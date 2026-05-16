@@ -35,6 +35,7 @@ nft.proofofwork.me
 token.proofofwork.me
 tokens.proofofwork.me -> https://token.proofofwork.me/
 work.proofofwork.me
+rush.proofofwork.me
 log.proofofwork.me
 growth.proofofwork.me
 ```
@@ -53,12 +54,13 @@ Production app roles:
 - `token.proofofwork.me` is the standalone mainnet token creation and mint app.
 - `tokens.proofofwork.me` redirects permanently to `https://token.proofofwork.me/`.
 - `work.proofofwork.me` is the standalone WORK token dashboard and mint page.
+- `rush.proofofwork.me` is the standalone RUSH token mint page with fixed phase rewards and chained minting.
 - `log.proofofwork.me` is the standalone public Bitcoin Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled Bitcoin Computer network value with real confirmed chain value in sats and USD.
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their Bitcoin transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, NFT, Token, WORK, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, NFT, Token, WORK, RUSH, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
 
 Official YouTube:
 
@@ -145,6 +147,7 @@ Launch invariants for future developers/agents:
 - Exposes Pay2Speak as a mainnet-only X Space crowdfunding surface with campaign creation, funding splits, optional questions, and a Computer workspace.
 - Exposes NFT as a mainnet-only collection surface. AK is the first collection, with local pixel-art generation, optional Genesis Tag minting, a Computer workspace, collection subpages that scan a selected operator address with AK decoding rules, and product credit to `machina@proofofwork.me`.
 - Exposes Tokens as a mainnet-only creation and mint surface, plus a dedicated WORK token dashboard. Token creation pays the built-in index fee to `tokens@proofofwork.me`; mints pay each token's own registry at the owner-set price.
+- Exposes RUSH as a fixed-schedule token mint surface. Production RUSH uses mainnet registry `bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e`; testnet4 development uses `tb1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk5gvw6q`. RUSH mints pay 1,000 sats, publish `pwr1:m:rush`, and can run through the chained mint assistant.
 - Exposes Growth as a public dashboard for modeled Bitcoin Computer network value versus real confirmed registry, log, file, marketplace, Pay2Speak, NFT, and Token value metrics.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
@@ -179,6 +182,7 @@ https://pay2speak.proofofwork.me/api/*
 https://nft.proofofwork.me/api/*
 https://token.proofofwork.me/api/*
 https://work.proofofwork.me/api/*
+https://rush.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
 https://growth.proofofwork.me/api/*
 ```
@@ -203,6 +207,7 @@ Current production behavior:
 - WORK's permanent value floor is derived from the Growth model's confirmed Bitcoin Computer network value: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. The inverse, `21,000,000 / confirmed_network_value_sats`, is the WORK-per-sat ratio. Pending records are visible but do not change the canonical floor until confirmed.
 - The WORK dashboard shows the live floor beside the mint panel: floor sats per WORK, USD per WORK, confirmed network value in sats/USD, and the refresh time. This is separate from the 1 sat/WORK launch mint price.
 - The WORK floor announcement is part of project history as ProofOfWork mail tx `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`: `$work now has a permanent Bitcoin Computer floor.` Live indexers determine whether that tx is pending or confirmed; once confirmed, Bitcoin history is the permanent source.
+- The RUSH API scans the configured network registry for valid `pwr1:m:rush` mints that pay at least 1,000 sats to the registry before OP_RETURN. Confirmed mint ordinals determine the phase reward; pending mints are visibility only.
 - The NFT API indexes deploy records and supported collection operators. Deploy records derive the operator from `vin0`, require at least 1,000 sats to `bc1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk7whapn`, and canonical collection subpages use `collection=<name>&operator=<operator-address>` because collection names are not globally unique. Public NFT docs and launch copy credit `machina@proofofwork.me`; this credit is provenance, not a protocol validation field.
 - The log API exposes a normalized Bitcoin Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, Pay2Speak campaigns/funding, NFT deploys/mints, token creations, and token mints. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
 - Browser renders ProofOfWork HTML by txid from either the `pwm1:m` message body or a verified `pwm1:a` file attachment. It does not introduce an outside carrier; attachments keep the same size/SHA-256 verification as Files/Desktop, and message-body HTML remains bound to the transaction that carries it.
@@ -347,6 +352,12 @@ To preview the WORK token dashboard locally:
 http://localhost:5173/?work=1
 ```
 
+To preview the RUSH token mint page locally:
+
+```text
+http://localhost:5173/?rush=1
+```
+
 To preview a Pay2Speak creator page locally:
 
 ```text
@@ -378,6 +389,7 @@ Pay2Speak -> /?pay2speak=1
 NFT -> /?nft=1
 Token -> /?token=1
 WORK -> /?work=1
+RUSH -> /?rush=1
 Log -> /?log=1
 Growth -> /?growth=1
 ```
@@ -440,6 +452,12 @@ To build the standalone WORK token dashboard for production:
 
 ```bash
 VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
+```
+
+To build the standalone RUSH token mint page for production:
+
+```bash
+VITE_RUSH_ONLY=1 VITE_POW_API_BASE=https://rush.proofofwork.me npm run build
 ```
 
 To build the standalone Log app for production:
@@ -513,6 +531,7 @@ Important implementation points:
 - Standalone NFT route switch: `isNftRoute()` in `src/App.tsx`.
 - Standalone Token route switch: `isTokenRoute()` in `src/App.tsx`.
 - Standalone WORK route switch: `isWorkTokenRoute()` in `src/App.tsx`.
+- Standalone RUSH route switch: `isRushRoute()` in `src/App.tsx`.
 - Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
 - Browser-only deploy switch: `VITE_BROWSER_ONLY=1`.
@@ -521,6 +540,7 @@ Important implementation points:
 - NFT-only deploy switch: `VITE_NFT_ONLY=1`.
 - Token-only deploy switch: `VITE_TOKEN_ONLY=1`.
 - WORK-only deploy switch: `VITE_WORK_TOKEN_ONLY=1`.
+- RUSH-only deploy switch: `VITE_RUSH_ONLY=1`.
 - Growth-only deploy switch: `VITE_GROWTH_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, `ID_MUTATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.

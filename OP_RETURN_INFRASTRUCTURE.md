@@ -1,6 +1,6 @@
 # ProofOfWork OP_RETURN Infrastructure
 
-ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol, `pwid1:` ID registry protocol, `pws1:` Pay2Speak protocol, NFT collection mint records, and `pwt1:` token protocol.
+ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol, `pwid1:` ID registry protocol, `pws1:` Pay2Speak protocol, NFT collection mint records, `pwt1:` token protocol, and the `pwr1:` RUSH mint protocol.
 
 The current product direction is OP_RETURN only. Future protocol work should improve this OP_RETURN indexer and API before introducing any new carrier.
 
@@ -30,11 +30,12 @@ nft.proofofwork.me          -> standalone NFT collections app
 token.proofofwork.me        -> standalone token creation and mint app
 tokens.proofofwork.me       -> permanent redirect to https://token.proofofwork.me/
 work.proofofwork.me         -> standalone WORK token dashboard and mint page
+rush.proofofwork.me         -> standalone RUSH token mint page
 log.proofofwork.me          -> public Bitcoin Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, NFT, Token, WORK, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, NFT, Token, WORK, RUSH, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
@@ -95,6 +96,7 @@ On `localhost` and `127.0.0.1`, shared app navigation uses local route flags ins
 /?nft=1
 /?token=1
 /?work=1
+/?rush=1
 /?log=1
 /?growth=1
 ```
@@ -112,6 +114,7 @@ VITE_PAY2SPEAK_ONLY=1 VITE_POW_API_BASE=https://pay2speak.proofofwork.me npm run
 VITE_NFT_ONLY=1 VITE_POW_API_BASE=https://nft.proofofwork.me npm run build
 VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://token.proofofwork.me npm run build
 VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
+VITE_RUSH_ONLY=1 VITE_POW_API_BASE=https://rush.proofofwork.me npm run build
 VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
 VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 ```
@@ -130,6 +133,8 @@ GET /api/v1/nft?network=livenet&collection=ak21&operator=<operator-address>
 GET /api/v1/nft?network=livenet&owner=<owner-address>
 POST /api/v1/broadcast/slipstream
 GET /api/v1/token?network=livenet
+GET /api/v1/rush?network=livenet
+GET /api/v1/rush?network=testnet4
 GET /api/v1/address/:address/mail?network=livenet
 GET /api/v1/tx/:txid?network=livenet
 GET /api/v1/tx/:txid/status?network=livenet
@@ -150,8 +155,8 @@ The log endpoint:
 
 - Starts from the canonical registry and all known ProofOfWork ID owner/receiver addresses.
 - Crawls the ProofOfWork mail/file address graph by reading `pwm1:` transactions, discovering senders and recipients, and expanding until the configured safety cap.
-- Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, attachments, Pay2Speak campaigns/funding, NFT deploys/mints, token creations, and token mints.
-- Reports total indexed ProofOfWork protocol data bytes across all discovered app OP_RETURN payloads, including marketplace listing/seal/buy/delist records and valid NFT deploy/mint records.
+- Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, attachments, Pay2Speak campaigns/funding, NFT deploys/mints, token creations, token mints, and RUSH mints.
+- Reports total indexed ProofOfWork protocol data bytes across all discovered app OP_RETURN payloads, including marketplace listing/seal/buy/delist records, valid NFT deploy/mint records, and RUSH mint records.
 
 The Growth app:
 
@@ -203,6 +208,16 @@ The token endpoint:
 - The WORK dashboard computes and displays this live floor from the same Growth inputs, using live BTC/USD for USD translations. The dashboard must keep the live floor visually separate from the token's owner-set mint price.
 - Historical WORK floor announcement mail tx: `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`. Its subject is `$work now has a permanent Bitcoin Computer floor.` The tx status should be read from the node/API at runtime; docs preserve the txid and decoded intent, not a stale confirmation claim.
 - Treats pending token records as visibility only; confirmed records are canonical.
+
+The RUSH endpoint:
+
+- Scans the configured RUSH registry address: `bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e` on livenet and `tb1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk5gvw6q` on testnet4.
+- Reads confirmed and pending `pwr1:m:rush` records.
+- Requires at least 1,000 sats paid to the RUSH registry before the RUSH OP_RETURN.
+- Credits the minter from the first input address.
+- Assigns canonical ordinals only to confirmed valid mints using block height, transaction position, and txid fallback ordering.
+- Computes the fixed 1,000,000,000 RUSH supply schedule across 50,000 rewarded mints: 50,000 RUSH for mints 1-5,000; 30,000 for 5,001-15,000; 18,000 for 15,001-30,000; 10,000 for 30,001-45,000; 6,000 for 45,001-50,000.
+- Treats pending RUSH records as visibility only; confirmed records are canonical.
 
 The mail endpoint:
 

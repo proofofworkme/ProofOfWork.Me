@@ -2,7 +2,6 @@ import type { CSSProperties, FormEvent } from "react";
 import * as bitcoin from "bitcoinjs-lib";
 import { ArrowUpRight, MessageCircle, MessageSquareQuote, Mic2, RefreshCw, Send, TrendingUp, X } from "lucide-react";
 import {
-  HOME_APP_URL,
   LOCAL_PAY2SPEAK_APP_URL,
   PAY2SPEAK_APP_URL,
 } from "../../app/appLinks";
@@ -10,9 +9,8 @@ import { appHref } from "../../app/routeRegistry";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { mempoolBase, mempoolTxUrl } from "../../shared/bitcoin/networks";
 import { MAX_DATA_CARRIER_BYTES } from "../../shared/bitcoin/protocolLimits";
-import { DomainNav } from "../../shared/components/DomainNav";
+import { AppHeader } from "../../shared/components/AppHeader";
 import { FeeRateControl } from "../../shared/components/FeeRateControl";
-import { HeaderActionsMenu } from "../../shared/components/HeaderActionsMenu";
 import { ProgressBar } from "../../shared/components/ProgressBar";
 import { SocialFooter } from "../../shared/components/SocialFooter";
 import { formatDate, shortAddress } from "../../functions";
@@ -79,6 +77,7 @@ export function Pay2SpeakApp({
   connectWallet,
   disconnectWallet,
   hasUnisat,
+  onNetworkChange,
   setTheme,
   status,
   theme,
@@ -87,6 +86,7 @@ export function Pay2SpeakApp({
   connectWallet: () => void;
   disconnectWallet: () => void;
   hasUnisat: boolean;
+  onNetworkChange: (network: BitcoinNetwork) => void;
   setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   status: { tone: StatusTone; text: string };
   theme: ThemeMode;
@@ -98,33 +98,19 @@ export function Pay2SpeakApp({
 
   return (
     <main className="id-launch-app pay2speak-public-app">
-      <header className="id-launch-topbar">
-        <a
-          className="brand"
-          href={HOME_APP_URL}
-          aria-label="ProofOfWork.Me home"
-        >
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
-          <div>
-            <h1>Pay2Speak</h1>
-            <span>X Space crowdfunding</span>
-          </div>
-        </a>
-
-        <DomainNav compact />
-
-        <HeaderActionsMenu
-          address={address}
-          busy={busy}
-          connectWallet={connectWallet}
-          disconnectWallet={disconnectWallet}
-          hasUnisat={hasUnisat}
-          setTheme={setTheme}
-          theme={theme}
-        />
-      </header>
+      <AppHeader
+        address={address}
+        busy={busy}
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        hasUnisat={hasUnisat}
+        network={workspaceProps.network}
+        onNetworkChange={onNetworkChange}
+        setTheme={setTheme}
+        subtitle="X Space crowdfunding"
+        theme={theme}
+        title="Pay2Speak"
+      />
 
       {status.tone !== "idle" ? (
         <div className={`status ${status.tone}`}>

@@ -80,6 +80,8 @@ const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
 const PAY2SPEAK_PROTOCOL_PREFIX = "pws1:";
 const TOKEN_PROTOCOL_PREFIX = "pwt1:";
+const RUSH_PROTOCOL_PREFIX = "pwr1:";
+const RUSH_MINT_PAYLOAD = "pwr1:m:rush";
 const ID_REGISTRATION_PRICE_SATS = 1000;
 const ID_MUTATION_PRICE_SATS = 546;
 const PAY2SPEAK_REGISTRY_PRICE_SATS = 1000;
@@ -142,6 +144,47 @@ const PAY2SPEAK_REGISTRY_ADDRESSES = {
 const TOKEN_INDEX_ADDRESSES = {
   livenet: "1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn",
 };
+const RUSH_REGISTRY_ADDRESSES = {
+  livenet: "bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e",
+  testnet4: "tb1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk5gvw6q",
+};
+const RUSH_MINT_PRICE_SATS = 1000;
+const RUSH_DECIMALS = 6n;
+const RUSH_BASE_UNITS = 1_000_000n;
+const RUSH_TOTAL_SUPPLY_UNITS = 1_000_000_000n * RUSH_BASE_UNITS;
+const RUSH_MAX_REWARDED_MINTS = 50_000;
+const RUSH_PHASES = [
+  {
+    endOrdinal: 5000,
+    phase: 1,
+    rewardUnits: 50_000n * RUSH_BASE_UNITS,
+    startOrdinal: 1,
+  },
+  {
+    endOrdinal: 15000,
+    phase: 2,
+    rewardUnits: 30_000n * RUSH_BASE_UNITS,
+    startOrdinal: 5001,
+  },
+  {
+    endOrdinal: 30000,
+    phase: 3,
+    rewardUnits: 18_000n * RUSH_BASE_UNITS,
+    startOrdinal: 15001,
+  },
+  {
+    endOrdinal: 45000,
+    phase: 4,
+    rewardUnits: 10_000n * RUSH_BASE_UNITS,
+    startOrdinal: 30001,
+  },
+  {
+    endOrdinal: 50000,
+    phase: 5,
+    rewardUnits: 6_000n * RUSH_BASE_UNITS,
+    startOrdinal: 45001,
+  },
+];
 
 const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
 const BLOCK_TXID_INDEX_CACHE = new Map();
@@ -1098,7 +1141,8 @@ function proofProtocolDataBytesForVout(vout) {
         message.startsWith(PROTOCOL_PREFIX) ||
         message.startsWith(ID_PROTOCOL_PREFIX) ||
         message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX) ||
-        message.startsWith(TOKEN_PROTOCOL_PREFIX),
+        message.startsWith(TOKEN_PROTOCOL_PREFIX) ||
+        message.startsWith(RUSH_PROTOCOL_PREFIX),
     )
     .reduce((total, message) => total + Buffer.byteLength(message, "utf8"), 0);
 }
@@ -1475,6 +1519,100 @@ function tokenPaymentAmountBeforeProtocol(vout, address) {
   }, 0);
 }
 
+function firstRushOutputIndex(vout) {
+  return vout.findIndex((output) => {
+    if (output.scriptpubkey_type !== "op_return") {
+      return false;
+    }
+
+    return decodedProtocolMessages([output], RUSH_PROTOCOL_PREFIX).some(
+      (message) => message === RUSH_MINT_PAYLOAD,
+    );
+  });
+}
+
+function rushPaymentAmountBeforeProtocol(vout, address) {
+  const protocolIndex = firstRushOutputIndex(vout);
+  return vout.reduce((total, output, index) => {
+    if (
+      output.scriptpubkey_address === address &&
+      typeof output.value === "number" &&
+      output.value > 0 &&
+      (protocolIndex === -1 || index < protocolIndex)
+    ) {
+      return total + output.value;
+    }
+
+    return total;
+  }, 0);
+}
+
+function rushPhaseForOrdinal(ordinal) {
+  if (!Number.isSafeInteger(ordinal) || ordinal < 1) {
+    return undefined;
+  }
+
+  return RUSH_PHASES.find(
+    (phase) => ordinal >= phase.startOrdinal && ordinal <= phase.endOrdinal,
+  );
+}
+
+function rushRewardUnitsForOrdinal(ordinal) {
+  return rushPhaseForOrdinal(ordinal)?.rewardUnits ?? 0n;
+}
+
+function formatRushUnits(units) {
+  const sign = units < 0n ? "-" : "";
+  const absolute = units < 0n ? -units : units;
+  const whole = absolute / RUSH_BASE_UNITS;
+  const fractional = absolute % RUSH_BASE_UNITS;
+  if (fractional === 0n) {
+    return `${sign}${whole.toString()}`;
+  }
+
+  const decimals = fractional
+    .toString()
+    .padStart(Number(RUSH_DECIMALS), "0")
+    .replace(/0+$/u, "");
+  return `${sign}${whole.toString()}.${decimals}`;
+}
+
+function rushStatsFromMints(mints) {
+  const confirmedMints = mints.filter((mint) => mint.confirmed).length;
+  const pendingMints = mints.filter((mint) => !mint.confirmed).length;
+  const rewardedMints = Math.min(confirmedMints, RUSH_MAX_REWARDED_MINTS);
+  const overflowMints = Math.max(0, confirmedMints - RUSH_MAX_REWARDED_MINTS);
+  const distributedUnits = mints.reduce((total, mint) => {
+    if (!mint.confirmed || mint.overflow) {
+      return total;
+    }
+
+    return total + BigInt(mint.amountUnits || "0");
+  }, 0n);
+  const remainingUnits =
+    distributedUnits >= RUSH_TOTAL_SUPPLY_UNITS
+      ? 0n
+      : RUSH_TOTAL_SUPPLY_UNITS - distributedUnits;
+  const nextOrdinal =
+    rewardedMints >= RUSH_MAX_REWARDED_MINTS ? null : rewardedMints + 1;
+  const nextPhase = nextOrdinal ? rushPhaseForOrdinal(nextOrdinal) : undefined;
+
+  return {
+    confirmedMints,
+    currentPhase: nextPhase?.phase ?? null,
+    distributed: formatRushUnits(distributedUnits),
+    nextOrdinal,
+    nextReward: nextOrdinal
+      ? formatRushUnits(rushRewardUnitsForOrdinal(nextOrdinal))
+      : "0",
+    overflowMints,
+    pendingMints,
+    remaining: formatRushUnits(remainingUnits),
+    rewardedMints,
+    totalSupply: "1000000000",
+  };
+}
+
 function normalizeTokenTicker(value) {
   return String(value ?? "")
     .trim()
@@ -1791,6 +1929,90 @@ function tokenStateFromTransactions(
     ),
     pendingSupply,
     tokens,
+  };
+}
+
+function emptyRushState(network = "livenet") {
+  return {
+    indexedAt: new Date().toISOString(),
+    mints: [],
+    network,
+    registryAddress: RUSH_REGISTRY_ADDRESSES[network] ?? "",
+    stats: rushStatsFromMints([]),
+  };
+}
+
+function rushStateFromTransactions(txs, registryAddress, network) {
+  if (!registryAddress) {
+    return emptyRushState(network);
+  }
+
+  const mints = [];
+  let confirmedOrdinal = 0;
+
+  for (const tx of tokenProtocolSortedTransactions(txs)) {
+    const txid = transactionTxid(tx);
+    if (!txid || mints.some((mint) => mint.txid === txid)) {
+      continue;
+    }
+
+    const vin = Array.isArray(tx.vin) ? tx.vin : [];
+    const vout = Array.isArray(tx.vout) ? tx.vout : [];
+    const minterAddress = transactionInputAddresses(vin)[0] ?? "";
+    if (!isValidBitcoinAddress(minterAddress, network)) {
+      continue;
+    }
+
+    const messages = decodedProtocolMessages(vout, RUSH_PROTOCOL_PREFIX);
+    if (!messages.includes(RUSH_MINT_PAYLOAD)) {
+      continue;
+    }
+
+    if (
+      rushPaymentAmountBeforeProtocol(vout, registryAddress) <
+      RUSH_MINT_PRICE_SATS
+    ) {
+      continue;
+    }
+
+    const confirmed = transactionConfirmed(tx);
+    const ordinal = confirmed ? (confirmedOrdinal += 1) : undefined;
+    const rewardOrdinal = ordinal ?? confirmedOrdinal + 1;
+    const rewardUnits = rushRewardUnitsForOrdinal(rewardOrdinal);
+    const phase = rushPhaseForOrdinal(rewardOrdinal);
+
+    mints.push({
+      amount: formatRushUnits(rewardUnits),
+      amountUnits: rewardUnits.toString(),
+      confirmed,
+      createdAt: new Date(tokenTransactionTime(tx)).toISOString(),
+      dataBytes: proofProtocolDataBytesForVout(vout),
+      minterAddress,
+      network,
+      ordinal,
+      overflow: confirmed ? rewardUnits === 0n : false,
+      paidSats: RUSH_MINT_PRICE_SATS,
+      phase: phase?.phase,
+      registryAddress,
+      txid,
+    });
+  }
+
+  const sortedMints = mints.sort(
+    (left, right) =>
+      Number(right.confirmed) - Number(left.confirmed) ||
+      (right.ordinal ?? Number.MAX_SAFE_INTEGER) -
+        (left.ordinal ?? Number.MAX_SAFE_INTEGER) ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      left.txid.localeCompare(right.txid),
+  );
+
+  return {
+    indexedAt: new Date().toISOString(),
+    mints: sortedMints,
+    network,
+    registryAddress,
+    stats: rushStatsFromMints(sortedMints),
   };
 }
 
@@ -3327,6 +3549,34 @@ function tokenActivityItemsFromState(state, indexAddress) {
   return [...creations, ...mints];
 }
 
+function rushActivityItemsFromState(state) {
+  return (state.mints ?? []).map((mint) => ({
+    amountSats: mint.paidSats,
+    actor: mint.minterAddress,
+    confirmed: mint.confirmed,
+    counterparty: mint.registryAddress,
+    createdAt: mint.createdAt,
+    dataBytes: mint.dataBytes,
+    description: `${mint.amount} RUSH minted by ${shortAddress(mint.minterAddress)}.`,
+    detail: mint.ordinal
+      ? `Mint #${mint.ordinal.toLocaleString()} Â· phase ${mint.phase ?? "overflow"}`
+      : `Pending mint Â· estimated phase ${mint.phase ?? "overflow"}`,
+    kind: "rush-mint",
+    network: mint.network,
+    tags: [
+      activityStatusTag(mint.confirmed),
+      networkLabel(mint.network),
+      "RUSH",
+      "Token",
+      "Mint",
+      `${mint.amount} RUSH`,
+      `${mint.paidSats.toLocaleString()} registry sats`,
+    ],
+    title: mint.confirmed ? "RUSH mint" : "RUSH mint pending",
+    txid: mint.txid,
+  }));
+}
+
 function addActivityAddress(addresses, address, network) {
   if (typeof address === "string" && isValidBitcoinAddress(address, network)) {
     addresses.add(address);
@@ -3421,6 +3671,15 @@ function cachedTokenPayload(network, tokenScope = "") {
   );
 }
 
+function cachedRushPayload(network) {
+  return cachedPayload(
+    `payload:rush:${network}`,
+    () => rushPayload(network),
+    TOKEN_CACHE_TTL_MS,
+    TOKEN_CACHE_STALE_MS,
+  );
+}
+
 async function globalActivityPayload(network) {
   const cacheKey = network;
   const cached = GLOBAL_ACTIVITY_CACHE.get(cacheKey);
@@ -3493,10 +3752,11 @@ async function globalActivityPayload(network) {
   }
 
   const mailActivity = mailActivityItemsFromTransactions(mailTxs, network);
-  const [pay2SpeakState, akState, tokenState] = await Promise.all([
+  const [pay2SpeakState, akState, tokenState, rushState] = await Promise.all([
     cachedPay2SpeakPayload(network).catch(() => null),
     cachedAkPayload(network).catch(() => null),
     cachedTokenPayload(network).catch(() => null),
+    cachedRushPayload(network).catch(() => null),
   ]);
   const pay2SpeakActivity = pay2SpeakState
     ? pay2SpeakActivityItemsFromState(
@@ -3508,12 +3768,14 @@ async function globalActivityPayload(network) {
     ? tokenActivityItemsFromState(tokenState, tokenState.indexAddress ?? "")
     : [];
   const akActivity = akState ? akActivityItemsFromState(akState) : [];
+  const rushActivity = rushState ? rushActivityItemsFromState(rushState) : [];
   const activity = dedupeActivityItems([
     ...(registry.activity ?? []),
     ...mailActivity,
     ...pay2SpeakActivity,
     ...akActivity,
     ...tokenActivity,
+    ...rushActivity,
   ]);
   const dataBytes = totalProtocolDataBytes(activity);
   const fileActions = activity.filter((item) => item.kind === "file").length;
@@ -3528,6 +3790,9 @@ async function globalActivityPayload(network) {
   ).length;
   const akActions = activity.filter((item) =>
     String(item.kind).startsWith("ak-"),
+  ).length;
+  const rushActions = activity.filter((item) =>
+    String(item.kind).startsWith("rush-"),
   ).length;
 
   const payload = {
@@ -3544,6 +3809,7 @@ async function globalActivityPayload(network) {
       pay2Speak: pay2SpeakActions,
       pending: activity.filter((item) => !item.confirmed).length,
       registry: (registry.activity ?? []).length,
+      rush: rushActions,
       tokens: tokenActions,
       total: activity.length,
     },
@@ -5180,6 +5446,20 @@ async function tokenPayload(network, tokenScope = "") {
   };
 }
 
+async function rushPayload(network) {
+  const registryAddress = RUSH_REGISTRY_ADDRESSES[network] ?? "";
+  if (!registryAddress) {
+    return emptyRushState(network);
+  }
+
+  const txs = await fetchRegistryTransactions(registryAddress, network);
+  return {
+    ...rushStateFromTransactions(txs, registryAddress, network),
+    source: mempoolBase(network),
+    transactions: txs.length,
+  };
+}
+
 async function mailPayload(address, network) {
   const txs = await fetchAddressTransactions(address, network);
   const inboxMessages = inboxMessagesFromTransactions(txs, address, network);
@@ -5383,6 +5663,27 @@ async function handleRequest(request, response) {
           response,
           `token:${network}:${tokenScope}`,
           () => cachedTokenPayload(network, tokenScope),
+          TOKEN_READ_CACHE_CONTROL,
+          TOKEN_CACHE_TTL_MS,
+          TOKEN_CACHE_STALE_MS,
+        );
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/v1/rush") {
+      if (freshReadRequested(url.searchParams)) {
+        jsonResponse(
+          response,
+          200,
+          await rushPayload(network),
+          FRESH_READ_CACHE_CONTROL,
+        );
+      } else {
+        await cachedJsonResponse(
+          response,
+          `rush:${network}`,
+          () => cachedRushPayload(network),
           TOKEN_READ_CACHE_CONTROL,
           TOKEN_CACHE_TTL_MS,
           TOKEN_CACHE_STALE_MS,

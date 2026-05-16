@@ -39,8 +39,8 @@ import {
   WORK_TOKEN_APP_URL,
 } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
-import { DomainNav } from "../../shared/components/DomainNav";
-import { HeaderActionsMenu } from "../../shared/components/HeaderActionsMenu";
+import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
+import { AppHeader } from "../../shared/components/AppHeader";
 import { SocialFooter } from "../../shared/components/SocialFooter";
 
 type ThemeMode = "light" | "dark";
@@ -68,12 +68,16 @@ function shortAddress(value: string) {
 export function LandingApp({
   registryAddress,
   registryRecords,
+  network,
+  onNetworkChange,
   setTheme,
   theme,
   onRefresh,
 }: {
   registryAddress: string;
   registryRecords: LandingRegistryRecord[];
+  network: BitcoinNetwork;
+  onNetworkChange: (network: BitcoinNetwork) => void;
   setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   theme: ThemeMode;
   onRefresh: () => void;
@@ -83,26 +87,17 @@ export function LandingApp({
 
   return (
     <main className="landing-app">
-      <header className="landing-topbar">
-        <a
-          className="landing-brand"
-          href={HOME_APP_URL}
-          aria-label="ProofOfWork.Me home"
-        >
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
-          <div>
-            <h1>ProofOfWork.Me</h1>
-            <span>The final network</span>
-          </div>
-        </a>
-
-        <div className="landing-nav">
-          <DomainNav />
-          <HeaderActionsMenu setTheme={setTheme} theme={theme} />
-        </div>
-      </header>
+      <AppHeader
+        brandClassName="landing-brand"
+        className="landing-topbar"
+        domainNavCompact={false}
+        network={network}
+        onNetworkChange={onNetworkChange}
+        setTheme={setTheme}
+        subtitle="The final network"
+        theme={theme}
+        title="ProofOfWork.Me"
+      />
 
       <section className="landing-hero">
         <div className="landing-hero-content">

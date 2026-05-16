@@ -9,6 +9,7 @@ export type AppSurface =
   | "nft"
   | "token"
   | "work"
+  | "rush"
   | "log"
   | "growth";
 
@@ -131,6 +132,14 @@ export function isWorkTokenRoute() {
   return hostname() === "work.proofofwork.me" || searchIncludes("work=1");
 }
 
+export function isRushRoute() {
+  if (import.meta.env.VITE_RUSH_ONLY === "1") {
+    return true;
+  }
+
+  return hostname() === "rush.proofofwork.me" || searchIncludes("rush=1");
+}
+
 export function isActivityRoute() {
   if (
     import.meta.env.VITE_ACTIVITY_ONLY === "1" ||
@@ -166,6 +175,7 @@ export function detectAppSurface(): AppSurface {
   if (isNftRoute()) return "nft";
   if (isTokenRoute()) return "token";
   if (isWorkTokenRoute()) return "work";
+  if (isRushRoute()) return "rush";
   if (isActivityRoute()) return "log";
   if (isGrowthRoute()) return "growth";
   return "computer";

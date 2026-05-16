@@ -86,6 +86,7 @@ import {
   isMarketplaceRoute,
   isNftRoute,
   isPay2SpeakRoute,
+  isRushRoute,
   isTokenRoute,
   isWorkTokenRoute,
 } from "./app/routeRegistry";
@@ -134,9 +135,28 @@ import {
   Pay2SpeakApp,
   Pay2SpeakWorkspace,
 } from "./features/pay2speak/Pay2SpeakApp";
-import { DomainNav } from "./shared/components/DomainNav";
+import { RushApp } from "./features/rush/RushApp";
+import {
+  buildRushMintPayload,
+  emptyRushState,
+  RUSH_CHAINED_MINT_DEFAULT_COUNT,
+  RUSH_CHAINED_MINT_DEFAULT_DELAY_MS,
+  RUSH_CHAINED_MINT_MAX_COUNT,
+  RUSH_CHAINED_MINT_MAX_DELAY_MS,
+  RUSH_MAX_REWARDED_MINTS,
+  RUSH_MINT_PRICE_SATS,
+  RUSH_PROTOCOL_PREFIX,
+  formatRushUnits,
+  rushPhaseForOrdinal,
+  rushRegistryAddressForNetwork,
+  rushRewardForOrdinal,
+  rushRewardUnitsForOrdinal,
+  rushStatsFromMints,
+  type RushMintRecord,
+  type RushState,
+} from "./features/rush/rushProtocol";
+import { AppHeader } from "./shared/components/AppHeader";
 import { FeeRateControl } from "./shared/components/FeeRateControl";
-import { HeaderActionsMenu } from "./shared/components/HeaderActionsMenu";
 import { ProgressBar } from "./shared/components/ProgressBar";
 import { SocialFooter } from "./shared/components/SocialFooter";
 import {
@@ -535,7 +555,8 @@ type PowActivityKind =
   | "ak-deploy"
   | "ak-mint"
   | "token-create"
-  | "token-mint";
+  | "token-mint"
+  | "rush-mint";
 
 type PowActivityItem = {
   amountSats?: number;
@@ -844,6 +865,8 @@ type Pay2SpeakApiResponse = Partial<Pay2SpeakState> & {
 };
 
 type AkApiResponse = Partial<AkState>;
+
+type RushApiResponse = Partial<RushState>;
 
 type PowTokenApiResponse = Partial<PowTokenState> & {
   registryAddress?: string;
@@ -4451,7 +4474,8 @@ function proofProtocolDataBytesForVout(vout: Array<Record<string, unknown>>) {
         message.startsWith(PROTOCOL_PREFIX) ||
         message.startsWith(ID_PROTOCOL_PREFIX) ||
         message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX) ||
-        message.startsWith(TOKEN_PROTOCOL_PREFIX),
+        message.startsWith(TOKEN_PROTOCOL_PREFIX) ||
+        message.startsWith(RUSH_PROTOCOL_PREFIX),
     )
     .reduce(
       (total, message) => total + new TextEncoder().encode(message).byteLength,
@@ -4841,6 +4865,132 @@ function tokenPaymentAmountBeforeProtocol(
 
     return total;
   }, 0);
+}
+
+function firstRushOutputIndex(vout: Array<Record<string, unknown>>) {
+  return vout.findIndex((output) => {
+    if (output.scriptpubkey_type !== "op_return") {
+      return false;
+    }
+
+    return decodedProtocolMessages([output], RUSH_PROTOCOL_PREFIX).some(
+      (message) => message === buildRushMintPayload(),
+    );
+  });
+}
+
+function rushPaymentAmountBeforeProtocol(
+  vout: Array<Record<string, unknown>>,
+  address: string,
+) {
+  const protocolIndex = firstRushOutputIndex(vout);
+  return vout.reduce((total, output, index) => {
+    if (
+      output.scriptpubkey_address === address &&
+      typeof output.value === "number" &&
+      output.value > 0 &&
+      (protocolIndex === -1 || index < protocolIndex)
+    ) {
+      return total + output.value;
+    }
+
+    return total;
+  }, 0);
+}
+
+function rushProtocolSortedTransactions(txs: Array<Record<string, unknown>>) {
+  return txs.slice().sort((left, right) => {
+    const leftConfirmed = transactionConfirmed(left);
+    const rightConfirmed = transactionConfirmed(right);
+    if (leftConfirmed !== rightConfirmed) {
+      return Number(rightConfirmed) - Number(leftConfirmed);
+    }
+
+    return (
+      (transactionBlockHeight(left) ?? Number.MAX_SAFE_INTEGER) -
+        (transactionBlockHeight(right) ?? Number.MAX_SAFE_INTEGER) ||
+      (transactionBlockIndex(left) ?? Number.MAX_SAFE_INTEGER) -
+        (transactionBlockIndex(right) ?? Number.MAX_SAFE_INTEGER) ||
+      String(transactionTxid(left)).localeCompare(String(transactionTxid(right)))
+    );
+  });
+}
+
+function rushStateFromTransactions(
+  txs: Array<Record<string, unknown>>,
+  registryAddress: string,
+  targetNetwork: BitcoinNetwork,
+): RushState {
+  const mints: RushMintRecord[] = [];
+  let confirmedOrdinal = 0;
+
+  for (const tx of rushProtocolSortedTransactions(txs)) {
+    const txid = transactionTxid(tx);
+    if (!txid || mints.some((mint) => mint.txid === txid)) {
+      continue;
+    }
+
+    const vin = Array.isArray(tx.vin)
+      ? (tx.vin as Array<Record<string, unknown>>)
+      : [];
+    const vout = Array.isArray(tx.vout)
+      ? (tx.vout as Array<Record<string, unknown>>)
+      : [];
+    const minterAddress = transactionInputAddresses(vin)[0] ?? "";
+    if (!isValidBitcoinAddress(minterAddress, targetNetwork)) {
+      continue;
+    }
+
+    const messages = decodedProtocolMessages(vout, RUSH_PROTOCOL_PREFIX);
+    if (!messages.includes(buildRushMintPayload())) {
+      continue;
+    }
+
+    const paidSats = rushPaymentAmountBeforeProtocol(vout, registryAddress);
+    if (paidSats < RUSH_MINT_PRICE_SATS) {
+      continue;
+    }
+
+    const confirmed = transactionConfirmed(tx);
+    const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+    const ordinal = confirmed ? (confirmedOrdinal += 1) : undefined;
+    const rewardOrdinal = ordinal ?? confirmedOrdinal + 1;
+    const rewardUnits = rushRewardUnitsForOrdinal(rewardOrdinal);
+    const phase = rushPhaseForOrdinal(rewardOrdinal);
+
+    mints.push({
+      amount: formatRushUnits(rewardUnits),
+      amountUnits: rewardUnits.toString(),
+      confirmed,
+      createdAt,
+      dataBytes: proofProtocolDataBytesForVout(vout),
+      minterAddress,
+      network: targetNetwork,
+      ordinal,
+      overflow: confirmed ? rewardUnits === 0n : false,
+      paidSats: RUSH_MINT_PRICE_SATS,
+      phase: phase?.phase,
+      registryAddress,
+      txid,
+    });
+  }
+
+  const sortedMints = mints.sort(
+    (left, right) =>
+      Number(right.confirmed) - Number(left.confirmed) ||
+      (right.ordinal ?? Number.MAX_SAFE_INTEGER) -
+        (left.ordinal ?? Number.MAX_SAFE_INTEGER) ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      left.txid.localeCompare(right.txid),
+  );
+
+  return {
+    indexedAt: new Date().toISOString(),
+    mints: sortedMints,
+    network: targetNetwork,
+    registryAddress,
+    stats: rushStatsFromMints(sortedMints),
+  };
 }
 
 function normalizeTokenTicker(value: string) {
@@ -8459,6 +8609,39 @@ async function fetchTokenState(
   );
 }
 
+async function fetchRushState(
+  targetNetwork: BitcoinNetwork,
+  fresh = false,
+): Promise<RushState> {
+  const registryAddress = rushRegistryAddressForNetwork(targetNetwork);
+  if (!registryAddress) {
+    return emptyRushState(targetNetwork);
+  }
+
+  if (POW_API_BASE) {
+    const payload = await fetchProofApiJson<RushApiResponse>(
+      fresh ? "/api/v1/rush?fresh=1" : "/api/v1/rush",
+      targetNetwork,
+    );
+    return {
+      indexedAt:
+        typeof payload.indexedAt === "string"
+          ? payload.indexedAt
+          : new Date().toISOString(),
+      mints: Array.isArray(payload.mints) ? payload.mints : [],
+      network: targetNetwork,
+      registryAddress:
+        typeof payload.registryAddress === "string"
+          ? payload.registryAddress
+          : registryAddress,
+      stats: payload.stats ?? emptyRushState(targetNetwork).stats,
+    };
+  }
+
+  const txs = await fetchRegistryTransactions(registryAddress, targetNetwork);
+  return rushStateFromTransactions(txs, registryAddress, targetNetwork);
+}
+
 async function fetchUtxos(
   ownerAddress: string,
   ownerNetwork: BitcoinNetwork,
@@ -10315,6 +10498,7 @@ export default function App() {
   const nftMode = isNftRoute();
   const tokenMode = isTokenRoute();
   const workTokenMode = isWorkTokenRoute();
+  const rushMode = isRushRoute();
   const pay2SpeakCreatorAddress = pay2SpeakCreatorRouteAddress();
   const activityMode = isActivityRoute();
   const growthMode = isGrowthRoute();
@@ -10471,6 +10655,14 @@ export default function App() {
     useState(0);
   const [tokenMintAssistantRunning, setTokenMintAssistantRunning] =
     useState(false);
+  const [rushState, setRushState] = useState<RushState>(() => emptyRushState());
+  const [rushMintCount, setRushMintCount] = useState(
+    RUSH_CHAINED_MINT_DEFAULT_COUNT,
+  );
+  const [rushMintDelayMs, setRushMintDelayMs] = useState(
+    RUSH_CHAINED_MINT_DEFAULT_DELAY_MS,
+  );
+  const [rushMinting, setRushMinting] = useState(false);
   const [tokenAction, setTokenAction] = useState<
     "" | "create" | "mint" | "split"
   >("");
@@ -10536,6 +10728,7 @@ export default function App() {
   const nftMintAssistantTimerRef = useRef<number | undefined>(undefined);
   const tokenMintAssistantActiveRef = useRef(false);
   const tokenMintAssistantTimerRef = useRef<number | undefined>(undefined);
+  const rushMintActiveRef = useRef(false);
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   const protocolPayloads = useMemo(
@@ -11630,7 +11823,14 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (activityMode || growthMode || nftMode || tokenMode || workTokenMode) {
+    if (
+      activityMode ||
+      growthMode ||
+      nftMode ||
+      tokenMode ||
+      workTokenMode ||
+      rushMode
+    ) {
       return;
     }
 
@@ -11672,6 +11872,7 @@ export default function App() {
     nftMode,
     growthMode,
     network,
+    rushMode,
     tokenMode,
     workTokenMode,
   ]);
@@ -11691,7 +11892,8 @@ export default function App() {
       pay2SpeakMode ||
       nftMode ||
       tokenMode ||
-      workTokenMode
+      workTokenMode ||
+      rushMode
     ) {
       return;
     }
@@ -11704,6 +11906,7 @@ export default function App() {
     mainnetRegistryMode,
     network,
     pay2SpeakMode,
+    rushMode,
     tokenMode,
     workTokenMode,
   ]);
@@ -11733,6 +11936,14 @@ export default function App() {
 
     void refreshToken(true);
   }, [network, tokenMode, workTokenMode]);
+
+  useEffect(() => {
+    if (!rushMode || !rushRegistryAddressForNetwork(network)) {
+      return;
+    }
+
+    void refreshRush(true);
+  }, [network, rushMode]);
 
   useEffect(() => {
     if (
@@ -12001,6 +12212,21 @@ export default function App() {
           return;
         }
 
+        if (rushMode) {
+          const rushNetwork = rushRegistryAddressForNetwork(nextNetwork)
+            ? nextNetwork
+            : "livenet";
+          await switchWalletNetwork(window.unisat as UnisatWallet, rushNetwork);
+          const state = await fetchRushState(rushNetwork, true);
+          setNetwork(rushNetwork);
+          setRushState(state);
+          setStatus({
+            tone: "good",
+            text: `${shortAddress(nextAddress)} connected. RUSH mint ready.`,
+          });
+          return;
+        }
+
         if (mainnetRegistryMode) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
           const state = await fetchIdRegistryState("livenet");
@@ -12067,6 +12293,7 @@ export default function App() {
     mainnetRegistryMode,
     network,
     pay2SpeakMode,
+    rushMode,
     tokenMode,
     workTokenMode,
   ]);
@@ -12937,6 +13164,43 @@ export default function App() {
     }
   }
 
+  async function refreshRush(silent = false, fresh = false) {
+    const registryAddress = rushRegistryAddressForNetwork(network);
+    if (!registryAddress) {
+      setRushState(emptyRushState(network));
+      if (!silent) {
+        setStatus({
+          tone: "idle",
+          text: `No RUSH registry configured for ${networkLabel(network)}.`,
+        });
+      }
+      return;
+    }
+
+    setBusy(true);
+    if (!silent) {
+      setStatus({ tone: "idle", text: "Scanning RUSH registry..." });
+    }
+
+    try {
+      const state = await fetchRushState(network, fresh || !silent);
+      setRushState(state);
+      if (!silent) {
+        setStatus({
+          tone: "good",
+          text: `RUSH loaded. ${state.stats.confirmedMints.toLocaleString()} confirmed mint${state.stats.confirmedMints === 1 ? "" : "s"}, ${state.stats.pendingMints.toLocaleString()} pending.`,
+        });
+      }
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "RUSH scan failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function refreshWorkFloor(silent = false) {
     if (workFloorRefreshInFlightRef.current) {
       return;
@@ -13352,9 +13616,36 @@ export default function App() {
       setSelectedKey("");
 
       if (!nextAddress) {
+        if (rushMode) {
+          const rushRegistry = rushRegistryAddressForNetwork(activeWalletNetwork);
+          setRushState(
+            rushRegistry
+              ? await fetchRushState(activeWalletNetwork, true)
+              : emptyRushState(activeWalletNetwork),
+          );
+        }
         setStatus({
           tone: "good",
           text: `${networkLabel(activeWalletNetwork)} ready.`,
+        });
+        return;
+      }
+
+      if (rushMode) {
+        const rushRegistry = rushRegistryAddressForNetwork(activeWalletNetwork);
+        if (!rushRegistry) {
+          setRushState(emptyRushState(activeWalletNetwork));
+          setStatus({
+            tone: "idle",
+            text: `No RUSH registry configured for ${networkLabel(activeWalletNetwork)}.`,
+          });
+          return;
+        }
+        const state = await fetchRushState(activeWalletNetwork, true);
+        setRushState(state);
+        setStatus({
+          tone: "good",
+          text: `${networkLabel(activeWalletNetwork)} ready. RUSH registry loaded.`,
         });
         return;
       }
@@ -16249,6 +16540,255 @@ export default function App() {
     }
   }
 
+  async function runRushChainedMint({
+    count,
+    delayMs,
+    onBroadcast,
+    requireActive,
+  }: {
+    count: number;
+    delayMs: number;
+    onBroadcast?: (completed: number, txid: string) => void;
+    requireActive: () => boolean;
+  }) {
+    const wallet = window.unisat;
+    if (!wallet?.signPsbt) {
+      throw new Error("UniSat signPsbt is not available.");
+    }
+    const mintNetwork = network;
+    const registryAddress = rushRegistryAddressForNetwork(mintNetwork);
+    if (!registryAddress) {
+      throw new Error(`No RUSH registry configured for ${networkLabel(mintNetwork)}.`);
+    }
+    const currentNetwork = await getWalletNetwork(wallet);
+    if (currentNetwork !== mintNetwork) {
+      await switchWalletNetwork(wallet, mintNetwork);
+    }
+
+    const total = Math.min(
+      RUSH_CHAINED_MINT_MAX_COUNT,
+      Math.max(1, Math.floor(count)),
+    );
+    const payload = buildRushMintPayload();
+    const opReturnScripts = protocolOutputScripts([payload]);
+    const registryScript = scriptForAddress(
+      registryAddress,
+      mintNetwork,
+      "RUSH registry",
+    );
+    const changeScript = scriptForAddress(
+      address,
+      mintNetwork,
+      "Connected wallet",
+    );
+    const fixedOutputVbytes =
+      outputVbytesForScript(registryScript) +
+      opReturnScripts.reduce(
+        (totalVbytes, script) => totalVbytes + outputVbytesForScript(script),
+        0,
+      );
+    const changeOutputVbytes = outputVbytesForScript(changeScript);
+    const estimatedFeePerMint = Math.ceil(
+      estimateTxVbytes(1, fixedOutputVbytes + changeOutputVbytes) * feeRate,
+    );
+    const initialInputs = await selectChainedInitialInputs({
+      feeRate,
+      fromAddress: address,
+      network: mintNetwork,
+      totalRequiredSats:
+        total * RUSH_MINT_PRICE_SATS +
+        total * estimatedFeePerMint +
+        DUST_SATS,
+    });
+    const latestState = await fetchRushState(mintNetwork, true);
+    setRushState(latestState);
+    if (latestState.stats.nextOrdinal === null) {
+      throw new Error("RUSH rewarded supply is fully minted.");
+    }
+    const remainingRewarded =
+      RUSH_MAX_REWARDED_MINTS - latestState.stats.rewardedMints;
+    if (total > remainingRewarded) {
+      throw new Error(
+        `Only ${remainingRewarded.toLocaleString()} rewarded RUSH mint${remainingRewarded === 1 ? "" : "s"} remain. Lower the run count.`,
+      );
+    }
+
+    const result = await executeChainedMintRun<ChainedMintInput, RushMintRecord>({
+      buildAndBroadcastStep: async ({ currentInputs, index, isLast }) => {
+        if (!requireActive()) {
+          throw new Error("RUSH chained mint stopped.");
+        }
+
+        const paymentPsbt = buildChainedMintPsbt({
+          feeRate,
+          fixedOutputs: [
+            {
+              address: registryAddress,
+              amountSats: RUSH_MINT_PRICE_SATS,
+            },
+            { amountSats: 0, script: opReturnScripts[0] },
+          ],
+          fromAddress: address,
+          inputs: currentInputs,
+          isLast,
+          network: mintNetwork,
+        });
+        if (
+          paymentPsbt.dustFeeSats > 0 &&
+          !confirmDustFeeAbsorption({
+            dustFeeSats: paymentPsbt.dustFeeSats,
+            feeRate,
+            feeSats: paymentPsbt.feeSats,
+          })
+        ) {
+          throw new Error(dustFeeAbsorptionCanceledText());
+        }
+
+        setStatus({
+          tone: "idle",
+          text: `Waiting for UniSat signature ${index + 1}/${total}. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} sats.`,
+        });
+        const broadcast = await signAndBroadcastPsbtDetailed({
+          broadcastStrategy: CHAINED_MINT_BROADCAST_STRATEGY,
+          inputCount: paymentPsbt.inputCount,
+          network: mintNetwork,
+          psbtHex: paymentPsbt.psbtHex,
+          wallet,
+        });
+        const txid = broadcast.txid;
+        const ordinal = latestState.stats.rewardedMints + index + 1;
+        const rewardUnits = rushRewardUnitsForOrdinal(ordinal);
+        const phase = rushPhaseForOrdinal(ordinal);
+        const mint: RushMintRecord = {
+          amount: formatRushUnits(rewardUnits),
+          amountUnits: rewardUnits.toString(),
+          confirmed: false,
+          createdAt: new Date().toISOString(),
+          dataBytes: dataCarrierBytesForPayload(payload),
+          minterAddress: address,
+          network: mintNetwork,
+          overflow: rewardUnits === 0n,
+          paidSats: RUSH_MINT_PRICE_SATS,
+          phase: phase?.phase,
+          registryAddress,
+          txid,
+        };
+
+        setRushState((current) => {
+          const mints = current.mints.some((item) => item.txid === txid)
+            ? current.mints
+            : [mint, ...current.mints];
+          return {
+            ...current,
+            indexedAt: new Date().toISOString(),
+            mints,
+            stats: rushStatsFromMints(mints),
+          };
+        });
+        setStatus({
+          tone: "good",
+          text: `RUSH mint ${index + 1}/${total} broadcast via ${broadcast.source}: ${shortAddress(txid)}.`,
+        });
+
+        const nextInput = paymentPsbt.nextInput
+          ? { ...paymentPsbt.nextInput, txid }
+          : undefined;
+        return {
+          feeSats: paymentPsbt.feeSats,
+          nextInputs: nextInput ? [nextInput] : [],
+          pendingRecord: mint,
+          txid,
+        };
+      },
+      count: total,
+      delayMs,
+      initialInputs,
+      isActive: requireActive,
+      onProgress: (event) => {
+        if (event.kind === "broadcast") {
+          onBroadcast?.(event.index + 1, event.txid);
+        }
+      },
+    });
+
+    await refreshRush(true, true);
+    return result.txids;
+  }
+
+  async function mintRush(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+    if (!address || !isValidBitcoinAddress(address, network)) {
+      setStatus({
+        tone: "bad",
+        text: `Connect a valid ${networkLabel(network)} wallet first.`,
+      });
+      return;
+    }
+    if (!rushRegistryAddressForNetwork(network)) {
+      setStatus({
+        tone: "bad",
+        text: `No RUSH registry configured for ${networkLabel(network)}.`,
+      });
+      return;
+    }
+    if (dataCarrierBytesForPayload(buildRushMintPayload()) > MAX_DATA_CARRIER_BYTES) {
+      setStatus({ tone: "bad", text: "RUSH mint OP_RETURN is over 100 KB." });
+      return;
+    }
+
+    const target = Math.min(
+      RUSH_CHAINED_MINT_MAX_COUNT,
+      Math.max(1, Math.floor(rushMintCount)),
+    );
+    const delayMs = Math.min(
+      RUSH_CHAINED_MINT_MAX_DELAY_MS,
+      Math.max(0, Math.floor(rushMintDelayMs)),
+    );
+
+    rushMintActiveRef.current = true;
+    setRushMinting(true);
+    setBusy(true);
+    setStatus({ tone: "idle", text: `Starting ${target} RUSH mint${target === 1 ? "" : "s"}...` });
+
+    try {
+      const txids = await runRushChainedMint({
+        count: target,
+        delayMs,
+        requireActive: () => rushMintActiveRef.current,
+      });
+      setStatus({
+        tone: "good",
+        text: `RUSH run broadcast ${txids.length.toLocaleString()} transaction${txids.length === 1 ? "" : "s"}.`,
+      });
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "RUSH mint failed."),
+      });
+    } finally {
+      rushMintActiveRef.current = false;
+      setRushMinting(false);
+      setBusy(false);
+    }
+  }
+
+  function stopRushMint() {
+    rushMintActiveRef.current = false;
+    setRushMinting(false);
+    setStatus({ tone: "idle", text: "RUSH mint run stopped." });
+  }
+
   function clearTokenMintAssistantTimer() {
     if (tokenMintAssistantTimerRef.current !== undefined) {
       window.clearTimeout(tokenMintAssistantTimerRef.current);
@@ -16549,6 +17089,8 @@ export default function App() {
   if (landingMode) {
     return (
       <LandingApp
+        network={network}
+        onNetworkChange={chooseNetwork}
         registryAddress={registryAddressForNetwork("livenet")}
         registryRecords={idRegistry.filter(
           (record) => record.network === "livenet",
@@ -16576,6 +17118,8 @@ export default function App() {
         lastRegisteredId={
           lastRegisteredId?.network === "livenet" ? lastRegisteredId : undefined
         }
+        network={network}
+        onNetworkChange={chooseNetwork}
         registryAddress={registryAddressForNetwork("livenet")}
         registryRecords={idRegistry.filter(
           (record) => record.network === "livenet",
@@ -16614,6 +17158,8 @@ export default function App() {
         idSalePriceSats={idSalePriceSats}
         idSaleReceiveAddress={idSaleReceiveAddress}
         managedIdName={managedIdRecord?.id ?? ""}
+        network={network}
+        onNetworkChange={chooseNetwork}
         publishListing={publishIdListing}
         pendingEvents={idPendingEvents.filter(
           (event) => event.network === "livenet",
@@ -16679,7 +17225,8 @@ export default function App() {
         )}
         handle={pay2SpeakHandle}
         hasUnisat={hasUnisat}
-        network="livenet"
+        network={network}
+        onNetworkChange={chooseNetwork}
         question={pay2SpeakQuestion}
         questions={pay2SpeakQuestions}
         registryAddress={pay2SpeakRegistryAddressForNetwork("livenet")}
@@ -16736,6 +17283,8 @@ export default function App() {
         mintAssistantTarget={nftMintAssistantTarget}
         mintBytes={akMintBytes}
         mints={akMints.filter((mint) => mint.network === "livenet")}
+        network={network}
+        onNetworkChange={chooseNetwork}
         operatorAddress={nftOperatorAddress}
         selectedCollection={nftSelectedCollection}
         setFeeRate={setFeeRate}
@@ -16793,6 +17342,8 @@ export default function App() {
         hasUnisat={hasUnisat}
         holders={selectedTokenLedger.holders}
         mintBytes={tokenMintBytes}
+        network={network}
+        onNetworkChange={chooseNetwork}
         mintAssistantCompleted={tokenMintAssistantCompleted}
         mintAssistantDelayMs={tokenMintAssistantDelayMs}
         mintAssistantRemaining={tokenMintAssistantRemaining}
@@ -16844,6 +17395,34 @@ export default function App() {
     );
   }
 
+  if (rushMode) {
+    return (
+      <RushApp
+        address={address}
+        busy={busy}
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        feeRate={feeRate}
+        hasUnisat={hasUnisat}
+        mintCount={rushMintCount}
+        mintDelayMs={rushMintDelayMs}
+        minting={rushMinting}
+        network={network}
+        onMint={mintRush}
+        onNetworkChange={chooseNetwork}
+        onRefresh={() => void refreshRush()}
+        onStopMint={stopRushMint}
+        setFeeRate={setFeeRate}
+        setMintCount={setRushMintCount}
+        setMintDelayMs={setRushMintDelayMs}
+        setTheme={setTheme}
+        state={rushState}
+        status={status}
+        theme={theme}
+      />
+    );
+  }
+
   if (desktopRoute) {
     return (
       <DesktopApp
@@ -16856,6 +17435,7 @@ export default function App() {
         selectedKey={desktopSelectedKey}
         setDesktopQuery={setDesktopQuery}
         setFileFilter={setFileFilter}
+        onNetworkChange={chooseNetwork}
         setSortMode={setSortMode}
         setTheme={setTheme}
         sortMode={sortMode}
@@ -16882,6 +17462,7 @@ export default function App() {
         activeNetwork={network}
         busy={activityLoading || busy}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
+        onNetworkChange={chooseNetwork}
         profile={activityProfile}
         query={activityQuery}
         searchedActivity={activityMail}
@@ -16907,6 +17488,7 @@ export default function App() {
   if (growthMode) {
     return (
       <GrowthApp
+        activeNetwork={network}
         akMints={akMints.filter((mint) => mint.network === "livenet")}
         busy={busy}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
@@ -16933,6 +17515,7 @@ export default function App() {
           (token) => token.network === "livenet",
         )}
         tokenMints={tokenMints.filter((mint) => mint.network === "livenet")}
+        onNetworkChange={chooseNetwork}
         onRefresh={() => void refreshGrowth()}
       />
     );
@@ -16940,86 +17523,57 @@ export default function App() {
 
   return (
     <main className="mail-app">
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
-          <div>
-            <h1>ProofOfWork.Me</h1>
-            <span>{networkLabel(network)}</span>
-          </div>
-        </div>
-
-        <DomainNav compact />
-
-        <HeaderActionsMenu
-          address={address}
-          busy={busy}
-          connectWallet={connectWallet}
-          disconnectWallet={disconnectWallet}
-          hasUnisat={hasUnisat}
-          networkOptions={[
-            {
-              active: network === "testnet4",
-              disabled: busy,
-              label: "Testnet4",
-              onSelect: () => chooseNetwork("testnet4"),
-            },
-            {
-              active: network === "testnet",
-              disabled: busy,
-              label: "Testnet3",
-              onSelect: () => chooseNetwork("testnet"),
-            },
-            {
-              active: network === "livenet",
-              disabled: busy,
-              label: "Mainnet",
-              onSelect: () => chooseNetwork("livenet"),
-            },
-          ]}
-          onRefresh={
-            refreshDisabled
-              ? undefined
-              : () => {
-                  if (activeFolder === "pay2speak") {
-                    void refreshPay2Speak();
-                    return;
-                  }
-
-                  if (activeFolder === "nft") {
-                    void refreshAk();
-                    return;
-                  }
-
-                  if (activeFolder === "token" || activeFolder === "work") {
-                    void refreshToken();
-                    return;
-                  }
-
-                  if (
-                    activeFolder === "ids" ||
-                    activeFolder === "marketplace" ||
-                    activeFolder === "log" ||
-                    activeFolder === "contacts"
-                  ) {
-                    void refreshIds();
-                    if (activeFolder === "log" && activityProfile) {
-                      void loadActivityTarget(activityProfile.query);
-                    }
-                    return;
-                  }
-
-                  void (activeFolder === "desktop"
-                    ? loadDesktopTarget()
-                    : refreshMail(activeFolder));
+      <AppHeader
+        address={address}
+        busy={busy}
+        className="topbar"
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        hasUnisat={hasUnisat}
+        network={network}
+        onNetworkChange={chooseNetwork}
+        onRefresh={
+          refreshDisabled
+            ? undefined
+            : () => {
+                if (activeFolder === "pay2speak") {
+                  void refreshPay2Speak();
+                  return;
                 }
-          }
-          setTheme={setTheme}
-          theme={theme}
-        />
-      </header>
+
+                if (activeFolder === "nft") {
+                  void refreshAk();
+                  return;
+                }
+
+                if (activeFolder === "token" || activeFolder === "work") {
+                  void refreshToken();
+                  return;
+                }
+
+                if (
+                  activeFolder === "ids" ||
+                  activeFolder === "marketplace" ||
+                  activeFolder === "log" ||
+                  activeFolder === "contacts"
+                ) {
+                  void refreshIds();
+                  if (activeFolder === "log" && activityProfile) {
+                    void loadActivityTarget(activityProfile.query);
+                  }
+                  return;
+                }
+
+                void (activeFolder === "desktop"
+                  ? loadDesktopTarget()
+                  : refreshMail(activeFolder));
+              }
+        }
+        setTheme={setTheme}
+        subtitle={networkLabel(network)}
+        theme={theme}
+        title="ProofOfWork.Me"
+      />
 
       <div className={`status ${status.tone}`}>
         <span className="status-dot" aria-hidden="true" />
@@ -18082,35 +18636,17 @@ function BrowserApp({
 
   return (
     <main className="desktop-public-app browser-public-app">
-      <header className="desktop-public-header">
-        <a
-          className="landing-brand"
-          href={HOME_APP_URL}
-          aria-label="ProofOfWork.Me home"
-        >
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
-          <div>
-            <h1>ProofOfWork Browser</h1>
-            <span>HTML from Bitcoin</span>
-          </div>
-        </a>
-        <DomainNav />
-        <div className="desktop-public-actions">
-          <button
-            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
-            className="icon-button"
-            onClick={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-            type="button"
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-        </div>
-      </header>
+      <AppHeader
+        brandClassName="landing-brand"
+        className="desktop-public-header"
+        domainNavCompact={false}
+        network={network}
+        onNetworkChange={setNetwork}
+        setTheme={setTheme}
+        subtitle="HTML from Bitcoin"
+        theme={theme}
+        title="ProofOfWork Browser"
+      />
 
       <div className={`status desktop-route-status ${status.tone}`}>
         <span className="status-dot" aria-hidden="true" />
@@ -18674,6 +19210,7 @@ function DesktopApp({
   status,
   theme,
   onClear,
+  onNetworkChange,
   onRefresh,
   onSearch,
   onSelect,
@@ -18693,6 +19230,7 @@ function DesktopApp({
   status: { tone: StatusTone; text: string };
   theme: ThemeMode;
   onClear: () => void;
+  onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
   onSelect: (message: MailMessage) => void;
@@ -18701,36 +19239,17 @@ function DesktopApp({
     <main
       className={`desktop-public-app ${status.tone !== "idle" ? "has-route-status" : ""}`}
     >
-      <header className="desktop-public-header">
-        <a
-          className="landing-brand"
-          href={HOME_APP_URL}
-          aria-label="ProofOfWork.Me home"
-        >
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
-          <div>
-            <h1>ProofOfWork Desktop</h1>
-            <span>Public file search</span>
-          </div>
-        </a>
-
-        <div className="landing-nav">
-          <DomainNav />
-          <button
-            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
-            className="icon-button"
-            onClick={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-            type="button"
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-        </div>
-      </header>
+      <AppHeader
+        brandClassName="landing-brand"
+        className="desktop-public-header"
+        domainNavCompact={false}
+        network={activeNetwork}
+        onNetworkChange={onNetworkChange}
+        setTheme={setTheme}
+        subtitle="Public file search"
+        theme={theme}
+        title="ProofOfWork Desktop"
+      />
 
       {status.tone !== "idle" ? (
         <div className={`status desktop-route-status ${status.tone}`}>
@@ -18774,6 +19293,7 @@ function ActivityApp({
   status,
   theme,
   onClear,
+  onNetworkChange,
   onRefresh,
   onSearch,
 }: {
@@ -18788,41 +19308,24 @@ function ActivityApp({
   status: { tone: StatusTone; text: string };
   theme: ThemeMode;
   onClear: () => void;
+  onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
     <main className="desktop-public-app activity-public-app">
-      <header className="desktop-public-header">
-        <a
-          className="landing-brand"
-          href={HOME_APP_URL}
-          aria-label="ProofOfWork.Me home"
-        >
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
-          <div>
-            <h1>ProofOfWork Log</h1>
-            <span>Bitcoin Computer log</span>
-          </div>
-        </a>
-
-        <div className="landing-nav">
-          <DomainNav />
-          <button
-            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
-            className="icon-button"
-            onClick={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-            type="button"
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-        </div>
-      </header>
+      <AppHeader
+        brandClassName="landing-brand"
+        className="desktop-public-header"
+        domainNavCompact={false}
+        network={activeNetwork}
+        onNetworkChange={onNetworkChange}
+        onRefresh={onRefresh}
+        setTheme={setTheme}
+        subtitle="Bitcoin Computer log"
+        theme={theme}
+        title="ProofOfWork Log"
+      />
 
       {status.tone !== "idle" ? (
         <div className={`status desktop-route-status ${status.tone}`}>
@@ -19180,6 +19683,7 @@ type TokenAppProps = {
   feeRate: number;
   btcUsd: number;
   hasUnisat: boolean;
+  network: BitcoinNetwork;
   holders: PowTokenHolder[];
   mintBytes: number;
   mintAssistantCompleted: number;
@@ -19224,6 +19728,7 @@ type TokenAppProps = {
   ) => void | Promise<string | undefined>;
   theme: ThemeMode;
   workTokenOnly?: boolean;
+  onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
 };
 
@@ -19233,6 +19738,8 @@ function TokenApp({
   connectWallet,
   disconnectWallet,
   hasUnisat,
+  network,
+  onNetworkChange,
   setTheme,
   status,
   theme,
@@ -19241,37 +19748,23 @@ function TokenApp({
 }: TokenAppProps) {
   return (
     <main className="id-launch-app token-public-app">
-      <header className="id-launch-topbar">
-        <a
-          className="brand"
-          href={HOME_APP_URL}
-          aria-label="ProofOfWork.Me home"
-        >
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
-          <div>
-            <h1>{workTokenOnly ? "WORK" : "Tokens"}</h1>
-            <span>
-              {workTokenOnly
-                ? "ProofOfWork token dashboard"
-                : "ProofOfWork token factory"}
-            </span>
-          </div>
-        </a>
-
-        <DomainNav compact />
-
-        <HeaderActionsMenu
-          address={address}
-          busy={busy}
-          connectWallet={connectWallet}
-          disconnectWallet={disconnectWallet}
-          hasUnisat={hasUnisat}
-          setTheme={setTheme}
-          theme={theme}
-        />
-      </header>
+      <AppHeader
+        address={address}
+        busy={busy}
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        hasUnisat={hasUnisat}
+        network={network}
+        onNetworkChange={onNetworkChange}
+        setTheme={setTheme}
+        subtitle={
+          workTokenOnly
+            ? "ProofOfWork token dashboard"
+            : "ProofOfWork token factory"
+        }
+        theme={theme}
+        title={workTokenOnly ? "WORK" : "Tokens"}
+      />
 
       {status.tone !== "idle" ? (
         <div className={`status ${status.tone}`}>
@@ -19361,6 +19854,8 @@ function TokenWorkspace({
   | "connectWallet"
   | "disconnectWallet"
   | "hasUnisat"
+  | "network"
+  | "onNetworkChange"
   | "setTheme"
   | "status"
   | "theme"
@@ -21814,6 +22309,7 @@ function GrowthProductCard({
 }
 
 function GrowthApp({
+  activeNetwork,
   akMints,
   busy,
   idActivity,
@@ -21828,8 +22324,10 @@ function GrowthApp({
   theme,
   tokenDefinitions,
   tokenMints,
+  onNetworkChange,
   onRefresh,
 }: {
+  activeNetwork: BitcoinNetwork;
   akMints: AkMintRecord[];
   busy: boolean;
   idActivity: PowActivityItem[];
@@ -21844,40 +22342,23 @@ function GrowthApp({
   theme: ThemeMode;
   tokenDefinitions: PowTokenDefinition[];
   tokenMints: PowTokenMint[];
+  onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
 }) {
   return (
     <main className="desktop-public-app activity-public-app growth-public-app">
-      <header className="desktop-public-header">
-        <a
-          className="landing-brand"
-          href={HOME_APP_URL}
-          aria-label="ProofOfWork.Me home"
-        >
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
-          <div>
-            <h1>ProofOfWork Growth</h1>
-            <span>Model vs chain</span>
-          </div>
-        </a>
-
-        <div className="landing-nav">
-          <DomainNav />
-          <button
-            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
-            className="icon-button"
-            onClick={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-            type="button"
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-        </div>
-      </header>
+      <AppHeader
+        brandClassName="landing-brand"
+        className="desktop-public-header"
+        domainNavCompact={false}
+        network={activeNetwork}
+        onNetworkChange={onNetworkChange}
+        onRefresh={onRefresh}
+        setTheme={setTheme}
+        subtitle="Model vs chain"
+        theme={theme}
+        title="ProofOfWork Growth"
+      />
 
       {status.tone !== "idle" ? (
         <div className={`status desktop-route-status ${status.tone}`}>
@@ -22459,6 +22940,8 @@ function IdLaunchApp({
   idPgpKey,
   idReceiveAddress,
   lastRegisteredId,
+  network,
+  onNetworkChange,
   registryAddress,
   registryRecords,
   registrationBytes,
@@ -22483,6 +22966,8 @@ function IdLaunchApp({
   idPgpKey: string;
   idReceiveAddress: string;
   lastRegisteredId?: PowIdRecord;
+  network: BitcoinNetwork;
+  onNetworkChange: (network: BitcoinNetwork) => void;
   registryAddress: string;
   registryRecords: PowIdRecord[];
   registrationBytes: number;
@@ -22530,30 +23015,20 @@ function IdLaunchApp({
 
   return (
     <main className="id-launch-app">
-      <header className="id-launch-topbar">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
-          <div>
-            <h1>ProofOfWork IDs</h1>
-            <span>Mainnet registry</span>
-          </div>
-        </div>
-
-        <DomainNav compact />
-
-        <HeaderActionsMenu
-          address={address}
-          busy={busy}
-          connectWallet={connectWallet}
-          disconnectWallet={disconnectWallet}
-          hasUnisat={hasUnisat}
-          onRefresh={onRefresh}
-          setTheme={setTheme}
-          theme={theme}
-        />
-      </header>
+      <AppHeader
+        address={address}
+        busy={busy}
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        hasUnisat={hasUnisat}
+        network={network}
+        onNetworkChange={onNetworkChange}
+        onRefresh={onRefresh}
+        setTheme={setTheme}
+        subtitle="Mainnet registry"
+        theme={theme}
+        title="ProofOfWork IDs"
+      />
 
       <div className={`status ${status.tone}`}>
         <span className="status-dot" aria-hidden="true" />
@@ -22812,6 +23287,8 @@ function MarketplaceApp({
   idSalePriceSats,
   idSaleReceiveAddress,
   managedIdName,
+  network,
+  onNetworkChange,
   pendingEvents,
   publishListing,
   registryAddress,
@@ -22850,6 +23327,8 @@ function MarketplaceApp({
   idSalePriceSats: number;
   idSaleReceiveAddress: string;
   managedIdName: string;
+  network: BitcoinNetwork;
+  onNetworkChange: (network: BitcoinNetwork) => void;
   pendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
   registryAddress: string;
@@ -22886,30 +23365,20 @@ function MarketplaceApp({
 
   return (
     <main className="id-launch-app marketplace-app">
-      <header className="id-launch-topbar">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
-          <div>
-            <h1>ProofOfWork Marketplace</h1>
-            <span>Mainnet ID transfers</span>
-          </div>
-        </div>
-
-        <DomainNav compact />
-
-        <HeaderActionsMenu
-          address={address}
-          busy={busy}
-          connectWallet={connectWallet}
-          disconnectWallet={disconnectWallet}
-          hasUnisat={hasUnisat}
-          onRefresh={onRefresh}
-          setTheme={setTheme}
-          theme={theme}
-        />
-      </header>
+      <AppHeader
+        address={address}
+        busy={busy}
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        hasUnisat={hasUnisat}
+        network={network}
+        onNetworkChange={onNetworkChange}
+        onRefresh={onRefresh}
+        setTheme={setTheme}
+        subtitle="Mainnet ID transfers"
+        theme={theme}
+        title="ProofOfWork Marketplace"
+      />
 
       <div className={`status ${status.tone}`}>
         <span className="status-dot" aria-hidden="true" />

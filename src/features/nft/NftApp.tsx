@@ -1,9 +1,8 @@
 import type { FormEvent } from "react";
 import { ArrowLeft, ArrowUpRight, RefreshCw, Send, X } from "lucide-react";
-import { HOME_APP_URL } from "../../app/appLinks";
-import { DomainNav } from "../../shared/components/DomainNav";
+import { AppHeader } from "../../shared/components/AppHeader";
+import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { FeeRateControl } from "../../shared/components/FeeRateControl";
-import { HeaderActionsMenu } from "../../shared/components/HeaderActionsMenu";
 import {
   DataList,
   ProgressMeter,
@@ -87,6 +86,8 @@ export function NftApp({
   connectWallet,
   disconnectWallet,
   hasUnisat,
+  network,
+  onNetworkChange,
   setTheme,
   status,
   theme,
@@ -95,39 +96,28 @@ export function NftApp({
   connectWallet: () => void;
   disconnectWallet: () => void;
   hasUnisat: boolean;
+  network: BitcoinNetwork;
+  onNetworkChange: (network: BitcoinNetwork) => void;
   setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   status: { tone: StatusTone; text: string };
   theme: ThemeMode;
 }) {
   return (
     <main className="id-launch-app">
-      <header className="id-launch-topbar">
-        <a
-          className="brand"
-          href={HOME_APP_URL}
-          aria-label="ProofOfWork.Me home"
-        >
-          <div className="brand-mark" aria-hidden="true">
-            NFT
-          </div>
-          <div>
-            <h1>NFT</h1>
-            <span>Collections on Bitcoin</span>
-          </div>
-        </a>
-
-        <DomainNav compact />
-
-        <HeaderActionsMenu
-          address={address}
-          busy={busy}
-          connectWallet={connectWallet}
-          disconnectWallet={disconnectWallet}
-          hasUnisat={hasUnisat}
-          setTheme={setTheme}
-          theme={theme}
-        />
-      </header>
+      <AppHeader
+        address={address}
+        busy={busy}
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        hasUnisat={hasUnisat}
+        mark="NFT"
+        network={network}
+        onNetworkChange={onNetworkChange}
+        setTheme={setTheme}
+        subtitle="Collections on Bitcoin"
+        theme={theme}
+        title="NFT"
+      />
 
       {status.tone !== "idle" ? (
         <div className={`status ${status.tone}`}>
