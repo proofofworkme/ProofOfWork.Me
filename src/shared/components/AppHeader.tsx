@@ -1,5 +1,6 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { HOME_APP_URL } from "../../app/appLinks";
+import { HOME_APP_URL, LOCAL_HOME_APP_URL } from "../../app/appLinks";
+import { appHref } from "../../app/routeRegistry";
 import type { BitcoinNetwork } from "../bitcoin/networks";
 import { DomainNav } from "./DomainNav";
 import { HeaderActionsMenu } from "./HeaderActionsMenu";
@@ -16,7 +17,7 @@ export function AppHeader({
   disconnectWallet,
   domainNavCompact = true,
   hasUnisat = true,
-  homeHref = HOME_APP_URL,
+  homeHref = appHref(HOME_APP_URL, LOCAL_HOME_APP_URL),
   mark = "PoW",
   network,
   onNetworkChange,
@@ -46,7 +47,11 @@ export function AppHeader({
 }) {
   return (
     <header className={className}>
-      <a className={brandClassName} href={homeHref} aria-label="ProofOfWork.Me home">
+      <a
+        className={brandClassName}
+        href={homeHref}
+        aria-label="ProofOfWork.Me home"
+      >
         <div className="brand-mark" aria-hidden="true">
           {mark}
         </div>

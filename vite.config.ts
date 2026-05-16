@@ -1,8 +1,21 @@
+import type { ProxyOptions } from "vite";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { prodProofApiProxy } from "./test-api/prodApiProxy";
 
-export default defineConfig({
+const LOCAL_PROOF_API_ORIGIN = "http://127.0.0.1:8081";
+
+function localProofApiProxy(): Record<string, string | ProxyOptions> {
+  return {
+    "/api": {
+      changeOrigin: true,
+      secure: false,
+      target: LOCAL_PROOF_API_ORIGIN,
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => ({
   build: {
     rollupOptions: {
       output: {
@@ -37,6 +50,12 @@ export default defineConfig({
   },
   plugins: [react()],
   server: {
-    proxy: prodProofApiProxy(),
+    proxy:
+      mode === "prod-api"
+        ? {
+            ...localProofApiProxy(),
+            ...prodProofApiProxy(),
+          }
+        : localProofApiProxy(),
   },
-});
+}));

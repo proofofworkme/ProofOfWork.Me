@@ -472,11 +472,15 @@ To build the standalone Growth app for production:
 VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 ```
 
-To run localhost against the production API:
+To run localhost against the production API explicitly:
 
 ```bash
-VITE_POW_API_BASE=https://computer.proofofwork.me npm run dev
+npm run dev:prod-api
 ```
+
+The default `npm run dev` keeps local routes local. If the frontend calls
+`/api/*`, Vite proxies that to the local OP_RETURN API on `127.0.0.1:8081`.
+Only `/test-api/*` in `dev:prod-api` is proxied to production.
 
 To build against a self-hosted ProofOfWork OP_RETURN API:
 

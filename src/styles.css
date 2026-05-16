@@ -5571,3 +5571,513 @@ pre {
     padding: 10px;
   }
 }
+
+/* TypeUI Simple final public overrides. Kept last so legacy page styles do not
+   re-expand spacing or reintroduce heavier card treatments. */
+.landing-app,
+.id-launch-app,
+.desktop-public-app {
+  --simple-bg: #f8fafc;
+  --simple-surface: #ffffff;
+  --simple-surface-soft: #f3f4f6;
+  --simple-text: #111827;
+  --simple-muted: #6b7280;
+  --simple-border: #e5e7eb;
+  --simple-border-strong: #d1d5db;
+  --simple-primary: #3b82f6;
+  --simple-success: #16a34a;
+  --simple-danger: #dc2626;
+  --simple-focus: 0 0 0 3px rgba(59, 130, 246, 0.26);
+  background: var(--simple-bg);
+  color: var(--simple-text);
+}
+
+:root[data-theme="dark"] .landing-app,
+:root[data-theme="dark"] .id-launch-app,
+:root[data-theme="dark"] .desktop-public-app {
+  --simple-bg: #0f1115;
+  --simple-surface: #151922;
+  --simple-surface-soft: #10141b;
+  --simple-text: #f9fafb;
+  --simple-muted: #a1a8b3;
+  --simple-border: #27303b;
+  --simple-border-strong: #374151;
+}
+
+.landing-topbar,
+.id-launch-topbar,
+.desktop-public-header {
+  background: color-mix(in srgb, var(--simple-surface) 94%, transparent);
+  border-bottom: 1px solid var(--simple-border);
+  box-shadow: none;
+  min-height: 56px;
+  padding: 0 16px;
+}
+
+.brand-mark {
+  background: var(--simple-text);
+  border-radius: 8px;
+  color: var(--simple-surface);
+  flex-basis: 32px;
+  height: 32px;
+}
+
+:root[data-theme="dark"] .brand-mark {
+  background: var(--simple-text);
+  color: var(--simple-bg);
+}
+
+.public-page,
+.id-launch-main,
+.activity-workspace,
+.growth-workspace,
+.browser-workspace,
+.landing-main {
+  gap: 16px;
+  max-width: 1120px;
+  padding: 24px 16px 32px;
+}
+
+.landing-main {
+  padding-top: 16px;
+}
+
+.public-page-header {
+  gap: 8px;
+  max-width: 760px;
+}
+
+.public-page-header h2,
+.id-launch-hero h2,
+.activity-hero h2,
+.growth-hero h2 {
+  color: var(--simple-text);
+  font-size: clamp(2rem, 5vw, 3rem);
+  letter-spacing: 0;
+  line-height: 1.04;
+}
+
+.landing-brand span,
+.brand span,
+.public-page-header p,
+.id-launch-hero p,
+.id-launch-section-head p,
+.field-note,
+.empty-state p,
+.empty-state span,
+.activity-row p,
+.id-card-head p,
+.section-heading p,
+.token-detail-title p {
+  color: var(--simple-muted);
+}
+
+.eyebrow,
+.landing-kicker,
+.id-launch-kicker,
+.browser-kicker {
+  color: var(--simple-primary);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.id-launch-card,
+.landing-video,
+.landing-stats div,
+.landing-choice,
+.landing-protocol,
+.landing-testimonial,
+.browser-search-card,
+.browser-preview-card,
+.browser-proof-card,
+.browser-source-card,
+.browser-template-card,
+.activity-feed-card,
+.growth-explainer-card,
+.growth-model-card,
+.growth-chart-card,
+.growth-events-card,
+.growth-product-card,
+.token-detail-hero,
+.token-floor-card {
+  background: var(--simple-surface);
+  border: 1px solid var(--simple-border);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.id-launch-card,
+.landing-choice,
+.landing-protocol,
+.landing-testimonial,
+.browser-search-card,
+.browser-preview-card,
+.browser-proof-card,
+.browser-source-card,
+.browser-template-card,
+.activity-feed-card,
+.growth-explainer-card,
+.growth-model-card,
+.growth-chart-card,
+.growth-events-card,
+.growth-product-card {
+  padding: 16px;
+}
+
+.id-launch-stats,
+.activity-stats,
+.growth-stat-grid,
+.growth-product-metrics,
+.token-detail-stats,
+.landing-stats {
+  gap: 8px;
+}
+
+.id-launch-stats div,
+.activity-stats div,
+.growth-stat-grid div,
+.growth-product-metrics div,
+.token-detail-stats div {
+  background: var(--simple-surface);
+  border: 1px solid var(--simple-border);
+  border-radius: 8px;
+  box-shadow: none;
+  min-height: 76px;
+  padding: 12px;
+}
+
+.app-menu-trigger,
+.header-actions-trigger,
+.network-select-trigger,
+.primary,
+.secondary,
+.icon-button,
+.link-button {
+  border-radius: 8px;
+  min-height: 36px;
+}
+
+.app-menu-trigger,
+.header-actions-trigger,
+.network-select-trigger,
+.secondary,
+.icon-button {
+  background: var(--simple-surface);
+  border: 1px solid var(--simple-border);
+  box-shadow: none;
+  color: var(--simple-text);
+}
+
+.app-menu-trigger:hover,
+.header-actions-trigger:hover,
+.network-select-trigger:hover,
+.secondary:hover,
+.icon-button:hover {
+  background: var(--simple-surface-soft);
+  border-color: var(--simple-border-strong);
+  transform: none;
+}
+
+.primary {
+  background: var(--simple-primary);
+  border: 1px solid var(--simple-primary);
+  box-shadow: none;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.primary:hover {
+  filter: brightness(0.96);
+  transform: none;
+}
+
+.primary:focus-visible,
+.secondary:focus-visible,
+.icon-button:focus-visible,
+.app-menu-trigger:focus-visible,
+.header-actions-trigger:focus-visible,
+.network-select-trigger:focus-visible,
+.app-menu-list a:focus-visible,
+.app-menu-list button:focus-visible {
+  box-shadow: var(--simple-focus);
+}
+
+.app-menu-popover,
+.header-actions-popover,
+.network-select-popover {
+  background: var(--simple-surface);
+  border: 1px solid var(--simple-border);
+  border-radius: 8px;
+  box-shadow: 0 16px 42px rgba(17, 24, 39, 0.12);
+  padding: 6px;
+}
+
+.app-menu-list {
+  gap: 4px;
+}
+
+.app-menu-list a,
+.app-menu-list button,
+.network-select-popover button {
+  border-radius: 6px;
+  min-height: 40px;
+  padding: 8px 10px;
+}
+
+.app-menu-list a:hover,
+.app-menu-list button:hover,
+.network-select-popover button:hover {
+  background: var(--simple-surface-soft);
+}
+
+.id-form input,
+.id-form textarea,
+.id-form select,
+.browser-template-fields input,
+.browser-template-fields textarea,
+.desktop-search input,
+.token-search-field input,
+.browser-search-card input {
+  background: var(--simple-surface);
+  border: 1px solid var(--simple-border);
+  border-radius: 8px;
+  color: var(--simple-text);
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.id-form input:focus,
+.id-form textarea:focus,
+.id-form select:focus,
+.browser-template-fields input:focus,
+.browser-template-fields textarea:focus,
+.desktop-search input:focus,
+.token-search-field input:focus,
+.browser-search-card input:focus {
+  border-color: var(--simple-primary);
+  box-shadow: var(--simple-focus);
+  outline: none;
+}
+
+.data-row,
+.id-record,
+.activity-row,
+.nft-mint-tile,
+.token-record,
+.growth-event-item {
+  background: var(--simple-surface-soft);
+  border: 1px solid var(--simple-border);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.progress-meter,
+.progress-track {
+  background: var(--simple-surface-soft);
+  border: 1px solid var(--simple-border);
+  height: 8px;
+}
+
+.progress-meter > div,
+.progress-fill {
+  background: var(--simple-primary);
+}
+
+.status {
+  background: var(--simple-surface);
+  border: 1px solid var(--simple-border);
+  border-radius: 8px;
+  box-shadow: none;
+  margin: 10px auto 0;
+  max-width: min(1120px, calc(100% - 32px));
+}
+
+.status.good {
+  border-color: color-mix(in srgb, var(--simple-success) 45%, var(--simple-border));
+}
+
+.status.bad {
+  border-color: color-mix(in srgb, var(--simple-danger) 45%, var(--simple-border));
+}
+
+.landing-hero {
+  border-bottom: 1px solid var(--simple-border);
+  min-height: min(64vh, 620px);
+  padding: 32px 16px;
+}
+
+.landing-hero h2 {
+  font-size: clamp(2.8rem, 8vw, 5.8rem);
+  line-height: 0.96;
+}
+
+.token-detail-title h2 {
+  font-size: clamp(2.4rem, 6vw, 4rem);
+  line-height: 0.96;
+}
+
+@media (max-width: 860px) {
+  .landing-topbar,
+  .id-launch-topbar,
+  .desktop-public-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 8px 12px;
+  }
+
+  .domain-nav {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+
+  .topbar-actions {
+    justify-content: flex-end;
+  }
+
+  .public-page,
+  .id-launch-main,
+  .activity-workspace,
+  .growth-workspace,
+  .browser-workspace,
+  .landing-main {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+@media (max-width: 620px) {
+  .public-page-header h2,
+  .id-launch-hero h2,
+  .activity-hero h2,
+  .growth-hero h2 {
+    font-size: clamp(1.8rem, 11vw, 2.45rem);
+  }
+
+  .id-launch-card,
+  .landing-choice,
+  .landing-protocol,
+  .landing-testimonial,
+  .browser-search-card,
+  .browser-preview-card,
+  .browser-proof-card,
+  .browser-source-card,
+  .browser-template-card,
+  .activity-feed-card,
+  .growth-explainer-card,
+  .growth-model-card,
+  .growth-chart-card,
+  .growth-events-card,
+  .growth-product-card {
+    padding: 12px;
+  }
+}
+
+/* Preserve the mobile scroll/padding fixes from 9dcf2ab after the TypeUI layer.
+   The public redesign should stay compact without shrinking page gutters below
+   the previously tested mobile values or reintroducing header overlap. */
+@media (max-width: 860px) {
+  .mail-app {
+    grid-template-rows: auto auto auto;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .desktop-public-app {
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .landing-main {
+    padding: 16px 14px 28px;
+  }
+
+  .id-launch-main {
+    padding: 18px 14px 28px;
+  }
+
+  .public-page,
+  .public-page-compact {
+    gap: 14px;
+    padding: 16px 14px 28px;
+  }
+
+  .browser-workspace {
+    padding: 92px 14px 28px;
+  }
+
+  .browser-computer-workspace {
+    padding: 14px;
+  }
+
+  .public-page-header {
+    justify-items: start;
+    max-width: none;
+    text-align: left;
+  }
+
+  .responsive-grid,
+  .responsive-grid-cards,
+  .responsive-grid-tight,
+  .responsive-grid-wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .section-heading {
+    align-items: stretch;
+    display: grid;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar,
+  .id-launch-topbar,
+  .landing-topbar,
+  .desktop-public-header {
+    gap: 8px;
+    padding: 9px 10px;
+  }
+
+  .domain-nav {
+    max-width: calc(100vw - 20px);
+  }
+
+  .app-menu-trigger {
+    justify-content: space-between;
+    max-width: calc(100vw - 20px);
+    width: 100%;
+  }
+
+  .header-actions-trigger {
+    gap: 4px;
+    min-height: 36px;
+    padding: 6px;
+  }
+
+  .network-select-trigger {
+    min-height: 36px;
+    padding: 6px;
+  }
+
+  .header-actions-popover,
+  .network-select-popover {
+    min-width: min(290px, calc(100vw - 20px));
+    right: 0;
+  }
+
+  .brand,
+  .landing-brand {
+    gap: 8px;
+  }
+
+  .brand span,
+  .landing-brand span {
+    display: none;
+  }
+
+  .brand h1,
+  .landing-brand h1 {
+    max-width: 52vw;
+  }
+}

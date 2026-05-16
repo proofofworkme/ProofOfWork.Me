@@ -83,6 +83,10 @@ VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 
 Without `VITE_POW_API_BASE`, the app keeps using the previous browser-side mempool.space readers. This keeps local development simple while allowing production to use ProofOfWork-owned infrastructure.
 
+In local Vite development, `/api/*` is reserved for the local ProofOfWork API at
+`http://127.0.0.1:8081`. Production API testing must use the explicit
+`npm run dev:prod-api` mode, where `/test-api/*` proxies to production.
+
 On `localhost` and `127.0.0.1`, shared app navigation uses local route flags instead of production domains:
 
 ```text
