@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --mode prod-api",
+    "dev": "vite --host 0.0.0.0",
+    "dev:prod-api": "vite --host 0.0.0.0 --mode prod-api",
     "build": "tsc && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "audit:ids": "node scripts/audit-id-registry.mjs",

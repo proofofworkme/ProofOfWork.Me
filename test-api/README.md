@@ -15,7 +15,13 @@ Vite forwards those requests to:
 https://computer.proofofwork.me/api/*
 ```
 
-`npm run dev` runs Vite in `prod-api` mode, which sets:
+Use the explicit production API dev mode:
+
+```bash
+npm run dev:prod-api
+```
+
+That runs Vite in `prod-api` mode, which sets:
 
 ```text
 VITE_POW_API_BASE=/test-api

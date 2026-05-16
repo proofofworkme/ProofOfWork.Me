@@ -22,7 +22,7 @@ export const WORK_TOKEN_APP_URL = "https://work.proofofwork.me";
 export const LOG_APP_URL = "https://log.proofofwork.me";
 export const GROWTH_APP_URL = "https://growth.proofofwork.me";
 
-export const LOCAL_HOME_APP_URL = HOME_APP_URL;
+export const LOCAL_HOME_APP_URL = "/?landing=1";
 export const LOCAL_ID_APP_URL = "/?id-launch=1";
 export const LOCAL_COMPUTER_APP_URL = "/";
 export const LOCAL_DESKTOP_APP_URL = "/?desktop=1";
