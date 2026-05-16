@@ -56,21 +56,33 @@
 
 html {
   background: var(--bg);
+  max-width: 100%;
   min-height: 100%;
 }
 
 body {
   background: var(--bg);
   margin: 0;
+  max-width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
-  min-width: 320px;
+  min-width: 0;
   overflow-x: hidden;
 }
 
 #root {
+  max-width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
+  min-width: 0;
+}
+
+img,
+canvas,
+iframe,
+video,
+svg {
+  max-width: 100%;
 }
 
 button,
@@ -123,6 +135,8 @@ h1 {
   font-size: 1.18rem;
   font-weight: 820;
   line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -1048,10 +1062,9 @@ select {
   background: #030508;
   color: #edf2f7;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto;
   min-height: 100vh;
   min-height: 100dvh;
-  overflow: hidden;
   position: relative;
 }
 
@@ -1122,11 +1135,6 @@ select {
 .desktop-public-app .app-footer a:hover {
   background: rgba(237, 242, 247, 0.08);
   border-color: rgba(237, 242, 247, 0.18);
-}
-
-.browser-public-app {
-  overflow-x: hidden;
-  overflow-y: auto;
 }
 
 .browser-workspace {
@@ -1594,7 +1602,6 @@ select {
 .activity-public-app {
   background: var(--bg);
   color: var(--text);
-  overflow: auto;
 }
 
 .activity-public-app .desktop-public-header {
@@ -1798,18 +1805,12 @@ select {
   min-height: 220px;
 }
 
-.growth-public-app {
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
 .growth-workspace {
   display: grid;
   gap: 18px;
   margin: 0 auto;
   max-width: 1220px;
   min-width: 0;
-  overflow-x: hidden;
   padding: 28px 18px 42px;
   width: 100%;
 }
@@ -3203,7 +3204,6 @@ pre {
   color: var(--text);
   min-height: 100vh;
   min-height: 100dvh;
-  overflow-x: hidden;
 }
 
 .landing-topbar {
@@ -3679,6 +3679,24 @@ pre {
   color: inherit;
   min-height: 100%;
   text-decoration: none;
+}
+
+.section-heading {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.section-heading > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.section-heading h3 {
+  overflow-wrap: anywhere;
 }
 
 .product-card-row,
@@ -4988,15 +5006,28 @@ pre {
 
   .id-launch-hero,
   .id-launch-grid,
+  .landing-video,
+  .landing-protocol,
+  .landing-testimonial,
   .activity-hero,
+  .activity-log-head,
   .browser-hero,
   .browser-page-grid,
   .browser-template-grid,
+  .browser-computer-workspace .browser-hero,
+  .desktop-browser-grid,
+  .desktop-toolbar,
   .growth-hero,
   .growth-explainer-grid,
   .growth-chart-value-strip,
   .growth-product-grid,
-  .growth-assumption-grid {
+  .growth-assumption-grid,
+  .token-public-app .id-launch-hero,
+  .token-public-app .id-launch-grid,
+  .token-mint-grid,
+  .token-registry-strip,
+  .token-search-row,
+  .pay2speak-public-app .id-launch-hero {
     grid-template-columns: 1fr;
   }
 
@@ -5110,6 +5141,74 @@ pre {
     justify-content: stretch;
   }
 
+  .responsive-grid,
+  .responsive-grid-cards,
+  .responsive-grid-tight,
+  .responsive-grid-wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .section-heading {
+    align-items: stretch;
+    display: grid;
+    gap: 10px;
+  }
+
+  .section-heading .small {
+    justify-self: start;
+  }
+
+  .nft-preview-stage {
+    min-height: 112px;
+  }
+
+  .nft-selected-stage {
+    height: auto;
+    min-height: 64px;
+  }
+
+  .nft-selected-stage img {
+    height: auto;
+    max-height: 58px;
+    max-width: 100%;
+    width: min(174px, 100%);
+  }
+
+  .nft-gallery-feature {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
+
+  .nft-gallery-image {
+    min-height: 104px;
+    padding: 10px;
+  }
+
+  .nft-mint-tile .nft-gallery-image {
+    min-height: 88px;
+  }
+
+  .token-assistant-head,
+  .token-assistant-actions,
+  .token-assistant-status {
+    align-items: stretch;
+    display: grid;
+    justify-content: stretch;
+  }
+
+  .token-assistant-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .data-row strong,
+  .mono-muted,
+  .token-assistant-head span,
+  .token-search-count,
+  .product-card-row strong {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
   .files-desktop {
     grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
     padding: 16px;
@@ -5137,6 +5236,14 @@ pre {
 }
 
 @media (max-width: 520px) {
+  .topbar,
+  .id-launch-topbar,
+  .landing-topbar,
+  .desktop-public-header {
+    gap: 8px;
+    padding: 9px 10px;
+  }
+
   .topbar-controls {
     gap: 6px;
   }
@@ -5154,7 +5261,43 @@ pre {
   }
 
   .domain-nav {
-    max-width: calc(100vw - 24px);
+    max-width: calc(100vw - 20px);
+  }
+
+  .app-menu-trigger {
+    justify-content: space-between;
+    max-width: calc(100vw - 20px);
+    width: 100%;
+  }
+
+  .header-actions-trigger {
+    gap: 4px;
+    min-height: 36px;
+    padding: 6px;
+  }
+
+  .header-actions-trigger > strong {
+    display: none;
+  }
+
+  .header-actions-popover {
+    min-width: min(290px, calc(100vw - 20px));
+    right: 0;
+  }
+
+  .brand,
+  .landing-brand {
+    gap: 8px;
+  }
+
+  .brand span,
+  .landing-brand span {
+    display: none;
+  }
+
+  .brand h1,
+  .landing-brand h1 {
+    max-width: 52vw;
   }
 
   .growth-public-app .desktop-public-header,
@@ -5244,5 +5387,22 @@ pre {
   .product-card,
   .id-launch-card.product-card {
     padding: 13px;
+  }
+
+  .nft-workspace .public-page-header h2 {
+    font-size: clamp(1.85rem, 10vw, 2.65rem);
+    line-height: 1;
+  }
+
+  .nft-preview-stage {
+    min-height: 92px;
+  }
+
+  .nft-gallery-image {
+    min-height: 86px;
+  }
+
+  .nft-mint-tile {
+    padding: 10px;
   }
 }
