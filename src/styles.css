@@ -5848,3 +5848,342 @@ pre {
     display: flex;
   }
 }
+
+/* ProofOfWork strict UI contract: clear lines, forms, buttons, tables. */
+.mail-layout > .token-workspace,
+.mail-layout > .marketplace-workspace,
+.mail-layout > .activity-workspace,
+.mail-layout > .growth-workspace,
+.mail-layout > .browser-computer-workspace {
+  justify-self: center;
+  max-width: 1180px;
+  width: 100%;
+}
+
+.mail-layout > .marketplace-workspace {
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.mail-app > .app-footer {
+  background: var(--surface-raised);
+  bottom: 0;
+  box-shadow: 0 -1px 0 var(--border);
+  position: sticky;
+  z-index: 18;
+}
+
+.id-launch-card,
+.id-card,
+.product-card,
+.activity-feed-card,
+.growth-model-card,
+.growth-chart-card,
+.growth-product-card,
+.browser-search-card,
+.browser-preview-card,
+.browser-proof-card,
+.browser-source-card,
+.browser-template-card,
+.marketplace-work-floor-card,
+.token-market-card,
+.token-floor-card,
+.token-utxo-prep,
+.token-detail-hero,
+.reader-pane,
+.message-column {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.id-launch-stats div,
+.browser-meta div,
+.token-public-app .browser-meta div,
+.token-workspace-compact .browser-meta div,
+.token-list-price-reference div,
+.token-utxo-dashboard > div,
+.token-floor-stats div,
+.token-detail-stats div,
+.registry-network-stat,
+.id-manage-state,
+.file-detail-list div {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.id-launch-card,
+.id-card,
+.token-market-card,
+.marketplace-work-floor-card,
+.token-floor-card {
+  gap: 14px;
+}
+
+.id-card-head,
+.section-heading,
+.token-detail-title,
+.token-detail-actions,
+.token-record-top {
+  min-width: 0;
+}
+
+.id-card-head {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.id-card-head:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+label,
+.folder-action-select > span,
+.sort-control,
+.field-note,
+.token-list-price-reference span,
+.token-list-price-reference small,
+.token-utxo-dashboard span,
+.token-utxo-stats span,
+.id-record dt,
+.browser-meta dt {
+  letter-spacing: 0;
+}
+
+input,
+select,
+textarea,
+.id-search-control,
+.folder-action-select select {
+  background-color: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  color: var(--text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-soft);
+  opacity: 1;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.id-search-control:focus {
+  background-color: var(--surface);
+  border-color: var(--accent);
+  box-shadow: var(--focus);
+}
+
+.primary,
+.secondary,
+.compose-button,
+.icon-button,
+.network-tabs,
+.network-tabs button,
+.fee-presets button,
+.app-menu-trigger,
+.network-select-trigger {
+  border-radius: 8px;
+}
+
+.primary,
+.compose-button {
+  border-color: var(--accent);
+  color: #ffffff;
+  font-weight: 820;
+}
+
+.secondary,
+.icon-button,
+.fee-presets button,
+.app-menu-trigger,
+.network-select-trigger {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 820;
+}
+
+.primary:hover,
+.compose-button:hover,
+.secondary:hover,
+.icon-button:hover,
+.fee-presets button:hover,
+.app-menu-trigger:hover,
+.network-select-trigger:hover {
+  transform: none;
+}
+
+.network-tabs {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 3px;
+}
+
+.network-tabs button {
+  border: 1px solid transparent;
+}
+
+.network-tabs button[aria-pressed="true"] {
+  border-color: var(--border-strong);
+}
+
+.message-row,
+.id-record,
+.token-record,
+.token-market-row,
+.activity-row,
+.file-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.message-row {
+  border-left: 0;
+  border-radius: 0;
+  border-right: 0;
+  border-top: 0;
+}
+
+.id-record dl,
+.token-market-row dl,
+.browser-meta,
+.token-public-app .browser-meta,
+.token-workspace-compact .browser-meta,
+.token-list-price-reference,
+.token-utxo-dashboard,
+.token-floor-stats,
+.token-detail-stats {
+  gap: 8px;
+}
+
+.id-record dl,
+.token-market-row dl {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.id-record dt,
+.token-market-row dt,
+.browser-meta dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 860;
+  text-transform: uppercase;
+}
+
+.id-record dd,
+.token-market-row dd,
+.browser-meta dd {
+  color: var(--text);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.token-market-row {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.marketplace-tabs {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  gap: 6px;
+  padding: 4px;
+}
+
+.marketplace-tabs button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  min-height: 36px;
+}
+
+.marketplace-tabs button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: rgba(10, 132, 255, 0.38);
+}
+
+.token-detail-page,
+.token-workspace-compact {
+  gap: 14px;
+}
+
+.token-detail-hero {
+  overflow: hidden;
+}
+
+.token-floor-card {
+  overflow: hidden;
+}
+
+.work-floor-chart,
+.token-market-price-chart {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 260px;
+  padding: 10px;
+}
+
+.work-floor-chart-toolbar {
+  margin-top: 4px;
+}
+
+.work-floor-chart-meta {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.empty-state,
+.empty-reader {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 220px;
+}
+
+.token-public-app .counter {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+@media (min-width: 861px) {
+  .mail-layout.is-token-workspace > .token-workspace,
+  .mail-layout.is-browser-workspace > .browser-computer-workspace {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 1180px) {
+  .mail-layout > .token-workspace,
+  .mail-layout > .marketplace-workspace,
+  .mail-layout > .activity-workspace,
+  .mail-layout > .growth-workspace,
+  .mail-layout > .browser-computer-workspace {
+    max-width: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .mail-app > .app-footer {
+    position: static;
+  }
+
+  .mail-layout > .marketplace-workspace {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
