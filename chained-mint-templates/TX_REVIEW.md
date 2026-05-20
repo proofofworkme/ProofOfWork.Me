@@ -68,11 +68,10 @@ payloads and registry payments. A chained token mint variant is a strong
 candidate because each mint is structurally similar and can carry a chained
 wallet output.
 
-### Pay2Speak / ID / Marketplace
+### ID / Marketplace
 
 These are not first targets for chained minting:
 
-- Pay2Speak funding depends on campaign/creator split validation.
 - ID registrations and transfers have first-confirmed and ownership semantics.
 - Marketplace purchase/list/delist flows depend on sale terms, anchors, and
   exact ownership state.
@@ -129,4 +128,4 @@ For each target protocol, define:
 1. Token chained mint template.
 2. Generic protocol chained template for future use.
 
-Do not adapt ID marketplace or Pay2Speak in the first pass.
+Do not adapt ID marketplace flows in the first pass.

@@ -4227,7 +4227,6 @@ pre {
   padding: 13px;
 }
 
-.pay2speak-public-app .id-launch-main,
 .activity-public-app .activity-workspace,
 .growth-public-app .growth-workspace,
 .browser-public-app .browser-workspace {
@@ -4237,7 +4236,6 @@ pre {
   padding-right: 18px;
 }
 
-.pay2speak-public-app .id-launch-card,
 .activity-public-app .activity-feed-card,
 .growth-public-app .growth-model-card,
 .growth-public-app .growth-chart-card,
@@ -4254,14 +4252,12 @@ pre {
   padding: 14px;
 }
 
-.pay2speak-public-app .id-launch-hero,
 .activity-public-app .activity-hero,
 .growth-public-app .growth-hero,
 .browser-public-app .browser-hero {
   gap: 14px;
 }
 
-.pay2speak-public-app .id-launch-hero h2,
 .activity-public-app .activity-hero h2,
 .growth-public-app .growth-hero h2,
 .browser-public-app .browser-hero h2,
@@ -4270,7 +4266,6 @@ pre {
   line-height: 0.98;
 }
 
-.pay2speak-public-app .id-launch-hero p,
 .activity-public-app .activity-hero p,
 .growth-public-app .growth-hero p,
 .browser-public-app .browser-hero p,
@@ -5333,8 +5328,7 @@ pre {
   .token-mint-grid,
   .token-registry-strip,
   .token-search-row,
-  .token-market-content,
-  .pay2speak-public-app .id-launch-hero {
+  .token-market-content {
     grid-template-columns: 1fr;
   }
 
@@ -6185,5 +6179,238 @@ textarea:focus,
   .mail-layout > .marketplace-workspace {
     padding-left: 14px;
     padding-right: 14px;
+  }
+}
+
+/* Product cleanup: marketplace panels must stay in normal document flow. */
+.mail-layout > .marketplace-workspace {
+  justify-self: center;
+  max-width: 1180px;
+  overflow: auto;
+  padding: 0 18px 72px;
+  width: 100%;
+}
+
+.marketplace-workspace {
+  align-content: start;
+  display: grid;
+  gap: 14px;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+.marketplace-workspace > .files-toolbar,
+.marketplace-workspace > .marketplace-tabs,
+.marketplace-workspace > .marketplace-workspace-stats,
+.marketplace-workspace > .marketplace-content,
+.marketplace-workspace > .token-market-stats,
+.marketplace-workspace > .token-market-content {
+  min-width: 0;
+  position: static;
+  width: 100%;
+  z-index: auto;
+}
+
+.marketplace-workspace > .files-toolbar,
+.marketplace-workspace > .marketplace-tabs {
+  margin: 0;
+}
+
+.marketplace-workspace > .marketplace-workspace-stats,
+.marketplace-workspace > .token-market-stats {
+  margin: 0;
+}
+
+.marketplace-workspace .marketplace-content,
+.marketplace-workspace .token-market-content {
+  align-items: start;
+  display: grid;
+  gap: 14px;
+  grid-auto-flow: row;
+  grid-auto-rows: auto;
+  min-height: 0;
+  overflow: visible;
+  padding: 0;
+}
+
+.marketplace-workspace .marketplace-content {
+  grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.4fr);
+}
+
+.marketplace-workspace .token-market-content {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.marketplace-workspace .id-card,
+.marketplace-workspace .token-market-card,
+.marketplace-workspace .marketplace-work-floor-card {
+  align-self: start;
+  max-width: 100%;
+  min-width: 0;
+  overflow: visible;
+  position: static;
+  z-index: auto;
+}
+
+.marketplace-workspace .marketplace-work-floor-card,
+.marketplace-workspace .token-market-card {
+  display: grid;
+  gap: 14px;
+}
+
+.marketplace-workspace .id-card-head {
+  align-items: start;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.marketplace-workspace .id-card-head > div:not(.empty-icon) {
+  min-width: 0;
+}
+
+.marketplace-workspace .id-card-head h3,
+.marketplace-workspace .id-card-head p {
+  overflow-wrap: anywhere;
+}
+
+.marketplace-workspace .id-launch-stats,
+.marketplace-workspace .token-floor-stats,
+.marketplace-workspace .token-market-grid,
+.marketplace-workspace .id-manage-state {
+  min-width: 0;
+}
+
+.marketplace-workspace .token-floor-stats {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.marketplace-workspace .token-market-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.marketplace-workspace .work-floor-chart,
+.marketplace-workspace .token-market-price-chart {
+  box-sizing: border-box;
+  height: auto;
+  max-height: 330px;
+  min-height: 0;
+  overflow: hidden;
+  width: 100%;
+}
+
+.marketplace-workspace .work-floor-chart svg,
+.marketplace-workspace .token-market-price-chart svg {
+  display: block;
+  height: auto;
+  max-height: 310px;
+  max-width: 100%;
+  width: 100%;
+}
+
+.marketplace-workspace .id-record-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.marketplace-workspace .primary.small,
+.marketplace-workspace .secondary.small,
+.marketplace-workspace .link-button {
+  align-self: start;
+  justify-self: start;
+  min-width: max-content;
+  white-space: nowrap;
+}
+
+.marketplace-workspace form,
+.marketplace-workspace .id-form,
+.token-workspace form,
+.token-workspace .id-form {
+  min-width: 0;
+  overflow: visible;
+}
+
+.marketplace-workspace .id-form,
+.token-workspace .id-form {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.marketplace-workspace .primary,
+.marketplace-workspace .secondary,
+.token-workspace .primary,
+.token-workspace .secondary {
+  justify-content: center;
+  max-width: 100%;
+}
+
+.marketplace-workspace .token-list-price-reference,
+.token-workspace .token-list-price-reference {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.token-workspace .token-detail-grid,
+.token-workspace .token-form-grid,
+.token-workspace .token-stats-row,
+.token-workspace .token-list-price-reference {
+  min-width: 0;
+}
+
+.token-workspace .token-list-item {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
+.token-workspace .token-list-item > span {
+  min-width: 0;
+}
+
+.token-workspace .token-list-item .id-record-actions {
+  justify-content: end;
+}
+
+.token-workspace .listing-fee-control {
+  align-items: end;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 340px);
+  min-width: 0;
+}
+
+.marketplace-workspace .empty-state {
+  min-height: 160px;
+}
+
+@media (max-width: 1180px) {
+  .marketplace-workspace .marketplace-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 860px) {
+  .mail-layout > .marketplace-workspace {
+    padding: 0 12px 24px;
+  }
+
+  .marketplace-workspace .id-card-head {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .marketplace-workspace .id-card-head > .secondary,
+  .marketplace-workspace .id-card-head > .primary {
+    grid-column: 1 / -1;
+  }
+
+  .token-workspace .token-list-item,
+  .token-workspace .listing-fee-control {
+    grid-template-columns: 1fr;
+  }
+
+  .token-workspace .token-list-item .id-record-actions {
+    justify-content: start;
   }
 }

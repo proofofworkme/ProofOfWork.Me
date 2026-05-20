@@ -5,7 +5,6 @@ export type AppSurface =
   | "desktop"
   | "browser"
   | "marketplace"
-  | "pay2speak"
   | "token"
   | "wallet"
   | "work"
@@ -83,17 +82,6 @@ export function isMarketplaceRoute() {
   );
 }
 
-export function isPay2SpeakRoute() {
-  if (import.meta.env.VITE_PAY2SPEAK_ONLY === "1") {
-    return true;
-  }
-
-  return (
-    hostname() === "pay2speak.proofofwork.me" ||
-    searchIncludes("pay2speak=1")
-  );
-}
-
 export function isTokenRoute() {
   if (import.meta.env.VITE_TOKEN_ONLY === "1") {
     return true;
@@ -162,7 +150,6 @@ export function detectAppSurface(): AppSurface {
   if (isDesktopRoute()) return "desktop";
   if (isBrowserRoute()) return "browser";
   if (isMarketplaceRoute()) return "marketplace";
-  if (isPay2SpeakRoute()) return "pay2speak";
   if (isTokenRoute()) return "token";
   if (isWalletRoute()) return "wallet";
   if (isWorkTokenRoute()) return "work";

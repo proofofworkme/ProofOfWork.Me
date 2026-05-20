@@ -9,7 +9,7 @@ It is distilled from current repository docs and public launch memory captured t
 - Public account: `@proofofworkme`
 - Launch memory reviewed: 2026-05-19
 - Public archive reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
-- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `pay2speak.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
+- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
 
@@ -78,7 +78,7 @@ The emotional shape is a breakthrough moment: years of Bitcoin/app experiments m
 
 The full archive is not a neat roadmap. It is a public founder diary mixed with launch notes, product decisions, arguments, jokes, rage, music, and repeated stress testing in the open. Future agents should preserve the durable signal, not the noise.
 
-- The project is a computer, not a collection of pages. IDs, Mail, Files, Desktop, Browser, Marketplace, Pay2Speak, Tokens, Wallet, WORK, Log, and Growth are facets of one Bitcoin Computer.
+- The project is a computer, not a collection of pages. IDs, Mail, Files, Desktop, Browser, Marketplace, Tokens, Wallet, WORK, Log, and Growth are facets of one Bitcoin Computer.
 - The anti-platform stance is central. Social media, ads, analytics dashboards, followers, likes, influencers, and conferences are weaker than chain-readable proofs, sats, txids, and confirmed state.
 - Distribution should collapse into the Computer. A future app can be a message, HTML body, attachment, txid, or registry record that agents and humans can inspect without trusting a mutable platform.
 - UTXOs are an organizational primitive. Good Bitcoin UX should teach responsible UTXO management, explicit fees, split/prepared outputs, and PSBT review before signing.
@@ -105,7 +105,6 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `computer.proofofwork.me` is the full mail/computer app.
 - `desktop.proofofwork.me` is the public read-only file desktop.
 - `marketplace.proofofwork.me` is the standalone asset marketplace: IDs and token sale-ticket markets are live.
-- `pay2speak.proofofwork.me` is the standalone Pay2Speak app for campaign funding and ranked questions.
 - `token.proofofwork.me` is the standalone token creation and mint app.
 - `tokens.proofofwork.me` redirects to `https://token.proofofwork.me/`.
 - `wallet.proofofwork.me` is the standalone token wallet and transfer app.
@@ -139,7 +138,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Wallet signing stays local.
 - Node/API infrastructure reads, indexes, verifies, and broadcasts already-signed txs. It does not custody.
 - Every tx-backed app action should be inspectable from an activity surface with clear labels for confirmed, pending, txid, listing txid, and UTXO references where relevant.
-- Every app action is a Bitcoin Computer action. Log and Growth should treat tx-backed actions from IDs, mail, files, Browser, Marketplace, Pay2Speak, Tokens, and staged protocols consistently.
+- Every app action is a Bitcoin Computer action. Log and Growth should treat tx-backed actions from IDs, mail, files, Browser, Marketplace, Tokens, and staged protocols consistently.
 - Production data surfaces should prefer the first-party node/API cache path for speed, then refresh from current full-node data. Stale snapshots are acceptable only as a first paint, not as the final truth after refresh.
 - Broadcast errors should be legible. A rejected transaction should expose the RPC code, reason when available, and a plain-English hint instead of a mystery error.
 - Every new product should enter the growth model with the same shape: real chain inputs, a usage assumption, a value assumption, fee elasticity, and blockspace accounting.

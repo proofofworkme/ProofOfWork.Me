@@ -106,7 +106,6 @@ computer.proofofwork.me     full mail/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
 marketplace.proofofwork.me  standalone asset marketplace; IDs and token sale-ticket markets live
-pay2speak.proofofwork.me    standalone X Space crowdfunding app
 token.proofofwork.me        standalone token creation and mint app
 tokens.proofofwork.me       permanent redirect to https://token.proofofwork.me/
 wallet.proofofwork.me      standalone token wallet and transfer app
@@ -118,9 +117,9 @@ growth.proofofwork.me       public growth model dashboard
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
 The Marketplace subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers. It is tabbed by asset class: the ID tab is live, and the Token tab uses the same sale-ticket shape for token `list5`, `seal5`, `delist5`, and `buy5` records.
-The Log subdomain is read-only. It exposes a unified Bitcoin Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, Pay2Speak campaigns/funding, token creations, token mints, token transfers, token listings, and token sales.
+The Log subdomain is read-only. It exposes a unified Bitcoin Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, token creations, token mints, token transfers, token listings, and token sales.
 The Token subdomain creates and mints mint-first `pwt1:` tokens. The `tokens` subdomain redirects to Token. The Wallet subdomain tracks token balances and broadcasts `pwt1:send` transfers that pay the token registry. The WORK subdomain is the dedicated WORK token dashboard.
-The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace/Pay2Speak/Token network-value model with confirmed registry, log, file, marketplace, Pay2Speak, and token value metrics in sats and USD. WORK has a permanent floor derived from this confirmed network value: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`; the inverse `21,000,000 / confirmed_network_value_sats` is the WORK-per-sat ratio.
+The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace/Token network-value model with confirmed registry, log, file, marketplace, and token value metrics in sats and USD. WORK has a permanent floor derived from this confirmed network value: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`; the inverse `21,000,000 / confirmed_network_value_sats` is the WORK-per-sat ratio.
 
 Local preview:
 
@@ -140,12 +139,6 @@ Marketplace-only build:
 
 ```bash
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
-```
-
-Pay2Speak-only build:
-
-```bash
-VITE_PAY2SPEAK_ONLY=1 VITE_POW_API_BASE=https://pay2speak.proofofwork.me npm run build
 ```
 
 Token-only build:
@@ -371,7 +364,6 @@ https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
-https://pay2speak.proofofwork.me/api/*
 https://token.proofofwork.me/api/*
 https://work.proofofwork.me/api/*
 https://log.proofofwork.me/api/*

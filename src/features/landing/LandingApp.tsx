@@ -6,7 +6,6 @@ import {
   FileText,
   Mail,
   MessageSquareQuote,
-  Mic2,
   Monitor,
   RefreshCw,
   TrendingUp,
@@ -27,13 +26,11 @@ import {
   LOCAL_ID_APP_URL,
   LOCAL_LOG_APP_URL,
   LOCAL_MARKETPLACE_APP_URL,
-  LOCAL_PAY2SPEAK_APP_URL,
   LOCAL_TOKEN_APP_URL,
   LOCAL_WALLET_APP_URL,
   LOCAL_WORK_TOKEN_APP_URL,
   LOG_APP_URL,
   MARKETPLACE_APP_URL,
-  PAY2SPEAK_APP_URL,
   TOKEN_APP_URL,
   WALLET_APP_URL,
   WORK_TOKEN_APP_URL,
@@ -102,14 +99,14 @@ export function LandingApp({
       <section className="landing-hero">
         <div className="landing-hero-content">
           <span className="landing-kicker">
-            Bitcoin-native identity, mail, files, pages, markets, funding,
-            tokens, logs, and growth
+            Bitcoin-native identity, mail, files, pages, markets, tokens,
+            logs, and growth
           </span>
           <h2>ProofOfWork.Me</h2>
           <p>
             Claim a permanent on-chain ID, then use the Bitcoin Computer for
-            mail, files, HTML pages, marketplace actions, Pay2Speak campaigns,
-            token mints, and chain-readable proof.
+            mail, files, HTML pages, marketplace actions, token mints, and
+            chain-readable proof.
           </p>
           <div className="landing-actions">
             <a
@@ -155,15 +152,6 @@ export function LandingApp({
               <span className="button-content">
                 <Users size={17} />
                 <span>Marketplace</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(PAY2SPEAK_APP_URL, LOCAL_PAY2SPEAK_APP_URL)}
-            >
-              <span className="button-content">
-                <Mic2 size={17} />
-                <span>Pay2Speak</span>
               </span>
             </a>
             <a
@@ -393,28 +381,6 @@ export function LandingApp({
               <span className="button-content">
                 <Users size={16} />
                 <span>Open Marketplace</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <Mic2 size={24} />
-            </div>
-            <div>
-              <h3>Open Pay2Speak</h3>
-              <p>
-                Create X Space campaigns, fund creators, and rank questions by
-                sats through confirmed <code>pws1:</code> records.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(PAY2SPEAK_APP_URL, LOCAL_PAY2SPEAK_APP_URL)}
-            >
-              <span className="button-content">
-                <Mic2 size={16} />
-                <span>Open Pay2Speak</span>
               </span>
             </a>
           </article>

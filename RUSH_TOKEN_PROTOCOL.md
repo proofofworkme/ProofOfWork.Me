@@ -46,8 +46,8 @@ pwr1:m:rush
 `pwr1:` means ProofOfWork RUSH. `m` means mint. `rush` is lowercase and exact.
 
 The minter address is inferred from `vin0`, matching the existing
-ProofOfWork.Me pattern used by token and Pay2Speak indexers. The OP_RETURN does
-not store a recipient, amount, rank, or balance.
+ProofOfWork.Me token-indexing pattern. The OP_RETURN does not store a recipient,
+amount, rank, or balance.
 
 ## Valid Mint Transaction Shape
 

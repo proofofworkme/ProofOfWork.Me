@@ -7,7 +7,6 @@ const SHORT_LABELS: Record<string, string> = {
   Browser: "Web",
   Computer: "PC",
   Marketplace: "Market",
-  Pay2Speak: "Speak",
 };
 
 function currentHref() {

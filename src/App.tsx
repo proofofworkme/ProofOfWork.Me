@@ -26,7 +26,6 @@ import {
   Inbox,
   LogOut,
   Mail,
-  Mic2,
   MessageCircle,
   MessageSquareQuote,
   Monitor,
@@ -64,13 +63,11 @@ import {
   LOCAL_ID_APP_URL,
   LOCAL_LOG_APP_URL,
   LOCAL_MARKETPLACE_APP_URL,
-  LOCAL_PAY2SPEAK_APP_URL,
   LOCAL_TOKEN_APP_URL,
   LOCAL_WALLET_APP_URL,
   LOCAL_WORK_TOKEN_APP_URL,
   LOG_APP_URL,
   MARKETPLACE_APP_URL,
-  PAY2SPEAK_APP_URL,
   TOKEN_APP_URL,
   WALLET_APP_URL,
   WORK_TOKEN_APP_URL,
@@ -85,7 +82,6 @@ import {
   isLandingRoute,
   isLocalPreviewHost,
   isMarketplaceRoute,
-  isPay2SpeakRoute,
   isRushRoute,
   isTokenRoute,
   isWalletRoute,
@@ -98,20 +94,6 @@ import {
   executeChainedMintRun,
 } from "./chained-mint";
 import { LandingApp } from "./features/landing/LandingApp";
-import {
-  PAY2SPEAK_PROTOCOL_PREFIX,
-  PAY2SPEAK_REGISTRY_PRICE_SATS,
-  PAY2SPEAK_SPLIT_THRESHOLD_SATS,
-  pay2SpeakRegistryAddressForNetwork,
-  type Pay2SpeakCampaign,
-  type Pay2SpeakFunding,
-  type Pay2SpeakQuestion,
-  type Pay2SpeakState,
-} from "./features/pay2speak/pay2speakProtocol";
-import {
-  Pay2SpeakApp,
-  Pay2SpeakWorkspace,
-} from "./features/pay2speak/Pay2SpeakApp";
 import { RushApp } from "./features/rush/RushApp";
 import {
   buildRushMintPayload,
@@ -167,7 +149,6 @@ import {
   isPlainRecord,
   normalizeSearchQuery,
   normalizeSubject,
-  pay2SpeakCreatorRouteAddress,
   satsToUsd,
   searchIncludes,
   shortAddress,
@@ -203,7 +184,6 @@ type Folder =
   | "browser"
   | "ids"
   | "marketplace"
-  | "pay2speak"
   | "token"
   | "wallet"
   | "work"
@@ -621,8 +601,6 @@ type PowActivityKind =
   | "mail"
   | "reply"
   | "file"
-  | "pay2speak-campaign"
-  | "pay2speak-funding"
   | "token-create"
   | "token-mint"
   | "token-listing"
@@ -930,10 +908,6 @@ type PowRegistryState = {
   sales: PowIdMarketplaceSale[];
 };
 
-type Pay2SpeakApiResponse = Partial<Pay2SpeakState> & {
-  registryAddress?: string;
-};
-
 type RushApiResponse = Partial<RushState>;
 
 type PowTokenApiResponse = Partial<PowTokenState> & {
@@ -1111,8 +1085,6 @@ type GrowthModelRow = {
   mailWrites: number;
   marketplaceSats: number;
   marketplaceWrites: number;
-  pay2SpeakSats: number;
-  pay2SpeakWrites: number;
   powids: number;
   tokenSats: number;
   tokenWrites: number;
@@ -1138,8 +1110,6 @@ type GrowthActualNetworkValue = {
   mailSats: number;
   marketplaceSats: number;
   marketplaceVolumeSats: number;
-  pay2SpeakFlowSats: number;
-  pay2SpeakSats: number;
   powids: number;
   tokenCreationFlowSats: number;
   tokenMintFlowSats: number;
@@ -1203,13 +1173,11 @@ const GROWTH_MODEL_INPUTS = {
   baselineFileFlowSats: 2_184,
   baselineMarketplaceVolumeSats: 1_000,
   baselineBrowserFlowSats: 0,
-  baselinePay2SpeakFlowSats: 0,
   baselineTokenFlowSats: 0,
   mailEdgeDensity: 0.012307692307692308,
   mailSatsPerDelivery: 680.1333333333333,
   marketplaceAverageSaleSats: 1000,
   browserAveragePageSats: 1000,
-  pay2SpeakAverageCampaignSats: 5460,
   tokenAverageMintSats: 1000,
   satsPerFile: 1000,
   canonicalFee: 0.00001,
@@ -1219,13 +1187,11 @@ const GROWTH_MODEL_INPUTS = {
   driveVbytesPerWrite: 9_621,
   marketplaceVbytesPerSale: 1_500,
   browserVbytesPerPage: 15_000,
-  pay2SpeakVbytesPerWrite: 700,
   tokenVbytesPerWrite: 700,
   mailMessagesPerPairPerYear: 4,
   driveFilesPerIdPerYear: 6,
   marketplaceSalesPerIdPerYear: 0.2,
   browserPagesPerIdPerYear: 1,
-  pay2SpeakCampaignsPerIdPerYear: 0.15,
   tokenMintsPerIdPerYear: 0.25,
   valueMultiple: 5,
   elasticities: {
@@ -1234,7 +1200,6 @@ const GROWTH_MODEL_INPUTS = {
     drive: 0.75,
     marketplace: 0.5,
     browser: 0.75,
-    pay2speak: 0.6,
     token: 0.6,
   },
   horizons: [
@@ -1295,10 +1260,6 @@ function growthModelRow(horizon: {
     GROWTH_MODEL_INPUTS.canonicalFee,
     GROWTH_MODEL_INPUTS.elasticities.browser,
   );
-  const pay2SpeakMultiplier = growthFeeMultiplier(
-    GROWTH_MODEL_INPUTS.canonicalFee,
-    GROWTH_MODEL_INPUTS.elasticities.pay2speak,
-  );
   const tokenMultiplier = growthFeeMultiplier(
     GROWTH_MODEL_INPUTS.canonicalFee,
     GROWTH_MODEL_INPUTS.elasticities.token,
@@ -1330,12 +1291,6 @@ function growthModelRow(horizon: {
     GROWTH_MODEL_INPUTS.browserAveragePageSats *
     GROWTH_MODEL_INPUTS.valueMultiple *
     browserMultiplier;
-  const rawPay2SpeakSats =
-    powids *
-    GROWTH_MODEL_INPUTS.pay2SpeakCampaignsPerIdPerYear *
-    GROWTH_MODEL_INPUTS.pay2SpeakAverageCampaignSats *
-    GROWTH_MODEL_INPUTS.valueMultiple *
-    pay2SpeakMultiplier;
   const rawTokenSats =
     powids *
     GROWTH_MODEL_INPUTS.tokenMintsPerIdPerYear *
@@ -1356,10 +1311,6 @@ function growthModelRow(horizon: {
     marketplaceMultiplier;
   const browserWrites =
     powids * GROWTH_MODEL_INPUTS.browserPagesPerIdPerYear * browserMultiplier;
-  const pay2SpeakWrites =
-    powids *
-    GROWTH_MODEL_INPUTS.pay2SpeakCampaignsPerIdPerYear *
-    pay2SpeakMultiplier;
   const tokenWrites =
     powids *
     GROWTH_MODEL_INPUTS.tokenMintsPerIdPerYear *
@@ -1370,7 +1321,6 @@ function growthModelRow(horizon: {
     driveWrites * GROWTH_MODEL_INPUTS.driveVbytesPerWrite +
     marketplaceWrites * GROWTH_MODEL_INPUTS.marketplaceVbytesPerSale +
     browserWrites * GROWTH_MODEL_INPUTS.browserVbytesPerPage +
-    pay2SpeakWrites * GROWTH_MODEL_INPUTS.pay2SpeakVbytesPerWrite +
     tokenWrites * GROWTH_MODEL_INPUTS.tokenVbytesPerWrite;
   const blockspaceUsageRatio =
     rawBlockspaceVbytes > 0
@@ -1384,7 +1334,6 @@ function growthModelRow(horizon: {
   const driveSats = rawDriveSats * blockspaceUsageRatio;
   const marketplaceSats = rawMarketplaceSats * blockspaceUsageRatio;
   const browserSats = rawBrowserSats * blockspaceUsageRatio;
-  const pay2SpeakSats = rawPay2SpeakSats * blockspaceUsageRatio;
   const tokenSats = rawTokenSats * blockspaceUsageRatio;
   const totalSats =
     idSats +
@@ -1392,7 +1341,6 @@ function growthModelRow(horizon: {
     driveSats +
     marketplaceSats +
     browserSats +
-    pay2SpeakSats +
     tokenSats;
   const btcUsdBase = growthBtcUsdAtYears(horizon.years);
 
@@ -1410,8 +1358,6 @@ function growthModelRow(horizon: {
     mailWrites: mailWrites * blockspaceUsageRatio,
     marketplaceSats,
     marketplaceWrites: marketplaceWrites * blockspaceUsageRatio,
-    pay2SpeakSats,
-    pay2SpeakWrites: pay2SpeakWrites * blockspaceUsageRatio,
     powids,
     tokenSats,
     tokenWrites: tokenWrites * blockspaceUsageRatio,
@@ -1424,7 +1370,6 @@ function growthModelRow(horizon: {
         driveWrites +
         marketplaceWrites +
         browserWrites +
-        pay2SpeakWrites +
         tokenWrites
       ) *
         blockspaceUsageRatio,
@@ -1447,9 +1392,6 @@ function growthModelStartRow(): GrowthModelRow {
   const browserSats =
     GROWTH_MODEL_INPUTS.baselineBrowserFlowSats *
     GROWTH_MODEL_INPUTS.valueMultiple;
-  const pay2SpeakSats =
-    GROWTH_MODEL_INPUTS.baselinePay2SpeakFlowSats *
-    GROWTH_MODEL_INPUTS.valueMultiple;
   const tokenSats =
     GROWTH_MODEL_INPUTS.baselineTokenFlowSats *
     GROWTH_MODEL_INPUTS.valueMultiple;
@@ -1459,7 +1401,6 @@ function growthModelStartRow(): GrowthModelRow {
     driveSats +
     marketplaceSats +
     browserSats +
-    pay2SpeakSats +
     tokenSats;
   const btcUsdBase = growthBtcUsdAtYears(0);
   return {
@@ -1477,8 +1418,6 @@ function growthModelStartRow(): GrowthModelRow {
     mailWrites: 0,
     marketplaceSats,
     marketplaceWrites: 0,
-    pay2SpeakSats,
-    pay2SpeakWrites: 0,
     powids: GROWTH_MODEL_INPUTS.currentPowids,
     tokenSats,
     tokenWrites: 0,
@@ -1780,10 +1719,6 @@ function registryAddressForNetwork(network: BitcoinNetwork) {
 
 function tokenIndexAddressForNetwork(network: BitcoinNetwork) {
   return TOKEN_INDEX_ADDRESSES[network] ?? "";
-}
-
-function pay2SpeakTitle(handle: string, spaceNumber: number) {
-  return `@${handle} Space #${spaceNumber}`;
 }
 
 function bitcoinNetwork(network: BitcoinNetwork) {
@@ -2622,10 +2557,6 @@ function folderLabel(folder: Folder) {
     return "Marketplace";
   }
 
-  if (folder === "pay2speak") {
-    return "Pay2Speak";
-  }
-
   if (folder === "token") {
     return "Token";
   }
@@ -2688,10 +2619,6 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "marketplace") {
     return "ID listings and transfers";
-  }
-
-  if (folder === "pay2speak") {
-    return "X Space funding";
   }
 
   if (folder === "token") {
@@ -4526,7 +4453,6 @@ function proofProtocolDataBytesForVout(vout: Array<Record<string, unknown>>) {
       (message) =>
         message.startsWith(PROTOCOL_PREFIX) ||
         message.startsWith(ID_PROTOCOL_PREFIX) ||
-        message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX) ||
         message.startsWith(TOKEN_PROTOCOL_PREFIX) ||
         message.startsWith(RUSH_PROTOCOL_PREFIX),
     )
@@ -4849,37 +4775,6 @@ function registryPaymentAmount(
   return vout.reduce((total, output, index) => {
     if (
       output.scriptpubkey_address === registryAddress &&
-      typeof output.value === "number" &&
-      output.value > 0 &&
-      (protocolIndex === -1 || index < protocolIndex)
-    ) {
-      return total + output.value;
-    }
-
-    return total;
-  }, 0);
-}
-
-function firstPay2SpeakOutputIndex(vout: Array<Record<string, unknown>>) {
-  return vout.findIndex((output) => {
-    if (output.scriptpubkey_type !== "op_return") {
-      return false;
-    }
-
-    return (
-      decodedProtocolMessages([output], PAY2SPEAK_PROTOCOL_PREFIX).length > 0
-    );
-  });
-}
-
-function pay2SpeakPaymentAmountBeforeProtocol(
-  vout: Array<Record<string, unknown>>,
-  address: string,
-) {
-  const protocolIndex = firstPay2SpeakOutputIndex(vout);
-  return vout.reduce((total, output, index) => {
-    if (
-      output.scriptpubkey_address === address &&
       typeof output.value === "number" &&
       output.value > 0 &&
       (protocolIndex === -1 || index < protocolIndex)
@@ -6285,337 +6180,6 @@ function tokenMintSupplyState(
     pendingMintOut,
     wouldOverfill,
   };
-}
-
-function normalizeXHandle(value: string) {
-  return value.trim().replace(/^@+/u, "").toLowerCase();
-}
-
-function pay2SpeakHandleError(handle: string) {
-  if (!/^[a-z0-9_]{1,15}$/u.test(handle)) {
-    return "Use a valid X handle without @.";
-  }
-
-  return "";
-}
-
-function pay2SpeakFundingSplit(grossSats: number) {
-  const gross = Math.floor(grossSats);
-  if (!Number.isSafeInteger(gross) || gross <= PAY2SPEAK_REGISTRY_PRICE_SATS) {
-    throw new Error("Contribution must be greater than 1,000 sats.");
-  }
-
-  const registrySats =
-    gross < PAY2SPEAK_SPLIT_THRESHOLD_SATS
-      ? PAY2SPEAK_REGISTRY_PRICE_SATS
-      : Math.floor(gross / 10);
-  const creatorSats = gross - registrySats;
-  if (creatorSats <= 0) {
-    throw new Error("Contribution must leave a positive creator amount.");
-  }
-
-  return { creatorSats, grossSats: gross, registrySats };
-}
-
-function buildPay2SpeakCampaignPayload(
-  spaceNumber: number,
-  handle: string,
-  targetGrossSats: number,
-) {
-  const normalizedHandle = normalizeXHandle(handle);
-  return `${PAY2SPEAK_PROTOCOL_PREFIX}c:${Math.floor(spaceNumber)}:${normalizedHandle}:${Math.floor(targetGrossSats)}`;
-}
-
-function buildPay2SpeakFundingPayload(campaignId: string, question: string) {
-  const normalizedCampaignId = campaignId.trim().toLowerCase();
-  const encodedQuestion = question.trim()
-    ? encodeTextBase64Url(question.trim())
-    : "";
-  return `${PAY2SPEAK_PROTOCOL_PREFIX}f:${normalizedCampaignId}:${encodedQuestion}`;
-}
-
-function parsePay2SpeakPayload(message: string) {
-  if (!message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX)) {
-    return null;
-  }
-
-  const payload = message.slice(PAY2SPEAK_PROTOCOL_PREFIX.length);
-  const parts = payload.split(":");
-  if (parts[0] === "c" && parts.length === 4) {
-    const spaceNumber = Number(parts[1]);
-    const handle = normalizeXHandle(parts[2] ?? "");
-    const targetGrossSats = Number(parts[3]);
-    if (
-      !Number.isSafeInteger(spaceNumber) ||
-      spaceNumber < 0 ||
-      pay2SpeakHandleError(handle) ||
-      !Number.isSafeInteger(targetGrossSats) ||
-      targetGrossSats <= PAY2SPEAK_REGISTRY_PRICE_SATS
-    ) {
-      return null;
-    }
-
-    return {
-      handle,
-      kind: "campaign" as const,
-      spaceNumber,
-      targetGrossSats,
-    };
-  }
-
-  if (
-    parts[0] === "f" &&
-    parts.length >= 2 &&
-    parts.length <= 3 &&
-    /^[0-9a-fA-F]{64}$/u.test(parts[1] ?? "")
-  ) {
-    const encodedQuestion = parts[2] ?? "";
-    let question = "";
-    try {
-      question = encodedQuestion
-        ? decodeTextBase64Url(encodedQuestion).trim().slice(0, 500)
-        : "";
-    } catch {
-      return null;
-    }
-
-    return {
-      campaignId: String(parts[1]).toLowerCase(),
-      kind: "funding" as const,
-      question: question || undefined,
-    };
-  }
-
-  return null;
-}
-
-function pay2SpeakStateFromTransactions(
-  txs: Array<Record<string, unknown>>,
-  registryAddress: string,
-  targetNetwork: BitcoinNetwork,
-): Pay2SpeakState {
-  const campaignMap = new Map<string, Pay2SpeakCampaign>();
-  const candidateFunding: Pay2SpeakFunding[] = [];
-
-  for (const tx of txs) {
-    const txid = transactionTxid(tx);
-    if (!txid) {
-      continue;
-    }
-
-    const vin = Array.isArray(tx.vin)
-      ? (tx.vin as Array<Record<string, unknown>>)
-      : [];
-    const vout = Array.isArray(tx.vout)
-      ? (tx.vout as Array<Record<string, unknown>>)
-      : [];
-    const messages = decodedProtocolMessages(vout, PAY2SPEAK_PROTOCOL_PREFIX);
-    if (messages.length === 0) {
-      continue;
-    }
-
-    const confirmed = transactionConfirmed(tx);
-    const status = tx.status as Record<string, unknown> | undefined;
-    const blockTime =
-      typeof status?.block_time === "number"
-        ? status.block_time * 1000
-        : Date.now();
-    const createdAt = new Date(blockTime).toISOString();
-    const inputAddresses = transactionInputAddresses(vin);
-    const actorAddress = inputAddresses[0] ?? "Unknown";
-
-    for (const message of messages) {
-      const parsed = parsePay2SpeakPayload(message);
-      if (!parsed) {
-        continue;
-      }
-
-      const registrySats = pay2SpeakPaymentAmountBeforeProtocol(
-        vout,
-        registryAddress,
-      );
-      if (parsed.kind === "campaign") {
-        if (
-          registrySats < PAY2SPEAK_REGISTRY_PRICE_SATS ||
-          !isValidBitcoinAddress(actorAddress, targetNetwork)
-        ) {
-          continue;
-        }
-
-        campaignMap.set(txid, {
-          confirmed,
-          createdAt,
-          creatorAddress: actorAddress,
-          fundedGrossSats: 0,
-          fundingCount: 0,
-          handle: parsed.handle,
-          network: targetNetwork,
-          registrySats,
-          spaceNumber: parsed.spaceNumber,
-          status: "Funding",
-          targetGrossSats: parsed.targetGrossSats,
-          title: pay2SpeakTitle(parsed.handle, parsed.spaceNumber),
-          txid,
-        });
-        continue;
-      }
-
-      const campaign = campaignMap.get(parsed.campaignId);
-      const creatorAddress = campaign?.creatorAddress ?? "";
-      if (!creatorAddress) {
-        candidateFunding.push({
-          campaignId: parsed.campaignId,
-          confirmed,
-          createdAt,
-          creatorAddress: "",
-          creatorSats: 0,
-          donorAddress: actorAddress,
-          grossSats: 0,
-          network: targetNetwork,
-          question: parsed.question,
-          registrySats,
-          txid,
-        });
-        continue;
-      }
-
-      const creatorSats = pay2SpeakPaymentAmountBeforeProtocol(
-        vout,
-        creatorAddress,
-      );
-      const grossSats = creatorSats + registrySats;
-      let expected;
-      try {
-        expected = pay2SpeakFundingSplit(grossSats);
-      } catch {
-        continue;
-      }
-
-      if (
-        expected.registrySats !== registrySats ||
-        expected.creatorSats !== creatorSats
-      ) {
-        continue;
-      }
-
-      candidateFunding.push({
-        campaignId: parsed.campaignId,
-        confirmed,
-        createdAt,
-        creatorAddress,
-        creatorSats,
-        donorAddress: actorAddress,
-        grossSats,
-        network: targetNetwork,
-        question: parsed.question,
-        registrySats,
-        txid,
-      });
-    }
-  }
-
-  const validFunding = candidateFunding.flatMap(
-    (funding): Pay2SpeakFunding[] => {
-      const campaign = campaignMap.get(funding.campaignId);
-      if (!campaign) {
-        return [];
-      }
-
-      const withCreator = funding.creatorAddress
-        ? funding
-        : (() => {
-            const tx = txs.find(
-              (item) => transactionTxid(item) === funding.txid,
-            );
-            const vout = Array.isArray(tx?.vout)
-              ? (tx?.vout as Array<Record<string, unknown>>)
-              : [];
-            const creatorSats = pay2SpeakPaymentAmountBeforeProtocol(
-              vout,
-              campaign.creatorAddress,
-            );
-            const grossSats = creatorSats + funding.registrySats;
-            try {
-              const expected = pay2SpeakFundingSplit(grossSats);
-              if (
-                expected.registrySats !== funding.registrySats ||
-                expected.creatorSats !== creatorSats
-              ) {
-                return null;
-              }
-            } catch {
-              return null;
-            }
-
-            return {
-              ...funding,
-              creatorAddress: campaign.creatorAddress,
-              creatorSats,
-              grossSats,
-            };
-          })();
-
-      return withCreator &&
-        withCreator.grossSats > PAY2SPEAK_REGISTRY_PRICE_SATS
-        ? [withCreator]
-        : [];
-    },
-  );
-
-  for (const funding of validFunding) {
-    const campaign = campaignMap.get(funding.campaignId);
-    if (!campaign) {
-      continue;
-    }
-
-    campaign.fundedGrossSats += funding.grossSats;
-    campaign.fundingCount += 1;
-    campaign.status =
-      campaign.fundedGrossSats >= campaign.targetGrossSats
-        ? "Funded"
-        : "Funding";
-  }
-
-  const campaigns = [...campaignMap.values()].sort(comparePay2SpeakCampaigns);
-  const questions = validFunding
-    .filter((funding): funding is Pay2SpeakFunding & { question: string } =>
-      Boolean(funding.question),
-    )
-    .map((funding) => ({
-      campaignId: funding.campaignId,
-      confirmed: funding.confirmed,
-      createdAt: funding.createdAt,
-      grossSats: funding.grossSats,
-      question: funding.question,
-      txid: funding.txid,
-    }))
-    .sort(
-      (left, right) =>
-        right.grossSats - left.grossSats ||
-        Date.parse(right.createdAt) - Date.parse(left.createdAt),
-    );
-
-  return {
-    campaigns,
-    funding: validFunding.sort(
-      (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
-    ),
-    questions,
-  };
-}
-
-function comparePay2SpeakCampaigns(
-  left: Pay2SpeakCampaign,
-  right: Pay2SpeakCampaign,
-) {
-  if (left.confirmed !== right.confirmed) {
-    return Number(right.confirmed) - Number(left.confirmed);
-  }
-
-  return (
-    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-    left.txid.localeCompare(right.txid)
-  );
 }
 
 function decodedOpReturnAt(vout: Array<Record<string, unknown>>, index: number) {
@@ -8871,32 +8435,6 @@ async function fetchGlobalActivity(
   return (await fetchIdRegistryState(targetNetwork)).activity;
 }
 
-async function fetchPay2SpeakState(
-  targetNetwork: BitcoinNetwork,
-  fresh = false,
-): Promise<Pay2SpeakState> {
-  const registryAddress = pay2SpeakRegistryAddressForNetwork(targetNetwork);
-  if (!registryAddress) {
-    return { campaigns: [], funding: [], questions: [] };
-  }
-
-  if (POW_API_BASE) {
-    const path = fresh ? "/api/v1/pay2speak?fresh=1" : "/api/v1/pay2speak";
-    const payload = await fetchProofApiJson<Pay2SpeakApiResponse>(
-      path,
-      targetNetwork,
-    );
-    return {
-      campaigns: Array.isArray(payload.campaigns) ? payload.campaigns : [],
-      funding: Array.isArray(payload.funding) ? payload.funding : [],
-      questions: Array.isArray(payload.questions) ? payload.questions : [],
-    };
-  }
-
-  const txs = await fetchRegistryTransactions(registryAddress, targetNetwork);
-  return pay2SpeakStateFromTransactions(txs, registryAddress, targetNetwork);
-}
-
 async function fetchTokenState(
   targetNetwork: BitcoinNetwork,
   fresh = false,
@@ -11045,18 +10583,15 @@ export default function App() {
   const desktopRoute = isDesktopRoute();
   const browserRoute = isBrowserRoute();
   const marketplaceMode = isMarketplaceRoute();
-  const pay2SpeakMode = isPay2SpeakRoute();
   const tokenMode = isTokenRoute();
   const walletMode = isWalletRoute();
   const workTokenMode = isWorkTokenRoute();
   const rushMode = isRushRoute();
-  const pay2SpeakCreatorAddress = pay2SpeakCreatorRouteAddress();
   const activityMode = isActivityRoute();
   const growthMode = isGrowthRoute();
   const mainnetRegistryMode =
     idLaunchMode ||
     marketplaceMode ||
-    pay2SpeakMode ||
     tokenMode ||
     walletMode ||
     workTokenMode ||
@@ -11101,23 +10636,6 @@ export default function App() {
   const [idSelectedListingId, setIdSelectedListingId] = useState("");
   const [idPurchaseOwnerAddress, setIdPurchaseOwnerAddress] = useState("");
   const [idPurchaseReceiveAddress, setIdPurchaseReceiveAddress] = useState("");
-  const [pay2SpeakCampaigns, setPay2SpeakCampaigns] = useState<
-    Pay2SpeakCampaign[]
-  >([]);
-  const [pay2SpeakFunding, setPay2SpeakFunding] = useState<Pay2SpeakFunding[]>(
-    [],
-  );
-  const [pay2SpeakQuestions, setPay2SpeakQuestions] = useState<
-    Pay2SpeakQuestion[]
-  >([]);
-  const [pay2SpeakSpaceNumber, setPay2SpeakSpaceNumber] = useState(0);
-  const [pay2SpeakHandle, setPay2SpeakHandle] = useState("");
-  const [pay2SpeakTargetSats, setPay2SpeakTargetSats] = useState(100_000);
-  const [pay2SpeakSelectedCampaignId, setPay2SpeakSelectedCampaignId] =
-    useState("");
-  const [pay2SpeakContributionSats, setPay2SpeakContributionSats] =
-    useState(5460);
-  const [pay2SpeakQuestion, setPay2SpeakQuestion] = useState("");
   const [tokenDefinitions, setTokenDefinitions] = useState<
     PowTokenDefinition[]
   >([]);
@@ -11212,9 +10730,7 @@ export default function App() {
   const [activeFolder, setActiveFolder] = useState<Folder>(() =>
     desktopRoute
       ? "desktop"
-      : pay2SpeakMode
-        ? "pay2speak"
-        : tokenMode
+      : tokenMode
             ? "token"
             : walletMode
               ? "wallet"
@@ -11656,75 +11172,7 @@ export default function App() {
       ),
     [idListings, idSelectedListingId, network],
   );
-  const pay2SpeakRegistryAddress = pay2SpeakRegistryAddressForNetwork(network);
   const tokenIndexAddress = tokenIndexAddressForNetwork(network);
-  const normalizedPay2SpeakHandle = normalizeXHandle(pay2SpeakHandle);
-  const selectedPay2SpeakCampaign = useMemo(
-    () =>
-      pay2SpeakCampaigns.find(
-        (campaign) =>
-          campaign.txid === pay2SpeakSelectedCampaignId &&
-          campaign.network === network,
-      ) ??
-      (pay2SpeakCreatorAddress
-        ? pay2SpeakCampaigns.find(
-            (campaign) =>
-              campaign.creatorAddress === pay2SpeakCreatorAddress &&
-              campaign.network === network,
-          )
-        : undefined) ??
-      pay2SpeakCampaigns.find((campaign) => campaign.network === network),
-    [
-      network,
-      pay2SpeakCampaigns,
-      pay2SpeakCreatorAddress,
-      pay2SpeakSelectedCampaignId,
-    ],
-  );
-  const pay2SpeakCampaignPayload = useMemo(
-    () =>
-      normalizedPay2SpeakHandle &&
-      Number.isSafeInteger(Math.floor(pay2SpeakSpaceNumber)) &&
-      Number.isSafeInteger(Math.floor(pay2SpeakTargetSats))
-        ? buildPay2SpeakCampaignPayload(
-            pay2SpeakSpaceNumber,
-            normalizedPay2SpeakHandle,
-            pay2SpeakTargetSats,
-          )
-        : "",
-    [normalizedPay2SpeakHandle, pay2SpeakSpaceNumber, pay2SpeakTargetSats],
-  );
-  const pay2SpeakFundingPayload = useMemo(
-    () =>
-      selectedPay2SpeakCampaign
-        ? buildPay2SpeakFundingPayload(
-            selectedPay2SpeakCampaign.txid,
-            pay2SpeakQuestion,
-          )
-        : "",
-    [pay2SpeakQuestion, selectedPay2SpeakCampaign],
-  );
-  const pay2SpeakCampaignBytes = useMemo(
-    () =>
-      pay2SpeakCampaignPayload
-        ? dataCarrierBytesForPayload(pay2SpeakCampaignPayload)
-        : 0,
-    [pay2SpeakCampaignPayload],
-  );
-  const pay2SpeakFundingBytes = useMemo(
-    () =>
-      pay2SpeakFundingPayload
-        ? dataCarrierBytesForPayload(pay2SpeakFundingPayload)
-        : 0,
-    [pay2SpeakFundingPayload],
-  );
-  const pay2SpeakSplit = useMemo(() => {
-    try {
-      return pay2SpeakFundingSplit(pay2SpeakContributionSats);
-    } catch {
-      return undefined;
-    }
-  }, [pay2SpeakContributionSats]);
   const normalizedTokenTicker = normalizeTokenTicker(tokenCreateTicker);
   const tokenTickerReservationMessage = tokenTickerReservationError(
     normalizedTokenTicker,
@@ -11983,31 +11431,6 @@ export default function App() {
         selectedToken.mintPriceSats + Math.max(0, tokenPrepareFeeReserveValue),
       )
     : 0;
-  const canCreatePay2SpeakCampaign =
-    Boolean(
-      address &&
-      network === "livenet" &&
-      pay2SpeakRegistryAddress &&
-      pay2SpeakCampaignPayload &&
-      !pay2SpeakHandleError(normalizedPay2SpeakHandle) &&
-      Number.isSafeInteger(Math.floor(pay2SpeakSpaceNumber)) &&
-      Math.floor(pay2SpeakSpaceNumber) >= 0 &&
-      Number.isSafeInteger(Math.floor(pay2SpeakTargetSats)) &&
-      Math.floor(pay2SpeakTargetSats) > PAY2SPEAK_REGISTRY_PRICE_SATS,
-    ) &&
-    pay2SpeakCampaignBytes <= MAX_DATA_CARRIER_BYTES &&
-    !busy;
-  const canFundPay2SpeakCampaign =
-    Boolean(
-      address &&
-      network === "livenet" &&
-      pay2SpeakRegistryAddress &&
-      selectedPay2SpeakCampaign &&
-      pay2SpeakSplit &&
-      pay2SpeakFundingPayload,
-    ) &&
-    pay2SpeakFundingBytes <= MAX_DATA_CARRIER_BYTES &&
-    !busy;
   const canMintToken =
     Boolean(
       address &&
@@ -12181,7 +11604,6 @@ export default function App() {
             ? true
             : activeFolder === "ids" ||
                 activeFolder === "marketplace" ||
-                activeFolder === "pay2speak" ||
                 activeFolder === "token" ||
                 activeFolder === "wallet" ||
                 activeFolder === "work" ||
@@ -12382,17 +11804,12 @@ export default function App() {
     if (
       activeFolder === "ids" ||
       activeFolder === "marketplace" ||
-      activeFolder === "pay2speak" ||
       activeFolder === "token" ||
       activeFolder === "wallet" ||
       activeFolder === "work" ||
       activeFolder === "log" ||
       activeFolder === "contacts"
     ) {
-      if (activeFolder === "pay2speak") {
-        void refreshPay2Speak(true);
-        return;
-      }
       if (activeFolder === "token" || activeFolder === "wallet" || activeFolder === "work") {
         if (network !== "livenet") {
           setNetwork("livenet");
@@ -12426,7 +11843,6 @@ export default function App() {
 
     if (
       growthMode ||
-      pay2SpeakMode ||
       tokenMode ||
       walletMode ||
       workTokenMode ||
@@ -12441,21 +11857,11 @@ export default function App() {
     growthMode,
     mainnetRegistryMode,
     network,
-    pay2SpeakMode,
     rushMode,
     tokenMode,
     walletMode,
     workTokenMode,
   ]);
-
-  useEffect(() => {
-    if (!pay2SpeakMode || network !== "livenet") {
-      return;
-    }
-
-    setActiveFolder("pay2speak");
-    void refreshPay2Speak(true);
-  }, [pay2SpeakMode, network]);
 
   useEffect(() => {
     if (
@@ -12691,9 +12097,7 @@ export default function App() {
       setChainSent([]);
       setSelectedKey("");
       setActiveFolder(
-        pay2SpeakMode
-          ? "pay2speak"
-          : workTokenMode
+        workTokenMode
             ? "work"
             : tokenMode
               ? "token"
@@ -12711,19 +12115,6 @@ export default function App() {
       }
 
       try {
-        if (pay2SpeakMode) {
-          await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
-          const state = await fetchPay2SpeakState("livenet");
-          setPay2SpeakCampaigns(state.campaigns);
-          setPay2SpeakFunding(state.funding);
-          setPay2SpeakQuestions(state.questions);
-          setStatus({
-            tone: "good",
-            text: `${shortAddress(nextAddress)} connected. Pay2Speak ready.`,
-          });
-          return;
-        }
-
         if (tokenMode || walletMode || workTokenMode) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
           const state = await fetchTokenState(
@@ -12819,7 +12210,6 @@ export default function App() {
     landingMode,
     mainnetRegistryMode,
     network,
-    pay2SpeakMode,
     rushMode,
     tokenMode,
     walletMode,
@@ -13543,50 +12933,6 @@ export default function App() {
     setStatus({ tone: "idle", text: "Log cleared." });
   }
 
-  async function refreshPay2Speak(silent = false) {
-    if (!pay2SpeakRegistryAddress) {
-      setPay2SpeakCampaigns([]);
-      setPay2SpeakFunding([]);
-      setPay2SpeakQuestions([]);
-      if (!silent) {
-        setStatus({
-          tone: "idle",
-          text: `No Pay2Speak registry configured for ${networkLabel(network)}.`,
-        });
-      }
-      return;
-    }
-
-    setBusy(true);
-    if (!silent) {
-      setStatus({ tone: "idle", text: "Scanning Pay2Speak campaigns..." });
-    }
-
-    try {
-      const state = await fetchPay2SpeakState(network);
-      setPay2SpeakCampaigns(state.campaigns);
-      setPay2SpeakFunding(state.funding);
-      setPay2SpeakQuestions(state.questions);
-      if (!silent) {
-        const confirmed = state.campaigns.filter(
-          (campaign) => campaign.confirmed,
-        ).length;
-        const pending = state.campaigns.length - confirmed;
-        setStatus({
-          tone: "good",
-          text: `Pay2Speak loaded. ${confirmed.toLocaleString()} confirmed campaign${confirmed === 1 ? "" : "s"}, ${pending.toLocaleString()} pending.`,
-        });
-      }
-    } catch (error) {
-      setStatus({
-        tone: "bad",
-        text: errorMessage(error, "Pay2Speak scan failed."),
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function refreshToken(silent = false, fresh = false) {
     if (!tokenIndexAddress) {
       setTokenDefinitions([]);
@@ -13702,11 +13048,9 @@ export default function App() {
         return;
       }
 
-      const [registryState, computerActivity, pay2SpeakState, tokenState] =
-        await Promise.all([
+      const [registryState, computerActivity, tokenState] = await Promise.all([
         fetchIdRegistryState("livenet", fresh),
         fetchGlobalActivity("livenet", fresh).catch(() => []),
-        fetchPay2SpeakState("livenet", fresh),
         fetchTokenState("livenet", fresh),
       ]);
       const activityForGrowth =
@@ -13717,8 +13061,6 @@ export default function App() {
         registryState.records,
         activityForGrowth,
         registryState.sales,
-        pay2SpeakState.campaigns,
-        pay2SpeakState.funding,
         tokenState.tokens,
         tokenState.mints,
         tokenState.transfers,
@@ -13734,8 +13076,6 @@ export default function App() {
         registryState.records,
         activityForGrowth,
         registryState.sales,
-        pay2SpeakState.campaigns,
-        pay2SpeakState.funding,
         tokenState.tokens,
         tokenState.mints,
         tokenState.transfers,
@@ -13791,11 +13131,9 @@ export default function App() {
     }
 
     try {
-      const [registryState, computerActivity, pay2SpeakState, tokenState] =
-        await Promise.all([
+      const [registryState, computerActivity, tokenState] = await Promise.all([
         fetchIdRegistryState("livenet", fresh),
         fetchGlobalActivity("livenet", fresh).catch(() => []),
-        fetchPay2SpeakState("livenet", fresh),
         fetchTokenState("livenet", fresh),
       ]);
       setIdRegistry(registryState.records);
@@ -13805,9 +13143,6 @@ export default function App() {
       setIdActivity(
         computerActivity.length > 0 ? computerActivity : registryState.activity,
       );
-      setPay2SpeakCampaigns(pay2SpeakState.campaigns);
-      setPay2SpeakFunding(pay2SpeakState.funding);
-      setPay2SpeakQuestions(pay2SpeakState.questions);
       setTokenDefinitions(tokenState.tokens);
       setTokenMints(tokenState.mints);
       setTokenTransfers(tokenState.transfers);
@@ -13817,7 +13152,7 @@ export default function App() {
       if (!silent) {
         setStatus({
           tone: "good",
-          text: `Growth metrics loaded. ${registryState.records.filter((record) => record.confirmed).length.toLocaleString()} IDs, ${computerActivity.length.toLocaleString()} computer action${computerActivity.length === 1 ? "" : "s"}, ${pay2SpeakState.campaigns.length.toLocaleString()} Pay2Speak campaign${pay2SpeakState.campaigns.length === 1 ? "" : "s"}, ${tokenState.tokens.length.toLocaleString()} token${tokenState.tokens.length === 1 ? "" : "s"}.`,
+          text: `Growth metrics loaded. ${registryState.records.filter((record) => record.confirmed).length.toLocaleString()} IDs, ${computerActivity.length.toLocaleString()} computer action${computerActivity.length === 1 ? "" : "s"}, ${tokenState.tokens.length.toLocaleString()} token${tokenState.tokens.length === 1 ? "" : "s"}.`,
         });
       }
     } catch (error) {
@@ -13953,9 +13288,7 @@ export default function App() {
       setChainSent([]);
       setSelectedKey("");
       setActiveFolder(
-        pay2SpeakMode
-          ? "pay2speak"
-          : tokenMode
+        tokenMode
             ? "token"
             : walletMode
               ? "wallet"
@@ -13968,18 +13301,6 @@ export default function App() {
       setComposeOpen(false);
 
       try {
-        if (pay2SpeakMode) {
-          const state = await fetchPay2SpeakState("livenet");
-          setPay2SpeakCampaigns(state.campaigns);
-          setPay2SpeakFunding(state.funding);
-          setPay2SpeakQuestions(state.questions);
-          setStatus({
-            tone: "good",
-            text: `UniSat connected. Pay2Speak ready.`,
-          });
-          return;
-        }
-
         if (tokenMode || walletMode || workTokenMode) {
           const state = await fetchTokenState(
             "livenet",
@@ -15763,246 +15084,6 @@ export default function App() {
     } finally {
       setCheckingBroadcasts(false);
       setRefreshing(false);
-      setBusy(false);
-    }
-  }
-
-  async function createPay2SpeakCampaign(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!window.unisat) {
-      setStatus({ tone: "bad", text: "Connect UniSat first." });
-      return;
-    }
-
-    if (!window.unisat.signPsbt) {
-      setStatus({
-        tone: "bad",
-        text: "UniSat signPsbt is not available. Update UniSat and try again.",
-      });
-      return;
-    }
-
-    if (network !== "livenet" || !pay2SpeakRegistryAddress) {
-      setStatus({ tone: "bad", text: "Pay2Speak v1 is mainnet only." });
-      return;
-    }
-
-    const handleError = pay2SpeakHandleError(normalizedPay2SpeakHandle);
-    if (handleError) {
-      setStatus({ tone: "bad", text: handleError });
-      return;
-    }
-
-    const spaceNumber = Math.floor(pay2SpeakSpaceNumber);
-    const targetGrossSats = Math.floor(pay2SpeakTargetSats);
-    if (!Number.isSafeInteger(spaceNumber) || spaceNumber < 0) {
-      setStatus({ tone: "bad", text: "Space number must be 0 or higher." });
-      return;
-    }
-
-    if (
-      !Number.isSafeInteger(targetGrossSats) ||
-      targetGrossSats <= PAY2SPEAK_REGISTRY_PRICE_SATS
-    ) {
-      setStatus({
-        tone: "bad",
-        text: "Target must be greater than 1,000 sats.",
-      });
-      return;
-    }
-
-    if (pay2SpeakCampaignBytes > MAX_DATA_CARRIER_BYTES) {
-      setStatus({
-        tone: "bad",
-        text: "Pay2Speak campaign OP_RETURN is over 100 KB.",
-      });
-      return;
-    }
-
-    setBusy(true);
-    setStatus({ tone: "idle", text: "Creating Pay2Speak campaign..." });
-
-    try {
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== "livenet") {
-        await switchWalletNetwork(window.unisat, "livenet");
-      }
-
-      const paymentPsbt = await buildPaymentPsbt({
-        amountSats: PAY2SPEAK_REGISTRY_PRICE_SATS,
-        feeRate,
-        fromAddress: address,
-        network: "livenet",
-        protocolPayloads: [pay2SpeakCampaignPayload],
-        requireConfirmedUtxos: true,
-        toAddress: pay2SpeakRegistryAddress,
-      });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
-
-      const txid = await signAndBroadcastPsbt({
-        inputCount: paymentPsbt.inputCount,
-        network: "livenet",
-        psbtHex: paymentPsbt.psbtHex,
-        wallet: window.unisat,
-      });
-      const campaign: Pay2SpeakCampaign = {
-        confirmed: false,
-        createdAt: new Date().toISOString(),
-        creatorAddress: address,
-        fundedGrossSats: 0,
-        fundingCount: 0,
-        handle: normalizedPay2SpeakHandle,
-        network: "livenet",
-        registrySats: PAY2SPEAK_REGISTRY_PRICE_SATS,
-        spaceNumber,
-        status: "Funding",
-        targetGrossSats,
-        title: pay2SpeakTitle(normalizedPay2SpeakHandle, spaceNumber),
-        txid,
-      };
-
-      setPay2SpeakCampaigns((current) =>
-        current.some((item) => item.txid === txid)
-          ? current
-          : [campaign, ...current],
-      );
-      setPay2SpeakSelectedCampaignId(txid);
-      setPay2SpeakHandle("");
-      setStatus({
-        tone: "good",
-        text: `Pay2Speak campaign broadcast: ${shortAddress(txid)}.`,
-      });
-      await refreshPay2Speak(true);
-      setPay2SpeakCampaigns((current) =>
-        current.some((item) => item.txid === txid)
-          ? current
-          : [campaign, ...current],
-      );
-    } catch (error) {
-      setStatus({
-        tone: "bad",
-        text: errorMessage(error, "Pay2Speak campaign failed."),
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function fundPay2SpeakCampaign(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!window.unisat) {
-      setStatus({ tone: "bad", text: "Connect UniSat first." });
-      return;
-    }
-
-    if (!window.unisat.signPsbt) {
-      setStatus({
-        tone: "bad",
-        text: "UniSat signPsbt is not available. Update UniSat and try again.",
-      });
-      return;
-    }
-
-    if (!selectedPay2SpeakCampaign || !pay2SpeakSplit) {
-      setStatus({
-        tone: "bad",
-        text: "Choose a campaign and enter more than 1,000 sats.",
-      });
-      return;
-    }
-
-    if (pay2SpeakFundingBytes > MAX_DATA_CARRIER_BYTES) {
-      setStatus({
-        tone: "bad",
-        text: "Pay2Speak funding OP_RETURN is over 100 KB.",
-      });
-      return;
-    }
-
-    setBusy(true);
-    setStatus({
-      tone: "idle",
-      text: `Funding ${selectedPay2SpeakCampaign.title}...`,
-    });
-
-    try {
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== "livenet") {
-        await switchWalletNetwork(window.unisat, "livenet");
-      }
-
-      const paymentPsbt = await buildPaymentPsbt({
-        feeRate,
-        fromAddress: address,
-        network: "livenet",
-        payments: [
-          {
-            address: selectedPay2SpeakCampaign.creatorAddress,
-            amountSats: pay2SpeakSplit.creatorSats,
-          },
-          {
-            address: pay2SpeakRegistryAddress,
-            amountSats: pay2SpeakSplit.registrySats,
-          },
-        ],
-        protocolPayloads: [pay2SpeakFundingPayload],
-        requireConfirmedUtxos: true,
-      });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
-
-      const txid = await signAndBroadcastPsbt({
-        inputCount: paymentPsbt.inputCount,
-        network: "livenet",
-        psbtHex: paymentPsbt.psbtHex,
-        wallet: window.unisat,
-      });
-      const funding: Pay2SpeakFunding = {
-        campaignId: selectedPay2SpeakCampaign.txid,
-        confirmed: false,
-        createdAt: new Date().toISOString(),
-        creatorAddress: selectedPay2SpeakCampaign.creatorAddress,
-        creatorSats: pay2SpeakSplit.creatorSats,
-        donorAddress: address,
-        grossSats: pay2SpeakSplit.grossSats,
-        network: "livenet",
-        question: pay2SpeakQuestion.trim() || undefined,
-        registrySats: pay2SpeakSplit.registrySats,
-        txid,
-      };
-
-      setPay2SpeakFunding((current) => [funding, ...current]);
-      setPay2SpeakQuestion("");
-      setStatus({
-        tone: "good",
-        text: `${pay2SpeakSplit.grossSats.toLocaleString()} sats broadcast to Pay2Speak: ${shortAddress(txid)}.`,
-      });
-      await refreshPay2Speak(true);
-    } catch (error) {
-      setStatus({
-        tone: "bad",
-        text: errorMessage(error, "Pay2Speak funding failed."),
-      });
-    } finally {
       setBusy(false);
     }
   }
@@ -17812,54 +16893,6 @@ export default function App() {
     );
   }
 
-  if (pay2SpeakMode) {
-    return (
-      <Pay2SpeakApp
-        address={address}
-        busy={busy}
-        campaignBytes={pay2SpeakCampaignBytes}
-        campaigns={pay2SpeakCampaigns.filter(
-          (campaign) => campaign.network === "livenet",
-        )}
-        canCreateCampaign={canCreatePay2SpeakCampaign}
-        canFundCampaign={canFundPay2SpeakCampaign}
-        connectWallet={connectWallet}
-        contributionSats={pay2SpeakContributionSats}
-        createCampaign={createPay2SpeakCampaign}
-        creatorRouteAddress={pay2SpeakCreatorAddress}
-        disconnectWallet={disconnectWallet}
-        feeRate={feeRate}
-        fundCampaign={fundPay2SpeakCampaign}
-        fundingBytes={pay2SpeakFundingBytes}
-        fundingRecords={pay2SpeakFunding.filter(
-          (funding) => funding.network === "livenet",
-        )}
-        handle={pay2SpeakHandle}
-        hasUnisat={hasUnisat}
-        network={network}
-        onNetworkChange={chooseNetwork}
-        question={pay2SpeakQuestion}
-        questions={pay2SpeakQuestions}
-        registryAddress={pay2SpeakRegistryAddressForNetwork("livenet")}
-        selectedCampaignId={selectedPay2SpeakCampaign?.txid ?? ""}
-        setContributionSats={setPay2SpeakContributionSats}
-        setFeeRate={setFeeRate}
-        setHandle={setPay2SpeakHandle}
-        setQuestion={setPay2SpeakQuestion}
-        setSelectedCampaignId={setPay2SpeakSelectedCampaignId}
-        setSpaceNumber={setPay2SpeakSpaceNumber}
-        setTargetSats={setPay2SpeakTargetSats}
-        setTheme={setTheme}
-        spaceNumber={pay2SpeakSpaceNumber}
-        split={pay2SpeakSplit}
-        status={status}
-        targetSats={pay2SpeakTargetSats}
-        theme={theme}
-        onRefresh={() => void refreshPay2Speak()}
-      />
-    );
-  }
-
   if (walletMode) {
     return (
       <TokenWalletApp
@@ -18097,12 +17130,6 @@ export default function App() {
         activeNetwork={network}
         busy={busy}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
-        pay2SpeakCampaigns={pay2SpeakCampaigns.filter(
-          (campaign) => campaign.network === "livenet",
-        )}
-        pay2SpeakFunding={pay2SpeakFunding.filter(
-          (funding) => funding.network === "livenet",
-        )}
         registryListings={idListings.filter(
           (listing) => listing.network === "livenet",
         )}
@@ -18141,11 +17168,6 @@ export default function App() {
           refreshDisabled
             ? undefined
             : () => {
-                if (activeFolder === "pay2speak") {
-                  void refreshPay2Speak();
-                  return;
-                }
-
                 if (
                   activeFolder === "token" ||
                   activeFolder === "wallet" ||
@@ -18392,17 +17414,6 @@ export default function App() {
               <strong>{ownerControlledIds.length}</strong>
             </button>
             <button
-              aria-current={activeFolder === "pay2speak"}
-              onClick={() => openFolder("pay2speak")}
-              type="button"
-            >
-              <span className="folder-label">
-                <Mic2 size={17} />
-                <span>Pay2Speak</span>
-              </span>
-              <strong>{pay2SpeakCampaigns.length}</strong>
-            </button>
-            <button
               aria-current={activeFolder === "token"}
               onClick={() => openFolder("token")}
               type="button"
@@ -18615,40 +17626,6 @@ export default function App() {
               void refreshToken(false, true);
               void refreshTokenBtcUsd();
             }}
-          />
-        ) : activeFolder === "pay2speak" ? (
-          <Pay2SpeakWorkspace
-            address={address}
-            busy={busy}
-            campaignBytes={pay2SpeakCampaignBytes}
-            campaigns={pay2SpeakCampaigns}
-            canCreateCampaign={canCreatePay2SpeakCampaign}
-            canFundCampaign={canFundPay2SpeakCampaign}
-            compact
-            contributionSats={pay2SpeakContributionSats}
-            createCampaign={createPay2SpeakCampaign}
-            creatorRouteAddress=""
-            feeRate={feeRate}
-            fundCampaign={fundPay2SpeakCampaign}
-            fundingBytes={pay2SpeakFundingBytes}
-            fundingRecords={pay2SpeakFunding}
-            handle={pay2SpeakHandle}
-            network={network}
-            question={pay2SpeakQuestion}
-            questions={pay2SpeakQuestions}
-            registryAddress={pay2SpeakRegistryAddress}
-            selectedCampaignId={selectedPay2SpeakCampaign?.txid ?? ""}
-            setContributionSats={setPay2SpeakContributionSats}
-            setFeeRate={setFeeRate}
-            setHandle={setPay2SpeakHandle}
-            setQuestion={setPay2SpeakQuestion}
-            setSelectedCampaignId={setPay2SpeakSelectedCampaignId}
-            setSpaceNumber={setPay2SpeakSpaceNumber}
-            setTargetSats={setPay2SpeakTargetSats}
-            spaceNumber={pay2SpeakSpaceNumber}
-            split={pay2SpeakSplit}
-            targetSats={pay2SpeakTargetSats}
-            onRefresh={() => void refreshPay2Speak()}
           />
         ) : activeFolder === "wallet" ? (
           <TokenWalletWorkspace
@@ -20071,8 +19048,7 @@ function ActivityWorkspace({
           <h2>Every ProofOfWork action with a txid.</h2>
           <p>
             Messages, replies, files, ID registry events, listings, seals,
-            delistings, purchases, Pay2Speak records, and token
-            events in one chain-readable log.
+            delistings, purchases, and token events in one chain-readable log.
           </p>
         </div>
         <form className="desktop-search activity-search" onSubmit={onSearch}>
@@ -23160,8 +22136,6 @@ function growthActualNetworkValue(
   records: PowIdRecord[],
   idActivity: PowActivityItem[],
   sales: PowIdMarketplaceSale[],
-  pay2SpeakCampaigns: Pay2SpeakCampaign[],
-  pay2SpeakFunding: Pay2SpeakFunding[],
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
   tokenTransfers: PowTokenTransfer[] = [],
@@ -23175,14 +22149,6 @@ function growthActualNetworkValue(
   );
   const confirmedSales = publicMarketplaceSales(sales).filter(
     (sale) => sale.confirmed && Date.parse(sale.createdAt) <= cutoffMs,
-  );
-  const confirmedPay2SpeakCampaigns = pay2SpeakCampaigns.filter(
-    (campaign) =>
-      campaign.confirmed && Date.parse(campaign.createdAt) <= cutoffMs,
-  );
-  const confirmedPay2SpeakFunding = pay2SpeakFunding.filter(
-    (funding) =>
-      funding.confirmed && Date.parse(funding.createdAt) <= cutoffMs,
   );
   const confirmedTokens = tokenDefinitions.filter(
     (token) => token.confirmed && Date.parse(token.createdAt) <= cutoffMs,
@@ -23212,15 +22178,6 @@ function growthActualNetworkValue(
     (total, sale) => total + sale.priceSats,
     0,
   );
-  const pay2SpeakFlowSats =
-    confirmedPay2SpeakCampaigns.reduce(
-      (total, campaign) => total + campaign.registrySats,
-      0,
-    ) +
-    confirmedPay2SpeakFunding.reduce(
-      (total, funding) => total + funding.grossSats,
-      0,
-    );
   const tokenCreationFlowSats = confirmedTokens.reduce(
     (total, token) => total + token.creationFeeSats,
     0,
@@ -23239,7 +22196,6 @@ function growthActualNetworkValue(
   const marketplaceSats =
     marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const pay2SpeakSats = pay2SpeakFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const tokenSats =
     (tokenCreationFlowSats + tokenMintFlowSats + tokenTransferFlowSats) *
     GROWTH_MODEL_INPUTS.valueMultiple;
@@ -23249,7 +22205,6 @@ function growthActualNetworkValue(
     driveSats +
     marketplaceSats +
     browserSats +
-    pay2SpeakSats +
     tokenSats;
   const years = Math.max(
     0,
@@ -23266,8 +22221,6 @@ function growthActualNetworkValue(
     mailSats,
     marketplaceSats,
     marketplaceVolumeSats,
-    pay2SpeakFlowSats,
-    pay2SpeakSats,
     powids,
     tokenCreationFlowSats,
     tokenMintFlowSats,
@@ -23310,8 +22263,6 @@ function growthActualValuePoints(
   records: PowIdRecord[],
   idActivity: PowActivityItem[],
   sales: PowIdMarketplaceSale[],
-  pay2SpeakCampaigns: Pay2SpeakCampaign[],
-  pay2SpeakFunding: Pay2SpeakFunding[],
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
   tokenTransfers: PowTokenTransfer[] = [],
@@ -23354,18 +22305,6 @@ function growthActualValuePoints(
     }
   }
 
-  for (const campaign of pay2SpeakCampaigns) {
-    if (campaign.confirmed) {
-      addEventTime(campaign.createdAt, campaign.title);
-    }
-  }
-
-  for (const funding of pay2SpeakFunding) {
-    if (funding.confirmed) {
-      addEventTime(funding.createdAt, `${shortAddress(funding.txid)} funding`);
-    }
-  }
-
   for (const token of tokenDefinitions) {
     if (token.confirmed) {
       addEventTime(token.createdAt, `${token.ticker} token created`);
@@ -23389,8 +22328,6 @@ function growthActualValuePoints(
     records,
     idActivity,
     sales,
-    pay2SpeakCampaigns,
-    pay2SpeakFunding,
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
@@ -23408,8 +22345,6 @@ function growthActualValuePoints(
       records,
       idActivity,
       sales,
-      pay2SpeakCampaigns,
-      pay2SpeakFunding,
       tokenDefinitions,
       tokenMints,
       tokenTransfers,
@@ -23434,8 +22369,6 @@ function growthActualValuePoints(
     records,
     idActivity,
     sales,
-    pay2SpeakCampaigns,
-    pay2SpeakFunding,
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
@@ -23520,10 +22453,6 @@ function growthActivityKindLabel(kind: PowActivityKind) {
     return "Drive";
   }
 
-  if (kind === "pay2speak-campaign" || kind === "pay2speak-funding") {
-    return "Pay2Speak";
-  }
-
   if (
     kind === "token-create" ||
     kind === "token-mint" ||
@@ -23540,8 +22469,6 @@ function growthActivityKindLabel(kind: PowActivityKind) {
 function confirmedComputerActionCount(
   records: PowIdRecord[],
   idActivity: PowActivityItem[],
-  pay2SpeakCampaigns: Pay2SpeakCampaign[],
-  pay2SpeakFunding: Pay2SpeakFunding[],
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
   tokenTransfers: PowTokenTransfer[] = [],
@@ -23555,10 +22482,6 @@ function confirmedComputerActionCount(
 
   records.forEach((record) => add(record.confirmed, record.txid));
   idActivity.forEach((item) => add(item.confirmed, item.txid));
-  pay2SpeakCampaigns.forEach((campaign) =>
-    add(campaign.confirmed, campaign.txid),
-  );
-  pay2SpeakFunding.forEach((funding) => add(funding.confirmed, funding.txid));
   tokenDefinitions.forEach((token) => add(token.confirmed, token.txid));
   tokenMints.forEach((mint) => add(mint.confirmed, mint.txid));
   tokenTransfers.forEach((transfer) => add(transfer.confirmed, transfer.txid));
@@ -23570,8 +22493,6 @@ function growthRealEventItems(
   records: PowIdRecord[],
   idActivity: PowActivityItem[],
   sales: PowIdMarketplaceSale[],
-  pay2SpeakCampaigns: Pay2SpeakCampaign[],
-  pay2SpeakFunding: Pay2SpeakFunding[],
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
   tokenTransfers: PowTokenTransfer[] = [],
@@ -23633,40 +22554,6 @@ function growthRealEventItems(
       network: sale.network,
       title: "Marketplace sale",
       txid: sale.txid,
-    });
-  }
-
-  for (const campaign of pay2SpeakCampaigns) {
-    if (!campaign.confirmed) {
-      continue;
-    }
-
-    setEvent({
-      amountLabel: `${campaign.registrySats.toLocaleString()} registry sats`,
-      createdAt: campaign.createdAt,
-      detail: `${campaign.title} opened by ${shortAddress(campaign.creatorAddress)}.`,
-      key: campaign.txid,
-      kind: "Pay2Speak",
-      network: campaign.network,
-      title: "Pay2Speak campaign",
-      txid: campaign.txid,
-    });
-  }
-
-  for (const funding of pay2SpeakFunding) {
-    if (!funding.confirmed) {
-      continue;
-    }
-
-    setEvent({
-      amountLabel: `${funding.grossSats.toLocaleString()} gross sats`,
-      createdAt: funding.createdAt,
-      detail: `${shortAddress(funding.donorAddress)} funded ${shortAddress(funding.creatorAddress)} with ${funding.creatorSats.toLocaleString()} creator sats.`,
-      key: funding.txid,
-      kind: "Pay2Speak",
-      network: funding.network,
-      title: funding.question ? "Funded question" : "Campaign funding",
-      txid: funding.txid,
     });
   }
 
@@ -24420,8 +23307,6 @@ function GrowthApp({
   activeNetwork,
   busy,
   idActivity,
-  pay2SpeakCampaigns,
-  pay2SpeakFunding,
   registryListings,
   registryRecords,
   registrySales,
@@ -24437,8 +23322,6 @@ function GrowthApp({
   activeNetwork: BitcoinNetwork;
   busy: boolean;
   idActivity: PowActivityItem[];
-  pay2SpeakCampaigns: Pay2SpeakCampaign[];
-  pay2SpeakFunding: Pay2SpeakFunding[];
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
   registrySales: PowIdMarketplaceSale[];
@@ -24476,8 +23359,6 @@ function GrowthApp({
       <GrowthWorkspace
         busy={busy}
         idActivity={idActivity}
-        pay2SpeakCampaigns={pay2SpeakCampaigns}
-        pay2SpeakFunding={pay2SpeakFunding}
         registryListings={registryListings}
         registryRecords={registryRecords}
         registrySales={registrySales}
@@ -24495,8 +23376,6 @@ function GrowthApp({
 function GrowthWorkspace({
   busy,
   idActivity,
-  pay2SpeakCampaigns,
-  pay2SpeakFunding,
   registryListings,
   registryRecords,
   registrySales,
@@ -24507,8 +23386,6 @@ function GrowthWorkspace({
 }: {
   busy: boolean;
   idActivity: PowActivityItem[];
-  pay2SpeakCampaigns: Pay2SpeakCampaign[];
-  pay2SpeakFunding: Pay2SpeakFunding[];
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
   registrySales: PowIdMarketplaceSale[];
@@ -24523,8 +23400,6 @@ function GrowthWorkspace({
     registryRecords,
     idActivity,
     registrySales,
-    pay2SpeakCampaigns,
-    pay2SpeakFunding,
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
@@ -24533,8 +23408,6 @@ function GrowthWorkspace({
     registryRecords,
     idActivity,
     registrySales,
-    pay2SpeakCampaigns,
-    pay2SpeakFunding,
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
@@ -24543,8 +23416,6 @@ function GrowthWorkspace({
     registryRecords,
     idActivity,
     registrySales,
-    pay2SpeakCampaigns,
-    pay2SpeakFunding,
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
@@ -24562,8 +23433,6 @@ function GrowthWorkspace({
   const confirmedComputerActions = confirmedComputerActionCount(
     registryRecords,
     idActivity,
-    pay2SpeakCampaigns,
-    pay2SpeakFunding,
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
@@ -24574,12 +23443,6 @@ function GrowthWorkspace({
   const browserActions = confirmedActivity.filter(isBrowserActivityItem).length;
   const driveActions = confirmedActivity.filter(
     (item) => item.kind === "file" && !isBrowserActivityItem(item),
-  ).length;
-  const confirmedPay2SpeakCampaigns = pay2SpeakCampaigns.filter(
-    (campaign) => campaign.confirmed,
-  ).length;
-  const confirmedPay2SpeakFunding = pay2SpeakFunding.filter(
-    (funding) => funding.confirmed,
   ).length;
   const confirmedTokenDefinitions = tokenDefinitions.filter(
     (token) => token.confirmed,
@@ -24602,7 +23465,7 @@ function GrowthWorkspace({
           <p>
             The blue line is modeled Bitcoin Computer network value. The green
             line is real confirmed mainnet value from IDs, Mail, Drive,
-            Marketplace, Browser, Pay2Speak, and Tokens.
+            Marketplace, Browser, and Tokens.
           </p>
         </div>
         <div className="growth-model-card">
@@ -24710,7 +23573,7 @@ function GrowthWorkspace({
           <h3>Blue is the success case. Green is Bitcoin history.</h3>
           <p>
             The model asks what the Bitcoin Computer can become if IDs, Mail,
-            Drive, Marketplace, Browser, Pay2Speak, and Tokens compound
+            Drive, Marketplace, Browser, and Tokens compound
             together. The real line only counts confirmed mainnet records that
             already exist.
           </p>
@@ -24720,9 +23583,8 @@ function GrowthWorkspace({
           <h3>Everything is valued in sats first.</h3>
           <p>
             IDs use n squared network value. Mail, Drive, Marketplace, Browser,
-            Pay2Speak, and Tokens use confirmed payment flow multiplied by
-            the same value multiple, then translated to USD with the Bitcoin
-            benchmark.
+            and Tokens use confirmed payment flow multiplied by the same value
+            multiple, then translated to USD with the Bitcoin benchmark.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -24730,8 +23592,7 @@ function GrowthWorkspace({
           <h3>The green line moves when Bitcoin confirms.</h3>
           <p>
             Registrations, messages, replies, file writes, HTML page writes,
-            buyer-funded marketplace sales, Pay2Speak campaigns, funded
-            questions, token creations, and token mints
+            buyer-funded marketplace sales, token creations, and token mints
             are pulled from live endpoints. Pending mempool events wait until
             they confirm.
           </p>
@@ -24938,25 +23799,6 @@ function GrowthWorkspace({
             )}
             name="Browser"
             note="HTML pages rendered from OP_RETURN message bodies or verified file attachments by txid."
-          />
-          <GrowthProductCard
-            actual={growthSats(actualValue.pay2SpeakSats)}
-            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.pay2SpeakSats, elapsedYears))} · ${actualValue.pay2SpeakFlowSats.toLocaleString()} gross sats · ${confirmedPay2SpeakCampaigns.toLocaleString()} campaigns · ${confirmedPay2SpeakFunding.toLocaleString()} funding events`}
-            icon={<Mic2 size={24} />}
-            modelFiveYear={growthSats(fiveYear.pay2SpeakSats)}
-            modelFiveYearLabel={growthUsd(
-              growthSatsToUsdAtYears(
-                fiveYear.pay2SpeakSats,
-                fiveYear.years,
-              ),
-            )}
-            modelLabel="network value"
-            modelOneYear={growthSats(oneYear.pay2SpeakSats)}
-            modelOneYearLabel={growthUsd(
-              growthSatsToUsdAtYears(oneYear.pay2SpeakSats, oneYear.years),
-            )}
-            name="Pay2Speak"
-            note="Creator funding, paid questions, and campaign receipts become measurable work value."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.tokenSats)}

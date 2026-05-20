@@ -1,6 +1,6 @@
 # ProofOfWork OP_RETURN Infrastructure
 
-ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol, `pwid1:` ID registry protocol, `pws1:` Pay2Speak protocol, `pwt1:` token protocol, and the staged `pwr1:` RUSH mint protocol.
+ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol, `pwid1:` ID registry protocol, `pwt1:` token protocol, and the staged `pwr1:` RUSH mint protocol.
 
 The current product direction is OP_RETURN only. Future protocol work should improve this OP_RETURN indexer and API before introducing any new carrier.
 
@@ -25,7 +25,6 @@ computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
 browser.proofofwork.me      -> public HTML browser by txid
 marketplace.proofofwork.me  -> standalone asset marketplace; IDs and token sale-ticket markets live
-pay2speak.proofofwork.me    -> standalone X Space crowdfunding app
 token.proofofwork.me        -> standalone token creation and mint app
 tokens.proofofwork.me       -> permanent redirect to https://token.proofofwork.me/
 wallet.proofofwork.me       -> standalone token wallet and transfer app
@@ -34,7 +33,7 @@ log.proofofwork.me          -> public Bitcoin Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, Token, Wallet, WORK, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Token, Wallet, WORK, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
@@ -105,7 +104,6 @@ On `localhost` and `127.0.0.1`, shared app navigation uses local route flags ins
 /?desktop=1
 /?browser=1
 /?marketplace=1
-/?pay2speak=1
 /?token=1
 /?work=1
 /?rush=1
@@ -122,7 +120,6 @@ VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
-VITE_PAY2SPEAK_ONLY=1 VITE_POW_API_BASE=https://pay2speak.proofofwork.me npm run build
 VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://token.proofofwork.me npm run build
 VITE_WALLET_ONLY=1 VITE_POW_API_BASE=https://wallet.proofofwork.me npm run build
 VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
@@ -141,7 +138,6 @@ GET /api/v1/registry?network=livenet
 GET /api/v1/log?network=livenet
 GET /api/v1/ids?network=livenet
 GET /api/v1/ids/:id?network=livenet
-GET /api/v1/pay2speak?network=livenet
 POST /api/v1/broadcast/tx
 POST /api/v1/broadcast/slipstream
 GET /api/v1/token?network=livenet
@@ -168,27 +164,16 @@ The log endpoint:
 
 - Starts from the canonical registry and all known ProofOfWork ID owner/receiver addresses.
 - Crawls the ProofOfWork mail/file address graph by reading `pwm1:` transactions, discovering senders and recipients, and expanding until the configured safety cap.
-- Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, attachments, Pay2Speak campaigns/funding, token creations, token mints, token transfers, token listings, token sales, and staged RUSH mints when enabled by the indexer.
+- Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, attachments, token creations, token mints, token transfers, token listings, token sales, and staged RUSH mints when enabled by the indexer.
 - Reports total indexed ProofOfWork protocol data bytes across all discovered app OP_RETURN payloads, including marketplace listing/seal/buy/delist records and staged RUSH mint records when enabled by the indexer.
 
 The Growth app:
 
-- Reads the same registry, log, Pay2Speak, and Token endpoints as the public app surfaces.
+- Reads the same registry, log, and Token endpoints as the public app surfaces.
 - Compares modeled Bitcoin Computer network value to confirmed chain-derived value in sats and USD.
-- Auto-refreshes confirmed registry, log, file, marketplace, Pay2Speak, and Token metrics while the page is visible.
+- Auto-refreshes confirmed registry, log, file, marketplace, and Token metrics while the page is visible.
 - Treats each modeled product consistently: real input, usage rate, value assumption, fee elasticity, and blockspace accounting.
 - Feeds the permanent WORK floor: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. Pending records are visible but do not change this canonical floor until confirmed.
-
-The Pay2Speak endpoint:
-
-- Scans the Pay2Speak registry address `bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4`.
-- Reads confirmed and pending `pws1:` records.
-- Reconstructs campaigns from `pws1:c:<space-number>:<x-handle>:<target-gross-sats>` creation transactions.
-- Defines the campaign ID as the creation txid and infers the creator payout address from the transaction inputs.
-- Reconstructs funding from `pws1:f:<campaign-id>:<question-base64url?>` transactions.
-- Counts valid funding by gross donor spend, using the required split before OP_RETURN: below 5,460 sats, 1,000 sats to registry and the remainder to creator; at or above 5,460 sats, 10% to registry and 90% to creator.
-- Exposes optional questions decoded from base64url and ranked by attached gross sats.
-- Treats pending Pay2Speak records as visibility only; confirmed records are canonical.
 
 The token endpoint:
 
@@ -321,19 +306,6 @@ Mainnet canonical registry:
 
 ```text
 bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e
-```
-
-Pay2Speak:
-
-```text
-pws1:c:<space-number>:<x-handle>:<target-gross-sats>
-pws1:f:<campaign-id>:<question-base64url?>
-```
-
-Mainnet Pay2Speak registry:
-
-```text
-bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4
 ```
 
 Tokens:

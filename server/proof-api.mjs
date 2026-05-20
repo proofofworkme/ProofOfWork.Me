@@ -103,14 +103,11 @@ const SLIPSTREAM_CLIENT_CODE_REQUIRED_MESSAGE =
 
 const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
-const PAY2SPEAK_PROTOCOL_PREFIX = "pws1:";
 const TOKEN_PROTOCOL_PREFIX = "pwt1:";
 const RUSH_PROTOCOL_PREFIX = "pwr1:";
 const RUSH_MINT_PAYLOAD = "pwr1:m:rush";
 const ID_REGISTRATION_PRICE_SATS = 1000;
 const ID_MUTATION_PRICE_SATS = 546;
-const PAY2SPEAK_REGISTRY_PRICE_SATS = 1000;
-const PAY2SPEAK_SPLIT_THRESHOLD_SATS = 5460;
 const TOKEN_CREATE_ACTION = "create";
 const TOKEN_MINT_ACTION = "mint";
 const TOKEN_SEND_ACTION = "send";
@@ -165,9 +162,6 @@ const ID_LISTING_ANCHOR_SIGHASH_TYPE =
 const MAX_ATTACHMENT_BYTES = 60_000;
 const ID_REGISTRY_ADDRESSES = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
-};
-const PAY2SPEAK_REGISTRY_ADDRESSES = {
-  livenet: "bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4",
 };
 const TOKEN_INDEX_ADDRESSES = {
   livenet: "1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn",
@@ -242,7 +236,6 @@ function shouldPersistJsonCache(cacheKey) {
   return (
     cacheKey === "activity:livenet" ||
     cacheKey === "registry:livenet" ||
-    cacheKey === "pay2speak:livenet" ||
     cacheKey.startsWith("token-summary:livenet:") ||
     cacheKey.startsWith("token:livenet:") ||
     cacheKey === "rush:livenet"
@@ -557,10 +550,6 @@ function pendingMempoolBases(network) {
 
 function registryAddressForNetwork(network) {
   return ID_REGISTRY_ADDRESSES[network] ?? "";
-}
-
-function pay2SpeakRegistryAddressForNetwork(network) {
-  return PAY2SPEAK_REGISTRY_ADDRESSES[network] ?? "";
 }
 
 function tokenIndexAddressForNetwork(network) {
@@ -1483,7 +1472,6 @@ function proofProtocolDataBytesForVout(vout) {
       (message) =>
         message.startsWith(PROTOCOL_PREFIX) ||
         message.startsWith(ID_PROTOCOL_PREFIX) ||
-        message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX) ||
         message.startsWith(TOKEN_PROTOCOL_PREFIX) ||
         message.startsWith(RUSH_PROTOCOL_PREFIX),
     )
@@ -1507,18 +1495,6 @@ function firstIdProtocolOutputIndex(vout) {
     }
 
     return decodedProtocolMessages([output], ID_PROTOCOL_PREFIX).length > 0;
-  });
-}
-
-function firstPay2SpeakOutputIndex(vout) {
-  return vout.findIndex((output) => {
-    if (output.scriptpubkey_type !== "op_return") {
-      return false;
-    }
-
-    return (
-      decodedProtocolMessages([output], PAY2SPEAK_PROTOCOL_PREFIX).length > 0
-    );
   });
 }
 
@@ -1809,22 +1785,6 @@ function registryPaymentAmount(vout, registryAddress) {
   return vout.reduce((total, output, index) => {
     if (
       output.scriptpubkey_address === registryAddress &&
-      typeof output.value === "number" &&
-      output.value > 0 &&
-      (protocolIndex === -1 || index < protocolIndex)
-    ) {
-      return total + output.value;
-    }
-
-    return total;
-  }, 0);
-}
-
-function pay2SpeakPaymentAmountBeforeProtocol(vout, address) {
-  const protocolIndex = firstPay2SpeakOutputIndex(vout);
-  return vout.reduce((total, output, index) => {
-    if (
-      output.scriptpubkey_address === address &&
       typeof output.value === "number" &&
       output.value > 0 &&
       (protocolIndex === -1 || index < protocolIndex)
@@ -2828,89 +2788,6 @@ function rushStateFromTransactions(txs, registryAddress, network) {
     registryAddress,
     stats: rushStatsFromMints(sortedMints),
   };
-}
-
-function normalizeXHandle(value) {
-  return String(value ?? "")
-    .trim()
-    .replace(/^@+/u, "")
-    .toLowerCase();
-}
-
-function pay2SpeakFundingSplit(grossSats) {
-  const gross = Math.floor(grossSats);
-  if (!Number.isSafeInteger(gross) || gross <= PAY2SPEAK_REGISTRY_PRICE_SATS) {
-    throw new Error("Contribution must be greater than 1,000 sats.");
-  }
-
-  const registrySats =
-    gross < PAY2SPEAK_SPLIT_THRESHOLD_SATS
-      ? PAY2SPEAK_REGISTRY_PRICE_SATS
-      : Math.floor(gross / 10);
-  return { creatorSats: gross - registrySats, grossSats: gross, registrySats };
-}
-
-function parsePay2SpeakPayload(message) {
-  if (!message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX)) {
-    return null;
-  }
-
-  const parts = message.slice(PAY2SPEAK_PROTOCOL_PREFIX.length).split(":");
-  if (parts[0] === "c" && parts.length === 4) {
-    const spaceNumber = Number(parts[1]);
-    const handle = normalizeXHandle(parts[2]);
-    const targetGrossSats = Number(parts[3]);
-    if (
-      !Number.isSafeInteger(spaceNumber) ||
-      spaceNumber < 0 ||
-      !/^[a-z0-9_]{1,15}$/u.test(handle) ||
-      !Number.isSafeInteger(targetGrossSats) ||
-      targetGrossSats <= PAY2SPEAK_REGISTRY_PRICE_SATS
-    ) {
-      return null;
-    }
-
-    return { handle, kind: "campaign", spaceNumber, targetGrossSats };
-  }
-
-  if (
-    parts[0] === "f" &&
-    parts.length >= 2 &&
-    parts.length <= 3 &&
-    /^[0-9a-fA-F]{64}$/u.test(parts[1] ?? "")
-  ) {
-    let question = "";
-    try {
-      question = parts[2]
-        ? decodeTextBase64Url(parts[2]).trim().slice(0, 500)
-        : "";
-    } catch {
-      return null;
-    }
-
-    return {
-      campaignId: parts[1].toLowerCase(),
-      kind: "funding",
-      question: question || undefined,
-    };
-  }
-
-  return null;
-}
-
-function pay2SpeakTitle(handle, spaceNumber) {
-  return `@${handle} Space #${spaceNumber}`;
-}
-
-function comparePay2SpeakCampaigns(left, right) {
-  if (left.confirmed !== right.confirmed) {
-    return Number(right.confirmed) - Number(left.confirmed);
-  }
-
-  return (
-    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-    left.txid.localeCompare(right.txid)
-  );
 }
 
 function idEventMinimumPaymentSats(kind) {
@@ -4196,65 +4073,6 @@ function mailActivityItemsFromTransactions(txs, network) {
     .filter(Boolean);
 }
 
-function pay2SpeakActivityItemsFromState(state, registryAddress) {
-  const campaigns = (state.campaigns ?? []).map((campaign) => ({
-    amountSats: campaign.registrySats,
-    actor: campaign.creatorAddress,
-    confirmed: campaign.confirmed,
-    counterparty: registryAddress,
-    createdAt: campaign.createdAt,
-    dataBytes: campaign.dataBytes,
-    description: `${campaign.title} opened by ${shortAddress(campaign.creatorAddress)} with a ${campaign.targetGrossSats.toLocaleString()} sat target.`,
-    detail: `Space ${campaign.spaceNumber.toLocaleString()} · @${campaign.handle}`,
-    kind: "pay2speak-campaign",
-    network: campaign.network,
-    tags: [
-      activityStatusTag(campaign.confirmed),
-      networkLabel(campaign.network),
-      "Pay2Speak",
-      "Campaign",
-      `${campaign.registrySats.toLocaleString()} registry sats`,
-    ],
-    title: campaign.confirmed
-      ? "Pay2Speak campaign"
-      : "Pay2Speak campaign pending",
-    txid: campaign.txid,
-  }));
-
-  const funding = (state.funding ?? []).map((item) => ({
-    amountSats: item.grossSats,
-    actor: item.donorAddress,
-    confirmed: item.confirmed,
-    counterparty: item.creatorAddress,
-    createdAt: item.createdAt,
-    dataBytes: item.dataBytes,
-    description: `${shortAddress(item.donorAddress)} funded ${shortAddress(item.creatorAddress)} with ${item.grossSats.toLocaleString()} gross sats.`,
-    detail: item.question
-      ? `Question: ${compactText(item.question, 120)}`
-      : `Campaign ${shortAddress(item.campaignId)}`,
-    kind: "pay2speak-funding",
-    network: item.network,
-    tags: [
-      activityStatusTag(item.confirmed),
-      networkLabel(item.network),
-      "Pay2Speak",
-      item.question ? "Question" : "Funding",
-      `${item.creatorSats.toLocaleString()} creator sats`,
-      `${item.registrySats.toLocaleString()} registry sats`,
-    ],
-    title: item.confirmed
-      ? item.question
-        ? "Funded question"
-        : "Campaign funding"
-      : item.question
-        ? "Funded question pending"
-        : "Campaign funding pending",
-    txid: item.txid,
-  }));
-
-  return [...campaigns, ...funding];
-}
-
 function tokenActivityItemsFromState(state, indexAddress) {
   const creations = (state.tokens ?? []).map((token) => ({
     amountSats: token.creationFeeSats,
@@ -4478,15 +4296,6 @@ function activityAddressesFromMailTransactions(txs, network) {
   }
 
   return addresses;
-}
-
-function cachedPay2SpeakPayload(network) {
-  return cachedPayload(
-    `payload:pay2speak:${network}`,
-    () => pay2SpeakPayload(network),
-    DERIVED_APP_CACHE_TTL_MS,
-    DERIVED_APP_CACHE_STALE_MS,
-  );
 }
 
 function cachedTokenPayload(network, tokenScope = "") {
@@ -4776,21 +4585,12 @@ async function globalActivityPayload(network, fresh = false) {
   }
 
   const mailActivity = mailActivityItemsFromTransactions(mailTxs, network);
-  const [pay2SpeakState, tokenState, rushState] = await Promise.all([
-    (fresh ? pay2SpeakPayload(network) : cachedPay2SpeakPayload(network)).catch(
-      () => null,
-    ),
+  const [tokenState, rushState] = await Promise.all([
     (fresh ? tokenPayload(network) : cachedTokenPayload(network)).catch(
       () => null,
     ),
     (fresh ? rushPayload(network) : cachedRushPayload(network)).catch(() => null),
   ]);
-  const pay2SpeakActivity = pay2SpeakState
-    ? pay2SpeakActivityItemsFromState(
-        pay2SpeakState,
-        pay2SpeakState.registryAddress ?? "",
-      )
-    : [];
   const tokenActivity = tokenState
     ? tokenActivityItemsFromState(tokenState, tokenState.indexAddress ?? "")
     : [];
@@ -4798,7 +4598,6 @@ async function globalActivityPayload(network, fresh = false) {
   const activity = dedupeActivityItems([
     ...(registry.activity ?? []),
     ...mailActivity,
-    ...pay2SpeakActivity,
     ...tokenActivity,
     ...rushActivity,
   ]);
@@ -4806,9 +4605,6 @@ async function globalActivityPayload(network, fresh = false) {
   const fileActions = activity.filter((item) => item.kind === "file").length;
   const messageActions = activity.filter(
     (item) => item.kind === "mail" || item.kind === "reply",
-  ).length;
-  const pay2SpeakActions = activity.filter((item) =>
-    String(item.kind).startsWith("pay2speak-"),
   ).length;
   const tokenActions = activity.filter((item) =>
     String(item.kind).startsWith("token-"),
@@ -4831,7 +4627,6 @@ async function globalActivityPayload(network, fresh = false) {
       dataBytes,
       files: fileActions,
       messages: messageActions,
-      pay2Speak: pay2SpeakActions,
       pending: activity.filter((item) => !item.confirmed).length,
       registry: (registry.activity ?? []).length,
       rush: rushActions,
@@ -5793,200 +5588,11 @@ async function registryPayload(network) {
   };
 }
 
-function pay2SpeakStateFromTransactions(txs, registryAddress, network) {
-  const campaignMap = new Map();
-  const candidateFunding = [];
-
-  for (const tx of txs) {
-    const txid = transactionTxid(tx);
-    if (!txid) {
-      continue;
-    }
-
-    const vin = Array.isArray(tx.vin) ? tx.vin : [];
-    const vout = Array.isArray(tx.vout) ? tx.vout : [];
-    const messages = decodedProtocolMessages(vout, PAY2SPEAK_PROTOCOL_PREFIX);
-    if (messages.length === 0) {
-      continue;
-    }
-
-    const confirmed = transactionConfirmed(tx);
-    const createdAt = new Date(
-      typeof tx.status?.block_time === "number"
-        ? tx.status.block_time * 1000
-        : Date.now(),
-    ).toISOString();
-    const actorAddress = inputAddresses(vin)[0] ?? "Unknown";
-    const registrySats = pay2SpeakPaymentAmountBeforeProtocol(
-      vout,
-      registryAddress,
-    );
-
-    for (const message of messages) {
-      const parsed = parsePay2SpeakPayload(message);
-      if (!parsed) {
-        continue;
-      }
-
-      if (parsed.kind === "campaign") {
-        if (
-          registrySats < PAY2SPEAK_REGISTRY_PRICE_SATS ||
-          !isValidBitcoinAddress(actorAddress, network)
-        ) {
-          continue;
-        }
-
-        campaignMap.set(txid, {
-          confirmed,
-          createdAt,
-          creatorAddress: actorAddress,
-          dataBytes: proofProtocolDataBytesForVout(vout),
-          fundedGrossSats: 0,
-          fundingCount: 0,
-          handle: parsed.handle,
-          network,
-          registrySats,
-          spaceNumber: parsed.spaceNumber,
-          status: "Funding",
-          targetGrossSats: parsed.targetGrossSats,
-          title: pay2SpeakTitle(parsed.handle, parsed.spaceNumber),
-          txid,
-        });
-        continue;
-      }
-
-      candidateFunding.push({
-        campaignId: parsed.campaignId,
-        confirmed,
-        createdAt,
-        dataBytes: proofProtocolDataBytesForVout(vout),
-        donorAddress: actorAddress,
-        network,
-        question: parsed.question,
-        registrySats,
-        txid,
-      });
-    }
-  }
-
-  const funding = candidateFunding.flatMap((candidate) => {
-    const campaign = campaignMap.get(candidate.campaignId);
-    if (!campaign) {
-      return [];
-    }
-
-    const tx = txs.find((item) => transactionTxid(item) === candidate.txid);
-    const vout = Array.isArray(tx?.vout) ? tx.vout : [];
-    const creatorSats = pay2SpeakPaymentAmountBeforeProtocol(
-      vout,
-      campaign.creatorAddress,
-    );
-    const grossSats = creatorSats + candidate.registrySats;
-    let split;
-    try {
-      split = pay2SpeakFundingSplit(grossSats);
-    } catch {
-      return [];
-    }
-
-    if (
-      split.registrySats !== candidate.registrySats ||
-      split.creatorSats !== creatorSats
-    ) {
-      return [];
-    }
-
-    return [
-      {
-        ...candidate,
-        creatorAddress: campaign.creatorAddress,
-        creatorSats,
-        grossSats,
-      },
-    ];
-  });
-
-  for (const item of funding) {
-    const campaign = campaignMap.get(item.campaignId);
-    if (!campaign) {
-      continue;
-    }
-
-    campaign.fundedGrossSats += item.grossSats;
-    campaign.fundingCount += 1;
-    campaign.status =
-      campaign.fundedGrossSats >= campaign.targetGrossSats
-        ? "Funded"
-        : "Funding";
-  }
-
-  const questions = funding
-    .filter((item) => item.question)
-    .map((item) => ({
-      campaignId: item.campaignId,
-      confirmed: item.confirmed,
-      createdAt: item.createdAt,
-      grossSats: item.grossSats,
-      question: item.question,
-      txid: item.txid,
-    }))
-    .sort(
-      (left, right) =>
-        right.grossSats - left.grossSats ||
-        Date.parse(right.createdAt) - Date.parse(left.createdAt),
-    );
-
-  return {
-    campaigns: [...campaignMap.values()].sort(comparePay2SpeakCampaigns),
-    funding: funding.sort(
-      (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
-    ),
-    questions,
-  };
-}
-
 function transactionInputAddresses(vin) {
   return (Array.isArray(vin) ? vin : [])
     .map((input) => input?.prevout?.scriptpubkey_address)
     .filter((address) => typeof address === "string" && address);
 }
-async function pay2SpeakPayload(network) {
-  const registryAddress = pay2SpeakRegistryAddressForNetwork(network);
-  if (!registryAddress) {
-    return {
-      campaigns: [],
-      funding: [],
-      indexedAt: new Date().toISOString(),
-      network,
-      questions: [],
-      registryAddress: "",
-    };
-  }
-
-  const txs = await fetchRegistryTransactions(registryAddress, network);
-  const state = pay2SpeakStateFromTransactions(txs, registryAddress, network);
-  return {
-    ...state,
-    indexedAt: new Date().toISOString(),
-    network,
-    registryAddress,
-    source: mempoolBase(network),
-    stats: {
-      campaigns: state.campaigns.length,
-      confirmedCampaigns: state.campaigns.filter(
-        (campaign) => campaign.confirmed,
-      ).length,
-      funding: state.funding.length,
-      grossSats: state.campaigns.reduce(
-        (total, campaign) => total + campaign.fundedGrossSats,
-        0,
-      ),
-      questions: state.questions.length,
-      transactions: txs.length,
-    },
-  };
-}
-
 async function tokenPayload(network, tokenScope = "") {
   const scope = normalizeTokenScope(tokenScope);
   const indexAddress = tokenIndexAddressForNetwork(network);
@@ -6198,8 +5804,6 @@ function growthActualNetworkValue(
   records,
   idActivity,
   sales,
-  pay2SpeakCampaigns,
-  pay2SpeakFunding,
   tokenDefinitions,
   tokenMints,
   cutoffMs = Date.now(),
@@ -6212,13 +5816,6 @@ function growthActualNetworkValue(
   );
   const confirmedSales = publicMarketplaceSales(sales).filter(
     (sale) => sale.confirmed && Date.parse(sale.createdAt) <= cutoffMs,
-  );
-  const confirmedPay2SpeakCampaigns = pay2SpeakCampaigns.filter(
-    (campaign) =>
-      campaign.confirmed && Date.parse(campaign.createdAt) <= cutoffMs,
-  );
-  const confirmedPay2SpeakFunding = pay2SpeakFunding.filter(
-    (funding) => funding.confirmed && Date.parse(funding.createdAt) <= cutoffMs,
   );
   const confirmedTokens = tokenDefinitions.filter(
     (token) => token.confirmed && Date.parse(token.createdAt) <= cutoffMs,
@@ -6244,15 +5841,6 @@ function growthActualNetworkValue(
     (total, sale) => total + sale.priceSats,
     0,
   );
-  const pay2SpeakFlowSats =
-    confirmedPay2SpeakCampaigns.reduce(
-      (total, campaign) => total + campaign.registrySats,
-      0,
-    ) +
-    confirmedPay2SpeakFunding.reduce(
-      (total, funding) => total + funding.grossSats,
-      0,
-    );
   const tokenCreationFlowSats = confirmedTokens.reduce(
     (total, token) => total + token.creationFeeSats,
     0,
@@ -6267,7 +5855,6 @@ function growthActualNetworkValue(
   const marketplaceSats =
     marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const pay2SpeakSats = pay2SpeakFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const tokenSats =
     (tokenCreationFlowSats + tokenMintFlowSats) *
     GROWTH_MODEL_INPUTS.valueMultiple;
@@ -6277,7 +5864,6 @@ function growthActualNetworkValue(
     driveSats +
     marketplaceSats +
     browserSats +
-    pay2SpeakSats +
     tokenSats;
   const years = Math.max(
     0,
@@ -6294,8 +5880,6 @@ function growthActualNetworkValue(
     mailSats,
     marketplaceSats,
     marketplaceVolumeSats,
-    pay2SpeakFlowSats,
-    pay2SpeakSats,
     powids,
     tokenCreationFlowSats,
     tokenMintFlowSats,
@@ -6333,8 +5917,6 @@ function growthActualValuePoints(
   records,
   idActivity,
   sales,
-  pay2SpeakCampaigns,
-  pay2SpeakFunding,
   tokenDefinitions,
   tokenMints,
   options = {},
@@ -6376,18 +5958,6 @@ function growthActualValuePoints(
     }
   }
 
-  for (const campaign of pay2SpeakCampaigns) {
-    if (campaign.confirmed) {
-      addEventTime(campaign.createdAt, campaign.title);
-    }
-  }
-
-  for (const funding of pay2SpeakFunding) {
-    if (funding.confirmed) {
-      addEventTime(funding.createdAt, `${shortAddress(funding.txid)} funding`);
-    }
-  }
-
   for (const token of tokenDefinitions) {
     if (token.confirmed) {
       addEventTime(token.createdAt, `${token.ticker} token created`);
@@ -6405,8 +5975,6 @@ function growthActualValuePoints(
     records,
     idActivity,
     sales,
-    pay2SpeakCampaigns,
-    pay2SpeakFunding,
     tokenDefinitions,
     tokenMints,
     startMs,
@@ -6423,8 +5991,6 @@ function growthActualValuePoints(
       records,
       idActivity,
       sales,
-      pay2SpeakCampaigns,
-      pay2SpeakFunding,
       tokenDefinitions,
       tokenMints,
       createdMs,
@@ -6448,8 +6014,6 @@ function growthActualValuePoints(
     records,
     idActivity,
     sales,
-    pay2SpeakCampaigns,
-    pay2SpeakFunding,
     tokenDefinitions,
     tokenMints,
   );
@@ -6501,19 +6065,9 @@ async function workFloorPayload(network, fresh = false) {
     sales: [],
     source: mempoolBase(network),
   };
-  const emptyPay2SpeakState = {
-    campaigns: [],
-    funding: [],
-    indexedAt: new Date().toISOString(),
-    network,
-    questions: [],
-    registryAddress: pay2SpeakRegistryAddressForNetwork(network),
-    source: mempoolBase(network),
-  };
   const [
     registryState,
     computerActivity,
-    pay2SpeakState,
     tokenState,
     workTokenState,
   ] = await Promise.all([
@@ -6526,14 +6080,6 @@ async function workFloorPayload(network, fresh = false) {
       emptyRegistryState,
     ),
     fastGlobalActivityPayload(network),
-    fastJsonBackedPayload(
-      `pay2speak:${network}`,
-      `payload:pay2speak:${network}`,
-      () => pay2SpeakPayload(network),
-      DERIVED_APP_CACHE_TTL_MS,
-      DERIVED_APP_CACHE_STALE_MS,
-      emptyPay2SpeakState,
-    ),
     fastCachedTokenPayload(network),
     fastCachedTokenPayload(network, WORK_TOKEN_ID),
   ]);
@@ -6546,8 +6092,6 @@ async function workFloorPayload(network, fresh = false) {
     registryState.records ?? [],
     activityForGrowth,
     registryState.sales ?? [],
-    pay2SpeakState.campaigns ?? [],
-    pay2SpeakState.funding ?? [],
     tokenState.tokens ?? [],
     tokenState.mints ?? [],
   );
@@ -6825,8 +6369,6 @@ async function handleRequest(request, response) {
       if (freshRead) {
         clearResponseCache(
           `activity:${network}`,
-          `pay2speak:${network}`,
-          `payload:pay2speak:${network}`,
           `token:${network}:`,
           `payload:token:${network}:`,
           `rush:${network}`,
@@ -6850,30 +6392,6 @@ async function handleRequest(request, response) {
         EXPENSIVE_READ_CACHE_CONTROL,
         ACTIVITY_CACHE_TTL_MS,
         ACTIVITY_CACHE_STALE_MS,
-      );
-      return;
-    }
-
-    if (url.pathname === "/api/v1/pay2speak") {
-      if (freshRead) {
-        clearResponseCache(
-          `pay2speak:${network}`,
-          `payload:pay2speak:${network}`,
-        );
-        refreshedJsonResponse(
-          response,
-          `pay2speak:${network}`,
-          await pay2SpeakPayload(network),
-          FRESH_READ_CACHE_CONTROL,
-        );
-        return;
-      }
-
-      await cachedJsonResponse(
-        response,
-        `pay2speak:${network}`,
-        () => pay2SpeakPayload(network),
-        READ_CACHE_CONTROL,
       );
       return;
     }
@@ -7108,12 +6626,6 @@ function prewarmExpensiveReadCaches() {
     () => registryPayload("livenet"),
     REGISTRY_CACHE_TTL_MS,
     REGISTRY_CACHE_STALE_MS,
-  );
-  warmJsonCache(
-    "pay2speak:livenet",
-    () => pay2SpeakPayload("livenet"),
-    DERIVED_APP_CACHE_TTL_MS,
-    DERIVED_APP_CACHE_STALE_MS,
   );
   warmJsonCache(
     "token:livenet:",

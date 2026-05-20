@@ -7,7 +7,6 @@ export { shortAddress } from "./formatting/shortAddress";
 export { tokenSatsPerUnit } from "./formatting/tokenSatsPerUnit";
 export { tokenUsd } from "./formatting/tokenUsd";
 export { isPlainRecord } from "./records/isPlainRecord";
-export { pay2SpeakCreatorRouteAddress } from "./routing/pay2SpeakCreatorRouteAddress";
 export { tokenRouteTarget } from "./routing/tokenRouteTarget";
 export { normalizeSearchQuery } from "./search/normalizeSearchQuery";
 export { searchIncludes } from "./search/searchIncludes";

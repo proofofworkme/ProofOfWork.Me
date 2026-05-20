@@ -34,7 +34,6 @@ computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
 browser.proofofwork.me      -> public HTML browser by txid
 marketplace.proofofwork.me  -> standalone ID marketplace
-pay2speak.proofofwork.me    -> standalone X Space crowdfunding app
 token.proofofwork.me        -> standalone token creation and mint app
 tokens.proofofwork.me       -> permanent redirect to https://token.proofofwork.me/
 wallet.proofofwork.me       -> standalone token wallet and transfer app
@@ -51,7 +50,6 @@ http://localhost:5173/?id-launch=1
 http://localhost:5173/?desktop=1
 http://localhost:5173/?browser=1
 http://localhost:5173/?marketplace=1
-http://localhost:5173/?pay2speak=1
 http://localhost:5173/?token=1
 http://localhost:5173/?work=1
 http://localhost:5173/?log=1
@@ -59,10 +57,10 @@ http://localhost:5173/?growth=1
 ```
 
 `desktop.proofofwork.me`, `browser.proofofwork.me`,
-`marketplace.proofofwork.me`, `pay2speak.proofofwork.me`,
-`token.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, and
-`growth.proofofwork.me` should remain standalone public surfaces, not hidden
-tabs that require the full Computer mailbox shell.
+`marketplace.proofofwork.me`, `token.proofofwork.me`,
+`wallet.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, and
+`growth.proofofwork.me` should remain standalone public surfaces, not hidden tabs
+that require the full Computer mailbox shell.
 
 Future on-chain app anchoring should verify releases without changing the canonical ID registry address or `pwid1:r2` format.
 
