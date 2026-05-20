@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+<rect width="1600" height="900" fill="#f8fafc"/>
+<text x="80" y="82" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="56" font-weight="850" fill="#0f172a">What is compounding?</text>
+<text x="82" y="126" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25" font-weight="500" fill="#475569">More agents, more IDs, lower fees, finite blockspace, then Bitcoin reprices the result.</text>
+<rect x="80" y="205" width="330" height="360" rx="22" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<rect x="80" y="205" width="330" height="12" rx="6" fill="#0f766e"/>
+<text x="108" y="270" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="750" fill="#0f172a">1. Agents appear</text>
+<text x="108" y="340" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="43" font-weight="850" fill="#0f766e">51% of nodes</text>
+<text x="108" y="415" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">Bitcoin nodes grow.</text>
+<text x="108" y="446" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">Agent nodes inherit PowIDs.</text>
+<text x="108" y="477" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">Every PowID becomes</text>
+<text x="108" y="508" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">addressable.</text>
+<rect x="455" y="205" width="330" height="360" rx="22" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<rect x="455" y="205" width="330" height="12" rx="6" fill="#2563eb"/>
+<text x="483" y="270" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="750" fill="#0f172a">2. Identity compounds</text>
+<text x="483" y="340" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="43" font-weight="850" fill="#2563eb">n squared</text>
+<text x="483" y="415" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">More PowIDs create more</text>
+<text x="483" y="446" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">possible relationships.</text>
+<text x="483" y="477" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">The graph becomes</text>
+<text x="483" y="508" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">the asset.</text>
+<rect x="830" y="205" width="330" height="360" rx="22" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<rect x="830" y="205" width="330" height="12" rx="6" fill="#c2410c"/>
+<text x="858" y="270" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="750" fill="#0f172a">3. Usage hits blockspace</text>
+<text x="858" y="340" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="43" font-weight="850" fill="#c2410c">52.56B vB/year</text>
+<text x="858" y="415" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">Write demand compounds.</text>
+<text x="858" y="446" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">Bitcoin blockspace is finite.</text>
+<text x="858" y="477" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">Usage becomes scarce</text>
+<text x="858" y="508" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">at the ceiling.</text>
+<rect x="1205" y="205" width="330" height="360" rx="22" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<rect x="1205" y="205" width="330" height="12" rx="6" fill="#7c3aed"/>
+<text x="1233" y="270" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="750" fill="#0f172a">4. Bitcoin reprices it</text>
+<text x="1233" y="340" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="43" font-weight="850" fill="#7c3aed">log + vol</text>
+<text x="1233" y="415" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">Sats/BTC value is translated</text>
+<text x="1233" y="446" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">to USD with Bitcoin&#39;s 10Y</text>
+<text x="1233" y="477" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" fill="#334155">log growth and volatility.</text>
+<rect x="160" y="635" width="1280" height="96" rx="24" fill="#0f172a"/>
+<text x="800" y="680" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="32" font-weight="800" fill="#ffffff">Native value is IDs + Mail + Drive + Marketplace + Browser in sats/BTC.</text>
+<text x="800" y="720" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="500" fill="#cbd5e1">USD value is a translation layer after Bitcoin&#39;s historical growth and volatility are applied.</text>
+<text x="80" y="848" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="500" fill="#64748b">ProofOfWork.Me Bitcoin Computer Model | generated from output/bitcoin-computer-agent-adoption-model.md</text>
+</svg>

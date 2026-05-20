@@ -1,0 +1,5 @@
+Read `SOUL.md` first.
+
+ProofOfWork.Me agents should use `SOUL.md` as operating memory and voice, then use `README.md`, `PROOFOFWORK_IDS.md`, `OP_RETURN_INFRASTRUCTURE.md`, and `MAIL_ORGANIZATION.md` as protocol/product truth.
+
+Protocol docs, source code, and explicit user instructions override `SOUL.md` when they conflict.

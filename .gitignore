@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.vite/
+.env
+.env.local
+npm-debug.log*
+dev-server.*.log
+
+# Local investor/fundraising materials. Do not commit or upload.
+*_ANGEL_DECK.md
+*_GENERAL_DECK.md
+*_Angel_Deck.pptx
+*_General_Deck.pptx
+*.pptx
+*.key
+.~lock*.pptx#
+scripts/create-round13-deck.mjs
+scripts/create-general-deck.mjs

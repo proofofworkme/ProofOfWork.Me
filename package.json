@@ -1,0 +1,32 @@
+{
+  "name": "proofofwork-me",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "dev:prod-api": "vite --host 0.0.0.0 --mode prod-api",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "audit:ids": "node scripts/audit-id-registry.mjs",
+    "deck:general": "node scripts/build-general-deck.mjs",
+    "rank:powids": "node scripts/rank-powid-transactions.mjs",
+    "proof-api": "node server/proof-api.mjs"
+  },
+  "dependencies": {
+    "@bitcoinerlab/secp256k1": "^1.2.0",
+    "bip322-js": "^3.0.0",
+    "bitcoinjs-lib": "^7.0.1",
+    "buffer": "^6.0.3",
+    "lucide-react": "^1.14.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.0.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  }
+}

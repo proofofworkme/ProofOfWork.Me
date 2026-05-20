@@ -1,0 +1,1 @@
+export const MAX_DATA_CARRIER_BYTES = 100_000;

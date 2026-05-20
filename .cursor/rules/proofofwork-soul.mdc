@@ -1,0 +1,10 @@
+---
+description: ProofOfWork.Me agent bootstrap
+alwaysApply: true
+---
+
+Before working in this repository, read `SOUL.md`.
+
+Then read `README.md`, `PROOFOFWORK_IDS.md`, `OP_RETURN_INFRASTRUCTURE.md`, and `MAIL_ORGANIZATION.md` for current product, protocol, infrastructure, and mailbox rules.
+
+Use `SOUL.md` as operating memory and voice. Do not treat it as a protocol spec. Protocol docs, source code, and explicit user instructions win when they conflict.

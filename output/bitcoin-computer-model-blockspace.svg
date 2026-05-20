@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+<rect width="1600" height="900" fill="#f8fafc"/>
+<text x="80" y="82" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="56" font-weight="850" fill="#0f172a">Blockspace is the ceiling</text>
+<text x="82" y="126" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25" font-weight="500" fill="#475569">Usage demand compounds until it hits today&#39;s theoretical Bitcoin blockspace limit.</text>
+<rect x="190" y="156" width="1220" height="54" rx="18" fill="#0f172a"/>
+<text x="800" y="191" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="27" font-weight="850" fill="#ffffff">Current theoretical ceiling: 52.6 billion vB per year</text><rect x="80" y="235" width="250" height="450" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<text x="205" y="295" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="26" font-weight="850" fill="#0f172a">6 months</text>
+<line x1="114" y1="548" x2="296" y2="548" stroke="#0f172a" stroke-width="4" stroke-dasharray="10 8"/>
+<rect x="162" y="478" width="86" height="70" rx="16" fill="#c2410c" opacity="0.82"/>
+<text x="205" y="598" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="27" font-weight="900" fill="#0f766e">36% used</text>
+<text x="205" y="642" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#334155">raw demand</text>
+<text x="205" y="666" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#334155">19.2 billion vB</text>
+<rect x="380" y="235" width="250" height="450" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<text x="505" y="295" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="26" font-weight="850" fill="#0f172a">12 months</text>
+<line x1="414" y1="548" x2="596" y2="548" stroke="#0f172a" stroke-width="4" stroke-dasharray="10 8"/>
+<rect x="462" y="456.3436123655522" width="86" height="91.65638763444781" rx="16" fill="#c2410c" opacity="0.82"/>
+<text x="505" y="598" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="27" font-weight="900" fill="#0f766e">89% used</text>
+<text x="505" y="642" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#334155">raw demand</text>
+<text x="505" y="666" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#334155">46.9 billion vB</text>
+<rect x="680" y="235" width="250" height="450" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<text x="805" y="295" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="26" font-weight="850" fill="#0f172a">24 months</text>
+<line x1="714" y1="548" x2="896" y2="548" stroke="#0f172a" stroke-width="4" stroke-dasharray="10 8"/>
+<rect x="762" y="429.0886199128449" width="86" height="118.91138008715512" rx="16" fill="#c2410c" opacity="0.82"/>
+<text x="805" y="598" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="27" font-weight="900" fill="#dc2626">FULL</text>
+<text x="805" y="642" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#334155">raw demand</text>
+<text x="805" y="666" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#334155">144 billion vB</text>
+<rect x="980" y="235" width="250" height="450" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<text x="1105" y="295" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="26" font-weight="850" fill="#0f172a">5 years</text>
+<line x1="1014" y1="548" x2="1196" y2="548" stroke="#0f172a" stroke-width="4" stroke-dasharray="10 8"/>
+<rect x="1062" y="391.56841466635956" width="86" height="156.4315853336404" rx="16" fill="#c2410c" opacity="0.82"/>
+<text x="1105" y="598" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="27" font-weight="900" fill="#dc2626">FULL</text>
+<text x="1105" y="642" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#334155">raw demand</text>
+<text x="1105" y="666" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#334155">680 billion vB</text>
+<rect x="1280" y="235" width="250" height="450" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<text x="1405" y="295" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="26" font-weight="850" fill="#0f172a">10 years</text>
+<line x1="1314" y1="548" x2="1496" y2="548" stroke="#0f172a" stroke-width="4" stroke-dasharray="10 8"/>
+<rect x="1362" y="333" width="86" height="215" rx="16" fill="#c2410c" opacity="0.82"/>
+<text x="1405" y="598" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="27" font-weight="900" fill="#dc2626">FULL</text>
+<text x="1405" y="642" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#334155">raw demand</text>
+<text x="1405" y="666" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#334155">7.64 trillion vB</text><rect x="170" y="735" width="1260" height="74" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<text x="800" y="766" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#0f172a">Once raw write demand crosses the ceiling, Mail, Drive, Marketplace, and Browser are throttled by executable blockspace.</text>
+<text x="800" y="794" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#0f172a">Scarce blockspace becomes part of the model instead of infinite throughput.</text>
+<text x="80" y="848" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="500" fill="#64748b">ProofOfWork.Me Bitcoin Computer Model | generated from output/bitcoin-computer-agent-adoption-model.md</text>
+</svg>
