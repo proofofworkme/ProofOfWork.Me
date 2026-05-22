@@ -15,6 +15,7 @@ const files = [
   "src/shared/components/AppStatusRow.tsx",
   "src/shared/components/BrowserNetworkTabs.tsx",
   "src/shared/components/DomainNav.tsx",
+  "src/shared/components/HeaderActionsMenu.tsx",
   "src/styles.css",
 ];
 
@@ -139,13 +140,37 @@ expect(
   /<header className="topbar">/.test(appHeader) && /className="brand"/.test(appHeader),
 );
 expect(
-  "AppHeader always exposes the same refresh control through HeaderActionsMenu",
+  "AppHeader exposes refresh as a direct topbar action",
   /const refreshAction\s*=\s*onRefresh\s*\?\?/.test(appHeader) &&
-    /<HeaderActionsMenu[\s\S]*onRefresh=\{refreshAction\}/.test(appHeader),
+    /className="topbar-action-button topbar-refresh-button"/.test(appHeader) &&
+    /onClick=\{\(\) => void refreshAction\(\)\}/.test(appHeader),
+);
+expect(
+  "AppHeader exposes wallet as a direct topbar action",
+  /className="topbar-action-button topbar-wallet-button"/.test(appHeader) &&
+    /Connect UniSat/.test(appHeader),
+);
+const appHeaderMenuTag =
+  appHeader.match(/<HeaderActionsMenu[\s\S]*?\/>/)?.[0] ?? "";
+expect(
+  "AppHeader uses HeaderActionsMenu only for network options",
+  /networkOptions=/.test(appHeaderMenuTag) &&
+    !/onRefresh=|connectWallet=|disconnectWallet=|address=/.test(
+      appHeaderMenuTag,
+    ),
 );
 expect(
   "AppHeader does not expose per-route compact nav",
   !/domainNavCompact|<DomainNav\s+compact=/.test(appHeader),
+);
+
+const headerActionsMenu = contents.get("src/shared/components/HeaderActionsMenu.tsx");
+expect(
+  "HeaderActionsMenu only toggles network choices",
+  /networkOptions/.test(headerActionsMenu) &&
+    !/Connect UniSat|Install UniSat|Refresh|Wallet|LogOut|UNISAT_DOWNLOAD_URL/.test(
+      headerActionsMenu,
+    ),
 );
 
 const landingApp = contents.get("src/features/landing/LandingApp.tsx");

@@ -18971,6 +18971,7 @@ function DesktopApp({
       <AppHeader
         network={activeNetwork}
         onNetworkChange={onNetworkChange}
+        onRefresh={onRefresh}
         subtitle="Public file search"
         title="ProofOfWork Desktop"
       />
@@ -19457,7 +19458,6 @@ function TokenWalletApp({
         disconnectWallet={disconnectWallet}
         hasUnisat={hasUnisat}
         homeHref={appHref(WALLET_APP_URL, LOCAL_WALLET_APP_URL)}
-        mark={<Wallet size={18} />}
         network={network}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
@@ -20212,6 +20212,7 @@ function TokenApp({
         hasUnisat={hasUnisat}
         network={network}
         onNetworkChange={onNetworkChange}
+        onRefresh={workspaceProps.onRefresh}
         subtitle={
           workTokenOnly
             ? "ProofOfWork token dashboard"
@@ -27672,7 +27673,7 @@ function DesktopWorkspace({
         <div className="desktop-screensaver">
           <div className="desktop-screen-card">
             <div className="brand-mark" aria-hidden="true">
-              <img src="/proofofwork-logo.png" alt="" />
+              PoW
             </div>
             <span>ProofOfWork Desktop</span>
             <h2>Open a public Bitcoin desktop.</h2>

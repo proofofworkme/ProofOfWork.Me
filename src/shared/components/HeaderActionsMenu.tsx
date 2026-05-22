@@ -1,48 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Check,
-  ChevronDown,
-  LogOut,
-  MoreHorizontal,
-  RefreshCw,
-  Wallet,
-} from "lucide-react";
-import { shortAddress } from "../../functions";
-import { UNISAT_DOWNLOAD_URL } from "../wallet/walletLinks";
+import { Check, ChevronDown, Network } from "lucide-react";
 
 export function HeaderActionsMenu({
-  address = "",
   busy = false,
-  connectWallet,
-  disconnectWallet,
-  hasUnisat = true,
-  onRefresh,
   networkOptions,
 }: {
-  address?: string;
   busy?: boolean;
-  connectWallet?: () => void;
-  disconnectWallet?: () => void;
-  hasUnisat?: boolean;
   networkOptions?: Array<{
     active: boolean;
     disabled?: boolean;
     label: string;
     onSelect: () => void;
   }>;
-  onRefresh?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const activeNetwork = networkOptions?.find((option) => option.active)?.label;
-  const walletLabel = address
-    ? shortAddress(address)
-    : hasUnisat
-      ? "Connect"
-      : "Install UniSat";
-  const triggerLabel = activeNetwork
-    ? `${activeNetwork} · ${walletLabel}`
-    : walletLabel;
+  const triggerLabel = activeNetwork ?? "Network";
 
   useEffect(() => {
     if (!open) {
@@ -86,7 +60,7 @@ export function HeaderActionsMenu({
         type="button"
       >
         <span className="header-actions-trigger-icon" aria-hidden="true">
-          <MoreHorizontal size={16} />
+          <Network size={16} />
         </span>
         <strong>{triggerLabel}</strong>
         <ChevronDown size={15} aria-hidden="true" />
@@ -94,24 +68,6 @@ export function HeaderActionsMenu({
 
       <div className="header-actions-popover" role="menu">
         <div className="app-menu-list">
-          {onRefresh ? (
-            <button
-              disabled={busy}
-              onClick={() => {
-                onRefresh();
-                setOpen(false);
-              }}
-              role="menuitem"
-              type="button"
-            >
-              <span>
-                <strong>{busy ? "Refreshing" : "Refresh"}</strong>
-                <small>Reload live chain data</small>
-              </span>
-              <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
-            </button>
-          ) : null}
-
           {networkOptions?.length ? (
             <>
               {networkOptions.map((option) => (
@@ -136,54 +92,6 @@ export function HeaderActionsMenu({
               ))}
             </>
           ) : null}
-
-          {address ? (
-            <button
-              disabled={busy || !disconnectWallet}
-              onClick={() => {
-                disconnectWallet?.();
-                setOpen(false);
-              }}
-              role="menuitem"
-              type="button"
-            >
-              <span>
-                <strong>{disconnectWallet ? "Disconnect wallet" : "Wallet"}</strong>
-                <small>{shortAddress(address)}</small>
-              </span>
-              {disconnectWallet ? <LogOut size={15} /> : <Check size={15} />}
-            </button>
-          ) : hasUnisat ? (
-            <button
-              disabled={busy || !connectWallet}
-              onClick={() => {
-                connectWallet?.();
-                setOpen(false);
-              }}
-              role="menuitem"
-              type="button"
-            >
-              <span>
-                <strong>Connect UniSat</strong>
-                <small>Sign Bitcoin transactions locally</small>
-              </span>
-              <Wallet size={15} />
-            </button>
-          ) : (
-            <a
-              href={UNISAT_DOWNLOAD_URL}
-              onClick={() => setOpen(false)}
-              rel="noreferrer"
-              role="menuitem"
-              target="_blank"
-            >
-              <span>
-                <strong>Install UniSat</strong>
-                <small>Wallet required for writes</small>
-              </span>
-              <Wallet size={15} />
-            </a>
-          )}
         </div>
       </div>
     </div>

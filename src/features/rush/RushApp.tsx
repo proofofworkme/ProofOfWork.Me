@@ -165,7 +165,6 @@ export function RushApp({
         connectWallet={connectWallet}
         disconnectWallet={disconnectWallet}
         hasUnisat={hasUnisat}
-        mark="R"
         network={network}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}

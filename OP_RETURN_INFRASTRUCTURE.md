@@ -105,6 +105,7 @@ On `localhost` and `127.0.0.1`, shared app navigation uses local route flags ins
 /?browser=1
 /?marketplace=1
 /?token=1
+/?wallet=1
 /?work=1
 /?rush=1
 /?log=1

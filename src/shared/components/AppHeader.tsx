@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import { LogOut, RefreshCw, Wallet } from "lucide-react";
 import { HOME_APP_URL, LOCAL_HOME_APP_URL } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
+import { shortAddress } from "../../functions";
 import type { BitcoinNetwork } from "../bitcoin/networks";
+import { UNISAT_DOWNLOAD_URL } from "../wallet/walletLinks";
 import { DomainNav } from "./DomainNav";
 import { HeaderActionsMenu } from "./HeaderActionsMenu";
 
@@ -25,7 +27,6 @@ export function AppHeader({
   disconnectWallet?: () => void;
   hasUnisat?: boolean;
   homeHref?: string;
-  mark?: ReactNode;
   network?: BitcoinNetwork;
   onDomainNavigate?: (label: string) => boolean | void;
   onNetworkChange?: (network: BitcoinNetwork) => void;
@@ -77,20 +78,67 @@ export function AppHeader({
       <DomainNav onNavigate={onDomainNavigate} />
 
       <div className="topbar-actions">
-        <HeaderActionsMenu
-          address={address}
-          busy={busy}
-          connectWallet={connectWallet}
-          disconnectWallet={disconnectWallet}
-          hasUnisat={hasUnisat}
-          networkOptions={networkOptions.map((option) => ({
-            active: option.active,
-            disabled: busy,
-            label: option.label,
-            onSelect: () => onNetworkChange?.(option.network),
-          }))}
-          onRefresh={refreshAction}
-        />
+        {onRefresh ? (
+          <button
+            aria-label={busy ? "Refreshing" : "Refresh"}
+            className="topbar-action-button topbar-refresh-button"
+            disabled={busy}
+            onClick={() => void refreshAction()}
+            title={busy ? "Refreshing" : "Refresh"}
+            type="button"
+          >
+            <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
+            <span>{busy ? "Refreshing" : "Refresh"}</span>
+          </button>
+        ) : null}
+
+        {networkOptions.length ? (
+          <HeaderActionsMenu
+            busy={busy}
+            networkOptions={networkOptions.map((option) => ({
+              active: option.active,
+              disabled: busy,
+              label: option.label,
+              onSelect: () => onNetworkChange?.(option.network),
+            }))}
+          />
+        ) : null}
+
+        {address ? (
+          <button
+            aria-label="Disconnect UniSat"
+            className="topbar-action-button topbar-wallet-button"
+            disabled={busy || !disconnectWallet}
+            onClick={() => void disconnectWallet?.()}
+            title="Disconnect UniSat"
+            type="button"
+          >
+            <LogOut size={15} />
+            <span>{shortAddress(address)}</span>
+          </button>
+        ) : hasUnisat && connectWallet ? (
+          <button
+            aria-label="Connect UniSat"
+            className="topbar-action-button topbar-wallet-button"
+            disabled={busy}
+            onClick={() => void connectWallet()}
+            type="button"
+          >
+            <Wallet size={15} />
+            <span>Connect UniSat</span>
+          </button>
+        ) : !hasUnisat ? (
+          <a
+            aria-label="Install UniSat"
+            className="topbar-action-button topbar-wallet-button"
+            href={UNISAT_DOWNLOAD_URL}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <Wallet size={15} />
+            <span>Install UniSat</span>
+          </a>
+        ) : null}
       </div>
     </header>
   );

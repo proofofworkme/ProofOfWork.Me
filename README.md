@@ -506,22 +506,27 @@ Confirmed registry treasury sweeps are tracked in `TREASURY_LEDGER.md`.
 Important implementation points:
 
 - Agent bootstrap: `SOUL.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules/proofofwork-soul.mdc`, and `.github/copilot-instructions.md`.
-- ID launch route switch: `isIdLaunchRoute()` in `src/App.tsx`.
-- Root landing route switch: `isLandingRoute()` in `src/App.tsx`.
-- Public Desktop route switch: `isDesktopRoute()` in `src/App.tsx`.
-- Public Browser route switch: `isBrowserRoute()` in `src/App.tsx`.
-- Standalone Marketplace route switch: `isMarketplaceRoute()` in `src/App.tsx`.
-- Standalone Token route switch: `isTokenRoute()` in `src/App.tsx`.
-- Standalone WORK route switch: `isWorkTokenRoute()` in `src/App.tsx`.
-- Staged RUSH route switch: `isRushRoute()` in `src/App.tsx`.
+- ID launch route switch: `isIdLaunchRoute()` in `src/app/routeRegistry.ts`.
+- Root landing route switch: `isLandingRoute()` in `src/app/routeRegistry.ts`.
+- Public Desktop route switch: `isDesktopRoute()` in `src/app/routeRegistry.ts`.
+- Public Browser route switch: `isBrowserRoute()` in `src/app/routeRegistry.ts`.
+- Standalone Marketplace route switch: `isMarketplaceRoute()` in `src/app/routeRegistry.ts`.
+- Standalone Token route switch: `isTokenRoute()` in `src/app/routeRegistry.ts`.
+- Standalone Wallet route switch: `isWalletRoute()` in `src/app/routeRegistry.ts`.
+- Standalone WORK route switch: `isWorkTokenRoute()` in `src/app/routeRegistry.ts`.
+- Staged RUSH route switch: `isRushRoute()` in `src/app/routeRegistry.ts`.
+- Log route switch: `isActivityRoute()` in `src/app/routeRegistry.ts`.
+- Growth route switch: `isGrowthRoute()` in `src/app/routeRegistry.ts`.
 - Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
+- Desktop-only deploy switch: `VITE_DESKTOP_ONLY=1`.
 - Browser-only deploy switch: `VITE_BROWSER_ONLY=1`.
 - Marketplace-only deploy switch: `VITE_MARKETPLACE_ONLY=1`.
 - Token-only deploy switch: `VITE_TOKEN_ONLY=1`.
 - Wallet-only deploy switch: `VITE_WALLET_ONLY=1`.
 - WORK-only deploy switch: `VITE_WORK_TOKEN_ONLY=1`.
 - Staged RUSH-only deploy switch: `VITE_RUSH_ONLY=1`.
+- Log-only deploy switch: `VITE_LOG_ONLY=1`.
 - Growth-only deploy switch: `VITE_GROWTH_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, `ID_MUTATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
