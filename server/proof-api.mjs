@@ -1066,6 +1066,15 @@ function scriptHashForAddress(address, network) {
   return Buffer.from(bitcoin.crypto.sha256(script)).reverse().toString("hex");
 }
 
+function scriptHashForScriptHex(scriptHex) {
+  if (!/^[0-9a-fA-F]+$/u.test(scriptHex) || scriptHex.length % 2 !== 0) {
+    throw new Error("Invalid output script.");
+  }
+
+  const script = Buffer.from(scriptHex, "hex");
+  return Buffer.from(bitcoin.crypto.sha256(script)).reverse().toString("hex");
+}
+
 function electrumRequest(method, params) {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection({
@@ -6243,7 +6252,68 @@ async function txHexPayload(txid, network) {
 }
 
 async function txOutspendPayload(txid, vout, network) {
-  return fetchJson(`${mempoolBase(network)}/api/tx/${txid}/outspend/${vout}`);
+  try {
+    return await fetchJson(
+      `${mempoolBase(network)}/api/tx/${txid}/outspend/${vout}`,
+    );
+  } catch {
+    // Some private electrs/mempool deployments do not expose /outspend.
+    // Reconstruct the answer from the output script's Electrum history instead.
+  }
+
+  const sourceTx = await fetchTransactionWithPendingFallback(txid, network);
+  const output = Array.isArray(sourceTx?.vout) ? sourceTx.vout[vout] : undefined;
+  const outputScript =
+    output && typeof output.scriptpubkey === "string" ? output.scriptpubkey : "";
+  if (!outputScript) {
+    throw new Error("Transaction output not found.");
+  }
+
+  const scripthash = scriptHashForScriptHex(outputScript);
+  const history = await electrumRequest("blockchain.scripthash.get_history", [
+    scripthash,
+  ]);
+  const candidateTxids = [
+    ...new Set(
+      (Array.isArray(history) ? history : [])
+        .map((entry) => entry?.tx_hash)
+        .filter(
+          (candidateTxid) =>
+            typeof candidateTxid === "string" &&
+            /^[0-9a-fA-F]{64}$/u.test(candidateTxid),
+        )
+        .map((candidateTxid) => candidateTxid.toLowerCase())
+        .filter((candidateTxid) => candidateTxid !== txid),
+    ),
+  ];
+  const candidateTxs = await mapWithConcurrency(
+    candidateTxids,
+    TX_FETCH_CONCURRENCY,
+    async (candidateTxid) => {
+      try {
+        return await fetchTransactionWithPendingFallback(candidateTxid, network);
+      } catch {
+        return null;
+      }
+    },
+  );
+
+  for (const candidateTx of candidateTxs.filter(Boolean)) {
+    const vin = Array.isArray(candidateTx.vin) ? candidateTx.vin : [];
+    const inputIndex = vin.findIndex(
+      (input) => input?.txid === txid && input?.vout === vout,
+    );
+    if (inputIndex >= 0) {
+      return {
+        spent: true,
+        status: candidateTx.status ?? null,
+        txid: transactionTxid(candidateTx),
+        vin: inputIndex,
+      };
+    }
+  }
+
+  return { spent: false };
 }
 
 async function txStatusPayload(txid, network) {
