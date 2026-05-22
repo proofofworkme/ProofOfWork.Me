@@ -108,7 +108,7 @@ browser.proofofwork.me      public HTML browser by txid
 marketplace.proofofwork.me  standalone asset marketplace; IDs and token sale-ticket markets live
 token.proofofwork.me        standalone token creation and mint app
 tokens.proofofwork.me       permanent redirect to https://token.proofofwork.me/
-wallet.proofofwork.me      standalone token wallet and transfer app
+wallet.proofofwork.me      standalone token wallet, transfer, listing, delisting, and sale-history app
 work.proofofwork.me         standalone WORK token dashboard and mint page
 log.proofofwork.me          public Bitcoin Computer log
 growth.proofofwork.me       public growth model dashboard
@@ -310,12 +310,13 @@ The node is only for ProofOfWork.Me infrastructure.
 
 ## Architecture
 
-Current app can remain static/browser-first. The future node/indexer improves reliability, privacy, and sovereignty.
+The app remains static/browser-first at the UI layer, while production reads and broadcasts through the first-party ProofOfWork node/API stack.
 
 ```text
 Static frontend
   -> ProofOfWork.Me API/indexer
-  -> Bitcoin Core node
+  -> private mempool/electrs API
+  -> Bitcoin Core full node
 ```
 
 Transaction flow:
@@ -327,9 +328,11 @@ User wallet signs locally
   -> Indexer watches blocks/mempool
 ```
 
-## Why Run A Node
+## Node/API Role
 
-Current ProofOfWork.Me works with UniSat and mempool.space. A dedicated node/indexer would improve:
+Production ProofOfWork.Me works with UniSat for local signing and the first-party node/API for chain reads, transaction preparation, broadcast, indexing, BTC/USD, and tx status. Public mempool.space is an explorer link target, not an application data dependency.
+
+The node/API stack provides:
 
 - Reliability.
 - Privacy.
@@ -337,23 +340,26 @@ Current ProofOfWork.Me works with UniSat and mempool.space. A dedicated node/ind
 - Registry indexing.
 - Alias resolution.
 - Independence from public APIs.
+- Live BTC/USD from the ProofOfWork node price endpoint.
+- Stale-while-refresh caches for expensive registry, token, log, Growth, and WORK floor reads.
 
 Bitcoin Core alone does not provide an easy address-history or OP_RETURN protocol-search API. ProofOfWork.Me should use Bitcoin Core with an indexer.
 
-Possible indexer approaches:
+Current indexer/API shape:
 
-- Esplora/electrs for general address and transaction APIs.
-- A custom ProofOfWork.Me indexer for `pwid1:` registry events and `pwm1:` mail events.
-
-The custom indexer/API has started as `server/proof-api.mjs`. It reads from the private mempool/electrs stack, parses ProofOfWork OP_RETURN protocols, and exposes browser-ready endpoints for registry state, mail state, and transaction status.
-
-Production apps can opt into it with:
-
-```bash
-VITE_POW_API_BASE=<production-api-url>
+```text
+server/proof-api.mjs
+  -> private mempool/electrs API
+  -> optional Bitcoin Core RPC diagnostics for testmempoolaccept
 ```
 
-For ID safety, production should prefer this API over public mempool.space reads. If the first-party API is unavailable, it is safer for ID registration/routing to fail closed than to create duplicates from incomplete public API state.
+Production apps are built with app-domain API bases:
+
+```bash
+VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
+```
+
+For ID safety, production must use this API/node path. If the first-party API is unavailable, it is safer for ID registration/routing to fail closed than to create duplicates from incomplete public API state.
 
 Phase 1 production uses same-origin API proxies:
 
@@ -401,10 +407,11 @@ Important notes:
 
 ## Big Picture
 
-ProofOfWork.Me can stay simple and browser-native while becoming more sovereign over time.
+ProofOfWork.Me stays browser-native for users and sovereign at the data layer.
 
-- Today: static client, UniSat signing, mempool.space APIs.
-- Next: ProofOfWork.Me IDs with an OP_RETURN registry.
-- Later: custom node/indexer for reliable mail and ID resolution.
-- Marketplace-ready IDs can become transferable on-chain assets.
+- Static clients render the Computer and standalone app surfaces.
+- UniSat signs locally.
+- The ProofOfWork API reads, indexes, verifies, prepares, and broadcasts already-signed transactions through the node stack.
+- IDs, token balances, token markets, wallet movements, Log, Growth, and WORK floor are replayed from confirmed Bitcoin history.
+- Pending mempool data is useful visibility, not canonical state.
 - The backend improves data access without becoming custodial.

@@ -34,6 +34,9 @@ curl "http://localhost:5173/test-api/health"
 curl "http://localhost:5173/test-api/api/v1/registry?network=livenet"
 curl "http://localhost:5173/test-api/api/v1/log?network=livenet"
 curl "http://localhost:5173/test-api/api/v1/token?network=livenet"
+curl "http://localhost:5173/test-api/api/v1/token-summary?network=livenet"
+curl "http://localhost:5173/test-api/api/v1/work-floor?network=livenet"
+curl "http://localhost:5173/test-api/api/v1/prices/btc-usd?network=livenet"
 ```
 
 Direct production checks:
@@ -43,4 +46,7 @@ curl "https://computer.proofofwork.me/health"
 curl "https://computer.proofofwork.me/api/v1/registry?network=livenet"
 curl "https://computer.proofofwork.me/api/v1/log?network=livenet"
 curl "https://computer.proofofwork.me/api/v1/token?network=livenet"
+curl "https://computer.proofofwork.me/api/v1/token-summary?network=livenet"
+curl "https://computer.proofofwork.me/api/v1/work-floor?network=livenet"
+curl "https://computer.proofofwork.me/api/v1/prices/btc-usd?network=livenet"
 ```

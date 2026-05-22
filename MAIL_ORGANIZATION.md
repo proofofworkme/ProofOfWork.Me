@@ -16,7 +16,7 @@ browser.proofofwork.me      public HTML browser by txid
 marketplace.proofofwork.me  standalone asset marketplace; IDs and token sale-ticket markets live
 token.proofofwork.me        standalone token creation and mint app
 tokens.proofofwork.me       permanent redirect to https://token.proofofwork.me/
-wallet.proofofwork.me      standalone token wallet and transfer app
+wallet.proofofwork.me      standalone token wallet, transfer, listing, delisting, and sale-history app
 work.proofofwork.me         standalone WORK token dashboard and mint page
 log.proofofwork.me          public Bitcoin Computer log
 growth.proofofwork.me       public growth model dashboard
@@ -209,7 +209,7 @@ Checking
 Behavior:
 
 - New broadcasts enter Outbox as Pending.
-- The app checks the txid through the selected mempool.space network route.
+- The app checks the txid through the selected network's first-party ProofOfWork API status route.
 - Confirmed txs move into Sent.
 - Confirmed sent mail is also reconstructed from the connected address transaction history, so Sent and Files survive stale local browser state.
 - Dropped txs remain in Outbox with a restore-to-draft action.
@@ -240,7 +240,7 @@ Behavior:
 
 - Rescan the connected address for incoming and sent ProofOfWork.Me protocol transactions.
 - Rebuild Incoming, Inbox, Sent, and Files from the latest chain/mempool view.
-- Check pending, dropped, and checking Outbox txids against the selected mempool.space route.
+- Check pending, dropped, and checking Outbox txids against the selected network's first-party ProofOfWork API status route.
 - Move confirmed inbound mail into Inbox, and confirmed broadcasts into Sent and Files.
 - Keep pending Incoming or pending/dropped Outbox records out of Files until they become durable chain records.
 - Show a concise status summary after refresh.

@@ -1,6 +1,6 @@
 # ProofOfWork.Me General Deck
 
-Generated on 2026-05-13.
+Generated on 2026-05-13. Product surface updated on 2026-05-22.
 
 Purpose: public-facing narrative deck for the current Bitcoin Computer.
 
@@ -104,18 +104,24 @@ It opens through Browser by txid.
 
 ProofOfWork IDs are transferable assets.
 
-Current marketplace protocol:
+Tokens are transferable market assets too.
+
+Current marketplace protocols:
 
 ```text
 pwid1:list5
 pwid1:seal5
 pwid1:buy5
 pwid1:delist5
+pwt1:list5
+pwt1:seal5
+pwt1:buy5
+pwt1:delist5
 ```
 
-Sellers publish on-chain listings.
+Sellers publish on-chain listings and seal exact sale terms.
 
-Buyers settle by spending a sale-ticket UTXO, paying the seller, paying the registry mutation fee, and writing the transfer event.
+Buyers settle by spending a sale-ticket UTXO, paying the seller, paying the registry mutation fee, and writing the transfer or buy event.
 
 Competing buys conflict at the Bitcoin UTXO layer.
 
@@ -130,19 +136,23 @@ work.proofofwork.me
 
 Creation pays the token index.
 
-Mints pay each token registry directly at the owner-set price.
+Mints, transfers, listings, seals, delistings, and buys pay each token registry directly.
 
 WORK starts with 21,000,000 max supply, 1,000 WORK per mint, and 1,000 sats per mint.
 
 That is exactly 1 sat per WORK.
 
+Wallet is the connected-address token surface for balances, transfer logs, token transfers, owned listings, delistings, and sale history.
+
 ## Slide 11: Log And Growth
 
 Log is the public Bitcoin Computer activity feed.
 
-It indexes registrations, receiver updates, transfers, listings, purchases, messages, replies, files, attachments, Browser-readable pages, token creations, token mints, and token transfers.
+It indexes registrations, receiver updates, transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, Browser-readable pages, token creations, token mints, token transfers, token listings, and token sales.
 
 Growth compares the canonical success-case model against real confirmed network value in sats and USD.
+
+WORK and Growth share the same confirmed network-value payload and live node-backed BTC/USD benchmark.
 
 The model adds every new product with consistent inputs:
 

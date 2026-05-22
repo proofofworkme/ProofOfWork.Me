@@ -6,14 +6,15 @@
 - `computer.proofofwork.me` contains the authenticated Marketplace workspace.
 - `marketplace.proofofwork.me` is the standalone asset marketplace app.
 
-Marketplace is organized by asset tabs. IDs are the live trading tab. Tokens are
-visible as an indexed market shell, but token list/seal/delist/buy writes remain
-staged until the token sale-ticket validator is as strict as the ID validator.
+Marketplace is organized by asset tabs. IDs and Tokens are both live trading
+tabs. Both asset classes use sale-ticket settlement so the buyer path spends a
+scarce UTXO, pays the seller, pays the registry mutation fee, and writes a
+chain-readable transfer/purchase event.
 - `log.proofofwork.me` is the public read-only Bitcoin Computer log for tx-backed app actions.
 - The IDs workspace is for registration, receiver updates, and direct owner transfers only.
-- Marketplace is for on-chain listings, delistings, buyer-funded purchases, and future asset trades.
-- Marketplace actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer tx, and sale-ticket UTXO references.
-- Marketplace attention metrics should be derived from valid chain events: active listings, ID sale count, and seller-price sale volume.
+- Marketplace is for on-chain listings, seals, delistings, buyer-funded purchases, token sales, and future asset trades.
+- Marketplace actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer/buy tx, token sale tx, and sale-ticket UTXO references.
+- Marketplace attention metrics should be derived from valid chain events: active listings, ID sale count, token sale count, seller-price sale volume, and token sale volume.
 
 ## Current ID Marketplace Model
 
@@ -50,6 +51,36 @@ The marketplace reports realized ID sale data from resolver-accepted buyer-funde
 - Sale volume is the seller price in sats, excluding the 546 sat registry mutation fee and excluding sale-ticket refunds.
 - Confirmed sales are canonical.
 - Pending sales are mempool-visible only until confirmation.
+
+## Current Token Marketplace Model
+
+The live token marketplace writes sale-ticket events to each token's own
+registry address.
+
+Current events:
+
+```text
+pwt1:list5:<sale-ticket-json-base64url>
+pwt1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>
+pwt1:delist5:<listing-txid>
+pwt1:buy5:<listing-txid>:<buyer-address>
+```
+
+Each token mutation pays the 546 sat token registry mutation fee. Token
+creation still pays the macro token index, but mints, transfers, listings,
+seals, delistings, and buys pay the token's own registry directly.
+
+The current flow:
+
+1. A token holder chooses a confirmed balance.
+2. The holder publishes `pwt1:list5`, which reserves spendable token balance and creates a 546 sat seller-controlled sale-ticket UTXO.
+3. After the listing txid exists, the seller publishes `pwt1:seal5` with a `SIGHASH_SINGLE|ANYONECANPAY` signature for the sale ticket.
+4. A buyer funds one `pwt1:buy5` transaction that spends the sale ticket, pays the seller price plus ticket value, pays the 546 sat token registry mutation fee, and writes the buy event.
+5. The token resolver accepts the purchase only if the listing is active and sealed, the seller still has spendable balance, the sale ticket is spent, seller payment is sufficient, and buyer constraints match.
+
+Wallet and Marketplace both use this model. Wallet is the connected-address
+ownership/action surface; Marketplace is the public discovery and purchase
+surface.
 
 ## Sealed Listings
 
@@ -112,12 +143,7 @@ New clients must write `list5`, `seal5`, `delist5`, and `buy5`.
 
 ## General Asset Trading
 
-IDs are the first marketplace asset. The long-term marketplace should stay asset-agnostic without weakening the ID protocol.
-
-Tokens use the same direction, not a weaker promise model. A token marketplace
-listing should reserve the seller's spendable token balance, create a
-seller-controlled sale-ticket UTXO, seal exact sale terms, and settle only when
-the buyer spends that ticket while paying the seller and the token registry.
+IDs and Tokens are the first marketplace assets. The long-term marketplace should stay asset-agnostic without weakening the live ID or token sale-ticket protocols.
 
 Future asset classes can include:
 

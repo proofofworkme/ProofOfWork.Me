@@ -49,7 +49,7 @@ Production app roles:
 - `marketplace.proofofwork.me` is the standalone asset marketplace. The IDs tab is live for ProofOfWork ID listings and buyer-funded transfers; the Tokens tab is live for token sale-ticket listings, sealed purchases, and market discovery.
 - `token.proofofwork.me` is the standalone mainnet token creation and mint app.
 - `tokens.proofofwork.me` redirects permanently to `https://token.proofofwork.me/`.
-- `wallet.proofofwork.me` is the standalone token wallet for confirmed balances and token transfers.
+- `wallet.proofofwork.me` is the standalone token wallet for confirmed balances, transfers, listings, delistings, and sale history touching the connected address.
 - `work.proofofwork.me` is the standalone WORK token dashboard and mint page.
 - `log.proofofwork.me` is the standalone public Bitcoin Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled Bitcoin Computer network value with real confirmed chain value in sats and USD.
@@ -137,17 +137,18 @@ Launch invariants for future developers/agents:
 - Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.
 - Resolves confirmed ProofOfWork IDs as direct transfer targets, so ownership can be sent to an ID's current owner/receiver instead of manually pasting the raw address.
 - Lets ID management receive fields accept confirmed ProofOfWork IDs, resolving them to raw Bitcoin receive addresses before writing registry events.
-- Lets current ID owners publish on-chain marketplace listings, delist them, and execute buyer-funded ID transfers. Marketplace is tabbed by asset class: IDs are live, and Tokens expose indexed supply, holders, transfers, listings, and sealed sale-ticket buys.
+- Lets current ID owners publish on-chain marketplace listings, seal them, delist them, and execute buyer-funded ID transfers. Marketplace is tabbed by asset class: IDs and token sale-ticket markets are live.
 - Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
-- Exposes Tokens as a mainnet-only creation and mint surface, plus a dedicated WORK token dashboard. Token creation pays the built-in index fee to `tokens@proofofwork.me`; mints pay each token's own registry at the owner-set price.
+- Exposes Tokens as a mainnet-only creation and mint surface, a Wallet surface for balances/transfers/listing actions, and a dedicated WORK token dashboard. Token creation pays the built-in index fee to `tokens@proofofwork.me`; mints, transfers, listings, seals, delistings, and buys pay each token's own registry at the owner-set price or mutation fee.
 - Token mint surfaces treat confirmed history as canonical mint-out, but pause user mint actions when confirmed plus pending mints would fill the remaining supply. Pending mempool records are not final, but the UI avoids letting users pay for likely overfill attempts.
 - Stages RUSH as an explicit development/protocol surface behind `?rush=1` or `VITE_RUSH_ONLY=1`. It is not part of shared public navigation or production domain routing until separately approved for launch.
 - Exposes Growth as a public dashboard for modeled Bitcoin Computer network value versus real confirmed registry, log, file, marketplace, and Token value metrics.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
-- Reads registry, mail, files, pagination, wallet UTXOs, transaction preparation data, broadcast status, and app metrics through the first-party ProofOfWork OP_RETURN API.
+- Reads registry, mail, files, pagination, wallet UTXOs, transaction preparation data, broadcast status, live BTC/USD, WORK floor, and app metrics through the first-party ProofOfWork OP_RETURN API.
+- Uses explicit pagination for registry, marketplace, token, wallet, log, and growth data views so large confirmed datasets remain inspectable without relying on broken infinite scroll.
 - Treats ProofOfWork IDs as case-insensitive names capped by the aggregate 100 KB OP_RETURN transaction limit, not arbitrary character rules.
 - Resolves ProofOfWork IDs in the compose recipient field only after a confirmed registry record exists; pending IDs cannot receive routed mail yet.
 - Re-checks the full registry immediately before broadcasting an ID registration to block stale duplicate claims.
@@ -174,6 +175,7 @@ https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
 https://token.proofofwork.me/api/*
+https://wallet.proofofwork.me/api/*
 https://work.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
 https://growth.proofofwork.me/api/*
@@ -196,12 +198,12 @@ Current production behavior:
 - Token transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` and require a 546 sat mutation payment to that same token registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visible but not canonical.
 - The Token tab inside Marketplace is the shared market surface for token trades. Token `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the token registry mutation fee.
 - Token mint prices are owner-set with a 546 sat minimum. ProofOfWork does not take a global fee on mints; the mint price goes to that token's registry address.
-- Token surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per token and per mint from BTC/USD.
-- `wallet.proofofwork.me` shows connected-address token balances and broadcasts non-custodial transfers through UniSat. `work.proofofwork.me` shows only the WORK dashboard: mint progress, holders, token facts, mint action, and mint log. `token.proofofwork.me` stays focused on token creation and mint selection.
+- Token surfaces show the starting unit price as mint price divided by mint amount, plus live node-backed USD per token and per mint from BTC/USD.
+- `wallet.proofofwork.me` shows connected-address token balances, transfer logs, active owned listings, sale history, and non-custodial transfers/listings/delistings through UniSat. `work.proofofwork.me` shows the WORK dashboard: mint progress, holders, token facts, mint action, mint log, live floor, and confirmed floor history. `token.proofofwork.me` stays focused on token creation and mint selection.
 - WORK is reserved for the canonical WORK token id `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`. Official indexers and UI creation flows reject non-canonical token creates whose ticker contains `WORK`, and exclude token creates from blocked scam creator address `bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl`.
 - WORK settings are 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, and the `work@proofofwork.me` registry address. The launch price is exactly 1 sat per WORK. The token create form can reuse the same economic template for new tickers, but cannot create another WORK-like token.
 - WORK's permanent value floor is derived from the Growth model's confirmed Bitcoin Computer network value: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. The inverse, `21,000,000 / confirmed_network_value_sats`, is the WORK-per-sat ratio. Pending records are visible but do not change the canonical floor until confirmed.
-- The WORK dashboard shows the live floor beside the mint panel: floor sats per WORK, USD per WORK, confirmed network value in sats/USD, a confirmed floor-history chart, and the refresh time. This is separate from the 1 sat/WORK launch mint price.
+- The WORK dashboard shows the live floor beside the mint panel: floor sats per WORK, USD per WORK, confirmed network value in sats/USD, a confirmed floor-history chart, and the refresh time. This is separate from the 1 sat/WORK launch mint price. WORK and Growth must use the same node-backed BTC/USD quote and the same confirmed network-value payload so sats and USD totals agree across surfaces.
 - The WORK floor announcement is part of project history as ProofOfWork mail tx `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`: `$work now has a permanent Bitcoin Computer floor.` Live indexers determine whether that tx is pending or confirmed; once confirmed, Bitcoin history is the permanent source.
 - The staged RUSH API scans the configured network registry for valid `pwr1:m:rush` mints that pay at least 1,000 sats to the registry before OP_RETURN. Confirmed mint ordinals determine the phase reward; pending mints are visibility only.
 - The log API exposes a normalized Bitcoin Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, token creations, token mints, token transfers, token listings, and token sales. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
@@ -209,7 +211,7 @@ Current production behavior:
 - Confirmed Browser pages may run scripts in an opaque sandbox, but wallet signing remains outside Browser pages. Pending Browser pages render as visibility only and cannot run scripts.
 - Files/Desktop treat Browser-readable `pwm1:m` HTML bodies as derived `.html` files for navigation and opening, while the original transaction remains a message-body record on-chain.
 - The canonical welcome page is pinned by txid `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b` as the default Bitcoin Computer file. It appears in Files/Desktop as a system artifact and opens in Browser so the transaction remains the source of truth.
-- Growth reads the same registry, log, and Token endpoints, then auto-refreshes real confirmed network value against the canonical `output/bitcoin-computer-agent-adoption-model.md` sats/USD assumptions. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
+- Growth reads the same registry, log, Token, and WORK floor endpoints, then auto-refreshes real confirmed network value with the same live node-backed BTC/USD benchmark used by the rest of the app. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
 - ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which external explorers can report as a lower effective fee rate.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
@@ -317,7 +319,7 @@ To preview the public Browser locally:
 http://localhost:5173/?browser=1
 ```
 
-To preview the standalone ID Marketplace locally:
+To preview the standalone asset Marketplace locally:
 
 ```text
 http://localhost:5173/?marketplace=1
@@ -405,7 +407,7 @@ To build the public Browser app for production:
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 ```
 
-To build the standalone ID Marketplace app for production:
+To build the standalone asset Marketplace app for production:
 
 ```bash
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build

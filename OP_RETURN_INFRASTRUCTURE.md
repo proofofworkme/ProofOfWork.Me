@@ -27,7 +27,7 @@ browser.proofofwork.me      -> public HTML browser by txid
 marketplace.proofofwork.me  -> standalone asset marketplace; IDs and token sale-ticket markets live
 token.proofofwork.me        -> standalone token creation and mint app
 tokens.proofofwork.me       -> permanent redirect to https://token.proofofwork.me/
-wallet.proofofwork.me       -> standalone token wallet and transfer app
+wallet.proofofwork.me       -> standalone token wallet, transfer, listing, and delisting app
 work.proofofwork.me         -> standalone WORK token dashboard and mint page
 log.proofofwork.me          -> public Bitcoin Computer log
 growth.proofofwork.me       -> public growth model dashboard
@@ -144,6 +144,9 @@ GET /api/v1/ids/:id?network=livenet
 POST /api/v1/broadcast/tx
 POST /api/v1/broadcast/slipstream
 GET /api/v1/token?network=livenet
+GET /api/v1/token-summary?network=livenet
+GET /api/v1/work-floor?network=livenet
+GET /api/v1/prices/btc-usd?network=livenet
 GET /api/v1/rush?network=livenet
 GET /api/v1/rush?network=testnet4
 GET /api/v1/address/:address/mail?network=livenet
@@ -180,6 +183,7 @@ The Growth app:
 - Auto-refreshes confirmed registry, log, file, marketplace, and Token metrics while the page is visible.
 - Treats each modeled product consistently: real input, usage rate, value assumption, fee elasticity, and blockspace accounting.
 - Feeds the permanent WORK floor: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. Pending records are visible but do not change this canonical floor until confirmed.
+- Uses the same first-party BTC/USD price endpoint and the same WORK floor payload as `work.proofofwork.me`, so Growth and WORK display matching sats and USD totals after refresh.
 
 The token endpoint:
 
@@ -197,12 +201,12 @@ The token endpoint:
 - Reconstructs token listings from `pwt1:list5:<sale-ticket-json-base64url>`, token seals from `pwt1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>`, delistings from `pwt1:delist5:<listing-txid>`, and buyer-funded purchases from `pwt1:buy5:<listing-txid>:<buyer-address>`.
 - Token listings reserve the seller's spendable balance, create a 546 sat seller-controlled sale-ticket output, and require the standard 546 sat token registry mutation payment before OP_RETURN. Buys must spend the seller ticket, pay the seller the listed price plus ticket value, and pay the token registry mutation fee.
 - Token UI surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per token and per mint from BTC/USD.
-- `token.proofofwork.me` is the create/mint surface, `tokens.proofofwork.me` redirects to it, `wallet.proofofwork.me` is the token wallet/transfer surface, and `work.proofofwork.me` is the dedicated WORK dashboard.
+- `token.proofofwork.me` is the create/mint surface, `tokens.proofofwork.me` redirects to it, `wallet.proofofwork.me` is the token wallet/transfer/listing/delisting surface, and `work.proofofwork.me` is the dedicated WORK dashboard.
 - WORK is reserved for canonical token id `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`. Official indexers and creation UI reject any non-canonical token create whose ticker contains `WORK`, and exclude blocked scam creator address `bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl`.
 - WORK settings are 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, and the `work@proofofwork.me` registry address. WORK launches at exactly 1 sat per WORK. The create form can reuse the same economic template for non-reserved tickers only.
 - WORK's permanent price floor is derived from the confirmed Bitcoin Computer network value, not from pending mempool visibility: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. The inverse `21,000,000 / confirmed_network_value_sats` is the WORK-per-sat ratio.
 - Token mint-out is confirmed-only at the protocol/indexing layer: a token is canonically minted out only when confirmed supply reaches max supply. UI mint controls also pause when confirmed plus pending mints fill the remaining supply, because pending records can consume the last valid mint slots if they confirm.
-- The WORK dashboard computes and displays this live floor from the same Growth inputs, using live BTC/USD for USD translations. It also charts confirmed floor history from WORK deployment onward. The dashboard must keep the live floor visually separate from the token's owner-set mint price.
+- The WORK dashboard computes and displays this live floor from the same Growth inputs, using the first-party node-backed BTC/USD endpoint for USD translations. It also charts confirmed floor history from WORK deployment onward. The dashboard must keep the live floor visually separate from the token's owner-set mint price.
 - Historical WORK floor announcement mail tx: `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`. Its subject is `$work now has a permanent Bitcoin Computer floor.` The tx status should be read from the node/API at runtime; docs preserve the txid and decoded intent, not a stale confirmation claim.
 - Treats pending token records as visibility only; confirmed records are canonical.
 
@@ -349,7 +353,8 @@ After changing the API or production build, verify:
 - Standalone Marketplace can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Token, Wallet, and Marketplace transaction buttons can load UTXOs, previous transaction hex, and listing-anchor outspends through the first-party API before opening UniSat.
 - Log can load global Bitcoin Computer events and search an address, confirmed ProofOfWork ID, or txid.
-- Growth can load real chain metrics, including token creations and mints, and render the modeled-vs-real sats/USD value graph without layout overlap on desktop and mobile.
+- Growth can load real chain metrics, including token creations, mints, transfers, listings, and sales, and render the modeled-vs-real sats/USD value graph without layout overlap on desktop and mobile.
+- WORK and Growth show matching confirmed network value in sats/USD using `/api/v1/work-floor` and `/api/v1/prices/btc-usd`.
 - Known attachment transactions reconstruct with valid size and SHA-256.
 - Known HTML message-body transactions render through Browser from `pwm1:m`.
 - Known pending txs return `pending`.

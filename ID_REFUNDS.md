@@ -54,7 +54,7 @@ Total issued in this batch: **14,000 sats**.
 
 Accounting status: these 14 duplicate registration payments are historical gross registry flow, but they are not net registry revenue after this refund batch.
 
-## 2026-05-11 Pending Marketplace Refund
+## 2026-05-11 Confirmed Marketplace Refund
 
 Refund for the losing same-block `testdummy@proofofwork.me` marketplace buy and invalid follow-up listing.
 
@@ -68,7 +68,7 @@ Refund components:
 - Invalid `list2` payment: 546 sat listing fee in tx `557350bbd9ee13a018967bc2af17c6214c4d59b2bc75ba95ce55fce648fe750a`.
 - Winning canonical `buy2`: tx `da77c38e8df8dd8242464ff384394882d57471a19961655da4cda240286007b1`.
 
-Status at log time: visible in mempool, not yet confirmed.
+Status: confirmed per ProofOfWork API check on 2026-05-22.
 
 ## 2026-05-09 Refund Notice Email
 

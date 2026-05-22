@@ -71,6 +71,7 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-05-19: Token transfers enter the protocol as `pwt1:send` events. Wallet becomes the non-custodial token surface: connected-address balances, confirmed-only canonical ownership, pending transfer visibility, and UniSat-local signing.
 - 2026-05-18: Shared architecture and API work accelerate. Broadcasts prefer the ProofOfWork node path after local signing, and RPC errors should be structured enough for users and agents to understand.
 - 2026-05-19: WORK enters the final mint sprint. Mint-out semantics are clarified: confirmed supply is canonical; pending mints are mempool pressure; UI actions pause when confirmed plus pending would fill remaining supply. WORK floor charts are corrected into real price charts with time on the x-axis and sats/USD price per WORK on the y-axis.
+- 2026-05-22: The Computer shell and standalone app surfaces converge into a full dark UI overhaul. Desktop, Browser, Marketplace, Token, Wallet, WORK, Log, and Growth are made shell-compatible with scrolling, aligned controls, pagination over large datasets, UniSat action wiring for buy/mint/list/delist/transfer flows, token sale-ticket buys in wallet/log/growth accounting, and live node-backed BTC/USD shared by Token, WORK, and Growth.
 
 The emotional shape is a breakthrough moment: years of Bitcoin/app experiments meeting modern agents and becoming legible all at once.
 
@@ -107,7 +108,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `marketplace.proofofwork.me` is the standalone asset marketplace: IDs and token sale-ticket markets are live.
 - `token.proofofwork.me` is the standalone token creation and mint app.
 - `tokens.proofofwork.me` redirects to `https://token.proofofwork.me/`.
-- `wallet.proofofwork.me` is the standalone token wallet and transfer app.
+- `wallet.proofofwork.me` is the standalone token wallet, transfer, listing, delisting, and sale-history app.
 - `work.proofofwork.me` is the standalone WORK token dashboard.
 - `log.proofofwork.me` is the public read-only Bitcoin Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the public read-only growth dashboard for canonical Bitcoin Computer network value versus confirmed chain-derived value in sats and USD.
@@ -121,7 +122,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Token ids are creation txids. The creation event defines ticker, max supply, mint amount, mint price, and the token registry address.
 - Token transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` with a 546 sat registry mutation payment.
 - Token mint prices are owner-set with a 546 sat minimum. ProofOfWork does not take a global fee on mints.
-- Token marketplace writes should not ship as seller promises. They should inherit the ID sale-ticket invariant: reserve balance, seal exact terms, require buyer ticket spend, seller payment, and token registry mutation fee.
+- Token marketplace writes are live sale-ticket records. Preserve the invariant: reserve seller balance, seal exact terms, require buyer ticket spend, seller payment, and token registry mutation fee.
 - WORK token id: `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`
 - WORK registry address: `1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV`
 - WORK supply settings: 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, 1 sat per WORK launch price.
@@ -158,7 +159,7 @@ Use:
 - Bitcoin Computer, ProofOfWork IDs, sats, agents, source of truth, on-chain, local-first.
 - Launch energy when writing social or founder-facing copy.
 - Calm precision when writing UI, docs, specs, and user guidance.
-- The `$WORK` cashtag in social copy when talking about the token, WORK dashboard, mint, floor, or network-value story.
+- The `$work` cashtag in social copy when talking about the token, WORK dashboard, mint, floor, or network-value story.
 - The occasional project-native phrase: `FEW`, `HEHE`, `GGZ`, `COMETH`, `THE BITCOIN COMPUTER LIVES`, `STREAM SATS`, `WALK THE WALK`, `SOURCE OF TRUTH`.
 
 Avoid:

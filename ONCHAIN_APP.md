@@ -33,10 +33,10 @@ id.proofofwork.me           -> focused mainnet ID registry onboarding
 computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
 browser.proofofwork.me      -> public HTML browser by txid
-marketplace.proofofwork.me  -> standalone ID marketplace
+marketplace.proofofwork.me  -> standalone asset marketplace for IDs and token sale-ticket markets
 token.proofofwork.me        -> standalone token creation and mint app
 tokens.proofofwork.me       -> permanent redirect to https://token.proofofwork.me/
-wallet.proofofwork.me       -> standalone token wallet and transfer app
+wallet.proofofwork.me       -> standalone token wallet, transfer, listing, delisting, and sale-history app
 work.proofofwork.me         -> standalone WORK token dashboard and mint page
 log.proofofwork.me          -> public Bitcoin Computer log
 growth.proofofwork.me       -> public growth model dashboard
@@ -51,6 +51,7 @@ http://localhost:5173/?desktop=1
 http://localhost:5173/?browser=1
 http://localhost:5173/?marketplace=1
 http://localhost:5173/?token=1
+http://localhost:5173/?wallet=1
 http://localhost:5173/?work=1
 http://localhost:5173/?log=1
 http://localhost:5173/?growth=1

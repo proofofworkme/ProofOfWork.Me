@@ -2,6 +2,12 @@
 
 Research date: 2026-05-06
 
+Status note, 2026-05-22: this is historical architecture research. The live
+ProofOfWork.Me app now uses the first-party ProofOfWork node/API stack for
+production reads, transaction preparation, broadcast, BTC/USD, Log, Growth, and
+WORK floor. Treat references to public mempool.space scanning below as launch-era
+context, not current production architecture.
+
 Scope: Public repositories listed at https://github.com/unwriter?tab=repositories on 2026-05-06. I used GitHub metadata, shallow local clones, READMEs, package manifests, and representative source files. Repo activity dates below are GitHub `updated_at` values unless otherwise noted.
 
 ## ProofOfWork.Me Launch Relevance
@@ -811,7 +817,7 @@ ProofOfWork.Me does not need the full Unwriter-style BTC toolchain before the cu
 - A `datapay`-like layer: the app builds PSBTs with `OP_RETURN` outputs.
 - A `B://`/media-like layer: the app already supports chunked attachments with MIME metadata, size checks, and SHA-256 verification.
 - A `fatURI`-like wallet handoff: UniSat signs the app-constructed PSBT instead of the app holding user keys.
-- A BitDB-like read layer: the app currently relies on mempool.space scanning rather than running its own indexer.
+- A BitDB-like read layer: the production app now uses the first-party ProofOfWork OP_RETURN API instead of public mempool.space scanning.
 
 The better near-term path is to keep ProofOfWork.Me focused as a usable BTC `OP_RETURN` mail/files app, while extracting small internal modules as the code matures:
 
@@ -821,7 +827,7 @@ The better near-term path is to keep ProofOfWork.Me focused as a usable BTC `OP_
 - `attachments.ts` for chunking and hash verification.
 - `mempool.ts` for scanning and broadcast calls.
 
-Separate BTC infrastructure tools should come later, once real app usage proves which pieces deserve to exist outside the app. Good triggers for separate tools would be needing a custom indexer instead of mempool.space, public `b://` / `c://` resolvers, reusable npm packages, non-UniSat wallet support, larger media/app publishing, or a Bitpipe-like subsidized posting service.
+Separate BTC infrastructure tools should come later, once real app usage proves which pieces deserve to exist outside the app. Good triggers for separate tools would be public `b://` / `c://` resolvers, reusable npm packages, non-UniSat wallet support, larger media/app publishing, deeper token indexes, or a Bitpipe-like subsidized posting service.
 
 Immediate caution: the app should enforce aggregate `OP_RETURN` data size per transaction, not only per-output size. Bitcoin Core v30+ applies `-datacarriersize` across all data-carrier outputs in the transaction.
 

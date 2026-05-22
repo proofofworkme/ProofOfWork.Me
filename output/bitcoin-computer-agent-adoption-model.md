@@ -1,8 +1,12 @@
 # ProofOfWork.Me Bitcoin Computer Model
 
-Generated on 2026-05-13.
+Generated on 2026-05-13. Operational note updated on 2026-05-22.
 
-This is the singular forward model for ProofOfWork.Me.
+This is the singular forward scenario model for ProofOfWork.Me. Current live
+BTC/USD, WORK floor, token flow, and real network-value totals are read from the
+production ProofOfWork node/API and displayed in `growth.proofofwork.me` and
+`work.proofofwork.me`; do not treat the generated static USD snapshots below as
+live market data.
 
 All prior standalone charts, product-only markdown models, and old projection files are deprecated. This model measures:
 
@@ -11,7 +15,9 @@ All prior standalone charts, product-only markdown models, and old projection fi
 3. ProofOfWork Files / Bitcoin Drive
 4. ProofOfWork Marketplace
 5. ProofOfWork Browser
-6. The aggregate Bitcoin Computer
+6. ProofOfWork Tokens, Wallet, and WORK
+7. ProofOfWork Log and Growth
+8. The aggregate Bitcoin Computer
 
 The model is success-case by design:
 
@@ -22,7 +28,7 @@ BTC/USD follows Bitcoin's backward-facing log-growth benchmark
 BTC/USD includes a one-standard-deviation volatility cone
 lower relay fees unlock exponentially more agent usage
 Bitcoin Computer write demand grows exponentially until today's blockspace ceiling
-IDs, Mail, Drive, Marketplace, and Browser reinforce each other
+IDs, Mail, Drive, Marketplace, Browser, Tokens, Wallet, WORK, Log, and Growth reinforce each other
 ```
 
 ## Visual Read
@@ -69,6 +75,10 @@ https://bitnodes.io/api/
 ```
 
 ### BTC/USD Input
+
+This section records the original generated benchmark. The live app no longer
+uses this static value for current USD displays. Production USD values come from
+`/api/v1/prices/btc-usd`, backed by the first-party node price endpoint.
 
 ```text
 Current BTC/USD used: $80,879.33
@@ -394,6 +404,17 @@ As network value grows, the $work floor rises.
 
 The tx status is intentionally not hardcoded here. The chain/API is the oracle for whether the announcement is pending or confirmed at read time.
 
+Live operational rule:
+
+```text
+work.proofofwork.me and growth.proofofwork.me must share the same
+/api/v1/work-floor payload and /api/v1/prices/btc-usd quote.
+```
+
+The static formula remains canonical, but current floor price, network USD, and
+token-reference/arbitrage displays must be read live from the node/API cache path
+and refreshed in the background when expensive token/log scans are required.
+
 ## Canonical Product Growth
 
 This is the canonical lowest-fee success path at 0.00001 sat/vB.
@@ -471,7 +492,8 @@ $2.96 octillion to $9.02 nonillion volatility range
 
 ## Canonical Status
 
-This markdown is the singular ProofOfWork.Me Bitcoin Computer model going forward.
+This markdown is the singular ProofOfWork.Me Bitcoin Computer forward model.
+The live dashboards are the operational source for current confirmed values.
 
 Deprecated:
 
