@@ -6279,7 +6279,11 @@ async function workFloorPayload(network, fresh = false) {
         registryPayload(network),
         globalActivityPayload(network, true),
         tokenPayload(network),
-        tokenPayload(network, WORK_TOKEN_ID),
+      ]).then(([freshRegistryState, freshComputerActivity, freshTokenState]) => [
+        freshRegistryState,
+        freshComputerActivity,
+        freshTokenState,
+        freshTokenState,
       ])
     : await Promise.all([
         fastJsonBackedPayload(
