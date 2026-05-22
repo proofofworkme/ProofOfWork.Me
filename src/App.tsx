@@ -16,6 +16,8 @@ import {
   AtSign,
   ArrowLeft,
   ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   Clock,
   Copy,
@@ -1010,7 +1012,10 @@ const SLIPSTREAM_CLIENT_CODE_REQUIRED_MESSAGE =
   "MARA Slipstream currently requires a client code for direct multi-OP_RETURN submission.";
 const MAX_ATTACHMENT_BYTES = 60_000;
 const MAX_REGISTRY_TX_PAGES = 100;
-const ACTIVITY_FEED_RENDER_LIMIT = 250;
+const DATA_PAGE_SIZE = 25;
+const TOKEN_GRID_PAGE_SIZE = 24;
+const ACTIVITY_FEED_PAGE_SIZE = 50;
+const GROWTH_EVENT_PAGE_SIZE = 12;
 const GROWTH_AUTO_REFRESH_MS = 5 * 60_000;
 const BLOCK_TXID_INDEX_CACHE = new Map<string, Promise<Map<string, number>>>();
 const PROTOCOL_PREFIX = "pwm1:";
@@ -1058,7 +1063,7 @@ const TOKEN_MINT_ASSISTANT_DEFAULT_COUNT = 5;
 const TOKEN_MINT_ASSISTANT_MAX_COUNT = 100;
 const TOKEN_MINT_ASSISTANT_DEFAULT_DELAY_MS = 1200;
 const TOKEN_MINT_ASSISTANT_MAX_DELAY_MS = 60_000;
-const TOKEN_LIST_PREVIEW_COUNT = 25;
+const TOKEN_LIST_PREVIEW_COUNT = DATA_PAGE_SIZE;
 const TOKEN_INDEX_ID = "tokens@proofofwork.me";
 const TOKEN_INDEX_TXID =
   "7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19";
@@ -12777,7 +12782,7 @@ export default function App() {
       });
 
       try {
-        const latestState = await fetchIdRegistryState(network);
+        const latestState = await fetchIdRegistryState(network, true);
         setIdRegistry(latestState.records);
         setIdListings(latestState.listings);
         setIdPendingEvents(latestState.pendingEvents);
@@ -13041,7 +13046,7 @@ export default function App() {
         registryAddress,
       );
       if (resolved.isId || resolved.error) {
-        const state = await fetchIdRegistryState(network);
+        const state = await fetchIdRegistryState(network, true);
         setIdRegistry(state.records);
         setIdListings(state.listings);
         setIdPendingEvents(state.pendingEvents);
@@ -13653,7 +13658,7 @@ export default function App() {
     }
   }
 
-  async function refreshIds(silent = false) {
+  async function refreshIds(silent = false, fresh = !silent) {
     if (!registryAddress) {
       setIdRegistry([]);
       setIdListings([]);
@@ -13686,14 +13691,14 @@ export default function App() {
     }
 
     try {
-      const state = await fetchIdRegistryState(network);
+      const state = await fetchIdRegistryState(network, fresh);
       const shouldLoadComputerLog =
         activityMode || growthMode || activeFolder === "log";
       let activity = state.activity;
       let activityLoadFailed = false;
       if (shouldLoadComputerLog) {
         try {
-          const liveActivity = await fetchGlobalActivity(network);
+          const liveActivity = await fetchGlobalActivity(network, fresh);
           activity = liveActivity.length > 0 ? liveActivity : state.activity;
         } catch {
           activityLoadFailed = true;
@@ -13795,7 +13800,7 @@ export default function App() {
     });
 
     try {
-      const latestState = await fetchIdRegistryState(network);
+      const latestState = await fetchIdRegistryState(network, true);
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
@@ -13958,7 +13963,7 @@ export default function App() {
     });
 
     try {
-      const latestState = await fetchIdRegistryState(network);
+      const latestState = await fetchIdRegistryState(network, true);
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
@@ -14072,7 +14077,7 @@ export default function App() {
       );
     }
 
-    const latestState = await fetchIdRegistryState(network);
+    const latestState = await fetchIdRegistryState(network, true);
     setIdRegistry(latestState.records);
     setIdListings(latestState.listings);
     setIdPendingEvents(latestState.pendingEvents);
@@ -14282,7 +14287,7 @@ export default function App() {
     });
 
     try {
-      const latestState = await fetchIdRegistryState(network);
+      const latestState = await fetchIdRegistryState(network, true);
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
@@ -14455,7 +14460,7 @@ export default function App() {
       });
 
       try {
-        const latestState = await fetchIdRegistryState(network);
+        const latestState = await fetchIdRegistryState(network, true);
         setIdRegistry(latestState.records);
         setIdListings(latestState.listings);
         setIdPendingEvents(latestState.pendingEvents);
@@ -14687,7 +14692,7 @@ export default function App() {
     });
 
     try {
-      const latestState = await fetchIdRegistryState(network);
+      const latestState = await fetchIdRegistryState(network, true);
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
@@ -14829,7 +14834,7 @@ export default function App() {
       registryAddress,
     );
     if (!isValidBitcoinAddress(receiveInput, network)) {
-      const latestState = await fetchIdRegistryState(network);
+      const latestState = await fetchIdRegistryState(network, true);
       latestRegistry = latestState.records;
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
@@ -14900,7 +14905,7 @@ export default function App() {
       !isValidBitcoinAddress(idTransferOwnerAddress.trim(), network) ||
       (receiveInput && !isValidBitcoinAddress(receiveInput, network))
     ) {
-      const latestState = await fetchIdRegistryState(network);
+      const latestState = await fetchIdRegistryState(network, true);
       latestRegistry = latestState.records;
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
@@ -15088,7 +15093,7 @@ export default function App() {
 
       let reservedOutpoints: PowIdSpentOutpoint[] = [];
       if (registryAddress) {
-        const latestState = await fetchIdRegistryState(network);
+        const latestState = await fetchIdRegistryState(network, true);
         setIdRegistry(latestState.records);
         setIdListings(latestState.listings);
         setIdPendingEvents(latestState.pendingEvents);
@@ -15615,7 +15620,7 @@ export default function App() {
 
     try {
       let latestSupply = freshSupplyCheck
-        ? await fetchTokenSupplyState("livenet", false, mintTarget.tokenId)
+        ? await fetchTokenSupplyState("livenet", true, mintTarget.tokenId)
         : undefined;
       let latestToken =
         latestSupply?.tokens.find((token) => token.tokenId === mintTarget.tokenId) ??
@@ -18292,6 +18297,94 @@ function networkFromBrowserLocation(): BitcoinNetwork {
     : "livenet";
 }
 
+type PagedItems<T> = {
+  end: number;
+  items: T[];
+  pageCount: number;
+  pageIndex: number;
+  pageSize: number;
+  start: number;
+  totalCount: number;
+};
+
+function pagedItems<T>(
+  items: T[],
+  requestedPageIndex: number,
+  requestedPageSize = DATA_PAGE_SIZE,
+): PagedItems<T> {
+  const pageSize = Math.max(1, Math.floor(requestedPageSize));
+  const totalCount = items.length;
+  const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+  const pageIndex = Math.min(
+    Math.max(0, Math.floor(requestedPageIndex) || 0),
+    pageCount - 1,
+  );
+  const start = totalCount === 0 ? 0 : pageIndex * pageSize;
+  const end = Math.min(totalCount, start + pageSize);
+
+  return {
+    end,
+    items: items.slice(start, end),
+    pageCount,
+    pageIndex,
+    pageSize,
+    start,
+    totalCount,
+  };
+}
+
+function PaginationControls({
+  label,
+  onPageChange,
+  page,
+}: {
+  label: string;
+  onPageChange: (pageIndex: number) => void;
+  page: PagedItems<unknown>;
+}) {
+  if (page.totalCount <= page.pageSize) {
+    return null;
+  }
+
+  const firstVisible = page.totalCount === 0 ? 0 : page.start + 1;
+
+  return (
+    <div className="pagination-row" aria-label={`${label} pagination`}>
+      <span>
+        {label}: {firstVisible.toLocaleString()}-{page.end.toLocaleString()} of{" "}
+        {page.totalCount.toLocaleString()}
+      </span>
+      <div className="id-record-actions">
+        <button
+          className="secondary small"
+          disabled={page.pageIndex <= 0}
+          onClick={() => onPageChange(page.pageIndex - 1)}
+          type="button"
+        >
+          <span className="button-content">
+            <ChevronLeft size={15} />
+            <span>Prev</span>
+          </span>
+        </button>
+        <button
+          className="secondary small"
+          disabled={page.pageIndex >= page.pageCount - 1}
+          onClick={() => onPageChange(page.pageIndex + 1)}
+          type="button"
+        >
+          <span className="button-content">
+            <span>
+              Page {(page.pageIndex + 1).toLocaleString()} /{" "}
+              {page.pageCount.toLocaleString()}
+            </span>
+            <ChevronRight size={15} />
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function browserPageWithContext(page: BrowserPage) {
   const context = JSON.stringify({
     amountSats: page.amountSats,
@@ -19146,6 +19239,7 @@ function ActivityWorkspace({
   onRefresh: () => void;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const [activityPageIndex, setActivityPageIndex] = useState(0);
   const items = activityItemsForView(
     idActivity,
     searchedActivity,
@@ -19155,8 +19249,12 @@ function ActivityWorkspace({
   const confirmedCount = items.filter((item) => item.confirmed).length;
   const pendingCount = items.length - confirmedCount;
   const dataBytes = totalActivityDataBytes(items);
-  const visibleItems = items.slice(0, ACTIVITY_FEED_RENDER_LIMIT);
-  const hiddenCount = Math.max(0, items.length - visibleItems.length);
+  const activityPage = pagedItems(
+    items,
+    activityPageIndex,
+    ACTIVITY_FEED_PAGE_SIZE,
+  );
+  const visibleItems = activityPage.items;
   const title = profile
     ? `${profile.label} log`
     : query.trim()
@@ -19252,16 +19350,21 @@ function ActivityWorkspace({
               Confirmed records are canonical. Pending records are visible until
               they confirm or disappear.
             </p>
-            {hiddenCount > 0 ? (
+            {items.length > ACTIVITY_FEED_PAGE_SIZE ? (
               <p>
-                Showing the newest {visibleItems.length.toLocaleString()} of{" "}
-                {items.length.toLocaleString()} matching actions. Search an
-                address, ID, txid, or app label to narrow the feed.
+                Showing paged results from {items.length.toLocaleString()}{" "}
+                matching actions. Search an address, ID, txid, or app label to
+                narrow the feed.
               </p>
             ) : null}
           </div>
         </div>
         <ActivityFeed items={visibleItems} totalCount={items.length} />
+        <PaginationControls
+          label="Actions"
+          onPageChange={setActivityPageIndex}
+          page={activityPage}
+        />
       </section>
     </section>
   );
@@ -19598,6 +19701,8 @@ function TokenWalletWorkspace({
 > & {
   compact: boolean;
 }) {
+  const [walletListingPageIndex, setWalletListingPageIndex] = useState(0);
+  const [walletTransferPageIndex, setWalletTransferPageIndex] = useState(0);
   const walletTransfers = address
     ? transfers.filter(
         (transfer) =>
@@ -19612,6 +19717,16 @@ function TokenWalletWorkspace({
           (!selectedTokenId || item.tokenId === selectedTokenId),
       )
     : [];
+  const walletListingPage = pagedItems(
+    walletListings,
+    walletListingPageIndex,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
+  const walletTransferPage = pagedItems(
+    walletTransfers,
+    walletTransferPageIndex,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
   const confirmedTokenCount = balances.filter(
     (balance) => balance.confirmedBalance > 0,
   ).length;
@@ -20018,7 +20133,7 @@ function TokenWalletWorkspace({
                 <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
               </div>
               <div className="token-list compact-token-list">
-                {walletListings.slice(0, TOKEN_LIST_PREVIEW_COUNT).map((item) => {
+                {walletListingPage.items.map((item) => {
                   const sealed = tokenSaleAuthorizationUsesSaleTicketAnchor(
                     item.saleAuthorization,
                   );
@@ -20071,6 +20186,11 @@ function TokenWalletWorkspace({
                   );
                 })}
               </div>
+              <PaginationControls
+                label="Listings"
+                onPageChange={setWalletListingPageIndex}
+                page={walletListingPage}
+              />
             </>
           ) : null}
         </section>
@@ -20087,31 +20207,38 @@ function TokenWalletWorkspace({
           </div>
         </div>
         {walletTransfers.length ? (
-          <div className="token-list compact-token-list">
-            {walletTransfers.slice(0, TOKEN_LIST_PREVIEW_COUNT).map((transfer) => (
-              <a
-                className="token-list-item"
-                href={mempoolTxUrl(transfer.txid, transfer.network)}
-                key={transfer.txid}
-                rel="noreferrer"
-                target="_blank"
-              >
-                <span>
-                  <strong>
-                    {transfer.amount.toLocaleString()} {transfer.ticker}
-                  </strong>
-                  <small>
-                    {transfer.senderAddress === address ? "Sent" : "Received"} ·{" "}
-                    {transfer.confirmed ? "confirmed" : "pending"}
-                  </small>
-                </span>
-                <span>
-                  <strong>{shortAddress(transfer.txid)}</strong>
-                  <small>{formatDate(transfer.createdAt)}</small>
-                </span>
-              </a>
-            ))}
-          </div>
+          <>
+            <div className="token-list compact-token-list">
+              {walletTransferPage.items.map((transfer) => (
+                <a
+                  className="token-list-item"
+                  href={mempoolTxUrl(transfer.txid, transfer.network)}
+                  key={transfer.txid}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <span>
+                    <strong>
+                      {transfer.amount.toLocaleString()} {transfer.ticker}
+                    </strong>
+                    <small>
+                      {transfer.senderAddress === address ? "Sent" : "Received"} ·{" "}
+                      {transfer.confirmed ? "confirmed" : "pending"}
+                    </small>
+                  </span>
+                  <span>
+                    <strong>{shortAddress(transfer.txid)}</strong>
+                    <small>{formatDate(transfer.createdAt)}</small>
+                  </span>
+                </a>
+              ))}
+            </div>
+            <PaginationControls
+              label="Transfers"
+              onPageChange={setWalletTransferPageIndex}
+              page={walletTransferPage}
+            />
+          </>
         ) : (
           <div className="empty-state">
             <Clock size={28} />
@@ -20327,6 +20454,9 @@ function TokenWorkspace({
 >) {
   const [holderSearch, setHolderSearch] = useState("");
   const [mintSearch, setMintSearch] = useState("");
+  const [holderPageIndex, setHolderPageIndex] = useState(0);
+  const [mintPageIndex, setMintPageIndex] = useState(0);
+  const [tokenIndexPageIndex, setTokenIndexPageIndex] = useState(0);
   const [workFloorChartUnit, setWorkFloorChartUnit] =
     useState<WorkFloorChartUnit>("sats");
   const [tokenMarketChartUnit, setTokenMarketChartUnit] =
@@ -20338,17 +20468,21 @@ function TokenWorkspace({
   const selectedMatchingHolders = holders.filter((holder) =>
     tokenHolderMatchesSearch(holder, holderQuery),
   );
-  const selectedVisibleHolders = selectedMatchingHolders.slice(
-    0,
+  const selectedHolderPage = pagedItems(
+    selectedMatchingHolders,
+    holderPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
+  const selectedVisibleHolders = selectedHolderPage.items;
   const selectedMatchingMints = mints.filter((mint) =>
     tokenMintMatchesSearch(mint, mintQuery),
   );
-  const selectedVisibleMints = selectedMatchingMints.slice(
-    0,
+  const selectedMintPage = pagedItems(
+    selectedMatchingMints,
+    mintPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
+  const selectedVisibleMints = selectedMintPage.items;
   const confirmedTokenCount = tokens.filter((token) => token.confirmed).length;
   const pendingTokenCount = tokens.length - confirmedTokenCount;
   const selectedPricePerToken =
@@ -20513,17 +20647,21 @@ function TokenWorkspace({
   const detailMatchingHolders = detailHolders.filter((holder) =>
     tokenHolderMatchesSearch(holder, holderQuery),
   );
-  const detailVisibleHolders = detailMatchingHolders.slice(
-    0,
+  const detailHolderPage = pagedItems(
+    detailMatchingHolders,
+    holderPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
+  const detailVisibleHolders = detailHolderPage.items;
   const detailMatchingMints = detailMints.filter((mint) =>
     tokenMintMatchesSearch(mint, mintQuery),
   );
-  const detailVisibleMints = detailMatchingMints.slice(
-    0,
+  const detailMintPage = pagedItems(
+    detailMatchingMints,
+    mintPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
+  const detailVisibleMints = detailMintPage.items;
   const detailHolderBalance =
     detailHolders.find((holder) => holder.address === address)?.balance ?? 0;
   const detailConfirmedMintCount = detailMints.filter(
@@ -20660,6 +20798,11 @@ function TokenWorkspace({
 
     return stats;
   }, [mints, tokens]);
+  const tokenDefinitionPage = pagedItems(
+    tokens,
+    tokenIndexPageIndex,
+    TOKEN_GRID_PAGE_SIZE,
+  );
   const normalizedPrepareMintCount = Number.isFinite(prepareMintCount)
     ? Math.max(0, Math.floor(prepareMintCount))
     : 0;
@@ -21618,6 +21761,11 @@ function TokenWorkspace({
                   detailHolders.length,
                 )}
                 {renderHolderList(detailToken, detailVisibleHolders)}
+                <PaginationControls
+                  label="Holders"
+                  onPageChange={setHolderPageIndex}
+                  page={detailHolderPage}
+                />
               </section>
 
               <section className="id-launch-card">
@@ -21638,6 +21786,11 @@ function TokenWorkspace({
                   detailMints.length,
                 )}
                 {renderMintList(detailVisibleMints)}
+                <PaginationControls
+                  label="Mints"
+                  onPageChange={setMintPageIndex}
+                  page={detailMintPage}
+                />
               </section>
             </div>
           </>
@@ -22016,7 +22169,7 @@ function TokenWorkspace({
               </div>
               <div>
                 <h3>{selectedToken.ticker} holders</h3>
-                <p>First 25 balances by default. Search to verify an address.</p>
+                <p>Paged confirmed balances. Search to verify an address.</p>
               </div>
             </div>
             {renderHolderSearch(
@@ -22025,6 +22178,11 @@ function TokenWorkspace({
               holders.length,
             )}
             {renderHolderList(selectedToken, selectedVisibleHolders)}
+            <PaginationControls
+              label="Holders"
+              onPageChange={setHolderPageIndex}
+              page={selectedHolderPage}
+            />
           </section>
 
           <section className="id-launch-card">
@@ -22034,7 +22192,7 @@ function TokenWorkspace({
               </div>
               <div>
                 <h3>{selectedToken.ticker} mints</h3>
-                <p>Latest 25 mints by default. Pending records stay visible.</p>
+                <p>Paged mint history. Pending records stay visible.</p>
               </div>
             </div>
             {renderMintSearch(
@@ -22043,6 +22201,11 @@ function TokenWorkspace({
               mints.length,
             )}
             {renderMintList(selectedVisibleMints)}
+            <PaginationControls
+              label="Mints"
+              onPageChange={setMintPageIndex}
+              page={selectedMintPage}
+            />
           </section>
         </div>
       ) : null}
@@ -22141,7 +22304,7 @@ function TokenWorkspace({
                 <p>Create WORK first, then mint against its token id.</p>
               </div>
             ) : (
-              tokens.slice(0, 12).map((token) => {
+              tokenDefinitionPage.items.map((token) => {
                 const stats = tokenStatsById.get(token.tokenId) ?? {
                   confirmedMints: 0,
                   confirmedSupply: 0,
@@ -22207,6 +22370,11 @@ function TokenWorkspace({
               })
             )}
           </div>
+          <PaginationControls
+            label="Tokens"
+            onPageChange={setTokenIndexPageIndex}
+            page={tokenDefinitionPage}
+          />
         </section>
       </div>
     </section>
@@ -23553,6 +23721,7 @@ function GrowthWorkspace({
   tokenTransfers: PowTokenTransfer[];
   onRefresh: () => void;
 }) {
+  const [growthEventPageIndex, setGrowthEventPageIndex] = useState(0);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
   const confirmedActivity = idActivity.filter((item) => item.confirmed);
   const actualValue = growthActualNetworkValue(
@@ -23578,6 +23747,11 @@ function GrowthWorkspace({
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
+  );
+  const growthEventPage = pagedItems(
+    realEvents,
+    growthEventPageIndex,
+    GROWTH_EVENT_PAGE_SIZE,
   );
   const marketplaceStats = marketplaceStatsFromSales(registrySales);
   const oneYear =
@@ -23833,28 +24007,35 @@ function GrowthWorkspace({
           </div>
         </div>
         {realEvents.length > 0 ? (
-          <div className="growth-event-list">
-            {realEvents.slice(0, 8).map((event) => (
-              <a
-                className="growth-event-item"
-                href={mempoolTxUrl(event.txid, event.network)}
-                key={event.key}
-                rel="noreferrer"
-                target="_blank"
-              >
-                <div>
-                  <span className="growth-event-kind">{event.kind}</span>
-                  <strong>{event.title}</strong>
-                  <p>{event.detail}</p>
-                </div>
-                <div className="growth-event-meta">
-                  <span>{event.amountLabel}</span>
-                  <small>{growthEventTimeLabel(event.createdAt)}</small>
-                  <small>{shortAddress(event.txid)}</small>
-                </div>
-              </a>
-            ))}
-          </div>
+          <>
+            <div className="growth-event-list">
+              {growthEventPage.items.map((event) => (
+                <a
+                  className="growth-event-item"
+                  href={mempoolTxUrl(event.txid, event.network)}
+                  key={event.key}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <div>
+                    <span className="growth-event-kind">{event.kind}</span>
+                    <strong>{event.title}</strong>
+                    <p>{event.detail}</p>
+                  </div>
+                  <div className="growth-event-meta">
+                    <span>{event.amountLabel}</span>
+                    <small>{growthEventTimeLabel(event.createdAt)}</small>
+                    <small>{shortAddress(event.txid)}</small>
+                  </div>
+                </a>
+              ))}
+            </div>
+            <PaginationControls
+              label="Growth events"
+              onPageChange={setGrowthEventPageIndex}
+              page={growthEventPage}
+            />
+          </>
         ) : (
           <p className="empty-copy">
             No confirmed growth events loaded yet. Refresh chain metrics to pull
@@ -24627,6 +24808,8 @@ function TokenMarketplacePanel({
   const [selectedTokenMarketId, setSelectedTokenMarketId] = useState(() =>
     tokenRouteTarget(),
   );
+  const [tokenMarketPageIndex, setTokenMarketPageIndex] = useState(0);
+  const [tokenListingPageIndex, setTokenListingPageIndex] = useState(0);
   const selectedMarketToken = rows.find(
     (token) =>
       token.tokenId === selectedTokenMarketId ||
@@ -24671,6 +24854,16 @@ function TokenMarketplacePanel({
       )
     : networkListings;
   const visibleRows = selectedMarketToken ? [selectedMarketToken] : rows;
+  const tokenMarketPage = pagedItems(
+    visibleRows,
+    tokenMarketPageIndex,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
+  const tokenListingPage = pagedItems(
+    marketListings,
+    tokenListingPageIndex,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
   const sealedListings = marketListings.filter((listing) =>
     tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization),
   );
@@ -25039,7 +25232,7 @@ function TokenMarketplacePanel({
             </div>
           ) : (
             <div className="token-market-grid">
-              {visibleRows.slice(0, TOKEN_LIST_PREVIEW_COUNT).map((token) => (
+              {tokenMarketPage.items.map((token) => (
                 <article className="id-record token-market-row" key={token.tokenId}>
                   <div>
                     <strong>{token.ticker}</strong>
@@ -25154,6 +25347,11 @@ function TokenMarketplacePanel({
               ))}
             </div>
           )}
+          <PaginationControls
+            label="Token markets"
+            onPageChange={setTokenMarketPageIndex}
+            page={tokenMarketPage}
+          />
         </section>
 
         <section className="id-card token-market-card">
@@ -25172,7 +25370,7 @@ function TokenMarketplacePanel({
           </div>
           {marketListings.length ? (
             <div className="token-market-grid">
-              {marketListings.slice(0, TOKEN_LIST_PREVIEW_COUNT).map((listing) => {
+              {tokenListingPage.items.map((listing) => {
                 const sealed = tokenSaleAuthorizationUsesSaleTicketAnchor(
                   listing.saleAuthorization,
                 );
@@ -25291,6 +25489,11 @@ function TokenMarketplacePanel({
               </p>
             </div>
           )}
+          <PaginationControls
+            label="Sale tickets"
+            onPageChange={setTokenListingPageIndex}
+            page={tokenListingPage}
+          />
         </section>
 
         <section className="id-card token-market-card">
@@ -26759,9 +26962,15 @@ function MarketplaceListingList({
   setFeeRate: (value: number) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [listingPageIndex, setListingPageIndex] = useState(0);
   const filteredListings = searchQuery
     ? listings.filter((listing) => idListingMatchesSearch(listing, searchQuery))
     : listings;
+  const listingPage = pagedItems(
+    filteredListings,
+    listingPageIndex,
+    DATA_PAGE_SIZE,
+  );
   const sellerListings = address
     ? listings.filter((listing) => listing.sellerAddress === address)
     : [];
@@ -26836,7 +27045,7 @@ function MarketplaceListingList({
         <p className="field-note">No active listings match this search.</p>
       ) : (
         <div className="id-record-list marketplace-listing-list">
-          {filteredListings.map((listing) => {
+          {listingPage.items.map((listing) => {
             const pendingSeal = pendingSealByListingId.get(listing.listingId);
             const sealTxid = listing.sealTxid ?? pendingSeal?.txid;
 
@@ -26946,6 +27155,11 @@ function MarketplaceListingList({
           })}
         </div>
       )}
+      <PaginationControls
+        label="Listings"
+        onPageChange={setListingPageIndex}
+        page={listingPage}
+      />
     </section>
   );
 }
@@ -27158,9 +27372,11 @@ function PendingIdEventList({
   events: PowIdPendingEvent[];
 }) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [pageIndex, setPageIndex] = useState(0);
   const filteredEvents = searchQuery
     ? events.filter((event) => pendingIdEventMatchesSearch(event, searchQuery))
     : events;
+  const eventPage = pagedItems(filteredEvents, pageIndex, DATA_PAGE_SIZE);
 
   if (events.length === 0) {
     return <p className="field-note">{empty}</p>;
@@ -27179,7 +27395,7 @@ function PendingIdEventList({
         <p className="field-note">No pending ID events match this search.</p>
       ) : (
         <div className="id-record-list">
-          {filteredEvents.map((event) => (
+          {eventPage.items.map((event) => (
             <article
               className="id-record"
               key={`${event.network}-${event.txid}-${event.kind}`}
@@ -27244,6 +27460,11 @@ function PendingIdEventList({
           ))}
         </div>
       )}
+      <PaginationControls
+        label="Pending events"
+        onPageChange={setPageIndex}
+        page={eventPage}
+      />
     </>
   );
 }
@@ -27311,18 +27532,16 @@ function IdRecordList({
   searchPlaceholder?: string;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [expanded, setExpanded] = useState(false);
+  const [pageIndex, setPageIndex] = useState(0);
   const filteredRecords = searchQuery
     ? records.filter((record) => idRecordMatchesSearch(record, searchQuery))
     : records;
-  const visibleRecords =
-    initialLimit && !expanded && !searchQuery
-      ? filteredRecords.slice(0, initialLimit)
-      : filteredRecords;
-  const hiddenCount = Math.max(
-    0,
-    filteredRecords.length - visibleRecords.length,
+  const recordPage = pagedItems(
+    filteredRecords,
+    pageIndex,
+    initialLimit ?? DATA_PAGE_SIZE,
   );
+  const visibleRecords = recordPage.items;
 
   if (records.length === 0) {
     return <p className="field-note">{empty}</p>;
@@ -27420,30 +27639,11 @@ function IdRecordList({
           })}
         </div>
       )}
-      {hiddenCount > 0 ? (
-        <button
-          className="secondary registry-expand-button"
-          onClick={() => setExpanded(true)}
-          type="button"
-        >
-          <span className="button-content">
-            <span>Show all IDs ({hiddenCount.toLocaleString()} more)</span>
-          </span>
-        </button>
-      ) : expanded &&
-        initialLimit &&
-        !searchQuery &&
-        records.length > initialLimit ? (
-        <button
-          className="secondary registry-expand-button"
-          onClick={() => setExpanded(false)}
-          type="button"
-        >
-          <span className="button-content">
-            <span>Show fewer IDs</span>
-          </span>
-        </button>
-      ) : null}
+      <PaginationControls
+        label="IDs"
+        onPageChange={setPageIndex}
+        page={recordPage}
+      />
     </>
   );
 }

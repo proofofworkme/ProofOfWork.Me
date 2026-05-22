@@ -13,12 +13,23 @@ export async function fetchProofApiJson<T>(
   path: string,
   network: BitcoinNetwork,
 ): Promise<T> {
-  const response = await fetch(proofApiUrl(path, network), {
-    cache: "no-store",
-    headers: {
-      Accept: "application/json",
-    },
-  });
+  const url = proofApiUrl(path, network);
+  const isFreshRead = /(?:[?&](?:fresh|refresh|nocache)=)/u.test(url);
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 60_000);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      cache: isFreshRead ? "no-store" : "default",
+      headers: {
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const responseText = await response.text().catch(() => "");

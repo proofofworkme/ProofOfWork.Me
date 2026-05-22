@@ -3280,6 +3280,21 @@ select {
   justify-content: center;
 }
 
+.pagination-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.pagination-row > span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 780;
+}
+
 .id-record dt {
   color: var(--text-muted);
   font-size: 0.72rem;
