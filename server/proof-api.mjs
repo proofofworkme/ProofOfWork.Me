@@ -6277,7 +6277,7 @@ async function workFloorPayload(network, fresh = false) {
   ] = fresh
     ? await Promise.all([
         registryPayload(network),
-        globalActivityPayload(network, true),
+        fastGlobalActivityPayload(network),
         tokenPayload(network),
       ]).then(([freshRegistryState, freshComputerActivity, freshTokenState]) => [
         freshRegistryState,
@@ -6298,6 +6298,9 @@ async function workFloorPayload(network, fresh = false) {
         fastCachedTokenPayload(network),
         fastCachedTokenPayload(network, WORK_TOKEN_ID),
       ]);
+  if (fresh) {
+    refreshGlobalActivityCacheInBackground(network);
+  }
   const activityForGrowth =
     Array.isArray(computerActivity.activity) &&
     computerActivity.activity.length > 0
@@ -6796,7 +6799,6 @@ async function handleRequest(request, response) {
         clearResponseCache(
           `work-floor:${network}`,
           `registry:${network}`,
-          `activity:${network}`,
           `token:${network}:`,
           `payload:registry:${network}`,
           `payload:token:${network}:`,
