@@ -12054,6 +12054,19 @@ export default function App() {
   }, [landingMode, network]);
 
   useEffect(() => {
+    if (!marketplaceMode) {
+      return;
+    }
+
+    if (network !== "livenet") {
+      setNetwork("livenet");
+      return;
+    }
+
+    void refreshIds(true);
+  }, [marketplaceMode, network]);
+
+  useEffect(() => {
     if (
       (!needsRegistryResolution(recipient, network) &&
         !needsRegistryResolution(ccRecipient, network) &&
