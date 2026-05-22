@@ -16017,6 +16017,14 @@ export default function App() {
       return;
     }
 
+    if (listing.sellerAddress === address) {
+      setStatus({
+        tone: "bad",
+        text: "You cannot buy your own token listing from the same wallet.",
+      });
+      return;
+    }
+
     setTokenAction("buy");
     setBusy(true);
     setStatus({
@@ -19897,7 +19905,7 @@ function TokenWalletWorkspace({
               </div>
             </div>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
-            <button className="primary" disabled={!canList} type="submit">
+            <button className="primary" disabled={listing} type="submit">
               <span className="button-content">
                 <Tag size={16} />
                 <span>{listing ? "Listing" : "List token"}</span>
@@ -19957,7 +19965,6 @@ function TokenWalletWorkspace({
                         ) : null}
                         <button
                           className="secondary small"
-                          disabled={!item.confirmed}
                           onClick={() => delistListing(item)}
                           type="button"
                         >
@@ -24199,7 +24206,7 @@ function IdLaunchApp({
               bytes
             </div>
 
-            <button className="primary" disabled={!canRegister} type="submit">
+            <button className="primary" disabled={busy} type="submit">
               <span className="button-content">
                 <AtSign size={16} />
                 <span>{busy ? "Registering" : "Register for 1,000 sats"}</span>
@@ -24546,14 +24553,17 @@ function MarketplaceTabs({
 function TokenMarketplacePanel({
   address,
   btcUsd,
+  busy,
   buyListing,
   computerMode = false,
+  feeRate,
   listings,
   mints,
   network,
   onOpenTokenWorkspace,
   onOpenWalletWorkspace,
   sales,
+  setFeeRate,
   tokens,
   transfers,
   workFloorLoading,
@@ -24561,14 +24571,17 @@ function TokenMarketplacePanel({
 }: {
   address: string;
   btcUsd: number;
+  busy: boolean;
   buyListing: (listing: PowTokenListing) => void;
   computerMode?: boolean;
+  feeRate: number;
   listings: PowTokenListing[];
   mints: PowTokenMint[];
   network: BitcoinNetwork;
   onOpenTokenWorkspace?: (token?: PowTokenDefinition) => void;
   onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
   sales: PowTokenSale[];
+  setFeeRate: (value: number) => void;
   tokens: PowTokenDefinition[];
   transfers: PowTokenTransfer[];
   workFloorLoading: boolean;
@@ -25150,6 +25163,13 @@ function TokenMarketplacePanel({
               </p>
             </div>
           </div>
+          <div className="listing-fee-control token-listing-fee-control">
+            <div>
+              <strong>Buy fee rate</strong>
+              <span>Used when buying token sale tickets.</span>
+            </div>
+            <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+          </div>
           {marketListings.length ? (
             <div className="token-market-grid">
               {tokenListingPage.items.map((listing) => {
@@ -25189,12 +25209,16 @@ function TokenMarketplacePanel({
                           minimumFractionDigits: 1,
                         })}%`
                     : "n/a";
-                const canBuy =
-                  sealed &&
-                  address &&
-                  listing.sellerAddress !== address &&
-                  (!listing.saleAuthorization.buyerAddress ||
-                    listing.saleAuthorization.buyerAddress === address);
+                const buyLabel = !address
+                  ? "Connect to buy"
+                  : !sealed
+                    ? "Needs seal"
+                    : listing.sellerAddress === address
+                      ? "Your listing"
+                      : listing.saleAuthorization.buyerAddress &&
+                          listing.saleAuthorization.buyerAddress !== address
+                        ? "Buyer locked"
+                        : "Buy";
                 return (
                   <article
                     className="id-record token-market-row"
@@ -25238,11 +25262,11 @@ function TokenMarketplacePanel({
                     <div className="id-record-actions">
                       <button
                         className="primary small"
-                        disabled={!canBuy}
+                        disabled={busy}
                         onClick={() => buyListing(listing)}
                         type="button"
                       >
-                        Buy
+                        {buyLabel}
                       </button>
                       <a
                         className="secondary small"
@@ -25666,11 +25690,14 @@ function MarketplaceApp({
           <TokenMarketplacePanel
             address={address}
             btcUsd={btcUsd}
+            busy={busy}
             buyListing={buyTokenListing}
+            feeRate={feeRate}
             listings={tokenListings}
             mints={tokenMints}
             network="livenet"
             sales={tokenSales}
+            setFeeRate={setFeeRate}
             tokens={tokens}
             transfers={tokenTransfers}
             workFloorLoading={workFloorLoading}
@@ -26009,14 +26036,17 @@ function MarketplaceWorkspace({
         <TokenMarketplacePanel
           address={address}
           btcUsd={btcUsd}
+          busy={busy}
           buyListing={buyTokenListing}
           computerMode
+          feeRate={feeRate}
           listings={tokenListings}
           mints={tokenMints}
           network={network}
           onOpenTokenWorkspace={onOpenTokenWorkspace}
           onOpenWalletWorkspace={onOpenWalletWorkspace}
           sales={tokenSales}
+          setFeeRate={setFeeRate}
           tokens={tokens}
           transfers={tokenTransfers}
           workFloorLoading={workFloorLoading}
@@ -26422,7 +26452,7 @@ function IdsWorkspace({
             bytes
           </div>
 
-          <button className="primary" disabled={!canRegister} type="submit">
+          <button className="primary" disabled={busy} type="submit">
             <span className="button-content">
               <AtSign size={16} />
               <span>{busy ? "Registering" : "Register ID"}</span>
@@ -27131,7 +27161,7 @@ function IdMarketplaceCard({
           </div>
           <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
           <div className="id-record-actions">
-            <button className="primary" disabled={!canPurchaseId} type="submit">
+            <button className="primary" disabled={busy} type="submit">
               <span className="button-content">
                 <Send size={15} />
                 <span>{busy ? "Buying" : "Buy Listing On-Chain"}</span>
