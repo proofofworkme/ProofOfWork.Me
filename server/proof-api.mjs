@@ -253,7 +253,8 @@ function shouldPersistJsonCache(cacheKey) {
     cacheKey === "registry:livenet" ||
     cacheKey.startsWith("token-summary:livenet:") ||
     cacheKey.startsWith("token:livenet:") ||
-    cacheKey === "rush:livenet"
+    cacheKey === "rush:livenet" ||
+    cacheKey === "work-floor:livenet"
   );
 }
 
@@ -6844,14 +6845,14 @@ async function handleRequest(request, response) {
         refreshedJsonResponse(
           response,
           `work-floor:${network}`,
-          await backgroundRefreshedJsonBackedPayload(
+          (await backgroundRefreshedJsonBackedPayload(
             `work-floor:${network}`,
             `payload:work-floor:${network}`,
             () => workFloorPayload(network, true),
             WORK_FLOOR_CACHE_TTL_MS,
             WORK_FLOOR_CACHE_STALE_MS,
-            emptyWorkFloorPayload(network),
-          ),
+            null,
+          )) ?? (await workFloorPayload(network)),
           FRESH_READ_CACHE_CONTROL,
           WORK_FLOOR_CACHE_TTL_MS,
           WORK_FLOOR_CACHE_STALE_MS,
@@ -7141,6 +7142,12 @@ function prewarmExpensiveReadCaches() {
     () => globalActivityPayload("livenet"),
     ACTIVITY_CACHE_TTL_MS,
     ACTIVITY_CACHE_STALE_MS,
+  );
+  warmJsonCache(
+    "work-floor:livenet",
+    () => workFloorPayload("livenet"),
+    WORK_FLOOR_CACHE_TTL_MS,
+    WORK_FLOOR_CACHE_STALE_MS,
   );
 }
 
