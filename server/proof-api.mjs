@@ -2458,7 +2458,8 @@ function tokenStateFromTransactions(
 
       const vin = Array.isArray(tx.vin) ? tx.vin : [];
       const vout = Array.isArray(tx.vout) ? tx.vout : [];
-      const actorAddress = inputAddresses(vin)[0] ?? "";
+      const txInputAddresses = inputAddresses(vin);
+      const actorAddress = txInputAddresses[0] ?? "";
       if (!isValidBitcoinAddress(actorAddress, network)) {
         continue;
       }
@@ -2673,7 +2674,7 @@ function tokenStateFromTransactions(
             : "";
           if (
             !listing ||
-            parsed.buyerAddress !== actorAddress ||
+            !txInputAddresses.includes(parsed.buyerAddress) ||
             remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
             !tokenSaleAuthorizationUsesSaleTicketAnchor(
               listing.saleAuthorization,

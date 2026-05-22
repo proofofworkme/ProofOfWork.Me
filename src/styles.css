@@ -3280,6 +3280,82 @@ select {
   justify-content: center;
 }
 
+.purchase-receipt-backdrop {
+  align-items: center;
+  background: rgba(8, 8, 7, 0.72);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 80;
+}
+
+.purchase-receipt-modal {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 14px;
+  max-height: min(720px, calc(100vh - 40px));
+  overflow: auto;
+  padding: 16px;
+  width: min(560px, 100%);
+}
+
+.purchase-receipt-head {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.purchase-receipt-head h3 {
+  margin: 0;
+}
+
+.purchase-receipt-head p {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
+.purchase-receipt-fields {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.purchase-receipt-fields div {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.purchase-receipt-fields dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.purchase-receipt-fields dd {
+  font-weight: 820;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.purchase-receipt-actions {
+  justify-content: flex-start;
+}
+
+.purchase-receipt-actions .link-button {
+  gap: 7px;
+}
+
 .pagination-row {
   align-items: center;
   display: flex;
@@ -5607,6 +5683,15 @@ pre {
   .token-search-count {
     text-align: left;
     white-space: normal;
+  }
+
+  .purchase-receipt-fields,
+  .purchase-receipt-head {
+    grid-template-columns: 1fr;
+  }
+
+  .purchase-receipt-head .secondary {
+    justify-self: start;
   }
 
   .token-progress-mini > div,

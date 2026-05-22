@@ -592,6 +592,18 @@ type PowTokenSale = {
   txid: string;
 };
 
+type MarketplacePurchaseReceipt = {
+  amountLabel: string;
+  assetLabel: string;
+  buyerAddress: string;
+  kind: "id" | "token";
+  listingId: string;
+  network: BitcoinNetwork;
+  priceSats: number;
+  sellerAddress: string;
+  txid: string;
+};
+
 type TokenMarketPricePoint = {
   confirmed: boolean;
   createdAt: string;
@@ -1728,6 +1740,132 @@ function xVerificationUrl(record: PowIdRecord) {
   ].join("\n\n");
 
   return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+}
+
+function marketplacePurchaseTweetUrl(receipt: MarketplacePurchaseReceipt) {
+  const assetLine =
+    receipt.kind === "id"
+      ? `I bought ${receipt.assetLabel} on ProofOfWork.Me.`
+      : `I bought ${receipt.amountLabel} on ProofOfWork.Me.`;
+  const text = [
+    assetLine,
+    `Purchase tx: ${explorerTxUrl(receipt.txid, receipt.network)}`,
+    "Bitcoin-native markets settle through on-chain sale tickets.",
+  ].join("\n\n");
+
+  return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+}
+
+function MarketplacePurchaseReceiptModal({
+  onClose,
+  receipt,
+}: {
+  onClose: () => void;
+  receipt?: MarketplacePurchaseReceipt;
+}) {
+  if (!receipt) {
+    return null;
+  }
+
+  const title =
+    receipt.kind === "id"
+      ? "ID purchase broadcast"
+      : "Token purchase broadcast";
+  const description =
+    receipt.kind === "id"
+      ? `${receipt.assetLabel} buyer-funded transfer is on Bitcoin.`
+      : `${receipt.amountLabel} purchase is on Bitcoin.`;
+
+  return (
+    <div
+      className="purchase-receipt-backdrop"
+      onClick={onClose}
+      role="presentation"
+    >
+      <section
+        aria-labelledby="purchase-receipt-title"
+        aria-modal="true"
+        className="purchase-receipt-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="purchase-receipt-head">
+          <div className="empty-icon" aria-hidden="true">
+            <CheckCircle2 size={24} />
+          </div>
+          <div>
+            <h3 id="purchase-receipt-title">{title}</h3>
+            <p>{description}</p>
+          </div>
+          <button
+            aria-label="Close purchase receipt"
+            className="secondary small"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        <dl className="purchase-receipt-fields">
+          <div>
+            <dt>Asset</dt>
+            <dd>{receipt.assetLabel}</dd>
+          </div>
+          <div>
+            <dt>Amount</dt>
+            <dd>{receipt.amountLabel}</dd>
+          </div>
+          <div>
+            <dt>Price</dt>
+            <dd>{receipt.priceSats.toLocaleString()} sats</dd>
+          </div>
+          <div>
+            <dt>Purchase TX</dt>
+            <dd>{shortAddress(receipt.txid)}</dd>
+          </div>
+          <div>
+            <dt>Buyer</dt>
+            <dd>{shortAddress(receipt.buyerAddress)}</dd>
+          </div>
+          <div>
+            <dt>Seller</dt>
+            <dd>{shortAddress(receipt.sellerAddress)}</dd>
+          </div>
+        </dl>
+
+        <div className="id-record-actions purchase-receipt-actions">
+          <a
+            className="primary link-button"
+            href={explorerTxUrl(receipt.txid, receipt.network)}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <ArrowUpRight size={15} />
+            <span>View Purchase TX</span>
+          </a>
+          <a
+            className="secondary link-button"
+            href={explorerTxUrl(receipt.listingId, receipt.network)}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <ArrowUpRight size={15} />
+            <span>View Listing TX</span>
+          </a>
+          <a
+            className="secondary link-button"
+            href={marketplacePurchaseTweetUrl(receipt)}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <Send size={15} />
+            <span>Post on X</span>
+          </a>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function registryAddressForNetwork(network: BitcoinNetwork) {
@@ -5547,7 +5685,8 @@ function tokenStateFromTransactions(
       const vout = Array.isArray(tx.vout)
         ? (tx.vout as Array<Record<string, unknown>>)
         : [];
-      const actorAddress = transactionInputAddresses(vin)[0] ?? "";
+      const txInputAddresses = transactionInputAddresses(vin);
+      const actorAddress = txInputAddresses[0] ?? "";
       if (!isValidBitcoinAddress(actorAddress, targetNetwork)) {
         continue;
       }
@@ -5754,7 +5893,7 @@ function tokenStateFromTransactions(
             : "";
           if (
             !listing ||
-            parsed.buyerAddress !== actorAddress ||
+            !txInputAddresses.includes(parsed.buyerAddress) ||
             remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
             !tokenSaleAuthorizationUsesSaleTicketAnchor(
               listing.saleAuthorization,
@@ -10457,6 +10596,9 @@ export default function App() {
   const [tokenTransfers, setTokenTransfers] = useState<PowTokenTransfer[]>([]);
   const [tokenListings, setTokenListings] = useState<PowTokenListing[]>([]);
   const [tokenSales, setTokenSales] = useState<PowTokenSale[]>([]);
+  const [purchaseReceipt, setPurchaseReceipt] = useState<
+    MarketplacePurchaseReceipt | undefined
+  >();
   const [tokenCreationSats, setTokenCreationSats] = useState(0);
   const [tokenSelectedId, setTokenSelectedId] = useState(() =>
     workTokenMode ? WORK_TOKEN_TICKER : tokenRouteTarget(),
@@ -14577,6 +14719,17 @@ export default function App() {
         tone: "good",
         text: `${authorization.id}@proofofwork.me purchase broadcast: ${shortAddress(txid)}.`,
       });
+      setPurchaseReceipt({
+        amountLabel: "1 ID",
+        assetLabel: `${authorization.id}@proofofwork.me`,
+        buyerAddress: ownerAddress,
+        kind: "id",
+        listingId: latestListing.listingId,
+        network,
+        priceSats: latestListing.priceSats,
+        sellerAddress: latestListing.sellerAddress,
+        txid,
+      });
       setIdSaleAuthorization("");
       setIdSelectedListingId("");
       setIdPurchaseReceiveAddress("");
@@ -16107,6 +16260,17 @@ export default function App() {
         tone: "good",
         text: `${listing.ticker} purchase broadcast: ${shortAddress(txid)}.`,
       });
+      setPurchaseReceipt({
+        amountLabel: `${listing.amount.toLocaleString()} ${listing.ticker}`,
+        assetLabel: listing.ticker,
+        buyerAddress: address,
+        kind: "token",
+        listingId: listing.listingId,
+        network: "livenet",
+        priceSats: listing.priceSats,
+        sellerAddress: listing.sellerAddress,
+        txid,
+      });
       void refreshToken(true, true);
     } catch (error) {
       setStatus({
@@ -16786,82 +16950,88 @@ export default function App() {
 
   if (marketplaceMode) {
     return (
-      <MarketplaceApp
-        address={address}
-        btcUsd={tokenBtcUsd}
-        busy={busy}
-        canCreateSaleAuthorization={canCreateSaleAuthorization}
-        canPurchaseId={canPurchaseId}
-        connectWallet={connectWallet}
-        delistListing={delistIdListing}
-        disconnectWallet={disconnectWallet}
-        feeRate={feeRate}
-        hasUnisat={hasUnisat}
-        idPurchaseBytes={idPurchaseBytes}
-        idPurchaseOwnerAddress={idPurchaseOwnerAddress}
-        idPurchaseReceiveAddress={idPurchaseReceiveAddress}
-        idSaleAuthorization={idSaleAuthorization}
-        idSaleBuyerAddress={idSaleBuyerAddress}
-        idSalePriceSats={idSalePriceSats}
-        idSaleReceiveAddress={idSaleReceiveAddress}
-        managedIdName={managedIdRecord?.id ?? ""}
-        network={network}
-        onNetworkChange={chooseNetwork}
-        publishListing={publishIdListing}
-        pendingEvents={idPendingEvents.filter(
-          (event) => event.network === "livenet",
-        )}
-        registryAddress={registryAddressForNetwork("livenet")}
-        registryListings={idListings.filter(
-          (listing) => listing.network === "livenet",
-        )}
-        registryRecords={idRegistry.filter(
-          (record) => record.network === "livenet",
-        )}
-        registrySales={idSales.filter((sale) => sale.network === "livenet")}
-        sealListing={sealIdListing}
-        setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
-        setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
-        setIdSaleBuyerAddress={setIdSaleBuyerAddress}
-        setIdSalePriceSats={setIdSalePriceSats}
-        setIdSaleReceiveAddress={setIdSaleReceiveAddress}
-        setFeeRate={setFeeRate}
-        setManagedIdName={(id) => {
-          setManagedIdName(id);
-          setIdSaleAuthorization("");
-          setIdSelectedListingId("");
-        }}
-        status={status}
-        submitPurchase={purchaseId}
-        tokenListings={tokenListings.filter(
-          (listing) => listing.network === "livenet",
-        )}
-        tokenMints={tokenMints.filter((mint) => mint.network === "livenet")}
-        tokenSales={tokenSales.filter((sale) => sale.network === "livenet")}
-        tokens={orderedTokenDefinitions.filter(
-          (token) => token.network === "livenet",
-        )}
-        tokenTransfers={tokenTransfers.filter(
-          (transfer) => transfer.network === "livenet",
-        )}
-        workFloorLoading={workFloorLoading}
-        workFloorQuote={workFloorQuote}
-        buyTokenListing={buyTokenListing}
-        useListing={(listing) => {
-          setIdSaleAuthorization(
-            JSON.stringify(listing.saleAuthorization, null, 2),
-          );
-          setIdSelectedListingId(listing.listingId);
-          setIdPurchaseOwnerAddress(address);
-          setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
-        }}
-        onRefresh={() => {
-          void refreshWorkFloor(false, true);
-          void refreshIds();
-          void refreshToken(false, true);
-          void refreshTokenBtcUsd();
-        }}
-      />
+      <>
+        <MarketplaceApp
+          address={address}
+          btcUsd={tokenBtcUsd}
+          busy={busy}
+          canCreateSaleAuthorization={canCreateSaleAuthorization}
+          canPurchaseId={canPurchaseId}
+          connectWallet={connectWallet}
+          delistListing={delistIdListing}
+          disconnectWallet={disconnectWallet}
+          feeRate={feeRate}
+          hasUnisat={hasUnisat}
+          idPurchaseBytes={idPurchaseBytes}
+          idPurchaseOwnerAddress={idPurchaseOwnerAddress}
+          idPurchaseReceiveAddress={idPurchaseReceiveAddress}
+          idSaleAuthorization={idSaleAuthorization}
+          idSaleBuyerAddress={idSaleBuyerAddress}
+          idSalePriceSats={idSalePriceSats}
+          idSaleReceiveAddress={idSaleReceiveAddress}
+          managedIdName={managedIdRecord?.id ?? ""}
+          network={network}
+          onNetworkChange={chooseNetwork}
+          publishListing={publishIdListing}
+          pendingEvents={idPendingEvents.filter(
+            (event) => event.network === "livenet",
+          )}
+          registryAddress={registryAddressForNetwork("livenet")}
+          registryListings={idListings.filter(
+            (listing) => listing.network === "livenet",
+          )}
+          registryRecords={idRegistry.filter(
+            (record) => record.network === "livenet",
+          )}
+          registrySales={idSales.filter((sale) => sale.network === "livenet")}
+          sealListing={sealIdListing}
+          setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
+          setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
+          setIdSaleBuyerAddress={setIdSaleBuyerAddress}
+          setIdSalePriceSats={setIdSalePriceSats}
+          setIdSaleReceiveAddress={setIdSaleReceiveAddress}
+          setFeeRate={setFeeRate}
+          setManagedIdName={(id) => {
+            setManagedIdName(id);
+            setIdSaleAuthorization("");
+            setIdSelectedListingId("");
+          }}
+          status={status}
+          submitPurchase={purchaseId}
+          tokenListings={tokenListings.filter(
+            (listing) => listing.network === "livenet",
+          )}
+          tokenMints={tokenMints.filter((mint) => mint.network === "livenet")}
+          tokenSales={tokenSales.filter((sale) => sale.network === "livenet")}
+          tokens={orderedTokenDefinitions.filter(
+            (token) => token.network === "livenet",
+          )}
+          tokenTransfers={tokenTransfers.filter(
+            (transfer) => transfer.network === "livenet",
+          )}
+          workFloorLoading={workFloorLoading}
+          workFloorQuote={workFloorQuote}
+          buyTokenListing={buyTokenListing}
+          useListing={(listing) => {
+            setIdSaleAuthorization(
+              JSON.stringify(listing.saleAuthorization, null, 2),
+            );
+            setIdSelectedListingId(listing.listingId);
+            setIdPurchaseOwnerAddress(address);
+            setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
+          }}
+          onRefresh={() => {
+            void refreshWorkFloor(false, true);
+            void refreshIds();
+            void refreshToken(false, true);
+            void refreshTokenBtcUsd();
+          }}
+        />
+        <MarketplacePurchaseReceiptModal
+          receipt={purchaseReceipt}
+          onClose={() => setPurchaseReceipt(undefined)}
+        />
+      </>
     );
   }
 
@@ -18004,6 +18174,10 @@ export default function App() {
           </>
         )}
       </section>
+      <MarketplacePurchaseReceiptModal
+        receipt={purchaseReceipt}
+        onClose={() => setPurchaseReceipt(undefined)}
+      />
       <SocialFooter compact />
     </main>
   );
