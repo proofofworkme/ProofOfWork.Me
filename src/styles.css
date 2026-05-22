@@ -3122,6 +3122,58 @@ select {
   color: var(--green);
 }
 
+.token-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.token-list-item {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 10px 12px;
+  text-decoration: none;
+}
+
+.token-list-item:hover {
+  border-color: var(--border-strong);
+}
+
+.token-list-item > span:not(.id-record-actions) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.token-list-item > span:last-child:not(.id-record-actions) {
+  justify-items: end;
+  text-align: right;
+}
+
+.token-list-item strong {
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.token-list-item small {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 780;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.token-list-item .id-record-actions {
+  justify-content: flex-end;
+}
+
 .contacts-list-card {
   min-height: 0;
 }
@@ -5692,6 +5744,20 @@ pre {
 
   .purchase-receipt-head .secondary {
     justify-self: start;
+  }
+
+  .token-list-item {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .token-list-item > span:last-child:not(.id-record-actions) {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .token-list-item .id-record-actions {
+    justify-content: flex-start;
   }
 
   .token-progress-mini > div,
