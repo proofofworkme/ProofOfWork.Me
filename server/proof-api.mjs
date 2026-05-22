@@ -81,7 +81,7 @@ const WORK_FLOOR_CACHE_STALE_MS = Number(
   process.env.WORK_FLOOR_CACHE_STALE_MS ?? 5 * 60_000,
 );
 const BTC_USD_PRICE_CACHE_TTL_MS = Number(
-  process.env.BTC_USD_PRICE_CACHE_TTL_MS ?? 5 * 60_000,
+  process.env.BTC_USD_PRICE_CACHE_TTL_MS ?? 60_000,
 );
 const BTC_USD_PRICE_FETCH_TIMEOUT_MS = Number(
   process.env.BTC_USD_PRICE_FETCH_TIMEOUT_MS ?? 8_000,
@@ -534,8 +534,23 @@ function freshReadRequested(searchParams) {
 
 function clearResponseCache(...cacheKeys) {
   for (const cacheKey of cacheKeys) {
+    const jsonCacheKey = `json:${cacheKey}`;
+    if (cacheKey.endsWith(":")) {
+      for (const key of [...RESPONSE_CACHE.keys()]) {
+        if (
+          key === cacheKey ||
+          key === jsonCacheKey ||
+          key.startsWith(cacheKey) ||
+          key.startsWith(jsonCacheKey)
+        ) {
+          RESPONSE_CACHE.delete(key);
+        }
+      }
+      continue;
+    }
+
     RESPONSE_CACHE.delete(cacheKey);
-    RESPONSE_CACHE.delete(`json:${cacheKey}`);
+    RESPONSE_CACHE.delete(jsonCacheKey);
   }
 }
 
@@ -1014,9 +1029,10 @@ function normalizeBtcUsdPricePayload(payload) {
   };
 }
 
-async function fetchLiveBtcUsdPrice() {
+async function fetchLiveBtcUsdPrice({ fresh = false } = {}) {
   const now = Date.now();
   if (
+    !fresh &&
     btcUsdPriceCache &&
     now - btcUsdPriceCache.fetchedAtMs < BTC_USD_PRICE_CACHE_TTL_MS
   ) {
@@ -1048,9 +1064,9 @@ async function fetchLiveBtcUsdPrice() {
   return { ...quote, cached: false };
 }
 
-async function btcUsdPricePayload(network) {
+async function btcUsdPricePayload(network, { fresh = false } = {}) {
   try {
-    const quote = await fetchLiveBtcUsdPrice();
+    const quote = await fetchLiveBtcUsdPrice({ fresh });
     return {
       USD: quote.usd,
       cached: quote.cached,
@@ -6258,19 +6274,26 @@ async function workFloorPayload(network, fresh = false) {
     computerActivity,
     tokenState,
     workTokenState,
-  ] = await Promise.all([
-    fastJsonBackedPayload(
-      `registry:${network}`,
-      `payload:registry:${network}`,
-      () => registryPayload(network),
-      REGISTRY_CACHE_TTL_MS,
-      REGISTRY_CACHE_STALE_MS,
-      emptyRegistryState,
-    ),
-    fastGlobalActivityPayload(network),
-    fastCachedTokenPayload(network),
-    fastCachedTokenPayload(network, WORK_TOKEN_ID),
-  ]);
+  ] = fresh
+    ? await Promise.all([
+        registryPayload(network),
+        globalActivityPayload(network, true),
+        tokenPayload(network),
+        tokenPayload(network, WORK_TOKEN_ID),
+      ])
+    : await Promise.all([
+        fastJsonBackedPayload(
+          `registry:${network}`,
+          `payload:registry:${network}`,
+          () => registryPayload(network),
+          REGISTRY_CACHE_TTL_MS,
+          REGISTRY_CACHE_STALE_MS,
+          emptyRegistryState,
+        ),
+        fastGlobalActivityPayload(network),
+        fastCachedTokenPayload(network),
+        fastCachedTokenPayload(network, WORK_TOKEN_ID),
+      ]);
   const activityForGrowth =
     Array.isArray(computerActivity.activity) &&
     computerActivity.activity.length > 0
@@ -6617,8 +6640,8 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await btcUsdPricePayload(network),
-        "public, max-age=300",
+        await btcUsdPricePayload(network, { fresh: freshRead }),
+        freshRead ? FRESH_READ_CACHE_CONTROL : "public, max-age=60",
       );
       return;
     }
@@ -6768,9 +6791,12 @@ async function handleRequest(request, response) {
       if (freshRead) {
         clearResponseCache(
           `work-floor:${network}`,
+          `registry:${network}`,
+          `activity:${network}`,
+          `token:${network}:`,
           `payload:registry:${network}`,
+          `payload:token:${network}:`,
         );
-        refreshTokenPayloadCacheInBackground(network);
         refreshedJsonResponse(
           response,
           `work-floor:${network}`,

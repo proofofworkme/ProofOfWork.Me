@@ -1681,9 +1681,9 @@ function maxPayloadDataBytes(prefix: string) {
   return low;
 }
 
-async function fetchBtcUsdPrice() {
+async function fetchBtcUsdPrice(fresh = false) {
   const payload = await fetchProofApiJson<{ USD?: number; usd?: number }>(
-    "/api/v1/prices/btc-usd",
+    fresh ? "/api/v1/prices/btc-usd?fresh=1" : "/api/v1/prices/btc-usd",
     "livenet",
   );
   const usd = Number(payload.USD ?? payload.usd);
@@ -10625,9 +10625,7 @@ export default function App() {
   const [tokenListAmount, setTokenListAmount] = useState(WORK_TOKEN_MINT_AMOUNT);
   const [tokenListBuyerAddress, setTokenListBuyerAddress] = useState("");
   const [tokenListPriceSats, setTokenListPriceSats] = useState(1000);
-  const [tokenBtcUsd, setTokenBtcUsd] = useState(
-    GROWTH_MODEL_INPUTS.currentBtcUsd,
-  );
+  const [tokenBtcUsd, setTokenBtcUsd] = useState(0);
   const [workFloorQuote, setWorkFloorQuote] = useState<
     WorkFloorQuote | undefined
   >();
@@ -11860,7 +11858,7 @@ export default function App() {
       return;
     }
 
-    void refreshToken(true);
+    void refreshToken(true, true);
   }, [marketplaceMode, network, tokenMode, walletMode, workTokenMode]);
 
   useEffect(() => {
@@ -11888,7 +11886,7 @@ export default function App() {
     const refreshWorkFloorMetrics = () => {
       if (document.visibilityState === "visible") {
         void refreshTokenBtcUsd();
-        void refreshWorkFloor(true);
+        void refreshWorkFloor(true, true);
       }
     };
 
@@ -11917,6 +11915,7 @@ export default function App() {
       !marketplaceMode &&
       !tokenMode &&
       !walletMode &&
+      !growthMode &&
       !workTokenMode &&
       activeFolder !== "marketplace" &&
       activeFolder !== "token" &&
@@ -11934,21 +11933,26 @@ export default function App() {
         }
       })
       .catch(() => {
-        if (!canceled) {
-          setTokenBtcUsd(GROWTH_MODEL_INPUTS.currentBtcUsd);
-        }
+        return undefined;
       });
 
     return () => {
       canceled = true;
     };
-  }, [activeFolder, marketplaceMode, tokenMode, walletMode, workTokenMode]);
+  }, [
+    activeFolder,
+    growthMode,
+    marketplaceMode,
+    tokenMode,
+    walletMode,
+    workTokenMode,
+  ]);
 
-  async function refreshTokenBtcUsd() {
+  async function refreshTokenBtcUsd(fresh = true) {
     try {
-      setTokenBtcUsd(await fetchBtcUsdPrice());
+      setTokenBtcUsd(await fetchBtcUsdPrice(fresh));
     } catch {
-      setTokenBtcUsd(GROWTH_MODEL_INPUTS.currentBtcUsd);
+      return undefined;
     }
   }
 
@@ -11959,7 +11963,7 @@ export default function App() {
 
     const refreshGrowthMetrics = () => {
       if (document.visibilityState === "visible") {
-        void refreshGrowth(true);
+        void refreshGrowth(true, true);
       }
     };
     refreshGrowthMetrics();
@@ -13246,10 +13250,18 @@ export default function App() {
     }
 
     try {
-      const [registryState, computerActivity, tokenState] = await Promise.all([
+      const [
+        registryState,
+        computerActivity,
+        tokenState,
+        btcUsdQuote,
+        floorQuote,
+      ] = await Promise.all([
         fetchIdRegistryState("livenet", fresh),
         fetchGlobalActivity("livenet", fresh).catch(() => []),
         fetchTokenState("livenet", fresh),
+        fetchBtcUsdPrice(fresh).catch(() => undefined),
+        fetchWorkFloorQuote("livenet", fresh).catch(() => undefined),
       ]);
       setIdRegistry(registryState.records);
       setIdListings(registryState.listings);
@@ -13264,6 +13276,12 @@ export default function App() {
       setTokenListings(tokenState.listings);
       setTokenSales(tokenState.sales);
       setTokenCreationSats(tokenState.creationSats);
+      if (btcUsdQuote) {
+        setTokenBtcUsd(btcUsdQuote);
+      }
+      if (floorQuote) {
+        setWorkFloorQuote(floorQuote);
+      }
       if (!silent) {
         setStatus({
           tone: "good",
@@ -17267,6 +17285,7 @@ export default function App() {
     return (
       <GrowthApp
         activeNetwork={network}
+        btcUsd={tokenBtcUsd}
         busy={busy}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
         registryListings={idListings.filter(
@@ -17285,6 +17304,7 @@ export default function App() {
         tokenTransfers={tokenTransfers.filter(
           (transfer) => transfer.network === "livenet",
         )}
+        workFloorQuote={workFloorQuote}
         onNetworkChange={chooseNetwork}
         onRefresh={() => void refreshGrowth()}
       />
@@ -23702,6 +23722,7 @@ function GrowthProductCard({
 
 function GrowthApp({
   activeNetwork,
+  btcUsd,
   busy,
   idActivity,
   registryListings,
@@ -23712,10 +23733,12 @@ function GrowthApp({
   tokenMints,
   tokenSales,
   tokenTransfers,
+  workFloorQuote,
   onNetworkChange,
   onRefresh,
 }: {
   activeNetwork: BitcoinNetwork;
+  btcUsd: number;
   busy: boolean;
   idActivity: PowActivityItem[];
   registryListings: PowIdListing[];
@@ -23726,6 +23749,7 @@ function GrowthApp({
   tokenMints: PowTokenMint[];
   tokenSales: PowTokenSale[];
   tokenTransfers: PowTokenTransfer[];
+  workFloorQuote?: WorkFloorQuote;
   onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
 }) {
@@ -23742,6 +23766,7 @@ function GrowthApp({
       <AppStatusRow className="desktop-route-status" persistent status={status} />
 
       <GrowthWorkspace
+        btcUsd={btcUsd}
         busy={busy}
         idActivity={idActivity}
         registryListings={registryListings}
@@ -23751,6 +23776,7 @@ function GrowthApp({
         tokenMints={tokenMints}
         tokenSales={tokenSales}
         tokenTransfers={tokenTransfers}
+        workFloorQuote={workFloorQuote}
         onRefresh={onRefresh}
       />
 
@@ -23760,6 +23786,7 @@ function GrowthApp({
 }
 
 function GrowthWorkspace({
+  btcUsd,
   busy,
   idActivity,
   registryListings,
@@ -23769,8 +23796,10 @@ function GrowthWorkspace({
   tokenMints,
   tokenSales,
   tokenTransfers,
+  workFloorQuote,
   onRefresh,
 }: {
+  btcUsd: number;
   busy: boolean;
   idActivity: PowActivityItem[];
   registryListings: PowIdListing[];
@@ -23780,6 +23809,7 @@ function GrowthWorkspace({
   tokenMints: PowTokenMint[];
   tokenSales: PowTokenSale[];
   tokenTransfers: PowTokenTransfer[];
+  workFloorQuote?: WorkFloorQuote;
   onRefresh: () => void;
 }) {
   const [growthEventPageIndex, setGrowthEventPageIndex] = useState(0);
@@ -23803,6 +23833,25 @@ function GrowthWorkspace({
     tokenTransfers,
     tokenSales,
   );
+  const liveBtcUsd = Number.isFinite(btcUsd) && btcUsd > 0 ? btcUsd : 0;
+  const usdForSats = (sats: number) => satsToUsd(sats, liveBtcUsd);
+  const growthUsdForSats = (sats: number) => growthUsd(usdForSats(sats));
+  const authoritativeNetworkValueSats =
+    workFloorQuote && workFloorQuote.networkValueSats > 0
+      ? workFloorQuote.networkValueSats
+      : actualValue.totalSats;
+  const authoritativeActualPoints =
+    workFloorQuote && workFloorQuote.chartPoints.length > 0
+      ? workFloorQuote.chartPoints.map((point) => ({
+          label: point.label,
+          sats: point.networkValueSats,
+          usd: usdForSats(point.networkValueSats),
+          years: point.years,
+        }))
+      : actualPoints.map((point) => ({
+          ...point,
+          usd: usdForSats(point.sats),
+        }));
   const realEvents = growthRealEventItems(
     registryRecords,
     idActivity,
@@ -23825,7 +23874,7 @@ function GrowthWorkspace({
   const currentActual = actualValue.powids;
   const elapsedYears = growthElapsedYears();
   const modelNow = growthModelValueAtYears(elapsedYears);
-  const valueDeltaSats = actualValue.totalSats - modelNow.sats;
+  const valueDeltaSats = authoritativeNetworkValueSats - modelNow.sats;
   const valueDeltaPct = modelNow.sats > 0 ? valueDeltaSats / modelNow.sats : 0;
   const confirmedComputerActions = confirmedComputerActionCount(
     registryRecords,
@@ -23924,14 +23973,14 @@ function GrowthWorkspace({
 
       <div className="growth-stat-grid" aria-label="Growth headline stats">
         <div>
-          <strong>{growthSats(actualValue.totalSats)}</strong>
+          <strong>{growthSats(authoritativeNetworkValueSats)}</strong>
           <span>
-            Real network value now · {growthUsd(actualValue.totalUsd)}
+            Real network value now · {growthUsdForSats(authoritativeNetworkValueSats)}
           </span>
         </div>
         <div>
           <strong>{growthSats(modelNow.sats)}</strong>
-          <span>Modeled value now · {growthUsd(modelNow.usd)}</span>
+          <span>Modeled value now · {growthUsdForSats(modelNow.sats)}</span>
         </div>
         <div>
           <strong>
@@ -24038,16 +24087,16 @@ function GrowthWorkspace({
             </span>
             <strong>{growthSats(modelNow.sats)}</strong>
             <small>
-              {growthUsd(modelNow.usd)} at {elapsedYears.toFixed(2)} years
+              {growthUsdForSats(modelNow.sats)} at {elapsedYears.toFixed(2)} years
             </small>
           </div>
           <div>
             <span>
               <i className="actual" /> Real now
             </span>
-            <strong>{growthSats(actualValue.totalSats)}</strong>
+            <strong>{growthSats(authoritativeNetworkValueSats)}</strong>
             <small>
-              {growthUsd(actualValue.totalUsd)} from confirmed events
+              {growthUsdForSats(authoritativeNetworkValueSats)} from confirmed events
             </small>
           </div>
           <div>
@@ -24055,10 +24104,10 @@ function GrowthWorkspace({
               <i className="model" /> 12m model
             </span>
             <strong>{growthSats(oneYear.totalSats)}</strong>
-            <small>{growthUsd(oneYear.totalUsdBase)} success path</small>
+            <small>{growthUsdForSats(oneYear.totalSats)} success path</small>
           </div>
         </div>
-        <GrowthLineChart actualPoints={actualPoints} />
+        <GrowthLineChart actualPoints={authoritativeActualPoints} />
       </section>
 
       <section
@@ -24130,103 +24179,79 @@ function GrowthWorkspace({
             actual={growthSats(
               actualValue.powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2,
             )}
-            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2, elapsedYears))} · ${currentActual.toLocaleString()} confirmed IDs`}
+            actualLabel={`${growthUsdForSats(actualValue.powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2)} · ${currentActual.toLocaleString()} confirmed IDs`}
             icon={<AtSign size={24} />}
             modelFiveYear={growthSats(fiveYear.idSats)}
-            modelFiveYearLabel={growthUsd(
-              growthSatsToUsdAtYears(fiveYear.idSats, fiveYear.years),
-            )}
+            modelFiveYearLabel={growthUsdForSats(fiveYear.idSats)}
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.idSats)}
-            modelOneYearLabel={growthUsd(
-              growthSatsToUsdAtYears(oneYear.idSats, oneYear.years),
-            )}
+            modelOneYearLabel={growthUsdForSats(oneYear.idSats)}
             name="IDs"
             note="Network stock value: n squared against current ID value density."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.mailSats)}
-            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.mailSats, elapsedYears))} · ${actualValue.mailFlowSats.toLocaleString()} paid sats · ${mailActions.toLocaleString()} actions`}
+            actualLabel={`${growthUsdForSats(actualValue.mailSats)} · ${actualValue.mailFlowSats.toLocaleString()} paid sats · ${mailActions.toLocaleString()} actions`}
             icon={<Mail size={24} />}
             modelFiveYear={growthSats(fiveYear.mailSats)}
-            modelFiveYearLabel={growthUsd(
-              growthSatsToUsdAtYears(fiveYear.mailSats, fiveYear.years),
-            )}
+            modelFiveYearLabel={growthUsdForSats(fiveYear.mailSats)}
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.mailSats)}
-            modelOneYearLabel={growthUsd(
-              growthSatsToUsdAtYears(oneYear.mailSats, oneYear.years),
-            )}
+            modelOneYearLabel={growthUsdForSats(oneYear.mailSats)}
             name="Mail"
             note="Relationship flow across the confirmed ID graph."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.driveSats)}
-            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.driveSats, elapsedYears))} · ${actualValue.driveFlowSats.toLocaleString()} file sats · ${driveActions.toLocaleString()} actions`}
+            actualLabel={`${growthUsdForSats(actualValue.driveSats)} · ${actualValue.driveFlowSats.toLocaleString()} file sats · ${driveActions.toLocaleString()} actions`}
             icon={<FileText size={24} />}
             modelFiveYear={growthSats(fiveYear.driveSats)}
-            modelFiveYearLabel={growthUsd(
-              growthSatsToUsdAtYears(fiveYear.driveSats, fiveYear.years),
-            )}
+            modelFiveYearLabel={growthUsdForSats(fiveYear.driveSats)}
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.driveSats)}
-            modelOneYearLabel={growthUsd(
-              growthSatsToUsdAtYears(oneYear.driveSats, oneYear.years),
-            )}
+            modelOneYearLabel={growthUsdForSats(oneYear.driveSats)}
             name="Drive"
             note="File writes priced through the same fee-collapse and blockspace constraint."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.marketplaceSats)}
-            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.marketplaceSats, elapsedYears))} · ${actualValue.marketplaceVolumeSats.toLocaleString()} sale sats · ${marketplaceSaleCount.toLocaleString()} confirmed sales · ${registryListings.length.toLocaleString()} ID listings`}
+            actualLabel={`${growthUsdForSats(actualValue.marketplaceSats)} · ${actualValue.marketplaceVolumeSats.toLocaleString()} sale sats · ${marketplaceSaleCount.toLocaleString()} confirmed sales · ${registryListings.length.toLocaleString()} ID listings`}
             icon={<Users size={24} />}
             modelFiveYear={growthSats(fiveYear.marketplaceSats)}
-            modelFiveYearLabel={growthUsd(
-              growthSatsToUsdAtYears(fiveYear.marketplaceSats, fiveYear.years),
-            )}
+            modelFiveYearLabel={growthUsdForSats(fiveYear.marketplaceSats)}
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.marketplaceSats)}
-            modelOneYearLabel={growthUsd(
-              growthSatsToUsdAtYears(oneYear.marketplaceSats, oneYear.years),
-            )}
+            modelOneYearLabel={growthUsdForSats(oneYear.marketplaceSats)}
             name="Marketplace"
             note="Buyer-funded ID transfers and token sale-ticket buys become first-class product flow."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.browserSats)}
-            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.browserSats, elapsedYears))} · ${actualValue.browserFlowSats.toLocaleString()} page sats · ${browserActions.toLocaleString()} actions`}
+            actualLabel={`${growthUsdForSats(actualValue.browserSats)} · ${actualValue.browserFlowSats.toLocaleString()} page sats · ${browserActions.toLocaleString()} actions`}
             icon={<Monitor size={24} />}
             modelFiveYear={growthSats(fiveYear.browserSats)}
-            modelFiveYearLabel={growthUsd(
-              growthSatsToUsdAtYears(fiveYear.browserSats, fiveYear.years),
-            )}
+            modelFiveYearLabel={growthUsdForSats(fiveYear.browserSats)}
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.browserSats)}
-            modelOneYearLabel={growthUsd(
-              growthSatsToUsdAtYears(oneYear.browserSats, oneYear.years),
-            )}
+            modelOneYearLabel={growthUsdForSats(oneYear.browserSats)}
             name="Browser"
             note="HTML pages rendered from OP_RETURN message bodies or verified file attachments by txid."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.tokenSats)}
-            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.tokenSats, elapsedYears))} · ${tokenFlowSats.toLocaleString()} token sats · ${confirmedTokenDefinitions.toLocaleString()} tokens · ${confirmedTokenMints.toLocaleString()} mints`}
+            actualLabel={`${growthUsdForSats(actualValue.tokenSats)} · ${tokenFlowSats.toLocaleString()} token sats · ${confirmedTokenDefinitions.toLocaleString()} tokens · ${confirmedTokenMints.toLocaleString()} mints`}
             icon={<TrendingUp size={24} />}
             modelFiveYear={growthSats(fiveYear.tokenSats)}
-            modelFiveYearLabel={growthUsd(
-              growthSatsToUsdAtYears(fiveYear.tokenSats, fiveYear.years),
-            )}
+            modelFiveYearLabel={growthUsdForSats(fiveYear.tokenSats)}
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.tokenSats)}
-            modelOneYearLabel={growthUsd(
-              growthSatsToUsdAtYears(oneYear.tokenSats, oneYear.years),
-            )}
+            modelOneYearLabel={growthUsdForSats(oneYear.tokenSats)}
             name="Tokens"
             note="Token creation fees and owner-registry mint flow become measurable Bitcoin Computer value."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.walletSats)}
-            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.walletSats, elapsedYears))} · ${walletFlowSats.toLocaleString()} transfer sats · ${confirmedTokenTransfers.toLocaleString()} transfers`}
+            actualLabel={`${growthUsdForSats(actualValue.walletSats)} · ${walletFlowSats.toLocaleString()} transfer sats · ${confirmedTokenTransfers.toLocaleString()} transfers`}
             icon={<Wallet size={24} />}
             modelFiveYear="Tracked"
             modelFiveYearLabel="token transfer lane"
@@ -24265,7 +24290,7 @@ function GrowthWorkspace({
           <p>
             At 12 months the model reaches{" "}
             {Math.round(oneYear.powids).toLocaleString()} PowIDs and{" "}
-            {growthSats(oneYear.totalSats)} / {growthUsd(oneYear.totalUsdBase)}{" "}
+            {growthSats(oneYear.totalSats)} / {growthUsdForSats(oneYear.totalSats)}{" "}
             total modeled Bitcoin Computer value.
           </p>
         </article>
