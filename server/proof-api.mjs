@@ -5870,6 +5870,7 @@ function growthActualNetworkValue(
   tokenDefinitions,
   tokenMints,
   tokenTransfers = [],
+  tokenSales = [],
   cutoffMs = Date.now(),
 ) {
   const confirmedRecords = records.filter(
@@ -5891,6 +5892,9 @@ function growthActualNetworkValue(
     (transfer) =>
       transfer.confirmed && Date.parse(transfer.createdAt) <= cutoffMs,
   );
+  const confirmedTokenSales = tokenSales.filter(
+    (sale) => sale.confirmed && Date.parse(sale.createdAt) <= cutoffMs,
+  );
   const powids = confirmedRecords.length;
   const mailFlowSats = confirmedActivity
     .filter(
@@ -5905,10 +5909,15 @@ function growthActualNetworkValue(
   const driveFlowSats = confirmedActivity
     .filter((item) => item.kind === "file" && !isBrowserActivityItem(item))
     .reduce((total, item) => total + (item.amountSats ?? 0), 0);
-  const marketplaceVolumeSats = confirmedSales.reduce(
+  const idMarketplaceVolumeSats = confirmedSales.reduce(
     (total, sale) => total + sale.priceSats,
     0,
   );
+  const tokenSaleFlowSats = confirmedTokenSales.reduce(
+    (total, sale) => total + sale.priceSats,
+    0,
+  );
+  const marketplaceVolumeSats = idMarketplaceVolumeSats + tokenSaleFlowSats;
   const tokenCreationFlowSats = confirmedTokens.reduce(
     (total, token) => total + token.creationFeeSats,
     0,
@@ -5955,6 +5964,7 @@ function growthActualNetworkValue(
     powids,
     tokenCreationFlowSats,
     tokenMintFlowSats,
+    tokenSaleFlowSats,
     tokenTransferFlowSats,
     tokenSats,
     totalSats,
@@ -5993,6 +6003,7 @@ function growthActualValuePoints(
   tokenDefinitions,
   tokenMints,
   tokenTransfers = [],
+  tokenSales = [],
   options = {},
 ) {
   const startMs = Math.max(
@@ -6050,6 +6061,12 @@ function growthActualValuePoints(
     }
   }
 
+  for (const sale of tokenSales) {
+    if (sale.confirmed) {
+      addEventTime(sale.createdAt, `${sale.ticker} token sale`);
+    }
+  }
+
   const points = [];
   const startValue = growthActualNetworkValue(
     records,
@@ -6058,6 +6075,7 @@ function growthActualValuePoints(
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
+    tokenSales,
     startMs,
   );
   points.push({
@@ -6075,6 +6093,7 @@ function growthActualValuePoints(
       tokenDefinitions,
       tokenMints,
       tokenTransfers,
+      tokenSales,
       createdMs,
     );
     points.push({
@@ -6099,6 +6118,7 @@ function growthActualValuePoints(
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
+    tokenSales,
   );
   const lastPoint = points[points.length - 1];
   if (
@@ -6130,8 +6150,10 @@ async function workFloorPayload(network, fresh = false) {
       stats: {
         confirmedTokenMints: 0,
         confirmedTokens: 0,
+        marketplaceVolumeSats: 0,
         tokenCreationFlowSats: 0,
         tokenMintFlowSats: 0,
+        tokenSaleFlowSats: 0,
         tokenTransactions: 0,
       },
     };
@@ -6178,6 +6200,7 @@ async function workFloorPayload(network, fresh = false) {
     tokenState.tokens ?? [],
     tokenState.mints ?? [],
     tokenState.transfers ?? [],
+    tokenState.sales ?? [],
   );
   const globalWorkMintFlowSats = (tokenState.mints ?? [])
     .filter((mint) => mint.confirmed && mint.tokenId === WORK_TOKEN_ID)
@@ -6218,6 +6241,7 @@ async function workFloorPayload(network, fresh = false) {
     tokenState.tokens ?? [],
     tokenState.mints ?? [],
     tokenState.transfers ?? [],
+    tokenState.sales ?? [],
     {
       startLabel: "WORK deploy",
       startMs: workCreatedMs,
@@ -6260,9 +6284,13 @@ async function workFloorPayload(network, fresh = false) {
       ).length,
       tokenCreationFlowSats: actualValue.tokenCreationFlowSats,
       tokenMintFlowSats: correctedTokenMintFlowSats,
+      tokenSaleFlowSats: actualValue.tokenSaleFlowSats,
+      marketplaceVolumeSats: actualValue.marketplaceVolumeSats,
       tokenTransactions:
         tokenState.stats?.transactions ??
-        (tokenState.tokens ?? []).length + (tokenState.mints ?? []).length,
+        (tokenState.tokens ?? []).length +
+          (tokenState.mints ?? []).length +
+          (tokenState.sales ?? []).length,
     },
   };
 }

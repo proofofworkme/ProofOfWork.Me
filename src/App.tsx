@@ -1172,6 +1172,7 @@ type GrowthActualNetworkValue = {
   powids: number;
   tokenCreationFlowSats: number;
   tokenMintFlowSats: number;
+  tokenSaleFlowSats: number;
   tokenTransferFlowSats: number;
   tokenSats: number;
   walletFlowSats: number;
@@ -13174,6 +13175,7 @@ export default function App() {
         tokenState.tokens,
         tokenState.mints,
         tokenState.transfers,
+        tokenState.sales,
       );
       const workToken = tokenState.tokens.find(
         (token) =>
@@ -13189,6 +13191,7 @@ export default function App() {
         tokenState.tokens,
         tokenState.mints,
         tokenState.transfers,
+        tokenState.sales,
         {
           startLabel: "WORK deploy",
           startMs: workCreatedMs,
@@ -17274,6 +17277,7 @@ export default function App() {
           (token) => token.network === "livenet",
         )}
         tokenMints={tokenMints.filter((mint) => mint.network === "livenet")}
+        tokenSales={tokenSales.filter((sale) => sale.network === "livenet")}
         tokenTransfers={tokenTransfers.filter(
           (transfer) => transfer.network === "livenet",
         )}
@@ -19678,6 +19682,44 @@ function TokenWalletWorkspace({
           transfer.recipientAddress === address,
       )
     : [];
+  const walletMovements = [
+    ...walletTransfers.map((transfer) => ({
+      amount: transfer.amount,
+      confirmed: transfer.confirmed,
+      createdAt: transfer.createdAt,
+      key: `transfer:${transfer.txid}`,
+      label: transfer.senderAddress === address ? "Sent" : "Received",
+      network: transfer.network,
+      priceSats: 0,
+      ticker: transfer.ticker,
+      txid: transfer.txid,
+      type: "transfer" as const,
+    })),
+    ...(address
+      ? tokenSales
+          .filter(
+            (sale) =>
+              sale.buyerAddress === address || sale.sellerAddress === address,
+          )
+          .map((sale) => ({
+            amount: sale.amount,
+            confirmed: sale.confirmed,
+            createdAt: sale.createdAt,
+            key: `sale:${sale.txid}`,
+            label: sale.buyerAddress === address ? "Bought" : "Sold",
+            network: sale.network,
+            priceSats: sale.priceSats,
+            ticker: sale.ticker,
+            txid: sale.txid,
+            type: "sale" as const,
+          }))
+      : []),
+  ].sort(
+    (left, right) =>
+      Number(right.confirmed) - Number(left.confirmed) ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      left.key.localeCompare(right.key),
+  );
   const walletListings = address
     ? listings.filter(
         (item) =>
@@ -19691,7 +19733,7 @@ function TokenWalletWorkspace({
     TOKEN_LIST_PREVIEW_COUNT,
   );
   const walletTransferPage = pagedItems(
-    walletTransfers,
+    walletMovements,
     walletTransferPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
@@ -19846,8 +19888,8 @@ function TokenWalletWorkspace({
             <strong>{confirmedTokenCount.toLocaleString()}</strong>
           </div>
           <div>
-            <span>Transfers seen</span>
-            <strong>{walletTransfers.length.toLocaleString()}</strong>
+            <span>Movements seen</span>
+            <strong>{walletMovements.length.toLocaleString()}</strong>
           </div>
           <div>
             <span>Mutation fee</span>
@@ -20170,32 +20212,35 @@ function TokenWalletWorkspace({
           </div>
           <div>
             <h2>Transfer log</h2>
-            <p>Transfers touching the connected address.</p>
+            <p>Transfers and trades touching the connected address.</p>
           </div>
         </div>
-        {walletTransfers.length ? (
+        {walletMovements.length ? (
           <>
             <div className="token-list compact-token-list">
-              {walletTransferPage.items.map((transfer) => (
+              {walletTransferPage.items.map((movement) => (
                 <a
                   className="token-list-item"
-                  href={explorerTxUrl(transfer.txid, transfer.network)}
-                  key={transfer.txid}
+                  href={explorerTxUrl(movement.txid, movement.network)}
+                  key={movement.key}
                   rel="noreferrer"
                   target="_blank"
                 >
                   <span>
                     <strong>
-                      {transfer.amount.toLocaleString()} {transfer.ticker}
+                      {movement.amount.toLocaleString()} {movement.ticker}
                     </strong>
                     <small>
-                      {transfer.senderAddress === address ? "Sent" : "Received"} ·{" "}
-                      {transfer.confirmed ? "confirmed" : "pending"}
+                      {movement.label} ·{" "}
+                      {movement.confirmed ? "confirmed" : "pending"}
+                      {movement.type === "sale"
+                        ? ` · ${movement.priceSats.toLocaleString()} sale sats`
+                        : ""}
                     </small>
                   </span>
                   <span>
-                    <strong>{shortAddress(transfer.txid)}</strong>
-                    <small>{formatDate(transfer.createdAt)}</small>
+                    <strong>{shortAddress(movement.txid)}</strong>
+                    <small>{formatDate(movement.createdAt)}</small>
                   </span>
                 </a>
               ))}
@@ -20209,8 +20254,8 @@ function TokenWalletWorkspace({
         ) : (
           <div className="empty-state">
             <Clock size={28} />
-            <h3>No transfers yet</h3>
-            <p>Your token transfer history will appear here.</p>
+            <h3>No movements yet</h3>
+            <p>Your token transfer and trade history will appear here.</p>
           </div>
         )}
       </section>
@@ -22439,6 +22484,7 @@ function growthActualNetworkValue(
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
   tokenTransfers: PowTokenTransfer[] = [],
+  tokenSales: PowTokenSale[] = [],
   cutoffMs = Date.now(),
 ): GrowthActualNetworkValue {
   const confirmedRecords = records.filter(
@@ -22460,6 +22506,9 @@ function growthActualNetworkValue(
     (transfer) =>
       transfer.confirmed && Date.parse(transfer.createdAt) <= cutoffMs,
   );
+  const confirmedTokenSales = tokenSales.filter(
+    (sale) => sale.confirmed && Date.parse(sale.createdAt) <= cutoffMs,
+  );
   const powids = confirmedRecords.length;
   const mailFlowSats = confirmedActivity
     .filter(
@@ -22474,10 +22523,15 @@ function growthActualNetworkValue(
   const driveFlowSats = confirmedActivity
     .filter((item) => item.kind === "file" && !isBrowserActivityItem(item))
     .reduce((total, item) => total + (item.amountSats ?? 0), 0);
-  const marketplaceVolumeSats = confirmedSales.reduce(
+  const idMarketplaceVolumeSats = confirmedSales.reduce(
     (total, sale) => total + sale.priceSats,
     0,
   );
+  const tokenSaleFlowSats = confirmedTokenSales.reduce(
+    (total, sale) => total + sale.priceSats,
+    0,
+  );
+  const marketplaceVolumeSats = idMarketplaceVolumeSats + tokenSaleFlowSats;
   const tokenCreationFlowSats = confirmedTokens.reduce(
     (total, token) => total + token.creationFeeSats,
     0,
@@ -22527,6 +22581,7 @@ function growthActualNetworkValue(
     powids,
     tokenCreationFlowSats,
     tokenMintFlowSats,
+    tokenSaleFlowSats,
     tokenTransferFlowSats,
     tokenSats,
     walletFlowSats,
@@ -22571,6 +22626,7 @@ function growthActualValuePoints(
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
   tokenTransfers: PowTokenTransfer[] = [],
+  tokenSales: PowTokenSale[] = [],
   options?: { startLabel?: string; startMs?: number },
 ): GrowthValuePoint[] {
   const startMs = Math.max(
@@ -22628,6 +22684,12 @@ function growthActualValuePoints(
     }
   }
 
+  for (const sale of tokenSales) {
+    if (sale.confirmed) {
+      addEventTime(sale.createdAt, `${sale.ticker} token sale`);
+    }
+  }
+
   const points: GrowthValuePoint[] = [];
   const startValue = growthActualNetworkValue(
     records,
@@ -22636,6 +22698,7 @@ function growthActualValuePoints(
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
+    tokenSales,
     startMs,
   );
   points.push({
@@ -22653,6 +22716,7 @@ function growthActualValuePoints(
       tokenDefinitions,
       tokenMints,
       tokenTransfers,
+      tokenSales,
       createdMs,
     );
     points.push({
@@ -22677,6 +22741,7 @@ function growthActualValuePoints(
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
+    tokenSales,
   );
   const lastPoint = points[points.length - 1];
   if (
@@ -22780,6 +22845,7 @@ function confirmedComputerActionCount(
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
   tokenTransfers: PowTokenTransfer[] = [],
+  tokenSales: PowTokenSale[] = [],
 ) {
   const txids = new Set<string>();
   const add = (confirmed: boolean, txid: string) => {
@@ -22793,6 +22859,7 @@ function confirmedComputerActionCount(
   tokenDefinitions.forEach((token) => add(token.confirmed, token.txid));
   tokenMints.forEach((mint) => add(mint.confirmed, mint.txid));
   tokenTransfers.forEach((transfer) => add(transfer.confirmed, transfer.txid));
+  tokenSales.forEach((sale) => add(sale.confirmed, sale.txid));
 
   return txids.size;
 }
@@ -22804,6 +22871,7 @@ function growthRealEventItems(
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
   tokenTransfers: PowTokenTransfer[] = [],
+  tokenSales: PowTokenSale[] = [],
 ): GrowthRealEvent[] {
   const events = new Map<string, GrowthRealEvent>();
   const setEvent = (event: GrowthRealEvent) => {
@@ -22913,6 +22981,23 @@ function growthRealEventItems(
       network: transfer.network,
       title: "Wallet transfer",
       txid: transfer.txid,
+    });
+  }
+
+  for (const sale of tokenSales) {
+    if (!sale.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${sale.priceSats.toLocaleString()} sale sats`,
+      createdAt: sale.createdAt,
+      detail: `${sale.amount.toLocaleString()} ${sale.ticker} bought by ${shortAddress(sale.buyerAddress)} from ${shortAddress(sale.sellerAddress)}.`,
+      key: sale.txid,
+      kind: "Marketplace",
+      network: sale.network,
+      title: "Token sale",
+      txid: sale.txid,
     });
   }
 
@@ -23621,6 +23706,7 @@ function GrowthApp({
   status,
   tokenDefinitions,
   tokenMints,
+  tokenSales,
   tokenTransfers,
   onNetworkChange,
   onRefresh,
@@ -23634,6 +23720,7 @@ function GrowthApp({
   status: { tone: StatusTone; text: string };
   tokenDefinitions: PowTokenDefinition[];
   tokenMints: PowTokenMint[];
+  tokenSales: PowTokenSale[];
   tokenTransfers: PowTokenTransfer[];
   onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
@@ -23658,6 +23745,7 @@ function GrowthApp({
         registrySales={registrySales}
         tokenDefinitions={tokenDefinitions}
         tokenMints={tokenMints}
+        tokenSales={tokenSales}
         tokenTransfers={tokenTransfers}
         onRefresh={onRefresh}
       />
@@ -23675,6 +23763,7 @@ function GrowthWorkspace({
   registrySales,
   tokenDefinitions,
   tokenMints,
+  tokenSales,
   tokenTransfers,
   onRefresh,
 }: {
@@ -23685,6 +23774,7 @@ function GrowthWorkspace({
   registrySales: PowIdMarketplaceSale[];
   tokenDefinitions: PowTokenDefinition[];
   tokenMints: PowTokenMint[];
+  tokenSales: PowTokenSale[];
   tokenTransfers: PowTokenTransfer[];
   onRefresh: () => void;
 }) {
@@ -23698,6 +23788,7 @@ function GrowthWorkspace({
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
+    tokenSales,
   );
   const actualPoints = growthActualValuePoints(
     registryRecords,
@@ -23706,6 +23797,7 @@ function GrowthWorkspace({
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
+    tokenSales,
   );
   const realEvents = growthRealEventItems(
     registryRecords,
@@ -23714,6 +23806,7 @@ function GrowthWorkspace({
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
+    tokenSales,
   );
   const growthEventPage = pagedItems(
     realEvents,
@@ -23736,6 +23829,7 @@ function GrowthWorkspace({
     tokenDefinitions,
     tokenMints,
     tokenTransfers,
+    tokenSales,
   );
   const mailActions = confirmedActivity.filter(
     (item) => item.kind === "mail" || item.kind === "reply",
@@ -23751,6 +23845,9 @@ function GrowthWorkspace({
   const confirmedTokenTransfers = tokenTransfers.filter(
     (transfer) => transfer.confirmed,
   ).length;
+  const confirmedTokenSales = tokenSales.filter((sale) => sale.confirmed).length;
+  const marketplaceSaleCount =
+    marketplaceStats.confirmedSales + confirmedTokenSales;
   const tokenFlowSats =
     actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats;
   const walletFlowSats = actualValue.walletFlowSats;
@@ -23854,11 +23951,11 @@ function GrowthWorkspace({
         </div>
         <div>
           <strong>
-            {marketplaceStats.confirmedVolumeSats.toLocaleString()}
+            {actualValue.marketplaceVolumeSats.toLocaleString()}
           </strong>
           <span>
             Marketplace sale sats ·{" "}
-            {marketplaceStats.confirmedSales.toLocaleString()} confirmed sales
+            {marketplaceSaleCount.toLocaleString()} confirmed sales
           </span>
         </div>
       </div>
@@ -23892,9 +23989,9 @@ function GrowthWorkspace({
           <h3>The olive line moves when Bitcoin confirms.</h3>
           <p>
             Registrations, messages, replies, file writes, HTML page writes,
-            buyer-funded marketplace sales, token creations, token mints, and
-            token transfers are pulled from live endpoints. Pending mempool
-            events wait until they confirm.
+            buyer-funded marketplace sales, token sale-ticket buys, token
+            creations, token mints, and token transfers are pulled from live
+            endpoints. Pending mempool events wait until they confirm.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -24077,7 +24174,7 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(actualValue.marketplaceSats)}
-            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.marketplaceSats, elapsedYears))} · ${marketplaceStats.confirmedVolumeSats.toLocaleString()} sale sats · ${registryListings.length.toLocaleString()} active listings`}
+            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.marketplaceSats, elapsedYears))} · ${actualValue.marketplaceVolumeSats.toLocaleString()} sale sats · ${marketplaceSaleCount.toLocaleString()} confirmed sales · ${registryListings.length.toLocaleString()} ID listings`}
             icon={<Users size={24} />}
             modelFiveYear={growthSats(fiveYear.marketplaceSats)}
             modelFiveYearLabel={growthUsd(
@@ -24089,7 +24186,7 @@ function GrowthWorkspace({
               growthSatsToUsdAtYears(oneYear.marketplaceSats, oneYear.years),
             )}
             name="Marketplace"
-            note="Buyer-funded transfers become a first-class product in the Bitcoin Computer model."
+            note="Buyer-funded ID transfers and token sale-ticket buys become first-class product flow."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.browserSats)}
