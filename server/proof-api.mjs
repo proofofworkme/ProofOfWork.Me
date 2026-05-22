@@ -5806,6 +5806,7 @@ function growthActualNetworkValue(
   sales,
   tokenDefinitions,
   tokenMints,
+  tokenTransfers = [],
   cutoffMs = Date.now(),
 ) {
   const confirmedRecords = records.filter(
@@ -5822,6 +5823,10 @@ function growthActualNetworkValue(
   );
   const confirmedTokenMints = tokenMints.filter(
     (mint) => mint.confirmed && Date.parse(mint.createdAt) <= cutoffMs,
+  );
+  const confirmedTokenTransfers = tokenTransfers.filter(
+    (transfer) =>
+      transfer.confirmed && Date.parse(transfer.createdAt) <= cutoffMs,
   );
   const powids = confirmedRecords.length;
   const mailFlowSats = confirmedActivity
@@ -5849,6 +5854,10 @@ function growthActualNetworkValue(
     (total, mint) => total + mint.paidSats,
     0,
   );
+  const tokenTransferFlowSats = confirmedTokenTransfers.reduce(
+    (total, transfer) => total + transfer.paidSats,
+    0,
+  );
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
@@ -5856,7 +5865,7 @@ function growthActualNetworkValue(
     marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const tokenSats =
-    (tokenCreationFlowSats + tokenMintFlowSats) *
+    (tokenCreationFlowSats + tokenMintFlowSats + tokenTransferFlowSats) *
     GROWTH_MODEL_INPUTS.valueMultiple;
   const totalSats =
     idSats +
@@ -5883,6 +5892,7 @@ function growthActualNetworkValue(
     powids,
     tokenCreationFlowSats,
     tokenMintFlowSats,
+    tokenTransferFlowSats,
     tokenSats,
     totalSats,
     totalUsd: growthSatsToUsdAtYears(totalSats, years),
@@ -5919,6 +5929,7 @@ function growthActualValuePoints(
   sales,
   tokenDefinitions,
   tokenMints,
+  tokenTransfers = [],
   options = {},
 ) {
   const startMs = Math.max(
@@ -5970,6 +5981,12 @@ function growthActualValuePoints(
     }
   }
 
+  for (const transfer of tokenTransfers) {
+    if (transfer.confirmed) {
+      addEventTime(transfer.createdAt, `${transfer.ticker} token transfer`);
+    }
+  }
+
   const points = [];
   const startValue = growthActualNetworkValue(
     records,
@@ -5977,6 +5994,7 @@ function growthActualValuePoints(
     sales,
     tokenDefinitions,
     tokenMints,
+    tokenTransfers,
     startMs,
   );
   points.push({
@@ -5993,6 +6011,7 @@ function growthActualValuePoints(
       sales,
       tokenDefinitions,
       tokenMints,
+      tokenTransfers,
       createdMs,
     );
     points.push({
@@ -6016,6 +6035,7 @@ function growthActualValuePoints(
     sales,
     tokenDefinitions,
     tokenMints,
+    tokenTransfers,
   );
   const lastPoint = points[points.length - 1];
   if (
@@ -6094,6 +6114,7 @@ async function workFloorPayload(network, fresh = false) {
     registryState.sales ?? [],
     tokenState.tokens ?? [],
     tokenState.mints ?? [],
+    tokenState.transfers ?? [],
   );
   const globalWorkMintFlowSats = (tokenState.mints ?? [])
     .filter((mint) => mint.confirmed && mint.tokenId === WORK_TOKEN_ID)
@@ -6131,10 +6152,9 @@ async function workFloorPayload(network, fresh = false) {
     registryState.records ?? [],
     activityForGrowth,
     registryState.sales ?? [],
-    pay2SpeakState.campaigns ?? [],
-    pay2SpeakState.funding ?? [],
     tokenState.tokens ?? [],
     tokenState.mints ?? [],
+    tokenState.transfers ?? [],
     {
       startLabel: "WORK deploy",
       startMs: workCreatedMs,

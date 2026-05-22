@@ -29,7 +29,6 @@ import {
   MessageCircle,
   MessageSquareQuote,
   Monitor,
-  Moon,
   Paperclip,
   PenLine,
   FolderPlus,
@@ -38,7 +37,6 @@ import {
   Search,
   Send,
   Star,
-  Sun,
   Tag,
   Trash2,
   TrendingUp,
@@ -115,6 +113,10 @@ import {
   type RushState,
 } from "./features/rush/rushProtocol";
 import { AppHeader } from "./shared/components/AppHeader";
+import {
+  AppStatusRow,
+  type AppStatusTone,
+} from "./shared/components/AppStatusRow";
 import { FeeRateControl } from "./shared/components/FeeRateControl";
 import { ProgressBar } from "./shared/components/ProgressBar";
 import { SocialFooter } from "./shared/components/SocialFooter";
@@ -170,7 +172,7 @@ type BitcoinNetwork = "livenet" | "testnet" | "testnet4";
 type LegacyBitcoinNetwork = "livenet" | "testnet";
 type UniSatChain = "BITCOIN_MAINNET" | "BITCOIN_TESTNET" | "BITCOIN_TESTNET4";
 type UniSatEvent = "accountsChanged" | "networkChanged" | "chainChanged";
-type StatusTone = "idle" | "good" | "bad";
+type StatusTone = AppStatusTone;
 type Folder =
   | "inbox"
   | "incoming"
@@ -190,6 +192,51 @@ type Folder =
   | "log"
   | "contacts"
   | "custom";
+
+const COMPUTER_ROUTE_FOLDERS: Folder[] = [
+  "inbox",
+  "incoming",
+  "sent",
+  "outbox",
+  "drafts",
+  "favorites",
+  "archive",
+  "files",
+  "desktop",
+  "browser",
+  "ids",
+  "marketplace",
+  "token",
+  "wallet",
+  "work",
+  "log",
+  "contacts",
+];
+
+const STANDALONE_ROUTE_PARAMS = [
+  "landing",
+  "id-launch",
+  "desktop",
+  "browser",
+  "marketplace",
+  "token",
+  "wallet",
+  "work",
+  "rush",
+  "log",
+  "growth",
+];
+
+function computerFolderFromSearch() {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  const folder = new URLSearchParams(window.location.search).get("folder");
+  return folder && COMPUTER_ROUTE_FOLDERS.includes(folder as Folder)
+    ? (folder as Folder)
+    : undefined;
+}
 type SortMode =
   | "value"
   | "newest"
@@ -199,7 +246,6 @@ type SortMode =
   | "filetype"
   | "sender";
 type FileFilter = "all" | "image" | "pdf" | "document" | "other";
-type ThemeMode = "light" | "dark";
 type BroadcastStatus = "pending" | "confirmed" | "dropped" | "unknown";
 type BroadcastSource = "mempool" | "node" | "slipstream" | "wallet";
 type BroadcastStrategy = "mempool" | "first-party-if-multiple-op-return";
@@ -948,7 +994,6 @@ const DRAFT_KEY_PREFIX = "proofofwork.draft.v1";
 const MAIL_PREFS_KEY = "proofofwork.mailPrefs.v1";
 const CONTACTS_KEY = "proofofwork.contacts.v1";
 const CUSTOM_FOLDERS_KEY = "proofofwork.customFolders.v1";
-const THEME_KEY = "proofofwork.theme";
 const BACKUP_APP = "ProofOfWork.Me";
 const BACKUP_VERSION = 1;
 const BACKUP_MAX_BYTES = 5 * 1024 * 1024;
@@ -1115,6 +1160,8 @@ type GrowthActualNetworkValue = {
   tokenMintFlowSats: number;
   tokenTransferFlowSats: number;
   tokenSats: number;
+  walletFlowSats: number;
+  walletSats: number;
   totalSats: number;
   totalUsd: number;
 };
@@ -1431,33 +1478,17 @@ function growthModelStartRow(): GrowthModelRow {
 const GROWTH_MODEL_ROWS = GROWTH_MODEL_INPUTS.horizons.map(growthModelRow);
 const GROWTH_MODEL_CHART_ROWS = [growthModelStartRow(), ...GROWTH_MODEL_ROWS];
 
-function loadTheme(): ThemeMode {
-  const stored = localStorage.getItem(THEME_KEY);
-  if (stored === "light" || stored === "dark") {
-    return stored;
-  }
-
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
-}
-
 function isBackupStorageKey(key: string) {
   return (
     key === SENT_KEY ||
     key === MAIL_PREFS_KEY ||
     key === CONTACTS_KEY ||
     key === CUSTOM_FOLDERS_KEY ||
-    key === THEME_KEY ||
     key.startsWith(`${DRAFT_KEY_PREFIX}:`)
   );
 }
 
 function validateBackupValue(key: string, value: string) {
-  if (key === THEME_KEY) {
-    return value === "light" || value === "dark";
-  }
-
   try {
     const parsed = JSON.parse(value) as unknown;
     if (key === SENT_KEY) {
@@ -1590,10 +1621,6 @@ function backupDataSummary(data: Record<string, string>) {
   ).length;
   if (draftCount > 0) {
     details.push(`${draftCount} draft${draftCount === 1 ? "" : "s"}`);
-  }
-
-  if (data[THEME_KEY]) {
-    details.push(`${data[THEME_KEY]} theme`);
   }
 
   return details.join(", ");
@@ -10597,7 +10624,6 @@ export default function App() {
     workTokenMode ||
     activityMode ||
     growthMode;
-  const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
   const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
   const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
   const [address, setAddress] = useState("");
@@ -10727,19 +10753,43 @@ export default function App() {
   const [desktopLoading, setDesktopLoading] = useState(false);
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
-  const [activeFolder, setActiveFolder] = useState<Folder>(() =>
-    desktopRoute
-      ? "desktop"
-      : tokenMode
-            ? "token"
-            : walletMode
-              ? "wallet"
-              : workTokenMode
-                ? "work"
-                : mainnetRegistryMode
-                  ? "ids"
-                  : "inbox",
-  );
+  const [activeFolder, setActiveFolder] = useState<Folder>(() => {
+    const queryFolder =
+      !landingMode &&
+      !idLaunchMode &&
+      !desktopRoute &&
+      !browserRoute &&
+      !marketplaceMode &&
+      !tokenMode &&
+      !walletMode &&
+      !workTokenMode &&
+      !rushMode &&
+      !activityMode &&
+      !growthMode
+        ? computerFolderFromSearch()
+        : undefined;
+
+    return (
+      queryFolder ??
+      (desktopRoute
+        ? "desktop"
+        : browserRoute
+          ? "browser"
+          : marketplaceMode
+            ? "marketplace"
+            : tokenMode
+              ? "token"
+                : walletMode
+                  ? "wallet"
+                  : workTokenMode
+                    ? "work"
+                    : activityMode
+                      ? "log"
+                      : mainnetRegistryMode
+                        ? "ids"
+                        : "inbox")
+    );
+  });
   const [activeCustomFolderId, setActiveCustomFolderId] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("value");
   const [fileFilter, setFileFilter] = useState<FileFilter>("all");
@@ -10756,6 +10806,7 @@ export default function App() {
   const allSentRef = useRef(allSent);
   const chainSentRef = useRef(chainSent);
   const idRefreshInFlightRef = useRef(false);
+  const tokenRefreshInFlightRef = useRef(false);
   const growthRefreshInFlightRef = useRef(false);
   const workFloorRefreshInFlightRef = useRef(false);
   const tokenMintAssistantActiveRef = useRef(false);
@@ -11612,9 +11663,8 @@ export default function App() {
             : !address || busy || refreshInProgress;
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
+    document.documentElement.dataset.theme = "dark";
+  }, []);
 
   useEffect(() => {
     const detectWallet = () => setHasUnisat(Boolean(window.unisat));
@@ -11842,7 +11892,9 @@ export default function App() {
     }
 
     if (
+      activityMode ||
       growthMode ||
+      marketplaceMode ||
       tokenMode ||
       walletMode ||
       workTokenMode ||
@@ -11854,8 +11906,10 @@ export default function App() {
     setActiveFolder("ids");
     void refreshIds(true);
   }, [
+    activityMode,
     growthMode,
     mainnetRegistryMode,
+    marketplaceMode,
     network,
     rushMode,
     tokenMode,
@@ -12103,9 +12157,11 @@ export default function App() {
               ? "token"
               : walletMode
                 ? "wallet"
-                : mainnetRegistryMode
-                  ? "ids"
-                  : "inbox",
+                : marketplaceMode
+                  ? "marketplace"
+                  : mainnetRegistryMode
+                    ? "ids"
+                    : "inbox",
       );
       setComposeOpen(false);
 
@@ -12209,6 +12265,7 @@ export default function App() {
     hasUnisat,
     landingMode,
     mainnetRegistryMode,
+    marketplaceMode,
     network,
     rushMode,
     tokenMode,
@@ -12472,7 +12529,82 @@ export default function App() {
     });
   }
 
+  function rememberComputerFolder(folder: Folder) {
+    if (typeof window === "undefined" || folder === "custom") {
+      return;
+    }
+
+    if (
+      landingMode ||
+      idLaunchMode ||
+      desktopRoute ||
+      browserRoute ||
+      marketplaceMode ||
+      tokenMode ||
+      walletMode ||
+      workTokenMode ||
+      rushMode ||
+      activityMode ||
+      growthMode
+    ) {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    STANDALONE_ROUTE_PARAMS.forEach((param) => url.searchParams.delete(param));
+    if (folder === "inbox") {
+      url.searchParams.delete("folder");
+    } else {
+      url.searchParams.set("folder", folder);
+    }
+    window.history.replaceState(
+      {},
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }
+
+  function rememberComputerWorkspaceAsset(folder: Folder, asset = "") {
+    if (typeof window === "undefined" || folder === "custom") {
+      return;
+    }
+
+    if (
+      landingMode ||
+      idLaunchMode ||
+      desktopRoute ||
+      browserRoute ||
+      marketplaceMode ||
+      tokenMode ||
+      walletMode ||
+      workTokenMode ||
+      rushMode ||
+      activityMode ||
+      growthMode
+    ) {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    STANDALONE_ROUTE_PARAMS.forEach((param) => url.searchParams.delete(param));
+    url.searchParams.set("folder", folder);
+    if (asset) {
+      url.searchParams.set("asset", asset);
+      url.searchParams.delete("ticker");
+    } else {
+      url.searchParams.delete("asset");
+      url.searchParams.delete("ticker");
+    }
+    window.history.replaceState(
+      {},
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }
+
   function openFolder(folder: Folder) {
+    rememberComputerFolder(folder);
+
     if (folder === "drafts") {
       const draft = address ? loadDraft(address, network) : savedDraft;
       setSavedDraft(draft);
@@ -12513,6 +12645,36 @@ export default function App() {
     setReplyParentTxid(undefined);
     setAttachment(undefined);
     setSelectedKey("");
+  }
+
+  function openTokenWorkspace(token?: PowTokenDefinition) {
+    const folder =
+      token &&
+      (token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER)
+        ? "work"
+        : "token";
+
+    if (token) {
+      setTokenSelectedId(token.tokenId);
+      setTokenDetailTarget(token.tokenId);
+      rememberComputerWorkspaceAsset(folder, token.tokenId);
+    } else {
+      setTokenDetailTarget("");
+      rememberComputerWorkspaceAsset(folder);
+    }
+
+    openFolder(folder);
+  }
+
+  function openWalletWorkspace(token?: PowTokenDefinition) {
+    if (token) {
+      setTokenTransferTokenId(token.tokenId);
+      rememberComputerWorkspaceAsset("wallet", token.tokenId);
+    } else {
+      rememberComputerWorkspaceAsset("wallet");
+    }
+
+    openFolder("wallet");
   }
 
   function openSourceMessage(message: MailMessage) {
@@ -12730,7 +12892,6 @@ export default function App() {
         localStorage.setItem(key, value);
       }
 
-      setTheme(loadTheme());
       setAllSent(loadSentMessages());
       setMailPreferences(loadMailPreferences());
       setContacts(loadContacts());
@@ -12950,6 +13111,11 @@ export default function App() {
       return;
     }
 
+    if (tokenRefreshInFlightRef.current) {
+      return;
+    }
+
+    tokenRefreshInFlightRef.current = true;
     setBusy(true);
     if (!silent) {
       setStatus({ tone: "idle", text: "Scanning token index..." });
@@ -12981,6 +13147,7 @@ export default function App() {
         text: errorMessage(error, "Token scan failed."),
       });
     } finally {
+      tokenRefreshInFlightRef.current = false;
       setBusy(false);
     }
   }
@@ -13096,9 +13263,7 @@ export default function App() {
         networkValueSats: actualValue.totalSats,
         powids: actualValue.powids,
         tokenFlowSats:
-          actualValue.tokenCreationFlowSats +
-          actualValue.tokenMintFlowSats +
-          actualValue.tokenTransferFlowSats,
+          actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats,
       });
       if (!silent) {
         setStatus({
@@ -13294,9 +13459,11 @@ export default function App() {
               ? "wallet"
               : workTokenMode
                 ? "work"
-                : mainnetRegistryMode
-                  ? "ids"
-                  : "inbox",
+                : marketplaceMode
+                  ? "marketplace"
+                  : mainnetRegistryMode
+                    ? "ids"
+                    : "inbox",
       );
       setComposeOpen(false);
 
@@ -16767,8 +16934,6 @@ export default function App() {
         registryRecords={idRegistry.filter(
           (record) => record.network === "livenet",
         )}
-        setTheme={setTheme}
-        theme={theme}
         onRefresh={() => void refreshIds()}
       />
     );
@@ -16801,10 +16966,8 @@ export default function App() {
         setIdName={setIdName}
         setIdPgpKey={setIdPgpKey}
         setIdReceiveAddress={setIdReceiveAddress}
-        setTheme={setTheme}
         status={status}
         submit={registerId}
-        theme={theme}
         onRefresh={() => void refreshIds()}
       />
     );
@@ -16857,10 +17020,8 @@ export default function App() {
           setIdSaleAuthorization("");
           setIdSelectedListingId("");
         }}
-        setTheme={setTheme}
         status={status}
         submitPurchase={purchaseId}
-        theme={theme}
         tokenListings={tokenListings.filter(
           (listing) => listing.network === "livenet",
         )}
@@ -16927,13 +17088,11 @@ export default function App() {
         setListBuyerAddress={setTokenListBuyerAddress}
         setListPriceSats={setTokenListPriceSats}
         setSelectedTokenId={setTokenTransferTokenId}
-        setTheme={setTheme}
         setTransferAmount={setTokenTransferAmount}
         setTransferRecipient={setTokenTransferRecipient}
         status={status}
         submitList={listToken}
         submitTransfer={transferToken}
-        theme={theme}
         transferAmount={tokenTransferAmount}
         transferBalance={walletTransferBalance}
         transferBytes={tokenTransferBytes}
@@ -17009,7 +17168,6 @@ export default function App() {
         setPrepareMintCount={setTokenPrepareMintCount}
         setSelectedTokenId={setTokenSelectedId}
         setTokenDetailTarget={setTokenDetailTarget}
-        setTheme={setTheme}
         status={status}
         tokenDetailTarget={effectiveTokenDetailTarget}
         tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
@@ -17021,7 +17179,6 @@ export default function App() {
         startMintAssistant={startTokenMintAssistant}
         stopMintAssistant={stopTokenMintAssistant}
         submitMint={mintToken}
-        theme={theme}
         workTokenOnly={workTokenMode}
         onRefresh={() => {
           void refreshTokenBtcUsd();
@@ -17054,10 +17211,8 @@ export default function App() {
         setFeeRate={setFeeRate}
         setMintCount={setRushMintCount}
         setMintDelayMs={setRushMintDelayMs}
-        setTheme={setTheme}
         state={rushState}
         status={status}
-        theme={theme}
       />
     );
   }
@@ -17076,10 +17231,8 @@ export default function App() {
         setFileFilter={setFileFilter}
         onNetworkChange={chooseNetwork}
         setSortMode={setSortMode}
-        setTheme={setTheme}
         sortMode={sortMode}
         status={status}
-        theme={theme}
         onClear={clearDesktop}
         onRefresh={() => void loadDesktopTarget()}
         onSearch={(event) => {
@@ -17092,7 +17245,7 @@ export default function App() {
   }
 
   if (browserRoute) {
-    return <BrowserApp setTheme={setTheme} theme={theme} />;
+    return <BrowserApp />;
   }
 
   if (activityMode) {
@@ -17106,9 +17259,7 @@ export default function App() {
         query={activityQuery}
         searchedActivity={activityMail}
         setQuery={setActivityQuery}
-        setTheme={setTheme}
         status={status}
-        theme={theme}
         onClear={clearActivity}
         onRefresh={() => {
           void refreshIds();
@@ -17137,9 +17288,7 @@ export default function App() {
           (record) => record.network === "livenet",
         )}
         registrySales={idSales.filter((sale) => sale.network === "livenet")}
-        setTheme={setTheme}
         status={status}
-        theme={theme}
         tokenDefinitions={tokenDefinitions.filter(
           (token) => token.network === "livenet",
         )}
@@ -17153,12 +17302,25 @@ export default function App() {
     );
   }
 
+  const layoutClassName = [
+    "mail-layout",
+    address ? "" : "is-onboarding",
+    activeFolder === "token" ||
+    activeFolder === "wallet" ||
+    activeFolder === "work"
+      ? "is-token-workspace"
+      : "",
+    activeFolder === "marketplace" ? "is-marketplace-workspace" : "",
+    activeFolder === "browser" ? "is-browser-workspace" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <main className="mail-app">
       <AppHeader
         address={address}
         busy={busy}
-        className="topbar"
         connectWallet={connectWallet}
         disconnectWallet={disconnectWallet}
         hasUnisat={hasUnisat}
@@ -17205,28 +17367,13 @@ export default function App() {
                   : refreshMail(activeFolder));
               }
         }
-        setTheme={setTheme}
         subtitle={networkLabel(network)}
-        theme={theme}
         title="ProofOfWork.Me"
       />
 
-      <div className={`status ${status.tone}`}>
-        <span className="status-dot" aria-hidden="true" />
-        <span>{status.text}</span>
-      </div>
+      <AppStatusRow persistent status={status} />
 
-      <section
-        className={`mail-layout ${address ? "" : "is-onboarding"} ${
-          activeFolder === "token" ||
-          activeFolder === "wallet" ||
-          activeFolder === "work"
-            ? "is-token-workspace"
-            : activeFolder === "browser"
-                ? "is-browser-workspace"
-                : ""
-        }`}
-      >
+      <section className={layoutClassName}>
         <aside className="sidebar">
           <button className="compose-button" onClick={composeNew} type="button">
             <span className="button-content">
@@ -17613,6 +17760,8 @@ export default function App() {
             tokenTransfers={tokenTransfers}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
+            onOpenTokenWorkspace={openTokenWorkspace}
+            onOpenWalletWorkspace={openWalletWorkspace}
             useListing={(listing) => {
               setIdSaleAuthorization(
                 JSON.stringify(listing.saleAuthorization, null, 2),
@@ -17735,6 +17884,7 @@ export default function App() {
             startMintAssistant={startTokenMintAssistant}
             stopMintAssistant={stopTokenMintAssistant}
             workTokenOnly={activeFolder === "work"}
+            onOpenTokenFactory={() => openTokenWorkspace()}
             onRefresh={() => {
               void refreshTokenBtcUsd();
               void refreshToken(false, true);
@@ -18146,11 +18296,7 @@ function browserPageWithContext(page: BrowserPage) {
 }
 
 function BrowserApp({
-  setTheme,
-  theme,
 }: {
-  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
-  theme: ThemeMode;
 }) {
   const [network, setNetwork] = useState<BitcoinNetwork>(() =>
     networkFromBrowserLocation(),
@@ -18231,23 +18377,15 @@ function BrowserApp({
   }
 
   return (
-    <main className="desktop-public-app browser-public-app">
+    <main className="desktop-public-app browser-public-app has-route-status">
       <AppHeader
-        brandClassName="landing-brand"
-        className="desktop-public-header"
-        domainNavCompact={false}
         network={network}
         onNetworkChange={setNetwork}
-        setTheme={setTheme}
         subtitle="HTML from Bitcoin"
-        theme={theme}
         title="ProofOfWork Browser"
       />
 
-      <div className={`status desktop-route-status ${status.tone}`}>
-        <span className="status-dot" aria-hidden="true" />
-        <span>{status.text}</span>
-      </div>
+      <AppStatusRow className="desktop-route-status" persistent status={status} />
 
       <section className="browser-workspace">
         <section className="browser-hero">
@@ -18559,10 +18697,11 @@ function BrowserWorkspace({
 
   return (
     <section className="browser-workspace browser-computer-workspace">
-      <div className={`status browser-workspace-status ${status.tone}`}>
-        <span className="status-dot" aria-hidden="true" />
-        <span>{status.text}</span>
-      </div>
+      <AppStatusRow
+        className="browser-workspace-status"
+        persistent
+        status={status}
+      />
 
       <section className="browser-hero">
         <div>
@@ -18801,10 +18940,8 @@ function DesktopApp({
   setDesktopQuery,
   setFileFilter,
   setSortMode,
-  setTheme,
   sortMode,
   status,
-  theme,
   onClear,
   onNetworkChange,
   onRefresh,
@@ -18821,10 +18958,8 @@ function DesktopApp({
   setDesktopQuery: (value: string) => void;
   setFileFilter: (value: FileFilter) => void;
   setSortMode: (value: SortMode) => void;
-  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   sortMode: SortMode;
   status: { tone: StatusTone; text: string };
-  theme: ThemeMode;
   onClear: () => void;
   onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
@@ -18832,27 +18967,15 @@ function DesktopApp({
   onSelect: (message: MailMessage) => void;
 }) {
   return (
-    <main
-      className={`desktop-public-app ${status.tone !== "idle" ? "has-route-status" : ""}`}
-    >
+    <main className="desktop-public-app has-route-status">
       <AppHeader
-        brandClassName="landing-brand"
-        className="desktop-public-header"
-        domainNavCompact={false}
         network={activeNetwork}
         onNetworkChange={onNetworkChange}
-        setTheme={setTheme}
         subtitle="Public file search"
-        theme={theme}
         title="ProofOfWork Desktop"
       />
 
-      {status.tone !== "idle" ? (
-        <div className={`status desktop-route-status ${status.tone}`}>
-          <span className="status-dot" aria-hidden="true" />
-          <span>{status.text}</span>
-        </div>
-      ) : null}
+      <AppStatusRow className="desktop-route-status" persistent status={status} />
 
       <DesktopWorkspace
         activeNetwork={activeNetwork}
@@ -18885,9 +19008,7 @@ function ActivityApp({
   query,
   searchedActivity,
   setQuery,
-  setTheme,
   status,
-  theme,
   onClear,
   onNetworkChange,
   onRefresh,
@@ -18900,35 +19021,23 @@ function ActivityApp({
   query: string;
   searchedActivity: PowActivityItem[];
   setQuery: (value: string) => void;
-  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   status: { tone: StatusTone; text: string };
-  theme: ThemeMode;
   onClear: () => void;
   onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <main className="desktop-public-app activity-public-app">
+    <main className="desktop-public-app activity-public-app has-route-status">
       <AppHeader
-        brandClassName="landing-brand"
-        className="desktop-public-header"
-        domainNavCompact={false}
         network={activeNetwork}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
-        setTheme={setTheme}
         subtitle="Bitcoin Computer log"
-        theme={theme}
         title="ProofOfWork Log"
       />
 
-      {status.tone !== "idle" ? (
-        <div className={`status desktop-route-status ${status.tone}`}>
-          <span className="status-dot" aria-hidden="true" />
-          <span>{status.text}</span>
-        </div>
-      ) : null}
+      <AppStatusRow className="desktop-route-status" persistent status={status} />
 
       <ActivityWorkspace
         activeNetwork={activeNetwork}
@@ -19278,13 +19387,11 @@ type TokenWalletAppProps = {
   setListBuyerAddress: (value: string) => void;
   setListPriceSats: (value: number) => void;
   setSelectedTokenId: (value: string) => void;
-  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   setTransferAmount: (value: number) => void;
   setTransferRecipient: (value: string) => void;
   status: { tone: StatusTone; text: string };
   submitList: (event: FormEvent<HTMLFormElement>) => void;
   submitTransfer: (event: FormEvent<HTMLFormElement>) => void;
-  theme: ThemeMode;
   tokenSales: PowTokenSale[];
   transferAmount: number;
   transferBalance: number;
@@ -19325,13 +19432,11 @@ function TokenWalletApp({
   setListBuyerAddress,
   setListPriceSats,
   setSelectedTokenId,
-  setTheme,
   setTransferAmount,
   setTransferRecipient,
   status,
   submitList,
   submitTransfer,
-  theme,
   tokenSales,
   transferAmount,
   transferBalance,
@@ -19344,33 +19449,23 @@ function TokenWalletApp({
   workFloorQuote,
 }: TokenWalletAppProps) {
   return (
-    <main className="id-launch-app token-public-app">
+    <main className="id-launch-app token-public-app token-wallet-public-app">
       <AppHeader
         address={address}
-        brandClassName="landing-brand"
         busy={busy}
-        className="id-launch-topbar"
         connectWallet={connectWallet}
         disconnectWallet={disconnectWallet}
-        domainNavCompact={false}
         hasUnisat={hasUnisat}
         homeHref={appHref(WALLET_APP_URL, LOCAL_WALLET_APP_URL)}
         mark={<Wallet size={18} />}
         network={network}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
-        setTheme={setTheme}
         subtitle="Token balances and transfers"
-        theme={theme}
         title="Wallet"
       />
 
-      {status.tone !== "idle" ? (
-        <div className={`status desktop-route-status ${status.tone}`}>
-          <span className="status-dot" aria-hidden="true" />
-          <span>{status.text}</span>
-        </div>
-      ) : null}
+      <AppStatusRow className="desktop-route-status" persistent status={status} />
 
       <TokenWalletWorkspace
         address={address}
@@ -19628,7 +19723,13 @@ function TokenWalletWorkspace({
   ]);
 
   return (
-    <section className={compact ? "workspace token-workspace" : "token-workspace"}>
+    <section
+      className={
+        compact
+          ? "workspace token-workspace token-workspace-compact token-wallet-workspace"
+          : "token-workspace token-wallet-workspace"
+      }
+    >
       <section className="id-launch-card token-dashboard-card">
         <div className="id-card-heading">
           <div className="id-card-icon">
@@ -20069,7 +20170,6 @@ type TokenAppProps = {
   setPrepareMintCount: (value: number) => void;
   setSelectedTokenId: (value: string) => void;
   setTokenDetailTarget: (value: string) => void;
-  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   status: { tone: StatusTone; text: string };
   tokenDetailTarget: string;
   tokenIndexAddress: string;
@@ -20084,8 +20184,8 @@ type TokenAppProps = {
     event: FormEvent<HTMLFormElement>,
     tokenOverride?: PowTokenDefinition,
   ) => void | Promise<string | undefined>;
-  theme: ThemeMode;
   workTokenOnly?: boolean;
+  onOpenTokenFactory?: () => void;
   onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
 };
@@ -20098,9 +20198,7 @@ function TokenApp({
   hasUnisat,
   network,
   onNetworkChange,
-  setTheme,
   status,
-  theme,
   workTokenOnly,
   ...workspaceProps
 }: TokenAppProps) {
@@ -20114,22 +20212,15 @@ function TokenApp({
         hasUnisat={hasUnisat}
         network={network}
         onNetworkChange={onNetworkChange}
-        setTheme={setTheme}
         subtitle={
           workTokenOnly
             ? "ProofOfWork token dashboard"
             : "ProofOfWork token factory"
         }
-        theme={theme}
         title={workTokenOnly ? "WORK" : "Tokens"}
       />
 
-      {status.tone !== "idle" ? (
-        <div className={`status ${status.tone}`}>
-          <span className="status-dot" aria-hidden="true" />
-          <span>{status.text}</span>
-        </div>
-      ) : null}
+      <AppStatusRow persistent status={status} />
 
       <TokenWorkspace
         address={address}
@@ -20210,6 +20301,7 @@ function TokenWorkspace({
   workFloorLoading,
   workFloorQuote,
   workTokenOnly,
+  onOpenTokenFactory,
   onRefresh,
 }: Omit<
   TokenAppProps,
@@ -20217,9 +20309,7 @@ function TokenWorkspace({
   | "disconnectWallet"
   | "hasUnisat"
   | "onNetworkChange"
-  | "setTheme"
   | "status"
-  | "theme"
 >) {
   const [holderSearch, setHolderSearch] = useState("");
   const [mintSearch, setMintSearch] = useState("");
@@ -20278,10 +20368,54 @@ function TokenWorkspace({
     setCreateMintAmount(WORK_TOKEN_MINT_AMOUNT);
     setCreateMintPriceSats(WORK_TOKEN_MINT_PRICE_SATS);
   };
+  const replaceComputerTokenRoute = (token?: PowTokenDefinition) => {
+    if (!compact || typeof window === "undefined") {
+      return false;
+    }
+
+    const url = new URL(window.location.href);
+    STANDALONE_ROUTE_PARAMS.forEach((param) => url.searchParams.delete(param));
+    url.searchParams.set(
+      "folder",
+      token &&
+        (token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER)
+        ? "work"
+        : "token",
+    );
+    if (token) {
+      url.searchParams.set("asset", token.tokenId);
+      url.searchParams.delete("ticker");
+    } else {
+      url.searchParams.delete("asset");
+      url.searchParams.delete("ticker");
+    }
+    window.history.replaceState(
+      null,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+    return true;
+  };
   const openTokenDetail = (token: PowTokenDefinition) => {
     setSelectedTokenId(token.tokenId);
     setTokenDetailTarget(token.tokenId);
-    window.history.pushState(null, "", tokenDetailHref(token));
+    if (!replaceComputerTokenRoute(token)) {
+      window.history.pushState(null, "", tokenDetailHref(token));
+    }
+  };
+  const openTokenFactory = () => {
+    setTokenDetailTarget("");
+    if (onOpenTokenFactory) {
+      onOpenTokenFactory();
+      return;
+    }
+    if (!replaceComputerTokenRoute()) {
+      window.history.pushState(
+        null,
+        "",
+        appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL),
+      );
+    }
   };
   const detailMode = workTokenOnly || Boolean(tokenDetailTarget.trim());
   const detailPricePerToken =
@@ -20975,15 +21109,24 @@ function TokenWorkspace({
     return (
       <section className={`${workspaceClassName} token-detail-page`}>
         <div className="token-detail-toolbar">
-          <a
-            className="secondary small"
-            href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
-          >
-            <span className="button-content">
-              <ArrowLeft size={15} />
-              <span>Factory</span>
-            </span>
-          </a>
+          {compact ? (
+            <button className="secondary small" onClick={openTokenFactory} type="button">
+              <span className="button-content">
+                <ArrowLeft size={15} />
+                <span>Factory</span>
+              </span>
+            </button>
+          ) : (
+            <a
+              className="secondary small"
+              href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
+            >
+              <span className="button-content">
+                <ArrowLeft size={15} />
+                <span>Factory</span>
+              </span>
+            </a>
+          )}
           <button className="secondary small" onClick={onRefresh} type="button">
             <span className="button-content">
               <RefreshCw size={15} />
@@ -21673,24 +21816,28 @@ function TokenWorkspace({
                 for the canonical WORK token.
               </p>
             )}
-            <div
-              className={
-                createBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"
-              }
-            >
-              {createBytes.toLocaleString()} /{" "}
-              {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
-              bytes
+            <div className="token-action-footer">
+              <div
+                className={
+                  createBytes > MAX_DATA_CARRIER_BYTES
+                    ? "counter bad"
+                    : "counter"
+                }
+              >
+                {createBytes.toLocaleString()} /{" "}
+                {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
+                bytes
+              </div>
+              <button className="primary" disabled={!canCreate} type="submit">
+                <span className="button-content">
+                  <Send size={16} />
+                  <span>{creatingToken ? "Creating" : "Create Token"}</span>
+                </span>
+              </button>
+              {!address ? (
+                <p className="field-note">Connect UniSat to create a token.</p>
+              ) : null}
             </div>
-            <button className="primary" disabled={!canCreate} type="submit">
-              <span className="button-content">
-                <Send size={16} />
-                <span>{creatingToken ? "Creating" : "Create Token"}</span>
-              </span>
-            </button>
-            {!address ? (
-              <p className="field-note">Connect UniSat to create a token.</p>
-            ) : null}
           </form>
         </section>
 
@@ -21797,26 +21944,30 @@ function TokenWorkspace({
               {selectedToken?.ticker ?? ""}.
             </p>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
-            <div
-              className={
-                mintBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"
-              }
-            >
-              {mintBytes.toLocaleString()} /{" "}
-              {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
-              bytes
+            <div className="token-action-footer">
+              <div
+                className={
+                  mintBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"
+                }
+              >
+                {mintBytes.toLocaleString()} /{" "}
+                {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
+                bytes
+              </div>
+              <button className="primary" disabled={!canMint} type="submit">
+                <span className="button-content">
+                  <Send size={16} />
+                  <span>{selectedMintButtonLabel}</span>
+                </span>
+              </button>
+              {!selectedToken ? (
+                <p className="field-note">
+                  Create or load a token before minting.
+                </p>
+              ) : selectedMintBlockedNote ? (
+                <p className="field-note bad">{selectedMintBlockedNote}</p>
+              ) : null}
             </div>
-            <button className="primary" disabled={!canMint} type="submit">
-              <span className="button-content">
-                <Send size={16} />
-                <span>{selectedMintButtonLabel}</span>
-              </span>
-            </button>
-            {!selectedToken ? (
-              <p className="field-note">Create or load a token before minting.</p>
-            ) : selectedMintBlockedNote ? (
-              <p className="field-note bad">{selectedMintBlockedNote}</p>
-            ) : null}
           </form>
           {renderMintAssistant(selectedToken)}
           {renderMintUtxoPrep(selectedToken)}
@@ -22190,6 +22341,7 @@ function growthActualNetworkValue(
     (total, transfer) => total + transfer.paidSats,
     0,
   );
+  const walletFlowSats = tokenTransferFlowSats;
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
@@ -22197,15 +22349,17 @@ function growthActualNetworkValue(
     marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const tokenSats =
-    (tokenCreationFlowSats + tokenMintFlowSats + tokenTransferFlowSats) *
+    (tokenCreationFlowSats + tokenMintFlowSats) *
     GROWTH_MODEL_INPUTS.valueMultiple;
+  const walletSats = walletFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const totalSats =
     idSats +
     mailSats +
     driveSats +
     marketplaceSats +
     browserSats +
-    tokenSats;
+    tokenSats +
+    walletSats;
   const years = Math.max(
     0,
     (Math.min(cutoffMs, Date.now()) - GROWTH_MODEL_START_MS) /
@@ -22226,6 +22380,8 @@ function growthActualNetworkValue(
     tokenMintFlowSats,
     tokenTransferFlowSats,
     tokenSats,
+    walletFlowSats,
+    walletSats,
     totalSats,
     totalUsd: growthSatsToUsdAtYears(totalSats, years),
   };
@@ -22453,12 +22609,15 @@ function growthActivityKindLabel(kind: PowActivityKind) {
     return "Drive";
   }
 
+  if (kind === "token-transfer") {
+    return "Wallet";
+  }
+
   if (
     kind === "token-create" ||
     kind === "token-mint" ||
     kind === "token-listing" ||
-    kind === "token-sale" ||
-    kind === "token-transfer"
+    kind === "token-sale"
   ) {
     return "Token";
   }
@@ -22601,9 +22760,9 @@ function growthRealEventItems(
       createdAt: transfer.createdAt,
       detail: `${transfer.amount.toLocaleString()} ${transfer.ticker} moved from ${shortAddress(transfer.senderAddress)} to ${shortAddress(transfer.recipientAddress)}.`,
       key: transfer.txid,
-      kind: "Token",
+      kind: "Wallet",
       network: transfer.network,
-      title: "Token transfer",
+      title: "Wallet transfer",
       txid: transfer.txid,
     });
   }
@@ -23310,9 +23469,7 @@ function GrowthApp({
   registryListings,
   registryRecords,
   registrySales,
-  setTheme,
   status,
-  theme,
   tokenDefinitions,
   tokenMints,
   tokenTransfers,
@@ -23325,9 +23482,7 @@ function GrowthApp({
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
   registrySales: PowIdMarketplaceSale[];
-  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   status: { tone: StatusTone; text: string };
-  theme: ThemeMode;
   tokenDefinitions: PowTokenDefinition[];
   tokenMints: PowTokenMint[];
   tokenTransfers: PowTokenTransfer[];
@@ -23335,26 +23490,16 @@ function GrowthApp({
   onRefresh: () => void;
 }) {
   return (
-    <main className="desktop-public-app activity-public-app growth-public-app">
+    <main className="desktop-public-app activity-public-app growth-public-app has-route-status">
       <AppHeader
-        brandClassName="landing-brand"
-        className="desktop-public-header"
-        domainNavCompact={false}
         network={activeNetwork}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
-        setTheme={setTheme}
         subtitle="Model vs chain"
-        theme={theme}
         title="ProofOfWork Growth"
       />
 
-      {status.tone !== "idle" ? (
-        <div className={`status desktop-route-status ${status.tone}`}>
-          <span className="status-dot" aria-hidden="true" />
-          <span>{status.text}</span>
-        </div>
-      ) : null}
+      <AppStatusRow className="desktop-route-status" persistent status={status} />
 
       <GrowthWorkspace
         busy={busy}
@@ -23452,9 +23597,8 @@ function GrowthWorkspace({
     (transfer) => transfer.confirmed,
   ).length;
   const tokenFlowSats =
-    actualValue.tokenCreationFlowSats +
-    actualValue.tokenMintFlowSats +
-    actualValue.tokenTransferFlowSats;
+    actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats;
+  const walletFlowSats = actualValue.walletFlowSats;
 
   return (
     <section className="growth-workspace">
@@ -23463,9 +23607,9 @@ function GrowthWorkspace({
           <span className="landing-kicker">Bitcoin Computer growth model</span>
           <h2>Model the future. Measure the chain.</h2>
           <p>
-            The blue line is modeled Bitcoin Computer network value. The green
-            line is real confirmed mainnet value from IDs, Mail, Drive,
-            Marketplace, Browser, and Tokens.
+            The candle-gold line is modeled Bitcoin Computer network value. The
+            olive line is real confirmed mainnet value from IDs, Mail, Drive,
+            Marketplace, Browser, Tokens, and Wallet.
           </p>
         </div>
         <div className="growth-model-card">
@@ -23570,12 +23714,12 @@ function GrowthWorkspace({
       >
         <article className="growth-explainer-card primary">
           <span>Plain read</span>
-          <h3>Blue is the success case. Green is Bitcoin history.</h3>
+          <h3>Candle-gold is the success case. Olive is Bitcoin history.</h3>
           <p>
             The model asks what the Bitcoin Computer can become if IDs, Mail,
-            Drive, Marketplace, Browser, and Tokens compound
-            together. The real line only counts confirmed mainnet records that
-            already exist.
+            Drive, Marketplace, Browser, Tokens, and Wallet compound together.
+            The real line only counts confirmed mainnet records that already
+            exist.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -23583,18 +23727,19 @@ function GrowthWorkspace({
           <h3>Everything is valued in sats first.</h3>
           <p>
             IDs use n squared network value. Mail, Drive, Marketplace, Browser,
-            and Tokens use confirmed payment flow multiplied by the same value
-            multiple, then translated to USD with the Bitcoin benchmark.
+            Tokens, and Wallet use confirmed payment flow multiplied by the
+            same value multiple, then translated to USD with the Bitcoin
+            benchmark.
           </p>
         </article>
         <article className="growth-explainer-card">
           <span>Real events</span>
-          <h3>The green line moves when Bitcoin confirms.</h3>
+          <h3>The olive line moves when Bitcoin confirms.</h3>
           <p>
             Registrations, messages, replies, file writes, HTML page writes,
-            buyer-funded marketplace sales, token creations, and token mints
-            are pulled from live endpoints. Pending mempool events wait until
-            they confirm.
+            buyer-funded marketplace sales, token creations, token mints, and
+            token transfers are pulled from live endpoints. Pending mempool
+            events wait until they confirm.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -23603,8 +23748,8 @@ function GrowthWorkspace({
           <p>
             A product needs real chain inputs, a usage assumption, a value
             assumption, fee elasticity, and blockspace cost. That keeps every
-            merged app beside IDs, Mail, Drive, Marketplace, and Browser instead
-            of bolted on.
+            merged app beside IDs, Mail, Drive, Marketplace, Browser, Tokens,
+            and Wallet instead of bolted on.
           </p>
         </article>
       </section>
@@ -23668,8 +23813,8 @@ function GrowthWorkspace({
           <div>
             <h3>Real growth events</h3>
             <p>
-              The green line is rebuilt from confirmed Bitcoin events. These are
-              the newest receipts feeding the real network value.
+              The olive line is rebuilt from confirmed Bitcoin events. These
+              are the newest receipts feeding the real network value.
             </p>
           </div>
         </div>
@@ -23802,7 +23947,7 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(actualValue.tokenSats)}
-            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.tokenSats, elapsedYears))} · ${tokenFlowSats.toLocaleString()} token sats · ${confirmedTokenDefinitions.toLocaleString()} tokens · ${confirmedTokenMints.toLocaleString()} mints · ${confirmedTokenTransfers.toLocaleString()} transfers`}
+            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.tokenSats, elapsedYears))} · ${tokenFlowSats.toLocaleString()} token sats · ${confirmedTokenDefinitions.toLocaleString()} tokens · ${confirmedTokenMints.toLocaleString()} mints`}
             icon={<TrendingUp size={24} />}
             modelFiveYear={growthSats(fiveYear.tokenSats)}
             modelFiveYearLabel={growthUsd(
@@ -23815,6 +23960,18 @@ function GrowthWorkspace({
             )}
             name="Tokens"
             note="Token creation fees and owner-registry mint flow become measurable Bitcoin Computer value."
+          />
+          <GrowthProductCard
+            actual={growthSats(actualValue.walletSats)}
+            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.walletSats, elapsedYears))} · ${walletFlowSats.toLocaleString()} transfer sats · ${confirmedTokenTransfers.toLocaleString()} transfers`}
+            icon={<Wallet size={24} />}
+            modelFiveYear="Tracked"
+            modelFiveYearLabel="token transfer lane"
+            modelLabel="confirmed transfer value"
+            modelOneYear="Tracked"
+            modelOneYearLabel="token transfer lane"
+            name="Wallet"
+            note="Token balances and pwt1:send transfers become their own ownership product in the Bitcoin Computer model."
           />
         </div>
       </section>
@@ -23875,10 +24032,8 @@ function IdLaunchApp({
   setIdName,
   setIdPgpKey,
   setIdReceiveAddress,
-  setTheme,
   status,
   submit,
-  theme,
   onRefresh,
 }: {
   address: string;
@@ -23901,10 +24056,8 @@ function IdLaunchApp({
   setIdName: (value: string) => void;
   setIdPgpKey: (value: string) => void;
   setIdReceiveAddress: (value: string) => void;
-  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   status: { tone: StatusTone; text: string };
   submit: (event: FormEvent<HTMLFormElement>) => void;
-  theme: ThemeMode;
   onRefresh: () => void;
 }) {
   const normalizedId = normalizePowId(idName);
@@ -23950,16 +24103,11 @@ function IdLaunchApp({
         network={network}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
-        setTheme={setTheme}
         subtitle="Mainnet registry"
-        theme={theme}
         title="ProofOfWork IDs"
       />
 
-      <div className={`status ${status.tone}`}>
-        <span className="status-dot" aria-hidden="true" />
-        <span>{status.text}</span>
-      </div>
+      <AppStatusRow persistent status={status} />
 
       <section className="id-launch-main">
         <div className="id-launch-hero">
@@ -24422,9 +24570,12 @@ function TokenMarketplacePanel({
   address,
   btcUsd,
   buyListing,
+  computerMode = false,
   listings,
   mints,
   network,
+  onOpenTokenWorkspace,
+  onOpenWalletWorkspace,
   sales,
   tokens,
   transfers,
@@ -24434,9 +24585,12 @@ function TokenMarketplacePanel({
   address: string;
   btcUsd: number;
   buyListing: (listing: PowTokenListing) => void;
+  computerMode?: boolean;
   listings: PowTokenListing[];
   mints: PowTokenMint[];
   network: BitcoinNetwork;
+  onOpenTokenWorkspace?: (token?: PowTokenDefinition) => void;
+  onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
   sales: PowTokenSale[];
   tokens: PowTokenDefinition[];
   transfers: PowTokenTransfer[];
@@ -24475,7 +24629,10 @@ function TokenMarketplacePanel({
     } else {
       params.delete("asset");
     }
-    if (isLocalPreviewHost()) {
+    if (computerMode) {
+      STANDALONE_ROUTE_PARAMS.forEach((param) => params.delete(param));
+      params.set("folder", "marketplace");
+    } else if (isLocalPreviewHost()) {
       params.set("marketplace", "1");
     }
     const query = params.toString();
@@ -24923,21 +25080,50 @@ function TokenMarketplacePanel({
                     >
                       Market
                     </button>
-                    <a className="secondary small" href={tokenDetailHref(token)}>
-                      <span className="button-content">
-                        <ArrowUpRight size={15} />
-                        <span>Token</span>
-                      </span>
-                    </a>
-                    <a
-                      className="secondary small"
-                      href={appHref(WALLET_APP_URL, LOCAL_WALLET_APP_URL)}
-                    >
-                      <span className="button-content">
-                        <Wallet size={15} />
-                        <span>Wallet</span>
-                      </span>
-                    </a>
+                    {onOpenTokenWorkspace ? (
+                      <button
+                        className="secondary small"
+                        onClick={() => onOpenTokenWorkspace(token)}
+                        type="button"
+                      >
+                        <span className="button-content">
+                          <ArrowUpRight size={15} />
+                          <span>Token</span>
+                        </span>
+                      </button>
+                    ) : (
+                      <a
+                        className="secondary small"
+                        href={tokenDetailHref(token)}
+                      >
+                        <span className="button-content">
+                          <ArrowUpRight size={15} />
+                          <span>Token</span>
+                        </span>
+                      </a>
+                    )}
+                    {onOpenWalletWorkspace ? (
+                      <button
+                        className="secondary small"
+                        onClick={() => onOpenWalletWorkspace(token)}
+                        type="button"
+                      >
+                        <span className="button-content">
+                          <Wallet size={15} />
+                          <span>Wallet</span>
+                        </span>
+                      </button>
+                    ) : (
+                      <a
+                        className="secondary small"
+                        href={appHref(WALLET_APP_URL, LOCAL_WALLET_APP_URL)}
+                      >
+                        <span className="button-content">
+                          <Wallet size={15} />
+                          <span>Wallet</span>
+                        </span>
+                      </a>
+                    )}
                     <a
                       className="secondary small"
                       href={mempoolTxUrl(token.txid, token.network)}
@@ -25107,24 +25293,50 @@ function TokenMarketplacePanel({
             </div>
           </div>
           <div className="id-record-actions">
-            <a
-              className="primary link-button"
-              href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
-            >
-              <span className="button-content">
-                <ArrowUpRight size={16} />
-                <span>Create / Mint</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(WALLET_APP_URL, LOCAL_WALLET_APP_URL)}
-            >
-              <span className="button-content">
-                <Wallet size={16} />
-                <span>Wallet Transfers</span>
-              </span>
-            </a>
+            {onOpenTokenWorkspace ? (
+              <button
+                className="primary link-button"
+                onClick={() => onOpenTokenWorkspace(selectedMarketToken)}
+                type="button"
+              >
+                <span className="button-content">
+                  <ArrowUpRight size={16} />
+                  <span>Create / Mint</span>
+                </span>
+              </button>
+            ) : (
+              <a
+                className="primary link-button"
+                href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
+              >
+                <span className="button-content">
+                  <ArrowUpRight size={16} />
+                  <span>Create / Mint</span>
+                </span>
+              </a>
+            )}
+            {onOpenWalletWorkspace ? (
+              <button
+                className="secondary link-button"
+                onClick={() => onOpenWalletWorkspace(selectedMarketToken)}
+                type="button"
+              >
+                <span className="button-content">
+                  <Wallet size={16} />
+                  <span>Wallet Transfers</span>
+                </span>
+              </button>
+            ) : (
+              <a
+                className="secondary link-button"
+                href={appHref(WALLET_APP_URL, LOCAL_WALLET_APP_URL)}
+              >
+                <span className="button-content">
+                  <Wallet size={16} />
+                  <span>Wallet Transfers</span>
+                </span>
+              </a>
+            )}
           </div>
         </section>
       </div>
@@ -25167,10 +25379,8 @@ function MarketplaceApp({
   setIdSaleReceiveAddress,
   setFeeRate,
   setManagedIdName,
-  setTheme,
   status,
   submitPurchase,
-  theme,
   tokenListings,
   tokenMints,
   tokenSales,
@@ -25216,10 +25426,8 @@ function MarketplaceApp({
   setIdSaleReceiveAddress: (value: string) => void;
   setFeeRate: (value: number) => void;
   setManagedIdName: (value: string) => void;
-  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   status: { tone: StatusTone; text: string };
   submitPurchase: (event: FormEvent<HTMLFormElement>) => void;
-  theme: ThemeMode;
   tokenListings: PowTokenListing[];
   tokenMints: PowTokenMint[];
   tokenSales: PowTokenSale[];
@@ -25256,16 +25464,11 @@ function MarketplaceApp({
         network={network}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
-        setTheme={setTheme}
         subtitle="Mainnet asset marketplace"
-        theme={theme}
         title="ProofOfWork Marketplace"
       />
 
-      <div className={`status ${status.tone}`}>
-        <span className="status-dot" aria-hidden="true" />
-        <span>{status.text}</span>
-      </div>
+      <AppStatusRow persistent status={status} />
 
       <section className="id-launch-main">
         <div className="id-launch-hero">
@@ -25522,6 +25725,8 @@ function MarketplaceWorkspace({
   tokenTransfers,
   workFloorLoading,
   workFloorQuote,
+  onOpenTokenWorkspace,
+  onOpenWalletWorkspace,
   useListing,
   onRefresh,
 }: {
@@ -25564,6 +25769,8 @@ function MarketplaceWorkspace({
   tokenTransfers: PowTokenTransfer[];
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
+  onOpenTokenWorkspace?: (token?: PowTokenDefinition) => void;
+  onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
   useListing: (listing: PowIdListing) => void;
   onRefresh: () => void;
 }) {
@@ -25804,9 +26011,12 @@ function MarketplaceWorkspace({
           address={address}
           btcUsd={btcUsd}
           buyListing={buyTokenListing}
+          computerMode
           listings={tokenListings}
           mints={tokenMints}
           network={network}
+          onOpenTokenWorkspace={onOpenTokenWorkspace}
+          onOpenWalletWorkspace={onOpenWalletWorkspace}
           sales={tokenSales}
           tokens={tokens}
           transfers={tokenTransfers}
@@ -27462,7 +27672,7 @@ function DesktopWorkspace({
         <div className="desktop-screensaver">
           <div className="desktop-screen-card">
             <div className="brand-mark" aria-hidden="true">
-              PoW
+              <img src="/proofofwork-logo.png" alt="" />
             </div>
             <span>ProofOfWork Desktop</span>
             <h2>Open a public Bitcoin desktop.</h2>

@@ -120,7 +120,7 @@ Launch invariants for future developers/agents:
 - Adds confirmed registry IDs to Contacts from the Computer app's ID registry rows.
 - Uses saved Contacts as compose suggestions.
 - Accepts multiple compose recipients separated by commas, semicolons, or new lines, with removable recipient chips.
-- Exports and imports local app data backups for contacts, drafts, archives, favorites, custom folders, theme, and broadcast tracking.
+- Exports and imports local app data backups for contacts, drafts, archives, favorites, custom folders, and broadcast tracking.
 - Supports one small attachment per message, capped at 60,000 bytes before encoding.
 - Adds a desktop-style Files section for confirmed attachment-only browsing, filtering, sorting, in-app previews, download, and opening the source message.
 - Previews images, PDFs, audio, video, text, Markdown, JSON, and code files directly in the app, with copy support for text/code content.

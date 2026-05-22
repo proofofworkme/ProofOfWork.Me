@@ -16,7 +16,7 @@ ProofOfWork.Me
 
 The Bitcoin Computer.
 
-Identity, mail, files, pages, marketplace actions, Pay2Speak funding, token mints, logs, and growth signals written to Bitcoin.
+Identity, mail, files, pages, marketplace actions, token mints, wallet transfers, logs, and growth signals written to Bitcoin.
 
 ## Slide 2: The Internet Rents Identity
 
@@ -140,7 +140,7 @@ That is exactly 1 sat per WORK.
 
 Log is the public Bitcoin Computer activity feed.
 
-It indexes registrations, receiver updates, transfers, listings, purchases, messages, replies, files, attachments, Browser-readable pages, Pay2Speak funding, token creations, and token mints.
+It indexes registrations, receiver updates, transfers, listings, purchases, messages, replies, files, attachments, Browser-readable pages, token creations, token mints, and token transfers.
 
 Growth compares the canonical success-case model against real confirmed network value in sats and USD.
 
@@ -177,7 +177,6 @@ Files.
 Desktop.
 Browser.
 Marketplace.
-Pay2Speak.
 Tokens.
 WORK.
 Log.

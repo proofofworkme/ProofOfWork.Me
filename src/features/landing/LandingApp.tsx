@@ -38,9 +38,8 @@ import {
 import { appHref } from "../../app/routeRegistry";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { AppHeader } from "../../shared/components/AppHeader";
+import { AppStatusRow } from "../../shared/components/AppStatusRow";
 import { SocialFooter } from "../../shared/components/SocialFooter";
-
-type ThemeMode = "light" | "dark";
 
 type LandingRegistryRecord = {
   confirmed: boolean;
@@ -67,16 +66,12 @@ export function LandingApp({
   registryRecords,
   network,
   onNetworkChange,
-  setTheme,
-  theme,
   onRefresh,
 }: {
   registryAddress: string;
   registryRecords: LandingRegistryRecord[];
   network: BitcoinNetwork;
   onNetworkChange: (network: BitcoinNetwork) => void;
-  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
-  theme: ThemeMode;
   onRefresh: () => void;
 }) {
   const confirmedRecords = registryRecords.filter((record) => record.confirmed);
@@ -85,16 +80,12 @@ export function LandingApp({
   return (
     <main className="landing-app">
       <AppHeader
-        brandClassName="landing-brand"
-        className="landing-topbar"
-        domainNavCompact={false}
         network={network}
         onNetworkChange={onNetworkChange}
-        setTheme={setTheme}
         subtitle="The final network"
-        theme={theme}
         title="ProofOfWork.Me"
       />
+      <AppStatusRow persistent status={{ tone: "idle", text: "Ready" }} />
 
       <section className="landing-hero">
         <div className="landing-hero-content">

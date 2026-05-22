@@ -1,20 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" role="img" aria-label="ProofOfWork.Me">
   <defs>
-    <linearGradient id="mark" x1="200" y1="130" x2="910" y2="970" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#f3f6f9"/>
-      <stop offset="1" stop-color="#9aa7b7"/>
+    <linearGradient id="mark" x1="96" y1="92" x2="1108" y2="1114" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#244f86"/>
+      <stop offset=".42" stop-color="#101722"/>
+      <stop offset=".7" stop-color="#090908"/>
+      <stop offset="1" stop-color="#c4932f"/>
     </linearGradient>
+    <radialGradient id="lamp" cx="31%" cy="24%" r="34%">
+      <stop stop-color="#fff5cf" stop-opacity=".92"/>
+      <stop offset=".46" stop-color="#fff5cf" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#fff5cf" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <rect width="1080" height="1080" rx="300" fill="url(#mark)"/>
-  <rect x="28" y="28" width="1024" height="1024" rx="272" fill="none" stroke="#c7d0d9" stroke-width="56"/>
+  <rect x="48" y="48" width="1104" height="1104" rx="235" fill="url(#mark)"/>
+  <rect x="48" y="48" width="1104" height="1104" rx="235" fill="url(#lamp)"/>
+  <rect x="52" y="52" width="1096" height="1096" rx="231" fill="none" stroke="#d7a84f" stroke-width="32"/>
   <text
-    x="540"
-    y="630"
-    fill="#111827"
+    x="600"
+    y="725"
+    fill="#ffffff"
     font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
-    font-size="320"
+    font-size="326"
     font-weight="900"
-    letter-spacing="-14"
     text-anchor="middle"
   >PoW</text>
 </svg>

@@ -8,6 +8,7 @@
     "dev:prod-api": "vite --host 0.0.0.0 --mode prod-api",
     "build": "tsc && vite build",
     "preview": "vite preview --host 0.0.0.0",
+    "check:ui": "node scripts/check-ui-contract.mjs",
     "audit:ids": "node scripts/audit-id-registry.mjs",
     "deck:general": "node scripts/build-general-deck.mjs",
     "rank:powids": "node scripts/rank-powid-transactions.mjs",

@@ -1,5 +1,5 @@
 import { Check, ChevronDown, Menu } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { APP_LINKS } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
 
@@ -51,7 +51,11 @@ function linkIsActive(link: (typeof APP_LINKS)[number], current: string) {
   return true;
 }
 
-export function DomainNav({ compact = false }: { compact?: boolean }) {
+type DomainNavProps = {
+  onNavigate?: (label: string) => boolean | void;
+};
+
+export function DomainNav({ onNavigate }: DomainNavProps) {
   const current = currentHref();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -85,12 +89,27 @@ export function DomainNav({ compact = false }: { compact?: boolean }) {
     };
   }, [open]);
 
+  function handleNavigate(
+    label: string,
+    event: MouseEvent<HTMLAnchorElement>,
+  ) {
+    if (!onNavigate) {
+      setOpen(false);
+      return;
+    }
+
+    const handled = onNavigate(label);
+    if (handled === true) {
+      event.preventDefault();
+    }
+    setOpen(false);
+  }
+
   return (
     <nav
       className={[
         "domain-nav",
         "app-menu-nav",
-        compact ? "compact" : "",
         open ? "is-open" : "",
       ]
         .filter(Boolean)
@@ -106,6 +125,7 @@ export function DomainNav({ compact = false }: { compact?: boolean }) {
               aria-current={active ? "page" : undefined}
               href={appHref(link.href, link.localHref)}
               key={link.href}
+              onClick={(event) => handleNavigate(link.label, event)}
             >
               {link.label}
             </a>
@@ -137,7 +157,7 @@ export function DomainNav({ compact = false }: { compact?: boolean }) {
                 data-short={SHORT_LABELS[link.label] ?? link.label}
                 href={appHref(link.href, link.localHref)}
                 key={link.href}
-                onClick={() => setOpen(false)}
+                onClick={(event) => handleNavigate(link.label, event)}
                 role="menuitem"
                 title={link.label}
               >

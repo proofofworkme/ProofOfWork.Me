@@ -45,7 +45,7 @@ Mail organization features that are already implemented in the full app:
 - Token workspace for mainnet token creation and minting, Wallet workspace for token balances, transfers, and listings, plus a WORK workspace for the dedicated WORK token dashboard. Creation pays the `tokens@proofofwork.me` index fee; mints, transfers, listings, seals, delistings, and buys pay each token registry directly.
 - Log surface for tx-backed registry, marketplace, mail, reply, file, attachment, and token actions.
 - Growth surface for canonical modeled network value versus real confirmed registry, log, file, marketplace, and Token value metrics.
-- Export/import for local drafts, archive/favorite preferences, theme, and sent/outbox tracking.
+- Export/import for local drafts, archive/favorite preferences, and sent/outbox tracking.
 - Confirmed-only ID routing in compose: pending IDs must not receive routed mail.
 - First-party OP_RETURN API reads for production mainnet mail, files, registry, and tx status when `VITE_POW_API_BASE` is configured.
 

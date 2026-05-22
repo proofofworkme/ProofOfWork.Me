@@ -1,5 +1,11 @@
 type BitcoinNetwork = "livenet" | "testnet" | "testnet4";
 
+const NETWORK_OPTIONS = [
+  { label: "Mainnet", network: "livenet" as const },
+  { label: "Testnet4", network: "testnet4" as const },
+  { label: "Testnet3", network: "testnet" as const },
+];
+
 export function BrowserNetworkTabs({
   network,
   onChange,
@@ -8,34 +14,20 @@ export function BrowserNetworkTabs({
   onChange: (network: BitcoinNetwork) => void;
 }) {
   return (
-    <div className="browser-network-control">
+    <label className="browser-network-control browser-network-select-field">
       <span>Network</span>
-      <div
-        className="network-tabs browser-network-tabs"
+      <select
         aria-label="Browser Bitcoin network"
+        className="network-select browser-network-select"
+        onChange={(event) => onChange(event.target.value as BitcoinNetwork)}
+        value={network}
       >
-        <button
-          aria-pressed={network === "livenet"}
-          onClick={() => onChange("livenet")}
-          type="button"
-        >
-          Mainnet
-        </button>
-        <button
-          aria-pressed={network === "testnet4"}
-          onClick={() => onChange("testnet4")}
-          type="button"
-        >
-          Testnet4
-        </button>
-        <button
-          aria-pressed={network === "testnet"}
-          onClick={() => onChange("testnet")}
-          type="button"
-        >
-          Testnet3
-        </button>
-      </div>
-    </div>
+        {NETWORK_OPTIONS.map((option) => (
+          <option key={option.network} value={option.network}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

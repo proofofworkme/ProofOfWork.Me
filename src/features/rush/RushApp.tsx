@@ -1,4 +1,4 @@
-import type { Dispatch, FormEvent, SetStateAction } from "react";
+import type { FormEvent } from "react";
 import {
   ArrowUpRight,
   Clock,
@@ -12,6 +12,10 @@ import {
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { mempoolBase, mempoolTxUrl } from "../../shared/bitcoin/networks";
 import { AppHeader } from "../../shared/components/AppHeader";
+import {
+  AppStatusRow,
+  type AppStatusState,
+} from "../../shared/components/AppStatusRow";
 import {
   DataList,
   ProgressMeter,
@@ -34,10 +38,6 @@ import {
   type RushMintRecord,
   type RushState,
 } from "./rushProtocol";
-
-type ThemeMode = "light" | "dark";
-type StatusTone = "idle" | "good" | "bad";
-
 export type RushAppProps = {
   address: string;
   busy: boolean;
@@ -56,10 +56,8 @@ export type RushAppProps = {
   setFeeRate: (value: number) => void;
   setMintCount: (value: number) => void;
   setMintDelayMs: (value: number) => void;
-  setTheme: Dispatch<SetStateAction<ThemeMode>>;
   state: RushState;
-  status: { tone: StatusTone; text: string };
-  theme: ThemeMode;
+  status: AppStatusState;
 };
 
 type RushHolder = {
@@ -140,10 +138,8 @@ export function RushApp({
   setFeeRate,
   setMintCount,
   setMintDelayMs,
-  setTheme,
   state,
   status,
-  theme,
 }: RushAppProps) {
   const stats = state.stats;
   const phaseProgress = rushPhaseProgress(stats);
@@ -173,18 +169,11 @@ export function RushApp({
         network={network}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
-        setTheme={setTheme}
         subtitle="Chained Bitcoin mint"
-        theme={theme}
         title="RUSH"
       />
 
-      {status.tone !== "idle" ? (
-        <div className={`status ${status.tone}`}>
-          <span className="status-dot" aria-hidden="true" />
-          <span>{status.text}</span>
-        </div>
-      ) : null}
+      <AppStatusRow persistent status={status} />
 
       <PublicPage className="rush-workspace">
         <PublicPageHeader align="center">

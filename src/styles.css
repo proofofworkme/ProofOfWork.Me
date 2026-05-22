@@ -1,24 +1,32 @@
 :root {
-  color-scheme: light;
-  --bg: #f3f5f8;
-  --surface: #ffffff;
-  --surface-soft: #f8fafc;
-  --surface-raised: rgba(255, 255, 255, 0.9);
-  --text: #111827;
-  --text-muted: #667085;
-  --text-soft: #8a94a3;
-  --border: #dce2e8;
-  --border-strong: #c7d0d9;
-  --accent: #0a84ff;
-  --accent-strong: #0066cc;
-  --accent-soft: #e8f2ff;
-  --green: #17845b;
-  --green-soft: #e8f7ef;
-  --red: #c2412d;
-  --red-soft: #fff0ed;
-  --amber: #a16207;
-  --shadow: 0 18px 60px rgba(18, 28, 45, 0.12);
-  --focus: 0 0 0 4px rgba(10, 132, 255, 0.18);
+  color-scheme: dark;
+  --bg: #080807;
+  --surface: #15130f;
+  --surface-soft: #0f0f0c;
+  --surface-raised: rgba(19, 17, 13, 0.94);
+  --text: #f7f0e2;
+  --text-muted: #b9aa91;
+  --text-soft: #80745f;
+  --border: #332c22;
+  --border-strong: #5a4935;
+  --accent: #d7a84f;
+  --accent-strong: #f0c96a;
+  --accent-soft: rgba(215, 168, 79, 0.16);
+  --green: #8fae6f;
+  --green-soft: rgba(143, 174, 111, 0.14);
+  --red: #b24a3f;
+  --red-soft: rgba(178, 74, 63, 0.15);
+  --amber: #f0c96a;
+  --blue: #315f9f;
+  --yellow: #f0c96a;
+  --lapis: #315f9f;
+  --oxblood: #6f1f24;
+  --olive: #667a42;
+  --parchment: #f2e3c4;
+  --shadow: 0 28px 90px rgba(0, 0, 0, 0.58);
+  --focus: 0 0 0 4px rgba(215, 168, 79, 0.22);
+  --topbar-height: 64px;
+  --status-row-height: 38px;
   background: var(--bg);
   color: var(--text);
   font-family:
@@ -27,27 +35,441 @@
   letter-spacing: 0;
 }
 
+/* Computer shell embedded app layout contract.
+   Standalone product pages can use broad page compositions; apps embedded inside
+   the Computer mail shell must fit the shell column without horizontal clipping. */
+.mail-layout.is-token-workspace,
+.mail-layout.is-marketplace-workspace,
+.mail-layout.is-browser-workspace {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mail-layout.is-token-workspace > :is(.workspace, .token-workspace, .id-launch-main),
+.mail-layout.is-marketplace-workspace > :is(.workspace, .ids-workspace, .marketplace-workspace) {
+  align-self: stretch;
+  box-sizing: border-box;
+  container-type: inline-size;
+  grid-column: 2 / -1;
+  justify-self: stretch;
+  margin: 0;
+  max-width: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 16px;
+  scrollbar-gutter: stable;
+  width: 100%;
+}
+
+.mail-layout.is-token-workspace :is(.token-workspace, .token-workspace-compact, .token-wallet-workspace),
+.mail-layout.is-marketplace-workspace :is(.marketplace-workspace, .ids-workspace) {
+  align-content: start;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.mail-layout.is-token-workspace :is(
+  .id-launch-card,
+  .id-card,
+  .id-form,
+  .token-detail-page,
+  .token-detail-page > *,
+  .token-mint-assistant,
+  .token-utxo-prep,
+  .token-selected-ledger
+),
+.mail-layout.is-marketplace-workspace :is(
+  .id-card,
+  .id-form,
+  .id-record,
+  .marketplace-content,
+  .ids-content,
+  .marketplace-work-floor-card,
+  .token-market-card,
+  .token-market-directory,
+  .token-sale-ticket-list
+) {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.mail-layout.is-token-workspace :is(
+  .id-launch-hero,
+  .id-launch-grid,
+  .token-detail-grid,
+  .token-detail-hero,
+  .token-form-grid,
+  .token-mint-grid,
+  .token-payment-lane,
+  .token-assistant-grid,
+  .token-registry-strip,
+  .browser-meta,
+  .token-wallet-workspace .id-launch-grid
+),
+.mail-layout.is-marketplace-workspace :is(
+  .marketplace-content,
+  .ids-content,
+  .id-marketplace-grid,
+  .marketplace-transfer-grid,
+  .token-market-content,
+  .token-market-grid,
+  .token-market-list,
+  .token-sale-ticket-list
+) {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  width: 100%;
+}
+
+.mail-layout.is-token-workspace :is(
+  .id-launch-stats,
+  .token-detail-stats,
+  .token-utxo-dashboard,
+  .token-list-price-reference
+),
+.mail-layout.is-marketplace-workspace :is(
+  .marketplace-tabs,
+  .marketplace-workspace-stats,
+  .id-launch-stats,
+  .id-manage-state,
+  .browser-meta,
+  .token-floor-stats,
+  .token-market-stats
+) {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  width: 100%;
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-tabs {
+  align-items: stretch;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mail-layout.is-token-workspace :is(.fee-presets, .network-tabs, .token-split-fee-presets),
+.mail-layout.is-marketplace-workspace :is(.fee-presets, .network-tabs) {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(112px, 100%), 1fr));
+  width: 100%;
+}
+
+.mail-layout.is-token-workspace :is(.token-action-footer, .token-assistant-actions) {
+  align-items: stretch;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: stretch;
+  width: 100%;
+}
+
+.mail-layout.is-token-workspace :is(
+  .token-action-footer .primary,
+  .token-action-footer .secondary,
+  .id-form > .primary,
+  .id-form > .secondary,
+  .id-form > button.primary,
+  .id-form > button.secondary,
+  .token-mint-assistant .primary,
+  .token-mint-assistant .secondary,
+  .token-assistant-actions button
+),
+.mail-layout.is-marketplace-workspace :is(
+  .id-form > .primary,
+  .id-form > .secondary,
+  .id-form > button.primary,
+  .id-form > button.secondary,
+  form > .primary,
+  form > .secondary
+) {
+  justify-content: center;
+  min-height: 42px;
+  width: 100%;
+}
+
+.mail-layout.is-token-workspace :is(input, select, textarea, button, .primary, .secondary),
+.mail-layout.is-marketplace-workspace :is(input, select, textarea, button, .primary, .secondary) {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.mail-layout.is-token-workspace :is(
+  .mono,
+  .field-note,
+  .token-payment-lane strong,
+  .id-launch-stats strong,
+  .browser-meta dd,
+  .token-record-top strong
+),
+.mail-layout.is-marketplace-workspace :is(
+  .mono,
+  .field-note,
+  .id-manage-state dd,
+  .id-launch-stats strong,
+  .browser-meta dd,
+  .token-market-card strong
+) {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-word;
+}
+
+@container (max-width: 720px) {
+  .mail-layout.is-token-workspace :is(
+    .id-launch-hero,
+    .id-launch-grid,
+    .token-detail-grid,
+    .token-detail-hero,
+    .token-form-grid,
+    .token-mint-grid,
+    .token-payment-lane,
+    .token-assistant-grid,
+    .token-registry-strip,
+    .browser-meta,
+    .id-launch-stats,
+    .token-detail-stats,
+    .token-utxo-dashboard,
+    .token-list-price-reference,
+    .fee-presets,
+    .network-tabs,
+    .token-split-fee-presets
+  ),
+  .mail-layout.is-marketplace-workspace :is(
+    .marketplace-content,
+    .ids-content,
+    .id-marketplace-grid,
+    .marketplace-transfer-grid,
+    .marketplace-workspace-stats,
+    .id-launch-stats,
+    .browser-meta,
+    .fee-presets,
+    .network-tabs
+  ) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 860px) {
+  .mail-layout.is-token-workspace > :is(.workspace, .token-workspace, .id-launch-main),
+  .mail-layout.is-marketplace-workspace > :is(.workspace, .ids-workspace, .marketplace-workspace) {
+    grid-column: 1 / -1;
+    padding: 14px;
+  }
+}
+
+/* Computer shell embedded app contract.
+   Standalone app pages can be wide and theatrical; inside Computer they must
+   behave like compact operating panels with no horizontal bleed. */
+@media (min-width: 861px) {
+  .mail-layout.is-marketplace-workspace {
+    grid-template-columns: 232px minmax(0, 1fr);
+  }
+
+  .mail-layout.is-marketplace-workspace > .marketplace-workspace {
+    grid-column: 2;
+  }
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace {
+  align-content: start;
+  display: grid;
+  gap: 14px;
+  height: 100%;
+  max-width: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 18px;
+  scrollbar-gutter: stable;
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace > *,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .id-card,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .id-form,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .id-launch-card,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .marketplace-content,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .marketplace-work-floor-card,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .token-market-card,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .token-market-directory,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .token-sale-ticket-list {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-tabs,
+.mail-layout.is-marketplace-workspace .marketplace-workspace-stats,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .id-launch-stats {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace .marketplace-content,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .ids-content,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .id-marketplace-grid,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .marketplace-transfer-grid,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .token-market-content,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .token-market-grid,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .token-market-list,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .token-sale-ticket-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace .id-manage-state,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .browser-meta,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .token-floor-stats,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .token-market-stats {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace input,
+.mail-layout.is-marketplace-workspace .marketplace-workspace select,
+.mail-layout.is-marketplace-workspace .marketplace-workspace textarea,
+.mail-layout.is-marketplace-workspace .marketplace-workspace button,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .primary,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .secondary {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace .fee-presets,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .network-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace .fee-presets button,
+.mail-layout.is-marketplace-workspace .marketplace-workspace form > .primary,
+.mail-layout.is-marketplace-workspace .marketplace-workspace form > .secondary {
+  justify-content: center;
+  width: 100%;
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace .id-launch-stats strong,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .id-manage-state dd,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .mono {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Token, Wallet, and WORK app panels inside Computer. */
+.mail-layout .token-workspace-compact {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.mail-layout .token-workspace-compact > *,
+.mail-layout .token-workspace-compact .id-launch-card,
+.mail-layout .token-workspace-compact .id-form,
+.mail-layout .token-workspace-compact .token-detail-page,
+.mail-layout .token-workspace-compact.token-detail-page,
+.mail-layout .token-workspace-compact .token-detail-page > *,
+.mail-layout .token-workspace-compact.token-detail-page > *,
+.mail-layout .token-workspace-compact .token-mint-assistant,
+.mail-layout .token-wallet-workspace > *,
+.mail-layout .token-wallet-workspace .id-launch-card,
+.mail-layout .token-wallet-workspace .id-form {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.mail-layout .token-workspace-compact .id-launch-hero,
+.mail-layout .token-workspace-compact .id-launch-grid,
+.mail-layout .token-workspace-compact .token-detail-grid,
+.mail-layout .token-workspace-compact .token-detail-hero,
+.mail-layout .token-workspace-compact .token-form-grid,
+.mail-layout .token-workspace-compact .token-mint-grid,
+.mail-layout .token-workspace-compact .token-payment-lane,
+.mail-layout .token-workspace-compact .token-assistant-grid,
+.mail-layout .token-workspace-compact .token-assistant-actions,
+.mail-layout .token-workspace-compact .token-registry-strip,
+.mail-layout .token-workspace-compact .browser-meta {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mail-layout .token-workspace-compact .fee-presets,
+.mail-layout .token-workspace-compact .network-tabs,
+.mail-layout .token-wallet-workspace .token-list-price-reference,
+.mail-layout .token-wallet-workspace .token-stats-row,
+.mail-layout .token-wallet-workspace .id-launch-stats,
+.mail-layout .token-wallet-workspace .token-payment-lane {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+}
+
+.mail-layout .token-workspace-compact .fee-presets button,
+.mail-layout .token-workspace-compact .network-tabs button,
+.mail-layout .token-workspace-compact .primary,
+.mail-layout .token-workspace-compact .secondary,
+.mail-layout .token-workspace-compact button.primary,
+.mail-layout .token-workspace-compact button.secondary,
+.mail-layout .token-workspace-compact form > button,
+.mail-layout .token-workspace-compact .id-form > button,
+.mail-layout .token-workspace-compact .token-mint-assistant button,
+.mail-layout .token-workspace-compact .token-action-footer button,
+.mail-layout .token-wallet-workspace form > button,
+.mail-layout .token-wallet-workspace button.primary,
+.mail-layout .token-wallet-workspace button.secondary,
+.mail-layout .token-wallet-workspace .id-form button {
+  justify-content: center;
+  min-height: 42px;
+  width: 100%;
+}
+
+.mail-layout .token-workspace-compact .token-action-footer {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+}
+
+.mail-layout .token-workspace-compact .id-launch-stats strong,
+.mail-layout .token-workspace-compact .token-payment-lane strong,
+.mail-layout .token-workspace-compact .browser-meta dd,
+.mail-layout .token-workspace-compact .mono {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-word;
+}
+
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0d0f12;
-  --surface: #15181d;
-  --surface-soft: #111418;
-  --surface-raised: rgba(21, 24, 29, 0.9);
-  --text: #f3f6f9;
-  --text-muted: #a7b0bd;
-  --text-soft: #73808f;
-  --border: #282f38;
-  --border-strong: #394350;
-  --accent: #5aa7ff;
-  --accent-strong: #86bdff;
-  --accent-soft: rgba(90, 167, 255, 0.16);
-  --green: #5ed69f;
-  --green-soft: rgba(94, 214, 159, 0.14);
-  --red: #ff7a66;
-  --red-soft: rgba(255, 122, 102, 0.14);
-  --amber: #f5c451;
-  --shadow: 0 20px 70px rgba(0, 0, 0, 0.42);
-  --focus: 0 0 0 4px rgba(90, 167, 255, 0.2);
+  --bg: #080807;
+  --surface: #15130f;
+  --surface-soft: #0f0f0c;
+  --surface-raised: rgba(19, 17, 13, 0.94);
+  --text: #f7f0e2;
+  --text-muted: #b9aa91;
+  --text-soft: #80745f;
+  --border: #332c22;
+  --border-strong: #5a4935;
+  --accent: #d7a84f;
+  --accent-strong: #f0c96a;
+  --accent-soft: rgba(215, 168, 79, 0.16);
+  --green: #8fae6f;
+  --green-soft: rgba(143, 174, 111, 0.14);
+  --red: #b24a3f;
+  --red-soft: rgba(178, 74, 63, 0.15);
+  --amber: #f0c96a;
+  --blue: #315f9f;
+  --yellow: #f0c96a;
+  --lapis: #315f9f;
+  --oxblood: #6f1f24;
+  --olive: #667a42;
+  --parchment: #f2e3c4;
+  --shadow: 0 28px 90px rgba(0, 0, 0, 0.58);
+  --focus: 0 0 0 4px rgba(215, 168, 79, 0.22);
+  --topbar-height: 64px;
+  --status-row-height: 38px;
 }
 
 * {
@@ -196,17 +618,23 @@ code {
   background: var(--surface-raised);
   backdrop-filter: blur(18px);
   border-bottom: 1px solid var(--border);
-  display: grid;
-  gap: 12px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  min-height: 64px;
+  display: flex;
+  gap: 14px;
+  height: var(--topbar-height);
+  max-height: var(--topbar-height);
+  min-height: var(--topbar-height);
+  overflow: visible;
   padding: 0 18px;
+  position: relative;
+  z-index: 30;
 }
 
 .brand {
   align-items: center;
   display: flex;
+  flex: 0 0 clamp(210px, 20vw, 300px);
   gap: 12px;
+  max-width: 300px;
   min-width: 0;
 }
 
@@ -216,22 +644,40 @@ code {
   min-width: 0;
 }
 
+.brand h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .brand-mark {
   align-items: center;
-  background: linear-gradient(135deg, #111827, #3b4653);
+  background: #080807;
+  border: 1px solid rgba(215, 168, 79, 0.42);
   border-radius: 10px;
-  color: #ffffff;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  color: #fff7e6;
   display: flex;
   flex: 0 0 36px;
   font-size: 0.72rem;
   font-weight: 900;
   height: 36px;
   justify-content: center;
+  overflow: hidden;
 }
 
 :root[data-theme="dark"] .brand-mark {
-  background: linear-gradient(135deg, #f3f6f9, #9aa7b7);
-  color: #111827;
+  background: #080807;
+  color: #fff7e6;
+}
+
+.brand-mark img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
 }
 
 .brand span,
@@ -247,36 +693,27 @@ code {
   font-size: 0.82rem;
 }
 
-.topbar-controls {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  justify-content: flex-end;
-  min-width: 0;
-}
-
 .topbar-actions {
   align-items: center;
   display: inline-flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   gap: 7px;
   justify-content: flex-end;
-  justify-self: end;
+  max-width: 100%;
   min-width: 0;
-}
-
-.topbar-actions-mobile {
-  display: none;
+  white-space: nowrap;
 }
 
 .domain-nav {
   align-items: center;
   display: flex;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
   gap: 7px;
   justify-content: center;
-  justify-self: center;
   min-width: 0;
+  overflow: visible;
   position: relative;
   z-index: 20;
 }
@@ -284,10 +721,11 @@ code {
 .domain-nav-links {
   align-items: center;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 7px;
   justify-content: center;
   min-width: 0;
+  overflow: hidden;
 }
 
 .domain-nav-links a {
@@ -296,11 +734,13 @@ code {
   border-radius: 8px;
   color: var(--text-muted);
   display: inline-flex;
+  flex: 0 0 auto;
   font-size: 0.86rem;
   font-weight: 780;
   min-height: 34px;
   padding: 6px 9px;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .domain-nav-links a:hover,
@@ -308,12 +748,6 @@ code {
   background: var(--surface-soft);
   border-color: var(--border);
   color: var(--text);
-}
-
-.domain-nav.compact .domain-nav-links a {
-  font-size: 0.8rem;
-  min-height: 30px;
-  padding: 5px 8px;
 }
 
 .app-menu-trigger {
@@ -363,17 +797,6 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.domain-nav.compact .app-menu-trigger {
-  min-height: 34px;
-  max-width: min(190px, 34vw);
-}
-
-.domain-nav.compact .app-menu-trigger-icon {
-  flex-basis: 22px;
-  height: 22px;
-  width: 22px;
 }
 
 .app-menu-popover {
@@ -761,6 +1184,65 @@ code {
   color: #111827;
 }
 
+.network-select-field {
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+}
+
+.network-select-field.compact span,
+.browser-network-select-field > span {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.network-select {
+  appearance: none;
+  background-color: var(--surface-soft);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 18px,
+    calc(100% - 12px) 18px;
+  background-repeat: no-repeat;
+  background-size:
+    6px 6px,
+    6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 850;
+  min-height: 42px;
+  padding: 0 38px 0 14px;
+}
+
+.network-select:focus {
+  border-color: var(--accent);
+  box-shadow: var(--focus);
+  outline: none;
+}
+
+.network-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.browser-network-select-field {
+  width: 100%;
+}
+
+.browser-network-select {
+  width: 100%;
+}
+
 .secondary,
 .primary,
 .compose-button {
@@ -805,12 +1287,19 @@ code {
   display: flex;
   font-size: 0.88rem;
   gap: 9px;
+  height: var(--status-row-height);
   min-height: 38px;
   min-width: 0;
   overflow: hidden;
   padding: 0 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.app-status-row {
+  flex: 0 0 auto;
+  min-height: var(--status-row-height);
+  width: 100%;
 }
 
 .status > span:last-child {
@@ -1241,38 +1730,19 @@ select {
   background: #030508;
   color: #edf2f7;
   display: grid;
-  grid-template-rows: auto auto auto;
+  grid-template-rows: var(--topbar-height) minmax(0, 1fr) auto;
   min-height: 100vh;
   min-height: 100dvh;
   position: relative;
 }
 
-.desktop-public-header {
-  align-items: center;
-  background: rgba(3, 5, 8, 0.76);
-  backdrop-filter: blur(18px);
-  border-bottom: 1px solid rgba(237, 242, 247, 0.16);
-  display: grid;
-  gap: 12px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  min-height: 64px;
-  padding: 0 18px;
-  position: relative;
-  z-index: 3;
-}
-
-.desktop-public-app .landing-brand,
-.desktop-public-app .landing-brand span,
-.desktop-public-app .app-menu-trigger,
 .desktop-public-app .app-footer,
 .desktop-public-app .app-footer a {
-  color: #a8b3c1;
+  color: var(--text-muted);
 }
 
-.desktop-public-app .landing-brand h1,
-.desktop-public-app .app-menu-trigger:hover,
 .desktop-public-app .app-footer a:hover {
-  color: #edf2f7;
+  color: var(--text);
 }
 
 .desktop-public-app .desktop-workspace {
@@ -1281,24 +1751,18 @@ select {
 }
 
 .desktop-public-app .desktop-route-status {
-  background: rgba(3, 5, 8, 0.9);
-  border-bottom-color: rgba(237, 242, 247, 0.16);
-  left: 0;
-  position: absolute;
-  right: 0;
-  top: 64px;
-  z-index: 2;
+  background: var(--surface-soft);
+  border-bottom-color: var(--border);
+  position: static;
+  z-index: auto;
 }
 
 .desktop-public-app.has-route-status {
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: var(--topbar-height) var(--status-row-height) minmax(0, 1fr) auto;
 }
 
 .desktop-public-app.has-route-status .desktop-route-status {
-  left: auto;
   position: static;
-  right: auto;
-  top: auto;
 }
 
 .desktop-public-app .app-footer {
@@ -1310,7 +1774,6 @@ select {
   z-index: 3;
 }
 
-.desktop-public-app .app-menu-trigger:hover,
 .desktop-public-app .app-footer a:hover {
   background: rgba(237, 242, 247, 0.08);
   border-color: rgba(237, 242, 247, 0.18);
@@ -1442,17 +1905,6 @@ select {
   color: #a8b3c1;
   font-size: 0.78rem;
   font-weight: 760;
-}
-
-.browser-network-tabs {
-  background: #030508;
-  border-color: rgba(237, 242, 247, 0.16);
-  width: 100%;
-}
-
-.browser-network-tabs button {
-  flex: 1 1 0;
-  min-width: 0;
 }
 
 .browser-page-grid {
@@ -1605,7 +2057,8 @@ select {
 }
 
 .marketplace-workspace {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .files-toolbar {
@@ -1783,26 +2236,14 @@ select {
   color: var(--text);
 }
 
-.activity-public-app .desktop-public-header {
-  background: var(--surface-raised);
-  border-bottom-color: var(--border);
-}
-
-.activity-public-app .landing-brand,
-.activity-public-app .landing-brand h1,
-.activity-public-app .app-menu-trigger,
 .activity-public-app .app-footer,
 .activity-public-app .app-footer a {
   color: var(--text);
 }
 
-.activity-public-app .landing-brand span {
-  color: var(--text-muted);
-}
-
 .activity-public-app .desktop-route-status {
-  position: sticky;
-  top: 64px;
+  position: static;
+  top: auto;
 }
 
 .activity-public-app .app-footer {
@@ -3585,37 +4026,6 @@ pre {
   min-height: 100dvh;
 }
 
-.landing-topbar {
-  align-items: center;
-  background: var(--surface-raised);
-  backdrop-filter: blur(18px);
-  border-bottom: 1px solid var(--border);
-  display: grid;
-  gap: 12px;
-  grid-template-columns: auto minmax(0, 1fr);
-  min-height: 64px;
-  padding: 0 18px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
-.landing-brand {
-  align-items: center;
-  color: var(--text);
-  display: flex;
-  gap: 12px;
-  min-width: 0;
-  text-decoration: none;
-}
-
-.landing-brand > div:last-child {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.landing-brand span,
 .landing-choice p,
 .landing-protocol p,
 .landing-testimonial p,
@@ -3623,20 +4033,6 @@ pre {
   color: var(--text-muted);
   font-size: 0.88rem;
   line-height: 1.5;
-}
-
-.landing-nav {
-  align-items: center;
-  display: flex;
-  gap: 7px;
-  justify-content: flex-end;
-  min-width: 0;
-}
-
-.landing-nav .domain-nav {
-  flex: 1 1 auto;
-  justify-self: stretch;
-  max-width: min(100%, 820px);
 }
 
 .landing-hero {
@@ -3856,23 +4252,10 @@ pre {
 .id-launch-app {
   background: var(--bg);
   color: var(--text);
+  display: grid;
+  grid-template-rows: var(--topbar-height) var(--status-row-height) minmax(0, 1fr) auto;
   min-height: 100vh;
   min-height: 100dvh;
-}
-
-.id-launch-topbar {
-  align-items: center;
-  background: var(--surface-raised);
-  backdrop-filter: blur(18px);
-  border-bottom: 1px solid var(--border);
-  display: grid;
-  gap: 12px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  min-height: 64px;
-  padding: 0 18px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
 }
 
 .id-launch-main {
@@ -3952,7 +4335,25 @@ pre {
 }
 
 .marketplace-workspace .marketplace-content {
+  align-content: start;
+  display: grid;
+  gap: 14px;
+  grid-auto-flow: row;
+  grid-auto-rows: auto;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
+  overflow: auto;
+  padding: 16px 18px max(18px, env(safe-area-inset-bottom));
+  scrollbar-gutter: stable;
+}
+
+.marketplace-workspace .marketplace-content > * {
+  min-width: 0;
+  position: static;
+}
+
+.marketplace-workspace .marketplace-content .ids-registry-card {
+  grid-column: auto;
 }
 
 .id-launch-grid {
@@ -3977,6 +4378,25 @@ pre {
   min-width: 0;
   padding: clamp(16px, 3vw, 32px) 18px 36px;
   width: 100%;
+}
+
+.token-wallet-public-app {
+  min-width: 0;
+}
+
+.token-wallet-public-app .token-wallet-workspace {
+  align-content: start;
+  display: grid;
+  gap: 16px;
+  margin: 0 auto;
+  max-width: 1180px;
+  min-width: 0;
+  padding: clamp(16px, 3vw, 32px) 18px 56px;
+  width: 100%;
+}
+
+.token-wallet-public-app > .app-footer {
+  margin-top: 0;
 }
 
 .public-page-compact {
@@ -4214,7 +4634,7 @@ pre {
 }
 
 .token-public-app .id-launch-hero {
-  align-items: start;
+  align-items: stretch;
   grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.92fr);
 }
 
@@ -4284,7 +4704,22 @@ pre {
   gap: 11px;
 }
 
+.token-public-app .token-create-card,
+.token-public-app .token-mint-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.token-public-app .token-create-card > .id-form,
+.token-public-app .token-mint-card > .id-form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 .token-workspace {
+  container-type: inline-size;
   min-width: 0;
   width: 100%;
 }
@@ -4323,9 +4758,109 @@ pre {
   justify-items: stretch;
 }
 
+.mail-layout .token-workspace-compact,
+.mail-layout .token-workspace-compact > *,
+.mail-layout .token-workspace-compact .id-launch-card,
+.mail-layout .token-workspace-compact .id-form,
+.mail-layout .token-workspace-compact .token-mint-assistant {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.mail-layout .token-workspace-compact {
+  overflow-x: hidden;
+}
+
+.mail-layout .token-workspace-compact .id-launch-hero,
+.mail-layout .token-workspace-compact .id-launch-grid,
+.mail-layout .token-workspace-compact .token-detail-grid,
+.mail-layout .token-workspace-compact .token-detail-hero,
+.mail-layout .token-workspace-compact .token-form-grid,
+.mail-layout .token-workspace-compact .token-mint-grid,
+.mail-layout .token-workspace-compact .token-payment-lane,
+.mail-layout .token-workspace-compact .token-assistant-grid,
+.mail-layout .token-workspace-compact .token-assistant-actions,
+.mail-layout .token-workspace-compact .token-registry-strip,
+.mail-layout .token-workspace-compact .browser-meta {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mail-layout .token-workspace-compact .fee-presets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mail-layout .token-workspace-compact .token-action-footer {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.mail-layout .token-workspace-compact .token-action-footer .primary,
+.mail-layout .token-workspace-compact .token-action-footer .secondary {
+  justify-self: stretch;
+  width: 100%;
+}
+
+.mail-layout .token-workspace-compact .token-action-footer .counter,
+.mail-layout .token-workspace-compact .token-action-footer .field-note {
+  margin: 0;
+}
+
+.mail-layout .token-workspace-compact .id-launch-stats,
+.mail-layout .token-workspace-compact .token-utxo-dashboard,
+.mail-layout .token-workspace-compact .token-split-fee-presets {
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+}
+
+.mail-layout .token-workspace-compact input,
+.mail-layout .token-workspace-compact select,
+.mail-layout .token-workspace-compact textarea,
+.mail-layout .token-workspace-compact button,
+.mail-layout .token-workspace-compact .primary,
+.mail-layout .token-workspace-compact .secondary {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.mail-layout .token-workspace-compact .id-launch-stats strong,
+.mail-layout .token-workspace-compact .token-payment-lane strong,
+.mail-layout .token-workspace-compact .browser-meta dd,
+.mail-layout .token-workspace-compact .mono {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-word;
+}
+
 .token-workspace-compact .id-launch-hero {
-  align-items: start;
+  align-items: stretch;
   grid-template-columns: repeat(2, minmax(min(100%, 380px), 1fr));
+}
+
+.token-workspace-compact .token-create-card,
+.token-workspace-compact .token-mint-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.token-workspace-compact .token-create-card > .id-form,
+.token-workspace-compact .token-mint-card > .id-form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.token-workspace-compact .token-create-card .token-action-footer,
+.token-workspace-compact .token-mint-card .token-action-footer {
+  margin-top: auto;
+}
+
+.token-workspace-compact.token-wallet-workspace
+  .token-mint-card
+  > .id-form
+  > button.primary {
+  margin-top: auto;
 }
 
 .token-workspace-compact .id-launch-hero h2,
@@ -4510,6 +5045,25 @@ pre {
 .token-public-app .counter {
   justify-self: stretch;
   text-align: right;
+}
+
+.token-public-app .token-action-footer {
+  display: grid;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.token-public-app .token-action-footer .counter {
+  min-height: 20px;
+}
+
+.token-public-app .token-action-footer .field-note {
+  margin: 0;
+  min-height: 20px;
+}
+
+.token-public-app .token-action-footer .primary {
+  width: 100%;
 }
 
 .token-public-app .browser-meta {
@@ -4876,6 +5430,73 @@ pre {
   text-align: center;
 }
 
+@container (max-width: 760px) {
+  .token-workspace-compact .id-launch-hero,
+  .token-workspace-compact .id-launch-grid,
+  .token-workspace-compact .token-form-grid,
+  .token-workspace-compact .token-mint-grid,
+  .token-workspace-compact .token-payment-lane,
+  .token-workspace-compact .token-assistant-grid,
+  .token-workspace-compact .token-assistant-actions,
+  .token-workspace-compact .token-registry-strip,
+  .token-workspace-compact .token-utxo-dashboard,
+  .token-workspace-compact .token-split-fee-presets,
+  .token-workspace-compact .token-detail-hero,
+  .token-workspace-compact .browser-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .token-workspace-compact .id-launch-stats {
+    grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+  }
+
+  .token-workspace-compact .id-launch-stats strong,
+  .token-workspace-compact .token-payment-lane strong,
+  .token-workspace-compact .browser-meta dd {
+    overflow-wrap: anywhere;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .token-workspace-compact .token-detail-title,
+  .token-workspace-compact .token-detail-actions,
+  .token-workspace-compact .token-assistant-head,
+  .token-workspace-compact .token-progress-mini > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .token-workspace-compact .token-detail-toolbar,
+  .token-workspace-compact .id-launch-section-head {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .token-workspace-compact .network-tabs,
+  .token-workspace-compact .fee-presets {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .token-workspace-compact button,
+  .token-workspace-compact .primary {
+    min-width: 0;
+  }
+}
+
+@container (max-width: 460px) {
+  .token-workspace-compact .id-launch-stats,
+  .token-workspace-compact .network-tabs,
+  .token-workspace-compact .fee-presets {
+    grid-template-columns: 1fr;
+  }
+
+  .token-workspace-compact .id-launch-card,
+  .token-workspace-compact .token-mint-assistant {
+    padding: 12px;
+  }
+}
+
 @media (max-width: 860px) {
   .token-public-app .id-launch-hero,
   .token-workspace-compact .id-launch-hero,
@@ -5005,39 +5626,9 @@ pre {
     grid-template-columns: 196px minmax(0, 1fr);
   }
 
-  .topbar-controls {
-    gap: 7px;
-  }
 }
 
-@media (min-width: 861px) and (max-width: 1320px) {
-  .topbar,
-  .id-launch-topbar,
-  .landing-topbar,
-  .desktop-public-header {
-    gap: 10px;
-    padding: 0 14px;
-  }
-
-  .topbar-controls {
-    gap: 6px;
-  }
-
-  .brand h1,
-  .landing-brand h1 {
-    font-size: 0.98rem;
-  }
-
-  .app-menu-trigger {
-    max-width: min(260px, 36vw);
-  }
-
-  .network-tabs button {
-    padding: 5px 8px;
-  }
-}
-
-@media (max-width: 860px) {
+@media (max-width: 1180px) {
   .mail-app {
     grid-template-rows: auto auto auto auto;
     height: auto;
@@ -5053,138 +5644,16 @@ pre {
     display: grid;
   }
 
-  .topbar,
-  .id-launch-topbar,
-  .landing-topbar,
-  .desktop-public-header {
-    align-items: center;
-    display: grid;
-    gap: 9px;
-    grid-template-columns: minmax(0, 1fr) auto;
-    min-height: 0;
-    padding: 10px 12px;
+  .desktop-public-app {
+    grid-template-rows: var(--topbar-height) minmax(0, 1fr) auto;
   }
 
-  .topbar .brand,
-  .id-launch-topbar .brand,
-  .landing-topbar .landing-brand,
-  .desktop-public-header .landing-brand {
-    grid-column: 1;
-    grid-row: 1;
-    min-width: 0;
+  .desktop-public-app.has-route-status {
+    grid-template-rows: var(--topbar-height) var(--status-row-height) minmax(0, 1fr) auto;
   }
 
-  .topbar .domain-nav,
-  .id-launch-topbar .domain-nav,
-  .landing-topbar .domain-nav,
-  .desktop-public-header .domain-nav {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    justify-self: stretch;
-    max-width: calc(100vw - 24px);
-  }
-
-  .topbar-controls,
-  .topbar-actions,
-  .header-actions-menu,
-  .landing-nav,
-  .desktop-public-header .landing-nav,
-  .desktop-public-actions {
-    align-items: center;
-    display: flex;
-    gap: 7px;
-    grid-column: 2;
-    grid-row: 1;
-    justify-content: flex-end;
-    justify-self: end;
-    min-width: 0;
-  }
-
-  .topbar-actions-desktop {
-    display: none;
-  }
-
-  .topbar-actions-mobile {
-    display: inline-flex;
-  }
-
-  .domain-nav-links {
-    display: none;
-  }
-
-  .app-menu-trigger {
-    display: inline-flex;
-  }
-
-  .landing-nav .domain-nav,
-  .desktop-public-header .landing-nav .domain-nav {
-    order: 2;
-  }
-
-  .landing-nav .header-actions-menu,
-  .desktop-public-header .landing-nav .header-actions-menu {
-    grid-column: 2;
-    grid-row: 1;
-    justify-self: end;
-    order: 1;
-  }
-
-  .landing-nav > .icon-button,
-  .desktop-public-header .landing-nav > .icon-button {
-    flex: 0 0 38px;
-    order: 1;
-    width: 38px;
-  }
-
-  .landing-nav {
-    display: contents;
-  }
-
-  .desktop-public-header .landing-nav {
-    display: contents;
-  }
-
-  .topbar-controls .secondary,
-  .topbar-controls .primary,
-  .topbar-controls .link-button {
-    max-width: 150px;
-  }
-
-  .topbar-controls .button-content span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .brand-mark {
-    flex-basis: 32px;
-    height: 32px;
-  }
-
-  .brand span,
-  .landing-brand span {
-    font-size: 0.72rem;
-  }
-
-  .brand h1,
-  .landing-brand h1 {
-    font-size: 0.95rem;
-  }
-
-  .app-menu-trigger {
-    max-width: min(300px, calc(100vw - 24px));
-  }
-
-  .app-menu-popover {
-    left: 0;
-    right: auto;
-    top: calc(100% + 8px);
-    transform: translate(0, -4px) scale(0.98);
-    transform-origin: top left;
-  }
-
-  .domain-nav.is-open .app-menu-popover {
-    transform: translate(0, 0) scale(1);
+  .id-launch-app {
+    grid-template-rows: var(--topbar-height) var(--status-row-height) minmax(0, 1fr) auto;
   }
 
   .pane-head,
@@ -5254,37 +5723,6 @@ pre {
     height: 420px;
   }
 
-  .browser-public-app .desktop-public-header {
-    align-items: center;
-    display: grid;
-    gap: 10px;
-    grid-template-columns: 1fr auto;
-  }
-
-  .browser-public-app .domain-nav {
-    display: flex;
-    flex-wrap: nowrap;
-    grid-column: 1 / -1;
-    justify-content: start;
-    max-width: calc(100vw - 24px);
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .browser-public-app .domain-nav::-webkit-scrollbar {
-    display: none;
-  }
-
-  .browser-public-app .desktop-public-actions {
-    grid-column: 2;
-    grid-row: 1;
-    justify-self: end;
-  }
-
-  .browser-public-app .icon-button {
-    width: 44px;
-  }
-
   .browser-hero h2 {
     font-size: 3rem;
   }
@@ -5348,7 +5786,10 @@ pre {
     flex: 1;
   }
 
-  .mail-layout {
+  .mail-layout,
+  .mail-layout.is-token-workspace,
+  .mail-layout.is-marketplace-workspace,
+  .mail-layout.is-browser-workspace {
     grid-template-columns: 1fr;
   }
 
@@ -5504,39 +5945,86 @@ pre {
   }
 }
 
-@media (max-width: 520px) {
-  .topbar,
-  .id-launch-topbar,
-  .landing-topbar,
-  .desktop-public-header {
-    gap: 8px;
-    padding: 9px 10px;
+@media (max-width: 1100px) {
+  .topbar {
+    gap: 10px;
+    padding: 0 12px;
   }
 
-  .topbar-controls {
-    gap: 6px;
+  .brand {
+    flex: 1 1 auto;
+    max-width: min(260px, 46vw);
+  }
+
+  .topbar .domain-nav {
+    flex: 0 0 auto;
+    max-width: none;
+  }
+
+  .topbar-actions,
+  .header-actions-menu {
+    flex: 0 0 auto;
+  }
+
+  .domain-nav-links {
+    display: none;
+  }
+
+  .app-menu-trigger {
+    display: inline-flex;
+    max-width: min(220px, 38vw);
+  }
+
+  .brand-mark {
+    flex-basis: 32px;
+    height: 32px;
+  }
+
+  .brand span {
+    font-size: 0.72rem;
+  }
+
+  .brand h1 {
+    font-size: 0.95rem;
+  }
+
+  .app-menu-popover {
+    left: auto;
+    right: 0;
+    top: calc(100% + 8px);
+    transform: translate(0, -4px) scale(0.98);
+    transform-origin: top right;
+  }
+
+  .domain-nav.is-open .app-menu-popover {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar {
+    gap: 8px;
+    padding: 9px 10px;
   }
 
   .icon-button {
     width: 38px;
   }
 
-  .landing-nav {
-    display: contents;
-  }
-
-  .landing-nav a {
-    justify-content: center;
-  }
-
   .domain-nav {
-    max-width: calc(100vw - 20px);
+    max-width: 42px;
   }
 
   .app-menu-trigger {
-    justify-content: space-between;
-    max-width: calc(100vw - 20px);
-    width: 100%;
+    justify-content: center;
+    max-width: 40px;
+    padding: 6px;
+    width: 40px;
+  }
+
+  .app-menu-trigger > strong,
+  .app-menu-trigger > svg:last-child {
+    display: none;
   }
 
   .header-actions-trigger {
@@ -5549,41 +6037,27 @@ pre {
     gap: 5px;
   }
 
-  .network-select-trigger {
-    min-height: 36px;
-    padding: 6px;
-  }
-
-  .network-select-trigger > strong {
-    font-size: 0.72rem;
-  }
-
   .header-actions-trigger > strong {
     display: none;
   }
 
-  .header-actions-popover,
-  .network-select-popover {
+  .header-actions-popover {
     min-width: min(290px, calc(100vw - 20px));
     right: 0;
   }
 
-  .brand,
-  .landing-brand {
+  .brand {
     gap: 8px;
   }
 
-  .brand span,
-  .landing-brand span {
+  .brand span {
     display: none;
   }
 
-  .brand h1,
-  .landing-brand h1 {
+  .brand h1 {
     max-width: 52vw;
   }
 
-  .growth-public-app .desktop-public-header,
   .growth-hero,
   .growth-explainer-card,
   .growth-model-card,
@@ -5672,745 +6146,4 @@ pre {
     padding: 13px;
   }
 
-}
-
-/* ProofOfWork chrome restore: preserve fast data paths and mobile menus without
-   overriding the original app visual system. */
-.landing-app,
-.id-launch-app,
-.desktop-public-app {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-  min-height: 100dvh;
-  overflow-x: hidden;
-}
-
-.landing-main,
-.id-launch-main,
-.browser-workspace,
-.desktop-workspace,
-.activity-workspace,
-.growth-workspace,
-.marketplace-app .id-launch-main {
-  flex: 1 0 auto;
-}
-
-.landing-app > .app-footer,
-.id-launch-app > .app-footer,
-.desktop-public-app > .app-footer {
-  flex-shrink: 0;
-  margin-top: auto;
-  max-width: none;
-  width: 100%;
-}
-
-.mail-app > .app-footer {
-  grid-row: 4;
-}
-
-.landing-topbar,
-.id-launch-topbar,
-.desktop-public-header,
-.topbar {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-}
-
-.landing-topbar .domain-nav,
-.id-launch-topbar .domain-nav,
-.desktop-public-header .domain-nav,
-.topbar .domain-nav {
-  justify-self: center;
-}
-
-.landing-topbar .topbar-actions-desktop,
-.id-launch-topbar .topbar-actions-desktop,
-.desktop-public-header .topbar-actions-desktop,
-.topbar .topbar-actions-desktop {
-  grid-column: 3;
-  grid-row: 1;
-  justify-self: end;
-}
-
-.marketplace-content,
-.token-market-content {
-  align-content: start;
-  overflow: visible;
-}
-
-.token-market-content {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.token-market-content .ids-registry-card,
-.token-market-content .token-market-card {
-  grid-column: 1 / -1;
-}
-
-.id-card,
-.id-launch-card,
-.token-market-card,
-.marketplace-work-floor-card,
-.token-market-content > .token-market-card {
-  max-height: none;
-  overflow: visible;
-}
-
-.token-market-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
-}
-
-.token-market-row,
-.token-market-row dl,
-.token-market-row dd,
-.token-market-row dt,
-.token-market-row strong,
-.token-market-row span,
-.token-market-row p {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.work-floor-chart,
-.token-market-price-chart {
-  display: block;
-  min-height: 220px;
-  overflow: hidden;
-  position: relative;
-  width: 100%;
-  z-index: 0;
-}
-
-.work-floor-chart-toolbar,
-.work-floor-chart-meta {
-  position: relative;
-  z-index: 1;
-}
-
-@media (max-width: 1180px) {
-  .landing-topbar,
-  .id-launch-topbar,
-  .desktop-public-header,
-  .topbar {
-    gap: 8px;
-  }
-
-  .domain-nav-links {
-    display: none;
-  }
-
-  .app-menu-trigger {
-    display: inline-flex;
-    max-width: min(260px, 32vw);
-  }
-
-  .topbar-actions-desktop .network-tabs {
-    display: flex;
-    flex: 0 0 auto;
-    white-space: nowrap;
-  }
-}
-
-@media (max-width: 980px) {
-  .topbar-actions-desktop {
-    flex-wrap: nowrap;
-  }
-
-  .topbar-actions-desktop .button-content span {
-    max-width: 120px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .topbar-actions-desktop .network-tabs button {
-    padding-left: 8px;
-    padding-right: 8px;
-  }
-}
-
-@media (min-width: 721px) and (max-width: 860px) {
-  .topbar-actions-desktop {
-    display: inline-flex;
-  }
-
-  .topbar-actions-mobile {
-    display: none;
-  }
-
-  .topbar-actions-desktop .network-tabs {
-    display: flex;
-  }
-}
-
-/* ProofOfWork strict UI contract: clear lines, forms, buttons, tables. */
-.mail-layout > .token-workspace,
-.mail-layout > .marketplace-workspace,
-.mail-layout > .activity-workspace,
-.mail-layout > .growth-workspace,
-.mail-layout > .browser-computer-workspace {
-  justify-self: center;
-  max-width: 1180px;
-  width: 100%;
-}
-
-.mail-layout > .marketplace-workspace {
-  padding-left: 18px;
-  padding-right: 18px;
-}
-
-.mail-app > .app-footer {
-  background: var(--surface-raised);
-  bottom: 0;
-  box-shadow: 0 -1px 0 var(--border);
-  position: sticky;
-  z-index: 18;
-}
-
-.id-launch-card,
-.id-card,
-.product-card,
-.activity-feed-card,
-.growth-model-card,
-.growth-chart-card,
-.growth-product-card,
-.browser-search-card,
-.browser-preview-card,
-.browser-proof-card,
-.browser-source-card,
-.browser-template-card,
-.marketplace-work-floor-card,
-.token-market-card,
-.token-floor-card,
-.token-utxo-prep,
-.token-detail-hero,
-.reader-pane,
-.message-column {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: none;
-}
-
-.id-launch-stats div,
-.browser-meta div,
-.token-public-app .browser-meta div,
-.token-workspace-compact .browser-meta div,
-.token-list-price-reference div,
-.token-utxo-dashboard > div,
-.token-floor-stats div,
-.token-detail-stats div,
-.registry-network-stat,
-.id-manage-state,
-.file-detail-list div {
-  background: var(--surface-soft);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: none;
-}
-
-.id-launch-card,
-.id-card,
-.token-market-card,
-.marketplace-work-floor-card,
-.token-floor-card {
-  gap: 14px;
-}
-
-.id-card-head,
-.section-heading,
-.token-detail-title,
-.token-detail-actions,
-.token-record-top {
-  min-width: 0;
-}
-
-.id-card-head {
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 12px;
-}
-
-.id-card-head:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
-}
-
-label,
-.folder-action-select > span,
-.sort-control,
-.field-note,
-.token-list-price-reference span,
-.token-list-price-reference small,
-.token-utxo-dashboard span,
-.token-utxo-stats span,
-.id-record dt,
-.browser-meta dt {
-  letter-spacing: 0;
-}
-
-input,
-select,
-textarea,
-.id-search-control,
-.folder-action-select select {
-  background-color: var(--surface-soft);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  color: var(--text);
-}
-
-input::placeholder,
-textarea::placeholder {
-  color: var(--text-soft);
-  opacity: 1;
-}
-
-input:focus,
-select:focus,
-textarea:focus,
-.id-search-control:focus {
-  background-color: var(--surface);
-  border-color: var(--accent);
-  box-shadow: var(--focus);
-}
-
-.primary,
-.secondary,
-.compose-button,
-.icon-button,
-.network-tabs,
-.network-tabs button,
-.fee-presets button,
-.app-menu-trigger,
-.network-select-trigger {
-  border-radius: 8px;
-}
-
-.primary,
-.compose-button {
-  border-color: var(--accent);
-  color: #ffffff;
-  font-weight: 820;
-}
-
-.secondary,
-.icon-button,
-.fee-presets button,
-.app-menu-trigger,
-.network-select-trigger {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-weight: 820;
-}
-
-.primary:hover,
-.compose-button:hover,
-.secondary:hover,
-.icon-button:hover,
-.fee-presets button:hover,
-.app-menu-trigger:hover,
-.network-select-trigger:hover {
-  transform: none;
-}
-
-.network-tabs {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  padding: 3px;
-}
-
-.network-tabs button {
-  border: 1px solid transparent;
-}
-
-.network-tabs button[aria-pressed="true"] {
-  border-color: var(--border-strong);
-}
-
-.message-row,
-.id-record,
-.token-record,
-.token-market-row,
-.activity-row,
-.file-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: none;
-}
-
-.message-row {
-  border-left: 0;
-  border-radius: 0;
-  border-right: 0;
-  border-top: 0;
-}
-
-.id-record dl,
-.token-market-row dl,
-.browser-meta,
-.token-public-app .browser-meta,
-.token-workspace-compact .browser-meta,
-.token-list-price-reference,
-.token-utxo-dashboard,
-.token-floor-stats,
-.token-detail-stats {
-  gap: 8px;
-}
-
-.id-record dl,
-.token-market-row dl {
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
-}
-
-.id-record dt,
-.token-market-row dt,
-.browser-meta dt {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 860;
-  text-transform: uppercase;
-}
-
-.id-record dd,
-.token-market-row dd,
-.browser-meta dd {
-  color: var(--text);
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.token-market-row {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-}
-
-.marketplace-tabs {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  gap: 6px;
-  padding: 4px;
-}
-
-.marketplace-tabs button {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  min-height: 36px;
-}
-
-.marketplace-tabs button[aria-pressed="true"] {
-  background: var(--accent-soft);
-  border-color: rgba(10, 132, 255, 0.38);
-}
-
-.token-detail-page,
-.token-workspace-compact {
-  gap: 14px;
-}
-
-.token-detail-hero {
-  overflow: hidden;
-}
-
-.token-floor-card {
-  overflow: hidden;
-}
-
-.work-floor-chart,
-.token-market-price-chart {
-  background: var(--surface-soft);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  min-height: 260px;
-  padding: 10px;
-}
-
-.work-floor-chart-toolbar {
-  margin-top: 4px;
-}
-
-.work-floor-chart-meta {
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
-}
-
-.empty-state,
-.empty-reader {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  min-height: 220px;
-}
-
-.token-public-app .counter {
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
-}
-
-@media (min-width: 861px) {
-  .mail-layout.is-token-workspace > .token-workspace,
-  .mail-layout.is-browser-workspace > .browser-computer-workspace {
-    grid-column: 2;
-  }
-}
-
-@media (max-width: 1180px) {
-  .mail-layout > .token-workspace,
-  .mail-layout > .marketplace-workspace,
-  .mail-layout > .activity-workspace,
-  .mail-layout > .growth-workspace,
-  .mail-layout > .browser-computer-workspace {
-    max-width: none;
-  }
-}
-
-@media (max-width: 860px) {
-  .mail-app > .app-footer {
-    position: static;
-  }
-
-  .mail-layout > .marketplace-workspace {
-    padding-left: 14px;
-    padding-right: 14px;
-  }
-}
-
-/* Product cleanup: marketplace panels must stay in normal document flow. */
-.mail-layout > .marketplace-workspace {
-  justify-self: center;
-  max-width: 1180px;
-  overflow: auto;
-  padding: 0 18px 72px;
-  width: 100%;
-}
-
-.marketplace-workspace {
-  align-content: start;
-  display: grid;
-  gap: 14px;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
-}
-
-.marketplace-workspace > .files-toolbar,
-.marketplace-workspace > .marketplace-tabs,
-.marketplace-workspace > .marketplace-workspace-stats,
-.marketplace-workspace > .marketplace-content,
-.marketplace-workspace > .token-market-stats,
-.marketplace-workspace > .token-market-content {
-  min-width: 0;
-  position: static;
-  width: 100%;
-  z-index: auto;
-}
-
-.marketplace-workspace > .files-toolbar,
-.marketplace-workspace > .marketplace-tabs {
-  margin: 0;
-}
-
-.marketplace-workspace > .marketplace-workspace-stats,
-.marketplace-workspace > .token-market-stats {
-  margin: 0;
-}
-
-.marketplace-workspace .marketplace-content,
-.marketplace-workspace .token-market-content {
-  align-items: start;
-  display: grid;
-  gap: 14px;
-  grid-auto-flow: row;
-  grid-auto-rows: auto;
-  min-height: 0;
-  overflow: visible;
-  padding: 0;
-}
-
-.marketplace-workspace .marketplace-content {
-  grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.4fr);
-}
-
-.marketplace-workspace .token-market-content {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.marketplace-workspace .id-card,
-.marketplace-workspace .token-market-card,
-.marketplace-workspace .marketplace-work-floor-card {
-  align-self: start;
-  max-width: 100%;
-  min-width: 0;
-  overflow: visible;
-  position: static;
-  z-index: auto;
-}
-
-.marketplace-workspace .marketplace-work-floor-card,
-.marketplace-workspace .token-market-card {
-  display: grid;
-  gap: 14px;
-}
-
-.marketplace-workspace .id-card-head {
-  align-items: start;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-}
-
-.marketplace-workspace .id-card-head > div:not(.empty-icon) {
-  min-width: 0;
-}
-
-.marketplace-workspace .id-card-head h3,
-.marketplace-workspace .id-card-head p {
-  overflow-wrap: anywhere;
-}
-
-.marketplace-workspace .id-launch-stats,
-.marketplace-workspace .token-floor-stats,
-.marketplace-workspace .token-market-grid,
-.marketplace-workspace .id-manage-state {
-  min-width: 0;
-}
-
-.marketplace-workspace .token-floor-stats {
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-}
-
-.marketplace-workspace .token-market-grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-}
-
-.marketplace-workspace .work-floor-chart,
-.marketplace-workspace .token-market-price-chart {
-  box-sizing: border-box;
-  height: auto;
-  max-height: 330px;
-  min-height: 0;
-  overflow: hidden;
-  width: 100%;
-}
-
-.marketplace-workspace .work-floor-chart svg,
-.marketplace-workspace .token-market-price-chart svg {
-  display: block;
-  height: auto;
-  max-height: 310px;
-  max-width: 100%;
-  width: 100%;
-}
-
-.marketplace-workspace .id-record-actions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.marketplace-workspace .primary.small,
-.marketplace-workspace .secondary.small,
-.marketplace-workspace .link-button {
-  align-self: start;
-  justify-self: start;
-  min-width: max-content;
-  white-space: nowrap;
-}
-
-.marketplace-workspace form,
-.marketplace-workspace .id-form,
-.token-workspace form,
-.token-workspace .id-form {
-  min-width: 0;
-  overflow: visible;
-}
-
-.marketplace-workspace .id-form,
-.token-workspace .id-form {
-  background: transparent;
-  border: 0;
-  padding: 0;
-}
-
-.marketplace-workspace .primary,
-.marketplace-workspace .secondary,
-.token-workspace .primary,
-.token-workspace .secondary {
-  justify-content: center;
-  max-width: 100%;
-}
-
-.marketplace-workspace .token-list-price-reference,
-.token-workspace .token-list-price-reference {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.token-workspace .token-detail-grid,
-.token-workspace .token-form-grid,
-.token-workspace .token-stats-row,
-.token-workspace .token-list-price-reference {
-  min-width: 0;
-}
-
-.token-workspace .token-list-item {
-  align-items: center;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  min-width: 0;
-}
-
-.token-workspace .token-list-item > span {
-  min-width: 0;
-}
-
-.token-workspace .token-list-item .id-record-actions {
-  justify-content: end;
-}
-
-.token-workspace .listing-fee-control {
-  align-items: end;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 340px);
-  min-width: 0;
-}
-
-.marketplace-workspace .empty-state {
-  min-height: 160px;
-}
-
-@media (max-width: 1180px) {
-  .marketplace-workspace .marketplace-content {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 860px) {
-  .mail-layout > .marketplace-workspace {
-    padding: 0 12px 24px;
-  }
-
-  .marketplace-workspace .id-card-head {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .marketplace-workspace .id-card-head > .secondary,
-  .marketplace-workspace .id-card-head > .primary {
-    grid-column: 1 / -1;
-  }
-
-  .token-workspace .token-list-item,
-  .token-workspace .listing-fee-control {
-    grid-template-columns: 1fr;
-  }
-
-  .token-workspace .token-list-item .id-record-actions {
-    justify-content: start;
-  }
 }

@@ -5,13 +5,11 @@ import {
   X_URL,
   YOUTUBE_URL,
 } from "../../app/appLinks";
-import { DomainNav } from "./DomainNav";
 
 export function SocialFooter({ compact = false }: { compact?: boolean }) {
   return (
     <footer className={compact ? "app-footer compact" : "app-footer"}>
       <span>ProofOfWork.Me</span>
-      <DomainNav compact={compact} />
       <nav className="social-nav" aria-label="Official ProofOfWork.Me links">
         <a
           href={X_URL}

@@ -1,19 +1,14 @@
-import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
   LogOut,
-  Moon,
   MoreHorizontal,
   RefreshCw,
-  Sun,
   Wallet,
 } from "lucide-react";
 import { shortAddress } from "../../functions";
 import { UNISAT_DOWNLOAD_URL } from "../wallet/walletLinks";
-
-type ThemeMode = "light" | "dark";
 
 export function HeaderActionsMenu({
   address = "",
@@ -23,8 +18,6 @@ export function HeaderActionsMenu({
   hasUnisat = true,
   onRefresh,
   networkOptions,
-  setTheme,
-  theme,
 }: {
   address?: string;
   busy?: boolean;
@@ -38,8 +31,6 @@ export function HeaderActionsMenu({
     onSelect: () => void;
   }>;
   onRefresh?: () => void;
-  setTheme: Dispatch<SetStateAction<ThemeMode>>;
-  theme: ThemeMode;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -80,11 +71,6 @@ export function HeaderActionsMenu({
     };
   }, [open]);
 
-  const toggleTheme = () => {
-    setTheme((current) => (current === "dark" ? "light" : "dark"));
-    setOpen(false);
-  };
-
   return (
     <div
       className={["header-actions-menu", open ? "is-open" : ""]
@@ -108,16 +94,6 @@ export function HeaderActionsMenu({
 
       <div className="header-actions-popover" role="menu">
         <div className="app-menu-list">
-          <button onClick={toggleTheme} role="menuitem" type="button">
-            <span>
-              <strong>
-                {theme === "dark" ? "Use light mode" : "Use dark mode"}
-              </strong>
-              <small>Switch the interface theme</small>
-            </span>
-            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
-          </button>
-
           {onRefresh ? (
             <button
               disabled={busy}
