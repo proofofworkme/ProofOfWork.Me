@@ -80,6 +80,12 @@ const WORK_FLOOR_CACHE_TTL_MS = Number(
 const WORK_FLOOR_CACHE_STALE_MS = Number(
   process.env.WORK_FLOOR_CACHE_STALE_MS ?? 5 * 60_000,
 );
+const BTC_USD_PRICE_CACHE_TTL_MS = Number(
+  process.env.BTC_USD_PRICE_CACHE_TTL_MS ?? 5 * 60_000,
+);
+const BTC_USD_PRICE_FETCH_TIMEOUT_MS = Number(
+  process.env.BTC_USD_PRICE_FETCH_TIMEOUT_MS ?? 8_000,
+);
 const TX_FETCH_CONCURRENCY = Number(process.env.TX_FETCH_CONCURRENCY ?? 8);
 const BLOCK_TXID_FETCH_CONCURRENCY = Number(
   process.env.BLOCK_TXID_FETCH_CONCURRENCY ?? 4,
@@ -215,6 +221,7 @@ const BACKGROUND_ACTIVITY_REFRESHES = new Set();
 const BACKGROUND_PAYLOAD_REFRESHES = new Set();
 const BACKGROUND_TOKEN_REFRESHES = new Set();
 const RESPONSE_CACHE = new Map();
+let btcUsdPriceCache = null;
 const HEAVY_READ_STALE_SECONDS = Math.max(
   60,
   Math.floor(HEAVY_READ_STALE_MS / 1000),
@@ -983,18 +990,94 @@ function slipstreamStatusPayload() {
   };
 }
 
-function btcUsdPricePayload(network) {
+function configuredBtcUsdPrice() {
   const usd =
     Number.isFinite(BTC_USD_PRICE) && BTC_USD_PRICE > 0
       ? BTC_USD_PRICE
       : GROWTH_MODEL_INPUTS.currentBtcUsd;
+  return Number.isFinite(usd) && usd > 0 ? usd : 0;
+}
+
+function normalizeBtcUsdPricePayload(payload) {
+  const usd = Number(payload?.USD ?? payload?.usd);
+  if (!Number.isFinite(usd) || usd <= 0) {
+    throw new Error("BTC/USD price payload did not include a valid USD quote.");
+  }
+
+  const quoteTimestamp = Number(payload?.time);
   return {
-    USD: usd,
-    indexedAt: new Date().toISOString(),
-    network,
-    source: "proof-api-config",
+    priceIndexedAt:
+      Number.isFinite(quoteTimestamp) && quoteTimestamp > 0
+        ? new Date(quoteTimestamp * 1000).toISOString()
+        : undefined,
     usd,
   };
+}
+
+async function fetchLiveBtcUsdPrice() {
+  const now = Date.now();
+  if (
+    btcUsdPriceCache &&
+    now - btcUsdPriceCache.fetchedAtMs < BTC_USD_PRICE_CACHE_TTL_MS
+  ) {
+    return { ...btcUsdPriceCache, cached: true };
+  }
+
+  const sourceUrl = `${mempoolBase("livenet")}/api/v1/prices`;
+  const response = await fetch(sourceUrl, {
+    headers: {
+      Accept: "application/json",
+    },
+    signal: AbortSignal.timeout(BTC_USD_PRICE_FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(
+      `${sourceUrl} returned ${response.status}${body ? `: ${body.slice(0, 200)}` : ""}`,
+    );
+  }
+
+  const payload = await response.json();
+  const quote = {
+    ...normalizeBtcUsdPricePayload(payload),
+    fetchedAtMs: now,
+    source: "proof-node-prices",
+    sourceUrl,
+  };
+  btcUsdPriceCache = quote;
+  return { ...quote, cached: false };
+}
+
+async function btcUsdPricePayload(network) {
+  try {
+    const quote = await fetchLiveBtcUsdPrice();
+    return {
+      USD: quote.usd,
+      cached: quote.cached,
+      indexedAt: new Date().toISOString(),
+      network,
+      priceIndexedAt: quote.priceIndexedAt,
+      source: quote.source,
+      sourceUrl: quote.sourceUrl,
+      usd: quote.usd,
+    };
+  } catch (error) {
+    const usd = configuredBtcUsdPrice();
+    if (!usd) {
+      throw error;
+    }
+
+    const sourceError =
+      error instanceof Error && error.message ? error.message : String(error);
+    return {
+      USD: usd,
+      indexedAt: new Date().toISOString(),
+      network,
+      source: "proof-api-config-fallback",
+      sourceError,
+      usd,
+    };
+  }
 }
 
 async function fetchBlockTxids(blockHash, network) {
@@ -6534,7 +6617,7 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        btcUsdPricePayload(network),
+        await btcUsdPricePayload(network),
         "public, max-age=300",
       );
       return;
