@@ -10129,7 +10129,11 @@ async function buildAnchoredMarketplacePsbt({
     });
   }
 
-  if ("signature" in anchor && typeof anchor.signature === "string") {
+  if (
+    anchorSpendMode === "preSigned" &&
+    "signature" in anchor &&
+    typeof anchor.signature === "string"
+  ) {
     psbt.finalizeInput(0);
   } else if (!("scriptPubKey" in anchor)) {
     psbt.finalizeInput(0, () => ({
