@@ -24943,6 +24943,7 @@ function TokenMarketplacePanel({
   );
   const [tokenMarketPageIndex, setTokenMarketPageIndex] = useState(0);
   const [tokenListingPageIndex, setTokenListingPageIndex] = useState(0);
+  const [tokenMarketLogPageIndex, setTokenMarketLogPageIndex] = useState(0);
   const selectedMarketToken = rows.find(
     (token) =>
       token.tokenId === selectedTokenMarketId ||
@@ -24986,6 +24987,28 @@ function TokenMarketplacePanel({
         (listing) => listing.tokenId === selectedMarketToken.tokenId,
       )
     : networkListings;
+  const networkSales = sales.filter((sale) => sale.network === network);
+  const marketSales = selectedMarketToken
+    ? networkSales.filter((sale) => sale.tokenId === selectedMarketToken.tokenId)
+    : networkSales;
+  const tokenMarketLogItems = [
+    ...marketListings.map((listing) => ({
+      createdAt: listing.createdAt,
+      kind: "listing" as const,
+      listing,
+      txid: listing.listingId,
+    })),
+    ...marketSales.map((sale) => ({
+      createdAt: sale.createdAt,
+      kind: "sale" as const,
+      sale,
+      txid: sale.txid,
+    })),
+  ].sort(
+    (left, right) =>
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      right.txid.localeCompare(left.txid),
+  );
   const visibleRows = selectedMarketToken ? [selectedMarketToken] : rows;
   const tokenMarketPage = pagedItems(
     visibleRows,
@@ -24995,6 +25018,11 @@ function TokenMarketplacePanel({
   const tokenListingPage = pagedItems(
     marketListings,
     tokenListingPageIndex,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
+  const tokenMarketLogPage = pagedItems(
+    tokenMarketLogItems,
+    tokenMarketLogPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
   const sealedListings = marketListings.filter((listing) =>
@@ -25643,62 +25671,211 @@ function TokenMarketplacePanel({
         <section className="id-card token-market-card">
           <div className="id-card-head">
             <div className="empty-icon" aria-hidden="true">
-              <Send size={24} />
+              <FileText size={24} />
             </div>
             <div>
-              <h3>Current Token Actions</h3>
+              <h3>Token Sales & Listings Log</h3>
               <p>
-                Mint from token registries, transfer balances, and list owned
-                tokens from Wallet.
+                {selectedMarketToken
+                  ? `${selectedMarketToken.ticker} listings and sale settlements.`
+                  : "Listings and sale settlements across token markets."}
               </p>
             </div>
           </div>
-          <div className="id-record-actions">
-            {onOpenTokenWorkspace ? (
-              <button
-                className="primary link-button"
-                onClick={() => onOpenTokenWorkspace(selectedMarketToken)}
-                type="button"
-              >
-                <span className="button-content">
-                  <ArrowUpRight size={16} />
-                  <span>Create / Mint</span>
-                </span>
-              </button>
-            ) : (
-              <a
-                className="primary link-button"
-                href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
-              >
-                <span className="button-content">
-                  <ArrowUpRight size={16} />
-                  <span>Create / Mint</span>
-                </span>
-              </a>
-            )}
-            {onOpenWalletWorkspace ? (
-              <button
-                className="secondary link-button"
-                onClick={() => onOpenWalletWorkspace(selectedMarketToken)}
-                type="button"
-              >
-                <span className="button-content">
-                  <Wallet size={16} />
-                  <span>Wallet Transfers</span>
-                </span>
-              </button>
-            ) : (
-              <a
-                className="secondary link-button"
-                href={appHref(WALLET_APP_URL, LOCAL_WALLET_APP_URL)}
-              >
-                <span className="button-content">
-                  <Wallet size={16} />
-                  <span>Wallet Transfers</span>
-                </span>
-              </a>
-            )}
-          </div>
+          {tokenMarketLogItems.length ? (
+            <div className="token-market-grid">
+              {tokenMarketLogPage.items.map((item) => {
+                if (item.kind === "sale") {
+                  const unitSats =
+                    item.sale.amount > 0
+                      ? item.sale.priceSats / item.sale.amount
+                      : 0;
+                  return (
+                    <article
+                      className="id-record token-market-row"
+                      key={`sale-${item.sale.txid}`}
+                    >
+                      <div>
+                        <strong>
+                          {item.sale.amount.toLocaleString()}{" "}
+                          {item.sale.ticker}
+                        </strong>
+                        <span>
+                          {item.sale.confirmed
+                            ? "Confirmed sale"
+                            : "Pending sale"}
+                        </span>
+                      </div>
+                      <dl>
+                        <div>
+                          <dt>Price</dt>
+                          <dd>{item.sale.priceSats.toLocaleString()} sats</dd>
+                        </div>
+                        <div>
+                          <dt>Unit</dt>
+                          <dd>
+                            {tokenSatsPerUnit(unitSats)} sat /{" "}
+                            {item.sale.ticker}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Seller</dt>
+                          <dd>{shortAddress(item.sale.sellerAddress)}</dd>
+                        </div>
+                        <div>
+                          <dt>Buyer</dt>
+                          <dd>{shortAddress(item.sale.buyerAddress)}</dd>
+                        </div>
+                        <div>
+                          <dt>Date</dt>
+                          <dd>{formatDate(item.sale.createdAt)}</dd>
+                        </div>
+                      </dl>
+                      <p className="field-note">
+                        Listing {shortAddress(item.sale.listingId)} settled for{" "}
+                        {item.sale.paidSats.toLocaleString()} paid sats.
+                      </p>
+                      <div className="id-record-actions">
+                        <a
+                          className="secondary small"
+                          href={explorerTxUrl(item.sale.txid, item.sale.network)}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <span className="button-content">
+                            <ArrowUpRight size={15} />
+                            <span>Sale TX</span>
+                          </span>
+                        </a>
+                        <a
+                          className="secondary small"
+                          href={explorerTxUrl(
+                            item.sale.listingId,
+                            item.sale.network,
+                          )}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <span className="button-content">
+                            <ArrowUpRight size={15} />
+                            <span>Listing TX</span>
+                          </span>
+                        </a>
+                      </div>
+                    </article>
+                  );
+                }
+
+                const sealed = tokenSaleAuthorizationUsesSaleTicketAnchor(
+                  item.listing.saleAuthorization,
+                );
+                const unitSats =
+                  item.listing.amount > 0
+                    ? item.listing.priceSats / item.listing.amount
+                    : 0;
+                const buyerLock =
+                  item.listing.saleAuthorization.buyerAddress || "";
+                return (
+                  <article
+                    className="id-record token-market-row"
+                    key={`listing-${item.listing.listingId}`}
+                  >
+                    <div>
+                      <strong>
+                        {item.listing.amount.toLocaleString()}{" "}
+                        {item.listing.ticker}
+                      </strong>
+                      <span>
+                        {!item.listing.confirmed
+                          ? "Pending listing"
+                          : sealed
+                            ? "Sealed listing"
+                            : "Waiting for seal"}
+                      </span>
+                    </div>
+                    <dl>
+                      <div>
+                        <dt>Price</dt>
+                        <dd>{item.listing.priceSats.toLocaleString()} sats</dd>
+                      </div>
+                      <div>
+                        <dt>Unit</dt>
+                        <dd>
+                          {tokenSatsPerUnit(unitSats)} sat /{" "}
+                          {item.listing.ticker}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Seller</dt>
+                        <dd>{shortAddress(item.listing.sellerAddress)}</dd>
+                      </div>
+                      <div>
+                        <dt>Buyer lock</dt>
+                        <dd>{buyerLock ? shortAddress(buyerLock) : "Open"}</dd>
+                      </div>
+                      <div>
+                        <dt>Date</dt>
+                        <dd>{formatDate(item.listing.createdAt)}</dd>
+                      </div>
+                    </dl>
+                    <p className="field-note">
+                      Sale ticket {shortAddress(item.listing.listingId)}
+                      {item.listing.sealTxid
+                        ? ` sealed by ${shortAddress(item.listing.sealTxid)}.`
+                        : "."}
+                    </p>
+                    <div className="id-record-actions">
+                      <a
+                        className="secondary small"
+                        href={explorerTxUrl(
+                          item.listing.listingId,
+                          item.listing.network,
+                        )}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <span className="button-content">
+                          <ArrowUpRight size={15} />
+                          <span>Listing TX</span>
+                        </span>
+                      </a>
+                      {item.listing.sealTxid ? (
+                        <a
+                          className="secondary small"
+                          href={explorerTxUrl(
+                            item.listing.sealTxid,
+                            item.listing.network,
+                          )}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <span className="button-content">
+                            <ArrowUpRight size={15} />
+                            <span>Seal TX</span>
+                          </span>
+                        </a>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <FileText size={28} />
+              <h3>No token market history yet</h3>
+              <p>
+                {selectedMarketToken
+                  ? `${selectedMarketToken.ticker} has no listings or sales yet.`
+                  : "Token listings and sales will appear here after they confirm or enter mempool."}
+              </p>
+            </div>
+          )}
+          <PaginationControls
+            label="Token sales and listings"
+            onPageChange={setTokenMarketLogPageIndex}
+            page={tokenMarketLogPage}
+          />
         </section>
       </div>
     </>
