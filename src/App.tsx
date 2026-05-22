@@ -17045,9 +17045,9 @@ export default function App() {
             setIdPurchaseOwnerAddress(address);
             setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
           }}
-          onRefresh={() => {
-            void refreshWorkFloor(false, true);
-            void refreshIds();
+          onRefreshIds={() => void refreshIds()}
+          onRefreshTokens={() => {
+            void refreshWorkFloor(true, true);
             void refreshToken(false, true);
             void refreshTokenBtcUsd();
           }}
@@ -17780,8 +17780,8 @@ export default function App() {
               setIdPurchaseOwnerAddress(address);
               setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
             }}
-            onRefresh={() => {
-              void refreshIds();
+            onRefreshIds={() => void refreshIds()}
+            onRefreshTokens={() => {
               void refreshToken(false, true);
               void refreshTokenBtcUsd();
             }}
@@ -24854,6 +24854,40 @@ function MarketplaceTabs({
   );
 }
 
+function marketplaceStatusIsIdScoped(text: string) {
+  return /(?:ID registry|ProofOfWork ID|Registry loaded)/u.test(text);
+}
+
+function marketplaceStatusIsTokenScoped(text: string) {
+  return /(?:Token index|token market|WORK floor)/iu.test(text);
+}
+
+function marketplaceStatusForTab({
+  active,
+  idSummary,
+  status,
+  tokenSummary,
+}: {
+  active: MarketplaceTab;
+  idSummary: { tone: StatusTone; text: string };
+  status: { tone: StatusTone; text: string };
+  tokenSummary: { tone: StatusTone; text: string };
+}) {
+  if (status.tone === "bad") {
+    return status;
+  }
+
+  if (active === "tokens" && marketplaceStatusIsIdScoped(status.text)) {
+    return tokenSummary;
+  }
+
+  if (active === "ids" && marketplaceStatusIsTokenScoped(status.text)) {
+    return idSummary;
+  }
+
+  return status;
+}
+
 function TokenMarketplacePanel({
   address,
   btcUsd,
@@ -25717,7 +25751,8 @@ function MarketplaceApp({
   workFloorQuote,
   buyTokenListing,
   useListing,
-  onRefresh,
+  onRefreshIds,
+  onRefreshTokens,
 }: {
   address: string;
   btcUsd: number;
@@ -25766,7 +25801,8 @@ function MarketplaceApp({
   workFloorQuote?: WorkFloorQuote;
   buyTokenListing: (listing: PowTokenListing) => void;
   useListing: (listing: PowIdListing) => void;
-  onRefresh: () => void;
+  onRefreshIds: () => void;
+  onRefreshTokens: () => void;
 }) {
   const [marketplaceTab, setMarketplaceTab] = useState<MarketplaceTab>("ids");
   const confirmedRecords = registryRecords.filter((record) => record.confirmed);
@@ -25781,6 +25817,30 @@ function MarketplaceApp({
     pendingIdEventTouchesAddress(event, address),
   );
   const marketplaceStats = marketplaceStatsFromSales(registrySales);
+  const sealedTokenListings = tokenListings.filter((listing) =>
+    tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization),
+  );
+  const confirmedTokenCount = tokens.filter((token) => token.confirmed).length;
+  const scopedStatus = marketplaceStatusForTab({
+    active: marketplaceTab,
+    idSummary: {
+      tone: "good",
+      text: `ID marketplace loaded. ${confirmedRecords.length.toLocaleString()} confirmed, ${registryListings.length.toLocaleString()} active listing${registryListings.length === 1 ? "" : "s"}, ${pendingRecords.length.toLocaleString()} pending.`,
+    },
+    status,
+    tokenSummary: {
+      tone: "good",
+      text: `Token market loaded. ${confirmedTokenCount.toLocaleString()} confirmed token${confirmedTokenCount === 1 ? "" : "s"}, ${tokenListings.length.toLocaleString()} open listing${tokenListings.length === 1 ? "" : "s"}, ${sealedTokenListings.length.toLocaleString()} sealed.`,
+    },
+  });
+  const refreshMarketplaceTab = () => {
+    if (marketplaceTab === "tokens") {
+      onRefreshTokens();
+      return;
+    }
+
+    onRefreshIds();
+  };
 
   return (
     <main className="id-launch-app marketplace-app">
@@ -25792,15 +25852,17 @@ function MarketplaceApp({
         hasUnisat={hasUnisat}
         network={network}
         onNetworkChange={onNetworkChange}
-        onRefresh={onRefresh}
+        onRefresh={refreshMarketplaceTab}
         subtitle="Mainnet asset marketplace"
         title="ProofOfWork Marketplace"
       />
 
-      <AppStatusRow persistent status={status} />
+      <AppStatusRow persistent status={scopedStatus} />
 
       <section className="id-launch-main">
-        <div className="id-launch-hero">
+        <div
+          className={`id-launch-hero${marketplaceTab === "tokens" ? " marketplace-token-hero" : ""}`}
+        >
           <div>
             <span className="id-launch-kicker">ProofOfWork marketplace</span>
             <h2>Trade Bitcoin-native assets.</h2>
@@ -25810,34 +25872,36 @@ function MarketplaceApp({
             </p>
           </div>
 
-          <div className="id-launch-stats" aria-label="Marketplace stats">
-            <div>
-              <strong>{registryRecords.length.toLocaleString()}</strong>
-              <span>Total IDs</span>
+          {marketplaceTab === "ids" ? (
+            <div className="id-launch-stats" aria-label="ID marketplace stats">
+              <div>
+                <strong>{registryRecords.length.toLocaleString()}</strong>
+                <span>Total IDs</span>
+              </div>
+              <div>
+                <strong>{registryListings.length.toLocaleString()}</strong>
+                <span>Active Listings</span>
+              </div>
+              <div>
+                <strong>{marketplaceStats.totalSales.toLocaleString()}</strong>
+                <span>ID Sales</span>
+              </div>
+              <div>
+                <strong>
+                  {marketplaceStats.totalVolumeSats.toLocaleString()}
+                </strong>
+                <span>Volume sats</span>
+              </div>
+              <div>
+                <strong>{pendingRecords.length.toLocaleString()}</strong>
+                <span>Pending IDs</span>
+              </div>
+              <div>
+                <strong>{marketplaceStats.pendingSales.toLocaleString()}</strong>
+                <span>Pending Sales</span>
+              </div>
             </div>
-            <div>
-              <strong>{registryListings.length.toLocaleString()}</strong>
-              <span>Active Listings</span>
-            </div>
-            <div>
-              <strong>{marketplaceStats.totalSales.toLocaleString()}</strong>
-              <span>ID Sales</span>
-            </div>
-            <div>
-              <strong>
-                {marketplaceStats.totalVolumeSats.toLocaleString()}
-              </strong>
-              <span>Volume sats</span>
-            </div>
-            <div>
-              <strong>{pendingRecords.length.toLocaleString()}</strong>
-              <span>Pending IDs</span>
-            </div>
-            <div>
-              <strong>{marketplaceStats.pendingSales.toLocaleString()}</strong>
-              <span>Pending Sales</span>
-            </div>
-          </div>
+          ) : null}
         </div>
 
         <MarketplaceTabs
@@ -26062,7 +26126,8 @@ function MarketplaceWorkspace({
   onOpenTokenWorkspace,
   onOpenWalletWorkspace,
   useListing,
-  onRefresh,
+  onRefreshIds,
+  onRefreshTokens,
 }: {
   address: string;
   btcUsd: number;
@@ -26109,7 +26174,8 @@ function MarketplaceWorkspace({
   onOpenTokenWorkspace?: (token?: PowTokenDefinition) => void;
   onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
   useListing: (listing: PowIdListing) => void;
-  onRefresh: () => void;
+  onRefreshIds: () => void;
+  onRefreshTokens: () => void;
 }) {
   const [marketplaceTab, setMarketplaceTab] = useState<MarketplaceTab>("ids");
   const confirmedRecords = registryRecords.filter(
@@ -26136,6 +26202,14 @@ function MarketplaceWorkspace({
   const networkTokenCount = tokens.filter(
     (token) => token.network === network,
   ).length;
+  const refreshMarketplaceTab = () => {
+    if (marketplaceTab === "tokens") {
+      onRefreshTokens();
+      return;
+    }
+
+    onRefreshIds();
+  };
 
   return (
     <section className="ids-workspace marketplace-workspace">
@@ -26150,8 +26224,8 @@ function MarketplaceWorkspace({
         </div>
         <button
           className="secondary small"
-          disabled={busy || !registryAddress}
-          onClick={onRefresh}
+          disabled={busy || (marketplaceTab === "ids" && !registryAddress)}
+          onClick={refreshMarketplaceTab}
           type="button"
         >
           <span className="button-content">
