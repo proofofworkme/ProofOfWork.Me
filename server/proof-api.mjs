@@ -4599,6 +4599,47 @@ async function fastJsonBackedPayload(
   return fallbackPayload;
 }
 
+async function backgroundRefreshedJsonBackedPayload(
+  cacheKey,
+  payloadKey,
+  producer,
+  ttlMs,
+  staleMs,
+  fallbackPayload,
+) {
+  refreshPayloadCacheInBackground(
+    cacheKey,
+    payloadKey,
+    producer,
+    ttlMs,
+    staleMs,
+  );
+
+  const payloadEntry = RESPONSE_CACHE.get(payloadKey);
+  if (payloadEntry?.payload) {
+    return payloadEntry.payload;
+  }
+
+  const jsonKey = `json:${cacheKey}`;
+  await hydratePersistedJsonCache(jsonKey, staleMs);
+  const cachedJsonEntry = RESPONSE_CACHE.get(jsonKey);
+  if (cachedJsonEntry?.body) {
+    try {
+      const payload = JSON.parse(cachedJsonEntry.body);
+      RESPONSE_CACHE.set(payloadKey, {
+        expiresAt: Date.now() + ttlMs,
+        payload,
+        staleUntil: Date.now() + staleMs,
+      });
+      return payload;
+    } catch {
+      RESPONSE_CACHE.delete(jsonKey);
+    }
+  }
+
+  return fallbackPayload;
+}
+
 async function fastGlobalActivityPayload(network) {
   const cached = GLOBAL_ACTIVITY_CACHE.get(network);
   if (cached?.payload) {
@@ -6236,26 +6277,30 @@ function growthActualValuePoints(
   return points;
 }
 
+function emptyWorkFloorPayload(network) {
+  return {
+    chartPoints: [],
+    indexedAt: new Date().toISOString(),
+    network,
+    networkValueSats: 0,
+    powids: 0,
+    source: mempoolBase(network),
+    tokenFlowSats: 0,
+    stats: {
+      confirmedTokenMints: 0,
+      confirmedTokens: 0,
+      marketplaceVolumeSats: 0,
+      tokenCreationFlowSats: 0,
+      tokenMintFlowSats: 0,
+      tokenSaleFlowSats: 0,
+      tokenTransactions: 0,
+    },
+  };
+}
+
 async function workFloorPayload(network, fresh = false) {
   if (network !== "livenet") {
-    return {
-      chartPoints: [],
-      indexedAt: new Date().toISOString(),
-      network,
-      networkValueSats: 0,
-      powids: 0,
-      source: mempoolBase(network),
-      tokenFlowSats: 0,
-      stats: {
-        confirmedTokenMints: 0,
-        confirmedTokens: 0,
-        marketplaceVolumeSats: 0,
-        tokenCreationFlowSats: 0,
-        tokenMintFlowSats: 0,
-        tokenSaleFlowSats: 0,
-        tokenTransactions: 0,
-      },
-    };
+    return emptyWorkFloorPayload(network);
   }
 
   const emptyRegistryState = {
@@ -6796,17 +6841,17 @@ async function handleRequest(request, response) {
 
     if (url.pathname === "/api/v1/work-floor") {
       if (freshRead) {
-        clearResponseCache(
-          `work-floor:${network}`,
-          `registry:${network}`,
-          `token:${network}:`,
-          `payload:registry:${network}`,
-          `payload:token:${network}:`,
-        );
         refreshedJsonResponse(
           response,
           `work-floor:${network}`,
-          await workFloorPayload(network, true),
+          await backgroundRefreshedJsonBackedPayload(
+            `work-floor:${network}`,
+            `payload:work-floor:${network}`,
+            () => workFloorPayload(network, true),
+            WORK_FLOOR_CACHE_TTL_MS,
+            WORK_FLOOR_CACHE_STALE_MS,
+            emptyWorkFloorPayload(network),
+          ),
           FRESH_READ_CACHE_CONTROL,
           WORK_FLOOR_CACHE_TTL_MS,
           WORK_FLOOR_CACHE_STALE_MS,
