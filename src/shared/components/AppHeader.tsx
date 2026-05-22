@@ -66,7 +66,7 @@ export function AppHeader({
         aria-label="ProofOfWork.Me home"
       >
         <div className="brand-mark" aria-hidden="true">
-          <img src="/proofofwork-logo.png" alt="" />
+          PoW
         </div>
         <div>
           <h1>{title}</h1>
