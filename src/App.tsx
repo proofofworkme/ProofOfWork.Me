@@ -8425,7 +8425,7 @@ async function fetchIdRegistryState(
     const listings = Array.isArray(payload.listings) ? payload.listings : [];
     return {
       activity: Array.isArray(payload.activity) ? payload.activity : [],
-      listings: await filterSpendableListings(listings, targetNetwork),
+      listings,
       pendingEvents: Array.isArray(payload.pendingEvents)
         ? payload.pendingEvents
         : [],
