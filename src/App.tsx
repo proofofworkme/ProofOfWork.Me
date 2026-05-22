@@ -123,13 +123,12 @@ import { FeeRateControl } from "./shared/components/FeeRateControl";
 import { ProgressBar } from "./shared/components/ProgressBar";
 import { SocialFooter } from "./shared/components/SocialFooter";
 import {
-  mempoolBase,
-  mempoolTxUrl,
+  explorerAddressUrl,
+  explorerTxUrl,
 } from "./shared/bitcoin/networks";
 import { MAX_DATA_CARRIER_BYTES } from "./shared/bitcoin/protocolLimits";
 import {
   fetchProofApiJson,
-  POW_API_BASE,
   proofApiUrl,
 } from "./shared/api/proofApiClient";
 import {
@@ -1007,9 +1006,6 @@ const CANONICAL_WELCOME_HTML =
 const CANONICAL_WELCOME_SENDER = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
 const CANONICAL_WELCOME_RECIPIENT = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
 const CANONICAL_WELCOME_CREATED_AT = "2026-05-13T17:58:01.000Z";
-const SLIPSTREAM_TX_URL = "https://slipstream.mara.com/tx";
-const SLIPSTREAM_CLIENT_CODE_REQUIRED_MESSAGE =
-  "MARA Slipstream currently requires a client code for direct multi-OP_RETURN submission.";
 const MAX_ATTACHMENT_BYTES = 60_000;
 const MAX_REGISTRY_TX_PAGES = 100;
 const DATA_PAGE_SIZE = 25;
@@ -1672,14 +1668,10 @@ function maxPayloadDataBytes(prefix: string) {
 }
 
 async function fetchBtcUsdPrice() {
-  const response = await fetch(`${mempoolBase("livenet")}/api/v1/prices`, {
-    headers: { Accept: "application/json" },
-  });
-  if (!response.ok) {
-    throw new Error(`BTC/USD price lookup returned ${response.status}`);
-  }
-
-  const payload = (await response.json()) as { USD?: number; usd?: number };
+  const payload = await fetchProofApiJson<{ USD?: number; usd?: number }>(
+    "/api/v1/prices/btc-usd",
+    "livenet",
+  );
   const usd = Number(payload.USD ?? payload.usd);
   if (!Number.isFinite(usd) || usd <= 0) {
     throw new Error("BTC/USD price is unavailable.");
@@ -1699,18 +1691,10 @@ async function fetchBlockTxidIndex(
   const normalizedHash = blockHash.toLowerCase();
   const cacheKey = `${network}:${normalizedHash}`;
   if (!BLOCK_TXID_INDEX_CACHE.has(cacheKey)) {
-    const promise = fetch(
-      `${mempoolBase(network)}/api/block/${normalizedHash}/txids`,
-      {
-        headers: { Accept: "application/json" },
-      },
+    const promise = fetchProofApiJson<string[]>(
+      `/api/v1/block/${encodeURIComponent(normalizedHash)}/txids`,
+      network,
     )
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`mempool.space returned ${response.status}`);
-        }
-        return response.json();
-      })
       .then((txids) => {
         const index = new Map<string, number>();
         if (Array.isArray(txids)) {
@@ -1738,7 +1722,7 @@ function xVerificationUrl(record: PowIdRecord) {
     : "submitted a registration for";
   const text = [
     `I ${action} ${record.id}@proofofwork.me on Bitcoin.`,
-    `Registry tx: ${mempoolTxUrl(record.txid, record.network)}`,
+    `Registry tx: ${explorerTxUrl(record.txid, record.network)}`,
     "ProofOfWork.Me IDs are on-chain mail identities.",
   ].join("\n\n");
 
@@ -3596,15 +3580,12 @@ async function listingAnchorSpent(
   }
 
   try {
-    const response = await fetch(
-      `${mempoolBase(network)}/api/tx/${anchor.txid}/outspend/${anchor.vout}`,
+    const outspend = await fetchTransactionOutspend(
+      anchor.txid,
+      anchor.vout,
+      network,
     );
-    if (!response.ok) {
-      return false;
-    }
-
-    const outspend = (await response.json()) as Record<string, unknown>;
-    return outspend.spent === true;
+    return outspend?.spent === true;
   } catch {
     return false;
   }
@@ -6685,14 +6666,10 @@ async function fetchAddressTransactionsPage(
   targetNetwork: BitcoinNetwork,
   path: string,
 ) {
-  const response = await fetch(
-    `${mempoolBase(targetNetwork)}/api/address/${targetAddress}/${path}`,
+  const transactions = await fetchProofApiJson<Array<Record<string, unknown>>>(
+    `/api/v1/address/${encodeURIComponent(targetAddress)}/${path}`,
+    targetNetwork,
   );
-  if (!response.ok) {
-    throw new Error(`mempool.space returned ${response.status}`);
-  }
-
-  const transactions = await response.json();
   return Array.isArray(transactions)
     ? (transactions as Array<Record<string, unknown>>)
     : [];
@@ -6991,33 +6968,17 @@ async function fetchAddressMail(
   targetAddress: string,
   targetNetwork: BitcoinNetwork,
 ) {
-  if (POW_API_BASE) {
-    const payload = await fetchProofApiJson<PowMailApiResponse>(
-      `/api/v1/address/${encodeURIComponent(targetAddress)}/mail`,
-      targetNetwork,
-    );
-    return {
-      inboxMessages: Array.isArray(payload.inboxMessages)
-        ? payload.inboxMessages
-        : [],
-      sentMessages: Array.isArray(payload.sentMessages)
-        ? payload.sentMessages
-        : [],
-    };
-  }
-
-  const txs = await fetchAddressTransactions(targetAddress, targetNetwork);
+  const payload = await fetchProofApiJson<PowMailApiResponse>(
+    `/api/v1/address/${encodeURIComponent(targetAddress)}/mail`,
+    targetNetwork,
+  );
   return {
-    inboxMessages: inboxMessagesFromTransactions(
-      txs,
-      targetAddress,
-      targetNetwork,
-    ),
-    sentMessages: sentMessagesFromTransactions(
-      txs,
-      targetAddress,
-      targetNetwork,
-    ),
+    inboxMessages: Array.isArray(payload.inboxMessages)
+      ? payload.inboxMessages
+      : [],
+    sentMessages: Array.isArray(payload.sentMessages)
+      ? payload.sentMessages
+      : [],
   };
 }
 
@@ -7030,35 +6991,14 @@ async function fetchTransactionJson(
     throw new Error("Enter a valid Bitcoin txid.");
   }
 
-  if (POW_API_BASE) {
-    const payload = await fetchProofApiJson<{
-      tx?: Record<string, unknown> | null;
-    }>(`/api/v1/tx/${encodeURIComponent(normalizedTxid)}`, targetNetwork);
-    if (!payload.tx) {
-      throw new Error("Transaction not found.");
-    }
-
-    return payload.tx;
+  const payload = await fetchProofApiJson<{
+    tx?: Record<string, unknown> | null;
+  }>(`/api/v1/tx/${encodeURIComponent(normalizedTxid)}`, targetNetwork);
+  if (!payload.tx) {
+    throw new Error("Transaction not found.");
   }
 
-  const response = await fetch(
-    `${mempoolBase(targetNetwork)}/api/tx/${normalizedTxid}`,
-    {
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
-      },
-    },
-  );
-  if (!response.ok) {
-    throw new Error(
-      response.status === 404
-        ? "Transaction not found."
-        : `Transaction lookup returned ${response.status}.`,
-    );
-  }
-
-  return response.json() as Promise<Record<string, unknown>>;
+  return payload.tx;
 }
 
 function isBrowserHtmlAttachment(attachment: MailAttachment) {
@@ -8421,33 +8361,19 @@ async function fetchIdRegistryState(
     };
   }
 
-  if (POW_API_BASE) {
-    const path = fresh ? "/api/v1/registry?fresh=1" : "/api/v1/registry";
-    const payload = await fetchProofApiJson<PowRegistryApiResponse>(
-      path,
-      targetNetwork,
-    );
-    const listings = Array.isArray(payload.listings) ? payload.listings : [];
-    return {
-      activity: Array.isArray(payload.activity) ? payload.activity : [],
-      listings,
-      pendingEvents: Array.isArray(payload.pendingEvents)
-        ? payload.pendingEvents
-        : [],
-      records: Array.isArray(payload.records) ? payload.records : [],
-      sales: Array.isArray(payload.sales) ? payload.sales : [],
-    };
-  }
-
-  const txs = await fetchRegistryTransactions(registryAddress, targetNetwork);
-  const state = idRegistryStateFromTransactions(
-    txs,
-    registryAddress,
+  const path = fresh ? "/api/v1/registry?fresh=1" : "/api/v1/registry";
+  const payload = await fetchProofApiJson<PowRegistryApiResponse>(
+    path,
     targetNetwork,
   );
   return {
-    ...state,
-    listings: await filterSpendableListings(state.listings, targetNetwork),
+    activity: Array.isArray(payload.activity) ? payload.activity : [],
+    listings: Array.isArray(payload.listings) ? payload.listings : [],
+    pendingEvents: Array.isArray(payload.pendingEvents)
+      ? payload.pendingEvents
+      : [],
+    records: Array.isArray(payload.records) ? payload.records : [],
+    sales: Array.isArray(payload.sales) ? payload.sales : [],
   };
 }
 
@@ -8455,16 +8381,12 @@ async function fetchGlobalActivity(
   targetNetwork: BitcoinNetwork,
   fresh = false,
 ): Promise<PowActivityItem[]> {
-  if (POW_API_BASE) {
-    const path = fresh ? "/api/v1/log?fresh=1" : "/api/v1/log";
-    const payload = await fetchProofApiJson<PowActivityApiResponse>(
-      path,
-      targetNetwork,
-    );
-    return Array.isArray(payload.activity) ? payload.activity : [];
-  }
-
-  return (await fetchIdRegistryState(targetNetwork)).activity;
+  const path = fresh ? "/api/v1/log?fresh=1" : "/api/v1/log";
+  const payload = await fetchProofApiJson<PowActivityApiResponse>(
+    path,
+    targetNetwork,
+  );
+  return Array.isArray(payload.activity) ? payload.activity : [];
 }
 
 async function fetchTokenState(
@@ -8477,61 +8399,35 @@ async function fetchTokenState(
     return emptyTokenState();
   }
 
-  if (POW_API_BASE) {
-    const params = new URLSearchParams();
-    if (fresh) {
-      params.set("fresh", "1");
-    }
-    if (tokenScope.trim()) {
-      params.set("asset", tokenScope.trim());
-    }
-    const query = params.toString();
-    const payload = await fetchProofApiJson<PowTokenApiResponse>(
-      query ? `/api/v1/token?${query}` : "/api/v1/token",
-      targetNetwork,
-    );
-    return sanitizedTokenState({
-      creationSats: Number.isSafeInteger(payload.creationSats)
-        ? Number(payload.creationSats)
-        : 0,
-      confirmedSupply: Number.isSafeInteger(payload.confirmedSupply)
-        ? Number(payload.confirmedSupply)
-        : 0,
-      holders: Array.isArray(payload.holders) ? payload.holders : [],
-      listings: Array.isArray(payload.listings) ? payload.listings : [],
-      mints: Array.isArray(payload.mints) ? payload.mints : [],
-      pendingSupply: Number.isSafeInteger(payload.pendingSupply)
-        ? Number(payload.pendingSupply)
-        : 0,
-      sales: Array.isArray(payload.sales) ? payload.sales : [],
-      transfers: Array.isArray(payload.transfers) ? payload.transfers : [],
-      tokens: Array.isArray(payload.tokens) ? payload.tokens : [],
-    });
+  const params = new URLSearchParams();
+  if (fresh) {
+    params.set("fresh", "1");
   }
-
-  const indexTxs = await fetchRegistryTransactions(indexAddress, targetNetwork);
-  const { tokens } = tokenDefinitionsFromTransactions(
-    indexTxs,
-    indexAddress,
+  if (tokenScope.trim()) {
+    params.set("asset", tokenScope.trim());
+  }
+  const query = params.toString();
+  const payload = await fetchProofApiJson<PowTokenApiResponse>(
+    query ? `/api/v1/token?${query}` : "/api/v1/token",
     targetNetwork,
   );
-  const registryAddresses = [
-    ...new Set(tokens.map((token) => token.registryAddress).filter(Boolean)),
-  ];
-  const registryEntries = await Promise.all(
-    registryAddresses.map(async (registryAddress) => [
-      registryAddress,
-      await fetchRegistryTransactions(registryAddress, targetNetwork),
-    ] as const),
-  );
-  return sanitizedTokenState(
-    tokenStateFromTransactions(
-      indexTxs,
-      new Map(registryEntries),
-      indexAddress,
-      targetNetwork,
-    ),
-  );
+  return sanitizedTokenState({
+    creationSats: Number.isSafeInteger(payload.creationSats)
+      ? Number(payload.creationSats)
+      : 0,
+    confirmedSupply: Number.isSafeInteger(payload.confirmedSupply)
+      ? Number(payload.confirmedSupply)
+      : 0,
+    holders: Array.isArray(payload.holders) ? payload.holders : [],
+    listings: Array.isArray(payload.listings) ? payload.listings : [],
+    mints: Array.isArray(payload.mints) ? payload.mints : [],
+    pendingSupply: Number.isSafeInteger(payload.pendingSupply)
+      ? Number(payload.pendingSupply)
+      : 0,
+    sales: Array.isArray(payload.sales) ? payload.sales : [],
+    transfers: Array.isArray(payload.transfers) ? payload.transfers : [],
+    tokens: Array.isArray(payload.tokens) ? payload.tokens : [],
+  });
 }
 
 async function fetchTokenSupplyState(
@@ -8549,39 +8445,29 @@ async function fetchTokenSupplyState(
     };
   }
 
-  if (POW_API_BASE) {
-    const params = new URLSearchParams();
-    if (fresh) {
-      params.set("fresh", "1");
-    }
-    if (tokenScope.trim()) {
-      params.set("asset", tokenScope.trim());
-    }
-    const query = params.toString();
-    const payload = await fetchProofApiJson<PowTokenApiResponse>(
-      query ? `/api/v1/token-summary?${query}` : "/api/v1/token-summary",
-      targetNetwork,
-    );
-    return {
-      creationSats: Number.isSafeInteger(payload.creationSats)
-        ? Number(payload.creationSats)
-        : 0,
-      confirmedSupply: Number.isSafeInteger(payload.confirmedSupply)
-        ? Number(payload.confirmedSupply)
-        : 0,
-      pendingSupply: Number.isSafeInteger(payload.pendingSupply)
-        ? Number(payload.pendingSupply)
-        : 0,
-      tokens: Array.isArray(payload.tokens) ? payload.tokens : [],
-    };
+  const params = new URLSearchParams();
+  if (fresh) {
+    params.set("fresh", "1");
   }
-
-  const state = await fetchTokenState(targetNetwork, fresh, tokenScope);
+  if (tokenScope.trim()) {
+    params.set("asset", tokenScope.trim());
+  }
+  const query = params.toString();
+  const payload = await fetchProofApiJson<PowTokenApiResponse>(
+    query ? `/api/v1/token-summary?${query}` : "/api/v1/token-summary",
+    targetNetwork,
+  );
   return {
-    creationSats: state.creationSats,
-    confirmedSupply: state.confirmedSupply,
-    pendingSupply: state.pendingSupply,
-    tokens: state.tokens,
+    creationSats: Number.isSafeInteger(payload.creationSats)
+      ? Number(payload.creationSats)
+      : 0,
+    confirmedSupply: Number.isSafeInteger(payload.confirmedSupply)
+      ? Number(payload.confirmedSupply)
+      : 0,
+    pendingSupply: Number.isSafeInteger(payload.pendingSupply)
+      ? Number(payload.pendingSupply)
+      : 0,
+    tokens: Array.isArray(payload.tokens) ? payload.tokens : [],
   };
 }
 
@@ -8616,10 +8502,6 @@ async function fetchWorkFloorQuote(
   targetNetwork: BitcoinNetwork,
   fresh = false,
 ): Promise<WorkFloorQuote | undefined> {
-  if (!POW_API_BASE) {
-    return undefined;
-  }
-
   const payload = await fetchProofApiJson<WorkFloorApiResponse>(
     fresh ? "/api/v1/work-floor?fresh=1" : "/api/v1/work-floor",
     targetNetwork,
@@ -8636,51 +8518,33 @@ async function fetchRushState(
     return emptyRushState(targetNetwork);
   }
 
-  if (POW_API_BASE) {
-    const payload = await fetchProofApiJson<RushApiResponse>(
-      fresh ? "/api/v1/rush?fresh=1" : "/api/v1/rush",
-      targetNetwork,
-    );
-    return {
-      indexedAt:
-        typeof payload.indexedAt === "string"
-          ? payload.indexedAt
-          : new Date().toISOString(),
-      mints: Array.isArray(payload.mints) ? payload.mints : [],
-      network: targetNetwork,
-      registryAddress:
-        typeof payload.registryAddress === "string"
-          ? payload.registryAddress
-          : registryAddress,
-      stats: payload.stats ?? emptyRushState(targetNetwork).stats,
-    };
-  }
-
-  const txs = await fetchRegistryTransactions(registryAddress, targetNetwork);
-  return rushStateFromTransactions(txs, registryAddress, targetNetwork);
+  const payload = await fetchProofApiJson<RushApiResponse>(
+    fresh ? "/api/v1/rush?fresh=1" : "/api/v1/rush",
+    targetNetwork,
+  );
+  return {
+    indexedAt:
+      typeof payload.indexedAt === "string"
+        ? payload.indexedAt
+        : new Date().toISOString(),
+    mints: Array.isArray(payload.mints) ? payload.mints : [],
+    network: targetNetwork,
+    registryAddress:
+      typeof payload.registryAddress === "string"
+        ? payload.registryAddress
+        : registryAddress,
+    stats: payload.stats ?? emptyRushState(targetNetwork).stats,
+  };
 }
 
 async function fetchUtxos(
   ownerAddress: string,
   ownerNetwork: BitcoinNetwork,
 ): Promise<MempoolUtxo[]> {
-  const rawUtxos = POW_API_BASE
-    ? await fetchProofApiJson<Array<Record<string, unknown>>>(
-        `/api/v1/address/${encodeURIComponent(ownerAddress)}/utxo`,
-        ownerNetwork,
-      )
-    : await (async () => {
-        const response = await fetch(
-          `${mempoolBase(ownerNetwork)}/api/address/${ownerAddress}/utxo`,
-        );
-        if (!response.ok) {
-          throw new Error(
-            `Could not load wallet UTXOs: mempool.space returned ${response.status}.`,
-          );
-        }
-
-        return (await response.json()) as Array<Record<string, unknown>>;
-      })();
+  const rawUtxos = await fetchProofApiJson<Array<Record<string, unknown>>>(
+    `/api/v1/address/${encodeURIComponent(ownerAddress)}/utxo`,
+    ownerNetwork,
+  );
 
   return rawUtxos
     .flatMap((utxo): MempoolUtxo[] => {
@@ -8704,31 +8568,18 @@ async function fetchUtxos(
 }
 
 async function fetchTransactionHex(txid: string, ownerNetwork: BitcoinNetwork) {
-  if (POW_API_BASE) {
-    const payload = await fetchProofApiJson<Record<string, unknown>>(
-      `/api/v1/tx/${encodeURIComponent(txid)}/hex`,
-      ownerNetwork,
-    );
-    const hex = typeof payload.hex === "string" ? payload.hex.trim() : "";
-    if (!hex || hex.length % 2 !== 0 || !/^[0-9a-fA-F]+$/u.test(hex)) {
-      throw new Error(
-        `Could not load previous transaction ${shortAddress(txid)}.`,
-      );
-    }
-
-    return hex;
-  }
-
-  const response = await fetch(
-    `${mempoolBase(ownerNetwork)}/api/tx/${txid}/hex`,
+  const payload = await fetchProofApiJson<Record<string, unknown>>(
+    `/api/v1/tx/${encodeURIComponent(txid)}/hex`,
+    ownerNetwork,
   );
-  if (!response.ok) {
+  const hex = typeof payload.hex === "string" ? payload.hex.trim() : "";
+  if (!hex || hex.length % 2 !== 0 || !/^[0-9a-fA-F]+$/u.test(hex)) {
     throw new Error(
       `Could not load previous transaction ${shortAddress(txid)}.`,
     );
   }
 
-  return response.text();
+  return hex;
 }
 
 async function fetchTransactionOutspend(
@@ -8736,14 +8587,12 @@ async function fetchTransactionOutspend(
   vout: number,
   network: BitcoinNetwork,
 ) {
-  const url = POW_API_BASE
-    ? proofApiUrl(
-        `/api/v1/tx/${encodeURIComponent(txid)}/outspend/${vout}`,
-        network,
-      )
-    : `${mempoolBase(network)}/api/tx/${txid}/outspend/${vout}`;
+  const url = proofApiUrl(
+    `/api/v1/tx/${encodeURIComponent(txid)}/outspend/${vout}`,
+    network,
+  );
   const response = await fetch(url, {
-    cache: POW_API_BASE ? "no-store" : "default",
+    cache: "no-store",
     headers: {
       Accept: "application/json",
     },
@@ -8825,26 +8674,11 @@ async function fetchBroadcastStatus(
   txid: string,
   ownerNetwork: BitcoinNetwork,
 ): Promise<BroadcastStatus> {
-  if (POW_API_BASE) {
-    const payload = await fetchProofApiJson<PowTxStatusApiResponse>(
-      `/api/v1/tx/${encodeURIComponent(txid)}/status`,
-      ownerNetwork,
-    );
-    return normalizeBroadcastStatus(payload.status);
-  }
-
-  const response = await fetch(`${mempoolBase(ownerNetwork)}/api/tx/${txid}`);
-  if (response.status === 404) {
-    return "dropped";
-  }
-
-  if (!response.ok) {
-    throw new Error(`Could not check transaction ${shortAddress(txid)}.`);
-  }
-
-  const tx = (await response.json()) as Record<string, unknown>;
-  const txStatus = tx.status as Record<string, unknown> | undefined;
-  return txStatus?.confirmed ? "confirmed" : "pending";
+  const payload = await fetchProofApiJson<PowTxStatusApiResponse>(
+    `/api/v1/tx/${encodeURIComponent(txid)}/status`,
+    ownerNetwork,
+  );
+  return normalizeBroadcastStatus(payload.status);
 }
 
 function broadcastTargetsFor(
@@ -10219,52 +10053,11 @@ function delay(ms: number) {
   });
 }
 
-function isSlipstreamClientCodeError(message: string) {
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes("client code") ||
-    normalized.includes("foundation@mara.com") ||
-    normalized.includes("slipstream_client_code")
-  );
-}
-
-function slipstreamErrorMessage(message: string) {
-  return isSlipstreamClientCodeError(message)
-    ? SLIPSTREAM_CLIENT_CODE_REQUIRED_MESSAGE
-    : message;
-}
-
 async function broadcastRawTransaction(
   rawTx: string,
   ownerNetwork: BitcoinNetwork,
 ): Promise<TransactionBroadcastResult> {
-  if (POW_API_BASE) {
-    return broadcastRawTransactionViaProofApi(rawTx, ownerNetwork);
-  }
-
-  const response = await fetch(`${mempoolBase(ownerNetwork)}/api/tx`, {
-    body: rawTx,
-    method: "POST",
-  });
-
-  if (!response.ok) {
-    const responseText = await response.text().catch(() => "");
-    throw new Error(
-      responseText || `Broadcast failed with HTTP ${response.status}.`,
-    );
-  }
-
-  const txid = normalizeBroadcastTxid(await response.text());
-  if (!txid) {
-    throw new Error("Mempool broadcast did not return a valid txid.");
-  }
-
-  return {
-    opReturnCount: countOpReturnOutputs(rawTx, ownerNetwork),
-    source: "mempool",
-    txid,
-    url: `${mempoolBase(ownerNetwork)}/tx/${txid}`,
-  };
+  return broadcastRawTransactionViaProofApi(rawTx, ownerNetwork);
 }
 
 function proofApiBroadcastErrorMessage(
@@ -10432,7 +10225,7 @@ async function broadcastRawTransactionViaProofApi(
         url:
           typeof result.payload?.url === "string"
             ? result.payload.url
-            : `${mempoolBase(ownerNetwork)}/tx/${result.txid}`,
+            : explorerTxUrl(result.txid, ownerNetwork),
       };
     }
 
@@ -10451,7 +10244,7 @@ async function broadcastRawTransactionViaProofApi(
         opReturnCount,
         source: "node",
         txid: localTxid,
-        url: `${mempoolBase(ownerNetwork)}/tx/${localTxid}`,
+        url: explorerTxUrl(localTxid, ownerNetwork),
       };
     }
 
@@ -10466,7 +10259,7 @@ async function broadcastRawTransactionViaProofApi(
           opReturnCount,
           source: "node",
           txid: localTxid,
-          url: `${mempoolBase(ownerNetwork)}/tx/${localTxid}`,
+          url: explorerTxUrl(localTxid, ownerNetwork),
         };
       }
     }
@@ -10479,62 +10272,6 @@ async function broadcastRawTransactionViaProofApi(
   throw new Error(lastMessage);
 }
 
-async function broadcastRawTransactionViaSlipstream(
-  rawTx: string,
-  ownerNetwork: BitcoinNetwork,
-): Promise<TransactionBroadcastResult> {
-  if (ownerNetwork !== "livenet") {
-    return broadcastRawTransaction(rawTx, ownerNetwork);
-  }
-
-  const response = await fetch(
-    proofApiUrl("/api/v1/broadcast/slipstream", ownerNetwork),
-    {
-      body: JSON.stringify({ txHex: rawTx }),
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      method: "POST",
-    },
-  );
-  const responseText = await response.text().catch(() => "");
-  let payload: Record<string, unknown> | null = null;
-  if (responseText) {
-    try {
-      payload = JSON.parse(responseText) as Record<string, unknown>;
-    } catch {
-      payload = { message: responseText };
-    }
-  }
-
-  const txid = normalizeBroadcastTxid(
-    payload?.txid ?? payload?.message ?? payload?.txId ?? payload?.result,
-  );
-  const slipstreamOk = response.ok && Boolean(txid);
-  if (!slipstreamOk) {
-    const rawMessage = String(
-      payload?.error ??
-        payload?.message ??
-        responseText ??
-        `Slipstream broadcast failed with HTTP ${response.status}.`,
-    );
-    throw new Error(
-      slipstreamErrorMessage(rawMessage),
-    );
-  }
-
-  return {
-    opReturnCount: countOpReturnOutputs(rawTx, ownerNetwork),
-    source: "slipstream",
-    txid,
-    url:
-      typeof payload?.url === "string"
-        ? payload.url
-        : `${SLIPSTREAM_TX_URL}/${txid}`,
-  };
-}
-
 async function broadcastSignedRawTransaction(
   rawTx: string,
   ownerNetwork: BitcoinNetwork,
@@ -10545,9 +10282,10 @@ async function broadcastSignedRawTransaction(
     strategy === "first-party-if-multiple-op-return" &&
     opReturnCount > 1
   ) {
-    const result = POW_API_BASE
-      ? await broadcastRawTransactionViaProofApi(rawTx, ownerNetwork)
-      : await broadcastRawTransactionViaSlipstream(rawTx, ownerNetwork);
+    const result = await broadcastRawTransactionViaProofApi(
+      rawTx,
+      ownerNetwork,
+    );
     return { ...result, opReturnCount };
   }
 
@@ -18586,7 +18324,7 @@ function BrowserApp({
                 </div>
                 <a
                   className="secondary small link-button"
-                  href={mempoolTxUrl(page.txid, page.network)}
+                  href={explorerTxUrl(page.txid, page.network)}
                   rel="noreferrer"
                   target="_blank"
                 >
@@ -18901,7 +18639,7 @@ function BrowserWorkspace({
               </div>
               <a
                 className="secondary small link-button"
-                href={mempoolTxUrl(page.txid, page.network)}
+                href={explorerTxUrl(page.txid, page.network)}
                 rel="noreferrer"
                 target="_blank"
               >
@@ -19490,7 +19228,7 @@ function ActivityFeed({
             <div className="id-record-actions">
               <a
                 className="secondary small"
-                href={mempoolTxUrl(item.txid, item.network)}
+                href={explorerTxUrl(item.txid, item.network)}
                 rel="noreferrer"
                 target="_blank"
               >
@@ -19502,7 +19240,7 @@ function ActivityFeed({
               {item.listingId && item.listingId !== item.txid ? (
                 <a
                   className="secondary small"
-                  href={mempoolTxUrl(item.listingId, item.network)}
+                  href={explorerTxUrl(item.listingId, item.network)}
                   rel="noreferrer"
                   target="_blank"
                 >
@@ -20201,7 +19939,7 @@ function TokenWalletWorkspace({
                       <span className="id-record-actions">
                         <a
                           className="secondary small"
-                          href={mempoolTxUrl(item.listingId, item.network)}
+                          href={explorerTxUrl(item.listingId, item.network)}
                           rel="noreferrer"
                           target="_blank"
                         >
@@ -20256,7 +19994,7 @@ function TokenWalletWorkspace({
               {walletTransferPage.items.map((transfer) => (
                 <a
                   className="token-list-item"
-                  href={mempoolTxUrl(transfer.txid, transfer.network)}
+                  href={explorerTxUrl(transfer.txid, transfer.network)}
                   key={transfer.txid}
                   rel="noreferrer"
                   target="_blank"
@@ -21245,7 +20983,7 @@ function TokenWorkspace({
             </div>
             <a
               className="secondary small"
-              href={mempoolBase(token.network) + `/address/${holder.address}`}
+              href={explorerAddressUrl(holder.address, token.network)}
               rel="noreferrer"
               target="_blank"
             >
@@ -21289,7 +21027,7 @@ function TokenWorkspace({
             <div className="id-record-actions">
               <a
                 className="secondary small"
-                href={mempoolTxUrl(mint.txid, mint.network)}
+                href={explorerTxUrl(mint.txid, mint.network)}
                 rel="noreferrer"
                 target="_blank"
               >
@@ -21366,7 +21104,7 @@ function TokenWorkspace({
               <div className="token-detail-actions">
                 <a
                   className="secondary small"
-                  href={mempoolTxUrl(detailToken.txid, detailToken.network)}
+                  href={explorerTxUrl(detailToken.txid, detailToken.network)}
                   rel="noreferrer"
                   target="_blank"
                 >
@@ -21377,10 +21115,10 @@ function TokenWorkspace({
                 </a>
                 <a
                   className="secondary small"
-                  href={
-                    mempoolBase(detailToken.network) +
-                    `/address/${detailToken.registryAddress}`
-                  }
+                  href={explorerAddressUrl(
+                    detailToken.registryAddress,
+                    detailToken.network,
+                  )}
                   rel="noreferrer"
                   target="_blank"
                 >
@@ -22299,7 +22037,7 @@ function TokenWorkspace({
             </button>
             <a
               className="secondary small"
-              href={mempoolBase("livenet") + `/address/${tokenIndexAddress}`}
+              href={explorerAddressUrl(tokenIndexAddress, "livenet")}
               rel="noreferrer"
               target="_blank"
             >
@@ -22310,7 +22048,7 @@ function TokenWorkspace({
             </a>
             <a
               className="secondary small"
-              href={mempoolTxUrl(TOKEN_INDEX_TXID, "livenet")}
+              href={explorerTxUrl(TOKEN_INDEX_TXID, "livenet")}
               rel="noreferrer"
               target="_blank"
             >
@@ -24056,7 +23794,7 @@ function GrowthWorkspace({
               {growthEventPage.items.map((event) => (
                 <a
                   className="growth-event-item"
-                  href={mempoolTxUrl(event.txid, event.network)}
+                  href={explorerTxUrl(event.txid, event.network)}
                   key={event.key}
                   rel="noreferrer"
                   target="_blank"
@@ -24498,7 +24236,7 @@ function IdLaunchApp({
                   </a>
                   <a
                     className="secondary link-button"
-                    href={mempoolTxUrl(
+                    href={explorerTxUrl(
                       lastRegisteredId.txid,
                       lastRegisteredId.network,
                     )}
@@ -25377,7 +25115,7 @@ function TokenMarketplacePanel({
                     )}
                     <a
                       className="secondary small"
-                      href={mempoolTxUrl(token.txid, token.network)}
+                      href={explorerTxUrl(token.txid, token.network)}
                       rel="noreferrer"
                       target="_blank"
                     >
@@ -25508,7 +25246,7 @@ function TokenMarketplacePanel({
                       </button>
                       <a
                         className="secondary small"
-                        href={mempoolTxUrl(listing.listingId, listing.network)}
+                        href={explorerTxUrl(listing.listingId, listing.network)}
                         rel="noreferrer"
                         target="_blank"
                       >
@@ -26895,7 +26633,7 @@ function IdsWorkspace({
               </a>
               <a
                 className="secondary link-button"
-                href={mempoolTxUrl(
+                href={explorerTxUrl(
                   lastRegisteredId.txid,
                   lastRegisteredId.network,
                 )}
@@ -27171,7 +26909,7 @@ function MarketplaceListingList({
                   ) : null}
                   <a
                     className="secondary small link-button"
-                    href={mempoolTxUrl(listing.txid, listing.network)}
+                    href={explorerTxUrl(listing.txid, listing.network)}
                     rel="noreferrer"
                     target="_blank"
                   >
@@ -27183,7 +26921,7 @@ function MarketplaceListingList({
                   {sealTxid ? (
                     <a
                       className="secondary small link-button"
-                      href={mempoolTxUrl(sealTxid, listing.network)}
+                      href={explorerTxUrl(sealTxid, listing.network)}
                       rel="noreferrer"
                       target="_blank"
                     >
@@ -27490,7 +27228,7 @@ function PendingIdEventList({
               <div className="id-record-actions">
                 <a
                   className="secondary small link-button"
-                  href={mempoolTxUrl(event.txid, event.network)}
+                  href={explorerTxUrl(event.txid, event.network)}
                   rel="noreferrer"
                   target="_blank"
                 >
@@ -27668,7 +27406,7 @@ function IdRecordList({
                   ) : null}
                   <a
                     className="secondary small link-button"
-                    href={mempoolTxUrl(record.txid, record.network)}
+                    href={explorerTxUrl(record.txid, record.network)}
                     rel="noreferrer"
                     target="_blank"
                   >
@@ -28523,7 +28261,7 @@ function FileInspector({
         ) : null}
         <a
           className="secondary link-button"
-          href={mempoolTxUrl(message.txid, explorerNetwork)}
+          href={explorerTxUrl(message.txid, explorerNetwork)}
           rel="noreferrer"
           target="_blank"
         >
@@ -29140,7 +28878,7 @@ function Reader({
           ) : null}
           <a
             className="secondary small link-button"
-            href={mempoolTxUrl(message.txid, explorerNetwork)}
+            href={explorerTxUrl(message.txid, explorerNetwork)}
             rel="noreferrer"
             target="_blank"
           >

@@ -1,6 +1,6 @@
 export type BitcoinNetwork = "livenet" | "testnet" | "testnet4";
 
-export function mempoolBase(network: BitcoinNetwork) {
+export function explorerBase(network: BitcoinNetwork) {
   if (network === "testnet4") {
     return "https://mempool.space/testnet4";
   }
@@ -12,6 +12,10 @@ export function mempoolBase(network: BitcoinNetwork) {
   return "https://mempool.space";
 }
 
-export function mempoolTxUrl(txid: string, network: BitcoinNetwork) {
-  return `${mempoolBase(network)}/tx/${txid}`;
+export function explorerTxUrl(txid: string, network: BitcoinNetwork) {
+  return `${explorerBase(network)}/tx/${txid}`;
+}
+
+export function explorerAddressUrl(address: string, network: BitcoinNetwork) {
+  return `${explorerBase(network)}/address/${address}`;
 }

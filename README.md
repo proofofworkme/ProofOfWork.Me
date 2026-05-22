@@ -94,8 +94,8 @@ Launch invariants for future developers/agents:
 - Switches UniSat between testnet4, testnet3, and mainnet.
 - Sends BTC to one or more recipient addresses or confirmed ProofOfWork IDs.
 - Builds a PSBT with BTC, ProofOfWork.Me OP_RETURN outputs, and change.
-- Uses UniSat to sign the PSBT, then broadcasts to the selected mempool.space network route.
-- Shows the txid and a mempool.space link.
+- Uses UniSat to sign the PSBT, then broadcasts signed hex through the first-party ProofOfWork node API.
+- Shows the txid and an external explorer link.
 - Scans the connected address for incoming and sent ProofOfWork.Me OP_RETURN payments.
 - Refreshes on demand to rescan address mail and check pending transaction statuses.
 - Keeps unconfirmed inbound mail in Incoming until it confirms.
@@ -131,7 +131,7 @@ Launch invariants for future developers/agents:
 - Pins the canonical `Welcome to ProofOfWork.Me.html` Bitcoin Computer page as a default system file in Files/Desktop, opening through Browser by txid.
 - Projects Browser-readable HTML message bodies into Files/Desktop as virtual `.html` files, so users can send HTML as a message body without needing an attachment.
 - Supports fractional fee rates, including sub-1 sat/vB values like `0.1`.
-- Uses the correct mempool.space explorer path for the connected chain, including `/testnet4`.
+- Uses the correct external explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
 - Searches ID registry records, owned IDs, pending ID events, marketplace listings, and registry supply views across the app.
 - Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.
@@ -147,7 +147,7 @@ Launch invariants for future developers/agents:
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
-- Can read registry, mail, files, and transaction status from a first-party ProofOfWork OP_RETURN API when `VITE_POW_API_BASE` is configured.
+- Reads registry, mail, files, pagination, wallet UTXOs, transaction preparation data, broadcast status, and app metrics through the first-party ProofOfWork OP_RETURN API.
 - Treats ProofOfWork IDs as case-insensitive names capped by the aggregate 100 KB OP_RETURN transaction limit, not arbitrary character rules.
 - Resolves ProofOfWork IDs in the compose recipient field only after a confirmed registry record exists; pending IDs cannot receive routed mail yet.
 - Re-checks the full registry immediately before broadcasting an ID registration to block stale duplicate claims.
@@ -186,7 +186,7 @@ Current production behavior:
 - Browser wallets still sign locally.
 - Production raw transaction broadcasts use the same first-party node path through `POST /api/v1/broadcast/tx`. The API receives only final signed transaction hex.
 - Unconfirmed transactions are mempool gossip, not global truth.
-- For pending visibility, the API merges the local node/indexer view with `PENDING_MEMPOOL_BASE`, which currently defaults to public `https://mempool.space`.
+- For pending visibility, the API merges the local node/indexer view with `PENDING_MEMPOOL_BASE` when configured. By default this stays on the same local node/indexer stack.
 - Confirmed records remain canonical; pending records are visible but not final.
 - Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
 - Marketplace ID sale count and seller-price volume are derived from resolver-accepted `buy5` sale-ticket purchases, with confirmed sales canonical and pending sales shown as mempool visibility. Older legacy buy events remain replayable protocol history but do not seed the public marketplace stats.
@@ -210,7 +210,7 @@ Current production behavior:
 - Files/Desktop treat Browser-readable `pwm1:m` HTML bodies as derived `.html` files for navigation and opening, while the original transaction remains a message-body record on-chain.
 - The canonical welcome page is pinned by txid `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b` as the default Bitcoin Computer file. It appears in Files/Desktop as a system artifact and opens in Browser so the transaction remains the source of truth.
 - Growth reads the same registry, log, and Token endpoints, then auto-refreshes real confirmed network value against the canonical `output/bitcoin-computer-agent-adoption-model.md` sats/USD assumptions. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
-- ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which mempool.space reports as a lower effective fee rate.
+- ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which external explorers can report as a lower effective fee rate.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
 
@@ -475,13 +475,13 @@ Useful API environment variables:
 HOST=127.0.0.1
 PORT=8081
 MEMPOOL_BASE=http://127.0.0.1:8080
-PENDING_MEMPOOL_BASE=https://mempool.space
+PENDING_MEMPOOL_BASE=http://127.0.0.1:8080
 BITCOIN_RPC_URL=
 BITCOIN_RPC_USER=
 BITCOIN_RPC_PASSWORD=
 ```
 
-`MEMPOOL_BASE` should point at the local private mempool/electrs HTTP API. `PENDING_MEMPOOL_BASE` is optional and exists because unconfirmed tx gossip can differ between nodes.
+`MEMPOOL_BASE` should point at the local private mempool/electrs HTTP API. `PENDING_MEMPOOL_BASE` is optional and exists because unconfirmed tx gossip can differ between nodes; production should keep it on ProofOfWork-controlled node infrastructure.
 `POST /api/v1/broadcast/tx` submits already-signed raw transaction hex to `MEMPOOL_BASE`; it never receives wallet keys or unsigned wallet authority.
 `BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, and `BITCOIN_RPC_PASSWORD` are optional server-only diagnostics for `testmempoolaccept`. When configured, rejected broadcasts can include the node's exact mempool reject reason. Do not expose Bitcoin Core RPC publicly.
 

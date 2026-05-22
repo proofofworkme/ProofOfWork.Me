@@ -37,6 +37,10 @@ import {
 } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
+import {
+  explorerAddressUrl,
+  explorerTxUrl,
+} from "../../shared/bitcoin/networks";
 import { AppHeader } from "../../shared/components/AppHeader";
 import { AppStatusRow } from "../../shared/components/AppStatusRow";
 import { SocialFooter } from "../../shared/components/SocialFooter";
@@ -49,7 +53,10 @@ const LANDING_VIDEO_URL = "https://www.youtube.com/watch?v=Tx28MqnxoUA";
 const LANDING_VIDEO_EMBED_URL = "https://www.youtube.com/embed/Tx28MqnxoUA";
 const LANDING_TESTIMONIAL_TXID =
   "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
-const LANDING_TESTIMONIAL_TX_URL = `https://mempool.space/tx/${LANDING_TESTIMONIAL_TXID}`;
+const LANDING_TESTIMONIAL_TX_URL = explorerTxUrl(
+  LANDING_TESTIMONIAL_TXID,
+  "livenet",
+);
 
 function shortAddress(value: string) {
   if (!value) {
@@ -498,7 +505,7 @@ export function LandingApp({
           </div>
           <a
             className="secondary link-button"
-            href={`https://mempool.space/address/${registryAddress}`}
+            href={explorerAddressUrl(registryAddress, "livenet")}
             rel="noreferrer"
             target="_blank"
           >

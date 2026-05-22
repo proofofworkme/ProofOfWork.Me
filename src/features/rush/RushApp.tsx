@@ -10,7 +10,10 @@ import {
   Wallet,
 } from "lucide-react";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
-import { mempoolBase, mempoolTxUrl } from "../../shared/bitcoin/networks";
+import {
+  explorerAddressUrl,
+  explorerTxUrl,
+} from "../../shared/bitcoin/networks";
 import { AppHeader } from "../../shared/components/AppHeader";
 import {
   AppStatusRow,
@@ -154,7 +157,7 @@ export function RushApp({
   const holders = rushHoldersFromMints(state.mints);
   const visibleHolders = holders.slice(0, 12);
   const registryUrl = state.registryAddress
-    ? `${mempoolBase(network)}/address/${state.registryAddress}`
+    ? explorerAddressUrl(state.registryAddress, network)
     : "";
 
   return (
@@ -445,7 +448,7 @@ export function RushApp({
                     </div>
                     <a
                       className="secondary small"
-                      href={`${mempoolBase(network)}/address/${holder.address}`}
+                      href={explorerAddressUrl(holder.address, network)}
                       rel="noreferrer"
                       target="_blank"
                     >
@@ -502,7 +505,7 @@ export function RushApp({
                   <div className="id-record-actions">
                     <a
                       className="secondary small"
-                      href={mempoolTxUrl(mint.txid, mint.network)}
+                      href={explorerTxUrl(mint.txid, mint.network)}
                       rel="noreferrer"
                       target="_blank"
                     >

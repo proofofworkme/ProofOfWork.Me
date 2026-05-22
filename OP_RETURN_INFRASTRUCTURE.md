@@ -64,7 +64,7 @@ Default configuration:
 HOST=127.0.0.1
 PORT=8081
 MEMPOOL_BASE=http://127.0.0.1:8080
-PENDING_MEMPOOL_BASE=https://mempool.space
+PENDING_MEMPOOL_BASE=http://127.0.0.1:8080
 SLIPSTREAM_CLIENT_CODE=
 BITCOIN_RPC_URL=
 BITCOIN_RPC_USER=
@@ -73,7 +73,7 @@ BITCOIN_RPC_PASSWORD=
 
 The default `MEMPOOL_BASE` is designed for the node server where mempool is already bound privately on localhost.
 
-`PENDING_MEMPOOL_BASE` is optional. It exists because unconfirmed transactions are gossip, not canonical chain state. Two honest nodes can temporarily see different mempools. Production uses the local node/indexer for confirmed history and uses the pending mempool base as a visibility fallback for unconfirmed records.
+`PENDING_MEMPOOL_BASE` is optional. It exists because unconfirmed transactions are gossip, not canonical chain state. Two honest nodes can temporarily see different mempools. Production uses ProofOfWork-controlled node/indexer infrastructure for confirmed history and pending visibility.
 
 Production raw transaction broadcasts use `MEMPOOL_BASE` through the first-party API. The browser sends only final signed transaction hex; wallet signing stays local and the API does not receive seed phrases, private keys, or unsigned wallet authority.
 
@@ -83,15 +83,15 @@ Production transaction preparation also uses the first-party API for wallet UTXO
 
 `SLIPSTREAM_CLIENT_CODE` is optional legacy server-only configuration for MARA Slipstream submissions. `MARA_SLIPSTREAM_CLIENT_CODE` is accepted as an equivalent fallback environment variable, while ordinary production broadcasts prefer the ProofOfWork node broadcast path.
 
-## Frontend Switch
+## Frontend API
 
-The frontend uses the API only when this env var is present:
+The frontend reads app data and broadcasts signed transactions through the ProofOfWork API. Production builds set the explicit app-domain API base:
 
 ```bash
 VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 ```
 
-Without `VITE_POW_API_BASE`, the app keeps using the previous browser-side mempool.space readers. This keeps local development simple while allowing production to use ProofOfWork-owned infrastructure.
+Without `VITE_POW_API_BASE`, the browser uses same-origin `/api/*`; it does not fall back to public mempool.space readers.
 
 In local Vite development, `/api/*` is reserved for the local ProofOfWork API at
 `http://127.0.0.1:8081`. Production API testing must use the explicit
@@ -331,9 +331,9 @@ tokens@proofofwork.me
 
 ## Launch Rule
 
-For production, ID resolution should prefer the ProofOfWork API over public mempool.space. If the API is unavailable, it is safer to fail closed than to route or register IDs from incomplete public API state.
+For production, ID resolution must use the ProofOfWork API/node path. If the API is unavailable, it is safer to fail closed than to route or register IDs from incomplete public API state.
 
-The only exception is pending visibility: the API itself may use `PENDING_MEMPOOL_BASE` as a fallback because pending txs are non-canonical gossip. This fallback must not override confirmed first-confirmed-wins resolution.
+Pending visibility is still non-canonical gossip. If `PENDING_MEMPOOL_BASE` is configured, keep it on ProofOfWork-controlled node infrastructure; it must not override confirmed first-confirmed-wins resolution.
 
 ## Production Verification Checklist
 

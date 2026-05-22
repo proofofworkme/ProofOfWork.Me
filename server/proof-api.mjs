@@ -20,18 +20,14 @@ const { Verifier } = bip322;
 
 const HOST = process.env.HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PORT ?? 8081);
-const MEMPOOL_BASE_MAINNET = stripTrailingSlash(
+const MEMPOOL_BASE_MAINNET = nodeApiBase(
   process.env.MEMPOOL_BASE ?? "http://127.0.0.1:8080",
 );
-const PENDING_MEMPOOL_BASE_MAINNET = stripTrailingSlash(
-  process.env.PENDING_MEMPOOL_BASE ?? "https://mempool.space",
+const PENDING_MEMPOOL_BASE_MAINNET = nodeApiBase(
+  process.env.PENDING_MEMPOOL_BASE ?? MEMPOOL_BASE_MAINNET,
 );
-const MEMPOOL_BASE_TESTNET = stripTrailingSlash(
-  process.env.MEMPOOL_BASE_TESTNET ?? "https://mempool.space/testnet",
-);
-const MEMPOOL_BASE_TESTNET4 = stripTrailingSlash(
-  process.env.MEMPOOL_BASE_TESTNET4 ?? "https://mempool.space/testnet4",
-);
+const MEMPOOL_BASE_TESTNET = nodeApiBase(process.env.MEMPOOL_BASE_TESTNET ?? "");
+const MEMPOOL_BASE_TESTNET4 = nodeApiBase(process.env.MEMPOOL_BASE_TESTNET4 ?? "");
 const BITCOIN_RPC_URL = String(process.env.BITCOIN_RPC_URL ?? "").trim();
 const BITCOIN_RPC_USER = String(process.env.BITCOIN_RPC_USER ?? "").trim();
 const BITCOIN_RPC_PASSWORD = String(
@@ -148,6 +144,9 @@ const GROWTH_MODEL_INPUTS = {
   idDensitySatsPerN2: 268.68933906745133,
   valueMultiple: 5,
 };
+const BTC_USD_PRICE = Number(
+  process.env.BTC_USD_PRICE ?? GROWTH_MODEL_INPUTS.currentBtcUsd,
+);
 const ID_SALE_AUTH_VERSION_LEGACY = "pwid-sale-v1";
 const ID_SALE_AUTH_VERSION_ANCHORED = "pwid-sale-v2";
 const ID_SALE_AUTH_VERSION = "pwid-sale-v3";
@@ -230,6 +229,15 @@ const FRESH_READ_CACHE_CONTROL = "no-store, max-age=0, must-revalidate";
 
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
+}
+
+function nodeApiBase(value) {
+  const base = stripTrailingSlash(value ?? "");
+  if (/^https:\/\/mempool\.space(?:\/|$)/iu.test(base)) {
+    return "";
+  }
+
+  return base;
 }
 
 function shouldPersistJsonCache(cacheKey) {
@@ -525,15 +533,40 @@ function clearResponseCache(...cacheKeys) {
 }
 
 function mempoolBase(network) {
+  let base;
   if (network === "testnet4") {
-    return MEMPOOL_BASE_TESTNET4;
+    base = MEMPOOL_BASE_TESTNET4;
+  } else if (network === "testnet") {
+    base = MEMPOOL_BASE_TESTNET;
+  } else {
+    base = MEMPOOL_BASE_MAINNET;
+  }
+
+  if (!base) {
+    const error = new Error(
+      `No ProofOfWork node API is configured for ${network}.`,
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+
+  return base;
+}
+
+function explorerBase(network) {
+  if (network === "testnet4") {
+    return "https://mempool.space/testnet4";
   }
 
   if (network === "testnet") {
-    return MEMPOOL_BASE_TESTNET;
+    return "https://mempool.space/testnet";
   }
 
-  return MEMPOOL_BASE_MAINNET;
+  return "https://mempool.space";
+}
+
+function explorerTxUrl(txid, network) {
+  return `${explorerBase(network)}/tx/${txid}`;
 }
 
 function pendingMempoolBases(network) {
@@ -923,7 +956,7 @@ async function submitNodeTransaction(txHex, network) {
     raw: responseText,
     source: "node",
     txid,
-    url: `${mempoolBase(network)}/tx/${txid}`,
+    url: explorerTxUrl(txid, network),
   };
 }
 
@@ -950,6 +983,32 @@ function slipstreamStatusPayload() {
   };
 }
 
+function btcUsdPricePayload(network) {
+  const usd =
+    Number.isFinite(BTC_USD_PRICE) && BTC_USD_PRICE > 0
+      ? BTC_USD_PRICE
+      : GROWTH_MODEL_INPUTS.currentBtcUsd;
+  return {
+    USD: usd,
+    indexedAt: new Date().toISOString(),
+    network,
+    source: "proof-api-config",
+    usd,
+  };
+}
+
+async function fetchBlockTxids(blockHash, network) {
+  const normalizedHash = blockHash.toLowerCase();
+  const txids = await fetchJson(
+    `${mempoolBase(network)}/api/block/${normalizedHash}/txids`,
+  );
+  return Array.isArray(txids)
+    ? txids.filter(
+        (txid) => typeof txid === "string" && /^[0-9a-f]{64}$/iu.test(txid),
+      )
+    : [];
+}
+
 async function fetchBlockTxidIndex(blockHash, network) {
   if (!/^[0-9a-fA-F]{64}$/u.test(blockHash)) {
     return new Map();
@@ -958,18 +1017,12 @@ async function fetchBlockTxidIndex(blockHash, network) {
   const normalizedHash = blockHash.toLowerCase();
   const cacheKey = `${network}:${normalizedHash}`;
   if (!BLOCK_TXID_INDEX_CACHE.has(cacheKey)) {
-    const promise = fetchJson(
-      `${mempoolBase(network)}/api/block/${normalizedHash}/txids`,
-    )
+    const promise = fetchBlockTxids(normalizedHash, network)
       .then((txids) => {
         const index = new Map();
-        if (Array.isArray(txids)) {
-          txids.forEach((txid, position) => {
-            if (typeof txid === "string" && /^[0-9a-fA-F]{64}$/u.test(txid)) {
-              index.set(txid.toLowerCase(), position);
-            }
-          });
-        }
+        txids.forEach((txid, position) => {
+          index.set(txid.toLowerCase(), position);
+        });
         return index;
       })
       .catch((error) => {
@@ -6448,6 +6501,38 @@ async function handleRequest(request, response) {
     const network = networkFromSearch(url.searchParams);
     const freshRead = freshReadRequested(url.searchParams);
 
+    if (url.pathname === "/api/v1/prices/btc-usd") {
+      jsonResponse(
+        response,
+        200,
+        btcUsdPricePayload(network),
+        "public, max-age=300",
+      );
+      return;
+    }
+
+    if (
+      pathParts.length === 5 &&
+      pathParts[0] === "api" &&
+      pathParts[1] === "v1" &&
+      pathParts[2] === "block" &&
+      pathParts[4] === "txids"
+    ) {
+      const blockHash = pathParts[3].toLowerCase();
+      if (!/^[0-9a-f]{64}$/u.test(blockHash)) {
+        errorResponse(response, 400, "Invalid block hash.");
+        return;
+      }
+
+      jsonResponse(
+        response,
+        200,
+        await fetchBlockTxids(blockHash, network),
+        "public, max-age=300",
+      );
+      return;
+    }
+
     if (url.pathname === "/api/v1/registry" || url.pathname === "/api/v1/ids") {
       if (freshRead) {
         clearResponseCache(`registry:${network}`);
@@ -6660,6 +6745,38 @@ async function handleRequest(request, response) {
         response,
         200,
         await addressUtxoPayload(address, network),
+        "no-store",
+      );
+      return;
+    }
+
+    if (
+      pathParts.length >= 5 &&
+      pathParts.length <= 7 &&
+      pathParts[0] === "api" &&
+      pathParts[1] === "v1" &&
+      pathParts[2] === "address" &&
+      pathParts[4] === "txs"
+    ) {
+      const address = decodeURIComponent(pathParts[3]);
+      const addressPath = pathParts.slice(4).join("/");
+      if (!isValidBitcoinAddress(address, network)) {
+        errorResponse(response, 400, "Invalid address for network.");
+        return;
+      }
+      if (
+        !/^txs(?:\/(?:mempool|chain(?:\/[0-9a-f]{64})?))?$/iu.test(
+          addressPath,
+        )
+      ) {
+        errorResponse(response, 400, "Invalid address transaction path.");
+        return;
+      }
+
+      jsonResponse(
+        response,
+        200,
+        await fetchAddressTransactionsPage(address, network, addressPath),
         "no-store",
       );
       return;
