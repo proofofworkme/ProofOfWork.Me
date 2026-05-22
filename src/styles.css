@@ -3361,6 +3361,14 @@ select {
   margin: 0;
 }
 
+.marketplace-action-status {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  height: auto;
+  min-height: 34px;
+  padding: 8px 10px;
+}
+
 .files-desktop {
   align-content: start;
   display: grid;

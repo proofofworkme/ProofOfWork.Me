@@ -2,6 +2,7 @@ import {
   ChangeEvent,
   CSSProperties,
   FormEvent,
+  MouseEvent,
   ReactNode,
   useCallback,
   useEffect,
@@ -14356,8 +14357,10 @@ export default function App() {
     });
   }
 
-  async function purchaseId(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function purchaseId(
+    event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
+  ) {
+    event?.preventDefault();
 
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
@@ -17559,6 +17562,7 @@ export default function App() {
               setIdSaleAuthorization("");
               setIdSelectedListingId("");
             }}
+            status={status}
             submitPurchase={purchaseId}
             buyTokenListing={buyTokenListing}
             tokenListings={tokenListings}
@@ -25450,7 +25454,9 @@ function MarketplaceApp({
   setFeeRate: (value: number) => void;
   setManagedIdName: (value: string) => void;
   status: { tone: StatusTone; text: string };
-  submitPurchase: (event: FormEvent<HTMLFormElement>) => void;
+  submitPurchase: (
+    event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
+  ) => void;
   tokenListings: PowTokenListing[];
   tokenMints: PowTokenMint[];
   tokenSales: PowTokenSale[];
@@ -25627,6 +25633,7 @@ function MarketplaceApp({
             setIdSalePriceSats={setIdSalePriceSats}
             setIdSaleReceiveAddress={setIdSaleReceiveAddress}
             setFeeRate={setFeeRate}
+            status={status}
             submitPurchase={submitPurchase}
           />
 
@@ -25742,6 +25749,7 @@ function MarketplaceWorkspace({
   setIdSaleReceiveAddress,
   setFeeRate,
   setManagedIdName,
+  status,
   submitPurchase,
   buyTokenListing,
   tokenListings,
@@ -25786,7 +25794,10 @@ function MarketplaceWorkspace({
   setIdSaleReceiveAddress: (value: string) => void;
   setFeeRate: (value: number) => void;
   setManagedIdName: (value: string) => void;
-  submitPurchase: (event: FormEvent<HTMLFormElement>) => void;
+  status: { tone: StatusTone; text: string };
+  submitPurchase: (
+    event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
+  ) => void;
   buyTokenListing: (listing: PowTokenListing) => void;
   tokenListings: PowTokenListing[];
   tokenMints: PowTokenMint[];
@@ -25966,6 +25977,7 @@ function MarketplaceWorkspace({
           setIdSalePriceSats={setIdSalePriceSats}
           setIdSaleReceiveAddress={setIdSaleReceiveAddress}
           setFeeRate={setFeeRate}
+          status={status}
           submitPurchase={submitPurchase}
         />
 
@@ -26997,6 +27009,7 @@ function IdMarketplaceCard({
   setIdSalePriceSats,
   setIdSaleReceiveAddress,
   setFeeRate,
+  status,
   submitPurchase,
 }: {
   busy: boolean;
@@ -27019,7 +27032,10 @@ function IdMarketplaceCard({
   setIdSalePriceSats: (value: number) => void;
   setIdSaleReceiveAddress: (value: string) => void;
   setFeeRate: (value: number) => void;
-  submitPurchase: (event: FormEvent<HTMLFormElement>) => void;
+  status: { tone: StatusTone; text: string };
+  submitPurchase: (
+    event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
+  ) => void;
 }) {
   const parsedSale = useMemo(() => {
     if (!idSaleAuthorization.trim()) {
@@ -27123,6 +27139,11 @@ function IdMarketplaceCard({
               ? `Selected listing price: ${parsedSale.priceSats.toLocaleString()} sats.`
               : "Choose an active listing below. The purchase form fills from that on-chain listing."}
           </p>
+          <AppStatusRow
+            className="marketplace-action-status"
+            persistent
+            status={status}
+          />
           <div className="compose-grid">
             <label>
               New owner
@@ -27161,7 +27182,12 @@ function IdMarketplaceCard({
           </div>
           <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
           <div className="id-record-actions">
-            <button className="primary" disabled={busy} type="submit">
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={submitPurchase}
+              type="button"
+            >
               <span className="button-content">
                 <Send size={15} />
                 <span>{busy ? "Buying" : "Buy Listing On-Chain"}</span>
