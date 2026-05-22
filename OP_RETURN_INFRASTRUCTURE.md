@@ -77,6 +77,8 @@ The default `MEMPOOL_BASE` is designed for the node server where mempool is alre
 
 Production raw transaction broadcasts use `MEMPOOL_BASE` through the first-party API. The browser sends only final signed transaction hex; wallet signing stays local and the API does not receive seed phrases, private keys, or unsigned wallet authority.
 
+Production transaction preparation also uses the first-party API for wallet UTXO reads, previous transaction hex, and listing-anchor outspend checks. These reads are public chain/indexer data needed to build PSBTs locally in the browser before UniSat signs. The API still never receives private keys, seed phrases, or unsigned wallet authority.
+
 `BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, and `BITCOIN_RPC_PASSWORD` are optional server-only diagnostics for `testmempoolaccept`. When configured, the API can attach the node's exact mempool reject reason to failed broadcasts. Bitcoin Core RPC must remain private and must not be exposed to browsers or public networks.
 
 `SLIPSTREAM_CLIENT_CODE` is optional legacy server-only configuration for MARA Slipstream submissions. `MARA_SLIPSTREAM_CLIENT_CODE` is accepted as an equivalent fallback environment variable, while ordinary production broadcasts prefer the ProofOfWork node broadcast path.
@@ -145,8 +147,11 @@ GET /api/v1/token?network=livenet
 GET /api/v1/rush?network=livenet
 GET /api/v1/rush?network=testnet4
 GET /api/v1/address/:address/mail?network=livenet
+GET /api/v1/address/:address/utxo?network=livenet
 GET /api/v1/tx/:txid?network=livenet
 GET /api/v1/tx/:txid/status?network=livenet
+GET /api/v1/tx/:txid/hex?network=livenet
+GET /api/v1/tx/:txid/outspend/:vout?network=livenet
 ```
 
 The registry endpoint:
@@ -342,6 +347,7 @@ After changing the API or production build, verify:
 - Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.
 - Browser can load a txid with HTML in the message body or a verified `text/html` attachment, render it in a sandbox, and reject non-HTML message/attachment data.
 - Standalone Marketplace can list, seal, delist, and buy confirmed IDs through the same registry API.
+- Token, Wallet, and Marketplace transaction buttons can load UTXOs, previous transaction hex, and listing-anchor outspends through the first-party API before opening UniSat.
 - Log can load global Bitcoin Computer events and search an address, confirmed ProofOfWork ID, or txid.
 - Growth can load real chain metrics, including token creations and mints, and render the modeled-vs-real sats/USD value graph without layout overlap on desktop and mobile.
 - Known attachment transactions reconstruct with valid size and SHA-256.

@@ -8664,16 +8664,24 @@ async function fetchUtxos(
   ownerAddress: string,
   ownerNetwork: BitcoinNetwork,
 ): Promise<MempoolUtxo[]> {
-  const response = await fetch(
-    `${mempoolBase(ownerNetwork)}/api/address/${ownerAddress}/utxo`,
-  );
-  if (!response.ok) {
-    throw new Error(
-      `Could not load wallet UTXOs: mempool.space returned ${response.status}.`,
-    );
-  }
+  const rawUtxos = POW_API_BASE
+    ? await fetchProofApiJson<Array<Record<string, unknown>>>(
+        `/api/v1/address/${encodeURIComponent(ownerAddress)}/utxo`,
+        ownerNetwork,
+      )
+    : await (async () => {
+        const response = await fetch(
+          `${mempoolBase(ownerNetwork)}/api/address/${ownerAddress}/utxo`,
+        );
+        if (!response.ok) {
+          throw new Error(
+            `Could not load wallet UTXOs: mempool.space returned ${response.status}.`,
+          );
+        }
 
-  const rawUtxos = (await response.json()) as Array<Record<string, unknown>>;
+        return (await response.json()) as Array<Record<string, unknown>>;
+      })();
+
   return rawUtxos
     .flatMap((utxo): MempoolUtxo[] => {
       const txid = typeof utxo.txid === "string" ? utxo.txid : "";
@@ -8696,6 +8704,21 @@ async function fetchUtxos(
 }
 
 async function fetchTransactionHex(txid: string, ownerNetwork: BitcoinNetwork) {
+  if (POW_API_BASE) {
+    const payload = await fetchProofApiJson<Record<string, unknown>>(
+      `/api/v1/tx/${encodeURIComponent(txid)}/hex`,
+      ownerNetwork,
+    );
+    const hex = typeof payload.hex === "string" ? payload.hex.trim() : "";
+    if (!hex || hex.length % 2 !== 0 || !/^[0-9a-fA-F]+$/u.test(hex)) {
+      throw new Error(
+        `Could not load previous transaction ${shortAddress(txid)}.`,
+      );
+    }
+
+    return hex;
+  }
+
   const response = await fetch(
     `${mempoolBase(ownerNetwork)}/api/tx/${txid}/hex`,
   );
@@ -8706,6 +8729,26 @@ async function fetchTransactionHex(txid: string, ownerNetwork: BitcoinNetwork) {
   }
 
   return response.text();
+}
+
+async function fetchTransactionOutspend(
+  txid: string,
+  vout: number,
+  network: BitcoinNetwork,
+) {
+  const url = POW_API_BASE
+    ? proofApiUrl(
+        `/api/v1/tx/${encodeURIComponent(txid)}/outspend/${vout}`,
+        network,
+      )
+    : `${mempoolBase(network)}/api/tx/${txid}/outspend/${vout}`;
+  const response = await fetch(url, {
+    cache: POW_API_BASE ? "no-store" : "default",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+  return response.ok ? ((await response.json()) as Record<string, unknown>) : null;
 }
 
 async function loadUtxoPreviousOutput(
@@ -9881,11 +9924,12 @@ async function assertListingAnchorUnspent(
     );
   }
 
-  const outspendResponse = await fetch(
-    `${mempoolBase(network)}/api/tx/${anchor.txid}/outspend/${anchor.vout}`,
+  const outspend = await fetchTransactionOutspend(
+    anchor.txid,
+    anchor.vout,
+    network,
   );
-  if (outspendResponse.ok) {
-    const outspend = (await outspendResponse.json()) as Record<string, unknown>;
+  if (outspend) {
     if (outspend.spent) {
       throw new Error("This listing anchor has already been spent.");
     }

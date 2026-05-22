@@ -6228,6 +6228,24 @@ async function mailPayload(address, network) {
   };
 }
 
+async function addressUtxoPayload(address, network) {
+  return fetchJson(`${mempoolBase(network)}/api/address/${address}/utxo`);
+}
+
+async function txHexPayload(txid, network) {
+  const hex = await fetchText(`${mempoolBase(network)}/api/tx/${txid}/hex`);
+  return {
+    hex,
+    indexedAt: new Date().toISOString(),
+    network,
+    txid,
+  };
+}
+
+async function txOutspendPayload(txid, vout, network) {
+  return fetchJson(`${mempoolBase(network)}/api/tx/${txid}/outspend/${vout}`);
+}
+
 async function txStatusPayload(txid, network) {
   const tx = await fetchTransactionWithPendingFallback(txid, network);
   if (!tx) {
@@ -6560,6 +6578,28 @@ async function handleRequest(request, response) {
       pathParts[0] === "api" &&
       pathParts[1] === "v1" &&
       pathParts[2] === "address" &&
+      pathParts[4] === "utxo"
+    ) {
+      const address = decodeURIComponent(pathParts[3]);
+      if (!isValidBitcoinAddress(address, network)) {
+        errorResponse(response, 400, "Invalid address for network.");
+        return;
+      }
+
+      jsonResponse(
+        response,
+        200,
+        await addressUtxoPayload(address, network),
+        "no-store",
+      );
+      return;
+    }
+
+    if (
+      pathParts.length === 5 &&
+      pathParts[0] === "api" &&
+      pathParts[1] === "v1" &&
+      pathParts[2] === "address" &&
       pathParts[4] === "mail"
     ) {
       const address = decodeURIComponent(pathParts[3]);
@@ -6582,6 +6622,28 @@ async function handleRequest(request, response) {
       pathParts[0] === "api" &&
       pathParts[1] === "v1" &&
       pathParts[2] === "tx" &&
+      pathParts[4] === "hex"
+    ) {
+      const txid = pathParts[3].toLowerCase();
+      if (!/^[0-9a-f]{64}$/u.test(txid)) {
+        errorResponse(response, 400, "Invalid txid.");
+        return;
+      }
+
+      jsonResponse(
+        response,
+        200,
+        await txHexPayload(txid, network),
+        "no-store",
+      );
+      return;
+    }
+
+    if (
+      pathParts.length === 5 &&
+      pathParts[0] === "api" &&
+      pathParts[1] === "v1" &&
+      pathParts[2] === "tx" &&
       pathParts[4] === "status"
     ) {
       const txid = pathParts[3].toLowerCase();
@@ -6594,6 +6656,33 @@ async function handleRequest(request, response) {
         response,
         200,
         await txStatusPayload(txid, network),
+        "no-store",
+      );
+      return;
+    }
+
+    if (
+      pathParts.length === 6 &&
+      pathParts[0] === "api" &&
+      pathParts[1] === "v1" &&
+      pathParts[2] === "tx" &&
+      pathParts[4] === "outspend"
+    ) {
+      const txid = pathParts[3].toLowerCase();
+      const vout = Number(pathParts[5]);
+      if (!/^[0-9a-f]{64}$/u.test(txid)) {
+        errorResponse(response, 400, "Invalid txid.");
+        return;
+      }
+      if (!Number.isSafeInteger(vout) || vout < 0) {
+        errorResponse(response, 400, "Invalid output index.");
+        return;
+      }
+
+      jsonResponse(
+        response,
+        200,
+        await txOutspendPayload(txid, vout, network),
         "no-store",
       );
       return;
