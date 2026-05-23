@@ -11100,10 +11100,16 @@ export default function App() {
   const [checkingBroadcasts, setCheckingBroadcasts] = useState(false);
   const allSentRef = useRef(allSent);
   const chainSentRef = useRef(chainSent);
-  const idRefreshInFlightRef = useRef(false);
-  const tokenRefreshInFlightRef = useRef(false);
+  const idRefreshInFlightRef =
+    useRef<Promise<PowRegistryState | undefined> | null>(null);
+  const idRefreshInFlightFreshRef = useRef(false);
+  const tokenRefreshInFlightRef =
+    useRef<Promise<PowTokenState | undefined> | null>(null);
+  const tokenRefreshInFlightFreshRef = useRef(false);
   const growthRefreshInFlightRef = useRef(false);
-  const workFloorRefreshInFlightRef = useRef(false);
+  const workFloorRefreshInFlightRef =
+    useRef<Promise<WorkFloorQuote | undefined> | null>(null);
+  const workFloorRefreshInFlightFreshRef = useRef(false);
   const tokenMintAssistantActiveRef = useRef(false);
   const tokenMintAssistantTimerRef = useRef<number | undefined>(undefined);
   const rushMintActiveRef = useRef(false);
@@ -13439,7 +13445,10 @@ export default function App() {
     setStatus({ tone: "idle", text: "Log cleared." });
   }
 
-  async function refreshToken(silent = false, fresh = false) {
+  async function refreshToken(
+    silent = false,
+    fresh = false,
+  ): Promise<PowTokenState | undefined> {
     if (!tokenIndexAddress) {
       setTokenDefinitions([]);
       setTokenMints([]);
@@ -13453,56 +13462,100 @@ export default function App() {
           text: `No token index configured for ${networkLabel(network)}.`,
         });
       }
-      return;
+      return undefined;
     }
 
     if (tokenRefreshInFlightRef.current) {
-      return;
+      const needsFreshRefresh =
+        fresh && !tokenRefreshInFlightFreshRef.current;
+      if (!silent) {
+        setBusy(true);
+        setStatus({
+          tone: "idle",
+          text: "Token index refresh already in progress...",
+        });
+      }
+      try {
+        const state = await tokenRefreshInFlightRef.current;
+        if (needsFreshRefresh) {
+          if (!silent) {
+            setStatus({
+              tone: "idle",
+              text: "Starting fresh token index refresh...",
+            });
+          }
+          return refreshToken(silent, fresh);
+        }
+        if (!silent) {
+          setStatus(
+            state
+              ? {
+                  tone: "good",
+                  text: `Token index loaded. ${state.tokens.length.toLocaleString()} token${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`,
+                }
+              : {
+                  tone: "bad",
+                  text: "Token scan failed.",
+                },
+          );
+        }
+        return state;
+      } finally {
+        if (!silent && !needsFreshRefresh) {
+          setBusy(false);
+        }
+      }
     }
 
-    tokenRefreshInFlightRef.current = true;
-    if (!silent) {
-      setBusy(true);
-    }
-    if (!silent) {
-      setStatus({ tone: "idle", text: "Scanning token index..." });
-    }
-
-    try {
+    const refreshPromise = (async () => {
+      if (!silent) {
+        setBusy(true);
+      }
+      if (!silent) {
+        setStatus({ tone: "idle", text: "Scanning token index..." });
+      }
       const tokenScope =
         workTokenMode || activeFolder === "work" ? WORK_TOKEN_ID : "";
       const useSummary = false;
-      const state = await fetchTokenState(
-        network,
-        fresh,
-        tokenScope,
-        useSummary,
-      );
-      setTokenDefinitions(state.tokens);
-      setTokenMints(state.mints);
-      setTokenTransfers(state.transfers);
-      setTokenListings(state.listings);
-      setTokenSales(state.sales);
-      setTokenCreationSats(state.creationSats);
-      if (!silent) {
-        setStatus({
-          tone: "good",
-          text: `Token index loaded. ${state.tokens.length.toLocaleString()} token${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`,
-        });
+      try {
+        const state = await fetchTokenState(
+          network,
+          fresh,
+          tokenScope,
+          useSummary,
+        );
+        setTokenDefinitions(state.tokens);
+        setTokenMints(state.mints);
+        setTokenTransfers(state.transfers);
+        setTokenListings(state.listings);
+        setTokenSales(state.sales);
+        setTokenCreationSats(state.creationSats);
+        if (!silent) {
+          setStatus({
+            tone: "good",
+            text: `Token index loaded. ${state.tokens.length.toLocaleString()} token${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`,
+          });
+        }
+        return state;
+      } catch (error) {
+        if (!silent) {
+          setStatus({
+            tone: "bad",
+            text: errorMessage(error, "Token scan failed."),
+          });
+        }
+        return undefined;
+      } finally {
+        tokenRefreshInFlightRef.current = null;
+        tokenRefreshInFlightFreshRef.current = false;
+        if (!silent) {
+          setBusy(false);
+        }
       }
-    } catch (error) {
-      if (!silent) {
-        setStatus({
-          tone: "bad",
-          text: errorMessage(error, "Token scan failed."),
-        });
-      }
-    } finally {
-      tokenRefreshInFlightRef.current = false;
-      if (!silent) {
-        setBusy(false);
-      }
-    }
+    })();
+    tokenRefreshInFlightFreshRef.current = fresh;
+    tokenRefreshInFlightRef.current = refreshPromise;
+    return refreshPromise;
   }
 
   async function refreshRush(silent = false, fresh = false) {
@@ -13542,104 +13595,210 @@ export default function App() {
     }
   }
 
-  async function refreshWorkFloor(silent = false, fresh = !silent) {
+  async function refreshWorkFloor(
+    silent = false,
+    fresh = !silent,
+  ): Promise<WorkFloorQuote | undefined> {
     if (workFloorRefreshInFlightRef.current) {
-      return;
-    }
-
-    workFloorRefreshInFlightRef.current = true;
-    const showLoading = !silent;
-    if (showLoading) {
-      setWorkFloorLoading(true);
-    }
-    if (!silent) {
-      setStatus({ tone: "idle", text: "Refreshing WORK floor..." });
-    }
-
-    try {
-      const apiQuote = await fetchWorkFloorQuote("livenet", fresh).catch(
-        () => undefined,
-      );
-      if (apiQuote) {
-        setWorkFloorQuote(apiQuote);
-        if (!silent) {
-          setStatus({
-            tone: "good",
-            text: `WORK floor loaded. Confirmed network value ${Math.round(apiQuote.networkValueSats).toLocaleString()} sats.`,
-          });
-        }
-        return;
+      const needsFreshRefresh =
+        fresh && !workFloorRefreshInFlightFreshRef.current;
+      if (!silent) {
+        setWorkFloorLoading(true);
+        setStatus({
+          tone: "idle",
+          text: "WORK floor refresh already in progress...",
+        });
       }
+      try {
+        const quote = await workFloorRefreshInFlightRef.current;
+        if (needsFreshRefresh) {
+          if (!silent) {
+            setStatus({
+              tone: "idle",
+              text: "Starting fresh WORK floor refresh...",
+            });
+          }
+          return refreshWorkFloor(silent, fresh);
+        }
+        if (!silent) {
+          setStatus(
+            quote
+              ? {
+                  tone: "good",
+                  text: `WORK floor loaded. Confirmed network value ${Math.round(quote.networkValueSats).toLocaleString()} sats.`,
+                }
+              : {
+                  tone: "bad",
+                  text: "WORK floor refresh failed.",
+                },
+          );
+        }
+        return quote;
+      } finally {
+        if (!silent && !needsFreshRefresh) {
+          setWorkFloorLoading(false);
+        }
+      }
+    }
 
-      const [registryState, computerActivity, tokenState] = await Promise.all([
-        fetchIdRegistryState("livenet", fresh),
-        fetchGlobalActivity("livenet", fresh).catch(() => []),
-        fetchTokenState("livenet", fresh),
-      ]);
-      const activityForGrowth =
-        computerActivity.length > 0
-          ? computerActivity
-          : registryState.activity;
-      const actualValue = growthActualNetworkValue(
-        registryState.records,
-        activityForGrowth,
-        registryState.sales,
-        tokenState.tokens,
-        tokenState.mints,
-        tokenState.transfers,
-        tokenState.sales,
-      );
-      const workToken = tokenState.tokens.find(
-        (token) =>
-          token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER,
-      );
-      const workCreatedMs = workToken
-        ? Date.parse(workToken.createdAt)
-        : GROWTH_MODEL_START_MS;
-      const chartPoints = growthActualValuePoints(
-        registryState.records,
-        activityForGrowth,
-        registryState.sales,
-        tokenState.tokens,
-        tokenState.mints,
-        tokenState.transfers,
-        tokenState.sales,
-        {
-          startLabel: "WORK deploy",
-          startMs: workCreatedMs,
-        },
-      )
-        .map((point) => ({
+    const refreshPromise = (async () => {
+      const showLoading = !silent;
+      if (showLoading) {
+        setWorkFloorLoading(true);
+      }
+      if (!silent) {
+        setStatus({ tone: "idle", text: "Refreshing WORK floor..." });
+      }
+      try {
+        const apiQuote = await fetchWorkFloorQuote("livenet", fresh).catch(
+          () => undefined,
+        );
+        if (apiQuote) {
+          setWorkFloorQuote(apiQuote);
+          if (!silent) {
+            setStatus({
+              tone: "good",
+              text: `WORK floor loaded. Confirmed network value ${Math.round(apiQuote.networkValueSats).toLocaleString()} sats.`,
+            });
+          }
+          return apiQuote;
+        }
+
+        const [registryState, computerActivity, tokenState] = await Promise.all([
+          fetchIdRegistryState("livenet", fresh),
+          fetchGlobalActivity("livenet", fresh).catch(() => []),
+          fetchTokenState("livenet", fresh),
+        ]);
+        const activityForGrowth =
+          computerActivity.length > 0
+            ? computerActivity
+            : registryState.activity;
+        const actualValue = growthActualNetworkValue(
+          registryState.records,
+          activityForGrowth,
+          registryState.sales,
+          tokenState.tokens,
+          tokenState.mints,
+          tokenState.transfers,
+          tokenState.sales,
+        );
+        const workToken = tokenState.tokens.find(
+          (token) =>
+            token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER,
+        );
+        const workCreatedMs = workToken
+          ? Date.parse(workToken.createdAt)
+          : GROWTH_MODEL_START_MS;
+        const chartPoints = growthActualValuePoints(
+          registryState.records,
+          activityForGrowth,
+          registryState.sales,
+          tokenState.tokens,
+          tokenState.mints,
+          tokenState.transfers,
+          tokenState.sales,
+          {
+            startLabel: "WORK deploy",
+            startMs: workCreatedMs,
+          },
+        ).map((point) => ({
           floorSats: point.sats / WORK_TOKEN_MAX_SUPPLY,
           label: point.label,
           networkValueSats: point.sats,
           years: point.years,
         }));
-      setWorkFloorQuote({
-        chartPoints,
-        indexedAt: new Date().toISOString(),
-        networkValueSats: actualValue.totalSats,
-        powids: actualValue.powids,
-        tokenFlowSats:
-          actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats,
-      });
-      if (!silent) {
-        setStatus({
-          tone: "good",
-          text: `WORK floor loaded. Confirmed network value ${Math.round(actualValue.totalSats).toLocaleString()} sats.`,
-        });
+        const quote = {
+          chartPoints,
+          indexedAt: new Date().toISOString(),
+          networkValueSats: actualValue.totalSats,
+          powids: actualValue.powids,
+          tokenFlowSats:
+            actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats,
+        };
+        setWorkFloorQuote(quote);
+        if (!silent) {
+          setStatus({
+            tone: "good",
+            text: `WORK floor loaded. Confirmed network value ${Math.round(actualValue.totalSats).toLocaleString()} sats.`,
+          });
+        }
+        return quote;
+      } catch (error) {
+        if (!silent) {
+          setStatus({
+            tone: "bad",
+            text: errorMessage(error, "WORK floor refresh failed."),
+          });
+        }
+        return undefined;
+      } finally {
+        workFloorRefreshInFlightRef.current = null;
+        workFloorRefreshInFlightFreshRef.current = false;
+        if (showLoading) {
+          setWorkFloorLoading(false);
+        }
       }
+    })();
+    workFloorRefreshInFlightFreshRef.current = fresh;
+    workFloorRefreshInFlightRef.current = refreshPromise;
+    return refreshPromise;
+  }
+
+  async function refreshTokenMarketData({
+    fresh = true,
+    includeWorkFloor = true,
+    label = "token market data",
+    silent = false,
+  }: {
+    fresh?: boolean;
+    includeWorkFloor?: boolean;
+    label?: string;
+    silent?: boolean;
+  } = {}) {
+    if (!silent) {
+      setBusy(true);
+      setStatus({ tone: "idle", text: `Refreshing ${label}...` });
+    }
+
+    try {
+      const [tokenState, , floorQuote] = await Promise.all([
+        refreshToken(true, fresh),
+        refreshTokenBtcUsd(fresh),
+        includeWorkFloor
+          ? refreshWorkFloor(true, fresh)
+          : Promise.resolve(undefined),
+      ]);
+
+      if (!silent) {
+        if (tokenState) {
+          const floorText =
+            includeWorkFloor && floorQuote
+              ? ` WORK floor ${Math.round(floorQuote.networkValueSats).toLocaleString()} sats.`
+              : "";
+          setStatus({
+            tone: "good",
+            text: `Token market loaded. ${tokenState.tokens.length.toLocaleString()} token${tokenState.tokens.length === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"}.${floorText}`,
+          });
+        } else {
+          setStatus({
+            tone: "bad",
+            text: "Token market refresh did not return token state.",
+          });
+        }
+      }
+
+      return { floorQuote, tokenState };
     } catch (error) {
       if (!silent) {
         setStatus({
           tone: "bad",
-          text: errorMessage(error, "WORK floor refresh failed."),
+          text: errorMessage(error, "Token market refresh failed."),
         });
       }
+      return { floorQuote: undefined, tokenState: undefined };
     } finally {
-      workFloorRefreshInFlightRef.current = false;
-      if (showLoading) {
-        setWorkFloorLoading(false);
+      if (!silent) {
+        setBusy(false);
       }
     }
   }
@@ -14012,7 +14171,10 @@ export default function App() {
     }
   }
 
-  async function refreshIds(silent = false, fresh = !silent) {
+  async function refreshIds(
+    silent = false,
+    fresh = !silent,
+  ): Promise<PowRegistryState | undefined> {
     if (!registryAddress) {
       setIdRegistry([]);
       setIdListings([]);
@@ -14025,28 +14187,67 @@ export default function App() {
           text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.`,
         });
       }
-      return;
+      return undefined;
     }
 
     if (idRefreshInFlightRef.current) {
-      return;
+      const needsFreshRefresh = fresh && !idRefreshInFlightFreshRef.current;
+      if (!silent) {
+        setBusy(true);
+        setStatus({
+          tone: "idle",
+          text: "ID registry refresh already in progress...",
+        });
+      }
+      try {
+        const state = await idRefreshInFlightRef.current;
+        if (needsFreshRefresh) {
+          if (!silent) {
+            setStatus({
+              tone: "idle",
+              text: "Starting fresh ID registry refresh...",
+            });
+          }
+          return refreshIds(silent, fresh);
+        }
+        if (!silent) {
+          if (state) {
+            const confirmed = state.records.filter(
+              (record) => record.confirmed,
+            ).length;
+            const pending = state.records.length - confirmed;
+            setStatus({
+              tone: "good",
+              text: `ID registry loaded. ${confirmed} confirmed, ${pending} pending, ${state.pendingEvents.length} in flight.`,
+            });
+          } else {
+            setStatus({
+              tone: "bad",
+              text: "ID registry scan failed.",
+            });
+          }
+        }
+        return state;
+      } finally {
+        if (!silent && !needsFreshRefresh) {
+          setBusy(false);
+        }
+      }
     }
 
-    idRefreshInFlightRef.current = true;
-    if (!silent) {
-      setBusy(true);
-    }
-    if (!silent) {
-      setStatus({
-        tone: "idle",
-        text:
-          activityMode || growthMode || activeFolder === "log"
-            ? "Scanning ProofOfWork computer log..."
-            : "Scanning ProofOfWork ID registry...",
-      });
-    }
-
-    try {
+    const refreshPromise = (async () => {
+      if (!silent) {
+        setBusy(true);
+      }
+      if (!silent) {
+        setStatus({
+          tone: "idle",
+          text:
+            activityMode || growthMode || activeFolder === "log"
+              ? "Scanning ProofOfWork computer log..."
+              : "Scanning ProofOfWork ID registry...",
+        });
+      }
       const shouldLoadComputerLog =
         activityMode || growthMode || activeFolder === "log";
       const useSummary =
@@ -14054,66 +14255,74 @@ export default function App() {
         !shouldLoadComputerLog &&
         !marketplaceMode &&
         activeFolder !== "marketplace";
-      const state = await fetchIdRegistryState(network, fresh, useSummary);
-      let activity = state.activity;
-      let activityLoadFailed = false;
-      if (shouldLoadComputerLog) {
-        try {
-          const liveActivity = await fetchGlobalActivity(
+      try {
+        const state = await fetchIdRegistryState(network, fresh, useSummary);
+        let activity = state.activity;
+        let activityLoadFailed = false;
+        if (shouldLoadComputerLog) {
+          try {
+            const liveActivity = await fetchGlobalActivity(
+              network,
+              fresh,
+              useSummary,
+            );
+            activity = liveActivity.length > 0 ? liveActivity : state.activity;
+          } catch {
+            activityLoadFailed = true;
+          }
+        }
+        setIdRegistry(state.records);
+        setIdListings(state.listings);
+        setIdPendingEvents(state.pendingEvents);
+        setIdSales(state.sales);
+        setIdActivity(activity);
+        setContacts((current) => {
+          const nextContacts = refreshRegistryContactsFromRecords(
+            current,
+            state.records,
             network,
-            fresh,
-            useSummary,
           );
-          activity = liveActivity.length > 0 ? liveActivity : state.activity;
-        } catch {
-          activityLoadFailed = true;
-        }
-      }
-      setIdRegistry(state.records);
-      setIdListings(state.listings);
-      setIdPendingEvents(state.pendingEvents);
-      setIdSales(state.sales);
-      setIdActivity(activity);
-      setContacts((current) => {
-        const nextContacts = refreshRegistryContactsFromRecords(
-          current,
-          state.records,
-          network,
-        );
-        if (nextContacts !== current) {
-          saveContacts(nextContacts);
-        }
-        return nextContacts;
-      });
+          if (nextContacts !== current) {
+            saveContacts(nextContacts);
+          }
+          return nextContacts;
+        });
 
-      if (!silent) {
-        const confirmed = state.records.filter(
-          (record) => record.confirmed,
-        ).length;
-        const pending = state.records.length - confirmed;
-        const pendingChanges = state.pendingEvents.length;
-        setStatus({
-          tone: activityLoadFailed ? "idle" : "good",
-          text: shouldLoadComputerLog
-            ? activityLoadFailed
-              ? `Registry loaded. Log refresh unavailable; using ${activity.length.toLocaleString()} registry action${activity.length === 1 ? "" : "s"}.`
-              : `Log loaded. ${activity.length.toLocaleString()} computer action${activity.length === 1 ? "" : "s"} indexed.`
-            : `ID registry loaded. ${confirmed} confirmed, ${pending} pending, ${pendingChanges} in flight.`,
-        });
+        if (!silent) {
+          const confirmed = state.records.filter(
+            (record) => record.confirmed,
+          ).length;
+          const pending = state.records.length - confirmed;
+          const pendingChanges = state.pendingEvents.length;
+          setStatus({
+            tone: activityLoadFailed ? "idle" : "good",
+            text: shouldLoadComputerLog
+              ? activityLoadFailed
+                ? `Registry loaded. Log refresh unavailable; using ${activity.length.toLocaleString()} registry action${activity.length === 1 ? "" : "s"}.`
+                : `Log loaded. ${activity.length.toLocaleString()} computer action${activity.length === 1 ? "" : "s"} indexed.`
+              : `ID registry loaded. ${confirmed} confirmed, ${pending} pending, ${pendingChanges} in flight.`,
+          });
+        }
+        return state;
+      } catch (error) {
+        if (!silent) {
+          setStatus({
+            tone: "bad",
+            text: errorMessage(error, "ID registry scan failed."),
+          });
+        }
+        return undefined;
+      } finally {
+        idRefreshInFlightRef.current = null;
+        idRefreshInFlightFreshRef.current = false;
+        if (!silent) {
+          setBusy(false);
+        }
       }
-    } catch (error) {
-      if (!silent) {
-        setStatus({
-          tone: "bad",
-          text: errorMessage(error, "ID registry scan failed."),
-        });
-      }
-    } finally {
-      idRefreshInFlightRef.current = false;
-      if (!silent) {
-        setBusy(false);
-      }
-    }
+    })();
+    idRefreshInFlightFreshRef.current = fresh;
+    idRefreshInFlightRef.current = refreshPromise;
+    return refreshPromise;
   }
 
   async function registerId(event: FormEvent<HTMLFormElement>) {
@@ -17465,11 +17674,12 @@ export default function App() {
             setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
           }}
           onRefreshIds={() => void refreshIds()}
-          onRefreshTokens={() => {
-            void refreshWorkFloor(true, true);
-            void refreshToken(false, true);
-            void refreshTokenBtcUsd();
-          }}
+          onRefreshTokens={() =>
+            void refreshTokenMarketData({
+              includeWorkFloor: true,
+              label: "token marketplace",
+            })
+          }
         />
         <MarketplacePurchaseReceiptModal
           receipt={purchaseReceipt}
@@ -17501,11 +17711,12 @@ export default function App() {
         listSpendableBalance={walletSpendableTokenBalance}
         network={network}
         onNetworkChange={chooseNetwork}
-        onRefresh={() => {
-          void refreshTokenBtcUsd();
-          void refreshToken(false, true);
-          void refreshWorkFloor(false, true);
-        }}
+        onRefresh={() =>
+          void refreshTokenMarketData({
+            includeWorkFloor: true,
+            label: "wallet market data",
+          })
+        }
         sealListing={sealTokenListing}
         selectedTokenId={walletTransferToken?.tokenId ?? ""}
         setFeeRate={setFeeRate}
@@ -17605,13 +17816,12 @@ export default function App() {
         stopMintAssistant={stopTokenMintAssistant}
         submitMint={mintToken}
         workTokenOnly={workTokenMode}
-        onRefresh={() => {
-          void refreshTokenBtcUsd();
-          void refreshToken(false, true);
-          if (workTokenMode || tokenRouteShowsWorkFloor) {
-            void refreshWorkFloor(false, true);
-          }
-        }}
+        onRefresh={() =>
+          void refreshTokenMarketData({
+            includeWorkFloor: workTokenMode || tokenRouteShowsWorkFloor,
+            label: workTokenMode ? "WORK market data" : "token data",
+          })
+        }
       />
     );
   }
@@ -17764,18 +17974,27 @@ export default function App() {
                   activeFolder === "wallet" ||
                   activeFolder === "work"
                 ) {
-                  void refreshToken(false, true);
-                  if (activeFolder === "work") {
-                    void refreshWorkFloor(false, true);
-                  }
+                  void refreshTokenMarketData({
+                    includeWorkFloor:
+                      activeFolder === "wallet" ||
+                      activeFolder === "work" ||
+                      tokenRouteShowsWorkFloor,
+                    label:
+                      activeFolder === "work"
+                        ? "WORK market data"
+                        : activeFolder === "wallet"
+                          ? "wallet market data"
+                          : "token data",
+                  });
                   return;
                 }
 
                 if (activeFolder === "marketplace") {
                   void refreshIds();
-                  void refreshToken(false, true);
-                  void refreshTokenBtcUsd();
-                  void refreshWorkFloor(false, true);
+                  void refreshTokenMarketData({
+                    includeWorkFloor: true,
+                    label: "marketplace data",
+                  });
                   return;
                 }
 
@@ -18201,10 +18420,12 @@ export default function App() {
               setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
             }}
             onRefreshIds={() => void refreshIds()}
-            onRefreshTokens={() => {
-              void refreshToken(false, true);
-              void refreshTokenBtcUsd();
-            }}
+            onRefreshTokens={() =>
+              void refreshTokenMarketData({
+                includeWorkFloor: true,
+                label: "token marketplace",
+              })
+            }
           />
         ) : activeFolder === "wallet" ? (
           <TokenWalletWorkspace
@@ -18315,13 +18536,13 @@ export default function App() {
             stopMintAssistant={stopTokenMintAssistant}
             workTokenOnly={activeFolder === "work"}
             onOpenTokenFactory={() => openTokenWorkspace()}
-            onRefresh={() => {
-              void refreshTokenBtcUsd();
-              void refreshToken(false, true);
-              if (activeFolder === "work") {
-                void refreshWorkFloor(false, true);
-              }
-            }}
+            onRefresh={() =>
+              void refreshTokenMarketData({
+                includeWorkFloor: activeFolder === "work",
+                label:
+                  activeFolder === "work" ? "WORK market data" : "token data",
+              })
+            }
           />
         ) : activeFolder === "contacts" ? (
           <ContactsWorkspace
