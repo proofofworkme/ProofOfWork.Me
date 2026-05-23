@@ -13238,7 +13238,7 @@ export default function App() {
     try {
       const tokenScope =
         workTokenMode || activeFolder === "work" ? WORK_TOKEN_ID : "";
-      const useSummary = silent && !walletMode && activeFolder !== "wallet";
+      const useSummary = false;
       const state = await fetchTokenState(
         network,
         fresh,
@@ -13425,7 +13425,6 @@ export default function App() {
     }
 
     try {
-      const useSummary = silent;
       const [
         registryState,
         computerActivity,
@@ -13433,9 +13432,9 @@ export default function App() {
         btcUsdQuote,
         floorQuote,
       ] = await Promise.all([
-        fetchIdRegistryState("livenet", fresh, useSummary),
-        fetchGlobalActivity("livenet", fresh, useSummary).catch(() => []),
-        fetchTokenState("livenet", fresh, "", useSummary),
+        fetchIdRegistryState("livenet", fresh, false),
+        fetchGlobalActivity("livenet", fresh, false).catch(() => []),
+        fetchTokenState("livenet", fresh, "", false),
         fetchBtcUsdPrice(fresh).catch(() => undefined),
         fetchWorkFloorQuote("livenet", fresh).catch(() => undefined),
       ]);
@@ -13823,10 +13822,14 @@ export default function App() {
     }
 
     try {
-      const useSummary = silent;
-      const state = await fetchIdRegistryState(network, fresh, useSummary);
       const shouldLoadComputerLog =
         activityMode || growthMode || activeFolder === "log";
+      const useSummary =
+        silent &&
+        !shouldLoadComputerLog &&
+        !marketplaceMode &&
+        activeFolder !== "marketplace";
+      const state = await fetchIdRegistryState(network, fresh, useSummary);
       let activity = state.activity;
       let activityLoadFailed = false;
       if (shouldLoadComputerLog) {
