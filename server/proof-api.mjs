@@ -80,8 +80,8 @@ const WORK_FLOOR_CACHE_TTL_MS = Number(
 const WORK_FLOOR_CACHE_STALE_MS = Number(
   process.env.WORK_FLOOR_CACHE_STALE_MS ?? 5 * 60_000,
 );
-const SUMMARY_ACTIVITY_LIMIT = Number(process.env.SUMMARY_ACTIVITY_LIMIT ?? 120);
-const SUMMARY_MARKET_LIMIT = Number(process.env.SUMMARY_MARKET_LIMIT ?? 80);
+const SUMMARY_ACTIVITY_LIMIT = Number(process.env.SUMMARY_ACTIVITY_LIMIT ?? 60);
+const SUMMARY_MARKET_LIMIT = Number(process.env.SUMMARY_MARKET_LIMIT ?? 40);
 const HISTORY_PAGE_DEFAULT_LIMIT = Number(
   process.env.HISTORY_PAGE_DEFAULT_LIMIT ?? 50,
 );

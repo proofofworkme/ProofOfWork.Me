@@ -1055,8 +1055,16 @@ const ACTIVITY_FEED_PAGE_SIZE = 50;
 const GROWTH_EVENT_PAGE_SIZE = 12;
 const GROWTH_AUTO_REFRESH_MS = 5 * 60_000;
 const BACKGROUND_FRESH_REFRESH_DELAY_MS = 1_000;
+const BTC_USD_BROWSER_CACHE_TTL_MS = 60_000;
 const BLOCK_TXID_INDEX_CACHE = new Map<string, Promise<Map<string, number>>>();
+const BTC_USD_BROWSER_INFLIGHT = new Map<string, Promise<number>>();
 const PROTOCOL_PREFIX = "pwm1:";
+let btcUsdBrowserCache:
+  | {
+      fetchedAtMs: number;
+      usd: number;
+    }
+  | undefined;
 
 // Canonical Phase 1 ProofOfWork ID registry.
 // Do not fork this address/protocol for id.proofofwork.me; the launch surface
@@ -1711,16 +1719,43 @@ function maxPayloadDataBytes(prefix: string) {
 }
 
 async function fetchBtcUsdPrice(fresh = false) {
-  const payload = await fetchProofApiJson<{ USD?: number; usd?: number }>(
-    fresh ? "/api/v1/prices/btc-usd?fresh=1" : "/api/v1/prices/btc-usd",
-    "livenet",
-  );
-  const usd = Number(payload.USD ?? payload.usd);
-  if (!Number.isFinite(usd) || usd <= 0) {
-    throw new Error("BTC/USD price is unavailable.");
+  if (
+    !fresh &&
+    btcUsdBrowserCache &&
+    Date.now() - btcUsdBrowserCache.fetchedAtMs < BTC_USD_BROWSER_CACHE_TTL_MS
+  ) {
+    return btcUsdBrowserCache.usd;
   }
 
-  return usd;
+  const cacheKey = fresh ? "fresh" : "cached";
+  const inFlight = BTC_USD_BROWSER_INFLIGHT.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const request = (async () => {
+    const payload = await fetchProofApiJson<{ USD?: number; usd?: number }>(
+      fresh ? "/api/v1/prices/btc-usd?fresh=1" : "/api/v1/prices/btc-usd",
+      "livenet",
+    );
+    const usd = Number(payload.USD ?? payload.usd);
+    if (!Number.isFinite(usd) || usd <= 0) {
+      throw new Error("BTC/USD price is unavailable.");
+    }
+
+    btcUsdBrowserCache = {
+      fetchedAtMs: Date.now(),
+      usd,
+    };
+    return usd;
+  })();
+
+  BTC_USD_BROWSER_INFLIGHT.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    BTC_USD_BROWSER_INFLIGHT.delete(cacheKey);
+  }
 }
 
 async function fetchBlockTxidIndex(
