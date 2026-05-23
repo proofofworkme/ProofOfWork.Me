@@ -8779,6 +8779,13 @@ async function fetchWorkFloorQuote(
   return normalizeWorkFloorQuote(payload);
 }
 
+async function triggerGrowthSummaryRefresh() {
+  await fetchProofApiJson<Record<string, unknown>>(
+    "/api/v1/growth-summary?fresh=1",
+    "livenet",
+  );
+}
+
 async function fetchRushState(
   targetNetwork: BitcoinNetwork,
   fresh = false,
@@ -13432,12 +13439,15 @@ export default function App() {
         btcUsdQuote,
         floorQuote,
       ] = await Promise.all([
-        fetchIdRegistryState("livenet", fresh, false),
-        fetchGlobalActivity("livenet", fresh, false).catch(() => []),
-        fetchTokenState("livenet", fresh, "", false),
+        fetchIdRegistryState("livenet", false, false),
+        fetchGlobalActivity("livenet", false, false).catch(() => []),
+        fetchTokenState("livenet", false, "", false),
         fetchBtcUsdPrice(fresh).catch(() => undefined),
         fetchWorkFloorQuote("livenet", fresh).catch(() => undefined),
       ]);
+      if (fresh) {
+        void triggerGrowthSummaryRefresh().catch(() => undefined);
+      }
       setIdRegistry(registryState.records);
       setIdListings(registryState.listings);
       setIdPendingEvents(registryState.pendingEvents);

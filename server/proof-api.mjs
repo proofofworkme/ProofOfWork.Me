@@ -260,7 +260,8 @@ function shouldPersistJsonCache(cacheKey) {
     cacheKey === "registry:livenet" ||
     cacheKey.startsWith("token:livenet:") ||
     cacheKey === "rush:livenet" ||
-    cacheKey === "work-floor:livenet"
+    cacheKey === "work-floor:livenet" ||
+    cacheKey === "growth-summary:livenet"
   );
 }
 
@@ -6513,12 +6514,36 @@ async function marketplaceSummaryPayload(network, fresh = false) {
   };
 }
 
+function refreshGrowthCachesInBackground(network) {
+  refreshPayloadCacheInBackground(
+    `registry:${network}`,
+    `payload:registry:${network}`,
+    () => safeRegistryPayload(network),
+    REGISTRY_CACHE_TTL_MS,
+    REGISTRY_CACHE_STALE_MS,
+  );
+  refreshGlobalActivityCacheInBackground(network);
+  refreshTokenPayloadCacheInBackground(network, "");
+  refreshTokenPayloadCacheInBackground(network, WORK_TOKEN_ID);
+  refreshPayloadCacheInBackground(
+    `work-floor:${network}`,
+    `payload:work-floor:${network}`,
+    () => workFloorPayload(network, true),
+    WORK_FLOOR_CACHE_TTL_MS,
+    WORK_FLOOR_CACHE_STALE_MS,
+  );
+}
+
 async function growthSummaryPayload(network, fresh = false) {
+  if (fresh) {
+    refreshGrowthCachesInBackground(network);
+  }
+
   const [registry, activity, token, workFloor] = await Promise.all([
-    registrySummaryPayload(network, fresh),
-    activitySummaryPayload(network, fresh),
-    tokenSummaryPayload(network, "", fresh),
-    workFloorPayload(network, fresh),
+    registrySummaryPayload(network),
+    activitySummaryPayload(network),
+    tokenSummaryPayload(network),
+    workFloorPayload(network),
   ]);
   return {
     activity,
@@ -7636,11 +7661,16 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/growth-summary") {
-      jsonResponse(
+      if (freshRead) {
+        refreshGrowthCachesInBackground(network);
+      }
+      await cachedJsonResponse(
         response,
-        200,
-        await growthSummaryPayload(network, freshRead),
+        `growth-summary:${network}`,
+        () => growthSummaryPayload(network),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
+        WORK_FLOOR_CACHE_TTL_MS,
+        HEAVY_READ_STALE_MS,
       );
       return;
     }
@@ -7917,6 +7947,12 @@ function prewarmExpensiveReadCaches() {
     () => workFloorPayload("livenet"),
     WORK_FLOOR_CACHE_TTL_MS,
     WORK_FLOOR_CACHE_STALE_MS,
+  );
+  warmJsonCache(
+    "growth-summary:livenet",
+    () => growthSummaryPayload("livenet"),
+    WORK_FLOOR_CACHE_TTL_MS,
+    HEAVY_READ_STALE_MS,
   );
 }
 
