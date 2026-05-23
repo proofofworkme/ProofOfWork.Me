@@ -80,6 +80,12 @@ const WORK_FLOOR_CACHE_TTL_MS = Number(
 const WORK_FLOOR_CACHE_STALE_MS = Number(
   process.env.WORK_FLOOR_CACHE_STALE_MS ?? 5 * 60_000,
 );
+const SUMMARY_ACTIVITY_LIMIT = Number(process.env.SUMMARY_ACTIVITY_LIMIT ?? 120);
+const SUMMARY_MARKET_LIMIT = Number(process.env.SUMMARY_MARKET_LIMIT ?? 80);
+const HISTORY_PAGE_DEFAULT_LIMIT = Number(
+  process.env.HISTORY_PAGE_DEFAULT_LIMIT ?? 50,
+);
+const HISTORY_PAGE_MAX_LIMIT = Number(process.env.HISTORY_PAGE_MAX_LIMIT ?? 200);
 const BTC_USD_PRICE_CACHE_TTL_MS = Number(
   process.env.BTC_USD_PRICE_CACHE_TTL_MS ?? 60_000,
 );
@@ -250,10 +256,15 @@ function nodeApiBase(value) {
 function shouldPersistJsonCache(cacheKey) {
   return (
     cacheKey === "activity:livenet" ||
+    cacheKey === "activity-summary:livenet" ||
+    cacheKey === "growth-summary:livenet" ||
+    cacheKey === "marketplace-summary:livenet" ||
     cacheKey === "registry:livenet" ||
+    cacheKey === "registry-summary:livenet" ||
     cacheKey.startsWith("token-summary:livenet:") ||
     cacheKey.startsWith("token:livenet:") ||
     cacheKey === "rush:livenet" ||
+    cacheKey === "work-summary:livenet" ||
     cacheKey === "work-floor:livenet"
   );
 }
@@ -553,6 +564,99 @@ function clearResponseCache(...cacheKeys) {
     RESPONSE_CACHE.delete(cacheKey);
     RESPONSE_CACHE.delete(jsonCacheKey);
   }
+}
+
+function boundedInteger(value, fallback, min, max) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function historyPaginationFromSearch(searchParams) {
+  const limit = boundedInteger(
+    searchParams.get("limit"),
+    HISTORY_PAGE_DEFAULT_LIMIT,
+    1,
+    HISTORY_PAGE_MAX_LIMIT,
+  );
+  const page = boundedInteger(searchParams.get("page"), 0, 0, 1_000_000);
+  const cursorRaw = String(searchParams.get("cursor") ?? "").trim();
+  const offset = cursorRaw
+    ? boundedInteger(cursorRaw, 0, 0, 100_000_000)
+    : page * limit;
+  const query = String(searchParams.get("q") ?? searchParams.get("search") ?? "")
+    .trim()
+    .toLowerCase();
+
+  return {
+    limit,
+    offset,
+    page,
+    query,
+  };
+}
+
+function valueSearchText(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(valueSearchText).join(" ");
+  }
+
+  if (typeof value === "object") {
+    return Object.values(value).map(valueSearchText).join(" ");
+  }
+
+  return String(value);
+}
+
+function historyItemsMatchingQuery(items, query) {
+  if (!query) {
+    return items;
+  }
+
+  return items.filter((item) =>
+    valueSearchText(item).toLowerCase().includes(query),
+  );
+}
+
+function paginatedHistoryPayload({
+  indexedAt,
+  items,
+  kind,
+  network,
+  pagination,
+  source,
+}) {
+  const filtered = historyItemsMatchingQuery(items, pagination.query);
+  const totalCount = filtered.length;
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  const pageItems = filtered.slice(start, end);
+  const nextCursor = end < totalCount ? String(end) : "";
+
+  return {
+    cursor: String(start),
+    end,
+    indexedAt,
+    items: pageItems,
+    kind,
+    limit: pagination.limit,
+    network,
+    nextCursor,
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source,
+    start,
+    totalCount,
+  };
 }
 
 function mempoolBase(network) {
@@ -5885,15 +5989,203 @@ async function tokenPayload(network, tokenScope = "") {
   };
 }
 
+function recentByCreatedAt(items, limit = SUMMARY_ACTIVITY_LIMIT) {
+  return (Array.isArray(items) ? items : [])
+    .slice()
+    .sort(
+      (left, right) =>
+        Number(Boolean(right?.confirmed)) - Number(Boolean(left?.confirmed)) ||
+        Date.parse(String(right?.createdAt ?? "")) -
+          Date.parse(String(left?.createdAt ?? "")) ||
+        String(left?.txid ?? left?.listingId ?? "").localeCompare(
+          String(right?.txid ?? right?.listingId ?? ""),
+        ),
+    )
+    .slice(0, Math.max(0, limit));
+}
+
+function tokenAggregateSummaries(payload) {
+  const tokens = Array.isArray(payload.tokens) ? payload.tokens : [];
+  const summaries = new Map(
+    tokens.map((token) => [
+      token.tokenId,
+      {
+        balances: new Map(),
+        confirmedMints: 0,
+        confirmedSupply: 0,
+        holderCount: 0,
+        lastSalePricePerToken: 0,
+        lowestAskPricePerToken: 0,
+        openListings: 0,
+        pendingMints: 0,
+        pendingSupply: 0,
+        transferCount: 0,
+      },
+    ]),
+  );
+  const addBalance = (tokenId, address, amount) => {
+    if (!tokenId || !address || !Number.isFinite(amount) || amount === 0) {
+      return;
+    }
+
+    const current = summaries.get(tokenId);
+    if (!current) {
+      return;
+    }
+
+    current.balances.set(address, (current.balances.get(address) ?? 0) + amount);
+  };
+
+  for (const mint of Array.isArray(payload.mints) ? payload.mints : []) {
+    const current = summaries.get(mint.tokenId);
+    if (!current) {
+      continue;
+    }
+
+    if (mint.confirmed) {
+      current.confirmedMints += 1;
+      current.confirmedSupply += mint.amount;
+      addBalance(mint.tokenId, mint.minterAddress, mint.amount);
+    } else {
+      current.pendingMints += 1;
+      current.pendingSupply += mint.amount;
+    }
+  }
+
+  for (const transfer of Array.isArray(payload.transfers) ? payload.transfers : []) {
+    const current = summaries.get(transfer.tokenId);
+    if (!current) {
+      continue;
+    }
+
+    current.transferCount += 1;
+    if (!transfer.confirmed) {
+      continue;
+    }
+
+    addBalance(transfer.tokenId, transfer.senderAddress, -transfer.amount);
+    addBalance(transfer.tokenId, transfer.recipientAddress, transfer.amount);
+  }
+
+  for (const sale of Array.isArray(payload.sales) ? payload.sales : []) {
+    const current = summaries.get(sale.tokenId);
+    if (!current || !sale.confirmed) {
+      continue;
+    }
+
+    addBalance(sale.tokenId, sale.sellerAddress, -sale.amount);
+    addBalance(sale.tokenId, sale.buyerAddress, sale.amount);
+    if (current.lastSalePricePerToken === 0 && sale.amount > 0) {
+      current.lastSalePricePerToken = sale.priceSats / sale.amount;
+    }
+  }
+
+  for (const listing of Array.isArray(payload.listings) ? payload.listings : []) {
+    const current = summaries.get(listing.tokenId);
+    if (!current) {
+      continue;
+    }
+
+    current.openListings += 1;
+    const ask = listing.amount > 0 ? listing.priceSats / listing.amount : 0;
+    if (ask > 0) {
+      current.lowestAskPricePerToken =
+        current.lowestAskPricePerToken > 0
+          ? Math.min(current.lowestAskPricePerToken, ask)
+          : ask;
+    }
+  }
+
+  for (const summary of summaries.values()) {
+    summary.holderCount = [...summary.balances.values()].filter(
+      (balance) => balance > 0,
+    ).length;
+    delete summary.balances;
+  }
+
+  return summaries;
+}
+
+async function fastTokenPayloadSnapshot(network, tokenScope = "") {
+  const scope = normalizeTokenScope(tokenScope);
+  const payloadKey = `payload:token:${network}:${scope}`;
+  const cachedPayloadEntry = RESPONSE_CACHE.get(payloadKey);
+  if (cachedPayloadEntry?.payload) {
+    return cachedPayloadEntry.payload;
+  }
+
+  const jsonKey = `json:token:${network}:${scope}`;
+  await hydratePersistedJsonCache(jsonKey, TOKEN_CACHE_STALE_MS);
+  const cachedJsonEntry = RESPONSE_CACHE.get(jsonKey);
+  if (cachedJsonEntry?.body) {
+    try {
+      const payload = JSON.parse(cachedJsonEntry.body);
+      RESPONSE_CACHE.set(payloadKey, {
+        expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
+        payload,
+        staleUntil: Date.now() + TOKEN_CACHE_STALE_MS,
+      });
+      refreshTokenPayloadCacheInBackground(network, scope);
+      return payload;
+    } catch {
+      RESPONSE_CACHE.delete(jsonKey);
+    }
+  }
+
+  refreshTokenPayloadCacheInBackground(network, scope);
+  return {
+    ...emptyTokenState(),
+    creationPriceSats: TOKEN_CREATION_PRICE_SATS,
+    indexedAt: new Date().toISOString(),
+    indexAddress: tokenIndexAddressForNetwork(network) ?? "",
+    indexId: TOKEN_INDEX_ID,
+    indexTxid: TOKEN_INDEX_TXID,
+    minMutationPriceSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+    network,
+    source: mempoolBase(network),
+    stats: {
+      confirmedMints: 0,
+      confirmedTransfers: 0,
+      confirmedTokens: 0,
+      holders: 0,
+      pendingMints: 0,
+      pendingTransfers: 0,
+      pendingTokens: 0,
+      registries: 0,
+      transactions: 0,
+    },
+    workDefaults: {
+      maxSupply: WORK_TOKEN_MAX_SUPPLY,
+      mintAmount: WORK_TOKEN_MINT_AMOUNT,
+      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
+      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      ticker: WORK_TOKEN_TICKER,
+      tokenId: WORK_TOKEN_ID,
+    },
+  };
+}
+
 function compactTokenSummaryPayload(payload) {
   const holders = Array.isArray(payload.holders) ? payload.holders : [];
   const stats =
     payload.stats && typeof payload.stats === "object" ? payload.stats : {};
+  const tokenSummaries = tokenAggregateSummaries(payload);
+  const tokens = (Array.isArray(payload.tokens) ? payload.tokens : []).map(
+    (token) => ({
+      ...token,
+      ...(tokenSummaries.get(token.tokenId) ?? {}),
+    }),
+  );
 
   return {
     ...payload,
-    holders,
+    holders: holders.slice(0, SUMMARY_MARKET_LIMIT),
+    listings: recentByCreatedAt(payload.listings, SUMMARY_MARKET_LIMIT),
     mints: [],
+    sales: recentByCreatedAt(payload.sales, SUMMARY_MARKET_LIMIT),
+    summaryOnly: true,
+    tokens,
     transfers: [],
     stats: {
       ...stats,
@@ -5940,8 +6232,196 @@ async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
 
   const payload = fresh
     ? await tokenPayload(network, scope)
-    : await fastCachedTokenPayload(network, scope);
+    : await fastTokenPayloadSnapshot(network, scope);
   return compactTokenSummaryPayload(payload);
+}
+
+function emptyRegistryPayload(network) {
+  return {
+    activity: [],
+    indexedAt: new Date().toISOString(),
+    listings: [],
+    network,
+    pendingEvents: [],
+    records: [],
+    registryAddress: registryAddressForNetwork(network) ?? "",
+    sales: [],
+    source: mempoolBase(network),
+    stats: {
+      confirmed: 0,
+      pending: 0,
+      pendingChanges: 0,
+      pendingRecords: 0,
+      total: 0,
+    },
+  };
+}
+
+function compactRegistrySummaryPayload(payload) {
+  return {
+    ...payload,
+    activity: recentByCreatedAt(payload.activity, SUMMARY_ACTIVITY_LIMIT),
+    listings: recentByCreatedAt(payload.listings, SUMMARY_MARKET_LIMIT),
+    pendingEvents: recentByCreatedAt(payload.pendingEvents, SUMMARY_MARKET_LIMIT),
+    sales: recentByCreatedAt(payload.sales, SUMMARY_MARKET_LIMIT),
+    summaryOnly: true,
+  };
+}
+
+function compactActivitySummaryPayload(payload) {
+  return {
+    ...payload,
+    activity: recentByCreatedAt(payload.activity, SUMMARY_ACTIVITY_LIMIT),
+    summaryOnly: true,
+  };
+}
+
+async function registrySummaryPayload(network, fresh = false) {
+  const payload = fresh
+    ? await registryPayload(network)
+    : await fastJsonBackedPayload(
+        `registry:${network}`,
+        `payload:registry:${network}`,
+        () => registryPayload(network),
+        REGISTRY_CACHE_TTL_MS,
+        REGISTRY_CACHE_STALE_MS,
+        emptyRegistryPayload(network),
+      );
+  return compactRegistrySummaryPayload(payload);
+}
+
+async function activitySummaryPayload(network, fresh = false) {
+  const payload = fresh
+    ? await globalActivityPayload(network, true)
+    : await fastGlobalActivityPayload(network);
+  return compactActivitySummaryPayload(payload);
+}
+
+async function workSummaryPayload(network, fresh = false) {
+  const [token, floor] = await Promise.all([
+    tokenSummaryPayload(network, WORK_TOKEN_ID, fresh),
+    workFloorPayload(network, fresh),
+  ]);
+  return {
+    floor,
+    indexedAt: new Date().toISOString(),
+    network,
+    summaryOnly: true,
+    token,
+  };
+}
+
+async function marketplaceSummaryPayload(network, fresh = false) {
+  const [registry, token, floor] = await Promise.all([
+    registrySummaryPayload(network, fresh),
+    tokenSummaryPayload(network, "", fresh),
+    workFloorPayload(network, fresh),
+  ]);
+  return {
+    indexedAt: new Date().toISOString(),
+    network,
+    registry,
+    summaryOnly: true,
+    token,
+    workFloor: floor,
+  };
+}
+
+async function growthSummaryPayload(network, fresh = false) {
+  const [registry, activity, token, workFloor] = await Promise.all([
+    registrySummaryPayload(network, fresh),
+    activitySummaryPayload(network, fresh),
+    tokenSummaryPayload(network, "", fresh),
+    workFloorPayload(network, fresh),
+  ]);
+  return {
+    activity,
+    indexedAt: new Date().toISOString(),
+    network,
+    registry,
+    summaryOnly: true,
+    token,
+    workFloor,
+  };
+}
+
+async function registryHistoryPayload(network, kind, searchParams, fresh = false) {
+  const payload = fresh
+    ? await registryPayload(network)
+    : await cachedPayload(
+        `payload:registry:${network}`,
+        () => registryPayload(network),
+        REGISTRY_CACHE_TTL_MS,
+        REGISTRY_CACHE_STALE_MS,
+      );
+  const safeKind = new Set([
+    "activity",
+    "listings",
+    "pending",
+    "records",
+    "sales",
+  ]).has(kind)
+    ? kind
+    : "records";
+  const items =
+    safeKind === "pending"
+      ? (payload.pendingEvents ?? [])
+      : (payload[safeKind] ?? []);
+
+  return paginatedHistoryPayload({
+    indexedAt: payload.indexedAt ?? new Date().toISOString(),
+    items,
+    kind: safeKind,
+    network,
+    pagination: historyPaginationFromSearch(searchParams),
+    source: payload.source ?? mempoolBase(network),
+  });
+}
+
+async function activityHistoryPayload(network, kind, searchParams, fresh = false) {
+  const payload = fresh
+    ? await globalActivityPayload(network, true)
+    : await globalActivityPayload(network);
+  const requestedKind = String(kind ?? "").trim();
+  const items = requestedKind
+    ? (payload.activity ?? []).filter((item) => item.kind === requestedKind)
+    : (payload.activity ?? []);
+
+  return paginatedHistoryPayload({
+    indexedAt: payload.indexedAt ?? new Date().toISOString(),
+    items,
+    kind: requestedKind || "activity",
+    network,
+    pagination: historyPaginationFromSearch(searchParams),
+    source: payload.source ?? mempoolBase(network),
+  });
+}
+
+async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fresh = false) {
+  const scope = normalizeTokenScope(tokenScope);
+  const payload = fresh
+    ? await tokenPayload(network, scope)
+    : await cachedTokenPayload(network, scope);
+  const safeKind = new Set([
+    "holders",
+    "listings",
+    "mints",
+    "sales",
+    "tokens",
+    "transfers",
+  ]).has(kind)
+    ? kind
+    : "mints";
+  const items = payload[safeKind] ?? [];
+
+  return paginatedHistoryPayload({
+    indexedAt: payload.indexedAt ?? new Date().toISOString(),
+    items,
+    kind: safeKind,
+    network,
+    pagination: historyPaginationFromSearch(searchParams),
+    source: payload.source ?? mempoolBase(network),
+  });
 }
 
 async function rushPayload(network) {
@@ -6721,6 +7201,32 @@ async function handleRequest(request, response) {
       return;
     }
 
+    if (
+      url.pathname === "/api/v1/registry-summary" ||
+      url.pathname === "/api/v1/ids-summary"
+    ) {
+      if (freshRead) {
+        refreshedJsonResponse(
+          response,
+          `registry-summary:${network}`,
+          await registrySummaryPayload(network, true),
+          FRESH_READ_CACHE_CONTROL,
+          REGISTRY_CACHE_TTL_MS,
+          REGISTRY_CACHE_STALE_MS,
+        );
+      } else {
+        await cachedJsonResponse(
+          response,
+          `registry-summary:${network}`,
+          () => registrySummaryPayload(network),
+          EXPENSIVE_READ_CACHE_CONTROL,
+          REGISTRY_CACHE_TTL_MS,
+          REGISTRY_CACHE_STALE_MS,
+        );
+      }
+      return;
+    }
+
     if (url.pathname === "/api/v1/registry" || url.pathname === "/api/v1/ids") {
       if (freshRead) {
         clearResponseCache(`registry:${network}`);
@@ -6743,6 +7249,53 @@ async function handleRequest(request, response) {
         REGISTRY_CACHE_TTL_MS,
         REGISTRY_CACHE_STALE_MS,
       );
+      return;
+    }
+
+    if (
+      url.pathname === "/api/v1/registry-history" ||
+      url.pathname === "/api/v1/ids-history"
+    ) {
+      const historyKind = String(url.searchParams.get("kind") ?? "records")
+        .trim()
+        .toLowerCase();
+      jsonResponse(
+        response,
+        200,
+        await registryHistoryPayload(
+          network,
+          historyKind,
+          url.searchParams,
+          freshRead,
+        ),
+        freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
+      );
+      return;
+    }
+
+    if (
+      url.pathname === "/api/v1/activity-summary" ||
+      url.pathname === "/api/v1/log-summary"
+    ) {
+      if (freshRead) {
+        refreshedJsonResponse(
+          response,
+          `activity-summary:${network}`,
+          await activitySummaryPayload(network, true),
+          FRESH_READ_CACHE_CONTROL,
+          ACTIVITY_CACHE_TTL_MS,
+          ACTIVITY_CACHE_STALE_MS,
+        );
+      } else {
+        await cachedJsonResponse(
+          response,
+          `activity-summary:${network}`,
+          () => activitySummaryPayload(network),
+          EXPENSIVE_READ_CACHE_CONTROL,
+          ACTIVITY_CACHE_TTL_MS,
+          ACTIVITY_CACHE_STALE_MS,
+        );
+      }
       return;
     }
 
@@ -6773,6 +7326,27 @@ async function handleRequest(request, response) {
         EXPENSIVE_READ_CACHE_CONTROL,
         ACTIVITY_CACHE_TTL_MS,
         ACTIVITY_CACHE_STALE_MS,
+      );
+      return;
+    }
+
+    if (
+      url.pathname === "/api/v1/activity-history" ||
+      url.pathname === "/api/v1/log-history"
+    ) {
+      const historyKind = String(url.searchParams.get("kind") ?? "")
+        .trim()
+        .toLowerCase();
+      jsonResponse(
+        response,
+        200,
+        await activityHistoryPayload(
+          network,
+          historyKind,
+          url.searchParams,
+          freshRead,
+        ),
+        freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
       );
       return;
     }
@@ -6840,6 +7414,31 @@ async function handleRequest(request, response) {
       return;
     }
 
+    if (url.pathname === "/api/v1/token-history") {
+      const tokenScope = normalizeTokenScope(
+        url.searchParams.get("asset") ??
+          url.searchParams.get("tokenId") ??
+          url.searchParams.get("ticker") ??
+          "",
+      );
+      const historyKind = String(url.searchParams.get("kind") ?? "mints")
+        .trim()
+        .toLowerCase();
+      jsonResponse(
+        response,
+        200,
+        await tokenHistoryPayload(
+          network,
+          tokenScope,
+          historyKind,
+          url.searchParams,
+          freshRead,
+        ),
+        freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
+      );
+      return;
+    }
+
     if (url.pathname === "/api/v1/work-floor") {
       if (freshRead) {
         refreshedJsonResponse(
@@ -6862,6 +7461,75 @@ async function handleRequest(request, response) {
           response,
           `work-floor:${network}`,
           () => workFloorPayload(network),
+          READ_CACHE_CONTROL,
+          WORK_FLOOR_CACHE_TTL_MS,
+          WORK_FLOOR_CACHE_STALE_MS,
+        );
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/v1/work-summary") {
+      if (freshRead) {
+        refreshedJsonResponse(
+          response,
+          `work-summary:${network}`,
+          await workSummaryPayload(network, true),
+          FRESH_READ_CACHE_CONTROL,
+          WORK_FLOOR_CACHE_TTL_MS,
+          WORK_FLOOR_CACHE_STALE_MS,
+        );
+      } else {
+        await cachedJsonResponse(
+          response,
+          `work-summary:${network}`,
+          () => workSummaryPayload(network),
+          READ_CACHE_CONTROL,
+          WORK_FLOOR_CACHE_TTL_MS,
+          WORK_FLOOR_CACHE_STALE_MS,
+        );
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/v1/marketplace-summary") {
+      if (freshRead) {
+        refreshedJsonResponse(
+          response,
+          `marketplace-summary:${network}`,
+          await marketplaceSummaryPayload(network, true),
+          FRESH_READ_CACHE_CONTROL,
+          TOKEN_CACHE_TTL_MS,
+          TOKEN_CACHE_STALE_MS,
+        );
+      } else {
+        await cachedJsonResponse(
+          response,
+          `marketplace-summary:${network}`,
+          () => marketplaceSummaryPayload(network),
+          TOKEN_READ_CACHE_CONTROL,
+          TOKEN_CACHE_TTL_MS,
+          TOKEN_CACHE_STALE_MS,
+        );
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/v1/growth-summary") {
+      if (freshRead) {
+        refreshedJsonResponse(
+          response,
+          `growth-summary:${network}`,
+          await growthSummaryPayload(network, true),
+          FRESH_READ_CACHE_CONTROL,
+          WORK_FLOOR_CACHE_TTL_MS,
+          WORK_FLOOR_CACHE_STALE_MS,
+        );
+      } else {
+        await cachedJsonResponse(
+          response,
+          `growth-summary:${network}`,
+          () => growthSummaryPayload(network),
           READ_CACHE_CONTROL,
           WORK_FLOOR_CACHE_TTL_MS,
           WORK_FLOOR_CACHE_STALE_MS,
@@ -7114,8 +7782,20 @@ function prewarmExpensiveReadCaches() {
     REGISTRY_CACHE_STALE_MS,
   );
   warmJsonCache(
+    "registry-summary:livenet",
+    () => registrySummaryPayload("livenet"),
+    REGISTRY_CACHE_TTL_MS,
+    REGISTRY_CACHE_STALE_MS,
+  );
+  warmJsonCache(
     "token:livenet:",
     () => cachedTokenPayload("livenet"),
+    TOKEN_CACHE_TTL_MS,
+    TOKEN_CACHE_STALE_MS,
+  );
+  warmJsonCache(
+    "token-summary:livenet:",
+    () => tokenSummaryPayload("livenet"),
     TOKEN_CACHE_TTL_MS,
     TOKEN_CACHE_STALE_MS,
   );
@@ -7132,6 +7812,12 @@ function prewarmExpensiveReadCaches() {
     TOKEN_CACHE_STALE_MS,
   );
   warmJsonCache(
+    "marketplace-summary:livenet",
+    () => marketplaceSummaryPayload("livenet"),
+    TOKEN_CACHE_TTL_MS,
+    TOKEN_CACHE_STALE_MS,
+  );
+  warmJsonCache(
     "rush:livenet",
     () => cachedRushPayload("livenet"),
     TOKEN_CACHE_TTL_MS,
@@ -7144,8 +7830,26 @@ function prewarmExpensiveReadCaches() {
     ACTIVITY_CACHE_STALE_MS,
   );
   warmJsonCache(
+    "activity-summary:livenet",
+    () => activitySummaryPayload("livenet"),
+    ACTIVITY_CACHE_TTL_MS,
+    ACTIVITY_CACHE_STALE_MS,
+  );
+  warmJsonCache(
     "work-floor:livenet",
     () => workFloorPayload("livenet"),
+    WORK_FLOOR_CACHE_TTL_MS,
+    WORK_FLOOR_CACHE_STALE_MS,
+  );
+  warmJsonCache(
+    "work-summary:livenet",
+    () => workSummaryPayload("livenet"),
+    WORK_FLOOR_CACHE_TTL_MS,
+    WORK_FLOOR_CACHE_STALE_MS,
+  );
+  warmJsonCache(
+    "growth-summary:livenet",
+    () => growthSummaryPayload("livenet"),
     WORK_FLOOR_CACHE_TTL_MS,
     WORK_FLOOR_CACHE_STALE_MS,
   );

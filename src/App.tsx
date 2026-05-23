@@ -492,17 +492,26 @@ type PowIdMarketplaceSale = {
 
 type PowTokenDefinition = {
   confirmed: boolean;
+  confirmedMints?: number;
+  confirmedSupply?: number;
   createdAt: string;
   creatorAddress: string;
   creationFeeSats: number;
   dataBytes?: number;
+  holderCount?: number;
+  lastSalePricePerToken?: number;
+  lowestAskPricePerToken?: number;
   maxSupply: number;
   mintAmount: number;
   mintPriceSats: number;
   network: BitcoinNetwork;
+  openListings?: number;
+  pendingMints?: number;
+  pendingSupply?: number;
   registryAddress: string;
   ticker: string;
   tokenId: string;
+  transferCount?: number;
   txid: string;
 };
 
@@ -625,6 +634,7 @@ type PowTokenState = {
   mints: PowTokenMint[];
   pendingSupply: number;
   sales: PowTokenSale[];
+  summaryOnly?: boolean;
   transfers: PowTokenTransfer[];
   tokens: PowTokenDefinition[];
 };
@@ -973,6 +983,7 @@ type RushApiResponse = Partial<RushState>;
 type PowTokenApiResponse = Partial<PowTokenState> & {
   registryAddress?: string;
   reserveAddress?: string;
+  summaryOnly?: boolean;
 };
 
 type PowActivityApiResponse = {
@@ -986,6 +997,23 @@ type PowActivityApiResponse = {
     registry?: number;
     total?: number;
   };
+};
+
+type PowPaginatedApiResponse<T> = {
+  cursor?: string;
+  end?: number;
+  indexedAt?: string;
+  items?: T[];
+  kind?: string;
+  limit?: number;
+  network?: BitcoinNetwork;
+  nextCursor?: string;
+  page?: number;
+  pageCount?: number;
+  pageSize?: number;
+  query?: string;
+  start?: number;
+  totalCount?: number;
 };
 
 type PowMailApiResponse = {
@@ -1026,6 +1054,7 @@ const TOKEN_GRID_PAGE_SIZE = 24;
 const ACTIVITY_FEED_PAGE_SIZE = 50;
 const GROWTH_EVENT_PAGE_SIZE = 12;
 const GROWTH_AUTO_REFRESH_MS = 5 * 60_000;
+const BACKGROUND_FRESH_REFRESH_DELAY_MS = 1_000;
 const BLOCK_TXID_INDEX_CACHE = new Map<string, Promise<Map<string, number>>>();
 const PROTOCOL_PREFIX = "pwm1:";
 
@@ -6045,8 +6074,17 @@ function tokenLedgerFor(
       );
     });
 
+  const summaryConfirmedSupply =
+    token && Number.isFinite(token.confirmedSupply)
+      ? Math.max(0, Number(token.confirmedSupply))
+      : 0;
+  const summaryPendingSupply =
+    token && Number.isFinite(token.pendingSupply)
+      ? Math.max(0, Number(token.pendingSupply))
+      : 0;
+
   return {
-    confirmedSupply,
+    confirmedSupply: Math.max(confirmedSupply, summaryConfirmedSupply),
     holders: [...balances.entries()]
       .filter(([, balance]) => balance > 0)
       .map(([holderAddress, balance]) => ({ address: holderAddress, balance }))
@@ -6056,11 +6094,12 @@ function tokenLedgerFor(
           left.address.localeCompare(right.address),
       ),
     mints: tokenMints,
-    pendingSupply,
+    pendingSupply: Math.max(pendingSupply, summaryPendingSupply),
   };
 }
 
 function sanitizedTokenState(state: PowTokenState): PowTokenState {
+  const summaryOnly = Boolean(state.summaryOnly);
   const tokens = state.tokens.filter((token) =>
     tokenCreationIsAllowed({
       creatorAddress: token.creatorAddress,
@@ -6084,12 +6123,17 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
     const ledger = tokenLedgerFor(tokens[0], mints, transfers, sales);
     return {
       creationSats: tokens[0].creationFeeSats,
-      confirmedSupply: ledger.confirmedSupply,
-      holders: ledger.holders,
+      confirmedSupply: summaryOnly
+        ? Math.max(ledger.confirmedSupply, state.confirmedSupply)
+        : ledger.confirmedSupply,
+      holders: summaryOnly && state.holders.length > 0 ? state.holders : ledger.holders,
       listings,
       mints,
-      pendingSupply: ledger.pendingSupply,
+      pendingSupply: summaryOnly
+        ? Math.max(ledger.pendingSupply, state.pendingSupply)
+        : ledger.pendingSupply,
       sales,
+      summaryOnly,
       tokens,
       transfers,
     };
@@ -6100,16 +6144,21 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
       (total, token) => total + token.creationFeeSats,
       0,
     ),
-    confirmedSupply: mints
-      .filter((mint) => mint.confirmed)
-      .reduce((total, mint) => total + mint.amount, 0),
-    holders: [],
+    confirmedSupply: summaryOnly
+      ? state.confirmedSupply
+      : mints
+          .filter((mint) => mint.confirmed)
+          .reduce((total, mint) => total + mint.amount, 0),
+    holders: summaryOnly ? state.holders : [],
     listings,
     mints,
-    pendingSupply: mints
-      .filter((mint) => !mint.confirmed)
-      .reduce((total, mint) => total + mint.amount, 0),
+    pendingSupply: summaryOnly
+      ? state.pendingSupply
+      : mints
+          .filter((mint) => !mint.confirmed)
+          .reduce((total, mint) => total + mint.amount, 0),
     sales,
+    summaryOnly,
     tokens,
     transfers,
   };
@@ -8490,6 +8539,7 @@ async function fetchIdRegistry(
 async function fetchIdRegistryState(
   targetNetwork: BitcoinNetwork,
   fresh = false,
+  summary = false,
 ): Promise<PowRegistryState> {
   const registryAddress = registryAddressForNetwork(targetNetwork);
   if (!registryAddress) {
@@ -8502,7 +8552,8 @@ async function fetchIdRegistryState(
     };
   }
 
-  const path = fresh ? "/api/v1/registry?fresh=1" : "/api/v1/registry";
+  const basePath = summary ? "/api/v1/registry-summary" : "/api/v1/registry";
+  const path = fresh ? `${basePath}?fresh=1` : basePath;
   const payload = await fetchProofApiJson<PowRegistryApiResponse>(
     path,
     targetNetwork,
@@ -8521,8 +8572,10 @@ async function fetchIdRegistryState(
 async function fetchGlobalActivity(
   targetNetwork: BitcoinNetwork,
   fresh = false,
+  summary = false,
 ): Promise<PowActivityItem[]> {
-  const path = fresh ? "/api/v1/log?fresh=1" : "/api/v1/log";
+  const basePath = summary ? "/api/v1/log-summary" : "/api/v1/log";
+  const path = fresh ? `${basePath}?fresh=1` : basePath;
   const payload = await fetchProofApiJson<PowActivityApiResponse>(
     path,
     targetNetwork,
@@ -8534,6 +8587,7 @@ async function fetchTokenState(
   targetNetwork: BitcoinNetwork,
   fresh = false,
   tokenScope = "",
+  summary = false,
 ): Promise<PowTokenState> {
   const indexAddress = tokenIndexAddressForNetwork(targetNetwork);
   if (!indexAddress) {
@@ -8549,7 +8603,11 @@ async function fetchTokenState(
   }
   const query = params.toString();
   const payload = await fetchProofApiJson<PowTokenApiResponse>(
-    query ? `/api/v1/token?${query}` : "/api/v1/token",
+    query
+      ? `${summary ? "/api/v1/token-summary" : "/api/v1/token"}?${query}`
+      : summary
+        ? "/api/v1/token-summary"
+        : "/api/v1/token",
     targetNetwork,
   );
   return sanitizedTokenState({
@@ -8566,6 +8624,7 @@ async function fetchTokenState(
       ? Number(payload.pendingSupply)
       : 0,
     sales: Array.isArray(payload.sales) ? payload.sales : [],
+    summaryOnly: Boolean(payload.summaryOnly),
     transfers: Array.isArray(payload.transfers) ? payload.transfers : [],
     tokens: Array.isArray(payload.tokens) ? payload.tokens : [],
   });
@@ -8609,6 +8668,41 @@ async function fetchTokenSupplyState(
       ? Number(payload.pendingSupply)
       : 0,
     tokens: Array.isArray(payload.tokens) ? payload.tokens : [],
+  };
+}
+
+async function fetchTokenHistoryPage<T>(
+  targetNetwork: BitcoinNetwork,
+  kind: "holders" | "listings" | "mints" | "sales" | "tokens" | "transfers",
+  options: {
+    fresh?: boolean;
+    pageIndex?: number;
+    pageSize?: number;
+    query?: string;
+    tokenScope?: string;
+  } = {},
+): Promise<PowPaginatedApiResponse<T>> {
+  const params = new URLSearchParams();
+  params.set("kind", kind);
+  params.set("limit", String(options.pageSize ?? DATA_PAGE_SIZE));
+  params.set("page", String(options.pageIndex ?? 0));
+  if (options.fresh) {
+    params.set("fresh", "1");
+  }
+  if (options.query?.trim()) {
+    params.set("q", options.query.trim());
+  }
+  if (options.tokenScope?.trim()) {
+    params.set("asset", options.tokenScope.trim());
+  }
+
+  const payload = await fetchProofApiJson<PowPaginatedApiResponse<T>>(
+    `/api/v1/token-history?${params.toString()}`,
+    targetNetwork,
+  );
+  return {
+    ...payload,
+    items: Array.isArray(payload.items) ? payload.items : [],
   };
 }
 
@@ -11858,7 +11952,21 @@ export default function App() {
       return;
     }
 
-    void refreshToken(true, true);
+    let cancelled = false;
+    void (async () => {
+      await refreshToken(true, false);
+      if (!cancelled && document.visibilityState === "visible") {
+        window.setTimeout(() => {
+          if (!cancelled && document.visibilityState === "visible") {
+            void refreshToken(true, true);
+          }
+        }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [marketplaceMode, network, tokenMode, walletMode, workTokenMode]);
 
   useEffect(() => {
@@ -11885,8 +11993,18 @@ export default function App() {
 
     const refreshWorkFloorMetrics = () => {
       if (document.visibilityState === "visible") {
-        void refreshTokenBtcUsd();
-        void refreshWorkFloor(true, true);
+        void (async () => {
+          await Promise.all([
+            refreshTokenBtcUsd(false),
+            refreshWorkFloor(true, false),
+          ]);
+          window.setTimeout(() => {
+            if (document.visibilityState === "visible") {
+              void refreshTokenBtcUsd(true);
+              void refreshWorkFloor(true, true);
+            }
+          }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
+        })();
       }
     };
 
@@ -11963,7 +12081,14 @@ export default function App() {
 
     const refreshGrowthMetrics = () => {
       if (document.visibilityState === "visible") {
-        void refreshGrowth(true, true);
+        void (async () => {
+          await refreshGrowth(true, false);
+          window.setTimeout(() => {
+            if (document.visibilityState === "visible") {
+              void refreshGrowth(true, true);
+            }
+          }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
+        })();
       }
     };
     refreshGrowthMetrics();
@@ -13068,7 +13193,9 @@ export default function App() {
     }
 
     tokenRefreshInFlightRef.current = true;
-    setBusy(true);
+    if (!silent) {
+      setBusy(true);
+    }
     if (!silent) {
       setStatus({ tone: "idle", text: "Scanning token index..." });
     }
@@ -13076,10 +13203,12 @@ export default function App() {
     try {
       const tokenScope =
         workTokenMode || activeFolder === "work" ? WORK_TOKEN_ID : "";
+      const useSummary = silent && !walletMode && activeFolder !== "wallet";
       const state = await fetchTokenState(
         network,
         fresh,
         tokenScope,
+        useSummary,
       );
       setTokenDefinitions(state.tokens);
       setTokenMints(state.mints);
@@ -13094,13 +13223,17 @@ export default function App() {
         });
       }
     } catch (error) {
-      setStatus({
-        tone: "bad",
-        text: errorMessage(error, "Token scan failed."),
-      });
+      if (!silent) {
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "Token scan failed."),
+        });
+      }
     } finally {
       tokenRefreshInFlightRef.current = false;
-      setBusy(false);
+      if (!silent) {
+        setBusy(false);
+      }
     }
   }
 
@@ -13147,7 +13280,10 @@ export default function App() {
     }
 
     workFloorRefreshInFlightRef.current = true;
-    setWorkFloorLoading(true);
+    const showLoading = !silent;
+    if (showLoading) {
+      setWorkFloorLoading(true);
+    }
     if (!silent) {
       setStatus({ tone: "idle", text: "Refreshing WORK floor..." });
     }
@@ -13234,7 +13370,9 @@ export default function App() {
       }
     } finally {
       workFloorRefreshInFlightRef.current = false;
-      setWorkFloorLoading(false);
+      if (showLoading) {
+        setWorkFloorLoading(false);
+      }
     }
   }
 
@@ -13244,12 +13382,15 @@ export default function App() {
     }
 
     growthRefreshInFlightRef.current = true;
-    setBusy(true);
+    if (!silent) {
+      setBusy(true);
+    }
     if (!silent) {
       setStatus({ tone: "idle", text: "Refreshing Growth metrics..." });
     }
 
     try {
+      const useSummary = silent;
       const [
         registryState,
         computerActivity,
@@ -13257,9 +13398,9 @@ export default function App() {
         btcUsdQuote,
         floorQuote,
       ] = await Promise.all([
-        fetchIdRegistryState("livenet", fresh),
-        fetchGlobalActivity("livenet", fresh).catch(() => []),
-        fetchTokenState("livenet", fresh),
+        fetchIdRegistryState("livenet", fresh, useSummary),
+        fetchGlobalActivity("livenet", fresh, useSummary).catch(() => []),
+        fetchTokenState("livenet", fresh, "", useSummary),
         fetchBtcUsdPrice(fresh).catch(() => undefined),
         fetchWorkFloorQuote("livenet", fresh).catch(() => undefined),
       ]);
@@ -13289,13 +13430,17 @@ export default function App() {
         });
       }
     } catch (error) {
-      setStatus({
-        tone: "bad",
-        text: errorMessage(error, "Growth metrics refresh failed."),
-      });
+      if (!silent) {
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "Growth metrics refresh failed."),
+        });
+      }
     } finally {
       growthRefreshInFlightRef.current = false;
-      setBusy(false);
+      if (!silent) {
+        setBusy(false);
+      }
     }
   }
 
@@ -13629,7 +13774,9 @@ export default function App() {
     }
 
     idRefreshInFlightRef.current = true;
-    setBusy(true);
+    if (!silent) {
+      setBusy(true);
+    }
     if (!silent) {
       setStatus({
         tone: "idle",
@@ -13641,14 +13788,19 @@ export default function App() {
     }
 
     try {
-      const state = await fetchIdRegistryState(network, fresh);
+      const useSummary = silent;
+      const state = await fetchIdRegistryState(network, fresh, useSummary);
       const shouldLoadComputerLog =
         activityMode || growthMode || activeFolder === "log";
       let activity = state.activity;
       let activityLoadFailed = false;
       if (shouldLoadComputerLog) {
         try {
-          const liveActivity = await fetchGlobalActivity(network, fresh);
+          const liveActivity = await fetchGlobalActivity(
+            network,
+            fresh,
+            useSummary,
+          );
           activity = liveActivity.length > 0 ? liveActivity : state.activity;
         } catch {
           activityLoadFailed = true;
@@ -13687,13 +13839,17 @@ export default function App() {
         });
       }
     } catch (error) {
-      setStatus({
-        tone: "bad",
-        text: errorMessage(error, "ID registry scan failed."),
-      });
+      if (!silent) {
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "ID registry scan failed."),
+        });
+      }
     } finally {
       idRefreshInFlightRef.current = false;
-      setBusy(false);
+      if (!silent) {
+        setBusy(false);
+      }
     }
   }
 
@@ -18329,6 +18485,49 @@ function pagedItems<T>(
   };
 }
 
+function historyPageToPagedItems<T>(
+  page: PowPaginatedApiResponse<T>,
+  fallbackPageIndex: number,
+  fallbackPageSize = DATA_PAGE_SIZE,
+): PagedItems<T> {
+  const items = Array.isArray(page.items) ? page.items : [];
+  const pageSize = Math.max(
+    1,
+    Math.floor(Number(page.pageSize ?? page.limit ?? fallbackPageSize)) ||
+      fallbackPageSize,
+  );
+  const totalCount = Math.max(0, Number(page.totalCount ?? items.length) || 0);
+  const pageIndex = Math.max(
+    0,
+    Math.floor(Number(page.page ?? fallbackPageIndex)) || 0,
+  );
+  const pageCount = Math.max(
+    1,
+    Math.ceil(totalCount / pageSize),
+    Number(page.pageCount ?? 0) || 0,
+  );
+  const start =
+    Number.isFinite(Number(page.start)) && Number(page.start) >= 0
+      ? Number(page.start)
+      : totalCount === 0
+        ? 0
+        : pageIndex * pageSize;
+  const end =
+    Number.isFinite(Number(page.end)) && Number(page.end) >= start
+      ? Number(page.end)
+      : Math.min(totalCount, start + items.length);
+
+  return {
+    end,
+    items,
+    pageCount,
+    pageIndex: Math.min(pageIndex, pageCount - 1),
+    pageSize,
+    start,
+    totalCount,
+  };
+}
+
 function PaginationControls({
   label,
   onPageChange,
@@ -20497,8 +20696,78 @@ function TokenWorkspace({
     useState<WorkFloorChartUnit>("sats");
   const [tokenMarketChartUnit, setTokenMarketChartUnit] =
     useState<WorkFloorChartUnit>("sats");
+  const [remoteMintPage, setRemoteMintPage] = useState<
+    | {
+        key: string;
+        page: PowPaginatedApiResponse<PowTokenMint>;
+      }
+    | undefined
+  >();
+  const [remoteMintPageLoading, setRemoteMintPageLoading] = useState(false);
   const holderQuery = holderSearch.trim().toLowerCase();
   const mintQuery = mintSearch.trim().toLowerCase();
+  const detailMode = workTokenOnly || Boolean(tokenDetailTarget.trim());
+  const mintHistoryToken = detailMode ? detailToken : selectedToken;
+  const mintHistoryLocalCount = detailMode ? detailMints.length : mints.length;
+  const mintHistoryTotalHint =
+    (Number(mintHistoryToken?.confirmedMints) || 0) +
+    (Number(mintHistoryToken?.pendingMints) || 0);
+  const mintHistoryKey = [
+    network,
+    mintHistoryToken?.tokenId ?? "",
+    mintPageIndex,
+    mintQuery,
+    TOKEN_LIST_PREVIEW_COUNT,
+  ].join(":");
+  const activeRemoteMintPage =
+    remoteMintPage?.key === mintHistoryKey ? remoteMintPage.page : undefined;
+  useEffect(() => {
+    if (!mintHistoryToken?.tokenId || network !== "livenet") {
+      setRemoteMintPage(undefined);
+      return;
+    }
+
+    if (mintHistoryTotalHint <= mintHistoryLocalCount) {
+      setRemoteMintPage(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    setRemoteMintPageLoading(true);
+    void fetchTokenHistoryPage<PowTokenMint>(network, "mints", {
+      pageIndex: mintPageIndex,
+      pageSize: TOKEN_LIST_PREVIEW_COUNT,
+      query: mintQuery,
+      tokenScope: mintHistoryToken.tokenId,
+    })
+      .then((page) => {
+        if (!cancelled) {
+          setRemoteMintPage({ key: mintHistoryKey, page });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRemoteMintPage(undefined);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRemoteMintPageLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    mintHistoryKey,
+    mintHistoryLocalCount,
+    mintHistoryToken?.tokenId,
+    mintHistoryTotalHint,
+    mintPageIndex,
+    mintQuery,
+    network,
+  ]);
   const holderBalance =
     holders.find((holder) => holder.address === address)?.balance ?? 0;
   const selectedMatchingHolders = holders.filter((holder) =>
@@ -20513,12 +20782,21 @@ function TokenWorkspace({
   const selectedMatchingMints = mints.filter((mint) =>
     tokenMintMatchesSearch(mint, mintQuery),
   );
-  const selectedMintPage = pagedItems(
-    selectedMatchingMints,
-    mintPageIndex,
-    TOKEN_LIST_PREVIEW_COUNT,
-  );
+  const selectedRemoteMintPage =
+    !detailMode && activeRemoteMintPage
+      ? historyPageToPagedItems(
+          activeRemoteMintPage,
+          mintPageIndex,
+          TOKEN_LIST_PREVIEW_COUNT,
+        )
+      : undefined;
+  const selectedMintPage =
+    selectedRemoteMintPage ??
+    pagedItems(selectedMatchingMints, mintPageIndex, TOKEN_LIST_PREVIEW_COUNT);
   const selectedVisibleMints = selectedMintPage.items;
+  const selectedMintMatchingCount =
+    selectedRemoteMintPage?.totalCount ?? selectedMatchingMints.length;
+  const selectedMintTotalCount = selectedRemoteMintPage?.totalCount ?? mints.length;
   const confirmedTokenCount = tokens.filter((token) => token.confirmed).length;
   const pendingTokenCount = tokens.length - confirmedTokenCount;
   const selectedPricePerToken =
@@ -20601,7 +20879,6 @@ function TokenWorkspace({
       );
     }
   };
-  const detailMode = workTokenOnly || Boolean(tokenDetailTarget.trim());
   const detailPricePerToken =
     detailToken && detailToken.mintAmount > 0
       ? detailToken.mintPriceSats / detailToken.mintAmount
@@ -20692,12 +20969,22 @@ function TokenWorkspace({
   const detailMatchingMints = detailMints.filter((mint) =>
     tokenMintMatchesSearch(mint, mintQuery),
   );
-  const detailMintPage = pagedItems(
-    detailMatchingMints,
-    mintPageIndex,
-    TOKEN_LIST_PREVIEW_COUNT,
-  );
+  const detailRemoteMintPage =
+    detailMode && activeRemoteMintPage
+      ? historyPageToPagedItems(
+          activeRemoteMintPage,
+          mintPageIndex,
+          TOKEN_LIST_PREVIEW_COUNT,
+        )
+      : undefined;
+  const detailMintPage =
+    detailRemoteMintPage ??
+    pagedItems(detailMatchingMints, mintPageIndex, TOKEN_LIST_PREVIEW_COUNT);
   const detailVisibleMints = detailMintPage.items;
+  const detailMintMatchingCount =
+    detailRemoteMintPage?.totalCount ?? detailMatchingMints.length;
+  const detailMintTotalCount =
+    detailRemoteMintPage?.totalCount ?? detailMints.length;
   const detailHolderBalance =
     detailHolders.find((holder) => holder.address === address)?.balance ?? 0;
   const detailConfirmedMintCount = detailMints.filter(
@@ -21251,13 +21538,24 @@ function TokenWorkspace({
       )}
     </div>
   );
-  const renderMintList = (visibleMints: PowTokenMint[]) => (
+  const renderMintList = (
+    visibleMints: PowTokenMint[],
+    loadingRemotePage = false,
+  ) => (
     <div className="activity-feed">
       {visibleMints.length === 0 ? (
         <div className="empty-state">
-          <h3>{mintQuery ? "No mint matches" : "No mints yet"}</h3>
+          <h3>
+            {loadingRemotePage
+              ? "Loading mints"
+              : mintQuery
+                ? "No mint matches"
+                : "No mints yet"}
+          </h3>
           <p>
-            {mintQuery
+            {loadingRemotePage
+              ? "Fetching the requested history page."
+              : mintQuery
               ? "Search by minter address, transaction id, status, amount, or sats."
               : "The selected token starts with its first valid mint."}
           </p>
@@ -21818,10 +22116,10 @@ function TokenWorkspace({
                 </div>
                 {renderMintSearch(
                   detailVisibleMints.length,
-                  detailMatchingMints.length,
-                  detailMints.length,
+                  detailMintMatchingCount,
+                  detailMintTotalCount,
                 )}
-                {renderMintList(detailVisibleMints)}
+                {renderMintList(detailVisibleMints, remoteMintPageLoading)}
                 <PaginationControls
                   label="Mints"
                   onPageChange={setMintPageIndex}
@@ -22233,10 +22531,10 @@ function TokenWorkspace({
             </div>
             {renderMintSearch(
               selectedVisibleMints.length,
-              selectedMatchingMints.length,
-              mints.length,
+              selectedMintMatchingCount,
+              selectedMintTotalCount,
             )}
-            {renderMintList(selectedVisibleMints)}
+            {renderMintList(selectedVisibleMints, remoteMintPageLoading)}
             <PaginationControls
               label="Mints"
               onPageChange={setMintPageIndex}
@@ -24793,24 +25091,68 @@ function tokenMarketplaceRowsFor({
     .map((token) => {
       const current = stats.get(token.tokenId);
       const balances = current?.balances ?? new Map<string, number>();
+      const confirmedMints = Math.max(
+        current?.confirmedMints ?? 0,
+        Number.isFinite(token.confirmedMints) ? Number(token.confirmedMints) : 0,
+      );
+      const confirmedSupply = Math.max(
+        current?.confirmedSupply ?? 0,
+        Number.isFinite(token.confirmedSupply)
+          ? Number(token.confirmedSupply)
+          : 0,
+      );
+      const holderCount = Math.max(
+        [...balances.values()].filter((balance) => balance > 0).length,
+        Number.isFinite(token.holderCount) ? Number(token.holderCount) : 0,
+      );
+      const lastSalePricePerToken = Math.max(
+        current?.lastSalePricePerToken ?? 0,
+        Number.isFinite(token.lastSalePricePerToken)
+          ? Number(token.lastSalePricePerToken)
+          : 0,
+      );
+      const computedLowestAsk = current?.lowestAskPricePerToken ?? 0;
+      const summaryLowestAsk = Number.isFinite(token.lowestAskPricePerToken)
+        ? Number(token.lowestAskPricePerToken)
+        : 0;
+      const lowestAskPricePerToken =
+        computedLowestAsk > 0 && summaryLowestAsk > 0
+          ? Math.min(computedLowestAsk, summaryLowestAsk)
+          : computedLowestAsk || summaryLowestAsk;
+      const openListings = Math.max(
+        current?.openListings ?? 0,
+        Number.isFinite(token.openListings) ? Number(token.openListings) : 0,
+      );
+      const pendingMints = Math.max(
+        current?.pendingMints ?? 0,
+        Number.isFinite(token.pendingMints) ? Number(token.pendingMints) : 0,
+      );
+      const pendingSupply = Math.max(
+        current?.pendingSupply ?? 0,
+        Number.isFinite(token.pendingSupply) ? Number(token.pendingSupply) : 0,
+      );
+      const transferCount = Math.max(
+        current?.transferCount ?? 0,
+        Number.isFinite(token.transferCount) ? Number(token.transferCount) : 0,
+      );
+
       return {
         ...token,
-        confirmedMints: current?.confirmedMints ?? 0,
-        confirmedSupply: current?.confirmedSupply ?? 0,
-        holderCount: [...balances.values()].filter((balance) => balance > 0)
-          .length,
-        lastSalePricePerToken: current?.lastSalePricePerToken ?? 0,
-        lowestAskPricePerToken: current?.lowestAskPricePerToken ?? 0,
-        openListings: current?.openListings ?? 0,
-        pendingMints: current?.pendingMints ?? 0,
-        pendingSupply: current?.pendingSupply ?? 0,
+        confirmedMints,
+        confirmedSupply,
+        holderCount,
+        lastSalePricePerToken,
+        lowestAskPricePerToken,
+        openListings,
+        pendingMints,
+        pendingSupply,
         pricePerToken:
           token.mintAmount > 0 ? token.mintPriceSats / token.mintAmount : 0,
         progress: tokenProgressPercent(
-          current?.confirmedSupply ?? 0,
+          confirmedSupply,
           token.maxSupply,
         ),
-        transferCount: current?.transferCount ?? 0,
+        transferCount,
         walletBalance: address ? Math.max(0, balances.get(address) ?? 0) : 0,
       };
     })
