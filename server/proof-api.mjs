@@ -714,7 +714,10 @@ async function existingTokenPayload(network, tokenScope = "") {
 
 async function safeTokenPayload(network, tokenScope = "") {
   const scope = normalizeTokenScope(tokenScope);
-  const previousPayload = await existingTokenPayload(network, scope);
+  const previousPayload = await tokenPayloadWithSpendableListings(
+    await existingTokenPayload(network, scope),
+    network,
+  );
   let nextPayload;
   try {
     nextPayload = await tokenPayload(network, scope);
@@ -888,10 +891,12 @@ function tokenIndexAddressForNetwork(network) {
   return TOKEN_INDEX_ADDRESSES[network] ?? "";
 }
 
-async function fetchJson(url) {
+async function fetchJson(url, init = {}) {
   const response = await fetch(url, {
+    ...init,
     headers: {
       Accept: "application/json",
+      ...(init.headers ?? {}),
     },
   });
 
@@ -2532,6 +2537,111 @@ function tokenSellerPaymentRequiredSats(listing) {
   return listing.priceSats + listing.saleAuthorization.anchorValueSats;
 }
 
+function tokenListingAnchorOutpoint(listing) {
+  if (
+    listing?.saleAuthorization?.anchorType !== TOKEN_LISTING_ANCHOR_TYPE ||
+    !/^[0-9a-f]{64}$/u.test(listing?.listingId ?? "") ||
+    !Number.isSafeInteger(listing.saleAuthorization.anchorVout)
+  ) {
+    return null;
+  }
+
+  return {
+    txid: listing.listingId,
+    vout: listing.saleAuthorization.anchorVout,
+  };
+}
+
+async function tokenListingAnchorOutspend(listing, network) {
+  const anchor = tokenListingAnchorOutpoint(listing);
+  if (!anchor) {
+    return null;
+  }
+
+  let unspentOutspend = null;
+  for (const base of pendingMempoolBases(network)) {
+    try {
+      const outspend = await fetchJson(
+        `${base}/api/tx/${anchor.txid}/outspend/${anchor.vout}`,
+        { signal: AbortSignal.timeout(4_000) },
+      );
+      if (outspend?.spent) {
+        return outspend;
+      }
+      if (outspend) {
+        unspentOutspend = outspend;
+      }
+    } catch {
+      // Keep the listing visible if a transient outspend lookup fails.
+    }
+  }
+
+  return unspentOutspend;
+}
+
+async function filterSpendableTokenListings(listings, network) {
+  const outspends = await Promise.all(
+    listings.map((listing) => tokenListingAnchorOutspend(listing, network)),
+  );
+  const activeListings = [];
+  const closedListings = [];
+
+  for (const [index, listing] of listings.entries()) {
+    const outspend = outspends[index];
+    if (!outspend?.spent) {
+      activeListings.push(listing);
+      continue;
+    }
+
+    const blockTime = outspend.status?.block_time;
+    closedListings.push({
+      ...listing,
+      closedAt:
+        typeof blockTime === "number"
+          ? new Date(blockTime * 1000).toISOString()
+          : new Date().toISOString(),
+      closedConfirmed: Boolean(outspend.status?.confirmed),
+      closedTxid: typeof outspend.txid === "string" ? outspend.txid : "",
+      closedVin: Number.isSafeInteger(outspend.vin) ? outspend.vin : undefined,
+    });
+  }
+
+  return { closedListings, listings: activeListings };
+}
+
+function sortClosedTokenListings(listings) {
+  return [...listings].sort(
+    (left, right) =>
+      Number(right.closedConfirmed) - Number(left.closedConfirmed) ||
+      Date.parse(right.closedAt) - Date.parse(left.closedAt) ||
+      left.listingId.localeCompare(right.listingId),
+  );
+}
+
+async function tokenPayloadWithSpendableListings(payload, network) {
+  if (!payload || !Array.isArray(payload.listings)) {
+    return payload;
+  }
+
+  const tokenListings = await filterSpendableTokenListings(
+    payload.listings,
+    network,
+  );
+  const closedByKey = new Map();
+  for (const listing of [
+    ...(Array.isArray(payload.closedListings) ? payload.closedListings : []),
+    ...tokenListings.closedListings,
+  ]) {
+    closedByKey.set(`${listing.listingId}:${listing.closedTxid ?? ""}`, listing);
+  }
+
+  return {
+    ...payload,
+    closedListings: sortClosedTokenListings([...closedByKey.values()]),
+    listings: tokenListings.listings,
+  };
+}
+
 function parseTokenPayload(message, network) {
   if (!message.startsWith(TOKEN_PROTOCOL_PREFIX)) {
     return null;
@@ -2678,6 +2788,7 @@ function tokenMatchesScope(token, scope) {
 
 function emptyTokenState() {
   return {
+    closedListings: [],
     creationSats: 0,
     confirmedSupply: 0,
     holders: [],
@@ -2812,6 +2923,7 @@ function tokenStateFromTransactions(
   const tokenSupply = new Map();
   const balances = new Map();
   const listings = new Map();
+  const closedListings = [];
   const mints = [];
   const sales = [];
   const transfers = [];
@@ -2834,6 +2946,21 @@ function tokenStateFromTransactions(
   const spendableBalanceFor = (tokenId, ownerAddress) =>
     (balances.get(balanceKeyFor(tokenId, ownerAddress)) ?? 0) -
     reservedBalanceFor(tokenId, ownerAddress);
+  const closeListingsSpentByEvent = (spentOutpoints, event) => {
+    for (const [listingId, listing] of [...listings.entries()]) {
+      if (!spendsTokenListingAnchor(spentOutpoints, listing)) {
+        continue;
+      }
+
+      listings.delete(listingId);
+      closedListings.push({
+        ...listing,
+        closedAt: event.createdAt,
+        closedConfirmed: event.confirmed,
+        closedTxid: event.txid,
+      });
+    }
+  };
 
   const registryAddresses = [
     ...new Set(tokens.map((token) => token.registryAddress).filter(Boolean)),
@@ -3112,10 +3239,22 @@ function tokenStateFromTransactions(
           });
         }
       }
+
+      closeListingsSpentByEvent(eventSpentOutpoints, {
+        confirmed,
+        createdAt,
+        txid,
+      });
     }
   }
 
   return {
+    closedListings: closedListings.sort(
+      (left, right) =>
+        Number(right.closedConfirmed) - Number(left.closedConfirmed) ||
+        Date.parse(right.closedAt) - Date.parse(left.closedAt) ||
+        left.listingId.localeCompare(right.listingId),
+    ),
     creationSats,
     confirmedSupply,
     holders: [...balances.entries()]
@@ -4635,6 +4774,41 @@ function tokenActivityItemsFromState(state, indexAddress) {
     };
   });
 
+  const closedListings = (state.closedListings ?? []).map((listing) => {
+    const closedTxid =
+      typeof listing.closedTxid === "string" ? listing.closedTxid : "";
+    const spentBy = closedTxid ? ` by ${shortAddress(closedTxid)}` : "";
+    return {
+      amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+      actor: listing.sellerAddress,
+      confirmed: Boolean(listing.closedConfirmed),
+      counterparty: listing.registryAddress,
+      createdAt: listing.closedAt ?? listing.createdAt,
+      dataBytes: listing.dataBytes,
+      description: `${listing.amount.toLocaleString()} ${listing.ticker} listing closed because its sale-ticket output was spent${spentBy}.`,
+      detail: closedTxid
+        ? `Sale ticket spent by ${shortAddress(closedTxid)}`
+        : "Sale ticket spent",
+      kind: "token-listing-closed",
+      network: listing.network,
+      tags: [
+        activityStatusTag(Boolean(listing.closedConfirmed)),
+        networkLabel(listing.network),
+        "Token",
+        "Marketplace",
+        "Closed",
+        "Spent ticket",
+        listing.ticker,
+        `${listing.amount.toLocaleString()} ${listing.ticker}`,
+        `${listing.priceSats.toLocaleString()} sale sats`,
+      ],
+      title: listing.closedConfirmed
+        ? "Token listing closed"
+        : "Token listing closing",
+      txid: closedTxid || listing.listingId,
+    };
+  });
+
   const sales = (state.sales ?? []).map((sale) => ({
     amountSats: sale.paidSats,
     actor: sale.buyerAddress,
@@ -4660,7 +4834,14 @@ function tokenActivityItemsFromState(state, indexAddress) {
     txid: sale.txid,
   }));
 
-  return [...creations, ...mints, ...transfers, ...listings, ...sales];
+  return [
+    ...creations,
+    ...mints,
+    ...transfers,
+    ...listings,
+    ...closedListings,
+    ...sales,
+  ];
 }
 
 function rushActivityItemsFromState(state) {
@@ -4983,7 +5164,10 @@ async function fastCachedTokenPayload(network, tokenScope = "") {
   const cachedJsonEntry = RESPONSE_CACHE.get(jsonKey);
   if (cachedJsonEntry?.body) {
     try {
-      const payload = JSON.parse(cachedJsonEntry.body);
+      const payload = await tokenPayloadWithSpendableListings(
+        JSON.parse(cachedJsonEntry.body),
+        network,
+      );
       RESPONSE_CACHE.set(payloadKey, {
         expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
         payload,
@@ -6138,8 +6322,9 @@ async function tokenPayload(network, tokenScope = "") {
     network,
     scope,
   );
+  const payloadState = await tokenPayloadWithSpendableListings(state, network);
   return {
-    ...state,
+    ...payloadState,
     creationPriceSats: TOKEN_CREATION_PRICE_SATS,
     indexedAt: new Date().toISOString(),
     indexAddress,
@@ -6306,7 +6491,10 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "") {
   const cachedJsonEntry = RESPONSE_CACHE.get(jsonKey);
   if (cachedJsonEntry?.body) {
     try {
-      const payload = JSON.parse(cachedJsonEntry.body);
+      const payload = await tokenPayloadWithSpendableListings(
+        JSON.parse(cachedJsonEntry.body),
+        network,
+      );
       RESPONSE_CACHE.set(payloadKey, {
         expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
         payload,
@@ -6367,6 +6555,7 @@ function compactTokenSummaryPayload(payload) {
 
   return {
     ...payload,
+    closedListings: recentByCreatedAt(payload.closedListings, SUMMARY_MARKET_LIMIT),
     holders: holders.slice(0, SUMMARY_MARKET_LIMIT),
     listings: recentByCreatedAt(payload.listings, SUMMARY_MARKET_LIMIT),
     mints: [],
@@ -6713,6 +6902,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     : await cachedTokenPayload(network, scope);
   const safeKind = new Set([
     "holders",
+    "closedListings",
     "listings",
     "mints",
     "sales",
@@ -7103,6 +7293,7 @@ function growthActivityKindLabel(kind) {
     kind === "token-create" ||
     kind === "token-mint" ||
     kind === "token-listing" ||
+    kind === "token-listing-closed" ||
     kind === "token-sale"
   ) {
     return "Token";

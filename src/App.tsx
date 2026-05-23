@@ -674,6 +674,7 @@ type PowActivityKind =
   | "token-create"
   | "token-mint"
   | "token-listing"
+  | "token-listing-closed"
   | "token-sale"
   | "token-transfer"
   | "rush-mint";
@@ -5453,6 +5454,38 @@ function tokenListingAnchorOutpoint(listing: PowTokenListing) {
   };
 }
 
+function activeTokenListingAnchorOutpointsForAddress(
+  listings: PowTokenListing[],
+  address: string,
+  {
+    exceptListingId,
+    network,
+  }: {
+    exceptListingId?: string;
+    network?: BitcoinNetwork;
+  } = {},
+): PowIdSpentOutpoint[] {
+  if (!address) {
+    return [];
+  }
+
+  return listings.flatMap((listing) => {
+    if (network && listing.network !== network) {
+      return [];
+    }
+
+    if (exceptListingId && listing.listingId === exceptListingId) {
+      return [];
+    }
+
+    if (listing.sellerAddress !== address) {
+      return [];
+    }
+
+    return [tokenListingAnchorOutpoint(listing)];
+  });
+}
+
 function spendsTokenListingAnchor(
   spentOutpoints: PowIdSpentOutpoint[],
   listing: PowTokenListing,
@@ -9424,18 +9457,28 @@ async function loadChainedInitialInputs(
 }
 
 async function selectChainedInitialInputs({
+  excludeOutpoints,
   feeRate,
   fromAddress,
   network,
   totalRequiredSats,
 }: {
+  excludeOutpoints?: PowIdSpentOutpoint[];
   feeRate: number;
   fromAddress: string;
   network: BitcoinNetwork;
   totalRequiredSats: number;
 }) {
   const walletUtxos = await fetchUtxos(fromAddress, network);
-  const utxos = walletUtxos.filter((utxo) => utxo.status?.confirmed);
+  const excluded = new Set(
+    (excludeOutpoints ?? []).map(
+      (outpoint) => `${outpoint.txid}:${outpoint.vout}`,
+    ),
+  );
+  const spendableWalletUtxos = walletUtxos.filter(
+    (utxo) => !excluded.has(`${utxo.txid}:${utxo.vout}`),
+  );
+  const utxos = spendableWalletUtxos.filter((utxo) => utxo.status?.confirmed);
 
   if (walletUtxos.length === 0) {
     throw new Error(
@@ -15938,6 +15981,11 @@ export default function App() {
 
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: TOKEN_CREATION_PRICE_SATS,
+        excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
+          tokenListings,
+          address,
+          { network: "livenet" },
+        ),
         feeRate,
         fromAddress: address,
         network: "livenet",
@@ -16065,6 +16113,11 @@ export default function App() {
       estimateTxVbytes(1, fixedOutputVbytes + changeOutputVbytes) * feeRate,
     );
     const initialInputs = await selectChainedInitialInputs({
+      excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
+        tokenListings,
+        address,
+        { network: "livenet" },
+      ),
       feeRate,
       fromAddress: address,
       network: "livenet",
@@ -16363,6 +16416,11 @@ export default function App() {
 
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+        excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
+          tokenListings,
+          address,
+          { network: "livenet" },
+        ),
         feeRate,
         fromAddress: address,
         network: "livenet",
@@ -16538,6 +16596,11 @@ export default function App() {
       }
 
       const paymentPsbt = await buildPaymentPsbt({
+        excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
+          latestState.listings,
+          address,
+          { network: "livenet" },
+        ),
         feeRate,
         fromAddress: address,
         network: "livenet",
@@ -16656,6 +16719,12 @@ export default function App() {
       );
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+        excludeOutpoints: [
+          ...activeTokenListingAnchorOutpointsForAddress(tokenListings, address, {
+            network: "livenet",
+          }),
+          tokenListingAnchorOutpoint(listing),
+        ],
         feeRate,
         fromAddress: address,
         network: "livenet",
@@ -16738,6 +16807,11 @@ export default function App() {
       const payload = buildTokenDelistingPayload(listing.listingId);
       const paymentPsbt = await buildAnchoredMarketplacePsbt({
         anchorSpendMode: "wallet",
+        excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
+          tokenListings,
+          address,
+          { exceptListingId: listing.listingId, network: "livenet" },
+        ),
         feeRate,
         fromAddress: address,
         listing,
@@ -16850,6 +16924,11 @@ export default function App() {
       const payload = buildTokenBuyPayload(listing.listingId, address);
       const paymentPsbt = await buildAnchoredMarketplacePsbt({
         anchorSpendMode: "preSigned",
+        excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
+          tokenListings,
+          address,
+          { network: "livenet" },
+        ),
         feeRate,
         fromAddress: address,
         listing,
@@ -23638,6 +23717,7 @@ function growthActivityKindLabel(kind: PowActivityKind) {
     kind === "token-create" ||
     kind === "token-mint" ||
     kind === "token-listing" ||
+    kind === "token-listing-closed" ||
     kind === "token-sale"
   ) {
     return "Token";
