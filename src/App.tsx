@@ -1219,10 +1219,12 @@ type GrowthActualNetworkValue = {
 };
 
 type WorkFloorQuote = {
+  actualValue?: GrowthActualNetworkValue;
   chartPoints: WorkFloorPoint[];
   indexedAt: string;
   networkValueSats: number;
   powids: number;
+  stats?: Record<string, number>;
   tokenFlowSats: number;
 };
 
@@ -1236,6 +1238,7 @@ type WorkFloorPoint = {
 type WorkFloorChartUnit = "sats" | "usd";
 
 type WorkFloorApiResponse = {
+  actualValue?: Partial<GrowthActualNetworkValue>;
   chartPoints?: Array<Partial<WorkFloorPoint>>;
   indexedAt?: string;
   network?: BitcoinNetwork;
@@ -1254,6 +1257,41 @@ type GrowthRealEvent = {
   network: BitcoinNetwork;
   title: string;
   txid: string;
+};
+
+type GrowthSummaryCounts = {
+  browserActions: number;
+  confirmedComputerActions: number;
+  confirmedTokenDefinitions: number;
+  confirmedTokenMints: number;
+  confirmedTokenSales: number;
+  confirmedTokenTransfers: number;
+  driveActions: number;
+  idListings: number;
+  mailActions: number;
+  marketplaceSaleCount: number;
+  pendingRecords: number;
+  powids: number;
+  tokenCount: number;
+};
+
+type GrowthSummarySnapshot = {
+  actualValue: GrowthActualNetworkValue;
+  counts: GrowthSummaryCounts;
+  events: GrowthRealEvent[];
+  indexedAt: string;
+  workFloor?: WorkFloorQuote;
+};
+
+type GrowthSummaryApiResponse = {
+  actualValue?: Partial<GrowthActualNetworkValue>;
+  activity?: PowActivityApiResponse;
+  counts?: Partial<GrowthSummaryCounts>;
+  events?: Array<Partial<GrowthRealEvent>>;
+  indexedAt?: string;
+  registry?: PowRegistryApiResponse;
+  token?: PowTokenApiResponse;
+  workFloor?: WorkFloorApiResponse;
 };
 
 const GROWTH_MODEL_START_DATE = "2026-05-11";
@@ -8741,8 +8779,115 @@ async function fetchTokenHistoryPage<T>(
   };
 }
 
-function normalizeWorkFloorQuote(payload: WorkFloorApiResponse): WorkFloorQuote {
+function growthNumberField(
+  payload: Partial<GrowthActualNetworkValue> | undefined,
+  key: keyof GrowthActualNetworkValue,
+) {
+  const value = Number(payload?.[key]);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function normalizeGrowthActualValue(
+  payload?: Partial<GrowthActualNetworkValue>,
+): GrowthActualNetworkValue {
   return {
+    browserFlowSats: growthNumberField(payload, "browserFlowSats"),
+    browserSats: growthNumberField(payload, "browserSats"),
+    driveFlowSats: growthNumberField(payload, "driveFlowSats"),
+    driveSats: growthNumberField(payload, "driveSats"),
+    mailFlowSats: growthNumberField(payload, "mailFlowSats"),
+    mailSats: growthNumberField(payload, "mailSats"),
+    marketplaceSats: growthNumberField(payload, "marketplaceSats"),
+    marketplaceVolumeSats: growthNumberField(
+      payload,
+      "marketplaceVolumeSats",
+    ),
+    powids: growthNumberField(payload, "powids"),
+    tokenCreationFlowSats: growthNumberField(
+      payload,
+      "tokenCreationFlowSats",
+    ),
+    tokenMintFlowSats: growthNumberField(payload, "tokenMintFlowSats"),
+    tokenSaleFlowSats: growthNumberField(payload, "tokenSaleFlowSats"),
+    tokenTransferFlowSats: growthNumberField(
+      payload,
+      "tokenTransferFlowSats",
+    ),
+    tokenSats: growthNumberField(payload, "tokenSats"),
+    walletFlowSats: growthNumberField(payload, "walletFlowSats"),
+    walletSats: growthNumberField(payload, "walletSats"),
+    totalSats: growthNumberField(payload, "totalSats"),
+    totalUsd: growthNumberField(payload, "totalUsd"),
+  };
+}
+
+function normalizeGrowthCounts(
+  payload: Partial<GrowthSummaryCounts> | undefined,
+  actualValue: GrowthActualNetworkValue,
+): GrowthSummaryCounts {
+  const numberCount = (key: keyof GrowthSummaryCounts, fallback = 0) => {
+    const value = Number(payload?.[key]);
+    return Number.isFinite(value) ? value : fallback;
+  };
+
+  return {
+    browserActions: numberCount("browserActions"),
+    confirmedComputerActions: numberCount("confirmedComputerActions"),
+    confirmedTokenDefinitions: numberCount("confirmedTokenDefinitions"),
+    confirmedTokenMints: numberCount("confirmedTokenMints"),
+    confirmedTokenSales: numberCount("confirmedTokenSales"),
+    confirmedTokenTransfers: numberCount("confirmedTokenTransfers"),
+    driveActions: numberCount("driveActions"),
+    idListings: numberCount("idListings"),
+    mailActions: numberCount("mailActions"),
+    marketplaceSaleCount: numberCount("marketplaceSaleCount"),
+    pendingRecords: numberCount("pendingRecords"),
+    powids: numberCount("powids", actualValue.powids),
+    tokenCount: numberCount("tokenCount"),
+  };
+}
+
+function normalizeGrowthEvent(
+  event: Partial<GrowthRealEvent>,
+): GrowthRealEvent | undefined {
+  const txid = typeof event.txid === "string" ? event.txid : "";
+  if (!txid) {
+    return undefined;
+  }
+  const network: BitcoinNetwork =
+    event.network === "testnet" || event.network === "testnet4"
+      ? event.network
+      : "livenet";
+
+  return {
+    amountLabel: String(event.amountLabel ?? "Confirmed"),
+    createdAt:
+      typeof event.createdAt === "string"
+        ? event.createdAt
+        : new Date().toISOString(),
+    detail: String(event.detail ?? ""),
+    key: String(event.key ?? txid),
+    kind: String(event.kind ?? "Event"),
+    network,
+    title: String(event.title ?? "Growth event"),
+    txid,
+  };
+}
+
+function normalizeWorkFloorQuote(payload: WorkFloorApiResponse): WorkFloorQuote {
+  const stats =
+    payload.stats && typeof payload.stats === "object"
+      ? Object.fromEntries(
+          Object.entries(payload.stats)
+            .map(([key, value]) => [key, Number(value)])
+            .filter(([, value]) => Number.isFinite(value)),
+        )
+      : undefined;
+
+  return {
+    actualValue: payload.actualValue
+      ? normalizeGrowthActualValue(payload.actualValue)
+      : undefined,
     chartPoints: Array.isArray(payload.chartPoints)
       ? payload.chartPoints
           .map((point) => ({
@@ -8764,6 +8909,7 @@ function normalizeWorkFloorQuote(payload: WorkFloorApiResponse): WorkFloorQuote 
         : new Date().toISOString(),
     networkValueSats: Number(payload.networkValueSats) || 0,
     powids: Number(payload.powids) || 0,
+    stats,
     tokenFlowSats: Number(payload.tokenFlowSats) || 0,
   };
 }
@@ -8779,11 +8925,88 @@ async function fetchWorkFloorQuote(
   return normalizeWorkFloorQuote(payload);
 }
 
-async function triggerGrowthSummaryRefresh() {
-  await fetchProofApiJson<Record<string, unknown>>(
-    "/api/v1/growth-summary?fresh=1",
+function normalizeGrowthSummary(
+  payload: GrowthSummaryApiResponse,
+): GrowthSummarySnapshot {
+  const workFloor = payload.workFloor
+    ? normalizeWorkFloorQuote(payload.workFloor)
+    : undefined;
+  const actualValue = normalizeGrowthActualValue(
+    payload.actualValue ?? workFloor?.actualValue,
+  );
+
+  return {
+    actualValue,
+    counts: normalizeGrowthCounts(payload.counts, actualValue),
+    events: Array.isArray(payload.events)
+      ? payload.events
+          .map(normalizeGrowthEvent)
+          .filter((event): event is GrowthRealEvent => Boolean(event))
+      : [],
+    indexedAt:
+      typeof payload.indexedAt === "string"
+        ? payload.indexedAt
+        : new Date().toISOString(),
+    workFloor,
+  };
+}
+
+async function fetchGrowthSummary(
+  fresh = false,
+): Promise<{
+  activity: PowActivityItem[];
+  registry: PowRegistryState;
+  snapshot: GrowthSummarySnapshot;
+  token: PowTokenState;
+}> {
+  const payload = await fetchProofApiJson<GrowthSummaryApiResponse>(
+    fresh ? "/api/v1/growth-summary?fresh=1" : "/api/v1/growth-summary",
     "livenet",
   );
+
+  return {
+    activity: Array.isArray(payload.activity?.activity)
+      ? payload.activity.activity
+      : [],
+    registry: {
+      activity: Array.isArray(payload.registry?.activity)
+        ? payload.registry.activity
+        : [],
+      listings: Array.isArray(payload.registry?.listings)
+        ? payload.registry.listings
+        : [],
+      pendingEvents: Array.isArray(payload.registry?.pendingEvents)
+        ? payload.registry.pendingEvents
+        : [],
+      records: Array.isArray(payload.registry?.records)
+        ? payload.registry.records
+        : [],
+      sales: Array.isArray(payload.registry?.sales) ? payload.registry.sales : [],
+    },
+    snapshot: normalizeGrowthSummary(payload),
+    token: sanitizedTokenState({
+      creationSats: Number.isSafeInteger(payload.token?.creationSats)
+        ? Number(payload.token?.creationSats)
+        : 0,
+      confirmedSupply: Number.isSafeInteger(payload.token?.confirmedSupply)
+        ? Number(payload.token?.confirmedSupply)
+        : 0,
+      holders: Array.isArray(payload.token?.holders) ? payload.token.holders : [],
+      listings: Array.isArray(payload.token?.listings)
+        ? payload.token.listings
+        : [],
+      mints: Array.isArray(payload.token?.mints) ? payload.token.mints : [],
+      pendingSupply: Number.isSafeInteger(payload.token?.pendingSupply)
+        ? Number(payload.token?.pendingSupply)
+        : 0,
+      sales: Array.isArray(payload.token?.sales) ? payload.token.sales : [],
+      summaryOnly: Boolean(payload.token?.summaryOnly),
+      transfers: Array.isArray(payload.token?.transfers)
+        ? payload.token.transfers
+        : [],
+      tokens: Array.isArray(payload.token?.tokens) ? payload.token.tokens : [],
+    }),
+  };
 }
 
 async function fetchRushState(
@@ -10764,6 +10987,9 @@ export default function App() {
   const [tokenBtcUsd, setTokenBtcUsd] = useState(0);
   const [workFloorQuote, setWorkFloorQuote] = useState<
     WorkFloorQuote | undefined
+  >();
+  const [growthSummary, setGrowthSummary] = useState<
+    GrowthSummarySnapshot | undefined
   >();
   const [workFloorLoading, setWorkFloorLoading] = useState(false);
   const [tokenPrepareMintCount, setTokenPrepareMintCount] = useState(
@@ -13432,45 +13658,34 @@ export default function App() {
     }
 
     try {
-      const [
-        registryState,
-        computerActivity,
-        tokenState,
-        btcUsdQuote,
-        floorQuote,
-      ] = await Promise.all([
-        fetchIdRegistryState("livenet", false, false),
-        fetchGlobalActivity("livenet", false, false).catch(() => []),
-        fetchTokenState("livenet", false, "", false),
+      const [summaryPayload, btcUsdQuote] = await Promise.all([
+        fetchGrowthSummary(fresh),
         fetchBtcUsdPrice(fresh).catch(() => undefined),
-        fetchWorkFloorQuote("livenet", fresh).catch(() => undefined),
       ]);
-      if (fresh) {
-        void triggerGrowthSummaryRefresh().catch(() => undefined);
-      }
+      const { activity, registry: registryState, snapshot, token: tokenState } =
+        summaryPayload;
       setIdRegistry(registryState.records);
       setIdListings(registryState.listings);
       setIdPendingEvents(registryState.pendingEvents);
       setIdSales(registryState.sales);
-      setIdActivity(
-        computerActivity.length > 0 ? computerActivity : registryState.activity,
-      );
+      setIdActivity(activity.length > 0 ? activity : registryState.activity);
       setTokenDefinitions(tokenState.tokens);
       setTokenMints(tokenState.mints);
       setTokenTransfers(tokenState.transfers);
       setTokenListings(tokenState.listings);
       setTokenSales(tokenState.sales);
       setTokenCreationSats(tokenState.creationSats);
+      setGrowthSummary(snapshot);
       if (btcUsdQuote) {
         setTokenBtcUsd(btcUsdQuote);
       }
-      if (floorQuote) {
-        setWorkFloorQuote(floorQuote);
+      if (snapshot.workFloor) {
+        setWorkFloorQuote(snapshot.workFloor);
       }
       if (!silent) {
         setStatus({
           tone: "good",
-          text: `Growth metrics loaded. ${registryState.records.filter((record) => record.confirmed).length.toLocaleString()} IDs, ${computerActivity.length.toLocaleString()} computer action${computerActivity.length === 1 ? "" : "s"}, ${tokenState.tokens.length.toLocaleString()} token${tokenState.tokens.length === 1 ? "" : "s"}.`,
+          text: `Growth metrics loaded. ${snapshot.counts.powids.toLocaleString()} IDs, ${snapshot.counts.confirmedComputerActions.toLocaleString()} computer action${snapshot.counts.confirmedComputerActions === 1 ? "" : "s"}, ${snapshot.counts.tokenCount.toLocaleString()} token${snapshot.counts.tokenCount === 1 ? "" : "s"}.`,
         });
       }
     } catch (error) {
@@ -17499,6 +17714,7 @@ export default function App() {
           (record) => record.network === "livenet",
         )}
         registrySales={idSales.filter((sale) => sale.network === "livenet")}
+        growthSummary={growthSummary}
         status={status}
         tokenDefinitions={tokenDefinitions.filter(
           (token) => token.network === "livenet",
@@ -24070,6 +24286,7 @@ function GrowthApp({
   activeNetwork,
   btcUsd,
   busy,
+  growthSummary,
   idActivity,
   registryListings,
   registryRecords,
@@ -24086,6 +24303,7 @@ function GrowthApp({
   activeNetwork: BitcoinNetwork;
   btcUsd: number;
   busy: boolean;
+  growthSummary?: GrowthSummarySnapshot;
   idActivity: PowActivityItem[];
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
@@ -24114,6 +24332,7 @@ function GrowthApp({
       <GrowthWorkspace
         btcUsd={btcUsd}
         busy={busy}
+        growthSummary={growthSummary}
         idActivity={idActivity}
         registryListings={registryListings}
         registryRecords={registryRecords}
@@ -24134,6 +24353,7 @@ function GrowthApp({
 function GrowthWorkspace({
   btcUsd,
   busy,
+  growthSummary,
   idActivity,
   registryListings,
   registryRecords,
@@ -24147,6 +24367,7 @@ function GrowthWorkspace({
 }: {
   btcUsd: number;
   busy: boolean;
+  growthSummary?: GrowthSummarySnapshot;
   idActivity: PowActivityItem[];
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
@@ -24161,7 +24382,7 @@ function GrowthWorkspace({
   const [growthEventPageIndex, setGrowthEventPageIndex] = useState(0);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
   const confirmedActivity = idActivity.filter((item) => item.confirmed);
-  const actualValue = growthActualNetworkValue(
+  const computedActualValue = growthActualNetworkValue(
     registryRecords,
     idActivity,
     registrySales,
@@ -24170,6 +24391,7 @@ function GrowthWorkspace({
     tokenTransfers,
     tokenSales,
   );
+  const actualValue = growthSummary?.actualValue ?? computedActualValue;
   const actualPoints = growthActualValuePoints(
     registryRecords,
     idActivity,
@@ -24182,13 +24404,16 @@ function GrowthWorkspace({
   const liveBtcUsd = Number.isFinite(btcUsd) && btcUsd > 0 ? btcUsd : 0;
   const usdForSats = (sats: number) => satsToUsd(sats, liveBtcUsd);
   const growthUsdForSats = (sats: number) => growthUsd(usdForSats(sats));
+  const summaryWorkFloor = growthSummary?.workFloor ?? workFloorQuote;
   const authoritativeNetworkValueSats =
-    workFloorQuote && workFloorQuote.networkValueSats > 0
-      ? workFloorQuote.networkValueSats
+    growthSummary?.actualValue.totalSats && growthSummary.actualValue.totalSats > 0
+      ? growthSummary.actualValue.totalSats
+      : summaryWorkFloor && summaryWorkFloor.networkValueSats > 0
+      ? summaryWorkFloor.networkValueSats
       : actualValue.totalSats;
   const authoritativeActualPoints =
-    workFloorQuote && workFloorQuote.chartPoints.length > 0
-      ? workFloorQuote.chartPoints.map((point) => ({
+    summaryWorkFloor && summaryWorkFloor.chartPoints.length > 0
+      ? summaryWorkFloor.chartPoints.map((point) => ({
           label: point.label,
           sats: point.networkValueSats,
           usd: usdForSats(point.networkValueSats),
@@ -24198,15 +24423,18 @@ function GrowthWorkspace({
           ...point,
           usd: usdForSats(point.sats),
         }));
-  const realEvents = growthRealEventItems(
-    registryRecords,
-    idActivity,
-    registrySales,
-    tokenDefinitions,
-    tokenMints,
-    tokenTransfers,
-    tokenSales,
-  );
+  const realEvents =
+    growthSummary?.events && growthSummary.events.length > 0
+      ? growthSummary.events
+      : growthRealEventItems(
+          registryRecords,
+          idActivity,
+          registrySales,
+          tokenDefinitions,
+          tokenMints,
+          tokenTransfers,
+          tokenSales,
+        );
   const growthEventPage = pagedItems(
     realEvents,
     growthEventPageIndex,
@@ -24217,39 +24445,55 @@ function GrowthWorkspace({
     GROWTH_MODEL_ROWS.find((row) => row.years === 1) ?? GROWTH_MODEL_ROWS[1];
   const fiveYear =
     GROWTH_MODEL_ROWS.find((row) => row.years === 5) ?? GROWTH_MODEL_ROWS[3];
-  const currentActual = actualValue.powids;
+  const summaryCounts = growthSummary?.counts;
+  const currentActual = summaryCounts?.powids ?? actualValue.powids;
   const elapsedYears = growthElapsedYears();
   const modelNow = growthModelValueAtYears(elapsedYears);
   const valueDeltaSats = authoritativeNetworkValueSats - modelNow.sats;
   const valueDeltaPct = modelNow.sats > 0 ? valueDeltaSats / modelNow.sats : 0;
-  const confirmedComputerActions = confirmedComputerActionCount(
-    registryRecords,
-    idActivity,
-    tokenDefinitions,
-    tokenMints,
-    tokenTransfers,
-    tokenSales,
-  );
-  const mailActions = confirmedActivity.filter(
-    (item) => item.kind === "mail" || item.kind === "reply",
-  ).length;
-  const browserActions = confirmedActivity.filter(isBrowserActivityItem).length;
-  const driveActions = confirmedActivity.filter(
-    (item) => item.kind === "file" && !isBrowserActivityItem(item),
-  ).length;
-  const confirmedTokenDefinitions = tokenDefinitions.filter(
-    (token) => token.confirmed,
-  ).length;
-  const confirmedTokenMints = tokenMints.filter((mint) => mint.confirmed).length;
-  const confirmedTokenTransfers = tokenTransfers.filter(
-    (transfer) => transfer.confirmed,
-  ).length;
-  const confirmedTokenSales = tokenSales.filter((sale) => sale.confirmed).length;
+  const confirmedComputerActions =
+    summaryCounts?.confirmedComputerActions ??
+    confirmedComputerActionCount(
+      registryRecords,
+      idActivity,
+      tokenDefinitions,
+      tokenMints,
+      tokenTransfers,
+      tokenSales,
+    );
+  const mailActions =
+    summaryCounts?.mailActions ??
+    confirmedActivity.filter(
+      (item) => item.kind === "mail" || item.kind === "reply",
+    ).length;
+  const browserActions =
+    summaryCounts?.browserActions ??
+    confirmedActivity.filter(isBrowserActivityItem).length;
+  const driveActions =
+    summaryCounts?.driveActions ??
+    confirmedActivity.filter(
+      (item) => item.kind === "file" && !isBrowserActivityItem(item),
+    ).length;
+  const confirmedTokenDefinitions =
+    summaryCounts?.confirmedTokenDefinitions ??
+    tokenDefinitions.filter((token) => token.confirmed).length;
+  const confirmedTokenMints =
+    summaryCounts?.confirmedTokenMints ??
+    tokenMints.filter((mint) => mint.confirmed).length;
+  const confirmedTokenTransfers =
+    summaryCounts?.confirmedTokenTransfers ??
+    tokenTransfers.filter((transfer) => transfer.confirmed).length;
+  const confirmedTokenSales =
+    summaryCounts?.confirmedTokenSales ??
+    tokenSales.filter((sale) => sale.confirmed).length;
   const marketplaceSaleCount =
+    summaryCounts?.marketplaceSaleCount ??
     marketplaceStats.confirmedSales + confirmedTokenSales;
   const tokenFlowSats =
     actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats;
   const walletFlowSats = actualValue.walletFlowSats;
+  const pendingRecordCount = summaryCounts?.pendingRecords ?? pendingRecords.length;
+  const idListingCount = summaryCounts?.idListings ?? registryListings.length;
 
   return (
     <section className="growth-workspace">
@@ -24341,7 +24585,7 @@ function GrowthWorkspace({
         <div>
           <strong>{currentActual.toLocaleString()}</strong>
           <span>
-            Confirmed IDs · {pendingRecords.length.toLocaleString()} pending
+            Confirmed IDs · {pendingRecordCount.toLocaleString()} pending
           </span>
         </div>
         <div>
@@ -24561,7 +24805,7 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(actualValue.marketplaceSats)}
-            actualLabel={`${growthUsdForSats(actualValue.marketplaceSats)} · ${actualValue.marketplaceVolumeSats.toLocaleString()} sale sats · ${marketplaceSaleCount.toLocaleString()} confirmed sales · ${registryListings.length.toLocaleString()} ID listings`}
+            actualLabel={`${growthUsdForSats(actualValue.marketplaceSats)} · ${actualValue.marketplaceVolumeSats.toLocaleString()} sale sats · ${marketplaceSaleCount.toLocaleString()} confirmed sales · ${idListingCount.toLocaleString()} ID listings`}
             icon={<Users size={24} />}
             modelFiveYear={growthSats(fiveYear.marketplaceSats)}
             modelFiveYearLabel={growthUsdForSats(fiveYear.marketplaceSats)}

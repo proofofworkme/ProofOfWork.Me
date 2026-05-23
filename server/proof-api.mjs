@@ -6539,14 +6539,112 @@ async function growthSummaryPayload(network, fresh = false) {
     refreshGrowthCachesInBackground(network);
   }
 
-  const [registry, activity, token, workFloor] = await Promise.all([
-    registrySummaryPayload(network),
-    activitySummaryPayload(network),
-    tokenSummaryPayload(network),
-    workFloorPayload(network),
-  ]);
+  const emptyRegistryState = emptyRegistryPayload(network);
+  const [registryState, computerActivity, tokenState, workFloor] =
+    await Promise.all([
+      fastJsonBackedPayload(
+        `registry:${network}`,
+        `payload:registry:${network}`,
+        () => safeRegistryPayload(network),
+        REGISTRY_CACHE_TTL_MS,
+        REGISTRY_CACHE_STALE_MS,
+        emptyRegistryState,
+      ),
+      fastGlobalActivityPayload(network),
+      fastTokenPayloadSnapshot(network),
+      workFloorPayload(network),
+    ]);
+  const registrySummary = compactRegistrySummaryPayload(registryState);
+  const activitySummary = compactActivitySummaryPayload(computerActivity);
+  const tokenSummary = compactTokenSummaryPayload(tokenState);
+  const registry = {
+    ...registrySummary,
+    activity: [],
+    listings: [],
+    pendingEvents: [],
+    records: [],
+    sales: [],
+  };
+  const activity = {
+    ...activitySummary,
+    activity: [],
+  };
+  const token = {
+    ...tokenSummary,
+    holders: [],
+    listings: [],
+    sales: [],
+    tokens: [],
+  };
+  const activityForGrowth =
+    Array.isArray(computerActivity.activity) &&
+    computerActivity.activity.length > 0
+      ? computerActivity.activity
+      : registryState.activity ?? [];
+  const tokenMints = tokenState.mints ?? [];
+  const tokenTransfers = tokenState.transfers ?? [];
+  const tokenSales = tokenState.sales ?? [];
+  const actualValue =
+    workFloor.actualValue ??
+    growthActualNetworkValue(
+      registryState.records ?? [],
+      activityForGrowth,
+      registryState.sales ?? [],
+      tokenState.tokens ?? [],
+      tokenMints,
+      tokenTransfers,
+      tokenSales,
+    );
+  const marketplaceStats = marketplaceStatsFromSales(registryState.sales ?? []);
+  const confirmedActivity = activityForGrowth.filter((item) => item.confirmed);
+  const events = growthRealEventItems(
+    registryState.records ?? [],
+    activityForGrowth,
+    registryState.sales ?? [],
+    tokenState.tokens ?? [],
+    tokenMints,
+    tokenTransfers,
+    tokenSales,
+  ).slice(0, SUMMARY_ACTIVITY_LIMIT);
+  const confirmedTokenSales = tokenSales.filter((sale) => sale.confirmed).length;
+
   return {
+    actualValue,
     activity,
+    counts: {
+      browserActions: confirmedActivity.filter(isBrowserActivityItem).length,
+      confirmedComputerActions: confirmedComputerActionCount(
+        registryState.records ?? [],
+        activityForGrowth,
+        tokenState.tokens ?? [],
+        tokenMints,
+        tokenTransfers,
+        tokenSales,
+      ),
+      confirmedTokenDefinitions: (tokenState.tokens ?? []).filter(
+        (item) => item.confirmed,
+      ).length,
+      confirmedTokenMints:
+        workFloor.stats?.confirmedTokenMints ??
+        tokenMints.filter((item) => item.confirmed).length,
+      confirmedTokenSales,
+      confirmedTokenTransfers: tokenTransfers.filter((item) => item.confirmed)
+        .length,
+      driveActions: confirmedActivity.filter(
+        (item) => item.kind === "file" && !isBrowserActivityItem(item),
+      ).length,
+      idListings: (registryState.listings ?? []).length,
+      mailActions: confirmedActivity.filter(
+        (item) => item.kind === "mail" || item.kind === "reply",
+      ).length,
+      marketplaceSaleCount: marketplaceStats.confirmedSales + confirmedTokenSales,
+      pendingRecords: (registryState.records ?? []).filter(
+        (record) => !record.confirmed,
+      ).length,
+      powids: actualValue.powids,
+      tokenCount: (tokenState.tokens ?? []).length,
+    },
+    events,
     indexedAt: new Date().toISOString(),
     network,
     registry,
@@ -6762,6 +6860,7 @@ function growthActualNetworkValue(
     (total, transfer) => total + transfer.paidSats,
     0,
   );
+  const walletFlowSats = tokenTransferFlowSats;
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
@@ -6769,15 +6868,17 @@ function growthActualNetworkValue(
     marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const tokenSats =
-    (tokenCreationFlowSats + tokenMintFlowSats + tokenTransferFlowSats) *
+    (tokenCreationFlowSats + tokenMintFlowSats) *
     GROWTH_MODEL_INPUTS.valueMultiple;
+  const walletSats = walletFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const totalSats =
     idSats +
     mailSats +
     driveSats +
     marketplaceSats +
     browserSats +
-    tokenSats;
+    tokenSats +
+    walletSats;
   const years = Math.max(
     0,
     (Math.min(cutoffMs, Date.now()) - GROWTH_MODEL_START_MS) /
@@ -6789,6 +6890,7 @@ function growthActualNetworkValue(
     browserSats,
     driveFlowSats,
     driveSats,
+    idSats,
     mailFlowSats,
     mailSats,
     marketplaceSats,
@@ -6799,6 +6901,8 @@ function growthActualNetworkValue(
     tokenSaleFlowSats,
     tokenTransferFlowSats,
     tokenSats,
+    walletFlowSats,
+    walletSats,
     totalSats,
     totalUsd: growthSatsToUsdAtYears(totalSats, years),
   };
@@ -6969,6 +7073,211 @@ function growthActualValuePoints(
   return points;
 }
 
+function growthActivityKindLabel(kind) {
+  if (
+    kind === "id-register" ||
+    kind === "id-update" ||
+    kind === "id-transfer"
+  ) {
+    return "ID";
+  }
+
+  if (
+    kind === "id-list" ||
+    kind === "id-seal" ||
+    kind === "id-delist" ||
+    kind === "id-buy"
+  ) {
+    return "Marketplace";
+  }
+
+  if (kind === "file") {
+    return "Drive";
+  }
+
+  if (kind === "token-transfer") {
+    return "Wallet";
+  }
+
+  if (
+    kind === "token-create" ||
+    kind === "token-mint" ||
+    kind === "token-listing" ||
+    kind === "token-sale"
+  ) {
+    return "Token";
+  }
+
+  return kind === "reply" ? "Mail reply" : "Mail";
+}
+
+function confirmedComputerActionCount(
+  records,
+  idActivity,
+  tokenDefinitions,
+  tokenMints,
+  tokenTransfers = [],
+  tokenSales = [],
+) {
+  const txids = new Set();
+  const add = (confirmed, txid) => {
+    if (confirmed && txid) {
+      txids.add(txid);
+    }
+  };
+
+  records.forEach((record) => add(record.confirmed, record.txid));
+  idActivity.forEach((item) => add(item.confirmed, item.txid));
+  tokenDefinitions.forEach((token) => add(token.confirmed, token.txid));
+  tokenMints.forEach((mint) => add(mint.confirmed, mint.txid));
+  tokenTransfers.forEach((transfer) => add(transfer.confirmed, transfer.txid));
+  tokenSales.forEach((sale) => add(sale.confirmed, sale.txid));
+
+  return txids.size;
+}
+
+function growthRealEventItems(
+  records,
+  idActivity,
+  sales,
+  tokenDefinitions,
+  tokenMints,
+  tokenTransfers = [],
+  tokenSales = [],
+) {
+  const events = new Map();
+  const setEvent = (event) => {
+    events.set(event.key, event);
+  };
+
+  for (const record of records) {
+    if (!record.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${record.amountSats.toLocaleString()} sats`,
+      createdAt: record.createdAt,
+      detail: `${record.id}@proofofwork.me joined the confirmed ID graph.`,
+      key: record.txid,
+      kind: "ID",
+      network: record.network,
+      title: "ID registered",
+      txid: record.txid,
+    });
+  }
+
+  for (const item of idActivity) {
+    if (!item.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: item.amountSats
+        ? `${item.amountSats.toLocaleString()} sats`
+        : "Confirmed",
+      createdAt: item.createdAt,
+      detail: item.detail || item.description,
+      key: item.txid,
+      kind: isBrowserActivityItem(item)
+        ? "Browser"
+        : growthActivityKindLabel(item.kind),
+      network: item.network,
+      title: item.id ? `${item.title}: ${item.id}@proofofwork.me` : item.title,
+      txid: item.txid,
+    });
+  }
+
+  for (const sale of publicMarketplaceSales(sales)) {
+    if (!sale.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${sale.priceSats.toLocaleString()} sale sats`,
+      createdAt: sale.createdAt,
+      detail: `${sale.id}@proofofwork.me transferred from ${shortAddress(sale.sellerAddress)} to ${shortAddress(sale.buyerAddress)}.`,
+      key: sale.txid,
+      kind: "Marketplace",
+      network: sale.network,
+      title: "Marketplace sale",
+      txid: sale.txid,
+    });
+  }
+
+  for (const token of tokenDefinitions) {
+    if (!token.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${token.creationFeeSats.toLocaleString()} creation sats`,
+      createdAt: token.createdAt,
+      detail: `${token.ticker} created with ${token.maxSupply.toLocaleString()} max supply and registry ${shortAddress(token.registryAddress)}.`,
+      key: token.txid,
+      kind: "Token",
+      network: token.network,
+      title: "Token created",
+      txid: token.txid,
+    });
+  }
+
+  for (const mint of tokenMints) {
+    if (!mint.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${mint.paidSats.toLocaleString()} mint sats`,
+      createdAt: mint.createdAt,
+      detail: `${mint.amount.toLocaleString()} ${mint.ticker} minted by ${shortAddress(mint.minterAddress)}.`,
+      key: mint.txid,
+      kind: "Token",
+      network: mint.network,
+      title: "Token mint",
+      txid: mint.txid,
+    });
+  }
+
+  for (const transfer of tokenTransfers) {
+    if (!transfer.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${transfer.paidSats.toLocaleString()} registry sats`,
+      createdAt: transfer.createdAt,
+      detail: `${transfer.amount.toLocaleString()} ${transfer.ticker} moved from ${shortAddress(transfer.senderAddress)} to ${shortAddress(transfer.recipientAddress)}.`,
+      key: transfer.txid,
+      kind: "Wallet",
+      network: transfer.network,
+      title: "Wallet transfer",
+      txid: transfer.txid,
+    });
+  }
+
+  for (const sale of tokenSales) {
+    if (!sale.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${sale.priceSats.toLocaleString()} sale sats`,
+      createdAt: sale.createdAt,
+      detail: `${sale.amount.toLocaleString()} ${sale.ticker} bought by ${shortAddress(sale.buyerAddress)} from ${shortAddress(sale.sellerAddress)}.`,
+      key: sale.txid,
+      kind: "Marketplace",
+      network: sale.network,
+      title: "Token sale",
+      txid: sale.txid,
+    });
+  }
+
+  return [...events.values()].sort(
+    (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
+  );
+}
+
 function emptyWorkFloorPayload(network) {
   return {
     chartPoints: [],
@@ -7074,9 +7383,22 @@ async function workFloorPayload(network, fresh = false) {
   );
   const correctedTokenMintFlowSats =
     actualValue.tokenMintFlowSats + missingWorkMintFlowSats;
+  const correctedTokenSats =
+    (actualValue.tokenCreationFlowSats + correctedTokenMintFlowSats) *
+    GROWTH_MODEL_INPUTS.valueMultiple;
   const correctedNetworkValueSats =
     actualValue.totalSats +
     missingWorkMintFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const correctedActualValue = {
+    ...actualValue,
+    tokenMintFlowSats: correctedTokenMintFlowSats,
+    tokenSats: correctedTokenSats,
+    totalSats: correctedNetworkValueSats,
+    totalUsd: growthSatsToUsdAtYears(
+      correctedNetworkValueSats,
+      growthElapsedYears(),
+    ),
+  };
   const workToken = (tokenState.tokens ?? []).find(
     (token) =>
       token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER,
@@ -7117,6 +7439,7 @@ async function workFloorPayload(network, fresh = false) {
   }
 
   return {
+    actualValue: correctedActualValue,
     chartPoints,
     indexedAt: new Date().toISOString(),
     network,
@@ -7132,10 +7455,23 @@ async function workFloorPayload(network, fresh = false) {
       confirmedTokens: (tokenState.tokens ?? []).filter(
         (token) => token.confirmed,
       ).length,
+      browserFlowSats: actualValue.browserFlowSats,
+      browserSats: actualValue.browserSats,
+      driveFlowSats: actualValue.driveFlowSats,
+      driveSats: actualValue.driveSats,
+      idSats: actualValue.idSats,
+      mailFlowSats: actualValue.mailFlowSats,
+      mailSats: actualValue.mailSats,
+      marketplaceSats: actualValue.marketplaceSats,
+      marketplaceVolumeSats: actualValue.marketplaceVolumeSats,
       tokenCreationFlowSats: actualValue.tokenCreationFlowSats,
       tokenMintFlowSats: correctedTokenMintFlowSats,
       tokenSaleFlowSats: actualValue.tokenSaleFlowSats,
-      marketplaceVolumeSats: actualValue.marketplaceVolumeSats,
+      tokenSats: correctedTokenSats,
+      tokenTransferFlowSats: actualValue.tokenTransferFlowSats,
+      walletFlowSats: actualValue.walletFlowSats,
+      walletSats: actualValue.walletSats,
+      totalSats: correctedNetworkValueSats,
       tokenTransactions:
         tokenState.stats?.transactions ??
         (tokenState.tokens ?? []).length +
