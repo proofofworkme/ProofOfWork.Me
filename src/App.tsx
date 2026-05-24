@@ -26210,6 +26210,7 @@ type MarketplaceSortMode =
   | "price-asc"
   | "arb-desc"
   | "arb-asc";
+type TokenListingBookFilter = "all" | "sealed" | "unsealed";
 
 type TokenReferenceSnapshot = Pick<
   PowTokenDefinition,
@@ -26857,6 +26858,8 @@ function TokenMarketplacePanel({
     useState<MarketplaceSortMode>("arb-desc");
   const [tokenListingSortMode, setTokenListingSortMode] =
     useState<MarketplaceSortMode>("arb-desc");
+  const [tokenListingBookFilter, setTokenListingBookFilter] =
+    useState<TokenListingBookFilter>("all");
   const selectedMarketToken = rows.find(
     (token) =>
       token.tokenId === selectedTokenMarketId ||
@@ -26867,7 +26870,7 @@ function TokenMarketplacePanel({
   }, [selectedMarketToken?.tokenId, tokenMarketSortMode]);
   useEffect(() => {
     setTokenListingPageIndex(0);
-  }, [selectedMarketToken?.tokenId, tokenListingSortMode]);
+  }, [selectedMarketToken?.tokenId, tokenListingBookFilter, tokenListingSortMode]);
   useEffect(() => {
     setTokenMarketLogPageIndex(0);
   }, [selectedMarketToken?.tokenId]);
@@ -26928,8 +26931,21 @@ function TokenMarketplacePanel({
   const tokenReferenceById = new Map<string, TokenReferenceSnapshot>(
     rows.map((token) => [token.tokenId, token]),
   );
+  const sealedListings = marketListings.filter((listing) =>
+    tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization),
+  );
+  const unsealedListings = marketListings.filter(
+    (listing) =>
+      !tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization),
+  );
+  const visibleMarketListings =
+    tokenListingBookFilter === "sealed"
+      ? sealedListings
+      : tokenListingBookFilter === "unsealed"
+        ? unsealedListings
+        : marketListings;
   const sortedMarketListings = sortTokenListings(
-    marketListings,
+    visibleMarketListings,
     tokenListingSortMode,
     tokenReferenceById,
     workMarketFloorSats,
@@ -27041,9 +27057,6 @@ function TokenMarketplacePanel({
   const tokenMarketLogPage =
     activeRemoteTokenMarketLogPage ?? localTokenMarketLogPage;
   const hasTokenMarketLogItems = tokenMarketLogPage.totalCount > 0;
-  const sealedListings = marketListings.filter((listing) =>
-    tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization),
-  );
   const confirmedTokens = rows.filter((token) => token.confirmed);
   const confirmedSupply = rows.reduce(
     (total, token) => total + token.confirmedSupply,
@@ -27557,11 +27570,33 @@ function TokenMarketplacePanel({
             </div>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
           </div>
+          <div
+            className="marketplace-tabs token-listing-tabs"
+            aria-label="Token order book filter"
+          >
+            {(
+              [
+                ["all", "All", marketListings.length],
+                ["sealed", "Sealed", sealedListings.length],
+                ["unsealed", "Unsealed", unsealedListings.length],
+              ] as const
+            ).map(([filter, label, count]) => (
+              <button
+                aria-pressed={tokenListingBookFilter === filter}
+                key={filter}
+                onClick={() => setTokenListingBookFilter(filter)}
+                type="button"
+              >
+                <span>{label}</span>
+                <strong>{count.toLocaleString()}</strong>
+              </button>
+            ))}
+          </div>
           <MarketplaceSortControl
             onChange={setTokenListingSortMode}
             value={tokenListingSortMode}
           />
-          {marketListings.length ? (
+          {visibleMarketListings.length ? (
             <div className="token-market-grid">
               {tokenListingPage.items.map((listing) => {
                 const sealed = tokenSaleAuthorizationUsesSaleTicketAnchor(
@@ -27678,9 +27713,19 @@ function TokenMarketplacePanel({
           ) : (
             <div className="empty-state">
               <Wallet size={28} />
-              <h3>No token listings yet</h3>
+              <h3>
+                {marketListings.length
+                  ? tokenListingBookFilter === "sealed"
+                    ? "No sealed listings"
+                    : "No unsealed listings"
+                  : "No token listings yet"}
+              </h3>
               <p>
-                {selectedMarketToken
+                {marketListings.length
+                  ? tokenListingBookFilter === "sealed"
+                    ? "No sale tickets in this view are sealed and buyable yet."
+                    : "Every sale ticket in this view is already sealed."
+                  : selectedMarketToken
                   ? `No ${selectedMarketToken.ticker} sale tickets are open yet.`
                   : "List from Wallet to open a token sale ticket."}
               </p>

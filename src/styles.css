@@ -3021,6 +3021,13 @@ select {
   max-width: none;
 }
 
+.token-listing-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  max-width: none;
+  padding: 0;
+}
+
 .marketplace-tabs button {
   align-items: center;
   background: var(--surface);
