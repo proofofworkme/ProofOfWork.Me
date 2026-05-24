@@ -281,6 +281,8 @@
   align-content: start;
   display: grid;
   gap: 14px;
+  grid-auto-rows: max-content;
+  grid-template-rows: none;
   height: 100%;
   max-width: 100%;
   min-height: 0;
@@ -321,6 +323,41 @@
 .mail-layout.is-marketplace-workspace .marketplace-workspace .token-market-list,
 .mail-layout.is-marketplace-workspace .marketplace-workspace .token-sale-ticket-list {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace .marketplace-content,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .token-market-content {
+  align-content: start;
+  grid-auto-rows: max-content;
+  min-height: auto;
+  overflow: visible;
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace .token-market-card,
+.mail-layout.is-marketplace-workspace .marketplace-workspace .marketplace-work-floor-card {
+  align-self: start;
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace .work-floor-chart-toolbar .network-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  grid-template-columns: none;
+  order: initial;
+  width: auto;
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace .work-floor-chart-toggle {
+  max-width: 220px;
+  min-width: 150px;
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace .work-floor-chart-toolbar .network-tabs button {
+  flex: 1 1 0;
+  width: auto;
+}
+
+.mail-layout.is-marketplace-workspace .marketplace-workspace .token-listing-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .mail-layout.is-marketplace-workspace .marketplace-workspace .id-manage-state,
