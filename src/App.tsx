@@ -672,7 +672,7 @@ type TokenMarketplaceSummaryStats = {
   ariaLabel: string;
   items: Array<{
     label: string;
-    value: number;
+    value: number | string;
   }>;
 };
 
@@ -7658,6 +7658,17 @@ function tokenScopeMatchesToken(
   );
 }
 
+function compactMarketplaceStatValue(value: number) {
+  const safeValue = Math.max(0, Math.floor(value));
+  if (safeValue >= 1_000_000) {
+    return `${(safeValue / 1_000_000).toLocaleString(undefined, {
+      maximumFractionDigits: 3,
+    })}M`;
+  }
+
+  return safeValue;
+}
+
 function tokenMarketplaceSummaryStats({
   listings,
   network,
@@ -7707,7 +7718,7 @@ function tokenMarketplaceSummaryStats({
       items: [
         {
           label: "Confirmed Supply",
-          value: Math.max(0, Math.floor(scopedToken.confirmedSupply ?? 0)),
+          value: compactMarketplaceStatValue(scopedToken.confirmedSupply ?? 0),
         },
         {
           label: "Holders",
@@ -7775,7 +7786,11 @@ function TokenMarketplaceStatsGrid({
     <div className={className} aria-label={stats.ariaLabel}>
       {stats.items.map((item) => (
         <div key={item.label}>
-          <strong>{item.value.toLocaleString()}</strong>
+          <strong>
+            {typeof item.value === "number"
+              ? item.value.toLocaleString()
+              : item.value}
+          </strong>
           <span>{item.label}</span>
         </div>
       ))}
