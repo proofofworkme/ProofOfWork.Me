@@ -7322,7 +7322,7 @@ async function activitySummaryPayload(network, fresh = false) {
 async function cachedWorkFloorPayload(network, fresh = false) {
   const cacheKey = `work-floor:${network}`;
   const payloadKey = `payload:work-floor:${network}`;
-  const producer = () => workFloorPayload(network, true);
+  const producer = () => workFloorPayload(network, false);
   const waitForFreshOrCached = (promise, payload) => {
     let timer;
     return Promise.race([
@@ -7483,7 +7483,6 @@ function refreshGrowthCachesInBackground(network) {
     REGISTRY_CACHE_STALE_MS,
   );
   refreshGlobalActivityCacheInBackground(network);
-  refreshTokenPayloadCacheInBackground(network, "");
   refreshPayloadCacheInBackground(
     `work-floor:${network}`,
     `payload:work-floor:${network}`,
@@ -8391,10 +8390,6 @@ async function workFloorPayload(network, fresh = false) {
     sales: [],
     source: mempoolBase(network),
   };
-  if (fresh) {
-    refreshGrowthCachesInBackground(network);
-  }
-
   const [registryState, computerActivity, tokenState, workTokenState] =
     await Promise.all([
       fastJsonBackedPayload(
@@ -9326,6 +9321,11 @@ function scheduleWarmJsonCache(cacheKey, producer, ttlMs, staleMs, delayMs) {
 
 function prewarmExpensiveReadCaches() {
   const baseDelay = BACKGROUND_STARTUP_REFRESH_DELAY_MS;
+  BACKGROUND_REFRESH_LAST_STARTED.set("token:livenet:", Date.now());
+  BACKGROUND_REFRESH_LAST_STARTED.set(
+    `token:livenet:${WORK_TOKEN_ID}`,
+    Date.now(),
+  );
   scheduleWarmJsonCache(
     "registry:livenet",
     () => safeRegistryPayload("livenet"),
