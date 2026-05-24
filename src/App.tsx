@@ -26327,51 +26327,17 @@ function sortTokenListings(
   });
 }
 
-function tokenMarketLogPriceSats(item: TokenMarketLogItem) {
-  if (item.kind === "sale") {
-    return item.sale.amount > 0 ? item.sale.priceSats / item.sale.amount : 0;
-  }
-
-  return tokenListingUnitPriceSats(item.listing);
+function tokenMarketLogItemConfirmed(item: TokenMarketLogItem) {
+  return item.kind === "sale" ? item.sale.confirmed : item.listing.confirmed;
 }
 
-function tokenMarketLogArbSats(
-  item: TokenMarketLogItem,
-  tokenById: Map<string, TokenReferenceSnapshot>,
-  workFloorSats: number,
-) {
-  const tokenId = item.kind === "sale" ? item.sale.tokenId : item.listing.tokenId;
-  const reference = tokenReferencePriceSats(tokenById.get(tokenId), workFloorSats);
-  const price = tokenMarketLogPriceSats(item);
-
-  return reference !== null && price > 0 ? reference - price : null;
-}
-
-function sortTokenMarketLogItems(
-  items: TokenMarketLogItem[],
-  sortMode: MarketplaceSortMode,
-  tokenById: Map<string, TokenReferenceSnapshot>,
-  workFloorSats: number,
-) {
-  return [...items].sort((left, right) => {
-    const fallback = () => compareCreatedAtDesc(left, right);
-
-    if (sortMode === "price-desc" || sortMode === "price-asc") {
-      return compareOptionalMetric(
-        tokenMarketLogPriceSats(left) || null,
-        tokenMarketLogPriceSats(right) || null,
-        sortMode === "price-desc",
-        fallback,
-      );
-    }
-
-    return compareOptionalMetric(
-      tokenMarketLogArbSats(left, tokenById, workFloorSats),
-      tokenMarketLogArbSats(right, tokenById, workFloorSats),
-      sortMode === "arb-desc",
-      fallback,
-    );
-  });
+function sortTokenMarketLogItems(items: TokenMarketLogItem[]) {
+  return [...items].sort(
+    (left, right) =>
+      Number(tokenMarketLogItemConfirmed(right)) -
+        Number(tokenMarketLogItemConfirmed(left)) ||
+      compareCreatedAtDesc(left, right),
+  );
 }
 
 function sortIdMarketplaceListings(
@@ -26769,8 +26735,6 @@ function TokenMarketplacePanel({
     useState<MarketplaceSortMode>("arb-desc");
   const [tokenListingSortMode, setTokenListingSortMode] =
     useState<MarketplaceSortMode>("arb-desc");
-  const [tokenMarketLogSortMode, setTokenMarketLogSortMode] =
-    useState<MarketplaceSortMode>("arb-desc");
   const selectedMarketToken = rows.find(
     (token) =>
       token.tokenId === selectedTokenMarketId ||
@@ -26784,7 +26748,7 @@ function TokenMarketplacePanel({
   }, [selectedMarketToken?.tokenId, tokenListingSortMode]);
   useEffect(() => {
     setTokenMarketLogPageIndex(0);
-  }, [selectedMarketToken?.tokenId, tokenMarketLogSortMode]);
+  }, [selectedMarketToken?.tokenId]);
   const setTokenMarketRoute = (tokenId: string) => {
     if (typeof window === "undefined") {
       return;
@@ -26840,25 +26804,20 @@ function TokenMarketplacePanel({
     tokenReferenceById,
     workMarketFloorSats,
   );
-  const tokenMarketLogItems = sortTokenMarketLogItems(
-    [
-      ...marketListings.map((listing) => ({
-        createdAt: listing.createdAt,
-        kind: "listing" as const,
-        listing,
-        txid: listing.listingId,
-      })),
-      ...marketSales.map((sale) => ({
-        createdAt: sale.createdAt,
-        kind: "sale" as const,
-        sale,
-        txid: sale.txid,
-      })),
-    ],
-    tokenMarketLogSortMode,
-    tokenReferenceById,
-    workMarketFloorSats,
-  );
+  const tokenMarketLogItems = sortTokenMarketLogItems([
+    ...marketListings.map((listing) => ({
+      createdAt: listing.createdAt,
+      kind: "listing" as const,
+      listing,
+      txid: listing.listingId,
+    })),
+    ...marketSales.map((sale) => ({
+      createdAt: sale.createdAt,
+      kind: "sale" as const,
+      sale,
+      txid: sale.txid,
+    })),
+  ]);
   const visibleRows = selectedMarketToken ? [selectedMarketToken] : rows;
   const sortedVisibleRows = sortTokenMarketplaceRows(
     visibleRows,
@@ -27546,10 +27505,6 @@ function TokenMarketplacePanel({
               </p>
             </div>
           </div>
-          <MarketplaceSortControl
-            onChange={setTokenMarketLogSortMode}
-            value={tokenMarketLogSortMode}
-          />
           {tokenMarketLogItems.length ? (
             <div className="token-market-grid">
               {tokenMarketLogPage.items.map((item) => {
