@@ -669,12 +669,11 @@ type PowIdMarketplaceStats = {
 };
 
 type TokenMarketplaceSummaryStats = {
-  activeListings: number;
-  pendingSales: number;
-  pendingTokens: number;
-  totalSales: number;
-  totalTokens: number;
-  totalVolumeSats: number;
+  ariaLabel: string;
+  items: Array<{
+    label: string;
+    value: number;
+  }>;
 };
 
 type PowActivityKind =
@@ -7647,30 +7646,121 @@ function publicMarketplaceSales(sales: PowIdMarketplaceSale[]) {
   return sales.filter((sale) => sale.transferVersion === "buy5");
 }
 
+function tokenScopeMatchesToken(
+  token: Pick<PowTokenDefinition, "ticker" | "tokenId">,
+  tokenScope = "",
+) {
+  const normalizedScope = tokenScope.trim();
+  return (
+    normalizedScope.length > 0 &&
+    (token.tokenId === normalizedScope ||
+      token.ticker === normalizeTokenTicker(normalizedScope))
+  );
+}
+
 function tokenMarketplaceSummaryStats({
   listings,
   network,
   sales,
+  token,
+  tokenScope = "",
   tokens,
 }: {
   listings: PowTokenListing[];
   network: BitcoinNetwork;
   sales: PowTokenSale[];
+  token?: PowTokenDefinition & {
+    confirmedSupply?: number;
+    holderCount?: number;
+  };
+  tokenScope?: string;
   tokens: PowTokenDefinition[];
 }): TokenMarketplaceSummaryStats {
-  const networkTokens = tokens.filter((token) => token.network === network);
-  const networkListings = listings.filter((listing) => listing.network === network);
+  const scopedToken =
+    token ??
+    tokens.find(
+      (candidate) =>
+        candidate.network === network && tokenScopeMatchesToken(candidate, tokenScope),
+    );
+  const scopedTokenId = scopedToken?.tokenId ?? "";
+  const networkTokens = tokens.filter(
+    (token) =>
+      token.network === network &&
+      (!scopedTokenId || token.tokenId === scopedTokenId),
+  );
+  const networkListings = listings.filter(
+    (listing) =>
+      listing.network === network &&
+      (!scopedTokenId || listing.tokenId === scopedTokenId),
+  );
   const marketStats = marketplaceStatsFromSales(
-    sales.filter((sale) => sale.network === network),
+    sales.filter(
+      (sale) =>
+        sale.network === network &&
+        (!scopedTokenId || sale.tokenId === scopedTokenId),
+    ),
   );
 
+  if (scopedToken) {
+    return {
+      ariaLabel: `${scopedToken.ticker} token marketplace stats`,
+      items: [
+        {
+          label: "Confirmed Supply",
+          value: Math.max(0, Math.floor(scopedToken.confirmedSupply ?? 0)),
+        },
+        {
+          label: "Holders",
+          value: Math.max(0, Math.floor(scopedToken.holderCount ?? 0)),
+        },
+        {
+          label: "Active Listings",
+          value: networkListings.length,
+        },
+        {
+          label: "Token Sales",
+          value: marketStats.totalSales,
+        },
+        {
+          label: "Volume sats",
+          value: marketStats.totalVolumeSats,
+        },
+        {
+          label: "Pending Sales",
+          value: marketStats.pendingSales,
+        },
+      ],
+    };
+  }
+
   return {
-    activeListings: networkListings.length,
-    pendingSales: marketStats.pendingSales,
-    pendingTokens: networkTokens.filter((token) => !token.confirmed).length,
-    totalSales: marketStats.totalSales,
-    totalTokens: networkTokens.length,
-    totalVolumeSats: marketStats.totalVolumeSats,
+    ariaLabel: "Token marketplace stats",
+    items: [
+      {
+        label: "Total Tokens",
+        value: networkTokens.length,
+      },
+      {
+        label: "Active Listings",
+        value: networkListings.length,
+      },
+      {
+        label: "Token Sales",
+        value: marketStats.totalSales,
+      },
+      {
+        label: "Volume sats",
+        value: marketStats.totalVolumeSats,
+      },
+      {
+        label: "Pending Tokens",
+        value: networkTokens.filter((token) => !token.confirmed).length,
+      },
+      {
+        label: "Pending Sales",
+        value: marketStats.pendingSales,
+      },
+    ],
   };
 }
 
@@ -7682,31 +7772,13 @@ function TokenMarketplaceStatsGrid({
   stats: TokenMarketplaceSummaryStats;
 }) {
   return (
-    <div className={className} aria-label="Token marketplace stats">
-      <div>
-        <strong>{stats.totalTokens.toLocaleString()}</strong>
-        <span>Total Tokens</span>
-      </div>
-      <div>
-        <strong>{stats.activeListings.toLocaleString()}</strong>
-        <span>Active Listings</span>
-      </div>
-      <div>
-        <strong>{stats.totalSales.toLocaleString()}</strong>
-        <span>Token Sales</span>
-      </div>
-      <div>
-        <strong>{stats.totalVolumeSats.toLocaleString()}</strong>
-        <span>Volume sats</span>
-      </div>
-      <div>
-        <strong>{stats.pendingTokens.toLocaleString()}</strong>
-        <span>Pending Tokens</span>
-      </div>
-      <div>
-        <strong>{stats.pendingSales.toLocaleString()}</strong>
-        <span>Pending Sales</span>
-      </div>
+    <div className={className} aria-label={stats.ariaLabel}>
+      {stats.items.map((item) => (
+        <div key={item.label}>
+          <strong>{item.value.toLocaleString()}</strong>
+          <span>{item.label}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -26921,7 +26993,9 @@ function TokenMarketplacePanel({
   network,
   onOpenTokenWorkspace,
   onOpenWalletWorkspace,
+  onSelectedTokenMarketIdChange,
   sales,
+  selectedTokenMarketId: controlledSelectedTokenMarketId,
   setFeeRate,
   tokens,
   transfers,
@@ -26940,7 +27014,9 @@ function TokenMarketplacePanel({
   network: BitcoinNetwork;
   onOpenTokenWorkspace?: (token?: PowTokenDefinition) => void;
   onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
+  onSelectedTokenMarketIdChange?: (tokenId: string) => void;
   sales: PowTokenSale[];
+  selectedTokenMarketId?: string;
   setFeeRate: (value: number) => void;
   tokens: PowTokenDefinition[];
   transfers: PowTokenTransfer[];
@@ -26963,6 +27039,12 @@ function TokenMarketplacePanel({
   const [selectedTokenMarketId, setSelectedTokenMarketId] = useState(() =>
     tokenRouteTarget(),
   );
+  const activeSelectedTokenMarketId =
+    controlledSelectedTokenMarketId ?? selectedTokenMarketId;
+  const updateSelectedTokenMarketId = (tokenId: string) => {
+    setSelectedTokenMarketId(tokenId);
+    onSelectedTokenMarketIdChange?.(tokenId);
+  };
   const [tokenMarketPageIndex, setTokenMarketPageIndex] = useState(0);
   const [tokenListingPageIndex, setTokenListingPageIndex] = useState(0);
   const [tokenMarketLogPageIndex, setTokenMarketLogPageIndex] = useState(0);
@@ -26983,8 +27065,8 @@ function TokenMarketplacePanel({
     useState<MarketplaceListingBookFilter>("all");
   const selectedMarketToken = rows.find(
     (token) =>
-      token.tokenId === selectedTokenMarketId ||
-      token.ticker === normalizeTokenTicker(selectedTokenMarketId),
+      token.tokenId === activeSelectedTokenMarketId ||
+      token.ticker === normalizeTokenTicker(activeSelectedTokenMarketId),
   );
   useEffect(() => {
     setTokenMarketPageIndex(0);
@@ -27020,11 +27102,11 @@ function TokenMarketplacePanel({
     );
   };
   const openTokenMarket = (token: TokenMarketplaceRow) => {
-    setSelectedTokenMarketId(token.tokenId);
+    updateSelectedTokenMarketId(token.tokenId);
     setTokenMarketRoute(token.tokenId);
   };
   const clearTokenMarket = () => {
-    setSelectedTokenMarketId("");
+    updateSelectedTokenMarketId("");
     setTokenMarketRoute("");
   };
   const networkListings = listings.filter((listing) => listing.network === network);
@@ -28232,7 +28314,13 @@ function MarketplaceApp({
   onRefreshIds: () => void;
   onRefreshTokens: () => void;
 }) {
-  const [marketplaceTab, setMarketplaceTab] = useState<MarketplaceTab>("ids");
+  const initialTokenMarketTarget = tokenRouteTarget();
+  const [marketplaceTab, setMarketplaceTab] = useState<MarketplaceTab>(() =>
+    initialTokenMarketTarget ? "tokens" : "ids",
+  );
+  const [selectedTokenMarketId, setSelectedTokenMarketId] = useState(
+    initialTokenMarketTarget,
+  );
   const confirmedRecords = registryRecords.filter((record) => record.confirmed);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
   const ownerControlledIds = confirmedRecords.filter(
@@ -28245,10 +28333,26 @@ function MarketplaceApp({
     pendingIdEventTouchesAddress(event, address),
   );
   const marketplaceStats = marketplaceStatsFromSales(registrySales);
+  const tokenMarketRows = tokenMarketplaceRowsFor({
+    address,
+    listings: tokenListings,
+    mints: tokenMints,
+    network: "livenet",
+    sales: tokenSales,
+    tokens,
+    transfers: tokenTransfers,
+  });
+  const selectedTokenMarket = tokenMarketRows.find(
+    (token) =>
+      token.tokenId === selectedTokenMarketId ||
+      token.ticker === normalizeTokenTicker(selectedTokenMarketId),
+  );
   const tokenSummaryStats = tokenMarketplaceSummaryStats({
     listings: tokenListings,
     network: "livenet",
     sales: tokenSales,
+    token: selectedTokenMarket,
+    tokenScope: selectedTokenMarketId,
     tokens,
   });
   const sealedTokenListings = tokenListings.filter((listing) =>
@@ -28502,7 +28606,9 @@ function MarketplaceApp({
             listings={tokenListings}
             mints={tokenMints}
             network="livenet"
+            onSelectedTokenMarketIdChange={setSelectedTokenMarketId}
             sales={tokenSales}
+            selectedTokenMarketId={selectedTokenMarketId}
             setFeeRate={setFeeRate}
             tokens={tokens}
             transfers={tokenTransfers}
@@ -28614,7 +28720,13 @@ function MarketplaceWorkspace({
   onRefreshIds: () => void;
   onRefreshTokens: () => void;
 }) {
-  const [marketplaceTab, setMarketplaceTab] = useState<MarketplaceTab>("ids");
+  const initialTokenMarketTarget = tokenRouteTarget();
+  const [marketplaceTab, setMarketplaceTab] = useState<MarketplaceTab>(() =>
+    initialTokenMarketTarget ? "tokens" : "ids",
+  );
+  const [selectedTokenMarketId, setSelectedTokenMarketId] = useState(
+    initialTokenMarketTarget,
+  );
   const confirmedRecords = registryRecords.filter(
     (record) => record.network === network && record.confirmed,
   );
@@ -28639,10 +28751,26 @@ function MarketplaceWorkspace({
   const networkTokenCount = tokens.filter(
     (token) => token.network === network,
   ).length;
+  const tokenMarketRows = tokenMarketplaceRowsFor({
+    address,
+    listings: tokenListings,
+    mints: tokenMints,
+    network,
+    sales: tokenSales,
+    tokens,
+    transfers: tokenTransfers,
+  });
+  const selectedTokenMarket = tokenMarketRows.find(
+    (token) =>
+      token.tokenId === selectedTokenMarketId ||
+      token.ticker === normalizeTokenTicker(selectedTokenMarketId),
+  );
   const tokenSummaryStats = tokenMarketplaceSummaryStats({
     listings: tokenListings,
     network,
     sales: tokenSales,
+    token: selectedTokenMarket,
+    tokenScope: selectedTokenMarketId,
     tokens,
   });
   const refreshMarketplaceTab = () => {
@@ -28880,7 +29008,9 @@ function MarketplaceWorkspace({
             network={network}
             onOpenTokenWorkspace={onOpenTokenWorkspace}
             onOpenWalletWorkspace={onOpenWalletWorkspace}
+            onSelectedTokenMarketIdChange={setSelectedTokenMarketId}
             sales={tokenSales}
+            selectedTokenMarketId={selectedTokenMarketId}
             setFeeRate={setFeeRate}
             tokens={tokens}
             transfers={tokenTransfers}
