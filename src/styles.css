@@ -4527,10 +4527,6 @@ pre {
   grid-template-columns: minmax(0, 1fr) minmax(280px, 430px);
 }
 
-.marketplace-token-hero {
-  grid-template-columns: minmax(0, 1fr);
-}
-
 .id-launch-hero > div:first-child {
   display: grid;
   gap: 10px;

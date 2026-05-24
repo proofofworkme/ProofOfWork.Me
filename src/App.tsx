@@ -28294,9 +28294,7 @@ function MarketplaceApp({
       <AppStatusRow persistent status={scopedStatus} />
 
       <section className="id-launch-main">
-        <div
-          className={`id-launch-hero${marketplaceTab === "tokens" ? " marketplace-token-hero" : ""}`}
-        >
+        <div className="id-launch-hero">
           <div>
             <span className="id-launch-kicker">ProofOfWork marketplace</span>
             <h2>Trade Bitcoin-native assets.</h2>
