@@ -7617,7 +7617,7 @@ function emptyMarketplaceStats(): PowIdMarketplaceStats {
 }
 
 function marketplaceStatsFromSales(
-  sales: PowIdMarketplaceSale[],
+  sales: Array<Pick<PowIdMarketplaceSale, "confirmed" | "priceSats">>,
 ): PowIdMarketplaceStats {
   return sales.reduce((stats, sale) => {
     if (sale.confirmed) {
@@ -27105,11 +27105,13 @@ function TokenMarketplacePanel({
   const tokenMarketLogPage =
     activeRemoteTokenMarketLogPage ?? localTokenMarketLogPage;
   const hasTokenMarketLogItems = tokenMarketLogPage.totalCount > 0;
-  const confirmedTokens = rows.filter((token) => token.confirmed);
-  const confirmedSupply = rows.reduce(
+  const statsRows = selectedMarketToken ? [selectedMarketToken] : rows;
+  const confirmedTokens = statsRows.filter((token) => token.confirmed);
+  const confirmedSupply = statsRows.reduce(
     (total, token) => total + token.confirmedSupply,
     0,
   );
+  const tokenMarketplaceStats = marketplaceStatsFromSales(marketSales);
   const workMarketFloorUsd = satsToUsd(workMarketFloorSats, btcUsd);
   const workMarketNetworkUsd = workFloorQuote
     ? satsToUsd(workFloorQuote.networkValueSats, btcUsd)
@@ -27186,6 +27188,20 @@ function TokenMarketplacePanel({
         <div>
           <strong>{sealedListings.length.toLocaleString()}</strong>
           <span>Sealed listings</span>
+        </div>
+        <div>
+          <strong>{tokenMarketplaceStats.confirmedSales.toLocaleString()}</strong>
+          <span>Token sales</span>
+        </div>
+        <div>
+          <strong>
+            {tokenMarketplaceStats.confirmedVolumeSats.toLocaleString()}
+          </strong>
+          <span>Volume sats</span>
+        </div>
+        <div>
+          <strong>{tokenMarketplaceStats.pendingSales.toLocaleString()}</strong>
+          <span>Pending sales</span>
         </div>
       </div>
 
