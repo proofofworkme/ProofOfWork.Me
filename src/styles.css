@@ -3048,6 +3048,24 @@ select {
   font-size: 0.82rem;
 }
 
+.marketplace-sort-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  margin: 10px 0 12px;
+  min-width: 0;
+}
+
+.marketplace-sort-row .sort-control {
+  margin-left: auto;
+}
+
+.marketplace-sort-row select {
+  min-width: 150px;
+}
+
 .token-market-content {
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
 }

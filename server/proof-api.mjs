@@ -58,6 +58,9 @@ const ACTIVITY_CACHE_TTL_MS = Number(
 const ACTIVITY_CACHE_STALE_MS = Number(
   process.env.ACTIVITY_CACHE_STALE_MS ?? HEAVY_READ_STALE_MS,
 );
+const BACKGROUND_ACTIVITY_REFRESH_DELAY_MS = Number(
+  process.env.BACKGROUND_ACTIVITY_REFRESH_DELAY_MS ?? 1000,
+);
 const DERIVED_APP_CACHE_TTL_MS = Number(
   process.env.DERIVED_APP_CACHE_TTL_MS ?? 15 * 60_000,
 );
@@ -75,10 +78,16 @@ const TOKEN_CACHE_STALE_MS = Number(
   process.env.TOKEN_CACHE_STALE_MS ?? HEAVY_READ_STALE_MS,
 );
 const WORK_FLOOR_CACHE_TTL_MS = Number(
-  process.env.WORK_FLOOR_CACHE_TTL_MS ?? 60_000,
+  process.env.WORK_FLOOR_CACHE_TTL_MS ?? 15_000,
 );
 const WORK_FLOOR_CACHE_STALE_MS = Number(
   process.env.WORK_FLOOR_CACHE_STALE_MS ?? 5 * 60_000,
+);
+const WORK_FLOOR_FRESH_WAIT_MS = Number(
+  process.env.WORK_FLOOR_FRESH_WAIT_MS ?? 1500,
+);
+const WORK_TOKEN_LIVE_DELTA_MAX_TXS = Number(
+  process.env.WORK_TOKEN_LIVE_DELTA_MAX_TXS ?? 1500,
 );
 const SUMMARY_ACTIVITY_LIMIT = Number(process.env.SUMMARY_ACTIVITY_LIMIT ?? 60);
 const SUMMARY_MARKET_LIMIT = Number(process.env.SUMMARY_MARKET_LIMIT ?? 40);
@@ -227,6 +236,7 @@ const BACKGROUND_ACTIVITY_REFRESHES = new Set();
 const BACKGROUND_PAYLOAD_REFRESHES = new Set();
 const BACKGROUND_TOKEN_REFRESHES = new Set();
 const RESPONSE_CACHE = new Map();
+const WORK_TOKEN_LIVE_SEEN_TXIDS = new Map();
 let persistedCacheWriteSequence = 0;
 let btcUsdPriceCache = null;
 const HEAVY_READ_STALE_SECONDS = Math.max(
@@ -268,6 +278,27 @@ function shouldPersistJsonCache(cacheKey) {
 function persistedJsonCachePath(jsonKey) {
   const file = Buffer.from(jsonKey).toString("base64url") + ".json";
   return path.join(PERSISTED_CACHE_DIR, file);
+}
+
+function invalidateWorkFloorCaches(network) {
+  if (network !== "livenet") {
+    return;
+  }
+
+  RESPONSE_CACHE.delete(`payload:work-floor:${network}`);
+  RESPONSE_CACHE.delete(`json:work-floor:${network}`);
+  RESPONSE_CACHE.delete(`payload:growth-summary:${network}`);
+  RESPONSE_CACHE.delete(`json:growth-summary:${network}`);
+}
+
+function invalidateDerivedCachesForBaseCache(cacheKey) {
+  if (
+    cacheKey === "registry:livenet" ||
+    cacheKey === "activity:livenet" ||
+    cacheKey.startsWith("token:livenet")
+  ) {
+    invalidateWorkFloorCaches("livenet");
+  }
 }
 
 async function readPersistedJsonCache(jsonKey) {
@@ -418,6 +449,7 @@ async function cachedJsonResponse(
           if (shouldPersistJsonCache(cacheKey)) {
             void writePersistedJsonCache(jsonKey, body);
           }
+          invalidateDerivedCachesForBaseCache(cacheKey);
           return body;
         })
         .catch((error) => {
@@ -477,6 +509,7 @@ function refreshedJsonResponse(
   if (shouldPersistJsonCache(cacheKey)) {
     void writePersistedJsonCache(jsonKey, body);
   }
+  invalidateDerivedCachesForBaseCache(cacheKey);
   writeJsonBody(response, 200, body, cacheControl, "REFRESH");
 }
 
@@ -494,6 +527,7 @@ function warmJsonCache(cacheKey, producer, ttlMs, staleMs) {
         const body = JSON.stringify(payload);
         cacheJsonBody(jsonKey, body, ttlMs, staleMs);
         void writePersistedJsonCache(jsonKey, body);
+        invalidateDerivedCachesForBaseCache(cacheKey);
         return body;
       })
       .catch((error) => {
@@ -1671,6 +1705,111 @@ async function fetchAddressTransactionsFromElectrum(address, network) {
   }
 
   return dedupeTransactions(txs.filter(Boolean));
+}
+
+async function fetchAddressHistoryTxidsFromElectrum(address, network) {
+  if (network !== "livenet" || !ELECTRUM_HOST || !ELECTRUM_PORT) {
+    return [];
+  }
+
+  const scripthash = scriptHashForAddress(address, network);
+  const history = await electrumRequest("blockchain.scripthash.get_history", [
+    scripthash,
+  ]);
+  return [
+    ...new Set(
+      (Array.isArray(history) ? history : [])
+        .map((entry) => entry?.tx_hash)
+        .filter(
+          (txid) => typeof txid === "string" && /^[0-9a-fA-F]{64}$/u.test(txid),
+        )
+        .map((txid) => txid.toLowerCase()),
+    ),
+  ];
+}
+
+async function fetchRecentUnknownAddressTransactions(
+  address,
+  network,
+  knownTxids,
+  maxTxs,
+) {
+  const collected = [];
+  const cursors = new Set();
+  const maxPages = Math.max(1, Math.ceil(maxTxs / 25) + 4);
+  const pageBases = [
+    ...new Set([
+      mempoolBase(network),
+      ...pendingMempoolBases(network),
+      explorerBase(network),
+    ]),
+  ];
+  const fetchPage = async (path) => {
+    let lastError = null;
+    for (const baseUrl of pageBases) {
+      try {
+        return await fetchAddressTransactionsPageFromBase(
+          baseUrl,
+          address,
+          path,
+        );
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError ?? new Error(`No address page source for ${address}.`);
+  };
+  let cursor = "";
+  let consecutiveKnownPages = 0;
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const path = cursor ? `txs/chain/${cursor}` : "txs/chain";
+    let pageTxs = [];
+    try {
+      pageTxs = await fetchPage(path);
+    } catch (error) {
+      if (page === 0) {
+        pageTxs = await fetchPage("txs").catch(() => []);
+      }
+      if (pageTxs.length === 0) {
+        console.error(
+          `Recent address page lookup failed for ${address}: ${errorSummary(error)}`,
+        );
+        break;
+      }
+    }
+
+    if (pageTxs.length === 0) {
+      break;
+    }
+
+    let pageUnknown = 0;
+    for (const tx of pageTxs) {
+      const txid = transactionTxid(tx);
+      if (!txid || knownTxids.has(txid)) {
+        continue;
+      }
+
+      pageUnknown += 1;
+      collected.push(tx);
+      if (collected.length >= maxTxs) {
+        return annotateBlockOrder(dedupeTransactions(collected), network);
+      }
+    }
+
+    consecutiveKnownPages = pageUnknown === 0 ? consecutiveKnownPages + 1 : 0;
+    if (consecutiveKnownPages >= 2 || (collected.length > 0 && pageUnknown === 0)) {
+      break;
+    }
+
+    cursor = oldestConfirmedTxid(pageTxs);
+    if (!cursor || cursors.has(cursor)) {
+      break;
+    }
+    cursors.add(cursor);
+  }
+
+  return annotateBlockOrder(dedupeTransactions(collected), network);
 }
 
 function transactionTxid(tx) {
@@ -4968,6 +5107,7 @@ function refreshTokenPayloadCacheInBackground(network, tokenScope = "") {
       if (shouldPersistJsonCache(`token:${network}:${scope}`)) {
         void writePersistedJsonCache(`json:token:${network}:${scope}`, body);
       }
+      invalidateDerivedCachesForBaseCache(`token:${network}:${scope}`);
     })
     .catch((error) => {
       console.error(`Token cache refresh failed for ${cacheKey}:`, error);
@@ -4983,13 +5123,18 @@ function refreshGlobalActivityCacheInBackground(network) {
   }
 
   BACKGROUND_ACTIVITY_REFRESHES.add(network);
-  void globalActivityPayload(network, true)
-    .catch((error) => {
-      console.error(`Activity cache refresh failed for ${network}:`, error);
-    })
-    .finally(() => {
-      BACKGROUND_ACTIVITY_REFRESHES.delete(network);
-    });
+  setTimeout(() => {
+    void globalActivityPayload(network, true)
+      .then(() => {
+        invalidateDerivedCachesForBaseCache(`activity:${network}`);
+      })
+      .catch((error) => {
+        console.error(`Activity cache refresh failed for ${network}:`, error);
+      })
+      .finally(() => {
+        BACKGROUND_ACTIVITY_REFRESHES.delete(network);
+      });
+  }, BACKGROUND_ACTIVITY_REFRESH_DELAY_MS);
 }
 
 function refreshPayloadCacheInBackground(
@@ -5016,6 +5161,7 @@ function refreshPayloadCacheInBackground(
       if (shouldPersistJsonCache(cacheKey)) {
         void writePersistedJsonCache(`json:${cacheKey}`, body);
       }
+      invalidateDerivedCachesForBaseCache(cacheKey);
     })
     .catch((error) => {
       console.error(`Cache refresh failed for ${cacheKey}:`, error);
@@ -5115,7 +5261,11 @@ async function backgroundRefreshedJsonBackedPayload(
 
 async function fastGlobalActivityPayload(network) {
   const cached = GLOBAL_ACTIVITY_CACHE.get(network);
+  if (cached?.payload && Date.now() - cached.createdAt < ACTIVITY_CACHE_TTL_MS) {
+    return cached.payload;
+  }
   if (cached?.payload) {
+    refreshGlobalActivityCacheInBackground(network);
     return cached.payload;
   }
 
@@ -5154,8 +5304,13 @@ async function fastGlobalActivityPayload(network) {
 async function fastCachedTokenPayload(network, tokenScope = "") {
   const scope = normalizeTokenScope(tokenScope);
   const payloadKey = `payload:token:${network}:${scope}`;
+  const now = Date.now();
   const cachedPayloadEntry = RESPONSE_CACHE.get(payloadKey);
-  if (cachedPayloadEntry?.payload) {
+  if (cachedPayloadEntry?.payload && now < cachedPayloadEntry.expiresAt) {
+    return cachedPayloadEntry.payload;
+  }
+  if (cachedPayloadEntry?.payload && now < cachedPayloadEntry.staleUntil) {
+    refreshTokenPayloadCacheInBackground(network, scope);
     return cachedPayloadEntry.payload;
   }
 
@@ -6481,8 +6636,13 @@ function tokenAggregateSummaries(payload) {
 async function fastTokenPayloadSnapshot(network, tokenScope = "") {
   const scope = normalizeTokenScope(tokenScope);
   const payloadKey = `payload:token:${network}:${scope}`;
+  const now = Date.now();
   const cachedPayloadEntry = RESPONSE_CACHE.get(payloadKey);
-  if (cachedPayloadEntry?.payload) {
+  if (cachedPayloadEntry?.payload && now < cachedPayloadEntry.expiresAt) {
+    return cachedPayloadEntry.payload;
+  }
+  if (cachedPayloadEntry?.payload && now < cachedPayloadEntry.staleUntil) {
+    refreshTokenPayloadCacheInBackground(network, scope);
     return cachedPayloadEntry.payload;
   }
 
@@ -6568,6 +6728,293 @@ function compactTokenSummaryPayload(payload) {
       holders: holders.length,
     },
   };
+}
+
+function workTokenLiveSeenTxids(network) {
+  const key = String(network || "livenet");
+  let seen = WORK_TOKEN_LIVE_SEEN_TXIDS.get(key);
+  if (!seen) {
+    seen = new Set();
+    WORK_TOKEN_LIVE_SEEN_TXIDS.set(key, seen);
+  }
+  return seen;
+}
+
+function addTokenStateTxids(txids, state) {
+  const add = (value) => {
+    if (typeof value === "string" && /^[0-9a-fA-F]{64}$/u.test(value)) {
+      txids.add(value.toLowerCase());
+    }
+  };
+
+  for (const key of [
+    "mints",
+    "transfers",
+    "sales",
+    "listings",
+    "closedListings",
+  ]) {
+    for (const item of Array.isArray(state?.[key]) ? state[key] : []) {
+      add(item.txid);
+      add(item.listingId);
+      add(item.sealTxid);
+      add(item.closedTxid);
+    }
+  }
+}
+
+function confirmedWorkMintEventsFromTransaction(tx, network) {
+  const txid = transactionTxid(tx);
+  if (!txid || !transactionConfirmed(tx)) {
+    return [];
+  }
+
+  const vin = Array.isArray(tx.vin) ? tx.vin : [];
+  const vout = Array.isArray(tx.vout) ? tx.vout : [];
+  const minterAddress = transactionInputAddresses(vin)[0] ?? "";
+  if (!isValidBitcoinAddress(minterAddress, network)) {
+    return [];
+  }
+
+  const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
+  if (messages.length === 0) {
+    return [];
+  }
+
+  let remainingRegistrySats = tokenPaymentAmountBeforeProtocol(
+    vout,
+    WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+  );
+  const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+  const events = [];
+
+  for (const message of messages) {
+    const parsed = parseTokenPayload(message, network);
+    if (
+      !parsed ||
+      parsed.kind !== "mint" ||
+      parsed.tokenId !== WORK_TOKEN_ID ||
+      parsed.amount !== WORK_TOKEN_MINT_AMOUNT ||
+      remainingRegistrySats < WORK_TOKEN_MINT_PRICE_SATS
+    ) {
+      continue;
+    }
+
+    remainingRegistrySats -= WORK_TOKEN_MINT_PRICE_SATS;
+    events.push({
+      amount: WORK_TOKEN_MINT_AMOUNT,
+      confirmed: true,
+      createdAt,
+      dataBytes: proofProtocolDataBytesForVout(vout),
+      minterAddress,
+      network,
+      paidSats: WORK_TOKEN_MINT_PRICE_SATS,
+      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      ticker: WORK_TOKEN_TICKER,
+      tokenId: WORK_TOKEN_ID,
+      txid,
+    });
+  }
+
+  return events;
+}
+
+function cacheLiveWorkTokenState(network, state) {
+  const scope = WORK_TOKEN_ID;
+  const payloadKey = `payload:token:${network}:${scope}`;
+  const jsonKey = `json:token:${network}:${scope}`;
+  const body = JSON.stringify(state);
+  RESPONSE_CACHE.set(payloadKey, {
+    expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
+    payload: state,
+    staleUntil: Date.now() + TOKEN_CACHE_STALE_MS,
+  });
+  cacheJsonBody(jsonKey, body, TOKEN_CACHE_TTL_MS, TOKEN_CACHE_STALE_MS);
+  if (shouldPersistJsonCache(`token:${network}:${scope}`)) {
+    void writePersistedJsonCache(jsonKey, body);
+  }
+}
+
+async function liveWorkTokenState(network, cachedWorkTokenState) {
+  const state =
+    cachedWorkTokenState && typeof cachedWorkTokenState === "object"
+      ? cachedWorkTokenState
+      : {
+          ...emptyTokenState(),
+          indexedAt: new Date().toISOString(),
+          network,
+          tokens: [
+            {
+              confirmed: true,
+              createdAt: new Date(GROWTH_MODEL_START_MS).toISOString(),
+              creationFeeSats: TOKEN_CREATION_PRICE_SATS,
+              creatorAddress: "",
+              dataBytes: 0,
+              maxSupply: WORK_TOKEN_MAX_SUPPLY,
+              mintAmount: WORK_TOKEN_MINT_AMOUNT,
+              mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+              network,
+              registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+              ticker: WORK_TOKEN_TICKER,
+              tokenId: WORK_TOKEN_ID,
+              txid: WORK_TOKEN_ID,
+            },
+          ],
+        };
+
+  if (network !== "livenet") {
+    return state;
+  }
+
+  const knownTxids = workTokenLiveSeenTxids(network);
+  addTokenStateTxids(knownTxids, state);
+
+  const maxDeltaTxs = Math.max(1, WORK_TOKEN_LIVE_DELTA_MAX_TXS);
+  let txs = await fetchRecentUnknownAddressTransactions(
+    WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    network,
+    knownTxids,
+    maxDeltaTxs,
+  ).catch((error) => {
+    console.error(
+      `WORK live recent page lookup failed for ${network}: ${errorSummary(error)}`,
+    );
+    return [];
+  });
+
+  let deltaTxids = [];
+  if (txs.length === 0) {
+    let historyTxids = [];
+    try {
+      historyTxids = await fetchAddressHistoryTxidsFromElectrum(
+        WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+        network,
+      );
+    } catch (error) {
+      console.error(
+        `WORK live registry history lookup failed for ${network}: ${errorSummary(error)}`,
+      );
+      return state;
+    }
+
+    const unknownTxids = historyTxids.filter((txid) => !knownTxids.has(txid));
+    if (unknownTxids.length === 0) {
+      return state;
+    }
+    deltaTxids = unknownTxids.slice(-maxDeltaTxs);
+  }
+
+  let failedFetches = 0;
+  if (deltaTxids.length > 0) {
+    txs = await mapWithConcurrency(
+      deltaTxids,
+      Math.min(4, TX_FETCH_CONCURRENCY),
+      async (txid) => {
+        try {
+          return await fetchTransaction(txid, network);
+        } catch {
+          failedFetches += 1;
+          return null;
+        } finally {
+          knownTxids.add(txid);
+        }
+      },
+    );
+  } else {
+    for (const tx of txs) {
+      const txid = transactionTxid(tx);
+      if (txid) {
+        knownTxids.add(txid);
+      }
+    }
+  }
+
+  if (failedFetches > 0) {
+    console.error(
+      `WORK live delta hydration was partial for ${network}: ${failedFetches} of ${deltaTxids.length} transaction lookups failed.`,
+    );
+  }
+
+  const existingMints = Array.isArray(state.mints) ? state.mints : [];
+  const acceptedMintCountsByTxid = new Map();
+  for (const mint of existingMints) {
+    const txid = String(mint.txid ?? "").toLowerCase();
+    if (/^[0-9a-f]{64}$/u.test(txid)) {
+      acceptedMintCountsByTxid.set(
+        txid,
+        (acceptedMintCountsByTxid.get(txid) ?? 0) + 1,
+      );
+    }
+  }
+  let confirmedSupply = existingMints
+    .filter((mint) => mint.confirmed)
+    .reduce((total, mint) => total + Number(mint.amount || 0), 0);
+  const seenMintCountsByTxid = new Map();
+  const newMints = [];
+
+  for (const tx of tokenProtocolSortedTransactions(txs.filter(Boolean))) {
+    for (const mint of confirmedWorkMintEventsFromTransaction(tx, network)) {
+      const seenCountInTx = seenMintCountsByTxid.get(mint.txid) ?? 0;
+      seenMintCountsByTxid.set(mint.txid, seenCountInTx + 1);
+      const acceptedCount = acceptedMintCountsByTxid.get(mint.txid) ?? 0;
+      if (
+        seenCountInTx < acceptedCount ||
+        confirmedSupply + mint.amount > WORK_TOKEN_MAX_SUPPLY
+      ) {
+        continue;
+      }
+
+      acceptedMintCountsByTxid.set(mint.txid, acceptedCount + 1);
+      confirmedSupply += mint.amount;
+      newMints.push(mint);
+    }
+  }
+
+  if (newMints.length === 0) {
+    return state;
+  }
+
+  const holders = new Map(
+    (Array.isArray(state.holders) ? state.holders : [])
+      .filter((holder) => holder?.address && Number(holder.balance) > 0)
+      .map((holder) => [holder.address, Number(holder.balance)]),
+  );
+  for (const mint of newMints) {
+    holders.set(
+      mint.minterAddress,
+      (holders.get(mint.minterAddress) ?? 0) + mint.amount,
+    );
+  }
+
+  const mergedMints = [...existingMints, ...newMints].sort(
+    (left, right) =>
+      Number(right.confirmed) - Number(left.confirmed) ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      left.txid.localeCompare(right.txid),
+  );
+  const nextState = {
+    ...state,
+    confirmedSupply,
+    holders: [...holders.entries()]
+      .map(([address, balance]) => ({ address, balance }))
+      .sort(
+        (left, right) =>
+          right.balance - left.balance ||
+          left.address.localeCompare(right.address),
+      ),
+    indexedAt: new Date().toISOString(),
+    mints: mergedMints,
+    stats: {
+      ...(state.stats ?? {}),
+      confirmedMints: mergedMints.filter((mint) => mint.confirmed).length,
+      holders: holders.size,
+    },
+  };
+  cacheLiveWorkTokenState(network, nextState);
+  console.log(
+    `Applied ${newMints.length} live WORK registry mint(s) for ${network}.`,
+  );
+  return nextState;
 }
 
 async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
@@ -6667,16 +7114,136 @@ async function registrySummaryPayload(network, fresh = false) {
 }
 
 async function activitySummaryPayload(network, fresh = false) {
-  const payload = fresh
-    ? await globalActivityPayload(network, true)
-    : await fastGlobalActivityPayload(network);
+  if (fresh) {
+    refreshGlobalActivityCacheInBackground(network);
+  }
+
+  const payload = await fastGlobalActivityPayload(network);
   return compactActivitySummaryPayload(payload);
 }
 
+async function cachedWorkFloorPayload(network, fresh = false) {
+  const cacheKey = `work-floor:${network}`;
+  const payloadKey = `payload:work-floor:${network}`;
+  const producer = () => workFloorPayload(network, true);
+  const waitForFreshOrCached = (promise, payload) => {
+    let timer;
+    return Promise.race([
+      promise,
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(payload), WORK_FLOOR_FRESH_WAIT_MS);
+      }),
+    ]).finally(() => clearTimeout(timer));
+  };
+  const startRefresh = () => {
+    const current = RESPONSE_CACHE.get(payloadKey);
+    if (current?.promise) {
+      return current.promise;
+    }
+
+    const now = Date.now();
+    const refreshPromise = producer()
+      .then((payload) => {
+        const body = JSON.stringify(payload);
+        cacheJsonBody(
+          `json:${cacheKey}`,
+          body,
+          WORK_FLOOR_CACHE_TTL_MS,
+          WORK_FLOOR_CACHE_STALE_MS,
+        );
+        if (shouldPersistJsonCache(cacheKey)) {
+          void writePersistedJsonCache(`json:${cacheKey}`, body);
+        }
+        RESPONSE_CACHE.set(payloadKey, {
+          expiresAt: Date.now() + WORK_FLOOR_CACHE_TTL_MS,
+          payload,
+          staleUntil: Date.now() + WORK_FLOOR_CACHE_STALE_MS,
+        });
+        return payload;
+      })
+      .catch((error) => {
+        const fallback = RESPONSE_CACHE.get(payloadKey);
+        if (fallback?.payload) {
+          RESPONSE_CACHE.set(payloadKey, {
+            ...fallback,
+            promise: null,
+          });
+          console.error(
+            `Using previous WORK floor payload for ${network} after refresh failure: ${errorSummary(error)}`,
+          );
+          return fallback.payload;
+        }
+        RESPONSE_CACHE.delete(payloadKey);
+        throw error;
+      });
+
+    RESPONSE_CACHE.set(payloadKey, {
+      expiresAt: current?.expiresAt ?? now,
+      payload: current?.payload,
+      promise: refreshPromise,
+      staleUntil: current?.staleUntil ?? now,
+    });
+    return refreshPromise;
+  };
+
+  const now = Date.now();
+  const cached = RESPONSE_CACHE.get(payloadKey);
+  if (!fresh && cached?.payload && now < cached.expiresAt) {
+    return cached.payload;
+  }
+  if (cached?.payload && now < cached.staleUntil) {
+    const refreshPromise =
+      fresh || now >= cached.expiresAt ? startRefresh() : cached.promise;
+    if (fresh && refreshPromise) {
+      return waitForFreshOrCached(refreshPromise, cached.payload);
+    }
+    return cached.payload;
+  }
+  if (cached?.promise) {
+    if (fresh && cached.payload) {
+      return waitForFreshOrCached(cached.promise, cached.payload);
+    }
+    return cached.promise;
+  }
+
+  const refreshPromise = startRefresh();
+
+  const jsonKey = `json:${cacheKey}`;
+  await hydratePersistedJsonCache(jsonKey, WORK_FLOOR_CACHE_STALE_MS);
+  const cachedJsonEntry = RESPONSE_CACHE.get(jsonKey);
+  if (cachedJsonEntry?.body && Date.now() < cachedJsonEntry.staleUntil) {
+    try {
+      const payload = JSON.parse(cachedJsonEntry.body);
+      RESPONSE_CACHE.set(payloadKey, {
+        expiresAt: Date.now() - 1,
+        payload,
+        staleUntil: Date.now() + WORK_FLOOR_CACHE_STALE_MS,
+        promise: refreshPromise,
+      });
+      if (fresh) {
+        return waitForFreshOrCached(refreshPromise, payload);
+      }
+      return payload;
+    } catch {
+      RESPONSE_CACHE.delete(jsonKey);
+    }
+  }
+
+  if (fresh) {
+    return waitForFreshOrCached(refreshPromise, emptyWorkFloorPayload(network));
+  }
+
+  return refreshPromise;
+}
+
 async function workSummaryPayload(network, fresh = false) {
+  if (fresh) {
+    refreshTokenPayloadCacheInBackground(network, WORK_TOKEN_ID);
+  }
+
   const [token, floor] = await Promise.all([
-    tokenSummaryPayload(network, WORK_TOKEN_ID, fresh),
-    workFloorPayload(network, fresh),
+    tokenSummaryPayload(network, WORK_TOKEN_ID, false),
+    cachedWorkFloorPayload(network, fresh),
   ]);
   return {
     floor,
@@ -6688,10 +7255,21 @@ async function workSummaryPayload(network, fresh = false) {
 }
 
 async function marketplaceSummaryPayload(network, fresh = false) {
+  if (fresh) {
+    refreshPayloadCacheInBackground(
+      `registry:${network}`,
+      `payload:registry:${network}`,
+      () => safeRegistryPayload(network),
+      REGISTRY_CACHE_TTL_MS,
+      REGISTRY_CACHE_STALE_MS,
+    );
+    refreshTokenPayloadCacheInBackground(network, "");
+  }
+
   const [registry, token, floor] = await Promise.all([
-    registrySummaryPayload(network, fresh),
-    tokenSummaryPayload(network, "", fresh),
-    workFloorPayload(network, fresh),
+    registrySummaryPayload(network, false),
+    tokenSummaryPayload(network, "", false),
+    cachedWorkFloorPayload(network, fresh),
   ]);
   return {
     indexedAt: new Date().toISOString(),
@@ -6717,7 +7295,7 @@ function refreshGrowthCachesInBackground(network) {
   refreshPayloadCacheInBackground(
     `work-floor:${network}`,
     `payload:work-floor:${network}`,
-    () => workFloorPayload(network, true),
+    () => cachedWorkFloorPayload(network, true),
     WORK_FLOOR_CACHE_TTL_MS,
     WORK_FLOOR_CACHE_STALE_MS,
   );
@@ -6741,7 +7319,7 @@ async function growthSummaryPayload(network, fresh = false) {
       ),
       fastGlobalActivityPayload(network),
       fastTokenPayloadSnapshot(network),
-      workFloorPayload(network),
+      cachedWorkFloorPayload(network, fresh),
     ]);
   const registrySummary = compactRegistrySummaryPayload(registryState);
   const activitySummary = compactActivitySummaryPayload(computerActivity);
@@ -6772,7 +7350,7 @@ async function growthSummaryPayload(network, fresh = false) {
       : registryState.activity ?? [];
   const tokenMints = tokenState.mints ?? [];
   const tokenTransfers = tokenState.transfers ?? [];
-  const tokenSales = tokenState.sales ?? [];
+  const tokenSales = tokenSalesIncludingSealedClosedListings(tokenState);
   const actualValue =
     workFloor.actualValue ??
     growthActualNetworkValue(
@@ -6983,6 +7561,33 @@ function isBrowserActivityItem(item) {
   return false;
 }
 
+function activityAmountSats(item) {
+  const amount = Number(item?.amountSats ?? 0);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
+function activityKindHasDedicatedGrowthBucket(item) {
+  if (isBrowserActivityItem(item)) {
+    return true;
+  }
+
+  return (
+    item.kind === "mail" ||
+    item.kind === "reply" ||
+    item.kind === "file" ||
+    item.kind === "token-create" ||
+    item.kind === "token-mint" ||
+    item.kind === "token-transfer" ||
+    item.kind === "token-sale"
+  );
+}
+
+function unbucketedConfirmedComputerLogFlowSats(confirmedActivity) {
+  return confirmedActivity
+    .filter((item) => !activityKindHasDedicatedGrowthBucket(item))
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+}
+
 function growthActualNetworkValue(
   records,
   idActivity,
@@ -7051,6 +7656,8 @@ function growthActualNetworkValue(
     0,
   );
   const walletFlowSats = tokenTransferFlowSats;
+  const computerEventFlowSats =
+    unbucketedConfirmedComputerLogFlowSats(confirmedActivity);
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
@@ -7061,6 +7668,8 @@ function growthActualNetworkValue(
     (tokenCreationFlowSats + tokenMintFlowSats) *
     GROWTH_MODEL_INPUTS.valueMultiple;
   const walletSats = walletFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const computerEventSats =
+    computerEventFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const totalSats =
     idSats +
     mailSats +
@@ -7068,7 +7677,8 @@ function growthActualNetworkValue(
     marketplaceSats +
     browserSats +
     tokenSats +
-    walletSats;
+    walletSats +
+    computerEventSats;
   const years = Math.max(
     0,
     (Math.min(cutoffMs, Date.now()) - GROWTH_MODEL_START_MS) /
@@ -7078,6 +7688,8 @@ function growthActualNetworkValue(
   return {
     browserFlowSats,
     browserSats,
+    computerEventFlowSats,
+    computerEventSats,
     driveFlowSats,
     driveSats,
     idSats,
@@ -7096,6 +7708,62 @@ function growthActualNetworkValue(
     totalSats,
     totalUsd: growthSatsToUsdAtYears(totalSats, years),
   };
+}
+
+function tokenSalesIncludingSealedClosedListings(tokenState) {
+  const tokenSales = Array.isArray(tokenState?.sales) ? tokenState.sales : [];
+  const saleListingIds = new Set(
+    tokenSales
+      .map((sale) => sale.listingId)
+      .filter((listingId) => typeof listingId === "string" && listingId),
+  );
+  const saleTxids = new Set(
+    tokenSales
+      .map((sale) => sale.txid)
+      .filter((txid) => typeof txid === "string" && txid),
+  );
+  const sealedClosedSales = (
+    Array.isArray(tokenState?.closedListings) ? tokenState.closedListings : []
+  ).flatMap((listing) => {
+    const closedTxid =
+      typeof listing.closedTxid === "string" ? listing.closedTxid : "";
+    const sealed = typeof listing.sealTxid === "string" && listing.sealTxid;
+    if (
+      !sealed ||
+      !listing.closedConfirmed ||
+      !closedTxid ||
+      saleListingIds.has(listing.listingId) ||
+      saleTxids.has(closedTxid)
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        amount: listing.amount,
+        buyerAddress: "",
+        confirmed: Boolean(listing.closedConfirmed),
+        createdAt: listing.closedAt ?? listing.createdAt,
+        inferredFromClosedListing: true,
+        listingId: listing.listingId,
+        network: listing.network,
+        paidSats: listing.priceSats + TOKEN_MIN_MUTATION_PRICE_SATS,
+        priceSats: listing.priceSats,
+        registryAddress: listing.registryAddress,
+        sellerAddress: listing.sellerAddress,
+        ticker: listing.ticker,
+        tokenId: listing.tokenId,
+        txid: closedTxid,
+      },
+    ];
+  });
+
+  return [...tokenSales, ...sealedClosedSales].sort(
+    (left, right) =>
+      Number(right.confirmed) - Number(left.confirmed) ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      left.txid.localeCompare(right.txid),
+  );
 }
 
 function compactGrowthEventTimes(eventTimes) {
@@ -7155,10 +7823,7 @@ function growthActualValuePoints(
   }
 
   for (const item of idActivity) {
-    if (
-      item.confirmed &&
-      (item.kind === "mail" || item.kind === "reply" || item.kind === "file")
-    ) {
+    if (item.confirmed) {
       addEventTime(item.createdAt, item.title);
     }
   }
@@ -7471,6 +8136,29 @@ function growthRealEventItems(
 
 function emptyWorkFloorPayload(network) {
   return {
+    actualValue: {
+      browserFlowSats: 0,
+      browserSats: 0,
+      computerEventFlowSats: 0,
+      computerEventSats: 0,
+      driveFlowSats: 0,
+      driveSats: 0,
+      idSats: 0,
+      mailFlowSats: 0,
+      mailSats: 0,
+      marketplaceSats: 0,
+      marketplaceVolumeSats: 0,
+      powids: 0,
+      tokenCreationFlowSats: 0,
+      tokenMintFlowSats: 0,
+      tokenSaleFlowSats: 0,
+      tokenTransferFlowSats: 0,
+      tokenSats: 0,
+      totalSats: 0,
+      totalUsd: 0,
+      walletFlowSats: 0,
+      walletSats: 0,
+    },
     chartPoints: [],
     indexedAt: new Date().toISOString(),
     network,
@@ -7482,6 +8170,9 @@ function emptyWorkFloorPayload(network) {
       confirmedTokenMints: 0,
       confirmedTokens: 0,
       marketplaceVolumeSats: 0,
+      computerEventFlowSats: 0,
+      computerEventSats: 0,
+      confirmedComputerActions: 0,
       tokenCreationFlowSats: 0,
       tokenMintFlowSats: 0,
       tokenSaleFlowSats: 0,
@@ -7506,43 +8197,38 @@ async function workFloorPayload(network, fresh = false) {
     sales: [],
     source: mempoolBase(network),
   };
-  const [
-    registryState,
-    computerActivity,
-    tokenState,
-    workTokenState,
-  ] = fresh
-    ? await Promise.all([
-        safeRegistryPayload(network),
-        fastGlobalActivityPayload(network),
-        safeTokenPayload(network),
-      ]).then(([freshRegistryState, freshComputerActivity, freshTokenState]) => [
-        freshRegistryState,
-        freshComputerActivity,
-        freshTokenState,
-        freshTokenState,
-      ])
-    : await Promise.all([
-        fastJsonBackedPayload(
-          `registry:${network}`,
-          `payload:registry:${network}`,
-          () => safeRegistryPayload(network),
-          REGISTRY_CACHE_TTL_MS,
-          REGISTRY_CACHE_STALE_MS,
-          emptyRegistryState,
-        ),
-        fastGlobalActivityPayload(network),
-        fastCachedTokenPayload(network),
-        fastCachedTokenPayload(network, WORK_TOKEN_ID),
-      ]);
   if (fresh) {
-    refreshGlobalActivityCacheInBackground(network);
+    refreshGrowthCachesInBackground(network);
   }
+
+  const [registryState, computerActivity, tokenState, workTokenState] =
+    await Promise.all([
+      fastJsonBackedPayload(
+        `registry:${network}`,
+        `payload:registry:${network}`,
+        () => safeRegistryPayload(network),
+        REGISTRY_CACHE_TTL_MS,
+        REGISTRY_CACHE_STALE_MS,
+        emptyRegistryState,
+      ),
+      fastGlobalActivityPayload(network),
+      fastCachedTokenPayload(network),
+      fastCachedTokenPayload(network, WORK_TOKEN_ID),
+    ]);
   const activityForGrowth =
     Array.isArray(computerActivity.activity) &&
     computerActivity.activity.length > 0
       ? computerActivity.activity
       : registryState.activity ?? [];
+  const tokenSalesForValue = tokenSalesIncludingSealedClosedListings(tokenState);
+  const confirmedComputerActions = confirmedComputerActionCount(
+    registryState.records ?? [],
+    activityForGrowth,
+    tokenState.tokens ?? [],
+    tokenState.mints ?? [],
+    tokenState.transfers ?? [],
+    tokenSalesForValue,
+  );
   const actualValue = growthActualNetworkValue(
     registryState.records ?? [],
     activityForGrowth,
@@ -7550,7 +8236,7 @@ async function workFloorPayload(network, fresh = false) {
     tokenState.tokens ?? [],
     tokenState.mints ?? [],
     tokenState.transfers ?? [],
-    tokenState.sales ?? [],
+    tokenSalesForValue,
   );
   const globalWorkMintFlowSats = (tokenState.mints ?? [])
     .filter((mint) => mint.confirmed && mint.tokenId === WORK_TOKEN_ID)
@@ -7604,7 +8290,7 @@ async function workFloorPayload(network, fresh = false) {
     tokenState.tokens ?? [],
     tokenState.mints ?? [],
     tokenState.transfers ?? [],
-    tokenState.sales ?? [],
+    tokenSalesForValue,
     {
       startLabel: "WORK deploy",
       startMs: workCreatedMs,
@@ -7646,8 +8332,11 @@ async function workFloorPayload(network, fresh = false) {
       confirmedTokens: (tokenState.tokens ?? []).filter(
         (token) => token.confirmed,
       ).length,
+      confirmedComputerActions,
       browserFlowSats: actualValue.browserFlowSats,
       browserSats: actualValue.browserSats,
+      computerEventFlowSats: actualValue.computerEventFlowSats,
+      computerEventSats: actualValue.computerEventSats,
       driveFlowSats: actualValue.driveFlowSats,
       driveSats: actualValue.driveSats,
       idSats: actualValue.idSats,
@@ -7667,7 +8356,7 @@ async function workFloorPayload(network, fresh = false) {
         tokenState.stats?.transactions ??
         (tokenState.tokens ?? []).length +
           (tokenState.mints ?? []).length +
-          (tokenState.sales ?? []).length,
+          tokenSalesForValue.length,
     },
   };
 }
@@ -8139,29 +8828,18 @@ async function handleRequest(request, response) {
 
     if (url.pathname === "/api/v1/work-floor") {
       if (freshRead) {
-        refreshedJsonResponse(
+        jsonResponse(
           response,
-          `work-floor:${network}`,
-          (await backgroundRefreshedJsonBackedPayload(
-            `work-floor:${network}`,
-            `payload:work-floor:${network}`,
-            () => workFloorPayload(network, true),
-            WORK_FLOOR_CACHE_TTL_MS,
-            WORK_FLOOR_CACHE_STALE_MS,
-            null,
-          )) ?? (await workFloorPayload(network)),
+          200,
+          await cachedWorkFloorPayload(network, true),
           FRESH_READ_CACHE_CONTROL,
-          WORK_FLOOR_CACHE_TTL_MS,
-          WORK_FLOOR_CACHE_STALE_MS,
         );
       } else {
-        await cachedJsonResponse(
+        jsonResponse(
           response,
-          `work-floor:${network}`,
-          () => workFloorPayload(network),
+          200,
+          await cachedWorkFloorPayload(network, false),
           READ_CACHE_CONTROL,
-          WORK_FLOOR_CACHE_TTL_MS,
-          WORK_FLOOR_CACHE_STALE_MS,
         );
       }
       return;
@@ -8182,20 +8860,27 @@ async function handleRequest(request, response) {
         response,
         200,
         await marketplaceSummaryPayload(network, freshRead),
-        freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
+        freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
       return;
     }
 
     if (url.pathname === "/api/v1/growth-summary") {
       if (freshRead) {
-        refreshGrowthCachesInBackground(network);
+        jsonResponse(
+          response,
+          200,
+          await growthSummaryPayload(network, true),
+          FRESH_READ_CACHE_CONTROL,
+        );
+        return;
       }
+
       await cachedJsonResponse(
         response,
         `growth-summary:${network}`,
         () => growthSummaryPayload(network),
-        freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
+        READ_CACHE_CONTROL,
         WORK_FLOOR_CACHE_TTL_MS,
         HEAVY_READ_STALE_MS,
       );
@@ -8471,7 +9156,7 @@ function prewarmExpensiveReadCaches() {
   );
   warmJsonCache(
     "work-floor:livenet",
-    () => workFloorPayload("livenet"),
+    () => cachedWorkFloorPayload("livenet", true),
     WORK_FLOOR_CACHE_TTL_MS,
     WORK_FLOOR_CACHE_STALE_MS,
   );

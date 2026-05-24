@@ -698,6 +698,17 @@ type PowActivityItem = {
   utxo?: string;
 };
 
+type PowActivityStats = {
+  addresses?: number;
+  confirmed?: number;
+  dataBytes?: number;
+  files?: number;
+  messages?: number;
+  pending?: number;
+  registry?: number;
+  total?: number;
+};
+
 type PowIdListingVersion = "list2" | "list3" | "list4" | "list5";
 
 type PowIdMarketplaceTransferVersion = "buy2" | "buy3" | "buy4" | "buy5";
@@ -989,15 +1000,10 @@ type PowTokenApiResponse = Partial<PowTokenState> & {
 
 type PowActivityApiResponse = {
   activity?: PowActivityItem[];
-  stats?: {
-    addresses?: number;
-    dataBytes?: number;
-    files?: number;
-    messages?: number;
-    pending?: number;
-    registry?: number;
-    total?: number;
-  };
+  indexedAt?: string;
+  source?: string;
+  stats?: PowActivityStats;
+  summaryOnly?: boolean;
 };
 
 type PowPaginatedApiResponse<T> = {
@@ -1055,6 +1061,8 @@ const TOKEN_GRID_PAGE_SIZE = 24;
 const ACTIVITY_FEED_PAGE_SIZE = 50;
 const GROWTH_EVENT_PAGE_SIZE = 12;
 const GROWTH_AUTO_REFRESH_MS = 5 * 60_000;
+const WORK_FLOOR_LIVE_REFRESH_MS = 15_000;
+const LOG_LIVE_REFRESH_MS = 15_000;
 const BACKGROUND_FRESH_REFRESH_DELAY_MS = 1_000;
 const BTC_USD_BROWSER_CACHE_TTL_MS = 60_000;
 const BLOCK_TXID_INDEX_CACHE = new Map<string, Promise<Map<string, number>>>();
@@ -1201,6 +1209,8 @@ type GrowthValuePoint = {
 type GrowthActualNetworkValue = {
   browserFlowSats: number;
   browserSats: number;
+  computerEventFlowSats: number;
+  computerEventSats: number;
   driveFlowSats: number;
   driveSats: number;
   mailFlowSats: number;
@@ -1291,6 +1301,21 @@ type GrowthSummaryApiResponse = {
   events?: Array<Partial<GrowthRealEvent>>;
   indexedAt?: string;
   registry?: PowRegistryApiResponse;
+  token?: PowTokenApiResponse;
+  workFloor?: WorkFloorApiResponse;
+};
+
+type MarketplaceSummarySnapshot = {
+  registry: PowRegistryState;
+  token: PowTokenState;
+  workFloor?: WorkFloorQuote;
+};
+
+type MarketplaceSummaryApiResponse = {
+  indexedAt?: string;
+  network?: BitcoinNetwork;
+  registry?: PowRegistryApiResponse;
+  summaryOnly?: boolean;
   token?: PowTokenApiResponse;
   workFloor?: WorkFloorApiResponse;
 };
@@ -7774,6 +7799,53 @@ function compareActivityItems(left: PowActivityItem, right: PowActivityItem) {
   );
 }
 
+function mergeActivityItems(
+  current: PowActivityItem[],
+  incoming: PowActivityItem[],
+) {
+  if (!incoming.length) {
+    return current;
+  }
+
+  const merged = new Map<string, PowActivityItem>();
+  for (const item of current) {
+    merged.set(activityKey(item), item);
+  }
+  for (const item of incoming) {
+    merged.set(activityKey(item), item);
+  }
+
+  return [...merged.values()].sort(compareActivityItems);
+}
+
+function numericActivityStat(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue >= 0
+    ? numberValue
+    : undefined;
+}
+
+function normalizeActivityStats(
+  stats: PowActivityStats | undefined,
+  fallbackItems: PowActivityItem[],
+): PowActivityStats {
+  const total = numericActivityStat(stats?.total) ?? fallbackItems.length;
+  const pending =
+    numericActivityStat(stats?.pending) ??
+    fallbackItems.filter((item) => !item.confirmed).length;
+  const confirmed =
+    numericActivityStat(stats?.confirmed) ?? Math.max(0, total - pending);
+
+  return {
+    ...stats,
+    confirmed,
+    dataBytes:
+      numericActivityStat(stats?.dataBytes) ?? totalActivityDataBytes(fallbackItems),
+    pending,
+    total,
+  };
+}
+
 function compareMarketplaceSales(
   left: PowIdMarketplaceSale,
   right: PowIdMarketplaceSale,
@@ -8680,13 +8752,90 @@ async function fetchGlobalActivity(
   fresh = false,
   summary = false,
 ): Promise<PowActivityItem[]> {
+  return (await fetchGlobalActivityPayload(targetNetwork, fresh, summary))
+    .activity ?? [];
+}
+
+async function fetchGlobalActivityPayload(
+  targetNetwork: BitcoinNetwork,
+  fresh = false,
+  summary = false,
+): Promise<PowActivityApiResponse> {
   const basePath = summary ? "/api/v1/log-summary" : "/api/v1/log";
   const path = fresh ? `${basePath}?fresh=1` : basePath;
   const payload = await fetchProofApiJson<PowActivityApiResponse>(
     path,
     targetNetwork,
   );
-  return Array.isArray(payload.activity) ? payload.activity : [];
+  return {
+    ...payload,
+    activity: Array.isArray(payload.activity) ? payload.activity : [],
+  };
+}
+
+async function fetchGlobalActivityHistoryPage(
+  targetNetwork: BitcoinNetwork,
+  options: {
+    fresh?: boolean;
+    pageIndex?: number;
+    pageSize?: number;
+    query?: string;
+  } = {},
+): Promise<PowPaginatedApiResponse<PowActivityItem>> {
+  const params = new URLSearchParams();
+  params.set("limit", String(options.pageSize ?? ACTIVITY_FEED_PAGE_SIZE));
+  params.set("page", String(options.pageIndex ?? 0));
+  if (options.fresh) {
+    params.set("fresh", "1");
+  }
+  if (options.query?.trim()) {
+    params.set("q", options.query.trim());
+  }
+
+  const payload = await fetchProofApiJson<
+    PowPaginatedApiResponse<PowActivityItem>
+  >(`/api/v1/log-history?${params.toString()}`, targetNetwork);
+  return {
+    ...payload,
+    items: Array.isArray(payload.items) ? payload.items : [],
+  };
+}
+
+function normalizeRegistryApiState(
+  payload: PowRegistryApiResponse | undefined,
+): PowRegistryState {
+  return {
+    activity: Array.isArray(payload?.activity) ? payload.activity : [],
+    listings: Array.isArray(payload?.listings) ? payload.listings : [],
+    pendingEvents: Array.isArray(payload?.pendingEvents)
+      ? payload.pendingEvents
+      : [],
+    records: Array.isArray(payload?.records) ? payload.records : [],
+    sales: Array.isArray(payload?.sales) ? payload.sales : [],
+  };
+}
+
+function normalizeTokenApiState(
+  payload: PowTokenApiResponse | undefined,
+): PowTokenState {
+  return sanitizedTokenState({
+    creationSats: Number.isSafeInteger(payload?.creationSats)
+      ? Number(payload?.creationSats)
+      : 0,
+    confirmedSupply: Number.isSafeInteger(payload?.confirmedSupply)
+      ? Number(payload?.confirmedSupply)
+      : 0,
+    holders: Array.isArray(payload?.holders) ? payload.holders : [],
+    listings: Array.isArray(payload?.listings) ? payload.listings : [],
+    mints: Array.isArray(payload?.mints) ? payload.mints : [],
+    pendingSupply: Number.isSafeInteger(payload?.pendingSupply)
+      ? Number(payload?.pendingSupply)
+      : 0,
+    sales: Array.isArray(payload?.sales) ? payload.sales : [],
+    summaryOnly: Boolean(payload?.summaryOnly),
+    transfers: Array.isArray(payload?.transfers) ? payload.transfers : [],
+    tokens: Array.isArray(payload?.tokens) ? payload.tokens : [],
+  });
 }
 
 async function fetchTokenState(
@@ -8713,27 +8862,10 @@ async function fetchTokenState(
       ? `${summary ? "/api/v1/token-summary" : "/api/v1/token"}?${query}`
       : summary
         ? "/api/v1/token-summary"
-        : "/api/v1/token",
+      : "/api/v1/token",
     targetNetwork,
   );
-  return sanitizedTokenState({
-    creationSats: Number.isSafeInteger(payload.creationSats)
-      ? Number(payload.creationSats)
-      : 0,
-    confirmedSupply: Number.isSafeInteger(payload.confirmedSupply)
-      ? Number(payload.confirmedSupply)
-      : 0,
-    holders: Array.isArray(payload.holders) ? payload.holders : [],
-    listings: Array.isArray(payload.listings) ? payload.listings : [],
-    mints: Array.isArray(payload.mints) ? payload.mints : [],
-    pendingSupply: Number.isSafeInteger(payload.pendingSupply)
-      ? Number(payload.pendingSupply)
-      : 0,
-    sales: Array.isArray(payload.sales) ? payload.sales : [],
-    summaryOnly: Boolean(payload.summaryOnly),
-    transfers: Array.isArray(payload.transfers) ? payload.transfers : [],
-    tokens: Array.isArray(payload.tokens) ? payload.tokens : [],
-  });
+  return normalizeTokenApiState(payload);
 }
 
 async function fetchTokenSupplyState(
@@ -8826,6 +8958,11 @@ function normalizeGrowthActualValue(
   return {
     browserFlowSats: growthNumberField(payload, "browserFlowSats"),
     browserSats: growthNumberField(payload, "browserSats"),
+    computerEventFlowSats: growthNumberField(
+      payload,
+      "computerEventFlowSats",
+    ),
+    computerEventSats: growthNumberField(payload, "computerEventSats"),
     driveFlowSats: growthNumberField(payload, "driveFlowSats"),
     driveSats: growthNumberField(payload, "driveSats"),
     mailFlowSats: growthNumberField(payload, "mailFlowSats"),
@@ -8958,6 +9095,25 @@ async function fetchWorkFloorQuote(
   return normalizeWorkFloorQuote(payload);
 }
 
+async function fetchMarketplaceSummary(
+  fresh = false,
+): Promise<MarketplaceSummarySnapshot> {
+  const payload = await fetchProofApiJson<MarketplaceSummaryApiResponse>(
+    fresh
+      ? "/api/v1/marketplace-summary?fresh=1"
+      : "/api/v1/marketplace-summary",
+    "livenet",
+  );
+
+  return {
+    registry: normalizeRegistryApiState(payload.registry),
+    token: normalizeTokenApiState(payload.token),
+    workFloor: payload.workFloor
+      ? normalizeWorkFloorQuote(payload.workFloor)
+      : undefined,
+  };
+}
+
 function normalizeGrowthSummary(
   payload: GrowthSummaryApiResponse,
 ): GrowthSummarySnapshot {
@@ -9001,44 +9157,9 @@ async function fetchGrowthSummary(
     activity: Array.isArray(payload.activity?.activity)
       ? payload.activity.activity
       : [],
-    registry: {
-      activity: Array.isArray(payload.registry?.activity)
-        ? payload.registry.activity
-        : [],
-      listings: Array.isArray(payload.registry?.listings)
-        ? payload.registry.listings
-        : [],
-      pendingEvents: Array.isArray(payload.registry?.pendingEvents)
-        ? payload.registry.pendingEvents
-        : [],
-      records: Array.isArray(payload.registry?.records)
-        ? payload.registry.records
-        : [],
-      sales: Array.isArray(payload.registry?.sales) ? payload.registry.sales : [],
-    },
+    registry: normalizeRegistryApiState(payload.registry),
     snapshot: normalizeGrowthSummary(payload),
-    token: sanitizedTokenState({
-      creationSats: Number.isSafeInteger(payload.token?.creationSats)
-        ? Number(payload.token?.creationSats)
-        : 0,
-      confirmedSupply: Number.isSafeInteger(payload.token?.confirmedSupply)
-        ? Number(payload.token?.confirmedSupply)
-        : 0,
-      holders: Array.isArray(payload.token?.holders) ? payload.token.holders : [],
-      listings: Array.isArray(payload.token?.listings)
-        ? payload.token.listings
-        : [],
-      mints: Array.isArray(payload.token?.mints) ? payload.token.mints : [],
-      pendingSupply: Number.isSafeInteger(payload.token?.pendingSupply)
-        ? Number(payload.token?.pendingSupply)
-        : 0,
-      sales: Array.isArray(payload.token?.sales) ? payload.token.sales : [],
-      summaryOnly: Boolean(payload.token?.summaryOnly),
-      transfers: Array.isArray(payload.token?.transfers)
-        ? payload.token.transfers
-        : [],
-      tokens: Array.isArray(payload.token?.tokens) ? payload.token.tokens : [],
-    }),
+    token: normalizeTokenApiState(payload.token),
   };
 }
 
@@ -11087,6 +11208,12 @@ export default function App() {
     DesktopProfile | undefined
   >();
   const [activityMail, setActivityMail] = useState<PowActivityItem[]>([]);
+  const [activityStats, setActivityStats] = useState<
+    PowActivityStats | undefined
+  >();
+  const [activityHistoryPage, setActivityHistoryPage] = useState<
+    PowPaginatedApiResponse<PowActivityItem> | undefined
+  >();
   const [activityLoading, setActivityLoading] = useState(false);
   const [desktopLoading, setDesktopLoading] = useState(false);
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
@@ -11149,6 +11276,9 @@ export default function App() {
   const tokenRefreshInFlightRef =
     useRef<Promise<PowTokenState | undefined> | null>(null);
   const tokenRefreshInFlightFreshRef = useRef(false);
+  const marketplaceSummaryRefreshInFlightRef =
+    useRef<Promise<MarketplaceSummarySnapshot | undefined> | null>(null);
+  const marketplaceSummaryRefreshInFlightFreshRef = useRef(false);
   const growthRefreshInFlightRef = useRef(false);
   const workFloorRefreshInFlightRef =
     useRef<Promise<WorkFloorQuote | undefined> | null>(null);
@@ -11156,6 +11286,9 @@ export default function App() {
   const tokenMintAssistantActiveRef = useRef(false);
   const tokenMintAssistantTimerRef = useRef<number | undefined>(undefined);
   const rushMintActiveRef = useRef(false);
+  const activityHistoryPageRef =
+    useRef<PowPaginatedApiResponse<PowActivityItem> | undefined>(undefined);
+  const activityProfileRef = useRef<DesktopProfile | undefined>(undefined);
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   const protocolPayloads = useMemo(
@@ -12031,6 +12164,14 @@ export default function App() {
   }, [allSent]);
 
   useEffect(() => {
+    activityHistoryPageRef.current = activityHistoryPage;
+  }, [activityHistoryPage]);
+
+  useEffect(() => {
+    activityProfileRef.current = activityProfile;
+  }, [activityProfile]);
+
+  useEffect(() => {
     chainSentRef.current = chainSent;
   }, [chainSent]);
 
@@ -12201,7 +12342,6 @@ export default function App() {
       activeFolder === "token" ||
       activeFolder === "wallet" ||
       activeFolder === "work" ||
-      activeFolder === "log" ||
       activeFolder === "contacts"
     ) {
       if (activeFolder === "token" || activeFolder === "wallet" || activeFolder === "work") {
@@ -12271,11 +12411,19 @@ export default function App() {
 
     let cancelled = false;
     void (async () => {
-      await refreshToken(true, false);
+      if (marketplaceMode || activeFolder === "marketplace") {
+        await refreshMarketplaceSummary(true, false);
+      } else {
+        await refreshToken(true, false);
+      }
       if (!cancelled && document.visibilityState === "visible") {
         window.setTimeout(() => {
           if (!cancelled && document.visibilityState === "visible") {
-            void refreshToken(true, true);
+            if (marketplaceMode || activeFolder === "marketplace") {
+              void refreshMarketplaceSummary(true, true);
+            } else {
+              void refreshToken(true, true);
+            }
           }
         }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
       }
@@ -12284,7 +12432,73 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [marketplaceMode, network, tokenMode, walletMode, workTokenMode]);
+  }, [activeFolder, marketplaceMode, network, tokenMode, walletMode, workTokenMode]);
+
+  useEffect(() => {
+    if (!(activityMode || activeFolder === "log")) {
+      return;
+    }
+
+    if (network !== "livenet") {
+      setNetwork("livenet");
+      return;
+    }
+
+    let cancelled = false;
+    let settleTimer: number | undefined;
+
+    const loadVisibleLog = (fresh = false) => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      void (async () => {
+        await loadLogHead(true, fresh);
+        if (cancelled) {
+          return;
+        }
+
+        const currentPageIndex = activityHistoryPageRef.current?.page ?? 0;
+        await loadLogHistoryPage(currentPageIndex, true);
+        const currentProfile = activityProfileRef.current;
+        if (!cancelled && currentProfile) {
+          void loadActivityTarget(currentProfile.query);
+        }
+
+        if (fresh) {
+          window.clearTimeout(settleTimer);
+          settleTimer = window.setTimeout(() => {
+            if (!cancelled && document.visibilityState === "visible") {
+              void loadLogHead(true, false);
+              void loadLogHistoryPage(currentPageIndex, true);
+            }
+          }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
+        }
+      })();
+    };
+
+    void refreshLogSurface(false, false);
+    settleTimer = window.setTimeout(() => {
+      loadVisibleLog(false);
+    }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
+
+    const interval = window.setInterval(() => {
+      loadVisibleLog(false);
+    }, LOG_LIVE_REFRESH_MS);
+    const focusHandler = () => loadVisibleLog(false);
+    window.addEventListener("focus", focusHandler);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.clearTimeout(settleTimer);
+      window.removeEventListener("focus", focusHandler);
+    };
+  }, [
+    activeFolder,
+    activityMode,
+    network,
+  ]);
 
   useEffect(() => {
     if (!rushMode || !rushRegistryAddressForNetwork(network)) {
@@ -12311,14 +12525,24 @@ export default function App() {
     const refreshWorkFloorMetrics = () => {
       if (document.visibilityState === "visible") {
         void (async () => {
-          await Promise.all([
-            refreshTokenBtcUsd(false),
-            refreshWorkFloor(true, false),
-          ]);
+          const useMarketplaceSummary =
+            marketplaceMode || activeFolder === "marketplace";
+          if (useMarketplaceSummary) {
+            await refreshMarketplaceSummary(true, false);
+          } else {
+            await Promise.all([
+              refreshTokenBtcUsd(false),
+              refreshWorkFloor(true, false),
+            ]);
+          }
           window.setTimeout(() => {
             if (document.visibilityState === "visible") {
-              void refreshTokenBtcUsd(true);
-              void refreshWorkFloor(true, true);
+              if (useMarketplaceSummary) {
+                void refreshMarketplaceSummary(true, true);
+              } else {
+                void refreshTokenBtcUsd(true);
+                void refreshWorkFloor(true, true);
+              }
             }
           }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
         })();
@@ -12328,7 +12552,7 @@ export default function App() {
     refreshWorkFloorMetrics();
     const interval = window.setInterval(
       refreshWorkFloorMetrics,
-      GROWTH_AUTO_REFRESH_MS,
+      WORK_FLOOR_LIVE_REFRESH_MS,
     );
     window.addEventListener("focus", refreshWorkFloorMetrics);
 
@@ -12411,7 +12635,7 @@ export default function App() {
     refreshGrowthMetrics();
     const interval = window.setInterval(
       refreshGrowthMetrics,
-      GROWTH_AUTO_REFRESH_MS,
+      WORK_FLOOR_LIVE_REFRESH_MS,
     );
     window.addEventListener("focus", refreshGrowthMetrics);
 
@@ -12444,7 +12668,7 @@ export default function App() {
       return;
     }
 
-    void refreshIds(true);
+    void refreshMarketplaceSummary(true, false);
   }, [marketplaceMode, network]);
 
   useEffect(() => {
@@ -13393,6 +13617,93 @@ export default function App() {
     setStatus({ tone: "idle", text: "Desktop cleared." });
   }
 
+  function applyActivityPayload(payload: PowActivityApiResponse) {
+    const activity = Array.isArray(payload.activity) ? payload.activity : [];
+    const stats = normalizeActivityStats(payload.stats, activity);
+    setActivityStats(stats);
+    setIdActivity((current) =>
+      payload.summaryOnly ? mergeActivityItems(current, activity) : activity,
+    );
+    return { activity, stats };
+  }
+
+  async function loadLogHead(silent = true, fresh = false) {
+    if (network !== "livenet") {
+      return undefined;
+    }
+
+    if (!silent) {
+      setBusy(true);
+      setStatus({ tone: "idle", text: "Loading cached Computer log..." });
+    }
+
+    try {
+      const payload = await fetchGlobalActivityPayload(network, fresh, true);
+      const { activity, stats } = applyActivityPayload(payload);
+      if (!silent) {
+        const total = stats.total ?? activity.length;
+        setStatus({
+          tone: "good",
+          text: `Log loaded from indexed ledger. ${total.toLocaleString()} computer action${total === 1 ? "" : "s"} tracked.`,
+        });
+      }
+      return payload;
+    } catch (error) {
+      if (!silent) {
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "Computer log load failed."),
+        });
+      }
+      return undefined;
+    } finally {
+      if (!silent) {
+        setBusy(false);
+      }
+    }
+  }
+
+  async function loadLogHistoryPage(pageIndex = 0, silent = true) {
+    if (network !== "livenet") {
+      return undefined;
+    }
+
+    if (!silent) {
+      setActivityLoading(true);
+    }
+
+    try {
+      const page = await fetchGlobalActivityHistoryPage(network, {
+        pageIndex,
+        pageSize: ACTIVITY_FEED_PAGE_SIZE,
+      });
+      activityHistoryPageRef.current = page;
+      setActivityHistoryPage(page);
+      setIdActivity((current) =>
+        mergeActivityItems(current, Array.isArray(page.items) ? page.items : []),
+      );
+      return page;
+    } catch (error) {
+      if (!silent) {
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "Computer log history failed."),
+        });
+      }
+      return undefined;
+    } finally {
+      if (!silent) {
+        setActivityLoading(false);
+      }
+    }
+  }
+
+  async function refreshLogSurface(silent = true, fresh = false) {
+    const head = await loadLogHead(silent, fresh);
+    await loadLogHistoryPage(0, true);
+    return head;
+  }
+
   async function loadActivityTarget(target = activityQuery) {
     const query = target.trim();
     if (!query) {
@@ -13486,6 +13797,99 @@ export default function App() {
     setActivityProfile(undefined);
     setActivityMail([]);
     setStatus({ tone: "idle", text: "Log cleared." });
+  }
+
+  async function refreshMarketplaceSummary(
+    silent = false,
+    fresh = false,
+  ): Promise<MarketplaceSummarySnapshot | undefined> {
+    if (network !== "livenet") {
+      return undefined;
+    }
+
+    if (marketplaceSummaryRefreshInFlightRef.current) {
+      const needsFreshRefresh =
+        fresh && !marketplaceSummaryRefreshInFlightFreshRef.current;
+      if (!silent) {
+        setBusy(true);
+        setWorkFloorLoading(true);
+        setStatus({
+          tone: "idle",
+          text: "Marketplace summary refresh already in progress...",
+        });
+      }
+      try {
+        const snapshot = await marketplaceSummaryRefreshInFlightRef.current;
+        if (needsFreshRefresh) {
+          return refreshMarketplaceSummary(silent, fresh);
+        }
+        return snapshot;
+      } finally {
+        if (!silent && !needsFreshRefresh) {
+          setBusy(false);
+          setWorkFloorLoading(false);
+        }
+      }
+    }
+
+    const refreshPromise = (async () => {
+      if (!silent) {
+        setBusy(true);
+        setWorkFloorLoading(true);
+        setStatus({ tone: "idle", text: "Refreshing marketplace summary..." });
+      }
+      try {
+        const [snapshot, btcUsdQuote] = await Promise.all([
+          fetchMarketplaceSummary(fresh),
+          fetchBtcUsdPrice(fresh).catch(() => undefined),
+        ]);
+        setIdRegistry(snapshot.registry.records);
+        setIdListings(snapshot.registry.listings);
+        setIdPendingEvents(snapshot.registry.pendingEvents);
+        setIdSales(snapshot.registry.sales);
+        setIdActivity(snapshot.registry.activity);
+        setTokenDefinitions(snapshot.token.tokens);
+        setTokenMints(snapshot.token.mints);
+        setTokenTransfers(snapshot.token.transfers);
+        setTokenListings(snapshot.token.listings);
+        setTokenSales(snapshot.token.sales);
+        setTokenCreationSats(snapshot.token.creationSats);
+        if (btcUsdQuote) {
+          setTokenBtcUsd(btcUsdQuote);
+        }
+        if (snapshot.workFloor) {
+          setWorkFloorQuote(snapshot.workFloor);
+        }
+        if (!silent) {
+          const floorText = snapshot.workFloor
+            ? ` WORK floor ${Math.round(snapshot.workFloor.networkValueSats).toLocaleString()} sats.`
+            : "";
+          setStatus({
+            tone: "good",
+            text: `Marketplace loaded. ${snapshot.token.tokens.length.toLocaleString()} token${snapshot.token.tokens.length === 1 ? "" : "s"}, ${snapshot.token.listings.length.toLocaleString()} listing${snapshot.token.listings.length === 1 ? "" : "s"}.${floorText}`,
+          });
+        }
+        return snapshot;
+      } catch (error) {
+        if (!silent) {
+          setStatus({
+            tone: "bad",
+            text: errorMessage(error, "Marketplace summary refresh failed."),
+          });
+        }
+        return undefined;
+      } finally {
+        marketplaceSummaryRefreshInFlightRef.current = null;
+        marketplaceSummaryRefreshInFlightFreshRef.current = false;
+        if (!silent) {
+          setBusy(false);
+          setWorkFloorLoading(false);
+        }
+      }
+    })();
+    marketplaceSummaryRefreshInFlightFreshRef.current = fresh;
+    marketplaceSummaryRefreshInFlightRef.current = refreshPromise;
+    return refreshPromise;
   }
 
   async function refreshToken(
@@ -13804,13 +14208,21 @@ export default function App() {
     }
 
     try {
-      const [tokenState, , floorQuote] = await Promise.all([
-        refreshToken(true, fresh),
-        refreshTokenBtcUsd(fresh),
-        includeWorkFloor
-          ? refreshWorkFloor(true, fresh)
-          : Promise.resolve(undefined),
-      ]);
+      let tokenState: PowTokenState | undefined;
+      let floorQuote: WorkFloorQuote | undefined;
+      if (marketplaceMode || activeFolder === "marketplace") {
+        const marketplaceSummary = await refreshMarketplaceSummary(true, fresh);
+        tokenState = marketplaceSummary?.token;
+        floorQuote = includeWorkFloor ? marketplaceSummary?.workFloor : undefined;
+      } else {
+        [tokenState, , floorQuote] = await Promise.all([
+          refreshToken(true, fresh),
+          refreshTokenBtcUsd(fresh),
+          includeWorkFloor
+            ? refreshWorkFloor(true, fresh)
+            : Promise.resolve(undefined),
+        ]);
+      }
 
       if (!silent) {
         if (tokenState) {
@@ -17966,6 +18378,8 @@ export default function App() {
     return (
       <ActivityApp
         activeNetwork={network}
+        activityHistoryPage={activityHistoryPage}
+        activityStats={activityStats}
         busy={activityLoading || busy}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
         onNetworkChange={chooseNetwork}
@@ -17975,8 +18389,11 @@ export default function App() {
         setQuery={setActivityQuery}
         status={status}
         onClear={clearActivity}
+        onActivityPageChange={(pageIndex) =>
+          void loadLogHistoryPage(pageIndex, false)
+        }
         onRefresh={() => {
-          void refreshIds();
+          void refreshLogSurface(false, true);
           if (activityProfile) {
             void loadActivityTarget(activityProfile.query);
           }
@@ -18069,7 +18486,6 @@ export default function App() {
                 }
 
                 if (activeFolder === "marketplace") {
-                  void refreshIds();
                   void refreshTokenMarketData({
                     includeWorkFloor: true,
                     label: "marketplace data",
@@ -18082,10 +18498,15 @@ export default function App() {
                   activeFolder === "log" ||
                   activeFolder === "contacts"
                 ) {
-                  void refreshIds();
-                  if (activeFolder === "log" && activityProfile) {
-                    void loadActivityTarget(activityProfile.query);
+                  if (activeFolder === "log") {
+                    void refreshLogSurface(false, true);
+                    if (activityProfile) {
+                      void loadActivityTarget(activityProfile.query);
+                    }
+                    return;
                   }
+
+                  void refreshIds();
                   return;
                 }
 
@@ -18329,7 +18750,9 @@ export default function App() {
                 <Clock size={17} />
                 <span>Log</span>
               </span>
-              <strong>{idActivity.length}</strong>
+              <strong>
+                {(activityStats?.total ?? idActivity.length).toLocaleString()}
+              </strong>
             </button>
             <button
               aria-current={activeFolder === "contacts"}
@@ -18657,6 +19080,8 @@ export default function App() {
         ) : activeFolder === "log" ? (
           <ActivityWorkspace
             activeNetwork={network}
+            activityHistoryPage={activityHistoryPage}
+            activityStats={activityStats}
             busy={activityLoading || busy}
             idActivity={idActivity}
             profile={activityProfile}
@@ -18664,8 +19089,11 @@ export default function App() {
             searchedActivity={activityMail}
             setQuery={setActivityQuery}
             onClear={clearActivity}
+            onActivityPageChange={(pageIndex) =>
+              void loadLogHistoryPage(pageIndex, false)
+            }
             onRefresh={() => {
-              void refreshIds();
+              void refreshLogSurface(false, true);
               if (activityProfile) {
                 void loadActivityTarget(activityProfile.query);
               }
@@ -19868,6 +20296,8 @@ function DesktopApp({
 
 function ActivityApp({
   activeNetwork,
+  activityHistoryPage,
+  activityStats,
   busy,
   idActivity,
   profile,
@@ -19875,12 +20305,15 @@ function ActivityApp({
   searchedActivity,
   setQuery,
   status,
+  onActivityPageChange,
   onClear,
   onNetworkChange,
   onRefresh,
   onSearch,
 }: {
   activeNetwork: BitcoinNetwork;
+  activityHistoryPage?: PowPaginatedApiResponse<PowActivityItem>;
+  activityStats?: PowActivityStats;
   busy: boolean;
   idActivity: PowActivityItem[];
   profile?: DesktopProfile;
@@ -19888,6 +20321,7 @@ function ActivityApp({
   searchedActivity: PowActivityItem[];
   setQuery: (value: string) => void;
   status: { tone: StatusTone; text: string };
+  onActivityPageChange?: (pageIndex: number) => void;
   onClear: () => void;
   onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
@@ -19907,6 +20341,8 @@ function ActivityApp({
 
       <ActivityWorkspace
         activeNetwork={activeNetwork}
+        activityHistoryPage={activityHistoryPage}
+        activityStats={activityStats}
         busy={busy}
         idActivity={idActivity}
         profile={profile}
@@ -19914,6 +20350,7 @@ function ActivityApp({
         searchedActivity={searchedActivity}
         setQuery={setQuery}
         onClear={onClear}
+        onActivityPageChange={onActivityPageChange}
         onRefresh={onRefresh}
         onSearch={onSearch}
       />
@@ -19977,48 +20414,76 @@ function totalActivityDataBytes(items: PowActivityItem[]) {
 
 function ActivityWorkspace({
   activeNetwork,
+  activityHistoryPage,
+  activityStats,
   busy,
   idActivity,
   profile,
   query,
   searchedActivity,
   setQuery,
+  onActivityPageChange,
   onClear,
   onRefresh,
   onSearch,
 }: {
   activeNetwork: BitcoinNetwork;
+  activityHistoryPage?: PowPaginatedApiResponse<PowActivityItem>;
+  activityStats?: PowActivityStats;
   busy: boolean;
   idActivity: PowActivityItem[];
   profile?: DesktopProfile;
   query: string;
   searchedActivity: PowActivityItem[];
   setQuery: (value: string) => void;
+  onActivityPageChange?: (pageIndex: number) => void;
   onClear: () => void;
   onRefresh: () => void;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const [activityPageIndex, setActivityPageIndex] = useState(0);
+  useEffect(() => {
+    setActivityPageIndex(0);
+  }, [profile?.query, query]);
+
   const items = activityItemsForView(
     idActivity,
     searchedActivity,
     query,
     profile,
   );
-  const confirmedCount = items.filter((item) => item.confirmed).length;
-  const pendingCount = items.length - confirmedCount;
-  const dataBytes = totalActivityDataBytes(items);
-  const activityPage = pagedItems(
-    items,
-    activityPageIndex,
-    ACTIVITY_FEED_PAGE_SIZE,
-  );
+  const useServerPage =
+    !profile && !query.trim() && Array.isArray(activityHistoryPage?.items);
+  const serverPage = useServerPage
+    ? historyPageToPagedItems(
+        activityHistoryPage ?? {},
+        activityHistoryPage?.page ?? 0,
+        ACTIVITY_FEED_PAGE_SIZE,
+      )
+    : undefined;
+  const localPage = pagedItems(
+      items,
+      activityPageIndex,
+      ACTIVITY_FEED_PAGE_SIZE,
+    );
+  const activityPage = serverPage ?? localPage;
+  const stats = !profile && !query.trim() ? activityStats : undefined;
+  const totalCount = stats?.total ?? activityPage.totalCount;
+  const pendingCount =
+    stats?.pending ?? items.filter((item) => !item.confirmed).length;
+  const confirmedCount =
+    stats?.confirmed ??
+    Math.max(0, totalCount - pendingCount);
+  const dataBytes = stats?.dataBytes ?? totalActivityDataBytes(items);
   const visibleItems = activityPage.items;
   const title = profile
     ? `${profile.label} log`
     : query.trim()
       ? "Filtered log"
       : "Global computer log";
+  const changePage = useServerPage && onActivityPageChange
+    ? onActivityPageChange
+    : setActivityPageIndex;
 
   return (
     <section className="activity-workspace">
@@ -20077,7 +20542,7 @@ function ActivityWorkspace({
 
       <div className="activity-stats" aria-label="Log stats">
         <div>
-          <strong>{items.length.toLocaleString()}</strong>
+          <strong>{totalCount.toLocaleString()}</strong>
           <span>Total actions</span>
         </div>
         <div>
@@ -20109,19 +20574,19 @@ function ActivityWorkspace({
               Confirmed records are canonical. Pending records are visible until
               they confirm or disappear.
             </p>
-            {items.length > ACTIVITY_FEED_PAGE_SIZE ? (
+            {totalCount > ACTIVITY_FEED_PAGE_SIZE ? (
               <p>
-                Showing paged results from {items.length.toLocaleString()}{" "}
+                Showing paged results from {totalCount.toLocaleString()}{" "}
                 matching actions. Search an address, ID, txid, or app label to
                 narrow the feed.
               </p>
             ) : null}
           </div>
         </div>
-        <ActivityFeed items={visibleItems} totalCount={items.length} />
+        <ActivityFeed items={visibleItems} totalCount={totalCount} />
         <PaginationControls
           label="Actions"
-          onPageChange={setActivityPageIndex}
+          onPageChange={changePage}
           page={activityPage}
         />
       </section>
@@ -20462,6 +20927,11 @@ function TokenWalletWorkspace({
 }) {
   const [walletListingPageIndex, setWalletListingPageIndex] = useState(0);
   const [walletTransferPageIndex, setWalletTransferPageIndex] = useState(0);
+  const [walletListingSortMode, setWalletListingSortMode] =
+    useState<MarketplaceSortMode>("price-desc");
+  useEffect(() => {
+    setWalletListingPageIndex(0);
+  }, [address, selectedTokenId, walletListingSortMode]);
   const walletTransfers = address
     ? transfers.filter(
         (transfer) =>
@@ -20514,8 +20984,21 @@ function TokenWalletWorkspace({
           (!selectedTokenId || item.tokenId === selectedTokenId),
       )
     : [];
-  const walletListingPage = pagedItems(
+  const walletTokenById = new Map<string, TokenReferenceSnapshot>(
+    balances.map((balance) => [balance.token.tokenId, balance.token]),
+  );
+  const walletWorkFloorSats =
+    workFloorQuote
+      ? workFloorQuote.networkValueSats / WORK_TOKEN_MAX_SUPPLY
+      : 0;
+  const sortedWalletListings = sortTokenListings(
     walletListings,
+    walletListingSortMode,
+    walletTokenById,
+    walletWorkFloorSats,
+  );
+  const walletListingPage = pagedItems(
+    sortedWalletListings,
     walletListingPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
@@ -20929,12 +21412,17 @@ function TokenWalletWorkspace({
                 </div>
                 <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
               </div>
+              <MarketplaceSortControl
+                onChange={setWalletListingSortMode}
+                value={walletListingSortMode}
+              />
               <div className="token-list compact-token-list">
                 {walletListingPage.items.map((item) => {
                   const sealed = tokenSaleAuthorizationUsesSaleTicketAnchor(
                     item.saleAuthorization,
                   );
                   const readyToSeal = item.confirmed && !sealed;
+                  const unitSats = tokenListingUnitPriceSats(item);
                   return (
                     <article className="token-list-item" key={item.listingId}>
                       <span>
@@ -20948,7 +21436,8 @@ function TokenWalletWorkspace({
                               ? "sealed"
                               : "ready to seal"}{" "}
                           ·{" "}
-                          {item.priceSats.toLocaleString()} sats
+                          {item.priceSats.toLocaleString()} sats ·{" "}
+                          {tokenSatsPerUnit(unitSats)} sats / {item.ticker}
                         </small>
                       </span>
                       <span className="id-record-actions">
@@ -22385,10 +22874,12 @@ function TokenWorkspace({
                       {detailToken.mintAmount.toLocaleString()} WORK. The live
                       floor follows confirmed network value only; pending mints
                       wait for confirmation. Refreshed{" "}
-                      {formatDate(workFloorQuote.indexedAt)} from{" "}
-                      {workFloorQuote.powids.toLocaleString()} confirmed IDs and{" "}
-                      {workFloorQuote.tokenFlowSats.toLocaleString()} token flow
-                      sats.
+                      {formatDate(workFloorQuote.indexedAt)} from confirmed
+                      Computer value across{" "}
+                      {Math.round(
+                        workFloorQuote.stats?.confirmedComputerActions ?? 0,
+                      ).toLocaleString()}{" "}
+                      confirmed actions.
                     </p>
                   </>
                 ) : (
@@ -23363,6 +23854,35 @@ function isBrowserActivityItem(item: PowActivityItem) {
       : false;
 }
 
+function activityAmountSats(item: PowActivityItem) {
+  const amount = Number(item.amountSats ?? 0);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
+function activityKindHasDedicatedGrowthBucket(item: PowActivityItem) {
+  if (isBrowserActivityItem(item)) {
+    return true;
+  }
+
+  return (
+    item.kind === "mail" ||
+    item.kind === "reply" ||
+    item.kind === "file" ||
+    item.kind === "token-create" ||
+    item.kind === "token-mint" ||
+    item.kind === "token-transfer" ||
+    item.kind === "token-sale"
+  );
+}
+
+function unbucketedConfirmedComputerLogFlowSats(
+  confirmedActivity: PowActivityItem[],
+) {
+  return confirmedActivity
+    .filter((item) => !activityKindHasDedicatedGrowthBucket(item))
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+}
+
 function growthActualNetworkValue(
   records: PowIdRecord[],
   idActivity: PowActivityItem[],
@@ -23431,6 +23951,8 @@ function growthActualNetworkValue(
     0,
   );
   const walletFlowSats = tokenTransferFlowSats;
+  const computerEventFlowSats =
+    unbucketedConfirmedComputerLogFlowSats(confirmedActivity);
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
@@ -23441,6 +23963,8 @@ function growthActualNetworkValue(
     (tokenCreationFlowSats + tokenMintFlowSats) *
     GROWTH_MODEL_INPUTS.valueMultiple;
   const walletSats = walletFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const computerEventSats =
+    computerEventFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const totalSats =
     idSats +
     mailSats +
@@ -23448,7 +23972,8 @@ function growthActualNetworkValue(
     marketplaceSats +
     browserSats +
     tokenSats +
-    walletSats;
+    walletSats +
+    computerEventSats;
   const years = Math.max(
     0,
     (Math.min(cutoffMs, Date.now()) - GROWTH_MODEL_START_MS) /
@@ -23458,6 +23983,8 @@ function growthActualNetworkValue(
   return {
     browserFlowSats,
     browserSats,
+    computerEventFlowSats,
+    computerEventSats,
     driveFlowSats,
     driveSats,
     mailFlowSats,
@@ -23538,10 +24065,7 @@ function growthActualValuePoints(
   }
 
   for (const item of idActivity) {
-    if (
-      item.confirmed &&
-      (item.kind === "mail" || item.kind === "reply" || item.kind === "file")
-    ) {
+    if (item.confirmed) {
       addEventTime(item.createdAt, item.title);
     }
   }
@@ -24793,6 +25317,7 @@ function GrowthWorkspace({
   const tokenFlowSats =
     actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats;
   const walletFlowSats = actualValue.walletFlowSats;
+  const computerEventFlowSats = actualValue.computerEventFlowSats;
   const pendingRecordCount = summaryCounts?.pendingRecords ?? pendingRecords.length;
   const idListingCount = summaryCounts?.idListings ?? registryListings.length;
 
@@ -25127,6 +25652,18 @@ function GrowthWorkspace({
             modelOneYearLabel={growthUsdForSats(oneYear.browserSats)}
             name="Browser"
             note="HTML pages rendered from OP_RETURN message bodies or verified file attachments by txid."
+          />
+          <GrowthProductCard
+            actual={growthSats(actualValue.computerEventSats)}
+            actualLabel={`${growthUsdForSats(actualValue.computerEventSats)} · ${computerEventFlowSats.toLocaleString()} confirmed log sats`}
+            icon={<GitBranch size={24} />}
+            modelFiveYear="Tracked"
+            modelFiveYearLabel="confirmed event ledger"
+            modelLabel="confirmed log value"
+            modelOneYear="Tracked"
+            modelOneYearLabel="confirmed event ledger"
+            name="Confirmed Events"
+            note="Registry mutations, listings, seals, delistings, and other confirmed log writes feed the same WORK floor ledger."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.tokenSats)}
@@ -25539,6 +26076,327 @@ type TokenMarketplaceRow = PowTokenDefinition & {
   walletBalance: number;
 };
 
+type MarketplaceSortMode =
+  | "price-desc"
+  | "price-asc"
+  | "arb-desc"
+  | "arb-asc";
+
+type TokenReferenceSnapshot = Pick<
+  PowTokenDefinition,
+  "mintAmount" | "mintPriceSats" | "ticker" | "tokenId"
+> &
+  Partial<
+    Pick<
+      TokenMarketplaceRow,
+      "lastSalePricePerToken" | "lowestAskPricePerToken" | "pricePerToken"
+    >
+  >;
+
+type TokenMarketLogItem =
+  | {
+      createdAt: string;
+      kind: "listing";
+      listing: PowTokenListing;
+      txid: string;
+    }
+  | {
+      createdAt: string;
+      kind: "sale";
+      sale: PowTokenSale;
+      txid: string;
+    };
+
+const MARKETPLACE_SORT_OPTIONS: Array<{
+  label: string;
+  value: MarketplaceSortMode;
+}> = [
+  { label: "Price high", value: "price-desc" },
+  { label: "Price low", value: "price-asc" },
+  { label: "Arb high", value: "arb-desc" },
+  { label: "Arb low", value: "arb-asc" },
+];
+
+function finitePositiveNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function compareOptionalMetric(
+  leftMetric: number | null,
+  rightMetric: number | null,
+  descending: boolean,
+  fallback: () => number,
+) {
+  const leftHasMetric = leftMetric !== null && Number.isFinite(leftMetric);
+  const rightHasMetric = rightMetric !== null && Number.isFinite(rightMetric);
+  if (leftHasMetric && !rightHasMetric) {
+    return -1;
+  }
+  if (!leftHasMetric && rightHasMetric) {
+    return 1;
+  }
+  if (leftHasMetric && rightHasMetric && leftMetric !== rightMetric) {
+    return descending
+      ? Number(rightMetric) - Number(leftMetric)
+      : Number(leftMetric) - Number(rightMetric);
+  }
+
+  return fallback();
+}
+
+function compareCreatedAtDesc(
+  left: { createdAt: string; txid?: string },
+  right: { createdAt: string; txid?: string },
+) {
+  return (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    String(left.txid ?? "").localeCompare(String(right.txid ?? ""))
+  );
+}
+
+function tokenMintPricePerUnit(token?: TokenReferenceSnapshot) {
+  if (!token || token.mintAmount <= 0) {
+    return 0;
+  }
+
+  return token.mintPriceSats / token.mintAmount;
+}
+
+function tokenReferencePriceSats(
+  token: TokenReferenceSnapshot | undefined,
+  workFloorSats: number,
+) {
+  if (!token) {
+    return null;
+  }
+
+  if (token.tokenId === WORK_TOKEN_ID && workFloorSats > 0) {
+    return workFloorSats;
+  }
+
+  return (
+    finitePositiveNumber(token.lastSalePricePerToken) ||
+    finitePositiveNumber(token.pricePerToken) ||
+    tokenMintPricePerUnit(token) ||
+    null
+  );
+}
+
+function tokenMarketDisplayPriceSats(
+  token: TokenMarketplaceRow,
+  workFloorSats: number,
+) {
+  if (token.tokenId === WORK_TOKEN_ID && workFloorSats > 0) {
+    return workFloorSats;
+  }
+
+  return (
+    finitePositiveNumber(token.lowestAskPricePerToken) ||
+    finitePositiveNumber(token.lastSalePricePerToken) ||
+    finitePositiveNumber(token.pricePerToken) ||
+    tokenMintPricePerUnit(token) ||
+    null
+  );
+}
+
+function tokenMarketArbSats(token: TokenMarketplaceRow, workFloorSats: number) {
+  const reference = tokenReferencePriceSats(token, workFloorSats);
+  const ask =
+    finitePositiveNumber(token.lowestAskPricePerToken) ||
+    finitePositiveNumber(token.lastSalePricePerToken) ||
+    finitePositiveNumber(token.pricePerToken) ||
+    tokenMintPricePerUnit(token) ||
+    null;
+
+  return reference !== null && ask !== null ? reference - ask : null;
+}
+
+function tokenListingUnitPriceSats(listing: PowTokenListing) {
+  return listing.amount > 0 ? listing.priceSats / listing.amount : 0;
+}
+
+function tokenListingReferencePriceSats(
+  listing: PowTokenListing,
+  tokenById: Map<string, TokenReferenceSnapshot>,
+  workFloorSats: number,
+) {
+  return tokenReferencePriceSats(tokenById.get(listing.tokenId), workFloorSats);
+}
+
+function tokenListingArbSats(
+  listing: PowTokenListing,
+  tokenById: Map<string, TokenReferenceSnapshot>,
+  workFloorSats: number,
+) {
+  const reference = tokenListingReferencePriceSats(
+    listing,
+    tokenById,
+    workFloorSats,
+  );
+  const unit = tokenListingUnitPriceSats(listing);
+
+  return reference !== null && unit > 0 ? reference - unit : null;
+}
+
+function sortTokenMarketplaceRows(
+  rows: TokenMarketplaceRow[],
+  sortMode: MarketplaceSortMode,
+  workFloorSats: number,
+) {
+  return [...rows].sort((left, right) => {
+    const fallback = () =>
+      right.openListings - left.openListings ||
+      right.confirmedSupply - left.confirmedSupply ||
+      compareTokensByConfirmation(left, right);
+
+    if (sortMode === "price-desc" || sortMode === "price-asc") {
+      return compareOptionalMetric(
+        tokenMarketDisplayPriceSats(left, workFloorSats),
+        tokenMarketDisplayPriceSats(right, workFloorSats),
+        sortMode === "price-desc",
+        fallback,
+      );
+    }
+
+    return compareOptionalMetric(
+      tokenMarketArbSats(left, workFloorSats),
+      tokenMarketArbSats(right, workFloorSats),
+      sortMode === "arb-desc",
+      fallback,
+    );
+  });
+}
+
+function sortTokenListings(
+  listings: PowTokenListing[],
+  sortMode: MarketplaceSortMode,
+  tokenById: Map<string, TokenReferenceSnapshot>,
+  workFloorSats: number,
+) {
+  return [...listings].sort((left, right) => {
+    const fallback = () =>
+      compareCreatedAtDesc(
+        { createdAt: left.createdAt, txid: left.listingId },
+        { createdAt: right.createdAt, txid: right.listingId },
+      );
+
+    if (sortMode === "price-desc" || sortMode === "price-asc") {
+      return compareOptionalMetric(
+        tokenListingUnitPriceSats(left) || null,
+        tokenListingUnitPriceSats(right) || null,
+        sortMode === "price-desc",
+        fallback,
+      );
+    }
+
+    return compareOptionalMetric(
+      tokenListingArbSats(left, tokenById, workFloorSats),
+      tokenListingArbSats(right, tokenById, workFloorSats),
+      sortMode === "arb-desc",
+      fallback,
+    );
+  });
+}
+
+function tokenMarketLogPriceSats(item: TokenMarketLogItem) {
+  if (item.kind === "sale") {
+    return item.sale.amount > 0 ? item.sale.priceSats / item.sale.amount : 0;
+  }
+
+  return tokenListingUnitPriceSats(item.listing);
+}
+
+function tokenMarketLogArbSats(
+  item: TokenMarketLogItem,
+  tokenById: Map<string, TokenReferenceSnapshot>,
+  workFloorSats: number,
+) {
+  const tokenId = item.kind === "sale" ? item.sale.tokenId : item.listing.tokenId;
+  const reference = tokenReferencePriceSats(tokenById.get(tokenId), workFloorSats);
+  const price = tokenMarketLogPriceSats(item);
+
+  return reference !== null && price > 0 ? reference - price : null;
+}
+
+function sortTokenMarketLogItems(
+  items: TokenMarketLogItem[],
+  sortMode: MarketplaceSortMode,
+  tokenById: Map<string, TokenReferenceSnapshot>,
+  workFloorSats: number,
+) {
+  return [...items].sort((left, right) => {
+    const fallback = () => compareCreatedAtDesc(left, right);
+
+    if (sortMode === "price-desc" || sortMode === "price-asc") {
+      return compareOptionalMetric(
+        tokenMarketLogPriceSats(left) || null,
+        tokenMarketLogPriceSats(right) || null,
+        sortMode === "price-desc",
+        fallback,
+      );
+    }
+
+    return compareOptionalMetric(
+      tokenMarketLogArbSats(left, tokenById, workFloorSats),
+      tokenMarketLogArbSats(right, tokenById, workFloorSats),
+      sortMode === "arb-desc",
+      fallback,
+    );
+  });
+}
+
+function sortIdMarketplaceListings(
+  listings: PowIdListing[],
+  sortMode: MarketplaceSortMode,
+) {
+  return [...listings].sort((left, right) => {
+    const fallback = () =>
+      compareCreatedAtDesc(
+        { createdAt: left.createdAt, txid: left.listingId },
+        { createdAt: right.createdAt, txid: right.listingId },
+      );
+    const descending =
+      sortMode === "price-desc" ||
+      sortMode === "arb-asc";
+
+    return compareOptionalMetric(
+      finitePositiveNumber(left.priceSats) || null,
+      finitePositiveNumber(right.priceSats) || null,
+      descending,
+      fallback,
+    );
+  });
+}
+
+function MarketplaceSortControl({
+  label = "Sort",
+  onChange,
+  value,
+}: {
+  label?: string;
+  onChange: (value: MarketplaceSortMode) => void;
+  value: MarketplaceSortMode;
+}) {
+  return (
+    <div className="marketplace-sort-row">
+      <label className="sort-control">
+        {label}
+        <select
+          onChange={(event) => onChange(event.target.value as MarketplaceSortMode)}
+          value={value}
+        >
+          {MARKETPLACE_SORT_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
+
 function tokenMarketplaceRowsFor({
   address,
   listings,
@@ -25879,11 +26737,26 @@ function TokenMarketplacePanel({
   const [tokenMarketPageIndex, setTokenMarketPageIndex] = useState(0);
   const [tokenListingPageIndex, setTokenListingPageIndex] = useState(0);
   const [tokenMarketLogPageIndex, setTokenMarketLogPageIndex] = useState(0);
+  const [tokenMarketSortMode, setTokenMarketSortMode] =
+    useState<MarketplaceSortMode>("arb-desc");
+  const [tokenListingSortMode, setTokenListingSortMode] =
+    useState<MarketplaceSortMode>("arb-desc");
+  const [tokenMarketLogSortMode, setTokenMarketLogSortMode] =
+    useState<MarketplaceSortMode>("arb-desc");
   const selectedMarketToken = rows.find(
     (token) =>
       token.tokenId === selectedTokenMarketId ||
       token.ticker === normalizeTokenTicker(selectedTokenMarketId),
   );
+  useEffect(() => {
+    setTokenMarketPageIndex(0);
+  }, [selectedMarketToken?.tokenId, tokenMarketSortMode]);
+  useEffect(() => {
+    setTokenListingPageIndex(0);
+  }, [selectedMarketToken?.tokenId, tokenListingSortMode]);
+  useEffect(() => {
+    setTokenMarketLogPageIndex(0);
+  }, [selectedMarketToken?.tokenId, tokenMarketLogSortMode]);
   const setTokenMarketRoute = (tokenId: string) => {
     if (typeof window === "undefined") {
       return;
@@ -25926,32 +26799,51 @@ function TokenMarketplacePanel({
   const marketSales = selectedMarketToken
     ? networkSales.filter((sale) => sale.tokenId === selectedMarketToken.tokenId)
     : networkSales;
-  const tokenMarketLogItems = [
-    ...marketListings.map((listing) => ({
-      createdAt: listing.createdAt,
-      kind: "listing" as const,
-      listing,
-      txid: listing.listingId,
-    })),
-    ...marketSales.map((sale) => ({
-      createdAt: sale.createdAt,
-      kind: "sale" as const,
-      sale,
-      txid: sale.txid,
-    })),
-  ].sort(
-    (left, right) =>
-      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      right.txid.localeCompare(left.txid),
+  const workMarketFloorSats =
+    network === "livenet" && workFloorQuote
+      ? workFloorQuote.networkValueSats / WORK_TOKEN_MAX_SUPPLY
+      : 0;
+  const tokenReferenceById = new Map<string, TokenReferenceSnapshot>(
+    rows.map((token) => [token.tokenId, token]),
+  );
+  const sortedMarketListings = sortTokenListings(
+    marketListings,
+    tokenListingSortMode,
+    tokenReferenceById,
+    workMarketFloorSats,
+  );
+  const tokenMarketLogItems = sortTokenMarketLogItems(
+    [
+      ...marketListings.map((listing) => ({
+        createdAt: listing.createdAt,
+        kind: "listing" as const,
+        listing,
+        txid: listing.listingId,
+      })),
+      ...marketSales.map((sale) => ({
+        createdAt: sale.createdAt,
+        kind: "sale" as const,
+        sale,
+        txid: sale.txid,
+      })),
+    ],
+    tokenMarketLogSortMode,
+    tokenReferenceById,
+    workMarketFloorSats,
   );
   const visibleRows = selectedMarketToken ? [selectedMarketToken] : rows;
-  const tokenMarketPage = pagedItems(
+  const sortedVisibleRows = sortTokenMarketplaceRows(
     visibleRows,
+    tokenMarketSortMode,
+    workMarketFloorSats,
+  );
+  const tokenMarketPage = pagedItems(
+    sortedVisibleRows,
     tokenMarketPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
   const tokenListingPage = pagedItems(
-    marketListings,
+    sortedMarketListings,
     tokenListingPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
@@ -25968,10 +26860,6 @@ function TokenMarketplacePanel({
     (total, token) => total + token.confirmedSupply,
     0,
   );
-  const workMarketFloorSats =
-    network === "livenet" && workFloorQuote
-      ? workFloorQuote.networkValueSats / WORK_TOKEN_MAX_SUPPLY
-      : 0;
   const workMarketFloorUsd = satsToUsd(workMarketFloorSats, btcUsd);
   const workMarketNetworkUsd = workFloorQuote
     ? satsToUsd(workFloorQuote.networkValueSats, btcUsd)
@@ -26161,10 +27049,12 @@ function TokenMarketplacePanel({
                 ) : null}
 
                 <p className="field-note">
-                  Refreshed {formatDate(workFloorQuote.indexedAt)} from{" "}
-                  {workFloorQuote.powids.toLocaleString()} confirmed IDs and{" "}
-                  {workFloorQuote.tokenFlowSats.toLocaleString()} token flow
-                  sats.
+                  Refreshed {formatDate(workFloorQuote.indexedAt)} from
+                  confirmed Computer value across{" "}
+                  {Math.round(
+                    workFloorQuote.stats?.confirmedComputerActions ?? 0,
+                  ).toLocaleString()}{" "}
+                  confirmed actions.
                 </p>
               </>
             ) : (
@@ -26320,6 +27210,13 @@ function TokenMarketplacePanel({
             ) : null}
           </div>
 
+          {!selectedMarketToken ? (
+            <MarketplaceSortControl
+              onChange={setTokenMarketSortMode}
+              value={tokenMarketSortMode}
+            />
+          ) : null}
+
           {rows.length === 0 ? (
             <div className="empty-state">
               <Wallet size={28} />
@@ -26471,6 +27368,10 @@ function TokenMarketplacePanel({
             </div>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
           </div>
+          <MarketplaceSortControl
+            onChange={setTokenListingSortMode}
+            value={tokenListingSortMode}
+          />
           {marketListings.length ? (
             <div className="token-market-grid">
               {tokenListingPage.items.map((listing) => {
@@ -26617,6 +27518,10 @@ function TokenMarketplacePanel({
               </p>
             </div>
           </div>
+          <MarketplaceSortControl
+            onChange={setTokenMarketLogSortMode}
+            value={tokenMarketLogSortMode}
+          />
           {tokenMarketLogItems.length ? (
             <div className="token-market-grid">
               {tokenMarketLogPage.items.map((item) => {
@@ -28273,11 +29178,20 @@ function MarketplaceListingList({
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [listingPageIndex, setListingPageIndex] = useState(0);
+  const [listingSortMode, setListingSortMode] =
+    useState<MarketplaceSortMode>("price-asc");
   const filteredListings = searchQuery
     ? listings.filter((listing) => idListingMatchesSearch(listing, searchQuery))
     : listings;
-  const listingPage = pagedItems(
+  const sortedListings = sortIdMarketplaceListings(
     filteredListings,
+    listingSortMode,
+  );
+  useEffect(() => {
+    setListingPageIndex(0);
+  }, [searchQuery, listingSortMode]);
+  const listingPage = pagedItems(
+    sortedListings,
     listingPageIndex,
     DATA_PAGE_SIZE,
   );
@@ -28333,6 +29247,10 @@ function MarketplaceListingList({
         setValue={setSearchQuery}
         totalCount={listings.length}
         value={searchQuery}
+      />
+      <MarketplaceSortControl
+        onChange={setListingSortMode}
+        value={listingSortMode}
       />
 
       {sellerListings.length > 0 ? (
