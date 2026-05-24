@@ -68,7 +68,7 @@ const BACKGROUND_REGISTRY_REFRESH_INTERVAL_MS = Number(
   process.env.BACKGROUND_REGISTRY_REFRESH_INTERVAL_MS ?? 60_000,
 );
 const BACKGROUND_TOKEN_REFRESH_INTERVAL_MS = Number(
-  process.env.BACKGROUND_TOKEN_REFRESH_INTERVAL_MS ?? 120_000,
+  process.env.BACKGROUND_TOKEN_REFRESH_INTERVAL_MS ?? 5 * 60_000,
 );
 const BACKGROUND_WORK_TOKEN_REFRESH_INTERVAL_MS = Number(
   process.env.BACKGROUND_WORK_TOKEN_REFRESH_INTERVAL_MS ?? 30_000,
@@ -5588,9 +5588,7 @@ async function globalActivityPayload(network, fresh = false) {
 
   const mailActivity = mailActivityItemsFromTransactions(mailTxs, network);
   const [tokenState, rushState] = await Promise.all([
-    (fresh ? safeTokenPayload(network) : cachedTokenPayload(network)).catch(
-      () => null,
-    ),
+    fastTokenPayloadSnapshot(network).catch(() => null),
     (fresh ? rushPayload(network) : cachedRushPayload(network)).catch(() => null),
   ]);
   const tokenActivity = tokenState
@@ -9330,7 +9328,7 @@ function prewarmExpensiveReadCaches() {
   );
   scheduleWarmJsonCache(
     `token:livenet:${WORK_TOKEN_ID}`,
-    () => cachedTokenPayload("livenet", WORK_TOKEN_ID),
+    () => fastTokenPayloadSnapshot("livenet", WORK_TOKEN_ID),
     TOKEN_CACHE_TTL_MS,
     TOKEN_CACHE_STALE_MS,
     baseDelay + 10_000,
@@ -9358,17 +9356,17 @@ function prewarmExpensiveReadCaches() {
   );
   scheduleWarmJsonCache(
     "token:livenet:",
-    () => cachedTokenPayload("livenet"),
+    () => fastTokenPayloadSnapshot("livenet"),
     TOKEN_CACHE_TTL_MS,
     TOKEN_CACHE_STALE_MS,
-    baseDelay + 60_000,
+    baseDelay + 5 * 60_000,
   );
   scheduleWarmJsonCache(
     "rush:livenet",
     () => cachedRushPayload("livenet"),
     TOKEN_CACHE_TTL_MS,
     TOKEN_CACHE_STALE_MS,
-    baseDelay + 75_000,
+    baseDelay + 6 * 60_000,
   );
 }
 
