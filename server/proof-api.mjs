@@ -5273,12 +5273,33 @@ function cachedTokenPayload(network, tokenScope = "") {
   );
 }
 
+function cacheTokenPayload(network, tokenScope = "", payload) {
+  const scope = normalizeTokenScope(tokenScope);
+  const cacheKey = `token:${network}:${scope}`;
+  const payloadKey = `payload:${cacheKey}`;
+  const jsonKey = `json:${cacheKey}`;
+  const body = JSON.stringify(payload);
+  RESPONSE_CACHE.set(payloadKey, {
+    expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
+    payload,
+    staleUntil: Date.now() + TOKEN_CACHE_STALE_MS,
+  });
+  cacheJsonBody(jsonKey, body, TOKEN_CACHE_TTL_MS, TOKEN_CACHE_STALE_MS);
+  if (shouldPersistJsonCache(cacheKey)) {
+    void writePersistedJsonCache(jsonKey, body);
+  }
+  invalidateDerivedCachesForBaseCache(cacheKey);
+}
+
+async function refreshTokenPayload(network, tokenScope = "") {
+  const scope = normalizeTokenScope(tokenScope);
+  const payload = await safeTokenPayload(network, scope);
+  cacheTokenPayload(network, scope, payload);
+  return payload;
+}
+
 function refreshTokenPayloadCacheInBackground(network, tokenScope = "") {
   const scope = normalizeTokenScope(tokenScope);
-  if (!scope || scope === WORK_TOKEN_ID) {
-    return;
-  }
-
   const cacheKey = `${network}:${scope}`;
   const refreshKey = `token:${cacheKey}`;
   if (BACKGROUND_TOKEN_REFRESHES.has(cacheKey)) {
@@ -5298,22 +5319,7 @@ function refreshTokenPayloadCacheInBackground(network, tokenScope = "") {
   BACKGROUND_TOKEN_REFRESHES.add(cacheKey);
   void safeTokenPayload(network, scope)
     .then((payload) => {
-      RESPONSE_CACHE.set(`payload:token:${network}:${scope}`, {
-        expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
-        payload,
-        staleUntil: Date.now() + TOKEN_CACHE_STALE_MS,
-      });
-      const body = JSON.stringify(payload);
-      cacheJsonBody(
-        `json:token:${network}:${scope}`,
-        body,
-        TOKEN_CACHE_TTL_MS,
-        TOKEN_CACHE_STALE_MS,
-      );
-      if (shouldPersistJsonCache(`token:${network}:${scope}`)) {
-        void writePersistedJsonCache(`json:token:${network}:${scope}`, body);
-      }
-      invalidateDerivedCachesForBaseCache(`token:${network}:${scope}`);
+      cacheTokenPayload(network, scope, payload);
     })
     .catch((error) => {
       console.error(`Token cache refresh failed for ${cacheKey}:`, error);
@@ -5626,8 +5632,8 @@ function cachedRushPayload(network) {
   );
 }
 
-function shouldAutoRefreshTokenScope(scope) {
-  return Boolean(scope) && scope !== WORK_TOKEN_ID;
+function shouldAutoRefreshTokenScope(_scope) {
+  return true;
 }
 
 async function globalActivityPayload(network, fresh = false) {
@@ -7128,18 +7134,7 @@ function confirmedWorkMintEventsFromTransaction(tx, network) {
 
 function cacheLiveWorkTokenState(network, state) {
   const scope = WORK_TOKEN_ID;
-  const payloadKey = `payload:token:${network}:${scope}`;
-  const jsonKey = `json:token:${network}:${scope}`;
-  const body = JSON.stringify(state);
-  RESPONSE_CACHE.set(payloadKey, {
-    expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
-    payload: state,
-    staleUntil: Date.now() + TOKEN_CACHE_STALE_MS,
-  });
-  cacheJsonBody(jsonKey, body, TOKEN_CACHE_TTL_MS, TOKEN_CACHE_STALE_MS);
-  if (shouldPersistJsonCache(`token:${network}:${scope}`)) {
-    void writePersistedJsonCache(jsonKey, body);
-  }
+  cacheTokenPayload(network, scope, state);
 }
 
 async function liveWorkTokenState(network, cachedWorkTokenState) {
@@ -7361,7 +7356,7 @@ async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
   }
 
   const payload = fresh
-    ? await safeTokenPayload(network, scope)
+    ? await refreshTokenPayload(network, scope)
     : await fastTokenPayloadSnapshot(network, scope);
   return compactTokenSummaryPayload(payload);
 }
@@ -7545,7 +7540,7 @@ async function cachedWorkFloorPayload(network, fresh = false) {
 
 async function workSummaryPayload(network, fresh = false) {
   const [token, floor] = await Promise.all([
-    tokenSummaryPayload(network, WORK_TOKEN_ID, false),
+    tokenSummaryPayload(network, WORK_TOKEN_ID, fresh),
     cachedWorkFloorPayload(network, fresh),
   ]);
   return {
@@ -7570,7 +7565,7 @@ async function marketplaceSummaryPayload(network, fresh = false) {
 
   const [registry, token, floor] = await Promise.all([
     registrySummaryPayload(network, false),
-    tokenSummaryPayload(network, "", false),
+    tokenSummaryPayload(network, "", fresh),
     cachedWorkFloorPayload(network, fresh),
   ]);
   return {
@@ -7778,7 +7773,7 @@ async function activityHistoryPayload(network, kind, searchParams, fresh = false
 async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fresh = false) {
   const scope = normalizeTokenScope(tokenScope);
   const payload = fresh
-    ? await safeTokenPayload(network, scope)
+    ? await refreshTokenPayload(network, scope)
     : await fastTokenPayloadSnapshot(network, scope);
   const kindMap = new Map([
     ["holders", "holders"],
@@ -9075,7 +9070,7 @@ async function handleRequest(request, response) {
         refreshedJsonResponse(
           response,
           `token:${network}:${tokenScope}`,
-          await safeTokenPayload(network, tokenScope),
+          await refreshTokenPayload(network, tokenScope),
           FRESH_READ_CACHE_CONTROL,
           TOKEN_CACHE_TTL_MS,
           TOKEN_CACHE_STALE_MS,
