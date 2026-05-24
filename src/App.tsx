@@ -668,6 +668,15 @@ type PowIdMarketplaceStats = {
   totalVolumeSats: number;
 };
 
+type TokenMarketplaceSummaryStats = {
+  activeListings: number;
+  pendingSales: number;
+  pendingTokens: number;
+  totalSales: number;
+  totalTokens: number;
+  totalVolumeSats: number;
+};
+
 type PowActivityKind =
   | "id-register"
   | "id-update"
@@ -7636,6 +7645,70 @@ function marketplaceStatsFromSales(
 
 function publicMarketplaceSales(sales: PowIdMarketplaceSale[]) {
   return sales.filter((sale) => sale.transferVersion === "buy5");
+}
+
+function tokenMarketplaceSummaryStats({
+  listings,
+  network,
+  sales,
+  tokens,
+}: {
+  listings: PowTokenListing[];
+  network: BitcoinNetwork;
+  sales: PowTokenSale[];
+  tokens: PowTokenDefinition[];
+}): TokenMarketplaceSummaryStats {
+  const networkTokens = tokens.filter((token) => token.network === network);
+  const networkListings = listings.filter((listing) => listing.network === network);
+  const marketStats = marketplaceStatsFromSales(
+    sales.filter((sale) => sale.network === network),
+  );
+
+  return {
+    activeListings: networkListings.length,
+    pendingSales: marketStats.pendingSales,
+    pendingTokens: networkTokens.filter((token) => !token.confirmed).length,
+    totalSales: marketStats.totalSales,
+    totalTokens: networkTokens.length,
+    totalVolumeSats: marketStats.totalVolumeSats,
+  };
+}
+
+function TokenMarketplaceStatsGrid({
+  className = "id-launch-stats",
+  stats,
+}: {
+  className?: string;
+  stats: TokenMarketplaceSummaryStats;
+}) {
+  return (
+    <div className={className} aria-label="Token marketplace stats">
+      <div>
+        <strong>{stats.totalTokens.toLocaleString()}</strong>
+        <span>Total Tokens</span>
+      </div>
+      <div>
+        <strong>{stats.activeListings.toLocaleString()}</strong>
+        <span>Active Listings</span>
+      </div>
+      <div>
+        <strong>{stats.totalSales.toLocaleString()}</strong>
+        <span>Token Sales</span>
+      </div>
+      <div>
+        <strong>{stats.totalVolumeSats.toLocaleString()}</strong>
+        <span>Volume sats</span>
+      </div>
+      <div>
+        <strong>{stats.pendingTokens.toLocaleString()}</strong>
+        <span>Pending Tokens</span>
+      </div>
+      <div>
+        <strong>{stats.pendingSales.toLocaleString()}</strong>
+        <span>Pending Sales</span>
+      </div>
+    </div>
+  );
 }
 
 function activityItemsFromIdEvents(events: PowIdEvent[]): PowActivityItem[] {
@@ -27105,13 +27178,6 @@ function TokenMarketplacePanel({
   const tokenMarketLogPage =
     activeRemoteTokenMarketLogPage ?? localTokenMarketLogPage;
   const hasTokenMarketLogItems = tokenMarketLogPage.totalCount > 0;
-  const statsRows = selectedMarketToken ? [selectedMarketToken] : rows;
-  const confirmedTokens = statsRows.filter((token) => token.confirmed);
-  const confirmedSupply = statsRows.reduce(
-    (total, token) => total + token.confirmedSupply,
-    0,
-  );
-  const tokenMarketplaceStats = marketplaceStatsFromSales(marketSales);
   const workMarketFloorUsd = satsToUsd(workMarketFloorSats, btcUsd);
   const workMarketNetworkUsd = workFloorQuote
     ? satsToUsd(workFloorQuote.networkValueSats, btcUsd)
@@ -27172,39 +27238,6 @@ function TokenMarketplacePanel({
 
   return (
     <>
-      <div className="id-launch-stats marketplace-workspace-stats token-market-stats">
-        <div>
-          <strong>{confirmedTokens.length.toLocaleString()}</strong>
-          <span>Confirmed tokens</span>
-        </div>
-        <div>
-          <strong>{confirmedSupply.toLocaleString()}</strong>
-          <span>Confirmed supply</span>
-        </div>
-        <div>
-          <strong>{marketListings.length.toLocaleString()}</strong>
-          <span>{selectedMarketToken ? "Token listings" : "Open listings"}</span>
-        </div>
-        <div>
-          <strong>{sealedListings.length.toLocaleString()}</strong>
-          <span>Sealed listings</span>
-        </div>
-        <div>
-          <strong>{tokenMarketplaceStats.confirmedSales.toLocaleString()}</strong>
-          <span>Token sales</span>
-        </div>
-        <div>
-          <strong>
-            {tokenMarketplaceStats.confirmedVolumeSats.toLocaleString()}
-          </strong>
-          <span>Volume sats</span>
-        </div>
-        <div>
-          <strong>{tokenMarketplaceStats.pendingSales.toLocaleString()}</strong>
-          <span>Pending sales</span>
-        </div>
-      </div>
-
       <div className="ids-content marketplace-content token-market-content">
         {!selectedMarketToken || selectedMarketTokenIsWork ? (
           <section className="id-card ids-registry-card token-market-card marketplace-work-floor-card">
@@ -28212,6 +28245,12 @@ function MarketplaceApp({
     pendingIdEventTouchesAddress(event, address),
   );
   const marketplaceStats = marketplaceStatsFromSales(registrySales);
+  const tokenSummaryStats = tokenMarketplaceSummaryStats({
+    listings: tokenListings,
+    network: "livenet",
+    sales: tokenSales,
+    tokens,
+  });
   const sealedTokenListings = tokenListings.filter((listing) =>
     tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization),
   );
@@ -28296,7 +28335,9 @@ function MarketplaceApp({
                 <span>Pending Sales</span>
               </div>
             </div>
-          ) : null}
+          ) : (
+            <TokenMarketplaceStatsGrid stats={tokenSummaryStats} />
+          )}
         </div>
 
         <MarketplaceTabs
@@ -28600,6 +28641,12 @@ function MarketplaceWorkspace({
   const networkTokenCount = tokens.filter(
     (token) => token.network === network,
   ).length;
+  const tokenSummaryStats = tokenMarketplaceSummaryStats({
+    listings: tokenListings,
+    network,
+    sales: tokenSales,
+    tokens,
+  });
   const refreshMarketplaceTab = () => {
     if (marketplaceTab === "tokens") {
       onRefreshTokens();
@@ -28817,26 +28864,32 @@ function MarketplaceWorkspace({
       </div>
         </>
       ) : (
-        <TokenMarketplacePanel
-          address={address}
-          btcUsd={btcUsd}
-          busy={busy}
-          buyListing={buyTokenListing}
-          closedListings={tokenClosedListings}
-          computerMode
-          feeRate={feeRate}
-          listings={tokenListings}
-          mints={tokenMints}
-          network={network}
-          onOpenTokenWorkspace={onOpenTokenWorkspace}
-          onOpenWalletWorkspace={onOpenWalletWorkspace}
-          sales={tokenSales}
-          setFeeRate={setFeeRate}
-          tokens={tokens}
-          transfers={tokenTransfers}
-          workFloorLoading={workFloorLoading}
-          workFloorQuote={workFloorQuote}
-        />
+        <>
+          <TokenMarketplaceStatsGrid
+            className="id-launch-stats marketplace-workspace-stats"
+            stats={tokenSummaryStats}
+          />
+          <TokenMarketplacePanel
+            address={address}
+            btcUsd={btcUsd}
+            busy={busy}
+            buyListing={buyTokenListing}
+            closedListings={tokenClosedListings}
+            computerMode
+            feeRate={feeRate}
+            listings={tokenListings}
+            mints={tokenMints}
+            network={network}
+            onOpenTokenWorkspace={onOpenTokenWorkspace}
+            onOpenWalletWorkspace={onOpenWalletWorkspace}
+            sales={tokenSales}
+            setFeeRate={setFeeRate}
+            tokens={tokens}
+            transfers={tokenTransfers}
+            workFloorLoading={workFloorLoading}
+            workFloorQuote={workFloorQuote}
+          />
+        </>
       )}
     </section>
   );
