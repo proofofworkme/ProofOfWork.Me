@@ -256,8 +256,10 @@ expect(
     ),
 );
 expect(
-  "route status rows are not absolute or sticky",
-  !/desktop-route-status[\s\S]{0,260}position:\s*(absolute|sticky)/.test(css),
+  "route status rows stick under the shared topbar",
+  /\.desktop-public-app\.has-route-status\s+\.topbar\s*\+\s*\.desktop-route-status\s*\{[\s\S]*position:\s*sticky[\s\S]*top:\s*var\(--topbar-height\)[\s\S]*z-index:\s*var\(--sticky-status-z\)/.test(
+    css,
+  ),
 );
 const folderTypeBlock = app.match(/type Folder =[\s\S]*?;\n\nconst COMPUTER_ROUTE_FOLDERS/)?.[0] ?? "";
 const computerFolderListBlock =

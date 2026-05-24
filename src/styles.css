@@ -27,6 +27,8 @@
   --focus: 0 0 0 4px rgba(215, 168, 79, 0.22);
   --topbar-height: 64px;
   --status-row-height: 38px;
+  --sticky-chrome-z: 60;
+  --sticky-status-z: 50;
   background: var(--bg);
   color: var(--text);
   font-family:
@@ -662,8 +664,9 @@ code {
   min-height: var(--topbar-height);
   overflow: visible;
   padding: 0 18px;
-  position: relative;
-  z-index: 30;
+  position: sticky;
+  top: 0;
+  z-index: var(--sticky-chrome-z);
 }
 
 .brand {
@@ -1380,6 +1383,12 @@ code {
   width: 100%;
 }
 
+.topbar + .app-status-row {
+  position: sticky;
+  top: var(--topbar-height);
+  z-index: var(--sticky-status-z);
+}
+
 .status > span:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1831,16 +1840,16 @@ select {
 .desktop-public-app .desktop-route-status {
   background: var(--surface-soft);
   border-bottom-color: var(--border);
-  position: static;
-  z-index: auto;
 }
 
 .desktop-public-app.has-route-status {
   grid-template-rows: var(--topbar-height) var(--status-row-height) minmax(0, 1fr) auto;
 }
 
-.desktop-public-app.has-route-status .desktop-route-status {
-  position: static;
+.desktop-public-app.has-route-status .topbar + .desktop-route-status {
+  position: sticky;
+  top: var(--topbar-height);
+  z-index: var(--sticky-status-z);
 }
 
 .desktop-public-app .app-footer {
