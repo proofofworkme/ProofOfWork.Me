@@ -26210,7 +26210,7 @@ type MarketplaceSortMode =
   | "price-asc"
   | "arb-desc"
   | "arb-asc";
-type TokenListingBookFilter = "all" | "sealed" | "unsealed";
+type MarketplaceListingBookFilter = "all" | "sealed" | "unsealed";
 
 type TokenReferenceSnapshot = Pick<
   PowTokenDefinition,
@@ -26475,6 +26475,13 @@ function sortIdMarketplaceListings(
   });
 }
 
+function idMarketplaceListingIsSealed(listing: PowIdListing) {
+  return (
+    listing.listingVersion !== "list5" ||
+    saleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)
+  );
+}
+
 function MarketplaceSortControl({
   label = "Sort",
   onChange,
@@ -26499,6 +26506,47 @@ function MarketplaceSortControl({
           ))}
         </select>
       </label>
+    </div>
+  );
+}
+
+function MarketplaceListingBookTabs({
+  allCount,
+  label,
+  onChange,
+  sealedCount,
+  unsealedCount,
+  value,
+}: {
+  allCount: number;
+  label: string;
+  onChange: (value: MarketplaceListingBookFilter) => void;
+  sealedCount: number;
+  unsealedCount: number;
+  value: MarketplaceListingBookFilter;
+}) {
+  return (
+    <div
+      className="marketplace-tabs marketplace-listing-tabs"
+      aria-label={label}
+    >
+      {(
+        [
+          ["all", "All", allCount],
+          ["sealed", "Sealed", sealedCount],
+          ["unsealed", "Unsealed", unsealedCount],
+        ] as const
+      ).map(([filter, filterLabel, count]) => (
+        <button
+          aria-pressed={value === filter}
+          key={filter}
+          onClick={() => onChange(filter)}
+          type="button"
+        >
+          <span>{filterLabel}</span>
+          <strong>{count.toLocaleString()}</strong>
+        </button>
+      ))}
     </div>
   );
 }
@@ -26859,7 +26907,7 @@ function TokenMarketplacePanel({
   const [tokenListingSortMode, setTokenListingSortMode] =
     useState<MarketplaceSortMode>("arb-desc");
   const [tokenListingBookFilter, setTokenListingBookFilter] =
-    useState<TokenListingBookFilter>("all");
+    useState<MarketplaceListingBookFilter>("all");
   const selectedMarketToken = rows.find(
     (token) =>
       token.tokenId === selectedTokenMarketId ||
@@ -27570,28 +27618,14 @@ function TokenMarketplacePanel({
             </div>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
           </div>
-          <div
-            className="marketplace-tabs token-listing-tabs"
-            aria-label="Token order book filter"
-          >
-            {(
-              [
-                ["all", "All", marketListings.length],
-                ["sealed", "Sealed", sealedListings.length],
-                ["unsealed", "Unsealed", unsealedListings.length],
-              ] as const
-            ).map(([filter, label, count]) => (
-              <button
-                aria-pressed={tokenListingBookFilter === filter}
-                key={filter}
-                onClick={() => setTokenListingBookFilter(filter)}
-                type="button"
-              >
-                <span>{label}</span>
-                <strong>{count.toLocaleString()}</strong>
-              </button>
-            ))}
-          </div>
+          <MarketplaceListingBookTabs
+            allCount={marketListings.length}
+            label="Token order book filter"
+            onChange={setTokenListingBookFilter}
+            sealedCount={sealedListings.length}
+            unsealedCount={unsealedListings.length}
+            value={tokenListingBookFilter}
+          />
           <MarketplaceSortControl
             onChange={setTokenListingSortMode}
             value={tokenListingSortMode}
@@ -29512,16 +29546,30 @@ function MarketplaceListingList({
   const [listingPageIndex, setListingPageIndex] = useState(0);
   const [listingSortMode, setListingSortMode] =
     useState<MarketplaceSortMode>("price-asc");
+  const [listingBookFilter, setListingBookFilter] =
+    useState<MarketplaceListingBookFilter>("all");
+  const sealedListings = listings.filter(idMarketplaceListingIsSealed);
+  const unsealedListings = listings.filter(
+    (listing) => !idMarketplaceListingIsSealed(listing),
+  );
+  const visibleListings =
+    listingBookFilter === "sealed"
+      ? sealedListings
+      : listingBookFilter === "unsealed"
+        ? unsealedListings
+        : listings;
   const filteredListings = searchQuery
-    ? listings.filter((listing) => idListingMatchesSearch(listing, searchQuery))
-    : listings;
+    ? visibleListings.filter((listing) =>
+        idListingMatchesSearch(listing, searchQuery),
+      )
+    : visibleListings;
   const sortedListings = sortIdMarketplaceListings(
     filteredListings,
     listingSortMode,
   );
   useEffect(() => {
     setListingPageIndex(0);
-  }, [searchQuery, listingSortMode]);
+  }, [listingBookFilter, searchQuery, listingSortMode]);
   const listingPage = pagedItems(
     sortedListings,
     listingPageIndex,
@@ -29577,8 +29625,16 @@ function MarketplaceListingList({
         placeholder="Search listings, sellers, txids"
         resultCount={filteredListings.length}
         setValue={setSearchQuery}
-        totalCount={listings.length}
+        totalCount={visibleListings.length}
         value={searchQuery}
+      />
+      <MarketplaceListingBookTabs
+        allCount={listings.length}
+        label="ID order book filter"
+        onChange={setListingBookFilter}
+        sealedCount={sealedListings.length}
+        unsealedCount={unsealedListings.length}
+        value={listingBookFilter}
       />
       <MarketplaceSortControl
         onChange={setListingSortMode}
@@ -29601,6 +29657,12 @@ function MarketplaceListingList({
 
       {listings.length === 0 ? (
         <p className="field-note">No active on-chain listings yet.</p>
+      ) : visibleListings.length === 0 ? (
+        <p className="field-note">
+          {listingBookFilter === "sealed"
+            ? "No sealed active listings yet."
+            : "No unsealed active listings yet."}
+        </p>
       ) : filteredListings.length === 0 ? (
         <p className="field-note">No active listings match this search.</p>
       ) : (

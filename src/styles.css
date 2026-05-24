@@ -356,7 +356,7 @@
   width: auto;
 }
 
-.mail-layout.is-marketplace-workspace .marketplace-workspace .token-listing-tabs {
+.mail-layout.is-marketplace-workspace .marketplace-workspace .marketplace-listing-tabs {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
@@ -3058,7 +3058,7 @@ select {
   max-width: none;
 }
 
-.token-listing-tabs {
+.marketplace-listing-tabs {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 0;
   max-width: none;
