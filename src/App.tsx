@@ -682,6 +682,7 @@ type PowActivityKind =
 type PowActivityItem = {
   amountSats?: number;
   actor?: string;
+  blockHeight?: number;
   confirmed: boolean;
   counterparty?: string;
   createdAt: string;
@@ -703,6 +704,7 @@ type PowActivityStats = {
   confirmed?: number;
   dataBytes?: number;
   files?: number;
+  indexedThroughBlock?: number;
   messages?: number;
   pending?: number;
   registry?: number;
@@ -1010,6 +1012,7 @@ type PowPaginatedApiResponse<T> = {
   cursor?: string;
   end?: number;
   indexedAt?: string;
+  indexedThroughBlock?: number;
   items?: T[];
   kind?: string;
   limit?: number;
@@ -1306,6 +1309,7 @@ type GrowthSummaryApiResponse = {
 };
 
 type MarketplaceSummarySnapshot = {
+  indexedAt: string;
   registry: PowRegistryState;
   token: PowTokenState;
   workFloor?: WorkFloorQuote;
@@ -7841,6 +7845,7 @@ function normalizeActivityStats(
     confirmed,
     dataBytes:
       numericActivityStat(stats?.dataBytes) ?? totalActivityDataBytes(fallbackItems),
+    indexedThroughBlock: numericActivityStat(stats?.indexedThroughBlock),
     pending,
     total,
   };
@@ -9106,6 +9111,10 @@ async function fetchMarketplaceSummary(
   );
 
   return {
+    indexedAt:
+      typeof payload.indexedAt === "string"
+        ? payload.indexedAt
+        : new Date().toISOString(),
     registry: normalizeRegistryApiState(payload.registry),
     token: normalizeTokenApiState(payload.token),
     workFloor: payload.workFloor
@@ -12422,7 +12431,7 @@ export default function App() {
             if (marketplaceMode || activeFolder === "marketplace") {
               void refreshMarketplaceSummary(true, true);
             } else {
-              void refreshToken(true, true);
+              void refreshToken(true, false);
             }
           }
         }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
@@ -20476,6 +20485,9 @@ function ActivityWorkspace({
     Math.max(0, totalCount - pendingCount);
   const dataBytes = stats?.dataBytes ?? totalActivityDataBytes(items);
   const visibleItems = activityPage.items;
+  const indexedAt = activityHistoryPage?.indexedAt;
+  const indexedThroughBlock =
+    activityHistoryPage?.indexedThroughBlock ?? stats?.indexedThroughBlock;
   const title = profile
     ? `${profile.label} log`
     : query.trim()
@@ -20574,6 +20586,14 @@ function ActivityWorkspace({
               Confirmed records are canonical. Pending records are visible until
               they confirm or disappear.
             </p>
+            {indexedAt || indexedThroughBlock ? (
+              <p>
+                {indexedAt ? `Refreshed ${formatDate(indexedAt)}` : "Refreshed"}{" "}
+                {indexedThroughBlock
+                  ? `through block ${indexedThroughBlock.toLocaleString()}.`
+                  : "from the confirmed Computer index."}
+              </p>
+            ) : null}
             {totalCount > ACTIVITY_FEED_PAGE_SIZE ? (
               <p>
                 Showing paged results from {totalCount.toLocaleString()}{" "}
@@ -25320,6 +25340,8 @@ function GrowthWorkspace({
   const computerEventFlowSats = actualValue.computerEventFlowSats;
   const pendingRecordCount = summaryCounts?.pendingRecords ?? pendingRecords.length;
   const idListingCount = summaryCounts?.idListings ?? registryListings.length;
+  const chainMetricsIndexedAt =
+    growthSummary?.indexedAt ?? summaryWorkFloor?.indexedAt;
 
   return (
     <section className="growth-workspace">
@@ -25384,6 +25406,12 @@ function GrowthWorkspace({
               <span>{busy ? "Refreshing" : "Refresh chain metrics"}</span>
             </span>
           </button>
+          {chainMetricsIndexedAt ? (
+            <p className="field-note">
+              Refreshed {formatDate(chainMetricsIndexedAt)} from confirmed
+              Computer events.
+            </p>
+          ) : null}
         </div>
       </div>
 
