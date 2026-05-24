@@ -71,7 +71,7 @@ const BACKGROUND_TOKEN_REFRESH_INTERVAL_MS = Number(
   process.env.BACKGROUND_TOKEN_REFRESH_INTERVAL_MS ?? 5 * 60_000,
 );
 const BACKGROUND_WORK_TOKEN_REFRESH_INTERVAL_MS = Number(
-  process.env.BACKGROUND_WORK_TOKEN_REFRESH_INTERVAL_MS ?? 30_000,
+  process.env.BACKGROUND_WORK_TOKEN_REFRESH_INTERVAL_MS ?? 10 * 60_000,
 );
 const BACKGROUND_DERIVED_REFRESH_INTERVAL_MS = Number(
   process.env.BACKGROUND_DERIVED_REFRESH_INTERVAL_MS ?? 15_000,
@@ -5434,7 +5434,9 @@ async function fastCachedTokenPayload(network, tokenScope = "") {
     return payload;
   }
   if (cachedPayloadEntry?.payload && now < cachedPayloadEntry.staleUntil) {
-    refreshTokenPayloadCacheInBackground(network, scope);
+    if (scope !== WORK_TOKEN_ID) {
+      refreshTokenPayloadCacheInBackground(network, scope);
+    }
     const payload = await tokenPayloadWithSpendableListings(
       cachedPayloadEntry.payload,
       network,
@@ -5459,7 +5461,9 @@ async function fastCachedTokenPayload(network, tokenScope = "") {
         payload,
         staleUntil: Date.now() + TOKEN_CACHE_STALE_MS,
       });
-      refreshTokenPayloadCacheInBackground(network, scope);
+      if (scope !== WORK_TOKEN_ID) {
+        refreshTokenPayloadCacheInBackground(network, scope);
+      }
       if (scope === WORK_TOKEN_ID) {
         return liveWorkTokenState(network, payload);
       }
@@ -5469,7 +5473,9 @@ async function fastCachedTokenPayload(network, tokenScope = "") {
     }
   }
 
-  refreshTokenPayloadCacheInBackground(network, scope);
+  if (scope !== WORK_TOKEN_ID) {
+    refreshTokenPayloadCacheInBackground(network, scope);
+  }
   if (cachedPayloadEntry?.payload) {
     return tokenPayloadWithSpendableListings(cachedPayloadEntry.payload, network);
   }
@@ -6817,7 +6823,9 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "") {
     return payload;
   }
   if (cachedPayloadEntry?.payload && now < cachedPayloadEntry.staleUntil) {
-    refreshTokenPayloadCacheInBackground(network, scope);
+    if (scope !== WORK_TOKEN_ID) {
+      refreshTokenPayloadCacheInBackground(network, scope);
+    }
     const payload = await tokenPayloadWithSpendableListings(
       cachedPayloadEntry.payload,
       network,
@@ -6842,7 +6850,9 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "") {
         payload,
         staleUntil: Date.now() + TOKEN_CACHE_STALE_MS,
       });
-      refreshTokenPayloadCacheInBackground(network, scope);
+      if (scope !== WORK_TOKEN_ID) {
+        refreshTokenPayloadCacheInBackground(network, scope);
+      }
       if (scope === WORK_TOKEN_ID) {
         return liveWorkTokenState(network, payload);
       }
@@ -6852,7 +6862,9 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "") {
     }
   }
 
-  refreshTokenPayloadCacheInBackground(network, scope);
+  if (scope !== WORK_TOKEN_ID) {
+    refreshTokenPayloadCacheInBackground(network, scope);
+  }
   return {
     ...emptyTokenState(),
     creationPriceSats: TOKEN_CREATION_PRICE_SATS,
@@ -7422,10 +7434,6 @@ async function cachedWorkFloorPayload(network, fresh = false) {
 }
 
 async function workSummaryPayload(network, fresh = false) {
-  if (fresh) {
-    refreshTokenPayloadCacheInBackground(network, WORK_TOKEN_ID);
-  }
-
   const [token, floor] = await Promise.all([
     tokenSummaryPayload(network, WORK_TOKEN_ID, false),
     cachedWorkFloorPayload(network, fresh),
@@ -7476,7 +7484,6 @@ function refreshGrowthCachesInBackground(network) {
   );
   refreshGlobalActivityCacheInBackground(network);
   refreshTokenPayloadCacheInBackground(network, "");
-  refreshTokenPayloadCacheInBackground(network, WORK_TOKEN_ID);
   refreshPayloadCacheInBackground(
     `work-floor:${network}`,
     `payload:work-floor:${network}`,
