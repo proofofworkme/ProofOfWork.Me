@@ -585,6 +585,13 @@ type PowTokenListing = {
   tokenId: string;
 };
 
+type PowTokenClosedListing = PowTokenListing & {
+  closedAt?: string;
+  closedConfirmed?: boolean;
+  closedTxid?: string;
+  closedVin?: number;
+};
+
 type PowTokenSale = {
   amount: number;
   buyerAddress: string;
@@ -627,6 +634,7 @@ type PowTokenHolder = {
 };
 
 type PowTokenState = {
+  closedListings: PowTokenClosedListing[];
   creationSats: number;
   confirmedSupply: number;
   holders: PowTokenHolder[];
@@ -5681,6 +5689,7 @@ function parseTokenPayload(message: string, network: BitcoinNetwork) {
 
 function emptyTokenState(): PowTokenState {
   return {
+    closedListings: [],
     creationSats: 0,
     confirmedSupply: 0,
     holders: [],
@@ -5808,6 +5817,7 @@ function tokenStateFromTransactions(
   const tokenSupply = new Map<string, { confirmed: number; pending: number }>();
   const balances = new Map<string, number>();
   const listings = new Map<string, PowTokenListing>();
+  const closedListings: PowTokenClosedListing[] = [];
   const mints: PowTokenMint[] = [];
   const sales: PowTokenSale[] = [];
   const transfers: PowTokenTransfer[] = [];
@@ -5831,6 +5841,27 @@ function tokenStateFromTransactions(
   const tokenSpendableBalance = (tokenId: string, ownerAddress: string) =>
     (balances.get(tokenBalanceKey(tokenId, ownerAddress)) ?? 0) -
     tokenReservedBalance(tokenId, ownerAddress);
+  const closeTokenListing = (
+    listing: PowTokenListing,
+    event: { confirmed: boolean; createdAt: string; txid: string },
+  ) => {
+    if (
+      closedListings.some(
+        (closed) =>
+          closed.listingId === listing.listingId &&
+          closed.closedTxid === event.txid,
+      )
+    ) {
+      return;
+    }
+
+    closedListings.push({
+      ...listing,
+      closedAt: event.createdAt,
+      closedConfirmed: event.confirmed,
+      closedTxid: event.txid,
+    });
+  };
 
   const registryAddresses = [
     ...new Set(tokens.map((token) => token.registryAddress).filter(Boolean)),
@@ -6044,6 +6075,7 @@ function tokenStateFromTransactions(
           }
 
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+          closeTokenListing(listing, { confirmed, createdAt, txid });
           listings.delete(listing.listingId);
           continue;
         }
@@ -6076,6 +6108,7 @@ function tokenStateFromTransactions(
           }
 
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+          closeTokenListing(listing, { confirmed, createdAt, txid });
           listings.delete(listing.listingId);
           if (confirmed) {
             const sellerBalance = balances.get(sellerBalanceKey) ?? 0;
@@ -6109,6 +6142,14 @@ function tokenStateFromTransactions(
   }
 
   return {
+    closedListings: closedListings.sort(
+      (left, right) =>
+        Number(Boolean(right.closedConfirmed)) -
+          Number(Boolean(left.closedConfirmed)) ||
+        Date.parse(right.closedAt ?? right.createdAt) -
+          Date.parse(left.closedAt ?? left.createdAt) ||
+        left.listingId.localeCompare(right.listingId),
+    ),
     creationSats,
     confirmedSupply,
     holders: [...balances.entries()]
@@ -6250,6 +6291,9 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
   const listings = (state.listings ?? []).filter((listing) =>
     allowedTokenIds.has(listing.tokenId),
   );
+  const closedListings = (state.closedListings ?? []).filter((listing) =>
+    allowedTokenIds.has(listing.tokenId),
+  );
   const sales = (state.sales ?? []).filter((sale) =>
     allowedTokenIds.has(sale.tokenId),
   );
@@ -6257,6 +6301,7 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
   if (tokens.length === 1) {
     const ledger = tokenLedgerFor(tokens[0], mints, transfers, sales);
     return {
+      closedListings,
       creationSats: tokens[0].creationFeeSats,
       confirmedSupply: summaryOnly
         ? Math.max(ledger.confirmedSupply, state.confirmedSupply)
@@ -6275,6 +6320,7 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
   }
 
   return {
+    closedListings,
     creationSats: tokens.reduce(
       (total, token) => total + token.creationFeeSats,
       0,
@@ -8824,6 +8870,9 @@ function normalizeTokenApiState(
   payload: PowTokenApiResponse | undefined,
 ): PowTokenState {
   return sanitizedTokenState({
+    closedListings: Array.isArray(payload?.closedListings)
+      ? payload.closedListings
+      : [],
     creationSats: Number.isSafeInteger(payload?.creationSats)
       ? Number(payload?.creationSats)
       : 0,
@@ -8916,7 +8965,15 @@ async function fetchTokenSupplyState(
 
 async function fetchTokenHistoryPage<T>(
   targetNetwork: BitcoinNetwork,
-  kind: "holders" | "listings" | "mints" | "sales" | "tokens" | "transfers",
+  kind:
+    | "closedListings"
+    | "holders"
+    | "listings"
+    | "market-log"
+    | "mints"
+    | "sales"
+    | "tokens"
+    | "transfers",
   options: {
     fresh?: boolean;
     pageIndex?: number;
@@ -11132,6 +11189,9 @@ export default function App() {
   const [tokenMints, setTokenMints] = useState<PowTokenMint[]>([]);
   const [tokenTransfers, setTokenTransfers] = useState<PowTokenTransfer[]>([]);
   const [tokenListings, setTokenListings] = useState<PowTokenListing[]>([]);
+  const [tokenClosedListings, setTokenClosedListings] = useState<
+    PowTokenClosedListing[]
+  >([]);
   const [tokenSales, setTokenSales] = useState<PowTokenSale[]>([]);
   const [purchaseReceipt, setPurchaseReceipt] = useState<
     MarketplacePurchaseReceipt | undefined
@@ -12809,6 +12869,7 @@ export default function App() {
           setTokenMints(state.mints);
           setTokenTransfers(state.transfers);
           setTokenListings(state.listings);
+          setTokenClosedListings(state.closedListings);
           setTokenSales(state.sales);
           setTokenCreationSats(state.creationSats);
           setStatus({
@@ -13861,6 +13922,7 @@ export default function App() {
         setTokenMints(snapshot.token.mints);
         setTokenTransfers(snapshot.token.transfers);
         setTokenListings(snapshot.token.listings);
+        setTokenClosedListings(snapshot.token.closedListings);
         setTokenSales(snapshot.token.sales);
         setTokenCreationSats(snapshot.token.creationSats);
         if (btcUsdQuote) {
@@ -13910,6 +13972,7 @@ export default function App() {
       setTokenMints([]);
       setTokenTransfers([]);
       setTokenListings([]);
+      setTokenClosedListings([]);
       setTokenSales([]);
       setTokenCreationSats(0);
       if (!silent) {
@@ -13984,6 +14047,7 @@ export default function App() {
         setTokenMints(state.mints);
         setTokenTransfers(state.transfers);
         setTokenListings(state.listings);
+        setTokenClosedListings(state.closedListings);
         setTokenSales(state.sales);
         setTokenCreationSats(state.creationSats);
         if (!silent) {
@@ -14296,6 +14360,7 @@ export default function App() {
       setTokenMints(tokenState.mints);
       setTokenTransfers(tokenState.transfers);
       setTokenListings(tokenState.listings);
+      setTokenClosedListings(tokenState.closedListings);
       setTokenSales(tokenState.sales);
       setTokenCreationSats(tokenState.creationSats);
       setGrowthSummary(snapshot);
@@ -14473,6 +14538,7 @@ export default function App() {
           setTokenMints(state.mints);
           setTokenTransfers(state.transfers);
           setTokenListings(state.listings);
+          setTokenClosedListings(state.closedListings);
           setTokenSales(state.sales);
           setTokenCreationSats(state.creationSats);
           setStatus({
@@ -16956,6 +17022,7 @@ export default function App() {
       setTokenMints(latestState.mints);
       setTokenTransfers(latestState.transfers);
       setTokenListings(latestState.listings);
+      setTokenClosedListings(latestState.closedListings);
       setTokenSales(latestState.sales);
       setTokenCreationSats(latestState.creationSats);
       const latestToken =
@@ -17272,6 +17339,21 @@ export default function App() {
       setTokenListings((current) =>
         current.filter((item) => item.listingId !== listing.listingId),
       );
+      setTokenClosedListings((current) => {
+        const closedListing: PowTokenClosedListing = {
+          ...listing,
+          closedAt: new Date().toISOString(),
+          closedConfirmed: false,
+          closedTxid: txid,
+        };
+        return current.some(
+          (item) =>
+            item.listingId === closedListing.listingId &&
+            item.closedTxid === closedListing.closedTxid,
+        )
+          ? current
+          : [closedListing, ...current];
+      });
       setStatus({
         tone: "good",
         text: `Token listing delisted: ${shortAddress(txid)}.`,
@@ -17406,6 +17488,21 @@ export default function App() {
       setTokenListings((current) =>
         current.filter((item) => item.listingId !== listing.listingId),
       );
+      setTokenClosedListings((current) => {
+        const closedListing: PowTokenClosedListing = {
+          ...listing,
+          closedAt: sale.createdAt,
+          closedConfirmed: false,
+          closedTxid: txid,
+        };
+        return current.some(
+          (item) =>
+            item.listingId === closedListing.listingId &&
+            item.closedTxid === closedListing.closedTxid,
+        )
+          ? current
+          : [closedListing, ...current];
+      });
       setTokenSales((current) =>
         current.some((item) => item.txid === txid) ? current : [sale, ...current],
       );
@@ -18151,6 +18248,9 @@ export default function App() {
           }}
           status={status}
           submitPurchase={purchaseId}
+          tokenClosedListings={tokenClosedListings.filter(
+            (listing) => listing.network === "livenet",
+          )}
           tokenListings={tokenListings.filter(
             (listing) => listing.network === "livenet",
           )}
@@ -18913,6 +19013,7 @@ export default function App() {
             status={status}
             submitPurchase={purchaseId}
             buyTokenListing={buyTokenListing}
+            tokenClosedListings={tokenClosedListings}
             tokenListings={tokenListings}
             tokenMints={tokenMints}
             tokenSales={tokenSales}
@@ -26124,6 +26225,12 @@ type TokenReferenceSnapshot = Pick<
 type TokenMarketLogItem =
   | {
       createdAt: string;
+      closedListing: PowTokenClosedListing;
+      kind: "closed-listing";
+      txid: string;
+    }
+  | {
+      createdAt: string;
       kind: "listing";
       listing: PowTokenListing;
       txid: string;
@@ -26328,6 +26435,10 @@ function sortTokenListings(
 }
 
 function tokenMarketLogItemConfirmed(item: TokenMarketLogItem) {
+  if (item.kind === "closed-listing") {
+    return Boolean(item.closedListing.closedConfirmed);
+  }
+
   return item.kind === "sale" ? item.sale.confirmed : item.listing.confirmed;
 }
 
@@ -26680,6 +26791,7 @@ function TokenMarketplacePanel({
   btcUsd,
   busy,
   buyListing,
+  closedListings,
   computerMode = false,
   feeRate,
   listings,
@@ -26698,6 +26810,7 @@ function TokenMarketplacePanel({
   btcUsd: number;
   busy: boolean;
   buyListing: (listing: PowTokenListing) => void;
+  closedListings: PowTokenClosedListing[];
   computerMode?: boolean;
   feeRate: number;
   listings: PowTokenListing[];
@@ -26731,6 +26844,15 @@ function TokenMarketplacePanel({
   const [tokenMarketPageIndex, setTokenMarketPageIndex] = useState(0);
   const [tokenListingPageIndex, setTokenListingPageIndex] = useState(0);
   const [tokenMarketLogPageIndex, setTokenMarketLogPageIndex] = useState(0);
+  const [remoteTokenMarketLogPage, setRemoteTokenMarketLogPage] = useState<
+    | {
+        key: string;
+        page: PowPaginatedApiResponse<TokenMarketLogItem>;
+      }
+    | undefined
+  >();
+  const [tokenMarketLogPageLoading, setTokenMarketLogPageLoading] =
+    useState(false);
   const [tokenMarketSortMode, setTokenMarketSortMode] =
     useState<MarketplaceSortMode>("arb-desc");
   const [tokenListingSortMode, setTokenListingSortMode] =
@@ -26787,6 +26909,14 @@ function TokenMarketplacePanel({
         (listing) => listing.tokenId === selectedMarketToken.tokenId,
       )
     : networkListings;
+  const networkClosedListings = closedListings.filter(
+    (listing) => listing.network === network,
+  );
+  const marketClosedListings = selectedMarketToken
+    ? networkClosedListings.filter(
+        (listing) => listing.tokenId === selectedMarketToken.tokenId,
+      )
+    : networkClosedListings;
   const networkSales = sales.filter((sale) => sale.network === network);
   const marketSales = selectedMarketToken
     ? networkSales.filter((sale) => sale.tokenId === selectedMarketToken.tokenId)
@@ -26811,12 +26941,73 @@ function TokenMarketplacePanel({
       listing,
       txid: listing.listingId,
     })),
+    ...marketClosedListings.map((closedListing) => ({
+      closedListing,
+      createdAt: closedListing.closedAt ?? closedListing.createdAt,
+      kind: "closed-listing" as const,
+      txid: closedListing.closedTxid || closedListing.listingId,
+    })),
     ...marketSales.map((sale) => ({
       createdAt: sale.createdAt,
       kind: "sale" as const,
       sale,
       txid: sale.txid,
     })),
+  ]);
+  const tokenMarketLogDataVersion = tokenMarketLogItems
+    .map((item) =>
+      [
+        item.kind,
+        item.txid,
+        item.createdAt,
+        tokenMarketLogItemConfirmed(item) ? "1" : "0",
+      ].join(":"),
+    )
+    .join("|");
+  const tokenMarketLogKey = [
+    network,
+    selectedMarketToken?.tokenId ?? "",
+    tokenMarketLogPageIndex,
+    TOKEN_LIST_PREVIEW_COUNT,
+    tokenMarketLogDataVersion,
+  ].join(":");
+  useEffect(() => {
+    if (network !== "livenet") {
+      setRemoteTokenMarketLogPage(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    setTokenMarketLogPageLoading(true);
+    void fetchTokenHistoryPage<TokenMarketLogItem>(network, "market-log", {
+      pageIndex: tokenMarketLogPageIndex,
+      pageSize: TOKEN_LIST_PREVIEW_COUNT,
+      tokenScope: selectedMarketToken?.tokenId ?? "",
+    })
+      .then((page) => {
+        if (!cancelled) {
+          setRemoteTokenMarketLogPage({ key: tokenMarketLogKey, page });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRemoteTokenMarketLogPage(undefined);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTokenMarketLogPageLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    network,
+    selectedMarketToken?.tokenId,
+    tokenMarketLogKey,
+    tokenMarketLogPageIndex,
   ]);
   const visibleRows = selectedMarketToken ? [selectedMarketToken] : rows;
   const sortedVisibleRows = sortTokenMarketplaceRows(
@@ -26834,11 +27025,22 @@ function TokenMarketplacePanel({
     tokenListingPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
-  const tokenMarketLogPage = pagedItems(
+  const localTokenMarketLogPage = pagedItems(
     tokenMarketLogItems,
     tokenMarketLogPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
+  const activeRemoteTokenMarketLogPage =
+    remoteTokenMarketLogPage?.key === tokenMarketLogKey
+      ? historyPageToPagedItems(
+          remoteTokenMarketLogPage.page,
+          tokenMarketLogPageIndex,
+          TOKEN_LIST_PREVIEW_COUNT,
+        )
+      : undefined;
+  const tokenMarketLogPage =
+    activeRemoteTokenMarketLogPage ?? localTokenMarketLogPage;
+  const hasTokenMarketLogItems = tokenMarketLogPage.totalCount > 0;
   const sealedListings = marketListings.filter((listing) =>
     tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization),
   );
@@ -27505,9 +27707,102 @@ function TokenMarketplacePanel({
               </p>
             </div>
           </div>
-          {tokenMarketLogItems.length ? (
+          {hasTokenMarketLogItems ? (
             <div className="token-market-grid">
               {tokenMarketLogPage.items.map((item) => {
+                if (item.kind === "closed-listing") {
+                  const closedListing = item.closedListing;
+                  const unitSats =
+                    closedListing.amount > 0
+                      ? closedListing.priceSats / closedListing.amount
+                      : 0;
+                  const closedTxid =
+                    closedListing.closedTxid || closedListing.listingId;
+                  const closedAt =
+                    closedListing.closedAt ?? closedListing.createdAt;
+                  return (
+                    <article
+                      className="id-record token-market-row"
+                      key={`closed-listing-${closedListing.listingId}-${closedTxid}`}
+                    >
+                      <div>
+                        <strong>
+                          {closedListing.amount.toLocaleString()}{" "}
+                          {closedListing.ticker}
+                        </strong>
+                        <span>
+                          {closedListing.closedConfirmed
+                            ? "Closed listing"
+                            : "Closing listing"}
+                        </span>
+                      </div>
+                      <dl>
+                        <div>
+                          <dt>Price</dt>
+                          <dd>{closedListing.priceSats.toLocaleString()} sats</dd>
+                        </div>
+                        <div>
+                          <dt>Unit</dt>
+                          <dd>
+                            {tokenSatsPerUnit(unitSats)} sat /{" "}
+                            {closedListing.ticker}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Seller</dt>
+                          <dd>{shortAddress(closedListing.sellerAddress)}</dd>
+                        </div>
+                        <div>
+                          <dt>Closed</dt>
+                          <dd>{formatDate(closedAt)}</dd>
+                        </div>
+                        <div>
+                          <dt>Listed</dt>
+                          <dd>{formatDate(closedListing.createdAt)}</dd>
+                        </div>
+                      </dl>
+                      <p className="field-note">
+                        Sale ticket {shortAddress(closedListing.listingId)} spent
+                        {closedListing.closedTxid
+                          ? ` by ${shortAddress(closedListing.closedTxid)}.`
+                          : "."}
+                      </p>
+                      <div className="id-record-actions">
+                        {closedListing.closedTxid ? (
+                          <a
+                            className="secondary small"
+                            href={explorerTxUrl(
+                              closedListing.closedTxid,
+                              closedListing.network,
+                            )}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            <span className="button-content">
+                              <ArrowUpRight size={15} />
+                              <span>Close TX</span>
+                            </span>
+                          </a>
+                        ) : null}
+                        <a
+                          className="secondary small"
+                          href={explorerTxUrl(
+                            closedListing.listingId,
+                            closedListing.network,
+                          )}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <span className="button-content">
+                            <ArrowUpRight size={15} />
+                            <span>Listing TX</span>
+                          </span>
+                        </a>
+                      </div>
+                    </article>
+                  );
+                }
+
                 if (item.kind === "sale") {
                   const unitSats =
                     item.sale.amount > 0
@@ -27694,6 +27989,9 @@ function TokenMarketplacePanel({
               </p>
             </div>
           )}
+          {tokenMarketLogPageLoading ? (
+            <p className="field-note">Loading full token market history...</p>
+          ) : null}
           <PaginationControls
             label="Token sales and listings"
             onPageChange={setTokenMarketLogPageIndex}
@@ -27742,6 +28040,7 @@ function MarketplaceApp({
   setManagedIdName,
   status,
   submitPurchase,
+  tokenClosedListings,
   tokenListings,
   tokenMints,
   tokenSales,
@@ -27792,6 +28091,7 @@ function MarketplaceApp({
   submitPurchase: (
     event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
   ) => void;
+  tokenClosedListings: PowTokenClosedListing[];
   tokenListings: PowTokenListing[];
   tokenMints: PowTokenMint[];
   tokenSales: PowTokenSale[];
@@ -28063,6 +28363,7 @@ function MarketplaceApp({
             btcUsd={btcUsd}
             busy={busy}
             buyListing={buyTokenListing}
+            closedListings={tokenClosedListings}
             feeRate={feeRate}
             listings={tokenListings}
             mints={tokenMints}
@@ -28116,6 +28417,7 @@ function MarketplaceWorkspace({
   status,
   submitPurchase,
   buyTokenListing,
+  tokenClosedListings,
   tokenListings,
   tokenMints,
   tokenSales,
@@ -28164,6 +28466,7 @@ function MarketplaceWorkspace({
     event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
   ) => void;
   buyTokenListing: (listing: PowTokenListing) => void;
+  tokenClosedListings: PowTokenClosedListing[];
   tokenListings: PowTokenListing[];
   tokenMints: PowTokenMint[];
   tokenSales: PowTokenSale[];
@@ -28424,6 +28727,7 @@ function MarketplaceWorkspace({
           btcUsd={btcUsd}
           busy={busy}
           buyListing={buyTokenListing}
+          closedListings={tokenClosedListings}
           computerMode
           feeRate={feeRate}
           listings={tokenListings}

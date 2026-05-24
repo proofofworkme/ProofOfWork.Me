@@ -80,6 +80,14 @@ expectAll("real paginated history contract is present", server, [
   /\/api\/v1\/token-history/,
 ]);
 
+expectAll("token market history paginates closed listings and sales", server, [
+  /function tokenMarketLogItemsFromState\(/,
+  /kind:\s*"closed-listing"/,
+  /\["closedlistings",\s*"closedListings"\]/,
+  /\["market-log",\s*"market-log"\]/,
+  /safeKind\s*===\s*"market-log"/,
+]);
+
 expectAll("frontend shows live freshness metadata", app, [
   /indexedThroughBlock\?:\s*number/,
   /Refreshed \$\{formatDate\(indexedAt\)\}/,
@@ -103,6 +111,15 @@ expectAll("marketplace sort modes cover price and arb", app, [
   /"arb-asc"/,
   /sortTokenListings\(/,
   /sortTokenMarketplaceRows\(/,
+]);
+
+expectAll("token marketplace log uses API-backed pagination", app, [
+  /type TokenMarketLogItem\s*=/,
+  /kind:\s*"closed-listing"/,
+  /fetchTokenHistoryPage<TokenMarketLogItem>\(network,\s*"market-log"/,
+  /tokenMarketLogDataVersion/,
+  /historyPageToPagedItems\(/,
+  /Token Sales & Listings Log/,
 ]);
 
 expect(

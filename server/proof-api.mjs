@@ -771,6 +771,10 @@ async function safeRegistryPayload(network) {
 
 function tokenPayloadMetrics(payload) {
   return {
+    closedListings: Math.max(
+      safeStatNumber(payload, "closedListings"),
+      Array.isArray(payload?.closedListings) ? payload.closedListings.length : 0,
+    ),
     confirmedMints: Math.max(
       safeStatNumber(payload, "confirmedMints"),
       confirmedItemCount(payload?.mints),
@@ -2838,6 +2842,80 @@ function sortClosedTokenListings(listings) {
   );
 }
 
+function tokenMarketLogItemConfirmed(item) {
+  if (item?.kind === "closed-listing") {
+    return Boolean(item.closedListing?.closedConfirmed);
+  }
+  if (item?.kind === "sale") {
+    return Boolean(item.sale?.confirmed);
+  }
+  return Boolean(item?.listing?.confirmed);
+}
+
+function tokenMarketLogItemCreatedAt(item) {
+  if (item?.kind === "closed-listing") {
+    return String(
+      item.closedListing?.closedAt ?? item.closedListing?.createdAt ?? "",
+    );
+  }
+  if (item?.kind === "sale") {
+    return String(item.sale?.createdAt ?? "");
+  }
+  return String(item?.listing?.createdAt ?? "");
+}
+
+function tokenMarketLogItemTxid(item) {
+  if (item?.kind === "closed-listing") {
+    return String(
+      item.closedListing?.closedTxid ?? item.closedListing?.listingId ?? "",
+    );
+  }
+  if (item?.kind === "sale") {
+    return String(item.sale?.txid ?? "");
+  }
+  return String(item?.listing?.listingId ?? "");
+}
+
+function sortTokenMarketLogItems(items) {
+  return [...items].sort(
+    (left, right) =>
+      Number(tokenMarketLogItemConfirmed(right)) -
+        Number(tokenMarketLogItemConfirmed(left)) ||
+      Date.parse(tokenMarketLogItemCreatedAt(right)) -
+        Date.parse(tokenMarketLogItemCreatedAt(left)) ||
+      tokenMarketLogItemTxid(left).localeCompare(tokenMarketLogItemTxid(right)),
+  );
+}
+
+function tokenMarketLogItemsFromState(state) {
+  const listings = Array.isArray(state?.listings) ? state.listings : [];
+  const closedListings = Array.isArray(state?.closedListings)
+    ? state.closedListings
+    : [];
+  const sales = Array.isArray(state?.sales) ? state.sales : [];
+
+  return sortTokenMarketLogItems([
+    ...listings.map((listing) => ({
+      createdAt: listing.createdAt,
+      kind: "listing",
+      listing,
+      txid: listing.listingId,
+    })),
+    ...closedListings.map((closedListing) => ({
+      closedListing,
+      createdAt: closedListing.closedAt ?? closedListing.createdAt,
+      kind: "closed-listing",
+      txid: closedListing.closedTxid || closedListing.listingId,
+    })),
+    ...sales.map((sale) => ({
+      createdAt: sale.createdAt,
+      kind: "sale",
+      sale,
+      txid: sale.txid,
+    })),
+  ]);
+}
+
 async function tokenPayloadWithSpendableListings(payload, network) {
   if (!payload || !Array.isArray(payload.listings)) {
     return payload;
@@ -3166,6 +3244,24 @@ function tokenStateFromTransactions(
   const spendableBalanceFor = (tokenId, ownerAddress) =>
     (balances.get(balanceKeyFor(tokenId, ownerAddress)) ?? 0) -
     reservedBalanceFor(tokenId, ownerAddress);
+  const closeListing = (listing, event) => {
+    if (
+      closedListings.some(
+        (closed) =>
+          closed.listingId === listing.listingId &&
+          closed.closedTxid === event.txid,
+      )
+    ) {
+      return;
+    }
+
+    closedListings.push({
+      ...listing,
+      closedAt: event.createdAt,
+      closedConfirmed: event.confirmed,
+      closedTxid: event.txid,
+    });
+  };
   const closeListingsSpentByEvent = (spentOutpoints, event) => {
     for (const [listingId, listing] of [...listings.entries()]) {
       if (!spendsTokenListingAnchor(spentOutpoints, listing)) {
@@ -3173,12 +3269,7 @@ function tokenStateFromTransactions(
       }
 
       listings.delete(listingId);
-      closedListings.push({
-        ...listing,
-        closedAt: event.createdAt,
-        closedConfirmed: event.confirmed,
-        closedTxid: event.txid,
-      });
+      closeListing(listing, event);
     }
   };
 
@@ -3398,6 +3489,11 @@ function tokenStateFromTransactions(
           }
 
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+          closeListing(listing, {
+            confirmed,
+            createdAt,
+            txid,
+          });
           listings.delete(listing.listingId);
           continue;
         }
@@ -3430,6 +3526,11 @@ function tokenStateFromTransactions(
           }
 
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+          closeListing(listing, {
+            confirmed,
+            createdAt,
+            txid,
+          });
           listings.delete(listing.listingId);
           if (confirmed) {
             const sellerBalance = balances.get(sellerBalanceKey) ?? 0;
@@ -6703,11 +6804,12 @@ function recentByCreatedAt(items, limit = SUMMARY_ACTIVITY_LIMIT) {
     .slice()
     .sort(
       (left, right) =>
-        Number(Boolean(right?.confirmed)) - Number(Boolean(left?.confirmed)) ||
-        Date.parse(String(right?.createdAt ?? "")) -
-          Date.parse(String(left?.createdAt ?? "")) ||
-        String(left?.txid ?? left?.listingId ?? "").localeCompare(
-          String(right?.txid ?? right?.listingId ?? ""),
+        Number(Boolean(right?.closedConfirmed ?? right?.confirmed)) -
+          Number(Boolean(left?.closedConfirmed ?? left?.confirmed)) ||
+        Date.parse(String(right?.closedAt ?? right?.createdAt ?? "")) -
+          Date.parse(String(left?.closedAt ?? left?.createdAt ?? "")) ||
+        String(left?.closedTxid ?? left?.txid ?? left?.listingId ?? "").localeCompare(
+          String(right?.closedTxid ?? right?.txid ?? right?.listingId ?? ""),
         ),
     )
     .slice(0, Math.max(0, limit));
@@ -7678,18 +7780,28 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
   const payload = fresh
     ? await safeTokenPayload(network, scope)
     : await fastTokenPayloadSnapshot(network, scope);
-  const safeKind = new Set([
-    "holders",
-    "closedListings",
-    "listings",
-    "mints",
-    "sales",
-    "tokens",
-    "transfers",
-  ]).has(kind)
-    ? kind
-    : "mints";
-  const items = payload[safeKind] ?? [];
+  const kindMap = new Map([
+    ["holders", "holders"],
+    ["closedlistings", "closedListings"],
+    ["closed-listings", "closedListings"],
+    ["closed_listing", "closedListings"],
+    ["closed-listing", "closedListings"],
+    ["listings", "listings"],
+    ["marketlog", "market-log"],
+    ["market-log", "market-log"],
+    ["market_log", "market-log"],
+    ["tokenmarketlog", "market-log"],
+    ["token-market-log", "market-log"],
+    ["mints", "mints"],
+    ["sales", "sales"],
+    ["tokens", "tokens"],
+    ["transfers", "transfers"],
+  ]);
+  const safeKind = kindMap.get(kind) ?? "mints";
+  const items =
+    safeKind === "market-log"
+      ? tokenMarketLogItemsFromState(payload)
+      : (payload[safeKind] ?? []);
 
   return paginatedHistoryPayload({
     indexedAt: payload.indexedAt ?? new Date().toISOString(),
