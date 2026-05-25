@@ -7945,6 +7945,41 @@ function confirmedActivityFlowSats(confirmedActivity, kinds) {
     .reduce((total, item) => total + activityAmountSats(item), 0);
 }
 
+function tokenStateWithScopedTokenOverride(tokenState, scopedState, tokenId) {
+  if (!scopedState || !tokenId) {
+    return tokenState;
+  }
+
+  const scopedTokens = Array.isArray(scopedState.tokens)
+    ? scopedState.tokens.filter((item) => item.tokenId === tokenId)
+    : [];
+  if (scopedTokens.length === 0) {
+    return tokenState;
+  }
+
+  const replaceScopedItems = (globalItems, scopedItems) => [
+    ...(Array.isArray(globalItems)
+      ? globalItems.filter((item) => item.tokenId !== tokenId)
+      : []),
+    ...(Array.isArray(scopedItems)
+      ? scopedItems.filter((item) => item.tokenId === tokenId)
+      : []),
+  ];
+
+  return {
+    ...tokenState,
+    closedListings: replaceScopedItems(
+      tokenState?.closedListings,
+      scopedState.closedListings,
+    ),
+    listings: replaceScopedItems(tokenState?.listings, scopedState.listings),
+    mints: replaceScopedItems(tokenState?.mints, scopedState.mints),
+    sales: replaceScopedItems(tokenState?.sales, scopedState.sales),
+    tokens: replaceScopedItems(tokenState?.tokens, scopedState.tokens),
+    transfers: replaceScopedItems(tokenState?.transfers, scopedState.transfers),
+  };
+}
+
 function growthActualNetworkValue(
   records,
   idActivity,
@@ -8554,38 +8589,43 @@ async function workFloorPayload(network, fresh = false) {
         ? refreshTokenPayload(network, WORK_TOKEN_ID)
         : fastCachedTokenPayload(network, WORK_TOKEN_ID),
     ]);
+  const valueTokenState = tokenStateWithScopedTokenOverride(
+    tokenState,
+    workTokenState,
+    WORK_TOKEN_ID,
+  );
   const activityForGrowth =
     Array.isArray(computerActivity.activity) &&
     computerActivity.activity.length > 0
       ? computerActivity.activity
       : registryState.activity ?? [];
-  const tokenSalesForValue = Array.isArray(tokenState.sales)
-    ? tokenState.sales
+  const tokenSalesForValue = Array.isArray(valueTokenState.sales)
+    ? valueTokenState.sales
     : [];
   const confirmedComputerActions = confirmedComputerActionCount(
     registryState.records ?? [],
     activityForGrowth,
-    tokenState.tokens ?? [],
-    tokenState.mints ?? [],
-    tokenState.transfers ?? [],
+    valueTokenState.tokens ?? [],
+    valueTokenState.mints ?? [],
+    valueTokenState.transfers ?? [],
     tokenSalesForValue,
   );
   const actualValue = growthActualNetworkValue(
     registryState.records ?? [],
     activityForGrowth,
     registryState.sales ?? [],
-    tokenState.tokens ?? [],
-    tokenState.mints ?? [],
-    tokenState.transfers ?? [],
+    valueTokenState.tokens ?? [],
+    valueTokenState.mints ?? [],
+    valueTokenState.transfers ?? [],
     tokenSalesForValue,
   );
-  const globalWorkMintFlowSats = (tokenState.mints ?? [])
+  const globalWorkMintFlowSats = (valueTokenState.mints ?? [])
     .filter((mint) => mint.confirmed && mint.tokenId === WORK_TOKEN_ID)
     .reduce((total, mint) => total + mint.paidSats, 0);
   const scopedWorkMintFlowSats = (workTokenState.mints ?? [])
     .filter((mint) => mint.confirmed)
     .reduce((total, mint) => total + mint.paidSats, 0);
-  const globalWorkMintCount = (tokenState.mints ?? []).filter(
+  const globalWorkMintCount = (valueTokenState.mints ?? []).filter(
     (mint) => mint.confirmed && mint.tokenId === WORK_TOKEN_ID,
   ).length;
   const scopedWorkMintCount = (workTokenState.mints ?? []).filter(
@@ -8617,7 +8657,7 @@ async function workFloorPayload(network, fresh = false) {
       growthElapsedYears(),
     ),
   };
-  const workToken = (tokenState.tokens ?? []).find(
+  const workToken = (valueTokenState.tokens ?? []).find(
     (token) =>
       token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER,
   ) ?? (workTokenState.tokens ?? [])[0];
@@ -8628,9 +8668,9 @@ async function workFloorPayload(network, fresh = false) {
     registryState.records ?? [],
     activityForGrowth,
     registryState.sales ?? [],
-    tokenState.tokens ?? [],
-    tokenState.mints ?? [],
-    tokenState.transfers ?? [],
+    valueTokenState.tokens ?? [],
+    valueTokenState.mints ?? [],
+    valueTokenState.transfers ?? [],
     tokenSalesForValue,
     {
       startLabel: "WORK deploy",
@@ -8667,10 +8707,10 @@ async function workFloorPayload(network, fresh = false) {
     tokenFlowSats:
       actualValue.tokenCreationFlowSats + correctedTokenMintFlowSats,
     stats: {
-      confirmedTokenMints: (tokenState.mints ?? []).filter(
+      confirmedTokenMints: (valueTokenState.mints ?? []).filter(
         (mint) => mint.confirmed,
       ).length + missingWorkMintCount,
-      confirmedTokens: (tokenState.tokens ?? []).filter(
+      confirmedTokens: (valueTokenState.tokens ?? []).filter(
         (token) => token.confirmed,
       ).length,
       confirmedComputerActions,
@@ -8701,9 +8741,9 @@ async function workFloorPayload(network, fresh = false) {
       walletSats: actualValue.walletSats,
       totalSats: correctedNetworkValueSats,
       tokenTransactions:
-        tokenState.stats?.transactions ??
-        (tokenState.tokens ?? []).length +
-          (tokenState.mints ?? []).length +
+        valueTokenState.stats?.transactions ??
+        (valueTokenState.tokens ?? []).length +
+          (valueTokenState.mints ?? []).length +
           tokenSalesForValue.length,
     },
   };

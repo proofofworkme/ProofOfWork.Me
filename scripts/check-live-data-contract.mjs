@@ -31,10 +31,10 @@ expectAll("WORK floor oracle stays confirmed Computer value based", server, [
 ]);
 
 expectAll("WORK floor counts confirmed token sale records only", server, [
-  /const tokenSalesForValue = Array\.isArray\(tokenState\.sales\)/,
+  /const tokenSalesForValue = Array\.isArray\(valueTokenState\.sales\)/,
   /registryState\.sales/,
-  /tokenState\.transfers/,
-  /tokenState\.mints/,
+  /valueTokenState\.transfers/,
+  /valueTokenState\.mints/,
   /activityForGrowth/,
 ]);
 
@@ -50,6 +50,12 @@ expectAll("marketplace sale volume is separate from marketplace fees", server, [
   /idMarketplaceFeeSats\s*=\s*confirmedActivityFlowSats/,
   /tokenMarketplaceFeeSats\s*=\s*confirmedActivityFlowSats/,
   /marketplaceMutationFeeSats\s*=\s*marketplaceFeeSats/,
+]);
+
+expectAll("WORK floor overlays scoped WORK token truth", server, [
+  /function tokenStateWithScopedTokenOverride\(/,
+  /const valueTokenState = tokenStateWithScopedTokenOverride\(/,
+  /valueTokenState\.sales/,
 ]);
 
 expectAll("token sale-ticket fees remain confirmed network events", server, [
