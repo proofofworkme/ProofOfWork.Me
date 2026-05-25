@@ -7471,7 +7471,7 @@ async function activitySummaryPayload(network, fresh = false) {
 async function cachedWorkFloorPayload(network, fresh = false) {
   const cacheKey = `work-floor:${network}`;
   const payloadKey = `payload:work-floor:${network}`;
-  const producer = () => workFloorPayload(network, false);
+  const producer = (forceFresh = false) => workFloorPayload(network, forceFresh);
   const waitForFreshOrCached = (promise, payload) => {
     let timer;
     return Promise.race([
@@ -7481,14 +7481,14 @@ async function cachedWorkFloorPayload(network, fresh = false) {
       }),
     ]).finally(() => clearTimeout(timer));
   };
-  const startRefresh = () => {
+  const startRefresh = (forceFresh = false) => {
     const current = RESPONSE_CACHE.get(payloadKey);
     if (current?.promise) {
       return current.promise;
     }
 
     const now = Date.now();
-    const refreshPromise = producer()
+    const refreshPromise = producer(forceFresh)
       .then((payload) => {
         const body = JSON.stringify(payload);
         cacheJsonBody(
@@ -7539,7 +7539,7 @@ async function cachedWorkFloorPayload(network, fresh = false) {
   }
   if (cached?.payload && now < cached.staleUntil) {
     const refreshPromise =
-      fresh || now >= cached.expiresAt ? startRefresh() : cached.promise;
+      fresh || now >= cached.expiresAt ? startRefresh(fresh) : cached.promise;
     if (fresh && refreshPromise) {
       return waitForFreshOrCached(refreshPromise, cached.payload);
     }
@@ -7552,7 +7552,7 @@ async function cachedWorkFloorPayload(network, fresh = false) {
     return cached.promise;
   }
 
-  const refreshPromise = startRefresh();
+  const refreshPromise = startRefresh(fresh);
 
   const jsonKey = `json:${cacheKey}`;
   await hydratePersistedJsonCache(jsonKey, WORK_FLOOR_CACHE_STALE_MS);
@@ -7657,7 +7657,7 @@ async function growthSummaryPayload(network, fresh = false) {
         emptyRegistryState,
       ),
       fastGlobalActivityPayload(network),
-      fastTokenPayloadSnapshot(network),
+      fresh ? refreshTokenPayload(network) : fastTokenPayloadSnapshot(network),
       cachedWorkFloorPayload(network, fresh),
     ]);
   const registrySummary = compactRegistrySummaryPayload(registryState);
@@ -8549,8 +8549,10 @@ async function workFloorPayload(network, fresh = false) {
         emptyRegistryState,
       ),
       fastGlobalActivityPayload(network),
-      fastCachedTokenPayload(network),
-      fastCachedTokenPayload(network, WORK_TOKEN_ID),
+      fresh ? refreshTokenPayload(network) : fastCachedTokenPayload(network),
+      fresh
+        ? refreshTokenPayload(network, WORK_TOKEN_ID)
+        : fastCachedTokenPayload(network, WORK_TOKEN_ID),
     ]);
   const activityForGrowth =
     Array.isArray(computerActivity.activity) &&

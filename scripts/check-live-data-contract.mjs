@@ -97,6 +97,8 @@ expectAll("token marketplace summaries refresh from live token truth", server, [
   /cacheTokenPayload\(network,\s*scope,\s*payload\)/,
   /function shouldAutoRefreshTokenScope\([^)]*\)\s*{\s*return true;/s,
   /fresh\s*\?\s*await refreshTokenPayload\(network,\s*scope\)/,
+  /fresh\s*\?\s*refreshTokenPayload\(network\)\s*:\s*fastCachedTokenPayload\(network\)/,
+  /fresh\s*\?\s*refreshTokenPayload\(network\)\s*:\s*fastTokenPayloadSnapshot\(network\)/,
   /tokenSummaryPayload\(network,\s*WORK_TOKEN_ID,\s*fresh\)/,
   /tokenSummaryPayload\(network,\s*"",\s*fresh\)/,
   /async function tokenHistoryPayload[\s\S]*fresh\s*\?\s*await refreshTokenPayload\(network,\s*scope\)/,
