@@ -7645,7 +7645,7 @@ async function growthSummaryPayload(network, fresh = false) {
       : registryState.activity ?? [];
   const tokenMints = tokenState.mints ?? [];
   const tokenTransfers = tokenState.transfers ?? [];
-  const tokenSales = tokenSalesIncludingSealedClosedListings(tokenState);
+  const tokenSales = Array.isArray(tokenState.sales) ? tokenState.sales : [];
   const actualValue =
     workFloor.actualValue ??
     growthActualNetworkValue(
@@ -8015,62 +8015,6 @@ function growthActualNetworkValue(
     totalSats,
     totalUsd: growthSatsToUsdAtYears(totalSats, years),
   };
-}
-
-function tokenSalesIncludingSealedClosedListings(tokenState) {
-  const tokenSales = Array.isArray(tokenState?.sales) ? tokenState.sales : [];
-  const saleListingIds = new Set(
-    tokenSales
-      .map((sale) => sale.listingId)
-      .filter((listingId) => typeof listingId === "string" && listingId),
-  );
-  const saleTxids = new Set(
-    tokenSales
-      .map((sale) => sale.txid)
-      .filter((txid) => typeof txid === "string" && txid),
-  );
-  const sealedClosedSales = (
-    Array.isArray(tokenState?.closedListings) ? tokenState.closedListings : []
-  ).flatMap((listing) => {
-    const closedTxid =
-      typeof listing.closedTxid === "string" ? listing.closedTxid : "";
-    const sealed = typeof listing.sealTxid === "string" && listing.sealTxid;
-    if (
-      !sealed ||
-      !listing.closedConfirmed ||
-      !closedTxid ||
-      saleListingIds.has(listing.listingId) ||
-      saleTxids.has(closedTxid)
-    ) {
-      return [];
-    }
-
-    return [
-      {
-        amount: listing.amount,
-        buyerAddress: "",
-        confirmed: Boolean(listing.closedConfirmed),
-        createdAt: listing.closedAt ?? listing.createdAt,
-        inferredFromClosedListing: true,
-        listingId: listing.listingId,
-        network: listing.network,
-        paidSats: listing.priceSats + TOKEN_MIN_MUTATION_PRICE_SATS,
-        priceSats: listing.priceSats,
-        registryAddress: listing.registryAddress,
-        sellerAddress: listing.sellerAddress,
-        ticker: listing.ticker,
-        tokenId: listing.tokenId,
-        txid: closedTxid,
-      },
-    ];
-  });
-
-  return [...tokenSales, ...sealedClosedSales].sort(
-    (left, right) =>
-      Number(right.confirmed) - Number(left.confirmed) ||
-      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      left.txid.localeCompare(right.txid),
-  );
 }
 
 function compactGrowthEventTimes(eventTimes) {
@@ -8523,7 +8467,9 @@ async function workFloorPayload(network, fresh = false) {
     computerActivity.activity.length > 0
       ? computerActivity.activity
       : registryState.activity ?? [];
-  const tokenSalesForValue = tokenSalesIncludingSealedClosedListings(tokenState);
+  const tokenSalesForValue = Array.isArray(tokenState.sales)
+    ? tokenState.sales
+    : [];
   const confirmedComputerActions = confirmedComputerActionCount(
     registryState.records ?? [],
     activityForGrowth,

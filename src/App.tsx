@@ -14447,6 +14447,17 @@ export default function App() {
         const marketplaceSummary = await refreshMarketplaceSummary(true, fresh);
         tokenState = marketplaceSummary?.token;
         floorQuote = includeWorkFloor ? marketplaceSummary?.workFloor : undefined;
+        if (!tokenState) {
+          const [fallbackTokenState, , fallbackFloorQuote] = await Promise.all([
+            refreshToken(true, fresh),
+            refreshTokenBtcUsd(fresh),
+            includeWorkFloor && !floorQuote
+              ? refreshWorkFloor(true, fresh)
+              : Promise.resolve(undefined),
+          ]);
+          tokenState = fallbackTokenState;
+          floorQuote = floorQuote ?? fallbackFloorQuote;
+        }
       } else {
         [tokenState, , floorQuote] = await Promise.all([
           refreshToken(true, fresh),

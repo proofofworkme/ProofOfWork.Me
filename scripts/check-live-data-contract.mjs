@@ -30,13 +30,19 @@ expectAll("WORK floor oracle stays confirmed Computer value based", server, [
   /networkValueSats:\s*correctedNetworkValueSats/,
 ]);
 
-expectAll("WORK floor is not separated from confirmed marketplace/log events", server, [
-  /tokenSalesIncludingSealedClosedListings\(tokenState\)/,
+expectAll("WORK floor counts confirmed token sale records only", server, [
+  /const tokenSalesForValue = Array\.isArray\(tokenState\.sales\)/,
   /registryState\.sales/,
   /tokenState\.transfers/,
   /tokenState\.mints/,
   /activityForGrowth/,
 ]);
+
+expect(
+  "closed token listings are not synthetic growth sales",
+  !/tokenSalesIncludingSealedClosedListings/.test(server) &&
+    !/inferredFromClosedListing/.test(server),
+);
 
 expectAll("heavy live reads are background-throttled", server, [
   /BACKGROUND_ACTIVITY_REFRESH_INTERVAL_MS/,
