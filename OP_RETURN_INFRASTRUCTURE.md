@@ -145,7 +145,12 @@ POST /api/v1/broadcast/tx
 POST /api/v1/broadcast/slipstream
 GET /api/v1/token?network=livenet
 GET /api/v1/token-summary?network=livenet
+GET /api/v1/token-history?network=livenet
 GET /api/v1/work-floor?network=livenet
+GET /api/v1/work-summary?network=livenet
+GET /api/v1/marketplace-summary?network=livenet
+GET /api/v1/log-history?network=livenet
+GET /api/v1/growth-summary?network=livenet
 GET /api/v1/prices/btc-usd?network=livenet
 GET /api/v1/rush?network=livenet
 GET /api/v1/rush?network=testnet4
@@ -200,6 +205,9 @@ The token endpoint:
 - Requires transfer payments of 546 sats to the token registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visibility only.
 - Reconstructs token listings from `pwt1:list5:<sale-ticket-json-base64url>`, token seals from `pwt1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>`, delistings from `pwt1:delist5:<listing-txid>`, and buyer-funded purchases from `pwt1:buy5:<listing-txid>:<buyer-address>`.
 - Token listings reserve the seller's spendable balance, create a 546 sat seller-controlled sale-ticket output, and require the standard 546 sat token registry mutation payment before OP_RETURN. Buys must spend the seller ticket, pay the seller the listed price plus ticket value, and pay the token registry mutation fee.
+- Active token listings are filtered by sale-ticket outspend state. If the ticket output is spent, the listing is closed even when a cached snapshot is otherwise stale; if the spend is a valid `buy5`, the event also appears as a token sale.
+- Token market history merges active listings, closed listings, and settled sales into a paginated `market-log` view ordered by confirmation status, event time, and txid. It is not sorted by price or arbitrage.
+- Fresh token reads, token summary reads, token history reads, WORK summaries, and marketplace summaries refresh the shared token payload cache before returning. Background refresh keeps fast first paint useful, but explicit refresh must converge on current node truth.
 - Token UI surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per token and per mint from BTC/USD.
 - `token.proofofwork.me` is the create/mint surface, `tokens.proofofwork.me` redirects to it, `wallet.proofofwork.me` is the token wallet/transfer/listing/delisting surface, and `work.proofofwork.me` is the dedicated WORK dashboard.
 - WORK is reserved for canonical token id `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`. Official indexers and creation UI reject any non-canonical token create whose ticker contains `WORK`, and exclude blocked scam creator address `bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl`.

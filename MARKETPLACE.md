@@ -82,6 +82,39 @@ Wallet and Marketplace both use this model. Wallet is the connected-address
 ownership/action surface; Marketplace is the public discovery and purchase
 surface.
 
+## Order Books And Logs
+
+Marketplace books should stay asset-agnostic as new product classes are added.
+For any sale-ticket product, the active book should expose:
+
+- All listings
+- Sealed listings
+- Unsealed listings
+
+Sealed listings are buyable when the seller signature and sale-ticket anchor are
+valid. Unsealed listings are visible records, but not yet buyable. Active books
+may sort by price high/low and arbitrage high/low when a reference price exists.
+
+Sales and listing logs are different from active books. They should be ordered
+by confirmation status and event time, newest first, then txid for stable replay.
+They should not use price or arbitrage sorting. Logs must be paginated so every
+listing, seal, closure, delisting, and purchase remains inspectable.
+
+## Spent Ticket Closure
+
+The sale-ticket UTXO is the settlement primitive. Once that outpoint is spent,
+the listing is no longer active.
+
+- A valid `buy5` spend closes the listing and records a sale.
+- A valid `delist5` spend closes the listing as a cancellation.
+- Any other observed spend still removes the listing from the active book and
+  records a closed-listing event for audit.
+
+Pending outspends are best-effort mempool visibility. Confirmed outspends are
+canonical. Summary and history endpoints must refresh token state on explicit
+refresh so a spent ticket cannot remain displayed as an active listing after the
+chain has moved.
+
 ## Sealed Listings
 
 `pwid1:list5` and `pwid1:seal5` are split because the listing txid does not exist until after the listing transaction broadcasts.
@@ -115,6 +148,7 @@ Automatic invalidation rules:
 
 - Any confirmed `pwid1:t` ownership transfer cancels active listings for that ID.
 - Any confirmed `pwid1:buy5` marketplace transfer cancels active listings for that ID.
+- Any confirmed token `pwt1:buy5` sale-ticket spend closes the active token listing and records the sale.
 - Expired sale authorizations are ignored by the resolver.
 - Delistings cancel the referenced listing after confirmation.
 

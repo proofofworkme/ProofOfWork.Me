@@ -1,12 +1,18 @@
 # ProofOfWork.Me Bitcoin Computer Model
 
-Generated on 2026-05-13. Operational note updated on 2026-05-22.
+Generated on 2026-05-13. Operational note updated on 2026-05-24.
 
 This is the singular forward scenario model for ProofOfWork.Me. Current live
 BTC/USD, WORK floor, token flow, and real network-value totals are read from the
 production ProofOfWork node/API and displayed in `growth.proofofwork.me` and
 `work.proofofwork.me`; do not treat the generated static USD snapshots below as
 live market data.
+
+Current production surfaces use fast cached first paint plus explicit fresh
+refresh against the first-party node/API. A refresh that touches Marketplace,
+WORK, token summaries, or token history must update the shared token payload so
+spent sale tickets, confirmed token sales, and WORK floor inputs converge across
+all app surfaces.
 
 All prior standalone charts, product-only markdown models, and old projection files are deprecated. This model measures:
 
@@ -95,9 +101,12 @@ https://coinmarketcap.com/historical/20160511/
 https://portfolioslab.com/tools/stock-comparison/BTC-USD/SPY
 ```
 
-### ProofOfWork.Me On-Chain Inputs
+### Generated ProofOfWork.Me On-Chain Seed Inputs
 
-These are from confirmed ProofOfWork.Me registry/mail/file data already modeled in this repo.
+These are historical generated seed inputs from confirmed ProofOfWork.Me
+registry/mail/file data already modeled in this repo. They are preserved so the
+static forward scenario remains reproducible. They are not the current live
+Growth or WORK values.
 
 ```text
 Confirmed PowIDs: 94

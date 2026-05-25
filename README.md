@@ -141,6 +141,9 @@ Launch invariants for future developers/agents:
 - Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Exposes Tokens as a mainnet-only creation and mint surface, a Wallet surface for balances/transfers/listing actions, and a dedicated WORK token dashboard. Token creation pays the built-in index fee to `tokens@proofofwork.me`; mints, transfers, listings, seals, delistings, and buys pay each token's own registry at the owner-set price or mutation fee.
+- Filters active marketplace listings by sale-ticket outspend state, so a spent ticket leaves the active book even if a cached summary snapshot is still warming.
+- Shows token market books with All, Sealed, and Unsealed views where sale-ticket status applies; active books can sort by price or arbitrage, while sales/listing logs stay ordered by confirmation time.
+- Paginates token sales/listing logs from the API so every listing, closure, and sale remains inspectable instead of being limited to a preview.
 - Token mint surfaces treat confirmed history as canonical mint-out, but pause user mint actions when confirmed plus pending mints would fill the remaining supply. Pending mempool records are not final, but the UI avoids letting users pay for likely overfill attempts.
 - Stages RUSH as an explicit development/protocol surface behind `?rush=1` or `VITE_RUSH_ONLY=1`. It is not part of shared public navigation or production domain routing until separately approved for launch.
 - Exposes Growth as a public dashboard for modeled Bitcoin Computer network value versus real confirmed registry, log, file, marketplace, and Token value metrics.
@@ -148,7 +151,7 @@ Launch invariants for future developers/agents:
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
 - Reads registry, mail, files, pagination, wallet UTXOs, transaction preparation data, broadcast status, live BTC/USD, WORK floor, and app metrics through the first-party ProofOfWork OP_RETURN API.
-- Uses explicit pagination for registry, marketplace, token, wallet, log, and growth data views so large confirmed datasets remain inspectable without relying on broken infinite scroll.
+- Uses explicit pagination for registry, marketplace, token, wallet, log, and growth data views so large confirmed datasets remain inspectable without relying on infinite scroll.
 - Treats ProofOfWork IDs as case-insensitive names capped by the aggregate 100 KB OP_RETURN transaction limit, not arbitrary character rules.
 - Resolves ProofOfWork IDs in the compose recipient field only after a confirmed registry record exists; pending IDs cannot receive routed mail yet.
 - Re-checks the full registry immediately before broadcasting an ID registration to block stale duplicate claims.
@@ -197,6 +200,8 @@ Current production behavior:
 - Token ids are creation txids. Mint events use `pwt1:mint:<token-create-txid>:<amount>` and must pay the token registry address before OP_RETURN.
 - Token transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` and require a 546 sat mutation payment to that same token registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visible but not canonical.
 - The Token tab inside Marketplace is the shared market surface for token trades. Token `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the token registry mutation fee.
+- Token active listings are spend-state aware. A sale-ticket outpoint spend closes the listing; if the spend is a valid `pwt1:buy5`, the sale appears in token sales, token market logs, Growth, and summary endpoints after refresh.
+- Fresh reads for token summaries, token histories, marketplace summaries, and WORK summaries refresh the shared token payload cache before returning. Stale snapshots are acceptable for first paint only, not after an explicit refresh.
 - Token mint prices are owner-set with a 546 sat minimum. ProofOfWork does not take a global fee on mints; the mint price goes to that token's registry address.
 - Token surfaces show the starting unit price as mint price divided by mint amount, plus live node-backed USD per token and per mint from BTC/USD.
 - `wallet.proofofwork.me` shows connected-address token balances, transfer logs, active owned listings, sale history, and non-custodial transfers/listings/delistings through UniSat. `work.proofofwork.me` shows the WORK dashboard: mint progress, holders, token facts, mint action, mint log, live floor, and confirmed floor history. `token.proofofwork.me` stays focused on token creation and mint selection.
