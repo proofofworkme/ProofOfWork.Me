@@ -7170,6 +7170,10 @@ function tokenAggregateSummaries(payload) {
     }
 
     current.openListings += 1;
+    if (!tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)) {
+      continue;
+    }
+
     const ask = listing.amount > 0 ? listing.priceSats / listing.amount : 0;
     if (ask > 0) {
       current.lowestAskPricePerToken =

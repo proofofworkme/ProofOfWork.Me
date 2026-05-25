@@ -21354,6 +21354,9 @@ function TokenWalletWorkspace({
           item.tokenId === selectedListToken.tokenId,
       )
     : [];
+  const selectedTokenSealedListings = selectedTokenListings.filter((item) =>
+    tokenSaleAuthorizationUsesSaleTicketAnchor(item.saleAuthorization),
+  );
   const selectedTokenSales = selectedListToken
     ? tokenSales.filter(
         (sale) =>
@@ -21362,7 +21365,7 @@ function TokenWalletWorkspace({
           sale.confirmed,
       )
     : [];
-  const lowestAskSats = selectedTokenListings.reduce((lowest, item) => {
+  const lowestAskSats = selectedTokenSealedListings.reduce((lowest, item) => {
     const unit = item.amount > 0 ? item.priceSats / item.amount : 0;
     if (unit <= 0) {
       return lowest;
@@ -26930,8 +26933,16 @@ function tokenMarketplaceRowsFor({
     }
 
     current.openListings += 1;
+    if (!tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)) {
+      continue;
+    }
+
     const ask =
       listing.amount > 0 ? listing.priceSats / listing.amount : 0;
+    if (ask <= 0) {
+      continue;
+    }
+
     current.lowestAskPricePerToken =
       current.lowestAskPricePerToken > 0
         ? Math.min(current.lowestAskPricePerToken, ask)
