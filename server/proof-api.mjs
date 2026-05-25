@@ -7585,7 +7585,7 @@ async function cachedWorkFloorPayload(network, fresh = false) {
 async function workSummaryPayload(network, fresh = false) {
   const [token, floor] = await Promise.all([
     tokenSummaryPayload(network, WORK_TOKEN_ID, fresh),
-    cachedWorkFloorPayload(network, fresh),
+    fresh ? workFloorPayload(network, true) : cachedWorkFloorPayload(network, false),
   ]);
   return {
     floor,
@@ -7610,7 +7610,7 @@ async function marketplaceSummaryPayload(network, fresh = false) {
   const [registry, token, floor] = await Promise.all([
     registrySummaryPayload(network, false),
     tokenSummaryPayload(network, "", fresh),
-    cachedWorkFloorPayload(network, fresh),
+    fresh ? workFloorPayload(network, true) : cachedWorkFloorPayload(network, false),
   ]);
   return {
     indexedAt: new Date().toISOString(),
@@ -7658,7 +7658,7 @@ async function growthSummaryPayload(network, fresh = false) {
       ),
       fastGlobalActivityPayload(network),
       fresh ? refreshTokenPayload(network) : fastTokenPayloadSnapshot(network),
-      cachedWorkFloorPayload(network, fresh),
+      fresh ? workFloorPayload(network, true) : cachedWorkFloorPayload(network, false),
     ]);
   const registrySummary = compactRegistrySummaryPayload(registryState);
   const activitySummary = compactActivitySummaryPayload(computerActivity);
@@ -9179,7 +9179,7 @@ async function handleRequest(request, response) {
         jsonResponse(
           response,
           200,
-          await cachedWorkFloorPayload(network, true),
+          await workFloorPayload(network, true),
           FRESH_READ_CACHE_CONTROL,
         );
       } else {
