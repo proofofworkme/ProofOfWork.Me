@@ -44,6 +44,21 @@ expect(
     !/inferredFromClosedListing/.test(server),
 );
 
+expectAll("marketplace sale volume is separate from marketplace fees", server, [
+  /marketplaceSaleVolumeSats\s*=\s*idMarketplaceVolumeSats\s*\+\s*tokenSaleVolumeSats/,
+  /marketplaceVolumeSats\s*=\s*marketplaceSaleVolumeSats/,
+  /idMarketplaceFeeSats\s*=\s*confirmedActivityFlowSats/,
+  /tokenMarketplaceFeeSats\s*=\s*confirmedActivityFlowSats/,
+  /marketplaceMutationFeeSats\s*=\s*marketplaceFeeSats/,
+]);
+
+expectAll("token sale-ticket fees remain confirmed network events", server, [
+  /sealAt:\s*createdAt/,
+  /sealConfirmed:\s*confirmed/,
+  /kind:\s*"token-listing-sealed"/,
+  /"token-listing-closed"/,
+]);
+
 expectAll("heavy live reads are background-throttled", server, [
   /BACKGROUND_ACTIVITY_REFRESH_INTERVAL_MS/,
   /BACKGROUND_TOKEN_REFRESH_INTERVAL_MS/,

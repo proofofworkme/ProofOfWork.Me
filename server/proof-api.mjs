@@ -3472,6 +3472,9 @@ function tokenStateFromTransactions(
           listings.set(listing.listingId, {
             ...listing,
             saleAuthorization: authorization,
+            sealAt: createdAt,
+            sealConfirmed: confirmed,
+            sealDataBytes: proofProtocolDataBytesForVout(vout),
             sealTxid: txid,
           });
           continue;
@@ -5103,6 +5106,46 @@ function tokenActivityItemsFromState(state, indexAddress) {
       txid: listing.listingId,
     };
   });
+  const sealedListings = [];
+  const seenSealTxids = new Set();
+  for (const listing of [
+    ...(state.listings ?? []),
+    ...(state.closedListings ?? []),
+  ]) {
+    const sealTxid =
+      typeof listing.sealTxid === "string" ? listing.sealTxid : "";
+    if (!sealTxid || seenSealTxids.has(sealTxid)) {
+      continue;
+    }
+    seenSealTxids.add(sealTxid);
+    sealedListings.push({
+      amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+      actor: listing.sellerAddress,
+      confirmed: Boolean(listing.sealConfirmed ?? listing.confirmed),
+      counterparty: listing.registryAddress,
+      createdAt: listing.sealAt ?? listing.createdAt,
+      dataBytes: listing.sealDataBytes ?? 0,
+      description: `${listing.amount.toLocaleString()} ${listing.ticker} sale ticket sealed for listing ${shortAddress(listing.listingId)}.`,
+      detail: `Listing ${shortAddress(listing.listingId)}`,
+      kind: "token-listing-sealed",
+      listingId: listing.listingId,
+      network: listing.network,
+      tags: [
+        activityStatusTag(Boolean(listing.sealConfirmed ?? listing.confirmed)),
+        networkLabel(listing.network),
+        "Token",
+        "Marketplace",
+        "Seal",
+        listing.ticker,
+        `${listing.amount.toLocaleString()} ${listing.ticker}`,
+        `${TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} registry sats`,
+      ],
+      title: listing.sealConfirmed === false
+        ? "Token sale-ticket seal pending"
+        : "Token sale ticket sealed",
+      txid: sealTxid,
+    });
+  }
 
   const closedListings = (state.closedListings ?? []).map((listing) => {
     const closedTxid =
@@ -5169,6 +5212,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     ...mints,
     ...transfers,
     ...listings,
+    ...sealedListings,
     ...closedListings,
     ...sales,
   ];
@@ -7895,6 +7939,12 @@ function unbucketedConfirmedComputerLogFlowSats(confirmedActivity) {
     .reduce((total, item) => total + activityAmountSats(item), 0);
 }
 
+function confirmedActivityFlowSats(confirmedActivity, kinds) {
+  return confirmedActivity
+    .filter((item) => kinds.has(item.kind))
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+}
+
 function growthActualNetworkValue(
   records,
   idActivity,
@@ -7945,11 +7995,29 @@ function growthActualNetworkValue(
     (total, sale) => total + sale.priceSats,
     0,
   );
-  const tokenSaleFlowSats = confirmedTokenSales.reduce(
+  const tokenSaleVolumeSats = confirmedTokenSales.reduce(
     (total, sale) => total + sale.priceSats,
     0,
   );
-  const marketplaceVolumeSats = idMarketplaceVolumeSats + tokenSaleFlowSats;
+  const tokenSaleFlowSats = tokenSaleVolumeSats;
+  const marketplaceSaleVolumeSats =
+    idMarketplaceVolumeSats + tokenSaleVolumeSats;
+  const marketplaceVolumeSats = marketplaceSaleVolumeSats;
+  const idMarketplaceFeeSats = confirmedActivityFlowSats(
+    confirmedActivity,
+    new Set(["id-list", "id-seal", "id-delist", "id-buy"]),
+  );
+  const tokenMarketplaceFeeSats = confirmedActivityFlowSats(
+    confirmedActivity,
+    new Set([
+      "token-listing",
+      "token-listing-sealed",
+      "token-listing-closed",
+    ]),
+  );
+  const marketplaceFeeSats =
+    idMarketplaceFeeSats + tokenMarketplaceFeeSats;
+  const marketplaceMutationFeeSats = marketplaceFeeSats;
   const tokenCreationFlowSats = confirmedTokens.reduce(
     (total, token) => total + token.creationFeeSats,
     0,
@@ -8003,11 +8071,18 @@ function growthActualNetworkValue(
     mailFlowSats,
     mailSats,
     marketplaceSats,
+    idMarketplaceFeeSats,
+    idMarketplaceVolumeSats,
+    marketplaceFeeSats,
+    marketplaceMutationFeeSats,
+    marketplaceSaleVolumeSats,
     marketplaceVolumeSats,
     powids,
+    tokenMarketplaceFeeSats,
     tokenCreationFlowSats,
     tokenMintFlowSats,
     tokenSaleFlowSats,
+    tokenSaleVolumeSats,
     tokenTransferFlowSats,
     tokenSats,
     walletFlowSats,
@@ -8209,6 +8284,7 @@ function growthActivityKindLabel(kind) {
     kind === "token-create" ||
     kind === "token-mint" ||
     kind === "token-listing" ||
+    kind === "token-listing-sealed" ||
     kind === "token-listing-closed" ||
     kind === "token-sale"
   ) {
@@ -8395,14 +8471,21 @@ function emptyWorkFloorPayload(network) {
       driveFlowSats: 0,
       driveSats: 0,
       idSats: 0,
+      idMarketplaceFeeSats: 0,
+      idMarketplaceVolumeSats: 0,
       mailFlowSats: 0,
       mailSats: 0,
+      marketplaceFeeSats: 0,
+      marketplaceMutationFeeSats: 0,
+      marketplaceSaleVolumeSats: 0,
       marketplaceSats: 0,
       marketplaceVolumeSats: 0,
       powids: 0,
+      tokenMarketplaceFeeSats: 0,
       tokenCreationFlowSats: 0,
       tokenMintFlowSats: 0,
       tokenSaleFlowSats: 0,
+      tokenSaleVolumeSats: 0,
       tokenTransferFlowSats: 0,
       tokenSats: 0,
       totalSats: 0,
@@ -8421,12 +8504,19 @@ function emptyWorkFloorPayload(network) {
       confirmedTokenMints: 0,
       confirmedTokens: 0,
       marketplaceVolumeSats: 0,
+      idMarketplaceFeeSats: 0,
+      idMarketplaceVolumeSats: 0,
+      marketplaceFeeSats: 0,
+      marketplaceMutationFeeSats: 0,
+      marketplaceSaleVolumeSats: 0,
+      tokenMarketplaceFeeSats: 0,
       computerEventFlowSats: 0,
       computerEventSats: 0,
       confirmedComputerActions: 0,
       tokenCreationFlowSats: 0,
       tokenMintFlowSats: 0,
       tokenSaleFlowSats: 0,
+      tokenSaleVolumeSats: 0,
       tokenTransactions: 0,
     },
   };
@@ -8591,11 +8681,18 @@ async function workFloorPayload(network, fresh = false) {
       idSats: actualValue.idSats,
       mailFlowSats: actualValue.mailFlowSats,
       mailSats: actualValue.mailSats,
+      idMarketplaceFeeSats: actualValue.idMarketplaceFeeSats,
+      idMarketplaceVolumeSats: actualValue.idMarketplaceVolumeSats,
+      marketplaceFeeSats: actualValue.marketplaceFeeSats,
+      marketplaceMutationFeeSats: actualValue.marketplaceMutationFeeSats,
+      marketplaceSaleVolumeSats: actualValue.marketplaceSaleVolumeSats,
       marketplaceSats: actualValue.marketplaceSats,
       marketplaceVolumeSats: actualValue.marketplaceVolumeSats,
+      tokenMarketplaceFeeSats: actualValue.tokenMarketplaceFeeSats,
       tokenCreationFlowSats: actualValue.tokenCreationFlowSats,
       tokenMintFlowSats: correctedTokenMintFlowSats,
       tokenSaleFlowSats: actualValue.tokenSaleFlowSats,
+      tokenSaleVolumeSats: actualValue.tokenSaleVolumeSats,
       tokenSats: correctedTokenSats,
       tokenTransferFlowSats: actualValue.tokenTransferFlowSats,
       walletFlowSats: actualValue.walletFlowSats,

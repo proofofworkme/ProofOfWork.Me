@@ -579,6 +579,9 @@ type PowTokenListing = {
   priceSats: number;
   registryAddress: string;
   saleAuthorization: PowTokenSaleAuthorization;
+  sealAt?: string;
+  sealConfirmed?: boolean;
+  sealDataBytes?: number;
   sealTxid?: string;
   sellerAddress: string;
   ticker: string;
@@ -690,6 +693,7 @@ type PowActivityKind =
   | "token-create"
   | "token-mint"
   | "token-listing"
+  | "token-listing-sealed"
   | "token-listing-closed"
   | "token-sale"
   | "token-transfer"
@@ -1232,14 +1236,21 @@ type GrowthActualNetworkValue = {
   computerEventSats: number;
   driveFlowSats: number;
   driveSats: number;
+  idMarketplaceFeeSats: number;
+  idMarketplaceVolumeSats: number;
   mailFlowSats: number;
   mailSats: number;
+  marketplaceFeeSats: number;
+  marketplaceMutationFeeSats: number;
+  marketplaceSaleVolumeSats: number;
   marketplaceSats: number;
   marketplaceVolumeSats: number;
   powids: number;
+  tokenMarketplaceFeeSats: number;
   tokenCreationFlowSats: number;
   tokenMintFlowSats: number;
   tokenSaleFlowSats: number;
+  tokenSaleVolumeSats: number;
   tokenTransferFlowSats: number;
   tokenSats: number;
   walletFlowSats: number;
@@ -6066,6 +6077,9 @@ function tokenStateFromTransactions(
           listings.set(listing.listingId, {
             ...listing,
             saleAuthorization: authorization,
+            sealAt: createdAt,
+            sealConfirmed: confirmed,
+            sealDataBytes: proofProtocolDataBytesForVout(vout),
             sealTxid: txid,
           });
           continue;
@@ -9187,20 +9201,42 @@ function normalizeGrowthActualValue(
     computerEventSats: growthNumberField(payload, "computerEventSats"),
     driveFlowSats: growthNumberField(payload, "driveFlowSats"),
     driveSats: growthNumberField(payload, "driveSats"),
+    idMarketplaceFeeSats: growthNumberField(
+      payload,
+      "idMarketplaceFeeSats",
+    ),
+    idMarketplaceVolumeSats: growthNumberField(
+      payload,
+      "idMarketplaceVolumeSats",
+    ),
     mailFlowSats: growthNumberField(payload, "mailFlowSats"),
     mailSats: growthNumberField(payload, "mailSats"),
+    marketplaceFeeSats: growthNumberField(payload, "marketplaceFeeSats"),
+    marketplaceMutationFeeSats: growthNumberField(
+      payload,
+      "marketplaceMutationFeeSats",
+    ),
+    marketplaceSaleVolumeSats: growthNumberField(
+      payload,
+      "marketplaceSaleVolumeSats",
+    ),
     marketplaceSats: growthNumberField(payload, "marketplaceSats"),
     marketplaceVolumeSats: growthNumberField(
       payload,
       "marketplaceVolumeSats",
     ),
     powids: growthNumberField(payload, "powids"),
+    tokenMarketplaceFeeSats: growthNumberField(
+      payload,
+      "tokenMarketplaceFeeSats",
+    ),
     tokenCreationFlowSats: growthNumberField(
       payload,
       "tokenCreationFlowSats",
     ),
     tokenMintFlowSats: growthNumberField(payload, "tokenMintFlowSats"),
     tokenSaleFlowSats: growthNumberField(payload, "tokenSaleFlowSats"),
+    tokenSaleVolumeSats: growthNumberField(payload, "tokenSaleVolumeSats"),
     tokenTransferFlowSats: growthNumberField(
       payload,
       "tokenTransferFlowSats",
@@ -24175,6 +24211,15 @@ function unbucketedConfirmedComputerLogFlowSats(
     .reduce((total, item) => total + activityAmountSats(item), 0);
 }
 
+function confirmedActivityFlowSats(
+  confirmedActivity: PowActivityItem[],
+  kinds: Set<PowActivityKind>,
+) {
+  return confirmedActivity
+    .filter((item) => kinds.has(item.kind))
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+}
+
 function growthActualNetworkValue(
   records: PowIdRecord[],
   idActivity: PowActivityItem[],
@@ -24225,11 +24270,29 @@ function growthActualNetworkValue(
     (total, sale) => total + sale.priceSats,
     0,
   );
-  const tokenSaleFlowSats = confirmedTokenSales.reduce(
+  const tokenSaleVolumeSats = confirmedTokenSales.reduce(
     (total, sale) => total + sale.priceSats,
     0,
   );
-  const marketplaceVolumeSats = idMarketplaceVolumeSats + tokenSaleFlowSats;
+  const tokenSaleFlowSats = tokenSaleVolumeSats;
+  const marketplaceSaleVolumeSats =
+    idMarketplaceVolumeSats + tokenSaleVolumeSats;
+  const marketplaceVolumeSats = marketplaceSaleVolumeSats;
+  const idMarketplaceFeeSats = confirmedActivityFlowSats(
+    confirmedActivity,
+    new Set(["id-list", "id-seal", "id-delist", "id-buy"]),
+  );
+  const tokenMarketplaceFeeSats = confirmedActivityFlowSats(
+    confirmedActivity,
+    new Set([
+      "token-listing",
+      "token-listing-sealed",
+      "token-listing-closed",
+    ]),
+  );
+  const marketplaceFeeSats =
+    idMarketplaceFeeSats + tokenMarketplaceFeeSats;
+  const marketplaceMutationFeeSats = marketplaceFeeSats;
   const tokenCreationFlowSats = confirmedTokens.reduce(
     (total, token) => total + token.creationFeeSats,
     0,
@@ -24281,12 +24344,19 @@ function growthActualNetworkValue(
     driveSats,
     mailFlowSats,
     mailSats,
+    idMarketplaceFeeSats,
+    idMarketplaceVolumeSats,
+    marketplaceFeeSats,
+    marketplaceMutationFeeSats,
+    marketplaceSaleVolumeSats,
     marketplaceSats,
     marketplaceVolumeSats,
     powids,
+    tokenMarketplaceFeeSats,
     tokenCreationFlowSats,
     tokenMintFlowSats,
     tokenSaleFlowSats,
+    tokenSaleVolumeSats,
     tokenTransferFlowSats,
     tokenSats,
     walletFlowSats,
@@ -24533,6 +24603,7 @@ function growthActivityKindLabel(kind: PowActivityKind) {
     kind === "token-create" ||
     kind === "token-mint" ||
     kind === "token-listing" ||
+    kind === "token-listing-sealed" ||
     kind === "token-listing-closed" ||
     kind === "token-sale"
   ) {
@@ -25606,12 +25677,15 @@ function GrowthWorkspace({
   const marketplaceSaleCount =
     summaryCounts?.marketplaceSaleCount ??
     marketplaceStats.confirmedSales + confirmedTokenSales;
+  const marketplaceSaleVolumeSats =
+    actualValue.marketplaceSaleVolumeSats || actualValue.marketplaceVolumeSats;
+  const marketplaceFeeSats =
+    actualValue.marketplaceFeeSats || actualValue.marketplaceMutationFeeSats;
   const tokenFlowSats =
     actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats;
   const walletFlowSats = actualValue.walletFlowSats;
   const computerEventFlowSats = actualValue.computerEventFlowSats;
   const pendingRecordCount = summaryCounts?.pendingRecords ?? pendingRecords.length;
-  const idListingCount = summaryCounts?.idListings ?? registryListings.length;
   const chainMetricsIndexedAt =
     growthSummary?.indexedAt ?? summaryWorkFloor?.indexedAt;
 
@@ -25720,11 +25794,12 @@ function GrowthWorkspace({
         </div>
         <div>
           <strong>
-            {actualValue.marketplaceVolumeSats.toLocaleString()}
+            {marketplaceSaleVolumeSats.toLocaleString()}
           </strong>
           <span>
             Marketplace sale sats ·{" "}
-            {marketplaceSaleCount.toLocaleString()} confirmed sales
+            {marketplaceSaleCount.toLocaleString()} confirmed sales ·{" "}
+            {marketplaceFeeSats.toLocaleString()} fee sats
           </span>
         </div>
       </div>
@@ -25931,7 +26006,7 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(actualValue.marketplaceSats)}
-            actualLabel={`${growthUsdForSats(actualValue.marketplaceSats)} · ${actualValue.marketplaceVolumeSats.toLocaleString()} sale sats · ${marketplaceSaleCount.toLocaleString()} confirmed sales · ${idListingCount.toLocaleString()} ID listings`}
+            actualLabel={`${growthUsdForSats(actualValue.marketplaceSats)} · ${marketplaceSaleVolumeSats.toLocaleString()} sale sats · ${marketplaceFeeSats.toLocaleString()} fee sats · ${marketplaceSaleCount.toLocaleString()} confirmed sales`}
             icon={<Users size={24} />}
             modelFiveYear={growthSats(fiveYear.marketplaceSats)}
             modelFiveYearLabel={growthUsdForSats(fiveYear.marketplaceSats)}
@@ -25955,7 +26030,7 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(actualValue.computerEventSats)}
-            actualLabel={`${growthUsdForSats(actualValue.computerEventSats)} · ${computerEventFlowSats.toLocaleString()} confirmed log sats`}
+            actualLabel={`${growthUsdForSats(actualValue.computerEventSats)} · ${computerEventFlowSats.toLocaleString()} confirmed log sats · ${marketplaceFeeSats.toLocaleString()} marketplace fee sats`}
             icon={<GitBranch size={24} />}
             modelFiveYear="Tracked"
             modelFiveYearLabel="confirmed event ledger"
