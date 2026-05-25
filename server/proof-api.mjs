@@ -173,6 +173,8 @@ const BLOCKED_TOKEN_CREATOR_ADDRESSES = new Set([
 ]);
 const WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS =
   "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
+const WORK_TOKEN_CREATED_AT = "2026-05-15T02:57:28.000Z";
+const WORK_TOKEN_CREATE_DATA_BYTES = 70;
 const GROWTH_MODEL_START_MS = Date.parse("2026-05-11T00:00:00.000Z");
 const MS_PER_MODEL_YEAR = 365 * 24 * 60 * 60 * 1000;
 const MAX_GROWTH_ACTUAL_CHART_EVENTS = 240;
@@ -800,6 +802,24 @@ function tokenPayloadMetrics(payload) {
   };
 }
 
+function canonicalWorkTokenDefinition(network = "livenet") {
+  return {
+    confirmed: true,
+    createdAt: WORK_TOKEN_CREATED_AT,
+    creationFeeSats: TOKEN_CREATION_PRICE_SATS,
+    creatorAddress: tokenIndexAddressForNetwork(network) ?? "",
+    dataBytes: WORK_TOKEN_CREATE_DATA_BYTES,
+    maxSupply: WORK_TOKEN_MAX_SUPPLY,
+    mintAmount: WORK_TOKEN_MINT_AMOUNT,
+    mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+    network,
+    registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    ticker: WORK_TOKEN_TICKER,
+    tokenId: WORK_TOKEN_ID,
+    txid: WORK_TOKEN_ID,
+  };
+}
+
 function tokenPayloadLooksWorse(nextPayload, previousPayload) {
   if (!previousPayload) {
     return false;
@@ -837,7 +857,10 @@ async function safeTokenPayload(network, tokenScope = "") {
   );
   let nextPayload;
   try {
-    nextPayload = await tokenPayload(network, scope);
+    nextPayload =
+      scope === WORK_TOKEN_ID
+        ? await workTokenPayload(network, previousPayload)
+        : await tokenPayload(network, scope);
   } catch (error) {
     if (previousPayload) {
       console.error(
@@ -3205,6 +3228,7 @@ function tokenStateFromTransactions(
   indexAddress,
   network,
   tokenScope = "",
+  seedTokens = [],
 ) {
   const { tokens: allTokens } = tokenDefinitionsFromTransactions(
     indexTxs,
@@ -3212,7 +3236,20 @@ function tokenStateFromTransactions(
     network,
   );
   const scope = normalizeTokenScope(tokenScope);
-  const tokens = allTokens.filter((token) => tokenMatchesScope(token, scope));
+  const tokensByDefinition = new Map();
+  for (const token of Array.isArray(seedTokens) ? seedTokens : []) {
+    if (token?.tokenId) {
+      tokensByDefinition.set(token.tokenId, token);
+    }
+  }
+  for (const token of allTokens) {
+    if (token?.tokenId) {
+      tokensByDefinition.set(token.tokenId, token);
+    }
+  }
+  const tokens = [...tokensByDefinition.values()].filter((token) =>
+    tokenMatchesScope(token, scope),
+  );
   const creationSats = tokens.reduce(
     (total, token) => total + token.creationFeeSats,
     0,
@@ -6760,6 +6797,78 @@ function transactionInputAddresses(vin) {
     .map((input) => input?.prevout?.scriptpubkey_address)
     .filter((address) => typeof address === "string" && address);
 }
+
+async function workTokenPayload(network, fallbackPayload = null) {
+  const indexAddress = tokenIndexAddressForNetwork(network);
+  const previousWorkToken = (Array.isArray(fallbackPayload?.tokens)
+    ? fallbackPayload.tokens
+    : []
+  ).find(
+    (token) =>
+      token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER,
+  );
+  const workToken = {
+    ...canonicalWorkTokenDefinition(network),
+    ...(previousWorkToken ?? {}),
+    maxSupply: WORK_TOKEN_MAX_SUPPLY,
+    mintAmount: WORK_TOKEN_MINT_AMOUNT,
+    mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+    network,
+    registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    ticker: WORK_TOKEN_TICKER,
+    tokenId: WORK_TOKEN_ID,
+    txid: WORK_TOKEN_ID,
+  };
+  const registryTxs = await fetchRegistryTransactions(
+    WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    network,
+  );
+  const state = tokenStateFromTransactions(
+    [],
+    new Map([[WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS, registryTxs]]),
+    indexAddress,
+    network,
+    WORK_TOKEN_ID,
+    [workToken],
+  );
+  const payloadState = await tokenPayloadWithSpendableListings(state, network);
+
+  return {
+    ...payloadState,
+    creationPriceSats: TOKEN_CREATION_PRICE_SATS,
+    indexedAt: new Date().toISOString(),
+    indexAddress,
+    indexId: TOKEN_INDEX_ID,
+    indexTxid: TOKEN_INDEX_TXID,
+    minMutationPriceSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+    network,
+    source: mempoolBase(network),
+    stats: {
+      confirmedMints: state.mints.filter((mint) => mint.confirmed).length,
+      confirmedTransfers: state.transfers.filter((transfer) => transfer.confirmed)
+        .length,
+      confirmedTokens: state.tokens.filter((token) => token.confirmed).length,
+      creationSats: state.creationSats,
+      holders: state.holders.length,
+      pendingMints: state.mints.filter((mint) => !mint.confirmed).length,
+      pendingTransfers: state.transfers.filter((transfer) => !transfer.confirmed)
+        .length,
+      pendingTokens: state.tokens.filter((token) => !token.confirmed).length,
+      registries: 1,
+      transactions: registryTxs.length,
+    },
+    workDefaults: {
+      maxSupply: WORK_TOKEN_MAX_SUPPLY,
+      mintAmount: WORK_TOKEN_MINT_AMOUNT,
+      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
+      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      ticker: WORK_TOKEN_TICKER,
+      tokenId: WORK_TOKEN_ID,
+    },
+  };
+}
+
 async function tokenPayload(network, tokenScope = "") {
   const scope = normalizeTokenScope(tokenScope);
   const indexAddress = tokenIndexAddressForNetwork(network);
@@ -6783,6 +6892,10 @@ async function tokenPayload(network, tokenScope = "") {
         tokenId: WORK_TOKEN_ID,
       },
     };
+  }
+
+  if (scope === WORK_TOKEN_ID) {
+    return workTokenPayload(network);
   }
 
   const indexTxs = await fetchRegistryTransactions(indexAddress, network);
@@ -7400,7 +7513,7 @@ async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
   }
 
   const payload = fresh
-    ? await refreshTokenPayload(network, scope)
+    ? await freshTokenPayloadOrSnapshot(network, scope)
     : await fastTokenPayloadSnapshot(network, scope);
   return compactTokenSummaryPayload(payload);
 }
@@ -7466,6 +7579,34 @@ async function activitySummaryPayload(network, fresh = false) {
 
   const payload = await fastGlobalActivityPayload(network);
   return compactActivitySummaryPayload(payload);
+}
+
+function payloadWithFallbackAfterMs(promise, fallbackPayload, timeoutMs) {
+  let timer;
+  return Promise.race([
+    promise.catch((error) => {
+      console.error(`Fresh payload refresh failed: ${errorSummary(error)}`);
+      return fallbackPayload;
+    }),
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve(fallbackPayload), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+async function freshTokenPayloadOrSnapshot(network, tokenScope = "") {
+  const scope = normalizeTokenScope(tokenScope);
+  const fallback = await fastTokenPayloadSnapshot(network, scope);
+  if (scope === WORK_TOKEN_ID) {
+    return payloadWithFallbackAfterMs(
+      refreshTokenPayload(network, scope),
+      fallback,
+      WORK_FLOOR_FRESH_WAIT_MS,
+    );
+  }
+
+  refreshTokenPayloadCacheInBackground(network, scope);
+  return fallback;
 }
 
 async function cachedWorkFloorPayload(network, fresh = false) {
@@ -7585,7 +7726,9 @@ async function cachedWorkFloorPayload(network, fresh = false) {
 async function workSummaryPayload(network, fresh = false) {
   const [token, floor] = await Promise.all([
     tokenSummaryPayload(network, WORK_TOKEN_ID, fresh),
-    fresh ? workFloorPayload(network, true) : cachedWorkFloorPayload(network, false),
+    fresh
+      ? cachedWorkFloorPayload(network, true)
+      : cachedWorkFloorPayload(network, false),
   ]);
   return {
     floor,
@@ -7610,7 +7753,9 @@ async function marketplaceSummaryPayload(network, fresh = false) {
   const [registry, token, floor] = await Promise.all([
     registrySummaryPayload(network, false),
     tokenSummaryPayload(network, "", fresh),
-    fresh ? workFloorPayload(network, true) : cachedWorkFloorPayload(network, false),
+    fresh
+      ? cachedWorkFloorPayload(network, true)
+      : cachedWorkFloorPayload(network, false),
   ]);
   return {
     indexedAt: new Date().toISOString(),
@@ -7657,8 +7802,12 @@ async function growthSummaryPayload(network, fresh = false) {
         emptyRegistryState,
       ),
       fastGlobalActivityPayload(network),
-      fresh ? refreshTokenPayload(network) : fastTokenPayloadSnapshot(network),
-      fresh ? workFloorPayload(network, true) : cachedWorkFloorPayload(network, false),
+      fresh
+        ? freshTokenPayloadOrSnapshot(network)
+        : fastTokenPayloadSnapshot(network),
+      fresh
+        ? cachedWorkFloorPayload(network, true)
+        : cachedWorkFloorPayload(network, false),
     ]);
   const registrySummary = compactRegistrySummaryPayload(registryState);
   const activitySummary = compactActivitySummaryPayload(computerActivity);
@@ -7817,7 +7966,7 @@ async function activityHistoryPayload(network, kind, searchParams, fresh = false
 async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fresh = false) {
   const scope = normalizeTokenScope(tokenScope);
   const payload = fresh
-    ? await refreshTokenPayload(network, scope)
+    ? await freshTokenPayloadOrSnapshot(network, scope)
     : await fastTokenPayloadSnapshot(network, scope);
   const kindMap = new Map([
     ["holders", "holders"],
@@ -8584,9 +8733,9 @@ async function workFloorPayload(network, fresh = false) {
         emptyRegistryState,
       ),
       fastGlobalActivityPayload(network),
-      fresh ? refreshTokenPayload(network) : fastCachedTokenPayload(network),
+      fresh ? freshTokenPayloadOrSnapshot(network) : fastCachedTokenPayload(network),
       fresh
-        ? refreshTokenPayload(network, WORK_TOKEN_ID)
+        ? freshTokenPayloadOrSnapshot(network, WORK_TOKEN_ID)
         : fastCachedTokenPayload(network, WORK_TOKEN_ID),
     ]);
   const valueTokenState = tokenStateWithScopedTokenOverride(
@@ -9219,7 +9368,7 @@ async function handleRequest(request, response) {
         jsonResponse(
           response,
           200,
-          await workFloorPayload(network, true),
+          await cachedWorkFloorPayload(network, true),
           FRESH_READ_CACHE_CONTROL,
         );
       } else {
