@@ -773,10 +773,9 @@ async function safeRegistryPayload(network) {
 
 function tokenPayloadMetrics(payload) {
   return {
-    closedListings: Math.max(
-      safeStatNumber(payload, "closedListings"),
-      Array.isArray(payload?.closedListings) ? payload.closedListings.length : 0,
-    ),
+    confirmedClosedListings: Array.isArray(payload?.closedListings)
+      ? payload.closedListings.filter((listing) => listing?.closedConfirmed).length
+      : 0,
     confirmedMints: Math.max(
       safeStatNumber(payload, "confirmedMints"),
       confirmedItemCount(payload?.mints),
@@ -2856,6 +2855,113 @@ async function filterSpendableTokenListings(listings, network) {
   return { closedListings, listings: activeListings };
 }
 
+function tokenListingWithoutCloseMetadata(listing) {
+  const {
+    closedAt,
+    closedConfirmed,
+    closedTxid,
+    closedVin,
+    ...activeListing
+  } = listing ?? {};
+  return activeListing;
+}
+
+async function tokenMarketTxIsVisible(txid, network) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    return false;
+  }
+
+  const tx = await fetchTransactionWithPendingFallback(normalizedTxid, network);
+  return Boolean(tx);
+}
+
+async function reconcileCachedTokenClosedListing(closedListing, network) {
+  if (closedListing?.closedConfirmed) {
+    return { kind: "closed", listing: closedListing };
+  }
+
+  const closedTxid = String(closedListing?.closedTxid ?? "")
+    .trim()
+    .toLowerCase();
+  if (closedTxid && (await tokenMarketTxIsVisible(closedTxid, network))) {
+    return { kind: "closed", listing: closedListing };
+  }
+
+  const outspend = await tokenListingAnchorOutspend(closedListing, network);
+  if (outspend?.spent) {
+    const blockTime = outspend.status?.block_time;
+    return {
+      kind: "closed",
+      listing: {
+        ...closedListing,
+        closedAt:
+          typeof blockTime === "number"
+            ? new Date(blockTime * 1000).toISOString()
+            : (closedListing.closedAt ?? new Date().toISOString()),
+        closedConfirmed: Boolean(outspend.status?.confirmed),
+        closedTxid:
+          typeof outspend.txid === "string"
+            ? outspend.txid.toLowerCase()
+            : closedTxid,
+        closedVin: Number.isSafeInteger(outspend.vin)
+          ? outspend.vin
+          : closedListing.closedVin,
+      },
+    };
+  }
+
+  const activeListing = tokenListingWithoutCloseMetadata(closedListing);
+  return tokenListingAnchorOutpoint(activeListing)
+    ? { kind: "active", listing: activeListing }
+    : { kind: "closed", listing: closedListing };
+}
+
+async function reconcileCachedTokenMarketPayload(payload, network) {
+  const activeListingsById = new Map(
+    (Array.isArray(payload?.listings) ? payload.listings : [])
+      .filter((listing) => listing?.listingId)
+      .map((listing) => [listing.listingId, listing]),
+  );
+  const closedListings = [];
+
+  const reconciledClosedListings = await mapWithConcurrency(
+    Array.isArray(payload?.closedListings) ? payload.closedListings : [],
+    TX_FETCH_CONCURRENCY,
+    (listing) => reconcileCachedTokenClosedListing(listing, network),
+  );
+
+  for (const result of reconciledClosedListings) {
+    if (result?.kind === "active" && result.listing?.listingId) {
+      activeListingsById.set(result.listing.listingId, result.listing);
+      continue;
+    }
+
+    if (result?.listing) {
+      closedListings.push(result.listing);
+    }
+  }
+
+  const sales = await mapWithConcurrency(
+    Array.isArray(payload?.sales) ? payload.sales : [],
+    TX_FETCH_CONCURRENCY,
+    async (sale) => {
+      if (sale?.confirmed) {
+        return sale;
+      }
+
+      return (await tokenMarketTxIsVisible(sale?.txid, network)) ? sale : null;
+    },
+  );
+
+  return {
+    ...payload,
+    closedListings,
+    listings: [...activeListingsById.values()],
+    sales: sales.filter(Boolean),
+  };
+}
+
 function sortClosedTokenListings(listings) {
   return [...listings].sort(
     (left, right) =>
@@ -2944,20 +3050,23 @@ async function tokenPayloadWithSpendableListings(payload, network) {
     return payload;
   }
 
+  const reconciledPayload = await reconcileCachedTokenMarketPayload(payload, network);
   const tokenListings = await filterSpendableTokenListings(
-    payload.listings,
+    reconciledPayload.listings,
     network,
   );
   const closedByKey = new Map();
   for (const listing of [
-    ...(Array.isArray(payload.closedListings) ? payload.closedListings : []),
+    ...(Array.isArray(reconciledPayload.closedListings)
+      ? reconciledPayload.closedListings
+      : []),
     ...tokenListings.closedListings,
   ]) {
     closedByKey.set(`${listing.listingId}:${listing.closedTxid ?? ""}`, listing);
   }
 
   return {
-    ...payload,
+    ...reconciledPayload,
     closedListings: sortClosedTokenListings([...closedByKey.values()]),
     listings: tokenListings.listings,
   };
