@@ -33,7 +33,7 @@ log.proofofwork.me          -> public Bitcoin Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Token, Wallet, WORK, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Token, Wallet, WORK, Log, and Growth from any production surface. Social links should include X, YouTube, and GitHub.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 

@@ -1,10 +1,5 @@
-import { GitBranch, MessageCircle, X } from "lucide-react";
-import {
-  DISCORD_URL,
-  GITHUB_URL,
-  X_URL,
-  YOUTUBE_URL,
-} from "../../app/appLinks";
+import { GitBranch, X } from "lucide-react";
+import { GITHUB_URL, X_URL, YOUTUBE_URL } from "../../app/appLinks";
 
 export function SocialFooter({ compact = false }: { compact?: boolean }) {
   return (
@@ -42,17 +37,6 @@ export function SocialFooter({ compact = false }: { compact?: boolean }) {
           <span className="button-content">
             <GitBranch size={14} />
             <span>GitHub</span>
-          </span>
-        </a>
-        <a
-          href={DISCORD_URL}
-          rel="noreferrer"
-          target="_blank"
-          aria-label="ProofOfWork.Me Discord"
-        >
-          <span className="button-content">
-            <MessageCircle size={14} />
-            <span>Discord</span>
           </span>
         </a>
       </nav>

@@ -56,7 +56,7 @@ Production app roles:
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their Bitcoin transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Token, Wallet, WORK, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Token, Wallet, WORK, Log, and Growth. Public social links should include X, YouTube, and GitHub.
 
 Official YouTube:
 

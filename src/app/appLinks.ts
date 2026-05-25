@@ -4,7 +4,6 @@ export type AppLink = {
   localHref: string;
 };
 
-export const DISCORD_URL = "https://discord.com/invite/mRA4zbqB";
 export const GITHUB_URL = "https://github.com/proofofworkme";
 export const X_URL = "https://x.com/proofofworkme";
 export const YOUTUBE_URL = "https://www.youtube.com/@proofofworkme";
