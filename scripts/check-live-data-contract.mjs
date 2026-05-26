@@ -146,13 +146,20 @@ expectAll("frontend refresh routes hit shared live surfaces", app, [
   /loadLogHistoryPage\(currentPageIndex,\s*true\)/,
 ]);
 
-expectAll("marketplace sort modes cover price and arb", app, [
+expectAll("marketplace listing sort modes cover price and arb", app, [
   /"price-desc"/,
   /"price-asc"/,
   /"arb-desc"/,
   /"arb-asc"/,
   /sortTokenListings\(/,
-  /sortTokenMarketplaceRows\(/,
+  /sortIdMarketplaceListings\(/,
+]);
+
+expectAll("token directory sorts by confirmed supply and mint progress", app, [
+  /type TokenDirectorySortMode\s*=\s*"mint-progress"\s*\|\s*"confirmed-supply"/,
+  /TokenDirectorySortTabs\(/,
+  /sortTokenDirectoryRows\(/,
+  /tokenProgressLabel\(token\.confirmedSupply,\s*token\.maxSupply\)/,
 ]);
 
 expectAll("token marketplace log uses API-backed pagination", app, [

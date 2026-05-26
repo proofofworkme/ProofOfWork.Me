@@ -26460,6 +26460,7 @@ type MarketplaceSortMode =
   | "arb-desc"
   | "arb-asc";
 type MarketplaceListingBookFilter = "all" | "sealed" | "unsealed";
+type TokenDirectorySortMode = "mint-progress" | "confirmed-supply";
 
 type TokenReferenceSnapshot = Pick<
   PowTokenDefinition,
@@ -26500,6 +26501,14 @@ const MARKETPLACE_SORT_OPTIONS: Array<{
   { label: "Price low", value: "price-asc" },
   { label: "Arb high", value: "arb-desc" },
   { label: "Arb low", value: "arb-asc" },
+];
+
+const TOKEN_DIRECTORY_SORT_OPTIONS: Array<{
+  label: string;
+  value: TokenDirectorySortMode;
+}> = [
+  { label: "Mint progress", value: "mint-progress" },
+  { label: "Confirmed supply", value: "confirmed-supply" },
 ];
 
 function finitePositiveNumber(value: unknown) {
@@ -26624,31 +26633,25 @@ function tokenListingArbSats(
   return reference !== null && unit > 0 ? reference - unit : null;
 }
 
-function sortTokenMarketplaceRows(
+function sortTokenDirectoryRows(
   rows: TokenMarketplaceRow[],
-  sortMode: MarketplaceSortMode,
-  workFloorSats: number,
+  sortMode: TokenDirectorySortMode,
 ) {
   return [...rows].sort((left, right) => {
     const fallback = () =>
-      right.openListings - left.openListings ||
-      right.confirmedSupply - left.confirmedSupply ||
-      compareTokensByConfirmation(left, right);
+      Number(right.confirmed) - Number(left.confirmed) ||
+      right.holderCount - left.holderCount ||
+      left.ticker.localeCompare(right.ticker) ||
+      left.tokenId.localeCompare(right.tokenId);
 
-    if (sortMode === "price-desc" || sortMode === "price-asc") {
-      return compareOptionalMetric(
-        tokenMarketDisplayPriceSats(left, workFloorSats),
-        tokenMarketDisplayPriceSats(right, workFloorSats),
-        sortMode === "price-desc",
-        fallback,
-      );
+    if (sortMode === "confirmed-supply") {
+      return right.confirmedSupply - left.confirmedSupply || fallback();
     }
 
-    return compareOptionalMetric(
-      tokenMarketArbSats(left, workFloorSats),
-      tokenMarketArbSats(right, workFloorSats),
-      sortMode === "arb-desc",
-      fallback,
+    return (
+      right.progress - left.progress ||
+      right.confirmedSupply - left.confirmedSupply ||
+      fallback()
     );
   });
 }
@@ -26755,6 +26758,37 @@ function MarketplaceSortControl({
           ))}
         </select>
       </label>
+    </div>
+  );
+}
+
+function TokenDirectorySortTabs({
+  onChange,
+  value,
+}: {
+  onChange: (value: TokenDirectorySortMode) => void;
+  value: TokenDirectorySortMode;
+}) {
+  return (
+    <div className="marketplace-sort-row">
+      <div className="sort-control">
+        <span>View</span>
+        <div
+          className="network-tabs token-directory-sort-tabs"
+          aria-label="Token directory sort"
+        >
+          {TOKEN_DIRECTORY_SORT_OPTIONS.map((option) => (
+            <button
+              aria-pressed={value === option.value}
+              key={option.value}
+              onClick={() => onChange(option.value)}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -27169,8 +27203,8 @@ function TokenMarketplacePanel({
   >();
   const [tokenMarketLogPageLoading, setTokenMarketLogPageLoading] =
     useState(false);
-  const [tokenMarketSortMode, setTokenMarketSortMode] =
-    useState<MarketplaceSortMode>("arb-desc");
+  const [tokenDirectorySortMode, setTokenDirectorySortMode] =
+    useState<TokenDirectorySortMode>("mint-progress");
   const [tokenListingSortMode, setTokenListingSortMode] =
     useState<MarketplaceSortMode>("arb-desc");
   const [tokenListingBookFilter, setTokenListingBookFilter] =
@@ -27182,7 +27216,7 @@ function TokenMarketplacePanel({
   );
   useEffect(() => {
     setTokenMarketPageIndex(0);
-  }, [selectedMarketToken?.tokenId, tokenMarketSortMode]);
+  }, [selectedMarketToken?.tokenId, tokenDirectorySortMode]);
   useEffect(() => {
     setTokenListingPageIndex(0);
   }, [selectedMarketToken?.tokenId, tokenListingBookFilter, tokenListingSortMode]);
@@ -27341,10 +27375,9 @@ function TokenMarketplacePanel({
     tokenMarketLogPageIndex,
   ]);
   const visibleRows = selectedMarketToken ? [selectedMarketToken] : rows;
-  const sortedVisibleRows = sortTokenMarketplaceRows(
+  const sortedVisibleRows = sortTokenDirectoryRows(
     visibleRows,
-    tokenMarketSortMode,
-    workMarketFloorSats,
+    tokenDirectorySortMode,
   );
   const tokenMarketPage = pagedItems(
     sortedVisibleRows,
@@ -27414,22 +27447,6 @@ function TokenMarketplacePanel({
   const selectedMarketChartMaxSats = selectedMarketChartPoints.length
     ? Math.max(...selectedMarketChartPoints.map((point) => point.priceSats))
     : 0;
-  const marketPriceLabelFor = (token: TokenMarketplaceRow) => {
-    if (token.tokenId === WORK_TOKEN_ID && workMarketFloorSats > 0) {
-      return `${tokenSatsPerUnit(workMarketFloorSats)} sat floor`;
-    }
-
-    if (token.lowestAskPricePerToken > 0) {
-      return `${tokenSatsPerUnit(token.lowestAskPricePerToken)} sat ask`;
-    }
-
-    return `${tokenSatsPerUnit(token.pricePerToken)} sat mint`;
-  };
-  const marketUsdFor = (token: TokenMarketplaceRow) =>
-    token.tokenId === WORK_TOKEN_ID && workMarketFloorSats > 0
-      ? satsToUsd(workMarketFloorSats, btcUsd)
-      : satsToUsd(token.pricePerToken, btcUsd);
-
   return (
     <>
       <div className="ids-content marketplace-content token-market-content">
@@ -27704,9 +27721,9 @@ function TokenMarketplacePanel({
           </div>
 
           {!selectedMarketToken ? (
-            <MarketplaceSortControl
-              onChange={setTokenMarketSortMode}
-              value={tokenMarketSortMode}
+            <TokenDirectorySortTabs
+              onChange={setTokenDirectorySortMode}
+              value={tokenDirectorySortMode}
             />
           ) : null}
 
@@ -27741,26 +27758,21 @@ function TokenMarketplacePanel({
                       <dd>{token.openListings.toLocaleString()}</dd>
                     </div>
                     <div>
-                      <dt>Floor / Ask</dt>
-                      <dd>{marketPriceLabelFor(token)}</dd>
+                      <dt>Progress</dt>
+                      <dd>{tokenProgressLabel(token.confirmedSupply, token.maxSupply)}</dd>
                     </div>
                     <div>
-                      <dt>Last Sale</dt>
-                      <dd>
-                        {token.lastSalePricePerToken > 0
-                          ? `${tokenSatsPerUnit(token.lastSalePricePerToken)} sat`
-                          : "none"}
-                      </dd>
+                      <dt>Mints</dt>
+                      <dd>{token.confirmedMints.toLocaleString()}</dd>
                     </div>
                   </dl>
                   <ProgressBar
-                    label={`${token.ticker} market supply progress`}
+                    label={`${token.ticker} mint progress`}
                     progress={token.progress}
                   />
                   <p className="field-note">
                     Registry {shortAddress(token.registryAddress)} ·{" "}
-                    {token.pendingMints.toLocaleString()} pending mints ·{" "}
-                    {tokenUsd(marketUsdFor(token))} per token
+                    {token.pendingMints.toLocaleString()} pending mints
                     {address
                       ? ` · Your balance ${token.walletBalance.toLocaleString()} ${token.ticker}`
                       : ""}
