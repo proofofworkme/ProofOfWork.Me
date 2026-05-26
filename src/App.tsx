@@ -28439,9 +28439,8 @@ function MarketplaceApp({
   onRefreshTokens: () => void;
 }) {
   const initialTokenMarketTarget = tokenRouteTarget();
-  const [marketplaceTab, setMarketplaceTab] = useState<MarketplaceTab>(() =>
-    initialTokenMarketTarget ? "tokens" : "ids",
-  );
+  const [marketplaceTab, setMarketplaceTab] =
+    useState<MarketplaceTab>("tokens");
   const [selectedTokenMarketId, setSelectedTokenMarketId] = useState(
     initialTokenMarketTarget,
   );
@@ -28845,9 +28844,8 @@ function MarketplaceWorkspace({
   onRefreshTokens: () => void;
 }) {
   const initialTokenMarketTarget = tokenRouteTarget();
-  const [marketplaceTab, setMarketplaceTab] = useState<MarketplaceTab>(() =>
-    initialTokenMarketTarget ? "tokens" : "ids",
-  );
+  const [marketplaceTab, setMarketplaceTab] =
+    useState<MarketplaceTab>("tokens");
   const [selectedTokenMarketId, setSelectedTokenMarketId] = useState(
     initialTokenMarketTarget,
   );
