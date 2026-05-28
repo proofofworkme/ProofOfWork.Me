@@ -207,6 +207,31 @@ These are safe phrases future agents can reuse or adapt:
 - The UI can protect against pending pressure without pretending pending is final.
 - Creator tokens should own their own registry.
 
+## Daily Social Posts
+
+These are recurring X posts the founder may ask agents to fire daily. They are not static copy. Always refresh live first, then draft in the high-conviction social voice.
+
+Use the first-party API and confirmed chain data:
+
+- WORK summary: `https://work.proofofwork.me/api/v1/work-summary?network=livenet&fresh=1`
+- WORK listings/sales: `https://marketplace.proofofwork.me/api/v1/token-history?network=livenet&asset=d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8&kind=listings&limit=200&fresh=1` and `kind=sales`
+- Marketplace summary and ID order book: `https://marketplace.proofofwork.me/api/v1/marketplace-summary?network=livenet&fresh=1`
+
+Daily tweet set:
+
+- WORK mint-to-floor update. Report mint price, current confirmed floor sats per WORK, floor multiple from mint, and confirmed Bitcoin Computer network value. Formula: `floor_sats_per_work = floor.networkValueSats / 21000000`; mint multiple is `floor_sats_per_work / 1`.
+- WORK sealed order book. Report confirmed active listings, confirmed sealed orders, best sealed ask, current floor, and buyer arb when ask is below floor. Formula: `price_per_work = priceSats / amount`; `buyer_arb_sats = (floor_sats_per_work - price_per_work) * amount`. Positive arb means the buyer can take sealed WORK below floor.
+- PowID order book. Report confirmed PowIDs, active ID listings, sealed ID listings, lowest active ask, and lowest sealed asks. Explain that sealed ID listings are buyer-funded transfer terms on chain.
+- WORK reserve update. Use the top three WORK holder addresses from the fresh WORK summary. Include secondary buys for `1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv` from confirmed WORK sales. Formula: `reserve_work = sum(top_3_holder_balances)`; `reserve_basis_sats = minted_work_at_1_sat + secondary_paid_sats`; `floor_value_sats = reserve_work * floor_sats_per_work`; `gain_sats = floor_value_sats - reserve_basis_sats`; `btc_value = sats / 100000000`; `multiple = floor_value_sats / reserve_basis_sats`. Prefer `paidSats` for all-in secondary basis when present, and `priceSats` only when describing seller price.
+
+Style rules:
+
+- Use `$work` or `$WORK` when talking about WORK, floor, mint, reserves, or the order book.
+- Say `confirmed` when the metric excludes pending mempool visibility.
+- Keep numbers compact but not vague: sats, BTC, and x multiple should all reconcile.
+- Do not present pending mints, pending listings, or unsealed listings as final takeable order-book state.
+- Keep the close simple: `On-chain. Bitcoin-native. $WORK`, `The chain is the oracle`, or `Names are assets now.`
+
 ## Agent Operating Model
 
 When working on ProofOfWork.Me:
