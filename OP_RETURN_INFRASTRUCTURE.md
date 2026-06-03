@@ -25,8 +25,9 @@ computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
 browser.proofofwork.me      -> public HTML browser by txid
 marketplace.proofofwork.me  -> standalone asset marketplace; IDs and credit sale-ticket markets live
-token.proofofwork.me        -> standalone credit creation and mint app
-tokens.proofofwork.me       -> permanent redirect to https://token.proofofwork.me/
+credit.proofofwork.me       -> standalone credit creation and mint app
+token.proofofwork.me        -> permanent redirect to https://credit.proofofwork.me/
+tokens.proofofwork.me       -> permanent redirect to https://credit.proofofwork.me/
 wallet.proofofwork.me       -> standalone credit wallet, transfer, listing, and delisting app
 work.proofofwork.me         -> standalone WORK credit dashboard and mint page
 log.proofofwork.me          -> public ProofOfWork Computer log
@@ -106,7 +107,7 @@ On `localhost` and `127.0.0.1`, shared app navigation uses local route flags ins
 /?desktop=1
 /?browser=1
 /?marketplace=1
-/?token=1
+/?credit=1
 /?wallet=1
 /?work=1
 /?rush=1
@@ -123,7 +124,7 @@ VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
-VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://token.proofofwork.me npm run build
+VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://credit.proofofwork.me npm run build
 VITE_WALLET_ONLY=1 VITE_POW_API_BASE=https://wallet.proofofwork.me npm run build
 VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
 VITE_RUSH_ONLY=1 VITE_POW_API_BASE=https://rush.proofofwork.me npm run build
@@ -209,7 +210,7 @@ The credit endpoint:
 - Credit market history merges active listings, closed listings, and settled sales into a paginated `market-log` view ordered by confirmation status, event time, and txid. It is not sorted by price or arbitrage.
 - Fresh credit reads, credit summary reads, credit history reads, WORK summaries, and marketplace summaries refresh the shared credit payload cache before returning. Background refresh keeps fast first paint useful, but explicit refresh must converge on current node truth.
 - Credit UI surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per credit and per mint from BTC/USD.
-- `token.proofofwork.me` is the create/mint surface, `tokens.proofofwork.me` redirects to it, `wallet.proofofwork.me` is the credit wallet/transfer/listing/delisting surface, and `work.proofofwork.me` is the dedicated WORK dashboard.
+- `credit.proofofwork.me` is the create/mint surface, `token.proofofwork.me` and `tokens.proofofwork.me` redirect to it, `wallet.proofofwork.me` is the credit wallet/transfer/listing/delisting surface, and `work.proofofwork.me` is the dedicated WORK dashboard.
 - WORK is reserved for canonical credit id `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`. Official indexers and creation UI reject any non-canonical credit create whose ticker contains `WORK`, and exclude blocked scam creator address `bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl`.
 - WORK settings are 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, and the `work@proofofwork.me` registry address. WORK launches at exactly 1 proof per WORK. The create form can reuse the same economic template for non-reserved tickers only.
 - WORK's permanent price floor is derived from the confirmed ProofOfWork Computer network value, not from pending mempool visibility: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. The inverse `21,000,000 / confirmed_network_value_sats` is the WORK-per-proof ratio.

@@ -14,8 +14,9 @@ computer.proofofwork.me     full mailbox/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
 marketplace.proofofwork.me  standalone asset marketplace; IDs and credit sale-ticket markets live
-token.proofofwork.me        standalone credit creation and mint app
-tokens.proofofwork.me       permanent redirect to https://token.proofofwork.me/
+credit.proofofwork.me       standalone credit creation and mint app
+token.proofofwork.me        permanent redirect to https://credit.proofofwork.me/
+tokens.proofofwork.me       permanent redirect to https://credit.proofofwork.me/
 wallet.proofofwork.me      standalone credit wallet, transfer, listing, delisting, and sale-history app
 work.proofofwork.me         standalone WORK credit dashboard and mint page
 log.proofofwork.me          public ProofOfWork Computer log

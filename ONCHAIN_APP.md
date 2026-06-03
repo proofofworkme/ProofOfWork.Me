@@ -34,8 +34,9 @@ computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
 browser.proofofwork.me      -> public HTML browser by txid
 marketplace.proofofwork.me  -> standalone asset marketplace for IDs and credit sale-ticket markets
-token.proofofwork.me        -> standalone credit creation and mint app
-tokens.proofofwork.me       -> permanent redirect to https://token.proofofwork.me/
+credit.proofofwork.me       -> standalone credit creation and mint app
+token.proofofwork.me        -> permanent redirect to https://credit.proofofwork.me/
+tokens.proofofwork.me       -> permanent redirect to https://credit.proofofwork.me/
 wallet.proofofwork.me       -> standalone credit wallet, transfer, listing, delisting, and sale-history app
 work.proofofwork.me         -> standalone WORK credit dashboard and mint page
 log.proofofwork.me          -> public ProofOfWork Computer log
@@ -50,7 +51,7 @@ http://localhost:5173/?id-launch=1
 http://localhost:5173/?desktop=1
 http://localhost:5173/?browser=1
 http://localhost:5173/?marketplace=1
-http://localhost:5173/?token=1
+http://localhost:5173/?credit=1
 http://localhost:5173/?wallet=1
 http://localhost:5173/?work=1
 http://localhost:5173/?log=1
@@ -58,7 +59,7 @@ http://localhost:5173/?growth=1
 ```
 
 `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`,
-`token.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`,
+`credit.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`,
 `log.proofofwork.me`, and `growth.proofofwork.me` should remain standalone public surfaces, not hidden tabs
 that require the full Computer mailbox shell.
 

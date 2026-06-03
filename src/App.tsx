@@ -220,6 +220,7 @@ const STANDALONE_ROUTE_PARAMS = [
   "desktop",
   "browser",
   "marketplace",
+  "credit",
   "token",
   "wallet",
   "work",
@@ -6530,7 +6531,7 @@ function tokenDetailHref(token: PowTokenDefinition) {
 
   return appHref(
     `${TOKEN_APP_URL}/?asset=${encodeURIComponent(token.tokenId)}`,
-    `/?token=1&asset=${encodeURIComponent(token.tokenId)}`,
+    `/?credit=1&asset=${encodeURIComponent(token.tokenId)}`,
   );
 }
 

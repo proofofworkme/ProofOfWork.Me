@@ -106,8 +106,9 @@ computer.proofofwork.me     full mail/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
 marketplace.proofofwork.me  standalone asset marketplace; IDs and credit sale-ticket markets live
-token.proofofwork.me        standalone credit creation and mint app
-tokens.proofofwork.me       permanent redirect to https://token.proofofwork.me/
+credit.proofofwork.me       standalone credit creation and mint app
+token.proofofwork.me        permanent redirect to https://credit.proofofwork.me/
+tokens.proofofwork.me       permanent redirect to https://credit.proofofwork.me/
 wallet.proofofwork.me      standalone credit wallet, transfer, listing, delisting, and sale-history app
 work.proofofwork.me         standalone WORK credit dashboard and mint page
 log.proofofwork.me          public ProofOfWork Computer log
@@ -146,7 +147,7 @@ VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm
 Credit-only build:
 
 ```bash
-VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://token.proofofwork.me npm run build
+VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://credit.proofofwork.me npm run build
 ```
 
 Credit-wallet-only build:
@@ -414,7 +415,7 @@ https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
-https://token.proofofwork.me/api/*
+https://credit.proofofwork.me/api/*
 https://work.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
 https://growth.proofofwork.me/api/*

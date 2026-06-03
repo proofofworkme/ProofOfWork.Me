@@ -89,8 +89,10 @@ export function isTokenRoute() {
 
   const currentHostname = hostname();
   return (
+    currentHostname === "credit.proofofwork.me" ||
     currentHostname === "token.proofofwork.me" ||
     currentHostname === "tokens.proofofwork.me" ||
+    searchIncludes("credit=1") ||
     searchIncludes("token=1")
   );
 }

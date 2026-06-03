@@ -32,8 +32,9 @@ computer.proofofwork.me
 desktop.proofofwork.me
 browser.proofofwork.me
 marketplace.proofofwork.me
-token.proofofwork.me
-tokens.proofofwork.me -> https://token.proofofwork.me/
+credit.proofofwork.me
+token.proofofwork.me -> https://credit.proofofwork.me/
+tokens.proofofwork.me -> https://credit.proofofwork.me/
 wallet.proofofwork.me
 work.proofofwork.me
 log.proofofwork.me
@@ -49,8 +50,8 @@ Production app roles:
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `browser.proofofwork.me` is the standalone public HTML renderer for ProofOfWork message bodies or verified file attachments by txid.
 - `marketplace.proofofwork.me` is the standalone asset marketplace. The IDs tab is live for ProofOfWork ID listings and buyer-funded transfers; the Credits tab is live for credit sale-ticket listings, sealed purchases, and market discovery.
-- `token.proofofwork.me` is the standalone mainnet credit creation and mint app.
-- `tokens.proofofwork.me` redirects permanently to `https://token.proofofwork.me/`.
+- `credit.proofofwork.me` is the standalone mainnet credit creation and mint app.
+- `token.proofofwork.me` and `tokens.proofofwork.me` redirect permanently to `https://credit.proofofwork.me/`.
 - `wallet.proofofwork.me` is the standalone credit wallet for confirmed balances, transfers, listings, delistings, and sale history touching the connected address.
 - `work.proofofwork.me` is the standalone WORK credit dashboard and mint page.
 - `log.proofofwork.me` is the standalone public ProofOfWork Computer log for tx-backed ProofOfWork actions.
@@ -180,7 +181,7 @@ https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
-https://token.proofofwork.me/api/*
+https://credit.proofofwork.me/api/*
 https://wallet.proofofwork.me/api/*
 https://work.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
@@ -207,7 +208,7 @@ Current production behavior:
 - Fresh reads for credit summaries, credit histories, marketplace summaries, and WORK summaries refresh the shared credit payload cache before returning. Stale snapshots are acceptable for first paint only, not after an explicit refresh.
 - Credit mint prices are owner-set with a 546-proof minimum. ProofOfWork does not take a global fee on mints; the mint price goes to that credit's registry address.
 - Credit surfaces show the starting unit price as mint price divided by mint amount, plus live node-backed USD per credit and per mint from BTC/USD.
-- `wallet.proofofwork.me` shows connected-address credit balances, transfer logs, active owned listings, sale history, and non-custodial transfers/listings/delistings through UniSat. `work.proofofwork.me` shows the WORK dashboard: mint progress, holders, credit facts, mint action, mint log, live floor, and confirmed floor history. `token.proofofwork.me` stays focused on credit creation and mint selection.
+- `wallet.proofofwork.me` shows connected-address credit balances, transfer logs, active owned listings, sale history, and non-custodial transfers/listings/delistings through UniSat. `work.proofofwork.me` shows the WORK dashboard: mint progress, holders, credit facts, mint action, mint log, live floor, and confirmed floor history. `credit.proofofwork.me` stays focused on credit creation and mint selection.
 - WORK is reserved for the canonical WORK credit id `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`. Official indexers and UI creation flows reject non-canonical credit creates whose ticker contains `WORK`, and exclude credit creates from blocked scam creator address `bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl`.
 - WORK settings are 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, and the `work@proofofwork.me` registry address. The launch price is exactly 1 proof per WORK. The credit create form can reuse the same economic template for new tickers, but cannot create another WORK-like credit.
 - WORK's permanent value floor is derived from the Growth model's confirmed ProofOfWork Computer network value: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. The inverse, `21,000,000 / confirmed_network_value_sats`, is the WORK-per-proof ratio. Pending records are visible but do not change the canonical floor until confirmed.
@@ -385,7 +386,7 @@ http://localhost:5173/?marketplace=1
 To preview the credit creation and mint app locally:
 
 ```text
-http://localhost:5173/?token=1
+http://localhost:5173/?credit=1
 ```
 
 To preview the WORK credit dashboard locally:
@@ -427,7 +428,7 @@ Computer -> /
 Desktop -> /?desktop=1
 Browser -> /?browser=1
 Marketplace -> /?marketplace=1
-Credit -> /?token=1
+Credit -> /?credit=1
 Wallet -> /?wallet=1
 WORK -> /?work=1
 Log -> /?log=1
@@ -475,7 +476,7 @@ VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm
 To build the standalone credit app for production:
 
 ```bash
-VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://token.proofofwork.me npm run build
+VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://credit.proofofwork.me npm run build
 ```
 
 To build the standalone credit wallet for production:

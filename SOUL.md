@@ -10,7 +10,7 @@ It is distilled from current repository docs and public launch memory captured t
 - Launch memory reviewed: 2026-05-19
 - Operational memory updated: 2026-05-24
 - Public archive reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
-- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
+- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
 
@@ -66,7 +66,7 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-05-12: Marketplace and registry thinking hardens around one event stream, 546-proof mutations, registrar recourse, responsible UTXO management, and agent-readable accountability.
 - 2026-05-13: Browser becomes a first-class app and Computer workspace; HTML message bodies and verified HTML attachments render from txids. Bug bounty practice begins with credited, paid, tx-backed reports. Public surfaces converge around IDs, Computer, Desktop, Browser, Marketplace, Log, and Growth.
 - 2026-05-14: Credit thinking lands: credits are businesses with creator-owned registries. A macro credit index records creation, while mints pay each credit registry directly. Marketplace UTXO reservations become a safety invariant.
-- 2026-05-15: Credits and WORK become first-class production surfaces. `token.proofofwork.me` creates and mints credits; `work.proofofwork.me` is the dedicated WORK dashboard. WORK launches with 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, and the `work@proofofwork.me` registry.
+- 2026-05-15: Credits and WORK become first-class production surfaces. `credit.proofofwork.me` creates and mints credits; `work.proofofwork.me` is the dedicated WORK dashboard. WORK launches with 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, and the `work@proofofwork.me` registry.
 - 2026-05-16: WORK gets a permanent floor formula, UTXO preparation, Mint Assistant, and explicit fee dashboards. The floor is confirmed ProofOfWork Computer network value divided by 21,000,000 WORK, separate from the 1 proof/WORK mint price.
 - 2026-05-17: Production performance hardens around a uniform node-backed cached snapshot path. WORK, Credit, Log, Growth, and registry pages must refresh against current full-node data without dragging huge ledgers through every view.
 - 2026-05-19: Credit transfers enter the protocol as `pwt1:send` events. Wallet becomes the non-custodial credit surface: connected-address balances, confirmed-only canonical ownership, pending transfer visibility, and UniSat-local signing.
@@ -110,8 +110,8 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `browser.proofofwork.me` is the standalone public HTML renderer.
 - Confessions is staged/local-only until a separate public launch is approved.
 - `marketplace.proofofwork.me` is the standalone asset marketplace: IDs and credit sale-ticket markets are live.
-- `token.proofofwork.me` is the standalone credit creation and mint app.
-- `tokens.proofofwork.me` redirects to `https://token.proofofwork.me/`.
+- `credit.proofofwork.me` is the standalone credit creation and mint app.
+- `token.proofofwork.me` and `tokens.proofofwork.me` redirect to `https://credit.proofofwork.me/`.
 - `wallet.proofofwork.me` is the standalone credit wallet, transfer, listing, delisting, and sale-history app.
 - `work.proofofwork.me` is the standalone WORK credit dashboard.
 - `log.proofofwork.me` is the public read-only ProofOfWork Computer log for tx-backed ProofOfWork actions.
