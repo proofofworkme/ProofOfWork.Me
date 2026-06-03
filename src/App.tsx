@@ -6525,10 +6525,6 @@ function compareTokensByConfirmation(
 }
 
 function tokenDetailHref(token: PowTokenDefinition) {
-  if (token.ticker === WORK_TOKEN_TICKER) {
-    return appHref(WORK_TOKEN_APP_URL, LOCAL_WORK_TOKEN_APP_URL);
-  }
-
   return appHref(
     `${TOKEN_APP_URL}/?asset=${encodeURIComponent(token.tokenId)}`,
     `/?credit=1&asset=${encodeURIComponent(token.tokenId)}`,
@@ -13532,11 +13528,7 @@ export default function App() {
   }
 
   function openTokenWorkspace(token?: PowTokenDefinition) {
-    const folder =
-      token &&
-      (token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER)
-        ? "work"
-        : "token";
+    const folder = "token";
 
     if (token) {
       setTokenSelectedId(token.tokenId);
