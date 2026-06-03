@@ -219,8 +219,6 @@ const STANDALONE_ROUTE_PARAMS = [
   "id-launch",
   "desktop",
   "browser",
-  "confessions",
-  "confession",
   "marketplace",
   "token",
   "wallet",

@@ -4,7 +4,6 @@ export type AppSurface =
   | "computer"
   | "desktop"
   | "browser"
-  | "confessions"
   | "marketplace"
   | "token"
   | "wallet"
@@ -70,21 +69,6 @@ export function isBrowserRoute() {
   }
 
   return hostname() === "browser.proofofwork.me" || searchIncludes("browser=1");
-}
-
-export function isConfessionsRoute() {
-  if (!isLocalPreviewHost()) {
-    return false;
-  }
-
-  if (import.meta.env.VITE_CONFESSIONS_ONLY === "1") {
-    return true;
-  }
-
-  return (
-    searchIncludes("confessions=1") ||
-    searchIncludes("confession=1")
-  );
 }
 
 export function isMarketplaceRoute() {
@@ -165,7 +149,6 @@ export function detectAppSurface(): AppSurface {
   if (isIdLaunchRoute()) return "id-launch";
   if (isDesktopRoute()) return "desktop";
   if (isBrowserRoute()) return "browser";
-  if (isConfessionsRoute()) return "confessions";
   if (isMarketplaceRoute()) return "marketplace";
   if (isTokenRoute()) return "token";
   if (isWalletRoute()) return "wallet";

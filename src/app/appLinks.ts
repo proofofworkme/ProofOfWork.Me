@@ -13,7 +13,6 @@ export const ID_APP_URL = "https://id.proofofwork.me";
 export const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 export const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
 export const BROWSER_APP_URL = "https://browser.proofofwork.me";
-// Staged only. Do not add Confessions to APP_LINKS until launch is approved.
 export const CONFESSIONS_APP_URL = "https://confessions.proofofwork.me";
 export const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
 export const TOKEN_APP_URL = "https://token.proofofwork.me";
