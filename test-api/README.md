@@ -1,7 +1,7 @@
 # Local Production API Proxy
 
 Use this for local development when the app should read production ProofOfWork
-data without exposing the raw Bitcoin node and without browser CORS issues.
+data without exposing the raw ProofOfWork node and without browser CORS issues.
 
 The browser calls the local same-origin path:
 

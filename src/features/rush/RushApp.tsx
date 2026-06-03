@@ -171,7 +171,7 @@ export function RushApp({
         network={network}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
-        subtitle="Chained Bitcoin mint"
+        subtitle="Chained ProofOfWork mint"
         title="RUSH"
       />
 
@@ -179,10 +179,10 @@ export function RushApp({
 
       <PublicPage className="rush-workspace">
         <PublicPageHeader align="center">
-          <p className="eyebrow">ProofOfWork token</p>
-          <h2>RUSH token dashboard</h2>
+          <p className="eyebrow">ProofOfWork credit</p>
+          <h2>RUSH credit dashboard</h2>
           <p>
-            Minted by confirmed Bitcoin history. RUSH mints pay the registry
+            Minted by confirmed ProofOfWork history. RUSH mints pay the registry
             directly, then the indexer assigns rewards from canonical block
             order.
           </p>
@@ -194,17 +194,17 @@ export function RushApp({
               <TrendingUp size={26} />
             </div>
             <div>
-              <p className="eyebrow">Token dashboard</p>
+              <p className="eyebrow">Credit dashboard</p>
               <h2>{RUSH_TICKER}</h2>
               <div className="token-chip-row" aria-label="RUSH summary">
                 <span>{stats.totalSupply} max</span>
                 <span>{stats.nextReward} next mint</span>
-                <span>{RUSH_MINT_PRICE_SATS.toLocaleString()} sats / mint</span>
+                <span>{RUSH_MINT_PRICE_SATS.toLocaleString()} proofs / mint</span>
                 <span>{confirmedMints.length.toLocaleString()} mints</span>
               </div>
               <p>
-                RUSH distributes one billion tokens over fifty thousand rewarded
-                mints. Pending records stay visible, but only confirmed Bitcoin
+                RUSH distributes one billion credits over fifty thousand rewarded
+                mints. Pending records stay visible, but only confirmed ProofOfWork
                 history decides final ordinal and reward.
               </p>
             </div>
@@ -276,11 +276,11 @@ export function RushApp({
             </div>
             <DataList
               items={[
-                { label: "Token", value: RUSH_TICKER },
+                { label: "Credit", value: RUSH_TICKER },
                 { label: "Payload", value: RUSH_MINT_PAYLOAD },
                 {
                   label: "Mint price",
-                  value: `${RUSH_MINT_PRICE_SATS.toLocaleString()} sats`,
+                  value: `${RUSH_MINT_PRICE_SATS.toLocaleString()} proofs`,
                 },
                 { label: "Registry", value: shortAddress(state.registryAddress) },
                 {
@@ -290,7 +290,7 @@ export function RushApp({
               ]}
             />
             <p className="field-note">
-              RUSH does not use a generic token deploy transaction. Its
+              RUSH does not use a generic credit deploy transaction. Its
               deployment is the fixed protocol rule: payment to this registry
               before the exact RUSH OP_RETURN, then rewards indexed by confirmed
               order.
@@ -331,7 +331,7 @@ export function RushApp({
                 <p className="eyebrow">Mint</p>
                 <h3>Chained mint assistant</h3>
               </div>
-              <strong>{RUSH_MINT_PRICE_SATS.toLocaleString()} sats / mint</strong>
+              <strong>{RUSH_MINT_PRICE_SATS.toLocaleString()} proofs / mint</strong>
             </div>
 
             <label>
@@ -379,7 +379,7 @@ export function RushApp({
                   label: "Run cost",
                   value: `${(
                     normalizedMintCount * RUSH_MINT_PRICE_SATS
-                  ).toLocaleString()} sats + fees`,
+                  ).toLocaleString()} proofs + fees`,
                 },
                 {
                   label: "Max run",
@@ -495,7 +495,7 @@ export function RushApp({
                       <strong>{shortAddress(mint.minterAddress)}</strong>
                       <p>
                         {mint.confirmed ? "Confirmed" : "Pending"} -{" "}
-                        {mint.paidSats.toLocaleString()} sats
+                        {mint.paidSats.toLocaleString()} proofs
                       </p>
                     </div>
                     <time dateTime={mint.createdAt}>

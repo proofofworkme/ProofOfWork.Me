@@ -97,13 +97,13 @@ export function LandingApp({
       <section className="landing-hero">
         <div className="landing-hero-content">
           <span className="landing-kicker">
-            Bitcoin-native identity, mail, files, pages, markets, tokens,
+            ProofOfWork-native identity, mail, files, pages, markets, credits,
             logs, and growth
           </span>
           <h2>ProofOfWork.Me</h2>
           <p>
-            Claim a permanent on-chain ID, then use the Bitcoin Computer for
-            mail, files, HTML pages, marketplace actions, token mints, and
+            Claim a permanent on-chain ID, then use the ProofOfWork Computer for
+            mail, files, HTML pages, marketplace actions, credit mints, and
             chain-readable proof.
           </p>
           <div className="landing-actions">
@@ -158,7 +158,7 @@ export function LandingApp({
             >
               <span className="button-content">
                 <FilePenLine size={17} />
-                <span>Tokens</span>
+                <span>Credits</span>
               </span>
             </a>
             <a
@@ -190,10 +190,10 @@ export function LandingApp({
         >
           <div className="landing-video-copy">
             <span className="landing-kicker">Video overview</span>
-            <h3>The Bitcoin Computer is live</h3>
+            <h3>The ProofOfWork Computer is live</h3>
             <p>
               Watch the current walkthrough, then open the apps below and verify
-              the records from Bitcoin.
+              the records from ProofOfWork.
             </p>
             <a
               className="secondary link-button"
@@ -214,7 +214,7 @@ export function LandingApp({
               loading="lazy"
               referrerPolicy="strict-origin-when-cross-origin"
               src={LANDING_VIDEO_EMBED_URL}
-              title="ProofOfWork.Me Bitcoin Computer overview"
+              title="ProofOfWork.Me ProofOfWork Computer overview"
             />
           </div>
         </section>
@@ -231,7 +231,7 @@ export function LandingApp({
               on the truth."
             </blockquote>
             <p>
-              Published to Bitcoin through ProofOfWork.Me by D.D. Subject:{" "}
+              Published to ProofOfWork through ProofOfWork.Me by D.D. Subject:{" "}
               <strong>Freedom and love</strong>.
             </p>
           </div>
@@ -280,7 +280,7 @@ export function LandingApp({
             <div>
               <h3>Claim Your ID</h3>
               <p>
-                Register <code>user@proofofwork.me</code> to your Bitcoin
+                Register <code>user@proofofwork.me</code> to your ProofOfWork
                 receive address through the canonical mainnet registry.
               </p>
             </div>
@@ -302,7 +302,7 @@ export function LandingApp({
             <div>
               <h3>Open Computer</h3>
               <p>
-                Send and receive Bitcoin-native mail, replies, and small files
+                Send and receive ProofOfWork-native mail, replies, and small files
                 with local drafts, archive, favorites, and backups.
               </p>
             </div>
@@ -388,9 +388,9 @@ export function LandingApp({
               <FilePenLine size={24} />
             </div>
             <div>
-              <h3>Create Tokens</h3>
+              <h3>Create Credits</h3>
               <p>
-                Launch mint-first <code>pwt1:</code> tokens, set the owner
+                Launch mint-first <code>pwt1:</code> credits, set the owner
                 registry, and let mints pay that registry directly.
               </p>
             </div>
@@ -400,7 +400,7 @@ export function LandingApp({
             >
               <span className="button-content">
                 <FilePenLine size={16} />
-                <span>Open Tokens</span>
+                <span>Open Credits</span>
               </span>
             </a>
           </article>
@@ -412,8 +412,8 @@ export function LandingApp({
             <div>
               <h3>Open Wallet</h3>
               <p>
-                Track confirmed platform token balances and send{" "}
-                <code>pwt1:send</code> transfers that pay the token registry.
+                Track confirmed platform credit balances and send{" "}
+                <code>pwt1:send</code> transfers that pay the credit registry.
               </p>
             </div>
             <a
@@ -456,7 +456,7 @@ export function LandingApp({
             <div>
               <h3>Open Log</h3>
               <p>
-                Read the public Bitcoin Computer activity feed for IDs, mail,
+                Read the public ProofOfWork Computer activity feed for IDs, mail,
                 replies, files, Browser pages, and marketplace events.
               </p>
             </div>
@@ -478,8 +478,8 @@ export function LandingApp({
             <div>
               <h3>Open Growth</h3>
               <p>
-                Compare the canonical Bitcoin Computer growth model against real
-                confirmed network value in sats and USD.
+                Compare the canonical ProofOfWork Computer growth model against real
+                confirmed network value in proofs and USD.
               </p>
             </div>
             <a
@@ -499,7 +499,7 @@ export function LandingApp({
             <span className="landing-kicker">Canonical registry</span>
             <h3>{shortAddress(registryAddress)}</h3>
             <p>
-              ProofOfWork IDs are resolved from Bitcoin. First confirmed valid
+              ProofOfWork IDs are resolved from ProofOfWork. First confirmed valid
               registration wins, and the app only routes mail to confirmed IDs.
             </p>
           </div>

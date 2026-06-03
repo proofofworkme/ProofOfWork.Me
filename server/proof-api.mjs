@@ -1162,7 +1162,7 @@ function bitcoinRejectHint(reason, code) {
     return "The transaction failed non-mandatory script policy. Rebuild and sign with a standard wallet path.";
   }
   if (Number(code) === -26) {
-    return "Bitcoin Core rejected this transaction by mempool policy or validation. The upstream node did not include a more specific reason.";
+    return "The upstream node rejected this transaction by mempool policy or validation and did not include a more specific reason.";
   }
 
   return "";
@@ -1439,7 +1439,7 @@ function configuredBtcUsdPrice() {
 function normalizeBtcUsdPricePayload(payload) {
   const usd = Number(payload?.USD ?? payload?.usd);
   if (!Number.isFinite(usd) || usd <= 0) {
-    throw new Error("BTC/USD price payload did not include a valid USD quote.");
+    throw new Error("USD price payload did not include a valid quote.");
   }
 
   const quoteTimestamp = Number(payload?.time);
@@ -2697,7 +2697,7 @@ function tokenSaleAuthorizationDraft(authorization = {}) {
 function parseTokenSaleAuthorizationJson(value, network) {
   const parsed = JSON.parse(value);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Token sale authorization is not an object.");
+    throw new Error("Credit sale authorization is not an object.");
   }
 
   const draft = tokenSaleAuthorizationDraft(parsed);
@@ -2725,7 +2725,7 @@ function parseTokenSaleAuthorizationJson(value, network) {
     (anchorTxid && !/^[0-9a-f]{64}$/u.test(anchorTxid)) ||
     (anchorSignature && !validSignatureHex(anchorSignature))
   ) {
-    throw new Error("Token sale authorization is invalid.");
+    throw new Error("Credit sale authorization is invalid.");
   }
 
   return { ...draft, anchorSignature, anchorTxid };
@@ -4868,7 +4868,7 @@ function idActivityItemsFromEvents(events) {
       tags: [
         status,
         networkLabel(event.network),
-        `${event.amountSats.toLocaleString()} sats`,
+        `${event.amountSats.toLocaleString()} proofs`,
       ],
       txid: event.txid,
     };
@@ -4917,7 +4917,7 @@ function idActivityItemsFromEvents(events) {
         ...base,
         actor: event.sellerAddress,
         counterparty: event.saleAuthorization.buyerAddress,
-        description: `${event.id}@proofofwork.me listed for ${event.priceSats.toLocaleString()} sats by ${shortAddress(event.sellerAddress)}.`,
+        description: `${event.id}@proofofwork.me listed for ${event.priceSats.toLocaleString()} proofs by ${shortAddress(event.sellerAddress)}.`,
         detail:
           event.listingVersion === "list5"
             ? "Sale-ticket listing"
@@ -4928,7 +4928,7 @@ function idActivityItemsFromEvents(events) {
         tags: [
           ...base.tags,
           "Listing",
-          `${event.priceSats.toLocaleString()} sale sats`,
+          `${event.priceSats.toLocaleString()} sale proofs`,
         ],
         title: event.confirmed ? "ID listed" : "ID listing pending",
         utxo: `${event.txid}:${anchorVout}`,
@@ -4975,7 +4975,7 @@ function idActivityItemsFromEvents(events) {
       tags: [
         ...base.tags,
         "Marketplace buy",
-        event.priceSats ? `${event.priceSats.toLocaleString()} sale sats` : "",
+        event.priceSats ? `${event.priceSats.toLocaleString()} sale proofs` : "",
       ].filter(Boolean),
       title: event.confirmed ? "ID purchased" : "ID purchase pending",
     };
@@ -5122,7 +5122,7 @@ function mailActivityItemFromTransaction(tx, network) {
     counterparty,
     createdAt,
     dataBytes: proofProtocolDataBytesForVout(vout),
-    description: `${shortAddress(actor)} sent ${noun} to ${counterparty}${amountSats > 0 ? ` for ${amountSats.toLocaleString()} sats` : ""}.`,
+    description: `${shortAddress(actor)} sent ${noun} to ${counterparty}${amountSats > 0 ? ` for ${amountSats.toLocaleString()} proofs` : ""}.`,
     detail,
     kind,
     network,
@@ -5132,7 +5132,7 @@ function mailActivityItemFromTransaction(tx, network) {
       isFile ? "Attachment" : isReply ? "Reply" : "Message",
       isBrowserHtmlMessageBody(protocolMessage.memo) ? "HTML body" : "",
       recipients.length > 1 ? `${recipients.length} recipients` : "1 recipient",
-      amountSats > 0 ? `${amountSats.toLocaleString()} sats` : "",
+      amountSats > 0 ? `${amountSats.toLocaleString()} proofs` : "",
     ].filter(Boolean),
     title,
     txid,
@@ -5154,18 +5154,18 @@ function tokenActivityItemsFromState(state, indexAddress) {
     createdAt: token.createdAt,
     dataBytes: token.dataBytes,
     description: `${token.ticker} created with ${token.maxSupply.toLocaleString()} max supply and registry ${shortAddress(token.registryAddress)}.`,
-    detail: `${token.mintAmount.toLocaleString()} ${token.ticker} for ${token.mintPriceSats.toLocaleString()} sats`,
+    detail: `${token.mintAmount.toLocaleString()} ${token.ticker} for ${token.mintPriceSats.toLocaleString()} proofs`,
     kind: "token-create",
     network: token.network,
     tags: [
       activityStatusTag(token.confirmed),
       networkLabel(token.network),
-      "Token",
+      "Credit",
       "Creation",
       token.ticker,
-      `${token.creationFeeSats.toLocaleString()} creation sats`,
+      `${token.creationFeeSats.toLocaleString()} creation proofs`,
     ],
-    title: token.confirmed ? "Token created" : "Token creation pending",
+    title: token.confirmed ? "Credit created" : "Credit creation pending",
     txid: token.txid,
   }));
 
@@ -5177,19 +5177,19 @@ function tokenActivityItemsFromState(state, indexAddress) {
     createdAt: mint.createdAt,
     dataBytes: mint.dataBytes,
     description: `${mint.amount.toLocaleString()} ${mint.ticker} minted by ${shortAddress(mint.minterAddress)}.`,
-    detail: `Token ${shortAddress(mint.tokenId)}`,
+    detail: `Credit ${shortAddress(mint.tokenId)}`,
     kind: "token-mint",
     network: mint.network,
     tags: [
       activityStatusTag(mint.confirmed),
       networkLabel(mint.network),
-      "Token",
+      "Credit",
       "Mint",
       mint.ticker,
       `${mint.amount.toLocaleString()} ${mint.ticker}`,
-      `${mint.paidSats.toLocaleString()} mint sats`,
+      `${mint.paidSats.toLocaleString()} mint proofs`,
     ],
-    title: mint.confirmed ? "Token mint" : "Token mint pending",
+    title: mint.confirmed ? "Credit mint" : "Credit mint pending",
     txid: mint.txid,
   }));
 
@@ -5201,19 +5201,19 @@ function tokenActivityItemsFromState(state, indexAddress) {
     createdAt: transfer.createdAt,
     dataBytes: transfer.dataBytes,
     description: `${transfer.amount.toLocaleString()} ${transfer.ticker} transferred from ${shortAddress(transfer.senderAddress)} to ${shortAddress(transfer.recipientAddress)}.`,
-    detail: `Token ${shortAddress(transfer.tokenId)}`,
+    detail: `Credit ${shortAddress(transfer.tokenId)}`,
     kind: "token-transfer",
     network: transfer.network,
     tags: [
       activityStatusTag(transfer.confirmed),
       networkLabel(transfer.network),
-      "Token",
+      "Credit",
       "Transfer",
       transfer.ticker,
       `${transfer.amount.toLocaleString()} ${transfer.ticker}`,
-      `${transfer.paidSats.toLocaleString()} registry sats`,
+      `${transfer.paidSats.toLocaleString()} registry proofs`,
     ],
-    title: transfer.confirmed ? "Token transfer" : "Token transfer pending",
+    title: transfer.confirmed ? "Credit transfer" : "Credit transfer pending",
     txid: transfer.txid,
   }));
 
@@ -5228,7 +5228,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
       counterparty: listing.registryAddress,
       createdAt: listing.createdAt,
       dataBytes: listing.dataBytes,
-      description: `${listing.amount.toLocaleString()} ${listing.ticker} listed by ${shortAddress(listing.sellerAddress)} for ${listing.priceSats.toLocaleString()} sats.`,
+      description: `${listing.amount.toLocaleString()} ${listing.ticker} listed by ${shortAddress(listing.sellerAddress)} for ${listing.priceSats.toLocaleString()} proofs.`,
       detail: sealed
         ? `Sealed sale ticket ${shortAddress(listing.sealTxid ?? "")}`
         : "Waiting for sale-ticket seal",
@@ -5237,18 +5237,18 @@ function tokenActivityItemsFromState(state, indexAddress) {
       tags: [
         activityStatusTag(listing.confirmed),
         networkLabel(listing.network),
-        "Token",
+        "Credit",
         "Marketplace",
         sealed ? "Sealed" : "Listing",
         listing.ticker,
         `${listing.amount.toLocaleString()} ${listing.ticker}`,
-        `${listing.priceSats.toLocaleString()} sale sats`,
+        `${listing.priceSats.toLocaleString()} sale proofs`,
       ],
       title: listing.confirmed
         ? sealed
-          ? "Token listing sealed"
-          : "Token listing"
-        : "Token listing pending",
+          ? "Credit listing sealed"
+          : "Credit listing"
+        : "Credit listing pending",
       txid: listing.listingId,
     };
   });
@@ -5279,16 +5279,16 @@ function tokenActivityItemsFromState(state, indexAddress) {
       tags: [
         activityStatusTag(Boolean(listing.sealConfirmed ?? listing.confirmed)),
         networkLabel(listing.network),
-        "Token",
+        "Credit",
         "Marketplace",
         "Seal",
         listing.ticker,
         `${listing.amount.toLocaleString()} ${listing.ticker}`,
-        `${TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} registry sats`,
+        `${TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} registry proofs`,
       ],
       title: listing.sealConfirmed === false
-        ? "Token sale-ticket seal pending"
-        : "Token sale ticket sealed",
+        ? "Credit sale-ticket seal pending"
+        : "Credit sale ticket sealed",
       txid: sealTxid,
     });
   }
@@ -5313,17 +5313,17 @@ function tokenActivityItemsFromState(state, indexAddress) {
       tags: [
         activityStatusTag(Boolean(listing.closedConfirmed)),
         networkLabel(listing.network),
-        "Token",
+        "Credit",
         "Marketplace",
         "Closed",
         "Spent ticket",
         listing.ticker,
         `${listing.amount.toLocaleString()} ${listing.ticker}`,
-        `${listing.priceSats.toLocaleString()} sale sats`,
+        `${listing.priceSats.toLocaleString()} sale proofs`,
       ],
       title: listing.closedConfirmed
-        ? "Token listing closed"
-        : "Token listing closing",
+        ? "Credit listing closed"
+        : "Credit listing closing",
       txid: closedTxid || listing.listingId,
     };
   });
@@ -5335,21 +5335,21 @@ function tokenActivityItemsFromState(state, indexAddress) {
     counterparty: sale.sellerAddress,
     createdAt: sale.createdAt,
     dataBytes: sale.dataBytes,
-    description: `${sale.amount.toLocaleString()} ${sale.ticker} bought by ${shortAddress(sale.buyerAddress)} from ${shortAddress(sale.sellerAddress)} for ${sale.priceSats.toLocaleString()} sats.`,
+    description: `${sale.amount.toLocaleString()} ${sale.ticker} bought by ${shortAddress(sale.buyerAddress)} from ${shortAddress(sale.sellerAddress)} for ${sale.priceSats.toLocaleString()} proofs.`,
     detail: `Listing ${shortAddress(sale.listingId)}`,
     kind: "token-sale",
     network: sale.network,
     tags: [
       activityStatusTag(sale.confirmed),
       networkLabel(sale.network),
-      "Token",
+      "Credit",
       "Marketplace",
       "Sale",
       sale.ticker,
       `${sale.amount.toLocaleString()} ${sale.ticker}`,
-      `${sale.priceSats.toLocaleString()} sale sats`,
+      `${sale.priceSats.toLocaleString()} sale proofs`,
     ],
-    title: sale.confirmed ? "Token sale" : "Token sale pending",
+    title: sale.confirmed ? "Credit sale" : "Credit sale pending",
     txid: sale.txid,
   }));
 
@@ -5382,10 +5382,10 @@ function rushActivityItemsFromState(state) {
       activityStatusTag(mint.confirmed),
       networkLabel(mint.network),
       "RUSH",
-      "Token",
+      "Credit",
       "Mint",
       `${mint.amount} RUSH`,
-      `${mint.paidSats.toLocaleString()} registry sats`,
+      `${mint.paidSats.toLocaleString()} registry proofs`,
     ],
     title: mint.confirmed ? "RUSH mint" : "RUSH mint pending",
     txid: mint.txid,
@@ -8459,25 +8459,25 @@ function growthActualValuePoints(
 
   for (const token of tokenDefinitions) {
     if (token.confirmed) {
-      addEventTime(token.createdAt, `${token.ticker} token created`);
+      addEventTime(token.createdAt, `${token.ticker} credit created`);
     }
   }
 
   for (const mint of tokenMints) {
     if (mint.confirmed) {
-      addEventTime(mint.createdAt, `${mint.ticker} token mint`);
+      addEventTime(mint.createdAt, `${mint.ticker} credit mint`);
     }
   }
 
   for (const transfer of tokenTransfers) {
     if (transfer.confirmed) {
-      addEventTime(transfer.createdAt, `${transfer.ticker} token transfer`);
+      addEventTime(transfer.createdAt, `${transfer.ticker} credit transfer`);
     }
   }
 
   for (const sale of tokenSales) {
     if (sale.confirmed) {
-      addEventTime(sale.createdAt, `${sale.ticker} token sale`);
+      addEventTime(sale.createdAt, `${sale.ticker} credit sale`);
     }
   }
 
@@ -8585,7 +8585,7 @@ function growthActivityKindLabel(kind) {
     kind === "token-listing-closed" ||
     kind === "token-sale"
   ) {
-    return "Token";
+    return "Credit";
   }
 
   return kind === "reply" ? "Mail reply" : "Mail";
@@ -8636,7 +8636,7 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${record.amountSats.toLocaleString()} sats`,
+      amountLabel: `${record.amountSats.toLocaleString()} proofs`,
       createdAt: record.createdAt,
       detail: `${record.id}@proofofwork.me joined the confirmed ID graph.`,
       key: record.txid,
@@ -8654,7 +8654,7 @@ function growthRealEventItems(
 
     setEvent({
       amountLabel: item.amountSats
-        ? `${item.amountSats.toLocaleString()} sats`
+        ? `${item.amountSats.toLocaleString()} proofs`
         : "Confirmed",
       createdAt: item.createdAt,
       detail: item.detail || item.description,
@@ -8674,7 +8674,7 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${sale.priceSats.toLocaleString()} sale sats`,
+      amountLabel: `${sale.priceSats.toLocaleString()} sale proofs`,
       createdAt: sale.createdAt,
       detail: `${sale.id}@proofofwork.me transferred from ${shortAddress(sale.sellerAddress)} to ${shortAddress(sale.buyerAddress)}.`,
       key: sale.txid,
@@ -8691,13 +8691,13 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${token.creationFeeSats.toLocaleString()} creation sats`,
+      amountLabel: `${token.creationFeeSats.toLocaleString()} creation proofs`,
       createdAt: token.createdAt,
       detail: `${token.ticker} created with ${token.maxSupply.toLocaleString()} max supply and registry ${shortAddress(token.registryAddress)}.`,
       key: token.txid,
-      kind: "Token",
+      kind: "Credit",
       network: token.network,
-      title: "Token created",
+      title: "Credit created",
       txid: token.txid,
     });
   }
@@ -8708,13 +8708,13 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${mint.paidSats.toLocaleString()} mint sats`,
+      amountLabel: `${mint.paidSats.toLocaleString()} mint proofs`,
       createdAt: mint.createdAt,
       detail: `${mint.amount.toLocaleString()} ${mint.ticker} minted by ${shortAddress(mint.minterAddress)}.`,
       key: mint.txid,
-      kind: "Token",
+      kind: "Credit",
       network: mint.network,
-      title: "Token mint",
+      title: "Credit mint",
       txid: mint.txid,
     });
   }
@@ -8725,7 +8725,7 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${transfer.paidSats.toLocaleString()} registry sats`,
+      amountLabel: `${transfer.paidSats.toLocaleString()} registry proofs`,
       createdAt: transfer.createdAt,
       detail: `${transfer.amount.toLocaleString()} ${transfer.ticker} moved from ${shortAddress(transfer.senderAddress)} to ${shortAddress(transfer.recipientAddress)}.`,
       key: transfer.txid,
@@ -8742,13 +8742,13 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${sale.priceSats.toLocaleString()} sale sats`,
+      amountLabel: `${sale.priceSats.toLocaleString()} sale proofs`,
       createdAt: sale.createdAt,
       detail: `${sale.amount.toLocaleString()} ${sale.ticker} bought by ${shortAddress(sale.buyerAddress)} from ${shortAddress(sale.sellerAddress)}.`,
       key: sale.txid,
       kind: "Marketplace",
       network: sale.network,
-      title: "Token sale",
+      title: "Credit sale",
       txid: sale.txid,
     });
   }

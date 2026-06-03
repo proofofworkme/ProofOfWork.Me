@@ -671,11 +671,13 @@ code {
 
 .brand {
   align-items: center;
+  color: inherit;
   display: flex;
   flex: 0 0 clamp(210px, 20vw, 300px);
   gap: 12px;
   max-width: 300px;
   min-width: 0;
+  text-decoration: none;
 }
 
 .brand > div:last-child {
@@ -4382,9 +4384,10 @@ pre {
 }
 
 .landing-video-copy h3 {
-  font-size: clamp(1.8rem, 4vw, 3.4rem);
+  font-size: clamp(1.6rem, 2.4vw, 2.45rem);
   letter-spacing: 0;
-  line-height: 0.95;
+  line-height: 1.04;
+  overflow-wrap: break-word;
 }
 
 .landing-video-frame {
@@ -4641,6 +4644,1285 @@ pre {
   min-width: 0;
   padding: clamp(16px, 3vw, 32px) 18px 36px;
   width: 100%;
+}
+
+.confessions-public-app {
+  background: #050608;
+}
+
+.confessions-shell {
+  align-items: start;
+  display: grid;
+  gap: 0;
+  grid-template-columns: minmax(210px, 260px) minmax(0, 680px);
+  justify-content: center;
+  margin: 0 auto;
+  max-width: 980px;
+  min-height: 0;
+  padding: 0 18px 36px;
+  width: 100%;
+}
+
+.confessions-shell.is-profile-view {
+  grid-template-columns: minmax(210px, 260px) minmax(0, 980px);
+  max-width: 1260px;
+}
+
+.confessions-sidebar {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 18px 14px;
+  position: sticky;
+  top: calc(var(--topbar-height) + var(--status-row-height));
+}
+
+.confessions-profile-page {
+  align-content: start;
+  background: #0b0d10;
+  border-left: 1px solid rgba(237, 242, 247, 0.13);
+  border-right: 1px solid rgba(237, 242, 247, 0.13);
+  display: grid;
+  gap: 12px;
+  min-height: calc(100vh - var(--topbar-height) - var(--status-row-height));
+  min-width: 0;
+  padding-bottom: 12px;
+}
+
+.confessions-profile-layout {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  min-width: 0;
+  padding: 12px;
+}
+
+.confessions-profile-main,
+.confessions-profile-rail {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.confessions-profile-rail {
+  align-self: start;
+  position: sticky;
+  top: calc(var(--topbar-height) + var(--status-row-height) + 12px);
+}
+
+.confessions-feed {
+  align-content: start;
+  background: #0b0d10;
+  border-left: 1px solid rgba(237, 242, 247, 0.13);
+  border-right: 1px solid rgba(237, 242, 247, 0.13);
+  display: grid;
+  min-height: calc(100vh - var(--topbar-height) - var(--status-row-height));
+  min-width: 0;
+}
+
+.confessions-feed-head,
+.confession-composer,
+.confession-post {
+  border-bottom: 1px solid rgba(237, 242, 247, 0.13);
+}
+
+.confessions-feed-head {
+  align-items: center;
+  backdrop-filter: blur(16px);
+  background: rgba(11, 13, 16, 0.88);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 14px 16px;
+  position: sticky;
+  top: calc(var(--topbar-height) + var(--status-row-height));
+  z-index: 4;
+}
+
+.confessions-feed-head h2 {
+  font-size: 1.25rem;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.confessions-feed-head span,
+.confessions-profile-card span,
+.confessions-mini-card span,
+.confession-post header span,
+.confession-post header time,
+.confession-post header small,
+.confession-actions small,
+.confessions-card-head span,
+.confessions-id-row small {
+  color: #8d99a6;
+  font-size: 0.78rem;
+}
+
+.confessions-profile-card,
+.confessions-mini-card,
+.confessions-card {
+  background: #111419;
+  border: 1px solid rgba(237, 242, 247, 0.13);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.confessions-profile-card {
+  display: grid;
+  gap: 11px;
+  padding: 14px;
+}
+
+.confessions-profile-card > div:nth-child(2),
+.confessions-id-row > div:nth-child(2) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.confessions-profile-card strong,
+.confessions-id-row strong,
+.confession-post header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.confessions-avatar {
+  align-items: center;
+  background: linear-gradient(135deg, #e5b95a, #4aa3ff);
+  border: 0;
+  border-radius: 999px;
+  color: #060708;
+  display: inline-flex;
+  font-weight: 900;
+  height: 44px;
+  justify-content: center;
+  width: 44px;
+}
+
+button.confessions-avatar {
+  cursor: pointer;
+}
+
+.confessions-avatar.small {
+  flex: 0 0 38px;
+  height: 38px;
+  width: 38px;
+}
+
+.confessions-avatar.tiny {
+  flex: 0 0 30px;
+  font-size: 0.76rem;
+  height: 30px;
+  width: 30px;
+}
+
+.confessions-avatar.xlarge {
+  border: 4px solid #111419;
+  flex: 0 0 82px;
+  font-size: 2rem;
+  height: 82px;
+  width: 82px;
+}
+
+.confessions-side-nav {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.confessions-side-nav a,
+.confessions-side-nav button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #edf2f7;
+  display: flex;
+  gap: 10px;
+  min-height: 42px;
+  padding: 9px 10px;
+  text-decoration: none;
+}
+
+.confessions-side-nav a:hover,
+.confessions-side-nav button:hover,
+.confessions-side-nav a[aria-current="page"],
+.confessions-side-nav button[aria-current="page"] {
+  background: rgba(74, 163, 255, 0.12);
+  border-color: rgba(74, 163, 255, 0.24);
+}
+
+.confessions-mini-card {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+}
+
+.confessions-mini-card strong {
+  font-size: 1.05rem;
+}
+
+.confession-composer {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  padding: 14px 16px;
+}
+
+.confession-composer-main {
+  display: grid;
+  gap: 11px;
+  min-width: 0;
+}
+
+.confession-composer textarea {
+  background: transparent;
+  border: 0;
+  color: #edf2f7;
+  font: inherit;
+  font-size: 1.08rem;
+  line-height: 1.4;
+  min-height: 96px;
+  outline: 0;
+  resize: vertical;
+  width: 100%;
+}
+
+.confession-composer textarea::placeholder,
+.confessions-link-field input::placeholder,
+.confessions-search input::placeholder {
+  color: #7d8791;
+}
+
+.confessions-link-field {
+  align-items: center;
+  background: #090b0e;
+  border: 1px solid rgba(237, 242, 247, 0.13);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.confessions-link-field input {
+  background: transparent;
+  border: 0;
+  color: #edf2f7;
+  font: inherit;
+  min-width: 0;
+  outline: 0;
+}
+
+.confessions-media-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.confessions-media-row label {
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+}
+
+.confessions-media-row input[type="file"] {
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  width: 1px;
+}
+
+.confessions-field-error {
+  color: var(--amber);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.confession-composer-actions {
+  align-items: center;
+  border-top: 1px solid rgba(237, 242, 247, 0.13);
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding-top: 10px;
+}
+
+.confession-composer-actions > span {
+  align-items: center;
+  border: 1px solid rgba(237, 242, 247, 0.16);
+  border-radius: 999px;
+  color: #8d99a6;
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  height: 30px;
+  justify-content: center;
+  min-width: 42px;
+  padding: 0 9px;
+}
+
+.confession-composer-actions > span.is-low {
+  border-color: rgba(240, 201, 106, 0.45);
+  color: var(--accent-strong);
+}
+
+.confessions-feed-list {
+  display: grid;
+}
+
+.confession-post {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  padding: 14px 16px;
+}
+
+.confession-post:hover {
+  background: rgba(237, 242, 247, 0.035);
+}
+
+.confession-post-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.confession-post header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.confession-author-button {
+  background: transparent;
+  border: 0;
+  color: #edf2f7;
+  font: inherit;
+  font-weight: 860;
+  padding: 0;
+}
+
+.confession-post p {
+  color: #edf2f7;
+  line-height: 1.45;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.confession-link-preview {
+  align-items: center;
+  background: #090b0e;
+  border: 1px solid rgba(237, 242, 247, 0.13);
+  border-radius: 8px;
+  color: #edf2f7;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  padding: 10px;
+  text-decoration: none;
+}
+
+.confession-link-preview span {
+  color: #8d99a6;
+  display: block;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.confession-repost-label {
+  align-items: center;
+  display: inline-flex;
+  flex: 1 0 100%;
+  gap: 5px;
+}
+
+.confession-image-preview {
+  background: #090b0e;
+  border: 1px solid rgba(237, 242, 247, 0.13);
+  border-radius: 8px;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.confession-image-preview img {
+  aspect-ratio: 16 / 9;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.confession-image-preview div {
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px 10px;
+}
+
+.confession-image-preview span {
+  color: #8d99a6;
+  display: block;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.confession-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  max-width: 440px;
+}
+
+.confession-actions button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #8d99a6;
+  display: inline-flex;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0;
+}
+
+.confessions-profile-detail {
+  gap: 13px;
+}
+
+.confessions-profile-top {
+  align-items: center;
+  display: grid;
+  gap: 11px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+}
+
+.confessions-profile-top h3 {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.confessions-profile-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.confessions-profile-actions label {
+  display: grid;
+  gap: 5px;
+}
+
+.confessions-profile-actions label span {
+  color: #8d99a6;
+  font-size: 0.72rem;
+  font-weight: 820;
+}
+
+.confessions-profile-actions input {
+  background: #090b0e;
+  border: 1px solid rgba(237, 242, 247, 0.13);
+  border-radius: 8px;
+  color: #edf2f7;
+  font: inherit;
+  min-height: 38px;
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.confessions-profile-stats {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.confessions-profile-stats div {
+  background: #090b0e;
+  border: 1px solid rgba(237, 242, 247, 0.1);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px;
+}
+
+.confessions-profile-stats dt {
+  color: #8d99a6;
+  font-size: 0.72rem;
+  font-weight: 820;
+}
+
+.confessions-profile-stats dd {
+  color: #edf2f7;
+  font-size: 0.9rem;
+  font-weight: 860;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.confessions-profile-tabs-card {
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.confessions-x-profile-banner {
+  aspect-ratio: 3 / 1;
+  background: #090b0e;
+  border-bottom: 1px solid rgba(237, 242, 247, 0.1);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.confessions-x-profile-banner.is-empty {
+  background:
+    linear-gradient(135deg, rgba(237, 242, 247, 0.06) 25%, transparent 25%) 0 0 /
+      22px 22px,
+    linear-gradient(315deg, rgba(237, 242, 247, 0.04) 25%, transparent 25%) 0 0 /
+      22px 22px,
+    #090b0e;
+}
+
+.confessions-x-profile-banner img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.confessions-x-profile-head {
+  display: grid;
+  gap: 11px;
+  min-width: 0;
+  padding: 0 13px 13px;
+}
+
+.confessions-x-avatar-row {
+  align-items: start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  margin-top: -34px;
+  min-width: 0;
+}
+
+.confessions-x-profile-head p {
+  color: #edf2f7;
+  font-size: 0.92rem;
+  line-height: 1.25;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.confessions-x-profile-actions {
+  align-self: end;
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  min-width: 0;
+  padding-top: 38px;
+}
+
+.confessions-icon-button {
+  align-items: center;
+  background: #0b0d10;
+  border: 1px solid rgba(237, 242, 247, 0.22);
+  border-radius: 999px;
+  color: #edf2f7;
+  display: inline-flex;
+  font: inherit;
+  height: 36px;
+  justify-content: center;
+  min-height: 36px;
+  min-width: 0;
+  padding: 0;
+  width: 36px;
+}
+
+.confessions-icon-button:disabled {
+  color: #6d7680;
+  cursor: not-allowed;
+  opacity: 0.66;
+}
+
+.confessions-follow-button {
+  align-items: center;
+  background: #edf2f7;
+  border: 1px solid #edf2f7;
+  border-radius: 999px;
+  color: #050608;
+  display: inline-flex;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 900;
+  min-height: 36px;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+
+.confessions-follow-button:disabled {
+  background: transparent;
+  color: #8d99a6;
+  cursor: not-allowed;
+}
+
+.confessions-x-profile-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.confessions-x-profile-title h3 {
+  align-items: center;
+  color: #edf2f7;
+  display: flex;
+  font-size: 1.02rem;
+  gap: 5px;
+  line-height: 1.15;
+  margin: 0;
+  min-width: 0;
+}
+
+.confessions-x-profile-title h3 > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confessions-x-profile-title svg {
+  color: #1d9bf0;
+  flex: 0 0 auto;
+}
+
+.confessions-x-profile-title > span {
+  color: #8d99a6;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confessions-x-profile-bio {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.confessions-x-profile-bio p {
+  white-space: pre-line;
+}
+
+.confessions-x-profile-bio a {
+  color: #1d9bf0;
+  text-decoration: none;
+}
+
+.confessions-x-profile-meta {
+  align-items: center;
+  color: #8d99a6;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  gap: 10px;
+  min-width: 0;
+}
+
+.confessions-x-profile-meta a,
+.confessions-x-profile-meta span {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+}
+
+.confessions-x-profile-meta a {
+  color: #1d9bf0;
+  max-width: 100%;
+  overflow: hidden;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confessions-x-profile-meta svg {
+  flex: 0 0 auto;
+}
+
+.confessions-x-social-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  min-width: 0;
+}
+
+.confessions-x-social-row div {
+  background: #090b0e;
+  border: 1px solid rgba(237, 242, 247, 0.1);
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 5px;
+  min-width: 0;
+  padding: 6px 9px;
+}
+
+.confessions-x-social-row dt {
+  color: #8d99a6;
+  font-size: 0.72rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.confessions-x-social-row dd {
+  color: #edf2f7;
+  font-size: 0.76rem;
+  font-weight: 860;
+  margin: 0;
+}
+
+.confessions-x-profile-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.confessions-x-profile-counts a {
+  color: #8d99a6;
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.confessions-x-profile-counts strong {
+  color: #edf2f7;
+}
+
+.confessions-proof-profile-panel {
+  background: #0b0d10;
+  border: 1px solid rgba(237, 242, 247, 0.13);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.confessions-profile-tabs {
+  border-bottom: 1px solid rgba(237, 242, 247, 0.13);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.confessions-profile-tabs button {
+  background: transparent;
+  border: 0;
+  color: #8d99a6;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 820;
+  min-height: 44px;
+  min-width: 0;
+  padding: 0 5px;
+  position: relative;
+  text-transform: capitalize;
+}
+
+.confessions-profile-tabs button[aria-selected="true"] {
+  color: #edf2f7;
+}
+
+.confessions-profile-tabs button[aria-selected="true"]::after {
+  background: #1d9bf0;
+  border-radius: 999px;
+  bottom: 0;
+  content: "";
+  height: 3px;
+  left: 18%;
+  position: absolute;
+  right: 18%;
+}
+
+.confessions-profile-timeline {
+  display: grid;
+  min-width: 0;
+}
+
+.confessions-profile-timeline-row {
+  border-bottom: 1px solid rgba(237, 242, 247, 0.13);
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px 13px;
+}
+
+.confessions-profile-timeline-row:last-child {
+  border-bottom: 0;
+}
+
+.confessions-pinned-label,
+.confessions-profile-repost {
+  align-items: center;
+  color: #8d99a6;
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 760;
+  gap: 5px;
+  margin-left: 40px;
+  min-width: 0;
+}
+
+.confessions-profile-post-grid {
+  align-items: start;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+}
+
+.confessions-profile-post-grid > div:last-child {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.confessions-profile-post-grid header {
+  align-items: center;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.confessions-profile-post-grid strong,
+.confessions-profile-post-grid p {
+  overflow-wrap: anywhere;
+}
+
+.confessions-profile-post-grid header strong,
+.confessions-profile-post-grid header span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confessions-profile-post-grid header span:last-child {
+  flex: 0 0 auto;
+}
+
+.confessions-profile-post-grid header span,
+.confessions-profile-post-grid p,
+.confessions-empty-note {
+  color: #8d99a6;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.confessions-profile-post-grid p {
+  color: #edf2f7;
+  line-height: 1.35;
+}
+
+.confessions-profile-post-grid img {
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.confessions-profile-row-actions {
+  display: flex;
+}
+
+.confessions-profile-row-actions button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #8d99a6;
+  display: inline-flex;
+  font: inherit;
+  font-size: 0.78rem;
+  gap: 5px;
+  padding: 0;
+}
+
+.confessions-search {
+  align-items: center;
+  background: #111419;
+  border: 1px solid rgba(237, 242, 247, 0.13);
+  border-radius: 999px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.confessions-search input {
+  background: transparent;
+  border: 0;
+  color: #edf2f7;
+  font: inherit;
+  min-width: 0;
+  outline: 0;
+}
+
+.confessions-card {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+}
+
+.confessions-card-head {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.confessions-card-head h3 {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.confessions-id-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.confessions-id-list > p {
+  color: #8d99a6;
+  margin: 0;
+}
+
+.confessions-id-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.confessions-id-row > span:nth-child(2) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.confessions-follow-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.confessions-follow-grid > div {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.confessions-follow-grid strong {
+  color: #8d99a6;
+  font-size: 0.75rem;
+}
+
+.confessions-follow-grid button {
+  background: #090b0e;
+  border: 1px solid rgba(237, 242, 247, 0.1);
+  border-radius: 8px;
+  color: #edf2f7;
+  font: inherit;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.confessions-protocol-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.confessions-protocol-list div {
+  align-items: center;
+  background: #0b0d10;
+  border: 1px solid rgba(237, 242, 247, 0.1);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 8px 9px;
+}
+
+.confessions-protocol-list dt {
+  color: #8d99a6;
+  font-size: 0.76rem;
+  font-weight: 820;
+}
+
+.confessions-protocol-list dd {
+  color: #edf2f7;
+  font-size: 0.8rem;
+  font-weight: 820;
+  margin: 0;
+  text-align: right;
+}
+
+.confessions-tx-modal-backdrop {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.68);
+  display: grid;
+  inset: 0;
+  justify-items: center;
+  padding: 18px;
+  position: fixed;
+  z-index: 120;
+}
+
+.confessions-tx-modal {
+  background: #111419;
+  border: 1px solid rgba(237, 242, 247, 0.18);
+  border-radius: 12px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  display: grid;
+  gap: 14px;
+  max-width: 420px;
+  min-width: 0;
+  padding: 16px;
+  width: min(100%, 420px);
+}
+
+.confessions-edit-modal {
+  background: #111419;
+  border: 1px solid rgba(237, 242, 247, 0.18);
+  border-radius: 12px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  display: grid;
+  gap: 12px;
+  max-height: min(92vh, 760px);
+  max-width: 610px;
+  min-width: 0;
+  overflow: auto;
+  padding: 10px 14px 16px;
+  width: min(100%, 610px);
+}
+
+.confessions-edit-head {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 42px;
+  min-width: 0;
+}
+
+.confessions-edit-head h2 {
+  font-size: 1.08rem;
+  margin: 0;
+}
+
+.confessions-edit-save {
+  background: #edf2f7;
+  border: 0;
+  border-radius: 999px;
+  color: #050608;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 900;
+  min-height: 34px;
+  padding: 0 16px;
+}
+
+.confessions-edit-media {
+  display: grid;
+  min-width: 0;
+  position: relative;
+}
+
+.confessions-edit-media .confessions-x-profile-banner {
+  border-radius: 8px 8px 0 0;
+}
+
+.confessions-edit-media .confessions-avatar.xlarge {
+  bottom: -36px;
+  left: 18px;
+  position: absolute;
+}
+
+.confessions-edit-banner-row {
+  margin-top: 40px;
+}
+
+.confessions-edit-media > span {
+  align-items: center;
+  background: rgba(5, 6, 8, 0.72);
+  border: 1px solid rgba(237, 242, 247, 0.25);
+  border-radius: 999px;
+  bottom: -16px;
+  color: #edf2f7;
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  left: 70px;
+  position: absolute;
+  width: 32px;
+}
+
+.confessions-edit-note {
+  background: rgba(74, 163, 255, 0.1);
+  border: 1px solid rgba(74, 163, 255, 0.18);
+  border-radius: 8px;
+  color: #dbeafe;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  margin: 34px 0 0;
+  padding: 10px;
+}
+
+.confessions-edit-field {
+  border: 1px solid rgba(237, 242, 247, 0.14);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.confessions-edit-field span,
+.confessions-edit-field small {
+  color: #8d99a6;
+  font-size: 0.75rem;
+}
+
+.confessions-edit-field input,
+.confessions-edit-field textarea {
+  background: transparent;
+  border: 0;
+  color: #edf2f7;
+  font: inherit;
+  min-width: 0;
+  outline: 0;
+  padding: 0;
+  resize: vertical;
+}
+
+.confessions-tx-modal-head {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.confessions-tx-modal-head h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.confessions-tx-modal-head span,
+.confessions-tx-profile span,
+.confessions-tx-amount span,
+.confessions-tx-details dt,
+.confessions-tx-fixed dt {
+  color: #8d99a6;
+  font-size: 0.78rem;
+}
+
+.confessions-tx-profile {
+  align-items: center;
+  background: #0b0d10;
+  border: 1px solid rgba(237, 242, 247, 0.12);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  padding: 10px;
+}
+
+.confessions-tx-profile > div:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.confessions-tx-profile strong,
+.confessions-tx-profile span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confessions-tx-amount {
+  display: grid;
+  gap: 6px;
+}
+
+.confessions-tx-amount input {
+  background: #090b0e;
+  border: 1px solid rgba(237, 242, 247, 0.16);
+  border-radius: 8px;
+  color: #edf2f7;
+  font: inherit;
+  min-height: 42px;
+  min-width: 0;
+  padding: 0 11px;
+}
+
+.confessions-tx-details,
+.confessions-tx-fixed {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.confessions-tx-details div,
+.confessions-tx-fixed div {
+  background: #0b0d10;
+  border: 1px solid rgba(237, 242, 247, 0.1);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.confessions-tx-details dd,
+.confessions-tx-fixed dd {
+  color: #edf2f7;
+  font-size: 0.86rem;
+  font-weight: 840;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .token-wallet-public-app {
@@ -6021,6 +7303,44 @@ pre {
   .public-page-compact {
     gap: 14px;
     padding: 16px 14px 28px;
+  }
+
+  .confessions-shell {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0 14px 28px;
+  }
+
+  .confessions-shell.is-profile-view {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 980px;
+  }
+
+  .confessions-sidebar,
+  .confessions-feed-head,
+  .confessions-profile-rail {
+    position: static;
+    top: auto;
+  }
+
+  .confessions-sidebar {
+    padding: 16px 0 12px;
+  }
+
+  .confessions-feed,
+  .confessions-profile-page {
+    border: 1px solid rgba(237, 242, 247, 0.13);
+    border-radius: 8px;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .confessions-profile-page {
+    gap: 10px;
+  }
+
+  .confessions-profile-layout {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 10px;
   }
 
   .public-page-header {

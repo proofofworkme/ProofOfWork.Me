@@ -1,12 +1,14 @@
 # ProofOfWork.Me
 
-Bitcoin-native mail and ProofOfWork ID registry, written to BTC OP_RETURN outputs and signed locally with UniSat.
+ProofOfWork-native mail and ProofOfWork ID registry, written to ProofOfWork OP_RETURN outputs and signed locally with UniSat.
 
 ## For Agents
 
 Before modifying ProofOfWork.Me, read `SOUL.md`.
 
 This repository is built for agent collaboration. `SOUL.md` explains the project's voice, thesis, and long-term direction. Protocol behavior lives in `README.md`, `PROOFOFWORK_IDS.md`, `MARKETPLACE.md`, and the source code.
+
+Public language uses `proofs` for sat-denominated value across ProofOfWork.Me social copy, dashboards, and user-facing labels. Agents must still preserve exact protocol/API names such as `amountSats`, `priceSats`, `paidSats`, `networkValueSats`, and `floorSats`; `proofs` is display language, not a JSON or serialized protocol rename. Daily WORK and PowID tweet structure lives in `SOUL.md`.
 
 ## Phase 1 Launch
 
@@ -46,17 +48,17 @@ Production app roles:
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `browser.proofofwork.me` is the standalone public HTML renderer for ProofOfWork message bodies or verified file attachments by txid.
-- `marketplace.proofofwork.me` is the standalone asset marketplace. The IDs tab is live for ProofOfWork ID listings and buyer-funded transfers; the Tokens tab is live for token sale-ticket listings, sealed purchases, and market discovery.
-- `token.proofofwork.me` is the standalone mainnet token creation and mint app.
+- `marketplace.proofofwork.me` is the standalone asset marketplace. The IDs tab is live for ProofOfWork ID listings and buyer-funded transfers; the Credits tab is live for credit sale-ticket listings, sealed purchases, and market discovery.
+- `token.proofofwork.me` is the standalone mainnet credit creation and mint app.
 - `tokens.proofofwork.me` redirects permanently to `https://token.proofofwork.me/`.
-- `wallet.proofofwork.me` is the standalone token wallet for confirmed balances, transfers, listings, delistings, and sale history touching the connected address.
-- `work.proofofwork.me` is the standalone WORK token dashboard and mint page.
-- `log.proofofwork.me` is the standalone public Bitcoin Computer log for tx-backed ProofOfWork actions.
-- `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled Bitcoin Computer network value with real confirmed chain value in sats and USD.
-- The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their Bitcoin transactions.
+- `wallet.proofofwork.me` is the standalone credit wallet for confirmed balances, transfers, listings, delistings, and sale history touching the connected address.
+- `work.proofofwork.me` is the standalone WORK credit dashboard and mint page.
+- `log.proofofwork.me` is the standalone public ProofOfWork Computer log for tx-backed ProofOfWork actions.
+- `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled ProofOfWork Computer network value with real confirmed chain value in proofs and USD.
+- The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Token, Wallet, WORK, Log, and Growth. Public social links should include X, YouTube, and GitHub.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Credit, Wallet, WORK, Log, and Growth. Public social links should include X, YouTube, and GitHub.
 
 Official YouTube:
 
@@ -92,8 +94,8 @@ Launch invariants for future developers/agents:
 
 - Connects UniSat.
 - Switches UniSat between testnet4, testnet3, and mainnet.
-- Sends BTC to one or more recipient addresses or confirmed ProofOfWork IDs.
-- Builds a PSBT with BTC, ProofOfWork.Me OP_RETURN outputs, and change.
+- Sends ProofOfWork payments to one or more recipient addresses or confirmed ProofOfWork IDs.
+- Builds a PSBT with ProofOfWork payment outputs, ProofOfWork.Me OP_RETURN outputs, and change.
 - Uses UniSat to sign the PSBT, then broadcasts signed hex through the first-party ProofOfWork node API.
 - Shows the txid and an external explorer link.
 - Scans the connected address for incoming and sent ProofOfWork.Me OP_RETURN payments.
@@ -105,7 +107,7 @@ Launch invariants for future developers/agents:
 - Checks pending broadcasts with the full transaction lookup so missing txs become dropped instead of staying pending forever.
 - Lets dropped broadcasts be rebuilt from their local draft data; users must sign a fresh transaction to resend.
 - Recovers confirmed sent mail from chain data, so Sent and Files do not depend only on browser history.
-- Sorts Incoming, Inbox, and Sent by highest sats, newest, oldest, or thread.
+- Sorts Incoming, Inbox, and Sent by highest proofs, newest, oldest, or thread.
 - Supports an optional Subject field written into the ProofOfWork.Me OP_RETURN protocol.
 - Replies to a message by embedding the parent txid so messages can form threads.
 - Supports Reply All for multi-recipient messages.
@@ -124,34 +126,35 @@ Launch invariants for future developers/agents:
 - Supports one small attachment per message, capped at 60,000 bytes before encoding.
 - Adds a desktop-style Files section for confirmed attachment-only browsing, filtering, sorting, in-app previews, download, and opening the source message.
 - Previews images, PDFs, audio, video, text, Markdown, JSON, and code files directly in the app, with copy support for text/code content.
-- Adds a standalone public Desktop app that searches any Bitcoin address or confirmed ProofOfWork ID and displays/previews confirmed public attachments without a wallet connection.
+- Adds a standalone public Desktop app that searches any ProofOfWork address or confirmed ProofOfWork ID and displays/previews confirmed public attachments without a wallet connection.
 - Adds a standalone public Browser app that loads a txid, renders HTML from a message body or verified `text/html` attachment in a sandbox, and exposes a Computer-native HTML template.
 - Keeps wallet signing outside Browser-rendered HTML pages.
-- Exposes Browser as a first-class Computer sidebar workspace, so HTML pages are part of the Bitcoin Computer and not only a standalone subdomain.
-- Pins the canonical `Welcome to ProofOfWork.Me.html` Bitcoin Computer page as a default system file in Files/Desktop, opening through Browser by txid.
+- Exposes Browser as a first-class Computer sidebar workspace, so HTML pages are part of the ProofOfWork Computer and not only a standalone subdomain.
+- Stages Confessions as a 140-character social app for ProofOfWork IDs. Links, Files-backed small image attachments, editable social profiles, replies, likes, reposts, follows, tips, profile earnings, and the Following timeline are planned as a separate `pwc1:` meta protocol, not as ID registry mutations.
+- Pins the canonical `Welcome to ProofOfWork.Me.html` ProofOfWork Computer page as a default system file in Files/Desktop, opening through Browser by txid.
 - Projects Browser-readable HTML message bodies into Files/Desktop as virtual `.html` files, so users can send HTML as a message body without needing an attachment.
-- Supports fractional fee rates, including sub-1 sat/vB values like `0.1`.
+- Supports fractional fee rates, including sub-1 proof/vB values like `0.1`.
 - Uses the correct external explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
 - Searches ID registry records, owned IDs, pending ID events, marketplace listings, and registry supply views across the app.
 - Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.
 - Resolves confirmed ProofOfWork IDs as direct transfer targets, so ownership can be sent to an ID's current owner/receiver instead of manually pasting the raw address.
-- Lets ID management receive fields accept confirmed ProofOfWork IDs, resolving them to raw Bitcoin receive addresses before writing registry events.
-- Lets current ID owners publish on-chain marketplace listings, seal them, delist them, and execute buyer-funded ID transfers. Marketplace is tabbed by asset class: IDs and token sale-ticket markets are live.
+- Lets ID management receive fields accept confirmed ProofOfWork IDs, resolving them to raw ProofOfWork receive addresses before writing registry events.
+- Lets current ID owners publish on-chain marketplace listings, seal them, delist them, and execute buyer-funded ID transfers. Marketplace is tabbed by asset class: IDs and credit sale-ticket markets are live.
 - Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
-- Exposes Tokens as a mainnet-only creation and mint surface, a Wallet surface for balances/transfers/listing actions, and a dedicated WORK token dashboard. Token creation pays the built-in index fee to `tokens@proofofwork.me`; mints, transfers, listings, seals, delistings, and buys pay each token's own registry at the owner-set price or mutation fee.
+- Exposes Credits as a mainnet-only creation and mint surface, a Wallet surface for balances/transfers/listing actions, and a dedicated WORK credit dashboard. Credit creation pays the built-in index fee to `tokens@proofofwork.me`; mints, transfers, listings, seals, delistings, and buys pay each credit's own registry at the owner-set price or mutation fee.
 - Filters active marketplace listings by sale-ticket outspend state, so a spent ticket leaves the active book even if a cached summary snapshot is still warming.
-- Shows token market books with All, Sealed, and Unsealed views where sale-ticket status applies; active books can sort by price or arbitrage, while sales/listing logs stay ordered by confirmation time.
-- Paginates token sales/listing logs from the API so every listing, closure, and sale remains inspectable instead of being limited to a preview.
-- Token mint surfaces treat confirmed history as canonical mint-out, but pause user mint actions when confirmed plus pending mints would fill the remaining supply. Pending mempool records are not final, but the UI avoids letting users pay for likely overfill attempts.
+- Shows credit market books with All, Sealed, and Unsealed views where sale-ticket status applies; active books can sort by price or arbitrage, while sales/listing logs stay ordered by confirmation time.
+- Paginates credit sales/listing logs from the API so every listing, closure, and sale remains inspectable instead of being limited to a preview.
+- Credit mint surfaces treat confirmed history as canonical mint-out, but pause user mint actions when confirmed plus pending mints would fill the remaining supply. Pending mempool records are not final, but the UI avoids letting users pay for likely overfill attempts.
 - Stages RUSH as an explicit development/protocol surface behind `?rush=1` or `VITE_RUSH_ONLY=1`. It is not part of shared public navigation or production domain routing until separately approved for launch.
-- Exposes Growth as a public dashboard for modeled Bitcoin Computer network value versus real confirmed registry, log, file, marketplace, and Token value metrics.
+- Exposes Growth as a public dashboard for modeled ProofOfWork Computer network value versus real confirmed registry, log, file, marketplace, and Credit value metrics.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
 - Reads registry, mail, files, pagination, wallet UTXOs, transaction preparation data, broadcast status, live BTC/USD, WORK floor, and app metrics through the first-party ProofOfWork OP_RETURN API.
-- Uses explicit pagination for registry, marketplace, token, wallet, log, and growth data views so large confirmed datasets remain inspectable without relying on infinite scroll.
+- Uses explicit pagination for registry, marketplace, credit, wallet, log, and growth data views so large confirmed datasets remain inspectable without relying on infinite scroll.
 - Treats ProofOfWork IDs as case-insensitive names capped by the aggregate 100 KB OP_RETURN transaction limit, not arbitrary character rules.
 - Resolves ProofOfWork IDs in the compose recipient field only after a confirmed registry record exists; pending IDs cannot receive routed mail yet.
 - Re-checks the full registry immediately before broadcasting an ID registration to block stale duplicate claims.
@@ -195,28 +198,28 @@ Current production behavior:
 - Confirmed records remain canonical; pending records are visible but not final.
 - Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
 - Marketplace ID sale count and seller-price volume are derived from resolver-accepted `buy5` sale-ticket purchases, with confirmed sales canonical and pending sales shown as mempool visibility. Older legacy buy events remain replayable protocol history but do not seed the public marketplace stats.
-- The token API scans `tokens@proofofwork.me` at `1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn` for `pwt1:create` events, using tx `7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19` as the current ID record for the token index.
-- Token creation requires a 546 sat payment to `tokens@proofofwork.me` before the OP_RETURN. The create event defines ticker, max supply, mint amount, mint price, and the token's own registry address. The UI may accept a confirmed ProofOfWork ID such as `work@proofofwork.me` for the token registry field, but the on-chain create payload stores the resolved Bitcoin address.
-- Token ids are creation txids. Mint events use `pwt1:mint:<token-create-txid>:<amount>` and must pay the token registry address before OP_RETURN.
-- Token transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` and require a 546 sat mutation payment to that same token registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visible but not canonical.
-- The Token tab inside Marketplace is the shared market surface for token trades. Token `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the token registry mutation fee.
-- Token active listings are spend-state aware. A sale-ticket outpoint spend closes the listing; if the spend is a valid `pwt1:buy5`, the sale appears in token sales, token market logs, Growth, and summary endpoints after refresh.
-- Fresh reads for token summaries, token histories, marketplace summaries, and WORK summaries refresh the shared token payload cache before returning. Stale snapshots are acceptable for first paint only, not after an explicit refresh.
-- Token mint prices are owner-set with a 546 sat minimum. ProofOfWork does not take a global fee on mints; the mint price goes to that token's registry address.
-- Token surfaces show the starting unit price as mint price divided by mint amount, plus live node-backed USD per token and per mint from BTC/USD.
-- `wallet.proofofwork.me` shows connected-address token balances, transfer logs, active owned listings, sale history, and non-custodial transfers/listings/delistings through UniSat. `work.proofofwork.me` shows the WORK dashboard: mint progress, holders, token facts, mint action, mint log, live floor, and confirmed floor history. `token.proofofwork.me` stays focused on token creation and mint selection.
-- WORK is reserved for the canonical WORK token id `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`. Official indexers and UI creation flows reject non-canonical token creates whose ticker contains `WORK`, and exclude token creates from blocked scam creator address `bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl`.
-- WORK settings are 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, and the `work@proofofwork.me` registry address. The launch price is exactly 1 sat per WORK. The token create form can reuse the same economic template for new tickers, but cannot create another WORK-like token.
-- WORK's permanent value floor is derived from the Growth model's confirmed Bitcoin Computer network value: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. The inverse, `21,000,000 / confirmed_network_value_sats`, is the WORK-per-sat ratio. Pending records are visible but do not change the canonical floor until confirmed.
-- The WORK dashboard shows the live floor beside the mint panel: floor sats per WORK, USD per WORK, confirmed network value in sats/USD, a confirmed floor-history chart, and the refresh time. This is separate from the 1 sat/WORK launch mint price. WORK and Growth must use the same node-backed BTC/USD quote and the same confirmed network-value payload so sats and USD totals agree across surfaces.
-- The WORK floor announcement is part of project history as ProofOfWork mail tx `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`: `$work now has a permanent Bitcoin Computer floor.` Live indexers determine whether that tx is pending or confirmed; once confirmed, Bitcoin history is the permanent source.
-- The staged RUSH API scans the configured network registry for valid `pwr1:m:rush` mints that pay at least 1,000 sats to the registry before OP_RETURN. Confirmed mint ordinals determine the phase reward; pending mints are visibility only.
-- The log API exposes a normalized Bitcoin Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, token creations, token mints, token transfers, token listings, and token sales. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
+- The credit API scans `tokens@proofofwork.me` at `1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn` for `pwt1:create` events, using tx `7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19` as the current ID record for the credit index.
+- Credit creation requires a 546-proof payment to `tokens@proofofwork.me` before the OP_RETURN. The create event defines ticker, max supply, mint amount, mint price, and the credit's own registry address. The UI may accept a confirmed ProofOfWork ID such as `work@proofofwork.me` for the credit registry field, but the on-chain create payload stores the resolved ProofOfWork address.
+- Credit ids are creation txids. Mint events use `pwt1:mint:<token-create-txid>:<amount>` and must pay the credit registry address before OP_RETURN.
+- Credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` and require a 546-proof mutation payment to that same credit registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visible but not canonical.
+- The Credit tab inside Marketplace is the shared market surface for credit trades. Credit `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the credit registry mutation fee.
+- Credit active listings are spend-state aware. A sale-ticket outpoint spend closes the listing; if the spend is a valid `pwt1:buy5`, the sale appears in credit sales, credit market logs, Growth, and summary endpoints after refresh.
+- Fresh reads for credit summaries, credit histories, marketplace summaries, and WORK summaries refresh the shared credit payload cache before returning. Stale snapshots are acceptable for first paint only, not after an explicit refresh.
+- Credit mint prices are owner-set with a 546-proof minimum. ProofOfWork does not take a global fee on mints; the mint price goes to that credit's registry address.
+- Credit surfaces show the starting unit price as mint price divided by mint amount, plus live node-backed USD per credit and per mint from BTC/USD.
+- `wallet.proofofwork.me` shows connected-address credit balances, transfer logs, active owned listings, sale history, and non-custodial transfers/listings/delistings through UniSat. `work.proofofwork.me` shows the WORK dashboard: mint progress, holders, credit facts, mint action, mint log, live floor, and confirmed floor history. `token.proofofwork.me` stays focused on credit creation and mint selection.
+- WORK is reserved for the canonical WORK credit id `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`. Official indexers and UI creation flows reject non-canonical credit creates whose ticker contains `WORK`, and exclude credit creates from blocked scam creator address `bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl`.
+- WORK settings are 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, and the `work@proofofwork.me` registry address. The launch price is exactly 1 proof per WORK. The credit create form can reuse the same economic template for new tickers, but cannot create another WORK-like credit.
+- WORK's permanent value floor is derived from the Growth model's confirmed ProofOfWork Computer network value: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. The inverse, `21,000,000 / confirmed_network_value_sats`, is the WORK-per-proof ratio. Pending records are visible but do not change the canonical floor until confirmed.
+- The WORK dashboard shows the live floor beside the mint panel: floor proofs per WORK, USD per WORK, confirmed network value in proofs/USD, a confirmed floor-history chart, and the refresh time. This is separate from the 1 proof/WORK launch mint price. WORK and Growth must use the same node-backed BTC/USD quote and the same confirmed network-value payload so proofs and USD totals agree across surfaces.
+- The WORK floor announcement is part of project history as ProofOfWork mail tx `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`: `$work now has a permanent ProofOfWork Computer floor.` Live indexers determine whether that tx is pending or confirmed; once confirmed, ProofOfWork history is the permanent source.
+- The staged RUSH API scans the configured network registry for valid `pwr1:m:rush` mints that pay at least 1,000 proofs to the registry before OP_RETURN. Confirmed mint ordinals determine the phase reward; pending mints are visibility only.
+- The log API exposes a normalized ProofOfWork Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, and credit sales. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
 - Browser renders ProofOfWork HTML by txid from either the `pwm1:m` message body or a verified `pwm1:a` file attachment. It does not introduce an outside carrier; attachments keep the same size/SHA-256 verification as Files/Desktop, and message-body HTML remains bound to the transaction that carries it.
 - Confirmed Browser pages may run scripts in an opaque sandbox, but wallet signing remains outside Browser pages. Pending Browser pages render as visibility only and cannot run scripts.
 - Files/Desktop treat Browser-readable `pwm1:m` HTML bodies as derived `.html` files for navigation and opening, while the original transaction remains a message-body record on-chain.
-- The canonical welcome page is pinned by txid `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b` as the default Bitcoin Computer file. It appears in Files/Desktop as a system artifact and opens in Browser so the transaction remains the source of truth.
-- Growth reads the same registry, log, Token, and WORK floor endpoints, then auto-refreshes real confirmed network value with the same live node-backed BTC/USD benchmark used by the rest of the app. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
+- The canonical welcome page is pinned by txid `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b` as the default ProofOfWork Computer file. It appears in Files/Desktop as a system artifact and opens in Browser so the transaction remains the source of truth.
+- Growth reads the same registry, log, Credit, and WORK floor endpoints, then auto-refreshes real confirmed network value with the same live node-backed BTC/USD benchmark used by the rest of the app. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
 - ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which external explorers can report as a lower effective fee rate.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
@@ -243,7 +246,7 @@ pwm1:s:<subject-base64url>
 pwm1:m:<message-chunk>
 ```
 
-Recipients are not stored in OP_RETURN. They are represented by normal Bitcoin payment outputs before the first ProofOfWork.Me OP_RETURN output. Multi-recipient mail uses one shared OP_RETURN payload and one BTC output per recipient.
+Recipients are not stored in OP_RETURN. They are represented by normal ProofOfWork payment outputs before the first ProofOfWork.Me OP_RETURN output. Multi-recipient mail uses one shared OP_RETURN payload and one ProofOfWork output per recipient.
 CC recipients are also normal payment outputs. To/CC labels are local sender-side organization metadata, not a chain-enforced privacy or delivery primitive.
 
 Replies are written as:
@@ -287,11 +290,51 @@ pwid1:delist5:<listing-txid>
 pwid1:buy5:<listing-txid>:<new-owner-address>:<new-receive-address?>
 ```
 
-`pwid1:r2` registrations require a 1,000 sat registry payment. `pwid1:u` and `pwid1:t` require a 546 sat mutation payment and must be spent from the current owner address. If a transfer omits the new receive address, the new owner also becomes the receiver.
-The UI may accept confirmed ProofOfWork IDs in owner/receive fields, but `pwid1:u` and `pwid1:t` always write resolved Bitcoin addresses on-chain.
-`pwid1:list5` publishes sale terms as a `pwid-sale-v4` JSON object and creates a 546 sat seller-controlled sale-ticket UTXO in the listing transaction. `pwid1:seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` signature for that ticket after the listing txid exists, and the seal must name the listing txid as its `anchorTxid`. `pwid1:buy5` must spend that same ticket, pay the seller price plus ticket value, and pay the 546 sat mutation fee before the ID OP_RETURN. Because every valid buyer spends the same sale ticket, competing purchases conflict at the Bitcoin UTXO layer instead of both paying.
+`pwid1:r2` registrations require a 1,000-proof registry payment. `pwid1:u` and `pwid1:t` require a 546-proof mutation payment and must be spent from the current owner address. If a transfer omits the new receive address, the new owner also becomes the receiver.
+The UI may accept confirmed ProofOfWork IDs in owner/receive fields, but `pwid1:u` and `pwid1:t` always write resolved ProofOfWork addresses on-chain.
+`pwid1:list5` publishes sale terms as a `pwid-sale-v4` JSON object and creates a 546-proof seller-controlled sale-ticket UTXO in the listing transaction. `pwid1:seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` signature for that ticket after the listing txid exists, and the seal must name the listing txid as its `anchorTxid`. `pwid1:buy5` must spend that same ticket, pay the seller price plus ticket value, and pay the 546-proof mutation fee before the ID OP_RETURN. Because every valid buyer spends the same sale ticket, competing purchases conflict at the ProofOfWork UTXO layer instead of both paying.
 `pwid1:delist5` cancels a listing by spending the sale ticket and paying the mutation fee. Historical `list2`/`buy2`/`delist2`, `list3`/`buy3`/`delist3`, and `list4`/`buy4`/`delist4` events remain readable for replay, but new marketplace writes use `list5`/`seal5`/`buy5`/`delist5`.
 Pending `pwid1:u`, `pwid1:t`, `pwid1:list5`, `pwid1:seal5`, `pwid1:delist5`, and `pwid1:buy5` events are exposed as in-flight changes for touched wallets. They do not change canonical owner/receiver routing until confirmed.
+
+## Staged Confessions Protocol
+
+Confessions is staged as a separate ProofOfWork ID social meta protocol, not as a change to the canonical `pwid1:` registry. It is not a public production surface until separately approved.
+
+Planned event shape:
+
+```text
+pwc1:profile:<profile-json-base64url>
+pwc1:post:<post-json-base64url>
+pwc1:reply:<parent-txid>:<post-json-base64url>
+pwc1:like:<target-txid>
+pwc1:repost:<target-txid>
+pwc1:follow:<target-id-base64url>
+pwc1:tip:<target-id-base64url>:<amount-proofs>
+pwc1:hide:<target-txid>
+```
+
+Rules to preserve while implementing the live writer/indexer:
+
+- Confessions and reply text are capped at 140 user-visible characters.
+- Every confirmed PowID has a blank Confessions profile by default. The default location is `ProofOfWork`.
+- Profile metadata uses `pwc1:profile:<profile-json-base64url>` and requires 546 proofs to the profile owner's own confirmed PowID receiver. Newer confirmed profile proofs replace older profile fields.
+- Profile fields are capped at 50 characters for name, 160 for bio, 30 for location, and 100 for website. Birthday is optional. Profile banner images are Files-backed references capped at 100 KB and ride the same 546-proof `pwc1:profile` proof to the owner's own PowID receiver.
+- Post JSON may include links and one image attachment reference under 100 KB before encoding. The image bytes should be created through the ProofOfWork Files attachment layer, and Confessions should store only the file txid/proof/hash/size pointer. The final transaction must still fit the aggregate OP_RETURN carrier limit.
+- Images should render inline in feeds and profiles from Files, while still exposing size/hash proof metadata in detailed views.
+- Confirmed ProofOfWork IDs are the account namespace.
+- The staged Confessions UI derives profile shells and payment receivers from confirmed `pwid1` registry records only; preview-only social accounts must not stand in for real PowIDs.
+- Pending IDs are visible but not routable social identities.
+- Likes, reposts, follows, and paid replies require at least 546 proofs to the immediate target's confirmed ProofOfWork ID receiver before the `pwc1:` OP_RETURN.
+- Following someone pays 546 proofs to that user's confirmed PowID receiver and creates the confirmed follow graph.
+- Tips pay a user-chosen amount to the target profile's confirmed PowID receiver.
+- Profiles should show confirmed followers, following, confirmed social proofs earned by source, pending social proofs separately, and the user's WORK balance when available.
+- Profiles should expose tabs for Posts, Replies, Likes, and Media. Reposts are inline profile timeline items in Posts, not a separate tab. Proofs/earnings stay in the profile summary.
+- Authors can archive/hide their own Confessions from default app/profile indexing with a 546-proof `pwc1:hide` event. The original record remains on-chain and can still appear in raw chain/log views.
+- The Following timeline shows posts from followed PowIDs ordered by post time.
+- Likes, reposts, and replies are disabled until the target post or reply is confirmed.
+- A reply to a reply pays the immediate parent author, not automatically the original thread author.
+- Confirmed ProofOfWork history is canonical. Pending Confessions records are visibility only.
+- Wallet signing stays local; the API reads, indexes, verifies, and broadcasts already-signed transactions only.
 
 ## Run
 
@@ -324,31 +367,40 @@ To preview the public Browser locally:
 http://localhost:5173/?browser=1
 ```
 
+To preview the staged Confessions app locally:
+
+```text
+http://localhost:5173/?confessions=1
+http://localhost:5173/?confessions=1&view=home
+http://localhost:5173/?confessions=1&view=following
+http://localhost:5173/?confessions=1&view=profile&profile=proofofwork
+```
+
 To preview the standalone asset Marketplace locally:
 
 ```text
 http://localhost:5173/?marketplace=1
 ```
 
-To preview the token creation and mint app locally:
+To preview the credit creation and mint app locally:
 
 ```text
 http://localhost:5173/?token=1
 ```
 
-To preview the WORK token dashboard locally:
+To preview the WORK credit dashboard locally:
 
 ```text
 http://localhost:5173/?work=1
 ```
 
-To preview the token wallet locally:
+To preview the credit wallet locally:
 
 ```text
 http://localhost:5173/?wallet=1
 ```
 
-To preview the staged RUSH token mint page locally:
+To preview the staged RUSH credit mint page locally:
 
 ```text
 http://localhost:5173/?rush=1
@@ -375,7 +427,7 @@ Computer -> /
 Desktop -> /?desktop=1
 Browser -> /?browser=1
 Marketplace -> /?marketplace=1
-Token -> /?token=1
+Credit -> /?token=1
 Wallet -> /?wallet=1
 WORK -> /?work=1
 Log -> /?log=1
@@ -412,31 +464,33 @@ To build the public Browser app for production:
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 ```
 
+The staged Confessions app is local-only until separately approved. Do not add it to public navigation or production builds.
+
 To build the standalone asset Marketplace app for production:
 
 ```bash
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
 ```
 
-To build the standalone token app for production:
+To build the standalone credit app for production:
 
 ```bash
 VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://token.proofofwork.me npm run build
 ```
 
-To build the standalone token wallet for production:
+To build the standalone credit wallet for production:
 
 ```bash
 VITE_WALLET_ONLY=1 VITE_POW_API_BASE=https://wallet.proofofwork.me npm run build
 ```
 
-To build the standalone WORK token dashboard for production:
+To build the standalone WORK credit dashboard for production:
 
 ```bash
 VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
 ```
 
-To build the staged standalone RUSH token mint page:
+To build the staged standalone RUSH credit mint page:
 
 ```bash
 VITE_RUSH_ONLY=1 VITE_POW_API_BASE=https://rush.proofofwork.me npm run build
@@ -517,8 +571,9 @@ Important implementation points:
 - Root landing route switch: `isLandingRoute()` in `src/app/routeRegistry.ts`.
 - Public Desktop route switch: `isDesktopRoute()` in `src/app/routeRegistry.ts`.
 - Public Browser route switch: `isBrowserRoute()` in `src/app/routeRegistry.ts`.
+- Staged Confessions route switch: `isConfessionsRoute()` in `src/app/routeRegistry.ts`; it returns true only on local preview hosts unless launch scope changes.
 - Standalone Marketplace route switch: `isMarketplaceRoute()` in `src/app/routeRegistry.ts`.
-- Standalone Token route switch: `isTokenRoute()` in `src/app/routeRegistry.ts`.
+- Standalone Credit route switch: `isTokenRoute()` in `src/app/routeRegistry.ts`.
 - Standalone Wallet route switch: `isWalletRoute()` in `src/app/routeRegistry.ts`.
 - Standalone WORK route switch: `isWorkTokenRoute()` in `src/app/routeRegistry.ts`.
 - Staged RUSH route switch: `isRushRoute()` in `src/app/routeRegistry.ts`.
@@ -528,8 +583,9 @@ Important implementation points:
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
 - Desktop-only deploy switch: `VITE_DESKTOP_ONLY=1`.
 - Browser-only deploy switch: `VITE_BROWSER_ONLY=1`.
+- Confessions-only deploy switch: `VITE_CONFESSIONS_ONLY=1` for local/staged builds only.
 - Marketplace-only deploy switch: `VITE_MARKETPLACE_ONLY=1`.
-- Token-only deploy switch: `VITE_TOKEN_ONLY=1`.
+- Credit-only deploy switch: `VITE_TOKEN_ONLY=1`.
 - Wallet-only deploy switch: `VITE_WALLET_ONLY=1`.
 - WORK-only deploy switch: `VITE_WORK_TOKEN_ONLY=1`.
 - Staged RUSH-only deploy switch: `VITE_RUSH_ONLY=1`.
@@ -539,6 +595,7 @@ Important implementation points:
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
 - Public Desktop UI: `DesktopApp`, `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
 - Public Browser UI: `BrowserApp`, `fetchBrowserPage()`, `browserPageFromTransaction()`, and `browserTemplateHtml()` in `src/App.tsx`.
+- Staged Confessions UI: `ConfessionsApp` in `src/features/confessions/ConfessionsApp.tsx`.
 - In-app file preview UI: `AttachmentViewer`, `FileInspector`, `attachmentPreviewKind()`, and `attachmentText()` in `src/App.tsx`.
 - ID write format: `buildIdRegistrationPayload()`.
 - ID mutation formats: `buildIdReceiverUpdatePayload()` and `buildIdTransferPayload()`.

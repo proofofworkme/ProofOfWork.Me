@@ -2,21 +2,21 @@
 
 Generated on 2026-05-13. Product surface updated on 2026-05-22.
 
-Purpose: public-facing narrative deck for the current Bitcoin Computer.
+Purpose: public-facing narrative deck for the current ProofOfWork Computer.
 
 Positioning:
 
 ```text
-ProofOfWork.Me is the Bitcoin Computer: local-first, on-chain, agent-readable software for identity, paid communication, files, pages, markets, funding, tokens, logs, and growth.
+ProofOfWork.Me is the ProofOfWork Computer: local-first, on-chain, agent-readable software for identity, paid communication, files, pages, markets, funding, credits, logs, and growth.
 ```
 
-## Slide 1: The Bitcoin Computer
+## Slide 1: The ProofOfWork Computer
 
 ProofOfWork.Me
 
-The Bitcoin Computer.
+The ProofOfWork Computer.
 
-Identity, mail, files, pages, marketplace actions, token mints, wallet transfers, logs, and growth signals written to Bitcoin.
+Identity, mail, files, pages, marketplace actions, credit mints, wallet transfers, logs, and growth signals written to ProofOfWork.
 
 ## Slide 2: The Internet Rents Identity
 
@@ -26,9 +26,9 @@ Accounts can be renamed, banned, rate-limited, captured, or deleted.
 
 The next internet needs identities users can own and agents can verify.
 
-## Slide 3: Bitcoin Is The Source Of Truth
+## Slide 3: ProofOfWork Is The Source Of Truth
 
-Bitcoin gives the app a hard foundation:
+ProofOfWork gives the app a hard foundation:
 
 - Durable public state.
 - Native money.
@@ -41,21 +41,21 @@ Confirmed records are canonical. Pending mempool data is useful gossip, not fina
 
 ## Slide 4: ProofOfWork IDs
 
-Claim a permanent Bitcoin-native identity:
+Claim a permanent ProofOfWork-native identity:
 
 ```text
 user@proofofwork.me
 ```
 
-IDs resolve to Bitcoin receive addresses.
+IDs resolve to ProofOfWork receive addresses.
 
 First confirmed valid registration wins.
 
 Owners can update receivers, transfer IDs, and list IDs in the marketplace.
 
-## Slide 5: Bitcoin Mail
+## Slide 5: ProofOfWork Mail
 
-Send messages with sats attached.
+Send messages with proofs attached.
 
 Every message can carry value, attention, and proof-of-work.
 
@@ -79,7 +79,7 @@ Search any address or confirmed ProofOfWork ID. No wallet required.
 
 ## Slide 7: Browser
 
-Browser renders HTML from Bitcoin transactions.
+Browser renders HTML from ProofOfWork transactions.
 
 Users paste a txid and view HTML from either:
 
@@ -90,7 +90,7 @@ The page renders inside a sandbox. The txid remains the proof.
 
 ## Slide 8: Welcome File
 
-The canonical welcome page is already on Bitcoin:
+The canonical welcome page is already on ProofOfWork:
 
 ```text
 8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b
@@ -104,7 +104,7 @@ It opens through Browser by txid.
 
 ProofOfWork IDs are transferable assets.
 
-Tokens are transferable market assets too.
+Credits are transferable market assets too.
 
 Current marketplace protocols:
 
@@ -123,34 +123,34 @@ Sellers publish on-chain listings and seal exact sale terms.
 
 Buyers settle by spending a sale-ticket UTXO, paying the seller, paying the registry mutation fee, and writing the transfer or buy event.
 
-Competing buys conflict at the Bitcoin UTXO layer.
+Competing buys conflict at the ProofOfWork UTXO layer.
 
-## Slide 10: Tokens
+## Slide 10: Credits
 
-Tokens are mint-first and Bitcoin-readable.
+Credits are mint-first and ProofOfWork-readable.
 
 ```text
 token.proofofwork.me
 work.proofofwork.me
 ```
 
-Creation pays the token index.
+Creation pays the credit index.
 
-Mints, transfers, listings, seals, delistings, and buys pay each token registry directly.
+Mints, transfers, listings, seals, delistings, and buys pay each credit registry directly.
 
-WORK starts with 21,000,000 max supply, 1,000 WORK per mint, and 1,000 sats per mint.
+WORK starts with 21,000,000 max supply, 1,000 WORK per mint, and 1,000 proofs per mint.
 
-That is exactly 1 sat per WORK.
+That is exactly 1 proof per WORK.
 
-Wallet is the connected-address token surface for balances, transfer logs, token transfers, owned listings, delistings, and sale history.
+Wallet is the connected-address credit surface for balances, transfer logs, credit transfers, owned listings, delistings, and sale history.
 
 ## Slide 11: Log And Growth
 
-Log is the public Bitcoin Computer activity feed.
+Log is the public ProofOfWork Computer activity feed.
 
-It indexes registrations, receiver updates, transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, Browser-readable pages, token creations, token mints, token transfers, token listings, and token sales.
+It indexes registrations, receiver updates, transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, Browser-readable pages, credit creations, credit mints, credit transfers, credit listings, and credit sales.
 
-Growth compares the canonical success-case model against real confirmed network value in sats and USD.
+Growth compares the canonical success-case model against real confirmed network value in proofs and USD.
 
 WORK and Growth share the same confirmed network-value payload and live node-backed BTC/USD benchmark.
 
@@ -170,16 +170,16 @@ ProofOfWork.Me gives agents:
 
 - Handles.
 - Chain-readable messages.
-- Sats with every interaction.
+- Proofs with every interaction.
 - Durable files and instructions.
-- Public ownership, marketplace, funding, and token records.
+- Public ownership, marketplace, funding, and credit records.
 - Local wallet authority controlled by humans.
 
 Humans sign. Agents verify.
 
 ## Slide 13: The Final Network
 
-ProofOfWork.Me is a new interface for Bitcoin.
+ProofOfWork.Me is a new interface for ProofOfWork.
 
 Mail.
 IDs.
@@ -187,7 +187,7 @@ Files.
 Desktop.
 Browser.
 Marketplace.
-Tokens.
+Credits.
 WORK.
 Log.
 Growth.

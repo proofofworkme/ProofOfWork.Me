@@ -29,7 +29,6 @@ import {
   Inbox,
   LogOut,
   Mail,
-  MessageCircle,
   MessageSquareQuote,
   Monitor,
   Paperclip,
@@ -220,6 +219,8 @@ const STANDALONE_ROUTE_PARAMS = [
   "id-launch",
   "desktop",
   "browser",
+  "confessions",
+  "confession",
   "marketplace",
   "token",
   "wallet",
@@ -1073,7 +1074,7 @@ const UNISAT_DOWNLOAD_URL = "https://unisat.io/download";
 const CANONICAL_WELCOME_TXID =
   "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b";
 const CANONICAL_WELCOME_HTML =
-  '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Welcome to ProofOfWork.Me</title><main style="font-family:system-ui,sans-serif;max-width:680px;margin:40px auto;padding:0 18px;line-height:1.55;color:#111"><p style="color:#06c;font-weight:800;text-transform:uppercase">Bitcoin Computer</p><h1>Welcome to ProofOfWork.Me</h1><p><b>ProofOfWork.Me is a computer built on Bitcoin.</b></p><p>It turns transactions into identity, mail, files, pages, marketplace actions, logs, and proof.</p><p>Your ProofOfWork ID is your Bitcoin-native name. Your Computer is where your ID, messages, files, contacts, pages, and history become usable.</p><p>Most apps ask you to trust a server. ProofOfWork.Me asks you to check the chain. Bitcoin history is the source of truth.</p><p>Claim an ID. Send mail. Save a file. Open a txid in the Browser. Watch the Log.</p><p><b>This is the Bitcoin Computer. Small today. Already real.</b></p><p><code>ProofOfWork.Me</code></p></main>\n';
+  '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Welcome to ProofOfWork.Me</title><main style="font-family:system-ui,sans-serif;max-width:680px;margin:40px auto;padding:0 18px;line-height:1.55;color:#111"><p style="color:#06c;font-weight:800;text-transform:uppercase">ProofOfWork Computer</p><h1>Welcome to ProofOfWork.Me</h1><p><b>ProofOfWork.Me is a computer built on ProofOfWork.</b></p><p>It turns transactions into identity, mail, files, pages, marketplace actions, logs, and proof.</p><p>Your ProofOfWork ID is your ProofOfWork-native name. Your Computer is where your ID, messages, files, contacts, pages, and history become usable.</p><p>Most apps ask you to trust a server. ProofOfWork.Me asks you to check the chain. ProofOfWork history is the source of truth.</p><p>Claim an ID. Send mail. Save a file. Open a txid in the Browser. Watch the Log.</p><p><b>This is the ProofOfWork Computer. Small today. Already real.</b></p><p><code>ProofOfWork.Me</code></p></main>\n';
 const CANONICAL_WELCOME_SENDER = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
 const CANONICAL_WELCOME_RECIPIENT = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
 const CANONICAL_WELCOME_CREATED_AT = "2026-05-13T17:58:01.000Z";
@@ -1835,7 +1836,7 @@ async function fetchBtcUsdPrice(fresh = false) {
     );
     const usd = Number(payload.USD ?? payload.usd);
     if (!Number.isFinite(usd) || usd <= 0) {
-      throw new Error("BTC/USD price is unavailable.");
+      throw new Error("USD price is unavailable.");
     }
 
     btcUsdBrowserCache = {
@@ -1894,7 +1895,7 @@ function xVerificationUrl(record: PowIdRecord) {
     ? "registered"
     : "submitted a registration for";
   const text = [
-    `I ${action} ${record.id}@proofofwork.me on Bitcoin.`,
+    `I ${action} ${record.id}@proofofwork.me on ProofOfWork.`,
     `Registry tx: ${explorerTxUrl(record.txid, record.network)}`,
     "ProofOfWork.Me IDs are on-chain mail identities.",
   ].join("\n\n");
@@ -1910,7 +1911,7 @@ function marketplacePurchaseTweetUrl(receipt: MarketplacePurchaseReceipt) {
   const text = [
     assetLine,
     `Purchase tx: ${explorerTxUrl(receipt.txid, receipt.network)}`,
-    "Bitcoin-native markets settle through on-chain sale tickets.",
+    "ProofOfWork-native markets settle through on-chain sale tickets.",
   ].join("\n\n");
 
   return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
@@ -1930,11 +1931,11 @@ function MarketplacePurchaseReceiptModal({
   const title =
     receipt.kind === "id"
       ? "ID purchase broadcast"
-      : "Token purchase broadcast";
+      : "Credit purchase broadcast";
   const description =
     receipt.kind === "id"
-      ? `${receipt.assetLabel} buyer-funded transfer is on Bitcoin.`
-      : `${receipt.amountLabel} purchase is on Bitcoin.`;
+      ? `${receipt.assetLabel} buyer-funded transfer is on ProofOfWork.`
+      : `${receipt.amountLabel} purchase is on ProofOfWork.`;
 
   return (
     <div
@@ -1978,7 +1979,7 @@ function MarketplacePurchaseReceiptModal({
           </div>
           <div>
             <dt>Price</dt>
-            <dd>{receipt.priceSats.toLocaleString()} sats</dd>
+            <dd>{receipt.priceSats.toLocaleString()} proofs</dd>
           </div>
           <div>
             <dt>Purchase TX</dt>
@@ -2193,9 +2194,9 @@ function confirmDustFeeAbsorption({
 
   return window.confirm(
     [
-      `${extraFeeSats.toLocaleString()} sats of below-dust change will be added to the miner fee.`,
-      `Selected fee rate: ${feeRate} sat/vB.`,
-      `Estimated fee: ${feeSats.toLocaleString()} sats.`,
+      `${extraFeeSats.toLocaleString()} proofs of below-dust change will be added to the miner fee.`,
+      `Selected fee rate: ${feeRate} proof/vB.`,
+      `Estimated fee: ${feeSats.toLocaleString()} proofs.`,
       "Use a larger confirmed UTXO or batch payments to avoid this. Continue signing?",
     ].join("\n\n"),
   );
@@ -2458,7 +2459,7 @@ function resolveRecipientInput(
   if (!id) {
     return {
       displayRecipient,
-      error: "Enter a valid Bitcoin address or ProofOfWork ID.",
+      error: "Enter a valid ProofOfWork address or ProofOfWork ID.",
       isId: true,
       paymentAddress: "",
     };
@@ -2541,7 +2542,7 @@ function resolvePowIdOwnerInput(
   if (!id) {
     return {
       displayRecipient,
-      error: "Enter a valid Bitcoin address or confirmed ProofOfWork ID.",
+      error: "Enter a valid ProofOfWork address or confirmed ProofOfWork ID.",
       isId: true,
       ownerAddress: "",
       receiveAddress: "",
@@ -2641,7 +2642,7 @@ function resolveRecipientInputs(
         duplicateCount,
         error:
           resolved.error ||
-          "Enter valid Bitcoin addresses or confirmed ProofOfWork IDs.",
+          "Enter valid ProofOfWork addresses or confirmed ProofOfWork IDs.",
         idCount,
         recipients,
       };
@@ -2710,7 +2711,7 @@ function ownerResolutionNote(resolution: PowIdOwnerResolution) {
     return `${resolution.displayRecipient} resolves to owner ${shortAddress(resolution.ownerAddress)} and receiver ${shortAddress(resolution.receiveAddress)}.`;
   }
 
-  return "Raw Bitcoin owner address.";
+  return "Raw ProofOfWork owner address.";
 }
 
 function receiveResolutionNote(resolution: RecipientResolution) {
@@ -2726,7 +2727,7 @@ function receiveResolutionNote(resolution: RecipientResolution) {
     return `${resolution.displayRecipient} resolves to receiver ${shortAddress(resolution.paymentAddress)}.`;
   }
 
-  return "Raw Bitcoin receive address.";
+  return "Raw ProofOfWork receive address.";
 }
 
 function explorerNetworkFor(
@@ -2873,7 +2874,7 @@ function folderLabel(folder: Folder) {
   }
 
   if (folder === "token") {
-    return "Token";
+    return "Credit";
   }
 
   if (folder === "wallet") {
@@ -2937,15 +2938,15 @@ function folderSubtitle(folder: Folder) {
   }
 
   if (folder === "token") {
-    return "Token creation and minting";
+    return "Credit creation and minting";
   }
 
   if (folder === "wallet") {
-    return "Token balances and transfers";
+    return "Credit balances and transfers";
   }
 
   if (folder === "work") {
-    return "WORK token dashboard";
+    return "WORK credit dashboard";
   }
 
   if (folder === "log") {
@@ -3524,7 +3525,7 @@ function parseSaleAuthorizationText(
   }
 
   if (!Number.isSafeInteger(priceSats) || priceSats < 0) {
-    throw new Error("Sale price must be zero or more sats.");
+    throw new Error("Sale price must be zero or more proofs.");
   }
 
   if (!nonce || nonce.length > 160) {
@@ -5291,7 +5292,7 @@ function tokenTickerIsReserved(value: string) {
 function tokenTickerReservationError(value: string) {
   const ticker = normalizeTokenTicker(value);
   return ticker && tokenTickerIsReserved(ticker)
-    ? "WORK is reserved for the canonical WORK token. Choose a ticker without WORK."
+    ? "WORK is reserved for the canonical WORK credit. Choose a ticker without WORK."
     : "";
 }
 
@@ -5396,7 +5397,7 @@ function parseTokenSaleAuthorizationJson(
 ): PowTokenSaleAuthorization {
   const parsed = JSON.parse(value) as Partial<PowTokenSaleAuthorization>;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Token sale authorization is not an object.");
+    throw new Error("Credit sale authorization is not an object.");
   }
 
   const draft = tokenSaleAuthorizationDraft(parsed);
@@ -5404,7 +5405,7 @@ function parseTokenSaleAuthorizationJson(
   const anchorSignature = String(parsed.anchorSignature ?? "").toLowerCase();
 
   if (draft.version !== TOKEN_SALE_AUTH_VERSION) {
-    throw new Error("Token sale authorization version is not supported.");
+    throw new Error("Credit sale authorization version is not supported.");
   }
 
   if (
@@ -5429,7 +5430,7 @@ function parseTokenSaleAuthorizationJson(
     (anchorTxid && !/^[0-9a-f]{64}$/u.test(anchorTxid)) ||
     (anchorSignature && !validSignatureHex(anchorSignature))
   ) {
-    throw new Error("Token sale authorization is invalid.");
+    throw new Error("Credit sale authorization is invalid.");
   }
 
   return {
@@ -5489,7 +5490,7 @@ function buildTokenSaleSealPayload(
   authorization: PowTokenSaleAuthorization,
 ) {
   if (!tokenSaleAuthorizationUsesSaleTicketAnchor(authorization)) {
-    throw new Error("Token sale-ticket seal signature is invalid.");
+    throw new Error("Credit sale-ticket seal signature is invalid.");
   }
 
   return `${TOKEN_PROTOCOL_PREFIX}${TOKEN_SEAL_ACTION}:${listingId}:${encodeTextBase64Url(JSON.stringify(authorization))}`;
@@ -7381,7 +7382,7 @@ async function fetchTransactionJson(
 ) {
   const normalizedTxid = txid.trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
-    throw new Error("Enter a valid Bitcoin txid.");
+    throw new Error("Enter a valid ProofOfWork txid.");
   }
 
   const payload = await fetchProofApiJson<{
@@ -7728,7 +7729,7 @@ function tokenMarketplaceSummaryStats({
 
   if (scopedToken) {
     return {
-      ariaLabel: `${scopedToken.ticker} token marketplace stats`,
+      ariaLabel: `${scopedToken.ticker} credit marketplace stats`,
       items: [
         {
           label: "Confirmed Supply",
@@ -7743,11 +7744,11 @@ function tokenMarketplaceSummaryStats({
           value: networkListings.length,
         },
         {
-          label: "Token Sales",
+          label: "Credit Sales",
           value: marketStats.totalSales,
         },
         {
-          label: "Volume sats",
+          label: "Volume proofs",
           value: marketStats.totalVolumeSats,
         },
         {
@@ -7759,10 +7760,10 @@ function tokenMarketplaceSummaryStats({
   }
 
   return {
-    ariaLabel: "Token marketplace stats",
+    ariaLabel: "Credit marketplace stats",
     items: [
       {
-        label: "Total Tokens",
+        label: "Total Credits",
         value: networkTokens.length,
       },
       {
@@ -7770,15 +7771,15 @@ function tokenMarketplaceSummaryStats({
         value: networkListings.length,
       },
       {
-        label: "Token Sales",
+        label: "Credit Sales",
         value: marketStats.totalSales,
       },
       {
-        label: "Volume sats",
+        label: "Volume proofs",
         value: marketStats.totalVolumeSats,
       },
       {
-        label: "Pending Tokens",
+        label: "Pending Credits",
         value: networkTokens.filter((token) => !token.confirmed).length,
       },
       {
@@ -7825,7 +7826,7 @@ function activityItemsFromIdEvents(events: PowIdEvent[]): PowActivityItem[] {
       tags: [
         status,
         networkLabel(event.network),
-        `${event.amountSats.toLocaleString()} sats`,
+        `${event.amountSats.toLocaleString()} proofs`,
       ],
       txid: event.txid,
     };
@@ -7874,7 +7875,7 @@ function activityItemsFromIdEvents(events: PowIdEvent[]): PowActivityItem[] {
         ...base,
         actor: event.sellerAddress,
         counterparty: event.saleAuthorization.buyerAddress,
-        description: `${event.id}@proofofwork.me listed for ${event.priceSats.toLocaleString()} sats by ${shortAddress(event.sellerAddress)}.`,
+        description: `${event.id}@proofofwork.me listed for ${event.priceSats.toLocaleString()} proofs by ${shortAddress(event.sellerAddress)}.`,
         detail:
           event.listingVersion === "list5"
             ? "Sale-ticket listing"
@@ -7885,7 +7886,7 @@ function activityItemsFromIdEvents(events: PowIdEvent[]): PowActivityItem[] {
         tags: [
           ...base.tags,
           "Listing",
-          `${event.priceSats.toLocaleString()} sale sats`,
+          `${event.priceSats.toLocaleString()} sale proofs`,
         ],
         title: event.confirmed ? "ID listed" : "ID listing pending",
         utxo: `${event.txid}:${anchorVout}`,
@@ -7932,7 +7933,7 @@ function activityItemsFromIdEvents(events: PowIdEvent[]): PowActivityItem[] {
       tags: [
         ...base.tags,
         "Marketplace buy",
-        event.priceSats ? `${event.priceSats.toLocaleString()} sale sats` : "",
+        event.priceSats ? `${event.priceSats.toLocaleString()} sale proofs` : "",
       ].filter(Boolean),
       title: event.confirmed ? "ID purchased" : "ID purchase pending",
     };
@@ -7952,7 +7953,7 @@ function activityItemsFromAddressMail(
       confirmed: message.confirmed,
       counterparty: message.to,
       createdAt: message.createdAt,
-      description: `${message.confirmed ? "Received" : "Incoming"} ${isFile ? "file" : isReply ? "reply" : "mail"} from ${shortAddress(message.from)} for ${message.amountSats.toLocaleString()} sats.`,
+      description: `${message.confirmed ? "Received" : "Incoming"} ${isFile ? "file" : isReply ? "reply" : "mail"} from ${shortAddress(message.from)} for ${message.amountSats.toLocaleString()} proofs.`,
       detail: message.attachment
         ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}`
         : messageSubject(message),
@@ -7962,7 +7963,7 @@ function activityItemsFromAddressMail(
         activityStatusTag(message.confirmed),
         networkLabel(message.network),
         "Inbound",
-        `${message.amountSats.toLocaleString()} sats`,
+        `${message.amountSats.toLocaleString()} proofs`,
         isFile ? "File" : isReply ? "Reply" : "Mail",
         isBrowserHtmlMessageBody(message.memo) ? "HTML body" : "",
         message.attachment?.mime ?? "",
@@ -7988,7 +7989,7 @@ function activityItemsFromAddressMail(
       confirmed,
       counterparty: message.to,
       createdAt: message.createdAt,
-      description: `${confirmed ? "Sent" : deliveryStatus === "dropped" ? "Dropped" : "Pending"} ${isFile ? "file" : isReply ? "reply" : "mail"} to ${message.to} for ${message.amountSats.toLocaleString()} sats.`,
+      description: `${confirmed ? "Sent" : deliveryStatus === "dropped" ? "Dropped" : "Pending"} ${isFile ? "file" : isReply ? "reply" : "mail"} to ${message.to} for ${message.amountSats.toLocaleString()} proofs.`,
       detail: message.attachment
         ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}`
         : messageSubject(message),
@@ -8002,7 +8003,7 @@ function activityItemsFromAddressMail(
             : "Pending",
         networkLabel(message.network),
         "Outbound",
-        `${message.amountSats.toLocaleString()} sats`,
+        `${message.amountSats.toLocaleString()} proofs`,
         isFile ? "File" : isReply ? "Reply" : "Mail",
         isBrowserHtmlMessageBody(message.memo) ? "HTML body" : "",
         message.attachment?.mime ?? "",
@@ -9574,7 +9575,7 @@ async function chooseSellerAnchorPlan(
 
   if (totalSats < sealTargetSats) {
     throw new Error(
-      `Need confirmed wallet UTXOs covering at least ${sealTargetSats.toLocaleString()} sats to create the seller anchor seal.`,
+      `Need confirmed wallet UTXOs covering at least ${sealTargetSats.toLocaleString()} proofs to create the seller anchor seal.`,
     );
   }
 
@@ -9755,7 +9756,7 @@ function selectUtxos(
       feeRate,
   );
   throw new Error(
-    `Insufficient funds. Need about ${(amountSats + estimatedFee).toLocaleString()} sats for amount plus fee.`,
+    `Insufficient funds. Need about ${(amountSats + estimatedFee).toLocaleString()} proofs for amount plus fee.`,
   );
 }
 
@@ -9961,7 +9962,7 @@ function buildChainedMintPsbt({
   const includeChainOutput = chainValue >= DUST_SATS;
   if (!includeChainOutput && !isLast) {
     throw new Error(
-      `Chained mint output would be below dust (${DUST_SATS.toLocaleString()} sats).`,
+      `Chained mint output would be below dust (${DUST_SATS.toLocaleString()} proofs).`,
     );
   }
 
@@ -10476,7 +10477,7 @@ async function signTokenSaleTicketAuthorization({
   const anchor = await assertListingAnchorUnspent(listing, network);
   if (!("scriptPubKey" in anchor) || !anchor.publicKey) {
     throw new Error(
-      "This token listing does not have a seller-controlled sale ticket.",
+    "This credit listing does not have a seller-controlled sale ticket.",
     );
   }
 
@@ -10538,13 +10539,13 @@ async function signTokenSaleTicketAuthorization({
     signature[signature.length - 1] !== TOKEN_LISTING_ANCHOR_SIGHASH_TYPE
   ) {
     throw new Error(
-      "Wallet did not return a token sale-ticket signature with the required sighash type.",
+      "Wallet did not return a credit sale-ticket signature with the required sighash type.",
     );
   }
 
   const signatureHex = bytesToHex(signature);
   if (!validSignatureHex(signatureHex)) {
-    throw new Error("Wallet returned a malformed token sale-ticket signature.");
+    throw new Error("Wallet returned a malformed credit sale-ticket signature.");
   }
 
   return signatureHex;
@@ -10605,7 +10606,7 @@ function listingAnchorDetails(
       };
     }
 
-    throw new Error("This token listing does not use a sale-ticket anchor.");
+    throw new Error("This credit listing does not use a sale-ticket anchor.");
   }
 
   const authorization = listing.saleAuthorization as PowIdSaleAuthorization;
@@ -11509,15 +11510,15 @@ export default function App() {
             ? "marketplace"
             : tokenMode
               ? "token"
-                : walletMode
-                  ? "wallet"
-                  : workTokenMode
-                    ? "work"
-                    : activityMode
-                      ? "log"
-                      : mainnetRegistryMode
-                        ? "ids"
-                        : "inbox")
+              : walletMode
+                ? "wallet"
+                : workTokenMode
+                  ? "work"
+                  : activityMode
+                    ? "log"
+                    : mainnetRegistryMode
+                      ? "ids"
+                      : "inbox")
     );
   });
   const [activeCustomFolderId, setActiveCustomFolderId] = useState("");
@@ -13070,7 +13071,7 @@ export default function App() {
           setTokenCreationSats(state.creationSats);
           setStatus({
             tone: "good",
-            text: `${shortAddress(nextAddress)} connected. Token wallet ready.`,
+            text: `${shortAddress(nextAddress)} connected. Credit wallet ready.`,
           });
           return;
         }
@@ -13801,7 +13802,7 @@ export default function App() {
     if (!query) {
       setStatus({
         tone: "bad",
-        text: "Enter a Bitcoin address or confirmed ProofOfWork ID.",
+        text: "Enter a ProofOfWork address or confirmed ProofOfWork ID.",
       });
       return;
     }
@@ -13832,7 +13833,7 @@ export default function App() {
           tone: "bad",
           text:
             resolved.error ||
-            "Enter a valid Bitcoin address or confirmed ProofOfWork ID.",
+            "Enter a valid ProofOfWork address or confirmed ProofOfWork ID.",
         });
         return;
       }
@@ -14017,7 +14018,7 @@ export default function App() {
           tone: "bad",
           text:
             resolved.error ||
-            "Enter a valid Bitcoin address or confirmed ProofOfWork ID.",
+            "Enter a valid ProofOfWork address or confirmed ProofOfWork ID.",
         });
         return;
       }
@@ -14129,11 +14130,11 @@ export default function App() {
         }
         if (!silent) {
           const floorText = snapshot.workFloor
-            ? ` WORK floor ${Math.round(snapshot.workFloor.networkValueSats).toLocaleString()} sats.`
+            ? ` WORK floor ${Math.round(snapshot.workFloor.networkValueSats).toLocaleString()} proofs.`
             : "";
           setStatus({
             tone: "good",
-            text: `Marketplace loaded. ${snapshot.token.tokens.length.toLocaleString()} token${snapshot.token.tokens.length === 1 ? "" : "s"}, ${snapshot.token.listings.length.toLocaleString()} listing${snapshot.token.listings.length === 1 ? "" : "s"}.${floorText}`,
+            text: `Marketplace loaded. ${snapshot.token.tokens.length.toLocaleString()} credit${snapshot.token.tokens.length === 1 ? "" : "s"}, ${snapshot.token.listings.length.toLocaleString()} listing${snapshot.token.listings.length === 1 ? "" : "s"}.${floorText}`,
           });
         }
         return snapshot;
@@ -14174,7 +14175,7 @@ export default function App() {
       if (!silent) {
         setStatus({
           tone: "idle",
-          text: `No token index configured for ${networkLabel(network)}.`,
+          text: `No credit index configured for ${networkLabel(network)}.`,
         });
       }
       return undefined;
@@ -14187,7 +14188,7 @@ export default function App() {
         setBusy(true);
         setStatus({
           tone: "idle",
-          text: "Token index refresh already in progress...",
+              text: "Credit index refresh already in progress...",
         });
       }
       try {
@@ -14196,7 +14197,7 @@ export default function App() {
           if (!silent) {
             setStatus({
               tone: "idle",
-              text: "Starting fresh token index refresh...",
+              text: "Starting fresh credit index refresh...",
             });
           }
           return refreshToken(silent, fresh);
@@ -14206,11 +14207,11 @@ export default function App() {
             state
               ? {
                   tone: "good",
-                  text: `Token index loaded. ${state.tokens.length.toLocaleString()} token${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`,
+                  text: `Credit index loaded. ${state.tokens.length.toLocaleString()} credit${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`,
                 }
               : {
                   tone: "bad",
-                  text: "Token scan failed.",
+                  text: "Credit scan failed.",
                 },
           );
         }
@@ -14227,7 +14228,7 @@ export default function App() {
         setBusy(true);
       }
       if (!silent) {
-        setStatus({ tone: "idle", text: "Scanning token index..." });
+        setStatus({ tone: "idle", text: "Scanning credit index..." });
       }
       const tokenScope =
         workTokenMode || activeFolder === "work" ? WORK_TOKEN_ID : "";
@@ -14249,7 +14250,7 @@ export default function App() {
         if (!silent) {
           setStatus({
             tone: "good",
-            text: `Token index loaded. ${state.tokens.length.toLocaleString()} token${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`,
+            text: `Credit index loaded. ${state.tokens.length.toLocaleString()} credit${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`,
           });
         }
         return state;
@@ -14257,7 +14258,7 @@ export default function App() {
         if (!silent) {
           setStatus({
             tone: "bad",
-            text: errorMessage(error, "Token scan failed."),
+            text: errorMessage(error, "Credit scan failed."),
           });
         }
         return undefined;
@@ -14341,7 +14342,7 @@ export default function App() {
             quote
               ? {
                   tone: "good",
-                  text: `WORK floor loaded. Confirmed network value ${Math.round(quote.networkValueSats).toLocaleString()} sats.`,
+                  text: `WORK floor loaded. Confirmed network value ${Math.round(quote.networkValueSats).toLocaleString()} proofs.`,
                 }
               : {
                   tone: "bad",
@@ -14374,7 +14375,7 @@ export default function App() {
           if (!silent) {
             setStatus({
               tone: "good",
-              text: `WORK floor loaded. Confirmed network value ${Math.round(apiQuote.networkValueSats).toLocaleString()} sats.`,
+              text: `WORK floor loaded. Confirmed network value ${Math.round(apiQuote.networkValueSats).toLocaleString()} proofs.`,
             });
           }
           return apiQuote;
@@ -14435,7 +14436,7 @@ export default function App() {
         if (!silent) {
           setStatus({
             tone: "good",
-            text: `WORK floor loaded. Confirmed network value ${Math.round(actualValue.totalSats).toLocaleString()} sats.`,
+            text: `WORK floor loaded. Confirmed network value ${Math.round(actualValue.totalSats).toLocaleString()} proofs.`,
           });
         }
         return quote;
@@ -14463,7 +14464,7 @@ export default function App() {
   async function refreshTokenMarketData({
     fresh = true,
     includeWorkFloor = true,
-    label = "token market data",
+    label = "credit market data",
     silent = false,
   }: {
     fresh?: boolean;
@@ -14508,16 +14509,16 @@ export default function App() {
         if (tokenState) {
           const floorText =
             includeWorkFloor && floorQuote
-              ? ` WORK floor ${Math.round(floorQuote.networkValueSats).toLocaleString()} sats.`
+              ? ` WORK floor ${Math.round(floorQuote.networkValueSats).toLocaleString()} proofs.`
               : "";
           setStatus({
             tone: "good",
-            text: `Token market loaded. ${tokenState.tokens.length.toLocaleString()} token${tokenState.tokens.length === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"}.${floorText}`,
+            text: `Credit market loaded. ${tokenState.tokens.length.toLocaleString()} credit${tokenState.tokens.length === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"}.${floorText}`,
           });
         } else {
           setStatus({
             tone: "bad",
-            text: "Token market refresh did not return token state.",
+            text: "Credit market refresh did not return credit state.",
           });
         }
       }
@@ -14527,7 +14528,7 @@ export default function App() {
       if (!silent) {
         setStatus({
           tone: "bad",
-          text: errorMessage(error, "Token market refresh failed."),
+          text: errorMessage(error, "Credit market refresh failed."),
         });
       }
       return { floorQuote: undefined, tokenState: undefined };
@@ -14580,7 +14581,7 @@ export default function App() {
       if (!silent) {
         setStatus({
           tone: "good",
-          text: `Growth metrics loaded. ${snapshot.counts.powids.toLocaleString()} IDs, ${snapshot.counts.confirmedComputerActions.toLocaleString()} computer action${snapshot.counts.confirmedComputerActions === 1 ? "" : "s"}, ${snapshot.counts.tokenCount.toLocaleString()} token${snapshot.counts.tokenCount === 1 ? "" : "s"}.`,
+          text: `Growth metrics loaded. ${snapshot.counts.powids.toLocaleString()} IDs, ${snapshot.counts.confirmedComputerActions.toLocaleString()} computer action${snapshot.counts.confirmedComputerActions === 1 ? "" : "s"}, ${snapshot.counts.tokenCount.toLocaleString()} credit${snapshot.counts.tokenCount === 1 ? "" : "s"}.`,
         });
       }
     } catch (error) {
@@ -14750,7 +14751,7 @@ export default function App() {
           setTokenCreationSats(state.creationSats);
           setStatus({
             tone: "good",
-            text: `UniSat connected. Token wallet ready.`,
+            text: `UniSat connected. Credit wallet ready.`,
           });
           return;
         }
@@ -15374,7 +15375,7 @@ export default function App() {
     }
 
     if (!Number.isSafeInteger(salePriceSats) || salePriceSats < 0) {
-      throw new Error("Sale price must be zero or more sats.");
+      throw new Error("Sale price must be zero or more proofs.");
     }
 
     if (saleBuyerAddress && !isValidBitcoinAddress(saleBuyerAddress, network)) {
@@ -16391,7 +16392,7 @@ export default function App() {
           tone: "bad",
           text:
             resolvedRecipients.error ||
-            "Enter a valid Bitcoin address or confirmed ProofOfWork ID.",
+            "Enter a valid ProofOfWork address or confirmed ProofOfWork ID.",
         });
         return;
       }
@@ -16490,7 +16491,7 @@ export default function App() {
 
       setStatus({
         tone: "idle",
-        text: `Waiting for UniSat signature. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} sats.`,
+        text: `Waiting for UniSat signature. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} proofs.`,
       });
 
       const txid = await signAndBroadcastPsbt({
@@ -16618,7 +16619,7 @@ export default function App() {
     }
 
     if (network !== "livenet" || !tokenIndexAddress) {
-      setStatus({ tone: "bad", text: "Token creation is mainnet only." });
+      setStatus({ tone: "bad", text: "Credit creation is mainnet only." });
       return;
     }
 
@@ -16629,7 +16630,7 @@ export default function App() {
     const registryAddress = tokenResolvedRegistryAddress;
     const registryError = tokenRegistryResolution.error?.replace(
       "before sending to this ID",
-      "before using it as a token registry",
+      "before using it as a credit registry",
     );
     const reservationError = tokenTickerReservationError(ticker);
     if (
@@ -16650,7 +16651,7 @@ export default function App() {
         text:
           reservationError ||
           registryError ||
-          "Token creation fields are invalid.",
+          "Credit creation fields are invalid.",
       });
       return;
     }
@@ -16658,14 +16659,14 @@ export default function App() {
     if (tokenCreateBytes > MAX_DATA_CARRIER_BYTES) {
       setStatus({
         tone: "bad",
-        text: "Token create OP_RETURN is over 100 KB.",
+        text: "Credit create OP_RETURN is over 100 KB.",
       });
       return;
     }
 
     setTokenAction("create");
     setBusy(true);
-    setStatus({ tone: "idle", text: `Creating ${ticker} token...` });
+    setStatus({ tone: "idle", text: `Creating ${ticker} credit...` });
 
     try {
       const currentNetwork = await getWalletNetwork(window.unisat);
@@ -16748,7 +16749,7 @@ export default function App() {
     } catch (error) {
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Token creation failed."),
+        text: errorMessage(error, "Credit creation failed."),
       });
     } finally {
       setTokenAction("");
@@ -16848,7 +16849,7 @@ export default function App() {
 
         setStatus({
           tone: "idle",
-          text: `Waiting for UniSat signature ${index + 1}/${total}. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} sats.`,
+          text: `Waiting for UniSat signature ${index + 1}/${total}. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} proofs.`,
         });
         const broadcast = await signAndBroadcastPsbtDetailed({
           broadcastStrategy: CHAINED_MINT_BROADCAST_STRATEGY,
@@ -16935,14 +16936,14 @@ export default function App() {
     }
 
     if (network !== "livenet" || !mintTarget) {
-      setStatus({ tone: "bad", text: "Select a mainnet token first." });
+      setStatus({ tone: "bad", text: "Select a mainnet credit first." });
       return undefined;
     }
 
     if (mintPayloadBytes > MAX_DATA_CARRIER_BYTES) {
       setStatus({
         tone: "bad",
-        text: "Token mint OP_RETURN is over 100 KB.",
+        text: "Credit mint OP_RETURN is over 100 KB.",
       });
       return undefined;
     }
@@ -17012,7 +17013,7 @@ export default function App() {
       ) {
         setStatus({
           tone: "bad",
-          text: "Next mint would exceed remaining token supply.",
+          text: "Next mint would exceed remaining credit supply.",
         });
         return undefined;
       }
@@ -17040,7 +17041,7 @@ export default function App() {
     } catch (error) {
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Token mint failed."),
+        text: errorMessage(error, "Credit mint failed."),
       });
       return undefined;
     } finally {
@@ -17069,7 +17070,7 @@ export default function App() {
     }
 
     if (network !== "livenet" || !token) {
-      setStatus({ tone: "bad", text: "Select a mainnet token first." });
+      setStatus({ tone: "bad", text: "Select a mainnet credit first." });
       return;
     }
 
@@ -17090,7 +17091,7 @@ export default function App() {
     if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
       setStatus({
         tone: "bad",
-        text: "Token transfer OP_RETURN is over 100 KB.",
+        text: "Credit transfer OP_RETURN is over 100 KB.",
       });
       return;
     }
@@ -17168,7 +17169,7 @@ export default function App() {
     } catch (error) {
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Token transfer failed."),
+        text: errorMessage(error, "Credit transfer failed."),
       });
     } finally {
       setTokenAction("");
@@ -17192,7 +17193,7 @@ export default function App() {
     }
 
     if (network !== "livenet" || !token) {
-      setStatus({ tone: "bad", text: "Select a mainnet token first." });
+      setStatus({ tone: "bad", text: "Select a mainnet credit first." });
       return;
     }
 
@@ -17287,7 +17288,7 @@ export default function App() {
       };
       const payload = buildTokenListingPayload(saleAuthorization);
       if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
-        throw new Error("Token listing OP_RETURN is over 100 KB.");
+        throw new Error("Credit listing OP_RETURN is over 100 KB.");
       }
 
       const paymentPsbt = await buildPaymentPsbt({
@@ -17358,7 +17359,7 @@ export default function App() {
     } catch (error) {
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Token listing failed."),
+        text: errorMessage(error, "Credit listing failed."),
       });
     } finally {
       setTokenAction("");
@@ -17390,7 +17391,7 @@ export default function App() {
 
     setTokenAction("seal");
     setBusy(true);
-    setStatus({ tone: "idle", text: "Sealing token listing..." });
+    setStatus({ tone: "idle", text: "Sealing credit listing..." });
 
     try {
       const currentNetwork = await getWalletNetwork(window.unisat);
@@ -17453,13 +17454,13 @@ export default function App() {
       );
       setStatus({
         tone: "good",
-        text: `Token listing sealed: ${shortAddress(txid)}.`,
+        text: `Credit listing sealed: ${shortAddress(txid)}.`,
       });
       void refreshToken(true, true);
     } catch (error) {
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Token listing seal failed."),
+        text: errorMessage(error, "Credit listing seal failed."),
       });
     } finally {
       setTokenAction("");
@@ -17491,7 +17492,7 @@ export default function App() {
 
     setTokenAction("delist");
     setBusy(true);
-    setStatus({ tone: "idle", text: "Delisting token listing..." });
+    setStatus({ tone: "idle", text: "Delisting credit listing..." });
 
     try {
       const currentNetwork = await getWalletNetwork(window.unisat);
@@ -17563,13 +17564,13 @@ export default function App() {
       });
       setStatus({
         tone: "good",
-        text: `Token listing delisted: ${shortAddress(txid)}.`,
+        text: `Credit listing delisted: ${shortAddress(txid)}.`,
       });
       void refreshToken(true, true);
     } catch (error) {
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Token delist failed."),
+        text: errorMessage(error, "Credit delist failed."),
       });
     } finally {
       setTokenAction("");
@@ -17594,7 +17595,7 @@ export default function App() {
     if (!tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)) {
       setStatus({
         tone: "bad",
-        text: "Seller must seal this token listing before it can be bought.",
+        text: "Seller must seal this credit listing before it can be bought.",
       });
       return;
     }
@@ -17613,7 +17614,7 @@ export default function App() {
     if (listing.sellerAddress === address) {
       setStatus({
         tone: "bad",
-        text: "You cannot buy your own token listing from the same wallet.",
+        text: "You cannot buy your own credit listing from the same wallet.",
       });
       return;
     }
@@ -17732,7 +17733,7 @@ export default function App() {
     } catch (error) {
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Token purchase failed."),
+        text: errorMessage(error, "Credit purchase failed."),
       });
     } finally {
       setTokenAction("");
@@ -17846,7 +17847,7 @@ export default function App() {
 
         setStatus({
           tone: "idle",
-          text: `Waiting for UniSat signature ${index + 1}/${total}. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} sats.`,
+          text: `Waiting for UniSat signature ${index + 1}/${total}. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} proofs.`,
         });
         const broadcast = await signAndBroadcastPsbtDetailed({
           broadcastStrategy: CHAINED_MINT_BROADCAST_STRATEGY,
@@ -18031,7 +18032,7 @@ export default function App() {
     if (!targetToken || !address || network !== "livenet" || busy) {
       setStatus({
         tone: "bad",
-        text: "Select a live token, connect UniSat, and resolve any mint block before starting the assistant.",
+        text: "Select a live credit, connect UniSat, and resolve any mint block before starting the assistant.",
       });
       return;
     }
@@ -18272,7 +18273,7 @@ export default function App() {
     }
 
     if (network !== "livenet" || !selectedToken) {
-      setStatus({ tone: "bad", text: "Select a mainnet token first." });
+      setStatus({ tone: "bad", text: "Select a mainnet credit first." });
       return;
     }
 
@@ -18344,7 +18345,7 @@ export default function App() {
       });
       setStatus({
         tone: "good",
-        text: `${mintCount.toLocaleString()} mint UTXOs prepared for ${selectedToken.ticker}: ${shortAddress(txid)}. Split fee ${paymentPsbt.feeSats.toLocaleString()} sats at ${prepareFeeRate} sat/vB. Wait for confirmation before burst minting.`,
+        text: `${mintCount.toLocaleString()} mint UTXOs prepared for ${selectedToken.ticker}: ${shortAddress(txid)}. Split fee ${paymentPsbt.feeSats.toLocaleString()} proofs at ${prepareFeeRate} proof/vB. Wait for confirmation before burst minting.`,
       });
     } catch (error) {
       setStatus({
@@ -18484,7 +18485,7 @@ export default function App() {
           onRefreshTokens={() =>
             void refreshTokenMarketData({
               includeWorkFloor: true,
-              label: "token marketplace",
+              label: "credit marketplace",
             })
           }
         />
@@ -18626,7 +18627,7 @@ export default function App() {
         onRefresh={() =>
           void refreshTokenMarketData({
             includeWorkFloor: workTokenMode || tokenRouteShowsWorkFloor,
-            label: workTokenMode ? "WORK market data" : "token data",
+            label: workTokenMode ? "WORK market data" : "credit data",
           })
         }
       />
@@ -18796,7 +18797,7 @@ export default function App() {
                         ? "WORK market data"
                         : activeFolder === "wallet"
                           ? "wallet market data"
-                          : "token data",
+                          : "credit data",
                   });
                   return;
                 }
@@ -19031,7 +19032,7 @@ export default function App() {
             >
               <span className="folder-label">
                 <FilePenLine size={17} />
-                <span>Token</span>
+                <span>Credit</span>
               </span>
               <strong>{tokenDefinitions.length}</strong>
             </button>
@@ -19242,7 +19243,7 @@ export default function App() {
             onRefreshTokens={() =>
               void refreshTokenMarketData({
                 includeWorkFloor: true,
-                label: "token marketplace",
+                label: "credit marketplace",
               })
             }
           />
@@ -19359,7 +19360,7 @@ export default function App() {
               void refreshTokenMarketData({
                 includeWorkFloor: activeFolder === "work",
                 label:
-                  activeFolder === "work" ? "WORK market data" : "token data",
+                  activeFolder === "work" ? "WORK market data" : "credit data",
               })
             }
           />
@@ -19470,7 +19471,7 @@ export default function App() {
                         setSortMode(event.target.value as SortMode)
                       }
                     >
-                      <option value="value">Highest sats</option>
+                      <option value="value">Highest proofs</option>
                       <option value="newest">Newest</option>
                       <option value="oldest">Oldest</option>
                       <option value="thread">Thread</option>
@@ -19686,7 +19687,7 @@ function htmlText(value: string) {
 
 function browserTemplateHtml(title: string, kicker: string, body: string) {
   const pageTitle = title.trim() || "Proof Page";
-  const pageKicker = kicker.trim() || "Published on the Bitcoin Computer";
+  const pageKicker = kicker.trim() || "Published on the ProofOfWork Computer";
   const pageBody =
     body.trim() ||
     "This page is HTML carried by ProofOfWork.Me OP_RETURN data and verified by txid.";
@@ -19725,7 +19726,7 @@ function browserTemplateHtml(title: string, kicker: string, body: string) {
     <section aria-label="Proof fields">
       <div><span>Carrier</span><strong>ProofOfWork.Me</strong></div>
       <div><span>Format</span><strong>text/html</strong></div>
-      <div><span>Truth</span><strong>Bitcoin txid</strong></div>
+      <div><span>Truth</span><strong>ProofOfWork txid</strong></div>
     </section>
     <footer>Rendered by browser.proofofwork.me from ProofOfWork OP_RETURN HTML.</footer>
   </main>
@@ -19915,12 +19916,12 @@ function BrowserApp({
   const [page, setPage] = useState<BrowserPage | undefined>();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({ tone: "idle", text: "Ready" });
-  const [templateTitle, setTemplateTitle] = useState("My Bitcoin Page");
+  const [templateTitle, setTemplateTitle] = useState("My ProofOfWork Page");
   const [templateKicker, setTemplateKicker] = useState(
     "ProofOfWork.Me Browser",
   );
   const [templateBody, setTemplateBody] = useState(
-    "This page lives as HTML carried by the Bitcoin Computer.",
+    "This page lives as HTML carried by the ProofOfWork Computer.",
   );
   const [templateCopied, setTemplateCopied] = useState(false);
   const initialLoadRef = useRef(false);
@@ -19936,14 +19937,14 @@ function BrowserApp({
     async (target = query) => {
       const txid = target.trim().toLowerCase();
       if (!/^[0-9a-f]{64}$/u.test(txid)) {
-        setStatus({ tone: "bad", text: "Enter a valid Bitcoin txid." });
+        setStatus({ tone: "bad", text: "Enter a valid ProofOfWork txid." });
         return;
       }
 
       setLoading(true);
       setStatus({
         tone: "idle",
-        text: "Loading verified page from Bitcoin...",
+        text: "Loading verified page from ProofOfWork...",
       });
       try {
         const loadedPage = await fetchBrowserPage(txid, network);
@@ -19991,7 +19992,7 @@ function BrowserApp({
       <AppHeader
         network={network}
         onNetworkChange={setNetwork}
-        subtitle="HTML from Bitcoin"
+        subtitle="HTML from ProofOfWork"
         title="ProofOfWork Browser"
       />
 
@@ -20000,7 +20001,7 @@ function BrowserApp({
       <section className="browser-workspace">
         <section className="browser-hero">
           <div>
-            <span className="browser-kicker">Bitcoin-native browser</span>
+            <span className="browser-kicker">ProofOfWork-native browser</span>
             <h2>Paste a txid. Render the page.</h2>
             <p>
               HTML pages are ProofOfWork message bodies or file attachments,
@@ -20101,7 +20102,7 @@ function BrowserApp({
                 </div>
                 <div>
                   <dt>Payment</dt>
-                  <dd>{page.amountSats.toLocaleString()} sats</dd>
+                  <dd>{page.amountSats.toLocaleString()} proofs</dd>
                 </div>
                 <div>
                   <dt>SHA-256</dt>
@@ -20238,14 +20239,14 @@ function BrowserWorkspace({
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({
     tone: "idle",
-    text: "Ready. Paste a txid to render verified HTML from the Bitcoin Computer.",
+    text: "Ready. Paste a txid to render verified HTML from the ProofOfWork Computer.",
   });
-  const [templateTitle, setTemplateTitle] = useState("My Bitcoin Page");
+  const [templateTitle, setTemplateTitle] = useState("My ProofOfWork Page");
   const [templateKicker, setTemplateKicker] = useState(
     "ProofOfWork.Me Browser",
   );
   const [templateBody, setTemplateBody] = useState(
-    "This page lives as HTML carried by the Bitcoin Computer.",
+    "This page lives as HTML carried by the ProofOfWork Computer.",
   );
   const [templateCopied, setTemplateCopied] = useState(false);
   const template = useMemo(
@@ -20267,14 +20268,14 @@ function BrowserWorkspace({
     async (target = query) => {
       const txid = target.trim().toLowerCase();
       if (!/^[0-9a-f]{64}$/u.test(txid)) {
-        setStatus({ tone: "bad", text: "Enter a valid Bitcoin txid." });
+        setStatus({ tone: "bad", text: "Enter a valid ProofOfWork txid." });
         return;
       }
 
       setLoading(true);
       setStatus({
         tone: "idle",
-        text: "Loading verified page from Bitcoin...",
+        text: "Loading verified page from ProofOfWork...",
       });
       try {
         const loadedPage = await fetchBrowserPage(txid, network);
@@ -20315,7 +20316,7 @@ function BrowserWorkspace({
 
       <section className="browser-hero">
         <div>
-          <span className="browser-kicker">Bitcoin-native browser</span>
+          <span className="browser-kicker">ProofOfWork-native browser</span>
           <h2>Browser</h2>
           <p>
             Paste a txid to render HTML from a ProofOfWork message body or the
@@ -20416,7 +20417,7 @@ function BrowserWorkspace({
               </div>
               <div>
                 <dt>Payment</dt>
-                <dd>{page.amountSats.toLocaleString()} sats</dd>
+                <dd>{page.amountSats.toLocaleString()} proofs</dd>
               </div>
               <div>
                 <dt>SHA-256</dt>
@@ -20650,7 +20651,7 @@ function ActivityApp({
         network={activeNetwork}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
-        subtitle="Bitcoin Computer log"
+        subtitle="ProofOfWork Computer log"
         title="ProofOfWork Log"
       />
 
@@ -20809,7 +20810,7 @@ function ActivityWorkspace({
     <section className="activity-workspace">
       <div className="activity-hero">
         <div>
-          <span className="landing-kicker">Bitcoin-native audit trail</span>
+          <span className="landing-kicker">ProofOfWork-native audit trail</span>
           <h2>Every ProofOfWork action with a txid.</h2>
           <p>
             Messages, replies, files, ID registry events, listings, seals,
@@ -21129,7 +21130,7 @@ function TokenWalletApp({
         network={network}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
-        subtitle="Token balances and transfers"
+        subtitle="Credit balances and transfers"
         title="Wallet"
       />
 
@@ -21475,17 +21476,17 @@ function TokenWalletWorkspace({
             <Wallet size={24} />
           </div>
           <div>
-            <p>Token wallet</p>
+            <p>Credit wallet</p>
             <h2>{address ? shortAddress(address) : "Connect UniSat"}</h2>
             <span>
               Confirmed balances are canonical. Pending transfers stay visible
-              until Bitcoin confirms or drops them.
+              until ProofOfWork confirms or drops them.
             </span>
           </div>
         </div>
         <div className="id-launch-stats token-stats-row">
           <div>
-            <span>Tokens owned</span>
+            <span>Credits owned</span>
             <strong>{confirmedTokenCount.toLocaleString()}</strong>
           </div>
           <div>
@@ -21494,7 +21495,7 @@ function TokenWalletWorkspace({
           </div>
           <div>
             <span>Mutation fee</span>
-            <strong>{TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} sats</strong>
+            <strong>{TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} proofs</strong>
           </div>
         </div>
       </section>
@@ -21507,7 +21508,7 @@ function TokenWalletWorkspace({
             </div>
             <div>
               <h2>Balances</h2>
-              <p>Tokens held by the connected address.</p>
+              <p>Credits held by the connected address.</p>
             </div>
           </div>
           {balances.length ? (
@@ -21544,8 +21545,8 @@ function TokenWalletWorkspace({
           ) : (
             <div className="empty-state">
               <Wallet size={28} />
-              <h3>No token balance yet</h3>
-              <p>Mint or receive a token, then refresh this wallet.</p>
+              <h3>No credit balance yet</h3>
+              <p>Mint or receive credit, then refresh this wallet.</p>
             </div>
           )}
         </section>
@@ -21558,13 +21559,13 @@ function TokenWalletWorkspace({
             <div>
               <h2>Transfer</h2>
               <p>
-                Sends a `pwt1:send` event and pays the selected token registry.
+                Sends a `pwt1:send` event and pays the selected credit registry.
               </p>
             </div>
           </div>
           <form className="id-form" onSubmit={submitTransfer}>
             <label>
-              Token
+              Credit
               <select
                 onChange={(event) => setSelectedTokenId(event.target.value)}
                 value={selectedTokenId || balances[0]?.token.tokenId || ""}
@@ -21577,7 +21578,7 @@ function TokenWalletWorkspace({
                     </option>
                   ))
                 ) : (
-                  <option value="">No token balance</option>
+                  <option value="">No credit balance</option>
                 )}
               </select>
             </label>
@@ -21596,7 +21597,7 @@ function TokenWalletWorkspace({
                 Recipient address
                 <input
                   onChange={(event) => setTransferRecipient(event.target.value)}
-                  placeholder="Bitcoin address"
+                  placeholder="ProofOfWork address"
                   value={transferRecipient}
                 />
               </label>
@@ -21611,7 +21612,7 @@ function TokenWalletWorkspace({
               </div>
               <div>
                 <span>Registry fee</span>
-                <strong>{TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} sats</strong>
+                <strong>{TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} proofs</strong>
               </div>
               <div>
                 <span>Payload</span>
@@ -21622,7 +21623,7 @@ function TokenWalletWorkspace({
             <button className="primary" disabled={!canTransfer} type="submit">
               <span className="button-content">
                 <Send size={16} />
-                <span>{transferring ? "Transferring" : "Transfer token"}</span>
+                <span>{transferring ? "Transferring" : "Transfer credit"}</span>
               </span>
             </button>
           </form>
@@ -21635,7 +21636,7 @@ function TokenWalletWorkspace({
             </div>
             <div>
               <h2>List</h2>
-              <p>Creates a sale-ticket listing paid to the token registry.</p>
+              <p>Creates a sale-ticket listing paid to the credit registry.</p>
             </div>
           </div>
           <form className="id-form" onSubmit={submitList}>
@@ -21651,7 +21652,7 @@ function TokenWalletWorkspace({
                 />
               </label>
               <label>
-                Price sats
+                Price proofs
                 <input
                   min={1}
                   onChange={(event) => setListPriceSats(Number(event.target.value))}
@@ -21665,7 +21666,7 @@ function TokenWalletWorkspace({
                 <span>List unit</span>
                 <strong>
                   {listUnitPriceSats > 0
-                    ? `${tokenSatsPerUnit(listUnitPriceSats)} sats / ${selectedListToken?.ticker ?? "TOKEN"}`
+                    ? `${tokenSatsPerUnit(listUnitPriceSats)} proofs / ${selectedListToken?.ticker ?? "CREDIT"}`
                     : "Set amount and price"}
                 </strong>
                 <small>{tokenUsd(satsToUsd(listUnitPriceSats, btcUsd))}</small>
@@ -21674,7 +21675,7 @@ function TokenWalletWorkspace({
                 <span>{listReferenceLabel}</span>
                 <strong>
                   {listReferenceSats > 0
-                    ? `${tokenSatsPerUnit(listReferenceSats)} sats / ${selectedListToken?.ticker ?? "TOKEN"}`
+                    ? `${tokenSatsPerUnit(listReferenceSats)} proofs / ${selectedListToken?.ticker ?? "CREDIT"}`
                     : workFloorLoading &&
                         selectedListToken?.tokenId === WORK_TOKEN_ID
                       ? "Loading floor"
@@ -21718,18 +21719,18 @@ function TokenWalletWorkspace({
               </div>
               <div>
                 <span>Registry fee</span>
-                <strong>{TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} sats</strong>
+                <strong>{TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} proofs</strong>
               </div>
               <div>
                 <span>Ticket</span>
-                <strong>{TOKEN_LISTING_ANCHOR_VALUE_SATS.toLocaleString()} sats</strong>
+                <strong>{TOKEN_LISTING_ANCHOR_VALUE_SATS.toLocaleString()} proofs</strong>
               </div>
             </div>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
             <button className="primary" disabled={listing} type="submit">
               <span className="button-content">
                 <Tag size={16} />
-                <span>{listing ? "Listing" : "List token"}</span>
+                <span>{listing ? "Listing" : "List credit"}</span>
               </span>
             </button>
           </form>
@@ -21739,7 +21740,7 @@ function TokenWalletWorkspace({
               <div className="listing-fee-control token-listing-fee-control">
                 <div>
                   <strong>Seal / Delist fee rate</strong>
-                  <span>Used when sealing or closing your token listings.</span>
+                  <span>Used when sealing or closing your credit listings.</span>
                 </div>
                 <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
               </div>
@@ -21767,8 +21768,8 @@ function TokenWalletWorkspace({
                               ? "sealed"
                               : "ready to seal"}{" "}
                           ·{" "}
-                          {item.priceSats.toLocaleString()} sats ·{" "}
-                          {tokenSatsPerUnit(unitSats)} sats / {item.ticker}
+                          {item.priceSats.toLocaleString()} proofs ·{" "}
+                          {tokenSatsPerUnit(unitSats)} proofs / {item.ticker}
                         </small>
                       </span>
                       <span className="id-record-actions">
@@ -21841,7 +21842,7 @@ function TokenWalletWorkspace({
                       {movement.label} ·{" "}
                       {movement.confirmed ? "confirmed" : "pending"}
                       {movement.type === "sale"
-                        ? ` · ${movement.priceSats.toLocaleString()} sale sats`
+                        ? ` · ${movement.priceSats.toLocaleString()} sale proofs`
                         : ""}
                     </small>
                   </span>
@@ -21862,7 +21863,7 @@ function TokenWalletWorkspace({
           <div className="empty-state">
             <Clock size={28} />
             <h3>No movements yet</h3>
-            <p>Your token transfer and trade history will appear here.</p>
+            <p>Your credit transfer and trade history will appear here.</p>
           </div>
         )}
       </section>
@@ -21974,10 +21975,10 @@ function TokenApp({
         onRefresh={workspaceProps.onRefresh}
         subtitle={
           workTokenOnly
-            ? "ProofOfWork token dashboard"
-            : "ProofOfWork token factory"
+            ? "ProofOfWork credit dashboard"
+            : "ProofOfWork credit factory"
         }
-        title={workTokenOnly ? "WORK" : "Tokens"}
+        title={workTokenOnly ? "WORK" : "Credits"}
       />
 
       <AppStatusRow persistent status={status} />
@@ -22202,11 +22203,11 @@ function TokenWorkspace({
     ? createRegistryResolution.error
       ? createRegistryResolution.error.replace(
           "before sending to this ID",
-          "before using it as a token registry",
+          "before using it as a credit registry",
         )
       : createRegistryResolution.isId
         ? `${createRegistryResolution.displayRecipient} resolves to ${shortAddress(createRegistryResolution.paymentAddress)}.`
-        : "Raw Bitcoin registry address."
+        : "Raw ProofOfWork registry address."
     : "";
   const applyTokenTemplate = () => {
     setCreateTicker(TOKEN_TEMPLATE_TICKER);
@@ -22304,9 +22305,9 @@ function TokenWorkspace({
         ? "Exceeds remaining"
         : "Mint";
   const detailMintBlockedNote = detailMintedOut
-    ? `${detailToken?.ticker ?? "This token"} is minted out by confirmed supply.`
+    ? `${detailToken?.ticker ?? "This credit"} is minted out by confirmed supply.`
     : detailPendingMintOut
-      ? `Pending mints currently fill the remaining ${detailToken?.ticker ?? "token"} supply. Refresh after confirmations.`
+      ? `Pending mints currently fill the remaining ${detailToken?.ticker ?? "credit"} supply. Refresh after confirmations.`
       : detailMintWouldOverfill
         ? detailPendingSupply > 0
           ? `Next mint needs ${detailToken?.mintAmount.toLocaleString()} ${detailToken?.ticker}, but only ${detailAvailableSupply.toLocaleString()} are available after pending mints.`
@@ -22450,9 +22451,9 @@ function TokenWorkspace({
         ? "Exceeds remaining"
         : "Mint";
   const selectedMintBlockedNote = selectedMintedOut
-    ? `${selectedToken?.ticker ?? "This token"} is minted out by confirmed supply.`
+    ? `${selectedToken?.ticker ?? "This credit"} is minted out by confirmed supply.`
     : selectedPendingMintOut
-      ? `Pending mints currently fill the remaining ${selectedToken?.ticker ?? "token"} supply. Refresh after confirmations.`
+      ? `Pending mints currently fill the remaining ${selectedToken?.ticker ?? "credit"} supply. Refresh after confirmations.`
       : selectedMintWouldOverfill
         ? pendingSupply > 0
           ? `Next mint needs ${selectedToken?.mintAmount.toLocaleString()} ${selectedToken?.ticker}, but only ${selectedAvailableSupply.toLocaleString()} are available after pending mints.`
@@ -22463,7 +22464,7 @@ function TokenWorkspace({
       ? `${WORK_TOKEN_DEFAULT_REGISTRY_ID} / ${shortAddress(WORK_TOKEN_REGISTRY_ADDRESS)}`
       : selectedToken
         ? shortAddress(selectedToken.registryAddress)
-        : "No token selected";
+        : "No credit selected";
   const tokenStatsById = useMemo(() => {
     const stats = new Map<
       string,
@@ -22690,7 +22691,7 @@ function TokenWorkspace({
           <div className="token-utxo-dashboard">
             <div>
               <span>Split tx fee rate</span>
-              <strong>{normalizedPrepareFeeRate.toLocaleString()} sat/vB</strong>
+              <strong>{normalizedPrepareFeeRate.toLocaleString()} proof/vB</strong>
               <p>
                 Miner fee for the one self-send transaction that creates mint
                 UTXOs.
@@ -22706,12 +22707,12 @@ function TokenWorkspace({
             </div>
             <div>
               <span>Split miner fee</span>
-              <strong>{estimatedSplitFeeSats.toLocaleString()} sats</strong>
+              <strong>{estimatedSplitFeeSats.toLocaleString()} proofs</strong>
               <p>This is paid to miners by the prepare transaction.</p>
             </div>
             <div>
               <span>Total wallet needed</span>
-              <strong>{estimatedTotalSats.toLocaleString()} sats</strong>
+              <strong>{estimatedTotalSats.toLocaleString()} proofs</strong>
               <p>Outputs total plus the split transaction miner fee.</p>
             </div>
           </div>
@@ -22740,7 +22741,7 @@ function TokenWorkspace({
               />
             </label>
             <label>
-              Split fee sat/vB
+              Split fee proof/vB
               <input
                 min={0.01}
                 onChange={(event) =>
@@ -22774,33 +22775,33 @@ function TokenWorkspace({
             </div>
             <div>
               <span>Each UTXO</span>
-              <strong>{outputSats.toLocaleString()} sats</strong>
+              <strong>{outputSats.toLocaleString()} proofs</strong>
             </div>
             <div>
-              <span>Registry sats staged</span>
-              <strong>{registrySatsTotal.toLocaleString()} sats</strong>
+              <span>Registry proofs staged</span>
+              <strong>{registrySatsTotal.toLocaleString()} proofs</strong>
             </div>
             <div>
               <span>Future fee reserve</span>
-              <strong>{futureReserveTotal.toLocaleString()} sats</strong>
+              <strong>{futureReserveTotal.toLocaleString()} proofs</strong>
             </div>
             <div>
               <span>Outputs total</span>
-              <strong>{totalPreparedSats.toLocaleString()} sats</strong>
+              <strong>{totalPreparedSats.toLocaleString()} proofs</strong>
             </div>
             <div>
               <span>Split tx miner fee</span>
-              <strong>{estimatedSplitFeeSats.toLocaleString()} sats</strong>
+              <strong>{estimatedSplitFeeSats.toLocaleString()} proofs</strong>
             </div>
             <div>
               <span>Total needed now</span>
-              <strong>{estimatedTotalSats.toLocaleString()} sats</strong>
+              <strong>{estimatedTotalSats.toLocaleString()} proofs</strong>
             </div>
           </div>
           <p className="field-note">
             This does not mint. It creates self-send outputs to your connected
             wallet. Each output is sized for the{" "}
-            {token.mintPriceSats.toLocaleString()} sat registry payment plus a
+            {token.mintPriceSats.toLocaleString()} proof registry payment plus a
             future-mint miner reserve. The split transaction has its own fee
             rate and should confirm before burst minting.
           </p>
@@ -22815,7 +22816,7 @@ function TokenWorkspace({
           {!address ? (
             <p className="field-note">Connect UniSat to prepare mint UTXOs.</p>
           ) : !helperTokenSelected ? (
-            <p className="field-note">Select this token before preparing UTXOs.</p>
+            <p className="field-note">Select this credit before preparing UTXOs.</p>
           ) : null}
         </form>
       </details>
@@ -22840,7 +22841,7 @@ function TokenWorkspace({
       <label className="token-search-field">
         <Search size={15} />
         <input
-          aria-label="Search token holders"
+          aria-label="Search credit holders"
           onChange={(event) => setHolderSearch(event.target.value)}
           placeholder="Search address or balance"
           value={holderSearch}
@@ -22866,9 +22867,9 @@ function TokenWorkspace({
       <label className="token-search-field">
         <Search size={15} />
         <input
-          aria-label="Search token mints"
+          aria-label="Search credit mints"
           onChange={(event) => setMintSearch(event.target.value)}
-          placeholder="Search minter, txid, status, sats"
+          placeholder="Search minter, txid, status, proofs"
           value={mintSearch}
         />
       </label>
@@ -22940,8 +22941,8 @@ function TokenWorkspace({
             {loadingRemotePage
               ? "Fetching the requested history page."
               : mintQuery
-              ? "Search by minter address, transaction id, status, amount, or sats."
-              : "The selected token starts with its first valid mint."}
+              ? "Search by minter address, transaction id, status, amount, or proofs."
+              : "The selected credit starts with its first valid mint."}
           </p>
         </div>
       ) : (
@@ -22955,7 +22956,7 @@ function TokenWorkspace({
                 <strong>{shortAddress(mint.minterAddress)}</strong>
                 <p>
                   {mint.confirmed ? "Confirmed" : "Pending"} -{" "}
-                  {mint.paidSats.toLocaleString()} sats
+                  {mint.paidSats.toLocaleString()} proofs
                 </p>
               </div>
               <time dateTime={mint.createdAt}>{formatDate(mint.createdAt)}</time>
@@ -23018,21 +23019,21 @@ function TokenWorkspace({
                   <TrendingUp size={26} />
                 </div>
                 <div>
-                  <p className="eyebrow">Token dashboard</p>
+                  <p className="eyebrow">Credit dashboard</p>
                   <h2>{detailToken.ticker}</h2>
-                  <div className="token-chip-row" aria-label="Token summary">
+                  <div className="token-chip-row" aria-label="Credit summary">
                     <span>{detailToken.maxSupply.toLocaleString()} max</span>
                     <span>
                       {detailToken.mintAmount.toLocaleString()} per mint
                     </span>
                     <span>
-                      {tokenSatsPerUnit(detailPricePerToken)} sat /{" "}
+                      {tokenSatsPerUnit(detailPricePerToken)} proof /{" "}
                       {detailToken.ticker}
                     </span>
                     <span>{detailConfirmedMintCount.toLocaleString()} mints</span>
                   </div>
                   <p>
-                    Minted by confirmed Bitcoin history. Mints pay the token
+                    Minted by confirmed ProofOfWork history. Mints pay the token
                     registry directly.
                   </p>
                 </div>
@@ -23111,7 +23112,7 @@ function TokenWorkspace({
                   <div>
                     <h3>Live WORK floor</h3>
                     <p>
-                      Confirmed Bitcoin Computer network value divided by{" "}
+                      Confirmed ProofOfWork Computer network value divided by{" "}
                       {WORK_TOKEN_MAX_SUPPLY.toLocaleString()} WORK.
                     </p>
                   </div>
@@ -23125,7 +23126,7 @@ function TokenWorkspace({
                       <div>
                         <span>Floor</span>
                         <strong>
-                          {tokenSatsPerUnit(liveWorkFloorSats)} sats / WORK
+                          {tokenSatsPerUnit(liveWorkFloorSats)} proofs / WORK
                         </strong>
                       </div>
                       <div>
@@ -23138,7 +23139,7 @@ function TokenWorkspace({
                           {Math.round(
                             workFloorQuote.networkValueSats,
                           ).toLocaleString()}{" "}
-                          sats
+                          proofs
                         </strong>
                       </div>
                       <div>
@@ -23155,7 +23156,7 @@ function TokenWorkspace({
                           >
                             {(
                               [
-                                ["sats", "Sats"],
+                                ["sats", "Proofs"],
                                 ["usd", "USD"],
                               ] as const
                             ).map(([unit, label]) => (
@@ -23201,7 +23202,7 @@ function TokenWorkspace({
                     ) : null}
                     <p className="field-note">
                       Mint price remains{" "}
-                      {detailToken.mintPriceSats.toLocaleString()} sats for{" "}
+                      {detailToken.mintPriceSats.toLocaleString()} proofs for{" "}
                       {detailToken.mintAmount.toLocaleString()} WORK. The live
                       floor follows confirmed network value only; pending mints
                       wait for confirmation. Refreshed{" "}
@@ -23233,7 +23234,7 @@ function TokenWorkspace({
                     <h3>{detailToken.ticker} market chart</h3>
                     <p>
                       Confirmed deploy price, sale prices, and active asks for
-                      this token.
+                      this credit.
                     </p>
                   </div>
                 </div>
@@ -23244,7 +23245,7 @@ function TokenWorkspace({
                   <div>
                     <span>Mint price</span>
                     <strong>
-                      {tokenSatsPerUnit(detailPricePerToken)} sats /{" "}
+                      {tokenSatsPerUnit(detailPricePerToken)} proofs /{" "}
                       {detailToken.ticker}
                     </strong>
                   </div>
@@ -23252,7 +23253,7 @@ function TokenWorkspace({
                     <span>Lowest ask</span>
                     <strong>
                       {detailLowestAskSats > 0
-                        ? `${tokenSatsPerUnit(detailLowestAskSats)} sats / ${detailToken.ticker}`
+                        ? `${tokenSatsPerUnit(detailLowestAskSats)} proofs / ${detailToken.ticker}`
                         : "No asks"}
                     </strong>
                   </div>
@@ -23260,12 +23261,12 @@ function TokenWorkspace({
                     <span>Last sale</span>
                     <strong>
                       {detailLastSaleSats > 0
-                        ? `${tokenSatsPerUnit(detailLastSaleSats)} sats / ${detailToken.ticker}`
+                        ? `${tokenSatsPerUnit(detailLastSaleSats)} proofs / ${detailToken.ticker}`
                         : "No sales"}
                     </strong>
                   </div>
                   <div>
-                    <span>USD/token</span>
+                    <span>USD/credit</span>
                     <strong>{tokenUsd(detailUnitUsd)}</strong>
                   </div>
                 </div>
@@ -23278,7 +23279,7 @@ function TokenWorkspace({
                       >
                         {(
                           [
-                            ["sats", "Sats"],
+                            ["sats", "Proofs"],
                             ["usd", "USD"],
                           ] as const
                         ).map(([unit, label]) => (
@@ -23326,13 +23327,13 @@ function TokenWorkspace({
                   </>
                 ) : (
                   <p className="field-note">
-                    This token has no confirmed market points yet. The mint
+                    This credit has no confirmed market points yet. The mint
                     price remains the starting reference until listings or sales
                     confirm.
                   </p>
                 )}
                 <p className="field-note">
-                  WORK uses the network floor chart. Other tokens use their own
+                  WORK uses the network floor chart. Other credits use their own
                   confirmed sale-ticket market data.
                 </p>
               </section>
@@ -23349,7 +23350,7 @@ function TokenWorkspace({
                     <p>
                       {detailToken.mintAmount.toLocaleString()}{" "}
                       {detailToken.ticker} for{" "}
-                      {detailToken.mintPriceSats.toLocaleString()} sats.
+                      {detailToken.mintPriceSats.toLocaleString()} proofs.
                     </p>
                   </div>
                 </div>
@@ -23361,7 +23362,7 @@ function TokenWorkspace({
                     <div>
                       <span>Mint price</span>
                       <strong>
-                        {detailToken.mintPriceSats.toLocaleString()} sats
+                        {detailToken.mintPriceSats.toLocaleString()} proofs
                       </strong>
                     </div>
                     <div>
@@ -23374,17 +23375,17 @@ function TokenWorkspace({
                     <div>
                       <span>Unit price</span>
                       <strong>
-                        {tokenSatsPerUnit(detailPricePerToken)} sat /{" "}
+                        {tokenSatsPerUnit(detailPricePerToken)} proof /{" "}
                         {detailToken.ticker}
                       </strong>
                     </div>
                     <div>
-                      <span>USD/token</span>
+                      <span>USD/credit</span>
                       <strong>{tokenUsd(detailUnitUsd)}</strong>
                     </div>
                   </div>
                   <p className="field-note">
-                    {tokenUsd(detailMintUsd)} per mint at the current BTC/USD
+                    {tokenUsd(detailMintUsd)} per mint at the current USD quote
                     estimate. Paid to{" "}
                     {shortAddress(detailToken.registryAddress)}.
                     {address
@@ -23425,13 +23426,13 @@ function TokenWorkspace({
                     <FileText size={24} />
                   </div>
                   <div>
-                    <h3>Token facts</h3>
-                    <p>Deployment and registry values for this token.</p>
+                    <h3>Credit facts</h3>
+                    <p>Deployment and registry values for this credit.</p>
                   </div>
                 </div>
                 <dl className="browser-meta">
                   <div>
-                    <dt>Token id</dt>
+                    <dt>Credit id</dt>
                     <dd>{shortAddress(detailToken.tokenId)}</dd>
                   </div>
                   <div>
@@ -23456,7 +23457,7 @@ function TokenWorkspace({
                   <div>
                     <dt>Starting price</dt>
                     <dd>
-                      {tokenSatsPerUnit(detailPricePerToken)} sat /{" "}
+                      {tokenSatsPerUnit(detailPricePerToken)} proof /{" "}
                       {detailToken.ticker}
                     </dd>
                   </div>
@@ -23519,10 +23520,10 @@ function TokenWorkspace({
             <div className="empty-icon" aria-hidden="true">
               <FileText size={24} />
             </div>
-            <h2>{normalizeTokenTicker(tokenDetailTarget) || "Token"} not live yet</h2>
+            <h2>{normalizeTokenTicker(tokenDetailTarget) || "Credit"} not live yet</h2>
             <p>
-              Create the token first. Once the creation transaction confirms,
-              this page becomes the token dashboard.
+              Create the credit first. Once the creation transaction confirms,
+              this page becomes the credit dashboard.
             </p>
           </section>
         )}
@@ -23534,9 +23535,9 @@ function TokenWorkspace({
     <section className={workspaceClassName}>
       <div className="token-registry-strip">
         <div>
-          <span>Token index</span>
+          <span>Credit index</span>
           <strong>{TOKEN_INDEX_ID}</strong>
-          <p>Creation records and token ids.</p>
+          <p>Creation records and credit ids.</p>
         </div>
         <div>
           <span>Selected registry</span>
@@ -23550,7 +23551,7 @@ function TokenWorkspace({
               ? `${selectedToken.mintAmount.toLocaleString()} ${selectedToken.ticker}`
               : "Owner priced"}
           </strong>
-          <p>Every token keeps its own mint lane.</p>
+          <p>Every credit keeps its own mint lane.</p>
         </div>
       </div>
       <div className="id-launch-hero">
@@ -23560,10 +23561,10 @@ function TokenWorkspace({
               <FilePenLine size={24} />
             </div>
             <div>
-              <h2>Create token</h2>
+              <h2>Create credit</h2>
               <p>
                 Pay the creation fee to <code>{TOKEN_INDEX_ID}</code>. Mints
-                route to the token registry you choose.
+                route to the credit registry you choose.
               </p>
             </div>
           </div>
@@ -23609,7 +23610,7 @@ function TokenWorkspace({
                 />
               </label>
               <label>
-                Mint price sats
+                Mint price proofs
                 <input
                   min={TOKEN_MIN_MUTATION_PRICE_SATS}
                   onChange={(event) =>
@@ -23621,12 +23622,12 @@ function TokenWorkspace({
                 />
               </label>
               <label className="wide">
-                Token registry
+                Credit registry
                 <input
                   onChange={(event) =>
                     setCreateRegistryAddress(event.target.value)
                   }
-                  placeholder="your-id@proofofwork.me or Bitcoin address"
+                  placeholder="your-id@proofofwork.me or ProofOfWork address"
                   value={createRegistryAddress}
                 />
                 {createRegistryNote ? (
@@ -23664,43 +23665,43 @@ function TokenWorkspace({
                 </span>
               </button>
             </div>
-            <div className="id-launch-stats" aria-label="Token create preview">
+            <div className="id-launch-stats" aria-label="Credit create preview">
               <div>
                 <span>Create fee</span>
-                <strong>{TOKEN_CREATION_PRICE_SATS.toLocaleString()} sats</strong>
+                <strong>{TOKEN_CREATION_PRICE_SATS.toLocaleString()} proofs</strong>
               </div>
               <div>
                 <span>Minimum mint</span>
                 <strong>
-                  {TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} sats
+                  {TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} proofs
                 </strong>
               </div>
               <div>
                 <span>Launch price</span>
                 <strong>
-                  {tokenSatsPerUnit(createPricePerToken)} sat /{" "}
+                  {tokenSatsPerUnit(createPricePerToken)} proof /{" "}
                   {createTickerLabel}
                 </strong>
               </div>
               <div>
-                <span>USD/token</span>
+                <span>USD/credit</span>
                 <strong>{tokenUsd(createUnitUsd)}</strong>
               </div>
             </div>
             {createHasMintPreview ? (
               <p className="field-note">
                 {createMintAmount.toLocaleString()} {createTickerLabel} for{" "}
-                {createMintPriceSats.toLocaleString()} sats ={" "}
-                {tokenSatsPerUnit(createPricePerToken)} sat / {createTickerLabel}{" "}
+                {createMintPriceSats.toLocaleString()} proofs ={" "}
+                {tokenSatsPerUnit(createPricePerToken)} proof / {createTickerLabel}{" "}
                 ({tokenUsd(createMintUsd)} per mint). Paid to{" "}
                 {createRegistryResolution.paymentAddress
                   ? shortAddress(createRegistryResolution.paymentAddress)
-                  : "the token registry"} on each mint.
+                  : "the credit registry"} on each mint.
               </p>
             ) : (
               <p className="field-note">
                 Enter a ticker and your own registry. WORK is already reserved
-                for the canonical WORK token.
+                for the canonical WORK credit.
               </p>
             )}
             <div className="token-action-footer">
@@ -23718,11 +23719,11 @@ function TokenWorkspace({
               <button className="primary" disabled={!canCreate} type="submit">
                 <span className="button-content">
                   <Send size={16} />
-                  <span>{creatingToken ? "Creating" : "Create Token"}</span>
+                  <span>{creatingToken ? "Creating" : "Create Credit"}</span>
                 </span>
               </button>
               {!address ? (
-                <p className="field-note">Connect UniSat to create a token.</p>
+                <p className="field-note">Connect UniSat to create credit.</p>
               ) : null}
             </div>
           </form>
@@ -23734,9 +23735,9 @@ function TokenWorkspace({
               <Wallet size={24} />
             </div>
             <div>
-              <h2>Mint token</h2>
+              <h2>Mint credit</h2>
               <p>
-                Mints pay the token registry directly. ProofOfWork only charges
+                Mints pay the credit registry directly. ProofOfWork only charges
                 the creation event.
               </p>
             </div>
@@ -23745,13 +23746,13 @@ function TokenWorkspace({
           <form className="id-form" onSubmit={submitMint}>
             <div className="token-form-grid token-mint-grid">
               <label className="wide">
-                Token
+                Credit
                 <select
                   onChange={(event) => setSelectedTokenId(event.target.value)}
                   value={selectedTokenId}
                 >
                   {tokens.length === 0 ? (
-                    <option value="">No tokens created yet</option>
+                    <option value="">No credits created yet</option>
                   ) : null}
                   {tokens.map((token) => (
                     <option key={token.tokenId} value={token.tokenId}>
@@ -23774,7 +23775,7 @@ function TokenWorkspace({
               <div>
                 <span>Mint price</span>
                 <strong>
-                  {(selectedToken?.mintPriceSats ?? 0).toLocaleString()} sats
+                  {(selectedToken?.mintPriceSats ?? 0).toLocaleString()} proofs
                 </strong>
               </div>
               <div>
@@ -23787,12 +23788,12 @@ function TokenWorkspace({
               <div>
                 <span>Price</span>
                 <strong>
-                  {tokenSatsPerUnit(selectedPricePerToken)} sat /{" "}
+                  {tokenSatsPerUnit(selectedPricePerToken)} proof /{" "}
                   {selectedToken?.ticker ?? "TOKEN"}
                 </strong>
               </div>
               <div>
-                <span>USD/token</span>
+                <span>USD/credit</span>
                 <strong>{tokenUsd(selectedUnitUsd)}</strong>
               </div>
             </div>
@@ -23820,13 +23821,13 @@ function TokenWorkspace({
             <p className="field-note">
               {(selectedToken?.mintAmount ?? 0).toLocaleString()}{" "}
               {selectedToken?.ticker ?? "TOKEN"} for{" "}
-              {(selectedToken?.mintPriceSats ?? 0).toLocaleString()} sats ={" "}
-              {tokenSatsPerUnit(selectedPricePerToken)} sat /{" "}
+              {(selectedToken?.mintPriceSats ?? 0).toLocaleString()} proofs ={" "}
+              {tokenSatsPerUnit(selectedPricePerToken)} proof /{" "}
               {selectedToken?.ticker ?? "TOKEN"} ({tokenUsd(selectedMintUsd)} per
               mint). Paid to{" "}
               {selectedToken
                 ? shortAddress(selectedToken.registryAddress)
-                : "the token registry"}{" "}
+                : "the credit registry"}{" "}
               on each mint. Your confirmed balance is {holderBalance.toLocaleString()}{" "}
               {selectedToken?.ticker ?? ""}.
             </p>
@@ -23861,22 +23862,22 @@ function TokenWorkspace({
         </section>
       </div>
 
-      <div className="id-launch-stats" aria-label="Token stats">
+      <div className="id-launch-stats" aria-label="Credit stats">
         <div>
           <strong>{tokens.length.toLocaleString()}</strong>
-          <span>Created tokens</span>
+          <span>Created credits</span>
         </div>
         <div>
           <strong>{confirmedTokenCount.toLocaleString()}</strong>
-          <span>Confirmed tokens</span>
+          <span>Confirmed credits</span>
         </div>
         <div>
           <strong>{pendingTokenCount.toLocaleString()}</strong>
-          <span>Pending tokens</span>
+          <span>Pending credits</span>
         </div>
         <div>
           <strong>{creationSats.toLocaleString()}</strong>
-          <span>Creation sats</span>
+          <span>Creation proofs</span>
         </div>
       </div>
 
@@ -23937,10 +23938,10 @@ function TokenWorkspace({
               <TrendingUp size={24} />
             </div>
             <div>
-              <h3>Token index</h3>
+              <h3>Credit index</h3>
               <p>
                 Creation fees go to {TOKEN_INDEX_ID}. Mints and mutations pay
-                each token registry at the owner-set price.
+                each credit registry at the owner-set price.
               </p>
             </div>
           </div>
@@ -23954,7 +23955,7 @@ function TokenWorkspace({
               <dd>{tokenIndexAddress}</dd>
             </div>
             <div>
-              <dt>Creation sats</dt>
+              <dt>Creation proofs</dt>
               <dd>{creationSats.toLocaleString()}</dd>
             </div>
             <div>
@@ -23962,7 +23963,7 @@ function TokenWorkspace({
               <dd>{shortAddress(TOKEN_INDEX_TXID)}</dd>
             </div>
             <div>
-              <dt>BTC/USD</dt>
+              <dt>USD quote</dt>
               <dd>{tokenUsd(btcUsd)}</dd>
             </div>
           </dl>
@@ -24013,15 +24014,15 @@ function TokenWorkspace({
               <FileText size={24} />
             </div>
             <div>
-              <h3>Created tokens</h3>
+              <h3>Created credits</h3>
               <p>Sorted by confirmation date. Pending creations stay visible.</p>
             </div>
           </div>
           <div className="id-record-list">
             {tokens.length === 0 ? (
               <div className="empty-state">
-                <h3>No tokens yet</h3>
-                <p>Create WORK first, then mint against its token id.</p>
+                <h3>No credits yet</h3>
+                <p>Create WORK first, then mint against its credit id.</p>
               </div>
             ) : (
               tokenDefinitionPage.items.map((token) => {
@@ -24052,8 +24053,8 @@ function TokenWorkspace({
                       </div>
                       <p className="token-record-price">
                         {token.mintAmount.toLocaleString()} for{" "}
-                        {token.mintPriceSats.toLocaleString()} sats -{" "}
-                        {tokenSatsPerUnit(rowPrice)} sat / {token.ticker}
+                        {token.mintPriceSats.toLocaleString()} proofs -{" "}
+                        {tokenSatsPerUnit(rowPrice)} proof / {token.ticker}
                       </p>
                       <code>{shortAddress(token.tokenId)}</code>
                       <div className="token-record-meter">
@@ -24091,7 +24092,7 @@ function TokenWorkspace({
             )}
           </div>
           <PaginationControls
-            label="Tokens"
+            label="Credits"
             onPageChange={setTokenIndexPageIndex}
             page={tokenDefinitionPage}
           />
@@ -24138,7 +24139,7 @@ function growthCompactNumber(value: number, decimals = 0) {
 }
 
 function growthSats(value: number) {
-  return `${growthCompactNumber(value)} sats`;
+  return `${growthCompactNumber(value)} proofs`;
 }
 
 function growthUsd(value: number) {
@@ -24443,25 +24444,25 @@ function growthActualValuePoints(
 
   for (const token of tokenDefinitions) {
     if (token.confirmed) {
-      addEventTime(token.createdAt, `${token.ticker} token created`);
+      addEventTime(token.createdAt, `${token.ticker} credit created`);
     }
   }
 
   for (const mint of tokenMints) {
     if (mint.confirmed) {
-      addEventTime(mint.createdAt, `${mint.ticker} token mint`);
+      addEventTime(mint.createdAt, `${mint.ticker} credit mint`);
     }
   }
 
   for (const transfer of tokenTransfers) {
     if (transfer.confirmed) {
-      addEventTime(transfer.createdAt, `${transfer.ticker} token transfer`);
+      addEventTime(transfer.createdAt, `${transfer.ticker} credit transfer`);
     }
   }
 
   for (const sale of tokenSales) {
     if (sale.confirmed) {
-      addEventTime(sale.createdAt, `${sale.ticker} token sale`);
+      addEventTime(sale.createdAt, `${sale.ticker} credit sale`);
     }
   }
 
@@ -24610,7 +24611,7 @@ function growthActivityKindLabel(kind: PowActivityKind) {
     kind === "token-listing-closed" ||
     kind === "token-sale"
   ) {
-    return "Token";
+    return "Credit";
   }
 
   return kind === "reply" ? "Mail reply" : "Mail";
@@ -24661,7 +24662,7 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${record.amountSats.toLocaleString()} sats`,
+      amountLabel: `${record.amountSats.toLocaleString()} proofs`,
       createdAt: record.createdAt,
       detail: `${record.id}@proofofwork.me joined the confirmed ID graph.`,
       key: record.txid,
@@ -24679,7 +24680,7 @@ function growthRealEventItems(
 
     setEvent({
       amountLabel: item.amountSats
-        ? `${item.amountSats.toLocaleString()} sats`
+        ? `${item.amountSats.toLocaleString()} proofs`
         : "Confirmed",
       createdAt: item.createdAt,
       detail: item.detail || item.description,
@@ -24699,7 +24700,7 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${sale.priceSats.toLocaleString()} sale sats`,
+      amountLabel: `${sale.priceSats.toLocaleString()} sale proofs`,
       createdAt: sale.createdAt,
       detail: `${sale.id}@proofofwork.me transferred from ${shortAddress(sale.sellerAddress)} to ${shortAddress(sale.buyerAddress)}.`,
       key: sale.txid,
@@ -24716,13 +24717,13 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${token.creationFeeSats.toLocaleString()} creation sats`,
+      amountLabel: `${token.creationFeeSats.toLocaleString()} creation proofs`,
       createdAt: token.createdAt,
       detail: `${token.ticker} created with ${token.maxSupply.toLocaleString()} max supply and registry ${shortAddress(token.registryAddress)}.`,
       key: token.txid,
-      kind: "Token",
+      kind: "Credit",
       network: token.network,
-      title: "Token created",
+      title: "Credit created",
       txid: token.txid,
     });
   }
@@ -24733,13 +24734,13 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${mint.paidSats.toLocaleString()} mint sats`,
+      amountLabel: `${mint.paidSats.toLocaleString()} mint proofs`,
       createdAt: mint.createdAt,
       detail: `${mint.amount.toLocaleString()} ${mint.ticker} minted by ${shortAddress(mint.minterAddress)}.`,
       key: mint.txid,
-      kind: "Token",
+      kind: "Credit",
       network: mint.network,
-      title: "Token mint",
+      title: "Credit mint",
       txid: mint.txid,
     });
   }
@@ -24750,7 +24751,7 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${transfer.paidSats.toLocaleString()} registry sats`,
+      amountLabel: `${transfer.paidSats.toLocaleString()} registry proofs`,
       createdAt: transfer.createdAt,
       detail: `${transfer.amount.toLocaleString()} ${transfer.ticker} moved from ${shortAddress(transfer.senderAddress)} to ${shortAddress(transfer.recipientAddress)}.`,
       key: transfer.txid,
@@ -24767,13 +24768,13 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${sale.priceSats.toLocaleString()} sale sats`,
+      amountLabel: `${sale.priceSats.toLocaleString()} sale proofs`,
       createdAt: sale.createdAt,
       detail: `${sale.amount.toLocaleString()} ${sale.ticker} bought by ${shortAddress(sale.buyerAddress)} from ${shortAddress(sale.sellerAddress)}.`,
       key: sale.txid,
       kind: "Marketplace",
       network: sale.network,
-      title: "Token sale",
+      title: "Credit sale",
       txid: sale.txid,
     });
   }
@@ -24850,7 +24851,7 @@ function GrowthLineChart({
       className="growth-chart"
       role="img"
       viewBox={`0 0 ${width} ${height}`}
-      aria-label="Modeled Bitcoin Computer network value compared with real confirmed network value"
+      aria-label="Modeled ProofOfWork Computer network value compared with real confirmed network value"
     >
       <rect
         className="growth-chart-bg"
@@ -24945,7 +24946,7 @@ function workFloorPriceLabel(
     return `${tokenUsd(satsToUsd(floorSats, btcUsd))} / WORK`;
   }
 
-  return `${tokenSatsPerUnit(floorSats)} sats / WORK`;
+  return `${tokenSatsPerUnit(floorSats)} proofs / WORK`;
 }
 
 function workFloorAxisPriceLabel(value: number, unit: WorkFloorChartUnit) {
@@ -24958,14 +24959,14 @@ function workFloorAxisPriceLabel(value: number, unit: WorkFloorChartUnit) {
   }
 
   if (!Number.isFinite(value) || value <= 0) {
-    return "0 sats";
+    return "0 proofs";
   }
 
   const decimals = value < 10 ? 3 : value < 100 ? 2 : 0;
   return `${value.toLocaleString(undefined, {
     maximumFractionDigits: decimals,
     minimumFractionDigits: decimals,
-  })} sats`;
+  })} proofs`;
 }
 
 function workFloorPointTimeMs(point: WorkFloorPoint) {
@@ -25072,7 +25073,7 @@ function WorkFloorChart({
       role="img"
       viewBox={`0 0 ${width} ${height}`}
       aria-label={`Confirmed WORK floor history in ${
-        unit === "usd" ? "USD" : "sats"
+        unit === "usd" ? "USD" : "proofs"
       } per WORK`}
     >
       <rect
@@ -25182,7 +25183,7 @@ function tokenMarketPriceLabel(
     return `${tokenUsd(satsToUsd(priceSats, btcUsd))} / ${ticker}`;
   }
 
-  return `${tokenSatsPerUnit(priceSats)} sats / ${ticker}`;
+  return `${tokenSatsPerUnit(priceSats)} proofs / ${ticker}`;
 }
 
 function tokenMarketAxisPriceLabel(value: number, unit: WorkFloorChartUnit) {
@@ -25335,7 +25336,7 @@ function TokenMarketPriceChart({
       role="img"
       viewBox={`0 0 ${width} ${height}`}
       aria-label={`Confirmed ${ticker} market history in ${
-        unit === "usd" ? "USD" : "sats"
+        unit === "usd" ? "USD" : "proofs"
       } per ${ticker}`}
     >
       <rect
@@ -25696,12 +25697,12 @@ function GrowthWorkspace({
     <section className="growth-workspace">
       <div className="growth-hero">
         <div>
-          <span className="landing-kicker">Bitcoin Computer growth model</span>
+          <span className="landing-kicker">ProofOfWork Computer growth model</span>
           <h2>Model the future. Measure the chain.</h2>
           <p>
-            The candle-gold line is modeled Bitcoin Computer network value. The
+            The candle-gold line is modeled ProofOfWork Computer network value. The
             olive line is real confirmed mainnet value from IDs, Mail, Drive,
-            Marketplace, Browser, Tokens, and Wallet.
+            Marketplace, Browser, Credits, and Wallet.
           </p>
         </div>
         <div className="growth-model-card">
@@ -25740,7 +25741,7 @@ function GrowthWorkspace({
                 {GROWTH_MODEL_INPUTS.canonicalFee.toLocaleString("en-US", {
                   maximumFractionDigits: 5,
                 })}{" "}
-                sat/vB
+                proof/vB
               </dd>
             </div>
           </dl>
@@ -25800,9 +25801,9 @@ function GrowthWorkspace({
             {marketplaceSaleVolumeSats.toLocaleString()}
           </strong>
           <span>
-            Marketplace sale sats ·{" "}
+            Marketplace sale proofs ·{" "}
             {marketplaceSaleCount.toLocaleString()} confirmed sales ·{" "}
-            {marketplaceFeeSats.toLocaleString()} fee sats
+            {marketplaceFeeSats.toLocaleString()} fee proofs
           </span>
         </div>
       </div>
@@ -25813,31 +25814,31 @@ function GrowthWorkspace({
       >
         <article className="growth-explainer-card primary">
           <span>Plain read</span>
-          <h3>Candle-gold is the success case. Olive is Bitcoin history.</h3>
+          <h3>Candle-gold is the success case. Olive is ProofOfWork history.</h3>
           <p>
-            The model asks what the Bitcoin Computer can become if IDs, Mail,
-            Drive, Marketplace, Browser, Tokens, and Wallet compound together.
+            The model asks what the ProofOfWork Computer can become if IDs, Mail,
+            Drive, Marketplace, Browser, Credits, and Wallet compound together.
             The real line only counts confirmed mainnet records that already
             exist.
           </p>
         </article>
         <article className="growth-explainer-card">
           <span>Network value</span>
-          <h3>Everything is valued in sats first.</h3>
+          <h3>Everything is valued in proofs first.</h3>
           <p>
             IDs use n squared network value. Mail, Drive, Marketplace, Browser,
-            Tokens, and Wallet use confirmed payment flow multiplied by the
-            same value multiple, then translated to USD with the Bitcoin
+            Credits, and Wallet use confirmed payment flow multiplied by the
+            same value multiple, then translated to USD with the live price
             benchmark.
           </p>
         </article>
         <article className="growth-explainer-card">
           <span>Real events</span>
-          <h3>The olive line moves when Bitcoin confirms.</h3>
+          <h3>The olive line moves when ProofOfWork confirms.</h3>
           <p>
             Registrations, messages, replies, file writes, HTML page writes,
-            buyer-funded marketplace sales, token sale-ticket buys, token
-            creations, token mints, and token transfers are pulled from live
+            buyer-funded marketplace sales, credit sale-ticket buys, credit
+            creations, credit mints, and credit transfers are pulled from live
             endpoints. Pending mempool events wait until they confirm.
           </p>
         </article>
@@ -25847,7 +25848,7 @@ function GrowthWorkspace({
           <p>
             A product needs real chain inputs, a usage assumption, a value
             assumption, fee elasticity, and blockspace cost. That keeps every
-            merged app beside IDs, Mail, Drive, Marketplace, Browser, Tokens,
+            merged app beside IDs, Mail, Drive, Marketplace, Browser, Credits,
             and Wallet instead of bolted on.
           </p>
         </article>
@@ -25858,8 +25859,8 @@ function GrowthWorkspace({
           <div>
             <h3>Modeled network value vs real confirmed value</h3>
             <p>
-              Log scale, 10-year window. Values are shown in sats and translated
-              to USD through the same BTC/USD benchmark.
+              Log scale, 10-year window. Values are shown in proofs and translated
+              to USD through the same live price benchmark.
             </p>
           </div>
           <div className="growth-chart-legend" aria-label="Chart legend">
@@ -25912,7 +25913,7 @@ function GrowthWorkspace({
           <div>
             <h3>Real growth events</h3>
             <p>
-              The olive line is rebuilt from confirmed Bitcoin events. These
+              The olive line is rebuilt from confirmed ProofOfWork events. These
               are the newest receipts feeding the real network value.
             </p>
           </div>
@@ -25985,7 +25986,7 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(actualValue.mailSats)}
-            actualLabel={`${growthUsdForSats(actualValue.mailSats)} · ${actualValue.mailFlowSats.toLocaleString()} paid sats · ${mailActions.toLocaleString()} actions`}
+            actualLabel={`${growthUsdForSats(actualValue.mailSats)} · ${actualValue.mailFlowSats.toLocaleString()} paid proofs · ${mailActions.toLocaleString()} actions`}
             icon={<Mail size={24} />}
             modelFiveYear={growthSats(fiveYear.mailSats)}
             modelFiveYearLabel={growthUsdForSats(fiveYear.mailSats)}
@@ -25997,7 +25998,7 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(actualValue.driveSats)}
-            actualLabel={`${growthUsdForSats(actualValue.driveSats)} · ${actualValue.driveFlowSats.toLocaleString()} file sats · ${driveActions.toLocaleString()} actions`}
+            actualLabel={`${growthUsdForSats(actualValue.driveSats)} · ${actualValue.driveFlowSats.toLocaleString()} file proofs · ${driveActions.toLocaleString()} actions`}
             icon={<FileText size={24} />}
             modelFiveYear={growthSats(fiveYear.driveSats)}
             modelFiveYearLabel={growthUsdForSats(fiveYear.driveSats)}
@@ -26009,7 +26010,7 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(actualValue.marketplaceSats)}
-            actualLabel={`${growthUsdForSats(actualValue.marketplaceSats)} · ${marketplaceSaleVolumeSats.toLocaleString()} sale sats · ${marketplaceFeeSats.toLocaleString()} fee sats · ${marketplaceSaleCount.toLocaleString()} confirmed sales`}
+            actualLabel={`${growthUsdForSats(actualValue.marketplaceSats)} · ${marketplaceSaleVolumeSats.toLocaleString()} sale proofs · ${marketplaceFeeSats.toLocaleString()} fee proofs · ${marketplaceSaleCount.toLocaleString()} confirmed sales`}
             icon={<Users size={24} />}
             modelFiveYear={growthSats(fiveYear.marketplaceSats)}
             modelFiveYearLabel={growthUsdForSats(fiveYear.marketplaceSats)}
@@ -26017,11 +26018,11 @@ function GrowthWorkspace({
             modelOneYear={growthSats(oneYear.marketplaceSats)}
             modelOneYearLabel={growthUsdForSats(oneYear.marketplaceSats)}
             name="Marketplace"
-            note="Buyer-funded ID transfers and token sale-ticket buys become first-class product flow."
+            note="Buyer-funded ID transfers and credit sale-ticket buys become first-class product flow."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.browserSats)}
-            actualLabel={`${growthUsdForSats(actualValue.browserSats)} · ${actualValue.browserFlowSats.toLocaleString()} page sats · ${browserActions.toLocaleString()} actions`}
+            actualLabel={`${growthUsdForSats(actualValue.browserSats)} · ${actualValue.browserFlowSats.toLocaleString()} page proofs · ${browserActions.toLocaleString()} actions`}
             icon={<Monitor size={24} />}
             modelFiveYear={growthSats(fiveYear.browserSats)}
             modelFiveYearLabel={growthUsdForSats(fiveYear.browserSats)}
@@ -26033,7 +26034,7 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(actualValue.computerEventSats)}
-            actualLabel={`${growthUsdForSats(actualValue.computerEventSats)} · ${computerEventFlowSats.toLocaleString()} confirmed log sats · ${marketplaceFeeSats.toLocaleString()} marketplace fee sats`}
+            actualLabel={`${growthUsdForSats(actualValue.computerEventSats)} · ${computerEventFlowSats.toLocaleString()} confirmed log proofs · ${marketplaceFeeSats.toLocaleString()} marketplace fee proofs`}
             icon={<GitBranch size={24} />}
             modelFiveYear="Tracked"
             modelFiveYearLabel="confirmed event ledger"
@@ -26045,27 +26046,27 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(actualValue.tokenSats)}
-            actualLabel={`${growthUsdForSats(actualValue.tokenSats)} · ${tokenFlowSats.toLocaleString()} token sats · ${confirmedTokenDefinitions.toLocaleString()} tokens · ${confirmedTokenMints.toLocaleString()} mints`}
+            actualLabel={`${growthUsdForSats(actualValue.tokenSats)} · ${tokenFlowSats.toLocaleString()} credit proofs · ${confirmedTokenDefinitions.toLocaleString()} credits · ${confirmedTokenMints.toLocaleString()} mints`}
             icon={<TrendingUp size={24} />}
             modelFiveYear={growthSats(fiveYear.tokenSats)}
             modelFiveYearLabel={growthUsdForSats(fiveYear.tokenSats)}
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.tokenSats)}
             modelOneYearLabel={growthUsdForSats(oneYear.tokenSats)}
-            name="Tokens"
-            note="Token creation fees and owner-registry mint flow become measurable Bitcoin Computer value."
+            name="Credits"
+            note="Credit creation fees and owner-registry mint flow become measurable ProofOfWork Computer value."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.walletSats)}
-            actualLabel={`${growthUsdForSats(actualValue.walletSats)} · ${walletFlowSats.toLocaleString()} transfer sats · ${confirmedTokenTransfers.toLocaleString()} transfers`}
+            actualLabel={`${growthUsdForSats(actualValue.walletSats)} · ${walletFlowSats.toLocaleString()} transfer proofs · ${confirmedTokenTransfers.toLocaleString()} transfers`}
             icon={<Wallet size={24} />}
             modelFiveYear="Tracked"
-            modelFiveYearLabel="token transfer lane"
+            modelFiveYearLabel="credit transfer lane"
             modelLabel="confirmed transfer value"
             modelOneYear="Tracked"
-            modelOneYearLabel="token transfer lane"
+            modelOneYearLabel="credit transfer lane"
             name="Wallet"
-            note="Token balances and pwt1:send transfers become their own ownership product in the Bitcoin Computer model."
+            note="Credit balances and pwt1:send transfers become their own ownership product in the ProofOfWork Computer model."
           />
         </div>
       </section>
@@ -26097,7 +26098,7 @@ function GrowthWorkspace({
             At 12 months the model reaches{" "}
             {Math.round(oneYear.powids).toLocaleString()} PowIDs and{" "}
             {growthSats(oneYear.totalSats)} / {growthUsdForSats(oneYear.totalSats)}{" "}
-            total modeled Bitcoin Computer value.
+            total modeled ProofOfWork Computer value.
           </p>
         </article>
       </section>
@@ -26179,12 +26180,12 @@ function IdLaunchApp({
         ? `${normalizedId}@proofofwork.me is pending`
         : `${normalizedId}@proofofwork.me is open`;
   const availabilityText = !normalizedId
-    ? "Enter a name to check the Bitcoin registry before you claim."
+    ? "Enter a name to check the ProofOfWork registry before you claim."
     : confirmedMatch
       ? `First confirmed registration won in ${shortAddress(confirmedMatch.txid)}.`
       : pendingMatch
         ? "Pending is not final. First confirmed valid registration wins."
-        : "Claimable now. Registration pays 1,000 sats to the canonical registry.";
+        : "Claimable now. Registration pays 1,000 proofs to the canonical registry.";
 
   return (
     <main className="id-launch-app">
@@ -26206,11 +26207,11 @@ function IdLaunchApp({
       <section className="id-launch-main">
         <div className="id-launch-hero">
           <div>
-            <span className="id-launch-kicker">Bitcoin-native identity</span>
+            <span className="id-launch-kicker">ProofOfWork-native identity</span>
             <h2>Claim your ProofOfWork ID.</h2>
             <p>
               Register a permanent on-chain mail identity that resolves to your
-              Bitcoin receive address. First confirmed valid registration wins.
+              ProofOfWork receive address. First confirmed valid registration wins.
             </p>
           </div>
 
@@ -26239,7 +26240,7 @@ function IdLaunchApp({
               <div>
                 <h3>Register ID</h3>
                 <p>
-                  Pay {ID_REGISTRATION_PRICE_SATS.toLocaleString()} sats to the
+                  Pay {ID_REGISTRATION_PRICE_SATS.toLocaleString()} proofs to the
                   canonical registry address.
                 </p>
               </div>
@@ -26319,7 +26320,7 @@ function IdLaunchApp({
             <button className="primary" disabled={busy} type="submit">
               <span className="button-content">
                 <AtSign size={16} />
-                <span>{busy ? "Registering" : "Register for 1,000 sats"}</span>
+                <span>{busy ? "Registering" : "Register for 1,000 proofs"}</span>
               </span>
             </button>
           </form>
@@ -26775,7 +26776,7 @@ function TokenDirectorySortTabs({
         <span>View</span>
         <div
           className="network-tabs token-directory-sort-tabs"
-          aria-label="Token directory sort"
+          aria-label="Credit directory sort"
         >
           {TOKEN_DIRECTORY_SORT_OPTIONS.map((option) => (
             <button
@@ -27075,7 +27076,7 @@ function MarketplaceTabs({
       {(
         [
           ["ids", "IDs", idCount],
-          ["tokens", "Tokens", tokenCount],
+          ["tokens", "Credits", tokenCount],
         ] as const
       ).map(([tab, label, count]) => (
         <button
@@ -27097,7 +27098,7 @@ function marketplaceStatusIsIdScoped(text: string) {
 }
 
 function marketplaceStatusIsTokenScoped(text: string) {
-  return /(?:Token index|token market|WORK floor)/iu.test(text);
+  return /(?:Credit index|credit market|WORK floor)/iu.test(text);
 }
 
 function marketplaceStatusForTab({
@@ -27474,7 +27475,7 @@ function TokenMarketplacePanel({
                   <div>
                     <span>Network floor</span>
                     <strong>
-                      {tokenSatsPerUnit(workMarketFloorSats)} sats / WORK
+                      {tokenSatsPerUnit(workMarketFloorSats)} proofs / WORK
                     </strong>
                   </div>
                   <div>
@@ -27487,7 +27488,7 @@ function TokenMarketplacePanel({
                       {Math.round(
                         workFloorQuote.networkValueSats,
                       ).toLocaleString()}{" "}
-                      sats
+                      proofs
                     </strong>
                   </div>
                   <div>
@@ -27498,7 +27499,7 @@ function TokenMarketplacePanel({
                     <span>Best ask</span>
                     <strong>
                       {workRow?.lowestAskPricePerToken
-                        ? `${tokenSatsPerUnit(workRow.lowestAskPricePerToken)} sats / WORK`
+                        ? `${tokenSatsPerUnit(workRow.lowestAskPricePerToken)} proofs / WORK`
                         : "No asks"}
                     </strong>
                   </div>
@@ -27513,7 +27514,7 @@ function TokenMarketplacePanel({
                       >
                         {(
                           [
-                            ["sats", "Sats"],
+                            ["sats", "Proofs"],
                             ["usd", "USD"],
                           ] as const
                         ).map(([unit, label]) => (
@@ -27587,7 +27588,7 @@ function TokenMarketplacePanel({
                 <h3>{selectedMarketToken.ticker} Market Chart</h3>
                 <p>
                   Confirmed deploy price, sale prices, and active asks for this
-                  token market.
+                  credit market.
                 </p>
               </div>
             </div>
@@ -27598,7 +27599,7 @@ function TokenMarketplacePanel({
               <div>
                 <span>Mint price</span>
                 <strong>
-                  {tokenSatsPerUnit(selectedMarketToken.pricePerToken)} sats /{" "}
+                  {tokenSatsPerUnit(selectedMarketToken.pricePerToken)} proofs /{" "}
                   {selectedMarketToken.ticker}
                 </strong>
               </div>
@@ -27606,7 +27607,7 @@ function TokenMarketplacePanel({
                 <span>Lowest ask</span>
                 <strong>
                   {selectedMarketToken.lowestAskPricePerToken > 0
-                    ? `${tokenSatsPerUnit(selectedMarketToken.lowestAskPricePerToken)} sats / ${selectedMarketToken.ticker}`
+                    ? `${tokenSatsPerUnit(selectedMarketToken.lowestAskPricePerToken)} proofs / ${selectedMarketToken.ticker}`
                     : "No asks"}
                 </strong>
               </div>
@@ -27614,12 +27615,12 @@ function TokenMarketplacePanel({
                 <span>Last sale</span>
                 <strong>
                   {selectedMarketToken.lastSalePricePerToken > 0
-                    ? `${tokenSatsPerUnit(selectedMarketToken.lastSalePricePerToken)} sats / ${selectedMarketToken.ticker}`
+                    ? `${tokenSatsPerUnit(selectedMarketToken.lastSalePricePerToken)} proofs / ${selectedMarketToken.ticker}`
                     : "No sales"}
                 </strong>
               </div>
               <div>
-                <span>USD/token</span>
+                <span>USD/credit</span>
                 <strong>
                   {tokenUsd(satsToUsd(selectedMarketToken.pricePerToken, btcUsd))}
                 </strong>
@@ -27634,7 +27635,7 @@ function TokenMarketplacePanel({
                   >
                     {(
                       [
-                        ["sats", "Sats"],
+                        ["sats", "Proofs"],
                         ["usd", "USD"],
                       ] as const
                     ).map(([unit, label]) => (
@@ -27682,7 +27683,7 @@ function TokenMarketplacePanel({
               </>
             ) : (
               <p className="field-note">
-                This token has no confirmed market points yet. The mint price
+                This credit has no confirmed market points yet. The mint price
                 remains the starting reference until listings or sales confirm.
               </p>
             )}
@@ -27698,12 +27699,12 @@ function TokenMarketplacePanel({
               <h3>
                 {selectedMarketToken
                   ? `${selectedMarketToken.ticker} Market`
-                  : "Token Markets"}
+                  : "Credit Markets"}
               </h3>
               <p>
                 {selectedMarketToken
-                  ? "This view only shows the selected token and its sale tickets."
-                  : "Tokens list, seal, delist, and buy through the same sale-ticket settlement model used by IDs."}
+                  ? "This view only shows the selected credit and its sale tickets."
+                  : "Credits list, seal, delist, and buy through the same sale-ticket settlement model used by IDs."}
               </p>
             </div>
             {selectedMarketToken ? (
@@ -27714,7 +27715,7 @@ function TokenMarketplacePanel({
               >
                 <span className="button-content">
                   <ArrowLeft size={15} />
-                  <span>All tokens</span>
+                  <span>All credits</span>
                 </span>
               </button>
             ) : null}
@@ -27730,8 +27731,8 @@ function TokenMarketplacePanel({
           {rows.length === 0 ? (
             <div className="empty-state">
               <Wallet size={28} />
-              <h3>No tokens indexed yet</h3>
-              <p>Create a token before token markets can open.</p>
+              <h3>No credits indexed yet</h3>
+              <p>Create credit before credit markets can open.</p>
             </div>
           ) : (
             <div className="token-market-grid">
@@ -27793,7 +27794,7 @@ function TokenMarketplacePanel({
                       >
                         <span className="button-content">
                           <ArrowUpRight size={15} />
-                          <span>Token</span>
+                          <span>Credit</span>
                         </span>
                       </button>
                     ) : (
@@ -27803,7 +27804,7 @@ function TokenMarketplacePanel({
                       >
                         <span className="button-content">
                           <ArrowUpRight size={15} />
-                          <span>Token</span>
+                          <span>Credit</span>
                         </span>
                       </a>
                     )}
@@ -27846,7 +27847,7 @@ function TokenMarketplacePanel({
             </div>
           )}
           <PaginationControls
-            label="Token markets"
+            label="Credit markets"
             onPageChange={setTokenMarketPageIndex}
             page={tokenMarketPage}
           />
@@ -27858,7 +27859,7 @@ function TokenMarketplacePanel({
               <Wallet size={24} />
             </div>
             <div>
-              <h3>Token Sale Tickets</h3>
+              <h3>Credit Sale Tickets</h3>
               <p>
                 {selectedMarketToken
                   ? `${selectedMarketToken.ticker} listings only. Buyers spend the sealed ticket and pay the seller plus registry.`
@@ -27869,13 +27870,13 @@ function TokenMarketplacePanel({
           <div className="listing-fee-control token-listing-fee-control">
             <div>
               <strong>Buy fee rate</strong>
-              <span>Used when buying token sale tickets.</span>
+              <span>Used when buying credit sale tickets.</span>
             </div>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
           </div>
           <MarketplaceListingBookTabs
             allCount={marketListings.length}
-            label="Token order book filter"
+            label="Credit order book filter"
             onChange={setTokenListingBookFilter}
             sealedCount={sealedListings.length}
             unsealedCount={unsealedListings.length}
@@ -27950,12 +27951,12 @@ function TokenMarketplacePanel({
                       </div>
                       <div>
                         <dt>Price</dt>
-                        <dd>{listing.priceSats.toLocaleString()} sats</dd>
+                        <dd>{listing.priceSats.toLocaleString()} proofs</dd>
                       </div>
                       <div>
                         <dt>Unit</dt>
                         <dd>
-                          {tokenSatsPerUnit(listingUnitSats)} sat /{" "}
+                          {tokenSatsPerUnit(listingUnitSats)} proof /{" "}
                           {listing.ticker}
                         </dd>
                       </div>
@@ -27971,7 +27972,7 @@ function TokenMarketplacePanel({
                     <p className="field-note">
                       Reference:{" "}
                       {listingReferenceSats > 0
-                        ? `${tokenSatsPerUnit(listingReferenceSats)} sats / ${listing.ticker} ${listingReferenceLabel}`
+                        ? `${tokenSatsPerUnit(listingReferenceSats)} proofs / ${listing.ticker} ${listingReferenceLabel}`
                         : "none yet"}
                     </p>
                     <div className="id-record-actions">
@@ -28007,7 +28008,7 @@ function TokenMarketplacePanel({
                   ? tokenListingBookFilter === "sealed"
                     ? "No sealed listings"
                     : "No unsealed listings"
-                  : "No token listings yet"}
+                  : "No credit listings yet"}
               </h3>
               <p>
                 {marketListings.length
@@ -28016,7 +28017,7 @@ function TokenMarketplacePanel({
                     : "Every sale ticket in this view is already sealed."
                   : selectedMarketToken
                   ? `No ${selectedMarketToken.ticker} sale tickets are open yet.`
-                  : "List from Wallet to open a token sale ticket."}
+                  : "List from Wallet to open a credit sale ticket."}
               </p>
             </div>
           )}
@@ -28033,11 +28034,11 @@ function TokenMarketplacePanel({
               <FileText size={24} />
             </div>
             <div>
-              <h3>Token Sales & Listings Log</h3>
+              <h3>Credit Sales & Listings Log</h3>
               <p>
                 {selectedMarketToken
                   ? `${selectedMarketToken.ticker} listings and sale settlements.`
-                  : "Listings and sale settlements across token markets."}
+                  : "Listings and sale settlements across credit markets."}
               </p>
             </div>
           </div>
@@ -28073,12 +28074,12 @@ function TokenMarketplacePanel({
                       <dl>
                         <div>
                           <dt>Price</dt>
-                          <dd>{closedListing.priceSats.toLocaleString()} sats</dd>
+                          <dd>{closedListing.priceSats.toLocaleString()} proofs</dd>
                         </div>
                         <div>
                           <dt>Unit</dt>
                           <dd>
-                            {tokenSatsPerUnit(unitSats)} sat /{" "}
+                            {tokenSatsPerUnit(unitSats)} proof /{" "}
                             {closedListing.ticker}
                           </dd>
                         </div>
@@ -28161,12 +28162,12 @@ function TokenMarketplacePanel({
                       <dl>
                         <div>
                           <dt>Price</dt>
-                          <dd>{item.sale.priceSats.toLocaleString()} sats</dd>
+                          <dd>{item.sale.priceSats.toLocaleString()} proofs</dd>
                         </div>
                         <div>
                           <dt>Unit</dt>
                           <dd>
-                            {tokenSatsPerUnit(unitSats)} sat /{" "}
+                            {tokenSatsPerUnit(unitSats)} proof /{" "}
                             {item.sale.ticker}
                           </dd>
                         </div>
@@ -28185,7 +28186,7 @@ function TokenMarketplacePanel({
                       </dl>
                       <p className="field-note">
                         Listing {shortAddress(item.sale.listingId)} settled for{" "}
-                        {item.sale.paidSats.toLocaleString()} paid sats.
+                        {item.sale.paidSats.toLocaleString()} paid proofs.
                       </p>
                       <div className="id-record-actions">
                         <a
@@ -28248,12 +28249,12 @@ function TokenMarketplacePanel({
                     <dl>
                       <div>
                         <dt>Price</dt>
-                        <dd>{item.listing.priceSats.toLocaleString()} sats</dd>
+                        <dd>{item.listing.priceSats.toLocaleString()} proofs</dd>
                       </div>
                       <div>
                         <dt>Unit</dt>
                         <dd>
-                          {tokenSatsPerUnit(unitSats)} sat /{" "}
+                          {tokenSatsPerUnit(unitSats)} proof /{" "}
                           {item.listing.ticker}
                         </dd>
                       </div>
@@ -28315,19 +28316,19 @@ function TokenMarketplacePanel({
           ) : (
             <div className="empty-state">
               <FileText size={28} />
-              <h3>No token market history yet</h3>
+              <h3>No credit market history yet</h3>
               <p>
                 {selectedMarketToken
                   ? `${selectedMarketToken.ticker} has no listings or sales yet.`
-                  : "Token listings and sales will appear here after they confirm or enter mempool."}
+                  : "Credit listings and sales will appear here after they confirm or enter mempool."}
               </p>
             </div>
           )}
           {tokenMarketLogPageLoading ? (
-            <p className="field-note">Loading full token market history...</p>
+            <p className="field-note">Loading full credit market history...</p>
           ) : null}
           <PaginationControls
-            label="Token sales and listings"
+            label="Credit sales and listings"
             onPageChange={setTokenMarketLogPageIndex}
             page={tokenMarketLogPage}
           />
@@ -28491,7 +28492,7 @@ function MarketplaceApp({
     status,
     tokenSummary: {
       tone: "good",
-      text: `Token market loaded. ${confirmedTokenCount.toLocaleString()} confirmed token${confirmedTokenCount === 1 ? "" : "s"}, ${tokenListings.length.toLocaleString()} open listing${tokenListings.length === 1 ? "" : "s"}, ${sealedTokenListings.length.toLocaleString()} sealed.`,
+      text: `Credit market loaded. ${confirmedTokenCount.toLocaleString()} confirmed credit${confirmedTokenCount === 1 ? "" : "s"}, ${tokenListings.length.toLocaleString()} open listing${tokenListings.length === 1 ? "" : "s"}, ${sealedTokenListings.length.toLocaleString()} sealed.`,
     },
   });
   const refreshMarketplaceTab = () => {
@@ -28524,10 +28525,10 @@ function MarketplaceApp({
         <div className="id-launch-hero">
           <div>
             <span className="id-launch-kicker">ProofOfWork marketplace</span>
-            <h2>Trade Bitcoin-native assets.</h2>
+            <h2>Trade ProofOfWork-native assets.</h2>
             <p>
-              IDs and tokens trade through sale tickets: sellers reserve the
-              asset, seal exact terms, and buyers settle on Bitcoin.
+              IDs and credits trade through sale tickets: sellers reserve the
+              asset, seal exact terms, and buyers settle on ProofOfWork.
             </p>
           </div>
 
@@ -28549,7 +28550,7 @@ function MarketplaceApp({
                 <strong>
                   {marketplaceStats.totalVolumeSats.toLocaleString()}
                 </strong>
-                <span>Volume sats</span>
+                <span>Volume proofs</span>
               </div>
               <div>
                 <strong>{pendingRecords.length.toLocaleString()}</strong>
@@ -28583,7 +28584,7 @@ function MarketplaceApp({
                 <h3>List an ID</h3>
                 <p>
                   Publish an on-chain listing for one of your confirmed IDs.
-                  Listings cost {ID_MUTATION_PRICE_SATS.toLocaleString()} sats.
+                  Listings cost {ID_MUTATION_PRICE_SATS.toLocaleString()} proofs.
                 </p>
               </div>
             </div>
@@ -28630,7 +28631,7 @@ function MarketplaceApp({
                 ) : null}
                 <p className="field-note">
                   The published listing includes on-chain sale terms. Delisting
-                  costs {ID_MUTATION_PRICE_SATS.toLocaleString()} sats and
+                  costs {ID_MUTATION_PRICE_SATS.toLocaleString()} proofs and
                   transfers invalidate old listings.
                 </p>
               </>
@@ -28911,7 +28912,7 @@ function MarketplaceWorkspace({
           <h2>Marketplace</h2>
           <span>
             {registryAddress
-              ? `${networkListings.length.toLocaleString()} ID listings · ${networkTokenCount.toLocaleString()} tokens`
+              ? `${networkListings.length.toLocaleString()} ID listings · ${networkTokenCount.toLocaleString()} credits`
               : `No marketplace registry configured for ${networkLabel(network)}`}
           </span>
         </div>
@@ -28951,7 +28952,7 @@ function MarketplaceWorkspace({
         </div>
         <div>
           <strong>{marketplaceStats.totalVolumeSats.toLocaleString()}</strong>
-          <span>Volume sats</span>
+          <span>Volume proofs</span>
         </div>
         <div>
           <strong>{marketplaceStats.pendingSales.toLocaleString()}</strong>
@@ -28969,7 +28970,7 @@ function MarketplaceWorkspace({
               <h3>List an ID</h3>
               <p>
                 Publish an on-chain listing for one of your confirmed IDs.
-                Listings cost {ID_MUTATION_PRICE_SATS.toLocaleString()} sats.
+                Listings cost {ID_MUTATION_PRICE_SATS.toLocaleString()} proofs.
               </p>
             </div>
           </div>
@@ -29016,7 +29017,7 @@ function MarketplaceWorkspace({
               ) : null}
               <p className="field-note">
                 The published listing includes on-chain sale terms. Delisting
-                costs {ID_MUTATION_PRICE_SATS.toLocaleString()} sats and
+                costs {ID_MUTATION_PRICE_SATS.toLocaleString()} proofs and
                 transfers invalidate old listings.
               </p>
             </>
@@ -29200,7 +29201,7 @@ function ContactsWorkspace({
             <div>
               <h3>Add Contact</h3>
               <p>
-                Save a Bitcoin address or confirmed ProofOfWork ID locally for
+                Save a ProofOfWork address or confirmed ProofOfWork ID locally for
                 compose.
               </p>
             </div>
@@ -29223,7 +29224,7 @@ function ContactsWorkspace({
               onChange={(event) => setTarget(event.target.value)}
               placeholder={
                 network === "livenet"
-                  ? "bitcoin@proofofwork.me or bc1..."
+                  ? "proofofwork@proofofwork.me or bc1..."
                   : "tb1..."
               }
               spellCheck={false}
@@ -29470,7 +29471,7 @@ function IdsWorkspace({
               <h3>Register ID</h3>
               <p>
                 First confirmed valid claim wins. Registration pays{" "}
-                {ID_REGISTRATION_PRICE_SATS.toLocaleString()} sats to the
+                {ID_REGISTRATION_PRICE_SATS.toLocaleString()} proofs to the
                 registry.
               </p>
             </div>
@@ -29558,7 +29559,7 @@ function IdsWorkspace({
               <p>
                 Current owners can update routing or transfer the asset. Each
                 registry mutation pays {ID_MUTATION_PRICE_SATS.toLocaleString()}{" "}
-                sats.
+                proofs.
               </p>
             </div>
           </div>
@@ -29995,7 +29996,7 @@ function MarketplaceListingList({
                 <div>
                   <strong>{listing.id}@proofofwork.me</strong>
                   <span>
-                    {listing.priceSats.toLocaleString()} sats ·{" "}
+                    {listing.priceSats.toLocaleString()} proofs ·{" "}
                     {listingStatus(listing)} · Listed{" "}
                     {formatDate(listing.createdAt)}
                   </span>
@@ -30194,7 +30195,7 @@ function IdMarketplaceCard({
               : "Select an owned confirmed ID above first."}
           </p>
           <label>
-            Seller price sats
+            Seller price proofs
             <input
               min={0}
               onChange={(event) =>
@@ -30253,7 +30254,7 @@ function IdMarketplaceCard({
             }
           >
             {parsedSale && saleIsReady
-              ? `Selected listing price: ${parsedSale.priceSats.toLocaleString()} sats.`
+              ? `Selected listing price: ${parsedSale.priceSats.toLocaleString()} proofs.`
               : "Choose an active listing below. The purchase form fills from that on-chain listing."}
           </p>
           <AppStatusRow
@@ -30361,7 +30362,7 @@ function PendingIdEventList({
                 </strong>
                 <span>
                   {pendingIdEventLabel(event, address)} ·{" "}
-                  {event.amountSats.toLocaleString()} sats
+                  {event.amountSats.toLocaleString()} proofs
                 </span>
               </div>
               <dl>
@@ -30529,7 +30530,7 @@ function IdRecordList({
                   <strong>{record.id}@proofofwork.me</strong>
                   <span>
                     {record.confirmed ? "Confirmed" : "Pending"} ·{" "}
-                    {record.amountSats.toLocaleString()} sats
+                    {record.amountSats.toLocaleString()} proofs
                   </span>
                 </div>
                 <dl>
@@ -30713,7 +30714,7 @@ function MessageList({
             <div className="message-subject">{messageSubject(message)}</div>
             <div className="message-preview">{mailPreview(message)}</div>
             <div className="message-meta">
-              <span>{message.amountSats.toLocaleString()} sats</span>
+              <span>{message.amountSats.toLocaleString()} proofs</span>
               {message.folder === "sent" ? (
                 <span>{deliveryLabel(sentDeliveryStatus(message))}</span>
               ) : null}
@@ -30773,7 +30774,7 @@ function DraftList({
             {mailPreview(draft) || "Unsent ProofOfWork.Me mail"}
           </div>
           <div className="message-meta">
-            <span>{draft.amountSats.toLocaleString()} sats</span>
+            <span>{draft.amountSats.toLocaleString()} proofs</span>
             {draft.attachment ? <span>Attachment</span> : null}
             {draft.parentTxid ? <span>Reply</span> : null}
             <span>{networkLabel(draft.network)}</span>
@@ -30844,7 +30845,7 @@ function DesktopWorkspace({
               PoW
             </div>
             <span>ProofOfWork Desktop</span>
-            <h2>Open a public Bitcoin desktop.</h2>
+            <h2>Open a public ProofOfWork desktop.</h2>
             <form
               className="desktop-search desktop-search-large"
               onSubmit={onSearch}
@@ -30931,7 +30932,7 @@ function DesktopWorkspace({
             value={sortMode}
             onChange={(event) => setSortMode(event.target.value as SortMode)}
           >
-            <option value="value">Highest sats</option>
+            <option value="value">Highest proofs</option>
             <option value="newest">Newest</option>
             <option value="oldest">Oldest</option>
             <option value="largest">Largest</option>
@@ -31166,7 +31167,7 @@ function FilesToolbar({
           value={sortMode}
           onChange={(event) => setSortMode(event.target.value as SortMode)}
         >
-          <option value="value">Highest sats</option>
+          <option value="value">Highest proofs</option>
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
           <option value="largest">Largest</option>
@@ -31218,7 +31219,7 @@ function FileTile({
         {fileFilterLabel(fileKindForMessage(message)).replace(/s$/u, "")}
       </span>
       <div className="file-tile-meta">
-        <span>{message.amountSats.toLocaleString()} sats</span>
+        <span>{message.amountSats.toLocaleString()} proofs</span>
         <span>{networkLabel(explorerNetwork)}</span>
       </div>
     </button>
@@ -31455,7 +31456,7 @@ function FileInspector({
         </div>
         <div>
           <dt>Value</dt>
-          <dd>{message.amountSats.toLocaleString()} sats</dd>
+          <dd>{message.amountSats.toLocaleString()} proofs</dd>
         </div>
         <div>
           <dt>Date</dt>
@@ -31491,8 +31492,8 @@ function OnboardingPane({
           <h2>{hasUnisat ? "Open ProofOfWork.Me" : "Install UniSat"}</h2>
           <p>
             {hasUnisat
-              ? `Connect UniSat to read and send Bitcoin mail on ${networkLabel(network)}.`
-              : "ProofOfWork.Me needs UniSat to sign Bitcoin mail transactions locally."}
+              ? `Connect UniSat to read and send ProofOfWork mail on ${networkLabel(network)}.`
+              : "ProofOfWork.Me needs UniSat to sign ProofOfWork mail transactions locally."}
           </p>
         </div>
         <div className="onboarding-checks" aria-label="Setup">
@@ -31755,7 +31756,7 @@ function ComposePane({
 
       <div className="compose-grid">
         <label>
-          Sats each
+          Proofs each
           <input
             min={1}
             onChange={(event) => setAmountSats(Number(event.target.value))}
@@ -32084,7 +32085,7 @@ function Reader({
         ) : null}
         <div>
           <dt>Value</dt>
-          <dd>{message.amountSats.toLocaleString()} sats</dd>
+          <dd>{message.amountSats.toLocaleString()} proofs</dd>
         </div>
         <div>
           <dt>Network</dt>
@@ -32133,7 +32134,7 @@ function Reader({
                 </strong>
                 <span>
                   {formatDate(threadMessage.createdAt)} ·{" "}
-                  {threadMessage.amountSats.toLocaleString()} sats
+                  {threadMessage.amountSats.toLocaleString()} proofs
                 </span>
               </div>
               <p>{mailPreview(threadMessage)}</p>

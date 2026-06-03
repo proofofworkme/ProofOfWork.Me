@@ -13,6 +13,8 @@ export const ID_APP_URL = "https://id.proofofwork.me";
 export const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 export const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
 export const BROWSER_APP_URL = "https://browser.proofofwork.me";
+// Staged only. Do not add Confessions to APP_LINKS until launch is approved.
+export const CONFESSIONS_APP_URL = "https://confessions.proofofwork.me";
 export const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
 export const TOKEN_APP_URL = "https://token.proofofwork.me";
 export const WALLET_APP_URL = "https://wallet.proofofwork.me";
@@ -26,6 +28,7 @@ export const LOCAL_ID_APP_URL = "/?id-launch=1";
 export const LOCAL_COMPUTER_APP_URL = "/";
 export const LOCAL_DESKTOP_APP_URL = "/?desktop=1";
 export const LOCAL_BROWSER_APP_URL = "/?browser=1";
+export const LOCAL_CONFESSIONS_APP_URL = "/?confessions=1";
 export const LOCAL_MARKETPLACE_APP_URL = "/?marketplace=1";
 export const LOCAL_TOKEN_APP_URL = "/?token=1";
 export const LOCAL_WALLET_APP_URL = "/?wallet=1";
@@ -51,7 +54,7 @@ export const APP_LINKS: AppLink[] = [
   },
   {
     href: TOKEN_APP_URL,
-    label: "Token",
+    label: "Credit",
     localHref: LOCAL_TOKEN_APP_URL,
   },
   {

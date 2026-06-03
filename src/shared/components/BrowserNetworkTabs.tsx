@@ -17,7 +17,7 @@ export function BrowserNetworkTabs({
     <label className="browser-network-control browser-network-select-field">
       <span>Network</span>
       <select
-        aria-label="Browser Bitcoin network"
+        aria-label="Browser ProofOfWork network"
         className="network-select browser-network-select"
         onChange={(event) => onChange(event.target.value as BitcoinNetwork)}
         value={network}

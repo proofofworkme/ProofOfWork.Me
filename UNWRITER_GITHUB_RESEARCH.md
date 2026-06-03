@@ -18,7 +18,7 @@ This research informed the current BTC OP_RETURN architecture, but the Phase 1 l
 id.proofofwork.me
 registry: bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e
 protocol: pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>
-price: 1000 sats
+price: 1000 proofs
 ```
 
 Future developers should use this research for architectural ideas, not as permission to swap the ID registry protocol, change the registry address, or introduce BSV-style `OP_FALSE OP_RETURN` patterns. ProofOfWork.Me BTC transactions should stay BTC-standard: `OP_RETURN` first, push-only data, and aggregate data-carrier size enforced across all OP_RETURN outputs.

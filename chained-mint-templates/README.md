@@ -4,14 +4,14 @@ This folder is a staging area for reusable chained-mint transaction templates.
 Files here are intentionally not wired into the production React app yet.
 
 The goal is to adapt one well-reviewed chaining pattern to each ProofOfWork.Me
-mint workflow: token mints, future registry writes, and any campaign mint that
+mint workflow: credit mints, future registry writes, and any campaign mint that
 benefits from signing/broadcasting many dependent transactions in sequence.
 
 ## Current App Behavior To Preserve
 
 The app already has assistant-style mint loops:
 
-- Token mint assistant: same model for token mints.
+- Credit mint assistant: same model for credit mints.
 - Broadcast routing: normal transactions use the app broadcaster; transactions
   with multiple OP_RETURN outputs can use Slipstream through the existing
   `slipstream-if-multiple-op-return` strategy.
@@ -135,8 +135,8 @@ Each duplicated template must define:
 
 ## Current Candidate Targets
 
-- Token mint chain:
-  - Each transaction should carry the token mint payload and pay the token
+- Credit mint chain:
+  - Each transaction should carry the credit mint payload and pay the credit
     registry/mint price exactly as existing single-mint logic does.
 - Future registry write chain:
   - Only safe for protocols whose canonical rules allow pending chained inputs

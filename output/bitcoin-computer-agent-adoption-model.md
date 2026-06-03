@@ -1,40 +1,40 @@
-# ProofOfWork.Me Bitcoin Computer Model
+# ProofOfWork.Me ProofOfWork Computer Model
 
 Generated on 2026-05-13. Operational note updated on 2026-05-24.
 
 This is the singular forward scenario model for ProofOfWork.Me. Current live
-BTC/USD, WORK floor, token flow, and real network-value totals are read from the
+BTC/USD, WORK floor, credit flow, and real network-value totals are read from the
 production ProofOfWork node/API and displayed in `growth.proofofwork.me` and
 `work.proofofwork.me`; do not treat the generated static USD snapshots below as
 live market data.
 
 Current production surfaces use fast cached first paint plus explicit fresh
 refresh against the first-party node/API. A refresh that touches Marketplace,
-WORK, token summaries, or token history must update the shared token payload so
-spent sale tickets, confirmed token sales, and WORK floor inputs converge across
+WORK, credit summaries, or credit history must update the shared credit payload so
+spent sale tickets, confirmed credit sales, and WORK floor inputs converge across
 all app surfaces.
 
 All prior standalone charts, product-only markdown models, and old projection files are deprecated. This model measures:
 
 1. ProofOfWork IDs
 2. ProofOfWork Mail
-3. ProofOfWork Files / Bitcoin Drive
+3. ProofOfWork Files / ProofOfWork Drive
 4. ProofOfWork Marketplace
 5. ProofOfWork Browser
-6. ProofOfWork Tokens, Wallet, and WORK
+6. ProofOfWork Credits, Wallet, and WORK
 7. ProofOfWork Log and Growth
-8. The aggregate Bitcoin Computer
+8. The aggregate ProofOfWork Computer
 
 The model is success-case by design:
 
 ```text
 agent adoption succeeds
-Bitcoin node count grows exponentially
-BTC/USD follows Bitcoin's backward-facing log-growth benchmark
+Base-layer node count grows exponentially
+BTC/USD follows the backward-facing BTC log-growth benchmark
 BTC/USD includes a one-standard-deviation volatility cone
 lower relay fees unlock exponentially more agent usage
-Bitcoin Computer write demand grows exponentially until today's blockspace ceiling
-IDs, Mail, Drive, Marketplace, Browser, Tokens, Wallet, WORK, Log, and Growth reinforce each other
+ProofOfWork Computer write demand grows exponentially until today's blockspace ceiling
+IDs, Mail, Drive, Marketplace, Browser, Credits, Wallet, WORK, Log, and Growth reinforce each other
 ```
 
 ## Visual Read
@@ -51,7 +51,7 @@ They are written for normal human pattern recognition: big labels, plain words, 
 
 ![Blockspace ceiling](bitcoin-computer-model-blockspace.png)
 
-![Bitcoin volatility translation](bitcoin-computer-model-volatility.png)
+![ProofOfWork volatility translation](bitcoin-computer-model-volatility.png)
 
 SVG versions:
 
@@ -59,19 +59,19 @@ SVG versions:
 - [Dollar growth in human words](bitcoin-computer-model-dollar-growth.svg)
 - [IDs Mail Drive Marketplace Browser product split](bitcoin-computer-model-product-split.svg)
 - [Blockspace ceiling](bitcoin-computer-model-blockspace.svg)
-- [Bitcoin volatility translation](bitcoin-computer-model-volatility.svg)
+- [ProofOfWork volatility translation](bitcoin-computer-model-volatility.svg)
 
 ## Real Inputs
 
-### Bitcoin Network Input
+### ProofOfWork Network Input
 
 ```text
-Reachable Bitcoin nodes: 23,984
+Reachable base-layer nodes: 23,984
 Snapshot time: 2026-04-30 08:58:26 UTC
 Source: Bitnodes
 ```
 
-Bitnodes describes its method as estimating the Bitcoin peer-to-peer network by finding reachable nodes.
+Bitnodes describes its method as estimating the base-layer peer-to-peer network by finding reachable nodes.
 
 Sources:
 
@@ -111,8 +111,8 @@ Growth or WORK values.
 ```text
 Confirmed PowIDs: 94
 Current n^2: 8,836
-Unique receive-address balance: 2,374,139 sats
-ID value density: 268.68933906745133 sats per n^2 unit
+Unique receive-address balance: 2,374,139 proofs
+ID value density: 268.68933906745133 proofs per n^2 unit
 ```
 
 Mail:
@@ -120,27 +120,27 @@ Mail:
 ```text
 Confirmed protocol txids: 12
 Confirmed delivery edges: 15
-Paid attention flow: 10,202 sats
-Average sats per delivery: 680.13 sats
+Paid attention flow: 10,202 proofs
+Average proofs per delivery: 680.13 proofs
 Current address-level mail edge density: 1.2308%
 ```
 
-Files / Bitcoin Drive:
+Files / ProofOfWork Drive:
 
 ```text
 Confirmed file txids: 4
 Unique file hashes: 4
 Total file bytes: 37,284
-File-bearing payment flow: 2,184 sats
-Canonical forward sats per file: 1,000 sats
+File-bearing payment flow: 2,184 proofs
+Canonical forward proofs per file: 1,000 proofs
 ```
 
 Marketplace:
 
 ```text
 Confirmed marketplace sales: 1
-Confirmed marketplace volume: 1,000 sats
-Average sats per sale: 1,000 sats
+Confirmed marketplace volume: 1,000 proofs
+Average proofs per sale: 1,000 proofs
 Canonical forward sales per ID per year: 0.2
 ```
 
@@ -148,14 +148,14 @@ Browser:
 
 ```text
 Confirmed browser page txids: 0
-Confirmed browser page flow: 0 sats
-Average sats per browser page: 1,000 sats
+Confirmed browser page flow: 0 proofs
+Average proofs per browser page: 1,000 proofs
 Canonical forward browser pages per ID per year: 1
 ```
 
-## Bitcoin Growth Benchmark
+## ProofOfWork Growth Benchmark
 
-Backward-facing Bitcoin log growth:
+Backward-facing BTC log growth:
 
 ```text
 btc_log_growth_mu = ln(current_btc_usd / historical_btc_usd) / 10
@@ -163,7 +163,7 @@ btc_log_growth_mu = 51.85%
 equivalent_cagr = e^mu - 1 = 67.96%
 ```
 
-Bitcoin volatility input:
+ProofOfWork volatility input:
 
 ```text
 btc_10y_annualized_volatility_sigma = 56.73%
@@ -177,13 +177,13 @@ low_btc_usd(t)  = current_btc_usd * e^(mu * t - sigma * sqrt(t))
 high_btc_usd(t) = current_btc_usd * e^(mu * t + sigma * sqrt(t))
 ```
 
-The volatility band changes only the USD translation. It does not change the sats or BTC valuation of the Bitcoin Computer.
+The volatility band changes only the USD translation. It does not change the proofs or BTC valuation of the ProofOfWork Computer.
 
-## Bitcoin Blockspace Ceiling
+## ProofOfWork Blockspace Ceiling
 
 This version adds the blockspace constraint.
 
-The success case assumes Bitcoin Computer usage compounds exponentially as agents, PowIDs, fee collapse, Mail, Drive, Marketplace, and Browser reinforce each other. That usage cannot grow through infinite blockspace. It compounds until it hits the current theoretical Bitcoin blockspace ceiling.
+The success case assumes ProofOfWork Computer usage compounds exponentially as agents, PowIDs, fee collapse, Mail, Drive, Marketplace, and Browser reinforce each other. That usage cannot grow through infinite blockspace. It compounds until it hits the current theoretical ProofOfWork blockspace ceiling.
 
 Protocol-derived ceiling:
 
@@ -219,15 +219,15 @@ Important boundary:
 The blockspace ceiling is protocol-derived.
 The per-product write sizes are model accounting assumptions.
 The model does not claim every block will be filled by ProofOfWork.Me.
-It asks what the Bitcoin Computer can execute if demand compounds until today's ceiling is binding.
+It asks what the ProofOfWork Computer can execute if demand compounds until today's ceiling is binding.
 ```
 
 ## Scenario Inputs
 
 ```text
-Agent-controlled Bitcoin node share: 51%
-Bitcoin node CAGR: 25%
-Canonical fee tier: 0.00001 sat/vB
+Agent-controlled base-layer node share: 51%
+Base-layer node CAGR: 25%
+Canonical fee tier: 0.00001 proof/vB
 ```
 
 Adoption curve:
@@ -245,10 +245,10 @@ Adoption curve:
 Fee tiers:
 
 ```text
-0.01 sat/vB
-0.001 sat/vB
-0.0001 sat/vB
-0.00001 sat/vB
+0.01 proof/vB
+0.001 proof/vB
+0.0001 proof/vB
+0.00001 proof/vB
 ```
 
 Fee-collapse multipliers:
@@ -278,7 +278,7 @@ Browser elasticity = 0.75
 
 ## Blockspace Constraint
 
-This is the canonical lowest-fee success path at 0.00001 sat/vB.
+This is the canonical lowest-fee success path at 0.00001 proof/vB.
 
 ```text
 raw_blockspace_demand_vbytes =
@@ -310,9 +310,9 @@ blockspace_usage_fulfillment_ratio =
 ### IDs
 
 ```text
-id_value_sats =
+id_value_proofs =
   projected_powids^2
-  * current_id_sats_per_n2_unit
+  * current_id_proofs_per_n2_unit
   * id_fee_multiplier
 ```
 
@@ -321,24 +321,24 @@ ID is modeled as network stock value. It is not reduced by the annual blockspace
 ### Mail
 
 ```text
-mail_value_sats =
+mail_value_proofs =
   projected_powids
   * (projected_powids - 1)
   * current_mail_edge_density
   * messages_per_pair_per_year
-  * sats_per_delivery
+  * proofs_per_delivery
   * value_multiple
   * mail_fee_multiplier
   * blockspace_usage_fulfillment_ratio
 ```
 
-### Files / Bitcoin Drive
+### Files / ProofOfWork Drive
 
 ```text
-drive_value_sats =
+drive_value_proofs =
   projected_powids
   * files_per_id_per_year
-  * sats_per_file
+  * proofs_per_file
   * value_multiple
   * drive_fee_multiplier
   * blockspace_usage_fulfillment_ratio
@@ -347,10 +347,10 @@ drive_value_sats =
 ### Marketplace
 
 ```text
-marketplace_value_sats =
+marketplace_value_proofs =
   projected_powids
   * marketplace_sales_per_id_per_year
-  * average_sale_sats
+  * average_sale_proofs
   * value_multiple
   * marketplace_fee_multiplier
   * blockspace_usage_fulfillment_ratio
@@ -359,53 +359,53 @@ marketplace_value_sats =
 ### Browser
 
 ```text
-browser_value_sats =
+browser_value_proofs =
   projected_powids
   * browser_pages_per_id_per_year
-  * average_browser_page_sats
+  * average_browser_page_proofs
   * value_multiple
   * browser_fee_multiplier
   * blockspace_usage_fulfillment_ratio
 ```
 
-### Bitcoin Computer
+### ProofOfWork Computer
 
 ```text
-bitcoin_computer_value_sats =
-  id_value_sats
-  + mail_value_sats
-  + drive_value_sats
-  + marketplace_value_sats
-  + browser_value_sats
+proofofwork_computer_value_proofs =
+  id_value_proofs
+  + mail_value_proofs
+  + drive_value_proofs
+  + marketplace_value_proofs
+  + browser_value_proofs
 ```
 
-The BTC column is a sats-denominated valuation converted into BTC as a unit of account. It is not a claim that those sats are locked in the protocol.
+The BTC column is a proofs-denominated valuation converted into BTC as a unit of account. It is not a claim that those proofs are locked in the protocol.
 
 ### WORK Floor
 
-WORK has a permanent floor tied to this confirmed Bitcoin Computer network value:
+WORK has a permanent floor tied to this confirmed ProofOfWork Computer network value:
 
 ```text
-work_floor_sats =
-  confirmed_bitcoin_computer_value_sats / 21,000,000 WORK
+work_floor_proofs =
+  confirmed_proofofwork_computer_value_proofs / 21,000,000 WORK
 ```
 
-For price-per-token displays, use `confirmed_bitcoin_computer_value_sats / 21,000,000`. The inverse, `21,000,000 / confirmed_bitcoin_computer_value_sats`, is the WORK-per-sat ratio. Pending mempool records are useful visibility but do not change the canonical floor until confirmed.
+For price-per-credit displays, use `confirmed_proofofwork_computer_value_proofs / 21,000,000`. The inverse, `21,000,000 / confirmed_proofofwork_computer_value_proofs`, is the WORK-per-proof ratio. Pending mempool records are useful visibility but do not change the canonical floor until confirmed.
 
 Historical WORK floor announcement:
 
 ```text
 txid: cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c
-subject: $work now has a permanent Bitcoin Computer floor.
+subject: $work now has a permanent ProofOfWork Computer floor.
 message:
 Formula:
 confirmed network value / 21,000,000 WORK
 
 Current live floor:
-74,499,503 sats / 21,000,000 = 3.5476 sats per WORK
+74,499,503 proofs / 21,000,000 = 3.5476 proofs per WORK
 ~$0.00277 per WORK at current BTC/USD
 
-Pending mints are visible, but only confirmed Bitcoin history moves the canonical floor.
+Pending mints are visible, but only confirmed ProofOfWork history moves the canonical floor.
 
 As ProofOfWork.Me grows, the network value grows.
 As network value grows, the $work floor rises.
@@ -421,14 +421,14 @@ work.proofofwork.me and growth.proofofwork.me must share the same
 ```
 
 The static formula remains canonical, but current floor price, network USD, and
-token-reference/arbitrage displays must be read live from the node/API cache path
-and refreshed in the background when expensive token/log scans are required.
+credit-reference/arbitrage displays must be read live from the node/API cache path
+and refreshed in the background when expensive credit/log scans are required.
 
 ## Canonical Product Growth
 
-This is the canonical lowest-fee success path at 0.00001 sat/vB.
+This is the canonical lowest-fee success path at 0.00001 proof/vB.
 
-| Horizon | PowIDs | ID sats | Mail sats | Drive sats | Marketplace sats | Browser sats | Total sats | BTC | Base USD | Volatility USD range |
+| Horizon | PowIDs | ID proofs | Mail proofs | Drive proofs | Marketplace proofs | Browser proofs | Total proofs | BTC | Base USD | Volatility USD range |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 6 months | 1,368 | 2,825,816,985 | 9,894,106,884 | 7,295,718,233 | 43,246,085 | 1,215,953,039 | 21,274,841,226 | 212.7484 | $22,299,945 ($22.3 million) | $14.9 million to $33.3 million |
 | 12 months | 3,058 | 14,129,084,927 | 49,490,545,697 | 16,313,721,914 | 96,701,186 | 2,718,953,652 | 82,749,007,376 | 827.4901 | $112,408,762 ($112 million) | $63.7 million to $198 million |
@@ -444,36 +444,36 @@ This is still one model. Fee tier is a variable inside the model, not a separate
 
 Every fee tier also runs through the same annual blockspace ceiling.
 
-| Horizon | Fee tier | PowIDs | Total sats | BTC | Base USD | Low USD | High USD |
+| Horizon | Fee tier | PowIDs | Total proofs | BTC | Base USD | Low USD | High USD |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 6 months | 0.01 sat/vB | 1,368 | 864,620,554 | 8.6462 | $906 thousand | $607 thousand | $1.35 million |
-| 6 months | 0.001 sat/vB | 1,368 | 2,156,499,768 | 21.5650 | $2.26 million | $1.51 million | $3.38 million |
-| 6 months | 0.0001 sat/vB | 1,368 | 6,245,153,575 | 62.4515 | $6.55 million | $4.38 million | $9.78 million |
-| 6 months | 0.00001 sat/vB | 1,368 | 21,274,841,226 | 212.7484 | $22.3 million | $14.9 million | $33.3 million |
-| 12 months | 0.01 sat/vB | 3,058 | 4,187,661,111 | 41.8766 | $5.69 million | $3.23 million | $10 million |
-| 12 months | 0.001 sat/vB | 3,058 | 10,028,599,698 | 100.2860 | $13.6 million | $7.73 million | $24 million |
-| 12 months | 0.0001 sat/vB | 3,058 | 27,010,774,154 | 270.1077 | $36.7 million | $20.8 million | $64.7 million |
-| 12 months | 0.00001 sat/vB | 3,058 | 82,749,007,376 | 827.4901 | $112 million | $63.7 million | $198 million |
-| 24 months | 0.01 sat/vB | 7,645 | 25,761,977,180 | 257.6198 | $58.8 million | $26.4 million | $131 million |
-| 24 months | 0.001 sat/vB | 7,645 | 60,391,558,539 | 603.9156 | $138 million | $61.8 million | $307 million |
-| 24 months | 0.0001 sat/vB | 7,645 | 156,029,832,651 | 1,560.30 | $356 million | $160 million | $794 million |
-| 24 months | 0.00001 sat/vB | 7,645 | 218,283,566,362 | 2,182.84 | $498 million | $223 million | $1.11 billion |
-| 5 years | 0.01 sat/vB | 22,397 | 219,568,156,228 | 2,195.68 | $2.37 billion | $668 million | $8.44 billion |
-| 5 years | 0.001 sat/vB | 22,397 | 509,724,668,177 | 5,097.25 | $5.51 billion | $1.55 billion | $19.6 billion |
-| 5 years | 0.0001 sat/vB | 22,397 | 685,848,039,292 | 6,858.48 | $7.41 billion | $2.09 billion | $26.4 billion |
-| 5 years | 0.00001 sat/vB | 22,397 | 973,919,730,564 | 9,739.20 | $10.5 billion | $2.96 billion | $37.4 billion |
-| 10 years | 0.01 sat/vB | 91,134 | 2,578,561,568,828 | 25,785.62 | $373 billion | $62 billion | $2.24 trillion |
-| 10 years | 0.001 sat/vB | 91,134 | 4,307,711,540,585 | 43,077.12 | $622 billion | $104 billion | $3.74 trillion |
-| 10 years | 0.0001 sat/vB | 91,134 | 7,383,461,271,496 | 73,834.61 | $1.07 trillion | $177 billion | $6.42 trillion |
-| 10 years | 0.00001 sat/vB | 91,134 | 12,855,382,827,934 | 128,553.83 | $1.86 trillion | $309 billion | $11.2 trillion |
-| 25 years | 0.01 sat/vB | 2,913,967 | 2,281,853,012,166,798 | 22,818,530.12 | $787 quadrillion | $46.2 quadrillion | $13.4 quintillion |
-| 25 years | 0.001 sat/vB | 2,913,967 | 4,057,494,013,625,229 | 40,574,940.14 | $1.4 quintillion | $82.1 quadrillion | $23.9 quintillion |
-| 25 years | 0.0001 sat/vB | 2,913,967 | 7,215,079,846,227,189 | 72,150,798.46 | $2.49 quintillion | $146 quadrillion | $42.5 quintillion |
-| 25 years | 0.00001 sat/vB | 2,913,967 | 12,830,149,720,449,110 | 128,301,497.20 | $4.43 quintillion | $260 quadrillion | $75.5 quintillion |
-| 50 years | 0.01 sat/vB | 857,022,930 | 197,349,177,102,430,830,000 | 1,973,491,771,024.31 | $29 octillion | $526 septillion | $1.6 nonillion |
-| 50 years | 0.001 sat/vB | 857,022,930 | 350,941,977,951,159,800,000 | 3,509,419,779,511.60 | $51.6 octillion | $935 septillion | $2.85 nonillion |
-| 50 years | 0.0001 sat/vB | 857,022,930 | 624,072,893,230,663,300,000 | 6,240,728,932,306.63 | $91.8 octillion | $1.66 octillion | $5.07 nonillion |
-| 50 years | 0.00001 sat/vB | 857,022,930 | 1,109,775,976,117,289,900,000 | 11,097,759,761,172.90 | $163 octillion | $2.96 octillion | $9.02 nonillion |
+| 6 months | 0.01 proof/vB | 1,368 | 864,620,554 | 8.6462 | $906 thousand | $607 thousand | $1.35 million |
+| 6 months | 0.001 proof/vB | 1,368 | 2,156,499,768 | 21.5650 | $2.26 million | $1.51 million | $3.38 million |
+| 6 months | 0.0001 proof/vB | 1,368 | 6,245,153,575 | 62.4515 | $6.55 million | $4.38 million | $9.78 million |
+| 6 months | 0.00001 proof/vB | 1,368 | 21,274,841,226 | 212.7484 | $22.3 million | $14.9 million | $33.3 million |
+| 12 months | 0.01 proof/vB | 3,058 | 4,187,661,111 | 41.8766 | $5.69 million | $3.23 million | $10 million |
+| 12 months | 0.001 proof/vB | 3,058 | 10,028,599,698 | 100.2860 | $13.6 million | $7.73 million | $24 million |
+| 12 months | 0.0001 proof/vB | 3,058 | 27,010,774,154 | 270.1077 | $36.7 million | $20.8 million | $64.7 million |
+| 12 months | 0.00001 proof/vB | 3,058 | 82,749,007,376 | 827.4901 | $112 million | $63.7 million | $198 million |
+| 24 months | 0.01 proof/vB | 7,645 | 25,761,977,180 | 257.6198 | $58.8 million | $26.4 million | $131 million |
+| 24 months | 0.001 proof/vB | 7,645 | 60,391,558,539 | 603.9156 | $138 million | $61.8 million | $307 million |
+| 24 months | 0.0001 proof/vB | 7,645 | 156,029,832,651 | 1,560.30 | $356 million | $160 million | $794 million |
+| 24 months | 0.00001 proof/vB | 7,645 | 218,283,566,362 | 2,182.84 | $498 million | $223 million | $1.11 billion |
+| 5 years | 0.01 proof/vB | 22,397 | 219,568,156,228 | 2,195.68 | $2.37 billion | $668 million | $8.44 billion |
+| 5 years | 0.001 proof/vB | 22,397 | 509,724,668,177 | 5,097.25 | $5.51 billion | $1.55 billion | $19.6 billion |
+| 5 years | 0.0001 proof/vB | 22,397 | 685,848,039,292 | 6,858.48 | $7.41 billion | $2.09 billion | $26.4 billion |
+| 5 years | 0.00001 proof/vB | 22,397 | 973,919,730,564 | 9,739.20 | $10.5 billion | $2.96 billion | $37.4 billion |
+| 10 years | 0.01 proof/vB | 91,134 | 2,578,561,568,828 | 25,785.62 | $373 billion | $62 billion | $2.24 trillion |
+| 10 years | 0.001 proof/vB | 91,134 | 4,307,711,540,585 | 43,077.12 | $622 billion | $104 billion | $3.74 trillion |
+| 10 years | 0.0001 proof/vB | 91,134 | 7,383,461,271,496 | 73,834.61 | $1.07 trillion | $177 billion | $6.42 trillion |
+| 10 years | 0.00001 proof/vB | 91,134 | 12,855,382,827,934 | 128,553.83 | $1.86 trillion | $309 billion | $11.2 trillion |
+| 25 years | 0.01 proof/vB | 2,913,967 | 2,281,853,012,166,798 | 22,818,530.12 | $787 quadrillion | $46.2 quadrillion | $13.4 quintillion |
+| 25 years | 0.001 proof/vB | 2,913,967 | 4,057,494,013,625,229 | 40,574,940.14 | $1.4 quintillion | $82.1 quadrillion | $23.9 quintillion |
+| 25 years | 0.0001 proof/vB | 2,913,967 | 7,215,079,846,227,189 | 72,150,798.46 | $2.49 quintillion | $146 quadrillion | $42.5 quintillion |
+| 25 years | 0.00001 proof/vB | 2,913,967 | 12,830,149,720,449,110 | 128,301,497.20 | $4.43 quintillion | $260 quadrillion | $75.5 quintillion |
+| 50 years | 0.01 proof/vB | 857,022,930 | 197,349,177,102,430,830,000 | 1,973,491,771,024.31 | $29 octillion | $526 septillion | $1.6 nonillion |
+| 50 years | 0.001 proof/vB | 857,022,930 | 350,941,977,951,159,800,000 | 3,509,419,779,511.60 | $51.6 octillion | $935 septillion | $2.85 nonillion |
+| 50 years | 0.0001 proof/vB | 857,022,930 | 624,072,893,230,663,300,000 | 6,240,728,932,306.63 | $91.8 octillion | $1.66 octillion | $5.07 nonillion |
+| 50 years | 0.00001 proof/vB | 857,022,930 | 1,109,775,976,117,289,900,000 | 11,097,759,761,172.90 | $163 octillion | $2.96 octillion | $9.02 nonillion |
 
 ## Plain Read
 
@@ -481,19 +481,19 @@ At the canonical deep-fee success path:
 
 ```text
 6 months:
-21,274,841,226 sats
+21,274,841,226 proofs
 212.7484 BTC
 $22.3 million base USD
 $14.9 million to $33.3 million volatility range
 
 10 years:
-12,855,382,827,934 sats
+12,855,382,827,934 proofs
 128,553.83 BTC
 $1.86 trillion base USD
 $309 billion to $11.2 trillion volatility range
 
 50 years:
-1,109,775,976,117,289,900,000 sats
+1,109,775,976,117,289,900,000 proofs
 11,097,759,761,172.90 BTC
 $163 octillion base USD
 $2.96 octillion to $9.02 nonillion volatility range
@@ -501,7 +501,7 @@ $2.96 octillion to $9.02 nonillion volatility range
 
 ## Canonical Status
 
-This markdown is the singular ProofOfWork.Me Bitcoin Computer forward model.
+This markdown is the singular ProofOfWork.Me ProofOfWork Computer forward model.
 The live dashboards are the operational source for current confirmed values.
 
 Deprecated:
@@ -517,8 +517,8 @@ old modeling-data exports
 
 The source of truth for ProofOfWork.Me is the chain.
 
-The Bitcoin node count is network-observed.
+The base-layer node count is network-observed.
 
-The Bitcoin price benchmark is backward-facing historical log growth with volatility.
+The BTC price benchmark is backward-facing historical log growth with volatility.
 
 The node growth, agent share, agent adoption curve, fee tiers, fee elasticities, and per-product blockspace usage assumptions are success-case scenario assumptions.

@@ -13,7 +13,7 @@ export function FeeRateControl({
     <div className="fee-control">
       <div className={sidecar ? "fee-control-grid" : undefined}>
         <label>
-          Fee sat/vB
+          Fee proof/vB
           <input
             min={0}
             onChange={(event) => setFeeRate(Number(event.target.value))}

@@ -63,7 +63,7 @@ export function NetworkSelectMenu({
       <button
         aria-expanded={open}
         aria-haspopup="menu"
-        aria-label="Select Bitcoin network"
+        aria-label="Select ProofOfWork network"
         className="network-select-trigger"
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}

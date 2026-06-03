@@ -15,7 +15,7 @@ refund liability = confirmed paid registration events that did not become canoni
 net registry revenue = gross registry flow - refunded or refund-owed non-canonical registration payments
 ```
 
-Confirmed duplicate rows may keep appearing in registry audits forever because Bitcoin history is permanent. They should be tracked as refunded or refund liabilities here, not counted as current unpaid revenue.
+Confirmed duplicate rows may keep appearing in registry audits forever because ProofOfWork history is permanent. They should be tracked as refunded or refund liabilities here, not counted as current unpaid revenue.
 
 When paying future ID refunds from ProofOfWork Mail, keep the on-chain marker small:
 
@@ -46,11 +46,11 @@ These refunds were reported as issued by the project operator after running the 
 
 | Refund address | Amount | Count | IDs |
 | --- | ---: | ---: | --- |
-| `bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d` | 7,000 sats | 7 | `x`, `btc`, `bitcoin`, `pepe`, `sats`, `bitcoin`, `pow` |
-| `bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc` | 6,000 sats | 6 | `okx`, `4`, `4`, `cz`, `okx`, `ai` |
-| `bc1p8m24m3ycx2awggnlp4ljh0m8l54985scfwshet9zdg4qtf80udhqkwrx0c` | 1,000 sats | 1 | `trump` |
+| `bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d` | 7,000 proofs | 7 | `x`, `btc`, `bitcoin`, `pepe`, `proofs`, `bitcoin`, `pow` |
+| `bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc` | 6,000 proofs | 6 | `okx`, `4`, `4`, `cz`, `okx`, `ai` |
+| `bc1p8m24m3ycx2awggnlp4ljh0m8l54985scfwshet9zdg4qtf80udhqkwrx0c` | 1,000 proofs | 1 | `trump` |
 
-Total issued in this batch: **14,000 sats**.
+Total issued in this batch: **14,000 proofs**.
 
 Accounting status: these 14 duplicate registration payments are historical gross registry flow, but they are not net registry revenue after this refund batch.
 
@@ -60,12 +60,12 @@ Refund for the losing same-block `testdummy@proofofwork.me` marketplace buy and 
 
 | Refund address | Amount | Count | IDs | Refund tx |
 | --- | ---: | ---: | --- | --- |
-| `bc1qggw7p5xtcv33uduhttphz24apx35u384ld9twk` | 2,092 sats | 2 | `testdummy` | `891f2575299d4017475afe4ed60eb590c96a89fd43c5211efea6bf46750db7d7` |
+| `bc1qggw7p5xtcv33uduhttphz24apx35u384ld9twk` | 2,092 proofs | 2 | `testdummy` | `891f2575299d4017475afe4ed60eb590c96a89fd43c5211efea6bf46750db7d7` |
 
 Refund components:
 
-- Losing `buy2` payment: 1,000 sat seller payment plus 546 sat mutation fee in tx `c305f8d50c7e077a3a6b958ece911e346a90bca2c51a1449bdf033ebcddba5e4`.
-- Invalid `list2` payment: 546 sat listing fee in tx `557350bbd9ee13a018967bc2af17c6214c4d59b2bc75ba95ce55fce648fe750a`.
+- Losing `buy2` payment: 1,000-proof seller payment plus 546-proof mutation fee in tx `c305f8d50c7e077a3a6b958ece911e346a90bca2c51a1449bdf033ebcddba5e4`.
+- Invalid `list2` payment: 546-proof listing fee in tx `557350bbd9ee13a018967bc2af17c6214c4d59b2bc75ba95ce55fce648fe750a`.
 - Winning canonical `buy2`: tx `da77c38e8df8dd8242464ff384394882d57471a19961655da4cda240286007b1`.
 
 Status: confirmed per ProofOfWork API check on 2026-05-22.
@@ -85,4 +85,4 @@ Run this command to generate a fresh duplicate/refund report:
 npm run audit:ids
 ```
 
-Confirmed duplicate rows may still appear in future audit output because the Bitcoin registry history is permanent. Check this refund log before treating an old duplicate as unpaid.
+Confirmed duplicate rows may still appear in future audit output because the ProofOfWork registry history is permanent. Check this refund log before treating an old duplicate as unpaid.

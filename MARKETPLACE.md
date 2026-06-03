@@ -6,15 +6,15 @@
 - `computer.proofofwork.me` contains the authenticated Marketplace workspace.
 - `marketplace.proofofwork.me` is the standalone asset marketplace app.
 
-Marketplace is organized by asset tabs. IDs and Tokens are both live trading
+Marketplace is organized by asset tabs. IDs and Credits are both live trading
 tabs. Both asset classes use sale-ticket settlement so the buyer path spends a
 scarce UTXO, pays the seller, pays the registry mutation fee, and writes a
 chain-readable transfer/purchase event.
-- `log.proofofwork.me` is the public read-only Bitcoin Computer log for tx-backed app actions.
+- `log.proofofwork.me` is the public read-only ProofOfWork Computer log for tx-backed app actions.
 - The IDs workspace is for registration, receiver updates, and direct owner transfers only.
-- Marketplace is for on-chain listings, seals, delistings, buyer-funded purchases, token sales, and future asset trades.
-- Marketplace actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer/buy tx, token sale tx, and sale-ticket UTXO references.
-- Marketplace attention metrics should be derived from valid chain events: active listings, ID sale count, token sale count, seller-price sale volume, and token sale volume.
+- Marketplace is for on-chain listings, seals, delistings, buyer-funded purchases, credit sales, and future asset trades.
+- Marketplace actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer/buy tx, credit sale tx, and sale-ticket UTXO references.
+- Marketplace attention metrics should be derived from valid chain events: active listings, ID sale count, credit sale count, seller-price sale volume, and credit sale volume.
 
 ## Current ID Marketplace Model
 
@@ -29,15 +29,15 @@ pwid1:delist5:<listing-txid>
 pwid1:buy5:<listing-txid>:<new-owner-address>:<new-receive-address?>
 ```
 
-Each listing mutation pays the 546 sat registry mutation fee. The confirmed chain is canonical; pending events are only best-effort mempool visibility.
+Each listing mutation pays the 546-proof registry mutation fee. The confirmed chain is canonical; pending events are only best-effort mempool visibility.
 
 The current flow:
 
 1. The current ID owner chooses an owned confirmed ID.
 2. The owner enters sale terms with price, optional buyer lock, optional receive-address lock, nonce, and optional expiry.
-3. The app publishes `pwid1:list5` and creates a 546 sat seller-controlled sale-ticket UTXO in the listing transaction.
+3. The app publishes `pwid1:list5` and creates a 546-proof seller-controlled sale-ticket UTXO in the listing transaction.
 4. After the listing txid exists, the seller publishes `pwid1:seal5` with a `SIGHASH_SINGLE|ANYONECANPAY` signature for the sale ticket.
-5. A buyer funds one `pwid1:buy5` transaction that spends the sale ticket, pays the seller price plus ticket value, pays the 546 sat registry mutation fee, and writes the ID transfer event.
+5. A buyer funds one `pwid1:buy5` transaction that spends the sale ticket, pays the seller price plus ticket value, pays the 546-proof registry mutation fee, and writes the ID transfer event.
 6. The resolver accepts the purchase only if the listing is active and sealed, the seller is still the current owner, the sale ticket is spent, seller payment is sufficient, and buyer/receiver constraints match.
 
 The sale ticket is the scarce settlement point. Competing buyers must spend the same outpoint, so only one purchase can confirm. A vandal cannot consume the ticket without paying the seller the required price plus the ticket value.
@@ -48,13 +48,13 @@ The marketplace reports realized ID sale data from resolver-accepted buyer-funde
 
 - Public sale count starts with the live sale-ticket marketplace and increments for valid `buy5` purchases.
 - Historical valid `buy2`/`buy3`/`buy4` purchases remain replayable protocol history, but they are not counted in the public marketplace sales metric.
-- Sale volume is the seller price in sats, excluding the 546 sat registry mutation fee and excluding sale-ticket refunds.
+- Sale volume is the seller price in proofs, excluding the 546-proof registry mutation fee and excluding sale-ticket refunds.
 - Confirmed sales are canonical.
 - Pending sales are mempool-visible only until confirmation.
 
-## Current Token Marketplace Model
+## Current Credit Marketplace Model
 
-The live token marketplace writes sale-ticket events to each token's own
+The live credit marketplace writes sale-ticket events to each credit's own
 registry address.
 
 Current events:
@@ -66,17 +66,17 @@ pwt1:delist5:<listing-txid>
 pwt1:buy5:<listing-txid>:<buyer-address>
 ```
 
-Each token mutation pays the 546 sat token registry mutation fee. Token
-creation still pays the macro token index, but mints, transfers, listings,
-seals, delistings, and buys pay the token's own registry directly.
+Each credit mutation pays the 546-proof credit registry mutation fee. Credit
+creation still pays the macro credit index, but mints, transfers, listings,
+seals, delistings, and buys pay the credit's own registry directly.
 
 The current flow:
 
-1. A token holder chooses a confirmed balance.
-2. The holder publishes `pwt1:list5`, which reserves spendable token balance and creates a 546 sat seller-controlled sale-ticket UTXO.
+1. A credit holder chooses a confirmed balance.
+2. The holder publishes `pwt1:list5`, which reserves spendable credit balance and creates a 546-proof seller-controlled sale-ticket UTXO.
 3. After the listing txid exists, the seller publishes `pwt1:seal5` with a `SIGHASH_SINGLE|ANYONECANPAY` signature for the sale ticket.
-4. A buyer funds one `pwt1:buy5` transaction that spends the sale ticket, pays the seller price plus ticket value, pays the 546 sat token registry mutation fee, and writes the buy event.
-5. The token resolver accepts the purchase only if the listing is active and sealed, the seller still has spendable balance, the sale ticket is spent, seller payment is sufficient, and buyer constraints match.
+4. A buyer funds one `pwt1:buy5` transaction that spends the sale ticket, pays the seller price plus ticket value, pays the 546-proof credit registry mutation fee, and writes the buy event.
+5. The credit resolver accepts the purchase only if the listing is active and sealed, the seller still has spendable balance, the sale ticket is spent, seller payment is sufficient, and buyer constraints match.
 
 Wallet and Marketplace both use this model. Wallet is the connected-address
 ownership/action surface; Marketplace is the public discovery and purchase
@@ -111,7 +111,7 @@ the listing is no longer active.
   records a closed-listing event for audit.
 
 Pending outspends are best-effort mempool visibility. Confirmed outspends are
-canonical. Summary and history endpoints must refresh token state on explicit
+canonical. Summary and history endpoints must refresh credit state on explicit
 refresh so a spent ticket cannot remain displayed as an active listing after the
 chain has moved.
 
@@ -127,7 +127,7 @@ Rules:
 - A `list5` record without a matching valid `seal5` is visible, but not purchasable.
 - Wallets may return either an ECDSA partial signature or a Taproot key signature. The app and API must accept both when validating sealed sale tickets.
 
-This keeps the listing public and chain-readable while making the buyer path atomic at the Bitcoin UTXO layer.
+This keeps the listing public and chain-readable while making the buyer path atomic at the ProofOfWork UTXO layer.
 
 ## Delistings
 
@@ -141,14 +141,14 @@ A valid delisting must:
 
 - Be funded by the current owner.
 - Spend the sale-ticket UTXO.
-- Pay the 546 sat mutation fee to the registry address.
+- Pay the 546-proof mutation fee to the registry address.
 - Reference the listing txid being canceled.
 
 Automatic invalidation rules:
 
 - Any confirmed `pwid1:t` ownership transfer cancels active listings for that ID.
 - Any confirmed `pwid1:buy5` marketplace transfer cancels active listings for that ID.
-- Any confirmed token `pwt1:buy5` sale-ticket spend closes the active token listing and records the sale.
+- Any confirmed credit `pwt1:buy5` sale-ticket spend closes the active credit listing and records the sale.
 - Expired sale authorizations are ignored by the resolver.
 - Delistings cancel the referenced listing after confirmation.
 
@@ -177,7 +177,7 @@ New clients must write `list5`, `seal5`, `delist5`, and `buy5`.
 
 ## General Asset Trading
 
-IDs and Tokens are the first marketplace assets. The long-term marketplace should stay asset-agnostic without weakening the live ID or token sale-ticket protocols.
+IDs and Credits are the first marketplace assets. The long-term marketplace should stay asset-agnostic without weakening the live ID or credit sale-ticket protocols.
 
 Future asset classes can include:
 
@@ -185,7 +185,7 @@ Future asset classes can include:
 - apps
 - files
 - code bundles
-- other Bitcoin-native records
+- other ProofOfWork-native records
 
 The forward-compatible shape is a universal asset envelope:
 
@@ -193,7 +193,7 @@ The forward-compatible shape is a universal asset envelope:
 {
   "version": "pow-asset-v1",
   "type": "id",
-  "locator": "pwid:bitcoin",
+  "locator": "pwid:proofs",
   "owner": "bc1...",
   "metadataHash": "sha256...",
   "transferMethod": "pwid1:buy5"
@@ -219,7 +219,7 @@ This keeps IDs, apps, code, and files coherent under one marketplace without for
 
 ## Asset-for-Asset Trades
 
-Sats-for-asset is the first settlement mode.
+Proofs-for-asset is the first settlement mode.
 
 Asset-for-asset trades are a later phase because true atomic swaps require both assets to be enforceable in one settlement path. For ProofOfWork-native assets, that can be designed as one transaction containing:
 

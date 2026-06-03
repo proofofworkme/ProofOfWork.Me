@@ -243,7 +243,7 @@ This connects to:
 ## Open Questions
 
 - Should `powcat1` chunks be separate mail transactions or separate zero-value content transactions?
-- Should chunk txs pay sats to the recipient, or only the mail pointer tx pays the recipient?
+- Should chunk txs pay proofs to the recipient, or only the mail pointer tx pays the recipient?
 - Should chunk content be allowed in Inbox ranking, or only parent mail tx value counts?
 - Should chunk manifests be reusable across many messages?
 - Should the app support raw binary OP_RETURN chunks or only base64url?

@@ -1,6 +1,6 @@
 # Mail Organization
 
-Notes for mailbox features that make ProofOfWork.Me feel like a normal mail app while respecting Bitcoin permanence.
+Notes for mailbox features that make ProofOfWork.Me feel like a normal mail app while respecting ProofOfWork permanence.
 
 ## Current Launch Status
 
@@ -13,12 +13,12 @@ id.proofofwork.me           focused ProofOfWork ID registry onboarding app
 computer.proofofwork.me     full mailbox/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
-marketplace.proofofwork.me  standalone asset marketplace; IDs and token sale-ticket markets live
-token.proofofwork.me        standalone token creation and mint app
+marketplace.proofofwork.me  standalone asset marketplace; IDs and credit sale-ticket markets live
+token.proofofwork.me        standalone credit creation and mint app
 tokens.proofofwork.me       permanent redirect to https://token.proofofwork.me/
-wallet.proofofwork.me      standalone token wallet, transfer, listing, delisting, and sale-history app
-work.proofofwork.me         standalone WORK token dashboard and mint page
-log.proofofwork.me          public Bitcoin Computer log
+wallet.proofofwork.me      standalone credit wallet, transfer, listing, delisting, and sale-history app
+work.proofofwork.me         standalone WORK credit dashboard and mint page
+log.proofofwork.me          public ProofOfWork Computer log
 growth.proofofwork.me       public growth model dashboard
 ```
 
@@ -42,22 +42,23 @@ Mail organization features that are already implemented in the full app:
 - Browser-readable HTML message bodies appear in Files/Desktop as derived `.html` files, even when no attachment exists.
 - Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
 - Marketplace workspace for confirmed ID listings, delistings, and buyer-funded transfers.
-- Token workspace for mainnet token creation and minting, Wallet workspace for token balances, transfers, and listings, plus a WORK workspace for the dedicated WORK token dashboard. Creation pays the `tokens@proofofwork.me` index fee; mints, transfers, listings, seals, delistings, and buys pay each token registry directly.
-- Log surface for tx-backed registry, marketplace, mail, reply, file, attachment, and token actions.
-- Growth surface for canonical modeled network value versus real confirmed registry, log, file, marketplace, and Token value metrics.
+- Credit workspace for mainnet credit creation and minting, Wallet workspace for credit balances, transfers, and listings, plus a WORK workspace for the dedicated WORK credit dashboard. Creation pays the `tokens@proofofwork.me` index fee; mints, transfers, listings, seals, delistings, and buys pay each credit registry directly.
+- Log surface for tx-backed registry, marketplace, mail, reply, file, attachment, and credit actions.
+- Growth surface for canonical modeled network value versus real confirmed registry, log, file, marketplace, and Credit value metrics.
 - Export/import for local drafts, archive/favorite preferences, and sent/outbox tracking.
 - Confirmed-only ID routing in compose: pending IDs must not receive routed mail.
 - First-party OP_RETURN API reads for production mainnet mail, files, registry, and tx status when `VITE_POW_API_BASE` is configured.
 
 Future developers should keep `id.proofofwork.me` narrow. Do not pull the full mailbox UI into the Phase 1 registry launch unless the launch scope explicitly changes.
-Marketplace actions should stay outside the mailbox folders. Keep ID and token trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders. The Marketplace workspace is tabbed by asset class: IDs and Tokens both use sale-ticket settlement, while Wallet stays the place to transfer or list owned token balances.
-Log is not a mailbox folder. It is a read-only Bitcoin Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, attachments, token creations, token mints, token transfers, token listings, and token sales.
-Growth is not a mailbox folder. It is a read-only model surface that compares confirmed chain-derived network value with the canonical Bitcoin Computer growth model in sats and USD. Merged apps such as Tokens and Wallet should appear as normal app surfaces, Computer workspaces when useful, and first-class Growth inputs.
+Marketplace actions should stay outside the mailbox folders. Keep ID and credit trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders. The Marketplace workspace is tabbed by asset class: IDs and Credits both use sale-ticket settlement, while Wallet stays the place to transfer or list owned credit balances.
+Log is not a mailbox folder. It is a read-only ProofOfWork Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, and credit sales.
+Growth is not a mailbox folder. It is a read-only model surface that compares confirmed chain-derived network value with the canonical ProofOfWork Computer growth model in proofs and USD. Merged apps such as Credits and Wallet should appear as normal app surfaces, Computer workspaces when useful, and first-class Growth inputs.
 Browser is not a mailbox folder. It is an HTML renderer over ProofOfWork message bodies and the same verified file attachment protocol used by Files and Desktop. Browser-rendered HTML stays separate from wallet signing. Browser should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.
+Confessions is not a mailbox folder. It is staged/local-only until separately approved. Confessions posts, social profile metadata, follows, likes, reposts, replies, tips, links, Files-backed small inline image references, Files-backed 100 KB profile banner references, and hide/archive visibility tombstones should use their own `pwc1:` meta protocol and should not be written as mailbox organization state or ID registry mutations. Confessions image bytes should be created through the existing ProofOfWork Files attachment layer and referenced from posts or profile proofs by file proof metadata. Its follow graph, Following timeline, profile tabs, profile earnings, and WORK-balance display are social views over confirmed chain-readable records, not local mail folders.
 
 ## Core Idea
 
-Messages written to Bitcoin are permanent. The app should not pretend users can delete them from the chain.
+Messages written to ProofOfWork are permanent. The app should not pretend users can delete them from the chain.
 
 Instead, ProofOfWork.Me can provide local mailbox organization:
 
@@ -113,7 +114,7 @@ The default Files experience should feel more like a desktop/file manager than a
 - Show image thumbnails when possible.
 - Show clean file icons for PDFs, documents, and other files.
 - Filter by file type: all files, images, PDFs, documents, and other.
-- Sort by highest sats, newest, oldest, thread, largest file, file type, or address.
+- Sort by highest proofs, newest, oldest, thread, largest file, file type, or address.
 - Select a file to see a details inspector.
 - Download from the inspector.
 - Keep `Open Message` as an explicit option for viewing the source mail/thread.
@@ -134,7 +135,7 @@ Desktop is the public read-only version of Files. On `desktop.proofofwork.me`, i
 
 Behavior:
 
-- Search a Bitcoin address or confirmed `user@proofofwork.me`.
+- Search a ProofOfWork address or confirmed `user@proofofwork.me`.
 - Resolve ProofOfWork IDs only when confirmed.
 - Load confirmed mail for the resolved address.
 - Show confirmed attachments as a desktop-style public file space.
@@ -159,13 +160,13 @@ The Computer app may still keep an internal Desktop folder for signed-in users. 
 
 ## Browser
 
-Browser is the public HTML renderer for the Bitcoin Computer. On `browser.proofofwork.me`, users paste a txid and the app renders HTML from the existing `pwm1:m` message body or reconstructs a verified `text/html` attachment from `pwm1:a` chunks.
+Browser is the public HTML renderer for the ProofOfWork Computer. On `browser.proofofwork.me`, users paste a txid and the app renders HTML from the existing `pwm1:m` message body or reconstructs a verified `text/html` attachment from `pwm1:a` chunks.
 
 The full Computer app also exposes Browser as a sidebar workspace. New products should follow this pattern: a standalone public surface when useful, a Computer workspace when it belongs inside the full machine, and a matching entry in the growth model.
 
 Behavior:
 
-- Accept a Bitcoin txid on mainnet, testnet4, or testnet3.
+- Accept a ProofOfWork txid on mainnet, testnet4, or testnet3.
 - Fetch the transaction through the ProofOfWork API when configured.
 - Render HTML-like message bodies directly from `pwm1:m` chunks.
 - Reconstruct HTML attachments through the same size and SHA-256 checks as Files/Desktop.
@@ -173,7 +174,7 @@ Behavior:
 - Render pending pages inside a sandboxed iframe with scripts disabled.
 - Render confirmed pages inside a sandboxed iframe that may run page scripts, but without same-origin privileges.
 - Keep wallet signing outside Browser iframes. Browser renders verified HTML, but iframe scripts do not get a parent signing bridge.
-- Show proof metadata: txid, status, network, sender, sats, protocol bytes, size, and SHA-256.
+- Show proof metadata: txid, status, network, sender, proofs, protocol bytes, size, and SHA-256.
 - Expose a simple Computer-native HTML template users can copy before publishing as a message body or download before publishing as a normal ProofOfWork file attachment.
 - Treat pending pages as pending visibility, not final truth.
 
@@ -252,7 +253,7 @@ Drafts, archive, and favorite state can stay serverless at first.
 Drafts:
 
 - Store one draft per wallet address and network at first.
-- Save recipient, CC recipient, subject, sats, fee rate, message body, attachment, reply parent txid, and update time.
+- Save recipient, CC recipient, subject, proofs, fee rate, message body, attachment, reply parent txid, and update time.
 - Keep drafts in `localStorage`; they are not written on-chain.
 - Clear the draft after successful broadcast or explicit discard.
 - Key drafts by `network + address`.
@@ -289,7 +290,7 @@ Custom folders:
 Contacts:
 
 - Store contacts locally in `localStorage`.
-- A contact can be a Bitcoin address or a confirmed `user@proofofwork.me` ID resolved to its receive address.
+- A contact can be a ProofOfWork address or a confirmed `user@proofofwork.me` ID resolved to its receive address.
 - Pending IDs should not be saved as routable contacts.
 - Confirmed registry rows can expose an `Add Contact` action next to `View TX`.
 - Compose should offer saved contacts as suggestions.
@@ -299,7 +300,7 @@ Multi-recipient mail:
 
 - Compose accepts addresses, confirmed ProofOfWork IDs, and saved Contacts separated by commas, semicolons, or new lines.
 - The To field and CC field both resolve through the same confirmed-ID/address logic.
-- Each resolved recipient gets a normal BTC payment output before the first `pwm1:` OP_RETURN output.
+- Each resolved recipient gets a normal ProofOfWork payment output before the first `pwm1:` OP_RETURN output.
 - The OP_RETURN payload is written once per transaction, so all recipients share the same txid and thread root.
 - The reader derives recipients from payment outputs, not OP_RETURN data.
 - To/CC labels are local sender-side organization metadata. Recipients can see payment outputs on-chain, but the protocol does not currently make role labels authoritative for every recipient.
@@ -365,7 +366,7 @@ Useful controls:
 
 Useful sorting:
 
-- Highest sats.
+- Highest proofs.
 - Newest.
 - Oldest.
 - Thread.
@@ -394,11 +395,11 @@ The first implementation should stay local and simple.
 
 ## Leaderboard
 
-ProofOfWork.Me can add a leaderboard to show which accounts or IDs receive the most sats through messages.
+ProofOfWork.Me can add a leaderboard to show which accounts or IDs receive the most proofs through messages.
 
 This turns paid mail into a visible attention market:
 
-- More sats received means more value, attention, or signal.
+- More proofs received means more value, attention, or signal.
 - Public rankings make the app feel alive.
 - Users can discover high-signal accounts.
 - Recipients have an incentive to share their ProofOfWork.Me address or ID.
@@ -426,14 +427,14 @@ All time
 
 Possible ranking metrics:
 
-- Total sats received.
+- Total proofs received.
 - Number of messages received.
 - Highest single message value.
 - Number of unique senders.
 - Reply activity.
 - Thread activity.
 
-Before ProofOfWork.Me IDs exist, the leaderboard can rank raw Bitcoin addresses.
+Before ProofOfWork.Me IDs exist, the leaderboard can rank raw ProofOfWork addresses.
 
 After IDs exist, the leaderboard should prefer names like:
 
@@ -454,9 +455,9 @@ Important design note:
 
 Archive, Favorites, and Files make ProofOfWork.Me feel like a real mail client.
 
-They also fit the Bitcoin model:
+They also fit the ProofOfWork model:
 
-- Bitcoin keeps the permanent record.
+- ProofOfWork keeps the permanent record.
 - The app gives users a personal view over that record.
 - No delete fiction is needed.
 - Leaderboards make paid attention visible and social.

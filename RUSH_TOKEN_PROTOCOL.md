@@ -1,20 +1,20 @@
-# RUSH Token Protocol
+# RUSH Credit Protocol
 
-RUSH is a ProofOfWork.Me token page with a fixed 50,000 mint
-schedule and an intentionally simple Bitcoin OP_RETURN record.
+RUSH is a ProofOfWork.Me credit page with a fixed 50,000 mint
+schedule and an intentionally simple ProofOfWork OP_RETURN record.
 
-The RUSH page is separate from the generic token creation flow. It uses its own
+The RUSH page is separate from the generic credit creation flow. It uses its own
 registry address, deterministic reward curve, and chained mint execution engine.
 
 ## Constants
 
 ```text
-token: RUSH
+credit: RUSH
 production network: livenet
 mainnet registry address: bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e
 testnet4 registry address: tb1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk5gvw6q
-mint price: 1000 sats
-total token supply: 1,000,000,000 RUSH
+mint price: 1000 proofs
+total credit supply: 1,000,000,000 RUSH
 maximum rewarded mints: 50,000
 final phase reward: 6,000 RUSH per mint
 ```
@@ -32,7 +32,7 @@ Each RUSH mint transaction must:
 
 ```text
 1. spend from the minter wallet.
-2. pay at least 1000 sats to the RUSH registry address.
+2. pay at least 1000 proofs to the RUSH registry address.
 3. include one RUSH mint OP_RETURN record.
 4. put the registry payment before the RUSH OP_RETURN output.
 ```
@@ -46,7 +46,7 @@ pwr1:m:rush
 `pwr1:` means ProofOfWork RUSH. `m` means mint. `rush` is lowercase and exact.
 
 The minter address is inferred from `vin0`, matching the existing
-ProofOfWork.Me token-indexing pattern. The OP_RETURN does not store a recipient,
+ProofOfWork.Me credit-indexing pattern. The OP_RETURN does not store a recipient,
 amount, rank, or balance.
 
 ## Valid Mint Transaction Shape
@@ -58,7 +58,7 @@ vin0:
   minter input
 
 vout before OP_RETURN:
-  payment >= 1000 sats -> RUSH registry address
+  payment >= 1000 proofs -> RUSH registry address
 
 OP_RETURN:
   pwr1:m:rush
@@ -88,7 +88,7 @@ vin0:
   current user-controlled chained UTXO
 
 vout0:
-  1000 sats -> RUSH registry address
+  1000 proofs -> RUSH registry address
 
 vout1:
   OP_RETURN pwr1:m:rush
@@ -109,7 +109,7 @@ vin0:
   current user-controlled chained UTXO
 
 vout0:
-  1000 sats -> RUSH registry address
+  1000 proofs -> RUSH registry address
 
 vout1:
   OP_RETURN pwr1:m:rush
@@ -154,7 +154,7 @@ For each transaction touching that address, a valid RUSH mint is accepted when:
 
 ```text
 1. the tx has a txid.
-2. the tx has a payment output >= 1000 sats to the RUSH registry address.
+2. the tx has a payment output >= 1000 proofs to the RUSH registry address.
 3. that payment output appears before the RUSH OP_RETURN.
 4. the tx has an OP_RETURN payload exactly equal to pwr1:m:rush.
 5. vin0 has a parseable minter address.
@@ -185,7 +185,7 @@ final ordinal can change until confirmation.
 
 ## Reward Schedule
 
-RUSH distributes exactly 1,000,000,000 tokens over 50,000 rewarded mints.
+RUSH distributes exactly 1,000,000,000 credits over 50,000 rewarded mints.
 
 The distribution is phase-based. Early minters receive more RUSH per mint, but
 the reward does not decay toward near-zero before the end of the mint window.
@@ -291,7 +291,7 @@ if ordinal > 50000:
 ```
 
 Floating point math must not be used for canonical accounting. Indexers must
-use integer base units. Since every phase reward is an integer token amount,
+use integer base units. Since every phase reward is an integer credit amount,
 the base-unit math is direct:
 
 ```text
@@ -389,7 +389,7 @@ The endpoint should:
 The global Log endpoint should add `rush-mint` activity items after the RUSH
 indexer exists.
 
-Growth can add RUSH later as a token-specific flow once confirmed usage exists.
+Growth can add RUSH later as a credit-specific flow once confirmed usage exists.
 
 ## Page Surface
 
@@ -439,4 +439,4 @@ V1 does not implement:
 - mutable metadata.
 
 The source of truth is the RUSH registry address plus valid `pwr1:m:rush`
-records confirmed on Bitcoin.
+records confirmed on ProofOfWork.

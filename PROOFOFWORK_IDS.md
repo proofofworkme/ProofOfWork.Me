@@ -1,6 +1,6 @@
 # ProofOfWork.Me IDs
 
-Planning notes for the next ProofOfWork.Me phase: human-readable on-chain mail IDs, backed by Bitcoin OP_RETURN registry events.
+Planning notes for the next ProofOfWork.Me phase: human-readable on-chain mail IDs, backed by ProofOfWork OP_RETURN registry events.
 
 ## Developer Warning
 
@@ -9,8 +9,8 @@ Phase 1 is a canonical registry launch. Future developers and agents should trea
 Do not change these without an explicit migration plan:
 
 - Mainnet registry address: `bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e`
-- Registration price: `1000` sats
-- Mutation price: `546` sats for receiver updates, transfers, on-chain listings, delistings, and buyer-funded marketplace transfers
+- Registration price: `1000` proofs
+- Mutation price: `546` proofs for receiver updates, transfers, on-chain listings, delistings, and buyer-funded marketplace transfers
 - Protocol prefix: `pwid1:`
 - Registration event: `pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>`
 - Receiver update event: `pwid1:u:<id-base64url>:<receive-address>`
@@ -53,10 +53,10 @@ user@proofofwork.me
 
 They are not traditional DNS records. They are on-chain mail IDs resolved by the ProofOfWork.Me app/indexer.
 
-- Registry events live in Bitcoin OP_RETURN outputs.
+- Registry events live in ProofOfWork OP_RETURN outputs.
 - First valid registration wins.
-- Registration requires a 1,000 sat payment to the canonical registry address.
-- Receiver updates, transfers, listings, delistings, and buyer-funded marketplace transfers require a 546 sat mutation payment to the same canonical registry address.
+- Registration requires a 1,000-proof payment to the canonical registry address.
+- Receiver updates, transfers, listings, delistings, and buyer-funded marketplace transfers require a 546-proof mutation payment to the same canonical registry address.
 - Transfers update the current owner/receiver.
 - Marketplace listings publish sale terms on-chain from the current owner's wallet, while buyer-funded transfers execute those terms.
 - Future messages resolve to the current receiver.
@@ -94,7 +94,7 @@ id.proofofwork.me
 
 The ID subdomain renders a focused mainnet claim flow using the same registry address and `pwid1:r2` protocol. It is intentionally narrower than the full mail app: connect UniSat, check availability, register, view registry stats, view owned IDs, view public registry records, and verify owned/routed IDs on X. Do not put ID transfer, management, or marketplace tools on `id.proofofwork.me`; those belong in the Computer app and the standalone Marketplace app.
 Inside `computer.proofofwork.me`, the IDs workspace is limited to registration, receiver updates, and direct owner transfers. Marketplace is a dedicated sidebar workspace for listing owned confirmed IDs and executing buyer-funded transfers.
-All registry-facing UI surfaces should include search once the registry grows: public registry, owned IDs, pending ID events, active marketplace listings, and registry supply lists should be searchable by ID, full `user@proofofwork.me`, owner/receiver address, txid, network, status, and sats where relevant.
+All registry-facing UI surfaces should include search once the registry grows: public registry, owned IDs, pending ID events, active marketplace listings, and registry supply lists should be searchable by ID, full `user@proofofwork.me`, owner/receiver address, txid, network, status, and proofs where relevant.
 
 Production domains:
 
@@ -105,26 +105,28 @@ id.proofofwork.me           focused ID registry app
 computer.proofofwork.me     full mail/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
-marketplace.proofofwork.me  standalone asset marketplace; IDs and token sale-ticket markets live
-token.proofofwork.me        standalone token creation and mint app
+marketplace.proofofwork.me  standalone asset marketplace; IDs and credit sale-ticket markets live
+token.proofofwork.me        standalone credit creation and mint app
 tokens.proofofwork.me       permanent redirect to https://token.proofofwork.me/
-wallet.proofofwork.me      standalone token wallet, transfer, listing, delisting, and sale-history app
-work.proofofwork.me         standalone WORK token dashboard and mint page
-log.proofofwork.me          public Bitcoin Computer log
+wallet.proofofwork.me      standalone credit wallet, transfer, listing, delisting, and sale-history app
+work.proofofwork.me         standalone WORK credit dashboard and mint page
+log.proofofwork.me          public ProofOfWork Computer log
 growth.proofofwork.me       public growth model dashboard
 ```
 
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
-The Marketplace subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers. It is tabbed by asset class: the ID tab is live, and the Token tab uses the same sale-ticket shape for token `list5`, `seal5`, `delist5`, and `buy5` records.
-The Log subdomain is read-only. It exposes a unified Bitcoin Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, token creations, token mints, token transfers, token listings, and token sales.
-The Token subdomain creates and mints mint-first `pwt1:` tokens. The `tokens` subdomain redirects to Token. The Wallet subdomain tracks token balances and broadcasts `pwt1:send` transfers that pay the token registry. The WORK subdomain is the dedicated WORK token dashboard.
-The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace/Token network-value model with confirmed registry, log, file, marketplace, and token value metrics in sats and USD. WORK has a permanent floor derived from this confirmed network value: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`; the inverse `21,000,000 / confirmed_network_value_sats` is the WORK-per-sat ratio.
+Confessions is staged/local-only for a Twitter-like 140-character social meta protocol over confirmed ProofOfWork IDs. It must not mutate the canonical `pwid1:` registry for follows, likes, reposts, or replies and must not be added to public production navigation until separately approved.
+The Marketplace subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers. It is tabbed by asset class: the ID tab is live, and the Credit tab uses the same sale-ticket shape for credit `list5`, `seal5`, `delist5`, and `buy5` records.
+The Log subdomain is read-only. It exposes a unified ProofOfWork Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, and credit sales.
+The Credit subdomain creates and mints mint-first `pwt1:` credits. The `tokens` subdomain redirects to Credit. The Wallet subdomain tracks credit balances and broadcasts `pwt1:send` transfers that pay the credit registry. The WORK subdomain is the dedicated WORK credit dashboard.
+The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace/Credit network-value model with confirmed registry, log, file, marketplace, and credit value metrics in proofs and USD. WORK has a permanent floor derived from this confirmed network value: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`; the inverse `21,000,000 / confirmed_network_value_sats` is the WORK-per-proof ratio.
 
 Local preview:
 
 ```text
 http://localhost:5173/?id-launch=1
+http://localhost:5173/?confessions=1
 ```
 
 ID-only launch build:
@@ -141,19 +143,19 @@ Marketplace-only build:
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
 ```
 
-Token-only build:
+Credit-only build:
 
 ```bash
 VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://token.proofofwork.me npm run build
 ```
 
-Token-wallet-only build:
+Credit-wallet-only build:
 
 ```bash
 VITE_WALLET_ONLY=1 VITE_POW_API_BASE=https://wallet.proofofwork.me npm run build
 ```
 
-WORK-token-only build:
+WORK-credit-only build:
 
 ```bash
 VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
@@ -190,21 +192,21 @@ pwid1:buy5:<listing-txid>:<new-owner-address>:<new-receive-address?>
 
 Rules:
 
-- `pwid1:r2` registration transactions must pay at least `1000` sats to the registry address.
-- `pwid1:u`, `pwid1:t`, `pwid1:list5`, `pwid1:seal5`, `pwid1:delist5`, and `pwid1:buy5` transactions must pay at least `546` sats to the registry address.
+- `pwid1:r2` registration transactions must pay at least `1000` proofs to the registry address.
+- `pwid1:u`, `pwid1:t`, `pwid1:list5`, `pwid1:seal5`, `pwid1:delist5`, and `pwid1:buy5` transactions must pay at least `546` proofs to the registry address.
 - The registry payment output must appear before the ID OP_RETURN output in the transaction.
 - The OP_RETURN must start with `pwid1:`.
 - Registrations, receiver updates, and transfers all use the same canonical registry address.
 - Receiver updates and transfers must be paid from the current owner address, because the resolver verifies the current owner appears in the transaction inputs.
 - `pwid1:u` changes only the receive address. The owner remains unchanged.
 - `pwid1:t` changes ownership. If the new receive address is omitted, the new owner address also becomes the receive address.
-- App UI may accept confirmed ProofOfWork IDs as transfer owner or receive targets, but the written `pwid1:u` and `pwid1:t` events must still contain resolved Bitcoin addresses.
-- `pwid1:list5` publishes sale terms as an active marketplace listing and creates a 546 sat seller-controlled sale-ticket UTXO in the listing transaction.
+- App UI may accept confirmed ProofOfWork IDs as transfer owner or receive targets, but the written `pwid1:u` and `pwid1:t` events must still contain resolved ProofOfWork addresses.
+- `pwid1:list5` publishes sale terms as an active marketplace listing and creates a 546-proof seller-controlled sale-ticket UTXO in the listing transaction.
 - `pwid1:seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` signature for the sale ticket after the listing txid exists, with `anchorTxid` set to the referenced listing txid.
 - `pwid1:delist5` cancels an active listing by spending the sale ticket and paying the mutation fee.
 - Any confirmed ownership transfer through `pwid1:t` or `pwid1:buy5` automatically invalidates all active listings for that ID.
 - `pwid1:buy5` changes ownership using active on-chain sale terms from a current-owner `list5` transaction and matching `seal5` event. The buyer must spend the sale ticket, so competing buys conflict as double-spends.
-- A `buy5` transaction must pay the 546 sat mutation fee before the ID OP_RETURN and must also pay the listed sale price plus ticket value to the current owner before the ID OP_RETURN.
+- A `buy5` transaction must pay the 546-proof mutation fee before the ID OP_RETURN and must also pay the listed sale price plus ticket value to the current owner before the ID OP_RETURN.
 - A `list5` sale authorization uses JSON version `pwid-sale-v4` and includes the ID, seller address, seller public key, price, optional buyer lock, optional receive-address lock, nonce, optional expiry, sale-ticket vout/value/script, and a `sale-ticket-v1` anchor type. A matching `seal5` adds the seller's `SIGHASH_SINGLE|ANYONECANPAY` anchor signature.
 - A `seal5` is valid only when its sealed authorization keeps the same terms as the `list5` authorization and its `anchorTxid` equals the listing txid. Listings without a matching valid seal are visible but not purchasable.
 - Sale-ticket seals may use wallet-returned ECDSA partial signatures or Taproot key signatures.
@@ -245,7 +247,49 @@ The chain remains canonical:
 - The ID is owned by the first confirmed valid registry transaction.
 - The X post only proves the registrant chose to publicly associate an account with that transaction.
 - The app can generate a prefilled post with the ID and mempool transaction link only from the owner's/routed wallet view.
-- Future profile metadata can store an X proof URL on-chain with a `pwid1:meta` event.
+- Future ID-level verification metadata can store an X proof URL on-chain with a `pwid1:meta` event. Confessions social profile metadata is separate staged `pwc1:profile` state and must not mutate the canonical ID registry.
+
+## Staged Confessions Social
+
+Confessions is a future/staged ProofOfWork ID social meta protocol. It uses confirmed PowIDs for accounts and their current receiver addresses as payment lanes, but it does not change the canonical `pwid1:` registry rules.
+
+Public app/domain launch is not approved. Keep the UI local/staged until launch scope changes.
+
+Planned OP_RETURN events:
+
+```text
+pwc1:profile:<profile-json-base64url>
+pwc1:post:<post-json-base64url>
+pwc1:reply:<parent-txid>:<post-json-base64url>
+pwc1:like:<target-txid>
+pwc1:repost:<target-txid>
+pwc1:follow:<target-id-base64url>
+pwc1:tip:<target-id-base64url>:<amount-proofs>
+pwc1:hide:<target-txid>
+```
+
+Rules to preserve:
+
+- Confessions and replies are capped at 140 user-visible characters.
+- Every confirmed PowID has a blank Confessions profile by default. The default location is `ProofOfWork`.
+- Profile metadata uses `pwc1:profile:<profile-json-base64url>` and requires 546 proofs to the owner's own confirmed PowID receiver. Newer confirmed profile proofs replace older profile fields.
+- Profile fields are capped at 50 characters for name, 160 for bio, 30 for location, and 100 for website. Birthday is optional. Profile banner images are Files-backed references capped at 100 KB and ride the same 546-proof `pwc1:profile` proof to the owner's own PowID receiver.
+- Post JSON may include links and one image attachment reference under 100 KB before encoding, while the final transaction must still fit the aggregate OP_RETURN limit. The image bytes should be stored through the ProofOfWork Files attachment layer; Confessions records should point to the file txid/proof/hash/size instead of carrying raw image bytes.
+- Images should render inline in feeds and profiles from Files, while detailed views can expose their size and hash proof.
+- Social accounts resolve only through confirmed ProofOfWork IDs.
+- The staged Confessions UI should derive profile shells and payment receivers from confirmed `pwid1` registry records only; preview-only social accounts must not masquerade as real PowIDs.
+- Pending IDs can be displayed but are not valid account targets.
+- Likes, reposts, follows, and paid replies require at least 546 proofs to the immediate target's confirmed PowID receiver before the `pwc1:` OP_RETURN.
+- Following someone pays 546 proofs to that user's confirmed PowID receiver and creates the confirmed follow graph.
+- Tips pay any user-chosen amount to the target profile's confirmed PowID receiver.
+- Profiles should show who follows the user, who the user follows, confirmed social proofs earned by source, pending incoming social proofs separately, and WORK balance when available.
+- Profiles should expose Posts, Replies, Likes, and Media tabs. Reposts appear inline in the Posts timeline, not as a separate tab. Proofs/earnings remain in the profile summary.
+- Authors can archive/hide their own Confessions from default app/profile indexing with a 546-proof `pwc1:hide` event. This is a visibility tombstone, not deletion from ProofOfWork.
+- The Following timeline shows only followed PowID posts, ordered by post time.
+- Likes, reposts, and replies are disabled until the target post or reply is confirmed.
+- A reply to a reply pays the author of the parent reply, not automatically the original post author.
+- Confirmed ProofOfWork history is canonical. Pending Confessions records are only visibility.
+- Wallet signing stays local.
 
 ## Future Metaprotocol
 
@@ -273,9 +317,9 @@ Rules to preserve:
 
 - All event ID fields should be base64url encoded and normalized case-insensitively by resolvers.
 - `r2` is valid only if the ID is unclaimed.
-- `r2` requires at least `1000` sats to the registry address.
+- `r2` requires at least `1000` proofs to the registry address.
 - `u`, `t`, `k`, `list5`, `seal5`, `delist5`, and `accept` are valid only from the current owner.
-- `u`, `t`, `list5`, `seal5`, `delist5`, and `buy5` require at least `546` sats to the registry address.
+- `u`, `t`, `list5`, `seal5`, `delist5`, and `buy5` require at least `546` proofs to the registry address.
 - `u`, `t`, `list5`, `seal5`, `delist5`, and `buy5` are live registry events.
 - `buy5` is valid only with a matching active sealed sale-ticket listing, a spent sale ticket, and matching seller payment.
 - `buy5` is valid only against current ownership; marketplace UIs should prefer active sealed `list5` listings.
@@ -341,7 +385,7 @@ The node/API stack provides:
 - Alias resolution.
 - Independence from public APIs.
 - Live BTC/USD from the ProofOfWork node price endpoint.
-- Stale-while-refresh caches for expensive registry, token, log, Growth, and WORK floor reads.
+- Stale-while-refresh caches for expensive registry, credit, log, Growth, and WORK floor reads.
 
 Bitcoin Core alone does not provide an easy address-history or OP_RETURN protocol-search API. ProofOfWork.Me should use Bitcoin Core with an indexer.
 
@@ -412,6 +456,6 @@ ProofOfWork.Me stays browser-native for users and sovereign at the data layer.
 - Static clients render the Computer and standalone app surfaces.
 - UniSat signs locally.
 - The ProofOfWork API reads, indexes, verifies, prepares, and broadcasts already-signed transactions through the node stack.
-- IDs, token balances, token markets, wallet movements, Log, Growth, and WORK floor are replayed from confirmed Bitcoin history.
+- IDs, credit balances, credit markets, wallet movements, Log, Growth, and WORK floor are replayed from confirmed ProofOfWork history.
 - Pending mempool data is useful visibility, not canonical state.
 - The backend improves data access without becoming custodial.

@@ -1,6 +1,6 @@
 # On-Chain App Anchoring
 
-Notes for anchoring ProofOfWork.Me application releases to Bitcoin.
+Notes for anchoring ProofOfWork.Me application releases to ProofOfWork.
 
 ## Core Idea
 
@@ -12,7 +12,7 @@ Current production build size is roughly:
 Dist with public assets: ~8.6 MB
 Compiled JS/CSS assets: ~789 KB
 App JS chunk:         ~349 KB
-Vendor JS chunks:     ~396 KB split across React, Bitcoin, and vendor
+Vendor JS chunks:     ~396 KB split across React, wallet, and vendor
 Main CSS bundle:      ~59 KB
 Gzipped JS total:     ~200 KB
 Gzipped CSS bundle:   ~11 KB
@@ -33,12 +33,12 @@ id.proofofwork.me           -> focused mainnet ID registry onboarding
 computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
 browser.proofofwork.me      -> public HTML browser by txid
-marketplace.proofofwork.me  -> standalone asset marketplace for IDs and token sale-ticket markets
-token.proofofwork.me        -> standalone token creation and mint app
+marketplace.proofofwork.me  -> standalone asset marketplace for IDs and credit sale-ticket markets
+token.proofofwork.me        -> standalone credit creation and mint app
 tokens.proofofwork.me       -> permanent redirect to https://token.proofofwork.me/
-wallet.proofofwork.me       -> standalone token wallet, transfer, listing, delisting, and sale-history app
-work.proofofwork.me         -> standalone WORK token dashboard and mint page
-log.proofofwork.me          -> public Bitcoin Computer log
+wallet.proofofwork.me       -> standalone credit wallet, transfer, listing, delisting, and sale-history app
+work.proofofwork.me         -> standalone WORK credit dashboard and mint page
+log.proofofwork.me          -> public ProofOfWork Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
@@ -57,10 +57,9 @@ http://localhost:5173/?log=1
 http://localhost:5173/?growth=1
 ```
 
-`desktop.proofofwork.me`, `browser.proofofwork.me`,
-`marketplace.proofofwork.me`, `token.proofofwork.me`,
-`wallet.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, and
-`growth.proofofwork.me` should remain standalone public surfaces, not hidden tabs
+`desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`,
+`token.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`,
+`log.proofofwork.me`, and `growth.proofofwork.me` should remain standalone public surfaces, not hidden tabs
 that require the full Computer mailbox shell.
 
 Future on-chain app anchoring should verify releases without changing the canonical ID registry address or `pwid1:r2` format.
@@ -73,7 +72,7 @@ However, ProofOfWork.Me can still put part of the app on-chain:
 - A small bootstrap loader.
 - A minimal read-only client.
 
-The goal is not necessarily to host the full app on-chain. The goal is to make the official app version verifiable from Bitcoin.
+The goal is not necessarily to host the full app on-chain. The goal is to make the official app version verifiable from ProofOfWork.
 
 ## Option 1: On-Chain Protocol Manifest
 
@@ -91,7 +90,7 @@ The app or loader can:
 4. Compare it to the on-chain hash.
 5. Run only if the hash matches.
 
-This gives ProofOfWork.Me a Bitcoin-anchored release trail.
+This gives ProofOfWork.Me a ProofOfWork-anchored release trail.
 
 ## Option 2: On-Chain Loader
 
@@ -185,14 +184,14 @@ Then later add:
 - Release revocations.
 - A tiny on-chain read-only verifier.
 
-This gives ProofOfWork.Me the feeling of a Bitcoin-anchored app without forcing every byte of the frontend into OP_RETURN.
+This gives ProofOfWork.Me the feeling of a ProofOfWork-anchored app without forcing every byte of the frontend into OP_RETURN.
 
 ## Big Picture
 
 ProofOfWork.Me can exist in layers:
 
 ```text
-Bitcoin OP_RETURN
+ProofOfWork OP_RETURN
   -> app release hash / manifest
   -> ID registry
   -> mail protocol
@@ -205,4 +204,4 @@ Browser
   -> runs wallet-signed mail client
 ```
 
-The full app can remain fast and usable, while Bitcoin provides the source-of-truth release anchor.
+The full app can remain fast and usable, while ProofOfWork provides the source-of-truth release anchor.

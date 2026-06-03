@@ -61,10 +61,10 @@ It selects confirmed wallet UTXOs and supports multiple OP_RETURN outputs. It is
 safe and general, but it does not intentionally create a chained output for the
 next mint.
 
-### Token Mint/Create Builders
+### Credit Mint/Create Builders
 
-Token flows currently use the generic payment builder with token protocol
-payloads and registry payments. A chained token mint variant is a strong
+Credit flows currently use the generic payment builder with credit protocol
+payloads and registry payments. A chained credit mint variant is a strong
 candidate because each mint is structurally similar and can carry a chained
 wallet output.
 
@@ -125,7 +125,7 @@ For each target protocol, define:
 
 ## Recommended First Implementations
 
-1. Token chained mint template.
+1. Credit chained mint template.
 2. Generic protocol chained template for future use.
 
 Do not adapt ID marketplace flows in the first pass.

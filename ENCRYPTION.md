@@ -16,7 +16,7 @@ For Phase 1, this key is stored/displayed as registry metadata only. The app doe
 
 ## Core Idea
 
-ProofOfWork.Me messages are permanent because they are written to Bitcoin OP_RETURN outputs.
+ProofOfWork.Me messages are permanent because they are written to ProofOfWork OP_RETURN outputs.
 
 Encryption can make that permanence safer:
 
@@ -35,7 +35,7 @@ It does not hide:
 
 - Sender funding address.
 - Recipient address.
-- Sats sent.
+- Proofs sent.
 - Transaction time.
 - Transaction graph.
 - OP_RETURN protocol usage.
@@ -267,13 +267,13 @@ Find recipient encryption key
 Toggle Encrypt content
 Encrypt locally
 Sign transaction locally
-Write ciphertext to Bitcoin
+Write ciphertext to ProofOfWork
 Decrypt locally when reading
 ```
 
 This preserves the core ProofOfWork.Me model:
 
-- Bitcoin stores the permanent proof/message record.
+- ProofOfWork stores the permanent proof/message record.
 - Wallets sign transactions locally.
 - Public keys can be discovered from the chain.
 - Private keys stay with the user.
