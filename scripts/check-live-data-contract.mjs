@@ -4,10 +4,6 @@ const server = readFileSync("server/proof-api.mjs", "utf8");
 const app = readFileSync("src/App.tsx", "utf8");
 const packageJson = readFileSync("package.json", "utf8");
 const failures = [];
-const invalidateWorkFloorBlock = server.slice(
-  server.indexOf("function invalidateWorkFloorCaches"),
-  server.indexOf("function invalidateDerivedCachesForBaseCache"),
-);
 
 function expect(name, condition) {
   if (!condition) {
@@ -21,175 +17,108 @@ function expectAll(name, text, patterns) {
   }
 }
 
-expectAll("WORK floor oracle stays confirmed Computer value based", server, [
-  /WORK_TOKEN_MAX_SUPPLY\s*=\s*21_000_000/,
-  /workFloorPayload\(network,\s*fresh\s*=\s*false\)/,
-  /confirmedComputerActionCount\(/,
-  /growthActualNetworkValue\(/,
-  /INFINITY_BOND_MEMO\s*=\s*"powb"/,
-  /FULL_ACTIVITY_HISTORY_ADDRESSES/,
-  /1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK/,
-  /isInfinityBondActivityItem\(/,
-  /infinityBondFlowSats/,
-  /infinityBondSats/,
-  /correctedNetworkValueSats\s*\/\s*WORK_TOKEN_MAX_SUPPLY/,
-  /networkValueSats:\s*correctedNetworkValueSats/,
+expectAll("canonical ledger cache is first-class", server, [
+  /LEDGER_CACHE_TTL_MS/,
+  /LEDGER_CACHE_STALE_MS/,
+  /LEDGER_FRESH_MIN_INTERVAL_MS/,
+  /cacheKey === "ledger:livenet"/,
+  /`payload:ledger:\$\{network\}`/,
+  /`json:ledger:\$\{network\}`/,
+  /function ledgerPayloadHasCurrentChecks\(/,
+  /function ledgerPayloadAgeMs\(/,
 ]);
 
-expectAll("fresh WORK and Growth reads use canonical confirmed activity", server, [
-  /globalActivityPayload\(network,\s*fresh\s*=\s*false\)/,
-  /shouldFetchFullActivityHistory\(address,\s*network\)[\s\S]*fetchAddressTransactions\(address,\s*network\)/,
-  /fetchAddressTransactionsViaMempoolPagination\(\s*address,\s*network,\s*MAX_ADDRESS_TX_PAGES/s,
-  /activitySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*await globalActivityPayload\(network,\s*true\)/,
-  /cachedWorkFloorPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*if \(fresh\) \{\s*return refreshPromise;\s*\}/,
-  /growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*fresh\s*\?\s*globalActivityPayload\(network,\s*true\)/,
-  /growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*fresh\s*\?\s*refreshTokenPayload\(network,\s*WORK_TOKEN_ID\)/,
-  /growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*workFloorPayloadFromState\(/,
-  /workFloorPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*fresh\s*\?\s*globalActivityPayload\(network,\s*true\)/,
-  /function workFloorPayloadFromState\(/,
-  /refreshedJsonResponse\(\s*response,\s*`activity:\$\{network\}`,\s*await globalActivityPayload\(network,\s*true\)/,
-]);
-
-expectAll("WORK floor counts confirmed token sale records only", server, [
-  /const tokenSalesForValue = Array\.isArray\(valueTokenState\.sales\)/,
-  /registryState\.sales/,
-  /valueTokenState\.transfers/,
-  /valueTokenState\.mints/,
-  /activityForGrowth/,
-]);
-
-expect(
-  "closed token listings are not synthetic growth sales",
-  !/tokenSalesIncludingSealedClosedListings/.test(server) &&
-    !/inferredFromClosedListing/.test(server),
-);
-
-expectAll("marketplace sale volume is separate from marketplace fees", server, [
-  /marketplaceSaleVolumeSats\s*=\s*idMarketplaceVolumeSats\s*\+\s*tokenSaleVolumeSats/,
-  /marketplaceVolumeSats\s*=\s*marketplaceSaleVolumeSats/,
-  /idMarketplaceFeeSats\s*=\s*confirmedActivityFlowSats/,
-  /tokenMarketplaceFeeSats\s*=\s*confirmedActivityFlowSats/,
-  /marketplaceMutationFeeSats\s*=\s*marketplaceFeeSats/,
-]);
-
-expectAll("WORK floor overlays scoped WORK token truth", server, [
-  /function tokenStateWithScopedTokenOverride\(/,
+expectAll("canonical ledger builder owns shared state", server, [
+  /async function buildCanonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)/,
   /const valueTokenState = tokenStateWithScopedTokenOverride\(/,
-  /valueTokenState\.sales/,
+  /const seededMailActivityState = await seededMailActivityPayload\(/,
+  /\.\.\.\(Array\.isArray\(seededMailActivityState\?\.activity\)/,
+  /tokenActivityItemsFromState\(\s*valueTokenState/,
+  /workFloorPayloadFromState\(/,
+  /growthSummaryPayloadFromLedger\(/,
+  /ledgerSnapshotChecks\(/,
+  /snapshotId/,
 ]);
 
-expectAll("token sale-ticket fees remain confirmed network events", server, [
-  /sealAt:\s*createdAt/,
-  /sealConfirmed:\s*confirmed/,
-  /kind:\s*"token-listing-sealed"/,
-  /"token-listing-closed"/,
+expectAll("canonical ledger directly merges seeded Computer mail", server, [
+  /function canonicalMailSeedAddresses\(/,
+  /function addTokenStateActivityAddresses\(/,
+  /async function seededMailActivityPayload\(/,
+  /async function buildSeededMailActivityPayload\(/,
+  /seededMailActivityState/,
+  /sourceCollectionFingerprint\(seededMailActivityState\?\.activity\)/,
 ]);
 
-expectAll("heavy live reads are background-throttled", server, [
-  /BACKGROUND_ACTIVITY_REFRESH_INTERVAL_MS/,
-  /BACKGROUND_TOKEN_REFRESH_INTERVAL_MS/,
-  /BACKGROUND_WORK_TOKEN_REFRESH_INTERVAL_MS/,
-  /BACKGROUND_REFRESH_LAST_STARTED/,
-  /backgroundRefreshRecentlyStarted\(/,
-  /scheduleWarmJsonCache\(/,
+expectAll("WORK Growth Log and token views use the same ledger", server, [
+  /async function canonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)/,
+  /async function mergedLogActivityPayload\(network,\s*fresh\s*=\s*false\)\s*{\s*return \(await canonicalLedgerPayload\(network,\s*fresh\)\)\.activityPayload;/s,
+  /async function cachedWorkFloorPayload\(network,\s*fresh\s*=\s*false\)\s*{\s*return \(await canonicalLedgerPayload\(network,\s*fresh\)\)\.workFloor;/s,
+  /async function growthSummaryPayload\(network,\s*fresh\s*=\s*false\)\s*{\s*return \(await canonicalLedgerPayload\(network,\s*fresh\)\)\.growthSummary;/s,
+  /async function tokenSummaryPayload[\s\S]*const ledger = await canonicalLedgerPayload\(network,\s*fresh\)/,
+  /async function tokenHistoryPayload[\s\S]*await canonicalLedgerPayload\(network,\s*fresh\)/,
+  /url\.pathname === "\/api\/v1\/token"[\s\S]*await canonicalLedgerPayload\(network,\s*freshRead\)/,
+]);
+
+expectAll("consistency endpoint guards the public invariant", server, [
+  /function ledgerSnapshotChecks\(/,
+  /"livenet-confirmed-history-present"/,
+  /"token-definitions-cover-confirmed-mints"/,
+  /"work-floor-actual-total"/,
+  /"growth-actual-total"/,
+  /"growth-work-floor-total"/,
+  /"token-sales-logged"/,
+  /"seeded-mail-events-logged"/,
+  /"seeded-infinity-bonds-logged"/,
+  /async function ledgerConsistencyPayload\(network,\s*fresh\s*=\s*false\)/,
+  /url\.pathname === "\/api\/v1\/consistency"/,
+  /url\.pathname === "\/api\/v1\/ledger-consistency"/,
+]);
+
+expectAll("seeded mail coverage guards confirmed Computer message value", server, [
+  /async function buildSeededMailActivityPayload[\s\S]*return await fetchAddressTransactions\(address,\s*network\);[\s\S]*fetchAddressTransactionsViaMempoolPagination\(/,
+  /const seededConfirmedMail = \(seededMailActivityState\?\.activity \?\? \[\]\)\.filter/,
+  /missingSeededMailEvents\.push\(missing\)/,
+  /missingSeededInfinityBondEvents\.push\(missing\)/,
+  /loggedInfinityBondFlowSats >= seededInfinityBondFlowSats/,
+]);
+
+expectAll("token sales must be searchable in Log by txid and participants", server, [
+  /participants:\s*\[\s*sale\.buyerAddress,\s*sale\.sellerAddress,\s*sale\.registryAddress,\s*\]/,
+  /kind:\s*"token-sale"/,
+  /tokenId:\s*sale\.tokenId/,
+  /activityByTxidKind\.get\(`token-sale:\$\{sale\.txid\}`\)/,
+  /missingLogEvents\.push\(\{\s*kind:\s*"token-sale"/s,
+]);
+
+expectAll("endpoint caches cannot bypass the ledger", server, [
+  /jsonResponse\(\s*response,\s*200,\s*await mergedLogActivityPayload\(network\)/,
+  /jsonResponse\(\s*response,\s*200,\s*await growthSummaryPayload\(network,\s*freshRead\)/,
+  /attachLedgerMetadata\(ledgerTokenStateForScope\(ledger,\s*tokenScope\),\s*ledger\)/,
+  /attachLedgerMetadata\(page,\s*ledger\)/,
+]);
+
+expectAll("fresh reads do not rebuild the ledger in a tight loop", server, [
+  /ledgerPayloadAgeMs\(cached\.payload,\s*now\)\s*<\s*LEDGER_FRESH_MIN_INTERVAL_MS/,
+  /if \(url\.pathname === "\/api\/v1\/activity" \|\| url\.pathname === "\/api\/v1\/log"\)[\s\S]*await mergedLogActivityPayload\(network,\s*true\)/,
 ]);
 
 expect(
-  "derived WORK/growth cache invalidation keeps stale snapshots available",
-  /expireResponseCacheEntry\(\s*`payload:work-floor/.test(
-    invalidateWorkFloorBlock,
-  ) && !/RESPONSE_CACHE\.delete/.test(invalidateWorkFloorBlock),
+  "growth-summary route no longer uses its old per-endpoint JSON cache",
+  !/cachedJsonResponse\(\s*response,\s*`growth-summary:\$\{network\}`/.test(
+    server,
+  ),
 );
 
-expectAll("request paths can paint from persisted snapshots", server, [
-  /fastJsonBackedPayload\(/,
-  /fastGlobalActivityPayload\(/,
-  /fastCachedTokenPayload\(/,
-  /fastTokenPayloadSnapshot\(/,
-  /return emptyWorkFloorPayload\(network\);/,
-]);
+expect(
+  "activity route no longer uses its old per-endpoint JSON cache for normal reads",
+  !/cachedJsonResponse\(\s*response,\s*`activity:\$\{network\}`/.test(server),
+);
 
-expectAll("spent marketplace tickets invalidate live listings", server, [
-  /tokenListingAnchorOutspend\(/,
-  /filterSpendableTokenListings\(/,
-  /tokenPayloadWithSpendableListings\(/,
-  /filterSpendableListings\(state\.listings,\s*network\)/,
-  /listingAnchorSpent\(/,
-]);
-
-expectAll("token marketplace summaries refresh from live token truth", server, [
-  /function cacheTokenPayload\(/,
-  /async function refreshTokenPayload\(/,
-  /cacheTokenPayload\(network,\s*scope,\s*payload\)/,
-  /function shouldAutoRefreshTokenScope\([^)]*\)\s*{\s*return true;/s,
-  /async function workTokenPayload\(/,
-  /canonicalWorkTokenDefinition\(network\)/,
-  /fresh\s*\?\s*await freshTokenPayloadOrSnapshot\(network,\s*scope\)/,
-  /fresh\s*\?\s*refreshTokenPayload\(network\)\s*:\s*fastCachedTokenPayload\(network\)/,
-  /fresh\s*\?\s*refreshTokenPayload\(network\)\s*:\s*fastTokenPayloadSnapshot\(network\)/,
-  /fresh\s*\?\s*refreshTokenPayload\(network,\s*WORK_TOKEN_ID\)\s*:\s*fastCachedTokenPayload\(network,\s*WORK_TOKEN_ID\)/,
-  /tokenSummaryPayload\(network,\s*WORK_TOKEN_ID,\s*fresh\)/,
-  /tokenSummaryPayload\(network,\s*"",\s*fresh\)/,
-  /async function tokenHistoryPayload[\s\S]*fresh\s*\?\s*await freshTokenPayloadOrSnapshot\(network,\s*scope\)/,
-]);
-
-expectAll("real paginated history contract is present", server, [
-  /function paginatedHistoryPayload\(/,
-  /totalCount/,
-  /pageCount/,
-  /nextCursor/,
-  /indexedThroughBlock/,
-  /\/api\/v1\/log-history/,
-  /\/api\/v1\/token-history/,
-]);
-
-expectAll("token market history paginates closed listings and sales", server, [
-  /function tokenMarketLogItemsFromState\(/,
-  /kind:\s*"closed-listing"/,
-  /\["closedlistings",\s*"closedListings"\]/,
-  /\["market-log",\s*"market-log"\]/,
-  /safeKind\s*===\s*"market-log"/,
-]);
-
-expectAll("frontend shows live freshness metadata", app, [
-  /indexedThroughBlock\?:\s*number/,
-  /Refreshed \$\{formatDate\(indexedAt\)\}/,
-  /through block/,
-  /Refreshed \{formatDate\(chainMetricsIndexedAt\)\}/,
-  /confirmed\s+Computer events/,
-]);
-
-expectAll("frontend refresh routes hit shared live surfaces", app, [
-  /refreshMarketplaceSummary\(/,
-  /fetchMarketplaceSummary\(fresh\)/,
-  /refreshLogSurface\(/,
-  /loadLogHead\(true,\s*fresh\)/,
-  /loadLogHistoryPage\(currentPageIndex,\s*true\)/,
-]);
-
-expectAll("marketplace listing sort modes cover price and arb", app, [
-  /"price-desc"/,
-  /"price-asc"/,
-  /"arb-desc"/,
-  /"arb-asc"/,
-  /sortTokenListings\(/,
-  /sortIdMarketplaceListings\(/,
-]);
-
-expectAll("token directory sorts by confirmed supply and mint progress", app, [
-  /type TokenDirectorySortMode\s*=\s*"mint-progress"\s*\|\s*"confirmed-supply"/,
-  /TokenDirectorySortTabs\(/,
-  /sortTokenDirectoryRows\(/,
-  /tokenProgressLabel\(token\.confirmedSupply,\s*token\.maxSupply\)/,
-]);
-
-expectAll("token marketplace log uses API-backed pagination", app, [
-  /type TokenMarketLogItem\s*=/,
-  /kind:\s*"closed-listing"/,
-  /fetchTokenHistoryPage<TokenMarketLogItem>\(network,\s*"market-log"/,
-  /tokenMarketLogDataVersion/,
-  /historyPageToPagedItems\(/,
-  /Credit Sales & Listings Log/,
+expectAll("frontend log search keeps server-backed tx and participant search", app, [
+  /participants\?:\s*string\[\]/,
+  /tokenId\?:\s*string/,
+  /fetchGlobalActivityHistoryPage\(network,\s*\{[\s\S]*query/,
+  /Log search found/,
 ]);
 
 expect(

@@ -1,0 +1,160 @@
+const DEFAULT_API_BASE = "https://work.proofofwork.me";
+const NETWORK = process.env.NETWORK ?? "livenet";
+const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
+  /\/+$/u,
+  "",
+);
+const GULLISH_TXID =
+  "cf6aacd51b3bb755620d9bd84e88b4e94e2a12bce74812734ba9013ae9d488aa";
+const GULLISH_BUYER =
+  "bc1p0e5qs2vcu6c50t6xwxuk7yfnqpwtm03rclv7wzgxzk37849xt8fssl6zvd";
+const INFINITY_BOND_REGRESSION_TXID =
+  "411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891";
+const PAGINATION_GAP_INFINITY_BOND_TXID =
+  "b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34";
+const MIN_INFINITY_BOND_FLOW_SATS = 47_234_999;
+const failures = [];
+
+function endpoint(path) {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${API_BASE}${path}${separator}network=${encodeURIComponent(NETWORK)}`;
+}
+
+async function readJson(path) {
+  const response = await fetch(endpoint(path));
+  if (!response.ok) {
+    throw new Error(`${path} returned HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function expect(name, condition) {
+  if (!condition) {
+    failures.push(name);
+  }
+}
+
+function numberValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function numbersAgree(left, right) {
+  return Math.abs(numberValue(left) - numberValue(right)) <= 0.000001;
+}
+
+function items(payload) {
+  return Array.isArray(payload?.items) ? payload.items : [];
+}
+
+function checkNames(payload) {
+  return new Set((payload?.checks ?? []).map((check) => check?.name));
+}
+
+const [
+  consistency,
+  workFloor,
+  growthSummary,
+  txLog,
+  buyerLog,
+  infinityBondLog,
+  paginationGapInfinityBondLog,
+] =
+  await Promise.all([
+    readJson("/api/v1/consistency"),
+    readJson("/api/v1/work-floor"),
+    readJson("/api/v1/growth-summary"),
+    readJson(`/api/v1/log-history?q=${GULLISH_TXID}`),
+    readJson(`/api/v1/log-history?q=${GULLISH_BUYER}`),
+    readJson(`/api/v1/log-history?q=${INFINITY_BOND_REGRESSION_TXID}`),
+    readJson(`/api/v1/log-history?q=${PAGINATION_GAP_INFINITY_BOND_TXID}`),
+  ]);
+
+expect("consistency endpoint is green", consistency.ok === true);
+const consistencyChecks = checkNames(consistency);
+expect(
+  "consistency guards seeded mail coverage",
+  consistencyChecks.has("seeded-mail-events-logged") &&
+    consistencyChecks.has("seeded-infinity-bonds-logged"),
+);
+expect(
+  "WORK and Growth share snapshot id",
+  workFloor.snapshotId && workFloor.snapshotId === growthSummary.snapshotId,
+);
+expect(
+  "consistency and WORK share snapshot id",
+  consistency.snapshotId && consistency.snapshotId === workFloor.snapshotId,
+);
+expect(
+  "WORK network value equals WORK actual value",
+  numbersAgree(workFloor.networkValueSats, workFloor.actualValue?.totalSats),
+);
+expect(
+  "WORK network value equals Growth actual value",
+  numbersAgree(workFloor.networkValueSats, growthSummary.actualValue?.totalSats),
+);
+expect(
+  "WORK network value equals Growth workFloor value",
+  numbersAgree(workFloor.networkValueSats, growthSummary.workFloor?.networkValueSats),
+);
+expect(
+  "Infinity Bond confirmed flow is fully indexed",
+  numberValue(workFloor.actualValue?.infinityBondFlowSats) >=
+    MIN_INFINITY_BOND_FLOW_SATS,
+);
+expect(
+  "known seeded Infinity Bond tx is searchable in Log",
+  items(infinityBondLog).some(
+    (item) =>
+      item.kind === "infinity-bond" &&
+      item.txid === INFINITY_BOND_REGRESSION_TXID &&
+      item.amountSats >= 950_000,
+  ),
+);
+expect(
+  "known paginated-address Infinity Bond tx is searchable in Log",
+  items(paginationGapInfinityBondLog).some(
+    (item) =>
+      item.kind === "infinity-bond" &&
+      item.txid === PAGINATION_GAP_INFINITY_BOND_TXID &&
+      item.amountSats >= 1_000_000,
+  ),
+);
+expect(
+  "Gullish txid search returns token sale",
+  items(txLog).some(
+    (item) =>
+      item.kind === "token-sale" &&
+      item.txid === GULLISH_TXID &&
+      item.tokenId ===
+        "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+  ),
+);
+expect(
+  "Gullish txid search returns token listing closure",
+  items(txLog).some(
+    (item) => item.kind === "token-listing-closed" && item.txid === GULLISH_TXID,
+  ),
+);
+expect(
+  "Gullish buyer address search returns sale participant event",
+  items(buyerLog).some(
+    (item) =>
+      item.kind === "token-sale" &&
+      item.txid === GULLISH_TXID &&
+      Array.isArray(item.participants) &&
+      item.participants.includes(GULLISH_BUYER),
+  ),
+);
+
+if (failures.length) {
+  console.error(`Ledger consistency audit failed against ${API_BASE}:`);
+  for (const failure of failures) {
+    console.error(`- ${failure}`);
+  }
+  process.exit(1);
+}
+
+console.log(
+  `Ledger consistency audit passed for ${API_BASE}: snapshot ${consistency.snapshotId}, value ${workFloor.networkValueSats} proofs.`,
+);

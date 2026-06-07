@@ -16,7 +16,11 @@ export async function fetchProofApiJson<T>(
   const url = proofApiUrl(path, network);
   const isFreshRead = /(?:[?&](?:fresh|refresh|nocache)=)/u.test(url);
   const controller = new AbortController();
-  const timeout = globalThis.setTimeout(() => controller.abort(), 60_000);
+  let timedOut = false;
+  const timeout = globalThis.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 60_000);
 
   let response: Response;
   try {
@@ -27,6 +31,17 @@ export async function fetchProofApiJson<T>(
       },
       signal: controller.signal,
     });
+  } catch (error) {
+    if (
+      timedOut ||
+      (error instanceof DOMException && error.name === "AbortError")
+    ) {
+      throw new Error(
+        "ProofOfWork API request timed out before the node returned data. Refresh and try again after the node finishes indexing.",
+      );
+    }
+
+    throw error;
   } finally {
     globalThis.clearTimeout(timeout);
   }

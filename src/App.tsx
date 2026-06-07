@@ -713,8 +713,10 @@ type PowActivityItem = {
   kind: PowActivityKind;
   listingId?: string;
   network: BitcoinNetwork;
+  participants?: string[];
   tags: string[];
   title: string;
+  tokenId?: string;
   txid: string;
   utxo?: string;
 };
@@ -8148,10 +8150,12 @@ function activityMatchesSearch(item: PowActivityItem, query: string) {
     item.id ? `${item.id}@proofofwork.me` : undefined,
     item.txid,
     item.listingId,
+    item.tokenId,
     item.actor,
     item.counterparty,
     item.kind,
     item.utxo,
+    ...(Array.isArray(item.participants) ? item.participants : []),
     ...item.tags,
   ]
     .filter(Boolean)
@@ -13979,7 +13983,11 @@ export default function App() {
     }
   }
 
-  async function loadLogHistoryPage(pageIndex = 0, silent = true) {
+  async function loadLogHistoryPage(
+    pageIndex = 0,
+    silent = true,
+    query = activityQuery,
+  ) {
     if (network !== "livenet") {
       return undefined;
     }
@@ -13992,6 +14000,7 @@ export default function App() {
       const page = await fetchGlobalActivityHistoryPage(network, {
         pageIndex,
         pageSize: ACTIVITY_FEED_PAGE_SIZE,
+        query,
       });
       activityHistoryPageRef.current = page;
       setActivityHistoryPage(page);
@@ -14025,23 +14034,38 @@ export default function App() {
     if (!query) {
       setActivityProfile(undefined);
       setActivityMail([]);
+      await loadLogHistoryPage(0, true, "");
       setStatus({ tone: "idle", text: "Log search cleared." });
       return;
     }
 
     const txidOnly = /^[0-9a-fA-F]{64}$/u.test(query);
-    if (txidOnly) {
-      setActivityQuery(query.toLowerCase());
-      setActivityProfile(undefined);
-      setActivityMail([]);
-      setStatus({ tone: "good", text: "Filtering log by txid." });
-      return;
-    }
-
     setActivityLoading(true);
-    setStatus({ tone: "idle", text: "Opening ProofOfWork log..." });
+    setStatus({ tone: "idle", text: "Searching ProofOfWork log..." });
 
     try {
+      if (txidOnly) {
+        const normalizedTxid = query.toLowerCase();
+        const page = await fetchGlobalActivityHistoryPage(network, {
+          pageIndex: 0,
+          pageSize: ACTIVITY_FEED_PAGE_SIZE,
+          query: normalizedTxid,
+        });
+        activityHistoryPageRef.current = page;
+        setActivityHistoryPage(page);
+        setIdActivity((current) =>
+          mergeActivityItems(current, Array.isArray(page.items) ? page.items : []),
+        );
+        setActivityQuery(normalizedTxid);
+        setActivityProfile(undefined);
+        setActivityMail([]);
+        setStatus({
+          tone: "good",
+          text: `Log search found ${(page.totalCount ?? page.items?.length ?? 0).toLocaleString()} matching action${(page.totalCount ?? page.items?.length ?? 0) === 1 ? "" : "s"}.`,
+        });
+        return;
+      }
+
       let resolved = resolveRecipientInput(
         query,
         network,
@@ -14072,14 +14096,16 @@ export default function App() {
         return;
       }
 
-      const { inboxMessages, sentMessages } = await fetchAddressMail(
-        resolved.paymentAddress,
-        network,
+      const page = await fetchGlobalActivityHistoryPage(network, {
+        pageIndex: 0,
+        pageSize: ACTIVITY_FEED_PAGE_SIZE,
+        query: resolved.paymentAddress,
+      });
+      activityHistoryPageRef.current = page;
+      setActivityHistoryPage(page);
+      setIdActivity((current) =>
+        mergeActivityItems(current, Array.isArray(page.items) ? page.items : []),
       );
-      const addressActivity = activityItemsFromAddressMail(
-        inboxMessages,
-        sentMessages,
-      ).sort(compareActivityItems);
       const profile: DesktopProfile = {
         address: resolved.paymentAddress,
         label: resolved.isId
@@ -14093,10 +14119,11 @@ export default function App() {
 
       setActivityQuery(query);
       setActivityProfile(profile);
-      setActivityMail(addressActivity);
+      setActivityMail([]);
+      const total = page.totalCount ?? page.items?.length ?? 0;
       setStatus({
         tone: "good",
-        text: `${profile.label} log loaded. ${addressActivity.length.toLocaleString()} mail/file action${addressActivity.length === 1 ? "" : "s"}.`,
+        text: `${profile.label} log loaded. ${total.toLocaleString()} matching action${total === 1 ? "" : "s"}.`,
       });
     } catch (error) {
       setStatus({
@@ -14112,6 +14139,7 @@ export default function App() {
     setActivityQuery("");
     setActivityProfile(undefined);
     setActivityMail([]);
+    void loadLogHistoryPage(0, true, "");
     setStatus({ tone: "idle", text: "Log cleared." });
   }
 
@@ -18758,12 +18786,17 @@ export default function App() {
         status={status}
         onClear={clearActivity}
         onActivityPageChange={(pageIndex) =>
-          void loadLogHistoryPage(pageIndex, false)
+          void loadLogHistoryPage(
+            pageIndex,
+            false,
+            activityProfile?.address ?? activityQuery,
+          )
         }
         onRefresh={() => {
           void refreshLogSurface(false, true);
-          if (activityProfile) {
-            void loadActivityTarget(activityProfile.query);
+          const activeLogTarget = activityProfile?.query ?? activityQuery;
+          if (activeLogTarget.trim()) {
+            void loadActivityTarget(activeLogTarget);
           }
         }}
         onSearch={(event) => {
@@ -19459,12 +19492,17 @@ export default function App() {
             setQuery={setActivityQuery}
             onClear={clearActivity}
             onActivityPageChange={(pageIndex) =>
-              void loadLogHistoryPage(pageIndex, false)
+              void loadLogHistoryPage(
+                pageIndex,
+                false,
+                activityProfile?.address ?? activityQuery,
+              )
             }
             onRefresh={() => {
               void refreshLogSurface(false, true);
-              if (activityProfile) {
-                void loadActivityTarget(activityProfile.query);
+              const activeLogTarget = activityProfile?.query ?? activityQuery;
+              if (activeLogTarget.trim()) {
+                void loadActivityTarget(activeLogTarget);
               }
             }}
             onSearch={(event) => {
@@ -20730,6 +20768,10 @@ function ActivityApp({
 }
 
 function activityKey(item: PowActivityItem) {
+  if (item.kind === "token-listing-closed" && item.txid) {
+    return `${item.kind}-${item.network}-${item.txid}`;
+  }
+
   return `${item.kind}-${item.network}-${item.txid}-${item.listingId ?? ""}-${item.id ?? ""}`;
 }
 
@@ -20821,8 +20863,16 @@ function ActivityWorkspace({
     query,
     profile,
   );
+  const normalizedQuery = query.trim().toLowerCase();
+  const serverQuery = String(activityHistoryPage?.query ?? "")
+    .trim()
+    .toLowerCase();
   const useServerPage =
-    !profile && !query.trim() && Array.isArray(activityHistoryPage?.items);
+    Array.isArray(activityHistoryPage?.items) &&
+    (profile
+      ? serverQuery === profile.address.toLowerCase() ||
+        serverQuery === normalizedQuery
+      : serverQuery === normalizedQuery);
   const serverPage = useServerPage
     ? historyPageToPagedItems(
         activityHistoryPage ?? {},
@@ -20836,7 +20886,7 @@ function ActivityWorkspace({
       ACTIVITY_FEED_PAGE_SIZE,
     );
   const activityPage = serverPage ?? localPage;
-  const stats = !profile && !query.trim() ? activityStats : undefined;
+  const stats = !profile && !normalizedQuery ? activityStats : undefined;
   const totalCount = stats?.total ?? activityPage.totalCount;
   const pendingCount =
     stats?.pending ?? items.filter((item) => !item.confirmed).length;
@@ -20850,9 +20900,9 @@ function ActivityWorkspace({
     activityHistoryPage?.indexedThroughBlock ?? stats?.indexedThroughBlock;
   const title = profile
     ? `${profile.label} log`
-    : query.trim()
+    : normalizedQuery
       ? "Filtered log"
-      : "Global computer log";
+      : "Global ProofOfWork log";
   const changePage = useServerPage && onActivityPageChange
     ? onActivityPageChange
     : setActivityPageIndex;
