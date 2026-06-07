@@ -8,7 +8,7 @@ It is distilled from current repository docs and public launch memory captured t
 
 - Public account: `@proofofworkme`
 - Launch memory reviewed: 2026-05-19
-- Operational memory updated: 2026-05-24
+- Operational memory updated: 2026-06-07
 - Public archive reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
 - Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
@@ -74,6 +74,7 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-05-19: WORK enters the final mint sprint. Mint-out semantics are clarified: confirmed supply is canonical; pending mints are mempool pressure; UI actions pause when confirmed plus pending would fill remaining supply. WORK floor charts are corrected into real price charts with time on the x-axis and proofs/USD price per WORK on the y-axis.
 - 2026-05-22: The Computer shell and standalone app surfaces converge into a full dark UI overhaul. Desktop, Browser, Marketplace, Credit, Wallet, WORK, Log, and Growth are made shell-compatible with scrolling, aligned controls, pagination over large datasets, UniSat action wiring for buy/mint/list/delist/transfer flows, credit sale-ticket buys in wallet/log/growth accounting, and live node-backed BTC/USD shared by Credit, WORK, and Growth.
 - 2026-05-24: Marketplace and data freshness harden. Public app chrome becomes sticky so status stays visible while users scroll. Marketplace credit stats become scoped to the selected credit, active books expose All/Sealed/Unsealed listing views, credit sales/listing logs are paginated and ordered by confirmation time, and spent sale-ticket outpoints remove listings from active books immediately. Fresh marketplace, WORK, credit summary, and credit history reads must refresh canonical credit payloads before returning; cached snapshots are for first paint only.
+- 2026-06-07: WORK, Growth, Log, and credit/token history converge on one canonical livenet ledger snapshot. Confirmed Computer mail events, Infinity Bonds, credit sales, and participant searches must be merged into that shared ledger before network value is computed. The `/api/v1/consistency` endpoint and `npm run audit:ledger` guard that seeded Computer mail events are logged, known pagination-gap transactions are searchable, Growth and WORK share the same snapshot/value, and missing log events stay empty.
 
 The emotional shape is a breakthrough moment: years of ProofOfWork/app experiments meeting modern agents and becoming legible all at once.
 
@@ -145,6 +146,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Node/API infrastructure reads, indexes, verifies, and broadcasts already-signed txs. It does not custody.
 - Every tx-backed app action should be inspectable from an activity surface with clear labels for confirmed, pending, txid, listing txid, and UTXO references where relevant.
 - Every app action is a ProofOfWork Computer action. Log and Growth should treat tx-backed actions from IDs, mail, files, Browser, Marketplace, Credits, and staged protocols consistently.
+- WORK, Growth, Log, token history, and public searches should read from the same canonical confirmed ledger snapshot on livenet. Address-only fallback scans are useful for recovery, but they must not become a separate truth that changes network value without appearing in Log.
 - Production data surfaces should prefer the first-party node/API cache path for speed, then refresh from current full-node data. Stale snapshots are acceptable only as a first paint, not as the final truth after refresh.
 - Fresh summary endpoints must not return stale credit truth. `token-summary`, `token-history`, `work-summary`, and `marketplace-summary` refreshes should update the shared credit payload cache so every surface converges on the same chain state.
 - Broadcast errors should be legible. A rejected transaction should expose the RPC code, reason when available, and a plain-English hint instead of a mystery error.

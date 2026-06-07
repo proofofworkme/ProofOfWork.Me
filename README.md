@@ -151,10 +151,12 @@ Launch invariants for future developers/agents:
 - Credit mint surfaces treat confirmed history as canonical mint-out, but pause user mint actions when confirmed plus pending mints would fill the remaining supply. Pending mempool records are not final, but the UI avoids letting users pay for likely overfill attempts.
 - Stages RUSH as an explicit development/protocol surface behind `?rush=1` or `VITE_RUSH_ONLY=1`. It is not part of shared public navigation or production domain routing until separately approved for launch.
 - Exposes Growth as a public dashboard for modeled ProofOfWork Computer network value versus real confirmed registry, log, file, marketplace, and Credit value metrics.
+- Computes WORK, Growth, Log, and livenet credit/token views from one canonical confirmed ledger snapshot, so public searches, logged events, and network value cannot diverge after refresh.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
 - Reads registry, mail, files, pagination, wallet UTXOs, transaction preparation data, broadcast status, live BTC/USD, WORK floor, and app metrics through the first-party ProofOfWork OP_RETURN API.
+- Uses `/api/v1/consistency` and `npm run audit:ledger` as the regression gate for livenet ledger coverage across Log, Growth, WORK, and credit/token history.
 - Uses explicit pagination for registry, marketplace, credit, wallet, log, and growth data views so large confirmed datasets remain inspectable without relying on infinite scroll.
 - Treats ProofOfWork IDs as case-insensitive names capped by the aggregate 100 KB OP_RETURN transaction limit, not arbitrary character rules.
 - Resolves ProofOfWork IDs in the compose recipient field only after a confirmed registry record exists; pending IDs cannot receive routed mail yet.
@@ -221,6 +223,7 @@ Current production behavior:
 - Files/Desktop treat Browser-readable `pwm1:m` HTML bodies as derived `.html` files for navigation and opening, while the original transaction remains a message-body record on-chain.
 - The canonical welcome page is pinned by txid `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b` as the default ProofOfWork Computer file. It appears in Files/Desktop as a system artifact and opens in Browser so the transaction remains the source of truth.
 - Growth reads the same registry, log, Credit, and WORK floor endpoints, then auto-refreshes real confirmed network value with the same live node-backed BTC/USD benchmark used by the rest of the app. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
+- On livenet, WORK floor, Growth summary, Log/Log history, token summary, and token history are backed by the same canonical ledger payload. That payload merges registry activity, discovered Computer activity, seeded mail activity from app-derived addresses, WORK token state, credit token state, and staged protocol activity where enabled. A confirmed event that affects network value must be searchable in Log from the same snapshot.
 - ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which external explorers can report as a lower effective fee rate.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
@@ -563,6 +566,29 @@ For public accounting, duplicate or failed registration payments should be treat
 
 Confirmed registry treasury sweeps are tracked in `TREASURY_LEDGER.md`.
 
+## Ledger Audit
+
+To verify that the live livenet ledger is internally consistent:
+
+```bash
+npm run audit:ledger
+```
+
+The audit checks `/api/v1/consistency`, `/api/v1/work-floor`,
+`/api/v1/growth-summary`, and Log search. It fails if WORK and Growth use
+different snapshots, if network value differs from actual confirmed value, if
+seeded Computer mail/Infinity Bond events are missing from Log, or if known
+confirmed regression txids are not searchable.
+
+The companion local contract check is:
+
+```bash
+npm run check:live-data
+```
+
+Run both after changing `server/proof-api.mjs`, Log search, Growth, WORK, or
+credit/token indexing.
+
 ## Developer Map
 
 Important implementation points:
@@ -580,6 +606,8 @@ Important implementation points:
 - Staged RUSH route switch: `isRushRoute()` in `src/app/routeRegistry.ts`.
 - Log route switch: `isActivityRoute()` in `src/app/routeRegistry.ts`.
 - Growth route switch: `isGrowthRoute()` in `src/app/routeRegistry.ts`.
+- Live data contract: `scripts/check-live-data-contract.mjs`.
+- Production ledger audit: `scripts/audit-ledger-consistency.mjs`.
 - Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
 - Desktop-only deploy switch: `VITE_DESKTOP_ONLY=1`.

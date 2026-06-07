@@ -152,6 +152,8 @@ GET /api/v1/work-summary?network=livenet
 GET /api/v1/marketplace-summary?network=livenet
 GET /api/v1/log-history?network=livenet
 GET /api/v1/growth-summary?network=livenet
+GET /api/v1/consistency?network=livenet
+GET /api/v1/ledger-consistency?network=livenet
 GET /api/v1/prices/btc-usd?network=livenet
 GET /api/v1/rush?network=livenet
 GET /api/v1/rush?network=testnet4
@@ -175,16 +177,39 @@ The registry endpoint:
 - Exposes a Credits marketplace tab over confirmed credit creations, mints, transfers, holders, registries, active sale-ticket listings, and settled credit sales.
 - Exposes registry records, pending events, listings, and registry-specific activity.
 
+The canonical livenet ledger payload:
+
+- Is the shared source for `/api/v1/log`, `/api/v1/log-history`, `/api/v1/work-floor`, `/api/v1/growth-summary`, `/api/v1/token`, `/api/v1/token-summary`, and `/api/v1/token-history`.
+- Merges registry activity, discovered global Computer activity, seeded mail activity from app-derived addresses, canonical WORK state, canonical credit/token state, and staged protocol activity when enabled.
+- Uses complete address history for configured mail-heavy Computer addresses, with paginated mempool/address reads as the faster path for the wider seed set. This prevents confirmed mail or Infinity Bond transactions from appearing in direct address search while missing from global Log and network value.
+- Emits one `snapshotId`, source hashes, metrics, and consistency checks so WORK, Growth, Log, and credit/token history can prove they are reading the same confirmed state.
+- Keeps pending records visible where useful, but only confirmed records affect canonical network value and the WORK floor.
+- Rejects or avoids replacing a useful cached ledger with a worse confirmed-history payload when guarded counts regress.
+
+The consistency endpoints:
+
+- `/api/v1/consistency`
+- `/api/v1/ledger-consistency`
+
+These expose the ledger checks used by `npm run audit:ledger`, including
+`livenet-confirmed-history-present`, `token-definitions-cover-confirmed-mints`,
+`work-floor-actual-total`, `growth-actual-total`, `growth-work-floor-total`,
+`token-sales-logged`, `seeded-mail-events-logged`, and
+`seeded-infinity-bonds-logged`. `missingLogEvents` must stay empty for a green
+production ledger.
+
 The log endpoint:
 
+- Reads from the canonical livenet ledger payload for global Log and Log history.
 - Starts from the canonical registry and all known ProofOfWork ID owner/receiver addresses.
 - Crawls the ProofOfWork mail/file address graph by reading `pwm1:` transactions, discovering senders and recipients, and expanding until the configured safety cap.
+- Supports server-backed search by address, confirmed ProofOfWork ID, txid, protocol kind, participant, token id, or app label against the same ledger-backed event set.
 - Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, credit sales, and staged RUSH mints when enabled by the indexer.
 - Reports total indexed ProofOfWork protocol data bytes across all discovered app OP_RETURN payloads, including marketplace listing/seal/buy/delist records and staged RUSH mint records when enabled by the indexer.
 
 The Growth app:
 
-- Reads the same registry, log, and Credit endpoints as the public app surfaces.
+- Reads the same canonical livenet ledger snapshot as WORK, Log, and credit/token history.
 - Compares modeled ProofOfWork Computer network value to confirmed chain-derived value in proofs and USD.
 - Auto-refreshes confirmed registry, log, file, marketplace, and Credit metrics while the page is visible.
 - Treats each modeled product consistently: real input, usage rate, value assumption, fee elasticity, and blockspace accounting.
@@ -368,6 +393,7 @@ Pending visibility is still non-canonical gossip. If `PENDING_MEMPOOL_BASE` is c
 After changing the API or production build, verify:
 
 - `/health` returns `service: proofofwork-op-return-api`.
+- `/api/v1/consistency?network=livenet` is green, has no `missingLogEvents`, and includes the seeded mail and seeded Infinity Bond checks.
 - ID registry count matches the node-backed API and includes pending records when visible.
 - `tokens@proofofwork.me` resolves to the expected credit index address.
 - Duplicate/pending IDs cannot be routed.
@@ -377,8 +403,11 @@ After changing the API or production build, verify:
 - Standalone Marketplace can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Credit, Wallet, and Marketplace transaction buttons can load UTXOs, previous transaction hex, and listing-anchor outspends through the first-party API before opening UniSat.
 - Log can load global ProofOfWork Computer events and search an address, confirmed ProofOfWork ID, or txid.
+- Known confirmed ledger regression txids are searchable in Log, including `411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891` and `b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34`.
 - Growth can load real chain metrics, including credit creations, mints, transfers, listings, and sales, and render the modeled-vs-real proofs/USD value graph without layout overlap on desktop and mobile.
 - WORK and Growth show matching confirmed network value in proofs/USD using `/api/v1/work-floor` and `/api/v1/prices/btc-usd`.
+- `npm run check:live-data` passes locally.
+- `npm run audit:ledger` passes against production.
 - Known attachment transactions reconstruct with valid size and SHA-256.
 - Known HTML message-body transactions render through Browser from `pwm1:m`.
 - Known pending txs return `pending`.
