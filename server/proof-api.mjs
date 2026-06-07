@@ -141,6 +141,7 @@ const ID_PROTOCOL_PREFIX = "pwid1:";
 const TOKEN_PROTOCOL_PREFIX = "pwt1:";
 const RUSH_PROTOCOL_PREFIX = "pwr1:";
 const RUSH_MINT_PAYLOAD = "pwr1:m:rush";
+const INFINITY_BOND_MEMO = "powb";
 const ID_REGISTRATION_PRICE_SATS = 1000;
 const ID_MUTATION_PRICE_SATS = 546;
 const TOKEN_CREATE_ACTION = "create";
@@ -175,6 +176,16 @@ const WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS =
   "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
 const WORK_TOKEN_CREATED_AT = "2026-05-15T02:57:28.000Z";
 const WORK_TOKEN_CREATE_DATA_BYTES = 70;
+const FULL_ACTIVITY_HISTORY_ADDRESSES = {
+  livenet: new Set(
+    String(
+      process.env.FULL_ACTIVITY_HISTORY_ADDRESSES_LIVENET ??
+        "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+    )
+      .split(/[,\s]+/u)
+      .filter(Boolean),
+  ),
+};
 const GROWTH_MODEL_START_MS = Date.parse("2026-05-11T00:00:00.000Z");
 const MS_PER_MODEL_YEAR = 365 * 24 * 60 * 60 * 1000;
 const MAX_GROWTH_ACTUAL_CHART_EVENTS = 240;
@@ -850,10 +861,13 @@ async function existingTokenPayload(network, tokenScope = "") {
 
 async function safeTokenPayload(network, tokenScope = "") {
   const scope = normalizeTokenScope(tokenScope);
-  const previousPayload = await tokenPayloadWithSpendableListings(
+  let previousPayload = await tokenPayloadWithSpendableListings(
     await existingTokenPayload(network, scope),
     network,
   );
+  if (scope === WORK_TOKEN_ID) {
+    previousPayload = await liveWorkTokenState(network, previousPayload);
+  }
   let nextPayload;
   try {
     nextPayload =
@@ -877,7 +891,9 @@ async function safeTokenPayload(network, tokenScope = "") {
     return previousPayload;
   }
 
-  return nextPayload;
+  return scope === WORK_TOKEN_ID
+    ? await liveWorkTokenState(network, nextPayload)
+    : nextPayload;
 }
 
 function boundedInteger(value, fallback, min, max) {
@@ -2744,6 +2760,32 @@ function tokenSaleAuthorizationUsesSaleTicketAnchor(authorization) {
   );
 }
 
+function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization) {
+  return (
+    authorization?.version === TOKEN_SALE_AUTH_VERSION &&
+    authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
+    authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
+    authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
+    authorization.anchorSigHashType === TOKEN_LISTING_ANCHOR_SIGHASH_TYPE &&
+    /^[0-9a-f]+$/u.test(authorization.anchorScriptPubKey ?? "") &&
+    validPublicKeyHex(authorization.sellerPublicKey ?? "")
+  );
+}
+
+function tokenListingHasConfirmedSaleTicketSeal(listing) {
+  return (
+    listing?.sealConfirmed === true &&
+    tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)
+  );
+}
+
+function tokenListingHasPendingSaleTicketSeal(listing) {
+  return (
+    listing?.sealConfirmed !== true &&
+    tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)
+  );
+}
+
 function tokenSaleAuthorizationTermsMatch(left, right) {
   return (
     JSON.stringify(
@@ -2777,6 +2819,27 @@ function spendsTokenListingAnchor(spent, listing) {
       outpoint.txid === listing.listingId &&
       outpoint.vout === listing.saleAuthorization.anchorVout,
   );
+}
+
+function tokenListingAnchorSpendMatchesAuthorization(vin, listing) {
+  const authorization = listing?.saleAuthorization;
+  if (!tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization)) {
+    return false;
+  }
+
+  return vin.some((input) => {
+    const prevout = input?.prevout ?? {};
+    const txid =
+      typeof input?.txid === "string" ? input.txid.toLowerCase() : "";
+    const vout = Number.isSafeInteger(input?.vout) ? input.vout : -1;
+    return (
+      txid === listing.listingId &&
+      vout === authorization.anchorVout &&
+      prevout.scriptpubkey === authorization.anchorScriptPubKey &&
+      prevout.scriptpubkey_address === listing.sellerAddress &&
+      prevout.value === authorization.anchorValueSats
+    );
+  });
 }
 
 function tokenSellerPaymentRequiredSats(listing) {
@@ -3205,7 +3268,8 @@ function normalizeTokenScope(value) {
     return raw.toLowerCase();
   }
 
-  return normalizeTokenTicker(raw);
+  const ticker = normalizeTokenTicker(raw);
+  return ticker === WORK_TOKEN_TICKER ? WORK_TOKEN_ID : ticker;
 }
 
 function tokenMatchesScope(token, scope) {
@@ -3649,6 +3713,11 @@ function tokenStateFromTransactions(
 
         if (parsed.kind === "buy") {
           const listing = listings.get(parsed.listingId);
+          const listingHasValidSaleTicketSpend = listing
+            ? tokenSaleAuthorizationUsesSaleTicketAnchor(
+                listing.saleAuthorization,
+              ) || tokenListingAnchorSpendMatchesAuthorization(vin, listing)
+            : false;
           const sellerBalanceKey = listing
             ? balanceKeyFor(listing.tokenId, listing.sellerAddress)
             : "";
@@ -3659,9 +3728,7 @@ function tokenStateFromTransactions(
             !listing ||
             !txInputAddresses.includes(parsed.buyerAddress) ||
             remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
-            !tokenSaleAuthorizationUsesSaleTicketAnchor(
-              listing.saleAuthorization,
-            ) ||
+            !listingHasValidSaleTicketSpend ||
             (listing.saleAuthorization.buyerAddress &&
               listing.saleAuthorization.buyerAddress !== parsed.buyerAddress) ||
             tokenListingIsExpired(listing) ||
@@ -5075,6 +5142,18 @@ function isBrowserHtmlMessageBody(value) {
   );
 }
 
+function isInfinityBondMemo(value) {
+  return String(value ?? "").trim().toLowerCase() === INFINITY_BOND_MEMO;
+}
+
+function isInfinityBondActivityItem(item) {
+  if (item?.kind === "infinity-bond") {
+    return true;
+  }
+
+  return item?.kind === "mail" && isInfinityBondMemo(item.detail);
+}
+
 function mailActivityItemFromTransaction(tx, network) {
   const vin = Array.isArray(tx.vin) ? tx.vin : [];
   const vout = Array.isArray(tx.vout) ? tx.vout : [];
@@ -5105,9 +5184,23 @@ function mailActivityItemFromTransaction(tx, network) {
         : `${recipients[0].display} +${recipients.length - 1}`;
   const isFile = Boolean(protocolMessage.attachment);
   const isReply = Boolean(protocolMessage.parentTxid);
-  const kind = isFile ? "file" : isReply ? "reply" : "mail";
-  const noun = isFile ? "file" : isReply ? "reply" : "mail";
-  const title = `${isFile ? "File" : isReply ? "Reply" : "Mail"} ${confirmed ? "sent" : "pending"}`;
+  const isInfinityBond =
+    !isFile && !isReply && isInfinityBondMemo(protocolMessage.memo);
+  const kind = isFile
+    ? "file"
+    : isReply
+      ? "reply"
+      : isInfinityBond
+        ? "infinity-bond"
+        : "mail";
+  const noun = isFile
+    ? "file"
+    : isReply
+      ? "reply"
+      : isInfinityBond
+        ? "infinity bond"
+        : "mail";
+  const title = `${isFile ? "File" : isReply ? "Reply" : isInfinityBond ? "Infinity Bond" : "Mail"} ${confirmed ? "sent" : "pending"}`;
   const detail = protocolMessage.attachment
     ? `${protocolMessage.attachment.name} · ${formatBytes(protocolMessage.attachment.size)} · ${protocolMessage.attachment.mime}`
     : protocolMessage.subject
@@ -5129,7 +5222,13 @@ function mailActivityItemFromTransaction(tx, network) {
     tags: [
       activityStatusTag(confirmed),
       networkLabel(network),
-      isFile ? "Attachment" : isReply ? "Reply" : "Message",
+      isFile
+        ? "Attachment"
+        : isReply
+          ? "Reply"
+          : isInfinityBond
+            ? "Infinity Bond"
+            : "Message",
       isBrowserHtmlMessageBody(protocolMessage.memo) ? "HTML body" : "",
       recipients.length > 1 ? `${recipients.length} recipients` : "1 recipient",
       amountSats > 0 ? `${amountSats.toLocaleString()} proofs` : "",
@@ -5218,9 +5317,8 @@ function tokenActivityItemsFromState(state, indexAddress) {
   }));
 
   const listings = (state.listings ?? []).map((listing) => {
-    const sealed = tokenSaleAuthorizationUsesSaleTicketAnchor(
-      listing.saleAuthorization,
-    );
+    const sealConfirmed = tokenListingHasConfirmedSaleTicketSeal(listing);
+    const sealPending = tokenListingHasPendingSaleTicketSeal(listing);
     return {
       amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       actor: listing.sellerAddress,
@@ -5229,9 +5327,11 @@ function tokenActivityItemsFromState(state, indexAddress) {
       createdAt: listing.createdAt,
       dataBytes: listing.dataBytes,
       description: `${listing.amount.toLocaleString()} ${listing.ticker} listed by ${shortAddress(listing.sellerAddress)} for ${listing.priceSats.toLocaleString()} proofs.`,
-      detail: sealed
+      detail: sealConfirmed
         ? `Sealed sale ticket ${shortAddress(listing.sealTxid ?? "")}`
-        : "Waiting for sale-ticket seal",
+        : sealPending
+          ? `Sale-ticket seal pending ${shortAddress(listing.sealTxid ?? "")}`
+          : "Waiting for sale-ticket seal",
       kind: "token-listing",
       network: listing.network,
       tags: [
@@ -5239,14 +5339,16 @@ function tokenActivityItemsFromState(state, indexAddress) {
         networkLabel(listing.network),
         "Credit",
         "Marketplace",
-        sealed ? "Sealed" : "Listing",
+        sealConfirmed ? "Sealed" : sealPending ? "Seal pending" : "Listing",
         listing.ticker,
         `${listing.amount.toLocaleString()} ${listing.ticker}`,
         `${listing.priceSats.toLocaleString()} sale proofs`,
       ],
       title: listing.confirmed
-        ? sealed
+        ? sealConfirmed
           ? "Credit listing sealed"
+          : sealPending
+            ? "Credit listing seal pending"
           : "Credit listing"
         : "Credit listing pending",
       txid: listing.listingId,
@@ -5264,10 +5366,11 @@ function tokenActivityItemsFromState(state, indexAddress) {
       continue;
     }
     seenSealTxids.add(sealTxid);
+    const sealConfirmed = listing.sealConfirmed === true;
     sealedListings.push({
       amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       actor: listing.sellerAddress,
-      confirmed: Boolean(listing.sealConfirmed ?? listing.confirmed),
+      confirmed: sealConfirmed,
       counterparty: listing.registryAddress,
       createdAt: listing.sealAt ?? listing.createdAt,
       dataBytes: listing.sealDataBytes ?? 0,
@@ -5277,7 +5380,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
       listingId: listing.listingId,
       network: listing.network,
       tags: [
-        activityStatusTag(Boolean(listing.sealConfirmed ?? listing.confirmed)),
+        activityStatusTag(sealConfirmed),
         networkLabel(listing.network),
         "Credit",
         "Marketplace",
@@ -5286,9 +5389,9 @@ function tokenActivityItemsFromState(state, indexAddress) {
         `${listing.amount.toLocaleString()} ${listing.ticker}`,
         `${TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} registry proofs`,
       ],
-      title: listing.sealConfirmed === false
-        ? "Credit sale-ticket seal pending"
-        : "Credit sale ticket sealed",
+      title: sealConfirmed
+        ? "Credit sale ticket sealed"
+        : "Credit sale-ticket seal pending",
       txid: sealTxid,
     });
   }
@@ -5398,8 +5501,20 @@ function addActivityAddress(addresses, address, network) {
   }
 }
 
+function fullActivityHistoryAddressesForNetwork(network) {
+  return FULL_ACTIVITY_HISTORY_ADDRESSES[network] ?? new Set();
+}
+
+function shouldFetchFullActivityHistory(address, network) {
+  return fullActivityHistoryAddressesForNetwork(network).has(address);
+}
+
 function activityAddressesFromRegistry(registry, network) {
   const addresses = new Set();
+
+  for (const address of fullActivityHistoryAddressesForNetwork(network)) {
+    addActivityAddress(addresses, address, network);
+  }
 
   for (const record of registry.records ?? []) {
     addActivityAddress(addresses, record.ownerAddress, network);
@@ -5870,13 +5985,31 @@ async function globalActivityPayload(network, fresh = false) {
         TX_FETCH_CONCURRENCY,
         async (address) => {
           try {
+            if (shouldFetchFullActivityHistory(address, network)) {
+              return await fetchAddressTransactions(address, network);
+            }
+
             return await fetchAddressTransactionsViaMempoolPagination(
               address,
               network,
-              3,
+              MAX_ADDRESS_TX_PAGES,
             );
-          } catch {
-            return [];
+          } catch (error) {
+            console.error(
+              `Global activity address lookup failed for ${address}: ${errorSummary(error)}`,
+            );
+            try {
+              return await fetchAddressTransactionsViaMempoolPagination(
+                address,
+                network,
+                MAX_ADDRESS_TX_PAGES,
+              );
+            } catch (fallbackError) {
+              console.error(
+                `Global activity fallback lookup failed for ${address}: ${errorSummary(fallbackError)}`,
+              );
+              return [];
+            }
           }
         },
       );
@@ -5914,8 +6047,11 @@ async function globalActivityPayload(network, fresh = false) {
   ]);
   const dataBytes = totalProtocolDataBytes(activity);
   const fileActions = activity.filter((item) => item.kind === "file").length;
+  const infinityBondActions = activity.filter(isInfinityBondActivityItem).length;
   const messageActions = activity.filter(
-    (item) => item.kind === "mail" || item.kind === "reply",
+    (item) =>
+      (item.kind === "mail" || item.kind === "reply") &&
+      !isInfinityBondActivityItem(item),
   ).length;
   const tokenActions = activity.filter((item) =>
     String(item.kind).startsWith("token-"),
@@ -5939,6 +6075,7 @@ async function globalActivityPayload(network, fresh = false) {
       dataBytes,
       files: fileActions,
       indexedThroughBlock,
+      infinityBonds: infinityBondActions,
       messages: messageActions,
       pending: activity.filter((item) => !item.confirmed).length,
       registry: (registry.activity ?? []).length,
@@ -7170,7 +7307,7 @@ function tokenAggregateSummaries(payload) {
     }
 
     current.openListings += 1;
-    if (!tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)) {
+    if (!tokenListingHasConfirmedSaleTicketSeal(listing)) {
       continue;
     }
 
@@ -7346,6 +7483,183 @@ function addTokenStateTxids(txids, state) {
   }
 }
 
+function workTokenClosedListingsMissingSales(state, network) {
+  const saleTxids = new Set(
+    (Array.isArray(state?.sales) ? state.sales : [])
+      .map((sale) => String(sale?.txid ?? "").toLowerCase())
+      .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
+  );
+  return (Array.isArray(state?.closedListings) ? state.closedListings : []).filter(
+    (listing) => {
+      const closedTxid = String(listing?.closedTxid ?? "").toLowerCase();
+      return (
+        listing?.tokenId === WORK_TOKEN_ID &&
+        listing?.closedConfirmed === true &&
+        /^[0-9a-f]{64}$/u.test(closedTxid) &&
+        !saleTxids.has(closedTxid)
+      );
+    },
+  );
+}
+
+function confirmedWorkSaleFromClosedListingTransaction(tx, listing, network) {
+  const txid = transactionTxid(tx);
+  if (!txid || !transactionConfirmed(tx)) {
+    return null;
+  }
+
+  const vin = Array.isArray(tx.vin) ? tx.vin : [];
+  const vout = Array.isArray(tx.vout) ? tx.vout : [];
+  const txInputAddresses = inputAddresses(vin);
+  const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
+  if (messages.length === 0) {
+    return null;
+  }
+
+  const registryAddress =
+    listing.registryAddress || WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS;
+  let remainingRegistrySats = tokenPaymentAmountBeforeProtocol(
+    vout,
+    registryAddress,
+  );
+  const paymentOutputs = paymentOutputsBeforeTokenProtocol(vout);
+  const eventSpentOutpoints = spentOutpoints(vin);
+  const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+
+  for (const message of messages) {
+    const parsed = parseTokenPayload(message, network);
+    if (
+      !parsed ||
+      parsed.kind !== "buy" ||
+      parsed.listingId !== listing.listingId
+    ) {
+      continue;
+    }
+
+    const listingHasValidSaleTicketSpend =
+      tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization) ||
+      tokenListingAnchorSpendMatchesAuthorization(vin, listing);
+    if (
+      !txInputAddresses.includes(parsed.buyerAddress) ||
+      remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+      !listingHasValidSaleTicketSpend ||
+      (listing.saleAuthorization.buyerAddress &&
+        listing.saleAuthorization.buyerAddress !== parsed.buyerAddress) ||
+      tokenListingIsExpired(listing, Date.parse(createdAt)) ||
+      !spendsTokenListingAnchor(eventSpentOutpoints, listing) ||
+      paymentAmountFromSnapshots(paymentOutputs, listing.sellerAddress) <
+        tokenSellerPaymentRequiredSats(listing)
+    ) {
+      continue;
+    }
+
+    remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+    return {
+      amount: listing.amount,
+      buyerAddress: parsed.buyerAddress,
+      confirmed: true,
+      createdAt,
+      listingId: listing.listingId,
+      network,
+      paidSats:
+        tokenSellerPaymentRequiredSats(listing) +
+        TOKEN_MIN_MUTATION_PRICE_SATS,
+      priceSats: listing.priceSats,
+      registryAddress,
+      sellerAddress: listing.sellerAddress,
+      ticker: listing.ticker,
+      tokenId: listing.tokenId,
+      txid,
+    };
+  }
+
+  return null;
+}
+
+async function recoverWorkSalesFromClosedListings(state, network) {
+  const candidates = workTokenClosedListingsMissingSales(state, network);
+  const recovered = [];
+
+  for (const listing of candidates) {
+    const closedTxid = String(listing.closedTxid ?? "").toLowerCase();
+    try {
+      const tx = await fetchTransaction(closedTxid, network);
+      const sale = confirmedWorkSaleFromClosedListingTransaction(
+        tx,
+        listing,
+        network,
+      );
+      if (sale) {
+        recovered.push(sale);
+      }
+    } catch (error) {
+      console.error(
+        `WORK closed sale repair lookup failed for ${closedTxid}: ${errorSummary(error)}`,
+      );
+    }
+  }
+
+  return recovered;
+}
+
+function workTokenStateWithRecoveredSales(state, recoveredSales) {
+  const newSales = recoveredSales.filter(
+    (sale) =>
+      sale?.txid &&
+      !(Array.isArray(state.sales) ? state.sales : []).some(
+        (existing) => existing?.txid === sale.txid,
+      ),
+  );
+  if (newSales.length === 0) {
+    return state;
+  }
+
+  const holders = new Map(
+    (Array.isArray(state.holders) ? state.holders : [])
+      .filter((holder) => holder?.address && Number(holder.balance) > 0)
+      .map((holder) => [holder.address, Number(holder.balance)]),
+  );
+
+  for (const sale of newSales) {
+    holders.set(
+      sale.sellerAddress,
+      (holders.get(sale.sellerAddress) ?? 0) - sale.amount,
+    );
+    holders.set(
+      sale.buyerAddress,
+      (holders.get(sale.buyerAddress) ?? 0) + sale.amount,
+    );
+  }
+
+  const nextHolders = [...holders.entries()]
+    .filter(([, balance]) => balance > 0)
+    .map(([address, balance]) => ({ address, balance }))
+    .sort(
+      (left, right) =>
+        right.balance - left.balance ||
+        left.address.localeCompare(right.address),
+    );
+
+  const nextSales = [...(Array.isArray(state.sales) ? state.sales : []), ...newSales]
+    .sort(
+      (left, right) =>
+        Number(right.confirmed) - Number(left.confirmed) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    );
+
+  return {
+    ...state,
+    holders: nextHolders,
+    indexedAt: new Date().toISOString(),
+    sales: nextSales,
+    stats: {
+      ...(state.stats ?? {}),
+      holders: nextHolders.length,
+    },
+  };
+}
+
 function confirmedWorkMintEventsFromTransaction(tx, network) {
   const txid = transactionTxid(tx);
   if (!txid || !transactionConfirmed(tx)) {
@@ -7408,7 +7722,7 @@ function cacheLiveWorkTokenState(network, state) {
 }
 
 async function liveWorkTokenState(network, cachedWorkTokenState) {
-  const state =
+  let state =
     cachedWorkTokenState && typeof cachedWorkTokenState === "object"
       ? cachedWorkTokenState
       : {
@@ -7436,6 +7750,18 @@ async function liveWorkTokenState(network, cachedWorkTokenState) {
 
   if (network !== "livenet") {
     return state;
+  }
+
+  const recoveredSales = await recoverWorkSalesFromClosedListings(
+    state,
+    network,
+  );
+  if (recoveredSales.length > 0) {
+    state = workTokenStateWithRecoveredSales(state, recoveredSales);
+    cacheLiveWorkTokenState(network, state);
+    console.log(
+      `Recovered ${recoveredSales.length} WORK closed sale(s) for ${network}.`,
+    );
   }
 
   const knownTxids = workTokenLiveSeenTxids(network);
@@ -7687,7 +8013,9 @@ async function registrySummaryPayload(network, fresh = false) {
 
 async function activitySummaryPayload(network, fresh = false) {
   if (fresh) {
-    refreshGlobalActivityCacheInBackground(network);
+    return compactActivitySummaryPayload(
+      await globalActivityPayload(network, true),
+    );
   }
 
   const payload = await fastGlobalActivityPayload(network);
@@ -7726,15 +8054,6 @@ async function cachedWorkFloorPayload(network, fresh = false) {
   const cacheKey = `work-floor:${network}`;
   const payloadKey = `payload:work-floor:${network}`;
   const producer = (forceFresh = false) => workFloorPayload(network, forceFresh);
-  const waitForFreshOrCached = (promise, payload) => {
-    let timer;
-    return Promise.race([
-      promise,
-      new Promise((resolve) => {
-        timer = setTimeout(() => resolve(payload), WORK_FLOOR_FRESH_WAIT_MS);
-      }),
-    ]).finally(() => clearTimeout(timer));
-  };
   const startRefresh = (forceFresh = false) => {
     const current = RESPONSE_CACHE.get(payloadKey);
     if (current?.promise) {
@@ -7795,13 +8114,13 @@ async function cachedWorkFloorPayload(network, fresh = false) {
     const refreshPromise =
       fresh || now >= cached.expiresAt ? startRefresh(fresh) : cached.promise;
     if (fresh && refreshPromise) {
-      return waitForFreshOrCached(refreshPromise, cached.payload);
+      return refreshPromise;
     }
     return cached.payload;
   }
   if (cached?.promise) {
-    if (fresh && cached.payload) {
-      return waitForFreshOrCached(cached.promise, cached.payload);
+    if (fresh) {
+      return cached.promise;
     }
     return cached.promise;
   }
@@ -7821,7 +8140,7 @@ async function cachedWorkFloorPayload(network, fresh = false) {
         promise: refreshPromise,
       });
       if (fresh) {
-        return waitForFreshOrCached(refreshPromise, payload);
+        return refreshPromise;
       }
       return payload;
     } catch {
@@ -7830,7 +8149,7 @@ async function cachedWorkFloorPayload(network, fresh = false) {
   }
 
   if (fresh) {
-    return waitForFreshOrCached(refreshPromise, emptyWorkFloorPayload(network));
+    return refreshPromise;
   }
 
   return emptyWorkFloorPayload(network);
@@ -7899,29 +8218,47 @@ function refreshGrowthCachesInBackground(network) {
 }
 
 async function growthSummaryPayload(network, fresh = false) {
-  if (fresh) {
-    refreshGrowthCachesInBackground(network);
-  }
-
   const emptyRegistryState = emptyRegistryPayload(network);
-  const [registryState, computerActivity, tokenState, workFloor] =
+  const [
+    registryState,
+    computerActivity,
+    tokenState,
+    workTokenState,
+    cachedWorkFloor,
+  ] =
     await Promise.all([
-      fastJsonBackedPayload(
-        `registry:${network}`,
-        `payload:registry:${network}`,
-        () => safeRegistryPayload(network),
-        REGISTRY_CACHE_TTL_MS,
-        REGISTRY_CACHE_STALE_MS,
-        emptyRegistryState,
-      ),
-      fastGlobalActivityPayload(network),
       fresh
-        ? freshTokenPayloadOrSnapshot(network)
+        ? safeRegistryPayload(network)
+        : fastJsonBackedPayload(
+            `registry:${network}`,
+            `payload:registry:${network}`,
+            () => safeRegistryPayload(network),
+            REGISTRY_CACHE_TTL_MS,
+            REGISTRY_CACHE_STALE_MS,
+            emptyRegistryState,
+          ),
+      fresh
+        ? globalActivityPayload(network, true)
+        : fastGlobalActivityPayload(network),
+      fresh
+        ? refreshTokenPayload(network)
         : fastTokenPayloadSnapshot(network),
       fresh
-        ? cachedWorkFloorPayload(network, true)
+        ? refreshTokenPayload(network, WORK_TOKEN_ID)
+        : Promise.resolve(null),
+      fresh
+        ? Promise.resolve(null)
         : cachedWorkFloorPayload(network, false),
     ]);
+  const workFloor = fresh
+    ? workFloorPayloadFromState(
+        network,
+        registryState,
+        computerActivity,
+        tokenState,
+        workTokenState,
+      )
+    : cachedWorkFloor;
   const registrySummary = compactRegistrySummaryPayload(registryState);
   const activitySummary = compactActivitySummaryPayload(computerActivity);
   const tokenSummary = compactTokenSummaryPayload(tokenState);
@@ -8002,8 +8339,12 @@ async function growthSummaryPayload(network, fresh = false) {
         (item) => item.kind === "file" && !isBrowserActivityItem(item),
       ).length,
       idListings: (registryState.listings ?? []).length,
+      infinityBondActions: confirmedActivity.filter(isInfinityBondActivityItem)
+        .length,
       mailActions: confirmedActivity.filter(
-        (item) => item.kind === "mail" || item.kind === "reply",
+        (item) =>
+          (item.kind === "mail" || item.kind === "reply") &&
+          !isInfinityBondActivityItem(item),
       ).length,
       marketplaceSaleCount: marketplaceStats.confirmedSales + confirmedTokenSales,
       pendingRecords: (registryState.records ?? []).filter(
@@ -8180,7 +8521,7 @@ function activityAmountSats(item) {
 }
 
 function activityKindHasDedicatedGrowthBucket(item) {
-  if (isBrowserActivityItem(item)) {
+  if (isBrowserActivityItem(item) || isInfinityBondActivityItem(item)) {
     return true;
   }
 
@@ -8279,8 +8620,12 @@ function growthActualNetworkValue(
     .filter(
       (item) =>
         (item.kind === "mail" || item.kind === "reply") &&
+        !isInfinityBondActivityItem(item) &&
         !isBrowserActivityItem(item),
     )
+    .reduce((total, item) => total + (item.amountSats ?? 0), 0);
+  const infinityBondFlowSats = confirmedActivity
+    .filter(isInfinityBondActivityItem)
     .reduce((total, item) => total + (item.amountSats ?? 0), 0);
   const browserFlowSats = confirmedActivity
     .filter(isBrowserActivityItem)
@@ -8332,6 +8677,8 @@ function growthActualNetworkValue(
     unbucketedConfirmedComputerLogFlowSats(confirmedActivity);
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const infinityBondSats =
+    infinityBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const marketplaceSats =
     marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
@@ -8345,6 +8692,7 @@ function growthActualNetworkValue(
   const totalSats =
     idSats +
     mailSats +
+    infinityBondSats +
     driveSats +
     marketplaceSats +
     browserSats +
@@ -8370,6 +8718,8 @@ function growthActualNetworkValue(
     marketplaceSats,
     idMarketplaceFeeSats,
     idMarketplaceVolumeSats,
+    infinityBondFlowSats,
+    infinityBondSats,
     marketplaceFeeSats,
     marketplaceMutationFeeSats,
     marketplaceSaleVolumeSats,
@@ -8577,6 +8927,10 @@ function growthActivityKindLabel(kind) {
     return "Wallet";
   }
 
+  if (kind === "infinity-bond") {
+    return "Infinity Bond";
+  }
+
   if (
     kind === "token-create" ||
     kind === "token-mint" ||
@@ -8659,7 +9013,9 @@ function growthRealEventItems(
       createdAt: item.createdAt,
       detail: item.detail || item.description,
       key: item.txid,
-      kind: isBrowserActivityItem(item)
+      kind: isInfinityBondActivityItem(item)
+        ? "Infinity Bond"
+        : isBrowserActivityItem(item)
         ? "Browser"
         : growthActivityKindLabel(item.kind),
       network: item.network,
@@ -8770,6 +9126,8 @@ function emptyWorkFloorPayload(network) {
       idSats: 0,
       idMarketplaceFeeSats: 0,
       idMarketplaceVolumeSats: 0,
+      infinityBondFlowSats: 0,
+      infinityBondSats: 0,
       mailFlowSats: 0,
       mailSats: 0,
       marketplaceFeeSats: 0,
@@ -8801,6 +9159,8 @@ function emptyWorkFloorPayload(network) {
       confirmedTokenMints: 0,
       confirmedTokens: 0,
       marketplaceVolumeSats: 0,
+      infinityBondFlowSats: 0,
+      infinityBondSats: 0,
       idMarketplaceFeeSats: 0,
       idMarketplaceVolumeSats: 0,
       marketplaceFeeSats: 0,
@@ -8837,20 +9197,45 @@ async function workFloorPayload(network, fresh = false) {
   };
   const [registryState, computerActivity, tokenState, workTokenState] =
     await Promise.all([
-      fastJsonBackedPayload(
-        `registry:${network}`,
-        `payload:registry:${network}`,
-        () => safeRegistryPayload(network),
-        REGISTRY_CACHE_TTL_MS,
-        REGISTRY_CACHE_STALE_MS,
-        emptyRegistryState,
-      ),
-      fastGlobalActivityPayload(network),
-      fresh ? freshTokenPayloadOrSnapshot(network) : fastCachedTokenPayload(network),
       fresh
-        ? freshTokenPayloadOrSnapshot(network, WORK_TOKEN_ID)
+        ? safeRegistryPayload(network)
+        : fastJsonBackedPayload(
+            `registry:${network}`,
+            `payload:registry:${network}`,
+            () => safeRegistryPayload(network),
+            REGISTRY_CACHE_TTL_MS,
+            REGISTRY_CACHE_STALE_MS,
+            emptyRegistryState,
+          ),
+      fresh
+        ? globalActivityPayload(network, true)
+        : fastGlobalActivityPayload(network),
+      fresh ? refreshTokenPayload(network) : fastCachedTokenPayload(network),
+      fresh
+        ? refreshTokenPayload(network, WORK_TOKEN_ID)
         : fastCachedTokenPayload(network, WORK_TOKEN_ID),
     ]);
+
+  return workFloorPayloadFromState(
+    network,
+    registryState,
+    computerActivity,
+    tokenState,
+    workTokenState,
+  );
+}
+
+function workFloorPayloadFromState(
+  network,
+  registryState,
+  computerActivity,
+  tokenState,
+  workTokenState,
+) {
+  if (network !== "livenet") {
+    return emptyWorkFloorPayload(network);
+  }
+
   const valueTokenState = tokenStateWithScopedTokenOverride(
     tokenState,
     workTokenState,
@@ -8983,6 +9368,8 @@ async function workFloorPayload(network, fresh = false) {
       driveFlowSats: actualValue.driveFlowSats,
       driveSats: actualValue.driveSats,
       idSats: actualValue.idSats,
+      infinityBondFlowSats: actualValue.infinityBondFlowSats,
+      infinityBondSats: actualValue.infinityBondSats,
       mailFlowSats: actualValue.mailFlowSats,
       mailSats: actualValue.mailSats,
       idMarketplaceFeeSats: actualValue.idMarketplaceFeeSats,
@@ -9359,10 +9746,10 @@ async function handleRequest(request, response) {
           `rush:${network}`,
           `payload:rush:${network}`,
         );
-        await cachedJsonResponse(
+        refreshedJsonResponse(
           response,
           `activity:${network}`,
-          () => globalActivityPayload(network, true),
+          await globalActivityPayload(network, true),
           FRESH_READ_CACHE_CONTROL,
           ACTIVITY_CACHE_TTL_MS,
           ACTIVITY_CACHE_STALE_MS,

@@ -5458,6 +5458,34 @@ function tokenSaleAuthorizationUsesSaleTicketAnchor(
   );
 }
 
+function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(
+  authorization: PowTokenSaleAuthorization,
+) {
+  return (
+    authorization.version === TOKEN_SALE_AUTH_VERSION &&
+    authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
+    authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
+    authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
+    authorization.anchorSigHashType === TOKEN_LISTING_ANCHOR_SIGHASH_TYPE &&
+    /^[0-9a-f]+$/u.test(authorization.anchorScriptPubKey) &&
+    validPublicKeyHex(authorization.sellerPublicKey)
+  );
+}
+
+function tokenListingHasConfirmedSaleTicketSeal(listing: PowTokenListing) {
+  return (
+    listing.sealConfirmed === true &&
+    tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)
+  );
+}
+
+function tokenListingHasPendingSaleTicketSeal(listing: PowTokenListing) {
+  return (
+    listing.sealConfirmed !== true &&
+    tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)
+  );
+}
+
 function tokenSaleAuthorizationTermsMatch(
   left: PowTokenSaleAuthorization,
   right: PowTokenSaleAuthorization,
@@ -5551,6 +5579,33 @@ function spendsTokenListingAnchor(
     (outpoint) =>
       outpoint.txid === anchor.txid && outpoint.vout === anchor.vout,
   );
+}
+
+function tokenListingAnchorSpendMatchesAuthorization(
+  vin: Array<Record<string, unknown>>,
+  listing: PowTokenListing,
+) {
+  const authorization = listing.saleAuthorization;
+  if (!tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization)) {
+    return false;
+  }
+
+  return vin.some((input) => {
+    const prevout = input.prevout as Record<string, unknown> | undefined;
+    const txid =
+      typeof input.txid === "string" ? input.txid.toLowerCase() : "";
+    const vout =
+      typeof input.vout === "number" && Number.isSafeInteger(input.vout)
+        ? input.vout
+        : -1;
+    return (
+      txid === listing.listingId &&
+      vout === authorization.anchorVout &&
+      prevout?.scriptpubkey === authorization.anchorScriptPubKey &&
+      prevout?.scriptpubkey_address === listing.sellerAddress &&
+      prevout?.value === authorization.anchorValueSats
+    );
+  });
 }
 
 function tokenSellerPaymentRequiredSats(listing: PowTokenListing) {
@@ -6104,6 +6159,11 @@ function tokenStateFromTransactions(
 
         if (parsed.kind === "buy") {
           const listing = listings.get(parsed.listingId);
+          const listingHasValidSaleTicketSpend = listing
+            ? tokenSaleAuthorizationUsesSaleTicketAnchor(
+                listing.saleAuthorization,
+              ) || tokenListingAnchorSpendMatchesAuthorization(vin, listing)
+            : false;
           const sellerBalanceKey = listing
             ? tokenBalanceKey(listing.tokenId, listing.sellerAddress)
             : "";
@@ -6114,9 +6174,7 @@ function tokenStateFromTransactions(
             !listing ||
             !txInputAddresses.includes(parsed.buyerAddress) ||
             remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
-            !tokenSaleAuthorizationUsesSaleTicketAnchor(
-              listing.saleAuthorization,
-            ) ||
+            !listingHasValidSaleTicketSpend ||
             (listing.saleAuthorization.buyerAddress &&
               listing.saleAuthorization.buyerAddress !== parsed.buyerAddress) ||
             tokenListingIsExpired(listing) ||
@@ -17583,10 +17641,12 @@ export default function App() {
       return;
     }
 
-    if (!tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)) {
+    if (!tokenListingHasConfirmedSaleTicketSeal(listing)) {
       setStatus({
         tone: "bad",
-        text: "Seller must seal this credit listing before it can be bought.",
+        text: tokenListingHasPendingSaleTicketSeal(listing)
+          ? "Seller seal must confirm before this credit listing can be bought."
+          : "Seller must seal this credit listing before it can be bought.",
       });
       return;
     }
@@ -21346,8 +21406,8 @@ function TokenWalletWorkspace({
           item.tokenId === selectedListToken.tokenId,
       )
     : [];
-  const selectedTokenSealedListings = selectedTokenListings.filter((item) =>
-    tokenSaleAuthorizationUsesSaleTicketAnchor(item.saleAuthorization),
+  const selectedTokenSealedListings = selectedTokenListings.filter(
+    tokenListingHasConfirmedSaleTicketSeal,
   );
   const selectedTokenSales = selectedListToken
     ? tokenSales.filter(
@@ -21741,10 +21801,14 @@ function TokenWalletWorkspace({
               />
               <div className="token-list compact-token-list">
                 {walletListingPage.items.map((item) => {
-                  const sealed = tokenSaleAuthorizationUsesSaleTicketAnchor(
+                  const hasSeal = tokenSaleAuthorizationUsesSaleTicketAnchor(
                     item.saleAuthorization,
                   );
-                  const readyToSeal = item.confirmed && !sealed;
+                  const sealConfirmed =
+                    tokenListingHasConfirmedSaleTicketSeal(item);
+                  const sealPending =
+                    tokenListingHasPendingSaleTicketSeal(item);
+                  const readyToSeal = item.confirmed && !hasSeal;
                   const unitSats = tokenListingUnitPriceSats(item);
                   return (
                     <article className="token-list-item" key={item.listingId}>
@@ -21755,8 +21819,10 @@ function TokenWalletWorkspace({
                         <small>
                           {!item.confirmed
                             ? "waiting for confirmation"
-                            : sealed
+                            : sealConfirmed
                               ? "sealed"
+                              : sealPending
+                                ? "seal pending"
                               : "ready to seal"}{" "}
                           ·{" "}
                           {item.priceSats.toLocaleString()} proofs ·{" "}
@@ -21772,7 +21838,7 @@ function TokenWalletWorkspace({
                         >
                           View TX
                         </a>
-                        {!sealed ? (
+                        {!hasSeal ? (
                           <button
                             className="secondary small"
                             disabled={!readyToSeal}
@@ -21780,6 +21846,10 @@ function TokenWalletWorkspace({
                             type="button"
                           >
                             {item.confirmed ? "Seal" : "Confirming"}
+                          </button>
+                        ) : sealPending ? (
+                          <button className="secondary small" disabled type="button">
+                            Seal pending
                           </button>
                         ) : null}
                         <button
@@ -26959,7 +27029,7 @@ function tokenMarketplaceRowsFor({
     }
 
     current.openListings += 1;
-    if (!tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)) {
+    if (!tokenListingHasConfirmedSaleTicketSeal(listing)) {
       continue;
     }
 
@@ -27000,13 +27070,7 @@ function tokenMarketplaceRowsFor({
           : 0,
       );
       const computedLowestAsk = current?.lowestAskPricePerToken ?? 0;
-      const summaryLowestAsk = Number.isFinite(token.lowestAskPricePerToken)
-        ? Number(token.lowestAskPricePerToken)
-        : 0;
-      const lowestAskPricePerToken =
-        computedLowestAsk > 0 && summaryLowestAsk > 0
-          ? Math.min(computedLowestAsk, summaryLowestAsk)
-          : computedLowestAsk || summaryLowestAsk;
+      const lowestAskPricePerToken = computedLowestAsk;
       const openListings = Math.max(
         current?.openListings ?? 0,
         Number.isFinite(token.openListings) ? Number(token.openListings) : 0,
@@ -27272,12 +27336,11 @@ function TokenMarketplacePanel({
   const tokenReferenceById = new Map<string, TokenReferenceSnapshot>(
     rows.map((token) => [token.tokenId, token]),
   );
-  const sealedListings = marketListings.filter((listing) =>
-    tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization),
+  const sealedListings = marketListings.filter(
+    tokenListingHasConfirmedSaleTicketSeal,
   );
   const unsealedListings = marketListings.filter(
-    (listing) =>
-      !tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization),
+    (listing) => !tokenListingHasConfirmedSaleTicketSeal(listing),
   );
   const visibleMarketListings =
     tokenListingBookFilter === "sealed"
@@ -27880,9 +27943,13 @@ function TokenMarketplacePanel({
           {visibleMarketListings.length ? (
             <div className="token-market-grid">
               {tokenListingPage.items.map((listing) => {
-                const sealed = tokenSaleAuthorizationUsesSaleTicketAnchor(
+                const hasSeal = tokenSaleAuthorizationUsesSaleTicketAnchor(
                   listing.saleAuthorization,
                 );
+                const sealConfirmed =
+                  tokenListingHasConfirmedSaleTicketSeal(listing);
+                const sealPending =
+                  tokenListingHasPendingSaleTicketSeal(listing);
                 const listingUnitSats =
                   listing.amount > 0 ? listing.priceSats / listing.amount : 0;
                 const listingToken = rows.find(
@@ -27918,14 +27985,24 @@ function TokenMarketplacePanel({
                     : "n/a";
                 const buyLabel = !address
                   ? "Connect to buy"
-                  : !sealed
+                  : !hasSeal
                     ? "Needs seal"
+                    : sealPending
+                      ? "Seal pending"
                     : listing.sellerAddress === address
                       ? "Your listing"
                       : listing.saleAuthorization.buyerAddress &&
                           listing.saleAuthorization.buyerAddress !== address
                         ? "Buyer locked"
                         : "Buy";
+                const buyDisabled =
+                  busy ||
+                  !sealConfirmed ||
+                  listing.sellerAddress === address ||
+                  Boolean(
+                    listing.saleAuthorization.buyerAddress &&
+                      listing.saleAuthorization.buyerAddress !== address,
+                  );
                 return (
                   <article
                     className="id-record token-market-row"
@@ -27933,7 +28010,13 @@ function TokenMarketplacePanel({
                   >
                     <div>
                       <strong>{listing.ticker}</strong>
-                      <span>{sealed ? "Sealed" : "Waiting for seal"}</span>
+                      <span>
+                        {!hasSeal
+                          ? "Waiting for seal"
+                          : sealConfirmed
+                            ? "Sealed"
+                            : "Seal pending"}
+                      </span>
                     </div>
                     <dl>
                       <div>
@@ -27969,7 +28052,7 @@ function TokenMarketplacePanel({
                     <div className="id-record-actions">
                       <button
                         className="primary small"
-                        disabled={busy}
+                        disabled={buyDisabled}
                         onClick={() => buyListing(listing)}
                         type="button"
                       >
@@ -28210,9 +28293,13 @@ function TokenMarketplacePanel({
                   );
                 }
 
-                const sealed = tokenSaleAuthorizationUsesSaleTicketAnchor(
+                const hasSeal = tokenSaleAuthorizationUsesSaleTicketAnchor(
                   item.listing.saleAuthorization,
                 );
+                const sealConfirmed =
+                  tokenListingHasConfirmedSaleTicketSeal(item.listing);
+                const sealPending =
+                  tokenListingHasPendingSaleTicketSeal(item.listing);
                 const unitSats =
                   item.listing.amount > 0
                     ? item.listing.priceSats / item.listing.amount
@@ -28232,8 +28319,10 @@ function TokenMarketplacePanel({
                       <span>
                         {!item.listing.confirmed
                           ? "Pending listing"
-                          : sealed
+                          : sealConfirmed
                             ? "Sealed listing"
+                            : sealPending
+                              ? "Seal pending"
                             : "Waiting for seal"}
                       </span>
                     </div>
@@ -28265,7 +28354,9 @@ function TokenMarketplacePanel({
                     <p className="field-note">
                       Sale ticket {shortAddress(item.listing.listingId)}
                       {item.listing.sealTxid
-                        ? ` sealed by ${shortAddress(item.listing.sealTxid)}.`
+                        ? sealConfirmed
+                          ? ` sealed by ${shortAddress(item.listing.sealTxid)}.`
+                          : ` seal pending at ${shortAddress(item.listing.sealTxid)}.`
                         : "."}
                     </p>
                     <div className="id-record-actions">
@@ -28470,8 +28561,8 @@ function MarketplaceApp({
     tokenScope: selectedTokenMarketId,
     tokens,
   });
-  const sealedTokenListings = tokenListings.filter((listing) =>
-    tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization),
+  const sealedTokenListings = tokenListings.filter(
+    tokenListingHasConfirmedSaleTicketSeal,
   );
   const confirmedTokenCount = tokens.filter((token) => token.confirmed).length;
   const scopedStatus = marketplaceStatusForTab({

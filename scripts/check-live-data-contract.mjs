@@ -26,8 +26,28 @@ expectAll("WORK floor oracle stays confirmed Computer value based", server, [
   /workFloorPayload\(network,\s*fresh\s*=\s*false\)/,
   /confirmedComputerActionCount\(/,
   /growthActualNetworkValue\(/,
+  /INFINITY_BOND_MEMO\s*=\s*"powb"/,
+  /FULL_ACTIVITY_HISTORY_ADDRESSES/,
+  /1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK/,
+  /isInfinityBondActivityItem\(/,
+  /infinityBondFlowSats/,
+  /infinityBondSats/,
   /correctedNetworkValueSats\s*\/\s*WORK_TOKEN_MAX_SUPPLY/,
   /networkValueSats:\s*correctedNetworkValueSats/,
+]);
+
+expectAll("fresh WORK and Growth reads use canonical confirmed activity", server, [
+  /globalActivityPayload\(network,\s*fresh\s*=\s*false\)/,
+  /shouldFetchFullActivityHistory\(address,\s*network\)[\s\S]*fetchAddressTransactions\(address,\s*network\)/,
+  /fetchAddressTransactionsViaMempoolPagination\(\s*address,\s*network,\s*MAX_ADDRESS_TX_PAGES/s,
+  /activitySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*await globalActivityPayload\(network,\s*true\)/,
+  /cachedWorkFloorPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*if \(fresh\) \{\s*return refreshPromise;\s*\}/,
+  /growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*fresh\s*\?\s*globalActivityPayload\(network,\s*true\)/,
+  /growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*fresh\s*\?\s*refreshTokenPayload\(network,\s*WORK_TOKEN_ID\)/,
+  /growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*workFloorPayloadFromState\(/,
+  /workFloorPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*fresh\s*\?\s*globalActivityPayload\(network,\s*true\)/,
+  /function workFloorPayloadFromState\(/,
+  /refreshedJsonResponse\(\s*response,\s*`activity:\$\{network\}`,\s*await globalActivityPayload\(network,\s*true\)/,
 ]);
 
 expectAll("WORK floor counts confirmed token sale records only", server, [
@@ -105,8 +125,9 @@ expectAll("token marketplace summaries refresh from live token truth", server, [
   /async function workTokenPayload\(/,
   /canonicalWorkTokenDefinition\(network\)/,
   /fresh\s*\?\s*await freshTokenPayloadOrSnapshot\(network,\s*scope\)/,
-  /fresh\s*\?\s*freshTokenPayloadOrSnapshot\(network\)\s*:\s*fastCachedTokenPayload\(network\)/,
-  /fresh\s*\?\s*freshTokenPayloadOrSnapshot\(network\)\s*:\s*fastTokenPayloadSnapshot\(network\)/,
+  /fresh\s*\?\s*refreshTokenPayload\(network\)\s*:\s*fastCachedTokenPayload\(network\)/,
+  /fresh\s*\?\s*refreshTokenPayload\(network\)\s*:\s*fastTokenPayloadSnapshot\(network\)/,
+  /fresh\s*\?\s*refreshTokenPayload\(network,\s*WORK_TOKEN_ID\)\s*:\s*fastCachedTokenPayload\(network,\s*WORK_TOKEN_ID\)/,
   /tokenSummaryPayload\(network,\s*WORK_TOKEN_ID,\s*fresh\)/,
   /tokenSummaryPayload\(network,\s*"",\s*fresh\)/,
   /async function tokenHistoryPayload[\s\S]*fresh\s*\?\s*await freshTokenPayloadOrSnapshot\(network,\s*scope\)/,
@@ -168,7 +189,7 @@ expectAll("token marketplace log uses API-backed pagination", app, [
   /fetchTokenHistoryPage<TokenMarketLogItem>\(network,\s*"market-log"/,
   /tokenMarketLogDataVersion/,
   /historyPageToPagedItems\(/,
-  /Token Sales & Listings Log/,
+  /Credit Sales & Listings Log/,
 ]);
 
 expect(
