@@ -8819,6 +8819,8 @@ function growthSummaryPayloadFromLedger(ledger) {
   return {
     actualValue,
     activity: compactActivity,
+    btcUsd: workFloor.btcUsd,
+    btcUsdIndexedAt: workFloor.btcUsdIndexedAt,
     counts: {
       browserActions: confirmedActivity.filter(isBrowserActivityItem).length,
       confirmedComputerActions: ledger.metrics.confirmedComputerActions,
@@ -8853,6 +8855,8 @@ function growthSummaryPayloadFromLedger(ledger) {
     registry,
     summaryOnly: true,
     token,
+    usdSource: workFloor.usdSource,
+    usdSourceUrl: workFloor.usdSourceUrl,
     workFloor,
   };
 }
@@ -8914,6 +8918,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     tokenState,
     workTokenState,
     rushState,
+    btcUsdQuote,
   ] = await Promise.all([
     fresh && ENABLE_GLOBAL_ACTIVITY_CRAWL
       ? globalActivityPayload(network, true)
@@ -8931,6 +8936,9 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     ledgerTokenPayload(network, "", fresh),
     ledgerTokenPayload(network, WORK_TOKEN_ID, fresh),
     (fresh ? rushPayload(network) : cachedRushPayload(network)).catch(() => null),
+    network === "livenet"
+      ? btcUsdPricePayload(network, { fresh })
+      : Promise.resolve(null),
   ]);
 
   const valueTokenState = tokenStateWithScopedTokenOverride(
@@ -8982,6 +8990,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     activityPayload,
     valueTokenState,
     {},
+    { btcUsdQuote },
   );
   const metrics = ledgerMetricsFromState({
     activity,
@@ -9435,6 +9444,29 @@ function growthBtcUsdAtYears(years) {
 
 function growthSatsToUsdAtYears(sats, years) {
   return (sats / 100_000_000) * growthBtcUsdAtYears(years);
+}
+
+function satsToUsdAtBtcUsd(sats, btcUsd) {
+  return (sats / 100_000_000) * btcUsd;
+}
+
+function btcUsdFromQuote(quote) {
+  const usd = Number(quote?.usd ?? quote?.USD);
+  return Number.isFinite(usd) && usd > 0 ? usd : 0;
+}
+
+function btcUsdResponseMetadata(quote) {
+  const btcUsd = btcUsdFromQuote(quote);
+  const metadata = {
+    btcUsd,
+    btcUsdIndexedAt: quote?.priceIndexedAt,
+    usdSource: quote?.source,
+    usdSourceUrl: quote?.sourceUrl,
+  };
+  if (quote?.sourceError) {
+    metadata.usdSourceError = quote.sourceError;
+  }
+  return metadata;
 }
 
 function isBrowserActivityItem(item) {
@@ -10147,7 +10179,7 @@ async function workFloorPayload(network, fresh = false) {
     sales: [],
     source: mempoolBase(network),
   };
-  const [registryState, computerActivity, tokenState, workTokenState] =
+  const [registryState, computerActivity, tokenState, workTokenState, btcUsdQuote] =
     await Promise.all([
       fresh
         ? safeRegistryPayload(network)
@@ -10168,6 +10200,7 @@ async function workFloorPayload(network, fresh = false) {
       fresh && ENABLE_SUMMARY_TOKEN_REFRESH
         ? refreshTokenPayload(network, WORK_TOKEN_ID)
         : fastCachedTokenPayload(network, WORK_TOKEN_ID),
+      btcUsdPricePayload(network, { fresh }),
     ]);
 
   return workFloorPayloadFromState(
@@ -10176,6 +10209,7 @@ async function workFloorPayload(network, fresh = false) {
     computerActivity,
     tokenState,
     workTokenState,
+    { btcUsdQuote },
   );
 }
 
@@ -10185,6 +10219,7 @@ function workFloorPayloadFromState(
   computerActivity,
   tokenState,
   workTokenState,
+  options = {},
 ) {
   if (network !== "livenet") {
     return emptyWorkFloorPayload(network);
@@ -10248,15 +10283,22 @@ function workFloorPayloadFromState(
   const correctedNetworkValueSats =
     actualValue.totalSats +
     missingWorkMintFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const modelTotalUsd = growthSatsToUsdAtYears(
+    correctedNetworkValueSats,
+    growthElapsedYears(),
+  );
+  const btcUsdMetadata = btcUsdResponseMetadata(options.btcUsdQuote);
+  const liveTotalUsd =
+    btcUsdMetadata.btcUsd > 0
+      ? satsToUsdAtBtcUsd(correctedNetworkValueSats, btcUsdMetadata.btcUsd)
+      : modelTotalUsd;
   const correctedActualValue = {
     ...actualValue,
+    modelTotalUsd,
     tokenMintFlowSats: correctedTokenMintFlowSats,
     tokenSats: correctedTokenSats,
     totalSats: correctedNetworkValueSats,
-    totalUsd: growthSatsToUsdAtYears(
-      correctedNetworkValueSats,
-      growthElapsedYears(),
-    ),
+    totalUsd: liveTotalUsd,
   };
   const workToken = (valueTokenState.tokens ?? []).find(
     (token) =>
@@ -10299,6 +10341,7 @@ function workFloorPayloadFromState(
 
   return {
     actualValue: correctedActualValue,
+    ...btcUsdMetadata,
     chartPoints,
     indexedAt: new Date().toISOString(),
     network,

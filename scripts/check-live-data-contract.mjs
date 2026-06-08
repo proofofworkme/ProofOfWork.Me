@@ -59,6 +59,16 @@ expectAll("WORK Growth Log and token views use the same ledger", server, [
   /url\.pathname === "\/api\/v1\/token"[\s\S]*await canonicalLedgerPayload\(network,\s*freshRead\)/,
 ]);
 
+expectAll("WORK floor USD uses live price metadata", server, [
+  /function satsToUsdAtBtcUsd\(sats,\s*btcUsd\)/,
+  /function btcUsdResponseMetadata\(quote\)/,
+  /btcUsdPricePayload\(network,\s*\{\s*fresh\s*\}\)/,
+  /modelTotalUsd/,
+  /totalUsd:\s*liveTotalUsd/,
+  /btcUsdIndexedAt/,
+  /usdSource/,
+]);
+
 expectAll("consistency endpoint guards the public invariant", server, [
   /function ledgerSnapshotChecks\(/,
   /"livenet-confirmed-history-present"/,

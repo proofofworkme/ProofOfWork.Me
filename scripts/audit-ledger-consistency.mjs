@@ -43,6 +43,23 @@ function numbersAgree(left, right) {
   return Math.abs(numberValue(left) - numberValue(right)) <= 0.000001;
 }
 
+function usdNumbersAgree(left, right) {
+  return Math.abs(numberValue(left) - numberValue(right)) <= 0.01;
+}
+
+function satsToUsd(sats, btcUsd) {
+  return (numberValue(sats) / 100_000_000) * numberValue(btcUsd);
+}
+
+function btcUsdQuotesClose(left, right) {
+  const leftNumber = numberValue(left);
+  const rightNumber = numberValue(right);
+  if (leftNumber <= 0 || rightNumber <= 0) {
+    return false;
+  }
+  return Math.abs(leftNumber - rightNumber) / rightNumber <= 0.01;
+}
+
 function items(payload) {
   return Array.isArray(payload?.items) ? payload.items : [];
 }
@@ -55,6 +72,7 @@ const [
   consistency,
   workFloor,
   growthSummary,
+  btcUsdPrice,
   txLog,
   buyerLog,
   infinityBondLog,
@@ -64,6 +82,7 @@ const [
     readJson("/api/v1/consistency"),
     readJson("/api/v1/work-floor"),
     readJson("/api/v1/growth-summary"),
+    readJson("/api/v1/prices/btc-usd?fresh=1"),
     readJson(`/api/v1/log-history?q=${GULLISH_TXID}`),
     readJson(`/api/v1/log-history?q=${GULLISH_BUYER}`),
     readJson(`/api/v1/log-history?q=${INFINITY_BOND_REGRESSION_TXID}`),
@@ -96,6 +115,27 @@ expect(
 expect(
   "WORK network value equals Growth workFloor value",
   numbersAgree(workFloor.networkValueSats, growthSummary.workFloor?.networkValueSats),
+);
+const liveBtcUsd = numberValue(workFloor.btcUsd);
+const priceEndpointBtcUsd = numberValue(btcUsdPrice.usd ?? btcUsdPrice.USD);
+expect("WORK exposes live BTC/USD metadata", liveBtcUsd > 0);
+expect(
+  "WORK BTC/USD metadata matches price endpoint",
+  btcUsdQuotesClose(liveBtcUsd, priceEndpointBtcUsd),
+);
+expect(
+  "WORK total USD uses live BTC/USD",
+  usdNumbersAgree(
+    workFloor.actualValue?.totalUsd,
+    satsToUsd(workFloor.actualValue?.totalSats, liveBtcUsd),
+  ),
+);
+expect(
+  "Growth total USD uses live BTC/USD",
+  usdNumbersAgree(
+    growthSummary.actualValue?.totalUsd,
+    satsToUsd(growthSummary.actualValue?.totalSats, liveBtcUsd),
+  ),
 );
 expect(
   "Infinity Bond confirmed flow is fully indexed",
