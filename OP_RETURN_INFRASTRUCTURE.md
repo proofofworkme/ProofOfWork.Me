@@ -183,6 +183,7 @@ The canonical livenet ledger payload:
 - Merges registry activity, discovered global Computer activity, seeded mail activity from app-derived addresses, canonical WORK state, canonical credit/token state, and staged protocol activity when enabled.
 - Uses complete address history for configured mail-heavy Computer addresses, with paginated mempool/address reads as the faster path for the wider seed set. This prevents confirmed mail or Infinity Bond transactions from appearing in direct address search while missing from global Log and network value.
 - Emits one `snapshotId`, source hashes, metrics, and consistency checks so WORK, Growth, Log, and credit/token history can prove they are reading the same confirmed state.
+- Carries live BTC/USD metadata (`btcUsd`, `btcUsdIndexedAt`, `usdSource`) on WORK/Growth responses. `actualValue.totalUsd` is current live USD from the first-party price endpoint, while `actualValue.modelTotalUsd` is the separate Growth model USD projection.
 - Keeps pending records visible where useful, but only confirmed records affect canonical network value and the WORK floor.
 - Rejects or avoids replacing a useful cached ledger with a worse confirmed-history payload when guarded counts regress.
 
@@ -195,8 +196,9 @@ These expose the ledger checks used by `npm run audit:ledger`, including
 `livenet-confirmed-history-present`, `token-definitions-cover-confirmed-mints`,
 `work-floor-actual-total`, `growth-actual-total`, `growth-work-floor-total`,
 `token-sales-logged`, `seeded-mail-events-logged`, and
-`seeded-infinity-bonds-logged`. `missingLogEvents` must stay empty for a green
-production ledger.
+`seeded-infinity-bonds-logged`. The audit also checks that WORK/Growth live USD
+reconciles from `/api/v1/prices/btc-usd`. `missingLogEvents` must stay empty for
+a green production ledger.
 
 The log endpoint:
 
@@ -214,7 +216,7 @@ The Growth app:
 - Auto-refreshes confirmed registry, log, file, marketplace, and Credit metrics while the page is visible.
 - Treats each modeled product consistently: real input, usage rate, value assumption, fee elasticity, and blockspace accounting.
 - Feeds the permanent WORK floor: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. Pending records are visible but do not change this canonical floor until confirmed.
-- Uses the same first-party BTC/USD price endpoint and the same WORK floor payload as `work.proofofwork.me`, so Growth and WORK display matching proofs and USD totals after refresh.
+- Uses the same first-party BTC/USD price endpoint and the same WORK floor payload as `work.proofofwork.me`, so Growth and WORK display matching proofs and live USD totals after refresh. Model USD remains available only as `modelTotalUsd`.
 
 The credit endpoint:
 
@@ -405,7 +407,7 @@ After changing the API or production build, verify:
 - Log can load global ProofOfWork Computer events and search an address, confirmed ProofOfWork ID, or txid.
 - Known confirmed ledger regression txids are searchable in Log, including `411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891` and `b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34`.
 - Growth can load real chain metrics, including credit creations, mints, transfers, listings, and sales, and render the modeled-vs-real proofs/USD value graph without layout overlap on desktop and mobile.
-- WORK and Growth show matching confirmed network value in proofs/USD using `/api/v1/work-floor` and `/api/v1/prices/btc-usd`.
+- WORK and Growth show matching confirmed network value in proofs/live USD using `/api/v1/work-floor` and `/api/v1/prices/btc-usd`; `actualValue.totalUsd` reconciles to `actualValue.totalSats / 100000000 * btcUsd`.
 - `npm run check:live-data` passes locally.
 - `npm run audit:ledger` passes against production.
 - Known attachment transactions reconstruct with valid size and SHA-256.

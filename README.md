@@ -215,6 +215,7 @@ Current production behavior:
 - WORK settings are 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, and the `work@proofofwork.me` registry address. The launch price is exactly 1 proof per WORK. The credit create form can reuse the same economic template for new tickers, but cannot create another WORK-like credit.
 - WORK's permanent value floor is derived from the Growth model's confirmed ProofOfWork Computer network value: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. The inverse, `21,000,000 / confirmed_network_value_sats`, is the WORK-per-proof ratio. Pending records are visible but do not change the canonical floor until confirmed.
 - The WORK dashboard shows the live floor beside the mint panel: floor proofs per WORK, USD per WORK, confirmed network value in proofs/USD, a confirmed floor-history chart, and the refresh time. This is separate from the 1 proof/WORK launch mint price. WORK and Growth must use the same node-backed BTC/USD quote and the same confirmed network-value payload so proofs and USD totals agree across surfaces.
+- `work-floor`, `work-summary`, `growth-summary`, and `marketplace-summary` expose current USD from the live first-party BTC/USD quote. `actualValue.totalUsd` is live current USD; `actualValue.modelTotalUsd` is the Growth model USD projection. Consumers that publish current numbers should use `actualValue.totalUsd` plus the response's `btcUsd`, `btcUsdIndexedAt`, and `usdSource` metadata, not `modelTotalUsd`.
 - The WORK floor announcement is part of project history as ProofOfWork mail tx `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`: `$work now has a permanent ProofOfWork Computer floor.` Live indexers determine whether that tx is pending or confirmed; once confirmed, ProofOfWork history is the permanent source.
 - The staged RUSH API scans the configured network registry for valid `pwr1:m:rush` mints that pay at least 1,000 proofs to the registry before OP_RETURN. Confirmed mint ordinals determine the phase reward; pending mints are visibility only.
 - The log API exposes a normalized ProofOfWork Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, and credit sales. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
@@ -575,10 +576,11 @@ npm run audit:ledger
 ```
 
 The audit checks `/api/v1/consistency`, `/api/v1/work-floor`,
-`/api/v1/growth-summary`, and Log search. It fails if WORK and Growth use
-different snapshots, if network value differs from actual confirmed value, if
-seeded Computer mail/Infinity Bond events are missing from Log, or if known
-confirmed regression txids are not searchable.
+`/api/v1/growth-summary`, `/api/v1/prices/btc-usd`, and Log search. It fails
+if WORK and Growth use different snapshots, if network value differs from
+actual confirmed value, if live USD does not reconcile from the exposed BTC/USD
+quote, if seeded Computer mail/Infinity Bond events are missing from Log, or if
+known confirmed regression txids are not searchable.
 
 The companion local contract check is:
 
