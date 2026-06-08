@@ -2904,25 +2904,15 @@ async function tokenListingAnchorOutspend(listing, network) {
     return null;
   }
 
-  let unspentOutspend = null;
-  for (const base of pendingMempoolBases(network)) {
-    try {
-      const outspend = await fetchJson(
-        `${base}/api/tx/${anchor.txid}/outspend/${anchor.vout}`,
-        { signal: AbortSignal.timeout(4_000) },
-      );
-      if (outspend?.spent) {
-        return outspend;
-      }
-      if (outspend) {
-        unspentOutspend = outspend;
-      }
-    } catch {
-      // Keep the listing visible if a transient outspend lookup fails.
-    }
+  try {
+    return await txOutspendPayload(anchor.txid, anchor.vout, network);
+  } catch (error) {
+    console.error(
+      `Token listing outspend lookup failed for ${anchor.txid}:${anchor.vout}: ${errorSummary(error)}`,
+    );
+    // Keep the listing visible if a transient outspend lookup fails.
+    return null;
   }
-
-  return unspentOutspend;
 }
 
 async function filterSpendableTokenListings(listings, network) {
@@ -8900,13 +8890,17 @@ async function ledgerConsistencyPayload(network, fresh = false) {
 }
 
 async function ledgerTokenPayload(network, tokenScope = "", fresh = false) {
-  const fallback = await fastCachedTokenPayload(network, tokenScope);
+  const scope = normalizeTokenScope(tokenScope);
+  let fallback = await fastCachedTokenPayload(network, scope);
+  if (scope === WORK_TOKEN_ID) {
+    fallback = await liveWorkTokenState(network, fallback);
+  }
   if (!fresh || !ENABLE_SUMMARY_TOKEN_REFRESH) {
     return fallback;
   }
 
   return payloadWithFallbackAfterMs(
-    refreshTokenPayload(network, tokenScope),
+    refreshTokenPayload(network, scope),
     fallback,
     WORK_FLOOR_FRESH_WAIT_MS,
   );
@@ -10397,10 +10391,14 @@ async function txHexPayload(txid, network) {
 }
 
 async function txOutspendPayload(txid, vout, network) {
+  let primaryOutspend = null;
   try {
-    return await fetchJson(
+    primaryOutspend = await fetchJson(
       `${mempoolBase(network)}/api/tx/${txid}/outspend/${vout}`,
     );
+    if (primaryOutspend?.spent) {
+      return primaryOutspend;
+    }
   } catch {
     // Some private electrs/mempool deployments do not expose /outspend.
     // Reconstruct the answer from the output script's Electrum history instead.
@@ -10411,13 +10409,24 @@ async function txOutspendPayload(txid, vout, network) {
   const outputScript =
     output && typeof output.scriptpubkey === "string" ? output.scriptpubkey : "";
   if (!outputScript) {
+    if (primaryOutspend) {
+      return primaryOutspend;
+    }
     throw new Error("Transaction output not found.");
   }
 
   const scripthash = scriptHashForScriptHex(outputScript);
-  const history = await electrumRequest("blockchain.scripthash.get_history", [
-    scripthash,
-  ]);
+  let history = [];
+  try {
+    history = await electrumRequest("blockchain.scripthash.get_history", [
+      scripthash,
+    ]);
+  } catch (error) {
+    if (primaryOutspend) {
+      return primaryOutspend;
+    }
+    throw error;
+  }
   const candidateTxids = [
     ...new Set(
       (Array.isArray(history) ? history : [])
@@ -10458,7 +10467,7 @@ async function txOutspendPayload(txid, vout, network) {
     }
   }
 
-  return { spent: false };
+  return primaryOutspend ?? { spent: false };
 }
 
 async function txStatusPayload(txid, network) {
