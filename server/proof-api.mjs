@@ -8093,6 +8093,417 @@ function confirmedWorkMintEventsFromTransaction(tx, network) {
   return events;
 }
 
+function workTokenDeltaHasNonMintActions(txs, network) {
+  return (Array.isArray(txs) ? txs : []).some((tx) => {
+    const vout = Array.isArray(tx?.vout) ? tx.vout : [];
+    return decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX).some(
+      (message) => {
+        const parsed = parseTokenPayload(message, network);
+        return parsed && parsed.kind !== "mint";
+      },
+    );
+  });
+}
+
+function workTokenStateWithDeltaTransactions(state, txs, network) {
+  const existingTxids = new Set();
+  addTokenStateTxids(existingTxids, state);
+
+  const holderBalances = new Map(
+    (Array.isArray(state?.holders) ? state.holders : [])
+      .filter((holder) => holder?.address && Number.isFinite(Number(holder.balance)))
+      .map((holder) => [holder.address, Number(holder.balance)]),
+  );
+  const listings = new Map(
+    (Array.isArray(state?.listings) ? state.listings : [])
+      .filter((listing) => listing?.listingId)
+      .map((listing) => [listing.listingId, listing]),
+  );
+  const closedListings = Array.isArray(state?.closedListings)
+    ? [...state.closedListings]
+    : [];
+  const mints = Array.isArray(state?.mints) ? [...state.mints] : [];
+  const sales = Array.isArray(state?.sales) ? [...state.sales] : [];
+  const transfers = Array.isArray(state?.transfers) ? [...state.transfers] : [];
+  let confirmedSupply = Number.isFinite(Number(state?.confirmedSupply))
+    ? Number(state.confirmedSupply)
+    : mints
+        .filter((mint) => mint.confirmed)
+        .reduce((total, mint) => total + Number(mint.amount || 0), 0);
+  let pendingSupply = Number.isFinite(Number(state?.pendingSupply))
+    ? Number(state.pendingSupply)
+    : mints
+        .filter((mint) => !mint.confirmed)
+        .reduce((total, mint) => total + Number(mint.amount || 0), 0);
+  let changed = false;
+
+  const reservedBalanceFor = (ownerAddress) => {
+    let reserved = 0;
+    for (const listing of listings.values()) {
+      if (
+        listing.tokenId === WORK_TOKEN_ID &&
+        listing.sellerAddress === ownerAddress &&
+        !tokenListingIsExpired(listing)
+      ) {
+        reserved += Number(listing.amount || 0);
+      }
+    }
+    return reserved;
+  };
+  const spendableBalanceFor = (ownerAddress) =>
+    (holderBalances.get(ownerAddress) ?? 0) - reservedBalanceFor(ownerAddress);
+  const closeListing = (listing, event) => {
+    if (
+      closedListings.some(
+        (closed) =>
+          closed.listingId === listing.listingId &&
+          closed.closedTxid === event.txid,
+      )
+    ) {
+      return;
+    }
+    closedListings.push({
+      ...listing,
+      closedAt: event.createdAt,
+      closedConfirmed: event.confirmed,
+      closedTxid: event.txid,
+    });
+    changed = true;
+  };
+
+  for (const tx of tokenProtocolSortedTransactions(
+    (Array.isArray(txs) ? txs : []).filter(Boolean),
+  )) {
+    const txid = transactionTxid(tx);
+    if (!txid || existingTxids.has(txid)) {
+      continue;
+    }
+
+    const vin = Array.isArray(tx.vin) ? tx.vin : [];
+    const vout = Array.isArray(tx.vout) ? tx.vout : [];
+    const txInputAddresses = inputAddresses(vin);
+    const actorAddress = txInputAddresses[0] ?? "";
+    if (!isValidBitcoinAddress(actorAddress, network)) {
+      continue;
+    }
+
+    const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
+    if (messages.length === 0) {
+      continue;
+    }
+
+    let remainingRegistrySats = tokenPaymentAmountBeforeProtocol(
+      vout,
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    );
+    const paymentOutputs = paymentOutputsBeforeTokenProtocol(vout);
+    const eventSpentOutpoints = spentOutpoints(vin);
+    const confirmed = transactionConfirmed(tx);
+    const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+    let acceptedTxMessage = false;
+
+    for (const message of messages) {
+      const parsed = parseTokenPayload(message, network);
+      if (!parsed) {
+        continue;
+      }
+
+      if (parsed.kind === "mint") {
+        if (
+          parsed.tokenId !== WORK_TOKEN_ID ||
+          parsed.amount !== WORK_TOKEN_MINT_AMOUNT ||
+          remainingRegistrySats < WORK_TOKEN_MINT_PRICE_SATS ||
+          confirmedSupply + pendingSupply + parsed.amount >
+            WORK_TOKEN_MAX_SUPPLY
+        ) {
+          continue;
+        }
+
+        remainingRegistrySats -= WORK_TOKEN_MINT_PRICE_SATS;
+        if (confirmed) {
+          confirmedSupply += parsed.amount;
+          holderBalances.set(
+            actorAddress,
+            (holderBalances.get(actorAddress) ?? 0) + parsed.amount,
+          );
+        } else {
+          pendingSupply += parsed.amount;
+        }
+        mints.push({
+          amount: parsed.amount,
+          confirmed,
+          createdAt,
+          dataBytes: proofProtocolDataBytesForVout(vout),
+          minterAddress: actorAddress,
+          network,
+          paidSats: WORK_TOKEN_MINT_PRICE_SATS,
+          registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+          ticker: WORK_TOKEN_TICKER,
+          tokenId: WORK_TOKEN_ID,
+          txid,
+        });
+        acceptedTxMessage = true;
+        changed = true;
+        continue;
+      }
+
+      if (parsed.kind === "send") {
+        if (
+          parsed.tokenId !== WORK_TOKEN_ID ||
+          remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+          (confirmed && spendableBalanceFor(actorAddress) < parsed.amount)
+        ) {
+          continue;
+        }
+
+        remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+        if (confirmed) {
+          holderBalances.set(
+            actorAddress,
+            (holderBalances.get(actorAddress) ?? 0) - parsed.amount,
+          );
+          holderBalances.set(
+            parsed.recipientAddress,
+            (holderBalances.get(parsed.recipientAddress) ?? 0) + parsed.amount,
+          );
+        }
+        transfers.push({
+          amount: parsed.amount,
+          confirmed,
+          createdAt,
+          dataBytes: proofProtocolDataBytesForVout(vout),
+          network,
+          paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+          recipientAddress: parsed.recipientAddress,
+          registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+          senderAddress: actorAddress,
+          ticker: WORK_TOKEN_TICKER,
+          tokenId: WORK_TOKEN_ID,
+          txid,
+        });
+        acceptedTxMessage = true;
+        changed = true;
+        continue;
+      }
+
+      if (parsed.kind === "list") {
+        const authorization = parsed.saleAuthorization;
+        if (
+          authorization.tokenId !== WORK_TOKEN_ID ||
+          authorization.registryAddress !== WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS ||
+          authorization.ticker !== WORK_TOKEN_TICKER ||
+          authorization.sellerAddress !== actorAddress ||
+          remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+          spendableBalanceFor(actorAddress) < authorization.amount ||
+          !tokenListingAnchorIsPresent(vout, authorization) ||
+          listings.has(txid)
+        ) {
+          continue;
+        }
+
+        remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+        listings.set(txid, {
+          amount: authorization.amount,
+          confirmed,
+          createdAt,
+          dataBytes: proofProtocolDataBytesForVout(vout),
+          listingId: txid,
+          network,
+          priceSats: authorization.priceSats,
+          registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+          saleAuthorization: authorization,
+          sellerAddress: actorAddress,
+          ticker: WORK_TOKEN_TICKER,
+          tokenId: WORK_TOKEN_ID,
+        });
+        acceptedTxMessage = true;
+        changed = true;
+        continue;
+      }
+
+      if (parsed.kind === "seal") {
+        const listing = listings.get(parsed.listingId);
+        const authorization = parsed.saleAuthorization;
+        if (
+          !listing ||
+          listing.sellerAddress !== actorAddress ||
+          remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+          !tokenSaleAuthorizationTermsMatch(
+            listing.saleAuthorization,
+            authorization,
+          ) ||
+          authorization.anchorTxid !== listing.listingId ||
+          !tokenSaleAuthorizationUsesSaleTicketAnchor(authorization)
+        ) {
+          continue;
+        }
+
+        remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+        listings.set(listing.listingId, {
+          ...listing,
+          saleAuthorization: authorization,
+          sealAt: createdAt,
+          sealConfirmed: confirmed,
+          sealDataBytes: proofProtocolDataBytesForVout(vout),
+          sealTxid: txid,
+        });
+        acceptedTxMessage = true;
+        changed = true;
+        continue;
+      }
+
+      if (parsed.kind === "delist") {
+        const listing = listings.get(parsed.listingId);
+        if (
+          !listing ||
+          listing.sellerAddress !== actorAddress ||
+          remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+          !spendsTokenListingAnchor(eventSpentOutpoints, listing)
+        ) {
+          continue;
+        }
+
+        remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+        closeListing(listing, { confirmed, createdAt, txid });
+        listings.delete(listing.listingId);
+        acceptedTxMessage = true;
+        changed = true;
+        continue;
+      }
+
+      if (parsed.kind === "buy") {
+        const listing = listings.get(parsed.listingId);
+        const listingHasValidSaleTicketSpend = listing
+          ? tokenSaleAuthorizationUsesSaleTicketAnchor(
+              listing.saleAuthorization,
+            ) || tokenListingAnchorSpendMatchesAuthorization(vin, listing)
+          : false;
+        if (
+          !listing ||
+          !txInputAddresses.includes(parsed.buyerAddress) ||
+          remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+          !listingHasValidSaleTicketSpend ||
+          (listing.saleAuthorization.buyerAddress &&
+            listing.saleAuthorization.buyerAddress !== parsed.buyerAddress) ||
+          tokenListingIsExpired(listing) ||
+          !spendsTokenListingAnchor(eventSpentOutpoints, listing) ||
+          paymentAmountFromSnapshots(paymentOutputs, listing.sellerAddress) <
+            tokenSellerPaymentRequiredSats(listing) ||
+          (confirmed &&
+            (holderBalances.get(listing.sellerAddress) ?? 0) < listing.amount)
+        ) {
+          continue;
+        }
+
+        remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+        closeListing(listing, { confirmed, createdAt, txid });
+        listings.delete(listing.listingId);
+        if (confirmed) {
+          holderBalances.set(
+            listing.sellerAddress,
+            (holderBalances.get(listing.sellerAddress) ?? 0) - listing.amount,
+          );
+          holderBalances.set(
+            parsed.buyerAddress,
+            (holderBalances.get(parsed.buyerAddress) ?? 0) + listing.amount,
+          );
+        }
+        sales.push({
+          amount: listing.amount,
+          buyerAddress: parsed.buyerAddress,
+          confirmed,
+          createdAt,
+          listingId: listing.listingId,
+          network,
+          paidSats:
+            tokenSellerPaymentRequiredSats(listing) +
+            TOKEN_MIN_MUTATION_PRICE_SATS,
+          priceSats: listing.priceSats,
+          registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+          sellerAddress: listing.sellerAddress,
+          ticker: WORK_TOKEN_TICKER,
+          tokenId: WORK_TOKEN_ID,
+          txid,
+        });
+        acceptedTxMessage = true;
+        changed = true;
+      }
+    }
+
+    if (acceptedTxMessage) {
+      existingTxids.add(txid);
+    }
+  }
+
+  if (!changed) {
+    return state;
+  }
+
+  const holders = [...holderBalances.entries()]
+    .filter(([, balance]) => balance > 0)
+    .map(([address, balance]) => ({ address, balance }))
+    .sort(
+      (left, right) =>
+        right.balance - left.balance ||
+        left.address.localeCompare(right.address),
+    );
+  const activeListings = [...listings.values()]
+    .filter((listing) => !tokenListingIsExpired(listing))
+    .sort(
+      (left, right) =>
+        Number(right.confirmed) - Number(left.confirmed) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.listingId.localeCompare(right.listingId),
+    );
+  const sortedMints = mints.sort(
+    (left, right) =>
+      Number(right.confirmed) - Number(left.confirmed) ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      left.txid.localeCompare(right.txid),
+  );
+  const sortedSales = sales.sort(
+    (left, right) =>
+      Number(right.confirmed) - Number(left.confirmed) ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      left.txid.localeCompare(right.txid),
+  );
+  const sortedTransfers = transfers.sort(
+    (left, right) =>
+      Number(right.confirmed) - Number(left.confirmed) ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      left.txid.localeCompare(right.txid),
+  );
+
+  return {
+    ...state,
+    closedListings: sortClosedTokenListings(closedListings),
+    confirmedSupply,
+    holders,
+    indexedAt: new Date().toISOString(),
+    listings: activeListings,
+    mints: sortedMints,
+    pendingSupply,
+    sales: sortedSales,
+    stats: {
+      ...(state.stats ?? {}),
+      confirmedMints: sortedMints.filter((mint) => mint.confirmed).length,
+      confirmedTransfers: sortedTransfers.filter((transfer) => transfer.confirmed)
+        .length,
+      confirmedTokens: (Array.isArray(state.tokens) ? state.tokens : []).filter(
+        (token) => token.confirmed,
+      ).length,
+      holders: holders.length,
+      pendingMints: sortedMints.filter((mint) => !mint.confirmed).length,
+      pendingTransfers: sortedTransfers.filter((transfer) => !transfer.confirmed)
+        .length,
+      pendingTokens: (Array.isArray(state.tokens) ? state.tokens : []).filter(
+        (token) => !token.confirmed,
+      ).length,
+    },
+    transfers: sortedTransfers,
+  };
+}
+
 function cacheLiveWorkTokenState(network, state) {
   const scope = WORK_TOKEN_ID;
   cacheTokenPayload(network, scope, state);
@@ -8190,24 +8601,62 @@ async function liveWorkTokenState(network, cachedWorkTokenState) {
         } catch {
           failedFetches += 1;
           return null;
-        } finally {
-          knownTxids.add(txid);
         }
       },
     );
-  } else {
-    for (const tx of txs) {
-      const txid = transactionTxid(tx);
-      if (txid) {
-        knownTxids.add(txid);
-      }
-    }
   }
 
   if (failedFetches > 0) {
     console.error(
       `WORK live delta hydration was partial for ${network}: ${failedFetches} of ${deltaTxids.length} transaction lookups failed.`,
     );
+  }
+
+  txs = txs.filter(Boolean);
+  if (workTokenDeltaHasNonMintActions(txs, network)) {
+    try {
+      const replayedState = await workTokenPayload(network, state);
+      if (!tokenPayloadLooksWorse(replayedState, state)) {
+        cacheLiveWorkTokenState(network, replayedState);
+        addTokenStateTxids(knownTxids, replayedState);
+        console.log(
+          `Replayed full WORK registry after non-mint delta for ${network}.`,
+        );
+        return replayedState;
+      }
+
+      const nextMetrics = JSON.stringify(tokenPayloadMetrics(replayedState));
+      const previousMetrics = JSON.stringify(tokenPayloadMetrics(state));
+      console.error(
+        `Rejected WORK non-mint delta replay regression for ${network}: ${nextMetrics} < ${previousMetrics}.`,
+      );
+    } catch (error) {
+      console.error(
+        `WORK non-mint delta replay failed for ${network}: ${errorSummary(error)}`,
+      );
+    }
+
+    const deltaState = await tokenPayloadWithSpendableListings(
+      workTokenStateWithDeltaTransactions(state, txs, network),
+      network,
+    );
+    if (deltaState !== state && !tokenPayloadLooksWorse(deltaState, state)) {
+      cacheLiveWorkTokenState(network, deltaState);
+      addTokenStateTxids(knownTxids, deltaState);
+      console.log(
+        `Applied incremental WORK non-mint delta for ${network}.`,
+      );
+      return deltaState;
+    }
+
+    return state;
+  }
+
+  for (const tx of txs) {
+    const txid = transactionTxid(tx);
+    if (txid) {
+      knownTxids.add(txid);
+    }
   }
 
   const existingMints = Array.isArray(state.mints) ? state.mints : [];
