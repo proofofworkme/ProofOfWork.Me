@@ -12,6 +12,8 @@ const INFINITY_BOND_REGRESSION_TXID =
   "411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891";
 const PAGINATION_GAP_INFINITY_BOND_TXID =
   "b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34";
+const HISTORY_AUDIT_PAGE_LIMIT = 200;
+const HISTORY_AUDIT_MAX_PAGES = 10;
 const MIN_INFINITY_BOND_FLOW_SATS = 47_234_999;
 const failures = [];
 
@@ -26,6 +28,17 @@ async function readJson(path) {
     throw new Error(`${path} returned HTTP ${response.status}`);
   }
   return response.json();
+}
+
+function appendQuery(path, params) {
+  const entries = Object.entries(params).filter(
+    ([, value]) => value !== undefined && value !== "",
+  );
+  if (!entries.length) {
+    return path;
+  }
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}${new URLSearchParams(entries)}`;
 }
 
 function expect(name, condition) {
@@ -64,8 +77,42 @@ function items(payload) {
   return Array.isArray(payload?.items) ? payload.items : [];
 }
 
+async function readHistoryUntil(path, predicate) {
+  const collected = [];
+  let cursor = "";
+
+  for (let page = 0; page < HISTORY_AUDIT_MAX_PAGES; page += 1) {
+    const payload = await readJson(
+      appendQuery(path, {
+        cursor,
+        limit: String(HISTORY_AUDIT_PAGE_LIMIT),
+      }),
+    );
+    const pageItems = items(payload);
+    collected.push(...pageItems);
+    if (pageItems.some(predicate)) {
+      return collected;
+    }
+    cursor = String(payload?.nextCursor ?? "");
+    if (!cursor) {
+      break;
+    }
+  }
+
+  return collected;
+}
+
 function checkNames(payload) {
   return new Set((payload?.checks ?? []).map((check) => check?.name));
+}
+
+function isGullishBuyerTokenSale(item) {
+  return (
+    item.kind === "token-sale" &&
+    item.txid === GULLISH_TXID &&
+    Array.isArray(item.participants) &&
+    item.participants.includes(GULLISH_BUYER)
+  );
 }
 
 const [
@@ -74,7 +121,6 @@ const [
   growthSummary,
   btcUsdPrice,
   txLog,
-  buyerLog,
   infinityBondLog,
   paginationGapInfinityBondLog,
 ] =
@@ -84,10 +130,14 @@ const [
     readJson("/api/v1/growth-summary"),
     readJson("/api/v1/prices/btc-usd?fresh=1"),
     readJson(`/api/v1/log-history?q=${GULLISH_TXID}`),
-    readJson(`/api/v1/log-history?q=${GULLISH_BUYER}`),
     readJson(`/api/v1/log-history?q=${INFINITY_BOND_REGRESSION_TXID}`),
     readJson(`/api/v1/log-history?q=${PAGINATION_GAP_INFINITY_BOND_TXID}`),
   ]);
+
+const buyerLogItems = await readHistoryUntil(
+  `/api/v1/log-history?q=${GULLISH_BUYER}`,
+  isGullishBuyerTokenSale,
+);
 
 expect("consistency endpoint is green", consistency.ok === true);
 const consistencyChecks = checkNames(consistency);
@@ -178,13 +228,7 @@ expect(
 );
 expect(
   "Gullish buyer address search returns sale participant event",
-  items(buyerLog).some(
-    (item) =>
-      item.kind === "token-sale" &&
-      item.txid === GULLISH_TXID &&
-      Array.isArray(item.participants) &&
-      item.participants.includes(GULLISH_BUYER),
-  ),
+  buyerLogItems.some(isGullishBuyerTokenSale),
 );
 
 if (failures.length) {
