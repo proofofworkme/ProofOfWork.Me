@@ -9173,25 +9173,43 @@ async function fetchTokenSupplyState(
   if (fresh) {
     params.set("fresh", "1");
   }
-  if (tokenScope.trim()) {
-    params.set("asset", tokenScope.trim());
+  const trimmedTokenScope = tokenScope.trim();
+  const normalizedTokenScope = /^[0-9a-fA-F]{64}$/u.test(trimmedTokenScope)
+    ? trimmedTokenScope.toLowerCase()
+    : normalizeTokenTicker(trimmedTokenScope);
+  if (trimmedTokenScope) {
+    params.set("asset", trimmedTokenScope);
   }
   const query = params.toString();
   const payload = await fetchProofApiJson<PowTokenApiResponse>(
     query ? `/api/v1/token-summary?${query}` : "/api/v1/token-summary",
     targetNetwork,
   );
+  const tokens = Array.isArray(payload.tokens) ? payload.tokens : [];
+  const scopedToken = normalizedTokenScope
+    ? tokens.find(
+        (token) =>
+          token.tokenId === normalizedTokenScope ||
+          token.ticker === normalizedTokenScope,
+      )
+    : undefined;
+  const scopedConfirmedSupply = scopedToken?.confirmedSupply;
+  const scopedPendingSupply = scopedToken?.pendingSupply;
   return {
     creationSats: Number.isSafeInteger(payload.creationSats)
       ? Number(payload.creationSats)
       : 0,
-    confirmedSupply: Number.isSafeInteger(payload.confirmedSupply)
+    confirmedSupply: Number.isSafeInteger(scopedConfirmedSupply)
+      ? Number(scopedConfirmedSupply)
+      : Number.isSafeInteger(payload.confirmedSupply)
       ? Number(payload.confirmedSupply)
       : 0,
-    pendingSupply: Number.isSafeInteger(payload.pendingSupply)
+    pendingSupply: Number.isSafeInteger(scopedPendingSupply)
+      ? Number(scopedPendingSupply)
+      : Number.isSafeInteger(payload.pendingSupply)
       ? Number(payload.pendingSupply)
       : 0,
-    tokens: Array.isArray(payload.tokens) ? payload.tokens : [],
+    tokens,
   };
 }
 

@@ -7718,6 +7718,116 @@ function tokenAggregateSummaries(payload) {
   return summaries;
 }
 
+function scopedTokenPayloadFromState(tokenState, scope) {
+  const normalizedScope = normalizeTokenScope(scope);
+  if (!normalizedScope) {
+    return tokenState;
+  }
+
+  const tokens = (tokenState.tokens ?? []).filter((token) =>
+    tokenMatchesScope(token, normalizedScope),
+  );
+  const scopedTokenIds = new Set(tokens.map((token) => token.tokenId));
+  const matchesScopedToken = (item) => scopedTokenIds.has(item?.tokenId);
+  const closedListings = (tokenState.closedListings ?? []).filter(
+    matchesScopedToken,
+  );
+  const listings = (tokenState.listings ?? []).filter(matchesScopedToken);
+  const mints = (tokenState.mints ?? []).filter(matchesScopedToken);
+  const sales = (tokenState.sales ?? []).filter(matchesScopedToken);
+  const transfers = (tokenState.transfers ?? []).filter(matchesScopedToken);
+  const summaries = tokenAggregateSummaries({
+    listings,
+    mints,
+    sales,
+    tokens,
+    transfers,
+  });
+  const balances = new Map();
+  const addBalance = (address, amount) => {
+    if (!address || !Number.isFinite(amount) || amount === 0) {
+      return;
+    }
+
+    balances.set(address, (balances.get(address) ?? 0) + amount);
+  };
+  for (const mint of mints) {
+    if (mint.confirmed) {
+      addBalance(mint.minterAddress, mint.amount);
+    }
+  }
+  for (const transfer of transfers) {
+    if (transfer.confirmed) {
+      addBalance(transfer.senderAddress, -transfer.amount);
+      addBalance(transfer.recipientAddress, transfer.amount);
+    }
+  }
+  for (const sale of sales) {
+    if (sale.confirmed) {
+      addBalance(sale.sellerAddress, -sale.amount);
+      addBalance(sale.buyerAddress, sale.amount);
+    }
+  }
+
+  const confirmedSupply = tokens.reduce((total, token) => {
+    const summary = summaries.get(token.tokenId);
+    return total + Math.max(
+      summary?.confirmedSupply ?? 0,
+      Number.isFinite(token.confirmedSupply) ? Number(token.confirmedSupply) : 0,
+    );
+  }, 0);
+  const pendingSupply = tokens.reduce((total, token) => {
+    const summary = summaries.get(token.tokenId);
+    return total + Math.max(
+      summary?.pendingSupply ?? 0,
+      Number.isFinite(token.pendingSupply) ? Number(token.pendingSupply) : 0,
+    );
+  }, 0);
+  const holders = [...balances.entries()]
+    .filter(([, balance]) => balance > 0)
+    .map(([address, balance]) => ({ address, balance }))
+    .sort(
+      (left, right) =>
+        right.balance - left.balance ||
+        left.address.localeCompare(right.address),
+    );
+
+  const creationSats = tokens.reduce(
+    (total, token) => total + (Number(token.creationFeeSats) || 0),
+    0,
+  );
+
+  return {
+    ...tokenState,
+    closedListings,
+    creationSats,
+    confirmedSupply,
+    holders,
+    listings,
+    mints,
+    pendingSupply,
+    sales,
+    tokens,
+    transfers,
+    stats: {
+      ...(tokenState.stats ?? {}),
+      confirmedMints: mints.filter((mint) => mint.confirmed).length,
+      confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
+        .length,
+      confirmedTokens: tokens.filter((token) => token.confirmed).length,
+      creationSats,
+      holders: holders.length,
+      pendingMints: mints.filter((mint) => !mint.confirmed).length,
+      pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+        .length,
+      pendingTokens: tokens.filter((token) => !token.confirmed).length,
+      registries: new Set(
+        tokens.map((token) => token.registryAddress).filter(Boolean),
+      ).size,
+    },
+  };
+}
+
 async function fastTokenPayloadSnapshot(network, tokenScope = "") {
   const scope = normalizeTokenScope(tokenScope);
   const payloadKey = `payload:token:${network}:${scope}`;
@@ -9038,18 +9148,7 @@ function ledgerTokenStateForScope(ledger, scope) {
   }
 
   const tokenState = ledger.tokenState ?? emptyTokenPayloadSnapshot(ledger.network);
-  const matches = (item) => item?.tokenId === scope || item?.ticker === scope;
-
-  return {
-    ...tokenState,
-    closedListings: (tokenState.closedListings ?? []).filter(matches),
-    holders: (tokenState.holders ?? []).filter(matches),
-    listings: (tokenState.listings ?? []).filter(matches),
-    mints: (tokenState.mints ?? []).filter(matches),
-    sales: (tokenState.sales ?? []).filter(matches),
-    tokens: (tokenState.tokens ?? []).filter(matches),
-    transfers: (tokenState.transfers ?? []).filter(matches),
-  };
+  return scopedTokenPayloadFromState(tokenState, scope);
 }
 
 function ledgerSnapshotChecks({
