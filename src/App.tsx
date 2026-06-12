@@ -595,6 +595,16 @@ type PowTokenClosedListing = PowTokenListing & {
   closedVin?: number;
 };
 
+type PendingTokenListingSeal = {
+  listingId: string;
+  network: BitcoinNetwork;
+  saleAuthorization: PowTokenSaleAuthorization;
+  sealAt: string;
+  sealTxid: string;
+  sellerAddress: string;
+  tokenId: string;
+};
+
 type PowTokenSale = {
   amount: number;
   buyerAddress: string;
@@ -1068,6 +1078,7 @@ const DRAFT_KEY_PREFIX = "proofofwork.draft.v1";
 const MAIL_PREFS_KEY = "proofofwork.mailPrefs.v1";
 const CONTACTS_KEY = "proofofwork.contacts.v1";
 const CUSTOM_FOLDERS_KEY = "proofofwork.customFolders.v1";
+const TOKEN_PENDING_SEALS_KEY = "proofofwork.tokenPendingSeals.v1";
 const BACKUP_APP = "ProofOfWork.Me";
 const BACKUP_VERSION = 1;
 const BACKUP_MAX_BYTES = 5 * 1024 * 1024;
@@ -5488,6 +5499,36 @@ function tokenListingHasPendingSaleTicketSeal(listing: PowTokenListing) {
   );
 }
 
+function tokenListingSealRank(listing: PowTokenListing) {
+  if (tokenListingHasConfirmedSaleTicketSeal(listing)) {
+    return 2;
+  }
+
+  return tokenListingHasPendingSaleTicketSeal(listing) ? 1 : 0;
+}
+
+function mergeTokenListingRecord(
+  current: PowTokenListing | undefined,
+  incoming: PowTokenListing,
+) {
+  if (!current) {
+    return incoming;
+  }
+
+  if (tokenListingSealRank(current) > tokenListingSealRank(incoming)) {
+    return {
+      ...incoming,
+      saleAuthorization: current.saleAuthorization,
+      sealAt: current.sealAt,
+      sealConfirmed: current.sealConfirmed,
+      sealDataBytes: current.sealDataBytes,
+      sealTxid: current.sealTxid,
+    };
+  }
+
+  return incoming;
+}
+
 function tokenSaleAuthorizationTermsMatch(
   left: PowTokenSaleAuthorization,
   right: PowTokenSaleAuthorization,
@@ -6558,10 +6599,134 @@ function mergeTokenListingsById(
     ]),
   );
   for (const listing of incoming) {
-    byKey.set(`${listing.network}:${listing.listingId}`, listing);
+    const key = `${listing.network}:${listing.listingId}`;
+    byKey.set(key, mergeTokenListingRecord(byKey.get(key), listing));
   }
 
   return [...byKey.values()];
+}
+
+function normalizePendingTokenListingSeal(
+  value: unknown,
+): PendingTokenListingSeal | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const item = value as Partial<PendingTokenListingSeal>;
+  const network =
+    item.network === "livenet" ||
+    item.network === "testnet" ||
+    item.network === "testnet4"
+      ? item.network
+      : undefined;
+  const listingId = String(item.listingId ?? "").trim().toLowerCase();
+  const sealTxid = String(item.sealTxid ?? "").trim().toLowerCase();
+  const sellerAddress = String(item.sellerAddress ?? "").trim();
+  const tokenId = String(item.tokenId ?? "").trim().toLowerCase();
+
+  if (
+    !network ||
+    !/^[0-9a-f]{64}$/u.test(listingId) ||
+    !/^[0-9a-f]{64}$/u.test(sealTxid) ||
+    !/^[0-9a-f]{64}$/u.test(tokenId) ||
+    !sellerAddress ||
+    !item.saleAuthorization ||
+    !tokenSaleAuthorizationUsesSaleTicketAnchor(item.saleAuthorization)
+  ) {
+    return undefined;
+  }
+
+  return {
+    listingId,
+    network,
+    saleAuthorization: item.saleAuthorization,
+    sealAt:
+      typeof item.sealAt === "string" && !Number.isNaN(Date.parse(item.sealAt))
+        ? item.sealAt
+        : new Date().toISOString(),
+    sealTxid,
+    sellerAddress,
+    tokenId,
+  };
+}
+
+function loadPendingTokenListingSeals() {
+  try {
+    const stored = localStorage.getItem(TOKEN_PENDING_SEALS_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed)
+      ? parsed.flatMap((item) => {
+          const seal = normalizePendingTokenListingSeal(item);
+          return seal ? [seal] : [];
+        })
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePendingTokenListingSeals(seals: PendingTokenListingSeal[]) {
+  const byKey = new Map(
+    seals.map((seal) => [`${seal.network}:${seal.listingId}`, seal]),
+  );
+  localStorage.setItem(
+    TOKEN_PENDING_SEALS_KEY,
+    JSON.stringify([...byKey.values()]),
+  );
+}
+
+function savePendingTokenListingSeal(
+  listing: PowTokenListing,
+  saleAuthorization: PowTokenSaleAuthorization,
+  sealTxid: string,
+) {
+  const seal = normalizePendingTokenListingSeal({
+    listingId: listing.listingId,
+    network: listing.network,
+    saleAuthorization,
+    sealAt: new Date().toISOString(),
+    sealTxid,
+    sellerAddress: listing.sellerAddress,
+    tokenId: listing.tokenId,
+  });
+  if (!seal) {
+    return;
+  }
+
+  savePendingTokenListingSeals([...loadPendingTokenListingSeals(), seal]);
+}
+
+function applyPendingTokenListingSeals(listings: PowTokenListing[]) {
+  const pendingByKey = new Map(
+    loadPendingTokenListingSeals().map((seal) => [
+      `${seal.network}:${seal.listingId}`,
+      seal,
+    ]),
+  );
+  if (pendingByKey.size === 0) {
+    return listings;
+  }
+
+  return listings.map((listing) => {
+    const seal = pendingByKey.get(`${listing.network}:${listing.listingId}`);
+    if (
+      !seal ||
+      seal.sellerAddress !== listing.sellerAddress ||
+      seal.tokenId !== listing.tokenId ||
+      tokenListingSealRank(listing) > 0
+    ) {
+      return listing;
+    }
+
+    return {
+      ...listing,
+      saleAuthorization: seal.saleAuthorization,
+      sealAt: seal.sealAt,
+      sealConfirmed: false,
+      sealTxid: seal.sealTxid,
+    };
+  });
 }
 
 function tokenHolderMatchesSearch(holder: PowTokenHolder, query: string) {
@@ -7150,6 +7315,47 @@ async function fetchAddressTransactions(
   targetNetwork: BitcoinNetwork,
 ) {
   return fetchAddressTransactionsPage(targetAddress, targetNetwork, "txs");
+}
+
+async function fetchPendingTokenListingSealsForAddress(
+  targetAddress: string,
+  targetNetwork: BitcoinNetwork,
+) {
+  const txs = await fetchAddressTransactionsPage(
+    targetAddress,
+    targetNetwork,
+    "txs/mempool",
+  );
+
+  return txs.flatMap((tx): PendingTokenListingSeal[] => {
+    const txid = transactionTxid(tx);
+    const vout = Array.isArray(tx.vout)
+      ? (tx.vout as Array<Record<string, unknown>>)
+      : [];
+    if (!txid || transactionConfirmed(tx)) {
+      return [];
+    }
+
+    return decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX).flatMap(
+      (message): PendingTokenListingSeal[] => {
+        const parsed = parseTokenPayload(message, targetNetwork);
+        if (parsed?.kind !== "seal") {
+          return [];
+        }
+
+        const seal = normalizePendingTokenListingSeal({
+          listingId: parsed.listingId,
+          network: targetNetwork,
+          saleAuthorization: parsed.saleAuthorization,
+          sealAt: new Date().toISOString(),
+          sealTxid: txid,
+          sellerAddress: parsed.saleAuthorization.sellerAddress,
+          tokenId: parsed.saleAuthorization.tokenId,
+        });
+        return seal && seal.sellerAddress === targetAddress ? [seal] : [];
+      },
+    );
+  });
 }
 
 function transactionTxid(tx: Record<string, unknown>) {
@@ -12263,26 +12469,35 @@ export default function App() {
     const tokenScope = walletTransferToken.tokenId;
 
     const hydrateWalletListings = async () => {
-      const page = await fetchTokenHistoryPage<PowTokenListing>(
-        "livenet",
-        "listings",
-        {
+      const [page, pendingSeals] = await Promise.all([
+        fetchTokenHistoryPage<PowTokenListing>("livenet", "listings", {
           fresh: true,
           pageSize: 200,
           query: walletAddress,
           tokenScope,
-        },
-      );
+        }),
+        fetchPendingTokenListingSealsForAddress(walletAddress, "livenet").catch(
+          () => [],
+        ),
+      ]);
       if (cancelled) {
         return;
       }
+      if (pendingSeals.length > 0) {
+        savePendingTokenListingSeals([
+          ...loadPendingTokenListingSeals(),
+          ...pendingSeals,
+        ]);
+      }
 
-      const ownedListings = (Array.isArray(page.items) ? page.items : []).filter(
-        (listing) =>
-          listing.network === "livenet" &&
-          listing.tokenId === tokenScope &&
-          listing.sellerAddress === walletAddress &&
-          !tokenListingIsExpired(listing),
+      const ownedListings = applyPendingTokenListingSeals(
+        (Array.isArray(page.items) ? page.items : []).filter(
+          (listing) =>
+            listing.network === "livenet" &&
+            listing.tokenId === tokenScope &&
+            listing.sellerAddress === walletAddress &&
+            !tokenListingIsExpired(listing),
+        ),
       );
       if (ownedListings.length > 0) {
         setTokenListings((current) =>
@@ -13218,7 +13433,7 @@ export default function App() {
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
           setTokenTransfers(state.transfers);
-          setTokenListings(state.listings);
+          setTokenListings(applyPendingTokenListingSeals(state.listings));
           setTokenClosedListings(state.closedListings);
           setTokenSales(state.sales);
           setTokenCreationSats(state.creationSats);
@@ -14291,7 +14506,7 @@ export default function App() {
         setTokenDefinitions(snapshot.token.tokens);
         setTokenMints(snapshot.token.mints);
         setTokenTransfers(snapshot.token.transfers);
-        setTokenListings(snapshot.token.listings);
+        setTokenListings(applyPendingTokenListingSeals(snapshot.token.listings));
         setTokenClosedListings(snapshot.token.closedListings);
         setTokenSales(snapshot.token.sales);
         setTokenCreationSats(snapshot.token.creationSats);
@@ -14416,7 +14631,7 @@ export default function App() {
         setTokenDefinitions(state.tokens);
         setTokenMints(state.mints);
         setTokenTransfers(state.transfers);
-        setTokenListings(state.listings);
+        setTokenListings(applyPendingTokenListingSeals(state.listings));
         setTokenClosedListings(state.closedListings);
         setTokenSales(state.sales);
         setTokenCreationSats(state.creationSats);
@@ -14740,7 +14955,7 @@ export default function App() {
       setTokenDefinitions(tokenState.tokens);
       setTokenMints(tokenState.mints);
       setTokenTransfers(tokenState.transfers);
-      setTokenListings(tokenState.listings);
+      setTokenListings(applyPendingTokenListingSeals(tokenState.listings));
       setTokenClosedListings(tokenState.closedListings);
       setTokenSales(tokenState.sales);
       setTokenCreationSats(tokenState.creationSats);
@@ -14918,7 +15133,7 @@ export default function App() {
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
           setTokenTransfers(state.transfers);
-          setTokenListings(state.listings);
+          setTokenListings(applyPendingTokenListingSeals(state.listings));
           setTokenClosedListings(state.closedListings);
           setTokenSales(state.sales);
           setTokenCreationSats(state.creationSats);
@@ -17402,7 +17617,7 @@ export default function App() {
       setTokenDefinitions(latestState.tokens);
       setTokenMints(latestState.mints);
       setTokenTransfers(latestState.transfers);
-      setTokenListings(latestState.listings);
+      setTokenListings(applyPendingTokenListingSeals(latestState.listings));
       setTokenClosedListings(latestState.closedListings);
       setTokenSales(latestState.sales);
       setTokenCreationSats(latestState.creationSats);
@@ -17618,10 +17833,17 @@ export default function App() {
         psbtHex: paymentPsbt.psbtHex,
         wallet: window.unisat,
       });
+      savePendingTokenListingSeal(listing, sealedAuthorization, txid);
       setTokenListings((current) =>
         current.map((item) =>
           item.listingId === listing.listingId
-            ? { ...item, saleAuthorization: sealedAuthorization, sealTxid: txid }
+            ? {
+                ...item,
+                saleAuthorization: sealedAuthorization,
+                sealAt: new Date().toISOString(),
+                sealConfirmed: false,
+                sealTxid: txid,
+              }
             : item,
         ),
       );

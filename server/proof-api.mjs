@@ -11705,7 +11705,9 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await fetchAddressTransactionsPage(address, network, addressPath),
+        addressPath === "txs/mempool"
+          ? await fetchAddressMempoolTransactions(address, network)
+          : await fetchAddressTransactionsPage(address, network, addressPath),
         "no-store",
       );
       return;
