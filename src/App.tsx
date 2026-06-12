@@ -25520,11 +25520,18 @@ function WorkFloorChart({
     padTop +
     (1 - Math.max(0, Math.min(1, (value - yMin) / (yMax - yMin)))) *
       plotHeight;
+  const firstPoint = visiblePoints[0];
+  const middlePoint = visiblePoints[Math.floor((visiblePoints.length - 1) / 2)];
   const latestPoint = visiblePoints[visiblePoints.length - 1];
   const yTicks = [yMin, (yMin + yMax) / 2, yMax];
+  const middleTickHasRoom =
+    middlePoint !== firstPoint &&
+    middlePoint !== latestPoint &&
+    Math.abs(xFor(middlePoint.years) - xFor(firstPoint.years)) >= 170 &&
+    Math.abs(xFor(latestPoint.years) - xFor(middlePoint.years)) >= 170;
   const xTicks = [
-    visiblePoints[0],
-    visiblePoints[Math.floor((visiblePoints.length - 1) / 2)],
+    firstPoint,
+    ...(middleTickHasRoom ? [middlePoint] : []),
     latestPoint,
   ].filter((point, index, list) => point && list.indexOf(point) === index);
 
@@ -25783,11 +25790,18 @@ function TokenMarketPriceChart({
     padTop +
     (1 - Math.max(0, Math.min(1, (value - yMin) / (yMax - yMin)))) *
       plotHeight;
+  const firstPoint = visiblePoints[0];
+  const middlePoint = visiblePoints[Math.floor((visiblePoints.length - 1) / 2)];
   const latestPoint = visiblePoints[visiblePoints.length - 1];
   const yTicks = [yMin, (yMin + yMax) / 2, yMax];
+  const middleTickHasRoom =
+    middlePoint !== firstPoint &&
+    middlePoint !== latestPoint &&
+    Math.abs(xFor(middlePoint) - xFor(firstPoint)) >= 170 &&
+    Math.abs(xFor(latestPoint) - xFor(middlePoint)) >= 170;
   const xTicks = [
-    visiblePoints[0],
-    visiblePoints[Math.floor((visiblePoints.length - 1) / 2)],
+    firstPoint,
+    ...(middleTickHasRoom ? [middlePoint] : []),
     latestPoint,
   ].filter((point, index, list) => point && list.indexOf(point) === index);
 

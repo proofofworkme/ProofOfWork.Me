@@ -4588,10 +4588,10 @@ pre {
 .id-launch-stats strong {
   font-size: clamp(1.1rem, 2vw, 1.6rem);
   font-variant-numeric: tabular-nums;
-  line-height: 1;
-  overflow-wrap: normal;
-  white-space: nowrap;
-  word-break: keep-all;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .id-launch-stats span {
@@ -5172,9 +5172,10 @@ pre {
 
 .token-workspace-compact .id-launch-stats strong {
   font-size: clamp(1rem, 1.35vw, 1.28rem);
-  overflow-wrap: normal;
-  white-space: nowrap;
-  word-break: normal;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .token-workspace-compact .token-detail-page,
