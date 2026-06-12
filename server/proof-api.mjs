@@ -3183,7 +3183,62 @@ async function tokenMarketTxIsVisible(txid, network) {
   return Boolean(tx);
 }
 
+async function tokenMarketTxIsConfirmed(txid, network) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    return false;
+  }
+
+  try {
+    return transactionConfirmed(await fetchTransaction(normalizedTxid, network));
+  } catch {
+    return false;
+  }
+}
+
+async function reconcileCachedTokenListingSeal(listing, network) {
+  const sealTxid = String(listing?.sealTxid ?? "").trim().toLowerCase();
+  if (
+    listing?.sealConfirmed !== false ||
+    !/^[0-9a-f]{64}$/u.test(sealTxid) ||
+    !tokenSaleAuthorizationUsesSaleTicketAnchor(listing?.saleAuthorization)
+  ) {
+    return listing;
+  }
+
+  return (await tokenMarketTxIsConfirmed(sealTxid, network))
+    ? { ...listing, sealConfirmed: true, sealTxid }
+    : listing;
+}
+
+async function tokenStateWithReconciledListingSeals(payload, network) {
+  if (!payload) {
+    return payload;
+  }
+
+  const [listings, closedListings] = await Promise.all([
+    mapWithConcurrency(
+      Array.isArray(payload.listings) ? payload.listings : [],
+      TX_FETCH_CONCURRENCY,
+      (listing) => reconcileCachedTokenListingSeal(listing, network),
+    ),
+    mapWithConcurrency(
+      Array.isArray(payload.closedListings) ? payload.closedListings : [],
+      TX_FETCH_CONCURRENCY,
+      (listing) => reconcileCachedTokenListingSeal(listing, network),
+    ),
+  ]);
+
+  return {
+    ...payload,
+    closedListings,
+    listings,
+  };
+}
+
 async function reconcileCachedTokenClosedListing(closedListing, network) {
+  closedListing = await reconcileCachedTokenListingSeal(closedListing, network);
+
   if (closedListing?.closedConfirmed) {
     return { kind: "closed", listing: closedListing };
   }
@@ -3225,6 +3280,7 @@ async function reconcileCachedTokenClosedListing(closedListing, network) {
 }
 
 async function reconcileCachedTokenMarketPayload(payload, network) {
+  payload = await tokenStateWithReconciledListingSeals(payload, network);
   const activeListingsById = new Map(
     (Array.isArray(payload?.listings) ? payload.listings : [])
       .filter((listing) => listing?.listingId)
@@ -8605,21 +8661,36 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     (Array.isArray(txs) ? txs : [])
       .filter(transactionConfirmed)
       .map(transactionTxid)
-      .filter(Boolean),
+      .filter(Boolean)
+      .map((txid) => txid.toLowerCase()),
   );
-  const shouldDropConfirmedDeltaMatch = (item) => {
+  const matchesIncomingConfirmedTxid = (...values) => {
     if (incomingConfirmedTxids.size === 0) {
       return false;
     }
-    const matches = (...values) =>
-      values.some((value) =>
-        typeof value === "string" &&
-        incomingConfirmedTxids.has(value.toLowerCase()),
-      );
+    return values.some((value) =>
+      typeof value === "string" &&
+      incomingConfirmedTxids.has(value.toLowerCase()),
+    );
+  };
+  const confirmedPendingSealTxids = new Set();
+  for (const item of [
+    ...(Array.isArray(state?.listings) ? state.listings : []),
+    ...(Array.isArray(state?.closedListings) ? state.closedListings : []),
+  ]) {
+    if (
+      item?.sealConfirmed === false &&
+      matchesIncomingConfirmedTxid(item.sealTxid)
+    ) {
+      confirmedPendingSealTxids.add(String(item.sealTxid).toLowerCase());
+    }
+  }
+  const shouldDropConfirmedDeltaMatch = (item) => {
     return (
-      (item?.confirmed === false && matches(item.txid, item.listingId)) ||
-      (item?.sealConfirmed === false && matches(item.sealTxid)) ||
-      (item?.closedConfirmed === false && matches(item.closedTxid))
+      (item?.confirmed === false &&
+        matchesIncomingConfirmedTxid(item.txid, item.listingId)) ||
+      (item?.closedConfirmed === false &&
+        matchesIncomingConfirmedTxid(item.closedTxid))
     );
   };
   const stateMints = workMintRowsWithinPendingCap(
@@ -8647,6 +8718,9 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     sales: stateSales,
     transfers: stateTransfers,
   });
+  for (const txid of confirmedPendingSealTxids) {
+    existingTxids.delete(txid);
+  }
 
   const holderBalances = new Map(
     (Array.isArray(state?.holders) ? state.holders : [])
@@ -10527,6 +10601,10 @@ async function marketplaceSummaryPayload(network, fresh = false) {
       ? await summaryCanonicalLedgerPayload(network, true)
       : await existingCanonicalLedgerPayload(network);
     if (ledger) {
+      const tokenState = await tokenStateWithReconciledListingSeals(
+        ledger.tokenState,
+        network,
+      );
       return attachLedgerMetadata(
         {
           indexedAt: ledger.generatedAt,
@@ -10534,7 +10612,7 @@ async function marketplaceSummaryPayload(network, fresh = false) {
           registry: compactRegistrySummaryPayload(ledger.registryState),
           summaryOnly: true,
           token: attachLedgerMetadata(
-            compactTokenSummaryPayload(ledger.tokenState),
+            compactTokenSummaryPayload(tokenState),
             ledger,
           ),
           workFloor: ledger.workFloor,
@@ -10694,7 +10772,7 @@ async function activityHistoryPayload(network, kind, searchParams, fresh = false
 
 async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fresh = false) {
   const scope = normalizeTokenScope(tokenScope);
-  const payload = await tokenPayloadForRead(network, scope, fresh, {
+  let payload = await tokenPayloadForRead(network, scope, fresh, {
     reconcileSpendable: false,
   });
   const kindMap = new Map([
@@ -10715,6 +10793,13 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     ["transfers", "transfers"],
   ]);
   const safeKind = kindMap.get(kind) ?? "mints";
+  if (
+    safeKind === "listings" ||
+    safeKind === "closedListings" ||
+    safeKind === "market-log"
+  ) {
+    payload = await tokenStateWithReconciledListingSeals(payload, network);
+  }
   const items =
     safeKind === "market-log"
       ? tokenMarketLogItemsFromState(payload)
