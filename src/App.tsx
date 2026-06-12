@@ -6543,6 +6543,27 @@ function tokenReservedBalanceFor(
   );
 }
 
+function mergeTokenListingsById(
+  current: PowTokenListing[],
+  incoming: PowTokenListing[],
+) {
+  if (incoming.length === 0) {
+    return current;
+  }
+
+  const byKey = new Map(
+    current.map((listing) => [
+      `${listing.network}:${listing.listingId}`,
+      listing,
+    ]),
+  );
+  for (const listing of incoming) {
+    byKey.set(`${listing.network}:${listing.listingId}`, listing);
+  }
+
+  return [...byKey.values()];
+}
+
 function tokenHolderMatchesSearch(holder: PowTokenHolder, query: string) {
   if (!query) {
     return true;
@@ -12226,6 +12247,63 @@ export default function App() {
     0,
     walletTransferBalance - walletReservedTokenBalance,
   );
+
+  useEffect(() => {
+    if (
+      network !== "livenet" ||
+      (!walletMode && activeFolder !== "wallet") ||
+      !address ||
+      !walletTransferToken?.tokenId
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const walletAddress = address;
+    const tokenScope = walletTransferToken.tokenId;
+
+    const hydrateWalletListings = async () => {
+      const page = await fetchTokenHistoryPage<PowTokenListing>(
+        "livenet",
+        "listings",
+        {
+          fresh: true,
+          pageSize: 200,
+          query: walletAddress,
+          tokenScope,
+        },
+      );
+      if (cancelled) {
+        return;
+      }
+
+      const ownedListings = (Array.isArray(page.items) ? page.items : []).filter(
+        (listing) =>
+          listing.network === "livenet" &&
+          listing.tokenId === tokenScope &&
+          listing.sellerAddress === walletAddress &&
+          !tokenListingIsExpired(listing),
+      );
+      if (ownedListings.length > 0) {
+        setTokenListings((current) =>
+          mergeTokenListingsById(current, ownedListings),
+        );
+      }
+    };
+
+    void hydrateWalletListings().catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeFolder,
+    address,
+    network,
+    walletMode,
+    walletTransferToken?.tokenId,
+  ]);
+
   const tokenMintPayload = useMemo(
     () =>
       selectedToken
