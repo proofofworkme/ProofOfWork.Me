@@ -6627,6 +6627,37 @@ function mergeTokenListingsById(
   return [...byKey.values()];
 }
 
+function replaceTokenListingsForOwnerScope(
+  current: PowTokenListing[],
+  incoming: PowTokenListing[],
+  {
+    network,
+    ownerAddress,
+    tokenId,
+  }: { network: BitcoinNetwork; ownerAddress: string; tokenId: string },
+) {
+  if (!ownerAddress || !tokenId) {
+    return current;
+  }
+
+  const incomingKeys = new Set(
+    incoming.map((listing) => `${listing.network}:${listing.listingId}`),
+  );
+  const retained = current.filter((listing) => {
+    if (
+      listing.network !== network ||
+      listing.sellerAddress !== ownerAddress ||
+      listing.tokenId !== tokenId
+    ) {
+      return true;
+    }
+
+    return incomingKeys.has(`${listing.network}:${listing.listingId}`);
+  });
+
+  return mergeTokenListingsById(retained, incoming);
+}
+
 function normalizePendingTokenListingSeal(
   value: unknown,
 ): PendingTokenListingSeal | undefined {
@@ -12486,6 +12517,34 @@ export default function App() {
     walletTransferBalance - walletReservedTokenBalance,
   );
 
+  async function fetchWalletOwnedTokenListings(
+    walletAddress: string,
+    tokenScope: string,
+  ) {
+    const [state, pendingSeals] = await Promise.all([
+      fetchTokenState("livenet", false, tokenScope, true),
+      fetchPendingTokenListingSealsForAddress(walletAddress, "livenet").catch(
+        () => [],
+      ),
+    ]);
+    if (pendingSeals.length > 0) {
+      savePendingTokenListingSeals([
+        ...loadPendingTokenListingSeals(),
+        ...pendingSeals,
+      ]);
+    }
+
+    return applyPendingTokenListingSeals(
+      (Array.isArray(state.listings) ? state.listings : []).filter(
+        (listing) =>
+          listing.network === "livenet" &&
+          listing.tokenId === tokenScope &&
+          listing.sellerAddress === walletAddress &&
+          !tokenListingIsExpired(listing),
+      ),
+    );
+  }
+
   useEffect(() => {
     if (
       network !== "livenet" ||
@@ -12501,41 +12560,20 @@ export default function App() {
     const tokenScope = walletTransferToken.tokenId;
 
     const hydrateWalletListings = async () => {
-      const [page, pendingSeals] = await Promise.all([
-        fetchTokenHistoryPage<PowTokenListing>("livenet", "listings", {
-          fresh: true,
-          pageSize: 200,
-          query: walletAddress,
-          tokenScope,
-        }),
-        fetchPendingTokenListingSealsForAddress(walletAddress, "livenet").catch(
-          () => [],
-        ),
-      ]);
+      const ownedListings = await fetchWalletOwnedTokenListings(
+        walletAddress,
+        tokenScope,
+      );
       if (cancelled) {
         return;
       }
-      if (pendingSeals.length > 0) {
-        savePendingTokenListingSeals([
-          ...loadPendingTokenListingSeals(),
-          ...pendingSeals,
-        ]);
-      }
-
-      const ownedListings = applyPendingTokenListingSeals(
-        (Array.isArray(page.items) ? page.items : []).filter(
-          (listing) =>
-            listing.network === "livenet" &&
-            listing.tokenId === tokenScope &&
-            listing.sellerAddress === walletAddress &&
-            !tokenListingIsExpired(listing),
-        ),
+      setTokenListings((current) =>
+        replaceTokenListingsForOwnerScope(current, ownedListings, {
+          network: "livenet",
+          ownerAddress: walletAddress,
+          tokenId: tokenScope,
+        }),
       );
-      if (ownedListings.length > 0) {
-        setTokenListings((current) =>
-          mergeTokenListingsById(current, ownedListings),
-        );
-      }
     };
 
     void hydrateWalletListings().catch(() => undefined);
@@ -14667,6 +14705,26 @@ export default function App() {
         setTokenClosedListings(state.closedListings);
         setTokenSales(state.sales);
         setTokenCreationSats(state.creationSats);
+        const walletAddress = address;
+        const walletTokenScope = walletTransferToken?.tokenId;
+        if (
+          network === "livenet" &&
+          (walletMode || activeFolder === "wallet") &&
+          walletAddress &&
+          walletTokenScope
+        ) {
+          void fetchWalletOwnedTokenListings(walletAddress, walletTokenScope)
+            .then((ownedListings) => {
+              setTokenListings((current) =>
+                replaceTokenListingsForOwnerScope(current, ownedListings, {
+                  network: "livenet",
+                  ownerAddress: walletAddress,
+                  tokenId: walletTokenScope,
+                }),
+              );
+            })
+            .catch(() => undefined);
+        }
         if (!silent) {
           setStatus({
             tone: "good",
