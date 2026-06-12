@@ -131,6 +131,12 @@ const TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS = Number(
 const WORK_TOKEN_LIVE_DELTA_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_DELTA_MAX_TXS ?? 1500,
 );
+const WORK_TOKEN_LIVE_RECENT_MAX_TXS = Number(
+  process.env.WORK_TOKEN_LIVE_RECENT_MAX_TXS ?? 100,
+);
+const WORK_TOKEN_LIVE_HISTORY_MAX_TXS = Number(
+  process.env.WORK_TOKEN_LIVE_HISTORY_MAX_TXS ?? 100,
+);
 const SUMMARY_ACTIVITY_LIMIT = Number(process.env.SUMMARY_ACTIVITY_LIMIT ?? 60);
 const SUMMARY_MARKET_LIMIT = Number(process.env.SUMMARY_MARKET_LIMIT ?? 40);
 const HISTORY_PAGE_DEFAULT_LIMIT = Number(
@@ -153,6 +159,12 @@ const BLOCK_TXID_FETCH_CONCURRENCY = Number(
 );
 const MAX_TRANSACTION_CACHE_SIZE = Number(
   process.env.MAX_TRANSACTION_CACHE_SIZE ?? 100_000,
+);
+const PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS = Number(
+  process.env.PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS ?? 24 * 60 * 60_000,
+);
+const PENDING_TOKEN_TRANSACTION_CACHE_MAX_SIZE = Number(
+  process.env.PENDING_TOKEN_TRANSACTION_CACHE_MAX_SIZE ?? 5000,
 );
 const PERSISTED_CACHE_DIR =
   process.env.POW_API_CACHE_DIR ?? path.join(process.cwd(), ".pow-api-cache");
@@ -296,6 +308,7 @@ const RUSH_PHASES = [
 const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
 const BLOCK_TXID_INDEX_CACHE = new Map();
 const TRANSACTION_CACHE = new Map();
+const PENDING_TOKEN_TRANSACTION_CACHE = new Map();
 const GLOBAL_ACTIVITY_CACHE = new Map();
 const BACKGROUND_ACTIVITY_REFRESHES = new Set();
 const BACKGROUND_LEDGER_REFRESHES = new Set();
@@ -1073,12 +1086,18 @@ function explorerTxUrl(txid, network) {
 
 function pendingMempoolBases(network) {
   if (network !== "livenet") {
-    return [mempoolBase(network)];
+    return [
+      ...new Set([mempoolBase(network), explorerBase(network)].filter(Boolean)),
+    ];
   }
 
   return [
     ...new Set(
-      [MEMPOOL_BASE_MAINNET, PENDING_MEMPOOL_BASE_MAINNET].filter(Boolean),
+      [
+        MEMPOOL_BASE_MAINNET,
+        PENDING_MEMPOOL_BASE_MAINNET,
+        explorerBase(network),
+      ].filter(Boolean),
     ),
   ];
 }
@@ -1410,7 +1429,13 @@ async function broadcastSlipstreamPayload(request) {
     throw new Error("Invalid transaction hex.");
   }
 
-  return submitSlipstreamTransaction(txHex);
+  const result = await submitSlipstreamTransaction(txHex);
+  await cachePendingTokenTransactionByTxid(
+    result.txid,
+    "livenet",
+    "broadcast-slipstream",
+  );
+  return result;
 }
 
 async function submitNodeTransaction(txHex, network) {
@@ -1471,7 +1496,13 @@ async function broadcastNodePayload(request, network) {
     throw new Error("Invalid transaction hex.");
   }
 
-  return submitNodeTransaction(txHex, network);
+  const result = await submitNodeTransaction(txHex, network);
+  await cachePendingTokenTransactionByTxid(
+    result.txid,
+    network,
+    "broadcast-node",
+  );
+  return result;
 }
 
 function slipstreamStatusPayload() {
@@ -1637,9 +1668,14 @@ async function fetchAddressMempoolTransactions(address, network) {
     ),
   );
 
-  return dedupeTransactions(
+  const transactions = dedupeTransactions(
     pages.flatMap((page) => (page.status === "fulfilled" ? page.value : [])),
   );
+  for (const tx of transactions) {
+    cachePendingTokenTransaction(tx, network, "address-mempool");
+  }
+
+  return transactions;
 }
 
 function bitcoinNetwork(network) {
@@ -1799,6 +1835,7 @@ async function fetchTransaction(txid, network) {
   }
 
   const tx = await fetchJson(`${mempoolBase(network)}/api/tx/${normalizedTxid}`);
+  cachePendingTokenTransaction(tx, network, "tx");
   if (transactionConfirmed(tx)) {
     TRANSACTION_CACHE.set(cacheKey, tx);
     if (TRANSACTION_CACHE.size > MAX_TRANSACTION_CACHE_SIZE) {
@@ -1826,6 +1863,7 @@ async function fetchTransactionWithPendingFallback(txid, network) {
   for (const baseUrl of pendingMempoolBases(network)) {
     const tx = await fetchTransactionFromBase(baseUrl, txid).catch(() => null);
     if (tx) {
+      cachePendingTokenTransaction(tx, network, "pending-fallback");
       return tx;
     }
   }
@@ -1925,6 +1963,35 @@ async function fetchRecentUnknownAddressTransactions(
     }
     throw lastError ?? new Error(`No address page source for ${address}.`);
   };
+  const collectUnknown = (txs) => {
+    let pageUnknown = 0;
+    for (const tx of txs) {
+      const txid = transactionTxid(tx);
+      if (!txid || knownTxids.has(txid)) {
+        continue;
+      }
+
+      pageUnknown += 1;
+      collected.push(tx);
+      if (collected.length >= maxTxs) {
+        break;
+      }
+    }
+
+    return pageUnknown;
+  };
+
+  try {
+    collectUnknown(await fetchAddressMempoolTransactions(address, network));
+    if (collected.length >= maxTxs) {
+      return annotateBlockOrder(dedupeTransactions(collected), network);
+    }
+  } catch (error) {
+    console.error(
+      `Recent address mempool lookup failed for ${address}: ${errorSummary(error)}`,
+    );
+  }
+
   let cursor = "";
   let consecutiveKnownPages = 0;
 
@@ -1949,18 +2016,9 @@ async function fetchRecentUnknownAddressTransactions(
       break;
     }
 
-    let pageUnknown = 0;
-    for (const tx of pageTxs) {
-      const txid = transactionTxid(tx);
-      if (!txid || knownTxids.has(txid)) {
-        continue;
-      }
-
-      pageUnknown += 1;
-      collected.push(tx);
-      if (collected.length >= maxTxs) {
-        return annotateBlockOrder(dedupeTransactions(collected), network);
-      }
+    const pageUnknown = collectUnknown(pageTxs);
+    if (collected.length >= maxTxs) {
+      return annotateBlockOrder(dedupeTransactions(collected), network);
     }
 
     consecutiveKnownPages = pageUnknown === 0 ? consecutiveKnownPages + 1 : 0;
@@ -2079,6 +2137,112 @@ function dedupeTransactions(txs) {
   }
 
   return [...merged.values()];
+}
+
+function pendingTokenTransactionCacheKey(network, txid) {
+  return `${network}:${txid}`;
+}
+
+function transactionHasTokenProtocol(tx, network) {
+  const vout = Array.isArray(tx?.vout) ? tx.vout : [];
+  return decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX).some((message) =>
+    Boolean(parseTokenPayload(message, network)),
+  );
+}
+
+function prunePendingTokenTransactionCache(now = Date.now()) {
+  for (const [key, entry] of PENDING_TOKEN_TRANSACTION_CACHE) {
+    if (
+      now >= entry.expiresAt ||
+      !transactionTxid(entry.tx) ||
+      transactionConfirmed(entry.tx)
+    ) {
+      PENDING_TOKEN_TRANSACTION_CACHE.delete(key);
+    }
+  }
+
+  while (
+    PENDING_TOKEN_TRANSACTION_CACHE.size >
+    PENDING_TOKEN_TRANSACTION_CACHE_MAX_SIZE
+  ) {
+    PENDING_TOKEN_TRANSACTION_CACHE.delete(
+      PENDING_TOKEN_TRANSACTION_CACHE.keys().next().value,
+    );
+  }
+}
+
+function cachePendingTokenTransaction(tx, network, source = "lookup") {
+  const txid = transactionTxid(tx);
+  if (!txid) {
+    return false;
+  }
+
+  const cacheKey = pendingTokenTransactionCacheKey(network, txid);
+  if (transactionConfirmed(tx)) {
+    PENDING_TOKEN_TRANSACTION_CACHE.delete(cacheKey);
+    return false;
+  }
+
+  if (!transactionHasTokenProtocol(tx, network)) {
+    return false;
+  }
+
+  const now = Date.now();
+  PENDING_TOKEN_TRANSACTION_CACHE.delete(cacheKey);
+  PENDING_TOKEN_TRANSACTION_CACHE.set(cacheKey, {
+    expiresAt: now + PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS,
+    network,
+    seenAt: now,
+    source,
+    tx,
+  });
+  prunePendingTokenTransactionCache(now);
+  return true;
+}
+
+async function cachePendingTokenTransactionByTxid(
+  txid,
+  network,
+  source = "lookup",
+) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    return false;
+  }
+
+  try {
+    const tx = await fetchTransactionWithPendingFallback(normalizedTxid, network);
+    return tx ? cachePendingTokenTransaction(tx, network, source) : false;
+  } catch {
+    return false;
+  }
+}
+
+function cachedPendingTokenTransactions(network, predicate = () => true) {
+  prunePendingTokenTransactionCache();
+  const transactions = [];
+  for (const entry of PENDING_TOKEN_TRANSACTION_CACHE.values()) {
+    if (entry.network !== network || !entry.tx || !predicate(entry.tx)) {
+      continue;
+    }
+    transactions.push(entry.tx);
+  }
+
+  return dedupeTransactions(transactions);
+}
+
+function pendingTokenTransactionPaysRegistry(tx, registryAddress) {
+  const vout = Array.isArray(tx?.vout) ? tx.vout : [];
+  return (
+    tokenPaymentAmountBeforeProtocol(vout, registryAddress) >=
+    TOKEN_MIN_MUTATION_PRICE_SATS
+  );
+}
+
+function cachedPendingTokenTransactionsForRegistry(network, registryAddress) {
+  return cachedPendingTokenTransactions(network, (tx) =>
+    pendingTokenTransactionPaysRegistry(tx, registryAddress),
+  );
 }
 
 async function fetchAddressTransactionsViaMempoolPagination(
@@ -8091,6 +8255,7 @@ function unconfirmedTokenStateTxids(state) {
 
 function syncWorkTokenLiveSeenTxids(network, state) {
   const knownTxids = workTokenLiveSeenTxids(network);
+  knownTxids.clear();
   addTokenStateTxids(knownTxids, state);
   for (const txid of unconfirmedTokenStateTxids(state)) {
     knownTxids.delete(txid);
@@ -8343,6 +8508,92 @@ function workTokenDeltaHasNonMintActions(txs, network) {
   });
 }
 
+function workMintSupplyTotals(mints) {
+  const rows = workMintRowsWithinPendingCap(mints);
+  return {
+    confirmedMints: rows.filter((mint) => mint.confirmed).length,
+    confirmedSupply: rows
+      .filter((mint) => mint.confirmed)
+      .reduce((total, mint) => total + Number(mint.amount || 0), 0),
+    pendingMints: rows.filter((mint) => !mint.confirmed).length,
+    pendingSupply: rows
+      .filter((mint) => !mint.confirmed)
+      .reduce((total, mint) => total + Number(mint.amount || 0), 0),
+  };
+}
+
+function sortWorkMintsForDisplay(mints) {
+  return [...(Array.isArray(mints) ? mints : [])].sort(
+    (left, right) =>
+      Number(right.confirmed) - Number(left.confirmed) ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      String(left.txid ?? "").localeCompare(String(right.txid ?? "")),
+  );
+}
+
+function sortWorkMintsForPendingCap(mints) {
+  return [...(Array.isArray(mints) ? mints : [])].sort(
+    (left, right) =>
+      Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
+      String(left.txid ?? "").localeCompare(String(right.txid ?? "")),
+  );
+}
+
+function workMintRowsWithinPendingCap(mints) {
+  const rows = (Array.isArray(mints) ? mints : []).filter(
+    (mint) => Number(mint?.amount) > 0,
+  );
+  const confirmed = rows.filter((mint) => mint.confirmed);
+  const confirmedSupply = confirmed.reduce(
+    (total, mint) => total + Number(mint.amount || 0),
+    0,
+  );
+  const acceptedPending = [];
+  let pendingSupply = 0;
+
+  for (const mint of sortWorkMintsForPendingCap(
+    rows.filter((item) => !item.confirmed),
+  )) {
+    const amount = Number(mint.amount || 0);
+    if (confirmedSupply + pendingSupply + amount > WORK_TOKEN_MAX_SUPPLY) {
+      continue;
+    }
+
+    pendingSupply += amount;
+    acceptedPending.push(mint);
+  }
+
+  return [...confirmed, ...acceptedPending];
+}
+
+function workTokenStateWithMintSupplyCounters(state) {
+  const cappedMints = workMintRowsWithinPendingCap(state?.mints);
+  const totals = workMintSupplyTotals(cappedMints);
+  const stats = state?.stats && typeof state.stats === "object" ? state.stats : {};
+  const changed =
+    (Array.isArray(state?.mints) ? state.mints.length : 0) !==
+      cappedMints.length ||
+    Number(state?.confirmedSupply ?? 0) !== totals.confirmedSupply ||
+    Number(state?.pendingSupply ?? 0) !== totals.pendingSupply ||
+    Number(stats.confirmedMints ?? 0) !== totals.confirmedMints ||
+    Number(stats.pendingMints ?? 0) !== totals.pendingMints;
+  if (!changed) {
+    return state;
+  }
+
+  return {
+    ...state,
+    confirmedSupply: totals.confirmedSupply,
+    mints: sortWorkMintsForDisplay(cappedMints),
+    pendingSupply: totals.pendingSupply,
+    stats: {
+      ...stats,
+      confirmedMints: totals.confirmedMints,
+      pendingMints: totals.pendingMints,
+    },
+  };
+}
+
 function workTokenStateWithDeltaTransactions(state, txs, network) {
   const incomingConfirmedTxids = new Set(
     (Array.isArray(txs) ? txs : [])
@@ -8365,8 +8616,10 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
       (item?.closedConfirmed === false && matches(item.closedTxid))
     );
   };
-  const stateMints = (Array.isArray(state?.mints) ? state.mints : []).filter(
-    (item) => !shouldDropConfirmedDeltaMatch(item),
+  const stateMints = workMintRowsWithinPendingCap(
+    (Array.isArray(state?.mints) ? state.mints : []).filter(
+      (item) => !shouldDropConfirmedDeltaMatch(item),
+    ),
   );
   const stateTransfers = (Array.isArray(state?.transfers)
     ? state.transfers
@@ -8403,17 +8656,12 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
   const mints = [...stateMints];
   const sales = [...stateSales];
   const transfers = [...stateTransfers];
-  let confirmedSupply = Number.isFinite(Number(state?.confirmedSupply))
-    ? Number(state.confirmedSupply)
-    : mints
-        .filter((mint) => mint.confirmed)
-        .reduce((total, mint) => total + Number(mint.amount || 0), 0);
-  let pendingSupply = Number.isFinite(Number(state?.pendingSupply))
-    ? Number(state.pendingSupply)
-    : mints
-        .filter((mint) => !mint.confirmed)
-        .reduce((total, mint) => total + Number(mint.amount || 0), 0);
-  let changed = false;
+  const initialSupplyTotals = workMintSupplyTotals(mints);
+  let confirmedSupply = initialSupplyTotals.confirmedSupply;
+  let pendingSupply = initialSupplyTotals.pendingSupply;
+  let changed =
+    Number(state?.confirmedSupply ?? 0) !== confirmedSupply ||
+    Number(state?.pendingSupply ?? 0) !== pendingSupply;
 
   const reservedBalanceFor = (ownerAddress) => {
     let reserved = 0;
@@ -8487,12 +8735,14 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
       }
 
       if (parsed.kind === "mint") {
+        const projectedSupply = confirmed
+          ? confirmedSupply + parsed.amount
+          : confirmedSupply + pendingSupply + parsed.amount;
         if (
           parsed.tokenId !== WORK_TOKEN_ID ||
           parsed.amount !== WORK_TOKEN_MINT_AMOUNT ||
           remainingRegistrySats < WORK_TOKEN_MINT_PRICE_SATS ||
-          confirmedSupply + pendingSupply + parsed.amount >
-            WORK_TOKEN_MAX_SUPPLY
+          projectedSupply > WORK_TOKEN_MAX_SUPPLY
         ) {
           continue;
         }
@@ -8733,12 +8983,8 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
         left.listingId.localeCompare(right.listingId),
     );
-  const sortedMints = mints.sort(
-    (left, right) =>
-      Number(right.confirmed) - Number(left.confirmed) ||
-      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      left.txid.localeCompare(right.txid),
-  );
+  const sortedMints = sortWorkMintsForDisplay(workMintRowsWithinPendingCap(mints));
+  const mintSupplyTotals = workMintSupplyTotals(sortedMints);
   const sortedSales = sales.sort(
     (left, right) =>
       Number(right.confirmed) - Number(left.confirmed) ||
@@ -8755,23 +9001,23 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
   return {
     ...state,
     closedListings: sortClosedTokenListings(closedListings),
-    confirmedSupply,
+    confirmedSupply: mintSupplyTotals.confirmedSupply,
     holders,
     indexedAt: new Date().toISOString(),
     listings: activeListings,
     mints: sortedMints,
-    pendingSupply,
+    pendingSupply: mintSupplyTotals.pendingSupply,
     sales: sortedSales,
     stats: {
       ...(state.stats ?? {}),
-      confirmedMints: sortedMints.filter((mint) => mint.confirmed).length,
+      confirmedMints: mintSupplyTotals.confirmedMints,
       confirmedTransfers: sortedTransfers.filter((transfer) => transfer.confirmed)
         .length,
       confirmedTokens: (Array.isArray(state.tokens) ? state.tokens : []).filter(
         (token) => token.confirmed,
       ).length,
       holders: holders.length,
-      pendingMints: sortedMints.filter((mint) => !mint.confirmed).length,
+      pendingMints: mintSupplyTotals.pendingMints,
       pendingTransfers: sortedTransfers.filter((transfer) => !transfer.confirmed)
         .length,
       pendingTokens: (Array.isArray(state.tokens) ? state.tokens : []).filter(
@@ -8810,6 +9056,52 @@ async function confirmedTransactionsForTxids(txids, network, maxTxs) {
   return txs.filter(Boolean);
 }
 
+async function recentUnknownHistoryTransactions(
+  address,
+  network,
+  knownTxids,
+  maxTxs,
+) {
+  let historyTxids = [];
+  try {
+    historyTxids = await fetchAddressHistoryTxidsFromElectrum(address, network);
+  } catch (error) {
+    console.error(
+      `WORK live registry history lookup failed for ${network}: ${errorSummary(error)}`,
+    );
+    return [];
+  }
+
+  const unknownTxids = historyTxids
+    .filter((txid) => !knownTxids.has(txid))
+    .slice(-Math.max(0, maxTxs));
+  if (unknownTxids.length === 0) {
+    return [];
+  }
+
+  let failedFetches = 0;
+  const txs = await mapWithConcurrency(
+    unknownTxids,
+    Math.min(4, TX_FETCH_CONCURRENCY),
+    async (txid) => {
+      try {
+        return await fetchTransaction(txid, network);
+      } catch {
+        failedFetches += 1;
+        return null;
+      }
+    },
+  );
+
+  if (failedFetches > 0) {
+    console.error(
+      `WORK live history hydration was partial for ${network}: ${failedFetches} of ${unknownTxids.length} transaction lookups failed.`,
+    );
+  }
+
+  return annotateBlockOrder(dedupeTransactions(txs.filter(Boolean)), network);
+}
+
 async function replayLiveWorkTokenState(network, state, reason) {
   try {
     const replayedState = await workTokenPayload(network, state);
@@ -8834,7 +9126,7 @@ async function replayLiveWorkTokenState(network, state, reason) {
   return null;
 }
 
-async function liveWorkTokenState(network, cachedWorkTokenState) {
+async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
   let state =
     cachedWorkTokenState && typeof cachedWorkTokenState === "object"
       ? cachedWorkTokenState
@@ -8865,20 +9157,37 @@ async function liveWorkTokenState(network, cachedWorkTokenState) {
     return state;
   }
 
-  const recoveredSales = await recoverWorkSalesFromClosedListings(
-    state,
-    network,
-  );
-  if (recoveredSales.length > 0) {
-    state = workTokenStateWithRecoveredSales(state, recoveredSales);
+  const counterNormalizedState = workTokenStateWithMintSupplyCounters(state);
+  if (counterNormalizedState !== state) {
+    state = counterNormalizedState;
     cacheLiveWorkTokenState(network, state);
     syncWorkTokenLiveSeenTxids(network, state);
-    console.log(
-      `Recovered ${recoveredSales.length} WORK closed sale(s) for ${network}.`,
+  }
+
+  if (options.recoverClosedSales !== false) {
+    const recoveredSales = await recoverWorkSalesFromClosedListings(
+      state,
+      network,
     );
+    if (recoveredSales.length > 0) {
+      state = workTokenStateWithRecoveredSales(state, recoveredSales);
+      cacheLiveWorkTokenState(network, state);
+      syncWorkTokenLiveSeenTxids(network, state);
+      console.log(
+        `Recovered ${recoveredSales.length} WORK closed sale(s) for ${network}.`,
+      );
+    }
   }
 
   const maxDeltaTxs = Math.max(1, WORK_TOKEN_LIVE_DELTA_MAX_TXS);
+  const maxRecentTxs = Math.max(
+    1,
+    Math.min(maxDeltaTxs, WORK_TOKEN_LIVE_RECENT_MAX_TXS),
+  );
+  const maxHistoryTxs = Math.max(
+    1,
+    Math.min(maxDeltaTxs, WORK_TOKEN_LIVE_HISTORY_MAX_TXS),
+  );
   const pendingTxids = unconfirmedTokenStateTxids(state);
   const confirmedPendingTxs = await confirmedTransactionsForTxids(
     pendingTxids,
@@ -8891,67 +9200,35 @@ async function liveWorkTokenState(network, cachedWorkTokenState) {
     WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
     network,
     knownTxids,
-    maxDeltaTxs,
+    maxRecentTxs,
   ).catch((error) => {
     console.error(
       `WORK live recent page lookup failed for ${network}: ${errorSummary(error)}`,
     );
     return [];
   });
+  const cachedPendingTokenTxs = cachedPendingTokenTransactionsForRegistry(
+    network,
+    WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+  );
+  const historyTxs = await recentUnknownHistoryTransactions(
+    WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    network,
+    knownTxids,
+    maxHistoryTxs,
+  );
 
-  let deltaTxids = [];
-  if (txs.length === 0 && confirmedPendingTxs.length === 0) {
-    let historyTxids = [];
-    try {
-      historyTxids = await fetchAddressHistoryTxidsFromElectrum(
-        WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-        network,
-      );
-    } catch (error) {
-      console.error(
-        `WORK live registry history lookup failed for ${network}: ${errorSummary(error)}`,
-      );
-      return state;
-    }
-
-    const unknownTxids = historyTxids.filter((txid) => !knownTxids.has(txid));
-    if (unknownTxids.length === 0) {
-      return state;
-    }
-    deltaTxids = unknownTxids.slice(-maxDeltaTxs);
-  }
-
-  let failedFetches = 0;
-  if (deltaTxids.length > 0) {
-    txs = await mapWithConcurrency(
-      deltaTxids,
-      Math.min(4, TX_FETCH_CONCURRENCY),
-      async (txid) => {
-        try {
-          return await fetchTransaction(txid, network);
-        } catch {
-          failedFetches += 1;
-          return null;
-        }
-      },
-    );
-  }
-
-  if (failedFetches > 0) {
-    console.error(
-      `WORK live delta hydration was partial for ${network}: ${failedFetches} of ${deltaTxids.length} transaction lookups failed.`,
-    );
-  }
-
-  txs = dedupeTransactions([...confirmedPendingTxs, ...txs.filter(Boolean)]);
+  txs = dedupeTransactions([
+    ...confirmedPendingTxs,
+    ...txs.filter(Boolean),
+    ...historyTxs,
+    ...cachedPendingTokenTxs,
+  ]);
   const confirmedDeltaTxids = new Set(
     txs.filter(transactionConfirmed).map(transactionTxid).filter(Boolean),
   );
   if (workTokenDeltaHasNonMintActions(txs, network)) {
-    const deltaState = await tokenPayloadWithSpendableListings(
-      workTokenStateWithDeltaTransactions(state, txs, network),
-      network,
-    );
+    const deltaState = workTokenStateWithDeltaTransactions(state, txs, network);
     if (deltaState !== state && !tokenPayloadLooksWorse(deltaState, state)) {
       cacheLiveWorkTokenState(network, deltaState);
       syncWorkTokenLiveSeenTxids(network, deltaState);
@@ -8980,12 +9257,14 @@ async function liveWorkTokenState(network, cachedWorkTokenState) {
     }
   }
 
-  const existingMints = (Array.isArray(state.mints) ? state.mints : []).filter(
-    (mint) =>
-      !(
-        mint?.confirmed === false &&
-        confirmedDeltaTxids.has(String(mint.txid ?? "").toLowerCase())
-      ),
+  const existingMints = workMintRowsWithinPendingCap(
+    (Array.isArray(state.mints) ? state.mints : []).filter(
+      (mint) =>
+        !(
+          mint?.confirmed === false &&
+          confirmedDeltaTxids.has(String(mint.txid ?? "").toLowerCase())
+        ),
+    ),
   );
   const acceptedMintCountsByTxid = new Map();
   for (const mint of existingMints) {
@@ -9037,15 +9316,13 @@ async function liveWorkTokenState(network, cachedWorkTokenState) {
     );
   }
 
-  const mergedMints = [...existingMints, ...newMints].sort(
-    (left, right) =>
-      Number(right.confirmed) - Number(left.confirmed) ||
-      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      left.txid.localeCompare(right.txid),
+  const mergedMints = sortWorkMintsForDisplay(
+    workMintRowsWithinPendingCap([...existingMints, ...newMints]),
   );
+  const mintSupplyTotals = workMintSupplyTotals(mergedMints);
   const nextState = {
     ...state,
-    confirmedSupply,
+    confirmedSupply: mintSupplyTotals.confirmedSupply,
     holders: [...holders.entries()]
       .map(([address, balance]) => ({ address, balance }))
       .sort(
@@ -9055,10 +9332,12 @@ async function liveWorkTokenState(network, cachedWorkTokenState) {
       ),
     indexedAt: new Date().toISOString(),
     mints: mergedMints,
+    pendingSupply: mintSupplyTotals.pendingSupply,
     stats: {
       ...(state.stats ?? {}),
-      confirmedMints: mergedMints.filter((mint) => mint.confirmed).length,
+      confirmedMints: mintSupplyTotals.confirmedMints,
       holders: holders.size,
+      pendingMints: mintSupplyTotals.pendingMints,
     },
   };
   cacheLiveWorkTokenState(network, nextState);
@@ -9089,13 +9368,18 @@ async function tokenPayloadForRead(
       );
     }
     if (ledger) {
-      const payload = attachLedgerMetadata(
+      let payload = attachLedgerMetadata(
         {
           ...ledgerTokenStateForScope(ledger, scope),
           indexedAt: ledger.generatedAt,
         },
         ledger,
       );
+      if (scope === WORK_TOKEN_ID) {
+        payload = await liveWorkTokenState(network, payload, {
+          recoverClosedSales: options.recoverWorkSales !== false,
+        });
+      }
       return options.reconcileSpendable === false
         ? payload
         : await tokenPayloadWithSpendableListings(payload, network);
@@ -9144,6 +9428,7 @@ async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
   }
 
   const payload = await tokenPayloadForRead(network, scope, fresh, {
+    recoverWorkSales: scope !== WORK_TOKEN_ID,
     reconcileSpendable: false,
   });
   return compactTokenSummaryPayload(payload, scope);
@@ -10149,6 +10434,11 @@ async function workSummaryPayload(network, fresh = false) {
       ? await summaryCanonicalLedgerPayload(network, true)
       : await existingCanonicalLedgerPayload(network);
     if (ledger) {
+      const workTokenState = await liveWorkTokenState(
+        network,
+        ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
+        { recoverClosedSales: false },
+      );
       return attachLedgerMetadata(
         {
           floor: ledger.workFloor,
@@ -10156,10 +10446,7 @@ async function workSummaryPayload(network, fresh = false) {
           network,
           summaryOnly: true,
           token: attachLedgerMetadata(
-            compactTokenSummaryPayload(
-              ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
-              WORK_TOKEN_ID,
-            ),
+            compactTokenSummaryPayload(workTokenState, WORK_TOKEN_ID),
             ledger,
           ),
         },
