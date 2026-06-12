@@ -75,6 +75,7 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-05-22: The Computer shell and standalone app surfaces converge into a full dark UI overhaul. Desktop, Browser, Marketplace, Credit, Wallet, WORK, Log, and Growth are made shell-compatible with scrolling, aligned controls, pagination over large datasets, UniSat action wiring for buy/mint/list/delist/transfer flows, credit sale-ticket buys in wallet/log/growth accounting, and live node-backed BTC/USD shared by Credit, WORK, and Growth.
 - 2026-05-24: Marketplace and data freshness harden. Public app chrome becomes sticky so status stays visible while users scroll. Marketplace credit stats become scoped to the selected credit, active books expose All/Sealed/Unsealed listing views, credit sales/listing logs are paginated and ordered by confirmation time, and spent sale-ticket outpoints remove listings from active books immediately. Fresh marketplace, WORK, credit summary, and credit history reads must refresh canonical credit payloads before returning; cached snapshots are for first paint only.
 - 2026-06-07: WORK, Growth, Log, and credit/token history converge on one canonical livenet ledger snapshot. Confirmed Computer mail events, Infinity Bonds, credit sales, and participant searches must be merged into that shared ledger before network value is computed. The `/api/v1/consistency` endpoint and `npm run audit:ledger` guard that seeded Computer mail events are logged, known pagination-gap transactions are searchable, Growth and WORK share the same snapshot/value, and missing log events stay empty.
+- 2026-06-12: WORK and credit marketplace replay hardens around sale-ticket truth. Confirmed and pending WORK listings are promoted through the same canonical credit payload, pending WORK mints count against user-facing availability without changing confirmed supply, duplicate listing seals are blocked, Wallet owned-listing views are reconstructed from active and closed sale-ticket state, and WORK mint summaries replay from canonical mints instead of stale partial summaries.
 
 The emotional shape is a breakthrough moment: years of ProofOfWork/app experiments meeting modern agents and becoming legible all at once.
 
@@ -129,6 +130,8 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Credit mint prices are owner-set with a 546-proof minimum. ProofOfWork does not take a global fee on mints.
 - Credit marketplace writes are live sale-ticket records. Preserve the invariant: reserve seller balance, seal exact terms, require buyer ticket spend, seller payment, and credit registry mutation fee.
 - A spent sale-ticket outpoint closes its listing. If the spend is a valid `buy5`, the sale must appear in credit sales, market logs, Growth, and any summary surface after refresh.
+- Listing confirmation promotion must preserve the listing lifecycle. A pending listing that confirms should become the canonical active listing once, keep its seal/outspend state, and not leave a duplicate pending shadow behind.
+- A seller should not be able to seal the same credit listing twice. Once a valid seal is visible for a listing, the UI and API should treat additional seal attempts as duplicates unless the underlying active listing changes.
 - WORK credit id: `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`
 - WORK registry address: `1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV`
 - WORK supply settings: 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, 1 proof per WORK launch price.
@@ -137,6 +140,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - WORK floor is not the same thing as mint price. Public UI should separate mint price, floor price, network value, and pending mint pressure.
 - WORK floor charts should be real price charts: x-axis is time; y-axis is price per WORK; users can toggle proofs and USD.
 - Credit mint-out is canonically confirmed-only. UI mint controls should also pause when confirmed plus pending mints would fill the remaining supply.
+- WORK mint summaries must replay canonical mint events from the shared ledger, with pending mints shown only as availability pressure. Pending mint pressure can disable unsafe mint actions, but it must not inflate confirmed supply, holders, floor, or network value.
 - Prepare UTXOs and Mint Assistant are signer helpers, not custody. They should never auto-sign, handle seed phrases, or move wallet authority server-side.
 - First confirmed valid registration wins.
 - IDs are case-insensitive forever.
@@ -149,6 +153,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - WORK, Growth, Log, token history, and public searches should read from the same canonical confirmed ledger snapshot on livenet. Address-only fallback scans are useful for recovery, but they must not become a separate truth that changes network value without appearing in Log.
 - Production data surfaces should prefer the first-party node/API cache path for speed, then refresh from current full-node data. Stale snapshots are acceptable only as a first paint, not as the final truth after refresh.
 - Fresh summary endpoints must not return stale credit truth. `token-summary`, `token-history`, `work-summary`, and `marketplace-summary` refreshes should update the shared credit payload cache so every surface converges on the same chain state.
+- WORK and credit marketplace views must derive active listings, closed listings, sales, wallet owned listings, and mint summaries from the same refreshed credit payload. A surface-specific summary can format the data differently, but it must not carry its own stale listing or mint count after refresh.
 - Broadcast errors should be legible. A rejected transaction should expose the RPC code, reason when available, and a plain-English hint instead of a mystery error.
 - Every new product should enter the growth model with the same shape: real chain inputs, a usage assumption, a value assumption, fee elasticity, and blockspace accounting.
 - Merged apps should be treated as normal apps across public links, local route maps, GitHub docs, and Growth inputs.
