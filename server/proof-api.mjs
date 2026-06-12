@@ -7828,25 +7828,24 @@ function scopedTokenPayloadFromState(tokenState, scope) {
   };
 }
 
-async function fastTokenPayloadSnapshot(network, tokenScope = "") {
+async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) {
   const scope = normalizeTokenScope(tokenScope);
+  const reconcileSpendable = options.reconcileSpendable !== false;
   const payloadKey = `payload:token:${network}:${scope}`;
   const now = Date.now();
   const cachedPayloadEntry = RESPONSE_CACHE.get(payloadKey);
   if (cachedPayloadEntry?.payload && now < cachedPayloadEntry.expiresAt) {
-    return tokenPayloadWithSpendableListings(
-      cachedPayloadEntry.payload,
-      network,
-    );
+    return reconcileSpendable
+      ? await tokenPayloadWithSpendableListings(cachedPayloadEntry.payload, network)
+      : cachedPayloadEntry.payload;
   }
   if (cachedPayloadEntry?.payload && now < cachedPayloadEntry.staleUntil) {
     if (shouldAutoRefreshTokenScope(scope)) {
       refreshTokenPayloadCacheInBackground(network, scope);
     }
-    return tokenPayloadWithSpendableListings(
-      cachedPayloadEntry.payload,
-      network,
-    );
+    return reconcileSpendable
+      ? await tokenPayloadWithSpendableListings(cachedPayloadEntry.payload, network)
+      : cachedPayloadEntry.payload;
   }
 
   const jsonKey = `json:token:${network}:${scope}`;
@@ -7854,10 +7853,10 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "") {
   const cachedJsonEntry = RESPONSE_CACHE.get(jsonKey);
   if (cachedJsonEntry?.body) {
     try {
-      const payload = await tokenPayloadWithSpendableListings(
-        JSON.parse(cachedJsonEntry.body),
-        network,
-      );
+      const rawPayload = JSON.parse(cachedJsonEntry.body);
+      const payload = reconcileSpendable
+        ? await tokenPayloadWithSpendableListings(rawPayload, network)
+        : rawPayload;
       RESPONSE_CACHE.set(payloadKey, {
         expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
         payload,
@@ -7968,6 +7967,66 @@ function addTokenStateTxids(txids, state) {
       add(item.closedTxid);
     }
   }
+}
+
+function unconfirmedTokenStateTxids(state) {
+  const txids = new Set();
+  const add = (value) => {
+    if (typeof value === "string" && /^[0-9a-fA-F]{64}$/u.test(value)) {
+      txids.add(value.toLowerCase());
+    }
+  };
+
+  for (const item of Array.isArray(state?.mints) ? state.mints : []) {
+    if (item?.confirmed === false) {
+      add(item.txid);
+    }
+  }
+
+  for (const item of Array.isArray(state?.transfers) ? state.transfers : []) {
+    if (item?.confirmed === false) {
+      add(item.txid);
+    }
+  }
+
+  for (const item of Array.isArray(state?.sales) ? state.sales : []) {
+    if (item?.confirmed === false) {
+      add(item.txid);
+    }
+  }
+
+  for (const item of Array.isArray(state?.listings) ? state.listings : []) {
+    if (item?.confirmed === false) {
+      add(item.txid);
+      add(item.listingId);
+    }
+    if (item?.sealConfirmed === false) {
+      add(item.sealTxid);
+    }
+  }
+
+  for (const item of Array.isArray(state?.closedListings)
+    ? state.closedListings
+    : []) {
+    if (item?.confirmed === false) {
+      add(item.txid);
+      add(item.listingId);
+    }
+    if (item?.closedConfirmed === false) {
+      add(item.closedTxid);
+    }
+  }
+
+  return [...txids];
+}
+
+function syncWorkTokenLiveSeenTxids(network, state) {
+  const knownTxids = workTokenLiveSeenTxids(network);
+  addTokenStateTxids(knownTxids, state);
+  for (const txid of unconfirmedTokenStateTxids(state)) {
+    knownTxids.delete(txid);
+  }
+  return knownTxids;
 }
 
 function workTokenClosedListingsMissingSales(state, network) {
@@ -8216,8 +8275,50 @@ function workTokenDeltaHasNonMintActions(txs, network) {
 }
 
 function workTokenStateWithDeltaTransactions(state, txs, network) {
+  const incomingConfirmedTxids = new Set(
+    (Array.isArray(txs) ? txs : [])
+      .filter(transactionConfirmed)
+      .map(transactionTxid)
+      .filter(Boolean),
+  );
+  const shouldDropConfirmedDeltaMatch = (item) => {
+    if (incomingConfirmedTxids.size === 0) {
+      return false;
+    }
+    const matches = (...values) =>
+      values.some((value) =>
+        typeof value === "string" &&
+        incomingConfirmedTxids.has(value.toLowerCase()),
+      );
+    return (
+      (item?.confirmed === false && matches(item.txid, item.listingId)) ||
+      (item?.sealConfirmed === false && matches(item.sealTxid)) ||
+      (item?.closedConfirmed === false && matches(item.closedTxid))
+    );
+  };
+  const stateMints = (Array.isArray(state?.mints) ? state.mints : []).filter(
+    (item) => !shouldDropConfirmedDeltaMatch(item),
+  );
+  const stateTransfers = (Array.isArray(state?.transfers)
+    ? state.transfers
+    : []).filter((item) => !shouldDropConfirmedDeltaMatch(item));
+  const stateListings = (Array.isArray(state?.listings)
+    ? state.listings
+    : []).filter((item) => !shouldDropConfirmedDeltaMatch(item));
+  const stateClosedListings = (Array.isArray(state?.closedListings)
+    ? state.closedListings
+    : []).filter((item) => !shouldDropConfirmedDeltaMatch(item));
+  const stateSales = (Array.isArray(state?.sales) ? state.sales : []).filter(
+    (item) => !shouldDropConfirmedDeltaMatch(item),
+  );
   const existingTxids = new Set();
-  addTokenStateTxids(existingTxids, state);
+  addTokenStateTxids(existingTxids, {
+    closedListings: stateClosedListings,
+    listings: stateListings,
+    mints: stateMints,
+    sales: stateSales,
+    transfers: stateTransfers,
+  });
 
   const holderBalances = new Map(
     (Array.isArray(state?.holders) ? state.holders : [])
@@ -8225,16 +8326,14 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
       .map((holder) => [holder.address, Number(holder.balance)]),
   );
   const listings = new Map(
-    (Array.isArray(state?.listings) ? state.listings : [])
+    stateListings
       .filter((listing) => listing?.listingId)
       .map((listing) => [listing.listingId, listing]),
   );
-  const closedListings = Array.isArray(state?.closedListings)
-    ? [...state.closedListings]
-    : [];
-  const mints = Array.isArray(state?.mints) ? [...state.mints] : [];
-  const sales = Array.isArray(state?.sales) ? [...state.sales] : [];
-  const transfers = Array.isArray(state?.transfers) ? [...state.transfers] : [];
+  const closedListings = [...stateClosedListings];
+  const mints = [...stateMints];
+  const sales = [...stateSales];
+  const transfers = [...stateTransfers];
   let confirmedSupply = Number.isFinite(Number(state?.confirmedSupply))
     ? Number(state.confirmedSupply)
     : mints
@@ -8619,6 +8718,53 @@ function cacheLiveWorkTokenState(network, state) {
   cacheTokenPayload(network, scope, state);
 }
 
+async function confirmedTransactionsForTxids(txids, network, maxTxs) {
+  const uniqueTxids = [...new Set(txids)]
+    .filter((txid) => /^[0-9a-f]{64}$/u.test(txid))
+    .slice(0, Math.max(0, maxTxs));
+  if (uniqueTxids.length === 0) {
+    return [];
+  }
+
+  const txs = await mapWithConcurrency(
+    uniqueTxids,
+    Math.min(4, TX_FETCH_CONCURRENCY),
+    async (txid) => {
+      try {
+        const tx = await fetchTransaction(txid, network);
+        return transactionConfirmed(tx) ? tx : null;
+      } catch {
+        return null;
+      }
+    },
+  );
+  return txs.filter(Boolean);
+}
+
+async function replayLiveWorkTokenState(network, state, reason) {
+  try {
+    const replayedState = await workTokenPayload(network, state);
+    if (!tokenPayloadLooksWorse(replayedState, state)) {
+      cacheLiveWorkTokenState(network, replayedState);
+      syncWorkTokenLiveSeenTxids(network, replayedState);
+      console.log(`Replayed full WORK registry ${reason} for ${network}.`);
+      return replayedState;
+    }
+
+    const nextMetrics = JSON.stringify(tokenPayloadMetrics(replayedState));
+    const previousMetrics = JSON.stringify(tokenPayloadMetrics(state));
+    console.error(
+      `Rejected WORK ${reason} replay regression for ${network}: ${nextMetrics} < ${previousMetrics}.`,
+    );
+  } catch (error) {
+    console.error(
+      `WORK ${reason} replay failed for ${network}: ${errorSummary(error)}`,
+    );
+  }
+
+  return null;
+}
+
 async function liveWorkTokenState(network, cachedWorkTokenState) {
   let state =
     cachedWorkTokenState && typeof cachedWorkTokenState === "object"
@@ -8657,15 +8803,21 @@ async function liveWorkTokenState(network, cachedWorkTokenState) {
   if (recoveredSales.length > 0) {
     state = workTokenStateWithRecoveredSales(state, recoveredSales);
     cacheLiveWorkTokenState(network, state);
+    syncWorkTokenLiveSeenTxids(network, state);
     console.log(
       `Recovered ${recoveredSales.length} WORK closed sale(s) for ${network}.`,
     );
   }
 
-  const knownTxids = workTokenLiveSeenTxids(network);
-  addTokenStateTxids(knownTxids, state);
-
   const maxDeltaTxs = Math.max(1, WORK_TOKEN_LIVE_DELTA_MAX_TXS);
+  const pendingTxids = unconfirmedTokenStateTxids(state);
+  const confirmedPendingTxs = await confirmedTransactionsForTxids(
+    pendingTxids,
+    network,
+    maxDeltaTxs,
+  );
+
+  const knownTxids = syncWorkTokenLiveSeenTxids(network, state);
   let txs = await fetchRecentUnknownAddressTransactions(
     WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
     network,
@@ -8679,7 +8831,7 @@ async function liveWorkTokenState(network, cachedWorkTokenState) {
   });
 
   let deltaTxids = [];
-  if (txs.length === 0) {
+  if (txs.length === 0 && confirmedPendingTxs.length === 0) {
     let historyTxids = [];
     try {
       historyTxids = await fetchAddressHistoryTxidsFromElectrum(
@@ -8722,41 +8874,31 @@ async function liveWorkTokenState(network, cachedWorkTokenState) {
     );
   }
 
-  txs = txs.filter(Boolean);
+  txs = dedupeTransactions([...confirmedPendingTxs, ...txs.filter(Boolean)]);
+  const confirmedDeltaTxids = new Set(
+    txs.filter(transactionConfirmed).map(transactionTxid).filter(Boolean),
+  );
   if (workTokenDeltaHasNonMintActions(txs, network)) {
-    try {
-      const replayedState = await workTokenPayload(network, state);
-      if (!tokenPayloadLooksWorse(replayedState, state)) {
-        cacheLiveWorkTokenState(network, replayedState);
-        addTokenStateTxids(knownTxids, replayedState);
-        console.log(
-          `Replayed full WORK registry after non-mint delta for ${network}.`,
-        );
-        return replayedState;
-      }
-
-      const nextMetrics = JSON.stringify(tokenPayloadMetrics(replayedState));
-      const previousMetrics = JSON.stringify(tokenPayloadMetrics(state));
-      console.error(
-        `Rejected WORK non-mint delta replay regression for ${network}: ${nextMetrics} < ${previousMetrics}.`,
-      );
-    } catch (error) {
-      console.error(
-        `WORK non-mint delta replay failed for ${network}: ${errorSummary(error)}`,
-      );
-    }
-
     const deltaState = await tokenPayloadWithSpendableListings(
       workTokenStateWithDeltaTransactions(state, txs, network),
       network,
     );
     if (deltaState !== state && !tokenPayloadLooksWorse(deltaState, state)) {
       cacheLiveWorkTokenState(network, deltaState);
-      addTokenStateTxids(knownTxids, deltaState);
+      syncWorkTokenLiveSeenTxids(network, deltaState);
       console.log(
         `Applied incremental WORK non-mint delta for ${network}.`,
       );
       return deltaState;
+    }
+
+    const replayedState = await replayLiveWorkTokenState(
+      network,
+      state,
+      "after non-mint delta",
+    );
+    if (replayedState) {
+      return replayedState;
     }
 
     return state;
@@ -8769,7 +8911,13 @@ async function liveWorkTokenState(network, cachedWorkTokenState) {
     }
   }
 
-  const existingMints = Array.isArray(state.mints) ? state.mints : [];
+  const existingMints = (Array.isArray(state.mints) ? state.mints : []).filter(
+    (mint) =>
+      !(
+        mint?.confirmed === false &&
+        confirmedDeltaTxids.has(String(mint.txid ?? "").toLowerCase())
+      ),
+  );
   const acceptedMintCountsByTxid = new Map();
   for (const mint of existingMints) {
     const txid = String(mint.txid ?? "").toLowerCase();
@@ -8845,10 +8993,23 @@ async function liveWorkTokenState(network, cachedWorkTokenState) {
     },
   };
   cacheLiveWorkTokenState(network, nextState);
+  syncWorkTokenLiveSeenTxids(network, nextState);
   console.log(
     `Applied ${newMints.length} live WORK registry mint(s) for ${network}.`,
   );
   return nextState;
+}
+
+async function tokenPayloadForRead(
+  network,
+  tokenScope = "",
+  fresh = false,
+  options = {},
+) {
+  const scope = normalizeTokenScope(tokenScope);
+  return fresh
+    ? await freshTokenPayloadOrSnapshot(network, scope, options)
+    : await fastTokenPayloadSnapshot(network, scope, options);
 }
 
 async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
@@ -8887,17 +9048,7 @@ async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
     };
   }
 
-  if (network === "livenet") {
-    const ledger = await canonicalLedgerPayload(network, fresh);
-    return attachLedgerMetadata(
-      compactTokenSummaryPayload(ledgerTokenStateForScope(ledger, scope)),
-      ledger,
-    );
-  }
-
-  const payload = fresh
-    ? await freshTokenPayloadOrSnapshot(network, scope)
-    : await fastTokenPayloadSnapshot(network, scope);
+  const payload = await tokenPayloadForRead(network, scope, fresh);
   return compactTokenSummaryPayload(payload);
 }
 
@@ -9716,9 +9867,13 @@ function payloadWithFallbackAfterMs(promise, fallbackPayload, timeoutMs) {
   ]).finally(() => clearTimeout(timer));
 }
 
-async function freshTokenPayloadOrSnapshot(network, tokenScope = "") {
+async function freshTokenPayloadOrSnapshot(
+  network,
+  tokenScope = "",
+  options = {},
+) {
   const scope = normalizeTokenScope(tokenScope);
-  const fallback = await fastTokenPayloadSnapshot(network, scope);
+  const fallback = await fastTokenPayloadSnapshot(network, scope, options);
   if (!ENABLE_SUMMARY_TOKEN_REFRESH) {
     return fallback;
   }
@@ -9922,14 +10077,9 @@ async function activityHistoryPayload(network, kind, searchParams, fresh = false
 
 async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fresh = false) {
   const scope = normalizeTokenScope(tokenScope);
-  const ledger = network === "livenet"
-    ? await canonicalLedgerPayload(network, fresh)
-    : null;
-  const payload = ledger
-    ? ledgerTokenStateForScope(ledger, scope)
-    : fresh
-      ? await freshTokenPayloadOrSnapshot(network, scope)
-      : await fastTokenPayloadSnapshot(network, scope);
+  const payload = await tokenPayloadForRead(network, scope, fresh, {
+    reconcileSpendable: false,
+  });
   const kindMap = new Map([
     ["holders", "holders"],
     ["closedlistings", "closedListings"],
@@ -9961,7 +10111,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     pagination: historyPaginationFromSearch(searchParams),
     source: payload.source ?? mempoolBase(network),
   });
-  return ledger ? attachLedgerMetadata(page, ledger) : page;
+  return page;
 }
 
 async function rushPayload(network) {
@@ -11358,39 +11508,14 @@ async function handleRequest(request, response) {
           url.searchParams.get("ticker") ??
           "",
       );
-      if (network === "livenet") {
-        const ledger = await canonicalLedgerPayload(network, freshRead);
-        jsonResponse(
-          response,
-          200,
-          attachLedgerMetadata(ledgerTokenStateForScope(ledger, tokenScope), ledger),
-          freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
-        );
-        return;
-      }
-      if (freshRead) {
-        clearResponseCache(
-          `token:${network}:${tokenScope}`,
-          `payload:token:${network}:${tokenScope}`,
-        );
-        refreshedJsonResponse(
-          response,
-          `token:${network}:${tokenScope}`,
-          await refreshTokenPayload(network, tokenScope),
-          FRESH_READ_CACHE_CONTROL,
-          TOKEN_CACHE_TTL_MS,
-          TOKEN_CACHE_STALE_MS,
-        );
-      } else {
-        await cachedJsonResponse(
-          response,
-          `token:${network}:${tokenScope}`,
-          () => safeTokenPayload(network, tokenScope),
-          TOKEN_READ_CACHE_CONTROL,
-          TOKEN_CACHE_TTL_MS,
-          TOKEN_CACHE_STALE_MS,
-        );
-      }
+      jsonResponse(
+        response,
+        200,
+        await tokenPayloadForRead(network, tokenScope, freshRead, {
+          reconcileSpendable: false,
+        }),
+        freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
+      );
       return;
     }
 
