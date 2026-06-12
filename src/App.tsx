@@ -6781,6 +6781,36 @@ function applyPendingTokenListingSeals(listings: PowTokenListing[]) {
   });
 }
 
+async function reconcileTokenListingSealStatuses(
+  listings: PowTokenListing[],
+): Promise<PowTokenListing[]> {
+  return Promise.all(
+    listings.map(async (listing) => {
+      if (
+        listing.sealConfirmed !== false ||
+        !/^[0-9a-f]{64}$/u.test(String(listing.sealTxid ?? ""))
+      ) {
+        return listing;
+      }
+
+      try {
+        const status = await fetchBroadcastStatus(
+          listing.sealTxid ?? "",
+          listing.network,
+        );
+        return status === "confirmed"
+          ? {
+              ...listing,
+              sealConfirmed: true,
+            }
+          : listing;
+      } catch {
+        return listing;
+      }
+    }),
+  );
+}
+
 function tokenHolderMatchesSearch(holder: PowTokenHolder, query: string) {
   if (!query) {
     return true;
@@ -12534,13 +12564,15 @@ export default function App() {
       ]);
     }
 
-    return applyPendingTokenListingSeals(
-      (Array.isArray(state.listings) ? state.listings : []).filter(
-        (listing) =>
-          listing.network === "livenet" &&
-          listing.tokenId === tokenScope &&
-          listing.sellerAddress === walletAddress &&
-          !tokenListingIsExpired(listing),
+    return reconcileTokenListingSealStatuses(
+      applyPendingTokenListingSeals(
+        (Array.isArray(state.listings) ? state.listings : []).filter(
+          (listing) =>
+            listing.network === "livenet" &&
+            listing.tokenId === tokenScope &&
+            listing.sellerAddress === walletAddress &&
+            !tokenListingIsExpired(listing),
+        ),
       ),
     );
   }
@@ -22296,6 +22328,16 @@ function TokenWalletWorkspace({
                         >
                           View TX
                         </a>
+                        {item.sealTxid ? (
+                          <a
+                            className="secondary small"
+                            href={explorerTxUrl(item.sealTxid, item.network)}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            Seal TX
+                          </a>
+                        ) : null}
                         {!hasSeal ? (
                           <button
                             className="secondary small"
