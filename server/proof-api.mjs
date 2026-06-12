@@ -122,6 +122,12 @@ const LEDGER_FRESH_MIN_INTERVAL_MS = Number(
 const WORK_FLOOR_FRESH_WAIT_MS = Number(
   process.env.WORK_FLOOR_FRESH_WAIT_MS ?? 1500,
 );
+const TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS = Number(
+  process.env.TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS ?? 10 * 60_000,
+);
+const TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS = Number(
+  process.env.TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS ?? HEAVY_READ_STALE_MS,
+);
 const WORK_TOKEN_LIVE_DELTA_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_DELTA_MAX_TXS ?? 1500,
 );
@@ -292,11 +298,13 @@ const BLOCK_TXID_INDEX_CACHE = new Map();
 const TRANSACTION_CACHE = new Map();
 const GLOBAL_ACTIVITY_CACHE = new Map();
 const BACKGROUND_ACTIVITY_REFRESHES = new Set();
+const BACKGROUND_LEDGER_REFRESHES = new Set();
 const BACKGROUND_PAYLOAD_REFRESHES = new Set();
 const BACKGROUND_TOKEN_REFRESHES = new Set();
 const BACKGROUND_REFRESH_LAST_STARTED = new Map();
 const RESPONSE_CACHE = new Map();
 const WORK_TOKEN_LIVE_SEEN_TXIDS = new Map();
+const TOKEN_MARKET_OUTSPEND_CACHE = new Map();
 let persistedCacheWriteSequence = 0;
 let btcUsdPriceCache = null;
 const HEAVY_READ_STALE_SECONDS = Math.max(
@@ -327,6 +335,7 @@ function nodeApiBase(value) {
 function shouldPersistJsonCache(cacheKey) {
   return (
     cacheKey === "activity:livenet" ||
+    cacheKey === "ledger:livenet" ||
     cacheKey === "registry:livenet" ||
     cacheKey.startsWith("token:livenet:") ||
     cacheKey === "rush:livenet" ||
@@ -898,10 +907,7 @@ async function existingTokenPayload(network, tokenScope = "") {
 
 async function safeTokenPayload(network, tokenScope = "") {
   const scope = normalizeTokenScope(tokenScope);
-  let previousPayload = await tokenPayloadWithSpendableListings(
-    await existingTokenPayload(network, scope),
-    network,
-  );
+  let previousPayload = await existingTokenPayload(network, scope);
   if (scope === WORK_TOKEN_ID) {
     previousPayload = await liveWorkTokenState(network, previousPayload);
   }
@@ -2898,20 +2904,61 @@ function tokenListingAnchorOutpoint(listing) {
   };
 }
 
+function tokenMarketOutspendCacheKey(network, anchor) {
+  return `token-outspend:${network}:${anchor.txid}:${anchor.vout}`;
+}
+
+function cachedTokenMarketOutspend(network, anchor, allowStale = false) {
+  const cached = TOKEN_MARKET_OUTSPEND_CACHE.get(
+    tokenMarketOutspendCacheKey(network, anchor),
+  );
+  if (!cached) {
+    return null;
+  }
+
+  const now = Date.now();
+  if (now < cached.expiresAt || (allowStale && now < cached.staleUntil)) {
+    return cached.payload;
+  }
+
+  TOKEN_MARKET_OUTSPEND_CACHE.delete(
+    tokenMarketOutspendCacheKey(network, anchor),
+  );
+  return null;
+}
+
+function cacheTokenMarketOutspend(network, anchor, payload) {
+  TOKEN_MARKET_OUTSPEND_CACHE.set(tokenMarketOutspendCacheKey(network, anchor), {
+    expiresAt: Date.now() + TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS,
+    payload,
+    staleUntil:
+      Date.now() +
+      TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS +
+      TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS,
+  });
+}
+
 async function tokenListingAnchorOutspend(listing, network) {
   const anchor = tokenListingAnchorOutpoint(listing);
   if (!anchor) {
     return null;
   }
 
+  const cached = cachedTokenMarketOutspend(network, anchor);
+  if (cached) {
+    return cached;
+  }
+
   try {
-    return await txOutspendPayload(anchor.txid, anchor.vout, network);
+    const payload = await txOutspendPayload(anchor.txid, anchor.vout, network);
+    cacheTokenMarketOutspend(network, anchor, payload);
+    return payload;
   } catch (error) {
     console.error(
       `Token listing outspend lookup failed for ${anchor.txid}:${anchor.vout}: ${errorSummary(error)}`,
     );
-    // Keep the listing visible if a transient outspend lookup fails.
-    return null;
+    // Keep the last known answer if the node has a transient outspend miss.
+    return cachedTokenMarketOutspend(network, anchor, true);
   }
 }
 
@@ -9007,6 +9054,32 @@ async function tokenPayloadForRead(
   options = {},
 ) {
   const scope = normalizeTokenScope(tokenScope);
+  const useLedgerSnapshot = options.useLedgerSnapshot !== false;
+  if (network === "livenet" && useLedgerSnapshot) {
+    let ledger = null;
+    try {
+      ledger = fresh
+        ? await summaryCanonicalLedgerPayload(network, true)
+        : await existingCanonicalLedgerPayload(network);
+    } catch (error) {
+      console.error(
+        `Canonical token payload failed for ${network}:${scope}: ${errorSummary(error)}`,
+      );
+    }
+    if (ledger) {
+      const payload = attachLedgerMetadata(
+        {
+          ...ledgerTokenStateForScope(ledger, scope),
+          indexedAt: ledger.generatedAt,
+        },
+        ledger,
+      );
+      return options.reconcileSpendable === false
+        ? payload
+        : await tokenPayloadWithSpendableListings(payload, network);
+    }
+  }
+
   return fresh
     ? await freshTokenPayloadOrSnapshot(network, scope, options)
     : await fastTokenPayloadSnapshot(network, scope, options);
@@ -9048,7 +9121,9 @@ async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
     };
   }
 
-  const payload = await tokenPayloadForRead(network, scope, fresh);
+  const payload = await tokenPayloadForRead(network, scope, fresh, {
+    reconcileSpendable: false,
+  });
   return compactTokenSummaryPayload(payload);
 }
 
@@ -9270,23 +9345,78 @@ function ledgerPayloadAgeMs(payload, now = Date.now()) {
 }
 
 async function existingCanonicalLedgerPayload(network) {
+  const cacheKey = `ledger:${network}`;
   const payloadKey = `payload:ledger:${network}`;
   const cachedPayload = RESPONSE_CACHE.get(payloadKey)?.payload;
   if (cachedPayload && ledgerPayloadHasCurrentChecks(cachedPayload)) {
     return cachedPayload;
   }
 
+  const persistedPayload = await persistedPayloadForCache(
+    cacheKey,
+    LEDGER_CACHE_STALE_MS,
+  );
+  if (persistedPayload && ledgerPayloadHasCurrentChecks(persistedPayload)) {
+    RESPONSE_CACHE.set(payloadKey, {
+      expiresAt: Date.now() - 1,
+      payload: persistedPayload,
+      staleUntil: Date.now() + LEDGER_CACHE_STALE_MS,
+    });
+    return persistedPayload;
+  }
+
   return null;
+}
+
+function cacheDerivedLedgerPayload(cacheKey, payload, ttlMs, staleMs) {
+  const payloadKey = `payload:${cacheKey}`;
+  const body = JSON.stringify(payload);
+  RESPONSE_CACHE.set(payloadKey, {
+    expiresAt: Date.now() + ttlMs,
+    payload,
+    staleUntil: Date.now() + staleMs,
+  });
+  cacheJsonBody(`json:${cacheKey}`, body, ttlMs, staleMs);
+  if (shouldPersistJsonCache(cacheKey)) {
+    void writePersistedJsonCache(`json:${cacheKey}`, body);
+  }
 }
 
 function cacheCanonicalLedgerPayload(network, payload) {
   const cacheKey = `ledger:${network}`;
   const payloadKey = `payload:${cacheKey}`;
+  const body = JSON.stringify(payload);
   RESPONSE_CACHE.set(payloadKey, {
     expiresAt: Date.now() + LEDGER_CACHE_TTL_MS,
     payload,
     staleUntil: Date.now() + LEDGER_CACHE_STALE_MS,
   });
+  cacheJsonBody(
+    `json:${cacheKey}`,
+    body,
+    LEDGER_CACHE_TTL_MS,
+    LEDGER_CACHE_STALE_MS,
+  );
+  if (shouldPersistJsonCache(cacheKey)) {
+    void writePersistedJsonCache(`json:${cacheKey}`, body);
+  }
+
+  if (payload?.workFloor) {
+    cacheDerivedLedgerPayload(
+      `work-floor:${network}`,
+      payload.workFloor,
+      WORK_FLOOR_CACHE_TTL_MS,
+      WORK_FLOOR_CACHE_STALE_MS,
+    );
+  }
+  if (payload?.growthSummary) {
+    cacheDerivedLedgerPayload(
+      `growth-summary:${network}`,
+      payload.growthSummary,
+      LEDGER_CACHE_TTL_MS,
+      HEAVY_READ_STALE_MS,
+    );
+  }
 }
 
 function ledgerTokenStateForScope(ledger, scope) {
@@ -9587,14 +9717,21 @@ function ledgerConsistencyPayloadFromLedger(ledger) {
 }
 
 async function ledgerConsistencyPayload(network, fresh = false) {
+  const ledger = await summaryCanonicalLedgerPayload(network, fresh);
+  if (ledger) {
+    return ledgerConsistencyPayloadFromLedger(ledger);
+  }
+
   return ledgerConsistencyPayloadFromLedger(
-    await canonicalLedgerPayload(network, fresh),
+    await canonicalLedgerPayload(network, false),
   );
 }
 
 async function ledgerTokenPayload(network, tokenScope = "", fresh = false) {
   const scope = normalizeTokenScope(tokenScope);
-  let fallback = await fastCachedTokenPayload(network, scope);
+  let fallback = await fastTokenPayloadSnapshot(network, scope, {
+    reconcileSpendable: false,
+  });
   if (scope === WORK_TOKEN_ID) {
     fallback = await liveWorkTokenState(network, fallback);
   }
@@ -9782,6 +9919,12 @@ async function canonicalLedgerPayload(network, fresh = false) {
     RESPONSE_CACHE.delete(payloadKey);
     cached = null;
   }
+  if (!cached?.payload) {
+    const persistedPayload = await existingCanonicalLedgerPayload(network);
+    if (persistedPayload) {
+      cached = RESPONSE_CACHE.get(payloadKey);
+    }
+  }
   if (fresh) {
     if (
       cached?.payload &&
@@ -9831,8 +9974,54 @@ async function canonicalLedgerPayload(network, fresh = false) {
   return promise;
 }
 
+function refreshCanonicalLedgerPayloadInBackground(network, fresh = false) {
+  const cacheKey = `ledger:${network}`;
+  if (BACKGROUND_LEDGER_REFRESHES.has(cacheKey)) {
+    return;
+  }
+  if (
+    backgroundRefreshRecentlyStarted(
+      cacheKey,
+      BACKGROUND_DERIVED_REFRESH_INTERVAL_MS,
+    )
+  ) {
+    return;
+  }
+
+  BACKGROUND_LEDGER_REFRESHES.add(cacheKey);
+  void refreshCanonicalLedgerPayload(network, fresh)
+    .catch((error) => {
+      console.error(
+        `Ledger refresh failed for ${network}: ${errorSummary(error)}`,
+      );
+    })
+    .finally(() => {
+      BACKGROUND_LEDGER_REFRESHES.delete(cacheKey);
+    });
+}
+
+async function summaryCanonicalLedgerPayload(network, fresh = false) {
+  const fallback = await existingCanonicalLedgerPayload(network);
+  if (fresh) {
+    refreshCanonicalLedgerPayloadInBackground(network, true);
+    return fallback;
+  }
+
+  if (fallback) {
+    return fallback;
+  }
+
+  refreshCanonicalLedgerPayloadInBackground(network, false);
+  return null;
+}
+
 async function mergedLogActivityPayload(network, fresh = false) {
-  return (await canonicalLedgerPayload(network, fresh)).activityPayload;
+  const ledger = await summaryCanonicalLedgerPayload(network, fresh);
+  if (ledger) {
+    return ledger.activityPayload;
+  }
+
+  return (await canonicalLedgerPayload(network, false)).activityPayload;
 }
 
 async function registrySummaryPayload(network, fresh = false) {
@@ -9890,28 +10079,82 @@ async function freshTokenPayloadOrSnapshot(
   return fallback;
 }
 
+async function cachedWorkFloorSnapshotNoRefresh(network) {
+  const cacheKey = `work-floor:${network}`;
+  const payloadKey = `payload:${cacheKey}`;
+  const cachedPayload = RESPONSE_CACHE.get(payloadKey)?.payload;
+  if (cachedPayload) {
+    return cachedPayload;
+  }
+
+  const persistedPayload = await persistedPayloadForCache(
+    cacheKey,
+    WORK_FLOOR_CACHE_STALE_MS,
+  );
+  if (persistedPayload) {
+    RESPONSE_CACHE.set(payloadKey, {
+      expiresAt: Date.now() - 1,
+      payload: persistedPayload,
+      staleUntil: Date.now() + WORK_FLOOR_CACHE_STALE_MS,
+    });
+    return persistedPayload;
+  }
+
+  return null;
+}
+
 async function cachedWorkFloorPayload(network, fresh = false) {
-  return (await canonicalLedgerPayload(network, fresh)).workFloor;
+  if (network === "livenet") {
+    const ledger = fresh
+      ? await summaryCanonicalLedgerPayload(network, true)
+      : await existingCanonicalLedgerPayload(network);
+    if (ledger?.workFloor) {
+      return ledger.workFloor;
+    }
+
+    const cachedFloor = await cachedWorkFloorSnapshotNoRefresh(network);
+    if (cachedFloor) {
+      return cachedFloor;
+    }
+  }
+
+  return workFloorPayload(network, false);
 }
 
 async function workSummaryPayload(network, fresh = false) {
   if (network === "livenet") {
-    const ledger = await canonicalLedgerPayload(network, fresh);
-    return attachLedgerMetadata(
-      {
-        floor: ledger.workFloor,
-        indexedAt: ledger.generatedAt,
-        network,
-        summaryOnly: true,
-        token: attachLedgerMetadata(
-          compactTokenSummaryPayload(
-            ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
+    const ledger = fresh
+      ? await summaryCanonicalLedgerPayload(network, true)
+      : await existingCanonicalLedgerPayload(network);
+    if (ledger) {
+      return attachLedgerMetadata(
+        {
+          floor: ledger.workFloor,
+          indexedAt: ledger.generatedAt,
+          network,
+          summaryOnly: true,
+          token: attachLedgerMetadata(
+            compactTokenSummaryPayload(
+              ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
+            ),
+            ledger,
           ),
-          ledger,
-        ),
-      },
-      ledger,
-    );
+        },
+        ledger,
+      );
+    }
+
+    const [floor, token] = await Promise.all([
+      cachedWorkFloorPayload(network, false),
+      tokenSummaryPayload(network, WORK_TOKEN_ID, false),
+    ]);
+    return {
+      floor,
+      indexedAt: floor.indexedAt ?? token.indexedAt ?? new Date().toISOString(),
+      network,
+      summaryOnly: true,
+      token,
+    };
   }
 
   const [token, floor] = await Promise.all([
@@ -9931,21 +10174,43 @@ async function workSummaryPayload(network, fresh = false) {
 
 async function marketplaceSummaryPayload(network, fresh = false) {
   if (network === "livenet") {
-    const ledger = await canonicalLedgerPayload(network, fresh);
-    return attachLedgerMetadata(
-      {
-        indexedAt: ledger.generatedAt,
-        network,
-        registry: compactRegistrySummaryPayload(ledger.registryState),
-        summaryOnly: true,
-        token: attachLedgerMetadata(
-          compactTokenSummaryPayload(ledger.tokenState),
-          ledger,
-        ),
-        workFloor: ledger.workFloor,
-      },
-      ledger,
-    );
+    const ledger = fresh
+      ? await summaryCanonicalLedgerPayload(network, true)
+      : await existingCanonicalLedgerPayload(network);
+    if (ledger) {
+      return attachLedgerMetadata(
+        {
+          indexedAt: ledger.generatedAt,
+          network,
+          registry: compactRegistrySummaryPayload(ledger.registryState),
+          summaryOnly: true,
+          token: attachLedgerMetadata(
+            compactTokenSummaryPayload(ledger.tokenState),
+            ledger,
+          ),
+          workFloor: ledger.workFloor,
+        },
+        ledger,
+      );
+    }
+
+    const [registry, token, workFloor] = await Promise.all([
+      registrySummaryPayload(network, false),
+      tokenSummaryPayload(network, "", false),
+      cachedWorkFloorPayload(network, false),
+    ]);
+    return {
+      indexedAt:
+        workFloor.indexedAt ??
+        token.indexedAt ??
+        registry.indexedAt ??
+        new Date().toISOString(),
+      network,
+      registry,
+      summaryOnly: true,
+      token,
+      workFloor,
+    };
   }
 
   if (fresh) {
@@ -9976,13 +10241,16 @@ async function marketplaceSummaryPayload(network, fresh = false) {
 }
 
 function refreshGrowthCachesInBackground(network) {
-  void canonicalLedgerPayload(network, true).catch((error) => {
-    console.error(`Ledger refresh failed for ${network}:`, error);
-  });
+  refreshCanonicalLedgerPayloadInBackground(network, true);
 }
 
 async function growthSummaryPayload(network, fresh = false) {
-  return (await canonicalLedgerPayload(network, fresh)).growthSummary;
+  const ledger = await summaryCanonicalLedgerPayload(network, fresh);
+  if (ledger) {
+    return ledger.growthSummary;
+  }
+
+  return (await canonicalLedgerPayload(network, false)).growthSummary;
 }
 
 async function registryHistoryPayload(network, kind, searchParams, fresh = false) {
@@ -10111,7 +10379,14 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     pagination: historyPaginationFromSearch(searchParams),
     source: payload.source ?? mempoolBase(network),
   });
-  return page;
+  return payload.snapshotId
+    ? {
+        ...page,
+        consistency: payload.consistency,
+        ledgerGeneratedAt: payload.ledgerGeneratedAt,
+        snapshotId: payload.snapshotId,
+      }
+    : page;
 }
 
 async function rushPayload(network) {
@@ -10894,10 +11169,12 @@ async function workFloorPayload(network, fresh = false) {
         : fastGlobalActivityPayload(network),
       fresh && ENABLE_SUMMARY_TOKEN_REFRESH
         ? refreshTokenPayload(network)
-        : fastCachedTokenPayload(network),
+        : fastTokenPayloadSnapshot(network, "", { reconcileSpendable: false }),
       fresh && ENABLE_SUMMARY_TOKEN_REFRESH
         ? refreshTokenPayload(network, WORK_TOKEN_ID)
-        : fastCachedTokenPayload(network, WORK_TOKEN_ID),
+        : fastTokenPayloadSnapshot(network, WORK_TOKEN_ID, {
+            reconcileSpendable: false,
+          }),
       btcUsdPricePayload(network, { fresh }),
     ]);
 
@@ -11860,6 +12137,9 @@ function prewarmExpensiveReadCaches() {
     `token:livenet:${WORK_TOKEN_ID}`,
     Date.now(),
   );
+  setTimeout(() => {
+    refreshCanonicalLedgerPayloadInBackground("livenet", false);
+  }, BACKGROUND_STARTUP_REFRESH_DELAY_MS);
 }
 
 server.listen(PORT, HOST, () => {

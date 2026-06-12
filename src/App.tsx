@@ -8031,7 +8031,7 @@ function tokenMarketplaceSummaryStats({
         },
         {
           label: "Volume proofs",
-          value: marketStats.totalVolumeSats,
+          value: compactMarketplaceStatValue(marketStats.totalVolumeSats),
         },
         {
           label: "Pending Sales",
@@ -8058,7 +8058,7 @@ function tokenMarketplaceSummaryStats({
       },
       {
         label: "Volume proofs",
-        value: marketStats.totalVolumeSats,
+        value: compactMarketplaceStatValue(marketStats.totalVolumeSats),
       },
       {
         label: "Pending Credits",

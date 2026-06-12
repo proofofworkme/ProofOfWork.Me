@@ -4581,13 +4581,17 @@ pre {
 .id-launch-stats div {
   display: grid;
   gap: 5px;
+  min-width: 0;
   padding: 14px;
 }
 
 .id-launch-stats strong {
-  font-size: 1.6rem;
+  font-size: clamp(1.1rem, 2vw, 1.6rem);
+  font-variant-numeric: tabular-nums;
   line-height: 1;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .id-launch-stats span {
