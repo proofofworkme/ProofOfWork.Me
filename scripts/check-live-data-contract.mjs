@@ -51,12 +51,14 @@ expectAll("canonical ledger directly merges seeded Computer mail", server, [
 
 expectAll("WORK Growth Log and token views use the same ledger", server, [
   /async function canonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)/,
-  /async function mergedLogActivityPayload\(network,\s*fresh\s*=\s*false\)\s*{\s*return \(await canonicalLedgerPayload\(network,\s*fresh\)\)\.activityPayload;/s,
-  /async function cachedWorkFloorPayload\(network,\s*fresh\s*=\s*false\)\s*{\s*return \(await canonicalLedgerPayload\(network,\s*fresh\)\)\.workFloor;/s,
-  /async function growthSummaryPayload\(network,\s*fresh\s*=\s*false\)\s*{\s*return \(await canonicalLedgerPayload\(network,\s*fresh\)\)\.growthSummary;/s,
-  /async function tokenSummaryPayload[\s\S]*const ledger = await canonicalLedgerPayload\(network,\s*fresh\)/,
-  /async function tokenHistoryPayload[\s\S]*await canonicalLedgerPayload\(network,\s*fresh\)/,
-  /url\.pathname === "\/api\/v1\/token"[\s\S]*await canonicalLedgerPayload\(network,\s*freshRead\)/,
+  /async function summaryCanonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*refreshCanonicalLedgerPayloadInBackground\(network,\s*true\)/,
+  /async function mergedLogActivityPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*return ledger\.activityPayload;[\s\S]*canonicalLedgerPayload\(network,\s*false\)\)\.activityPayload;/,
+  /async function cachedWorkFloorPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*true\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*return ledger\.workFloor;/,
+  /async function growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*return ledger\.growthSummary;[\s\S]*canonicalLedgerPayload\(network,\s*false\)\)\.growthSummary;/,
+  /async function tokenPayloadForRead[\s\S]*summaryCanonicalLedgerPayload\(network,\s*true\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerTokenStateForScope\(ledger,\s*scope\)/,
+  /async function tokenSummaryPayload[\s\S]*const payload = await tokenPayloadForRead\(network,\s*scope,\s*fresh/,
+  /async function tokenHistoryPayload[\s\S]*let payload = await tokenPayloadForRead\(network,\s*scope,\s*fresh/,
+  /url\.pathname === "\/api\/v1\/token"[\s\S]*await tokenPayloadForRead\(network,\s*tokenScope,\s*freshRead/,
 ]);
 
 expectAll("WORK floor USD uses live price metadata", server, [
@@ -103,8 +105,8 @@ expectAll("token sales must be searchable in Log by txid and participants", serv
 expectAll("endpoint caches cannot bypass the ledger", server, [
   /jsonResponse\(\s*response,\s*200,\s*await mergedLogActivityPayload\(network\)/,
   /jsonResponse\(\s*response,\s*200,\s*await growthSummaryPayload\(network,\s*freshRead\)/,
-  /attachLedgerMetadata\(ledgerTokenStateForScope\(ledger,\s*tokenScope\),\s*ledger\)/,
-  /attachLedgerMetadata\(page,\s*ledger\)/,
+  /attachLedgerMetadata\(\s*\{[\s\S]*ledgerTokenStateForScope\(ledger,\s*scope\)[\s\S]*indexedAt:\s*ledger\.generatedAt[\s\S]*\},\s*ledger,?\s*\)/,
+  /return payload\.snapshotId[\s\S]*\.\.\.page[\s\S]*ledgerGeneratedAt:\s*payload\.ledgerGeneratedAt[\s\S]*snapshotId:\s*payload\.snapshotId/,
 ]);
 
 expectAll("fresh reads do not rebuild the ledger in a tight loop", server, [
