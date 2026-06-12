@@ -7954,17 +7954,39 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) 
   };
 }
 
-function compactTokenSummaryPayload(payload) {
+function compactTokenSummaryPayload(payload, tokenScope = "") {
   const holders = Array.isArray(payload.holders) ? payload.holders : [];
   const stats =
     payload.stats && typeof payload.stats === "object" ? payload.stats : {};
+  const scope = normalizeTokenScope(tokenScope);
+  const rawTokens = Array.isArray(payload.tokens) ? payload.tokens : [];
   const tokenSummaries = tokenAggregateSummaries(payload);
-  const tokens = (Array.isArray(payload.tokens) ? payload.tokens : []).map(
-    (token) => ({
+  const scopedTokenId =
+    scope && rawTokens.length === 1 && tokenMatchesScope(rawTokens[0], scope)
+      ? rawTokens[0].tokenId
+      : "";
+  const scopedConfirmedSupply = Number.isFinite(payload.confirmedSupply)
+    ? Math.max(0, Number(payload.confirmedSupply))
+    : undefined;
+  const scopedPendingSupply = Number.isFinite(payload.pendingSupply)
+    ? Math.max(0, Number(payload.pendingSupply))
+    : undefined;
+  const tokens = rawTokens.map((token) => {
+    const summary = tokenSummaries.get(token.tokenId) ?? {};
+    const next = {
       ...token,
-      ...(tokenSummaries.get(token.tokenId) ?? {}),
-    }),
-  );
+      ...summary,
+    };
+    if (scopedTokenId && token.tokenId === scopedTokenId) {
+      if (scopedConfirmedSupply !== undefined) {
+        next.confirmedSupply = scopedConfirmedSupply;
+      }
+      if (scopedPendingSupply !== undefined) {
+        next.pendingSupply = scopedPendingSupply;
+      }
+    }
+    return next;
+  });
 
   return {
     ...payload,
@@ -9124,7 +9146,7 @@ async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
   const payload = await tokenPayloadForRead(network, scope, fresh, {
     reconcileSpendable: false,
   });
-  return compactTokenSummaryPayload(payload);
+  return compactTokenSummaryPayload(payload, scope);
 }
 
 function emptyRegistryPayload(network) {
@@ -10136,6 +10158,7 @@ async function workSummaryPayload(network, fresh = false) {
           token: attachLedgerMetadata(
             compactTokenSummaryPayload(
               ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
+              WORK_TOKEN_ID,
             ),
             ledger,
           ),

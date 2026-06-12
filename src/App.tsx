@@ -6423,21 +6423,41 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
 
   if (tokens.length === 1) {
     const ledger = tokenLedgerFor(tokens[0], mints, transfers, sales);
+    const stateConfirmedSupply = Number.isFinite(state.confirmedSupply)
+      ? Math.max(0, Number(state.confirmedSupply))
+      : 0;
+    const statePendingSupply = Number.isFinite(state.pendingSupply)
+      ? Math.max(0, Number(state.pendingSupply))
+      : 0;
+    const confirmedSupply = Math.max(
+      ledger.confirmedSupply,
+      stateConfirmedSupply,
+    );
+    const pendingSupply = Math.max(ledger.pendingSupply, statePendingSupply);
+    const tokenConfirmedSupply = Number.isFinite(tokens[0].confirmedSupply)
+      ? Math.max(confirmedSupply, Number(tokens[0].confirmedSupply))
+      : confirmedSupply;
+    const tokenPendingSupply = Number.isFinite(tokens[0].pendingSupply)
+      ? Math.max(pendingSupply, Number(tokens[0].pendingSupply))
+      : pendingSupply;
+    const scopedTokens = [
+      {
+        ...tokens[0],
+        confirmedSupply: tokenConfirmedSupply,
+        pendingSupply: tokenPendingSupply,
+      },
+    ];
     return {
       closedListings,
-      creationSats: tokens[0].creationFeeSats,
-      confirmedSupply: summaryOnly
-        ? Math.max(ledger.confirmedSupply, state.confirmedSupply)
-        : ledger.confirmedSupply,
+      creationSats: scopedTokens[0].creationFeeSats,
+      confirmedSupply,
       holders: summaryOnly && state.holders.length > 0 ? state.holders : ledger.holders,
       listings,
       mints,
-      pendingSupply: summaryOnly
-        ? Math.max(ledger.pendingSupply, state.pendingSupply)
-        : ledger.pendingSupply,
+      pendingSupply,
       sales,
       summaryOnly,
-      tokens,
+      tokens: scopedTokens,
       transfers,
     };
   }
@@ -9422,19 +9442,30 @@ async function fetchTokenSupplyState(
     : undefined;
   const scopedConfirmedSupply = scopedToken?.confirmedSupply;
   const scopedPendingSupply = scopedToken?.pendingSupply;
+  const topLevelConfirmedSupply = Number.isSafeInteger(payload.confirmedSupply)
+    ? Math.max(0, Number(payload.confirmedSupply))
+    : undefined;
+  const topLevelPendingSupply = Number.isSafeInteger(payload.pendingSupply)
+    ? Math.max(0, Number(payload.pendingSupply))
+    : undefined;
+  const preferScopedTopLevelSupply = Boolean(normalizedTokenScope);
   return {
     creationSats: Number.isSafeInteger(payload.creationSats)
       ? Number(payload.creationSats)
       : 0,
-    confirmedSupply: Number.isSafeInteger(scopedConfirmedSupply)
+    confirmedSupply: preferScopedTopLevelSupply && topLevelConfirmedSupply !== undefined
+      ? topLevelConfirmedSupply
+      : Number.isSafeInteger(scopedConfirmedSupply)
       ? Number(scopedConfirmedSupply)
-      : Number.isSafeInteger(payload.confirmedSupply)
-      ? Number(payload.confirmedSupply)
+      : topLevelConfirmedSupply !== undefined
+      ? topLevelConfirmedSupply
       : 0,
-    pendingSupply: Number.isSafeInteger(scopedPendingSupply)
+    pendingSupply: preferScopedTopLevelSupply && topLevelPendingSupply !== undefined
+      ? topLevelPendingSupply
+      : Number.isSafeInteger(scopedPendingSupply)
       ? Number(scopedPendingSupply)
-      : Number.isSafeInteger(payload.pendingSupply)
-      ? Number(payload.pendingSupply)
+      : topLevelPendingSupply !== undefined
+      ? topLevelPendingSupply
       : 0,
     tokens,
   };
@@ -18607,7 +18638,7 @@ export default function App() {
 
     setTokenMintAssistantRemaining(remaining);
     const txid = await mintToken(undefined, token, {
-      freshSupplyCheck: false,
+      freshSupplyCheck: true,
       refreshAfterBroadcast: false,
     });
     if (!tokenMintAssistantActiveRef.current) {
