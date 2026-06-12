@@ -125,6 +125,9 @@ const WORK_FLOOR_FRESH_WAIT_MS = Number(
 const WORK_TOKEN_LIVE_WAIT_MS = Number(
   process.env.WORK_TOKEN_LIVE_WAIT_MS ?? WORK_FLOOR_FRESH_WAIT_MS,
 );
+const TOKEN_SCOPED_FRESH_WAIT_MS = Number(
+  process.env.TOKEN_SCOPED_FRESH_WAIT_MS ?? 30_000,
+);
 const TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS = Number(
   process.env.TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS ?? 10 * 60_000,
 );
@@ -135,7 +138,7 @@ const WORK_TOKEN_LIVE_DELTA_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_DELTA_MAX_TXS ?? 1500,
 );
 const WORK_TOKEN_LIVE_PENDING_CONFIRMATION_MAX_TXS = Number(
-  process.env.WORK_TOKEN_LIVE_PENDING_CONFIRMATION_MAX_TXS ?? 0,
+  process.env.WORK_TOKEN_LIVE_PENDING_CONFIRMATION_MAX_TXS ?? 250,
 );
 const WORK_TOKEN_LIVE_RECENT_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_RECENT_MAX_TXS ?? 40,
@@ -8272,24 +8275,8 @@ function unconfirmedTokenStateTxids(state) {
     }
   };
 
-  for (const item of Array.isArray(state?.mints) ? state.mints : []) {
-    if (item?.confirmed === false) {
-      add(item.txid);
-    }
-  }
-
-  for (const item of Array.isArray(state?.transfers) ? state.transfers : []) {
-    if (item?.confirmed === false) {
-      add(item.txid);
-    }
-  }
-
-  for (const item of Array.isArray(state?.sales) ? state.sales : []) {
-    if (item?.confirmed === false) {
-      add(item.txid);
-    }
-  }
-
+  // Listings and seals directly gate seller actions, so check them before
+  // high-volume pending mint rows consume the bounded confirmation window.
   for (const item of Array.isArray(state?.listings) ? state.listings : []) {
     if (item?.confirmed === false) {
       add(item.txid);
@@ -8309,6 +8296,24 @@ function unconfirmedTokenStateTxids(state) {
     }
     if (item?.closedConfirmed === false) {
       add(item.closedTxid);
+    }
+  }
+
+  for (const item of Array.isArray(state?.sales) ? state.sales : []) {
+    if (item?.confirmed === false) {
+      add(item.txid);
+    }
+  }
+
+  for (const item of Array.isArray(state?.transfers) ? state.transfers : []) {
+    if (item?.confirmed === false) {
+      add(item.txid);
+    }
+  }
+
+  for (const item of Array.isArray(state?.mints) ? state.mints : []) {
+    if (item?.confirmed === false) {
+      add(item.txid);
     }
   }
 
@@ -9126,7 +9131,7 @@ async function confirmedTransactionsForTxids(txids, network, maxTxs) {
     TX_FETCH_CONCURRENCY,
     async (txid) => {
       try {
-        const tx = await fetchTransaction(txid, network);
+        const tx = await fetchTransactionWithPendingFallback(txid, network);
         return transactionConfirmed(tx) ? tx : null;
       } catch {
         return null;
@@ -9454,6 +9459,26 @@ async function tokenPayloadForRead(
 ) {
   const scope = normalizeTokenScope(tokenScope);
   const useLedgerSnapshot = options.useLedgerSnapshot !== false;
+  if (
+    fresh &&
+    scope &&
+    scope !== WORK_TOKEN_ID &&
+    options.preferScopedRefresh !== false
+  ) {
+    const fallback = await existingTokenPayload(network, scope);
+    const freshScopedPayload = await payloadWithFallbackAfterMs(
+      refreshTokenPayload(network, scope),
+      fallback,
+      Number.isFinite(options.scopedRefreshWaitMs)
+        ? options.scopedRefreshWaitMs
+        : TOKEN_SCOPED_FRESH_WAIT_MS,
+    );
+    if (freshScopedPayload) {
+      return options.reconcileSpendable === false
+        ? freshScopedPayload
+        : await tokenPayloadWithSpendableListings(freshScopedPayload, network);
+    }
+  }
   if (network === "livenet" && useLedgerSnapshot) {
     let ledger = null;
     try {
@@ -9534,7 +9559,8 @@ async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
   }
 
   const payload = await tokenPayloadForRead(network, scope, fresh, {
-    liveWorkWaitMs: scope === WORK_TOKEN_ID ? WORK_TOKEN_LIVE_WAIT_MS : undefined,
+    liveWorkWaitMs:
+      scope === WORK_TOKEN_ID && !fresh ? WORK_TOKEN_LIVE_WAIT_MS : undefined,
     recoverWorkSales: scope !== WORK_TOKEN_ID,
     reconcileSpendable: false,
   });
@@ -10601,8 +10627,19 @@ async function marketplaceSummaryPayload(network, fresh = false) {
       ? await summaryCanonicalLedgerPayload(network, true)
       : await existingCanonicalLedgerPayload(network);
     if (ledger) {
+      const baseTokenState =
+        fresh && ledger.workTokenState
+          ? tokenStateWithScopedTokenOverride(
+              ledger.tokenState,
+              await liveWorkTokenState(
+                network,
+                ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
+              ),
+              WORK_TOKEN_ID,
+            )
+          : ledger.tokenState;
       const tokenState = await tokenStateWithReconciledListingSeals(
-        ledger.tokenState,
+        baseTokenState,
         network,
       );
       return attachLedgerMetadata(
