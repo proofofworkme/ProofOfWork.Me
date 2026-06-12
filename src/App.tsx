@@ -6429,11 +6429,12 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
     const statePendingSupply = Number.isFinite(state.pendingSupply)
       ? Math.max(0, Number(state.pendingSupply))
       : 0;
-    const confirmedSupply = Math.max(
-      ledger.confirmedSupply,
-      stateConfirmedSupply,
-    );
-    const pendingSupply = Math.max(ledger.pendingSupply, statePendingSupply);
+    const confirmedSupply = summaryOnly
+      ? Math.max(ledger.confirmedSupply, stateConfirmedSupply)
+      : ledger.confirmedSupply;
+    const pendingSupply = summaryOnly
+      ? Math.max(ledger.pendingSupply, statePendingSupply)
+      : ledger.pendingSupply;
     const tokenConfirmedSupply = Number.isFinite(tokens[0].confirmedSupply)
       ? Math.max(confirmedSupply, Number(tokens[0].confirmedSupply))
       : confirmedSupply;

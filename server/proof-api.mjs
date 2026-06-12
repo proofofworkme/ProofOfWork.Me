@@ -122,6 +122,9 @@ const LEDGER_FRESH_MIN_INTERVAL_MS = Number(
 const WORK_FLOOR_FRESH_WAIT_MS = Number(
   process.env.WORK_FLOOR_FRESH_WAIT_MS ?? 1500,
 );
+const WORK_TOKEN_LIVE_WAIT_MS = Number(
+  process.env.WORK_TOKEN_LIVE_WAIT_MS ?? WORK_FLOOR_FRESH_WAIT_MS,
+);
 const TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS = Number(
   process.env.TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS ?? 10 * 60_000,
 );
@@ -131,11 +134,14 @@ const TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS = Number(
 const WORK_TOKEN_LIVE_DELTA_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_DELTA_MAX_TXS ?? 1500,
 );
+const WORK_TOKEN_LIVE_PENDING_CONFIRMATION_MAX_TXS = Number(
+  process.env.WORK_TOKEN_LIVE_PENDING_CONFIRMATION_MAX_TXS ?? 0,
+);
 const WORK_TOKEN_LIVE_RECENT_MAX_TXS = Number(
-  process.env.WORK_TOKEN_LIVE_RECENT_MAX_TXS ?? 100,
+  process.env.WORK_TOKEN_LIVE_RECENT_MAX_TXS ?? 40,
 );
 const WORK_TOKEN_LIVE_HISTORY_MAX_TXS = Number(
-  process.env.WORK_TOKEN_LIVE_HISTORY_MAX_TXS ?? 100,
+  process.env.WORK_TOKEN_LIVE_HISTORY_MAX_TXS ?? 40,
 );
 const SUMMARY_ACTIVITY_LIMIT = Number(process.env.SUMMARY_ACTIVITY_LIMIT ?? 60);
 const SUMMARY_MARKET_LIMIT = Number(process.env.SUMMARY_MARKET_LIMIT ?? 40);
@@ -9043,7 +9049,7 @@ async function confirmedTransactionsForTxids(txids, network, maxTxs) {
 
   const txs = await mapWithConcurrency(
     uniqueTxids,
-    Math.min(4, TX_FETCH_CONCURRENCY),
+    TX_FETCH_CONCURRENCY,
     async (txid) => {
       try {
         const tx = await fetchTransaction(txid, network);
@@ -9082,7 +9088,7 @@ async function recentUnknownHistoryTransactions(
   let failedFetches = 0;
   const txs = await mapWithConcurrency(
     unknownTxids,
-    Math.min(4, TX_FETCH_CONCURRENCY),
+    TX_FETCH_CONCURRENCY,
     async (txid) => {
       try {
         return await fetchTransaction(txid, network);
@@ -9180,6 +9186,10 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
   }
 
   const maxDeltaTxs = Math.max(1, WORK_TOKEN_LIVE_DELTA_MAX_TXS);
+  const maxPendingConfirmationTxs = Math.max(
+    0,
+    Math.min(maxDeltaTxs, WORK_TOKEN_LIVE_PENDING_CONFIRMATION_MAX_TXS),
+  );
   const maxRecentTxs = Math.max(
     1,
     Math.min(maxDeltaTxs, WORK_TOKEN_LIVE_RECENT_MAX_TXS),
@@ -9192,7 +9202,7 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
   const confirmedPendingTxs = await confirmedTransactionsForTxids(
     pendingTxids,
     network,
-    maxDeltaTxs,
+    maxPendingConfirmationTxs,
   );
 
   const knownTxids = syncWorkTokenLiveSeenTxids(network, state);
@@ -9348,6 +9358,20 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
   return nextState;
 }
 
+async function liveWorkTokenStateWithFallbackAfterMs(
+  network,
+  cachedWorkTokenState,
+  timeoutMs = WORK_TOKEN_LIVE_WAIT_MS,
+  options = {},
+) {
+  const fallback = workTokenStateWithMintSupplyCounters(cachedWorkTokenState);
+  return payloadWithFallbackAfterMs(
+    liveWorkTokenState(network, fallback, options),
+    fallback,
+    timeoutMs,
+  );
+}
+
 async function tokenPayloadForRead(
   network,
   tokenScope = "",
@@ -9376,9 +9400,17 @@ async function tokenPayloadForRead(
         ledger,
       );
       if (scope === WORK_TOKEN_ID) {
-        payload = await liveWorkTokenState(network, payload, {
+        const liveOptions = {
           recoverClosedSales: options.recoverWorkSales !== false,
-        });
+        };
+        payload = Number.isFinite(options.liveWorkWaitMs)
+          ? await liveWorkTokenStateWithFallbackAfterMs(
+              network,
+              payload,
+              options.liveWorkWaitMs,
+              liveOptions,
+            )
+          : await liveWorkTokenState(network, payload, liveOptions);
       }
       return options.reconcileSpendable === false
         ? payload
@@ -9428,6 +9460,7 @@ async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
   }
 
   const payload = await tokenPayloadForRead(network, scope, fresh, {
+    liveWorkWaitMs: scope === WORK_TOKEN_ID ? WORK_TOKEN_LIVE_WAIT_MS : undefined,
     recoverWorkSales: scope !== WORK_TOKEN_ID,
     reconcileSpendable: false,
   });
@@ -10040,7 +10073,12 @@ async function ledgerTokenPayload(network, tokenScope = "", fresh = false) {
     reconcileSpendable: false,
   });
   if (scope === WORK_TOKEN_ID) {
-    fallback = await liveWorkTokenState(network, fallback);
+    fallback = await liveWorkTokenStateWithFallbackAfterMs(
+      network,
+      fallback,
+      WORK_TOKEN_LIVE_WAIT_MS,
+      { recoverClosedSales: false },
+    );
   }
   if (!fresh || !ENABLE_SUMMARY_TOKEN_REFRESH) {
     return fallback;
@@ -10434,9 +10472,10 @@ async function workSummaryPayload(network, fresh = false) {
       ? await summaryCanonicalLedgerPayload(network, true)
       : await existingCanonicalLedgerPayload(network);
     if (ledger) {
-      const workTokenState = await liveWorkTokenState(
+      const workTokenState = await liveWorkTokenStateWithFallbackAfterMs(
         network,
         ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
+        WORK_TOKEN_LIVE_WAIT_MS,
         { recoverClosedSales: false },
       );
       return attachLedgerMetadata(
