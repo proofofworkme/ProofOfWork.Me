@@ -14,7 +14,7 @@ chain-readable transfer/purchase event.
 - The IDs workspace is for registration, receiver updates, and direct owner transfers only.
 - Marketplace is for on-chain listings, seals, delistings, buyer-funded purchases, credit sales, and future asset trades.
 - Marketplace actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer/buy tx, credit sale tx, and sale-ticket UTXO references.
-- Marketplace attention metrics should be derived from valid chain events: active listings, ID sale count, credit sale count, seller-price sale volume, and credit sale volume.
+- Marketplace attention metrics should be derived from valid chain events: active listings, ID sale count, credit sale count, seller-price sale volume, credit sale volume, and marketplace mutation-fee flow.
 
 ## Current ID Marketplace Model
 
@@ -49,6 +49,8 @@ The marketplace reports realized ID sale data from resolver-accepted buyer-funde
 - Public sale count starts with the live sale-ticket marketplace and increments for valid `buy5` purchases.
 - Historical valid `buy2`/`buy3`/`buy4` purchases remain replayable protocol history, but they are not counted in the public marketplace sales metric.
 - Sale volume is the seller price in proofs, excluding the 546-proof registry mutation fee and excluding sale-ticket refunds.
+- Marketplace flow for Growth and WORK floor accounting is seller sale volume plus marketplace mutation fees from listing, seal, delisting, and buy events.
+- Seller sale volume remains a separate public metric. Do not fold mutation fees into seller volume, and do not count marketplace mutation fees again as generic Computer event flow.
 - Confirmed sales are canonical.
 - Pending sales are mempool-visible only until confirmation.
 
@@ -82,6 +84,14 @@ Wallet and Marketplace both use this model. Wallet is the connected-address
 ownership/action surface; Marketplace is the public discovery and purchase
 surface.
 
+## June 13 Ledger Hardening
+
+The June 13, 2026 marketplace fixes preserved three operational invariants:
+
+- WORK and credit sale-ticket seals are listing state. When a pending listing confirms, the confirmed listing must keep any valid pending or confirmed seal metadata instead of becoming unsealed again.
+- Pending WORK and credit txids are liveness-checked on fresh reads. If a pending transfer, listing, seal, delisting, or buy disappears from mempool visibility, it is removed from pending overlays without changing confirmed history.
+- Marketplace network value includes mutation-fee flow from listings, seals, delistings, and buys alongside seller sale volume. Mutation fees stay out of generic Computer event flow so the Growth and WORK floor ledgers do not double-count them.
+
 ## Order Books And Logs
 
 Marketplace books should stay asset-agnostic as new product classes are added.
@@ -92,8 +102,11 @@ For any sale-ticket product, the active book should expose:
 - Unsealed listings
 
 Sealed listings are buyable when the seller signature and sale-ticket anchor are
-valid. Unsealed listings are visible records, but not yet buyable. Active books
-may sort by price high/low and arbitrage high/low when a reference price exists.
+valid. Listings with a visible pending seal may be shown as sealing so sellers
+and buyers do not lose the state during confirmation, but confirmed state remains
+canonical. Unsealed listings are visible records, but not yet buyable. Active
+books may sort by price high/low and arbitrage high/low when a reference price
+exists.
 
 Sales and listing logs are different from active books. They should be ordered
 by confirmation status and event time, newest first, then txid for stable replay.
@@ -160,6 +173,7 @@ Pending marketplace events are UI status, not final ownership:
 - Buyers see pending buyer-funded transfers they broadcast.
 - New owners or receivers see incoming pending transfers that target their wallet.
 - Confirmed registry state remains the source of truth for active listings and ownership.
+- Fresh reads should prune dropped pending marketplace and credit txids from live overlays after liveness checks. Dropped pending txids may stay diagnosable for a short cache window, but they must not remain visible as active pending marketplace state.
 
 Marketplace broadcasts spend confirmed wallet UTXOs only. This keeps the visible fee rate close to the effective package fee and avoids low-fee unconfirmed ancestors trapping marketplace actions in mempool.
 

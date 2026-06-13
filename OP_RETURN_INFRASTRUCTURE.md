@@ -188,6 +188,9 @@ The canonical livenet ledger payload:
 - Rejects or avoids replacing a useful cached ledger with a worse confirmed-history payload when guarded counts regress.
 - Replays WORK mint summaries from canonical mint events and treats pending WORK mints as availability pressure only. Pending mints can reduce available mint slots in the UI, but they do not change confirmed supply, holders, floor, or network value.
 - Promotes pending WORK and credit listings into confirmed state through the shared credit payload, deduping by listing txid and sale-ticket outpoint so confirmation does not leave duplicate pending rows behind.
+- Preserves sale-ticket seal metadata when WORK or credit listings promote from pending to confirmed state. Confirmed seal regressions are rejected so a refreshed payload cannot make a sealed listing look unsealed.
+- Checks pending WORK and credit txids for liveness on fresh reads and prunes dropped pending transfers, listings, seals, delistings, and buys from pending overlays without changing confirmed history.
+- Counts marketplace network value from sale volume plus marketplace mutation fees. Marketplace mutation fees remain in marketplace flow and are excluded from generic Computer event flow.
 
 The consistency endpoints:
 
@@ -197,10 +200,12 @@ The consistency endpoints:
 These expose the ledger checks used by `npm run audit:ledger`, including
 `livenet-confirmed-history-present`, `token-definitions-cover-confirmed-mints`,
 `work-floor-actual-total`, `growth-actual-total`, `growth-work-floor-total`,
-`token-sales-logged`, `seeded-mail-events-logged`, and
-`seeded-infinity-bonds-logged`. The audit also checks that WORK/Growth live USD
-reconciles from `/api/v1/prices/btc-usd`. `missingLogEvents` must stay empty for
-a green production ledger.
+`marketplace-mutation-fees-counted`,
+`marketplace-value-includes-mutation-fees`,
+`computer-event-flow-excludes-marketplace`, `token-sales-logged`,
+`seeded-mail-events-logged`, and `seeded-infinity-bonds-logged`. The audit also
+checks that WORK/Growth live USD reconciles from `/api/v1/prices/btc-usd`.
+`missingLogEvents` must stay empty for a green production ledger.
 
 The log endpoint:
 
@@ -236,9 +241,10 @@ The credit endpoint:
 - Reconstructs credit listings from `pwt1:list5:<sale-ticket-json-base64url>`, credit seals from `pwt1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>`, delistings from `pwt1:delist5:<listing-txid>`, and buyer-funded purchases from `pwt1:buy5:<listing-txid>:<buyer-address>`.
 - Credit listings reserve the seller's spendable balance, create a 546-proof seller-controlled sale-ticket output, and require the standard 546-proof credit registry mutation payment before OP_RETURN. Buys must spend the seller ticket, pay the seller the listed price plus ticket value, and pay the credit registry mutation fee.
 - Active credit listings are filtered by sale-ticket outspend state. If the ticket output is spent, the listing is closed even when a cached snapshot is otherwise stale; if the spend is a valid `buy5`, the event also appears as a credit sale.
-- Credit listing seals are one-per-active-listing. A valid existing seal blocks duplicate seal attempts, while a newly confirmed listing promotion preserves the original seal and outspend state.
+- Credit listing seals are one-per-active-listing. A valid existing seal blocks duplicate seal attempts, while a newly confirmed listing promotion preserves the original seal and outspend state. Listing books may show sealed-or-sealing rows when a sale-ticket anchor signature is visible from confirmed state or pending visibility; confirmed state remains canonical.
 - Credit market history merges active listings, closed listings, and settled sales into a paginated `market-log` view ordered by confirmation status, event time, and txid. It is not sorted by price or arbitrage.
 - Fresh credit reads, credit summary reads, credit history reads, WORK summaries, and marketplace summaries refresh the shared credit payload cache before returning. Background refresh keeps fast first paint useful, but explicit refresh must converge on current node truth.
+- Fresh reads also remove dropped pending credit/WORK transactions from overlay state after liveness checks, so stale pending transfers, listings, seals, delistings, or buys do not survive after they disappear from mempool views.
 - Wallet-owned credit listing views are derived from the same active and closed listing state as Marketplace, so a connected seller can inspect confirmed, pending, delisted, and sold listings without a separate stale wallet-only book.
 - Credit UI surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per credit and per mint from BTC/USD.
 - `credit.proofofwork.me` is the create/mint surface, `token.proofofwork.me` and `tokens.proofofwork.me` redirect to it, `wallet.proofofwork.me` is the credit wallet for transfers, listings, delistings, and sale history, and `work.proofofwork.me` is the dedicated WORK dashboard.

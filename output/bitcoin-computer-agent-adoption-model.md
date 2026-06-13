@@ -1,6 +1,6 @@
 # ProofOfWork.Me ProofOfWork Computer Model
 
-Generated on 2026-05-13. Operational note updated on 2026-05-24.
+Generated on 2026-05-13. Operational note updated on 2026-06-13.
 
 This is the singular forward scenario model for ProofOfWork.Me. Current live
 BTC/USD, WORK floor, credit flow, and real network-value totals are read from the
@@ -13,6 +13,12 @@ refresh against the first-party node/API. A refresh that touches Marketplace,
 WORK, credit summaries, or credit history must update the shared credit payload so
 spent sale tickets, confirmed credit sales, and WORK floor inputs converge across
 all app surfaces.
+
+June 13, 2026 marketplace accounting note: live Growth and WORK floor accounting
+now treats marketplace flow as seller sale volume plus marketplace mutation fees
+from listing, seal, delisting, and buy events. Seller sale volume remains a
+separate metric, and marketplace mutation fees stay out of generic Computer event
+flow to avoid double counting.
 
 All prior standalone charts, product-only markdown models, and old projection files are deprecated. This model measures:
 
@@ -142,6 +148,15 @@ Confirmed marketplace sales: 1
 Confirmed marketplace volume: 1,000 proofs
 Average proofs per sale: 1,000 proofs
 Canonical forward sales per ID per year: 0.2
+```
+
+The generated static model above used seller sale volume only. Live Growth and
+WORK floor values use confirmed marketplace flow:
+
+```text
+marketplace_flow_proofs =
+  seller_sale_volume_proofs
+  + marketplace_mutation_fee_proofs
 ```
 
 Browser:
@@ -354,6 +369,15 @@ marketplace_value_proofs =
   * value_multiple
   * marketplace_fee_multiplier
   * blockspace_usage_fulfillment_ratio
+```
+
+Live Growth and WORK floor accounting additionally includes confirmed
+marketplace mutation-fee flow from listings, seals, delistings, and buys:
+
+```text
+live_marketplace_value_proofs =
+  (marketplace_sale_volume_proofs + marketplace_mutation_fee_proofs)
+  * value_multiple
 ```
 
 ### Browser

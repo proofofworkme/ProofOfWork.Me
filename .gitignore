@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .vite/
+.pow-api-cache/
 .env
 .env.local
 npm-debug.log*

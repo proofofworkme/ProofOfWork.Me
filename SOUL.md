@@ -132,6 +132,9 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - A spent sale-ticket outpoint closes its listing. If the spend is a valid `buy5`, the sale must appear in credit sales, market logs, Growth, and any summary surface after refresh.
 - Listing confirmation promotion must preserve the listing lifecycle. A pending listing that confirms should become the canonical active listing once, keep its seal/outspend state, and not leave a duplicate pending shadow behind.
 - A seller should not be able to seal the same credit listing twice. Once a valid seal is visible for a listing, the UI and API should treat additional seal attempts as duplicates unless the underlying active listing changes.
+- WORK and credit listing views must preserve sale-ticket seal metadata when pending listings promote to confirmed state. Cache/regression guards should reject refreshed token payloads that drop a confirmed seal.
+- Dropped pending WORK and credit transactions must be removed from pending overlays after live liveness checks. They can remain diagnosable for a short cache window, but they must not keep stale transfers, listings, seals, or buys visible as live pending state.
+- Marketplace network value counts seller sale volume plus marketplace mutation fees from listings, seals, delistings, and buys. Keep seller sale volume separate from mutation-fee flow, and do not double-count marketplace mutation fees as generic Computer event flow.
 - WORK credit id: `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`
 - WORK registry address: `1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV`
 - WORK supply settings: 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, 1 proof per WORK launch price.
