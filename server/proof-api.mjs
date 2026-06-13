@@ -181,6 +181,19 @@ const PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS = Number(
 const PENDING_TOKEN_TRANSACTION_CACHE_MAX_SIZE = Number(
   process.env.PENDING_TOKEN_TRANSACTION_CACHE_MAX_SIZE ?? 5000,
 );
+const DROPPED_PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS = Number(
+  process.env.DROPPED_PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS ?? 10 * 60_000,
+);
+const DROPPED_PENDING_TOKEN_TRANSACTION_CACHE_MAX_SIZE = Number(
+  process.env.DROPPED_PENDING_TOKEN_TRANSACTION_CACHE_MAX_SIZE ?? 5000,
+);
+const PENDING_TOKEN_LIVENESS_CHECK_MAX_TXS = Number(
+  process.env.PENDING_TOKEN_LIVENESS_CHECK_MAX_TXS ?? 100,
+);
+const PENDING_TOKEN_LIVENESS_CHECK_CONCURRENCY = Number(
+  process.env.PENDING_TOKEN_LIVENESS_CHECK_CONCURRENCY ??
+    Math.min(8, TX_FETCH_CONCURRENCY),
+);
 const PERSISTED_CACHE_DIR =
   process.env.POW_API_CACHE_DIR ?? path.join(process.cwd(), ".pow-api-cache");
 const SLIPSTREAM_SUBMIT_TX_URL = "https://slipstream.mara.com/api/transactions";
@@ -324,6 +337,7 @@ const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
 const BLOCK_TXID_INDEX_CACHE = new Map();
 const TRANSACTION_CACHE = new Map();
 const PENDING_TOKEN_TRANSACTION_CACHE = new Map();
+const DROPPED_PENDING_TOKEN_TRANSACTION_CACHE = new Map();
 const GLOBAL_ACTIVITY_CACHE = new Map();
 const BACKGROUND_ACTIVITY_REFRESHES = new Set();
 const BACKGROUND_LEDGER_REFRESHES = new Set();
@@ -966,9 +980,11 @@ async function safeTokenPayload(network, tokenScope = "") {
     return previousPayload;
   }
 
-  return scope === WORK_TOKEN_ID
-    ? await liveWorkTokenState(network, nextPayload)
-    : nextPayload;
+  const payload =
+    scope === WORK_TOKEN_ID
+      ? await liveWorkTokenState(network, nextPayload)
+      : nextPayload;
+  return tokenStateWithoutDroppedPendingTransactions(payload, network);
 }
 
 function boundedInteger(value, fallback, min, max) {
@@ -1887,6 +1903,7 @@ async function fetchTransactionWithPendingFallback(txid, network) {
     }
   }
 
+  markDroppedPendingTokenTransaction(txid, network, "pending-fallback");
   return null;
 }
 
@@ -2162,6 +2179,66 @@ function pendingTokenTransactionCacheKey(network, txid) {
   return `${network}:${txid}`;
 }
 
+function pruneDroppedPendingTokenTransactionCache(now = Date.now()) {
+  for (const [key, entry] of DROPPED_PENDING_TOKEN_TRANSACTION_CACHE) {
+    if (now >= entry.expiresAt) {
+      DROPPED_PENDING_TOKEN_TRANSACTION_CACHE.delete(key);
+    }
+  }
+
+  while (
+    DROPPED_PENDING_TOKEN_TRANSACTION_CACHE.size >
+    DROPPED_PENDING_TOKEN_TRANSACTION_CACHE_MAX_SIZE
+  ) {
+    DROPPED_PENDING_TOKEN_TRANSACTION_CACHE.delete(
+      DROPPED_PENDING_TOKEN_TRANSACTION_CACHE.keys().next().value,
+    );
+  }
+}
+
+function markDroppedPendingTokenTransaction(txid, network, source = "lookup") {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    return false;
+  }
+
+  const now = Date.now();
+  const cacheKey = pendingTokenTransactionCacheKey(network, normalizedTxid);
+  PENDING_TOKEN_TRANSACTION_CACHE.delete(cacheKey);
+  DROPPED_PENDING_TOKEN_TRANSACTION_CACHE.set(cacheKey, {
+    expiresAt: now + DROPPED_PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS,
+    network,
+    seenAt: now,
+    source,
+    txid: normalizedTxid,
+  });
+  pruneDroppedPendingTokenTransactionCache(now);
+  return true;
+}
+
+function clearDroppedPendingTokenTransaction(txid, network) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    return false;
+  }
+
+  DROPPED_PENDING_TOKEN_TRANSACTION_CACHE.delete(
+    pendingTokenTransactionCacheKey(network, normalizedTxid),
+  );
+  return true;
+}
+
+function droppedPendingTokenTransactionTxids(network) {
+  pruneDroppedPendingTokenTransactionCache();
+  const txids = new Set();
+  for (const entry of DROPPED_PENDING_TOKEN_TRANSACTION_CACHE.values()) {
+    if (entry.network === network && entry.txid) {
+      txids.add(entry.txid);
+    }
+  }
+  return txids;
+}
+
 function transactionHasTokenProtocol(tx, network) {
   const vout = Array.isArray(tx?.vout) ? tx.vout : [];
   return decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX).some((message) =>
@@ -2170,11 +2247,13 @@ function transactionHasTokenProtocol(tx, network) {
 }
 
 function prunePendingTokenTransactionCache(now = Date.now()) {
+  pruneDroppedPendingTokenTransactionCache(now);
   for (const [key, entry] of PENDING_TOKEN_TRANSACTION_CACHE) {
     if (
       now >= entry.expiresAt ||
       !transactionTxid(entry.tx) ||
-      transactionConfirmed(entry.tx)
+      transactionConfirmed(entry.tx) ||
+      DROPPED_PENDING_TOKEN_TRANSACTION_CACHE.has(key)
     ) {
       PENDING_TOKEN_TRANSACTION_CACHE.delete(key);
     }
@@ -2199,6 +2278,7 @@ function cachePendingTokenTransaction(tx, network, source = "lookup") {
   const cacheKey = pendingTokenTransactionCacheKey(network, txid);
   if (transactionConfirmed(tx)) {
     PENDING_TOKEN_TRANSACTION_CACHE.delete(cacheKey);
+    clearDroppedPendingTokenTransaction(txid, network);
     return false;
   }
 
@@ -2207,6 +2287,7 @@ function cachePendingTokenTransaction(tx, network, source = "lookup") {
   }
 
   const now = Date.now();
+  clearDroppedPendingTokenTransaction(txid, network);
   PENDING_TOKEN_TRANSACTION_CACHE.delete(cacheKey);
   PENDING_TOKEN_TRANSACTION_CACHE.set(cacheKey, {
     expiresAt: now + PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS,
@@ -2231,7 +2312,11 @@ async function cachePendingTokenTransactionByTxid(
 
   try {
     const tx = await fetchTransactionWithPendingFallback(normalizedTxid, network);
-    return tx ? cachePendingTokenTransaction(tx, network, source) : false;
+    if (!tx) {
+      markDroppedPendingTokenTransaction(normalizedTxid, network, source);
+      return false;
+    }
+    return cachePendingTokenTransaction(tx, network, source);
   } catch {
     return false;
   }
@@ -8327,17 +8412,25 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) 
   const now = Date.now();
   const cachedPayloadEntry = RESPONSE_CACHE.get(payloadKey);
   if (cachedPayloadEntry?.payload && now < cachedPayloadEntry.expiresAt) {
+    const payload = tokenStateWithoutDroppedPendingTransactions(
+      cachedPayloadEntry.payload,
+      network,
+    );
     return reconcileSpendable
-      ? await tokenPayloadWithSpendableListings(cachedPayloadEntry.payload, network)
-      : cachedPayloadEntry.payload;
+      ? await tokenPayloadWithSpendableListings(payload, network)
+      : payload;
   }
   if (cachedPayloadEntry?.payload && now < cachedPayloadEntry.staleUntil) {
     if (shouldAutoRefreshTokenScope(scope)) {
       refreshTokenPayloadCacheInBackground(network, scope);
     }
+    const payload = tokenStateWithoutDroppedPendingTransactions(
+      cachedPayloadEntry.payload,
+      network,
+    );
     return reconcileSpendable
-      ? await tokenPayloadWithSpendableListings(cachedPayloadEntry.payload, network)
-      : cachedPayloadEntry.payload;
+      ? await tokenPayloadWithSpendableListings(payload, network)
+      : payload;
   }
 
   const jsonKey = `json:token:${network}:${scope}`;
@@ -8346,9 +8439,13 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) 
   if (cachedJsonEntry?.body) {
     try {
       const rawPayload = JSON.parse(cachedJsonEntry.body);
+      const filteredPayload = tokenStateWithoutDroppedPendingTransactions(
+        rawPayload,
+        network,
+      );
       const payload = reconcileSpendable
-        ? await tokenPayloadWithSpendableListings(rawPayload, network)
-        : rawPayload;
+        ? await tokenPayloadWithSpendableListings(filteredPayload, network)
+        : filteredPayload;
       RESPONSE_CACHE.set(payloadKey, {
         expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
         payload,
@@ -8366,7 +8463,7 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) 
   if (shouldAutoRefreshTokenScope(scope)) {
     refreshTokenPayloadCacheInBackground(network, scope);
   }
-  return {
+  return tokenStateWithoutDroppedPendingTransactions({
     ...emptyTokenState(),
     creationPriceSats: TOKEN_CREATION_PRICE_SATS,
     indexedAt: new Date().toISOString(),
@@ -8397,7 +8494,7 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) 
       ticker: WORK_TOKEN_TICKER,
       tokenId: WORK_TOKEN_ID,
     },
-  };
+  }, network);
 }
 
 function compactTokenSummaryPayload(payload, tokenScope = "") {
@@ -8535,6 +8632,203 @@ function unconfirmedTokenStateTxids(state) {
   }
 
   return [...txids];
+}
+
+function tokenStateWithPendingStats(state) {
+  const tokens = Array.isArray(state?.tokens) ? state.tokens : [];
+  const mints = Array.isArray(state?.mints) ? state.mints : [];
+  const transfers = Array.isArray(state?.transfers) ? state.transfers : [];
+  const sales = Array.isArray(state?.sales) ? state.sales : [];
+  const pendingSupply = mints
+    .filter((mint) => !mint.confirmed)
+    .reduce((total, mint) => total + Number(mint.amount || 0), 0);
+
+  return {
+    ...state,
+    pendingSupply,
+    stats: {
+      ...(state?.stats ?? {}),
+      confirmedMints: mints.filter((mint) => mint.confirmed).length,
+      confirmedSales: sales.filter((sale) => sale.confirmed).length,
+      confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
+        .length,
+      confirmedTokens: tokens.filter((token) => token.confirmed).length,
+      pendingMints: mints.filter((mint) => !mint.confirmed).length,
+      pendingSales: sales.filter((sale) => !sale.confirmed).length,
+      pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+        .length,
+      pendingTokens: tokens.filter((token) => !token.confirmed).length,
+    },
+  };
+}
+
+function tokenStateWithoutDroppedPendingTransactions(state, network) {
+  const droppedTxids = droppedPendingTokenTransactionTxids(network);
+  if (droppedTxids.size === 0 || !state) {
+    return state;
+  }
+
+  const isDropped = (...values) =>
+    values.some(
+      (value) =>
+        typeof value === "string" && droppedTxids.has(value.toLowerCase()),
+    );
+  const keepPendingItem = (item, ...txidValues) =>
+    item?.confirmed !== false || !isDropped(...txidValues);
+  const stripDroppedSeal = (listing) => {
+    if (listing?.sealConfirmed !== false || !isDropped(listing.sealTxid)) {
+      return listing;
+    }
+
+    const {
+      sealAt,
+      sealConfirmed,
+      sealDataBytes,
+      sealTxid,
+      ...withoutDroppedSeal
+    } = listing;
+    return withoutDroppedSeal;
+  };
+  const activeListingsById = new Map();
+  const addActiveListing = (listing) => {
+    const listingId = String(
+      listing?.listingId ?? listing?.txid ?? "",
+    ).toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(listingId)) {
+      return;
+    }
+    activeListingsById.set(
+      listingId,
+      mergeTokenListingRecord(activeListingsById.get(listingId), listing),
+    );
+  };
+
+  let changed = false;
+  const filterPendingItems = (items, txidForItem) =>
+    (Array.isArray(items) ? items : []).filter((item) => {
+      const keep = keepPendingItem(item, ...txidForItem(item));
+      if (!keep) {
+        changed = true;
+      }
+      return keep;
+    });
+
+  const tokens = filterPendingItems(state.tokens, (item) => [item?.txid]);
+  const mints = filterPendingItems(state.mints, (item) => [item?.txid]);
+  const transfers = filterPendingItems(state.transfers, (item) => [item?.txid]);
+  const sales = filterPendingItems(state.sales, (item) => [item?.txid]);
+  const invalidEvents = filterPendingItems(state.invalidEvents, (item) => [
+    item?.txid,
+  ]);
+
+  for (const listing of Array.isArray(state.listings) ? state.listings : []) {
+    if (
+      listing?.confirmed === false &&
+      isDropped(listing.txid, listing.listingId)
+    ) {
+      changed = true;
+      continue;
+    }
+    const nextListing = stripDroppedSeal(listing);
+    if (nextListing !== listing) {
+      changed = true;
+    }
+    addActiveListing(nextListing);
+  }
+
+  const closedListings = [];
+  for (const listing of Array.isArray(state.closedListings)
+    ? state.closedListings
+    : []) {
+    if (
+      listing?.confirmed === false &&
+      isDropped(listing.txid, listing.listingId)
+    ) {
+      changed = true;
+      continue;
+    }
+
+    if (
+      listing?.closedConfirmed === false &&
+      isDropped(listing.closedTxid)
+    ) {
+      const {
+        closedAt,
+        closedConfirmed,
+        closedTxid,
+        ...reopenedListing
+      } = stripDroppedSeal(listing);
+      changed = true;
+      addActiveListing(reopenedListing);
+      continue;
+    }
+
+    const nextListing = stripDroppedSeal(listing);
+    if (nextListing !== listing) {
+      changed = true;
+    }
+    closedListings.push(nextListing);
+  }
+
+  const listings = [...activeListingsById.values()];
+  if (
+    !changed &&
+    tokens.length === (Array.isArray(state.tokens) ? state.tokens.length : 0) &&
+    mints.length === (Array.isArray(state.mints) ? state.mints.length : 0) &&
+    transfers.length ===
+      (Array.isArray(state.transfers) ? state.transfers.length : 0) &&
+    sales.length === (Array.isArray(state.sales) ? state.sales.length : 0) &&
+    invalidEvents.length ===
+      (Array.isArray(state.invalidEvents) ? state.invalidEvents.length : 0) &&
+    listings.length ===
+      (Array.isArray(state.listings) ? state.listings.length : 0) &&
+    closedListings.length ===
+      (Array.isArray(state.closedListings) ? state.closedListings.length : 0)
+  ) {
+    return state;
+  }
+
+  return tokenStateWithPendingStats({
+    ...state,
+    closedListings,
+    invalidEvents,
+    listings,
+    mints,
+    sales,
+    tokens,
+    transfers,
+  });
+}
+
+async function tokenStateWithLivePendingTransactionCheck(state, network) {
+  const txids = unconfirmedTokenStateTxids(state).slice(
+    0,
+    Math.max(0, PENDING_TOKEN_LIVENESS_CHECK_MAX_TXS),
+  );
+  if (txids.length === 0) {
+    return tokenStateWithoutDroppedPendingTransactions(state, network);
+  }
+
+  await mapWithConcurrency(
+    txids,
+    Math.max(1, PENDING_TOKEN_LIVENESS_CHECK_CONCURRENCY),
+    async (txid) => {
+      if (droppedPendingTokenTransactionTxids(network).has(txid)) {
+        return;
+      }
+
+      const tx = await fetchTransactionWithPendingFallback(txid, network).catch(
+        () => null,
+      );
+      if (tx) {
+        cachePendingTokenTransaction(tx, network, "pending-liveness");
+      } else {
+        markDroppedPendingTokenTransaction(txid, network, "pending-liveness");
+      }
+    },
+  );
+
+  return tokenStateWithoutDroppedPendingTransactions(state, network);
 }
 
 function syncWorkTokenLiveSeenTxids(network, state) {
@@ -9936,6 +10230,15 @@ async function liveWorkTokenStateWithFallbackAfterMs(
   );
 }
 
+async function tokenPayloadReadResult(payload, network, fresh, options = {}) {
+  const reconciledPayload = fresh
+    ? await tokenStateWithLivePendingTransactionCheck(payload, network)
+    : tokenStateWithoutDroppedPendingTransactions(payload, network);
+  return options.reconcileSpendable === false
+    ? reconciledPayload
+    : await tokenPayloadWithSpendableListings(reconciledPayload, network);
+}
+
 async function tokenPayloadForRead(
   network,
   tokenScope = "",
@@ -9959,9 +10262,7 @@ async function tokenPayloadForRead(
         : TOKEN_SCOPED_FRESH_WAIT_MS,
     );
     if (freshScopedPayload) {
-      return options.reconcileSpendable === false
-        ? freshScopedPayload
-        : await tokenPayloadWithSpendableListings(freshScopedPayload, network);
+      return tokenPayloadReadResult(freshScopedPayload, network, fresh, options);
     }
   }
   if (network === "livenet" && useLedgerSnapshot) {
@@ -9996,15 +10297,14 @@ async function tokenPayloadForRead(
             )
           : await liveWorkTokenState(network, payload, liveOptions);
       }
-      return options.reconcileSpendable === false
-        ? payload
-        : await tokenPayloadWithSpendableListings(payload, network);
+      return tokenPayloadReadResult(payload, network, fresh, options);
     }
   }
 
-  return fresh
+  const payload = fresh
     ? await freshTokenPayloadOrSnapshot(network, scope, options)
     : await fastTokenPayloadSnapshot(network, scope, options);
+  return tokenPayloadReadResult(payload, network, fresh, options);
 }
 
 async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
@@ -10799,16 +11099,17 @@ async function ledgerTokenPayload(network, tokenScope = "", fresh = false) {
     );
   }
   if (!fresh || !ENABLE_SUMMARY_TOKEN_REFRESH) {
-    return fallback;
+    return tokenStateWithoutDroppedPendingTransactions(fallback, network);
   }
 
-  return payloadWithFallbackAfterMs(
+  const payload = await payloadWithFallbackAfterMs(
     refreshTokenPayload(network, scope),
     fallback,
     scope === WORK_TOKEN_ID
       ? WORK_TOKEN_CANONICAL_FRESH_WAIT_MS
       : WORK_FLOOR_FRESH_WAIT_MS,
   );
+  return tokenStateWithLivePendingTransactionCheck(payload, network);
 }
 
 async function buildCanonicalLedgerPayload(network, fresh = false) {
@@ -11080,22 +11381,34 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
   return null;
 }
 
-async function activityPayloadWithLiveWorkTokenOverlay(ledger) {
+async function activityPayloadWithLiveWorkTokenOverlay(ledger, fresh = false) {
   if (!ledger || ledger.network !== "livenet" || !ledger.tokenState) {
     return ledger?.activityPayload;
   }
 
-  const workTokenState = await liveWorkTokenStateWithFallbackAfterMs(
+  let workTokenState = await liveWorkTokenStateWithFallbackAfterMs(
     ledger.network,
     ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
     WORK_TOKEN_LIVE_WAIT_MS,
     { recoverClosedSales: false },
   );
-  const valueTokenState = tokenStateWithScopedTokenOverride(
-    ledger.tokenState,
+  workTokenState = fresh
+    ? await tokenStateWithLivePendingTransactionCheck(
+        workTokenState,
+        ledger.network,
+      )
+    : tokenStateWithoutDroppedPendingTransactions(workTokenState, ledger.network);
+  let valueTokenState = tokenStateWithScopedTokenOverride(
+    tokenStateWithoutDroppedPendingTransactions(ledger.tokenState, ledger.network),
     workTokenState,
     WORK_TOKEN_ID,
   );
+  valueTokenState = fresh
+    ? await tokenStateWithLivePendingTransactionCheck(
+        valueTokenState,
+        ledger.network,
+      )
+    : tokenStateWithoutDroppedPendingTransactions(valueTokenState, ledger.network);
   const baseActivity = Array.isArray(ledger.activityPayload?.activity)
     ? ledger.activityPayload.activity
     : Array.isArray(ledger.activity)
@@ -11121,12 +11434,15 @@ async function activityPayloadWithLiveWorkTokenOverlay(ledger) {
 async function mergedLogActivityPayload(network, fresh = false) {
   const ledger = await summaryCanonicalLedgerPayload(network, fresh);
   if (ledger) {
-    return (await activityPayloadWithLiveWorkTokenOverlay(ledger)) ?? ledger.activityPayload;
+    return (
+      (await activityPayloadWithLiveWorkTokenOverlay(ledger, fresh)) ??
+      ledger.activityPayload
+    );
   }
 
   const canonicalLedger = await canonicalLedgerPayload(network, false);
   return (
-    (await activityPayloadWithLiveWorkTokenOverlay(canonicalLedger)) ??
+    (await activityPayloadWithLiveWorkTokenOverlay(canonicalLedger, fresh)) ??
     canonicalLedger.activityPayload
   );
 }
