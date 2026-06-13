@@ -1092,7 +1092,9 @@ const CANONICAL_WELCOME_RECIPIENT = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
 const CANONICAL_WELCOME_CREATED_AT = "2026-05-13T17:58:01.000Z";
 const MAX_ATTACHMENT_BYTES = 60_000;
 const MAX_REGISTRY_TX_PAGES = 100;
+const MAX_TOKEN_HISTORY_PAGES = 100;
 const DATA_PAGE_SIZE = 25;
+const TOKEN_HISTORY_PAGE_SIZE = 200;
 const TOKEN_GRID_PAGE_SIZE = 24;
 const ACTIVITY_FEED_PAGE_SIZE = 50;
 const GROWTH_EVENT_PAGE_SIZE = 12;
@@ -5492,10 +5494,14 @@ function tokenListingHasConfirmedSaleTicketSeal(listing: PowTokenListing) {
   );
 }
 
+function tokenListingHasSaleTicketSeal(listing: PowTokenListing) {
+  return tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization);
+}
+
 function tokenListingHasPendingSaleTicketSeal(listing: PowTokenListing) {
   return (
     listing.sealConfirmed !== true &&
-    tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)
+    tokenListingHasSaleTicketSeal(listing)
   );
 }
 
@@ -12550,13 +12556,36 @@ export default function App() {
   async function fetchWalletOwnedTokenListings(
     walletAddress: string,
     tokenScope: string,
+    fresh = false,
   ) {
-    const [state, pendingSeals] = await Promise.all([
-      fetchTokenState("livenet", false, tokenScope, true),
-      fetchPendingTokenListingSealsForAddress(walletAddress, "livenet").catch(
-        () => [],
-      ),
-    ]);
+    const listingPages: PowTokenListing[] = [];
+    let pageIndex = 0;
+    do {
+      const page = await fetchTokenHistoryPage<PowTokenListing>(
+        "livenet",
+        "listings",
+        {
+          fresh,
+          pageIndex,
+          pageSize: TOKEN_HISTORY_PAGE_SIZE,
+          tokenScope,
+        },
+      );
+      listingPages.push(...(Array.isArray(page.items) ? page.items : []));
+      const pageCount = Number.isSafeInteger(page.pageCount)
+        ? Math.max(1, Number(page.pageCount))
+        : 1;
+      if (!page.nextCursor && pageIndex + 1 >= pageCount) {
+        break;
+      }
+      pageIndex += 1;
+    } while (pageIndex < MAX_TOKEN_HISTORY_PAGES);
+
+    const pendingSeals = await fetchPendingTokenListingSealsForAddress(
+      walletAddress,
+      "livenet",
+    ).catch(() => []);
+
     if (pendingSeals.length > 0) {
       savePendingTokenListingSeals([
         ...loadPendingTokenListingSeals(),
@@ -12566,7 +12595,7 @@ export default function App() {
 
     return reconcileTokenListingSealStatuses(
       applyPendingTokenListingSeals(
-        (Array.isArray(state.listings) ? state.listings : []).filter(
+        listingPages.filter(
           (listing) =>
             listing.network === "livenet" &&
             listing.tokenId === tokenScope &&
@@ -27851,10 +27880,10 @@ function TokenMarketplacePanel({
     rows.map((token) => [token.tokenId, token]),
   );
   const sealedListings = marketListings.filter(
-    tokenListingHasConfirmedSaleTicketSeal,
+    tokenListingHasSaleTicketSeal,
   );
   const unsealedListings = marketListings.filter(
-    (listing) => !tokenListingHasConfirmedSaleTicketSeal(listing),
+    (listing) => !tokenListingHasSaleTicketSeal(listing),
   );
   const visibleMarketListings =
     tokenListingBookFilter === "sealed"
@@ -28601,8 +28630,8 @@ function TokenMarketplacePanel({
               <p>
                 {marketListings.length
                   ? tokenListingBookFilter === "sealed"
-                    ? "No sale tickets in this view are sealed and buyable yet."
-                    : "Every sale ticket in this view is already sealed."
+                    ? "No sale tickets in this view have a seal or pending seal yet."
+                    : "Every sale ticket in this view already has a seal or pending seal."
                   : selectedMarketToken
                   ? `No ${selectedMarketToken.ticker} sale tickets are open yet.`
                   : "List from Wallet to open a credit sale ticket."}
@@ -29076,7 +29105,7 @@ function MarketplaceApp({
     tokens,
   });
   const sealedTokenListings = tokenListings.filter(
-    tokenListingHasConfirmedSaleTicketSeal,
+    tokenListingHasSaleTicketSeal,
   );
   const confirmedTokenCount = tokens.filter((token) => token.confirmed).length;
   const scopedStatus = marketplaceStatusForTab({
@@ -29088,7 +29117,7 @@ function MarketplaceApp({
     status,
     tokenSummary: {
       tone: "good",
-      text: `Credit market loaded. ${confirmedTokenCount.toLocaleString()} confirmed credit${confirmedTokenCount === 1 ? "" : "s"}, ${tokenListings.length.toLocaleString()} open listing${tokenListings.length === 1 ? "" : "s"}, ${sealedTokenListings.length.toLocaleString()} sealed.`,
+      text: `Credit market loaded. ${confirmedTokenCount.toLocaleString()} confirmed credit${confirmedTokenCount === 1 ? "" : "s"}, ${tokenListings.length.toLocaleString()} open listing${tokenListings.length === 1 ? "" : "s"}, ${sealedTokenListings.length.toLocaleString()} sealed or sealing.`,
     },
   });
   const refreshMarketplaceTab = () => {

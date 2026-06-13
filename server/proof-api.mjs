@@ -149,6 +149,9 @@ const WORK_TOKEN_LIVE_RECENT_MAX_TXS = Number(
 const WORK_TOKEN_LIVE_HISTORY_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_HISTORY_MAX_TXS ?? WORK_TOKEN_LIVE_DELTA_MAX_TXS,
 );
+const WORK_TOKEN_SEAL_RECOVERY_CACHE_TTL_MS = Number(
+  process.env.WORK_TOKEN_SEAL_RECOVERY_CACHE_TTL_MS ?? 60_000,
+);
 const SUMMARY_ACTIVITY_LIMIT = Number(process.env.SUMMARY_ACTIVITY_LIMIT ?? 60);
 const SUMMARY_MARKET_LIMIT = Number(process.env.SUMMARY_MARKET_LIMIT ?? 40);
 const HISTORY_PAGE_DEFAULT_LIMIT = Number(
@@ -329,6 +332,7 @@ const BACKGROUND_TOKEN_REFRESHES = new Set();
 const BACKGROUND_REFRESH_LAST_STARTED = new Map();
 const RESPONSE_CACHE = new Map();
 const WORK_TOKEN_LIVE_SEEN_TXIDS = new Map();
+const WORK_TOKEN_SEAL_RECOVERY_CACHE = new Map();
 const TOKEN_MARKET_OUTSPEND_CACHE = new Map();
 let persistedCacheWriteSequence = 0;
 let btcUsdPriceCache = null;
@@ -913,7 +917,10 @@ function tokenPayloadLooksWorse(nextPayload, previousPayload) {
     return false;
   }
 
-  return Object.keys(previous).some((key) => next[key] < previous[key]);
+  return (
+    Object.keys(previous).some((key) => next[key] < previous[key]) ||
+    tokenPayloadHasConfirmedSealRegression(nextPayload, previousPayload)
+  );
 }
 
 async function existingTokenPayload(network, tokenScope = "") {
@@ -2998,11 +3005,144 @@ function tokenListingHasConfirmedSaleTicketSeal(listing) {
   );
 }
 
+function tokenListingHasSaleTicketSeal(listing) {
+  return tokenSaleAuthorizationUsesSaleTicketAnchor(listing?.saleAuthorization);
+}
+
 function tokenListingHasPendingSaleTicketSeal(listing) {
   return (
     listing?.sealConfirmed !== true &&
-    tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)
+    tokenListingHasSaleTicketSeal(listing)
   );
+}
+
+function tokenListingSealRank(listing) {
+  const sealTxid = String(listing?.sealTxid ?? "").toLowerCase();
+  if (
+    !tokenListingHasSaleTicketSeal(listing) ||
+    !/^[0-9a-f]{64}$/u.test(sealTxid)
+  ) {
+    return 0;
+  }
+
+  return listing?.sealConfirmed === true ? 2 : 1;
+}
+
+function tokenListingWithSealFrom(listing, sealSource) {
+  if (!listing || tokenListingSealRank(sealSource) === 0) {
+    return listing;
+  }
+
+  return {
+    ...listing,
+    saleAuthorization: sealSource.saleAuthorization ?? listing.saleAuthorization,
+    sealAt: sealSource.sealAt ?? listing.sealAt,
+    sealConfirmed: sealSource.sealConfirmed === true,
+    sealDataBytes: sealSource.sealDataBytes ?? listing.sealDataBytes,
+    sealTxid: sealSource.sealTxid ?? listing.sealTxid,
+  };
+}
+
+function mergeTokenListingRecord(current, incoming) {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming) {
+    return current;
+  }
+
+  return tokenListingSealRank(current) > tokenListingSealRank(incoming)
+    ? tokenListingWithSealFrom(incoming, current)
+    : incoming;
+}
+
+function tokenPayloadConfirmedListingSeals(payload) {
+  const seals = new Map();
+  for (const listing of [
+    ...(Array.isArray(payload?.listings) ? payload.listings : []),
+    ...(Array.isArray(payload?.closedListings) ? payload.closedListings : []),
+  ]) {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(listingId) || tokenListingSealRank(listing) < 2) {
+      continue;
+    }
+    seals.set(listingId, listing);
+  }
+  return seals;
+}
+
+function tokenPayloadHasConfirmedSealRegression(nextPayload, previousPayload) {
+  const previousSeals = tokenPayloadConfirmedListingSeals(previousPayload);
+  if (previousSeals.size === 0) {
+    return false;
+  }
+
+  const nextSeals = tokenPayloadConfirmedListingSeals(nextPayload);
+  for (const [listingId, previousListing] of previousSeals) {
+    const nextListing = nextSeals.get(listingId);
+    if (
+      !nextListing ||
+      tokenListingSealRank(nextListing) < tokenListingSealRank(previousListing)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function tokenStateWithMergedListingSeals(state, sourceState) {
+  if (!state || !sourceState) {
+    return state;
+  }
+
+  const sourceSeals = new Map();
+  for (const listing of [
+    ...(Array.isArray(sourceState?.listings) ? sourceState.listings : []),
+    ...(Array.isArray(sourceState?.closedListings)
+      ? sourceState.closedListings
+      : []),
+  ]) {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(listingId) || tokenListingSealRank(listing) < 1) {
+      continue;
+    }
+    sourceSeals.set(
+      listingId,
+      mergeTokenListingRecord(sourceSeals.get(listingId), listing),
+    );
+  }
+  if (sourceSeals.size === 0) {
+    return state;
+  }
+
+  let changed = false;
+  const mergeSeal = (listing) => {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    const source = sourceSeals.get(listingId);
+    if (!source || tokenListingSealRank(source) <= tokenListingSealRank(listing)) {
+      return listing;
+    }
+    changed = true;
+    return tokenListingWithSealFrom(listing, source);
+  };
+
+  const listings = (Array.isArray(state?.listings) ? state.listings : []).map(
+    mergeSeal,
+  );
+  const closedListings = (Array.isArray(state?.closedListings)
+    ? state.closedListings
+    : []
+  ).map(mergeSeal);
+
+  return changed
+    ? {
+        ...state,
+        closedListings,
+        indexedAt: new Date().toISOString(),
+        listings,
+      }
+    : state;
 }
 
 function tokenSaleAuthorizationTermsMatch(left, right) {
@@ -3287,11 +3427,16 @@ async function reconcileCachedTokenClosedListing(closedListing, network) {
 
 async function reconcileCachedTokenMarketPayload(payload, network) {
   payload = await tokenStateWithReconciledListingSeals(payload, network);
-  const activeListingsById = new Map(
-    (Array.isArray(payload?.listings) ? payload.listings : [])
-      .filter((listing) => listing?.listingId)
-      .map((listing) => [listing.listingId, listing]),
-  );
+  const activeListingsById = new Map();
+  for (const listing of Array.isArray(payload?.listings) ? payload.listings : []) {
+    if (!listing?.listingId) {
+      continue;
+    }
+    activeListingsById.set(
+      listing.listingId,
+      mergeTokenListingRecord(activeListingsById.get(listing.listingId), listing),
+    );
+  }
   const closedListings = [];
 
   const reconciledClosedListings = await mapWithConcurrency(
@@ -3302,7 +3447,13 @@ async function reconcileCachedTokenMarketPayload(payload, network) {
 
   for (const result of reconciledClosedListings) {
     if (result?.kind === "active" && result.listing?.listingId) {
-      activeListingsById.set(result.listing.listingId, result.listing);
+      activeListingsById.set(
+        result.listing.listingId,
+        mergeTokenListingRecord(
+          activeListingsById.get(result.listing.listingId),
+          result.listing,
+        ),
+      );
       continue;
     }
 
@@ -8798,11 +8949,16 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
       .filter((holder) => holder?.address && Number.isFinite(Number(holder.balance)))
       .map((holder) => [holder.address, Number(holder.balance)]),
   );
-  const listings = new Map(
-    stateListings
-      .filter((listing) => listing?.listingId)
-      .map((listing) => [listing.listingId, listing]),
-  );
+  const listings = new Map();
+  for (const listing of stateListings) {
+    if (!listing?.listingId) {
+      continue;
+    }
+    listings.set(
+      listing.listingId,
+      mergeTokenListingRecord(listings.get(listing.listingId), listing),
+    );
+  }
   const closedListings = [...stateClosedListings];
   const invalidEvents = Array.isArray(state?.invalidEvents)
     ? [...state.invalidEvents]
@@ -9216,6 +9372,189 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
   };
 }
 
+function workTokenListingsNeedingSealRecovery(state) {
+  const listings = new Map();
+  for (const listing of [
+    ...(Array.isArray(state?.listings) ? state.listings : []),
+    ...(Array.isArray(state?.closedListings) ? state.closedListings : []),
+  ]) {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    if (
+      !/^[0-9a-f]{64}$/u.test(listingId) ||
+      listing?.tokenId !== WORK_TOKEN_ID ||
+      listing?.registryAddress !== WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS ||
+      !isValidBitcoinAddress(
+        listing?.sellerAddress,
+        state?.network ?? "livenet",
+      ) ||
+      tokenListingSealRank(listing) >= 2
+    ) {
+      continue;
+    }
+    listings.set(listingId, listing);
+  }
+  return listings;
+}
+
+function workTokenStateWithRecoveredListingSeals(state, txs, network) {
+  const candidates = workTokenListingsNeedingSealRecovery(state);
+  if (candidates.size === 0) {
+    return state;
+  }
+
+  const recoveredById = new Map();
+  const currentListingFor = (listingId) =>
+    recoveredById.get(listingId) ?? candidates.get(listingId);
+
+  for (const tx of tokenProtocolSortedTransactions(
+    (Array.isArray(txs) ? txs : []).filter(Boolean),
+  )) {
+    const txid = transactionTxid(tx);
+    if (!txid) {
+      continue;
+    }
+
+    const vin = Array.isArray(tx.vin) ? tx.vin : [];
+    const vout = Array.isArray(tx.vout) ? tx.vout : [];
+    const actorAddress = inputAddresses(vin)[0] ?? "";
+    if (!isValidBitcoinAddress(actorAddress, network)) {
+      continue;
+    }
+
+    let remainingRegistrySats = tokenPaymentAmountBeforeProtocol(
+      vout,
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    );
+    const confirmed = transactionConfirmed(tx);
+    const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+
+    for (const message of decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX)) {
+      const parsed = parseTokenPayload(message, network);
+      const listingId = String(parsed?.listingId ?? "").toLowerCase();
+      const listing = currentListingFor(listingId);
+      const authorization = parsed?.saleAuthorization;
+      if (
+        parsed?.kind !== "seal" ||
+        !listing ||
+        listing.sellerAddress !== actorAddress ||
+        remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+        authorization?.tokenId !== WORK_TOKEN_ID ||
+        authorization.registryAddress !== WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS ||
+        authorization.ticker !== WORK_TOKEN_TICKER ||
+        !tokenSaleAuthorizationTermsMatch(
+          listing.saleAuthorization,
+          authorization,
+        ) ||
+        authorization.anchorTxid !== listing.listingId ||
+        !tokenSaleAuthorizationUsesSaleTicketAnchor(authorization)
+      ) {
+        continue;
+      }
+
+      remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+      const recoveredListing = tokenListingWithSealFrom(listing, {
+        saleAuthorization: authorization,
+        sealAt: createdAt,
+        sealConfirmed: confirmed,
+        sealDataBytes: proofProtocolDataBytesForVout(vout),
+        sealTxid: txid,
+      });
+      if (tokenListingSealRank(recoveredListing) > tokenListingSealRank(listing)) {
+        recoveredById.set(listingId, recoveredListing);
+      }
+    }
+  }
+
+  if (recoveredById.size === 0) {
+    return state;
+  }
+
+  const recoverListing = (listing) => {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    const recovered = recoveredById.get(listingId);
+    return recovered ? mergeTokenListingRecord(listing, recovered) : listing;
+  };
+
+  return {
+    ...state,
+    closedListings: (Array.isArray(state?.closedListings)
+      ? state.closedListings
+      : []
+    ).map(recoverListing),
+    indexedAt: new Date().toISOString(),
+    listings: (Array.isArray(state?.listings) ? state.listings : []).map(
+      recoverListing,
+    ),
+  };
+}
+
+async function recentWorkTokenSealRecoveryTransactions(network, maxTxs) {
+  const cacheKey = `${network}:${maxTxs}`;
+  const cached = WORK_TOKEN_SEAL_RECOVERY_CACHE.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.txs;
+  }
+
+  let historyTxids = [];
+  try {
+    historyTxids = await fetchAddressHistoryTxidsFromElectrum(
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      network,
+    );
+  } catch (error) {
+    console.error(
+      `WORK listing seal recovery history lookup failed for ${network}: ${errorSummary(error)}`,
+    );
+    return [];
+  }
+
+  const txids = historyTxids.slice(-Math.max(0, maxTxs));
+  if (txids.length === 0) {
+    return [];
+  }
+
+  let failedFetches = 0;
+  const txs = await mapWithConcurrency(
+    txids,
+    TX_FETCH_CONCURRENCY,
+    async (txid) => {
+      try {
+        return await fetchTransaction(txid, network);
+      } catch {
+        failedFetches += 1;
+        return null;
+      }
+    },
+  );
+  if (failedFetches > 0) {
+    console.error(
+      `WORK listing seal recovery hydration was partial for ${network}: ${failedFetches} of ${txids.length} transaction lookups failed.`,
+    );
+  }
+
+  const recoveredTxs = await annotateBlockOrder(
+    dedupeTransactions(txs.filter(Boolean)),
+    network,
+  );
+  WORK_TOKEN_SEAL_RECOVERY_CACHE.set(cacheKey, {
+    expiresAt: Date.now() + WORK_TOKEN_SEAL_RECOVERY_CACHE_TTL_MS,
+    txs: recoveredTxs,
+  });
+  return recoveredTxs;
+}
+
+async function recoverWorkListingSealsFromRecentHistory(state, network, maxTxs) {
+  if (
+    network !== "livenet" ||
+    workTokenListingsNeedingSealRecovery(state).size === 0
+  ) {
+    return state;
+  }
+
+  const txs = await recentWorkTokenSealRecoveryTransactions(network, maxTxs);
+  return workTokenStateWithRecoveredListingSeals(state, txs, network);
+}
+
 function cacheLiveWorkTokenState(network, state) {
   const scope = WORK_TOKEN_ID;
   cacheTokenPayload(network, scope, state);
@@ -9345,6 +9684,28 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
     return state;
   }
 
+  const cachedScopedWorkState = await existingTokenPayload(
+    network,
+    WORK_TOKEN_ID,
+  ).catch(() => null);
+  if (
+    cachedScopedWorkState &&
+    cachedScopedWorkState !== state &&
+    !tokenPayloadLooksWorse(cachedScopedWorkState, state)
+  ) {
+    state = cachedScopedWorkState;
+  } else {
+    const sealMergedState = tokenStateWithMergedListingSeals(
+      state,
+      cachedScopedWorkState,
+    );
+    if (sealMergedState !== state) {
+      state = sealMergedState;
+      cacheLiveWorkTokenState(network, state);
+      syncWorkTokenLiveSeenTxids(network, state);
+    }
+  }
+
   const counterNormalizedState = workTokenStateWithMintSupplyCounters(state);
   if (counterNormalizedState !== state) {
     state = counterNormalizedState;
@@ -9416,6 +9777,27 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
     ...historyTxs,
     ...cachedPendingTokenTxs,
   ]);
+  const sealRecoveredFromDeltaState = workTokenStateWithRecoveredListingSeals(
+    state,
+    txs,
+    network,
+  );
+  if (sealRecoveredFromDeltaState !== state) {
+    state = sealRecoveredFromDeltaState;
+    cacheLiveWorkTokenState(network, state);
+    syncWorkTokenLiveSeenTxids(network, state);
+    console.log(`Recovered WORK listing seal(s) from live delta for ${network}.`);
+  }
+  const sealRecoveredFromHistoryState =
+    await recoverWorkListingSealsFromRecentHistory(state, network, maxHistoryTxs);
+  if (sealRecoveredFromHistoryState !== state) {
+    state = sealRecoveredFromHistoryState;
+    cacheLiveWorkTokenState(network, state);
+    syncWorkTokenLiveSeenTxids(network, state);
+    console.log(
+      `Recovered WORK listing seal(s) from recent registry history for ${network}.`,
+    );
+  }
   const confirmedDeltaTxids = new Set(
     txs.filter(transactionConfirmed).map(transactionTxid).filter(Boolean),
   );
@@ -10907,17 +11289,17 @@ async function marketplaceSummaryPayload(network, fresh = false) {
       ? await summaryCanonicalLedgerPayload(network, true)
       : await existingCanonicalLedgerPayload(network);
     if (ledger) {
-      const baseTokenState =
-        fresh && ledger.workTokenState
-          ? tokenStateWithScopedTokenOverride(
-              ledger.tokenState,
-              await liveWorkTokenState(
-                network,
-                ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
-              ),
-              WORK_TOKEN_ID,
-            )
-          : ledger.tokenState;
+      const workTokenState = await liveWorkTokenStateWithFallbackAfterMs(
+        network,
+        ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
+        WORK_TOKEN_LIVE_WAIT_MS,
+        { recoverClosedSales: false },
+      );
+      const baseTokenState = tokenStateWithScopedTokenOverride(
+        ledger.tokenState,
+        workTokenState,
+        WORK_TOKEN_ID,
+      );
       const tokenState = await tokenStateWithReconciledListingSeals(
         baseTokenState,
         network,
@@ -11279,10 +11661,35 @@ function tokenStateWithScopedTokenOverride(tokenState, scopedState, tokenId) {
       ? scopedItems.filter((item) => item.tokenId === tokenId)
       : []),
   ];
+  const replaceScopedListingItems = (globalItems, scopedItems) => {
+    const unscoped = (Array.isArray(globalItems) ? globalItems : []).filter(
+      (item) => item.tokenId !== tokenId,
+    );
+    const scopedById = new Map();
+    for (const item of Array.isArray(globalItems) ? globalItems : []) {
+      if (item?.tokenId !== tokenId || !item?.listingId) {
+        continue;
+      }
+      scopedById.set(
+        item.listingId,
+        mergeTokenListingRecord(scopedById.get(item.listingId), item),
+      );
+    }
+    for (const item of Array.isArray(scopedItems) ? scopedItems : []) {
+      if (item?.tokenId !== tokenId || !item?.listingId) {
+        continue;
+      }
+      scopedById.set(
+        item.listingId,
+        mergeTokenListingRecord(scopedById.get(item.listingId), item),
+      );
+    }
+    return [...unscoped, ...scopedById.values()];
+  };
 
   return {
     ...tokenState,
-    closedListings: replaceScopedItems(
+    closedListings: replaceScopedListingItems(
       tokenState?.closedListings,
       scopedState.closedListings,
     ),
@@ -11290,7 +11697,10 @@ function tokenStateWithScopedTokenOverride(tokenState, scopedState, tokenId) {
       tokenState?.invalidEvents,
       scopedState.invalidEvents,
     ),
-    listings: replaceScopedItems(tokenState?.listings, scopedState.listings),
+    listings: replaceScopedListingItems(
+      tokenState?.listings,
+      scopedState.listings,
+    ),
     mints: replaceScopedItems(tokenState?.mints, scopedState.mints),
     sales: replaceScopedItems(tokenState?.sales, scopedState.sales),
     tokens: replaceScopedItems(tokenState?.tokens, scopedState.tokens),
