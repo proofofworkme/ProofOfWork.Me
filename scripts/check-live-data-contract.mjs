@@ -52,7 +52,8 @@ expectAll("canonical ledger directly merges seeded Computer mail", server, [
 expectAll("WORK Growth Log and token views use the same ledger", server, [
   /async function canonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)/,
   /async function summaryCanonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*refreshCanonicalLedgerPayloadInBackground\(network,\s*true\)/,
-  /async function mergedLogActivityPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*return ledger\.activityPayload;[\s\S]*canonicalLedgerPayload\(network,\s*false\)\)\.activityPayload;/,
+  /async function activityPayloadWithLiveWorkTokenOverlay\(ledger\)[\s\S]*liveWorkTokenStateWithFallbackAfterMs\([\s\S]*tokenActivityItemsFromState\(/,
+  /async function mergedLogActivityPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*activityPayloadWithLiveWorkTokenOverlay\(ledger\)[\s\S]*canonicalLedgerPayload\(network,\s*false\)/,
   /async function cachedWorkFloorPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*true\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*return ledger\.workFloor;/,
   /async function growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*return ledger\.growthSummary;[\s\S]*canonicalLedgerPayload\(network,\s*false\)\)\.growthSummary;/,
   /async function tokenPayloadForRead[\s\S]*summaryCanonicalLedgerPayload\(network,\s*true\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerTokenStateForScope\(ledger,\s*scope\)/,
@@ -78,6 +79,7 @@ expectAll("consistency endpoint guards the public invariant", server, [
   /"work-floor-actual-total"/,
   /"growth-actual-total"/,
   /"growth-work-floor-total"/,
+  /"token-events-logged"/,
   /"token-sales-logged"/,
   /"seeded-mail-events-logged"/,
   /"seeded-infinity-bonds-logged"/,
@@ -98,8 +100,30 @@ expectAll("token sales must be searchable in Log by txid and participants", serv
   /participants:\s*\[\s*sale\.buyerAddress,\s*sale\.sellerAddress,\s*sale\.registryAddress,\s*\]/,
   /kind:\s*"token-sale"/,
   /tokenId:\s*sale\.tokenId/,
-  /activityByTxidKind\.get\(`token-sale:\$\{sale\.txid\}`\)/,
-  /missingLogEvents\.push\(\{\s*kind:\s*"token-sale"/s,
+  /tokenStateLogExpectations\(tokenState\)/,
+  /missingTokenLogEvents\.push\(missing\)/,
+]);
+
+expectAll("all confirmed token state rows must be searchable in Log", server, [
+  /function tokenStateLogExpectations\(tokenState\)/,
+  /kind:\s*"token-transfer"/,
+  /kind:\s*"token-listing-sealed"/,
+  /activityByTxidKind\.get\(`\$\{expected\.kind\}:\$\{expected\.txid\}`\)/,
+  /"token-events-logged"/,
+]);
+
+expectAll("confirmed token protocol failures stay diagnosable", server, [
+  /invalidEvents:\s*\[\]/,
+  /reason:\s*"no-valid-token-event"/,
+  /reason:\s*"no-valid-work-token-event"/,
+  /\["invalid-events",\s*"invalidEvents"\]/,
+  /invalidTokenEvents:\s*confirmedItemCount\(tokenState\?\.invalidEvents\)/,
+]);
+
+expectAll("WORK fresh replay favors correctness over recent-page luck", server, [
+  /WORK_TOKEN_CANONICAL_FRESH_WAIT_MS/,
+  /WORK_TOKEN_LIVE_HISTORY_MAX_TXS[\s\S]*WORK_TOKEN_LIVE_DELTA_MAX_TXS/,
+  /scope === WORK_TOKEN_ID[\s\S]*WORK_TOKEN_CANONICAL_FRESH_WAIT_MS[\s\S]*WORK_FLOOR_FRESH_WAIT_MS/,
 ]);
 
 expectAll("endpoint caches cannot bypass the ledger", server, [

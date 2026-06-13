@@ -128,6 +128,9 @@ const WORK_TOKEN_LIVE_WAIT_MS = Number(
 const TOKEN_SCOPED_FRESH_WAIT_MS = Number(
   process.env.TOKEN_SCOPED_FRESH_WAIT_MS ?? 30_000,
 );
+const WORK_TOKEN_CANONICAL_FRESH_WAIT_MS = Number(
+  process.env.WORK_TOKEN_CANONICAL_FRESH_WAIT_MS ?? TOKEN_SCOPED_FRESH_WAIT_MS,
+);
 const TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS = Number(
   process.env.TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS ?? 10 * 60_000,
 );
@@ -144,7 +147,7 @@ const WORK_TOKEN_LIVE_RECENT_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_RECENT_MAX_TXS ?? 40,
 );
 const WORK_TOKEN_LIVE_HISTORY_MAX_TXS = Number(
-  process.env.WORK_TOKEN_LIVE_HISTORY_MAX_TXS ?? 40,
+  process.env.WORK_TOKEN_LIVE_HISTORY_MAX_TXS ?? WORK_TOKEN_LIVE_DELTA_MAX_TXS,
 );
 const SUMMARY_ACTIVITY_LIMIT = Number(process.env.SUMMARY_ACTIVITY_LIMIT ?? 60);
 const SUMMARY_MARKET_LIMIT = Number(process.env.SUMMARY_MARKET_LIMIT ?? 40);
@@ -3589,6 +3592,7 @@ function emptyTokenState() {
     creationSats: 0,
     confirmedSupply: 0,
     holders: [],
+    invalidEvents: [],
     listings: [],
     mints: [],
     pendingSupply: 0,
@@ -3736,6 +3740,7 @@ function tokenStateFromTransactions(
   const listings = new Map();
   const closedListings = [];
   const mints = [];
+  const invalidEvents = [];
   const sales = [];
   const transfers = [];
   let confirmedSupply = 0;
@@ -3815,16 +3820,25 @@ function tokenStateFromTransactions(
         vout,
         registryAddress,
       );
+      const originalRegistrySats = remainingRegistrySats;
       const paymentOutputs = paymentOutputsBeforeTokenProtocol(vout);
       const eventSpentOutpoints = spentOutpoints(vin);
       const confirmed = transactionConfirmed(tx);
       const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+      let acceptedTxMessage = false;
+      let parsedTxMessage = false;
+      let parsedTxKind = "";
+      let parsedTxTokenId = "";
 
       for (const message of messages) {
         const parsed = parseTokenPayload(message, network);
         if (!parsed) {
           continue;
         }
+        parsedTxMessage = true;
+        parsedTxKind = parsed.kind ?? parsedTxKind;
+        parsedTxTokenId =
+          parsed.tokenId ?? parsed.saleAuthorization?.tokenId ?? parsedTxTokenId;
 
         if (parsed.kind === "mint") {
           const mintedToken = tokensById.get(parsed.tokenId);
@@ -3876,6 +3890,7 @@ function tokenStateFromTransactions(
             tokenId: mintedToken.tokenId,
             txid,
           });
+          acceptedTxMessage = true;
           continue;
         }
 
@@ -3925,6 +3940,7 @@ function tokenStateFromTransactions(
             tokenId: sentToken.tokenId,
             txid,
           });
+          acceptedTxMessage = true;
           continue;
         }
 
@@ -3961,6 +3977,7 @@ function tokenStateFromTransactions(
             ticker: listedToken.ticker,
             tokenId: listedToken.tokenId,
           });
+          acceptedTxMessage = true;
           continue;
         }
 
@@ -3990,6 +4007,7 @@ function tokenStateFromTransactions(
             sealDataBytes: proofProtocolDataBytesForVout(vout),
             sealTxid: txid,
           });
+          acceptedTxMessage = true;
           continue;
         }
 
@@ -4011,6 +4029,7 @@ function tokenStateFromTransactions(
             txid,
           });
           listings.delete(listing.listingId);
+          acceptedTxMessage = true;
           continue;
         }
 
@@ -4077,6 +4096,7 @@ function tokenStateFromTransactions(
             tokenId: listing.tokenId,
             txid,
           });
+          acceptedTxMessage = true;
         }
       }
 
@@ -4085,6 +4105,23 @@ function tokenStateFromTransactions(
         createdAt,
         txid,
       });
+      if (
+        confirmed &&
+        parsedTxMessage &&
+        !acceptedTxMessage &&
+        originalRegistrySats >= TOKEN_MIN_MUTATION_PRICE_SATS
+      ) {
+        invalidEvents.push({
+          confirmed,
+          createdAt,
+          kind: parsedTxKind || "unknown",
+          network,
+          reason: "no-valid-token-event",
+          registryAddress,
+          tokenId: parsedTxTokenId,
+          txid,
+        });
+      }
     }
   }
 
@@ -4108,6 +4145,11 @@ function tokenStateFromTransactions(
           right.balance - left.balance ||
           left.address.localeCompare(right.address),
       ),
+    invalidEvents: invalidEvents.sort(
+      (left, right) =>
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    ),
     listings: [...listings.values()]
       .filter((listing) => !tokenListingIsExpired(listing))
       .sort(
@@ -5838,6 +5880,20 @@ function tokenActivityItemsFromState(state, indexAddress) {
   ];
 }
 
+const TOKEN_ACTIVITY_KINDS = new Set([
+  "token-create",
+  "token-mint",
+  "token-transfer",
+  "token-listing",
+  "token-listing-sealed",
+  "token-listing-closed",
+  "token-sale",
+]);
+
+function isTokenActivityItem(item) {
+  return TOKEN_ACTIVITY_KINDS.has(item?.kind);
+}
+
 function rushActivityItemsFromState(state) {
   return (state.mints ?? []).map((mint) => ({
     amountSats: mint.paidSats,
@@ -6459,6 +6515,7 @@ function emptyTokenPayloadSnapshot(network) {
       confirmedTransfers: 0,
       confirmedTokens: 0,
       holders: 0,
+      invalidEvents: 0,
       pendingMints: 0,
       pendingTransfers: 0,
       pendingTokens: 0,
@@ -6570,6 +6627,7 @@ async function fastCachedTokenPayload(network, tokenScope = "") {
       confirmedTransfers: 0,
       confirmedTokens: 0,
       holders: 0,
+      invalidEvents: 0,
       pendingMints: 0,
       pendingTransfers: 0,
       pendingTokens: 0,
@@ -7760,6 +7818,8 @@ async function workTokenPayload(network, fallbackPayload = null) {
       confirmedTokens: state.tokens.filter((token) => token.confirmed).length,
       creationSats: state.creationSats,
       holders: state.holders.length,
+      invalidEvents: (state.invalidEvents ?? []).filter((event) => event.confirmed)
+        .length,
       pendingMints: state.mints.filter((mint) => !mint.confirmed).length,
       pendingTransfers: state.transfers.filter((transfer) => !transfer.confirmed)
         .length,
@@ -7851,6 +7911,8 @@ async function tokenPayload(network, tokenScope = "") {
       confirmedTokens: state.tokens.filter((token) => token.confirmed).length,
       creationSats: state.creationSats,
       holders: state.holders.length,
+      invalidEvents: (state.invalidEvents ?? []).filter((event) => event.confirmed)
+        .length,
       pendingMints: state.mints.filter((mint) => !mint.confirmed).length,
       pendingTransfers: state.transfers.filter((transfer) => !transfer.confirmed)
         .length,
@@ -8009,6 +8071,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
     matchesScopedToken,
   );
   const listings = (tokenState.listings ?? []).filter(matchesScopedToken);
+  const invalidEvents = (tokenState.invalidEvents ?? []).filter(matchesScopedToken);
   const mints = (tokenState.mints ?? []).filter(matchesScopedToken);
   const sales = (tokenState.sales ?? []).filter(matchesScopedToken);
   const transfers = (tokenState.transfers ?? []).filter(matchesScopedToken);
@@ -8079,6 +8142,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
     creationSats,
     confirmedSupply,
     holders,
+    invalidEvents,
     listings,
     mints,
     pendingSupply,
@@ -8093,6 +8157,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
       confirmedTokens: tokens.filter((token) => token.confirmed).length,
       creationSats,
       holders: holders.length,
+      invalidEvents: invalidEvents.filter((event) => event.confirmed).length,
       pendingMints: mints.filter((mint) => !mint.confirmed).length,
       pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
         .length,
@@ -8165,6 +8230,7 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) 
       confirmedTransfers: 0,
       confirmedTokens: 0,
       holders: 0,
+      invalidEvents: 0,
       pendingMints: 0,
       pendingTransfers: 0,
       pendingTokens: 0,
@@ -8738,6 +8804,9 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
       .map((listing) => [listing.listingId, listing]),
   );
   const closedListings = [...stateClosedListings];
+  const invalidEvents = Array.isArray(state?.invalidEvents)
+    ? [...state.invalidEvents]
+    : [];
   const mints = [...stateMints];
   const sales = [...stateSales];
   const transfers = [...stateTransfers];
@@ -8807,17 +8876,25 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
       vout,
       WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
     );
+    const originalRegistrySats = remainingRegistrySats;
     const paymentOutputs = paymentOutputsBeforeTokenProtocol(vout);
     const eventSpentOutpoints = spentOutpoints(vin);
     const confirmed = transactionConfirmed(tx);
     const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
     let acceptedTxMessage = false;
+    let parsedTxMessage = false;
+    let parsedTxKind = "";
+    let parsedTxTokenId = "";
 
     for (const message of messages) {
       const parsed = parseTokenPayload(message, network);
       if (!parsed) {
         continue;
       }
+      parsedTxMessage = true;
+      parsedTxKind = parsed.kind ?? parsedTxKind;
+      parsedTxTokenId =
+        parsed.tokenId ?? parsed.saleAuthorization?.tokenId ?? parsedTxTokenId;
 
       if (parsed.kind === "mint") {
         const projectedSupply = confirmed
@@ -9045,6 +9122,26 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
 
     if (acceptedTxMessage) {
       existingTxids.add(txid);
+      continue;
+    }
+
+    if (
+      confirmed &&
+      parsedTxMessage &&
+      originalRegistrySats >= TOKEN_MIN_MUTATION_PRICE_SATS &&
+      !invalidEvents.some((event) => event.txid === txid)
+    ) {
+      invalidEvents.push({
+        confirmed,
+        createdAt,
+        kind: parsedTxKind || "unknown",
+        network,
+        reason: "no-valid-work-token-event",
+        registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+        tokenId: parsedTxTokenId,
+        txid,
+      });
+      changed = true;
     }
   }
 
@@ -9089,6 +9186,11 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     confirmedSupply: mintSupplyTotals.confirmedSupply,
     holders,
     indexedAt: new Date().toISOString(),
+    invalidEvents: invalidEvents.sort(
+      (left, right) =>
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    ),
     listings: activeListings,
     mints: sortedMints,
     pendingSupply: mintSupplyTotals.pendingSupply,
@@ -9102,6 +9204,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         (token) => token.confirmed,
       ).length,
       holders: holders.length,
+      invalidEvents: invalidEvents.filter((event) => event.confirmed).length,
       pendingMints: mintSupplyTotals.pendingMints,
       pendingTransfers: sortedTransfers.filter((transfer) => !transfer.confirmed)
         .length,
@@ -9693,9 +9796,13 @@ function ledgerSourceHashes({
     seededMail: sourceCollectionFingerprint(seededMailActivityState?.activity),
     tokenMints: sourceCollectionFingerprint(tokenState?.mints),
     tokenSales: sourceCollectionFingerprint(tokenState?.sales),
+    tokenInvalidEvents: sourceCollectionFingerprint(tokenState?.invalidEvents),
+    tokenTransfers: sourceCollectionFingerprint(tokenState?.transfers),
     tokens: sourceCollectionFingerprint(tokenState?.tokens),
+    workInvalidEvents: sourceCollectionFingerprint(workTokenState?.invalidEvents),
     workMints: sourceCollectionFingerprint(workTokenState?.mints),
     workSales: sourceCollectionFingerprint(workTokenState?.sales),
+    workTransfers: sourceCollectionFingerprint(workTokenState?.transfers),
   };
 }
 
@@ -9730,6 +9837,7 @@ function ledgerMetricsFromState({
     confirmedTokenTransfers: confirmedItemCount(tokenTransfers),
     confirmedTokens:
       workFloor?.stats?.confirmedTokens ?? confirmedItemCount(tokenDefinitions),
+    invalidTokenEvents: confirmedItemCount(tokenState?.invalidEvents),
     indexedThroughBlock: indexedThroughBlockFromItems(activity ?? []),
     networkValueSats: numericValue(
       workFloor?.networkValueSats ?? workFloor?.actualValue?.totalSats,
@@ -9872,6 +9980,142 @@ function ledgerTokenStateForScope(ledger, scope) {
   return scopedTokenPayloadFromState(tokenState, scope);
 }
 
+function tokenStateLogExpectations(tokenState) {
+  const expectations = [];
+  const seenSealTxids = new Set();
+  const add = (item) => {
+    const txid = String(item?.txid ?? "").toLowerCase();
+    if (!item?.kind || !/^[0-9a-f]{64}$/u.test(txid)) {
+      return;
+    }
+    expectations.push({
+      ...item,
+      participants: Array.isArray(item.participants) ? item.participants : [],
+      tokenId: item.tokenId ?? "",
+      txid,
+    });
+  };
+
+  for (const token of tokenState?.tokens ?? []) {
+    if (!token?.confirmed) {
+      continue;
+    }
+    add({
+      kind: "token-create",
+      participants: [token.creatorAddress, token.registryAddress].filter(Boolean),
+      tokenId: token.tokenId,
+      txid: token.txid,
+    });
+  }
+
+  for (const mint of tokenState?.mints ?? []) {
+    if (!mint?.confirmed) {
+      continue;
+    }
+    add({
+      kind: "token-mint",
+      participants: [mint.minterAddress, mint.registryAddress].filter(Boolean),
+      tokenId: mint.tokenId,
+      txid: mint.txid,
+    });
+  }
+
+  for (const transfer of tokenState?.transfers ?? []) {
+    if (!transfer?.confirmed) {
+      continue;
+    }
+    add({
+      kind: "token-transfer",
+      participants: [
+        transfer.senderAddress,
+        transfer.recipientAddress,
+        transfer.registryAddress,
+      ].filter(Boolean),
+      tokenId: transfer.tokenId,
+      txid: transfer.txid,
+    });
+  }
+
+  for (const listing of tokenState?.listings ?? []) {
+    if (listing?.confirmed) {
+      add({
+        kind: "token-listing",
+        listingId: listing.listingId,
+        participants: [
+          listing.sellerAddress,
+          listing.saleAuthorization?.buyerAddress,
+          listing.registryAddress,
+        ].filter(Boolean),
+        tokenId: listing.tokenId,
+        txid: listing.listingId,
+      });
+    }
+  }
+
+  for (const listing of [
+    ...(tokenState?.listings ?? []),
+    ...(tokenState?.closedListings ?? []),
+  ]) {
+    const sealTxid = String(listing?.sealTxid ?? "").toLowerCase();
+    if (
+      listing?.sealConfirmed !== true ||
+      !/^[0-9a-f]{64}$/u.test(sealTxid) ||
+      seenSealTxids.has(sealTxid)
+    ) {
+      continue;
+    }
+    seenSealTxids.add(sealTxid);
+    add({
+      kind: "token-listing-sealed",
+      listingId: listing.listingId,
+      participants: [
+        listing.sellerAddress,
+        listing.saleAuthorization?.buyerAddress,
+        listing.registryAddress,
+      ].filter(Boolean),
+      tokenId: listing.tokenId,
+      txid: sealTxid,
+    });
+  }
+
+  for (const listing of tokenState?.closedListings ?? []) {
+    const closedTxid = listing?.closedTxid || listing?.listingId;
+    if (!listing?.closedConfirmed || !closedTxid) {
+      continue;
+    }
+    add({
+      kind: "token-listing-closed",
+      listingId: listing.listingId,
+      participants: [
+        listing.sellerAddress,
+        listing.saleAuthorization?.buyerAddress,
+        listing.registryAddress,
+      ].filter(Boolean),
+      tokenId: listing.tokenId,
+      txid: closedTxid,
+    });
+  }
+
+  for (const sale of tokenState?.sales ?? []) {
+    if (!sale?.confirmed) {
+      continue;
+    }
+    add({
+      kind: "token-sale",
+      listingId: sale.listingId,
+      participants: [
+        sale.buyerAddress,
+        sale.sellerAddress,
+        sale.registryAddress,
+      ].filter(Boolean),
+      tokenId: sale.tokenId,
+      txid: sale.txid,
+    });
+  }
+
+  return expectations;
+}
+
 function ledgerSnapshotChecks({
   activity,
   growthSummary,
@@ -9936,47 +10180,39 @@ function ledgerSnapshotChecks({
     activityByTxidKind.set(`${item.kind}:${item.txid}`, item);
   }
 
-  for (const sale of tokenState?.sales ?? []) {
-    if (!sale?.confirmed || !sale?.txid) {
-      continue;
-    }
-    const item = activityByTxidKind.get(`token-sale:${sale.txid}`);
+  const missingTokenLogEvents = [];
+  for (const expected of tokenStateLogExpectations(tokenState)) {
+    const item = activityByTxidKind.get(`${expected.kind}:${expected.txid}`);
     const participants = new Set(
       Array.isArray(item?.participants) ? item.participants : [],
     );
-    const participantOk = [
-      sale.buyerAddress,
-      sale.sellerAddress,
-      sale.registryAddress,
-    ]
-      .filter(Boolean)
-      .every((address) => participants.has(address));
+    const participantOk = expected.participants.every((address) =>
+      participants.has(address),
+    );
     if (!item || !participantOk) {
-      missingLogEvents.push({
-        kind: "token-sale",
-        txid: sale.txid,
-        tokenId: sale.tokenId,
-      });
+      const missing = {
+        kind: expected.kind,
+        listingId: expected.listingId,
+        txid: expected.txid,
+        tokenId: expected.tokenId,
+      };
+      missingTokenLogEvents.push(missing);
+      missingLogEvents.push(missing);
     }
   }
 
-  for (const listing of tokenState?.closedListings ?? []) {
-    const closedTxid = listing?.closedTxid || listing?.listingId;
-    if (!listing?.closedConfirmed || !closedTxid) {
-      continue;
-    }
-    if (!activityByTxidKind.has(`token-listing-closed:${closedTxid}`)) {
-      missingLogEvents.push({
-        kind: "token-listing-closed",
-        txid: closedTxid,
-        tokenId: listing.tokenId,
-      });
-    }
-  }
-
-  addCheck("token-sales-logged", missingLogEvents.length === 0, {
-    missing: missingLogEvents.length,
+  addCheck("token-events-logged", missingTokenLogEvents.length === 0, {
+    missing: missingTokenLogEvents.length,
   });
+  addCheck(
+    "token-sales-logged",
+    !missingTokenLogEvents.some((item) => item.kind === "token-sale"),
+    {
+      missing: missingTokenLogEvents.filter(
+        (item) => item.kind === "token-sale",
+      ).length,
+    },
+  );
 
   const seededConfirmedMail = (seededMailActivityState?.activity ?? []).filter(
     (item) => item?.confirmed && item?.txid && item?.kind,
@@ -10187,7 +10423,9 @@ async function ledgerTokenPayload(network, tokenScope = "", fresh = false) {
   return payloadWithFallbackAfterMs(
     refreshTokenPayload(network, scope),
     fallback,
-    WORK_FLOOR_FRESH_WAIT_MS,
+    scope === WORK_TOKEN_ID
+      ? WORK_TOKEN_CANONICAL_FRESH_WAIT_MS
+      : WORK_FLOOR_FRESH_WAIT_MS,
   );
 }
 
@@ -10460,13 +10698,55 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
   return null;
 }
 
+async function activityPayloadWithLiveWorkTokenOverlay(ledger) {
+  if (!ledger || ledger.network !== "livenet" || !ledger.tokenState) {
+    return ledger?.activityPayload;
+  }
+
+  const workTokenState = await liveWorkTokenStateWithFallbackAfterMs(
+    ledger.network,
+    ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
+    WORK_TOKEN_LIVE_WAIT_MS,
+    { recoverClosedSales: false },
+  );
+  const valueTokenState = tokenStateWithScopedTokenOverride(
+    ledger.tokenState,
+    workTokenState,
+    WORK_TOKEN_ID,
+  );
+  const baseActivity = Array.isArray(ledger.activityPayload?.activity)
+    ? ledger.activityPayload.activity
+    : Array.isArray(ledger.activity)
+      ? ledger.activity
+      : [];
+  const activity = dedupeActivityItems([
+    ...baseActivity.filter((item) => !isTokenActivityItem(item)),
+    ...tokenActivityItemsFromState(
+      valueTokenState,
+      valueTokenState?.indexAddress ?? "",
+    ),
+  ]);
+  const payload = {
+    ...(ledger.activityPayload ?? {}),
+    activity,
+    indexedAt: new Date().toISOString(),
+    network: ledger.network,
+    stats: activityStatsFromItems(activity, ledger.activityPayload?.stats ?? {}),
+  };
+  return attachLedgerMetadata(payload, ledger);
+}
+
 async function mergedLogActivityPayload(network, fresh = false) {
   const ledger = await summaryCanonicalLedgerPayload(network, fresh);
   if (ledger) {
-    return ledger.activityPayload;
+    return (await activityPayloadWithLiveWorkTokenOverlay(ledger)) ?? ledger.activityPayload;
   }
 
-  return (await canonicalLedgerPayload(network, false)).activityPayload;
+  const canonicalLedger = await canonicalLedgerPayload(network, false);
+  return (
+    (await activityPayloadWithLiveWorkTokenOverlay(canonicalLedger)) ??
+    canonicalLedger.activityPayload
+  );
 }
 
 async function registrySummaryPayload(network, fresh = false) {
@@ -10814,6 +11094,9 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
   });
   const kindMap = new Map([
     ["holders", "holders"],
+    ["invalid", "invalidEvents"],
+    ["invalid-events", "invalidEvents"],
+    ["invalid_events", "invalidEvents"],
     ["closedlistings", "closedListings"],
     ["closed-listings", "closedListings"],
     ["closed_listing", "closedListings"],
@@ -11002,6 +11285,10 @@ function tokenStateWithScopedTokenOverride(tokenState, scopedState, tokenId) {
     closedListings: replaceScopedItems(
       tokenState?.closedListings,
       scopedState.closedListings,
+    ),
+    invalidEvents: replaceScopedItems(
+      tokenState?.invalidEvents,
+      scopedState.invalidEvents,
     ),
     listings: replaceScopedItems(tokenState?.listings, scopedState.listings),
     mints: replaceScopedItems(tokenState?.mints, scopedState.mints),

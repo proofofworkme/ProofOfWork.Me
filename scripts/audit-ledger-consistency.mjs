@@ -8,6 +8,16 @@ const GULLISH_TXID =
   "cf6aacd51b3bb755620d9bd84e88b4e94e2a12bce74812734ba9013ae9d488aa";
 const GULLISH_BUYER =
   "bc1p0e5qs2vcu6c50t6xwxuk7yfnqpwtm03rclv7wzgxzk37849xt8fssl6zvd";
+const WORK_TOKEN_ID =
+  "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const WORK_TRANSFER_REGRESSION_TXID =
+  "7e9e711564be12330793b3415a032eca42bb742499fbdb8a6b8be6d6f1867354";
+const WORK_TRANSFER_REGRESSION_RECIPIENT =
+  "1MexjWyzCEwRW9R3Unnw6p6PPWWKdY3Wc2";
+const WORK_SEAL_REGRESSION_TXID =
+  "0cdd580f47ffb1e53d2667121f10f99784e7750a60403787bf09fac512fb0b3d";
+const WORK_SEAL_REGRESSION_LISTING_TXID =
+  "d976f2abdfd60eca041cb7a64450f0c9de06761978cd28b5d2fcae1605457148";
 const INFINITY_BOND_REGRESSION_TXID =
   "411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891";
 const PAGINATION_GAP_INFINITY_BOND_TXID =
@@ -121,6 +131,13 @@ const [
   growthSummary,
   btcUsdPrice,
   txLog,
+  workTransferLog,
+  workSealLog,
+  workTransferHistory,
+  workTransferInvalidHistory,
+  workSealListingHistory,
+  workSealMarketLogHistory,
+  workSealInvalidHistory,
   infinityBondLog,
   paginationGapInfinityBondLog,
 ] =
@@ -130,6 +147,23 @@ const [
     readJson("/api/v1/growth-summary"),
     readJson("/api/v1/prices/btc-usd?fresh=1"),
     readJson(`/api/v1/log-history?q=${GULLISH_TXID}`),
+    readJson(`/api/v1/log-history?q=${WORK_TRANSFER_REGRESSION_TXID}`),
+    readJson(`/api/v1/log-history?q=${WORK_SEAL_REGRESSION_TXID}`),
+    readJson(
+      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=transfers&q=${WORK_TRANSFER_REGRESSION_TXID}&fresh=1`,
+    ),
+    readJson(
+      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=invalid-events&q=${WORK_TRANSFER_REGRESSION_TXID}&fresh=1`,
+    ),
+    readJson(
+      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=listings&q=${WORK_SEAL_REGRESSION_LISTING_TXID}&fresh=1`,
+    ),
+    readJson(
+      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=market-log&q=${WORK_SEAL_REGRESSION_TXID}&fresh=1`,
+    ),
+    readJson(
+      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=invalid-events&q=${WORK_SEAL_REGRESSION_TXID}&fresh=1`,
+    ),
     readJson(`/api/v1/log-history?q=${INFINITY_BOND_REGRESSION_TXID}`),
     readJson(`/api/v1/log-history?q=${PAGINATION_GAP_INFINITY_BOND_TXID}`),
   ]);
@@ -229,6 +263,62 @@ expect(
 expect(
   "Gullish buyer address search returns sale participant event",
   buyerLogItems.some(isGullishBuyerTokenSale),
+);
+expect(
+  "confirmed WORK transfer tx is in transfer history",
+  items(workTransferHistory).some(
+    (item) =>
+      item.txid === WORK_TRANSFER_REGRESSION_TXID &&
+      item.confirmed === true &&
+      item.amount === 101_000 &&
+      item.recipientAddress === WORK_TRANSFER_REGRESSION_RECIPIENT,
+  ),
+);
+expect(
+  "confirmed WORK transfer tx is searchable in Log",
+  items(workTransferLog).some(
+    (item) =>
+      item.kind === "token-transfer" &&
+      item.txid === WORK_TRANSFER_REGRESSION_TXID &&
+      item.tokenId === WORK_TOKEN_ID &&
+      Array.isArray(item.participants) &&
+      item.participants.includes(WORK_TRANSFER_REGRESSION_RECIPIENT),
+  ),
+);
+expect(
+  "confirmed WORK transfer tx is not classified invalid",
+  items(workTransferInvalidHistory).length === 0,
+);
+expect(
+  "confirmed WORK seal is attached to its listing",
+  items(workSealListingHistory).some(
+    (item) =>
+      item.listingId === WORK_SEAL_REGRESSION_LISTING_TXID &&
+      item.sealTxid === WORK_SEAL_REGRESSION_TXID &&
+      item.sealConfirmed === true,
+  ),
+);
+expect(
+  "confirmed WORK seal tx is searchable in market log",
+  items(workSealMarketLogHistory).some(
+    (item) =>
+      item.txid === WORK_SEAL_REGRESSION_LISTING_TXID &&
+      item.listing?.sealTxid === WORK_SEAL_REGRESSION_TXID,
+  ),
+);
+expect(
+  "confirmed WORK seal tx is searchable in Log",
+  items(workSealLog).some(
+    (item) =>
+      item.kind === "token-listing-sealed" &&
+      item.txid === WORK_SEAL_REGRESSION_TXID &&
+      item.listingId === WORK_SEAL_REGRESSION_LISTING_TXID &&
+      item.tokenId === WORK_TOKEN_ID,
+  ),
+);
+expect(
+  "confirmed WORK seal tx is not classified invalid",
+  items(workSealInvalidHistory).length === 0,
 );
 
 if (failures.length) {
