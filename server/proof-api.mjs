@@ -131,6 +131,9 @@ const TOKEN_SCOPED_FRESH_WAIT_MS = Number(
 const WORK_TOKEN_CANONICAL_FRESH_WAIT_MS = Number(
   process.env.WORK_TOKEN_CANONICAL_FRESH_WAIT_MS ?? TOKEN_SCOPED_FRESH_WAIT_MS,
 );
+const LEDGER_SUMMARY_FRESH_WAIT_MS = Number(
+  process.env.LEDGER_SUMMARY_FRESH_WAIT_MS ?? WORK_TOKEN_CANONICAL_FRESH_WAIT_MS,
+);
 const TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS = Number(
   process.env.TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS ?? 10 * 60_000,
 );
@@ -10593,6 +10596,32 @@ function ledgerPayloadAgeMs(payload, now = Date.now()) {
   return Number.isFinite(generatedAt) ? Math.max(0, now - generatedAt) : Infinity;
 }
 
+function ledgerPayloadIndexedThroughBlock(payload) {
+  const height = Math.max(
+    Number(payload?.metrics?.indexedThroughBlock) || 0,
+    Number(payload?.sourceTipHeight) || 0,
+  );
+  return Number.isSafeInteger(height) && height > 0 ? height : 0;
+}
+
+async function ledgerTipHeight(network) {
+  try {
+    const tip = await fetchText(`${mempoolBase(network)}/api/blocks/tip/height`);
+    const height = Number(tip);
+    return Number.isSafeInteger(height) && height > 0 ? height : null;
+  } catch {
+    return null;
+  }
+}
+
+async function ledgerPayloadCoversTip(payload, network) {
+  const tipHeight = await ledgerTipHeight(network);
+  if (!Number.isSafeInteger(tipHeight)) {
+    return true;
+  }
+  return ledgerPayloadIndexedThroughBlock(payload) >= tipHeight;
+}
+
 async function existingCanonicalLedgerPayload(network) {
   const cacheKey = `ledger:${network}`;
   const payloadKey = `payload:ledger:${network}`;
@@ -11175,7 +11204,7 @@ async function ledgerTokenPayload(network, tokenScope = "", fresh = false) {
       { recoverClosedSales: false },
     );
   }
-  if (!fresh || !ENABLE_SUMMARY_TOKEN_REFRESH) {
+  if (!fresh || (!ENABLE_SUMMARY_TOKEN_REFRESH && scope !== WORK_TOKEN_ID)) {
     return tokenStateWithoutDroppedPendingTransactions(fallback, network);
   }
 
@@ -11198,6 +11227,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     workTokenState,
     rushState,
     btcUsdQuote,
+    sourceTipHeight,
   ] = await Promise.all([
     fresh && ENABLE_GLOBAL_ACTIVITY_CRAWL
       ? globalActivityPayload(network, true)
@@ -11218,6 +11248,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     network === "livenet"
       ? btcUsdPricePayload(network, { fresh })
       : Promise.resolve(null),
+    network === "livenet" ? ledgerTipHeight(network) : Promise.resolve(null),
   ]);
 
   const valueTokenState = tokenStateWithScopedTokenOverride(
@@ -11305,6 +11336,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     seededMailActivityState,
     snapshotId,
     sourceHashes,
+    sourceTipHeight,
     tokenState: valueTokenState,
     workFloor,
     workTokenState,
@@ -11371,7 +11403,8 @@ async function canonicalLedgerPayload(network, fresh = false) {
   if (fresh) {
     if (
       cached?.payload &&
-      ledgerPayloadAgeMs(cached.payload, now) < LEDGER_FRESH_MIN_INTERVAL_MS
+      ledgerPayloadAgeMs(cached.payload, now) < LEDGER_FRESH_MIN_INTERVAL_MS &&
+      (await ledgerPayloadCoversTip(cached.payload, network))
     ) {
       return cached.payload;
     }
@@ -11446,6 +11479,14 @@ function refreshCanonicalLedgerPayloadInBackground(network, fresh = false) {
 async function summaryCanonicalLedgerPayload(network, fresh = false) {
   const fallback = await existingCanonicalLedgerPayload(network);
   if (fresh) {
+    const refreshed = await payloadWithFallbackAfterMs(
+      canonicalLedgerPayload(network, true),
+      fallback,
+      LEDGER_SUMMARY_FRESH_WAIT_MS,
+    );
+    if (refreshed) {
+      return refreshed;
+    }
     refreshCanonicalLedgerPayloadInBackground(network, true);
     return fallback;
   }

@@ -18,6 +18,10 @@ const WORK_SEAL_REGRESSION_TXID =
   "0cdd580f47ffb1e53d2667121f10f99784e7750a60403787bf09fac512fb0b3d";
 const WORK_SEAL_REGRESSION_LISTING_TXID =
   "d976f2abdfd60eca041cb7a64450f0c9de06761978cd28b5d2fcae1605457148";
+const WORK_FRESH_LISTING_REGRESSION_TXID =
+  "4e80256079c9475589f5a828079be2e403ed029bf3dcd7a9801055714ee4b2bf";
+const WORK_FRESH_LISTING_REGRESSION_SELLER =
+  "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
 const INFINITY_BOND_REGRESSION_TXID =
   "411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891";
 const PAGINATION_GAP_INFINITY_BOND_TXID =
@@ -139,6 +143,8 @@ const [
   workSealListingHistory,
   workSealMarketLogHistory,
   workSealInvalidHistory,
+  workFreshListingHistory,
+  workFreshListingMarketLog,
   infinityBondLog,
   paginationGapInfinityBondLog,
 ] =
@@ -164,6 +170,12 @@ const [
     ),
     readJson(
       `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=invalid-events&q=${WORK_SEAL_REGRESSION_TXID}&fresh=1`,
+    ),
+    readJson(
+      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=listings&q=${WORK_FRESH_LISTING_REGRESSION_TXID}&fresh=1`,
+    ),
+    readJson(
+      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=market-log&q=${WORK_FRESH_LISTING_REGRESSION_TXID}&fresh=1`,
     ),
     readJson(`/api/v1/log-history?q=${INFINITY_BOND_REGRESSION_TXID}`),
     readJson(`/api/v1/log-history?q=${PAGINATION_GAP_INFINITY_BOND_TXID}`),
@@ -354,6 +366,26 @@ expect(
 expect(
   "confirmed WORK seal tx is not classified invalid",
   items(workSealInvalidHistory).length === 0,
+);
+expect(
+  "fresh confirmed WORK listing is visible in listing history",
+  items(workFreshListingHistory).some(
+    (item) =>
+      item.listingId === WORK_FRESH_LISTING_REGRESSION_TXID &&
+      item.confirmed === true &&
+      item.amount === 20_000 &&
+      item.priceSats === 151_600 &&
+      item.sellerAddress === WORK_FRESH_LISTING_REGRESSION_SELLER,
+  ),
+);
+expect(
+  "fresh confirmed WORK listing is visible in market log",
+  items(workFreshListingMarketLog).some(
+    (item) =>
+      item.kind === "listing" &&
+      item.txid === WORK_FRESH_LISTING_REGRESSION_TXID &&
+      item.listing?.sellerAddress === WORK_FRESH_LISTING_REGRESSION_SELLER,
+  ),
 );
 
 if (failures.length) {
