@@ -52,11 +52,12 @@ expectAll("canonical ledger directly merges seeded Computer mail", server, [
 expectAll("WORK Growth Log and token views use the same ledger", server, [
   /async function canonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)/,
   /async function summaryCanonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*refreshCanonicalLedgerPayloadInBackground\(network,\s*true\)/,
-  /async function activityPayloadWithLiveWorkTokenOverlay\(ledger\)[\s\S]*liveWorkTokenStateWithFallbackAfterMs\([\s\S]*tokenActivityItemsFromState\(/,
-  /async function mergedLogActivityPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*activityPayloadWithLiveWorkTokenOverlay\(ledger\)[\s\S]*canonicalLedgerPayload\(network,\s*false\)/,
+  /async function activityPayloadWithLiveWorkTokenOverlay\(ledger,\s*fresh\s*=\s*false\)[\s\S]*liveWorkTokenStateWithFallbackAfterMs\([\s\S]*tokenActivityItemsFromState\(/,
+  /async function mergedLogActivityPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*activityPayloadWithLiveWorkTokenOverlay\(ledger,\s*fresh\)[\s\S]*canonicalLedgerPayload\(network,\s*false\)/,
   /async function cachedWorkFloorPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*true\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*return ledger\.workFloor;/,
   /async function growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*return ledger\.growthSummary;[\s\S]*canonicalLedgerPayload\(network,\s*false\)\)\.growthSummary;/,
   /async function tokenPayloadForRead[\s\S]*summaryCanonicalLedgerPayload\(network,\s*true\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerTokenStateForScope\(ledger,\s*scope\)/,
+  /const liveWorkWaitMs = Number\.isFinite\(options\.liveWorkWaitMs\)[\s\S]*liveWorkTokenStateWithFallbackAfterMs\([\s\S]*liveWorkWaitMs/,
   /async function tokenSummaryPayload[\s\S]*const payload = await tokenPayloadForRead\(network,\s*scope,\s*fresh/,
   /async function tokenHistoryPayload[\s\S]*let payload = await tokenPayloadForRead\(network,\s*scope,\s*fresh/,
   /url\.pathname === "\/api\/v1\/token"[\s\S]*await tokenPayloadForRead\(network,\s*tokenScope,\s*freshRead/,
@@ -79,6 +80,9 @@ expectAll("consistency endpoint guards the public invariant", server, [
   /"work-floor-actual-total"/,
   /"growth-actual-total"/,
   /"growth-work-floor-total"/,
+  /"marketplace-mutation-fees-counted"/,
+  /"marketplace-value-includes-mutation-fees"/,
+  /"computer-event-flow-excludes-marketplace"/,
   /"token-events-logged"/,
   /"token-sales-logged"/,
   /"seeded-mail-events-logged"/,
@@ -110,6 +114,15 @@ expectAll("all confirmed token state rows must be searchable in Log", server, [
   /kind:\s*"token-listing-sealed"/,
   /activityByTxidKind\.get\(`\$\{expected\.kind\}:\$\{expected\.txid\}`\)/,
   /"token-events-logged"/,
+]);
+
+expectAll("marketplace mutation fees are first-class network value", server, [
+  /const MARKETPLACE_MUTATION_KINDS = new Set/,
+  /MARKETPLACE_MUTATION_KINDS\.has\(item\.kind\)/,
+  /const marketplaceFlowSats =\s*marketplaceSaleVolumeSats \+ marketplaceMutationFeeSats/,
+  /marketplaceFlowSats \* GROWTH_MODEL_INPUTS\.valueMultiple/,
+  /"marketplace-mutation-fees-counted"/,
+  /"marketplace-value-includes-mutation-fees"/,
 ]);
 
 expectAll("confirmed token protocol failures stay diagnosable", server, [

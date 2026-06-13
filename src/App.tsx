@@ -731,6 +731,22 @@ type PowActivityItem = {
   utxo?: string;
 };
 
+const ID_MARKETPLACE_MUTATION_KINDS = new Set<PowActivityKind>([
+  "id-list",
+  "id-seal",
+  "id-delist",
+  "id-buy",
+]);
+const TOKEN_MARKETPLACE_MUTATION_KINDS = new Set<PowActivityKind>([
+  "token-listing",
+  "token-listing-sealed",
+  "token-listing-closed",
+]);
+const MARKETPLACE_MUTATION_KINDS = new Set<PowActivityKind>([
+  ...ID_MARKETPLACE_MUTATION_KINDS,
+  ...TOKEN_MARKETPLACE_MUTATION_KINDS,
+]);
+
 type PowActivityStats = {
   addresses?: number;
   confirmed?: number;
@@ -1256,6 +1272,7 @@ type GrowthActualNetworkValue = {
   mailFlowSats: number;
   mailSats: number;
   marketplaceFeeSats: number;
+  marketplaceFlowSats: number;
   marketplaceMutationFeeSats: number;
   marketplaceSaleVolumeSats: number;
   marketplaceSats: number;
@@ -9614,6 +9631,7 @@ function normalizeGrowthActualValue(
     mailFlowSats: growthNumberField(payload, "mailFlowSats"),
     mailSats: growthNumberField(payload, "mailSats"),
     marketplaceFeeSats: growthNumberField(payload, "marketplaceFeeSats"),
+    marketplaceFlowSats: growthNumberField(payload, "marketplaceFlowSats"),
     marketplaceMutationFeeSats: growthNumberField(
       payload,
       "marketplaceMutationFeeSats",
@@ -24787,6 +24805,7 @@ function activityKindHasDedicatedGrowthBucket(item: PowActivityItem) {
   }
 
   return (
+    MARKETPLACE_MUTATION_KINDS.has(item.kind) ||
     item.kind === "mail" ||
     item.kind === "reply" ||
     item.kind === "file" ||
@@ -24874,19 +24893,17 @@ function growthActualNetworkValue(
   const marketplaceVolumeSats = marketplaceSaleVolumeSats;
   const idMarketplaceFeeSats = confirmedActivityFlowSats(
     confirmedActivity,
-    new Set(["id-list", "id-seal", "id-delist", "id-buy"]),
+    ID_MARKETPLACE_MUTATION_KINDS,
   );
   const tokenMarketplaceFeeSats = confirmedActivityFlowSats(
     confirmedActivity,
-    new Set([
-      "token-listing",
-      "token-listing-sealed",
-      "token-listing-closed",
-    ]),
+    TOKEN_MARKETPLACE_MUTATION_KINDS,
   );
   const marketplaceFeeSats =
     idMarketplaceFeeSats + tokenMarketplaceFeeSats;
   const marketplaceMutationFeeSats = marketplaceFeeSats;
+  const marketplaceFlowSats =
+    marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
   const tokenCreationFlowSats = confirmedTokens.reduce(
     (total, token) => total + token.creationFeeSats,
     0,
@@ -24906,7 +24923,7 @@ function growthActualNetworkValue(
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const marketplaceSats =
-    marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
+    marketplaceFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const tokenSats =
     (tokenCreationFlowSats + tokenMintFlowSats) *
@@ -24941,6 +24958,7 @@ function growthActualNetworkValue(
     idMarketplaceFeeSats,
     idMarketplaceVolumeSats,
     marketplaceFeeSats,
+    marketplaceFlowSats,
     marketplaceMutationFeeSats,
     marketplaceSaleVolumeSats,
     marketplaceSats,
@@ -25180,7 +25198,11 @@ function growthActivityKindLabel(kind: PowActivityKind) {
     kind === "id-list" ||
     kind === "id-seal" ||
     kind === "id-delist" ||
-    kind === "id-buy"
+    kind === "id-buy" ||
+    kind === "token-listing" ||
+    kind === "token-listing-sealed" ||
+    kind === "token-listing-closed" ||
+    kind === "token-sale"
   ) {
     return "Marketplace";
   }
@@ -25195,11 +25217,7 @@ function growthActivityKindLabel(kind: PowActivityKind) {
 
   if (
     kind === "token-create" ||
-    kind === "token-mint" ||
-    kind === "token-listing" ||
-    kind === "token-listing-sealed" ||
-    kind === "token-listing-closed" ||
-    kind === "token-sale"
+    kind === "token-mint"
   ) {
     return "Credit";
   }
@@ -26289,6 +26307,9 @@ function GrowthWorkspace({
     actualValue.marketplaceSaleVolumeSats || actualValue.marketplaceVolumeSats;
   const marketplaceFeeSats =
     actualValue.marketplaceFeeSats || actualValue.marketplaceMutationFeeSats;
+  const marketplaceFlowSats =
+    actualValue.marketplaceFlowSats ||
+    marketplaceSaleVolumeSats + marketplaceFeeSats;
   const tokenFlowSats =
     actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats;
   const walletFlowSats = actualValue.walletFlowSats;
@@ -26402,10 +26423,10 @@ function GrowthWorkspace({
         </div>
         <div>
           <strong>
-            {marketplaceSaleVolumeSats.toLocaleString()}
+            {marketplaceFlowSats.toLocaleString()}
           </strong>
           <span>
-            Marketplace sale proofs ·{" "}
+            Marketplace flow proofs · {marketplaceSaleVolumeSats.toLocaleString()} sale ·{" "}
             {marketplaceSaleCount.toLocaleString()} confirmed sales ·{" "}
             {marketplaceFeeSats.toLocaleString()} fee proofs
           </span>
@@ -26441,7 +26462,7 @@ function GrowthWorkspace({
           <h3>The olive line moves when ProofOfWork confirms.</h3>
           <p>
             Registrations, messages, replies, file writes, HTML page writes,
-            buyer-funded marketplace sales, credit sale-ticket buys, credit
+            marketplace listings, seals, delistings, buyer-funded buys, credit
             creations, credit mints, and credit transfers are pulled from live
             endpoints. Pending mempool events wait until they confirm.
           </p>
@@ -26638,7 +26659,7 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(actualValue.computerEventSats)}
-            actualLabel={`${growthUsdForSats(actualValue.computerEventSats)} · ${computerEventFlowSats.toLocaleString()} confirmed log proofs · ${marketplaceFeeSats.toLocaleString()} marketplace fee proofs`}
+            actualLabel={`${growthUsdForSats(actualValue.computerEventSats)} · ${computerEventFlowSats.toLocaleString()} other confirmed log proofs`}
             icon={<GitBranch size={24} />}
             modelFiveYear="Tracked"
             modelFiveYearLabel="confirmed event ledger"
@@ -26646,7 +26667,7 @@ function GrowthWorkspace({
             modelOneYear="Tracked"
             modelOneYearLabel="confirmed event ledger"
             name="Confirmed Events"
-            note="Registry mutations, listings, seals, delistings, and other confirmed log writes feed the same WORK floor ledger."
+            note="Non-marketplace registry mutations and other confirmed log writes feed the same WORK floor ledger."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.tokenSats)}

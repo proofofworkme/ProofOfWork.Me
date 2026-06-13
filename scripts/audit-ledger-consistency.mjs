@@ -25,6 +25,7 @@ const PAGINATION_GAP_INFINITY_BOND_TXID =
 const HISTORY_AUDIT_PAGE_LIMIT = 200;
 const HISTORY_AUDIT_MAX_PAGES = 10;
 const MIN_INFINITY_BOND_FLOW_SATS = 47_234_999;
+const GROWTH_VALUE_MULTIPLE = 5;
 const failures = [];
 
 function endpoint(path) {
@@ -219,6 +220,40 @@ expect(
   usdNumbersAgree(
     growthSummary.actualValue?.totalUsd,
     satsToUsd(growthSummary.actualValue?.totalSats, liveBtcUsd),
+  ),
+);
+const actualValue = workFloor.actualValue ?? {};
+const marketplaceFeeSats = numberValue(actualValue.marketplaceFeeSats);
+const marketplaceMutationFeeSats = numberValue(
+  actualValue.marketplaceMutationFeeSats,
+);
+const marketplaceSaleVolumeSats = numberValue(
+  actualValue.marketplaceSaleVolumeSats ?? actualValue.marketplaceVolumeSats,
+);
+const marketplaceFlowSats = numberValue(actualValue.marketplaceFlowSats);
+const marketplaceSats = numberValue(actualValue.marketplaceSats);
+expect(
+  "consistency guards marketplace mutation fee accounting",
+  consistencyChecks.has("marketplace-mutation-fees-counted") &&
+    consistencyChecks.has("marketplace-value-includes-mutation-fees") &&
+    consistencyChecks.has("computer-event-flow-excludes-marketplace"),
+);
+expect(
+  "marketplace mutation fee aliases agree",
+  numbersAgree(marketplaceFeeSats, marketplaceMutationFeeSats),
+);
+expect(
+  "marketplace flow includes sale volume and mutation fees",
+  numbersAgree(
+    marketplaceFlowSats,
+    marketplaceSaleVolumeSats + marketplaceMutationFeeSats,
+  ),
+);
+expect(
+  "marketplace network value includes mutation fees",
+  numbersAgree(
+    marketplaceSats,
+    marketplaceFlowSats * GROWTH_VALUE_MULTIPLE,
   ),
 );
 expect(

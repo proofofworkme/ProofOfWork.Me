@@ -270,6 +270,21 @@ const GROWTH_MODEL_INPUTS = {
   idDensitySatsPerN2: 268.68933906745133,
   valueMultiple: 5,
 };
+const ID_MARKETPLACE_MUTATION_KINDS = new Set([
+  "id-list",
+  "id-seal",
+  "id-delist",
+  "id-buy",
+]);
+const TOKEN_MARKETPLACE_MUTATION_KINDS = new Set([
+  "token-listing",
+  "token-listing-sealed",
+  "token-listing-closed",
+]);
+const MARKETPLACE_MUTATION_KINDS = new Set([
+  ...ID_MARKETPLACE_MUTATION_KINDS,
+  ...TOKEN_MARKETPLACE_MUTATION_KINDS,
+]);
 const BTC_USD_PRICE = Number(
   process.env.BTC_USD_PRICE ?? GROWTH_MODEL_INPUTS.currentBtcUsd,
 );
@@ -10288,14 +10303,15 @@ async function tokenPayloadForRead(
         const liveOptions = {
           recoverClosedSales: options.recoverWorkSales !== false,
         };
-        payload = Number.isFinite(options.liveWorkWaitMs)
-          ? await liveWorkTokenStateWithFallbackAfterMs(
-              network,
-              payload,
-              options.liveWorkWaitMs,
-              liveOptions,
-            )
-          : await liveWorkTokenState(network, payload, liveOptions);
+        const liveWorkWaitMs = Number.isFinite(options.liveWorkWaitMs)
+          ? options.liveWorkWaitMs
+          : WORK_TOKEN_LIVE_WAIT_MS;
+        payload = await liveWorkTokenStateWithFallbackAfterMs(
+          network,
+          payload,
+          liveWorkWaitMs,
+          liveOptions,
+        );
       }
       return tokenPayloadReadResult(payload, network, fresh, options);
     }
@@ -10563,6 +10579,9 @@ function ledgerPayloadHasCurrentChecks(payload) {
     Boolean(payload?.snapshotId) &&
     checkNames.has("livenet-confirmed-history-present") &&
     checkNames.has("token-definitions-cover-confirmed-mints") &&
+    checkNames.has("marketplace-mutation-fees-counted") &&
+    checkNames.has("marketplace-value-includes-mutation-fees") &&
+    checkNames.has("computer-event-flow-excludes-marketplace") &&
     checkNames.has("token-sales-logged") &&
     checkNames.has("seeded-mail-events-logged") &&
     checkNames.has("seeded-infinity-bonds-logged")
@@ -10841,6 +10860,34 @@ function ledgerSnapshotChecks({
   const growthFloorValue = numericValue(
     growthSummary?.workFloor?.networkValueSats,
   );
+  const confirmedActivity = (activity ?? []).filter((item) => item?.confirmed);
+  const confirmedMarketplaceMutationFeeSats = confirmedActivityFlowSats(
+    confirmedActivity,
+    MARKETPLACE_MUTATION_KINDS,
+  );
+  const marketplaceFeeSats = numericValue(
+    workFloor?.actualValue?.marketplaceFeeSats,
+  );
+  const marketplaceMutationFeeSats = numericValue(
+    workFloor?.actualValue?.marketplaceMutationFeeSats,
+  );
+  const marketplaceSaleVolumeSats = numericValue(
+    workFloor?.actualValue?.marketplaceSaleVolumeSats ??
+      workFloor?.actualValue?.marketplaceVolumeSats,
+  );
+  const marketplaceFlowSats = numericValue(
+    workFloor?.actualValue?.marketplaceFlowSats,
+  );
+  const marketplaceSats = numericValue(workFloor?.actualValue?.marketplaceSats);
+  const expectedMarketplaceFlowSats =
+    marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
+  const expectedMarketplaceSats =
+    expectedMarketplaceFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const expectedComputerEventFlowSats =
+    unbucketedConfirmedComputerLogFlowSats(confirmedActivity);
+  const computerEventFlowSats = numericValue(
+    workFloor?.actualValue?.computerEventFlowSats,
+  );
   addCheck("work-floor-actual-total", numbersAgree(workNetworkValue, workActualValue), {
     actualValueSats: workActualValue,
     networkValueSats: workNetworkValue,
@@ -10853,6 +10900,36 @@ function ledgerSnapshotChecks({
     growthWorkFloorSats: growthFloorValue,
     workValueSats: workNetworkValue,
   });
+  addCheck(
+    "marketplace-mutation-fees-counted",
+    numbersAgree(confirmedMarketplaceMutationFeeSats, marketplaceFeeSats) &&
+      numbersAgree(confirmedMarketplaceMutationFeeSats, marketplaceMutationFeeSats),
+    {
+      confirmedMarketplaceMutationFeeSats,
+      marketplaceFeeSats,
+      marketplaceMutationFeeSats,
+    },
+  );
+  addCheck(
+    "marketplace-value-includes-mutation-fees",
+    numbersAgree(marketplaceFlowSats, expectedMarketplaceFlowSats) &&
+      numbersAgree(marketplaceSats, expectedMarketplaceSats),
+    {
+      marketplaceFlowSats,
+      marketplaceMutationFeeSats,
+      marketplaceSaleVolumeSats,
+      marketplaceSats,
+    },
+  );
+  addCheck(
+    "computer-event-flow-excludes-marketplace",
+    numbersAgree(computerEventFlowSats, expectedComputerEventFlowSats),
+    {
+      computerEventFlowSats,
+      expectedComputerEventFlowSats,
+      marketplaceMutationFeeSats,
+    },
+  );
 
   const activityByTxidKind = new Map();
   for (const item of activity ?? []) {
@@ -11191,7 +11268,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     registryState,
     activityPayload,
     valueTokenState,
-    {},
+    workTokenState,
     { btcUsdQuote },
   );
   const metrics = ledgerMetricsFromState({
@@ -11935,6 +12012,7 @@ function activityKindHasDedicatedGrowthBucket(item) {
   }
 
   return (
+    MARKETPLACE_MUTATION_KINDS.has(item.kind) ||
     item.kind === "mail" ||
     item.kind === "reply" ||
     item.kind === "file" ||
@@ -12088,19 +12166,17 @@ function growthActualNetworkValue(
   const marketplaceVolumeSats = marketplaceSaleVolumeSats;
   const idMarketplaceFeeSats = confirmedActivityFlowSats(
     confirmedActivity,
-    new Set(["id-list", "id-seal", "id-delist", "id-buy"]),
+    ID_MARKETPLACE_MUTATION_KINDS,
   );
   const tokenMarketplaceFeeSats = confirmedActivityFlowSats(
     confirmedActivity,
-    new Set([
-      "token-listing",
-      "token-listing-sealed",
-      "token-listing-closed",
-    ]),
+    TOKEN_MARKETPLACE_MUTATION_KINDS,
   );
   const marketplaceFeeSats =
     idMarketplaceFeeSats + tokenMarketplaceFeeSats;
   const marketplaceMutationFeeSats = marketplaceFeeSats;
+  const marketplaceFlowSats =
+    marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
   const tokenCreationFlowSats = confirmedTokens.reduce(
     (total, token) => total + token.creationFeeSats,
     0,
@@ -12122,7 +12198,7 @@ function growthActualNetworkValue(
     infinityBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const marketplaceSats =
-    marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
+    marketplaceFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const tokenSats =
     (tokenCreationFlowSats + tokenMintFlowSats) *
@@ -12162,6 +12238,7 @@ function growthActualNetworkValue(
     infinityBondFlowSats,
     infinityBondSats,
     marketplaceFeeSats,
+    marketplaceFlowSats,
     marketplaceMutationFeeSats,
     marketplaceSaleVolumeSats,
     marketplaceVolumeSats,
@@ -12355,7 +12432,11 @@ function growthActivityKindLabel(kind) {
     kind === "id-list" ||
     kind === "id-seal" ||
     kind === "id-delist" ||
-    kind === "id-buy"
+    kind === "id-buy" ||
+    kind === "token-listing" ||
+    kind === "token-listing-sealed" ||
+    kind === "token-listing-closed" ||
+    kind === "token-sale"
   ) {
     return "Marketplace";
   }
@@ -12374,11 +12455,7 @@ function growthActivityKindLabel(kind) {
 
   if (
     kind === "token-create" ||
-    kind === "token-mint" ||
-    kind === "token-listing" ||
-    kind === "token-listing-sealed" ||
-    kind === "token-listing-closed" ||
-    kind === "token-sale"
+    kind === "token-mint"
   ) {
     return "Credit";
   }
@@ -12572,6 +12649,7 @@ function emptyWorkFloorPayload(network) {
       mailFlowSats: 0,
       mailSats: 0,
       marketplaceFeeSats: 0,
+      marketplaceFlowSats: 0,
       marketplaceMutationFeeSats: 0,
       marketplaceSaleVolumeSats: 0,
       marketplaceSats: 0,
@@ -12605,6 +12683,7 @@ function emptyWorkFloorPayload(network) {
       idMarketplaceFeeSats: 0,
       idMarketplaceVolumeSats: 0,
       marketplaceFeeSats: 0,
+      marketplaceFlowSats: 0,
       marketplaceMutationFeeSats: 0,
       marketplaceSaleVolumeSats: 0,
       tokenMarketplaceFeeSats: 0,
@@ -12831,6 +12910,7 @@ function workFloorPayloadFromState(
       idMarketplaceFeeSats: actualValue.idMarketplaceFeeSats,
       idMarketplaceVolumeSats: actualValue.idMarketplaceVolumeSats,
       marketplaceFeeSats: actualValue.marketplaceFeeSats,
+      marketplaceFlowSats: actualValue.marketplaceFlowSats,
       marketplaceMutationFeeSats: actualValue.marketplaceMutationFeeSats,
       marketplaceSaleVolumeSats: actualValue.marketplaceSaleVolumeSats,
       marketplaceSats: actualValue.marketplaceSats,
