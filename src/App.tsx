@@ -1119,6 +1119,7 @@ const WORK_FLOOR_LIVE_REFRESH_MS = 15_000;
 const LOG_LIVE_REFRESH_MS = 15_000;
 const BACKGROUND_FRESH_REFRESH_DELAY_MS = 1_000;
 const BTC_USD_BROWSER_CACHE_TTL_MS = 60_000;
+const TX_OUTSPEND_FETCH_TIMEOUT_MS = 12_000;
 const BLOCK_TXID_INDEX_CACHE = new Map<string, Promise<Map<string, number>>>();
 const BTC_USD_BROWSER_INFLIGHT = new Map<string, Promise<number>>();
 const PROTOCOL_PREFIX = "pwm1:";
@@ -9927,12 +9928,37 @@ async function fetchTransactionOutspend(
     `/api/v1/tx/${encodeURIComponent(txid)}/outspend/${vout}`,
     network,
   );
-  const response = await fetch(url, {
-    cache: "no-store",
-    headers: {
-      Accept: "application/json",
-    },
-  });
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = globalThis.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, TX_OUTSPEND_FETCH_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (
+      timedOut ||
+      (error instanceof DOMException && error.name === "AbortError")
+    ) {
+      throw new Error(
+        "Could not verify the sale-ticket spend state before timeout. Refresh and try sealing again.",
+      );
+    }
+
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+
   return response.ok ? ((await response.json()) as Record<string, unknown>) : null;
 }
 

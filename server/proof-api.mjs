@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
 import path from "node:path";
+import dns from "node:dns";
 import { URL } from "node:url";
 import bip322 from "bip322-js";
 import * as bitcoin from "bitcoinjs-lib";
@@ -16,6 +17,7 @@ import {
 } from "./http/responses.mjs";
 
 bitcoin.initEccLib(ecc);
+dns.setDefaultResultOrder("ipv4first");
 const { Verifier } = bip322;
 
 const HOST = process.env.HOST ?? "127.0.0.1";
@@ -139,6 +141,9 @@ const TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS = Number(
 );
 const TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS = Number(
   process.env.TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS ?? HEAVY_READ_STALE_MS,
+);
+const TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS = Number(
+  process.env.TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS ?? 4_000,
 );
 const WORK_TOKEN_LIVE_DELTA_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_DELTA_MAX_TXS ?? 1500,
@@ -1182,8 +1187,8 @@ async function fetchJson(url, init = {}) {
   return response.json();
 }
 
-async function fetchText(url) {
-  const response = await fetch(url);
+async function fetchText(url, init = {}) {
+  const response = await fetch(url, init);
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new Error(
@@ -1798,7 +1803,7 @@ function scriptHashForScriptHex(scriptHex) {
   return Buffer.from(bitcoin.crypto.sha256(script)).reverse().toString("hex");
 }
 
-function electrumRequest(method, params) {
+function electrumRequest(method, params, timeoutMs = 30_000) {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection({
       host: ELECTRUM_HOST,
@@ -1816,7 +1821,7 @@ function electrumRequest(method, params) {
       settled = true;
       socket.destroy();
       reject(new Error(`Electrum request timed out: ${method}`));
-    }, 30_000);
+    }, timeoutMs);
 
     socket.on("connect", () => {
       socket.write(`${JSON.stringify({ id: requestId, method, params })}\n`);
@@ -13013,84 +13018,77 @@ async function txHexPayload(txid, network) {
   };
 }
 
-async function txOutspendPayload(txid, vout, network) {
-  let primaryOutspend = null;
-  try {
-    primaryOutspend = await fetchJson(
-      `${mempoolBase(network)}/api/tx/${txid}/outspend/${vout}`,
-    );
-    if (primaryOutspend?.spent) {
-      return primaryOutspend;
+async function directTxOutspendPayload(txid, vout, network) {
+  let lastOutspend = null;
+  for (const base of pendingMempoolBases(network)) {
+    try {
+      const outspend = await fetchJson(
+        `${base}/api/tx/${txid}/outspend/${vout}`,
+        { signal: AbortSignal.timeout(TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS) },
+      );
+      if (outspend?.spent) {
+        return outspend;
+      }
+      if (outspend && typeof outspend === "object") {
+        lastOutspend = outspend;
+      }
+    } catch {
+      // Try the next configured mempool source before reconstructing from history.
     }
-  } catch {
-    // Some private electrs/mempool deployments do not expose /outspend.
-    // Reconstruct the answer from the output script's Electrum history instead.
   }
 
-  const sourceTx = await fetchTransactionWithPendingFallback(txid, network);
-  const output = Array.isArray(sourceTx?.vout) ? sourceTx.vout[vout] : undefined;
-  const outputScript =
-    output && typeof output.scriptpubkey === "string" ? output.scriptpubkey : "";
+  return lastOutspend;
+}
+
+async function txOutspendPayload(txid, vout, network) {
+  const primaryOutspend = await directTxOutspendPayload(txid, vout, network);
+  if (primaryOutspend) {
+    return primaryOutspend;
+  }
+
+  // Some private mempool deployments do not expose /outspend, and walking
+  // full script history can be expensive for active seller addresses. For
+  // seal preflight, a bounded Electrum unspent check gives the answer needed.
+  let outputScript = "";
+  try {
+    const sourceTxHex = await fetchText(
+      `${mempoolBase(network)}/api/tx/${txid}/hex`,
+      { signal: AbortSignal.timeout(TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS) },
+    );
+    const sourceTx = bitcoin.Transaction.fromHex(sourceTxHex);
+    const output = sourceTx.outs[vout];
+    outputScript = output ? bytesToHex(output.script) : "";
+  } catch {
+    return { spent: false, unknown: true };
+  }
+
   if (!outputScript) {
-    if (primaryOutspend) {
-      return primaryOutspend;
-    }
-    throw new Error("Transaction output not found.");
+    return { spent: false, unknown: true };
   }
 
   const scripthash = scriptHashForScriptHex(outputScript);
-  let history = [];
   try {
-    history = await electrumRequest("blockchain.scripthash.get_history", [
-      scripthash,
-    ]);
-  } catch (error) {
-    if (primaryOutspend) {
-      return primaryOutspend;
-    }
-    throw error;
-  }
-  const candidateTxids = [
-    ...new Set(
-      (Array.isArray(history) ? history : [])
-        .map((entry) => entry?.tx_hash)
-        .filter(
-          (candidateTxid) =>
-            typeof candidateTxid === "string" &&
-            /^[0-9a-fA-F]{64}$/u.test(candidateTxid),
-        )
-        .map((candidateTxid) => candidateTxid.toLowerCase())
-        .filter((candidateTxid) => candidateTxid !== txid),
-    ),
-  ];
-  const candidateTxs = await mapWithConcurrency(
-    candidateTxids,
-    TX_FETCH_CONCURRENCY,
-    async (candidateTxid) => {
-      try {
-        return await fetchTransactionWithPendingFallback(candidateTxid, network);
-      } catch {
-        return null;
-      }
-    },
-  );
-
-  for (const candidateTx of candidateTxs.filter(Boolean)) {
-    const vin = Array.isArray(candidateTx.vin) ? candidateTx.vin : [];
-    const inputIndex = vin.findIndex(
-      (input) => input?.txid === txid && input?.vout === vout,
+    const unspent = await electrumRequest(
+      "blockchain.scripthash.listunspent",
+      [scripthash],
+      TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS,
     );
-    if (inputIndex >= 0) {
-      return {
-        spent: true,
-        status: candidateTx.status ?? null,
-        txid: transactionTxid(candidateTx),
-        vin: inputIndex,
-      };
+    if (Array.isArray(unspent)) {
+      const stillUnspent = unspent.some((entry) => {
+        const entryTxid =
+          typeof entry?.tx_hash === "string"
+            ? entry.tx_hash.toLowerCase()
+            : "";
+        const entryVout = Number(entry?.tx_pos);
+        return entryTxid === txid && entryVout === vout;
+      });
+      return stillUnspent ? { spent: false } : { spent: true, status: null };
     }
+  } catch {
+    return { spent: false, unknown: true };
   }
 
-  return primaryOutspend ?? { spent: false };
+  return { spent: false, unknown: true };
 }
 
 async function txStatusPayload(txid, network) {
