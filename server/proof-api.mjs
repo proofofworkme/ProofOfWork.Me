@@ -130,6 +130,10 @@ const WORK_TOKEN_LIVE_WAIT_MS = Number(
 const TOKEN_SCOPED_FRESH_WAIT_MS = Number(
   process.env.TOKEN_SCOPED_FRESH_WAIT_MS ?? 30_000,
 );
+const WORK_TOKEN_LIVE_RECOVERY_WAIT_MS = Number(
+  process.env.WORK_TOKEN_LIVE_RECOVERY_WAIT_MS ??
+    Math.max(WORK_TOKEN_LIVE_WAIT_MS, TOKEN_SCOPED_FRESH_WAIT_MS),
+);
 const WORK_TOKEN_CANONICAL_FRESH_WAIT_MS = Number(
   process.env.WORK_TOKEN_CANONICAL_FRESH_WAIT_MS ?? TOKEN_SCOPED_FRESH_WAIT_MS,
 );
@@ -156,6 +160,27 @@ const WORK_TOKEN_LIVE_RECENT_MAX_TXS = Number(
 );
 const WORK_TOKEN_LIVE_HISTORY_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_HISTORY_MAX_TXS ?? WORK_TOKEN_LIVE_DELTA_MAX_TXS,
+);
+const WORK_TOKEN_LIVE_NON_MINT_MAX_TXS = Number(
+  process.env.WORK_TOKEN_LIVE_NON_MINT_MAX_TXS ?? 250,
+);
+const WORK_TOKEN_LIVE_NON_MINT_SCAN_MAX_TXS = Number(
+  process.env.WORK_TOKEN_LIVE_NON_MINT_SCAN_MAX_TXS ?? 10_000,
+);
+const WORK_TOKEN_LIVE_PARTICIPANT_ADDRESS_MAX = Number(
+  process.env.WORK_TOKEN_LIVE_PARTICIPANT_ADDRESS_MAX ?? 80,
+);
+const WORK_TOKEN_LIVE_PARTICIPANT_TXS_PER_ADDRESS = Number(
+  process.env.WORK_TOKEN_LIVE_PARTICIPANT_TXS_PER_ADDRESS ?? 80,
+);
+const WORK_TOKEN_LIVE_RECOVERY_TXS_PER_ADDRESS = Number(
+  process.env.WORK_TOKEN_LIVE_RECOVERY_TXS_PER_ADDRESS ?? 120,
+);
+const WORK_TOKEN_RECOVERY_CACHE_TTL_MS = Number(
+  process.env.WORK_TOKEN_RECOVERY_CACHE_TTL_MS ?? 30_000,
+);
+const WORK_TOKEN_RECOVERY_CACHE_MAX_ENTRIES = Number(
+  process.env.WORK_TOKEN_RECOVERY_CACHE_MAX_ENTRIES ?? 200,
 );
 const WORK_TOKEN_SEAL_RECOVERY_CACHE_TTL_MS = Number(
   process.env.WORK_TOKEN_SEAL_RECOVERY_CACHE_TTL_MS ?? 60_000,
@@ -369,6 +394,8 @@ const BACKGROUND_TOKEN_REFRESHES = new Set();
 const BACKGROUND_REFRESH_LAST_STARTED = new Map();
 const RESPONSE_CACHE = new Map();
 const WORK_TOKEN_LIVE_SEEN_TXIDS = new Map();
+const WORK_TOKEN_NON_MINT_HISTORY_CACHE = new Map();
+const WORK_TOKEN_PARTICIPANT_RECOVERY_CACHE = new Map();
 const WORK_TOKEN_SEAL_RECOVERY_CACHE = new Map();
 const TOKEN_MARKET_OUTSPEND_CACHE = new Map();
 let persistedCacheWriteSequence = 0;
@@ -899,6 +926,10 @@ function tokenPayloadMetrics(payload) {
     confirmedClosedListings: Array.isArray(payload?.closedListings)
       ? payload.closedListings.filter((listing) => listing?.closedConfirmed).length
       : 0,
+    confirmedListingEvents: [
+      ...(Array.isArray(payload?.listings) ? payload.listings : []),
+      ...(Array.isArray(payload?.closedListings) ? payload.closedListings : []),
+    ].filter((listing) => listing?.confirmed).length,
     confirmedMints: Math.max(
       safeStatNumber(payload, "confirmedMints"),
       confirmedItemCount(payload?.mints),
@@ -1041,6 +1072,33 @@ function historyPaginationFromSearch(searchParams) {
     page,
     query,
   };
+}
+
+function recoveryAddressesFromSearchParams(searchParams, network) {
+  if (!searchParams) {
+    return [];
+  }
+
+  const values = [];
+  for (const key of [
+    "address",
+    "owner",
+    "ownerAddress",
+    "seller",
+    "sellerAddress",
+    "buyer",
+    "buyerAddress",
+  ]) {
+    values.push(...searchParams.getAll(key));
+  }
+
+  return [
+    ...new Set(
+      values
+        .map((value) => String(value ?? "").trim())
+        .filter((value) => isValidBitcoinAddress(value, network)),
+    ),
+  ];
 }
 
 function valueSearchText(value) {
@@ -1917,7 +1975,11 @@ async function fetchTransactionFromBase(baseUrl, txid) {
   return response.json();
 }
 
-async function fetchTransactionWithPendingFallback(txid, network) {
+async function fetchTransactionFromPendingSources(
+  txid,
+  network,
+  options = {},
+) {
   for (const baseUrl of pendingMempoolBases(network)) {
     const tx = await fetchTransactionFromBase(baseUrl, txid).catch(() => null);
     if (tx) {
@@ -1926,8 +1988,160 @@ async function fetchTransactionWithPendingFallback(txid, network) {
     }
   }
 
-  markDroppedPendingTokenTransaction(txid, network, "pending-fallback");
+  if (options.markDropped !== false) {
+    markDroppedPendingTokenTransaction(txid, network, "pending-fallback");
+  }
   return null;
+}
+
+async function fetchTransactionWithPendingFallback(txid, network) {
+  return fetchTransactionFromPendingSources(txid, network);
+}
+
+async function fetchTransactionWithSourceFallback(txid, network) {
+  let primaryError = null;
+  try {
+    return await fetchTransaction(txid, network);
+  } catch (error) {
+    primaryError = error;
+    const fallback = await fetchTransactionFromPendingSources(txid, network, {
+      markDropped: false,
+    });
+    if (fallback) {
+      return fallback;
+    }
+  }
+
+  const electrumTx = await fetchTransactionFromElectrum(txid, network).catch(
+    () => null,
+  );
+  if (electrumTx) {
+    return electrumTx;
+  }
+
+  throw primaryError ?? new Error(`Transaction lookup failed for ${txid}.`);
+}
+
+function coreScriptTypeToMempoolType(type) {
+  switch (type) {
+    case "nulldata":
+      return "op_return";
+    case "pubkeyhash":
+      return "p2pkh";
+    case "scripthash":
+      return "p2sh";
+    case "witness_v0_keyhash":
+      return "v0_p2wpkh";
+    case "witness_v0_scripthash":
+      return "v0_p2wsh";
+    case "witness_v1_taproot":
+      return "v1_p2tr";
+    default:
+      return String(type ?? "");
+  }
+}
+
+function coreVoutToMempoolVout(output) {
+  const script = output?.scriptPubKey ?? {};
+  return {
+    scriptpubkey: String(script.hex ?? ""),
+    scriptpubkey_address: String(script.address ?? ""),
+    scriptpubkey_asm: String(script.asm ?? ""),
+    scriptpubkey_type: coreScriptTypeToMempoolType(script.type),
+    value: Math.round(Number(output?.value ?? 0) * 100_000_000),
+  };
+}
+
+async function fetchTransactionFromElectrum(
+  txid,
+  network,
+  options = {},
+) {
+  const normalizedTxid = String(txid ?? "").toLowerCase();
+  if (
+    network !== "livenet" ||
+    !ELECTRUM_HOST ||
+    !ELECTRUM_PORT ||
+    !/^[0-9a-f]{64}$/u.test(normalizedTxid)
+  ) {
+    return null;
+  }
+
+  const cacheKey = `${network}:${normalizedTxid}`;
+  const cached = TRANSACTION_CACHE.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const raw = await electrumRequest("blockchain.transaction.get", [
+    normalizedTxid,
+    true,
+  ]);
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const vout = (Array.isArray(raw.vout) ? raw.vout : []).map(
+    coreVoutToMempoolVout,
+  );
+  const vin = await mapWithConcurrency(
+    Array.isArray(raw.vin) ? raw.vin : [],
+    TX_FETCH_CONCURRENCY,
+    async (input) => {
+      const nextInput = {
+        scriptsig: String(input?.scriptSig?.hex ?? ""),
+        scriptsig_asm: String(input?.scriptSig?.asm ?? ""),
+        sequence: Number(input?.sequence ?? 0),
+        txid: String(input?.txid ?? "").toLowerCase(),
+        vout: Number(input?.vout ?? -1),
+      };
+      if (
+        options.includePrevouts !== false &&
+        /^[0-9a-f]{64}$/u.test(nextInput.txid) &&
+        Number.isSafeInteger(nextInput.vout) &&
+        nextInput.vout >= 0
+      ) {
+        const prevTx = await fetchTransactionFromElectrum(
+          nextInput.txid,
+          network,
+          { includePrevouts: false },
+        ).catch(() => null);
+        const prevout = prevTx?.vout?.[nextInput.vout];
+        if (prevout) {
+          nextInput.prevout = prevout;
+        }
+      }
+      return nextInput;
+    },
+  );
+
+  const confirmed = Number(raw.confirmations ?? 0) > 0;
+  const tx = {
+    fee: Number.isFinite(Number(raw.fee))
+      ? Math.round(Number(raw.fee) * 100_000_000)
+      : undefined,
+    locktime: Number(raw.locktime ?? 0),
+    size: Number(raw.size ?? 0),
+    status: {
+      block_hash: String(raw.blockhash ?? ""),
+      block_time: Number(raw.blocktime ?? raw.time ?? 0),
+      confirmed,
+    },
+    txid: String(raw.txid ?? normalizedTxid).toLowerCase(),
+    version: Number(raw.version ?? 0),
+    vin,
+    vout,
+    weight: Number(raw.weight ?? 0),
+  };
+
+  if (confirmed) {
+    TRANSACTION_CACHE.set(cacheKey, tx);
+    if (TRANSACTION_CACHE.size > MAX_TRANSACTION_CACHE_SIZE) {
+      TRANSACTION_CACHE.delete(TRANSACTION_CACHE.keys().next().value);
+    }
+  }
+
+  return tx;
 }
 
 async function fetchAddressTransactionsFromElectrum(address, network) {
@@ -1953,7 +2167,10 @@ async function fetchAddressTransactionsFromElectrum(address, network) {
     TX_FETCH_CONCURRENCY,
     async (txid) => {
       try {
-        return await fetchTransaction(txid, network);
+        return (
+          (await fetchTransactionFromElectrum(txid, network).catch(() => null)) ??
+          (await fetchTransactionWithSourceFallback(txid, network))
+        );
       } catch {
         failedFetches += 1;
         return null;
@@ -2093,6 +2310,55 @@ async function fetchRecentUnknownAddressTransactions(
   }
 
   return annotateBlockOrder(dedupeTransactions(collected), network);
+}
+
+async function fetchRecentUnknownAddressHistoryTransactions(
+  address,
+  network,
+  knownTxids,
+  maxTxs,
+) {
+  let historyTxids = [];
+  try {
+    historyTxids = await fetchAddressHistoryTxidsFromElectrum(address, network);
+  } catch (error) {
+    console.error(
+      `Recent address Electrum history lookup failed for ${address}: ${errorSummary(error)}`,
+    );
+    return [];
+  }
+
+  const unknownTxids = historyTxids
+    .filter((txid) => !knownTxids.has(txid))
+    .slice(-Math.max(0, maxTxs));
+  if (unknownTxids.length === 0) {
+    return [];
+  }
+
+  let failedFetches = 0;
+  const txs = await mapWithConcurrency(
+    unknownTxids,
+    TX_FETCH_CONCURRENCY,
+    async (txid) => {
+      try {
+        return (
+          (await fetchTransactionFromElectrum(txid, network).catch(() => null)) ??
+          (await fetchTransactionWithSourceFallback(txid, network))
+        );
+      } catch {
+        failedFetches += 1;
+        return null;
+      }
+    },
+  );
+
+  if (failedFetches > 0) {
+    console.error(
+      `Recent address Electrum history hydration was partial for ${address}: ${failedFetches} of ${unknownTxids.length} transaction lookups failed.`,
+    );
+  }
+
+  return annotateBlockOrder(dedupeTransactions(txs.filter(Boolean)), network);
 }
 
 function transactionTxid(tx) {
@@ -3253,6 +3519,75 @@ function tokenStateWithMergedListingSeals(state, sourceState) {
     : state;
 }
 
+function tokenStateWithPreservedListingRecords(state, sourceState) {
+  if (!state || !sourceState) {
+    return state;
+  }
+
+  const stateClosedListingIds = new Set(
+    (Array.isArray(state?.closedListings) ? state.closedListings : [])
+      .map((listing) => String(listing?.listingId ?? "").toLowerCase())
+      .filter((listingId) => /^[0-9a-f]{64}$/u.test(listingId)),
+  );
+  const activeById = new Map();
+  const setActive = (listing) => {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(listingId)) {
+      return;
+    }
+    activeById.set(
+      listingId,
+      mergeTokenListingRecord(activeById.get(listingId), listing),
+    );
+  };
+
+  for (const listing of Array.isArray(sourceState?.listings)
+    ? sourceState.listings
+    : []) {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    if (!stateClosedListingIds.has(listingId)) {
+      setActive(listing);
+    }
+  }
+  for (const listing of Array.isArray(state?.listings) ? state.listings : []) {
+    setActive(listing);
+  }
+
+  const closedByKey = new Map();
+  const setClosed = (listing) => {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(listingId)) {
+      return;
+    }
+    const key = `${listingId}:${String(listing?.closedTxid ?? "").toLowerCase()}`;
+    closedByKey.set(
+      key,
+      mergeTokenListingRecord(closedByKey.get(key), listing),
+    );
+  };
+  for (const listing of Array.isArray(sourceState?.closedListings)
+    ? sourceState.closedListings
+    : []) {
+    setClosed(listing);
+  }
+  for (const listing of Array.isArray(state?.closedListings)
+    ? state.closedListings
+    : []) {
+    setClosed(listing);
+  }
+
+  return {
+    ...state,
+    closedListings: sortClosedTokenListings([...closedByKey.values()]),
+    listings: [...activeById.values()].sort(
+      (left, right) =>
+        Number(right.confirmed) - Number(left.confirmed) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        String(left.listingId ?? "").localeCompare(String(right.listingId ?? "")),
+    ),
+  };
+}
+
 function tokenSaleAuthorizationTermsMatch(left, right) {
   return (
     JSON.stringify(
@@ -3433,7 +3768,7 @@ async function tokenMarketTxIsVisible(txid, network) {
     return false;
   }
 
-  const tx = await fetchTransactionWithPendingFallback(normalizedTxid, network);
+  const tx = await fetchTransactionWithSourceFallback(normalizedTxid, network);
   return Boolean(tx);
 }
 
@@ -3444,7 +3779,9 @@ async function tokenMarketTxIsConfirmed(txid, network) {
   }
 
   try {
-    return transactionConfirmed(await fetchTransaction(normalizedTxid, network));
+    return transactionConfirmed(
+      await fetchTransactionWithSourceFallback(normalizedTxid, network),
+    );
   } catch {
     return false;
   }
@@ -8964,7 +9301,7 @@ async function recoverWorkSalesFromClosedListings(state, network) {
   for (const listing of candidates) {
     const closedTxid = String(listing.closedTxid ?? "").toLowerCase();
     try {
-      const tx = await fetchTransaction(closedTxid, network);
+      const tx = await fetchTransactionWithSourceFallback(closedTxid, network);
       const sale = confirmedWorkSaleFromClosedListingTransaction(
         tx,
         listing,
@@ -9107,6 +9444,281 @@ function workTokenDeltaHasNonMintActions(txs, network) {
       },
     );
   });
+}
+
+function workTokenNonMintActionKindsFromTransaction(tx, network) {
+  const vout = Array.isArray(tx?.vout) ? tx.vout : [];
+  const kinds = new Set();
+  for (const message of decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX)) {
+    const parsed = parseTokenPayload(message, network);
+    const tokenId = parsed?.tokenId ?? parsed?.saleAuthorization?.tokenId ?? "";
+    if (!parsed || parsed.kind === "mint" || tokenId !== WORK_TOKEN_ID) {
+      continue;
+    }
+
+    kinds.add(parsed.kind);
+  }
+  return kinds;
+}
+
+function workTokenTransactionHasNonMintAction(tx, network) {
+  return workTokenNonMintActionKindsFromTransaction(tx, network).size > 0;
+}
+
+function cacheWorkTokenRecoveryTransactions(cache, cacheKey, txs) {
+  const now = Date.now();
+  for (const [entryKey, entry] of cache) {
+    if (now >= Number(entry?.expiresAt ?? 0)) {
+      cache.delete(entryKey);
+    }
+  }
+  while (cache.size >= WORK_TOKEN_RECOVERY_CACHE_MAX_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    cache.delete(oldestKey);
+  }
+  cache.set(cacheKey, {
+    expiresAt: now + WORK_TOKEN_RECOVERY_CACHE_TTL_MS,
+    txs,
+  });
+}
+
+async function recentUnknownWorkTokenNonMintTransactions(
+  network,
+  knownTxids,
+  maxActionTxs,
+  maxScanTxids,
+) {
+  const cacheKey = `${network}:${maxActionTxs}:${maxScanTxids}`;
+  const cached = WORK_TOKEN_NON_MINT_HISTORY_CACHE.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.txs;
+  }
+
+  let historyTxids = [];
+  try {
+    historyTxids = await fetchAddressHistoryTxidsFromElectrum(
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      network,
+    );
+  } catch (error) {
+    console.error(
+      `WORK live non-mint history lookup failed for ${network}: ${errorSummary(error)}`,
+    );
+    return [];
+  }
+
+  const normalizedKnown = knownTxids instanceof Set ? knownTxids : new Set();
+  if (normalizedKnown.size === 0) {
+    return [];
+  }
+
+  const candidateTxids = [...historyTxids]
+    .reverse()
+    .filter((txid) => /^[0-9a-f]{64}$/u.test(txid) && !normalizedKnown.has(txid))
+    .slice(0, Math.max(0, maxScanTxids));
+  if (candidateTxids.length === 0) {
+    return [];
+  }
+
+  const maxActions = Math.max(0, maxActionTxs);
+  if (maxActions === 0) {
+    return [];
+  }
+
+  const recovered = [];
+  const batchSize = Math.max(1, TX_FETCH_CONCURRENCY * 4);
+  let failedFetches = 0;
+  let scanned = 0;
+
+  for (let start = 0; start < candidateTxids.length; start += batchSize) {
+    const batch = candidateTxids.slice(start, start + batchSize);
+    scanned += batch.length;
+    const txs = await mapWithConcurrency(
+      batch,
+      TX_FETCH_CONCURRENCY,
+      async (txid) => {
+        try {
+          return await fetchTransactionWithSourceFallback(txid, network);
+        } catch {
+          failedFetches += 1;
+          return null;
+        }
+      },
+    );
+
+    for (const tx of txs.filter(Boolean)) {
+      if (!workTokenTransactionHasNonMintAction(tx, network)) {
+        continue;
+      }
+
+      recovered.push(tx);
+      if (recovered.length >= maxActions) {
+        break;
+      }
+    }
+
+    if (recovered.length >= maxActions) {
+      break;
+    }
+  }
+
+  if (failedFetches > 0) {
+    console.error(
+      `WORK live non-mint hydration was partial for ${network}: ${failedFetches} transaction lookup(s) failed while scanning ${scanned}.`,
+    );
+  }
+  if (recovered.length > 0) {
+    console.log(
+      `Recovered ${recovered.length} WORK non-mint registry transaction(s) while scanning ${scanned} recent unknown txid(s) for ${network}.`,
+    );
+  }
+
+  const annotated = await annotateBlockOrder(dedupeTransactions(recovered), network);
+  cacheWorkTokenRecoveryTransactions(
+    WORK_TOKEN_NON_MINT_HISTORY_CACHE,
+    cacheKey,
+    annotated,
+  );
+  return annotated;
+}
+
+function workTokenParticipantRecoveryAddresses(state, network, extraAddresses = []) {
+  const addresses = new Set();
+  const addAddress = (address) => {
+    if (isValidBitcoinAddress(address, network)) {
+      addresses.add(address);
+    }
+  };
+
+  for (const address of Array.isArray(extraAddresses) ? extraAddresses : []) {
+    addAddress(address);
+  }
+  if (addresses.size > 0) {
+    return [...addresses].slice(
+      0,
+      Math.max(0, WORK_TOKEN_LIVE_PARTICIPANT_ADDRESS_MAX),
+    );
+  }
+
+  for (const holder of Array.isArray(state?.holders) ? state.holders : []) {
+    if (Number(holder?.balance) > 0) {
+      addAddress(holder.address);
+    }
+  }
+  for (const listing of [
+    ...(Array.isArray(state?.listings) ? state.listings : []),
+    ...(Array.isArray(state?.closedListings) ? state.closedListings : []),
+  ]) {
+    addAddress(listing?.sellerAddress);
+  }
+  for (const transfer of Array.isArray(state?.transfers) ? state.transfers : []) {
+    addAddress(transfer?.senderAddress);
+    addAddress(transfer?.recipientAddress);
+  }
+  for (const sale of Array.isArray(state?.sales) ? state.sales : []) {
+    addAddress(sale?.sellerAddress);
+    addAddress(sale?.buyerAddress);
+  }
+
+  return [...addresses].slice(
+    0,
+    Math.max(0, WORK_TOKEN_LIVE_PARTICIPANT_ADDRESS_MAX),
+  );
+}
+
+async function recentUnknownWorkTokenParticipantTransactions(
+  state,
+  network,
+  knownTxids,
+  maxTxsPerAddress,
+  extraAddresses = [],
+) {
+  const normalizedKnown = knownTxids instanceof Set ? knownTxids : new Set();
+  if (normalizedKnown.size === 0) {
+    return [];
+  }
+
+  const addresses = workTokenParticipantRecoveryAddresses(
+    state,
+    network,
+    extraAddresses,
+  );
+  if (addresses.length === 0) {
+    return [];
+  }
+  const cacheKey = `${network}:${maxTxsPerAddress}:${addresses.join(",")}`;
+  const cached = WORK_TOKEN_PARTICIPANT_RECOVERY_CACHE.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.txs;
+  }
+
+  const hasExplicitRecoveryAddresses =
+    Array.isArray(extraAddresses) && extraAddresses.length > 0;
+  let failedAddresses = 0;
+  const groups = await mapWithConcurrency(
+    addresses,
+    Math.min(TX_FETCH_CONCURRENCY, 6),
+    async (address) => {
+      try {
+        if (hasExplicitRecoveryAddresses) {
+          return await fetchRecentUnknownAddressHistoryTransactions(
+            address,
+            network,
+            normalizedKnown,
+            Math.max(1, maxTxsPerAddress),
+          );
+        }
+
+        const pageTxs = await fetchRecentUnknownAddressTransactions(
+          address,
+          network,
+          normalizedKnown,
+          Math.max(1, maxTxsPerAddress),
+        );
+        if (pageTxs.length > 0) {
+          return pageTxs;
+        }
+
+        return await fetchRecentUnknownAddressHistoryTransactions(
+          address,
+          network,
+          normalizedKnown,
+          Math.max(1, maxTxsPerAddress),
+        );
+      } catch (error) {
+        failedAddresses += 1;
+        console.error(
+          `WORK participant recovery lookup failed for ${address}: ${errorSummary(error)}`,
+        );
+        return [];
+      }
+    },
+  );
+  if (failedAddresses > 0) {
+    console.error(
+      `WORK participant recovery had ${failedAddresses} address lookup failure(s) for ${network}.`,
+    );
+  }
+
+  const recovered = dedupeTransactions(groups.flat()).filter((tx) =>
+    workTokenTransactionHasNonMintAction(tx, network),
+  );
+  if (recovered.length > 0) {
+    console.log(
+      `Recovered ${recovered.length} WORK non-mint participant transaction(s) from ${addresses.length} address scan(s) for ${network}.`,
+    );
+  }
+
+  const annotated = await annotateBlockOrder(recovered, network);
+  cacheWorkTokenRecoveryTransactions(
+    WORK_TOKEN_PARTICIPANT_RECOVERY_CACHE,
+    cacheKey,
+    annotated,
+  );
+  return annotated;
 }
 
 function workMintSupplyTotals(mints) {
@@ -9277,7 +9889,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     );
   }
   const closedListings = [...stateClosedListings];
-  const invalidEvents = Array.isArray(state?.invalidEvents)
+  let invalidEvents = Array.isArray(state?.invalidEvents)
     ? [...state.invalidEvents]
     : [];
   const mints = [...stateMints];
@@ -9594,6 +10206,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     }
 
     if (acceptedTxMessage) {
+      invalidEvents = invalidEvents.filter((event) => event.txid !== txid);
       existingTxids.add(txid);
       continue;
     }
@@ -9630,14 +10243,12 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         right.balance - left.balance ||
         left.address.localeCompare(right.address),
     );
-  const activeListings = [...listings.values()]
-    .filter((listing) => !tokenListingIsExpired(listing))
-    .sort(
-      (left, right) =>
-        Number(right.confirmed) - Number(left.confirmed) ||
-        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        left.listingId.localeCompare(right.listingId),
-    );
+  const activeListings = [...listings.values()].sort(
+    (left, right) =>
+      Number(right.confirmed) - Number(left.confirmed) ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      left.listingId.localeCompare(right.listingId),
+  );
   const sortedMints = sortWorkMintsForDisplay(workMintRowsWithinPendingCap(mints));
   const mintSupplyTotals = workMintSupplyTotals(sortedMints);
   const sortedSales = sales.sort(
@@ -9805,6 +10416,103 @@ function workTokenStateWithRecoveredListingSeals(state, txs, network) {
   };
 }
 
+function workTokenStateWithRecoveredListingsFromTransactions(state, txs, network) {
+  const activeListings = new Map();
+  const knownListingIds = new Set();
+  for (const listing of Array.isArray(state?.listings) ? state.listings : []) {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(listingId)) {
+      continue;
+    }
+    knownListingIds.add(listingId);
+    activeListings.set(
+      listingId,
+      mergeTokenListingRecord(activeListings.get(listingId), listing),
+    );
+  }
+  for (const listing of Array.isArray(state?.closedListings)
+    ? state.closedListings
+    : []) {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    if (/^[0-9a-f]{64}$/u.test(listingId)) {
+      knownListingIds.add(listingId);
+    }
+  }
+
+  let changed = false;
+  let invalidEvents = Array.isArray(state?.invalidEvents)
+    ? [...state.invalidEvents]
+    : [];
+  for (const tx of tokenProtocolSortedTransactions(
+    (Array.isArray(txs) ? txs : []).filter(Boolean),
+  )) {
+    const txid = transactionTxid(tx);
+    if (!txid || knownListingIds.has(txid) || !transactionConfirmed(tx)) {
+      continue;
+    }
+
+    const vin = Array.isArray(tx.vin) ? tx.vin : [];
+    const vout = Array.isArray(tx.vout) ? tx.vout : [];
+    const txInputAddresses = inputAddresses(vin);
+    let remainingRegistrySats = tokenPaymentAmountBeforeProtocol(
+      vout,
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    );
+    const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+
+    for (const message of decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX)) {
+      const parsed = parseTokenPayload(message, network);
+      const authorization = parsed?.saleAuthorization;
+      if (
+        parsed?.kind !== "list" ||
+        authorization?.tokenId !== WORK_TOKEN_ID ||
+        authorization.registryAddress !== WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS ||
+        authorization.ticker !== WORK_TOKEN_TICKER ||
+        !txInputAddresses.includes(authorization.sellerAddress) ||
+        remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+        !tokenListingAnchorIsPresent(vout, authorization)
+      ) {
+        continue;
+      }
+
+      remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+      activeListings.set(txid, {
+        amount: authorization.amount,
+        confirmed: true,
+        createdAt,
+        dataBytes: proofProtocolDataBytesForVout(vout),
+        listingId: txid,
+        network,
+        priceSats: authorization.priceSats,
+        registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+        saleAuthorization: authorization,
+        sellerAddress: authorization.sellerAddress,
+        ticker: WORK_TOKEN_TICKER,
+        tokenId: WORK_TOKEN_ID,
+      });
+      invalidEvents = invalidEvents.filter((event) => event.txid !== txid);
+      knownListingIds.add(txid);
+      changed = true;
+    }
+  }
+
+  if (!changed) {
+    return state;
+  }
+
+  return {
+    ...state,
+    indexedAt: new Date().toISOString(),
+    invalidEvents,
+    listings: [...activeListings.values()].sort(
+      (left, right) =>
+        Number(right.confirmed) - Number(left.confirmed) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        String(left.listingId ?? "").localeCompare(String(right.listingId ?? "")),
+    ),
+  };
+}
+
 async function recentWorkTokenSealRecoveryTransactions(network, maxTxs) {
   const cacheKey = `${network}:${maxTxs}`;
   const cached = WORK_TOKEN_SEAL_RECOVERY_CACHE.get(cacheKey);
@@ -9836,7 +10544,7 @@ async function recentWorkTokenSealRecoveryTransactions(network, maxTxs) {
     TX_FETCH_CONCURRENCY,
     async (txid) => {
       try {
-        return await fetchTransaction(txid, network);
+        return await fetchTransactionWithSourceFallback(txid, network);
       } catch {
         failedFetches += 1;
         return null;
@@ -9890,7 +10598,7 @@ async function confirmedTransactionsForTxids(txids, network, maxTxs) {
     TX_FETCH_CONCURRENCY,
     async (txid) => {
       try {
-        const tx = await fetchTransactionWithPendingFallback(txid, network);
+        const tx = await fetchTransactionWithSourceFallback(txid, network);
         return transactionConfirmed(tx) ? tx : null;
       } catch {
         return null;
@@ -9929,7 +10637,7 @@ async function recentUnknownHistoryTransactions(
     TX_FETCH_CONCURRENCY,
     async (txid) => {
       try {
-        return await fetchTransaction(txid, network);
+        return await fetchTransactionWithSourceFallback(txid, network);
       } catch {
         failedFetches += 1;
         return null;
@@ -9971,6 +10679,9 @@ async function replayLiveWorkTokenState(network, state, reason) {
 }
 
 async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
+  const recoveryAddresses = Array.isArray(options.recoveryAddresses)
+    ? options.recoveryAddresses
+    : [];
   let state =
     cachedWorkTokenState && typeof cachedWorkTokenState === "object"
       ? cachedWorkTokenState
@@ -10058,6 +10769,17 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
     1,
     Math.min(maxDeltaTxs, WORK_TOKEN_LIVE_HISTORY_MAX_TXS),
   );
+  const hasRecoveryAddresses = recoveryAddresses.length > 0;
+  const maxNonMintTxs = Math.max(
+    0,
+    hasRecoveryAddresses
+      ? 0
+      : Math.min(maxDeltaTxs, WORK_TOKEN_LIVE_NON_MINT_MAX_TXS),
+  );
+  const maxNonMintScanTxs = Math.max(
+    maxNonMintTxs,
+    maxNonMintTxs > 0 ? WORK_TOKEN_LIVE_NON_MINT_SCAN_MAX_TXS : 0,
+  );
   const pendingTxids = unconfirmedTokenStateTxids(state);
   const confirmedPendingTxs = await confirmedTransactionsForTxids(
     pendingTxids,
@@ -10066,34 +10788,62 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
   );
 
   const knownTxids = syncWorkTokenLiveSeenTxids(network, state);
-  let txs = await fetchRecentUnknownAddressTransactions(
-    WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-    network,
-    knownTxids,
-    maxRecentTxs,
-  ).catch((error) => {
-    console.error(
-      `WORK live recent page lookup failed for ${network}: ${errorSummary(error)}`,
-    );
-    return [];
-  });
   const cachedPendingTokenTxs = cachedPendingTokenTransactionsForRegistry(
     network,
     WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
   );
-  const historyTxs = await recentUnknownHistoryTransactions(
-    WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-    network,
-    knownTxids,
-    maxHistoryTxs,
-  );
+  const [recentTxs, historyTxs, nonMintHistoryTxs, participantTxs] =
+    await Promise.all([
+      fetchRecentUnknownAddressTransactions(
+        WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+        network,
+        knownTxids,
+        maxRecentTxs,
+      ).catch((error) => {
+        console.error(
+          `WORK live recent page lookup failed for ${network}: ${errorSummary(error)}`,
+        );
+        return [];
+      }),
+      recentUnknownHistoryTransactions(
+        WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+        network,
+        knownTxids,
+        maxHistoryTxs,
+      ),
+      recentUnknownWorkTokenNonMintTransactions(
+        network,
+        knownTxids,
+        maxNonMintTxs,
+        maxNonMintScanTxs,
+      ),
+      recentUnknownWorkTokenParticipantTransactions(
+        state,
+        network,
+        knownTxids,
+        hasRecoveryAddresses
+          ? WORK_TOKEN_LIVE_RECOVERY_TXS_PER_ADDRESS
+          : WORK_TOKEN_LIVE_PARTICIPANT_TXS_PER_ADDRESS,
+        recoveryAddresses,
+      ),
+    ]);
 
-  txs = dedupeTransactions([
+  const txs = dedupeTransactions([
     ...confirmedPendingTxs,
-    ...txs.filter(Boolean),
+    ...recentTxs.filter(Boolean),
     ...historyTxs,
+    ...nonMintHistoryTxs,
+    ...participantTxs,
     ...cachedPendingTokenTxs,
   ]);
+  const listingRecoveredFromDeltaState =
+    workTokenStateWithRecoveredListingsFromTransactions(state, txs, network);
+  if (listingRecoveredFromDeltaState !== state) {
+    state = listingRecoveredFromDeltaState;
+    cacheLiveWorkTokenState(network, state);
+    syncWorkTokenLiveSeenTxids(network, state);
+    console.log(`Recovered WORK listing(s) from live delta for ${network}.`);
+  }
   const sealRecoveredFromDeltaState = workTokenStateWithRecoveredListingSeals(
     state,
     txs,
@@ -10120,13 +10870,24 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
   );
   if (workTokenDeltaHasNonMintActions(txs, network)) {
     const deltaState = workTokenStateWithDeltaTransactions(state, txs, network);
-    if (deltaState !== state && !tokenPayloadLooksWorse(deltaState, state)) {
-      cacheLiveWorkTokenState(network, deltaState);
-      syncWorkTokenLiveSeenTxids(network, deltaState);
+    const preservedDeltaState = tokenStateWithPreservedListingRecords(
+      deltaState,
+      state,
+    );
+    const sealMergedDeltaState = tokenStateWithMergedListingSeals(
+      preservedDeltaState,
+      state,
+    );
+    if (
+      sealMergedDeltaState !== state &&
+      !tokenPayloadLooksWorse(sealMergedDeltaState, state)
+    ) {
+      cacheLiveWorkTokenState(network, sealMergedDeltaState);
+      syncWorkTokenLiveSeenTxids(network, sealMergedDeltaState);
       console.log(
         `Applied incremental WORK non-mint delta for ${network}.`,
       );
-      return deltaState;
+      return sealMergedDeltaState;
     }
 
     const replayedState = await replayLiveWorkTokenState(
@@ -10253,6 +11014,17 @@ async function liveWorkTokenStateWithFallbackAfterMs(
   );
 }
 
+function liveWorkReadWaitMs(options = {}) {
+  if (Number.isFinite(options.liveWorkWaitMs)) {
+    return options.liveWorkWaitMs;
+  }
+
+  return Array.isArray(options.recoveryAddresses) &&
+    options.recoveryAddresses.length > 0
+    ? WORK_TOKEN_LIVE_RECOVERY_WAIT_MS
+    : WORK_TOKEN_LIVE_WAIT_MS;
+}
+
 async function tokenPayloadReadResult(payload, network, fresh, options = {}) {
   const reconciledPayload = fresh
     ? await tokenStateWithLivePendingTransactionCheck(payload, network)
@@ -10270,6 +11042,9 @@ async function tokenPayloadForRead(
 ) {
   const scope = normalizeTokenScope(tokenScope);
   const useLedgerSnapshot = options.useLedgerSnapshot !== false;
+  const hasRecoveryAddresses =
+    Array.isArray(options.recoveryAddresses) &&
+    options.recoveryAddresses.length > 0;
   if (
     fresh &&
     scope &&
@@ -10291,7 +11066,7 @@ async function tokenPayloadForRead(
   if (network === "livenet" && useLedgerSnapshot) {
     let ledger = null;
     try {
-      ledger = fresh
+      ledger = fresh && !(scope === WORK_TOKEN_ID && hasRecoveryAddresses)
         ? await summaryCanonicalLedgerPayload(network, true)
         : await existingCanonicalLedgerPayload(network);
     } catch (error) {
@@ -10310,14 +11085,12 @@ async function tokenPayloadForRead(
       if (scope === WORK_TOKEN_ID) {
         const liveOptions = {
           recoverClosedSales: options.recoverWorkSales !== false,
+          recoveryAddresses: options.recoveryAddresses,
         };
-        const liveWorkWaitMs = Number.isFinite(options.liveWorkWaitMs)
-          ? options.liveWorkWaitMs
-          : WORK_TOKEN_LIVE_WAIT_MS;
         payload = await liveWorkTokenStateWithFallbackAfterMs(
           network,
           payload,
-          liveWorkWaitMs,
+          liveWorkReadWaitMs(options),
           liveOptions,
         );
       }
@@ -10325,13 +11098,30 @@ async function tokenPayloadForRead(
     }
   }
 
-  const payload = fresh
+  let payload = fresh
     ? await freshTokenPayloadOrSnapshot(network, scope, options)
     : await fastTokenPayloadSnapshot(network, scope, options);
+  if (scope === WORK_TOKEN_ID) {
+    const liveOptions = {
+      recoverClosedSales: options.recoverWorkSales !== false,
+      recoveryAddresses: options.recoveryAddresses,
+    };
+    payload = await liveWorkTokenStateWithFallbackAfterMs(
+      network,
+      payload,
+      liveWorkReadWaitMs(options),
+      liveOptions,
+    );
+  }
   return tokenPayloadReadResult(payload, network, fresh, options);
 }
 
-async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
+async function tokenSummaryPayload(
+  network,
+  tokenScope = "",
+  fresh = false,
+  options = {},
+) {
   const scope = normalizeTokenScope(tokenScope);
   const indexAddress = tokenIndexAddressForNetwork(network);
   if (!indexAddress) {
@@ -10368,6 +11158,7 @@ async function tokenSummaryPayload(network, tokenScope = "", fresh = false) {
   }
 
   const payload = await tokenPayloadForRead(network, scope, fresh, {
+    recoveryAddresses: options.recoveryAddresses,
     liveWorkWaitMs:
       scope === WORK_TOKEN_ID && !fresh ? WORK_TOKEN_LIVE_WAIT_MS : undefined,
     recoverWorkSales: scope !== WORK_TOKEN_ID,
@@ -11912,6 +12703,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
   const scope = normalizeTokenScope(tokenScope);
   let payload = await tokenPayloadForRead(network, scope, fresh, {
     reconcileSpendable: false,
+    recoveryAddresses: recoveryAddressesFromSearchParams(searchParams, network),
   });
   const kindMap = new Map([
     ["holders", "holders"],
@@ -13092,7 +13884,9 @@ async function txOutspendPayload(txid, vout, network) {
 }
 
 async function txStatusPayload(txid, network) {
-  const tx = await fetchTransactionWithPendingFallback(txid, network);
+  const tx = await fetchTransactionWithSourceFallback(txid, network).catch(
+    () => null,
+  );
   if (!tx) {
     return {
       confirmed: false,
@@ -13114,7 +13908,9 @@ async function txStatusPayload(txid, network) {
 }
 
 async function txPayload(txid, network) {
-  const tx = await fetchTransactionWithPendingFallback(txid, network);
+  const tx = await fetchTransactionWithSourceFallback(txid, network).catch(
+    () => null,
+  );
   if (!tx) {
     return {
       confirmed: false,
@@ -13393,6 +14189,10 @@ async function handleRequest(request, response) {
         200,
         await tokenPayloadForRead(network, tokenScope, freshRead, {
           reconcileSpendable: false,
+          recoveryAddresses: recoveryAddressesFromSearchParams(
+            url.searchParams,
+            network,
+          ),
         }),
         freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
@@ -13409,7 +14209,12 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await tokenSummaryPayload(network, tokenScope, freshRead),
+        await tokenSummaryPayload(network, tokenScope, freshRead, {
+          recoveryAddresses: recoveryAddressesFromSearchParams(
+            url.searchParams,
+            network,
+          ),
+        }),
         freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
       return;

@@ -9462,6 +9462,7 @@ async function fetchTokenState(
   fresh = false,
   tokenScope = "",
   summary = false,
+  addressHints: string[] = [],
 ): Promise<PowTokenState> {
   const indexAddress = tokenIndexAddressForNetwork(targetNetwork);
   if (!indexAddress) {
@@ -9474,6 +9475,12 @@ async function fetchTokenState(
   }
   if (tokenScope.trim()) {
     params.set("asset", tokenScope.trim());
+  }
+  for (const addressHint of addressHints) {
+    const trimmedAddress = addressHint.trim();
+    if (trimmedAddress) {
+      params.append("address", trimmedAddress);
+    }
   }
   const query = params.toString();
   const payload = await fetchProofApiJson<PowTokenApiResponse>(
@@ -9569,6 +9576,7 @@ async function fetchTokenHistoryPage<T>(
     | "tokens"
     | "transfers",
   options: {
+    address?: string;
     fresh?: boolean;
     pageIndex?: number;
     pageSize?: number;
@@ -9588,6 +9596,9 @@ async function fetchTokenHistoryPage<T>(
   }
   if (options.tokenScope?.trim()) {
     params.set("asset", options.tokenScope.trim());
+  }
+  if (options.address?.trim()) {
+    params.set("address", options.address.trim());
   }
 
   const payload = await fetchProofApiJson<PowPaginatedApiResponse<T>>(
@@ -12609,6 +12620,7 @@ export default function App() {
         "livenet",
         "listings",
         {
+          address: walletAddress,
           fresh,
           pageIndex,
           pageSize: TOKEN_HISTORY_PAGE_SIZE,
@@ -13604,6 +13616,8 @@ export default function App() {
             "livenet",
             false,
             workTokenMode ? WORK_TOKEN_ID : "",
+            false,
+            [nextAddress],
           );
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
@@ -14802,6 +14816,7 @@ export default function App() {
           fresh,
           tokenScope,
           useSummary,
+          address ? [address] : [],
         );
         setTokenDefinitions(state.tokens);
         setTokenMints(state.mints);
@@ -15324,6 +15339,8 @@ export default function App() {
             "livenet",
             false,
             workTokenMode ? WORK_TOKEN_ID : "",
+            false,
+            [firstAddress],
           );
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
@@ -17808,7 +17825,13 @@ export default function App() {
         await switchWalletNetwork(window.unisat, "livenet");
       }
 
-      const latestState = await fetchTokenState("livenet", true);
+      const latestState = await fetchTokenState(
+        "livenet",
+        true,
+        "",
+        false,
+        [address],
+      );
       setTokenDefinitions(latestState.tokens);
       setTokenMints(latestState.mints);
       setTokenTransfers(latestState.transfers);
