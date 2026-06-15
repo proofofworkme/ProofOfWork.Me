@@ -14340,11 +14340,9 @@ async function mailPayload(address, network) {
 async function addressUtxoPayload(address, network) {
   const fetchUtxosFromBase = async (base) => {
     const url = `${base}/api/address/${address}/utxo`;
-    return String(base).startsWith("https://")
-      ? fetchJsonViaHttps(url, ADDRESS_UTXO_FETCH_TIMEOUT_MS)
-      : fetchJson(url, {
-          signal: AbortSignal.timeout(ADDRESS_UTXO_FETCH_TIMEOUT_MS),
-        });
+    return fetchJson(url, {
+      signal: AbortSignal.timeout(ADDRESS_UTXO_FETCH_TIMEOUT_MS),
+    });
   };
   const requireUtxoArray = async (label, promise) => {
     const utxos = await promise;
@@ -14361,7 +14359,10 @@ async function addressUtxoPayload(address, network) {
           fetchAddressUtxosFromElectrum(address, network),
         )
       : null,
-    requireUtxoArray(explorerBase(network), fetchUtxosFromBase(explorerBase(network))),
+    requireUtxoArray(
+      explorerBase(network),
+      fetchUtxosFromBase(explorerBase(network)),
+    ),
   ].filter(Boolean);
 
   try {
