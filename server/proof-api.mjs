@@ -1158,6 +1158,63 @@ function historyItemsMatchingAddresses(items, addresses) {
   });
 }
 
+function tokenPayloadScopedToAddresses(payload, addresses) {
+  if (!payload || !Array.isArray(addresses) || addresses.length === 0) {
+    return payload;
+  }
+
+  const mints = historyItemsMatchingAddresses(payload.mints ?? [], addresses);
+  const transfers = historyItemsMatchingAddresses(
+    payload.transfers ?? [],
+    addresses,
+  );
+  const listings = historyItemsMatchingAddresses(
+    payload.listings ?? [],
+    addresses,
+  );
+  const closedListings = historyItemsMatchingAddresses(
+    payload.closedListings ?? [],
+    addresses,
+  );
+  const sales = historyItemsMatchingAddresses(payload.sales ?? [], addresses);
+  const invalidEvents = historyItemsMatchingAddresses(
+    payload.invalidEvents ?? [],
+    addresses,
+  );
+  const tokenIds = new Set(
+    [
+      ...mints,
+      ...transfers,
+      ...listings,
+      ...closedListings,
+      ...sales,
+      ...invalidEvents,
+    ]
+      .map((item) => item?.tokenId)
+      .filter(Boolean),
+  );
+  const tokens = (payload.tokens ?? []).filter((token) =>
+    tokenIds.has(token.tokenId),
+  );
+
+  return {
+    ...payload,
+    closedListings,
+    holders: historyItemsMatchingAddresses(payload.holders ?? [], addresses),
+    invalidEvents,
+    listings,
+    mints,
+    sales,
+    stats: {
+      ...(payload.stats ?? {}),
+      walletScoped: true,
+    },
+    tokens,
+    transfers,
+    walletScoped: true,
+  };
+}
+
 function paginatedHistoryPayload({
   indexedAt,
   items,
@@ -12924,6 +12981,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     liveWorkWaitMs:
       recoveryAddresses.length > 0 ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS : undefined,
   });
+  const pagination = historyPaginationFromSearch(searchParams);
   const kindMap = new Map([
     ["holders", "holders"],
     ["invalid", "invalidEvents"],
@@ -12950,22 +13008,18 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     safeKind === "closedListings" ||
     safeKind === "market-log"
   ) {
+    const scopeMarketItems = (items) =>
+      historyItemsMatchingQuery(
+        historyItemsMatchingAddresses(items ?? [], recoveryAddresses),
+        pagination.query,
+      );
     const marketPayload =
-      recoveryAddresses.length > 0
+      recoveryAddresses.length > 0 || pagination.query
         ? {
             ...payload,
-            closedListings: historyItemsMatchingAddresses(
-              payload.closedListings ?? [],
-              recoveryAddresses,
-            ),
-            listings: historyItemsMatchingAddresses(
-              payload.listings ?? [],
-              recoveryAddresses,
-            ),
-            sales: historyItemsMatchingAddresses(
-              payload.sales ?? [],
-              recoveryAddresses,
-            ),
+            closedListings: scopeMarketItems(payload.closedListings),
+            listings: scopeMarketItems(payload.listings),
+            sales: scopeMarketItems(payload.sales),
           }
         : payload;
     payload = await tokenStateWithReconciledListingSeals(marketPayload, network);
@@ -12981,7 +13035,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     items,
     kind: safeKind,
     network,
-    pagination: historyPaginationFromSearch(searchParams),
+    pagination,
     source: payload.source ?? mempoolBase(network),
   });
   return payload.snapshotId
@@ -14542,18 +14596,24 @@ async function handleRequest(request, response) {
         url.searchParams,
         network,
       );
+      const walletScoped =
+        recoveryAddresses.length > 0 &&
+        /^(?:1|true|yes)$/iu.test(
+          String(url.searchParams.get("wallet") ?? "").trim(),
+        );
+      const payload = await tokenPayloadForRead(network, tokenScope, freshRead, {
+        reconcileListingStatus: false,
+        reconcileSpendable: false,
+        recoveryAddresses,
+        liveWorkWaitMs:
+          recoveryAddresses.length > 0
+            ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS
+            : undefined,
+      });
       jsonResponse(
         response,
         200,
-        await tokenPayloadForRead(network, tokenScope, freshRead, {
-          reconcileListingStatus: false,
-          reconcileSpendable: false,
-          recoveryAddresses,
-          liveWorkWaitMs:
-            recoveryAddresses.length > 0
-              ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS
-              : undefined,
-        }),
+        walletScoped ? tokenPayloadScopedToAddresses(payload, recoveryAddresses) : payload,
         freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
       return;

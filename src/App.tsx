@@ -9487,6 +9487,7 @@ async function fetchTokenState(
   tokenScope = "",
   summary = false,
   addressHints: string[] = [],
+  walletScoped = false,
 ): Promise<PowTokenState> {
   const indexAddress = tokenIndexAddressForNetwork(targetNetwork);
   if (!indexAddress) {
@@ -9505,6 +9506,9 @@ async function fetchTokenState(
     if (trimmedAddress) {
       params.append("address", trimmedAddress);
     }
+  }
+  if (walletScoped && addressHints.length > 0) {
+    params.set("wallet", "1");
   }
   const query = params.toString();
   const payload = await fetchProofApiJson<PowTokenApiResponse>(
@@ -13653,6 +13657,7 @@ export default function App() {
             workTokenMode ? WORK_TOKEN_ID : "",
             false,
             [nextAddress],
+            walletMode,
           );
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
@@ -14862,6 +14867,7 @@ export default function App() {
           tokenScope,
           useSummary,
           address ? [address] : [],
+          walletMode || activeFolder === "wallet",
         );
         setTokenDefinitions(state.tokens);
         setTokenMints(state.mints);
@@ -15399,6 +15405,7 @@ export default function App() {
             workTokenMode ? WORK_TOKEN_ID : "",
             false,
             [firstAddress],
+            walletMode,
           );
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
@@ -17894,6 +17901,7 @@ export default function App() {
         "",
         false,
         [address],
+        walletMode || activeFolder === "wallet",
       );
       setTokenDefinitions(latestState.tokens);
       setTokenMints(latestState.mints);
