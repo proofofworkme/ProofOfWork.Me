@@ -12670,8 +12670,8 @@ async function activityPayloadWithLiveWorkTokenOverlay(ledger, fresh = false) {
   let workTokenState = await liveWorkTokenStateWithFallbackAfterMs(
     ledger.network,
     ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
-    WORK_TOKEN_LIVE_WAIT_MS,
-    { recoverClosedSales: true },
+    WORK_TOKEN_LIVE_RECOVERY_WAIT_MS,
+    { recoverClosedSales: true, recoverClosedSalesOnly: true },
   );
   workTokenState = fresh
     ? await tokenStateWithLivePendingTransactionCheck(
