@@ -14352,25 +14352,28 @@ async function addressUtxoPayload(address, network) {
     return utxos;
   };
 
-  const fastSources = [
-    network === "livenet" && ELECTRUM_HOST && ELECTRUM_PORT
-      ? requireUtxoArray(
-          "electrum",
-          fetchAddressUtxosFromElectrum(address, network),
-        )
-      : null,
-    requireUtxoArray(
+  try {
+    return await requireUtxoArray(
       explorerBase(network),
       fetchUtxosFromBase(explorerBase(network)),
-    ),
-  ].filter(Boolean);
-
-  try {
-    return await Promise.any(fastSources);
+    );
   } catch (error) {
     console.error(
-      `Fast UTXO lookup failed for ${address}: ${errorSummary(error)}`,
+      `Explorer UTXO lookup failed for ${address}: ${errorSummary(error)}`,
     );
+  }
+
+  const electrumUtxos = await fetchAddressUtxosFromElectrum(
+    address,
+    network,
+  ).catch((error) => {
+    console.error(
+      `Electrum UTXO lookup failed for ${address}: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (electrumUtxos) {
+    return electrumUtxos;
   }
 
   let lastError = null;
