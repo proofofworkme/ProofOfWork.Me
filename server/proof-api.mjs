@@ -13039,13 +13039,6 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     searchParams,
     network,
   );
-  let payload = await tokenPayloadForRead(network, scope, fresh, {
-    reconcileListingStatus: false,
-    reconcileSpendable: false,
-    recoveryAddresses,
-    liveWorkWaitMs:
-      recoveryAddresses.length > 0 ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS : undefined,
-  });
   const pagination = historyPaginationFromSearch(searchParams);
   const kindMap = new Map([
     ["holders", "holders"],
@@ -13068,6 +13061,22 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     ["transfers", "transfers"],
   ]);
   const safeKind = kindMap.get(kind) ?? "mints";
+  const queriedWorkSaleHistory =
+    scope === WORK_TOKEN_ID &&
+    Boolean(pagination.query) &&
+    (safeKind === "sales" ||
+      safeKind === "market-log" ||
+      safeKind === "invalidEvents");
+  let payload = await tokenPayloadForRead(network, scope, fresh, {
+    reconcileListingStatus: false,
+    reconcileSpendable: false,
+    recoveryAddresses,
+    liveWorkWaitMs: queriedWorkSaleHistory
+      ? WORK_TOKEN_LIVE_RECOVERY_WAIT_MS
+      : recoveryAddresses.length > 0
+        ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS
+        : undefined,
+  });
   if (
     safeKind === "listings" ||
     safeKind === "closedListings" ||
