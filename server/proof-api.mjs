@@ -12807,22 +12807,95 @@ async function cachedWorkFloorSnapshotNoRefresh(network) {
   return null;
 }
 
+function workFloorWithBtcUsdQuote(workFloor, quote) {
+  const btcUsdMetadata = btcUsdResponseMetadata(quote);
+  if (!workFloor || btcUsdMetadata.btcUsd <= 0) {
+    return workFloor;
+  }
+
+  const totalSats = numericValue(
+    workFloor.actualValue?.totalSats ?? workFloor.networkValueSats,
+  );
+  return {
+    ...workFloor,
+    ...btcUsdMetadata,
+    actualValue: {
+      ...(workFloor.actualValue ?? {}),
+      totalUsd: satsToUsdAtBtcUsd(totalSats, btcUsdMetadata.btcUsd),
+    },
+  };
+}
+
+async function workFloorWithCurrentBtcUsd(workFloor, network, fresh = false) {
+  if (network !== "livenet") {
+    return workFloor;
+  }
+
+  try {
+    const quote = await btcUsdPricePayload(network, { fresh });
+    return workFloorWithBtcUsdQuote(workFloor, quote);
+  } catch (error) {
+    console.error(`WORK BTC/USD overlay failed: ${errorSummary(error)}`);
+    return workFloor;
+  }
+}
+
+function growthSummaryWithBtcUsdQuote(growthSummary, quote) {
+  const btcUsdMetadata = btcUsdResponseMetadata(quote);
+  if (!growthSummary || btcUsdMetadata.btcUsd <= 0) {
+    return growthSummary;
+  }
+
+  const totalSats = numericValue(growthSummary.actualValue?.totalSats);
+  return {
+    ...growthSummary,
+    ...btcUsdMetadata,
+    actualValue: {
+      ...(growthSummary.actualValue ?? {}),
+      totalUsd: satsToUsdAtBtcUsd(totalSats, btcUsdMetadata.btcUsd),
+    },
+    workFloor: workFloorWithBtcUsdQuote(growthSummary.workFloor, quote),
+  };
+}
+
+async function growthSummaryWithCurrentBtcUsd(
+  growthSummary,
+  network,
+  fresh = false,
+) {
+  if (network !== "livenet") {
+    return growthSummary;
+  }
+
+  try {
+    const quote = await btcUsdPricePayload(network, { fresh });
+    return growthSummaryWithBtcUsdQuote(growthSummary, quote);
+  } catch (error) {
+    console.error(`Growth BTC/USD overlay failed: ${errorSummary(error)}`);
+    return growthSummary;
+  }
+}
+
 async function cachedWorkFloorPayload(network, fresh = false) {
   if (network === "livenet") {
     const ledger = fresh
       ? await summaryCanonicalLedgerPayload(network, true)
       : await existingCanonicalLedgerPayload(network);
     if (ledger?.workFloor) {
-      return ledger.workFloor;
+      return workFloorWithCurrentBtcUsd(ledger.workFloor, network, fresh);
     }
 
     const cachedFloor = await cachedWorkFloorSnapshotNoRefresh(network);
     if (cachedFloor) {
-      return cachedFloor;
+      return workFloorWithCurrentBtcUsd(cachedFloor, network, fresh);
     }
   }
 
-  return workFloorPayload(network, false);
+  return workFloorWithCurrentBtcUsd(
+    await workFloorPayload(network, false),
+    network,
+    fresh,
+  );
 }
 
 async function workSummaryPayload(network, fresh = false) {
@@ -12970,10 +13043,14 @@ function refreshGrowthCachesInBackground(network) {
 async function growthSummaryPayload(network, fresh = false) {
   const ledger = await summaryCanonicalLedgerPayload(network, fresh);
   if (ledger) {
-    return ledger.growthSummary;
+    return growthSummaryWithCurrentBtcUsd(ledger.growthSummary, network, fresh);
   }
 
-  return (await canonicalLedgerPayload(network, false)).growthSummary;
+  return growthSummaryWithCurrentBtcUsd(
+    (await canonicalLedgerPayload(network, false)).growthSummary,
+    network,
+    fresh,
+  );
 }
 
 async function registryHistoryPayload(network, kind, searchParams, fresh = false) {
