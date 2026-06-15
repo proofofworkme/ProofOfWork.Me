@@ -14601,7 +14601,11 @@ async function handleRequest(request, response) {
         /^(?:1|true|yes)$/iu.test(
           String(url.searchParams.get("wallet") ?? "").trim(),
         );
-      const payload = await tokenPayloadForRead(network, tokenScope, freshRead, {
+      if (walletScoped && freshRead) {
+        refreshCanonicalLedgerPayloadInBackground(network, true);
+      }
+      const tokenFreshRead = walletScoped ? false : freshRead;
+      const payload = await tokenPayloadForRead(network, tokenScope, tokenFreshRead, {
         reconcileListingStatus: false,
         reconcileSpendable: false,
         recoveryAddresses,
@@ -14614,7 +14618,7 @@ async function handleRequest(request, response) {
         response,
         200,
         walletScoped ? tokenPayloadScopedToAddresses(payload, recoveryAddresses) : payload,
-        freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
+        tokenFreshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
       return;
     }
