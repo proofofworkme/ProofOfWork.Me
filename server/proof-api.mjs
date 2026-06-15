@@ -14338,22 +14338,56 @@ async function mailPayload(address, network) {
 }
 
 async function addressUtxoPayload(address, network) {
-  const electrumUtxos = await fetchAddressUtxosFromElectrum(
-    address,
-    network,
-  ).catch((error) => {
+  const fetchUtxosFromBase = async (base) => {
+    const url = `${base}/api/address/${address}/utxo`;
+    return String(base).startsWith("https://")
+      ? fetchJsonViaHttps(url, ADDRESS_UTXO_FETCH_TIMEOUT_MS)
+      : fetchJson(url, {
+          signal: AbortSignal.timeout(ADDRESS_UTXO_FETCH_TIMEOUT_MS),
+        });
+  };
+  const requireUtxoArray = async (label, promise) => {
+    const utxos = await promise;
+    if (!Array.isArray(utxos)) {
+      throw new Error(`${label} did not return a UTXO array.`);
+    }
+    return utxos;
+  };
+
+  const fastSources = [
+    network === "livenet" && ELECTRUM_HOST && ELECTRUM_PORT
+      ? requireUtxoArray(
+          "electrum",
+          fetchAddressUtxosFromElectrum(address, network),
+        )
+      : null,
+    requireUtxoArray(explorerBase(network), fetchUtxosFromBase(explorerBase(network))),
+  ].filter(Boolean);
+
+  try {
+    return await Promise.any(fastSources);
+  } catch (error) {
     console.error(
-      `Electrum UTXO lookup failed for ${address}: ${errorSummary(error)}`,
+      `Fast UTXO lookup failed for ${address}: ${errorSummary(error)}`,
     );
-    return null;
-  });
-  if (electrumUtxos) {
-    return electrumUtxos;
   }
 
-  return fetchJson(`${mempoolBase(network)}/api/address/${address}/utxo`, {
-    signal: AbortSignal.timeout(ADDRESS_UTXO_FETCH_TIMEOUT_MS),
-  });
+  let lastError = null;
+  for (const base of pendingMempoolBases(network)) {
+    if (base === explorerBase(network)) {
+      continue;
+    }
+    try {
+      return await requireUtxoArray(base, fetchUtxosFromBase(base));
+    } catch (error) {
+      lastError = error;
+      console.error(
+        `UTXO lookup failed for ${base} ${address}: ${errorSummary(error)}`,
+      );
+    }
+  }
+
+  throw lastError ?? new Error(`UTXO lookup failed for ${address}.`);
 }
 
 async function txHexPayload(txid, network) {
@@ -14494,9 +14528,12 @@ async function scriptHistoryOutspendPayload(txid, vout, scriptHex, network) {
 }
 
 async function txOutspendPayload(txid, vout, network) {
-  const outputScript = await txOutputScriptHex(txid, vout, network).catch(
-    () => "",
+  const outputScript = await payloadWithFallbackAfterMs(
+    txOutputScriptHex(txid, vout, network).catch(() => ""),
+    "",
+    TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS,
   );
+  const unknownUnspent = { spent: false, unknown: true };
 
   if (outputScript && network === "livenet" && ELECTRUM_HOST && ELECTRUM_PORT) {
     const scripthash = scriptHashForScriptHex(outputScript);
@@ -14521,12 +14558,17 @@ async function txOutspendPayload(txid, vout, network) {
       console.error(
         `Electrum outspend lookup failed for ${txid}:${vout}: ${errorSummary(error)}`,
       );
+      return unknownUnspent;
     }
+  }
+
+  if (network === "livenet") {
+    return unknownUnspent;
   }
 
   const primaryOutspend = await directTxOutspendPayload(txid, vout, network);
   if (primaryOutspend?.spent || !outputScript) {
-    return primaryOutspend ?? { spent: false, unknown: true };
+    return primaryOutspend ?? unknownUnspent;
   }
 
   const historyOutspend = await scriptHistoryOutspendPayload(
@@ -14535,7 +14577,7 @@ async function txOutspendPayload(txid, vout, network) {
     outputScript,
     network,
   ).catch(() => null);
-  return historyOutspend ?? primaryOutspend ?? { spent: false, unknown: true };
+  return historyOutspend ?? primaryOutspend ?? unknownUnspent;
 }
 
 async function txStatusPayload(txid, network) {
