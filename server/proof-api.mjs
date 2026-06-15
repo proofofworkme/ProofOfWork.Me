@@ -11419,7 +11419,12 @@ async function tokenPayloadForRead(
   if (network === "livenet" && useLedgerSnapshot) {
     let ledger = null;
     try {
-      ledger = fresh && !(scope === WORK_TOKEN_ID && hasRecoveryAddresses)
+      ledger =
+        fresh &&
+        !(
+          scope === WORK_TOKEN_ID &&
+          (hasRecoveryAddresses || options.recoverWorkSalesOnly === true)
+        )
         ? await summaryCanonicalLedgerPayload(network, true)
         : await existingCanonicalLedgerPayload(network);
     } catch (error) {
