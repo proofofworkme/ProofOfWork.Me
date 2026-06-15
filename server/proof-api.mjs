@@ -135,6 +135,9 @@ const WORK_TOKEN_LIVE_RECOVERY_WAIT_MS = Number(
   process.env.WORK_TOKEN_LIVE_RECOVERY_WAIT_MS ??
     Math.max(WORK_TOKEN_LIVE_WAIT_MS, TOKEN_SCOPED_FRESH_WAIT_MS),
 );
+const TOKEN_ADDRESS_HINT_LIVE_WAIT_MS = Number(
+  process.env.TOKEN_ADDRESS_HINT_LIVE_WAIT_MS ?? 1500,
+);
 const WORK_TOKEN_CANONICAL_FRESH_WAIT_MS = Number(
   process.env.WORK_TOKEN_CANONICAL_FRESH_WAIT_MS ?? TOKEN_SCOPED_FRESH_WAIT_MS,
 );
@@ -1141,6 +1144,18 @@ function historyItemsMatchingQuery(items, query) {
   return items.filter((item) =>
     valueSearchText(item).toLowerCase().includes(query),
   );
+}
+
+function historyItemsMatchingAddresses(items, addresses) {
+  if (!Array.isArray(addresses) || addresses.length === 0) {
+    return items;
+  }
+
+  const needles = addresses.map((address) => address.toLowerCase());
+  return items.filter((item) => {
+    const text = valueSearchText(item).toLowerCase();
+    return needles.some((address) => text.includes(address));
+  });
 }
 
 function paginatedHistoryPayload({
@@ -3905,11 +3920,11 @@ async function reconcileCachedTokenListingSeal(listing, network) {
 }
 
 async function reconcileCachedTokenClosedListingStatus(closedListing, network) {
-  closedListing = await reconcileCachedTokenListingSeal(closedListing, network);
-
   if (closedListing?.closedConfirmed) {
     return closedListing;
   }
+
+  closedListing = await reconcileCachedTokenListingSeal(closedListing, network);
 
   const closedTxid = String(closedListing?.closedTxid ?? "")
     .trim()
@@ -11206,10 +11221,10 @@ function liveWorkReadWaitMs(options = {}) {
 }
 
 async function tokenPayloadReadResult(payload, network, fresh, options = {}) {
-  const listingReconciledPayload = await tokenStateWithReconciledListingSeals(
-    payload,
-    network,
-  );
+  const listingReconciledPayload =
+    options.reconcileListingStatus === false
+      ? payload
+      : await tokenStateWithReconciledListingSeals(payload, network);
   const reconciledPayload = fresh
     ? await tokenStateWithLivePendingTransactionCheck(
         listingReconciledPayload,
@@ -11348,9 +11363,16 @@ async function tokenSummaryPayload(
   }
 
   const payload = await tokenPayloadForRead(network, scope, fresh, {
+    reconcileListingStatus: false,
     recoveryAddresses: options.recoveryAddresses,
     liveWorkWaitMs:
-      scope === WORK_TOKEN_ID && !fresh ? WORK_TOKEN_LIVE_WAIT_MS : undefined,
+      scope === WORK_TOKEN_ID &&
+      Array.isArray(options.recoveryAddresses) &&
+      options.recoveryAddresses.length > 0
+        ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS
+        : scope === WORK_TOKEN_ID && !fresh
+          ? WORK_TOKEN_LIVE_WAIT_MS
+          : undefined,
     recoverWorkSales: scope !== WORK_TOKEN_ID,
     reconcileSpendable: false,
   });
@@ -12891,9 +12913,16 @@ async function activityHistoryPayload(network, kind, searchParams, fresh = false
 
 async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fresh = false) {
   const scope = normalizeTokenScope(tokenScope);
+  const recoveryAddresses = recoveryAddressesFromSearchParams(
+    searchParams,
+    network,
+  );
   let payload = await tokenPayloadForRead(network, scope, fresh, {
+    reconcileListingStatus: false,
     reconcileSpendable: false,
-    recoveryAddresses: recoveryAddressesFromSearchParams(searchParams, network),
+    recoveryAddresses,
+    liveWorkWaitMs:
+      recoveryAddresses.length > 0 ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS : undefined,
   });
   const kindMap = new Map([
     ["holders", "holders"],
@@ -12921,12 +12950,31 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     safeKind === "closedListings" ||
     safeKind === "market-log"
   ) {
-    payload = await tokenStateWithReconciledListingSeals(payload, network);
+    const marketPayload =
+      recoveryAddresses.length > 0
+        ? {
+            ...payload,
+            closedListings: historyItemsMatchingAddresses(
+              payload.closedListings ?? [],
+              recoveryAddresses,
+            ),
+            listings: historyItemsMatchingAddresses(
+              payload.listings ?? [],
+              recoveryAddresses,
+            ),
+            sales: historyItemsMatchingAddresses(
+              payload.sales ?? [],
+              recoveryAddresses,
+            ),
+          }
+        : payload;
+    payload = await tokenStateWithReconciledListingSeals(marketPayload, network);
   }
-  const items =
+  const rawItems =
     safeKind === "market-log"
       ? tokenMarketLogItemsFromState(payload)
       : (payload[safeKind] ?? []);
+  const items = historyItemsMatchingAddresses(rawItems, recoveryAddresses);
 
   const page = paginatedHistoryPayload({
     indexedAt: payload.indexedAt ?? new Date().toISOString(),
@@ -14490,15 +14538,21 @@ async function handleRequest(request, response) {
           url.searchParams.get("ticker") ??
           "",
       );
+      const recoveryAddresses = recoveryAddressesFromSearchParams(
+        url.searchParams,
+        network,
+      );
       jsonResponse(
         response,
         200,
         await tokenPayloadForRead(network, tokenScope, freshRead, {
+          reconcileListingStatus: false,
           reconcileSpendable: false,
-          recoveryAddresses: recoveryAddressesFromSearchParams(
-            url.searchParams,
-            network,
-          ),
+          recoveryAddresses,
+          liveWorkWaitMs:
+            recoveryAddresses.length > 0
+              ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS
+              : undefined,
         }),
         freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
