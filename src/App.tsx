@@ -389,6 +389,8 @@ type UnisatWallet = {
     },
   ) => Promise<string>;
   pushPsbt?: (psbtHex: string) => Promise<string>;
+  getBitcoinUtxos?: () => Promise<Array<Record<string, unknown>>>;
+  getUtxos?: () => Promise<Array<Record<string, unknown>>>;
 };
 
 type SentMessage = {
@@ -9917,30 +9919,92 @@ async function fetchUtxos(
   ownerAddress: string,
   ownerNetwork: BitcoinNetwork,
 ): Promise<MempoolUtxo[]> {
-  const rawUtxos = await fetchProofApiJson<Array<Record<string, unknown>>>(
-    `/api/v1/address/${encodeURIComponent(ownerAddress)}/utxo`,
-    ownerNetwork,
-  );
+  const normalizeUtxos = (rawUtxos: Array<Record<string, unknown>>) =>
+    rawUtxos
+      .flatMap((utxo): MempoolUtxo[] => {
+        const txid =
+          typeof utxo.txid === "string"
+            ? utxo.txid
+            : typeof utxo.txId === "string"
+              ? utxo.txId
+              : typeof utxo.tx_hash === "string"
+                ? utxo.tx_hash
+                : "";
+        const vout = Number(
+          utxo.vout ?? utxo.outputIndex ?? utxo.tx_pos ?? -1,
+        );
+        const value = Number(utxo.value ?? utxo.satoshis ?? utxo.amount ?? 0);
 
-  return rawUtxos
-    .flatMap((utxo): MempoolUtxo[] => {
-      const txid = typeof utxo.txid === "string" ? utxo.txid : "";
-      const vout = typeof utxo.vout === "number" ? utxo.vout : -1;
-      const value = typeof utxo.value === "number" ? utxo.value : 0;
+        if (!/^[0-9a-fA-F]{64}$/.test(txid) || vout < 0 || value <= 0) {
+          return [];
+        }
 
-      if (!/^[0-9a-fA-F]{64}$/.test(txid) || vout < 0 || value <= 0) {
-        return [];
+        const rawStatus = utxo.status as MempoolUtxo["status"] | undefined;
+        const confirmations = Number(utxo.confirmations);
+        const confirmed =
+          typeof rawStatus?.confirmed === "boolean"
+            ? rawStatus.confirmed
+            : typeof utxo.confirmed === "boolean"
+              ? utxo.confirmed
+              : Number.isFinite(confirmations)
+                ? confirmations > 0
+                : true;
+        const status = {
+          ...(rawStatus ?? {}),
+          confirmed,
+        };
+        return [{ txid, vout, value, status }];
+      })
+      .sort((left, right) => {
+        const byConfirmation =
+          Number(Boolean(right.status?.confirmed)) -
+          Number(Boolean(left.status?.confirmed));
+        return byConfirmation || right.value - left.value;
+      });
+
+  const walletUtxoReader =
+    window.unisat?.getBitcoinUtxos ?? window.unisat?.getUtxos;
+  if (walletUtxoReader && ownerNetwork === "livenet") {
+    try {
+      const rawWalletUtxos = await walletUtxoReader.call(window.unisat);
+      if (Array.isArray(rawWalletUtxos)) {
+        return normalizeUtxos(rawWalletUtxos);
       }
+    } catch {
+      // Fall through to the ProofOfWork API fallback.
+    }
+  }
 
-      const status = utxo.status as MempoolUtxo["status"] | undefined;
-      return [{ txid, vout, value, status }];
-    })
-    .sort((left, right) => {
-      const byConfirmation =
-        Number(Boolean(right.status?.confirmed)) -
-        Number(Boolean(left.status?.confirmed));
-      return byConfirmation || right.value - left.value;
-    });
+  const apiPath = `/api/v1/address/${encodeURIComponent(ownerAddress)}/utxo`;
+  const utxoUrls = [
+    ownerNetwork === "livenet"
+      ? `https://mempool.space/api/address/${encodeURIComponent(ownerAddress)}/utxo`
+      : "",
+    proofApiUrl(apiPath, ownerNetwork),
+  ].filter(Boolean);
+  let lastError: unknown;
+  for (const url of utxoUrls) {
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(() => controller.abort(), 7_000);
+    try {
+      const response = await fetch(url, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`UTXO lookup returned HTTP ${response.status}.`);
+      }
+      const payload = await response.json();
+      return normalizeUtxos(Array.isArray(payload) ? payload : []);
+    } catch (error) {
+      lastError = error;
+    } finally {
+      globalThis.clearTimeout(timeout);
+    }
+  }
+
+  throw new Error(errorMessage(lastError, "Could not load wallet UTXOs."));
 }
 
 async function fetchTransactionHex(txid: string, ownerNetwork: BitcoinNetwork) {
