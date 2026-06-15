@@ -11524,7 +11524,7 @@ function proofApiBroadcastErrorMessage(
 }
 
 function isKnownAcceptedBroadcastMessage(message: string) {
-  return /txn-already-in-mempool|already in mempool|already known|already exists|already in block chain|transaction already in the block chain|transaction already in blockchain/i.test(
+  return /txn-already-in-mempool|already in mempool|already known|already exists|already in block chain|transaction already in the block chain|transaction already in blockchain|rpc code\s*-27|code\s*-27/i.test(
     message,
   );
 }
@@ -19197,6 +19197,7 @@ export default function App() {
         busy={busy}
         canList={canListToken}
         canTransfer={canTransferToken}
+        closedListings={tokenClosedListings}
         connectWallet={connectWallet}
         delistListing={delistTokenListing}
         disconnectWallet={disconnectWallet}
@@ -19950,6 +19951,7 @@ export default function App() {
             btcUsd={tokenBtcUsd}
             canList={canListToken}
             canTransfer={canTransferToken}
+            closedListings={tokenClosedListings}
             compact
             delistListing={delistTokenListing}
             feeRate={feeRate}
@@ -21749,6 +21751,7 @@ type TokenWalletAppProps = {
   busy: boolean;
   canList: boolean;
   canTransfer: boolean;
+  closedListings: PowTokenClosedListing[];
   connectWallet: () => Promise<void>;
   delistListing: (listing: PowTokenListing) => void;
   disconnectWallet: () => void;
@@ -21794,6 +21797,7 @@ function TokenWalletApp({
   busy,
   canList,
   canTransfer,
+  closedListings,
   connectWallet,
   delistListing,
   disconnectWallet,
@@ -21855,6 +21859,7 @@ function TokenWalletApp({
         btcUsd={btcUsd}
         canList={canList}
         canTransfer={canTransfer}
+        closedListings={closedListings}
         compact={false}
         delistListing={delistListing}
         feeRate={feeRate}
@@ -21898,6 +21903,7 @@ function TokenWalletWorkspace({
   btcUsd,
   canList,
   canTransfer,
+  closedListings,
   compact,
   delistListing,
   feeRate,
@@ -21935,6 +21941,7 @@ function TokenWalletWorkspace({
   | "btcUsd"
   | "canList"
   | "canTransfer"
+  | "closedListings"
   | "delistListing"
   | "feeRate"
   | "listAmount"
@@ -21981,6 +21988,20 @@ function TokenWalletWorkspace({
           transfer.recipientAddress === address,
       )
     : [];
+  const walletListingEvents = address
+    ? listings.filter(
+        (item) =>
+          item.sellerAddress === address ||
+          item.saleAuthorization.buyerAddress === address,
+      )
+    : [];
+  const walletClosedListingEvents = address
+    ? closedListings.filter(
+        (item) =>
+          item.sellerAddress === address ||
+          item.saleAuthorization.buyerAddress === address,
+      )
+    : [];
   const walletMovements = [
     ...walletTransfers.map((transfer) => ({
       amount: transfer.amount,
@@ -21993,6 +22014,48 @@ function TokenWalletWorkspace({
       ticker: transfer.ticker,
       txid: transfer.txid,
       type: "transfer" as const,
+    })),
+    ...walletListingEvents.map((item) => ({
+      amount: item.amount,
+      confirmed: item.confirmed,
+      createdAt: item.createdAt,
+      key: `listing:${item.listingId}`,
+      label: "Listed",
+      network: item.network,
+      priceSats: item.priceSats,
+      ticker: item.ticker,
+      txid: item.listingId,
+      type: "listing" as const,
+    })),
+    ...walletListingEvents.flatMap((item) =>
+      item.sealTxid
+        ? [
+            {
+              amount: item.amount,
+              confirmed: Boolean(item.sealConfirmed),
+              createdAt: item.sealAt ?? item.createdAt,
+              key: `seal:${item.sealTxid}`,
+              label: "Sealed",
+              network: item.network,
+              priceSats: item.priceSats,
+              ticker: item.ticker,
+              txid: item.sealTxid,
+              type: "seal" as const,
+            },
+          ]
+        : [],
+    ),
+    ...walletClosedListingEvents.map((item) => ({
+      amount: item.amount,
+      confirmed: Boolean(item.closedConfirmed ?? item.confirmed),
+      createdAt: item.closedAt ?? item.createdAt,
+      key: `closed-listing:${item.closedTxid || item.listingId}`,
+      label: "Delisted",
+      network: item.network,
+      priceSats: item.priceSats,
+      ticker: item.ticker,
+      txid: item.closedTxid || item.listingId,
+      type: "closed-listing" as const,
     })),
     ...(address
       ? tokenSales
@@ -22574,7 +22637,7 @@ function TokenWalletWorkspace({
                     <small>
                       {movement.label} ·{" "}
                       {movement.confirmed ? "confirmed" : "pending"}
-                      {movement.type === "sale"
+                      {movement.priceSats > 0
                         ? ` · ${movement.priceSats.toLocaleString()} sale proofs`
                         : ""}
                     </small>

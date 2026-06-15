@@ -156,6 +156,9 @@ const TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS = Number(
 const ADDRESS_PAGE_FETCH_TIMEOUT_MS = Number(
   process.env.ADDRESS_PAGE_FETCH_TIMEOUT_MS ?? 8_000,
 );
+const ADDRESS_UTXO_FETCH_TIMEOUT_MS = Number(
+  process.env.ADDRESS_UTXO_FETCH_TIMEOUT_MS ?? 5_000,
+);
 const TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS = Number(
   process.env.TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS ?? 4_000,
 );
@@ -1459,6 +1462,13 @@ function firstNonEmptyString(...values) {
 
 function bitcoinRejectHint(reason, code) {
   const text = String(reason ?? "").toLowerCase();
+  if (
+    Number(code) === -27 ||
+    text.includes("already in block chain") ||
+    text.includes("transaction already in blockchain")
+  ) {
+    return "The transaction is already accepted by the chain. Refresh status or open the recovered transaction id.";
+  }
   if (text.includes("too-long-mempool-chain")) {
     return "Too many unconfirmed ancestors. Wait for confirmations or prepare fresh confirmed UTXOs before minting again.";
   }
@@ -2340,6 +2350,61 @@ async function fetchAddressHistoryTxidsFromElectrum(address, network) {
         .map((txid) => txid.toLowerCase()),
     ),
   ];
+}
+
+async function fetchAddressUtxosFromElectrum(address, network) {
+  if (network !== "livenet" || !ELECTRUM_HOST || !ELECTRUM_PORT) {
+    return null;
+  }
+
+  const scripthash = scriptHashForAddress(address, network);
+  const unspent = await electrumRequest(
+    "blockchain.scripthash.listunspent",
+    [scripthash],
+    ADDRESS_UTXO_FETCH_TIMEOUT_MS,
+  );
+  if (!Array.isArray(unspent)) {
+    return null;
+  }
+
+  return unspent
+    .flatMap((entry) => {
+      const txid =
+        typeof entry?.tx_hash === "string"
+          ? entry.tx_hash.toLowerCase()
+          : "";
+      const vout = Number(entry?.tx_pos);
+      const value = Number(entry?.value);
+      const height = Number(entry?.height);
+      if (
+        !/^[0-9a-f]{64}$/u.test(txid) ||
+        !Number.isSafeInteger(vout) ||
+        vout < 0 ||
+        !Number.isSafeInteger(value) ||
+        value <= 0
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          txid,
+          vout,
+          value,
+          status: {
+            confirmed: Number.isSafeInteger(height) && height > 0,
+            block_height:
+              Number.isSafeInteger(height) && height > 0 ? height : null,
+          },
+        },
+      ];
+    })
+    .sort((left, right) => {
+      const byConfirmation =
+        Number(Boolean(right.status?.confirmed)) -
+        Number(Boolean(left.status?.confirmed));
+      return byConfirmation || right.value - left.value;
+    });
 }
 
 async function fetchRecentUnknownAddressTransactions(
@@ -13190,8 +13255,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
   });
   if (
     safeKind === "listings" ||
-    safeKind === "closedListings" ||
-    safeKind === "market-log"
+    safeKind === "closedListings"
   ) {
     const scopeMarketItems = (items) =>
       historyItemsMatchingQuery(
@@ -14274,7 +14338,22 @@ async function mailPayload(address, network) {
 }
 
 async function addressUtxoPayload(address, network) {
-  return fetchJson(`${mempoolBase(network)}/api/address/${address}/utxo`);
+  const electrumUtxos = await fetchAddressUtxosFromElectrum(
+    address,
+    network,
+  ).catch((error) => {
+    console.error(
+      `Electrum UTXO lookup failed for ${address}: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (electrumUtxos) {
+    return electrumUtxos;
+  }
+
+  return fetchJson(`${mempoolBase(network)}/api/address/${address}/utxo`, {
+    signal: AbortSignal.timeout(ADDRESS_UTXO_FETCH_TIMEOUT_MS),
+  });
 }
 
 async function txHexPayload(txid, network) {
@@ -14415,56 +14494,39 @@ async function scriptHistoryOutspendPayload(txid, vout, scriptHex, network) {
 }
 
 async function txOutspendPayload(txid, vout, network) {
-  const primaryOutspend = await directTxOutspendPayload(txid, vout, network);
-  if (primaryOutspend?.spent) {
-    return primaryOutspend;
-  }
+  const outputScript = await txOutputScriptHex(txid, vout, network).catch(
+    () => "",
+  );
 
-  // Some private mempool deployments do not expose /outspend, and walking
-  // full script history can be expensive for active seller addresses. For
-  // seal preflight, a bounded Electrum unspent check gives the answer needed.
-  const outputScript = await txOutputScriptHex(txid, vout, network);
-
-  if (!outputScript) {
-    return primaryOutspend ?? { spent: false, unknown: true };
-  }
-
-  const scripthash = scriptHashForScriptHex(outputScript);
-  try {
-    const unspent = await electrumRequest(
-      "blockchain.scripthash.listunspent",
-      [scripthash],
-      TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS,
-    );
-    if (Array.isArray(unspent)) {
-      const stillUnspent = unspent.some((entry) => {
-        const entryTxid =
-          typeof entry?.tx_hash === "string"
-            ? entry.tx_hash.toLowerCase()
-            : "";
-        const entryVout = Number(entry?.tx_pos);
-        return entryTxid === txid && entryVout === vout;
-      });
-      if (stillUnspent) {
-        return { spent: false };
+  if (outputScript && network === "livenet" && ELECTRUM_HOST && ELECTRUM_PORT) {
+    const scripthash = scriptHashForScriptHex(outputScript);
+    try {
+      const unspent = await electrumRequest(
+        "blockchain.scripthash.listunspent",
+        [scripthash],
+        TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS,
+      );
+      if (Array.isArray(unspent)) {
+        const stillUnspent = unspent.some((entry) => {
+          const entryTxid =
+            typeof entry?.tx_hash === "string"
+              ? entry.tx_hash.toLowerCase()
+              : "";
+          const entryVout = Number(entry?.tx_pos);
+          return entryTxid === txid && entryVout === vout;
+        });
+        return stillUnspent ? { spent: false } : { spent: true, status: null };
       }
-
-      const historyOutspend = await scriptHistoryOutspendPayload(
-        txid,
-        vout,
-        outputScript,
-        network,
-      ).catch(() => null);
-      return historyOutspend ?? { spent: true, status: null };
+    } catch (error) {
+      console.error(
+        `Electrum outspend lookup failed for ${txid}:${vout}: ${errorSummary(error)}`,
+      );
     }
-  } catch {
-    const historyOutspend = await scriptHistoryOutspendPayload(
-      txid,
-      vout,
-      outputScript,
-      network,
-    ).catch(() => null);
-    return historyOutspend ?? primaryOutspend ?? { spent: false, unknown: true };
+  }
+
+  const primaryOutspend = await directTxOutspendPayload(txid, vout, network);
+  if (primaryOutspend?.spent || !outputScript) {
+    return primaryOutspend ?? { spent: false, unknown: true };
   }
 
   const historyOutspend = await scriptHistoryOutspendPayload(
