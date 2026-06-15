@@ -11095,6 +11095,9 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
       );
     }
   }
+  if (options.recoverClosedSalesOnly === true) {
+    return state;
+  }
 
   const maxDeltaTxs = Math.max(1, WORK_TOKEN_LIVE_DELTA_MAX_TXS);
   const maxPendingConfirmationTxs = Math.max(
@@ -11435,6 +11438,7 @@ async function tokenPayloadForRead(
       if (scope === WORK_TOKEN_ID) {
         const liveOptions = {
           recoverClosedSales: options.recoverWorkSales !== false,
+          recoverClosedSalesOnly: options.recoverWorkSalesOnly === true,
           recoveryAddresses: options.recoveryAddresses,
         };
         payload = await liveWorkTokenStateWithFallbackAfterMs(
@@ -11454,6 +11458,7 @@ async function tokenPayloadForRead(
   if (scope === WORK_TOKEN_ID) {
     const liveOptions = {
       recoverClosedSales: options.recoverWorkSales !== false,
+      recoverClosedSalesOnly: options.recoverWorkSalesOnly === true,
       recoveryAddresses: options.recoveryAddresses,
     };
     payload = await liveWorkTokenStateWithFallbackAfterMs(
@@ -13099,6 +13104,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       : recoveryAddresses.length > 0
         ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS
         : undefined,
+    recoverWorkSalesOnly: queriedWorkSaleHistory,
   });
   if (
     safeKind === "listings" ||
