@@ -10,6 +10,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "check:ui": "node scripts/check-ui-contract.mjs",
     "check:live-data": "node scripts/check-live-data-contract.mjs",
+    "check:marketplace-regressions": "node scripts/check-marketplace-regressions.mjs",
     "audit:ledger": "node scripts/audit-ledger-consistency.mjs",
     "audit:ids": "node scripts/audit-id-registry.mjs",
     "deck:general": "node scripts/build-general-deck.mjs",

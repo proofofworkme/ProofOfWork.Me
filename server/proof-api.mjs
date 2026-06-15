@@ -3616,6 +3616,29 @@ function tokenListingWithSealFrom(listing, sealSource) {
   };
 }
 
+function tokenListingCloseRank(listing) {
+  const closedTxid = String(listing?.closedTxid ?? "").toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(closedTxid)) {
+    return 0;
+  }
+
+  return listing?.closedConfirmed === true ? 2 : 1;
+}
+
+function tokenListingWithCloseFrom(listing, closeSource) {
+  if (!listing || tokenListingCloseRank(closeSource) === 0) {
+    return listing;
+  }
+
+  return {
+    ...listing,
+    closedAt: closeSource.closedAt ?? listing.closedAt,
+    closedConfirmed: closeSource.closedConfirmed === true,
+    closedTxid: closeSource.closedTxid ?? listing.closedTxid,
+    closedVin: closeSource.closedVin ?? listing.closedVin,
+  };
+}
+
 function mergeTokenListingRecord(current, incoming) {
   if (!current) {
     return incoming;
@@ -3624,9 +3647,13 @@ function mergeTokenListingRecord(current, incoming) {
     return current;
   }
 
-  return tokenListingSealRank(current) > tokenListingSealRank(incoming)
-    ? tokenListingWithSealFrom(incoming, current)
-    : incoming;
+  const merged =
+    tokenListingSealRank(current) > tokenListingSealRank(incoming)
+      ? tokenListingWithSealFrom(incoming, current)
+      : incoming;
+  return tokenListingCloseRank(current) > tokenListingCloseRank(incoming)
+    ? tokenListingWithCloseFrom(merged, current)
+    : tokenListingWithCloseFrom(merged, incoming);
 }
 
 function tokenPayloadConfirmedListingSeals(payload) {
@@ -4184,6 +4211,9 @@ async function reconcileCachedTokenMarketPayload(payload, network) {
     }
 
     if (result?.listing) {
+      if (result.listing?.listingId) {
+        activeListingsById.delete(result.listing.listingId);
+      }
       closedListings.push(result.listing);
     }
   }
@@ -4202,7 +4232,7 @@ async function reconcileCachedTokenMarketPayload(payload, network) {
 
   return {
     ...payload,
-    closedListings,
+    closedListings: sortClosedTokenListings(closedListings),
     listings: [...activeListingsById.values()],
     sales: sales.filter(Boolean),
   };
@@ -12755,6 +12785,10 @@ async function activityPayloadWithLiveWorkTokenOverlay(ledger, fresh = false) {
         ledger.network,
       )
     : tokenStateWithoutDroppedPendingTransactions(valueTokenState, ledger.network);
+  valueTokenState = await tokenStateWithReconciledListingSeals(
+    valueTokenState,
+    ledger.network,
+  );
   const baseActivity = Array.isArray(ledger.activityPayload?.activity)
     ? ledger.activityPayload.activity
     : Array.isArray(ledger.activity)
@@ -13236,12 +13270,15 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     ["transfers", "transfers"],
   ]);
   const safeKind = kindMap.get(kind) ?? "mints";
+  const workMarketHistoryKind =
+    safeKind === "sales" ||
+    safeKind === "market-log" ||
+    safeKind === "closedListings" ||
+    safeKind === "listings";
   const queriedWorkSaleHistory =
     scope === WORK_TOKEN_ID &&
-    Boolean(pagination.query) &&
-    (safeKind === "sales" ||
-      safeKind === "market-log" ||
-      safeKind === "invalidEvents");
+    (Boolean(pagination.query) || recoveryAddresses.length > 0) &&
+    (workMarketHistoryKind || safeKind === "invalidEvents");
   let payload = await tokenPayloadForRead(network, scope, fresh, {
     reconcileListingStatus: false,
     reconcileSpendable: false,
@@ -13253,10 +13290,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
         : undefined,
     recoverWorkSalesOnly: queriedWorkSaleHistory,
   });
-  if (
-    safeKind === "listings" ||
-    safeKind === "closedListings"
-  ) {
+  if (workMarketHistoryKind) {
     const scopeMarketItems = (items) =>
       historyItemsMatchingQuery(
         historyItemsMatchingAddresses(items ?? [], recoveryAddresses),
@@ -13271,7 +13305,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
             sales: scopeMarketItems(payload.sales),
           }
         : payload;
-    payload = await tokenStateWithReconciledListingSeals(marketPayload, network);
+    payload = await tokenPayloadWithSpendableListings(marketPayload, network);
   }
   const rawItems =
     safeKind === "market-log"
@@ -14903,14 +14937,26 @@ async function handleRequest(request, response) {
         reconcileSpendable: false,
         recoveryAddresses,
         liveWorkWaitMs:
-          recoveryAddresses.length > 0
+          walletScoped && tokenScope === WORK_TOKEN_ID
+            ? WORK_TOKEN_LIVE_RECOVERY_WAIT_MS
+            : recoveryAddresses.length > 0
             ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS
             : undefined,
+        recoverWorkSalesOnly: walletScoped && tokenScope === WORK_TOKEN_ID,
       });
+      const responsePayload =
+        walletScoped && tokenScope === WORK_TOKEN_ID
+          ? await tokenPayloadWithSpendableListings(
+              tokenPayloadScopedToAddresses(payload, recoveryAddresses),
+              network,
+            )
+          : walletScoped
+            ? tokenPayloadScopedToAddresses(payload, recoveryAddresses)
+            : payload;
       jsonResponse(
         response,
         200,
-        walletScoped ? tokenPayloadScopedToAddresses(payload, recoveryAddresses) : payload,
+        responsePayload,
         tokenFreshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
       return;
