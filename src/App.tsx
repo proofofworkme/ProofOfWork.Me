@@ -6421,6 +6421,27 @@ function tokenLedgerFor(
   };
 }
 
+function tokenListingStateKey(
+  listing: Pick<PowTokenListing | PowTokenClosedListing, "listingId" | "network">,
+) {
+  return `${listing.network}:${listing.listingId}`;
+}
+
+function activeTokenListingsExcludingClosed(
+  listings: PowTokenListing[],
+  closedListings: PowTokenClosedListing[],
+) {
+  const closedKeys = new Set(closedListings.map(tokenListingStateKey));
+  if (closedKeys.size === 0) {
+    return listings;
+  }
+
+  const activeListings = listings.filter(
+    (listing) => !closedKeys.has(tokenListingStateKey(listing)),
+  );
+  return activeListings.length === listings.length ? listings : activeListings;
+}
+
 function sanitizedTokenState(state: PowTokenState): PowTokenState {
   const summaryOnly = Boolean(state.summaryOnly);
   const tokens = state.tokens.filter((token) =>
@@ -6435,11 +6456,14 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
   const transfers = state.transfers.filter((transfer) =>
     allowedTokenIds.has(transfer.tokenId),
   );
-  const listings = (state.listings ?? []).filter((listing) =>
-    allowedTokenIds.has(listing.tokenId),
-  );
   const closedListings = (state.closedListings ?? []).filter((listing) =>
     allowedTokenIds.has(listing.tokenId),
+  );
+  const listings = activeTokenListingsExcludingClosed(
+    (state.listings ?? []).filter((listing) =>
+      allowedTokenIds.has(listing.tokenId),
+    ),
+    closedListings,
   );
   const sales = (state.sales ?? []).filter((sale) =>
     allowedTokenIds.has(sale.tokenId),
@@ -11850,6 +11874,13 @@ export default function App() {
     MarketplacePurchaseReceipt | undefined
   >();
   const [tokenCreationSats, setTokenCreationSats] = useState(0);
+
+  useEffect(() => {
+    setTokenListings((current) =>
+      activeTokenListingsExcludingClosed(current, tokenClosedListings),
+    );
+  }, [tokenClosedListings]);
+
   const [tokenSelectedId, setTokenSelectedId] = useState(() =>
     workTokenMode ? WORK_TOKEN_TICKER : tokenRouteTarget(),
   );
@@ -12685,11 +12716,14 @@ export default function App() {
         return;
       }
       setTokenListings((current) =>
-        replaceTokenListingsForOwnerScope(current, ownedListings, {
-          network: "livenet",
-          ownerAddress: walletAddress,
-          tokenId: tokenScope,
-        }),
+        activeTokenListingsExcludingClosed(
+          replaceTokenListingsForOwnerScope(current, ownedListings, {
+            network: "livenet",
+            ownerAddress: walletAddress,
+            tokenId: tokenScope,
+          }),
+          tokenClosedListings,
+        ),
       );
     };
 
@@ -12702,6 +12736,7 @@ export default function App() {
     activeFolder,
     address,
     network,
+    tokenClosedListings,
     walletMode,
     walletTransferToken?.tokenId,
   ]);
@@ -13622,7 +13657,12 @@ export default function App() {
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
           setTokenTransfers(state.transfers);
-          setTokenListings(applyPendingTokenListingSeals(state.listings));
+          setTokenListings(
+            activeTokenListingsExcludingClosed(
+              applyPendingTokenListingSeals(state.listings),
+              state.closedListings,
+            ),
+          );
           setTokenClosedListings(state.closedListings);
           setTokenSales(state.sales);
           setTokenCreationSats(state.creationSats);
@@ -14695,7 +14735,12 @@ export default function App() {
         setTokenDefinitions(snapshot.token.tokens);
         setTokenMints(snapshot.token.mints);
         setTokenTransfers(snapshot.token.transfers);
-        setTokenListings(applyPendingTokenListingSeals(snapshot.token.listings));
+        setTokenListings(
+          activeTokenListingsExcludingClosed(
+            applyPendingTokenListingSeals(snapshot.token.listings),
+            snapshot.token.closedListings,
+          ),
+        );
         setTokenClosedListings(snapshot.token.closedListings);
         setTokenSales(snapshot.token.sales);
         setTokenCreationSats(snapshot.token.creationSats);
@@ -14821,7 +14866,12 @@ export default function App() {
         setTokenDefinitions(state.tokens);
         setTokenMints(state.mints);
         setTokenTransfers(state.transfers);
-        setTokenListings(applyPendingTokenListingSeals(state.listings));
+        setTokenListings(
+          activeTokenListingsExcludingClosed(
+            applyPendingTokenListingSeals(state.listings),
+            state.closedListings,
+          ),
+        );
         setTokenClosedListings(state.closedListings);
         setTokenSales(state.sales);
         setTokenCreationSats(state.creationSats);
@@ -14836,11 +14886,14 @@ export default function App() {
           void fetchWalletOwnedTokenListings(walletAddress, walletTokenScope)
             .then((ownedListings) => {
               setTokenListings((current) =>
-                replaceTokenListingsForOwnerScope(current, ownedListings, {
-                  network: "livenet",
-                  ownerAddress: walletAddress,
-                  tokenId: walletTokenScope,
-                }),
+                activeTokenListingsExcludingClosed(
+                  replaceTokenListingsForOwnerScope(current, ownedListings, {
+                    network: "livenet",
+                    ownerAddress: walletAddress,
+                    tokenId: walletTokenScope,
+                  }),
+                  state.closedListings,
+                ),
               );
             })
             .catch(() => undefined);
@@ -15165,7 +15218,12 @@ export default function App() {
       setTokenDefinitions(tokenState.tokens);
       setTokenMints(tokenState.mints);
       setTokenTransfers(tokenState.transfers);
-      setTokenListings(applyPendingTokenListingSeals(tokenState.listings));
+      setTokenListings(
+        activeTokenListingsExcludingClosed(
+          applyPendingTokenListingSeals(tokenState.listings),
+          tokenState.closedListings,
+        ),
+      );
       setTokenClosedListings(tokenState.closedListings);
       setTokenSales(tokenState.sales);
       setTokenCreationSats(tokenState.creationSats);
@@ -15345,7 +15403,12 @@ export default function App() {
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
           setTokenTransfers(state.transfers);
-          setTokenListings(applyPendingTokenListingSeals(state.listings));
+          setTokenListings(
+            activeTokenListingsExcludingClosed(
+              applyPendingTokenListingSeals(state.listings),
+              state.closedListings,
+            ),
+          );
           setTokenClosedListings(state.closedListings);
           setTokenSales(state.sales);
           setTokenCreationSats(state.creationSats);
@@ -17835,7 +17898,12 @@ export default function App() {
       setTokenDefinitions(latestState.tokens);
       setTokenMints(latestState.mints);
       setTokenTransfers(latestState.transfers);
-      setTokenListings(applyPendingTokenListingSeals(latestState.listings));
+      setTokenListings(
+        activeTokenListingsExcludingClosed(
+          applyPendingTokenListingSeals(latestState.listings),
+          latestState.closedListings,
+        ),
+      );
       setTokenClosedListings(latestState.closedListings);
       setTokenSales(latestState.sales);
       setTokenCreationSats(latestState.creationSats);
@@ -27373,9 +27441,9 @@ function tokenMarketLogItemConfirmed(item: TokenMarketLogItem) {
 function sortTokenMarketLogItems(items: TokenMarketLogItem[]) {
   return [...items].sort(
     (left, right) =>
+      compareCreatedAtDesc(left, right) ||
       Number(tokenMarketLogItemConfirmed(right)) -
-        Number(tokenMarketLogItemConfirmed(left)) ||
-      compareCreatedAtDesc(left, right),
+        Number(tokenMarketLogItemConfirmed(left)),
   );
 }
 

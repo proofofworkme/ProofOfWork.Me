@@ -144,6 +144,9 @@ const LEDGER_SUMMARY_FRESH_WAIT_MS = Number(
 const TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS = Number(
   process.env.TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS ?? 10 * 60_000,
 );
+const TOKEN_MARKET_UNSPENT_OUTSPEND_CACHE_TTL_MS = Number(
+  process.env.TOKEN_MARKET_UNSPENT_OUTSPEND_CACHE_TTL_MS ?? 30_000,
+);
 const TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS = Number(
   process.env.TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS ?? HEAVY_READ_STALE_MS,
 );
@@ -152,6 +155,15 @@ const ADDRESS_PAGE_FETCH_TIMEOUT_MS = Number(
 );
 const TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS = Number(
   process.env.TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS ?? 4_000,
+);
+const TX_OUTSPEND_EXTERNAL_FETCH_TIMEOUT_MS = Number(
+  process.env.TX_OUTSPEND_EXTERNAL_FETCH_TIMEOUT_MS ?? 12_000,
+);
+const TX_OUTSPEND_HISTORY_FETCH_TIMEOUT_MS = Number(
+  process.env.TX_OUTSPEND_HISTORY_FETCH_TIMEOUT_MS ?? 15_000,
+);
+const TX_OUTSPEND_HISTORY_MAX_TXS = Number(
+  process.env.TX_OUTSPEND_HISTORY_MAX_TXS ?? 500,
 );
 const WORK_TOKEN_LIVE_DELTA_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_DELTA_MAX_TXS ?? 1500,
@@ -3713,6 +3725,40 @@ function tokenListingAnchorOutpoint(listing) {
   };
 }
 
+function transactionOutpointSpendIndex(tx, txid, vout) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const outputIndex = Number(vout);
+  if (
+    !/^[0-9a-f]{64}$/u.test(normalizedTxid) ||
+    !Number.isSafeInteger(outputIndex) ||
+    outputIndex < 0
+  ) {
+    return -1;
+  }
+
+  return (Array.isArray(tx?.vin) ? tx.vin : []).findIndex((input) => {
+    const inputTxid =
+      typeof input?.txid === "string" ? input.txid.toLowerCase() : "";
+    const inputVout = Number(input?.vout);
+    return inputTxid === normalizedTxid && inputVout === outputIndex;
+  });
+}
+
+function outspendPayloadFromSpenderTransaction(tx, txid, vout) {
+  const vin = transactionOutpointSpendIndex(tx, txid, vout);
+  const spenderTxid = transactionTxid(tx);
+  if (vin < 0 || !spenderTxid) {
+    return null;
+  }
+
+  return {
+    spent: true,
+    status: tx.status ?? null,
+    txid: spenderTxid,
+    vin,
+  };
+}
+
 function tokenMarketOutspendCacheKey(network, anchor) {
   return `token-outspend:${network}:${anchor.txid}:${anchor.vout}`;
 }
@@ -3737,13 +3783,19 @@ function cachedTokenMarketOutspend(network, anchor, allowStale = false) {
 }
 
 function cacheTokenMarketOutspend(network, anchor, payload) {
+  if (payload?.unknown) {
+    return;
+  }
+
+  const now = Date.now();
+  const ttlMs = payload?.spent
+    ? TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS
+    : TOKEN_MARKET_UNSPENT_OUTSPEND_CACHE_TTL_MS;
+  const staleMs = payload?.spent ? TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS : 0;
   TOKEN_MARKET_OUTSPEND_CACHE.set(tokenMarketOutspendCacheKey(network, anchor), {
-    expiresAt: Date.now() + TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS,
+    expiresAt: now + ttlMs,
     payload,
-    staleUntil:
-      Date.now() +
-      TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS +
-      TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS,
+    staleUntil: now + ttlMs + staleMs,
   });
 }
 
@@ -3852,6 +3904,45 @@ async function reconcileCachedTokenListingSeal(listing, network) {
     : listing;
 }
 
+async function reconcileCachedTokenClosedListingStatus(closedListing, network) {
+  closedListing = await reconcileCachedTokenListingSeal(closedListing, network);
+
+  if (closedListing?.closedConfirmed) {
+    return closedListing;
+  }
+
+  const closedTxid = String(closedListing?.closedTxid ?? "")
+    .trim()
+    .toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(closedTxid)) {
+    return closedListing;
+  }
+
+  const anchor = tokenListingAnchorOutpoint(closedListing);
+  const closeTx = await fetchTransactionWithSourceFallback(
+    closedTxid,
+    network,
+  ).catch(() => null);
+  const closedVin = anchor
+    ? transactionOutpointSpendIndex(closeTx, anchor.txid, anchor.vout)
+    : -1;
+  if (!closeTx || (anchor && closedVin < 0)) {
+    return closedListing;
+  }
+
+  const blockTime = closeTx.status?.block_time;
+  return {
+    ...closedListing,
+    closedAt:
+      typeof blockTime === "number"
+        ? new Date(blockTime * 1000).toISOString()
+        : (closedListing.closedAt ?? new Date().toISOString()),
+    closedConfirmed: transactionConfirmed(closeTx),
+    closedTxid,
+    closedVin: anchor ? closedVin : closedListing.closedVin,
+  };
+}
+
 async function tokenStateWithReconciledListingSeals(payload, network) {
   if (!payload) {
     return payload;
@@ -3866,7 +3957,7 @@ async function tokenStateWithReconciledListingSeals(payload, network) {
     mapWithConcurrency(
       Array.isArray(payload.closedListings) ? payload.closedListings : [],
       TX_FETCH_CONCURRENCY,
-      (listing) => reconcileCachedTokenListingSeal(listing, network),
+      (listing) => reconcileCachedTokenClosedListingStatus(listing, network),
     ),
   ]);
 
@@ -3878,7 +3969,10 @@ async function tokenStateWithReconciledListingSeals(payload, network) {
 }
 
 async function reconcileCachedTokenClosedListing(closedListing, network) {
-  closedListing = await reconcileCachedTokenListingSeal(closedListing, network);
+  closedListing = await reconcileCachedTokenClosedListingStatus(
+    closedListing,
+    network,
+  );
 
   if (closedListing?.closedConfirmed) {
     return { kind: "closed", listing: closedListing };
@@ -4023,10 +4117,10 @@ function tokenMarketLogItemTxid(item) {
 function sortTokenMarketLogItems(items) {
   return [...items].sort(
     (left, right) =>
-      Number(tokenMarketLogItemConfirmed(right)) -
-        Number(tokenMarketLogItemConfirmed(left)) ||
       Date.parse(tokenMarketLogItemCreatedAt(right)) -
         Date.parse(tokenMarketLogItemCreatedAt(left)) ||
+      Number(tokenMarketLogItemConfirmed(right)) -
+        Number(tokenMarketLogItemConfirmed(left)) ||
       tokenMarketLogItemTxid(left).localeCompare(tokenMarketLogItemTxid(right)),
   );
 }
@@ -11112,9 +11206,19 @@ function liveWorkReadWaitMs(options = {}) {
 }
 
 async function tokenPayloadReadResult(payload, network, fresh, options = {}) {
+  const listingReconciledPayload = await tokenStateWithReconciledListingSeals(
+    payload,
+    network,
+  );
   const reconciledPayload = fresh
-    ? await tokenStateWithLivePendingTransactionCheck(payload, network)
-    : tokenStateWithoutDroppedPendingTransactions(payload, network);
+    ? await tokenStateWithLivePendingTransactionCheck(
+        listingReconciledPayload,
+        network,
+      )
+    : tokenStateWithoutDroppedPendingTransactions(
+        listingReconciledPayload,
+        network,
+      );
   return options.reconcileSpendable === false
     ? reconciledPayload
     : await tokenPayloadWithSpendableListings(reconciledPayload, network);
@@ -13902,22 +14006,40 @@ async function directTxOutspendPayload(txid, vout, network) {
     ...new Set([explorerBase(network), ...pendingMempoolBases(network)]),
   ];
   for (const base of outspendBases) {
-    try {
-      const url = `${base}/api/tx/${txid}/outspend/${vout}`;
-      let outspend;
+    const timeoutMs = String(base).startsWith("https://")
+      ? TX_OUTSPEND_EXTERNAL_FETCH_TIMEOUT_MS
+      : TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS;
+    const fetchOutspendJson = async (url) => {
       try {
-        outspend = await fetchJson(url, {
-          signal: AbortSignal.timeout(TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS),
+        return await fetchJson(url, {
+          signal: AbortSignal.timeout(timeoutMs),
         });
       } catch (error) {
         if (!String(base).startsWith("https://")) {
           throw error;
         }
-        outspend = await fetchJsonViaHttps(
-          url,
-          TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS,
-        );
+        return fetchJsonViaHttps(url, timeoutMs);
       }
+    };
+
+    try {
+      const outspends = await fetchOutspendJson(`${base}/api/tx/${txid}/outspends`);
+      const outspend = Array.isArray(outspends) ? outspends[vout] : null;
+      if (outspend?.spent) {
+        return outspend;
+      }
+      if (outspend && typeof outspend === "object") {
+        lastOutspend = outspend;
+      }
+    } catch (error) {
+      console.error(
+        `Outspends lookup failed for ${base} ${txid}:${vout}: ${errorSummary(error)}`,
+      );
+    }
+
+    try {
+      const url = `${base}/api/tx/${txid}/outspend/${vout}`;
+      const outspend = await fetchOutspendJson(url);
       if (outspend?.spent) {
         return outspend;
       }
@@ -13934,16 +14056,7 @@ async function directTxOutspendPayload(txid, vout, network) {
   return lastOutspend;
 }
 
-async function txOutspendPayload(txid, vout, network) {
-  const primaryOutspend = await directTxOutspendPayload(txid, vout, network);
-  if (primaryOutspend) {
-    return primaryOutspend;
-  }
-
-  // Some private mempool deployments do not expose /outspend, and walking
-  // full script history can be expensive for active seller addresses. For
-  // seal preflight, a bounded Electrum unspent check gives the answer needed.
-  let outputScript = "";
+async function txOutputScriptHex(txid, vout, network) {
   try {
     const sourceTxHex = await fetchText(
       `${mempoolBase(network)}/api/tx/${txid}/hex`,
@@ -13951,13 +14064,82 @@ async function txOutspendPayload(txid, vout, network) {
     );
     const sourceTx = bitcoin.Transaction.fromHex(sourceTxHex);
     const output = sourceTx.outs[vout];
-    outputScript = output ? bytesToHex(output.script) : "";
+    if (output) {
+      return bytesToHex(output.script);
+    }
   } catch {
-    return { spent: false, unknown: true };
+    // Fall back to JSON transaction sources below.
   }
 
+  const sourceTx = await fetchTransactionWithSourceFallback(txid, network).catch(
+    () => null,
+  );
+  const scriptHex = sourceTx?.vout?.[vout]?.scriptpubkey;
+  return typeof scriptHex === "string" && /^[0-9a-fA-F]+$/u.test(scriptHex)
+    ? scriptHex
+    : "";
+}
+
+async function scriptHistoryOutspendPayload(txid, vout, scriptHex, network) {
+  if (network !== "livenet" || !ELECTRUM_HOST || !ELECTRUM_PORT || !scriptHex) {
+    return null;
+  }
+
+  const scripthash = scriptHashForScriptHex(scriptHex);
+  const history = await electrumRequest(
+    "blockchain.scripthash.get_history",
+    [scripthash],
+    TX_OUTSPEND_HISTORY_FETCH_TIMEOUT_MS,
+  );
+  const historyTxids = [
+    ...new Set(
+      (Array.isArray(history) ? history : [])
+        .map((entry) => entry?.tx_hash)
+        .filter(
+          (value) => typeof value === "string" && /^[0-9a-fA-F]{64}$/u.test(value),
+        )
+        .map((value) => value.toLowerCase())
+        .filter((value) => value !== txid),
+    ),
+  ]
+    .reverse()
+    .slice(0, Math.max(0, TX_OUTSPEND_HISTORY_MAX_TXS));
+
+  const txs = await mapWithConcurrency(
+    historyTxids,
+    TX_FETCH_CONCURRENCY,
+    async (historyTxid) =>
+      (await fetchTransactionFromElectrum(historyTxid, network).catch(
+        () => null,
+      )) ??
+      (await fetchTransactionWithSourceFallback(historyTxid, network).catch(
+        () => null,
+      )),
+  );
+
+  for (const tx of txs) {
+    const outspend = outspendPayloadFromSpenderTransaction(tx, txid, vout);
+    if (outspend) {
+      return outspend;
+    }
+  }
+
+  return null;
+}
+
+async function txOutspendPayload(txid, vout, network) {
+  const primaryOutspend = await directTxOutspendPayload(txid, vout, network);
+  if (primaryOutspend?.spent) {
+    return primaryOutspend;
+  }
+
+  // Some private mempool deployments do not expose /outspend, and walking
+  // full script history can be expensive for active seller addresses. For
+  // seal preflight, a bounded Electrum unspent check gives the answer needed.
+  const outputScript = await txOutputScriptHex(txid, vout, network);
+
   if (!outputScript) {
-    return { spent: false, unknown: true };
+    return primaryOutspend ?? { spent: false, unknown: true };
   }
 
   const scripthash = scriptHashForScriptHex(outputScript);
@@ -13976,13 +14158,35 @@ async function txOutspendPayload(txid, vout, network) {
         const entryVout = Number(entry?.tx_pos);
         return entryTxid === txid && entryVout === vout;
       });
-      return stillUnspent ? { spent: false } : { spent: true, status: null };
+      if (stillUnspent) {
+        return { spent: false };
+      }
+
+      const historyOutspend = await scriptHistoryOutspendPayload(
+        txid,
+        vout,
+        outputScript,
+        network,
+      ).catch(() => null);
+      return historyOutspend ?? { spent: true, status: null };
     }
   } catch {
-    return { spent: false, unknown: true };
+    const historyOutspend = await scriptHistoryOutspendPayload(
+      txid,
+      vout,
+      outputScript,
+      network,
+    ).catch(() => null);
+    return historyOutspend ?? primaryOutspend ?? { spent: false, unknown: true };
   }
 
-  return { spent: false, unknown: true };
+  const historyOutspend = await scriptHistoryOutspendPayload(
+    txid,
+    vout,
+    outputScript,
+    network,
+  ).catch(() => null);
+  return historyOutspend ?? primaryOutspend ?? { spent: false, unknown: true };
 }
 
 async function txStatusPayload(txid, network) {
