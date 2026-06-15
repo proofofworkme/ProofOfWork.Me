@@ -18,9 +18,11 @@ const WORK_SEAL_REGRESSION_TXID =
   "0cdd580f47ffb1e53d2667121f10f99784e7750a60403787bf09fac512fb0b3d";
 const WORK_SEAL_REGRESSION_LISTING_TXID =
   "d976f2abdfd60eca041cb7a64450f0c9de06761978cd28b5d2fcae1605457148";
-const WORK_FRESH_LISTING_REGRESSION_TXID =
+const WORK_DELIST_REGRESSION_LISTING_TXID =
   "4e80256079c9475589f5a828079be2e403ed029bf3dcd7a9801055714ee4b2bf";
-const WORK_FRESH_LISTING_REGRESSION_SELLER =
+const WORK_DELIST_REGRESSION_TXID =
+  "9079e81e519b2e9a2cecde1133d656afc892b7866ed72d37c2b524913ce82850";
+const WORK_DELIST_REGRESSION_SELLER =
   "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
 const INFINITY_BOND_REGRESSION_TXID =
   "411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891";
@@ -143,8 +145,9 @@ const [
   workSealListingHistory,
   workSealMarketLogHistory,
   workSealInvalidHistory,
-  workFreshListingHistory,
-  workFreshListingMarketLog,
+  workDelistedActiveListingHistory,
+  workDelistedClosedListingHistory,
+  workDelistedListingMarketLog,
   infinityBondLog,
   paginationGapInfinityBondLog,
 ] =
@@ -172,10 +175,13 @@ const [
       `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=invalid-events&q=${WORK_SEAL_REGRESSION_TXID}&fresh=1`,
     ),
     readJson(
-      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=listings&q=${WORK_FRESH_LISTING_REGRESSION_TXID}&fresh=1`,
+      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=listings&q=${WORK_DELIST_REGRESSION_LISTING_TXID}&fresh=1`,
     ),
     readJson(
-      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=market-log&q=${WORK_FRESH_LISTING_REGRESSION_TXID}&fresh=1`,
+      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=closed-listings&q=${WORK_DELIST_REGRESSION_TXID}&fresh=1`,
+    ),
+    readJson(
+      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=market-log&q=${WORK_DELIST_REGRESSION_TXID}&fresh=1`,
     ),
     readJson(`/api/v1/log-history?q=${INFINITY_BOND_REGRESSION_TXID}`),
     readJson(`/api/v1/log-history?q=${PAGINATION_GAP_INFINITY_BOND_TXID}`),
@@ -368,23 +374,30 @@ expect(
   items(workSealInvalidHistory).length === 0,
 );
 expect(
-  "fresh confirmed WORK listing is visible in listing history",
-  items(workFreshListingHistory).some(
-    (item) =>
-      item.listingId === WORK_FRESH_LISTING_REGRESSION_TXID &&
-      item.confirmed === true &&
-      item.amount === 20_000 &&
-      item.priceSats === 151_600 &&
-      item.sellerAddress === WORK_FRESH_LISTING_REGRESSION_SELLER,
+  "delisted WORK listing is removed from active listing history",
+  !items(workDelistedActiveListingHistory).some(
+    (item) => item.listingId === WORK_DELIST_REGRESSION_LISTING_TXID,
   ),
 );
 expect(
-  "fresh confirmed WORK listing is visible in market log",
-  items(workFreshListingMarketLog).some(
+  "WORK delist tx is visible in closed listing history",
+  items(workDelistedClosedListingHistory).some(
     (item) =>
-      item.kind === "listing" &&
-      item.txid === WORK_FRESH_LISTING_REGRESSION_TXID &&
-      item.listing?.sellerAddress === WORK_FRESH_LISTING_REGRESSION_SELLER,
+      item.listingId === WORK_DELIST_REGRESSION_LISTING_TXID &&
+      item.closedTxid === WORK_DELIST_REGRESSION_TXID &&
+      item.amount === 20_000 &&
+      item.priceSats === 151_600 &&
+      item.sellerAddress === WORK_DELIST_REGRESSION_SELLER,
+  ),
+);
+expect(
+  "WORK delist tx is visible in market log",
+  items(workDelistedListingMarketLog).some(
+    (item) =>
+      item.kind === "closed-listing" &&
+      item.txid === WORK_DELIST_REGRESSION_TXID &&
+      item.closedListing?.listingId === WORK_DELIST_REGRESSION_LISTING_TXID &&
+      item.closedListing?.sellerAddress === WORK_DELIST_REGRESSION_SELLER,
   ),
 );
 

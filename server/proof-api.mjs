@@ -2,6 +2,7 @@
 
 import fs from "node:fs/promises";
 import http from "node:http";
+import https from "node:https";
 import net from "node:net";
 import path from "node:path";
 import dns from "node:dns";
@@ -145,6 +146,9 @@ const TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS = Number(
 );
 const TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS = Number(
   process.env.TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS ?? HEAVY_READ_STALE_MS,
+);
+const ADDRESS_PAGE_FETCH_TIMEOUT_MS = Number(
+  process.env.ADDRESS_PAGE_FETCH_TIMEOUT_MS ?? 8_000,
 );
 const TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS = Number(
   process.env.TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS ?? 4_000,
@@ -1245,6 +1249,50 @@ async function fetchJson(url, init = {}) {
   return response.json();
 }
 
+function fetchJsonViaHttps(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      url,
+      {
+        headers: { Accept: "application/json" },
+        timeout: timeoutMs,
+      },
+      (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          body += chunk;
+        });
+        response.on("end", () => {
+          if (
+            !response.statusCode ||
+            response.statusCode < 200 ||
+            response.statusCode >= 300
+          ) {
+            reject(
+              new Error(
+                `${url} returned ${response.statusCode ?? 0}${body ? `: ${body.slice(0, 200)}` : ""}`,
+              ),
+            );
+            return;
+          }
+
+          try {
+            resolve(JSON.parse(body));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
+
+    request.on("timeout", () => {
+      request.destroy(new Error(`HTTPS request timed out for ${url}`));
+    });
+    request.on("error", reject);
+  });
+}
+
 async function fetchText(url, init = {}) {
   const response = await fetch(url, init);
   if (!response.ok) {
@@ -1766,6 +1814,7 @@ async function fetchBlockTxidIndex(blockHash, network) {
 async function fetchAddressTransactionsPage(address, network, path) {
   const transactions = await fetchJson(
     `${mempoolBase(network)}/api/address/${address}/${path}`,
+    { signal: AbortSignal.timeout(ADDRESS_PAGE_FETCH_TIMEOUT_MS) },
   );
   return Array.isArray(transactions) ? transactions : [];
 }
@@ -1773,6 +1822,7 @@ async function fetchAddressTransactionsPage(address, network, path) {
 async function fetchAddressTransactionsPageFromBase(baseUrl, address, path) {
   const transactions = await fetchJson(
     `${baseUrl}/api/address/${address}/${path}`,
+    { signal: AbortSignal.timeout(ADDRESS_PAGE_FETCH_TIMEOUT_MS) },
   );
   return Array.isArray(transactions) ? transactions : [];
 }
@@ -2219,9 +2269,9 @@ async function fetchRecentUnknownAddressTransactions(
   const maxPages = Math.max(1, Math.ceil(maxTxs / 25) + 4);
   const pageBases = [
     ...new Set([
+      explorerBase(network),
       mempoolBase(network),
       ...pendingMempoolBases(network),
-      explorerBase(network),
     ]),
   ];
   const fetchPage = async (path) => {
@@ -8546,6 +8596,25 @@ function recentByCreatedAt(items, limit = SUMMARY_ACTIVITY_LIMIT) {
     .slice(0, Math.max(0, limit));
 }
 
+function recentClosedTokenListings(items, limit = SUMMARY_MARKET_LIMIT) {
+  const eventTime = (item) => {
+    const parsed = Date.parse(String(item?.closedAt ?? item?.createdAt ?? ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  return (Array.isArray(items) ? items : [])
+    .slice()
+    .sort(
+      (left, right) =>
+        eventTime(right) - eventTime(left) ||
+        Number(Boolean(right?.closedConfirmed)) -
+          Number(Boolean(left?.closedConfirmed)) ||
+        String(right?.closedTxid ?? right?.listingId ?? "").localeCompare(
+          String(left?.closedTxid ?? left?.listingId ?? ""),
+        ),
+    )
+    .slice(0, Math.max(0, limit));
+}
+
 function tokenAggregateSummaries(payload) {
   const tokens = Array.isArray(payload.tokens) ? payload.tokens : [];
   const summaries = new Map(
@@ -8893,7 +8962,10 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
 
   return {
     ...payload,
-    closedListings: recentByCreatedAt(payload.closedListings, SUMMARY_MARKET_LIMIT),
+    closedListings: recentClosedTokenListings(
+      payload.closedListings,
+      SUMMARY_MARKET_LIMIT,
+    ),
     holders: holders.slice(0, SUMMARY_MARKET_LIMIT),
     listings: recentByCreatedAt(payload.listings, SUMMARY_MARKET_LIMIT),
     mints: [],
@@ -9448,11 +9520,23 @@ function workTokenDeltaHasNonMintActions(txs, network) {
 
 function workTokenNonMintActionKindsFromTransaction(tx, network) {
   const vout = Array.isArray(tx?.vout) ? tx.vout : [];
+  const registryMutationSats = tokenPaymentAmountBeforeProtocol(
+    vout,
+    WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+  );
   const kinds = new Set();
   for (const message of decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX)) {
     const parsed = parseTokenPayload(message, network);
     const tokenId = parsed?.tokenId ?? parsed?.saleAuthorization?.tokenId ?? "";
-    if (!parsed || parsed.kind === "mint" || tokenId !== WORK_TOKEN_ID) {
+    const isListingScopedWorkCandidate =
+      (parsed?.kind === "delist" || parsed?.kind === "buy") &&
+      /^[0-9a-f]{64}$/u.test(String(parsed?.listingId ?? "")) &&
+      registryMutationSats >= TOKEN_MIN_MUTATION_PRICE_SATS;
+    if (
+      !parsed ||
+      parsed.kind === "mint" ||
+      (tokenId !== WORK_TOKEN_ID && !isListingScopedWorkCandidate)
+    ) {
       continue;
     }
 
@@ -9603,15 +9687,17 @@ function workTokenParticipantRecoveryAddresses(state, network, extraAddresses = 
     );
   }
 
+  for (const listing of Array.isArray(state?.listings) ? state.listings : []) {
+    addAddress(listing?.sellerAddress);
+  }
   for (const holder of Array.isArray(state?.holders) ? state.holders : []) {
     if (Number(holder?.balance) > 0) {
       addAddress(holder.address);
     }
   }
-  for (const listing of [
-    ...(Array.isArray(state?.listings) ? state.listings : []),
-    ...(Array.isArray(state?.closedListings) ? state.closedListings : []),
-  ]) {
+  for (const listing of Array.isArray(state?.closedListings)
+    ? state.closedListings
+    : []) {
     addAddress(listing?.sellerAddress);
   }
   for (const transfer of Array.isArray(state?.transfers) ? state.transfers : []) {
@@ -13812,20 +13898,36 @@ async function txHexPayload(txid, network) {
 
 async function directTxOutspendPayload(txid, vout, network) {
   let lastOutspend = null;
-  for (const base of pendingMempoolBases(network)) {
+  const outspendBases = [
+    ...new Set([explorerBase(network), ...pendingMempoolBases(network)]),
+  ];
+  for (const base of outspendBases) {
     try {
-      const outspend = await fetchJson(
-        `${base}/api/tx/${txid}/outspend/${vout}`,
-        { signal: AbortSignal.timeout(TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS) },
-      );
+      const url = `${base}/api/tx/${txid}/outspend/${vout}`;
+      let outspend;
+      try {
+        outspend = await fetchJson(url, {
+          signal: AbortSignal.timeout(TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS),
+        });
+      } catch (error) {
+        if (!String(base).startsWith("https://")) {
+          throw error;
+        }
+        outspend = await fetchJsonViaHttps(
+          url,
+          TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS,
+        );
+      }
       if (outspend?.spent) {
         return outspend;
       }
       if (outspend && typeof outspend === "object") {
         lastOutspend = outspend;
       }
-    } catch {
-      // Try the next configured mempool source before reconstructing from history.
+    } catch (error) {
+      console.error(
+        `Outspend lookup failed for ${base} ${txid}:${vout}: ${errorSummary(error)}`,
+      );
     }
   }
 
