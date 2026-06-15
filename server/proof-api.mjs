@@ -9445,12 +9445,14 @@ function workTokenClosedListingsMissingSales(state, network) {
       .map((sale) => String(sale?.txid ?? "").toLowerCase())
       .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
   );
+  const confirmedInvalidBuyTxids = confirmedInvalidWorkBuyTxids(state);
   return (Array.isArray(state?.closedListings) ? state.closedListings : []).filter(
     (listing) => {
       const closedTxid = String(listing?.closedTxid ?? "").toLowerCase();
       return (
         listing?.tokenId === WORK_TOKEN_ID &&
-        listing?.closedConfirmed === true &&
+        (listing?.closedConfirmed === true ||
+          confirmedInvalidBuyTxids.has(closedTxid)) &&
         /^[0-9a-f]{64}$/u.test(closedTxid) &&
         !saleTxids.has(closedTxid)
       );
@@ -9458,8 +9460,8 @@ function workTokenClosedListingsMissingSales(state, network) {
   );
 }
 
-function prioritizedWorkSaleRecoveryCandidates(state, candidates) {
-  const invalidBuyTxids = new Set(
+function confirmedInvalidWorkBuyTxids(state) {
+  return new Set(
     (Array.isArray(state?.invalidEvents) ? state.invalidEvents : [])
       .filter(
         (event) =>
@@ -9470,6 +9472,10 @@ function prioritizedWorkSaleRecoveryCandidates(state, candidates) {
       .map((event) => String(event?.txid ?? "").toLowerCase())
       .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
   );
+}
+
+function prioritizedWorkSaleRecoveryCandidates(state, candidates) {
+  const invalidBuyTxids = confirmedInvalidWorkBuyTxids(state);
   const ordered = [...candidates].sort((left, right) => {
     const leftPriority = invalidBuyTxids.has(
       String(left?.closedTxid ?? "").toLowerCase(),
@@ -9667,9 +9673,26 @@ function workTokenStateWithRecoveredSales(state, recoveredSales) {
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
         left.txid.localeCompare(right.txid),
     );
+  const salesByTxid = new Map(
+    newSales.map((sale) => [String(sale.txid ?? "").toLowerCase(), sale]),
+  );
+  const closedListings = (Array.isArray(state.closedListings)
+    ? state.closedListings
+    : []
+  ).map((listing) => {
+    const sale = salesByTxid.get(String(listing?.closedTxid ?? "").toLowerCase());
+    return sale
+      ? {
+          ...listing,
+          closedAt: sale.createdAt,
+          closedConfirmed: true,
+        }
+      : listing;
+  });
 
   return tokenStateWithPendingStats({
     ...state,
+    closedListings,
     holders: nextHolders,
     indexedAt: new Date().toISOString(),
     invalidEvents: nextInvalidEvents,
