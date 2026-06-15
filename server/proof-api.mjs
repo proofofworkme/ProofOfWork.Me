@@ -9458,6 +9458,45 @@ function workTokenClosedListingsMissingSales(state, network) {
   );
 }
 
+function prioritizedWorkSaleRecoveryCandidates(state, candidates) {
+  const invalidBuyTxids = new Set(
+    (Array.isArray(state?.invalidEvents) ? state.invalidEvents : [])
+      .filter(
+        (event) =>
+          event?.confirmed === true &&
+          event?.kind === "buy" &&
+          event?.reason === "no-valid-work-token-event",
+      )
+      .map((event) => String(event?.txid ?? "").toLowerCase())
+      .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
+  );
+  const ordered = [...candidates].sort((left, right) => {
+    const leftPriority = invalidBuyTxids.has(
+      String(left?.closedTxid ?? "").toLowerCase(),
+    )
+      ? 1
+      : 0;
+    const rightPriority = invalidBuyTxids.has(
+      String(right?.closedTxid ?? "").toLowerCase(),
+    )
+      ? 1
+      : 0;
+    return (
+      rightPriority - leftPriority ||
+      Date.parse(right?.closedAt ?? right?.createdAt ?? "") -
+        Date.parse(left?.closedAt ?? left?.createdAt ?? "") ||
+      String(left?.listingId ?? "").localeCompare(String(right?.listingId ?? ""))
+    );
+  });
+
+  const priorityCount = ordered.filter((listing) =>
+    invalidBuyTxids.has(String(listing?.closedTxid ?? "").toLowerCase()),
+  ).length;
+  // User-facing reads should repair invalid confirmed buys before sweeping older
+  // generic closures, otherwise wallet refreshes can block on unrelated delists.
+  return priorityCount > 0 ? ordered.slice(0, priorityCount) : ordered;
+}
+
 function confirmedWorkSaleFromClosedListingTransaction(tx, listing, network) {
   const txid = transactionTxid(tx);
   if (!txid || !transactionConfirmed(tx)) {
@@ -9533,29 +9572,35 @@ function confirmedWorkSaleFromClosedListingTransaction(tx, listing, network) {
 }
 
 async function recoverWorkSalesFromClosedListings(state, network) {
-  const candidates = workTokenClosedListingsMissingSales(state, network);
-  const recovered = [];
-
-  for (const listing of candidates) {
-    const closedTxid = String(listing.closedTxid ?? "").toLowerCase();
-    try {
-      const tx = await fetchTransactionWithSourceFallback(closedTxid, network);
-      const sale = confirmedWorkSaleFromClosedListingTransaction(
-        tx,
-        listing,
-        network,
-      );
-      if (sale) {
-        recovered.push(sale);
+  const candidates = prioritizedWorkSaleRecoveryCandidates(
+    state,
+    workTokenClosedListingsMissingSales(state, network),
+  );
+  const recovered = await mapWithConcurrency(
+    candidates,
+    TX_FETCH_CONCURRENCY,
+    async (listing) => {
+      const closedTxid = String(listing.closedTxid ?? "").toLowerCase();
+      try {
+        const tx = await fetchTransactionWithSourceFallback(closedTxid, network);
+        const sale = confirmedWorkSaleFromClosedListingTransaction(
+          tx,
+          listing,
+          network,
+        );
+        if (sale) {
+          return sale;
+        }
+      } catch (error) {
+        console.error(
+          `WORK closed sale repair lookup failed for ${closedTxid}: ${errorSummary(error)}`,
+        );
       }
-    } catch (error) {
-      console.error(
-        `WORK closed sale repair lookup failed for ${closedTxid}: ${errorSummary(error)}`,
-      );
-    }
-  }
+      return null;
+    },
+  );
 
-  return recovered;
+  return recovered.filter(Boolean);
 }
 
 function workTokenStateWithRecoveredSales(state, recoveredSales) {
@@ -9570,6 +9615,11 @@ function workTokenStateWithRecoveredSales(state, recoveredSales) {
     return state;
   }
 
+  const recoveredSaleTxids = new Set(
+    newSales
+      .map((sale) => String(sale?.txid ?? "").toLowerCase())
+      .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
+  );
   const holders = new Map(
     (Array.isArray(state.holders) ? state.holders : [])
       .filter((holder) => holder?.address && Number(holder.balance) > 0)
@@ -9604,16 +9654,31 @@ function workTokenStateWithRecoveredSales(state, recoveredSales) {
         left.txid.localeCompare(right.txid),
     );
 
-  return {
+  const nextInvalidEvents = (Array.isArray(state.invalidEvents)
+    ? state.invalidEvents
+    : []
+  )
+    .filter(
+      (event) =>
+        !recoveredSaleTxids.has(String(event?.txid ?? "").toLowerCase()),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    );
+
+  return tokenStateWithPendingStats({
     ...state,
     holders: nextHolders,
     indexedAt: new Date().toISOString(),
+    invalidEvents: nextInvalidEvents,
     sales: nextSales,
     stats: {
       ...(state.stats ?? {}),
       holders: nextHolders.length,
     },
-  };
+  });
 }
 
 function confirmedWorkMintEventsFromTransaction(tx, network) {
@@ -11430,7 +11495,7 @@ async function tokenSummaryPayload(
         : scope === WORK_TOKEN_ID && !fresh
           ? WORK_TOKEN_LIVE_WAIT_MS
           : undefined,
-    recoverWorkSales: scope !== WORK_TOKEN_ID,
+    recoverWorkSales: true,
     reconcileSpendable: false,
   });
   return compactTokenSummaryPayload(payload, scope);
@@ -12266,7 +12331,7 @@ async function ledgerTokenPayload(network, tokenScope = "", fresh = false) {
       network,
       fallback,
       WORK_TOKEN_LIVE_WAIT_MS,
-      { recoverClosedSales: false },
+      { recoverClosedSales: true },
     );
   }
   if (!fresh || (!ENABLE_SUMMARY_TOKEN_REFRESH && scope !== WORK_TOKEN_ID)) {
@@ -12573,7 +12638,7 @@ async function activityPayloadWithLiveWorkTokenOverlay(ledger, fresh = false) {
     ledger.network,
     ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
     WORK_TOKEN_LIVE_WAIT_MS,
-    { recoverClosedSales: false },
+    { recoverClosedSales: true },
   );
   workTokenState = fresh
     ? await tokenStateWithLivePendingTransactionCheck(
@@ -12737,7 +12802,7 @@ async function workSummaryPayload(network, fresh = false) {
         network,
         ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
         WORK_TOKEN_LIVE_WAIT_MS,
-        { recoverClosedSales: false },
+        { recoverClosedSales: true },
       );
       return attachLedgerMetadata(
         {
@@ -12792,7 +12857,7 @@ async function marketplaceSummaryPayload(network, fresh = false) {
         network,
         ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
         WORK_TOKEN_LIVE_WAIT_MS,
-        { recoverClosedSales: false },
+        { recoverClosedSales: true },
       );
       const baseTokenState = tokenStateWithScopedTokenOverride(
         ledger.tokenState,

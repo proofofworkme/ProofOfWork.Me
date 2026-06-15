@@ -24,6 +24,20 @@ const WORK_DELIST_REGRESSION_TXID =
   "9079e81e519b2e9a2cecde1133d656afc892b7866ed72d37c2b524913ce82850";
 const WORK_DELIST_REGRESSION_SELLER =
   "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
+const WORK_BUY_RECOVERY_REGRESSIONS = [
+  {
+    buyer: "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+    listingId:
+      "f190c6246feae944e61ae909fc80fc39b3fe2e7536832279eb7d3c593ba889b8",
+    txid: "85d7930ffd5650c8508baf1f0128d469592e8349ad51483f69f3e227aca9233b",
+  },
+  {
+    buyer: "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+    listingId:
+      "4cde906f5e0692e05c6c1bfcfb8d49fccfce9bdb564d88b358aa50d418e163c6",
+    txid: "8b470b3ab319c201d4eb440bb3562b7b907b7ca38480ff71b51c6b655e522e97",
+  },
+];
 const INFINITY_BOND_REGRESSION_TXID =
   "411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891";
 const PAGINATION_GAP_INFINITY_BOND_TXID =
@@ -191,6 +205,29 @@ const buyerLogItems = await readHistoryUntil(
   `/api/v1/log-history?q=${GULLISH_BUYER}`,
   isGullishBuyerTokenSale,
 );
+const workBuyRecoveryAudits = await Promise.all(
+  WORK_BUY_RECOVERY_REGRESSIONS.map(async (regression) => {
+    const [sales, invalid, marketLog, tokenSaleLog] = await Promise.all([
+      readJson(
+        `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=sales&q=${regression.txid}&fresh=1`,
+      ),
+      readJson(
+        `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=invalid-events&q=${regression.txid}&fresh=1`,
+      ),
+      readJson(
+        `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=market-log&q=${regression.txid}&fresh=1`,
+      ),
+      readJson(`/api/v1/log-history?kind=token-sale&q=${regression.txid}`),
+    ]);
+    return {
+      invalid,
+      marketLog,
+      regression,
+      sales,
+      tokenSaleLog,
+    };
+  }),
+);
 
 expect("consistency endpoint is green", consistency.ok === true);
 const consistencyChecks = checkNames(consistency);
@@ -317,6 +354,48 @@ expect(
   "Gullish buyer address search returns sale participant event",
   buyerLogItems.some(isGullishBuyerTokenSale),
 );
+for (const {
+  invalid,
+  marketLog,
+  regression,
+  sales,
+  tokenSaleLog,
+} of workBuyRecoveryAudits) {
+  expect(
+    `confirmed WORK buy ${regression.txid} is in sales history`,
+    items(sales).some(
+      (item) =>
+        item.txid === regression.txid &&
+        item.listingId === regression.listingId &&
+        item.buyerAddress === regression.buyer &&
+        item.confirmed === true,
+    ),
+  );
+  expect(
+    `confirmed WORK buy ${regression.txid} is in market log as a sale`,
+    items(marketLog).some(
+      (item) =>
+        item.kind === "sale" &&
+        item.txid === regression.txid &&
+        item.sale?.listingId === regression.listingId,
+    ),
+  );
+  expect(
+    `confirmed WORK buy ${regression.txid} is in Log as a token sale`,
+    items(tokenSaleLog).some(
+      (item) =>
+        item.kind === "token-sale" &&
+        item.txid === regression.txid &&
+        item.listingId === regression.listingId &&
+        Array.isArray(item.participants) &&
+        item.participants.includes(regression.buyer),
+    ),
+  );
+  expect(
+    `confirmed WORK buy ${regression.txid} is not classified invalid`,
+    items(invalid).length === 0,
+  );
+}
 expect(
   "confirmed WORK transfer tx is in transfer history",
   items(workTransferHistory).some(
