@@ -9968,7 +9968,10 @@ async function fetchUtxos(
     try {
       const rawWalletUtxos = await walletUtxoReader.call(window.unisat);
       if (Array.isArray(rawWalletUtxos)) {
-        return normalizeUtxos(rawWalletUtxos);
+        const walletUtxos = normalizeUtxos(rawWalletUtxos);
+        if (walletUtxos.some((utxo) => utxo.status?.confirmed)) {
+          return walletUtxos;
+        }
       }
     } catch {
       // Fall through to the ProofOfWork API fallback.

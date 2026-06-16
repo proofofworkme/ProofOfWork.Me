@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
@@ -159,8 +160,19 @@ const TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS = Number(
 const ADDRESS_PAGE_FETCH_TIMEOUT_MS = Number(
   process.env.ADDRESS_PAGE_FETCH_TIMEOUT_MS ?? 8_000,
 );
+const ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS = Number(
+  process.env.ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS ??
+    ADDRESS_PAGE_FETCH_TIMEOUT_MS,
+);
 const ADDRESS_UTXO_FETCH_TIMEOUT_MS = Number(
   process.env.ADDRESS_UTXO_FETCH_TIMEOUT_MS ?? 5_000,
+);
+const ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS = Number(
+  process.env.ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS ?? 12_000,
+);
+const BLOCKCHAIN_INFO_ADDRESS_TX_PAGE_LIMIT = Math.max(
+  1,
+  Math.min(100, Number(process.env.BLOCKCHAIN_INFO_ADDRESS_TX_PAGE_LIMIT ?? 50)),
 );
 const TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS = Number(
   process.env.TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS ?? 4_000,
@@ -443,6 +455,7 @@ const EXPENSIVE_READ_CACHE_CONTROL =
 const TOKEN_READ_CACHE_CONTROL =
   `public, max-age=60, stale-while-revalidate=${HEAVY_READ_STALE_SECONDS}, stale-if-error=${HEAVY_READ_STALE_SECONDS}`;
 const FRESH_READ_CACHE_CONTROL = "no-store, max-age=0, must-revalidate";
+const OUTBOUND_FETCH_USER_AGENT = "ProofOfWork.Me/0.1 (+https://proofofwork.me)";
 
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
@@ -1297,6 +1310,22 @@ function explorerBase(network) {
   return "https://mempool.space";
 }
 
+function secondaryExplorerBases(network) {
+  if (network === "livenet") {
+    return ["https://blockstream.info"];
+  }
+
+  if (network === "testnet") {
+    return ["https://blockstream.info/testnet"];
+  }
+
+  return [];
+}
+
+function explorerReadBases(network) {
+  return [...new Set([...secondaryExplorerBases(network), explorerBase(network)])];
+}
+
 function explorerTxUrl(txid, network) {
   return `${explorerBase(network)}/tx/${txid}`;
 }
@@ -1332,6 +1361,7 @@ async function fetchJson(url, init = {}) {
     ...init,
     headers: {
       Accept: "application/json",
+      "User-Agent": OUTBOUND_FETCH_USER_AGENT,
       ...(init.headers ?? {}),
     },
   });
@@ -1351,7 +1381,10 @@ function fetchJsonViaHttps(url, timeoutMs) {
     const request = https.get(
       url,
       {
-        headers: { Accept: "application/json" },
+        headers: {
+          Accept: "application/json",
+          "User-Agent": OUTBOUND_FETCH_USER_AGENT,
+        },
         timeout: timeoutMs,
       },
       (response) => {
@@ -1390,8 +1423,93 @@ function fetchJsonViaHttps(url, timeoutMs) {
   });
 }
 
+function fetchJsonViaCurl(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const maxTimeSeconds = Math.max(1, Math.ceil(Number(timeoutMs) / 1000));
+    execFile(
+      "curl",
+      [
+        "-fsSL",
+        "--max-time",
+        String(maxTimeSeconds),
+        "-H",
+        "Accept: application/json",
+        "-H",
+        `User-Agent: ${OUTBOUND_FETCH_USER_AGENT}`,
+        url,
+      ],
+      { maxBuffer: 50 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(
+            new Error(
+              `${url} curl failed: ${String(stderr || error.message).trim()}`,
+            ),
+          );
+          return;
+        }
+
+        try {
+          resolve(JSON.parse(stdout));
+        } catch (parseError) {
+          reject(parseError);
+        }
+      },
+    );
+  });
+}
+
+function fetchTextViaHttps(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      url,
+      {
+        headers: {
+          Accept: "text/plain",
+          "User-Agent": OUTBOUND_FETCH_USER_AGENT,
+        },
+        timeout: timeoutMs,
+      },
+      (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          body += chunk;
+        });
+        response.on("end", () => {
+          if (
+            !response.statusCode ||
+            response.statusCode < 200 ||
+            response.statusCode >= 300
+          ) {
+            reject(
+              new Error(
+                `${url} returned ${response.statusCode ?? 0}${body ? `: ${body.slice(0, 200)}` : ""}`,
+              ),
+            );
+            return;
+          }
+
+          resolve(body);
+        });
+      },
+    );
+
+    request.on("timeout", () => {
+      request.destroy(new Error(`HTTPS request timed out for ${url}`));
+    });
+    request.on("error", reject);
+  });
+}
+
 async function fetchText(url, init = {}) {
-  const response = await fetch(url, init);
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      "User-Agent": OUTBOUND_FETCH_USER_AGENT,
+      ...(init.headers ?? {}),
+    },
+  });
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new Error(
@@ -1939,19 +2057,38 @@ async function fetchBlockTxidIndex(blockHash, network) {
 }
 
 async function fetchAddressTransactionsPage(address, network, path) {
-  const transactions = await fetchJson(
-    `${mempoolBase(network)}/api/address/${address}/${path}`,
-    { signal: AbortSignal.timeout(ADDRESS_PAGE_FETCH_TIMEOUT_MS) },
+  return fetchAddressTransactionsPageFromBase(
+    mempoolBase(network),
+    address,
+    path,
   );
-  return Array.isArray(transactions) ? transactions : [];
 }
 
 async function fetchAddressTransactionsPageFromBase(baseUrl, address, path) {
-  const transactions = await fetchJson(
-    `${baseUrl}/api/address/${address}/${path}`,
-    { signal: AbortSignal.timeout(ADDRESS_PAGE_FETCH_TIMEOUT_MS) },
-  );
+  const timeoutMs = String(baseUrl).startsWith("https://")
+    ? ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS
+    : ADDRESS_PAGE_FETCH_TIMEOUT_MS;
+  const url = `${baseUrl}/api/address/${address}/${path}`;
+  const transactions = String(baseUrl).startsWith("https://")
+    ? await fetchJsonViaHttps(url, timeoutMs)
+    : await fetchJson(url, {
+        signal: AbortSignal.timeout(timeoutMs),
+      });
   return Array.isArray(transactions) ? transactions : [];
+}
+
+function addressTransactionPageBases(network) {
+  return [
+    ...new Set([
+      explorerBase(network),
+      mempoolBase(network),
+      ...pendingMempoolBases(network),
+    ]),
+  ];
+}
+
+function externalAddressTransactionPageBases(network) {
+  return explorerReadBases(network);
 }
 
 async function fetchAddressMempoolTransactions(address, network) {
@@ -2420,9 +2557,11 @@ async function fetchTransactionFromElectrum(
 
 async function fetchAddressTransactionsFromElectrum(address, network) {
   const scripthash = scriptHashForAddress(address, network);
-  const history = await electrumRequest("blockchain.scripthash.get_history", [
-    scripthash,
-  ]);
+  const history = await electrumRequest(
+    "blockchain.scripthash.get_history",
+    [scripthash],
+    ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS,
+  );
   const entries = Array.isArray(history) ? history : [];
   const txids = [
     ...new Set(
@@ -2467,9 +2606,11 @@ async function fetchAddressHistoryTxidsFromElectrum(address, network) {
   }
 
   const scripthash = scriptHashForAddress(address, network);
-  const history = await electrumRequest("blockchain.scripthash.get_history", [
-    scripthash,
-  ]);
+  const history = await electrumRequest(
+    "blockchain.scripthash.get_history",
+    [scripthash],
+    ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS,
+  );
   return [
     ...new Set(
       (Array.isArray(history) ? history : [])
@@ -2537,6 +2678,257 @@ async function fetchAddressUtxosFromElectrum(address, network) {
     });
 }
 
+async function fetchAddressUtxosFromBlockchainInfo(address, network) {
+  if (network !== "livenet") {
+    return null;
+  }
+
+  const payload = await fetchJsonViaHttps(
+    `https://blockchain.info/unspent?active=${encodeURIComponent(address)}`,
+    ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS,
+  );
+  const outputs = Array.isArray(payload?.unspent_outputs)
+    ? payload.unspent_outputs
+    : [];
+  return outputs
+    .flatMap((output) => {
+      const txid =
+        typeof output?.tx_hash_big_endian === "string"
+          ? output.tx_hash_big_endian.toLowerCase()
+          : "";
+      const vout = Number(output?.tx_output_n);
+      const value = Number(output?.value);
+      const confirmations = Number(output?.confirmations);
+      if (
+        !/^[0-9a-f]{64}$/u.test(txid) ||
+        !Number.isSafeInteger(vout) ||
+        vout < 0 ||
+        !Number.isSafeInteger(value) ||
+        value <= 0
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          txid,
+          vout,
+          value,
+          status: {
+            confirmed: Number.isFinite(confirmations)
+              ? confirmations > 0
+              : true,
+          },
+        },
+      ];
+    })
+    .sort((left, right) => {
+      const byConfirmation =
+        Number(Boolean(right.status?.confirmed)) -
+        Number(Boolean(left.status?.confirmed));
+      return byConfirmation || right.value - left.value;
+    });
+}
+
+function normalizedHex(value) {
+  const text = String(value ?? "").trim().toLowerCase();
+  return text.length % 2 === 0 && /^[0-9a-f]*$/u.test(text) ? text : "";
+}
+
+function opReturnAsmFromScriptHex(scriptHex) {
+  const script = normalizedHex(scriptHex);
+  if (!script.startsWith("6a")) {
+    return "";
+  }
+
+  const bytes = Buffer.from(script, "hex");
+  const chunks = [];
+  let offset = 1;
+  while (offset < bytes.length) {
+    const opcode = bytes[offset];
+    offset += 1;
+
+    let length = 0;
+    if (opcode >= 1 && opcode <= 75) {
+      length = opcode;
+    } else if (opcode === 76) {
+      if (offset >= bytes.length) {
+        break;
+      }
+      length = bytes[offset];
+      offset += 1;
+    } else if (opcode === 77) {
+      if (offset + 1 >= bytes.length) {
+        break;
+      }
+      length = bytes.readUInt16LE(offset);
+      offset += 2;
+    } else if (opcode === 78) {
+      if (offset + 3 >= bytes.length) {
+        break;
+      }
+      length = bytes.readUInt32LE(offset);
+      offset += 4;
+    } else if (opcode === 0) {
+      continue;
+    } else {
+      break;
+    }
+
+    if (offset + length > bytes.length) {
+      break;
+    }
+
+    const chunk = bytes.subarray(offset, offset + length).toString("hex");
+    if (chunk) {
+      chunks.push(chunk);
+    }
+    offset += length;
+  }
+
+  return chunks.length > 0 ? `OP_RETURN ${chunks.join(" ")}` : "OP_RETURN";
+}
+
+function blockchainOutputScriptType(output) {
+  const script = normalizedHex(output?.script);
+  if (script.startsWith("6a")) {
+    return "op_return";
+  }
+
+  const address = String(output?.addr ?? "");
+  if (/^bc1p/iu.test(address)) {
+    return "v1_p2tr";
+  }
+  if (/^bc1q/iu.test(address)) {
+    return "v0_p2wpkh";
+  }
+  if (/^3/u.test(address)) {
+    return "p2sh";
+  }
+  if (/^1/u.test(address)) {
+    return "p2pkh";
+  }
+
+  return "";
+}
+
+function blockchainOutputToMempoolOutput(output) {
+  const script = normalizedHex(output?.script);
+  const address = typeof output?.addr === "string" ? output.addr : "";
+  const value = Number(output?.value);
+  const mapped = {
+    scriptpubkey: script,
+    scriptpubkey_asm: script.startsWith("6a")
+      ? opReturnAsmFromScriptHex(script)
+      : "",
+    scriptpubkey_type: blockchainOutputScriptType(output),
+    value: Number.isSafeInteger(value) && value > 0 ? value : 0,
+  };
+  if (address) {
+    mapped.scriptpubkey_address = address;
+  }
+  return mapped;
+}
+
+function blockchainInputToMempoolInput(input) {
+  const previousOutput = input?.prev_out;
+  const txid =
+    typeof previousOutput?.tx_hash === "string" &&
+    /^[0-9a-fA-F]{64}$/u.test(previousOutput.tx_hash)
+      ? previousOutput.tx_hash.toLowerCase()
+      : "";
+  const vout = Number(previousOutput?.n);
+  const sequence = Number(input?.sequence);
+  return {
+    txid,
+    vout: Number.isSafeInteger(vout) && vout >= 0 ? vout : -1,
+    prevout: previousOutput
+      ? blockchainOutputToMempoolOutput(previousOutput)
+      : undefined,
+    scriptsig: normalizedHex(input?.script),
+    scriptsig_asm: "",
+    sequence: Number.isSafeInteger(sequence) ? sequence : 0,
+  };
+}
+
+function blockchainTxToMempoolTransaction(tx) {
+  const txid =
+    typeof tx?.hash === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.hash)
+      ? tx.hash.toLowerCase()
+      : "";
+  if (!txid) {
+    return null;
+  }
+
+  const blockHeight = Number(tx?.block_height);
+  const blockTime = Number(tx?.time);
+  const confirmed = Number.isSafeInteger(blockHeight) && blockHeight > 0;
+  const status = { confirmed };
+  if (confirmed) {
+    status.block_height = blockHeight;
+  }
+  if (Number.isSafeInteger(blockTime) && blockTime > 0) {
+    status.block_time = blockTime;
+  }
+  if (
+    typeof tx?.block_hash === "string" &&
+    /^[0-9a-fA-F]{64}$/u.test(tx.block_hash)
+  ) {
+    status.block_hash = tx.block_hash.toLowerCase();
+  }
+
+  const fee = Number(tx?.fee);
+  const size = Number(tx?.size);
+  const weight = Number(tx?.weight);
+  const version = Number(tx?.ver ?? tx?.version);
+  const locktime = Number(tx?.lock_time ?? tx?.locktime);
+  return {
+    txid,
+    fee: Number.isSafeInteger(fee) && fee >= 0 ? fee : 0,
+    locktime: Number.isSafeInteger(locktime) && locktime >= 0 ? locktime : 0,
+    size: Number.isSafeInteger(size) && size >= 0 ? size : 0,
+    status,
+    version: Number.isSafeInteger(version) ? version : 0,
+    vin: Array.isArray(tx?.inputs)
+      ? tx.inputs.map(blockchainInputToMempoolInput)
+      : [],
+    vout: Array.isArray(tx?.out)
+      ? tx.out.map(blockchainOutputToMempoolOutput)
+      : [],
+    weight: Number.isSafeInteger(weight) && weight >= 0 ? weight : 0,
+  };
+}
+
+async function fetchAddressTransactionsFromBlockchainInfo(
+  address,
+  network,
+  maxPages = MAX_ADDRESS_TX_PAGES,
+) {
+  if (network !== "livenet") {
+    return [];
+  }
+
+  const transactions = [];
+  const pageLimit = BLOCKCHAIN_INFO_ADDRESS_TX_PAGE_LIMIT;
+  const pageCount = Math.max(1, Number(maxPages) || MAX_ADDRESS_TX_PAGES);
+  for (let page = 0; page < pageCount; page += 1) {
+    const offset = page * pageLimit;
+    const payload = await fetchJsonViaHttps(
+      `https://blockchain.info/rawaddr/${encodeURIComponent(
+        address,
+      )}?limit=${pageLimit}&offset=${offset}`,
+      ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS,
+    );
+    const txs = Array.isArray(payload?.txs) ? payload.txs : [];
+    transactions.push(...txs.map(blockchainTxToMempoolTransaction));
+    if (txs.length < pageLimit) {
+      break;
+    }
+  }
+
+  return dedupeTransactions(transactions.filter(Boolean));
+}
+
 async function fetchRecentUnknownAddressTransactions(
   address,
   network,
@@ -2546,13 +2938,7 @@ async function fetchRecentUnknownAddressTransactions(
   const collected = [];
   const cursors = new Set();
   const maxPages = Math.max(1, Math.ceil(maxTxs / 25) + 4);
-  const pageBases = [
-    ...new Set([
-      explorerBase(network),
-      mempoolBase(network),
-      ...pendingMempoolBases(network),
-    ]),
-  ];
+  const pageBases = addressTransactionPageBases(network);
   const fetchPage = async (path) => {
     let lastError = null;
     for (const baseUrl of pageBases) {
@@ -2972,7 +3358,25 @@ async function fetchAddressTransactionsViaMempoolPagination(
   network,
   maxPages = MAX_ADDRESS_TX_PAGES,
 ) {
-  const recentTxs = await fetchAddressTransactionsPage(address, network, "txs");
+  const pageBases = externalAddressTransactionPageBases(network);
+  const fetchPage = async (path) => {
+    let lastError = null;
+    for (const baseUrl of pageBases) {
+      try {
+        return await fetchAddressTransactionsPageFromBase(
+          baseUrl,
+          address,
+          path,
+        );
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError ?? new Error(`No address page source for ${address}.`);
+  };
+
+  const recentTxs = await fetchPage("txs");
   const mempoolTxs = await fetchAddressMempoolTransactions(
     address,
     network,
@@ -2980,11 +3384,7 @@ async function fetchAddressTransactionsViaMempoolPagination(
 
   let chainPage = [];
   try {
-    chainPage = await fetchAddressTransactionsPage(
-      address,
-      network,
-      "txs/chain",
-    );
+    chainPage = await fetchPage("txs/chain");
   } catch {
     chainPage = recentTxs.filter(transactionConfirmed);
   }
@@ -3005,11 +3405,7 @@ async function fetchAddressTransactionsViaMempoolPagination(
     cursors.add(cursor);
     let nextPage = [];
     try {
-      nextPage = await fetchAddressTransactionsPage(
-        address,
-        network,
-        `txs/chain/${cursor}`,
-      );
+      nextPage = await fetchPage(`txs/chain/${cursor}`);
     } catch {
       break;
     }
@@ -3023,6 +3419,109 @@ async function fetchAddressTransactionsViaMempoolPagination(
   }
 
   return dedupeTransactions([...chainTxs, ...mempoolTxs, ...recentTxs]);
+}
+
+async function fetchAddressTransactionsViaCurlPagination(
+  address,
+  network,
+  maxPages = MAX_ADDRESS_TX_PAGES,
+) {
+  const baseUrl = explorerBase(network);
+  const fetchPage = async (path) => {
+    const url = `${baseUrl}/api/address/${address}/${path}`;
+    const transactions = await fetchJsonViaCurl(
+      url,
+      ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS,
+    );
+    return Array.isArray(transactions) ? transactions : [];
+  };
+
+  const recentTxs = await fetchPage("txs");
+  const mempoolTxs = await fetchPage("txs/mempool").catch(() => []);
+
+  let chainPage = [];
+  try {
+    chainPage = await fetchPage("txs/chain");
+  } catch {
+    chainPage = recentTxs.filter(transactionConfirmed);
+  }
+
+  if (chainPage.length === 0) {
+    chainPage = recentTxs.filter(transactionConfirmed);
+  }
+
+  const chainTxs = [...chainPage];
+  const cursors = new Set();
+  let cursor = oldestConfirmedTxid(chainPage);
+
+  for (let page = 0; cursor && page < maxPages; page += 1) {
+    if (cursors.has(cursor)) {
+      break;
+    }
+
+    cursors.add(cursor);
+    let nextPage = [];
+    try {
+      nextPage = await fetchPage(`txs/chain/${cursor}`);
+    } catch {
+      break;
+    }
+
+    if (nextPage.length === 0) {
+      break;
+    }
+
+    chainTxs.push(...nextPage);
+    cursor = oldestConfirmedTxid(nextPage);
+  }
+
+  return dedupeTransactions([...chainTxs, ...mempoolTxs, ...recentTxs]);
+}
+
+async function fetchAddressTransactionsViaExplorerFallback(
+  address,
+  network,
+  maxPages = MAX_ADDRESS_TX_PAGES,
+) {
+  const curlTransactions = await fetchAddressTransactionsViaCurlPagination(
+    address,
+    network,
+    maxPages,
+  ).catch((curlError) => {
+    console.error(
+      `Curl transaction lookup failed for ${address}: ${errorSummary(curlError)}`,
+    );
+    return null;
+  });
+  if (curlTransactions) {
+    return curlTransactions;
+  }
+
+  try {
+    return await fetchAddressTransactionsViaMempoolPagination(
+      address,
+      network,
+      maxPages,
+    );
+  } catch (error) {
+    const blockchainInfoTransactions =
+      await fetchAddressTransactionsFromBlockchainInfo(
+        address,
+        network,
+        maxPages,
+      ).catch((fallbackError) => {
+        console.error(
+          `Blockchain.info transaction lookup failed for ${address}: ${errorSummary(fallbackError)}`,
+        );
+        return null;
+      });
+
+    if (blockchainInfoTransactions) {
+      return blockchainInfoTransactions;
+    }
+
+    throw error;
+  }
 }
 
 async function fetchAddressTransactions(
@@ -3046,7 +3545,7 @@ async function fetchAddressTransactions(
         throw error;
       }
 
-      return fetchAddressTransactionsViaMempoolPagination(
+      return fetchAddressTransactionsViaExplorerFallback(
         address,
         network,
         maxPages,
@@ -3054,7 +3553,7 @@ async function fetchAddressTransactions(
     }
   }
 
-  return fetchAddressTransactionsViaMempoolPagination(
+  return fetchAddressTransactionsViaExplorerFallback(
     address,
     network,
     maxPages,
@@ -14895,9 +15394,14 @@ async function mailPayload(address, network) {
 async function addressUtxoPayload(address, network) {
   const fetchUtxosFromBase = async (base) => {
     const url = `${base}/api/address/${address}/utxo`;
-    return fetchJson(url, {
-      signal: AbortSignal.timeout(ADDRESS_UTXO_FETCH_TIMEOUT_MS),
-    });
+    const timeoutMs = String(base).startsWith("https://")
+      ? ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS
+      : ADDRESS_UTXO_FETCH_TIMEOUT_MS;
+    return String(base).startsWith("https://")
+      ? fetchJsonViaHttps(url, timeoutMs)
+      : fetchJson(url, {
+          signal: AbortSignal.timeout(timeoutMs),
+        });
   };
   const requireUtxoArray = async (label, promise) => {
     const utxos = await promise;
@@ -14907,15 +15411,27 @@ async function addressUtxoPayload(address, network) {
     return utxos;
   };
 
-  try {
-    return await requireUtxoArray(
-      explorerBase(network),
-      fetchUtxosFromBase(explorerBase(network)),
-    );
-  } catch (error) {
+  for (const base of explorerReadBases(network)) {
+    try {
+      return await requireUtxoArray(base, fetchUtxosFromBase(base));
+    } catch (error) {
+      console.error(
+        `Explorer UTXO lookup failed for ${base} ${address}: ${errorSummary(error)}`,
+      );
+    }
+  }
+
+  const blockchainInfoUtxos = await fetchAddressUtxosFromBlockchainInfo(
+    address,
+    network,
+  ).catch((error) => {
     console.error(
-      `Explorer UTXO lookup failed for ${address}: ${errorSummary(error)}`,
+      `Blockchain.info UTXO lookup failed for ${address}: ${errorSummary(error)}`,
     );
+    return null;
+  });
+  if (blockchainInfoUtxos) {
+    return blockchainInfoUtxos;
   }
 
   const electrumUtxos = await fetchAddressUtxosFromElectrum(
@@ -14932,8 +15448,9 @@ async function addressUtxoPayload(address, network) {
   }
 
   let lastError = null;
+  const explorerBases = new Set(explorerReadBases(network));
   for (const base of pendingMempoolBases(network)) {
-    if (base === explorerBase(network)) {
+    if (explorerBases.has(base)) {
       continue;
     }
     try {
@@ -14950,13 +15467,40 @@ async function addressUtxoPayload(address, network) {
 }
 
 async function txHexPayload(txid, network) {
-  const hex = await fetchText(`${mempoolBase(network)}/api/tx/${txid}/hex`);
-  return {
-    hex,
-    indexedAt: new Date().toISOString(),
-    network,
-    txid,
-  };
+  let lastError = null;
+  const bases = [
+    ...new Set([
+      mempoolBase(network),
+      ...explorerReadBases(network),
+      ...pendingMempoolBases(network),
+    ]),
+  ];
+  for (const base of bases) {
+    const timeoutMs = String(base).startsWith("https://")
+      ? ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS
+      : TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS;
+    const url = `${base}/api/tx/${txid}/hex`;
+    try {
+      const hex = String(base).startsWith("https://")
+        ? await fetchTextViaHttps(url, timeoutMs)
+        : await fetchText(url, {
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+      return {
+        hex,
+        indexedAt: new Date().toISOString(),
+        network,
+        txid,
+      };
+    } catch (error) {
+      lastError = error;
+      console.error(
+        `Transaction hex lookup failed for ${base} ${txid}: ${errorSummary(error)}`,
+      );
+    }
+  }
+
+  throw lastError ?? new Error(`Transaction hex lookup failed for ${txid}.`);
 }
 
 async function directTxOutspendPayload(txid, vout, network) {
