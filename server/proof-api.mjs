@@ -3426,14 +3426,23 @@ async function fetchAddressTransactionsViaCurlPagination(
   network,
   maxPages = MAX_ADDRESS_TX_PAGES,
 ) {
-  const baseUrl = explorerBase(network);
+  const pageBases = externalAddressTransactionPageBases(network);
   const fetchPage = async (path) => {
-    const url = `${baseUrl}/api/address/${address}/${path}`;
-    const transactions = await fetchJsonViaCurl(
-      url,
-      ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS,
-    );
-    return Array.isArray(transactions) ? transactions : [];
+    let lastError = null;
+    for (const baseUrl of pageBases) {
+      const url = `${baseUrl}/api/address/${address}/${path}`;
+      try {
+        const transactions = await fetchJsonViaCurl(
+          url,
+          ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS,
+        );
+        return Array.isArray(transactions) ? transactions : [];
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError ?? new Error(`No curl address page source for ${address}.`);
   };
 
   const recentTxs = await fetchPage("txs");
