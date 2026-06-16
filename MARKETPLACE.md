@@ -84,13 +84,15 @@ Wallet and Marketplace both use this model. Wallet is the connected-address
 ownership/action surface; Marketplace is the public discovery and purchase
 surface.
 
-## June 13 Ledger Hardening
+## June 13-16 Ledger Hardening
 
-The June 13, 2026 marketplace fixes preserved three operational invariants:
+The June 2026 marketplace fixes preserved these operational invariants:
 
 - WORK and credit sale-ticket seals are listing state. When a pending listing confirms, the confirmed listing must keep any valid pending or confirmed seal metadata instead of becoming unsealed again.
 - Pending WORK and credit txids are liveness-checked on fresh reads. If a pending transfer, listing, seal, delisting, or buy disappears from mempool visibility, it is removed from pending overlays without changing confirmed history.
 - Marketplace network value includes mutation-fee flow from listings, seals, delistings, and buys alongside seller sale volume. Mutation fees stay out of generic Computer event flow so the Growth and WORK floor ledgers do not double-count them.
+- Confirmed sale-ticket spends are active-book truth. When Bitcoin Core RPC is configured, active listing reconciliation uses current UTXO spend state before falling back to slower address-history recovery, so confirmed delistings and buys clear from Marketplace and Wallet while summaries warm.
+- Closed listings, sales, market logs, Growth, and Log derive from the same sale-ticket lifecycle. A delisting should not disappear from logs, and a bought ticket should not stay visible as active in any wallet or marketplace surface.
 
 ## Order Books And Logs
 
@@ -124,9 +126,12 @@ the listing is no longer active.
   records a closed-listing event for audit.
 
 Pending outspends are best-effort mempool visibility. Confirmed outspends are
-canonical. Summary and history endpoints must refresh credit state on explicit
-refresh so a spent ticket cannot remain displayed as an active listing after the
-chain has moved.
+canonical. Production should use Bitcoin Core `gettxout` as the fast spend-state
+oracle when configured, then use address-history and parsed `buy5`/`delist5`
+events to classify the closure. Summary and history endpoints must refresh
+credit state on explicit refresh, and any fast cached first paint must still
+correct active listings against current spend state so a spent ticket cannot
+remain displayed as active after the chain has moved.
 
 ## Sealed Listings
 

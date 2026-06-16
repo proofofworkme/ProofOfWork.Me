@@ -44,7 +44,7 @@ Mail organization features that are already implemented in the full app:
 - Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
 - Marketplace workspace for confirmed ID listings, delistings, and buyer-funded transfers.
 - Credit workspace for mainnet credit creation and minting, Wallet workspace for credit balances, transfers, listings, delistings, and sale history, plus a WORK workspace for the dedicated WORK credit dashboard. Creation pays the `tokens@proofofwork.me` index fee; mints, transfers, listings, seals, delistings, and buys pay each credit registry directly.
-- Wallet-owned listing state is reconstructed from the shared credit marketplace ledger, including active, pending, delisted, and sold sale-ticket records, so wallet history does not drift from Marketplace or WORK.
+- Wallet-owned listing state is reconstructed from the shared credit marketplace ledger, including active, pending, delisted, and sold sale-ticket records. Core-backed sale-ticket spend checks keep Wallet, Marketplace, WORK, and Log aligned while summary payloads warm.
 - Log surface for tx-backed registry, marketplace, mail, reply, file, attachment, credit, and seeded Computer mail actions from the canonical livenet ledger.
 - Growth surface for canonical modeled network value versus real confirmed registry, log, file, marketplace, and Credit value metrics from the same livenet ledger snapshot used by WORK.
 - Export/import for local drafts, archive/favorite preferences, and sent/outbox tracking.

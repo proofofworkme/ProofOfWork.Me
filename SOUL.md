@@ -8,7 +8,7 @@ It is distilled from current repository docs and public launch memory captured t
 
 - Public account: `@proofofworkme`
 - Launch memory reviewed: 2026-05-19
-- Operational memory updated: 2026-06-07
+- Operational memory updated: 2026-06-16
 - Public archive reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
 - Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
@@ -76,6 +76,7 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-05-24: Marketplace and data freshness harden. Public app chrome becomes sticky so status stays visible while users scroll. Marketplace credit stats become scoped to the selected credit, active books expose All/Sealed/Unsealed listing views, credit sales/listing logs are paginated and ordered by confirmation time, and spent sale-ticket outpoints remove listings from active books immediately. Fresh marketplace, WORK, credit summary, and credit history reads must refresh canonical credit payloads before returning; cached snapshots are for first paint only.
 - 2026-06-07: WORK, Growth, Log, and credit/token history converge on one canonical livenet ledger snapshot. Confirmed Computer mail events, Infinity Bonds, credit sales, and participant searches must be merged into that shared ledger before network value is computed. The `/api/v1/consistency` endpoint and `npm run audit:ledger` guard that seeded Computer mail events are logged, known pagination-gap transactions are searchable, Growth and WORK share the same snapshot/value, and missing log events stay empty.
 - 2026-06-12: WORK and credit marketplace replay hardens around sale-ticket truth. Confirmed and pending WORK listings are promoted through the same canonical credit payload, pending WORK mints count against user-facing availability without changing confirmed supply, duplicate listing seals are blocked, Wallet owned-listing views are reconstructed from active and closed sale-ticket state, and WORK mint summaries replay from canonical mints instead of stale partial summaries.
+- 2026-06-16: WORK sale-ticket reconciliation hardens against Bitcoin Core spend truth. Confirmed delistings and buys must clear active books in Marketplace and Wallet even while summary payloads warm; closed listings, sales, market logs, Growth, and Log all derive from the same sale-ticket lifecycle instead of separate surface-local caches.
 
 The emotional shape is a breakthrough moment: years of ProofOfWork/app experiments meeting modern agents and becoming legible all at once.
 
@@ -129,7 +130,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` with a 546-proof registry mutation payment.
 - Credit mint prices are owner-set with a 546-proof minimum. ProofOfWork does not take a global fee on mints.
 - Credit marketplace writes are live sale-ticket records. Preserve the invariant: reserve seller balance, seal exact terms, require buyer ticket spend, seller payment, and credit registry mutation fee.
-- A spent sale-ticket outpoint closes its listing. If the spend is a valid `buy5`, the sale must appear in credit sales, market logs, Growth, and any summary surface after refresh.
+- A spent sale-ticket outpoint closes its listing. Production should prefer Bitcoin Core UTXO spend state for this check when RPC is configured, with address-history scans used as recovery context. If the spend is a valid `buy5`, the sale must appear in credit sales, market logs, Growth, and any summary surface after refresh.
 - Listing confirmation promotion must preserve the listing lifecycle. A pending listing that confirms should become the canonical active listing once, keep its seal/outspend state, and not leave a duplicate pending shadow behind.
 - A seller should not be able to seal the same credit listing twice. Once a valid seal is visible for a listing, the UI and API should treat additional seal attempts as duplicates unless the underlying active listing changes.
 - WORK and credit listing views must preserve sale-ticket seal metadata when pending listings promote to confirmed state. Cache/regression guards should reject refreshed token payloads that drop a confirmed seal.
@@ -155,7 +156,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Every app action is a ProofOfWork Computer action. Log and Growth should treat tx-backed actions from IDs, mail, files, Browser, Marketplace, Credits, and staged protocols consistently.
 - WORK, Growth, Log, token history, and public searches should read from the same canonical confirmed ledger snapshot on livenet. Address-only fallback scans are useful for recovery, but they must not become a separate truth that changes network value without appearing in Log.
 - Production data surfaces should prefer the first-party node/API cache path for speed, then refresh from current full-node data. Stale snapshots are acceptable only as a first paint, not as the final truth after refresh.
-- Fresh summary endpoints must not return stale credit truth. `token-summary`, `token-history`, `work-summary`, and `marketplace-summary` refreshes should update the shared credit payload cache so every surface converges on the same chain state.
+- Fresh summary endpoints must not return stale credit truth. `token-summary`, `token-history`, `work-summary`, and `marketplace-summary` refreshes should update the shared credit payload cache so every surface converges on the same chain state; fast cached first paint may only survive if active listing spend state is corrected against node truth.
 - WORK and credit marketplace views must derive active listings, closed listings, sales, wallet owned listings, and mint summaries from the same refreshed credit payload. A surface-specific summary can format the data differently, but it must not carry its own stale listing or mint count after refresh.
 - Broadcast errors should be legible. A rejected transaction should expose the RPC code, reason when available, and a plain-English hint instead of a mystery error.
 - Every new product should enter the growth model with the same shape: real chain inputs, a usage assumption, a value assumption, fee elasticity, and blockspace accounting.

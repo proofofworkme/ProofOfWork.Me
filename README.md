@@ -145,7 +145,7 @@ Launch invariants for future developers/agents:
 - Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Exposes Credits as a mainnet-only creation and mint surface, a Wallet surface for balances, transfers, listing actions, and sale history, and a dedicated WORK credit dashboard. Credit creation pays the built-in index fee to `tokens@proofofwork.me`; mints, transfers, listings, seals, delistings, and buys pay each credit's own registry at the owner-set price or mutation fee.
-- Filters active marketplace listings by sale-ticket outspend state, so a spent ticket leaves the active book even if a cached summary snapshot is still warming.
+- Filters active marketplace listings by sale-ticket outspend state, using Bitcoin Core spend checks when configured, so a spent ticket leaves the active book even if a cached summary snapshot is still warming.
 - Promotes pending credit listings into confirmed listing state without duplicating them, so WORK and other credit books do not show stale pending shadows after confirmation.
 - Preserves credit sale-ticket seal metadata when pending listings promote to confirmed state, so WORK listings stay sealed or sealing across cache refreshes.
 - Blocks duplicate credit listing seals once a valid seal is already known for the active listing.
@@ -210,7 +210,7 @@ Current production behavior:
 - Credit ids are creation txids. Mint events use `pwt1:mint:<token-create-txid>:<amount>` and must pay the credit registry address before OP_RETURN.
 - Credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` and require a 546-proof mutation payment to that same credit registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visible but not canonical.
 - The Credit tab inside Marketplace is the shared market surface for credit trades. Credit `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the credit registry mutation fee.
-- Credit active listings are spend-state aware. A sale-ticket outpoint spend closes the listing; if the spend is a valid `pwt1:buy5`, the sale appears in credit sales, credit market logs, Growth, and summary endpoints after refresh.
+- Credit active listings are spend-state aware. A sale-ticket outpoint spend closes the listing; production Core-backed spend checks keep Wallet and Marketplace aligned while summaries warm. If the spend is a valid `pwt1:buy5`, the sale appears in credit sales, credit market logs, Growth, and summary endpoints after refresh.
 - Fresh reads for credit summaries, credit histories, marketplace summaries, and WORK summaries refresh the shared credit payload cache before returning. Stale snapshots are acceptable for first paint only, not after an explicit refresh.
 - Credit mint prices are owner-set with a 546-proof minimum. ProofOfWork does not take a global fee on mints; the mint price goes to that credit's registry address.
 - Credit surfaces show the starting unit price as mint price divided by mint amount, plus live node-backed USD per credit and per mint from BTC/USD.
@@ -554,7 +554,7 @@ BITCOIN_RPC_PASSWORD=
 
 `MEMPOOL_BASE` should point at the local private mempool/electrs HTTP API. `PENDING_MEMPOOL_BASE` is optional and exists because unconfirmed tx gossip can differ between nodes; production should keep it on ProofOfWork-controlled node infrastructure.
 `POST /api/v1/broadcast/tx` submits already-signed raw transaction hex to `MEMPOOL_BASE`; it never receives wallet keys or unsigned wallet authority.
-`BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, and `BITCOIN_RPC_PASSWORD` are optional server-only diagnostics for `testmempoolaccept`. When configured, rejected broadcasts can include the node's exact mempool reject reason. Do not expose Bitcoin Core RPC publicly.
+`BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, and `BITCOIN_RPC_PASSWORD` are optional server-only Bitcoin Core RPC settings. When configured, the API can attach the node's exact `testmempoolaccept` reject reason to failed broadcasts, hydrate transactions with `getrawtransaction`, and verify sale-ticket spend state with `gettxout` so confirmed delistings and buys clear active books without waiting on slower address-history scans. Do not expose Bitcoin Core RPC publicly.
 
 ## Registry Audit
 
