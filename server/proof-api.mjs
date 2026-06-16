@@ -128,6 +128,9 @@ const WORK_FLOOR_FRESH_WAIT_MS = Number(
 const WORK_TOKEN_LIVE_WAIT_MS = Number(
   process.env.WORK_TOKEN_LIVE_WAIT_MS ?? WORK_FLOOR_FRESH_WAIT_MS,
 );
+const WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS = Number(
+  process.env.WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS ?? WORK_FLOOR_FRESH_WAIT_MS,
+);
 const TOKEN_SCOPED_FRESH_WAIT_MS = Number(
   process.env.TOKEN_SCOPED_FRESH_WAIT_MS ?? 30_000,
 );
@@ -188,6 +191,13 @@ const WORK_TOKEN_LIVE_NON_MINT_MAX_TXS = Number(
 );
 const WORK_TOKEN_LIVE_NON_MINT_SCAN_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_NON_MINT_SCAN_MAX_TXS ?? 10_000,
+);
+const WORK_TOKEN_LIVE_CLOSE_MAX_TXS = Number(
+  process.env.WORK_TOKEN_LIVE_CLOSE_MAX_TXS ?? 1000,
+);
+const WORK_TOKEN_LIVE_CLOSE_SCAN_MAX_TXS = Number(
+  process.env.WORK_TOKEN_LIVE_CLOSE_SCAN_MAX_TXS ??
+    WORK_TOKEN_LIVE_NON_MINT_SCAN_MAX_TXS,
 );
 const WORK_TOKEN_LIVE_PARTICIPANT_ADDRESS_MAX = Number(
   process.env.WORK_TOKEN_LIVE_PARTICIPANT_ADDRESS_MAX ?? 80,
@@ -1605,6 +1615,29 @@ async function bitcoinRpc(method, params) {
   };
 }
 
+async function bitcoinRpcOutspendPayload(txid, vout, network) {
+  if (
+    network !== "livenet" ||
+    !/^[0-9a-f]{64}$/u.test(String(txid ?? "")) ||
+    !Number.isSafeInteger(Number(vout))
+  ) {
+    return null;
+  }
+
+  const response = await bitcoinRpc("gettxout", [txid, Number(vout), true]);
+  if (!response) {
+    return null;
+  }
+  if (!response.ok) {
+    console.error(
+      `Bitcoin RPC gettxout failed for ${txid}:${vout}: ${errorSummary(response.error)}`,
+    );
+    return null;
+  }
+
+  return response.result ? { spent: false } : { spent: true, status: null };
+}
+
 async function testMempoolAcceptDiagnostic(txHex, network) {
   if (network !== "livenet") {
     return null;
@@ -2142,7 +2175,104 @@ async function fetchTransactionWithPendingFallback(txid, network) {
   return fetchTransactionFromPendingSources(txid, network);
 }
 
+async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (network !== "livenet" || !/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    return null;
+  }
+
+  const cacheKey = `${network}:${normalizedTxid}`;
+  const cached = TRANSACTION_CACHE.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const response = await bitcoinRpc("getrawtransaction", [normalizedTxid, true]);
+  if (!response) {
+    return null;
+  }
+  if (!response.ok || !response.result || typeof response.result !== "object") {
+    if (!response.ok) {
+      console.error(
+        `Bitcoin RPC getrawtransaction failed for ${normalizedTxid}: ${errorSummary(response.error)}`,
+      );
+    }
+    return null;
+  }
+
+  const raw = response.result;
+  const vout = (Array.isArray(raw.vout) ? raw.vout : []).map(
+    coreVoutToMempoolVout,
+  );
+  const vin = await mapWithConcurrency(
+    Array.isArray(raw.vin) ? raw.vin : [],
+    TX_FETCH_CONCURRENCY,
+    async (input) => {
+      const nextInput = {
+        scriptsig: String(input?.scriptSig?.hex ?? ""),
+        scriptsig_asm: String(input?.scriptSig?.asm ?? ""),
+        sequence: Number(input?.sequence ?? 0),
+        txid: String(input?.txid ?? "").toLowerCase(),
+        vout: Number(input?.vout ?? -1),
+      };
+      if (
+        options.includePrevouts !== false &&
+        /^[0-9a-f]{64}$/u.test(nextInput.txid) &&
+        Number.isSafeInteger(nextInput.vout) &&
+        nextInput.vout >= 0
+      ) {
+        const prevTx = await fetchTransactionFromBitcoinRpc(
+          nextInput.txid,
+          network,
+          { includePrevouts: false },
+        ).catch(() => null);
+        const prevout = prevTx?.vout?.[nextInput.vout];
+        if (prevout) {
+          nextInput.prevout = prevout;
+        }
+      }
+      return nextInput;
+    },
+  );
+  const confirmations = Number(raw.confirmations ?? 0);
+  const confirmed = confirmations > 0;
+  const tx = {
+    fee: Number.isFinite(Number(raw.fee))
+      ? Math.round(Number(raw.fee) * 100_000_000)
+      : undefined,
+    locktime: Number(raw.locktime ?? 0),
+    size: Number(raw.size ?? 0),
+    status: {
+      block_hash: String(raw.blockhash ?? ""),
+      block_height: Number(raw.height ?? 0) || undefined,
+      block_time: Number(raw.blocktime ?? raw.time ?? 0),
+      confirmed,
+    },
+    txid: String(raw.txid ?? normalizedTxid).toLowerCase(),
+    version: Number(raw.version ?? 0),
+    vin,
+    vout,
+    weight: Number(raw.weight ?? 0),
+  };
+
+  if (confirmed) {
+    TRANSACTION_CACHE.set(cacheKey, tx);
+    if (TRANSACTION_CACHE.size > MAX_TRANSACTION_CACHE_SIZE) {
+      TRANSACTION_CACHE.delete(TRANSACTION_CACHE.keys().next().value);
+    }
+  }
+
+  return tx;
+}
+
 async function fetchTransactionWithSourceFallback(txid, network) {
+  const rpcTx = await fetchTransactionFromBitcoinRpc(txid, network).catch(
+    () => null,
+  );
+  if (rpcTx) {
+    return rpcTx;
+  }
+
   let primaryError = null;
   try {
     return await fetchTransaction(txid, network);
@@ -3963,6 +4093,39 @@ function cacheTokenMarketOutspend(network, anchor, payload) {
   });
 }
 
+async function tokenListingAnchorOutspendFromSellerUtxos(listing, anchor, network) {
+  const sellerAddress = String(listing?.sellerAddress ?? "").trim();
+  if (!isValidBitcoinAddress(sellerAddress, network)) {
+    return null;
+  }
+
+  const utxos = await fetchAddressUtxosFromElectrum(
+    sellerAddress,
+    network,
+  ).catch((error) => {
+    console.error(
+      `Token listing seller UTXO lookup failed for ${sellerAddress}: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (!Array.isArray(utxos)) {
+    return null;
+  }
+
+  const stillUnspent = utxos.some(
+    (utxo) => utxo.txid === anchor.txid && utxo.vout === anchor.vout,
+  );
+  return stillUnspent
+    ? { spent: false }
+    : {
+        spent: true,
+        status: {
+          confirmed: false,
+        },
+        txid: "",
+      };
+}
+
 async function tokenListingAnchorOutspend(listing, network) {
   const anchor = tokenListingAnchorOutpoint(listing);
   if (!anchor) {
@@ -3976,6 +4139,17 @@ async function tokenListingAnchorOutspend(listing, network) {
 
   try {
     const payload = await txOutspendPayload(anchor.txid, anchor.vout, network);
+    if (payload?.unknown) {
+      const utxoRecovered = await tokenListingAnchorOutspendFromSellerUtxos(
+        listing,
+        anchor,
+        network,
+      );
+      if (utxoRecovered) {
+        cacheTokenMarketOutspend(network, anchor, utxoRecovered);
+        return utxoRecovered;
+      }
+    }
     cacheTokenMarketOutspend(network, anchor, payload);
     return payload;
   } catch (error) {
@@ -3988,8 +4162,10 @@ async function tokenListingAnchorOutspend(listing, network) {
 }
 
 async function filterSpendableTokenListings(listings, network) {
-  const outspends = await Promise.all(
-    listings.map((listing) => tokenListingAnchorOutspend(listing, network)),
+  const outspends = await mapWithConcurrency(
+    listings,
+    Math.max(1, Math.min(TX_FETCH_CONCURRENCY, 4)),
+    (listing) => tokenListingAnchorOutspend(listing, network),
   );
   const activeListings = [];
   const closedListings = [];
@@ -4343,6 +4519,30 @@ async function tokenPayloadWithSpendableListings(payload, network) {
 
   return {
     ...reconciledPayload,
+    closedListings: sortClosedTokenListings([...closedByKey.values()]),
+    listings: tokenListings.listings,
+  };
+}
+
+async function tokenPayloadWithSpendableActiveListings(payload, network) {
+  if (!payload || !Array.isArray(payload.listings)) {
+    return payload;
+  }
+
+  const tokenListings = await filterSpendableTokenListings(
+    payload.listings,
+    network,
+  );
+  const closedByKey = new Map();
+  for (const listing of [
+    ...(Array.isArray(payload.closedListings) ? payload.closedListings : []),
+    ...tokenListings.closedListings,
+  ]) {
+    closedByKey.set(`${listing.listingId}:${listing.closedTxid ?? ""}`, listing);
+  }
+
+  return {
+    ...payload,
     closedListings: sortClosedTokenListings([...closedByKey.values()]),
     listings: tokenListings.listings,
   };
@@ -9189,6 +9389,30 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) 
 
 function compactTokenSummaryPayload(payload, tokenScope = "") {
   const holders = Array.isArray(payload.holders) ? payload.holders : [];
+  const closedListings = Array.isArray(payload.closedListings)
+    ? payload.closedListings
+    : [];
+  const closedListingKeys = new Set(
+    closedListings
+      .map((listing) =>
+        listing?.listingId
+          ? `${listing.network ?? ""}:${String(listing.listingId).toLowerCase()}`
+          : "",
+      )
+      .filter(Boolean),
+  );
+  const listings = (Array.isArray(payload.listings)
+    ? payload.listings
+    : []
+  ).filter((listing) => {
+    if (!listing?.listingId || closedListingKeys.size === 0) {
+      return true;
+    }
+
+    return !closedListingKeys.has(
+      `${listing.network ?? ""}:${String(listing.listingId).toLowerCase()}`,
+    );
+  });
   const stats =
     payload.stats && typeof payload.stats === "object" ? payload.stats : {};
   const scope = normalizeTokenScope(tokenScope);
@@ -9224,11 +9448,11 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
   return {
     ...payload,
     closedListings: recentClosedTokenListings(
-      payload.closedListings,
+      closedListings,
       SUMMARY_MARKET_LIMIT,
     ),
     holders: holders.slice(0, SUMMARY_MARKET_LIMIT),
-    listings: recentByCreatedAt(payload.listings, SUMMARY_MARKET_LIMIT),
+    listings: recentByCreatedAt(listings, SUMMARY_MARKET_LIMIT),
     mints: [],
     sales: recentByCreatedAt(payload.sales, SUMMARY_MARKET_LIMIT),
     summaryOnly: true,
@@ -9865,6 +10089,202 @@ function workTokenDeltaHasNonMintActions(txs, network) {
       },
     );
   });
+}
+
+async function recentWorkTokenMarketCloseTransactions(
+  network,
+  maxCloseTxs,
+  maxScanTxids,
+) {
+  const closeLimit = Math.max(0, Number(maxCloseTxs) || 0);
+  const scanLimit = Math.max(0, Number(maxScanTxids) || 0);
+  const cacheKey = `close:${network}:${closeLimit}:${scanLimit}`;
+  const cached = WORK_TOKEN_NON_MINT_HISTORY_CACHE.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.txs;
+  }
+  if (closeLimit === 0 || scanLimit === 0) {
+    return [];
+  }
+
+  let historyTxids = [];
+  try {
+    historyTxids = await fetchAddressHistoryTxidsFromElectrum(
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      network,
+    );
+  } catch (error) {
+    console.error(
+      `WORK close history lookup failed for ${network}: ${errorSummary(error)}`,
+    );
+    return [];
+  }
+
+  const candidateTxids = [...historyTxids]
+    .reverse()
+    .filter((txid) => /^[0-9a-f]{64}$/u.test(txid))
+    .slice(0, scanLimit);
+  const closeTxs = [];
+  const batchSize = Math.max(1, TX_FETCH_CONCURRENCY * 4);
+  let failedFetches = 0;
+  let scanned = 0;
+
+  for (let start = 0; start < candidateTxids.length; start += batchSize) {
+    const batch = candidateTxids.slice(start, start + batchSize);
+    scanned += batch.length;
+    const txs = await mapWithConcurrency(
+      batch,
+      TX_FETCH_CONCURRENCY,
+      async (txid) => {
+        const tx = await fetchTransactionFromElectrum(txid, network, {
+          includePrevouts: false,
+        }).catch(() => null);
+        if (!tx) {
+          failedFetches += 1;
+        }
+        return tx;
+      },
+    );
+
+    for (const tx of txs.filter(Boolean)) {
+      const kinds = workTokenNonMintActionKindsFromTransaction(tx, network);
+      if (!kinds.has("delist") && !kinds.has("buy")) {
+        continue;
+      }
+      closeTxs.push(tx);
+      if (closeTxs.length >= closeLimit) {
+        break;
+      }
+    }
+
+    if (closeTxs.length >= closeLimit) {
+      break;
+    }
+  }
+
+  if (failedFetches > 0) {
+    console.error(
+      `WORK close history hydration was partial for ${network}: ${failedFetches} transaction lookup(s) failed while scanning ${scanned}.`,
+    );
+  }
+
+  const fullCloseTxs = await mapWithConcurrency(
+    closeTxs,
+    TX_FETCH_CONCURRENCY,
+    async (tx) =>
+      (await fetchTransactionFromElectrum(transactionTxid(tx), network).catch(
+        () => null,
+      )) ?? tx,
+  );
+  const annotated = await annotateBlockOrder(
+    dedupeTransactions(fullCloseTxs.filter(Boolean)),
+    network,
+  );
+  cacheWorkTokenRecoveryTransactions(
+    WORK_TOKEN_NON_MINT_HISTORY_CACHE,
+    cacheKey,
+    annotated,
+  );
+  return annotated;
+}
+
+function workTokenStateWithRecoveredListingClosesFromTransactions(
+  state,
+  txs,
+  network,
+) {
+  const listings = new Map();
+  for (const listing of Array.isArray(state?.listings) ? state.listings : []) {
+    if (listing?.listingId) {
+      listings.set(String(listing.listingId).toLowerCase(), listing);
+    }
+  }
+  if (listings.size === 0) {
+    return state;
+  }
+
+  const closedListings = Array.isArray(state?.closedListings)
+    ? [...state.closedListings]
+    : [];
+  const closedKeys = new Set(
+    closedListings.map(
+      (listing) =>
+        `${String(listing?.listingId ?? "").toLowerCase()}:${String(
+          listing?.closedTxid ?? "",
+        ).toLowerCase()}`,
+    ),
+  );
+  let changed = false;
+
+  for (const tx of tokenProtocolSortedTransactions(
+    (Array.isArray(txs) ? txs : []).filter(Boolean),
+  )) {
+    const txid = transactionTxid(tx);
+    if (!txid) {
+      continue;
+    }
+
+    const vin = Array.isArray(tx.vin) ? tx.vin : [];
+    const vout = Array.isArray(tx.vout) ? tx.vout : [];
+    const actorAddress = inputAddresses(vin)[0] ?? "";
+    const eventSpentOutpoints = spentOutpoints(vin);
+    let remainingRegistrySats = tokenPaymentAmountBeforeProtocol(
+      vout,
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    );
+    const confirmed = transactionConfirmed(tx);
+    const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+
+    for (const message of decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX)) {
+      const parsed = parseTokenPayload(message, network);
+      const listingId = String(parsed?.listingId ?? "").toLowerCase();
+      const listing = listings.get(listingId);
+      if (
+        !listing ||
+        (parsed?.kind !== "delist" && parsed?.kind !== "buy") ||
+        remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+        !spendsTokenListingAnchor(eventSpentOutpoints, listing) ||
+        (parsed.kind === "delist" && listing.sellerAddress !== actorAddress)
+      ) {
+        continue;
+      }
+
+      remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+      const key = `${listing.listingId}:${txid}`;
+      if (!closedKeys.has(key)) {
+        closedListings.push({
+          ...listing,
+          closedAt: createdAt,
+          closedConfirmed: confirmed,
+          closedTxid: txid,
+          closedVin: transactionOutpointSpendIndex(
+            tx,
+            listing.listingId,
+            listing.saleAuthorization.anchorVout,
+          ),
+        });
+        closedKeys.add(key);
+      }
+      listings.delete(listingId);
+      changed = true;
+    }
+  }
+
+  if (!changed) {
+    return state;
+  }
+
+  return {
+    ...state,
+    closedListings: sortClosedTokenListings(closedListings),
+    indexedAt: new Date().toISOString(),
+    listings: [...listings.values()].sort(
+      (left, right) =>
+        Number(right.confirmed) - Number(left.confirmed) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        String(left.listingId ?? "").localeCompare(String(right.listingId ?? "")),
+    ),
+  };
 }
 
 function workTokenNonMintActionKindsFromTransaction(tx, network) {
@@ -11612,7 +12032,7 @@ async function tokenSummaryPayload(
     };
   }
 
-  const payload = await tokenPayloadForRead(network, scope, fresh, {
+  let payload = await tokenPayloadForRead(network, scope, fresh, {
     reconcileListingStatus: false,
     recoveryAddresses: options.recoveryAddresses,
     liveWorkWaitMs:
@@ -11626,6 +12046,55 @@ async function tokenSummaryPayload(
     recoverWorkSales: true,
     reconcileSpendable: false,
   });
+  if (network === "livenet" && !scope) {
+    const workPayload = await tokenPayloadForRead(network, WORK_TOKEN_ID, fresh, {
+      reconcileListingStatus: false,
+      recoveryAddresses: options.recoveryAddresses,
+      liveWorkWaitMs: WORK_TOKEN_LIVE_WAIT_MS,
+      recoverWorkSales: true,
+    }).catch((error) => {
+      console.error(
+        `WORK summary overlay failed for ${network}: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    if (workPayload) {
+      payload = tokenStateWithScopedTokenOverride(
+        payload,
+        workPayload,
+        WORK_TOKEN_ID,
+      );
+    }
+  }
+  if (network === "livenet" && (!scope || scope === WORK_TOKEN_ID)) {
+    const closeTxs = await payloadWithFallbackAfterMs(
+      recentWorkTokenMarketCloseTransactions(
+        network,
+        WORK_TOKEN_LIVE_CLOSE_MAX_TXS,
+        WORK_TOKEN_LIVE_CLOSE_SCAN_MAX_TXS,
+      ),
+      [],
+      WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
+    );
+    const workPayload = scopedTokenPayloadFromState(payload, WORK_TOKEN_ID);
+    const closedWorkPayload =
+      workTokenStateWithRecoveredListingClosesFromTransactions(
+        workPayload,
+        closeTxs,
+        network,
+      );
+    payload =
+      scope === WORK_TOKEN_ID
+        ? closedWorkPayload
+        : tokenStateWithScopedTokenOverride(
+            payload,
+            closedWorkPayload,
+            WORK_TOKEN_ID,
+          );
+  }
+  if (network === "livenet" && (!scope || scope === WORK_TOKEN_ID)) {
+    payload = await tokenPayloadWithSpendableActiveListings(payload, network);
+  }
   return compactTokenSummaryPayload(payload, scope);
 }
 
@@ -11849,6 +12318,16 @@ function ledgerPayloadHasCurrentChecks(payload) {
   );
 }
 
+function ledgerPayloadIsUsableFallback(payload) {
+  return Boolean(
+    payload?.network &&
+      payload?.generatedAt &&
+      payload?.registryState &&
+      payload?.tokenState &&
+      payload?.workFloor,
+  );
+}
+
 function ledgerPayloadAgeMs(payload, now = Date.now()) {
   const generatedAt = Date.parse(payload?.generatedAt ?? "");
   return Number.isFinite(generatedAt) ? Math.max(0, now - generatedAt) : Infinity;
@@ -11884,7 +12363,11 @@ async function existingCanonicalLedgerPayload(network) {
   const cacheKey = `ledger:${network}`;
   const payloadKey = `payload:ledger:${network}`;
   const cachedPayload = RESPONSE_CACHE.get(payloadKey)?.payload;
-  if (cachedPayload && ledgerPayloadHasCurrentChecks(cachedPayload)) {
+  if (
+    cachedPayload &&
+    (ledgerPayloadHasCurrentChecks(cachedPayload) ||
+      ledgerPayloadIsUsableFallback(cachedPayload))
+  ) {
     return cachedPayload;
   }
 
@@ -11892,7 +12375,11 @@ async function existingCanonicalLedgerPayload(network) {
     cacheKey,
     LEDGER_CACHE_STALE_MS,
   );
-  if (persistedPayload && ledgerPayloadHasCurrentChecks(persistedPayload)) {
+  if (
+    persistedPayload &&
+    (ledgerPayloadHasCurrentChecks(persistedPayload) ||
+      ledgerPayloadIsUsableFallback(persistedPayload))
+  ) {
     RESPONSE_CACHE.set(payloadKey, {
       expiresAt: Date.now() - 1,
       payload: persistedPayload,
@@ -13009,6 +13496,25 @@ async function workSummaryPayload(network, fresh = false) {
         WORK_TOKEN_LIVE_WAIT_MS,
         { recoverClosedSales: true },
       );
+      const closeTxs = await payloadWithFallbackAfterMs(
+        recentWorkTokenMarketCloseTransactions(
+          network,
+          WORK_TOKEN_LIVE_CLOSE_MAX_TXS,
+          WORK_TOKEN_LIVE_CLOSE_SCAN_MAX_TXS,
+        ),
+        [],
+        WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
+      );
+      const closedWorkTokenState =
+        workTokenStateWithRecoveredListingClosesFromTransactions(
+          workTokenState,
+          closeTxs,
+          network,
+        );
+      const spendableWorkTokenState = await tokenPayloadWithSpendableActiveListings(
+        closedWorkTokenState,
+        network,
+      );
       return attachLedgerMetadata(
         {
           floor: ledger.workFloor,
@@ -13016,7 +13522,7 @@ async function workSummaryPayload(network, fresh = false) {
           network,
           summaryOnly: true,
           token: attachLedgerMetadata(
-            compactTokenSummaryPayload(workTokenState, WORK_TOKEN_ID),
+            compactTokenSummaryPayload(spendableWorkTokenState, WORK_TOKEN_ID),
             ledger,
           ),
         },
@@ -13064,12 +13570,27 @@ async function marketplaceSummaryPayload(network, fresh = false) {
         WORK_TOKEN_LIVE_WAIT_MS,
         { recoverClosedSales: true },
       );
+      const closeTxs = await payloadWithFallbackAfterMs(
+        recentWorkTokenMarketCloseTransactions(
+          network,
+          WORK_TOKEN_LIVE_CLOSE_MAX_TXS,
+          WORK_TOKEN_LIVE_CLOSE_SCAN_MAX_TXS,
+        ),
+        [],
+        WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
+      );
+      const closedWorkTokenState =
+        workTokenStateWithRecoveredListingClosesFromTransactions(
+          workTokenState,
+          closeTxs,
+          network,
+        );
       const baseTokenState = tokenStateWithScopedTokenOverride(
         ledger.tokenState,
-        workTokenState,
+        closedWorkTokenState,
         WORK_TOKEN_ID,
       );
-      const tokenState = await tokenStateWithReconciledListingSeals(
+      const tokenState = await tokenPayloadWithSpendableActiveListings(
         baseTokenState,
         network,
       );
@@ -14566,15 +15087,30 @@ async function scriptHistoryOutspendPayload(txid, vout, scriptHex, network) {
 }
 
 async function txOutspendPayload(txid, vout, network) {
-  const outputScript = await payloadWithFallbackAfterMs(
+  const unknownUnspent = { spent: false, unknown: true };
+  const rpcOutspend = await payloadWithFallbackAfterMs(
+    bitcoinRpcOutspendPayload(txid, vout, network).catch((error) => {
+      console.error(
+        `Bitcoin RPC outspend lookup failed for ${txid}:${vout}: ${errorSummary(error)}`,
+      );
+      return null;
+    }),
+    null,
+    TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS,
+  );
+  if (rpcOutspend) {
+    return rpcOutspend;
+  }
+
+  const outputScriptHex = await payloadWithFallbackAfterMs(
     txOutputScriptHex(txid, vout, network).catch(() => ""),
     "",
     TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS,
   );
-  const unknownUnspent = { spent: false, unknown: true };
+  let electrumSpent = null;
 
-  if (outputScript && network === "livenet" && ELECTRUM_HOST && ELECTRUM_PORT) {
-    const scripthash = scriptHashForScriptHex(outputScript);
+  if (outputScriptHex && network === "livenet" && ELECTRUM_HOST && ELECTRUM_PORT) {
+    const scripthash = scriptHashForScriptHex(outputScriptHex);
     try {
       const unspent = await electrumRequest(
         "blockchain.scripthash.listunspent",
@@ -14590,29 +15126,55 @@ async function txOutspendPayload(txid, vout, network) {
           const entryVout = Number(entry?.tx_pos);
           return entryTxid === txid && entryVout === vout;
         });
-        return stillUnspent ? { spent: false } : { spent: true, status: null };
+        if (stillUnspent) {
+          return { spent: false };
+        }
+        electrumSpent = { spent: true, status: null };
       }
     } catch (error) {
       console.error(
         `Electrum outspend lookup failed for ${txid}:${vout}: ${errorSummary(error)}`,
       );
-      return unknownUnspent;
     }
   }
 
   if (network === "livenet") {
-    return unknownUnspent;
+    return electrumSpent ?? unknownUnspent;
   }
 
   const primaryOutspend = await directTxOutspendPayload(txid, vout, network);
-  if (primaryOutspend?.spent || !outputScript) {
+  if (primaryOutspend?.spent) {
+    return primaryOutspend;
+  }
+  if (electrumSpent) {
+    if (!outputScriptHex) {
+      return electrumSpent;
+    }
+
+    const historyOutspend = await scriptHistoryOutspendPayload(
+      txid,
+      vout,
+      outputScriptHex,
+      network,
+    ).catch(() => null);
+    return historyOutspend ?? electrumSpent;
+  }
+  if (
+    primaryOutspend &&
+    primaryOutspend.spent === false &&
+    !primaryOutspend.unknown
+  ) {
+    return primaryOutspend;
+  }
+
+  if (!outputScriptHex) {
     return primaryOutspend ?? unknownUnspent;
   }
 
   const historyOutspend = await scriptHistoryOutspendPayload(
     txid,
     vout,
-    outputScript,
+    outputScriptHex,
     network,
   ).catch(() => null);
   return historyOutspend ?? primaryOutspend ?? unknownUnspent;

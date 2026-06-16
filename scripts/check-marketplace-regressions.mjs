@@ -97,6 +97,21 @@ const walletToken = await getJson("/api/v1/token", {
   address: SELLER,
   wallet: 1,
 });
+assert(
+  !(walletToken.listings ?? []).some(
+    (item) => String(item?.listingId ?? "").toLowerCase() === LISTING_TX,
+  ),
+  `${LISTING_TX} is still returned as active in wallet-scoped token payload`,
+);
+assert(
+  (walletToken.closedListings ?? []).some(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() === LISTING_TX &&
+      String(item?.closedTxid ?? "").toLowerCase() === DELIST_TX &&
+      item?.closedConfirmed === true,
+  ),
+  `${LISTING_TX} is not closed by ${DELIST_TX} in wallet-scoped token payload`,
+);
 const walletSaleTxids = txids(walletToken.sales);
 for (const txid of BUY_TXS) {
   assert(
@@ -104,6 +119,16 @@ for (const txid of BUY_TXS) {
     `${txid} is missing from wallet-scoped sales`,
   );
 }
+
+const marketplaceSummary = await getJson("/api/v1/marketplace-summary", {
+  network: "livenet",
+});
+assert(
+  !(marketplaceSummary.token?.listings ?? []).some(
+    (item) => String(item?.listingId ?? "").toLowerCase() === LISTING_TX,
+  ),
+  `${LISTING_TX} is still returned as active in marketplace summary`,
+);
 
 const logClose = await getJson("/api/v1/log-history", {
   network: "livenet",
@@ -121,5 +146,5 @@ assert(
 );
 
 console.log(
-  `Marketplace regression checks passed for ${API_BASE}: delist, sales, wallet, and Log close status.`,
+  `Marketplace regression checks passed for ${API_BASE}: delist, summary, sales, wallet, and Log close status.`,
 );
