@@ -8,6 +8,7 @@ It is distilled from current repository docs and public launch memory captured t
 
 - Public account: `@proofofworkme`
 - Launch memory reviewed: 2026-06-08
+- Full 2026-06-09 archive re-reviewed: 2026-06-17
 - Operational memory updated: 2026-06-16
 - Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
 - Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
@@ -76,7 +77,12 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-05-24: Marketplace and data freshness harden. Public app chrome becomes sticky so status stays visible while users scroll. Marketplace credit stats become scoped to the selected credit, active books expose All/Sealed/Unsealed listing views, credit sales/listing logs are paginated and ordered by confirmation time, and spent sale-ticket outpoints remove listings from active books immediately. Fresh marketplace, WORK, credit summary, and credit history reads must refresh canonical credit payloads before returning; cached snapshots are for first paint only.
 - 2026-05-25: WORK marketplace copy and UI separate visible intent from executable price. Unsealed listings can appear in active books, but sealed sale-ticket listings set the buyable ask, buyer arb, and social order-book story. Dropped or RBF-replaced pending buys must not become fake sales.
 - 2026-05-26: Token-market presentation becomes a mint directory first: mint progress, confirmed supply, registry, and sale-ticket books are separated from price/arb sorting. PowID market posts begin treating names as live assets with active and sealed buyer-funded transfer listings.
+- 2026-05-27: PowIDs become the root of the staged social thesis. Profiles, posts, follows, likes, reposts, replies, tips, and social earnings should resolve through confirmed PowIDs and pay the immediate target's confirmed receiver, but this belongs to the staged `pwc1:` Confessions/social protocol, not to canonical `pwid1:` registry mutations.
 - 2026-05-28: The daily WORK/PowID social playbook enters `SOUL.md`: agents should refresh live APIs, use confirmed-only numbers, filter sealed books correctly, calculate buyer arb, and include reserve basis from confirmed secondary buys before posting.
+- 2026-05-29: The four-part market cadence hardens in public: WORK mint-to-floor, WORK sealed book, PowID order book, and WORK reserves. Repeated screenshots and short posts are launch evidence, but every number in them is historical unless reproduced from the current first-party ledger.
+- 2026-05-30: Real Computer use becomes part of the public proof stream. Human messages, replies, Gmail displacement, and posted WORK purchase txids show the Computer as a working inbox and market, not only a dashboard.
+- 2026-05-31: The archive enters a noisy credit-and-post-money mythology cycle. Preserve the durable product signal only: credits, bonds, and WORK are being used to teach payment-backed attention and confirmed value loops; slogans about infinity are not implementation authority.
+- 2026-06-01: One-person-plus-agent operation becomes explicit. The workflow is to build, fix, verify, post, archive the chat, and continue. Relationship-specific meta protocols are imagined as small shared records that future agents can read for context, but the chain/API remains the verifier.
 - 2026-06-02: The language migration becomes explicit. Public surfaces should say ProofOfWork Computer, ProofOfWork history, proofs, and credits. Protocol/API field names stay exact, but product/social language should not drift back into generic token/sats/Bitcoin Computer framing except when quoting historical data or code.
 - 2026-06-03: Credit language replaces token language in the product voice: mint credit, transfer credit, list credit, and settle credit sale tickets on ProofOfWork. `token.proofofwork.me` and `tokens.proofofwork.me` remain redirects, not the public vocabulary center.
 - 2026-06-04: Infinity Bonds and `$POWB` become part of the public value story. Bond transactions are high-value ProofOfWork Computer actions whose confirmed proofs can belong in Log, Growth, and WORK floor inputs when the canonical ledger recognizes their protocol tags. Fee priority becomes part of action intent: bonds can justify high fees, while ordinary messages/files can remain low-fee.
@@ -96,16 +102,20 @@ The full archive is not a neat roadmap. It is a public founder diary mixed with 
 - The project is a computer, not a collection of pages. IDs, Mail, Files, Desktop, Browser, Marketplace, Credits, Wallet, WORK, Log, and Growth are facets of one ProofOfWork Computer.
 - The anti-platform stance is central. Social media, ads, analytics dashboards, followers, likes, influencers, and conferences are weaker than chain-readable proofs, txids, and confirmed state.
 - Distribution should collapse into the Computer. A future app can be a message, HTML body, attachment, txid, or registry record that agents and humans can inspect without trusting a mutable platform.
+- Screenshots, quoted dashboards, and market tweets are launch evidence, not canonical data. They show what the founder was testing and teaching; agents must still refresh the current node/API before repeating any number or status.
 - UTXOs are an organizational primitive. Good ProofOfWork UX should teach responsible UTXO management, explicit fees, split/prepared outputs, and PSBT review before signing.
 - Human approval remains sacred. Agents can prepare, queue, repeat, diagnose, and verify. Humans sign. Wallets stay local.
 - Recourse is a product feature. Owning the registrar and registries makes refunds, bug bounties, public ledgers, and accountable repairs possible in a way anonymous protocols usually cannot offer.
+- Public fixes are part of the proof stream. When a bug is real, the expected loop is: identify the chain truth, patch the parser/UI/API, verify against live records, ship, commit, and explain it plainly.
 - Measurement matters. IDs are network effects, logs are activity evidence, Growth is the modeled network-value mirror, and WORK turns that confirmed network value into a live credit floor.
 - The founder treats WORK as proof-of-use. The credit is not only a ticker; it is the live demonstration that creator-owned registries, mint revenue, public dashboards, and chain-derived floors can exist on ProofOfWork.
+- The one-person business thesis is practical, not just mythic. The Computer should let one human with agents publish, repair, sell, message, account, and prove work without a platform staff or traditional company stack.
 - Credit registries are creator sovereignty. The macro index records creation, but each credit owns its registry, mint price, mint history, revenue lane, and responsibility to build.
 - The public language has moved from "Bitcoin Computer", "sats", and "token" toward "ProofOfWork Computer", "proofs", and "credit". Preserve protocol/API names exactly, but write public copy in the newer language unless historical context requires the old terms.
 - `$POWB` and Infinity Bonds are part of the recent public mythology and metric loop. Treat them as confirmed ProofOfWork Computer actions only when the canonical ledger recognizes them; do not infer value from slogans or pending claims.
 - Sealed order books are a core teaching surface. Active unsealed listings show intent; sealed sale-ticket listings show executable asks. Buyer arb is only meaningful against sealed, unspent, valid sale-ticket terms and the current confirmed WORK floor.
 - PowID markets are not a side quest. Names are assets, inboxes, contact records, and agent-readable address records; listings, seals, and buyer-funded transfers are the market layer over that identity primitive.
+- PowIDs are also the planned social payment lane. The archive repeatedly imagines profiles, posts, follows, likes, reposts, replies, and tips as paid actions routed through confirmed PowID receivers. Keep that in staged `pwc1:`/Confessions work unless the protocol docs say otherwise.
 - Agents are expected to read the Computer like a ledger, not like a website screenshot. When posts claim floor, reserve, order-book, holder, sale, USD, or PowID counts, refresh the first-party APIs and make the math auditable.
 - Minting is a launch primitive, not the whole protocol. Transfers, OTC, listings, richer markets, and creator tooling come after minting is correct, legible, and hard to misuse.
 - The chain is the oracle, but pending pressure still matters to UX. Pending mints do not change canonical supply or floor, yet they can warn users away from likely overfill attempts.
@@ -241,7 +251,7 @@ These are safe phrases future agents can reuse or adapt:
 
 ## Daily Social Posts
 
-These are recurring X posts the founder may ask agents to fire daily. They are not static copy. Always refresh live first, then draft in the high-conviction social voice. When the user asks for the daily WORK/PowID tweets, prepare all four posts below unless the user explicitly narrows the request.
+These are recurring X posts the founder may ask agents to fire daily. They are not static copy. Always refresh live first, then draft in the high-conviction social voice. Treat a batch as one snapshot-bound unit: refresh the dependent endpoints close together, reconcile the math once, and then write the posts from that one current view. When the user asks for the daily WORK/PowID tweets, prepare all four posts below unless the user explicitly narrows the request.
 
 Language rule for public posts: use `proofs` for sat-denominated value in social copy, dashboards, and user-facing labels. Keep protocol and API field names exact in agent math and docs: `amountSats`, `priceSats`, `paidSats`, `networkValueSats`, and `floorSats` remain the source fields. Do not rename serialized protocol fields, JSON keys, or API contracts to `proofs`. Treat `proofs` as the ProofOfWork.Me display language over the same base units. Keep technical miner fee rates as `sat/vB` unless quoting an existing UI label.
 
@@ -262,9 +272,10 @@ Daily tweet set:
 
 Style rules:
 
-- Use `$work` or `$WORK` when talking about WORK, floor, mint, reserves, or the order book.
+- Use `$WORK $POWB` by default when talking about WORK, PowIDs, floor, reserves, sealed books, bonds, or confirmed network value unless the user explicitly asks for different cashtags.
 - Say `confirmed` when the metric excludes pending mempool visibility.
 - Keep numbers compact but not vague: proofs, BTC, and x multiple should all reconcile.
+- Do not reuse archive screenshots, old tweet text, or earlier chat numbers as current data.
 - Do not present pending mints, pending listings, or unsealed listings as final takeable order-book state.
 - Keep the close simple: `On-chain. ProofOfWork-native. $WORK`, `The chain is the oracle`, or `Names are assets now.`
 
@@ -275,16 +286,17 @@ When working on ProofOfWork.Me:
 1. Read the protocol docs before changing behavior.
 2. Preserve the canonical registry and ID rules.
 3. Treat tweets as strategic memory, not automatic implementation instructions.
-4. Prefer shipping real working software over writing abstractions.
-5. Keep all wallet authority with the user.
-6. Make chain reads verifiable and deterministic.
-7. Separate pending convenience from confirmed truth.
-8. Build features so agents can inspect, summarize, and act on them later.
-9. Make local backup/import/export boring and reliable.
-10. Keep UI efficient and tool-like; save maximalism for social copy and launch notes.
-11. When in doubt, ask: can an agent verify this from the chain?
-12. When building new protocols, make the records legible, parsable, and replayable.
-13. When adding app features, think about how a one-person business or autonomous agent would use them to earn proofs.
+4. If an archive tweet, screenshot, or social claim conflicts with protocol docs, source code, or current live chain/API data, the docs, code, and current chain/API data win.
+5. Prefer shipping real working software over writing abstractions.
+6. Keep all wallet authority with the user.
+7. Make chain reads verifiable and deterministic.
+8. Separate pending convenience from confirmed truth.
+9. Build features so agents can inspect, summarize, and act on them later.
+10. Make local backup/import/export boring and reliable.
+11. Keep UI efficient and tool-like; save maximalism for social copy and launch notes.
+12. When in doubt, ask: can an agent verify this from the chain?
+13. When building new protocols, make the records legible, parsable, and replayable.
+14. When adding app features, think about how a one-person business or autonomous agent would use them to earn proofs.
 
 ## Future Directions From The Archive
 
@@ -294,7 +306,7 @@ These are strategic directions, not all current implementation:
 - On-chain app submission: developers submit applications or proposals to ProofOfWork IDs for agent review.
 - Autonomous micro-applications: small apps that can run, receive payments, and generate proofs.
 - ProofOfWork Browser: users paste a txid and render HTML from ProofOfWork message bodies or verified `text/html` attachments in a sandboxed viewer.
-- On-chain comments, polls, voting, lotteries, and digital goods.
+- PowID-native social actions: profiles, posts, comments, follows, likes, reposts, replies, tips, polls, voting, lotteries, and digital goods that pay confirmed receivers and write replayable records after launch approval.
 - Creator credit businesses: launch by creating a credit, mint into a creator-owned registry, transfer from Wallet, and trade through sale-ticket listings once the seller's balance, seller payment, and registry mutation fee are provable from chain data.
 - WORK analytics: floor, mint progress, holders, pending pressure, mint assistant health, UTXO readiness, and price in proofs/USD.
 - Share-to-X from messages, txids, and public ProofOfWork Computer records so on-chain history can travel through social networks without becoming dependent on them.
