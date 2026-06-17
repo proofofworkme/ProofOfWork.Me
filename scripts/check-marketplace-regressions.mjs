@@ -15,6 +15,13 @@ const DELIST_TX =
   "71092adb6e27e871a43a5338459b09528f2de39a0e90b31b2605bd36a9f80c47";
 const LOG_CLOSE_TX =
   "9079e81e519b2e9a2cecde1133d656afc892b7866ed72d37c2b524913ce82850";
+const WALLET_SUMMARY_DELIST_TXS = [
+  "4bdb7f9de2293548d598cd00b07df621339cf364fa1fa1cf42e80ad0551488f4",
+  "4c59acfc84b47225f6e0b9bd67379d1ddac14e2e71f6a256315cececbe559d98",
+  "51fa5bfe98090b84bd1f2fc906c6f677f636b88a7f45f5e7ae75c8762ba03019",
+  DELIST_TX,
+  LOG_CLOSE_TX,
+];
 const BUY_TXS = [
   "85d7930ffd5650c8508baf1f0128d469592e8349ad51483f69f3e227aca9233b",
   "8b470b3ab319c201d4eb440bb3562b7b907b7ca38480ff71b51c6b655e522e97",
@@ -119,6 +126,30 @@ for (const txid of BUY_TXS) {
     `${txid} is missing from wallet-scoped sales`,
   );
 }
+
+const walletSummary = await getJson("/api/v1/token-summary", {
+  network: "livenet",
+  asset: WORK_TOKEN_ID,
+  address: SELLER,
+  wallet: 1,
+  fresh: 1,
+});
+for (const txid of WALLET_SUMMARY_DELIST_TXS) {
+  assert(
+    (walletSummary.closedListings ?? []).some(
+      (item) =>
+        String(item?.closedTxid ?? "").toLowerCase() === txid &&
+        item?.closedConfirmed === true,
+    ),
+    `${txid} is not confirmed in wallet-scoped token summary`,
+  );
+}
+assert(
+  !(walletSummary.closedListings ?? []).some(
+    (item) => item?.sellerAddress === SELLER && !item?.closedTxid,
+  ),
+  "wallet-scoped token summary returned an anonymous closed listing",
+);
 
 const marketplaceSummary = await getJson("/api/v1/marketplace-summary", {
   network: "livenet",

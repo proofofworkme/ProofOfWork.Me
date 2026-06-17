@@ -4685,6 +4685,14 @@ async function filterSpendableTokenListings(listings, network) {
       continue;
     }
 
+    const closedTxid =
+      typeof outspend.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(outspend.txid)
+        ? outspend.txid.toLowerCase()
+        : "";
+    if (!closedTxid) {
+      continue;
+    }
+
     const blockTime = outspend.status?.block_time;
     closedListings.push({
       ...listing,
@@ -4693,7 +4701,7 @@ async function filterSpendableTokenListings(listings, network) {
           ? new Date(blockTime * 1000).toISOString()
           : new Date().toISOString(),
       closedConfirmed: Boolean(outspend.status?.confirmed),
-      closedTxid: typeof outspend.txid === "string" ? outspend.txid : "",
+      closedTxid,
       closedVin: Number.isSafeInteger(outspend.vin) ? outspend.vin : undefined,
     });
   }
@@ -4718,8 +4726,12 @@ async function tokenMarketTxIsVisible(txid, network) {
     return false;
   }
 
-  const tx = await fetchTransactionWithSourceFallback(normalizedTxid, network);
-  return Boolean(tx);
+  try {
+    const tx = await fetchTransactionWithSourceFallback(normalizedTxid, network);
+    return Boolean(tx);
+  } catch {
+    return false;
+  }
 }
 
 async function tokenMarketTxIsConfirmed(txid, network) {
@@ -5037,20 +5049,23 @@ async function tokenPayloadWithSpendableActiveListings(payload, network) {
     return payload;
   }
 
+  const reconciledPayload = await reconcileCachedTokenMarketPayload(payload, network);
   const tokenListings = await filterSpendableTokenListings(
-    payload.listings,
+    reconciledPayload.listings,
     network,
   );
   const closedByKey = new Map();
   for (const listing of [
-    ...(Array.isArray(payload.closedListings) ? payload.closedListings : []),
+    ...(Array.isArray(reconciledPayload.closedListings)
+      ? reconciledPayload.closedListings
+      : []),
     ...tokenListings.closedListings,
   ]) {
     closedByKey.set(`${listing.listingId}:${listing.closedTxid ?? ""}`, listing);
   }
 
   return {
-    ...payload,
+    ...reconciledPayload,
     closedListings: sortClosedTokenListings([...closedByKey.values()]),
     listings: tokenListings.listings,
   };
