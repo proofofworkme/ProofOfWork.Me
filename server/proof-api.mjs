@@ -12024,6 +12024,9 @@ async function recoverWorkListingSealsFromRecentHistory(state, network, maxTxs) 
 }
 
 function cacheLiveWorkTokenState(network, state) {
+  if (state?.summaryOnly) {
+    return;
+  }
   const scope = WORK_TOKEN_ID;
   cacheTokenPayload(network, scope, state);
 }
@@ -13941,7 +13944,7 @@ async function freshTokenPayloadOrSnapshot(
 ) {
   const scope = normalizeTokenScope(tokenScope);
   const fallback = await fastTokenPayloadSnapshot(network, scope, options);
-  if (!ENABLE_SUMMARY_TOKEN_REFRESH) {
+  if (!ENABLE_SUMMARY_TOKEN_REFRESH && options.forceRefresh !== true) {
     return fallback;
   }
 
@@ -13949,7 +13952,9 @@ async function freshTokenPayloadOrSnapshot(
     return payloadWithFallbackAfterMs(
       refreshTokenPayload(network, scope),
       fallback,
-      WORK_FLOOR_FRESH_WAIT_MS,
+      Number.isFinite(options.fullRefreshWaitMs)
+        ? options.fullRefreshWaitMs
+        : Math.max(WORK_FLOOR_FRESH_WAIT_MS, liveWorkReadWaitMs(options)),
     );
   }
 
@@ -14524,15 +14529,26 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     safeKind === "market-log" ||
     safeKind === "closedListings" ||
     safeKind === "listings";
-  const queriedWorkSaleHistory =
+  const workBalanceHistoryKind =
+    safeKind === "holders" || safeKind === "transfers";
+  const queriedWorkHistory =
     scope === WORK_TOKEN_ID &&
     (Boolean(pagination.query) || recoveryAddresses.length > 0) &&
+    (workMarketHistoryKind ||
+      workBalanceHistoryKind ||
+      safeKind === "invalidEvents");
+  const queriedWorkSaleHistory =
+    queriedWorkHistory &&
     (workMarketHistoryKind || safeKind === "invalidEvents");
   let payload = await tokenPayloadForRead(network, scope, fresh, {
+    forceRefresh: workBalanceHistoryKind && queriedWorkHistory,
+    fullRefreshWaitMs: WORK_TOKEN_LIVE_RECOVERY_WAIT_MS,
     reconcileListingStatus: false,
     reconcileSpendable: false,
     recoveryAddresses,
-    liveWorkWaitMs: queriedWorkSaleHistory
+    useLedgerSnapshot:
+      workBalanceHistoryKind && queriedWorkHistory ? false : undefined,
+    liveWorkWaitMs: queriedWorkHistory
       ? WORK_TOKEN_LIVE_RECOVERY_WAIT_MS
       : recoveryAddresses.length > 0
         ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS

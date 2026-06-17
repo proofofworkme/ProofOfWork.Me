@@ -14,6 +14,10 @@ const WORK_TRANSFER_REGRESSION_TXID =
   "7e9e711564be12330793b3415a032eca42bb742499fbdb8a6b8be6d6f1867354";
 const WORK_TRANSFER_REGRESSION_RECIPIENT =
   "1MexjWyzCEwRW9R3Unnw6p6PPWWKdY3Wc2";
+const OTC_WORK_TRANSFER_REGRESSION_TXID =
+  "accaa6797578aadb1c9cced97fad154629324b1a41fc3fc60dabaf8701ab161b";
+const OTC_WORK_TRANSFER_REGRESSION_RECIPIENT =
+  "bc1qgzxhgj4y3xkm5zgtdkxw3whq0xek0g22rhu7q3";
 const WORK_SEAL_REGRESSION_TXID =
   "0cdd580f47ffb1e53d2667121f10f99784e7750a60403787bf09fac512fb0b3d";
 const WORK_SEAL_REGRESSION_LISTING_TXID =
@@ -153,8 +157,11 @@ const [
   btcUsdPrice,
   txLog,
   workTransferLog,
+  otcWorkTransferLog,
   workSealLog,
   workTransferHistory,
+  otcWorkTransferHistory,
+  otcWorkTransferRecipientHistory,
   workTransferInvalidHistory,
   workSealListingHistory,
   workSealMarketLogHistory,
@@ -172,9 +179,16 @@ const [
     readJson("/api/v1/prices/btc-usd?fresh=1"),
     readJson(`/api/v1/log-history?q=${GULLISH_TXID}`),
     readJson(`/api/v1/log-history?q=${WORK_TRANSFER_REGRESSION_TXID}`),
+    readJson(`/api/v1/log-history?q=${OTC_WORK_TRANSFER_REGRESSION_TXID}`),
     readJson(`/api/v1/log-history?q=${WORK_SEAL_REGRESSION_TXID}`),
     readJson(
       `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=transfers&q=${WORK_TRANSFER_REGRESSION_TXID}&fresh=1`,
+    ),
+    readJson(
+      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=transfers&q=${OTC_WORK_TRANSFER_REGRESSION_TXID}&fresh=1`,
+    ),
+    readJson(
+      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=transfers&q=${OTC_WORK_TRANSFER_REGRESSION_RECIPIENT}&fresh=1`,
     ),
     readJson(
       `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=invalid-events&q=${WORK_TRANSFER_REGRESSION_TXID}&fresh=1`,
@@ -415,6 +429,37 @@ expect(
       item.tokenId === WORK_TOKEN_ID &&
       Array.isArray(item.participants) &&
       item.participants.includes(WORK_TRANSFER_REGRESSION_RECIPIENT),
+  ),
+);
+expect(
+  "confirmed OTC WORK transfer tx is in transfer history",
+  items(otcWorkTransferHistory).some(
+    (item) =>
+      item.txid === OTC_WORK_TRANSFER_REGRESSION_TXID &&
+      item.confirmed === true &&
+      item.amount === 10_000 &&
+      item.recipientAddress === OTC_WORK_TRANSFER_REGRESSION_RECIPIENT,
+  ),
+);
+expect(
+  "confirmed OTC WORK transfer is searchable by recipient in transfer history",
+  items(otcWorkTransferRecipientHistory).some(
+    (item) =>
+      item.txid === OTC_WORK_TRANSFER_REGRESSION_TXID &&
+      item.confirmed === true &&
+      item.amount === 10_000 &&
+      item.recipientAddress === OTC_WORK_TRANSFER_REGRESSION_RECIPIENT,
+  ),
+);
+expect(
+  "confirmed OTC WORK transfer tx is searchable in Log",
+  items(otcWorkTransferLog).some(
+    (item) =>
+      item.kind === "token-transfer" &&
+      item.txid === OTC_WORK_TRANSFER_REGRESSION_TXID &&
+      item.tokenId === WORK_TOKEN_ID &&
+      Array.isArray(item.participants) &&
+      item.participants.includes(OTC_WORK_TRANSFER_REGRESSION_RECIPIENT),
   ),
 );
 expect(
