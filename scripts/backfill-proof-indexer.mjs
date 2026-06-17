@@ -12,6 +12,9 @@ const PAGE_LIMIT = Number(process.env.POW_INDEX_BACKFILL_LIMIT ?? 200);
 const MAX_PAGES = Number(process.env.POW_INDEX_BACKFILL_MAX_PAGES ?? 2000);
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
 const REQUEST_RETRIES = Number(process.env.POW_INDEX_FETCH_RETRIES ?? 4);
+const INCLUDE_SCOPED_HOLDERS = !/^(?:0|false|no)$/iu.test(
+  String(process.env.POW_INDEX_BACKFILL_HOLDERS ?? "1"),
+);
 const DRY_RUN = process.argv.includes("--dry-run");
 const SOURCE_FILTER = new Set(
   String(process.env.POW_INDEX_BACKFILL_SOURCES ?? "")
@@ -40,7 +43,6 @@ const ALL_SOURCES = [
     path: "/api/v1/token-history",
     params: { kind: "invalid-events" },
   },
-  { label: "token-holders", path: "/api/v1/token-history", params: { kind: "holders" } },
 ];
 const SOURCES = SOURCE_FILTER.size
   ? ALL_SOURCES.filter((source) => SOURCE_FILTER.has(source.label))
@@ -759,6 +761,82 @@ async function backfillSource(client, source) {
   return { indexed: seen, skipped, source: source.label };
 }
 
+async function backfillScopedTokenHolders(client) {
+  if (!INCLUDE_SCOPED_HOLDERS) {
+    return { indexed: 0, skipped: 0, source: "token-holders" };
+  }
+
+  const tokenResult = await client.query(
+    `
+      SELECT token_id
+      FROM proof_indexer.credit_definitions
+      WHERE network = $1
+      ORDER BY token_id
+    `,
+    [NETWORK],
+  );
+  let indexed = 0;
+  let skipped = 0;
+  let tokenCount = 0;
+
+  for (const row of tokenResult.rows) {
+    const tokenId = row.token_id;
+    let cursor = "";
+    let page = 0;
+
+    while (page < MAX_PAGES) {
+      const url = endpoint("/api/v1/token-history", {
+        asset: tokenId,
+        cursor,
+        kind: "holders",
+      });
+      const payload = await readJson(url);
+      const items = Array.isArray(payload.items) ? payload.items : [];
+
+      await client.query("BEGIN");
+      try {
+        for (const item of items) {
+          if (item?.address) {
+            await upsertProjection(
+              client,
+              "token-holders",
+              { ...item, tokenId },
+              "confirmed",
+            );
+            indexed += 1;
+          } else {
+            skipped += 1;
+          }
+        }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+
+      cursor = String(payload.nextCursor ?? "");
+      page += 1;
+      if (!cursor || items.length === 0) {
+        break;
+      }
+    }
+
+    tokenCount += 1;
+    console.log(
+      JSON.stringify({
+        indexed,
+        skipped,
+        source: "token-holders",
+        tokenCount,
+        tokenId,
+        totalTokens: tokenResult.rows.length,
+      }),
+    );
+  }
+
+  return { indexed, skipped, source: "token-holders", tokens: tokenResult.rows.length };
+}
+
 if (DRY_RUN) {
   console.log(
     JSON.stringify(
@@ -768,6 +846,7 @@ if (DRY_RUN) {
         maxPages: MAX_PAGES,
         network: NETWORK,
         pageLimit: PAGE_LIMIT,
+        scopedHolders: INCLUDE_SCOPED_HOLDERS,
         sources: SOURCES.map((source) => source.label),
       },
       null,
@@ -793,6 +872,7 @@ try {
     for (const source of SOURCES) {
       results.push(await backfillSource(client, source));
     }
+    results.push(await backfillScopedTokenHolders(client));
     console.log(
       JSON.stringify(
         {
