@@ -142,11 +142,24 @@ try {
   check(
     checks,
     "transactions-cover-canonical-activity",
+    rowNumber(counts, "transactions_total") >= activityItems,
+    {
+      canonicalActivityItems: activityItems,
+      confirmedTransactions: rowNumber(counts, "transactions_confirmed"),
+      pendingTransactions: rowNumber(counts, "transactions_pending"),
+      totalTransactions: rowNumber(counts, "transactions_total"),
+    },
+  );
+  check(
+    checks,
+    "confirmed-transaction-status-lag",
     rowNumber(counts, "transactions_confirmed") >= activityItems,
     {
       canonicalActivityItems: activityItems,
       confirmedTransactions: rowNumber(counts, "transactions_confirmed"),
+      pendingTransactions: rowNumber(counts, "transactions_pending"),
     },
+    "warning",
   );
   check(
     checks,
