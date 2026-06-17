@@ -11,6 +11,7 @@ const NETWORK = process.env.NETWORK ?? "livenet";
 const PAGE_LIMIT = Number(process.env.POW_INDEX_BACKFILL_LIMIT ?? 200);
 const MAX_PAGES = Number(process.env.POW_INDEX_BACKFILL_MAX_PAGES ?? 2000);
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
+const REQUEST_RETRIES = Number(process.env.POW_INDEX_FETCH_RETRIES ?? 4);
 const DRY_RUN = process.argv.includes("--dry-run");
 const SOURCE_FILTER = new Set(
   String(process.env.POW_INDEX_BACKFILL_SOURCES ?? "")
@@ -58,17 +59,39 @@ function endpoint(pathname, params = {}) {
 }
 
 async function readJson(url) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) {
-      throw new Error(`${url.pathname} returned HTTP ${response.status}`);
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= REQUEST_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) {
+        throw new Error(`${url.pathname} returned HTTP ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= REQUEST_RETRIES) {
+        break;
+      }
+      const delayMs = Math.min(30_000, 1000 * 2 ** attempt);
+      console.error(
+        JSON.stringify({
+          attempt,
+          delayMs,
+          error: error?.message ?? String(error),
+          retrying: true,
+          url: String(url),
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    } finally {
+      clearTimeout(timeout);
     }
-    return response.json();
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw lastError;
 }
 
 function isHexTxid(value) {
