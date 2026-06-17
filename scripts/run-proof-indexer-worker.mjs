@@ -27,6 +27,22 @@ const BACKFILL_LIMIT = Number(
     process.env.POW_INDEX_BACKFILL_LIMIT ??
     200,
 );
+const DEFAULT_WORKER_BACKFILL_SOURCES = [
+  "log",
+  "registry-records",
+  "registry-pending",
+  "registry-listings",
+  "registry-sales",
+  "tokens",
+  "token-mints",
+  "token-transfers",
+  "token-sales",
+  "token-invalid-events",
+].join(",");
+const BACKFILL_SOURCES = String(
+  process.env.POW_INDEX_WORKER_BACKFILL_SOURCES ??
+    DEFAULT_WORKER_BACKFILL_SOURCES,
+).trim();
 const PENDING_STATUS_LIMIT = Number(process.env.POW_INDEX_PENDING_STATUS_LIMIT ?? 100);
 const PENDING_MIN_AGE_MS = Number(process.env.POW_INDEX_PENDING_MIN_AGE_MS ?? 300_000);
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
@@ -228,13 +244,9 @@ async function runCycle(pool) {
     POW_INDEX_BACKFILL_LIMIT: String(BACKFILL_LIMIT),
     POW_INDEX_BACKFILL_MAX_PAGES: String(BACKFILL_MAX_PAGES),
     POW_INDEX_BACKFILL_HOLDERS: INCLUDE_HOLDERS ? "1" : "0",
+    POW_INDEX_BACKFILL_SOURCES: BACKFILL_SOURCES,
     POW_INDEX_DB_APP_NAME: "proof-indexer-worker-backfill",
   };
-
-  if (process.env.POW_INDEX_WORKER_BACKFILL_SOURCES) {
-    backfillEnv.POW_INDEX_BACKFILL_SOURCES =
-      process.env.POW_INDEX_WORKER_BACKFILL_SOURCES;
-  }
 
   await runScript("backfill-proof-indexer.mjs", [], backfillEnv);
   const pendingStatus = await refreshPendingStatuses(pool);
@@ -252,6 +264,7 @@ async function runCycle(pool) {
     apiBase: API_BASE,
     backfillLimit: BACKFILL_LIMIT,
     backfillMaxPages: BACKFILL_MAX_PAGES,
+    backfillSources: BACKFILL_SOURCES,
     durationMs: finishedAt.getTime() - startedAt.getTime(),
     finishedAt: finishedAt.toISOString(),
     holders: INCLUDE_HOLDERS,
@@ -272,6 +285,7 @@ if (DRY_RUN) {
         apiBase: API_BASE,
         backfillLimit: BACKFILL_LIMIT,
         backfillMaxPages: BACKFILL_MAX_PAGES,
+        backfillSources: BACKFILL_SOURCES,
         dryRun: true,
         intervalMs: INTERVAL_MS,
         holders: INCLUDE_HOLDERS,
