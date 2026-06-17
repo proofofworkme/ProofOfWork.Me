@@ -2,14 +2,14 @@
 
 This file is operating memory for future agents.
 
-It is distilled from current repository docs and public launch memory captured through 2026-05-19. It is not a protocol spec. When this file conflicts with `README.md`, `PROOFOFWORK_IDS.md`, `OP_RETURN_INFRASTRUCTURE.md`, `MAIL_ORGANIZATION.md`, or the source code, the protocol docs and code win.
+It is distilled from current repository docs and public launch memory captured through 2026-06-08. It is not a protocol spec. When this file conflicts with `README.md`, `PROOFOFWORK_IDS.md`, `OP_RETURN_INFRASTRUCTURE.md`, `MAIL_ORGANIZATION.md`, or the source code, the protocol docs and code win.
 
 ## Source Memory
 
 - Public account: `@proofofworkme`
-- Launch memory reviewed: 2026-05-19
+- Launch memory reviewed: 2026-06-08
 - Operational memory updated: 2026-06-16
-- Public archive reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
+- Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
 - Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
@@ -74,7 +74,16 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-05-19: WORK enters the final mint sprint. Mint-out semantics are clarified: confirmed supply is canonical; pending mints are mempool pressure; UI actions pause when confirmed plus pending would fill remaining supply. WORK floor charts are corrected into real price charts with time on the x-axis and proofs/USD price per WORK on the y-axis.
 - 2026-05-22: The Computer shell and standalone app surfaces converge into a full dark UI overhaul. Desktop, Browser, Marketplace, Credit, Wallet, WORK, Log, and Growth are made shell-compatible with scrolling, aligned controls, pagination over large datasets, UniSat action wiring for buy/mint/list/delist/transfer flows, credit sale-ticket buys in wallet/log/growth accounting, and live node-backed BTC/USD shared by Credit, WORK, and Growth.
 - 2026-05-24: Marketplace and data freshness harden. Public app chrome becomes sticky so status stays visible while users scroll. Marketplace credit stats become scoped to the selected credit, active books expose All/Sealed/Unsealed listing views, credit sales/listing logs are paginated and ordered by confirmation time, and spent sale-ticket outpoints remove listings from active books immediately. Fresh marketplace, WORK, credit summary, and credit history reads must refresh canonical credit payloads before returning; cached snapshots are for first paint only.
+- 2026-05-25: WORK marketplace copy and UI separate visible intent from executable price. Unsealed listings can appear in active books, but sealed sale-ticket listings set the buyable ask, buyer arb, and social order-book story. Dropped or RBF-replaced pending buys must not become fake sales.
+- 2026-05-26: Token-market presentation becomes a mint directory first: mint progress, confirmed supply, registry, and sale-ticket books are separated from price/arb sorting. PowID market posts begin treating names as live assets with active and sealed buyer-funded transfer listings.
+- 2026-05-28: The daily WORK/PowID social playbook enters `SOUL.md`: agents should refresh live APIs, use confirmed-only numbers, filter sealed books correctly, calculate buyer arb, and include reserve basis from confirmed secondary buys before posting.
+- 2026-06-02: The language migration becomes explicit. Public surfaces should say ProofOfWork Computer, ProofOfWork history, proofs, and credits. Protocol/API field names stay exact, but product/social language should not drift back into generic token/sats/Bitcoin Computer framing except when quoting historical data or code.
+- 2026-06-03: Credit language replaces token language in the product voice: mint credit, transfer credit, list credit, and settle credit sale tickets on ProofOfWork. `token.proofofwork.me` and `tokens.proofofwork.me` remain redirects, not the public vocabulary center.
+- 2026-06-04: Infinity Bonds and `$POWB` become part of the public value story. Bond transactions are high-value ProofOfWork Computer actions whose confirmed proofs can belong in Log, Growth, and WORK floor inputs when the canonical ledger recognizes their protocol tags. Fee priority becomes part of action intent: bonds can justify high fees, while ordinary messages/files can remain low-fee.
+- 2026-06-05: WORK floor accounting is corrected to reconcile every confirmed protocol tag across Log, WORK, and Growth, including IDs, mail, files, credits, marketplace, RUSH, and Infinity Bonds when enabled. "Chain truth, no vibes" becomes the operating test: if the floor, log, and growth number disagree, the ledger path is wrong.
 - 2026-06-07: WORK, Growth, Log, and credit/token history converge on one canonical livenet ledger snapshot. Confirmed Computer mail events, Infinity Bonds, credit sales, and participant searches must be merged into that shared ledger before network value is computed. The `/api/v1/consistency` endpoint and `npm run audit:ledger` guard that seeded Computer mail events are logged, known pagination-gap transactions are searchable, Growth and WORK share the same snapshot/value, and missing log events stay empty.
+- 2026-06-07: Public market copy hardens around agent-readable books. PowID and WORK order-book posts should make the machine-readable point: names, prices, listings, seals, and sales are chain-readable records that agents can read forever.
+- 2026-06-08: Live USD accounting is split from model USD. Current public numbers should use node BTC/USD and `actualValue.totalUsd`; `modelTotalUsd` remains a comparison field, not the live quote. The daily social close expands to include `$WORK $POWB` when the post is about WORK, PowIDs, floor, bonds, or confirmed network value.
 - 2026-06-12: WORK and credit marketplace replay hardens around sale-ticket truth. Confirmed and pending WORK listings are promoted through the same canonical credit payload, pending WORK mints count against user-facing availability without changing confirmed supply, duplicate listing seals are blocked, Wallet owned-listing views are reconstructed from active and closed sale-ticket state, and WORK mint summaries replay from canonical mints instead of stale partial summaries.
 - 2026-06-16: WORK sale-ticket reconciliation hardens against Bitcoin Core spend truth. Confirmed delistings and buys must clear active books in Marketplace and Wallet even while summary payloads warm; closed listings, sales, market logs, Growth, and Log all derive from the same sale-ticket lifecycle instead of separate surface-local caches.
 
@@ -93,6 +102,11 @@ The full archive is not a neat roadmap. It is a public founder diary mixed with 
 - Measurement matters. IDs are network effects, logs are activity evidence, Growth is the modeled network-value mirror, and WORK turns that confirmed network value into a live credit floor.
 - The founder treats WORK as proof-of-use. The credit is not only a ticker; it is the live demonstration that creator-owned registries, mint revenue, public dashboards, and chain-derived floors can exist on ProofOfWork.
 - Credit registries are creator sovereignty. The macro index records creation, but each credit owns its registry, mint price, mint history, revenue lane, and responsibility to build.
+- The public language has moved from "Bitcoin Computer", "sats", and "token" toward "ProofOfWork Computer", "proofs", and "credit". Preserve protocol/API names exactly, but write public copy in the newer language unless historical context requires the old terms.
+- `$POWB` and Infinity Bonds are part of the recent public mythology and metric loop. Treat them as confirmed ProofOfWork Computer actions only when the canonical ledger recognizes them; do not infer value from slogans or pending claims.
+- Sealed order books are a core teaching surface. Active unsealed listings show intent; sealed sale-ticket listings show executable asks. Buyer arb is only meaningful against sealed, unspent, valid sale-ticket terms and the current confirmed WORK floor.
+- PowID markets are not a side quest. Names are assets, inboxes, contact records, and agent-readable address records; listings, seals, and buyer-funded transfers are the market layer over that identity primitive.
+- Agents are expected to read the Computer like a ledger, not like a website screenshot. When posts claim floor, reserve, order-book, holder, sale, USD, or PowID counts, refresh the first-party APIs and make the math auditable.
 - Minting is a launch primitive, not the whole protocol. Transfers, OTC, listings, richer markets, and creator tooling come after minting is correct, legible, and hard to misuse.
 - The chain is the oracle, but pending pressure still matters to UX. Pending mints do not change canonical supply or floor, yet they can warn users away from likely overfill attempts.
 - Speed and freshness are product integrity. Fast cached first paint is useful; a refresh that leaves stale data is a lie. Full-node truth must win after refresh.
@@ -177,6 +191,7 @@ Use:
 - Launch energy when writing social or founder-facing copy.
 - Calm precision when writing UI, docs, specs, and user guidance.
 - The `$work` cashtag in social copy when talking about the credit, WORK dashboard, mint, floor, or network-value story.
+- The `$POWB` cashtag in social copy when the post touches Infinity Bonds, confirmed bond proofs, WORK floor from bond-heavy network value, or the combined WORK/PowID market story.
 - The occasional project-native phrase: `FEW`, `HEHE`, `GGZ`, `COMETH`, `THE PROOFOFWORK COMPUTER LIVES`, `STREAM PROOFS`, `WALK THE WALK`, `SOURCE OF TRUTH`.
 
 Avoid:
@@ -195,6 +210,7 @@ Keep the fire. Leave the poison.
 These are safe phrases future agents can reuse or adapt:
 
 - The source of truth is the chain.
+- Chain truth, no vibes.
 - Confirmed records are canonical. Pending mempool visibility is gossip.
 - Wallet signing stays local.
 - Your attention belongs to you.
@@ -219,6 +235,9 @@ These are safe phrases future agents can reuse or adapt:
 - Mint price is not floor price.
 - The UI can protect against pending pressure without pretending pending is final.
 - Creator credits should own their own registry.
+- Active book shows intent. Sealed book sets executable ask.
+- Names are assets now.
+- Agents can read the book forever.
 
 ## Daily Social Posts
 
