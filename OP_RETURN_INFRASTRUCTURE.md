@@ -63,6 +63,8 @@ Database tooling:
 ```bash
 POW_INDEX_DATABASE_URL=postgres://proof_indexer:...@127.0.0.1:5432/proof_indexer npm run db:schema
 POW_INDEX_DATABASE_URL=postgres://proof_indexer:...@127.0.0.1:5432/proof_indexer POW_API_BASE=http://127.0.0.1:8081 npm run indexer:backfill
+POW_INDEX_DATABASE_URL=postgres://proof_indexer:...@127.0.0.1:5432/proof_indexer POW_API_BASE=http://127.0.0.1:8081 npm run indexer:parity
+POW_INDEX_DATABASE_URL=postgres://proof_indexer:...@127.0.0.1:5432/proof_indexer POW_API_BASE=http://127.0.0.1:8081 npm run indexer:worker -- --once
 ```
 
 The backfill script reads current canonical API history in pages and stores a
@@ -71,15 +73,33 @@ comma-separated sources such as `registry-records,tokens,token-mints`, while
 `POW_INDEX_BACKFILL_LIMIT`, `POW_INDEX_BACKFILL_MAX_PAGES`, and
 `POW_INDEX_FETCH_TIMEOUT_MS` bound each run.
 
+The parity script compares the database read model with the canonical
+`/api/v1/ledger-consistency` snapshot before any endpoint cutover. It requires a
+green canonical ledger, `missingLogEvents: []`, database coverage for confirmed
+activity, matching confirmed credit definitions, and populated search indexes.
+Warnings such as a snapshot id moving during a refresh can be promoted to hard
+failures with `POW_INDEX_PARITY_STRICT=1`.
+
+The worker script keeps the shadow indexer warm by repeatedly running bounded
+backfill pages, refreshing stale pending transaction statuses through
+`/api/v1/tx/:txid/status`, marking disappeared txids as `dropped`, and running
+the parity checker. Production service configuration is tracked in:
+
+```text
+deploy/proofofwork-indexer-worker.service
+```
+
 Rollout should happen in shadow mode:
 
 1. Backfill known ProofOfWork transactions into PostgreSQL.
-2. Replay protocol projections from the database.
-3. Compare database output with the current canonical ledger payloads for
+2. Run the continuous worker so new confirmed events and dropped pending txs
+   update the database read model.
+3. Replay protocol projections from the database.
+4. Compare database output with the current canonical ledger payloads for
    Registry, Log, Credits, WORK, Marketplace, and Growth.
-4. Require `/api/v1/consistency`, `/api/v1/ledger-consistency`, and
+5. Require `/api/v1/consistency`, `/api/v1/ledger-consistency`, and
    `npm run audit:ledger` to stay green with `missingLogEvents: []`.
-5. Switch endpoints to database reads only after shadow output matches current
+6. Switch endpoints to database reads only after shadow output matches current
    chain-derived output.
 
 This replaces expensive repeated scans with indexed local reads while preserving

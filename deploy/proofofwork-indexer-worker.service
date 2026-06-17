@@ -1,0 +1,27 @@
+[Unit]
+Description=ProofOfWork.Me PostgreSQL event indexer worker
+After=network-online.target postgresql.service proofofwork-api.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=powadmin
+WorkingDirectory=/opt/proofofwork-api
+EnvironmentFile=/opt/proofofwork-api/config/proof-indexer-db.env
+Environment=NETWORK=livenet
+Environment=POW_API_BASE=http://127.0.0.1:8081
+Environment=POW_INDEX_WORKER_INTERVAL_MS=300000
+Environment=POW_INDEX_WORKER_BACKFILL_MAX_PAGES=3
+Environment=POW_INDEX_PENDING_MIN_AGE_MS=300000
+Environment=POW_INDEX_PENDING_STATUS_LIMIT=100
+Environment=POW_INDEX_FETCH_TIMEOUT_MS=180000
+Environment=POW_INDEX_FETCH_RETRIES=8
+ExecStart=/usr/bin/npm run indexer:worker -- --loop
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
