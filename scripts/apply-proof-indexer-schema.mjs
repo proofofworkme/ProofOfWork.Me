@@ -46,7 +46,7 @@ try {
         'schema',
         jsonb_build_object(
           'name', 'proof-indexer-v1',
-          'path', $1,
+          'path', $1::text,
           'appliedAt', now()
         ),
         now()
