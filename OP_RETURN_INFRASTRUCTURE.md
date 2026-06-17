@@ -15,6 +15,63 @@ Browser app
 
 The browser still signs locally with UniSat. The API never receives seed phrases, private keys, or unsigned wallet authority.
 
+## ProofOfWork Event Database
+
+The next performance step is a ProofOfWork-specific PostgreSQL indexer beside the
+node/API stack:
+
+```text
+Browser app
+  -> same-origin ProofOfWork OP_RETURN API proxy
+  -> ProofOfWork event database / projections
+  -> private mempool/electrs API
+  -> Bitcoin Core full node
+```
+
+PostgreSQL is the preferred production database for this layer. The data is an
+ordered, replayable event log with relational verification needs: txids,
+outpoints, block heights, participants, IDs, credit ids, listings, and snapshot
+checks. MongoDB is not the default fit for this protocol shape, and SQLite is a
+useful local/dev option but not the preferred long-running production store.
+
+The database is not the source of truth. It is a durable read model derived from
+Bitcoin Core, electrs/mempool, and the ProofOfWork parsers. Confirmed chain data
+remains canonical. Pending mempool data is useful visibility and may be stored,
+but pending rows must not change canonical routing, ownership, credit balances,
+WORK floor, Growth value, Log totals, or durable Files/Desktop state.
+
+Every indexed row should be replayable and externally inspectable:
+
+- Store the raw/normalized transaction data needed to reparse the event.
+- Store the parsed protocol payload, validation result, participants, and
+  important references such as parent txids, listing txids, credit ids, and sale
+  ticket outpoints.
+- Store status transitions for `pending`, `confirmed`, `dropped`, and
+  `orphaned` records.
+- Keep `txid` on every event so the UI can expose the normal explorer/mempool
+  verification link beside database-backed data.
+- Keep canonical projections derived from confirmed rows only.
+
+The first schema lives at:
+
+```text
+server/sql/proof-indexer-v1.sql
+```
+
+Rollout should happen in shadow mode:
+
+1. Backfill known ProofOfWork transactions into PostgreSQL.
+2. Replay protocol projections from the database.
+3. Compare database output with the current canonical ledger payloads for
+   Registry, Log, Credits, WORK, Marketplace, and Growth.
+4. Require `/api/v1/consistency`, `/api/v1/ledger-consistency`, and
+   `npm run audit:ledger` to stay green with `missingLogEvents: []`.
+5. Switch endpoints to database reads only after shadow output matches current
+   chain-derived output.
+
+This replaces expensive repeated scans with indexed local reads while preserving
+the existing rule: chain truth wins, database speed follows.
+
 Production domains:
 
 ```text
