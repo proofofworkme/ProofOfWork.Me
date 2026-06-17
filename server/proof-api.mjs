@@ -170,8 +170,7 @@ const ADDRESS_PAGE_FETCH_TIMEOUT_MS = Number(
   process.env.ADDRESS_PAGE_FETCH_TIMEOUT_MS ?? 8_000,
 );
 const ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS = Number(
-  process.env.ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS ??
-    ADDRESS_PAGE_FETCH_TIMEOUT_MS,
+  process.env.ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS ?? 30_000,
 );
 const ADDRESS_UTXO_FETCH_TIMEOUT_MS = Number(
   process.env.ADDRESS_UTXO_FETCH_TIMEOUT_MS ?? 5_000,
@@ -1367,6 +1366,27 @@ function pendingMempoolBases(network) {
   ];
 }
 
+function firstPartyAddressReadBases(network) {
+  const bases = [];
+  try {
+    bases.push(mempoolBase(network));
+  } catch {
+    // Some non-mainnet deployments may intentionally rely on external readers.
+  }
+
+  try {
+    bases.push(
+      ...pendingMempoolBases(network).filter(
+        (base) => !String(base).startsWith("https://"),
+      ),
+    );
+  } catch {
+    // Keep the first-party list best-effort; callers decide whether to fail.
+  }
+
+  return [...new Set(bases.filter(Boolean))];
+}
+
 function registryAddressForNetwork(network) {
   return ID_REGISTRY_ADDRESSES[network] ?? "";
 }
@@ -2110,9 +2130,13 @@ function externalAddressTransactionPageBases(network) {
   return explorerReadBases(network);
 }
 
-async function fetchAddressMempoolTransactions(address, network) {
+async function fetchAddressMempoolTransactions(address, network, options = {}) {
+  const bases =
+    options.includeExternal === false
+      ? firstPartyAddressReadBases(network)
+      : pendingMempoolBases(network);
   const pages = await Promise.allSettled(
-    pendingMempoolBases(network).map((baseUrl) =>
+    bases.map((baseUrl) =>
       fetchAddressTransactionsPageFromBase(baseUrl, address, "txs/mempool"),
     ),
   );
@@ -3376,8 +3400,12 @@ async function fetchAddressTransactionsViaMempoolPagination(
   address,
   network,
   maxPages = MAX_ADDRESS_TX_PAGES,
+  options = {},
 ) {
-  const pageBases = externalAddressTransactionPageBases(network);
+  const pageBases =
+    options.includeExternal === false
+      ? firstPartyAddressReadBases(network)
+      : externalAddressTransactionPageBases(network);
   const fetchPage = async (path) => {
     let lastError = null;
     for (const baseUrl of pageBases) {
@@ -3399,6 +3427,7 @@ async function fetchAddressTransactionsViaMempoolPagination(
   const mempoolTxs = await fetchAddressMempoolTransactions(
     address,
     network,
+    options,
   ).catch(() => []);
 
   let chainPage = [];
@@ -3556,16 +3585,24 @@ async function fetchAddressTransactions(
   address,
   network,
   maxPages = MAX_ADDRESS_TX_PAGES,
+  options = {},
 ) {
+  const includeExternal = options.includeExternal !== false;
   if (network === "livenet" && ELECTRUM_HOST && ELECTRUM_PORT) {
     try {
       const [historyTxs, mempoolTxs] = await Promise.all([
         fetchAddressTransactionsFromElectrum(address, network),
-        fetchAddressMempoolTransactions(address, network).catch(() => []),
+        fetchAddressMempoolTransactions(address, network, {
+          includeExternal,
+        }).catch(() => []),
       ]);
 
       return dedupeTransactions([...historyTxs, ...mempoolTxs]);
     } catch (error) {
+      if (!includeExternal) {
+        throw error;
+      }
+
       if (
         error instanceof Error &&
         error.message.includes("transaction hydration was partial")
@@ -3579,6 +3616,15 @@ async function fetchAddressTransactions(
         maxPages,
       );
     }
+  }
+
+  if (!includeExternal) {
+    return fetchAddressTransactionsViaMempoolPagination(
+      address,
+      network,
+      maxPages,
+      { includeExternal: false },
+    );
   }
 
   return fetchAddressTransactionsViaExplorerFallback(
@@ -15551,7 +15597,19 @@ function workFloorPayloadFromState(
 }
 
 async function mailPayload(address, network) {
-  const txs = await fetchAddressTransactions(address, network);
+  let scanError = "";
+  const txs = await fetchAddressTransactions(
+    address,
+    network,
+    MAX_ADDRESS_TX_PAGES,
+    { includeExternal: false },
+  ).catch((error) => {
+    scanError = errorSummary(error);
+    console.error(
+      `First-party mail scan failed for ${address}: ${scanError}`,
+    );
+    return [];
+  });
   const inboxMessages = inboxMessagesFromTransactions(txs, address, network);
   const sentMessages = sentMessagesFromTransactions(txs, address, network);
 
@@ -15561,10 +15619,12 @@ async function mailPayload(address, network) {
     indexedAt: new Date().toISOString(),
     network,
     sentMessages,
+    ...(scanError ? { scanError } : {}),
     source: mempoolBase(network),
     stats: {
       inbox: inboxMessages.filter((message) => message.confirmed).length,
       incoming: inboxMessages.filter((message) => !message.confirmed).length,
+      scanFailed: Boolean(scanError),
       scannedTransactions: txs.length,
       sent: sentMessages.filter((message) => message.status === "confirmed")
         .length,
@@ -15594,27 +15654,16 @@ async function addressUtxoPayload(address, network) {
     return utxos;
   };
 
-  for (const base of explorerReadBases(network)) {
+  let lastError = null;
+  for (const base of firstPartyAddressReadBases(network)) {
     try {
       return await requireUtxoArray(base, fetchUtxosFromBase(base));
     } catch (error) {
+      lastError = error;
       console.error(
-        `Explorer UTXO lookup failed for ${base} ${address}: ${errorSummary(error)}`,
+        `UTXO lookup failed for ${base} ${address}: ${errorSummary(error)}`,
       );
     }
-  }
-
-  const blockchainInfoUtxos = await fetchAddressUtxosFromBlockchainInfo(
-    address,
-    network,
-  ).catch((error) => {
-    console.error(
-      `Blockchain.info UTXO lookup failed for ${address}: ${errorSummary(error)}`,
-    );
-    return null;
-  });
-  if (blockchainInfoUtxos) {
-    return blockchainInfoUtxos;
   }
 
   const electrumUtxos = await fetchAddressUtxosFromElectrum(
@@ -15628,22 +15677,6 @@ async function addressUtxoPayload(address, network) {
   });
   if (electrumUtxos) {
     return electrumUtxos;
-  }
-
-  let lastError = null;
-  const explorerBases = new Set(explorerReadBases(network));
-  for (const base of pendingMempoolBases(network)) {
-    if (explorerBases.has(base)) {
-      continue;
-    }
-    try {
-      return await requireUtxoArray(base, fetchUtxosFromBase(base));
-    } catch (error) {
-      lastError = error;
-      console.error(
-        `UTXO lookup failed for ${base} ${address}: ${errorSummary(error)}`,
-      );
-    }
   }
 
   throw lastError ?? new Error(`UTXO lookup failed for ${address}.`);

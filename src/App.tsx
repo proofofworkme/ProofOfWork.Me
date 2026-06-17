@@ -9979,12 +9979,7 @@ async function fetchUtxos(
   }
 
   const apiPath = `/api/v1/address/${encodeURIComponent(ownerAddress)}/utxo`;
-  const utxoUrls = [
-    ownerNetwork === "livenet"
-      ? `https://mempool.space/api/address/${encodeURIComponent(ownerAddress)}/utxo`
-      : "",
-    proofApiUrl(apiPath, ownerNetwork),
-  ].filter(Boolean);
+  const utxoUrls = [proofApiUrl(apiPath, ownerNetwork)];
   let lastError: unknown;
   for (const url of utxoUrls) {
     const controller = new AbortController();

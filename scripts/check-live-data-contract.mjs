@@ -17,6 +17,32 @@ function expectAll(name, text, patterns) {
   }
 }
 
+function sourceSliceBetween(text, startPattern, endPattern) {
+  const start = text.search(startPattern);
+  if (start === -1) {
+    return "";
+  }
+  const rest = text.slice(start);
+  const end = rest.search(endPattern);
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
+const fetchAddressMailSource = sourceSliceBetween(
+  app,
+  /async function fetchAddressMail/,
+  /async function fetchTransactionJson/,
+);
+const loadDesktopTargetSource = sourceSliceBetween(
+  app,
+  /\n  async function loadDesktopTarget/,
+  /\n  function clearDesktop/,
+);
+const desktopAppSource = sourceSliceBetween(
+  app,
+  /function DesktopApp/,
+  /function ActivityApp/,
+);
+
 expectAll("canonical ledger cache is first-class", server, [
   /LEDGER_CACHE_TTL_MS/,
   /LEDGER_CACHE_STALE_MS/,
@@ -54,13 +80,45 @@ expectAll("WORK Growth Log and token views use the same ledger", server, [
   /async function summaryCanonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*refreshCanonicalLedgerPayloadInBackground\(network,\s*true\)/,
   /async function activityPayloadWithLiveWorkTokenOverlay\(ledger,\s*fresh\s*=\s*false\)[\s\S]*liveWorkTokenStateWithFallbackAfterMs\([\s\S]*tokenActivityItemsFromState\(/,
   /async function mergedLogActivityPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*activityPayloadWithLiveWorkTokenOverlay\(ledger,\s*fresh\)[\s\S]*canonicalLedgerPayload\(network,\s*false\)/,
-  /async function cachedWorkFloorPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*true\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*return ledger\.workFloor;/,
-  /async function growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*return ledger\.growthSummary;[\s\S]*canonicalLedgerPayload\(network,\s*false\)\)\.growthSummary;/,
+  /async function cachedWorkFloorPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*true\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*workFloorWithCurrentBtcUsd\(ledger\.workFloor,\s*network,\s*fresh\)/,
+  /async function growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*growthSummaryWithCurrentBtcUsd\(ledger\.growthSummary,\s*network,\s*fresh\)[\s\S]*canonicalLedgerPayload\(network,\s*false\)\)\.growthSummary/,
   /async function tokenPayloadForRead[\s\S]*summaryCanonicalLedgerPayload\(network,\s*true\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerTokenStateForScope\(ledger,\s*scope\)/,
-  /const liveWorkWaitMs = Number\.isFinite\(options\.liveWorkWaitMs\)[\s\S]*liveWorkTokenStateWithFallbackAfterMs\([\s\S]*liveWorkWaitMs/,
-  /async function tokenSummaryPayload[\s\S]*const payload = await tokenPayloadForRead\(network,\s*scope,\s*fresh/,
+  /function liveWorkReadWaitMs\(options[\s\S]*Number\.isFinite\(options\.liveWorkWaitMs\)[\s\S]*liveWorkTokenStateWithFallbackAfterMs\([\s\S]*liveWorkReadWaitMs\(options\)/,
+  /async function tokenSummaryPayload[\s\S]*let payload = await tokenPayloadForRead\(network,\s*scope,\s*fresh/,
   /async function tokenHistoryPayload[\s\S]*let payload = await tokenPayloadForRead\(network,\s*scope,\s*fresh/,
-  /url\.pathname === "\/api\/v1\/token"[\s\S]*await tokenPayloadForRead\(network,\s*tokenScope,\s*freshRead/,
+  /url\.pathname === "\/api\/v1\/token"[\s\S]*const tokenFreshRead[\s\S]*const payload = await tokenPayloadForRead\(network,\s*tokenScope,\s*tokenFreshRead/,
+]);
+
+expectAll("Desktop public search stays on first-party ProofOfWork API", app, [
+  /function DesktopApp\([\s\S]*<DesktopWorkspace[\s\S]*onSearch=\{onSearch\}/,
+]);
+expectAll("Desktop address mail read stays first-party", fetchAddressMailSource, [
+  /async function fetchAddressMail\(\s*targetAddress:\s*string,\s*targetNetwork:\s*BitcoinNetwork,\s*\)/,
+  /fetchProofApiJson<[\s\S]*`\/api\/v1\/address\/\$\{encodeURIComponent\(targetAddress\)\}\/mail`/,
+]);
+expectAll("Desktop search loader uses address mail read", loadDesktopTargetSource, [
+  /async function loadDesktopTarget\(target = desktopQuery\)/,
+  /fetchAddressMail\(resolved\.paymentAddress,\s*network\)/,
+]);
+expect("Desktop public search must keep fetchAddressMail source present", Boolean(fetchAddressMailSource));
+expect("Desktop public search must keep loadDesktopTarget source present", Boolean(loadDesktopTargetSource));
+expect("Desktop public app source must stay present", Boolean(desktopAppSource));
+expect("fetchAddressMail must not call public mempool.space", !/mempool\.space/i.test(fetchAddressMailSource));
+expect("loadDesktopTarget must not call public mempool.space", !/mempool\.space/i.test(loadDesktopTargetSource));
+expect("DesktopApp must not call public mempool.space", !/mempool\.space/i.test(desktopAppSource));
+expect(
+  "frontend app reads must not call public mempool.space address APIs",
+  !/mempool\.space\/api\/address/i.test(app),
+);
+expectAll("API address app reads stay first-party", server, [
+  /const ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS = Number\([\s\S]*30_000/,
+  /function firstPartyAddressReadBases\(network\)[\s\S]*mempoolBase\(network\)[\s\S]*pendingMempoolBases\(network\)\.filter/,
+  /async function fetchAddressMempoolTransactions\(address,\s*network,\s*options = \{\}\)[\s\S]*options\.includeExternal === false[\s\S]*firstPartyAddressReadBases\(network\)/,
+  /async function fetchAddressTransactionsViaMempoolPagination\([\s\S]*options = \{\}[\s\S]*options\.includeExternal === false[\s\S]*firstPartyAddressReadBases\(network\)/,
+  /async function fetchAddressTransactions\([\s\S]*const includeExternal = options\.includeExternal !== false[\s\S]*fetchAddressMempoolTransactions\(address,\s*network,\s*\{[\s\S]*includeExternal/,
+  /async function fetchAddressTransactions\([\s\S]*if \(!includeExternal\) \{[\s\S]*throw error;[\s\S]*\}/,
+  /async function mailPayload\(address,\s*network\)[\s\S]*let scanError = ""[\s\S]*fetchAddressTransactions\([\s\S]*MAX_ADDRESS_TX_PAGES,[\s\S]*\{ includeExternal: false \}[\s\S]*First-party mail scan failed[\s\S]*scanFailed: Boolean\(scanError\)/,
+  /async function addressUtxoPayload\(address,\s*network\)[\s\S]*for \(const base of firstPartyAddressReadBases\(network\)\)/,
 ]);
 
 expectAll("WORK floor USD uses live price metadata", server, [
