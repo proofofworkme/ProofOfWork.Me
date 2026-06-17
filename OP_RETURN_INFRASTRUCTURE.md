@@ -83,7 +83,10 @@ failures with `POW_INDEX_PARITY_STRICT=1`.
 The worker script keeps the shadow indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through
 `/api/v1/tx/:txid/status`, marking disappeared txids as `dropped`, and running
-the parity checker. Production service configuration is tracked in:
+the parity checker. Continuous worker cycles skip scoped holder recrawls by
+default (`POW_INDEX_WORKER_HOLDERS=0`) so holder projection refreshes can run as
+explicit full backfill jobs instead of every short polling loop. Production
+service configuration is tracked in:
 
 ```text
 deploy/proofofwork-indexer-worker.service

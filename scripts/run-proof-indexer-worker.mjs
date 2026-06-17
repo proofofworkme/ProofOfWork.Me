@@ -33,6 +33,9 @@ const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_0
 const RUN_PARITY = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_WORKER_PARITY ?? "1"),
 );
+const INCLUDE_HOLDERS = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_WORKER_HOLDERS ?? ""),
+);
 const DRY_RUN = process.argv.includes("--dry-run");
 const ONCE = process.argv.includes("--once");
 
@@ -224,6 +227,7 @@ async function runCycle(pool) {
     POW_API_BASE: API_BASE,
     POW_INDEX_BACKFILL_LIMIT: String(BACKFILL_LIMIT),
     POW_INDEX_BACKFILL_MAX_PAGES: String(BACKFILL_MAX_PAGES),
+    POW_INDEX_BACKFILL_HOLDERS: INCLUDE_HOLDERS ? "1" : "0",
     POW_INDEX_DB_APP_NAME: "proof-indexer-worker-backfill",
   };
 
@@ -250,6 +254,7 @@ async function runCycle(pool) {
     backfillMaxPages: BACKFILL_MAX_PAGES,
     durationMs: finishedAt.getTime() - startedAt.getTime(),
     finishedAt: finishedAt.toISOString(),
+    holders: INCLUDE_HOLDERS,
     network: NETWORK,
     ok: true,
     parity: RUN_PARITY,
@@ -269,6 +274,7 @@ if (DRY_RUN) {
         backfillMaxPages: BACKFILL_MAX_PAGES,
         dryRun: true,
         intervalMs: INTERVAL_MS,
+        holders: INCLUDE_HOLDERS,
         network: NETWORK,
         once: ONCE,
         parity: RUN_PARITY,
