@@ -11,6 +11,8 @@
     "check:ui": "node scripts/check-ui-contract.mjs",
     "check:live-data": "node scripts/check-live-data-contract.mjs",
     "check:marketplace-regressions": "node scripts/check-marketplace-regressions.mjs",
+    "db:schema": "node scripts/apply-proof-indexer-schema.mjs",
+    "indexer:backfill": "node scripts/backfill-proof-indexer.mjs",
     "audit:ledger": "node scripts/audit-ledger-consistency.mjs",
     "audit:ids": "node scripts/audit-id-registry.mjs",
     "deck:general": "node scripts/build-general-deck.mjs",
@@ -23,6 +25,7 @@
     "bitcoinjs-lib": "^7.0.1",
     "buffer": "^6.0.3",
     "lucide-react": "^1.14.0",
+    "pg": "^8.21.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

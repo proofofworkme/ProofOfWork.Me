@@ -24,9 +24,11 @@ CREATE TABLE IF NOT EXISTS proof_indexer.blocks (
   tx_count integer,
   canonical boolean NOT NULL DEFAULT true,
   indexed_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (network, block_hash),
-  UNIQUE (network, height)
+  PRIMARY KEY (network, block_hash)
 );
+
+CREATE INDEX IF NOT EXISTS blocks_height_idx
+  ON proof_indexer.blocks (network, height, canonical);
 
 CREATE TABLE IF NOT EXISTS proof_indexer.transactions (
   network text NOT NULL,

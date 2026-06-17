@@ -58,6 +58,19 @@ The first schema lives at:
 server/sql/proof-indexer-v1.sql
 ```
 
+Database tooling:
+
+```bash
+POW_INDEX_DATABASE_URL=postgres://proof_indexer:...@127.0.0.1:5432/proof_indexer npm run db:schema
+POW_INDEX_DATABASE_URL=postgres://proof_indexer:...@127.0.0.1:5432/proof_indexer POW_API_BASE=http://127.0.0.1:8081 npm run indexer:backfill
+```
+
+The backfill script reads current canonical API history in pages and stores a
+shadow copy in PostgreSQL. `POW_INDEX_BACKFILL_SOURCES` can limit a run to
+comma-separated sources such as `registry-records,tokens,token-mints`, while
+`POW_INDEX_BACKFILL_LIMIT`, `POW_INDEX_BACKFILL_MAX_PAGES`, and
+`POW_INDEX_FETCH_TIMEOUT_MS` bound each run.
+
 Rollout should happen in shadow mode:
 
 1. Backfill known ProofOfWork transactions into PostgreSQL.
