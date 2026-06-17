@@ -26,6 +26,9 @@ const BUY_TXS = [
   "85d7930ffd5650c8508baf1f0128d469592e8349ad51483f69f3e227aca9233b",
   "8b470b3ab319c201d4eb440bb3562b7b907b7ca38480ff71b51c6b655e522e97",
 ];
+const MARKETPLACE_SUMMARY_MAX_MS = Number(
+  process.env.MARKETPLACE_SUMMARY_MAX_MS ?? 55_000,
+);
 
 function assert(condition, message) {
   if (!condition) {
@@ -45,6 +48,15 @@ async function getJson(path, params = {}) {
     throw new Error(`${url} returned HTTP ${response.status}`);
   }
   return response.json();
+}
+
+async function timedGetJson(path, params = {}) {
+  const startedAt = Date.now();
+  const json = await getJson(path, params);
+  return {
+    elapsedMs: Date.now() - startedAt,
+    json,
+  };
 }
 
 async function tokenHistory(kind, params = {}) {
@@ -151,9 +163,14 @@ assert(
   "wallet-scoped token summary returned an anonymous closed listing",
 );
 
-const marketplaceSummary = await getJson("/api/v1/marketplace-summary", {
-  network: "livenet",
-});
+const { elapsedMs: marketplaceSummaryMs, json: marketplaceSummary } =
+  await timedGetJson("/api/v1/marketplace-summary", {
+    network: "livenet",
+  });
+assert(
+  marketplaceSummaryMs <= MARKETPLACE_SUMMARY_MAX_MS,
+  `/api/v1/marketplace-summary took ${marketplaceSummaryMs}ms, expected <= ${MARKETPLACE_SUMMARY_MAX_MS}ms`,
+);
 assert(
   !(marketplaceSummary.token?.listings ?? []).some(
     (item) => String(item?.listingId ?? "").toLowerCase() === LISTING_TX,

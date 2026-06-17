@@ -104,6 +104,12 @@ const RESPONSE_CACHE_TTL_MS = Number(
 const RESPONSE_CACHE_STALE_MS = Number(
   process.env.RESPONSE_CACHE_STALE_MS ?? 10 * 60_000,
 );
+const MARKETPLACE_SUMMARY_CACHE_TTL_MS = Number(
+  process.env.MARKETPLACE_SUMMARY_CACHE_TTL_MS ?? RESPONSE_CACHE_TTL_MS,
+);
+const MARKETPLACE_SUMMARY_CACHE_STALE_MS = Number(
+  process.env.MARKETPLACE_SUMMARY_CACHE_STALE_MS ?? HEAVY_READ_STALE_MS,
+);
 const TOKEN_CACHE_TTL_MS = Number(process.env.TOKEN_CACHE_TTL_MS ?? 60_000);
 const TOKEN_CACHE_STALE_MS = Number(
   process.env.TOKEN_CACHE_STALE_MS ?? HEAVY_READ_STALE_MS,
@@ -131,6 +137,9 @@ const WORK_TOKEN_LIVE_WAIT_MS = Number(
 );
 const WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS = Number(
   process.env.WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS ?? WORK_FLOOR_FRESH_WAIT_MS,
+);
+const MARKETPLACE_SUMMARY_FRESH_WAIT_MS = Number(
+  process.env.MARKETPLACE_SUMMARY_FRESH_WAIT_MS ?? WORK_FLOOR_FRESH_WAIT_MS,
 );
 const TOKEN_SCOPED_FRESH_WAIT_MS = Number(
   process.env.TOKEN_SCOPED_FRESH_WAIT_MS ?? 30_000,
@@ -474,6 +483,7 @@ function shouldPersistJsonCache(cacheKey) {
   return (
     cacheKey === "activity:livenet" ||
     cacheKey === "ledger:livenet" ||
+    cacheKey === "marketplace-summary:livenet" ||
     cacheKey === "registry:livenet" ||
     cacheKey.startsWith("token:livenet:") ||
     cacheKey === "rush:livenet" ||
@@ -524,6 +534,7 @@ function backgroundRefreshIntervalForCacheKey(cacheKey) {
   if (
     cacheKey === "work-floor:livenet" ||
     cacheKey === "ledger:livenet" ||
+    cacheKey === "marketplace-summary:livenet" ||
     cacheKey === "growth-summary:livenet"
   ) {
     return BACKGROUND_DERIVED_REFRESH_INTERVAL_MS;
@@ -564,6 +575,14 @@ function invalidateWorkFloorCaches(network) {
   expireResponseCacheEntry(
     `json:growth-summary:${network}`,
     HEAVY_READ_STALE_MS,
+  );
+  expireResponseCacheEntry(
+    `payload:marketplace-summary:${network}`,
+    MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+  );
+  expireResponseCacheEntry(
+    `json:marketplace-summary:${network}`,
+    MARKETPLACE_SUMMARY_CACHE_STALE_MS,
   );
 }
 
@@ -14081,7 +14100,113 @@ async function workSummaryPayload(network, fresh = false) {
   };
 }
 
-async function marketplaceSummaryPayload(network, fresh = false) {
+function marketplaceSummaryCacheKey(network) {
+  return `marketplace-summary:${network}`;
+}
+
+function marketplaceSummaryPayloadKey(network) {
+  return `payload:${marketplaceSummaryCacheKey(network)}`;
+}
+
+function cacheMarketplaceSummaryPayload(network, payload) {
+  const cacheKey = marketplaceSummaryCacheKey(network);
+  const payloadKey = marketplaceSummaryPayloadKey(network);
+  const body = JSON.stringify(payload);
+  RESPONSE_CACHE.set(payloadKey, {
+    expiresAt: Date.now() + MARKETPLACE_SUMMARY_CACHE_TTL_MS,
+    payload,
+    staleUntil: Date.now() + MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+  });
+  cacheJsonBody(
+    `json:${cacheKey}`,
+    body,
+    MARKETPLACE_SUMMARY_CACHE_TTL_MS,
+    MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+  );
+  if (shouldPersistJsonCache(cacheKey)) {
+    void writePersistedJsonCache(`json:${cacheKey}`, body);
+  }
+  return payload;
+}
+
+async function cachedMarketplaceSummaryPayloadNoRefresh(network) {
+  const cacheKey = marketplaceSummaryCacheKey(network);
+  const payloadKey = marketplaceSummaryPayloadKey(network);
+  const cachedPayload = RESPONSE_CACHE.get(payloadKey)?.payload;
+  if (cachedPayload) {
+    return cachedPayload;
+  }
+
+  const persistedPayload = await persistedPayloadForCache(
+    cacheKey,
+    MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+  );
+  if (persistedPayload) {
+    RESPONSE_CACHE.set(payloadKey, {
+      expiresAt: Date.now() - 1,
+      payload: persistedPayload,
+      staleUntil: Date.now() + MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+    });
+    return persistedPayload;
+  }
+
+  return null;
+}
+
+function marketplaceSummaryPayloadFromLedger(
+  ledger,
+  tokenState = ledger?.tokenState,
+) {
+  if (!ledger) {
+    return null;
+  }
+
+  return attachLedgerMetadata(
+    {
+      indexedAt: ledger.generatedAt,
+      network: ledger.network,
+      registry: compactRegistrySummaryPayload(ledger.registryState),
+      summaryOnly: true,
+      token: attachLedgerMetadata(
+        compactTokenSummaryPayload(tokenState),
+        ledger,
+      ),
+      workFloor: ledger.workFloor,
+    },
+    ledger,
+  );
+}
+
+function emptyMarketplaceSummaryPayload(network) {
+  return {
+    indexedAt: new Date().toISOString(),
+    network,
+    registry: compactRegistrySummaryPayload(emptyRegistryPayload(network)),
+    summaryOnly: true,
+    token: compactTokenSummaryPayload(emptyTokenPayloadSnapshot(network)),
+    workFloor: emptyWorkFloorPayload(network),
+  };
+}
+
+async function marketplaceSummaryFallbackPayload(network) {
+  const cached = await cachedMarketplaceSummaryPayloadNoRefresh(network);
+  if (cached) {
+    return cached;
+  }
+
+  const ledger = await existingCanonicalLedgerPayload(network);
+  const ledgerPayload = marketplaceSummaryPayloadFromLedger(ledger);
+  if (ledgerPayload) {
+    return ledgerPayload;
+  }
+
+  return emptyMarketplaceSummaryPayload(network);
+}
+
+async function reconciledLivenetMarketplaceSummaryPayload(
+  network,
+  fresh = false,
+) {
   if (network === "livenet") {
     const ledger = fresh
       ? await summaryCanonicalLedgerPayload(network, true)
@@ -14150,6 +14275,40 @@ async function marketplaceSummaryPayload(network, fresh = false) {
       token,
       workFloor,
     };
+  }
+}
+
+async function refreshMarketplaceSummaryPayloadCache(network, fresh = false) {
+  return cacheMarketplaceSummaryPayload(
+    network,
+    await reconciledLivenetMarketplaceSummaryPayload(network, fresh),
+  );
+}
+
+async function livenetMarketplaceSummaryPayload(network, fresh = false) {
+  const fallback = await marketplaceSummaryFallbackPayload(network);
+
+  if (fresh) {
+    return payloadWithFallbackAfterMs(
+      refreshMarketplaceSummaryPayloadCache(network, true),
+      fallback,
+      MARKETPLACE_SUMMARY_FRESH_WAIT_MS,
+    );
+  }
+
+  refreshPayloadCacheInBackground(
+    marketplaceSummaryCacheKey(network),
+    marketplaceSummaryPayloadKey(network),
+    () => reconciledLivenetMarketplaceSummaryPayload(network, false),
+    MARKETPLACE_SUMMARY_CACHE_TTL_MS,
+    MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+  );
+  return fallback;
+}
+
+async function marketplaceSummaryPayload(network, fresh = false) {
+  if (network === "livenet") {
+    return livenetMarketplaceSummaryPayload(network, fresh);
   }
 
   if (fresh) {
