@@ -16,8 +16,9 @@ Environment=POW_INDEX_WORKER_BACKFILL_MAX_PAGES=3
 Environment=POW_INDEX_WORKER_BACKFILL_SOURCES=log,registry-records,registry-pending,registry-listings,registry-sales,tokens,token-mints,token-transfers,token-sales,token-invalid-events
 Environment=POW_INDEX_WORKER_HOLDERS=0
 Environment=POW_INDEX_PENDING_MIN_AGE_MS=300000
-Environment=POW_INDEX_PENDING_STATUS_LIMIT=100
+Environment=POW_INDEX_PENDING_STATUS_LIMIT=20
 Environment=POW_INDEX_FETCH_TIMEOUT_MS=180000
+Environment=POW_INDEX_STATUS_FETCH_TIMEOUT_MS=15000
 Environment=POW_INDEX_FETCH_RETRIES=8
 ExecStart=/usr/bin/npm run indexer:worker -- --loop
 Restart=always

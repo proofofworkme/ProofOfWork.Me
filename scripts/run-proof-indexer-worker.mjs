@@ -46,6 +46,10 @@ const BACKFILL_SOURCES = String(
 const PENDING_STATUS_LIMIT = Number(process.env.POW_INDEX_PENDING_STATUS_LIMIT ?? 100);
 const PENDING_MIN_AGE_MS = Number(process.env.POW_INDEX_PENDING_MIN_AGE_MS ?? 300_000);
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
+const STATUS_REQUEST_TIMEOUT_MS = Number(
+  process.env.POW_INDEX_STATUS_FETCH_TIMEOUT_MS ??
+    Math.min(REQUEST_TIMEOUT_MS, 15_000),
+);
 const RUN_PARITY = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_WORKER_PARITY ?? "1"),
 );
@@ -66,9 +70,9 @@ function endpoint(pathname, params = {}) {
   return url;
 }
 
-async function readJson(url) {
+async function readJson(url, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) {
@@ -202,7 +206,10 @@ async function refreshPendingStatuses(pool) {
     const txid = String(row.txid);
     summary.checked += 1;
     try {
-      const payload = await readJson(endpoint(`/api/v1/tx/${txid}/status`));
+      const payload = await readJson(
+        endpoint(`/api/v1/tx/${txid}/status`),
+        STATUS_REQUEST_TIMEOUT_MS,
+      );
       const status = String(payload?.status ?? "").toLowerCase();
       if (!["pending", "confirmed", "dropped"].includes(status)) {
         throw new Error(`Unexpected tx status ${JSON.stringify(payload?.status)}`);
@@ -294,6 +301,7 @@ if (DRY_RUN) {
         parity: RUN_PARITY,
         pendingMinAgeMs: PENDING_MIN_AGE_MS,
         pendingStatusLimit: PENDING_STATUS_LIMIT,
+        statusTimeoutMs: STATUS_REQUEST_TIMEOUT_MS,
       },
       null,
       2,

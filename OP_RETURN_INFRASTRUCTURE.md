@@ -87,8 +87,10 @@ the parity checker. Continuous worker cycles use
 `POW_INDEX_WORKER_BACKFILL_SOURCES` for fast feeds and skip the cold
 token-listing, closed-listing, and scoped-holder recrawls by default
 (`POW_INDEX_WORKER_HOLDERS=0`). Run those heavier projection refreshes as
-explicit full backfill jobs instead of every short polling loop. Production
-service configuration is tracked in:
+explicit full backfill jobs instead of every short polling loop. Pending status
+checks use their own smaller timeout (`POW_INDEX_STATUS_FETCH_TIMEOUT_MS`) and
+batch limit (`POW_INDEX_PENDING_STATUS_LIMIT`) so a single cold tx lookup cannot
+block a full worker cycle. Production service configuration is tracked in:
 
 ```text
 deploy/proofofwork-indexer-worker.service
