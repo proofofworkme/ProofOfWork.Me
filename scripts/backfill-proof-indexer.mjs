@@ -64,6 +64,13 @@ const TOKEN_HISTORY_SNAPSHOT_SCOPES = [
   { key: "all", params: {} },
   { key: WORK_TOKEN_ID, params: { asset: WORK_TOKEN_ID } },
 ];
+const REGISTRY_HISTORY_SNAPSHOT_KINDS = ["activity", "listings", "records", "sales"];
+const SUMMARY_SNAPSHOT_SOURCES = [
+  { key: "growthSummary", path: "/api/v1/growth-summary" },
+  { key: "marketplaceSummary", path: "/api/v1/marketplace-summary" },
+  { key: "workFloor", path: "/api/v1/work-floor" },
+  { key: "workSummary", path: "/api/v1/work-summary" },
+];
 
 function endpoint(pathname, params = {}) {
   const url = new URL(`${API_BASE}${pathname}`);
@@ -321,6 +328,50 @@ async function tokenHistorySnapshotsForScope(scope) {
     delete snapshots["market-log"];
   }
   return snapshots;
+}
+
+async function summarySnapshots() {
+  const entries = await Promise.all(
+    SUMMARY_SNAPSHOT_SOURCES.map(async (source) => {
+      try {
+        return [
+          source.key,
+          await readJson(endpoint(source.path, { fresh: "1" })),
+        ];
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            error: error?.message ?? String(error),
+            phase: "summary-snapshot",
+            source: source.key,
+          }),
+        );
+        return [source.key, null];
+      }
+    }),
+  );
+  return Object.fromEntries(entries.filter(([, payload]) => payload));
+}
+
+async function registryHistorySnapshots() {
+  const entries = [];
+  for (const kind of REGISTRY_HISTORY_SNAPSHOT_KINDS) {
+    try {
+      entries.push([
+        kind,
+        await readHistorySnapshot("/api/v1/registry-history", { kind }),
+      ]);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          error: error?.message ?? String(error),
+          kind,
+          phase: "registry-history-snapshot",
+        }),
+      );
+    }
+  }
+  return Object.fromEntries(entries);
 }
 
 function numberOrNull(value) {
@@ -862,9 +913,12 @@ function listingStatus(item, sourceLabel) {
 
 async function storeLedgerSnapshot(client) {
   const tokenHistoryPayloads = {};
-  const [payload, activityPayload] = await Promise.all([
+  const [payload, activityPayload, registryHistoryPayloads, summaryPayloads] =
+    await Promise.all([
     readJson(endpoint("/api/v1/ledger-consistency")),
-    readJson(endpoint("/api/v1/log")),
+    readJson(endpoint("/api/v1/log", { fresh: "1" })),
+    registryHistorySnapshots(),
+    summarySnapshots(),
   ]);
   for (const scope of TOKEN_HISTORY_SNAPSHOT_SCOPES) {
     try {
@@ -880,10 +934,16 @@ async function storeLedgerSnapshot(client) {
       tokenHistoryPayloads[scope.key] = {};
     }
   }
+  const indexedAt = new Date().toISOString();
   const snapshotPayload = {
     ...payload,
+    activityIndexedAt: indexedAt,
     activityPayload,
-    tokenHistoryIndexedAt: new Date().toISOString(),
+    registryHistoryIndexedAt: indexedAt,
+    registryHistoryPayloads,
+    summaryPayloads,
+    summaryPayloadsIndexedAt: indexedAt,
+    tokenHistoryIndexedAt: indexedAt,
     tokenHistoryPayloads,
   };
   await client.query(

@@ -107,6 +107,14 @@ snapshot cursors. Missing, stale, incomplete, wallet-scoped, or fresh reads fall
 back to the canonical node/API path. `POW_INDEX_SHADOW_READS=token-history`
 compares eligible DB output against canonical Token History without changing the
 public response.
+Additional snapshot-backed read flags are available for the broader default-read
+posture: `log` serves the full `/api/v1/log` payload from the stored canonical
+activity snapshot; `registry-history` serves stable registry records, activity,
+listings, and sales pages from stored canonical history snapshots while pending
+registry views stay canonical; `work-floor`, `work-summary`,
+`marketplace-summary`, and `growth-summary` serve stored canonical summary
+snapshots with age guards and canonical fallback. Fresh reads still use the
+node/API path so explicit refreshes converge on current chain and mempool truth.
 
 The worker script keeps the shadow indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through

@@ -2,9 +2,12 @@ import { createProofIndexPool } from "../server/db/postgres.mjs";
 import {
   closeProofIndexReadPool,
   compareProofIndexHistoryPayloads,
+  proofIndexActivityPayload,
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
   proofIndexRecentTransactionIds,
+  proofIndexRegistryHistoryPayload,
+  proofIndexSnapshotPayload,
   proofIndexTokenHistoryReadEligibility,
   proofIndexTokenHistoryPayload,
   proofIndexTxStatusPayload,
@@ -66,6 +69,16 @@ function check(results, name, ok, details = {}, severity = "error") {
 
 function rowNumber(row, key) {
   return numberValue(row?.[key]);
+}
+
+function summaryValue(payload) {
+  const candidates = [
+    payload?.actualValue?.totalSats,
+    payload?.floor?.actualValue?.totalSats,
+    payload?.workFloor?.actualValue?.totalSats,
+    payload?.networkValueSats,
+  ];
+  return numberValue(candidates.find((value) => Number.isFinite(Number(value))));
 }
 
 if (DRY_RUN) {
@@ -379,6 +392,114 @@ try {
     },
   );
 
+  const indexedActivityPayload = await proofIndexActivityPayload(NETWORK);
+  const canonicalActivityPayload = await readJson(
+    endpoint("/api/v1/log", { fresh: "1" }),
+  );
+  check(
+    checks,
+    "log-payload-snapshot-parity",
+    Boolean(indexedActivityPayload?.snapshotId) &&
+      indexedActivityPayload?.snapshotId === canonicalActivityPayload?.snapshotId &&
+      (indexedActivityPayload?.activity ?? []).length ===
+        (canonicalActivityPayload?.activity ?? []).length,
+    {
+      canonicalActivityItems: canonicalActivityPayload?.activity?.length ?? null,
+      canonicalSnapshotId: canonicalActivityPayload?.snapshotId ?? null,
+      indexedActivityItems: indexedActivityPayload?.activity?.length ?? null,
+      indexedSnapshotId: indexedActivityPayload?.snapshotId ?? null,
+    },
+    STRICT ? "error" : "warning",
+  );
+
+  const registryHistoryCases = [
+    { label: "records", params: { kind: "records", limit: 10 } },
+    { label: "listings", params: { kind: "listings", limit: 10 } },
+    { label: "sales", params: { kind: "sales", limit: 10 } },
+    { label: "activity", params: { kind: "activity", limit: 10 } },
+  ];
+  for (const registryCase of registryHistoryCases) {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(registryCase.params)) {
+      searchParams.set(key, String(value));
+    }
+    const indexedRegistryPage = await proofIndexRegistryHistoryPayload(
+      NETWORK,
+      String(registryCase.params.kind ?? ""),
+      searchParams,
+    );
+    const canonicalRegistryPage = await readJson(
+      endpoint("/api/v1/registry-history", {
+        ...registryCase.params,
+        fresh: "1",
+      }),
+    );
+    const registryMismatches = compareProofIndexHistoryPayloads(
+      canonicalRegistryPage,
+      indexedRegistryPage,
+    );
+    check(
+      checks,
+      `registry-history-${registryCase.label}-parity`,
+      registryMismatches.length === 0,
+      {
+        mismatches: registryMismatches.slice(0, 5),
+        snapshotId: indexedRegistryPage?.snapshotId ?? null,
+      },
+      STRICT ? "error" : "warning",
+    );
+    check(
+      checks,
+      `registry-history-${registryCase.label}-snapshot-pinned`,
+      Boolean(indexedRegistryPage?.snapshotId) &&
+        String(indexedRegistryPage?.cursor ?? "").startsWith(
+          `snapshot:${indexedRegistryPage?.snapshotId}:`,
+        ) &&
+        (!indexedRegistryPage?.nextCursor ||
+          String(indexedRegistryPage.nextCursor).startsWith(
+            `snapshot:${indexedRegistryPage.snapshotId}:`,
+          )),
+      {
+        cursor: indexedRegistryPage?.cursor ?? null,
+        nextCursor: indexedRegistryPage?.nextCursor ?? null,
+        snapshotId: indexedRegistryPage?.snapshotId ?? null,
+      },
+    );
+  }
+
+  const summaryCases = [
+    { key: "growthSummary", label: "growth-summary", path: "/api/v1/growth-summary" },
+    {
+      key: "marketplaceSummary",
+      label: "marketplace-summary",
+      path: "/api/v1/marketplace-summary",
+    },
+    { key: "workFloor", label: "work-floor", path: "/api/v1/work-floor" },
+    { key: "workSummary", label: "work-summary", path: "/api/v1/work-summary" },
+  ];
+  for (const summaryCase of summaryCases) {
+    const [indexedSummary, canonicalSummary] = await Promise.all([
+      proofIndexSnapshotPayload(NETWORK, summaryCase.key),
+      readJson(endpoint(summaryCase.path, { fresh: "1" })),
+    ]);
+    const indexedValue = summaryValue(indexedSummary);
+    const canonicalValue = summaryValue(canonicalSummary);
+    check(
+      checks,
+      `${summaryCase.label}-snapshot-parity`,
+      Boolean(indexedSummary?.snapshotId) &&
+        indexedSummary?.snapshotId === canonicalSummary?.snapshotId &&
+        (!canonicalValue || Math.abs(indexedValue - canonicalValue) < 0.0001),
+      {
+        canonicalSnapshotId: canonicalSummary?.snapshotId ?? null,
+        canonicalValue,
+        indexedSnapshotId: indexedSummary?.snapshotId ?? null,
+        indexedValue,
+      },
+      STRICT ? "error" : "warning",
+    );
+  }
+
   const tokenHistoryCases = [
     {
       label: "all-mints",
@@ -477,6 +598,57 @@ try {
         nextCursor: indexedTokenPage?.nextCursor ?? null,
         snapshotId: indexedTokenPage?.snapshotId ?? null,
       },
+    );
+  }
+
+  const nonWorkHolderTokenResult = await pool.query(
+    `
+      SELECT cb.token_id
+      FROM proof_indexer.credit_balances cb
+      WHERE cb.network = $1
+        AND cb.token_id <> $2
+        AND cb.confirmed_balance > 0
+      GROUP BY cb.token_id
+      ORDER BY count(*) DESC, cb.token_id
+      LIMIT 1
+    `,
+    [NETWORK, WORK_TOKEN_ID],
+  );
+  const nonWorkHolderTokenId = nonWorkHolderTokenResult.rows[0]?.token_id ?? "";
+  if (nonWorkHolderTokenId) {
+    const searchParams = new URLSearchParams({
+      asset: nonWorkHolderTokenId,
+      kind: "holders",
+      limit: "10",
+    });
+    const indexedScopedHolders = await proofIndexTokenHistoryPayload(
+      NETWORK,
+      nonWorkHolderTokenId,
+      "holders",
+      searchParams,
+    );
+    const canonicalScopedHolders = await readJson(
+      endpoint("/api/v1/token-history", {
+        asset: nonWorkHolderTokenId,
+        fresh: "1",
+        kind: "holders",
+        limit: 10,
+      }),
+    );
+    const holderMismatches = compareProofIndexHistoryPayloads(
+      canonicalScopedHolders,
+      indexedScopedHolders,
+    );
+    check(
+      checks,
+      "token-history-non-work-holders-parity",
+      holderMismatches.length === 0,
+      {
+        mismatches: holderMismatches.slice(0, 5),
+        snapshotId: indexedScopedHolders?.snapshotId ?? null,
+        tokenId: nonWorkHolderTokenId,
+      },
+      STRICT ? "error" : "warning",
     );
   }
 

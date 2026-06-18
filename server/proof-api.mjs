@@ -19,11 +19,14 @@ import {
 } from "./http/responses.mjs";
 import {
   compareProofIndexHistoryPayloads,
+  proofIndexActivityPayload,
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
   proofIndexReadFeatureEnabled,
   proofIndexReadUnconfirmedTxStatus,
+  proofIndexRegistryHistoryPayload,
   proofIndexShadowFeatureEnabled,
+  proofIndexSnapshotPayload,
   proofIndexTokenHistoryReadEligibility,
   proofIndexTokenHistoryPayload,
   proofIndexTxStatusPayload,
@@ -16326,6 +16329,30 @@ async function handleRequest(request, response) {
       const historyKind = String(url.searchParams.get("kind") ?? "records")
         .trim()
         .toLowerCase();
+      if (
+        !freshRead &&
+        proofIndexReadFeatureEnabled("registry-history,ids-history")
+      ) {
+        const indexedPayload = await proofIndexRegistryHistoryPayload(
+          network,
+          historyKind,
+          url.searchParams,
+        ).catch((error) => {
+          console.error(
+            `Proof index registry-history read failed: ${errorSummary(error)}`,
+          );
+          return null;
+        });
+        if (indexedPayload) {
+          jsonResponse(
+            response,
+            200,
+            indexedPayload,
+            EXPENSIVE_READ_CACHE_CONTROL,
+          );
+          return;
+        }
+      }
       jsonResponse(
         response,
         200,
@@ -16367,6 +16394,25 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/activity" || url.pathname === "/api/v1/log") {
+      if (!freshRead && proofIndexReadFeatureEnabled("activity,log")) {
+        const indexedPayload = await proofIndexActivityPayload(network).catch(
+          (error) => {
+            console.error(
+              `Proof index activity read failed: ${errorSummary(error)}`,
+            );
+            return null;
+          },
+        );
+        if (indexedPayload) {
+          jsonResponse(
+            response,
+            200,
+            indexedPayload,
+            EXPENSIVE_READ_CACHE_CONTROL,
+          );
+          return;
+        }
+      }
       if (freshRead) {
         jsonResponse(
           response,
@@ -16572,6 +16618,24 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/work-floor") {
+      if (
+        !freshRead &&
+        proofIndexReadFeatureEnabled("work-floor,summary,summaries")
+      ) {
+        const indexedPayload = await proofIndexSnapshotPayload(
+          network,
+          "workFloor",
+        ).catch((error) => {
+          console.error(
+            `Proof index work-floor read failed: ${errorSummary(error)}`,
+          );
+          return null;
+        });
+        if (indexedPayload) {
+          jsonResponse(response, 200, indexedPayload, READ_CACHE_CONTROL);
+          return;
+        }
+      }
       if (freshRead) {
         jsonResponse(
           response,
@@ -16591,6 +16655,24 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/work-summary") {
+      if (
+        !freshRead &&
+        proofIndexReadFeatureEnabled("work-summary,summary,summaries")
+      ) {
+        const indexedPayload = await proofIndexSnapshotPayload(
+          network,
+          "workSummary",
+        ).catch((error) => {
+          console.error(
+            `Proof index work-summary read failed: ${errorSummary(error)}`,
+          );
+          return null;
+        });
+        if (indexedPayload) {
+          jsonResponse(response, 200, indexedPayload, READ_CACHE_CONTROL);
+          return;
+        }
+      }
       jsonResponse(
         response,
         200,
@@ -16601,6 +16683,24 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/marketplace-summary") {
+      if (
+        !freshRead &&
+        proofIndexReadFeatureEnabled("marketplace-summary,summary,summaries")
+      ) {
+        const indexedPayload = await proofIndexSnapshotPayload(
+          network,
+          "marketplaceSummary",
+        ).catch((error) => {
+          console.error(
+            `Proof index marketplace-summary read failed: ${errorSummary(error)}`,
+          );
+          return null;
+        });
+        if (indexedPayload) {
+          jsonResponse(response, 200, indexedPayload, READ_CACHE_CONTROL);
+          return;
+        }
+      }
       jsonResponse(
         response,
         200,
@@ -16611,6 +16711,24 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/growth-summary") {
+      if (
+        !freshRead &&
+        proofIndexReadFeatureEnabled("growth-summary,summary,summaries")
+      ) {
+        const indexedPayload = await proofIndexSnapshotPayload(
+          network,
+          "growthSummary",
+        ).catch((error) => {
+          console.error(
+            `Proof index growth-summary read failed: ${errorSummary(error)}`,
+          );
+          return null;
+        });
+        if (indexedPayload) {
+          jsonResponse(response, 200, indexedPayload, READ_CACHE_CONTROL);
+          return;
+        }
+      }
       jsonResponse(
         response,
         200,

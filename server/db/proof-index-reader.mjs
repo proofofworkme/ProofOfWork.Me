@@ -457,6 +457,44 @@ function tokenHistorySnapshotAgeMs(snapshot) {
   return Number.isFinite(parsed) ? Date.now() - parsed : Number.POSITIVE_INFINITY;
 }
 
+function proofIndexSnapshotMaxAgeMs(env = process.env) {
+  return boundedInteger(
+    env.POW_INDEX_SNAPSHOT_READ_MAX_AGE_MS,
+    15 * 60_000,
+    0,
+    24 * 60 * 60_000,
+  );
+}
+
+function snapshotPayloadFresh(snapshot, indexedAtKey, env = process.env) {
+  const payload = snapshot?.payload;
+  const parsed = Date.parse(payload?.[indexedAtKey] ?? snapshot?.generated_at);
+  if (!Number.isFinite(parsed)) {
+    return false;
+  }
+  return Date.now() - parsed <= proofIndexSnapshotMaxAgeMs(env);
+}
+
+function registryHistorySafeKind(kind) {
+  const value = String(kind ?? "").trim().toLowerCase();
+  if (value === "pending") {
+    return "pending";
+  }
+  return new Set(["activity", "listings", "records", "sales"]).has(value)
+    ? value
+    : "records";
+}
+
+export function proofIndexRegistryHistoryReadEligibility(kind, searchParams) {
+  const safeKind = registryHistorySafeKind(kind);
+  return {
+    eligible: safeKind !== "pending",
+    kind: safeKind,
+    pagination: historyPaginationFromSearch(searchParams),
+    reason: "snapshot-pinned-registry-history",
+  };
+}
+
 function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination) {
   const activityPayload = snapshotActivityPayload(snapshot);
   const sourceItems = Array.isArray(activityPayload?.activity)
@@ -511,6 +549,73 @@ function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination
       ledgerGeneratedAt:
         activityPayload.ledgerGeneratedAt ??
         dateIso(activityPayload.generatedAt ?? snapshot?.generated_at),
+      snapshotId,
+    };
+  }
+
+  return page;
+}
+
+function historyPageFromStoredPayload(
+  storedPayload,
+  snapshot,
+  network,
+  kind,
+  pagination,
+) {
+  const sourceItems = Array.isArray(storedPayload?.items)
+    ? storedPayload.items
+    : [];
+  if (sourceItems.length === 0 && Number(storedPayload?.totalCount ?? 0) > 0) {
+    return null;
+  }
+
+  const filtered = historyItemsMatchingQuery(sourceItems, pagination.query);
+  const totalCount = filtered.length;
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  const snapshotId =
+    storedPayload?.snapshotId ??
+    storedPayload?.ledgerSnapshotId ??
+    snapshot?.snapshot_id ??
+    "";
+  const cursor = historyCursor(snapshotId, start);
+  const nextCursor = end < totalCount ? historyCursor(snapshotId, end) : "";
+  const indexedAt = dateIso(
+    storedPayload?.indexedAt ??
+      storedPayload?.ledgerGeneratedAt ??
+      storedPayload?.generatedAt ??
+      snapshot?.generated_at,
+  );
+
+  const page = {
+    cursor,
+    end,
+    indexedAt,
+    indexedThroughBlock:
+      indexedThroughBlockFromItems(filtered) ??
+      rowNumber(snapshot, "indexed_through_block"),
+    items: filtered.slice(start, end),
+    kind,
+    limit: pagination.limit,
+    network,
+    nextCursor,
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source: storedPayload?.source ?? "proof-indexer-snapshot",
+    start,
+    totalCount,
+  };
+
+  if (snapshotId) {
+    return {
+      ...page,
+      consistency: storedPayload?.consistency ?? snapshot?.consistency ?? undefined,
+      ledgerGeneratedAt:
+        storedPayload?.ledgerGeneratedAt ??
+        dateIso(storedPayload?.generatedAt ?? snapshot?.generated_at),
       snapshotId,
     };
   }
@@ -779,7 +884,7 @@ export async function proofIndexTokenHistoryPayload(
     return null;
   }
 
-  return tokenHistoryPageFromSnapshot(
+  const snapshotPage = tokenHistoryPageFromSnapshot(
     snapshot,
     network,
     tokenScope,
@@ -787,6 +892,196 @@ export async function proofIndexTokenHistoryPayload(
     searchParams,
     eligibility.pagination,
   );
+  if (snapshotPage) {
+    return snapshotPage;
+  }
+
+  if (
+    eligibility.kind === "holders" &&
+    eligibility.scope !== "all" &&
+    tokenHistorySnapshotAgeMs(snapshot) <= proofIndexTokenHistoryMaxAgeMs()
+  ) {
+    return proofIndexScopedHolderHistoryPayload(
+      pool,
+      network,
+      eligibility.scope,
+      eligibility.pagination,
+      snapshot,
+    );
+  }
+
+  return null;
+}
+
+async function proofIndexScopedHolderHistoryPayload(
+  pool,
+  network,
+  scope,
+  pagination,
+  snapshot,
+) {
+  const tokenResult = await pool.query(
+    `
+      SELECT token_id, ticker
+      FROM proof_indexer.credit_definitions
+      WHERE network = $1
+        AND (token_id = $2 OR lower(ticker) = lower($2))
+      LIMIT 1
+    `,
+    [network, scope],
+  );
+  const token = tokenResult.rows[0];
+  if (!token) {
+    return null;
+  }
+
+  const countResult = await pool.query(
+    `
+      SELECT count(*) AS total_count
+      FROM proof_indexer.credit_balances
+      WHERE network = $1
+        AND token_id = $2
+        AND confirmed_balance > 0
+        AND ($3 = '' OR lower(address) LIKE $4)
+    `,
+    [
+      network,
+      token.token_id,
+      pagination.query,
+      `%${pagination.query}%`,
+    ],
+  );
+  const totalCount = rowNumber(countResult.rows[0], "total_count");
+  const rowsResult = await pool.query(
+    `
+      SELECT address, confirmed_balance
+      FROM proof_indexer.credit_balances
+      WHERE network = $1
+        AND token_id = $2
+        AND confirmed_balance > 0
+        AND ($5 = '' OR lower(address) LIKE $6)
+      ORDER BY confirmed_balance DESC, address ASC
+      LIMIT $3
+      OFFSET $4
+    `,
+    [
+      network,
+      token.token_id,
+      pagination.limit,
+      pagination.offset,
+      pagination.query,
+      `%${pagination.query}%`,
+    ],
+  );
+
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  const snapshotId = snapshot?.snapshot_id ?? "";
+  const cursor = historyCursor(snapshotId, start);
+  const nextCursor = end < totalCount ? historyCursor(snapshotId, end) : "";
+  const indexedAt = dateIso(
+    snapshot?.payload?.tokenHistoryIndexedAt ?? snapshot?.generated_at,
+  );
+
+  return {
+    cursor,
+    end,
+    indexedAt,
+    indexedThroughBlock: rowNumber(snapshot, "indexed_through_block"),
+    items: rowsResult.rows.map((row) => ({
+      address: row.address,
+      balance: Number(row.confirmed_balance),
+    })),
+    kind: "holders",
+    limit: pagination.limit,
+    network,
+    nextCursor,
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source: "proof-indexer-credit-balances",
+    start,
+    totalCount,
+    snapshotId,
+  };
+}
+
+export async function proofIndexRegistryHistoryPayload(
+  network,
+  kind,
+  searchParams,
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const eligibility = proofIndexRegistryHistoryReadEligibility(
+    kind,
+    searchParams,
+  );
+  if (!eligibility.eligible) {
+    return null;
+  }
+
+  const snapshot = await ledgerSnapshot(
+    pool,
+    network,
+    eligibility.pagination.snapshotId,
+  );
+  if (
+    !snapshot ||
+    !snapshotPayloadFresh(snapshot, "registryHistoryIndexedAt")
+  ) {
+    return null;
+  }
+
+  const registryHistoryPayloads = snapshot?.payload?.registryHistoryPayloads;
+  const storedPayload = registryHistoryPayloads?.[eligibility.kind];
+  if (!storedPayload || storedPayload.complete === false) {
+    return null;
+  }
+
+  return historyPageFromStoredPayload(
+    storedPayload,
+    snapshot,
+    network,
+    eligibility.kind,
+    eligibility.pagination,
+  );
+}
+
+export async function proofIndexActivityPayload(network) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const snapshot = await ledgerSnapshot(pool, network);
+  if (!snapshot || !snapshotPayloadFresh(snapshot, "activityIndexedAt")) {
+    return null;
+  }
+
+  return snapshotActivityPayload(snapshot);
+}
+
+export async function proofIndexSnapshotPayload(network, key) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const snapshot = await ledgerSnapshot(pool, network);
+  if (!snapshot || !snapshotPayloadFresh(snapshot, "summaryPayloadsIndexedAt")) {
+    return null;
+  }
+
+  const payload = snapshot?.payload?.summaryPayloads?.[key];
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  return payload;
 }
 
 function historyItemKey(item) {
