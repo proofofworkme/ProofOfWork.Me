@@ -19,6 +19,7 @@ import {
 } from "./http/responses.mjs";
 import {
   compareProofIndexHistoryPayloads,
+  proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
   proofIndexReadFeatureEnabled,
   proofIndexReadUnconfirmedTxStatus,
@@ -16052,6 +16053,9 @@ function shadowProofIndexLogHistory(canonicalPayload, network, kind, searchParam
   if (!proofIndexShadowFeatureEnabled("log-history,activity-history,log")) {
     return;
   }
+  if (!proofIndexLogHistoryReadEligibility(kind, searchParams).eligible) {
+    return;
+  }
 
   void proofIndexLogHistoryPayload(network, kind, searchParams)
     .then((indexedPayload) => {
@@ -16334,7 +16338,11 @@ async function handleRequest(request, response) {
         .toLowerCase();
       if (
         !freshRead &&
-        proofIndexReadFeatureEnabled("log-history,activity-history,log")
+        proofIndexReadFeatureEnabled("log-history,activity-history,log") &&
+        proofIndexLogHistoryReadEligibility(
+          historyKind,
+          url.searchParams,
+        ).eligible
       ) {
         const indexedPayload = await proofIndexLogHistoryPayload(
           network,

@@ -103,6 +103,41 @@ function historyPaginationFromSearch(searchParams) {
   return { limit, offset, page, query };
 }
 
+export function proofIndexLogHistoryReadEligibility(kind, searchParams) {
+  const requestedKind = String(kind ?? "").trim().toLowerCase();
+  const pagination = historyPaginationFromSearch(searchParams);
+
+  if (requestedKind) {
+    return {
+      eligible: true,
+      pagination,
+      reason: "kind-filter",
+    };
+  }
+
+  if (pagination.query) {
+    return {
+      eligible: true,
+      pagination,
+      reason: "query",
+    };
+  }
+
+  if (pagination.offset > 0) {
+    return {
+      eligible: true,
+      pagination,
+      reason: "paginated-history",
+    };
+  }
+
+  return {
+    eligible: false,
+    pagination,
+    reason: "volatile-first-page",
+  };
+}
+
 function rowNumber(row, key) {
   const number = Number(row?.[key]);
   return Number.isFinite(number) ? number : 0;
@@ -305,7 +340,10 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
   }
 
   const requestedKind = String(kind ?? "").trim().toLowerCase();
-  const pagination = historyPaginationFromSearch(searchParams);
+  const { pagination } = proofIndexLogHistoryReadEligibility(
+    requestedKind,
+    searchParams,
+  );
   const snapshot = await latestLedgerSnapshot(pool, network);
   const snapshotPage = logHistoryPageFromSnapshot(
     snapshot,

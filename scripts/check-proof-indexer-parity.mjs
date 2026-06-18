@@ -2,6 +2,7 @@ import { createProofIndexPool } from "../server/db/postgres.mjs";
 import {
   closeProofIndexReadPool,
   compareProofIndexHistoryPayloads,
+  proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
   proofIndexRecentTransactionIds,
   proofIndexTxStatusPayload,
@@ -214,34 +215,64 @@ try {
 
   const logHistoryCases = [
     {
+      expectIndexedRead: false,
       label: "first-page",
       params: { limit: 20 },
     },
     {
+      expectIndexedRead: true,
       label: "kind-token-sale",
       params: { kind: "token-sale", limit: 10 },
     },
     {
+      expectIndexedRead: true,
       label: "query-infinity-bond",
       params: { q: INFINITY_BOND_REGRESSION_TXID, limit: 10 },
     },
     {
+      expectIndexedRead: true,
       label: "query-pagination-gap-infinity-bond",
       params: { q: PAGINATION_GAP_INFINITY_BOND_TXID, limit: 10 },
     },
     {
+      expectIndexedRead: true,
       label: "query-work-transfer",
       params: { q: WORK_TRANSFER_REGRESSION_TXID, limit: 10 },
     },
+    {
+      expectIndexedRead: true,
+      label: "paginated-history",
+      params: { cursor: 40, limit: 20 },
+    },
   ];
   for (const logCase of logHistoryCases) {
-    const canonicalLogPage = await readJson(
-      endpoint("/api/v1/log-history", logCase.params),
-    );
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(logCase.params)) {
       searchParams.set(key, String(value));
     }
+    const eligibility = proofIndexLogHistoryReadEligibility(
+      String(logCase.params.kind ?? ""),
+      searchParams,
+    );
+    check(
+      checks,
+      `log-history-${logCase.label}-read-eligibility`,
+      eligibility.eligible === logCase.expectIndexedRead,
+      {
+        eligible: eligibility.eligible,
+        expected: logCase.expectIndexedRead,
+        offset: eligibility.pagination.offset,
+        query: eligibility.pagination.query,
+        reason: eligibility.reason,
+      },
+    );
+    if (!eligibility.eligible) {
+      continue;
+    }
+
+    const canonicalLogPage = await readJson(
+      endpoint("/api/v1/log-history", { ...logCase.params, fresh: "1" }),
+    );
     const indexedLogPage = await proofIndexLogHistoryPayload(
       NETWORK,
       String(logCase.params.kind ?? ""),
