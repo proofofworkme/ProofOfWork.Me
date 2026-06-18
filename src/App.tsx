@@ -1072,6 +1072,7 @@ type PowPaginatedApiResponse<T> = {
   pageCount?: number;
   pageSize?: number;
   query?: string;
+  snapshotId?: string;
   start?: number;
   totalCount?: number;
 };
@@ -9422,6 +9423,7 @@ async function fetchGlobalActivityHistoryPage(
     pageIndex?: number;
     pageSize?: number;
     query?: string;
+    snapshotId?: string;
   } = {},
 ): Promise<PowPaginatedApiResponse<PowActivityItem>> {
   const params = new URLSearchParams();
@@ -9432,6 +9434,9 @@ async function fetchGlobalActivityHistoryPage(
   }
   if (options.query?.trim()) {
     params.set("q", options.query.trim());
+  }
+  if (options.snapshotId?.trim()) {
+    params.set("snapshot", options.snapshotId.trim());
   }
 
   const payload = await fetchProofApiJson<
@@ -14594,6 +14599,7 @@ export default function App() {
     pageIndex = 0,
     silent = true,
     query = activityQuery,
+    options: { snapshotId?: string } = {},
   ) {
     if (network !== "livenet") {
       return undefined;
@@ -14608,6 +14614,7 @@ export default function App() {
         pageIndex,
         pageSize: ACTIVITY_FEED_PAGE_SIZE,
         query,
+        snapshotId: options.snapshotId,
       });
       activityHistoryPageRef.current = page;
       setActivityHistoryPage(page);
@@ -19465,6 +19472,7 @@ export default function App() {
             pageIndex,
             false,
             activityProfile?.address ?? activityQuery,
+            { snapshotId: activityHistoryPageRef.current?.snapshotId },
           )
         }
         onRefresh={() => {
@@ -20172,6 +20180,7 @@ export default function App() {
                 pageIndex,
                 false,
                 activityProfile?.address ?? activityQuery,
+                { snapshotId: activityHistoryPageRef.current?.snapshotId },
               )
             }
             onRefresh={() => {

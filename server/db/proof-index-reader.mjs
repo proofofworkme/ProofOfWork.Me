@@ -88,19 +88,56 @@ function boundedInteger(value, fallback, min, max) {
   return Math.min(max, Math.max(min, parsed));
 }
 
+function normalizedSnapshotId(value) {
+  const snapshotId = String(value ?? "").trim();
+  if (!snapshotId || snapshotId.length > 128 || /\s/u.test(snapshotId)) {
+    return "";
+  }
+  return snapshotId;
+}
+
+function historyCursorFromSearch(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return { offset: 0, snapshotId: "" };
+  }
+
+  const snapshotMatch = /^snapshot:([^:]+):(\d+)$/iu.exec(raw);
+  if (snapshotMatch) {
+    return {
+      offset: boundedInteger(snapshotMatch[2], 0, 0, 100_000_000),
+      snapshotId: normalizedSnapshotId(snapshotMatch[1]),
+    };
+  }
+
+  return {
+    offset: boundedInteger(raw, 0, 0, 100_000_000),
+    snapshotId: "",
+  };
+}
+
+function historyCursor(snapshotId, offset) {
+  const pinnedSnapshotId = normalizedSnapshotId(snapshotId);
+  return pinnedSnapshotId ? `snapshot:${pinnedSnapshotId}:${offset}` : String(offset);
+}
+
 function historyPaginationFromSearch(searchParams) {
   const params = searchParams ?? new URLSearchParams();
   const limit = boundedInteger(params.get("limit"), 200, 1, 500);
   const page = boundedInteger(params.get("page"), 0, 0, 1_000_000);
   const cursorRaw = String(params.get("cursor") ?? "").trim();
-  const offset = cursorRaw
-    ? boundedInteger(cursorRaw, 0, 0, 100_000_000)
-    : page * limit;
+  const cursor = historyCursorFromSearch(cursorRaw);
+  const offset = cursorRaw ? cursor.offset : page * limit;
+  const snapshotId =
+    cursor.snapshotId ||
+    normalizedSnapshotId(
+      params.get("snapshot") ?? params.get("snapshotId") ?? "",
+    );
   const query = String(params.get("q") ?? params.get("search") ?? "")
     .trim()
     .toLowerCase();
 
-  return { limit, offset, page, query };
+  return { limit, offset, page, query, snapshotId };
 }
 
 export function proofIndexLogHistoryReadEligibility(kind, searchParams) {
@@ -124,9 +161,9 @@ export function proofIndexLogHistoryReadEligibility(kind, searchParams) {
   }
 
   return {
-    eligible: false,
+    eligible: true,
     pagination,
-    reason: "volatile-unfiltered-activity",
+    reason: "snapshot-pinned-activity",
   };
 }
 
@@ -231,7 +268,26 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
   };
 }
 
-async function latestLedgerSnapshot(pool, network) {
+async function ledgerSnapshot(pool, network, snapshotId = "") {
+  const pinnedSnapshotId = normalizedSnapshotId(snapshotId);
+  if (pinnedSnapshotId) {
+    const pinnedResult = await pool.query(
+      `
+        SELECT
+          snapshot_id,
+          generated_at,
+          indexed_through_block,
+          consistency,
+          payload
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1 AND snapshot_id = $2
+        LIMIT 1
+      `,
+      [network, pinnedSnapshotId],
+    );
+    return pinnedResult.rows[0] ?? null;
+  }
+
   const snapshotResult = await pool.query(
     `
       SELECT
@@ -247,7 +303,7 @@ async function latestLedgerSnapshot(pool, network) {
     `,
     [network],
   );
-  return snapshotResult.rows[0] ?? {};
+  return snapshotResult.rows[0] ?? null;
 }
 
 function snapshotActivityPayload(snapshot) {
@@ -282,7 +338,9 @@ function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination
   const totalCount = filtered.length;
   const start = Math.min(pagination.offset, totalCount);
   const end = Math.min(totalCount, start + pagination.limit);
-  const nextCursor = end < totalCount ? String(end) : "";
+  const snapshotId = activityPayload.snapshotId ?? snapshot?.snapshot_id ?? "";
+  const cursor = historyCursor(snapshotId, start);
+  const nextCursor = end < totalCount ? historyCursor(snapshotId, end) : "";
   const indexedAt = dateIso(
     activityPayload.indexedAt ??
       activityPayload.generatedAt ??
@@ -290,7 +348,7 @@ function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination
   );
 
   const page = {
-    cursor: String(start),
+    cursor,
     end,
     indexedAt,
     indexedThroughBlock:
@@ -310,7 +368,6 @@ function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination
     totalCount,
   };
 
-  const snapshotId = activityPayload.snapshotId ?? snapshot?.snapshot_id;
   if (snapshotId) {
     return {
       ...page,
@@ -336,7 +393,10 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     requestedKind,
     searchParams,
   );
-  const snapshot = await latestLedgerSnapshot(pool, network);
+  const snapshot = await ledgerSnapshot(pool, network, pagination.snapshotId);
+  if (!snapshot) {
+    return null;
+  }
   const snapshotPage = logHistoryPageFromSnapshot(
     snapshot,
     network,
@@ -345,6 +405,9 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
   );
   if (snapshotPage) {
     return snapshotPage;
+  }
+  if (pagination.snapshotId) {
+    return null;
   }
 
   const conditions = [

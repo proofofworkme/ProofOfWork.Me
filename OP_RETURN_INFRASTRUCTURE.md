@@ -93,9 +93,10 @@ enables the first low-risk read adapter for confirmed transaction statuses, with
 canonical node/API fallback for unknown, pending, or dropped rows unless
 `POW_INDEX_READ_UNCONFIRMED_TX_STATUS=1` is explicitly set.
 `POW_INDEX_READS=tx-status,log-history` enables hybrid Log history reads:
-database-backed reads are used for stable `q`/`search` queries and `kind`
-filters. Unfiltered activity pages continue to use the canonical node/API path
-so pending mempool churn cannot make public Log pagination stale.
+database-backed reads are used for stable `q`/`search` queries, `kind` filters,
+and unfiltered activity pages. Unfiltered pagination is pinned to a stored
+ledger snapshot through snapshot cursors so pending mempool churn cannot shift
+page boundaries between reads. Fresh reads still use the canonical node/API path.
 `POW_INDEX_SHADOW_READS=log-history` compares Log history DB output against the
 canonical response without changing the public response for DB-eligible query
 shapes.

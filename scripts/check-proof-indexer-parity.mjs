@@ -215,32 +215,44 @@ try {
 
   const logHistoryCases = [
     {
-      expectIndexedRead: false,
+      compareFresh: false,
+      expectIndexedRead: true,
+      expectReason: "snapshot-pinned-activity",
       label: "first-page",
       params: { limit: 20 },
     },
     {
+      compareFresh: true,
       expectIndexedRead: true,
+      expectReason: "kind-filter",
       label: "kind-token-sale",
       params: { kind: "token-sale", limit: 10 },
     },
     {
+      compareFresh: true,
       expectIndexedRead: true,
+      expectReason: "query",
       label: "query-infinity-bond",
       params: { q: INFINITY_BOND_REGRESSION_TXID, limit: 10 },
     },
     {
+      compareFresh: true,
       expectIndexedRead: true,
+      expectReason: "query",
       label: "query-pagination-gap-infinity-bond",
       params: { q: PAGINATION_GAP_INFINITY_BOND_TXID, limit: 10 },
     },
     {
+      compareFresh: true,
       expectIndexedRead: true,
+      expectReason: "query",
       label: "query-work-transfer",
       params: { q: WORK_TRANSFER_REGRESSION_TXID, limit: 10 },
     },
     {
-      expectIndexedRead: false,
+      compareFresh: false,
+      expectIndexedRead: true,
+      expectReason: "snapshot-pinned-activity",
       label: "paginated-history",
       params: { cursor: 40, limit: 20 },
     },
@@ -266,17 +278,47 @@ try {
         reason: eligibility.reason,
       },
     );
+    check(
+      checks,
+      `log-history-${logCase.label}-read-reason`,
+      eligibility.reason === logCase.expectReason,
+      {
+        expected: logCase.expectReason,
+        reason: eligibility.reason,
+      },
+    );
     if (!eligibility.eligible) {
+      continue;
+    }
+
+    const indexedLogPage = await proofIndexLogHistoryPayload(
+      NETWORK,
+      String(logCase.params.kind ?? ""),
+      searchParams,
+    );
+    if (!logCase.compareFresh) {
+      check(
+        checks,
+        `log-history-${logCase.label}-snapshot-pinned`,
+        Boolean(indexedLogPage?.snapshotId) &&
+          String(indexedLogPage?.cursor ?? "").startsWith(
+            `snapshot:${indexedLogPage?.snapshotId}:`,
+          ) &&
+          (!indexedLogPage?.nextCursor ||
+            String(indexedLogPage.nextCursor).startsWith(
+              `snapshot:${indexedLogPage.snapshotId}:`,
+            )),
+        {
+          cursor: indexedLogPage?.cursor ?? null,
+          nextCursor: indexedLogPage?.nextCursor ?? null,
+          snapshotId: indexedLogPage?.snapshotId ?? null,
+        },
+      );
       continue;
     }
 
     const canonicalLogPage = await readJson(
       endpoint("/api/v1/log-history", { ...logCase.params, fresh: "1" }),
-    );
-    const indexedLogPage = await proofIndexLogHistoryPayload(
-      NETWORK,
-      String(logCase.params.kind ?? ""),
-      searchParams,
     );
     const logMismatches = compareProofIndexHistoryPayloads(
       canonicalLogPage,
@@ -292,6 +334,46 @@ try {
       STRICT ? "error" : "warning",
     );
   }
+
+  const firstSnapshotParams = new URLSearchParams({ limit: "20" });
+  const firstSnapshotPage = await proofIndexLogHistoryPayload(
+    NETWORK,
+    "",
+    firstSnapshotParams,
+  );
+  const secondSnapshotParams = new URLSearchParams({
+    cursor: String(firstSnapshotPage?.nextCursor ?? ""),
+    limit: "20",
+  });
+  const secondSnapshotPage = await proofIndexLogHistoryPayload(
+    NETWORK,
+    "",
+    secondSnapshotParams,
+  );
+  const firstKeys = new Set(
+    (firstSnapshotPage?.items ?? []).map(
+      (item) => `${item?.kind ?? ""}:${item?.txid ?? ""}:${item?.listingId ?? ""}`,
+    ),
+  );
+  const overlappingKeys = (secondSnapshotPage?.items ?? [])
+    .map((item) => `${item?.kind ?? ""}:${item?.txid ?? ""}:${item?.listingId ?? ""}`)
+    .filter((key) => firstKeys.has(key));
+  check(
+    checks,
+    "log-history-snapshot-cursor-stability",
+    Boolean(firstSnapshotPage?.snapshotId) &&
+      firstSnapshotPage?.snapshotId === secondSnapshotPage?.snapshotId &&
+      Number(firstSnapshotPage?.end) === Number(secondSnapshotPage?.start) &&
+      overlappingKeys.length === 0,
+    {
+      firstEnd: firstSnapshotPage?.end ?? null,
+      firstNextCursor: firstSnapshotPage?.nextCursor ?? null,
+      firstSnapshotId: firstSnapshotPage?.snapshotId ?? null,
+      overlap: overlappingKeys.slice(0, 3),
+      secondSnapshotId: secondSnapshotPage?.snapshotId ?? null,
+      secondStart: secondSnapshotPage?.start ?? null,
+    },
+  );
 
   const sampleTxids = await proofIndexRecentTransactionIds(NETWORK, {
     limit: 10,

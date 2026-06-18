@@ -1122,6 +1122,20 @@ function boundedInteger(value, fallback, min, max) {
   return Math.min(max, Math.max(min, parsed));
 }
 
+function historyCursorOffset(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return 0;
+  }
+
+  const snapshotMatch = /^snapshot:[^:]+:(\d+)$/iu.exec(raw);
+  if (snapshotMatch) {
+    return boundedInteger(snapshotMatch[1], 0, 0, 100_000_000);
+  }
+
+  return boundedInteger(raw, 0, 0, 100_000_000);
+}
+
 function historyPaginationFromSearch(searchParams) {
   const limit = boundedInteger(
     searchParams.get("limit"),
@@ -1131,9 +1145,7 @@ function historyPaginationFromSearch(searchParams) {
   );
   const page = boundedInteger(searchParams.get("page"), 0, 0, 1_000_000);
   const cursorRaw = String(searchParams.get("cursor") ?? "").trim();
-  const offset = cursorRaw
-    ? boundedInteger(cursorRaw, 0, 0, 100_000_000)
-    : page * limit;
+  const offset = cursorRaw ? historyCursorOffset(cursorRaw) : page * limit;
   const query = String(searchParams.get("q") ?? searchParams.get("search") ?? "")
     .trim()
     .toLowerCase();
@@ -16053,7 +16065,8 @@ function shadowProofIndexLogHistory(canonicalPayload, network, kind, searchParam
   if (!proofIndexShadowFeatureEnabled("log-history,activity-history,log")) {
     return;
   }
-  if (!proofIndexLogHistoryReadEligibility(kind, searchParams).eligible) {
+  const eligibility = proofIndexLogHistoryReadEligibility(kind, searchParams);
+  if (!eligibility.eligible || eligibility.reason === "snapshot-pinned-activity") {
     return;
   }
 
