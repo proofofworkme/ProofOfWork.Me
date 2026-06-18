@@ -92,14 +92,10 @@ Database-backed API reads are feature-flagged. `POW_INDEX_READS=tx-status`
 enables the first low-risk read adapter for confirmed transaction statuses, with
 canonical node/API fallback for unknown, pending, or dropped rows unless
 `POW_INDEX_READ_UNCONFIRMED_TX_STATUS=1` is explicitly set.
-`POW_INDEX_READS=tx-status,log-history` also enables the Log history read
-adapter once parity is clean; the adapter pages from the stored canonical
-activity snapshot and falls back to the canonical node/API path if the database
-read fails.
 `POW_INDEX_SHADOW_READS=log-history` compares Log history DB output against the
 canonical response without changing the public response. Do not enable
-`POW_INDEX_READS=log-history` until shadow parity is clean for the relevant
-query shapes.
+`POW_INDEX_READS=log-history` until shadow parity and active-read parity stay
+clean for the relevant query shapes, including the volatile first page.
 
 The worker script keeps the shadow indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through
