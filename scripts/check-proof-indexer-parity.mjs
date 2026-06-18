@@ -240,7 +240,7 @@ try {
       params: { q: WORK_TRANSFER_REGRESSION_TXID, limit: 10 },
     },
     {
-      expectIndexedRead: true,
+      expectIndexedRead: false,
       label: "paginated-history",
       params: { cursor: 40, limit: 20 },
     },

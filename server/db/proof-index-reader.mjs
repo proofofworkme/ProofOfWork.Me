@@ -123,18 +123,10 @@ export function proofIndexLogHistoryReadEligibility(kind, searchParams) {
     };
   }
 
-  if (pagination.offset > 0) {
-    return {
-      eligible: true,
-      pagination,
-      reason: "paginated-history",
-    };
-  }
-
   return {
     eligible: false,
     pagination,
-    reason: "volatile-first-page",
+    reason: "volatile-unfiltered-activity",
   };
 }
 
