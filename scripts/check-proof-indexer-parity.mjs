@@ -23,6 +23,9 @@ const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_0
 const STRICT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_PARITY_STRICT ?? ""),
 );
+const CHECK_ACTIVITY_SNAPSHOT = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_PARITY_ACTIVITY_SNAPSHOT ?? ""),
+);
 const DRY_RUN = process.argv.includes("--dry-run");
 const INFINITY_BOND_REGRESSION_TXID =
   "411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891";
@@ -233,8 +236,8 @@ try {
   const logHistoryCases = [
     {
       compareFresh: false,
-      expectIndexedRead: true,
-      expectReason: "snapshot-pinned-activity",
+      expectIndexedRead: false,
+      expectReason: "volatile-first-page-canonical",
       label: "first-page",
       params: { limit: 20 },
     },
@@ -352,7 +355,7 @@ try {
     );
   }
 
-  const firstSnapshotParams = new URLSearchParams({ limit: "20" });
+  const firstSnapshotParams = new URLSearchParams({ cursor: "40", limit: "20" });
   const firstSnapshotPage = await proofIndexLogHistoryPayload(
     NETWORK,
     "",
@@ -392,25 +395,27 @@ try {
     },
   );
 
-  const indexedActivityPayload = await proofIndexActivityPayload(NETWORK);
-  const canonicalActivityPayload = await readJson(
-    endpoint("/api/v1/log", { fresh: "1" }),
-  );
-  check(
-    checks,
-    "log-payload-snapshot-parity",
-    Boolean(indexedActivityPayload?.snapshotId) &&
-      indexedActivityPayload?.snapshotId === canonicalActivityPayload?.snapshotId &&
-      (indexedActivityPayload?.activity ?? []).length ===
-        (canonicalActivityPayload?.activity ?? []).length,
-    {
-      canonicalActivityItems: canonicalActivityPayload?.activity?.length ?? null,
-      canonicalSnapshotId: canonicalActivityPayload?.snapshotId ?? null,
-      indexedActivityItems: indexedActivityPayload?.activity?.length ?? null,
-      indexedSnapshotId: indexedActivityPayload?.snapshotId ?? null,
-    },
-    STRICT ? "error" : "warning",
-  );
+  if (CHECK_ACTIVITY_SNAPSHOT) {
+    const indexedActivityPayload = await proofIndexActivityPayload(NETWORK);
+    const canonicalActivityPayload = await readJson(
+      endpoint("/api/v1/log", { fresh: "1" }),
+    );
+    check(
+      checks,
+      "log-payload-snapshot-parity",
+      Boolean(indexedActivityPayload?.snapshotId) &&
+        indexedActivityPayload?.snapshotId === canonicalActivityPayload?.snapshotId &&
+        (indexedActivityPayload?.activity ?? []).length ===
+          (canonicalActivityPayload?.activity ?? []).length,
+      {
+        canonicalActivityItems: canonicalActivityPayload?.activity?.length ?? null,
+        canonicalSnapshotId: canonicalActivityPayload?.snapshotId ?? null,
+        indexedActivityItems: indexedActivityPayload?.activity?.length ?? null,
+        indexedSnapshotId: indexedActivityPayload?.snapshotId ?? null,
+      },
+      STRICT ? "error" : "warning",
+    );
+  }
 
   const registryHistoryCases = [
     { label: "records", params: { kind: "records", limit: 10 } },

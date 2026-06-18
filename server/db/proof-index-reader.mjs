@@ -212,6 +212,8 @@ function historyItemsMatchingNeedles(items, needles) {
 export function proofIndexLogHistoryReadEligibility(kind, searchParams) {
   const requestedKind = String(kind ?? "").trim().toLowerCase();
   const pagination = historyPaginationFromSearch(searchParams);
+  const params = searchParams ?? new URLSearchParams();
+  const cursorRaw = String(params.get("cursor") ?? "").trim();
 
   if (requestedKind) {
     return {
@@ -229,10 +231,18 @@ export function proofIndexLogHistoryReadEligibility(kind, searchParams) {
     };
   }
 
+  if (cursorRaw || pagination.snapshotId || pagination.offset > 0) {
+    return {
+      eligible: true,
+      pagination,
+      reason: "snapshot-pinned-activity",
+    };
+  }
+
   return {
-    eligible: true,
+    eligible: false,
     pagination,
-    reason: "snapshot-pinned-activity",
+    reason: "volatile-first-page-canonical",
   };
 }
 

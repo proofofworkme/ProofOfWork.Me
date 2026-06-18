@@ -15,6 +15,9 @@ const REQUEST_RETRIES = Number(process.env.POW_INDEX_FETCH_RETRIES ?? 4);
 const INCLUDE_SCOPED_HOLDERS = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_HOLDERS ?? "1"),
 );
+const REFRESH_ACTIVITY_SNAPSHOT = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_BACKFILL_ACTIVITY_SNAPSHOT ?? ""),
+);
 const DRY_RUN = process.argv.includes("--dry-run");
 const SOURCE_FILTER = new Set(
   String(process.env.POW_INDEX_BACKFILL_SOURCES ?? "")
@@ -372,6 +375,50 @@ async function registryHistorySnapshots() {
     }
   }
   return Object.fromEntries(entries);
+}
+
+async function storedLedgerSnapshotPayload(client, snapshotId = "") {
+  const requestedSnapshotId = String(snapshotId ?? "").trim();
+  const params = [NETWORK];
+  const snapshotFilter = requestedSnapshotId
+    ? "AND snapshot_id = $2"
+    : "";
+  if (requestedSnapshotId) {
+    params.push(requestedSnapshotId);
+  }
+  const result = await client.query(
+    `
+      SELECT payload
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
+      ${snapshotFilter}
+      ORDER BY generated_at DESC
+      LIMIT 1
+    `,
+    params,
+  );
+  const payload = result.rows[0]?.payload;
+  return payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload
+    : {};
+}
+
+async function activitySnapshot(previousPayload) {
+  if (!REFRESH_ACTIVITY_SNAPSHOT) {
+    return previousPayload?.activityPayload ?? null;
+  }
+  try {
+    return await readJson(endpoint("/api/v1/log", { fresh: "1" }));
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        error: error?.message ?? String(error),
+        phase: "activity-snapshot",
+        preservedPrevious: Boolean(previousPayload?.activityPayload),
+      }),
+    );
+    return previousPayload?.activityPayload ?? null;
+  }
 }
 
 function numberOrNull(value) {
@@ -913,13 +960,17 @@ function listingStatus(item, sourceLabel) {
 
 async function storeLedgerSnapshot(client) {
   const tokenHistoryPayloads = {};
-  const [payload, activityPayload, registryHistoryPayloads, summaryPayloads] =
+  const payload = await readJson(endpoint("/api/v1/ledger-consistency"));
+  const previousPayload = await storedLedgerSnapshotPayload(
+    client,
+    payload.snapshotId ?? "",
+  );
+  const [activityPayload, registryHistoryPayloads, summaryPayloads] =
     await Promise.all([
-    readJson(endpoint("/api/v1/ledger-consistency")),
-    readJson(endpoint("/api/v1/log", { fresh: "1" })),
-    registryHistorySnapshots(),
-    summarySnapshots(),
-  ]);
+      activitySnapshot(previousPayload),
+      registryHistorySnapshots(),
+      summarySnapshots(),
+    ]);
   for (const scope of TOKEN_HISTORY_SNAPSHOT_SCOPES) {
     try {
       tokenHistoryPayloads[scope.key] = await tokenHistorySnapshotsForScope(scope);
@@ -935,10 +986,22 @@ async function storeLedgerSnapshot(client) {
     }
   }
   const indexedAt = new Date().toISOString();
+  const basePayload =
+    previousPayload && typeof previousPayload === "object" && !Array.isArray(previousPayload)
+      ? previousPayload
+      : {};
   const snapshotPayload = {
+    ...basePayload,
     ...payload,
-    activityIndexedAt: indexedAt,
-    activityPayload,
+    ...(activityPayload
+      ? {
+          activityIndexedAt:
+            activityPayload === previousPayload?.activityPayload
+              ? previousPayload.activityIndexedAt ?? indexedAt
+              : indexedAt,
+          activityPayload,
+        }
+      : {}),
     registryHistoryIndexedAt: indexedAt,
     registryHistoryPayloads,
     summaryPayloads,

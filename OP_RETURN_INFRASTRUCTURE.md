@@ -82,11 +82,13 @@ plus a recent confirmed tx-status sample against the canonical API. Warnings
 such as a snapshot id moving during a refresh can be promoted to hard failures
 with `POW_INDEX_PARITY_STRICT=1`.
 
-Ledger snapshots store both the consistency payload and the canonical
-`/api/v1/log` activity payload. Database-backed Log history reads page from that
-stored canonical activity snapshot first, then fall back to per-event rows only
-when no activity snapshot exists. This keeps the read model aligned with the
-same Log/Growth/WORK overlay that public canonical reads use.
+Ledger snapshots store the consistency payload and may preserve a previously
+captured canonical `/api/v1/log` activity payload. The default snapshot-only
+backfill does not refresh the full activity payload because that canonical read
+can be intentionally expensive; set `POW_INDEX_BACKFILL_ACTIVITY_SNAPSHOT=1`
+only for an explicit full Log activity refresh. Database-backed Log history
+reads page from the stored activity snapshot first, then fall back to per-event
+rows only when no activity snapshot exists.
 
 Database-backed API reads are feature-flagged. `POW_INDEX_READS=tx-status`
 enables the first low-risk read adapter for confirmed transaction statuses, with
@@ -94,9 +96,10 @@ canonical node/API fallback for unknown, pending, or dropped rows unless
 `POW_INDEX_READ_UNCONFIRMED_TX_STATUS=1` is explicitly set.
 `POW_INDEX_READS=tx-status,log-history` enables hybrid Log history reads:
 database-backed reads are used for stable `q`/`search` queries, `kind` filters,
-and unfiltered activity pages. Unfiltered pagination is pinned to a stored
-ledger snapshot through snapshot cursors so pending mempool churn cannot shift
-page boundaries between reads. Fresh reads still use the canonical node/API path.
+and older unfiltered activity pages. The volatile unfiltered first page remains
+canonical; later unfiltered pagination is pinned to a stored ledger snapshot
+through snapshot cursors so pending mempool churn cannot shift page boundaries
+between reads. Fresh reads still use the canonical node/API path.
 `POW_INDEX_SHADOW_READS=log-history` compares Log history DB output against the
 canonical response without changing the public response for DB-eligible query
 shapes.
@@ -108,13 +111,13 @@ back to the canonical node/API path. `POW_INDEX_SHADOW_READS=token-history`
 compares eligible DB output against canonical Token History without changing the
 public response.
 Additional snapshot-backed read flags are available for the broader default-read
-posture: `log` serves the full `/api/v1/log` payload from the stored canonical
-activity snapshot; `registry-history` serves stable registry records, activity,
-listings, and sales pages from stored canonical history snapshots while pending
-registry views stay canonical; `work-floor`, `work-summary`,
-`marketplace-summary`, and `growth-summary` serve stored canonical summary
-snapshots with age guards and canonical fallback. Fresh reads still use the
-node/API path so explicit refreshes converge on current chain and mempool truth.
+posture: `registry-history` serves stable registry records, activity, listings,
+and sales pages from stored canonical history snapshots while pending registry
+views stay canonical; `work-floor`, `work-summary`, `marketplace-summary`, and
+`growth-summary` serve stored canonical summary snapshots with age guards and
+canonical fallback. The `log` flag is reserved for an explicit full activity
+snapshot refresh. Fresh reads still use the node/API path so explicit refreshes
+converge on current chain and mempool truth.
 
 The worker script keeps the shadow indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through
