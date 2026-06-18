@@ -77,8 +77,18 @@ The parity script compares the database read model with the canonical
 `/api/v1/ledger-consistency` snapshot before any endpoint cutover. It requires a
 green canonical ledger, `missingLogEvents: []`, database coverage for confirmed
 activity, matching confirmed credit definitions, and populated search indexes.
-Warnings such as a snapshot id moving during a refresh can be promoted to hard
-failures with `POW_INDEX_PARITY_STRICT=1`.
+It also checks the first Log history page and a recent confirmed tx-status
+sample against the canonical API. Warnings such as a snapshot id moving during a
+refresh can be promoted to hard failures with `POW_INDEX_PARITY_STRICT=1`.
+
+Database-backed API reads are feature-flagged. `POW_INDEX_READS=tx-status`
+enables the first low-risk read adapter for confirmed transaction statuses, with
+canonical node/API fallback for unknown, pending, or dropped rows unless
+`POW_INDEX_READ_UNCONFIRMED_TX_STATUS=1` is explicitly set.
+`POW_INDEX_SHADOW_READS=log-history` compares Log history DB output against the
+canonical response without changing the public response. Do not enable
+`POW_INDEX_READS=log-history` until shadow parity is clean for the relevant
+query shapes.
 
 The worker script keeps the shadow indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through

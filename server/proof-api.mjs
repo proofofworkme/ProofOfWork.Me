@@ -17,6 +17,14 @@ import {
   optionsResponse,
   writeJsonBody,
 } from "./http/responses.mjs";
+import {
+  compareProofIndexHistoryPayloads,
+  proofIndexLogHistoryPayload,
+  proofIndexReadFeatureEnabled,
+  proofIndexReadUnconfirmedTxStatus,
+  proofIndexShadowFeatureEnabled,
+  proofIndexTxStatusPayload,
+} from "./db/proof-index-reader.mjs";
 
 bitcoin.initEccLib(ecc);
 dns.setDefaultResultOrder("ipv4first");
@@ -15957,6 +15965,20 @@ async function txOutspendPayload(txid, vout, network) {
 }
 
 async function txStatusPayload(txid, network) {
+  if (proofIndexReadFeatureEnabled("tx-status,tx")) {
+    const indexedStatus = await proofIndexTxStatusPayload(txid, network, {
+      includeUnconfirmed: proofIndexReadUnconfirmedTxStatus(),
+    }).catch((error) => {
+      console.error(
+        `Proof index tx-status read failed for ${txid}: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    if (indexedStatus) {
+      return indexedStatus;
+    }
+  }
+
   const tx = await fetchTransactionWithSourceFallback(txid, network).catch(
     () => null,
   );
@@ -15978,6 +16000,34 @@ async function txStatusPayload(txid, network) {
     status: confirmed ? "confirmed" : "pending",
     txid,
   };
+}
+
+function shadowProofIndexLogHistory(canonicalPayload, network, kind, searchParams) {
+  if (!proofIndexShadowFeatureEnabled("log-history,activity-history,log")) {
+    return;
+  }
+
+  void proofIndexLogHistoryPayload(network, kind, searchParams)
+    .then((indexedPayload) => {
+      if (!indexedPayload) {
+        console.error("Proof index log-history shadow read returned no payload.");
+        return;
+      }
+      const mismatches = compareProofIndexHistoryPayloads(
+        canonicalPayload,
+        indexedPayload,
+      );
+      if (mismatches.length > 0) {
+        console.error(
+          `Proof index log-history shadow mismatch: ${mismatches.join("; ")}`,
+        );
+      }
+    })
+    .catch((error) => {
+      console.error(
+        `Proof index log-history shadow read failed: ${errorSummary(error)}`,
+      );
+    });
 }
 
 async function txPayload(txid, network) {
@@ -16236,15 +16286,41 @@ async function handleRequest(request, response) {
       const historyKind = String(url.searchParams.get("kind") ?? "")
         .trim()
         .toLowerCase();
-      jsonResponse(
-        response,
-        200,
-        await activityHistoryPayload(
+      if (
+        !freshRead &&
+        proofIndexReadFeatureEnabled("log-history,activity-history,log")
+      ) {
+        const indexedPayload = await proofIndexLogHistoryPayload(
           network,
           historyKind,
           url.searchParams,
-          freshRead,
-        ),
+        ).catch((error) => {
+          console.error(
+            `Proof index log-history read failed: ${errorSummary(error)}`,
+          );
+          return null;
+        });
+        if (indexedPayload) {
+          jsonResponse(
+            response,
+            200,
+            indexedPayload,
+            EXPENSIVE_READ_CACHE_CONTROL,
+          );
+          return;
+        }
+      }
+      const payload = await activityHistoryPayload(
+        network,
+        historyKind,
+        url.searchParams,
+        freshRead,
+      );
+      shadowProofIndexLogHistory(payload, network, historyKind, url.searchParams);
+      jsonResponse(
+        response,
+        200,
+        payload,
         freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
       );
       return;

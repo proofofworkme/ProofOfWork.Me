@@ -1,4 +1,11 @@
 import { createProofIndexPool } from "../server/db/postgres.mjs";
+import {
+  closeProofIndexReadPool,
+  compareProofIndexHistoryPayloads,
+  proofIndexLogHistoryPayload,
+  proofIndexRecentTransactionIds,
+  proofIndexTxStatusPayload,
+} from "../server/db/proof-index-reader.mjs";
 
 const DEFAULT_API_BASE = "http://127.0.0.1:8081";
 const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
@@ -199,6 +206,53 @@ try {
     STRICT ? "error" : "warning",
   );
 
+  const canonicalLogPage = await readJson(endpoint("/api/v1/log-history", { limit: 20 }));
+  const indexedLogPage = await proofIndexLogHistoryPayload(
+    NETWORK,
+    "",
+    new URLSearchParams("limit=20"),
+  );
+  const logMismatches = compareProofIndexHistoryPayloads(
+    canonicalLogPage,
+    indexedLogPage,
+  );
+  check(
+    checks,
+    "log-history-first-page-parity",
+    logMismatches.length === 0,
+    {
+      mismatches: logMismatches.slice(0, 5),
+    },
+    STRICT ? "error" : "warning",
+  );
+
+  const sampleTxids = await proofIndexRecentTransactionIds(NETWORK, {
+    limit: 10,
+    status: "confirmed",
+  });
+  let txStatusMismatches = 0;
+  for (const txid of sampleTxids) {
+    const [canonicalStatus, indexedStatus] = await Promise.all([
+      readJson(endpoint(`/api/v1/tx/${txid}/status`)),
+      proofIndexTxStatusPayload(txid, NETWORK, { includeUnconfirmed: true }),
+    ]);
+    if (
+      canonicalStatus?.status !== indexedStatus?.status ||
+      Boolean(canonicalStatus?.confirmed) !== Boolean(indexedStatus?.confirmed)
+    ) {
+      txStatusMismatches += 1;
+    }
+  }
+  check(
+    checks,
+    "tx-status-confirmed-sample-parity",
+    txStatusMismatches === 0,
+    {
+      checked: sampleTxids.length,
+      mismatches: txStatusMismatches,
+    },
+  );
+
   const failed = checks.filter((item) => item.severity === "error" && !item.ok);
   const output = {
     apiBase: API_BASE,
@@ -220,5 +274,6 @@ try {
     process.exitCode = 1;
   }
 } finally {
+  await closeProofIndexReadPool();
   await pool.end();
 }
