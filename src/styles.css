@@ -4302,15 +4302,35 @@ pre {
 
 .landing-hero {
   align-items: end;
-  background:
-    linear-gradient(90deg, rgba(0, 0, 0, 0.98), rgba(0, 0, 0, 0.72) 54%, rgba(0, 0, 0, 0.2)),
-    url("/twitter-banner.png") center / cover no-repeat #030508;
+  background: #030508;
   border-bottom: 1px solid var(--border);
   color: #f4f7fb;
   display: grid;
+  isolation: isolate;
   min-height: min(72vh, 720px);
   overflow: hidden;
   padding: 28px 18px;
+  position: relative;
+}
+
+.landing-hero::before,
+.landing-hero::after {
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+}
+
+.landing-hero::before {
+  background: url("/landing-banner.png") center / cover no-repeat;
+  filter: brightness(1.24) saturate(1.08);
+}
+
+.landing-hero::after {
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.56) 48%, rgba(0, 0, 0, 0.12)),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.62));
 }
 
 .landing-hero-content {
@@ -4319,7 +4339,9 @@ pre {
   margin: 0 auto;
   max-width: 1180px;
   min-width: 0;
+  position: relative;
   width: 100%;
+  z-index: 1;
 }
 
 .landing-kicker {
@@ -5959,11 +5981,19 @@ pre {
   }
 
   .landing-hero {
-    background:
-      linear-gradient(180deg, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.96)),
-      url("/twitter-banner.png") center top / cover no-repeat #030508;
     min-height: 620px;
     padding: 22px 14px;
+  }
+
+  .landing-hero::before {
+    background-position: center top;
+    filter: brightness(1.18) saturate(1.08);
+  }
+
+  .landing-hero::after {
+    background:
+      linear-gradient(180deg, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0.88)),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.24));
   }
 
   .landing-main {
