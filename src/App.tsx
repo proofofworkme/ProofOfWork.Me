@@ -22947,10 +22947,26 @@ function TokenWorkspace({
     | undefined
   >();
   const [remoteMintPageLoading, setRemoteMintPageLoading] = useState(false);
+  const [remoteHolderPage, setRemoteHolderPage] = useState<
+    | {
+        key: string;
+        page: PowPaginatedApiResponse<PowTokenHolder>;
+      }
+    | undefined
+  >();
+  const [remoteHolderPageLoading, setRemoteHolderPageLoading] = useState(false);
   const holderQuery = holderSearch.trim().toLowerCase();
   const mintQuery = mintSearch.trim().toLowerCase();
   const detailMode = workTokenOnly || Boolean(tokenDetailTarget.trim());
+  const holderHistoryToken = detailMode ? detailToken : selectedToken;
   const mintHistoryToken = detailMode ? detailToken : selectedToken;
+  const holderHistoryKey = [
+    network,
+    holderHistoryToken?.tokenId ?? "",
+    holderPageIndex,
+    holderQuery,
+    TOKEN_LIST_PREVIEW_COUNT,
+  ].join(":");
   const mintHistoryLocalCount = detailMode ? detailMints.length : mints.length;
   const mintHistoryTotalHint =
     (Number(mintHistoryToken?.confirmedMints) || 0) +
@@ -22962,8 +22978,57 @@ function TokenWorkspace({
     mintQuery,
     TOKEN_LIST_PREVIEW_COUNT,
   ].join(":");
+  const activeRemoteHolderPage =
+    remoteHolderPage?.key === holderHistoryKey
+      ? remoteHolderPage.page
+      : undefined;
   const activeRemoteMintPage =
     remoteMintPage?.key === mintHistoryKey ? remoteMintPage.page : undefined;
+  useEffect(() => {
+    setHolderPageIndex(0);
+  }, [holderHistoryToken?.tokenId, holderQuery]);
+  useEffect(() => {
+    if (!holderQuery || !holderHistoryToken?.tokenId || network !== "livenet") {
+      setRemoteHolderPage(undefined);
+      setRemoteHolderPageLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRemoteHolderPageLoading(true);
+    void fetchTokenHistoryPage<PowTokenHolder>(network, "holders", {
+      fresh: true,
+      pageIndex: holderPageIndex,
+      pageSize: TOKEN_LIST_PREVIEW_COUNT,
+      query: holderQuery,
+      tokenScope: holderHistoryToken.tokenId,
+    })
+      .then((page) => {
+        if (!cancelled) {
+          setRemoteHolderPage({ key: holderHistoryKey, page });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRemoteHolderPage(undefined);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRemoteHolderPageLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    holderHistoryKey,
+    holderHistoryToken?.tokenId,
+    holderPageIndex,
+    holderQuery,
+    network,
+  ]);
   useEffect(() => {
     if (!mintHistoryToken?.tokenId || network !== "livenet") {
       setRemoteMintPage(undefined);
@@ -23016,12 +23081,26 @@ function TokenWorkspace({
   const selectedMatchingHolders = holders.filter((holder) =>
     tokenHolderMatchesSearch(holder, holderQuery),
   );
-  const selectedHolderPage = pagedItems(
-    selectedMatchingHolders,
-    holderPageIndex,
-    TOKEN_LIST_PREVIEW_COUNT,
-  );
+  const selectedRemoteHolderPage =
+    !detailMode && activeRemoteHolderPage
+      ? historyPageToPagedItems(
+          activeRemoteHolderPage,
+          holderPageIndex,
+          TOKEN_LIST_PREVIEW_COUNT,
+        )
+      : undefined;
+  const selectedHolderPage =
+    selectedRemoteHolderPage ??
+    pagedItems(
+      selectedMatchingHolders,
+      holderPageIndex,
+      TOKEN_LIST_PREVIEW_COUNT,
+    );
   const selectedVisibleHolders = selectedHolderPage.items;
+  const selectedHolderMatchingCount =
+    selectedRemoteHolderPage?.totalCount ?? selectedMatchingHolders.length;
+  const selectedHolderTotalCount =
+    selectedRemoteHolderPage?.totalCount ?? holders.length;
   const selectedMatchingMints = mints.filter((mint) =>
     tokenMintMatchesSearch(mint, mintQuery),
   );
@@ -23203,12 +23282,26 @@ function TokenWorkspace({
   const detailMatchingHolders = detailHolders.filter((holder) =>
     tokenHolderMatchesSearch(holder, holderQuery),
   );
-  const detailHolderPage = pagedItems(
-    detailMatchingHolders,
-    holderPageIndex,
-    TOKEN_LIST_PREVIEW_COUNT,
-  );
+  const detailRemoteHolderPage =
+    detailMode && activeRemoteHolderPage
+      ? historyPageToPagedItems(
+          activeRemoteHolderPage,
+          holderPageIndex,
+          TOKEN_LIST_PREVIEW_COUNT,
+        )
+      : undefined;
+  const detailHolderPage =
+    detailRemoteHolderPage ??
+    pagedItems(
+      detailMatchingHolders,
+      holderPageIndex,
+      TOKEN_LIST_PREVIEW_COUNT,
+    );
   const detailVisibleHolders = detailHolderPage.items;
+  const detailHolderMatchingCount =
+    detailRemoteHolderPage?.totalCount ?? detailMatchingHolders.length;
+  const detailHolderTotalCount =
+    detailRemoteHolderPage?.totalCount ?? detailHolders.length;
   const detailMatchingMints = detailMints.filter((mint) =>
     tokenMintMatchesSearch(mint, mintQuery),
   );
@@ -23745,13 +23838,22 @@ function TokenWorkspace({
   const renderHolderList = (
     token: PowTokenDefinition,
     visibleHolders: PowTokenHolder[],
+    loadingRemotePage = false,
   ) => (
     <div className="id-record-list">
       {visibleHolders.length === 0 ? (
         <div className="empty-state">
-          <h3>{holderQuery ? "No holder matches" : "No holders yet"}</h3>
+          <h3>
+            {loadingRemotePage
+              ? "Loading holders"
+              : holderQuery
+                ? "No holder matches"
+                : "No holders yet"}
+          </h3>
           <p>
-            {holderQuery
+            {loadingRemotePage
+              ? "Fetching the requested holder page."
+              : holderQuery
               ? "Search by a full address fragment or confirmed balance."
               : "The first confirmed mint will appear here."}
           </p>
@@ -24336,10 +24438,14 @@ function TokenWorkspace({
                 </div>
                 {renderHolderSearch(
                   detailVisibleHolders.length,
-                  detailMatchingHolders.length,
-                  detailHolders.length,
+                  detailHolderMatchingCount,
+                  detailHolderTotalCount,
                 )}
-                {renderHolderList(detailToken, detailVisibleHolders)}
+                {renderHolderList(
+                  detailToken,
+                  detailVisibleHolders,
+                  remoteHolderPageLoading,
+                )}
                 <PaginationControls
                   label="Holders"
                   onPageChange={setHolderPageIndex}
@@ -24753,10 +24859,14 @@ function TokenWorkspace({
             </div>
             {renderHolderSearch(
               selectedVisibleHolders.length,
-              selectedMatchingHolders.length,
-              holders.length,
+              selectedHolderMatchingCount,
+              selectedHolderTotalCount,
             )}
-            {renderHolderList(selectedToken, selectedVisibleHolders)}
+            {renderHolderList(
+              selectedToken,
+              selectedVisibleHolders,
+              remoteHolderPageLoading,
+            )}
             <PaginationControls
               label="Holders"
               onPageChange={setHolderPageIndex}

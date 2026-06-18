@@ -1162,12 +1162,34 @@ function recoveryAddressesFromSearchParams(searchParams, network) {
   ]) {
     values.push(...searchParams.getAll(key));
   }
+  for (const key of ["q", "search"]) {
+    values.push(...searchParams.getAll(key));
+  }
 
   return [
     ...new Set(
       values
         .map((value) => String(value ?? "").trim())
         .filter((value) => isValidBitcoinAddress(value, network)),
+    ),
+  ];
+}
+
+function recoveryTxidsFromSearchParams(searchParams) {
+  if (!searchParams) {
+    return [];
+  }
+
+  const values = [];
+  for (const key of ["q", "search", "txid", "transaction", "transactionId"]) {
+    values.push(...searchParams.getAll(key));
+  }
+
+  return [
+    ...new Set(
+      values
+        .map((value) => String(value ?? "").trim().toLowerCase())
+        .filter((value) => /^[0-9a-f]{64}$/u.test(value)),
     ),
   ];
 }
@@ -12136,6 +12158,9 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
   const recoveryAddresses = Array.isArray(options.recoveryAddresses)
     ? options.recoveryAddresses
     : [];
+  const recoveryTxids = Array.isArray(options.recoveryTxids)
+    ? options.recoveryTxids
+    : [];
   let state =
     cachedWorkTokenState && typeof cachedWorkTokenState === "object"
       ? cachedWorkTokenState
@@ -12227,9 +12252,11 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
     Math.min(maxDeltaTxs, WORK_TOKEN_LIVE_HISTORY_MAX_TXS),
   );
   const hasRecoveryAddresses = recoveryAddresses.length > 0;
+  const hasRecoveryTxids = recoveryTxids.length > 0;
+  const hasRecoveryInputs = hasRecoveryAddresses || hasRecoveryTxids;
   const maxNonMintTxs = Math.max(
     0,
-    hasRecoveryAddresses
+    hasRecoveryInputs
       ? 0
       : Math.min(maxDeltaTxs, WORK_TOKEN_LIVE_NON_MINT_MAX_TXS),
   );
@@ -12238,11 +12265,18 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
     maxNonMintTxs > 0 ? WORK_TOKEN_LIVE_NON_MINT_SCAN_MAX_TXS : 0,
   );
   const pendingTxids = unconfirmedTokenStateTxids(state);
-  const confirmedPendingTxs = await confirmedTransactionsForTxids(
-    pendingTxids,
-    network,
-    maxPendingConfirmationTxs,
-  );
+  const [confirmedPendingTxs, recoveredTxidTxs] = await Promise.all([
+    confirmedTransactionsForTxids(
+      pendingTxids,
+      network,
+      maxPendingConfirmationTxs,
+    ),
+    confirmedTransactionsForTxids(
+      recoveryTxids,
+      network,
+      Math.max(0, recoveryTxids.length),
+    ),
+  ]);
 
   const knownTxids = syncWorkTokenLiveSeenTxids(network, state);
   const cachedPendingTokenTxs = cachedPendingTokenTransactionsForRegistry(
@@ -12287,6 +12321,7 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
 
   const txs = dedupeTransactions([
     ...confirmedPendingTxs,
+    ...recoveredTxidTxs,
     ...recentTxs.filter(Boolean),
     ...historyTxs,
     ...nonMintHistoryTxs,
@@ -12476,8 +12511,9 @@ function liveWorkReadWaitMs(options = {}) {
     return options.liveWorkWaitMs;
   }
 
-  return Array.isArray(options.recoveryAddresses) &&
-    options.recoveryAddresses.length > 0
+  return (Array.isArray(options.recoveryAddresses) &&
+    options.recoveryAddresses.length > 0) ||
+    (Array.isArray(options.recoveryTxids) && options.recoveryTxids.length > 0)
     ? WORK_TOKEN_LIVE_RECOVERY_WAIT_MS
     : WORK_TOKEN_LIVE_WAIT_MS;
 }
@@ -12512,6 +12548,8 @@ async function tokenPayloadForRead(
   const hasRecoveryAddresses =
     Array.isArray(options.recoveryAddresses) &&
     options.recoveryAddresses.length > 0;
+  const hasRecoveryTxids =
+    Array.isArray(options.recoveryTxids) && options.recoveryTxids.length > 0;
   if (
     fresh &&
     scope &&
@@ -12537,7 +12575,9 @@ async function tokenPayloadForRead(
         fresh &&
         !(
           scope === WORK_TOKEN_ID &&
-          (hasRecoveryAddresses || options.recoverWorkSalesOnly === true)
+          (hasRecoveryAddresses ||
+            hasRecoveryTxids ||
+            options.recoverWorkSalesOnly === true)
         )
         ? await summaryCanonicalLedgerPayload(network, true)
         : await existingCanonicalLedgerPayload(network);
@@ -12559,6 +12599,7 @@ async function tokenPayloadForRead(
           recoverClosedSales: options.recoverWorkSales !== false,
           recoverClosedSalesOnly: options.recoverWorkSalesOnly === true,
           recoveryAddresses: options.recoveryAddresses,
+          recoveryTxids: options.recoveryTxids,
         };
         payload = await liveWorkTokenStateWithFallbackAfterMs(
           network,
@@ -12579,6 +12620,7 @@ async function tokenPayloadForRead(
       recoverClosedSales: options.recoverWorkSales !== false,
       recoverClosedSalesOnly: options.recoverWorkSalesOnly === true,
       recoveryAddresses: options.recoveryAddresses,
+      recoveryTxids: options.recoveryTxids,
     };
     payload = await liveWorkTokenStateWithFallbackAfterMs(
       network,
@@ -14510,6 +14552,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     searchParams,
     network,
   );
+  const recoveryTxids = recoveryTxidsFromSearchParams(searchParams);
   const pagination = historyPaginationFromSearch(searchParams);
   const kindMap = new Map([
     ["holders", "holders"],
@@ -14541,7 +14584,9 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     safeKind === "holders" || safeKind === "transfers";
   const queriedWorkHistory =
     scope === WORK_TOKEN_ID &&
-    (Boolean(pagination.query) || recoveryAddresses.length > 0) &&
+    (Boolean(pagination.query) ||
+      recoveryAddresses.length > 0 ||
+      recoveryTxids.length > 0) &&
     (workMarketHistoryKind ||
       workBalanceHistoryKind ||
       safeKind === "invalidEvents");
@@ -14554,6 +14599,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     reconcileListingStatus: false,
     reconcileSpendable: false,
     recoveryAddresses,
+    recoveryTxids,
     useLedgerSnapshot:
       workBalanceHistoryKind && queriedWorkHistory ? false : undefined,
     liveWorkWaitMs: queriedWorkHistory

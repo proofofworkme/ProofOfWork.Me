@@ -89,6 +89,24 @@ expectAll("WORK Growth Log and token views use the same ledger", server, [
   /url\.pathname === "\/api\/v1\/token"[\s\S]*const tokenFreshRead[\s\S]*const payload = await tokenPayloadForRead\(network,\s*tokenScope,\s*tokenFreshRead/,
 ]);
 
+expectAll("searched WORK balance history uses exact recovery inputs", server, [
+  /function recoveryAddressesFromSearchParams\(searchParams,\s*network\)[\s\S]*for \(const key of \["q",\s*"search"\]\)/,
+  /function recoveryTxidsFromSearchParams\(searchParams\)/,
+  /async function liveWorkTokenState\(network,\s*cachedWorkTokenState,\s*options = \{\}\)[\s\S]*const recoveryTxids = Array\.isArray\(options\.recoveryTxids\)/,
+  /const \[confirmedPendingTxs,\s*recoveredTxidTxs\] = await Promise\.all/,
+  /async function tokenPayloadForRead[\s\S]*hasRecoveryTxids[\s\S]*recoveryTxids: options\.recoveryTxids/,
+  /async function tokenHistoryPayload[\s\S]*const recoveryTxids = recoveryTxidsFromSearchParams\(searchParams\)[\s\S]*recoveryTxids,/,
+]);
+
+expectAll("frontend holder searches use remote holder history", app, [
+  /const \[remoteHolderPage,\s*setRemoteHolderPage\] = useState/,
+  /fetchTokenHistoryPage<PowTokenHolder>\(network,\s*"holders"/,
+  /fresh:\s*true/,
+  /const selectedRemoteHolderPage =[\s\S]*historyPageToPagedItems\([\s\S]*activeRemoteHolderPage/,
+  /const detailRemoteHolderPage =[\s\S]*historyPageToPagedItems\([\s\S]*activeRemoteHolderPage/,
+  /renderHolderList = \([\s\S]*loadingRemotePage = false/,
+]);
+
 expectAll("Desktop public search stays on first-party ProofOfWork API", app, [
   /function DesktopApp\([\s\S]*<DesktopWorkspace[\s\S]*onSearch=\{onSearch\}/,
 ]);
