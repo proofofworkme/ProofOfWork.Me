@@ -49,12 +49,12 @@ Mail organization features that are already implemented in the full app:
 - Growth surface for canonical modeled network value versus real confirmed registry, log, file, marketplace, and Credit value metrics from the same livenet ledger snapshot used by WORK.
 - Export/import for local drafts, archive/favorite preferences, and sent/outbox tracking.
 - Confirmed-only ID routing in compose: pending IDs must not receive routed mail.
-- First-party OP_RETURN API reads for production mainnet mail, files, registry, and tx status when `VITE_POW_API_BASE` is configured.
+- First-party OP_RETURN API reads for production mainnet mail, files, registry, Log, Growth, credit/token, marketplace, event history, and tx status when `VITE_POW_API_BASE` is configured; stable confirmed global reads use the proof index database where supported.
 
 Future developers should keep `id.proofofwork.me` narrow. Do not pull the full mailbox UI into the Phase 1 registry launch unless the launch scope explicitly changes.
 Marketplace actions should stay outside the mailbox folders. Keep ID and credit trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders. The Marketplace workspace is tabbed by asset class: IDs and Credits both use sale-ticket settlement, while Wallet stays the place to transfer or list owned credit balances.
-Log is not a mailbox folder. It is a read-only ProofOfWork Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, credit sales, and seeded Computer mail events such as Infinity Bonds. Server-backed Log search should query the canonical ledger by address, confirmed ID, txid, protocol kind, participant, token id, or app label; a direct address lookup must not expose confirmed value-bearing events that are absent from global Log.
-Growth is not a mailbox folder. It is a read-only model surface that compares confirmed chain-derived network value with the canonical ProofOfWork Computer growth model in proofs and USD. Merged apps such as Credits and Wallet should appear as normal app surfaces, Computer workspaces when useful, and first-class Growth inputs. Growth, WORK, Log, and credit/token history should read the same canonical ledger snapshot so proofs/USD totals and event search agree after refresh.
+Log is not a mailbox folder. It is a read-only ProofOfWork Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, credit sales, and seeded Computer mail events such as Infinity Bonds. Server-backed Log search should query the canonical confirmed ledger by address, confirmed ID, txid, protocol kind, participant, token id, or app label, using the proof index database for stable confirmed search/filter reads and the node/API path for volatile first-page, fresh, pending, dropped, and fallback reads. A direct address lookup must not expose confirmed value-bearing events that are absent from global Log.
+Growth is not a mailbox folder. It is a read-only model surface that compares confirmed chain-derived network value with the canonical ProofOfWork Computer growth model in proofs and USD. Merged apps such as Credits and Wallet should appear as normal app surfaces, Computer workspaces when useful, and first-class Growth inputs. Growth, WORK, Log, and credit/token history should read the same canonical ledger snapshot, served through the proof index database where supported, so proofs/USD totals and event search agree after refresh.
 Browser is not a mailbox folder. It is an HTML renderer over ProofOfWork message bodies and the same verified file attachment protocol used by Files and Desktop. Browser-rendered HTML stays separate from wallet signing. Browser should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.
 Confessions is not a mailbox folder. It is staged/local-only until separately approved. Confessions posts, social profile metadata, follows, likes, reposts, replies, tips, links, Files-backed small inline image references, Files-backed 100 KB profile banner references, and hide/archive visibility tombstones should use their own `pwc1:` meta protocol and should not be written as mailbox organization state or ID registry mutations. Confessions image bytes should be created through the existing ProofOfWork Files attachment layer and referenced from posts or profile proofs by file proof metadata. Its follow graph, Following timeline, profile tabs, profile earnings, and WORK-balance display are social views over confirmed chain-readable records, not local mail folders.
 
@@ -218,7 +218,7 @@ Behavior:
 - Dropped txs remain in Outbox with a restore-to-draft action.
 - Dropped txs should not appear in Sent or Files.
 - Pending txs should not appear in Files by default.
-- Pending visibility is best-effort because mempool transactions are gossip. The API can merge local node/indexer mempool state with a pending fallback, but confirmation is the only durable state.
+- Pending visibility is best-effort because mempool transactions are gossip. The API can merge local node/proof-indexer mempool state with a pending fallback, but confirmation is the only durable state.
 - Older local sent records without a known status can appear as Checking until the txid is verified.
 
 This prevents the app from treating dropped mempool transactions as permanent mail.
@@ -451,7 +451,7 @@ Important design note:
 - The leaderboard should only count valid ProofOfWork.Me protocol messages.
 - It should not count random payments or unrelated OP_RETURN transactions.
 - Archived/favorited local state should not affect public ranking.
-- The leaderboard should be computed from indexed chain data, not local browser state.
+- The leaderboard should be computed from indexed confirmed chain data, not local browser state.
 
 ## Big Picture
 

@@ -230,7 +230,7 @@ Rules:
 - Public Desktop search follows the same confirmed-only ID resolver rule.
 - Duplicate confirmed registrations are ignored by the resolver.
 - Registry scans must paginate full confirmed address history and merge mempool transactions before applying first-confirmed-wins. Reading only the first mempool.space address page can hide older confirmed winners and make duplicates look available or pending.
-- Production registry reads should go through the ProofOfWork OP_RETURN API. The API reads confirmed state from the ProofOfWork node/indexer stack and may merge a pending mempool fallback for unconfirmed visibility.
+- Production registry reads should go through the ProofOfWork OP_RETURN API. Stable confirmed registry records, activity, listings, and sales can read from the proof index database, with canonical node/API fallback for fresh reads, pending visibility, rechecks before broadcast, and edge verification.
 - Registration broadcasts must re-check the full registry immediately before building/signing the PSBT.
 - Every ProofOfWork.Me broadcast path should use confirmed wallet UTXOs only, including mail/files, registration, receiver update, transfer, listing, delisting, and marketplace purchase broadcasts. This keeps the chosen fee rate aligned with the transaction's effective package fee and avoids low-fee unconfirmed ancestors trapping user actions in mempool.
 - Owner and receive address are separate fields.

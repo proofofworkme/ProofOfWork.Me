@@ -196,13 +196,15 @@ https://growth.proofofwork.me/api/*
 
 Current production behavior:
 
-- Confirmed mainnet registry, mail, files, and tx status are read through the ProofOfWork node/indexer stack.
+- Confirmed stable mainnet registry, Log, credit/token, marketplace, summary, event, mail/file, and tx-status reads go through the ProofOfWork API and use the PostgreSQL proof index where the read flag supports that surface.
+- The proof index is a fast replayable read model, not a separate source of truth. Confirmed chain data remains canonical, and every tx-backed record should keep its txid available for normal explorer/mempool verification.
 - The node stack does not hold funds, seed phrases, private keys, or wallet authority.
 - Browser wallets still sign locally.
 - Production raw transaction broadcasts use the same first-party node path through `POST /api/v1/broadcast/tx`. The API receives only final signed transaction hex.
 - Unconfirmed transactions are mempool gossip, not global truth.
 - For pending visibility, the API merges the local node/indexer view with `PENDING_MEMPOOL_BASE` when configured. By default this stays on the same local node/indexer stack.
-- Confirmed records remain canonical; pending records are visible but not final.
+- Fresh reads, mempool checks, raw tx lookups, UTXO/outspend checks, broadcasts, and projection fallback still use the first-party node/API path.
+- Confirmed database projections are the default fast path for supported stable reads; pending records are visible but not final.
 - Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
 - Marketplace ID sale count and seller-price volume are derived from resolver-accepted `buy5` sale-ticket purchases, with confirmed sales canonical and pending sales shown as mempool visibility. Older legacy buy events remain replayable protocol history but do not seed the public marketplace stats.
 - The credit API scans `tokens@proofofwork.me` at `1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn` for `pwt1:create` events, using tx `7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19` as the current ID record for the credit index.

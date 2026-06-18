@@ -17,8 +17,8 @@ The browser still signs locally with UniSat. The API never receives seed phrases
 
 ## ProofOfWork Event Database
 
-The next performance step is a ProofOfWork-specific PostgreSQL indexer beside the
-node/API stack:
+ProofOfWork runs a ProofOfWork-specific PostgreSQL indexer beside the node/API
+stack for fast confirmed read projections:
 
 ```text
 Browser app
@@ -28,7 +28,7 @@ Browser app
   -> Bitcoin Core full node
 ```
 
-PostgreSQL is the preferred production database for this layer. The data is an
+PostgreSQL is the production database for this layer. The data is an
 ordered, replayable event log with relational verification needs: txids,
 outpoints, block heights, participants, IDs, credit ids, listings, and snapshot
 checks. MongoDB is not the default fit for this protocol shape, and SQLite is a
@@ -36,9 +36,12 @@ useful local/dev option but not the preferred long-running production store.
 
 The database is not the source of truth. It is a durable read model derived from
 Bitcoin Core, electrs/mempool, and the ProofOfWork parsers. Confirmed chain data
-remains canonical. Pending mempool data is useful visibility and may be stored,
-but pending rows must not change canonical routing, ownership, credit balances,
-WORK floor, Growth value, Log totals, or durable Files/Desktop state.
+remains canonical. Production stable confirmed reads should prefer the database
+projection first, then fall back to the canonical node/API path when a projection
+is missing, stale, scoped outside the indexed snapshot, explicitly fresh, or an
+edge read needs raw node truth. Pending mempool data is useful visibility and may
+be stored, but pending rows must not change canonical routing, ownership, credit
+balances, WORK floor, Growth value, Log totals, or durable Files/Desktop state.
 
 Every indexed row should be replayable and externally inspectable:
 
@@ -97,7 +100,16 @@ only for an explicit full Log activity refresh. Database-backed Log history
 reads page from the stored activity snapshot first, then fall back to per-event
 rows only when no activity snapshot exists.
 
-Database-backed API reads are feature-flagged. `POW_INDEX_READS=tx-status`
+Database-backed API reads are feature-flagged. The current production
+default-read posture is:
+
+```text
+POW_INDEX_READS=tx-status,log-history,token-history,token-state,registry-history,work-floor,work-summary,marketplace-summary,growth-summary,event-history
+POW_INDEX_SHADOW_READS=log-history,token-history
+POW_INDEX_READ_UNCONFIRMED_TX_STATUS=0
+```
+
+`POW_INDEX_READS=tx-status`
 enables the first low-risk read adapter for confirmed transaction statuses, with
 canonical node/API fallback for unknown, pending, or dropped rows unless
 `POW_INDEX_READ_UNCONFIRMED_TX_STATUS=1` is explicitly set.
@@ -131,7 +143,7 @@ events. The `log` flag is reserved for an explicit full activity snapshot
 refresh. Fresh reads still use the node/API path so explicit refreshes converge
 on current chain and mempool truth.
 
-The worker script keeps the shadow indexer warm by repeatedly running bounded
+The worker script keeps the indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through
 `/api/v1/tx/:txid/status`, marking disappeared txids as `dropped`, and running
 the parity checker. Continuous worker cycles use
@@ -147,7 +159,8 @@ block a full worker cycle. Production service configuration is tracked in:
 deploy/proofofwork-indexer-worker.service
 ```
 
-Rollout should happen in shadow mode:
+The completed production rollout followed this shadow-first ladder. Future
+database-backed surfaces should use the same pattern:
 
 1. Backfill known ProofOfWork transactions into PostgreSQL.
 2. Run the continuous worker so new confirmed events and dropped pending txs
@@ -158,7 +171,7 @@ Rollout should happen in shadow mode:
 5. Require `/api/v1/consistency`, `/api/v1/ledger-consistency`, and
    `npm run audit:ledger` to stay green with `missingLogEvents: []`.
 6. Switch endpoints to database reads only after shadow output matches current
-   chain-derived output.
+   chain-derived output, with canonical fallback left in place.
 
 This replaces expensive repeated scans with indexed local reads while preserving
 the existing rule: chain truth wins, database speed follows.
@@ -460,7 +473,7 @@ Confirmed ProofOfWork history is canonical. Pending mempool state is not.
 
 Production rules:
 
-- Confirmed registry/mail/file history should come from the ProofOfWork node/indexer stack.
+- Confirmed stable registry, mail/file, Log, credit, marketplace, summary, and event history should come from the ProofOfWork event database when supported, with first-party node/API fallback for fresh reads and edge verification.
 - Public Desktop reads should use the same confirmed mail/file API path as Computer.
 - Pending registry/mail/outbox visibility should merge all configured mempool views.
 - Pending IDs must never be routable.
