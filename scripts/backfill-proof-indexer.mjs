@@ -671,7 +671,14 @@ function listingStatus(item, sourceLabel) {
 }
 
 async function storeLedgerSnapshot(client) {
-  const payload = await readJson(endpoint("/api/v1/ledger-consistency"));
+  const [payload, activityPayload] = await Promise.all([
+    readJson(endpoint("/api/v1/ledger-consistency")),
+    readJson(endpoint("/api/v1/log")),
+  ]);
+  const snapshotPayload = {
+    ...payload,
+    activityPayload,
+  };
   await client.query(
     `
       INSERT INTO proof_indexer.ledger_snapshots (
@@ -707,10 +714,10 @@ async function storeLedgerSnapshot(client) {
         ok: payload.ok,
         status: payload.status,
       }),
-      JSON.stringify(payload),
+      JSON.stringify(snapshotPayload),
     ],
   );
-  return payload;
+  return snapshotPayload;
 }
 
 async function backfillSource(client, source) {

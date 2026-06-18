@@ -18,6 +18,12 @@ const STRICT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_PARITY_STRICT ?? ""),
 );
 const DRY_RUN = process.argv.includes("--dry-run");
+const INFINITY_BOND_REGRESSION_TXID =
+  "411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891";
+const PAGINATION_GAP_INFINITY_BOND_TXID =
+  "b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34";
+const WORK_TRANSFER_REGRESSION_TXID =
+  "7e9e711564be12330793b3415a032eca42bb742499fbdb8a6b8be6d6f1867354";
 
 function endpoint(pathname, params = {}) {
   const url = new URL(`${API_BASE}${pathname}`);
@@ -206,25 +212,55 @@ try {
     STRICT ? "error" : "warning",
   );
 
-  const canonicalLogPage = await readJson(endpoint("/api/v1/log-history", { limit: 20 }));
-  const indexedLogPage = await proofIndexLogHistoryPayload(
-    NETWORK,
-    "",
-    new URLSearchParams("limit=20"),
-  );
-  const logMismatches = compareProofIndexHistoryPayloads(
-    canonicalLogPage,
-    indexedLogPage,
-  );
-  check(
-    checks,
-    "log-history-first-page-parity",
-    logMismatches.length === 0,
+  const logHistoryCases = [
     {
-      mismatches: logMismatches.slice(0, 5),
+      label: "first-page",
+      params: { limit: 20 },
     },
-    STRICT ? "error" : "warning",
-  );
+    {
+      label: "kind-token-sale",
+      params: { kind: "token-sale", limit: 10 },
+    },
+    {
+      label: "query-infinity-bond",
+      params: { q: INFINITY_BOND_REGRESSION_TXID, limit: 10 },
+    },
+    {
+      label: "query-pagination-gap-infinity-bond",
+      params: { q: PAGINATION_GAP_INFINITY_BOND_TXID, limit: 10 },
+    },
+    {
+      label: "query-work-transfer",
+      params: { q: WORK_TRANSFER_REGRESSION_TXID, limit: 10 },
+    },
+  ];
+  for (const logCase of logHistoryCases) {
+    const canonicalLogPage = await readJson(
+      endpoint("/api/v1/log-history", logCase.params),
+    );
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(logCase.params)) {
+      searchParams.set(key, String(value));
+    }
+    const indexedLogPage = await proofIndexLogHistoryPayload(
+      NETWORK,
+      String(logCase.params.kind ?? ""),
+      searchParams,
+    );
+    const logMismatches = compareProofIndexHistoryPayloads(
+      canonicalLogPage,
+      indexedLogPage,
+    );
+    check(
+      checks,
+      `log-history-${logCase.label}-parity`,
+      logMismatches.length === 0,
+      {
+        mismatches: logMismatches.slice(0, 5),
+      },
+      STRICT ? "error" : "warning",
+    );
+  }
 
   const sampleTxids = await proofIndexRecentTransactionIds(NETWORK, {
     limit: 10,

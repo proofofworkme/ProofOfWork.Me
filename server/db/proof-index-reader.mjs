@@ -116,6 +116,47 @@ function canonicalEventPayload(payload) {
   return item;
 }
 
+function valueSearchText(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (Array.isArray(value)) {
+    return value.map(valueSearchText).join(" ");
+  }
+  if (typeof value === "object") {
+    return Object.values(value).map(valueSearchText).join(" ");
+  }
+  return String(value);
+}
+
+function historyItemsMatchingQuery(items, query) {
+  if (!query) {
+    return items;
+  }
+  return items.filter((item) =>
+    valueSearchText(item).toLowerCase().includes(query),
+  );
+}
+
+function itemCreatedAtMs(item) {
+  const parsed = Date.parse(item?.createdAt);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function compareHistoryItems(left, right) {
+  return (
+    itemCreatedAtMs(right) - itemCreatedAtMs(left) ||
+    String(right?.txid ?? "").localeCompare(String(left?.txid ?? ""))
+  );
+}
+
+function indexedThroughBlockFromItems(items) {
+  const heights = (Array.isArray(items) ? items : [])
+    .map((item) => Number(item?.blockHeight))
+    .filter((height) => Number.isSafeInteger(height) && height > 0);
+  return heights.length > 0 ? Math.max(...heights) : undefined;
+}
+
 function normalizedStatus(status) {
   const value = String(status ?? "").toLowerCase();
   if (value === "confirmed" || value === "pending" || value === "dropped") {
@@ -163,6 +204,100 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
   };
 }
 
+async function latestLedgerSnapshot(pool, network) {
+  const snapshotResult = await pool.query(
+    `
+      SELECT
+        snapshot_id,
+        generated_at,
+        indexed_through_block,
+        consistency,
+        payload
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
+      ORDER BY generated_at DESC
+      LIMIT 1
+    `,
+    [network],
+  );
+  return snapshotResult.rows[0] ?? {};
+}
+
+function snapshotActivityPayload(snapshot) {
+  const payload = snapshot?.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  if (
+    payload.activityPayload &&
+    typeof payload.activityPayload === "object" &&
+    !Array.isArray(payload.activityPayload)
+  ) {
+    return payload.activityPayload;
+  }
+  return payload;
+}
+
+function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination) {
+  const activityPayload = snapshotActivityPayload(snapshot);
+  const sourceItems = Array.isArray(activityPayload?.activity)
+    ? activityPayload.activity
+    : [];
+  if (sourceItems.length === 0) {
+    return null;
+  }
+
+  const kindItems = requestedKind
+    ? sourceItems.filter((item) => item?.kind === requestedKind)
+    : sourceItems;
+  const sortedItems = [...kindItems].sort(compareHistoryItems);
+  const filtered = historyItemsMatchingQuery(sortedItems, pagination.query);
+  const totalCount = filtered.length;
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  const nextCursor = end < totalCount ? String(end) : "";
+  const indexedAt = dateIso(
+    activityPayload.indexedAt ??
+      activityPayload.generatedAt ??
+      snapshot?.generated_at,
+  );
+
+  const page = {
+    cursor: String(start),
+    end,
+    indexedAt,
+    indexedThroughBlock:
+      indexedThroughBlockFromItems(filtered) ??
+      rowNumber(snapshot, "indexed_through_block"),
+    items: filtered.slice(start, end),
+    kind: requestedKind || "activity",
+    limit: pagination.limit,
+    network,
+    nextCursor,
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source: activityPayload.source ?? "proof-indexer-snapshot",
+    start,
+    totalCount,
+  };
+
+  const snapshotId = activityPayload.snapshotId ?? snapshot?.snapshot_id;
+  if (snapshotId) {
+    return {
+      ...page,
+      consistency: activityPayload.consistency ?? snapshot?.consistency ?? undefined,
+      ledgerGeneratedAt:
+        activityPayload.ledgerGeneratedAt ??
+        dateIso(activityPayload.generatedAt ?? snapshot?.generated_at),
+      snapshotId,
+    };
+  }
+
+  return page;
+}
+
 export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
   const pool = proofIndexPool();
   if (!pool) {
@@ -171,6 +306,17 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
 
   const requestedKind = String(kind ?? "").trim().toLowerCase();
   const pagination = historyPaginationFromSearch(searchParams);
+  const snapshot = await latestLedgerSnapshot(pool, network);
+  const snapshotPage = logHistoryPageFromSnapshot(
+    snapshot,
+    network,
+    requestedKind,
+    pagination,
+  );
+  if (snapshotPage) {
+    return snapshotPage;
+  }
+
   const conditions = [
     "e.network = $1",
     "e.payload->>'indexedFrom' = 'log'",
@@ -220,17 +366,6 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     rowParams,
   );
 
-  const snapshotResult = await pool.query(
-    `
-      SELECT snapshot_id, generated_at, consistency
-      FROM proof_indexer.ledger_snapshots
-      WHERE network = $1
-      ORDER BY generated_at DESC
-      LIMIT 1
-    `,
-    [network],
-  );
-  const snapshot = snapshotResult.rows[0] ?? {};
   const start = Math.min(pagination.offset, totalCount);
   const end = Math.min(totalCount, start + pagination.limit);
   const nextCursor = end < totalCount ? String(end) : "";
