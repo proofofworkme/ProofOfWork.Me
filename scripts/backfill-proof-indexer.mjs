@@ -339,7 +339,10 @@ async function tokenHistorySnapshotsForScope(scope) {
       delete snapshots["market-log"];
     }
   }
-  return snapshots;
+  return {
+    historyPayloads: snapshots,
+    statePayload: state,
+  };
 }
 
 async function summarySnapshots() {
@@ -969,6 +972,7 @@ function listingStatus(item, sourceLabel) {
 
 async function storeLedgerSnapshot(client) {
   const tokenHistoryPayloads = {};
+  const tokenStatePayloads = {};
   const payload = await readJson(endpoint("/api/v1/ledger-consistency"));
   const previousPayload = await storedLedgerSnapshotPayload(
     client,
@@ -982,7 +986,9 @@ async function storeLedgerSnapshot(client) {
     ]);
   for (const scope of TOKEN_HISTORY_SNAPSHOT_SCOPES) {
     try {
-      tokenHistoryPayloads[scope.key] = await tokenHistorySnapshotsForScope(scope);
+      const tokenSnapshot = await tokenHistorySnapshotsForScope(scope);
+      tokenHistoryPayloads[scope.key] = tokenSnapshot.historyPayloads;
+      tokenStatePayloads[scope.key] = tokenSnapshot.statePayload;
     } catch (error) {
       console.error(
         JSON.stringify({
@@ -992,6 +998,7 @@ async function storeLedgerSnapshot(client) {
         }),
       );
       tokenHistoryPayloads[scope.key] = {};
+      tokenStatePayloads[scope.key] = {};
     }
   }
   const indexedAt = new Date().toISOString();
@@ -1017,6 +1024,8 @@ async function storeLedgerSnapshot(client) {
     summaryPayloadsIndexedAt: indexedAt,
     tokenHistoryIndexedAt: indexedAt,
     tokenHistoryPayloads,
+    tokenStatePayloads,
+    tokenStatePayloadsIndexedAt: indexedAt,
   };
   await client.query(
     `

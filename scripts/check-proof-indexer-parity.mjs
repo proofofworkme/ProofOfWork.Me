@@ -3,13 +3,16 @@ import {
   closeProofIndexReadPool,
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
+  proofIndexEventHistoryPayload,
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
   proofIndexRecentTransactionIds,
   proofIndexRegistryHistoryPayload,
   proofIndexSnapshotPayload,
+  proofIndexTokenPayload,
   proofIndexTokenHistoryReadEligibility,
   proofIndexTokenHistoryPayload,
+  proofIndexTokenReadEligibility,
   proofIndexTxStatusPayload,
 } from "../server/db/proof-index-reader.mjs";
 
@@ -95,6 +98,10 @@ function summaryValue(payload) {
     payload?.networkValueSats,
   ];
   return numberValue(candidates.find((value) => Number.isFinite(Number(value))));
+}
+
+function arrayLength(value) {
+  return Array.isArray(value) ? value.length : 0;
 }
 
 if (DRY_RUN) {
@@ -515,6 +522,101 @@ try {
         indexedValue,
       },
       STRICT ? "error" : "warning",
+    );
+  }
+
+  const tokenReadEligibility = proofIndexTokenReadEligibility(
+    "",
+    new URLSearchParams(),
+  );
+  check(
+    checks,
+    "token-state-read-eligibility",
+    tokenReadEligibility.eligible === true,
+    {
+      reason: tokenReadEligibility.reason,
+      scope: tokenReadEligibility.scope,
+    },
+  );
+  const indexedTokenState = await proofIndexTokenPayload(
+    NETWORK,
+    "",
+    new URLSearchParams(),
+  );
+  check(
+    checks,
+    "token-state-snapshot-present",
+    Boolean(indexedTokenState?.snapshotId) &&
+      arrayLength(indexedTokenState?.tokens) > 0,
+    {
+      listings: arrayLength(indexedTokenState?.listings),
+      snapshotId: indexedTokenState?.snapshotId ?? null,
+      tokens: arrayLength(indexedTokenState?.tokens),
+    },
+  );
+  check(
+    checks,
+    "marketplace-token-state-lifecycle-present",
+    arrayLength(indexedTokenState?.listings) > 0 &&
+      (arrayLength(indexedTokenState?.closedListings) > 0 ||
+        arrayLength(indexedTokenState?.sales) > 0),
+    {
+      activeListings: arrayLength(indexedTokenState?.listings),
+      closedListings: arrayLength(indexedTokenState?.closedListings),
+      sales: arrayLength(indexedTokenState?.sales),
+      sealedListings: (indexedTokenState?.listings ?? []).filter(
+        (listing) =>
+          listing?.sealTxid ||
+          listing?.sealPending ||
+          listing?.sealConfirmed,
+      ).length,
+    },
+  );
+  const indexedWorkTokenState = await proofIndexTokenPayload(
+    NETWORK,
+    WORK_TOKEN_ID,
+    new URLSearchParams({ asset: WORK_TOKEN_ID }),
+  );
+  check(
+    checks,
+    "work-token-state-snapshot-present",
+    Boolean(indexedWorkTokenState?.snapshotId) &&
+      arrayLength(indexedWorkTokenState?.tokens) > 0,
+    {
+      holders: arrayLength(indexedWorkTokenState?.holders),
+      listings: arrayLength(indexedWorkTokenState?.listings),
+      snapshotId: indexedWorkTokenState?.snapshotId ?? null,
+      tokens: arrayLength(indexedWorkTokenState?.tokens),
+    },
+  );
+
+  const eventHistoryCases = [
+    { label: "mail-protocol", params: { limit: 5, protocol: "pwm1" } },
+    { label: "credit-protocol", params: { limit: 5, protocol: "pwt1" } },
+    { label: "id-protocol", params: { limit: 5, protocol: "pwid1" } },
+    {
+      label: "work-transfer-search",
+      params: { limit: 5, q: WORK_TRANSFER_REGRESSION_TXID },
+    },
+  ];
+  for (const eventCase of eventHistoryCases) {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(eventCase.params)) {
+      searchParams.set(key, String(value));
+    }
+    const indexedEvents = await proofIndexEventHistoryPayload(
+      NETWORK,
+      searchParams,
+    );
+    check(
+      checks,
+      `event-history-${eventCase.label}-db-page`,
+      Boolean(indexedEvents?.snapshotId) && arrayLength(indexedEvents?.items) > 0,
+      {
+        count: arrayLength(indexedEvents?.items),
+        snapshotId: indexedEvents?.snapshotId ?? null,
+        totalCount: indexedEvents?.totalCount ?? null,
+      },
     );
   }
 

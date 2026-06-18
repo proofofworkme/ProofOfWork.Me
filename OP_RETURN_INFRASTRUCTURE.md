@@ -113,8 +113,11 @@ shapes.
 `POW_INDEX_READS=tx-status,log-history,token-history` also enables snapshot-backed
 Token History reads. The indexer stores canonical `/api/v1/token-history?fresh=1`
 pages in the ledger snapshot and the API repaginates those stored pages with
-snapshot cursors. Missing, stale, incomplete, wallet-scoped, or fresh reads fall
-back to the canonical node/API path. `POW_INDEX_SHADOW_READS=token-history`
+snapshot cursors. `POW_INDEX_READS=token-state` enables default `/api/v1/token`
+reads from stored token-state snapshots for global and scoped credit views,
+including Marketplace active/sealed books and sale-ticket lifecycle arrays.
+Missing, stale, incomplete, wallet-scoped, address-scoped, query-scoped, or
+fresh reads fall back to the canonical node/API path. `POW_INDEX_SHADOW_READS=token-history`
 compares eligible DB output against canonical Token History without changing the
 public response.
 Additional snapshot-backed read flags are available for the broader default-read
@@ -122,9 +125,11 @@ posture: `registry-history` serves stable registry records, activity, listings,
 and sales pages from stored canonical history snapshots while pending registry
 views stay canonical; `work-floor`, `work-summary`, `marketplace-summary`, and
 `growth-summary` serve stored canonical summary snapshots with age guards and
-canonical fallback. The `log` flag is reserved for an explicit full activity
-snapshot refresh. Fresh reads still use the node/API path so explicit refreshes
-converge on current chain and mempool truth.
+canonical fallback; `event-history` serves DB-backed protocol/event search for
+indexed registry, credit, marketplace, mail/file, seeded, and broader Computer
+events. The `log` flag is reserved for an explicit full activity snapshot
+refresh. Fresh reads still use the node/API path so explicit refreshes converge
+on current chain and mempool truth.
 
 The worker script keeps the shadow indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through

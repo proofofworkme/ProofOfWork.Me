@@ -279,6 +279,36 @@ export function proofIndexTokenHistoryReadEligibility(
   };
 }
 
+export function proofIndexTokenReadEligibility(tokenScope, searchParams) {
+  const params = searchParams ?? new URLSearchParams();
+  const walletScoped = /^(?:1|true|yes)$/iu.test(
+    String(params.get("wallet") ?? "").trim(),
+  );
+  const scopedAddressParams = [
+    "address",
+    "owner",
+    "ownerAddress",
+    "seller",
+    "sellerAddress",
+    "buyer",
+    "buyerAddress",
+  ].some((key) => params.has(key));
+  const query = String(params.get("q") ?? params.get("search") ?? "").trim();
+  if (walletScoped || scopedAddressParams || query) {
+    return {
+      eligible: false,
+      reason: walletScoped ? "wallet-scoped-canonical" : "query-scoped-canonical",
+      scope: tokenScopeKey(tokenScope),
+    };
+  }
+
+  return {
+    eligible: true,
+    reason: "snapshot-pinned-token-state",
+    scope: tokenScopeKey(tokenScope),
+  };
+}
+
 function rowNumber(row, key) {
   const number = Number(row?.[key]);
   return Number.isFinite(number) ? number : 0;
@@ -448,6 +478,21 @@ function tokenHistoryPayloadsFromSnapshot(snapshot) {
   return null;
 }
 
+function tokenStatePayloadsFromSnapshot(snapshot) {
+  const payload = snapshot?.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  if (
+    payload.tokenStatePayloads &&
+    typeof payload.tokenStatePayloads === "object" &&
+    !Array.isArray(payload.tokenStatePayloads)
+  ) {
+    return payload.tokenStatePayloads;
+  }
+  return null;
+}
+
 function proofIndexTokenHistoryMaxAgeMs(env = process.env) {
   return boundedInteger(
     env.POW_INDEX_TOKEN_HISTORY_MAX_AGE_MS,
@@ -462,6 +507,17 @@ function tokenHistorySnapshotAgeMs(snapshot) {
   const parsed = Date.parse(
     payload?.tokenHistoryIndexedAt ??
       payload?.tokenHistoryPayloads?.all?.tokens?.indexedAt ??
+      snapshot?.generated_at,
+  );
+  return Number.isFinite(parsed) ? Date.now() - parsed : Number.POSITIVE_INFINITY;
+}
+
+function tokenStateSnapshotAgeMs(snapshot) {
+  const payload = snapshot?.payload;
+  const parsed = Date.parse(
+    payload?.tokenStatePayloadsIndexedAt ??
+      payload?.tokenHistoryIndexedAt ??
+      payload?.tokenStatePayloads?.all?.indexedAt ??
       snapshot?.generated_at,
   );
   return Number.isFinite(parsed) ? Date.now() - parsed : Number.POSITIVE_INFINITY;
@@ -923,6 +979,187 @@ export async function proofIndexTokenHistoryPayload(
   return null;
 }
 
+function tokenMatchesScope(token, scope) {
+  const normalizedScope = String(scope ?? "").trim().toLowerCase();
+  if (!normalizedScope || normalizedScope === "all") {
+    return true;
+  }
+  return (
+    String(token?.tokenId ?? "").trim().toLowerCase() === normalizedScope ||
+    String(token?.ticker ?? "").trim().toLowerCase() === normalizedScope
+  );
+}
+
+function tokenStateWithSnapshotMetadata(payload, snapshot, source) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  const snapshotId = payload.snapshotId ?? snapshot?.snapshot_id ?? "";
+  return {
+    ...payload,
+    indexedAt: dateIso(
+      payload.indexedAt ??
+        snapshot?.payload?.tokenStatePayloadsIndexedAt ??
+        snapshot?.generated_at,
+    ),
+    source: payload.source ?? source,
+    ...(snapshotId ? { snapshotId } : {}),
+  };
+}
+
+function tokenStateStats(payload, tokens, mints, transfers, invalidEvents) {
+  return {
+    ...(payload?.stats ?? {}),
+    confirmedMints: mints.filter((item) => item?.confirmed).length,
+    confirmedTransfers: transfers.filter((item) => item?.confirmed).length,
+    confirmedTokens: tokens.filter((item) => item?.confirmed).length,
+    holders: Array.isArray(payload?.holders) ? payload.holders.length : 0,
+    invalidEvents: invalidEvents.filter((item) => item?.confirmed).length,
+    pendingMints: mints.filter((item) => !item?.confirmed).length,
+    pendingTransfers: transfers.filter((item) => !item?.confirmed).length,
+    pendingTokens: tokens.filter((item) => !item?.confirmed).length,
+    registries: new Set(
+      tokens.map((token) => token?.registryAddress).filter(Boolean),
+    ).size,
+    transactions:
+      tokens.length +
+      mints.length +
+      transfers.length +
+      (Array.isArray(payload?.listings) ? payload.listings.length : 0) +
+      (Array.isArray(payload?.closedListings)
+        ? payload.closedListings.length
+        : 0) +
+      (Array.isArray(payload?.sales) ? payload.sales.length : 0),
+  };
+}
+
+async function scopedHoldersFromBalances(pool, network, tokenId) {
+  const result = await pool.query(
+    `
+      SELECT address, confirmed_balance
+      FROM proof_indexer.credit_balances
+      WHERE network = $1
+        AND token_id = $2
+        AND confirmed_balance > 0
+      ORDER BY confirmed_balance DESC, address ASC
+    `,
+    [network, tokenId],
+  );
+  return result.rows.map((row) => ({
+    address: row.address,
+    balance: Number(row.confirmed_balance),
+  }));
+}
+
+async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) {
+  const tokens = (Array.isArray(allPayload?.tokens) ? allPayload.tokens : []).filter(
+    (token) => tokenMatchesScope(token, scope),
+  );
+  if (tokens.length === 0) {
+    return null;
+  }
+  const tokenIds = new Set(tokens.map((token) => token.tokenId).filter(Boolean));
+  const scopedItems = (items) =>
+    (Array.isArray(items) ? items : []).filter((item) =>
+      tokenIds.has(item?.tokenId),
+    );
+  const mints = scopedItems(allPayload.mints);
+  const transfers = scopedItems(allPayload.transfers);
+  const listings = scopedItems(allPayload.listings);
+  const closedListings = scopedItems(allPayload.closedListings);
+  const sales = scopedItems(allPayload.sales);
+  const invalidEvents = scopedItems(allPayload.invalidEvents);
+  const holders =
+    tokenIds.size === 1
+      ? await scopedHoldersFromBalances(pool, network, [...tokenIds][0])
+      : [];
+  const confirmedSupply = holders.reduce(
+    (total, holder) => total + Number(holder.balance ?? 0),
+    0,
+  );
+  const creationSats = tokens.reduce(
+    (total, token) => total + Number(token?.creationFeeSats ?? 0),
+    0,
+  );
+  const payload = {
+    ...allPayload,
+    closedListings,
+    confirmedSupply,
+    creationSats,
+    holders,
+    invalidEvents,
+    listings,
+    mints,
+    pendingSupply: mints
+      .filter((mint) => !mint?.confirmed)
+      .reduce((total, mint) => total + Number(mint?.amount ?? 0), 0),
+    sales,
+    tokens,
+    transfers,
+  };
+  return {
+    ...payload,
+    stats: tokenStateStats(payload, tokens, mints, transfers, invalidEvents),
+  };
+}
+
+export async function proofIndexTokenPayload(network, tokenScope, searchParams) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+  const eligibility = proofIndexTokenReadEligibility(tokenScope, searchParams);
+  if (!eligibility.eligible) {
+    return null;
+  }
+
+  const snapshot = await ledgerSnapshot(pool, network);
+  if (
+    !snapshot ||
+    tokenStateSnapshotAgeMs(snapshot) > proofIndexTokenHistoryMaxAgeMs()
+  ) {
+    return null;
+  }
+
+  const statePayloads = tokenStatePayloadsFromSnapshot(snapshot);
+  if (!statePayloads) {
+    return null;
+  }
+
+  const scopedPayload = statePayloads[eligibility.scope];
+  if (scopedPayload && typeof scopedPayload === "object") {
+    return tokenStateWithSnapshotMetadata(
+      scopedPayload,
+      snapshot,
+      "proof-indexer-token-state-snapshot",
+    );
+  }
+
+  const allPayload = statePayloads.all;
+  if (!allPayload || typeof allPayload !== "object") {
+    return null;
+  }
+  if (eligibility.scope === "all") {
+    return tokenStateWithSnapshotMetadata(
+      allPayload,
+      snapshot,
+      "proof-indexer-token-state-snapshot",
+    );
+  }
+
+  const reconstructed = await scopedTokenStateFromAllPayload(
+    pool,
+    network,
+    eligibility.scope,
+    allPayload,
+  );
+  return tokenStateWithSnapshotMetadata(
+    reconstructed,
+    snapshot,
+    "proof-indexer-token-state-snapshot",
+  );
+}
+
 async function proofIndexScopedHolderHistoryPayload(
   pool,
   network,
@@ -1074,6 +1311,192 @@ export async function proofIndexActivityPayload(network) {
   }
 
   return snapshotActivityPayload(snapshot);
+}
+
+function eventHistoryFilters(searchParams, pagination, baseValues = []) {
+  const params = searchParams ?? new URLSearchParams();
+  const filters = [];
+  const values = [...baseValues];
+  const addValue = (value) => {
+    values.push(value);
+    return `$${values.length}`;
+  };
+  const scalarFilter = (column, key) => {
+    const value = String(params.get(key) ?? "").trim().toLowerCase();
+    if (!value) {
+      return;
+    }
+    filters.push(`${column} = ${addValue(value)}`);
+  };
+
+  scalarFilter("e.protocol", "protocol");
+  scalarFilter("e.kind", "kind");
+  const status = String(params.get("status") ?? "confirmed")
+    .trim()
+    .toLowerCase();
+  if (status && status !== "all" && status !== "*") {
+    filters.push(`e.status = ${addValue(status)}`);
+  }
+  const source = String(params.get("source") ?? "").trim().toLowerCase();
+  if (source) {
+    filters.push(`lower(e.payload->>'indexedFrom') = ${addValue(source)}`);
+  }
+  const txid = String(params.get("txid") ?? "").trim().toLowerCase();
+  if (/^[0-9a-f]{64}$/u.test(txid)) {
+    filters.push(`e.txid = ${addValue(txid)}`);
+  }
+  const address = String(params.get("address") ?? "").trim();
+  if (address) {
+    filters.push(`
+      EXISTS (
+        SELECT 1
+        FROM proof_indexer.event_participants ep
+        WHERE ep.event_id = e.event_id
+          AND lower(ep.address) = ${addValue(address.toLowerCase())}
+      )
+    `);
+  }
+  const refType = String(params.get("refType") ?? params.get("ref_type") ?? "")
+    .trim()
+    .toLowerCase();
+  const refValue = String(
+    params.get("ref") ??
+      params.get("refValue") ??
+      params.get("ref_value") ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  if (refValue) {
+    const valueParam = addValue(refValue);
+    const typeFilter = refType ? `AND lower(er.ref_type) = ${addValue(refType)}` : "";
+    filters.push(`
+      EXISTS (
+        SELECT 1
+        FROM proof_indexer.event_refs er
+        WHERE er.event_id = e.event_id
+          AND lower(er.ref_value) = ${valueParam}
+          ${typeFilter}
+      )
+    `);
+  }
+  if (pagination.query) {
+    const queryParam = addValue(`%${pagination.query}%`);
+    filters.push(`
+      (
+        lower(e.txid) LIKE ${queryParam}
+        OR lower(e.payload::text) LIKE ${queryParam}
+        OR EXISTS (
+          SELECT 1
+          FROM proof_indexer.event_refs erq
+          WHERE erq.event_id = e.event_id
+            AND lower(erq.ref_value) LIKE ${queryParam}
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM proof_indexer.event_participants epq
+          WHERE epq.event_id = e.event_id
+            AND lower(epq.address) LIKE ${queryParam}
+        )
+      )
+    `);
+  }
+
+  return { filters, values };
+}
+
+function eventRowPayload(row, network) {
+  const payload = canonicalEventPayload(row.payload);
+  return {
+    txid: row.txid,
+    protocol: row.protocol,
+    kind: row.kind,
+    status: row.status,
+    confirmed: row.status === "confirmed",
+    createdAt: dateIso(row.event_time ?? row.block_time ?? row.created_at),
+    network,
+    ...payload,
+  };
+}
+
+export async function proofIndexEventHistoryPayload(network, searchParams) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const pagination = historyPaginationFromSearch(searchParams);
+  const snapshot = await ledgerSnapshot(pool, network, pagination.snapshotId);
+  if (!snapshot) {
+    return null;
+  }
+  const { filters, values } = eventHistoryFilters(searchParams, pagination, [
+    network,
+  ]);
+  const whereClause = ["e.network = $1", ...filters].join(" AND ");
+  const countResult = await pool.query(
+    `
+      SELECT count(*) AS total_count, max(e.block_height) AS indexed_through_block
+      FROM proof_indexer.events e
+      WHERE ${whereClause}
+    `,
+    values,
+  );
+  const totalCount = rowNumber(countResult.rows[0], "total_count");
+  const indexedThroughBlock = rowNumber(
+    countResult.rows[0],
+    "indexed_through_block",
+  );
+  const rowParams = [...values, pagination.limit, pagination.offset];
+  const limitParam = rowParams.length - 1;
+  const offsetParam = rowParams.length;
+  const rowsResult = await pool.query(
+    `
+      SELECT
+        e.payload,
+        e.protocol,
+        e.kind,
+        e.status,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        e.block_height,
+        e.txid,
+        e.event_id
+      FROM proof_indexer.events e
+      WHERE ${whereClause}
+      ORDER BY
+        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        e.txid DESC,
+        e.event_id DESC
+      LIMIT $${limitParam}
+      OFFSET $${offsetParam}
+    `,
+    rowParams,
+  );
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  const snapshotId = snapshot.snapshot_id ?? "";
+
+  return {
+    cursor: historyCursor(snapshotId, start),
+    end,
+    indexedAt: dateIso(snapshot.generated_at),
+    indexedThroughBlock,
+    items: rowsResult.rows.map((row) => eventRowPayload(row, network)),
+    kind: "events",
+    limit: pagination.limit,
+    network,
+    nextCursor: end < totalCount ? historyCursor(snapshotId, end) : "",
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source: "proof-indexer-events",
+    start,
+    totalCount,
+    ...(snapshotId ? { snapshotId } : {}),
+  };
 }
 
 export async function proofIndexSnapshotPayload(network, key) {

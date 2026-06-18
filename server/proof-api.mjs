@@ -20,6 +20,7 @@ import {
 import {
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
+  proofIndexEventHistoryPayload,
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
   proofIndexReadFeatureEnabled,
@@ -27,8 +28,10 @@ import {
   proofIndexRegistryHistoryPayload,
   proofIndexShadowFeatureEnabled,
   proofIndexSnapshotPayload,
+  proofIndexTokenPayload,
   proofIndexTokenHistoryReadEligibility,
   proofIndexTokenHistoryPayload,
+  proofIndexTokenReadEligibility,
   proofIndexTxStatusPayload,
 } from "./db/proof-index-reader.mjs";
 
@@ -16393,6 +16396,35 @@ async function handleRequest(request, response) {
       return;
     }
 
+    if (
+      url.pathname === "/api/v1/events" ||
+      url.pathname === "/api/v1/event-history" ||
+      url.pathname === "/api/v1/protocol-events"
+    ) {
+      if (!freshRead && proofIndexReadFeatureEnabled("event-history,events")) {
+        const indexedPayload = await proofIndexEventHistoryPayload(
+          network,
+          url.searchParams,
+        ).catch((error) => {
+          console.error(
+            `Proof index event-history read failed: ${errorSummary(error)}`,
+          );
+          return null;
+        });
+        if (indexedPayload) {
+          jsonResponse(
+            response,
+            200,
+            indexedPayload,
+            EXPENSIVE_READ_CACHE_CONTROL,
+          );
+          return;
+        }
+      }
+      errorResponse(response, 404, "Database event history is not available.");
+      return;
+    }
+
     if (url.pathname === "/api/v1/activity" || url.pathname === "/api/v1/log") {
       if (!freshRead && proofIndexReadFeatureEnabled("activity,log")) {
         const indexedPayload = await proofIndexActivityPayload(network).catch(
@@ -16499,6 +16531,32 @@ async function handleRequest(request, response) {
         /^(?:1|true|yes)$/iu.test(
           String(url.searchParams.get("wallet") ?? "").trim(),
         );
+      if (
+        !freshRead &&
+        !walletScoped &&
+        proofIndexReadFeatureEnabled("token-state,token-default,token") &&
+        proofIndexTokenReadEligibility(tokenScope, url.searchParams).eligible
+      ) {
+        const indexedPayload = await proofIndexTokenPayload(
+          network,
+          tokenScope,
+          url.searchParams,
+        ).catch((error) => {
+          console.error(
+            `Proof index token-state read failed: ${errorSummary(error)}`,
+          );
+          return null;
+        });
+        if (indexedPayload) {
+          jsonResponse(
+            response,
+            200,
+            indexedPayload,
+            TOKEN_READ_CACHE_CONTROL,
+          );
+          return;
+        }
+      }
       if (walletScoped && freshRead) {
         refreshCanonicalLedgerPayloadInBackground(network, true);
       }
