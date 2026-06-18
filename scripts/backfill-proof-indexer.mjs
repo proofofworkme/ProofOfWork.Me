@@ -47,6 +47,23 @@ const ALL_SOURCES = [
 const SOURCES = SOURCE_FILTER.size
   ? ALL_SOURCES.filter((source) => SOURCE_FILTER.has(source.label))
   : ALL_SOURCES;
+const WORK_TOKEN_ID =
+  "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const TOKEN_HISTORY_SNAPSHOT_KINDS = [
+  "tokens",
+  "mints",
+  "transfers",
+  "listings",
+  "closedListings",
+  "sales",
+  "market-log",
+  "holders",
+  "invalidEvents",
+];
+const TOKEN_HISTORY_SNAPSHOT_SCOPES = [
+  { key: "all", params: {} },
+  { key: WORK_TOKEN_ID, params: { asset: WORK_TOKEN_ID } },
+];
 
 function endpoint(pathname, params = {}) {
   const url = new URL(`${API_BASE}${pathname}`);
@@ -96,6 +113,47 @@ async function readJson(url) {
   throw lastError;
 }
 
+async function readHistorySnapshot(pathname, params = {}) {
+  let cursor = "";
+  let firstPayload = null;
+  let page = 0;
+  const items = [];
+
+  while (page < MAX_PAGES) {
+    const payload = await readJson(
+      endpoint(pathname, { ...params, cursor, fresh: "1" }),
+    );
+    if (!firstPayload) {
+      firstPayload = payload;
+    }
+    items.push(...(Array.isArray(payload.items) ? payload.items : []));
+    cursor = String(payload.nextCursor ?? "");
+    page += 1;
+    if (!cursor) {
+      break;
+    }
+  }
+
+  const payloadTotalCount = Number(firstPayload?.totalCount);
+  const totalCount = Math.max(
+    Number.isFinite(payloadTotalCount) ? payloadTotalCount : 0,
+    items.length,
+  );
+  return {
+    ...(firstPayload ?? {}),
+    complete: !cursor,
+    cursor: "0",
+    end: items.length,
+    items,
+    limit: items.length,
+    nextCursor: "",
+    page: 0,
+    pageCount: 1,
+    pageSize: items.length,
+    totalCount,
+  };
+}
+
 function isHexTxid(value) {
   return /^[0-9a-f]{64}$/u.test(String(value ?? "").toLowerCase());
 }
@@ -131,6 +189,138 @@ function itemTime(item) {
     item?.updatedAt ??
     null
   );
+}
+
+function tokenMarketLogItemConfirmed(item) {
+  if (item?.kind === "closed-listing") {
+    return item.closedListing?.closedConfirmed ?? item.closedListing?.confirmed;
+  }
+  if (item?.kind === "sale") {
+    return item.sale?.confirmed;
+  }
+  return item?.listing?.confirmed;
+}
+
+function tokenMarketLogItemCreatedAt(item) {
+  if (item?.kind === "closed-listing") {
+    return String(
+      item.closedListing?.closedAt ?? item.closedListing?.createdAt ?? "",
+    );
+  }
+  if (item?.kind === "sale") {
+    return String(item.sale?.createdAt ?? "");
+  }
+  return String(item?.listing?.createdAt ?? "");
+}
+
+function tokenMarketLogItemTxid(item) {
+  if (item?.kind === "closed-listing") {
+    return String(
+      item.closedListing?.closedTxid ?? item.closedListing?.listingId ?? "",
+    );
+  }
+  if (item?.kind === "sale") {
+    return String(item.sale?.txid ?? "");
+  }
+  return String(item?.listing?.listingId ?? "");
+}
+
+function tokenMarketLogItemsFromState(state) {
+  const listings = Array.isArray(state?.listings) ? state.listings : [];
+  const closedListings = Array.isArray(state?.closedListings)
+    ? state.closedListings
+    : [];
+  const sales = Array.isArray(state?.sales) ? state.sales : [];
+
+  return [
+    ...listings.map((listing) => ({
+      createdAt: listing.createdAt,
+      kind: "listing",
+      listing,
+      txid: listing.listingId,
+    })),
+    ...closedListings.map((closedListing) => ({
+      closedListing,
+      createdAt: closedListing.closedAt ?? closedListing.createdAt,
+      kind: "closed-listing",
+      txid: closedListing.closedTxid || closedListing.listingId,
+    })),
+    ...sales.map((sale) => ({
+      createdAt: sale.createdAt,
+      kind: "sale",
+      sale,
+      txid: sale.txid,
+    })),
+  ].sort(
+    (left, right) =>
+      Date.parse(tokenMarketLogItemCreatedAt(right)) -
+        Date.parse(tokenMarketLogItemCreatedAt(left)) ||
+      Number(tokenMarketLogItemConfirmed(right)) -
+        Number(tokenMarketLogItemConfirmed(left)) ||
+      tokenMarketLogItemTxid(left).localeCompare(tokenMarketLogItemTxid(right)),
+  );
+}
+
+function tokenHistoryItemsFromState(state, kind) {
+  if (kind === "market-log") {
+    return tokenMarketLogItemsFromState(state);
+  }
+  return Array.isArray(state?.[kind]) ? state[kind] : [];
+}
+
+function tokenHistorySnapshotFromState(state, kind) {
+  const items = tokenHistoryItemsFromState(state, kind);
+  return {
+    complete: true,
+    consistency: state?.consistency,
+    cursor: "0",
+    end: items.length,
+    indexedAt: state?.indexedAt ?? new Date().toISOString(),
+    indexedThroughBlock: state?.indexedThroughBlock,
+    items,
+    kind,
+    ledgerGeneratedAt: state?.ledgerGeneratedAt,
+    limit: items.length,
+    network: state?.network ?? NETWORK,
+    nextCursor: "",
+    page: 0,
+    pageCount: 1,
+    pageSize: items.length,
+    query: "",
+    snapshotId: state?.snapshotId,
+    source: state?.source ?? API_BASE,
+    start: 0,
+    totalCount: items.length,
+  };
+}
+
+async function tokenHistorySnapshotsForScope(scope) {
+  const state = await readJson(
+    endpoint("/api/v1/token", { ...scope.params, fresh: "1" }),
+  );
+  const snapshots = Object.fromEntries(
+    TOKEN_HISTORY_SNAPSHOT_KINDS.map((kind) => [
+      kind,
+      tokenHistorySnapshotFromState(state, kind),
+    ]),
+  );
+  try {
+    snapshots["market-log"] = await readHistorySnapshot("/api/v1/token-history", {
+      ...scope.params,
+      kind: "market-log",
+    });
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        error: error?.message ?? String(error),
+        kind: "market-log",
+        phase: "token-history-snapshot",
+        scope: scope.key,
+      }),
+    );
+    delete snapshots["market-log"];
+  }
+  return snapshots;
 }
 
 function numberOrNull(value) {
@@ -671,13 +861,30 @@ function listingStatus(item, sourceLabel) {
 }
 
 async function storeLedgerSnapshot(client) {
+  const tokenHistoryPayloads = {};
   const [payload, activityPayload] = await Promise.all([
     readJson(endpoint("/api/v1/ledger-consistency")),
     readJson(endpoint("/api/v1/log")),
   ]);
+  for (const scope of TOKEN_HISTORY_SNAPSHOT_SCOPES) {
+    try {
+      tokenHistoryPayloads[scope.key] = await tokenHistorySnapshotsForScope(scope);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          error: error?.message ?? String(error),
+          phase: "token-history-snapshot",
+          scope: scope.key,
+        }),
+      );
+      tokenHistoryPayloads[scope.key] = {};
+    }
+  }
   const snapshotPayload = {
     ...payload,
     activityPayload,
+    tokenHistoryIndexedAt: new Date().toISOString(),
+    tokenHistoryPayloads,
   };
   await client.query(
     `

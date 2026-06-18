@@ -140,6 +140,75 @@ function historyPaginationFromSearch(searchParams) {
   return { limit, offset, page, query, snapshotId };
 }
 
+function tokenHistorySafeKind(kind) {
+  const value = String(kind ?? "").trim().toLowerCase();
+  const kindMap = new Map([
+    ["holders", "holders"],
+    ["invalid", "invalidEvents"],
+    ["invalid-events", "invalidEvents"],
+    ["invalid_events", "invalidEvents"],
+    ["closedlistings", "closedListings"],
+    ["closed-listings", "closedListings"],
+    ["closed_listing", "closedListings"],
+    ["closed-listing", "closedListings"],
+    ["listings", "listings"],
+    ["marketlog", "market-log"],
+    ["market-log", "market-log"],
+    ["market_log", "market-log"],
+    ["tokenmarketlog", "market-log"],
+    ["token-market-log", "market-log"],
+    ["mints", "mints"],
+    ["sales", "sales"],
+    ["tokens", "tokens"],
+    ["transfers", "transfers"],
+  ]);
+  return kindMap.get(value) ?? "mints";
+}
+
+function tokenScopeKey(tokenScope) {
+  const scope = String(tokenScope ?? "").trim().toLowerCase();
+  return scope || "all";
+}
+
+function tokenHistoryFilterNeedles(searchParams, pagination) {
+  const params = searchParams ?? new URLSearchParams();
+  const values = [];
+  if (pagination.query) {
+    values.push(pagination.query);
+  }
+  for (const key of [
+    "address",
+    "owner",
+    "ownerAddress",
+    "seller",
+    "sellerAddress",
+    "buyer",
+    "buyerAddress",
+    "txid",
+    "transaction",
+    "transactionId",
+  ]) {
+    values.push(...params.getAll(key));
+  }
+  return [
+    ...new Set(
+      values
+        .map((value) => String(value ?? "").trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function historyItemsMatchingNeedles(items, needles) {
+  if (!Array.isArray(needles) || needles.length === 0) {
+    return items;
+  }
+  return items.filter((item) => {
+    const text = valueSearchText(item).toLowerCase();
+    return needles.every((needle) => text.includes(needle));
+  });
+}
+
 export function proofIndexLogHistoryReadEligibility(kind, searchParams) {
   const requestedKind = String(kind ?? "").trim().toLowerCase();
   const pagination = historyPaginationFromSearch(searchParams);
@@ -164,6 +233,39 @@ export function proofIndexLogHistoryReadEligibility(kind, searchParams) {
     eligible: true,
     pagination,
     reason: "snapshot-pinned-activity",
+  };
+}
+
+export function proofIndexTokenHistoryReadEligibility(
+  tokenScope,
+  kind,
+  searchParams,
+) {
+  const pagination = historyPaginationFromSearch(searchParams);
+  const params = searchParams ?? new URLSearchParams();
+  const walletScoped = /^(?:1|true|yes)$/iu.test(
+    String(params.get("wallet") ?? "").trim(),
+  );
+  if (walletScoped) {
+    return {
+      eligible: false,
+      kind: tokenHistorySafeKind(kind),
+      pagination,
+      reason: "wallet-scoped-canonical",
+      scope: tokenScopeKey(tokenScope),
+    };
+  }
+
+  const safeKind = tokenHistorySafeKind(kind);
+  return {
+    eligible: true,
+    kind: safeKind,
+    pagination,
+    reason:
+      pagination.query || tokenHistoryFilterNeedles(params, pagination).length > 0
+        ? "query"
+        : "snapshot-pinned-token-history",
+    scope: tokenScopeKey(tokenScope),
   };
 }
 
@@ -321,6 +423,40 @@ function snapshotActivityPayload(snapshot) {
   return payload;
 }
 
+function tokenHistoryPayloadsFromSnapshot(snapshot) {
+  const payload = snapshot?.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  if (
+    payload.tokenHistoryPayloads &&
+    typeof payload.tokenHistoryPayloads === "object" &&
+    !Array.isArray(payload.tokenHistoryPayloads)
+  ) {
+    return payload.tokenHistoryPayloads;
+  }
+  return null;
+}
+
+function proofIndexTokenHistoryMaxAgeMs(env = process.env) {
+  return boundedInteger(
+    env.POW_INDEX_TOKEN_HISTORY_MAX_AGE_MS,
+    15 * 60_000,
+    0,
+    24 * 60 * 60_000,
+  );
+}
+
+function tokenHistorySnapshotAgeMs(snapshot) {
+  const payload = snapshot?.payload;
+  const parsed = Date.parse(
+    payload?.tokenHistoryIndexedAt ??
+      payload?.tokenHistoryPayloads?.all?.tokens?.indexedAt ??
+      snapshot?.generated_at,
+  );
+  return Number.isFinite(parsed) ? Date.now() - parsed : Number.POSITIVE_INFINITY;
+}
+
 function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination) {
   const activityPayload = snapshotActivityPayload(snapshot);
   const sourceItems = Array.isArray(activityPayload?.activity)
@@ -375,6 +511,123 @@ function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination
       ledgerGeneratedAt:
         activityPayload.ledgerGeneratedAt ??
         dateIso(activityPayload.generatedAt ?? snapshot?.generated_at),
+      snapshotId,
+    };
+  }
+
+  return page;
+}
+
+function tokenHistoryItemsFromSnapshot(tokenHistoryPayloads, scope, safeKind) {
+  const scopedPayload = tokenHistoryPayloads?.[scope];
+  if (
+    scopedPayload?.[safeKind] &&
+    scopedPayload[safeKind].complete !== false &&
+    Array.isArray(scopedPayload[safeKind].items)
+  ) {
+    return {
+      payload: scopedPayload[safeKind],
+      sourceItems: scopedPayload[safeKind].items,
+    };
+  }
+
+  const allPayload = tokenHistoryPayloads?.all?.[safeKind];
+  if (
+    !allPayload ||
+    allPayload.complete === false ||
+    !Array.isArray(allPayload.items)
+  ) {
+    return null;
+  }
+  if (scope === "all") {
+    return {
+      payload: allPayload,
+      sourceItems: allPayload.items,
+    };
+  }
+  if (safeKind === "holders") {
+    return null;
+  }
+
+  return {
+    payload: allPayload,
+    sourceItems: allPayload.items.filter((item) => {
+      const tokenId = String(item?.tokenId ?? "").trim().toLowerCase();
+      const ticker = String(item?.ticker ?? "").trim().toLowerCase();
+      return tokenId === scope || ticker === scope;
+    }),
+  };
+}
+
+function tokenHistoryPageFromSnapshot(
+  snapshot,
+  network,
+  tokenScope,
+  safeKind,
+  searchParams,
+  pagination,
+) {
+  if (tokenHistorySnapshotAgeMs(snapshot) > proofIndexTokenHistoryMaxAgeMs()) {
+    return null;
+  }
+  const tokenHistoryPayloads = tokenHistoryPayloadsFromSnapshot(snapshot);
+  if (!tokenHistoryPayloads) {
+    return null;
+  }
+
+  const scope = tokenScopeKey(tokenScope);
+  const source = tokenHistoryItemsFromSnapshot(tokenHistoryPayloads, scope, safeKind);
+  if (!source) {
+    return null;
+  }
+
+  const needles = tokenHistoryFilterNeedles(searchParams, pagination);
+  const filtered = historyItemsMatchingNeedles(source.sourceItems, needles);
+  const totalCount = filtered.length;
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  const snapshotId =
+    source.payload?.snapshotId ??
+    source.payload?.ledgerSnapshotId ??
+    snapshot?.snapshot_id ??
+    "";
+  const cursor = historyCursor(snapshotId, start);
+  const nextCursor = end < totalCount ? historyCursor(snapshotId, end) : "";
+  const indexedAt = dateIso(
+    source.payload?.indexedAt ??
+      source.payload?.ledgerGeneratedAt ??
+      source.payload?.generatedAt ??
+      snapshot?.generated_at,
+  );
+
+  const page = {
+    cursor,
+    end,
+    indexedAt,
+    indexedThroughBlock:
+      indexedThroughBlockFromItems(filtered) ??
+      rowNumber(snapshot, "indexed_through_block"),
+    items: filtered.slice(start, end),
+    kind: safeKind,
+    limit: pagination.limit,
+    network,
+    nextCursor,
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source: source.payload?.source ?? "proof-indexer-token-snapshot",
+    start,
+    totalCount,
+  };
+
+  if (snapshotId) {
+    return {
+      ...page,
+      consistency: source.payload?.consistency ?? snapshot?.consistency ?? undefined,
+      ledgerGeneratedAt:
+        source.payload?.ledgerGeneratedAt ??
+        dateIso(source.payload?.generatedAt ?? snapshot?.generated_at),
       snapshotId,
     };
   }
@@ -497,6 +750,65 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
   return page;
 }
 
+export async function proofIndexTokenHistoryPayload(
+  network,
+  tokenScope,
+  kind,
+  searchParams,
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const eligibility = proofIndexTokenHistoryReadEligibility(
+    tokenScope,
+    kind,
+    searchParams,
+  );
+  if (!eligibility.eligible) {
+    return null;
+  }
+
+  const snapshot = await ledgerSnapshot(
+    pool,
+    network,
+    eligibility.pagination.snapshotId,
+  );
+  if (!snapshot) {
+    return null;
+  }
+
+  return tokenHistoryPageFromSnapshot(
+    snapshot,
+    network,
+    tokenScope,
+    eligibility.kind,
+    searchParams,
+    eligibility.pagination,
+  );
+}
+
+function historyItemKey(item) {
+  return [
+    item?.kind,
+    item?.txid,
+    item?.listingId,
+    item?.closedTxid,
+    item?.sealTxid,
+    item?.tokenId,
+    item?.ticker,
+    item?.address,
+    item?.minterAddress,
+    item?.senderAddress,
+    item?.recipientAddress,
+    item?.sellerAddress,
+    item?.buyerAddress,
+  ]
+    .filter((value) => value !== undefined && value !== null && value !== "")
+    .join(":");
+}
+
 export function compareProofIndexHistoryPayloads(canonical, indexed) {
   const mismatches = [];
   if (!canonical || !indexed) {
@@ -518,8 +830,8 @@ export function compareProofIndexHistoryPayloads(canonical, indexed) {
   for (let index = 0; index < sampleSize; index += 1) {
     const left = canonicalItems[index];
     const right = indexedItems[index];
-    const leftKey = `${left?.kind ?? ""}:${left?.txid ?? ""}:${left?.listingId ?? ""}`;
-    const rightKey = `${right?.kind ?? ""}:${right?.txid ?? ""}:${right?.listingId ?? ""}`;
+    const leftKey = historyItemKey(left);
+    const rightKey = historyItemKey(right);
     if (leftKey !== rightKey) {
       mismatches.push(`item[${index}]:${leftKey}!=${rightKey}`);
       if (mismatches.length >= 5) {

@@ -100,6 +100,13 @@ page boundaries between reads. Fresh reads still use the canonical node/API path
 `POW_INDEX_SHADOW_READS=log-history` compares Log history DB output against the
 canonical response without changing the public response for DB-eligible query
 shapes.
+`POW_INDEX_READS=tx-status,log-history,token-history` also enables snapshot-backed
+Token History reads. The indexer stores canonical `/api/v1/token-history?fresh=1`
+pages in the ledger snapshot and the API repaginates those stored pages with
+snapshot cursors. Missing, stale, incomplete, wallet-scoped, or fresh reads fall
+back to the canonical node/API path. `POW_INDEX_SHADOW_READS=token-history`
+compares eligible DB output against canonical Token History without changing the
+public response.
 
 The worker script keeps the shadow indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through

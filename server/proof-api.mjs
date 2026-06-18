@@ -24,6 +24,8 @@ import {
   proofIndexReadFeatureEnabled,
   proofIndexReadUnconfirmedTxStatus,
   proofIndexShadowFeatureEnabled,
+  proofIndexTokenHistoryReadEligibility,
+  proofIndexTokenHistoryPayload,
   proofIndexTxStatusPayload,
 } from "./db/proof-index-reader.mjs";
 
@@ -16093,6 +16095,48 @@ function shadowProofIndexLogHistory(canonicalPayload, network, kind, searchParam
     });
 }
 
+function shadowProofIndexTokenHistory(
+  canonicalPayload,
+  network,
+  tokenScope,
+  kind,
+  searchParams,
+) {
+  if (!proofIndexShadowFeatureEnabled("token-history,token")) {
+    return;
+  }
+  const eligibility = proofIndexTokenHistoryReadEligibility(
+    tokenScope,
+    kind,
+    searchParams,
+  );
+  if (!eligibility.eligible) {
+    return;
+  }
+
+  void proofIndexTokenHistoryPayload(network, tokenScope, kind, searchParams)
+    .then((indexedPayload) => {
+      if (!indexedPayload) {
+        console.error("Proof index token-history shadow read returned no payload.");
+        return;
+      }
+      const mismatches = compareProofIndexHistoryPayloads(
+        canonicalPayload,
+        indexedPayload,
+      );
+      if (mismatches.length > 0) {
+        console.error(
+          `Proof index token-history shadow mismatch: ${mismatches.join("; ")}`,
+        );
+      }
+    })
+    .catch((error) => {
+      console.error(
+        `Proof index token-history shadow read failed: ${errorSummary(error)}`,
+      );
+    });
+}
+
 async function txPayload(txid, network) {
   const tx = await fetchTransactionWithSourceFallback(txid, network).catch(
     () => null,
@@ -16474,16 +16518,54 @@ async function handleRequest(request, response) {
       const historyKind = String(url.searchParams.get("kind") ?? "mints")
         .trim()
         .toLowerCase();
-      jsonResponse(
-        response,
-        200,
-        await tokenHistoryPayload(
+      if (
+        !freshRead &&
+        proofIndexReadFeatureEnabled("token-history,token") &&
+        proofIndexTokenHistoryReadEligibility(
+          tokenScope,
+          historyKind,
+          url.searchParams,
+        ).eligible
+      ) {
+        const indexedPayload = await proofIndexTokenHistoryPayload(
           network,
           tokenScope,
           historyKind,
           url.searchParams,
-          freshRead,
-        ),
+        ).catch((error) => {
+          console.error(
+            `Proof index token-history read failed: ${errorSummary(error)}`,
+          );
+          return null;
+        });
+        if (indexedPayload) {
+          jsonResponse(
+            response,
+            200,
+            indexedPayload,
+            TOKEN_READ_CACHE_CONTROL,
+          );
+          return;
+        }
+      }
+      const payload = await tokenHistoryPayload(
+        network,
+        tokenScope,
+        historyKind,
+        url.searchParams,
+        freshRead,
+      );
+      shadowProofIndexTokenHistory(
+        payload,
+        network,
+        tokenScope,
+        historyKind,
+        url.searchParams,
+      );
+      jsonResponse(
+        response,
+        200,
+        payload,
         freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
       return;

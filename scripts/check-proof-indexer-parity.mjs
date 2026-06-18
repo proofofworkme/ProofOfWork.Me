@@ -5,6 +5,8 @@ import {
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
   proofIndexRecentTransactionIds,
+  proofIndexTokenHistoryReadEligibility,
+  proofIndexTokenHistoryPayload,
   proofIndexTxStatusPayload,
 } from "../server/db/proof-index-reader.mjs";
 
@@ -25,6 +27,8 @@ const PAGINATION_GAP_INFINITY_BOND_TXID =
   "b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34";
 const WORK_TRANSFER_REGRESSION_TXID =
   "7e9e711564be12330793b3415a032eca42bb742499fbdb8a6b8be6d6f1867354";
+const WORK_TOKEN_ID =
+  "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 
 function endpoint(pathname, params = {}) {
   const url = new URL(`${API_BASE}${pathname}`);
@@ -374,6 +378,107 @@ try {
       secondStart: secondSnapshotPage?.start ?? null,
     },
   );
+
+  const tokenHistoryCases = [
+    {
+      label: "all-mints",
+      params: { kind: "mints", limit: 10 },
+      tokenScope: "",
+    },
+    {
+      label: "all-transfers",
+      params: { kind: "transfers", limit: 10 },
+      tokenScope: "",
+    },
+    {
+      label: "work-transfer-query",
+      params: {
+        asset: WORK_TOKEN_ID,
+        kind: "transfers",
+        limit: 10,
+        q: WORK_TRANSFER_REGRESSION_TXID,
+      },
+      tokenScope: WORK_TOKEN_ID,
+    },
+    {
+      label: "work-holders",
+      params: { asset: WORK_TOKEN_ID, kind: "holders", limit: 10 },
+      tokenScope: WORK_TOKEN_ID,
+    },
+    {
+      label: "work-market-log",
+      params: { asset: WORK_TOKEN_ID, kind: "market-log", limit: 10 },
+      tokenScope: WORK_TOKEN_ID,
+    },
+  ];
+  for (const tokenCase of tokenHistoryCases) {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(tokenCase.params)) {
+      searchParams.set(key, String(value));
+    }
+    const eligibility = proofIndexTokenHistoryReadEligibility(
+      tokenCase.tokenScope,
+      String(tokenCase.params.kind ?? ""),
+      searchParams,
+    );
+    check(
+      checks,
+      `token-history-${tokenCase.label}-read-eligibility`,
+      eligibility.eligible === true,
+      {
+        eligible: eligibility.eligible,
+        kind: eligibility.kind,
+        offset: eligibility.pagination.offset,
+        query: eligibility.pagination.query,
+        reason: eligibility.reason,
+        scope: eligibility.scope,
+      },
+    );
+    if (!eligibility.eligible) {
+      continue;
+    }
+
+    const indexedTokenPage = await proofIndexTokenHistoryPayload(
+      NETWORK,
+      tokenCase.tokenScope,
+      String(tokenCase.params.kind ?? ""),
+      searchParams,
+    );
+    const canonicalTokenPage = await readJson(
+      endpoint("/api/v1/token-history", { ...tokenCase.params, fresh: "1" }),
+    );
+    const tokenMismatches = compareProofIndexHistoryPayloads(
+      canonicalTokenPage,
+      indexedTokenPage,
+    );
+    check(
+      checks,
+      `token-history-${tokenCase.label}-parity`,
+      tokenMismatches.length === 0,
+      {
+        mismatches: tokenMismatches.slice(0, 5),
+        snapshotId: indexedTokenPage?.snapshotId ?? null,
+      },
+      STRICT ? "error" : "warning",
+    );
+    check(
+      checks,
+      `token-history-${tokenCase.label}-snapshot-pinned`,
+      Boolean(indexedTokenPage?.snapshotId) &&
+        String(indexedTokenPage?.cursor ?? "").startsWith(
+          `snapshot:${indexedTokenPage?.snapshotId}:`,
+        ) &&
+        (!indexedTokenPage?.nextCursor ||
+          String(indexedTokenPage.nextCursor).startsWith(
+            `snapshot:${indexedTokenPage.snapshotId}:`,
+          )),
+      {
+        cursor: indexedTokenPage?.cursor ?? null,
+        nextCursor: indexedTokenPage?.nextCursor ?? null,
+        snapshotId: indexedTokenPage?.snapshotId ?? null,
+      },
+    );
+  }
 
   const sampleTxids = await proofIndexRecentTransactionIds(NETWORK, {
     limit: 10,
