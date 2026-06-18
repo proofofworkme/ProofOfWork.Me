@@ -26,6 +26,9 @@ const STRICT = /^(?:1|true|yes)$/iu.test(
 const CHECK_ACTIVITY_SNAPSHOT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_PARITY_ACTIVITY_SNAPSHOT ?? ""),
 );
+const CHECK_FRESH_SNAPSHOTS = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_PARITY_SNAPSHOT_FRESH ?? ""),
+);
 const DRY_RUN = process.argv.includes("--dry-run");
 const INFINITY_BOND_REGRESSION_TXID =
   "411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891";
@@ -45,6 +48,10 @@ function endpoint(pathname, params = {}) {
     }
   }
   return url;
+}
+
+function snapshotParityParams(params = {}) {
+  return CHECK_FRESH_SNAPSHOTS ? { ...params, fresh: "1" } : params;
 }
 
 async function readJson(url) {
@@ -434,10 +441,10 @@ try {
       searchParams,
     );
     const canonicalRegistryPage = await readJson(
-      endpoint("/api/v1/registry-history", {
-        ...registryCase.params,
-        fresh: "1",
-      }),
+      endpoint(
+        "/api/v1/registry-history",
+        snapshotParityParams(registryCase.params),
+      ),
     );
     const registryMismatches = compareProofIndexHistoryPayloads(
       canonicalRegistryPage,
@@ -485,7 +492,7 @@ try {
   for (const summaryCase of summaryCases) {
     const [indexedSummary, canonicalSummary] = await Promise.all([
       proofIndexSnapshotPayload(NETWORK, summaryCase.key),
-      readJson(endpoint(summaryCase.path, { fresh: "1" })),
+      readJson(endpoint(summaryCase.path, snapshotParityParams())),
     ]);
     const indexedValue = summaryValue(indexedSummary);
     const canonicalValue = summaryValue(canonicalSummary);

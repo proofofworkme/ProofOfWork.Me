@@ -71,7 +71,10 @@ The backfill script reads current canonical API history in pages and stores a
 shadow copy in PostgreSQL. `POW_INDEX_BACKFILL_SOURCES` can limit a run to
 comma-separated sources such as `registry-records,tokens,token-mints`, while
 `POW_INDEX_BACKFILL_LIMIT`, `POW_INDEX_BACKFILL_MAX_PAGES`, and
-`POW_INDEX_FETCH_TIMEOUT_MS` bound each run.
+`POW_INDEX_FETCH_TIMEOUT_MS` bound each run. Snapshot-only refreshes use the
+fast canonical cached API reads by default; set
+`POW_INDEX_BACKFILL_SNAPSHOT_FRESH=1` only when deliberately auditing against
+full fresh source reads.
 
 The parity script compares the database read model with the canonical
 `/api/v1/ledger-consistency` snapshot before any endpoint cutover. It requires a
@@ -80,7 +83,9 @@ activity, matching confirmed credit definitions, and populated search indexes.
 It also checks Log history first-page, kind-filter, and known txid-search reads
 plus a recent confirmed tx-status sample against the canonical API. Warnings
 such as a snapshot id moving during a refresh can be promoted to hard failures
-with `POW_INDEX_PARITY_STRICT=1`.
+with `POW_INDEX_PARITY_STRICT=1`. Registry and summary parity use cached
+canonical snapshot sources by default and can be forced through full fresh reads
+with `POW_INDEX_PARITY_SNAPSHOT_FRESH=1`.
 
 Ledger snapshots store the consistency payload and may preserve a previously
 captured canonical `/api/v1/log` activity payload. The default snapshot-only

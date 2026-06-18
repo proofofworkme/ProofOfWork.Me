@@ -18,6 +18,9 @@ const INCLUDE_SCOPED_HOLDERS = !/^(?:0|false|no)$/iu.test(
 const REFRESH_ACTIVITY_SNAPSHOT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_ACTIVITY_SNAPSHOT ?? ""),
 );
+const REFRESH_SNAPSHOT_SOURCES = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_BACKFILL_SNAPSHOT_FRESH ?? ""),
+);
 const DRY_RUN = process.argv.includes("--dry-run");
 const SOURCE_FILTER = new Set(
   String(process.env.POW_INDEX_BACKFILL_SOURCES ?? "")
@@ -123,6 +126,10 @@ async function readJson(url) {
   throw lastError;
 }
 
+function snapshotSourceParams(params = {}) {
+  return REFRESH_SNAPSHOT_SOURCES ? { ...params, fresh: "1" } : params;
+}
+
 async function readHistorySnapshot(pathname, params = {}) {
   let cursor = "";
   let firstPayload = null;
@@ -131,7 +138,7 @@ async function readHistorySnapshot(pathname, params = {}) {
 
   while (page < MAX_PAGES) {
     const payload = await readJson(
-      endpoint(pathname, { ...params, cursor, fresh: "1" }),
+      endpoint(pathname, snapshotSourceParams({ ...params, cursor })),
     );
     if (!firstPayload) {
       firstPayload = payload;
@@ -306,7 +313,7 @@ function tokenHistorySnapshotFromState(state, kind) {
 
 async function tokenHistorySnapshotsForScope(scope) {
   const state = await readJson(
-    endpoint("/api/v1/token", { ...scope.params, fresh: "1" }),
+    endpoint("/api/v1/token", snapshotSourceParams(scope.params)),
   );
   const snapshots = Object.fromEntries(
     TOKEN_HISTORY_SNAPSHOT_KINDS.map((kind) => [
@@ -314,21 +321,23 @@ async function tokenHistorySnapshotsForScope(scope) {
       tokenHistorySnapshotFromState(state, kind),
     ]),
   );
-  try {
-    snapshots["market-log"] = await readHistorySnapshot("/api/v1/token-history", {
-      ...scope.params,
-      kind: "market-log",
-    });
-  } catch (error) {
-    console.error(
-      JSON.stringify({
-        error: error?.message ?? String(error),
+  if (REFRESH_SNAPSHOT_SOURCES) {
+    try {
+      snapshots["market-log"] = await readHistorySnapshot("/api/v1/token-history", {
+        ...scope.params,
         kind: "market-log",
-        phase: "token-history-snapshot",
-        scope: scope.key,
-      }),
-    );
-    delete snapshots["market-log"];
+      });
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          error: error?.message ?? String(error),
+          kind: "market-log",
+          phase: "token-history-snapshot",
+          scope: scope.key,
+        }),
+      );
+      delete snapshots["market-log"];
+    }
   }
   return snapshots;
 }
@@ -339,7 +348,7 @@ async function summarySnapshots() {
       try {
         return [
           source.key,
-          await readJson(endpoint(source.path, { fresh: "1" })),
+          await readJson(endpoint(source.path, snapshotSourceParams())),
         ];
       } catch (error) {
         console.error(
