@@ -86,7 +86,8 @@ such as a snapshot id moving during a refresh can be promoted to hard failures
 with `POW_INDEX_PARITY_STRICT=1`. Registry and summary parity use cached
 canonical snapshot sources by default and can be forced through full fresh reads
 with `POW_INDEX_PARITY_SNAPSHOT_FRESH=1`; fresh Log history response comparisons
-are opt-in with `POW_INDEX_PARITY_LOG_FRESH=1`.
+are opt-in with `POW_INDEX_PARITY_LOG_FRESH=1`, and fresh Token History response
+comparisons are opt-in with `POW_INDEX_PARITY_TOKEN_FRESH=1`.
 
 Ledger snapshots store the consistency payload and may preserve a previously
 captured canonical `/api/v1/log` activity payload. The default snapshot-only

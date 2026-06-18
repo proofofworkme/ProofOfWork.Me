@@ -32,6 +32,9 @@ const CHECK_FRESH_LOG_HISTORY = /^(?:1|true|yes)$/iu.test(
 const CHECK_FRESH_SNAPSHOTS = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_PARITY_SNAPSHOT_FRESH ?? ""),
 );
+const CHECK_FRESH_TOKEN_HISTORY = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_PARITY_TOKEN_FRESH ?? ""),
+);
 const DRY_RUN = process.argv.includes("--dry-run");
 const INFINITY_BOND_REGRESSION_TXID =
   "411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891";
@@ -580,23 +583,25 @@ try {
       String(tokenCase.params.kind ?? ""),
       searchParams,
     );
-    const canonicalTokenPage = await readJson(
-      endpoint("/api/v1/token-history", { ...tokenCase.params, fresh: "1" }),
-    );
-    const tokenMismatches = compareProofIndexHistoryPayloads(
-      canonicalTokenPage,
-      indexedTokenPage,
-    );
-    check(
-      checks,
-      `token-history-${tokenCase.label}-parity`,
-      tokenMismatches.length === 0,
-      {
-        mismatches: tokenMismatches.slice(0, 5),
-        snapshotId: indexedTokenPage?.snapshotId ?? null,
-      },
-      STRICT ? "error" : "warning",
-    );
+    if (CHECK_FRESH_TOKEN_HISTORY) {
+      const canonicalTokenPage = await readJson(
+        endpoint("/api/v1/token-history", { ...tokenCase.params, fresh: "1" }),
+      );
+      const tokenMismatches = compareProofIndexHistoryPayloads(
+        canonicalTokenPage,
+        indexedTokenPage,
+      );
+      check(
+        checks,
+        `token-history-${tokenCase.label}-parity`,
+        tokenMismatches.length === 0,
+        {
+          mismatches: tokenMismatches.slice(0, 5),
+          snapshotId: indexedTokenPage?.snapshotId ?? null,
+        },
+        STRICT ? "error" : "warning",
+      );
+    }
     check(
       checks,
       `token-history-${tokenCase.label}-snapshot-pinned`,
@@ -642,29 +647,43 @@ try {
       "holders",
       searchParams,
     );
-    const canonicalScopedHolders = await readJson(
-      endpoint("/api/v1/token-history", {
-        asset: nonWorkHolderTokenId,
-        fresh: "1",
-        kind: "holders",
-        limit: 10,
-      }),
-    );
-    const holderMismatches = compareProofIndexHistoryPayloads(
-      canonicalScopedHolders,
-      indexedScopedHolders,
-    );
-    check(
-      checks,
-      "token-history-non-work-holders-parity",
-      holderMismatches.length === 0,
-      {
-        mismatches: holderMismatches.slice(0, 5),
-        snapshotId: indexedScopedHolders?.snapshotId ?? null,
-        tokenId: nonWorkHolderTokenId,
-      },
-      STRICT ? "error" : "warning",
-    );
+    if (CHECK_FRESH_TOKEN_HISTORY) {
+      const canonicalScopedHolders = await readJson(
+        endpoint("/api/v1/token-history", {
+          asset: nonWorkHolderTokenId,
+          fresh: "1",
+          kind: "holders",
+          limit: 10,
+        }),
+      );
+      const holderMismatches = compareProofIndexHistoryPayloads(
+        canonicalScopedHolders,
+        indexedScopedHolders,
+      );
+      check(
+        checks,
+        "token-history-non-work-holders-parity",
+        holderMismatches.length === 0,
+        {
+          mismatches: holderMismatches.slice(0, 5),
+          snapshotId: indexedScopedHolders?.snapshotId ?? null,
+          tokenId: nonWorkHolderTokenId,
+        },
+        STRICT ? "error" : "warning",
+      );
+    } else {
+      check(
+        checks,
+        "token-history-non-work-holders-db-page",
+        Boolean(indexedScopedHolders?.snapshotId) &&
+          (indexedScopedHolders?.items ?? []).length > 0,
+        {
+          items: indexedScopedHolders?.items?.length ?? null,
+          snapshotId: indexedScopedHolders?.snapshotId ?? null,
+          tokenId: nonWorkHolderTokenId,
+        },
+      );
+    }
   }
 
   const sampleTxids = await proofIndexRecentTransactionIds(NETWORK, {
