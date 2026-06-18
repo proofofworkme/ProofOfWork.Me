@@ -26,6 +26,9 @@ const STRICT = /^(?:1|true|yes)$/iu.test(
 const CHECK_ACTIVITY_SNAPSHOT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_PARITY_ACTIVITY_SNAPSHOT ?? ""),
 );
+const CHECK_FRESH_LOG_HISTORY = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_PARITY_LOG_FRESH ?? ""),
+);
 const CHECK_FRESH_SNAPSHOTS = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_PARITY_SNAPSHOT_FRESH ?? ""),
 );
@@ -323,7 +326,7 @@ try {
       String(logCase.params.kind ?? ""),
       searchParams,
     );
-    if (!logCase.compareFresh) {
+    if (!logCase.compareFresh || !CHECK_FRESH_LOG_HISTORY) {
       check(
         checks,
         `log-history-${logCase.label}-snapshot-pinned`,
