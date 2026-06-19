@@ -21,6 +21,26 @@ const REFRESH_ACTIVITY_SNAPSHOT = /^(?:1|true|yes)$/iu.test(
 const REFRESH_SNAPSHOT_SOURCES = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_SNAPSHOT_FRESH ?? ""),
 );
+const REFRESH_TOKEN_SNAPSHOT_SOURCES = /^(?:1|true|yes)$/iu.test(
+  String(
+    process.env.POW_INDEX_BACKFILL_TOKEN_SNAPSHOT_FRESH ??
+      process.env.POW_INDEX_BACKFILL_SNAPSHOT_FRESH ??
+      "",
+  ),
+);
+const REFRESH_ALL_TOKEN_SNAPSHOT_SOURCES = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_BACKFILL_ALL_TOKEN_SNAPSHOT_FRESH ?? ""),
+);
+const REFRESH_SUMMARY_SNAPSHOT_SOURCES = /^(?:1|true|yes)$/iu.test(
+  String(
+    process.env.POW_INDEX_BACKFILL_SUMMARY_SNAPSHOT_FRESH ??
+      process.env.POW_INDEX_BACKFILL_SNAPSHOT_FRESH ??
+      "",
+  ),
+);
+const REFRESH_SOURCE_READS = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_BACKFILL_SOURCE_FRESH ?? ""),
+);
 const DRY_RUN = process.argv.includes("--dry-run");
 const SOURCE_FILTER = new Set(
   String(process.env.POW_INDEX_BACKFILL_SOURCES ?? "")
@@ -130,7 +150,32 @@ function snapshotSourceParams(params = {}) {
   return REFRESH_SNAPSHOT_SOURCES ? { ...params, fresh: "1" } : params;
 }
 
-async function readHistorySnapshot(pathname, params = {}) {
+function tokenSnapshotSourceParams(params = {}) {
+  return REFRESH_TOKEN_SNAPSHOT_SOURCES ? { ...params, fresh: "1" } : params;
+}
+
+function scopedTokenSnapshotSourceParams(scope, params = {}) {
+  if (scope?.key === "all" && !REFRESH_ALL_TOKEN_SNAPSHOT_SOURCES) {
+    return snapshotSourceParams(params);
+  }
+  return tokenSnapshotSourceParams(params);
+}
+
+function summarySnapshotSourceParams(params = {}) {
+  return REFRESH_SUMMARY_SNAPSHOT_SOURCES
+    ? { ...params, fresh: "1" }
+    : snapshotSourceParams(params);
+}
+
+function backfillSourceParams(params = {}) {
+  return REFRESH_SOURCE_READS ? { ...params, fresh: "1" } : params;
+}
+
+async function readHistorySnapshot(
+  pathname,
+  params = {},
+  sourceParams = snapshotSourceParams,
+) {
   let cursor = "";
   let firstPayload = null;
   let page = 0;
@@ -138,7 +183,7 @@ async function readHistorySnapshot(pathname, params = {}) {
 
   while (page < MAX_PAGES) {
     const payload = await readJson(
-      endpoint(pathname, snapshotSourceParams({ ...params, cursor })),
+      endpoint(pathname, sourceParams({ ...params, cursor })),
     );
     if (!firstPayload) {
       firstPayload = payload;
@@ -313,7 +358,10 @@ function tokenHistorySnapshotFromState(state, kind) {
 
 async function tokenHistorySnapshotsForScope(scope) {
   const state = await readJson(
-    endpoint("/api/v1/token", snapshotSourceParams(scope.params)),
+    endpoint(
+      "/api/v1/token",
+      scopedTokenSnapshotSourceParams(scope, scope.params),
+    ),
   );
   const snapshots = Object.fromEntries(
     TOKEN_HISTORY_SNAPSHOT_KINDS.map((kind) => [
@@ -321,12 +369,16 @@ async function tokenHistorySnapshotsForScope(scope) {
       tokenHistorySnapshotFromState(state, kind),
     ]),
   );
-  if (REFRESH_SNAPSHOT_SOURCES) {
+  if (REFRESH_SNAPSHOT_SOURCES || REFRESH_TOKEN_SNAPSHOT_SOURCES) {
     try {
-      snapshots["market-log"] = await readHistorySnapshot("/api/v1/token-history", {
-        ...scope.params,
-        kind: "market-log",
-      });
+      snapshots["market-log"] = await readHistorySnapshot(
+        "/api/v1/token-history",
+        {
+          ...scope.params,
+          kind: "market-log",
+        },
+        (params) => scopedTokenSnapshotSourceParams(scope, params),
+      );
     } catch (error) {
       console.error(
         JSON.stringify({
@@ -351,7 +403,7 @@ async function summarySnapshots() {
       try {
         return [
           source.key,
-          await readJson(endpoint(source.path, snapshotSourceParams())),
+          await readJson(endpoint(source.path, summarySnapshotSourceParams())),
         ];
       } catch (error) {
         console.error(
@@ -846,11 +898,14 @@ async function upsertProjection(client, sourceLabel, item, status) {
     );
   }
 
-  if (
-    ["token-listings", "token-closed-listings"].includes(sourceLabel) &&
-    item?.listingId &&
-    item?.tokenId
-  ) {
+  const projectionKind = eventKind(item, sourceLabel);
+  const projectsCreditListing =
+    ["token-listings", "token-closed-listings"].includes(sourceLabel) ||
+    projectionKind === "token-listing-closed" ||
+    projectionKind === "closed-listing";
+  if (projectsCreditListing && item?.listingId && item?.tokenId) {
+    const projectedStatus = listingStatus(item, sourceLabel);
+    const projectedPayload = creditListingProjectionPayload(item, projectedStatus);
     await client.query(
       `
         INSERT INTO proof_indexer.credit_listings (
@@ -890,7 +945,7 @@ async function upsertProjection(client, sourceLabel, item, status) {
         NETWORK,
         item.listingId,
         item.tokenId,
-        listingStatus(item, sourceLabel),
+        projectedStatus,
         item.sellerAddress ?? "",
         item.buyerAddress ?? null,
         String(item.amount ?? 0),
@@ -899,8 +954,8 @@ async function upsertProjection(client, sourceLabel, item, status) {
         numberOrNull(item.saleTicketVout ?? item.saleAuthorization?.saleTicketVout),
         bigintOrZero(item.saleTicketValueSats ?? item.saleAuthorization?.saleTicketValueSats),
         item.sealTxid ?? null,
-        item.closedTxid ?? item.closeTxid ?? null,
-        JSON.stringify(item),
+        creditListingCloseTxid(item, projectedStatus, projectionKind, sourceLabel),
+        JSON.stringify(projectedPayload),
       ],
     );
   }
@@ -955,10 +1010,21 @@ async function upsertProjection(client, sourceLabel, item, status) {
 }
 
 function listingStatus(item, sourceLabel) {
+  const kind = eventKind(item, sourceLabel);
   if (item?.dropped) {
     return "dropped";
   }
-  if (sourceLabel === "token-closed-listings") {
+  if (
+    sourceLabel === "token-closed-listings" ||
+    kind === "token-listing-closed" ||
+    kind === "closed-listing"
+  ) {
+    if (
+      item?.closedConfirmed === false ||
+      item?.closedListing?.closedConfirmed === false
+    ) {
+      return "pending";
+    }
     if (item?.saleTxid || item?.buyerAddress) {
       return "sold";
     }
@@ -968,6 +1034,47 @@ function listingStatus(item, sourceLabel) {
     return "sealing";
   }
   return item?.confirmed === false ? "pending" : "active";
+}
+
+function creditListingCloseTxid(
+  item,
+  projectedStatus,
+  projectionKind,
+  sourceLabel,
+) {
+  const direct =
+    item?.closedTxid ?? item?.closeTxid ?? item?.closedListing?.closedTxid;
+  if (isHexTxid(direct)) {
+    return String(direct).toLowerCase();
+  }
+  const isCloseProjection =
+    sourceLabel === "token-closed-listings" ||
+    projectionKind === "token-listing-closed" ||
+    projectionKind === "closed-listing";
+  if (isCloseProjection && isHexTxid(item?.txid)) {
+    return String(item.txid).toLowerCase();
+  }
+  if (
+    !["active", "pending"].includes(projectedStatus) &&
+    isHexTxid(item?.txid)
+  ) {
+    return String(item.txid).toLowerCase();
+  }
+  return null;
+}
+
+function creditListingProjectionPayload(item, projectedStatus) {
+  const payload = { ...(item ?? {}) };
+  if (projectedStatus === "sold" || projectedStatus === "delisted") {
+    payload.closedConfirmed = true;
+  }
+  if (
+    projectedStatus === "pending" &&
+    isHexTxid(payload.closedTxid ?? payload.closeTxid)
+  ) {
+    payload.closedConfirmed = false;
+  }
+  return payload;
 }
 
 async function storeLedgerSnapshot(client) {
@@ -1075,7 +1182,10 @@ async function backfillSource(client, source) {
   let skipped = 0;
 
   while (page < MAX_PAGES) {
-    const url = endpoint(source.path, { ...(source.params ?? {}), cursor });
+    const url = endpoint(
+      source.path,
+      backfillSourceParams({ ...(source.params ?? {}), cursor }),
+    );
     const payload = await readJson(url);
     const items = Array.isArray(payload.items) ? payload.items : [];
 
@@ -1141,9 +1251,11 @@ async function backfillScopedTokenHolders(client) {
 
     while (page < MAX_PAGES) {
       const url = endpoint("/api/v1/token-history", {
-        asset: tokenId,
-        cursor,
-        kind: "holders",
+        ...backfillSourceParams({
+          asset: tokenId,
+          cursor,
+          kind: "holders",
+        }),
       });
       const payload = await readJson(url);
       const items = Array.isArray(payload.items) ? payload.items : [];

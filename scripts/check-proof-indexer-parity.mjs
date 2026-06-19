@@ -45,6 +45,10 @@ const PAGINATION_GAP_INFINITY_BOND_TXID =
   "b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34";
 const WORK_TRANSFER_REGRESSION_TXID =
   "7e9e711564be12330793b3415a032eca42bb742499fbdb8a6b8be6d6f1867354";
+const WORK_DELIST_REGRESSION_TXID =
+  "f5dbee238a09fe0da6a0e4d01526fefefa6676b86df742323ce49df0daa5ecf5";
+const WORK_DELIST_REGRESSION_LISTING_TXID =
+  "50cd4dff315842c999a06c3ed0be3616f61c33f1a2f0fce6f645e3f48e9b023c";
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 
@@ -243,6 +247,65 @@ try {
       eventRefs: rowNumber(counts, "event_refs"),
     },
   );
+  const workDelistDbResult = await pool.query(
+    `
+      SELECT
+        t.status AS transaction_status,
+        e.kind,
+        e.status AS event_status,
+        COALESCE(
+          array_agg(er.ref_value ORDER BY er.ref_type, er.ref_value)
+            FILTER (WHERE er.ref_value IS NOT NULL),
+          ARRAY[]::text[]
+        ) AS refs
+      FROM proof_indexer.transactions t
+      LEFT JOIN proof_indexer.events e
+        ON e.network = t.network
+       AND e.txid = t.txid
+      LEFT JOIN proof_indexer.event_refs er
+        ON er.event_id = e.event_id
+      WHERE t.network = $1
+        AND t.txid = $2
+      GROUP BY t.status, e.kind, e.status
+    `,
+    [NETWORK, WORK_DELIST_REGRESSION_TXID],
+  );
+  const workDelistRows = workDelistDbResult.rows ?? [];
+  const workDelistConfirmedTx = workDelistRows.some(
+    (row) => row.transaction_status === "confirmed",
+  );
+  const workDelistConfirmedEvent = workDelistRows.some(
+    (row) =>
+      row.event_status === "confirmed" &&
+      (Array.isArray(row.refs) ? row.refs : []).includes(
+        WORK_DELIST_REGRESSION_LISTING_TXID,
+      ),
+  );
+  check(
+    checks,
+    "work-delist-regression-transaction-indexed",
+    workDelistConfirmedTx,
+    {
+      rows: workDelistRows.map((row) => ({
+        eventStatus: row.event_status ?? null,
+        kind: row.kind ?? null,
+        transactionStatus: row.transaction_status ?? null,
+      })),
+      txid: WORK_DELIST_REGRESSION_TXID,
+    },
+  );
+  check(
+    checks,
+    "work-delist-regression-event-indexed",
+    workDelistConfirmedEvent,
+    {
+      listingId: WORK_DELIST_REGRESSION_LISTING_TXID,
+      refs: workDelistRows.flatMap((row) =>
+        Array.isArray(row.refs) ? row.refs : [],
+      ),
+      txid: WORK_DELIST_REGRESSION_TXID,
+    },
+  );
   check(
     checks,
     "holder-projections-present",
@@ -288,6 +351,13 @@ try {
       expectReason: "query",
       label: "query-work-transfer",
       params: { q: WORK_TRANSFER_REGRESSION_TXID, limit: 10 },
+    },
+    {
+      compareFresh: true,
+      expectIndexedRead: true,
+      expectReason: "query",
+      label: "query-work-delist",
+      params: { q: WORK_DELIST_REGRESSION_TXID, limit: 10 },
     },
     {
       compareFresh: false,
@@ -598,6 +668,10 @@ try {
       label: "work-transfer-search",
       params: { limit: 5, q: WORK_TRANSFER_REGRESSION_TXID },
     },
+    {
+      label: "work-delist-search",
+      params: { limit: 5, q: WORK_DELIST_REGRESSION_TXID },
+    },
   ];
   for (const eventCase of eventHistoryCases) {
     const searchParams = new URLSearchParams();
@@ -651,6 +725,17 @@ try {
       params: { asset: WORK_TOKEN_ID, kind: "market-log", limit: 10 },
       tokenScope: WORK_TOKEN_ID,
     },
+    {
+      label: "work-delist-closed-query",
+      expectedNeedle: WORK_DELIST_REGRESSION_TXID,
+      params: {
+        asset: WORK_TOKEN_ID,
+        kind: "closed-listings",
+        limit: 10,
+        q: WORK_DELIST_REGRESSION_TXID,
+      },
+      tokenScope: WORK_TOKEN_ID,
+    },
   ];
   for (const tokenCase of tokenHistoryCases) {
     const searchParams = new URLSearchParams();
@@ -685,6 +770,21 @@ try {
       String(tokenCase.params.kind ?? ""),
       searchParams,
     );
+    if (tokenCase.expectedNeedle) {
+      const expectedNeedle = String(tokenCase.expectedNeedle).toLowerCase();
+      check(
+        checks,
+        `token-history-${tokenCase.label}-contains-expected-event`,
+        (indexedTokenPage?.items ?? []).some((item) =>
+          JSON.stringify(item).toLowerCase().includes(expectedNeedle),
+        ),
+        {
+          count: arrayLength(indexedTokenPage?.items),
+          expectedNeedle,
+          snapshotId: indexedTokenPage?.snapshotId ?? null,
+        },
+      );
+    }
     if (CHECK_FRESH_TOKEN_HISTORY) {
       const canonicalTokenPage = await readJson(
         endpoint("/api/v1/token-history", { ...tokenCase.params, fresh: "1" }),

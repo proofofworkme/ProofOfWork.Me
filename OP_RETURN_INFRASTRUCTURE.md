@@ -74,10 +74,15 @@ The backfill script reads current canonical API history in pages and stores a
 shadow copy in PostgreSQL. `POW_INDEX_BACKFILL_SOURCES` can limit a run to
 comma-separated sources such as `registry-records,tokens,token-mints`, while
 `POW_INDEX_BACKFILL_LIMIT`, `POW_INDEX_BACKFILL_MAX_PAGES`, and
-`POW_INDEX_FETCH_TIMEOUT_MS` bound each run. Snapshot-only refreshes use the
-fast canonical cached API reads by default; set
-`POW_INDEX_BACKFILL_SNAPSHOT_FRESH=1` only when deliberately auditing against
-full fresh source reads.
+`POW_INDEX_FETCH_TIMEOUT_MS` bound each run. Production worker runs set
+`POW_INDEX_BACKFILL_SOURCE_FRESH=1` and
+`POW_INDEX_BACKFILL_TOKEN_SNAPSHOT_FRESH=1` so database ingestion bypasses
+database-backed API fast paths for event pages and scoped token/listing
+snapshots. It also sets `POW_INDEX_BACKFILL_SUMMARY_SNAPSHOT_FRESH=1` so
+WORK, Growth, and Marketplace summaries refresh from canonical endpoints.
+`POW_INDEX_BACKFILL_SNAPSHOT_FRESH=1` is reserved for explicit broad registry
+snapshot audits, and `POW_INDEX_BACKFILL_ALL_TOKEN_SNAPSHOT_FRESH=1` is
+reserved for explicit all-token fresh snapshot audits.
 
 The parity script compares the database read model with the canonical
 `/api/v1/ledger-consistency` snapshot before any endpoint cutover. It requires a
@@ -147,13 +152,13 @@ The worker script keeps the indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through
 `/api/v1/tx/:txid/status`, marking disappeared txids as `dropped`, and running
 the parity checker. Continuous worker cycles use
-`POW_INDEX_WORKER_BACKFILL_SOURCES` for fast feeds and skip the cold
-token-listing, closed-listing, and scoped-holder recrawls by default
-(`POW_INDEX_WORKER_HOLDERS=0`). Run those heavier projection refreshes as
-explicit full backfill jobs instead of every short polling loop. Pending status
-checks use their own smaller timeout (`POW_INDEX_STATUS_FETCH_TIMEOUT_MS`) and
-batch limit (`POW_INDEX_PENDING_STATUS_LIMIT`) so a single cold tx lookup cannot
-block a full worker cycle. Production service configuration is tracked in:
+`POW_INDEX_WORKER_BACKFILL_SOURCES` for bounded feeds, including token listings
+and token closed-listings so sale-ticket lifecycle projections stay current.
+Scoped-holder recrawls stay off by default (`POW_INDEX_WORKER_HOLDERS=0`) and
+should run as explicit full backfill jobs. Pending status checks use their own
+smaller timeout (`POW_INDEX_STATUS_FETCH_TIMEOUT_MS`) and batch limit
+(`POW_INDEX_PENDING_STATUS_LIMIT`) so a single cold tx lookup cannot block a
+full worker cycle. Production service configuration is tracked in:
 
 ```text
 deploy/proofofwork-indexer-worker.service

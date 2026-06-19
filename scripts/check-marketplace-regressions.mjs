@@ -15,12 +15,17 @@ const DELIST_TX =
   "71092adb6e27e871a43a5338459b09528f2de39a0e90b31b2605bd36a9f80c47";
 const LOG_CLOSE_TX =
   "9079e81e519b2e9a2cecde1133d656afc892b7866ed72d37c2b524913ce82850";
+const REPORTED_LISTING_TX =
+  "50cd4dff315842c999a06c3ed0be3616f61c33f1a2f0fce6f645e3f48e9b023c";
+const REPORTED_DELIST_TX =
+  "f5dbee238a09fe0da6a0e4d01526fefefa6676b86df742323ce49df0daa5ecf5";
 const WALLET_SUMMARY_DELIST_TXS = [
   "4bdb7f9de2293548d598cd00b07df621339cf364fa1fa1cf42e80ad0551488f4",
   "4c59acfc84b47225f6e0b9bd67379d1ddac14e2e71f6a256315cececbe559d98",
   "51fa5bfe98090b84bd1f2fc906c6f677f636b88a7f45f5e7ae75c8762ba03019",
   DELIST_TX,
   LOG_CLOSE_TX,
+  REPORTED_DELIST_TX,
 ];
 const BUY_TXS = [
   "85d7930ffd5650c8508baf1f0128d469592e8349ad51483f69f3e227aca9233b",
@@ -90,6 +95,13 @@ assert(
   !txids(activeListing.items).has(LISTING_TX),
   `${LISTING_TX} is still returned as an active listing`,
 );
+const reportedActiveListing = await tokenHistory("listings", {
+  q: REPORTED_LISTING_TX,
+});
+assert(
+  !txids(reportedActiveListing.items).has(REPORTED_LISTING_TX),
+  `${REPORTED_LISTING_TX} is still returned as an active listing`,
+);
 
 const closedByDelist = await tokenHistory("closed-listings", { q: DELIST_TX });
 assert(
@@ -99,6 +111,18 @@ assert(
       item?.closedConfirmed === true,
   ),
   `${DELIST_TX} is not returned as a confirmed closed listing`,
+);
+const reportedClosedByDelist = await tokenHistory("closed-listings", {
+  q: REPORTED_DELIST_TX,
+});
+assert(
+  (reportedClosedByDelist.items ?? []).some(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() === REPORTED_LISTING_TX &&
+      String(item?.closedTxid ?? "").toLowerCase() === REPORTED_DELIST_TX &&
+      item?.closedConfirmed === true,
+  ),
+  `${REPORTED_DELIST_TX} is not returned as a confirmed closed listing`,
 );
 
 const sellerSales = await tokenHistory("sales", { address: SELLER });
@@ -123,6 +147,12 @@ assert(
   `${LISTING_TX} is still returned as active in wallet-scoped token payload`,
 );
 assert(
+  !(walletToken.listings ?? []).some(
+    (item) => String(item?.listingId ?? "").toLowerCase() === REPORTED_LISTING_TX,
+  ),
+  `${REPORTED_LISTING_TX} is still returned as active in wallet-scoped token payload`,
+);
+assert(
   (walletToken.closedListings ?? []).some(
     (item) =>
       String(item?.listingId ?? "").toLowerCase() === LISTING_TX &&
@@ -130,6 +160,15 @@ assert(
       item?.closedConfirmed === true,
   ),
   `${LISTING_TX} is not closed by ${DELIST_TX} in wallet-scoped token payload`,
+);
+assert(
+  (walletToken.closedListings ?? []).some(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() === REPORTED_LISTING_TX &&
+      String(item?.closedTxid ?? "").toLowerCase() === REPORTED_DELIST_TX &&
+      item?.closedConfirmed === true,
+  ),
+  `${REPORTED_LISTING_TX} is not closed by ${REPORTED_DELIST_TX} in wallet-scoped token payload`,
 );
 const walletSaleTxids = txids(walletToken.sales);
 for (const txid of BUY_TXS) {
@@ -191,6 +230,20 @@ assert(
       item?.confirmed === true,
   ),
   `${LOG_CLOSE_TX} is not logged as a confirmed token-listing close`,
+);
+const reportedLogClose = await getJson("/api/v1/log-history", {
+  network: "livenet",
+  q: REPORTED_DELIST_TX,
+  limit: 5,
+});
+assert(
+  (reportedLogClose.items ?? []).some(
+    (item) =>
+      item?.kind === "token-listing-closed" &&
+      String(item?.txid ?? "").toLowerCase() === REPORTED_DELIST_TX &&
+      item?.confirmed === true,
+  ),
+  `${REPORTED_DELIST_TX} is not logged as a confirmed token-listing close`,
 );
 
 console.log(

@@ -830,9 +830,6 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
   if (snapshotPage) {
     return snapshotPage;
   }
-  if (pagination.snapshotId) {
-    return null;
-  }
 
   const conditions = [
     "e.network = $1",
@@ -885,13 +882,15 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
 
   const start = Math.min(pagination.offset, totalCount);
   const end = Math.min(totalCount, start + pagination.limit);
-  const nextCursor = end < totalCount ? String(end) : "";
+  const snapshotId = snapshot.snapshot_id ?? "";
+  const cursor = historyCursor(snapshotId, start);
+  const nextCursor = end < totalCount ? historyCursor(snapshotId, end) : "";
   const indexedAt = snapshot.generated_at
     ? dateIso(snapshot.generated_at)
     : new Date().toISOString();
 
   const page = {
-    cursor: String(start),
+    cursor,
     end,
     indexedAt,
     indexedThroughBlock,
@@ -909,12 +908,12 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     totalCount,
   };
 
-  if (snapshot.snapshot_id) {
+  if (snapshotId) {
     return {
       ...page,
       consistency: snapshot.consistency ?? undefined,
       ledgerGeneratedAt: indexedAt,
-      snapshotId: snapshot.snapshot_id,
+      snapshotId,
     };
   }
 

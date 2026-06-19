@@ -465,6 +465,7 @@ const RESPONSE_CACHE = new Map();
 const WORK_TOKEN_LIVE_SEEN_TXIDS = new Map();
 const WORK_TOKEN_NON_MINT_HISTORY_CACHE = new Map();
 const WORK_TOKEN_PARTICIPANT_RECOVERY_CACHE = new Map();
+const WORK_TOKEN_EXPLICIT_CLOSE_RECOVERY_CACHE = new Map();
 const WORK_TOKEN_SEAL_RECOVERY_CACHE = new Map();
 const TOKEN_MARKET_OUTSPEND_CACHE = new Map();
 let persistedCacheWriteSequence = 0;
@@ -1002,6 +1003,13 @@ async function safeRegistryPayload(network) {
 }
 
 function tokenPayloadMetrics(payload) {
+  const confirmedTokenItems = confirmedItemCount(payload?.tokens);
+  const confirmedTokenStats = safeStatNumber(payload, "confirmedTokens");
+  const scopedTokenMetrics =
+    Array.isArray(payload?.tokens) &&
+    payload.tokens.length > 0 &&
+    confirmedTokenItems > 0 &&
+    confirmedTokenItems < confirmedTokenStats;
   return {
     confirmedClosedListings: Array.isArray(payload?.closedListings)
       ? payload.closedListings.filter((listing) => listing?.closedConfirmed).length
@@ -1021,7 +1029,7 @@ function tokenPayloadMetrics(payload) {
       0,
     ),
     confirmedTokens: Math.max(
-      safeStatNumber(payload, "confirmedTokens"),
+      scopedTokenMetrics ? confirmedTokenItems : confirmedTokenStats,
       confirmedItemCount(payload?.tokens),
     ),
     confirmedTransfers: Math.max(
@@ -4750,6 +4758,110 @@ async function tokenListingAnchorOutspendFromSellerUtxos(listing, anchor, networ
       };
 }
 
+async function tokenListingAnchorOutspendFromSellerHistory(
+  listing,
+  anchor,
+  network,
+) {
+  const sellerAddress = String(listing?.sellerAddress ?? "").trim();
+  if (!isValidBitcoinAddress(sellerAddress, network)) {
+    return null;
+  }
+
+  let historyTxids = [];
+  try {
+    historyTxids = await fetchAddressHistoryTxidsFromElectrum(
+      sellerAddress,
+      network,
+    );
+  } catch (error) {
+    console.error(
+      `Token listing seller history lookup failed for ${sellerAddress}: ${errorSummary(error)}`,
+    );
+    return null;
+  }
+
+  const candidateTxids = [...new Set(historyTxids)]
+    .filter((txid) => /^[0-9a-f]{64}$/u.test(txid) && txid !== anchor.txid)
+    .reverse()
+    .slice(
+      0,
+      Math.max(0, TX_OUTSPEND_HISTORY_MAX_TXS, WORK_TOKEN_LIVE_CLOSE_SCAN_MAX_TXS),
+    );
+  const txs = await mapWithConcurrency(
+    candidateTxids,
+    TX_FETCH_CONCURRENCY,
+    async (txid) =>
+      (await fetchTransaction(txid, network).catch(() => null)) ??
+      (await fetchTransactionWithSourceFallback(txid, network).catch(() => null)),
+  );
+
+  for (const tx of txs) {
+    const outspend = outspendPayloadFromSpenderTransaction(
+      tx,
+      anchor.txid,
+      anchor.vout,
+    );
+    if (outspend) {
+      return outspend;
+    }
+  }
+
+  return null;
+}
+
+async function tokenListingAnchorOutspendFromRegistryHistory(
+  listing,
+  anchor,
+  network,
+) {
+  const registryAddress = String(listing?.registryAddress ?? "").trim();
+  if (!isValidBitcoinAddress(registryAddress, network)) {
+    return null;
+  }
+
+  let historyTxids = [];
+  try {
+    historyTxids = await fetchAddressHistoryTxidsFromElectrum(
+      registryAddress,
+      network,
+    );
+  } catch (error) {
+    console.error(
+      `Token listing registry history lookup failed for ${registryAddress}: ${errorSummary(error)}`,
+    );
+    return null;
+  }
+
+  const candidateTxids = [...new Set(historyTxids)]
+    .filter((txid) => /^[0-9a-f]{64}$/u.test(txid) && txid !== anchor.txid)
+    .reverse()
+    .slice(
+      0,
+      Math.max(0, TX_OUTSPEND_HISTORY_MAX_TXS, WORK_TOKEN_LIVE_CLOSE_SCAN_MAX_TXS),
+    );
+  const txs = await mapWithConcurrency(
+    candidateTxids,
+    TX_FETCH_CONCURRENCY,
+    async (txid) =>
+      (await fetchTransaction(txid, network).catch(() => null)) ??
+      (await fetchTransactionWithSourceFallback(txid, network).catch(() => null)),
+  );
+
+  for (const tx of txs) {
+    const outspend = outspendPayloadFromSpenderTransaction(
+      tx,
+      anchor.txid,
+      anchor.vout,
+    );
+    if (outspend) {
+      return outspend;
+    }
+  }
+
+  return null;
+}
+
 async function tokenListingAnchorOutspend(listing, network) {
   const anchor = tokenListingAnchorOutpoint(listing);
   if (!anchor) {
@@ -4762,7 +4874,24 @@ async function tokenListingAnchorOutspend(listing, network) {
   }
 
   try {
-    const payload = await txOutspendPayload(anchor.txid, anchor.vout, network);
+    let payload = await txOutspendPayload(anchor.txid, anchor.vout, network);
+    const hasSpenderTxid =
+      typeof payload?.txid === "string" &&
+      /^[0-9a-fA-F]{64}$/u.test(payload.txid);
+    if (payload?.spent && !hasSpenderTxid) {
+      payload =
+        (await tokenListingAnchorOutspendFromSellerHistory(
+          listing,
+          anchor,
+          network,
+        )) ??
+        (await tokenListingAnchorOutspendFromRegistryHistory(
+          listing,
+          anchor,
+          network,
+        )) ??
+        payload;
+    }
     if (payload?.unknown) {
       const utxoRecovered = await tokenListingAnchorOutspendFromSellerUtxos(
         listing,
@@ -4806,6 +4935,9 @@ async function filterSpendableTokenListings(listings, network) {
         ? outspend.txid.toLowerCase()
         : "";
     if (!closedTxid) {
+      console.error(
+        `Token listing ${listing?.listingId ?? "unknown"} is spent but the spender txid is unavailable; excluding it from active listings.`,
+      );
       continue;
     }
 
@@ -10866,6 +10998,7 @@ function workTokenStateWithRecoveredListingClosesFromTransactions(
     const vin = Array.isArray(tx.vin) ? tx.vin : [];
     const vout = Array.isArray(tx.vout) ? tx.vout : [];
     const actorAddress = inputAddresses(vin)[0] ?? "";
+    const hasActorAddress = isValidBitcoinAddress(actorAddress, network);
     const eventSpentOutpoints = spentOutpoints(vin);
     let remainingRegistrySats = tokenPaymentAmountBeforeProtocol(
       vout,
@@ -10883,7 +11016,9 @@ function workTokenStateWithRecoveredListingClosesFromTransactions(
         (parsed?.kind !== "delist" && parsed?.kind !== "buy") ||
         remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
         !spendsTokenListingAnchor(eventSpentOutpoints, listing) ||
-        (parsed.kind === "delist" && listing.sellerAddress !== actorAddress)
+        (parsed.kind === "delist" &&
+          hasActorAddress &&
+          listing.sellerAddress !== actorAddress)
       ) {
         continue;
       }
@@ -10974,6 +11109,40 @@ function cacheWorkTokenRecoveryTransactions(cache, cacheKey, txs) {
   cache.set(cacheKey, {
     expiresAt: now + WORK_TOKEN_RECOVERY_CACHE_TTL_MS,
     txs,
+  });
+}
+
+function explicitWorkTokenCloseRecoveryTxs(network) {
+  const entry = WORK_TOKEN_EXPLICIT_CLOSE_RECOVERY_CACHE.get(
+    String(network || "livenet"),
+  );
+  if (!entry || Date.now() >= Number(entry.expiresAt ?? 0)) {
+    return [];
+  }
+  return Array.isArray(entry.txs) ? entry.txs : [];
+}
+
+function cacheExplicitWorkTokenCloseRecoveryTxs(network, txs) {
+  const confirmedCloseTxs = (Array.isArray(txs) ? txs : []).filter((tx) => {
+    if (!transactionConfirmed(tx)) {
+      return false;
+    }
+    const kinds = workTokenNonMintActionKindsFromTransaction(tx, network);
+    return kinds.has("delist") || kinds.has("buy");
+  });
+  if (confirmedCloseTxs.length === 0) {
+    return;
+  }
+
+  const key = String(network || "livenet");
+  const merged = dedupeTransactions([
+    ...explicitWorkTokenCloseRecoveryTxs(network),
+    ...confirmedCloseTxs,
+  ]).slice(-Math.max(1, WORK_TOKEN_LIVE_CLOSE_MAX_TXS));
+  WORK_TOKEN_EXPLICIT_CLOSE_RECOVERY_CACHE.set(key, {
+    expiresAt:
+      Date.now() + Math.max(WORK_TOKEN_RECOVERY_CACHE_TTL_MS, 10 * 60_000),
+    txs: merged,
   });
 }
 
@@ -11442,9 +11611,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     const vout = Array.isArray(tx.vout) ? tx.vout : [];
     const txInputAddresses = inputAddresses(vin);
     const actorAddress = txInputAddresses[0] ?? "";
-    if (!isValidBitcoinAddress(actorAddress, network)) {
-      continue;
-    }
+    const hasActorAddress = isValidBitcoinAddress(actorAddress, network);
 
     const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
     if (messages.length === 0) {
@@ -11482,6 +11649,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         if (
           parsed.tokenId !== WORK_TOKEN_ID ||
           parsed.amount !== WORK_TOKEN_MINT_AMOUNT ||
+          !hasActorAddress ||
           remainingRegistrySats < WORK_TOKEN_MINT_PRICE_SATS ||
           projectedSupply > WORK_TOKEN_MAX_SUPPLY
         ) {
@@ -11519,6 +11687,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
       if (parsed.kind === "send") {
         if (
           parsed.tokenId !== WORK_TOKEN_ID ||
+          !hasActorAddress ||
           remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
           (confirmed && spendableBalanceFor(actorAddress) < parsed.amount)
         ) {
@@ -11561,6 +11730,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
           authorization.tokenId !== WORK_TOKEN_ID ||
           authorization.registryAddress !== WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS ||
           authorization.ticker !== WORK_TOKEN_TICKER ||
+          !hasActorAddress ||
           authorization.sellerAddress !== actorAddress ||
           remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
           spendableBalanceFor(actorAddress) < authorization.amount ||
@@ -11595,6 +11765,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         const authorization = parsed.saleAuthorization;
         if (
           !listing ||
+          !hasActorAddress ||
           listing.sellerAddress !== actorAddress ||
           remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
           !tokenSaleAuthorizationTermsMatch(
@@ -11625,7 +11796,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         const listing = listings.get(parsed.listingId);
         if (
           !listing ||
-          listing.sellerAddress !== actorAddress ||
+          (hasActorAddress && listing.sellerAddress !== actorAddress) ||
           remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
           !spendsTokenListingAnchor(eventSpentOutpoints, listing)
         ) {
@@ -12095,7 +12266,9 @@ async function confirmedTransactionsForTxids(txids, network, maxTxs) {
     TX_FETCH_CONCURRENCY,
     async (txid) => {
       try {
-        const tx = await fetchTransactionWithSourceFallback(txid, network);
+        const tx =
+          (await fetchTransaction(txid, network).catch(() => null)) ??
+          (await fetchTransactionWithSourceFallback(txid, network));
         return transactionConfirmed(tx) ? tx : null;
       } catch {
         return null;
@@ -12255,9 +12428,6 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
       );
     }
   }
-  if (options.recoverClosedSalesOnly === true) {
-    return state;
-  }
 
   const maxDeltaTxs = Math.max(1, WORK_TOKEN_LIVE_DELTA_MAX_TXS);
   const maxPendingConfirmationTxs = Math.max(
@@ -12275,6 +12445,9 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
   const hasRecoveryAddresses = recoveryAddresses.length > 0;
   const hasRecoveryTxids = recoveryTxids.length > 0;
   const hasRecoveryInputs = hasRecoveryAddresses || hasRecoveryTxids;
+  if (options.recoverClosedSalesOnly === true && !hasRecoveryInputs) {
+    return state;
+  }
   const maxNonMintTxs = Math.max(
     0,
     hasRecoveryInputs
@@ -12348,7 +12521,20 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
     ...nonMintHistoryTxs,
     ...participantTxs,
     ...cachedPendingTokenTxs,
+    ...explicitWorkTokenCloseRecoveryTxs(network),
   ]);
+  const closeRecoveredFromDeltaState =
+    workTokenStateWithRecoveredListingClosesFromTransactions(
+      state,
+      txs,
+      network,
+    );
+  if (closeRecoveredFromDeltaState !== state) {
+    state = closeRecoveredFromDeltaState;
+    cacheLiveWorkTokenState(network, state);
+    syncWorkTokenLiveSeenTxids(network, state);
+    console.log(`Recovered WORK listing close(s) from live delta for ${network}.`);
+  }
   const listingRecoveredFromDeltaState =
     workTokenStateWithRecoveredListingsFromTransactions(state, txs, network);
   if (listingRecoveredFromDeltaState !== state) {
@@ -14631,13 +14817,29 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     recoverWorkSalesOnly: queriedWorkSaleHistory,
   });
   if (workMarketHistoryKind) {
-    const scopeMarketItems = (items) =>
-      historyItemsMatchingQuery(
-        historyItemsMatchingAddresses(items ?? [], recoveryAddresses),
-        pagination.query,
+    if (scope === WORK_TOKEN_ID && recoveryTxids.length > 0) {
+      const recoveryTxs = await confirmedTransactionsForTxids(
+        recoveryTxids,
+        network,
+        recoveryTxids.length,
       );
+      const recoveredPayload =
+        workTokenStateWithRecoveredListingClosesFromTransactions(
+          payload,
+          recoveryTxs,
+          network,
+        );
+      if (recoveredPayload !== payload) {
+        payload = recoveredPayload;
+        cacheExplicitWorkTokenCloseRecoveryTxs(network, recoveryTxs);
+        cacheLiveWorkTokenState(network, payload);
+        syncWorkTokenLiveSeenTxids(network, payload);
+      }
+    }
+    const scopeMarketItems = (items) =>
+      historyItemsMatchingAddresses(items ?? [], recoveryAddresses);
     const marketPayload =
-      recoveryAddresses.length > 0 || pagination.query
+      recoveryAddresses.length > 0
         ? {
             ...payload,
             closedListings: scopeMarketItems(payload.closedListings),
@@ -15949,9 +16151,10 @@ async function txOutspendPayload(txid, vout, network) {
     null,
     TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS,
   );
-  if (rpcOutspend) {
+  if (rpcOutspend && !rpcOutspend.spent) {
     return rpcOutspend;
   }
+  const rpcSpent = rpcOutspend?.spent ? rpcOutspend : null;
 
   const outputScriptHex = await payloadWithFallbackAfterMs(
     txOutputScriptHex(txid, vout, network).catch(() => ""),
@@ -15990,7 +16193,28 @@ async function txOutspendPayload(txid, vout, network) {
   }
 
   if (network === "livenet") {
-    return electrumSpent ?? unknownUnspent;
+    if (electrumSpent) {
+      if (outputScriptHex) {
+        const historyOutspend = await scriptHistoryOutspendPayload(
+          txid,
+          vout,
+          outputScriptHex,
+          network,
+        ).catch(() => null);
+        if (historyOutspend) {
+          return historyOutspend;
+        }
+      }
+
+      const directOutspend = await directTxOutspendPayload(
+        txid,
+        vout,
+        network,
+      ).catch(() => null);
+      return directOutspend?.spent ? directOutspend : electrumSpent;
+    }
+
+    return rpcSpent ?? unknownUnspent;
   }
 
   const primaryOutspend = await directTxOutspendPayload(txid, vout, network);
@@ -16561,9 +16785,10 @@ async function handleRequest(request, response) {
         refreshCanonicalLedgerPayloadInBackground(network, true);
       }
       const tokenFreshRead = walletScoped ? false : freshRead;
+      const reconcileTokenListings = tokenFreshRead && !walletScoped;
       const payload = await tokenPayloadForRead(network, tokenScope, tokenFreshRead, {
-        reconcileListingStatus: false,
-        reconcileSpendable: false,
+        reconcileListingStatus: reconcileTokenListings,
+        reconcileSpendable: reconcileTokenListings,
         recoveryAddresses,
         liveWorkWaitMs:
           walletScoped && tokenScope === WORK_TOKEN_ID
@@ -16573,15 +16798,25 @@ async function handleRequest(request, response) {
             : undefined,
         recoverWorkSalesOnly: walletScoped && tokenScope === WORK_TOKEN_ID,
       });
-      const responsePayload =
-        walletScoped && tokenScope === WORK_TOKEN_ID
-          ? await tokenPayloadWithSpendableListings(
-              tokenPayloadScopedToAddresses(payload, recoveryAddresses),
-              network,
-            )
-          : walletScoped
-            ? tokenPayloadScopedToAddresses(payload, recoveryAddresses)
-            : payload;
+      let responsePayload = payload;
+      if (walletScoped && tokenScope === WORK_TOKEN_ID) {
+        const scopedPayload = tokenPayloadScopedToAddresses(
+          payload,
+          recoveryAddresses,
+        );
+        const closeRecoveredScopedPayload =
+          workTokenStateWithRecoveredListingClosesFromTransactions(
+            scopedPayload,
+            explicitWorkTokenCloseRecoveryTxs(network),
+            network,
+          );
+        responsePayload = await tokenPayloadWithSpendableListings(
+          closeRecoveredScopedPayload,
+          network,
+        );
+      } else if (walletScoped) {
+        responsePayload = tokenPayloadScopedToAddresses(payload, recoveryAddresses);
+      }
       jsonResponse(
         response,
         200,
