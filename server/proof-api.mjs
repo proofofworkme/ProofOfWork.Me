@@ -20,6 +20,7 @@ import {
 import {
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
+  proofIndexAddressMailPayload,
   proofIndexEventHistoryPayload,
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
@@ -15889,7 +15890,97 @@ function workFloorPayloadFromState(
   };
 }
 
-async function mailPayload(address, network) {
+function mailPayloadHasMessages(payload) {
+  return (
+    Array.isArray(payload?.inboxMessages) &&
+      payload.inboxMessages.length > 0
+  ) || (
+    Array.isArray(payload?.sentMessages) &&
+      payload.sentMessages.length > 0
+  );
+}
+
+function mailMessageRichness(message) {
+  return [
+    message?.memo,
+    message?.subject,
+    message?.attachment,
+    ...(Array.isArray(message?.recipients) ? message.recipients : []),
+  ].filter(Boolean).length;
+}
+
+function mergeMailMessageLists(indexedMessages, scannedMessages) {
+  const merged = new Map();
+  for (const message of [
+    ...(Array.isArray(indexedMessages) ? indexedMessages : []),
+    ...(Array.isArray(scannedMessages) ? scannedMessages : []),
+  ]) {
+    if (!message?.txid) {
+      continue;
+    }
+
+    const current = merged.get(message.txid);
+    if (!current || mailMessageRichness(message) >= mailMessageRichness(current)) {
+      merged.set(message.txid, message);
+    }
+  }
+
+  return [...merged.values()].sort(
+    (left, right) =>
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      String(right.txid ?? "").localeCompare(String(left.txid ?? "")),
+  );
+}
+
+function mailStats(inboxMessages, sentMessages, extras = {}) {
+  return {
+    inbox: inboxMessages.filter((message) => message.confirmed).length,
+    incoming: inboxMessages.filter((message) => !message.confirmed).length,
+    scanFailed: false,
+    scannedTransactions: 0,
+    sent: sentMessages.filter((message) => message.status === "confirmed")
+      .length,
+    outbox: sentMessages.filter((message) => message.status !== "confirmed")
+      .length,
+    ...extras,
+  };
+}
+
+function mergeMailPayloads(indexedPayload, scannedPayload) {
+  if (!indexedPayload) {
+    return scannedPayload;
+  }
+  if (!scannedPayload) {
+    return indexedPayload;
+  }
+
+  const inboxMessages = mergeMailMessageLists(
+    indexedPayload.inboxMessages,
+    scannedPayload.inboxMessages,
+  );
+  const sentMessages = mergeMailMessageLists(
+    indexedPayload.sentMessages,
+    scannedPayload.sentMessages,
+  );
+
+  return {
+    ...indexedPayload,
+    inboxMessages,
+    indexedAt: new Date().toISOString(),
+    sentMessages,
+    ...(scannedPayload.scanError ? { scanError: scannedPayload.scanError } : {}),
+    source: scannedPayload.scanError
+      ? indexedPayload.source
+      : `${indexedPayload.source}+${scannedPayload.source}`,
+    stats: mailStats(inboxMessages, sentMessages, {
+      indexedEvents: indexedPayload.stats?.indexedEvents ?? 0,
+      scanFailed: Boolean(scannedPayload.scanError),
+      scannedTransactions: scannedPayload.stats?.scannedTransactions ?? 0,
+    }),
+  };
+}
+
+async function nodeMailPayload(address, network) {
   let scanError = "";
   const txs = await fetchAddressTransactions(
     address,
@@ -15914,17 +16005,49 @@ async function mailPayload(address, network) {
     sentMessages,
     ...(scanError ? { scanError } : {}),
     source: mempoolBase(network),
-    stats: {
-      inbox: inboxMessages.filter((message) => message.confirmed).length,
-      incoming: inboxMessages.filter((message) => !message.confirmed).length,
+    stats: mailStats(inboxMessages, sentMessages, {
       scanFailed: Boolean(scanError),
       scannedTransactions: txs.length,
-      sent: sentMessages.filter((message) => message.status === "confirmed")
-        .length,
-      outbox: sentMessages.filter((message) => message.status !== "confirmed")
-        .length,
-    },
+    }),
   };
+}
+
+async function indexedMailPayload(address, network) {
+  if (
+    network !== "livenet" ||
+    !proofIndexReadFeatureEnabled("address-mail,mail,event-history,events")
+  ) {
+    return null;
+  }
+
+  try {
+    return await proofIndexAddressMailPayload(network, address);
+  } catch (error) {
+    console.error(
+      `Proof index mail lookup failed for ${address}: ${errorSummary(error)}`,
+    );
+    return null;
+  }
+}
+
+async function mailPayload(address, network, options = {}) {
+  const fresh = Boolean(options.fresh);
+  const indexedPayload = await indexedMailPayload(address, network);
+
+  if (!fresh && indexedPayload) {
+    return indexedPayload;
+  }
+
+  const scannedPayload = await nodeMailPayload(address, network);
+  if (!indexedPayload) {
+    return scannedPayload;
+  }
+
+  if (scannedPayload.scanError || mailPayloadHasMessages(scannedPayload)) {
+    return mergeMailPayloads(indexedPayload, scannedPayload);
+  }
+
+  return indexedPayload;
 }
 
 async function addressUtxoPayload(address, network) {
@@ -17151,7 +17274,7 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await mailPayload(address, network),
+        await mailPayload(address, network, { fresh: freshRead }),
         "public, max-age=10",
       );
       return;

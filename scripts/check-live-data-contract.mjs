@@ -135,7 +135,11 @@ expectAll("API address app reads stay first-party", server, [
   /async function fetchAddressTransactionsViaMempoolPagination\([\s\S]*options = \{\}[\s\S]*options\.includeExternal === false[\s\S]*firstPartyAddressReadBases\(network\)/,
   /async function fetchAddressTransactions\([\s\S]*const includeExternal = options\.includeExternal !== false[\s\S]*fetchAddressMempoolTransactions\(address,\s*network,\s*\{[\s\S]*includeExternal/,
   /async function fetchAddressTransactions\([\s\S]*if \(!includeExternal\) \{[\s\S]*throw error;[\s\S]*\}/,
-  /async function mailPayload\(address,\s*network\)[\s\S]*let scanError = ""[\s\S]*fetchAddressTransactions\([\s\S]*MAX_ADDRESS_TX_PAGES,[\s\S]*\{ includeExternal: false \}[\s\S]*First-party mail scan failed[\s\S]*scanFailed: Boolean\(scanError\)/,
+  /proofIndexAddressMailPayload/,
+  /async function nodeMailPayload\(address,\s*network\)[\s\S]*let scanError = ""[\s\S]*fetchAddressTransactions\([\s\S]*MAX_ADDRESS_TX_PAGES,[\s\S]*\{ includeExternal: false \}[\s\S]*First-party mail scan failed[\s\S]*scanFailed: Boolean\(scanError\)/,
+  /async function indexedMailPayload\(address,\s*network\)[\s\S]*proofIndexReadFeatureEnabled\("address-mail,mail,event-history,events"\)[\s\S]*proofIndexAddressMailPayload\(network,\s*address\)/,
+  /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedPayload = await indexedMailPayload\(address,\s*network\)[\s\S]*if \(!fresh && indexedPayload\) \{[\s\S]*return indexedPayload/,
+  /mailPayload\(address,\s*network,\s*\{ fresh: freshRead \}\)/,
   /async function addressUtxoPayload\(address,\s*network\)[\s\S]*for \(const base of firstPartyAddressReadBases\(network\)\)/,
 ]);
 

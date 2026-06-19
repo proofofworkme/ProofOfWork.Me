@@ -1418,6 +1418,288 @@ function eventRowPayload(row, network) {
   };
 }
 
+const ADDRESS_MAIL_EVENT_KINDS = [
+  "mail",
+  "reply",
+  "file",
+  "attachment",
+  "browser",
+  "infinity-bond",
+];
+
+function normalizedAddress(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizedAddressKey(value) {
+  return normalizedAddress(value).toLowerCase();
+}
+
+function positiveNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function stringList(values) {
+  return (Array.isArray(values) ? values : [])
+    .map((value) => normalizedAddress(value))
+    .filter(Boolean);
+}
+
+function mailSubjectFromEvent(row, payload) {
+  const direct = String(row.subject ?? payload.subject ?? "").trim();
+  if (direct) {
+    return direct;
+  }
+
+  const detail = String(payload.detail ?? "").trim();
+  const match = /^Subject:\s*(.+)$/isu.exec(detail);
+  return match ? match[1].trim() : "";
+}
+
+function mailMemoFromEvent(row, payload) {
+  const body = String(
+    row.body_text ?? payload.body ?? payload.message ?? payload.memo ?? "",
+  ).trim();
+  if (body) {
+    return body;
+  }
+
+  const detail = String(payload.detail ?? "").trim();
+  if (detail && !/^Subject:\s*/iu.test(detail)) {
+    return detail;
+  }
+
+  return "";
+}
+
+function mailParticipantsFromRow(row, payload) {
+  const participantRows = Array.isArray(row.participants)
+    ? row.participants
+    : [];
+  const addresses = [
+    ...stringList(payload.participants),
+    ...participantRows.map((participant) => participant?.address),
+    payload.actor,
+    payload.counterparty,
+  ];
+  const unique = new Map();
+  for (const address of addresses) {
+    const value = normalizedAddress(address);
+    if (!value || /\s\+\d+$/u.test(value)) {
+      continue;
+    }
+    unique.set(normalizedAddressKey(value), value);
+  }
+  return [...unique.values()];
+}
+
+function recipientRows(addresses, totalAmountSats) {
+  const amount =
+    addresses.length > 1 && totalAmountSats % addresses.length === 0
+      ? totalAmountSats / addresses.length
+      : totalAmountSats;
+  return addresses.map((address) => ({
+    address,
+    amountSats: amount,
+    display: address,
+  }));
+}
+
+function recipientSummary(recipients) {
+  const first = recipients[0];
+  if (!first) {
+    return "Unknown";
+  }
+  return recipients.length === 1
+    ? first.display
+    : `${first.display} +${recipients.length - 1}`;
+}
+
+function addressMailRowPayload(row, address, network) {
+  const payload = canonicalEventPayload(row.payload);
+  const targetAddress = normalizedAddress(address);
+  const targetKey = normalizedAddressKey(targetAddress);
+  const actor = normalizedAddress(payload.actor);
+  const actorKey = normalizedAddressKey(actor);
+  const participants = mailParticipantsFromRow(row, payload);
+  const recipientAddresses = participants.filter(
+    (participant) => normalizedAddressKey(participant) !== actorKey,
+  );
+  const totalAmountSats = positiveNumber(
+    payload.amountSats ?? row.amount_sats,
+  );
+  const recipients = recipientRows(recipientAddresses, totalAmountSats);
+  const createdAt = dateIso(row.event_time ?? row.block_time ?? row.created_at);
+  const confirmed = row.status === "confirmed";
+  const deliveryStatus = row.status === "orphaned" ? "dropped" : row.status;
+  const subject = mailSubjectFromEvent(row, payload);
+  const memo = mailMemoFromEvent(row, payload);
+  const parentTxid = String(row.parent_txid ?? payload.parentTxid ?? "").trim();
+
+  if (actorKey && actorKey === targetKey) {
+    return {
+      folder: "sent",
+      message: {
+        amountSats: totalAmountSats,
+        confirmedAt: confirmed ? createdAt : undefined,
+        createdAt,
+        feeRate: 0,
+        from: targetAddress,
+        lastCheckedAt: new Date().toISOString(),
+        memo,
+        network,
+        parentTxid: parentTxid || undefined,
+        recipients: recipients.length > 0 ? recipients : undefined,
+        replyTo: targetAddress,
+        status: confirmed ? "confirmed" : deliveryStatus,
+        subject: subject || undefined,
+        to: recipientSummary(recipients),
+        txid: row.txid,
+      },
+    };
+  }
+
+  const targetRecipient =
+    recipients.find(
+      (recipient) => normalizedAddressKey(recipient.address) === targetKey,
+    ) ?? recipients[0];
+  return {
+    folder: "inbox",
+    message: {
+      amountSats: positiveNumber(targetRecipient?.amountSats) || totalAmountSats,
+      confirmed,
+      createdAt,
+      from: actor || "Unknown",
+      memo,
+      network,
+      parentTxid: parentTxid || undefined,
+      recipients: recipients.length > 0 ? recipients : undefined,
+      replyTo: actor || "Unknown",
+      subject: subject || undefined,
+      to: targetAddress,
+      txid: row.txid,
+    },
+  };
+}
+
+function compareMailMessages(left, right) {
+  return (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    String(right.txid ?? "").localeCompare(String(left.txid ?? ""))
+  );
+}
+
+export async function proofIndexAddressMailPayload(network, address) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const targetAddress = normalizedAddress(address);
+  if (!targetAddress) {
+    return null;
+  }
+
+  const rowsResult = await pool.query(
+    `
+      SELECT
+        e.payload,
+        e.kind,
+        e.status,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        e.txid,
+        e.event_id,
+        m.subject,
+        m.parent_txid,
+        m.body_text,
+        m.amount_sats,
+        COALESCE(
+          jsonb_agg(
+            jsonb_build_object(
+              'address', ep.address,
+              'role', ep.role,
+              'powid', ep.powid
+            )
+            ORDER BY ep.role, ep.address
+          ) FILTER (WHERE ep.address IS NOT NULL),
+          '[]'::jsonb
+        ) AS participants
+      FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.mail_items m
+        ON m.network = e.network
+       AND m.txid = e.txid
+      LEFT JOIN proof_indexer.event_participants ep
+        ON ep.event_id = e.event_id
+      WHERE e.network = $1
+        AND e.valid = true
+        AND e.kind = ANY($3::text[])
+        AND e.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+        AND EXISTS (
+          SELECT 1
+          FROM proof_indexer.event_participants target
+          WHERE target.event_id = e.event_id
+            AND lower(target.address) = $2
+        )
+      GROUP BY
+        e.payload,
+        e.kind,
+        e.status,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        e.txid,
+        e.event_id,
+        m.subject,
+        m.parent_txid,
+        m.body_text,
+        m.amount_sats
+      ORDER BY
+        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        e.txid DESC,
+        e.event_id DESC
+      LIMIT 1000
+    `,
+    [network, targetAddress.toLowerCase(), ADDRESS_MAIL_EVENT_KINDS],
+  );
+
+  const inboxMessages = [];
+  const sentMessages = [];
+  for (const row of rowsResult.rows) {
+    const item = addressMailRowPayload(row, targetAddress, network);
+    if (item.folder === "sent") {
+      sentMessages.push(item.message);
+    } else {
+      inboxMessages.push(item.message);
+    }
+  }
+
+  inboxMessages.sort(compareMailMessages);
+  sentMessages.sort(compareMailMessages);
+
+  return {
+    address: targetAddress,
+    inboxMessages,
+    indexedAt: new Date().toISOString(),
+    network,
+    sentMessages,
+    source: "proof-indexer-mail",
+    stats: {
+      inbox: inboxMessages.filter((message) => message.confirmed).length,
+      incoming: inboxMessages.filter((message) => !message.confirmed).length,
+      indexedEvents: rowsResult.rows.length,
+      scanFailed: false,
+      scannedTransactions: 0,
+      sent: sentMessages.filter((message) => message.status === "confirmed")
+        .length,
+      outbox: sentMessages.filter((message) => message.status !== "confirmed")
+        .length,
+    },
+  };
+}
+
 export async function proofIndexEventHistoryPayload(network, searchParams) {
   const pool = proofIndexPool();
   if (!pool) {
