@@ -3,6 +3,7 @@ import {
   closeProofIndexReadPool,
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
+  proofIndexAddressMailPayload,
   proofIndexEventHistoryPayload,
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
@@ -51,6 +52,22 @@ const WORK_DELIST_REGRESSION_LISTING_TXID =
   "50cd4dff315842c999a06c3ed0be3616f61c33f1a2f0fce6f645e3f48e9b023c";
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const ADDRESS_MAIL_REGRESSION_CASES = [
+  {
+    address:
+      "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+    label: "carbonz",
+    minInbox: 1,
+    minTotal: 1,
+  },
+  {
+    address:
+      "bc1p8ddc3s6z09ktchgdxxht8l0tt7gs7jn90w004uw2hrxuue39lp7qlxrd3q",
+    label: "pinoratiko",
+    minSent: 1,
+    minTotal: 1,
+  },
+];
 
 function endpoint(pathname, params = {}) {
   const url = new URL(`${API_BASE}${pathname}`);
@@ -173,6 +190,7 @@ try {
     ? ledger.missingLogEvents
     : [];
   const activityItems = numberValue(metrics.activityItems);
+  const confirmedComputerActions = numberValue(metrics.confirmedComputerActions);
   const confirmedTokens = numberValue(metrics.confirmedTokens);
   const checks = [];
 
@@ -211,9 +229,9 @@ try {
   check(
     checks,
     "confirmed-transaction-status-lag",
-    rowNumber(counts, "transactions_confirmed") >= activityItems,
+    rowNumber(counts, "transactions_confirmed") >= confirmedComputerActions,
     {
-      canonicalActivityItems: activityItems,
+      canonicalConfirmedComputerActions: confirmedComputerActions,
       confirmedTransactions: rowNumber(counts, "transactions_confirmed"),
       pendingTransactions: rowNumber(counts, "transactions_pending"),
     },
@@ -690,6 +708,37 @@ try {
         count: arrayLength(indexedEvents?.items),
         snapshotId: indexedEvents?.snapshotId ?? null,
         totalCount: indexedEvents?.totalCount ?? null,
+      },
+    );
+  }
+
+  for (const mailCase of ADDRESS_MAIL_REGRESSION_CASES) {
+    const indexedMail = await proofIndexAddressMailPayload(
+      NETWORK,
+      mailCase.address,
+    );
+    const inboxCount = (indexedMail?.inboxMessages ?? []).filter(
+      (message) => message?.confirmed,
+    ).length;
+    const sentCount = (indexedMail?.sentMessages ?? []).filter(
+      (message) => message?.status === "confirmed",
+    ).length;
+    const totalCount =
+      arrayLength(indexedMail?.inboxMessages) +
+      arrayLength(indexedMail?.sentMessages);
+    check(
+      checks,
+      `address-mail-${mailCase.label}-db-page`,
+      indexedMail?.source === "proof-indexer-mail" &&
+        inboxCount >= numberValue(mailCase.minInbox) &&
+        sentCount >= numberValue(mailCase.minSent) &&
+        totalCount >= numberValue(mailCase.minTotal),
+      {
+        inbox: inboxCount,
+        indexedEvents: indexedMail?.stats?.indexedEvents ?? null,
+        sent: sentCount,
+        source: indexedMail?.source ?? null,
+        total: totalCount,
       },
     );
   }
