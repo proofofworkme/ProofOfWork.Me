@@ -6,7 +6,7 @@ const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
   "",
 );
 const NETWORK = String(process.env.POW_NETWORK ?? "livenet");
-const FETCH_TIMEOUT_MS = Number(process.env.POW_MAIL_CHECK_TIMEOUT_MS ?? 15000);
+const FETCH_TIMEOUT_MS = Number(process.env.POW_MAIL_CHECK_TIMEOUT_MS ?? 30000);
 
 const CHECKS = [
   {
@@ -22,6 +22,14 @@ const CHECKS = [
     label: "pinoratiko@proofofwork.me",
     minSent: 1,
     minTotal: 1,
+  },
+];
+
+const REGISTRY_RESOLUTION_CHECKS = [
+  {
+    id: "otc",
+    label: "otc@proofofwork.me",
+    ownerAddress: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
   },
 ];
 
@@ -53,6 +61,47 @@ async function fetchMailbox(check) {
     throw new Error(`${check.label} returned HTTP ${response.status}`);
   }
   return response.json();
+}
+
+async function fetchRegistry() {
+  const url = new URL("/api/v1/registry", API_BASE);
+  url.searchParams.set("network", NETWORK);
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(`registry returned HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function assertRegistryResolution(payload) {
+  const source = String(payload?.source ?? "");
+  const records = Array.isArray(payload?.records) ? payload.records : [];
+  const failures = [];
+  if (!source.includes("proof-indexer-registry-snapshot")) {
+    failures.push(
+      `expected proof-indexer-registry-snapshot source, got ${source || "none"}`,
+    );
+  }
+  for (const check of REGISTRY_RESOLUTION_CHECKS) {
+    const record = records.find(
+      (item) =>
+        item?.id === check.id &&
+        item?.confirmed &&
+        item?.ownerAddress === check.ownerAddress,
+    );
+    if (!record) {
+      failures.push(`missing confirmed registry resolution for ${check.label}`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(`registry: ${failures.join("; ")}`);
+  }
+  return {
+    records: records.length,
+    source,
+  };
 }
 
 function assertMailbox(check, payload) {
@@ -90,6 +139,8 @@ function assertMailbox(check, payload) {
 }
 
 const results = [];
+const registryPayload = await fetchRegistry();
+const registry = assertRegistryResolution(registryPayload);
 for (const check of CHECKS) {
   const payload = await fetchMailbox(check);
   results.push({
@@ -104,6 +155,7 @@ console.log(
       apiBase: API_BASE,
       network: NETWORK,
       ok: true,
+      registry,
       results,
     },
     null,

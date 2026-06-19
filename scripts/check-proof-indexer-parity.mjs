@@ -9,6 +9,7 @@ import {
   proofIndexLogHistoryPayload,
   proofIndexRecentTransactionIds,
   proofIndexRegistryHistoryPayload,
+  proofIndexRegistryPayload,
   proofIndexSnapshotPayload,
   proofIndexTokenPayload,
   proofIndexTokenHistoryReadEligibility,
@@ -579,6 +580,26 @@ try {
       },
     );
   }
+
+  const indexedRegistryPayload = await proofIndexRegistryPayload(NETWORK);
+  check(
+    checks,
+    "registry-payload-db-default",
+    indexedRegistryPayload?.source === "proof-indexer-registry-snapshot" &&
+      arrayLength(indexedRegistryPayload?.records) > 0 &&
+      arrayLength(indexedRegistryPayload?.activity) > 0 &&
+      arrayLength(indexedRegistryPayload?.listings) > 0 &&
+      Number.isFinite(Number(indexedRegistryPayload?.stats?.confirmed)) &&
+      Number(indexedRegistryPayload?.stats?.confirmed) > 0,
+    {
+      activity: arrayLength(indexedRegistryPayload?.activity),
+      confirmed: indexedRegistryPayload?.stats?.confirmed ?? null,
+      listings: arrayLength(indexedRegistryPayload?.listings),
+      records: arrayLength(indexedRegistryPayload?.records),
+      snapshotId: indexedRegistryPayload?.snapshotId ?? null,
+      source: indexedRegistryPayload?.source ?? null,
+    },
+  );
 
   const summaryCases = [
     { key: "growthSummary", label: "growth-summary", path: "/api/v1/growth-summary" },

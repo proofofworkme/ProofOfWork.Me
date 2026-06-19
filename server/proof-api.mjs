@@ -27,6 +27,7 @@ import {
   proofIndexReadFeatureEnabled,
   proofIndexReadUnconfirmedTxStatus,
   proofIndexRegistryHistoryPayload,
+  proofIndexRegistryPayload,
   proofIndexShadowFeatureEnabled,
   proofIndexSnapshotPayload,
   proofIndexTokenPayload,
@@ -9639,6 +9640,30 @@ async function registryPayload(network) {
   };
 }
 
+async function indexedRegistryPayload(network) {
+  if (
+    !proofIndexReadFeatureEnabled(
+      "registry,ids,registry-state,ids-state,registry-history,ids-history",
+    )
+  ) {
+    return null;
+  }
+
+  const registryAddress = registryAddressForNetwork(network);
+  if (!registryAddress) {
+    return null;
+  }
+
+  return proofIndexRegistryPayload(network, { registryAddress }).catch(
+    (error) => {
+      console.error(
+        `Proof index registry read failed: ${errorSummary(error)}`,
+      );
+      return null;
+    },
+  );
+}
+
 function transactionInputAddresses(vin) {
   return (Array.isArray(vin) ? vin : [])
     .map((input) => input?.prevout?.scriptpubkey_address)
@@ -14166,14 +14191,15 @@ async function mergedLogActivityPayload(network, fresh = false) {
 async function registrySummaryPayload(network, fresh = false) {
   const payload = fresh
     ? await safeRegistryPayload(network)
-    : await fastJsonBackedPayload(
+    : (await indexedRegistryPayload(network)) ??
+      (await fastJsonBackedPayload(
         `registry:${network}`,
         `payload:registry:${network}`,
         () => safeRegistryPayload(network),
         REGISTRY_CACHE_TTL_MS,
         REGISTRY_CACHE_STALE_MS,
         emptyRegistryPayload(network),
-      );
+      ));
   return compactRegistrySummaryPayload(payload);
 }
 
@@ -16657,6 +16683,17 @@ async function handleRequest(request, response) {
           FRESH_READ_CACHE_CONTROL,
           REGISTRY_CACHE_TTL_MS,
           REGISTRY_CACHE_STALE_MS,
+        );
+        return;
+      }
+
+      const indexedPayload = await indexedRegistryPayload(network);
+      if (indexedPayload) {
+        jsonResponse(
+          response,
+          200,
+          indexedPayload,
+          EXPENSIVE_READ_CACHE_CONTROL,
         );
         return;
       }

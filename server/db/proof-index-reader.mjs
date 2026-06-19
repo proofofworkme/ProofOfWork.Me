@@ -363,6 +363,66 @@ function indexedThroughBlockFromItems(items) {
   return heights.length > 0 ? Math.max(...heights) : undefined;
 }
 
+function completeStoredItems(storedPayload) {
+  if (
+    !storedPayload ||
+    storedPayload.complete === false ||
+    !Array.isArray(storedPayload.items)
+  ) {
+    return null;
+  }
+  if (
+    storedPayload.items.length === 0 &&
+    Number(storedPayload.totalCount ?? 0) > 0
+  ) {
+    return null;
+  }
+  return storedPayload.items;
+}
+
+function salePriceSats(sale) {
+  const value = Number(
+    sale?.priceSats ?? sale?.salePriceSats ?? sale?.amountSats ?? 0,
+  );
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function salesStats(sales) {
+  const items = Array.isArray(sales) ? sales : [];
+  let confirmedSales = 0;
+  let confirmedSalesVolumeSats = 0;
+  let pendingSales = 0;
+  let pendingSalesVolumeSats = 0;
+  for (const sale of items) {
+    if (sale?.confirmed) {
+      confirmedSales += 1;
+      confirmedSalesVolumeSats += salePriceSats(sale);
+    } else {
+      pendingSales += 1;
+      pendingSalesVolumeSats += salePriceSats(sale);
+    }
+  }
+  return {
+    confirmedSales,
+    confirmedSalesVolumeSats,
+    pendingSales,
+    pendingSalesVolumeSats,
+    sales: confirmedSales + pendingSales,
+    salesVolumeSats: confirmedSalesVolumeSats + pendingSalesVolumeSats,
+  };
+}
+
+function uniqueTxidCount(items) {
+  const txids = new Set();
+  for (const item of Array.isArray(items) ? items : []) {
+    const txid = String(item?.txid ?? "").trim().toLowerCase();
+    if (/^[0-9a-f]{64}$/u.test(txid)) {
+      txids.add(txid);
+    }
+  }
+  return txids.size;
+}
+
 function normalizedStatus(status) {
   const value = String(status ?? "").toLowerCase();
   if (value === "confirmed" || value === "pending" || value === "dropped") {
@@ -493,6 +553,21 @@ function tokenStatePayloadsFromSnapshot(snapshot) {
   return null;
 }
 
+function registryHistoryPayloadsFromSnapshot(snapshot) {
+  const payload = snapshot?.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  if (
+    payload.registryHistoryPayloads &&
+    typeof payload.registryHistoryPayloads === "object" &&
+    !Array.isArray(payload.registryHistoryPayloads)
+  ) {
+    return payload.registryHistoryPayloads;
+  }
+  return null;
+}
+
 function proofIndexTokenHistoryMaxAgeMs(env = process.env) {
   return boundedInteger(
     env.POW_INDEX_TOKEN_HISTORY_MAX_AGE_MS,
@@ -526,7 +601,7 @@ function tokenStateSnapshotAgeMs(snapshot) {
 function proofIndexSnapshotMaxAgeMs(env = process.env) {
   return boundedInteger(
     env.POW_INDEX_SNAPSHOT_READ_MAX_AGE_MS,
-    15 * 60_000,
+    24 * 60 * 60_000,
     0,
     24 * 60 * 60_000,
   );
@@ -1283,7 +1358,7 @@ export async function proofIndexRegistryHistoryPayload(
     return null;
   }
 
-  const registryHistoryPayloads = snapshot?.payload?.registryHistoryPayloads;
+  const registryHistoryPayloads = registryHistoryPayloadsFromSnapshot(snapshot);
   const storedPayload = registryHistoryPayloads?.[eligibility.kind];
   if (!storedPayload || storedPayload.complete === false) {
     return null;
@@ -1296,6 +1371,89 @@ export async function proofIndexRegistryHistoryPayload(
     eligibility.kind,
     eligibility.pagination,
   );
+}
+
+export async function proofIndexRegistryPayload(network, options = {}) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const snapshot = await ledgerSnapshot(
+    pool,
+    network,
+    options.snapshotId ?? "",
+  );
+  if (
+    !snapshot ||
+    !snapshotPayloadFresh(snapshot, "registryHistoryIndexedAt")
+  ) {
+    return null;
+  }
+
+  const registryHistoryPayloads = registryHistoryPayloadsFromSnapshot(snapshot);
+  const recordsPayload = registryHistoryPayloads?.records;
+  const listingsPayload = registryHistoryPayloads?.listings;
+  const salesPayload = registryHistoryPayloads?.sales;
+  const activityPayload = registryHistoryPayloads?.activity;
+  const records = completeStoredItems(recordsPayload);
+  const listings = completeStoredItems(listingsPayload);
+  const sales = completeStoredItems(salesPayload);
+  const activity = completeStoredItems(activityPayload);
+
+  if (!records || !listings || !sales || !activity) {
+    return null;
+  }
+
+  const pendingEvents = completeStoredItems(registryHistoryPayloads?.pending) ?? [];
+  const confirmed = records.filter((record) => record?.confirmed).length;
+  const pendingRecords = records.length - confirmed;
+  const marketplaceStats = salesStats(sales);
+  const indexedAt = dateIso(
+    recordsPayload?.indexedAt ??
+      activityPayload?.indexedAt ??
+      snapshot?.payload?.registryHistoryIndexedAt ??
+      snapshot?.generated_at,
+  );
+  const snapshotId = snapshot?.snapshot_id ?? "";
+  const registryItems = [
+    ...records,
+    ...listings,
+    ...sales,
+    ...activity,
+    ...pendingEvents,
+  ];
+
+  return {
+    activity,
+    indexedAt,
+    indexedThroughBlock:
+      indexedThroughBlockFromItems(registryItems) ??
+      rowNumber(snapshot, "indexed_through_block"),
+    listings,
+    network,
+    pendingEvents,
+    records,
+    registryAddress: String(options.registryAddress ?? ""),
+    sales,
+    snapshotId,
+    source: "proof-indexer-registry-snapshot",
+    stats: {
+      confirmed,
+      confirmedSales: marketplaceStats.confirmedSales,
+      confirmedSalesVolumeSats: marketplaceStats.confirmedSalesVolumeSats,
+      pending: pendingRecords + pendingEvents.length,
+      pendingChanges: pendingEvents.length,
+      pendingRecords,
+      pendingSales: marketplaceStats.pendingSales,
+      pendingSalesVolumeSats: marketplaceStats.pendingSalesVolumeSats,
+      sales: marketplaceStats.sales,
+      salesVolumeSats: marketplaceStats.salesVolumeSats,
+      total: records.length,
+      transactions:
+        uniqueTxidCount(activity) || uniqueTxidCount(registryItems),
+    },
+  };
 }
 
 export async function proofIndexActivityPayload(network) {

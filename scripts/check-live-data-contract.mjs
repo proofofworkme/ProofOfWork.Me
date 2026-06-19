@@ -143,6 +143,13 @@ expectAll("API address app reads stay first-party", server, [
   /async function addressUtxoPayload\(address,\s*network\)[\s\S]*for \(const base of firstPartyAddressReadBases\(network\)\)/,
 ]);
 
+expectAll("registry default reads use proof index with canonical fallback", server, [
+  /proofIndexRegistryPayload/,
+  /async function indexedRegistryPayload\(network\)[\s\S]*proofIndexReadFeatureEnabled\([\s\S]*registry-history[\s\S]*proofIndexRegistryPayload\(network,\s*\{ registryAddress \}\)/,
+  /async function registrySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*await indexedRegistryPayload\(network\)[\s\S]*fastJsonBackedPayload/,
+  /url\.pathname === "\/api\/v1\/registry" \|\| url\.pathname === "\/api\/v1\/ids"[\s\S]*const indexedPayload = await indexedRegistryPayload\(network\)[\s\S]*if \(indexedPayload\)/,
+]);
+
 expectAll("WORK floor USD uses live price metadata", server, [
   /function satsToUsdAtBtcUsd\(sats,\s*btcUsd\)/,
   /function btcUsdResponseMetadata\(quote\)/,

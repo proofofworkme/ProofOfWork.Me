@@ -14314,7 +14314,7 @@ export default function App() {
       });
 
       try {
-        const latestState = await fetchIdRegistryState(network, true);
+        const latestState = await fetchIdRegistryState(network);
         setIdRegistry(latestState.records);
         setIdListings(latestState.listings);
         setIdPendingEvents(latestState.pendingEvents);
@@ -14687,7 +14687,7 @@ export default function App() {
         registryAddress,
       );
       if (resolved.isId || resolved.error) {
-        const state = await fetchIdRegistryState(network, true);
+        const state = await fetchIdRegistryState(network);
         setIdRegistry(state.records);
         setIdListings(state.listings);
         setIdPendingEvents(state.pendingEvents);
@@ -16902,7 +16902,7 @@ export default function App() {
       registryAddress,
     );
     if (!isValidBitcoinAddress(receiveInput, network)) {
-      const latestState = await fetchIdRegistryState(network, true);
+      const latestState = await fetchIdRegistryState(network);
       latestRegistry = latestState.records;
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
@@ -16973,7 +16973,7 @@ export default function App() {
       !isValidBitcoinAddress(idTransferOwnerAddress.trim(), network) ||
       (receiveInput && !isValidBitcoinAddress(receiveInput, network))
     ) {
-      const latestState = await fetchIdRegistryState(network, true);
+      const latestState = await fetchIdRegistryState(network);
       latestRegistry = latestState.records;
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
@@ -17161,7 +17161,7 @@ export default function App() {
 
       let reservedOutpoints: PowIdSpentOutpoint[] = [];
       if (registryAddress) {
-        const latestState = await fetchIdRegistryState(network, true);
+        const latestState = await fetchIdRegistryState(network);
         setIdRegistry(latestState.records);
         setIdListings(latestState.listings);
         setIdPendingEvents(latestState.pendingEvents);
