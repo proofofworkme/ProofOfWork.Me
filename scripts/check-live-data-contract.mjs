@@ -148,9 +148,12 @@ expectAll("API address app reads stay first-party", server, [
   /async function fetchAddressTransactions\([\s\S]*const includeExternal = options\.includeExternal !== false[\s\S]*fetchAddressMempoolTransactions\(address,\s*network,\s*\{[\s\S]*includeExternal/,
   /async function fetchAddressTransactions\([\s\S]*if \(!includeExternal\) \{[\s\S]*throw error;[\s\S]*\}/,
   /proofIndexAddressMailPayload/,
-  /async function nodeMailPayload\(address,\s*network\)[\s\S]*let scanError = ""[\s\S]*fetchAddressTransactions\([\s\S]*MAX_ADDRESS_TX_PAGES,[\s\S]*\{ includeExternal: false \}[\s\S]*First-party mail scan failed[\s\S]*scanFailed: Boolean\(scanError\)/,
+  /async function nodeMailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*let scanError = ""[\s\S]*MAIL_ADDRESS_TX_PAGES[\s\S]*includeExternal:\s*options\.includeExternal !== false[\s\S]*preferExternal:\s*options\.preferExternal === true[\s\S]*Mail scan failed[\s\S]*scanFailed: Boolean\(scanError\)/,
   /async function indexedMailPayload\(address,\s*network\)[\s\S]*proofIndexReadFeatureEnabled\("address-mail,mail,event-history,events"\)[\s\S]*proofIndexAddressMailPayload\(network,\s*address\)/,
-  /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedPayload = await indexedMailPayload\(address,\s*network\)[\s\S]*if \(!fresh && indexedPayload\) \{[\s\S]*return indexedPayload/,
+  /function mailPayloadHasMessages\(payload\)/,
+  /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedPayload = await indexedMailPayload\(address,\s*network\)[\s\S]*if \(!fresh && indexedPayload && mailPayloadHasMessages\(indexedPayload\)\) \{[\s\S]*return indexedPayload/,
+  /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedWasEmpty = Boolean\(indexedPayload\) && !mailPayloadHasMessages\(indexedPayload\)[\s\S]*includeExternal:\s*indexedWasEmpty \|\| fresh \|\| !indexedPayload[\s\S]*preferExternal:\s*indexedWasEmpty/,
+  /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*mergeMailPayloads\(indexedPayload,\s*scannedPayload\)/,
   /mailPayload\(address,\s*network,\s*\{ fresh: freshRead \}\)/,
   /async function addressUtxoPayload\(address,\s*network\)[\s\S]*for \(const base of firstPartyAddressReadBases\(network\)\)/,
 ]);
@@ -242,6 +245,26 @@ expectAll("token sales must be searchable in Log by txid and participants", serv
   /tokenId:\s*sale\.tokenId/,
   /tokenStateLogExpectations\(tokenState\)/,
   /missingTokenLogEvents\.push\(missing\)/,
+]);
+
+expectAll("token market history reads merge direct DB event overlays", server, [
+  /proofIndexTokenMarketHistoryOverlayPayload/,
+  /async function tokenHistoryPayload[\s\S]*if \(workMarketHistoryKind && network === "livenet"\)[\s\S]*proofIndexTokenMarketHistoryOverlayPayload\(/,
+  /mergeTokenHistoryPageWithOverlay\(page,\s*overlayPage,\s*pagination\)/,
+]);
+
+expectAll("proof index token history merges market event rows", proofIndexReader, [
+  /export async function proofIndexTokenMarketHistoryOverlayPayload/,
+  /e\.kind = ANY\(\$2::text\[\]\)/,
+  /tokenHistoryItemFromMarketEventPayload/,
+  /mergeTokenHistoryPages\(\s*snapshotPage,\s*marketOverlayPage/,
+]);
+
+expectAll("log history searches fall back to direct DB event rows", proofIndexReader, [
+  /logHistoryPageFromSnapshot/,
+  /requestedKind \|\| pagination\.query/,
+  /lower\(e\.payload::text\) LIKE/,
+  /source:\s*"proof-indexer"/,
 ]);
 
 expectAll("all confirmed token state rows must be searchable in Log", server, [

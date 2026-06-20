@@ -209,6 +209,324 @@ function historyItemsMatchingNeedles(items, needles) {
   });
 }
 
+function commaNumber(value) {
+  const number = Number(String(value ?? "").replace(/,/gu, ""));
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function tokenMarketNumbersFromTags(payload) {
+  const tags = Array.isArray(payload?.tags) ? payload.tags.map(String) : [];
+  let amount = 0;
+  let priceSats = 0;
+  let ticker = "";
+
+  for (const tag of tags) {
+    const amountMatch = /^([\d,]+)\s+([A-Z0-9]{1,16})$/u.exec(tag.trim());
+    if (amountMatch && !amount) {
+      amount = commaNumber(amountMatch[1]);
+      ticker = amountMatch[2];
+      continue;
+    }
+
+    const priceMatch = /^([\d,]+)\s+sale\s+proofs$/iu.exec(tag.trim());
+    if (priceMatch && !priceSats) {
+      priceSats = commaNumber(priceMatch[1]);
+    }
+  }
+
+  return { amount, priceSats, ticker };
+}
+
+function tokenRegistryAddressFromPayload(payload, actor, counterparty, fallback = "") {
+  const actorKey = String(actor ?? "").toLowerCase();
+  const counterpartyKey = String(counterparty ?? "").toLowerCase();
+  const participants = Array.isArray(payload?.participants)
+    ? payload.participants
+    : [];
+  return (
+    participants.find((participant) => {
+      const value = String(participant ?? "").trim();
+      const key = value.toLowerCase();
+      return value && key !== actorKey && key !== counterpartyKey;
+    }) ??
+    payload?.registryAddress ??
+    fallback ??
+    ""
+  );
+}
+
+function tokenSaleFromEventPayload(payload) {
+  const { amount, priceSats, ticker } = tokenMarketNumbersFromTags(payload);
+  const buyerAddress = String(payload?.actor ?? payload?.buyerAddress ?? "")
+    .trim();
+  const sellerAddress = String(
+    payload?.counterparty ?? payload?.sellerAddress ?? "",
+  ).trim();
+  const registryAddress = tokenRegistryAddressFromPayload(
+    payload,
+    buyerAddress,
+    sellerAddress,
+  );
+  return {
+    amount,
+    buyerAddress,
+    confirmed: payload?.confirmed === true,
+    createdAt: dateIso(payload?.createdAt),
+    dataBytes: rowNumber(payload, "dataBytes"),
+    listingId: String(payload?.listingId ?? "").trim().toLowerCase(),
+    network: payload?.network,
+    paidSats: rowNumber(payload, "amountSats"),
+    priceSats,
+    registryAddress,
+    sellerAddress,
+    ticker,
+    tokenId: String(payload?.tokenId ?? "").trim().toLowerCase(),
+    txid: String(payload?.txid ?? "").trim().toLowerCase(),
+  };
+}
+
+function tokenClosedListingFromEventPayload(payload) {
+  const { amount, priceSats, ticker } = tokenMarketNumbersFromTags(payload);
+  const sellerAddress = String(payload?.actor ?? payload?.sellerAddress ?? "")
+    .trim();
+  const registryAddress = tokenRegistryAddressFromPayload(
+    payload,
+    sellerAddress,
+    payload?.counterparty,
+    payload?.counterparty,
+  );
+  const createdAt = dateIso(payload?.createdAt);
+  return {
+    amount,
+    closedAt: createdAt,
+    closedConfirmed: payload?.confirmed === true,
+    closedTxid: String(payload?.txid ?? "").trim().toLowerCase(),
+    confirmed: true,
+    createdAt,
+    dataBytes: rowNumber(payload, "dataBytes"),
+    listingId: String(payload?.listingId ?? "").trim().toLowerCase(),
+    network: payload?.network,
+    priceSats,
+    registryAddress,
+    saleAuthorization: {},
+    sellerAddress,
+    ticker,
+    tokenId: String(payload?.tokenId ?? "").trim().toLowerCase(),
+  };
+}
+
+function tokenHistoryItemFromMarketEventPayload(payload, safeKind) {
+  if (payload?.kind === "token-sale") {
+    const sale = tokenSaleFromEventPayload(payload);
+    if (!sale.txid || !sale.listingId || !sale.tokenId) {
+      return null;
+    }
+    if (safeKind === "sales") {
+      return sale;
+    }
+    return {
+      createdAt: sale.createdAt,
+      kind: "sale",
+      sale,
+      txid: sale.txid,
+    };
+  }
+
+  if (payload?.kind === "token-listing-closed") {
+    const closedListing = tokenClosedListingFromEventPayload(payload);
+    if (
+      !closedListing.closedTxid ||
+      !closedListing.listingId ||
+      !closedListing.tokenId
+    ) {
+      return null;
+    }
+    if (safeKind === "closedListings") {
+      return closedListing;
+    }
+    return {
+      closedListing,
+      createdAt: closedListing.closedAt ?? closedListing.createdAt,
+      kind: "closed-listing",
+      txid: closedListing.closedTxid || closedListing.listingId,
+    };
+  }
+
+  return null;
+}
+
+function tokenHistoryMarketEventKinds(safeKind) {
+  if (safeKind === "sales") {
+    return ["token-sale"];
+  }
+  if (safeKind === "closedListings") {
+    return ["token-listing-closed"];
+  }
+  if (safeKind === "market-log") {
+    return ["token-sale", "token-listing-closed"];
+  }
+  return [];
+}
+
+function tokenHistoryItemKey(item, safeKind) {
+  if (safeKind === "market-log") {
+    if (item?.kind === "sale") {
+      return `sale:${String(item.sale?.txid ?? item.txid ?? "").toLowerCase()}`;
+    }
+    if (item?.kind === "closed-listing") {
+      return `closed:${String(
+        item.closedListing?.listingId ?? "",
+      ).toLowerCase()}:${String(
+        item.closedListing?.closedTxid ?? item.txid ?? "",
+      ).toLowerCase()}`;
+    }
+    if (item?.kind === "listing") {
+      return `listing:${String(
+        item.listing?.listingId ?? item.txid ?? "",
+      ).toLowerCase()}`;
+    }
+  }
+
+  if (safeKind === "closedListings") {
+    return `closed:${String(item?.listingId ?? "").toLowerCase()}:${String(
+      item?.closedTxid ?? item?.txid ?? "",
+    ).toLowerCase()}`;
+  }
+
+  if (safeKind === "sales") {
+    return `sale:${String(item?.txid ?? "").toLowerCase()}`;
+  }
+
+  return String(item?.txid ?? item?.listingId ?? JSON.stringify(item));
+}
+
+function tokenHistoryItemCreatedAt(item) {
+  if (item?.kind === "sale") {
+    return item.sale?.createdAt ?? item.createdAt;
+  }
+  if (item?.kind === "closed-listing") {
+    return item.closedListing?.closedAt ?? item.closedListing?.createdAt ?? item.createdAt;
+  }
+  if (item?.kind === "listing") {
+    return item.listing?.createdAt ?? item.createdAt;
+  }
+  return item?.closedAt ?? item?.createdAt;
+}
+
+function compareTokenHistoryMarketItems(left, right) {
+  const leftTime = Date.parse(tokenHistoryItemCreatedAt(left) ?? "");
+  const rightTime = Date.parse(tokenHistoryItemCreatedAt(right) ?? "");
+  return (
+    (Number.isFinite(rightTime) ? rightTime : 0) -
+      (Number.isFinite(leftTime) ? leftTime : 0) ||
+    String(right?.txid ?? right?.closedTxid ?? right?.listingId ?? "")
+      .localeCompare(String(left?.txid ?? left?.closedTxid ?? left?.listingId ?? ""))
+  );
+}
+
+function tokenHistoryPageFromItems({
+  indexedAt,
+  indexedThroughBlock,
+  items,
+  kind,
+  network,
+  pagination,
+  source,
+  snapshot,
+}) {
+  const needles = tokenHistoryFilterNeedles(new URLSearchParams(), pagination);
+  const filtered = historyItemsMatchingNeedles(items, needles);
+  const totalCount = filtered.length;
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  const snapshotId = snapshot?.snapshot_id ?? "";
+  const cursor = historyCursor(snapshotId, start);
+  const nextCursor = end < totalCount ? historyCursor(snapshotId, end) : "";
+  const page = {
+    cursor,
+    end,
+    indexedAt,
+    indexedThroughBlock:
+      indexedThroughBlock ?? indexedThroughBlockFromItems(filtered),
+    items: filtered.slice(start, end),
+    kind,
+    limit: pagination.limit,
+    network,
+    nextCursor,
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source,
+    start,
+    totalCount,
+  };
+  if (snapshotId) {
+    return {
+      ...page,
+      consistency: snapshot?.consistency ?? undefined,
+      ledgerGeneratedAt: dateIso(snapshot?.generated_at),
+      snapshotId,
+    };
+  }
+  return page;
+}
+
+function mergedSourceLabel(...sources) {
+  return [
+    ...new Set(
+      sources
+        .flatMap((source) => String(source ?? "").split("+"))
+        .map((source) => source.trim())
+        .filter(Boolean),
+    ),
+  ].join("+");
+}
+
+function mergeTokenHistoryPages(basePage, overlayPage, safeKind, pagination) {
+  if (!overlayPage || !Array.isArray(overlayPage.items) || overlayPage.items.length === 0) {
+    return basePage;
+  }
+  if (!basePage) {
+    return overlayPage;
+  }
+
+  const byKey = new Map();
+  for (const item of [
+    ...overlayPage.items,
+    ...(Array.isArray(basePage.items) ? basePage.items : []),
+  ]) {
+    byKey.set(tokenHistoryItemKey(item, safeKind), item);
+  }
+  const items = [...byKey.values()].sort(compareTokenHistoryMarketItems);
+  return {
+    ...tokenHistoryPageFromItems({
+      indexedAt: dateIso(overlayPage.indexedAt ?? basePage.indexedAt),
+      indexedThroughBlock:
+        overlayPage.indexedThroughBlock ?? basePage.indexedThroughBlock,
+      items,
+      kind: safeKind,
+      network: basePage.network ?? overlayPage.network,
+      pagination: {
+        ...pagination,
+        offset: 0,
+      },
+      source: mergedSourceLabel(basePage.source, overlayPage.source),
+      snapshot: {
+        consistency: basePage.consistency ?? overlayPage.consistency,
+        generated_at:
+          basePage.ledgerGeneratedAt ?? overlayPage.ledgerGeneratedAt,
+        snapshot_id: basePage.snapshotId ?? overlayPage.snapshotId ?? "",
+      },
+    }),
+    totalCount: Math.max(
+      Number(basePage.totalCount ?? 0),
+      Number(overlayPage.totalCount ?? 0),
+      items.length,
+    ),
+  };
+}
+
 export function proofIndexLogHistoryReadEligibility(kind, searchParams) {
   const requestedKind = String(kind ?? "").trim().toLowerCase();
   const pagination = historyPaginationFromSearch(searchParams);
@@ -881,6 +1199,144 @@ function tokenHistoryPageFromSnapshot(
   return page;
 }
 
+export async function proofIndexTokenMarketHistoryOverlayPayload(
+  network,
+  tokenScope,
+  kind,
+  searchParams,
+  options = {},
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const safeKind = tokenHistorySafeKind(kind);
+  const eventKinds = tokenHistoryMarketEventKinds(safeKind);
+  if (eventKinds.length === 0) {
+    return null;
+  }
+
+  const pagination =
+    options.pagination ?? historyPaginationFromSearch(searchParams);
+  const scope = tokenScopeKey(tokenScope);
+  const snapshot =
+    options.snapshot ?? (await ledgerSnapshot(pool, network, pagination.snapshotId));
+  const conditions = [
+    "e.network = $1",
+    "e.valid = true",
+    "e.kind = ANY($2::text[])",
+  ];
+  const params = [network, eventKinds];
+
+  if (scope && scope !== "all") {
+    params.push(scope);
+    const scopeParam = `$${params.length}`;
+    params.push(`%${scope}%`);
+    const scopeLikeParam = `$${params.length}`;
+    conditions.push(
+      `(lower(e.payload->>'tokenId') = ${scopeParam} OR lower(e.payload::text) LIKE ${scopeLikeParam})`,
+    );
+  }
+
+  const needles = tokenHistoryFilterNeedles(searchParams, pagination);
+  for (const needle of needles) {
+    params.push(`%${needle}%`);
+    const param = `$${params.length}`;
+    conditions.push(`lower(e.payload::text) LIKE ${param}`);
+  }
+
+  const whereClause = conditions.join(" AND ");
+  const countResult = await pool.query(
+    `
+      SELECT count(*) AS total_count, max(e.block_height) AS indexed_through_block
+      FROM proof_indexer.events e
+      WHERE ${whereClause}
+    `,
+    params,
+  );
+  const totalCount = rowNumber(countResult.rows[0], "total_count");
+  const indexedThroughBlock = rowNumber(
+    countResult.rows[0],
+    "indexed_through_block",
+  );
+  if (totalCount === 0) {
+    return null;
+  }
+
+  const rowParams = [...params, pagination.limit, pagination.offset];
+  const limitParam = rowParams.length - 1;
+  const offsetParam = rowParams.length;
+  const rowsResult = await pool.query(
+    `
+      SELECT
+        e.payload,
+        e.protocol,
+        e.kind,
+        e.status,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        e.block_height,
+        e.txid,
+        e.event_id
+      FROM proof_indexer.events e
+      WHERE ${whereClause}
+      ORDER BY
+        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        e.txid DESC,
+        e.event_id DESC
+      LIMIT $${limitParam}
+      OFFSET $${offsetParam}
+    `,
+    rowParams,
+  );
+  const items = rowsResult.rows
+    .map((row) =>
+      tokenHistoryItemFromMarketEventPayload(eventRowPayload(row, network), safeKind),
+    )
+    .filter(Boolean)
+    .sort(compareTokenHistoryMarketItems);
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  const snapshotId = snapshot?.snapshot_id ?? "";
+  const cursor = historyCursor(snapshotId, start);
+  const nextCursor = end < totalCount ? historyCursor(snapshotId, end) : "";
+  const indexedAt = dateIso(
+    rowsResult.rows[0]?.event_time ??
+      rowsResult.rows[0]?.block_time ??
+      rowsResult.rows[0]?.created_at ??
+      snapshot?.generated_at,
+  );
+  const page = {
+    cursor,
+    end,
+    indexedAt,
+    indexedThroughBlock,
+    items,
+    kind: safeKind,
+    limit: pagination.limit,
+    network,
+    nextCursor,
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source: "proof-indexer-token-events",
+    start,
+    totalCount,
+  };
+  if (snapshotId) {
+    return {
+      ...page,
+      consistency: snapshot?.consistency ?? undefined,
+      ledgerGeneratedAt: dateIso(snapshot?.generated_at),
+      snapshotId,
+    };
+  }
+  return page;
+}
+
 export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
   const pool = proofIndexPool();
   if (!pool) {
@@ -902,14 +1358,14 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     requestedKind,
     pagination,
   );
-  if (snapshotPage) {
+  if (
+    snapshotPage &&
+    !((requestedKind || pagination.query) && snapshotPage.totalCount === 0)
+  ) {
     return snapshotPage;
   }
 
-  const conditions = [
-    "e.network = $1",
-    "e.payload->>'indexedFrom' = 'log'",
-  ];
+  const conditions = ["e.network = $1"];
   const params = [network];
 
   if (requestedKind) {
@@ -1032,6 +1488,24 @@ export async function proofIndexTokenHistoryPayload(
     searchParams,
     eligibility.pagination,
   );
+  const marketOverlayPage = await proofIndexTokenMarketHistoryOverlayPayload(
+    network,
+    tokenScope,
+    eligibility.kind,
+    searchParams,
+    {
+      pagination: eligibility.pagination,
+      snapshot,
+    },
+  );
+  if (marketOverlayPage) {
+    return mergeTokenHistoryPages(
+      snapshotPage,
+      marketOverlayPage,
+      eligibility.kind,
+      eligibility.pagination,
+    );
+  }
   if (snapshotPage) {
     return snapshotPage;
   }

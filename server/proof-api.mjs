@@ -30,6 +30,7 @@ import {
   proofIndexRegistryPayload,
   proofIndexShadowFeatureEnabled,
   proofIndexSnapshotPayload,
+  proofIndexTokenMarketHistoryOverlayPayload,
   proofIndexTokenPayload,
   proofIndexTokenHistoryReadEligibility,
   proofIndexTokenHistoryPayload,
@@ -60,6 +61,9 @@ const ELECTRUM_HOST = process.env.ELECTRUM_HOST ?? "127.0.0.1";
 const ELECTRUM_PORT = Number(process.env.ELECTRUM_PORT ?? 50001);
 const MAX_REGISTRY_TX_PAGES = Number(process.env.MAX_REGISTRY_TX_PAGES ?? 250);
 const MAX_ADDRESS_TX_PAGES = Number(process.env.MAX_ADDRESS_TX_PAGES ?? 50);
+const MAIL_ADDRESS_TX_PAGES = Number(
+  process.env.MAIL_ADDRESS_TX_PAGES ?? Math.min(MAX_ADDRESS_TX_PAGES, 8),
+);
 const MAX_ACTIVITY_ADDRESSES = Number(
   process.env.MAX_ACTIVITY_ADDRESSES ?? 500,
 );
@@ -1353,6 +1357,114 @@ function paginatedHistoryPayload({
     source,
     start,
     totalCount,
+  };
+}
+
+function tokenHistoryPageItemKey(item, kind) {
+  if (kind === "market-log") {
+    if (item?.kind === "sale") {
+      return `sale:${String(item.sale?.txid ?? item.txid ?? "").toLowerCase()}`;
+    }
+    if (item?.kind === "closed-listing") {
+      return `closed:${String(
+        item.closedListing?.listingId ?? "",
+      ).toLowerCase()}:${String(
+        item.closedListing?.closedTxid ?? item.txid ?? "",
+      ).toLowerCase()}`;
+    }
+    if (item?.kind === "listing") {
+      return `listing:${String(
+        item.listing?.listingId ?? item.txid ?? "",
+      ).toLowerCase()}`;
+    }
+  }
+  if (kind === "closedListings") {
+    return `closed:${String(item?.listingId ?? "").toLowerCase()}:${String(
+      item?.closedTxid ?? item?.txid ?? "",
+    ).toLowerCase()}`;
+  }
+  if (kind === "sales") {
+    return `sale:${String(item?.txid ?? "").toLowerCase()}`;
+  }
+  return String(item?.txid ?? item?.listingId ?? JSON.stringify(item));
+}
+
+function tokenHistoryPageItemCreatedAt(item) {
+  if (item?.kind === "sale") {
+    return item.sale?.createdAt ?? item.createdAt;
+  }
+  if (item?.kind === "closed-listing") {
+    return item.closedListing?.closedAt ?? item.closedListing?.createdAt ?? item.createdAt;
+  }
+  if (item?.kind === "listing") {
+    return item.listing?.createdAt ?? item.createdAt;
+  }
+  return item?.closedAt ?? item?.createdAt;
+}
+
+function compareTokenHistoryPageItems(left, right) {
+  const leftTime = Date.parse(tokenHistoryPageItemCreatedAt(left) ?? "");
+  const rightTime = Date.parse(tokenHistoryPageItemCreatedAt(right) ?? "");
+  return (
+    (Number.isFinite(rightTime) ? rightTime : 0) -
+      (Number.isFinite(leftTime) ? leftTime : 0) ||
+    String(right?.txid ?? right?.closedTxid ?? right?.listingId ?? "")
+      .localeCompare(String(left?.txid ?? left?.closedTxid ?? left?.listingId ?? ""))
+  );
+}
+
+function mergedSourceLabel(...sources) {
+  return [
+    ...new Set(
+      sources
+        .flatMap((source) => String(source ?? "").split("+"))
+        .map((source) => source.trim())
+        .filter(Boolean),
+    ),
+  ].join("+");
+}
+
+function mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination) {
+  if (
+    !overlayPage ||
+    !Array.isArray(overlayPage.items) ||
+    overlayPage.items.length === 0
+  ) {
+    return page;
+  }
+
+  const kind = page?.kind ?? overlayPage.kind;
+  const byKey = new Map();
+  for (const item of [
+    ...overlayPage.items,
+    ...(Array.isArray(page?.items) ? page.items : []),
+  ]) {
+    byKey.set(tokenHistoryPageItemKey(item, kind), item);
+  }
+
+  const items = [...byKey.values()].sort(compareTokenHistoryPageItems);
+  const merged = paginatedHistoryPayload({
+    indexedAt: overlayPage.indexedAt ?? page?.indexedAt ?? new Date().toISOString(),
+    items,
+    kind,
+    network: page?.network ?? overlayPage.network,
+    pagination: {
+      ...pagination,
+      offset: 0,
+    },
+    source: mergedSourceLabel(page?.source, overlayPage.source),
+  });
+
+  return {
+    ...page,
+    ...merged,
+    indexedThroughBlock:
+      overlayPage.indexedThroughBlock ?? page?.indexedThroughBlock,
+    totalCount: Math.max(
+      Number(page?.totalCount ?? 0),
+      Number(overlayPage.totalCount ?? 0),
+      merged.totalCount,
+    ),
   };
 }
 
@@ -3686,6 +3798,14 @@ async function fetchAddressTransactions(
   options = {},
 ) {
   const includeExternal = options.includeExternal !== false;
+  if (includeExternal && options.preferExternal === true) {
+    return fetchAddressTransactionsViaExplorerFallback(
+      address,
+      network,
+      maxPages,
+    );
+  }
+
   if (network === "livenet" && ELECTRUM_HOST && ELECTRUM_PORT) {
     try {
       const [historyTxs, mempoolTxs] = await Promise.all([
@@ -15135,7 +15255,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       : (payload[safeKind] ?? []);
   const items = historyItemsMatchingAddresses(rawItems, recoveryAddresses);
 
-  const page = paginatedHistoryPayload({
+  let page = paginatedHistoryPayload({
     indexedAt: payload.indexedAt ?? new Date().toISOString(),
     items,
     kind: safeKind,
@@ -15143,6 +15263,20 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     pagination,
     source: payload.source ?? mempoolBase(network),
   });
+  if (workMarketHistoryKind && network === "livenet") {
+    const overlayPage = await proofIndexTokenMarketHistoryOverlayPayload(
+      network,
+      scope,
+      safeKind,
+      searchParams,
+    ).catch((error) => {
+      console.error(
+        `Proof index token market overlay failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    page = mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination);
+  }
   return payload.snapshotId
     ? {
         ...page,
@@ -16259,17 +16393,20 @@ function mergeMailPayloads(indexedPayload, scannedPayload) {
   };
 }
 
-async function nodeMailPayload(address, network) {
+async function nodeMailPayload(address, network, options = {}) {
   let scanError = "";
   const txs = await fetchAddressTransactions(
     address,
     network,
-    MAX_ADDRESS_TX_PAGES,
-    { includeExternal: false },
+    options.maxPages ?? MAIL_ADDRESS_TX_PAGES,
+    {
+      includeExternal: options.includeExternal !== false,
+      preferExternal: options.preferExternal === true,
+    },
   ).catch((error) => {
     scanError = errorSummary(error);
     console.error(
-      `First-party mail scan failed for ${address}: ${scanError}`,
+      `Mail scan failed for ${address}: ${scanError}`,
     );
     return [];
   });
@@ -16313,16 +16450,24 @@ async function mailPayload(address, network, options = {}) {
   const fresh = Boolean(options.fresh);
   const indexedPayload = await indexedMailPayload(address, network);
 
-  if (!fresh && indexedPayload) {
+  if (!fresh && indexedPayload && mailPayloadHasMessages(indexedPayload)) {
     return indexedPayload;
   }
 
-  const scannedPayload = await nodeMailPayload(address, network);
+  const indexedWasEmpty = Boolean(indexedPayload) && !mailPayloadHasMessages(indexedPayload);
+  const scannedPayload = await nodeMailPayload(address, network, {
+    includeExternal: indexedWasEmpty || fresh || !indexedPayload,
+    preferExternal: indexedWasEmpty,
+  });
   if (!indexedPayload) {
     return scannedPayload;
   }
 
-  if (scannedPayload.scanError || mailPayloadHasMessages(scannedPayload)) {
+  if (
+    indexedWasEmpty ||
+    scannedPayload.scanError ||
+    mailPayloadHasMessages(scannedPayload)
+  ) {
     return mergeMailPayloads(indexedPayload, scannedPayload);
   }
 

@@ -23,6 +23,17 @@ const CHECKS = [
     minSent: 1,
     minTotal: 1,
   },
+  {
+    address: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+    label: "otc@proofofwork.me self-send",
+    minInbox: 1,
+    minSent: 1,
+    minTotal: 2,
+    mustInboxTxid:
+      "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
+    mustSentTxid:
+      "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
+  },
 ];
 
 const REGISTRY_RESOLUTION_CHECKS = [
@@ -105,11 +116,15 @@ function assertRegistryResolution(payload) {
 }
 
 function assertMailbox(check, payload) {
+  const inboxMessages = Array.isArray(payload?.inboxMessages)
+    ? payload.inboxMessages
+    : [];
+  const sentMessages = Array.isArray(payload?.sentMessages)
+    ? payload.sentMessages
+    : [];
   const inbox = countConfirmedInbox(payload);
   const sent = countVisibleSent(payload);
-  const total =
-    (Array.isArray(payload?.inboxMessages) ? payload.inboxMessages.length : 0) +
-    (Array.isArray(payload?.sentMessages) ? payload.sentMessages.length : 0);
+  const total = inboxMessages.length + sentMessages.length;
   const scanFailed = Boolean(payload?.stats?.scanFailed);
   const indexedEvents = numberValue(payload?.stats?.indexedEvents);
   const source = String(payload?.source ?? "");
@@ -129,6 +144,24 @@ function assertMailbox(check, payload) {
   }
   if (!source.includes("proof-indexer-mail")) {
     failures.push(`expected proof-indexer-mail source, got ${source || "none"}`);
+  }
+  if (
+    check.mustInboxTxid &&
+    !inboxMessages.some(
+      (message) =>
+        String(message?.txid ?? "").toLowerCase() === check.mustInboxTxid,
+    )
+  ) {
+    failures.push(`missing inbox tx ${check.mustInboxTxid}`);
+  }
+  if (
+    check.mustSentTxid &&
+    !sentMessages.some(
+      (message) =>
+        String(message?.txid ?? "").toLowerCase() === check.mustSentTxid,
+    )
+  ) {
+    failures.push(`missing sent tx ${check.mustSentTxid}`);
   }
 
   if (failures.length > 0) {

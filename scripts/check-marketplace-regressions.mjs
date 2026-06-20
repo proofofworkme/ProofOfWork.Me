@@ -19,6 +19,8 @@ const REPORTED_LISTING_TX =
   "50cd4dff315842c999a06c3ed0be3616f61c33f1a2f0fce6f645e3f48e9b023c";
 const REPORTED_DELIST_TX =
   "f5dbee238a09fe0da6a0e4d01526fefefa6676b86df742323ce49df0daa5ecf5";
+const REPORTED_SALE_TX =
+  "34ad3a1211c3023d66d72e04e9faf8d989cd60f476887a0abd28b53ba2a8b0a3";
 const WALLET_SUMMARY_DELIST_TXS = [
   "4bdb7f9de2293548d598cd00b07df621339cf364fa1fa1cf42e80ad0551488f4",
   "4c59acfc84b47225f6e0b9bd67379d1ddac14e2e71f6a256315cececbe559d98",
@@ -133,6 +135,18 @@ for (const txid of BUY_TXS) {
     `${txid} is missing from seller-scoped sales history`,
   );
 }
+const reportedSaleHistory = await tokenHistory("sales", { q: REPORTED_SALE_TX });
+assert(
+  txids(reportedSaleHistory.items).has(REPORTED_SALE_TX),
+  `${REPORTED_SALE_TX} is missing from credit sales history`,
+);
+const reportedMarketLog = await tokenHistory("market-log", {
+  q: REPORTED_SALE_TX,
+});
+assert(
+  txids(reportedMarketLog.items).has(REPORTED_SALE_TX),
+  `${REPORTED_SALE_TX} is missing from credit sales and listings log`,
+);
 
 const walletToken = await getJson("/api/v1/token", {
   network: "livenet",
@@ -244,6 +258,20 @@ assert(
       item?.confirmed === true,
   ),
   `${REPORTED_DELIST_TX} is not logged as a confirmed token-listing close`,
+);
+const reportedLogSale = await getJson("/api/v1/log-history", {
+  network: "livenet",
+  q: REPORTED_SALE_TX,
+  limit: 5,
+});
+assert(
+  (reportedLogSale.items ?? []).some(
+    (item) =>
+      item?.kind === "token-sale" &&
+      String(item?.txid ?? "").toLowerCase() === REPORTED_SALE_TX &&
+      item?.confirmed === true,
+  ),
+  `${REPORTED_SALE_TX} is not logged as a confirmed token sale`,
 );
 
 console.log(
