@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
 <rect width="1600" height="900" fill="#f8fafc"/>
 <text x="80" y="82" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="56" font-weight="850" fill="#0f172a">Blockspace is the ceiling</text>
-<text x="82" y="126" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25" font-weight="500" fill="#475569">Usage demand compounds until it hits today&#39;s theoretical Bitcoin blockspace limit.</text>
+<text x="82" y="126" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25" font-weight="500" fill="#475569">Usage demand compounds until it hits today&#39;s theoretical ProofOfWork blockspace limit.</text>
 <rect x="190" y="156" width="1220" height="54" rx="18" fill="#0f172a"/>
 <text x="800" y="191" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="27" font-weight="850" fill="#ffffff">Current theoretical ceiling: 52.6 billion vB per year</text><rect x="80" y="235" width="250" height="450" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
 <text x="205" y="295" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="26" font-weight="850" fill="#0f172a">6 months</text>
@@ -40,5 +40,5 @@
 <text x="1405" y="666" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#334155">7.64 trillion vB</text><rect x="170" y="735" width="1260" height="74" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
 <text x="800" y="766" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#0f172a">Once raw write demand crosses the ceiling, Mail, Drive, Marketplace, and Browser are throttled by executable blockspace.</text>
 <text x="800" y="794" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#0f172a">Scarce blockspace becomes part of the model instead of infinite throughput.</text>
-<text x="80" y="848" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="500" fill="#64748b">ProofOfWork.Me Bitcoin Computer Model | generated from output/bitcoin-computer-agent-adoption-model.md</text>
+<text x="80" y="848" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="500" fill="#64748b">ProofOfWork.Me ProofOfWork Computer Model | generated from output/proofofwork-computer-agent-adoption-model.md</text>
 </svg>

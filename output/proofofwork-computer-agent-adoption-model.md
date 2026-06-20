@@ -49,23 +49,23 @@ These visuals are generated from this same canonical model.
 
 They are written for normal human pattern recognition: big labels, plain words, and no scientific notation.
 
-![What is compounding](bitcoin-computer-model-compounding.png)
+![What is compounding](proofofwork-computer-model-compounding.png)
 
-![Dollar growth in human words](bitcoin-computer-model-dollar-growth.png)
+![Dollar growth in human words](proofofwork-computer-model-dollar-growth.png)
 
-![IDs Mail Drive Marketplace Browser product split](bitcoin-computer-model-product-split.png)
+![IDs Mail Drive Marketplace Browser product split](proofofwork-computer-model-product-split.png)
 
-![Blockspace ceiling](bitcoin-computer-model-blockspace.png)
+![Blockspace ceiling](proofofwork-computer-model-blockspace.png)
 
-![ProofOfWork volatility translation](bitcoin-computer-model-volatility.png)
+![ProofOfWork volatility translation](proofofwork-computer-model-volatility.png)
 
 SVG versions:
 
-- [What is compounding](bitcoin-computer-model-compounding.svg)
-- [Dollar growth in human words](bitcoin-computer-model-dollar-growth.svg)
-- [IDs Mail Drive Marketplace Browser product split](bitcoin-computer-model-product-split.svg)
-- [Blockspace ceiling](bitcoin-computer-model-blockspace.svg)
-- [ProofOfWork volatility translation](bitcoin-computer-model-volatility.svg)
+- [What is compounding](proofofwork-computer-model-compounding.svg)
+- [Dollar growth in human words](proofofwork-computer-model-dollar-growth.svg)
+- [IDs Mail Drive Marketplace Browser product split](proofofwork-computer-model-product-split.svg)
+- [Blockspace ceiling](proofofwork-computer-model-blockspace.svg)
+- [ProofOfWork volatility translation](proofofwork-computer-model-volatility.svg)
 
 ## Real Inputs
 
@@ -102,7 +102,7 @@ Current BTC/USD date: 2026-05-11
 Sources:
 
 ```text
-https://coinmarketcap.com/currencies/bitcoin/
+https://coinmarketcap.com/currencies/proofofwork/
 https://coinmarketcap.com/historical/20160511/
 https://portfolioslab.com/tools/stock-comparison/BTC-USD/SPY
 ```
@@ -213,8 +213,8 @@ Annual theoretical ceiling: 52,560,000,000 vB
 Sources:
 
 ```text
-https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki
-https://github.com/bitcoin/bitcoin/blob/master/src/consensus/consensus.h
+https://github.com/proofofwork/bips/blob/master/bip-0141.mediawiki
+https://github.com/proofofwork/proofofwork/blob/master/src/consensus/consensus.h
 ```
 
 Blockspace accounting assumptions:

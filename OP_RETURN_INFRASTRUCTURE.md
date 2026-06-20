@@ -148,7 +148,9 @@ canonical fallback; `event-history` serves DB-backed protocol/event search for
 indexed registry, credit, marketplace, mail/file, seeded, and broader Computer
 events; `address-mail` serves connected-wallet mailbox reads from the indexed
 mail projection, including confirmed Inbox/Sent and indexed pending
-Incoming/Outbox visibility. The `log` flag is reserved for an explicit full
+Incoming/Outbox visibility. `pwm1:m:powb` is normalized as `infinity-bond` for
+Log/Event/summary accounting but still projects into `mail_items` so confirmed
+self-sends land in both Inbox and Sent. The `log` flag is reserved for an explicit full
 activity snapshot refresh. Fresh reads still use the node/API path so explicit
 refreshes converge on current chain and mempool truth.
 
@@ -167,6 +169,13 @@ full worker cycle. Production service configuration is tracked in:
 ```text
 deploy/proofofwork-indexer-worker.service
 ```
+
+Production regression gates after the June 2026 database hardening are
+`npm run audit:ledger`, `npm run indexer:parity`, `npm run check:mail-regressions`,
+`npm run check:marketplace-regressions`, and `npm run check:live-data`. A healthy
+run has `missingLogEvents: []`, populated event participant/ref search indexes,
+matching WORK/Growth/summary snapshot ids, searchable known regression txids,
+and pending rows limited to mempool visibility.
 
 The completed production rollout followed this shadow-first ladder. Future
 database-backed surfaces should use the same pattern:
@@ -587,6 +596,10 @@ After changing the API or production build, verify:
 - Credit, Wallet, and Marketplace transaction buttons can load UTXOs, previous transaction hex, and listing-anchor outspends through the first-party API before opening UniSat.
 - Log can load global ProofOfWork Computer events and search an address, confirmed ProofOfWork ID, or txid.
 - Known confirmed ledger regression txids are searchable in Log, including `411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891` and `b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34`.
+- `npm run indexer:parity` passes against production and reports canonical/database snapshot parity plus populated participants/refs.
+- `npm run check:mail-regressions` passes against production, including the `64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e` OTC self-send in Inbox, Sent, Log, and Event History as an Infinity Bond.
+- `npm run check:marketplace-regressions` passes against production, including WORK delist and sale-ticket lifecycle alignment.
+- Known WORK marketplace regression txids are searchable in Log, including `f5dbee238a09fe0da6a0e4d01526fefefa6676b86df742323ce49df0daa5ecf5` as a listing close and `34ad3a1211c3023d66d72e04e9faf8d989cd60f476887a0abd28b53ba2a8b0a3` as sale plus closure.
 - Growth can load real chain metrics, including credit creations, mints, transfers, listings, and sales, and render the modeled-vs-real proofs/USD value graph without layout overlap on desktop and mobile.
 - WORK and Growth show matching confirmed network value in proofs/live USD using `/api/v1/work-floor` and `/api/v1/prices/btc-usd`; `actualValue.totalUsd` reconciles to `actualValue.totalSats / 100000000 * btcUsd`.
 - `npm run check:live-data` passes locally.

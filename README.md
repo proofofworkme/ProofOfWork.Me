@@ -198,6 +198,8 @@ Current production behavior:
 
 - Confirmed stable mainnet registry, Log, credit/token, marketplace, summary, event, mail/file, and tx-status reads go through the ProofOfWork API and use the PostgreSQL proof index where the read flag supports that surface.
 - The proof index is a fast replayable read model, not a separate source of truth. Confirmed chain data remains canonical, and every tx-backed record should keep its txid available for normal explorer/mempool verification.
+- The production proof index is the default stable read model for confirmed Log, Event History, address mail, registry, credit/token, marketplace lifecycle, WORK, Growth, and tx-status reads where enabled. Explicit fresh reads, mempool state, raw transaction data, UTXO/outspend checks, signing support, and broadcasts still fall back to the first-party node/API path.
+- The mail and Log parsers normalize `pwm1:m:powb` as `infinity-bond` for event/search/Growth accounting while still projecting it into the mailbox model so confirmed self-sends appear in both Inbox and Sent.
 - The node stack does not hold funds, seed phrases, private keys, or wallet authority.
 - Browser wallets still sign locally.
 - Production raw transaction broadcasts use the same first-party node path through `POST /api/v1/broadcast/tx`. The API receives only final signed transaction hex.
@@ -595,8 +597,18 @@ The companion local contract check is:
 npm run check:live-data
 ```
 
-Run both after changing `server/proof-api.mjs`, Log search, Growth, WORK, or
-credit/token indexing.
+The broader proof-index regression gates are:
+
+```bash
+npm run indexer:parity
+npm run check:mail-regressions
+npm run check:marketplace-regressions
+```
+
+`check:mail-regressions` proves indexed Inbox/Sent mail plus Infinity Bond Log/Event search for the OTC self-send regression tx. `check:marketplace-regressions` proves WORK delist, sale, wallet, summary, and Log close status stay aligned. `indexer:parity` proves the database snapshot, event rows, participants/refs, registry, summaries, token history, address-mail, and tx-status samples match the canonical ledger contract.
+
+Run the relevant checks after changing `server/proof-api.mjs`, Log search,
+Growth, WORK, mail indexing, marketplace indexing, or credit/token indexing.
 
 ## Developer Map
 
