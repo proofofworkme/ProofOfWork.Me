@@ -146,7 +146,7 @@ function slideXml(slide, index) {
       ${textShape(2, "Kicker", 0.7 * EMU, 0.45 * EMU, 11.9 * EMU, 0.35 * EMU, paragraph("PROOFOFWORK.ME", { size: 1250, bold: true, color: "0a84ff" }))}
       ${textShape(3, "Title", 0.7 * EMU, isTitle ? 1.2 * EMU : 0.95 * EMU, 11.9 * EMU, isTitle ? 1.4 * EMU : 1.0 * EMU, paragraph(slide.title, { size: titleSize, bold: true, color: "111827" }))}
       ${textShape(4, "Body", 0.75 * EMU, isTitle ? 2.85 * EMU : 2.15 * EMU, 11.7 * EMU, isTitle ? 3.9 * EMU : 4.9 * EMU, bodyXml)}
-      ${textShape(5, "Footer", 0.75 * EMU, 6.95 * EMU, 11.7 * EMU, 0.28 * EMU, paragraph("Bitcoin Computer · local-first · on-chain · agent-readable", { size: 1050, color: "64748b" }))}
+      ${textShape(5, "Footer", 0.75 * EMU, 6.95 * EMU, 11.7 * EMU, 0.28 * EMU, paragraph("ProofOfWork Computer · local-first · on-chain · agent-readable", { size: 1050, color: "64748b" }))}
     </p:spTree>
   </p:cSld>
   <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>

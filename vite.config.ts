@@ -36,7 +36,7 @@ export default defineConfig(({ mode }) => ({
             id.includes("tiny-secp256k1") ||
             id.includes("bip")
           ) {
-            return "bitcoin";
+            return "proofofwork";
           }
 
           if (id.includes("lucide-react")) {

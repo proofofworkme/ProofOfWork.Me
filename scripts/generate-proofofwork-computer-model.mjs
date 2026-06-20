@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 
-const OUTPUT = "output/bitcoin-computer-agent-adoption-model.md";
-const GROWTH_JSON_OUTPUT = "output/bitcoin-computer-growth-model.json";
+const OUTPUT = "output/proofofwork-computer-agent-adoption-model.md";
+const GROWTH_JSON_OUTPUT = "output/proofofwork-computer-growth-model.json";
 
 const inputs = {
   generatedOn: "2026-05-13",
@@ -19,24 +19,24 @@ const inputs = {
   },
   pow: {
     confirmedPowids: 94,
-    uniqueReceiveAddressBalanceSats: 2374139,
-    idDensitySatsPerN2: 268.68933906745133,
+    uniqueReceiveAddressBalanceProofs: 2374139,
+    idDensityProofsPerN2: 268.68933906745133,
     mailTxids: 12,
     mailDeliveryEdges: 15,
-    mailPaidAttentionFlowSats: 10202,
-    mailSatsPerDelivery: 680.1333333333333,
+    mailPaidAttentionFlowProofs: 10202,
+    mailProofsPerDelivery: 680.1333333333333,
     mailEdgeDensity: 0.012307692307692308,
     fileTxids: 4,
     uniqueFileHashes: 4,
     totalFileBytes: 37284,
-    fileFlowSats: 2184,
-    satsPerFileBase: 1000,
+    fileFlowProofs: 2184,
+    proofsPerFileBase: 1000,
     marketplaceSales: 1,
-    marketplaceVolumeSats: 1000,
-    marketplaceAverageSaleSats: 1000,
+    marketplaceVolumeProofs: 1000,
+    marketplaceAverageSaleProofs: 1000,
     browserPageTxids: 0,
-    browserPageFlowSats: 0,
-    browserAveragePageSats: 1000,
+    browserPageFlowProofs: 0,
+    browserAveragePageProofs: 1000,
   },
   blockspace: {
     maxBlockWeightUnits: 4_000_000,
@@ -113,30 +113,30 @@ function modelRow(horizon, feeRate) {
   const driveMultiplier = feeMultiplier(feeRate, inputs.scenario.elasticities.drive);
   const marketplaceMultiplier = feeMultiplier(feeRate, inputs.scenario.elasticities.marketplace);
   const browserMultiplier = feeMultiplier(feeRate, inputs.scenario.elasticities.browser);
-  const rawIdSats = powids ** 2 * inputs.pow.idDensitySatsPerN2 * idMultiplier;
-  const rawMailSats =
+  const rawIdProofs = powids ** 2 * inputs.pow.idDensityProofsPerN2 * idMultiplier;
+  const rawMailProofs =
     directedPairs *
     inputs.pow.mailEdgeDensity *
     inputs.scenario.mailMessagesPerPairPerYear *
-    inputs.pow.mailSatsPerDelivery *
+    inputs.pow.mailProofsPerDelivery *
     inputs.scenario.mailValueMultiple *
     mailMultiplier;
-  const rawDriveSats =
+  const rawDriveProofs =
     powids *
     inputs.scenario.driveFilesPerIdPerYear *
-    inputs.pow.satsPerFileBase *
+    inputs.pow.proofsPerFileBase *
     inputs.scenario.driveValueMultiple *
     driveMultiplier;
-  const rawMarketplaceSats =
+  const rawMarketplaceProofs =
     powids *
     inputs.scenario.marketplaceSalesPerIdPerYear *
-    inputs.pow.marketplaceAverageSaleSats *
+    inputs.pow.marketplaceAverageSaleProofs *
     inputs.scenario.marketplaceValueMultiple *
     marketplaceMultiplier;
-  const rawBrowserSats =
+  const rawBrowserProofs =
     powids *
     inputs.scenario.browserPagesPerIdPerYear *
-    inputs.pow.browserAveragePageSats *
+    inputs.pow.browserAveragePageProofs *
     inputs.scenario.browserValueMultiple *
     browserMultiplier;
   const idWrites = powids * idMultiplier;
@@ -158,13 +158,13 @@ function modelRow(horizon, feeRate) {
   const blockspaceUsageRatio = rawBlockspaceVbytes > 0 ? executedBlockspaceVbytes / rawBlockspaceVbytes : 1;
   const blockspaceSaturation = executedBlockspaceVbytes / blockspaceVbytesPerYear;
   const isBlockspaceCapped = rawBlockspaceVbytes > blockspaceVbytesPerYear;
-  const idSats = rawIdSats;
-  const mailSats = rawMailSats * blockspaceUsageRatio;
-  const driveSats = rawDriveSats * blockspaceUsageRatio;
-  const marketplaceSats = rawMarketplaceSats * blockspaceUsageRatio;
-  const browserSats = rawBrowserSats * blockspaceUsageRatio;
-  const totalSats = idSats + mailSats + driveSats + marketplaceSats + browserSats;
-  const btc = totalSats / 100_000_000;
+  const idProofs = rawIdProofs;
+  const mailProofs = rawMailProofs * blockspaceUsageRatio;
+  const driveProofs = rawDriveProofs * blockspaceUsageRatio;
+  const marketplaceProofs = rawMarketplaceProofs * blockspaceUsageRatio;
+  const browserProofs = rawBrowserProofs * blockspaceUsageRatio;
+  const totalProofs = idProofs + mailProofs + driveProofs + marketplaceProofs + browserProofs;
+  const btc = totalProofs / 100_000_000;
   const usdPath = futureBtcUsd(horizon.years);
 
   return {
@@ -179,18 +179,18 @@ function modelRow(horizon, feeRate) {
     driveMultiplier,
     marketplaceMultiplier,
     browserMultiplier,
-    rawIdSats,
-    rawMailSats,
-    rawDriveSats,
-    rawMarketplaceSats,
-    rawBrowserSats,
-    rawTotalSats: rawIdSats + rawMailSats + rawDriveSats + rawMarketplaceSats + rawBrowserSats,
-    idSats,
-    mailSats,
-    driveSats,
-    marketplaceSats,
-    browserSats,
-    totalSats,
+    rawIdProofs,
+    rawMailProofs,
+    rawDriveProofs,
+    rawMarketplaceProofs,
+    rawBrowserProofs,
+    rawTotalProofs: rawIdProofs + rawMailProofs + rawDriveProofs + rawMarketplaceProofs + rawBrowserProofs,
+    idProofs,
+    mailProofs,
+    driveProofs,
+    marketplaceProofs,
+    browserProofs,
+    totalProofs,
     idWrites,
     mailWrites,
     driveWrites,
@@ -223,7 +223,7 @@ function fmtNumber(value, decimals = 0) {
   });
 }
 
-function fmtSats(value) {
+function fmtProofs(value) {
   return fmtNumber(Math.round(value));
 }
 
@@ -303,16 +303,16 @@ function table(headers, rows) {
 
 function productTable(rows) {
   return table(
-    ["Horizon", "PowIDs", "ID sats", "Mail sats", "Drive sats", "Marketplace sats", "Browser sats", "Total sats", "BTC", "Base USD", "Volatility USD range"],
+    ["Horizon", "PowIDs", "ID proofs", "Mail proofs", "Drive proofs", "Marketplace proofs", "Browser proofs", "Total proofs", "BTC", "Base USD", "Volatility USD range"],
     rows.map((row) => [
       row.label,
       fmtNumber(Math.round(row.powids)),
-      fmtSats(row.idSats),
-      fmtSats(row.mailSats),
-      fmtSats(row.driveSats),
-      fmtSats(row.marketplaceSats),
-      fmtSats(row.browserSats),
-      fmtSats(row.totalSats),
+      fmtProofs(row.idProofs),
+      fmtProofs(row.mailProofs),
+      fmtProofs(row.driveProofs),
+      fmtProofs(row.marketplaceProofs),
+      fmtProofs(row.browserProofs),
+      fmtProofs(row.totalProofs),
       fmtBtc(row.btc),
       `${fmtUsd(row.usdBase)} (${humanUsd(row.usdBase)})`,
       `${humanUsd(row.usdLow)} to ${humanUsd(row.usdHigh)}`,
@@ -322,12 +322,12 @@ function productTable(rows) {
 
 function aggregateFeeTable(rows) {
   return table(
-    ["Horizon", "Fee tier", "PowIDs", "Total sats", "BTC", "Base USD", "Low USD", "High USD"],
+    ["Horizon", "Fee tier", "PowIDs", "Total proofs", "BTC", "Base USD", "Low USD", "High USD"],
     rows.map((row) => [
       row.label,
-      `${fmtFee(row.feeRate)} sat/vB`,
+      `${fmtFee(row.feeRate)} proof/vB`,
       fmtNumber(Math.round(row.powids)),
-      fmtSats(row.totalSats),
+      fmtProofs(row.totalProofs),
       fmtBtc(row.btc),
       humanUsd(row.usdBase),
       humanUsd(row.usdLow),
@@ -415,7 +415,7 @@ function svgShell(title, subtitle, body) {
 ${svgText([title], 80, 82, { size: 56, weight: 850, fill: "#0f172a" })}
 ${svgText([subtitle], 82, 126, { size: 25, weight: 500, fill: "#475569" })}
 ${body}
-${svgText(["ProofOfWork.Me Bitcoin Computer Model | generated from output/bitcoin-computer-agent-adoption-model.md"], 80, 848, { size: 20, fill: "#64748b" })}
+${svgText(["ProofOfWork.Me ProofOfWork Computer Model | generated from output/proofofwork-computer-agent-adoption-model.md"], 80, 848, { size: 20, fill: "#64748b" })}
 </svg>
 `;
 }
@@ -425,7 +425,7 @@ function renderCompoundingVisual() {
     {
       title: "1. Agents appear",
       value: "51% of nodes",
-      body: ["Bitcoin nodes grow.", "Agent nodes inherit PowIDs.", "Every PowID becomes", "addressable."],
+      body: ["ProofOfWork nodes grow.", "Agent nodes inherit PowIDs.", "Every PowID becomes", "addressable."],
       color: "#0f766e",
     },
     {
@@ -437,13 +437,13 @@ function renderCompoundingVisual() {
     {
       title: "3. Usage hits blockspace",
       value: "52.56B vB/year",
-      body: ["Write demand compounds.", "Bitcoin blockspace is finite.", "Usage becomes scarce", "at the ceiling."],
+      body: ["Write demand compounds.", "ProofOfWork blockspace is finite.", "Usage becomes scarce", "at the ceiling."],
       color: "#c2410c",
     },
     {
-      title: "4. Bitcoin reprices it",
+      title: "4. ProofOfWork reprices it",
       value: "log + vol",
-      body: ["Sats/BTC value is translated", "to USD with Bitcoin's 10Y", "log growth and volatility."],
+      body: ["Proofs/BTC value is translated", "to USD with ProofOfWork's 10Y", "log growth and volatility."],
       color: "#7c3aed",
     },
   ];
@@ -461,10 +461,10 @@ ${svgText(card.body, x + 28, 415, { size: 22, weight: 500, fill: "#334155", line
 
   const body = `${cardSvg}
 <rect x="160" y="635" width="1280" height="96" rx="24" fill="#0f172a"/>
-${svgText(["Native value is IDs + Mail + Drive + Marketplace + Browser in sats/BTC."], 800, 680, { size: 32, weight: 800, fill: "#ffffff", anchor: "middle" })}
-${svgText(["USD value is a translation layer after Bitcoin's historical growth and volatility are applied."], 800, 720, { size: 24, fill: "#cbd5e1", anchor: "middle" })}`;
+${svgText(["Native value is IDs + Mail + Drive + Marketplace + Browser in proofs/BTC."], 800, 680, { size: 32, weight: 800, fill: "#ffffff", anchor: "middle" })}
+${svgText(["USD value is a translation layer after ProofOfWork's historical growth and volatility are applied."], 800, 720, { size: 24, fill: "#cbd5e1", anchor: "middle" })}`;
 
-  return svgShell("What is compounding?", "More agents, more IDs, lower fees, finite blockspace, then Bitcoin reprices the result.", body);
+  return svgShell("What is compounding?", "More agents, more IDs, lower fees, finite blockspace, then ProofOfWork reprices the result.", body);
 }
 
 function renderDollarGrowthVisual(rows) {
@@ -489,7 +489,7 @@ ${svgText([`${humanUsdShort(row.usdLow)} - ${humanUsdShort(row.usdHigh)}`], x + 
     .join("\n");
 
   const footer = `<rect x="170" y="735" width="1260" height="74" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-${svgText(["This is why exponents matter: the same model moves from millions to billions to trillions", "as agents, usage, fees, and Bitcoin compound together."], 800, 766, { size: 22, weight: 700, fill: "#0f172a", anchor: "middle", lineHeight: 28 })}`;
+${svgText(["This is why exponents matter: the same model moves from millions to billions to trillions", "as agents, usage, fees, and ProofOfWork compound together."], 800, 766, { size: 22, weight: 700, fill: "#0f172a", anchor: "middle", lineHeight: 28 })}`;
 
   return svgShell("Dollar growth, in human words", "Canonical deep-fee path. Big labels show base USD. Smaller line shows volatility range.", `${body}${footer}`);
 }
@@ -508,17 +508,17 @@ function renderProductSplitVisual(rows) {
       const x = 220;
       const y = 260 + index * 150;
       const width = 1080;
-      const idW = (row.idSats / row.totalSats) * width;
-      const mailW = (row.mailSats / row.totalSats) * width;
-      const driveW = (row.driveSats / row.totalSats) * width;
-      const marketplaceW = (row.marketplaceSats / row.totalSats) * width;
+      const idW = (row.idProofs / row.totalProofs) * width;
+      const mailW = (row.mailProofs / row.totalProofs) * width;
+      const driveW = (row.driveProofs / row.totalProofs) * width;
+      const marketplaceW = (row.marketplaceProofs / row.totalProofs) * width;
       const browserW = Math.max(0, width - idW - mailW - driveW - marketplaceW);
       const btcUsd = row.btcUsdBase;
-      const idUsd = (row.idSats / 100_000_000) * btcUsd;
-      const mailUsd = (row.mailSats / 100_000_000) * btcUsd;
-      const driveUsd = (row.driveSats / 100_000_000) * btcUsd;
-      const marketplaceUsd = (row.marketplaceSats / 100_000_000) * btcUsd;
-      const browserUsd = (row.browserSats / 100_000_000) * btcUsd;
+      const idUsd = (row.idProofs / 100_000_000) * btcUsd;
+      const mailUsd = (row.mailProofs / 100_000_000) * btcUsd;
+      const driveUsd = (row.driveProofs / 100_000_000) * btcUsd;
+      const marketplaceUsd = (row.marketplaceProofs / 100_000_000) * btcUsd;
+      const browserUsd = (row.browserProofs / 100_000_000) * btcUsd;
       return `${svgText([row.label], 190, y + 50, { size: 28, weight: 850, fill: "#0f172a", anchor: "end" })}
 <rect x="${x}" y="${y}" width="${idW}" height="64" rx="12" fill="${productColors.id}"/>
 <rect x="${x + idW}" y="${y}" width="${mailW}" height="64" fill="${productColors.mail}"/>
@@ -567,15 +567,15 @@ ${svgText([`Current theoretical ceiling: ${humanVbytes(blockspaceVbytesPerYear)}
   const footer = `<rect x="170" y="735" width="1260" height="74" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
 ${svgText(["Once raw write demand crosses the ceiling, Mail, Drive, Marketplace, and Browser are throttled by executable blockspace.", "Scarce blockspace becomes part of the model instead of infinite throughput."], 800, 766, { size: 22, weight: 700, fill: "#0f172a", anchor: "middle", lineHeight: 28 })}`;
 
-  return svgShell("Blockspace is the ceiling", "Usage demand compounds until it hits today's theoretical Bitcoin blockspace limit.", `${header}${cards}${footer}`);
+  return svgShell("Blockspace is the ceiling", "Usage demand compounds until it hits today's theoretical ProofOfWork blockspace limit.", `${header}${cards}${footer}`);
 }
 
 function renderVolatilityVisual(rows) {
   const row = rows[4];
   const items = [
-    { label: "Low volatility path", value: row.usdLow, color: "#0f766e", text: "Bitcoin still grows, but below the base path." },
-    { label: "Base log-growth path", value: row.usdBase, color: "#2563eb", text: "Backward-facing 10Y Bitcoin log growth." },
-    { label: "High volatility path", value: row.usdHigh, color: "#7c3aed", text: "Same sats value, stronger USD repricing." },
+    { label: "Low volatility path", value: row.usdLow, color: "#0f766e", text: "ProofOfWork still grows, but below the base path." },
+    { label: "Base log-growth path", value: row.usdBase, color: "#2563eb", text: "Backward-facing 10Y ProofOfWork log growth." },
+    { label: "High volatility path", value: row.usdHigh, color: "#7c3aed", text: "Same proofs value, stronger USD repricing." },
   ];
   const cards = items
     .map((item, index) => {
@@ -589,19 +589,19 @@ ${svgText([item.text], x + 215, 520, { size: 22, fill: "#475569", anchor: "middl
     })
     .join("\n");
 
-  const footer = `${svgText([`10-year canonical model: the Bitcoin Computer is ${fmtBtc(row.btc)} BTC in every path.`], 800, 685, { size: 30, weight: 850, fill: "#0f172a", anchor: "middle" })}
-${svgText(["Only the USD translation changes with Bitcoin volatility."], 800, 728, { size: 24, weight: 650, fill: "#475569", anchor: "middle" })}`;
+  const footer = `${svgText([`10-year canonical model: the ProofOfWork Computer is ${fmtBtc(row.btc)} BTC in every path.`], 800, 685, { size: 30, weight: 850, fill: "#0f172a", anchor: "middle" })}
+${svgText(["Only the USD translation changes with ProofOfWork volatility."], 800, 728, { size: 24, weight: 650, fill: "#475569", anchor: "middle" })}`;
 
-  return svgShell("Volatility does not change the Bitcoin Computer", "It changes what the same BTC-denominated value looks like in dollars.", `${cards}${footer}`);
+  return svgShell("Volatility does not change the ProofOfWork Computer", "It changes what the same BTC-denominated value looks like in dollars.", `${cards}${footer}`);
 }
 
 function writeVisuals(rows) {
   const visuals = [
-    ["output/bitcoin-computer-model-compounding.svg", renderCompoundingVisual()],
-    ["output/bitcoin-computer-model-dollar-growth.svg", renderDollarGrowthVisual(rows)],
-    ["output/bitcoin-computer-model-product-split.svg", renderProductSplitVisual(rows)],
-    ["output/bitcoin-computer-model-blockspace.svg", renderBlockspaceVisual(rows)],
-    ["output/bitcoin-computer-model-volatility.svg", renderVolatilityVisual(rows)],
+    ["output/proofofwork-computer-model-compounding.svg", renderCompoundingVisual()],
+    ["output/proofofwork-computer-model-dollar-growth.svg", renderDollarGrowthVisual(rows)],
+    ["output/proofofwork-computer-model-product-split.svg", renderProductSplitVisual(rows)],
+    ["output/proofofwork-computer-model-blockspace.svg", renderBlockspaceVisual(rows)],
+    ["output/proofofwork-computer-model-volatility.svg", renderVolatilityVisual(rows)],
   ];
 
   for (const [path, svg] of visuals) {
@@ -616,31 +616,49 @@ const aggregateRows = inputs.scenario.horizons.flatMap((horizon) =>
 const growthRows = inputs.scenario.horizons.map((horizon) => modelRow(horizon, inputs.scenario.canonicalFee));
 writeVisuals(canonicalRows);
 
-const markdown = `# ProofOfWork.Me Bitcoin Computer Model
+const markdown = `# ProofOfWork.Me ProofOfWork Computer Model
 
-Generated on ${inputs.generatedOn}.
+Generated on ${inputs.generatedOn}. Operational note updated on 2026-06-13.
 
-This is the singular forward model for ProofOfWork.Me.
+This is the singular forward scenario model for ProofOfWork.Me. Current live
+BTC/USD, WORK floor, credit flow, and real network-value totals are read from the
+production ProofOfWork node/API and displayed in \`growth.proofofwork.me\` and
+\`work.proofofwork.me\`; do not treat the generated static USD snapshots below as
+live market data.
+
+Current production surfaces use fast cached first paint plus explicit fresh
+refresh against the first-party node/API. A refresh that touches Marketplace,
+WORK, credit summaries, or credit history must update the shared credit payload so
+spent sale tickets, confirmed credit sales, and WORK floor inputs converge across
+all app surfaces.
+
+June 13, 2026 marketplace accounting note: live Growth and WORK floor accounting
+now treats marketplace flow as seller sale volume plus marketplace mutation fees
+from listing, seal, delisting, and buy events. Seller sale volume remains a
+separate metric, and marketplace mutation fees stay out of generic Computer event
+flow to avoid double counting.
 
 All prior standalone charts, product-only markdown models, and old projection files are deprecated. This model measures:
 
 1. ProofOfWork IDs
 2. ProofOfWork Mail
-3. ProofOfWork Files / Bitcoin Drive
+3. ProofOfWork Files / ProofOfWork Drive
 4. ProofOfWork Marketplace
 5. ProofOfWork Browser
-6. The aggregate Bitcoin Computer
+6. ProofOfWork Credits, Wallet, and WORK
+7. ProofOfWork Log and Growth
+8. The aggregate ProofOfWork Computer
 
 The model is success-case by design:
 
 \`\`\`text
 agent adoption succeeds
-Bitcoin node count grows exponentially
-BTC/USD follows Bitcoin's backward-facing log-growth benchmark
+Base-layer node count grows exponentially
+BTC/USD follows the backward-facing BTC log-growth benchmark
 BTC/USD includes a one-standard-deviation volatility cone
 lower relay fees unlock exponentially more agent usage
-Bitcoin Computer write demand grows exponentially until today's blockspace ceiling
-IDs, Mail, Drive, Marketplace, and Browser reinforce each other
+ProofOfWork Computer write demand grows exponentially until today's blockspace ceiling
+IDs, Mail, Drive, Marketplace, Browser, Credits, Wallet, WORK, Log, and Growth reinforce each other
 \`\`\`
 
 ## Visual Read
@@ -649,35 +667,35 @@ These visuals are generated from this same canonical model.
 
 They are written for normal human pattern recognition: big labels, plain words, and no scientific notation.
 
-![What is compounding](bitcoin-computer-model-compounding.png)
+![What is compounding](proofofwork-computer-model-compounding.png)
 
-![Dollar growth in human words](bitcoin-computer-model-dollar-growth.png)
+![Dollar growth in human words](proofofwork-computer-model-dollar-growth.png)
 
-![IDs Mail Drive Marketplace Browser product split](bitcoin-computer-model-product-split.png)
+![IDs Mail Drive Marketplace Browser product split](proofofwork-computer-model-product-split.png)
 
-![Blockspace ceiling](bitcoin-computer-model-blockspace.png)
+![Blockspace ceiling](proofofwork-computer-model-blockspace.png)
 
-![Bitcoin volatility translation](bitcoin-computer-model-volatility.png)
+![ProofOfWork volatility translation](proofofwork-computer-model-volatility.png)
 
 SVG versions:
 
-- [What is compounding](bitcoin-computer-model-compounding.svg)
-- [Dollar growth in human words](bitcoin-computer-model-dollar-growth.svg)
-- [IDs Mail Drive Marketplace Browser product split](bitcoin-computer-model-product-split.svg)
-- [Blockspace ceiling](bitcoin-computer-model-blockspace.svg)
-- [Bitcoin volatility translation](bitcoin-computer-model-volatility.svg)
+- [What is compounding](proofofwork-computer-model-compounding.svg)
+- [Dollar growth in human words](proofofwork-computer-model-dollar-growth.svg)
+- [IDs Mail Drive Marketplace Browser product split](proofofwork-computer-model-product-split.svg)
+- [Blockspace ceiling](proofofwork-computer-model-blockspace.svg)
+- [ProofOfWork volatility translation](proofofwork-computer-model-volatility.svg)
 
 ## Real Inputs
 
-### Bitcoin Network Input
+### ProofOfWork Network Input
 
 \`\`\`text
-Reachable Bitcoin nodes: ${fmtNumber(inputs.bitnodes.reachableNodes)}
+Reachable base-layer nodes: ${fmtNumber(inputs.bitnodes.reachableNodes)}
 Snapshot time: ${inputs.bitnodes.snapshotTimeUtc}
 Source: ${inputs.bitnodes.source}
 \`\`\`
 
-Bitnodes describes its method as estimating the Bitcoin peer-to-peer network by finding reachable nodes.
+Bitnodes describes its method as estimating the base-layer peer-to-peer network by finding reachable nodes.
 
 Sources:
 
@@ -687,6 +705,10 @@ https://bitnodes.io/api/
 \`\`\`
 
 ### BTC/USD Input
+
+This section records the original generated benchmark. The live app no longer
+uses this static value for current USD displays. Production USD values come from
+\`/api/v1/prices/btc-usd\`, backed by the first-party node price endpoint.
 
 \`\`\`text
 Current BTC/USD used: ${fmtUsdPrecise(inputs.btc.currentUsd)}
@@ -698,20 +720,23 @@ Current BTC/USD date: ${inputs.btc.currentDate}
 Sources:
 
 \`\`\`text
-https://coinmarketcap.com/currencies/bitcoin/
+https://coinmarketcap.com/currencies/proofofwork/
 https://coinmarketcap.com/historical/20160511/
 https://portfolioslab.com/tools/stock-comparison/BTC-USD/SPY
 \`\`\`
 
-### ProofOfWork.Me On-Chain Inputs
+### Generated ProofOfWork.Me On-Chain Seed Inputs
 
-These are from confirmed ProofOfWork.Me registry/mail/file data already modeled in this repo.
+These are historical generated seed inputs from confirmed ProofOfWork.Me
+registry/mail/file data already modeled in this repo. They are preserved so the
+static forward scenario remains reproducible. They are not the current live
+Growth or WORK values.
 
 \`\`\`text
 Confirmed PowIDs: ${fmtNumber(inputs.pow.confirmedPowids)}
 Current n^2: ${fmtNumber(inputs.pow.confirmedPowids ** 2)}
-Unique receive-address balance: ${fmtSats(inputs.pow.uniqueReceiveAddressBalanceSats)} sats
-ID value density: ${inputs.pow.idDensitySatsPerN2} sats per n^2 unit
+Unique receive-address balance: ${fmtProofs(inputs.pow.uniqueReceiveAddressBalanceProofs)} proofs
+ID value density: ${inputs.pow.idDensityProofsPerN2} proofs per n^2 unit
 \`\`\`
 
 Mail:
@@ -719,42 +744,51 @@ Mail:
 \`\`\`text
 Confirmed protocol txids: ${inputs.pow.mailTxids}
 Confirmed delivery edges: ${inputs.pow.mailDeliveryEdges}
-Paid attention flow: ${fmtSats(inputs.pow.mailPaidAttentionFlowSats)} sats
-Average sats per delivery: ${inputs.pow.mailSatsPerDelivery.toFixed(2)} sats
+Paid attention flow: ${fmtProofs(inputs.pow.mailPaidAttentionFlowProofs)} proofs
+Average proofs per delivery: ${inputs.pow.mailProofsPerDelivery.toFixed(2)} proofs
 Current address-level mail edge density: ${(inputs.pow.mailEdgeDensity * 100).toFixed(4)}%
 \`\`\`
 
-Files / Bitcoin Drive:
+Files / ProofOfWork Drive:
 
 \`\`\`text
 Confirmed file txids: ${inputs.pow.fileTxids}
 Unique file hashes: ${inputs.pow.uniqueFileHashes}
 Total file bytes: ${fmtNumber(inputs.pow.totalFileBytes)}
-File-bearing payment flow: ${fmtSats(inputs.pow.fileFlowSats)} sats
-Canonical forward sats per file: ${fmtSats(inputs.pow.satsPerFileBase)} sats
+File-bearing payment flow: ${fmtProofs(inputs.pow.fileFlowProofs)} proofs
+Canonical forward proofs per file: ${fmtProofs(inputs.pow.proofsPerFileBase)} proofs
 \`\`\`
 
 Marketplace:
 
 \`\`\`text
 Confirmed marketplace sales: ${inputs.pow.marketplaceSales}
-Confirmed marketplace volume: ${fmtSats(inputs.pow.marketplaceVolumeSats)} sats
-Average sats per sale: ${fmtSats(inputs.pow.marketplaceAverageSaleSats)} sats
+Confirmed marketplace volume: ${fmtProofs(inputs.pow.marketplaceVolumeProofs)} proofs
+Average proofs per sale: ${fmtProofs(inputs.pow.marketplaceAverageSaleProofs)} proofs
 Canonical forward sales per ID per year: ${inputs.scenario.marketplaceSalesPerIdPerYear}
+\`\`\`
+
+The generated static model above used seller sale volume only. Live Growth and
+WORK floor values use confirmed marketplace flow:
+
+\`\`\`text
+marketplace_flow_proofs =
+  seller_sale_volume_proofs
+  + marketplace_mutation_fee_proofs
 \`\`\`
 
 Browser:
 
 \`\`\`text
 Confirmed browser page txids: ${inputs.pow.browserPageTxids}
-Confirmed browser page flow: ${fmtSats(inputs.pow.browserPageFlowSats)} sats
-Average sats per browser page: ${fmtSats(inputs.pow.browserAveragePageSats)} sats
+Confirmed browser page flow: ${fmtProofs(inputs.pow.browserPageFlowProofs)} proofs
+Average proofs per browser page: ${fmtProofs(inputs.pow.browserAveragePageProofs)} proofs
 Canonical forward browser pages per ID per year: ${inputs.scenario.browserPagesPerIdPerYear}
 \`\`\`
 
-## Bitcoin Growth Benchmark
+## ProofOfWork Growth Benchmark
 
-Backward-facing Bitcoin log growth:
+Backward-facing BTC log growth:
 
 \`\`\`text
 btc_log_growth_mu = ln(current_btc_usd / historical_btc_usd) / 10
@@ -762,7 +796,7 @@ btc_log_growth_mu = ${fmtPct(btcLogGrowth)}
 equivalent_cagr = e^mu - 1 = ${fmtPct(btcEquivalentCagr)}
 \`\`\`
 
-Bitcoin volatility input:
+ProofOfWork volatility input:
 
 \`\`\`text
 btc_10y_annualized_volatility_sigma = ${fmtPct(inputs.btc.tenYearVolatility)}
@@ -776,13 +810,13 @@ low_btc_usd(t)  = current_btc_usd * e^(mu * t - sigma * sqrt(t))
 high_btc_usd(t) = current_btc_usd * e^(mu * t + sigma * sqrt(t))
 \`\`\`
 
-The volatility band changes only the USD translation. It does not change the sats or BTC valuation of the Bitcoin Computer.
+The volatility band changes only the USD translation. It does not change the proofs or BTC valuation of the ProofOfWork Computer.
 
-## Bitcoin Blockspace Ceiling
+## ProofOfWork Blockspace Ceiling
 
 This version adds the blockspace constraint.
 
-The success case assumes Bitcoin Computer usage compounds exponentially as agents, PowIDs, fee collapse, Mail, Drive, Marketplace, and Browser reinforce each other. That usage cannot grow through infinite blockspace. It compounds until it hits the current theoretical Bitcoin blockspace ceiling.
+The success case assumes ProofOfWork Computer usage compounds exponentially as agents, PowIDs, fee collapse, Mail, Drive, Marketplace, and Browser reinforce each other. That usage cannot grow through infinite blockspace. It compounds until it hits the current theoretical ProofOfWork blockspace ceiling.
 
 Protocol-derived ceiling:
 
@@ -797,8 +831,8 @@ Annual theoretical ceiling: ${fmtNumber(blockspaceVbytesPerYear)} vB
 Sources:
 
 \`\`\`text
-https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki
-https://github.com/bitcoin/bitcoin/blob/master/src/consensus/consensus.h
+https://github.com/proofofwork/bips/blob/master/bip-0141.mediawiki
+https://github.com/proofofwork/proofofwork/blob/master/src/consensus/consensus.h
 \`\`\`
 
 Blockspace accounting assumptions:
@@ -818,15 +852,15 @@ Important boundary:
 The blockspace ceiling is protocol-derived.
 The per-product write sizes are model accounting assumptions.
 The model does not claim every block will be filled by ProofOfWork.Me.
-It asks what the Bitcoin Computer can execute if demand compounds until today's ceiling is binding.
+It asks what the ProofOfWork Computer can execute if demand compounds until today's ceiling is binding.
 \`\`\`
 
 ## Scenario Inputs
 
 \`\`\`text
-Agent-controlled Bitcoin node share: ${fmtPct(inputs.scenario.agentShare, 0)}
-Bitcoin node CAGR: ${fmtPct(inputs.scenario.nodeCagr, 0)}
-Canonical fee tier: ${fmtFee(inputs.scenario.canonicalFee)} sat/vB
+Agent-controlled base-layer node share: ${fmtPct(inputs.scenario.agentShare, 0)}
+Base-layer node CAGR: ${fmtPct(inputs.scenario.nodeCagr, 0)}
+Canonical fee tier: ${fmtFee(inputs.scenario.canonicalFee)} proof/vB
 \`\`\`
 
 Adoption curve:
@@ -844,10 +878,10 @@ Adoption curve:
 Fee tiers:
 
 \`\`\`text
-0.01 sat/vB
-0.001 sat/vB
-0.0001 sat/vB
-0.00001 sat/vB
+0.01 proof/vB
+0.001 proof/vB
+0.0001 proof/vB
+0.00001 proof/vB
 \`\`\`
 
 Fee-collapse multipliers:
@@ -869,7 +903,7 @@ ${growthEngineTable(growthRows)}
 
 ## Blockspace Constraint
 
-This is the canonical lowest-fee success path at ${fmtFee(inputs.scenario.canonicalFee)} sat/vB.
+This is the canonical lowest-fee success path at ${fmtFee(inputs.scenario.canonicalFee)} proof/vB.
 
 \`\`\`text
 raw_blockspace_demand_vbytes =
@@ -893,9 +927,9 @@ ${blockspaceConstraintTable(canonicalRows)}
 ### IDs
 
 \`\`\`text
-id_value_sats =
+id_value_proofs =
   projected_powids^2
-  * current_id_sats_per_n2_unit
+  * current_id_proofs_per_n2_unit
   * id_fee_multiplier
 \`\`\`
 
@@ -904,24 +938,24 @@ ID is modeled as network stock value. It is not reduced by the annual blockspace
 ### Mail
 
 \`\`\`text
-mail_value_sats =
+mail_value_proofs =
   projected_powids
   * (projected_powids - 1)
   * current_mail_edge_density
   * messages_per_pair_per_year
-  * sats_per_delivery
+  * proofs_per_delivery
   * value_multiple
   * mail_fee_multiplier
   * blockspace_usage_fulfillment_ratio
 \`\`\`
 
-### Files / Bitcoin Drive
+### Files / ProofOfWork Drive
 
 \`\`\`text
-drive_value_sats =
+drive_value_proofs =
   projected_powids
   * files_per_id_per_year
-  * sats_per_file
+  * proofs_per_file
   * value_multiple
   * drive_fee_multiplier
   * blockspace_usage_fulfillment_ratio
@@ -930,43 +964,95 @@ drive_value_sats =
 ### Marketplace
 
 \`\`\`text
-marketplace_value_sats =
+marketplace_value_proofs =
   projected_powids
   * marketplace_sales_per_id_per_year
-  * average_sale_sats
+  * average_sale_proofs
   * value_multiple
   * marketplace_fee_multiplier
   * blockspace_usage_fulfillment_ratio
 \`\`\`
 
+Live Growth and WORK floor accounting additionally includes confirmed
+marketplace mutation-fee flow from listings, seals, delistings, and buys:
+
+\`\`\`text
+live_marketplace_value_proofs =
+  (marketplace_sale_volume_proofs + marketplace_mutation_fee_proofs)
+  * value_multiple
+\`\`\`
+
 ### Browser
 
 \`\`\`text
-browser_value_sats =
+browser_value_proofs =
   projected_powids
   * browser_pages_per_id_per_year
-  * average_browser_page_sats
+  * average_browser_page_proofs
   * value_multiple
   * browser_fee_multiplier
   * blockspace_usage_fulfillment_ratio
 \`\`\`
 
-### Bitcoin Computer
+### ProofOfWork Computer
 
 \`\`\`text
-bitcoin_computer_value_sats =
-  id_value_sats
-  + mail_value_sats
-  + drive_value_sats
-  + marketplace_value_sats
-  + browser_value_sats
+proofofwork_computer_value_proofs =
+  id_value_proofs
+  + mail_value_proofs
+  + drive_value_proofs
+  + marketplace_value_proofs
+  + browser_value_proofs
 \`\`\`
 
-The BTC column is a sats-denominated valuation converted into BTC as a unit of account. It is not a claim that those sats are locked in the protocol.
+The BTC column is a proofs-denominated valuation converted into BTC as a unit of account. It is not a claim that those proofs are locked in the protocol.
+
+### WORK Floor
+
+WORK has a permanent floor tied to this confirmed ProofOfWork Computer network value:
+
+\`\`\`text
+work_floor_proofs =
+  confirmed_proofofwork_computer_value_proofs / 21,000,000 WORK
+\`\`\`
+
+For price-per-credit displays, use \`confirmed_proofofwork_computer_value_proofs / 21,000,000\`. The inverse, \`21,000,000 / confirmed_proofofwork_computer_value_proofs\`, is the WORK-per-proof ratio. Pending mempool records are useful visibility but do not change the canonical floor until confirmed.
+
+Historical WORK floor announcement:
+
+\`\`\`text
+txid: cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c
+subject: $work now has a permanent ProofOfWork Computer floor.
+message:
+Formula:
+confirmed network value / 21,000,000 WORK
+
+Current live floor:
+74,499,503 proofs / 21,000,000 = 3.5476 proofs per WORK
+~$0.00277 per WORK at current BTC/USD
+
+Pending mints are visible, but only confirmed ProofOfWork history moves the canonical floor.
+
+As ProofOfWork.Me grows, the network value grows.
+As network value grows, the $work floor rises.
+\`\`\`
+
+The tx status is intentionally not hardcoded here. The chain/API is the oracle for whether the announcement is pending or confirmed at read time.
+
+Live operational rule:
+
+\`\`\`text
+work.proofofwork.me and growth.proofofwork.me must share the same
+/api/v1/work-floor payload and /api/v1/prices/btc-usd quote.
+\`\`\`
+
+The static formula remains canonical, but current floor price, network USD, and
+credit-reference/arbitrage displays must be read live from the node/API cache path
+and refreshed in the background when expensive credit/log scans are required.
 
 ## Canonical Product Growth
 
-This is the canonical lowest-fee success path at ${fmtFee(inputs.scenario.canonicalFee)} sat/vB.
+This is the canonical lowest-fee success path at ${fmtFee(inputs.scenario.canonicalFee)} proof/vB.
 
 ${productTable(canonicalRows)}
 
@@ -984,19 +1070,19 @@ At the canonical deep-fee success path:
 
 \`\`\`text
 6 months:
-${fmtSats(canonicalRows[0].totalSats)} sats
+${fmtProofs(canonicalRows[0].totalProofs)} proofs
 ${fmtBtc(canonicalRows[0].btc)} BTC
 ${humanUsd(canonicalRows[0].usdBase)} base USD
 ${humanUsd(canonicalRows[0].usdLow)} to ${humanUsd(canonicalRows[0].usdHigh)} volatility range
 
 10 years:
-${fmtSats(canonicalRows[4].totalSats)} sats
+${fmtProofs(canonicalRows[4].totalProofs)} proofs
 ${fmtBtc(canonicalRows[4].btc)} BTC
 ${humanUsd(canonicalRows[4].usdBase)} base USD
 ${humanUsd(canonicalRows[4].usdLow)} to ${humanUsd(canonicalRows[4].usdHigh)} volatility range
 
 50 years:
-${fmtSats(canonicalRows[6].totalSats)} sats
+${fmtProofs(canonicalRows[6].totalProofs)} proofs
 ${fmtBtc(canonicalRows[6].btc)} BTC
 ${humanUsd(canonicalRows[6].usdBase)} base USD
 ${humanUsd(canonicalRows[6].usdLow)} to ${humanUsd(canonicalRows[6].usdHigh)} volatility range
@@ -1004,7 +1090,8 @@ ${humanUsd(canonicalRows[6].usdLow)} to ${humanUsd(canonicalRows[6].usdHigh)} vo
 
 ## Canonical Status
 
-This markdown is the singular ProofOfWork.Me Bitcoin Computer model going forward.
+This markdown is the singular ProofOfWork.Me ProofOfWork Computer forward model.
+The live dashboards are the operational source for current confirmed values.
 
 Deprecated:
 
@@ -1019,9 +1106,9 @@ old modeling-data exports
 
 The source of truth for ProofOfWork.Me is the chain.
 
-The Bitcoin node count is network-observed.
+The base-layer node count is network-observed.
 
-The Bitcoin price benchmark is backward-facing historical log growth with volatility.
+The BTC price benchmark is backward-facing historical log growth with volatility.
 
 The node growth, agent share, agent adoption curve, fee tiers, fee elasticities, and per-product blockspace usage assumptions are success-case scenario assumptions.
 `;
@@ -1053,33 +1140,33 @@ writeFileSync(
         productAssumptions: {
           id: {
             elasticity: inputs.scenario.elasticities.id,
-            idDensitySatsPerN2: inputs.pow.idDensitySatsPerN2,
+            idDensityProofsPerN2: inputs.pow.idDensityProofsPerN2,
             vbytesPerWrite: inputs.blockspace.idVbytesPerWrite,
           },
           mail: {
             elasticity: inputs.scenario.elasticities.mail,
             edgeDensity: inputs.pow.mailEdgeDensity,
             messagesPerPairPerYear: inputs.scenario.mailMessagesPerPairPerYear,
-            satsPerDelivery: inputs.pow.mailSatsPerDelivery,
+            proofsPerDelivery: inputs.pow.mailProofsPerDelivery,
             valueMultiple: inputs.scenario.mailValueMultiple,
             vbytesPerWrite: inputs.blockspace.mailVbytesPerWrite,
           },
           drive: {
             elasticity: inputs.scenario.elasticities.drive,
             filesPerIdPerYear: inputs.scenario.driveFilesPerIdPerYear,
-            satsPerFile: inputs.pow.satsPerFileBase,
+            proofsPerFile: inputs.pow.proofsPerFileBase,
             valueMultiple: inputs.scenario.driveValueMultiple,
             vbytesPerWrite: driveVbytesPerWrite,
           },
           marketplace: {
-            averageSaleSats: inputs.pow.marketplaceAverageSaleSats,
+            averageSaleProofs: inputs.pow.marketplaceAverageSaleProofs,
             elasticity: inputs.scenario.elasticities.marketplace,
             salesPerIdPerYear: inputs.scenario.marketplaceSalesPerIdPerYear,
             valueMultiple: inputs.scenario.marketplaceValueMultiple,
             vbytesPerSale: inputs.blockspace.marketplaceVbytesPerSale,
           },
           browser: {
-            averagePageSats: inputs.pow.browserAveragePageSats,
+            averagePageProofs: inputs.pow.browserAveragePageProofs,
             elasticity: inputs.scenario.elasticities.browser,
             pagesPerIdPerYear: inputs.scenario.browserPagesPerIdPerYear,
             valueMultiple: inputs.scenario.browserValueMultiple,
@@ -1088,44 +1175,44 @@ writeFileSync(
         },
       },
       realBaseline: {
-        idSats: Math.round(inputs.pow.uniqueReceiveAddressBalanceSats),
-        mailSats: Math.round(inputs.pow.mailPaidAttentionFlowSats * inputs.scenario.mailValueMultiple),
-        driveSats: Math.round(inputs.pow.fileFlowSats * inputs.scenario.driveValueMultiple),
-        marketplaceSats: Math.round(inputs.pow.marketplaceVolumeSats * inputs.scenario.marketplaceValueMultiple),
-        browserSats: Math.round(inputs.pow.browserPageFlowSats * inputs.scenario.browserValueMultiple),
-        totalSats: Math.round(
-          inputs.pow.uniqueReceiveAddressBalanceSats +
-            inputs.pow.mailPaidAttentionFlowSats * inputs.scenario.mailValueMultiple +
-            inputs.pow.fileFlowSats * inputs.scenario.driveValueMultiple +
-            inputs.pow.marketplaceVolumeSats * inputs.scenario.marketplaceValueMultiple +
-            inputs.pow.browserPageFlowSats * inputs.scenario.browserValueMultiple,
+        idProofs: Math.round(inputs.pow.uniqueReceiveAddressBalanceProofs),
+        mailProofs: Math.round(inputs.pow.mailPaidAttentionFlowProofs * inputs.scenario.mailValueMultiple),
+        driveProofs: Math.round(inputs.pow.fileFlowProofs * inputs.scenario.driveValueMultiple),
+        marketplaceProofs: Math.round(inputs.pow.marketplaceVolumeProofs * inputs.scenario.marketplaceValueMultiple),
+        browserProofs: Math.round(inputs.pow.browserPageFlowProofs * inputs.scenario.browserValueMultiple),
+        totalProofs: Math.round(
+          inputs.pow.uniqueReceiveAddressBalanceProofs +
+            inputs.pow.mailPaidAttentionFlowProofs * inputs.scenario.mailValueMultiple +
+            inputs.pow.fileFlowProofs * inputs.scenario.driveValueMultiple +
+            inputs.pow.marketplaceVolumeProofs * inputs.scenario.marketplaceValueMultiple +
+            inputs.pow.browserPageFlowProofs * inputs.scenario.browserValueMultiple,
         ),
         usdBase:
-          ((inputs.pow.uniqueReceiveAddressBalanceSats +
-            inputs.pow.mailPaidAttentionFlowSats * inputs.scenario.mailValueMultiple +
-            inputs.pow.fileFlowSats * inputs.scenario.driveValueMultiple +
-            inputs.pow.marketplaceVolumeSats * inputs.scenario.marketplaceValueMultiple +
-            inputs.pow.browserPageFlowSats * inputs.scenario.browserValueMultiple) /
+          ((inputs.pow.uniqueReceiveAddressBalanceProofs +
+            inputs.pow.mailPaidAttentionFlowProofs * inputs.scenario.mailValueMultiple +
+            inputs.pow.fileFlowProofs * inputs.scenario.driveValueMultiple +
+            inputs.pow.marketplaceVolumeProofs * inputs.scenario.marketplaceValueMultiple +
+            inputs.pow.browserPageFlowProofs * inputs.scenario.browserValueMultiple) /
             100_000_000) *
           inputs.btc.currentUsd,
       },
       canonicalRows: canonicalRows.map((row) => ({
         adoption: row.adoption,
         blockspaceUsageRatio: row.blockspaceUsageRatio,
-        browserSats: Math.round(row.browserSats),
+        browserProofs: Math.round(row.browserProofs),
         browserWrites: row.browserWrites,
         btcUsdBase: row.btcUsdBase,
-        driveSats: Math.round(row.driveSats),
+        driveProofs: Math.round(row.driveProofs),
         driveWrites: row.driveWrites,
-        idSats: Math.round(row.idSats),
+        idProofs: Math.round(row.idProofs),
         idWrites: row.idWrites,
         label: row.label,
-        mailSats: Math.round(row.mailSats),
+        mailProofs: Math.round(row.mailProofs),
         mailWrites: row.mailWrites,
-        marketplaceSats: Math.round(row.marketplaceSats),
+        marketplaceProofs: Math.round(row.marketplaceProofs),
         marketplaceWrites: row.marketplaceWrites,
         powids: row.powids,
-        totalSats: Math.round(row.totalSats),
+        totalProofs: Math.round(row.totalProofs),
         usdBase: row.usdBase,
         totalWrites: row.idWrites + (row.mailWrites + row.driveWrites + row.marketplaceWrites + row.browserWrites) * row.blockspaceUsageRatio,
         years: row.years,
