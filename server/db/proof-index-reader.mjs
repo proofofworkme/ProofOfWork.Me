@@ -571,7 +571,7 @@ function registryHistoryPayloadsFromSnapshot(snapshot) {
 function proofIndexTokenHistoryMaxAgeMs(env = process.env) {
   return boundedInteger(
     env.POW_INDEX_TOKEN_HISTORY_MAX_AGE_MS,
-    15 * 60_000,
+    24 * 60 * 60_000,
     0,
     24 * 60 * 60_000,
   );
@@ -1631,23 +1631,41 @@ function mailMemoFromEvent(row, payload) {
   return "";
 }
 
-function mailParticipantsFromRow(row, payload) {
+function mailParticipantRecordsFromRow(row, payload) {
   const participantRows = Array.isArray(row.participants)
     ? row.participants
     : [];
-  const addresses = [
-    ...stringList(payload.participants),
-    ...participantRows.map((participant) => participant?.address),
-    payload.actor,
-    payload.counterparty,
+  const records = [
+    ...participantRows.map((participant) => ({
+      address: participant?.address,
+      role: participant?.role,
+    })),
+    ...stringList(payload.participants).map((address) => ({
+      address,
+      role: "participant",
+    })),
+    { address: payload.actor, role: "sender" },
+    { address: payload.counterparty, role: "recipient" },
   ];
   const unique = new Map();
-  for (const address of addresses) {
-    const value = normalizedAddress(address);
+  for (const record of records) {
+    const value = normalizedAddress(record.address);
     if (!value || /\s\+\d+$/u.test(value)) {
       continue;
     }
-    unique.set(normalizedAddressKey(value), value);
+    const role = String(record.role ?? "participant").trim().toLowerCase();
+    unique.set(`${normalizedAddressKey(value)}:${role}`, {
+      address: value,
+      role,
+    });
+  }
+  return [...unique.values()];
+}
+
+function mailParticipantsFromRow(row, payload) {
+  const unique = new Map();
+  for (const participant of mailParticipantRecordsFromRow(row, payload)) {
+    unique.set(normalizedAddressKey(participant.address), participant.address);
   }
   return [...unique.values()];
 }
@@ -1674,16 +1692,35 @@ function recipientSummary(recipients) {
     : `${first.display} +${recipients.length - 1}`;
 }
 
-function addressMailRowPayload(row, address, network) {
+function addressMailRowPayloads(row, address, network) {
   const payload = canonicalEventPayload(row.payload);
   const targetAddress = normalizedAddress(address);
   const targetKey = normalizedAddressKey(targetAddress);
   const actor = normalizedAddress(payload.actor);
   const actorKey = normalizedAddressKey(actor);
+  const participantRecords = mailParticipantRecordsFromRow(row, payload);
   const participants = mailParticipantsFromRow(row, payload);
-  const recipientAddresses = participants.filter(
+  const roleRecipientAddresses = participantRecords
+    .filter((participant) =>
+      ["recipient", "receiver", "counterparty"].includes(participant.role),
+    )
+    .map((participant) => participant.address);
+  const fallbackRecipientAddresses = participants.filter(
     (participant) => normalizedAddressKey(participant) !== actorKey,
   );
+  const recipientAddresses =
+    roleRecipientAddresses.length > 0
+      ? [...new Set(roleRecipientAddresses)]
+      : fallbackRecipientAddresses;
+  const targetIsRecipient =
+    recipientAddresses.some(
+      (participant) => normalizedAddressKey(participant) === targetKey,
+    ) ||
+    participantRecords.some(
+      (participant) =>
+        normalizedAddressKey(participant.address) === targetKey &&
+        ["recipient", "receiver", "counterparty"].includes(participant.role),
+    );
   const totalAmountSats = positiveNumber(
     payload.amountSats ?? row.amount_sats,
   );
@@ -1694,9 +1731,10 @@ function addressMailRowPayload(row, address, network) {
   const subject = mailSubjectFromEvent(row, payload);
   const memo = mailMemoFromEvent(row, payload);
   const parentTxid = String(row.parent_txid ?? payload.parentTxid ?? "").trim();
+  const items = [];
 
   if (actorKey && actorKey === targetKey) {
-    return {
+    items.push({
       folder: "sent",
       message: {
         amountSats: totalAmountSats,
@@ -1715,30 +1753,35 @@ function addressMailRowPayload(row, address, network) {
         to: recipientSummary(recipients),
         txid: row.txid,
       },
-    };
+    });
   }
 
-  const targetRecipient =
-    recipients.find(
-      (recipient) => normalizedAddressKey(recipient.address) === targetKey,
-    ) ?? recipients[0];
-  return {
-    folder: "inbox",
-    message: {
-      amountSats: positiveNumber(targetRecipient?.amountSats) || totalAmountSats,
-      confirmed,
-      createdAt,
-      from: actor || "Unknown",
-      memo,
-      network,
-      parentTxid: parentTxid || undefined,
-      recipients: recipients.length > 0 ? recipients : undefined,
-      replyTo: actor || "Unknown",
-      subject: subject || undefined,
-      to: targetAddress,
-      txid: row.txid,
-    },
-  };
+  if (!actorKey || actorKey !== targetKey || targetIsRecipient) {
+    const targetRecipient =
+      recipients.find(
+        (recipient) => normalizedAddressKey(recipient.address) === targetKey,
+      ) ?? recipients[0];
+    items.push({
+      folder: "inbox",
+      message: {
+        amountSats:
+          positiveNumber(targetRecipient?.amountSats) || totalAmountSats,
+        confirmed,
+        createdAt,
+        from: actor || "Unknown",
+        memo,
+        network,
+        parentTxid: parentTxid || undefined,
+        recipients: recipients.length > 0 ? recipients : undefined,
+        replyTo: actor || "Unknown",
+        subject: subject || undefined,
+        to: targetAddress,
+        txid: row.txid,
+      },
+    });
+  }
+
+  return items;
 }
 
 function compareMailMessages(left, right) {
@@ -1758,6 +1801,9 @@ export async function proofIndexAddressMailPayload(network, address) {
   if (!targetAddress) {
     return null;
   }
+  const addressCandidates = [
+    ...new Set([targetAddress, targetAddress.toLowerCase()].filter(Boolean)),
+  ];
 
   const rowsResult = await pool.query(
     `
@@ -1799,7 +1845,7 @@ export async function proofIndexAddressMailPayload(network, address) {
           SELECT 1
           FROM proof_indexer.event_participants target
           WHERE target.event_id = e.event_id
-            AND lower(target.address) = $2
+            AND target.address = ANY($2::text[])
         )
       GROUP BY
         e.payload,
@@ -1820,17 +1866,18 @@ export async function proofIndexAddressMailPayload(network, address) {
         e.event_id DESC
       LIMIT 1000
     `,
-    [network, targetAddress.toLowerCase(), ADDRESS_MAIL_EVENT_KINDS],
+    [network, addressCandidates, ADDRESS_MAIL_EVENT_KINDS],
   );
 
   const inboxMessages = [];
   const sentMessages = [];
   for (const row of rowsResult.rows) {
-    const item = addressMailRowPayload(row, targetAddress, network);
-    if (item.folder === "sent") {
-      sentMessages.push(item.message);
-    } else {
-      inboxMessages.push(item.message);
+    for (const item of addressMailRowPayloads(row, targetAddress, network)) {
+      if (item.folder === "sent") {
+        sentMessages.push(item.message);
+      } else {
+        inboxMessages.push(item.message);
+      }
     }
   }
 

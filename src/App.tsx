@@ -2765,6 +2765,25 @@ function receiveResolutionNote(resolution: RecipientResolution) {
   return "Raw ProofOfWork receive address.";
 }
 
+function samePaymentAddress(left: string, right: string) {
+  const leftAddress = left.trim();
+  const rightAddress = right.trim();
+  if (!leftAddress || !rightAddress) {
+    return false;
+  }
+
+  if (leftAddress === rightAddress) {
+    return true;
+  }
+
+  const leftLower = leftAddress.toLowerCase();
+  const rightLower = rightAddress.toLowerCase();
+  const isBech32 =
+    /^(bc1|tb1|bcrt1)/u.test(leftLower) &&
+    /^(bc1|tb1|bcrt1)/u.test(rightLower);
+  return isBech32 && leftLower === rightLower;
+}
+
 function explorerNetworkFor(
   messageNetwork: BitcoinNetwork,
   activeNetwork: BitcoinNetwork,
@@ -17240,6 +17259,7 @@ export default function App() {
         wallet: window.unisat,
       });
 
+      const createdAt = new Date().toISOString();
       const sentMessage: SentMessage = {
         txid,
         network,
@@ -17254,15 +17274,46 @@ export default function App() {
         memo,
         attachment,
         status: "pending",
-        lastCheckedAt: new Date().toISOString(),
+        lastCheckedAt: createdAt,
         replyTo: address,
         parentTxid: replyParentTxid,
-        createdAt: new Date().toISOString(),
+        createdAt,
       };
+      const selfRecipient = mailRecipients.find((mailRecipient) =>
+        samePaymentAddress(mailRecipient.address, address),
+      );
+      const selfIncomingMessage: InboxMessage | undefined = selfRecipient
+        ? {
+            amountSats: selfRecipient.amountSats,
+            attachment,
+            confirmed: false,
+            createdAt,
+            from: address,
+            memo,
+            network,
+            parentTxid: replyParentTxid,
+            recipients: mailRecipients,
+            replyTo: address,
+            subject: normalizeSubject(subject) || undefined,
+            to: address,
+            txid,
+          }
+        : undefined;
 
       clearDraft(address, network);
       setSavedDraft(undefined);
       setAllSent((current) => [sentMessage, ...current]);
+      if (selfIncomingMessage) {
+        setInbox((current) => [
+          selfIncomingMessage,
+          ...current.filter(
+            (message) =>
+              message.txid !== txid ||
+              message.network !== network ||
+              message.confirmed,
+          ),
+        ]);
+      }
       setActiveFolder("outbox");
       setComposeOpen(false);
       setAttachment(undefined);

@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 
 const server = readFileSync("server/proof-api.mjs", "utf8");
+const proofIndexReader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
 const app = readFileSync("src/App.tsx", "utf8");
+const proofIndexDeploy = readFileSync("deploy/proofofwork-api-proof-index.conf", "utf8");
 const packageJson = readFileSync("package.json", "utf8");
 const failures = [];
 
@@ -41,6 +43,16 @@ const desktopAppSource = sourceSliceBetween(
   app,
   /function DesktopApp/,
   /function ActivityApp/,
+);
+const pendingMempoolBasesSource = sourceSliceBetween(
+  server,
+  /function pendingMempoolBases/,
+  /function firstPartyAddressReadBases/,
+);
+const txHexPayloadSource = sourceSliceBetween(
+  server,
+  /async function txHexPayload/,
+  /async function directTxOutspendPayload/,
 );
 
 expectAll("canonical ledger cache is first-class", server, [
@@ -141,6 +153,43 @@ expectAll("API address app reads stay first-party", server, [
   /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedPayload = await indexedMailPayload\(address,\s*network\)[\s\S]*if \(!fresh && indexedPayload\) \{[\s\S]*return indexedPayload/,
   /mailPayload\(address,\s*network,\s*\{ fresh: freshRead \}\)/,
   /async function addressUtxoPayload\(address,\s*network\)[\s\S]*for \(const base of firstPartyAddressReadBases\(network\)\)/,
+]);
+expect("pending mempool bases must not hardcode public explorer data sources", !/explorerBase|explorerReadBases|mempool\.space/i.test(pendingMempoolBasesSource));
+expectAll("transaction hex PSBT reads stay first-party", txHexPayloadSource, [
+  /fetchTransactionHexFromBitcoinRpc\(txid,\s*network\)/,
+  /fetchTransactionHexFromElectrum\(txid,\s*network\)/,
+  /for \(const base of firstPartyAddressReadBases\(network\)\)/,
+]);
+expect("transaction hex PSBT reads must not call public explorer fallbacks", !/explorerBase|explorerReadBases|fetchTextViaHttps|mempool\.space/i.test(txHexPayloadSource));
+expectAll("wallet scoped token reads keep confirmed lifecycle history", server, [
+  /function compactTokenSummaryPayload\(payload,\s*tokenScope = ""\)[\s\S]*const walletScopedSummary =[\s\S]*payload\.walletScoped === true \|\| stats\.walletScoped === true/,
+  /const closedListingLimit = walletScopedSummary[\s\S]*Math\.max\(closedListings\.length,\s*SUMMARY_MARKET_LIMIT\)/,
+  /closedListings: recentClosedTokenListings\([\s\S]*closedListingLimit/,
+  /function tokenStateWithPreservedListingRecords\(state,\s*sourceState\)[\s\S]*const preservedClosedListingIds = new Set\([\s\S]*sourceState\?\.closedListings[\s\S]*if \(!preservedClosedListingIds\.has\(listingId\)\)/,
+  /async function walletScopedTokenPayload\([\s\S]*proofIndexTokenPayload\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletClosedListings/,
+  /async function walletScopedTokenSummaryPayload\([\s\S]*proofIndexTokenPayload\([\s\S]*tokenPayloadScopedToAddresses/,
+  /async function indexedWalletClosedListings\([\s\S]*kind: "token-closed-listings"[\s\S]*proofIndexEventHistoryPayload/,
+  /async function tokenPayloadWithIndexedWalletClosedListings\([\s\S]*tokenStateWithPreservedListingRecords/,
+  /url\.pathname === "\/api\/v1\/token"[\s\S]*if \(walletScoped\) \{[\s\S]*walletScopedTokenPayload/,
+  /url\.pathname === "\/api\/v1\/token-summary"[\s\S]*const walletScoped =[\s\S]*walletScopedTokenSummaryPayload/,
+]);
+expectAll("DB mail reads use indexed address matching and self-send folders", proofIndexReader, [
+  /function addressMailRowPayloads\(row,\s*address,\s*network\)/,
+  /target\.address = ANY\(\$2::text\[\]\)/,
+  /const targetIsRecipient =[\s\S]*\["recipient",\s*"receiver",\s*"counterparty"\]/,
+  /if \(actorKey && actorKey === targetKey\)[\s\S]*folder: "sent"/,
+  /if \(!actorKey \|\| actorKey !== targetKey \|\| targetIsRecipient\)[\s\S]*folder: "inbox"/,
+]);
+expectAll("local self-send broadcasts appear in Incoming immediately", app, [
+  /function samePaymentAddress\(left:\s*string,\s*right:\s*string\)/,
+  /const selfRecipient = mailRecipients\.find\([\s\S]*samePaymentAddress\(mailRecipient\.address,\s*address\)/,
+  /const selfIncomingMessage: InboxMessage \| undefined = selfRecipient/,
+  /setInbox\(\(current\) => \[/,
+]);
+expectAll("proof index deploy flags keep mailbox DB reads enabled", proofIndexDeploy, [
+  /POW_INDEX_READS=[^\n]*event-history/,
+  /POW_INDEX_READS=[^\n]*address-mail/,
+  /POW_INDEX_TOKEN_HISTORY_MAX_AGE_MS=86400000/,
 ]);
 
 expectAll("registry default reads use proof index with canonical fallback", server, [
