@@ -46,6 +46,10 @@ const INFINITY_BOND_REGRESSION_TXID =
   "411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891";
 const PAGINATION_GAP_INFINITY_BOND_TXID =
   "b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34";
+const OTC_SELF_BOND_TXID =
+  "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e";
+const OTC_SELF_BOND_ADDRESS =
+  "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
 const HISTORY_AUDIT_PAGE_LIMIT = 200;
 const HISTORY_AUDIT_MAX_PAGES = 10;
 const MIN_INFINITY_BOND_FLOW_SATS = 47_234_999;
@@ -171,6 +175,8 @@ const [
   workDelistedListingMarketLog,
   infinityBondLog,
   paginationGapInfinityBondLog,
+  otcSelfBondLog,
+  otcSelfBondEventHistory,
 ] =
   await Promise.all([
     readJson("/api/v1/consistency"),
@@ -213,6 +219,10 @@ const [
     ),
     readJson(`/api/v1/log-history?q=${INFINITY_BOND_REGRESSION_TXID}`),
     readJson(`/api/v1/log-history?q=${PAGINATION_GAP_INFINITY_BOND_TXID}`),
+    readJson(`/api/v1/log-history?kind=infinity-bond&q=${OTC_SELF_BOND_TXID}`),
+    readJson(
+      `/api/v1/event-history?kind=infinity-bond&address=${OTC_SELF_BOND_ADDRESS}`,
+    ),
   ]);
 
 const buyerLogItems = await readHistoryUntil(
@@ -346,6 +356,26 @@ expect(
       item.kind === "infinity-bond" &&
       item.txid === PAGINATION_GAP_INFINITY_BOND_TXID &&
       item.amountSats >= 1_000_000,
+  ),
+);
+expect(
+  "known OTC self-send Infinity Bond tx is searchable in Log",
+  items(otcSelfBondLog).some(
+    (item) =>
+      item.kind === "infinity-bond" &&
+      item.txid === OTC_SELF_BOND_TXID &&
+      item.amountSats >= 50_000,
+  ),
+);
+expect(
+  "known OTC self-send Infinity Bond tx is searchable in Event history",
+  items(otcSelfBondEventHistory).some(
+    (item) =>
+      item.kind === "infinity-bond" &&
+      item.txid === OTC_SELF_BOND_TXID &&
+      item.amountSats >= 50_000 &&
+      Array.isArray(item.participants) &&
+      item.participants.includes(OTC_SELF_BOND_ADDRESS),
   ),
 );
 expect(

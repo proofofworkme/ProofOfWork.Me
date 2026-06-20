@@ -75,6 +75,8 @@ const SOURCES = SOURCE_FILTER.size
   : ALL_SOURCES;
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const INFINITY_BOND_MEMO = "powb";
+const INFINITY_BOND_KIND = "infinity-bond";
 const TOKEN_HISTORY_SNAPSHOT_KINDS = [
   "tokens",
   "mints",
@@ -251,6 +253,77 @@ function itemTime(item) {
     item?.updatedAt ??
     null
   );
+}
+
+function normalizedText(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizedLowerText(value) {
+  return normalizedText(value).toLowerCase();
+}
+
+function rawEventKind(item, fallback) {
+  return normalizedLowerText(item?.kind ?? item?.action ?? fallback ?? "event");
+}
+
+function isInfinityBondMemoText(value) {
+  return normalizedLowerText(value) === INFINITY_BOND_MEMO;
+}
+
+function isInfinityBondItem(item, kind = rawEventKind(item)) {
+  if (kind === INFINITY_BOND_KIND) {
+    return true;
+  }
+  if (kind !== "mail") {
+    return false;
+  }
+  return [item?.detail, item?.memo, item?.body, item?.message].some(
+    isInfinityBondMemoText,
+  );
+}
+
+function stableEventKeyKind(item, kind, fallback) {
+  const rawKind = rawEventKind(item, fallback);
+  return rawKind === "mail" && isInfinityBondItem(item, rawKind)
+    ? rawKind
+    : kind;
+}
+
+function normalizedInfinityBondTags(tags) {
+  const normalized = [];
+  for (const tag of Array.isArray(tags) ? tags : []) {
+    const value = normalizedText(tag);
+    if (!value) {
+      continue;
+    }
+    normalized.push(/^message$/iu.test(value) ? "Infinity Bond" : value);
+  }
+  if (!normalized.some((tag) => /^infinity bond$/iu.test(tag))) {
+    normalized.push("Infinity Bond");
+  }
+  return normalized;
+}
+
+function normalizedInfinityBondTitle(item, status) {
+  const title = normalizedText(item?.title);
+  if (title && !/^(?:mail|message)\b/iu.test(title)) {
+    return title;
+  }
+  return `Infinity Bond ${status === "confirmed" ? "sent" : "pending"}`;
+}
+
+function normalizedEventItem(item, kind, status) {
+  if (kind !== INFINITY_BOND_KIND) {
+    return item;
+  }
+  return {
+    ...item,
+    detail: normalizedText(item?.detail) || INFINITY_BOND_MEMO,
+    kind: INFINITY_BOND_KIND,
+    tags: normalizedInfinityBondTags(item?.tags),
+    title: normalizedInfinityBondTitle(item, status),
+  };
 }
 
 function tokenMarketLogItemConfirmed(item) {
@@ -496,9 +569,8 @@ function bigintOrZero(value) {
 }
 
 function eventKind(item, fallback) {
-  return String(item?.kind ?? item?.action ?? fallback ?? "event")
-    .trim()
-    .toLowerCase();
+  const kind = rawEventKind(item, fallback);
+  return isInfinityBondItem(item, kind) ? INFINITY_BOND_KIND : kind;
 }
 
 function protocolForItem(item, kind) {
@@ -674,11 +746,18 @@ async function upsertEvent(client, sourceLabel, item) {
   }
 
   const kind = eventKind(item, sourceLabel);
+  const normalizedItem = normalizedEventItem(item, kind, status);
   const protocol = protocolForItem(item, kind);
-  const eventKey = stableEventKey({ item, kind, protocol, sourceLabel, txid });
-  const eventTime = itemTime(item);
+  const eventKey = stableEventKey({
+    item: normalizedItem,
+    kind: stableEventKeyKind(item, kind, sourceLabel),
+    protocol,
+    sourceLabel,
+    txid,
+  });
+  const eventTime = itemTime(normalizedItem);
 
-  await upsertTransaction(client, item, txid, status, sourceLabel);
+  await upsertTransaction(client, normalizedItem, txid, status, sourceLabel);
 
   const result = await client.query(
     `
@@ -738,15 +817,15 @@ async function upsertEvent(client, sourceLabel, item) {
       protocol,
       kind,
       status,
-      item?.valid !== false && !String(kind).includes("invalid"),
-      item?.reason ? [String(item.reason)] : [],
-      amountSats(item),
-      dataBytes(item),
-      numberOrNull(item?.blockHeight ?? item?.height),
+      normalizedItem?.valid !== false && !String(kind).includes("invalid"),
+      normalizedItem?.reason ? [String(normalizedItem.reason)] : [],
+      amountSats(normalizedItem),
+      dataBytes(normalizedItem),
+      numberOrNull(normalizedItem?.blockHeight ?? normalizedItem?.height),
       eventTime,
       eventTime,
-      item?.payload ? String(item.payload) : "",
-      JSON.stringify({ ...item, indexedFrom: sourceLabel }),
+      normalizedItem?.payload ? String(normalizedItem.payload) : "",
+      JSON.stringify({ ...normalizedItem, indexedFrom: sourceLabel }),
     ],
   );
   const eventId = result.rows[0].event_id;
@@ -754,7 +833,7 @@ async function upsertEvent(client, sourceLabel, item) {
   await client.query("DELETE FROM proof_indexer.event_participants WHERE event_id = $1", [
     eventId,
   ]);
-  for (const participant of participantsForItem(item)) {
+  for (const participant of participantsForItem(normalizedItem)) {
     await client.query(
       `
         INSERT INTO proof_indexer.event_participants (event_id, address, role, powid)
@@ -768,7 +847,7 @@ async function upsertEvent(client, sourceLabel, item) {
   await client.query("DELETE FROM proof_indexer.event_refs WHERE event_id = $1", [
     eventId,
   ]);
-  for (const ref of refsForItem(item)) {
+  for (const ref of refsForItem(normalizedItem)) {
     await client.query(
       `
         INSERT INTO proof_indexer.event_refs (event_id, ref_type, ref_value)
@@ -779,7 +858,7 @@ async function upsertEvent(client, sourceLabel, item) {
     );
   }
 
-  await upsertProjection(client, sourceLabel, item, status);
+  await upsertProjection(client, sourceLabel, normalizedItem, status);
   return { skipped: false };
 }
 
@@ -960,7 +1039,11 @@ async function upsertProjection(client, sourceLabel, item, status) {
     );
   }
 
-  if (["mail", "reply", "file", "attachment", "browser"].includes(eventKind(item))) {
+  if (
+    ["mail", "reply", "file", "attachment", "browser", INFINITY_BOND_KIND].includes(
+      projectionKind,
+    )
+  ) {
     const txid = itemTxid(item);
     if (txid) {
       await client.query(
@@ -998,7 +1081,7 @@ async function upsertProjection(client, sourceLabel, item, status) {
           item.senderAddress ?? null,
           item.subject ?? null,
           item.parentTxid ?? null,
-          item.body ?? item.message ?? null,
+          item.body ?? item.message ?? item.memo ?? item.detail ?? null,
           amountSats(item),
           dataBytes(item),
           JSON.stringify(item),

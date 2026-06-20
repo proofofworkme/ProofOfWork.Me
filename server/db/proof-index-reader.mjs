@@ -4,6 +4,8 @@ import {
 } from "./postgres.mjs";
 
 let proofIndexReadPool = null;
+const INFINITY_BOND_MEMO = "powb";
+const INFINITY_BOND_KIND = "infinity-bond";
 
 function proofIndexPool() {
   if (!proofIndexDatabaseConfigured()) {
@@ -640,6 +642,99 @@ function canonicalEventPayload(payload) {
   return item;
 }
 
+function normalizedText(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizedLowerText(value) {
+  return normalizedText(value).toLowerCase();
+}
+
+function isInfinityBondMemoText(value) {
+  return normalizedLowerText(value) === INFINITY_BOND_MEMO;
+}
+
+function isInfinityBondEventPayload(payload, row = {}) {
+  const kind = normalizedLowerText(payload?.kind ?? row.kind);
+  if (kind === INFINITY_BOND_KIND) {
+    return true;
+  }
+  if (kind !== "mail") {
+    return false;
+  }
+  return [
+    payload?.detail,
+    payload?.memo,
+    payload?.body,
+    payload?.message,
+    row.body_text,
+  ].some(isInfinityBondMemoText);
+}
+
+function normalizedInfinityBondTags(tags) {
+  const normalized = [];
+  for (const tag of Array.isArray(tags) ? tags : []) {
+    const value = String(tag ?? "").trim();
+    if (!value) {
+      continue;
+    }
+    normalized.push(/^message$/iu.test(value) ? "Infinity Bond" : value);
+  }
+  if (!normalized.some((tag) => /^infinity bond$/iu.test(tag))) {
+    normalized.push("Infinity Bond");
+  }
+  return normalized;
+}
+
+function normalizedInfinityBondTitle(payload, row = {}) {
+  const title = normalizedText(payload?.title);
+  if (title && !/^(?:mail|message)\b/iu.test(title)) {
+    return title;
+  }
+  const confirmed = row.status
+    ? normalizedLowerText(row.status) === "confirmed"
+    : payload?.confirmed !== false;
+  return `Infinity Bond ${confirmed ? "sent" : "pending"}`;
+}
+
+function normalizeEventPayload(payload, row = {}) {
+  if (!isInfinityBondEventPayload(payload, row)) {
+    return payload;
+  }
+  return {
+    ...payload,
+    detail: normalizedText(payload?.detail) || INFINITY_BOND_MEMO,
+    kind: INFINITY_BOND_KIND,
+    tags: normalizedInfinityBondTags(payload?.tags),
+    title: normalizedInfinityBondTitle(payload, row),
+  };
+}
+
+function eventKindSqlCondition(kind, addValue) {
+  const normalizedKind = normalizedLowerText(kind);
+  if (normalizedKind !== INFINITY_BOND_KIND) {
+    return `e.kind = ${addValue(normalizedKind)}`;
+  }
+
+  const infinityBondKindParam = addValue(INFINITY_BOND_KIND);
+  const mailKindParam = addValue("mail");
+  const memoParam = addValue(INFINITY_BOND_MEMO);
+  return `
+    (
+      e.kind = ${infinityBondKindParam}
+      OR (
+        e.kind = ${mailKindParam}
+        AND (
+          lower(coalesce(e.payload->>'detail', '')) = ${memoParam}
+          OR lower(coalesce(e.payload->>'memo', '')) = ${memoParam}
+          OR lower(coalesce(e.payload->>'body', '')) = ${memoParam}
+          OR lower(coalesce(e.payload->>'message', '')) = ${memoParam}
+        )
+      )
+    )
+  `;
+}
+
 function valueSearchText(value) {
   if (value === null || value === undefined) {
     return "";
@@ -957,7 +1052,7 @@ export function proofIndexRegistryHistoryReadEligibility(kind, searchParams) {
 function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination) {
   const activityPayload = snapshotActivityPayload(snapshot);
   const sourceItems = Array.isArray(activityPayload?.activity)
-    ? activityPayload.activity
+    ? activityPayload.activity.map((item) => normalizeEventPayload(item))
     : [];
   if (sourceItems.length === 0) {
     return null;
@@ -1367,15 +1462,19 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
 
   const conditions = ["e.network = $1"];
   const params = [network];
+  const addParam = (value) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
 
   if (requestedKind) {
-    params.push(requestedKind);
-    conditions.push(`e.kind = $${params.length}`);
+    conditions.push(eventKindSqlCondition(requestedKind, addParam));
   }
 
   if (pagination.query) {
-    params.push(`%${pagination.query}%`);
-    conditions.push(`lower(e.payload::text) LIKE $${params.length}`);
+    conditions.push(
+      `lower(e.payload::text) LIKE ${addParam(`%${pagination.query}%`)}`,
+    );
   }
 
   const whereClause = conditions.join(" AND ");
@@ -1398,7 +1497,17 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
   const offsetParam = rowParams.length;
   const rowsResult = await pool.query(
     `
-      SELECT e.payload, e.event_time, e.block_height, e.txid, e.event_id
+      SELECT
+        e.payload,
+        e.protocol,
+        e.kind,
+        e.status,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        e.block_height,
+        e.txid,
+        e.event_id
       FROM proof_indexer.events e
       WHERE ${whereClause}
       ORDER BY
@@ -1425,7 +1534,7 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     end,
     indexedAt,
     indexedThroughBlock,
-    items: rowsResult.rows.map((row) => canonicalEventPayload(row.payload)),
+    items: rowsResult.rows.map((row) => eventRowPayload(row, network)),
     kind: requestedKind || "activity",
     limit: pagination.limit,
     network,
@@ -1961,7 +2070,10 @@ function eventHistoryFilters(searchParams, pagination, baseValues = []) {
   };
 
   scalarFilter("e.protocol", "protocol");
-  scalarFilter("e.kind", "kind");
+  const kind = String(params.get("kind") ?? "").trim().toLowerCase();
+  if (kind) {
+    filters.push(eventKindSqlCondition(kind, addValue));
+  }
   const status = String(params.get("status") ?? "confirmed")
     .trim()
     .toLowerCase();
@@ -2037,16 +2149,16 @@ function eventHistoryFilters(searchParams, pagination, baseValues = []) {
 }
 
 function eventRowPayload(row, network) {
-  const payload = canonicalEventPayload(row.payload);
+  const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
   return {
-    txid: row.txid,
-    protocol: row.protocol,
-    kind: row.kind,
-    status: row.status,
-    confirmed: row.status === "confirmed",
+    ...payload,
+    txid: row.txid ?? payload.txid,
+    protocol: row.protocol ?? payload.protocol,
+    kind: normalizedLowerText(payload.kind ?? row.kind),
+    status: row.status ?? payload.status,
+    confirmed: row.status ? row.status === "confirmed" : payload.confirmed,
     createdAt: dateIso(row.event_time ?? row.block_time ?? row.created_at),
     network,
-    ...payload,
   };
 }
 
@@ -2167,7 +2279,7 @@ function recipientSummary(recipients) {
 }
 
 function addressMailRowPayloads(row, address, network) {
-  const payload = canonicalEventPayload(row.payload);
+  const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
   const targetAddress = normalizedAddress(address);
   const targetKey = normalizedAddressKey(targetAddress);
   const actor = normalizedAddress(payload.actor);

@@ -31,6 +31,9 @@ const CHECKS = [
     minTotal: 2,
     mustInboxTxid:
       "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
+    mustInfinityBondAmountSats: 50_000,
+    mustInfinityBondTxid:
+      "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
     mustSentTxid:
       "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
   },
@@ -84,6 +87,27 @@ async function fetchRegistry() {
     throw new Error(`registry returned HTTP ${response.status}`);
   }
   return response.json();
+}
+
+async function fetchHistory(pathname, params = {}) {
+  const url = new URL(pathname, API_BASE);
+  url.searchParams.set("network", NETWORK);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(`${pathname} returned HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function historyItems(payload) {
+  return Array.isArray(payload?.items) ? payload.items : [];
 }
 
 function assertRegistryResolution(payload) {
@@ -171,7 +195,36 @@ function assertMailbox(check, payload) {
   return { inbox, indexedEvents, scanFailed, sent, source, total };
 }
 
+function assertInfinityBondHistory(check, logPayload, eventPayload) {
+  const expectedTxid = String(check.mustInfinityBondTxid ?? "").toLowerCase();
+  if (!expectedTxid) {
+    return null;
+  }
+
+  const minAmount = numberValue(check.mustInfinityBondAmountSats);
+  const isExpectedBond = (item) =>
+    String(item?.txid ?? "").toLowerCase() === expectedTxid &&
+    item?.kind === "infinity-bond" &&
+    numberValue(item?.amountSats) >= minAmount;
+  const failures = [];
+  if (!historyItems(logPayload).some(isExpectedBond)) {
+    failures.push(`missing Log infinity-bond tx ${expectedTxid}`);
+  }
+  if (!historyItems(eventPayload).some(isExpectedBond)) {
+    failures.push(`missing Event infinity-bond tx ${expectedTxid}`);
+  }
+  if (failures.length > 0) {
+    throw new Error(`${check.label}: ${failures.join("; ")}`);
+  }
+  return {
+    eventHistoryCount: numberValue(eventPayload?.totalCount),
+    logHistoryCount: numberValue(logPayload?.totalCount),
+    txid: expectedTxid,
+  };
+}
+
 const results = [];
+const historyResults = [];
 const registryPayload = await fetchRegistry();
 const registry = assertRegistryResolution(registryPayload);
 for (const check of CHECKS) {
@@ -180,6 +233,24 @@ for (const check of CHECKS) {
     label: check.label,
     ...assertMailbox(check, payload),
   });
+  if (check.mustInfinityBondTxid) {
+    const [logPayload, eventPayload] = await Promise.all([
+      fetchHistory("/api/v1/log-history", {
+        kind: "infinity-bond",
+        limit: 20,
+        q: check.mustInfinityBondTxid,
+      }),
+      fetchHistory("/api/v1/event-history", {
+        address: check.address,
+        kind: "infinity-bond",
+        limit: 50,
+      }),
+    ]);
+    historyResults.push({
+      label: check.label,
+      ...assertInfinityBondHistory(check, logPayload, eventPayload),
+    });
+  }
 }
 
 console.log(
@@ -189,6 +260,7 @@ console.log(
       network: NETWORK,
       ok: true,
       registry,
+      historyResults,
       results,
     },
     null,

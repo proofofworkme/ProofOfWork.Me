@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 const server = readFileSync("server/proof-api.mjs", "utf8");
 const proofIndexReader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
+const proofIndexerBackfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const app = readFileSync("src/App.tsx", "utf8");
 const proofIndexDeploy = readFileSync("deploy/proofofwork-api-proof-index.conf", "utf8");
 const packageJson = readFileSync("package.json", "utf8");
@@ -265,6 +266,23 @@ expectAll("log history searches fall back to direct DB event rows", proofIndexRe
   /requestedKind \|\| pagination\.query/,
   /lower\(e\.payload::text\) LIKE/,
   /source:\s*"proof-indexer"/,
+]);
+expectAll("Infinity Bond mail normalization spans DB reads", proofIndexReader, [
+  /const INFINITY_BOND_MEMO = "powb"/,
+  /function isInfinityBondEventPayload\(payload,\s*row = \{\}\)/,
+  /function normalizeEventPayload\(payload,\s*row = \{\}\)/,
+  /function eventKindSqlCondition\(kind,\s*addValue\)/,
+  /activityPayload\.activity\.map\(\(item\) => normalizeEventPayload\(item\)\)/,
+  /filters\.push\(eventKindSqlCondition\(kind,\s*addValue\)\)/,
+  /items: rowsResult\.rows\.map\(\(row\) => eventRowPayload\(row,\s*network\)\)/,
+]);
+expectAll("backfill writes powb mail as Infinity Bond projections", proofIndexerBackfill, [
+  /const INFINITY_BOND_MEMO = "powb"/,
+  /function isInfinityBondItem\(item,\s*kind = rawEventKind\(item\)\)/,
+  /return isInfinityBondItem\(item,\s*kind\) \? INFINITY_BOND_KIND : kind/,
+  /stableEventKeyKind\(item,\s*kind,\s*sourceLabel\)/,
+  /\["mail",\s*"reply",\s*"file",\s*"attachment",\s*"browser",\s*INFINITY_BOND_KIND\]\.includes/,
+  /item\.body \?\? item\.message \?\? item\.memo \?\? item\.detail/,
 ]);
 
 expectAll("all confirmed token state rows must be searchable in Log", server, [
