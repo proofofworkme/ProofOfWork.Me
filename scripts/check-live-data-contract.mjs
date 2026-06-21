@@ -130,6 +130,10 @@ expectAll("frontend scoped credit mint supply ignores global summary totals", ap
   /pendingSupply: scopedPendingSupply \?\?[\s\S]*scopedTopLevelPendingSupply \?\?[\s\S]*topLevelPendingSupply \?\?/,
 ]);
 
+expectAll("server scoped credit fresh reads prefer canonical ledger on livenet", server, [
+  /fresh &&[\s\S]*scope &&[\s\S]*scope !== WORK_TOKEN_ID &&[\s\S]*!\(network === "livenet" && useLedgerSnapshot\) &&[\s\S]*options\.preferScopedRefresh !== false/,
+]);
+
 expectAll("Desktop public search stays on first-party ProofOfWork API", app, [
   /function DesktopApp\([\s\S]*<DesktopWorkspace[\s\S]*onSearch=\{onSearch\}/,
 ]);

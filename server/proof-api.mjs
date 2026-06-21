@@ -12969,6 +12969,7 @@ async function tokenPayloadForRead(
     fresh &&
     scope &&
     scope !== WORK_TOKEN_ID &&
+    !(network === "livenet" && useLedgerSnapshot) &&
     options.preferScopedRefresh !== false
   ) {
     const fallback = await existingTokenPayload(network, scope);

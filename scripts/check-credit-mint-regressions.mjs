@@ -84,6 +84,9 @@ function assertPowMintable(label, payload) {
 }
 
 const unscopedSummary = await getJson("/api/v1/token-summary", { fresh: 1 });
+const cachedScopedByIdSummary = await getJson("/api/v1/token-summary", {
+  asset: POW_TOKEN_ID,
+});
 const scopedByIdSummary = await getJson("/api/v1/token-summary", {
   asset: POW_TOKEN_ID,
   fresh: 1,
@@ -94,6 +97,10 @@ const scopedByTickerSummary = await getJson("/api/v1/token-summary", {
 });
 
 const unscopedPow = assertPowMintable("unscoped summary POW row", unscopedSummary);
+const cachedScopedByIdPow = assertPowMintable(
+  "cached asset-id scoped POW summary",
+  cachedScopedByIdSummary,
+);
 const scopedByIdPow = assertPowMintable(
   "asset-id scoped POW summary",
   scopedByIdSummary,
@@ -106,6 +113,10 @@ const scopedByTickerPow = assertPowMintable(
 assert(
   numberValue(scopedByIdSummary.confirmedSupply) === scopedByIdPow.confirmedSupply,
   "asset-id scoped top-level confirmed supply does not match the POW row",
+);
+assert(
+  scopedByIdPow.confirmedSupply >= cachedScopedByIdPow.confirmedSupply,
+  `asset-id scoped fresh supply regressed behind cached supply (${scopedByIdPow.confirmedSupply} < ${cachedScopedByIdPow.confirmedSupply})`,
 );
 assert(
   numberValue(scopedByTickerSummary.confirmedSupply) ===
