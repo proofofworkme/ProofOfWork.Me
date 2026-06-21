@@ -6443,6 +6443,33 @@ function tokenLedgerFor(
   };
 }
 
+function nonNegativeSafeInteger(value: unknown) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) ? Math.max(0, number) : undefined;
+}
+
+function tokenSupplyValue(
+  token: PowTokenDefinition | undefined,
+  key: "confirmedSupply" | "pendingSupply",
+) {
+  return nonNegativeSafeInteger(token?.[key]);
+}
+
+function scopedTopLevelSupplyValue(
+  value: unknown,
+  token: PowTokenDefinition | undefined,
+) {
+  const supply = nonNegativeSafeInteger(value);
+  if (supply === undefined) {
+    return undefined;
+  }
+  const maxSupply = nonNegativeSafeInteger(token?.maxSupply);
+  if (token && maxSupply !== undefined && maxSupply > 0 && supply > maxSupply) {
+    return undefined;
+  }
+  return supply;
+}
+
 function tokenListingStateKey(
   listing: Pick<PowTokenListing | PowTokenClosedListing, "listingId" | "network">,
 ) {
@@ -6493,24 +6520,27 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
 
   if (tokens.length === 1) {
     const ledger = tokenLedgerFor(tokens[0], mints, transfers, sales);
-    const stateConfirmedSupply = Number.isFinite(state.confirmedSupply)
-      ? Math.max(0, Number(state.confirmedSupply))
-      : 0;
-    const statePendingSupply = Number.isFinite(state.pendingSupply)
-      ? Math.max(0, Number(state.pendingSupply))
-      : 0;
-    const confirmedSupply = summaryOnly
-      ? Math.max(ledger.confirmedSupply, stateConfirmedSupply)
-      : ledger.confirmedSupply;
-    const pendingSupply = summaryOnly
-      ? Math.max(ledger.pendingSupply, statePendingSupply)
-      : ledger.pendingSupply;
-    const tokenConfirmedSupply = Number.isFinite(tokens[0].confirmedSupply)
-      ? Math.max(confirmedSupply, Number(tokens[0].confirmedSupply))
-      : confirmedSupply;
-    const tokenPendingSupply = Number.isFinite(tokens[0].pendingSupply)
-      ? Math.max(pendingSupply, Number(tokens[0].pendingSupply))
-      : pendingSupply;
+    const tokenRowConfirmedSupply = tokenSupplyValue(
+      tokens[0],
+      "confirmedSupply",
+    );
+    const tokenRowPendingSupply = tokenSupplyValue(tokens[0], "pendingSupply");
+    const scopedTopLevelConfirmedSupply = summaryOnly
+      ? scopedTopLevelSupplyValue(state.confirmedSupply, tokens[0])
+      : undefined;
+    const scopedTopLevelPendingSupply = summaryOnly
+      ? scopedTopLevelSupplyValue(state.pendingSupply, tokens[0])
+      : undefined;
+    const confirmedSupply = Math.max(
+      ledger.confirmedSupply,
+      tokenRowConfirmedSupply ?? scopedTopLevelConfirmedSupply ?? 0,
+    );
+    const pendingSupply = Math.max(
+      ledger.pendingSupply,
+      tokenRowPendingSupply ?? scopedTopLevelPendingSupply ?? 0,
+    );
+    const tokenConfirmedSupply = confirmedSupply;
+    const tokenPendingSupply = pendingSupply;
     const scopedTokens = [
       {
         ...tokens[0],
@@ -9587,33 +9617,35 @@ async function fetchTokenSupplyState(
           token.ticker === normalizedTokenScope,
       )
     : undefined;
-  const scopedConfirmedSupply = scopedToken?.confirmedSupply;
-  const scopedPendingSupply = scopedToken?.pendingSupply;
+  const scopedConfirmedSupply = tokenSupplyValue(
+    scopedToken,
+    "confirmedSupply",
+  );
+  const scopedPendingSupply = tokenSupplyValue(scopedToken, "pendingSupply");
   const topLevelConfirmedSupply = Number.isSafeInteger(payload.confirmedSupply)
     ? Math.max(0, Number(payload.confirmedSupply))
     : undefined;
   const topLevelPendingSupply = Number.isSafeInteger(payload.pendingSupply)
     ? Math.max(0, Number(payload.pendingSupply))
     : undefined;
-  const preferScopedTopLevelSupply = Boolean(normalizedTokenScope);
+  const scopedTopLevelConfirmedSupply = normalizedTokenScope
+    ? scopedTopLevelSupplyValue(topLevelConfirmedSupply, scopedToken)
+    : undefined;
+  const scopedTopLevelPendingSupply = normalizedTokenScope
+    ? scopedTopLevelSupplyValue(topLevelPendingSupply, scopedToken)
+    : undefined;
   return {
     creationSats: Number.isSafeInteger(payload.creationSats)
       ? Number(payload.creationSats)
       : 0,
-    confirmedSupply: preferScopedTopLevelSupply && topLevelConfirmedSupply !== undefined
-      ? topLevelConfirmedSupply
-      : Number.isSafeInteger(scopedConfirmedSupply)
-      ? Number(scopedConfirmedSupply)
-      : topLevelConfirmedSupply !== undefined
-      ? topLevelConfirmedSupply
-      : 0,
-    pendingSupply: preferScopedTopLevelSupply && topLevelPendingSupply !== undefined
-      ? topLevelPendingSupply
-      : Number.isSafeInteger(scopedPendingSupply)
-      ? Number(scopedPendingSupply)
-      : topLevelPendingSupply !== undefined
-      ? topLevelPendingSupply
-      : 0,
+    confirmedSupply: scopedConfirmedSupply ??
+      scopedTopLevelConfirmedSupply ??
+      topLevelConfirmedSupply ??
+      0,
+    pendingSupply: scopedPendingSupply ??
+      scopedTopLevelPendingSupply ??
+      topLevelPendingSupply ??
+      0,
     tokens,
   };
 }

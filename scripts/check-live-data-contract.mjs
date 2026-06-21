@@ -120,6 +120,16 @@ expectAll("frontend holder searches use remote holder history", app, [
   /renderHolderList = \([\s\S]*loadingRemotePage = false/,
 ]);
 
+expectAll("frontend scoped credit mint supply ignores global summary totals", app, [
+  /function nonNegativeSafeInteger\(value:\s*unknown\)/,
+  /function tokenSupplyValue\([\s\S]*key:\s*"confirmedSupply" \| "pendingSupply"/,
+  /function scopedTopLevelSupplyValue\([\s\S]*supply > maxSupply[\s\S]*return undefined/,
+  /const tokenRowConfirmedSupply = tokenSupplyValue\([\s\S]*"confirmedSupply"/,
+  /const scopedTopLevelConfirmedSupply = summaryOnly[\s\S]*scopedTopLevelSupplyValue\(state\.confirmedSupply,\s*tokens\[0\]\)/,
+  /confirmedSupply: scopedConfirmedSupply \?\?[\s\S]*scopedTopLevelConfirmedSupply \?\?[\s\S]*topLevelConfirmedSupply \?\?/,
+  /pendingSupply: scopedPendingSupply \?\?[\s\S]*scopedTopLevelPendingSupply \?\?[\s\S]*topLevelPendingSupply \?\?/,
+]);
+
 expectAll("Desktop public search stays on first-party ProofOfWork API", app, [
   /function DesktopApp\([\s\S]*<DesktopWorkspace[\s\S]*onSearch=\{onSearch\}/,
 ]);
@@ -350,6 +360,12 @@ expectAll("frontend log search keeps server-backed tx and participant search", a
 expect(
   "package exposes this live-data regression contract",
   /"check:live-data":\s*"node scripts\/check-live-data-contract\.mjs"/.test(
+    packageJson,
+  ),
+);
+expect(
+  "package exposes credit mint regression checks",
+  /"check:credit-mint-regressions":\s*"node scripts\/check-credit-mint-regressions\.mjs"/.test(
     packageJson,
   ),
 );

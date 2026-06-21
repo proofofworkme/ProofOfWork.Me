@@ -1,0 +1,126 @@
+#!/usr/bin/env node
+
+const DEFAULT_API_BASE = "https://credit.proofofwork.me";
+const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
+  /\/+$/u,
+  "",
+);
+const NETWORK = String(process.env.POW_NETWORK ?? "livenet");
+const FETCH_TIMEOUT_MS = Number(
+  process.env.POW_CREDIT_MINT_CHECK_TIMEOUT_MS ?? 90_000,
+);
+
+const POW_TOKEN_ID =
+  "e5c5ba610cf56e3fc31f8937d042497ca827f6a5d01eca7dcd05c2bbbbad1f4f";
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+function numberValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+async function getJson(path, params = {}) {
+  const url = new URL(path, `${API_BASE}/`);
+  url.searchParams.set("network", NETWORK);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(`${url} returned HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function findPowToken(payload) {
+  return (Array.isArray(payload?.tokens) ? payload.tokens : []).find(
+    (token) =>
+      token?.tokenId === POW_TOKEN_ID ||
+      String(token?.ticker ?? "").toUpperCase() === "POW",
+  );
+}
+
+function assertPowMintable(label, payload) {
+  const token = findPowToken(payload);
+  assert(token, `${label}: missing POW token row`);
+
+  const confirmedSupply = numberValue(token.confirmedSupply);
+  const pendingSupply = numberValue(token.pendingSupply);
+  const maxSupply = numberValue(token.maxSupply);
+  const mintAmount = numberValue(token.mintAmount);
+  const availableSupply = maxSupply - confirmedSupply - pendingSupply;
+
+  assert(maxSupply > 0, `${label}: POW max supply is missing`);
+  assert(mintAmount > 0, `${label}: POW mint amount is missing`);
+  assert(
+    confirmedSupply < maxSupply,
+    `${label}: POW token row says minted out (${confirmedSupply}/${maxSupply})`,
+  );
+  assert(
+    confirmedSupply + pendingSupply + mintAmount <= maxSupply,
+    `${label}: POW next mint would overfill (${confirmedSupply}+${pendingSupply}+${mintAmount} > ${maxSupply})`,
+  );
+  assert(
+    availableSupply >= mintAmount,
+    `${label}: POW available supply is below one mint`,
+  );
+
+  return {
+    availableSupply,
+    confirmedSupply,
+    maxSupply,
+    mintAmount,
+    pendingSupply,
+  };
+}
+
+const unscopedSummary = await getJson("/api/v1/token-summary", { fresh: 1 });
+const scopedByIdSummary = await getJson("/api/v1/token-summary", {
+  asset: POW_TOKEN_ID,
+  fresh: 1,
+});
+const scopedByTickerSummary = await getJson("/api/v1/token-summary", {
+  asset: "POW",
+  fresh: 1,
+});
+
+const unscopedPow = assertPowMintable("unscoped summary POW row", unscopedSummary);
+const scopedByIdPow = assertPowMintable(
+  "asset-id scoped POW summary",
+  scopedByIdSummary,
+);
+const scopedByTickerPow = assertPowMintable(
+  "ticker scoped POW summary",
+  scopedByTickerSummary,
+);
+
+assert(
+  numberValue(scopedByIdSummary.confirmedSupply) === scopedByIdPow.confirmedSupply,
+  "asset-id scoped top-level confirmed supply does not match the POW row",
+);
+assert(
+  numberValue(scopedByTickerSummary.confirmedSupply) ===
+    scopedByTickerPow.confirmedSupply,
+  "ticker scoped top-level confirmed supply does not match the POW row",
+);
+assert(
+  numberValue(unscopedSummary.confirmedSupply) !== unscopedPow.confirmedSupply,
+  "unscoped summary is expected to expose global top-level supply distinct from POW row supply",
+);
+assert(
+  numberValue(unscopedSummary.confirmedSupply) > unscopedPow.maxSupply,
+  "unscoped global supply no longer exceeds POW max; update this regression if global totals change",
+);
+
+console.log(
+  `Credit mint regression checks passed for ${API_BASE}: POW ${scopedByIdPow.confirmedSupply.toLocaleString()}/${scopedByIdPow.maxSupply.toLocaleString()} confirmed, ${scopedByIdPow.pendingSupply.toLocaleString()} pending, ${scopedByIdPow.availableSupply.toLocaleString()} available.`,
+);
