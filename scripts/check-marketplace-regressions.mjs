@@ -21,6 +21,12 @@ const REPORTED_DELIST_TX =
   "f5dbee238a09fe0da6a0e4d01526fefefa6676b86df742323ce49df0daa5ecf5";
 const REPORTED_SALE_TX =
   "34ad3a1211c3023d66d72e04e9faf8d989cd60f476887a0abd28b53ba2a8b0a3";
+const CARBONZ_ADDRESS =
+  "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed";
+const CARBONZ_LISTING_TX =
+  "d0697f88d7648ac4221af34d17d3e8c55852b917f820100d9029143085b29a13";
+const CARBONZ_SEAL_TX =
+  "e365ada0deb8a7bf8f8c4c012897633e4f00938e7f0ca85999de884f939cbc68";
 const WALLET_SUMMARY_DELIST_TXS = [
   "4bdb7f9de2293548d598cd00b07df621339cf364fa1fa1cf42e80ad0551488f4",
   "4c59acfc84b47225f6e0b9bd67379d1ddac14e2e71f6a256315cececbe559d98",
@@ -89,6 +95,20 @@ function txids(items) {
         ).toLowerCase(),
       )
       .filter(Boolean),
+  );
+}
+
+function listingKey(item) {
+  return `${item?.network ?? ""}:${String(item?.listingId ?? "").toLowerCase()}`;
+}
+
+function tokenListingHasConfirmedSeal(item) {
+  return (
+    item?.sealConfirmed === true &&
+    /^[0-9a-f]{64}$/u.test(String(item?.sealTxid ?? "")) &&
+    /^[0-9a-f]{64}$/u.test(String(item?.saleAuthorization?.anchorTxid ?? "")) &&
+    typeof item?.saleAuthorization?.anchorSignature === "string" &&
+    item.saleAuthorization.anchorSignature.length > 0
   );
 }
 
@@ -231,6 +251,51 @@ assert(
   `${LISTING_TX} is still returned as active in marketplace summary`,
 );
 
+const workToken = await getJson("/api/v1/token", {
+  network: "livenet",
+  asset: WORK_TOKEN_ID,
+});
+const confirmedSealedListings = (workToken.listings ?? []).filter(
+  tokenListingHasConfirmedSeal,
+);
+const summaryListingKeys = new Set(
+  (marketplaceSummary.token?.listings ?? []).map(listingKey),
+);
+assert(
+  confirmedSealedListings.length > 0,
+  "full WORK token payload returned no confirmed sealed listings",
+);
+for (const listing of confirmedSealedListings) {
+  assert(
+    summaryListingKeys.has(listingKey(listing)),
+    `${listing.listingId} is confirmed sealed in /api/v1/token but missing from marketplace summary`,
+  );
+}
+
+const carbonzWalletToken = await getJson("/api/v1/token", {
+  network: "livenet",
+  asset: WORK_TOKEN_ID,
+  address: CARBONZ_ADDRESS,
+  wallet: 1,
+});
+const carbonzListing = (carbonzWalletToken.listings ?? []).find(
+  (item) => String(item?.listingId ?? "").toLowerCase() === CARBONZ_LISTING_TX,
+);
+assert(
+  carbonzListing &&
+    String(carbonzListing.sealTxid ?? "").toLowerCase() === CARBONZ_SEAL_TX &&
+    carbonzListing.sealConfirmed === true,
+  `${CARBONZ_LISTING_TX} is missing its confirmed seal in carbonz wallet-scoped token payload`,
+);
+const carbonzMarketLog = await tokenHistory("market-log", {
+  address: CARBONZ_ADDRESS,
+  limit: 100,
+});
+assert(
+  txids(carbonzMarketLog.items).has(CARBONZ_LISTING_TX),
+  `${CARBONZ_LISTING_TX} is missing from carbonz-scoped market log`,
+);
+
 const logClose = await getJson("/api/v1/log-history", {
   network: "livenet",
   q: LOG_CLOSE_TX,
@@ -275,5 +340,5 @@ assert(
 );
 
 console.log(
-  `Marketplace regression checks passed for ${API_BASE}: delist, summary, sales, wallet, and Log close status.`,
+  `Marketplace regression checks passed for ${API_BASE}: delist, summary, sealed listings, sales, wallet, and Log close status.`,
 );

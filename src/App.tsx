@@ -6728,6 +6728,27 @@ function mergeTokenListingsById(
   return [...byKey.values()];
 }
 
+function tokenListingShouldSurviveRefresh(listing: PowTokenListing) {
+  return listing.confirmed === false || tokenListingHasPendingSaleTicketSeal(listing);
+}
+
+function tokenListingsWithPreservedLocalPending(
+  current: PowTokenListing[],
+  incoming: PowTokenListing[],
+  closedListings: PowTokenClosedListing[],
+) {
+  const incomingKeys = new Set(incoming.map(tokenListingStateKey));
+  const preserved = current.filter(
+    (listing) =>
+      tokenListingShouldSurviveRefresh(listing) &&
+      !incomingKeys.has(tokenListingStateKey(listing)),
+  );
+  return activeTokenListingsExcludingClosed(
+    mergeTokenListingsById(incoming, preserved),
+    closedListings,
+  );
+}
+
 function replaceTokenListingsForOwnerScope(
   current: PowTokenListing[],
   incoming: PowTokenListing[],
@@ -6753,7 +6774,10 @@ function replaceTokenListingsForOwnerScope(
       return true;
     }
 
-    return incomingKeys.has(`${listing.network}:${listing.listingId}`);
+    return (
+      incomingKeys.has(`${listing.network}:${listing.listingId}`) ||
+      tokenListingShouldSurviveRefresh(listing)
+    );
   });
 
   return mergeTokenListingsById(retained, incoming);
@@ -13798,8 +13822,9 @@ export default function App() {
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
           setTokenTransfers(state.transfers);
-          setTokenListings(
-            activeTokenListingsExcludingClosed(
+          setTokenListings((current) =>
+            tokenListingsWithPreservedLocalPending(
+              current,
               applyPendingTokenListingSeals(state.listings),
               state.closedListings,
             ),
@@ -14878,8 +14903,9 @@ export default function App() {
         setTokenDefinitions(snapshot.token.tokens);
         setTokenMints(snapshot.token.mints);
         setTokenTransfers(snapshot.token.transfers);
-        setTokenListings(
-          activeTokenListingsExcludingClosed(
+        setTokenListings((current) =>
+          tokenListingsWithPreservedLocalPending(
+            current,
             applyPendingTokenListingSeals(snapshot.token.listings),
             snapshot.token.closedListings,
           ),
@@ -15010,8 +15036,9 @@ export default function App() {
         setTokenDefinitions(state.tokens);
         setTokenMints(state.mints);
         setTokenTransfers(state.transfers);
-        setTokenListings(
-          activeTokenListingsExcludingClosed(
+        setTokenListings((current) =>
+          tokenListingsWithPreservedLocalPending(
+            current,
             applyPendingTokenListingSeals(state.listings),
             state.closedListings,
           ),
@@ -15362,8 +15389,9 @@ export default function App() {
       setTokenDefinitions(tokenState.tokens);
       setTokenMints(tokenState.mints);
       setTokenTransfers(tokenState.transfers);
-      setTokenListings(
-        activeTokenListingsExcludingClosed(
+      setTokenListings((current) =>
+        tokenListingsWithPreservedLocalPending(
+          current,
           applyPendingTokenListingSeals(tokenState.listings),
           tokenState.closedListings,
         ),
@@ -15548,8 +15576,9 @@ export default function App() {
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
           setTokenTransfers(state.transfers);
-          setTokenListings(
-            activeTokenListingsExcludingClosed(
+          setTokenListings((current) =>
+            tokenListingsWithPreservedLocalPending(
+              current,
               applyPendingTokenListingSeals(state.listings),
               state.closedListings,
             ),
@@ -18076,8 +18105,9 @@ export default function App() {
       setTokenDefinitions(latestState.tokens);
       setTokenMints(latestState.mints);
       setTokenTransfers(latestState.transfers);
-      setTokenListings(
-        activeTokenListingsExcludingClosed(
+      setTokenListings((current) =>
+        tokenListingsWithPreservedLocalPending(
+          current,
           applyPendingTokenListingSeals(latestState.listings),
           latestState.closedListings,
         ),
@@ -28371,10 +28401,10 @@ function TokenMarketplacePanel({
     rows.map((token) => [token.tokenId, token]),
   );
   const sealedListings = marketListings.filter(
-    tokenListingHasSaleTicketSeal,
+    tokenListingHasConfirmedSaleTicketSeal,
   );
   const unsealedListings = marketListings.filter(
-    (listing) => !tokenListingHasSaleTicketSeal(listing),
+    (listing) => !tokenListingHasConfirmedSaleTicketSeal(listing),
   );
   const visibleMarketListings =
     tokenListingBookFilter === "sealed"

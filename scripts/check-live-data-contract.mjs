@@ -192,6 +192,23 @@ expectAll("wallet scoped token reads keep confirmed lifecycle history", server, 
   /url\.pathname === "\/api\/v1\/token"[\s\S]*if \(walletScoped\) \{[\s\S]*walletScopedTokenPayload/,
   /url\.pathname === "\/api\/v1\/token-summary"[\s\S]*const walletScoped =[\s\S]*walletScopedTokenSummaryPayload/,
 ]);
+expectAll("marketplace summary and tabs keep confirmed sealed inventory canonical", server + app, [
+  /function tokenSummaryListings\(items,\s*limit = SUMMARY_MARKET_LIMIT\)[\s\S]*tokenListingHasConfirmedSaleTicketSeal\(listing\)/,
+  /listings:\s*tokenSummaryListings\(listings,\s*listingLimit\)/,
+  /url\.pathname === "\/api\/v1\/marketplace-summary"[\s\S]*await marketplaceSummaryPayload\(network,\s*freshRead\)/,
+  /const sealedListings = marketListings\.filter\(\s*tokenListingHasConfirmedSaleTicketSeal,\s*\)/,
+  /const unsealedListings = marketListings\.filter\(\s*\(listing\) => !tokenListingHasConfirmedSaleTicketSeal\(listing\),\s*\)/,
+]);
+expect(
+  "marketplace summary must not serve stale proof-index summary snapshots before reconciliation",
+  !/proofIndexSnapshotPayload\(\s*network,\s*"marketplaceSummary"/.test(server),
+);
+expectAll("wallet token listing refresh preserves local pending marketplace rows", app, [
+  /function tokenListingShouldSurviveRefresh\(listing:\s*PowTokenListing\)[\s\S]*listing\.confirmed === false[\s\S]*tokenListingHasPendingSaleTicketSeal\(listing\)/,
+  /function tokenListingsWithPreservedLocalPending\([\s\S]*tokenListingShouldSurviveRefresh\(listing\)[\s\S]*mergeTokenListingsById\(incoming,\s*preserved\)/,
+  /function replaceTokenListingsForOwnerScope\([\s\S]*tokenListingShouldSurviveRefresh\(listing\)/,
+  /setTokenListings\(\(current\) =>\s*tokenListingsWithPreservedLocalPending\(/,
+]);
 expectAll("DB mail reads use indexed address matching and self-send folders", proofIndexReader, [
   /function addressMailRowPayloads\(row,\s*address,\s*network\)/,
   /target\.address = ANY\(\$2::text\[\]\)/,

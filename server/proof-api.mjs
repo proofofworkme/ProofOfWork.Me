@@ -10049,6 +10049,50 @@ function recentByCreatedAt(items, limit = SUMMARY_ACTIVITY_LIMIT) {
     .slice(0, Math.max(0, limit));
 }
 
+function tokenSummaryListingKey(listing) {
+  return listing?.listingId
+    ? `${listing.network ?? ""}:${String(listing.listingId).toLowerCase()}`
+    : "";
+}
+
+function tokenSummaryListingActivityMs(listing) {
+  const parsed = Date.parse(
+    String(listing?.sealAt ?? listing?.createdAt ?? ""),
+  );
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function tokenSummaryListings(items, limit = SUMMARY_MARKET_LIMIT) {
+  const listings = Array.isArray(items) ? items : [];
+  const selected = new Map();
+
+  for (const listing of recentByCreatedAt(listings, limit)) {
+    const key = tokenSummaryListingKey(listing);
+    if (key) {
+      selected.set(key, listing);
+    }
+  }
+
+  for (const listing of listings) {
+    if (!tokenListingHasConfirmedSaleTicketSeal(listing)) {
+      continue;
+    }
+    const key = tokenSummaryListingKey(listing);
+    if (key) {
+      selected.set(key, listing);
+    }
+  }
+
+  return [...selected.values()].sort(
+    (left, right) =>
+      Number(tokenListingHasConfirmedSaleTicketSeal(right)) -
+        Number(tokenListingHasConfirmedSaleTicketSeal(left)) ||
+      Number(Boolean(right?.confirmed)) - Number(Boolean(left?.confirmed)) ||
+      tokenSummaryListingActivityMs(right) - tokenSummaryListingActivityMs(left) ||
+      String(left?.listingId ?? "").localeCompare(String(right?.listingId ?? "")),
+  );
+}
+
 function recentClosedTokenListings(items, limit = SUMMARY_MARKET_LIMIT) {
   const eventTime = (item) => {
     const parsed = Date.parse(String(item?.closedAt ?? item?.createdAt ?? ""));
@@ -10461,7 +10505,7 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
       closedListingLimit,
     ),
     holders: holders.slice(0, holderLimit),
-    listings: recentByCreatedAt(listings, listingLimit),
+    listings: tokenSummaryListings(listings, listingLimit),
     mints: [],
     sales: recentByCreatedAt(payload.sales, saleLimit),
     summaryOnly: true,
@@ -17720,24 +17764,6 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/marketplace-summary") {
-      if (
-        !freshRead &&
-        proofIndexReadFeatureEnabled("marketplace-summary,summary,summaries")
-      ) {
-        const indexedPayload = await proofIndexSnapshotPayload(
-          network,
-          "marketplaceSummary",
-        ).catch((error) => {
-          console.error(
-            `Proof index marketplace-summary read failed: ${errorSummary(error)}`,
-          );
-          return null;
-        });
-        if (indexedPayload) {
-          jsonResponse(response, 200, indexedPayload, READ_CACHE_CONTROL);
-          return;
-        }
-      }
       jsonResponse(
         response,
         200,
