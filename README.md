@@ -148,8 +148,10 @@ Launch invariants for future developers/agents:
 - Filters active marketplace listings by sale-ticket outspend state, using Bitcoin Core spend checks when configured, so a spent ticket leaves the active book even if a cached summary snapshot is still warming.
 - Promotes pending credit listings into confirmed listing state without duplicating them, so WORK and other credit books do not show stale pending shadows after confirmation.
 - Preserves credit sale-ticket seal metadata when pending listings promote to confirmed state, so WORK listings stay sealed or sealing across cache refreshes.
+- Preserves local pending credit listings and seals across wallet/token refreshes until the canonical API sees the same listing, seal, closure, or sale, so seller action buttons do not blink away while the indexer catches up.
 - Blocks duplicate credit listing seals once a valid seal is already known for the active listing.
-- Shows credit market books with All, Sealed, and Unsealed views where sale-ticket status applies; active books can sort by price or arbitrage, while sales/listing logs stay ordered by confirmation time.
+- Shows credit market books with All, Sealed, and Unsealed views where sale-ticket status applies. Sealed means the sale-ticket seal is confirmed and buyable; pending seal rows remain visible in All/Unsealed as sealing status. Active books can sort by price or arbitrage, while sales/listing logs stay ordered by confirmation time.
+- Keeps confirmed, unspent, buyable sealed listings in marketplace summaries even when ordinary active-listing previews are capped, so older sealed inventory remains visible in Buy and public order-book views.
 - Paginates credit sales/listing logs from the API so every listing, closure, and sale remains inspectable instead of being limited to a preview.
 - Prunes dropped pending WORK and credit transactions from live pending overlays after liveness checks, so stale mempool ghosts cannot distort transfer visibility, listing visibility, balances, floor, or network value.
 - Credit mint surfaces treat confirmed history as canonical mint-out, but pause user mint actions when confirmed plus pending mints would fill the remaining supply. Pending mempool records are not final, but the UI avoids letting users pay for likely overfill attempts, and WORK summary data must replay confirmed mints instead of trusting stale partial supply totals.
@@ -215,6 +217,7 @@ Current production behavior:
 - Credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` and require a 546-proof mutation payment to that same credit registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visible but not canonical.
 - The Credit tab inside Marketplace is the shared market surface for credit trades. Credit `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the credit registry mutation fee.
 - Credit active listings are spend-state aware. A sale-ticket outpoint spend closes the listing; production Core-backed spend checks keep Wallet and Marketplace aligned while summaries warm. If the spend is a valid `pwt1:buy5`, the sale appears in credit sales, credit market logs, Growth, and summary endpoints after refresh.
+- `/api/v1/marketplace-summary` returns the reconciled marketplace lifecycle rather than a raw proof-index summary snapshot, so stale compacted snapshots cannot hide confirmed sealed listings from the public Buy book. Proof-index summary snapshots are still backfilled and checked by parity, but route output must preserve the confirmed sealed inventory contract.
 - Fresh reads for credit summaries, credit histories, marketplace summaries, and WORK summaries refresh the shared credit payload cache before returning. Stale snapshots are acceptable for first paint only, not after an explicit refresh.
 - Credit mint prices are owner-set with a 546-proof minimum. ProofOfWork does not take a global fee on mints; the mint price goes to that credit's registry address.
 - Credit surfaces show the starting unit price as mint price divided by mint amount, plus live node-backed USD per credit and per mint from BTC/USD.
@@ -605,7 +608,7 @@ npm run check:mail-regressions
 npm run check:marketplace-regressions
 ```
 
-`check:mail-regressions` proves indexed Inbox/Sent mail plus Infinity Bond Log/Event search for the OTC self-send regression tx. `check:marketplace-regressions` proves WORK delist, sale, wallet, summary, and Log close status stay aligned. `indexer:parity` proves the database snapshot, event rows, participants/refs, registry, summaries, token history, address-mail, and tx-status samples match the canonical ledger contract.
+`check:mail-regressions` proves indexed Inbox/Sent mail plus Infinity Bond Log/Event search for the OTC self-send regression tx. `check:marketplace-regressions` proves WORK delist, sale, wallet, summary, all confirmed sealed listing visibility, and Log close status stay aligned. `indexer:parity` proves the database snapshot, event rows, participants/refs, registry, summaries, token history, address-mail, and tx-status samples match the canonical ledger contract.
 
 Run the relevant checks after changing `server/proof-api.mjs`, Log search,
 Growth, WORK, mail indexing, marketplace indexing, or credit/token indexing.

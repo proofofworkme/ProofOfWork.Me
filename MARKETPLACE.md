@@ -94,6 +94,26 @@ The June 2026 marketplace fixes preserved these operational invariants:
 - Confirmed sale-ticket spends are active-book truth. When Bitcoin Core RPC is configured, active listing reconciliation uses current UTXO spend state before falling back to slower address-history recovery, so confirmed delistings and buys clear from Marketplace and Wallet while summaries warm.
 - Closed listings, sales, market logs, Growth, and Log derive from the same sale-ticket lifecycle. A delisting should not disappear from logs, and a bought ticket should not stay visible as active in any wallet or marketplace surface.
 
+## June 22 Summary Hardening
+
+The June 22 marketplace fix tightened the split between visible intent,
+pending sealing, and confirmed executable asks:
+
+- Confirmed, unspent, buyable sealed WORK/credit listings must stay present in
+  `/api/v1/marketplace-summary` even when ordinary active-listing previews are
+  capped by recency.
+- The public marketplace summary route must return the reconciled sale-ticket
+  lifecycle, not a stale compacted proof-index summary snapshot that can hide
+  older confirmed sealed inventory.
+- The Sealed tab/count means confirmed and buyable. Pending seal rows remain
+  visible as sealing status in All/Unsealed until their seal confirms.
+- Wallet and Marketplace refreshes may preserve locally broadcast pending
+  listing/seal overlays until the canonical API sees the same tx or a closure,
+  so seller controls do not disappear while the indexer catches up.
+- Regression checks must prove that every confirmed sealed WORK listing present
+  in the full token payload is also present in marketplace summary, and that
+  wallet-scoped listing reads preserve confirmed seal txids.
+
 ## Order Books And Logs
 
 Marketplace books should stay asset-agnostic as new product classes are added.
@@ -104,8 +124,9 @@ For any sale-ticket product, the active book should expose:
 - Unsealed listings
 
 Sealed listings are buyable when the seller signature and sale-ticket anchor are
-valid. Listings with a visible pending seal may be shown as sealing so sellers
-and buyers do not lose the state during confirmation, but confirmed state remains
+valid and confirmed. Listings with a visible pending seal may be shown as
+sealing so sellers and buyers do not lose the state during confirmation, but
+they belong in All/Unsealed until confirmation. Confirmed state remains
 canonical. Unsealed listings are visible records, but not yet buyable. Active
 books may sort by price high/low and arbitrage high/low when a reference price
 exists.

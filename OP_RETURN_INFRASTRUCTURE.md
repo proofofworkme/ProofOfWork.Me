@@ -142,16 +142,19 @@ public response.
 Additional snapshot-backed read flags are available for the broader default-read
 posture: `registry-history` serves stable registry records, activity, listings,
 and sales pages from stored canonical history snapshots while pending registry
-views stay canonical; `work-floor`, `work-summary`, `marketplace-summary`, and
-`growth-summary` serve stored canonical summary snapshots with age guards and
-canonical fallback; `event-history` serves DB-backed protocol/event search for
-indexed registry, credit, marketplace, mail/file, seeded, and broader Computer
-events; `address-mail` serves connected-wallet mailbox reads from the indexed
-mail projection, including confirmed Inbox/Sent and indexed pending
-Incoming/Outbox visibility. `pwm1:m:powb` is normalized as `infinity-bond` for
-Log/Event/summary accounting but still projects into `mail_items` so confirmed
-self-sends land in both Inbox and Sent. The `log` flag is reserved for an explicit full
-activity snapshot refresh. Fresh reads still use the node/API path so explicit
+views stay canonical; `work-floor`, `work-summary`, and `growth-summary` serve
+stored canonical summary snapshots with age guards and canonical fallback.
+`marketplace-summary` must pass through the reconciled marketplace lifecycle
+builder before returning so confirmed, unspent, buyable sealed listings cannot
+be dropped by an older compacted proof-index summary snapshot. `event-history`
+serves DB-backed protocol/event search for indexed registry, credit,
+marketplace, mail/file, seeded, and broader Computer events; `address-mail`
+serves connected-wallet mailbox reads from the indexed mail projection,
+including confirmed Inbox/Sent and indexed pending Incoming/Outbox visibility.
+`pwm1:m:powb` is normalized as `infinity-bond` for Log/Event/summary accounting
+but still projects into `mail_items` so confirmed self-sends land in both Inbox
+and Sent. The `log` flag is reserved for an explicit full activity snapshot
+refresh. Fresh reads still use the node/API path so explicit
 refreshes converge on current chain and mempool truth.
 
 The worker script keeps the indexer warm by repeatedly running bounded
@@ -421,7 +424,8 @@ The credit endpoint:
 - Reconstructs credit listings from `pwt1:list5:<sale-ticket-json-base64url>`, credit seals from `pwt1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>`, delistings from `pwt1:delist5:<listing-txid>`, and buyer-funded purchases from `pwt1:buy5:<listing-txid>:<buyer-address>`.
 - Credit listings reserve the seller's spendable balance, create a 546-proof seller-controlled sale-ticket output, and require the standard 546-proof credit registry mutation payment before OP_RETURN. Buys must spend the seller ticket, pay the seller the listed price plus ticket value, and pay the credit registry mutation fee.
 - Active credit listings are filtered by sale-ticket outspend state. When Bitcoin Core RPC is configured, `gettxout` is the fast spend-state oracle and address-history scans are recovery context. If the ticket output is spent, the listing is closed even when a cached snapshot is otherwise stale; if the spend is a valid `buy5`, the event also appears as a credit sale.
-- Credit listing seals are one-per-active-listing. A valid existing seal blocks duplicate seal attempts, while a newly confirmed listing promotion preserves the original seal and outspend state. Listing books may show sealed-or-sealing rows when a sale-ticket anchor signature is visible from confirmed state or pending visibility; confirmed state remains canonical.
+- Credit listing seals are one-per-active-listing. A valid existing seal blocks duplicate seal attempts, while a newly confirmed listing promotion preserves the original seal and outspend state. Listing books may show pending seal rows as sealing status, but the Sealed tab/count means confirmed and buyable only; pending seals stay in All/Unsealed until confirmation.
+- Marketplace summary compaction must keep all confirmed, unspent, buyable sealed listings even when the recent active-listing preview is capped. Public summary reads should be verified against the full WORK token payload so every confirmed sealed listing in `/api/v1/token` remains present in `/api/v1/marketplace-summary`.
 - Credit market history merges active listings, closed listings, and settled sales into a paginated `market-log` view ordered by confirmation status, event time, and txid. It is not sorted by price or arbitrage.
 - Fresh credit reads, credit summary reads, credit history reads, WORK summaries, and marketplace summaries refresh the shared credit payload cache before returning. Background refresh keeps fast first paint useful, but explicit refresh must converge on current node truth and may not leave a spent sale-ticket visible as active.
 - Fresh reads also remove dropped pending credit/WORK transactions from overlay state after liveness checks, so stale pending transfers, listings, seals, delistings, or buys do not survive after they disappear from mempool views.
@@ -598,7 +602,7 @@ After changing the API or production build, verify:
 - Known confirmed ledger regression txids are searchable in Log, including `411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891` and `b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34`.
 - `npm run indexer:parity` passes against production and reports canonical/database snapshot parity plus populated participants/refs.
 - `npm run check:mail-regressions` passes against production, including the `64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e` OTC self-send in Inbox, Sent, Log, and Event History as an Infinity Bond.
-- `npm run check:marketplace-regressions` passes against production, including WORK delist and sale-ticket lifecycle alignment.
+- `npm run check:marketplace-regressions` passes against production, including WORK delist, sale-ticket lifecycle alignment, confirmed sealed listing visibility in marketplace summary, and wallet-scoped sealed listing state.
 - Known WORK marketplace regression txids are searchable in Log, including `f5dbee238a09fe0da6a0e4d01526fefefa6676b86df742323ce49df0daa5ecf5` as a listing close and `34ad3a1211c3023d66d72e04e9faf8d989cd60f476887a0abd28b53ba2a8b0a3` as sale plus closure.
 - Growth can load real chain metrics, including credit creations, mints, transfers, listings, and sales, and render the modeled-vs-real proofs/USD value graph without layout overlap on desktop and mobile.
 - WORK and Growth show matching confirmed network value in proofs/live USD using `/api/v1/work-floor` and `/api/v1/prices/btc-usd`; `actualValue.totalUsd` reconciles to `actualValue.totalSats / 100000000 * btcUsd`.
