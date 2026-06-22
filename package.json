@@ -10,6 +10,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "check:ui": "node scripts/check-ui-contract.mjs",
     "check:live-data": "node scripts/check-live-data-contract.mjs",
+    "check:send-prep-regressions": "node scripts/check-send-prep-regressions.mjs",
     "check:credit-mint-regressions": "node scripts/check-credit-mint-regressions.mjs",
     "check:marketplace-regressions": "node scripts/check-marketplace-regressions.mjs",
     "check:mail-regressions": "node scripts/check-mail-regressions.mjs",

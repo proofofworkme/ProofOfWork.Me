@@ -2342,7 +2342,10 @@ function addressMailRowPayloads(row, address, network) {
     });
   }
 
-  if (!actorKey || actorKey !== targetKey || targetIsRecipient) {
+  if (
+    deliveryStatus !== "dropped" &&
+    (!actorKey || actorKey !== targetKey || targetIsRecipient)
+  ) {
     const targetRecipient =
       recipients.find(
         (recipient) => normalizedAddressKey(recipient.address) === targetKey,
@@ -2396,7 +2399,12 @@ export async function proofIndexAddressMailPayload(network, address) {
       SELECT
         e.payload,
         e.kind,
-        e.status,
+        CASE
+          WHEN 'confirmed' = ANY(ARRAY[e.status, m.status, t.status]) THEN 'confirmed'
+          WHEN 'dropped' = ANY(ARRAY[e.status, m.status, t.status]) THEN 'dropped'
+          WHEN 'orphaned' = ANY(ARRAY[e.status, m.status, t.status]) THEN 'orphaned'
+          ELSE e.status
+        END AS status,
         e.event_time,
         e.block_time,
         e.created_at,
@@ -2421,6 +2429,9 @@ export async function proofIndexAddressMailPayload(network, address) {
       LEFT JOIN proof_indexer.mail_items m
         ON m.network = e.network
        AND m.txid = e.txid
+      LEFT JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
       LEFT JOIN proof_indexer.event_participants ep
         ON ep.event_id = e.event_id
       WHERE e.network = $1
@@ -2437,6 +2448,8 @@ export async function proofIndexAddressMailPayload(network, address) {
         e.payload,
         e.kind,
         e.status,
+        m.status,
+        t.status,
         e.event_time,
         e.block_time,
         e.created_at,

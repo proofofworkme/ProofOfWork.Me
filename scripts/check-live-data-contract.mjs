@@ -165,8 +165,9 @@ expectAll("API address app reads stay first-party", server, [
   /proofIndexAddressMailPayload/,
   /async function nodeMailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*let scanError = ""[\s\S]*MAIL_ADDRESS_TX_PAGES[\s\S]*includeExternal:\s*options\.includeExternal !== false[\s\S]*preferExternal:\s*options\.preferExternal === true[\s\S]*Mail scan failed[\s\S]*scanFailed: Boolean\(scanError\)/,
   /async function indexedMailPayload\(address,\s*network\)[\s\S]*proofIndexReadFeatureEnabled\("address-mail,mail,event-history,events"\)[\s\S]*proofIndexAddressMailPayload\(network,\s*address\)/,
+  /async function reconcileMailPayloadStatuses\(payload,\s*network\)[\s\S]*txStatusPayload\(txid,\s*network\)[\s\S]*status\?\.status === "dropped"[\s\S]*return \[\]/,
   /function mailPayloadHasMessages\(payload\)/,
-  /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedPayload = await indexedMailPayload\(address,\s*network\)[\s\S]*if \(!fresh && indexedPayload && mailPayloadHasMessages\(indexedPayload\)\) \{[\s\S]*return indexedPayload/,
+  /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedPayload = await indexedMailPayload\(address,\s*network\)[\s\S]*if \(!fresh && indexedPayload && mailPayloadHasMessages\(indexedPayload\)\) \{[\s\S]*return reconcileMailPayloadStatuses\(indexedPayload,\s*network\)/,
   /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedWasEmpty = Boolean\(indexedPayload\) && !mailPayloadHasMessages\(indexedPayload\)[\s\S]*includeExternal:\s*indexedWasEmpty \|\| fresh \|\| !indexedPayload[\s\S]*preferExternal:\s*indexedWasEmpty/,
   /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*mergeMailPayloads\(indexedPayload,\s*scannedPayload\)/,
   /mailPayload\(address,\s*network,\s*\{ fresh: freshRead \}\)/,
@@ -194,9 +195,11 @@ expectAll("wallet scoped token reads keep confirmed lifecycle history", server, 
 expectAll("DB mail reads use indexed address matching and self-send folders", proofIndexReader, [
   /function addressMailRowPayloads\(row,\s*address,\s*network\)/,
   /target\.address = ANY\(\$2::text\[\]\)/,
+  /LEFT JOIN proof_indexer\.transactions t[\s\S]*AND t\.txid = e\.txid/,
+  /WHEN 'confirmed' = ANY\(ARRAY\[e\.status,\s*m\.status,\s*t\.status\]\) THEN 'confirmed'/,
   /const targetIsRecipient =[\s\S]*\["recipient",\s*"receiver",\s*"counterparty"\]/,
   /if \(actorKey && actorKey === targetKey\)[\s\S]*folder: "sent"/,
-  /if \(!actorKey \|\| actorKey !== targetKey \|\| targetIsRecipient\)[\s\S]*folder: "inbox"/,
+  /deliveryStatus !== "dropped"[\s\S]*\(!actorKey \|\| actorKey !== targetKey \|\| targetIsRecipient\)[\s\S]*folder: "inbox"/,
 ]);
 expectAll("local self-send broadcasts appear in Incoming immediately", app, [
   /function samePaymentAddress\(left:\s*string,\s*right:\s*string\)/,

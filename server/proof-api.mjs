@@ -201,6 +201,9 @@ const ADDRESS_UTXO_FETCH_TIMEOUT_MS = Number(
 const ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS = Number(
   process.env.ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS ?? 12_000,
 );
+const ADDRESS_UTXO_EXTERNAL_FETCH_TIMEOUT_MS = Number(
+  process.env.ADDRESS_UTXO_EXTERNAL_FETCH_TIMEOUT_MS ?? 8_000,
+);
 const BLOCKCHAIN_INFO_ADDRESS_TX_PAGE_LIMIT = Math.max(
   1,
   Math.min(100, Number(process.env.BLOCKCHAIN_INFO_ADDRESS_TX_PAGE_LIMIT ?? 50)),
@@ -217,6 +220,7 @@ const TX_OUTSPEND_HISTORY_FETCH_TIMEOUT_MS = Number(
 const TX_OUTSPEND_HISTORY_MAX_TXS = Number(
   process.env.TX_OUTSPEND_HISTORY_MAX_TXS ?? 500,
 );
+const TX_FETCH_TIMEOUT_MS = Number(process.env.TX_FETCH_TIMEOUT_MS ?? 5_000);
 const WORK_TOKEN_LIVE_DELTA_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_DELTA_MAX_TXS ?? 1500,
 );
@@ -2477,7 +2481,9 @@ async function fetchTransaction(txid, network) {
     return cached;
   }
 
-  const tx = await fetchJson(`${mempoolBase(network)}/api/tx/${normalizedTxid}`);
+  const tx = await fetchJson(`${mempoolBase(network)}/api/tx/${normalizedTxid}`, {
+    signal: AbortSignal.timeout(TX_FETCH_TIMEOUT_MS),
+  });
   cachePendingTokenTransaction(tx, network, "tx");
   if (transactionConfirmed(tx)) {
     TRANSACTION_CACHE.set(cacheKey, tx);
@@ -2490,7 +2496,9 @@ async function fetchTransaction(txid, network) {
 }
 
 async function fetchTransactionFromBase(baseUrl, txid) {
-  const response = await fetch(`${baseUrl}/api/tx/${txid}`);
+  const response = await fetch(`${baseUrl}/api/tx/${txid}`, {
+    signal: AbortSignal.timeout(TX_FETCH_TIMEOUT_MS),
+  });
   if (response.status === 404) {
     return null;
   }
@@ -2717,10 +2725,11 @@ async function fetchTransactionFromElectrum(
     return cached;
   }
 
-  const raw = await electrumRequest("blockchain.transaction.get", [
-    normalizedTxid,
-    true,
-  ]);
+  const raw = await electrumRequest(
+    "blockchain.transaction.get",
+    [normalizedTxid, true],
+    options.timeoutMs ?? TX_FETCH_TIMEOUT_MS,
+  );
   if (!raw || typeof raw !== "object") {
     return null;
   }
@@ -2938,7 +2947,7 @@ async function fetchAddressUtxosFromBlockchainInfo(address, network) {
 
   const payload = await fetchJsonViaHttps(
     `https://blockchain.info/unspent?active=${encodeURIComponent(address)}`,
-    ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS,
+    ADDRESS_UTXO_EXTERNAL_FETCH_TIMEOUT_MS,
   );
   const outputs = Array.isArray(payload?.unspent_outputs)
     ? payload.unspent_outputs
@@ -2981,6 +2990,27 @@ async function fetchAddressUtxosFromBlockchainInfo(address, network) {
         Number(Boolean(left.status?.confirmed));
       return byConfirmation || right.value - left.value;
     });
+}
+
+async function fetchAddressUtxosFromSecondaryExplorers(address, network) {
+  for (const base of secondaryExplorerBases(network)) {
+    const url = `${base}/api/address/${address}/utxo`;
+    try {
+      const utxos = await fetchJsonViaHttps(
+        url,
+        ADDRESS_UTXO_EXTERNAL_FETCH_TIMEOUT_MS,
+      );
+      if (Array.isArray(utxos)) {
+        return utxos;
+      }
+    } catch (error) {
+      console.error(
+        `Secondary UTXO lookup failed for ${base} ${address}: ${errorSummary(error)}`,
+      );
+    }
+  }
+
+  return null;
 }
 
 function normalizedHex(value) {
@@ -16394,6 +16424,94 @@ function mergeMailPayloads(indexedPayload, scannedPayload) {
   };
 }
 
+async function reconcileMailPayloadStatuses(payload, network) {
+  if (!payload) {
+    return payload;
+  }
+
+  const inboxMessages = Array.isArray(payload.inboxMessages)
+    ? payload.inboxMessages
+    : [];
+  const sentMessages = Array.isArray(payload.sentMessages)
+    ? payload.sentMessages
+    : [];
+  const statusTxids = [
+    ...inboxMessages
+      .filter((message) => !message?.confirmed)
+      .map((message) => message?.txid),
+    ...sentMessages
+      .filter((message) => message?.status !== "confirmed")
+      .map((message) => message?.txid),
+  ]
+    .map((txid) => String(txid ?? "").trim().toLowerCase())
+    .filter((txid) => /^[0-9a-f]{64}$/u.test(txid));
+  const uniqueTxids = [...new Set(statusTxids)].slice(0, 25);
+  if (uniqueTxids.length === 0) {
+    return payload;
+  }
+
+  const settled = await Promise.allSettled(
+    uniqueTxids.map(async (txid) => [txid, await txStatusPayload(txid, network)]),
+  );
+  const statusByTxid = new Map();
+  for (const result of settled) {
+    if (result.status !== "fulfilled") {
+      continue;
+    }
+    const [txid, status] = result.value;
+    if (status?.status) {
+      statusByTxid.set(txid, status);
+    }
+  }
+
+  const reconciledInbox = inboxMessages.flatMap((message) => {
+    const status = statusByTxid.get(String(message?.txid ?? "").toLowerCase());
+    if (status?.status === "dropped") {
+      return [];
+    }
+    if (status?.status === "confirmed" && !message.confirmed) {
+      return [
+        {
+          ...message,
+          confirmed: true,
+          confirmedAt: message.confirmedAt ?? status.indexedAt,
+        },
+      ];
+    }
+    return [message];
+  });
+  const reconciledSent = sentMessages.map((message) => {
+    const status = statusByTxid.get(String(message?.txid ?? "").toLowerCase());
+    if (status?.status === "dropped" && message.status !== "dropped") {
+      return {
+        ...message,
+        droppedAt: message.droppedAt ?? status.indexedAt,
+        lastCheckedAt: status.indexedAt,
+        status: "dropped",
+      };
+    }
+    if (status?.status === "confirmed" && message.status !== "confirmed") {
+      return {
+        ...message,
+        confirmedAt: message.confirmedAt ?? status.indexedAt,
+        lastCheckedAt: status.indexedAt,
+        status: "confirmed",
+      };
+    }
+    return message;
+  });
+
+  return {
+    ...payload,
+    inboxMessages: reconciledInbox,
+    sentMessages: reconciledSent,
+    stats: mailStats(reconciledInbox, reconciledSent, {
+      ...(payload.stats ?? {}),
+      reconciledStatuses: statusByTxid.size,
+    }),
+  };
+}
+
 async function nodeMailPayload(address, network, options = {}) {
   let scanError = "";
   const txs = await fetchAddressTransactions(
@@ -16452,7 +16570,7 @@ async function mailPayload(address, network, options = {}) {
   const indexedPayload = await indexedMailPayload(address, network);
 
   if (!fresh && indexedPayload && mailPayloadHasMessages(indexedPayload)) {
-    return indexedPayload;
+    return reconcileMailPayloadStatuses(indexedPayload, network);
   }
 
   const indexedWasEmpty = Boolean(indexedPayload) && !mailPayloadHasMessages(indexedPayload);
@@ -16469,10 +16587,13 @@ async function mailPayload(address, network, options = {}) {
     scannedPayload.scanError ||
     mailPayloadHasMessages(scannedPayload)
   ) {
-    return mergeMailPayloads(indexedPayload, scannedPayload);
+    return reconcileMailPayloadStatuses(
+      mergeMailPayloads(indexedPayload, scannedPayload),
+      network,
+    );
   }
 
-  return indexedPayload;
+  return reconcileMailPayloadStatuses(indexedPayload, network);
 }
 
 async function addressUtxoPayload(address, network) {
@@ -16496,6 +16617,20 @@ async function addressUtxoPayload(address, network) {
   };
 
   let lastError = null;
+  const electrumUtxos = await fetchAddressUtxosFromElectrum(
+    address,
+    network,
+  ).catch((error) => {
+    lastError = error;
+    console.error(
+      `Electrum UTXO lookup failed for ${address}: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (Array.isArray(electrumUtxos)) {
+    return electrumUtxos;
+  }
+
   for (const base of firstPartyAddressReadBases(network)) {
     try {
       return await requireUtxoArray(base, fetchUtxosFromBase(base));
@@ -16507,20 +16642,40 @@ async function addressUtxoPayload(address, network) {
     }
   }
 
-  const electrumUtxos = await fetchAddressUtxosFromElectrum(
+  const blockchainInfoUtxos = await fetchAddressUtxosFromBlockchainInfo(
     address,
     network,
   ).catch((error) => {
+    lastError = error;
     console.error(
-      `Electrum UTXO lookup failed for ${address}: ${errorSummary(error)}`,
+      `Blockchain.info UTXO lookup failed for ${address}: ${errorSummary(error)}`,
     );
     return null;
   });
-  if (electrumUtxos) {
-    return electrumUtxos;
+  if (Array.isArray(blockchainInfoUtxos)) {
+    return blockchainInfoUtxos;
   }
 
-  throw lastError ?? new Error(`UTXO lookup failed for ${address}.`);
+  const secondaryUtxos = network === "livenet" ? null : await fetchAddressUtxosFromSecondaryExplorers(
+    address,
+    network,
+  ).catch((error) => {
+    lastError = error;
+    console.error(
+      `Secondary UTXO lookup failed for ${address}: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (Array.isArray(secondaryUtxos)) {
+    return secondaryUtxos;
+  }
+
+  const error = new Error(
+    `Wallet UTXO lookup timed out for ${shortAddress(address)}. The node could not return spendable outputs before timeout. Refresh and try again.`,
+  );
+  error.statusCode = 503;
+  error.details = lastError ? { cause: errorSummary(lastError) } : undefined;
+  throw error;
 }
 
 async function txHexPayload(txid, network) {

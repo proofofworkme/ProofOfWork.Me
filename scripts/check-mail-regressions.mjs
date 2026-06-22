@@ -15,6 +15,18 @@ const CHECKS = [
     label: "carbonz@proofofwork.me",
     minInbox: 1,
     minTotal: 1,
+    mustNotInboxTxid:
+      "8e9074486fa0a6a75fd01f20c8a41a56ccd964be569e61e81e92c60266c001f0",
+  },
+  {
+    address: "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH",
+    label: "armyofyouth@proofofwork.me",
+    minInbox: 1,
+    minTotal: 1,
+    mustDroppedOutboxTxid:
+      "8e9074486fa0a6a75fd01f20c8a41a56ccd964be569e61e81e92c60266c001f0",
+    mustInboxTxid:
+      "91a754469f5efcbf4312a71a11352fa3141eef19a6ace923ad22b16250c05e37",
   },
   {
     address:
@@ -179,6 +191,15 @@ function assertMailbox(check, payload) {
     failures.push(`missing inbox tx ${check.mustInboxTxid}`);
   }
   if (
+    check.mustNotInboxTxid &&
+    inboxMessages.some(
+      (message) =>
+        String(message?.txid ?? "").toLowerCase() === check.mustNotInboxTxid,
+    )
+  ) {
+    failures.push(`dropped tx ${check.mustNotInboxTxid} leaked into inbox`);
+  }
+  if (
     check.mustSentTxid &&
     !sentMessages.some(
       (message) =>
@@ -186,6 +207,17 @@ function assertMailbox(check, payload) {
     )
   ) {
     failures.push(`missing sent tx ${check.mustSentTxid}`);
+  }
+  if (
+    check.mustDroppedOutboxTxid &&
+    !sentMessages.some(
+      (message) =>
+        String(message?.txid ?? "").toLowerCase() ===
+          check.mustDroppedOutboxTxid &&
+        message?.status === "dropped",
+    )
+  ) {
+    failures.push(`missing dropped outbox tx ${check.mustDroppedOutboxTxid}`);
   }
 
   if (failures.length > 0) {

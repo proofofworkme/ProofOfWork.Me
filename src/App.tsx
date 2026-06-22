@@ -1123,6 +1123,7 @@ const LOG_LIVE_REFRESH_MS = 15_000;
 const BACKGROUND_FRESH_REFRESH_DELAY_MS = 1_000;
 const BTC_USD_BROWSER_CACHE_TTL_MS = 60_000;
 const TX_OUTSPEND_FETCH_TIMEOUT_MS = 12_000;
+const WALLET_UTXO_FETCH_TIMEOUT_MS = 20_000;
 const BLOCK_TXID_INDEX_CACHE = new Map<string, Promise<Map<string, number>>>();
 const BTC_USD_BROWSER_INFLIGHT = new Map<string, Promise<number>>();
 const PROTOCOL_PREFIX = "pwm1:";
@@ -10039,7 +10040,11 @@ async function fetchUtxos(
   let lastError: unknown;
   for (const url of utxoUrls) {
     const controller = new AbortController();
-    const timeout = globalThis.setTimeout(() => controller.abort(), 7_000);
+    let timedOut = false;
+    const timeout = globalThis.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, WALLET_UTXO_FETCH_TIMEOUT_MS);
     try {
       const response = await fetch(url, {
         cache: "no-store",
@@ -10047,12 +10052,25 @@ async function fetchUtxos(
         signal: controller.signal,
       });
       if (!response.ok) {
-        throw new Error(`UTXO lookup returned HTTP ${response.status}.`);
+        const payload = await response.json().catch(() => null);
+        const apiError =
+          payload && typeof payload === "object" && "error" in payload
+            ? String((payload as { error?: unknown }).error ?? "").trim()
+            : "";
+        throw new Error(
+          apiError || `UTXO lookup returned HTTP ${response.status}.`,
+        );
       }
       const payload = await response.json();
       return normalizeUtxos(Array.isArray(payload) ? payload : []);
     } catch (error) {
-      lastError = error;
+      lastError =
+        timedOut ||
+        (error instanceof DOMException && error.name === "AbortError")
+          ? new Error(
+              "Wallet UTXO lookup timed out before the node returned spendable outputs. Refresh and try again.",
+            )
+          : error;
     } finally {
       globalThis.clearTimeout(timeout);
     }
