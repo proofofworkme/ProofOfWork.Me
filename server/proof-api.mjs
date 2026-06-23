@@ -35,7 +35,9 @@ import {
   proofIndexTokenHistoryReadEligibility,
   proofIndexTokenHistoryPayload,
   proofIndexTokenReadEligibility,
+  proofIndexTokenMarketSummaryOverlayPayload,
   proofIndexTxStatusPayload,
+  proofIndexWalletTokenOverlayPayload,
 } from "./db/proof-index-reader.mjs";
 
 bitcoin.initEccLib(ecc);
@@ -159,10 +161,12 @@ const WORK_TOKEN_LIVE_WAIT_MS = Number(
   process.env.WORK_TOKEN_LIVE_WAIT_MS ?? WORK_FLOOR_FRESH_WAIT_MS,
 );
 const WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS = Number(
-  process.env.WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS ?? WORK_FLOOR_FRESH_WAIT_MS,
+  process.env.WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS ??
+    Math.max(WORK_FLOOR_FRESH_WAIT_MS, 15_000),
 );
 const MARKETPLACE_SUMMARY_FRESH_WAIT_MS = Number(
-  process.env.MARKETPLACE_SUMMARY_FRESH_WAIT_MS ?? WORK_FLOOR_FRESH_WAIT_MS,
+  process.env.MARKETPLACE_SUMMARY_FRESH_WAIT_MS ??
+    Math.max(WORK_FLOOR_FRESH_WAIT_MS, 30_000),
 );
 const TOKEN_SCOPED_FRESH_WAIT_MS = Number(
   process.env.TOKEN_SCOPED_FRESH_WAIT_MS ?? 30_000,
@@ -1326,6 +1330,337 @@ function tokenPayloadScopedToAddresses(payload, addresses) {
     transfers,
     walletScoped: true,
   };
+}
+
+function mergeTokenStateItemsByKey(baseItems, overlayItems, keyForItem) {
+  const byKey = new Map();
+  for (const item of Array.isArray(baseItems) ? baseItems : []) {
+    const key = keyForItem(item);
+    if (key) {
+      byKey.set(key, item);
+    }
+  }
+  for (const item of Array.isArray(overlayItems) ? overlayItems : []) {
+    const key = keyForItem(item);
+    if (key) {
+      byKey.set(key, item);
+    }
+  }
+  return [...byKey.values()].sort(compareTokenHistoryPageItems);
+}
+
+function mergeWalletHolders(baseHolders, overlayHolders) {
+  const byAddress = new Map();
+  for (const holder of Array.isArray(baseHolders) ? baseHolders : []) {
+    const address = String(holder?.address ?? "").trim().toLowerCase();
+    if (address) {
+      byAddress.set(address, holder);
+    }
+  }
+  for (const holder of Array.isArray(overlayHolders) ? overlayHolders : []) {
+    const address = String(holder?.address ?? "").trim().toLowerCase();
+    if (address) {
+      byAddress.set(address, holder);
+    }
+  }
+  return [...byAddress.values()]
+    .filter((holder) => Number(holder?.balance ?? 0) > 0)
+    .sort(
+      (left, right) =>
+        Number(right.balance ?? 0) - Number(left.balance ?? 0) ||
+        String(left.address ?? "").localeCompare(String(right.address ?? "")),
+    );
+}
+
+function newerIso(left, right) {
+  const leftMs = Date.parse(left ?? "");
+  const rightMs = Date.parse(right ?? "");
+  if (!Number.isFinite(leftMs)) {
+    return Number.isFinite(rightMs) ? right : left;
+  }
+  if (!Number.isFinite(rightMs)) {
+    return left;
+  }
+  return rightMs > leftMs ? right : left;
+}
+
+async function tokenPayloadWithIndexedWalletOverlay(
+  payload,
+  network,
+  tokenScope,
+  recoveryAddresses,
+) {
+  if (
+    network !== "livenet" ||
+    !Array.isArray(recoveryAddresses) ||
+    recoveryAddresses.length === 0 ||
+    !proofIndexReadFeatureEnabled("token-state,token-default,token")
+  ) {
+    return payload;
+  }
+
+  const overlay = await proofIndexWalletTokenOverlayPayload(
+    network,
+    tokenScope,
+    recoveryAddresses,
+  ).catch((error) => {
+    console.error(
+      `Proof index wallet token overlay failed: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (!overlay) {
+    return payload;
+  }
+
+  const transfers = mergeTokenStateItemsByKey(
+    payload?.transfers,
+    overlay.transfers,
+    (item) => String(item?.txid ?? "").trim().toLowerCase(),
+  );
+  const sales = mergeTokenStateItemsByKey(
+    payload?.sales,
+    overlay.sales,
+    (item) => String(item?.txid ?? "").trim().toLowerCase(),
+  );
+  const holders = mergeWalletHolders(payload?.holders, overlay.holders);
+  if (
+    transfers.length === (Array.isArray(payload?.transfers) ? payload.transfers.length : 0) &&
+    sales.length === (Array.isArray(payload?.sales) ? payload.sales.length : 0) &&
+    holders.length === (Array.isArray(payload?.holders) ? payload.holders.length : 0)
+  ) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    holders,
+    indexedAt: newerIso(payload?.indexedAt, overlay.indexedAt),
+    sales,
+    source: mergedSourceLabel(payload?.source, overlay.source),
+    stats: {
+      ...(payload?.stats ?? {}),
+      confirmedSales: sales.filter((sale) => sale.confirmed).length,
+      confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
+        .length,
+      holders: holders.length,
+      pendingSales: sales.filter((sale) => !sale.confirmed).length,
+      pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+        .length,
+      walletScoped: true,
+    },
+    transfers,
+    walletScoped: true,
+  };
+}
+
+function tokenSaleItemKey(item) {
+  return String(item?.txid ?? "").trim().toLowerCase();
+}
+
+function tokenClosedListingItemKey(item) {
+  return [
+    String(item?.network ?? "").trim().toLowerCase(),
+    String(item?.listingId ?? "").trim().toLowerCase(),
+    String(item?.closedTxid ?? item?.txid ?? "").trim().toLowerCase(),
+  ].join(":");
+}
+
+function confirmedTokenSalesStats(sales) {
+  const items = Array.isArray(sales) ? sales : [];
+  let confirmedSales = 0;
+  let confirmedSalesVolumeSats = 0;
+  for (const sale of items) {
+    if (!sale?.confirmed) {
+      continue;
+    }
+    confirmedSales += 1;
+    confirmedSalesVolumeSats += numericValue(sale.priceSats);
+  }
+  return { confirmedSales, confirmedSalesVolumeSats };
+}
+
+function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
+  if (!payload || !overlay) {
+    return payload;
+  }
+
+  const sales = mergeTokenStateItemsByKey(
+    payload.sales,
+    overlay.sales,
+    tokenSaleItemKey,
+  );
+  const closedListings = sortClosedTokenListings(
+    mergeTokenStateItemsByKey(
+      payload.closedListings,
+      overlay.closedListings,
+      tokenClosedListingItemKey,
+    ),
+  );
+  const stats = confirmedTokenSalesStats(sales);
+  return {
+    ...payload,
+    closedListings,
+    indexedAt: newerIso(payload.indexedAt, overlay.indexedAt),
+    sales,
+    source: mergedSourceLabel(payload.source, overlay.source),
+    stats: {
+      ...(payload.stats ?? {}),
+      confirmedSales: Math.max(
+        safeStatNumber(payload, "confirmedSales"),
+        numericValue(overlay.stats?.confirmedSales),
+        stats.confirmedSales,
+      ),
+      confirmedSalesVolumeSats: Math.max(
+        numericValue(payload.stats?.confirmedSalesVolumeSats),
+        numericValue(overlay.stats?.confirmedSalesVolumeSats),
+        stats.confirmedSalesVolumeSats,
+      ),
+    },
+  };
+}
+
+async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
+  if (
+    network !== "livenet" ||
+    !proofIndexReadFeatureEnabled("token-state,token-default,token")
+  ) {
+    return null;
+  }
+
+  return proofIndexTokenMarketSummaryOverlayPayload(
+    network,
+    tokenScope,
+  ).catch((error) => {
+    console.error(
+      `Proof index token market summary overlay failed: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+}
+
+function workFloorWithIndexedMarketSummaryOverlay(workFloor, overlay, tokenState) {
+  if (!workFloor || !overlay) {
+    return workFloor;
+  }
+
+  const saleStats = confirmedTokenSalesStats(tokenState?.sales);
+  const previousActual = workFloor.actualValue ?? {};
+  const previousStats = workFloor.stats ?? {};
+  const previousTokenSaleVolumeSats = numericValue(
+    previousActual.tokenSaleVolumeSats,
+  );
+  const nextTokenSaleVolumeSats = Math.max(
+    previousTokenSaleVolumeSats,
+    numericValue(overlay.stats?.confirmedSalesVolumeSats),
+    saleStats.confirmedSalesVolumeSats,
+  );
+  const previousMarketplaceSaleVolumeSats = numericValue(
+    previousActual.marketplaceSaleVolumeSats ??
+      previousActual.marketplaceVolumeSats,
+  );
+  const idMarketplaceVolumeSats = numericValue(
+    previousActual.idMarketplaceVolumeSats ??
+      Math.max(
+        0,
+        previousMarketplaceSaleVolumeSats - previousTokenSaleVolumeSats,
+      ),
+  );
+  const marketplaceSaleVolumeSats = Math.max(
+    previousMarketplaceSaleVolumeSats,
+    idMarketplaceVolumeSats + nextTokenSaleVolumeSats,
+  );
+  const marketplaceMutationFeeSats = numericValue(
+    previousActual.marketplaceMutationFeeSats ??
+      previousActual.marketplaceFeeSats,
+  );
+  const marketplaceFlowSats =
+    marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
+  const previousMarketplaceSats = numericValue(previousActual.marketplaceSats);
+  const marketplaceSats =
+    marketplaceFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const previousTotalSats = numericValue(
+    previousActual.totalSats ?? workFloor.networkValueSats,
+  );
+  const totalSats =
+    previousMarketplaceSats > 0
+      ? previousTotalSats - previousMarketplaceSats + marketplaceSats
+      : previousTotalSats +
+        (marketplaceSaleVolumeSats - previousMarketplaceSaleVolumeSats) *
+          GROWTH_MODEL_INPUTS.valueMultiple;
+  const btcUsd = numericValue(workFloor.btcUsd);
+  const totalUsd =
+    btcUsd > 0
+      ? satsToUsdAtBtcUsd(totalSats, btcUsd)
+      : growthSatsToUsdAtYears(totalSats, growthElapsedYears());
+  const confirmedSales = Math.max(
+    numericValue(previousStats.confirmedTokenSales),
+    numericValue(overlay.stats?.confirmedSales),
+    saleStats.confirmedSales,
+  );
+
+  return {
+    ...workFloor,
+    indexedAt: newerIso(workFloor.indexedAt, overlay.indexedAt),
+    networkValueSats: totalSats,
+    actualValue: {
+      ...previousActual,
+      marketplaceFlowSats,
+      marketplaceSaleVolumeSats,
+      marketplaceSats,
+      marketplaceVolumeSats: marketplaceSaleVolumeSats,
+      tokenSaleFlowSats: nextTokenSaleVolumeSats,
+      tokenSaleVolumeSats: nextTokenSaleVolumeSats,
+      totalSats,
+      totalUsd,
+    },
+    stats: {
+      ...previousStats,
+      confirmedTokenSales: confirmedSales,
+      marketplaceFlowSats,
+      marketplaceSaleVolumeSats,
+      marketplaceVolumeSats: marketplaceSaleVolumeSats,
+      tokenSaleFlowSats: nextTokenSaleVolumeSats,
+      tokenSaleVolumeSats: nextTokenSaleVolumeSats,
+      totalSats,
+    },
+  };
+}
+
+async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
+  payload,
+  network,
+) {
+  if (!payload || network !== "livenet") {
+    return payload;
+  }
+
+  const overlay = await indexedTokenMarketSummaryOverlay(network);
+  if (!overlay) {
+    return payload;
+  }
+
+  const tokenState = tokenStateWithIndexedMarketSummaryOverlay(
+    payload.token,
+    overlay,
+  );
+  const token = compactTokenSummaryPayload(tokenState);
+  return {
+    ...payload,
+    indexedAt: newerIso(payload.indexedAt, token.indexedAt),
+    token,
+    workFloor: workFloorWithIndexedMarketSummaryOverlay(
+      payload.workFloor,
+      overlay,
+      tokenState,
+    ),
+  };
+}
+
+function marketplaceSummaryHasIndexedMarketOverlay(payload) {
+  return String(payload?.token?.source ?? payload?.source ?? "").includes(
+    "proof-indexer-token-market-summary-overlay",
+  );
 }
 
 function paginatedHistoryPayload({
@@ -13273,6 +13608,12 @@ async function walletScopedTokenSummaryPayload(
       network,
     );
   }
+  scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
+  );
   scopedPayload = await tokenPayloadWithIndexedWalletClosedListings(
     scopedPayload,
     network,
@@ -13327,6 +13668,12 @@ async function walletScopedTokenPayload(
       network,
     );
   }
+  scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
+  );
 
   return tokenPayloadWithIndexedWalletClosedListings(
     scopedPayload,
@@ -14974,13 +15321,16 @@ function emptyMarketplaceSummaryPayload(network) {
 async function marketplaceSummaryFallbackPayload(network) {
   const cached = await cachedMarketplaceSummaryPayloadNoRefresh(network);
   if (cached) {
-    return cached;
+    return marketplaceSummaryPayloadWithIndexedMarketOverlay(cached, network);
   }
 
   const ledger = await existingCanonicalLedgerPayload(network);
   const ledgerPayload = marketplaceSummaryPayloadFromLedger(ledger);
   if (ledgerPayload) {
-    return ledgerPayload;
+    return marketplaceSummaryPayloadWithIndexedMarketOverlay(
+      ledgerPayload,
+      network,
+    );
   }
 
   return emptyMarketplaceSummaryPayload(network);
@@ -15021,13 +15371,24 @@ async function reconciledLivenetMarketplaceSummaryPayload(
         closedWorkTokenState,
         WORK_TOKEN_ID,
       );
-      const tokenState = await tokenPayloadWithSpendableActiveListings(
+      const spendableTokenState = await tokenPayloadWithSpendableActiveListings(
         baseTokenState,
         network,
       );
+      const marketOverlay = await indexedTokenMarketSummaryOverlay(network);
+      const tokenState = tokenStateWithIndexedMarketSummaryOverlay(
+        spendableTokenState,
+        marketOverlay,
+      );
+      const workFloor = workFloorWithIndexedMarketSummaryOverlay(
+        ledger.workFloor,
+        marketOverlay,
+        tokenState,
+      );
+      const indexedAt = newerIso(ledger.generatedAt, tokenState?.indexedAt);
       return attachLedgerMetadata(
         {
-          indexedAt: ledger.generatedAt,
+          indexedAt,
           network,
           registry: compactRegistrySummaryPayload(ledger.registryState),
           summaryOnly: true,
@@ -15035,7 +15396,7 @@ async function reconciledLivenetMarketplaceSummaryPayload(
             compactTokenSummaryPayload(tokenState),
             ledger,
           ),
-          workFloor: ledger.workFloor,
+          workFloor,
         },
         ledger,
       );
@@ -15072,6 +15433,16 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
   const fallback = await marketplaceSummaryFallbackPayload(network);
 
   if (fresh) {
+    if (marketplaceSummaryHasIndexedMarketOverlay(fallback)) {
+      refreshPayloadCacheInBackground(
+        marketplaceSummaryCacheKey(network),
+        marketplaceSummaryPayloadKey(network),
+        () => reconciledLivenetMarketplaceSummaryPayload(network, true),
+        MARKETPLACE_SUMMARY_CACHE_TTL_MS,
+        MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+      );
+      return fallback;
+    }
     return payloadWithFallbackAfterMs(
       refreshMarketplaceSummaryPayloadCache(network, true),
       fallback,

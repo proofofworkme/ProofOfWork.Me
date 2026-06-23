@@ -239,6 +239,22 @@ function tokenMarketNumbersFromTags(payload) {
   return { amount, priceSats, ticker };
 }
 
+function tokenTransferAmountFromTags(payload, ticker = "") {
+  const tags = Array.isArray(payload?.tags) ? payload.tags.map(String) : [];
+  const normalizedTicker = String(ticker || "").trim().toUpperCase();
+  for (const tag of tags) {
+    const amountMatch = /^([\d,]+)\s+([A-Z0-9]{1,16})$/u.exec(tag.trim());
+    if (!amountMatch) {
+      continue;
+    }
+    if (normalizedTicker && amountMatch[2] !== normalizedTicker) {
+      continue;
+    }
+    return commaNumber(amountMatch[1]);
+  }
+  return 0;
+}
+
 function tokenRegistryAddressFromPayload(payload, actor, counterparty, fallback = "") {
   const actorKey = String(actor ?? "").toLowerCase();
   const counterpartyKey = String(counterparty ?? "").toLowerCase();
@@ -317,6 +333,43 @@ function tokenClosedListingFromEventPayload(payload) {
   };
 }
 
+function tokenTransferFromEventPayload(payload, row = {}) {
+  const ticker = String(row.ticker ?? payload?.ticker ?? "").trim();
+  const senderAddress = String(
+    payload?.senderAddress ?? payload?.from ?? payload?.actor ?? "",
+  ).trim();
+  const recipientAddress = String(
+    payload?.recipientAddress ?? payload?.to ?? payload?.counterparty ?? "",
+  ).trim();
+  const registryAddress = tokenRegistryAddressFromPayload(
+    payload,
+    senderAddress,
+    recipientAddress,
+    row.registry_address,
+  );
+  const amount =
+    rowNumber(payload, "amount") ||
+    rowNumber(payload, "tokenAmount") ||
+    tokenTransferAmountFromTags(payload, ticker);
+  return {
+    amount,
+    confirmed:
+      row.status === "confirmed" || payload?.confirmed === true,
+    createdAt: dateIso(
+      payload?.createdAt ?? row.event_time ?? row.block_time ?? row.created_at,
+    ),
+    dataBytes: rowNumber(payload, "dataBytes"),
+    network: payload?.network ?? row.network,
+    paidSats: rowNumber(payload, "paidSats") || rowNumber(payload, "amountSats"),
+    recipientAddress,
+    registryAddress,
+    senderAddress,
+    ticker,
+    tokenId: String(payload?.tokenId ?? row.token_id ?? "").trim().toLowerCase(),
+    txid: String(payload?.txid ?? row.txid ?? "").trim().toLowerCase(),
+  };
+}
+
 function tokenHistoryItemFromMarketEventPayload(payload, safeKind) {
   if (payload?.kind === "token-sale") {
     const sale = tokenSaleFromEventPayload(payload);
@@ -355,6 +408,17 @@ function tokenHistoryItemFromMarketEventPayload(payload, safeKind) {
   }
 
   return null;
+}
+
+function compareTokenItemsByTime(left, right) {
+  const leftTime = Date.parse(left?.createdAt ?? left?.closedAt ?? "");
+  const rightTime = Date.parse(right?.createdAt ?? right?.closedAt ?? "");
+  return (
+    (Number.isFinite(rightTime) ? rightTime : 0) -
+      (Number.isFinite(leftTime) ? leftTime : 0) ||
+    String(right?.txid ?? right?.closedTxid ?? right?.listingId ?? "")
+      .localeCompare(String(left?.txid ?? left?.closedTxid ?? left?.listingId ?? ""))
+  );
 }
 
 function tokenHistoryMarketEventKinds(safeKind) {
@@ -1560,6 +1624,120 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
   return page;
 }
 
+export async function proofIndexTokenMarketSummaryOverlayPayload(
+  network,
+  tokenScope,
+  options = {},
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const scope = tokenScopeKey(tokenScope);
+  const maxRows = boundedInteger(options.limit, 5000, 1, 10000);
+  const conditions = [
+    "e.network = $1",
+    "e.valid = true",
+    "e.kind = ANY($2::text[])",
+  ];
+  const params = [network, ["token-sale", "token-listing-closed"]];
+
+  if (scope && scope !== "all") {
+    params.push(scope);
+    const scopeParam = `$${params.length}`;
+    params.push(`%${scope}%`);
+    const scopeLikeParam = `$${params.length}`;
+    conditions.push(
+      `(lower(e.payload->>'tokenId') = ${scopeParam} OR lower(e.payload::text) LIKE ${scopeLikeParam})`,
+    );
+  }
+
+  const whereClause = conditions.join(" AND ");
+  const countResult = await pool.query(
+    `
+      SELECT
+        count(*) AS total_count,
+        max(e.block_height) AS indexed_through_block,
+        max(COALESCE(e.event_time, e.block_time, e.created_at)) AS indexed_at
+      FROM proof_indexer.events e
+      WHERE ${whereClause}
+    `,
+    params,
+  );
+  const totalCount = rowNumber(countResult.rows[0], "total_count");
+  if (totalCount === 0) {
+    return null;
+  }
+
+  const rowParams = [...params, maxRows];
+  const limitParam = `$${rowParams.length}`;
+  const rowsResult = await pool.query(
+    `
+      SELECT
+        e.payload,
+        e.protocol,
+        e.kind,
+        e.status,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        e.block_height,
+        e.txid,
+        e.event_id
+      FROM proof_indexer.events e
+      WHERE ${whereClause}
+      ORDER BY
+        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        e.txid DESC,
+        e.event_id DESC
+      LIMIT ${limitParam}
+    `,
+    rowParams,
+  );
+
+  const sales = [];
+  const closedListings = [];
+  for (const row of rowsResult.rows) {
+    const payload = eventRowPayload(row, network);
+    if (payload?.kind === "token-sale") {
+      const sale = tokenSaleFromEventPayload(payload);
+      if (sale.txid && sale.listingId && sale.tokenId) {
+        sales.push(sale);
+      }
+      continue;
+    }
+
+    if (payload?.kind === "token-listing-closed") {
+      const closedListing = tokenClosedListingFromEventPayload(payload);
+      if (
+        closedListing.closedTxid &&
+        closedListing.listingId &&
+        closedListing.tokenId
+      ) {
+        closedListings.push(closedListing);
+      }
+    }
+  }
+
+  const stats = salesStats(sales);
+  return {
+    closedListings: closedListings.sort(compareTokenItemsByTime),
+    indexedAt: dateIso(countResult.rows[0]?.indexed_at),
+    indexedThroughBlock: rowNumber(
+      countResult.rows[0],
+      "indexed_through_block",
+    ),
+    sales: sales.sort(compareTokenItemsByTime),
+    source: "proof-indexer-token-market-summary-overlay",
+    stats: {
+      ...stats,
+      complete: rowsResult.rows.length >= totalCount,
+      totalCount,
+    },
+  };
+}
+
 export async function proofIndexTokenHistoryPayload(
   network,
   tokenScope,
@@ -1815,6 +1993,161 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
     snapshot,
     "proof-indexer-token-state-snapshot",
   );
+}
+
+export async function proofIndexWalletTokenOverlayPayload(
+  network,
+  tokenScope,
+  addresses,
+) {
+  const pool = proofIndexPool();
+  const addressNeedles = [
+    ...new Set(
+      (Array.isArray(addresses) ? addresses : [])
+        .map((address) => String(address ?? "").trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+  if (!pool || addressNeedles.length === 0) {
+    return null;
+  }
+
+  const scope = tokenScopeKey(tokenScope);
+  const scoped = scope && scope !== "all";
+  const scopeCondition = scoped
+    ? "AND (lower(cb.token_id) = $3 OR lower(cd.ticker) = lower($3))"
+    : "";
+  const holderParams = scoped
+    ? [network, addressNeedles, scope]
+    : [network, addressNeedles];
+  const holderResult = await pool.query(
+    `
+      SELECT
+        cb.address,
+        cb.confirmed_balance,
+        cb.pending_delta,
+        cb.updated_at,
+        cb.token_id,
+        cd.ticker,
+        cd.registry_address
+      FROM proof_indexer.credit_balances cb
+      JOIN proof_indexer.credit_definitions cd
+        ON cd.network = cb.network
+       AND cd.token_id = cb.token_id
+      WHERE cb.network = $1
+        AND lower(cb.address) = ANY($2::text[])
+        ${scopeCondition}
+      ORDER BY cb.updated_at DESC, cb.address ASC
+    `,
+    holderParams,
+  );
+
+  const eventConditions = [
+    "e.network = $1",
+    "e.valid = true",
+    "e.status IN ('confirmed', 'pending')",
+    `EXISTS (
+      SELECT 1
+      FROM proof_indexer.event_participants ep
+      WHERE ep.event_id = e.event_id
+        AND lower(ep.address) = ANY($2::text[])
+    )`,
+  ];
+  const eventParams = [network, addressNeedles];
+  if (scoped) {
+    eventParams.push(scope);
+    const scopeParam = `$${eventParams.length}`;
+    eventConditions.push(
+      `(lower(e.payload->>'tokenId') = ${scopeParam} OR lower(cd.ticker) = lower(${scopeParam}))`,
+    );
+  }
+  const eventWhere = eventConditions.join(" AND ");
+  const eventParamsWithLimit = [...eventParams, 500];
+  const eventLimitParam = `$${eventParamsWithLimit.length}`;
+  const eventResult = await pool.query(
+    `
+      SELECT
+        e.payload,
+        e.status,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        e.block_height,
+        e.txid,
+        e.network,
+        cd.token_id,
+        cd.ticker,
+        cd.registry_address
+      FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = e.network
+       AND cd.token_id = lower(e.payload->>'tokenId')
+      WHERE ${eventWhere}
+        AND e.kind IN ('token-transfer', 'token-sale')
+      ORDER BY
+        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        e.txid DESC,
+        e.event_id DESC
+      LIMIT ${eventLimitParam}
+    `,
+    eventParamsWithLimit,
+  );
+
+  const holders = holderResult.rows
+    .map((row) => ({
+      address: row.address,
+      balance: Number(row.confirmed_balance ?? 0),
+      pendingDelta: Number(row.pending_delta ?? 0),
+      ticker: row.ticker,
+      tokenId: String(row.token_id ?? "").toLowerCase(),
+    }))
+    .filter((holder) => holder.address && holder.balance > 0)
+    .sort(
+      (left, right) =>
+        right.balance - left.balance ||
+        left.address.localeCompare(right.address),
+    );
+  const transfers = [];
+  const sales = [];
+  for (const row of eventResult.rows) {
+    const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
+    if (payload?.kind === "token-transfer") {
+      const transfer = tokenTransferFromEventPayload(payload, row);
+      if (
+        transfer.txid &&
+        transfer.tokenId &&
+        transfer.amount > 0 &&
+        (transfer.senderAddress || transfer.recipientAddress)
+      ) {
+        transfers.push(transfer);
+      }
+      continue;
+    }
+    if (payload?.kind === "token-sale") {
+      const sale = tokenSaleFromEventPayload(payload);
+      if (sale.txid && sale.listingId && sale.tokenId) {
+        sales.push(sale);
+      }
+    }
+  }
+
+  const newestTime = [
+    ...holderResult.rows.map((row) => row.updated_at),
+    ...eventResult.rows.map(
+      (row) => row.event_time ?? row.block_time ?? row.created_at,
+    ),
+  ]
+    .map((value) => Date.parse(value))
+    .filter(Number.isFinite)
+    .reduce((max, value) => Math.max(max, value), 0);
+
+  return {
+    holders,
+    indexedAt: newestTime ? new Date(newestTime).toISOString() : undefined,
+    sales: sales.sort(compareTokenItemsByTime),
+    source: "proof-indexer-wallet-token-overlay",
+    transfers: transfers.sort(compareTokenItemsByTime),
+  };
 }
 
 async function proofIndexScopedHolderHistoryPayload(

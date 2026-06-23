@@ -27,6 +27,12 @@ const CARBONZ_LISTING_TX =
   "d0697f88d7648ac4221af34d17d3e8c55852b917f820100d9029143085b29a13";
 const CARBONZ_SEAL_TX =
   "e365ada0deb8a7bf8f8c4c012897633e4f00938e7f0ca85999de884f939cbc68";
+const REPORTED_TRANSFER_TX =
+  "90cdafde9e7e050a1831fcc3b412f29e529368fa6d9afc8f053c681c204449d4";
+const REPORTED_TRANSFER_SENDER =
+  "bc1pq0czje5lfwwat69g97k4sysx7an0wxu80n7jceqy6gc50hacd5wqltpx8y";
+const REPORTED_TRANSFER_RECIPIENT = "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d";
+const STALE_MARKETPLACE_SNAPSHOT_AT = "2026-06-22T18:08:38.250Z";
 const WALLET_SUMMARY_DELIST_TXS = [
   "4bdb7f9de2293548d598cd00b07df621339cf364fa1fa1cf42e80ad0551488f4",
   "4c59acfc84b47225f6e0b9bd67379d1ddac14e2e71f6a256315cececbe559d98",
@@ -41,6 +47,9 @@ const BUY_TXS = [
 ];
 const MARKETPLACE_SUMMARY_MAX_MS = Number(
   process.env.MARKETPLACE_SUMMARY_MAX_MS ?? 55_000,
+);
+const MARKETPLACE_FRESH_SUMMARY_MAX_MS = Number(
+  process.env.MARKETPLACE_FRESH_SUMMARY_MAX_MS ?? 90_000,
 );
 
 function assert(condition, message) {
@@ -212,6 +221,32 @@ for (const txid of BUY_TXS) {
   );
 }
 
+const reportedTransferHistory = await tokenHistory("transfers", {
+  fresh: 1,
+  q: REPORTED_TRANSFER_TX,
+});
+assert(
+  txids(reportedTransferHistory.items).has(REPORTED_TRANSFER_TX),
+  `${REPORTED_TRANSFER_TX} is missing from WORK transfer history`,
+);
+for (const address of [REPORTED_TRANSFER_SENDER, REPORTED_TRANSFER_RECIPIENT]) {
+  const scopedWallet = await getJson("/api/v1/token", {
+    network: "livenet",
+    asset: WORK_TOKEN_ID,
+    address,
+    wallet: 1,
+    fresh: 1,
+  });
+  assert(
+    (scopedWallet.transfers ?? []).some(
+      (item) =>
+        String(item?.txid ?? "").toLowerCase() === REPORTED_TRANSFER_TX &&
+        item?.confirmed === true,
+    ),
+    `${REPORTED_TRANSFER_TX} is missing from ${address} wallet-scoped transfers`,
+  );
+}
+
 const walletSummary = await getJson("/api/v1/token-summary", {
   network: "livenet",
   asset: WORK_TOKEN_ID,
@@ -249,6 +284,25 @@ assert(
     (item) => String(item?.listingId ?? "").toLowerCase() === LISTING_TX,
   ),
   `${LISTING_TX} is still returned as active in marketplace summary`,
+);
+const { elapsedMs: marketplaceFreshSummaryMs, json: marketplaceFreshSummary } =
+  await timedGetJson("/api/v1/marketplace-summary", {
+    network: "livenet",
+    fresh: 1,
+  });
+assert(
+  marketplaceFreshSummaryMs <= MARKETPLACE_FRESH_SUMMARY_MAX_MS,
+  `/api/v1/marketplace-summary?fresh=1 took ${marketplaceFreshSummaryMs}ms, expected <= ${MARKETPLACE_FRESH_SUMMARY_MAX_MS}ms`,
+);
+const freshMarketplaceIndexedAt = Date.parse(
+  marketplaceFreshSummary.token?.indexedAt ??
+    marketplaceFreshSummary.indexedAt ??
+    "",
+);
+assert(
+  Number.isFinite(freshMarketplaceIndexedAt) &&
+    freshMarketplaceIndexedAt > Date.parse(STALE_MARKETPLACE_SNAPSHOT_AT),
+  `/api/v1/marketplace-summary?fresh=1 is still pinned to stale snapshot ${STALE_MARKETPLACE_SNAPSHOT_AT}`,
 );
 
 const workToken = await getJson("/api/v1/token", {
