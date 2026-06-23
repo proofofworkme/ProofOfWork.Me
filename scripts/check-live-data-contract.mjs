@@ -176,12 +176,18 @@ expectAll("API address app reads stay first-party", server, [
   /async function nodeMailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*let scanError = ""[\s\S]*MAIL_ADDRESS_TX_PAGES[\s\S]*includeExternal:\s*options\.includeExternal !== false[\s\S]*preferExternal:\s*options\.preferExternal === true[\s\S]*Mail scan failed[\s\S]*scanFailed: Boolean\(scanError\)/,
   /async function indexedMailPayload\(address,\s*network\)[\s\S]*proofIndexReadFeatureEnabled\("address-mail,mail,event-history,events"\)[\s\S]*proofIndexAddressMailPayload\(network,\s*address\)/,
   /async function reconcileMailPayloadStatuses\(payload,\s*network\)[\s\S]*txStatusPayload\(txid,\s*network\)[\s\S]*status\?\.status === "dropped"[\s\S]*return \[\]/,
+  /function mailActivityItemFromTransaction\(tx,\s*network\)[\s\S]*memo: protocolMessage\.memo[\s\S]*subject: protocolMessage\.subject/,
   /function mailPayloadHasMessages\(payload\)/,
-  /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedPayload = await indexedMailPayload\(address,\s*network\)[\s\S]*if \(!fresh && indexedPayload && mailPayloadHasMessages\(indexedPayload\)\) \{[\s\S]*return reconcileMailPayloadStatuses\(indexedPayload,\s*network\)/,
+  /async function repairMailPayloadBodies\(payload,\s*address,\s*network\)[\s\S]*fetchTransactionWithSourceFallback\(txid,\s*network\)[\s\S]*inboxMessagesFromTransactions\(\[tx\],\s*address,\s*network\)/,
+  /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedPayload = await indexedMailPayload\(address,\s*network\)[\s\S]*if \(!fresh && indexedPayload && mailPayloadHasMessages\(indexedPayload\)\) \{[\s\S]*repairMailPayloadBodies\(indexedPayload,\s*address,\s*network\)/,
   /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedWasEmpty = Boolean\(indexedPayload\) && !mailPayloadHasMessages\(indexedPayload\)[\s\S]*includeExternal:\s*indexedWasEmpty \|\| fresh \|\| !indexedPayload[\s\S]*preferExternal:\s*indexedWasEmpty/,
   /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*mergeMailPayloads\(indexedPayload,\s*scannedPayload\)/,
   /mailPayload\(address,\s*network,\s*\{ fresh: freshRead \}\)/,
   /async function addressUtxoPayload\(address,\s*network\)[\s\S]*for \(const base of firstPartyAddressReadBases\(network\)\)/,
+]);
+expectAll("proof index mail body projection separates subject from body", proofIndexReader + proofIndexerBackfill, [
+  /function mailMemoFromEvent\(row,\s*payload\)[\s\S]*payload\.body \?\? payload\.message \?\? payload\.memo[\s\S]*!subjectOnlyMailBody\(storedBody\)/,
+  /function mailItemBodyText\(item\)[\s\S]*item\?\.body \?\? item\?\.message \?\? item\?\.memo[\s\S]*!subjectOnlyMailBody\(detail\)/,
 ]);
 expect("pending mempool bases must not hardcode public explorer data sources", !/explorerBase|explorerReadBases|mempool\.space/i.test(pendingMempoolBasesSource));
 expectAll("transaction hex PSBT reads stay first-party", txHexPayloadSource, [
@@ -370,7 +376,7 @@ expectAll("backfill writes powb mail as Infinity Bond projections", proofIndexer
   /return isInfinityBondItem\(item,\s*kind\) \? INFINITY_BOND_KIND : kind/,
   /stableEventKeyKind\(item,\s*kind,\s*sourceLabel\)/,
   /\["mail",\s*"reply",\s*"file",\s*"attachment",\s*"browser",\s*INFINITY_BOND_KIND\]\.includes/,
-  /item\.body \?\? item\.message \?\? item\.memo \?\? item\.detail/,
+  /mailItemBodyText\(item\)/,
 ]);
 
 expectAll("all confirmed token state rows must be searchable in Log", server, [

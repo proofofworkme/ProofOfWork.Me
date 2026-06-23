@@ -610,6 +610,20 @@ function dataBytes(item) {
   return bigintOrZero(item?.dataBytes ?? item?.protocolBytes ?? item?.sizeBytes);
 }
 
+function subjectOnlyMailBody(value) {
+  return /^Subject:\s*/iu.test(String(value ?? "").trim());
+}
+
+function mailItemBodyText(item) {
+  const direct = normalizedText(item?.body ?? item?.message ?? item?.memo ?? "");
+  if (direct) {
+    return direct;
+  }
+
+  const detail = normalizedText(item?.detail ?? "");
+  return detail && !subjectOnlyMailBody(detail) ? detail : null;
+}
+
 function stableEventKey({ item, kind, protocol, sourceLabel, txid }) {
   const parts = [
     protocol,
@@ -1081,7 +1095,7 @@ async function upsertProjection(client, sourceLabel, item, status) {
           item.senderAddress ?? null,
           item.subject ?? null,
           item.parentTxid ?? null,
-          item.body ?? item.message ?? item.memo ?? item.detail ?? null,
+          mailItemBodyText(item),
           amountSats(item),
           dataBytes(item),
           JSON.stringify(item),

@@ -66,6 +66,9 @@ const MAX_ADDRESS_TX_PAGES = Number(process.env.MAX_ADDRESS_TX_PAGES ?? 50);
 const MAIL_ADDRESS_TX_PAGES = Number(
   process.env.MAIL_ADDRESS_TX_PAGES ?? Math.min(MAX_ADDRESS_TX_PAGES, 8),
 );
+const MAIL_BODY_REPAIR_MAX_TXS = Number(
+  process.env.MAIL_BODY_REPAIR_MAX_TXS ?? 12,
+);
 const MAX_ACTIVITY_ADDRESSES = Number(
   process.env.MAX_ACTIVITY_ADDRESSES ?? 500,
 );
@@ -8120,12 +8123,15 @@ function mailActivityItemFromTransaction(tx, network) {
     description: `${shortAddress(actor)} sent ${noun} to ${counterparty}${amountSats > 0 ? ` for ${amountSats.toLocaleString()} proofs` : ""}.`,
     detail,
     kind,
+    memo: protocolMessage.memo,
     network,
+    parentTxid: protocolMessage.parentTxid,
     participants: [
       actor,
       ...recipients.map((recipient) => recipient.address),
     ].filter(Boolean),
     recipients,
+    subject: protocolMessage.subject,
     tags: [
       activityStatusTag(confirmed),
       networkLabel(network),
@@ -17519,6 +17525,131 @@ function mergeMailMessageLists(indexedMessages, scannedMessages) {
   );
 }
 
+function subjectOnlyMailBody(value) {
+  return /^Subject:\s*/iu.test(String(value ?? "").trim());
+}
+
+function mailMessageNeedsBodyRepair(message) {
+  const txid = String(message?.txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(txid)) {
+    return false;
+  }
+  if (message?.confirmed === false || message?.status === "pending") {
+    return false;
+  }
+  const subject = String(message?.subject ?? "").trim();
+  if (!subject) {
+    return false;
+  }
+  const memo = String(message?.memo ?? "").trim();
+  return !memo || subjectOnlyMailBody(memo);
+}
+
+function mailMessageHasRealBody(message) {
+  const memo = String(message?.memo ?? "").trim();
+  return Boolean(memo && !subjectOnlyMailBody(memo));
+}
+
+function mergeRepairedMailMessage(message, recovered) {
+  if (!mailMessageHasRealBody(recovered)) {
+    return message;
+  }
+
+  return {
+    ...message,
+    attachment: recovered.attachment ?? message.attachment,
+    memo: recovered.memo,
+    parentTxid: recovered.parentTxid ?? message.parentTxid,
+    recipients: recovered.recipients ?? message.recipients,
+    replyTo:
+      recovered.replyTo && recovered.replyTo !== "Unknown"
+        ? recovered.replyTo
+        : message.replyTo,
+    subject: recovered.subject ?? message.subject,
+    to: recovered.to ?? message.to,
+    ...(recovered.from && recovered.from !== "Unknown"
+      ? { from: recovered.from }
+      : {}),
+  };
+}
+
+async function repairMailPayloadBodies(payload, address, network) {
+  if (!payload || network !== "livenet") {
+    return payload;
+  }
+
+  const inboxMessages = Array.isArray(payload.inboxMessages)
+    ? payload.inboxMessages
+    : [];
+  const sentMessages = Array.isArray(payload.sentMessages)
+    ? payload.sentMessages
+    : [];
+  const repairTxids = [
+    ...new Set(
+      [...inboxMessages, ...sentMessages]
+        .filter(mailMessageNeedsBodyRepair)
+        .map((message) => String(message.txid).toLowerCase()),
+    ),
+  ].slice(0, Math.max(0, MAIL_BODY_REPAIR_MAX_TXS));
+  if (repairTxids.length === 0) {
+    return payload;
+  }
+
+  const recoveredByTxid = new Map();
+  const settled = await Promise.allSettled(
+    repairTxids.map(async (txid) => {
+      const tx = await fetchTransactionWithSourceFallback(txid, network);
+      recoveredByTxid.set(txid, {
+        inbox: inboxMessagesFromTransactions([tx], address, network),
+        sent: sentMessagesFromTransactions([tx], address, network),
+      });
+    }),
+  );
+  for (const result of settled) {
+    if (result.status === "rejected") {
+      console.error(
+        `Mail body repair failed: ${errorSummary(result.reason)}`,
+      );
+    }
+  }
+
+  let repairedBodies = 0;
+  const repairList = (messages, folder) =>
+    messages.map((message) => {
+      if (!mailMessageNeedsBodyRepair(message)) {
+        return message;
+      }
+      const txid = String(message.txid ?? "").toLowerCase();
+      const recoveredGroup = recoveredByTxid.get(txid);
+      const recovered = recoveredGroup?.[folder]?.find(
+        (candidate) => String(candidate?.txid ?? "").toLowerCase() === txid,
+      );
+      const repaired = mergeRepairedMailMessage(message, recovered);
+      if (repaired !== message) {
+        repairedBodies += 1;
+      }
+      return repaired;
+    });
+
+  const repairedInbox = repairList(inboxMessages, "inbox");
+  const repairedSent = repairList(sentMessages, "sent");
+  if (repairedBodies === 0) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    inboxMessages: repairedInbox,
+    indexedAt: new Date().toISOString(),
+    sentMessages: repairedSent,
+    source: mergedSourceLabel(payload.source, "raw-mail-body-repair"),
+    stats: {
+      ...(payload.stats ?? {}),
+      repairedBodies,
+    },
+  };
+}
+
 function mailStats(inboxMessages, sentMessages, extras = {}) {
   return {
     inbox: inboxMessages.filter((message) => message.confirmed).length,
@@ -17713,7 +17844,10 @@ async function mailPayload(address, network, options = {}) {
   const indexedPayload = await indexedMailPayload(address, network);
 
   if (!fresh && indexedPayload && mailPayloadHasMessages(indexedPayload)) {
-    return reconcileMailPayloadStatuses(indexedPayload, network);
+    return reconcileMailPayloadStatuses(
+      await repairMailPayloadBodies(indexedPayload, address, network),
+      network,
+    );
   }
 
   const indexedWasEmpty = Boolean(indexedPayload) && !mailPayloadHasMessages(indexedPayload);
@@ -17730,13 +17864,17 @@ async function mailPayload(address, network, options = {}) {
     scannedPayload.scanError ||
     mailPayloadHasMessages(scannedPayload)
   ) {
+    const mergedPayload = mergeMailPayloads(indexedPayload, scannedPayload);
     return reconcileMailPayloadStatuses(
-      mergeMailPayloads(indexedPayload, scannedPayload),
+      await repairMailPayloadBodies(mergedPayload, address, network),
       network,
     );
   }
 
-  return reconcileMailPayloadStatuses(indexedPayload, network);
+  return reconcileMailPayloadStatuses(
+    await repairMailPayloadBodies(indexedPayload, address, network),
+    network,
+  );
 }
 
 async function addressUtxoPayload(address, network) {

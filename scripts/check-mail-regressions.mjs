@@ -25,6 +25,10 @@ const CHECKS = [
     minTotal: 1,
     mustDroppedOutboxTxid:
       "8e9074486fa0a6a75fd01f20c8a41a56ccd964be569e61e81e92c60266c001f0",
+    mustBodyIncludes: "confirmed network value / 21,000,000 WORK",
+    mustBodySubject: "$work now has a permanent Bitcoin Computer floor.",
+    mustBodyTxid:
+      "cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c",
     mustInboxTxid:
       "91a754469f5efcbf4312a71a11352fa3141eef19a6ace923ad22b16250c05e37",
   },
@@ -218,6 +222,28 @@ function assertMailbox(check, payload) {
     )
   ) {
     failures.push(`missing dropped outbox tx ${check.mustDroppedOutboxTxid}`);
+  }
+  if (check.mustBodyTxid) {
+    const message = [...inboxMessages, ...sentMessages].find(
+      (item) =>
+        String(item?.txid ?? "").toLowerCase() ===
+        String(check.mustBodyTxid).toLowerCase(),
+    );
+    if (!message) {
+      failures.push(`missing subject/body tx ${check.mustBodyTxid}`);
+    } else {
+      const memo = String(message.memo ?? "");
+      const subject = String(message.subject ?? "");
+      if (check.mustBodySubject && subject !== check.mustBodySubject) {
+        failures.push(`subject/body tx ${check.mustBodyTxid} has wrong subject`);
+      }
+      if (!memo.includes(check.mustBodyIncludes)) {
+        failures.push(`subject/body tx ${check.mustBodyTxid} is missing body text`);
+      }
+      if (/^Subject:\s*/iu.test(memo.trim())) {
+        failures.push(`subject/body tx ${check.mustBodyTxid} still uses subject as body`);
+      }
+    }
   }
 
   if (failures.length > 0) {

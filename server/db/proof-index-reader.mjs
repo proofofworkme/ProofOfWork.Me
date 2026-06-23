@@ -2534,16 +2534,25 @@ function mailSubjectFromEvent(row, payload) {
   return match ? match[1].trim() : "";
 }
 
+function subjectOnlyMailBody(value) {
+  return /^Subject:\s*/iu.test(String(value ?? "").trim());
+}
+
 function mailMemoFromEvent(row, payload) {
-  const body = String(
-    row.body_text ?? payload.body ?? payload.message ?? payload.memo ?? "",
+  const payloadBody = String(
+    payload.body ?? payload.message ?? payload.memo ?? "",
   ).trim();
-  if (body) {
-    return body;
+  if (payloadBody) {
+    return payloadBody;
+  }
+
+  const storedBody = String(row.body_text ?? "").trim();
+  if (storedBody && !subjectOnlyMailBody(storedBody)) {
+    return storedBody;
   }
 
   const detail = String(payload.detail ?? "").trim();
-  if (detail && !/^Subject:\s*/iu.test(detail)) {
+  if (detail && !subjectOnlyMailBody(detail)) {
     return detail;
   }
 
