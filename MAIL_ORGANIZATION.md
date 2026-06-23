@@ -51,7 +51,7 @@ Mail organization features that are already implemented in the full app:
 - Export/import for local drafts, archive/favorite preferences, and sent/outbox tracking.
 - Confirmed-only ID routing in compose: pending IDs must not receive routed mail.
 - First-party OP_RETURN API reads for production mainnet mail, files, registry, Log, Growth, credit/token, marketplace, event history, and tx status when `VITE_POW_API_BASE` is configured; stable confirmed global reads use the proof index database where supported.
-- Indexed mailbox reads come from the proof-index address-mail projection when supported; confirmed self-sends must render in both Inbox and Sent, and `pwm1:m:powb` Infinity Bonds must remain mailbox-visible while also classifying as `infinity-bond` in Log/Event History. POWB mint credit belongs to the bond recipient address; self-sends credit the sender because the sender is also the recipient.
+- Indexed mailbox reads come from the proof-index address-mail projection when supported; confirmed self-sends must render in both Inbox and Sent, and `pwm1:m:powb` Infinity Bonds must remain mailbox-visible while also classifying as `infinity-bond` in Log/Event History. Subject metadata from `pwm1:s` must stay separate from body text from `pwm1:m`; `mail_items.body_text` and UI memo rendering must not fall back to Log detail strings such as `Subject: ...`. POWB mint credit belongs to the bond recipient address; self-sends credit the sender because the sender is also the recipient.
 
 Future developers should keep `id.proofofwork.me` narrow. Do not pull the full mailbox UI into the Phase 1 registry launch unless the launch scope explicitly changes.
 Marketplace actions should stay outside the mailbox folders. Keep ID and credit trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders. The Marketplace workspace is tabbed by asset class: IDs and Credits both use sale-ticket settlement, while Wallet stays the place to transfer or list owned credit balances.
@@ -74,6 +74,8 @@ Instead, ProofOfWork.Me can provide local mailbox organization:
 - Send one message to multiple recipients without duplicating the OP_RETURN payload.
 
 This gives users normal mail hygiene without misrepresenting what happens on-chain.
+
+Subject metadata is not the message body. Mail composers may write a short `pwm1:s:<subject-base64url>` header and one or more `pwm1:m:<message-chunk>` body chunks, but readers should render the subject in the header and the decoded `pwm1:m` text as the body. Indexed or cached rows that only contain `Subject: ...` as body text are stale projections and should be repaired from the raw tx when the txid is known.
 
 ## Suggested Folders
 

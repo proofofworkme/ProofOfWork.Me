@@ -459,10 +459,11 @@ The mail endpoint:
 - Scans address history.
 - Reads only OP_RETURN outputs that follow ProofOfWork protocol prefixes.
 - Derives recipients from normal ProofOfWork payment outputs before the first `pwm1:` OP_RETURN output.
-- Reconstructs optional `pwm1:s` subject fields.
-- Reconstructs `pwm1:m` message chunks.
+- Reconstructs optional `pwm1:s` subject fields as header metadata only.
+- Reconstructs `pwm1:m` message chunks as the canonical message body.
 - Reconstructs `pwm1:a` attachments after size and SHA-256 checks.
 - Separates confirmed inbox/sent records from pending records.
+- For proof-index-backed reads, prefers indexed decoded body text and can repair legacy subject-only rows from raw tx data. `Subject: ...` is never a valid replacement for the message body.
 
 The tx status endpoint:
 

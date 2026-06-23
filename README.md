@@ -205,6 +205,7 @@ Current production behavior:
 - The proof index is a fast replayable read model, not a separate source of truth. Confirmed chain data remains canonical, and every tx-backed record should keep its txid available for normal explorer/mempool verification.
 - The production proof index is the default stable read model for confirmed Log, Event History, address mail, registry, credit/token, marketplace lifecycle, WORK, Growth, and tx-status reads where enabled. Explicit fresh reads, mempool state, raw transaction data, UTXO/outspend checks, signing support, and broadcasts still fall back to the first-party node/API path.
 - The mail and Log parsers normalize `pwm1:m:powb` as `infinity-bond` for event/search/Growth accounting while still projecting it into the mailbox model. Confirmed bond payments mint POWB to the recipient address one-for-one with proofs sent; self-sends are just the self-recipient case and appear in both Inbox and Sent.
+- Mail subjects and bodies are separate protocol fields. `pwm1:s` is header metadata, while `pwm1:m` is the durable message body. Indexed mailbox rows must render body text from decoded `pwm1:m` content, never from Log display detail such as `Subject: ...`; legacy subject-only rows may be repaired from raw tx data at read time.
 - The node stack does not hold funds, seed phrases, private keys, or wallet authority.
 - Browser wallets still sign locally.
 - Production raw transaction broadcasts use the same first-party node path through `POST /api/v1/broadcast/tx`. The API receives only final signed transaction hex.
@@ -619,7 +620,7 @@ npm run check:mail-regressions
 npm run check:marketplace-regressions
 ```
 
-`check:mail-regressions` proves indexed Inbox/Sent mail plus Infinity Bond Log/Event search for the OTC self-send regression tx. `check:marketplace-regressions` proves WORK delist, sale, wallet, summary, all confirmed sealed listing visibility, and Log close status stay aligned. `indexer:parity` proves the database snapshot, event rows, participants/refs, registry, summaries, token history, address-mail, and tx-status samples match the canonical ledger contract.
+`check:mail-regressions` proves indexed Inbox/Sent mail, Infinity Bond Log/Event search for the OTC self-send regression tx, and subject/body rendering for historical mail whose body must be repaired from raw tx data. `check:marketplace-regressions` proves WORK delist, sale, wallet, summary, all confirmed sealed listing visibility, and Log close status stay aligned. `indexer:parity` proves the database snapshot, event rows, participants/refs, registry, summaries, token history, address-mail, and tx-status samples match the canonical ledger contract.
 
 Run the relevant checks after changing `server/proof-api.mjs`, Log search,
 Growth, WORK, mail indexing, marketplace indexing, or credit/token indexing.
