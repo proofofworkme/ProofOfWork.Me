@@ -641,6 +641,7 @@ code {
 
 .mail-app > .app-footer.compact {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   justify-content: center;
 }
@@ -1577,22 +1578,29 @@ code {
 .app-footer {
   align-items: center;
   color: var(--text-muted);
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   font-size: 0.84rem;
-  gap: 14px;
+  gap: 10px;
   justify-content: center;
   margin: 0 auto;
   max-width: 1180px;
   min-width: 0;
   padding: 0 18px 28px;
+  text-align: center;
 }
 
 .app-footer nav,
 .app-footer .domain-nav {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
   justify-content: center;
+}
+
+.app-footer-brand {
+  color: var(--text);
+  font-weight: 820;
 }
 
 .app-footer a {

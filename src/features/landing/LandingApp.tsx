@@ -4,6 +4,7 @@ import {
   Clock,
   FilePenLine,
   FileText,
+  Infinity as InfinityIcon,
   Mail,
   MessageSquareQuote,
   Monitor,
@@ -17,13 +18,14 @@ import {
   COMPUTER_APP_URL,
   DESKTOP_APP_URL,
   GROWTH_APP_URL,
-  HOME_APP_URL,
   ID_APP_URL,
+  INFINITY_APP_URL,
   LOCAL_BROWSER_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_GROWTH_APP_URL,
   LOCAL_ID_APP_URL,
+  LOCAL_INFINITY_APP_URL,
   LOCAL_LOG_APP_URL,
   LOCAL_MARKETPLACE_APP_URL,
   LOCAL_TOKEN_APP_URL,
@@ -36,7 +38,6 @@ import {
   WORK_TOKEN_APP_URL,
 } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
-import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import {
   explorerAddressUrl,
   explorerTxUrl,
@@ -71,14 +72,10 @@ function shortAddress(value: string) {
 export function LandingApp({
   registryAddress,
   registryRecords,
-  network,
-  onNetworkChange,
   onRefresh,
 }: {
   registryAddress: string;
   registryRecords: LandingRegistryRecord[];
-  network: BitcoinNetwork;
-  onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
 }) {
   const confirmedRecords = registryRecords.filter((record) => record.confirmed);
@@ -87,8 +84,6 @@ export function LandingApp({
   return (
     <main className="landing-app">
       <AppHeader
-        network={network}
-        onNetworkChange={onNetworkChange}
         subtitle="The final network"
         title="ProofOfWork.Me"
       />
@@ -98,13 +93,13 @@ export function LandingApp({
         <div className="landing-hero-content">
           <span className="landing-kicker">
             ProofOfWork-native identity, mail, files, pages, markets, credits,
-            logs, and growth
+            Infinity Bonds, logs, and growth
           </span>
           <h2>ProofOfWork.Me</h2>
           <p>
             Claim a permanent on-chain ID, then use the ProofOfWork Computer for
             mail, files, HTML pages, marketplace actions, credit mints, and
-            chain-readable proof.
+            bond-backed chain-readable proof.
           </p>
           <div className="landing-actions">
             <a
@@ -177,6 +172,15 @@ export function LandingApp({
               <span className="button-content">
                 <TrendingUp size={17} />
                 <span>WORK</span>
+              </span>
+            </a>
+            <a
+              className="secondary link-button"
+              href={appHref(INFINITY_APP_URL, LOCAL_INFINITY_APP_URL)}
+            >
+              <span className="button-content">
+                <InfinityIcon size={17} />
+                <span>Infinity</span>
               </span>
             </a>
           </div>
@@ -253,16 +257,16 @@ export function LandingApp({
           aria-label="ProofOfWork ID registry stats"
         >
           <div>
-            <span>Total IDs</span>
-            <strong>{registryRecords.length.toLocaleString()}</strong>
-          </div>
-          <div>
-            <span>Confirmed</span>
+            <span>Confirmed IDs</span>
             <strong>{confirmedRecords.length.toLocaleString()}</strong>
           </div>
           <div>
-            <span>Pending</span>
+            <span>Pending IDs</span>
             <strong>{pendingRecords.length.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Visible records</span>
+            <strong>{registryRecords.length.toLocaleString()}</strong>
           </div>
           <button className="secondary" onClick={onRefresh} type="button">
             <span className="button-content">
@@ -445,6 +449,28 @@ export function LandingApp({
               <span className="button-content">
                 <TrendingUp size={16} />
                 <span>Open WORK</span>
+              </span>
+            </a>
+          </article>
+
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <InfinityIcon size={24} />
+            </div>
+            <div>
+              <h3>Open Infinity</h3>
+              <p>
+                Create Infinity Bonds, track POWB supply and floor, and trade
+                POWB through the same sale-ticket market as credits.
+              </p>
+            </div>
+            <a
+              className="secondary link-button"
+              href={appHref(INFINITY_APP_URL, LOCAL_INFINITY_APP_URL)}
+            >
+              <span className="button-content">
+                <InfinityIcon size={16} />
+                <span>Open Infinity</span>
               </span>
             </a>
           </article>

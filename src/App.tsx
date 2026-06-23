@@ -20024,8 +20024,6 @@ export default function App() {
   if (landingMode) {
     return (
       <LandingApp
-        network={network}
-        onNetworkChange={chooseNetwork}
         registryAddress={registryAddressForNetwork("livenet")}
         registryRecords={idRegistry.filter(
           (record) => record.network === "livenet",

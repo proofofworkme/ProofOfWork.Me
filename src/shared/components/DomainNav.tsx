@@ -1,7 +1,7 @@
 import { Check, ChevronDown, Menu } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { APP_LINKS } from "../../app/appLinks";
-import { appHref } from "../../app/routeRegistry";
+import { appHref, isLocalPreviewHost } from "../../app/routeRegistry";
 
 const SHORT_LABELS: Record<string, string> = {
   Browser: "Web",
@@ -18,7 +18,9 @@ function currentHref() {
 }
 
 function linkIsActive(link: (typeof APP_LINKS)[number], current: string) {
-  if (current === link.localHref) {
+  const localPreview = isLocalPreviewHost();
+
+  if (localPreview && current === link.localHref) {
     return true;
   }
 
@@ -35,20 +37,24 @@ function linkIsActive(link: (typeof APP_LINKS)[number], current: string) {
     return true;
   }
 
-  const localQuery = link.localHref.split("?")[1] ?? "";
-  if (!localQuery) {
-    return current === link.localHref;
-  }
-
-  const currentParams = new URLSearchParams(window.location.search);
-  const linkParams = new URLSearchParams(localQuery);
-  for (const [key, value] of linkParams.entries()) {
-    if (currentParams.get(key) !== value) {
-      return false;
+  if (localPreview) {
+    const localQuery = link.localHref.split("?")[1] ?? "";
+    if (!localQuery) {
+      return current === link.localHref;
     }
+
+    const currentParams = new URLSearchParams(window.location.search);
+    const linkParams = new URLSearchParams(localQuery);
+    for (const [key, value] of linkParams.entries()) {
+      if (currentParams.get(key) !== value) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
-  return true;
+  return false;
 }
 
 type DomainNavProps = {
