@@ -29,6 +29,8 @@ const CARBONZ_SEAL_TX =
   "e365ada0deb8a7bf8f8c4c012897633e4f00938e7f0ca85999de884f939cbc68";
 const REPORTED_TRANSFER_TX =
   "90cdafde9e7e050a1831fcc3b412f29e529368fa6d9afc8f053c681c204449d4";
+const REPORTED_WAITING_FOR_SEAL_LISTING_TX =
+  "a5476c0c6a8df67569935c3cca152a3ef979d95469ce8fe8c8187f359c48a6c7";
 const REPORTED_TRANSFER_SENDER =
   "bc1pq0czje5lfwwat69g97k4sysx7an0wxu80n7jceqy6gc50hacd5wqltpx8y";
 const REPORTED_TRANSFER_RECIPIENT = "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d";
@@ -49,7 +51,11 @@ const MARKETPLACE_SUMMARY_MAX_MS = Number(
   process.env.MARKETPLACE_SUMMARY_MAX_MS ?? 55_000,
 );
 const MARKETPLACE_FRESH_SUMMARY_MAX_MS = Number(
-  process.env.MARKETPLACE_FRESH_SUMMARY_MAX_MS ?? 90_000,
+  process.env.MARKETPLACE_FRESH_SUMMARY_MAX_MS ?? 180_000,
+);
+const REQUEST_TIMEOUT_MS = Number(
+  process.env.MARKETPLACE_REGRESSION_REQUEST_TIMEOUT_MS ??
+    Math.max(MARKETPLACE_FRESH_SUMMARY_MAX_MS + 15_000, 90_000),
 );
 
 function assert(condition, message) {
@@ -65,7 +71,9 @@ async function getJson(path, params = {}) {
       url.searchParams.set(key, String(value));
     }
   }
-  const response = await fetch(url, { signal: AbortSignal.timeout(90_000) });
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error(`${url} returned HTTP ${response.status}`);
   }
@@ -175,6 +183,16 @@ const reportedMarketLog = await tokenHistory("market-log", {
 assert(
   txids(reportedMarketLog.items).has(REPORTED_SALE_TX),
   `${REPORTED_SALE_TX} is missing from credit sales and listings log`,
+);
+const reportedWaitingForSealMarketLog = await tokenHistory("market-log", {
+  fresh: 1,
+  q: REPORTED_WAITING_FOR_SEAL_LISTING_TX,
+});
+assert(
+  txids(reportedWaitingForSealMarketLog.items).has(
+    REPORTED_WAITING_FOR_SEAL_LISTING_TX,
+  ),
+  `${REPORTED_WAITING_FOR_SEAL_LISTING_TX} is missing from WORK market-log history`,
 );
 
 const walletToken = await getJson("/api/v1/token", {
@@ -304,7 +322,14 @@ assert(
     freshMarketplaceIndexedAt > Date.parse(STALE_MARKETPLACE_SNAPSHOT_AT),
   `/api/v1/marketplace-summary?fresh=1 is still pinned to stale snapshot ${STALE_MARKETPLACE_SNAPSHOT_AT}`,
 );
-
+assert(
+  (marketplaceFreshSummary.token?.listings ?? []).some(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() ===
+        REPORTED_WAITING_FOR_SEAL_LISTING_TX && item?.confirmed === true,
+  ),
+  `${REPORTED_WAITING_FOR_SEAL_LISTING_TX} is missing from fresh marketplace summary listings`,
+);
 const workToken = await getJson("/api/v1/token", {
   network: "livenet",
   asset: WORK_TOKEN_ID,

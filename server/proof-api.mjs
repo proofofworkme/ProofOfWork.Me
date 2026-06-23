@@ -174,8 +174,16 @@ const WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS = Number(
 );
 const MARKETPLACE_SUMMARY_FRESH_WAIT_MS = Number(
   process.env.MARKETPLACE_SUMMARY_FRESH_WAIT_MS ??
-    Math.max(WORK_FLOOR_FRESH_WAIT_MS, 30_000),
+    Math.max(WORK_FLOOR_FRESH_WAIT_MS, 180_000),
 );
+const PROOF_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS = (() => {
+  const parsed = Number(
+    process.env.POW_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS ??
+      process.env.POW_INDEX_MAX_TIP_LAG_BLOCKS ??
+      6,
+  );
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 6;
+})();
 const TOKEN_SCOPED_FRESH_WAIT_MS = Number(
   process.env.TOKEN_SCOPED_FRESH_WAIT_MS ?? 30_000,
 );
@@ -246,10 +254,10 @@ const WORK_TOKEN_LIVE_HISTORY_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_HISTORY_MAX_TXS ?? WORK_TOKEN_LIVE_DELTA_MAX_TXS,
 );
 const WORK_TOKEN_LIVE_NON_MINT_MAX_TXS = Number(
-  process.env.WORK_TOKEN_LIVE_NON_MINT_MAX_TXS ?? 250,
+  process.env.WORK_TOKEN_LIVE_NON_MINT_MAX_TXS ?? 1000,
 );
 const WORK_TOKEN_LIVE_NON_MINT_SCAN_MAX_TXS = Number(
-  process.env.WORK_TOKEN_LIVE_NON_MINT_SCAN_MAX_TXS ?? 10_000,
+  process.env.WORK_TOKEN_LIVE_NON_MINT_SCAN_MAX_TXS ?? 20_000,
 );
 const WORK_TOKEN_LIVE_CLOSE_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_CLOSE_MAX_TXS ?? 1000,
@@ -1579,6 +1587,13 @@ function tokenSaleItemKey(item) {
   return String(item?.txid ?? "").trim().toLowerCase();
 }
 
+function tokenListingItemKey(item) {
+  return [
+    String(item?.network ?? "").trim().toLowerCase(),
+    String(item?.listingId ?? item?.txid ?? "").trim().toLowerCase(),
+  ].join(":");
+}
+
 function tokenClosedListingItemKey(item) {
   return [
     String(item?.network ?? "").trim().toLowerCase(),
@@ -1606,6 +1621,11 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
     return payload;
   }
 
+  const listings = mergeTokenStateItemsByKey(
+    payload.listings,
+    overlay.listings,
+    tokenListingItemKey,
+  );
   const sales = mergeTokenStateItemsByKey(
     payload.sales,
     overlay.sales,
@@ -1623,6 +1643,7 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
     ...payload,
     closedListings,
     indexedAt: newerIso(payload.indexedAt, overlay.indexedAt),
+    listings,
     sales,
     source: mergedSourceLabel(payload.source, overlay.source),
     stats: {
@@ -1655,6 +1676,27 @@ async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
   ).catch((error) => {
     console.error(
       `Proof index token market summary overlay failed: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+}
+
+async function workTokenStateForSummaryRead(network, fresh) {
+  if (network !== "livenet") {
+    return null;
+  }
+  return tokenPayloadForRead(
+    network,
+    WORK_TOKEN_ID,
+    fresh,
+    {
+      reconcileListingStatus: fresh,
+      reconcileSpendable: fresh,
+      recoverWorkSales: true,
+    },
+  ).catch((error) => {
+    console.error(
+      `WORK marketplace summary token read failed: ${errorSummary(error)}`,
     );
     return null;
   });
@@ -2533,6 +2575,13 @@ async function submitNodeTransaction(txHex, network) {
       error instanceof Error && error.message
         ? error.message
         : "node broadcast request failed";
+    console.error(
+      JSON.stringify({
+        error: message,
+        phase: "broadcast-node-request",
+        source: mempoolBase(network),
+      }),
+    );
     throw new BroadcastRejectError(
       {
         hint: "The transaction was not accepted by the broadcast gateway. Refresh wallet UTXOs and retry; if it persists, wait for pending ancestors to confirm.",
@@ -2555,6 +2604,14 @@ async function submitNodeTransaction(txHex, network) {
         details.hint = bitcoinRejectHint(details.reason, details.code);
       }
     }
+    console.error(
+      JSON.stringify({
+        details,
+        phase: "broadcast-node-reject",
+        source: mempoolBase(network),
+        status: response.status,
+      }),
+    );
     throw new BroadcastRejectError(details);
   }
 
@@ -10968,7 +11025,10 @@ function tokenSummaryListings(items, limit = SUMMARY_MARKET_LIMIT) {
   }
 
   for (const listing of listings) {
-    if (!tokenListingHasConfirmedSaleTicketSeal(listing)) {
+    if (
+      !listing?.confirmed &&
+      !tokenListingHasConfirmedSaleTicketSeal(listing)
+    ) {
       continue;
     }
     const key = tokenSummaryListingKey(listing);
@@ -12430,14 +12490,9 @@ async function recentUnknownWorkTokenNonMintTransactions(
     return [];
   }
 
-  const normalizedKnown = knownTxids instanceof Set ? knownTxids : new Set();
-  if (normalizedKnown.size === 0) {
-    return [];
-  }
-
   const candidateTxids = [...historyTxids]
     .reverse()
-    .filter((txid) => /^[0-9a-f]{64}$/u.test(txid) && !normalizedKnown.has(txid))
+    .filter((txid) => /^[0-9a-f]{64}$/u.test(txid))
     .slice(0, Math.max(0, maxScanTxids));
   if (candidateTxids.length === 0) {
     return [];
@@ -14054,6 +14109,18 @@ async function tokenPayloadForRead(
       );
     }
     if (ledger) {
+      if (
+        fresh &&
+        !(await proofIndexPayloadCoversConfirmedTip(
+          ledger,
+          network,
+          `canonical-token:${scope || "all"}`,
+        ))
+      ) {
+        ledger = null;
+      }
+    }
+    if (ledger) {
       let payload = attachLedgerMetadata(
         {
           ...ledgerTokenStateForScope(ledger, scope),
@@ -14660,7 +14727,17 @@ function ledgerPayloadAgeMs(payload, now = Date.now()) {
 function ledgerPayloadIndexedThroughBlock(payload) {
   const height = Math.max(
     Number(payload?.metrics?.indexedThroughBlock) || 0,
-    Number(payload?.sourceTipHeight) || 0,
+    Number(payload?.indexedThroughBlock) || 0,
+  );
+  return Number.isSafeInteger(height) && height > 0 ? height : 0;
+}
+
+function proofIndexPayloadIndexedThroughBlock(payload) {
+  const height = Math.max(
+    Number(payload?.indexedThroughBlock) || 0,
+    Number(payload?.metrics?.indexedThroughBlock) || 0,
+    Number(payload?.token?.indexedThroughBlock) || 0,
+    Number(payload?.workFloor?.indexedThroughBlock) || 0,
   );
   return Number.isSafeInteger(height) && height > 0 ? height : 0;
 }
@@ -14680,7 +14757,42 @@ async function ledgerPayloadCoversTip(payload, network) {
   if (!Number.isSafeInteger(tipHeight)) {
     return true;
   }
-  return ledgerPayloadIndexedThroughBlock(payload) >= tipHeight;
+  return (
+    tipHeight - ledgerPayloadIndexedThroughBlock(payload) <=
+    PROOF_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS
+  );
+}
+
+async function proofIndexPayloadCoversConfirmedTip(
+  payload,
+  network,
+  label = "proof-index",
+) {
+  if (network !== "livenet") {
+    return true;
+  }
+  const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
+  if (!indexedThroughBlock) {
+    console.error(
+      `Rejected ${label} proof-index read: payload has no indexedThroughBlock.`,
+    );
+    return false;
+  }
+
+  const tipHeight = await ledgerTipHeight(network);
+  if (!Number.isSafeInteger(tipHeight)) {
+    return true;
+  }
+
+  const lagBlocks = tipHeight - indexedThroughBlock;
+  if (lagBlocks <= PROOF_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS) {
+    return true;
+  }
+
+  console.error(
+    `Rejected stale ${label} proof-index read: indexedThroughBlock ${indexedThroughBlock}, tip ${tipHeight}, lag ${lagBlocks} blocks.`,
+  );
+  return false;
 }
 
 async function existingCanonicalLedgerPayload(network) {
@@ -15963,16 +16075,31 @@ async function cachedWorkFloorPayload(network, fresh = false) {
 
 async function workSummaryPayload(network, fresh = false) {
   if (network === "livenet") {
-    const ledger = fresh
-      ? await summaryCanonicalLedgerPayload(network, true)
-      : await existingCanonicalLedgerPayload(network);
+    const ledger = await existingCanonicalLedgerPayload(network);
+    if (fresh) {
+      refreshCanonicalLedgerPayloadInBackground(network, true);
+    }
     if (ledger) {
-      const workTokenState = await liveWorkTokenStateWithFallbackAfterMs(
-        network,
-        ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
-        WORK_TOKEN_LIVE_WAIT_MS,
-        { recoverClosedSales: true },
-      );
+      const summaryWorkTokenState =
+        fresh ? await workTokenStateForSummaryRead(network, true) : null;
+      const workTokenState =
+        summaryWorkTokenState ??
+        (await liveWorkTokenStateWithFallbackAfterMs(
+          network,
+          ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
+          WORK_TOKEN_LIVE_WAIT_MS,
+          { recoverClosedSales: true },
+        ));
+      const mergedWorkTokenState =
+        summaryWorkTokenState && summaryWorkTokenState !== workTokenState
+        ? tokenStateWithMergedListingSeals(
+            tokenStateWithPreservedListingRecords(
+              workTokenState,
+              summaryWorkTokenState,
+            ),
+            summaryWorkTokenState,
+          )
+        : workTokenState;
       const closeTxs = await payloadWithFallbackAfterMs(
         recentWorkTokenMarketCloseTransactions(
           network,
@@ -15984,7 +16111,7 @@ async function workSummaryPayload(network, fresh = false) {
       );
       const closedWorkTokenState =
         workTokenStateWithRecoveredListingClosesFromTransactions(
-          workTokenState,
+          mergedWorkTokenState,
           closeTxs,
           network,
         );
@@ -16146,16 +16273,31 @@ async function reconciledLivenetMarketplaceSummaryPayload(
   fresh = false,
 ) {
   if (network === "livenet") {
-    const ledger = fresh
-      ? await summaryCanonicalLedgerPayload(network, true)
-      : await existingCanonicalLedgerPayload(network);
+    const ledger = await existingCanonicalLedgerPayload(network);
+    if (fresh) {
+      refreshCanonicalLedgerPayloadInBackground(network, true);
+    }
     if (ledger) {
-      const workTokenState = await liveWorkTokenStateWithFallbackAfterMs(
-        network,
-        ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
-        WORK_TOKEN_LIVE_WAIT_MS,
-        { recoverClosedSales: true },
-      );
+      const summaryWorkTokenState =
+        fresh ? await workTokenStateForSummaryRead(network, true) : null;
+      const workTokenState =
+        summaryWorkTokenState ??
+        (await liveWorkTokenStateWithFallbackAfterMs(
+          network,
+          ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
+          WORK_TOKEN_LIVE_WAIT_MS,
+          { recoverClosedSales: true },
+        ));
+      const mergedWorkTokenState =
+        summaryWorkTokenState && summaryWorkTokenState !== workTokenState
+        ? tokenStateWithMergedListingSeals(
+            tokenStateWithPreservedListingRecords(
+              workTokenState,
+              summaryWorkTokenState,
+            ),
+            summaryWorkTokenState,
+          )
+        : workTokenState;
       const closeTxs = await payloadWithFallbackAfterMs(
         recentWorkTokenMarketCloseTransactions(
           network,
@@ -16167,7 +16309,7 @@ async function reconciledLivenetMarketplaceSummaryPayload(
       );
       const closedWorkTokenState =
         workTokenStateWithRecoveredListingClosesFromTransactions(
-          workTokenState,
+          mergedWorkTokenState,
           closeTxs,
           network,
         );
@@ -16238,21 +16380,23 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
   const fallback = await marketplaceSummaryFallbackPayload(network);
 
   if (fresh) {
-    if (marketplaceSummaryHasIndexedMarketOverlay(fallback)) {
-      refreshPayloadCacheInBackground(
-        marketplaceSummaryCacheKey(network),
-        marketplaceSummaryPayloadKey(network),
-        () => reconciledLivenetMarketplaceSummaryPayload(network, true),
-        MARKETPLACE_SUMMARY_CACHE_TTL_MS,
-        MARKETPLACE_SUMMARY_CACHE_STALE_MS,
-      );
-      return fallback;
-    }
-    return payloadWithFallbackAfterMs(
+    const refreshed = await payloadWithFallbackAfterMs(
       refreshMarketplaceSummaryPayloadCache(network, true),
-      fallback,
+      null,
       MARKETPLACE_SUMMARY_FRESH_WAIT_MS,
     );
+    if (refreshed) {
+      return refreshed;
+    }
+
+    refreshPayloadCacheInBackground(
+      marketplaceSummaryCacheKey(network),
+      marketplaceSummaryPayloadKey(network),
+      () => reconciledLivenetMarketplaceSummaryPayload(network, true),
+      MARKETPLACE_SUMMARY_CACHE_TTL_MS,
+      MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+    );
+    return fallback;
   }
 
   refreshPayloadCacheInBackground(
@@ -16573,12 +16717,21 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
         network,
         recoveryTxids.length,
       );
-      const recoveredPayload =
-        workTokenStateWithRecoveredListingClosesFromTransactions(
-          payload,
-          recoveryTxs,
-          network,
-        );
+      let recoveredPayload = workTokenStateWithRecoveredListingsFromTransactions(
+        payload,
+        recoveryTxs,
+        network,
+      );
+      recoveredPayload = workTokenStateWithRecoveredListingSeals(
+        recoveredPayload,
+        recoveryTxs,
+        network,
+      );
+      recoveredPayload = workTokenStateWithRecoveredListingClosesFromTransactions(
+        recoveredPayload,
+        recoveryTxs,
+        network,
+      );
       if (recoveredPayload !== payload) {
         payload = recoveredPayload;
         cacheExplicitWorkTokenCloseRecoveryTxs(network, recoveryTxs);
@@ -18965,7 +19118,14 @@ async function handleRequest(request, response) {
           );
           return null;
         });
-        if (indexedPayload) {
+        if (
+          indexedPayload &&
+          (await proofIndexPayloadCoversConfirmedTip(
+            indexedPayload,
+            network,
+            "token-state",
+          ))
+        ) {
           jsonResponse(
             response,
             200,
@@ -19077,7 +19237,14 @@ async function handleRequest(request, response) {
           );
           return null;
         });
-        if (indexedPayload) {
+        if (
+          indexedPayload &&
+          (await proofIndexPayloadCoversConfirmedTip(
+            indexedPayload,
+            network,
+            "token-history",
+          ))
+        ) {
           jsonResponse(
             response,
             200,

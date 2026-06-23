@@ -20,7 +20,7 @@ const ERROR_INTERVAL_MS = Number(
 const BACKFILL_MAX_PAGES = Number(
   process.env.POW_INDEX_WORKER_BACKFILL_MAX_PAGES ??
     process.env.POW_INDEX_BACKFILL_MAX_PAGES ??
-    3,
+    20,
 );
 const BACKFILL_LIMIT = Number(
   process.env.POW_INDEX_WORKER_BACKFILL_LIMIT ??
@@ -28,18 +28,18 @@ const BACKFILL_LIMIT = Number(
     200,
 );
 const DEFAULT_WORKER_BACKFILL_SOURCES = [
-  "log",
-  "registry-records",
-  "registry-pending",
-  "registry-listings",
-  "registry-sales",
-  "tokens",
-  "token-mints",
-  "token-transfers",
   "token-listings",
   "token-closed-listings",
   "token-sales",
+  "token-transfers",
+  "token-mints",
+  "tokens",
   "token-invalid-events",
+  "registry-records",
+  "registry-listings",
+  "registry-sales",
+  "registry-pending",
+  "log",
 ].join(",");
 const BACKFILL_SOURCES = String(
   process.env.POW_INDEX_WORKER_BACKFILL_SOURCES ??

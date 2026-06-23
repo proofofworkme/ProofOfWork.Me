@@ -303,6 +303,40 @@ function tokenSaleFromEventPayload(payload) {
   };
 }
 
+function tokenListingFromEventPayload(payload) {
+  const { amount, priceSats, ticker } = tokenMarketNumbersFromTags(payload);
+  const sellerAddress = String(
+    payload?.sellerAddress ?? payload?.actor ?? "",
+  ).trim();
+  const registryAddress = tokenRegistryAddressFromPayload(
+    payload,
+    sellerAddress,
+    payload?.counterparty,
+  );
+  const saleAuthorization =
+    payload?.saleAuthorization &&
+    typeof payload.saleAuthorization === "object" &&
+    !Array.isArray(payload.saleAuthorization)
+      ? payload.saleAuthorization
+      : {};
+  return {
+    amount: rowNumber(payload, "amount") || amount,
+    confirmed: payload?.confirmed === true,
+    createdAt: dateIso(payload?.createdAt),
+    dataBytes: rowNumber(payload, "dataBytes"),
+    listingId: String(payload?.listingId ?? payload?.txid ?? "")
+      .trim()
+      .toLowerCase(),
+    network: payload?.network,
+    priceSats: rowNumber(payload, "priceSats") || priceSats,
+    registryAddress,
+    saleAuthorization,
+    sellerAddress,
+    ticker,
+    tokenId: String(payload?.tokenId ?? "").trim().toLowerCase(),
+  };
+}
+
 function tokenClosedListingFromEventPayload(payload) {
   const { amount, priceSats, ticker } = tokenMarketNumbersFromTags(payload);
   const sellerAddress = String(payload?.actor ?? payload?.sellerAddress ?? "")
@@ -371,6 +405,22 @@ function tokenTransferFromEventPayload(payload, row = {}) {
 }
 
 function tokenHistoryItemFromMarketEventPayload(payload, safeKind) {
+  if (payload?.kind === "token-listing") {
+    const listing = tokenListingFromEventPayload(payload);
+    if (!listing.listingId || !listing.tokenId) {
+      return null;
+    }
+    if (safeKind === "listings") {
+      return listing;
+    }
+    return {
+      createdAt: listing.createdAt,
+      kind: "listing",
+      listing,
+      txid: listing.listingId,
+    };
+  }
+
   if (payload?.kind === "token-sale") {
     const sale = tokenSaleFromEventPayload(payload);
     if (!sale.txid || !sale.listingId || !sale.tokenId) {
@@ -422,6 +472,9 @@ function compareTokenItemsByTime(left, right) {
 }
 
 function tokenHistoryMarketEventKinds(safeKind) {
+  if (safeKind === "listings") {
+    return ["token-listing"];
+  }
   if (safeKind === "sales") {
     return ["token-sale"];
   }
@@ -429,7 +482,7 @@ function tokenHistoryMarketEventKinds(safeKind) {
     return ["token-listing-closed"];
   }
   if (safeKind === "market-log") {
-    return ["token-sale", "token-listing-closed"];
+    return ["token-listing", "token-sale", "token-listing-closed"];
   }
   return [];
 }
@@ -1641,7 +1694,10 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
     "e.valid = true",
     "e.kind = ANY($2::text[])",
   ];
-  const params = [network, ["token-sale", "token-listing-closed"]];
+  const params = [
+    network,
+    ["token-listing", "token-sale", "token-listing-closed"],
+  ];
 
   if (scope && scope !== "all") {
     params.push(scope);
@@ -1697,9 +1753,18 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
   );
 
   const sales = [];
+  const listings = [];
   const closedListings = [];
   for (const row of rowsResult.rows) {
     const payload = eventRowPayload(row, network);
+    if (payload?.kind === "token-listing") {
+      const listing = tokenListingFromEventPayload(payload);
+      if (listing.listingId && listing.tokenId) {
+        listings.push(listing);
+      }
+      continue;
+    }
+
     if (payload?.kind === "token-sale") {
       const sale = tokenSaleFromEventPayload(payload);
       if (sale.txid && sale.listingId && sale.tokenId) {
@@ -1728,6 +1793,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
       countResult.rows[0],
       "indexed_through_block",
     ),
+    listings: listings.sort(compareTokenItemsByTime),
     sales: sales.sort(compareTokenItemsByTime),
     source: "proof-indexer-token-market-summary-overlay",
     stats: {
@@ -1832,6 +1898,7 @@ function tokenStateWithSnapshotMetadata(payload, snapshot, source) {
   const snapshotId = payload.snapshotId ?? snapshot?.snapshot_id ?? "";
   return {
     ...payload,
+    indexedThroughBlock: rowNumber(snapshot, "indexed_through_block"),
     indexedAt: dateIso(
       payload.indexedAt ??
         snapshot?.payload?.tokenStatePayloadsIndexedAt ??
