@@ -19,6 +19,7 @@ token.proofofwork.me        permanent redirect to https://credit.proofofwork.me/
 tokens.proofofwork.me       permanent redirect to https://credit.proofofwork.me/
 wallet.proofofwork.me      standalone credit wallet, transfer, listing, delisting, and sale-history app
 work.proofofwork.me         standalone WORK credit dashboard and mint page
+infinity.proofofwork.me     standalone Infinity Bond / POWB market and bond composer
 log.proofofwork.me          public ProofOfWork Computer log
 growth.proofofwork.me       public growth model dashboard
 ```

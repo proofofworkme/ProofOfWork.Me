@@ -193,6 +193,7 @@ type Folder =
   | "token"
   | "wallet"
   | "work"
+  | "infinity"
   | "log"
   | "contacts"
   | "custom";
@@ -213,6 +214,7 @@ const COMPUTER_ROUTE_FOLDERS: Folder[] = [
   "token",
   "wallet",
   "work",
+  "infinity",
   "log",
   "contacts",
 ];
@@ -3016,6 +3018,10 @@ function folderLabel(folder: Folder) {
     return "WORK";
   }
 
+  if (folder === "infinity") {
+    return "Infinity";
+  }
+
   if (folder === "log") {
     return "Log";
   }
@@ -3062,6 +3068,10 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "ids") {
     return "ProofOfWork ID registry";
+  }
+
+  if (folder === "infinity") {
+    return "Infinity Bond / POWB market";
   }
 
   if (folder === "marketplace") {
@@ -12384,7 +12394,7 @@ export default function App() {
                 : workTokenMode
                   ? "work"
                   : infinityMode
-                    ? "marketplace"
+                    ? "infinity"
                     : activityMode
                       ? "log"
                       : mainnetRegistryMode
@@ -13097,7 +13107,7 @@ export default function App() {
       (item) => item.token.tokenId === tokenTransferTokenId,
     )?.token ??
     tokenWalletBalances[0]?.token ??
-    (infinityMode
+    (infinityMode || activeFolder === "infinity"
       ? powbTokenDefinition
       : !address
         ? workTokenDefinition ?? WORK_TOKEN_DEFINITION
@@ -13466,6 +13476,7 @@ export default function App() {
                 activeFolder === "token" ||
                 activeFolder === "wallet" ||
                 activeFolder === "work" ||
+                activeFolder === "infinity" ||
                 activeFolder === "log"
             ? busy || refreshInProgress || !registryAddress
             : !address || busy || refreshInProgress;
@@ -13674,8 +13685,18 @@ export default function App() {
       activeFolder === "token" ||
       activeFolder === "wallet" ||
       activeFolder === "work" ||
+      activeFolder === "infinity" ||
       activeFolder === "contacts"
     ) {
+      if (activeFolder === "infinity") {
+        if (network !== "livenet") {
+          setNetwork("livenet");
+          return;
+        }
+        void refreshInfinity(true, false);
+        return;
+      }
+
       if (activeFolder === "token" || activeFolder === "wallet" || activeFolder === "work") {
         if (network !== "livenet") {
           setNetwork("livenet");
@@ -13924,7 +13945,8 @@ export default function App() {
       activeFolder !== "marketplace" &&
       activeFolder !== "token" &&
       activeFolder !== "wallet" &&
-      activeFolder !== "work"
+      activeFolder !== "work" &&
+      activeFolder !== "infinity"
     ) {
       return;
     }
@@ -14018,7 +14040,7 @@ export default function App() {
   }, [marketplaceMode, network]);
 
   useEffect(() => {
-    if (!infinityMode) {
+    if (!infinityMode && activeFolder !== "infinity") {
       return;
     }
 
@@ -14042,7 +14064,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [infinityMode, network]);
+  }, [activeFolder, infinityMode, network]);
 
   useEffect(() => {
     if (
@@ -14056,7 +14078,7 @@ export default function App() {
           needsRegistryResolution(tokenCreateRegistryAddress, network)
         ) &&
         !(
-          infinityMode &&
+          (infinityMode || activeFolder === "infinity") &&
           needsRegistryResolution(infinityBondRecipient, "livenet")
         )) ||
       !registryAddress
@@ -16056,7 +16078,7 @@ export default function App() {
                 : marketplaceMode
                   ? "marketplace"
                   : infinityMode
-                    ? "marketplace"
+                    ? "infinity"
                   : mainnetRegistryMode
                     ? "ids"
                     : "inbox",
@@ -20466,7 +20488,8 @@ export default function App() {
     address ? "" : "is-onboarding",
     activeFolder === "token" ||
     activeFolder === "wallet" ||
-    activeFolder === "work"
+    activeFolder === "work" ||
+    activeFolder === "infinity"
       ? "is-token-workspace"
       : "",
     activeFolder === "marketplace" ? "is-marketplace-workspace" : "",
@@ -20489,6 +20512,11 @@ export default function App() {
           refreshDisabled
             ? undefined
             : () => {
+                if (activeFolder === "infinity") {
+                  void refreshInfinity(false, true);
+                  return;
+                }
+
                 if (
                   activeFolder === "token" ||
                   activeFolder === "wallet" ||
@@ -20764,6 +20792,19 @@ export default function App() {
                 <span>WORK</span>
               </span>
               <strong>{workTokenLedger.confirmedSupply.toLocaleString()}</strong>
+            </button>
+            <button
+              aria-current={activeFolder === "infinity"}
+              onClick={() => openFolder("infinity")}
+              type="button"
+            >
+              <span className="folder-label">
+                <TrendingUp size={17} />
+                <span>Infinity</span>
+              </span>
+              <strong>
+                {(infinitySummary?.stats.confirmedSupply ?? 0).toLocaleString()}
+              </strong>
             </button>
             <button
               aria-current={activeFolder === "log"}
@@ -21071,6 +21112,62 @@ export default function App() {
                   activeFolder === "work" ? "WORK market data" : "credit data",
               })
             }
+          />
+        ) : activeFolder === "infinity" ? (
+          <InfinityApp
+            address={address}
+            balances={powbWalletBalances}
+            bondAmount={infinityBondAmount}
+            bondBytes={infinityBondBytes}
+            bondRecipient={infinityBondRecipient}
+            bondRecipientResolution={infinityBondResolution}
+            btcUsd={tokenBtcUsd}
+            busy={busy}
+            buyListing={buyTokenListing}
+            canCreateBond={canCreateInfinityBond}
+            canList={canListToken}
+            canTransfer={canTransferToken}
+            closedListings={powbClosedListings}
+            connectWallet={connectWallet}
+            delistListing={delistTokenListing}
+            disconnectWallet={disconnectWallet}
+            embedded
+            feeRate={feeRate}
+            hasUnisat={hasUnisat}
+            listAmount={tokenListAmount}
+            listBuyerAddress={tokenListBuyerAddress}
+            listPriceSats={tokenListPriceSats}
+            listing={tokenAction === "list"}
+            listings={powbListings}
+            listSpendableBalance={walletSpendableTokenBalance}
+            network={network}
+            onNetworkChange={chooseNetwork}
+            onRefresh={() => void refreshInfinity(false, true)}
+            sales={powbSales}
+            sealListing={sealTokenListing}
+            selectedTokenId={POWB_TOKEN_ID}
+            setBondAmount={setInfinityBondAmount}
+            setBondRecipient={setInfinityBondRecipient}
+            setFeeRate={setFeeRate}
+            setListAmount={setTokenListAmount}
+            setListBuyerAddress={setTokenListBuyerAddress}
+            setListPriceSats={setTokenListPriceSats}
+            setSelectedTokenId={setTokenTransferTokenId}
+            setTransferAmount={setTokenTransferAmount}
+            setTransferRecipient={setTokenTransferRecipient}
+            status={status}
+            submitBond={createInfinityBond}
+            submitList={listToken}
+            submitTransfer={transferToken}
+            summary={infinitySummary}
+            tokens={powbTokenDefinitions}
+            transfers={powbTransfers}
+            transferAmount={tokenTransferAmount}
+            transferBalance={walletTransferBalance}
+            transferBytes={tokenTransferBytes}
+            transferRecipient={tokenTransferRecipient}
+            transferToken={walletTransferToken}
+            transferring={tokenAction === "transfer"}
           />
         ) : activeFolder === "contacts" ? (
           <ContactsWorkspace
@@ -22818,6 +22915,7 @@ type InfinityAppProps = {
   connectWallet: () => Promise<void>;
   delistListing: (listing: PowTokenListing) => void;
   disconnectWallet: () => void;
+  embedded?: boolean;
   feeRate: number;
   hasUnisat: boolean;
   listAmount: number;
@@ -22873,6 +22971,7 @@ function InfinityApp({
   connectWallet,
   delistListing,
   disconnectWallet,
+  embedded = false,
   feeRate,
   hasUnisat,
   listAmount,
@@ -22948,25 +23047,8 @@ function InfinityApp({
       ? shortAddress(address)
       : "Connect UniSat";
 
-  return (
-    <main className="id-launch-app token-public-app token-wallet-public-app">
-      <AppHeader
-        address={address}
-        busy={busy}
-        connectWallet={connectWallet}
-        disconnectWallet={disconnectWallet}
-        hasUnisat={hasUnisat}
-        homeHref={appHref(INFINITY_APP_URL, LOCAL_INFINITY_APP_URL)}
-        network={network}
-        onNetworkChange={onNetworkChange}
-        onRefresh={onRefresh}
-        subtitle="$POWB bond market"
-        title="Infinity Bonds"
-      />
-
-      <AppStatusRow className="desktop-route-status" persistent status={status} />
-
-      <section className="token-workspace token-wallet-workspace">
+  const workspace = (
+    <section className="token-workspace token-wallet-workspace">
         <section className="id-launch-card token-dashboard-card">
           <div className="id-card-heading">
             <div className="id-card-icon">
@@ -23224,7 +23306,32 @@ function InfinityApp({
           summary={summary}
           tokens={tokens}
         />
-      </section>
+    </section>
+  );
+
+  if (embedded) {
+    return workspace;
+  }
+
+  return (
+    <main className="id-launch-app token-public-app token-wallet-public-app">
+      <AppHeader
+        address={address}
+        busy={busy}
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        hasUnisat={hasUnisat}
+        homeHref={appHref(INFINITY_APP_URL, LOCAL_INFINITY_APP_URL)}
+        network={network}
+        onNetworkChange={onNetworkChange}
+        onRefresh={onRefresh}
+        subtitle="$POWB bond market"
+        title="Infinity Bonds"
+      />
+
+      <AppStatusRow className="desktop-route-status" persistent status={status} />
+
+      {workspace}
 
       <SocialFooter />
     </main>

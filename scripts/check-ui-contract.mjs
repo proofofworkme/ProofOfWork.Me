@@ -282,6 +282,16 @@ expect(
     !/openFolder\("growth"\)/.test(app),
 );
 expect(
+  "Computer includes Infinity as a real POWB workspace",
+  /\|\s*"infinity"/.test(folderTypeBlock) &&
+    /"infinity"/.test(computerFolderListBlock) &&
+    /activeFolder\s*===\s*"infinity"/.test(app) &&
+    /openFolder\("infinity"\)/.test(app) &&
+    /activeFolder === "infinity"\s*\?\s*\([\s\S]*<InfinityApp[\s\S]*\bembedded\b/.test(
+      app,
+    ),
+);
+expect(
   "wallet standalone has explicit public alignment shell",
   /token-wallet-public-app/.test(app) && /token-wallet-workspace/.test(app),
 );

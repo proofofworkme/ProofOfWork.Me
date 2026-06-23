@@ -424,7 +424,9 @@ https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
 https://credit.proofofwork.me/api/*
+https://wallet.proofofwork.me/api/*
 https://work.proofofwork.me/api/*
+https://infinity.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
 https://growth.proofofwork.me/api/*
 ```

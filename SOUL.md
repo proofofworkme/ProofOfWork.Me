@@ -11,7 +11,7 @@ It is distilled from current repository docs and public launch memory captured t
 - Full 2026-06-09 archive re-reviewed: 2026-06-17
 - Operational memory updated: 2026-06-20
 - Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
-- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
+- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
 
@@ -104,7 +104,7 @@ The emotional shape is a breakthrough moment: years of ProofOfWork/app experimen
 
 The full archive is not a neat roadmap. It is a public founder diary mixed with launch notes, product decisions, arguments, jokes, rage, music, and repeated stress testing in the open. Future agents should preserve the durable signal, not the noise.
 
-- The project is a computer, not a collection of pages. IDs, Mail, Files, Desktop, Browser, Marketplace, Credits, Wallet, WORK, Log, and Growth are facets of one ProofOfWork Computer.
+- The project is a computer, not a collection of pages. IDs, Mail, Files, Desktop, Browser, Marketplace, Credits, Wallet, WORK, Infinity, Log, and Growth are facets of one ProofOfWork Computer.
 - The anti-platform stance is central. Social media, ads, analytics dashboards, followers, likes, influencers, and conferences are weaker than chain-readable proofs, txids, and confirmed state.
 - Distribution should collapse into the Computer. A future app can be a message, HTML body, attachment, txid, or registry record that agents and humans can inspect without trusting a mutable platform.
 - Screenshots, quoted dashboards, and market tweets are launch evidence, not canonical data. They show what the founder was testing and teaching; agents must still refresh the current node/API before repeating any number or status.
@@ -146,6 +146,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `token.proofofwork.me` and `tokens.proofofwork.me` redirect to `https://credit.proofofwork.me/`.
 - `wallet.proofofwork.me` is the standalone credit wallet, transfer, listing, delisting, and sale-history app.
 - `work.proofofwork.me` is the standalone WORK credit dashboard.
+- `infinity.proofofwork.me` is the standalone Infinity Bond / POWB market and bond composer.
 - `log.proofofwork.me` is the public read-only ProofOfWork Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the public read-only growth dashboard for canonical ProofOfWork Computer network value versus confirmed chain-derived value in proofs and USD.
 - Canonical mainnet registry address: `bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e`

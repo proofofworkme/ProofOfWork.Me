@@ -37,6 +37,7 @@ token.proofofwork.me -> https://credit.proofofwork.me/
 tokens.proofofwork.me -> https://credit.proofofwork.me/
 wallet.proofofwork.me
 work.proofofwork.me
+infinity.proofofwork.me
 log.proofofwork.me
 growth.proofofwork.me
 ```
@@ -54,12 +55,13 @@ Production app roles:
 - `token.proofofwork.me` and `tokens.proofofwork.me` redirect permanently to `https://credit.proofofwork.me/`.
 - `wallet.proofofwork.me` is the standalone credit wallet for confirmed balances, transfers, listings, delistings, and sale history touching the connected address.
 - `work.proofofwork.me` is the standalone WORK credit dashboard and mint page.
+- `infinity.proofofwork.me` is the standalone Infinity Bond / POWB market and bond composer.
 - `log.proofofwork.me` is the standalone public ProofOfWork Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled ProofOfWork Computer network value with real confirmed chain value in proofs and USD.
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Credit, Wallet, WORK, Log, and Growth. Public social links should include X, YouTube, and GitHub.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Log, and Growth. Public social links should include X, YouTube, and GitHub.
 
 Official YouTube:
 
@@ -508,6 +510,12 @@ To build the standalone WORK credit dashboard for production:
 
 ```bash
 VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
+```
+
+To build the standalone Infinity Bond / POWB market for production:
+
+```bash
+VITE_INFINITY_ONLY=1 VITE_POW_API_BASE=https://infinity.proofofwork.me npm run build
 ```
 
 To build the staged standalone RUSH credit mint page:

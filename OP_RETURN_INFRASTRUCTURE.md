@@ -214,11 +214,12 @@ token.proofofwork.me        -> permanent redirect to https://credit.proofofwork.
 tokens.proofofwork.me       -> permanent redirect to https://credit.proofofwork.me/
 wallet.proofofwork.me       -> standalone credit wallet, transfer, listing, delisting, and sale-history app
 work.proofofwork.me         -> standalone WORK credit dashboard and mint page
+infinity.proofofwork.me     -> standalone Infinity Bond / POWB market and bond composer
 log.proofofwork.me          -> public ProofOfWork Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Credit, Wallet, WORK, Log, and Growth from any production surface. Social links should include X, YouTube, and GitHub.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Log, and Growth from any production surface. Social links should include X, YouTube, and GitHub.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
@@ -311,6 +312,7 @@ VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm
 VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://credit.proofofwork.me npm run build
 VITE_WALLET_ONLY=1 VITE_POW_API_BASE=https://wallet.proofofwork.me npm run build
 VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
+VITE_INFINITY_ONLY=1 VITE_POW_API_BASE=https://infinity.proofofwork.me npm run build
 VITE_RUSH_ONLY=1 VITE_POW_API_BASE=https://rush.proofofwork.me npm run build
 VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
 VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
