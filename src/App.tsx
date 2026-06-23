@@ -2412,6 +2412,37 @@ function ownedPowIds(records: PowIdRecord[], ownerOrReceiverAddress: string) {
   );
 }
 
+function preferPowIdRecord(candidate: PowIdRecord, current: PowIdRecord) {
+  if (candidate.confirmed !== current.confirmed) {
+    return candidate.confirmed;
+  }
+
+  const candidateCreatedAt = Date.parse(candidate.createdAt);
+  const currentCreatedAt = Date.parse(current.createdAt);
+  if (Number.isFinite(candidateCreatedAt) && Number.isFinite(currentCreatedAt)) {
+    return candidateCreatedAt < currentCreatedAt;
+  }
+
+  return false;
+}
+
+function uniquePowIdRecords(records: PowIdRecord[]) {
+  const uniqueRecords = new Map<string, PowIdRecord>();
+  for (const record of records) {
+    const key = normalizePowId(record.id);
+    if (!key) {
+      continue;
+    }
+    const current = uniqueRecords.get(key);
+    uniqueRecords.set(
+      key,
+      current && !preferPowIdRecord(record, current) ? current : record,
+    );
+  }
+
+  return [...uniqueRecords.values()];
+}
+
 function idRecordMatchesSearch(record: PowIdRecord, query: string) {
   return searchIncludes(
     [
@@ -3413,6 +3444,27 @@ function normalizePowId(value: string) {
     .replace(/^@/u, "")
     .replace(/@proofofwork\.me$/u, "")
     .trim();
+}
+
+function setDocumentMeta(selector: string, content: string) {
+  document
+    .querySelector<HTMLMetaElement>(selector)
+    ?.setAttribute("content", content);
+}
+
+function applyDocumentMetadata({
+  description,
+  title,
+}: {
+  description: string;
+  title: string;
+}) {
+  document.title = title;
+  setDocumentMeta('meta[name="description"]', description);
+  setDocumentMeta('meta[property="og:title"]', title);
+  setDocumentMeta('meta[property="og:description"]', description);
+  setDocumentMeta('meta[name="twitter:title"]', title);
+  setDocumentMeta('meta[name="twitter:description"]', description);
 }
 
 function powIdError(id: string) {
@@ -13486,6 +13538,22 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    applyDocumentMetadata(
+      idLaunchMode
+        ? {
+            description:
+              "Claim a permanent on-chain ProofOfWork ID that resolves to your ProofOfWork receive address.",
+            title: "ProofOfWork IDs",
+          }
+        : {
+            description:
+              "ProofOfWork.Me is the ProofOfWork Computer: local-first, on-chain identity, mail, files, pages, markets, credits, logs, and proof.",
+            title: "ProofOfWork.Me",
+          },
+    );
+  }, [idLaunchMode]);
+
+  useEffect(() => {
     const detectWallet = () => setHasUnisat(Boolean(window.unisat));
     detectWallet();
     const interval = window.setInterval(detectWallet, 1000);
@@ -20049,8 +20117,6 @@ export default function App() {
         lastRegisteredId={
           lastRegisteredId?.network === "livenet" ? lastRegisteredId : undefined
         }
-        network={network}
-        onNetworkChange={chooseNetwork}
         registryAddress={registryAddressForNetwork("livenet")}
         registryRecords={idRegistry.filter(
           (record) => record.network === "livenet",
@@ -28863,8 +28929,6 @@ function IdLaunchApp({
   idPgpKey,
   idReceiveAddress,
   lastRegisteredId,
-  network,
-  onNetworkChange,
   registryAddress,
   registryRecords,
   registrationBytes,
@@ -28887,8 +28951,6 @@ function IdLaunchApp({
   idPgpKey: string;
   idReceiveAddress: string;
   lastRegisteredId?: PowIdRecord;
-  network: BitcoinNetwork;
-  onNetworkChange: (network: BitcoinNetwork) => void;
   registryAddress: string;
   registryRecords: PowIdRecord[];
   registrationBytes: number;
@@ -28901,9 +28963,14 @@ function IdLaunchApp({
   onRefresh: () => void;
 }) {
   const normalizedId = normalizePowId(idName);
-  const ownedIds = ownedPowIds(registryRecords, address);
-  const confirmedRecords = registryRecords.filter((record) => record.confirmed);
-  const pendingRecords = registryRecords.filter((record) => !record.confirmed);
+  const uniqueRegistryRecords = uniquePowIdRecords(registryRecords);
+  const ownedIds = ownedPowIds(uniqueRegistryRecords, address);
+  const confirmedRecords = uniqueRegistryRecords.filter(
+    (record) => record.confirmed,
+  );
+  const pendingRecords = uniqueRegistryRecords.filter(
+    (record) => !record.confirmed,
+  );
   const confirmedMatch = normalizedId
     ? confirmedRecords.find((record) => record.id === normalizedId)
     : undefined;
@@ -28931,6 +28998,19 @@ function IdLaunchApp({
       : pendingMatch
         ? "Pending is not final. First confirmed valid registration wins."
         : "Claimable now. Registration pays 1,000 proofs to the canonical registry.";
+  const registerButtonLabel = busy
+    ? "Registering"
+    : !address
+      ? "Connect UniSat first"
+      : !normalizedId
+        ? "Enter an ID"
+        : confirmedMatch
+          ? "ID taken"
+          : pendingMatch
+            ? "ID pending"
+            : !canRegister
+              ? "Complete registration"
+              : "Register for 1,000 proofs";
 
   return (
     <main className="id-launch-app">
@@ -28940,8 +29020,6 @@ function IdLaunchApp({
         connectWallet={connectWallet}
         disconnectWallet={disconnectWallet}
         hasUnisat={hasUnisat}
-        network={network}
-        onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
         subtitle="Mainnet registry"
         title="ProofOfWork IDs"
@@ -28962,16 +29040,16 @@ function IdLaunchApp({
 
           <div className="id-launch-stats" aria-label="Registry stats">
             <div>
-              <strong>{registryRecords.length.toLocaleString()}</strong>
-              <span>Total IDs</span>
-            </div>
-            <div>
               <strong>{confirmedRecords.length.toLocaleString()}</strong>
-              <span>Confirmed</span>
+              <span>Confirmed IDs</span>
             </div>
             <div>
               <strong>{pendingRecords.length.toLocaleString()}</strong>
-              <span>Pending</span>
+              <span>Pending IDs</span>
+            </div>
+            <div>
+              <strong>{uniqueRegistryRecords.length.toLocaleString()}</strong>
+              <span>Visible records</span>
             </div>
           </div>
         </div>
@@ -29062,10 +29140,10 @@ function IdLaunchApp({
               bytes
             </div>
 
-            <button className="primary" disabled={busy} type="submit">
+            <button className="primary" disabled={!canRegister} type="submit">
               <span className="button-content">
                 <AtSign size={16} />
-                <span>{busy ? "Registering" : "Register for 1,000 proofs"}</span>
+                <span>{registerButtonLabel}</span>
               </span>
             </button>
           </form>
@@ -29171,7 +29249,7 @@ function IdLaunchApp({
             </button>
           </div>
           <IdRecordList
-            records={registryRecords}
+            records={uniqueRegistryRecords}
             empty="No registry records found yet."
             initialLimit={12}
           />

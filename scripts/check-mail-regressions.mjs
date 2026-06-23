@@ -126,13 +126,34 @@ function historyItems(payload) {
   return Array.isArray(payload?.items) ? payload.items : [];
 }
 
+function duplicateRegistryIds(records) {
+  const seen = new Set();
+  const duplicates = new Set();
+  for (const record of records) {
+    const id = String(record?.id ?? "").trim().toLowerCase();
+    if (!id) {
+      continue;
+    }
+    if (seen.has(id)) {
+      duplicates.add(id);
+      continue;
+    }
+    seen.add(id);
+  }
+  return [...duplicates];
+}
+
 function assertRegistryResolution(payload) {
   const source = String(payload?.source ?? "");
   const records = Array.isArray(payload?.records) ? payload.records : [];
   const failures = [];
-  if (!source.includes("proof-indexer-registry-snapshot")) {
+  if (!source) {
+    failures.push("missing registry source");
+  }
+  const duplicateIds = duplicateRegistryIds(records);
+  if (duplicateIds.length > 0) {
     failures.push(
-      `expected proof-indexer-registry-snapshot source, got ${source || "none"}`,
+      `duplicate registry IDs: ${duplicateIds.slice(0, 8).join(", ")}`,
     );
   }
   for (const check of REGISTRY_RESOLUTION_CHECKS) {

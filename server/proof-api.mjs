@@ -142,6 +142,11 @@ const TOKEN_CACHE_TTL_MS = Number(process.env.TOKEN_CACHE_TTL_MS ?? 60_000);
 const TOKEN_CACHE_STALE_MS = Number(
   process.env.TOKEN_CACHE_STALE_MS ?? HEAVY_READ_STALE_MS,
 );
+const REGISTRY_INDEXED_PAYLOAD_MAX_AGE_MS = Number(
+  process.env.REGISTRY_INDEXED_PAYLOAD_MAX_AGE_MS ??
+    process.env.POW_INDEX_SNAPSHOT_READ_MAX_AGE_MS ??
+    24 * 60 * 60_000,
+);
 const WORK_FLOOR_CACHE_TTL_MS = Number(
   process.env.WORK_FLOOR_CACHE_TTL_MS ?? 15_000,
 );
@@ -978,6 +983,54 @@ function registryConfirmedCount(payload) {
   );
 }
 
+function duplicateRegistryRecordIds(payload) {
+  const seen = new Set();
+  const duplicates = new Set();
+  for (const record of Array.isArray(payload?.records) ? payload.records : []) {
+    const id = String(record?.id ?? "").trim().toLowerCase();
+    if (!id) {
+      continue;
+    }
+    if (seen.has(id)) {
+      duplicates.add(id);
+      continue;
+    }
+    seen.add(id);
+  }
+  return [...duplicates];
+}
+
+function registryPayloadIndexedAtMs(payload) {
+  const parsed = Date.parse(payload?.indexedAt);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function registryIndexedPayloadRejectReason(payload, previousPayload = null) {
+  if (!payload) {
+    return "empty payload";
+  }
+
+  const duplicateIds = duplicateRegistryRecordIds(payload);
+  if (duplicateIds.length > 0) {
+    return `duplicate ID records: ${duplicateIds.slice(0, 8).join(", ")}`;
+  }
+
+  const indexedAtMs = registryPayloadIndexedAtMs(payload);
+  if (
+    REGISTRY_INDEXED_PAYLOAD_MAX_AGE_MS > 0 &&
+    (!indexedAtMs ||
+      Date.now() - indexedAtMs > REGISTRY_INDEXED_PAYLOAD_MAX_AGE_MS)
+  ) {
+    return `stale indexedAt ${payload?.indexedAt ?? "unknown"}`;
+  }
+
+  if (registryPayloadLooksWorse(payload, previousPayload)) {
+    return `confirmed ${registryConfirmedCount(payload)} < ${registryConfirmedCount(previousPayload)}`;
+  }
+
+  return "";
+}
+
 function registryPayloadLooksWorse(nextPayload, previousPayload) {
   if (!previousPayload) {
     return false;
@@ -1015,6 +1068,19 @@ async function safeRegistryPayload(network) {
       return previousPayload;
     }
     throw error;
+  }
+
+  const duplicateIds = duplicateRegistryRecordIds(nextPayload);
+  if (duplicateIds.length > 0) {
+    if (previousPayload) {
+      console.error(
+        `Rejected registry payload with duplicate IDs for ${network}: ${duplicateIds.slice(0, 8).join(", ")}.`,
+      );
+      return previousPayload;
+    }
+    throw new Error(
+      `Registry payload contains duplicate IDs: ${duplicateIds.slice(0, 8).join(", ")}`,
+    );
   }
 
   if (registryPayloadLooksWorse(nextPayload, previousPayload)) {
@@ -10487,14 +10553,29 @@ async function indexedRegistryPayload(network) {
     return null;
   }
 
-  return proofIndexRegistryPayload(network, { registryAddress }).catch(
-    (error) => {
+  return proofIndexRegistryPayload(network, { registryAddress })
+    .then(async (payload) => {
+      const previousPayload = await existingRegistryPayload(network).catch(
+        () => null,
+      );
+      const rejectReason = registryIndexedPayloadRejectReason(
+        payload,
+        previousPayload,
+      );
+      if (rejectReason) {
+        console.error(
+          `Rejected proof-index registry payload for ${network}: ${rejectReason}.`,
+        );
+        return null;
+      }
+      return payload;
+    })
+    .catch((error) => {
       console.error(
         `Proof index registry read failed: ${errorSummary(error)}`,
       );
       return null;
-    },
-  );
+    });
 }
 
 function transactionInputAddresses(vin) {
@@ -15699,17 +15780,26 @@ async function mergedLogActivityPayload(network, fresh = false) {
 }
 
 async function registrySummaryPayload(network, fresh = false) {
-  const payload = fresh
-    ? await safeRegistryPayload(network)
-    : (await indexedRegistryPayload(network)) ??
-      (await fastJsonBackedPayload(
+  let payload;
+  if (fresh) {
+    payload = await safeRegistryPayload(network);
+  } else {
+    payload = await indexedRegistryPayload(network);
+    if (!payload) {
+      const fallbackPayload = emptyRegistryPayload(network);
+      payload = await fastJsonBackedPayload(
         `registry:${network}`,
         `payload:registry:${network}`,
         () => safeRegistryPayload(network),
         REGISTRY_CACHE_TTL_MS,
         REGISTRY_CACHE_STALE_MS,
-        emptyRegistryPayload(network),
-      ));
+        fallbackPayload,
+      );
+      if (payload === fallbackPayload) {
+        payload = await safeRegistryPayload(network);
+      }
+    }
+  }
   return compactRegistrySummaryPayload(payload);
 }
 

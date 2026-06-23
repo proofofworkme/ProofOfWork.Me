@@ -272,7 +272,10 @@ expectAll("proof index deploy flags keep mailbox DB reads enabled", proofIndexDe
 
 expectAll("registry default reads use proof index with canonical fallback", server, [
   /proofIndexRegistryPayload/,
+  /function duplicateRegistryRecordIds\(payload\)[\s\S]*duplicates\.add\(id\)/,
+  /function registryIndexedPayloadRejectReason\(payload,\s*previousPayload\s*=\s*null\)[\s\S]*duplicateRegistryRecordIds\(payload\)[\s\S]*stale indexedAt[\s\S]*registryPayloadLooksWorse/,
   /async function indexedRegistryPayload\(network\)[\s\S]*proofIndexReadFeatureEnabled\([\s\S]*registry-history[\s\S]*proofIndexRegistryPayload\(network,\s*\{ registryAddress \}\)/,
+  /async function indexedRegistryPayload\(network\)[\s\S]*registryIndexedPayloadRejectReason\([\s\S]*Rejected proof-index registry payload/,
   /async function registrySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*await indexedRegistryPayload\(network\)[\s\S]*fastJsonBackedPayload/,
   /url\.pathname === "\/api\/v1\/registry" \|\| url\.pathname === "\/api\/v1\/ids"[\s\S]*const indexedPayload = await indexedRegistryPayload\(network\)[\s\S]*if \(indexedPayload\)/,
 ]);
