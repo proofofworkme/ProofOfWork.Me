@@ -56,6 +56,11 @@ const txHexPayloadSource = sourceSliceBetween(
   /async function txHexPayload/,
   /async function directTxOutspendPayload/,
 );
+const infinityAppSource = sourceSliceBetween(
+  app,
+  /function InfinityApp\(/,
+  /function TokenWalletApp\(/,
+);
 
 expectAll("canonical ledger cache is first-class", server, [
   /LEDGER_CACHE_TTL_MS/,
@@ -334,16 +339,27 @@ expectAll("Infinity Bond POWB recipient-credit market is wired", server + app + 
   /const POWB_TOKEN_TICKER = "POWB"/,
   /const POWB_REGISTRY_ID = "infinity@proofofwork.me"/,
   /function powbRecipientMintsFromActivityItem\(item,\s*network\)/,
+  /function infinityBondChartPointsFromEvents\(/,
+  /const chartPoints = infinityBondChartPointsFromEvents\(/,
   /item\.recipients[\s\S]*recipient\.amountSats[\s\S]*recipient\.address/,
   /minterAddress:\s*recipientMint\.minterAddress/,
   /url\.pathname === "\/api\/v1\/infinity-summary"/,
   /function isInfinityRoute\(\)/,
   /function InfinityApp\(/,
+  /function InfinityBondChart\(/,
+  /function InfinityBondMarketPanel\(/,
+  /POWB Sale Tickets/,
+  /POWB Sales & Listings Log/,
   /fetchInfinitySummary\(fresh\)/,
   /submitBond=\{createInfinityBond\}/,
   /address:\s*resolvedRecipient\.paymentAddress/,
   /minterAddress:\s*mailRecipient\.address/,
 ]);
+expect(
+  "Infinity app must use the POWB-only market panel",
+  /<InfinityBondMarketPanel/.test(infinityAppSource) &&
+    !/<TokenMarketplacePanel/.test(infinityAppSource),
+);
 expectAll("backfill writes powb mail as Infinity Bond projections", proofIndexerBackfill, [
   /const INFINITY_BOND_MEMO = "powb"/,
   /function isInfinityBondItem\(item,\s*kind = rawEventKind\(item\)\)/,

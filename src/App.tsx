@@ -1412,6 +1412,17 @@ type InfinityActualValue = {
   totalUsd: number;
 };
 
+type InfinityBondChartPoint = {
+  bondActions: number;
+  confirmedSupply: number;
+  createdAt: string;
+  floorSats: number;
+  networkValueSats: number;
+  txid: string;
+};
+
+type InfinityBondChartMetric = "supply" | "value" | "floor";
+
 type InfinitySummaryStats = {
   confirmedBondActions: number;
   confirmedListings: number;
@@ -1425,6 +1436,7 @@ type InfinitySummaryStats = {
 
 type InfinitySummarySnapshot = {
   actualValue: InfinityActualValue;
+  chartPoints: InfinityBondChartPoint[];
   floorSats: number;
   floorUsd: number;
   indexedAt: string;
@@ -1439,6 +1451,7 @@ type InfinitySummarySnapshot = {
 
 type InfinitySummaryApiResponse = {
   actualValue?: Partial<InfinityActualValue>;
+  chartPoints?: Array<Partial<InfinityBondChartPoint>>;
   floorSats?: number;
   floorUsd?: number;
   indexedAt?: string;
@@ -10038,6 +10051,28 @@ function normalizeInfinityStats(
   };
 }
 
+function normalizeInfinityBondChartPoint(
+  payload: Partial<InfinityBondChartPoint> | undefined,
+): InfinityBondChartPoint | null {
+  const createdAt =
+    typeof payload?.createdAt === "string" &&
+    Number.isFinite(Date.parse(payload.createdAt))
+      ? payload.createdAt
+      : "";
+  if (!createdAt) {
+    return null;
+  }
+
+  return {
+    bondActions: Number(payload?.bondActions) || 0,
+    confirmedSupply: Number(payload?.confirmedSupply) || 0,
+    createdAt,
+    floorSats: Number(payload?.floorSats) || 0,
+    networkValueSats: Number(payload?.networkValueSats) || 0,
+    txid: typeof payload?.txid === "string" ? payload.txid : "",
+  };
+}
+
 function normalizeInfinitySummary(
   payload: InfinitySummaryApiResponse,
 ): InfinitySummarySnapshot {
@@ -10045,6 +10080,11 @@ function normalizeInfinitySummary(
   const token = normalizeTokenApiState(payload.token);
   return {
     actualValue,
+    chartPoints: Array.isArray(payload.chartPoints)
+      ? payload.chartPoints
+          .map(normalizeInfinityBondChartPoint)
+          .filter((point): point is InfinityBondChartPoint => Boolean(point))
+      : [],
     floorSats: Number(payload.floorSats) || actualValue.floorSats,
     floorUsd: Number(payload.floorUsd) || actualValue.floorUsd,
     indexedAt:
@@ -20180,7 +20220,6 @@ export default function App() {
         listing={tokenAction === "list"}
         listings={powbListings}
         listSpendableBalance={walletSpendableTokenBalance}
-        mints={powbMints}
         network={network}
         onNetworkChange={chooseNetwork}
         onRefresh={() => void refreshInfinity(false, true)}
@@ -20209,8 +20248,6 @@ export default function App() {
         transferRecipient={tokenTransferRecipient}
         transferToken={walletTransferToken}
         transferring={tokenAction === "transfer"}
-        workFloorLoading={workFloorLoading}
-        workFloorQuote={workFloorQuote}
       />
     );
   }
@@ -22789,7 +22826,6 @@ type InfinityAppProps = {
   listing: boolean;
   listings: PowTokenListing[];
   listSpendableBalance: number;
-  mints: PowTokenMint[];
   network: BitcoinNetwork;
   onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
@@ -22818,8 +22854,6 @@ type InfinityAppProps = {
   transferRecipient: string;
   transferToken: PowTokenDefinition | undefined;
   transferring: boolean;
-  workFloorLoading: boolean;
-  workFloorQuote?: WorkFloorQuote;
 };
 
 function InfinityApp({
@@ -22847,7 +22881,6 @@ function InfinityApp({
   listing,
   listings,
   listSpendableBalance,
-  mints,
   network,
   onNetworkChange,
   onRefresh,
@@ -22876,9 +22909,9 @@ function InfinityApp({
   transferRecipient,
   transferToken,
   transferring,
-  workFloorLoading,
-  workFloorQuote,
 }: InfinityAppProps) {
+  const [infinityChartMetric, setInfinityChartMetric] =
+    useState<InfinityBondChartMetric>("supply");
   const confirmedSupply =
     summary?.stats.confirmedSupply ??
     tokens.find((token) => token.tokenId === POWB_TOKEN_ID)?.confirmedSupply ??
@@ -22893,6 +22926,18 @@ function InfinityApp({
   const floorUsd = summary?.actualValue.floorUsd ?? satsToUsd(floorSats, btcUsd);
   const networkUsd =
     summary?.actualValue.networkUsd ?? satsToUsd(networkValueSats, btcUsd);
+  const infinityChartPoints = summary?.chartPoints ?? [];
+  const infinityLatestChartPoint =
+    infinityChartPoints[infinityChartPoints.length - 1];
+  const infinityChartValues = infinityChartPoints.map((point) =>
+    infinityBondChartValue(point, infinityChartMetric),
+  );
+  const infinityChartMin = infinityChartValues.length
+    ? Math.min(...infinityChartValues)
+    : 0;
+  const infinityChartMax = infinityChartValues.length
+    ? Math.max(...infinityChartValues)
+    : 0;
   const recipientText = bondRecipient.trim()
     ? bondRecipientResolution.error
       ? bondRecipientResolution.error
@@ -22959,6 +23004,94 @@ function InfinityApp({
               <strong>{tokenUsd(networkUsd)}</strong>
             </div>
           </div>
+        </section>
+
+        <section className="id-launch-card token-dashboard-card marketplace-work-floor-card">
+          <div className="id-card-heading">
+            <div className="id-card-icon">
+              <TrendingUp size={24} />
+            </div>
+            <div>
+              <p>POWB history</p>
+              <h2>Infinity Bond Chart</h2>
+              <span>
+                Confirmed bond proofs, POWB supply, sales, transfers, and mutation
+                fees.
+              </span>
+            </div>
+          </div>
+          <div
+            className="id-launch-stats token-floor-stats"
+            aria-label="Infinity Bond chart stats"
+          >
+            <div>
+              <span>Chart points</span>
+              <strong>{infinityChartPoints.length.toLocaleString()}</strong>
+            </div>
+            <div>
+              <span>Bond events</span>
+              <strong>
+                {(infinityLatestChartPoint?.bondActions ?? 0).toLocaleString()}
+              </strong>
+            </div>
+            <div>
+              <span>Latest supply</span>
+              <strong>
+                {(infinityLatestChartPoint?.confirmedSupply ?? confirmedSupply).toLocaleString()}{" "}
+                POWB
+              </strong>
+            </div>
+            <div>
+              <span>Latest floor</span>
+              <strong>
+                {tokenSatsPerUnit(
+                  infinityLatestChartPoint?.floorSats ?? floorSats,
+                )}{" "}
+                proofs / POWB
+              </strong>
+            </div>
+          </div>
+          <div className="work-floor-chart-toolbar">
+            <div
+              className="network-tabs work-floor-chart-toggle"
+              aria-label="Infinity Bond chart metric"
+            >
+              {INFINITY_BOND_CHART_OPTIONS.map((option) => (
+                <button
+                  aria-pressed={infinityChartMetric === option.value}
+                  key={option.value}
+                  onClick={() => setInfinityChartMetric(option.value)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {infinityChartPoints.length ? (
+            <>
+              <InfinityBondChart
+                metric={infinityChartMetric}
+                points={infinityChartPoints}
+              />
+              <div className="work-floor-chart-meta">
+                <span>
+                  Low {infinityBondAxisLabel(infinityChartMin, infinityChartMetric)}
+                </span>
+                <span>
+                  High{" "}
+                  {infinityBondAxisLabel(infinityChartMax, infinityChartMetric)}
+                </span>
+                <span>
+                  Refreshed {formatDate(summary?.indexedAt ?? new Date().toISOString())}
+                </span>
+              </div>
+            </>
+          ) : (
+            <p className="field-note">
+              Bond chart appears after confirmed POWB bond events index.
+            </p>
+          )}
         </section>
 
         <section className="id-launch-card token-mint-card">
@@ -23052,11 +23185,32 @@ function InfinityApp({
           transferToken={transferToken}
           transferring={transferring}
           transfers={transfers}
-          workFloorLoading={workFloorLoading}
-          workFloorQuote={workFloorQuote}
+          workFloorLoading={false}
+          copy={{
+            balancesDescription: "POWB held by the connected address.",
+            fallbackTicker: "POWB",
+            listingDescription:
+              "Creates a POWB sale-ticket listing paid to the Infinity registry.",
+            listingFeeDescription:
+              "Used when sealing or closing your POWB listings.",
+            listButton: "List POWB",
+            listProgressButton: "Listing",
+            movementsEmptyBody:
+              "Your POWB transfer and trade history will appear here.",
+            noBalanceBody: "Create or receive a bond, then refresh this wallet.",
+            noBalanceOption: "No POWB balance",
+            noBalanceTitle: "No POWB balance yet",
+            ownedLabel: "POWB positions",
+            transferButton: "Transfer POWB",
+            transferDescription:
+              "Sends a `pwt1:send` POWB event and pays the Infinity registry.",
+            transferProgressButton: "Transferring",
+            transferSelectLabel: "POWB",
+            walletEyebrow: "POWB wallet",
+          }}
         />
 
-        <TokenMarketplacePanel
+        <InfinityBondMarketPanel
           address={address}
           btcUsd={btcUsd}
           busy={busy}
@@ -23064,16 +23218,11 @@ function InfinityApp({
           closedListings={closedListings}
           feeRate={feeRate}
           listings={listings}
-          mints={mints}
           network={network}
-          preserveRoute
           sales={sales}
-          selectedTokenMarketId={POWB_TOKEN_ID}
           setFeeRate={setFeeRate}
+          summary={summary}
           tokens={tokens}
-          transfers={transfers}
-          workFloorLoading={workFloorLoading}
-          workFloorQuote={workFloorQuote}
         />
       </section>
 
@@ -23189,6 +23338,45 @@ function TokenWalletApp({
   );
 }
 
+type TokenWalletWorkspaceCopy = Partial<{
+  balancesDescription: string;
+  fallbackTicker: string;
+  listingDescription: string;
+  listingFeeDescription: string;
+  listButton: string;
+  listProgressButton: string;
+  movementsEmptyBody: string;
+  noBalanceBody: string;
+  noBalanceOption: string;
+  noBalanceTitle: string;
+  ownedLabel: string;
+  transferButton: string;
+  transferDescription: string;
+  transferProgressButton: string;
+  transferSelectLabel: string;
+  walletEyebrow: string;
+}>;
+
+const DEFAULT_TOKEN_WALLET_WORKSPACE_COPY: Required<TokenWalletWorkspaceCopy> = {
+  balancesDescription: "Credits held by the connected address.",
+  fallbackTicker: "CREDIT",
+  listingDescription: "Creates a sale-ticket listing paid to the credit registry.",
+  listingFeeDescription: "Used when sealing or closing your credit listings.",
+  listButton: "List credit",
+  listProgressButton: "Listing",
+  movementsEmptyBody: "Your credit transfer and trade history will appear here.",
+  noBalanceBody: "Mint or receive credit, then refresh this wallet.",
+  noBalanceOption: "No credit balance",
+  noBalanceTitle: "No credit balance yet",
+  ownedLabel: "Credits owned",
+  transferButton: "Transfer credit",
+  transferDescription:
+    "Sends a `pwt1:send` event and pays the selected credit registry.",
+  transferProgressButton: "Transferring",
+  transferSelectLabel: "Credit",
+  walletEyebrow: "Credit wallet",
+};
+
 function TokenWalletWorkspace({
   address,
   balances,
@@ -23226,6 +23414,7 @@ function TokenWalletWorkspace({
   transfers,
   workFloorLoading,
   workFloorQuote,
+  copy,
 }: Pick<
   TokenWalletAppProps,
   | "address"
@@ -23265,7 +23454,9 @@ function TokenWalletWorkspace({
   | "workFloorQuote"
 > & {
   compact: boolean;
+  copy?: TokenWalletWorkspaceCopy;
 }) {
+  const walletCopy = { ...DEFAULT_TOKEN_WALLET_WORKSPACE_COPY, ...copy };
   const [walletListingPageIndex, setWalletListingPageIndex] = useState(0);
   const [walletTransferPageIndex, setWalletTransferPageIndex] = useState(0);
   const [walletListingSortMode, setWalletListingSortMode] =
@@ -23544,7 +23735,7 @@ function TokenWalletWorkspace({
             <Wallet size={24} />
           </div>
           <div>
-            <p>Credit wallet</p>
+            <p>{walletCopy.walletEyebrow}</p>
             <h2>{address ? shortAddress(address) : "Connect UniSat"}</h2>
             <span>
               Confirmed balances are canonical. Pending transfers stay visible
@@ -23554,7 +23745,7 @@ function TokenWalletWorkspace({
         </div>
         <div className="id-launch-stats token-stats-row">
           <div>
-            <span>Credits owned</span>
+            <span>{walletCopy.ownedLabel}</span>
             <strong>{confirmedTokenCount.toLocaleString()}</strong>
           </div>
           <div>
@@ -23576,7 +23767,7 @@ function TokenWalletWorkspace({
             </div>
             <div>
               <h2>Balances</h2>
-              <p>Credits held by the connected address.</p>
+              <p>{walletCopy.balancesDescription}</p>
             </div>
           </div>
           {balances.length ? (
@@ -23613,8 +23804,8 @@ function TokenWalletWorkspace({
           ) : (
             <div className="empty-state">
               <Wallet size={28} />
-              <h3>No credit balance yet</h3>
-              <p>Mint or receive credit, then refresh this wallet.</p>
+              <h3>{walletCopy.noBalanceTitle}</h3>
+              <p>{walletCopy.noBalanceBody}</p>
             </div>
           )}
         </section>
@@ -23626,14 +23817,12 @@ function TokenWalletWorkspace({
             </div>
             <div>
               <h2>Transfer</h2>
-              <p>
-                Sends a `pwt1:send` event and pays the selected credit registry.
-              </p>
+              <p>{walletCopy.transferDescription}</p>
             </div>
           </div>
           <form className="id-form" onSubmit={submitTransfer}>
             <label>
-              Credit
+              {walletCopy.transferSelectLabel}
               <select
                 onChange={(event) => setSelectedTokenId(event.target.value)}
                 value={selectedTokenId || balances[0]?.token.tokenId || ""}
@@ -23646,7 +23835,7 @@ function TokenWalletWorkspace({
                     </option>
                   ))
                 ) : (
-                  <option value="">No credit balance</option>
+                  <option value="">{walletCopy.noBalanceOption}</option>
                 )}
               </select>
             </label>
@@ -23691,7 +23880,11 @@ function TokenWalletWorkspace({
             <button className="primary" disabled={!canTransfer} type="submit">
               <span className="button-content">
                 <Send size={16} />
-                <span>{transferring ? "Transferring" : "Transfer credit"}</span>
+                <span>
+                  {transferring
+                    ? walletCopy.transferProgressButton
+                    : walletCopy.transferButton}
+                </span>
               </span>
             </button>
           </form>
@@ -23704,7 +23897,7 @@ function TokenWalletWorkspace({
             </div>
             <div>
               <h2>List</h2>
-              <p>Creates a sale-ticket listing paid to the credit registry.</p>
+              <p>{walletCopy.listingDescription}</p>
             </div>
           </div>
           <form className="id-form" onSubmit={submitList}>
@@ -23734,7 +23927,7 @@ function TokenWalletWorkspace({
                 <span>List unit</span>
                 <strong>
                   {listUnitPriceSats > 0
-                    ? `${tokenSatsPerUnit(listUnitPriceSats)} proofs / ${selectedListToken?.ticker ?? "CREDIT"}`
+                    ? `${tokenSatsPerUnit(listUnitPriceSats)} proofs / ${selectedListToken?.ticker ?? walletCopy.fallbackTicker}`
                     : "Set amount and price"}
                 </strong>
                 <small>{tokenUsd(satsToUsd(listUnitPriceSats, btcUsd))}</small>
@@ -23743,7 +23936,7 @@ function TokenWalletWorkspace({
                 <span>{listReferenceLabel}</span>
                 <strong>
                   {listReferenceSats > 0
-                    ? `${tokenSatsPerUnit(listReferenceSats)} proofs / ${selectedListToken?.ticker ?? "CREDIT"}`
+                    ? `${tokenSatsPerUnit(listReferenceSats)} proofs / ${selectedListToken?.ticker ?? walletCopy.fallbackTicker}`
                     : workFloorLoading &&
                         selectedListToken?.tokenId === WORK_TOKEN_ID
                       ? "Loading floor"
@@ -23798,7 +23991,9 @@ function TokenWalletWorkspace({
             <button className="primary" disabled={listing} type="submit">
               <span className="button-content">
                 <Tag size={16} />
-                <span>{listing ? "Listing" : "List credit"}</span>
+                <span>
+                  {listing ? walletCopy.listProgressButton : walletCopy.listButton}
+                </span>
               </span>
             </button>
           </form>
@@ -23808,7 +24003,7 @@ function TokenWalletWorkspace({
               <div className="listing-fee-control token-listing-fee-control">
                 <div>
                   <strong>Seal / Delist fee rate</strong>
-                  <span>Used when sealing or closing your credit listings.</span>
+                  <span>{walletCopy.listingFeeDescription}</span>
                 </div>
                 <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
               </div>
@@ -23951,7 +24146,7 @@ function TokenWalletWorkspace({
           <div className="empty-state">
             <Clock size={28} />
             <h3>No movements yet</h3>
-            <p>Your credit transfer and trade history will appear here.</p>
+            <p>{walletCopy.movementsEmptyBody}</p>
           </div>
         )}
       </section>
@@ -27359,6 +27554,236 @@ function WorkFloorChart({
   );
 }
 
+const INFINITY_BOND_CHART_OPTIONS: Array<{
+  label: string;
+  value: InfinityBondChartMetric;
+}> = [
+  { label: "Supply", value: "supply" },
+  { label: "Backing", value: "value" },
+  { label: "Floor", value: "floor" },
+];
+
+function infinityBondPointTimeMs(point: InfinityBondChartPoint) {
+  const createdMs = Date.parse(point.createdAt);
+  return Number.isFinite(createdMs) ? createdMs : 0;
+}
+
+function infinityBondTimeLabel(point: InfinityBondChartPoint) {
+  const createdMs = infinityBondPointTimeMs(point);
+  if (!createdMs) {
+    return shortAddress(point.txid);
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+  }).format(new Date(createdMs));
+}
+
+function infinityBondChartValue(
+  point: InfinityBondChartPoint,
+  metric: InfinityBondChartMetric,
+) {
+  if (metric === "floor") {
+    return point.floorSats;
+  }
+
+  if (metric === "value") {
+    return point.networkValueSats;
+  }
+
+  return point.confirmedSupply;
+}
+
+function infinityBondAxisLabel(
+  value: number,
+  metric: InfinityBondChartMetric,
+) {
+  if (metric === "floor") {
+    return value > 0 ? `${tokenSatsPerUnit(value)} proofs` : "0 proofs";
+  }
+
+  if (metric === "value") {
+    return `${growthCompactNumber(value, 1)} proofs`;
+  }
+
+  return `${growthCompactNumber(value, 1)} POWB`;
+}
+
+function infinityBondMetricTitle(metric: InfinityBondChartMetric) {
+  if (metric === "floor") {
+    return "Floor / POWB";
+  }
+
+  if (metric === "value") {
+    return "Backing proofs";
+  }
+
+  return "POWB supply";
+}
+
+function InfinityBondChart({
+  metric,
+  points,
+}: {
+  metric: InfinityBondChartMetric;
+  points: InfinityBondChartPoint[];
+}) {
+  const visiblePoints = [...points]
+    .filter(
+      (point) =>
+        infinityBondPointTimeMs(point) > 0 &&
+        Number.isFinite(infinityBondChartValue(point, metric)) &&
+        infinityBondChartValue(point, metric) >= 0,
+    )
+    .sort(
+      (left, right) =>
+        infinityBondPointTimeMs(left) - infinityBondPointTimeMs(right) ||
+        left.bondActions - right.bondActions ||
+        left.txid.localeCompare(right.txid),
+    );
+  if (visiblePoints.length === 0) {
+    return null;
+  }
+
+  const width = 920;
+  const height = 260;
+  const padLeft = 106;
+  const padRight = 24;
+  const padTop = 28;
+  const padBottom = 52;
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+  const minTime = Math.min(...visiblePoints.map(infinityBondPointTimeMs));
+  const maxTime = Math.max(...visiblePoints.map(infinityBondPointTimeMs));
+  const pointValue = (point: InfinityBondChartPoint) =>
+    infinityBondChartValue(point, metric);
+  const pointValues = visiblePoints.map(pointValue);
+  const rawYMin = Math.min(...pointValues);
+  const rawYMax = Math.max(...pointValues);
+  const rawYRange = rawYMax - rawYMin;
+  const fallbackYRange =
+    metric === "floor"
+      ? Math.max(0.01, Math.abs(rawYMax) * 0.02)
+      : Math.max(1, Math.abs(rawYMax) * 0.02);
+  const yRange = rawYRange > 0 ? rawYRange : fallbackYRange;
+  const yPadding = yRange * 0.22;
+  const yMin = Math.max(0, rawYMin - yPadding);
+  const yMax = Math.max(rawYMax + yPadding, yMin + fallbackYRange);
+  const xRange = Math.max(1, maxTime - minTime);
+  const xFor = (point: InfinityBondChartPoint) =>
+    visiblePoints.length === 1
+      ? padLeft + plotWidth / 2
+      : padLeft + ((infinityBondPointTimeMs(point) - minTime) / xRange) *
+          plotWidth;
+  const yFor = (value: number) =>
+    padTop +
+    (1 - Math.max(0, Math.min(1, (value - yMin) / (yMax - yMin)))) *
+      plotHeight;
+  const firstPoint = visiblePoints[0];
+  const middlePoint = visiblePoints[Math.floor((visiblePoints.length - 1) / 2)];
+  const latestPoint = visiblePoints[visiblePoints.length - 1];
+  const yTicks = [yMin, (yMin + yMax) / 2, yMax];
+  const middleTickHasRoom =
+    middlePoint !== firstPoint &&
+    middlePoint !== latestPoint &&
+    Math.abs(xFor(middlePoint) - xFor(firstPoint)) >= 170 &&
+    Math.abs(xFor(latestPoint) - xFor(middlePoint)) >= 170;
+  const xTicks = [
+    firstPoint,
+    ...(middleTickHasRoom ? [middlePoint] : []),
+    latestPoint,
+  ].filter((point, index, list) => point && list.indexOf(point) === index);
+
+  return (
+    <svg
+      className="work-floor-chart token-market-price-chart"
+      role="img"
+      viewBox={`0 0 ${width} ${height}`}
+      aria-label={`Confirmed Infinity Bond ${infinityBondMetricTitle(metric)} history`}
+    >
+      <rect
+        className="growth-chart-bg"
+        x="0"
+        y="0"
+        width={width}
+        height={height}
+        rx="14"
+      />
+      <text
+        className="growth-chart-label work-floor-axis-title"
+        x={padLeft}
+        y="18"
+        textAnchor="start"
+      >
+        {infinityBondMetricTitle(metric)}
+      </text>
+      {yTicks.map((tick) => (
+        <g key={`infinity-y-${tick}`}>
+          <line
+            className="growth-chart-grid"
+            x1={padLeft}
+            x2={width - padRight}
+            y1={yFor(tick)}
+            y2={yFor(tick)}
+          />
+          <text
+            className="growth-chart-label"
+            x={padLeft - 12}
+            y={yFor(tick) + 4}
+            textAnchor="end"
+          >
+            {infinityBondAxisLabel(tick, metric)}
+          </text>
+        </g>
+      ))}
+      {xTicks.map((point, index) => (
+        <text
+          className="growth-chart-label"
+          key={`infinity-x-${point.txid}-${index}`}
+          x={xFor(point)}
+          y={height - 16}
+          textAnchor={
+            index === 0 ? "start" : index === xTicks.length - 1 ? "end" : "middle"
+          }
+        >
+          {infinityBondTimeLabel(point)}
+        </text>
+      ))}
+      <text
+        className="growth-chart-label work-floor-axis-title"
+        x={width - padRight}
+        y={height - 6}
+        textAnchor="end"
+      >
+        time
+      </text>
+      {visiblePoints.length > 1 ? (
+        <polyline
+          className="token-market-chart-line"
+          points={visiblePoints
+            .map(
+              (point) =>
+                `${xFor(point).toFixed(2)},${yFor(pointValue(point)).toFixed(2)}`,
+            )
+            .join(" ")}
+        />
+      ) : null}
+      {visiblePoints.map((point, index) => (
+        <circle
+          className="token-market-chart-dot sale"
+          cx={xFor(point)}
+          cy={yFor(pointValue(point))}
+          key={`${point.txid}-${point.bondActions}-${index}`}
+          r={index === visiblePoints.length - 1 ? 5.5 : 3.5}
+        />
+      ))}
+    </svg>
+  );
+}
+
 function tokenMarketPointTimeMs(point: TokenMarketPricePoint) {
   const createdMs = Date.parse(point.createdAt);
   return Number.isFinite(createdMs) ? createdMs : 0;
@@ -29334,6 +29759,604 @@ function marketplaceStatusForTab({
   }
 
   return status;
+}
+
+function InfinityBondMarketPanel({
+  address,
+  btcUsd,
+  busy,
+  buyListing,
+  closedListings,
+  feeRate,
+  listings,
+  network,
+  sales,
+  setFeeRate,
+  summary,
+  tokens,
+}: {
+  address: string;
+  btcUsd: number;
+  busy: boolean;
+  buyListing: (listing: PowTokenListing) => void;
+  closedListings: PowTokenClosedListing[];
+  feeRate: number;
+  listings: PowTokenListing[];
+  network: BitcoinNetwork;
+  sales: PowTokenSale[];
+  setFeeRate: (value: number) => void;
+  summary?: InfinitySummarySnapshot;
+  tokens: PowTokenDefinition[];
+}) {
+  const [tokenListingPageIndex, setTokenListingPageIndex] = useState(0);
+  const [tokenMarketLogPageIndex, setTokenMarketLogPageIndex] = useState(0);
+  const [tokenListingSortMode, setTokenListingSortMode] =
+    useState<MarketplaceSortMode>("arb-desc");
+  const [tokenListingBookFilter, setTokenListingBookFilter] =
+    useState<MarketplaceListingBookFilter>("all");
+  const marketListings = listings.filter(
+    (listing) => listing.network === network && listing.tokenId === POWB_TOKEN_ID,
+  );
+  const marketClosedListings = closedListings.filter(
+    (listing) => listing.network === network && listing.tokenId === POWB_TOKEN_ID,
+  );
+  const marketSales = sales.filter(
+    (sale) => sale.network === network && sale.tokenId === POWB_TOKEN_ID,
+  );
+  const sealedListings = marketListings.filter(
+    tokenListingHasConfirmedSaleTicketSeal,
+  );
+  const unsealedListings = marketListings.filter(
+    (listing) => !tokenListingHasConfirmedSaleTicketSeal(listing),
+  );
+  const visibleMarketListings =
+    tokenListingBookFilter === "sealed"
+      ? sealedListings
+      : tokenListingBookFilter === "unsealed"
+        ? unsealedListings
+        : marketListings;
+  const powbToken = tokens.find(
+    (token) => token.network === network && token.tokenId === POWB_TOKEN_ID,
+  );
+  const powbReferenceSats =
+    summary?.actualValue.floorSats ?? summary?.floorSats ?? 0;
+  const powbFloorUsd = satsToUsd(powbReferenceSats, btcUsd);
+  const powbReference: TokenReferenceSnapshot = {
+    mintAmount: powbToken?.mintAmount ?? 1,
+    mintPriceSats: powbToken?.mintPriceSats ?? Math.max(1, powbReferenceSats),
+    pricePerToken: powbReferenceSats,
+    ticker: POWB_TOKEN_TICKER,
+    tokenId: POWB_TOKEN_ID,
+  };
+  const tokenReferenceById = new Map<string, TokenReferenceSnapshot>([
+    [POWB_TOKEN_ID, powbReference],
+  ]);
+  const sortedMarketListings = sortTokenListings(
+    visibleMarketListings,
+    tokenListingSortMode,
+    tokenReferenceById,
+    0,
+  );
+  const tokenMarketLogItems = sortTokenMarketLogItems([
+    ...marketListings.map((listing) => ({
+      createdAt: listing.createdAt,
+      kind: "listing" as const,
+      listing,
+      txid: listing.listingId,
+    })),
+    ...marketClosedListings.map((closedListing) => ({
+      closedListing,
+      createdAt: closedListing.closedAt ?? closedListing.createdAt,
+      kind: "closed-listing" as const,
+      txid: closedListing.closedTxid || closedListing.listingId,
+    })),
+    ...marketSales.map((sale) => ({
+      createdAt: sale.createdAt,
+      kind: "sale" as const,
+      sale,
+      txid: sale.txid,
+    })),
+  ]);
+  const tokenListingPage = pagedItems(
+    sortedMarketListings,
+    tokenListingPageIndex,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
+  const tokenMarketLogPage = pagedItems(
+    tokenMarketLogItems,
+    tokenMarketLogPageIndex,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
+  const hasTokenMarketLogItems = tokenMarketLogPage.totalCount > 0;
+
+  useEffect(() => {
+    setTokenListingPageIndex(0);
+  }, [tokenListingBookFilter, tokenListingSortMode]);
+  useEffect(() => {
+    setTokenMarketLogPageIndex(0);
+  }, [marketListings.length, marketClosedListings.length, marketSales.length]);
+
+  return (
+    <div className="ids-content marketplace-content token-market-content">
+      <section className="id-card token-market-card">
+        <div className="id-card-head">
+          <div className="empty-icon" aria-hidden="true">
+            <Wallet size={24} />
+          </div>
+          <div>
+            <h3>POWB Sale Tickets</h3>
+            <p>
+              Open POWB listings reserve seller balance, then buyers spend the
+              sealed ticket and pay the seller plus Infinity registry.
+            </p>
+          </div>
+        </div>
+        <div
+          className="id-launch-stats token-floor-stats"
+          aria-label="POWB sale-ticket market"
+        >
+          <div>
+            <span>Bond floor</span>
+            <strong>{tokenSatsPerUnit(powbReferenceSats)} proofs / POWB</strong>
+          </div>
+          <div>
+            <span>USD/POWB</span>
+            <strong>{tokenUsd(powbFloorUsd)}</strong>
+          </div>
+          <div>
+            <span>Open tickets</span>
+            <strong>{marketListings.length.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Sealed</span>
+            <strong>{sealedListings.length.toLocaleString()}</strong>
+          </div>
+        </div>
+        <div className="listing-fee-control token-listing-fee-control">
+          <div>
+            <strong>Buy fee rate</strong>
+            <span>Used when buying POWB sale tickets.</span>
+          </div>
+          <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+        </div>
+        <MarketplaceListingBookTabs
+          allCount={marketListings.length}
+          label="POWB order book filter"
+          onChange={setTokenListingBookFilter}
+          sealedCount={sealedListings.length}
+          unsealedCount={unsealedListings.length}
+          value={tokenListingBookFilter}
+        />
+        <MarketplaceSortControl
+          onChange={setTokenListingSortMode}
+          value={tokenListingSortMode}
+        />
+        {visibleMarketListings.length ? (
+          <div className="token-market-grid">
+            {tokenListingPage.items.map((listing) => {
+              const hasSeal = tokenSaleAuthorizationUsesSaleTicketAnchor(
+                listing.saleAuthorization,
+              );
+              const sealConfirmed =
+                tokenListingHasConfirmedSaleTicketSeal(listing);
+              const sealPending = tokenListingHasPendingSaleTicketSeal(listing);
+              const listingUnitSats = tokenListingUnitPriceSats(listing);
+              const listingDeltaPct =
+                powbReferenceSats > 0 && listingUnitSats > 0
+                  ? (listingUnitSats - powbReferenceSats) / powbReferenceSats
+                  : 0;
+              const listingMarketLabel =
+                powbReferenceSats > 0 && listingUnitSats > 0
+                  ? Math.abs(listingDeltaPct) <= 0.01
+                    ? "Floor"
+                    : `${listingDeltaPct > 0 ? "+" : ""}${(listingDeltaPct * 100).toLocaleString(undefined, {
+                        maximumFractionDigits: 1,
+                        minimumFractionDigits: 1,
+                      })}%`
+                  : "n/a";
+              const buyerLocked =
+                listing.saleAuthorization.buyerAddress &&
+                listing.saleAuthorization.buyerAddress !== address;
+              const buyLabel = !address
+                ? "Connect to buy"
+                : !hasSeal
+                  ? "Needs seal"
+                  : sealPending
+                    ? "Seal pending"
+                    : listing.sellerAddress === address
+                      ? "Your listing"
+                      : buyerLocked
+                        ? "Buyer locked"
+                        : "Buy";
+              const buyDisabled =
+                busy ||
+                !address ||
+                !sealConfirmed ||
+                listing.sellerAddress === address ||
+                Boolean(buyerLocked);
+              return (
+                <article
+                  className="id-record token-market-row"
+                  key={listing.listingId}
+                >
+                  <div>
+                    <strong>
+                      {listing.amount.toLocaleString()} {POWB_TOKEN_TICKER}
+                    </strong>
+                    <span>
+                      {!hasSeal
+                        ? "Waiting for seal"
+                        : sealConfirmed
+                          ? "Sealed"
+                          : "Seal pending"}
+                    </span>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Amount</dt>
+                      <dd>{listing.amount.toLocaleString()}</dd>
+                    </div>
+                    <div>
+                      <dt>Price</dt>
+                      <dd>{listing.priceSats.toLocaleString()} proofs</dd>
+                    </div>
+                    <div>
+                      <dt>Unit</dt>
+                      <dd>
+                        {tokenSatsPerUnit(listingUnitSats)} proofs /{" "}
+                        {POWB_TOKEN_TICKER}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Floor</dt>
+                      <dd>{listingMarketLabel}</dd>
+                    </div>
+                    <div>
+                      <dt>Seller</dt>
+                      <dd>{shortAddress(listing.sellerAddress)}</dd>
+                    </div>
+                  </dl>
+                  <p className="field-note">
+                    Reference:{" "}
+                    {powbReferenceSats > 0
+                      ? `${tokenSatsPerUnit(powbReferenceSats)} proofs / ${POWB_TOKEN_TICKER} bond floor`
+                      : "no confirmed bond floor yet"}
+                  </p>
+                  <div className="id-record-actions">
+                    <button
+                      className="primary small"
+                      disabled={buyDisabled}
+                      onClick={() => buyListing(listing)}
+                      type="button"
+                    >
+                      {buyLabel}
+                    </button>
+                    <a
+                      className="secondary small"
+                      href={explorerTxUrl(listing.listingId, listing.network)}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <span className="button-content">
+                        <ArrowUpRight size={15} />
+                        <span>Listing TX</span>
+                      </span>
+                    </a>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <Wallet size={28} />
+            <h3>
+              {marketListings.length
+                ? tokenListingBookFilter === "sealed"
+                  ? "No sealed POWB tickets"
+                  : "No unsealed POWB tickets"
+                : "No POWB sale tickets yet"}
+            </h3>
+            <p>
+              {marketListings.length
+                ? tokenListingBookFilter === "sealed"
+                  ? "No POWB sale tickets in this view have a seal or pending seal yet."
+                  : "Every POWB sale ticket in this view already has a seal or pending seal."
+                : "List POWB from the wallet to open a bond sale ticket."}
+            </p>
+          </div>
+        )}
+        <PaginationControls
+          label="POWB sale tickets"
+          onPageChange={setTokenListingPageIndex}
+          page={tokenListingPage}
+        />
+      </section>
+
+      <section className="id-card token-market-card">
+        <div className="id-card-head">
+          <div className="empty-icon" aria-hidden="true">
+            <FileText size={24} />
+          </div>
+          <div>
+            <h3>POWB Sales & Listings Log</h3>
+            <p>POWB listings, seals, closes, and sale settlements.</p>
+          </div>
+        </div>
+        {hasTokenMarketLogItems ? (
+          <div className="token-market-grid">
+            {tokenMarketLogPage.items.map((item) => {
+              if (item.kind === "closed-listing") {
+                const closedListing = item.closedListing;
+                const unitSats = tokenListingUnitPriceSats(closedListing);
+                const closedTxid = closedListing.closedTxid || closedListing.listingId;
+                const closedAt = closedListing.closedAt ?? closedListing.createdAt;
+                return (
+                  <article
+                    className="id-record token-market-row"
+                    key={`powb-closed-listing-${closedListing.listingId}-${closedTxid}`}
+                  >
+                    <div>
+                      <strong>
+                        {closedListing.amount.toLocaleString()} {POWB_TOKEN_TICKER}
+                      </strong>
+                      <span>
+                        {closedListing.closedConfirmed
+                          ? "Closed listing"
+                          : "Closing listing"}
+                      </span>
+                    </div>
+                    <dl>
+                      <div>
+                        <dt>Price</dt>
+                        <dd>{closedListing.priceSats.toLocaleString()} proofs</dd>
+                      </div>
+                      <div>
+                        <dt>Unit</dt>
+                        <dd>
+                          {tokenSatsPerUnit(unitSats)} proofs / {POWB_TOKEN_TICKER}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Seller</dt>
+                        <dd>{shortAddress(closedListing.sellerAddress)}</dd>
+                      </div>
+                      <div>
+                        <dt>Closed</dt>
+                        <dd>{formatDate(closedAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Listed</dt>
+                        <dd>{formatDate(closedListing.createdAt)}</dd>
+                      </div>
+                    </dl>
+                    <p className="field-note">
+                      Sale ticket {shortAddress(closedListing.listingId)} spent
+                      {closedListing.closedTxid
+                        ? ` by ${shortAddress(closedListing.closedTxid)}.`
+                        : "."}
+                    </p>
+                    <div className="id-record-actions">
+                      {closedListing.closedTxid ? (
+                        <a
+                          className="secondary small"
+                          href={explorerTxUrl(
+                            closedListing.closedTxid,
+                            closedListing.network,
+                          )}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <span className="button-content">
+                            <ArrowUpRight size={15} />
+                            <span>Close TX</span>
+                          </span>
+                        </a>
+                      ) : null}
+                      <a
+                        className="secondary small"
+                        href={explorerTxUrl(
+                          closedListing.listingId,
+                          closedListing.network,
+                        )}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <span className="button-content">
+                          <ArrowUpRight size={15} />
+                          <span>Listing TX</span>
+                        </span>
+                      </a>
+                    </div>
+                  </article>
+                );
+              }
+
+              if (item.kind === "sale") {
+                const unitSats =
+                  item.sale.amount > 0
+                    ? item.sale.priceSats / item.sale.amount
+                    : 0;
+                return (
+                  <article
+                    className="id-record token-market-row"
+                    key={`powb-sale-${item.sale.txid}`}
+                  >
+                    <div>
+                      <strong>
+                        {item.sale.amount.toLocaleString()} {POWB_TOKEN_TICKER}
+                      </strong>
+                      <span>
+                        {item.sale.confirmed ? "Confirmed sale" : "Pending sale"}
+                      </span>
+                    </div>
+                    <dl>
+                      <div>
+                        <dt>Price</dt>
+                        <dd>{item.sale.priceSats.toLocaleString()} proofs</dd>
+                      </div>
+                      <div>
+                        <dt>Unit</dt>
+                        <dd>
+                          {tokenSatsPerUnit(unitSats)} proofs / {POWB_TOKEN_TICKER}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Seller</dt>
+                        <dd>{shortAddress(item.sale.sellerAddress)}</dd>
+                      </div>
+                      <div>
+                        <dt>Buyer</dt>
+                        <dd>{shortAddress(item.sale.buyerAddress)}</dd>
+                      </div>
+                      <div>
+                        <dt>Date</dt>
+                        <dd>{formatDate(item.sale.createdAt)}</dd>
+                      </div>
+                    </dl>
+                    <p className="field-note">
+                      Listing {shortAddress(item.sale.listingId)} settled for{" "}
+                      {item.sale.paidSats.toLocaleString()} paid proofs.
+                    </p>
+                    <div className="id-record-actions">
+                      <a
+                        className="secondary small"
+                        href={explorerTxUrl(item.sale.txid, item.sale.network)}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <span className="button-content">
+                          <ArrowUpRight size={15} />
+                          <span>Sale TX</span>
+                        </span>
+                      </a>
+                      <a
+                        className="secondary small"
+                        href={explorerTxUrl(item.sale.listingId, item.sale.network)}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <span className="button-content">
+                          <ArrowUpRight size={15} />
+                          <span>Listing TX</span>
+                        </span>
+                      </a>
+                    </div>
+                  </article>
+                );
+              }
+
+              const hasSeal = tokenSaleAuthorizationUsesSaleTicketAnchor(
+                item.listing.saleAuthorization,
+              );
+              const sealConfirmed = tokenListingHasConfirmedSaleTicketSeal(
+                item.listing,
+              );
+              const sealPending = tokenListingHasPendingSaleTicketSeal(item.listing);
+              const unitSats = tokenListingUnitPriceSats(item.listing);
+              const buyerLock = item.listing.saleAuthorization.buyerAddress || "";
+              return (
+                <article
+                  className="id-record token-market-row"
+                  key={`powb-listing-${item.listing.listingId}`}
+                >
+                  <div>
+                    <strong>
+                      {item.listing.amount.toLocaleString()} {POWB_TOKEN_TICKER}
+                    </strong>
+                    <span>
+                      {!item.listing.confirmed
+                        ? "Pending listing"
+                        : sealConfirmed
+                          ? "Sealed listing"
+                          : sealPending
+                            ? "Seal pending"
+                            : "Waiting for seal"}
+                    </span>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Price</dt>
+                      <dd>{item.listing.priceSats.toLocaleString()} proofs</dd>
+                    </div>
+                    <div>
+                      <dt>Unit</dt>
+                      <dd>
+                        {tokenSatsPerUnit(unitSats)} proofs / {POWB_TOKEN_TICKER}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Seller</dt>
+                      <dd>{shortAddress(item.listing.sellerAddress)}</dd>
+                    </div>
+                    <div>
+                      <dt>Buyer lock</dt>
+                      <dd>{buyerLock ? shortAddress(buyerLock) : "Open"}</dd>
+                    </div>
+                    <div>
+                      <dt>Date</dt>
+                      <dd>{formatDate(item.listing.createdAt)}</dd>
+                    </div>
+                  </dl>
+                  <p className="field-note">
+                    Sale ticket {shortAddress(item.listing.listingId)}
+                    {hasSeal && item.listing.sealTxid
+                      ? sealConfirmed
+                        ? ` sealed by ${shortAddress(item.listing.sealTxid)}.`
+                        : ` seal pending at ${shortAddress(item.listing.sealTxid)}.`
+                      : "."}
+                  </p>
+                  <div className="id-record-actions">
+                    <a
+                      className="secondary small"
+                      href={explorerTxUrl(
+                        item.listing.listingId,
+                        item.listing.network,
+                      )}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <span className="button-content">
+                        <ArrowUpRight size={15} />
+                        <span>Listing TX</span>
+                      </span>
+                    </a>
+                    {item.listing.sealTxid ? (
+                      <a
+                        className="secondary small"
+                        href={explorerTxUrl(
+                          item.listing.sealTxid,
+                          item.listing.network,
+                        )}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <span className="button-content">
+                          <ArrowUpRight size={15} />
+                          <span>Seal TX</span>
+                        </span>
+                      </a>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <FileText size={28} />
+            <h3>No POWB market history yet</h3>
+            <p>POWB listings and sales will appear here after they index.</p>
+          </div>
+        )}
+        <PaginationControls
+          label="POWB sales and listings"
+          onPageChange={setTokenMarketLogPageIndex}
+          page={tokenMarketLogPage}
+        />
+      </section>
+    </div>
+  );
 }
 
 function TokenMarketplacePanel({

@@ -8250,6 +8250,83 @@ function powbMintsFromActivity(activity, registryAddress, network) {
     });
 }
 
+function infinityBondChartPointsFromEvents({
+  marketplaceMutations,
+  mints,
+  sales,
+  transfers,
+}) {
+  const events = [
+    ...(Array.isArray(mints) ? mints : [])
+      .filter((mint) => mint?.confirmed && mint.tokenId === POWB_TOKEN_ID)
+      .map((mint) => ({
+        amount: numericValue(mint.amount),
+        createdAt: mint.createdAt,
+        order: 0,
+        txid: String(mint.txid ?? ""),
+        valueSats: numericValue(mint.paidSats),
+      })),
+    ...(Array.isArray(transfers) ? transfers : [])
+      .filter((transfer) => transfer?.confirmed && transfer.tokenId === POWB_TOKEN_ID)
+      .map((transfer) => ({
+        amount: 0,
+        createdAt: transfer.createdAt,
+        order: 1,
+        txid: String(transfer.txid ?? ""),
+        valueSats: numericValue(transfer.paidSats),
+      })),
+    ...(Array.isArray(marketplaceMutations) ? marketplaceMutations : [])
+      .filter((item) => item?.confirmed && item.tokenId === POWB_TOKEN_ID)
+      .map((item) => ({
+        amount: 0,
+        createdAt: item.createdAt,
+        order: 2,
+        txid: String(item.txid ?? ""),
+        valueSats: activityAmountSats(item),
+      })),
+    ...(Array.isArray(sales) ? sales : [])
+      .filter((sale) => sale?.confirmed && sale.tokenId === POWB_TOKEN_ID)
+      .map((sale) => ({
+        amount: 0,
+        createdAt: sale.createdAt,
+        order: 3,
+        txid: String(sale.txid ?? ""),
+        valueSats: numericValue(sale.priceSats),
+      })),
+  ]
+    .filter(
+      (event) =>
+        event.txid &&
+        (event.amount > 0 || event.valueSats > 0) &&
+        Number.isFinite(Date.parse(event.createdAt)),
+    )
+    .sort((left, right) => {
+      const timeSort = Date.parse(left.createdAt) - Date.parse(right.createdAt);
+      return timeSort || left.order - right.order || left.txid.localeCompare(right.txid);
+    });
+
+  let bondActions = 0;
+  let confirmedSupply = 0;
+  let networkValueSats = 0;
+  const points = [];
+
+  for (const event of events) {
+    bondActions += 1;
+    confirmedSupply += event.amount;
+    networkValueSats += event.valueSats;
+    points.push({
+      bondActions,
+      confirmedSupply,
+      createdAt: event.createdAt,
+      floorSats: confirmedSupply > 0 ? networkValueSats / confirmedSupply : 0,
+      networkValueSats,
+      txid: event.txid,
+    });
+  }
+
+  return points.slice(-500);
+}
+
 function tokenActivityItemsFromState(state, indexAddress) {
   const creations = (state.tokens ?? []).map((token) => ({
     amountSats: token.creationFeeSats,
@@ -15010,12 +15087,12 @@ function infinitySummaryPayloadFromLedger(ledger) {
     (total, transfer) => total + numericValue(transfer.paidSats),
     0,
   );
-  const bondMarketplaceMutationFeeSats = confirmedActivity
-    .filter(
-      (item) =>
-        item?.tokenId === POWB_TOKEN_ID &&
-        TOKEN_MARKETPLACE_MUTATION_KINDS.has(item.kind),
-    )
+  const confirmedMarketplaceMutations = confirmedActivity.filter(
+    (item) =>
+      item?.tokenId === POWB_TOKEN_ID &&
+      TOKEN_MARKETPLACE_MUTATION_KINDS.has(item.kind),
+  );
+  const bondMarketplaceMutationFeeSats = confirmedMarketplaceMutations
     .reduce((total, item) => total + activityAmountSats(item), 0);
   const networkValueSats =
     bondMintFlowSats +
@@ -15031,6 +15108,12 @@ function infinitySummaryPayloadFromLedger(ledger) {
     btcUsdMetadata.btcUsd > 0
       ? satsToUsdAtBtcUsd(networkValueSats, btcUsdMetadata.btcUsd)
       : 0;
+  const chartPoints = infinityBondChartPointsFromEvents({
+    marketplaceMutations: confirmedMarketplaceMutations,
+    mints: confirmedMints,
+    sales: confirmedSales,
+    transfers: confirmedTransfers,
+  });
 
   return {
     ...btcUsdMetadata,
@@ -15046,6 +15129,7 @@ function infinitySummaryPayloadFromLedger(ledger) {
       totalSats: networkValueSats,
       totalUsd: networkUsd,
     },
+    chartPoints,
     floorSats,
     floorUsd,
     indexedAt: ledger.generatedAt,
