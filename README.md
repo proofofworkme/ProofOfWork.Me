@@ -192,6 +192,7 @@ https://marketplace.proofofwork.me/api/*
 https://credit.proofofwork.me/api/*
 https://wallet.proofofwork.me/api/*
 https://work.proofofwork.me/api/*
+https://infinity.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
 https://growth.proofofwork.me/api/*
 ```
@@ -201,7 +202,7 @@ Current production behavior:
 - Confirmed stable mainnet registry, Log, credit/token, marketplace, summary, event, mail/file, and tx-status reads go through the ProofOfWork API and use the PostgreSQL proof index where the read flag supports that surface.
 - The proof index is a fast replayable read model, not a separate source of truth. Confirmed chain data remains canonical, and every tx-backed record should keep its txid available for normal explorer/mempool verification.
 - The production proof index is the default stable read model for confirmed Log, Event History, address mail, registry, credit/token, marketplace lifecycle, WORK, Growth, and tx-status reads where enabled. Explicit fresh reads, mempool state, raw transaction data, UTXO/outspend checks, signing support, and broadcasts still fall back to the first-party node/API path.
-- The mail and Log parsers normalize `pwm1:m:powb` as `infinity-bond` for event/search/Growth accounting while still projecting it into the mailbox model so confirmed self-sends appear in both Inbox and Sent.
+- The mail and Log parsers normalize `pwm1:m:powb` as `infinity-bond` for event/search/Growth accounting while still projecting it into the mailbox model. Confirmed bond payments mint POWB to the recipient address one-for-one with proofs sent; self-sends are just the self-recipient case and appear in both Inbox and Sent.
 - The node stack does not hold funds, seed phrases, private keys, or wallet authority.
 - Browser wallets still sign locally.
 - Production raw transaction broadcasts use the same first-party node path through `POST /api/v1/broadcast/tx`. The API receives only final signed transaction hex.
@@ -217,6 +218,8 @@ Current production behavior:
 - Credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` and require a 546-proof mutation payment to that same credit registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visible but not canonical.
 - The Credit tab inside Marketplace is the shared market surface for credit trades. Credit `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the credit registry mutation fee.
 - Credit active listings are spend-state aware. A sale-ticket outpoint spend closes the listing; production Core-backed spend checks keep Wallet and Marketplace aligned while summaries warm. If the spend is a valid `pwt1:buy5`, the sale appears in credit sales, credit market logs, Growth, and summary endpoints after refresh.
+- Infinity Bonds use the canonical `pwm1:m:powb` message memo. Each confirmed recipient payment mints the same number of POWB to that recipient address. POWB is a reserved, uncapped synthetic credit backed by confirmed bond proofs and registered through `infinity@proofofwork.me`; `infinity.proofofwork.me` exposes `/api/v1/infinity-summary`, the bond composer, POWB balances, and the POWB sale-ticket market. POWB supply has no maximum and can trend to infinity.
+- POWB floor accounting is confirmed bond network value divided by confirmed POWB supply. Bond network value includes confirmed bond proof payments, POWB seller sale volume, POWB transfer fees, and POWB marketplace mutation fees. POWB sale volume and mutation fees also contribute to the broader ProofOfWork Computer/WORK network floor alongside the rest of confirmed marketplace flow.
 - `/api/v1/marketplace-summary` returns the reconciled marketplace lifecycle rather than a raw proof-index summary snapshot, so stale compacted snapshots cannot hide confirmed sealed listings from the public Buy book. Proof-index summary snapshots are still backfilled and checked by parity, but route output must preserve the confirmed sealed inventory contract.
 - Fresh reads for credit summaries, credit histories, marketplace summaries, and WORK summaries refresh the shared credit payload cache before returning. Stale snapshots are acceptable for first paint only, not after an explicit refresh.
 - Credit mint prices are owner-set with a 546-proof minimum. ProofOfWork does not take a global fee on mints; the mint price goes to that credit's registry address.
@@ -627,6 +630,7 @@ Important implementation points:
 - Standalone Credit route switch: `isTokenRoute()` in `src/app/routeRegistry.ts`.
 - Standalone Wallet route switch: `isWalletRoute()` in `src/app/routeRegistry.ts`.
 - Standalone WORK route switch: `isWorkTokenRoute()` in `src/app/routeRegistry.ts`.
+- Standalone Infinity route switch: `isInfinityRoute()` in `src/app/routeRegistry.ts`.
 - Staged RUSH route switch: `isRushRoute()` in `src/app/routeRegistry.ts`.
 - Log route switch: `isActivityRoute()` in `src/app/routeRegistry.ts`.
 - Growth route switch: `isGrowthRoute()` in `src/app/routeRegistry.ts`.
@@ -641,6 +645,7 @@ Important implementation points:
 - Credit-only deploy switch: `VITE_TOKEN_ONLY=1`.
 - Wallet-only deploy switch: `VITE_WALLET_ONLY=1`.
 - WORK-only deploy switch: `VITE_WORK_TOKEN_ONLY=1`.
+- Infinity-only deploy switch: `VITE_INFINITY_ONLY=1`.
 - Staged RUSH-only deploy switch: `VITE_RUSH_ONLY=1`.
 - Log-only deploy switch: `VITE_LOG_ONLY=1`.
 - Growth-only deploy switch: `VITE_GROWTH_ONLY=1`.
@@ -660,6 +665,7 @@ Important implementation points:
 - Full app ID workspace: `IdsWorkspace`.
 - Standalone marketplace UI: `MarketplaceApp`.
 - Computer marketplace workspace: `MarketplaceWorkspace`.
+- Standalone Infinity Bond / POWB UI: `InfinityApp`.
 - Standalone growth dashboard: `GrowthApp`.
 - OP_RETURN API: `server/proof-api.mjs`.
 - OP_RETURN infrastructure notes: `OP_RETURN_INFRASTRUCTURE.md`.

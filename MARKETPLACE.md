@@ -6,15 +6,16 @@
 - `computer.proofofwork.me` contains the authenticated Marketplace workspace.
 - `marketplace.proofofwork.me` is the standalone asset marketplace app.
 
-Marketplace is organized by asset tabs. IDs and Credits are both live trading
-tabs. Both asset classes use sale-ticket settlement so the buyer path spends a
-scarce UTXO, pays the seller, pays the registry mutation fee, and writes a
+Marketplace is organized by asset tabs. IDs, Credits, and POWB are live trading
+classes. These asset classes use sale-ticket settlement so the buyer path spends
+a scarce UTXO, pays the seller, pays the registry mutation fee, and writes a
 chain-readable transfer/purchase event.
 - `log.proofofwork.me` is the public read-only ProofOfWork Computer log for tx-backed app actions.
 - The IDs workspace is for registration, receiver updates, and direct owner transfers only.
 - Marketplace is for on-chain listings, seals, delistings, buyer-funded purchases, credit sales, and future asset trades.
 - Marketplace actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer/buy tx, credit sale tx, and sale-ticket UTXO references.
 - Marketplace attention metrics should be derived from valid chain events: active listings, ID sale count, credit sale count, seller-price sale volume, credit sale volume, and marketplace mutation-fee flow.
+- POWB market actions use the same credit sale-ticket machinery under the reserved POWB asset. Bond mint supply comes from confirmed `pwm1:m:powb` recipient payments, not from `pwt1:mint`.
 
 ## Current ID Marketplace Model
 
@@ -83,6 +84,29 @@ The current flow:
 Wallet and Marketplace both use this model. Wallet is the connected-address
 ownership/action surface; Marketplace is the public discovery and purchase
 surface.
+
+## Current Infinity Bond / POWB Model
+
+Infinity Bonds are `pwm1:m:powb` message actions. A confirmed bond payment mints
+POWB to each recipient address one-for-one with proofs sent to that recipient.
+Sending a bond to yourself credits your address; sending a bond to another
+address credits that address. POWB has no maximum supply.
+
+POWB is reserved as a synthetic credit-like asset with `infinity@proofofwork.me`
+as the registry lane. POWB transfers, listings, seals, delistings, and buys use
+the same `pwt1:send`, `pwt1:list5`, `pwt1:seal5`, `pwt1:delist5`, and
+`pwt1:buy5` machinery as credits, paying the POWB registry mutation fee.
+
+The POWB floor is:
+
+```text
+powb_floor_sats = confirmed_bond_network_value_sats / confirmed_powb_supply
+```
+
+Confirmed bond network value includes bond proof payments, POWB seller sale
+volume, POWB transfer mutation fees, and POWB sale-ticket mutation fees. POWB
+sales and mutation fees also feed the broader ProofOfWork Computer/WORK floor
+through the normal confirmed marketplace flow.
 
 ## June 13-16 Ledger Hardening
 

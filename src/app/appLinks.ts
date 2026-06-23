@@ -18,6 +18,7 @@ export const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
 export const TOKEN_APP_URL = "https://credit.proofofwork.me";
 export const WALLET_APP_URL = "https://wallet.proofofwork.me";
 export const WORK_TOKEN_APP_URL = "https://work.proofofwork.me";
+export const INFINITY_APP_URL = "https://infinity.proofofwork.me";
 export const RUSH_APP_URL = "https://rush.proofofwork.me";
 export const LOG_APP_URL = "https://log.proofofwork.me";
 export const GROWTH_APP_URL = "https://growth.proofofwork.me";
@@ -32,6 +33,7 @@ export const LOCAL_MARKETPLACE_APP_URL = "/?marketplace=1";
 export const LOCAL_TOKEN_APP_URL = "/?credit=1";
 export const LOCAL_WALLET_APP_URL = "/?wallet=1";
 export const LOCAL_WORK_TOKEN_APP_URL = "/?work=1";
+export const LOCAL_INFINITY_APP_URL = "/?infinity=1";
 export const LOCAL_RUSH_APP_URL = "/?rush=1";
 export const LOCAL_LOG_APP_URL = "/?log=1";
 export const LOCAL_GROWTH_APP_URL = "/?growth=1";
@@ -65,6 +67,11 @@ export const APP_LINKS: AppLink[] = [
     href: WORK_TOKEN_APP_URL,
     label: "WORK",
     localHref: LOCAL_WORK_TOKEN_APP_URL,
+  },
+  {
+    href: INFINITY_APP_URL,
+    label: "Infinity",
+    localHref: LOCAL_INFINITY_APP_URL,
   },
   { href: LOG_APP_URL, label: "Log", localHref: LOCAL_LOG_APP_URL },
   { href: GROWTH_APP_URL, label: "Growth", localHref: LOCAL_GROWTH_APP_URL },

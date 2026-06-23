@@ -360,6 +360,14 @@ const WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS =
   "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
 const WORK_TOKEN_CREATED_AT = "2026-05-15T02:57:28.000Z";
 const WORK_TOKEN_CREATE_DATA_BYTES = 70;
+const POWB_TOKEN_TICKER = "POWB";
+const POWB_TOKEN_ID =
+  "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
+const POWB_REGISTRY_ID = "infinity@proofofwork.me";
+const POWB_TOKEN_CREATED_AT = "2026-06-23T00:00:00.000Z";
+const POWB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
+const POWB_TOKEN_MINT_AMOUNT = 1;
+const POWB_TOKEN_MINT_PRICE_SATS = 1;
 const FULL_ACTIVITY_HISTORY_ADDRESSES = {
   livenet: new Set(
     String(
@@ -1073,6 +1081,50 @@ function canonicalWorkTokenDefinition(network = "livenet") {
     tokenId: WORK_TOKEN_ID,
     txid: WORK_TOKEN_ID,
   };
+}
+
+function canonicalPowbTokenDefinition(network = "livenet", registryAddress = "") {
+  return {
+    confirmed: Boolean(registryAddress),
+    createdAt: POWB_TOKEN_CREATED_AT,
+    creationFeeSats: 0,
+    creatorAddress: registryAddress,
+    dataBytes: 0,
+    maxSupply: POWB_TOKEN_MAX_SUPPLY,
+    mintAmount: POWB_TOKEN_MINT_AMOUNT,
+    mintPriceSats: POWB_TOKEN_MINT_PRICE_SATS,
+    network,
+    registryAddress,
+    ticker: POWB_TOKEN_TICKER,
+    tokenId: POWB_TOKEN_ID,
+    txid: POWB_TOKEN_ID,
+    uncapped: true,
+  };
+}
+
+function registryRecordForId(registryState, id) {
+  const normalized = normalizePowId(String(id ?? ""));
+  return (registryState?.records ?? []).find(
+    (record) => normalizePowId(String(record?.id ?? "")) === normalized,
+  );
+}
+
+async function powbRegistryAddressForNetwork(network, registryState = null) {
+  if (network !== "livenet") {
+    return "";
+  }
+
+  const state = registryState ?? (await safeRegistryPayload(network).catch(() => null));
+  const record = registryRecordForId(state, POWB_REGISTRY_ID);
+  const receiveAddress = String(record?.receiveAddress ?? "").trim();
+  const ownerAddress = String(record?.ownerAddress ?? "").trim();
+  if (isValidBitcoinAddress(receiveAddress, network)) {
+    return receiveAddress;
+  }
+  if (isValidBitcoinAddress(ownerAddress, network)) {
+    return ownerAddress;
+  }
+  return "";
 }
 
 function tokenPayloadLooksWorse(nextPayload, previousPayload) {
@@ -5985,6 +6037,9 @@ function normalizeTokenScope(value) {
   }
 
   const ticker = normalizeTokenTicker(raw);
+  if (ticker === POWB_TOKEN_TICKER) {
+    return POWB_TOKEN_ID;
+  }
   return ticker === WORK_TOKEN_TICKER ? WORK_TOKEN_ID : ticker;
 }
 
@@ -6119,6 +6174,7 @@ function tokenStateFromTransactions(
   network,
   tokenScope = "",
   seedTokens = [],
+  seedMints = [],
 ) {
   const { tokens: allTokens } = tokenDefinitionsFromTransactions(
     indexTxs,
@@ -6204,6 +6260,67 @@ function tokenStateFromTransactions(
   const registryAddresses = [
     ...new Set(tokens.map((token) => token.registryAddress).filter(Boolean)),
   ];
+
+  for (const mint of Array.isArray(seedMints) ? seedMints : []) {
+    const mintedToken = tokensById.get(String(mint?.tokenId ?? "").toLowerCase());
+    const minterAddress = String(mint?.minterAddress ?? "").trim();
+    const amount = Number(mint?.amount ?? 0);
+    const txid = String(mint?.txid ?? "").toLowerCase();
+    if (
+      !mintedToken ||
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !isValidBitcoinAddress(minterAddress, network) ||
+      !Number.isSafeInteger(amount) ||
+      amount < 1 ||
+      mints.some(
+        (item) =>
+          item.txid === txid &&
+          item.tokenId === mintedToken.tokenId &&
+          item.minterAddress === minterAddress,
+      )
+    ) {
+      continue;
+    }
+
+    const confirmed = mint.confirmed === true;
+    const currentSupply = tokenSupply.get(mintedToken.tokenId) ?? {
+      confirmed: 0,
+      pending: 0,
+    };
+    if (
+      !mintedToken.uncapped &&
+      currentSupply.confirmed + currentSupply.pending + amount >
+        mintedToken.maxSupply
+    ) {
+      continue;
+    }
+
+    if (confirmed) {
+      currentSupply.confirmed += amount;
+      confirmedSupply += amount;
+      const balanceKey = balanceKeyFor(mintedToken.tokenId, minterAddress);
+      balances.set(balanceKey, (balances.get(balanceKey) ?? 0) + amount);
+    } else {
+      currentSupply.pending += amount;
+      pendingSupply += amount;
+    }
+    tokenSupply.set(mintedToken.tokenId, currentSupply);
+
+    mints.push({
+      amount,
+      confirmed,
+      createdAt: mint.createdAt ?? new Date().toISOString(),
+      dataBytes: numericValue(mint.dataBytes),
+      minterAddress,
+      network,
+      paidSats: numericValue(mint.paidSats),
+      registryAddress: mintedToken.registryAddress,
+      sourceKind: mint.sourceKind,
+      ticker: mintedToken.ticker,
+      tokenId: mintedToken.tokenId,
+      txid,
+    });
+  }
 
   for (const registryAddress of registryAddresses) {
     const txs = registryTxsByAddress.get(registryAddress) ?? [];
@@ -7854,6 +7971,9 @@ function activityItemRichness(item) {
     item?.listingId,
     item?.tokenId,
     ...(Array.isArray(item?.participants) ? item.participants : []),
+    ...(Array.isArray(item?.recipients)
+      ? item.recipients.map((recipient) => recipient?.address)
+      : []),
   ].filter(Boolean).length;
 }
 
@@ -8005,6 +8125,7 @@ function mailActivityItemFromTransaction(tx, network) {
       actor,
       ...recipients.map((recipient) => recipient.address),
     ].filter(Boolean),
+    recipients,
     tags: [
       activityStatusTag(confirmed),
       networkLabel(network),
@@ -8028,6 +8149,105 @@ function mailActivityItemsFromTransactions(txs, network) {
   return dedupeTransactions(txs)
     .map((tx) => mailActivityItemFromTransaction(tx, network))
     .filter(Boolean);
+}
+
+function powbRecipientMintsFromActivityItem(item, network) {
+  if (!isInfinityBondActivityItem(item)) {
+    return [];
+  }
+
+  const recipients = Array.isArray(item?.recipients)
+    ? item.recipients
+        .map((recipient) => ({
+          address: String(recipient?.address ?? "").trim(),
+          amountSats: numericValue(recipient?.amountSats),
+        }))
+        .filter(
+          (recipient) =>
+            recipient.amountSats > 0 &&
+            isValidBitcoinAddress(recipient.address, network),
+        )
+    : [];
+  if (recipients.length > 0) {
+    const byAddress = new Map();
+    for (const recipient of recipients) {
+      byAddress.set(
+        recipient.address,
+        (byAddress.get(recipient.address) ?? 0) + recipient.amountSats,
+      );
+    }
+    return [...byAddress.entries()].map(([address, amountSats]) => ({
+      amount: amountSats,
+      minterAddress: address,
+      paidSats: amountSats,
+    }));
+  }
+
+  const amount = activityAmountSats(item);
+  if (amount < 1) {
+    return [];
+  }
+
+  const counterparty = String(item?.counterparty ?? "").trim();
+  if (isValidBitcoinAddress(counterparty, network)) {
+    return [{ amount, minterAddress: counterparty, paidSats: amount }];
+  }
+
+  const actor = String(item?.actor ?? "").trim();
+  const participantRecipient = (Array.isArray(item?.participants)
+    ? item.participants
+    : []
+  )
+    .slice(1)
+    .map((participant) => String(participant ?? "").trim())
+    .find((participant) => isValidBitcoinAddress(participant, network));
+  const fallbackRecipient = participantRecipient || actor;
+  return isValidBitcoinAddress(fallbackRecipient, network)
+    ? [{ amount, minterAddress: fallbackRecipient, paidSats: amount }]
+    : [];
+}
+
+function powbMintsFromActivity(activity, registryAddress, network) {
+  if (!registryAddress) {
+    return [];
+  }
+
+  const seen = new Set();
+  return (Array.isArray(activity) ? activity : [])
+    .filter((item) => item?.txid && isInfinityBondActivityItem(item))
+    .flatMap((item) => {
+      const txid = String(item.txid ?? "").toLowerCase();
+      if (!/^[0-9a-f]{64}$/u.test(txid)) {
+        return [];
+      }
+      return powbRecipientMintsFromActivityItem(item, network).flatMap(
+        (recipientMint) => {
+          const mintKey = `${txid}:${recipientMint.minterAddress}`;
+          if (
+            seen.has(mintKey) ||
+            recipientMint.amount < 1 ||
+            !isValidBitcoinAddress(recipientMint.minterAddress, network)
+          ) {
+            return [];
+          }
+          seen.add(mintKey);
+          return {
+            amount: recipientMint.amount,
+            confirmed: item.confirmed === true,
+            createdAt: item.createdAt,
+            dataBytes: numericValue(item.dataBytes),
+            minterAddress: recipientMint.minterAddress,
+            network,
+            paidSats: recipientMint.paidSats,
+            registryAddress,
+            sourceKind: "infinity-bond",
+            ticker: POWB_TOKEN_TICKER,
+            tokenId: POWB_TOKEN_ID,
+            txid,
+          };
+        },
+      );
+    });
 }
 
 function tokenActivityItemsFromState(state, indexAddress) {
@@ -10273,6 +10493,148 @@ async function workTokenPayload(network, fallbackPayload = null) {
   };
 }
 
+async function indexedPowbActivityForTokenState(network) {
+  if (
+    !proofIndexReadFeatureEnabled("log-history,activity-history,log")
+  ) {
+    return null;
+  }
+
+  const items = [];
+  let cursor = "";
+  let indexedAt = "";
+  for (let pageIndex = 0; pageIndex < 20; pageIndex += 1) {
+    const searchParams = new URLSearchParams({ limit: "500" });
+    if (cursor) {
+      searchParams.set("cursor", cursor);
+    }
+    const page = await proofIndexLogHistoryPayload(
+      network,
+      "infinity-bond",
+      searchParams,
+    );
+    if (!page) {
+      return null;
+    }
+    indexedAt = newerIso(indexedAt, page.indexedAt);
+    items.push(...(Array.isArray(page.items) ? page.items : []));
+    if (!page.nextCursor) {
+      break;
+    }
+    cursor = page.nextCursor;
+  }
+
+  return {
+    activity: dedupeActivityItems(items.filter(isInfinityBondActivityItem)),
+    indexedAt: Number.isFinite(Date.parse(indexedAt))
+      ? indexedAt
+      : new Date().toISOString(),
+    network,
+    source: "proof-indexer",
+  };
+}
+
+async function powbActivityForTokenState(network, registryState = null) {
+  void registryState;
+  const indexedActivity = await indexedPowbActivityForTokenState(network).catch(
+    (error) => {
+      console.error(
+        `Proof index POWB activity read failed: ${errorSummary(error)}`,
+      );
+      return null;
+    },
+  );
+  if (indexedActivity) {
+    return indexedActivity.activity;
+  }
+
+  const activityState = await cachedGlobalActivityPayloadNoRefresh(network).catch(
+    () => null,
+  );
+  return dedupeActivityItems([
+    ...(Array.isArray(activityState?.activity) ? activityState.activity : []),
+  ]);
+}
+
+async function powbSeedForTokenPayload(network, registryState = null) {
+  const registryAddress = await powbRegistryAddressForNetwork(
+    network,
+    registryState,
+  );
+  if (!registryAddress) {
+    return { registryAddress: "", seedMints: [], seedTokens: [] };
+  }
+
+  const activity = await powbActivityForTokenState(network, registryState);
+  return {
+    registryAddress,
+    seedMints: powbMintsFromActivity(activity, registryAddress, network),
+    seedTokens: [canonicalPowbTokenDefinition(network, registryAddress)],
+  };
+}
+
+async function powbTokenPayload(network, registryState = null) {
+  const indexAddress = tokenIndexAddressForNetwork(network);
+  const powbSeed = await powbSeedForTokenPayload(network, registryState);
+  if (!powbSeed.registryAddress) {
+    return {
+      ...emptyTokenPayloadSnapshot(network),
+      tokens: [canonicalPowbTokenDefinition(network, "")],
+    };
+  }
+
+  const registryTxs = await fetchRegistryTransactions(
+    powbSeed.registryAddress,
+    network,
+  ).catch(() => []);
+  const state = tokenStateFromTransactions(
+    [],
+    new Map([[powbSeed.registryAddress, registryTxs]]),
+    indexAddress,
+    network,
+    POWB_TOKEN_ID,
+    powbSeed.seedTokens,
+    powbSeed.seedMints,
+  );
+  const payloadState = await tokenPayloadWithSpendableListings(state, network);
+  return {
+    ...payloadState,
+    creationPriceSats: TOKEN_CREATION_PRICE_SATS,
+    indexedAt: new Date().toISOString(),
+    indexAddress,
+    indexId: TOKEN_INDEX_ID,
+    indexTxid: TOKEN_INDEX_TXID,
+    minMutationPriceSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+    network,
+    source: mempoolBase(network),
+    stats: {
+      confirmedMints: state.mints.filter((mint) => mint.confirmed).length,
+      confirmedTransfers: state.transfers.filter((transfer) => transfer.confirmed)
+        .length,
+      confirmedTokens: state.tokens.filter((token) => token.confirmed).length,
+      creationSats: state.creationSats,
+      holders: state.holders.length,
+      invalidEvents: (state.invalidEvents ?? []).filter((event) => event.confirmed)
+        .length,
+      pendingMints: state.mints.filter((mint) => !mint.confirmed).length,
+      pendingTransfers: state.transfers.filter((transfer) => !transfer.confirmed)
+        .length,
+      pendingTokens: state.tokens.filter((token) => !token.confirmed).length,
+      registries: 1,
+      transactions: registryTxs.length,
+    },
+    workDefaults: {
+      maxSupply: WORK_TOKEN_MAX_SUPPLY,
+      mintAmount: WORK_TOKEN_MINT_AMOUNT,
+      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
+      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      ticker: WORK_TOKEN_TICKER,
+      tokenId: WORK_TOKEN_ID,
+    },
+  };
+}
+
 async function tokenPayload(network, tokenScope = "") {
   const scope = normalizeTokenScope(tokenScope);
   const indexAddress = tokenIndexAddressForNetwork(network);
@@ -10302,13 +10664,44 @@ async function tokenPayload(network, tokenScope = "") {
     return workTokenPayload(network);
   }
 
+  const registryStateForPowb =
+    network === "livenet" && (!scope || scope === POWB_TOKEN_ID)
+      ? scope === POWB_TOKEN_ID
+        ? ((await indexedRegistryPayload(network).catch(() => null)) ??
+          (await fastJsonBackedPayload(
+            `registry:${network}`,
+            `payload:registry:${network}`,
+            () => safeRegistryPayload(network),
+            REGISTRY_CACHE_TTL_MS,
+            REGISTRY_CACHE_STALE_MS,
+            emptyRegistryPayload(network),
+          ).catch(() => null)))
+        : await safeRegistryPayload(network).catch(() => null)
+      : null;
+  if (scope === POWB_TOKEN_ID) {
+    return powbTokenPayload(network, registryStateForPowb);
+  }
+  const powbSeed =
+    network === "livenet" && (!scope || scope === POWB_TOKEN_ID)
+      ? await powbSeedForTokenPayload(network, registryStateForPowb)
+      : { registryAddress: "", seedMints: [], seedTokens: [] };
+  if (scope === POWB_TOKEN_ID && !powbSeed.registryAddress) {
+    return {
+      ...emptyTokenPayloadSnapshot(network),
+      tokens: [canonicalPowbTokenDefinition(network, "")],
+    };
+  }
+
   const indexTxs = await fetchRegistryTransactions(indexAddress, network);
   const { tokens } = tokenDefinitionsFromTransactions(
     indexTxs,
     indexAddress,
     network,
   );
-  const scopedTokens = tokens.filter((token) => tokenMatchesScope(token, scope));
+  const allTokenDefinitions = [...tokens, ...powbSeed.seedTokens];
+  const scopedTokens = allTokenDefinitions.filter((token) =>
+    tokenMatchesScope(token, scope),
+  );
   const registryAddresses = [
     ...new Set(
       scopedTokens.map((token) => token.registryAddress).filter(Boolean),
@@ -10326,6 +10719,8 @@ async function tokenPayload(network, tokenScope = "") {
     indexAddress,
     network,
     scope,
+    powbSeed.seedTokens,
+    powbSeed.seedMints,
   );
   const payloadState = await tokenPayloadWithSpendableListings(state, network);
   return {
@@ -13558,7 +13953,10 @@ async function tokenSummaryPayload(
             WORK_TOKEN_ID,
           );
   }
-  if (network === "livenet" && (!scope || scope === WORK_TOKEN_ID)) {
+  if (
+    network === "livenet" &&
+    (!scope || scope === WORK_TOKEN_ID || scope === POWB_TOKEN_ID)
+  ) {
     payload = await tokenPayloadWithSpendableActiveListings(payload, network);
   }
   return compactTokenSummaryPayload(payload, scope);
@@ -13573,6 +13971,7 @@ async function walletScopedTokenSummaryPayload(
   let payload = null;
   if (
     network === "livenet" &&
+    scope !== POWB_TOKEN_ID &&
     proofIndexReadFeatureEnabled("token-state,token-default,token")
   ) {
     payload = await proofIndexTokenPayload(
@@ -13608,18 +14007,22 @@ async function walletScopedTokenSummaryPayload(
       network,
     );
   }
-  scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
-    scopedPayload,
-    network,
-    scope,
-    recoveryAddresses,
-  );
-  scopedPayload = await tokenPayloadWithIndexedWalletClosedListings(
-    scopedPayload,
-    network,
-    scope,
-    recoveryAddresses,
-  );
+  if (scope !== POWB_TOKEN_ID) {
+    scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
+      scopedPayload,
+      network,
+      scope,
+      recoveryAddresses,
+    );
+  }
+  if (scope !== POWB_TOKEN_ID) {
+    scopedPayload = await tokenPayloadWithIndexedWalletClosedListings(
+      scopedPayload,
+      network,
+      scope,
+      recoveryAddresses,
+    );
+  }
 
   return compactTokenSummaryPayload(scopedPayload, scope);
 }
@@ -13633,6 +14036,7 @@ async function walletScopedTokenPayload(
   let payload = null;
   if (
     network === "livenet" &&
+    scope !== POWB_TOKEN_ID &&
     proofIndexReadFeatureEnabled("token-state,token-default,token")
   ) {
     payload = await proofIndexTokenPayload(
@@ -13668,19 +14072,23 @@ async function walletScopedTokenPayload(
       network,
     );
   }
-  scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
-    scopedPayload,
-    network,
-    scope,
-    recoveryAddresses,
-  );
+  if (scope !== POWB_TOKEN_ID) {
+    scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
+      scopedPayload,
+      network,
+      scope,
+      recoveryAddresses,
+    );
+  }
 
-  return tokenPayloadWithIndexedWalletClosedListings(
-    scopedPayload,
-    network,
-    scope,
-    recoveryAddresses,
-  );
+  return scope === POWB_TOKEN_ID
+    ? scopedPayload
+    : tokenPayloadWithIndexedWalletClosedListings(
+        scopedPayload,
+        network,
+        scope,
+        recoveryAddresses,
+      );
 }
 
 async function indexedWalletClosedListings(network, tokenScope, addresses) {
@@ -14105,6 +14513,14 @@ function cacheCanonicalLedgerPayload(network, payload) {
     cacheDerivedLedgerPayload(
       `growth-summary:${network}`,
       payload.growthSummary,
+      LEDGER_CACHE_TTL_MS,
+      HEAVY_READ_STALE_MS,
+    );
+  }
+  if (payload?.infinitySummary) {
+    cacheDerivedLedgerPayload(
+      `infinity-summary:${network}`,
+      payload.infinitySummary,
       LEDGER_CACHE_TTL_MS,
       HEAVY_READ_STALE_MS,
     );
@@ -14568,6 +14984,95 @@ function growthSummaryPayloadFromLedger(ledger) {
   };
 }
 
+function infinitySummaryPayloadFromLedger(ledger) {
+  const tokenState = ledgerTokenStateForScope(ledger, POWB_TOKEN_ID);
+  const token = compactTokenSummaryPayload(tokenState, POWB_TOKEN_ID);
+  const activity = Array.isArray(ledger?.activity) ? ledger.activity : [];
+  const confirmedActivity = activity.filter((item) => item?.confirmed);
+  const confirmedMints = (tokenState?.mints ?? []).filter(
+    (mint) => mint?.confirmed && mint.tokenId === POWB_TOKEN_ID,
+  );
+  const confirmedTransfers = (tokenState?.transfers ?? []).filter(
+    (transfer) => transfer?.confirmed && transfer.tokenId === POWB_TOKEN_ID,
+  );
+  const confirmedSales = (tokenState?.sales ?? []).filter(
+    (sale) => sale?.confirmed && sale.tokenId === POWB_TOKEN_ID,
+  );
+  const bondMintFlowSats = confirmedMints.reduce(
+    (total, mint) => total + numericValue(mint.paidSats),
+    0,
+  );
+  const bondSaleVolumeSats = confirmedSales.reduce(
+    (total, sale) => total + numericValue(sale.priceSats),
+    0,
+  );
+  const bondTransferFeeSats = confirmedTransfers.reduce(
+    (total, transfer) => total + numericValue(transfer.paidSats),
+    0,
+  );
+  const bondMarketplaceMutationFeeSats = confirmedActivity
+    .filter(
+      (item) =>
+        item?.tokenId === POWB_TOKEN_ID &&
+        TOKEN_MARKETPLACE_MUTATION_KINDS.has(item.kind),
+    )
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+  const networkValueSats =
+    bondMintFlowSats +
+    bondSaleVolumeSats +
+    bondTransferFeeSats +
+    bondMarketplaceMutationFeeSats;
+  const confirmedSupply = numericValue(tokenState?.confirmedSupply);
+  const floorSats = confirmedSupply > 0 ? networkValueSats / confirmedSupply : 0;
+  const btcUsdMetadata = btcUsdResponseMetadata(ledger?.btcUsdQuote);
+  const floorUsd =
+    btcUsdMetadata.btcUsd > 0 ? satsToUsdAtBtcUsd(floorSats, btcUsdMetadata.btcUsd) : 0;
+  const networkUsd =
+    btcUsdMetadata.btcUsd > 0
+      ? satsToUsdAtBtcUsd(networkValueSats, btcUsdMetadata.btcUsd)
+      : 0;
+
+  return {
+    ...btcUsdMetadata,
+    actualValue: {
+      bondMarketplaceMutationFeeSats,
+      bondMintFlowSats,
+      bondSaleVolumeSats,
+      bondTransferFeeSats,
+      floorSats,
+      floorUsd,
+      networkValueSats,
+      networkUsd,
+      totalSats: networkValueSats,
+      totalUsd: networkUsd,
+    },
+    floorSats,
+    floorUsd,
+    indexedAt: ledger.generatedAt,
+    network: ledger.network,
+    networkValueSats,
+    registryAddress: tokenState?.tokens?.[0]?.registryAddress ?? "",
+    registryId: POWB_REGISTRY_ID,
+    stats: {
+      confirmedBondActions: confirmedMints.length,
+      confirmedListings: (tokenState?.listings ?? []).filter(
+        (listing) => listing.confirmed,
+      ).length,
+      confirmedSales: confirmedSales.length,
+      confirmedSupply,
+      confirmedTransfers: confirmedTransfers.length,
+      holders: (tokenState?.holders ?? []).length,
+      pendingBondActions: (tokenState?.mints ?? []).filter(
+        (mint) => !mint.confirmed && mint.tokenId === POWB_TOKEN_ID,
+      ).length,
+      pendingSupply: numericValue(tokenState?.pendingSupply),
+    },
+    ticker: POWB_TOKEN_TICKER,
+    token,
+    tokenId: POWB_TOKEN_ID,
+  };
+}
+
 function ledgerConsistencyPayloadFromLedger(ledger) {
   const growthSummary = ledger.growthSummary;
   return {
@@ -14680,17 +15185,45 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
       workTokenState,
     }),
   );
-  const activity = dedupeActivityItems([
+  const baseActivity = dedupeActivityItems([
     ...(Array.isArray(activityState?.activity) ? activityState.activity : []),
     ...(Array.isArray(seededMailActivityState?.activity)
       ? seededMailActivityState.activity
       : []),
     ...(Array.isArray(registryState?.activity) ? registryState.activity : []),
-    ...tokenActivityItemsFromState(
-      valueTokenState,
-      valueTokenState?.indexAddress ?? "",
-    ),
     ...(rushState ? rushActivityItemsFromState(rushState) : []),
+  ]);
+  let ledgerTokenState = valueTokenState;
+  const powbRegistryAddress = await powbRegistryAddressForNetwork(
+    network,
+    registryState,
+  );
+  if (powbRegistryAddress) {
+    const powbRegistryTxs = await fetchRegistryTransactions(
+      powbRegistryAddress,
+      network,
+    ).catch(() => []);
+    const powbState = tokenStateFromTransactions(
+      [],
+      new Map([[powbRegistryAddress, powbRegistryTxs]]),
+      tokenIndexAddressForNetwork(network),
+      network,
+      POWB_TOKEN_ID,
+      [canonicalPowbTokenDefinition(network, powbRegistryAddress)],
+      powbMintsFromActivity(baseActivity, powbRegistryAddress, network),
+    );
+    ledgerTokenState = tokenStateWithScopedTokenOverride(
+      ledgerTokenState,
+      await tokenPayloadWithSpendableListings(powbState, network),
+      POWB_TOKEN_ID,
+    );
+  }
+  const activity = dedupeActivityItems([
+    ...baseActivity,
+    ...tokenActivityItemsFromState(
+      ledgerTokenState,
+      ledgerTokenState?.indexAddress ?? "",
+    ),
   ]);
   const activityPayload = {
     activity,
@@ -14712,14 +15245,14 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     network,
     registryState,
     activityPayload,
-    valueTokenState,
+    ledgerTokenState,
     workTokenState,
     { btcUsdQuote },
   );
   const metrics = ledgerMetricsFromState({
     activity,
     registryState,
-    tokenState: valueTokenState,
+    tokenState: ledgerTokenState,
     workFloor,
   });
   const sourceHashes = ledgerSourceHashes({
@@ -14727,7 +15260,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     registryState,
     rushState,
     seededMailActivityState,
-    tokenState,
+    tokenState: ledgerTokenState,
     workTokenState,
   });
   const snapshotId = sha256Hex(
@@ -14742,6 +15275,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
   const ledger = {
     activity,
     activityPayload,
+    btcUsdQuote,
     generatedAt: new Date().toISOString(),
     metrics,
     network,
@@ -14751,7 +15285,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     snapshotId,
     sourceHashes,
     sourceTipHeight,
-    tokenState: valueTokenState,
+    tokenState: ledgerTokenState,
     workFloor,
     workTokenState,
   };
@@ -14762,8 +15296,12 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     metrics,
     network,
     seededMailActivityState,
-    tokenState: valueTokenState,
+    tokenState: ledgerTokenState,
     workFloor,
+  });
+  const infinitySummary = infinitySummaryPayloadFromLedger({
+    ...ledger,
+    consistency,
   });
 
   return {
@@ -14774,6 +15312,10 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     }),
     consistency,
     growthSummary: attachLedgerMetadata(growthSummary, {
+      ...ledger,
+      consistency,
+    }),
+    infinitySummary: attachLedgerMetadata(infinitySummary, {
       ...ledger,
       consistency,
     }),
@@ -15509,6 +16051,105 @@ async function growthSummaryPayload(network, fresh = false) {
   );
 }
 
+async function standaloneInfinitySummaryPayload(network, fresh = false) {
+  void fresh;
+  const registryState =
+    (await indexedRegistryPayload(network).catch(() => null)) ??
+    (await fastJsonBackedPayload(
+        `registry:${network}`,
+        `payload:registry:${network}`,
+        () => safeRegistryPayload(network),
+        REGISTRY_CACHE_TTL_MS,
+        REGISTRY_CACHE_STALE_MS,
+        emptyRegistryPayload(network),
+      ).catch(() => null));
+  const registryAddress = await powbRegistryAddressForNetwork(
+    network,
+    registryState,
+  );
+  const indexedActivity = await indexedPowbActivityForTokenState(network).catch(
+    () => null,
+  );
+  const activity = indexedActivity?.activity ?? [];
+  const state = tokenStateFromTransactions(
+    [],
+    new Map(),
+    tokenIndexAddressForNetwork(network),
+    network,
+    POWB_TOKEN_ID,
+    [canonicalPowbTokenDefinition(network, registryAddress)],
+    registryAddress
+      ? powbMintsFromActivity(activity, registryAddress, network)
+      : [],
+  );
+  const powbTokenState = {
+    ...state,
+    creationPriceSats: TOKEN_CREATION_PRICE_SATS,
+    indexedAt: newerIso(indexedActivity?.indexedAt, registryState?.indexedAt),
+    indexAddress: tokenIndexAddressForNetwork(network),
+    indexId: TOKEN_INDEX_ID,
+    indexTxid: TOKEN_INDEX_TXID,
+    minMutationPriceSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+    network,
+    source: indexedActivity?.source ?? "proof-indexer",
+    stats: {
+      confirmedMints: state.mints.filter((mint) => mint.confirmed).length,
+      confirmedTransfers: state.transfers.filter((transfer) => transfer.confirmed)
+        .length,
+      confirmedTokens: state.tokens.filter((token) => token.confirmed).length,
+      creationSats: state.creationSats,
+      holders: state.holders.length,
+      invalidEvents: (state.invalidEvents ?? []).filter((event) => event.confirmed)
+        .length,
+      pendingMints: state.mints.filter((mint) => !mint.confirmed).length,
+      pendingTransfers: state.transfers.filter((transfer) => !transfer.confirmed)
+        .length,
+      pendingTokens: state.tokens.filter((token) => !token.confirmed).length,
+      registries: registryAddress ? 1 : 0,
+      transactions: activity.length,
+    },
+    workDefaults: {
+      maxSupply: WORK_TOKEN_MAX_SUPPLY,
+      mintAmount: WORK_TOKEN_MINT_AMOUNT,
+      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
+      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      ticker: WORK_TOKEN_TICKER,
+      tokenId: WORK_TOKEN_ID,
+    },
+  };
+  const btcUsdQuote =
+    network === "livenet"
+      ? await btcUsdPricePayload(network, { fresh }).catch(() => null)
+      : null;
+  const indexedAt = newerIso(
+    powbTokenState.indexedAt,
+    registryState?.indexedAt,
+  );
+  return infinitySummaryPayloadFromLedger({
+    activity: tokenActivityItemsFromState(
+      powbTokenState,
+      powbTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
+    ),
+    btcUsdQuote,
+    generatedAt: Number.isFinite(Date.parse(indexedAt ?? ""))
+      ? indexedAt
+      : new Date().toISOString(),
+    network,
+    tokenState: powbTokenState,
+  });
+}
+
+async function infinitySummaryPayload(network, fresh = false) {
+  if (!fresh) {
+    const ledger = await existingCanonicalLedgerPayload(network);
+    if (ledger?.infinitySummary?.registryAddress) {
+      return ledger.infinitySummary;
+    }
+  }
+  return standaloneInfinitySummaryPayload(network, fresh);
+}
+
 async function registryHistoryPayload(network, kind, searchParams, fresh = false) {
   const payload = fresh
     ? await safeRegistryPayload(network)
@@ -15942,6 +16583,9 @@ function growthActualNetworkValue(
   const confirmedTokenMints = tokenMints.filter(
     (mint) => mint.confirmed && Date.parse(mint.createdAt) <= cutoffMs,
   );
+  const confirmedValueTokenMints = confirmedTokenMints.filter(
+    (mint) => mint.tokenId !== POWB_TOKEN_ID,
+  );
   const confirmedTokenTransfers = tokenTransfers.filter(
     (transfer) =>
       transfer.confirmed && Date.parse(transfer.createdAt) <= cutoffMs,
@@ -15996,7 +16640,7 @@ function growthActualNetworkValue(
     (total, token) => total + token.creationFeeSats,
     0,
   );
-  const tokenMintFlowSats = confirmedTokenMints.reduce(
+  const tokenMintFlowSats = confirmedValueTokenMints.reduce(
     (total, mint) => total + mint.paidSats,
     0,
   );
@@ -17911,6 +18555,7 @@ async function handleRequest(request, response) {
         );
       if (
         !freshRead &&
+        tokenScope !== POWB_TOKEN_ID &&
         !walletScoped &&
         proofIndexReadFeatureEnabled("token-state,token-default,token") &&
         proofIndexTokenReadEligibility(tokenScope, url.searchParams).eligible
@@ -18018,6 +18663,7 @@ async function handleRequest(request, response) {
         .toLowerCase();
       if (
         !freshRead &&
+        tokenScope !== POWB_TOKEN_ID &&
         proofIndexReadFeatureEnabled("token-history,token") &&
         proofIndexTokenHistoryReadEligibility(
           tokenScope,
@@ -18139,6 +18785,16 @@ async function handleRequest(request, response) {
         response,
         200,
         await marketplaceSummaryPayload(network, freshRead),
+        freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
+      );
+      return;
+    }
+
+    if (url.pathname === "/api/v1/infinity-summary") {
+      jsonResponse(
+        response,
+        200,
+        await infinitySummaryPayload(network, freshRead),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
       return;

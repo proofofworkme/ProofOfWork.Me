@@ -8,6 +8,7 @@ export type AppSurface =
   | "token"
   | "wallet"
   | "work"
+  | "infinity"
   | "rush"
   | "log"
   | "growth";
@@ -113,6 +114,17 @@ export function isWorkTokenRoute() {
   return hostname() === "work.proofofwork.me" || searchIncludes("work=1");
 }
 
+export function isInfinityRoute() {
+  if (import.meta.env.VITE_INFINITY_ONLY === "1") {
+    return true;
+  }
+
+  return (
+    hostname() === "infinity.proofofwork.me" ||
+    searchIncludes("infinity=1")
+  );
+}
+
 export function isRushRoute() {
   if (import.meta.env.VITE_RUSH_ONLY === "1") {
     return true;
@@ -155,6 +167,7 @@ export function detectAppSurface(): AppSurface {
   if (isTokenRoute()) return "token";
   if (isWalletRoute()) return "wallet";
   if (isWorkTokenRoute()) return "work";
+  if (isInfinityRoute()) return "infinity";
   if (isRushRoute()) return "rush";
   if (isActivityRoute()) return "log";
   if (isGrowthRoute()) return "growth";

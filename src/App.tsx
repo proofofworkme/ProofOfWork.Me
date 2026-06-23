@@ -56,11 +56,13 @@ import {
   GROWTH_APP_URL,
   HOME_APP_URL,
   ID_APP_URL,
+  INFINITY_APP_URL,
   LOCAL_BROWSER_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_GROWTH_APP_URL,
   LOCAL_ID_APP_URL,
+  LOCAL_INFINITY_APP_URL,
   LOCAL_LOG_APP_URL,
   LOCAL_MARKETPLACE_APP_URL,
   LOCAL_TOKEN_APP_URL,
@@ -79,6 +81,7 @@ import {
   isDesktopRoute,
   isGrowthRoute,
   isIdLaunchRoute,
+  isInfinityRoute,
   isLandingRoute,
   isLocalPreviewHost,
   isMarketplaceRoute,
@@ -224,6 +227,7 @@ const STANDALONE_ROUTE_PARAMS = [
   "token",
   "wallet",
   "work",
+  "infinity",
   "rush",
   "log",
   "growth",
@@ -1191,6 +1195,13 @@ const WORK_TOKEN_MINT_AMOUNT = 1000;
 const WORK_TOKEN_MINT_PRICE_SATS = 1000;
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const POWB_TOKEN_TICKER = "POWB";
+const POWB_TOKEN_ID =
+  "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
+const POWB_REGISTRY_ID = "infinity@proofofwork.me";
+const POWB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
+const INFINITY_BOND_SUBJECT = "Infinity Bond";
+const INFINITY_BOND_MEMO = "powb";
 const BLOCKED_TOKEN_CREATOR_ADDRESSES = new Set([
   "bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl",
 ]);
@@ -1386,6 +1397,58 @@ type MarketplaceSummaryApiResponse = {
   summaryOnly?: boolean;
   token?: PowTokenApiResponse;
   workFloor?: WorkFloorApiResponse;
+};
+
+type InfinityActualValue = {
+  bondMarketplaceMutationFeeSats: number;
+  bondMintFlowSats: number;
+  bondSaleVolumeSats: number;
+  bondTransferFeeSats: number;
+  floorSats: number;
+  floorUsd: number;
+  networkValueSats: number;
+  networkUsd: number;
+  totalSats: number;
+  totalUsd: number;
+};
+
+type InfinitySummaryStats = {
+  confirmedBondActions: number;
+  confirmedListings: number;
+  confirmedSales: number;
+  confirmedSupply: number;
+  confirmedTransfers: number;
+  holders: number;
+  pendingBondActions: number;
+  pendingSupply: number;
+};
+
+type InfinitySummarySnapshot = {
+  actualValue: InfinityActualValue;
+  floorSats: number;
+  floorUsd: number;
+  indexedAt: string;
+  networkValueSats: number;
+  registryAddress: string;
+  registryId: string;
+  stats: InfinitySummaryStats;
+  ticker: string;
+  token: PowTokenState;
+  tokenId: string;
+};
+
+type InfinitySummaryApiResponse = {
+  actualValue?: Partial<InfinityActualValue>;
+  floorSats?: number;
+  floorUsd?: number;
+  indexedAt?: string;
+  networkValueSats?: number;
+  registryAddress?: string;
+  registryId?: string;
+  stats?: Partial<InfinitySummaryStats>;
+  ticker?: string;
+  token?: PowTokenApiResponse;
+  tokenId?: string;
 };
 
 const GROWTH_MODEL_START_DATE = "2026-05-11";
@@ -5341,12 +5404,20 @@ function normalizeTokenCreatorAddress(value: string) {
 
 function tokenTickerIsReserved(value: string) {
   const ticker = normalizeTokenTicker(value);
-  return ticker.includes(WORK_TOKEN_TICKER);
+  return ticker.includes(WORK_TOKEN_TICKER) || ticker === POWB_TOKEN_TICKER;
 }
 
 function tokenTickerReservationError(value: string) {
   const ticker = normalizeTokenTicker(value);
-  return ticker && tokenTickerIsReserved(ticker)
+  if (!ticker) {
+    return "";
+  }
+
+  if (ticker === POWB_TOKEN_TICKER) {
+    return "POWB is reserved for Infinity Bonds.";
+  }
+
+  return tokenTickerIsReserved(ticker)
     ? "WORK is reserved for the canonical WORK credit. Choose a ticker without WORK."
     : "";
 }
@@ -5361,6 +5432,10 @@ function tokenCreationIsAllowed({
   tokenId: string;
 }) {
   if (String(tokenId ?? "").toLowerCase() === WORK_TOKEN_ID) {
+    return true;
+  }
+
+  if (String(tokenId ?? "").toLowerCase() === POWB_TOKEN_ID) {
     return true;
   }
 
@@ -9919,6 +9994,93 @@ async function fetchMarketplaceSummary(
   };
 }
 
+function normalizeInfinityActualValue(
+  payload: Partial<InfinityActualValue> | undefined,
+): InfinityActualValue {
+  const numberValue = (key: keyof InfinityActualValue) => {
+    const value = Number(payload?.[key]);
+    return Number.isFinite(value) ? value : 0;
+  };
+
+  return {
+    bondMarketplaceMutationFeeSats: numberValue(
+      "bondMarketplaceMutationFeeSats",
+    ),
+    bondMintFlowSats: numberValue("bondMintFlowSats"),
+    bondSaleVolumeSats: numberValue("bondSaleVolumeSats"),
+    bondTransferFeeSats: numberValue("bondTransferFeeSats"),
+    floorSats: numberValue("floorSats"),
+    floorUsd: numberValue("floorUsd"),
+    networkValueSats: numberValue("networkValueSats"),
+    networkUsd: numberValue("networkUsd"),
+    totalSats: numberValue("totalSats"),
+    totalUsd: numberValue("totalUsd"),
+  };
+}
+
+function normalizeInfinityStats(
+  payload: Partial<InfinitySummaryStats> | undefined,
+): InfinitySummaryStats {
+  const numberValue = (key: keyof InfinitySummaryStats) => {
+    const value = Number(payload?.[key]);
+    return Number.isFinite(value) ? value : 0;
+  };
+
+  return {
+    confirmedBondActions: numberValue("confirmedBondActions"),
+    confirmedListings: numberValue("confirmedListings"),
+    confirmedSales: numberValue("confirmedSales"),
+    confirmedSupply: numberValue("confirmedSupply"),
+    confirmedTransfers: numberValue("confirmedTransfers"),
+    holders: numberValue("holders"),
+    pendingBondActions: numberValue("pendingBondActions"),
+    pendingSupply: numberValue("pendingSupply"),
+  };
+}
+
+function normalizeInfinitySummary(
+  payload: InfinitySummaryApiResponse,
+): InfinitySummarySnapshot {
+  const actualValue = normalizeInfinityActualValue(payload.actualValue);
+  const token = normalizeTokenApiState(payload.token);
+  return {
+    actualValue,
+    floorSats: Number(payload.floorSats) || actualValue.floorSats,
+    floorUsd: Number(payload.floorUsd) || actualValue.floorUsd,
+    indexedAt:
+      typeof payload.indexedAt === "string"
+        ? payload.indexedAt
+        : new Date().toISOString(),
+    networkValueSats:
+      Number(payload.networkValueSats) || actualValue.networkValueSats,
+    registryAddress:
+      typeof payload.registryAddress === "string"
+        ? payload.registryAddress
+        : token.tokens.find((item) => item.tokenId === POWB_TOKEN_ID)
+            ?.registryAddress ?? "",
+    registryId:
+      typeof payload.registryId === "string"
+        ? payload.registryId
+        : POWB_REGISTRY_ID,
+    stats: normalizeInfinityStats(payload.stats),
+    ticker:
+      typeof payload.ticker === "string" ? payload.ticker : POWB_TOKEN_TICKER,
+    token,
+    tokenId:
+      typeof payload.tokenId === "string" ? payload.tokenId : POWB_TOKEN_ID,
+  };
+}
+
+async function fetchInfinitySummary(
+  fresh = false,
+): Promise<InfinitySummarySnapshot> {
+  const payload = await fetchProofApiJson<InfinitySummaryApiResponse>(
+    fresh ? "/api/v1/infinity-summary?fresh=1" : "/api/v1/infinity-summary",
+    "livenet",
+  );
+  return normalizeInfinitySummary(payload);
+}
+
 function normalizeGrowthSummary(
   payload: GrowthSummaryApiResponse,
 ): GrowthSummarySnapshot {
@@ -11975,6 +12137,7 @@ export default function App() {
   const tokenMode = isTokenRoute();
   const walletMode = isWalletRoute();
   const workTokenMode = isWorkTokenRoute();
+  const infinityMode = isInfinityRoute();
   const rushMode = isRushRoute();
   const activityMode = isActivityRoute();
   const growthMode = isGrowthRoute();
@@ -11984,6 +12147,7 @@ export default function App() {
     tokenMode ||
     walletMode ||
     workTokenMode ||
+    infinityMode ||
     activityMode ||
     growthMode;
   const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
@@ -12046,10 +12210,18 @@ export default function App() {
   }, [tokenClosedListings]);
 
   const [tokenSelectedId, setTokenSelectedId] = useState(() =>
-    workTokenMode ? WORK_TOKEN_TICKER : tokenRouteTarget(),
+    infinityMode
+      ? POWB_TOKEN_ID
+      : workTokenMode
+        ? WORK_TOKEN_TICKER
+        : tokenRouteTarget(),
   );
   const [tokenDetailTarget, setTokenDetailTarget] = useState(() =>
-    workTokenMode ? WORK_TOKEN_TICKER : tokenRouteTarget(),
+    infinityMode
+      ? POWB_TOKEN_ID
+      : workTokenMode
+        ? WORK_TOKEN_TICKER
+        : tokenRouteTarget(),
   );
   const [tokenCreateTicker, setTokenCreateTicker] = useState("");
   const [tokenCreateMaxSupply, setTokenCreateMaxSupply] = useState(0);
@@ -12072,6 +12244,11 @@ export default function App() {
   const [growthSummary, setGrowthSummary] = useState<
     GrowthSummarySnapshot | undefined
   >();
+  const [infinitySummary, setInfinitySummary] = useState<
+    InfinitySummarySnapshot | undefined
+  >();
+  const [infinityBondAmount, setInfinityBondAmount] = useState(1000);
+  const [infinityBondRecipient, setInfinityBondRecipient] = useState("");
   const [workFloorLoading, setWorkFloorLoading] = useState(false);
   const [tokenPrepareMintCount, setTokenPrepareMintCount] = useState(
     TOKEN_PREPARE_DEFAULT_MINT_COUNT,
@@ -12147,6 +12324,7 @@ export default function App() {
       !workTokenMode &&
       !rushMode &&
       !activityMode &&
+      !infinityMode &&
       !growthMode
         ? computerFolderFromSearch()
         : undefined;
@@ -12165,11 +12343,13 @@ export default function App() {
                 ? "wallet"
                 : workTokenMode
                   ? "work"
-                  : activityMode
-                    ? "log"
-                    : mainnetRegistryMode
-                      ? "ids"
-                      : "inbox")
+                  : infinityMode
+                    ? "marketplace"
+                    : activityMode
+                      ? "log"
+                      : mainnetRegistryMode
+                        ? "ids"
+                        : "inbox")
     );
   });
   const [activeCustomFolderId, setActiveCustomFolderId] = useState("");
@@ -12196,6 +12376,9 @@ export default function App() {
   const marketplaceSummaryRefreshInFlightRef =
     useRef<Promise<MarketplaceSummarySnapshot | undefined> | null>(null);
   const marketplaceSummaryRefreshInFlightFreshRef = useRef(false);
+  const infinityRefreshInFlightRef =
+    useRef<Promise<InfinitySummarySnapshot | undefined> | null>(null);
+  const infinityRefreshInFlightFreshRef = useRef(false);
   const growthRefreshInFlightRef = useRef(false);
   const workFloorRefreshInFlightRef =
     useRef<Promise<WorkFloorQuote | undefined> | null>(null);
@@ -12785,12 +12968,100 @@ export default function App() {
       ),
     [address, dashboardTokenDefinitions, tokenMints, tokenSales, tokenTransfers],
   );
+  const powbTokenDefinitions = useMemo(
+    () =>
+      orderedTokenDefinitions.filter(
+        (token) =>
+          token.tokenId === POWB_TOKEN_ID ||
+          normalizeTokenTicker(token.ticker) === POWB_TOKEN_TICKER,
+      ),
+    [orderedTokenDefinitions],
+  );
+  const powbWalletBalances = useMemo(
+    () =>
+      tokenWalletBalancesFor(
+        address,
+        powbTokenDefinitions,
+        tokenMints,
+        tokenTransfers,
+        tokenSales,
+      ),
+    [address, powbTokenDefinitions, tokenMints, tokenSales, tokenTransfers],
+  );
+  const powbTokenDefinition = powbTokenDefinitions[0];
+  const powbMints = useMemo(
+    () => tokenMints.filter((mint) => mint.tokenId === POWB_TOKEN_ID),
+    [tokenMints],
+  );
+  const powbTransfers = useMemo(
+    () =>
+      tokenTransfers.filter((transfer) => transfer.tokenId === POWB_TOKEN_ID),
+    [tokenTransfers],
+  );
+  const powbListings = useMemo(
+    () => tokenListings.filter((listing) => listing.tokenId === POWB_TOKEN_ID),
+    [tokenListings],
+  );
+  const powbClosedListings = useMemo(
+    () =>
+      tokenClosedListings.filter(
+        (listing) => listing.tokenId === POWB_TOKEN_ID,
+      ),
+    [tokenClosedListings],
+  );
+  const powbSales = useMemo(
+    () => tokenSales.filter((sale) => sale.tokenId === POWB_TOKEN_ID),
+    [tokenSales],
+  );
+  const infinityBondRecipientInput = infinityBondRecipient.trim();
+  const infinityBondResolution = useMemo<RecipientResolution>(
+    () =>
+      infinityBondRecipientInput
+        ? resolveRecipientInput(
+            infinityBondRecipientInput,
+            "livenet",
+            idRegistry,
+            registryAddressForNetwork("livenet"),
+          )
+        : {
+            displayRecipient: address ? shortAddress(address) : "",
+            isId: false,
+            paymentAddress: address,
+          },
+    [address, idRegistry, infinityBondRecipientInput],
+  );
+  const infinityBondAmountValue = Number.isFinite(infinityBondAmount)
+    ? Math.floor(infinityBondAmount)
+    : 0;
+  const infinityBondPayloads = useMemo(
+    () => buildProtocolPayloads(INFINITY_BOND_SUBJECT, INFINITY_BOND_MEMO),
+    [],
+  );
+  const infinityBondBytes = useMemo(
+    () => dataCarrierBytesForPayloads(infinityBondPayloads),
+    [infinityBondPayloads],
+  );
+  const canCreateInfinityBond =
+    Boolean(
+      address &&
+      network === "livenet" &&
+      infinityBondAmountValue >= 1 &&
+      infinityBondResolution.paymentAddress &&
+      !infinityBondResolution.error &&
+      isValidBitcoinAddress(infinityBondResolution.paymentAddress, "livenet"),
+    ) &&
+    infinityBondBytes <= MAX_DATA_CARRIER_BYTES &&
+    !busy;
   const walletTransferToken =
     tokenWalletBalances.find(
       (item) => item.token.tokenId === tokenTransferTokenId,
     )?.token ??
     tokenWalletBalances[0]?.token ??
-    (!address ? workTokenDefinition ?? WORK_TOKEN_DEFINITION : undefined);
+    (infinityMode
+      ? powbTokenDefinition
+      : !address
+        ? workTokenDefinition ?? WORK_TOKEN_DEFINITION
+        : undefined);
   const walletTransferBalance =
     tokenWalletBalances.find(
       (item) => item.token.tokenId === walletTransferToken?.tokenId,
@@ -13351,6 +13622,7 @@ export default function App() {
       tokenMode ||
       walletMode ||
       workTokenMode ||
+      infinityMode ||
       rushMode
     ) {
       return;
@@ -13378,6 +13650,7 @@ export default function App() {
     activeFolder,
     activityMode,
     growthMode,
+    infinityMode,
     network,
     rushMode,
     tokenMode,
@@ -13402,6 +13675,7 @@ export default function App() {
       tokenMode ||
       walletMode ||
       workTokenMode ||
+      infinityMode ||
       rushMode
     ) {
       return;
@@ -13412,6 +13686,7 @@ export default function App() {
   }, [
     activityMode,
     growthMode,
+    infinityMode,
     mainnetRegistryMode,
     marketplaceMode,
     network,
@@ -13424,6 +13699,7 @@ export default function App() {
   useEffect(() => {
     if (
       (!marketplaceMode && !tokenMode && !walletMode && !workTokenMode) ||
+      infinityMode ||
       network !== "livenet"
     ) {
       return;
@@ -13452,7 +13728,15 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeFolder, marketplaceMode, network, tokenMode, walletMode, workTokenMode]);
+  }, [
+    activeFolder,
+    infinityMode,
+    marketplaceMode,
+    network,
+    tokenMode,
+    walletMode,
+    workTokenMode,
+  ]);
 
   useEffect(() => {
     if (!(activityMode || activeFolder === "log")) {
@@ -13596,6 +13880,7 @@ export default function App() {
       !walletMode &&
       !growthMode &&
       !workTokenMode &&
+      !infinityMode &&
       activeFolder !== "marketplace" &&
       activeFolder !== "token" &&
       activeFolder !== "wallet" &&
@@ -13621,6 +13906,7 @@ export default function App() {
   }, [
     activeFolder,
     growthMode,
+    infinityMode,
     marketplaceMode,
     tokenMode,
     walletMode,
@@ -13692,6 +13978,33 @@ export default function App() {
   }, [marketplaceMode, network]);
 
   useEffect(() => {
+    if (!infinityMode) {
+      return;
+    }
+
+    if (network !== "livenet") {
+      setNetwork("livenet");
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      await refreshInfinity(true, false);
+      if (!cancelled && document.visibilityState === "visible") {
+        window.setTimeout(() => {
+          if (!cancelled && document.visibilityState === "visible") {
+            void refreshInfinity(true, true);
+          }
+        }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [infinityMode, network]);
+
+  useEffect(() => {
     if (
       (!needsRegistryResolution(recipient, network) &&
         !needsRegistryResolution(ccRecipient, network) &&
@@ -13701,6 +14014,10 @@ export default function App() {
             activeFolder === "token" ||
             activeFolder === "work") &&
           needsRegistryResolution(tokenCreateRegistryAddress, network)
+        ) &&
+        !(
+          infinityMode &&
+          needsRegistryResolution(infinityBondRecipient, "livenet")
         )) ||
       !registryAddress
     ) {
@@ -13722,7 +14039,18 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [activeFolder, ccRecipient, network, recipient, registryAddress, tokenCreateRegistryAddress, tokenMode, workTokenMode]);
+  }, [
+    activeFolder,
+    ccRecipient,
+    infinityBondRecipient,
+    infinityMode,
+    network,
+    recipient,
+    registryAddress,
+    tokenCreateRegistryAddress,
+    tokenMode,
+    workTokenMode,
+  ]);
 
   useEffect(() => {
     if (
@@ -13797,6 +14125,8 @@ export default function App() {
                 ? "wallet"
                 : marketplaceMode
                   ? "marketplace"
+                  : infinityMode
+                    ? "marketplace"
                   : mainnetRegistryMode
                     ? "ids"
                     : "inbox",
@@ -13809,6 +14139,33 @@ export default function App() {
       }
 
       try {
+        if (infinityMode) {
+          await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
+          const snapshot = await fetchInfinitySummary(false);
+          const tokenState = snapshot.token;
+          setInfinitySummary(snapshot);
+          setTokenDefinitions(tokenState.tokens);
+          setTokenMints(tokenState.mints);
+          setTokenTransfers(tokenState.transfers);
+          setTokenListings((current) =>
+            tokenListingsWithPreservedLocalPending(
+              current,
+              applyPendingTokenListingSeals(tokenState.listings),
+              tokenState.closedListings,
+            ),
+          );
+          setTokenClosedListings(tokenState.closedListings);
+          setTokenSales(tokenState.sales);
+          setTokenCreationSats(tokenState.creationSats);
+          setTokenSelectedId(POWB_TOKEN_ID);
+          setTokenDetailTarget(POWB_TOKEN_ID);
+          setStatus({
+            tone: "good",
+            text: `${shortAddress(nextAddress)} connected. Infinity Bonds ready.`,
+          });
+          return;
+        }
+
         if (tokenMode || walletMode || workTokenMode) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
           const state = await fetchTokenState(
@@ -13911,6 +14268,7 @@ export default function App() {
     desktopRoute,
     growthMode,
     hasUnisat,
+    infinityMode,
     landingMode,
     mainnetRegistryMode,
     marketplaceMode,
@@ -14191,6 +14549,7 @@ export default function App() {
       tokenMode ||
       walletMode ||
       workTokenMode ||
+      infinityMode ||
       rushMode ||
       activityMode ||
       growthMode
@@ -14226,6 +14585,7 @@ export default function App() {
       tokenMode ||
       walletMode ||
       workTokenMode ||
+      infinityMode ||
       rushMode ||
       activityMode ||
       growthMode
@@ -14951,6 +15311,104 @@ export default function App() {
     return refreshPromise;
   }
 
+  async function refreshInfinity(
+    silent = false,
+    fresh = false,
+  ): Promise<InfinitySummarySnapshot | undefined> {
+    if (network !== "livenet") {
+      return undefined;
+    }
+
+    if (infinityRefreshInFlightRef.current) {
+      const needsFreshRefresh =
+        fresh && !infinityRefreshInFlightFreshRef.current;
+      if (!silent) {
+        setBusy(true);
+        setStatus({
+          tone: "idle",
+          text: "Infinity refresh already in progress...",
+        });
+      }
+      try {
+        const snapshot = await infinityRefreshInFlightRef.current;
+        if (needsFreshRefresh) {
+          return refreshInfinity(silent, fresh);
+        }
+        return snapshot;
+      } finally {
+        if (!silent && !needsFreshRefresh) {
+          setBusy(false);
+        }
+      }
+    }
+
+    const refreshPromise = (async () => {
+      if (!silent) {
+        setBusy(true);
+        setStatus({ tone: "idle", text: "Refreshing Infinity Bonds..." });
+      }
+
+      try {
+        const [snapshot, registryState, btcUsdQuote] = await Promise.all([
+          fetchInfinitySummary(fresh),
+          fetchIdRegistryState("livenet", fresh, true).catch(() => undefined),
+          fetchBtcUsdPrice(fresh).catch(() => undefined),
+        ]);
+        const tokenState = snapshot.token;
+        if (registryState) {
+          setIdRegistry(registryState.records);
+          setIdListings(registryState.listings);
+          setIdPendingEvents(registryState.pendingEvents);
+          setIdSales(registryState.sales);
+          setIdActivity(registryState.activity);
+        }
+        setInfinitySummary(snapshot);
+        setTokenDefinitions(tokenState.tokens);
+        setTokenMints(tokenState.mints);
+        setTokenTransfers(tokenState.transfers);
+        setTokenListings((current) =>
+          tokenListingsWithPreservedLocalPending(
+            current,
+            applyPendingTokenListingSeals(tokenState.listings),
+            tokenState.closedListings,
+          ),
+        );
+        setTokenClosedListings(tokenState.closedListings);
+        setTokenSales(tokenState.sales);
+        setTokenCreationSats(tokenState.creationSats);
+        setTokenSelectedId(POWB_TOKEN_ID);
+        setTokenDetailTarget(POWB_TOKEN_ID);
+        if (btcUsdQuote) {
+          setTokenBtcUsd(btcUsdQuote);
+        }
+        if (!silent) {
+          setStatus({
+            tone: "good",
+            text: `Infinity loaded. ${snapshot.stats.confirmedSupply.toLocaleString()} POWB confirmed from ${snapshot.stats.confirmedBondActions.toLocaleString()} bond action${snapshot.stats.confirmedBondActions === 1 ? "" : "s"}.`,
+          });
+        }
+        return snapshot;
+      } catch (error) {
+        if (!silent) {
+          setStatus({
+            tone: "bad",
+            text: errorMessage(error, "Infinity refresh failed."),
+          });
+        }
+        return undefined;
+      } finally {
+        infinityRefreshInFlightRef.current = null;
+        infinityRefreshInFlightFreshRef.current = false;
+        if (!silent) {
+          setBusy(false);
+        }
+      }
+    })();
+    infinityRefreshInFlightFreshRef.current = fresh;
+    infinityRefreshInFlightRef.current = refreshPromise;
+    return refreshPromise;
+  }
+
   async function refreshToken(
     silent = false,
     fresh = false,
@@ -15557,6 +16015,8 @@ export default function App() {
                 ? "work"
                 : marketplaceMode
                   ? "marketplace"
+                  : infinityMode
+                    ? "marketplace"
                   : mainnetRegistryMode
                     ? "ids"
                     : "inbox",
@@ -15564,6 +16024,32 @@ export default function App() {
       setComposeOpen(false);
 
       try {
+        if (infinityMode) {
+          const snapshot = await fetchInfinitySummary(false);
+          const tokenState = snapshot.token;
+          setInfinitySummary(snapshot);
+          setTokenDefinitions(tokenState.tokens);
+          setTokenMints(tokenState.mints);
+          setTokenTransfers(tokenState.transfers);
+          setTokenListings((current) =>
+            tokenListingsWithPreservedLocalPending(
+              current,
+              applyPendingTokenListingSeals(tokenState.listings),
+              tokenState.closedListings,
+            ),
+          );
+          setTokenClosedListings(tokenState.closedListings);
+          setTokenSales(tokenState.sales);
+          setTokenCreationSats(tokenState.creationSats);
+          setTokenSelectedId(POWB_TOKEN_ID);
+          setTokenDetailTarget(POWB_TOKEN_ID);
+          setStatus({
+            tone: "good",
+            text: `UniSat connected. Infinity Bonds ready.`,
+          });
+          return;
+        }
+
         if (tokenMode || walletMode || workTokenMode) {
           const state = await fetchTokenState(
             "livenet",
@@ -17408,6 +17894,230 @@ export default function App() {
       setStatus({
         tone: "bad",
         text: errorMessage(error, "Transaction failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createInfinityBond(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+
+    if (network !== "livenet") {
+      setStatus({ tone: "bad", text: "Infinity Bonds are mainnet only." });
+      return;
+    }
+
+    if (
+      !Number.isSafeInteger(infinityBondAmountValue) ||
+      infinityBondAmountValue < 1
+    ) {
+      setStatus({ tone: "bad", text: "Enter a bond amount of at least 1 proof." });
+      return;
+    }
+
+    if (infinityBondBytes > MAX_DATA_CARRIER_BYTES) {
+      setStatus({
+        tone: "bad",
+        text: "Infinity Bond OP_RETURN is over 100 KB.",
+      });
+      return;
+    }
+
+    let resolvedRecipient = infinityBondResolution;
+    setBusy(true);
+    setStatus({
+      tone: "idle",
+      text: infinityBondRecipientInput
+        ? "Checking bond recipient..."
+        : "Building Infinity Bond...",
+    });
+
+    try {
+      if (infinityBondRecipientInput) {
+        const latestState = await fetchIdRegistryState("livenet", true, true);
+        setIdRegistry(latestState.records);
+        setIdListings(latestState.listings);
+        setIdPendingEvents(latestState.pendingEvents);
+        setIdSales(latestState.sales);
+        setIdActivity(latestState.activity);
+        resolvedRecipient = resolveRecipientInput(
+          infinityBondRecipientInput,
+          "livenet",
+          latestState.records,
+          registryAddressForNetwork("livenet"),
+        );
+      }
+
+      if (
+        resolvedRecipient.error ||
+        !resolvedRecipient.paymentAddress ||
+        !isValidBitcoinAddress(resolvedRecipient.paymentAddress, "livenet")
+      ) {
+        setStatus({
+          tone: "bad",
+          text:
+            resolvedRecipient.error ||
+            "Enter your own address or confirmed ProofOfWork ID.",
+        });
+        return;
+      }
+
+      const currentNetwork = await getWalletNetwork(window.unisat);
+      if (currentNetwork !== "livenet") {
+        await switchWalletNetwork(window.unisat, "livenet");
+      }
+
+      const reservedIdOutpoints = activeListingAnchorOutpointsForAddress(
+        idListings,
+        address,
+        { network: "livenet" },
+      );
+      const reservedTokenOutpoints = activeTokenListingAnchorOutpointsForAddress(
+        tokenListings,
+        address,
+        { network: "livenet" },
+      );
+      const paymentPsbt = await buildPaymentPsbt({
+        excludeOutpoints: [...reservedIdOutpoints, ...reservedTokenOutpoints],
+        feeRate,
+        fromAddress: address,
+        network: "livenet",
+        payments: [
+          {
+            address: resolvedRecipient.paymentAddress,
+            amountSats: infinityBondAmountValue,
+          },
+        ],
+        protocolPayloads: infinityBondPayloads,
+        requireConfirmedUtxos: true,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      setStatus({
+        tone: "idle",
+        text: `Waiting for UniSat signature. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} proofs.`,
+      });
+
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network: "livenet",
+        psbtHex: paymentPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+
+      const createdAt = new Date().toISOString();
+      const mailRecipient = {
+        address: resolvedRecipient.paymentAddress,
+        amountSats: infinityBondAmountValue,
+        display: resolvedRecipient.isId
+          ? resolvedRecipient.displayRecipient
+          : resolvedRecipient.paymentAddress,
+        id: resolvedRecipient.id,
+      };
+      const sentMessage: SentMessage = {
+        amountSats: infinityBondAmountValue,
+        createdAt,
+        feeRate,
+        from: address,
+        lastCheckedAt: createdAt,
+        memo: INFINITY_BOND_MEMO,
+        network: "livenet",
+        recipients: [mailRecipient],
+        replyTo: address,
+        status: "pending",
+        subject: INFINITY_BOND_SUBJECT,
+        to: mailRecipient.display,
+        txid,
+      };
+      const incomingMessage: InboxMessage | undefined = samePaymentAddress(
+        mailRecipient.address,
+        address,
+      )
+        ? {
+            amountSats: infinityBondAmountValue,
+            confirmed: false,
+            createdAt,
+            from: address,
+            memo: INFINITY_BOND_MEMO,
+            network: "livenet",
+            recipients: [mailRecipient],
+            replyTo: address,
+            subject: INFINITY_BOND_SUBJECT,
+            to: address,
+            txid,
+          }
+        : undefined;
+      const pendingMint: PowTokenMint = {
+        amount: infinityBondAmountValue,
+        confirmed: false,
+        createdAt,
+        dataBytes: infinityBondBytes,
+        minterAddress: mailRecipient.address,
+        network: "livenet",
+        paidSats: infinityBondAmountValue,
+        registryAddress:
+          infinitySummary?.registryAddress ||
+          powbTokenDefinition?.registryAddress ||
+          "",
+        ticker: POWB_TOKEN_TICKER,
+        tokenId: POWB_TOKEN_ID,
+        txid,
+      };
+
+      setAllSent((current) =>
+        current.some((message) => message.txid === txid)
+          ? current
+          : [sentMessage, ...current],
+      );
+      if (incomingMessage) {
+        setInbox((current) => [
+          incomingMessage,
+          ...current.filter(
+            (message) =>
+              message.txid !== txid ||
+              message.network !== "livenet" ||
+              message.confirmed,
+          ),
+        ]);
+      }
+      setTokenMints((current) =>
+        current.some((mint) => mint.txid === txid)
+          ? current
+          : [pendingMint, ...current],
+      );
+      setInfinityBondRecipient("");
+      setStatus({
+        tone: "good",
+        text: `${infinityBondAmountValue.toLocaleString()} proof Infinity Bond broadcast: ${shortAddress(txid)}.`,
+      });
+      void refreshInfinity(true, true);
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Infinity Bond failed."),
       });
     } finally {
       setBusy(false);
@@ -19437,6 +20147,68 @@ export default function App() {
         transferring={tokenAction === "transfer"}
         tokenSales={tokenSales}
         transfers={tokenTransfers}
+        workFloorLoading={workFloorLoading}
+        workFloorQuote={workFloorQuote}
+      />
+    );
+  }
+
+  if (infinityMode) {
+    return (
+      <InfinityApp
+        address={address}
+        balances={powbWalletBalances}
+        bondAmount={infinityBondAmount}
+        bondBytes={infinityBondBytes}
+        bondRecipient={infinityBondRecipient}
+        bondRecipientResolution={infinityBondResolution}
+        btcUsd={tokenBtcUsd}
+        busy={busy}
+        buyListing={buyTokenListing}
+        canCreateBond={canCreateInfinityBond}
+        canList={canListToken}
+        canTransfer={canTransferToken}
+        closedListings={powbClosedListings}
+        connectWallet={connectWallet}
+        delistListing={delistTokenListing}
+        disconnectWallet={disconnectWallet}
+        feeRate={feeRate}
+        hasUnisat={hasUnisat}
+        listAmount={tokenListAmount}
+        listBuyerAddress={tokenListBuyerAddress}
+        listPriceSats={tokenListPriceSats}
+        listing={tokenAction === "list"}
+        listings={powbListings}
+        listSpendableBalance={walletSpendableTokenBalance}
+        mints={powbMints}
+        network={network}
+        onNetworkChange={chooseNetwork}
+        onRefresh={() => void refreshInfinity(false, true)}
+        sales={powbSales}
+        sealListing={sealTokenListing}
+        selectedTokenId={POWB_TOKEN_ID}
+        setBondAmount={setInfinityBondAmount}
+        setBondRecipient={setInfinityBondRecipient}
+        setFeeRate={setFeeRate}
+        setListAmount={setTokenListAmount}
+        setListBuyerAddress={setTokenListBuyerAddress}
+        setListPriceSats={setTokenListPriceSats}
+        setSelectedTokenId={setTokenTransferTokenId}
+        setTransferAmount={setTokenTransferAmount}
+        setTransferRecipient={setTokenTransferRecipient}
+        status={status}
+        submitBond={createInfinityBond}
+        submitList={listToken}
+        submitTransfer={transferToken}
+        summary={infinitySummary}
+        tokens={powbTokenDefinitions}
+        transfers={powbTransfers}
+        transferAmount={tokenTransferAmount}
+        transferBalance={walletTransferBalance}
+        transferBytes={tokenTransferBytes}
+        transferRecipient={tokenTransferRecipient}
+        transferToken={walletTransferToken}
+        transferring={tokenAction === "transfer"}
         workFloorLoading={workFloorLoading}
         workFloorQuote={workFloorQuote}
       />
@@ -21991,6 +22763,324 @@ type TokenWalletAppProps = {
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
 };
+
+type InfinityAppProps = {
+  address: string;
+  balances: PowTokenWalletBalance[];
+  bondAmount: number;
+  bondBytes: number;
+  bondRecipient: string;
+  bondRecipientResolution: RecipientResolution;
+  btcUsd: number;
+  busy: boolean;
+  buyListing: (listing: PowTokenListing) => void;
+  canCreateBond: boolean;
+  canList: boolean;
+  canTransfer: boolean;
+  closedListings: PowTokenClosedListing[];
+  connectWallet: () => Promise<void>;
+  delistListing: (listing: PowTokenListing) => void;
+  disconnectWallet: () => void;
+  feeRate: number;
+  hasUnisat: boolean;
+  listAmount: number;
+  listBuyerAddress: string;
+  listPriceSats: number;
+  listing: boolean;
+  listings: PowTokenListing[];
+  listSpendableBalance: number;
+  mints: PowTokenMint[];
+  network: BitcoinNetwork;
+  onNetworkChange: (network: BitcoinNetwork) => void;
+  onRefresh: () => void;
+  sales: PowTokenSale[];
+  sealListing: (listing: PowTokenListing) => void;
+  selectedTokenId: string;
+  setBondAmount: (value: number) => void;
+  setBondRecipient: (value: string) => void;
+  setFeeRate: (value: number) => void;
+  setListAmount: (value: number) => void;
+  setListBuyerAddress: (value: string) => void;
+  setListPriceSats: (value: number) => void;
+  setSelectedTokenId: (value: string) => void;
+  setTransferAmount: (value: number) => void;
+  setTransferRecipient: (value: string) => void;
+  status: { tone: StatusTone; text: string };
+  submitBond: (event: FormEvent<HTMLFormElement>) => void;
+  submitList: (event: FormEvent<HTMLFormElement>) => void;
+  submitTransfer: (event: FormEvent<HTMLFormElement>) => void;
+  summary?: InfinitySummarySnapshot;
+  tokens: PowTokenDefinition[];
+  transfers: PowTokenTransfer[];
+  transferAmount: number;
+  transferBalance: number;
+  transferBytes: number;
+  transferRecipient: string;
+  transferToken: PowTokenDefinition | undefined;
+  transferring: boolean;
+  workFloorLoading: boolean;
+  workFloorQuote?: WorkFloorQuote;
+};
+
+function InfinityApp({
+  address,
+  balances,
+  bondAmount,
+  bondBytes,
+  bondRecipient,
+  bondRecipientResolution,
+  btcUsd,
+  busy,
+  buyListing,
+  canCreateBond,
+  canList,
+  canTransfer,
+  closedListings,
+  connectWallet,
+  delistListing,
+  disconnectWallet,
+  feeRate,
+  hasUnisat,
+  listAmount,
+  listBuyerAddress,
+  listPriceSats,
+  listing,
+  listings,
+  listSpendableBalance,
+  mints,
+  network,
+  onNetworkChange,
+  onRefresh,
+  sales,
+  sealListing,
+  selectedTokenId,
+  setBondAmount,
+  setBondRecipient,
+  setFeeRate,
+  setListAmount,
+  setListBuyerAddress,
+  setListPriceSats,
+  setSelectedTokenId,
+  setTransferAmount,
+  setTransferRecipient,
+  status,
+  submitBond,
+  submitList,
+  submitTransfer,
+  summary,
+  tokens,
+  transfers,
+  transferAmount,
+  transferBalance,
+  transferBytes,
+  transferRecipient,
+  transferToken,
+  transferring,
+  workFloorLoading,
+  workFloorQuote,
+}: InfinityAppProps) {
+  const confirmedSupply =
+    summary?.stats.confirmedSupply ??
+    tokens.find((token) => token.tokenId === POWB_TOKEN_ID)?.confirmedSupply ??
+    0;
+  const pendingSupply =
+    summary?.stats.pendingSupply ??
+    tokens.find((token) => token.tokenId === POWB_TOKEN_ID)?.pendingSupply ??
+    0;
+  const floorSats = summary?.actualValue.floorSats ?? summary?.floorSats ?? 0;
+  const networkValueSats =
+    summary?.actualValue.networkValueSats ?? summary?.networkValueSats ?? 0;
+  const floorUsd = summary?.actualValue.floorUsd ?? satsToUsd(floorSats, btcUsd);
+  const networkUsd =
+    summary?.actualValue.networkUsd ?? satsToUsd(networkValueSats, btcUsd);
+  const recipientText = bondRecipient.trim()
+    ? bondRecipientResolution.error
+      ? bondRecipientResolution.error
+      : bondRecipientResolution.isId
+        ? `${bondRecipientResolution.displayRecipient} -> ${shortAddress(bondRecipientResolution.paymentAddress)}`
+        : shortAddress(bondRecipientResolution.paymentAddress)
+    : address
+      ? shortAddress(address)
+      : "Connect UniSat";
+
+  return (
+    <main className="id-launch-app token-public-app token-wallet-public-app">
+      <AppHeader
+        address={address}
+        busy={busy}
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        hasUnisat={hasUnisat}
+        homeHref={appHref(INFINITY_APP_URL, LOCAL_INFINITY_APP_URL)}
+        network={network}
+        onNetworkChange={onNetworkChange}
+        onRefresh={onRefresh}
+        subtitle="$POWB bond market"
+        title="Infinity Bonds"
+      />
+
+      <AppStatusRow className="desktop-route-status" persistent status={status} />
+
+      <section className="token-workspace token-wallet-workspace">
+        <section className="id-launch-card token-dashboard-card">
+          <div className="id-card-heading">
+            <div className="id-card-icon">
+              <TrendingUp size={24} />
+            </div>
+            <div>
+              <p>POWB</p>
+              <h2>Infinity Bond Market</h2>
+              <span>{POWB_REGISTRY_ID}</span>
+            </div>
+          </div>
+          <div className="id-launch-stats token-stats-row">
+            <div>
+              <span>Confirmed supply</span>
+              <strong>{confirmedSupply.toLocaleString()} POWB</strong>
+            </div>
+            <div>
+              <span>Pending supply</span>
+              <strong>{pendingSupply.toLocaleString()} POWB</strong>
+            </div>
+            <div>
+              <span>Bond floor</span>
+              <strong>{tokenSatsPerUnit(floorSats)} proofs / POWB</strong>
+            </div>
+            <div>
+              <span>Network value</span>
+              <strong>{Math.round(networkValueSats).toLocaleString()} proofs</strong>
+            </div>
+            <div>
+              <span>Floor USD</span>
+              <strong>{tokenUsd(floorUsd)}</strong>
+            </div>
+            <div>
+              <span>Network USD</span>
+              <strong>{tokenUsd(networkUsd)}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="id-launch-card token-mint-card">
+          <div className="id-card-heading compact">
+            <div className="id-card-icon">
+              <Send size={22} />
+            </div>
+            <div>
+              <h2>Create Bond</h2>
+              <p>{summary?.registryAddress || POWB_REGISTRY_ID}</p>
+            </div>
+          </div>
+          <form className="id-form" onSubmit={submitBond}>
+            <div className="token-form-grid">
+              <label>
+                Proofs
+                <input
+                  min={1}
+                  onChange={(event) => setBondAmount(Number(event.target.value))}
+                  type="number"
+                  value={bondAmount}
+                />
+              </label>
+              <label>
+                Recipient
+                <input
+                  onChange={(event) => setBondRecipient(event.target.value)}
+                  placeholder="Blank uses connected address"
+                  value={bondRecipient}
+                />
+              </label>
+            </div>
+            <div className="id-launch-stats token-stats-row">
+              <div>
+                <span>POWB credit</span>
+                <strong>
+                  {Math.max(0, Math.floor(bondAmount || 0)).toLocaleString()} POWB
+                </strong>
+              </div>
+              <div>
+                <span>Recipient</span>
+                <strong>{recipientText}</strong>
+              </div>
+              <div>
+                <span>Payload</span>
+                <strong>{bondBytes.toLocaleString()} bytes</strong>
+              </div>
+            </div>
+            <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+            <button className="primary" disabled={!canCreateBond} type="submit">
+              <span className="button-content">
+                <Send size={16} />
+                <span>Create bond</span>
+              </span>
+            </button>
+          </form>
+        </section>
+
+        <TokenWalletWorkspace
+          address={address}
+          balances={balances}
+          btcUsd={btcUsd}
+          canList={canList}
+          canTransfer={canTransfer}
+          closedListings={closedListings}
+          compact
+          delistListing={delistListing}
+          feeRate={feeRate}
+          listAmount={listAmount}
+          listBuyerAddress={listBuyerAddress}
+          listPriceSats={listPriceSats}
+          listing={listing}
+          listings={listings}
+          listSpendableBalance={listSpendableBalance}
+          sealListing={sealListing}
+          selectedTokenId={selectedTokenId}
+          setFeeRate={setFeeRate}
+          setListAmount={setListAmount}
+          setListBuyerAddress={setListBuyerAddress}
+          setListPriceSats={setListPriceSats}
+          setSelectedTokenId={setSelectedTokenId}
+          setTransferAmount={setTransferAmount}
+          setTransferRecipient={setTransferRecipient}
+          submitList={submitList}
+          submitTransfer={submitTransfer}
+          tokenSales={sales}
+          transferAmount={transferAmount}
+          transferBalance={transferBalance}
+          transferBytes={transferBytes}
+          transferRecipient={transferRecipient}
+          transferToken={transferToken}
+          transferring={transferring}
+          transfers={transfers}
+          workFloorLoading={workFloorLoading}
+          workFloorQuote={workFloorQuote}
+        />
+
+        <TokenMarketplacePanel
+          address={address}
+          btcUsd={btcUsd}
+          busy={busy}
+          buyListing={buyListing}
+          closedListings={closedListings}
+          feeRate={feeRate}
+          listings={listings}
+          mints={mints}
+          network={network}
+          preserveRoute
+          sales={sales}
+          selectedTokenMarketId={POWB_TOKEN_ID}
+          setFeeRate={setFeeRate}
+          tokens={tokens}
+          transfers={transfers}
+          workFloorLoading={workFloorLoading}
+          workFloorQuote={workFloorQuote}
+        />
+      </section>
+
+      <SocialFooter />
+    </main>
+  );
+}
 
 function TokenWalletApp({
   address,
@@ -28260,6 +29350,7 @@ function TokenMarketplacePanel({
   onOpenTokenWorkspace,
   onOpenWalletWorkspace,
   onSelectedTokenMarketIdChange,
+  preserveRoute = false,
   sales,
   selectedTokenMarketId: controlledSelectedTokenMarketId,
   setFeeRate,
@@ -28281,6 +29372,7 @@ function TokenMarketplacePanel({
   onOpenTokenWorkspace?: (token?: PowTokenDefinition) => void;
   onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
   onSelectedTokenMarketIdChange?: (tokenId: string) => void;
+  preserveRoute?: boolean;
   sales: PowTokenSale[];
   selectedTokenMarketId?: string;
   setFeeRate: (value: number) => void;
@@ -28344,7 +29436,7 @@ function TokenMarketplacePanel({
     setTokenMarketLogPageIndex(0);
   }, [selectedMarketToken?.tokenId]);
   const setTokenMarketRoute = (tokenId: string) => {
-    if (typeof window === "undefined") {
+    if (preserveRoute || typeof window === "undefined") {
       return;
     }
 

@@ -152,9 +152,11 @@ marketplace, mail/file, seeded, and broader Computer events; `address-mail`
 serves connected-wallet mailbox reads from the indexed mail projection,
 including confirmed Inbox/Sent and indexed pending Incoming/Outbox visibility.
 `pwm1:m:powb` is normalized as `infinity-bond` for Log/Event/summary accounting
-but still projects into `mail_items` so confirmed self-sends land in both Inbox
-and Sent. The `log` flag is reserved for an explicit full activity snapshot
-refresh. Fresh reads still use the node/API path so explicit
+but still projects into `mail_items`. Each confirmed bond recipient payment
+mints POWB to that recipient address, one POWB per proof sent; self-sends are
+the self-recipient case and land in both Inbox and Sent. The `log` flag is
+reserved for an explicit full activity snapshot refresh. Fresh reads still use
+the node/API path so explicit
 refreshes converge on current chain and mempool truth.
 
 The worker script keeps the indexer warm by repeatedly running bounded
@@ -598,6 +600,7 @@ After changing the API or production build, verify:
 - Browser can load a txid with HTML in the message body or a verified `text/html` attachment, render it in a sandbox, and reject non-HTML message/attachment data.
 - Standalone Marketplace can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Credit, Wallet, and Marketplace transaction buttons can load UTXOs, previous transaction hex, and listing-anchor outspends through the first-party API before opening UniSat.
+- `infinity.proofofwork.me` loads `/api/v1/infinity-summary`, can broadcast a `pwm1:m:powb` bond message to a recipient, and shows POWB balances/listings from the same sale-ticket ledger as credits.
 - Log can load global ProofOfWork Computer events and search an address, confirmed ProofOfWork ID, or txid.
 - Known confirmed ledger regression txids are searchable in Log, including `411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891` and `b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34`.
 - `npm run indexer:parity` passes against production and reports canonical/database snapshot parity plus populated participants/refs.

@@ -111,6 +111,7 @@ token.proofofwork.me        permanent redirect to https://credit.proofofwork.me/
 tokens.proofofwork.me       permanent redirect to https://credit.proofofwork.me/
 wallet.proofofwork.me      standalone credit wallet, transfer, listing, delisting, and sale-history app
 work.proofofwork.me         standalone WORK credit dashboard and mint page
+infinity.proofofwork.me     standalone Infinity Bond / POWB market and bond composer
 log.proofofwork.me          public ProofOfWork Computer log
 growth.proofofwork.me       public growth model dashboard
 ```
@@ -120,7 +121,7 @@ The Desktop subdomain can resolve confirmed IDs for public file browsing, but it
 Confessions is staged/local-only for a Twitter-like 140-character social meta protocol over confirmed ProofOfWork IDs. It must not mutate the canonical `pwid1:` registry for follows, likes, reposts, or replies and must not be added to public production navigation until separately approved.
 The Marketplace subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers. It is tabbed by asset class: the ID tab is live, and the Credit tab uses the same sale-ticket shape for credit `list5`, `seal5`, `delist5`, and `buy5` records.
 The Log subdomain is read-only. It exposes a unified ProofOfWork Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, credit sales, and seeded Computer mail events. Log search is server-backed by the canonical livenet ledger, so address, confirmed ID, txid, participant, and token searches should agree with global Log.
-The Credit subdomain creates and mints mint-first `pwt1:` credits. The `tokens` subdomain redirects to Credit. The Wallet subdomain tracks credit balances and broadcasts `pwt1:send` transfers that pay the credit registry. The WORK subdomain is the dedicated WORK credit dashboard.
+The Credit subdomain creates and mints mint-first `pwt1:` credits. The `tokens` subdomain redirects to Credit. The Wallet subdomain tracks credit balances and broadcasts `pwt1:send` transfers that pay the credit registry. The WORK subdomain is the dedicated WORK credit dashboard. The Infinity subdomain tracks POWB supply/floor data, creates `pwm1:m:powb` bond messages, and reuses the credit sale-ticket lifecycle for POWB transfers and trades.
 The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace/Credit network-value model with confirmed registry, log, file, marketplace, and credit value metrics in proofs and USD. Growth, WORK, Log, and credit/token history should share one confirmed livenet ledger snapshot after refresh. WORK has a permanent floor derived from this confirmed network value: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`; the inverse `21,000,000 / confirmed_network_value_sats` is the WORK-per-proof ratio.
 
 Local preview:
@@ -128,12 +129,19 @@ Local preview:
 ```text
 http://localhost:5173/?id-launch=1
 http://localhost:5173/?confessions=1
+http://localhost:5173/?infinity=1
 ```
 
 ID-only launch build:
 
 ```bash
 VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
+```
+
+Infinity-only production build:
+
+```bash
+VITE_INFINITY_ONLY=1 VITE_POW_API_BASE=https://infinity.proofofwork.me npm run build
 ```
 
 Use that environment variable for the Phase 1 server so the full mail app stays hidden even if someone opens the bare IP address or a non-ID hostname.

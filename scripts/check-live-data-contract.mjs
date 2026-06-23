@@ -4,6 +4,7 @@ const server = readFileSync("server/proof-api.mjs", "utf8");
 const proofIndexReader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
 const proofIndexerBackfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const app = readFileSync("src/App.tsx", "utf8");
+const routeRegistry = readFileSync("src/app/routeRegistry.ts", "utf8");
 const proofIndexDeploy = readFileSync("deploy/proofofwork-api-proof-index.conf", "utf8");
 const packageJson = readFileSync("package.json", "utf8");
 const failures = [];
@@ -70,11 +71,15 @@ expectAll("canonical ledger cache is first-class", server, [
 expectAll("canonical ledger builder owns shared state", server, [
   /async function buildCanonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)/,
   /const valueTokenState = tokenStateWithScopedTokenOverride\(/,
+  /let ledgerTokenState = valueTokenState/,
+  /powbMintsFromActivity\(baseActivity,\s*powbRegistryAddress,\s*network\)/,
+  /tokenStateWithScopedTokenOverride\([\s\S]*POWB_TOKEN_ID/,
   /const seededMailActivityState = await seededMailActivityPayload\(/,
   /\.\.\.\(Array\.isArray\(seededMailActivityState\?\.activity\)/,
-  /tokenActivityItemsFromState\(\s*valueTokenState/,
+  /tokenActivityItemsFromState\(\s*ledgerTokenState/,
   /workFloorPayloadFromState\(/,
   /growthSummaryPayloadFromLedger\(/,
+  /infinitySummaryPayloadFromLedger\(/,
   /ledgerSnapshotChecks\(/,
   /snapshotId/,
 ]);
@@ -324,6 +329,20 @@ expectAll("Infinity Bond mail normalization spans DB reads", proofIndexReader, [
   /activityPayload\.activity\.map\(\(item\) => normalizeEventPayload\(item\)\)/,
   /filters\.push\(eventKindSqlCondition\(kind,\s*addValue\)\)/,
   /items: rowsResult\.rows\.map\(\(row\) => eventRowPayload\(row,\s*network\)\)/,
+]);
+expectAll("Infinity Bond POWB recipient-credit market is wired", server + app + routeRegistry, [
+  /const POWB_TOKEN_TICKER = "POWB"/,
+  /const POWB_REGISTRY_ID = "infinity@proofofwork.me"/,
+  /function powbRecipientMintsFromActivityItem\(item,\s*network\)/,
+  /item\.recipients[\s\S]*recipient\.amountSats[\s\S]*recipient\.address/,
+  /minterAddress:\s*recipientMint\.minterAddress/,
+  /url\.pathname === "\/api\/v1\/infinity-summary"/,
+  /function isInfinityRoute\(\)/,
+  /function InfinityApp\(/,
+  /fetchInfinitySummary\(fresh\)/,
+  /submitBond=\{createInfinityBond\}/,
+  /address:\s*resolvedRecipient\.paymentAddress/,
+  /minterAddress:\s*mailRecipient\.address/,
 ]);
 expectAll("backfill writes powb mail as Infinity Bond projections", proofIndexerBackfill, [
   /const INFINITY_BOND_MEMO = "powb"/,
