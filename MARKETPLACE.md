@@ -108,6 +108,12 @@ volume, POWB transfer mutation fees, and POWB sale-ticket mutation fees. POWB
 sales and mutation fees also feed the broader ProofOfWork Computer/WORK floor
 through the normal confirmed marketplace flow.
 
+After the June 23, 2026 Infinity launch, POWB has both a standalone surface at
+`infinity.proofofwork.me` and an embedded Computer workspace at
+`computer.proofofwork.me/?folder=infinity`. Both views must use POWB-specific
+market labels, charts, balances, sale tickets, and listing logs; stale credit
+market copy on the Infinity surface is a release blocker.
+
 ## June 13-16 Ledger Hardening
 
 The June 2026 marketplace fixes preserved these operational invariants:
