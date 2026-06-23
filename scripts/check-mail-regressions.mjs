@@ -6,7 +6,7 @@ const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
   "",
 );
 const NETWORK = String(process.env.POW_NETWORK ?? "livenet");
-const FETCH_TIMEOUT_MS = Number(process.env.POW_MAIL_CHECK_TIMEOUT_MS ?? 30000);
+const FETCH_TIMEOUT_MS = Number(process.env.POW_MAIL_CHECK_TIMEOUT_MS ?? 90000);
 
 const CHECKS = [
   {
