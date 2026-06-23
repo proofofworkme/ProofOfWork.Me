@@ -11031,6 +11031,21 @@ function tokenAggregateSummaries(payload) {
   return summaries;
 }
 
+function tokenSummaryMetricValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function mergedTokenSummaryMetric(token, summary, key, preserveExisting) {
+  const tokenValue = tokenSummaryMetricValue(token?.[key]);
+  if (preserveExisting && tokenValue !== undefined) {
+    return tokenValue;
+  }
+
+  const summaryValue = tokenSummaryMetricValue(summary?.[key]);
+  return summaryValue ?? tokenValue;
+}
+
 function scopedTokenPayloadFromState(tokenState, scope) {
   const normalizedScope = normalizeTokenScope(scope);
   if (!normalizedScope) {
@@ -11284,6 +11299,7 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
   const scope = normalizeTokenScope(tokenScope);
   const rawTokens = Array.isArray(payload.tokens) ? payload.tokens : [];
   const tokenSummaries = tokenAggregateSummaries(payload);
+  const preserveExistingTokenMetrics = payload.summaryOnly === true;
   const scopedTokenId =
     scope && rawTokens.length === 1 && tokenMatchesScope(rawTokens[0], scope)
       ? rawTokens[0].tokenId
@@ -11298,14 +11314,81 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
     const summary = tokenSummaries.get(token.tokenId) ?? {};
     const next = {
       ...token,
-      ...summary,
+      confirmedMints: mergedTokenSummaryMetric(
+        token,
+        summary,
+        "confirmedMints",
+        preserveExistingTokenMetrics,
+      ),
+      confirmedSupply: mergedTokenSummaryMetric(
+        token,
+        summary,
+        "confirmedSupply",
+        preserveExistingTokenMetrics,
+      ),
+      holderCount: mergedTokenSummaryMetric(
+        token,
+        summary,
+        "holderCount",
+        preserveExistingTokenMetrics,
+      ),
+      lastSalePricePerToken: mergedTokenSummaryMetric(
+        token,
+        summary,
+        "lastSalePricePerToken",
+        preserveExistingTokenMetrics,
+      ),
+      lowestAskPricePerToken: mergedTokenSummaryMetric(
+        token,
+        summary,
+        "lowestAskPricePerToken",
+        preserveExistingTokenMetrics,
+      ),
+      openListings: mergedTokenSummaryMetric(
+        token,
+        summary,
+        "openListings",
+        preserveExistingTokenMetrics,
+      ),
+      pendingMints: mergedTokenSummaryMetric(
+        token,
+        summary,
+        "pendingMints",
+        preserveExistingTokenMetrics,
+      ),
+      pendingSupply: mergedTokenSummaryMetric(
+        token,
+        summary,
+        "pendingSupply",
+        preserveExistingTokenMetrics,
+      ),
+      transferCount: mergedTokenSummaryMetric(
+        token,
+        summary,
+        "transferCount",
+        preserveExistingTokenMetrics,
+      ),
     };
     if (scopedTokenId && token.tokenId === scopedTokenId) {
       if (scopedConfirmedSupply !== undefined) {
-        next.confirmedSupply = scopedConfirmedSupply;
+        const nextConfirmedSupply = tokenSummaryMetricValue(
+          next.confirmedSupply,
+        );
+        next.confirmedSupply =
+          preserveExistingTokenMetrics &&
+          nextConfirmedSupply !== undefined &&
+          nextConfirmedSupply > scopedConfirmedSupply
+            ? nextConfirmedSupply
+            : scopedConfirmedSupply;
       }
       if (scopedPendingSupply !== undefined) {
-        next.pendingSupply = scopedPendingSupply;
+        const nextPendingSupply = tokenSummaryMetricValue(next.pendingSupply);
+        next.pendingSupply =
+          preserveExistingTokenMetrics &&
+          nextPendingSupply !== undefined &&
+          nextPendingSupply > scopedPendingSupply
+            ? nextPendingSupply
+            : scopedPendingSupply;
       }
     }
     return next;

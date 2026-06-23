@@ -144,6 +144,15 @@ expectAll("server scoped credit fresh reads prefer canonical ledger on livenet",
   /fresh &&[\s\S]*scope &&[\s\S]*scope !== WORK_TOKEN_ID &&[\s\S]*!\(network === "livenet" && useLedgerSnapshot\) &&[\s\S]*options\.preferScopedRefresh !== false/,
 ]);
 
+expectAll("server compact token summaries preserve existing row supply metrics", server, [
+  /function tokenSummaryMetricValue\(value\)[\s\S]*Number\.isFinite\(number\) && number >= 0/,
+  /function mergedTokenSummaryMetric\(token,\s*summary,\s*key,\s*preserveExisting\)[\s\S]*preserveExisting && tokenValue !== undefined/,
+  /const preserveExistingTokenMetrics = payload\.summaryOnly === true/,
+  /confirmedSupply:\s*mergedTokenSummaryMetric\(\s*token,\s*summary,\s*"confirmedSupply",\s*preserveExistingTokenMetrics,\s*\)/,
+  /pendingSupply:\s*mergedTokenSummaryMetric\(\s*token,\s*summary,\s*"pendingSupply",\s*preserveExistingTokenMetrics,\s*\)/,
+  /nextConfirmedSupply > scopedConfirmedSupply[\s\S]*nextPendingSupply > scopedPendingSupply/,
+]);
+
 expectAll("Desktop public search stays on first-party ProofOfWork API", app, [
   /function DesktopApp\([\s\S]*<DesktopWorkspace[\s\S]*onSearch=\{onSearch\}/,
 ]);

@@ -12,6 +12,8 @@ const FETCH_TIMEOUT_MS = Number(
 
 const POW_TOKEN_ID =
   "e5c5ba610cf56e3fc31f8937d042497ca827f6a5d01eca7dcd05c2bbbbad1f4f";
+const WORK_TOKEN_ID =
+  "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 
 function assert(condition, message) {
   if (!condition) {
@@ -41,12 +43,45 @@ async function getJson(path, params = {}) {
   return response.json();
 }
 
-function findPowToken(payload) {
+function findToken(payload, tokenId, ticker) {
   return (Array.isArray(payload?.tokens) ? payload.tokens : []).find(
     (token) =>
-      token?.tokenId === POW_TOKEN_ID ||
-      String(token?.ticker ?? "").toUpperCase() === "POW",
+      token?.tokenId === tokenId ||
+      String(token?.ticker ?? "").toUpperCase() === ticker,
   );
+}
+
+function findPowToken(payload) {
+  return findToken(payload, POW_TOKEN_ID, "POW");
+}
+
+function assertIndexedSupply(label, payload, tokenId, ticker) {
+  const token = findToken(payload, tokenId, ticker);
+  assert(token, `${label}: missing ${ticker} token row`);
+
+  const confirmedSupply = numberValue(token.confirmedSupply);
+  const confirmedMints = numberValue(token.confirmedMints);
+  const maxSupply = numberValue(token.maxSupply);
+
+  assert(maxSupply > 0, `${label}: ${ticker} max supply is missing`);
+  assert(
+    confirmedSupply > 0,
+    `${label}: ${ticker} token row has zero confirmed supply`,
+  );
+  assert(
+    confirmedSupply <= maxSupply,
+    `${label}: ${ticker} confirmed supply exceeds max (${confirmedSupply}/${maxSupply})`,
+  );
+  assert(
+    confirmedMints > 0,
+    `${label}: ${ticker} token row has zero confirmed mints`,
+  );
+
+  return {
+    confirmedMints,
+    confirmedSupply,
+    maxSupply,
+  };
 }
 
 function assertPowMintable(label, payload) {
@@ -97,6 +132,12 @@ const scopedByTickerSummary = await getJson("/api/v1/token-summary", {
 });
 
 const unscopedPow = assertPowMintable("unscoped summary POW row", unscopedSummary);
+const unscopedWork = assertIndexedSupply(
+  "unscoped summary WORK row",
+  unscopedSummary,
+  WORK_TOKEN_ID,
+  "WORK",
+);
 const cachedScopedByIdPow = assertPowMintable(
   "cached asset-id scoped POW summary",
   cachedScopedByIdSummary,
@@ -133,5 +174,5 @@ assert(
 );
 
 console.log(
-  `Credit mint regression checks passed for ${API_BASE}: POW ${scopedByIdPow.confirmedSupply.toLocaleString()}/${scopedByIdPow.maxSupply.toLocaleString()} confirmed, ${scopedByIdPow.pendingSupply.toLocaleString()} pending, ${scopedByIdPow.availableSupply.toLocaleString()} available.`,
+  `Credit mint regression checks passed for ${API_BASE}: POW ${scopedByIdPow.confirmedSupply.toLocaleString()}/${scopedByIdPow.maxSupply.toLocaleString()} confirmed, ${scopedByIdPow.pendingSupply.toLocaleString()} pending, ${scopedByIdPow.availableSupply.toLocaleString()} available; WORK ${unscopedWork.confirmedSupply.toLocaleString()}/${unscopedWork.maxSupply.toLocaleString()} confirmed.`,
 );
