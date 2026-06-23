@@ -53,6 +53,16 @@ const CHECKS = [
     mustSentTxid:
       "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
   },
+  {
+    address: "bc1q7lvsdf0lpgmvn0c8emj9zvjm0sycn4lu3qrry0",
+    label: "desktop public file sender",
+    minSent: 1,
+    minTotal: 1,
+    mustAttachmentMime: "image/jpeg",
+    mustAttachmentName: "pepe mic drop.jpeg",
+    mustAttachmentTxid:
+      "e6ad5d7c10e19bd3e34155061ba05ed4862b2aecf35ae4dc5f59a10aedaf22a1",
+  },
 ];
 
 const REGISTRY_RESOLUTION_CHECKS = [
@@ -263,6 +273,31 @@ function assertMailbox(check, payload) {
       }
       if (/^Subject:\s*/iu.test(memo.trim())) {
         failures.push(`subject/body tx ${check.mustBodyTxid} still uses subject as body`);
+      }
+    }
+  }
+  if (check.mustAttachmentTxid) {
+    const message = [...inboxMessages, ...sentMessages].find(
+      (item) =>
+        String(item?.txid ?? "").toLowerCase() ===
+        String(check.mustAttachmentTxid).toLowerCase(),
+    );
+    if (!message) {
+      failures.push(`missing attachment tx ${check.mustAttachmentTxid}`);
+    } else if (!message.attachment) {
+      failures.push(`attachment tx ${check.mustAttachmentTxid} has no attachment`);
+    } else {
+      const name = String(message.attachment.name ?? "");
+      const mime = String(message.attachment.mime ?? "");
+      if (check.mustAttachmentName && name !== check.mustAttachmentName) {
+        failures.push(
+          `attachment tx ${check.mustAttachmentTxid} has wrong name ${name}`,
+        );
+      }
+      if (check.mustAttachmentMime && mime !== check.mustAttachmentMime) {
+        failures.push(
+          `attachment tx ${check.mustAttachmentTxid} has wrong mime ${mime}`,
+        );
       }
     }
   }

@@ -167,6 +167,12 @@ expectAll("Desktop search loader uses address mail read", loadDesktopTargetSourc
 expect("Desktop public search must keep fetchAddressMail source present", Boolean(fetchAddressMailSource));
 expect("Desktop public search must keep loadDesktopTarget source present", Boolean(loadDesktopTargetSource));
 expect("Desktop public app source must stay present", Boolean(desktopAppSource));
+expect("Desktop public route must not expose network switching controls", !/onNetworkChange/.test(desktopAppSource));
+expectAll("Desktop public route has dedicated metadata", app, [
+  /desktopRoute[\s\S]*Search public confirmed ProofOfWork files by address or confirmed ProofOfWork ID\./,
+  /title:\s*"ProofOfWork Desktop"/,
+  /\},\s*\[desktopRoute,\s*idLaunchMode\]\)/,
+]);
 expect("fetchAddressMail must not call public mempool.space", !/mempool\.space/i.test(fetchAddressMailSource));
 expect("loadDesktopTarget must not call public mempool.space", !/mempool\.space/i.test(loadDesktopTargetSource));
 expect("DesktopApp must not call public mempool.space", !/mempool\.space/i.test(desktopAppSource));
@@ -187,7 +193,9 @@ expectAll("API address app reads stay first-party", server, [
   /async function reconcileMailPayloadStatuses\(payload,\s*network\)[\s\S]*txStatusPayload\(txid,\s*network\)[\s\S]*status\?\.status === "dropped"[\s\S]*return \[\]/,
   /function mailActivityItemFromTransaction\(tx,\s*network\)[\s\S]*memo: protocolMessage\.memo[\s\S]*subject: protocolMessage\.subject/,
   /function mailPayloadHasMessages\(payload\)/,
-  /async function repairMailPayloadBodies\(payload,\s*address,\s*network\)[\s\S]*fetchTransactionWithSourceFallback\(txid,\s*network\)[\s\S]*inboxMessagesFromTransactions\(\[tx\],\s*address,\s*network\)/,
+  /function mailMessageNeedsAttachmentRepair\(message\)[\s\S]*return !message\?\.attachment/,
+  /function mailMessageNeedsContentRepair\(message\)[\s\S]*mailMessageNeedsBodyRepair\(message\)[\s\S]*mailMessageNeedsAttachmentRepair\(message\)/,
+  /async function repairMailPayloadBodies\(payload,\s*address,\s*network\)[\s\S]*mailMessageNeedsContentRepair[\s\S]*fetchTransactionWithSourceFallback\(txid,\s*network\)[\s\S]*inboxMessagesFromTransactions\(\[tx\],\s*address,\s*network\)[\s\S]*repairedAttachments/,
   /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedPayload = await indexedMailPayload\(address,\s*network\)[\s\S]*if \(!fresh && indexedPayload && mailPayloadHasMessages\(indexedPayload\)\) \{[\s\S]*repairMailPayloadBodies\(indexedPayload,\s*address,\s*network\)/,
   /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedWasEmpty = Boolean\(indexedPayload\) && !mailPayloadHasMessages\(indexedPayload\)[\s\S]*includeExternal:\s*indexedWasEmpty \|\| fresh \|\| !indexedPayload[\s\S]*preferExternal:\s*indexedWasEmpty/,
   /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*mergeMailPayloads\(indexedPayload,\s*scannedPayload\)/,
@@ -197,6 +205,9 @@ expectAll("API address app reads stay first-party", server, [
 expectAll("proof index mail body projection separates subject from body", proofIndexReader + proofIndexerBackfill, [
   /function mailMemoFromEvent\(row,\s*payload\)[\s\S]*payload\.body \?\? payload\.message \?\? payload\.memo[\s\S]*!subjectOnlyMailBody\(storedBody\)/,
   /function mailItemBodyText\(item\)[\s\S]*item\?\.body \?\? item\?\.message \?\? item\?\.memo[\s\S]*!subjectOnlyMailBody\(detail\)/,
+]);
+expectAll("proof index address mail exposes file kinds for Desktop repair", proofIndexReader, [
+  /protocolKind:\s*row\.kind/,
 ]);
 expect("pending mempool bases must not hardcode public explorer data sources", !/explorerBase|explorerReadBases|mempool\.space/i.test(pendingMempoolBasesSource));
 expectAll("transaction hex PSBT reads stay first-party", txHexPayloadSource, [

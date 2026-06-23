@@ -13545,13 +13545,19 @@ export default function App() {
               "Claim a permanent on-chain ProofOfWork ID that resolves to your ProofOfWork receive address.",
             title: "ProofOfWork IDs",
           }
+        : desktopRoute
+          ? {
+              description:
+                "Search public confirmed ProofOfWork files by address or confirmed ProofOfWork ID.",
+              title: "ProofOfWork Desktop",
+            }
         : {
             description:
               "ProofOfWork.Me is the ProofOfWork Computer: local-first, on-chain identity, mail, files, pages, markets, credits, logs, and proof.",
             title: "ProofOfWork.Me",
           },
     );
-  }, [idLaunchMode]);
+  }, [desktopRoute, idLaunchMode]);
 
   useEffect(() => {
     const detectWallet = () => setHasUnisat(Boolean(window.unisat));
@@ -20459,7 +20465,6 @@ export default function App() {
         selectedKey={desktopSelectedKey}
         setDesktopQuery={setDesktopQuery}
         setFileFilter={setFileFilter}
-        onNetworkChange={chooseNetwork}
         setSortMode={setSortMode}
         sortMode={sortMode}
         status={status}
@@ -22429,7 +22434,6 @@ function DesktopApp({
   sortMode,
   status,
   onClear,
-  onNetworkChange,
   onRefresh,
   onSearch,
   onSelect,
@@ -22447,7 +22451,6 @@ function DesktopApp({
   sortMode: SortMode;
   status: { tone: StatusTone; text: string };
   onClear: () => void;
-  onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
   onSelect: (message: MailMessage) => void;
@@ -22456,7 +22459,6 @@ function DesktopApp({
     <main className="desktop-public-app has-route-status">
       <AppHeader
         network={activeNetwork}
-        onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
         subtitle="Public file search"
         title="ProofOfWork Desktop"

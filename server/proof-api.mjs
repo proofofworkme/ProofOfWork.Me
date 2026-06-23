@@ -17871,20 +17871,60 @@ function mailMessageNeedsBodyRepair(message) {
   return !memo || subjectOnlyMailBody(memo);
 }
 
+function mailMessageNeedsAttachmentRepair(message) {
+  const txid = String(message?.txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(txid)) {
+    return false;
+  }
+  if (message?.confirmed === false || message?.status === "pending") {
+    return false;
+  }
+  const protocolKind = String(message?.protocolKind ?? message?.kind ?? "")
+    .trim()
+    .toLowerCase();
+  if (!["file", "attachment", "browser"].includes(protocolKind)) {
+    return false;
+  }
+  return !message?.attachment;
+}
+
+function mailMessageNeedsContentRepair(message) {
+  return (
+    mailMessageNeedsBodyRepair(message) ||
+    mailMessageNeedsAttachmentRepair(message)
+  );
+}
+
+function mailMessageTimeMs(message) {
+  const timeMs = Date.parse(message?.createdAt ?? "");
+  return Number.isFinite(timeMs) ? timeMs : 0;
+}
+
+function compareMailContentRepairPriority(left, right) {
+  return (
+    Number(mailMessageNeedsAttachmentRepair(right)) -
+      Number(mailMessageNeedsAttachmentRepair(left)) ||
+    mailMessageTimeMs(right) - mailMessageTimeMs(left) ||
+    String(right?.txid ?? "").localeCompare(String(left?.txid ?? ""))
+  );
+}
+
 function mailMessageHasRealBody(message) {
   const memo = String(message?.memo ?? "").trim();
   return Boolean(memo && !subjectOnlyMailBody(memo));
 }
 
 function mergeRepairedMailMessage(message, recovered) {
-  if (!mailMessageHasRealBody(recovered)) {
+  const hasRecoveredBody = mailMessageHasRealBody(recovered);
+  const recoveredAttachment = recovered?.attachment;
+  if (!hasRecoveredBody && !recoveredAttachment) {
     return message;
   }
 
   return {
     ...message,
-    attachment: recovered.attachment ?? message.attachment,
-    memo: recovered.memo,
+    attachment: recoveredAttachment ?? message.attachment,
+    memo: hasRecoveredBody ? recovered.memo : message.memo,
     parentTxid: recovered.parentTxid ?? message.parentTxid,
     recipients: recovered.recipients ?? message.recipients,
     replyTo:
@@ -17913,7 +17953,8 @@ async function repairMailPayloadBodies(payload, address, network) {
   const repairTxids = [
     ...new Set(
       [...inboxMessages, ...sentMessages]
-        .filter(mailMessageNeedsBodyRepair)
+        .filter(mailMessageNeedsContentRepair)
+        .sort(compareMailContentRepairPriority)
         .map((message) => String(message.txid).toLowerCase()),
     ),
   ].slice(0, Math.max(0, MAIL_BODY_REPAIR_MAX_TXS));
@@ -17940,9 +17981,10 @@ async function repairMailPayloadBodies(payload, address, network) {
   }
 
   let repairedBodies = 0;
+  let repairedAttachments = 0;
   const repairList = (messages, folder) =>
     messages.map((message) => {
-      if (!mailMessageNeedsBodyRepair(message)) {
+      if (!mailMessageNeedsContentRepair(message)) {
         return message;
       }
       const txid = String(message.txid ?? "").toLowerCase();
@@ -17950,16 +17992,21 @@ async function repairMailPayloadBodies(payload, address, network) {
       const recovered = recoveredGroup?.[folder]?.find(
         (candidate) => String(candidate?.txid ?? "").toLowerCase() === txid,
       );
+      const hadRealBody = mailMessageHasRealBody(message);
+      const hadAttachment = Boolean(message.attachment);
       const repaired = mergeRepairedMailMessage(message, recovered);
-      if (repaired !== message) {
+      if (!hadRealBody && mailMessageHasRealBody(repaired)) {
         repairedBodies += 1;
+      }
+      if (!hadAttachment && repaired.attachment) {
+        repairedAttachments += 1;
       }
       return repaired;
     });
 
   const repairedInbox = repairList(inboxMessages, "inbox");
   const repairedSent = repairList(sentMessages, "sent");
-  if (repairedBodies === 0) {
+  if (repairedBodies === 0 && repairedAttachments === 0) {
     return payload;
   }
 
@@ -17971,6 +18018,7 @@ async function repairMailPayloadBodies(payload, address, network) {
     source: mergedSourceLabel(payload.source, "raw-mail-body-repair"),
     stats: {
       ...(payload.stats ?? {}),
+      repairedAttachments,
       repairedBodies,
     },
   };
