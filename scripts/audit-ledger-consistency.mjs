@@ -157,6 +157,8 @@ function isGullishBuyerTokenSale(item) {
 const [
   consistency,
   workFloor,
+  workSummary,
+  marketplaceSummary,
   growthSummary,
   btcUsdPrice,
   txLog,
@@ -181,6 +183,8 @@ const [
   await Promise.all([
     readJson("/api/v1/consistency"),
     readJson("/api/v1/work-floor"),
+    readJson("/api/v1/work-summary"),
+    readJson("/api/v1/marketplace-summary"),
     readJson("/api/v1/growth-summary"),
     readJson("/api/v1/prices/btc-usd?fresh=1"),
     readJson(`/api/v1/log-history?q=${GULLISH_TXID}`),
@@ -282,16 +286,53 @@ expect(
 );
 const liveBtcUsd = numberValue(workFloor.btcUsd);
 const priceEndpointBtcUsd = numberValue(btcUsdPrice.usd ?? btcUsdPrice.USD);
+const workSummaryFloor = workSummary.floor ?? {};
+const marketplaceSummaryWorkFloor = marketplaceSummary.workFloor ?? {};
+const workSummaryBtcUsd = numberValue(workSummaryFloor.btcUsd);
+const marketplaceSummaryBtcUsd = numberValue(marketplaceSummaryWorkFloor.btcUsd);
 expect("WORK exposes live BTC/USD metadata", liveBtcUsd > 0);
 expect(
   "WORK BTC/USD metadata matches price endpoint",
   btcUsdQuotesClose(liveBtcUsd, priceEndpointBtcUsd),
 );
 expect(
+  "WORK summary floor shares WORK floor value",
+  numbersAgree(workSummaryFloor.networkValueSats, workFloor.networkValueSats),
+);
+expect(
+  "WORK summary floor BTC/USD metadata matches price endpoint",
+  btcUsdQuotesClose(workSummaryBtcUsd, priceEndpointBtcUsd),
+);
+expect(
+  "Marketplace summary WORK floor BTC/USD metadata matches price endpoint",
+  btcUsdQuotesClose(marketplaceSummaryBtcUsd, priceEndpointBtcUsd),
+);
+expect(
   "WORK total USD uses live BTC/USD",
   usdNumbersAgree(
     workFloor.actualValue?.totalUsd,
     satsToUsd(workFloor.actualValue?.totalSats, liveBtcUsd),
+  ),
+);
+expect(
+  "WORK summary floor total USD uses live BTC/USD",
+  usdNumbersAgree(
+    workSummaryFloor.actualValue?.totalUsd,
+    satsToUsd(
+      workSummaryFloor.actualValue?.totalSats ?? workSummaryFloor.networkValueSats,
+      workSummaryBtcUsd,
+    ),
+  ),
+);
+expect(
+  "Marketplace summary WORK floor total USD uses live BTC/USD",
+  usdNumbersAgree(
+    marketplaceSummaryWorkFloor.actualValue?.totalUsd,
+    satsToUsd(
+      marketplaceSummaryWorkFloor.actualValue?.totalSats ??
+        marketplaceSummaryWorkFloor.networkValueSats,
+      marketplaceSummaryBtcUsd,
+    ),
   ),
 );
 expect(

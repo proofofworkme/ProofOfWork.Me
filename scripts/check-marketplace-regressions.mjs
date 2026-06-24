@@ -335,7 +335,42 @@ assert(
 const workToken = await getJson("/api/v1/token", {
   network: "livenet",
   asset: WORK_TOKEN_ID,
+  fresh: 1,
 });
+const [workSummary, workTokenSummary] = await Promise.all([
+  getJson("/api/v1/work-summary", {
+    network: "livenet",
+    fresh: 1,
+  }),
+  getJson("/api/v1/token-summary", {
+    network: "livenet",
+    asset: WORK_TOKEN_ID,
+    fresh: 1,
+  }),
+]);
+const activeWorkListingCount = (workToken.listings ?? []).length;
+const workSummaryToken = (workSummary.token?.tokens ?? []).find(
+  (item) => item?.tokenId === WORK_TOKEN_ID,
+);
+const scopedSummaryToken = (workTokenSummary.tokens ?? []).find(
+  (item) => item?.tokenId === WORK_TOKEN_ID,
+);
+assert(
+  (workSummary.token?.listings ?? []).length === activeWorkListingCount,
+  `/api/v1/work-summary?fresh=1 returned ${(workSummary.token?.listings ?? []).length} active WORK listings, expected ${activeWorkListingCount}`,
+);
+assert(
+  (workTokenSummary.listings ?? []).length === activeWorkListingCount,
+  `/api/v1/token-summary?asset=WORK&fresh=1 returned ${(workTokenSummary.listings ?? []).length} active WORK listings, expected ${activeWorkListingCount}`,
+);
+assert(
+  workSummaryToken?.openListings === activeWorkListingCount,
+  `/api/v1/work-summary?fresh=1 reports ${workSummaryToken?.openListings} open WORK listings, expected ${activeWorkListingCount}`,
+);
+assert(
+  scopedSummaryToken?.openListings === activeWorkListingCount,
+  `/api/v1/token-summary?asset=WORK&fresh=1 reports ${scopedSummaryToken?.openListings} open WORK listings, expected ${activeWorkListingCount}`,
+);
 const confirmedSealedListings = (workToken.listings ?? []).filter(
   tokenListingHasConfirmedSeal,
 );

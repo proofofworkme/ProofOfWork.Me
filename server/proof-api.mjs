@@ -1857,7 +1857,7 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
     indexedTokenMarketSummaryOverlay(network),
   ]);
   if (!workTokenState && !overlay) {
-    return payload;
+    return marketplaceSummaryWithCurrentBtcUsd(payload, network, false);
   }
 
   const baseTokenState = workTokenState
@@ -1867,16 +1867,20 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
     ? tokenStateWithIndexedMarketSummaryOverlay(baseTokenState, overlay)
     : baseTokenState;
   const token = compactTokenSummaryPayload(tokenState);
-  return {
-    ...payload,
-    indexedAt: newerIso(payload.indexedAt, token.indexedAt),
-    token,
-    workFloor: workFloorWithIndexedMarketSummaryOverlay(
-      payload.workFloor,
-      overlay,
-      tokenState,
-    ),
-  };
+  return marketplaceSummaryWithCurrentBtcUsd(
+    {
+      ...payload,
+      indexedAt: newerIso(payload.indexedAt, token.indexedAt),
+      token,
+      workFloor: workFloorWithIndexedMarketSummaryOverlay(
+        payload.workFloor,
+        overlay,
+        tokenState,
+      ),
+    },
+    network,
+    false,
+  );
 }
 
 function marketplaceSummaryHasIndexedMarketOverlay(payload) {
@@ -11538,13 +11542,15 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
     payload.stats && typeof payload.stats === "object" ? payload.stats : {};
   const walletScopedSummary =
     payload.walletScoped === true || stats.walletScoped === true;
+  const scope = normalizeTokenScope(tokenScope);
+  const includeAllActiveListings = walletScopedSummary || Boolean(scope);
   const closedListingLimit = walletScopedSummary
     ? Math.max(closedListings.length, SUMMARY_MARKET_LIMIT)
     : SUMMARY_MARKET_LIMIT;
   const holderLimit = walletScopedSummary
     ? Math.max(holders.length, SUMMARY_MARKET_LIMIT)
     : SUMMARY_MARKET_LIMIT;
-  const listingLimit = walletScopedSummary
+  const listingLimit = includeAllActiveListings
     ? Math.max(listings.length, SUMMARY_MARKET_LIMIT)
     : SUMMARY_MARKET_LIMIT;
   const saleLimit = walletScopedSummary
@@ -11553,9 +11559,8 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
         SUMMARY_MARKET_LIMIT,
       )
     : SUMMARY_MARKET_LIMIT;
-  const scope = normalizeTokenScope(tokenScope);
   const rawTokens = Array.isArray(payload.tokens) ? payload.tokens : [];
-  const tokenSummaries = tokenAggregateSummaries(payload);
+  const tokenSummaries = tokenAggregateSummaries({ ...payload, listings });
   const preserveExistingTokenMetrics = payload.summaryOnly === true;
   const scopedTokenId =
     scope && rawTokens.length === 1 && tokenMatchesScope(rawTokens[0], scope)
@@ -11605,7 +11610,7 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
         token,
         summary,
         "openListings",
-        preserveExistingTokenMetrics,
+        false,
       ),
       pendingMints: mergedTokenSummaryMetric(
         token,
@@ -14501,7 +14506,11 @@ async function tokenSummaryPayload(
   const summaryRecoveryAddresses = Array.isArray(options.recoveryAddresses)
     ? options.recoveryAddresses
     : [];
-  if (network === "livenet" && summaryRecoveryAddresses.length === 0) {
+  if (
+    network === "livenet" &&
+    summaryRecoveryAddresses.length === 0 &&
+    scope !== WORK_TOKEN_ID
+  ) {
     const ledger = await existingCanonicalLedgerPayload(network);
     if (fresh) {
       refreshCanonicalLedgerPayloadInBackground(network, true);
@@ -16321,6 +16330,36 @@ async function workFloorWithCurrentBtcUsd(workFloor, network, fresh = false) {
   }
 }
 
+async function workSummaryWithCurrentBtcUsd(payload, network, fresh = false) {
+  if (!payload?.floor) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    floor: await workFloorWithCurrentBtcUsd(payload.floor, network, fresh),
+  };
+}
+
+async function marketplaceSummaryWithCurrentBtcUsd(
+  payload,
+  network,
+  fresh = false,
+) {
+  if (!payload?.workFloor) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    workFloor: await workFloorWithCurrentBtcUsd(
+      payload.workFloor,
+      network,
+      fresh,
+    ),
+  };
+}
+
 function growthSummaryWithBtcUsdQuote(growthSummary, quote) {
   const btcUsdMetadata = btcUsdResponseMetadata(quote);
   if (!growthSummary || btcUsdMetadata.btcUsd <= 0) {
@@ -16425,18 +16464,22 @@ async function workSummaryPayload(network, fresh = false) {
         closedWorkTokenState,
         network,
       );
-      return attachLedgerMetadata(
-        {
-          floor: ledger.workFloor,
-          indexedAt: ledger.generatedAt,
-          network,
-          summaryOnly: true,
-          token: attachLedgerMetadata(
-            compactTokenSummaryPayload(spendableWorkTokenState, WORK_TOKEN_ID),
-            ledger,
-          ),
-        },
-        ledger,
+      return workSummaryWithCurrentBtcUsd(
+        attachLedgerMetadata(
+          {
+            floor: ledger.workFloor,
+            indexedAt: ledger.generatedAt,
+            network,
+            summaryOnly: true,
+            token: attachLedgerMetadata(
+              compactTokenSummaryPayload(spendableWorkTokenState, WORK_TOKEN_ID),
+              ledger,
+            ),
+          },
+          ledger,
+        ),
+        network,
+        fresh,
       );
     }
 
@@ -16633,10 +16676,14 @@ async function reconciledLivenetMarketplaceSummaryPayload(
         spendableTokenState,
         marketOverlay,
       );
-      const workFloor = workFloorWithIndexedMarketSummaryOverlay(
-        ledger.workFloor,
-        marketOverlay,
-        tokenState,
+      const workFloor = await workFloorWithCurrentBtcUsd(
+        workFloorWithIndexedMarketSummaryOverlay(
+          ledger.workFloor,
+          marketOverlay,
+          tokenState,
+        ),
+        network,
+        fresh,
       );
       const indexedAt = newerIso(ledger.generatedAt, tokenState?.indexedAt);
       return attachLedgerMetadata(
@@ -19639,7 +19686,12 @@ async function handleRequest(request, response) {
           return null;
         });
         if (indexedPayload) {
-          jsonResponse(response, 200, indexedPayload, READ_CACHE_CONTROL);
+          jsonResponse(
+            response,
+            200,
+            await workFloorWithCurrentBtcUsd(indexedPayload, network, false),
+            READ_CACHE_CONTROL,
+          );
           return;
         }
       }
@@ -19676,7 +19728,12 @@ async function handleRequest(request, response) {
           return null;
         });
         if (indexedPayload) {
-          jsonResponse(response, 200, indexedPayload, READ_CACHE_CONTROL);
+          jsonResponse(
+            response,
+            200,
+            await workSummaryWithCurrentBtcUsd(indexedPayload, network, false),
+            READ_CACHE_CONTROL,
+          );
           return;
         }
       }
@@ -19724,7 +19781,16 @@ async function handleRequest(request, response) {
           return null;
         });
         if (indexedPayload) {
-          jsonResponse(response, 200, indexedPayload, READ_CACHE_CONTROL);
+          jsonResponse(
+            response,
+            200,
+            await growthSummaryWithCurrentBtcUsd(
+              indexedPayload,
+              network,
+              false,
+            ),
+            READ_CACHE_CONTROL,
+          );
           return;
         }
       }
