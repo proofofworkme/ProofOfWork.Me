@@ -658,15 +658,19 @@ code {
   background: var(--surface-raised);
   backdrop-filter: blur(18px);
   border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
   display: flex;
   gap: 14px;
   height: var(--topbar-height);
+  max-width: 100%;
   max-height: var(--topbar-height);
   min-height: var(--topbar-height);
+  min-width: 0;
   overflow: visible;
   padding: 0 18px;
   position: sticky;
   top: 0;
+  width: 100%;
   z-index: var(--sticky-chrome-z);
 }
 
@@ -1381,8 +1385,11 @@ code {
 }
 
 .app-status-row {
+  box-sizing: border-box;
   flex: 0 0 auto;
+  max-width: 100%;
   min-height: var(--status-row-height);
+  min-width: 0;
   width: 100%;
 }
 

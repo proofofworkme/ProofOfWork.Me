@@ -283,6 +283,14 @@ expect(
     css,
   ),
 );
+expect(
+  "shared sticky chrome does not create desktop horizontal overflow",
+  /box-sizing:\s*border-box/.test(cssBlock(".topbar")) &&
+    /max-width:\s*100%/.test(cssBlock(".topbar")) &&
+    /width:\s*100%/.test(cssBlock(".topbar")) &&
+    /box-sizing:\s*border-box/.test(cssBlock(".app-status-row")) &&
+    /max-width:\s*100%/.test(cssBlock(".app-status-row")),
+);
 const folderTypeBlock = app.match(/type Folder =[\s\S]*?;\n\nconst COMPUTER_ROUTE_FOLDERS/)?.[0] ?? "";
 const computerFolderListBlock =
   app.match(/const COMPUTER_ROUTE_FOLDERS:[\s\S]*?\];/)?.[0] ?? "";

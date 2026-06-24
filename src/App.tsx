@@ -27,6 +27,7 @@ import {
   FileText,
   GitBranch,
   Inbox,
+  InfinityIcon,
   LogOut,
   Mail,
   MessageSquareQuote,
@@ -705,6 +706,7 @@ type PowActivityKind =
   | "id-seal"
   | "id-delist"
   | "id-buy"
+  | "infinity-bond"
   | "mail"
   | "reply"
   | "file"
@@ -1287,6 +1289,8 @@ type GrowthActualNetworkValue = {
   driveSats: number;
   idMarketplaceFeeSats: number;
   idMarketplaceVolumeSats: number;
+  infinityBondFlowSats: number;
+  infinityBondSats: number;
   mailFlowSats: number;
   mailSats: number;
   marketplaceFeeSats: number;
@@ -1307,16 +1311,22 @@ type GrowthActualNetworkValue = {
   walletSats: number;
   totalSats: number;
   totalUsd: number;
+  modelTotalUsd?: number;
 };
 
 type WorkFloorQuote = {
   actualValue?: GrowthActualNetworkValue;
+  btcUsd?: number;
+  btcUsdIndexedAt?: string;
   chartPoints: WorkFloorPoint[];
   indexedAt: string;
+  ledgerGeneratedAt?: string;
   networkValueSats: number;
   powids: number;
+  snapshotId?: string;
   stats?: Record<string, number>;
   tokenFlowSats: number;
+  usdSource?: string;
 };
 
 type WorkFloorPoint = {
@@ -1330,13 +1340,18 @@ type WorkFloorChartUnit = "sats" | "usd";
 
 type WorkFloorApiResponse = {
   actualValue?: Partial<GrowthActualNetworkValue>;
+  btcUsd?: number;
+  btcUsdIndexedAt?: string;
   chartPoints?: Array<Partial<WorkFloorPoint>>;
   indexedAt?: string;
+  ledgerGeneratedAt?: string;
   network?: BitcoinNetwork;
   networkValueSats?: number;
   powids?: number;
+  snapshotId?: string;
   stats?: Record<string, number>;
   tokenFlowSats?: number;
+  usdSource?: string;
 };
 
 type GrowthRealEvent = {
@@ -1359,6 +1374,7 @@ type GrowthSummaryCounts = {
   confirmedTokenTransfers: number;
   driveActions: number;
   idListings: number;
+  infinityBondActions: number;
   mailActions: number;
   marketplaceSaleCount: number;
   pendingRecords: number;
@@ -1368,20 +1384,30 @@ type GrowthSummaryCounts = {
 
 type GrowthSummarySnapshot = {
   actualValue: GrowthActualNetworkValue;
+  btcUsd?: number;
+  btcUsdIndexedAt?: string;
   counts: GrowthSummaryCounts;
   events: GrowthRealEvent[];
   indexedAt: string;
+  ledgerGeneratedAt?: string;
+  snapshotId?: string;
+  usdSource?: string;
   workFloor?: WorkFloorQuote;
 };
 
 type GrowthSummaryApiResponse = {
   actualValue?: Partial<GrowthActualNetworkValue>;
   activity?: PowActivityApiResponse;
+  btcUsd?: number;
+  btcUsdIndexedAt?: string;
   counts?: Partial<GrowthSummaryCounts>;
   events?: Array<Partial<GrowthRealEvent>>;
   indexedAt?: string;
+  ledgerGeneratedAt?: string;
   registry?: PowRegistryApiResponse;
+  snapshotId?: string;
   token?: PowTokenApiResponse;
+  usdSource?: string;
   workFloor?: WorkFloorApiResponse;
 };
 
@@ -9909,6 +9935,11 @@ function normalizeGrowthActualValue(
       payload,
       "idMarketplaceVolumeSats",
     ),
+    infinityBondFlowSats: growthNumberField(
+      payload,
+      "infinityBondFlowSats",
+    ),
+    infinityBondSats: growthNumberField(payload, "infinityBondSats"),
     mailFlowSats: growthNumberField(payload, "mailFlowSats"),
     mailSats: growthNumberField(payload, "mailSats"),
     marketplaceFeeSats: growthNumberField(payload, "marketplaceFeeSats"),
@@ -9947,6 +9978,7 @@ function normalizeGrowthActualValue(
     walletSats: growthNumberField(payload, "walletSats"),
     totalSats: growthNumberField(payload, "totalSats"),
     totalUsd: growthNumberField(payload, "totalUsd"),
+    modelTotalUsd: growthNumberField(payload, "modelTotalUsd"),
   };
 }
 
@@ -9968,6 +10000,7 @@ function normalizeGrowthCounts(
     confirmedTokenTransfers: numberCount("confirmedTokenTransfers"),
     driveActions: numberCount("driveActions"),
     idListings: numberCount("idListings"),
+    infinityBondActions: numberCount("infinityBondActions"),
     mailActions: numberCount("mailActions"),
     marketplaceSaleCount: numberCount("marketplaceSaleCount"),
     pendingRecords: numberCount("pendingRecords"),
@@ -10017,6 +10050,11 @@ function normalizeWorkFloorQuote(payload: WorkFloorApiResponse): WorkFloorQuote 
     actualValue: payload.actualValue
       ? normalizeGrowthActualValue(payload.actualValue)
       : undefined,
+    btcUsd: Number(payload.btcUsd) || undefined,
+    btcUsdIndexedAt:
+      typeof payload.btcUsdIndexedAt === "string"
+        ? payload.btcUsdIndexedAt
+        : undefined,
     chartPoints: Array.isArray(payload.chartPoints)
       ? payload.chartPoints
           .map((point) => ({
@@ -10036,10 +10074,17 @@ function normalizeWorkFloorQuote(payload: WorkFloorApiResponse): WorkFloorQuote 
       typeof payload.indexedAt === "string"
         ? payload.indexedAt
         : new Date().toISOString(),
+    ledgerGeneratedAt:
+      typeof payload.ledgerGeneratedAt === "string"
+        ? payload.ledgerGeneratedAt
+        : undefined,
     networkValueSats: Number(payload.networkValueSats) || 0,
     powids: Number(payload.powids) || 0,
+    snapshotId:
+      typeof payload.snapshotId === "string" ? payload.snapshotId : undefined,
     stats,
     tokenFlowSats: Number(payload.tokenFlowSats) || 0,
+    usdSource: typeof payload.usdSource === "string" ? payload.usdSource : undefined,
   };
 }
 
@@ -10203,6 +10248,11 @@ function normalizeGrowthSummary(
 
   return {
     actualValue,
+    btcUsd: Number(payload.btcUsd) || undefined,
+    btcUsdIndexedAt:
+      typeof payload.btcUsdIndexedAt === "string"
+        ? payload.btcUsdIndexedAt
+        : undefined,
     counts: normalizeGrowthCounts(payload.counts, actualValue),
     events: Array.isArray(payload.events)
       ? payload.events
@@ -10213,6 +10263,13 @@ function normalizeGrowthSummary(
       typeof payload.indexedAt === "string"
         ? payload.indexedAt
         : new Date().toISOString(),
+    ledgerGeneratedAt:
+      typeof payload.ledgerGeneratedAt === "string"
+        ? payload.ledgerGeneratedAt
+        : undefined,
+    snapshotId:
+      typeof payload.snapshotId === "string" ? payload.snapshotId : undefined,
+    usdSource: typeof payload.usdSource === "string" ? payload.usdSource : undefined,
     workFloor,
   };
 }
@@ -16030,9 +16087,13 @@ export default function App() {
         setWorkFloorQuote(snapshot.workFloor);
       }
       if (!silent) {
+        const snapshotDate = formatDate(snapshot.indexedAt);
+        const quoteDate = snapshot.btcUsdIndexedAt
+          ? ` Live USD quote ${formatDate(snapshot.btcUsdIndexedAt)}.`
+          : "";
         setStatus({
           tone: "good",
-          text: `Growth metrics loaded. ${snapshot.counts.powids.toLocaleString()} IDs, ${snapshot.counts.confirmedComputerActions.toLocaleString()} computer action${snapshot.counts.confirmedComputerActions === 1 ? "" : "s"}, ${snapshot.counts.tokenCount.toLocaleString()} credit${snapshot.counts.tokenCount === 1 ? "" : "s"}.`,
+          text: `Growth metrics loaded from ledger snapshot ${snapshotDate}.${quoteDate} ${snapshot.counts.powids.toLocaleString()} IDs, ${snapshot.counts.infinityBondActions.toLocaleString()} Infinity Bond action${snapshot.counts.infinityBondActions === 1 ? "" : "s"}, ${snapshot.counts.confirmedComputerActions.toLocaleString()} computer action${snapshot.counts.confirmedComputerActions === 1 ? "" : "s"}.`,
         });
       }
     } catch (error) {
@@ -26825,8 +26886,19 @@ function activityAmountSats(item: PowActivityItem) {
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
 
+function isInfinityBondActivityItem(item: PowActivityItem) {
+  if (item.kind === "infinity-bond") {
+    return true;
+  }
+
+  const detail = String(item.detail ?? item.description ?? "")
+    .trim()
+    .toLowerCase();
+  return item.kind === "mail" && detail === "powb";
+}
+
 function activityKindHasDedicatedGrowthBucket(item: PowActivityItem) {
-  if (isBrowserActivityItem(item)) {
+  if (isBrowserActivityItem(item) || isInfinityBondActivityItem(item)) {
     return true;
   }
 
@@ -26884,6 +26956,9 @@ function growthActualNetworkValue(
   const confirmedTokenMints = tokenMints.filter(
     (mint) => mint.confirmed && Date.parse(mint.createdAt) <= cutoffMs,
   );
+  const confirmedValueTokenMints = confirmedTokenMints.filter(
+    (mint) => mint.tokenId !== POWB_TOKEN_ID,
+  );
   const confirmedTokenTransfers = tokenTransfers.filter(
     (transfer) =>
       transfer.confirmed && Date.parse(transfer.createdAt) <= cutoffMs,
@@ -26896,8 +26971,12 @@ function growthActualNetworkValue(
     .filter(
       (item) =>
         (item.kind === "mail" || item.kind === "reply") &&
+        !isInfinityBondActivityItem(item) &&
         !isBrowserActivityItem(item),
     )
+    .reduce((total, item) => total + (item.amountSats ?? 0), 0);
+  const infinityBondFlowSats = confirmedActivity
+    .filter(isInfinityBondActivityItem)
     .reduce((total, item) => total + (item.amountSats ?? 0), 0);
   const browserFlowSats = confirmedActivity
     .filter(isBrowserActivityItem)
@@ -26934,7 +27013,7 @@ function growthActualNetworkValue(
     (total, token) => total + token.creationFeeSats,
     0,
   );
-  const tokenMintFlowSats = confirmedTokenMints.reduce(
+  const tokenMintFlowSats = confirmedValueTokenMints.reduce(
     (total, mint) => total + mint.paidSats,
     0,
   );
@@ -26947,6 +27026,8 @@ function growthActualNetworkValue(
     unbucketedConfirmedComputerLogFlowSats(confirmedActivity);
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const infinityBondSats =
+    infinityBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const marketplaceSats =
     marketplaceFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
@@ -26960,6 +27041,7 @@ function growthActualNetworkValue(
   const totalSats =
     idSats +
     mailSats +
+    infinityBondSats +
     driveSats +
     marketplaceSats +
     browserSats +
@@ -26979,6 +27061,8 @@ function growthActualNetworkValue(
     computerEventSats,
     driveFlowSats,
     driveSats,
+    infinityBondFlowSats,
+    infinityBondSats,
     mailFlowSats,
     mailSats,
     idMarketplaceFeeSats,
@@ -28534,8 +28618,13 @@ function GrowthWorkspace({
   const mailActions =
     summaryCounts?.mailActions ??
     confirmedActivity.filter(
-      (item) => item.kind === "mail" || item.kind === "reply",
+      (item) =>
+        (item.kind === "mail" || item.kind === "reply") &&
+        !isInfinityBondActivityItem(item),
     ).length;
+  const infinityBondActions =
+    summaryCounts?.infinityBondActions ??
+    confirmedActivity.filter(isInfinityBondActivityItem).length;
   const browserActions =
     summaryCounts?.browserActions ??
     confirmedActivity.filter(isBrowserActivityItem).length;
@@ -28573,6 +28662,8 @@ function GrowthWorkspace({
   const pendingRecordCount = summaryCounts?.pendingRecords ?? pendingRecords.length;
   const chainMetricsIndexedAt =
     growthSummary?.indexedAt ?? summaryWorkFloor?.indexedAt;
+  const usdQuoteIndexedAt =
+    growthSummary?.btcUsdIndexedAt ?? summaryWorkFloor?.btcUsdIndexedAt;
 
   return (
     <section className="growth-workspace">
@@ -28582,8 +28673,8 @@ function GrowthWorkspace({
           <h2>Model the future. Measure the chain.</h2>
           <p>
             The candle-gold line is modeled ProofOfWork Computer network value. The
-            olive line is real confirmed mainnet value from IDs, Mail, Drive,
-            Marketplace, Browser, Credits, and Wallet.
+            olive line is real confirmed mainnet value from IDs, Mail, Infinity
+            Bonds, Drive, Marketplace, Browser, Credits, and Wallet.
           </p>
         </div>
         <div className="growth-model-card">
@@ -28639,8 +28730,11 @@ function GrowthWorkspace({
           </button>
           {chainMetricsIndexedAt ? (
             <p className="field-note">
-              Refreshed {formatDate(chainMetricsIndexedAt)} from confirmed
-              Computer events.
+              Ledger snapshot {formatDate(chainMetricsIndexedAt)} from confirmed
+              Computer events
+              {usdQuoteIndexedAt
+                ? ` with USD quote ${formatDate(usdQuoteIndexedAt)}.`
+                : "."}
             </p>
           ) : null}
         </div>
@@ -28698,19 +28792,19 @@ function GrowthWorkspace({
           <h3>Candle-gold is the success case. Olive is ProofOfWork history.</h3>
           <p>
             The model asks what the ProofOfWork Computer can become if IDs, Mail,
-            Drive, Marketplace, Browser, Credits, and Wallet compound together.
-            The real line only counts confirmed mainnet records that already
-            exist.
+            Infinity Bonds, Drive, Marketplace, Browser, Credits, and Wallet
+            compound together. The real line only counts confirmed mainnet
+            records that already exist.
           </p>
         </article>
         <article className="growth-explainer-card">
           <span>Network value</span>
           <h3>Everything is valued in proofs first.</h3>
           <p>
-            IDs use n squared network value. Mail, Drive, Marketplace, Browser,
-            Credits, and Wallet use confirmed payment flow multiplied by the
-            same value multiple, then translated to USD with the live price
-            benchmark.
+            IDs use n squared network value. Mail, Infinity Bonds, Drive,
+            Marketplace, Browser, Credits, and Wallet use confirmed payment flow
+            multiplied by the same value multiple, then translated to USD with
+            the live price benchmark.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -28718,9 +28812,10 @@ function GrowthWorkspace({
           <h3>The olive line moves when ProofOfWork confirms.</h3>
           <p>
             Registrations, messages, replies, file writes, HTML page writes,
-            marketplace listings, seals, delistings, buyer-funded buys, credit
-            creations, credit mints, and credit transfers are pulled from live
-            endpoints. Pending mempool events wait until they confirm.
+            Infinity Bonds, marketplace listings, seals, delistings,
+            buyer-funded buys, credit creations, credit mints, and credit
+            transfers are pulled from live endpoints. Pending mempool events
+            wait until they confirm.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -28729,8 +28824,8 @@ function GrowthWorkspace({
           <p>
             A product needs real chain inputs, a usage assumption, a value
             assumption, fee elasticity, and blockspace cost. That keeps every
-            merged app beside IDs, Mail, Drive, Marketplace, Browser, Credits,
-            and Wallet instead of bolted on.
+            merged app beside IDs, Mail, Infinity, Drive, Marketplace, Browser,
+            Credits, and Wallet instead of bolted on.
           </p>
         </article>
       </section>
@@ -28876,6 +28971,18 @@ function GrowthWorkspace({
             modelOneYearLabel={growthUsdForSats(oneYear.mailSats)}
             name="Mail"
             note="Relationship flow across the confirmed ID graph."
+          />
+          <GrowthProductCard
+            actual={growthSats(actualValue.infinityBondSats)}
+            actualLabel={`${growthUsdForSats(actualValue.infinityBondSats)} · ${actualValue.infinityBondFlowSats.toLocaleString()} bond proofs · ${infinityBondActions.toLocaleString()} bond actions`}
+            icon={<InfinityIcon size={24} />}
+            modelFiveYear="Tracked"
+            modelFiveYearLabel="confirmed bond lane"
+            modelLabel="confirmed bond value"
+            modelOneYear="Tracked"
+            modelOneYearLabel="confirmed bond lane"
+            name="Infinity"
+            note="Confirmed Infinity Bonds and POWB bond proofs feed the same WORK floor ledger."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.driveSats)}

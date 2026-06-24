@@ -61,6 +61,11 @@ const infinityAppSource = sourceSliceBetween(
   /function InfinityApp\(/,
   /function TokenWalletApp\(/,
 );
+const growthWorkspaceSource = sourceSliceBetween(
+  app,
+  /function GrowthWorkspace\(/,
+  /function IdLaunchApp\(/,
+);
 
 expectAll("canonical ledger cache is first-class", server, [
   /LEDGER_CACHE_TTL_MS/,
@@ -412,6 +417,26 @@ expect(
   "Infinity app must use the POWB-only market panel",
   /<InfinityBondMarketPanel/.test(infinityAppSource) &&
     !/<TokenMarketplacePanel/.test(infinityAppSource),
+);
+expectAll("Growth surfaces Infinity Bond value as a first-class product lane", app, [
+  /\|\s*"infinity-bond"/,
+  /infinityBondFlowSats:\s*number/,
+  /infinityBondSats:\s*number/,
+  /infinityBondActions:\s*number/,
+  /function isInfinityBondActivityItem\(item:\s*PowActivityItem\)/,
+  /confirmedValueTokenMints = confirmedTokenMints\.filter\([\s\S]*mint\.tokenId !== POWB_TOKEN_ID/,
+  /const infinityBondFlowSats = confirmedActivity[\s\S]*\.filter\(isInfinityBondActivityItem\)/,
+  /const infinityBondSats =[\s\S]*infinityBondFlowSats \* GROWTH_MODEL_INPUTS\.valueMultiple/,
+  /infinityBondSats \+/,
+  /infinityBondActions =[\s\S]*confirmedActivity\.filter\(isInfinityBondActivityItem\)\.length/,
+]);
+expect(
+  "Growth product cards include Infinity/POWB bond value",
+  /name="Infinity"/.test(growthWorkspaceSource) &&
+    /InfinityIcon/.test(growthWorkspaceSource) &&
+    /actualValue\.infinityBondSats/.test(growthWorkspaceSource) &&
+    /actualValue\.infinityBondFlowSats/.test(growthWorkspaceSource) &&
+    /bond actions/.test(growthWorkspaceSource),
 );
 expectAll("backfill writes powb mail as Infinity Bond projections", proofIndexerBackfill, [
   /const INFINITY_BOND_MEMO = "powb"/,
