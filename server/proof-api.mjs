@@ -1461,7 +1461,12 @@ function tokenPayloadScopedToAddresses(payload, addresses) {
   };
 }
 
-function mergeTokenStateItemsByKey(baseItems, overlayItems, keyForItem) {
+function mergeTokenStateItemsByKey(
+  baseItems,
+  overlayItems,
+  keyForItem,
+  mergeItem = (_current, incoming) => incoming,
+) {
   const byKey = new Map();
   for (const item of Array.isArray(baseItems) ? baseItems : []) {
     const key = keyForItem(item);
@@ -1472,7 +1477,7 @@ function mergeTokenStateItemsByKey(baseItems, overlayItems, keyForItem) {
   for (const item of Array.isArray(overlayItems) ? overlayItems : []) {
     const key = keyForItem(item);
     if (key) {
-      byKey.set(key, item);
+      byKey.set(key, mergeItem(byKey.get(key), item));
     }
   }
   return [...byKey.values()].sort(compareTokenHistoryPageItems);
@@ -1625,6 +1630,7 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
     payload.listings,
     overlay.listings,
     tokenListingItemKey,
+    mergeTokenListingRecord,
   );
   const sales = mergeTokenStateItemsByKey(
     payload.sales,
@@ -1636,6 +1642,7 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
       payload.closedListings,
       overlay.closedListings,
       tokenClosedListingItemKey,
+      mergeTokenListingRecord,
     ),
   );
   const stats = confirmedTokenSalesStats(sales);
@@ -1677,8 +1684,55 @@ async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
     console.error(
       `Proof index token market summary overlay failed: ${errorSummary(error)}`,
     );
+      return null;
+    });
+}
+
+async function indexedWorkTokenStateForMarketplaceSummary(network) {
+  if (
+    network !== "livenet" ||
+    !proofIndexReadFeatureEnabled("token-state,token-default,token")
+  ) {
+    return null;
+  }
+
+  let payload = await proofIndexTokenPayload(
+    network,
+    WORK_TOKEN_ID,
+    new URLSearchParams([["asset", WORK_TOKEN_ID]]),
+  ).catch((error) => {
+    console.error(
+      `Proof index WORK token-state marketplace summary overlay failed: ${errorSummary(error)}`,
+    );
     return null;
   });
+
+  if (
+    payload &&
+    !(await proofIndexPayloadCoversConfirmedTip(
+      payload,
+      network,
+      "token-state marketplace-summary",
+    ))
+  ) {
+    payload = null;
+  }
+
+  if (!payload) {
+    payload = await tokenPayloadForRead(network, WORK_TOKEN_ID, false, {
+      liveWorkWaitMs: WORK_TOKEN_LIVE_WAIT_MS,
+      reconcileListingStatus: false,
+      reconcileSpendable: false,
+      recoverWorkSales: true,
+    }).catch((error) => {
+      console.error(
+        `Canonical WORK token-state marketplace summary overlay failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+  }
+
+  return payload;
 }
 
 async function workTokenStateForSummaryRead(network, fresh) {
@@ -1798,15 +1852,20 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
     return payload;
   }
 
-  const overlay = await indexedTokenMarketSummaryOverlay(network);
-  if (!overlay) {
+  const [workTokenState, overlay] = await Promise.all([
+    indexedWorkTokenStateForMarketplaceSummary(network),
+    indexedTokenMarketSummaryOverlay(network),
+  ]);
+  if (!workTokenState && !overlay) {
     return payload;
   }
 
-  const tokenState = tokenStateWithIndexedMarketSummaryOverlay(
-    payload.token,
-    overlay,
-  );
+  const baseTokenState = workTokenState
+    ? tokenStateWithMergedConfirmedSealedListings(payload.token, workTokenState)
+    : payload.token;
+  const tokenState = overlay
+    ? tokenStateWithIndexedMarketSummaryOverlay(baseTokenState, overlay)
+    : baseTokenState;
   const token = compactTokenSummaryPayload(tokenState);
   return {
     ...payload,
@@ -5207,6 +5266,63 @@ function tokenStateWithMergedListingSeals(state, sourceState) {
         listings,
       }
     : state;
+}
+
+function tokenStateWithMergedConfirmedSealedListings(state, sourceState) {
+  const mergedState = tokenStateWithMergedListingSeals(state, sourceState);
+  if (!mergedState || !sourceState) {
+    return mergedState;
+  }
+
+  const closedListingIds = new Set(
+    [
+      ...(Array.isArray(mergedState.closedListings)
+        ? mergedState.closedListings
+        : []),
+      ...(Array.isArray(sourceState.closedListings) ? sourceState.closedListings : []),
+    ]
+      .map((listing) => String(listing?.listingId ?? "").toLowerCase())
+      .filter((listingId) => /^[0-9a-f]{64}$/u.test(listingId)),
+  );
+  const listingsById = new Map();
+  for (const listing of Array.isArray(mergedState.listings)
+    ? mergedState.listings
+    : []) {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    if (/^[0-9a-f]{64}$/u.test(listingId)) {
+      listingsById.set(listingId, listing);
+    }
+  }
+
+  let changed = false;
+  for (const listing of Array.isArray(sourceState.listings)
+    ? sourceState.listings
+    : []) {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    if (
+      !/^[0-9a-f]{64}$/u.test(listingId) ||
+      closedListingIds.has(listingId) ||
+      !tokenListingHasConfirmedSaleTicketSeal(listing)
+    ) {
+      continue;
+    }
+
+    const current = listingsById.get(listingId);
+    const next = mergeTokenListingRecord(current, listing);
+    if (next !== current) {
+      changed = true;
+    }
+    listingsById.set(listingId, next);
+  }
+
+  return changed
+    ? {
+        ...mergedState,
+        indexedAt: newerIso(mergedState.indexedAt, sourceState.indexedAt),
+        listings: [...listingsById.values()],
+        source: mergedSourceLabel(mergedState.source, sourceState.source),
+      }
+    : mergedState;
 }
 
 function tokenStateWithPreservedListingRecords(state, sourceState) {

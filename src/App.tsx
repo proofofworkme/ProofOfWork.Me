@@ -31479,7 +31479,7 @@ function TokenMarketplacePanel({
               <p>
                 {marketListings.length
                   ? tokenListingBookFilter === "sealed"
-                    ? "No sale tickets in this view have a seal or pending seal yet."
+                    ? "No sale tickets in this view have a confirmed buyable seal yet."
                     : "Every sale ticket in this view already has a seal or pending seal."
                   : selectedMarketToken
                   ? `No ${selectedMarketToken.ticker} sale tickets are open yet.`

@@ -337,17 +337,32 @@ const workToken = await getJson("/api/v1/token", {
 const confirmedSealedListings = (workToken.listings ?? []).filter(
   tokenListingHasConfirmedSeal,
 );
-const summaryListingKeys = new Set(
-  (marketplaceSummary.token?.listings ?? []).map(listingKey),
+const summaryListingsByKey = new Map(
+  (marketplaceSummary.token?.listings ?? []).map((item) => [listingKey(item), item]),
 );
 assert(
   confirmedSealedListings.length > 0,
   "full WORK token payload returned no confirmed sealed listings",
 );
 for (const listing of confirmedSealedListings) {
+  const summaryListing = summaryListingsByKey.get(listingKey(listing));
   assert(
-    summaryListingKeys.has(listingKey(listing)),
+    summaryListing,
     `${listing.listingId} is confirmed sealed in /api/v1/token but missing from marketplace summary`,
+  );
+  assert(
+    tokenListingHasConfirmedSeal(summaryListing),
+    `${listing.listingId} is confirmed sealed in /api/v1/token but marketplace summary dropped its seal metadata`,
+  );
+  assert(
+    String(summaryListing.sealTxid ?? "").toLowerCase() ===
+      String(listing.sealTxid ?? "").toLowerCase(),
+    `${listing.listingId} has mismatched seal txid between /api/v1/token and marketplace summary`,
+  );
+  assert(
+    String(summaryListing.saleAuthorization?.anchorTxid ?? "").toLowerCase() ===
+      String(listing.saleAuthorization?.anchorTxid ?? "").toLowerCase(),
+    `${listing.listingId} has mismatched sale-ticket anchor between /api/v1/token and marketplace summary`,
   );
 }
 
