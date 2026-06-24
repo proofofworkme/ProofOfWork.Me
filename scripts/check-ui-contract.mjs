@@ -214,6 +214,28 @@ const app = contents.get("src/App.tsx");
 ].forEach((pattern) =>
   notContains("src/App.tsx", pattern, `no per-route AppHeader override ${pattern}`),
 );
+const browserAppBlock = app.match(/function BrowserApp[\s\S]*?function BrowserWorkspace/)?.[0] ?? "";
+expect(
+  "standalone Browser route has dedicated metadata and canonical URLs",
+  [
+  /browserRoute\s*\?\s*\{[\s\S]*title:\s*"ProofOfWork Browser"/,
+  /Render ProofOfWork HTML message bodies and verified HTML attachments by transaction ID\./,
+  /function browserRoutePath\(txid:\s*string,\s*network:\s*BitcoinNetwork\)/,
+  /params\.set\("browser",\s*"1"\)/,
+  /window\.history\.pushState\(null,\s*"",\s*nextPath\)/,
+  /syncBrowserRoute\(txid,\s*network\)/,
+  ].every((pattern) => pattern.test(app)),
+);
+expect(
+  "Browser iframes do not grant clipboard write to rendered pages",
+  !/allow="clipboard-write"/.test(app),
+);
+expect(
+  "standalone Browser keeps the network selector in the form, not the shared topbar",
+  /<BrowserNetworkTabs\s+network=\{network\}\s+onChange=\{setNetwork\}/.test(
+    browserAppBlock,
+  ) && !/<AppHeader[\s\S]*?onNetworkChange=\{setNetwork\}/.test(browserAppBlock),
+);
 const appStatusRow = contents.get("src/shared/components/AppStatusRow.tsx");
 const rushApp = contents.get("src/features/rush/RushApp.tsx");
 const appStatusRowUsages = app.match(/<AppStatusRow[\s\S]*?\/>/g) ?? [];

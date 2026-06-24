@@ -13551,13 +13551,19 @@ export default function App() {
                 "Search public confirmed ProofOfWork files by address or confirmed ProofOfWork ID.",
               title: "ProofOfWork Desktop",
             }
-        : {
-            description:
-              "ProofOfWork.Me is the ProofOfWork Computer: local-first, on-chain identity, mail, files, pages, markets, credits, logs, and proof.",
-            title: "ProofOfWork.Me",
-          },
+          : browserRoute
+            ? {
+                description:
+                  "Render ProofOfWork HTML message bodies and verified HTML attachments by transaction ID.",
+                title: "ProofOfWork Browser",
+              }
+            : {
+                description:
+                  "ProofOfWork.Me is the ProofOfWork Computer: local-first, on-chain identity, mail, files, pages, markets, credits, logs, and proof.",
+                title: "ProofOfWork.Me",
+              },
     );
-  }, [desktopRoute, idLaunchMode]);
+  }, [browserRoute, desktopRoute, idLaunchMode]);
 
   useEffect(() => {
     const detectWallet = () => setHasUnisat(Boolean(window.unisat));
@@ -21629,6 +21635,31 @@ function txidFromBrowserLocation() {
     : "";
 }
 
+function browserRoutePath(txid: string, network: BitcoinNetwork) {
+  const normalizedTxid = txid.trim().toLowerCase();
+  const params = new URLSearchParams();
+  if (network !== "livenet") {
+    params.set("network", network);
+  }
+
+  if (isLocalPreviewHost()) {
+    params.set("browser", "1");
+    params.set("txid", normalizedTxid);
+    return `/?${params.toString()}`;
+  }
+
+  const query = params.toString();
+  return `/tx/${normalizedTxid}${query ? `?${query}` : ""}`;
+}
+
+function syncBrowserRoute(txid: string, network: BitcoinNetwork) {
+  const nextPath = browserRoutePath(txid, network);
+  const currentPath = `${window.location.pathname}${window.location.search}`;
+  if (currentPath !== nextPath) {
+    window.history.pushState(null, "", nextPath);
+  }
+}
+
 function networkFromBrowserLocation(): BitcoinNetwork {
   const params = new URLSearchParams(window.location.search);
   const network = params.get("network");
@@ -21830,6 +21861,7 @@ function BrowserApp({
         const loadedPage = await fetchBrowserPage(txid, network);
         setPage(loadedPage);
         setQuery(txid);
+        syncBrowserRoute(txid, network);
         setStatus({
           tone: loadedPage.confirmed ? "good" : "idle",
           text: loadedPage.confirmed
@@ -21870,8 +21902,6 @@ function BrowserApp({
   return (
     <main className="desktop-public-app browser-public-app has-route-status">
       <AppHeader
-        network={network}
-        onNetworkChange={setNetwork}
         subtitle="HTML from ProofOfWork"
         title="ProofOfWork Browser"
       />
@@ -21938,7 +21968,6 @@ function BrowserApp({
                 </a>
               </div>
               <iframe
-                allow="clipboard-write"
                 referrerPolicy="no-referrer"
                 sandbox={page.confirmed ? "allow-scripts" : ""}
                 srcDoc={browserPageWithContext(page)}
@@ -22253,7 +22282,6 @@ function BrowserWorkspace({
               </a>
             </div>
             <iframe
-              allow="clipboard-write"
               referrerPolicy="no-referrer"
               sandbox={page.confirmed ? "allow-scripts" : ""}
               srcDoc={browserPageWithContext(page)}

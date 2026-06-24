@@ -171,7 +171,12 @@ expect("Desktop public route must not expose network switching controls", !/onNe
 expectAll("Desktop public route has dedicated metadata", app, [
   /desktopRoute[\s\S]*Search public confirmed ProofOfWork files by address or confirmed ProofOfWork ID\./,
   /title:\s*"ProofOfWork Desktop"/,
-  /\},\s*\[desktopRoute,\s*idLaunchMode\]\)/,
+  /\},\s*\[browserRoute,\s*desktopRoute,\s*idLaunchMode\]\)/,
+]);
+expectAll("Browser public route has dedicated metadata", app, [
+  /browserRoute[\s\S]*Render ProofOfWork HTML message bodies and verified HTML attachments by transaction ID\./,
+  /title:\s*"ProofOfWork Browser"/,
+  /\},\s*\[browserRoute,\s*desktopRoute,\s*idLaunchMode\]\)/,
 ]);
 expect("fetchAddressMail must not call public mempool.space", !/mempool\.space/i.test(fetchAddressMailSource));
 expect("loadDesktopTarget must not call public mempool.space", !/mempool\.space/i.test(loadDesktopTargetSource));
