@@ -14174,6 +14174,133 @@ async function tokenPayloadReadResult(payload, network, fresh, options = {}) {
     : await tokenPayloadWithSpendableListings(reconciledPayload, network);
 }
 
+function tokenPayloadFreshnessRank(payload) {
+  const tokens = Array.isArray(payload?.tokens) ? payload.tokens : [];
+  const mints = Array.isArray(payload?.mints) ? payload.mints : [];
+  const transfers = Array.isArray(payload?.transfers) ? payload.transfers : [];
+  const listings = Array.isArray(payload?.listings) ? payload.listings : [];
+  const sales = Array.isArray(payload?.sales) ? payload.sales : [];
+  const holders = Array.isArray(payload?.holders) ? payload.holders : [];
+  const stats = payload?.stats && typeof payload.stats === "object"
+    ? payload.stats
+    : {};
+  const indexedAtMs = Date.parse(
+    String(
+      payload?.indexedAt ??
+        payload?.ledgerGeneratedAt ??
+        payload?.generatedAt ??
+        "",
+    ),
+  );
+  return {
+    confirmedMints: Math.max(
+      numericValue(stats.confirmedMints),
+      mints.filter((mint) => mint?.confirmed).length,
+    ),
+    confirmedSupply: numericValue(payload?.confirmedSupply),
+    confirmedTokens: Math.max(
+      numericValue(stats.confirmedTokens),
+      tokens.filter((token) => token?.confirmed).length,
+    ),
+    holders: holders.length,
+    indexedAtMs: Number.isFinite(indexedAtMs) ? indexedAtMs : 0,
+    listings: listings.length,
+    mints: mints.length,
+    pendingSupply: numericValue(payload?.pendingSupply),
+    sales: sales.length,
+    tokens: tokens.length,
+    transfers: transfers.length,
+  };
+}
+
+function tokenPayloadShouldReplaceForFreshness(candidate, current) {
+  if (!candidate) {
+    return false;
+  }
+  if (!current) {
+    return true;
+  }
+
+  const candidateRank = tokenPayloadFreshnessRank(candidate);
+  const currentRank = tokenPayloadFreshnessRank(current);
+  if (candidateRank.tokens > 0 && currentRank.tokens === 0) {
+    return true;
+  }
+  if (candidateRank.tokens > currentRank.tokens) {
+    return true;
+  }
+
+  const nonRegressing =
+    candidateRank.confirmedTokens >= currentRank.confirmedTokens &&
+    candidateRank.confirmedMints >= currentRank.confirmedMints &&
+    candidateRank.confirmedSupply >= currentRank.confirmedSupply;
+  if (!nonRegressing) {
+    return false;
+  }
+
+  return (
+    candidateRank.indexedAtMs > currentRank.indexedAtMs ||
+    candidateRank.mints > currentRank.mints ||
+    candidateRank.transfers > currentRank.transfers ||
+    candidateRank.listings > currentRank.listings ||
+    candidateRank.sales > currentRank.sales ||
+    candidateRank.holders > currentRank.holders ||
+    candidateRank.pendingSupply > currentRank.pendingSupply
+  );
+}
+
+function ledgerPayloadForFreshnessCompare(ledger, scope) {
+  if (!ledger) {
+    return null;
+  }
+  return attachLedgerMetadata(
+    {
+      ...ledgerTokenStateForScope(ledger, scope),
+      indexedAt: ledger.generatedAt,
+    },
+    ledger,
+  );
+}
+
+async function indexedTokenPayloadFreshnessFloor(network, scope, options = {}) {
+  if (
+    network !== "livenet" ||
+    scope === WORK_TOKEN_ID ||
+    scope === POWB_TOKEN_ID ||
+    (Array.isArray(options.recoveryAddresses) &&
+      options.recoveryAddresses.length > 0) ||
+    (Array.isArray(options.recoveryTxids) &&
+      options.recoveryTxids.length > 0) ||
+    !proofIndexReadFeatureEnabled("token-state,token-default,token")
+  ) {
+    return null;
+  }
+
+  const params = new URLSearchParams();
+  if (scope) {
+    params.set("asset", scope);
+  }
+  const payload = await proofIndexTokenPayload(network, scope, params).catch(
+    (error) => {
+      console.error(
+        `Proof index token-state fresh floor failed for ${scope || "all"}: ${errorSummary(error)}`,
+      );
+      return null;
+    },
+  );
+  if (
+    payload &&
+    (await proofIndexPayloadCoversConfirmedTip(
+      payload,
+      network,
+      `token-state fresh-floor:${scope || "all"}`,
+    ))
+  ) {
+    return payload;
+  }
+  return null;
+}
+
 async function tokenPayloadForRead(
   network,
   tokenScope = "",
@@ -14187,6 +14314,9 @@ async function tokenPayloadForRead(
     options.recoveryAddresses.length > 0;
   const hasRecoveryTxids =
     Array.isArray(options.recoveryTxids) && options.recoveryTxids.length > 0;
+  const indexedFreshFloor = fresh && scope
+    ? await indexedTokenPayloadFreshnessFloor(network, scope, options)
+    : null;
   if (
     fresh &&
     scope &&
@@ -14208,17 +14338,47 @@ async function tokenPayloadForRead(
   }
   if (network === "livenet" && useLedgerSnapshot) {
     let ledger = null;
+    let cachedLedger = null;
     try {
-      ledger =
+      const shouldFreshenLedger =
         fresh &&
         !(
           scope === WORK_TOKEN_ID &&
           (hasRecoveryAddresses ||
             hasRecoveryTxids ||
             options.recoverWorkSalesOnly === true)
-        )
-        ? await summaryCanonicalLedgerPayload(network, true)
-        : await existingCanonicalLedgerPayload(network);
+        );
+      cachedLedger = shouldFreshenLedger
+        ? await existingCanonicalLedgerPayload(network)
+        : null;
+      const ledgerPromise = shouldFreshenLedger
+        ? summaryCanonicalLedgerPayload(network, true)
+        : existingCanonicalLedgerPayload(network);
+      ledger =
+        shouldFreshenLedger && (indexedFreshFloor || cachedLedger)
+          ? await payloadWithFallbackAfterMs(
+              ledgerPromise,
+              cachedLedger,
+              Number.isFinite(options.ledgerFreshWaitMs)
+                ? options.ledgerFreshWaitMs
+                : WORK_FLOOR_FRESH_WAIT_MS,
+            )
+          : await ledgerPromise;
+      if (
+        shouldFreshenLedger &&
+        cachedLedger &&
+        ledger &&
+        ledger !== cachedLedger
+      ) {
+        const cachedPayload = ledgerPayloadForFreshnessCompare(
+          cachedLedger,
+          scope,
+        );
+        const freshPayload = ledgerPayloadForFreshnessCompare(ledger, scope);
+        if (tokenPayloadShouldReplaceForFreshness(cachedPayload, freshPayload)) {
+          ledger = cachedLedger;
+        }
+      }
     } catch (error) {
       console.error(
         `Canonical token payload failed for ${network}:${scope}: ${errorSummary(error)}`,
@@ -14233,7 +14393,7 @@ async function tokenPayloadForRead(
           `canonical-token:${scope || "all"}`,
         ))
       ) {
-        ledger = null;
+        ledger = cachedLedger ?? null;
       }
     }
     if (ledger) {
@@ -14258,13 +14418,28 @@ async function tokenPayloadForRead(
           liveOptions,
         );
       }
+      if (
+        indexedFreshFloor &&
+        tokenPayloadShouldReplaceForFreshness(indexedFreshFloor, payload)
+      ) {
+        payload = indexedFreshFloor;
+      }
       return tokenPayloadReadResult(payload, network, fresh, options);
+    }
+    if (indexedFreshFloor) {
+      return tokenPayloadReadResult(indexedFreshFloor, network, fresh, options);
     }
   }
 
   let payload = fresh
     ? await freshTokenPayloadOrSnapshot(network, scope, options)
     : await fastTokenPayloadSnapshot(network, scope, options);
+  if (
+    indexedFreshFloor &&
+    tokenPayloadShouldReplaceForFreshness(indexedFreshFloor, payload)
+  ) {
+    payload = indexedFreshFloor;
+  }
   if (scope === WORK_TOKEN_ID) {
     const liveOptions = {
       recoverClosedSales: options.recoverWorkSales !== false,
@@ -14323,13 +14498,28 @@ async function tokenSummaryPayload(
     };
   }
 
+  const summaryRecoveryAddresses = Array.isArray(options.recoveryAddresses)
+    ? options.recoveryAddresses
+    : [];
+  if (network === "livenet" && summaryRecoveryAddresses.length === 0) {
+    const ledger = await existingCanonicalLedgerPayload(network);
+    if (fresh) {
+      refreshCanonicalLedgerPayloadInBackground(network, true);
+    }
+    if (ledger) {
+      return compactTokenSummaryPayload(
+        ledgerPayloadForFreshnessCompare(ledger, scope),
+        scope,
+      );
+    }
+  }
+
   let payload = await tokenPayloadForRead(network, scope, fresh, {
     reconcileListingStatus: false,
-    recoveryAddresses: options.recoveryAddresses,
+    recoveryAddresses: summaryRecoveryAddresses,
     liveWorkWaitMs:
       scope === WORK_TOKEN_ID &&
-      Array.isArray(options.recoveryAddresses) &&
-      options.recoveryAddresses.length > 0
+      summaryRecoveryAddresses.length > 0
         ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS
         : scope === WORK_TOKEN_ID && !fresh
           ? WORK_TOKEN_LIVE_WAIT_MS
@@ -14338,9 +14528,9 @@ async function tokenSummaryPayload(
     reconcileSpendable: false,
   });
   if (network === "livenet" && !scope) {
-    const workPayload = await tokenPayloadForRead(network, WORK_TOKEN_ID, fresh, {
+    const workPayload = await tokenPayloadForRead(network, WORK_TOKEN_ID, false, {
       reconcileListingStatus: false,
-      recoveryAddresses: options.recoveryAddresses,
+      recoveryAddresses: summaryRecoveryAddresses,
       liveWorkWaitMs: WORK_TOKEN_LIVE_WAIT_MS,
       recoverWorkSales: true,
     }).catch((error) => {
@@ -14357,7 +14547,7 @@ async function tokenSummaryPayload(
       );
     }
   }
-  if (network === "livenet" && (!scope || scope === WORK_TOKEN_ID)) {
+  if (network === "livenet" && scope === WORK_TOKEN_ID) {
     const closeTxs = await payloadWithFallbackAfterMs(
       recentWorkTokenMarketCloseTransactions(
         network,
@@ -14385,7 +14575,7 @@ async function tokenSummaryPayload(
   }
   if (
     network === "livenet" &&
-    (!scope || scope === WORK_TOKEN_ID || scope === POWB_TOKEN_ID)
+    (scope === WORK_TOKEN_ID || scope === POWB_TOKEN_ID)
   ) {
     payload = await tokenPayloadWithSpendableActiveListings(payload, network);
   }

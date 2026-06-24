@@ -5525,6 +5525,13 @@ function tokenCreationIsAllowed({
   return !tokenTickerIsReserved(ticker);
 }
 
+function isPowbTokenDefinition(token: Pick<PowTokenDefinition, "ticker" | "tokenId">) {
+  return (
+    String(token.tokenId ?? "").toLowerCase() === POWB_TOKEN_ID ||
+    normalizeTokenTicker(token.ticker) === POWB_TOKEN_TICKER
+  );
+}
+
 function buildTokenCreatePayload({
   maxSupply,
   mintAmount,
@@ -12984,9 +12991,16 @@ export default function App() {
         .sort(compareTokensByConfirmation),
     [tokenDefinitions],
   );
+  const creditFactoryTokenDefinitions = useMemo(
+    () =>
+      orderedTokenDefinitions.filter((token) => !isPowbTokenDefinition(token)),
+    [orderedTokenDefinitions],
+  );
   const dashboardTokenDefinitions = useMemo(() => {
     if (!workTokenMode && activeFolder !== "work") {
-      return orderedTokenDefinitions;
+      return tokenMode || activeFolder === "token"
+        ? creditFactoryTokenDefinitions
+        : orderedTokenDefinitions;
     }
 
     const hasWork = orderedTokenDefinitions.some(
@@ -12996,7 +13010,13 @@ export default function App() {
     return hasWork
       ? orderedTokenDefinitions
       : [WORK_TOKEN_DEFINITION, ...orderedTokenDefinitions];
-  }, [activeFolder, orderedTokenDefinitions, workTokenMode]);
+  }, [
+    activeFolder,
+    creditFactoryTokenDefinitions,
+    orderedTokenDefinitions,
+    tokenMode,
+    workTokenMode,
+  ]);
   const effectiveTokenDetailTarget =
     workTokenMode || activeFolder === "work"
       ? WORK_TOKEN_TICKER
@@ -13014,9 +13034,11 @@ export default function App() {
             token.tokenId === effectiveTokenSelection ||
             (selectedTicker && token.ticker === selectedTicker),
         ) ??
-        dashboardTokenDefinitions.find(
-          (token) => token.ticker === WORK_TOKEN_TICKER,
-        ) ??
+        (workTokenMode || activeFolder === "work"
+          ? dashboardTokenDefinitions.find(
+              (token) => token.ticker === WORK_TOKEN_TICKER,
+            )
+          : undefined) ??
         dashboardTokenDefinitions[0]
       );
     },
@@ -20416,7 +20438,7 @@ export default function App() {
         tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
         tokenListings={tokenListings}
         tokenSales={tokenSales}
-        tokens={orderedTokenDefinitions}
+        tokens={dashboardTokenDefinitions}
         workFloorLoading={workFloorLoading}
         workFloorQuote={workFloorQuote}
         startMintAssistant={startTokenMintAssistant}
@@ -26154,7 +26176,7 @@ function TokenWorkspace({
               <h2>Create credit</h2>
               <p>
                 Pay the creation fee to <code>{TOKEN_INDEX_ID}</code>. Mints
-                route to the credit registry you choose.
+                route to your registry.
               </p>
             </div>
           </div>

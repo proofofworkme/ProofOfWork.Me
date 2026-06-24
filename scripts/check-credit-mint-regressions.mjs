@@ -26,6 +26,11 @@ function numberValue(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function timeValue(value) {
+  const time = Date.parse(String(value ?? ""));
+  return Number.isFinite(time) ? time : 0;
+}
+
 async function getJson(path, params = {}) {
   const url = new URL(path, `${API_BASE}/`);
   url.searchParams.set("network", NETWORK);
@@ -130,6 +135,15 @@ const scopedByTickerSummary = await getJson("/api/v1/token-summary", {
   asset: "POW",
   fresh: 1,
 });
+const cachedTokenDirectory = await getJson("/api/v1/token-history", {
+  kind: "tokens",
+  limit: 1,
+});
+const freshTokenDirectory = await getJson("/api/v1/token-history", {
+  fresh: 1,
+  kind: "tokens",
+  limit: 1,
+});
 
 const unscopedPow = assertPowMintable("unscoped summary POW row", unscopedSummary);
 const unscopedWork = assertIndexedSupply(
@@ -171,6 +185,16 @@ assert(
 assert(
   numberValue(unscopedSummary.confirmedSupply) > unscopedPow.maxSupply,
   "unscoped global supply no longer exceeds POW max; update this regression if global totals change",
+);
+assert(
+  numberValue(freshTokenDirectory.totalCount) >=
+    numberValue(cachedTokenDirectory.totalCount),
+  `fresh credit directory regressed behind cached directory (${freshTokenDirectory.totalCount} < ${cachedTokenDirectory.totalCount})`,
+);
+assert(
+  timeValue(freshTokenDirectory.indexedAt) >=
+    timeValue(cachedTokenDirectory.indexedAt),
+  `fresh credit directory returned an older snapshot (${freshTokenDirectory.indexedAt} < ${cachedTokenDirectory.indexedAt})`,
 );
 
 console.log(
