@@ -1989,6 +1989,44 @@ function mergedSourceLabel(...sources) {
   ].join("+");
 }
 
+function mergeTokenHistoryPageItem(current, incoming, kind) {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming) {
+    return current;
+  }
+
+  if (kind === "listings" || kind === "closedListings") {
+    return mergeTokenListingRecord(current, incoming);
+  }
+
+  if (kind === "market-log") {
+    if (current.kind === "listing" && incoming.kind === "listing") {
+      return {
+        ...current,
+        ...incoming,
+        listing: mergeTokenListingRecord(current.listing, incoming.listing),
+      };
+    }
+    if (
+      current.kind === "closed-listing" &&
+      incoming.kind === "closed-listing"
+    ) {
+      return {
+        ...current,
+        ...incoming,
+        closedListing: mergeTokenListingRecord(
+          current.closedListing,
+          incoming.closedListing,
+        ),
+      };
+    }
+  }
+
+  return incoming;
+}
+
 function mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination) {
   if (
     !overlayPage ||
@@ -2001,10 +2039,11 @@ function mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination) {
   const kind = page?.kind ?? overlayPage.kind;
   const byKey = new Map();
   for (const item of [
-    ...overlayPage.items,
     ...(Array.isArray(page?.items) ? page.items : []),
+    ...overlayPage.items,
   ]) {
-    byKey.set(tokenHistoryPageItemKey(item, kind), item);
+    const key = tokenHistoryPageItemKey(item, kind);
+    byKey.set(key, mergeTokenHistoryPageItem(byKey.get(key), item, kind));
   }
 
   const items = [...byKey.values()].sort(compareTokenHistoryPageItems);
@@ -17196,6 +17235,34 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     pagination,
     source: payload.source ?? mempoolBase(network),
   });
+  if (workBalanceHistoryKind && queriedWorkHistory && network === "livenet") {
+    const overlayPage = await proofIndexTokenHistoryPayload(
+      network,
+      scope,
+      safeKind,
+      searchParams,
+    ).catch((error) => {
+      console.error(
+        `Proof index token balance overlay failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    page = mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination);
+  }
+  if (workMarketHistoryKind && queriedWorkHistory && network === "livenet") {
+    const overlayPage = await proofIndexTokenHistoryPayload(
+      network,
+      scope,
+      safeKind,
+      searchParams,
+    ).catch((error) => {
+      console.error(
+        `Proof index token market history overlay failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    page = mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination);
+  }
   if (workMarketHistoryKind && network === "livenet") {
     const overlayPage = await proofIndexTokenMarketHistoryOverlayPayload(
       network,

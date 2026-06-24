@@ -1130,6 +1130,7 @@ const WORK_FLOOR_LIVE_REFRESH_MS = 15_000;
 const LOG_LIVE_REFRESH_MS = 15_000;
 const BACKGROUND_FRESH_REFRESH_DELAY_MS = 1_000;
 const BTC_USD_BROWSER_CACHE_TTL_MS = 60_000;
+const TOKEN_LOCAL_PENDING_LISTING_TTL_MS = 30 * 60_000;
 const TX_OUTSPEND_FETCH_TIMEOUT_MS = 12_000;
 const WALLET_UTXO_FETCH_TIMEOUT_MS = 20_000;
 const BLOCK_TXID_INDEX_CACHE = new Map<string, Promise<Map<string, number>>>();
@@ -5711,6 +5712,71 @@ function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(
   );
 }
 
+function normalizeTokenListingRecord<
+  T extends PowTokenListing | PowTokenClosedListing,
+>(listing: T): T | undefined {
+  if (!listing || typeof listing !== "object") {
+    return undefined;
+  }
+
+  const rawAuthorization =
+    listing.saleAuthorization &&
+    typeof listing.saleAuthorization === "object" &&
+    !Array.isArray(listing.saleAuthorization)
+      ? (listing.saleAuthorization as Partial<PowTokenSaleAuthorization>)
+      : {};
+  const saleAuthorization: PowTokenSaleAuthorization = {
+    ...tokenSaleAuthorizationDraft(rawAuthorization),
+    anchorSignature: String(rawAuthorization.anchorSignature ?? "").toLowerCase(),
+    anchorTxid: String(rawAuthorization.anchorTxid ?? "").toLowerCase(),
+  };
+  const listingId = String(listing.listingId ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(listingId)) {
+    return undefined;
+  }
+
+  return {
+    ...listing,
+    amount: Math.max(
+      0,
+      Math.floor(Number(listing.amount || saleAuthorization.amount || 0)),
+    ),
+    listingId,
+    priceSats: Math.max(
+      0,
+      Math.floor(Number(listing.priceSats || saleAuthorization.priceSats || 0)),
+    ),
+    registryAddress: String(
+      listing.registryAddress || saleAuthorization.registryAddress || "",
+    ).trim(),
+    saleAuthorization,
+    sellerAddress: String(
+      listing.sellerAddress || saleAuthorization.sellerAddress || "",
+    ).trim(),
+    ticker: normalizeTokenTicker(
+      String(listing.ticker || saleAuthorization.ticker || ""),
+    ),
+    tokenId: String(listing.tokenId || saleAuthorization.tokenId || "")
+      .trim()
+      .toLowerCase(),
+  } as T;
+}
+
+function normalizeTokenListingRecords<
+  T extends PowTokenListing | PowTokenClosedListing,
+>(listings: T[]) {
+  return listings
+    .map(normalizeTokenListingRecord)
+    .filter((listing): listing is T => Boolean(listing));
+}
+
+function tokenListingHasSpendableSaleTicketAnchor(listing: PowTokenListing) {
+  return (
+    Boolean(listing.registryAddress && listing.sellerAddress && listing.tokenId) &&
+    tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(listing.saleAuthorization)
+  );
+}
+
 function tokenListingHasConfirmedSaleTicketSeal(listing: PowTokenListing) {
   return (
     listing.sealConfirmed === true &&
@@ -5805,6 +5871,10 @@ function buildTokenBuyPayload(listingId: string, buyerAddress: string) {
 }
 
 function tokenListingAnchorOutpoint(listing: PowTokenListing) {
+  if (!tokenListingHasSpendableSaleTicketAnchor(listing)) {
+    return null;
+  }
+
   return {
     txid: listing.listingId,
     vout: listing.saleAuthorization.anchorVout,
@@ -5839,7 +5909,8 @@ function activeTokenListingAnchorOutpointsForAddress(
       return [];
     }
 
-    return [tokenListingAnchorOutpoint(listing)];
+    const anchor = tokenListingAnchorOutpoint(listing);
+    return anchor ? [anchor] : [];
   });
 }
 
@@ -5848,6 +5919,10 @@ function spendsTokenListingAnchor(
   listing: PowTokenListing,
 ) {
   const anchor = tokenListingAnchorOutpoint(listing);
+  if (!anchor) {
+    return false;
+  }
+
   return spentOutpoints.some(
     (outpoint) =>
       outpoint.txid === anchor.txid && outpoint.vout === anchor.vout,
@@ -6664,15 +6739,16 @@ function activeTokenListingsExcludingClosed(
   listings: PowTokenListing[],
   closedListings: PowTokenClosedListing[],
 ) {
+  const spendableListings = listings.filter(tokenListingHasSpendableSaleTicketAnchor);
   const closedKeys = new Set(closedListings.map(tokenListingStateKey));
   if (closedKeys.size === 0) {
-    return listings;
+    return spendableListings;
   }
 
-  const activeListings = listings.filter(
+  const activeListings = spendableListings.filter(
     (listing) => !closedKeys.has(tokenListingStateKey(listing)),
   );
-  return activeListings.length === listings.length ? listings : activeListings;
+  return activeListings;
 }
 
 function sanitizedTokenState(state: PowTokenState): PowTokenState {
@@ -6689,11 +6765,11 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
   const transfers = state.transfers.filter((transfer) =>
     allowedTokenIds.has(transfer.tokenId),
   );
-  const closedListings = (state.closedListings ?? []).filter((listing) =>
-    allowedTokenIds.has(listing.tokenId),
-  );
+  const closedListings = normalizeTokenListingRecords(
+    state.closedListings ?? [],
+  ).filter((listing) => allowedTokenIds.has(listing.tokenId));
   const listings = activeTokenListingsExcludingClosed(
-    (state.listings ?? []).filter((listing) =>
+    normalizeTokenListingRecords(state.listings ?? []).filter((listing) =>
       allowedTokenIds.has(listing.tokenId),
     ),
     closedListings,
@@ -6882,6 +6958,7 @@ function tokenReservedBalanceFor(
     (total, listing) =>
       listing.tokenId === tokenId &&
       listing.sellerAddress === ownerAddress &&
+      tokenListingHasSpendableSaleTicketAnchor(listing) &&
       !tokenListingIsExpired(listing)
         ? total + listing.amount
         : total,
@@ -6912,7 +6989,23 @@ function mergeTokenListingsById(
 }
 
 function tokenListingShouldSurviveRefresh(listing: PowTokenListing) {
-  return listing.confirmed === false || tokenListingHasPendingSaleTicketSeal(listing);
+  if (tokenListingHasPendingSaleTicketSeal(listing)) {
+    return true;
+  }
+
+  if (
+    listing.confirmed !== false ||
+    !tokenListingHasSpendableSaleTicketAnchor(listing)
+  ) {
+    return false;
+  }
+
+  const createdAtMs = Date.parse(listing.createdAt);
+  if (!Number.isFinite(createdAtMs)) {
+    return false;
+  }
+
+  return Date.now() - createdAtMs <= TOKEN_LOCAL_PENDING_LISTING_TTL_MS;
 }
 
 function tokenListingsWithPreservedLocalPending(
@@ -9900,9 +9993,14 @@ async function fetchTokenHistoryPage<T>(
     `/api/v1/token-history?${params.toString()}`,
     targetNetwork,
   );
+  const rawItems = Array.isArray(payload.items) ? payload.items : [];
+  const items =
+    kind === "listings"
+      ? (normalizeTokenListingRecords(rawItems as PowTokenListing[]) as T[])
+      : rawItems;
   return {
     ...payload,
-    items: Array.isArray(payload.items) ? payload.items : [],
+    items,
   };
 }
 
@@ -11560,26 +11658,23 @@ function listingAnchorDetails(
   listing: PowIdListing | PowTokenListing,
   network: BitcoinNetwork,
 ) {
-  if (
-    "tokenId" in listing &&
-    listing.saleAuthorization.version === TOKEN_SALE_AUTH_VERSION
-  ) {
-    if (
-      listing.saleAuthorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
-      typeof listing.saleAuthorization.sellerPublicKey === "string"
-    ) {
-      return {
-        publicKey: listing.saleAuthorization.sellerPublicKey,
-        scriptPubKey: listing.saleAuthorization.anchorScriptPubKey,
-        signature: listing.saleAuthorization.anchorSignature,
-        sighashType: listing.saleAuthorization.anchorSigHashType,
-        txid: listing.listingId,
-        valueSats: listing.saleAuthorization.anchorValueSats,
-        vout: listing.saleAuthorization.anchorVout,
-      };
+  const tokenAuthorization = (listing as PowTokenListing).saleAuthorization;
+  if (tokenAuthorization?.version === TOKEN_SALE_AUTH_VERSION) {
+    if (!tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(tokenAuthorization)) {
+      throw new Error(
+        "This credit listing does not use a spendable sale-ticket anchor.",
+      );
     }
 
-    throw new Error("This credit listing does not use a sale-ticket anchor.");
+    return {
+      publicKey: tokenAuthorization.sellerPublicKey,
+      scriptPubKey: tokenAuthorization.anchorScriptPubKey,
+      signature: tokenAuthorization.anchorSignature,
+      sighashType: tokenAuthorization.anchorSigHashType,
+      txid: listing.listingId,
+      valueSats: tokenAuthorization.anchorValueSats,
+      vout: tokenAuthorization.anchorVout,
+    };
   }
 
   const authorization = listing.saleAuthorization as PowIdSaleAuthorization;
@@ -19279,13 +19374,14 @@ export default function App() {
         listing.listingId,
         sealedAuthorization,
       );
+      const listingAnchor = tokenListingAnchorOutpoint(listing);
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
         excludeOutpoints: [
           ...activeTokenListingAnchorOutpointsForAddress(tokenListings, address, {
             network: "livenet",
           }),
-          tokenListingAnchorOutpoint(listing),
+          ...(listingAnchor ? [listingAnchor] : []),
         ],
         feeRate,
         fromAddress: address,

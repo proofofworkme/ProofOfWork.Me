@@ -31,6 +31,10 @@ const REPORTED_TRANSFER_TX =
   "90cdafde9e7e050a1831fcc3b412f29e529368fa6d9afc8f053c681c204449d4";
 const REPORTED_WAITING_FOR_SEAL_LISTING_TX =
   "a5476c0c6a8df67569935c3cca152a3ef979d95469ce8fe8c8187f359c48a6c7";
+const REPORTED_CONFIRMED_SEALABLE_LISTING_TX =
+  "d7fe42285c4edd02592608cbd887ad7a8a2b78e085de05296e352fcc1e2166a9";
+const REPORTED_DROPPED_LISTING_TX =
+  "658bca245e97ccfa0055ba6237e309fa2fa089316c9287c8952c8af6f59a050a";
 const REPORTED_TRANSFER_SENDER =
   "bc1pq0czje5lfwwat69g97k4sysx7an0wxu80n7jceqy6gc50hacd5wqltpx8y";
 const REPORTED_TRANSFER_RECIPIENT = "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d";
@@ -215,6 +219,35 @@ assert(
     REPORTED_WAITING_FOR_SEAL_LISTING_TX,
   ),
   `${REPORTED_WAITING_FOR_SEAL_LISTING_TX} is missing from WORK market-log history`,
+);
+const reportedSealableListing = await tokenHistory("listings", {
+  q: REPORTED_CONFIRMED_SEALABLE_LISTING_TX,
+});
+const sealableItem = (reportedSealableListing.items ?? []).find(
+  (item) =>
+    String(item?.listingId ?? "").toLowerCase() ===
+    REPORTED_CONFIRMED_SEALABLE_LISTING_TX,
+);
+assert(
+  sealableItem?.confirmed === true,
+  `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} is not returned as a confirmed active listing`,
+);
+assert(
+  sealableItem?.tokenId === WORK_TOKEN_ID &&
+    sealableItem?.registryAddress &&
+    sealableItem?.sellerAddress &&
+    sealableItem?.saleAuthorization?.version === "pwt-sale-v1" &&
+    sealableItem?.saleAuthorization?.anchorType === "sale-ticket-v1" &&
+    sealableItem?.saleAuthorization?.anchorVout === 2 &&
+    sealableItem?.saleAuthorization?.anchorValueSats === 546,
+  `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} is missing complete sale-ticket listing fields`,
+);
+const reportedDroppedListing = await tokenHistory("listings", {
+  q: REPORTED_DROPPED_LISTING_TX,
+});
+assert(
+  !txids(reportedDroppedListing.items).has(REPORTED_DROPPED_LISTING_TX),
+  `${REPORTED_DROPPED_LISTING_TX} is still returned as an active listing`,
 );
 
 const walletToken = await getJson("/api/v1/token", {

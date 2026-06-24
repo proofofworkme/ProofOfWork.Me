@@ -287,8 +287,9 @@ expectAll("summary proof-index reads reject stale snapshot ids", server, [
   /url\.pathname === "\/api\/v1\/growth-summary"[\s\S]*currentProofIndexSummarySnapshotPayload\([\s\S]*"growthSummary"[\s\S]*"growth-summary"/,
   /async function cachedMarketplaceSummaryPayloadNoRefresh\(network\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*payloadSnapshotMatchesLedger\(cachedPayload,\s*ledger\)[\s\S]*payloadSnapshotMatchesLedger\(persistedPayload,\s*ledger\)/,
 ]);
-expectAll("wallet token listing refresh preserves local pending marketplace rows", app, [
-  /function tokenListingShouldSurviveRefresh\(listing:\s*PowTokenListing\)[\s\S]*listing\.confirmed === false[\s\S]*tokenListingHasPendingSaleTicketSeal\(listing\)/,
+expectAll("wallet token listing refresh preserves bounded spendable local pending marketplace rows", app, [
+  /const TOKEN_LOCAL_PENDING_LISTING_TTL_MS = 30 \* 60_000/,
+  /function tokenListingShouldSurviveRefresh\(listing:\s*PowTokenListing\)[\s\S]*tokenListingHasPendingSaleTicketSeal\(listing\)[\s\S]*tokenListingHasSpendableSaleTicketAnchor\(listing\)[\s\S]*TOKEN_LOCAL_PENDING_LISTING_TTL_MS/,
   /function tokenListingsWithPreservedLocalPending\([\s\S]*tokenListingShouldSurviveRefresh\(listing\)[\s\S]*mergeTokenListingsById\(incoming,\s*preserved\)/,
   /function replaceTokenListingsForOwnerScope\([\s\S]*tokenListingShouldSurviveRefresh\(listing\)/,
   /setTokenListings\(\(current\) =>\s*tokenListingsWithPreservedLocalPending\(/,

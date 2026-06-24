@@ -6,6 +6,11 @@ import {
 let proofIndexReadPool = null;
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
+const TOKEN_SALE_AUTH_VERSION = "pwt-sale-v1";
+const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
+const TOKEN_LISTING_ANCHOR_VALUE_SATS = 546;
+const TOKEN_LISTING_ANCHOR_VOUT = 2;
+const TOKEN_LISTING_ANCHOR_SIGHASH_TYPE = 0x83;
 const PUBLIC_LOG_EVENT_KINDS = new Set([
   "attachment",
   "browser",
@@ -328,23 +333,31 @@ function tokenSaleFromEventPayload(payload) {
 }
 
 function tokenListingFromEventPayload(payload) {
-  const { amount, priceSats, ticker } = tokenMarketNumbersFromTags(payload);
-  const sellerAddress = String(
-    payload?.sellerAddress ?? payload?.actor ?? "",
-  ).trim();
-  const registryAddress = tokenRegistryAddressFromPayload(
-    payload,
-    sellerAddress,
-    payload?.counterparty,
-  );
   const saleAuthorization =
     payload?.saleAuthorization &&
     typeof payload.saleAuthorization === "object" &&
     !Array.isArray(payload.saleAuthorization)
       ? payload.saleAuthorization
       : {};
+  const { amount, priceSats, ticker } = tokenMarketNumbersFromTags(payload);
+  const sellerAddress = String(
+    payload?.sellerAddress ??
+      payload?.actor ??
+      saleAuthorization.sellerAddress ??
+      "",
+  ).trim();
+  const registryAddress = tokenRegistryAddressFromPayload(
+    payload,
+    sellerAddress,
+    payload?.counterparty,
+    saleAuthorization.registryAddress,
+  );
+  const tokenId = String(payload?.tokenId ?? saleAuthorization.tokenId ?? "")
+    .trim()
+    .toLowerCase();
+  const normalizedTicker = String(ticker || saleAuthorization.ticker || "").trim();
   return {
-    amount: rowNumber(payload, "amount") || amount,
+    amount: rowNumber(payload, "amount") || rowNumber(saleAuthorization, "amount") || amount,
     confirmed: payload?.confirmed === true,
     createdAt: dateIso(payload?.createdAt),
     dataBytes: rowNumber(payload, "dataBytes"),
@@ -352,13 +365,96 @@ function tokenListingFromEventPayload(payload) {
       .trim()
       .toLowerCase(),
     network: payload?.network,
-    priceSats: rowNumber(payload, "priceSats") || priceSats,
+    priceSats:
+      rowNumber(payload, "priceSats") ||
+      rowNumber(saleAuthorization, "priceSats") ||
+      priceSats,
+    registryAddress,
+    saleAuthorization,
+    sellerAddress,
+    status: payload?.status,
+    ticker: normalizedTicker,
+    tokenId,
+  };
+}
+
+function validPublicKeyHex(value) {
+  return (
+    /^[0-9a-fA-F]{64}$/u.test(value) ||
+    /^(02|03)[0-9a-fA-F]{64}$/u.test(value) ||
+    /^04[0-9a-fA-F]{128}$/u.test(value)
+  );
+}
+
+function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization) {
+  return (
+    authorization?.version === TOKEN_SALE_AUTH_VERSION &&
+    authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
+    authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
+    authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
+    authorization.anchorSigHashType === TOKEN_LISTING_ANCHOR_SIGHASH_TYPE &&
+    /^[0-9a-f]+$/u.test(authorization.anchorScriptPubKey ?? "") &&
+    validPublicKeyHex(authorization.sellerPublicKey ?? "")
+  );
+}
+
+function activeTokenListingHistoryItem(listing) {
+  return (
+    listing &&
+    listing.status !== "dropped" &&
+    listing.listingId &&
+    listing.tokenId &&
+    listing.registryAddress &&
+    listing.sellerAddress &&
+    tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(
+      listing.saleAuthorization,
+    )
+  );
+}
+
+function normalizeTokenHistoryListingItem(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return null;
+  }
+
+  const saleAuthorization =
+    item.saleAuthorization &&
+    typeof item.saleAuthorization === "object" &&
+    !Array.isArray(item.saleAuthorization)
+      ? item.saleAuthorization
+      : {};
+  const tokenId = String(item.tokenId ?? saleAuthorization.tokenId ?? "")
+    .trim()
+    .toLowerCase();
+  const registryAddress = String(
+    item.registryAddress ?? saleAuthorization.registryAddress ?? "",
+  ).trim();
+  const sellerAddress = String(
+    item.sellerAddress ?? saleAuthorization.sellerAddress ?? "",
+  ).trim();
+  const ticker = String(item.ticker ?? saleAuthorization.ticker ?? "").trim();
+
+  return {
+    ...item,
+    amount: rowNumber(item, "amount") || rowNumber(saleAuthorization, "amount"),
+    priceSats:
+      rowNumber(item, "priceSats") || rowNumber(saleAuthorization, "priceSats"),
     registryAddress,
     saleAuthorization,
     sellerAddress,
     ticker,
-    tokenId: String(payload?.tokenId ?? "").trim().toLowerCase(),
+    tokenId,
   };
+}
+
+function normalizeTokenHistoryItemsForKind(items, safeKind) {
+  if (!Array.isArray(items) || safeKind !== "listings") {
+    return items;
+  }
+
+  return items
+    .map(normalizeTokenHistoryListingItem)
+    .filter(activeTokenListingHistoryItem);
 }
 
 function tokenClosedListingFromEventPayload(payload) {
@@ -429,9 +525,9 @@ function tokenTransferFromEventPayload(payload, row = {}) {
 }
 
 function tokenHistoryItemFromMarketEventPayload(payload, safeKind) {
-  if (payload?.kind === "token-listing") {
+  if (payload?.kind === "token-listing" || payload?.kind === "token-listings") {
     const listing = tokenListingFromEventPayload(payload);
-    if (!listing.listingId || !listing.tokenId) {
+    if (!activeTokenListingHistoryItem(listing)) {
       return null;
     }
     if (safeKind === "listings") {
@@ -497,7 +593,7 @@ function compareTokenItemsByTime(left, right) {
 
 function tokenHistoryMarketEventKinds(safeKind) {
   if (safeKind === "listings") {
-    return ["token-listing"];
+    return ["token-listings", "token-listing"];
   }
   if (safeKind === "sales") {
     return ["token-sale"];
@@ -506,7 +602,12 @@ function tokenHistoryMarketEventKinds(safeKind) {
     return ["token-listing-closed"];
   }
   if (safeKind === "market-log") {
-    return ["token-listing", "token-sale", "token-listing-closed"];
+    return [
+      "token-listings",
+      "token-listing",
+      "token-sale",
+      "token-listing-closed",
+    ];
   }
   return [];
 }
@@ -571,6 +672,108 @@ function compareTokenHistoryMarketItems(left, right) {
     String(right?.txid ?? right?.closedTxid ?? right?.listingId ?? "")
       .localeCompare(String(left?.txid ?? left?.closedTxid ?? left?.listingId ?? ""))
   );
+}
+
+function validTxid(value) {
+  return /^[0-9a-f]{64}$/u.test(String(value ?? "").trim().toLowerCase());
+}
+
+function tokenListingSealRank(listing) {
+  if (!validTxid(listing?.sealTxid)) {
+    return 0;
+  }
+  return listing?.sealConfirmed === true ? 2 : 1;
+}
+
+function tokenListingWithSealFrom(listing, sealSource) {
+  if (!listing || tokenListingSealRank(sealSource) === 0) {
+    return listing;
+  }
+
+  return {
+    ...listing,
+    saleAuthorization: sealSource.saleAuthorization ?? listing.saleAuthorization,
+    sealAt: sealSource.sealAt ?? listing.sealAt,
+    sealConfirmed: sealSource.sealConfirmed === true,
+    sealDataBytes: sealSource.sealDataBytes ?? listing.sealDataBytes,
+    sealTxid: sealSource.sealTxid ?? listing.sealTxid,
+  };
+}
+
+function tokenListingCloseRank(listing) {
+  if (!validTxid(listing?.closedTxid)) {
+    return 0;
+  }
+  return listing?.closedConfirmed === true ? 2 : 1;
+}
+
+function tokenListingWithCloseFrom(listing, closeSource) {
+  if (!listing || tokenListingCloseRank(closeSource) === 0) {
+    return listing;
+  }
+
+  return {
+    ...listing,
+    closedAt: closeSource.closedAt ?? listing.closedAt,
+    closedConfirmed: closeSource.closedConfirmed === true,
+    closedTxid: closeSource.closedTxid ?? listing.closedTxid,
+    closedVin: closeSource.closedVin ?? listing.closedVin,
+  };
+}
+
+function mergeTokenListingRecord(current, incoming) {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming) {
+    return current;
+  }
+
+  const merged =
+    tokenListingSealRank(current) > tokenListingSealRank(incoming)
+      ? tokenListingWithSealFrom(incoming, current)
+      : tokenListingWithSealFrom(incoming, incoming);
+  return tokenListingCloseRank(current) > tokenListingCloseRank(incoming)
+    ? tokenListingWithCloseFrom(merged, current)
+    : tokenListingWithCloseFrom(merged, incoming);
+}
+
+function mergeTokenHistoryMarketItem(current, incoming, safeKind) {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming) {
+    return current;
+  }
+
+  if (safeKind === "listings" || safeKind === "closedListings") {
+    return mergeTokenListingRecord(current, incoming);
+  }
+
+  if (safeKind === "market-log") {
+    if (current.kind === "listing" && incoming.kind === "listing") {
+      return {
+        ...current,
+        ...incoming,
+        listing: mergeTokenListingRecord(current.listing, incoming.listing),
+      };
+    }
+    if (
+      current.kind === "closed-listing" &&
+      incoming.kind === "closed-listing"
+    ) {
+      return {
+        ...current,
+        ...incoming,
+        closedListing: mergeTokenListingRecord(
+          current.closedListing,
+          incoming.closedListing,
+        ),
+      };
+    }
+  }
+
+  return incoming;
 }
 
 function tokenHistoryPageFromItems({
@@ -642,10 +845,14 @@ function mergeTokenHistoryPages(basePage, overlayPage, safeKind, pagination) {
 
   const byKey = new Map();
   for (const item of [
-    ...overlayPage.items,
     ...(Array.isArray(basePage.items) ? basePage.items : []),
+    ...overlayPage.items,
   ]) {
-    byKey.set(tokenHistoryItemKey(item, safeKind), item);
+    const key = tokenHistoryItemKey(item, safeKind);
+    byKey.set(
+      key,
+      mergeTokenHistoryMarketItem(byKey.get(key), item, safeKind),
+    );
   }
   const items = [...byKey.values()].sort(compareTokenHistoryMarketItems);
   return {
@@ -688,12 +895,21 @@ async function filterClosedTokenListingHistoryPage(pool, page, network) {
 
   const result = await pool.query(
     `
-      SELECT DISTINCT lower(e.payload->>'listingId') AS listing_id
+      SELECT DISTINCT lower(COALESCE(e.payload->>'listingId', e.txid)) AS listing_id
       FROM proof_indexer.events e
       WHERE e.network = $1
         AND e.valid = true
-        AND e.kind = ANY($2::text[])
-        AND lower(e.payload->>'listingId') = ANY($3::text[])
+        AND (
+          (
+            e.kind = ANY($2::text[])
+            AND lower(e.payload->>'listingId') = ANY($3::text[])
+          )
+          OR (
+            e.kind = 'token-listing'
+            AND e.status = 'dropped'
+            AND lower(COALESCE(e.payload->>'listingId', e.txid)) = ANY($3::text[])
+          )
+        )
     `,
     [network, ["token-listing-closed", "token-sale"], listingIds],
   );
@@ -1606,8 +1822,12 @@ function tokenHistoryPageFromSnapshot(
     return null;
   }
 
+  const sourceItems = normalizeTokenHistoryItemsForKind(
+    source.sourceItems,
+    safeKind,
+  );
   const needles = tokenHistoryFilterNeedles(searchParams, pagination);
-  const filtered = historyItemsMatchingNeedles(source.sourceItems, needles);
+  const filtered = historyItemsMatchingNeedles(sourceItems, needles);
   const totalCount = filtered.length;
   const start = Math.min(pagination.offset, totalCount);
   const end = Math.min(totalCount, start + pagination.limit);
@@ -1708,6 +1928,10 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   }
   if (safeKind === "listings") {
     conditions.push(
+      `(e.status IS DISTINCT FROM 'dropped')`,
+      `(e.payload ? 'saleAuthorization')`,
+      `(e.payload->'saleAuthorization'->>'version' = 'pwt-sale-v1')`,
+      `(e.payload->'saleAuthorization'->>'anchorType' = 'sale-ticket-v1')`,
       `NOT EXISTS (
         SELECT 1
         FROM proof_indexer.events close_event
@@ -2002,7 +2226,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
   ];
   const params = [
     network,
-    ["token-listing", "token-sale", "token-listing-closed"],
+    ["token-listings", "token-listing", "token-sale", "token-listing-closed"],
   ];
 
   if (scope && scope !== "all") {
@@ -2063,7 +2287,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
   const closedListings = [];
   for (const row of rowsResult.rows) {
     const payload = eventRowPayload(row, network);
-    if (payload?.kind === "token-listing") {
+    if (payload?.kind === "token-listing" || payload?.kind === "token-listings") {
       const listing = tokenListingFromEventPayload(payload);
       if (listing.listingId && listing.tokenId) {
         listings.push(listing);
