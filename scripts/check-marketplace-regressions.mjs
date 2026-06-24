@@ -105,8 +105,10 @@ function txids(items) {
       .map((item) =>
         String(
           item?.txid ??
+            item?.listingId ??
             item?.closedTxid ??
             item?.sale?.txid ??
+            item?.listing?.listingId ??
             item?.closedListing?.closedTxid ??
             "",
         ).toLowerCase(),

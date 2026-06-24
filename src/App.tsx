@@ -13183,7 +13183,7 @@ export default function App() {
     tokenWalletBalances[0]?.token ??
     (infinityMode || activeFolder === "infinity"
       ? powbTokenDefinition
-      : !address
+      : !address && !walletMode && activeFolder !== "wallet"
         ? workTokenDefinition ?? WORK_TOKEN_DEFINITION
         : undefined);
   const walletTransferBalance =
@@ -24211,7 +24211,7 @@ function TokenWalletWorkspace({
               </div>
             </div>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
-            <button className="primary" disabled={listing} type="submit">
+            <button className="primary" disabled={!canList || listing} type="submit">
               <span className="button-content">
                 <Tag size={16} />
                 <span>

@@ -487,6 +487,12 @@ function tokenHistoryMarketEventKinds(safeKind) {
   return [];
 }
 
+function tokenListingId(item) {
+  return String(item?.listingId ?? item?.listing?.listingId ?? "")
+    .trim()
+    .toLowerCase();
+}
+
 function tokenHistoryItemKey(item, safeKind) {
   if (safeKind === "market-log") {
     if (item?.kind === "sale") {
@@ -642,6 +648,50 @@ function mergeTokenHistoryPages(basePage, overlayPage, safeKind, pagination) {
       Number(basePage.totalCount ?? 0),
       Number(overlayPage.totalCount ?? 0),
       items.length,
+    ),
+  };
+}
+
+async function filterClosedTokenListingHistoryPage(pool, page, network) {
+  if (!page || !Array.isArray(page.items) || page.items.length === 0) {
+    return page;
+  }
+
+  const listingIds = [...new Set(page.items.map(tokenListingId).filter(Boolean))];
+  if (listingIds.length === 0) {
+    return page;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT DISTINCT lower(e.payload->>'listingId') AS listing_id
+      FROM proof_indexer.events e
+      WHERE e.network = $1
+        AND e.valid = true
+        AND e.kind = ANY($2::text[])
+        AND lower(e.payload->>'listingId') = ANY($3::text[])
+    `,
+    [network, ["token-listing-closed", "token-sale"], listingIds],
+  );
+  const closedListingIds = new Set(
+    result.rows
+      .map((row) => String(row?.listing_id ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (closedListingIds.size === 0) {
+    return page;
+  }
+
+  const items = page.items.filter(
+    (item) => !closedListingIds.has(tokenListingId(item)),
+  );
+  return {
+    ...page,
+    items,
+    totalCount: Math.max(
+      0,
+      Number(page.totalCount ?? page.items.length) -
+        (page.items.length - items.length),
     ),
   };
 }
@@ -1457,6 +1507,18 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     const param = `$${params.length}`;
     conditions.push(`lower(e.payload::text) LIKE ${param}`);
   }
+  if (safeKind === "listings") {
+    conditions.push(
+      `NOT EXISTS (
+        SELECT 1
+        FROM proof_indexer.events close_event
+        WHERE close_event.network = e.network
+          AND close_event.valid = true
+          AND close_event.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
+          AND lower(close_event.payload->>'listingId') = lower(e.payload->>'listingId')
+      )`,
+    );
+  }
 
   const whereClause = conditions.join(" AND ");
   const countResult = await pool.query(
@@ -1851,16 +1913,20 @@ export async function proofIndexTokenHistoryPayload(
       snapshot,
     },
   );
+  let page = snapshotPage;
   if (marketOverlayPage) {
-    return mergeTokenHistoryPages(
+    page = mergeTokenHistoryPages(
       snapshotPage,
       marketOverlayPage,
       eligibility.kind,
       eligibility.pagination,
     );
   }
-  if (snapshotPage) {
-    return snapshotPage;
+  if (page && eligibility.kind === "listings") {
+    page = await filterClosedTokenListingHistoryPage(pool, page, network);
+  }
+  if (page) {
+    return page;
   }
 
   if (

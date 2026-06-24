@@ -19591,14 +19591,7 @@ async function handleRequest(request, response) {
           );
           return null;
         });
-        if (
-          indexedPayload &&
-          (await proofIndexPayloadCoversConfirmedTip(
-            indexedPayload,
-            network,
-            "token-history",
-          ))
-        ) {
+        if (indexedPayload) {
           jsonResponse(
             response,
             200,
