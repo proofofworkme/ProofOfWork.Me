@@ -374,10 +374,12 @@ expectAll("Infinity Bond mail normalization spans DB reads", proofIndexReader, [
   /const INFINITY_BOND_MEMO = "powb"/,
   /function isInfinityBondEventPayload\(payload,\s*row = \{\}\)/,
   /function normalizeEventPayload\(payload,\s*row = \{\}\)/,
+  /function normalizeHistoryEventItem\(item,\s*network,\s*\{ publicOnly = false \} = \{\}\)/,
+  /function normalizeHistoryEventRows\(rows,\s*network,\s*options = \{\}\)/,
   /function eventKindSqlCondition\(kind,\s*addValue\)/,
-  /activityPayload\.activity\.map\(\(item\) => normalizeEventPayload\(item\)\)/,
+  /normalizeHistoryEventItem\(normalizeEventPayload\(item\),\s*network,\s*\{/,
   /filters\.push\(eventKindSqlCondition\(kind,\s*addValue\)\)/,
-  /items: rowsResult\.rows\.map\(\(row\) => eventRowPayload\(row,\s*network\)\)/,
+  /items: normalizeHistoryEventRows\(rowsResult\.rows,\s*network/,
 ]);
 expectAll("Infinity Bond POWB recipient-credit market is wired", server + app + routeRegistry, [
   /const POWB_TOKEN_TICKER = "POWB"/,

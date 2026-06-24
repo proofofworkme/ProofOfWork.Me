@@ -8733,6 +8733,7 @@ function activityMatchesSearch(item: PowActivityItem, query: string) {
   if (!normalized) {
     return true;
   }
+  const tags = Array.isArray(item.tags) ? item.tags : [];
 
   return [
     item.title,
@@ -8747,7 +8748,7 @@ function activityMatchesSearch(item: PowActivityItem, query: string) {
     item.kind,
     item.utxo,
     ...(Array.isArray(item.participants) ? item.participants : []),
-    ...item.tags,
+    ...tags,
   ]
     .filter(Boolean)
     .some((value) => String(value).toLowerCase().includes(normalized));
@@ -22613,6 +22614,14 @@ function activityKey(item: PowActivityItem) {
   return `${item.kind}-${item.network}-${item.txid}-${item.listingId ?? ""}-${item.id ?? ""}`;
 }
 
+function activityKindDisplay(kind: string) {
+  return String(kind || "activity")
+    .split(/[-_]+/u)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
 function activityItemsForView(
   idActivity: PowActivityItem[],
   searchedActivity: PowActivityItem[],
@@ -22888,12 +22897,21 @@ function ActivityFeed({
     <div className="activity-feed">
       {items.map((item) => {
         const key = activityKey(item);
+        const tags = Array.isArray(item.tags) ? item.tags : [];
+        const title =
+          item.id
+            ? `${item.id}@proofofwork.me`
+            : item.title || activityKindDisplay(item.kind);
+        const summary =
+          item.id
+            ? item.title || activityKindDisplay(item.kind)
+            : item.description || item.detail || item.txid;
         return (
           <article className="activity-row" key={key}>
             <div className="activity-row-main">
               <div>
-                <h4>{item.id ? `${item.id}@proofofwork.me` : item.title}</h4>
-                <strong>{item.id ? item.title : item.description}</strong>
+                <h4>{title}</h4>
+                <strong>{summary}</strong>
                 {item.id ? <p>{item.description}</p> : null}
                 {item.detail ? (
                   <span className="activity-detail">{item.detail}</span>
@@ -22903,7 +22921,7 @@ function ActivityFeed({
             </div>
 
             <div className="activity-tags">
-              {item.tags.map((tag) => (
+              {tags.map((tag) => (
                 <span key={`${key}-${tag}`}>{tag}</span>
               ))}
             </div>

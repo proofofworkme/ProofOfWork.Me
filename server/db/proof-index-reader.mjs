@@ -6,6 +6,30 @@ import {
 let proofIndexReadPool = null;
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
+const PUBLIC_LOG_EVENT_KINDS = new Set([
+  "attachment",
+  "browser",
+  "file",
+  "id-buy",
+  "id-delist",
+  "id-list",
+  "id-register",
+  "id-seal",
+  "id-transfer",
+  "id-update",
+  "infinity-bond",
+  "mail",
+  "reply",
+  "rush-mint",
+  "token-create",
+  "token-listing",
+  "token-listing-closed",
+  "token-listing-sealed",
+  "token-mint",
+  "token-sale",
+  "token-transfer",
+]);
+const SMALL_EVENT_HISTORY_NORMALIZE_LIMIT = 2_000;
 
 function proofIndexPool() {
   if (!proofIndexDatabaseConfigured()) {
@@ -936,6 +960,117 @@ function compareHistoryItems(left, right) {
   );
 }
 
+function historyActivityKey(item) {
+  if (item?.kind === "token-listing-closed" && item?.txid) {
+    return `${item.kind}:${item.network}:${item.txid}`;
+  }
+
+  return [
+    item?.kind,
+    item?.network,
+    item?.txid,
+    item?.listingId ?? "",
+    item?.id ?? "",
+  ].join(":");
+}
+
+function historyActivityRichness(item) {
+  return [
+    item?.title,
+    item?.description,
+    item?.detail,
+    item?.listingId,
+    item?.tokenId,
+    item?.actor,
+    item?.counterparty,
+    ...(Array.isArray(item?.tags) ? item.tags : []),
+    ...(Array.isArray(item?.participants) ? item.participants : []),
+  ].filter(Boolean).length;
+}
+
+function eventKindTitle(kind, confirmed) {
+  const label = String(kind ?? "")
+    .split(/[-_]+/u)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+  return `${label || "ProofOfWork event"} ${confirmed ? "confirmed" : "pending"}`;
+}
+
+function safeEventTags(item, network, confirmed) {
+  const tags = (Array.isArray(item?.tags) ? item.tags : [])
+    .map((tag) => normalizedText(tag))
+    .filter(Boolean);
+  if (tags.length > 0) {
+    return tags;
+  }
+
+  return [
+    confirmed ? "Confirmed" : "Pending",
+    network === "livenet" ? "Mainnet" : network,
+    normalizedText(item?.kind),
+  ].filter(Boolean);
+}
+
+function normalizeHistoryEventItem(item, network, { publicOnly = false } = {}) {
+  const kind = normalizedLowerText(item?.kind);
+  if (publicOnly && !PUBLIC_LOG_EVENT_KINDS.has(kind)) {
+    return null;
+  }
+
+  const txid = normalizedLowerText(item?.txid);
+  if (!txid) {
+    return null;
+  }
+
+  const confirmed =
+    typeof item?.confirmed === "boolean"
+      ? item.confirmed
+      : normalizedLowerText(item?.status) === "confirmed";
+  const createdAt = dateIso(item?.createdAt);
+  const title = normalizedText(item?.title) || eventKindTitle(kind, confirmed);
+  const description =
+    normalizedText(item?.description) ||
+    normalizedText(item?.detail) ||
+    `${title} for ${txid.slice(0, 8)}...${txid.slice(-8)}.`;
+
+  return {
+    ...item,
+    confirmed,
+    createdAt,
+    description,
+    kind,
+    network: normalizedText(item?.network) || network,
+    tags: safeEventTags(item, network, confirmed),
+    title,
+    txid,
+  };
+}
+
+function normalizeHistoryEventRows(rows, network, options = {}) {
+  const merged = new Map();
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const item = normalizeHistoryEventItem(eventRowPayload(row, network), network, options);
+    if (!item) {
+      continue;
+    }
+
+    const key = historyActivityKey(item);
+    const current = merged.get(key);
+    if (
+      !current ||
+      (item.confirmed && !current.confirmed) ||
+      (item.confirmed === current.confirmed &&
+        historyActivityRichness(item) > historyActivityRichness(current))
+    ) {
+      merged.set(key, item);
+    }
+  }
+
+  return [...merged.values()].sort(compareHistoryItems);
+}
+
 function indexedThroughBlockFromItems(items) {
   const heights = (Array.isArray(items) ? items : [])
     .map((item) => Number(item?.blockHeight))
@@ -1219,7 +1354,13 @@ export function proofIndexRegistryHistoryReadEligibility(kind, searchParams) {
 function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination) {
   const activityPayload = snapshotActivityPayload(snapshot);
   const sourceItems = Array.isArray(activityPayload?.activity)
-    ? activityPayload.activity.map((item) => normalizeEventPayload(item))
+    ? activityPayload.activity
+        .map((item) =>
+          normalizeHistoryEventItem(normalizeEventPayload(item), network, {
+            publicOnly: true,
+          }),
+        )
+        .filter(Boolean)
     : [];
   if (sourceItems.length === 0) {
     return null;
@@ -1270,6 +1411,52 @@ function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination
       ledgerGeneratedAt:
         activityPayload.ledgerGeneratedAt ??
         dateIso(activityPayload.generatedAt ?? snapshot?.generated_at),
+      snapshotId,
+    };
+  }
+
+  return page;
+}
+
+function logHistoryPageFromItems({
+  indexedAt,
+  indexedThroughBlock,
+  items,
+  kind,
+  network,
+  pagination,
+  snapshot,
+  source,
+}) {
+  const totalCount = items.length;
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  const snapshotId = snapshot?.snapshot_id ?? "";
+  const page = {
+    cursor: historyCursor(snapshotId, start),
+    end,
+    indexedAt,
+    indexedThroughBlock:
+      indexedThroughBlock ?? indexedThroughBlockFromItems(items),
+    items: items.slice(start, end),
+    kind,
+    limit: pagination.limit,
+    network,
+    nextCursor: end < totalCount ? historyCursor(snapshotId, end) : "",
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source,
+    start,
+    totalCount,
+  };
+
+  if (snapshotId) {
+    return {
+      ...page,
+      consistency: snapshot?.consistency ?? undefined,
+      ledgerGeneratedAt: dateIso(snapshot?.generated_at),
       snapshotId,
     };
   }
@@ -1671,6 +1858,49 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     "indexed_through_block",
   );
 
+  if (
+    totalCount > 0 &&
+    totalCount <= SMALL_EVENT_HISTORY_NORMALIZE_LIMIT
+  ) {
+    const allRowsResult = await pool.query(
+      `
+        SELECT
+          e.payload,
+          e.protocol,
+          e.kind,
+          e.status,
+          e.event_time,
+          e.block_time,
+          e.created_at,
+          e.block_height,
+          e.txid,
+          e.event_id
+        FROM proof_indexer.events e
+        WHERE ${whereClause}
+        ORDER BY
+          COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+          e.txid DESC,
+          e.event_id DESC
+        LIMIT ${totalCount}
+      `,
+      params,
+    );
+    return logHistoryPageFromItems({
+      indexedAt: snapshot.generated_at
+        ? dateIso(snapshot.generated_at)
+        : new Date().toISOString(),
+      indexedThroughBlock,
+      items: normalizeHistoryEventRows(allRowsResult.rows, network, {
+        publicOnly: true,
+      }),
+      kind: requestedKind || "activity",
+      network,
+      pagination,
+      snapshot,
+      source: "proof-indexer",
+    });
+  }
+
   const rowParams = [...params, pagination.limit, pagination.offset];
   const limitParam = rowParams.length - 1;
   const offsetParam = rowParams.length;
@@ -1713,7 +1943,9 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     end,
     indexedAt,
     indexedThroughBlock,
-    items: rowsResult.rows.map((row) => eventRowPayload(row, network)),
+    items: normalizeHistoryEventRows(rowsResult.rows, network, {
+      publicOnly: true,
+    }),
     kind: requestedKind || "activity",
     limit: pagination.limit,
     network,
@@ -3009,6 +3241,60 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
     countResult.rows[0],
     "indexed_through_block",
   );
+
+  if (
+    totalCount > 0 &&
+    totalCount <= SMALL_EVENT_HISTORY_NORMALIZE_LIMIT
+  ) {
+    const allRowsResult = await pool.query(
+      `
+        SELECT
+          e.payload,
+          e.protocol,
+          e.kind,
+          e.status,
+          e.event_time,
+          e.block_time,
+          e.created_at,
+          e.block_height,
+          e.txid,
+          e.event_id
+        FROM proof_indexer.events e
+        WHERE ${whereClause}
+        ORDER BY
+          COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+          e.txid DESC,
+          e.event_id DESC
+        LIMIT ${totalCount}
+      `,
+      values,
+    );
+    const items = normalizeHistoryEventRows(allRowsResult.rows, network);
+    const start = Math.min(pagination.offset, items.length);
+    const end = Math.min(items.length, start + pagination.limit);
+    const snapshotId = snapshot.snapshot_id ?? "";
+
+    return {
+      cursor: historyCursor(snapshotId, start),
+      end,
+      indexedAt: dateIso(snapshot.generated_at),
+      indexedThroughBlock,
+      items: items.slice(start, end),
+      kind: "events",
+      limit: pagination.limit,
+      network,
+      nextCursor: end < items.length ? historyCursor(snapshotId, end) : "",
+      page: Math.floor(start / pagination.limit),
+      pageCount: Math.max(1, Math.ceil(items.length / pagination.limit)),
+      pageSize: pagination.limit,
+      query: pagination.query,
+      source: "proof-indexer-events",
+      start,
+      totalCount: items.length,
+      ...(snapshotId ? { snapshotId } : {}),
+    };
+  }
+
   const rowParams = [...values, pagination.limit, pagination.offset];
   const limitParam = rowParams.length - 1;
   const offsetParam = rowParams.length;
@@ -3045,7 +3331,7 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
     end,
     indexedAt: dateIso(snapshot.generated_at),
     indexedThroughBlock,
-    items: rowsResult.rows.map((row) => eventRowPayload(row, network)),
+    items: normalizeHistoryEventRows(rowsResult.rows, network),
     kind: "events",
     limit: pagination.limit,
     network,

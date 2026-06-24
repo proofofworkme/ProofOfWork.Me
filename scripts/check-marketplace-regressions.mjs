@@ -64,6 +64,26 @@ function assert(condition, message) {
   }
 }
 
+function assertRenderableLogItems(payload, label) {
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  for (const item of items) {
+    const txid = String(item?.txid ?? "");
+    assert(txid, `${label} returned a Log row without txid`);
+    assert(
+      String(item?.title ?? "").trim(),
+      `${label} returned ${txid} without title`,
+    );
+    assert(
+      String(item?.description ?? "").trim(),
+      `${label} returned ${txid} without description`,
+    );
+    assert(
+      Array.isArray(item?.tags),
+      `${label} returned ${txid} without render-safe tags`,
+    );
+  }
+}
+
 async function getJson(path, params = {}) {
   const url = new URL(path, `${API_BASE}/`);
   for (const [key, value] of Object.entries(params)) {
@@ -446,6 +466,7 @@ const reportedLogClose = await getJson("/api/v1/log-history", {
   q: REPORTED_DELIST_TX,
   limit: 5,
 });
+assertRenderableLogItems(reportedLogClose, "reported delist Log search");
 assert(
   (reportedLogClose.items ?? []).some(
     (item) =>
@@ -460,6 +481,7 @@ const reportedLogSale = await getJson("/api/v1/log-history", {
   q: REPORTED_SALE_TX,
   limit: 5,
 });
+assertRenderableLogItems(reportedLogSale, "reported sale Log search");
 assert(
   (reportedLogSale.items ?? []).some(
     (item) =>

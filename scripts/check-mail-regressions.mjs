@@ -320,12 +320,28 @@ function assertInfinityBondHistory(check, logPayload, eventPayload) {
     String(item?.txid ?? "").toLowerCase() === expectedTxid &&
     item?.kind === "infinity-bond" &&
     numberValue(item?.amountSats) >= minAmount;
+  const duplicateKeys = (items) => {
+    const counts = new Map();
+    for (const item of items.filter(isExpectedBond)) {
+      const key = `${item.kind}:${String(item.txid ?? "").toLowerCase()}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.entries()].filter(([, count]) => count > 1);
+  };
   const failures = [];
   if (!historyItems(logPayload).some(isExpectedBond)) {
     failures.push(`missing Log infinity-bond tx ${expectedTxid}`);
   }
   if (!historyItems(eventPayload).some(isExpectedBond)) {
     failures.push(`missing Event infinity-bond tx ${expectedTxid}`);
+  }
+  const logDuplicates = duplicateKeys(historyItems(logPayload));
+  const eventDuplicates = duplicateKeys(historyItems(eventPayload));
+  if (logDuplicates.length > 0) {
+    failures.push(`duplicate Log infinity-bond tx ${expectedTxid}`);
+  }
+  if (eventDuplicates.length > 0) {
+    failures.push(`duplicate Event infinity-bond tx ${expectedTxid}`);
   }
   if (failures.length > 0) {
     throw new Error(`${check.label}: ${failures.join("; ")}`);

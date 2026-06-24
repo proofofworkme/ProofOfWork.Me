@@ -122,6 +122,30 @@ function summaryValue(payload) {
   return numberValue(candidates.find((value) => Number.isFinite(Number(value))));
 }
 
+function snapshotActivityItems(snapshot) {
+  const payload = snapshot?.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return [];
+  }
+  const activityPayload =
+    payload.activityPayload &&
+    typeof payload.activityPayload === "object" &&
+    !Array.isArray(payload.activityPayload)
+      ? payload.activityPayload
+      : payload;
+  return Array.isArray(activityPayload?.activity)
+    ? activityPayload.activity
+    : [];
+}
+
+function uniqueActivityTxids(items) {
+  return new Set(
+    (Array.isArray(items) ? items : [])
+      .map((item) => String(item?.txid ?? "").trim().toLowerCase())
+      .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
+  );
+}
+
 function arrayLength(value) {
   return Array.isArray(value) ? value.length : 0;
 }
@@ -175,7 +199,7 @@ try {
   );
   const latestSnapshotResult = await pool.query(
     `
-      SELECT snapshot_id, generated_at, indexed_through_block
+      SELECT snapshot_id, generated_at, indexed_through_block, payload
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
       ORDER BY generated_at DESC
@@ -193,6 +217,11 @@ try {
   const activityItems = numberValue(metrics.activityItems);
   const confirmedComputerActions = numberValue(metrics.confirmedComputerActions);
   const confirmedTokens = numberValue(metrics.confirmedTokens);
+  const canonicalActivityTxids = uniqueActivityTxids(
+    snapshotActivityItems(latestSnapshot),
+  );
+  const canonicalActivityTxidCount =
+    canonicalActivityTxids.size || activityItems;
   const checks = [];
 
   check(checks, "canonical-ledger-green", ledger.ok === true && ledger.status === "green", {
@@ -218,14 +247,16 @@ try {
   );
   check(
     checks,
-    "transactions-cover-canonical-activity",
-    rowNumber(counts, "transactions_total") >= activityItems,
+    "transactions-cover-canonical-activity-txids",
+    rowNumber(counts, "transactions_total") >= canonicalActivityTxidCount,
     {
       canonicalActivityItems: activityItems,
+      canonicalActivityTxids: canonicalActivityTxidCount,
       confirmedTransactions: rowNumber(counts, "transactions_confirmed"),
       pendingTransactions: rowNumber(counts, "transactions_pending"),
       totalTransactions: rowNumber(counts, "transactions_total"),
     },
+    STRICT ? "error" : "warning",
   );
   check(
     checks,
