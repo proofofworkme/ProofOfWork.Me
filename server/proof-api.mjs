@@ -16811,6 +16811,28 @@ async function growthSummaryPayload(network, fresh = false) {
   );
 }
 
+async function infinitySummaryFromCanonicalLedger(ledger, network, fresh = false) {
+  if (!ledger) {
+    return null;
+  }
+
+  let btcUsdQuote = ledger.btcUsdQuote;
+  if (network === "livenet") {
+    btcUsdQuote = await btcUsdPricePayload(network, { fresh }).catch((error) => {
+      console.error(`Infinity BTC/USD overlay failed: ${errorSummary(error)}`);
+      return ledger.btcUsdQuote;
+    });
+  }
+
+  return attachLedgerMetadata(
+    infinitySummaryPayloadFromLedger({
+      ...ledger,
+      btcUsdQuote,
+    }),
+    ledger,
+  );
+}
+
 async function standaloneInfinitySummaryPayload(network, fresh = false) {
   void fresh;
   const registryState =
@@ -16901,12 +16923,13 @@ async function standaloneInfinitySummaryPayload(network, fresh = false) {
 }
 
 async function infinitySummaryPayload(network, fresh = false) {
-  if (!fresh) {
-    const ledger = await existingCanonicalLedgerPayload(network);
-    if (ledger?.infinitySummary?.registryAddress) {
-      return ledger.infinitySummary;
-    }
+  const ledger = fresh
+    ? await summaryCanonicalLedgerPayload(network, true)
+    : await existingCanonicalLedgerPayload(network);
+  if (ledger?.infinitySummary?.registryAddress) {
+    return infinitySummaryFromCanonicalLedger(ledger, network, fresh);
   }
+
   return standaloneInfinitySummaryPayload(network, fresh);
 }
 

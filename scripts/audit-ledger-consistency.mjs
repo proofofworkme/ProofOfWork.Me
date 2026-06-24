@@ -10,6 +10,8 @@ const GULLISH_BUYER =
   "bc1p0e5qs2vcu6c50t6xwxuk7yfnqpwtm03rclv7wzgxzk37849xt8fssl6zvd";
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const POWB_TOKEN_ID =
+  "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
 const WORK_TRANSFER_REGRESSION_TXID =
   "7e9e711564be12330793b3415a032eca42bb742499fbdb8a6b8be6d6f1867354";
 const WORK_TRANSFER_REGRESSION_RECIPIENT =
@@ -159,6 +161,8 @@ const [
   workFloor,
   workSummary,
   marketplaceSummary,
+  infinitySummary,
+  powbTokenState,
   growthSummary,
   btcUsdPrice,
   txLog,
@@ -185,6 +189,8 @@ const [
     readJson("/api/v1/work-floor"),
     readJson("/api/v1/work-summary"),
     readJson("/api/v1/marketplace-summary"),
+    readJson("/api/v1/infinity-summary?fresh=1"),
+    readJson(`/api/v1/token?asset=${POWB_TOKEN_ID}&fresh=1`),
     readJson("/api/v1/growth-summary"),
     readJson("/api/v1/prices/btc-usd?fresh=1"),
     readJson(`/api/v1/log-history?q=${GULLISH_TXID}`),
@@ -290,6 +296,16 @@ const workSummaryFloor = workSummary.floor ?? {};
 const marketplaceSummaryWorkFloor = marketplaceSummary.workFloor ?? {};
 const workSummaryBtcUsd = numberValue(workSummaryFloor.btcUsd);
 const marketplaceSummaryBtcUsd = numberValue(marketplaceSummaryWorkFloor.btcUsd);
+const powbConfirmedMints = Array.isArray(powbTokenState.mints)
+  ? powbTokenState.mints.filter((mint) => mint?.confirmed).length
+  : numberValue(powbTokenState.stats?.confirmedMints);
+const powbPendingMints = Array.isArray(powbTokenState.mints)
+  ? powbTokenState.mints.filter((mint) => !mint?.confirmed).length
+  : numberValue(powbTokenState.stats?.pendingMints);
+const powbHolders = Array.isArray(powbTokenState.holders)
+  ? powbTokenState.holders.length
+  : numberValue(powbTokenState.stats?.holders);
+const infinitySummaryBtcUsd = numberValue(infinitySummary.btcUsd);
 expect("WORK exposes live BTC/USD metadata", liveBtcUsd > 0);
 expect(
   "WORK BTC/USD metadata matches price endpoint",
@@ -306,6 +322,10 @@ expect(
 expect(
   "Marketplace summary WORK floor BTC/USD metadata matches price endpoint",
   btcUsdQuotesClose(marketplaceSummaryBtcUsd, priceEndpointBtcUsd),
+);
+expect(
+  "Infinity summary BTC/USD metadata matches price endpoint",
+  btcUsdQuotesClose(infinitySummaryBtcUsd, priceEndpointBtcUsd),
 );
 expect(
   "WORK total USD uses live BTC/USD",
@@ -340,6 +360,36 @@ expect(
   usdNumbersAgree(
     growthSummary.actualValue?.totalUsd,
     satsToUsd(growthSummary.actualValue?.totalSats, liveBtcUsd),
+  ),
+);
+expect(
+  "Infinity summary confirmed supply matches POWB token state",
+  numbersAgree(
+    infinitySummary.stats?.confirmedSupply,
+    powbTokenState.confirmedSupply,
+  ),
+);
+expect(
+  "Infinity summary pending supply matches POWB token state",
+  numbersAgree(infinitySummary.stats?.pendingSupply, powbTokenState.pendingSupply),
+);
+expect(
+  "Infinity summary confirmed bond count matches POWB mints",
+  numbersAgree(infinitySummary.stats?.confirmedBondActions, powbConfirmedMints),
+);
+expect(
+  "Infinity summary pending bond count matches POWB mints",
+  numbersAgree(infinitySummary.stats?.pendingBondActions, powbPendingMints),
+);
+expect(
+  "Infinity summary holder count matches POWB token state",
+  numbersAgree(infinitySummary.stats?.holders, powbHolders),
+);
+expect(
+  "Infinity total USD uses live BTC/USD",
+  usdNumbersAgree(
+    infinitySummary.actualValue?.totalUsd,
+    satsToUsd(infinitySummary.actualValue?.totalSats, infinitySummaryBtcUsd),
   ),
 );
 const actualValue = workFloor.actualValue ?? {};
