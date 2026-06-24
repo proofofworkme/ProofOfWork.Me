@@ -833,6 +833,18 @@ function canonicalEventPayload(payload) {
   return item;
 }
 
+function rawTransactionItemPayload(row) {
+  const raw = row?.transaction_raw_tx;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+  const item = raw.item;
+  if (item && typeof item === "object" && !Array.isArray(item)) {
+    return item;
+  }
+  return raw;
+}
+
 function normalizedText(value) {
   return String(value ?? "").trim();
 }
@@ -2873,6 +2885,11 @@ function normalizedAddress(value) {
   return String(value ?? "").trim();
 }
 
+function knownMailAddress(value) {
+  const address = normalizedAddress(value);
+  return /^unknown$/iu.test(address) ? "" : address;
+}
+
 function normalizedAddressKey(value) {
   return normalizedAddress(value).toLowerCase();
 }
@@ -2884,8 +2901,19 @@ function positiveNumber(value) {
 
 function stringList(values) {
   return (Array.isArray(values) ? values : [])
-    .map((value) => normalizedAddress(value))
+    .map((value) => knownMailAddress(value))
     .filter(Boolean);
+}
+
+function recipientAddressRecords(values) {
+  return (Array.isArray(values) ? values : [])
+    .map((value) => {
+      if (typeof value === "string") {
+        return { address: value, role: "recipient" };
+      }
+      return { address: value?.address, role: "recipient" };
+    })
+    .filter((record) => knownMailAddress(record.address));
 }
 
 function mailSubjectFromEvent(row, payload) {
@@ -2924,7 +2952,7 @@ function mailMemoFromEvent(row, payload) {
   return "";
 }
 
-function mailParticipantRecordsFromRow(row, payload) {
+function mailParticipantRecordsFromRow(row, payload, rawPayload = {}) {
   const participantRows = Array.isArray(row.participants)
     ? row.participants
     : [];
@@ -2933,16 +2961,25 @@ function mailParticipantRecordsFromRow(row, payload) {
       address: participant?.address,
       role: participant?.role,
     })),
+    { address: row.sender_address, role: "sender" },
     ...stringList(payload.participants).map((address) => ({
       address,
       role: "participant",
     })),
+    ...stringList(rawPayload.participants).map((address) => ({
+      address,
+      role: "participant",
+    })),
+    ...recipientAddressRecords(payload.recipients),
+    ...recipientAddressRecords(rawPayload.recipients),
     { address: payload.actor, role: "sender" },
+    { address: rawPayload.actor, role: "sender" },
     { address: payload.counterparty, role: "recipient" },
+    { address: rawPayload.counterparty, role: "recipient" },
   ];
   const unique = new Map();
   for (const record of records) {
-    const value = normalizedAddress(record.address);
+    const value = knownMailAddress(record.address);
     if (!value || /\s\+\d+$/u.test(value)) {
       continue;
     }
@@ -2955,9 +2992,9 @@ function mailParticipantRecordsFromRow(row, payload) {
   return [...unique.values()];
 }
 
-function mailParticipantsFromRow(row, payload) {
+function mailParticipantsFromRow(row, payload, rawPayload = {}) {
   const unique = new Map();
-  for (const participant of mailParticipantRecordsFromRow(row, payload)) {
+  for (const participant of mailParticipantRecordsFromRow(row, payload, rawPayload)) {
     unique.set(normalizedAddressKey(participant.address), participant.address);
   }
   return [...unique.values()];
@@ -2987,12 +3024,17 @@ function recipientSummary(recipients) {
 
 function addressMailRowPayloads(row, address, network) {
   const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
+  const rawPayload = normalizeEventPayload(
+    canonicalEventPayload(rawTransactionItemPayload(row)),
+    row,
+  );
   const targetAddress = normalizedAddress(address);
   const targetKey = normalizedAddressKey(targetAddress);
-  const actor = normalizedAddress(payload.actor);
+  const actor =
+    knownMailAddress(payload.actor) || knownMailAddress(rawPayload.actor);
   const actorKey = normalizedAddressKey(actor);
-  const participantRecords = mailParticipantRecordsFromRow(row, payload);
-  const participants = mailParticipantsFromRow(row, payload);
+  const participantRecords = mailParticipantRecordsFromRow(row, payload, rawPayload);
+  const participants = mailParticipantsFromRow(row, payload, rawPayload);
   const roleRecipientAddresses = participantRecords
     .filter((participant) =>
       ["recipient", "receiver", "counterparty"].includes(participant.role),
@@ -3119,7 +3161,9 @@ export async function proofIndexAddressMailPayload(network, address) {
         e.created_at,
         e.txid,
         e.event_id,
+        t.raw_tx AS transaction_raw_tx,
         m.subject,
+        m.sender_address,
         m.parent_txid,
         m.body_text,
         m.amount_sats,
@@ -3147,11 +3191,29 @@ export async function proofIndexAddressMailPayload(network, address) {
         AND e.valid = true
         AND e.kind = ANY($3::text[])
         AND e.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
-        AND EXISTS (
-          SELECT 1
-          FROM proof_indexer.event_participants target
-          WHERE target.event_id = e.event_id
-            AND target.address = ANY($2::text[])
+        AND (
+          m.sender_address = ANY($2::text[])
+          OR t.raw_tx->'item'->>'actor' = ANY($2::text[])
+          OR EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(
+              COALESCE(t.raw_tx->'item'->'participants', '[]'::jsonb)
+            ) raw_participant(address)
+            WHERE raw_participant.address = ANY($2::text[])
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(
+              COALESCE(t.raw_tx->'item'->'recipients', '[]'::jsonb)
+            ) raw_recipient(recipient)
+            WHERE raw_recipient.recipient->>'address' = ANY($2::text[])
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM proof_indexer.event_participants target
+            WHERE target.event_id = e.event_id
+              AND target.address = ANY($2::text[])
+          )
         )
       GROUP BY
         e.payload,
@@ -3164,7 +3226,9 @@ export async function proofIndexAddressMailPayload(network, address) {
         e.created_at,
         e.txid,
         e.event_id,
+        t.raw_tx,
         m.subject,
+        m.sender_address,
         m.parent_txid,
         m.body_text,
         m.amount_sats

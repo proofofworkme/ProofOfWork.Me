@@ -357,6 +357,21 @@ expect(
     css,
   ),
 );
+expect(
+  "Computer WORK workspace shows loading state before ledger data arrives",
+  /ledgerLoading/.test(app) &&
+    /Loading \{detailToken\?\.ticker \?\? "credit"\} ledger/.test(app) &&
+    /tokenLedgerLoading && workTokenLedger\.confirmedSupply === 0[\s\S]*\?\s*"\.\.\."/.test(
+      app,
+    ),
+);
+expect(
+  "Computer marketplace shows loading states before credit market data arrives",
+  /tokenMarketLoading/.test(app) &&
+    /Loading credit markets/.test(app) &&
+    /Loading credit sale tickets/.test(app) &&
+    /Loading credit market history/.test(app),
+);
 expect("stale browser network tab CSS removed", !/browser-network-tabs/.test(css));
 
 if (failures.length) {

@@ -219,6 +219,14 @@ expectAll("proof index mail body projection separates subject from body", proofI
 expectAll("proof index address mail exposes file kinds for Desktop repair", proofIndexReader, [
   /protocolKind:\s*row\.kind/,
 ]);
+expectAll("proof index address mail recovers sender-only file rows", proofIndexReader, [
+  /\{\s*address:\s*row\.sender_address,\s*role:\s*"sender"\s*\}/,
+  /function rawTransactionItemPayload\(row\)/,
+  /knownMailAddress\(payload\.actor\) \|\| knownMailAddress\(rawPayload\.actor\)/,
+  /m\.sender_address/,
+  /t\.raw_tx AS transaction_raw_tx/,
+  /m\.sender_address = ANY\(\$2::text\[\]\)[\s\S]*t\.raw_tx->'item'->>'actor' = ANY\(\$2::text\[\]\)[\s\S]*jsonb_array_elements_text/,
+]);
 expect("pending mempool bases must not hardcode public explorer data sources", !/explorerBase|explorerReadBases|mempool\.space/i.test(pendingMempoolBasesSource));
 expectAll("transaction hex PSBT reads stay first-party", txHexPayloadSource, [
   /fetchTransactionHexFromBitcoinRpc\(txid,\s*network\)/,
@@ -271,6 +279,14 @@ expect(
   "marketplace summary must not serve stale proof-index summary snapshots before reconciliation",
   !/proofIndexSnapshotPayload\(\s*network,\s*"marketplaceSummary"/.test(server),
 );
+expectAll("summary proof-index reads reject stale snapshot ids", server, [
+  /function payloadSnapshotMatchesLedger\(payload,\s*ledger\)[\s\S]*payloadSnapshotId\(payload\)[\s\S]*payloadSnapshotId\(ledger\)/,
+  /async function currentProofIndexSummarySnapshotPayload\(network,\s*key,\s*label\)[\s\S]*proofIndexSnapshotPayload\(network,\s*key\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*!payloadSnapshotMatchesLedger\(indexedPayload,\s*ledger\)/,
+  /url\.pathname === "\/api\/v1\/work-floor"[\s\S]*currentProofIndexSummarySnapshotPayload\([\s\S]*"workFloor"[\s\S]*"work-floor"/,
+  /url\.pathname === "\/api\/v1\/work-summary"[\s\S]*currentProofIndexSummarySnapshotPayload\([\s\S]*"workSummary"[\s\S]*"work-summary"/,
+  /url\.pathname === "\/api\/v1\/growth-summary"[\s\S]*currentProofIndexSummarySnapshotPayload\([\s\S]*"growthSummary"[\s\S]*"growth-summary"/,
+  /async function cachedMarketplaceSummaryPayloadNoRefresh\(network\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*payloadSnapshotMatchesLedger\(cachedPayload,\s*ledger\)[\s\S]*payloadSnapshotMatchesLedger\(persistedPayload,\s*ledger\)/,
+]);
 expectAll("wallet token listing refresh preserves local pending marketplace rows", app, [
   /function tokenListingShouldSurviveRefresh\(listing:\s*PowTokenListing\)[\s\S]*listing\.confirmed === false[\s\S]*tokenListingHasPendingSaleTicketSeal\(listing\)/,
   /function tokenListingsWithPreservedLocalPending\([\s\S]*tokenListingShouldSurviveRefresh\(listing\)[\s\S]*mergeTokenListingsById\(incoming,\s*preserved\)/,

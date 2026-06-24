@@ -12369,6 +12369,10 @@ export default function App() {
     MarketplacePurchaseReceipt | undefined
   >();
   const [tokenCreationSats, setTokenCreationSats] = useState(0);
+  const [tokenDataLoading, setTokenDataLoading] = useState(false);
+  const [tokenDataLoaded, setTokenDataLoaded] = useState(false);
+  const [marketplaceDataLoading, setMarketplaceDataLoading] = useState(false);
+  const [marketplaceDataLoaded, setMarketplaceDataLoaded] = useState(false);
 
   useEffect(() => {
     setTokenListings((current) =>
@@ -13116,6 +13120,26 @@ export default function App() {
     tokenMode &&
     (effectiveTokenDetailTarget === WORK_TOKEN_ID ||
       normalizeTokenTicker(effectiveTokenDetailTarget) === WORK_TOKEN_TICKER);
+  const tokenDataPriming =
+    network === "livenet" &&
+    !tokenDataLoaded &&
+    tokenDefinitions.length === 0 &&
+    (tokenMode ||
+      walletMode ||
+      workTokenMode ||
+      activeFolder === "token" ||
+      activeFolder === "wallet" ||
+      activeFolder === "work");
+  const tokenLedgerLoading = tokenDataLoading || tokenDataPriming;
+  const marketplaceDataPriming =
+    network === "livenet" &&
+    !marketplaceDataLoaded &&
+    tokenDefinitions.length === 0 &&
+    tokenListings.length === 0 &&
+    tokenSales.length === 0 &&
+    (marketplaceMode || activeFolder === "marketplace");
+  const tokenMarketplaceLoading =
+    marketplaceDataLoading || marketplaceDataPriming;
   const tokenDetailLedger = useMemo(
     () => tokenLedgerFor(tokenDetailToken, tokenMints, tokenTransfers, tokenSales),
     [tokenDetailToken, tokenMints, tokenSales, tokenTransfers],
@@ -15444,6 +15468,7 @@ export default function App() {
     if (marketplaceSummaryRefreshInFlightRef.current) {
       const needsFreshRefresh =
         fresh && !marketplaceSummaryRefreshInFlightFreshRef.current;
+      setMarketplaceDataLoading(true);
       if (!silent) {
         setBusy(true);
         setWorkFloorLoading(true);
@@ -15454,11 +15479,18 @@ export default function App() {
       }
       try {
         const snapshot = await marketplaceSummaryRefreshInFlightRef.current;
+        if (snapshot) {
+          setMarketplaceDataLoaded(true);
+          setTokenDataLoaded(true);
+        }
         if (needsFreshRefresh) {
           return refreshMarketplaceSummary(silent, fresh);
         }
         return snapshot;
       } finally {
+        if (!needsFreshRefresh) {
+          setMarketplaceDataLoading(false);
+        }
         if (!silent && !needsFreshRefresh) {
           setBusy(false);
           setWorkFloorLoading(false);
@@ -15467,6 +15499,7 @@ export default function App() {
     }
 
     const refreshPromise = (async () => {
+      setMarketplaceDataLoading(true);
       if (!silent) {
         setBusy(true);
         setWorkFloorLoading(true);
@@ -15495,6 +15528,8 @@ export default function App() {
         setTokenClosedListings(snapshot.token.closedListings);
         setTokenSales(snapshot.token.sales);
         setTokenCreationSats(snapshot.token.creationSats);
+        setMarketplaceDataLoaded(true);
+        setTokenDataLoaded(true);
         if (btcUsdQuote) {
           setTokenBtcUsd(btcUsdQuote);
         }
@@ -15522,6 +15557,7 @@ export default function App() {
       } finally {
         marketplaceSummaryRefreshInFlightRef.current = null;
         marketplaceSummaryRefreshInFlightFreshRef.current = false;
+        setMarketplaceDataLoading(false);
         if (!silent) {
           setBusy(false);
           setWorkFloorLoading(false);
@@ -15643,6 +15679,8 @@ export default function App() {
       setTokenClosedListings([]);
       setTokenSales([]);
       setTokenCreationSats(0);
+      setTokenDataLoaded(false);
+      setTokenDataLoading(false);
       if (!silent) {
         setStatus({
           tone: "idle",
@@ -15655,6 +15693,7 @@ export default function App() {
     if (tokenRefreshInFlightRef.current) {
       const needsFreshRefresh =
         fresh && !tokenRefreshInFlightFreshRef.current;
+      setTokenDataLoading(true);
       if (!silent) {
         setBusy(true);
         setStatus({
@@ -15664,6 +15703,9 @@ export default function App() {
       }
       try {
         const state = await tokenRefreshInFlightRef.current;
+        if (state) {
+          setTokenDataLoaded(true);
+        }
         if (needsFreshRefresh) {
           if (!silent) {
             setStatus({
@@ -15688,6 +15730,9 @@ export default function App() {
         }
         return state;
       } finally {
+        if (!needsFreshRefresh) {
+          setTokenDataLoading(false);
+        }
         if (!silent && !needsFreshRefresh) {
           setBusy(false);
         }
@@ -15695,6 +15740,7 @@ export default function App() {
     }
 
     const refreshPromise = (async () => {
+      setTokenDataLoading(true);
       if (!silent) {
         setBusy(true);
       }
@@ -15726,6 +15772,7 @@ export default function App() {
         setTokenClosedListings(state.closedListings);
         setTokenSales(state.sales);
         setTokenCreationSats(state.creationSats);
+        setTokenDataLoaded(true);
         const walletAddress = address;
         const walletTokenScope = walletTransferToken?.tokenId;
         if (
@@ -15767,6 +15814,7 @@ export default function App() {
       } finally {
         tokenRefreshInFlightRef.current = null;
         tokenRefreshInFlightFreshRef.current = false;
+        setTokenDataLoading(false);
         if (!silent) {
           setBusy(false);
         }
@@ -20293,6 +20341,7 @@ export default function App() {
           tokenTransfers={tokenTransfers.filter(
             (transfer) => transfer.network === "livenet",
           )}
+          tokenMarketLoading={tokenMarketplaceLoading}
           workFloorLoading={workFloorLoading}
           workFloorQuote={workFloorQuote}
           buyTokenListing={buyTokenListing}
@@ -20498,6 +20547,7 @@ export default function App() {
         status={status}
         tokenDetailTarget={effectiveTokenDetailTarget}
         tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
+        ledgerLoading={tokenLedgerLoading}
         tokenListings={tokenListings}
         tokenSales={tokenSales}
         tokens={dashboardTokenDefinitions}
@@ -20950,7 +21000,11 @@ export default function App() {
                 <TrendingUp size={17} />
                 <span>WORK</span>
               </span>
-              <strong>{workTokenLedger.confirmedSupply.toLocaleString()}</strong>
+              <strong>
+                {tokenLedgerLoading && workTokenLedger.confirmedSupply === 0
+                  ? "..."
+                  : workTokenLedger.confirmedSupply.toLocaleString()}
+              </strong>
             </button>
             <button
               aria-current={activeFolder === "infinity"}
@@ -21134,6 +21188,7 @@ export default function App() {
             tokenSales={tokenSales}
             tokens={orderedTokenDefinitions}
             tokenTransfers={tokenTransfers}
+            tokenMarketLoading={tokenMarketplaceLoading}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
             onOpenTokenWorkspace={openTokenWorkspace}
@@ -21255,6 +21310,7 @@ export default function App() {
               activeFolder === "work" ? WORK_TOKEN_TICKER : ""
             }
             tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
+            ledgerLoading={tokenLedgerLoading}
             tokenListings={tokenListings}
             tokenSales={tokenSales}
             tokens={orderedTokenDefinitions}
@@ -24484,6 +24540,7 @@ type TokenAppProps = {
   feeRate: number;
   btcUsd: number;
   hasUnisat: boolean;
+  ledgerLoading?: boolean;
   network: BitcoinNetwork;
   holders: PowTokenHolder[];
   mintBytes: number;
@@ -24606,6 +24663,7 @@ function TokenWorkspace({
   feeRate,
   btcUsd,
   holders,
+  ledgerLoading = false,
   mintBytes,
   network,
   mintAssistantCompleted,
@@ -25667,6 +25725,56 @@ function TokenWorkspace({
     </div>
   );
   const workspaceClassName = `id-launch-main token-workspace${compact ? " token-workspace-compact" : ""}`;
+  const detailLedgerLoading =
+    ledgerLoading &&
+    Boolean(detailToken) &&
+    detailConfirmedSupply === 0 &&
+    detailHolders.length === 0 &&
+    detailMints.length === 0;
+
+  if (detailMode && detailLedgerLoading) {
+    return (
+      <section className={`${workspaceClassName} token-detail-page`}>
+        <div className="token-detail-toolbar">
+          {compact ? (
+            <button className="secondary small" onClick={openTokenFactory} type="button">
+              <span className="button-content">
+                <ArrowLeft size={15} />
+                <span>Factory</span>
+              </span>
+            </button>
+          ) : (
+            <a
+              className="secondary small"
+              href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
+            >
+              <span className="button-content">
+                <ArrowLeft size={15} />
+                <span>Factory</span>
+              </span>
+            </a>
+          )}
+          <button className="secondary small" onClick={onRefresh} type="button">
+            <span className="button-content">
+              <RefreshCw size={15} />
+              <span>Refresh</span>
+            </span>
+          </button>
+        </div>
+        <section className="id-launch-card token-detail-empty">
+          <div className="empty-icon" aria-hidden="true">
+            <TrendingUp size={24} />
+          </div>
+          <h2>Loading {detailToken?.ticker ?? "credit"} ledger</h2>
+          <p>
+            Confirmed credit data is loading from the ProofOfWork index. The
+            dashboard will show supply, holders, and mints once the ledger
+            snapshot arrives.
+          </p>
+        </section>
+      </section>
+    );
+  }
 
   if (detailMode) {
     return (
@@ -30737,6 +30845,7 @@ function TokenMarketplacePanel({
   sales,
   selectedTokenMarketId: controlledSelectedTokenMarketId,
   setFeeRate,
+  tokenMarketLoading = false,
   tokens,
   transfers,
   workFloorLoading,
@@ -30759,6 +30868,7 @@ function TokenMarketplacePanel({
   sales: PowTokenSale[];
   selectedTokenMarketId?: string;
   setFeeRate: (value: number) => void;
+  tokenMarketLoading?: boolean;
   tokens: PowTokenDefinition[];
   transfers: PowTokenTransfer[];
   workFloorLoading: boolean;
@@ -31324,8 +31434,16 @@ function TokenMarketplacePanel({
           {rows.length === 0 ? (
             <div className="empty-state">
               <Wallet size={28} />
-              <h3>No credits indexed yet</h3>
-              <p>Create credit before credit markets can open.</p>
+              <h3>
+                {tokenMarketLoading
+                  ? "Loading credit markets"
+                  : "No credits indexed yet"}
+              </h3>
+              <p>
+                {tokenMarketLoading
+                  ? "Confirmed credit and sale-ticket data is loading from the ProofOfWork index."
+                  : "Create credit before credit markets can open."}
+              </p>
             </div>
           ) : (
             <div className="token-market-grid">
@@ -31617,14 +31735,18 @@ function TokenMarketplacePanel({
             <div className="empty-state">
               <Wallet size={28} />
               <h3>
-                {marketListings.length
+                {tokenMarketLoading
+                  ? "Loading credit sale tickets"
+                  : marketListings.length
                   ? tokenListingBookFilter === "sealed"
                     ? "No sealed listings"
                     : "No unsealed listings"
                   : "No credit listings yet"}
               </h3>
               <p>
-                {marketListings.length
+                {tokenMarketLoading
+                  ? "Confirmed listings and seals are loading from the ProofOfWork index."
+                  : marketListings.length
                   ? tokenListingBookFilter === "sealed"
                     ? "No sale tickets in this view have a confirmed buyable seal yet."
                     : "Every sale ticket in this view already has a seal or pending seal."
@@ -31937,9 +32059,15 @@ function TokenMarketplacePanel({
           ) : (
             <div className="empty-state">
               <FileText size={28} />
-              <h3>No credit market history yet</h3>
+              <h3>
+                {tokenMarketLoading
+                  ? "Loading credit market history"
+                  : "No credit market history yet"}
+              </h3>
               <p>
-                {selectedMarketToken
+                {tokenMarketLoading
+                  ? "Confirmed listings, closures, and sales are loading from the ProofOfWork index."
+                  : selectedMarketToken
                   ? `${selectedMarketToken.ticker} has no listings or sales yet.`
                   : "Credit listings and sales will appear here after they confirm or enter mempool."}
               </p>
@@ -32002,6 +32130,7 @@ function MarketplaceApp({
   tokenSales,
   tokens,
   tokenTransfers,
+  tokenMarketLoading,
   workFloorLoading,
   workFloorQuote,
   buyTokenListing,
@@ -32053,6 +32182,7 @@ function MarketplaceApp({
   tokenSales: PowTokenSale[];
   tokens: PowTokenDefinition[];
   tokenTransfers: PowTokenTransfer[];
+  tokenMarketLoading: boolean;
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
   buyTokenListing: (listing: PowTokenListing) => void;
@@ -32357,6 +32487,7 @@ function MarketplaceApp({
             setFeeRate={setFeeRate}
             tokens={tokens}
             transfers={tokenTransfers}
+            tokenMarketLoading={tokenMarketLoading}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
           />
@@ -32408,6 +32539,7 @@ function MarketplaceWorkspace({
   tokenSales,
   tokens,
   tokenTransfers,
+  tokenMarketLoading,
   workFloorLoading,
   workFloorQuote,
   onOpenTokenWorkspace,
@@ -32457,6 +32589,7 @@ function MarketplaceWorkspace({
   tokenSales: PowTokenSale[];
   tokens: PowTokenDefinition[];
   tokenTransfers: PowTokenTransfer[];
+  tokenMarketLoading: boolean;
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
   onOpenTokenWorkspace?: (token?: PowTokenDefinition) => void;
@@ -32758,6 +32891,7 @@ function MarketplaceWorkspace({
             setFeeRate={setFeeRate}
             tokens={tokens}
             transfers={tokenTransfers}
+            tokenMarketLoading={tokenMarketLoading}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
           />

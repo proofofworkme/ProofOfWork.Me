@@ -15142,6 +15142,47 @@ async function existingCanonicalLedgerPayload(network) {
   return null;
 }
 
+function payloadSnapshotId(payload) {
+  return String(payload?.snapshotId ?? "").trim();
+}
+
+function payloadSnapshotMatchesLedger(payload, ledger) {
+  const payloadId = payloadSnapshotId(payload);
+  const ledgerId = payloadSnapshotId(ledger);
+  return !payloadId || !ledgerId || payloadId === ledgerId;
+}
+
+function logStaleSnapshotPayload(label, payload, ledger) {
+  console.error(
+    `Rejected stale ${label}: snapshot ${payloadSnapshotId(payload) || "unknown"} does not match canonical ledger snapshot ${payloadSnapshotId(ledger) || "unknown"}.`,
+  );
+}
+
+async function currentProofIndexSummarySnapshotPayload(network, key, label) {
+  const indexedPayload = await proofIndexSnapshotPayload(network, key).catch(
+    (error) => {
+      console.error(`Proof index ${label} read failed: ${errorSummary(error)}`);
+      return null;
+    },
+  );
+  if (!indexedPayload) {
+    return null;
+  }
+
+  const ledger = await existingCanonicalLedgerPayload(network).catch((error) => {
+    console.error(
+      `Canonical ledger snapshot check failed for ${label}: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (ledger && !payloadSnapshotMatchesLedger(indexedPayload, ledger)) {
+    logStaleSnapshotPayload(`proof-index ${label} read`, indexedPayload, ledger);
+    return null;
+  }
+
+  return indexedPayload;
+}
+
 function cacheDerivedLedgerPayload(cacheKey, payload, ttlMs, staleMs) {
   const payloadKey = `payload:${cacheKey}`;
   const body = JSON.stringify(payload);
@@ -16543,9 +16584,14 @@ function cacheMarketplaceSummaryPayload(network, payload) {
 async function cachedMarketplaceSummaryPayloadNoRefresh(network) {
   const cacheKey = marketplaceSummaryCacheKey(network);
   const payloadKey = marketplaceSummaryPayloadKey(network);
+  const ledger = await existingCanonicalLedgerPayload(network);
   const cachedPayload = RESPONSE_CACHE.get(payloadKey)?.payload;
   if (cachedPayload) {
-    return cachedPayload;
+    if (payloadSnapshotMatchesLedger(cachedPayload, ledger)) {
+      return cachedPayload;
+    }
+    logStaleSnapshotPayload("marketplace-summary cache", cachedPayload, ledger);
+    RESPONSE_CACHE.delete(payloadKey);
   }
 
   const persistedPayload = await persistedPayloadForCache(
@@ -16553,6 +16599,14 @@ async function cachedMarketplaceSummaryPayloadNoRefresh(network) {
     MARKETPLACE_SUMMARY_CACHE_STALE_MS,
   );
   if (persistedPayload) {
+    if (!payloadSnapshotMatchesLedger(persistedPayload, ledger)) {
+      logStaleSnapshotPayload(
+        "persisted marketplace-summary cache",
+        persistedPayload,
+        ledger,
+      );
+      return null;
+    }
     RESPONSE_CACHE.set(payloadKey, {
       expiresAt: Date.now() - 1,
       payload: persistedPayload,
@@ -19699,15 +19753,11 @@ async function handleRequest(request, response) {
         !freshRead &&
         proofIndexReadFeatureEnabled("work-floor,summary,summaries")
       ) {
-        const indexedPayload = await proofIndexSnapshotPayload(
+        const indexedPayload = await currentProofIndexSummarySnapshotPayload(
           network,
           "workFloor",
-        ).catch((error) => {
-          console.error(
-            `Proof index work-floor read failed: ${errorSummary(error)}`,
-          );
-          return null;
-        });
+          "work-floor",
+        );
         if (indexedPayload) {
           jsonResponse(
             response,
@@ -19741,15 +19791,11 @@ async function handleRequest(request, response) {
         !freshRead &&
         proofIndexReadFeatureEnabled("work-summary,summary,summaries")
       ) {
-        const indexedPayload = await proofIndexSnapshotPayload(
+        const indexedPayload = await currentProofIndexSummarySnapshotPayload(
           network,
           "workSummary",
-        ).catch((error) => {
-          console.error(
-            `Proof index work-summary read failed: ${errorSummary(error)}`,
-          );
-          return null;
-        });
+          "work-summary",
+        );
         if (indexedPayload) {
           jsonResponse(
             response,
@@ -19794,15 +19840,11 @@ async function handleRequest(request, response) {
         !freshRead &&
         proofIndexReadFeatureEnabled("growth-summary,summary,summaries")
       ) {
-        const indexedPayload = await proofIndexSnapshotPayload(
+        const indexedPayload = await currentProofIndexSummarySnapshotPayload(
           network,
           "growthSummary",
-        ).catch((error) => {
-          console.error(
-            `Proof index growth-summary read failed: ${errorSummary(error)}`,
-          );
-          return null;
-        });
+          "growth-summary",
+        );
         if (indexedPayload) {
           jsonResponse(
             response,
