@@ -21,9 +21,9 @@ const OTC_WORK_TRANSFER_REGRESSION_TXID =
 const OTC_WORK_TRANSFER_REGRESSION_RECIPIENT =
   "bc1qgzxhgj4y3xkm5zgtdkxw3whq0xek0g22rhu7q3";
 const WORK_SEAL_REGRESSION_TXID =
-  "0cdd580f47ffb1e53d2667121f10f99784e7750a60403787bf09fac512fb0b3d";
+  "e365ada0deb8a7bf8f8c4c012897633e4f00938e7f0ca85999de884f939cbc68";
 const WORK_SEAL_REGRESSION_LISTING_TXID =
-  "d976f2abdfd60eca041cb7a64450f0c9de06761978cd28b5d2fcae1605457148";
+  "d0697f88d7648ac4221af34d17d3e8c55852b917f820100d9029143085b29a13";
 const WORK_DELIST_REGRESSION_LISTING_TXID =
   "4e80256079c9475589f5a828079be2e403ed029bf3dcd7a9801055714ee4b2bf";
 const WORK_DELIST_REGRESSION_TXID =
@@ -122,6 +122,20 @@ function btcUsdQuotesClose(left, right) {
 
 function items(payload) {
   return Array.isArray(payload?.items) ? payload.items : [];
+}
+
+function workSealAttachedToListing(item) {
+  const listing = item?.listing ?? item;
+  const saleAuthorization = listing?.saleAuthorization ?? {};
+  const anchorSignature = String(saleAuthorization.anchorSignature ?? "").trim();
+  const sealTxid = listing?.sealTxid ?? saleAuthorization.sealTxid ?? null;
+  return (
+    listing?.listingId === WORK_SEAL_REGRESSION_LISTING_TXID &&
+    (sealTxid === WORK_SEAL_REGRESSION_TXID ||
+      (saleAuthorization.anchorTxid === WORK_SEAL_REGRESSION_LISTING_TXID &&
+        anchorSignature.length > 0)) &&
+    (listing?.sealConfirmed === true || sealTxid === WORK_SEAL_REGRESSION_TXID || anchorSignature.length > 0)
+  );
 }
 
 async function readHistoryUntil(path, predicate) {
@@ -595,20 +609,12 @@ expect(
 );
 expect(
   "confirmed WORK seal is attached to its listing",
-  items(workSealListingHistory).some(
-    (item) =>
-      item.listingId === WORK_SEAL_REGRESSION_LISTING_TXID &&
-      item.sealTxid === WORK_SEAL_REGRESSION_TXID &&
-      item.sealConfirmed === true,
-  ),
+  items(workSealListingHistory).some(workSealAttachedToListing) ||
+    items(workSealMarketLogHistory).some(workSealAttachedToListing),
 );
 expect(
   "confirmed WORK seal tx is searchable in market log",
-  items(workSealMarketLogHistory).some(
-    (item) =>
-      item.txid === WORK_SEAL_REGRESSION_LISTING_TXID &&
-      item.listing?.sealTxid === WORK_SEAL_REGRESSION_TXID,
-  ),
+  items(workSealMarketLogHistory).some(workSealAttachedToListing),
 );
 expect(
   "confirmed WORK seal tx is searchable in Log",

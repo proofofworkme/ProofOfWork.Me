@@ -13,7 +13,7 @@ Environment=NETWORK=livenet
 Environment=POW_API_BASE=http://127.0.0.1:8081
 Environment=POW_INDEX_WORKER_INTERVAL_MS=300000
 Environment=POW_INDEX_WORKER_BACKFILL_MAX_PAGES=20
-Environment=POW_INDEX_WORKER_BACKFILL_SOURCES=token-listings,token-closed-listings,token-sales,token-transfers,token-mints,tokens,token-invalid-events,registry-records,registry-listings,registry-sales,registry-pending,log
+Environment=POW_INDEX_WORKER_BACKFILL_SOURCES=token-listings,token-closed-listings,token-sales,token-transfers,token-mints,tokens,token-invalid-events,registry-records,registry-listings,registry-sales,registry-pending,log,address-mail
 Environment=POW_INDEX_WORKER_BACKFILL_SOURCE_FRESH=1
 Environment=POW_INDEX_WORKER_BACKFILL_SUMMARY_SNAPSHOT_FRESH=1
 Environment=POW_INDEX_WORKER_BACKFILL_TOKEN_SNAPSHOT_FRESH=1

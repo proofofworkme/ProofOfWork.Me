@@ -70,6 +70,10 @@ const MAIL_ADDRESS_TX_PAGES = Number(
 const MAIL_INDEXED_REPAIR_TX_PAGES = Number(
   process.env.MAIL_INDEXED_REPAIR_TX_PAGES ?? Math.min(MAIL_ADDRESS_TX_PAGES, 2),
 );
+const MAIL_INDEXED_RECENT_TX_PAGES = Number(
+  process.env.MAIL_INDEXED_RECENT_TX_PAGES ??
+    Math.max(2, Math.min(MAIL_ADDRESS_TX_PAGES, 4)),
+);
 const MAIL_BODY_REPAIR_MAX_TXS = Number(
   process.env.MAIL_BODY_REPAIR_MAX_TXS ?? 12,
 );
@@ -220,7 +224,7 @@ const TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS = Number(
   process.env.TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS ?? HEAVY_READ_STALE_MS,
 );
 const ADDRESS_PAGE_FETCH_TIMEOUT_MS = Number(
-  process.env.ADDRESS_PAGE_FETCH_TIMEOUT_MS ?? 8_000,
+  process.env.ADDRESS_PAGE_FETCH_TIMEOUT_MS ?? 30_000,
 );
 const ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS = Number(
   process.env.ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS ?? 30_000,
@@ -10763,6 +10767,62 @@ function inboxMessagesFromTransactions(txs, address, network) {
   });
 }
 
+function mailAddressKey(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function mailRecipientsFromActivityItem(item) {
+  return Array.isArray(item?.recipients)
+    ? item.recipients
+        .map((recipient) => ({
+          address: String(recipient?.address ?? recipient?.display ?? "").trim(),
+          amountSats: numericValue(recipient?.amountSats),
+          display: String(recipient?.display ?? recipient?.address ?? "").trim(),
+        }))
+        .filter((recipient) => recipient.address)
+    : [];
+}
+
+function inboxMessagesFromActivityItems(items, address, network) {
+  const targetKey = mailAddressKey(address);
+  return (Array.isArray(items) ? items : []).flatMap((item) => {
+    const txid = transactionTxid(item) || item?.txid;
+    if (!txid) {
+      return [];
+    }
+    const actor = String(item?.actor ?? item?.senderAddress ?? "").trim();
+    const recipients = mailRecipientsFromActivityItem(item);
+    const targetRecipient = recipients.find(
+      (recipient) => mailAddressKey(recipient.address) === targetKey,
+    );
+    if (!targetRecipient) {
+      return [];
+    }
+    const createdAt =
+      item?.createdAt ?? item?.confirmedAt ?? new Date().toISOString();
+    return [
+      {
+        amountSats:
+          numericValue(targetRecipient.amountSats) ||
+          numericValue(item?.amountSats),
+        attachment: item?.attachment,
+        confirmed: item?.confirmed !== false,
+        createdAt,
+        from: actor || "Unknown",
+        memo: item?.memo ?? item?.detail ?? "",
+        network,
+        parentTxid: item?.parentTxid,
+        protocolKind: item?.kind,
+        recipients,
+        replyTo: actor || "Unknown",
+        subject: item?.subject,
+        to: address,
+        txid,
+      },
+    ];
+  });
+}
+
 function sentMessagesFromTransactions(txs, address, network) {
   return txs.flatMap((tx) => {
     const vin = Array.isArray(tx.vin) ? tx.vin : [];
@@ -10809,6 +10869,49 @@ function sentMessagesFromTransactions(txs, address, network) {
           recipients.length === 1
             ? payment.display
             : `${payment.display} +${recipients.length - 1}`,
+        txid,
+      },
+    ];
+  });
+}
+
+function sentMessagesFromActivityItems(items, address, network) {
+  const targetKey = mailAddressKey(address);
+  return (Array.isArray(items) ? items : []).flatMap((item) => {
+    const txid = transactionTxid(item) || item?.txid;
+    if (!txid || mailAddressKey(item?.actor ?? item?.senderAddress) !== targetKey) {
+      return [];
+    }
+    const recipients = mailRecipientsFromActivityItem(item);
+    const createdAt =
+      item?.createdAt ?? item?.confirmedAt ?? new Date().toISOString();
+    const confirmed = item?.confirmed !== false;
+    const firstRecipient = recipients[0];
+    return [
+      {
+        amountSats:
+          recipients.reduce(
+            (total, recipient) => total + numericValue(recipient.amountSats),
+            0,
+          ) || numericValue(item?.amountSats),
+        attachment: item?.attachment,
+        confirmedAt: confirmed ? createdAt : undefined,
+        createdAt,
+        feeRate: 0,
+        from: address,
+        lastCheckedAt: new Date().toISOString(),
+        memo: item?.memo ?? item?.detail ?? "",
+        network,
+        parentTxid: item?.parentTxid,
+        protocolKind: item?.kind,
+        recipients,
+        replyTo: address,
+        subject: item?.subject,
+        status: confirmed ? "confirmed" : item?.status ?? "pending",
+        to:
+          recipients.length === 1
+            ? firstRecipient?.display || firstRecipient?.address || "Unknown"
+            : `${firstRecipient?.display || firstRecipient?.address || "Unknown"} +${recipients.length - 1}`,
         txid,
       },
     ];
@@ -19136,6 +19239,61 @@ function mailStats(inboxMessages, sentMessages, extras = {}) {
   };
 }
 
+async function recentAddressMailTransactions(address, network, maxPages) {
+  const firstPartyTxs = await fetchAddressTransactionsViaMempoolPagination(
+    address,
+    network,
+    maxPages,
+    { includeExternal: false },
+  ).catch((error) => {
+    console.error(
+      `Recent first-party mail scan failed for ${address}: ${errorSummary(error)}`,
+    );
+    return [];
+  });
+
+  try {
+    const fallbackTxs = await fetchAddressTransactionsViaExplorerFallback(
+      address,
+      network,
+      maxPages,
+    );
+    return dedupeTransactions([...firstPartyTxs, ...fallbackTxs]);
+  } catch (error) {
+    console.error(
+      `Recent recovery mail scan failed for ${address}: ${errorSummary(error)}`,
+    );
+    return firstPartyTxs;
+  }
+}
+
+async function recentNodeMailPayload(address, network, options = {}) {
+  const maxPages = options.maxPages ?? MAIL_INDEXED_RECENT_TX_PAGES;
+  const txs = await recentAddressMailTransactions(address, network, maxPages);
+  const activityItems = mailActivityItemsFromTransactions(txs, network);
+  const inboxMessages = mergeMailMessageLists(
+    inboxMessagesFromTransactions(txs, address, network),
+    inboxMessagesFromActivityItems(activityItems, address, network),
+  );
+  const sentMessages = mergeMailMessageLists(
+    sentMessagesFromTransactions(txs, address, network),
+    sentMessagesFromActivityItems(activityItems, address, network),
+  );
+  return {
+    address,
+    inboxMessages,
+    indexedAt: new Date().toISOString(),
+    network,
+    sentMessages,
+    source: `${mempoolBase(network)}:recent-mail`,
+    stats: mailStats(inboxMessages, sentMessages, {
+      recentActivityItems: activityItems.length,
+      recentScan: true,
+      scannedTransactions: txs.length,
+    }),
+  };
+}
+
 function mergeMailPayloads(indexedPayload, scannedPayload) {
   if (!indexedPayload) {
     return scannedPayload;
@@ -19168,6 +19326,26 @@ function mergeMailPayloads(indexedPayload, scannedPayload) {
       scannedTransactions: scannedPayload.stats?.scannedTransactions ?? 0,
     }),
   };
+}
+
+async function mailPayloadWithRecentOverlay(payload, address, network) {
+  if (!payload || network !== "livenet") {
+    return payload;
+  }
+
+  const recentPayload = await recentNodeMailPayload(address, network).catch(
+    (error) => {
+      console.error(
+        `Recent indexed mail overlay failed for ${address}: ${errorSummary(error)}`,
+      );
+      return null;
+    },
+  );
+  if (!recentPayload || !mailPayloadHasMessages(recentPayload)) {
+    return payload;
+  }
+
+  return mergeMailPayloads(payload, recentPayload);
 }
 
 async function reconcileMailPayloadStatuses(payload, network) {
@@ -19260,7 +19438,7 @@ async function reconcileMailPayloadStatuses(payload, network) {
 
 async function nodeMailPayload(address, network, options = {}) {
   let scanError = "";
-  const txs = await fetchAddressTransactions(
+  let txs = await fetchAddressTransactions(
     address,
     network,
     options.maxPages ?? MAIL_ADDRESS_TX_PAGES,
@@ -19275,6 +19453,16 @@ async function nodeMailPayload(address, network, options = {}) {
     );
     return [];
   });
+  if (txs.length === 0 && scanError) {
+    const recentTxs = await recentAddressMailTransactions(
+      address,
+      network,
+      options.maxPages ?? MAIL_INDEXED_RECENT_TX_PAGES,
+    );
+    if (recentTxs.length > 0) {
+      txs = recentTxs;
+    }
+  }
   const inboxMessages = inboxMessagesFromTransactions(txs, address, network);
   const sentMessages = sentMessagesFromTransactions(txs, address, network);
 
@@ -19287,6 +19475,7 @@ async function nodeMailPayload(address, network, options = {}) {
     ...(scanError ? { scanError } : {}),
     source: mempoolBase(network),
     stats: mailStats(inboxMessages, sentMessages, {
+      partialScan: Boolean(scanError && txs.length > 0),
       scanFailed: Boolean(scanError),
       scannedTransactions: txs.length,
     }),
@@ -19316,8 +19505,13 @@ async function mailPayload(address, network, options = {}) {
   const indexedPayload = await indexedMailPayload(address, network);
 
   if (!fresh && indexedPayload && mailPayloadHasMessages(indexedPayload)) {
+    const overlayPayload = await mailPayloadWithRecentOverlay(
+      indexedPayload,
+      address,
+      network,
+    );
     return reconcileMailPayloadStatuses(
-      await repairMailPayloadBodies(indexedPayload, address, network),
+      await repairMailPayloadBodies(overlayPayload, address, network),
       network,
     );
   }
@@ -19328,7 +19522,15 @@ async function mailPayload(address, network, options = {}) {
     preferExternal: indexedWasEmpty,
   });
   if (!indexedPayload) {
-    return scannedPayload;
+    const overlayPayload = await mailPayloadWithRecentOverlay(
+      scannedPayload,
+      address,
+      network,
+    );
+    return reconcileMailPayloadStatuses(
+      await repairMailPayloadBodies(overlayPayload, address, network),
+      network,
+    );
   }
 
   if (
@@ -19337,8 +19539,13 @@ async function mailPayload(address, network, options = {}) {
     mailPayloadHasMessages(scannedPayload)
   ) {
     const mergedPayload = mergeMailPayloads(indexedPayload, scannedPayload);
+    const overlayPayload = await mailPayloadWithRecentOverlay(
+      mergedPayload,
+      address,
+      network,
+    );
     return reconcileMailPayloadStatuses(
-      await repairMailPayloadBodies(mergedPayload, address, network),
+      await repairMailPayloadBodies(overlayPayload, address, network),
       network,
     );
   }

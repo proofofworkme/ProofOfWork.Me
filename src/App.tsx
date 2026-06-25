@@ -8126,9 +8126,11 @@ function sentMessagesFromTransactions(
 async function fetchAddressMail(
   targetAddress: string,
   targetNetwork: BitcoinNetwork,
+  fresh = false,
 ) {
+  const suffix = fresh ? "?fresh=1" : "";
   const payload = await fetchProofApiJson<PowMailApiResponse>(
-    `/api/v1/address/${encodeURIComponent(targetAddress)}/mail`,
+    `/api/v1/address/${encodeURIComponent(targetAddress)}/mail${suffix}`,
     targetNetwork,
   );
   return {
@@ -18506,7 +18508,7 @@ export default function App() {
     });
 
     try {
-      const mailState = await fetchAddressMail(address, network);
+      const mailState = await fetchAddressMail(address, network, true);
       const { inboxMessages, sentMessages } = mailState;
       const targets = broadcastTargetsFor(
         address,

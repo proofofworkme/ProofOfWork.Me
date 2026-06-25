@@ -55,6 +55,13 @@ const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const ADDRESS_MAIL_REGRESSION_CASES = [
   {
+    address: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+    label: "otc",
+    minInbox: 6,
+    minSent: 6,
+    minTotal: 12,
+  },
+  {
     address:
       "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
     label: "carbonz",

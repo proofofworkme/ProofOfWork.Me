@@ -41,6 +41,9 @@ const REFRESH_SUMMARY_SNAPSHOT_SOURCES = /^(?:1|true|yes)$/iu.test(
 const REFRESH_SOURCE_READS = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_SOURCE_FRESH ?? ""),
 );
+const MAIL_BACKFILL_ADDRESS_LIMIT = Number(
+  process.env.POW_INDEX_BACKFILL_MAIL_ADDRESS_LIMIT ?? 200,
+);
 const DRY_RUN = process.argv.includes("--dry-run");
 const SOURCE_FILTER = new Set(
   String(process.env.POW_INDEX_BACKFILL_SOURCES ?? "")
@@ -69,6 +72,7 @@ const ALL_SOURCES = [
     path: "/api/v1/token-history",
     params: { kind: "invalid-events" },
   },
+  { addressMail: true, label: "address-mail" },
 ];
 const SOURCES = SOURCE_FILTER.size
   ? ALL_SOURCES.filter((source) => SOURCE_FILTER.has(source.label))
@@ -77,6 +81,18 @@ const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
+const DEFAULT_MAIL_BACKFILL_ADDRESSES = [
+  "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+  "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH",
+  "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+  "bc1p8ddc3s6z09ktchgdxxht8l0tt7gs7jn90w004uw2hrxuue39lp7qlxrd3q",
+];
+const CONFIGURED_MAIL_BACKFILL_ADDRESSES = String(
+  process.env.POW_INDEX_BACKFILL_MAIL_ADDRESSES ?? "",
+)
+  .split(/[,\s]+/u)
+  .map((value) => value.trim())
+  .filter(Boolean);
 const TOKEN_HISTORY_SNAPSHOT_KINDS = [
   "tokens",
   "mints",
@@ -622,6 +638,122 @@ function mailItemBodyText(item) {
 
   const detail = normalizedText(item?.detail ?? "");
   return detail && !subjectOnlyMailBody(detail) ? detail : null;
+}
+
+function addressMailMessageKind(message) {
+  const explicit = normalizedLowerText(message?.protocolKind ?? message?.kind);
+  if (
+    ["mail", "reply", "file", "attachment", "browser", INFINITY_BOND_KIND].includes(
+      explicit,
+    )
+  ) {
+    return explicit === "attachment" ? "file" : explicit;
+  }
+  if (message?.attachment) {
+    return "file";
+  }
+  if (message?.parentTxid) {
+    return "reply";
+  }
+  return isInfinityBondMemoText(message?.memo) ? INFINITY_BOND_KIND : "mail";
+}
+
+function normalizedMailRecipients(message, fallbackAddress = "") {
+  const recipients = Array.isArray(message?.recipients)
+    ? message.recipients
+        .map((recipient) => ({
+          address: normalizedText(recipient?.address ?? recipient?.display),
+          amountSats: bigintOrZero(recipient?.amountSats),
+          display: normalizedText(recipient?.display ?? recipient?.address),
+        }))
+        .filter((recipient) => recipient.address)
+    : [];
+  if (recipients.length > 0) {
+    return recipients;
+  }
+  const to = normalizedText(message?.to ?? fallbackAddress);
+  return to
+    ? [
+        {
+          address: to,
+          amountSats: amountSats(message),
+          display: to,
+        },
+      ]
+    : [];
+}
+
+function addressMailMessageToEvent(message, address, folder) {
+  const txid = itemTxid(message);
+  if (!txid) {
+    return null;
+  }
+  const kind = addressMailMessageKind(message);
+  const recipients = normalizedMailRecipients(message, address);
+  const actor = normalizedText(message?.from) || address;
+  const counterparty =
+    normalizedText(message?.to) ||
+    (recipients.length === 1
+      ? recipients[0].display || recipients[0].address
+      : recipients.length > 1
+        ? `${recipients[0].display || recipients[0].address} +${recipients.length - 1}`
+        : "Unknown");
+  const status = itemStatus(message);
+  const memo = normalizedText(message?.memo);
+  const detail =
+    message?.attachment
+      ? `${message.attachment.name ?? "Attachment"}`
+      : normalizedText(message?.subject)
+        ? `Subject: ${message.subject}`
+        : memo || "No message body";
+  const totalSats =
+    amountSats(message) ||
+    recipients.reduce((total, recipient) => total + amountSats(recipient), 0);
+
+  return {
+    amountSats: totalSats,
+    actor,
+    attachment: message?.attachment,
+    confirmed: status === "confirmed",
+    counterparty,
+    createdAt: itemTime(message),
+    detail,
+    indexedFromMailboxFolder: folder,
+    kind,
+    memo,
+    network: NETWORK,
+    parentTxid: message?.parentTxid,
+    participants: [
+      actor,
+      ...recipients.map((recipient) => recipient.address),
+    ].filter(Boolean),
+    recipients,
+    senderAddress: actor,
+    status,
+    subject: message?.subject,
+    title: kind === INFINITY_BOND_KIND ? "Infinity Bond sent" : "Mail sent",
+    txid,
+  };
+}
+
+function addressMailPayloadEvents(payload, address) {
+  const events = [
+    ...(Array.isArray(payload?.inboxMessages)
+      ? payload.inboxMessages.map((message) =>
+          addressMailMessageToEvent(message, address, "inbox"),
+        )
+      : []),
+    ...(Array.isArray(payload?.sentMessages)
+      ? payload.sentMessages.map((message) =>
+          addressMailMessageToEvent(message, address, "sent"),
+        )
+      : []),
+  ].filter(Boolean);
+  const byKey = new Map();
+  for (const event of events) {
+    byKey.set(`${event.kind}:${event.txid}`, event);
+  }
+  return [...byKey.values()];
 }
 
 function stableEventKey({ item, kind, protocol, sourceLabel, txid }) {
@@ -1273,6 +1405,10 @@ async function storeLedgerSnapshot(client) {
 }
 
 async function backfillSource(client, source) {
+  if (source.addressMail) {
+    return backfillAddressMailSource(client, source);
+  }
+
   let cursor = "";
   let page = 0;
   let seen = 0;
@@ -1321,6 +1457,93 @@ async function backfillSource(client, source) {
   }
 
   return { indexed: seen, skipped, source: source.label };
+}
+
+async function addressMailBackfillAddresses(client) {
+  const addresses = new Set([
+    ...DEFAULT_MAIL_BACKFILL_ADDRESSES,
+    ...CONFIGURED_MAIL_BACKFILL_ADDRESSES,
+  ]);
+
+  const remaining = Math.max(0, MAIL_BACKFILL_ADDRESS_LIMIT - addresses.size);
+  if (remaining > 0) {
+    const result = await client.query(
+      `
+        SELECT owner_address, receive_address
+        FROM proof_indexer.id_records
+        WHERE network = $1
+        ORDER BY updated_at DESC NULLS LAST, display_id ASC
+        LIMIT $2
+      `,
+      [NETWORK, remaining],
+    );
+    for (const row of result.rows) {
+      if (row.owner_address) {
+        addresses.add(row.owner_address);
+      }
+      if (row.receive_address) {
+        addresses.add(row.receive_address);
+      }
+    }
+  }
+
+  return [...addresses].slice(0, Math.max(0, MAIL_BACKFILL_ADDRESS_LIMIT));
+}
+
+async function backfillAddressMailSource(client, source) {
+  let seen = 0;
+  let skipped = 0;
+  const addresses = await addressMailBackfillAddresses(client);
+
+  for (const [index, address] of addresses.entries()) {
+    const payload = await readJson(
+      endpoint(`/api/v1/address/${encodeURIComponent(address)}/mail`),
+    ).catch((error) => {
+      console.error(
+        JSON.stringify({
+          address,
+          error: error?.message ?? String(error),
+          source: source.label,
+        }),
+      );
+      return null;
+    });
+    const items = addressMailPayloadEvents(payload, address);
+
+    await client.query("BEGIN");
+    try {
+      for (const item of items) {
+        const result = await upsertEvent(client, source.label, item);
+        if (result.skipped) {
+          skipped += 1;
+        } else {
+          seen += 1;
+        }
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
+
+    console.log(
+      JSON.stringify({
+        address,
+        indexed: seen,
+        page: index,
+        skipped,
+        source: source.label,
+        totalCount: items.length,
+      }),
+    );
+  }
+
+  return {
+    addresses: addresses.length,
+    indexed: seen,
+    skipped,
+    source: source.label,
+  };
 }
 
 async function backfillScopedTokenHolders(client) {

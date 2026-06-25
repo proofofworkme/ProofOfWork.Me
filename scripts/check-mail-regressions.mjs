@@ -60,17 +60,37 @@ const CHECKS = [
   {
     address: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
     label: "otc@proofofwork.me latest POWB self-send",
-    minInbox: 2,
-    minSent: 2,
-    minTotal: 4,
+    minInbox: 6,
+    minSent: 6,
+    minTotal: 12,
     mustInboxTxid:
-      "7a416ae4f98588ca20adbd55917ed5ae36b6f9f20e4a5241e4f84b8bb255cbed",
-    mustInfinityBondAmountSats: 30_001,
+      "e54e68d1e567ab6158100d27a6fe357950d19248336af90fd4e7ed068f650b46",
+    mustInfinityBondAmountSats: 30_000,
     mustInfinityBondTxid:
-      "7a416ae4f98588ca20adbd55917ed5ae36b6f9f20e4a5241e4f84b8bb255cbed",
+      "e54e68d1e567ab6158100d27a6fe357950d19248336af90fd4e7ed068f650b46",
     mustSentTxid:
+      "e54e68d1e567ab6158100d27a6fe357950d19248336af90fd4e7ed068f650b46",
+    mustInboxTxids: [
+      "e54e68d1e567ab6158100d27a6fe357950d19248336af90fd4e7ed068f650b46",
+      "bb7e8873088c9244afb38c23186d2dc7394c49bac48ee89be025da71518e9cec",
+      "e26a42c356c5230cbb060580f78fc1d026a39f057d949082fe60bdb97d998b09",
       "7a416ae4f98588ca20adbd55917ed5ae36b6f9f20e4a5241e4f84b8bb255cbed",
+      "9bc8b59e7befc0a2f48403f2b2e8416336e4b80357f3e11e0fc6e1fb58eb7701",
+      "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
+    ],
+    mustSentTxids: [
+      "e54e68d1e567ab6158100d27a6fe357950d19248336af90fd4e7ed068f650b46",
+      "bb7e8873088c9244afb38c23186d2dc7394c49bac48ee89be025da71518e9cec",
+      "e26a42c356c5230cbb060580f78fc1d026a39f057d949082fe60bdb97d998b09",
+      "7a416ae4f98588ca20adbd55917ed5ae36b6f9f20e4a5241e4f84b8bb255cbed",
+      "9bc8b59e7befc0a2f48403f2b2e8416336e4b80357f3e11e0fc6e1fb58eb7701",
+      "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
+    ],
     mustUniqueTxids: [
+      "e54e68d1e567ab6158100d27a6fe357950d19248336af90fd4e7ed068f650b46",
+      "bb7e8873088c9244afb38c23186d2dc7394c49bac48ee89be025da71518e9cec",
+      "e26a42c356c5230cbb060580f78fc1d026a39f057d949082fe60bdb97d998b09",
+      "9bc8b59e7befc0a2f48403f2b2e8416336e4b80357f3e11e0fc6e1fb58eb7701",
       "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
       "7a416ae4f98588ca20adbd55917ed5ae36b6f9f20e4a5241e4f84b8bb255cbed",
     ],
@@ -247,6 +267,18 @@ function assertMailbox(check, payload) {
   ) {
     failures.push(`missing inbox tx ${check.mustInboxTxid}`);
   }
+  for (const txid of check.mustInboxTxids ?? []) {
+    const normalizedTxid = String(txid).toLowerCase();
+    if (
+      !inboxMessages.some(
+        (message) =>
+          String(message?.txid ?? "").toLowerCase() === normalizedTxid &&
+          message?.confirmed,
+      )
+    ) {
+      failures.push(`missing confirmed inbox tx ${normalizedTxid}`);
+    }
+  }
   if (
     check.mustNotInboxTxid &&
     inboxMessages.some(
@@ -264,6 +296,18 @@ function assertMailbox(check, payload) {
     )
   ) {
     failures.push(`missing sent tx ${check.mustSentTxid}`);
+  }
+  for (const txid of check.mustSentTxids ?? []) {
+    const normalizedTxid = String(txid).toLowerCase();
+    if (
+      !sentMessages.some(
+        (message) =>
+          String(message?.txid ?? "").toLowerCase() === normalizedTxid &&
+          message?.status === "confirmed",
+      )
+    ) {
+      failures.push(`missing confirmed sent tx ${normalizedTxid}`);
+    }
   }
   if (
     check.mustDroppedOutboxTxid &&
