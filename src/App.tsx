@@ -10456,7 +10456,7 @@ async function fetchUtxos(
               ? utxo.confirmed
               : Number.isFinite(confirmations)
                 ? confirmations > 0
-                : true;
+                : false;
         const status = {
           ...(rawStatus ?? {}),
           confirmed,
@@ -10588,10 +10588,32 @@ async function fetchTransactionOutspend(
   return response.ok ? ((await response.json()) as Record<string, unknown>) : null;
 }
 
+async function assertConfirmedFundingUtxo(
+  utxo: MempoolUtxo,
+  network: BitcoinNetwork,
+) {
+  if (utxo.status?.confirmed !== true) {
+    throw new Error(
+      `Selected wallet output ${shortAddress(utxo.txid)}:${utxo.vout} is not confirmed. Wait for confirmations before broadcasting.`,
+    );
+  }
+
+  const status = await fetchBroadcastStatus(utxo.txid, network).catch(
+    () => undefined,
+  );
+  if (status === "pending") {
+    throw new Error(
+      `Selected wallet output ${shortAddress(utxo.txid)}:${utxo.vout} is ${status}. ProofOfWork.Me broadcasts only use confirmed funding inputs.`,
+    );
+  }
+}
+
 async function loadUtxoPreviousOutput(
   utxo: MempoolUtxo,
   network: BitcoinNetwork,
 ) {
+  await assertConfirmedFundingUtxo(utxo, network);
+
   const previousTxHex = await fetchTransactionHex(utxo.txid, network);
   const previousTx = bitcoin.Transaction.fromHex(previousTxHex);
   const previousOutput = previousTx.outs[utxo.vout];
@@ -10890,19 +10912,11 @@ async function loadChainedInitialInputs(
 ): Promise<ChainedMintInput[]> {
   return Promise.all(
     selected.map(async (utxo) => {
-      const previousTxHex = await fetchTransactionHex(utxo.txid, network);
-      const previousTx = bitcoin.Transaction.fromHex(previousTxHex);
-      const previousOutput = previousTx.outs[utxo.vout];
-
-      if (!previousOutput) {
-        throw new Error(
-          `Previous output ${shortAddress(utxo.txid)}:${utxo.vout} could not be read.`,
-        );
-      }
+      const loaded = await loadUtxoPreviousOutput(utxo, network);
 
       return {
-        previousOutput,
-        previousTxHex,
+        previousOutput: loaded.previousOutput,
+        previousTxHex: loaded.previousTxHex,
         txid: utxo.txid,
         value: utxo.value,
         vout: utxo.vout,
@@ -11223,23 +11237,7 @@ async function buildPaymentPsbt({
     throw error;
   }
   const selectedWithPreviousTx = await Promise.all(
-    selection.selected.map(async (utxo) => {
-      const previousTxHex = await fetchTransactionHex(utxo.txid, network);
-      const previousTx = bitcoin.Transaction.fromHex(previousTxHex);
-      const previousOutput = previousTx.outs[utxo.vout];
-
-      if (!previousOutput) {
-        throw new Error(
-          `Previous output ${shortAddress(utxo.txid)}:${utxo.vout} could not be read.`,
-        );
-      }
-
-      return {
-        ...utxo,
-        previousTxHex,
-        previousOutput,
-      };
-    }),
+    selection.selected.map((utxo) => loadUtxoPreviousOutput(utxo, network)),
   );
 
   const psbt = new bitcoin.Psbt({ network: selectedNetwork });

@@ -3355,6 +3355,66 @@ function compareMailMessages(left, right) {
   );
 }
 
+function mailMessageProjectionRank(message) {
+  const confirmed =
+    message?.confirmed === true || message?.status === "confirmed" ? 1 : 0;
+  const protocol =
+    String(message?.protocolKind ?? "").toLowerCase() === INFINITY_BOND_KIND
+      ? 2
+      : 0;
+  const content = [
+    message?.memo,
+    message?.subject,
+    Array.isArray(message?.recipients) ? message.recipients.length : 0,
+  ].some(Boolean)
+    ? 1
+    : 0;
+  return confirmed * 100 + protocol * 10 + content;
+}
+
+function mergeMailProjectionMessage(current, incoming) {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming) {
+    return current;
+  }
+
+  const primary =
+    mailMessageProjectionRank(incoming) >= mailMessageProjectionRank(current)
+      ? incoming
+      : current;
+  const secondary = primary === incoming ? current : incoming;
+  return {
+    ...secondary,
+    ...primary,
+    confirmedAt: primary.confirmedAt ?? secondary.confirmedAt,
+    createdAt: primary.createdAt ?? secondary.createdAt,
+    lastCheckedAt: primary.lastCheckedAt ?? secondary.lastCheckedAt,
+    memo: primary.memo || secondary.memo,
+    parentTxid: primary.parentTxid ?? secondary.parentTxid,
+    recipients: primary.recipients ?? secondary.recipients,
+    replyTo: primary.replyTo || secondary.replyTo,
+    subject: primary.subject ?? secondary.subject,
+    to: primary.to || secondary.to,
+  };
+}
+
+function dedupeMailProjectionMessages(messages) {
+  const byTxid = new Map();
+  const withoutTxid = [];
+  for (const message of messages) {
+    const txid = String(message?.txid ?? "").trim().toLowerCase();
+    if (!txid) {
+      withoutTxid.push(message);
+      continue;
+    }
+    const key = `${String(message?.network ?? "").trim().toLowerCase()}:${txid}`;
+    byTxid.set(key, mergeMailProjectionMessage(byTxid.get(key), message));
+  }
+  return [...byTxid.values(), ...withoutTxid].sort(compareMailMessages);
+}
+
 export async function proofIndexAddressMailPayload(network, address) {
   const pool = proofIndexPool();
   if (!pool) {
@@ -3477,26 +3537,29 @@ export async function proofIndexAddressMailPayload(network, address) {
     }
   }
 
-  inboxMessages.sort(compareMailMessages);
-  sentMessages.sort(compareMailMessages);
+  const dedupedInboxMessages = dedupeMailProjectionMessages(inboxMessages);
+  const dedupedSentMessages = dedupeMailProjectionMessages(sentMessages);
 
   return {
     address: targetAddress,
-    inboxMessages,
+    inboxMessages: dedupedInboxMessages,
     indexedAt: new Date().toISOString(),
     network,
-    sentMessages,
+    sentMessages: dedupedSentMessages,
     source: "proof-indexer-mail",
     stats: {
-      inbox: inboxMessages.filter((message) => message.confirmed).length,
-      incoming: inboxMessages.filter((message) => !message.confirmed).length,
+      inbox: dedupedInboxMessages.filter((message) => message.confirmed).length,
+      incoming: dedupedInboxMessages.filter((message) => !message.confirmed)
+        .length,
       indexedEvents: rowsResult.rows.length,
       scanFailed: false,
       scannedTransactions: 0,
-      sent: sentMessages.filter((message) => message.status === "confirmed")
-        .length,
-      outbox: sentMessages.filter((message) => message.status !== "confirmed")
-        .length,
+      sent: dedupedSentMessages.filter(
+        (message) => message.status === "confirmed",
+      ).length,
+      outbox: dedupedSentMessages.filter(
+        (message) => message.status !== "confirmed",
+      ).length,
     },
   };
 }

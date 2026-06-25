@@ -285,8 +285,8 @@ function isInfinityBondItem(item, kind = rawEventKind(item)) {
 
 function stableEventKeyKind(item, kind, fallback) {
   const rawKind = rawEventKind(item, fallback);
-  return rawKind === "mail" && isInfinityBondItem(item, rawKind)
-    ? rawKind
+  return isInfinityBondItem(item, rawKind) || kind === INFINITY_BOND_KIND
+    ? INFINITY_BOND_KIND
     : kind;
 }
 

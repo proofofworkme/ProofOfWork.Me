@@ -42,9 +42,9 @@ const CHECKS = [
   {
     address: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
     label: "otc@proofofwork.me self-send",
-    minInbox: 1,
-    minSent: 1,
-    minTotal: 2,
+    minInbox: 2,
+    minSent: 2,
+    minTotal: 4,
     mustInboxTxid:
       "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
     mustInfinityBondAmountSats: 50_000,
@@ -52,6 +52,28 @@ const CHECKS = [
       "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
     mustSentTxid:
       "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
+    mustUniqueTxids: [
+      "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
+      "7a416ae4f98588ca20adbd55917ed5ae36b6f9f20e4a5241e4f84b8bb255cbed",
+    ],
+  },
+  {
+    address: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+    label: "otc@proofofwork.me latest POWB self-send",
+    minInbox: 2,
+    minSent: 2,
+    minTotal: 4,
+    mustInboxTxid:
+      "7a416ae4f98588ca20adbd55917ed5ae36b6f9f20e4a5241e4f84b8bb255cbed",
+    mustInfinityBondAmountSats: 30_001,
+    mustInfinityBondTxid:
+      "7a416ae4f98588ca20adbd55917ed5ae36b6f9f20e4a5241e4f84b8bb255cbed",
+    mustSentTxid:
+      "7a416ae4f98588ca20adbd55917ed5ae36b6f9f20e4a5241e4f84b8bb255cbed",
+    mustUniqueTxids: [
+      "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e",
+      "7a416ae4f98588ca20adbd55917ed5ae36b6f9f20e4a5241e4f84b8bb255cbed",
+    ],
   },
   {
     address: "bc1q7lvsdf0lpgmvn0c8emj9zvjm0sycn4lu3qrry0",
@@ -253,6 +275,23 @@ function assertMailbox(check, payload) {
     )
   ) {
     failures.push(`missing dropped outbox tx ${check.mustDroppedOutboxTxid}`);
+  }
+  for (const txid of check.mustUniqueTxids ?? []) {
+    const normalizedTxid = String(txid).toLowerCase();
+    const inboxMatches = inboxMessages.filter(
+      (message) =>
+        String(message?.txid ?? "").toLowerCase() === normalizedTxid,
+    );
+    const sentMatches = sentMessages.filter(
+      (message) =>
+        String(message?.txid ?? "").toLowerCase() === normalizedTxid,
+    );
+    if (inboxMatches.length > 1) {
+      failures.push(`duplicate inbox tx ${normalizedTxid}`);
+    }
+    if (sentMatches.length > 1) {
+      failures.push(`duplicate sent tx ${normalizedTxid}`);
+    }
   }
   if (check.mustBodyTxid) {
     const message = [...inboxMessages, ...sentMessages].find(

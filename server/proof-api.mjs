@@ -66,6 +66,9 @@ const MAX_ADDRESS_TX_PAGES = Number(process.env.MAX_ADDRESS_TX_PAGES ?? 50);
 const MAIL_ADDRESS_TX_PAGES = Number(
   process.env.MAIL_ADDRESS_TX_PAGES ?? Math.min(MAX_ADDRESS_TX_PAGES, 8),
 );
+const MAIL_INDEXED_REPAIR_TX_PAGES = Number(
+  process.env.MAIL_INDEXED_REPAIR_TX_PAGES ?? Math.min(MAIL_ADDRESS_TX_PAGES, 2),
+);
 const MAIL_BODY_REPAIR_MAX_TXS = Number(
   process.env.MAIL_BODY_REPAIR_MAX_TXS ?? 12,
 );
@@ -3484,14 +3487,20 @@ async function fetchAddressTransactionsFromElectrum(address, network) {
       }
     },
   );
+  const hydratedTxs = dedupeTransactions(txs.filter(Boolean));
 
   if (failedFetches > 0) {
-    throw new Error(
+    console.error(
       `Electrum history transaction hydration was partial for ${address}: ${failedFetches} of ${txids.length} transaction lookups failed.`,
     );
+    if (hydratedTxs.length === 0) {
+      throw new Error(
+        `Electrum history transaction hydration failed for ${address}: ${failedFetches} of ${txids.length} transaction lookups failed.`,
+      );
+    }
   }
 
-  return dedupeTransactions(txs.filter(Boolean));
+  return hydratedTxs;
 }
 
 async function fetchAddressHistoryTxidsFromElectrum(address, network) {
@@ -4481,6 +4490,17 @@ async function fetchAddressTransactions(
     } catch (error) {
       if (!includeExternal) {
         throw error;
+      }
+
+      const firstPartyTransactions =
+        await fetchAddressTransactionsViaMempoolPagination(
+          address,
+          network,
+          maxPages,
+          { includeExternal: false },
+        ).catch(() => null);
+      if (firstPartyTransactions) {
+        return firstPartyTransactions;
       }
 
       if (
@@ -5821,6 +5841,11 @@ async function filterSpendableTokenListings(listings, network) {
       continue;
     }
 
+    if (!outspend.status?.confirmed) {
+      activeListings.push(listing);
+      continue;
+    }
+
     const closedTxid =
       typeof outspend.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(outspend.txid)
         ? outspend.txid.toLowerCase()
@@ -5980,12 +6005,15 @@ async function reconcileCachedTokenClosedListing(closedListing, network) {
   const closedTxid = String(closedListing?.closedTxid ?? "")
     .trim()
     .toLowerCase();
-  if (closedTxid && (await tokenMarketTxIsVisible(closedTxid, network))) {
-    return { kind: "closed", listing: closedListing };
-  }
-
   const outspend = await tokenListingAnchorOutspend(closedListing, network);
   if (outspend?.spent) {
+    if (!outspend.status?.confirmed) {
+      const activeListing = tokenListingWithoutCloseMetadata(closedListing);
+      return tokenListingAnchorOutpoint(activeListing)
+        ? { kind: "active", listing: activeListing }
+        : { kind: "closed", listing: closedListing };
+    }
+
     const blockTime = outspend.status?.block_time;
     return {
       kind: "closed",
@@ -17129,15 +17157,233 @@ async function registryHistoryPayload(network, kind, searchParams, fresh = false
   });
 }
 
+function mailActivityItemFromMailMessage(message, address, network) {
+  const txid = String(message?.txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(txid)) {
+    return null;
+  }
+
+  const confirmed =
+    message?.confirmed === true || message?.status === "confirmed";
+  const createdAt = dateIso(
+    message?.createdAt ?? message?.confirmedAt ?? message?.lastCheckedAt,
+    new Date(),
+  );
+  const from = String(message?.from ?? message?.actor ?? "").trim();
+  const to = String(message?.to ?? message?.counterparty ?? "").trim();
+  const recipients = Array.isArray(message?.recipients)
+    ? message.recipients
+        .map((recipient) => ({
+          address: String(recipient?.address ?? recipient?.display ?? "").trim(),
+          amountSats: numericValue(recipient?.amountSats),
+          display: String(recipient?.display ?? recipient?.address ?? "").trim(),
+        }))
+        .filter((recipient) => recipient.address || recipient.display)
+    : [];
+  if (recipients.length === 0 && isValidBitcoinAddress(to, network)) {
+    recipients.push({
+      address: to,
+      amountSats: numericValue(message?.amountSats),
+      display: to,
+    });
+  }
+
+  const memo = String(message?.memo ?? "").trim();
+  const protocolKind = String(message?.protocolKind ?? message?.kind ?? "")
+    .trim()
+    .toLowerCase();
+  const isFile = ["attachment", "browser", "file"].includes(protocolKind);
+  const isReply = Boolean(message?.parentTxid ?? message?.replyTo);
+  const isInfinityBond =
+    protocolKind === INFINITY_BOND_KIND ||
+    (!isFile && !isReply && isInfinityBondMemo(memo));
+  const kind = isFile
+    ? "file"
+    : isReply
+      ? "reply"
+      : isInfinityBond
+        ? INFINITY_BOND_KIND
+        : "mail";
+  const amountSats =
+    numericValue(message?.amountSats) ||
+    recipients.reduce(
+      (total, recipient) => total + numericValue(recipient.amountSats),
+      0,
+    );
+  const actor = from || address;
+  const counterparty =
+    to ||
+    (recipients.length === 1
+      ? recipients[0].display || recipients[0].address
+      : recipients.length > 1
+        ? `${recipients[0].display || recipients[0].address} +${recipients.length - 1}`
+        : "Unknown");
+  const attachment = message?.attachment;
+  const detail = attachment
+    ? `${attachment.name} · ${formatBytes(attachment.size)} · ${attachment.mime}`
+    : message?.subject
+      ? `Subject: ${message.subject}`
+      : compactText(memo, 120) || "No message body";
+
+  return {
+    amountSats,
+    actor,
+    blockHeight: message?.blockHeight,
+    confirmed,
+    counterparty,
+    createdAt,
+    dataBytes: numericValue(message?.dataBytes),
+    description: `${shortAddress(actor)} sent ${kind === INFINITY_BOND_KIND ? "infinity bond" : kind} to ${counterparty}${amountSats > 0 ? ` for ${amountSats.toLocaleString()} proofs` : ""}.`,
+    detail,
+    kind,
+    memo,
+    network,
+    parentTxid: message?.parentTxid,
+    participants: [
+      actor,
+      ...recipients.map((recipient) => recipient.address || recipient.display),
+    ].filter(Boolean),
+    recipients,
+    subject: message?.subject,
+    tags: [
+      activityStatusTag(confirmed),
+      networkLabel(network),
+      kind === INFINITY_BOND_KIND
+        ? "Infinity Bond"
+        : kind === "file"
+          ? "Attachment"
+          : kind === "reply"
+            ? "Reply"
+            : "Message",
+      recipients.length > 1 ? `${recipients.length} recipients` : "1 recipient",
+      amountSats > 0 ? `${amountSats.toLocaleString()} proofs` : "",
+    ].filter(Boolean),
+    title: `${kind === INFINITY_BOND_KIND ? "Infinity Bond" : kind === "file" ? "File" : kind === "reply" ? "Reply" : "Mail"} ${confirmed ? "sent" : "pending"}`,
+    txid,
+  };
+}
+
+function mailActivityItemsFromMailPayload(payload, address, network) {
+  const messages = [
+    ...(Array.isArray(payload?.inboxMessages) ? payload.inboxMessages : []),
+    ...(Array.isArray(payload?.sentMessages) ? payload.sentMessages : []),
+  ];
+  return dedupeActivityItems(
+    messages
+      .map((message) =>
+        mailActivityItemFromMailMessage(message, address, network),
+      )
+      .filter(Boolean),
+  );
+}
+
 async function mailActivityItemsForAddressSearch(address, network) {
   return cachedPayload(
     `direct-mail-activity:${network}:${address}`,
     async () => {
-      const txs = await fetchAddressTransactions(address, network);
-      return mailActivityItemsFromTransactions(txs, network);
+      const payload = await nodeMailPayload(address, network, {
+        includeExternal: true,
+        maxPages: MAIL_INDEXED_REPAIR_TX_PAGES,
+      });
+      return mailActivityItemsFromMailPayload(payload, address, network);
     },
     ACTIVITY_CACHE_TTL_MS,
     ACTIVITY_CACHE_STALE_MS,
+  );
+}
+
+async function mailActivityItemsForTxidSearch(txid, network) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    return [];
+  }
+
+  return cachedPayload(
+    `direct-mail-activity-txid:${network}:${normalizedTxid}`,
+    async () => {
+      const tx = await fetchTransactionWithSourceFallback(
+        normalizedTxid,
+        network,
+      );
+      const item = mailActivityItemFromTransaction(tx, network);
+      return item ? [item] : [];
+    },
+    ACTIVITY_CACHE_TTL_MS,
+    ACTIVITY_CACHE_STALE_MS,
+  );
+}
+
+function isMailRecoveryHistoryKind(kind) {
+  const normalizedKind = String(kind ?? "").trim().toLowerCase();
+  return (
+    !normalizedKind ||
+    [
+      "attachment",
+      "browser",
+      "file",
+      "infinity-bond",
+      "mail",
+      "reply",
+    ].includes(normalizedKind)
+  );
+}
+
+function mailRecoveryKindMatches(item, kind) {
+  const normalizedKind = String(kind ?? "").trim().toLowerCase();
+  if (!normalizedKind) {
+    return true;
+  }
+  const itemKind = String(item?.kind ?? "").trim().toLowerCase();
+  return (
+    itemKind === normalizedKind ||
+    (normalizedKind === "attachment" && itemKind === "file")
+  );
+}
+
+async function recoveredMailActivityItemsForHistorySearch(
+  network,
+  requestedKind,
+  searchParams,
+) {
+  const normalizedKind = String(requestedKind ?? "").trim().toLowerCase();
+  if (!isMailRecoveryHistoryKind(normalizedKind)) {
+    return [];
+  }
+
+  const recoveryTxids = recoveryTxidsFromSearchParams(searchParams);
+  const recoveryAddresses = recoveryAddressesFromSearchParams(
+    searchParams,
+    network,
+  );
+  if (recoveryTxids.length === 0 && recoveryAddresses.length === 0) {
+    return [];
+  }
+
+  const [txidResults, addressResults] = await Promise.all([
+    Promise.all(
+      recoveryTxids.map((txid) =>
+        mailActivityItemsForTxidSearch(txid, network).catch((error) => {
+          console.error(
+            `Direct log mail txid lookup failed for ${txid}: ${errorSummary(error)}`,
+          );
+          return [];
+        }),
+      ),
+    ),
+    Promise.all(
+      recoveryAddresses.map((address) =>
+        mailActivityItemsForAddressSearch(address, network).catch((error) => {
+          console.error(
+            `Direct log mail address lookup failed for ${address}: ${errorSummary(error)}`,
+          );
+          return [];
+        }),
+      ),
+    ),
+  ]);
+
+  return dedupeActivityItems([...txidResults, ...addressResults].flat()).filter(
+    (item) => mailRecoveryKindMatches(item, normalizedKind),
   );
 }
 
@@ -17208,9 +17454,6 @@ async function recoveredWorkTokenActivityItemsForLogSearch(
 
 async function activityHistoryPayload(network, kind, searchParams, fresh = false) {
   const payload = await mergedLogActivityPayload(network, fresh);
-  const rawQuery = String(
-    searchParams.get("q") ?? searchParams.get("search") ?? "",
-  ).trim();
   const requestedKind = String(kind ?? "").trim();
   const recoveredTokenActivity =
     await recoveredWorkTokenActivityItemsForLogSearch(
@@ -17218,17 +17461,11 @@ async function activityHistoryPayload(network, kind, searchParams, fresh = false
       requestedKind,
       searchParams,
     );
-  const directMailActivity =
-    rawQuery && isValidBitcoinAddress(rawQuery, network)
-      ? await mailActivityItemsForAddressSearch(rawQuery, network).catch(
-          (error) => {
-            console.error(
-              `Direct log mail lookup failed for ${rawQuery}: ${errorSummary(error)}`,
-            );
-            return [];
-          },
-        )
-      : [];
+  const directMailActivity = await recoveredMailActivityItemsForHistorySearch(
+    network,
+    requestedKind,
+    searchParams,
+  );
   const activity = dedupeActivityItems([
     ...(payload.activity ?? []),
     ...directMailActivity,
@@ -17254,6 +17491,57 @@ async function activityHistoryPayload(network, kind, searchParams, fresh = false
         snapshotId: payload.snapshotId,
       }
     : page;
+}
+
+async function eventHistoryRecoveryPayload(network, searchParams) {
+  const requestedKind = String(searchParams.get("kind") ?? "").trim().toLowerCase();
+  const recoveredItems = await recoveredMailActivityItemsForHistorySearch(
+    network,
+    requestedKind,
+    searchParams,
+  );
+  if (recoveredItems.length === 0) {
+    return null;
+  }
+
+  return paginatedHistoryPayload({
+    indexedAt: new Date().toISOString(),
+    items: recoveredItems,
+    kind: requestedKind || "events",
+    network,
+    pagination: historyPaginationFromSearch(searchParams),
+    source: "first-party-mail-event-recovery",
+  });
+}
+
+function mergeEventHistoryRecoveryPayload(
+  indexedPayload,
+  recoveredPayload,
+  network,
+  searchParams,
+) {
+  if (!recoveredPayload || Number(recoveredPayload.totalCount ?? 0) < 1) {
+    return indexedPayload;
+  }
+
+  const mergedItems = dedupeActivityItems([
+    ...(Array.isArray(indexedPayload?.items) ? indexedPayload.items : []),
+    ...(Array.isArray(recoveredPayload.items) ? recoveredPayload.items : []),
+  ]);
+  const page = paginatedHistoryPayload({
+    indexedAt: new Date().toISOString(),
+    items: mergedItems,
+    kind: String(searchParams.get("kind") ?? "").trim().toLowerCase() || "events",
+    network,
+    pagination: historyPaginationFromSearch(searchParams),
+    source: mergedSourceLabel(indexedPayload?.source, recoveredPayload.source),
+  });
+
+  return {
+    ...(indexedPayload ?? {}),
+    ...page,
+    source: page.source,
+  };
 }
 
 async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fresh = false) {
@@ -19675,14 +19963,46 @@ async function handleRequest(request, response) {
           return null;
         });
         if (indexedPayload) {
+          const recoveredPayload = await eventHistoryRecoveryPayload(
+            network,
+            url.searchParams,
+          ).catch((error) => {
+            console.error(
+              `Event-history recovery read failed: ${errorSummary(error)}`,
+            );
+            return null;
+          });
           jsonResponse(
             response,
             200,
-            indexedPayload,
+            mergeEventHistoryRecoveryPayload(
+              indexedPayload,
+              recoveredPayload,
+              network,
+              url.searchParams,
+            ),
             EXPENSIVE_READ_CACHE_CONTROL,
           );
           return;
         }
+      }
+      const recoveredPayload = await eventHistoryRecoveryPayload(
+        network,
+        url.searchParams,
+      ).catch((error) => {
+        console.error(
+          `Event-history recovery read failed: ${errorSummary(error)}`,
+        );
+        return null;
+      });
+      if (recoveredPayload && recoveredPayload.totalCount > 0) {
+        jsonResponse(
+          response,
+          200,
+          recoveredPayload,
+          freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
+        );
+        return;
       }
       errorResponse(response, 404, "Database event history is not available.");
       return;
