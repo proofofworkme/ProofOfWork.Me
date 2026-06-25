@@ -43,6 +43,12 @@ const WORK_BUY_RECOVERY_REGRESSIONS = [
       "4cde906f5e0692e05c6c1bfcfb8d49fccfce9bdb564d88b358aa50d418e163c6",
     txid: "8b470b3ab319c201d4eb440bb3562b7b907b7ca38480ff71b51c6b655e522e97",
   },
+  {
+    buyer: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+    listingId:
+      "67730b089c8fce6f287968fc5c028df8b2ff72ce84b1b3dbda014fb6b9807933",
+    txid: "50086fb6c14bcbfc818b87415191378188a1bb1e3781d17d0875d81fef91301f",
+  },
 ];
 const INFINITY_BOND_REGRESSION_TXID =
   "411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891";

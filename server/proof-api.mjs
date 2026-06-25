@@ -2027,7 +2027,12 @@ function mergeTokenHistoryPageItem(current, incoming, kind) {
   return incoming;
 }
 
-function mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination) {
+function mergeTokenHistoryPageWithOverlay(
+  page,
+  overlayPage,
+  pagination,
+  options = {},
+) {
   if (
     !overlayPage ||
     !Array.isArray(overlayPage.items) ||
@@ -2037,12 +2042,18 @@ function mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination) {
   }
 
   const kind = page?.kind ?? overlayPage.kind;
+  const addOverlayItems = options.addOverlayItems !== false;
+  const pageItems = Array.isArray(page?.items) ? page.items : [];
   const byKey = new Map();
-  for (const item of [
-    ...(Array.isArray(page?.items) ? page.items : []),
-    ...overlayPage.items,
-  ]) {
+  for (const item of pageItems) {
     const key = tokenHistoryPageItemKey(item, kind);
+    byKey.set(key, mergeTokenHistoryPageItem(byKey.get(key), item, kind));
+  }
+  for (const item of overlayPage.items) {
+    const key = tokenHistoryPageItemKey(item, kind);
+    if (!addOverlayItems && !byKey.has(key)) {
+      continue;
+    }
     byKey.set(key, mergeTokenHistoryPageItem(byKey.get(key), item, kind));
   }
 
@@ -2066,7 +2077,7 @@ function mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination) {
       overlayPage.indexedThroughBlock ?? page?.indexedThroughBlock,
     totalCount: Math.max(
       Number(page?.totalCount ?? 0),
-      Number(overlayPage.totalCount ?? 0),
+      addOverlayItems ? Number(overlayPage.totalCount ?? 0) : 0,
       merged.totalCount,
     ),
   };
@@ -3156,7 +3167,10 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
 
   const cacheKey = `${network}:${normalizedTxid}`;
   const cached = TRANSACTION_CACHE.get(cacheKey);
-  if (cached) {
+  if (
+    cached &&
+    (options.includePrevouts === false || transactionInputsHavePrevouts(cached))
+  ) {
     return cached;
   }
 
@@ -3266,6 +3280,13 @@ async function fetchTransactionWithSourceFallback(txid, network) {
     return rpcTx;
   }
 
+  const electrumTx = await fetchTransactionFromElectrum(txid, network).catch(
+    () => null,
+  );
+  if (electrumTx) {
+    return electrumTx;
+  }
+
   let primaryError = null;
   try {
     return await fetchTransaction(txid, network);
@@ -3277,13 +3298,6 @@ async function fetchTransactionWithSourceFallback(txid, network) {
     if (fallback) {
       return fallback;
     }
-  }
-
-  const electrumTx = await fetchTransactionFromElectrum(txid, network).catch(
-    () => null,
-  );
-  if (electrumTx) {
-    return electrumTx;
   }
 
   throw primaryError ?? new Error(`Transaction lookup failed for ${txid}.`);
@@ -3336,7 +3350,10 @@ async function fetchTransactionFromElectrum(
 
   const cacheKey = `${network}:${normalizedTxid}`;
   const cached = TRANSACTION_CACHE.get(cacheKey);
-  if (cached) {
+  if (
+    cached &&
+    (options.includePrevouts === false || transactionInputsHavePrevouts(cached))
+  ) {
     return cached;
   }
 
@@ -4842,6 +4859,11 @@ function inputAddresses(vin) {
   return vin
     .map((input) => input?.prevout?.scriptpubkey_address)
     .filter((address) => typeof address === "string" && address.length > 0);
+}
+
+function transactionInputsHavePrevouts(tx) {
+  const vin = Array.isArray(tx?.vin) ? tx.vin : [];
+  return vin.every((input) => input?.prevout && typeof input.prevout === "object");
 }
 
 function spentOutpoints(vin) {
@@ -12109,8 +12131,11 @@ function confirmedWorkSaleFromClosedListingTransaction(tx, listing, network) {
     const listingHasValidSaleTicketSpend =
       tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization) ||
       tokenListingAnchorSpendMatchesAuthorization(vin, listing);
+    const buyerAddressIsLinked =
+      txInputAddresses.includes(parsed.buyerAddress) ||
+      paymentAmountFromSnapshots(paymentOutputs, parsed.buyerAddress) > 0;
     if (
-      !txInputAddresses.includes(parsed.buyerAddress) ||
+      !buyerAddressIsLinked ||
       remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
       !listingHasValidSaleTicketSpend ||
       (listing.saleAuthorization.buyerAddress &&
@@ -12271,6 +12296,13 @@ function workTokenStateWithRecoveredSales(state, recoveredSales) {
       holders: nextHolders.length,
     },
   });
+}
+
+async function workTokenStateWithRecoveredListingCloseSales(state, network) {
+  const recoveredSales = await recoverWorkSalesFromClosedListings(state, network);
+  return recoveredSales.length > 0
+    ? workTokenStateWithRecoveredSales(state, recoveredSales)
+    : state;
 }
 
 function confirmedWorkMintEventsFromTransaction(tx, network) {
@@ -13997,13 +14029,18 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
     ...cachedPendingTokenTxs,
     ...explicitWorkTokenCloseRecoveryTxs(network),
   ]);
-  const closeRecoveredFromDeltaState =
+  let closeRecoveredFromDeltaState =
     workTokenStateWithRecoveredListingClosesFromTransactions(
       state,
       txs,
       network,
     );
   if (closeRecoveredFromDeltaState !== state) {
+    closeRecoveredFromDeltaState =
+      await workTokenStateWithRecoveredListingCloseSales(
+        closeRecoveredFromDeltaState,
+        network,
+      );
     state = closeRecoveredFromDeltaState;
     cacheLiveWorkTokenState(network, state);
     syncWorkTokenLiveSeenTxids(network, state);
@@ -14606,12 +14643,16 @@ async function tokenSummaryPayload(
       WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
     );
     const workPayload = scopedTokenPayloadFromState(payload, WORK_TOKEN_ID);
-    const closedWorkPayload =
+    let closedWorkPayload =
       workTokenStateWithRecoveredListingClosesFromTransactions(
         workPayload,
         closeTxs,
         network,
       );
+    closedWorkPayload = await workTokenStateWithRecoveredListingCloseSales(
+      closedWorkPayload,
+      network,
+    );
     payload =
       scope === WORK_TOKEN_ID
         ? closedWorkPayload
@@ -14674,6 +14715,10 @@ async function walletScopedTokenSummaryPayload(
       explicitWorkTokenCloseRecoveryTxs(network),
       network,
     );
+    scopedPayload = await workTokenStateWithRecoveredListingCloseSales(
+      scopedPayload,
+      network,
+    );
   }
   if (scope !== POWB_TOKEN_ID) {
     scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
@@ -14689,6 +14734,12 @@ async function walletScopedTokenSummaryPayload(
       network,
       scope,
       recoveryAddresses,
+    );
+  }
+  if (scope === WORK_TOKEN_ID) {
+    scopedPayload = await workTokenStateWithRecoveredListingCloseSales(
+      scopedPayload,
+      network,
     );
   }
 
@@ -14739,6 +14790,10 @@ async function walletScopedTokenPayload(
       explicitWorkTokenCloseRecoveryTxs(network),
       network,
     );
+    scopedPayload = await workTokenStateWithRecoveredListingCloseSales(
+      scopedPayload,
+      network,
+    );
   }
   if (scope !== POWB_TOKEN_ID) {
     scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
@@ -14749,14 +14804,19 @@ async function walletScopedTokenPayload(
     );
   }
 
-  return scope === POWB_TOKEN_ID
-    ? scopedPayload
-    : tokenPayloadWithIndexedWalletClosedListings(
-        scopedPayload,
-        network,
-        scope,
-        recoveryAddresses,
-      );
+  if (scope === POWB_TOKEN_ID) {
+    return scopedPayload;
+  }
+
+  scopedPayload = await tokenPayloadWithIndexedWalletClosedListings(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
+  );
+  return scope === WORK_TOKEN_ID
+    ? workTokenStateWithRecoveredListingCloseSales(scopedPayload, network)
+    : scopedPayload;
 }
 
 async function indexedWalletClosedListings(network, tokenScope, addresses) {
@@ -16534,12 +16594,16 @@ async function workSummaryPayload(network, fresh = false) {
         [],
         WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
       );
-      const closedWorkTokenState =
+      let closedWorkTokenState =
         workTokenStateWithRecoveredListingClosesFromTransactions(
           mergedWorkTokenState,
           closeTxs,
           network,
         );
+      closedWorkTokenState = await workTokenStateWithRecoveredListingCloseSales(
+        closedWorkTokenState,
+        network,
+      );
       const spendableWorkTokenState = await tokenPayloadWithSpendableActiveListings(
         closedWorkTokenState,
         network,
@@ -16749,12 +16813,16 @@ async function reconciledLivenetMarketplaceSummaryPayload(
         [],
         WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
       );
-      const closedWorkTokenState =
+      let closedWorkTokenState =
         workTokenStateWithRecoveredListingClosesFromTransactions(
           mergedWorkTokenState,
           closeTxs,
           network,
         );
+      closedWorkTokenState = await workTokenStateWithRecoveredListingCloseSales(
+        closedWorkTokenState,
+        network,
+      );
       const baseTokenState = tokenStateWithScopedTokenOverride(
         ledger.tokenState,
         closedWorkTokenState,
@@ -17073,11 +17141,83 @@ async function mailActivityItemsForAddressSearch(address, network) {
   );
 }
 
+async function recoveredWorkTokenActivityItemsForLogSearch(
+  network,
+  requestedKind,
+  searchParams,
+) {
+  const recoveryTxids = recoveryTxidsFromSearchParams(searchParams);
+  if (network !== "livenet" || recoveryTxids.length === 0) {
+    return [];
+  }
+
+  const kind = String(requestedKind ?? "").trim();
+  if (
+    kind &&
+    kind !== "token-sale" &&
+    kind !== "token-listing-closed"
+  ) {
+    return [];
+  }
+
+  const state = {
+    closedListings: [],
+    listings: [],
+    mints: [],
+    sales: [],
+    tokens: [],
+    transfers: [],
+  };
+  if (!kind || kind === "token-sale") {
+    const salesPage = await tokenHistoryPayload(
+      network,
+      WORK_TOKEN_ID,
+      "sales",
+      searchParams,
+      true,
+    ).catch((error) => {
+      console.error(
+        `Recovered WORK sale Log lookup failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    state.sales = Array.isArray(salesPage?.items) ? salesPage.items : [];
+  }
+  if (!kind || kind === "token-listing-closed") {
+    const closedPage = await tokenHistoryPayload(
+      network,
+      WORK_TOKEN_ID,
+      "closed-listings",
+      searchParams,
+      true,
+    ).catch((error) => {
+      console.error(
+        `Recovered WORK close Log lookup failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    state.closedListings = Array.isArray(closedPage?.items)
+      ? closedPage.items
+      : [];
+  }
+
+  return tokenActivityItemsFromState(state, "").filter((item) =>
+    kind ? item.kind === kind : true,
+  );
+}
+
 async function activityHistoryPayload(network, kind, searchParams, fresh = false) {
   const payload = await mergedLogActivityPayload(network, fresh);
   const rawQuery = String(
     searchParams.get("q") ?? searchParams.get("search") ?? "",
   ).trim();
+  const requestedKind = String(kind ?? "").trim();
+  const recoveredTokenActivity =
+    await recoveredWorkTokenActivityItemsForLogSearch(
+      network,
+      requestedKind,
+      searchParams,
+    );
   const directMailActivity =
     rawQuery && isValidBitcoinAddress(rawQuery, network)
       ? await mailActivityItemsForAddressSearch(rawQuery, network).catch(
@@ -17092,8 +17232,8 @@ async function activityHistoryPayload(network, kind, searchParams, fresh = false
   const activity = dedupeActivityItems([
     ...(payload.activity ?? []),
     ...directMailActivity,
+    ...recoveredTokenActivity,
   ]);
-  const requestedKind = String(kind ?? "").trim();
   const items = requestedKind
     ? activity.filter((item) => item.kind === requestedKind)
     : activity;
@@ -17201,6 +17341,10 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
         recoveryTxs,
         network,
       );
+      recoveredPayload = await workTokenStateWithRecoveredListingCloseSales(
+        recoveredPayload,
+        network,
+      );
       if (recoveredPayload !== payload) {
         payload = recoveredPayload;
         cacheExplicitWorkTokenCloseRecoveryTxs(network, recoveryTxs);
@@ -17261,7 +17405,9 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       );
       return null;
     });
-    page = mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination);
+    page = mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination, {
+      addOverlayItems: !(fresh && safeKind === "listings"),
+    });
   }
   if (workMarketHistoryKind && network === "livenet") {
     const overlayPage = await proofIndexTokenMarketHistoryOverlayPayload(
@@ -17275,7 +17421,9 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       );
       return null;
     });
-    page = mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination);
+    page = mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination, {
+      addOverlayItems: !(fresh && safeKind === "listings"),
+    });
   }
   return payload.snapshotId
     ? {
@@ -19586,13 +19734,14 @@ async function handleRequest(request, response) {
       const historyKind = String(url.searchParams.get("kind") ?? "")
         .trim()
         .toLowerCase();
+      const logHistoryEligibility = proofIndexLogHistoryReadEligibility(
+        historyKind,
+        url.searchParams,
+      );
       if (
         !freshRead &&
         proofIndexReadFeatureEnabled("log-history,activity-history,log") &&
-        proofIndexLogHistoryReadEligibility(
-          historyKind,
-          url.searchParams,
-        ).eligible
+        logHistoryEligibility.eligible
       ) {
         const indexedPayload = await proofIndexLogHistoryPayload(
           network,
@@ -19605,13 +19754,21 @@ async function handleRequest(request, response) {
           return null;
         });
         if (indexedPayload) {
-          jsonResponse(
-            response,
-            200,
-            indexedPayload,
-            EXPENSIVE_READ_CACHE_CONTROL,
+          const indexedTotal = Number(
+            indexedPayload.totalCount ?? indexedPayload.items?.length ?? 0,
           );
-          return;
+          const shouldUseCanonicalTxidFallback =
+            indexedTotal === 0 &&
+            /^[0-9a-f]{64}$/u.test(logHistoryEligibility.pagination.query);
+          if (!shouldUseCanonicalTxidFallback) {
+            jsonResponse(
+              response,
+              200,
+              indexedPayload,
+              EXPENSIVE_READ_CACHE_CONTROL,
+            );
+            return;
+          }
         }
       }
       const payload = await activityHistoryPayload(

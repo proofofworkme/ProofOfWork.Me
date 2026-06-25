@@ -21,6 +21,12 @@ const REPORTED_DELIST_TX =
   "f5dbee238a09fe0da6a0e4d01526fefefa6676b86df742323ce49df0daa5ecf5";
 const REPORTED_SALE_TX =
   "34ad3a1211c3023d66d72e04e9faf8d989cd60f476887a0abd28b53ba2a8b0a3";
+const REPORTED_BUY_TX =
+  "50086fb6c14bcbfc818b87415191378188a1bb1e3781d17d0875d81fef91301f";
+const REPORTED_BUY_LISTING_TX =
+  "67730b089c8fce6f287968fc5c028df8b2ff72ce84b1b3dbda014fb6b9807933";
+const REPORTED_BUY_BUYER = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
+const REPORTED_BUY_SELLER = "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW";
 const CARBONZ_ADDRESS =
   "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed";
 const CARBONZ_LISTING_TX =
@@ -209,6 +215,53 @@ const reportedMarketLog = await tokenHistory("market-log", {
 assert(
   txids(reportedMarketLog.items).has(REPORTED_SALE_TX),
   `${REPORTED_SALE_TX} is missing from credit sales and listings log`,
+);
+const reportedBuySaleHistory = await tokenHistory("sales", {
+  fresh: 1,
+  q: REPORTED_BUY_TX,
+});
+const reportedBuySale = (reportedBuySaleHistory.items ?? []).find(
+  (item) =>
+    String(item?.txid ?? "").toLowerCase() === REPORTED_BUY_TX &&
+    String(item?.listingId ?? "").toLowerCase() === REPORTED_BUY_LISTING_TX,
+);
+assert(reportedBuySale, `${REPORTED_BUY_TX} is missing from WORK sales history`);
+assert(
+  reportedBuySale?.confirmed === true &&
+    reportedBuySale?.amount === 60 &&
+    reportedBuySale?.priceSats === 9932 &&
+    reportedBuySale?.buyerAddress === REPORTED_BUY_BUYER &&
+    reportedBuySale?.sellerAddress === REPORTED_BUY_SELLER,
+  `${REPORTED_BUY_TX} returned an incomplete recovered WORK sale`,
+);
+const reportedBuyMarketLog = await tokenHistory("market-log", {
+  fresh: 1,
+  q: REPORTED_BUY_TX,
+});
+assert(
+  txids(reportedBuyMarketLog.items).has(REPORTED_BUY_TX),
+  `${REPORTED_BUY_TX} is missing from WORK credit sales and listings log`,
+);
+const reportedBuyClosedListing = await tokenHistory("closed-listings", {
+  fresh: 1,
+  q: REPORTED_BUY_TX,
+});
+assert(
+  (reportedBuyClosedListing.items ?? []).some(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() === REPORTED_BUY_LISTING_TX &&
+      String(item?.closedTxid ?? "").toLowerCase() === REPORTED_BUY_TX &&
+      item?.closedConfirmed === true,
+  ),
+  `${REPORTED_BUY_TX} is missing from WORK closed-listings history`,
+);
+const reportedBuyActiveListing = await tokenHistory("listings", {
+  fresh: 1,
+  q: REPORTED_BUY_LISTING_TX,
+});
+assert(
+  !txids(reportedBuyActiveListing.items).has(REPORTED_BUY_LISTING_TX),
+  `${REPORTED_BUY_LISTING_TX} is still returned as an active WORK listing`,
 );
 const reportedWaitingForSealMarketLog = await tokenHistory("market-log", {
   fresh: 1,
@@ -523,6 +576,21 @@ assert(
       item?.confirmed === true,
   ),
   `${REPORTED_SALE_TX} is not logged as a confirmed token sale`,
+);
+const reportedBuyLogSale = await getJson("/api/v1/log-history", {
+  network: "livenet",
+  q: REPORTED_BUY_TX,
+  limit: 5,
+});
+assertRenderableLogItems(reportedBuyLogSale, "reported recovered buy Log search");
+assert(
+  (reportedBuyLogSale.items ?? []).some(
+    (item) =>
+      item?.kind === "token-sale" &&
+      String(item?.txid ?? "").toLowerCase() === REPORTED_BUY_TX &&
+      item?.confirmed === true,
+  ),
+  `${REPORTED_BUY_TX} is not logged as a confirmed token sale`,
 );
 
 console.log(
