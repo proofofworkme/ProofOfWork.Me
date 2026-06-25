@@ -63,6 +63,26 @@ Production app roles:
 
 Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Log, and Growth. Public social links should include X, YouTube, and GitHub.
 
+### Audit Workflow
+
+Audit standalone public apps before the full Computer shell: Home, IDs, Desktop,
+Browser, Marketplace, Credit, Wallet, WORK, Infinity, Log, and Growth come
+first. `computer.proofofwork.me` comes last because it embeds and cross-checks
+the same protocols, workspaces, and read models in one integrated ProofOfWork
+Computer.
+
+An audit should move in this order:
+
+1. Reproduce the visible issue on the named production surface.
+2. Verify the underlying chain/API truth with first-party endpoints and
+   regression scripts.
+3. Patch only the responsible code or documentation scope.
+4. Run the production verification gates that cover the touched surface.
+5. Deploy after the fixed production surface is checked.
+6. Commit the exact reviewed scope.
+7. Draft concise public copy that says what was hardened without inventing
+   numbers from stale screenshots.
+
 Official YouTube:
 
 ```text

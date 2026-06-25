@@ -52,6 +52,10 @@ Mail organization features that are already implemented in the full app:
 - Confirmed-only ID routing in compose: pending IDs must not receive routed mail.
 - First-party OP_RETURN API reads for production mainnet mail, files, registry, Log, Growth, credit/token, marketplace, event history, and tx status when `VITE_POW_API_BASE` is configured; stable confirmed global reads use the proof index database where supported.
 - Indexed mailbox reads come from the proof-index address-mail projection when supported; confirmed self-sends must render in both Inbox and Sent, and `pwm1:m:powb` Infinity Bonds must remain mailbox-visible while also classifying as `infinity-bond` in Log/Event History. Subject metadata from `pwm1:s` must stay separate from body text from `pwm1:m`; `mail_items.body_text` and UI memo rendering must not fall back to Log detail strings such as `Subject: ...`. POWB mint credit belongs to the bond recipient address; self-sends credit the sender because the sender is also the recipient.
+- Indexed sent/file recovery may use raw transaction sender, recipients, payload,
+  and proof-index participants to repair stale projection rows at read time.
+  The chain transaction remains the authority; the repair is a projection fix,
+  not a new mailbox rule.
 
 Future developers should keep `id.proofofwork.me` narrow. Do not pull the full mailbox UI into the Phase 1 registry launch unless the launch scope explicitly changes.
 Marketplace actions should stay outside the mailbox folders. Keep ID and credit trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders. The Marketplace workspace is tabbed by asset class: IDs and Credits both use sale-ticket settlement, while Wallet stays the place to transfer or list owned credit balances.
@@ -169,6 +173,11 @@ The Computer app may still keep an internal Desktop folder for signed-in users. 
 Browser is the public HTML renderer for the ProofOfWork Computer. On `browser.proofofwork.me`, users paste a txid and the app renders HTML from the existing `pwm1:m` message body or reconstructs a verified `text/html` attachment from `pwm1:a` chunks.
 
 The full Computer app also exposes Browser as a sidebar workspace. New products should follow this pattern: a standalone public surface when useful, a Computer workspace when it belongs inside the full machine, and a matching entry in the growth model.
+
+That same shape applies to audits: test the standalone surface first, then test
+the matching Computer workspace during the final `computer.proofofwork.me`
+audit. Computer should be the last integration check over surfaces that already
+passed on their own.
 
 Behavior:
 

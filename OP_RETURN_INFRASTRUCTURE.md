@@ -182,6 +182,13 @@ run has `missingLogEvents: []`, populated event participant/ref search indexes,
 matching WORK/Growth/summary snapshot ids, searchable known regression txids,
 and pending rows limited to mempool visibility.
 
+Production audits should follow the public app dependency order. Verify the
+standalone surfaces first: Home, IDs, Desktop, Browser, Marketplace, Credit,
+Wallet, WORK, Infinity, Log, and Growth. Audit `computer.proofofwork.me` last,
+because it is the integrated shell over the same registry, mail/file, credit,
+marketplace, WORK, Infinity, Log, and Growth read paths. The final Computer
+audit should prove that standalone fixes still agree inside the combined shell.
+
 The completed production rollout followed this shadow-first ladder. Future
 database-backed surfaces should use the same pattern:
 
@@ -319,6 +326,11 @@ VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 ```
 
 RUSH remains staged behind explicit build/query flags and should not be added to public navigation or production domain routing until separately approved for launch.
+
+Local deploy builds can leave generated artifacts such as `dist/`, `.vite/`,
+and `.pow-api-cache/`. Treat them as rebuildable output/cache state: deploy from
+the intended `dist/` bundle, then clear stale local copies before committing
+unless a specific generated artifact is intentionally tracked.
 
 ## Endpoints
 
@@ -593,6 +605,9 @@ Pending visibility is still non-canonical gossip. If `PENDING_MEMPOOL_BASE` is c
 
 After changing the API or production build, verify:
 
+- Standalone public surfaces have been audited before the final Computer shell
+  audit, so Computer is checking integration rather than hiding an unaudited
+  child surface.
 - `/health` returns `service: proofofwork-op-return-api`.
 - `/api/v1/consistency?network=livenet` is green, has no `missingLogEvents`, and includes the seeded mail and seeded Infinity Bond checks.
 - ID registry count matches the node-backed API and includes pending records when visible.
