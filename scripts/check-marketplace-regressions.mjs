@@ -25,6 +25,10 @@ const REPORTED_BUY_TX =
   "50086fb6c14bcbfc818b87415191378188a1bb1e3781d17d0875d81fef91301f";
 const REPORTED_BUY_LISTING_TX =
   "67730b089c8fce6f287968fc5c028df8b2ff72ce84b1b3dbda014fb6b9807933";
+const REPORTED_SECOND_BUY_TX =
+  "35db9a67bddb61d8601f25d8cde3c7c0edda16fbdad1ee9e71110842496c7528";
+const REPORTED_SECOND_BUY_LISTING_TX =
+  "b97dfcf6eafaabc37f3516581a2c7bb6bca5c34a793a8bb11e71e2643b05f08f";
 const REPORTED_BUY_BUYER = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
 const REPORTED_BUY_SELLER = "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW";
 const CARBONZ_ADDRESS =
@@ -37,6 +41,8 @@ const REPORTED_TRANSFER_TX =
   "90cdafde9e7e050a1831fcc3b412f29e529368fa6d9afc8f053c681c204449d4";
 const REPORTED_WAITING_FOR_SEAL_LISTING_TX =
   "a5476c0c6a8df67569935c3cca152a3ef979d95469ce8fe8c8187f359c48a6c7";
+const REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX =
+  "9cbaf52ddb244d228204d841342b126dc8801a987626d0a05d82d5e1af2c1bc3";
 const REPORTED_CONFIRMED_SEALABLE_LISTING_TX =
   "d7fe42285c4edd02592608cbd887ad7a8a2b78e085de05296e352fcc1e2166a9";
 const REPORTED_DROPPED_LISTING_TX =
@@ -263,6 +269,45 @@ assert(
   !txids(reportedBuyActiveListing.items).has(REPORTED_BUY_LISTING_TX),
   `${REPORTED_BUY_LISTING_TX} is still returned as an active WORK listing`,
 );
+const reportedSecondBuySaleHistory = await tokenHistory("sales", {
+  fresh: 1,
+  q: REPORTED_SECOND_BUY_TX,
+});
+assert(
+  (reportedSecondBuySaleHistory.items ?? []).some(
+    (item) =>
+      String(item?.txid ?? "").toLowerCase() === REPORTED_SECOND_BUY_TX &&
+      String(item?.listingId ?? "").toLowerCase() ===
+        REPORTED_SECOND_BUY_LISTING_TX &&
+      item?.confirmed === true,
+  ),
+  `${REPORTED_SECOND_BUY_TX} is missing from WORK sales history`,
+);
+const reportedSecondBuyClosedListing = await tokenHistory("closed-listings", {
+  fresh: 1,
+  q: REPORTED_SECOND_BUY_TX,
+});
+assert(
+  (reportedSecondBuyClosedListing.items ?? []).some(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() ===
+        REPORTED_SECOND_BUY_LISTING_TX &&
+      String(item?.closedTxid ?? "").toLowerCase() ===
+        REPORTED_SECOND_BUY_TX &&
+      item?.closedConfirmed === true,
+  ),
+  `${REPORTED_SECOND_BUY_TX} is missing from WORK closed-listings history`,
+);
+const reportedSecondBuyActiveListing = await tokenHistory("listings", {
+  fresh: 1,
+  q: REPORTED_SECOND_BUY_LISTING_TX,
+});
+assert(
+  !txids(reportedSecondBuyActiveListing.items).has(
+    REPORTED_SECOND_BUY_LISTING_TX,
+  ),
+  `${REPORTED_SECOND_BUY_LISTING_TX} is still returned as an active WORK listing`,
+);
 const reportedWaitingForSealMarketLog = await tokenHistory("market-log", {
   fresh: 1,
   q: REPORTED_WAITING_FOR_SEAL_LISTING_TX,
@@ -272,6 +317,26 @@ assert(
     REPORTED_WAITING_FOR_SEAL_LISTING_TX,
   ),
   `${REPORTED_WAITING_FOR_SEAL_LISTING_TX} is missing from WORK market-log history`,
+);
+const reportedLatestWaitingForSealListing = await tokenHistory("listings", {
+  fresh: 1,
+  q: REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX,
+});
+const latestWaitingForSealItem = (
+  reportedLatestWaitingForSealListing.items ?? []
+).find(
+  (item) =>
+    String(item?.listingId ?? "").toLowerCase() ===
+    REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX,
+);
+assert(
+  latestWaitingForSealItem?.confirmed === true &&
+    latestWaitingForSealItem?.amount === 100 &&
+    latestWaitingForSealItem?.priceSats === 100853 &&
+    latestWaitingForSealItem?.saleAuthorization?.anchorType ===
+      "sale-ticket-v1" &&
+    !tokenListingHasConfirmedSeal(latestWaitingForSealItem),
+  `${REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX} is not returned as a confirmed waiting-for-seal listing`,
 );
 const reportedSealableListing = await tokenHistory("listings", {
   q: REPORTED_CONFIRMED_SEALABLE_LISTING_TX,
@@ -437,6 +502,16 @@ assert(
         REPORTED_WAITING_FOR_SEAL_LISTING_TX && item?.confirmed === true,
   ),
   `${REPORTED_WAITING_FOR_SEAL_LISTING_TX} is missing from fresh marketplace summary listings`,
+);
+assert(
+  (marketplaceFreshSummary.token?.listings ?? []).some(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() ===
+        REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX &&
+      item?.confirmed === true &&
+      !tokenListingHasConfirmedSeal(item),
+  ),
+  `${REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX} is missing from fresh marketplace summary waiting-for-seal listings`,
 );
 const workToken = await getJson("/api/v1/token", {
   network: "livenet",

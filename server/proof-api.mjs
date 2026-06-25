@@ -34,6 +34,7 @@ import {
   proofIndexTokenPayload,
   proofIndexTokenHistoryReadEligibility,
   proofIndexTokenHistoryPayload,
+  proofIndexTokenListingCloseOutspendPayload,
   proofIndexTokenReadEligibility,
   proofIndexTokenMarketSummaryOverlayPayload,
   proofIndexTxStatusPayload,
@@ -175,9 +176,15 @@ const WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS = Number(
   process.env.WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS ??
     Math.max(WORK_FLOOR_FRESH_WAIT_MS, 15_000),
 );
-const MARKETPLACE_SUMMARY_FRESH_WAIT_MS = Number(
-  process.env.MARKETPLACE_SUMMARY_FRESH_WAIT_MS ??
-    Math.max(WORK_FLOOR_FRESH_WAIT_MS, 180_000),
+const MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS = Number(
+  process.env.MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS ?? 25_000,
+);
+const MARKETPLACE_SUMMARY_FRESH_WAIT_MS = Math.min(
+  Number(
+    process.env.MARKETPLACE_SUMMARY_FRESH_WAIT_MS ??
+      Math.max(WORK_FLOOR_FRESH_WAIT_MS, MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS),
+  ),
+  MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS,
 );
 const PROOF_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS = (() => {
   const parsed = Number(
@@ -5596,6 +5603,68 @@ function outspendPayloadFromSpenderTransaction(tx, txid, vout) {
   };
 }
 
+function outspendHasConfirmedSpender(payload) {
+  return (
+    payload?.spent === true &&
+    typeof payload.txid === "string" &&
+    /^[0-9a-fA-F]{64}$/u.test(payload.txid) &&
+    payload.status?.confirmed === true
+  );
+}
+
+function outspendHasSpenderTxid(payload) {
+  return (
+    payload?.spent === true &&
+    typeof payload.txid === "string" &&
+    /^[0-9a-fA-F]{64}$/u.test(payload.txid)
+  );
+}
+
+async function hydrateOutspendStatus(payload, network) {
+  if (!outspendHasSpenderTxid(payload)) {
+    return payload;
+  }
+  if (payload.status?.confirmed === true) {
+    return payload;
+  }
+
+  const txid = payload.txid.toLowerCase();
+  const tx = await fetchTransactionWithSourceFallback(txid, network).catch(
+    () => null,
+  );
+  return tx
+    ? {
+        ...payload,
+        status: tx.status ?? payload.status ?? null,
+        txid,
+      }
+    : payload;
+}
+
+async function hydrateIncompleteSpentOutspendFromProofIndex(
+  txid,
+  vout,
+  network,
+  payload,
+) {
+  if (!payload?.spent || outspendHasConfirmedSpender(payload)) {
+    return payload;
+  }
+
+  const indexedCloseOutspend =
+    await proofIndexTokenListingCloseOutspendPayload(network, txid).catch(
+      (error) => {
+        console.error(
+          `Proof index listing close outspend lookup failed for ${txid}:${vout}: ${errorSummary(error)}`,
+        );
+        return null;
+      },
+    );
+  return outspendHasConfirmedSpender(indexedCloseOutspend)
+    ? indexedCloseOutspend
+    : payload;
+}
+
 function tokenMarketOutspendCacheKey(network, anchor) {
   return `token-outspend:${network}:${anchor.txid}:${anchor.vout}`;
 }
@@ -5786,10 +5855,7 @@ async function tokenListingAnchorOutspend(listing, network) {
 
   try {
     let payload = await txOutspendPayload(anchor.txid, anchor.vout, network);
-    const hasSpenderTxid =
-      typeof payload?.txid === "string" &&
-      /^[0-9a-fA-F]{64}$/u.test(payload.txid);
-    if (payload?.spent && !hasSpenderTxid) {
+    if (payload?.spent && !outspendHasConfirmedSpender(payload)) {
       payload =
         (await tokenListingAnchorOutspendFromSellerHistory(
           listing,
@@ -5802,6 +5868,9 @@ async function tokenListingAnchorOutspend(listing, network) {
           network,
         )) ??
         payload;
+    }
+    if (payload?.spent) {
+      payload = await hydrateOutspendStatus(payload, network);
     }
     if (payload?.unknown) {
       const utxoRecovered = await tokenListingAnchorOutspendFromSellerUtxos(
@@ -16802,6 +16871,25 @@ async function marketplaceSummaryFallbackPayload(network) {
   return emptyMarketplaceSummaryPayload(network);
 }
 
+async function marketplaceSummaryFastFallbackPayload(network) {
+  const cached = await payloadWithFallbackAfterMs(
+    cachedMarketplaceSummaryPayloadNoRefresh(network),
+    null,
+    Math.min(2_500, MARKETPLACE_SUMMARY_FRESH_WAIT_MS),
+  );
+  if (cached) {
+    return cached;
+  }
+
+  const ledger = await payloadWithFallbackAfterMs(
+    existingCanonicalLedgerPayload(network),
+    null,
+    Math.min(2_500, MARKETPLACE_SUMMARY_FRESH_WAIT_MS),
+  );
+  const ledgerPayload = marketplaceSummaryPayloadFromLedger(ledger);
+  return ledgerPayload ?? emptyMarketplaceSummaryPayload(network);
+}
+
 async function reconciledLivenetMarketplaceSummaryPayload(
   network,
   fresh = false,
@@ -16919,9 +17007,8 @@ async function refreshMarketplaceSummaryPayloadCache(network, fresh = false) {
 }
 
 async function livenetMarketplaceSummaryPayload(network, fresh = false) {
-  const fallback = await marketplaceSummaryFallbackPayload(network);
-
   if (fresh) {
+    const fallback = await marketplaceSummaryFastFallbackPayload(network);
     const refreshed = await payloadWithFallbackAfterMs(
       refreshMarketplaceSummaryPayloadCache(network, true),
       null,
@@ -16941,6 +17028,7 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
     return fallback;
   }
 
+  const fallback = await marketplaceSummaryFallbackPayload(network);
   refreshPayloadCacheInBackground(
     marketplaceSummaryCacheKey(network),
     marketplaceSummaryPayloadKey(network),
@@ -17591,6 +17679,83 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
   const queriedWorkSaleHistory =
     queriedWorkHistory &&
     (workMarketHistoryKind || safeKind === "invalidEvents");
+  if (
+    workMarketHistoryKind &&
+    scope === WORK_TOKEN_ID &&
+    recoveryTxids.length > 0 &&
+    network === "livenet"
+  ) {
+    const recoveryTxs = await confirmedTransactionsForTxids(
+      recoveryTxids,
+      network,
+      recoveryTxids.length,
+    );
+    if (recoveryTxs.length > 0) {
+      let recoveredPayload = {
+        ...emptyTokenPayloadSnapshot(network),
+        indexedAt: new Date().toISOString(),
+        source: "first-party-token-txid-recovery",
+      };
+      recoveredPayload = workTokenStateWithRecoveredListingsFromTransactions(
+        recoveredPayload,
+        recoveryTxs,
+        network,
+      );
+      recoveredPayload = workTokenStateWithRecoveredListingSeals(
+        recoveredPayload,
+        recoveryTxs,
+        network,
+      );
+      recoveredPayload = workTokenStateWithRecoveredListingClosesFromTransactions(
+        recoveredPayload,
+        recoveryTxs,
+        network,
+      );
+      recoveredPayload = await tokenPayloadWithSpendableListings(
+        recoveredPayload,
+        network,
+      );
+      const directItems =
+        safeKind === "market-log"
+          ? tokenMarketLogItemsFromState(recoveredPayload)
+          : (recoveredPayload[safeKind] ?? []);
+      const scopedDirectItems = historyItemsMatchingAddresses(
+        directItems,
+        recoveryAddresses,
+      );
+      if (scopedDirectItems.length > 0) {
+        return paginatedHistoryPayload({
+          indexedAt: recoveredPayload.indexedAt ?? new Date().toISOString(),
+          items: scopedDirectItems,
+          kind: safeKind,
+          network,
+          pagination,
+          source: recoveredPayload.source,
+        });
+      }
+    }
+  }
+  if (workMarketHistoryKind && queriedWorkHistory && network === "livenet") {
+    const indexedMarketPage = await proofIndexTokenMarketHistoryOverlayPayload(
+      network,
+      scope,
+      safeKind,
+      searchParams,
+      { pagination },
+    ).catch((error) => {
+      console.error(
+        `Proof index fast WORK market history read failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    if (
+      indexedMarketPage &&
+      (Number(indexedMarketPage.totalCount ?? 0) > 0 ||
+        (indexedMarketPage.items ?? []).length > 0)
+    ) {
+      return indexedMarketPage;
+    }
+  }
   let payload = await tokenPayloadForRead(network, scope, fresh, {
     forceRefresh: workBalanceHistoryKind && queriedWorkHistory,
     fullRefreshWaitMs: WORK_TOKEN_LIVE_RECOVERY_WAIT_MS,
@@ -19332,8 +19497,8 @@ async function txHexPayload(txid, network) {
 
 async function directTxOutspendPayload(txid, vout, network) {
   let lastOutspend = null;
-  const outspendBases = firstPartyAddressReadBases(network);
-  for (const base of outspendBases) {
+  let lastSpentOutspend = null;
+  const readBase = async (base) => {
     const timeoutMs = String(base).startsWith("https://")
       ? TX_OUTSPEND_EXTERNAL_FETCH_TIMEOUT_MS
       : TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS;
@@ -19354,10 +19519,14 @@ async function directTxOutspendPayload(txid, vout, network) {
       const outspends = await fetchOutspendJson(`${base}/api/tx/${txid}/outspends`);
       const outspend = Array.isArray(outspends) ? outspends[vout] : null;
       if (outspend?.spent) {
-        return outspend;
+        const hydrated = await hydrateOutspendStatus(outspend, network);
+        if (outspendHasConfirmedSpender(hydrated)) {
+          return { done: true, payload: hydrated };
+        }
+        return { payload: hydrated, spentIncomplete: true };
       }
       if (outspend && typeof outspend === "object") {
-        lastOutspend = outspend;
+        return { payload: outspend };
       }
     } catch (error) {
       console.error(
@@ -19369,19 +19538,65 @@ async function directTxOutspendPayload(txid, vout, network) {
       const url = `${base}/api/tx/${txid}/outspend/${vout}`;
       const outspend = await fetchOutspendJson(url);
       if (outspend?.spent) {
-        return outspend;
+        const hydrated = await hydrateOutspendStatus(outspend, network);
+        if (outspendHasConfirmedSpender(hydrated)) {
+          return { done: true, payload: hydrated };
+        }
+        return { payload: hydrated, spentIncomplete: true };
       }
       if (outspend && typeof outspend === "object") {
-        lastOutspend = outspend;
+        return { payload: outspend };
       }
     } catch (error) {
       console.error(
         `Outspend lookup failed for ${base} ${txid}:${vout}: ${errorSummary(error)}`,
       );
     }
+
+    return null;
+  };
+
+  for (const base of firstPartyAddressReadBases(network)) {
+    const result = await readBase(base);
+    if (result?.done) {
+      return result.payload;
+    }
+    if (result?.spentIncomplete) {
+      lastSpentOutspend = result.payload;
+      continue;
+    }
+    if (result?.payload && typeof result.payload === "object") {
+      lastOutspend = result.payload;
+      if (result.payload.spent === false && !result.payload.unknown) {
+        return result.payload;
+      }
+    }
   }
 
-  return lastOutspend;
+  if (lastSpentOutspend) {
+    const indexedOutspend =
+      await hydrateIncompleteSpentOutspendFromProofIndex(
+        txid,
+        vout,
+        network,
+        lastSpentOutspend,
+      );
+    if (outspendHasConfirmedSpender(indexedOutspend)) {
+      return indexedOutspend;
+    }
+
+    for (const base of explorerReadBases(network)) {
+      const result = await readBase(base);
+      if (result?.done) {
+        return result.payload;
+      }
+      if (result?.spentIncomplete) {
+        lastSpentOutspend = result.payload;
+      }
+    }
+  }
+
+  return lastSpentOutspend ?? lastOutspend;
 }
 
 async function txOutputScriptHex(txid, vout, network) {
@@ -19527,15 +19742,39 @@ async function txOutspendPayload(txid, vout, network) {
         vout,
         network,
       ).catch(() => null);
-      return directOutspend?.spent ? directOutspend : electrumSpent;
+      return directOutspend?.spent
+        ? await hydrateIncompleteSpentOutspendFromProofIndex(
+            txid,
+            vout,
+            network,
+            directOutspend,
+          )
+        : await hydrateIncompleteSpentOutspendFromProofIndex(
+            txid,
+            vout,
+            network,
+            electrumSpent,
+          );
     }
 
-    return rpcSpent ?? unknownUnspent;
+    return rpcSpent
+      ? await hydrateIncompleteSpentOutspendFromProofIndex(
+          txid,
+          vout,
+          network,
+          rpcSpent,
+        )
+      : unknownUnspent;
   }
 
   const primaryOutspend = await directTxOutspendPayload(txid, vout, network);
   if (primaryOutspend?.spent) {
-    return primaryOutspend;
+    return hydrateIncompleteSpentOutspendFromProofIndex(
+      txid,
+      vout,
+      network,
+      primaryOutspend,
+    );
   }
   if (electrumSpent) {
     if (!outputScriptHex) {
@@ -19548,7 +19787,13 @@ async function txOutspendPayload(txid, vout, network) {
       outputScriptHex,
       network,
     ).catch(() => null);
-    return historyOutspend ?? electrumSpent;
+    const payload = historyOutspend ?? electrumSpent;
+    return hydrateIncompleteSpentOutspendFromProofIndex(
+      txid,
+      vout,
+      network,
+      payload,
+    );
   }
   if (
     primaryOutspend &&

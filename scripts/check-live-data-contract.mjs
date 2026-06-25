@@ -256,7 +256,9 @@ expectAll("proof index wallet token overlay reads balances and events", proofInd
   /"proof-indexer-token-market-summary-overlay"/,
 ]);
 expectAll("marketplace summary and tabs keep confirmed sealed inventory canonical", server + app, [
-  /const MARKETPLACE_SUMMARY_FRESH_WAIT_MS = Number\([\s\S]*Math\.max\(WORK_FLOOR_FRESH_WAIT_MS,\s*180_000\)/,
+  /const MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS = Number\([\s\S]*25_000/,
+  /const MARKETPLACE_SUMMARY_FRESH_WAIT_MS = Math\.min\([\s\S]*MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS/,
+  /async function marketplaceSummaryFastFallbackPayload\(network\)[\s\S]*payloadWithFallbackAfterMs\([\s\S]*cachedMarketplaceSummaryPayloadNoRefresh/,
   /async function marketplaceSummaryPayloadWithIndexedMarketOverlay\([\s\S]*indexedTokenMarketSummaryOverlay\([\s\S]*compactTokenSummaryPayload\(tokenState\)/,
   /async function marketplaceSummaryWithCurrentBtcUsd\([\s\S]*workFloorWithCurrentBtcUsd\(/,
   /function tokenStateWithIndexedMarketSummaryOverlay\([\s\S]*overlay\.listings[\s\S]*tokenListingItemKey/,

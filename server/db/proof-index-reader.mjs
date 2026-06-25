@@ -2034,6 +2034,65 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   return page;
 }
 
+export async function proofIndexTokenListingCloseOutspendPayload(
+  network,
+  listingTxid,
+) {
+  const pool = proofIndexPool();
+  const normalizedListingTxid = String(listingTxid ?? "").trim().toLowerCase();
+  if (!pool || !/^[0-9a-f]{64}$/u.test(normalizedListingTxid)) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        e.payload,
+        e.status,
+        e.block_time,
+        e.block_height,
+        e.txid
+      FROM proof_indexer.events e
+      WHERE e.network = $1
+        AND e.valid = true
+        AND e.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
+        AND lower(e.payload->>'listingId') = $2
+      ORDER BY
+        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        e.txid DESC,
+        e.event_id DESC
+      LIMIT 1
+    `,
+    [network, normalizedListingTxid],
+  );
+  const row = result.rows[0];
+  const closeTxid = String(row?.txid ?? row?.payload?.closedTxid ?? "")
+    .trim()
+    .toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(closeTxid)) {
+    return null;
+  }
+
+  const confirmed =
+    row?.status === "confirmed" ||
+    row?.payload?.confirmed === true ||
+    row?.payload?.closedConfirmed === true;
+  return {
+    spent: true,
+    status: {
+      block_height: rowNumber(row, "block_height") || undefined,
+      block_time: row?.block_time
+        ? Math.floor(new Date(row.block_time).getTime() / 1000)
+        : undefined,
+      confirmed,
+    },
+    txid: closeTxid,
+    vin: Number.isSafeInteger(Number(row?.payload?.closedVin))
+      ? Number(row.payload.closedVin)
+      : undefined,
+  };
+}
+
 export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
   const pool = proofIndexPool();
   if (!pool) {
