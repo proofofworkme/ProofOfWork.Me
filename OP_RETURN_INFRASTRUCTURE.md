@@ -381,6 +381,11 @@ The canonical livenet ledger payload:
 - Merges registry activity, discovered global Computer activity, seeded mail activity from app-derived addresses, canonical WORK state, canonical credit/token state, and staged protocol activity when enabled.
 - Uses complete address history for configured mail-heavy Computer addresses, with paginated mempool/address reads as the faster path for the wider seed set. This prevents confirmed mail or Infinity Bond transactions from appearing in direct address search while missing from global Log and network value.
 - Emits one `snapshotId`, source hashes, metrics, and consistency checks so WORK, Growth, Log, and credit/token history can prove they are reading the same confirmed state.
+- Fresh summary reads must reject stale ledger fallbacks. A fresh WORK,
+  Growth, Infinity, Marketplace, Log, or credit/token response must either
+  build from current canonical/proof-index event data that covers the node tip
+  within the configured lag, or fail closed instead of returning an older
+  snapshot as if it were refreshed.
 - Carries live BTC/USD metadata (`btcUsd`, `btcUsdIndexedAt`, `usdSource`) on WORK/Growth responses. `actualValue.totalUsd` is current live USD from the first-party price endpoint, while `actualValue.modelTotalUsd` is the separate Growth model USD projection.
 - Keeps pending records visible where useful, but only confirmed records affect canonical network value and the WORK floor.
 - Rejects or avoids replacing a useful cached ledger with a worse confirmed-history payload when guarded counts regress.
@@ -401,7 +406,8 @@ These expose the ledger checks used by `npm run audit:ledger`, including
 `work-floor-actual-total`, `growth-actual-total`, `growth-work-floor-total`,
 `marketplace-mutation-fees-counted`,
 `marketplace-value-includes-mutation-fees`,
-`computer-event-flow-excludes-marketplace`, `token-sales-logged`,
+`computer-event-flow-excludes-marketplace`, `ledger-covers-node-tip`,
+`token-sales-logged`,
 `seeded-mail-events-logged`, and `seeded-infinity-bonds-logged`. The audit also
 checks that WORK/Growth live USD reconciles from `/api/v1/prices/btc-usd`.
 `missingLogEvents` must stay empty for a green production ledger.

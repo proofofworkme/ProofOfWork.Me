@@ -621,10 +621,11 @@ npm run audit:ledger
 
 The audit checks `/api/v1/consistency`, `/api/v1/work-floor`,
 `/api/v1/growth-summary`, `/api/v1/prices/btc-usd`, and Log search. It fails
-if WORK and Growth use different snapshots, if network value differs from
-actual confirmed value, if live USD does not reconcile from the exposed BTC/USD
-quote, if seeded Computer mail/Infinity Bond events are missing from Log, or if
-known confirmed regression txids are not searchable.
+if WORK and Growth use different snapshots, if the ledger snapshot does not
+cover the current node tip within the configured lag, if network value differs
+from actual confirmed value, if live USD does not reconcile from the exposed
+BTC/USD quote, if seeded Computer mail/Infinity Bond events are missing from
+Log, or if known confirmed regression txids are not searchable.
 
 The companion local contract check is:
 

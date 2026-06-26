@@ -80,11 +80,12 @@ expectAll("canonical ledger cache is first-class", server, [
 
 expectAll("canonical ledger builder owns shared state", server, [
   /async function buildCanonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)/,
+  /activityStateForCanonicalLedger\(network,\s*fresh\)/,
   /const valueTokenState = tokenStateWithScopedTokenOverride\(/,
   /let ledgerTokenState = valueTokenState/,
   /powbMintsFromActivity\(baseActivity,\s*powbRegistryAddress,\s*network\)/,
   /tokenStateWithScopedTokenOverride\([\s\S]*POWB_TOKEN_ID/,
-  /const seededMailActivityState = await seededMailActivityPayload\(/,
+  /const seededMailActivityState = activityStateIsProofIndexCanonical\(activityState\)[\s\S]*seededMailActivityPayloadFromIndexedActivity\([\s\S]*seededMailActivityPayload\(network,\s*seedAddresses\)/,
   /\.\.\.\(Array\.isArray\(seededMailActivityState\?\.activity\)/,
   /tokenActivityItemsFromState\(\s*ledgerTokenState/,
   /workFloorPayloadFromState\(/,
@@ -98,6 +99,7 @@ expectAll("canonical ledger directly merges seeded Computer mail", server, [
   /function canonicalMailSeedAddresses\(/,
   /function addTokenStateActivityAddresses\(/,
   /async function seededMailActivityPayload\(/,
+  /function seededMailActivityPayloadFromIndexedActivity\(/,
   /async function buildSeededMailActivityPayload\(/,
   /seededMailActivityState/,
   /sourceCollectionFingerprint\(seededMailActivityState\?\.activity\)/,
@@ -147,8 +149,43 @@ expectAll("frontend scoped credit mint supply ignores global summary totals", ap
   /pendingSupply: scopedPendingSupply \?\?[\s\S]*scopedTopLevelPendingSupply \?\?[\s\S]*topLevelPendingSupply \?\?/,
 ]);
 
-expectAll("server scoped credit fresh reads prefer canonical ledger on livenet", server, [
-  /fresh &&[\s\S]*scope &&[\s\S]*scope !== WORK_TOKEN_ID &&[\s\S]*!\(network === "livenet" && useLedgerSnapshot\) &&[\s\S]*options\.preferScopedRefresh !== false/,
+expectAll("server scoped credit fresh reads use direct scoped refresh before ledger", server, [
+  /fresh &&[\s\S]*scope &&[\s\S]*scope !== WORK_TOKEN_ID &&[\s\S]*options\.preferScopedRefresh !== false[\s\S]*refreshTokenPayload\(network,\s*scope\)/,
+]);
+
+expectAll("server POWB activity rejects stale proof-index seed data", server, [
+  /const POWB_ACTIVITY_FRESH_WAIT_MS = Number\(/,
+  /async function indexedPowbActivityForTokenState\(network\)[\s\S]*indexedThroughBlock[\s\S]*stats:\s*{[\s\S]*indexedThroughBlock/,
+  /async function powbActivityForTokenState\(network,[\s\S]*proofIndexPayloadCoversConfirmedTip\([\s\S]*"powb-activity"[\s\S]*payloadWithFallbackAfterMs\([\s\S]*globalActivityPayload\(network,\s*true\)/,
+]);
+
+expectAll("server POWB listings recover confirmed Infinity Bond parent mints", server, [
+  /async function powbSeedMintsWithSaleTicketParents\([\s\S]*fetchTransactionWithSourceFallback\(parentTxid,\s*network\)[\s\S]*mailActivityItemFromTransaction\(parentTx,\s*network\)[\s\S]*isInfinityBondActivityItem\(activityItem\)/,
+  /const seedMints = await powbSeedMintsWithSaleTicketParents\([\s\S]*powbSeed\.seedMints[\s\S]*registryTxs[\s\S]*POWB_TOKEN_ID[\s\S]*seedMints/,
+  /function powbRegistryAddressFromTokenTransactions\(txs,\s*network\)[\s\S]*tokenPaymentAmountBeforeProtocol\(vout,\s*registryAddress\)/,
+  /async function recoveredPowbTokenPayloadFromTransactions\(network,\s*recoveryTxs\)[\s\S]*powbRegistryAddressFromTokenTransactions\(confirmedTxs,\s*network\)[\s\S]*powbSeedMintsWithSaleTicketParents\([\s\S]*first-party-powb-txid-recovery/,
+  /scope === POWB_TOKEN_ID &&[\s\S]*recoveryTxids\.length > 0[\s\S]*recoveredPowbTokenPayloadFromTransactions\(/,
+]);
+
+expectAll("server POWB fresh scoped reads do not return stale cached fallback", server, [
+  /const scopedRefreshWaitMs = Number\.isFinite\(options\.scopedRefreshWaitMs\)[\s\S]*scope === POWB_TOKEN_ID[\s\S]*WORK_TOKEN_CANONICAL_FRESH_WAIT_MS/,
+  /fallback &&[\s\S]*scope !== POWB_TOKEN_ID[\s\S]*scoped-token-fallback/,
+]);
+
+expectAll("server WORK transfer txid history recovers without full ledger rebuild", server, [
+  /const WORK_TOKEN_TRANSFER_RECOVERY_TXIDS = new Set\(/,
+  /const TOKEN_ADDRESS_TRANSFER_RECOVERY_MAX_PAGES = Number\(/,
+  /const TOKEN_ADDRESS_TRANSFER_RECOVERY_WAIT_MS = Number\(/,
+  /function workTransfersFromTransactions\(txs,\s*network\)[\s\S]*parsed\?\.kind !== "send"[\s\S]*WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS/,
+  /async function recoveredWorkTransfersForAddresses\(addresses,\s*network\)[\s\S]*WORK_TOKEN_TRANSFER_RECOVERY_TXIDS[\s\S]*fetchAddressTransactionsViaMempoolPagination\([\s\S]*TOKEN_ADDRESS_TRANSFER_RECOVERY_WAIT_MS[\s\S]*workTransfersFromTransactions/,
+  /scope === WORK_TOKEN_ID &&[\s\S]*recoveryTxids\.length > 0[\s\S]*safeKind === "transfers"[\s\S]*first-party-work-transfer-txid-recovery/,
+  /scope === WORK_TOKEN_ID &&[\s\S]*recoveryAddresses\.length > 0[\s\S]*safeKind === "transfers"[\s\S]*first-party-work-transfer-address-recovery/,
+]);
+
+expectAll("server WORK market invalid txid history recovers related listings", server, [
+  /function workRelatedListingTxidsFromTransactions\(txs,\s*network\)[\s\S]*parsed\?\.kind === "seal"[\s\S]*listingTxids\.add\(listingId\)/,
+  /async function recoveredWorkMarketPayloadFromTransactions\([\s\S]*workRelatedListingTxidsFromTransactions\([\s\S]*workTokenStateWithRecoveredListingSeals\(/,
+  /safeKind === "invalidEvents"[\s\S]*recoveredWorkMarketPayloadFromTransactions\([\s\S]*hasRecoveredValidMarketEvent/,
 ]);
 
 expectAll("server compact token summaries preserve existing row supply metrics", server, [
@@ -357,6 +394,7 @@ expectAll("consistency endpoint guards the public invariant", server, [
   /"token-sales-logged"/,
   /"seeded-mail-events-logged"/,
   /"seeded-infinity-bonds-logged"/,
+  /"ledger-covers-node-tip"/,
   /async function ledgerConsistencyPayload\(network,\s*fresh\s*=\s*false\)/,
   /url\.pathname === "\/api\/v1\/consistency"/,
   /url\.pathname === "\/api\/v1\/ledger-consistency"/,
@@ -396,6 +434,12 @@ expectAll("log history searches fall back to direct DB event rows", proofIndexRe
   /requestedKind \|\| pagination\.query/,
   /lower\(e\.payload::text\) LIKE/,
   /source:\s*"proof-indexer"/,
+]);
+expectAll("canonical ledger can read direct proof-index event rows", proofIndexReader, [
+  /export async function proofIndexCanonicalActivityPayload\(network\)/,
+  /FROM proof_indexer\.events e/,
+  /normalizeHistoryEventRows\(result\.rows,\s*network\)/,
+  /source:\s*"proof-indexer-events"/,
 ]);
 expectAll("Infinity Bond mail normalization spans DB reads", proofIndexReader, [
   /const INFINITY_BOND_MEMO = "powb"/,

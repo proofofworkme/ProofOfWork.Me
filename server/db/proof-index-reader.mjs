@@ -1616,8 +1616,10 @@ function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination
     end,
     indexedAt,
     indexedThroughBlock:
-      indexedThroughBlockFromItems(filtered) ??
-      rowNumber(snapshot, "indexed_through_block"),
+      Math.max(
+        indexedThroughBlockFromItems(filtered) ?? 0,
+        rowNumber(snapshot, "indexed_through_block"),
+      ) || undefined,
     items: filtered.slice(start, end),
     kind: requestedKind || "activity",
     limit: pagination.limit,
@@ -1953,10 +1955,11 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     params,
   );
   const totalCount = rowNumber(countResult.rows[0], "total_count");
-  const indexedThroughBlock = rowNumber(
-    countResult.rows[0],
-    "indexed_through_block",
-  );
+  const indexedThroughBlock =
+    Math.max(
+      rowNumber(countResult.rows[0], "indexed_through_block"),
+      rowNumber(snapshot, "indexed_through_block"),
+    ) || undefined;
   if (totalCount === 0) {
     return null;
   }
@@ -3086,6 +3089,69 @@ export async function proofIndexActivityPayload(network) {
   return snapshotActivityPayload(snapshot);
 }
 
+export async function proofIndexCanonicalActivityPayload(network) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        e.payload,
+        e.protocol,
+        e.kind,
+        e.status,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        e.block_height,
+        e.txid,
+        e.event_id
+      FROM proof_indexer.events e
+      WHERE e.network = $1
+        AND e.valid = true
+        AND e.status IN ('confirmed', 'pending')
+      ORDER BY
+        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        e.txid DESC,
+        e.event_id DESC
+    `,
+    [network],
+  );
+  const snapshot = await ledgerSnapshot(pool, network).catch(() => null);
+  const items = normalizeHistoryEventRows(result.rows, network);
+  if (items.length === 0) {
+    return null;
+  }
+
+  const confirmed = items.filter((item) => item.confirmed).length;
+  const indexedThroughBlock =
+    Math.max(
+      indexedThroughBlockFromItems(items) ?? 0,
+      rowNumber(snapshot, "indexed_through_block"),
+    ) || undefined;
+  const indexedAt = dateIso(
+    result.rows[0]?.event_time ??
+      result.rows[0]?.block_time ??
+      result.rows[0]?.created_at,
+  );
+
+  return {
+    activity: items,
+    indexedAt,
+    indexedThroughBlock,
+    network,
+    source: "proof-indexer-events",
+    stats: {
+      confirmed,
+      indexedThroughBlock,
+      pending: items.length - confirmed,
+      total: items.length,
+    },
+  };
+}
+
 function eventHistoryFilters(searchParams, pagination, baseValues = []) {
   const params = searchParams ?? new URLSearchParams();
   const filters = [];
@@ -3185,6 +3251,7 @@ function eventRowPayload(row, network) {
   const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
   return {
     ...payload,
+    blockHeight: rowNumber(row, "block_height") || payload.blockHeight,
     txid: row.txid ?? payload.txid,
     protocol: row.protocol ?? payload.protocol,
     kind: normalizedLowerText(payload.kind ?? row.kind),

@@ -12,6 +12,9 @@ const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
+const MAX_LEDGER_TIP_LAG_BLOCKS = Number(
+  process.env.MAX_LEDGER_TIP_LAG_BLOCKS ?? 6,
+);
 const WORK_TRANSFER_REGRESSION_TXID =
   "7e9e711564be12330793b3415a032eca42bb742499fbdb8a6b8be6d6f1867354";
 const WORK_TRANSFER_REGRESSION_RECIPIENT =
@@ -58,6 +61,8 @@ const OTC_SELF_BOND_TXID =
   "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e";
 const OTC_SELF_BOND_ADDRESS =
   "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
+const REPORTED_POWB_LISTING_TXID =
+  "dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46";
 const HISTORY_AUDIT_PAGE_LIMIT = 200;
 const HISTORY_AUDIT_MAX_PAGES = 10;
 const MIN_INFINITY_BOND_FLOW_SATS = 47_234_999;
@@ -138,6 +143,15 @@ function workSealAttachedToListing(item) {
   );
 }
 
+function isReportedPowbListing(item) {
+  const listing = item?.listing ?? item;
+  return (
+    (item?.txid === REPORTED_POWB_LISTING_TXID ||
+      listing?.listingId === REPORTED_POWB_LISTING_TXID) &&
+    (item?.tokenId === POWB_TOKEN_ID || listing?.tokenId === POWB_TOKEN_ID)
+  );
+}
+
 async function readHistoryUntil(path, predicate) {
   const collected = [];
   let cursor = "";
@@ -178,6 +192,7 @@ function isGullishBuyerTokenSale(item) {
 
 const [
   consistency,
+  health,
   workFloor,
   workSummary,
   marketplaceSummary,
@@ -203,9 +218,13 @@ const [
   paginationGapInfinityBondLog,
   otcSelfBondLog,
   otcSelfBondEventHistory,
+  reportedPowbListingStatus,
+  reportedPowbListingMarketLog,
+  reportedPowbTokenState,
 ] =
   await Promise.all([
     readJson("/api/v1/consistency"),
+    readJson("/health"),
     readJson("/api/v1/work-floor"),
     readJson("/api/v1/work-summary"),
     readJson("/api/v1/marketplace-summary"),
@@ -253,6 +272,11 @@ const [
     readJson(
       `/api/v1/event-history?kind=infinity-bond&address=${OTC_SELF_BOND_ADDRESS}`,
     ),
+    readJson(`/api/v1/tx/${REPORTED_POWB_LISTING_TXID}/status`),
+    readJson(
+      `/api/v1/token-history?asset=${POWB_TOKEN_ID}&kind=market-log&q=${REPORTED_POWB_LISTING_TXID}&fresh=1`,
+    ),
+    readJson(`/api/v1/token?asset=${POWB_TOKEN_ID}&fresh=1`),
   ]);
 
 const buyerLogItems = await readHistoryUntil(
@@ -289,6 +313,21 @@ expect(
   "consistency guards seeded mail coverage",
   consistencyChecks.has("seeded-mail-events-logged") &&
     consistencyChecks.has("seeded-infinity-bonds-logged"),
+);
+expect(
+  "consistency guards ledger node-tip coverage",
+  consistencyChecks.has("ledger-covers-node-tip"),
+);
+const healthTipHeight = numberValue(health.tipHeight);
+const consistencyIndexedThroughBlock = numberValue(
+  consistency.indexedThroughBlock ?? consistency.metrics?.indexedThroughBlock,
+);
+expect(
+  "ledger snapshot is current with node tip",
+  healthTipHeight <= 0 ||
+    (consistencyIndexedThroughBlock > 0 &&
+      healthTipHeight - consistencyIndexedThroughBlock <=
+        MAX_LEDGER_TIP_LAG_BLOCKS),
 );
 expect(
   "WORK and Growth share snapshot id",
@@ -411,6 +450,25 @@ expect(
     infinitySummary.actualValue?.totalUsd,
     satsToUsd(infinitySummary.actualValue?.totalSats, infinitySummaryBtcUsd),
   ),
+);
+expect(
+  "reported POWB listing tx is confirmed",
+  reportedPowbListingStatus.confirmed === true ||
+    reportedPowbListingStatus.status === "confirmed",
+);
+expect(
+  "reported POWB listing is visible in market log",
+  items(reportedPowbListingMarketLog).some(isReportedPowbListing),
+);
+expect(
+  "reported POWB listing is visible in token state",
+  Array.isArray(reportedPowbTokenState.listings) &&
+    reportedPowbTokenState.listings.some(
+      (listing) =>
+        listing.listingId === REPORTED_POWB_LISTING_TXID &&
+        listing.tokenId === POWB_TOKEN_ID &&
+        listing.confirmed === true,
+    ),
 );
 const actualValue = workFloor.actualValue ?? {};
 const marketplaceFeeSats = numberValue(actualValue.marketplaceFeeSats);
