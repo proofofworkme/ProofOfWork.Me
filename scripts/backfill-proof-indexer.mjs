@@ -12,6 +12,16 @@ const PAGE_LIMIT = Number(process.env.POW_INDEX_BACKFILL_LIMIT ?? 200);
 const MAX_PAGES = Number(process.env.POW_INDEX_BACKFILL_MAX_PAGES ?? 2000);
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
 const REQUEST_RETRIES = Number(process.env.POW_INDEX_FETCH_RETRIES ?? 4);
+const BITCOIN_RPC_URL = String(process.env.BITCOIN_RPC_URL ?? "").trim();
+const BITCOIN_RPC_USER = String(process.env.BITCOIN_RPC_USER ?? "").trim();
+const BITCOIN_RPC_PASSWORD = String(process.env.BITCOIN_RPC_PASSWORD ?? "").trim();
+const BLOCK_SCAN_MAX_BLOCKS = Number(
+  process.env.POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_BLOCKS ?? 2_000,
+);
+const BLOCK_SCAN_MAX_TXIDS = Number(
+  process.env.POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_TXIDS ?? 5_000,
+);
+const PROTOCOL_PREFIXES = ["pwm1:", "pwid1:", "pwt1:", "pwr1:", "pwc1:"];
 const INCLUDE_SCOPED_HOLDERS = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_HOLDERS ?? "1"),
 );
@@ -52,6 +62,7 @@ const SOURCE_FILTER = new Set(
     .filter(Boolean),
 );
 const ALL_SOURCES = [
+  { blockScan: true, label: "block-scan" },
   { label: "log", path: "/api/v1/log-history" },
   { label: "registry-records", path: "/api/v1/registry-history", params: { kind: "records" } },
   { label: "registry-pending", path: "/api/v1/registry-history", params: { kind: "pending" } },
@@ -79,6 +90,8 @@ const SOURCES = SOURCE_FILTER.size
   : ALL_SOURCES;
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const POWB_TOKEN_ID =
+  "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
 const DEFAULT_MAIL_BACKFILL_ADDRESSES = [
@@ -107,10 +120,12 @@ const TOKEN_HISTORY_SNAPSHOT_KINDS = [
 const TOKEN_HISTORY_SNAPSHOT_SCOPES = [
   { key: "all", params: {} },
   { key: WORK_TOKEN_ID, params: { asset: WORK_TOKEN_ID } },
+  { key: POWB_TOKEN_ID, params: { asset: POWB_TOKEN_ID } },
 ];
 const REGISTRY_HISTORY_SNAPSHOT_KINDS = ["activity", "listings", "records", "sales"];
 const SUMMARY_SNAPSHOT_SOURCES = [
   { key: "growthSummary", path: "/api/v1/growth-summary" },
+  { key: "infinitySummary", path: "/api/v1/infinity-summary" },
   { key: "marketplaceSummary", path: "/api/v1/marketplace-summary" },
   { key: "workFloor", path: "/api/v1/work-floor" },
   { key: "workSummary", path: "/api/v1/work-summary" },
@@ -128,10 +143,13 @@ function endpoint(pathname, params = {}) {
   return url;
 }
 
-async function readJson(url) {
+async function readJson(url, options = {}) {
   let lastError = null;
+  const retries = Number.isFinite(options.retries)
+    ? Math.max(0, Math.floor(options.retries))
+    : REQUEST_RETRIES;
 
-  for (let attempt = 0; attempt <= REQUEST_RETRIES; attempt += 1) {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
@@ -142,7 +160,7 @@ async function readJson(url) {
       return await response.json();
     } catch (error) {
       lastError = error;
-      if (attempt >= REQUEST_RETRIES) {
+      if (attempt >= retries) {
         break;
       }
       const delayMs = Math.min(30_000, 1000 * 2 ** attempt);
@@ -162,6 +180,482 @@ async function readJson(url) {
   }
 
   throw lastError;
+}
+
+async function bitcoinRpc(method, params = []) {
+  if (!BITCOIN_RPC_URL) {
+    throw new Error("BITCOIN_RPC_URL is not configured.");
+  }
+
+  const headers = { "content-type": "application/json" };
+  if (BITCOIN_RPC_USER || BITCOIN_RPC_PASSWORD) {
+    headers.authorization = `Basic ${Buffer.from(
+      `${BITCOIN_RPC_USER}:${BITCOIN_RPC_PASSWORD}`,
+    ).toString("base64")}`;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(BITCOIN_RPC_URL, {
+      body: JSON.stringify({
+        id: "proof-indexer-backfill",
+        jsonrpc: "1.0",
+        method,
+        params,
+      }),
+      headers,
+      method: "POST",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`Bitcoin RPC ${method} returned HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    if (payload?.error) {
+      throw new Error(
+        `Bitcoin RPC ${method} failed: ${payload.error.message ?? payload.error.code}`,
+      );
+    }
+    return payload.result;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function opReturnTextFromVout(vout) {
+  const asm = String(
+    vout?.scriptPubKey?.asm ?? vout?.scriptpubkey_asm ?? "",
+  ).trim();
+  if (!asm.startsWith("OP_RETURN")) {
+    return "";
+  }
+
+  const chunks = [];
+  for (const part of asm.split(/\s+/u).slice(1)) {
+    if (/^(?:[0-9a-f]{2})+$/iu.test(part)) {
+      chunks.push(Buffer.from(part, "hex"));
+    }
+  }
+  if (chunks.length === 0) {
+    return "";
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function protocolMessagesFromTx(tx) {
+  const messages = [];
+  for (const vout of tx?.vout ?? []) {
+    const text = opReturnTextFromVout(vout);
+    const prefix = PROTOCOL_PREFIXES.find((candidate) =>
+      text.startsWith(candidate),
+    );
+    if (prefix) {
+      messages.push({ prefix, text });
+    }
+  }
+  return messages;
+}
+
+function satsFromVoutValue(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return 0n;
+  }
+  if (Number.isInteger(numeric) && numeric > 21_000_000) {
+    return BigInt(numeric);
+  }
+  return BigInt(Math.round(numeric * 100_000_000));
+}
+
+function addressFromVout(vout) {
+  return String(
+    vout?.scriptPubKey?.address ??
+      vout?.scriptpubkey_address ??
+      vout?.scriptPubKey?.addresses?.[0] ??
+      "",
+  );
+}
+
+function protocolOutputIndex(tx) {
+  return (tx?.vout ?? []).findIndex((vout) =>
+    PROTOCOL_PREFIXES.some((prefix) => opReturnTextFromVout(vout).startsWith(prefix)),
+  );
+}
+
+function paymentOutputsBeforeProtocol(tx) {
+  const protocolIndex = protocolOutputIndex(tx);
+  return (tx?.vout ?? [])
+    .filter((vout, index) => protocolIndex === -1 || index < protocolIndex)
+    .map((vout) => ({
+      address: addressFromVout(vout),
+      amountSats: satsFromVoutValue(vout.value),
+      vout: Number(vout.n ?? 0),
+    }))
+    .filter((output) => output.address && output.amountSats > 0n);
+}
+
+function senderAddressFromTx(tx) {
+  for (const vin of tx?.vin ?? []) {
+    const address = String(
+      vin?.prevout?.scriptPubKey?.address ??
+        vin?.prevout?.scriptpubkey_address ??
+        vin?.prevout?.scriptPubKey?.addresses?.[0] ??
+        "",
+    );
+    if (address) {
+      return address;
+    }
+  }
+  return "";
+}
+
+function blockEventTime(tx) {
+  const time = Number(tx?.blocktime ?? tx?.status?.block_time ?? 0);
+  return Number.isFinite(time) && time > 0
+    ? new Date(time * 1000).toISOString()
+    : new Date().toISOString();
+}
+
+function decodeBase64UrlText(value) {
+  try {
+    const normalized = String(value ?? "").replace(/-/gu, "+").replace(/_/gu, "/");
+    const padded = normalized.padEnd(
+      Math.ceil(normalized.length / 4) * 4,
+      "=",
+    );
+    return Buffer.from(padded, "base64").toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+function decodeBase64UrlJson(value) {
+  try {
+    const normalized = String(value ?? "").replace(/-/gu, "+").replace(/_/gu, "/");
+    const padded = normalized.padEnd(
+      Math.ceil(normalized.length / 4) * 4,
+      "=",
+    );
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function baseProtocolItem(tx, message, kind) {
+  const payments = paymentOutputsBeforeProtocol(tx);
+  const amountSats = payments.reduce(
+    (sum, output) => sum + output.amountSats,
+    0n,
+  );
+  return {
+    amountSats: amountSats.toString(),
+    blockHeight: Number(tx?.status?.block_height ?? tx?.height ?? 0) || null,
+    blockTime: blockEventTime(tx),
+    confirmed: true,
+    dataBytes: Buffer.byteLength(message.text, "utf8"),
+    kind,
+    network: NETWORK,
+    payload: message.text,
+    protocol: message.prefix.replace(/:$/u, ""),
+    recipients: payments.map((output) => ({
+      address: output.address,
+      amountSats: output.amountSats.toString(),
+      vout: output.vout,
+    })),
+    senderAddress: senderAddressFromTx(tx),
+    timestamp: blockEventTime(tx),
+    txid: tx.txid,
+  };
+}
+
+function tokenListingItemFromTicket(tx, message, ticket) {
+  const base = baseProtocolItem(tx, message, "token-listing");
+  const tokenId = String(ticket?.tokenId ?? ticket?.asset ?? "").toLowerCase();
+  if (!isHexTxid(tokenId)) {
+    return null;
+  }
+  return {
+    ...base,
+    amount: String(ticket?.amount ?? ticket?.quantity ?? ticket?.units ?? 0),
+    listingId: tx.txid,
+    priceSats: String(
+      ticket?.priceSats ??
+        ticket?.price ??
+        ticket?.totalPriceSats ??
+        ticket?.totalSats ??
+        0,
+    ),
+    saleAuthorization: ticket,
+    saleTicketTxid: tx.txid,
+    saleTicketValueSats: String(ticket?.saleTicketValueSats ?? 546),
+    saleTicketVout: Number(ticket?.saleTicketVout ?? 2),
+    sellerAddress:
+      ticket?.sellerAddress ?? ticket?.seller ?? base.senderAddress ?? "",
+    tokenId,
+  };
+}
+
+function protocolItemsFromTx(tx, message) {
+  const parts = String(message.text ?? "").split(":");
+  const action = String(parts[1] ?? "").toLowerCase();
+  if (message.prefix === "pwm1:") {
+    const memo = parts.slice(2).join(":");
+    return [
+      {
+        ...baseProtocolItem(
+          tx,
+          message,
+          action === "a"
+            ? "attachment"
+            : action === "r"
+              ? "reply"
+              : memo.trim().toLowerCase() === INFINITY_BOND_MEMO
+                ? INFINITY_BOND_KIND
+                : "mail",
+        ),
+        memo,
+        subject: action === "s" ? decodeBase64UrlText(parts[2]) : "",
+      },
+    ];
+  }
+
+  if (message.prefix === "pwid1:") {
+    return [
+      {
+        ...baseProtocolItem(tx, message, action === "r2" ? "id-register" : `id-${action || "event"}`),
+        id: decodeBase64UrlText(parts[2]),
+        ownerAddress: parts[3] ?? "",
+        receiveAddress: parts[4] ?? parts[3] ?? "",
+      },
+    ];
+  }
+
+  if (message.prefix !== "pwt1:") {
+    return [baseProtocolItem(tx, message, `${message.prefix.replace(/:$/u, "")}-event`)];
+  }
+
+  if (action === "create") {
+    return [
+      {
+        ...baseProtocolItem(tx, message, "token-create"),
+        createTxid: tx.txid,
+        creatorAddress: senderAddressFromTx(tx),
+        maxSupply: parts[3] ?? "0",
+        mintAmount: parts[4] ?? "0",
+        mintPriceSats: parts[5] ?? "0",
+        registryAddress: parts[6] ?? "",
+        ticker: parts[2] ?? "",
+        tokenId: tx.txid,
+      },
+    ];
+  }
+  if (action === "mint") {
+    return [
+      {
+        ...baseProtocolItem(tx, message, "token-mint"),
+        amount: parts[3] ?? "0",
+        minterAddress: senderAddressFromTx(tx),
+        tokenId: String(parts[2] ?? "").toLowerCase(),
+      },
+    ];
+  }
+  if (action === "send") {
+    return [
+      {
+        ...baseProtocolItem(tx, message, "token-transfer"),
+        amount: parts[3] ?? "0",
+        recipientAddress: parts[4] ?? "",
+        senderAddress: senderAddressFromTx(tx),
+        tokenId: String(parts[2] ?? "").toLowerCase(),
+      },
+    ];
+  }
+  if (action === "list5") {
+    const item = tokenListingItemFromTicket(tx, message, decodeBase64UrlJson(parts[2]));
+    return item ? [item] : [baseProtocolItem(tx, message, "token-listing")];
+  }
+  if (action === "seal5") {
+    const ticket = decodeBase64UrlJson(parts[3]);
+    const item = tokenListingItemFromTicket(tx, message, ticket);
+    return [
+      {
+        ...(item ?? baseProtocolItem(tx, message, "token-listing-sealed")),
+        kind: "token-listing-sealed",
+        listingId: parts[2] ?? item?.listingId ?? "",
+        sealTxid: tx.txid,
+      },
+    ];
+  }
+  if (action === "delist5") {
+    return [
+      {
+        ...baseProtocolItem(tx, message, "token-listing-closed"),
+        closedTxid: tx.txid,
+        listingId: parts[2] ?? "",
+      },
+    ];
+  }
+  if (action === "buy5") {
+    return [
+      {
+        ...baseProtocolItem(tx, message, "token-sale"),
+        buyerAddress: parts[3] ?? "",
+        listingId: parts[2] ?? "",
+        saleTxid: tx.txid,
+      },
+    ];
+  }
+  return [baseProtocolItem(tx, message, "token-event")];
+}
+
+function sourceLabelForProtocolItem(item) {
+  const kind = String(item?.kind ?? "").toLowerCase();
+  if (kind === "token-create") {
+    return "tokens";
+  }
+  if (kind === "token-mint") {
+    return "token-mints";
+  }
+  if (kind === "token-transfer") {
+    return "token-transfers";
+  }
+  if (kind === "token-sale") {
+    return "token-sales";
+  }
+  if (kind === "token-listing-closed") {
+    return "token-closed-listings";
+  }
+  if (kind.startsWith("token-listing")) {
+    return "token-listings";
+  }
+  if (kind === "id-register") {
+    return "registry-records";
+  }
+  if (kind.includes("list")) {
+    return "registry-listings";
+  }
+  if (kind.includes("buy") || kind.includes("transfer")) {
+    return "registry-sales";
+  }
+  return "log";
+}
+
+function tokenScopesForProtocolMessage(txid, text) {
+  const parts = String(text ?? "").split(":");
+  const action = String(parts[1] ?? "").toLowerCase();
+  const scopes = new Set();
+  if (action === "create" && isHexTxid(txid)) {
+    scopes.add(txid);
+  }
+  if (["mint", "send"].includes(action) && isHexTxid(parts[2])) {
+    scopes.add(parts[2].toLowerCase());
+  }
+  if (action === "list5") {
+    const ticket = decodeBase64UrlJson(parts[2]);
+    if (isHexTxid(ticket?.tokenId)) {
+      scopes.add(String(ticket.tokenId).toLowerCase());
+    }
+  }
+  if (action === "seal5") {
+    const ticket = decodeBase64UrlJson(parts[3]);
+    if (isHexTxid(ticket?.tokenId)) {
+      scopes.add(String(ticket.tokenId).toLowerCase());
+    }
+  }
+  if (scopes.size === 0) {
+    scopes.add(WORK_TOKEN_ID);
+    scopes.add(POWB_TOKEN_ID);
+  }
+  return [...scopes];
+}
+
+function tokenRecoveryKindsForProtocolMessage(text) {
+  const action = String(String(text ?? "").split(":")[1] ?? "").toLowerCase();
+  if (action === "create") {
+    return [{ kind: "tokens", label: "tokens" }];
+  }
+  if (action === "mint") {
+    return [{ kind: "mints", label: "token-mints" }];
+  }
+  if (action === "send") {
+    return [{ kind: "transfers", label: "token-transfers" }];
+  }
+  if (action === "list5" || action === "seal5") {
+    return [{ kind: "listings", label: "token-listings" }];
+  }
+  if (action === "delist5") {
+    return [{ kind: "closed-listings", label: "token-closed-listings" }];
+  }
+  if (action === "buy5") {
+    return [
+      { kind: "sales", label: "token-sales" },
+      { kind: "closed-listings", label: "token-closed-listings" },
+    ];
+  }
+  return [
+    { kind: "tokens", label: "tokens" },
+    { kind: "mints", label: "token-mints" },
+    { kind: "transfers", label: "token-transfers" },
+    { kind: "listings", label: "token-listings" },
+    { kind: "closed-listings", label: "token-closed-listings" },
+    { kind: "sales", label: "token-sales" },
+    { kind: "invalid-events", label: "token-invalid-events" },
+  ];
+}
+
+function recoveryEndpointSpecs(txid, message) {
+  const q = txid;
+  if (message.prefix === "pwm1:") {
+    return [
+      {
+        label: "log",
+        params: { q },
+        path: "/api/v1/event-history",
+      },
+    ];
+  }
+  if (message.prefix === "pwid1:") {
+    return [
+      { label: "registry-records", params: { kind: "records", q }, path: "/api/v1/registry-history" },
+      { label: "registry-listings", params: { kind: "listings", q }, path: "/api/v1/registry-history" },
+      { label: "registry-sales", params: { kind: "sales", q }, path: "/api/v1/registry-history" },
+    ];
+  }
+  if (message.prefix === "pwt1:") {
+    const scopes = tokenScopesForProtocolMessage(txid, message.text);
+    const kinds = tokenRecoveryKindsForProtocolMessage(message.text);
+    const specs = [];
+    for (const scope of scopes) {
+      const scoped = { asset: scope };
+      for (const kind of kinds) {
+        specs.push({
+          label: kind.label,
+          params: { ...scoped, kind: kind.kind, q },
+          path: "/api/v1/token-history",
+        });
+      }
+    }
+    return specs;
+  }
+  return [];
+}
+
+async function recoverProtocolTxid(client, tx, messages) {
+  let indexed = 0;
+  let skipped = 0;
+  for (const message of messages) {
+    for (const item of protocolItemsFromTx(tx, message)) {
+      const result = await upsertEvent(client, sourceLabelForProtocolItem(item), item);
+      if (result.skipped) {
+        skipped += 1;
+      } else {
+        indexed += 1;
+      }
+    }
+  }
+  return { indexed, skipped };
 }
 
 function snapshotSourceParams(params = {}) {
@@ -492,7 +986,9 @@ async function summarySnapshots() {
       try {
         return [
           source.key,
-          await readJson(endpoint(source.path, summarySnapshotSourceParams())),
+          await readJson(endpoint(source.path, summarySnapshotSourceParams()), {
+            retries: 0,
+          }),
         ];
       } catch (error) {
         console.error(
@@ -1306,35 +1802,46 @@ function creditListingProjectionPayload(item, projectedStatus) {
   return payload;
 }
 
-async function storeLedgerSnapshot(client) {
+async function storeLedgerSnapshot(client, options = {}) {
+  const includeDerivedSnapshots = options.includeDerivedSnapshots !== false;
   const tokenHistoryPayloads = {};
   const tokenStatePayloads = {};
-  const payload = await readJson(endpoint("/api/v1/ledger-consistency"));
+  const payload = await readJson(
+    endpoint("/api/v1/ledger-consistency", summarySnapshotSourceParams()),
+  );
   const previousPayload = await storedLedgerSnapshotPayload(
     client,
     payload.snapshotId ?? "",
   );
   const [activityPayload, registryHistoryPayloads, summaryPayloads] =
-    await Promise.all([
-      activitySnapshot(previousPayload),
-      registryHistorySnapshots(),
-      summarySnapshots(),
-    ]);
-  for (const scope of TOKEN_HISTORY_SNAPSHOT_SCOPES) {
-    try {
-      const tokenSnapshot = await tokenHistorySnapshotsForScope(scope);
-      tokenHistoryPayloads[scope.key] = tokenSnapshot.historyPayloads;
-      tokenStatePayloads[scope.key] = tokenSnapshot.statePayload;
-    } catch (error) {
-      console.error(
-        JSON.stringify({
-          error: error?.message ?? String(error),
-          phase: "token-history-snapshot",
-          scope: scope.key,
-        }),
-      );
-      tokenHistoryPayloads[scope.key] = {};
-      tokenStatePayloads[scope.key] = {};
+    includeDerivedSnapshots
+      ? await Promise.all([
+          activitySnapshot(previousPayload),
+          registryHistorySnapshots(),
+          summarySnapshots(),
+        ])
+      : [
+          previousPayload?.activityPayload ?? null,
+          previousPayload?.registryHistoryPayloads ?? {},
+          previousPayload?.summaryPayloads ?? {},
+        ];
+  if (includeDerivedSnapshots) {
+    for (const scope of TOKEN_HISTORY_SNAPSHOT_SCOPES) {
+      try {
+        const tokenSnapshot = await tokenHistorySnapshotsForScope(scope);
+        tokenHistoryPayloads[scope.key] = tokenSnapshot.historyPayloads;
+        tokenStatePayloads[scope.key] = tokenSnapshot.statePayload;
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            error: error?.message ?? String(error),
+            phase: "token-history-snapshot",
+            scope: scope.key,
+          }),
+        );
+        tokenHistoryPayloads[scope.key] = {};
+        tokenStatePayloads[scope.key] = {};
+      }
     }
   }
   const indexedAt = new Date().toISOString();
@@ -1354,14 +1861,18 @@ async function storeLedgerSnapshot(client) {
           activityPayload,
         }
       : {}),
-    registryHistoryIndexedAt: indexedAt,
-    registryHistoryPayloads,
-    summaryPayloads,
-    summaryPayloadsIndexedAt: indexedAt,
-    tokenHistoryIndexedAt: indexedAt,
-    tokenHistoryPayloads,
-    tokenStatePayloads,
-    tokenStatePayloadsIndexedAt: indexedAt,
+    ...(includeDerivedSnapshots
+      ? {
+          registryHistoryIndexedAt: indexedAt,
+          registryHistoryPayloads,
+          summaryPayloads,
+          summaryPayloadsIndexedAt: indexedAt,
+          tokenHistoryIndexedAt: indexedAt,
+          tokenHistoryPayloads,
+          tokenStatePayloads,
+          tokenStatePayloadsIndexedAt: indexedAt,
+        }
+      : {}),
   };
   await client.query(
     `
@@ -1404,7 +1915,196 @@ async function storeLedgerSnapshot(client) {
   return snapshotPayload;
 }
 
+async function latestIndexedBlockHeight(client) {
+  const result = await client.query(
+    `
+      SELECT COALESCE(max(block_height), 0) AS height
+      FROM proof_indexer.transactions
+      WHERE network = $1 AND status = 'confirmed'
+    `,
+    [NETWORK],
+  );
+  const height = Number(result.rows[0]?.height ?? 0);
+  return Number.isSafeInteger(height) && height > 0 ? height : 0;
+}
+
+async function storeBlockScanSnapshot(client, payload) {
+  const snapshotId = createHash("sha256")
+    .update(
+      JSON.stringify({
+        indexedThroughBlock: payload.tipHeight,
+        network: NETWORK,
+        protocolTxids: payload.protocolTxids,
+        source: "block-scan",
+      }),
+    )
+    .digest("hex")
+    .slice(0, 24);
+  const generatedAt = new Date().toISOString();
+  await client.query(
+    `
+      INSERT INTO proof_indexer.ledger_snapshots (
+        network,
+        snapshot_id,
+        generated_at,
+        indexed_through_block,
+        source_hashes,
+        metrics,
+        consistency,
+        payload
+      )
+      VALUES ($1, $2, $3::timestamptz, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb)
+      ON CONFLICT (network, snapshot_id)
+      DO UPDATE SET
+        generated_at = EXCLUDED.generated_at,
+        indexed_through_block = EXCLUDED.indexed_through_block,
+        source_hashes = EXCLUDED.source_hashes,
+        metrics = EXCLUDED.metrics,
+        consistency = EXCLUDED.consistency,
+        payload = EXCLUDED.payload
+    `,
+    [
+      NETWORK,
+      snapshotId,
+      generatedAt,
+      numberOrNull(payload.tipHeight),
+      JSON.stringify({ blockScan: snapshotId }),
+      JSON.stringify({
+        indexed: payload.indexed,
+        indexedThroughBlock: payload.tipHeight,
+        protocolTxids: payload.protocolTxids,
+        scannedBlocks: payload.scannedBlocks,
+        skipped: payload.skipped,
+      }),
+      JSON.stringify({ ok: true, status: "block-scan" }),
+      JSON.stringify({
+        generatedAt,
+        indexedThroughBlock: payload.tipHeight,
+        network: NETWORK,
+        snapshotId,
+        source: "proof-indexer-block-scan",
+      }),
+    ],
+  );
+  return snapshotId;
+}
+
+async function backfillBlockScanSource(client, source) {
+  if (!BITCOIN_RPC_URL) {
+    console.error(
+      JSON.stringify({
+        error: "BITCOIN_RPC_URL is not configured",
+        source: source.label,
+      }),
+    );
+    return { indexed: 0, skipped: 0, source: source.label, txids: 0 };
+  }
+
+  const latestIndexedHeight = await latestIndexedBlockHeight(client);
+  const tipHeight = Number(await bitcoinRpc("getblockcount"));
+  if (!Number.isSafeInteger(tipHeight) || tipHeight <= latestIndexedHeight) {
+    return {
+      blocks: 0,
+      indexed: 0,
+      latestIndexedHeight,
+      skipped: 0,
+      source: source.label,
+      tipHeight,
+      txids: 0,
+    };
+  }
+
+  const maxBlocks = Math.max(0, BLOCK_SCAN_MAX_BLOCKS);
+  const firstHeight = Math.max(
+    latestIndexedHeight + 1,
+    maxBlocks > 0 ? tipHeight - maxBlocks + 1 : latestIndexedHeight + 1,
+  );
+  let indexed = 0;
+  let protocolTxids = 0;
+  let skipped = 0;
+  let scannedBlocks = 0;
+
+  for (let height = firstHeight; height <= tipHeight; height += 1) {
+    const blockHash = await bitcoinRpc("getblockhash", [height]);
+    const block = await bitcoinRpc("getblock", [blockHash, 2]);
+    scannedBlocks += 1;
+    let foundInBlock = 0;
+    for (const tx of block?.tx ?? []) {
+      const messages = protocolMessagesFromTx(tx);
+      if (messages.length === 0) {
+        continue;
+      }
+      protocolTxids += 1;
+      foundInBlock += 1;
+      try {
+        await client.query("BEGIN");
+        const result = await recoverProtocolTxid(
+          client,
+          { ...tx, blocktime: block?.time, height },
+          messages,
+        );
+        await client.query("COMMIT");
+        indexed += result.indexed;
+        skipped += result.skipped;
+      } catch (error) {
+        await client.query("ROLLBACK");
+        skipped += 1;
+        console.error(
+          JSON.stringify({
+            error: error?.message ?? String(error),
+            phase: "block-scan",
+            txid: tx.txid,
+          }),
+        );
+      }
+      if (protocolTxids >= BLOCK_SCAN_MAX_TXIDS) {
+        break;
+      }
+    }
+    if (foundInBlock > 0 || scannedBlocks % 25 === 0 || height === tipHeight) {
+      console.log(
+        JSON.stringify({
+          foundInBlock,
+          height,
+          indexed,
+          protocolTxids,
+          scannedBlocks,
+          skipped,
+          source: source.label,
+          tipHeight,
+        }),
+      );
+    }
+    if (protocolTxids >= BLOCK_SCAN_MAX_TXIDS) {
+      break;
+    }
+  }
+
+  const summary = {
+    blocks: scannedBlocks,
+    fromHeight: firstHeight,
+    indexed,
+    latestIndexedHeight,
+    skipped,
+    source: source.label,
+    tipHeight,
+    txids: protocolTxids,
+  };
+  await storeBlockScanSnapshot(client, {
+    indexed,
+    protocolTxids,
+    scannedBlocks,
+    skipped,
+    tipHeight,
+  });
+  return summary;
+}
+
 async function backfillSource(client, source) {
+  if (source.blockScan) {
+    return backfillBlockScanSource(client, source);
+  }
+
   if (source.addressMail) {
     return backfillAddressMailSource(client, source);
   }
@@ -1654,12 +2354,12 @@ const pool = createProofIndexPool({
 try {
   const client = await pool.connect();
   try {
-    const snapshot = await storeLedgerSnapshot(client);
     const results = [];
     for (const source of SOURCES) {
       results.push(await backfillSource(client, source));
     }
     results.push(await backfillScopedTokenHolders(client));
+    const snapshot = await storeLedgerSnapshot(client);
     console.log(
       JSON.stringify(
         {

@@ -642,6 +642,11 @@ try {
   const summaryCases = [
     { key: "growthSummary", label: "growth-summary", path: "/api/v1/growth-summary" },
     {
+      key: "infinitySummary",
+      label: "infinity-summary",
+      path: "/api/v1/infinity-summary",
+    },
+    {
       key: "marketplaceSummary",
       label: "marketplace-summary",
       path: "/api/v1/marketplace-summary",

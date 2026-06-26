@@ -3882,6 +3882,124 @@ export async function proofIndexSnapshotPayload(network, key) {
   return payload;
 }
 
+export async function proofIndexValueSummaryPayload(network) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      WITH latest_scan AS (
+        SELECT indexed_through_block, generated_at
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+        ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
+        LIMIT 1
+      ),
+      value_events AS (
+        SELECT
+          COALESCE(sum(amount_sats), 0)::text AS total_sats,
+          count(*)::int AS event_count,
+          max(block_height)::int AS max_event_block,
+          max(event_time) AS max_event_time
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND status = 'confirmed'
+          AND valid IS DISTINCT FROM false
+      )
+      SELECT
+        latest_scan.indexed_through_block,
+        latest_scan.generated_at,
+        value_events.total_sats,
+        value_events.event_count,
+        value_events.max_event_block,
+        value_events.max_event_time
+      FROM value_events
+      LEFT JOIN latest_scan ON true
+    `,
+    [network],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+  const totalSats = Number(row.total_sats ?? 0);
+  const indexedThroughBlock =
+    Number(row.indexed_through_block) || Number(row.max_event_block) || 0;
+  return {
+    actualValue: {
+      computerEventFlowSats: totalSats,
+      networkValueSats: totalSats,
+      totalSats,
+    },
+    indexedAt: dateIso(row.generated_at ?? row.max_event_time),
+    indexedThroughBlock,
+    network,
+    networkValueSats: totalSats,
+    source: "proof-indexer-value-events",
+    stats: {
+      confirmedComputerActions: Number(row.event_count ?? 0),
+      indexedThroughBlock,
+    },
+  };
+}
+
+export async function proofIndexCreditListingsPayload(network, tokenId) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        listing_id,
+        status,
+        token_id,
+        seller_address,
+        buyer_address,
+        amount,
+        price_sats,
+        sale_ticket_txid,
+        sale_ticket_vout,
+        sale_ticket_value_sats,
+        seal_txid,
+        close_txid,
+        payload,
+        updated_at
+      FROM proof_indexer.credit_listings
+      WHERE network = $1 AND token_id = $2
+      ORDER BY updated_at DESC, listing_id ASC
+      LIMIT 500
+    `,
+    [network, tokenId],
+  );
+
+  return {
+    indexedAt: dateIso(result.rows[0]?.updated_at),
+    items: result.rows.map((row) => ({
+      ...(row.payload ?? {}),
+      amount: row.amount,
+      buyerAddress: row.buyer_address,
+      closeTxid: row.close_txid,
+      confirmed: row.status !== "pending",
+      listingId: row.listing_id,
+      priceSats: Number(row.price_sats ?? 0),
+      saleTicketTxid: row.sale_ticket_txid,
+      saleTicketValueSats: Number(row.sale_ticket_value_sats ?? 0),
+      saleTicketVout: row.sale_ticket_vout,
+      sealTxid: row.seal_txid,
+      sellerAddress: row.seller_address,
+      status: row.status,
+      tokenId: row.token_id,
+      txid: row.listing_id,
+    })),
+    network,
+    totalCount: result.rowCount,
+  };
+}
+
 function historyItemKey(item) {
   return [
     item?.kind,

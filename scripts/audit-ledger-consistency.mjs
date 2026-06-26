@@ -220,6 +220,7 @@ const [
   otcSelfBondEventHistory,
   reportedPowbListingStatus,
   reportedPowbListingMarketLog,
+  reportedPowbListings,
   reportedPowbTokenState,
 ] =
   await Promise.all([
@@ -275,6 +276,9 @@ const [
     readJson(`/api/v1/tx/${REPORTED_POWB_LISTING_TXID}/status`),
     readJson(
       `/api/v1/token-history?asset=${POWB_TOKEN_ID}&kind=market-log&q=${REPORTED_POWB_LISTING_TXID}&fresh=1`,
+    ),
+    readJson(
+      `/api/v1/token-history?asset=${POWB_TOKEN_ID}&kind=listings&fresh=1`,
     ),
     readJson(`/api/v1/token?asset=${POWB_TOKEN_ID}&fresh=1`),
   ]);
@@ -461,9 +465,28 @@ expect(
   items(reportedPowbListingMarketLog).some(isReportedPowbListing),
 );
 expect(
+  "reported POWB listing is visible in unfiltered POWB listings",
+  items(reportedPowbListings).some(
+    (listing) =>
+      listing.listingId === REPORTED_POWB_LISTING_TXID &&
+      listing.tokenId === POWB_TOKEN_ID &&
+      listing.confirmed === true,
+  ),
+);
+expect(
   "reported POWB listing is visible in token state",
   Array.isArray(reportedPowbTokenState.listings) &&
     reportedPowbTokenState.listings.some(
+      (listing) =>
+        listing.listingId === REPORTED_POWB_LISTING_TXID &&
+        listing.tokenId === POWB_TOKEN_ID &&
+        listing.confirmed === true,
+    ),
+);
+expect(
+  "reported POWB listing is visible in Infinity summary token state",
+  Array.isArray(infinitySummary.token?.listings) &&
+    infinitySummary.token.listings.some(
       (listing) =>
         listing.listingId === REPORTED_POWB_LISTING_TXID &&
         listing.tokenId === POWB_TOKEN_ID &&
