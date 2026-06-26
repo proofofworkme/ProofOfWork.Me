@@ -15876,7 +15876,7 @@ export default function App() {
           walletAddress &&
           walletTokenScope
         ) {
-          void fetchWalletOwnedTokenListings(walletAddress, walletTokenScope)
+          void fetchWalletOwnedTokenListings(walletAddress, walletTokenScope, fresh)
             .then((ownedListings) => {
               setTokenListings((current) =>
                 activeTokenListingsExcludingClosed(

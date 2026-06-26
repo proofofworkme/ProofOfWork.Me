@@ -113,12 +113,14 @@ expectAll("WORK Growth Log and token views use the same ledger", server, [
   /async function tokenPayloadForRead[\s\S]*summaryCanonicalLedgerPayload\(network,\s*true\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerTokenStateForScope\(ledger,\s*scope\)/,
   /function liveWorkReadWaitMs\(options[\s\S]*Number\.isFinite\(options\.liveWorkWaitMs\)[\s\S]*liveWorkTokenStateWithFallbackAfterMs\([\s\S]*liveWorkReadWaitMs\(options\)/,
   /async function tokenSummaryPayload[\s\S]*let payload = await tokenPayloadForRead\(network,\s*scope,\s*fresh/,
-  /async function tokenHistoryPayload[\s\S]*let payload = await tokenPayloadForRead\(network,\s*scope,\s*fresh/,
+  /async function tokenHistoryPayload[\s\S]*proofIndexTokenMarketHistoryOverlayPayload\([\s\S]*proofIndexWalletTokenOverlayPayload\([\s\S]*workTokenStateWithIndexedActiveListings\([\s\S]*let payload = await tokenPayloadForRead\(\s*network,\s*scope,\s*fresh \|\| scopedWorkMarketHistory/,
   /url\.pathname === "\/api\/v1\/token"[\s\S]*const tokenFreshRead[\s\S]*const payload = await tokenPayloadForRead\(network,\s*tokenScope,\s*tokenFreshRead/,
 ]);
 
 expectAll("searched WORK balance history uses exact recovery inputs", server, [
-  /function recoveryAddressesFromSearchParams\(searchParams,\s*network\)[\s\S]*for \(const key of \["q",\s*"search"\]\)/,
+  /function recoveryAddressCandidateValuesFromSearchParams\(searchParams\)[\s\S]*for \(const key of \["q",\s*"search"\]\)/,
+  /function recoveryAddressHintsFromSearchParams\(searchParams,\s*network\)[\s\S]*addressLooksRecoverable\(value,\s*network\)/,
+  /function recoveryAddressesFromSearchParams\(searchParams,\s*network\)[\s\S]*recoveryAddressCandidateValuesFromSearchParams\(searchParams\)[\s\S]*isValidBitcoinAddress\(value,\s*network\)/,
   /function recoveryTxidsFromSearchParams\(searchParams\)/,
   /async function liveWorkTokenState\(network,\s*cachedWorkTokenState,\s*options = \{\}\)[\s\S]*const recoveryTxids = Array\.isArray\(options\.recoveryTxids\)/,
   /const \[confirmedPendingTxs,\s*recoveredTxidTxs\] = await Promise\.all/,
@@ -251,7 +253,7 @@ expectAll("wallet scoped token reads keep confirmed lifecycle history", server, 
 expectAll("proof index wallet token overlay reads balances and events", proofIndexReader, [
   /export async function proofIndexWalletTokenOverlayPayload\(/,
   /proof_indexer\.credit_balances cb/,
-  /e\.kind IN \('token-transfer', 'token-sale'\)/,
+  /e\.kind IN \([\s\S]*'token-transfer'[\s\S]*'token-sale'[\s\S]*'token-listing'[\s\S]*'token-listing-closed'[\s\S]*\)/,
   /export async function proofIndexTokenMarketSummaryOverlayPayload\(/,
   /e\.kind = ANY\(\$2::text\[\]\)/,
   /"proof-indexer-token-market-summary-overlay"/,

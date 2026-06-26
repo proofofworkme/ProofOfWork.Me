@@ -1331,7 +1331,7 @@ function historyPaginationFromSearch(searchParams) {
   };
 }
 
-function recoveryAddressesFromSearchParams(searchParams, network) {
+function recoveryAddressCandidateValuesFromSearchParams(searchParams) {
   if (!searchParams) {
     return [];
   }
@@ -1351,11 +1351,37 @@ function recoveryAddressesFromSearchParams(searchParams, network) {
   for (const key of ["q", "search"]) {
     values.push(...searchParams.getAll(key));
   }
+  return values.map((value) => String(value ?? "").trim()).filter(Boolean);
+}
 
+function addressLooksRecoverable(value, network) {
+  const address = String(value ?? "").trim();
+  if (!address) {
+    return false;
+  }
+  if (isValidBitcoinAddress(address, network)) {
+    return true;
+  }
+  if (network === "livenet" && /^bc1p[ac-hj-np-z02-9]{20,}$/iu.test(address)) {
+    return true;
+  }
+  return false;
+}
+
+function recoveryAddressHintsFromSearchParams(searchParams, network) {
   return [
     ...new Set(
-      values
-        .map((value) => String(value ?? "").trim())
+      recoveryAddressCandidateValuesFromSearchParams(searchParams).filter(
+        (value) => addressLooksRecoverable(value, network),
+      ),
+    ),
+  ];
+}
+
+function recoveryAddressesFromSearchParams(searchParams, network) {
+  return [
+    ...new Set(
+      recoveryAddressCandidateValuesFromSearchParams(searchParams)
         .filter((value) => isValidBitcoinAddress(value, network)),
     ),
   ];
@@ -1571,27 +1597,51 @@ async function tokenPayloadWithIndexedWalletOverlay(
     overlay.sales,
     (item) => String(item?.txid ?? "").trim().toLowerCase(),
   );
+  const listings = mergeTokenStateItemsByKey(
+    payload?.listings,
+    overlay.listings,
+    (item) => String(item?.listingId ?? "").trim().toLowerCase(),
+    mergeTokenListingRecord,
+  );
+  const closedListings = mergeTokenStateItemsByKey(
+    payload?.closedListings,
+    overlay.closedListings,
+    (item) =>
+      `${String(item?.listingId ?? "").trim().toLowerCase()}:${String(
+        item?.closedTxid ?? item?.txid ?? "",
+      )
+        .trim()
+        .toLowerCase()}`,
+    mergeTokenListingRecord,
+  );
   const holders = mergeWalletHolders(payload?.holders, overlay.holders);
   if (
     transfers.length === (Array.isArray(payload?.transfers) ? payload.transfers.length : 0) &&
     sales.length === (Array.isArray(payload?.sales) ? payload.sales.length : 0) &&
+    listings.length === (Array.isArray(payload?.listings) ? payload.listings.length : 0) &&
+    closedListings.length ===
+      (Array.isArray(payload?.closedListings) ? payload.closedListings.length : 0) &&
     holders.length === (Array.isArray(payload?.holders) ? payload.holders.length : 0)
   ) {
     return payload;
   }
 
-  return {
+  return tokenStateWithPreservedListingRecords({
     ...payload,
+    closedListings,
     holders,
     indexedAt: newerIso(payload?.indexedAt, overlay.indexedAt),
+    listings,
     sales,
     source: mergedSourceLabel(payload?.source, overlay.source),
     stats: {
       ...(payload?.stats ?? {}),
+      confirmedListings: listings.filter((listing) => listing.confirmed).length,
       confirmedSales: sales.filter((sale) => sale.confirmed).length,
       confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
         .length,
       holders: holders.length,
+      pendingListings: listings.filter((listing) => !listing.confirmed).length,
       pendingSales: sales.filter((sale) => !sale.confirmed).length,
       pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
         .length,
@@ -1599,7 +1649,10 @@ async function tokenPayloadWithIndexedWalletOverlay(
     },
     transfers,
     walletScoped: true,
-  };
+  }, {
+    closedListings: overlay.closedListings,
+    listings: overlay.listings,
+  });
 }
 
 function tokenSaleItemKey(item) {
@@ -13984,6 +14037,56 @@ async function confirmedTransactionsForTxids(txids, network, maxTxs) {
   return txs.filter(Boolean);
 }
 
+async function quickConfirmedTransactionsForTxids(
+  txids,
+  network,
+  maxTxs,
+  timeoutMs = Math.max(5_000, TOKEN_ADDRESS_HINT_LIVE_WAIT_MS),
+) {
+  const uniqueTxids = [...new Set(txids)]
+    .filter((txid) => /^[0-9a-f]{64}$/u.test(txid))
+    .slice(0, Math.max(0, maxTxs));
+  if (uniqueTxids.length === 0) {
+    return [];
+  }
+
+  const txs = await mapWithConcurrency(
+    uniqueTxids,
+    TX_FETCH_CONCURRENCY,
+    async (txid) => {
+      const normalizeLookupTx = (payload) =>
+        payload?.tx && typeof payload.tx === "object" ? payload.tx : payload;
+      const hasRawTxBody = (tx) =>
+        tx &&
+        Array.isArray(tx.vin) &&
+        Array.isArray(tx.vout) &&
+        tx.vout.length > 0;
+
+      const directTx = normalizeLookupTx(
+        await payloadWithFallbackAfterMs(
+          fetchTransaction(txid, network).catch(() => null),
+          null,
+          timeoutMs,
+        ),
+      );
+      if (transactionConfirmed(directTx) && hasRawTxBody(directTx)) {
+        return directTx;
+      }
+
+      const fallbackTx = normalizeLookupTx(
+        await payloadWithFallbackAfterMs(
+          fetchTransactionWithSourceFallback(txid, network).catch(() => null),
+          null,
+          timeoutMs,
+        ),
+      );
+      const tx = transactionConfirmed(fallbackTx) ? fallbackTx : directTx;
+      return transactionConfirmed(tx) && hasRawTxBody(tx) ? tx : null;
+    },
+  );
+  return txs.filter(Boolean);
+}
+
 async function recentUnknownHistoryTransactions(
   address,
   network,
@@ -14927,6 +15030,12 @@ async function walletScopedTokenSummaryPayload(
       scope,
       recoveryAddresses,
     );
+    scopedPayload = await tokenPayloadWithWalletActiveListings(
+      scopedPayload,
+      network,
+      scope,
+      recoveryAddresses,
+    );
   }
   if (scope !== POWB_TOKEN_ID) {
     scopedPayload = await tokenPayloadWithIndexedWalletClosedListings(
@@ -14997,6 +15106,12 @@ async function walletScopedTokenPayload(
   }
   if (scope !== POWB_TOKEN_ID) {
     scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
+      scopedPayload,
+      network,
+      scope,
+      recoveryAddresses,
+    );
+    scopedPayload = await tokenPayloadWithWalletActiveListings(
       scopedPayload,
       network,
       scope,
@@ -15101,6 +15216,239 @@ async function tokenPayloadWithIndexedWalletClosedListings(
   }
 
   return tokenStateWithPreservedListingRecords(payload, { closedListings });
+}
+
+async function indexedWorkActiveListingTxids(network, addresses, limit = 200) {
+  if (
+    network !== "livenet" ||
+    !proofIndexReadFeatureEnabled("event-history,events") ||
+    !Array.isArray(addresses) ||
+    addresses.length === 0
+  ) {
+    return [];
+  }
+
+  const txids = new Set();
+  const kinds = ["token-listing", "token-listings"];
+  for (const address of addresses) {
+    const value = String(address ?? "").trim();
+    if (!value) {
+      continue;
+    }
+    for (const kind of kinds) {
+      const baseParams = {
+        kind,
+        limit: String(limit),
+        status: "confirmed",
+      };
+      const pages = [];
+      const addressParams = new URLSearchParams({
+        ...baseParams,
+        address: value,
+      });
+      const addressPage = await proofIndexEventHistoryPayload(
+        network,
+        addressParams,
+      ).catch((error) => {
+        console.error(
+          `Proof index active listing candidate lookup failed for ${value}: ${errorSummary(error)}`,
+        );
+        return null;
+      });
+      pages.push(addressPage);
+
+      if ((addressPage?.items ?? []).length === 0) {
+        const queryParams = new URLSearchParams({
+          ...baseParams,
+          q: value,
+        });
+        const queryPage = await proofIndexEventHistoryPayload(
+          network,
+          queryParams,
+        ).catch((error) => {
+          console.error(
+            `Proof index active listing candidate search failed for ${value}: ${errorSummary(error)}`,
+          );
+          return null;
+        });
+        pages.push(queryPage);
+      }
+
+      for (const page of pages) {
+        for (const item of Array.isArray(page?.items) ? page.items : []) {
+          const txid = String(item?.listingId ?? item?.txid ?? "")
+            .trim()
+            .toLowerCase();
+          if (/^[0-9a-f]{64}$/u.test(txid)) {
+            txids.add(txid);
+          }
+        }
+      }
+    }
+  }
+
+  return [...txids].slice(0, Math.max(0, limit));
+}
+
+function workActiveListingsFromTransactions(txs, network, recoveryAddresses = []) {
+  const addressKeys = new Set(
+    (Array.isArray(recoveryAddresses) ? recoveryAddresses : [])
+      .map((address) => String(address ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const listingsById = new Map();
+  for (const tx of tokenProtocolSortedTransactions(
+    (Array.isArray(txs) ? txs : []).filter(Boolean),
+  )) {
+    const txid = transactionTxid(tx);
+    if (!txid || !transactionConfirmed(tx)) {
+      continue;
+    }
+
+    const vin = Array.isArray(tx.vin) ? tx.vin : [];
+    const vout = Array.isArray(tx.vout) ? tx.vout : [];
+    const txInputAddresses = inputAddresses(vin);
+    let remainingRegistrySats = tokenPaymentAmountBeforeProtocol(
+      vout,
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    );
+    const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+    const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
+
+    for (const message of messages) {
+      const parsed = parseTokenPayload(message, network);
+      const authorization = parsed?.saleAuthorization;
+      if (
+        parsed?.kind !== "list" ||
+        authorization?.tokenId !== WORK_TOKEN_ID ||
+        authorization.registryAddress !== WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS ||
+        authorization.ticker !== WORK_TOKEN_TICKER ||
+        (txInputAddresses.length > 0 &&
+          !txInputAddresses.includes(authorization.sellerAddress)) ||
+        (addressKeys.size > 0 &&
+          !addressKeys.has(String(authorization.sellerAddress).toLowerCase())) ||
+        remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+        !tokenListingAnchorIsPresent(vout, authorization)
+      ) {
+        continue;
+      }
+
+      remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+      listingsById.set(
+        txid,
+        mergeTokenListingRecord(listingsById.get(txid), {
+          amount: authorization.amount,
+          confirmed: true,
+          createdAt,
+          dataBytes: proofProtocolDataBytesForVout(vout),
+          listingId: txid,
+          network,
+          priceSats: authorization.priceSats,
+          registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+          saleAuthorization: authorization,
+          sellerAddress: authorization.sellerAddress,
+          ticker: WORK_TOKEN_TICKER,
+          tokenId: WORK_TOKEN_ID,
+        }),
+      );
+    }
+  }
+
+  return [...listingsById.values()].sort(compareTokenHistoryPageItems);
+}
+
+async function workTokenStateWithIndexedActiveListings(
+  payload,
+  network,
+  recoveryAddresses,
+) {
+  const txids = await indexedWorkActiveListingTxids(
+    network,
+    recoveryAddresses,
+  );
+  if (txids.length === 0) {
+    return payload;
+  }
+
+  const txs = await quickConfirmedTransactionsForTxids(
+    txids,
+    network,
+    txids.length,
+  );
+  if (txs.length === 0) {
+    return payload;
+  }
+
+  const recoveredListings = workActiveListingsFromTransactions(
+    txs,
+    network,
+    recoveryAddresses,
+  );
+  if (recoveredListings.length === 0) {
+    return payload;
+  }
+  const recoveredPayload = tokenStateWithPreservedListingRecords(payload, {
+    listings: recoveredListings,
+  });
+
+  const spendable = await filterSpendableTokenListings(
+    Array.isArray(recoveredPayload?.listings) ? recoveredPayload.listings : [],
+    network,
+  );
+  return {
+    ...recoveredPayload,
+    closedListings: [
+      ...(Array.isArray(recoveredPayload?.closedListings)
+        ? recoveredPayload.closedListings
+        : []),
+      ...spendable.closedListings,
+    ],
+    listings: spendable.listings,
+    source: mergedSourceLabel(
+      recoveredPayload?.source,
+      "proof-indexer-token-listing-tx-recovery",
+    ),
+  };
+}
+
+async function tokenPayloadWithWalletActiveListings(
+  payload,
+  network,
+  tokenScope,
+  recoveryAddresses,
+) {
+  if (
+    network !== "livenet" ||
+    normalizeTokenScope(tokenScope) !== WORK_TOKEN_ID ||
+    !Array.isArray(recoveryAddresses) ||
+    recoveryAddresses.length === 0
+  ) {
+    return payload;
+  }
+
+  const recoveredPayload = await workTokenStateWithIndexedActiveListings(
+    payload,
+    network,
+    recoveryAddresses,
+  );
+  const addressKeys = new Set(
+    recoveryAddresses
+      .map((address) => String(address ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const listings = (Array.isArray(recoveredPayload?.listings)
+    ? recoveredPayload.listings
+    : []
+  ).filter(
+    (listing) =>
+      listing?.confirmed === true &&
+      addressKeys.has(String(listing?.sellerAddress ?? "").toLowerCase()) &&
+      normalizeTokenScope(listing?.tokenId) === WORK_TOKEN_ID,
+  );
+
+  return listings.length > 0
+    ? tokenStateWithPreservedListingRecords(payload, { listings })
+    : payload;
 }
 
 function emptyRegistryPayload(network) {
@@ -17737,10 +18085,14 @@ function mergeEventHistoryRecoveryPayload(
 
 async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fresh = false) {
   const scope = normalizeTokenScope(tokenScope);
-  const recoveryAddresses = recoveryAddressesFromSearchParams(
+  const strictRecoveryAddresses = recoveryAddressesFromSearchParams(
     searchParams,
     network,
   );
+  const recoveryAddresses =
+    strictRecoveryAddresses.length > 0
+      ? strictRecoveryAddresses
+      : recoveryAddressHintsFromSearchParams(searchParams, network);
   const recoveryTxids = recoveryTxidsFromSearchParams(searchParams);
   const pagination = historyPaginationFromSearch(searchParams);
   const kindMap = new Map([
@@ -17782,6 +18134,12 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
   const queriedWorkSaleHistory =
     queriedWorkHistory &&
     (workMarketHistoryKind || safeKind === "invalidEvents");
+  const freshWorkHolderHistory =
+    fresh && scope === WORK_TOKEN_ID && safeKind === "holders";
+  const scopedWorkMarketHistory =
+    scope === WORK_TOKEN_ID &&
+    workMarketHistoryKind &&
+    recoveryAddresses.length > 0;
   if (
     workMarketHistoryKind &&
     scope === WORK_TOKEN_ID &&
@@ -17799,11 +18157,24 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
         indexedAt: new Date().toISOString(),
         source: "first-party-token-txid-recovery",
       };
-      recoveredPayload = workTokenStateWithRecoveredListingsFromTransactions(
-        recoveredPayload,
-        recoveryTxs,
-        network,
-      );
+      if (safeKind === "listings") {
+        recoveredPayload = tokenStateWithPreservedListingRecords(
+          recoveredPayload,
+          {
+            listings: workActiveListingsFromTransactions(
+              recoveryTxs,
+              network,
+              recoveryAddresses,
+            ),
+          },
+        );
+      } else {
+        recoveredPayload = workTokenStateWithRecoveredListingsFromTransactions(
+          recoveredPayload,
+          recoveryTxs,
+          network,
+        );
+      }
       recoveredPayload = workTokenStateWithRecoveredListingSeals(
         recoveredPayload,
         recoveryTxs,
@@ -17836,6 +18207,43 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
           source: recoveredPayload.source,
         });
       }
+      if (safeKind === "listings") {
+        return paginatedHistoryPayload({
+          indexedAt: recoveredPayload.indexedAt ?? new Date().toISOString(),
+          items: [],
+          kind: safeKind,
+          network,
+          pagination,
+          source: recoveredPayload.source,
+        });
+      }
+    }
+  }
+  if (
+    safeKind === "listings" &&
+    scopedWorkMarketHistory &&
+    network === "livenet"
+  ) {
+    const recoveredPayload = await workTokenStateWithIndexedActiveListings(
+      emptyTokenPayloadSnapshot(network),
+      network,
+      recoveryAddresses,
+    );
+    const recoveredItems = historyItemsMatchingAddresses(
+      recoveredPayload?.listings ?? [],
+      recoveryAddresses,
+    );
+    if (recoveredItems.length > 0) {
+      return paginatedHistoryPayload({
+        indexedAt: recoveredPayload.indexedAt ?? new Date().toISOString(),
+        items: recoveredItems,
+        kind: safeKind,
+        network,
+        pagination,
+        source:
+          recoveredPayload.source ??
+          "proof-indexer-token-listing-tx-recovery",
+      });
     }
   }
   if (workMarketHistoryKind && queriedWorkHistory && network === "livenet") {
@@ -17859,22 +18267,94 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       return indexedMarketPage;
     }
   }
-  let payload = await tokenPayloadForRead(network, scope, fresh, {
-    forceRefresh: workBalanceHistoryKind && queriedWorkHistory,
+  if (safeKind === "holders" && queriedWorkHistory && network === "livenet") {
+    const indexedWalletOverlay = await proofIndexWalletTokenOverlayPayload(
+      network,
+      scope,
+      recoveryAddresses,
+    ).catch((error) => {
+      console.error(
+        `Proof index fast WORK holder overlay failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    const indexedHolderItems = (Array.isArray(indexedWalletOverlay?.holders)
+      ? indexedWalletOverlay.holders
+      : []
+    ).filter(
+      (holder) =>
+        tokenMatchesScope(holder, scope) &&
+        recoveryAddresses.some(
+          (address) =>
+            String(holder?.address ?? "").toLowerCase() ===
+            String(address ?? "").toLowerCase(),
+        ),
+    );
+    if (indexedHolderItems.length > 0) {
+      return paginatedHistoryPayload({
+        indexedAt:
+          indexedWalletOverlay.indexedAt ?? new Date().toISOString(),
+        items: indexedHolderItems,
+        kind: safeKind,
+        network,
+        pagination,
+        source: indexedWalletOverlay.source ?? "proof-indexer-wallet-overlay",
+      });
+    }
+  }
+  if (
+    safeKind === "listings" &&
+    scopedWorkMarketHistory &&
+    network === "livenet"
+  ) {
+    const recoveredPayload = await workTokenStateWithIndexedActiveListings(
+      emptyTokenPayloadSnapshot(network),
+      network,
+      recoveryAddresses,
+    );
+    const recoveredItems = historyItemsMatchingAddresses(
+      recoveredPayload?.listings ?? [],
+      recoveryAddresses,
+    );
+    if (recoveredItems.length > 0) {
+      return paginatedHistoryPayload({
+        indexedAt: recoveredPayload.indexedAt ?? new Date().toISOString(),
+        items: recoveredItems,
+        kind: safeKind,
+        network,
+        pagination,
+        source:
+          recoveredPayload.source ??
+          "proof-indexer-token-listing-tx-recovery",
+      });
+    }
+  }
+  let payload = await tokenPayloadForRead(
+    network,
+    scope,
+    fresh || scopedWorkMarketHistory,
+    {
+    forceRefresh:
+      (workBalanceHistoryKind && (queriedWorkHistory || freshWorkHolderHistory)) ||
+      scopedWorkMarketHistory,
     fullRefreshWaitMs: WORK_TOKEN_LIVE_RECOVERY_WAIT_MS,
     reconcileListingStatus: false,
     reconcileSpendable: false,
     recoveryAddresses,
     recoveryTxids,
     useLedgerSnapshot:
-      workBalanceHistoryKind && queriedWorkHistory ? false : undefined,
-    liveWorkWaitMs: queriedWorkHistory
+      (workBalanceHistoryKind && (queriedWorkHistory || freshWorkHolderHistory)) ||
+      scopedWorkMarketHistory
+        ? false
+        : undefined,
+    liveWorkWaitMs: queriedWorkHistory || freshWorkHolderHistory || scopedWorkMarketHistory
       ? WORK_TOKEN_LIVE_RECOVERY_WAIT_MS
       : recoveryAddresses.length > 0
         ? TOKEN_ADDRESS_HINT_LIVE_WAIT_MS
         : undefined,
     recoverWorkSalesOnly: queriedWorkSaleHistory,
-  });
+    },
+  );
   if (workMarketHistoryKind) {
     if (scope === WORK_TOKEN_ID && recoveryTxids.length > 0) {
       const recoveryTxs = await confirmedTransactionsForTxids(
@@ -20566,10 +21046,14 @@ async function handleRequest(request, response) {
           url.searchParams.get("ticker") ??
           "",
       );
-      const recoveryAddresses = recoveryAddressesFromSearchParams(
+      const strictRecoveryAddresses = recoveryAddressesFromSearchParams(
         url.searchParams,
         network,
       );
+      const recoveryAddresses =
+        strictRecoveryAddresses.length > 0
+          ? strictRecoveryAddresses
+          : recoveryAddressHintsFromSearchParams(url.searchParams, network);
       const walletScoped =
         recoveryAddresses.length > 0 &&
         /^(?:1|true|yes)$/iu.test(
@@ -20608,9 +21092,6 @@ async function handleRequest(request, response) {
           );
           return;
         }
-      }
-      if (walletScoped && freshRead) {
-        refreshCanonicalLedgerPayloadInBackground(network, true);
       }
       if (walletScoped) {
         jsonResponse(
@@ -20651,18 +21132,19 @@ async function handleRequest(request, response) {
           url.searchParams.get("ticker") ??
           "",
       );
-      const recoveryAddresses = recoveryAddressesFromSearchParams(
+      const strictRecoveryAddresses = recoveryAddressesFromSearchParams(
         url.searchParams,
         network,
       );
+      const recoveryAddresses =
+        strictRecoveryAddresses.length > 0
+          ? strictRecoveryAddresses
+          : recoveryAddressHintsFromSearchParams(url.searchParams, network);
       const walletScoped =
         recoveryAddresses.length > 0 &&
         /^(?:1|true|yes)$/iu.test(
           String(url.searchParams.get("wallet") ?? "").trim(),
         );
-      if (walletScoped && freshRead) {
-        refreshCanonicalLedgerPayloadInBackground(network, true);
-      }
       jsonResponse(
         response,
         200,
@@ -20690,9 +21172,25 @@ async function handleRequest(request, response) {
       const historyKind = String(url.searchParams.get("kind") ?? "mints")
         .trim()
         .toLowerCase();
+      const addressScopedMarketHistory =
+        [
+          "closedlistings",
+          "closed-listings",
+          "closed_listing",
+          "closed-listing",
+          "listings",
+          "marketlog",
+          "market-log",
+          "market_log",
+          "tokenmarketlog",
+          "token-market-log",
+          "sales",
+        ].includes(historyKind) &&
+        recoveryAddressHintsFromSearchParams(url.searchParams, network).length > 0;
       if (
         !freshRead &&
         tokenScope !== POWB_TOKEN_ID &&
+        !addressScopedMarketHistory &&
         proofIndexReadFeatureEnabled("token-history,token") &&
         proofIndexTokenHistoryReadEligibility(
           tokenScope,

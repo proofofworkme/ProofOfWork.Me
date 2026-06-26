@@ -33,6 +33,8 @@ const REPORTED_BUY_BUYER = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
 const REPORTED_BUY_SELLER = "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW";
 const CARBONZ_ADDRESS =
   "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed";
+const CARBONZ_TAPROOT_LISTING_ADDRESS =
+  "bc1parjksvz4hetpmqwtka9wuzl9skhq8y3weusenf8e3qrguqhypweqtpmz2g";
 const CARBONZ_LISTING_TX =
   "d0697f88d7648ac4221af34d17d3e8c55852b917f820100d9029143085b29a13";
 const CARBONZ_SEAL_TX =
@@ -43,6 +45,10 @@ const REPORTED_WAITING_FOR_SEAL_LISTING_TX =
   "a5476c0c6a8df67569935c3cca152a3ef979d95469ce8fe8c8187f359c48a6c7";
 const REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX =
   "9cbaf52ddb244d228204d841342b126dc8801a987626d0a05d82d5e1af2c1bc3";
+const REPORTED_LATEST_WAITING_FOR_SEAL_CLOSE_TX =
+  "bcacff05f33c248008073a01f0c37222cf01299a742afc68f49d0a1d479a8525";
+const REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX =
+  "f371ee499b94f929069fb4677446006b1bb67d6793724f2b8d6effb26499c090";
 const REPORTED_CONFIRMED_SEALABLE_LISTING_TX =
   "d7fe42285c4edd02592608cbd887ad7a8a2b78e085de05296e352fcc1e2166a9";
 const REPORTED_DROPPED_LISTING_TX =
@@ -164,6 +170,20 @@ function tokenListingHasConfirmedSeal(item) {
     /^[0-9a-f]{64}$/u.test(String(item?.saleAuthorization?.anchorTxid ?? "")) &&
     typeof item?.saleAuthorization?.anchorSignature === "string" &&
     item.saleAuthorization.anchorSignature.length > 0
+  );
+}
+
+function listingById(items, listingId) {
+  const needle = String(listingId ?? "").toLowerCase();
+  return (items ?? []).find(
+    (item) => String(item?.listingId ?? "").toLowerCase() === needle,
+  );
+}
+
+function holderByAddress(items, address) {
+  const needle = String(address ?? "").toLowerCase();
+  return (items ?? []).find(
+    (item) => String(item?.address ?? "").toLowerCase() === needle,
   );
 }
 
@@ -318,33 +338,62 @@ assert(
   ),
   `${REPORTED_WAITING_FOR_SEAL_LISTING_TX} is missing from WORK market-log history`,
 );
-const reportedLatestWaitingForSealListing = await tokenHistory("listings", {
+const reportedLatestActiveListing = await tokenHistory("listings", {
   fresh: 1,
   q: REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX,
 });
-const latestWaitingForSealItem = (
-  reportedLatestWaitingForSealListing.items ?? []
-).find(
-  (item) =>
-    String(item?.listingId ?? "").toLowerCase() ===
+assert(
+  !txids(reportedLatestActiveListing.items).has(
     REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX,
+  ),
+  `${REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX} is still returned as an active waiting-for-seal listing after its anchor was spent`,
+);
+const reportedLatestClosedListing = await tokenHistory("closed-listings", {
+  fresh: 1,
+  q: REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX,
+});
+const latestClosedItem = (reportedLatestClosedListing.items ?? []).find(
+  (item) =>
+    item?.listingId === REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX &&
+    item?.closedTxid === REPORTED_LATEST_WAITING_FOR_SEAL_CLOSE_TX,
 );
 assert(
-  latestWaitingForSealItem?.confirmed === true &&
-    latestWaitingForSealItem?.amount === 100 &&
-    latestWaitingForSealItem?.priceSats === 100853 &&
-    latestWaitingForSealItem?.saleAuthorization?.anchorType ===
-      "sale-ticket-v1" &&
-    !tokenListingHasConfirmedSeal(latestWaitingForSealItem),
-  `${REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX} is not returned as a confirmed waiting-for-seal listing`,
+  latestClosedItem?.closedConfirmed === true,
+  `${REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX} is not returned as a confirmed closed listing`,
 );
+const reportedRecentWaitingForSealListing = await tokenHistory("listings", {
+  fresh: 1,
+  q: REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
+});
+const recentWaitingForSealItem = listingById(
+  reportedRecentWaitingForSealListing.items,
+  REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
+);
+assert(
+  recentWaitingForSealItem?.confirmed === true &&
+    recentWaitingForSealItem?.amount === 130 &&
+    recentWaitingForSealItem?.priceSats === 81325 &&
+    recentWaitingForSealItem?.sellerAddress ===
+      CARBONZ_TAPROOT_LISTING_ADDRESS &&
+    !tokenListingHasConfirmedSeal(recentWaitingForSealItem),
+  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is not returned as a confirmed waiting-for-seal listing`,
+);
+const carbonzTaprootListingHistory = await tokenHistory("listings", {
+  address: CARBONZ_TAPROOT_LISTING_ADDRESS,
+});
+for (const txid of [REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX]) {
+  const item = listingById(carbonzTaprootListingHistory.items, txid);
+  assert(
+    item?.confirmed === true && !tokenListingHasConfirmedSeal(item),
+    `${txid} is missing from cached Carbonz address-scoped waiting-for-seal listings`,
+  );
+}
 const reportedSealableListing = await tokenHistory("listings", {
   q: REPORTED_CONFIRMED_SEALABLE_LISTING_TX,
 });
-const sealableItem = (reportedSealableListing.items ?? []).find(
-  (item) =>
-    String(item?.listingId ?? "").toLowerCase() ===
-    REPORTED_CONFIRMED_SEALABLE_LISTING_TX,
+const sealableItem = listingById(
+  reportedSealableListing.items,
+  REPORTED_CONFIRMED_SEALABLE_LISTING_TX,
 );
 assert(
   sealableItem?.confirmed === true,
@@ -411,6 +460,54 @@ for (const txid of BUY_TXS) {
     `${txid} is missing from wallet-scoped sales`,
   );
 }
+const carbonzTaprootWalletToken = await getJson("/api/v1/token", {
+  network: "livenet",
+  asset: WORK_TOKEN_ID,
+  address: CARBONZ_TAPROOT_LISTING_ADDRESS,
+  wallet: 1,
+  fresh: 1,
+});
+for (const txid of [REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX]) {
+  const item = listingById(carbonzTaprootWalletToken.listings, txid);
+  assert(
+    item?.confirmed === true && !tokenListingHasConfirmedSeal(item),
+    `${txid} is missing from Carbonz wallet-scoped waiting-for-seal listings`,
+  );
+}
+assert(
+  !listingById(
+    carbonzTaprootWalletToken.listings,
+    REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX,
+  ),
+  `${REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX} is still returned as a Carbonz wallet-scoped waiting-for-seal listing after its anchor was spent`,
+);
+const latestWalletClosedItem = listingById(
+  carbonzTaprootWalletToken.closedListings,
+  REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX,
+);
+assert(
+  latestWalletClosedItem?.closedTxid ===
+    REPORTED_LATEST_WAITING_FOR_SEAL_CLOSE_TX,
+  `${REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX} is missing from Carbonz wallet-scoped closed listings`,
+);
+const carbonzTaprootHolderHistory = await tokenHistory("holders", {
+  fresh: 1,
+  q: CARBONZ_TAPROOT_LISTING_ADDRESS,
+});
+const carbonzTaprootWalletHolder = holderByAddress(
+  carbonzTaprootWalletToken.holders,
+  CARBONZ_TAPROOT_LISTING_ADDRESS,
+);
+const carbonzTaprootHistoryHolder = holderByAddress(
+  carbonzTaprootHolderHistory.items,
+  CARBONZ_TAPROOT_LISTING_ADDRESS,
+);
+assert(
+  Number(carbonzTaprootWalletHolder?.balance ?? 0) > 0 &&
+    Number(carbonzTaprootWalletHolder?.balance ?? 0) ===
+      Number(carbonzTaprootHistoryHolder?.balance ?? 0),
+  `${CARBONZ_TAPROOT_LISTING_ADDRESS} holder search does not match wallet-scoped WORK balance`,
+);
 
 const reportedTransferHistory = await tokenHistory("transfers", {
   fresh: 1,
@@ -504,14 +601,22 @@ assert(
   `${REPORTED_WAITING_FOR_SEAL_LISTING_TX} is missing from fresh marketplace summary listings`,
 );
 assert(
+  !(marketplaceFreshSummary.token?.listings ?? []).some(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() ===
+      REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX,
+  ),
+  `${REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX} is still returned in fresh marketplace summary waiting-for-seal listings after its anchor was spent`,
+);
+assert(
   (marketplaceFreshSummary.token?.listings ?? []).some(
     (item) =>
       String(item?.listingId ?? "").toLowerCase() ===
-        REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX &&
+        REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX &&
       item?.confirmed === true &&
       !tokenListingHasConfirmedSeal(item),
   ),
-  `${REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX} is missing from fresh marketplace summary waiting-for-seal listings`,
+  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is missing from fresh marketplace summary waiting-for-seal listings`,
 );
 const workToken = await getJson("/api/v1/token", {
   network: "livenet",

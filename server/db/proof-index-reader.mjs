@@ -2702,18 +2702,30 @@ export async function proofIndexWalletTokenOverlayPayload(
     holderParams,
   );
 
+  const addressLikeNeedles = addressNeedles.map((address) => `%${address}%`);
   const eventConditions = [
     "e.network = $1",
     "e.valid = true",
     "e.status IN ('confirmed', 'pending')",
-    `EXISTS (
+    `(EXISTS (
       SELECT 1
       FROM proof_indexer.event_participants ep
       WHERE ep.event_id = e.event_id
         AND lower(ep.address) = ANY($2::text[])
+    ) OR lower(e.payload::text) LIKE ANY($3::text[]))`,
+    `(
+      e.kind NOT IN ('token-listings', 'token-listing')
+      OR NOT EXISTS (
+        SELECT 1
+        FROM proof_indexer.events close_event
+        WHERE close_event.network = e.network
+          AND close_event.valid = true
+          AND close_event.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
+          AND lower(close_event.payload->>'listingId') = lower(e.payload->>'listingId')
+      )
     )`,
   ];
-  const eventParams = [network, addressNeedles];
+  const eventParams = [network, addressNeedles, addressLikeNeedles];
   if (scoped) {
     eventParams.push(scope);
     const scopeParam = `$${eventParams.length}`;
@@ -2743,7 +2755,13 @@ export async function proofIndexWalletTokenOverlayPayload(
         ON cd.network = e.network
        AND cd.token_id = lower(e.payload->>'tokenId')
       WHERE ${eventWhere}
-        AND e.kind IN ('token-transfer', 'token-sale')
+        AND e.kind IN (
+          'token-transfer',
+          'token-sale',
+          'token-listings',
+          'token-listing',
+          'token-listing-closed'
+        )
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
@@ -2769,8 +2787,17 @@ export async function proofIndexWalletTokenOverlayPayload(
     );
   const transfers = [];
   const sales = [];
+  const listings = [];
+  const closedListings = [];
   for (const row of eventResult.rows) {
     const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
+    if (payload?.kind === "token-listing" || payload?.kind === "token-listings") {
+      const listing = tokenListingFromEventPayload(payload);
+      if (activeTokenListingHistoryItem(listing)) {
+        listings.push(listing);
+      }
+      continue;
+    }
     if (payload?.kind === "token-transfer") {
       const transfer = tokenTransferFromEventPayload(payload, row);
       if (
@@ -2788,6 +2815,17 @@ export async function proofIndexWalletTokenOverlayPayload(
       if (sale.txid && sale.listingId && sale.tokenId) {
         sales.push(sale);
       }
+      continue;
+    }
+    if (payload?.kind === "token-listing-closed") {
+      const closedListing = tokenClosedListingFromEventPayload(payload);
+      if (
+        closedListing.closedTxid &&
+        closedListing.listingId &&
+        closedListing.tokenId
+      ) {
+        closedListings.push(closedListing);
+      }
     }
   }
 
@@ -2804,6 +2842,8 @@ export async function proofIndexWalletTokenOverlayPayload(
   return {
     holders,
     indexedAt: newestTime ? new Date(newestTime).toISOString() : undefined,
+    closedListings: closedListings.sort(compareTokenItemsByTime),
+    listings: listings.sort(compareTokenItemsByTime),
     sales: sales.sort(compareTokenItemsByTime),
     source: "proof-indexer-wallet-token-overlay",
     transfers: transfers.sort(compareTokenItemsByTime),
