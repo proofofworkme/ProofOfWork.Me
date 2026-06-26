@@ -2040,6 +2040,11 @@ function tokenHistoryPageItemKey(item, kind) {
       item?.closedTxid ?? item?.txid ?? "",
     ).toLowerCase()}`;
   }
+  if (kind === "holders") {
+    return `holder:${String(item?.tokenId ?? "").toLowerCase()}:${String(
+      item?.address ?? "",
+    ).toLowerCase()}`;
+  }
   if (kind === "sales") {
     return `sale:${String(item?.txid ?? "").toLowerCase()}`;
   }
@@ -2114,6 +2119,13 @@ function mergeTokenHistoryPageItem(current, incoming, kind) {
         ),
       };
     }
+  }
+
+  if (kind === "holders") {
+    return {
+      ...incoming,
+      ...current,
+    };
   }
 
   return incoming;
@@ -16040,6 +16052,70 @@ function numbersAgree(left, right, tolerance = 0.000001) {
   return Math.abs(numericValue(left) - numericValue(right)) <= tolerance;
 }
 
+function finitePositiveNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0;
+}
+
+function workFloorPayloadHasFiniteNetworkValue(workFloor) {
+  if (!workFloor) {
+    return false;
+  }
+
+  const networkValue = workFloor.networkValueSats;
+  const totalValue = workFloor.actualValue?.totalSats;
+  return (
+    finitePositiveNumber(networkValue) &&
+    finitePositiveNumber(totalValue) &&
+    numbersAgree(networkValue, totalValue, 0.01)
+  );
+}
+
+function growthSummaryPayloadHasFiniteNetworkValue(growthSummary) {
+  if (!growthSummary) {
+    return false;
+  }
+
+  return (
+    finitePositiveNumber(growthSummary.actualValue?.totalSats) &&
+    (!growthSummary.workFloor ||
+      workFloorPayloadHasFiniteNetworkValue(growthSummary.workFloor))
+  );
+}
+
+function ledgerPayloadHasFiniteNetworkValues(payload) {
+  if (payload?.network !== "livenet") {
+    return true;
+  }
+
+  return (
+    workFloorPayloadHasFiniteNetworkValue(payload?.workFloor) &&
+    (!payload?.growthSummary ||
+      growthSummaryPayloadHasFiniteNetworkValue(payload.growthSummary))
+  );
+}
+
+function summaryPayloadHasFiniteNetworkValue(network, key, payload) {
+  if (network !== "livenet") {
+    return true;
+  }
+
+  if (key === "workFloor") {
+    return workFloorPayloadHasFiniteNetworkValue(payload);
+  }
+  if (key === "workSummary") {
+    return workFloorPayloadHasFiniteNetworkValue(payload?.floor);
+  }
+  if (key === "growthSummary") {
+    return growthSummaryPayloadHasFiniteNetworkValue(payload);
+  }
+  if (key === "marketplaceSummary") {
+    return workFloorPayloadHasFiniteNetworkValue(payload?.workFloor);
+  }
+
+  return true;
+}
+
 function sourceCollectionFingerprint(items) {
   const list = Array.isArray(items) ? items : [];
   const confirmed = list.filter((item) => item?.confirmed).length;
@@ -16166,8 +16242,10 @@ function ledgerPayloadHasCurrentChecks(payload) {
   );
   return (
     Boolean(payload?.snapshotId) &&
+    ledgerPayloadHasFiniteNetworkValues(payload) &&
     checkNames.has("livenet-confirmed-history-present") &&
     checkNames.has("token-definitions-cover-confirmed-mints") &&
+    checkNames.has("network-values-finite") &&
     checkNames.has("marketplace-mutation-fees-counted") &&
     checkNames.has("marketplace-value-includes-mutation-fees") &&
     checkNames.has("computer-event-flow-excludes-marketplace") &&
@@ -16184,7 +16262,8 @@ function ledgerPayloadIsUsableFallback(payload) {
       payload?.generatedAt &&
       payload?.registryState &&
       payload?.tokenState &&
-      payload?.workFloor,
+      payload?.workFloor &&
+      ledgerPayloadHasFiniteNetworkValues(payload),
   );
 }
 
@@ -16378,6 +16457,12 @@ async function currentProofIndexSummarySnapshotPayload(network, key, label) {
       `summary:${label}`,
     ))
   ) {
+    return null;
+  }
+  if (!summaryPayloadHasFiniteNetworkValue(network, key, indexedPayload)) {
+    console.error(
+      `Rejected malformed proof-index ${label} read: network value is not finite.`,
+    );
     return null;
   }
 
@@ -16697,6 +16782,18 @@ function ledgerSnapshotChecks({
     unbucketedConfirmedComputerLogFlowSats(confirmedActivity);
   const computerEventFlowSats = numericValue(
     workFloor?.actualValue?.computerEventFlowSats,
+  );
+  addCheck(
+    "network-values-finite",
+    network !== "livenet" ||
+      (workFloorPayloadHasFiniteNetworkValue(workFloor) &&
+        growthSummaryPayloadHasFiniteNetworkValue(growthSummary)),
+    {
+      growthActualValueSats: growthActualValue,
+      growthWorkFloorValueSats: growthFloorValue,
+      workActualValueSats: workActualValue,
+      workNetworkValueSats: workNetworkValue,
+    },
   );
   addCheck("work-floor-actual-total", numbersAgree(workNetworkValue, workActualValue), {
     actualValueSats: workActualValue,
@@ -17581,6 +17678,19 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
     if (currentFallback) {
       return currentFallback;
     }
+    const refreshed = await payloadWithFallbackAfterMs(
+      canonicalLedgerPayload(network, true),
+      null,
+      LEDGER_SUMMARY_FRESH_WAIT_MS,
+    );
+    const currentRefreshed = await currentLedgerPayloadOrNull(
+      refreshed,
+      network,
+      "recovered canonical ledger",
+    );
+    if (currentRefreshed) {
+      return currentRefreshed;
+    }
     refreshCanonicalLedgerPayloadInBackground(network, true);
     return null;
   }
@@ -17767,15 +17877,24 @@ async function cachedWorkFloorSnapshotNoRefresh(network) {
   const cacheKey = `work-floor:${network}`;
   const payloadKey = `payload:${cacheKey}`;
   const cachedPayload = RESPONSE_CACHE.get(payloadKey)?.payload;
-  if (cachedPayload) {
+  if (
+    cachedPayload &&
+    summaryPayloadHasFiniteNetworkValue(network, "workFloor", cachedPayload)
+  ) {
     return cachedPayload;
+  }
+  if (cachedPayload) {
+    RESPONSE_CACHE.delete(payloadKey);
   }
 
   const persistedPayload = await persistedPayloadForCache(
     cacheKey,
     WORK_FLOOR_CACHE_STALE_MS,
   );
-  if (persistedPayload) {
+  if (
+    persistedPayload &&
+    summaryPayloadHasFiniteNetworkValue(network, "workFloor", persistedPayload)
+  ) {
     RESPONSE_CACHE.set(payloadKey, {
       expiresAt: Date.now() - 1,
       payload: persistedPayload,
@@ -18079,7 +18198,14 @@ async function cachedMarketplaceSummaryPayloadNoRefresh(network) {
   const ledger = await existingCanonicalLedgerPayload(network);
   const cachedPayload = RESPONSE_CACHE.get(payloadKey)?.payload;
   if (cachedPayload) {
-    if (payloadSnapshotMatchesLedger(cachedPayload, ledger)) {
+    if (
+      payloadSnapshotMatchesLedger(cachedPayload, ledger) &&
+      summaryPayloadHasFiniteNetworkValue(
+        network,
+        "marketplaceSummary",
+        cachedPayload,
+      )
+    ) {
       return cachedPayload;
     }
     logStaleSnapshotPayload("marketplace-summary cache", cachedPayload, ledger);
@@ -18091,7 +18217,14 @@ async function cachedMarketplaceSummaryPayloadNoRefresh(network) {
     MARKETPLACE_SUMMARY_CACHE_STALE_MS,
   );
   if (persistedPayload) {
-    if (!payloadSnapshotMatchesLedger(persistedPayload, ledger)) {
+    if (
+      !payloadSnapshotMatchesLedger(persistedPayload, ledger) ||
+      !summaryPayloadHasFiniteNetworkValue(
+        network,
+        "marketplaceSummary",
+        persistedPayload,
+      )
+    ) {
       logStaleSnapshotPayload(
         "persisted marketplace-summary cache",
         persistedPayload,
@@ -18293,6 +18426,16 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
     if (refreshed) {
       return refreshed;
     }
+    const fallback = await marketplaceSummaryFallbackPayload(network);
+    if (
+      summaryPayloadHasFiniteNetworkValue(
+        network,
+        "marketplaceSummary",
+        fallback,
+      )
+    ) {
+      return fallback;
+    }
 
     refreshPayloadCacheInBackground(
       marketplaceSummaryCacheKey(network),
@@ -18312,6 +18455,23 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
     Math.min(2_500, MARKETPLACE_SUMMARY_FRESH_WAIT_MS),
   );
   if (!fallback) {
+    const ledgerFallback = await marketplaceSummaryFallbackPayload(network);
+    if (
+      summaryPayloadHasFiniteNetworkValue(
+        network,
+        "marketplaceSummary",
+        ledgerFallback,
+      )
+    ) {
+      refreshPayloadCacheInBackground(
+        marketplaceSummaryCacheKey(network),
+        marketplaceSummaryPayloadKey(network),
+        () => reconciledLivenetMarketplaceSummaryPayload(network, false),
+        MARKETPLACE_SUMMARY_CACHE_TTL_MS,
+        MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+      );
+      return ledgerFallback;
+    }
     refreshPayloadCacheInBackground(
       marketplaceSummaryCacheKey(network),
       marketplaceSummaryPayloadKey(network),
@@ -19366,41 +19526,19 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       return indexedMarketPage;
     }
   }
-  if (safeKind === "holders" && queriedWorkHistory && network === "livenet") {
-    const indexedWalletOverlay = await proofIndexWalletTokenOverlayPayload(
-      network,
-      scope,
-      recoveryAddresses,
-    ).catch((error) => {
-      console.error(
-        `Proof index fast WORK holder overlay failed: ${errorSummary(error)}`,
-      );
-      return null;
-    });
-    const indexedHolderItems = (Array.isArray(indexedWalletOverlay?.holders)
-      ? indexedWalletOverlay.holders
-      : []
-    ).filter(
-      (holder) =>
-        tokenMatchesScope(holder, scope) &&
-        recoveryAddresses.some(
-          (address) =>
-            String(holder?.address ?? "").toLowerCase() ===
-            String(address ?? "").toLowerCase(),
-        ),
-    );
-    if (indexedHolderItems.length > 0) {
-      return paginatedHistoryPayload({
-        indexedAt:
-          indexedWalletOverlay.indexedAt ?? new Date().toISOString(),
-        items: indexedHolderItems,
-        kind: safeKind,
-        network,
-        pagination,
-        source: indexedWalletOverlay.source ?? "proof-indexer-wallet-overlay",
-      });
-    }
-  }
+  const indexedWorkHolderOverlayPromise =
+    safeKind === "holders" && queriedWorkHistory && network === "livenet"
+      ? proofIndexWalletTokenOverlayPayload(
+          network,
+          scope,
+          recoveryAddresses,
+        ).catch((error) => {
+          console.error(
+            `Proof index WORK holder overlay failed: ${errorSummary(error)}`,
+          );
+          return null;
+        })
+      : Promise.resolve(null);
   if (
     safeKind === "listings" &&
     scopedWorkMarketHistory &&
@@ -19425,6 +19563,40 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
         source:
           recoveredPayload.source ??
           "proof-indexer-token-listing-tx-recovery",
+      });
+    }
+  }
+  if (
+    safeKind === "holders" &&
+    queriedWorkHistory &&
+    recoveryAddresses.length > 0 &&
+    network === "livenet"
+  ) {
+    const walletPayload = await walletScopedTokenPayload(
+      network,
+      scope,
+      recoveryAddresses,
+    ).catch((error) => {
+      console.error(
+        `Wallet-scoped WORK holder history recovery failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    const walletHolderItems = historyItemsMatchingAddresses(
+      walletPayload?.holders ?? [],
+      recoveryAddresses,
+    );
+    if (walletHolderItems.length > 0) {
+      return paginatedHistoryPayload({
+        indexedAt: walletPayload.indexedAt ?? new Date().toISOString(),
+        items: walletHolderItems,
+        kind: safeKind,
+        network,
+        pagination,
+        source: mergedSourceLabel(
+          walletPayload.source,
+          "wallet-scoped-holder-recovery",
+        ),
       });
     }
   }
@@ -19527,6 +19699,36 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       return null;
     });
     page = mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination);
+    if (safeKind === "holders") {
+      const indexedWalletOverlay = await indexedWorkHolderOverlayPromise;
+      const indexedHolderItems = (Array.isArray(indexedWalletOverlay?.holders)
+        ? indexedWalletOverlay.holders
+        : []
+      ).filter(
+        (holder) =>
+          tokenMatchesScope(holder, scope) &&
+          recoveryAddresses.some(
+            (address) =>
+              String(holder?.address ?? "").toLowerCase() ===
+              String(address ?? "").toLowerCase(),
+          ),
+      );
+      if (indexedHolderItems.length > 0) {
+        page = mergeTokenHistoryPageWithOverlay(
+          page,
+          paginatedHistoryPayload({
+            indexedAt:
+              indexedWalletOverlay.indexedAt ?? new Date().toISOString(),
+            items: indexedHolderItems,
+            kind: safeKind,
+            network,
+            pagination,
+            source: indexedWalletOverlay.source ?? "proof-indexer-wallet-overlay",
+          }),
+          pagination,
+        );
+      }
+    }
   }
   if (workMarketHistoryKind && queriedWorkHistory && network === "livenet") {
     const overlayPage = await proofIndexTokenHistoryPayload(
@@ -19797,22 +19999,22 @@ function growthActualNetworkValue(
         !isInfinityBondActivityItem(item) &&
         !isBrowserActivityItem(item),
     )
-    .reduce((total, item) => total + (item.amountSats ?? 0), 0);
+    .reduce((total, item) => total + activityAmountSats(item), 0);
   const infinityBondFlowSats = confirmedActivity
     .filter(isInfinityBondActivityItem)
-    .reduce((total, item) => total + (item.amountSats ?? 0), 0);
+    .reduce((total, item) => total + activityAmountSats(item), 0);
   const browserFlowSats = confirmedActivity
     .filter(isBrowserActivityItem)
-    .reduce((total, item) => total + (item.amountSats ?? 0), 0);
+    .reduce((total, item) => total + activityAmountSats(item), 0);
   const driveFlowSats = confirmedActivity
     .filter((item) => item.kind === "file" && !isBrowserActivityItem(item))
-    .reduce((total, item) => total + (item.amountSats ?? 0), 0);
+    .reduce((total, item) => total + activityAmountSats(item), 0);
   const idMarketplaceVolumeSats = confirmedSales.reduce(
-    (total, sale) => total + sale.priceSats,
+    (total, sale) => total + numericValue(sale.priceSats),
     0,
   );
   const tokenSaleVolumeSats = confirmedTokenSales.reduce(
-    (total, sale) => total + sale.priceSats,
+    (total, sale) => total + numericValue(sale.priceSats),
     0,
   );
   const tokenSaleFlowSats = tokenSaleVolumeSats;
@@ -19833,15 +20035,15 @@ function growthActualNetworkValue(
   const marketplaceFlowSats =
     marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
   const tokenCreationFlowSats = confirmedTokens.reduce(
-    (total, token) => total + token.creationFeeSats,
+    (total, token) => total + numericValue(token.creationFeeSats),
     0,
   );
   const tokenMintFlowSats = confirmedValueTokenMints.reduce(
-    (total, mint) => total + mint.paidSats,
+    (total, mint) => total + numericValue(mint.paidSats),
     0,
   );
   const tokenTransferFlowSats = confirmedTokenTransfers.reduce(
-    (total, transfer) => total + transfer.paidSats,
+    (total, transfer) => total + numericValue(transfer.paidSats),
     0,
   );
   const walletFlowSats = tokenTransferFlowSats;
@@ -20017,8 +20219,8 @@ function growthActualValuePoints(
   );
   points.push({
     label: options.startLabel ?? "Model start",
-    sats: startValue.totalSats,
-    usd: growthSatsToUsdAtYears(startValue.totalSats, startYears),
+    sats: numericValue(startValue.totalSats),
+    usd: growthSatsToUsdAtYears(numericValue(startValue.totalSats), startYears),
     years: startYears,
   });
 
@@ -20035,9 +20237,9 @@ function growthActualValuePoints(
     );
     points.push({
       label,
-      sats: value.totalSats,
+      sats: numericValue(value.totalSats),
       usd: growthSatsToUsdAtYears(
-        value.totalSats,
+        numericValue(value.totalSats),
         Math.max(0, (createdMs - GROWTH_MODEL_START_MS) / MS_PER_MODEL_YEAR),
       ),
       years: Math.max(
@@ -20065,8 +20267,8 @@ function growthActualValuePoints(
   ) {
     points.push({
       label: "Real now",
-      sats: nowValue.totalSats,
-      usd: nowValue.totalUsd,
+      sats: numericValue(nowValue.totalSats),
+      usd: growthSatsToUsdAtYears(numericValue(nowValue.totalSats), elapsed),
       years: elapsed,
     });
   }
@@ -20450,10 +20652,10 @@ function workFloorPayloadFromState(
   );
   const globalWorkMintFlowSats = (valueTokenState.mints ?? [])
     .filter((mint) => mint.confirmed && mint.tokenId === WORK_TOKEN_ID)
-    .reduce((total, mint) => total + mint.paidSats, 0);
+    .reduce((total, mint) => total + numericValue(mint.paidSats), 0);
   const scopedWorkMintFlowSats = (workTokenState.mints ?? [])
     .filter((mint) => mint.confirmed)
-    .reduce((total, mint) => total + mint.paidSats, 0);
+    .reduce((total, mint) => total + numericValue(mint.paidSats), 0);
   const globalWorkMintCount = (valueTokenState.mints ?? []).filter(
     (mint) => mint.confirmed && mint.tokenId === WORK_TOKEN_ID,
   ).length;

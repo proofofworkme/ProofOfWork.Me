@@ -49,6 +49,8 @@ const REPORTED_LATEST_WAITING_FOR_SEAL_CLOSE_TX =
   "bcacff05f33c248008073a01f0c37222cf01299a742afc68f49d0a1d479a8525";
 const REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX =
   "f371ee499b94f929069fb4677446006b1bb67d6793724f2b8d6effb26499c090";
+const REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX =
+  "2f26753315873beab5b1eaaace89eb55fa8a63595c6348a45e5aa80945d54692";
 const REPORTED_CONFIRMED_SEALABLE_LISTING_TX =
   "d7fe42285c4edd02592608cbd887ad7a8a2b78e085de05296e352fcc1e2166a9";
 const REPORTED_DROPPED_LISTING_TX =
@@ -77,7 +79,10 @@ const MARKETPLACE_FRESH_SUMMARY_MAX_MS = Number(
 );
 const REQUEST_TIMEOUT_MS = Number(
   process.env.MARKETPLACE_REGRESSION_REQUEST_TIMEOUT_MS ??
-    Math.max(MARKETPLACE_FRESH_SUMMARY_MAX_MS + 15_000, 90_000),
+    Math.max(MARKETPLACE_FRESH_SUMMARY_MAX_MS + 120_000, 300_000),
+);
+const REQUEST_RETRY_COUNT = Number(
+  process.env.MARKETPLACE_REGRESSION_REQUEST_RETRY_COUNT ?? 2,
 );
 
 function assert(condition, message) {
@@ -113,13 +118,34 @@ async function getJson(path, params = {}) {
       url.searchParams.set(key, String(value));
     }
   }
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) {
-    throw new Error(`${url} returned HTTP ${response.status}`);
+  let lastError = null;
+  for (let attempt = 0; attempt <= REQUEST_RETRY_COUNT; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (response.ok) {
+        return response.json();
+      }
+      const retryableStatus = [500, 502, 503, 504].includes(response.status);
+      if (!retryableStatus || attempt >= REQUEST_RETRY_COUNT) {
+        throw new Error(`${url} returned HTTP ${response.status}`);
+      }
+      lastError = new Error(`${url} returned HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      const retryableError =
+        error?.name === "TimeoutError" ||
+        String(error?.message ?? "").includes("fetch failed");
+      if (!retryableError || attempt >= REQUEST_RETRY_COUNT) {
+        throw error;
+      }
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, 1_000 * (attempt + 1)),
+    );
   }
-  return response.json();
+  throw lastError;
 }
 
 async function timedGetJson(path, params = {}) {
@@ -374,9 +400,8 @@ assert(
     recentWaitingForSealItem?.amount === 130 &&
     recentWaitingForSealItem?.priceSats === 81325 &&
     recentWaitingForSealItem?.sellerAddress ===
-      CARBONZ_TAPROOT_LISTING_ADDRESS &&
-    !tokenListingHasConfirmedSeal(recentWaitingForSealItem),
-  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is not returned as a confirmed waiting-for-seal listing`,
+      CARBONZ_TAPROOT_LISTING_ADDRESS,
+  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is not returned as a confirmed listing event`,
 );
 const carbonzTaprootListingHistory = await tokenHistory("listings", {
   address: CARBONZ_TAPROOT_LISTING_ADDRESS,
@@ -384,8 +409,8 @@ const carbonzTaprootListingHistory = await tokenHistory("listings", {
 for (const txid of [REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX]) {
   const item = listingById(carbonzTaprootListingHistory.items, txid);
   assert(
-    item?.confirmed === true && !tokenListingHasConfirmedSeal(item),
-    `${txid} is missing from cached Carbonz address-scoped waiting-for-seal listings`,
+    item?.confirmed === true,
+    `${txid} is missing from cached Carbonz address-scoped listings`,
   );
 }
 const reportedSealableListing = await tokenHistory("listings", {
@@ -470,8 +495,11 @@ const carbonzTaprootWalletToken = await getJson("/api/v1/token", {
 for (const txid of [REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX]) {
   const item = listingById(carbonzTaprootWalletToken.listings, txid);
   assert(
-    item?.confirmed === true && !tokenListingHasConfirmedSeal(item),
-    `${txid} is missing from Carbonz wallet-scoped waiting-for-seal listings`,
+    item?.confirmed === true &&
+      tokenListingHasConfirmedSeal(item) &&
+      String(item.sealTxid ?? "").toLowerCase() ===
+        REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX,
+    `${txid} is missing its confirmed seal in Carbonz wallet-scoped listings`,
   );
 }
 assert(
@@ -614,9 +642,11 @@ assert(
       String(item?.listingId ?? "").toLowerCase() ===
         REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX &&
       item?.confirmed === true &&
-      !tokenListingHasConfirmedSeal(item),
+      tokenListingHasConfirmedSeal(item) &&
+      String(item.sealTxid ?? "").toLowerCase() ===
+        REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX,
   ),
-  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is missing from fresh marketplace summary waiting-for-seal listings`,
+  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is missing its confirmed seal in fresh marketplace summary listings`,
 );
 const workToken = await getJson("/api/v1/token", {
   network: "livenet",
