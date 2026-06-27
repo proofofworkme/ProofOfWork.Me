@@ -2220,27 +2220,37 @@ function workFloorWithIndexedMarketSummaryOverlay(workFloor, overlay, tokenState
 async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
   payload,
   network,
+  options = {},
 ) {
   if (!payload || network !== "livenet") {
     return payload;
   }
 
+  const fast = options.fast === true;
   const baseWorkTokenState = scopedTokenPayloadFromState(
     payload.token,
     WORK_TOKEN_ID,
   );
-  const recoveredWorkTokenState = await workTokenStateWithSummaryListingTruth(
-    baseWorkTokenState,
-    network,
-    { recoverActiveListings: true },
-  );
+  const recoveredWorkTokenState = fast
+    ? await payloadWithFallbackAfterMs(
+        workTokenStateWithSummaryListingTruth(baseWorkTokenState, network, {
+          recoverActiveListings: true,
+        }),
+        baseWorkTokenState,
+        MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS,
+      )
+    : await workTokenStateWithSummaryListingTruth(baseWorkTokenState, network, {
+        recoverActiveListings: true,
+      });
   const recoveredTokenState = tokenStateWithScopedTokenOverride(
     payload.token,
     recoveredWorkTokenState,
     WORK_TOKEN_ID,
   );
   const [workTokenState, overlay] = await Promise.all([
-    indexedWorkTokenStateForMarketplaceSummary(network),
+    indexedWorkTokenStateForMarketplaceSummary(network, {
+      canonicalFallback: !fast,
+    }),
     indexedTokenMarketSummaryOverlay(network),
   ]);
   if (!workTokenState && !overlay && recoveredTokenState === payload.token) {
@@ -2260,10 +2270,13 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
   const overlaidTokenState = overlay
     ? tokenStateWithIndexedMarketSummaryOverlay(baseTokenState, overlay)
     : baseTokenState;
-  const tokenState = await tokenPayloadWithSpendableActiveListings(
-    overlaidTokenState,
-    network,
-  );
+  const tokenState = fast
+    ? await payloadWithFallbackAfterMs(
+        tokenPayloadWithSpendableActiveListings(overlaidTokenState, network),
+        overlaidTokenState,
+        SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS,
+      )
+    : await tokenPayloadWithSpendableActiveListings(overlaidTokenState, network);
   const token = compactTokenSummaryPayload(tokenState);
   return marketplaceSummaryWithCurrentBtcUsd(
     {
@@ -5962,10 +5975,13 @@ function tokenListingIsExpired(listing, nowMs = Date.now()) {
 }
 
 function spendsTokenListingAnchor(spent, listing) {
-  return spent.some(
-    (outpoint) =>
-      outpoint.txid === listing.listingId &&
-      outpoint.vout === listing.saleAuthorization.anchorVout,
+  const anchor = tokenListingAnchorOutpoint(listing);
+  return Boolean(
+    anchor &&
+      spent.some(
+        (outpoint) =>
+          outpoint.txid === anchor.txid && outpoint.vout === anchor.vout,
+      ),
   );
 }
 
@@ -6003,8 +6019,16 @@ function tokenListingAnchorOutpoint(listing) {
     return null;
   }
 
+  const sealTxid = String(listing?.sealTxid ?? "")
+    .trim()
+    .toLowerCase();
   return {
-    txid: listing.listingId,
+    txid:
+      listing.sealConfirmed === true &&
+      /^[0-9a-f]{64}$/u.test(sealTxid) &&
+      tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)
+        ? sealTxid
+        : listing.listingId,
     vout: listing.saleAuthorization.anchorVout,
   };
 }
@@ -6373,6 +6397,7 @@ async function filterSpendableTokenListings(listings, network) {
         typeof blockTime === "number"
           ? new Date(blockTime * 1000).toISOString()
           : new Date().toISOString(),
+      closedBySpendableOutspend: true,
       closedConfirmed: Boolean(outspend.status?.confirmed),
       closedTxid,
       closedVin: Number.isSafeInteger(outspend.vin) ? outspend.vin : undefined,
@@ -6539,6 +6564,7 @@ async function reconcileCachedTokenClosedListing(closedListing, network) {
             typeof blockTime === "number"
               ? new Date(blockTime * 1000).toISOString()
               : (closedListing.closedAt ?? new Date().toISOString()),
+          closedBySpendableOutspend: true,
           closedConfirmed: true,
           closedTxid:
             typeof outspend.txid === "string"
@@ -6577,6 +6603,7 @@ async function reconcileCachedTokenClosedListing(closedListing, network) {
           typeof blockTime === "number"
             ? new Date(blockTime * 1000).toISOString()
             : (closedListing.closedAt ?? new Date().toISOString()),
+        closedBySpendableOutspend: true,
         closedConfirmed: Boolean(outspend.status?.confirmed),
         closedTxid:
           typeof outspend.txid === "string"
@@ -12730,6 +12757,7 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
     const activeListing = sealedActiveListingsByKey.get(key);
     return !(
       activeListing &&
+      listing?.closedBySpendableOutspend !== true &&
       String(listing?.closedTxid ?? listing?.txid ?? "").toLowerCase() ===
         String(activeListing.sealTxid ?? "").toLowerCase()
     );
@@ -12756,6 +12784,15 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
     closedListingsByKey.set(key, current);
   }
   const listings = rawListings.filter((listing) => {
+    if (
+      listing?.closedConfirmed === true &&
+      /^[0-9a-f]{64}$/u.test(
+        String(listing.closedTxid ?? listing.closeTxid ?? "").toLowerCase(),
+      )
+    ) {
+      return false;
+    }
+
     if (!listing?.listingId || closedListingKeys.size === 0) {
       return true;
     }
@@ -18908,7 +18945,9 @@ async function marketplaceSummaryFastFallbackPayload(network) {
     Math.min(2_500, MARKETPLACE_SUMMARY_FRESH_WAIT_MS),
   );
   if (cached) {
-    return marketplaceSummaryPayloadWithIndexedMarketOverlay(cached, network);
+    return marketplaceSummaryPayloadWithIndexedMarketOverlay(cached, network, {
+      fast: true,
+    });
   }
 
   const ledger = await payloadWithFallbackAfterMs(
@@ -18918,7 +18957,9 @@ async function marketplaceSummaryFastFallbackPayload(network) {
   );
   const ledgerPayload = marketplaceSummaryPayloadFromLedger(ledger);
   return ledgerPayload
-    ? marketplaceSummaryPayloadWithIndexedMarketOverlay(ledgerPayload, network)
+    ? marketplaceSummaryPayloadWithIndexedMarketOverlay(ledgerPayload, network, {
+        fast: true,
+      })
     : emptyMarketplaceSummaryPayload(network);
 }
 
@@ -19172,7 +19213,7 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
     Math.min(2_500, MARKETPLACE_SUMMARY_FRESH_WAIT_MS),
   );
   if (!fallback) {
-    const ledgerFallback = await marketplaceSummaryFallbackPayload(network);
+    const ledgerFallback = await marketplaceSummaryFastFallbackPayload(network);
     if (
       summaryPayloadHasFiniteNetworkValue(
         network,

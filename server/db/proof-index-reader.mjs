@@ -303,7 +303,16 @@ function tokenRegistryAddressFromPayload(payload, actor, counterparty, fallback 
 }
 
 function tokenSaleFromEventPayload(payload) {
-  const { amount, priceSats, ticker } = tokenMarketNumbersFromTags(payload);
+  const tagNumbers = tokenMarketNumbersFromTags(payload);
+  const amount =
+    rowNumber(payload, "amount") ||
+    rowNumber(payload, "tokenAmount") ||
+    tagNumbers.amount;
+  const priceSats =
+    rowNumber(payload, "priceSats") ||
+    rowNumber(payload, "salePriceSats") ||
+    tagNumbers.priceSats;
+  const ticker = String(payload?.ticker ?? tagNumbers.ticker ?? "").trim();
   const buyerAddress = String(payload?.actor ?? payload?.buyerAddress ?? "")
     .trim();
   const sellerAddress = String(
@@ -322,7 +331,7 @@ function tokenSaleFromEventPayload(payload) {
     dataBytes: rowNumber(payload, "dataBytes"),
     listingId: String(payload?.listingId ?? "").trim().toLowerCase(),
     network: payload?.network,
-    paidSats: rowNumber(payload, "amountSats"),
+    paidSats: rowNumber(payload, "paidSats") || rowNumber(payload, "amountSats"),
     priceSats,
     registryAddress,
     sellerAddress,
@@ -2733,7 +2742,11 @@ export async function proofIndexWalletTokenOverlayPayload(
     eventParams.push(scope);
     const scopeParam = `$${eventParams.length}`;
     eventConditions.push(
-      `(lower(e.payload->>'tokenId') = ${scopeParam} OR lower(cd.ticker) = lower(${scopeParam}))`,
+      `(
+        lower(e.payload->>'tokenId') = ${scopeParam}
+        OR lower(cl_event.token_id) = ${scopeParam}
+        OR lower(cd.ticker) = lower(${scopeParam})
+      )`,
     );
   }
   const eventWhere = eventConditions.join(" AND ");
@@ -2750,13 +2763,22 @@ export async function proofIndexWalletTokenOverlayPayload(
         e.block_height,
         e.txid,
         e.network,
-        cd.token_id,
+        COALESCE(cd.token_id, cl_event.token_id) AS token_id,
         cd.ticker,
-        cd.registry_address
+        cd.registry_address,
+        cl_event.listing_id AS linked_listing_id,
+        cl_event.seller_address AS listing_seller_address,
+        cl_event.buyer_address AS listing_buyer_address,
+        cl_event.amount AS listing_amount,
+        cl_event.price_sats AS listing_price_sats,
+        cl_event.payload AS listing_payload
       FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.credit_listings cl_event
+        ON cl_event.network = e.network
+       AND cl_event.listing_id = lower(e.payload->>'listingId')
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = e.network
-       AND cd.token_id = lower(e.payload->>'tokenId')
+       AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
       WHERE ${eventWhere}
         AND e.kind IN (
           'token-transfer',
@@ -2857,7 +2879,42 @@ export async function proofIndexWalletTokenOverlayPayload(
       continue;
     }
     if (payload?.kind === "token-sale") {
-      const sale = tokenSaleFromEventPayload(payload);
+      const listingPayload =
+        row.listing_payload &&
+        typeof row.listing_payload === "object" &&
+        !Array.isArray(row.listing_payload)
+          ? row.listing_payload
+          : {};
+      const sale = tokenSaleFromEventPayload({
+        ...listingPayload,
+        ...payload,
+        amount:
+          payload.amount ??
+          payload.tokenAmount ??
+          listingPayload.amount ??
+          row.listing_amount,
+        listingId:
+          payload.listingId ?? listingPayload.listingId ?? row.linked_listing_id,
+        priceSats:
+          payload.priceSats ??
+          payload.salePriceSats ??
+          listingPayload.priceSats ??
+          row.listing_price_sats,
+        registryAddress:
+          payload.registryAddress ??
+          listingPayload.registryAddress ??
+          row.registry_address,
+        sellerAddress:
+          payload.sellerAddress ??
+          payload.counterparty ??
+          listingPayload.sellerAddress ??
+          row.listing_seller_address,
+        ticker: payload.ticker ?? listingPayload.ticker ?? row.ticker,
+        tokenId:
+          payload.tokenId ??
+          listingPayload.tokenId ??
+          row.token_id,
+      });
       if (sale.txid && sale.listingId && sale.tokenId) {
         sales.push(sale);
       }

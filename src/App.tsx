@@ -7240,6 +7240,31 @@ function tokenMintMatchesSearch(mint: PowTokenMint, query: string) {
   ].some((value) => value.toLowerCase().includes(query));
 }
 
+function tokenListingMatchesSearch(listing: PowTokenListing, query: string) {
+  return searchIncludes(
+    [
+      listing.ticker,
+      listing.tokenId,
+      listing.listingId,
+      listing.sellerAddress,
+      listing.saleAuthorization.buyerAddress,
+      listing.registryAddress,
+      listing.sealTxid,
+      listing.network,
+      networkLabel(listing.network),
+      listing.amount,
+      listing.priceSats,
+      listing.confirmed ? "confirmed" : "pending",
+      tokenListingHasConfirmedSaleTicketSeal(listing)
+        ? "sealed"
+        : tokenListingHasPendingSaleTicketSeal(listing)
+          ? "seal pending"
+          : "unsealed",
+    ],
+    query,
+  );
+}
+
 function compareTokensByConfirmation(
   left: PowTokenDefinition,
   right: PowTokenDefinition,
@@ -31002,6 +31027,7 @@ function TokenMarketplacePanel({
   const [tokenMarketPageIndex, setTokenMarketPageIndex] = useState(0);
   const [tokenListingPageIndex, setTokenListingPageIndex] = useState(0);
   const [tokenMarketLogPageIndex, setTokenMarketLogPageIndex] = useState(0);
+  const [tokenListingSearchQuery, setTokenListingSearchQuery] = useState("");
   const [remoteTokenMarketLogPage, setRemoteTokenMarketLogPage] = useState<
     | {
         key: string;
@@ -31027,7 +31053,12 @@ function TokenMarketplacePanel({
   }, [selectedMarketToken?.tokenId, tokenDirectorySortMode]);
   useEffect(() => {
     setTokenListingPageIndex(0);
-  }, [selectedMarketToken?.tokenId, tokenListingBookFilter, tokenListingSortMode]);
+  }, [
+    selectedMarketToken?.tokenId,
+    tokenListingBookFilter,
+    tokenListingSearchQuery,
+    tokenListingSortMode,
+  ]);
   useEffect(() => {
     setTokenMarketLogPageIndex(0);
   }, [selectedMarketToken?.tokenId]);
@@ -31100,12 +31131,30 @@ function TokenMarketplacePanel({
       : tokenListingBookFilter === "unsealed"
         ? unsealedListings
         : marketListings;
+  const filteredMarketListings = tokenListingSearchQuery
+    ? visibleMarketListings.filter((listing) =>
+        tokenListingMatchesSearch(listing, tokenListingSearchQuery),
+      )
+    : visibleMarketListings;
   const sortedMarketListings = sortTokenListings(
-    visibleMarketListings,
+    filteredMarketListings,
     tokenListingSortMode,
     tokenReferenceById,
     workMarketFloorSats,
   );
+  const walletMarketListings = address
+    ? sortTokenListings(
+        marketListings.filter(
+          (listing) =>
+            listing.sellerAddress === address &&
+            (!selectedMarketToken ||
+              listing.tokenId === selectedMarketToken.tokenId),
+        ),
+        tokenListingSortMode,
+        tokenReferenceById,
+        workMarketFloorSats,
+      )
+    : [];
   const tokenMarketLogItems = sortTokenMarketLogItems([
     ...marketListings.map((listing) => ({
       createdAt: listing.createdAt,
@@ -31688,6 +31737,13 @@ function TokenMarketplacePanel({
             </div>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
           </div>
+          <IdSearchControl
+            placeholder="Search sale tickets, sellers, txids"
+            resultCount={filteredMarketListings.length}
+            setValue={setTokenListingSearchQuery}
+            totalCount={visibleMarketListings.length}
+            value={tokenListingSearchQuery}
+          />
           <MarketplaceListingBookTabs
             allCount={marketListings.length}
             label="Credit order book filter"
@@ -31700,7 +31756,42 @@ function TokenMarketplacePanel({
             onChange={setTokenListingSortMode}
             value={tokenListingSortMode}
           />
-          {visibleMarketListings.length ? (
+          {walletMarketListings.length ? (
+            <div className="token-list compact-token-list">
+              {walletMarketListings.slice(0, 6).map((listing) => {
+                const unitSats = tokenListingUnitPriceSats(listing);
+                const sealStatus = tokenListingHasConfirmedSaleTicketSeal(listing)
+                  ? "sealed"
+                  : tokenListingHasPendingSaleTicketSeal(listing)
+                    ? "seal pending"
+                    : "ready to seal";
+                return (
+                  <a
+                    className="token-list-item"
+                    href={explorerTxUrl(listing.listingId, listing.network)}
+                    key={`wallet-market-${listing.listingId}`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <span>
+                      <strong>
+                        Your {listing.amount.toLocaleString()} {listing.ticker}
+                      </strong>
+                      <small>
+                        {sealStatus} · {listing.priceSats.toLocaleString()} proofs ·{" "}
+                        {tokenSatsPerUnit(unitSats)} proof / {listing.ticker}
+                      </small>
+                    </span>
+                    <span>
+                      <strong>{shortAddress(listing.listingId)}</strong>
+                      <small>{formatDate(listing.createdAt)}</small>
+                    </span>
+                  </a>
+                );
+              })}
+            </div>
+          ) : null}
+          {filteredMarketListings.length ? (
             <div className="token-market-grid">
               {tokenListingPage.items.map((listing) => {
                 const hasSeal = tokenSaleAuthorizationUsesSaleTicketAnchor(
@@ -31838,20 +31929,24 @@ function TokenMarketplacePanel({
             <div className="empty-state">
               <Wallet size={28} />
               <h3>
-                {tokenMarketLoading
-                  ? "Loading credit sale tickets"
-                  : marketListings.length
-                  ? tokenListingBookFilter === "sealed"
-                    ? "No sealed listings"
+                  {tokenMarketLoading
+                    ? "Loading credit sale tickets"
+                    : tokenListingSearchQuery
+                      ? "No matching sale tickets"
+                    : marketListings.length
+                    ? tokenListingBookFilter === "sealed"
+                      ? "No sealed listings"
                     : "No unsealed listings"
                   : "No credit listings yet"}
               </h3>
               <p>
-                {tokenMarketLoading
-                  ? "Confirmed listings and seals are loading from the ProofOfWork index."
-                  : marketListings.length
-                  ? tokenListingBookFilter === "sealed"
-                    ? "No sale tickets in this view have a confirmed buyable seal yet."
+                  {tokenMarketLoading
+                    ? "Confirmed listings and seals are loading from the ProofOfWork index."
+                    : tokenListingSearchQuery
+                      ? "No sale tickets match this search."
+                    : marketListings.length
+                    ? tokenListingBookFilter === "sealed"
+                      ? "No sale tickets in this view have a confirmed buyable seal yet."
                     : "Every sale ticket in this view already has a seal or pending seal."
                   : selectedMarketToken
                   ? `No ${selectedMarketToken.ticker} sale tickets are open yet.`

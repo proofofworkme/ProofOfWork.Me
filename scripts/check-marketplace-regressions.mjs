@@ -59,6 +59,17 @@ const REPORTED_SPENT_SEAL_LISTING_TX =
   "df5740ebf1260f04906479ec1f23a1fd64d112f368be4a056a0a4b55cff838a1";
 const REPORTED_SPENT_SEAL_TX =
   "a18c2972590631e0a53bf47a2b1a737c39142136994faf2fd04247f7c1628749";
+const REPORTED_OTC_UNSEALED_LISTING_TXS = [
+  "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa",
+  "7f41658356632323b0659c935f83c2a5dcc42aefce08e8ed6d769722325d1fe9",
+];
+const CARBONZ_REPORTED_BUY_TX =
+  "7ddf760aaae819aab74a4cc5523016350e11b5888c4950acd97a7660533ba47b";
+const CARBONZ_REPORTED_BUY_LISTING_TX =
+  "48decc8b8e1ee2c6e0678387c8466c6381b4a071661e31748b5779a4106c57eb";
+const CARBONZ_REPORTED_BUY_BUYER = "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d";
+const CARBONZ_REPORTED_BUY_SELLER =
+  "bc1p3yaleuat8cdugnx20m0zkum90vpwnuqgshkd8j4xqrwn6amqan4shdh33v";
 const REPORTED_TRANSFER_SENDER =
   "bc1pq0czje5lfwwat69g97k4sysx7an0wxu80n7jceqy6gc50hacd5wqltpx8y";
 const REPORTED_TRANSFER_RECIPIENT = "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d";
@@ -491,6 +502,15 @@ assert(
   ),
   `${REPORTED_LISTING_TX} is not closed by ${REPORTED_DELIST_TX} in wallet-scoped token payload`,
 );
+for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
+  const item = listingById(walletToken.listings, txid);
+  assert(
+    item?.confirmed === true &&
+      item?.sellerAddress === SELLER &&
+      !item?.sealTxid,
+    `${txid} is missing as an active unsealed seller listing in wallet-scoped token payload`,
+  );
+}
 const walletSaleTxids = txids(walletToken.sales);
 for (const txid of BUY_TXS) {
   assert(
@@ -498,6 +518,27 @@ for (const txid of BUY_TXS) {
     `${txid} is missing from wallet-scoped sales`,
   );
 }
+const carbonzBuyerWalletToken = await getJson("/api/v1/token", {
+  network: "livenet",
+  asset: WORK_TOKEN_ID,
+  address: CARBONZ_REPORTED_BUY_BUYER,
+  wallet: 1,
+  fresh: 1,
+});
+const carbonzBuyerSale = (carbonzBuyerWalletToken.sales ?? []).find(
+  (item) =>
+    String(item?.txid ?? "").toLowerCase() === CARBONZ_REPORTED_BUY_TX &&
+    String(item?.listingId ?? "").toLowerCase() ===
+      CARBONZ_REPORTED_BUY_LISTING_TX,
+);
+assert(
+  carbonzBuyerSale?.confirmed === true &&
+    carbonzBuyerSale?.amount === 7000 &&
+    carbonzBuyerSale?.priceSats === 49000 &&
+    carbonzBuyerSale?.buyerAddress === CARBONZ_REPORTED_BUY_BUYER &&
+    carbonzBuyerSale?.sellerAddress === CARBONZ_REPORTED_BUY_SELLER,
+  `${CARBONZ_REPORTED_BUY_TX} is missing from buyer wallet-scoped sales`,
+);
 const carbonzTaprootWalletToken = await getJson("/api/v1/token", {
   network: "livenet",
   asset: WORK_TOKEN_ID,
@@ -622,6 +663,15 @@ assert(
   ),
   `${REPORTED_SPENT_SEAL_LISTING_TX} is still returned as active in marketplace summary after ${REPORTED_SPENT_SEAL_TX} spent its sale-ticket anchor`,
 );
+for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
+  const item = listingById(marketplaceSummary.token?.listings, txid);
+  assert(
+    item?.confirmed === true &&
+      item?.sellerAddress === SELLER &&
+      !item?.sealTxid,
+    `${txid} is missing as an active unsealed seller listing in marketplace summary`,
+  );
+}
 const { elapsedMs: marketplaceFreshSummaryMs, json: marketplaceFreshSummary } =
   await timedGetJson("/api/v1/marketplace-summary", {
     network: "livenet",
@@ -677,6 +727,15 @@ assert(
   ),
   `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is missing its confirmed seal in fresh marketplace summary listings`,
 );
+for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
+  const item = listingById(marketplaceFreshSummary.token?.listings, txid);
+  assert(
+    item?.confirmed === true &&
+      item?.sellerAddress === SELLER &&
+      !item?.sealTxid,
+    `${txid} is missing as an active unsealed seller listing in fresh marketplace summary`,
+  );
+}
 const workToken = await getJson("/api/v1/token", {
   network: "livenet",
   asset: WORK_TOKEN_ID,
