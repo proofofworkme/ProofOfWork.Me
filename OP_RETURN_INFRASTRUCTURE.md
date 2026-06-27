@@ -146,7 +146,13 @@ views stay canonical; `work-floor`, `work-summary`, and `growth-summary` serve
 stored canonical summary snapshots with age guards and canonical fallback.
 `marketplace-summary` must pass through the reconciled marketplace lifecycle
 builder before returning so confirmed, unspent, buyable sealed listings cannot
-be dropped by an older compacted proof-index summary snapshot. `event-history`
+be dropped by an older compacted proof-index summary snapshot. A valid sale
+ticket seal spend is active sealed inventory, not a close; if a projection row
+temporarily carries `closeTxid === sealTxid`, the summary builder must recover
+the row as sealed unless a later real buy, delist, or other non-seal spend
+closes it. Fresh marketplace reads should honor the configured production wait
+window and return a reconciled fallback rather than a raw stale snapshot or 503
+when canonical refresh is slower than the request budget. `event-history`
 serves DB-backed protocol/event search for indexed registry, credit,
 marketplace, mail/file, seeded, and broader Computer events; `address-mail`
 serves connected-wallet mailbox reads from the indexed mail projection,
@@ -191,7 +197,8 @@ Production regression gates after the June 2026 database hardening are
 `npm run check:marketplace-regressions`, and `npm run check:live-data`. A healthy
 run has `missingLogEvents: []`, populated event participant/ref search indexes,
 matching WORK/Growth/summary snapshot ids, searchable known regression txids,
-and pending rows limited to mempool visibility.
+pending rows limited to mempool visibility, and marketplace summaries containing
+every confirmed sealed WORK listing present in the full token payload.
 
 Production audits should follow the public app dependency order. Verify the
 standalone surfaces first: Home, IDs, Desktop, Browser, Marketplace, Credit,

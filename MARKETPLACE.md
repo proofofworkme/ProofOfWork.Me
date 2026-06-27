@@ -144,6 +144,27 @@ pending sealing, and confirmed executable asks:
   in the full token payload is also present in marketplace summary, and that
   wallet-scoped listing reads preserve confirmed seal txids.
 
+## June 27 Sealed Summary Hardening
+
+The final audit follow-up tightened one more sale-ticket edge case: a valid
+`seal5` transaction spends the listing sale-ticket anchor, but that spend is
+not a close. It publishes the seller's executable terms.
+
+- Active-book and summary reconciliation must treat `closeTxid === sealTxid` as
+  a stale projection of the seal spend, not as a delist or sale.
+- Proof-index `credit_listings` rows with status such as `sealing` or a
+  seal-as-close projection should be usable as a recovery overlay for confirmed
+  sealed WORK/credit inventory.
+- Final summary compaction must remove stale seal-as-close rows before using
+  closed listings to filter active listings.
+- `marketplace-summary?fresh=1` should wait for the configured production
+  refresh window and, if canonical refresh is still slow, return the reconciled
+  fallback rather than a raw stale snapshot, false zero, or 503.
+- The production gate is `POW_API_BASE=https://computer.proofofwork.me npm run
+  check:marketplace-regressions`; it must prove every confirmed sealed WORK
+  listing present in `/api/v1/token?asset=WORK&fresh=1` is also present in
+  `/api/v1/marketplace-summary`.
+
 ## Order Books And Logs
 
 Marketplace books should stay asset-agnostic as new product classes are added.
@@ -168,13 +189,15 @@ listing, seal, closure, delisting, and purchase remains inspectable.
 
 ## Spent Ticket Closure
 
-The sale-ticket UTXO is the settlement primitive. Once that outpoint is spent,
-the listing is no longer active.
+The sale-ticket UTXO is the settlement primitive. Once that outpoint is spent by
+a close transaction, the listing is no longer active. A valid `seal5` spend of
+the ticket anchor is the exception: it makes the listing sealed/buyable and does
+not close it.
 
 - A valid `buy5` spend closes the listing and records a sale.
 - A valid `delist5` spend closes the listing as a cancellation.
-- Any other observed spend still removes the listing from the active book and
-  records a closed-listing event for audit.
+- Any other confirmed non-seal observed spend still removes the listing from the
+  active book and records a closed-listing event for audit.
 
 Pending outspends are best-effort mempool visibility. Confirmed outspends are
 canonical. Production should use Bitcoin Core `gettxout` as the fast spend-state
