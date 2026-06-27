@@ -379,6 +379,13 @@ expect(
   numbersAgree(workSummaryFloor.networkValueSats, workFloor.networkValueSats),
 );
 expect(
+  "Marketplace summary WORK floor shares WORK floor value",
+  numbersAgree(
+    marketplaceSummaryWorkFloor.networkValueSats,
+    workFloor.networkValueSats,
+  ),
+);
+expect(
   "WORK summary floor BTC/USD metadata matches price endpoint",
   btcUsdQuotesClose(workSummaryBtcUsd, priceEndpointBtcUsd),
 );

@@ -184,15 +184,19 @@ const WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS = Number(
     Math.max(WORK_FLOOR_FRESH_WAIT_MS, 15_000),
 );
 const MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS = Number(
-  process.env.MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS ?? 25_000,
+  process.env.MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS ?? 0,
 );
-const MARKETPLACE_SUMMARY_FRESH_WAIT_MS = Math.min(
-  Number(
-    process.env.MARKETPLACE_SUMMARY_FRESH_WAIT_MS ??
-      Math.max(WORK_FLOOR_FRESH_WAIT_MS, MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS),
-  ),
-  MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS,
+const MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED = Number(
+  process.env.MARKETPLACE_SUMMARY_FRESH_WAIT_MS ??
+    Math.max(WORK_FLOOR_FRESH_WAIT_MS, 25_000),
 );
+const MARKETPLACE_SUMMARY_FRESH_WAIT_MS =
+  MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS > 0
+    ? Math.min(
+        MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED,
+        MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS,
+      )
+    : MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED;
 const PROOF_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS = (() => {
   const parsed = Number(
     process.env.POW_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS ??
@@ -225,7 +229,30 @@ const WORK_TOKEN_CANONICAL_FRESH_WAIT_MS = Number(
   process.env.WORK_TOKEN_CANONICAL_FRESH_WAIT_MS ?? TOKEN_SCOPED_FRESH_WAIT_MS,
 );
 const LEDGER_SUMMARY_FRESH_WAIT_MS = Number(
-  process.env.LEDGER_SUMMARY_FRESH_WAIT_MS ?? WORK_TOKEN_CANONICAL_FRESH_WAIT_MS,
+  process.env.LEDGER_SUMMARY_FRESH_WAIT_MS ??
+    Math.max(WORK_FLOOR_FRESH_WAIT_MS, 8_000),
+);
+const SUMMARY_PROOF_INDEX_READ_WAIT_MS = Number(
+  process.env.SUMMARY_PROOF_INDEX_READ_WAIT_MS ??
+    Math.max(WORK_FLOOR_FRESH_WAIT_MS, 3_000),
+);
+const LEDGER_SUMMARY_CURRENT_FALLBACK_WAIT_MS = Number(
+  process.env.LEDGER_SUMMARY_CURRENT_FALLBACK_WAIT_MS ?? 8_000,
+);
+const MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS = Number(
+  process.env.MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS ?? 8_000,
+);
+const SUMMARY_TOKEN_CURRENT_FALLBACK_WAIT_MS = Number(
+  process.env.SUMMARY_TOKEN_CURRENT_FALLBACK_WAIT_MS ?? 90_000,
+);
+const SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS = Number(
+  process.env.SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS ?? 2_500,
+);
+const SUMMARY_WORK_LISTING_RECOVERY_LIMIT = Number(
+  process.env.SUMMARY_WORK_LISTING_RECOVERY_LIMIT ?? 1_000,
+);
+const SUMMARY_WORK_LISTING_RECOVERY_WAIT_MS = Number(
+  process.env.SUMMARY_WORK_LISTING_RECOVERY_WAIT_MS ?? 15_000,
 );
 const TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS = Number(
   process.env.TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS ?? 10 * 60_000,
@@ -243,13 +270,13 @@ const ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS = Number(
   process.env.ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS ?? 30_000,
 );
 const ADDRESS_UTXO_FETCH_TIMEOUT_MS = Number(
-  process.env.ADDRESS_UTXO_FETCH_TIMEOUT_MS ?? 5_000,
+  process.env.ADDRESS_UTXO_FETCH_TIMEOUT_MS ?? 15_000,
 );
 const ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS = Number(
   process.env.ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS ?? 12_000,
 );
 const ADDRESS_UTXO_EXTERNAL_FETCH_TIMEOUT_MS = Number(
-  process.env.ADDRESS_UTXO_EXTERNAL_FETCH_TIMEOUT_MS ?? 8_000,
+  process.env.ADDRESS_UTXO_EXTERNAL_FETCH_TIMEOUT_MS ?? 15_000,
 );
 const BLOCKCHAIN_INFO_ADDRESS_TX_PAGE_LIMIT = Math.max(
   1,
@@ -1769,18 +1796,22 @@ async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
     return null;
   }
 
-  return proofIndexTokenMarketSummaryOverlayPayload(
-    network,
-    tokenScope,
+  return payloadWithFallbackAfterMs(
+    proofIndexTokenMarketSummaryOverlayPayload(network, tokenScope),
+    null,
+    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
   ).catch((error) => {
     console.error(
       `Proof index token market summary overlay failed: ${errorSummary(error)}`,
     );
-      return null;
-    });
+    return null;
+  });
 }
 
-async function indexedWorkTokenStateForMarketplaceSummary(network) {
+async function indexedWorkTokenStateForMarketplaceSummary(
+  network,
+  options = {},
+) {
   if (
     network !== "livenet" ||
     !proofIndexReadFeatureEnabled("token-state,token-default,token")
@@ -1788,10 +1819,14 @@ async function indexedWorkTokenStateForMarketplaceSummary(network) {
     return null;
   }
 
-  let payload = await proofIndexTokenPayload(
-    network,
-    WORK_TOKEN_ID,
-    new URLSearchParams([["asset", WORK_TOKEN_ID]]),
+  let payload = await payloadWithFallbackAfterMs(
+    proofIndexTokenPayload(
+      network,
+      WORK_TOKEN_ID,
+      new URLSearchParams([["asset", WORK_TOKEN_ID]]),
+    ),
+    null,
+    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
   ).catch((error) => {
     console.error(
       `Proof index WORK token-state marketplace summary overlay failed: ${errorSummary(error)}`,
@@ -1810,7 +1845,7 @@ async function indexedWorkTokenStateForMarketplaceSummary(network) {
     payload = null;
   }
 
-  if (!payload) {
+  if (!payload && options.canonicalFallback !== false) {
     payload = await tokenPayloadForRead(network, WORK_TOKEN_ID, false, {
       liveWorkWaitMs: WORK_TOKEN_LIVE_WAIT_MS,
       reconcileListingStatus: false,
@@ -1825,6 +1860,181 @@ async function indexedWorkTokenStateForMarketplaceSummary(network) {
   }
 
   return payload;
+}
+
+async function indexedWorkActiveListingStateForSummary(network) {
+  if (
+    network !== "livenet" ||
+    !proofIndexReadFeatureEnabled("token-history,token")
+  ) {
+    return null;
+  }
+
+  const page = await payloadWithFallbackAfterMs(
+    proofIndexTokenMarketHistoryOverlayPayload(
+      network,
+      WORK_TOKEN_ID,
+      "listings",
+      new URLSearchParams([
+        ["limit", String(SUMMARY_WORK_LISTING_RECOVERY_LIMIT)],
+      ]),
+    ),
+    null,
+    Math.min(
+      SUMMARY_WORK_LISTING_RECOVERY_WAIT_MS,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    ),
+  ).catch((error) => {
+    console.error(
+      `Proof index WORK active listing summary read failed: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (
+    !page ||
+    !(await proofIndexPayloadCoversConfirmedTip(
+      page,
+      network,
+      "token-listing summary",
+    ))
+  ) {
+    return null;
+  }
+
+  const listings = (Array.isArray(page.items) ? page.items : []).filter(
+    (listing) =>
+      listing?.confirmed === true &&
+      normalizeTokenScope(listing?.tokenId) === WORK_TOKEN_ID,
+  );
+  if (listings.length === 0) {
+    return null;
+  }
+
+  return {
+    ...emptyTokenPayloadSnapshot(network),
+    indexedAt: page.indexedAt,
+    indexedThroughBlock: page.indexedThroughBlock,
+    listings,
+    source: page.source ?? "proof-indexer-token-market-history",
+  };
+}
+
+function workTokenListingFromCreditListingItem(item, network, indexedAt) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return null;
+  }
+
+  const saleAuthorization =
+    item.saleAuthorization &&
+    typeof item.saleAuthorization === "object" &&
+    !Array.isArray(item.saleAuthorization)
+      ? item.saleAuthorization
+      : {};
+  const listingId = String(item.listingId ?? item.txid ?? "")
+    .trim()
+    .toLowerCase();
+  const sealTxid = String(item.sealTxid ?? saleAuthorization.sealTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const closeTxid = String(item.closedTxid ?? item.closeTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const tokenId = normalizeTokenScope(item.tokenId ?? saleAuthorization.tokenId);
+  const status = String(item.status ?? "").trim().toLowerCase();
+  const isSealCloseProjection =
+    /^[0-9a-f]{64}$/u.test(sealTxid) &&
+    closeTxid === sealTxid &&
+    tokenSaleAuthorizationUsesSaleTicketAnchor(saleAuthorization);
+  if (
+    !/^[0-9a-f]{64}$/u.test(listingId) ||
+    tokenId !== WORK_TOKEN_ID ||
+    !(["active", "sealing"].includes(status) || isSealCloseProjection) ||
+    !(
+      tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(saleAuthorization) ||
+      tokenSaleAuthorizationUsesSaleTicketAnchor(saleAuthorization)
+    )
+  ) {
+    return null;
+  }
+
+  const sealConfirmed =
+    item.sealConfirmed === true ||
+    ((status === "sealing" || isSealCloseProjection) &&
+      item.confirmed === true &&
+      /^[0-9a-f]{64}$/u.test(sealTxid) &&
+      tokenSaleAuthorizationUsesSaleTicketAnchor(saleAuthorization));
+
+  return {
+    ...item,
+    amount:
+      numericValue(item.amount) ||
+      numericValue(saleAuthorization.amount),
+    confirmed: item.confirmed === true,
+    createdAt: item.createdAt ?? indexedAt ?? new Date().toISOString(),
+    listingId,
+    network,
+    priceSats:
+      numericValue(item.priceSats) ||
+      numericValue(saleAuthorization.priceSats),
+    registryAddress:
+      item.registryAddress ??
+      saleAuthorization.registryAddress ??
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    saleAuthorization,
+    sealAt: item.sealAt ?? item.createdAt ?? indexedAt,
+    sealConfirmed,
+    sealTxid: /^[0-9a-f]{64}$/u.test(sealTxid) ? sealTxid : undefined,
+    sellerAddress:
+      item.sellerAddress ??
+      saleAuthorization.sellerAddress ??
+      "",
+    status: isSealCloseProjection ? "sealing" : status,
+    ticker: item.ticker ?? saleAuthorization.ticker ?? WORK_TOKEN_TICKER,
+    tokenId,
+  };
+}
+
+async function indexedWorkCreditListingStateForSummary(network) {
+  if (
+    network !== "livenet" ||
+    !proofIndexReadFeatureEnabled("marketplace-summary,token-history,token")
+  ) {
+    return null;
+  }
+
+  const payload = await payloadWithFallbackAfterMs(
+    proofIndexCreditListingsPayload(network, WORK_TOKEN_ID),
+    null,
+    Math.min(
+      SUMMARY_WORK_LISTING_RECOVERY_WAIT_MS,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    ),
+  ).catch((error) => {
+    console.error(
+      `Proof index WORK credit listing summary read failed: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+
+  const listings = (Array.isArray(payload?.items) ? payload.items : [])
+    .map((item) =>
+      workTokenListingFromCreditListingItem(
+        item,
+        network,
+        payload?.indexedAt,
+      ),
+    )
+    .filter(Boolean);
+  if (listings.length === 0) {
+    return null;
+  }
+
+  return {
+    ...emptyTokenPayloadSnapshot(network),
+    indexedAt: payload.indexedAt,
+    listings,
+    source: "proof-indexer-credit-listings-summary",
+  };
 }
 
 async function workTokenStateForSummaryRead(network, fresh) {
@@ -1846,6 +2056,57 @@ async function workTokenStateForSummaryRead(network, fresh) {
     );
     return null;
   });
+}
+
+async function workTokenStateWithSummaryListingTruth(
+  state,
+  network,
+  options = {},
+) {
+  if (!state || network !== "livenet") {
+    return state;
+  }
+
+  const recoverActiveListings = options.recoverActiveListings !== false;
+  const [indexedState, indexedListingState, indexedCreditListingState] =
+    recoverActiveListings
+    ? await Promise.all([
+        payloadWithFallbackAfterMs(
+          indexedWorkTokenStateForMarketplaceSummary(network, {
+            canonicalFallback: false,
+          }),
+          null,
+          Math.min(
+            SUMMARY_TOKEN_CURRENT_FALLBACK_WAIT_MS,
+            SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+          ),
+        ),
+        indexedWorkActiveListingStateForSummary(network),
+        indexedWorkCreditListingStateForSummary(network),
+      ])
+    : [null, null, null];
+  let mergedState = state;
+  const mergeSourceState = (sourceState, preserveRecoveredActive = false) => {
+    if (!sourceState) {
+      return;
+    }
+    const preservedState = preserveRecoveredActive
+      ? tokenStateWithRecoveredActiveListingRecords(mergedState, sourceState)
+      : tokenStateWithPreservedListingRecords(mergedState, sourceState);
+    mergedState = tokenStateWithMergedListingSeals(
+      preservedState,
+      sourceState,
+    );
+  };
+  mergeSourceState(indexedState);
+  mergeSourceState(indexedListingState, true);
+  mergeSourceState(indexedCreditListingState, true);
+
+  return payloadWithFallbackAfterMs(
+    tokenPayloadWithSpendableActiveListings(mergedState, network),
+    mergedState,
+    SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS,
+  );
 }
 
 function workFloorWithIndexedMarketSummaryOverlay(workFloor, overlay, tokenState) {
@@ -1902,22 +2163,41 @@ function workFloorWithIndexedMarketSummaryOverlay(workFloor, overlay, tokenState
     btcUsd > 0
       ? satsToUsdAtBtcUsd(totalSats, btcUsd)
       : growthSatsToUsdAtYears(totalSats, growthElapsedYears());
+  const floorSats = totalSats / WORK_TOKEN_MAX_SUPPLY;
   const confirmedSales = Math.max(
     numericValue(previousStats.confirmedTokenSales),
     numericValue(overlay.stats?.confirmedSales),
     saleStats.confirmedSales,
   );
+  const chartPoints = Array.isArray(workFloor.chartPoints)
+    ? [...workFloor.chartPoints]
+    : [];
+  const nowPoint = {
+    floorSats,
+    label: "Real now",
+    networkValueSats: totalSats,
+    years: growthElapsedYears(),
+  };
+  const lastChartPoint = chartPoints[chartPoints.length - 1];
+  if (!lastChartPoint || lastChartPoint.label !== "Real now") {
+    chartPoints.push(nowPoint);
+  } else {
+    chartPoints[chartPoints.length - 1] = nowPoint;
+  }
 
   return {
     ...workFloor,
+    chartPoints,
     indexedAt: newerIso(workFloor.indexedAt, overlay.indexedAt),
     networkValueSats: totalSats,
     actualValue: {
       ...previousActual,
+      floorSats,
       marketplaceFlowSats,
       marketplaceSaleVolumeSats,
       marketplaceSats,
       marketplaceVolumeSats: marketplaceSaleVolumeSats,
+      networkValueSats: totalSats,
       tokenSaleFlowSats: nextTokenSaleVolumeSats,
       tokenSaleVolumeSats: nextTokenSaleVolumeSats,
       totalSats,
@@ -1929,6 +2209,7 @@ function workFloorWithIndexedMarketSummaryOverlay(workFloor, overlay, tokenState
       marketplaceFlowSats,
       marketplaceSaleVolumeSats,
       marketplaceVolumeSats: marketplaceSaleVolumeSats,
+      networkValueSats: totalSats,
       tokenSaleFlowSats: nextTokenSaleVolumeSats,
       tokenSaleVolumeSats: nextTokenSaleVolumeSats,
       totalSats,
@@ -1944,17 +2225,38 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
     return payload;
   }
 
+  const baseWorkTokenState = scopedTokenPayloadFromState(
+    payload.token,
+    WORK_TOKEN_ID,
+  );
+  const recoveredWorkTokenState = await workTokenStateWithSummaryListingTruth(
+    baseWorkTokenState,
+    network,
+    { recoverActiveListings: true },
+  );
+  const recoveredTokenState = tokenStateWithScopedTokenOverride(
+    payload.token,
+    recoveredWorkTokenState,
+    WORK_TOKEN_ID,
+  );
   const [workTokenState, overlay] = await Promise.all([
     indexedWorkTokenStateForMarketplaceSummary(network),
     indexedTokenMarketSummaryOverlay(network),
   ]);
-  if (!workTokenState && !overlay) {
+  if (!workTokenState && !overlay && recoveredTokenState === payload.token) {
     return marketplaceSummaryWithCurrentBtcUsd(payload, network, false);
   }
 
   const baseTokenState = workTokenState
-    ? tokenStateWithMergedConfirmedSealedListings(payload.token, workTokenState)
-    : payload.token;
+    ? tokenStateWithScopedTokenOverride(
+        recoveredTokenState,
+        tokenStateWithMergedConfirmedSealedListings(
+          scopedTokenPayloadFromState(recoveredTokenState, WORK_TOKEN_ID),
+          workTokenState,
+        ),
+        WORK_TOKEN_ID,
+      )
+    : recoveredTokenState;
   const tokenState = overlay
     ? tokenStateWithIndexedMarketSummaryOverlay(baseTokenState, overlay)
     : baseTokenState;
@@ -5588,6 +5890,46 @@ function tokenStateWithPreservedListingRecords(state, sourceState) {
   };
 }
 
+function tokenStateWithRecoveredActiveListingRecords(state, sourceState) {
+  if (!state || !sourceState) {
+    return state;
+  }
+
+  const recoveredActiveIds = new Set(
+    (Array.isArray(sourceState?.listings) ? sourceState.listings : [])
+      .map((listing) => String(listing?.listingId ?? "").toLowerCase())
+      .filter((listingId) => /^[0-9a-f]{64}$/u.test(listingId)),
+  );
+  if (recoveredActiveIds.size === 0) {
+    return tokenStateWithPreservedListingRecords(state, sourceState);
+  }
+
+  const keepClosedListing = (listing) => {
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    return (
+      listing?.closedConfirmed === true ||
+      !recoveredActiveIds.has(listingId)
+    );
+  };
+
+  return tokenStateWithPreservedListingRecords(
+    {
+      ...state,
+      closedListings: (Array.isArray(state?.closedListings)
+        ? state.closedListings
+        : []
+      ).filter(keepClosedListing),
+    },
+    {
+      ...sourceState,
+      closedListings: (Array.isArray(sourceState?.closedListings)
+        ? sourceState.closedListings
+        : []
+      ).filter(keepClosedListing),
+    },
+  );
+}
+
 function tokenSaleAuthorizationTermsMatch(left, right) {
   return (
     JSON.stringify(
@@ -6009,6 +6351,15 @@ async function filterSpendableTokenListings(listings, network) {
       continue;
     }
 
+    if (
+      tokenListingHasConfirmedSaleTicketSeal(listing) &&
+      String(outspend.txid ?? "").toLowerCase() ===
+        String(listing.sealTxid ?? "").toLowerCase()
+    ) {
+      activeListings.push(listing);
+      continue;
+    }
+
     const closedTxid =
       typeof outspend.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(outspend.txid)
         ? outspend.txid.toLowerCase()
@@ -6161,6 +6512,18 @@ async function reconcileCachedTokenClosedListing(closedListing, network) {
     network,
   );
 
+  if (
+    closedListing?.closedConfirmed === true &&
+    tokenListingHasConfirmedSaleTicketSeal(closedListing) &&
+    String(closedListing.closedTxid ?? "").toLowerCase() ===
+      String(closedListing.sealTxid ?? "").toLowerCase()
+  ) {
+    const activeListing = tokenListingWithoutCloseMetadata(closedListing);
+    return tokenListingAnchorOutpoint(activeListing)
+      ? { kind: "active", listing: activeListing }
+      : { kind: "closed", listing: closedListing };
+  }
+
   if (closedListing?.closedConfirmed) {
     return { kind: "closed", listing: closedListing };
   }
@@ -6171,6 +6534,17 @@ async function reconcileCachedTokenClosedListing(closedListing, network) {
   const outspend = await tokenListingAnchorOutspend(closedListing, network);
   if (outspend?.spent) {
     if (!outspend.status?.confirmed) {
+      const activeListing = tokenListingWithoutCloseMetadata(closedListing);
+      return tokenListingAnchorOutpoint(activeListing)
+        ? { kind: "active", listing: activeListing }
+        : { kind: "closed", listing: closedListing };
+    }
+
+    if (
+      tokenListingHasConfirmedSaleTicketSeal(closedListing) &&
+      String(outspend.txid ?? "").toLowerCase() ===
+        String(closedListing.sealTxid ?? "").toLowerCase()
+    ) {
       const activeListing = tokenListingWithoutCloseMetadata(closedListing);
       return tokenListingAnchorOutpoint(activeListing)
         ? { kind: "active", listing: activeListing }
@@ -12317,9 +12691,32 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) 
 
 function compactTokenSummaryPayload(payload, tokenScope = "") {
   const holders = Array.isArray(payload.holders) ? payload.holders : [];
-  const closedListings = Array.isArray(payload.closedListings)
+  const rawListings = Array.isArray(payload.listings) ? payload.listings : [];
+  const sealedActiveListingsByKey = new Map(
+    rawListings
+      .filter(tokenListingHasConfirmedSaleTicketSeal)
+      .map((listing) => [
+        listing?.listingId
+          ? `${listing.network ?? ""}:${String(listing.listingId).toLowerCase()}`
+          : "",
+        listing,
+      ])
+      .filter(([key]) => Boolean(key)),
+  );
+  const closedListings = (Array.isArray(payload.closedListings)
     ? payload.closedListings
-    : [];
+    : []
+  ).filter((listing) => {
+    const key = listing?.listingId
+      ? `${listing.network ?? ""}:${String(listing.listingId).toLowerCase()}`
+      : "";
+    const activeListing = sealedActiveListingsByKey.get(key);
+    return !(
+      activeListing &&
+      String(listing?.closedTxid ?? listing?.txid ?? "").toLowerCase() ===
+        String(activeListing.sealTxid ?? "").toLowerCase()
+    );
+  });
   const closedListingKeys = new Set(
     closedListings
       .map((listing) =>
@@ -12329,16 +12726,37 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
       )
       .filter(Boolean),
   );
-  const listings = (Array.isArray(payload.listings)
-    ? payload.listings
-    : []
-  ).filter((listing) => {
+  const closedListingsByKey = new Map();
+  for (const listing of closedListings) {
+    const key = listing?.listingId
+      ? `${listing.network ?? ""}:${String(listing.listingId).toLowerCase()}`
+      : "";
+    if (!key) {
+      continue;
+    }
+    const current = closedListingsByKey.get(key) ?? [];
+    current.push(listing);
+    closedListingsByKey.set(key, current);
+  }
+  const listings = rawListings.filter((listing) => {
     if (!listing?.listingId || closedListingKeys.size === 0) {
       return true;
     }
 
-    return !closedListingKeys.has(
-      `${listing.network ?? ""}:${String(listing.listingId).toLowerCase()}`,
+    const key = `${listing.network ?? ""}:${String(listing.listingId).toLowerCase()}`;
+    if (!closedListingKeys.has(key)) {
+      return true;
+    }
+    if (!tokenListingHasConfirmedSaleTicketSeal(listing)) {
+      return false;
+    }
+
+    const closedForListing = closedListingsByKey.get(key) ?? [];
+    return closedForListing.every(
+      (closedListing) =>
+        closedListing?.closedConfirmed !== true ||
+        String(closedListing.closedTxid ?? closedListing.txid ?? "").toLowerCase() ===
+          String(listing.sealTxid ?? "").toLowerCase(),
     );
   });
   const stats =
@@ -16441,12 +16859,14 @@ function logStaleSnapshotPayload(label, payload, ledger) {
 }
 
 async function currentProofIndexSummarySnapshotPayload(network, key, label) {
-  const indexedPayload = await proofIndexSnapshotPayload(network, key).catch(
-    (error) => {
-      console.error(`Proof index ${label} read failed: ${errorSummary(error)}`);
-      return null;
-    },
-  );
+  const indexedPayload = await payloadWithFallbackAfterMs(
+    proofIndexSnapshotPayload(network, key),
+    null,
+    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+  ).catch((error) => {
+    console.error(`Proof index ${label} read failed: ${errorSummary(error)}`);
+    return null;
+  });
   if (!indexedPayload) {
     return null;
   }
@@ -17104,10 +17524,15 @@ function infinitySummaryPayloadFromLedger(ledger) {
     floorSats,
     floorUsd,
     indexedAt: ledger.generatedAt,
+    indexedThroughBlock:
+      ledger.indexedThroughBlock ??
+      ledger.metrics?.indexedThroughBlock ??
+      tokenState?.indexedThroughBlock,
     network: ledger.network,
     networkValueSats,
     registryAddress: tokenState?.tokens?.[0]?.registryAddress ?? "",
     registryId: POWB_REGISTRY_ID,
+    source: tokenState?.source,
     stats: {
       confirmedBondActions: confirmedMints.length,
       confirmedListings: (tokenState?.listings ?? []).filter(
@@ -17666,7 +18091,7 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
       return currentRefreshed;
     }
     refreshCanonicalLedgerPayloadInBackground(network, true);
-    return currentFallback;
+    return currentFallback ?? fallback;
   }
 
   if (network === "livenet") {
@@ -17939,6 +18364,29 @@ async function workFloorWithCurrentBtcUsd(workFloor, network, fresh = false) {
   }
 }
 
+async function workFloorWithSummaryMarketOverlay(
+  workFloor,
+  network,
+  fresh = false,
+  tokenState = null,
+  overlay = null,
+) {
+  if (network !== "livenet" || !workFloor) {
+    return workFloorWithCurrentBtcUsd(workFloor, network, fresh);
+  }
+
+  const marketOverlay =
+    overlay === null ? await indexedTokenMarketSummaryOverlay(network) : overlay;
+  const overlaidWorkFloor = marketOverlay
+    ? workFloorWithIndexedMarketSummaryOverlay(
+        workFloor,
+        marketOverlay,
+        tokenState,
+      )
+    : workFloor;
+  return workFloorWithCurrentBtcUsd(overlaidWorkFloor, network, fresh);
+}
+
 async function workSummaryWithCurrentBtcUsd(payload, network, fresh = false) {
   if (!payload?.floor) {
     return payload;
@@ -17947,6 +18395,33 @@ async function workSummaryWithCurrentBtcUsd(payload, network, fresh = false) {
   return {
     ...payload,
     floor: await workFloorWithCurrentBtcUsd(payload.floor, network, fresh),
+  };
+}
+
+function growthSummaryWithCanonicalWorkFloor(growthSummary, workFloor) {
+  if (!growthSummary || !workFloor) {
+    return growthSummary;
+  }
+
+  const totalSats = numericValue(
+    workFloor.actualValue?.totalSats ?? workFloor.networkValueSats,
+  );
+  if (!finitePositiveNumber(totalSats)) {
+    return {
+      ...growthSummary,
+      workFloor,
+    };
+  }
+
+  return {
+    ...growthSummary,
+    networkValueSats: totalSats,
+    actualValue: {
+      ...(growthSummary.actualValue ?? {}),
+      networkValueSats: totalSats,
+      totalSats,
+    },
+    workFloor,
   };
 }
 
@@ -18054,7 +18529,12 @@ async function cachedWorkFloorPayload(network, fresh = false) {
   if (network === "livenet") {
     const ledger = await summaryCanonicalLedgerPayload(network, fresh);
     if (ledger?.workFloor) {
-      return workFloorWithCurrentBtcUsd(ledger.workFloor, network, fresh);
+      return workFloorWithSummaryMarketOverlay(
+        ledger.workFloor,
+        network,
+        fresh,
+        ledger.tokenState,
+      );
     }
     const indexedFloor = fresh ? null : await proofIndexWorkFloorPayload(network);
     if (indexedFloor) {
@@ -18079,17 +18559,74 @@ async function workSummaryPayload(network, fresh = false) {
   if (network === "livenet") {
     const ledger = await summaryCanonicalLedgerPayload(network, fresh);
     if (ledger) {
-      const summaryWorkTokenState =
-        fresh ? await workTokenStateForSummaryRead(network, true) : null;
+      if (fresh) {
+        const baseWorkTokenState = ledgerTokenStateForScope(
+          ledger,
+          WORK_TOKEN_ID,
+        );
+        const refreshedWorkTokenState = await payloadWithFallbackAfterMs(
+          workTokenStateForSummaryRead(network, true),
+          baseWorkTokenState,
+          SUMMARY_TOKEN_CURRENT_FALLBACK_WAIT_MS,
+        );
+        const tokenReadReturnedCanonical =
+          refreshedWorkTokenState && refreshedWorkTokenState !== baseWorkTokenState;
+        const spendableWorkTokenState = await workTokenStateWithSummaryListingTruth(
+          refreshedWorkTokenState,
+          network,
+          { recoverActiveListings: !tokenReadReturnedCanonical },
+        );
+        const overlayTokenState = tokenStateWithScopedTokenOverride(
+          ledger.tokenState,
+          spendableWorkTokenState,
+          WORK_TOKEN_ID,
+        );
+        const floor = await workFloorWithSummaryMarketOverlay(
+          ledger.workFloor,
+          network,
+          true,
+          overlayTokenState,
+        );
+        return workSummaryWithCurrentBtcUsd(
+          attachLedgerMetadata(
+            {
+              floor,
+              indexedAt: ledger.generatedAt,
+              network,
+              summaryOnly: true,
+              token: attachLedgerMetadata(
+                compactTokenSummaryPayload(
+                  spendableWorkTokenState,
+                  WORK_TOKEN_ID,
+                ),
+                ledger,
+              ),
+            },
+            ledger,
+          ),
+          network,
+          true,
+        );
+      }
+      const summaryReadWaitMs = fresh
+        ? LEDGER_SUMMARY_CURRENT_FALLBACK_WAIT_MS
+        : WORK_TOKEN_LIVE_WAIT_MS;
+      const summaryWorkTokenState = fresh
+        ? await payloadWithFallbackAfterMs(
+            workTokenStateForSummaryRead(network, true),
+            null,
+            summaryReadWaitMs,
+          )
+        : null;
       const workTokenState =
         summaryWorkTokenState ??
         (await liveWorkTokenStateWithFallbackAfterMs(
           network,
           ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
-          WORK_TOKEN_LIVE_WAIT_MS,
+          summaryReadWaitMs,
           { recoverClosedSales: true },
         ));
-      const mergedWorkTokenState =
+      let mergedWorkTokenState =
         summaryWorkTokenState && summaryWorkTokenState !== workTokenState
         ? tokenStateWithMergedListingSeals(
             tokenStateWithPreservedListingRecords(
@@ -18099,6 +18636,11 @@ async function workSummaryPayload(network, fresh = false) {
             summaryWorkTokenState,
           )
         : workTokenState;
+      mergedWorkTokenState = await workTokenStateWithSummaryListingTruth(
+        mergedWorkTokenState,
+        network,
+        { recoverActiveListings: true },
+      );
       const closeTxs = await payloadWithFallbackAfterMs(
         recentWorkTokenMarketCloseTransactions(
           network,
@@ -18106,7 +18648,12 @@ async function workSummaryPayload(network, fresh = false) {
           WORK_TOKEN_LIVE_CLOSE_SCAN_MAX_TXS,
         ),
         [],
-        WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
+        fresh
+          ? Math.min(
+              WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
+              LEDGER_SUMMARY_CURRENT_FALLBACK_WAIT_MS,
+            )
+          : WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
       );
       let closedWorkTokenState =
         workTokenStateWithRecoveredListingClosesFromTransactions(
@@ -18114,18 +18661,40 @@ async function workSummaryPayload(network, fresh = false) {
           closeTxs,
           network,
         );
-      closedWorkTokenState = await workTokenStateWithRecoveredListingCloseSales(
+      closedWorkTokenState = await payloadWithFallbackAfterMs(
+        workTokenStateWithRecoveredListingCloseSales(
+          closedWorkTokenState,
+          network,
+        ),
         closedWorkTokenState,
-        network,
+        fresh
+          ? LEDGER_SUMMARY_CURRENT_FALLBACK_WAIT_MS
+          : WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
       );
-      const spendableWorkTokenState = await tokenPayloadWithSpendableActiveListings(
+      const spendableWorkTokenState = await payloadWithFallbackAfterMs(
+        tokenPayloadWithSpendableActiveListings(closedWorkTokenState, network),
         closedWorkTokenState,
+        fresh
+          ? LEDGER_SUMMARY_CURRENT_FALLBACK_WAIT_MS
+          : WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
+      );
+      const marketOverlay = await indexedTokenMarketSummaryOverlay(network);
+      const overlayTokenState = tokenStateWithScopedTokenOverride(
+        ledger.tokenState,
+        spendableWorkTokenState,
+        WORK_TOKEN_ID,
+      );
+      const floor = await workFloorWithSummaryMarketOverlay(
+        ledger.workFloor,
         network,
+        fresh,
+        overlayTokenState,
+        marketOverlay,
       );
       return workSummaryWithCurrentBtcUsd(
         attachLedgerMetadata(
           {
-            floor: ledger.workFloor,
+            floor,
             indexedAt: ledger.generatedAt,
             network,
             summaryOnly: true,
@@ -18303,7 +18872,7 @@ async function marketplaceSummaryFastFallbackPayload(network) {
     Math.min(2_500, MARKETPLACE_SUMMARY_FRESH_WAIT_MS),
   );
   if (cached) {
-    return cached;
+    return marketplaceSummaryPayloadWithIndexedMarketOverlay(cached, network);
   }
 
   const ledger = await payloadWithFallbackAfterMs(
@@ -18312,7 +18881,9 @@ async function marketplaceSummaryFastFallbackPayload(network) {
     Math.min(2_500, MARKETPLACE_SUMMARY_FRESH_WAIT_MS),
   );
   const ledgerPayload = marketplaceSummaryPayloadFromLedger(ledger);
-  return ledgerPayload ?? emptyMarketplaceSummaryPayload(network);
+  return ledgerPayload
+    ? marketplaceSummaryPayloadWithIndexedMarketOverlay(ledgerPayload, network)
+    : emptyMarketplaceSummaryPayload(network);
 }
 
 async function reconciledLivenetMarketplaceSummaryPayload(
@@ -18320,16 +18891,90 @@ async function reconciledLivenetMarketplaceSummaryPayload(
   fresh = false,
 ) {
   if (network === "livenet") {
-    const ledger = await summaryCanonicalLedgerPayload(network, fresh);
+    let ledger = await summaryCanonicalLedgerPayload(network, fresh);
+    if (!ledger && fresh) {
+      ledger = await existingCanonicalLedgerPayload(network).catch((error) => {
+        console.error(
+          `Marketplace summary existing ledger fallback failed: ${errorSummary(error)}`,
+        );
+        return null;
+      });
+      if (ledger) {
+        refreshCanonicalLedgerPayloadInBackground(network, true);
+      }
+    }
     if (ledger) {
-      const summaryWorkTokenState =
-        fresh ? await workTokenStateForSummaryRead(network, true) : null;
+      if (fresh) {
+        const baseWorkTokenState = ledgerTokenStateForScope(
+          ledger,
+          WORK_TOKEN_ID,
+        );
+        const refreshedWorkTokenState = await payloadWithFallbackAfterMs(
+          workTokenStateForSummaryRead(network, true),
+          baseWorkTokenState,
+          SUMMARY_TOKEN_CURRENT_FALLBACK_WAIT_MS,
+        );
+        const tokenReadReturnedCanonical =
+          refreshedWorkTokenState && refreshedWorkTokenState !== baseWorkTokenState;
+        const currentWorkTokenState = await workTokenStateWithSummaryListingTruth(
+          refreshedWorkTokenState,
+          network,
+          { recoverActiveListings: !tokenReadReturnedCanonical },
+        );
+        const baseTokenState = tokenStateWithScopedTokenOverride(
+          ledger.tokenState,
+          currentWorkTokenState,
+          WORK_TOKEN_ID,
+        );
+        const spendableTokenState = await payloadWithFallbackAfterMs(
+          tokenPayloadWithSpendableActiveListings(baseTokenState, network),
+          baseTokenState,
+          SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS,
+        );
+        const marketOverlay = await indexedTokenMarketSummaryOverlay(network);
+        const tokenState = tokenStateWithIndexedMarketSummaryOverlay(
+          spendableTokenState,
+          marketOverlay,
+        );
+        const workFloor = await workFloorWithSummaryMarketOverlay(
+          ledger.workFloor,
+          network,
+          true,
+          tokenState,
+          marketOverlay,
+        );
+        const indexedAt = newerIso(ledger.generatedAt, tokenState?.indexedAt);
+        return attachLedgerMetadata(
+          {
+            indexedAt,
+            network,
+            registry: compactRegistrySummaryPayload(ledger.registryState),
+            summaryOnly: true,
+            token: attachLedgerMetadata(
+              compactTokenSummaryPayload(tokenState),
+              ledger,
+            ),
+            workFloor,
+          },
+          ledger,
+        );
+      }
+      const summaryReadWaitMs = fresh
+        ? MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS
+        : WORK_TOKEN_LIVE_WAIT_MS;
+      const summaryWorkTokenState = fresh
+        ? await payloadWithFallbackAfterMs(
+            workTokenStateForSummaryRead(network, true),
+            null,
+            summaryReadWaitMs,
+          )
+        : null;
       const workTokenState =
         summaryWorkTokenState ??
         (await liveWorkTokenStateWithFallbackAfterMs(
           network,
           ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
-          WORK_TOKEN_LIVE_WAIT_MS,
+          summaryReadWaitMs,
           { recoverClosedSales: true },
         ));
       const mergedWorkTokenState =
@@ -18349,7 +18994,12 @@ async function reconciledLivenetMarketplaceSummaryPayload(
           WORK_TOKEN_LIVE_CLOSE_SCAN_MAX_TXS,
         ),
         [],
-        WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
+        fresh
+          ? Math.min(
+              WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
+              MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS,
+            )
+          : WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
       );
       let closedWorkTokenState =
         workTokenStateWithRecoveredListingClosesFromTransactions(
@@ -18357,18 +19007,32 @@ async function reconciledLivenetMarketplaceSummaryPayload(
           closeTxs,
           network,
         );
-      closedWorkTokenState = await workTokenStateWithRecoveredListingCloseSales(
+      closedWorkTokenState = await payloadWithFallbackAfterMs(
+        workTokenStateWithRecoveredListingCloseSales(
+          closedWorkTokenState,
+          network,
+        ),
+        closedWorkTokenState,
+        fresh
+          ? MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS
+          : WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
+      );
+      closedWorkTokenState = await workTokenStateWithSummaryListingTruth(
         closedWorkTokenState,
         network,
+        { recoverActiveListings: true },
       );
       const baseTokenState = tokenStateWithScopedTokenOverride(
         ledger.tokenState,
         closedWorkTokenState,
         WORK_TOKEN_ID,
       );
-      const spendableTokenState = await tokenPayloadWithSpendableActiveListings(
+      const spendableTokenState = await payloadWithFallbackAfterMs(
+        tokenPayloadWithSpendableActiveListings(baseTokenState, network),
         baseTokenState,
-        network,
+        fresh
+          ? MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS
+          : WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
       );
       const marketOverlay = await indexedTokenMarketSummaryOverlay(network);
       const tokenState = tokenStateWithIndexedMarketSummaryOverlay(
@@ -18418,15 +19082,32 @@ async function refreshMarketplaceSummaryPayloadCache(network, fresh = false) {
 
 async function livenetMarketplaceSummaryPayload(network, fresh = false) {
   if (fresh) {
+    const fallbackPromise = marketplaceSummaryFastFallbackPayload(network).catch(
+      (error) => {
+        console.error(
+          `Marketplace summary fallback failed: ${errorSummary(error)}`,
+        );
+        return null;
+      },
+    );
+    const refreshWaitMs = Math.max(
+      0,
+      MARKETPLACE_SUMMARY_FRESH_WAIT_MS -
+        MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS,
+    );
     const refreshed = await payloadWithFallbackAfterMs(
       refreshMarketplaceSummaryPayloadCache(network, true),
       null,
-      MARKETPLACE_SUMMARY_FRESH_WAIT_MS,
+      refreshWaitMs,
     );
     if (refreshed) {
       return refreshed;
     }
-    const fallback = await marketplaceSummaryFallbackPayload(network);
+    const fallback = await payloadWithFallbackAfterMs(
+      fallbackPromise,
+      null,
+      MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS,
+    );
     if (
       summaryPayloadHasFiniteNetworkValue(
         network,
@@ -18532,7 +19213,17 @@ function refreshGrowthCachesInBackground(network) {
 async function growthSummaryPayload(network, fresh = false) {
   const ledger = await summaryCanonicalLedgerPayload(network, fresh);
   if (ledger) {
-    return growthSummaryWithCurrentBtcUsd(ledger.growthSummary, network, fresh);
+    const workFloor = await workFloorWithSummaryMarketOverlay(
+      ledger.workFloor,
+      network,
+      fresh,
+      ledger.tokenState,
+    );
+    return growthSummaryWithCurrentBtcUsd(
+      growthSummaryWithCanonicalWorkFloor(ledger.growthSummary, workFloor),
+      network,
+      fresh,
+    );
   }
 
   if (fresh) {
@@ -18594,88 +19285,76 @@ async function infinitySummaryFromCanonicalLedger(ledger, network, fresh = false
   );
 }
 
-async function proofIndexInfinitySummaryPayload(network) {
-  const workFloor = await proofIndexWorkFloorPayload(network);
-  if (!workFloor) {
-    return null;
-  }
-  const listingsPage = await proofIndexCreditListingsPayload(
-    network,
-    POWB_TOKEN_ID,
+async function proofIndexInfinitySummaryPayload(network, fresh = false) {
+  const params = new URLSearchParams([["asset", POWB_TOKEN_ID]]);
+  let powbTokenState = await payloadWithFallbackAfterMs(
+    proofIndexTokenPayload(network, POWB_TOKEN_ID, params),
+    null,
+    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
   ).catch((error) => {
-    console.error(`Proof index Infinity listings read failed: ${errorSummary(error)}`);
+    console.error(
+      `Proof index Infinity token-state read failed: ${errorSummary(error)}`,
+    );
     return null;
   });
-  const listings = Array.isArray(listingsPage?.items) ? listingsPage.items : [];
-  const btcUsdQuote = await btcUsdPricePayload(network, { fresh: false }).catch(
+
+  if (
+    powbTokenState &&
+    !(await proofIndexPayloadCoversConfirmedTip(
+      powbTokenState,
+      network,
+      "infinity-token-state",
+    ))
+  ) {
+    powbTokenState = null;
+  }
+
+  if (!powbTokenState) {
+    powbTokenState = await tokenPayloadForRead(network, POWB_TOKEN_ID, fresh, {
+      reconcileListingStatus: fresh,
+      reconcileSpendable: true,
+      scopedRefreshWaitMs: SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+      useLedgerSnapshot: false,
+    }).catch((error) => {
+      console.error(
+        `Canonical Infinity token-state read failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+  }
+
+  if (!powbTokenState) {
+    return null;
+  }
+
+  powbTokenState = await tokenPayloadWithSpendableActiveListings(
+    powbTokenState,
+    network,
+  );
+  const btcUsdQuote = await btcUsdPricePayload(network, { fresh }).catch(
     () => null,
   );
-  const btcUsdMetadata = btcUsdResponseMetadata(btcUsdQuote);
-  const indexedAt = newerIso(workFloor.indexedAt, listingsPage?.indexedAt);
-  const token = {
-    closedListings: [],
-    confirmedSupply: 0,
-    holders: [],
-    indexedAt,
-    indexedThroughBlock: workFloor.indexedThroughBlock,
-    invalidEvents: [],
-    listings,
-    mints: [],
+  const generatedAt = Number.isFinite(
+    Date.parse(powbTokenState.indexedAt ?? ""),
+  )
+    ? powbTokenState.indexedAt
+    : new Date().toISOString();
+  const payload = infinitySummaryPayloadFromLedger({
+    activity: tokenActivityItemsFromState(
+      powbTokenState,
+      powbTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
+    ),
+    btcUsdQuote,
+    generatedAt,
+    indexedThroughBlock: powbTokenState.indexedThroughBlock,
     network,
-    pendingSupply: 0,
-    sales: [],
-    stats: {
-      confirmedMints: 0,
-      confirmedTokens: 0,
-      confirmedTransfers: 0,
-      creationSats: 0,
-      holders: 0,
-      invalidEvents: 0,
-      pendingMints: 0,
-      pendingTokens: 0,
-      pendingTransfers: 0,
-      registries: 0,
-    },
-    summaryOnly: true,
-    tokens: [],
-    transfers: [],
-  };
+    tokenState: powbTokenState,
+  });
   return {
-    ...btcUsdMetadata,
-    actualValue: {
-      bondMarketplaceMutationFeeSats: 0,
-      bondMintFlowSats: 0,
-      bondSaleVolumeSats: 0,
-      bondTransferFeeSats: 0,
-      floorSats: 0,
-      floorUsd: 0,
-      networkValueSats: 0,
-      networkUsd: 0,
-      totalSats: 0,
-      totalUsd: 0,
-    },
-    chartPoints: [],
-    floorSats: 0,
-    floorUsd: 0,
-    indexedAt,
-    indexedThroughBlock: workFloor.indexedThroughBlock,
-    network,
-    networkValueSats: 0,
-    registryAddress: listings[0]?.saleAuthorization?.registryAddress ?? "",
-    registryId: POWB_REGISTRY_ID,
-    stats: {
-      confirmedBondActions: 0,
-      confirmedListings: listings.filter((listing) => listing.confirmed).length,
-      confirmedSales: 0,
-      confirmedSupply: 0,
-      confirmedTransfers: 0,
-      holders: 0,
-      pendingBondActions: 0,
-      pendingSupply: 0,
-    },
-    ticker: "POWB",
-    token,
-    tokenId: POWB_TOKEN_ID,
+    ...payload,
+    indexedThroughBlock:
+      powbTokenState.indexedThroughBlock ?? payload.indexedThroughBlock,
+    source: mergedSourceLabel(payload.source, powbTokenState.source),
   };
 }
 
@@ -18775,7 +19454,7 @@ async function infinitySummaryPayload(network, fresh = false) {
   }
 
   if (network === "livenet") {
-    const indexed = fresh ? null : await proofIndexInfinitySummaryPayload(network);
+    const indexed = await proofIndexInfinitySummaryPayload(network, fresh);
     if (indexed) {
       return indexed;
     }
@@ -21341,7 +22020,7 @@ async function addressUtxoPayload(address, network) {
   const fetchUtxosFromBase = async (base) => {
     const url = `${base}/api/address/${address}/utxo`;
     const timeoutMs = String(base).startsWith("https://")
-      ? ADDRESS_EXTERNAL_FETCH_TIMEOUT_MS
+      ? ADDRESS_UTXO_EXTERNAL_FETCH_TIMEOUT_MS
       : ADDRESS_UTXO_FETCH_TIMEOUT_MS;
     return String(base).startsWith("https://")
       ? fetchJsonViaHttps(url, timeoutMs)
@@ -22559,7 +23238,11 @@ async function handleRequest(request, response) {
           jsonResponse(
             response,
             200,
-            await workFloorWithCurrentBtcUsd(indexedPayload, network, false),
+            await workFloorWithSummaryMarketOverlay(
+              indexedPayload,
+              network,
+              false,
+            ),
             READ_CACHE_CONTROL,
           );
           return;
@@ -22597,7 +23280,19 @@ async function handleRequest(request, response) {
           jsonResponse(
             response,
             200,
-            await workSummaryWithCurrentBtcUsd(indexedPayload, network, false),
+            await workSummaryWithCurrentBtcUsd(
+              {
+                ...indexedPayload,
+                floor: await workFloorWithSummaryMarketOverlay(
+                  indexedPayload.floor,
+                  network,
+                  false,
+                  indexedPayload.token,
+                ),
+              },
+              network,
+              false,
+            ),
             READ_CACHE_CONTROL,
           );
           return;

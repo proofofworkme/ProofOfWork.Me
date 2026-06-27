@@ -15,9 +15,9 @@ export function FeeRateControl({
         <label>
           Fee proof/vB
           <input
-            min={0}
+            min={0.1}
             onChange={(event) => setFeeRate(Number(event.target.value))}
-            step={0.01}
+            step={0.1}
             type="number"
             value={feeRate}
           />
@@ -25,7 +25,7 @@ export function FeeRateControl({
         {sidecar}
       </div>
       <div className="fee-presets" aria-label="Fee presets">
-        {[0.1, 0.25, 0.5, 1].map((preset) => (
+        {[1, 2, 5, 10].map((preset) => (
           <button
             aria-pressed={feeRate === preset}
             key={preset}
