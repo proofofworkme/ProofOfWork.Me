@@ -2774,6 +2774,49 @@ export async function proofIndexWalletTokenOverlayPayload(
     eventParamsWithLimit,
   );
 
+  const listingConditions = [
+    "cl.network = $1",
+    "lower(cl.seller_address) = ANY($2::text[])",
+    "cl.status IN ('active', 'sealing', 'pending')",
+  ];
+  const listingParams = [network, addressNeedles];
+  if (scoped) {
+    listingParams.push(scope);
+    const scopeParam = `$${listingParams.length}`;
+    listingConditions.push(
+      `(lower(cl.token_id) = ${scopeParam} OR lower(cd.ticker) = lower(${scopeParam}))`,
+    );
+  }
+  const listingResult = await pool.query(
+    `
+      SELECT
+        cl.listing_id,
+        cl.status,
+        cl.token_id,
+        cl.seller_address,
+        cl.buyer_address,
+        cl.amount,
+        cl.price_sats,
+        cl.sale_ticket_txid,
+        cl.sale_ticket_vout,
+        cl.sale_ticket_value_sats,
+        cl.seal_txid,
+        cl.close_txid,
+        cl.payload,
+        cl.updated_at,
+        cd.ticker,
+        cd.registry_address
+      FROM proof_indexer.credit_listings cl
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = cl.network
+       AND cd.token_id = cl.token_id
+      WHERE ${listingConditions.join(" AND ")}
+      ORDER BY cl.updated_at DESC, cl.listing_id ASC
+      LIMIT 500
+    `,
+    listingParams,
+  );
+
   const holders = holderResult.rows
     .map((row) => ({
       address: row.address,
@@ -2831,12 +2874,53 @@ export async function proofIndexWalletTokenOverlayPayload(
       }
     }
   }
+  for (const row of listingResult.rows) {
+    const payload =
+      row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+        ? row.payload
+        : {};
+    const listing = {
+      ...payload,
+      amount: rowNumber(row, "amount") || rowNumber(payload, "amount"),
+      buyerAddress: row.buyer_address ?? payload.buyerAddress,
+      closeTxid: row.close_txid ?? payload.closeTxid,
+      confirmed: row.status !== "pending",
+      createdAt: dateIso(payload.createdAt ?? row.updated_at),
+      listingId: String(row.listing_id ?? payload.listingId ?? "")
+        .trim()
+        .toLowerCase(),
+      network,
+      priceSats: rowNumber(row, "price_sats") || rowNumber(payload, "priceSats"),
+      registryAddress:
+        payload.registryAddress ?? row.registry_address ?? "",
+      saleTicketTxid: row.sale_ticket_txid ?? payload.saleTicketTxid,
+      saleTicketValueSats:
+        rowNumber(row, "sale_ticket_value_sats") ||
+        rowNumber(payload, "saleTicketValueSats"),
+      saleTicketVout:
+        row.sale_ticket_vout ?? payload.saleTicketVout,
+      sealTxid: row.seal_txid ?? payload.sealTxid,
+      sellerAddress: row.seller_address ?? payload.sellerAddress ?? "",
+      status: row.status ?? payload.status,
+      ticker: payload.ticker ?? row.ticker ?? "",
+      tokenId: String(row.token_id ?? payload.tokenId ?? "")
+        .trim()
+        .toLowerCase(),
+      txid: String(row.listing_id ?? payload.txid ?? "")
+        .trim()
+        .toLowerCase(),
+    };
+    if (activeTokenListingHistoryItem(listing)) {
+      listings.push(listing);
+    }
+  }
 
   const newestTime = [
     ...holderResult.rows.map((row) => row.updated_at),
     ...eventResult.rows.map(
       (row) => row.event_time ?? row.block_time ?? row.created_at,
     ),
+    ...listingResult.rows.map((row) => row.updated_at),
   ]
     .map((value) => Date.parse(value))
     .filter(Number.isFinite)

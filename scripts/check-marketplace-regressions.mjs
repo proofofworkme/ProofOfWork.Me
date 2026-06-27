@@ -50,11 +50,15 @@ const REPORTED_LATEST_WAITING_FOR_SEAL_CLOSE_TX =
 const REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX =
   "f371ee499b94f929069fb4677446006b1bb67d6793724f2b8d6effb26499c090";
 const REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX =
-  "2f26753315873beab5b1eaaace89eb55fa8a63595c6348a45e5aa80945d54692";
+  "d6c78c4ffad8e9b17324b19f5baee023e91cce63e8e05fd4677280023b022c12";
 const REPORTED_CONFIRMED_SEALABLE_LISTING_TX =
   "d7fe42285c4edd02592608cbd887ad7a8a2b78e085de05296e352fcc1e2166a9";
 const REPORTED_DROPPED_LISTING_TX =
   "658bca245e97ccfa0055ba6237e309fa2fa089316c9287c8952c8af6f59a050a";
+const REPORTED_SPENT_SEAL_LISTING_TX =
+  "df5740ebf1260f04906479ec1f23a1fd64d112f368be4a056a0a4b55cff838a1";
+const REPORTED_SPENT_SEAL_TX =
+  "a18c2972590631e0a53bf47a2b1a737c39142136994faf2fd04247f7c1628749";
 const REPORTED_TRANSFER_SENDER =
   "bc1pq0czje5lfwwat69g97k4sysx7an0wxu80n7jceqy6gc50hacd5wqltpx8y";
 const REPORTED_TRANSFER_RECIPIENT = "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d";
@@ -89,6 +93,15 @@ function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+function numericValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function numbersAgree(left, right, tolerance = 0.01) {
+  return Math.abs(numericValue(left) - numericValue(right)) <= tolerance;
 }
 
 function assertRenderableLogItems(payload, label) {
@@ -601,6 +614,14 @@ assert(
   ),
   `${LISTING_TX} is still returned as active in marketplace summary`,
 );
+assert(
+  !(marketplaceSummary.token?.listings ?? []).some(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() ===
+      REPORTED_SPENT_SEAL_LISTING_TX,
+  ),
+  `${REPORTED_SPENT_SEAL_LISTING_TX} is still returned as active in marketplace summary after ${REPORTED_SPENT_SEAL_TX} spent its sale-ticket anchor`,
+);
 const { elapsedMs: marketplaceFreshSummaryMs, json: marketplaceFreshSummary } =
   await timedGetJson("/api/v1/marketplace-summary", {
     network: "livenet",
@@ -637,6 +658,14 @@ assert(
   `${REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX} is still returned in fresh marketplace summary waiting-for-seal listings after its anchor was spent`,
 );
 assert(
+  !(marketplaceFreshSummary.token?.listings ?? []).some(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() ===
+      REPORTED_SPENT_SEAL_LISTING_TX,
+  ),
+  `${REPORTED_SPENT_SEAL_LISTING_TX} is still returned in fresh marketplace summary after ${REPORTED_SPENT_SEAL_TX} spent its sale-ticket anchor`,
+);
+assert(
   (marketplaceFreshSummary.token?.listings ?? []).some(
     (item) =>
       String(item?.listingId ?? "").toLowerCase() ===
@@ -653,7 +682,7 @@ const workToken = await getJson("/api/v1/token", {
   asset: WORK_TOKEN_ID,
   fresh: 1,
 });
-const [workSummary, workTokenSummary] = await Promise.all([
+const [workSummary, workTokenSummary, growthSummary] = await Promise.all([
   getJson("/api/v1/work-summary", {
     network: "livenet",
     fresh: 1,
@@ -661,6 +690,10 @@ const [workSummary, workTokenSummary] = await Promise.all([
   getJson("/api/v1/token-summary", {
     network: "livenet",
     asset: WORK_TOKEN_ID,
+    fresh: 1,
+  }),
+  getJson("/api/v1/growth-summary", {
+    network: "livenet",
     fresh: 1,
   }),
 ]);
@@ -686,6 +719,37 @@ assert(
 assert(
   scopedSummaryToken?.openListings === activeWorkListingCount,
   `/api/v1/token-summary?asset=WORK&fresh=1 reports ${scopedSummaryToken?.openListings} open WORK listings, expected ${activeWorkListingCount}`,
+);
+assert(
+  workSummary.snapshotId === marketplaceFreshSummary.snapshotId &&
+    workSummary.snapshotId === growthSummary.snapshotId,
+  `summary snapshot mismatch: work=${workSummary.snapshotId ?? "none"} marketplace=${marketplaceFreshSummary.snapshotId ?? "none"} growth=${growthSummary.snapshotId ?? "none"}`,
+);
+assert(
+  numbersAgree(
+    workSummary.floor?.networkValueSats,
+    marketplaceFreshSummary.workFloor?.networkValueSats,
+  ) &&
+    numbersAgree(
+      workSummary.floor?.networkValueSats,
+      growthSummary.workFloor?.networkValueSats,
+    ) &&
+    numbersAgree(
+      workSummary.floor?.networkValueSats,
+      growthSummary.actualValue?.totalSats,
+    ),
+  `summary network value mismatch: work=${workSummary.floor?.networkValueSats} marketplace=${marketplaceFreshSummary.workFloor?.networkValueSats} growthFloor=${growthSummary.workFloor?.networkValueSats} growth=${growthSummary.actualValue?.totalSats}`,
+);
+assert(
+  numbersAgree(
+    workSummary.floor?.floorSats,
+    marketplaceFreshSummary.workFloor?.floorSats,
+  ) &&
+    numbersAgree(
+      workSummary.floor?.floorSats,
+      growthSummary.workFloor?.floorSats,
+    ),
+  `WORK floor mismatch: work=${workSummary.floor?.floorSats} marketplace=${marketplaceFreshSummary.workFloor?.floorSats} growth=${growthSummary.workFloor?.floorSats}`,
 );
 const confirmedSealedListings = (workToken.listings ?? []).filter(
   tokenListingHasConfirmedSeal,

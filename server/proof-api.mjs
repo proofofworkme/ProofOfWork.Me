@@ -2257,9 +2257,13 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
         WORK_TOKEN_ID,
       )
     : recoveredTokenState;
-  const tokenState = overlay
+  const overlaidTokenState = overlay
     ? tokenStateWithIndexedMarketSummaryOverlay(baseTokenState, overlay)
     : baseTokenState;
+  const tokenState = await tokenPayloadWithSpendableActiveListings(
+    overlaidTokenState,
+    network,
+  );
   const token = compactTokenSummaryPayload(tokenState);
   return marketplaceSummaryWithCurrentBtcUsd(
     {
@@ -6351,15 +6355,6 @@ async function filterSpendableTokenListings(listings, network) {
       continue;
     }
 
-    if (
-      tokenListingHasConfirmedSaleTicketSeal(listing) &&
-      String(outspend.txid ?? "").toLowerCase() ===
-        String(listing.sealTxid ?? "").toLowerCase()
-    ) {
-      activeListings.push(listing);
-      continue;
-    }
-
     const closedTxid =
       typeof outspend.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(outspend.txid)
         ? outspend.txid.toLowerCase()
@@ -6512,16 +6507,49 @@ async function reconcileCachedTokenClosedListing(closedListing, network) {
     network,
   );
 
-  if (
+  const projectedSealTxid = String(closedListing?.sealTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const projectedClosedTxid = String(closedListing?.closedTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const isSealCloseProjection =
     closedListing?.closedConfirmed === true &&
-    tokenListingHasConfirmedSaleTicketSeal(closedListing) &&
-    String(closedListing.closedTxid ?? "").toLowerCase() ===
-      String(closedListing.sealTxid ?? "").toLowerCase()
-  ) {
+    /^[0-9a-f]{64}$/u.test(projectedSealTxid) &&
+    projectedClosedTxid === projectedSealTxid &&
+    tokenListingHasSaleTicketSeal(closedListing);
+  if (isSealCloseProjection) {
     const activeListing = tokenListingWithoutCloseMetadata(closedListing);
-    return tokenListingAnchorOutpoint(activeListing)
-      ? { kind: "active", listing: activeListing }
-      : { kind: "closed", listing: closedListing };
+    const outspend = tokenListingAnchorOutpoint(activeListing)
+      ? await tokenListingAnchorOutspend(activeListing, network)
+      : null;
+    if (outspend && !outspend.spent) {
+      return { kind: "active", listing: activeListing };
+    }
+    if (outspend?.spent && !outspend.status?.confirmed) {
+      return { kind: "active", listing: activeListing };
+    }
+    if (outspend?.spent && outspend.status?.confirmed) {
+      const blockTime = outspend.status?.block_time;
+      return {
+        kind: "closed",
+        listing: {
+          ...closedListing,
+          closedAt:
+            typeof blockTime === "number"
+              ? new Date(blockTime * 1000).toISOString()
+              : (closedListing.closedAt ?? new Date().toISOString()),
+          closedConfirmed: true,
+          closedTxid:
+            typeof outspend.txid === "string"
+              ? outspend.txid.toLowerCase()
+              : projectedClosedTxid,
+          closedVin: Number.isSafeInteger(outspend.vin)
+            ? outspend.vin
+            : closedListing.closedVin,
+        },
+      };
+    }
   }
 
   if (closedListing?.closedConfirmed) {
@@ -6534,17 +6562,6 @@ async function reconcileCachedTokenClosedListing(closedListing, network) {
   const outspend = await tokenListingAnchorOutspend(closedListing, network);
   if (outspend?.spent) {
     if (!outspend.status?.confirmed) {
-      const activeListing = tokenListingWithoutCloseMetadata(closedListing);
-      return tokenListingAnchorOutpoint(activeListing)
-        ? { kind: "active", listing: activeListing }
-        : { kind: "closed", listing: closedListing };
-    }
-
-    if (
-      tokenListingHasConfirmedSaleTicketSeal(closedListing) &&
-      String(outspend.txid ?? "").toLowerCase() ===
-        String(closedListing.sealTxid ?? "").toLowerCase()
-    ) {
       const activeListing = tokenListingWithoutCloseMetadata(closedListing);
       return tokenListingAnchorOutpoint(activeListing)
         ? { kind: "active", listing: activeListing }
@@ -16842,6 +16859,14 @@ async function existingCanonicalLedgerPayload(network) {
   return null;
 }
 
+async function existingCurrentCanonicalLedgerPayload(
+  network,
+  label = "canonical ledger",
+) {
+  const existing = await existingCanonicalLedgerPayload(network);
+  return currentLedgerPayloadOrNull(existing, network, label);
+}
+
 function payloadSnapshotId(payload) {
   return String(payload?.snapshotId ?? "").trim();
 }
@@ -18091,7 +18116,7 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
       return currentRefreshed;
     }
     refreshCanonicalLedgerPayloadInBackground(network, true);
-    return currentFallback ?? fallback;
+    return currentFallback;
   }
 
   if (network === "livenet") {
@@ -18117,7 +18142,7 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
       return currentRefreshed;
     }
     refreshCanonicalLedgerPayloadInBackground(network, true);
-    return null;
+    return ledgerPayloadHasFiniteNetworkValues(fallback) ? fallback : null;
   }
 
   if (fallback) {
@@ -18536,10 +18561,6 @@ async function cachedWorkFloorPayload(network, fresh = false) {
         ledger.tokenState,
       );
     }
-    const indexedFloor = fresh ? null : await proofIndexWorkFloorPayload(network);
-    if (indexedFloor) {
-      return indexedFloor;
-    }
 
     throw freshDataUnavailableError(
       fresh
@@ -18764,7 +18785,16 @@ function cacheMarketplaceSummaryPayload(network, payload) {
 async function cachedMarketplaceSummaryPayloadNoRefresh(network) {
   const cacheKey = marketplaceSummaryCacheKey(network);
   const payloadKey = marketplaceSummaryPayloadKey(network);
-  const ledger = await existingCanonicalLedgerPayload(network);
+  const ledger =
+    network === "livenet"
+      ? await existingCurrentCanonicalLedgerPayload(
+          network,
+          "marketplace-summary canonical ledger",
+        )
+      : await existingCanonicalLedgerPayload(network);
+  if (network === "livenet" && !ledger) {
+    return null;
+  }
   const cachedPayload = RESPONSE_CACHE.get(payloadKey)?.payload;
   if (cachedPayload) {
     if (
@@ -18853,7 +18883,13 @@ async function marketplaceSummaryFallbackPayload(network) {
     return marketplaceSummaryPayloadWithIndexedMarketOverlay(cached, network);
   }
 
-  const ledger = await existingCanonicalLedgerPayload(network);
+  const ledger =
+    network === "livenet"
+      ? await existingCurrentCanonicalLedgerPayload(
+          network,
+          "marketplace-summary fallback ledger",
+        )
+      : await existingCanonicalLedgerPayload(network);
   const ledgerPayload = marketplaceSummaryPayloadFromLedger(ledger);
   if (ledgerPayload) {
     return marketplaceSummaryPayloadWithIndexedMarketOverlay(
@@ -18926,15 +18962,15 @@ async function reconciledLivenetMarketplaceSummaryPayload(
           currentWorkTokenState,
           WORK_TOKEN_ID,
         );
-        const spendableTokenState = await payloadWithFallbackAfterMs(
-          tokenPayloadWithSpendableActiveListings(baseTokenState, network),
-          baseTokenState,
-          SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS,
-        );
         const marketOverlay = await indexedTokenMarketSummaryOverlay(network);
-        const tokenState = tokenStateWithIndexedMarketSummaryOverlay(
-          spendableTokenState,
+        const overlaidTokenState = tokenStateWithIndexedMarketSummaryOverlay(
+          baseTokenState,
           marketOverlay,
+        );
+        const tokenState = await payloadWithFallbackAfterMs(
+          tokenPayloadWithSpendableActiveListings(overlaidTokenState, network),
+          overlaidTokenState,
+          SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS,
         );
         const workFloor = await workFloorWithSummaryMarketOverlay(
           ledger.workFloor,
@@ -19027,17 +19063,17 @@ async function reconciledLivenetMarketplaceSummaryPayload(
         closedWorkTokenState,
         WORK_TOKEN_ID,
       );
-      const spendableTokenState = await payloadWithFallbackAfterMs(
-        tokenPayloadWithSpendableActiveListings(baseTokenState, network),
+      const marketOverlay = await indexedTokenMarketSummaryOverlay(network);
+      const overlaidTokenState = tokenStateWithIndexedMarketSummaryOverlay(
         baseTokenState,
+        marketOverlay,
+      );
+      const tokenState = await payloadWithFallbackAfterMs(
+        tokenPayloadWithSpendableActiveListings(overlaidTokenState, network),
+        overlaidTokenState,
         fresh
           ? MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS
           : WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
-      );
-      const marketOverlay = await indexedTokenMarketSummaryOverlay(network);
-      const tokenState = tokenStateWithIndexedMarketSummaryOverlay(
-        spendableTokenState,
-        marketOverlay,
       );
       const workFloor = await workFloorWithCurrentBtcUsd(
         workFloorWithIndexedMarketSummaryOverlay(
@@ -19231,28 +19267,6 @@ async function growthSummaryPayload(network, fresh = false) {
   }
 
   if (network === "livenet") {
-    const workFloor = await proofIndexWorkFloorPayload(network);
-    if (workFloor) {
-      return growthSummaryWithCurrentBtcUsd(
-        {
-          actualValue: {
-            ...(workFloor.actualValue ?? {}),
-            networkValueSats: workFloor.networkValueSats,
-            totalSats: workFloor.networkValueSats,
-          },
-          chartPoints: workFloor.chartPoints ?? [],
-          indexedAt: workFloor.indexedAt,
-          indexedThroughBlock: workFloor.indexedThroughBlock,
-          network,
-          networkValueSats: workFloor.networkValueSats,
-          source: workFloor.source,
-          stats: workFloor.stats ?? {},
-          workFloor,
-        },
-        network,
-        false,
-      );
-    }
     throw freshDataUnavailableError("Current Growth summary ledger is unavailable.");
   }
 
@@ -22037,57 +22051,54 @@ async function addressUtxoPayload(address, network) {
   };
 
   let lastError = null;
-  const electrumUtxos = await fetchAddressUtxosFromElectrum(
-    address,
-    network,
-  ).catch((error) => {
-    lastError = error;
-    console.error(
-      `Electrum UTXO lookup failed for ${address}: ${errorSummary(error)}`,
-    );
-    return null;
-  });
-  if (Array.isArray(electrumUtxos)) {
-    return electrumUtxos;
+  const candidates = [
+    {
+      label: "Electrum",
+      read: () => fetchAddressUtxosFromElectrum(address, network),
+    },
+    ...firstPartyAddressReadBases(network).map((base) => ({
+      label: base,
+      read: () => requireUtxoArray(base, fetchUtxosFromBase(base)),
+    })),
+    ...(network === "livenet"
+      ? [
+          {
+            label: "Blockchain.info",
+            read: () => fetchAddressUtxosFromBlockchainInfo(address, network),
+          },
+        ]
+      : [
+          {
+            label: "secondary explorers",
+            read: () => fetchAddressUtxosFromSecondaryExplorers(address, network),
+          },
+        ]),
+  ];
+  const results = await Promise.all(
+    candidates.map(async (candidate) => {
+      try {
+        const utxos = await candidate.read();
+        return Array.isArray(utxos)
+          ? { ok: true, utxos }
+          : { ok: false };
+      } catch (error) {
+        lastError = error;
+        console.error(
+          `UTXO lookup failed for ${candidate.label} ${address}: ${errorSummary(error)}`,
+        );
+        return { ok: false };
+      }
+    }),
+  );
+  const arrays = results
+    .filter((result) => result.ok && Array.isArray(result.utxos))
+    .map((result) => result.utxos);
+  const nonEmpty = arrays.find((utxos) => utxos.length > 0);
+  if (nonEmpty) {
+    return nonEmpty;
   }
-
-  for (const base of firstPartyAddressReadBases(network)) {
-    try {
-      return await requireUtxoArray(base, fetchUtxosFromBase(base));
-    } catch (error) {
-      lastError = error;
-      console.error(
-        `UTXO lookup failed for ${base} ${address}: ${errorSummary(error)}`,
-      );
-    }
-  }
-
-  const blockchainInfoUtxos = await fetchAddressUtxosFromBlockchainInfo(
-    address,
-    network,
-  ).catch((error) => {
-    lastError = error;
-    console.error(
-      `Blockchain.info UTXO lookup failed for ${address}: ${errorSummary(error)}`,
-    );
-    return null;
-  });
-  if (Array.isArray(blockchainInfoUtxos)) {
-    return blockchainInfoUtxos;
-  }
-
-  const secondaryUtxos = network === "livenet" ? null : await fetchAddressUtxosFromSecondaryExplorers(
-    address,
-    network,
-  ).catch((error) => {
-    lastError = error;
-    console.error(
-      `Secondary UTXO lookup failed for ${address}: ${errorSummary(error)}`,
-    );
-    return null;
-  });
-  if (Array.isArray(secondaryUtxos)) {
-    return secondaryUtxos;
+  if (arrays.length > 0) {
+    return arrays[0];
   }
 
   const error = new Error(
@@ -23227,6 +23238,7 @@ async function handleRequest(request, response) {
     if (url.pathname === "/api/v1/work-floor") {
       if (
         !freshRead &&
+        network !== "livenet" &&
         proofIndexReadFeatureEnabled("work-floor,summary,summaries")
       ) {
         const indexedPayload = await currentProofIndexSummarySnapshotPayload(
@@ -23269,6 +23281,7 @@ async function handleRequest(request, response) {
     if (url.pathname === "/api/v1/work-summary") {
       if (
         !freshRead &&
+        network !== "livenet" &&
         proofIndexReadFeatureEnabled("work-summary,summary,summaries")
       ) {
         const indexedPayload = await currentProofIndexSummarySnapshotPayload(
@@ -23330,6 +23343,7 @@ async function handleRequest(request, response) {
     if (url.pathname === "/api/v1/growth-summary") {
       if (
         !freshRead &&
+        network !== "livenet" &&
         proofIndexReadFeatureEnabled("growth-summary,summary,summaries")
       ) {
         const indexedPayload = await currentProofIndexSummarySnapshotPayload(
