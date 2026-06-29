@@ -41,6 +41,12 @@ const CARBONZ_SEAL_TX =
   "e365ada0deb8a7bf8f8c4c012897633e4f00938e7f0ca85999de884f939cbc68";
 const REPORTED_TRANSFER_TX =
   "90cdafde9e7e050a1831fcc3b412f29e529368fa6d9afc8f053c681c204449d4";
+const CARBONZ_DELAYED_TRANSFER_TX =
+  "c90f95cdd45892f76af89686dea7c1c35ec070148e5a74c947f174e244ef44db";
+const CARBONZ_DELAYED_TRANSFER_SENDER =
+  "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW";
+const CARBONZ_DELAYED_TRANSFER_RECIPIENT =
+  "14hKW6Z3WKrJZayZhCvLJCocMaaAtTHd9L";
 const REPORTED_WAITING_FOR_SEAL_LISTING_TX =
   "a5476c0c6a8df67569935c3cca152a3ef979d95469ce8fe8c8187f359c48a6c7";
 const REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX =
@@ -98,6 +104,9 @@ const REQUEST_TIMEOUT_MS = Number(
 );
 const REQUEST_RETRY_COUNT = Number(
   process.env.MARKETPLACE_REGRESSION_REQUEST_RETRY_COUNT ?? 2,
+);
+const ID_RECORD_MAX_MS = Number(
+  process.env.MARKETPLACE_ID_RECORD_MAX_MS ?? 15_000,
 );
 
 function assert(condition, message) {
@@ -236,6 +245,20 @@ function holderByAddress(items, address) {
     (item) => String(item?.address ?? "").toLowerCase() === needle,
   );
 }
+
+const { elapsedMs: carbonzIdMs, json: carbonzIdPayload } = await timedGetJson(
+  "/api/v1/ids/carbonz",
+  { network: "livenet" },
+);
+assert(
+  carbonzIdMs <= ID_RECORD_MAX_MS,
+  `/api/v1/ids/carbonz took ${carbonzIdMs}ms, expected <= ${ID_RECORD_MAX_MS}ms`,
+);
+assert(
+  String(carbonzIdPayload.record?.id ?? "").toLowerCase() === "carbonz" &&
+    carbonzIdPayload.record?.confirmed === true,
+  "/api/v1/ids/carbonz did not return the confirmed Carbonz ID record",
+);
 
 const activeListing = await tokenHistory("listings", { q: LISTING_TX });
 assert(
@@ -616,6 +639,60 @@ for (const address of [REPORTED_TRANSFER_SENDER, REPORTED_TRANSFER_RECIPIENT]) {
     `${REPORTED_TRANSFER_TX} is missing from ${address} wallet-scoped transfers`,
   );
 }
+const carbonzDelayedTransferHistory = await tokenHistory("transfers", {
+  fresh: 1,
+  q: CARBONZ_DELAYED_TRANSFER_TX,
+});
+const carbonzDelayedTransfer = (carbonzDelayedTransferHistory.items ?? []).find(
+  (item) =>
+    String(item?.txid ?? "").toLowerCase() === CARBONZ_DELAYED_TRANSFER_TX &&
+    item?.confirmed === true,
+);
+assert(
+  carbonzDelayedTransfer?.amount === 20000 &&
+    carbonzDelayedTransfer?.senderAddress === CARBONZ_DELAYED_TRANSFER_SENDER &&
+    carbonzDelayedTransfer?.recipientAddress ===
+      CARBONZ_DELAYED_TRANSFER_RECIPIENT,
+  `${CARBONZ_DELAYED_TRANSFER_TX} is missing or incomplete in WORK transfer history`,
+);
+for (const address of [
+  CARBONZ_DELAYED_TRANSFER_SENDER,
+  CARBONZ_DELAYED_TRANSFER_RECIPIENT,
+]) {
+  const scopedWallet = await getJson("/api/v1/token", {
+    network: "livenet",
+    asset: WORK_TOKEN_ID,
+    address,
+    wallet: 1,
+    fresh: 1,
+  });
+  assert(
+    (scopedWallet.transfers ?? []).some(
+      (item) =>
+        String(item?.txid ?? "").toLowerCase() ===
+          CARBONZ_DELAYED_TRANSFER_TX &&
+        item?.confirmed === true &&
+        item?.senderAddress === CARBONZ_DELAYED_TRANSFER_SENDER &&
+        item?.recipientAddress === CARBONZ_DELAYED_TRANSFER_RECIPIENT,
+    ),
+    `${CARBONZ_DELAYED_TRANSFER_TX} is missing from ${address} wallet-scoped transfers`,
+  );
+}
+const delayedRecipientWallet = await getJson("/api/v1/token-summary", {
+  network: "livenet",
+  asset: WORK_TOKEN_ID,
+  address: CARBONZ_DELAYED_TRANSFER_RECIPIENT,
+  wallet: 1,
+  fresh: 1,
+});
+const delayedRecipientHolder = holderByAddress(
+  delayedRecipientWallet.holders,
+  CARBONZ_DELAYED_TRANSFER_RECIPIENT,
+);
+assert(
+  Number(delayedRecipientHolder?.balance ?? 0) >= 20000,
+  `${CARBONZ_DELAYED_TRANSFER_RECIPIENT} wallet summary did not include the confirmed WORK transfer balance`,
+);
 
 const walletSummary = await getJson("/api/v1/token-summary", {
   network: "livenet",

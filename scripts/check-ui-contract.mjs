@@ -210,6 +210,10 @@ const app = contents.get("src/App.tsx");
 const idMarketplaceCardBlock =
   app.match(/function IdMarketplaceCard[\s\S]*?function PendingIdEventList/)?.[0] ??
   "";
+const prepareIdSaleAuthorizationBlock =
+  app.match(
+    /async function prepareIdSaleAuthorization[\s\S]*?async function publishIdListing/,
+  )?.[0] ?? "";
 expect(
   "ID marketplace buttons use action-specific busy labels",
   /idMarketplaceAction/.test(idMarketplaceCardBlock) &&
@@ -217,6 +221,15 @@ expect(
     /buyInProgress/.test(idMarketplaceCardBlock) &&
     !/busy\s*\?\s*"Publishing"/.test(idMarketplaceCardBlock) &&
     !/busy\s*\?\s*"Buying"/.test(idMarketplaceCardBlock),
+);
+expect(
+  "ID marketplace publish uses narrow ID record verification",
+  /fetchIdRecordState\(network,\s*managedIdRecord\.id\)/.test(
+    prepareIdSaleAuthorizationBlock,
+  ) &&
+    !/fetchIdRegistryState\(network,\s*true\)/.test(
+      prepareIdSaleAuthorizationBlock,
+    ),
 );
 expect(
   "ID marketplace buy button uses the purchase guard",

@@ -423,15 +423,18 @@ const WORK_TOKEN_MINT_PRICE_SATS = 1000;
 const WORK_TOKEN_PRICE_SATS_PER_WORK = 1;
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const DEFAULT_WORK_TOKEN_TRANSFER_RECOVERY_TXIDS = [
+  "7e9e711564be12330793b3415a032eca42bb742499fbdb8a6b8be6d6f1867354",
+  "accaa6797578aadb1c9cced97fad154629324b1a41fc3fc60dabaf8701ab161b",
+  "c90f95cdd45892f76af89686dea7c1c35ec070148e5a74c947f174e244ef44db",
+];
 const WORK_TOKEN_TRANSFER_RECOVERY_TXIDS = new Set(
-  String(
-    process.env.WORK_TOKEN_TRANSFER_RECOVERY_TXIDS ??
-      [
-        "7e9e711564be12330793b3415a032eca42bb742499fbdb8a6b8be6d6f1867354",
-        "accaa6797578aadb1c9cced97fad154629324b1a41fc3fc60dabaf8701ab161b",
-      ].join(","),
-  )
-    .split(/[,\s]+/u)
+  [
+    ...DEFAULT_WORK_TOKEN_TRANSFER_RECOVERY_TXIDS,
+    ...String(process.env.WORK_TOKEN_TRANSFER_RECOVERY_TXIDS ?? "").split(
+      /[,\s]+/u,
+    ),
+  ]
     .map((txid) => txid.trim().toLowerCase())
     .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
 );
@@ -1575,6 +1578,53 @@ function mergeTokenStateItemsByKey(
   return [...byKey.values()].sort(compareTokenHistoryPageItems);
 }
 
+function transferMergeString(current, incoming, field) {
+  const incomingValue = String(incoming?.[field] ?? "").trim();
+  const currentValue = String(current?.[field] ?? "").trim();
+  return incomingValue || currentValue || "";
+}
+
+function transferMergeNumber(current, incoming, field) {
+  const incomingNumber = numericValue(incoming?.[field], Number.NaN);
+  if (Number.isFinite(incomingNumber) && incomingNumber > 0) {
+    return incoming[field];
+  }
+  const currentNumber = numericValue(current?.[field], Number.NaN);
+  return Number.isFinite(currentNumber) ? current[field] : incoming?.[field];
+}
+
+function mergeTokenTransferRecord(current, incoming) {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming) {
+    return current;
+  }
+
+  return {
+    ...current,
+    ...incoming,
+    amount: transferMergeNumber(current, incoming, "amount"),
+    blockHeight: transferMergeNumber(current, incoming, "blockHeight"),
+    blockIndex: transferMergeNumber(current, incoming, "blockIndex"),
+    confirmed: current.confirmed === true || incoming.confirmed === true,
+    createdAt: newerIso(current.createdAt, incoming.createdAt),
+    dataBytes: transferMergeNumber(current, incoming, "dataBytes"),
+    network: transferMergeString(current, incoming, "network"),
+    paidSats: transferMergeNumber(current, incoming, "paidSats"),
+    recipientAddress: transferMergeString(
+      current,
+      incoming,
+      "recipientAddress",
+    ),
+    registryAddress: transferMergeString(current, incoming, "registryAddress"),
+    senderAddress: transferMergeString(current, incoming, "senderAddress"),
+    ticker: transferMergeString(current, incoming, "ticker"),
+    tokenId: transferMergeString(current, incoming, "tokenId"),
+    txid: transferMergeString(current, incoming, "txid"),
+  };
+}
+
 function mergeWalletHolders(baseHolders, overlayHolders) {
   const byAddress = new Map();
   for (const holder of Array.isArray(baseHolders) ? baseHolders : []) {
@@ -1643,6 +1693,7 @@ async function tokenPayloadWithIndexedWalletOverlay(
     payload?.transfers,
     overlay.transfers,
     (item) => String(item?.txid ?? "").trim().toLowerCase(),
+    mergeTokenTransferRecord,
   );
   const sales = mergeTokenStateItemsByKey(
     payload?.sales,
@@ -1667,7 +1718,15 @@ async function tokenPayloadWithIndexedWalletOverlay(
     mergeTokenListingRecord,
   );
   const holders = mergeWalletHolders(payload?.holders, overlay.holders);
+  const hasOverlayRows = [
+    overlay.transfers,
+    overlay.sales,
+    overlay.listings,
+    overlay.closedListings,
+    overlay.holders,
+  ].some((items) => Array.isArray(items) && items.length > 0);
   if (
+    !hasOverlayRows &&
     transfers.length === (Array.isArray(payload?.transfers) ? payload.transfers.length : 0) &&
     sales.length === (Array.isArray(payload?.sales) ? payload.sales.length : 0) &&
     listings.length === (Array.isArray(payload?.listings) ? payload.listings.length : 0) &&
@@ -1705,6 +1764,166 @@ async function tokenPayloadWithIndexedWalletOverlay(
     closedListings: overlay.closedListings,
     listings: overlay.listings,
   });
+}
+
+function transferBalanceDeltaForAddress(transfer, address) {
+  const normalized = String(address ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return 0;
+  }
+  const amount = numericValue(transfer?.amount);
+  if (amount <= 0) {
+    return 0;
+  }
+
+  let delta = 0;
+  if (
+    String(transfer?.recipientAddress ?? "").trim().toLowerCase() === normalized
+  ) {
+    delta += amount;
+  }
+  if (String(transfer?.senderAddress ?? "").trim().toLowerCase() === normalized) {
+    delta -= amount;
+  }
+  return delta;
+}
+
+async function tokenPayloadWithRecoveredWalletWorkTransfers(
+  payload,
+  network,
+  tokenScope,
+  recoveryAddresses,
+) {
+  const scope = normalizeTokenScope(tokenScope);
+  const addresses = [
+    ...new Map(
+      (Array.isArray(recoveryAddresses) ? recoveryAddresses : [])
+        .map((address) => String(address ?? "").trim())
+        .filter((address) => isValidBitcoinAddress(address, network))
+        .map((address) => [address.toLowerCase(), address]),
+    ).values(),
+  ];
+  if (network !== "livenet" || scope !== WORK_TOKEN_ID || addresses.length === 0) {
+    return payload;
+  }
+
+  const recoveredTransfers = await recoveredWorkTransfersForAddresses(
+    addresses,
+    network,
+  ).catch((error) => {
+    console.error(
+      `Recovered WORK wallet transfer overlay failed: ${errorSummary(error)}`,
+    );
+    return [];
+  });
+  if (recoveredTransfers.length === 0) {
+    return payload;
+  }
+
+  const addressSet = new Set(addresses.map((address) => address.toLowerCase()));
+  const relevantRecoveredTransfers = recoveredTransfers.filter((transfer) => {
+    const sender = String(transfer?.senderAddress ?? "").trim().toLowerCase();
+    const recipient = String(transfer?.recipientAddress ?? "").trim().toLowerCase();
+    return addressSet.has(sender) || addressSet.has(recipient);
+  });
+  if (relevantRecoveredTransfers.length === 0) {
+    return payload;
+  }
+
+  const transfersByTxid = new Map();
+  for (const transfer of Array.isArray(payload?.transfers)
+    ? payload.transfers
+    : []) {
+    const txid = String(transfer?.txid ?? "").trim().toLowerCase();
+    if (txid) {
+      transfersByTxid.set(txid, transfer);
+    }
+  }
+  for (const transfer of relevantRecoveredTransfers) {
+    const txid = String(transfer?.txid ?? "").trim().toLowerCase();
+    if (txid) {
+      transfersByTxid.set(
+        txid,
+        mergeTokenTransferRecord(transfersByTxid.get(txid), transfer),
+      );
+    }
+  }
+
+  const holdersByAddress = new Map();
+  for (const holder of Array.isArray(payload?.holders) ? payload.holders : []) {
+    const address = String(holder?.address ?? "").trim().toLowerCase();
+    if (address) {
+      holdersByAddress.set(address, holder);
+    }
+  }
+
+  const recoveredNetByAddress = new Map();
+  for (const transfer of relevantRecoveredTransfers) {
+    for (const address of addresses) {
+      const delta = transferBalanceDeltaForAddress(transfer, address);
+      if (delta !== 0) {
+        recoveredNetByAddress.set(
+          address.toLowerCase(),
+          numericValue(recoveredNetByAddress.get(address.toLowerCase())) + delta,
+        );
+      }
+    }
+  }
+
+  for (const address of addresses) {
+    const normalized = address.toLowerCase();
+    const currentHolder = holdersByAddress.get(normalized);
+    const currentBalance = numericValue(currentHolder?.balance);
+    const recoveredNet = numericValue(recoveredNetByAddress.get(normalized));
+    if (currentBalance > 0 || recoveredNet <= 0) {
+      continue;
+    }
+
+    holdersByAddress.set(normalized, {
+      ...(currentHolder ?? {}),
+      address,
+      balance: recoveredNet,
+      confirmed: true,
+      createdAt:
+        currentHolder?.createdAt ??
+        relevantRecoveredTransfers.find(
+          (transfer) => transferBalanceDeltaForAddress(transfer, address) > 0,
+        )?.createdAt ??
+        new Date().toISOString(),
+      network,
+      ticker: WORK_TOKEN_TICKER,
+      tokenId: WORK_TOKEN_ID,
+    });
+  }
+
+  const transfers = [...transfersByTxid.values()].sort(
+    compareTokenHistoryPageItems,
+  );
+  const holders = [...holdersByAddress.values()]
+    .filter((holder) => numericValue(holder?.balance) > 0)
+    .sort(
+      (left, right) =>
+        numericValue(right.balance) - numericValue(left.balance) ||
+        String(left.address ?? "").localeCompare(String(right.address ?? "")),
+    );
+
+  return {
+    ...payload,
+    holders,
+    indexedAt: newerIso(payload?.indexedAt, new Date().toISOString()),
+    source: mergedSourceLabel(payload?.source, "work-transfer-recovery"),
+    stats: {
+      ...(payload?.stats ?? {}),
+      confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
+        .length,
+      holders: holders.length,
+      pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+        .length,
+      walletScoped: true,
+    },
+    transfers,
+    walletScoped: true,
+  };
 }
 
 function tokenSaleItemKey(item) {
@@ -16036,6 +16255,14 @@ async function walletScopedTokenSummaryPayload(
     );
   }
   if (scope === WORK_TOKEN_ID) {
+    scopedPayload = await tokenPayloadWithRecoveredWalletWorkTransfers(
+      scopedPayload,
+      network,
+      scope,
+      recoveryAddresses,
+    );
+  }
+  if (scope === WORK_TOKEN_ID) {
     scopedPayload = await workTokenStateWithRecoveredListingCloseSales(
       scopedPayload,
       network,
@@ -16119,6 +16346,14 @@ async function walletScopedTokenPayload(
     scope,
     recoveryAddresses,
   );
+  if (scope === WORK_TOKEN_ID) {
+    scopedPayload = await tokenPayloadWithRecoveredWalletWorkTransfers(
+      scopedPayload,
+      network,
+      scope,
+      recoveryAddresses,
+    );
+  }
   return scope === WORK_TOKEN_ID
     ? workTokenStateWithRecoveredListingCloseSales(scopedPayload, network)
     : scopedPayload;
@@ -23446,18 +23681,62 @@ async function handleRequest(request, response) {
       pathParts[2] === "ids"
     ) {
       const id = normalizePowId(decodeURIComponent(pathParts[3]));
-      const registry = await cachedPayload(`registry:${network}`, () =>
-        safeRegistryPayload(network),
-      );
-      const records = registry.records.filter((record) => record.id === id);
+      if (!id) {
+        errorResponse(response, 400, "Invalid ProofOfWork ID.");
+        return;
+      }
+      const indexedRegistry = await indexedRegistryPayload(network);
+      const persistedRegistry =
+        indexedRegistry ??
+        (await existingRegistryPayload(network).catch(() => null));
+      const registry =
+        persistedRegistry ??
+        (await cachedPayload(`registry:${network}`, () =>
+          safeRegistryPayload(network),
+        ));
+      const records = (Array.isArray(registry.records) ? registry.records : [])
+        .filter((record) => normalizePowId(String(record?.id ?? "")) === id);
       const confirmed = records.find((record) => record.confirmed);
       const pending = records.find((record) => !record.confirmed);
+      const ownerAddress = String(
+        confirmed?.ownerAddress ?? pending?.ownerAddress ?? "",
+      );
+      const listings = (Array.isArray(registry.listings) ? registry.listings : [])
+        .filter(
+          (listing) =>
+            normalizePowId(String(listing?.id ?? "")) === id ||
+            (ownerAddress && listing?.sellerAddress === ownerAddress),
+        );
+      const pendingEvents = (Array.isArray(registry.pendingEvents)
+        ? registry.pendingEvents
+        : []
+      ).filter(
+        (event) =>
+          normalizePowId(String(event?.id ?? "")) === id ||
+          (ownerAddress &&
+            (event?.ownerAddress === ownerAddress ||
+              event?.sellerAddress === ownerAddress ||
+              event?.currentOwnerAddress === ownerAddress)),
+      );
+      const sales = (Array.isArray(registry.sales) ? registry.sales : []).filter(
+        (sale) =>
+          normalizePowId(String(sale?.id ?? "")) === id ||
+          (ownerAddress &&
+            (sale?.sellerAddress === ownerAddress ||
+              sale?.buyerAddress === ownerAddress)),
+      );
       jsonResponse(response, 200, {
+        activity: [],
         id,
         indexedAt: registry.indexedAt,
+        listings,
         network,
+        pendingEvents,
         record: confirmed ?? pending ?? null,
+        records,
         routable: Boolean(confirmed),
+        sales,
+        source: indexedRegistry ? "proof-index:registry-id" : registry.source,
         status: confirmed ? "confirmed" : pending ? "pending" : "available",
       });
       return;

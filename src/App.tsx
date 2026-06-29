@@ -1038,10 +1038,14 @@ type ChainedMintBuildResult = {
 
 type PowRegistryApiResponse = {
   activity?: PowActivityItem[];
+  indexedAt?: string;
   listings?: PowIdListing[];
   pendingEvents?: PowIdPendingEvent[];
+  record?: PowIdRecord | null;
   records?: PowIdRecord[];
+  routable?: boolean;
   sales?: PowIdMarketplaceSale[];
+  status?: string;
 };
 
 type PowRegistryState = {
@@ -2471,6 +2475,46 @@ function uniquePowIdRecords(records: PowIdRecord[]) {
   }
 
   return [...uniqueRecords.values()];
+}
+
+function mergeLatestPowIdRecords(
+  current: PowIdRecord[],
+  incoming: PowIdRecord[],
+) {
+  const incomingById = new Map(
+    incoming
+      .map((record) => [normalizePowId(record.id), record] as const)
+      .filter(([id]) => Boolean(id)),
+  );
+  if (incomingById.size === 0) {
+    return current;
+  }
+  return [
+    ...incomingById.values(),
+    ...current.filter((record) => !incomingById.has(normalizePowId(record.id))),
+  ];
+}
+
+function mergeLatestPowIdListings(
+  current: PowIdListing[],
+  incoming: PowIdListing[],
+) {
+  const byListingId = new Map<string, PowIdListing>();
+  for (const listing of current) {
+    if (listing.listingId) {
+      byListingId.set(listing.listingId, listing);
+    }
+  }
+  for (const listing of incoming) {
+    if (listing.listingId) {
+      byListingId.set(listing.listingId, listing);
+    }
+  }
+  return [...byListingId.values()].sort(
+    (left, right) =>
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      left.listingId.localeCompare(right.listingId),
+  );
 }
 
 function idRecordMatchesSearch(record: PowIdRecord, query: string) {
@@ -9768,6 +9812,48 @@ async function fetchIdRegistryState(
       : [],
     records: Array.isArray(payload.records) ? payload.records : [],
     sales: Array.isArray(payload.sales) ? payload.sales : [],
+  };
+}
+
+async function fetchIdRecordState(
+  targetNetwork: BitcoinNetwork,
+  id: string,
+): Promise<PowRegistryState & { record?: PowIdRecord | null }> {
+  const normalizedId = normalizePowId(id);
+  if (!normalizedId) {
+    throw new Error("Choose a confirmed ProofOfWork ID first.");
+  }
+
+  const payload = await fetchProofApiJson<PowRegistryApiResponse>(
+    `/api/v1/ids/${encodeURIComponent(normalizedId)}`,
+    targetNetwork,
+  );
+  const state = normalizeRegistryApiState(payload);
+  const payloadRecord =
+    payload.record && normalizePowId(payload.record.id) === normalizedId
+      ? payload.record
+      : null;
+  const record =
+    payloadRecord ??
+    state.records.find(
+      (candidate) =>
+        candidate.network === targetNetwork &&
+        normalizePowId(candidate.id) === normalizedId,
+    ) ??
+    null;
+  const records = record
+    ? [
+        record,
+        ...state.records.filter(
+          (candidate) => normalizePowId(candidate.id) !== normalizedId,
+        ),
+      ]
+    : state.records;
+
+  return {
+    ...state,
+    record,
+    records,
   };
 }
 
@@ -17121,17 +17207,28 @@ export default function App() {
       );
     }
 
-    const latestState = await fetchIdRegistryState(network, true);
-    setIdRegistry(latestState.records);
-    setIdListings(latestState.listings);
-    setIdPendingEvents(latestState.pendingEvents);
-    setIdSales(latestState.sales);
-    const latestRecord = latestState.records.find(
-      (record) =>
-        record.network === network &&
-        record.id === managedIdRecord.id &&
-        record.confirmed,
+    const latestState = await fetchIdRecordState(network, managedIdRecord.id);
+    setIdRegistry((current) =>
+      mergeLatestPowIdRecords(current, latestState.records),
     );
+    setIdListings((current) =>
+      mergeLatestPowIdListings(current, latestState.listings),
+    );
+    if (latestState.pendingEvents.length > 0) {
+      setIdPendingEvents(latestState.pendingEvents);
+    }
+    if (latestState.sales.length > 0) {
+      setIdSales(latestState.sales);
+    }
+    const latestRecord =
+      latestState.record?.confirmed === true
+        ? latestState.record
+        : latestState.records.find(
+            (record) =>
+              record.network === network &&
+              normalizePowId(record.id) === normalizePowId(managedIdRecord.id) &&
+              record.confirmed,
+          );
 
     if (!latestRecord) {
       throw new Error(
@@ -17184,7 +17281,7 @@ export default function App() {
     return {
       authorization: { ...draft, signature: "" },
       reservedOutpoints: activeListingAnchorOutpointsForAddress(
-        latestState.listings,
+        mergeLatestPowIdListings(idListings, latestState.listings),
         address,
         { network },
       ),
