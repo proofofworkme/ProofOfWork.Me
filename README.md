@@ -82,6 +82,9 @@ An audit should move in this order:
 6. Commit the exact reviewed scope.
 7. Draft concise public copy that says what was hardened without inventing
    numbers from stale screenshots.
+8. When the user-approved workflow includes production verification, commit,
+   deploy, and push, provide tweet-ready public copy immediately unless the
+   user explicitly says not to.
 
 Official YouTube:
 

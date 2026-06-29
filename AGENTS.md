@@ -24,3 +24,4 @@ Core operating rules:
 - Treat confirmed ProofOfWork history as canonical and pending mempool data as best-effort visibility.
 - Build features so future agents can inspect, verify, and act from chain-readable records.
 - Keep product/UI copy calm and precise; keep launch/social copy alive with the ProofOfWork.Me voice.
+- After a user-approved production workflow has been production-verified, committed, deployed, and pushed, immediately provide tweet-ready public copy in the ProofOfWork.Me voice unless the user explicitly says not to.
