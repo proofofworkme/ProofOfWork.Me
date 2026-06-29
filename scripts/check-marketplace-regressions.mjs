@@ -5,6 +5,16 @@ const API_BASE = (
   process.env.VITE_POW_API_BASE ||
   "http://127.0.0.1:8081"
 ).replace(/\/+$/u, "");
+const REGRESSION_MODE = String(
+  process.env.MARKETPLACE_REGRESSION_MODE ??
+    (process.argv.includes("--full") ? "full" : "fast"),
+)
+  .trim()
+  .toLowerCase();
+const FULL_REGRESSION_MODE = ["full", "audit", "slow"].includes(
+  REGRESSION_MODE,
+);
+const GATE_LABEL = FULL_REGRESSION_MODE ? "full" : "fast";
 
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
@@ -100,10 +110,13 @@ const MARKETPLACE_FRESH_SUMMARY_MAX_MS = Number(
 );
 const REQUEST_TIMEOUT_MS = Number(
   process.env.MARKETPLACE_REGRESSION_REQUEST_TIMEOUT_MS ??
-    Math.max(MARKETPLACE_FRESH_SUMMARY_MAX_MS + 120_000, 300_000),
+    (FULL_REGRESSION_MODE
+      ? Math.max(MARKETPLACE_FRESH_SUMMARY_MAX_MS + 120_000, 300_000)
+      : 90_000),
 );
 const REQUEST_RETRY_COUNT = Number(
-  process.env.MARKETPLACE_REGRESSION_REQUEST_RETRY_COUNT ?? 2,
+  process.env.MARKETPLACE_REGRESSION_REQUEST_RETRY_COUNT ??
+    (FULL_REGRESSION_MODE ? 2 : 0),
 );
 const ID_RECORD_MAX_MS = Number(
   process.env.MARKETPLACE_ID_RECORD_MAX_MS ?? 15_000,
@@ -122,6 +135,27 @@ function numericValue(value) {
 
 function numbersAgree(left, right, tolerance = 0.01) {
   return Math.abs(numericValue(left) - numericValue(right)) <= tolerance;
+}
+
+function elapsedMs(startedAt) {
+  return `${Date.now() - startedAt}ms`;
+}
+
+async function step(name, run) {
+  const startedAt = Date.now();
+  console.log(`START [${GATE_LABEL}] ${name}`);
+  try {
+    const result = await run();
+    console.log(`PASS  [${GATE_LABEL}] ${name} ${elapsedMs(startedAt)}`);
+    return result;
+  } catch (error) {
+    console.error(
+      `FAIL  [${GATE_LABEL}] ${name} ${elapsedMs(startedAt)}: ${
+        error?.message ?? error
+      }`,
+    );
+    throw error;
+  }
 }
 
 function assertRenderableLogItems(payload, label) {
@@ -151,6 +185,8 @@ async function getJson(path, params = {}) {
       url.searchParams.set(key, String(value));
     }
   }
+  const requestStartedAt = Date.now();
+  console.log(`GET   [${GATE_LABEL}] ${url.pathname}${url.search}`);
   let lastError = null;
   for (let attempt = 0; attempt <= REQUEST_RETRY_COUNT; attempt += 1) {
     try {
@@ -158,10 +194,20 @@ async function getJson(path, params = {}) {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (response.ok) {
+        console.log(
+          `OK    [${GATE_LABEL}] ${url.pathname}${url.search} ${elapsedMs(
+            requestStartedAt,
+          )}`,
+        );
         return response.json();
       }
       const retryableStatus = [500, 502, 503, 504].includes(response.status);
       if (!retryableStatus || attempt >= REQUEST_RETRY_COUNT) {
+        console.error(
+          `BAD   [${GATE_LABEL}] ${url.pathname}${url.search} HTTP ${
+            response.status
+          } ${elapsedMs(requestStartedAt)}`,
+        );
         throw new Error(`${url} returned HTTP ${response.status}`);
       }
       lastError = new Error(`${url} returned HTTP ${response.status}`);
@@ -171,9 +217,19 @@ async function getJson(path, params = {}) {
         error?.name === "TimeoutError" ||
         String(error?.message ?? "").includes("fetch failed");
       if (!retryableError || attempt >= REQUEST_RETRY_COUNT) {
+        console.error(
+          `BAD   [${GATE_LABEL}] ${url.pathname}${url.search} ${
+            error?.message ?? error
+          } ${elapsedMs(requestStartedAt)}`,
+        );
         throw error;
       }
     }
+    console.log(
+      `RETRY [${GATE_LABEL}] ${url.pathname}${url.search} attempt ${
+        attempt + 2
+      }/${REQUEST_RETRY_COUNT + 1}`,
+    );
     await new Promise((resolve) =>
       setTimeout(resolve, 1_000 * (attempt + 1)),
     );
@@ -245,6 +301,222 @@ function holderByAddress(items, address) {
     (item) => String(item?.address ?? "").toLowerCase() === needle,
   );
 }
+
+async function runFastMarketplaceRegressionGate() {
+  console.log(`Marketplace regression gate: fast deploy checks for ${API_BASE}`);
+
+  await step("fast ProofOfWork ID record lookup", async () => {
+    const { elapsedMs: carbonzIdMs, json: carbonzIdPayload } =
+      await timedGetJson("/api/v1/ids/carbonz", { network: "livenet" });
+    assert(
+      carbonzIdMs <= ID_RECORD_MAX_MS,
+      `/api/v1/ids/carbonz took ${carbonzIdMs}ms, expected <= ${ID_RECORD_MAX_MS}ms`,
+    );
+    assert(
+      String(carbonzIdPayload.record?.id ?? "").toLowerCase() === "carbonz" &&
+        carbonzIdPayload.record?.confirmed === true,
+      "/api/v1/ids/carbonz did not return the confirmed Carbonz ID record",
+    );
+  });
+
+  await step("active and closed WORK listing truth", async () => {
+    const activeListing = await tokenHistory("listings", { q: LISTING_TX });
+    assert(
+      !txids(activeListing.items).has(LISTING_TX),
+      `${LISTING_TX} is still returned as an active listing`,
+    );
+    const reportedActiveListing = await tokenHistory("listings", {
+      q: REPORTED_LISTING_TX,
+    });
+    assert(
+      !txids(reportedActiveListing.items).has(REPORTED_LISTING_TX),
+      `${REPORTED_LISTING_TX} is still returned as an active listing`,
+    );
+
+    const closedByDelist = await tokenHistory("closed-listings", {
+      q: DELIST_TX,
+    });
+    assert(
+      (closedByDelist.items ?? []).some(
+        (item) =>
+          String(item?.closedTxid ?? "").toLowerCase() === DELIST_TX &&
+          item?.closedConfirmed === true,
+      ),
+      `${DELIST_TX} is not returned as a confirmed closed listing`,
+    );
+    const reportedClosedByDelist = await tokenHistory("closed-listings", {
+      q: REPORTED_DELIST_TX,
+    });
+    assert(
+      (reportedClosedByDelist.items ?? []).some(
+        (item) =>
+          String(item?.listingId ?? "").toLowerCase() === REPORTED_LISTING_TX &&
+          String(item?.closedTxid ?? "").toLowerCase() ===
+            REPORTED_DELIST_TX &&
+          item?.closedConfirmed === true,
+      ),
+      `${REPORTED_DELIST_TX} is not returned as a confirmed closed listing`,
+    );
+  });
+
+  await step("seller wallet active and unsealed listing state", async () => {
+    const walletToken = await getJson("/api/v1/token", {
+      network: "livenet",
+      asset: WORK_TOKEN_ID,
+      address: SELLER,
+      wallet: 1,
+    });
+    assert(
+      !(walletToken.listings ?? []).some(
+        (item) => String(item?.listingId ?? "").toLowerCase() === LISTING_TX,
+      ),
+      `${LISTING_TX} is still returned as active in wallet-scoped token payload`,
+    );
+    assert(
+      !(walletToken.listings ?? []).some(
+        (item) =>
+          String(item?.listingId ?? "").toLowerCase() ===
+          REPORTED_LISTING_TX,
+      ),
+      `${REPORTED_LISTING_TX} is still returned as active in wallet-scoped token payload`,
+    );
+    for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
+      const item = listingById(walletToken.listings, txid);
+      assert(
+        item?.confirmed === true &&
+          item?.sellerAddress === SELLER &&
+          !item?.sealTxid,
+        `${txid} is missing as an active unsealed seller listing in wallet-scoped token payload`,
+      );
+    }
+  });
+
+  await step("confirmed sealed listing metadata stays visible", async () => {
+    const carbonzTaprootWalletToken = await getJson("/api/v1/token", {
+      network: "livenet",
+      asset: WORK_TOKEN_ID,
+      address: CARBONZ_TAPROOT_LISTING_ADDRESS,
+      wallet: 1,
+      fresh: 1,
+    });
+    const recentWaitingForSealItem = listingById(
+      carbonzTaprootWalletToken.listings,
+      REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
+    );
+    assert(
+      recentWaitingForSealItem?.confirmed === true &&
+        tokenListingHasConfirmedSeal(recentWaitingForSealItem) &&
+        String(recentWaitingForSealItem.sealTxid ?? "").toLowerCase() ===
+          REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX,
+      `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is missing its confirmed seal metadata`,
+    );
+  });
+
+  await step("Carbonz delayed WORK transfer wallet recovery", async () => {
+    const carbonzDelayedTransferHistory = await tokenHistory("transfers", {
+      fresh: 1,
+      q: CARBONZ_DELAYED_TRANSFER_TX,
+    });
+    const carbonzDelayedTransfer = (
+      carbonzDelayedTransferHistory.items ?? []
+    ).find(
+      (item) =>
+        String(item?.txid ?? "").toLowerCase() ===
+          CARBONZ_DELAYED_TRANSFER_TX && item?.confirmed === true,
+    );
+    assert(
+      carbonzDelayedTransfer?.amount === 20000 &&
+        carbonzDelayedTransfer?.senderAddress ===
+          CARBONZ_DELAYED_TRANSFER_SENDER &&
+        carbonzDelayedTransfer?.recipientAddress ===
+          CARBONZ_DELAYED_TRANSFER_RECIPIENT,
+      `${CARBONZ_DELAYED_TRANSFER_TX} is missing or incomplete in WORK transfer history`,
+    );
+    for (const address of [
+      CARBONZ_DELAYED_TRANSFER_SENDER,
+      CARBONZ_DELAYED_TRANSFER_RECIPIENT,
+    ]) {
+      const scopedWallet = await getJson("/api/v1/token", {
+        network: "livenet",
+        asset: WORK_TOKEN_ID,
+        address,
+        wallet: 1,
+        fresh: 1,
+      });
+      assert(
+        (scopedWallet.transfers ?? []).some(
+          (item) =>
+            String(item?.txid ?? "").toLowerCase() ===
+              CARBONZ_DELAYED_TRANSFER_TX &&
+            item?.confirmed === true &&
+            item?.senderAddress === CARBONZ_DELAYED_TRANSFER_SENDER &&
+            item?.recipientAddress === CARBONZ_DELAYED_TRANSFER_RECIPIENT,
+        ),
+        `${CARBONZ_DELAYED_TRANSFER_TX} is missing from ${address} wallet-scoped transfers`,
+      );
+    }
+    const delayedRecipientWallet = await getJson("/api/v1/token-summary", {
+      network: "livenet",
+      asset: WORK_TOKEN_ID,
+      address: CARBONZ_DELAYED_TRANSFER_RECIPIENT,
+      wallet: 1,
+      fresh: 1,
+    });
+    const delayedRecipientHolder = holderByAddress(
+      delayedRecipientWallet.holders,
+      CARBONZ_DELAYED_TRANSFER_RECIPIENT,
+    );
+    assert(
+      Number(delayedRecipientHolder?.balance ?? 0) >= 20000,
+      `${CARBONZ_DELAYED_TRANSFER_RECIPIENT} wallet summary did not include the confirmed WORK transfer balance`,
+    );
+  });
+
+  await step("marketplace summary active book contract", async () => {
+    const { elapsedMs: marketplaceSummaryMs, json: marketplaceSummary } =
+      await timedGetJson("/api/v1/marketplace-summary", {
+        network: "livenet",
+      });
+    assert(
+      marketplaceSummaryMs <= MARKETPLACE_SUMMARY_MAX_MS,
+      `/api/v1/marketplace-summary took ${marketplaceSummaryMs}ms, expected <= ${MARKETPLACE_SUMMARY_MAX_MS}ms`,
+    );
+    assert(
+      !(marketplaceSummary.token?.listings ?? []).some(
+        (item) => String(item?.listingId ?? "").toLowerCase() === LISTING_TX,
+      ),
+      `${LISTING_TX} is still returned as active in marketplace summary`,
+    );
+    assert(
+      !(marketplaceSummary.token?.listings ?? []).some(
+        (item) =>
+          String(item?.listingId ?? "").toLowerCase() ===
+          REPORTED_SPENT_SEAL_LISTING_TX,
+      ),
+      `${REPORTED_SPENT_SEAL_LISTING_TX} is still returned as active in marketplace summary after ${REPORTED_SPENT_SEAL_TX} spent its sale-ticket anchor`,
+    );
+    for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
+      const item = listingById(marketplaceSummary.token?.listings, txid);
+      assert(
+        item?.confirmed === true &&
+          item?.sellerAddress === SELLER &&
+          !item?.sealTxid,
+        `${txid} is missing as an active unsealed seller listing in marketplace summary`,
+      );
+    }
+  });
+
+  console.log(
+    `Marketplace fast regression checks passed for ${API_BASE}: ID lookup, listing lifecycle, wallet scopes, sealed/unsealed book state, and targeted WORK transfers.`,
+  );
+}
+
+if (!FULL_REGRESSION_MODE) {
+  await runFastMarketplaceRegressionGate();
+  process.exit(0);
+}
+
+console.log(`Marketplace regression gate: full convergence audit for ${API_BASE}`);
 
 const { elapsedMs: carbonzIdMs, json: carbonzIdPayload } = await timedGetJson(
   "/api/v1/ids/carbonz",
@@ -1004,5 +1276,5 @@ assert(
 );
 
 console.log(
-  `Marketplace regression checks passed for ${API_BASE}: delist, summary, sealed listings, sales, wallet, and Log close status.`,
+  `Marketplace full regression checks passed for ${API_BASE}: delist, fresh summaries, sealed listings, sales, wallet, and Log close status.`,
 );

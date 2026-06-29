@@ -13,6 +13,7 @@
     "check:send-prep-regressions": "node scripts/check-send-prep-regressions.mjs",
     "check:credit-mint-regressions": "node scripts/check-credit-mint-regressions.mjs",
     "check:marketplace-regressions": "node scripts/check-marketplace-regressions.mjs",
+    "check:marketplace-regressions:full": "MARKETPLACE_REGRESSION_MODE=full node scripts/check-marketplace-regressions.mjs",
     "check:mail-regressions": "node scripts/check-mail-regressions.mjs",
     "db:schema": "node scripts/apply-proof-indexer-schema.mjs",
     "indexer:backfill": "node scripts/backfill-proof-indexer.mjs",
