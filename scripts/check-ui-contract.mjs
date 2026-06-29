@@ -207,6 +207,21 @@ expect(
 );
 
 const app = contents.get("src/App.tsx");
+const idMarketplaceCardBlock =
+  app.match(/function IdMarketplaceCard[\s\S]*?function PendingIdEventList/)?.[0] ??
+  "";
+expect(
+  "ID marketplace buttons use action-specific busy labels",
+  /idMarketplaceAction/.test(idMarketplaceCardBlock) &&
+    /publishInProgress/.test(idMarketplaceCardBlock) &&
+    /buyInProgress/.test(idMarketplaceCardBlock) &&
+    !/busy\s*\?\s*"Publishing"/.test(idMarketplaceCardBlock) &&
+    !/busy\s*\?\s*"Buying"/.test(idMarketplaceCardBlock),
+);
+expect(
+  "ID marketplace buy button uses the purchase guard",
+  /disabled=\{!canPurchaseId\}/.test(idMarketplaceCardBlock),
+);
 [
   /className="desktop-public-header"/,
   /className="id-launch-topbar"/,

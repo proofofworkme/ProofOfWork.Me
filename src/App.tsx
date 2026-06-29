@@ -775,6 +775,8 @@ type PowIdMarketplaceTransferVersion = "buy2" | "buy3" | "buy4" | "buy5";
 
 type PowIdDelistingVersion = "delist2" | "delist3" | "delist4" | "delist5";
 
+type IdMarketplaceAction = "idle" | "publish" | "buy";
+
 type PowIdSpentOutpoint = {
   txid: string;
   vout: number;
@@ -12657,6 +12659,8 @@ export default function App() {
   const [composeOpen, setComposeOpen] = useState(true);
   const [replyParentTxid, setReplyParentTxid] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  const [idMarketplaceAction, setIdMarketplaceAction] =
+    useState<IdMarketplaceAction>("idle");
   const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({
     tone: "idle",
     text: "Ready",
@@ -17201,6 +17205,7 @@ export default function App() {
       return;
     }
 
+    setIdMarketplaceAction("publish");
     setBusy(true);
     setStatus({
       tone: "idle",
@@ -17273,6 +17278,7 @@ export default function App() {
         text: errorMessage(error, "ID listing failed."),
       });
     } finally {
+      setIdMarketplaceAction("idle");
       setBusy(false);
     }
   }
@@ -17727,6 +17733,7 @@ export default function App() {
       return;
     }
 
+    setIdMarketplaceAction("buy");
     setBusy(true);
     setStatus({
       tone: "idle",
@@ -17855,6 +17862,7 @@ export default function App() {
         text: errorMessage(error, "ID purchase failed."),
       });
     } finally {
+      setIdMarketplaceAction("idle");
       setBusy(false);
     }
   }
@@ -20426,6 +20434,7 @@ export default function App() {
           idSaleBuyerAddress={idSaleBuyerAddress}
           idSalePriceSats={idSalePriceSats}
           idSaleReceiveAddress={idSaleReceiveAddress}
+          idMarketplaceAction={idMarketplaceAction}
           managedIdName={managedIdRecord?.id ?? ""}
           network={network}
           onNetworkChange={chooseNetwork}
@@ -21287,6 +21296,7 @@ export default function App() {
             idSaleBuyerAddress={idSaleBuyerAddress}
             idSalePriceSats={idSalePriceSats}
             idSaleReceiveAddress={idSaleReceiveAddress}
+            idMarketplaceAction={idMarketplaceAction}
             managedIdName={managedIdName}
             network={network}
             pendingEvents={idPendingEvents}
@@ -32303,6 +32313,7 @@ function MarketplaceApp({
   idSaleBuyerAddress,
   idSalePriceSats,
   idSaleReceiveAddress,
+  idMarketplaceAction,
   managedIdName,
   network,
   onNetworkChange,
@@ -32353,6 +32364,7 @@ function MarketplaceApp({
   idSaleBuyerAddress: string;
   idSalePriceSats: number;
   idSaleReceiveAddress: string;
+  idMarketplaceAction: IdMarketplaceAction;
   managedIdName: string;
   network: BitcoinNetwork;
   onNetworkChange: (network: BitcoinNetwork) => void;
@@ -32588,7 +32600,6 @@ function MarketplaceApp({
           </section>
 
           <IdMarketplaceCard
-            busy={busy}
             canCreateSaleAuthorization={canCreateSaleAuthorization}
             canPurchaseId={canPurchaseId}
             feeRate={feeRate}
@@ -32599,6 +32610,7 @@ function MarketplaceApp({
             idSaleBuyerAddress={idSaleBuyerAddress}
             idSalePriceSats={idSalePriceSats}
             idSaleReceiveAddress={idSaleReceiveAddress}
+            idMarketplaceAction={idMarketplaceAction}
             managedId={managedId}
             network="livenet"
             publishListing={publishListing}
@@ -32712,6 +32724,7 @@ function MarketplaceWorkspace({
   idSaleBuyerAddress,
   idSalePriceSats,
   idSaleReceiveAddress,
+  idMarketplaceAction,
   managedIdName,
   network,
   pendingEvents,
@@ -32760,6 +32773,7 @@ function MarketplaceWorkspace({
   idSaleBuyerAddress: string;
   idSalePriceSats: number;
   idSaleReceiveAddress: string;
+  idMarketplaceAction: IdMarketplaceAction;
   managedIdName: string;
   network: BitcoinNetwork;
   pendingEvents: PowIdPendingEvent[];
@@ -32977,7 +32991,6 @@ function MarketplaceWorkspace({
         </section>
 
         <IdMarketplaceCard
-          busy={busy}
           canCreateSaleAuthorization={canCreateSaleAuthorization}
           canPurchaseId={canPurchaseId}
           feeRate={feeRate}
@@ -32988,6 +33001,7 @@ function MarketplaceWorkspace({
           idSaleBuyerAddress={idSaleBuyerAddress}
           idSalePriceSats={idSalePriceSats}
           idSaleReceiveAddress={idSaleReceiveAddress}
+          idMarketplaceAction={idMarketplaceAction}
           managedId={managedId}
           network={network}
           publishListing={publishListing}
@@ -34060,7 +34074,6 @@ function MarketplaceListingList({
 }
 
 function IdMarketplaceCard({
-  busy,
   canCreateSaleAuthorization,
   canPurchaseId,
   feeRate,
@@ -34071,6 +34084,7 @@ function IdMarketplaceCard({
   idSaleBuyerAddress,
   idSalePriceSats,
   idSaleReceiveAddress,
+  idMarketplaceAction,
   managedId,
   network,
   publishListing,
@@ -34083,7 +34097,6 @@ function IdMarketplaceCard({
   status,
   submitPurchase,
 }: {
-  busy: boolean;
   canCreateSaleAuthorization: boolean;
   canPurchaseId: boolean;
   feeRate: number;
@@ -34094,6 +34107,7 @@ function IdMarketplaceCard({
   idSaleBuyerAddress: string;
   idSalePriceSats: number;
   idSaleReceiveAddress: string;
+  idMarketplaceAction: IdMarketplaceAction;
   managedId?: PowIdRecord;
   network: BitcoinNetwork;
   publishListing: () => void;
@@ -34122,6 +34136,8 @@ function IdMarketplaceCard({
   const saleIsReady = parsedSale
     ? saleAuthorizationCanBroadcast(parsedSale)
     : false;
+  const publishInProgress = idMarketplaceAction === "publish";
+  const buyInProgress = idMarketplaceAction === "buy";
 
   return (
     <section className="id-card id-marketplace-card">
@@ -34189,7 +34205,9 @@ function IdMarketplaceCard({
             >
               <span className="button-content">
                 <Send size={15} />
-                <span>{busy ? "Publishing" : "Publish On-Chain"}</span>
+                <span>
+                  {publishInProgress ? "Publishing" : "Publish On-Chain"}
+                </span>
               </span>
             </button>
           </div>
@@ -34255,13 +34273,13 @@ function IdMarketplaceCard({
           <div className="id-record-actions">
             <button
               className="primary"
-              disabled={busy}
+              disabled={!canPurchaseId}
               onClick={submitPurchase}
               type="button"
             >
               <span className="button-content">
                 <Send size={15} />
-                <span>{busy ? "Buying" : "Buy Listing On-Chain"}</span>
+                <span>{buyInProgress ? "Buying" : "Buy Listing On-Chain"}</span>
               </span>
             </button>
           </div>
