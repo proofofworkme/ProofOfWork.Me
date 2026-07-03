@@ -1621,7 +1621,10 @@ async function upsertProjection(client, sourceLabel, item, status) {
 
   const projectionKind = eventKind(item, sourceLabel);
   const projectsCreditListing =
-    ["token-listings", "token-closed-listings"].includes(sourceLabel) ||
+    ["token-listings", "token-closed-listings", "token-sales"].includes(
+      sourceLabel,
+    ) ||
+    projectionKind === "token-sale" ||
     projectionKind === "token-listing-closed" ||
     projectionKind === "closed-listing";
   if (projectsCreditListing && item?.listingId && item?.tokenId) {
@@ -1740,11 +1743,14 @@ function listingStatus(item, sourceLabel) {
     return "dropped";
   }
   if (
+    sourceLabel === "token-sales" ||
+    kind === "token-sale" ||
     sourceLabel === "token-closed-listings" ||
     kind === "token-listing-closed" ||
     kind === "closed-listing"
   ) {
     if (
+      item?.confirmed === false ||
       item?.closedConfirmed === false ||
       item?.closedListing?.closedConfirmed === false
     ) {
@@ -1773,6 +1779,8 @@ function creditListingCloseTxid(
     return String(direct).toLowerCase();
   }
   const isCloseProjection =
+    sourceLabel === "token-sales" ||
+    projectionKind === "token-sale" ||
     sourceLabel === "token-closed-listings" ||
     projectionKind === "token-listing-closed" ||
     projectionKind === "closed-listing";

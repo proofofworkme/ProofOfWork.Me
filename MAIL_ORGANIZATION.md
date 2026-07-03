@@ -56,6 +56,12 @@ Mail organization features that are already implemented in the full app:
   and proof-index participants to repair stale projection rows at read time.
   The chain transaction remains the authority; the repair is a projection fix,
   not a new mailbox rule.
+- Confirmed Log/Event History, credit history, marketplace state, WORK/Growth
+  network value, Wallet, and Infinity views must agree with first-party
+  full-node confirmed tx truth before production changes ship. If a stable
+  proof-index row hides a confirmed tx, shows a sold listing as active, or
+  returns stale zero value, the projection is wrong and must be repaired or
+  bypassed.
 
 Future developers should keep `id.proofofwork.me` narrow. Do not pull the full mailbox UI into the Phase 1 registry launch unless the launch scope explicitly changes.
 Marketplace actions should stay outside the mailbox folders. Keep ID and credit trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders. The Marketplace workspace is tabbed by asset class: IDs and Credits both use sale-ticket settlement, while Wallet stays the place to transfer or list owned credit balances.

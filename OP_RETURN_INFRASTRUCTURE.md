@@ -199,6 +199,11 @@ run has `missingLogEvents: []`, populated event participant/ref search indexes,
 matching WORK/Growth/summary snapshot ids, searchable known regression txids,
 pending rows limited to mempool visibility, and marketplace summaries containing
 every confirmed sealed WORK listing present in the full token payload.
+Production shipping must also verify the exact changed public outputs against
+first-party full-node or confirmed tx truth before deploy. Proof-index
+PostgreSQL tables are derived read models for speed; stale rows, stale zeros,
+and unclosed sale-ticket projections must be repaired or bypassed when they
+disagree with confirmed chain state.
 
 Production audits should follow the public app dependency order. Verify the
 standalone surfaces first: Home, IDs, Desktop, Browser, Marketplace, Credit,
@@ -649,7 +654,7 @@ After changing the API or production build, verify:
 - `npm run indexer:parity` passes against production and reports canonical/database snapshot parity plus populated participants/refs.
 - `npm run check:mail-regressions` passes against production, including the `64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e` OTC self-send in Inbox, Sent, Log, and Event History as an Infinity Bond.
 - `npm run check:marketplace-regressions` passes against production, including WORK delist, sale-ticket lifecycle alignment, confirmed sealed listing visibility in marketplace summary, and wallet-scoped sealed listing state.
-- Known WORK marketplace regression txids are searchable in Log, including `f5dbee238a09fe0da6a0e4d01526fefefa6676b86df742323ce49df0daa5ecf5` as a listing close and `34ad3a1211c3023d66d72e04e9faf8d989cd60f476887a0abd28b53ba2a8b0a3` as sale plus closure.
+- Known WORK marketplace regression txids are searchable in Log, including `f5dbee238a09fe0da6a0e4d01526fefefa6676b86df742323ce49df0daa5ecf5` as a listing close, `34ad3a1211c3023d66d72e04e9faf8d989cd60f476887a0abd28b53ba2a8b0a3` as sale plus closure, and `d5fba208f3213ff0eabe3f857b84d1be9bc63ea5318f8e945a7a6cb9b6190edb` as the confirmed close for listing `ed2302fc151663295633de43026e1669f21e4371cc2805866cf17ee1f78eb78e`.
 - Growth can load real chain metrics, including credit creations, mints, transfers, listings, and sales, and render the modeled-vs-real proofs/USD value graph without layout overlap on desktop and mobile.
 - WORK and Growth show matching confirmed network value in proofs/live USD using `/api/v1/work-floor` and `/api/v1/prices/btc-usd`; `actualValue.totalUsd` reconciles to `actualValue.totalSats / 100000000 * btcUsd`.
 - `npm run check:live-data` passes locally.

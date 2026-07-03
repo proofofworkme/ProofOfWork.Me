@@ -527,11 +527,19 @@ type PowTokenDefinition = {
 type PowTokenMint = {
   amount: number;
   confirmed: boolean;
+  creditAmountMoved?: number;
+  creditLiveFloorSats?: number;
+  creditLiveValueSats?: number;
+  creditValueAtConfirmSats?: number;
   createdAt: string;
   dataBytes?: number;
+  frozenNetworkValueSats?: number;
+  liveNetworkValueSats?: number;
   minterAddress: string;
+  minerFeeSats?: number;
   network: BitcoinNetwork;
   paidSats: number;
+  proofPaymentSats?: number;
   registryAddress: string;
   ticker: string;
   tokenId: string;
@@ -540,12 +548,22 @@ type PowTokenMint = {
 
 type PowTokenTransfer = {
   amount: number;
+  arbSats?: number;
   confirmed: boolean;
+  creditAmountMoved?: number;
+  creditFloorAtConfirmSats?: number;
+  creditLiveFloorSats?: number;
+  creditLiveValueSats?: number;
+  creditValueAtConfirmSats?: number;
   createdAt: string;
   dataBytes?: number;
+  frozenNetworkValueSats?: number;
+  liveNetworkValueSats?: number;
+  minerFeeSats?: number;
   network: BitcoinNetwork;
   paidSats: number;
   recipientAddress: string;
+  registryMutationFeeSats?: number;
   registryAddress: string;
   senderAddress: string;
   ticker: string;
@@ -583,7 +601,11 @@ type PowTokenListing = {
   confirmed: boolean;
   createdAt: string;
   dataBytes?: number;
+  frozenNetworkValueSats?: number;
   listingId: string;
+  liveNetworkValueSats?: number;
+  marketplaceMutationFeeSats?: number;
+  minerFeeSats?: number;
   network: BitcoinNetwork;
   priceSats: number;
   registryAddress: string;
@@ -591,6 +613,9 @@ type PowTokenListing = {
   sealAt?: string;
   sealConfirmed?: boolean;
   sealDataBytes?: number;
+  sealFrozenNetworkValueSats?: number;
+  sealLiveNetworkValueSats?: number;
+  sealMinerFeeSats?: number;
   sealTxid?: string;
   sellerAddress: string;
   ticker: string;
@@ -600,6 +625,9 @@ type PowTokenListing = {
 type PowTokenClosedListing = PowTokenListing & {
   closedAt?: string;
   closedConfirmed?: boolean;
+  closedFrozenNetworkValueSats?: number;
+  closedLiveNetworkValueSats?: number;
+  closedMinerFeeSats?: number;
   closedTxid?: string;
   closedVin?: number;
 };
@@ -616,14 +644,25 @@ type PendingTokenListingSeal = {
 
 type PowTokenSale = {
   amount: number;
+  arbSats?: number;
   buyerAddress: string;
   confirmed: boolean;
+  creditAmountMoved?: number;
+  creditFloorAtConfirmSats?: number;
+  creditLiveFloorSats?: number;
+  creditLiveValueSats?: number;
+  creditValueAtConfirmSats?: number;
   createdAt: string;
+  frozenNetworkValueSats?: number;
   listingId: string;
+  liveNetworkValueSats?: number;
+  marketplaceMutationFeeSats?: number;
+  minerFeeSats?: number;
   network: BitcoinNetwork;
   paidSats: number;
   priceSats: number;
   registryAddress: string;
+  salePaymentSats?: number;
   sellerAddress: string;
   ticker: string;
   tokenId: string;
@@ -726,14 +765,26 @@ type PowActivityItem = {
   confirmed: boolean;
   counterparty?: string;
   createdAt: string;
+  creditAmountMoved?: number;
+  creditFloorAtConfirmSats?: number;
+  creditLiveFloorSats?: number;
+  creditLiveValueSats?: number;
+  creditValueAtConfirmSats?: number;
   dataBytes?: number;
   description: string;
   detail?: string;
+  frozenNetworkValueSats?: number;
   id?: string;
   kind: PowActivityKind;
   listingId?: string;
+  liveNetworkValueSats?: number;
+  marketplaceMutationFeeSats?: number;
+  minerFeeSats?: number;
   network: BitcoinNetwork;
   participants?: string[];
+  proofPaymentSats?: number;
+  registryMutationFeeSats?: number;
+  salePaymentSats?: number;
   tags: string[];
   title: string;
   tokenId?: string;
@@ -1293,6 +1344,16 @@ type GrowthActualNetworkValue = {
   browserSats: number;
   computerEventFlowSats: number;
   computerEventSats: number;
+  creditEventFrozenValueSats?: number;
+  creditEventLiveValueSats?: number;
+  creditMinerFeeFlowSats?: number;
+  creditMarketplaceMutationFlowSats?: number;
+  creditMovementFrozenValueSats?: number;
+  creditMovementLiveValueSats?: number;
+  creditNetworkValueSats?: number;
+  creditProofPaymentFlowSats?: number;
+  creditRegistryMutationFlowSats?: number;
+  creditSalePaymentFlowSats?: number;
   driveFlowSats: number;
   driveSats: number;
   idMarketplaceFeeSats: number;
@@ -10139,6 +10200,46 @@ function normalizeGrowthActualValue(
       "computerEventFlowSats",
     ),
     computerEventSats: growthNumberField(payload, "computerEventSats"),
+    creditEventFrozenValueSats: growthNumberField(
+      payload,
+      "creditEventFrozenValueSats",
+    ),
+    creditEventLiveValueSats: growthNumberField(
+      payload,
+      "creditEventLiveValueSats",
+    ),
+    creditMinerFeeFlowSats: growthNumberField(
+      payload,
+      "creditMinerFeeFlowSats",
+    ),
+    creditMarketplaceMutationFlowSats: growthNumberField(
+      payload,
+      "creditMarketplaceMutationFlowSats",
+    ),
+    creditMovementFrozenValueSats: growthNumberField(
+      payload,
+      "creditMovementFrozenValueSats",
+    ),
+    creditMovementLiveValueSats: growthNumberField(
+      payload,
+      "creditMovementLiveValueSats",
+    ),
+    creditNetworkValueSats: growthNumberField(
+      payload,
+      "creditNetworkValueSats",
+    ),
+    creditProofPaymentFlowSats: growthNumberField(
+      payload,
+      "creditProofPaymentFlowSats",
+    ),
+    creditRegistryMutationFlowSats: growthNumberField(
+      payload,
+      "creditRegistryMutationFlowSats",
+    ),
+    creditSalePaymentFlowSats: growthNumberField(
+      payload,
+      "creditSalePaymentFlowSats",
+    ),
     driveFlowSats: growthNumberField(payload, "driveFlowSats"),
     driveSats: growthNumberField(payload, "driveSats"),
     idMarketplaceFeeSats: growthNumberField(
@@ -16192,6 +16293,7 @@ export default function App() {
           years: point.years,
         }));
         const quote = {
+          actualValue,
           chartPoints,
           indexedAt: new Date().toISOString(),
           networkValueSats: actualValue.totalSats,
@@ -24082,6 +24184,8 @@ function TokenWalletWorkspace({
     ...walletTransfers.map((transfer) => ({
       amount: transfer.amount,
       confirmed: transfer.confirmed,
+      frozenNetworkValueSats: transfer.frozenNetworkValueSats,
+      liveNetworkValueSats: transfer.liveNetworkValueSats,
       createdAt: transfer.createdAt,
       key: `transfer:${transfer.txid}`,
       label: transfer.senderAddress === address ? "Sent" : "Received",
@@ -24095,6 +24199,8 @@ function TokenWalletWorkspace({
       amount: item.amount,
       confirmed: item.confirmed,
       createdAt: item.createdAt,
+      frozenNetworkValueSats: item.frozenNetworkValueSats,
+      liveNetworkValueSats: item.liveNetworkValueSats,
       key: `listing:${item.listingId}`,
       label: "Listed",
       network: item.network,
@@ -24110,6 +24216,8 @@ function TokenWalletWorkspace({
               amount: item.amount,
               confirmed: Boolean(item.sealConfirmed),
               createdAt: item.sealAt ?? item.createdAt,
+              frozenNetworkValueSats: item.sealFrozenNetworkValueSats,
+              liveNetworkValueSats: item.sealLiveNetworkValueSats,
               key: `seal:${item.sealTxid}`,
               label: "Sealed",
               network: item.network,
@@ -24125,6 +24233,8 @@ function TokenWalletWorkspace({
       amount: item.amount,
       confirmed: Boolean(item.closedConfirmed ?? item.confirmed),
       createdAt: item.closedAt ?? item.createdAt,
+      frozenNetworkValueSats: item.closedFrozenNetworkValueSats,
+      liveNetworkValueSats: item.closedLiveNetworkValueSats,
       key: `closed-listing:${item.closedTxid || item.listingId}`,
       label: "Delisted",
       network: item.network,
@@ -24143,6 +24253,8 @@ function TokenWalletWorkspace({
             amount: sale.amount,
             confirmed: sale.confirmed,
             createdAt: sale.createdAt,
+            frozenNetworkValueSats: sale.frozenNetworkValueSats,
+            liveNetworkValueSats: sale.liveNetworkValueSats,
             key: `sale:${sale.txid}`,
             label: sale.buyerAddress === address ? "Bought" : "Sold",
             network: sale.network,
@@ -24720,6 +24832,12 @@ function TokenWalletWorkspace({
                       {movement.priceSats > 0
                         ? ` · ${movement.priceSats.toLocaleString()} sale proofs`
                         : ""}
+                      {movement.frozenNetworkValueSats
+                        ? ` · frozen ${Math.round(movement.frozenNetworkValueSats).toLocaleString()} proofs`
+                        : ""}
+                      {movement.liveNetworkValueSats
+                        ? ` · live ${Math.round(movement.liveNetworkValueSats).toLocaleString()} proofs`
+                        : ""}
                     </small>
                   </span>
                   <span>
@@ -25290,6 +25408,18 @@ function TokenWorkspace({
   const liveWorkNetworkUsd = workFloorQuote
     ? satsToUsd(workFloorQuote.networkValueSats, btcUsd)
     : 0;
+  const workCreditNetworkValueSats =
+    workFloorQuote?.actualValue?.creditNetworkValueSats ?? 0;
+  const workCreditEventLiveValueSats =
+    workFloorQuote?.actualValue?.creditEventLiveValueSats ??
+    workFloorQuote?.actualValue?.creditMovementLiveValueSats ??
+    0;
+  const workCreditMovementFrozenValueSats =
+    workFloorQuote?.actualValue?.creditMovementFrozenValueSats ?? 0;
+  const workCreditSalePaymentFlowSats =
+    workFloorQuote?.actualValue?.creditSalePaymentFlowSats ?? 0;
+  const workCreditMinerFeeFlowSats =
+    workFloorQuote?.actualValue?.creditMinerFeeFlowSats ?? 0;
   const workFloorChartPoints = workFloorQuote?.chartPoints ?? [];
   const workFloorMinSats =
     workFloorChartPoints.length > 0
@@ -26176,6 +26306,55 @@ function TokenWorkspace({
                         <span>Network USD</span>
                         <strong>{tokenUsd(liveWorkNetworkUsd)}</strong>
                       </div>
+                      {workCreditNetworkValueSats > 0 ? (
+                        <>
+                          <div>
+                            <span>WORK event value</span>
+                            <strong>
+                              {Math.round(
+                                workCreditNetworkValueSats,
+                              ).toLocaleString()}{" "}
+                              proofs
+                            </strong>
+                          </div>
+                          <div>
+                            <span>WORK mark</span>
+                            <strong>
+                              {Math.round(
+                                workCreditMovementFrozenValueSats,
+                              ).toLocaleString()}{" "}
+                              proofs
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Live WORK value</span>
+                            <strong>
+                              {Math.round(
+                                workCreditEventLiveValueSats,
+                              ).toLocaleString()}{" "}
+                              proofs
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Sale proofs</span>
+                            <strong>
+                              {Math.round(
+                                workCreditSalePaymentFlowSats,
+                              ).toLocaleString()}{" "}
+                              proofs
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Credit miner fees</span>
+                            <strong>
+                              {Math.round(
+                                workCreditMinerFeeFlowSats,
+                              ).toLocaleString()}{" "}
+                              proofs
+                            </strong>
+                          </div>
+                        </>
+                      ) : null}
                     </div>
                     {workFloorChartPoints.length > 1 ? (
                       <>
@@ -26241,7 +26420,10 @@ function TokenWorkspace({
                       {Math.round(
                         workFloorQuote.stats?.confirmedComputerActions ?? 0,
                       ).toLocaleString()}{" "}
-                      confirmed actions.
+                      confirmed actions
+                      {workCreditNetworkValueSats > 0
+                        ? `, including ${Math.round(workCreditNetworkValueSats).toLocaleString()} full frozen WORK-event proofs and ${Math.round(workCreditEventLiveValueSats).toLocaleString()} live WORK-event proofs.`
+                        : "."}
                     </p>
                   </>
                 ) : (
@@ -27309,6 +27491,20 @@ function growthActualNetworkValue(
   const confirmedTokenSales = tokenSales.filter(
     (sale) => sale.confirmed && Date.parse(sale.createdAt) <= cutoffMs,
   );
+  const valueCreditIds = new Set(
+    confirmedTokens
+      .filter((token) => token.tokenId === WORK_TOKEN_ID)
+      .map((token) => token.tokenId),
+  );
+  const confirmedCreditValueMints = confirmedValueTokenMints.filter((mint) =>
+    valueCreditIds.has(mint.tokenId),
+  );
+  const confirmedCreditValueTransfers = confirmedTokenTransfers.filter(
+    (transfer) => valueCreditIds.has(transfer.tokenId),
+  );
+  const confirmedCreditValueSales = confirmedTokenSales.filter((sale) =>
+    valueCreditIds.has(sale.tokenId),
+  );
   const powids = confirmedRecords.length;
   const mailFlowSats = confirmedActivity
     .filter(
@@ -27381,6 +27577,148 @@ function growthActualNetworkValue(
   const walletSats = walletFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const computerEventSats =
     computerEventFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const creditMovementEvents = [
+    ...confirmedCreditValueMints,
+    ...confirmedCreditValueTransfers,
+    ...confirmedCreditValueSales,
+  ];
+  const creditMovementTxids = new Set(
+    creditMovementEvents.map((event) => event.txid).filter(Boolean),
+  );
+  const creditMutationEvents = confirmedActivity.filter(
+    (item) =>
+      item.tokenId &&
+      valueCreditIds.has(item.tokenId) &&
+      !creditMovementTxids.has(item.txid) &&
+      (item.kind === "token-create" ||
+        item.kind === "token-listing" ||
+        item.kind === "token-listing-sealed" ||
+        item.kind === "token-listing-closed"),
+  );
+  const creditEvents = [...creditMovementEvents, ...creditMutationEvents];
+  const eventNumber = (value: unknown) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+  };
+  const eventProofPaymentSats = (
+    event: PowTokenMint | PowTokenTransfer | PowTokenSale | PowActivityItem,
+  ) => {
+    if ("proofPaymentSats" in event && event.proofPaymentSats !== undefined) {
+      return eventNumber(event.proofPaymentSats);
+    }
+    if ("kind" in event && event.kind === "token-create") {
+      return eventNumber(event.amountSats);
+    }
+    if ("paidSats" in event && !("recipientAddress" in event) && !("priceSats" in event)) {
+      return eventNumber(event.paidSats);
+    }
+    return 0;
+  };
+  const eventRegistryMutationSats = (
+    event: PowTokenMint | PowTokenTransfer | PowTokenSale | PowActivityItem,
+  ) =>
+    "registryMutationFeeSats" in event
+      ? eventNumber(event.registryMutationFeeSats)
+      : "recipientAddress" in event
+        ? eventNumber(event.paidSats)
+        : 0;
+  const eventMarketplaceMutationSats = (
+    event: PowTokenMint | PowTokenTransfer | PowTokenSale | PowActivityItem,
+  ) => {
+    if ("marketplaceMutationFeeSats" in event) {
+      return eventNumber(event.marketplaceMutationFeeSats);
+    }
+    if ("kind" in event && TOKEN_MARKETPLACE_MUTATION_KINDS.has(event.kind)) {
+      return eventNumber(event.amountSats) || TOKEN_MIN_MUTATION_PRICE_SATS;
+    }
+    if ("priceSats" in event && "sellerAddress" in event) {
+      return TOKEN_MIN_MUTATION_PRICE_SATS;
+    }
+    return 0;
+  };
+  const eventSalePaymentSats = (
+    event: PowTokenMint | PowTokenTransfer | PowTokenSale | PowActivityItem,
+  ) =>
+    "salePaymentSats" in event
+      ? eventNumber(event.salePaymentSats)
+      : "priceSats" in event
+        ? eventNumber(event.priceSats)
+        : 0;
+  const eventFrozenNetworkValueSats = (
+    event: PowTokenMint | PowTokenTransfer | PowTokenSale | PowActivityItem,
+  ) => {
+    const explicit = eventNumber(event.frozenNetworkValueSats);
+    if (explicit > 0) {
+      return explicit;
+    }
+    return (
+      eventNumber(event.creditValueAtConfirmSats) +
+      eventProofPaymentSats(event) +
+      eventRegistryMutationSats(event) +
+      eventMarketplaceMutationSats(event) +
+      eventSalePaymentSats(event) +
+      eventNumber(event.minerFeeSats)
+    );
+  };
+  const eventLiveNetworkValueSats = (
+    event: PowTokenMint | PowTokenTransfer | PowTokenSale | PowActivityItem,
+  ) => {
+    const explicit = eventNumber(event.liveNetworkValueSats);
+    if (explicit > 0) {
+      return explicit;
+    }
+    return (
+      eventNumber(event.creditLiveValueSats) +
+      eventProofPaymentSats(event) +
+      eventRegistryMutationSats(event) +
+      eventMarketplaceMutationSats(event) +
+      eventSalePaymentSats(event) +
+      eventNumber(event.minerFeeSats)
+    );
+  };
+  const creditMovementFrozenValueSats = creditMovementEvents.reduce(
+    (total, event) => total + (event.creditValueAtConfirmSats ?? 0),
+    0,
+  );
+  const creditMovementLiveValueSats = creditMovementEvents.reduce(
+    (total, event) => total + (event.creditLiveValueSats ?? 0),
+    0,
+  );
+  const creditEventFrozenValueSats = creditEvents.reduce(
+    (total, event) => total + eventFrozenNetworkValueSats(event),
+    0,
+  );
+  const creditEventLiveValueSats = creditEvents.reduce(
+    (total, event) => total + eventLiveNetworkValueSats(event),
+    0,
+  );
+  const creditProofPaymentFlowSats = creditEvents.reduce(
+    (total, event) => total + eventProofPaymentSats(event),
+    0,
+  );
+  const creditRegistryMutationFlowSats = creditEvents.reduce(
+    (total, event) => total + eventRegistryMutationSats(event),
+    0,
+  );
+  const creditMarketplaceMutationFlowSats = creditEvents.reduce(
+    (total, event) => total + eventMarketplaceMutationSats(event),
+    0,
+  );
+  const creditSalePaymentFlowSats = creditEvents.reduce(
+    (total, event) => total + eventSalePaymentSats(event),
+    0,
+  );
+  const creditMinerFeesByTxid = new Map<string, number>();
+  for (const event of creditEvents) {
+    if (event.txid && event.minerFeeSats) {
+      creditMinerFeesByTxid.set(event.txid, event.minerFeeSats);
+    }
+  }
+  const creditMinerFeeFlowSats = [...creditMinerFeesByTxid.values()].reduce(
+    (total, fee) => total + fee,
+    0,
+  );
+  const creditNetworkValueSats = creditEventFrozenValueSats;
   const totalSats =
     idSats +
     mailSats +
@@ -27390,7 +27728,8 @@ function growthActualNetworkValue(
     browserSats +
     tokenSats +
     walletSats +
-    computerEventSats;
+    computerEventSats +
+    creditNetworkValueSats;
   const years = Math.max(
     0,
     (Math.min(cutoffMs, Date.now()) - GROWTH_MODEL_START_MS) /
@@ -27402,6 +27741,16 @@ function growthActualNetworkValue(
     browserSats,
     computerEventFlowSats,
     computerEventSats,
+    creditEventFrozenValueSats,
+    creditEventLiveValueSats,
+    creditMinerFeeFlowSats,
+    creditMarketplaceMutationFlowSats,
+    creditMovementFrozenValueSats,
+    creditMovementLiveValueSats,
+    creditNetworkValueSats,
+    creditProofPaymentFlowSats,
+    creditRegistryMutationFlowSats,
+    creditSalePaymentFlowSats,
     driveFlowSats,
     driveSats,
     infinityBondFlowSats,
@@ -29001,6 +29350,21 @@ function GrowthWorkspace({
   const tokenFlowSats =
     actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats;
   const walletFlowSats = actualValue.walletFlowSats;
+  const creditNetworkValueSats = actualValue.creditNetworkValueSats ?? 0;
+  const creditEventFrozenValueSats =
+    actualValue.creditEventFrozenValueSats ?? creditNetworkValueSats;
+  const creditEventLiveValueSats =
+    actualValue.creditEventLiveValueSats ??
+    actualValue.creditMovementLiveValueSats ??
+    0;
+  const creditMovementFrozenValueSats =
+    actualValue.creditMovementFrozenValueSats ?? 0;
+  const creditMinerFeeFlowSats = actualValue.creditMinerFeeFlowSats ?? 0;
+  const creditProofPaymentFlowSats = actualValue.creditProofPaymentFlowSats ?? 0;
+  const creditSalePaymentFlowSats = actualValue.creditSalePaymentFlowSats ?? 0;
+  const creditMutationFlowSats =
+    (actualValue.creditRegistryMutationFlowSats ?? 0) +
+    (actualValue.creditMarketplaceMutationFlowSats ?? 0);
   const computerEventFlowSats = actualValue.computerEventFlowSats;
   const pendingRecordCount = summaryCounts?.pendingRecords ?? pendingRecords.length;
   const chainMetricsIndexedAt =
@@ -29124,6 +29488,14 @@ function GrowthWorkspace({
             {marketplaceFeeSats.toLocaleString()} fee proofs
           </span>
         </div>
+        <div>
+          <strong>{growthSats(creditNetworkValueSats)}</strong>
+          <span>
+            WORK frozen event value · {creditMovementFrozenValueSats.toLocaleString()} WORK
+            mark · {creditSalePaymentFlowSats.toLocaleString()} sale proofs ·{" "}
+            {creditMutationFlowSats.toLocaleString()} mutation proofs
+          </span>
+        </div>
       </div>
 
       <section
@@ -29145,9 +29517,10 @@ function GrowthWorkspace({
           <h3>Everything is valued in proofs first.</h3>
           <p>
             IDs use n squared network value. Mail, Infinity Bonds, Drive,
-            Marketplace, Browser, Credits, and Wallet use confirmed payment flow
-            multiplied by the same value multiple, then translated to USD with
-            the live price benchmark.
+            Marketplace, Browser, Credits, and Wallet keep their confirmed
+            payment-flow buckets. WORK credit movements add frozen
+            proof-equivalent value at confirmation plus separate miner fees,
+            then the total is translated to USD with the live price benchmark.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -29157,8 +29530,10 @@ function GrowthWorkspace({
             Registrations, messages, replies, file writes, HTML page writes,
             Infinity Bonds, marketplace listings, seals, delistings,
             buyer-funded buys, credit creations, credit mints, and credit
-            transfers are pulled from live endpoints. Pending mempool events
-            wait until they confirm.
+            transfers are pulled from live endpoints. WORK credit transfers
+            and sales also carry frozen and live network value. Other credits
+            stay proof-flow only. Pending mempool
+            events wait until they confirm.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -29398,6 +29773,18 @@ function GrowthWorkspace({
             modelOneYearLabel="credit transfer lane"
             name="Wallet"
             note="Credit balances and pwt1:send transfers become their own ownership product in the ProofOfWork Computer model."
+          />
+          <GrowthProductCard
+            actual={growthSats(creditNetworkValueSats)}
+            actualLabel={`${growthUsdForSats(creditNetworkValueSats)} · ${creditEventFrozenValueSats.toLocaleString()} frozen WORK event · ${creditEventLiveValueSats.toLocaleString()} live WORK event · ${creditMovementFrozenValueSats.toLocaleString()} WORK mark · ${creditSalePaymentFlowSats.toLocaleString()} sale proofs · ${creditProofPaymentFlowSats.toLocaleString()} mint/create proofs · ${creditMinerFeeFlowSats.toLocaleString()} miner proofs`}
+            icon={<TrendingUp size={24} />}
+            modelFiveYear="Tracked"
+            modelFiveYearLabel="WORK movement lane"
+            modelLabel="full frozen event value"
+            modelOneYear="Tracked"
+            modelOneYearLabel="WORK movement lane"
+            name="WORK Credit Value"
+            note="Only WORK transfers and sales carry frozen network value at confirmation, while live value reprices from the current WORK floor. Other credits stay proof-flow only."
           />
         </div>
       </section>
@@ -31372,6 +31759,18 @@ function TokenMarketplacePanel({
   const workMarketNetworkUsd = workFloorQuote
     ? satsToUsd(workFloorQuote.networkValueSats, btcUsd)
     : 0;
+  const workCreditNetworkValueSats =
+    workFloorQuote?.actualValue?.creditNetworkValueSats ?? 0;
+  const workCreditEventLiveValueSats =
+    workFloorQuote?.actualValue?.creditEventLiveValueSats ??
+    workFloorQuote?.actualValue?.creditMovementLiveValueSats ??
+    0;
+  const workCreditMovementFrozenValueSats =
+    workFloorQuote?.actualValue?.creditMovementFrozenValueSats ?? 0;
+  const workCreditSalePaymentFlowSats =
+    workFloorQuote?.actualValue?.creditSalePaymentFlowSats ?? 0;
+  const workCreditMinerFeeFlowSats =
+    workFloorQuote?.actualValue?.creditMinerFeeFlowSats ?? 0;
   const workRow = rows.find(
     (token) =>
       token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER,
@@ -31465,6 +31864,55 @@ function TokenMarketplacePanel({
                         : "No asks"}
                     </strong>
                   </div>
+                  {workCreditNetworkValueSats > 0 ? (
+                    <>
+                      <div>
+                        <span>WORK event value</span>
+                        <strong>
+                          {Math.round(
+                            workCreditNetworkValueSats,
+                          ).toLocaleString()}{" "}
+                          proofs
+                        </strong>
+                      </div>
+                      <div>
+                        <span>WORK mark</span>
+                        <strong>
+                          {Math.round(
+                            workCreditMovementFrozenValueSats,
+                          ).toLocaleString()}{" "}
+                          proofs
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Live WORK value</span>
+                        <strong>
+                          {Math.round(
+                            workCreditEventLiveValueSats,
+                          ).toLocaleString()}{" "}
+                          proofs
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Sale proofs</span>
+                        <strong>
+                          {Math.round(
+                            workCreditSalePaymentFlowSats,
+                          ).toLocaleString()}{" "}
+                          proofs
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Credit miner fees</span>
+                        <strong>
+                          {Math.round(
+                            workCreditMinerFeeFlowSats,
+                          ).toLocaleString()}{" "}
+                          proofs
+                        </strong>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
 
                 {workFloorChartPoints.length > 1 ? (
@@ -31527,7 +31975,10 @@ function TokenMarketplacePanel({
                   {Math.round(
                     workFloorQuote.stats?.confirmedComputerActions ?? 0,
                   ).toLocaleString()}{" "}
-                  confirmed actions.
+                  confirmed actions
+                  {workCreditNetworkValueSats > 0
+                    ? `, including ${Math.round(workCreditNetworkValueSats).toLocaleString()} full frozen WORK-event proofs and ${Math.round(workCreditEventLiveValueSats).toLocaleString()} live WORK-event proofs.`
+                    : "."}
                 </p>
               </>
             ) : (

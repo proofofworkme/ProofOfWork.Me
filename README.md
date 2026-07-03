@@ -645,10 +645,14 @@ npm run check:mail-regressions
 npm run check:marketplace-regressions
 ```
 
-`check:mail-regressions` proves indexed Inbox/Sent mail, Infinity Bond Log/Event search for the OTC self-send regression tx, and subject/body rendering for historical mail whose body must be repaired from raw tx data. `check:marketplace-regressions` proves WORK delist, sale, wallet, summary, all confirmed sealed listing visibility, and Log close status stay aligned. `indexer:parity` proves the database snapshot, event rows, participants/refs, registry, summaries, token history, address-mail, and tx-status samples match the canonical ledger contract.
+`check:mail-regressions` proves indexed Inbox/Sent mail, Infinity Bond Log/Event search for the OTC self-send regression tx, and subject/body rendering for historical mail whose body must be repaired from raw tx data. `check:marketplace-regressions` proves WORK delist, sale, wallet, summary, sold-listing closure, confirmed sealed listing visibility, POWB transfer visibility, and Log close/sale/transfer status stay aligned. `indexer:parity` proves the database snapshot, event rows, participants/refs, registry, summaries, token history, address-mail, and tx-status samples match the canonical ledger contract.
 
 Run the relevant checks after changing `server/proof-api.mjs`, Log search,
 Growth, WORK, mail indexing, marketplace indexing, or credit/token indexing.
+Before any approved production ship, verify the exact touched public outputs
+against first-party full-node or confirmed transaction truth. The database is a
+speed layer over that truth; if proof-index projections disagree with node-backed
+confirmed history, repair or bypass the projection before deploy.
 
 ## Developer Map
 

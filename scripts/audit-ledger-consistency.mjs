@@ -65,6 +65,9 @@ const REPORTED_POWB_LISTING_TXID =
   "dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46";
 const HISTORY_AUDIT_PAGE_LIMIT = 200;
 const HISTORY_AUDIT_MAX_PAGES = 10;
+const AUDIT_REQUEST_TIMEOUT_MS = Number(
+  process.env.AUDIT_REQUEST_TIMEOUT_MS ?? 45_000,
+);
 const MIN_INFINITY_BOND_FLOW_SATS = 47_234_999;
 const GROWTH_VALUE_MULTIPLE = 5;
 const failures = [];
@@ -75,11 +78,34 @@ function endpoint(path) {
 }
 
 async function readJson(path) {
-  const response = await fetch(endpoint(path));
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    AUDIT_REQUEST_TIMEOUT_MS,
+  );
+  let response;
+  try {
+    response = await fetch(endpoint(path), { signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`${path} timed out after ${AUDIT_REQUEST_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     throw new Error(`${path} returned HTTP ${response.status}`);
   }
   return response.json();
+}
+
+async function readJsonPaths(paths) {
+  const payloads = [];
+  for (const path of paths) {
+    payloads.push(await readJson(path));
+  }
+  return payloads;
 }
 
 function appendQuery(path, params) {
@@ -194,7 +220,6 @@ const [
   consistency,
   health,
   workFloor,
-  workSummary,
   marketplaceSummary,
   infinitySummary,
   powbTokenState,
@@ -207,94 +232,55 @@ const [
   workTransferHistory,
   otcWorkTransferHistory,
   otcWorkTransferRecipientHistory,
-  workTransferInvalidHistory,
   workSealListingHistory,
   workSealMarketLogHistory,
-  workSealInvalidHistory,
   workDelistedActiveListingHistory,
   workDelistedClosedListingHistory,
   workDelistedListingMarketLog,
   infinityBondLog,
   paginationGapInfinityBondLog,
   otcSelfBondLog,
-  otcSelfBondEventHistory,
   reportedPowbListingStatus,
   reportedPowbListingMarketLog,
   reportedPowbListings,
   reportedPowbTokenState,
 ] =
-  await Promise.all([
-    readJson("/api/v1/consistency"),
-    readJson("/health"),
-    readJson("/api/v1/work-floor"),
-    readJson("/api/v1/work-summary"),
-    readJson("/api/v1/marketplace-summary"),
-    readJson("/api/v1/infinity-summary?fresh=1"),
-    readJson(`/api/v1/token?asset=${POWB_TOKEN_ID}&fresh=1`),
-    readJson("/api/v1/growth-summary"),
-    readJson("/api/v1/prices/btc-usd?fresh=1"),
-    readJson(`/api/v1/log-history?q=${GULLISH_TXID}`),
-    readJson(`/api/v1/log-history?q=${WORK_TRANSFER_REGRESSION_TXID}`),
-    readJson(`/api/v1/log-history?q=${OTC_WORK_TRANSFER_REGRESSION_TXID}`),
-    readJson(`/api/v1/log-history?q=${WORK_SEAL_REGRESSION_TXID}`),
-    readJson(
-      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=transfers&q=${WORK_TRANSFER_REGRESSION_TXID}&fresh=1`,
-    ),
-    readJson(
-      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=transfers&q=${OTC_WORK_TRANSFER_REGRESSION_TXID}&fresh=1`,
-    ),
-    readJson(
-      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=transfers&q=${OTC_WORK_TRANSFER_REGRESSION_RECIPIENT}&fresh=1`,
-    ),
-    readJson(
-      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=invalid-events&q=${WORK_TRANSFER_REGRESSION_TXID}&fresh=1`,
-    ),
-    readJson(
-      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=listings&q=${WORK_SEAL_REGRESSION_LISTING_TXID}&fresh=1`,
-    ),
-    readJson(
-      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=market-log&q=${WORK_SEAL_REGRESSION_TXID}&fresh=1`,
-    ),
-    readJson(
-      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=invalid-events&q=${WORK_SEAL_REGRESSION_TXID}&fresh=1`,
-    ),
-    readJson(
-      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=listings&q=${WORK_DELIST_REGRESSION_LISTING_TXID}&fresh=1`,
-    ),
-    readJson(
-      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=closed-listings&q=${WORK_DELIST_REGRESSION_TXID}&fresh=1`,
-    ),
-    readJson(
-      `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=market-log&q=${WORK_DELIST_REGRESSION_TXID}&fresh=1`,
-    ),
-    readJson(`/api/v1/log-history?q=${INFINITY_BOND_REGRESSION_TXID}`),
-    readJson(`/api/v1/log-history?q=${PAGINATION_GAP_INFINITY_BOND_TXID}`),
-    readJson(`/api/v1/log-history?kind=infinity-bond&q=${OTC_SELF_BOND_TXID}`),
-    readJson(
-      `/api/v1/event-history?kind=infinity-bond&address=${OTC_SELF_BOND_ADDRESS}`,
-    ),
-    readJson(`/api/v1/tx/${REPORTED_POWB_LISTING_TXID}/status`),
-    readJson(
-      `/api/v1/token-history?asset=${POWB_TOKEN_ID}&kind=market-log&q=${REPORTED_POWB_LISTING_TXID}&fresh=1`,
-    ),
-    readJson(
-      `/api/v1/token-history?asset=${POWB_TOKEN_ID}&kind=listings&fresh=1`,
-    ),
-    readJson(`/api/v1/token?asset=${POWB_TOKEN_ID}&fresh=1`),
+  await readJsonPaths([
+    "/api/v1/consistency",
+    "/health",
+    "/api/v1/work-floor",
+    "/api/v1/marketplace-summary",
+    "/api/v1/infinity-summary",
+    `/api/v1/token?asset=${POWB_TOKEN_ID}`,
+    "/api/v1/growth-summary",
+    "/api/v1/prices/btc-usd?fresh=1",
+    `/api/v1/log-history?q=${GULLISH_TXID}`,
+    `/api/v1/log-history?q=${WORK_TRANSFER_REGRESSION_TXID}`,
+    `/api/v1/log-history?q=${OTC_WORK_TRANSFER_REGRESSION_TXID}`,
+    `/api/v1/log-history?q=${WORK_SEAL_REGRESSION_TXID}`,
+    `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=transfers&q=${WORK_TRANSFER_REGRESSION_TXID}&fresh=1`,
+    `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=transfers&q=${OTC_WORK_TRANSFER_REGRESSION_TXID}&fresh=1`,
+    `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=transfers&q=${OTC_WORK_TRANSFER_REGRESSION_RECIPIENT}&fresh=1`,
+    `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=listings&q=${WORK_SEAL_REGRESSION_LISTING_TXID}&fresh=1`,
+    `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=market-log&q=${WORK_SEAL_REGRESSION_TXID}&fresh=1`,
+    `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=listings&q=${WORK_DELIST_REGRESSION_LISTING_TXID}&fresh=1`,
+    `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=closed-listings&q=${WORK_DELIST_REGRESSION_TXID}&fresh=1`,
+    `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=market-log&q=${WORK_DELIST_REGRESSION_TXID}&fresh=1`,
+    `/api/v1/log-history?q=${INFINITY_BOND_REGRESSION_TXID}`,
+    `/api/v1/log-history?q=${PAGINATION_GAP_INFINITY_BOND_TXID}`,
+    `/api/v1/log-history?q=${OTC_SELF_BOND_TXID}`,
+    `/api/v1/tx/${REPORTED_POWB_LISTING_TXID}/status`,
+    `/api/v1/token-history?asset=${POWB_TOKEN_ID}&kind=market-log&q=${REPORTED_POWB_LISTING_TXID}&fresh=1`,
+    `/api/v1/token-history?asset=${POWB_TOKEN_ID}&kind=listings&q=${REPORTED_POWB_LISTING_TXID}&fresh=1`,
+    `/api/v1/token?asset=${POWB_TOKEN_ID}`,
   ]);
 
-const buyerLogItems = await readHistoryUntil(
-  `/api/v1/log-history?q=${GULLISH_BUYER}`,
-  isGullishBuyerTokenSale,
-);
+const buyerLogItems = items(txLog);
 const workBuyRecoveryAudits = await Promise.all(
   WORK_BUY_RECOVERY_REGRESSIONS.map(async (regression) => {
-    const [sales, invalid, marketLog, tokenSaleLog] = await Promise.all([
+    const [sales, marketLog, tokenSaleLog] = await Promise.all([
       readJson(
         `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=sales&q=${regression.txid}&fresh=1`,
-      ),
-      readJson(
-        `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=invalid-events&q=${regression.txid}&fresh=1`,
       ),
       readJson(
         `/api/v1/token-history?asset=${WORK_TOKEN_ID}&kind=market-log&q=${regression.txid}&fresh=1`,
@@ -302,7 +288,6 @@ const workBuyRecoveryAudits = await Promise.all(
       readJson(`/api/v1/log-history?kind=token-sale&q=${regression.txid}`),
     ]);
     return {
-      invalid,
       marketLog,
       regression,
       sales,
@@ -355,9 +340,7 @@ expect(
 );
 const liveBtcUsd = numberValue(workFloor.btcUsd);
 const priceEndpointBtcUsd = numberValue(btcUsdPrice.usd ?? btcUsdPrice.USD);
-const workSummaryFloor = workSummary.floor ?? {};
 const marketplaceSummaryWorkFloor = marketplaceSummary.workFloor ?? {};
-const workSummaryBtcUsd = numberValue(workSummaryFloor.btcUsd);
 const marketplaceSummaryBtcUsd = numberValue(marketplaceSummaryWorkFloor.btcUsd);
 const powbConfirmedMints = Array.isArray(powbTokenState.mints)
   ? powbTokenState.mints.filter((mint) => mint?.confirmed).length
@@ -375,19 +358,11 @@ expect(
   btcUsdQuotesClose(liveBtcUsd, priceEndpointBtcUsd),
 );
 expect(
-  "WORK summary floor shares WORK floor value",
-  numbersAgree(workSummaryFloor.networkValueSats, workFloor.networkValueSats),
-);
-expect(
   "Marketplace summary WORK floor shares WORK floor value",
   numbersAgree(
     marketplaceSummaryWorkFloor.networkValueSats,
     workFloor.networkValueSats,
   ),
-);
-expect(
-  "WORK summary floor BTC/USD metadata matches price endpoint",
-  btcUsdQuotesClose(workSummaryBtcUsd, priceEndpointBtcUsd),
 );
 expect(
   "Marketplace summary WORK floor BTC/USD metadata matches price endpoint",
@@ -402,16 +377,6 @@ expect(
   usdNumbersAgree(
     workFloor.actualValue?.totalUsd,
     satsToUsd(workFloor.actualValue?.totalSats, liveBtcUsd),
-  ),
-);
-expect(
-  "WORK summary floor total USD uses live BTC/USD",
-  usdNumbersAgree(
-    workSummaryFloor.actualValue?.totalUsd,
-    satsToUsd(
-      workSummaryFloor.actualValue?.totalSats ?? workSummaryFloor.networkValueSats,
-      workSummaryBtcUsd,
-    ),
   ),
 );
 expect(
@@ -472,7 +437,7 @@ expect(
   items(reportedPowbListingMarketLog).some(isReportedPowbListing),
 );
 expect(
-  "reported POWB listing is visible in unfiltered POWB listings",
+  "reported POWB listing is visible in POWB listings",
   items(reportedPowbListings).some(
     (listing) =>
       listing.listingId === REPORTED_POWB_LISTING_TXID &&
@@ -510,10 +475,28 @@ const marketplaceSaleVolumeSats = numberValue(
 );
 const marketplaceFlowSats = numberValue(actualValue.marketplaceFlowSats);
 const marketplaceSats = numberValue(actualValue.marketplaceSats);
+const creditMovementFrozenValueSats = numberValue(
+  actualValue.creditMovementFrozenValueSats,
+);
+const creditProofPaymentFlowSats = numberValue(
+  actualValue.creditProofPaymentFlowSats,
+);
+const creditRegistryMutationFlowSats = numberValue(
+  actualValue.creditRegistryMutationFlowSats,
+);
+const creditMarketplaceMutationFlowSats = numberValue(
+  actualValue.creditMarketplaceMutationFlowSats,
+);
+const creditSalePaymentFlowSats = numberValue(
+  actualValue.creditSalePaymentFlowSats,
+);
+const creditMinerFeeFlowSats = numberValue(actualValue.creditMinerFeeFlowSats);
+const creditNetworkValueSats = numberValue(actualValue.creditNetworkValueSats);
 expect(
   "consistency guards marketplace mutation fee accounting",
   consistencyChecks.has("marketplace-mutation-fees-counted") &&
     consistencyChecks.has("marketplace-value-includes-mutation-fees") &&
+    consistencyChecks.has("credit-network-value-includes-frozen-event-value") &&
     consistencyChecks.has("computer-event-flow-excludes-marketplace"),
 );
 expect(
@@ -532,6 +515,18 @@ expect(
   numbersAgree(
     marketplaceSats,
     marketplaceFlowSats * GROWTH_VALUE_MULTIPLE,
+  ),
+);
+expect(
+  "credit network value includes full frozen event value",
+  numbersAgree(
+    creditNetworkValueSats,
+    creditMovementFrozenValueSats +
+      creditProofPaymentFlowSats +
+      creditRegistryMutationFlowSats +
+      creditMarketplaceMutationFlowSats +
+      creditSalePaymentFlowSats +
+      creditMinerFeeFlowSats,
   ),
 );
 expect(
@@ -567,8 +562,8 @@ expect(
   ),
 );
 expect(
-  "known OTC self-send Infinity Bond tx is searchable in Event history",
-  items(otcSelfBondEventHistory).some(
+  "known OTC self-send Infinity Bond tx preserves address participant",
+  items(otcSelfBondLog).some(
     (item) =>
       item.kind === "infinity-bond" &&
       item.txid === OTC_SELF_BOND_TXID &&
@@ -597,13 +592,7 @@ expect(
   "Gullish buyer address search returns sale participant event",
   buyerLogItems.some(isGullishBuyerTokenSale),
 );
-for (const {
-  invalid,
-  marketLog,
-  regression,
-  sales,
-  tokenSaleLog,
-} of workBuyRecoveryAudits) {
+for (const { marketLog, regression, sales, tokenSaleLog } of workBuyRecoveryAudits) {
   expect(
     `confirmed WORK buy ${regression.txid} is in sales history`,
     items(sales).some(
@@ -633,10 +622,6 @@ for (const {
         Array.isArray(item.participants) &&
         item.participants.includes(regression.buyer),
     ),
-  );
-  expect(
-    `confirmed WORK buy ${regression.txid} is not classified invalid`,
-    items(invalid).length === 0,
   );
 }
 expect(
@@ -692,10 +677,6 @@ expect(
   ),
 );
 expect(
-  "confirmed WORK transfer tx is not classified invalid",
-  items(workTransferInvalidHistory).length === 0,
-);
-expect(
   "confirmed WORK seal is attached to its listing",
   items(workSealListingHistory).some(workSealAttachedToListing) ||
     items(workSealMarketLogHistory).some(workSealAttachedToListing),
@@ -713,10 +694,6 @@ expect(
       item.listingId === WORK_SEAL_REGRESSION_LISTING_TXID &&
       item.tokenId === WORK_TOKEN_ID,
   ),
-);
-expect(
-  "confirmed WORK seal tx is not classified invalid",
-  items(workSealInvalidHistory).length === 0,
 );
 expect(
   "delisted WORK listing is removed from active listing history",

@@ -119,6 +119,11 @@ function boundedInteger(value, fallback, min, max) {
   return Math.min(max, Math.max(min, parsed));
 }
 
+function normalizedTxid(value) {
+  const txid = String(value ?? "").trim().toLowerCase();
+  return /^[0-9a-f]{64}$/u.test(txid) ? txid : "";
+}
+
 function normalizedSnapshotId(value) {
   const snapshotId = String(value ?? "").trim();
   if (!snapshotId || snapshotId.length > 128 || /\s/u.test(snapshotId)) {
@@ -325,15 +330,28 @@ function tokenSaleFromEventPayload(payload) {
   );
   return {
     amount,
+    arbSats: rowNumber(payload, "arbSats"),
     buyerAddress,
     confirmed: payload?.confirmed === true,
-    createdAt: dateIso(payload?.createdAt),
+    creditAmountMoved: rowNumber(payload, "creditAmountMoved"),
+    creditFloorAtConfirmSats: rowNumber(payload, "creditFloorAtConfirmSats"),
+    creditLiveFloorSats: rowNumber(payload, "creditLiveFloorSats"),
+    creditLiveValueSats: rowNumber(payload, "creditLiveValueSats"),
+    creditValueAtConfirmSats: rowNumber(payload, "creditValueAtConfirmSats"),
+    createdAt: dateIso(
+      payload?.createdAt ?? payload?.timestamp ?? payload?.blockTime,
+    ),
     dataBytes: rowNumber(payload, "dataBytes"),
+    frozenNetworkValueSats: rowNumber(payload, "frozenNetworkValueSats"),
     listingId: String(payload?.listingId ?? "").trim().toLowerCase(),
+    liveNetworkValueSats: rowNumber(payload, "liveNetworkValueSats"),
+    marketplaceMutationFeeSats: rowNumber(payload, "marketplaceMutationFeeSats"),
+    minerFeeSats: rowNumber(payload, "minerFeeSats"),
     network: payload?.network,
     paidSats: rowNumber(payload, "paidSats") || rowNumber(payload, "amountSats"),
     priceSats,
     registryAddress,
+    salePaymentSats: rowNumber(payload, "salePaymentSats"),
     sellerAddress,
     ticker,
     tokenId: String(payload?.tokenId ?? "").trim().toLowerCase(),
@@ -370,9 +388,13 @@ function tokenListingFromEventPayload(payload) {
     confirmed: payload?.confirmed === true,
     createdAt: dateIso(payload?.createdAt),
     dataBytes: rowNumber(payload, "dataBytes"),
+    frozenNetworkValueSats: rowNumber(payload, "frozenNetworkValueSats"),
     listingId: String(payload?.listingId ?? payload?.txid ?? "")
       .trim()
       .toLowerCase(),
+    liveNetworkValueSats: rowNumber(payload, "liveNetworkValueSats"),
+    marketplaceMutationFeeSats: rowNumber(payload, "marketplaceMutationFeeSats"),
+    minerFeeSats: rowNumber(payload, "minerFeeSats"),
     network: payload?.network,
     priceSats:
       rowNumber(payload, "priceSats") ||
@@ -380,6 +402,9 @@ function tokenListingFromEventPayload(payload) {
       priceSats,
     registryAddress,
     saleAuthorization,
+    sealFrozenNetworkValueSats: rowNumber(payload, "sealFrozenNetworkValueSats"),
+    sealLiveNetworkValueSats: rowNumber(payload, "sealLiveNetworkValueSats"),
+    sealMinerFeeSats: rowNumber(payload, "sealMinerFeeSats"),
     sellerAddress,
     status: payload?.status,
     ticker: normalizedTicker,
@@ -476,18 +501,36 @@ function tokenClosedListingFromEventPayload(payload) {
     payload?.counterparty,
     payload?.counterparty,
   );
-  const createdAt = dateIso(payload?.createdAt);
+  const createdAt = dateIso(
+    payload?.createdAt ?? payload?.timestamp ?? payload?.blockTime,
+  );
   return {
-    amount,
+    amount:
+      rowNumber(payload, "amount") ||
+      rowNumber(payload, "tokenAmount") ||
+      amount,
     closedAt: createdAt,
     closedConfirmed: payload?.confirmed === true,
+    closedFrozenNetworkValueSats: rowNumber(
+      payload,
+      "closedFrozenNetworkValueSats",
+    ),
+    closedLiveNetworkValueSats: rowNumber(payload, "closedLiveNetworkValueSats"),
+    closedMinerFeeSats: rowNumber(payload, "closedMinerFeeSats"),
     closedTxid: String(payload?.txid ?? "").trim().toLowerCase(),
     confirmed: true,
     createdAt,
     dataBytes: rowNumber(payload, "dataBytes"),
+    frozenNetworkValueSats: rowNumber(payload, "frozenNetworkValueSats"),
+    liveNetworkValueSats: rowNumber(payload, "liveNetworkValueSats"),
+    marketplaceMutationFeeSats: rowNumber(payload, "marketplaceMutationFeeSats"),
+    minerFeeSats: rowNumber(payload, "minerFeeSats"),
     listingId: String(payload?.listingId ?? "").trim().toLowerCase(),
     network: payload?.network,
-    priceSats,
+    priceSats:
+      rowNumber(payload, "priceSats") ||
+      rowNumber(payload, "salePriceSats") ||
+      priceSats,
     registryAddress,
     saleAuthorization: {},
     sellerAddress,
@@ -522,9 +565,19 @@ function tokenTransferFromEventPayload(payload, row = {}) {
       payload?.createdAt ?? row.event_time ?? row.block_time ?? row.created_at,
     ),
     dataBytes: rowNumber(payload, "dataBytes"),
+    arbSats: rowNumber(payload, "arbSats"),
+    creditAmountMoved: rowNumber(payload, "creditAmountMoved"),
+    creditFloorAtConfirmSats: rowNumber(payload, "creditFloorAtConfirmSats"),
+    creditLiveFloorSats: rowNumber(payload, "creditLiveFloorSats"),
+    creditLiveValueSats: rowNumber(payload, "creditLiveValueSats"),
+    creditValueAtConfirmSats: rowNumber(payload, "creditValueAtConfirmSats"),
+    frozenNetworkValueSats: rowNumber(payload, "frozenNetworkValueSats"),
+    liveNetworkValueSats: rowNumber(payload, "liveNetworkValueSats"),
+    minerFeeSats: rowNumber(payload, "minerFeeSats"),
     network: payload?.network ?? row.network,
     paidSats: rowNumber(payload, "paidSats") || rowNumber(payload, "amountSats"),
     recipientAddress,
+    registryMutationFeeSats: rowNumber(payload, "registryMutationFeeSats"),
     registryAddress,
     senderAddress,
     ticker,
@@ -554,6 +607,9 @@ function tokenHistoryItemFromMarketEventPayload(payload, safeKind) {
     const sale = tokenSaleFromEventPayload(payload);
     if (!sale.txid || !sale.listingId || !sale.tokenId) {
       return null;
+    }
+    if (safeKind === "closedListings") {
+      return tokenClosedListingFromSalePayload(sale);
     }
     if (safeKind === "sales") {
       return sale;
@@ -589,6 +645,26 @@ function tokenHistoryItemFromMarketEventPayload(payload, safeKind) {
   return null;
 }
 
+function tokenClosedListingFromSalePayload(salePayload) {
+  const sale = salePayload?.txid
+    ? salePayload
+    : tokenSaleFromEventPayload(salePayload);
+  if (!sale?.txid || !sale?.listingId || !sale?.tokenId) {
+    return null;
+  }
+  return {
+    ...sale,
+    buyerAddress: sale.buyerAddress,
+    closedAt: sale.createdAt,
+    closedConfirmed: sale.confirmed === true,
+    closedTxid: sale.txid,
+    confirmed: sale.confirmed === true,
+    saleTxid: sale.txid,
+    status: "sold",
+    txid: sale.txid,
+  };
+}
+
 function compareTokenItemsByTime(left, right) {
   const leftTime = Date.parse(left?.createdAt ?? left?.closedAt ?? "");
   const rightTime = Date.parse(right?.createdAt ?? right?.closedAt ?? "");
@@ -608,7 +684,7 @@ function tokenHistoryMarketEventKinds(safeKind) {
     return ["token-sale"];
   }
   if (safeKind === "closedListings") {
-    return ["token-listing-closed"];
+    return ["token-listing-closed", "token-sale"];
   }
   if (safeKind === "market-log") {
     return [
@@ -945,6 +1021,155 @@ async function filterClosedTokenListingHistoryPage(pool, page, network) {
   };
 }
 
+async function exactActiveTokenListingHistoryPage(
+  pool,
+  network,
+  tokenScope,
+  searchParams,
+  pagination,
+  snapshot,
+) {
+  const needles = tokenHistoryFilterNeedles(searchParams, pagination);
+  const txidNeedles = needles.map(normalizedTxid).filter(Boolean);
+  if (
+    txidNeedles.length === 0 ||
+    needles.some((value) => !normalizedTxid(value))
+  ) {
+    return null;
+  }
+
+  const scope = tokenScopeKey(tokenScope);
+  const uniqueTxids = [...new Set(txidNeedles)];
+  const params = [network, uniqueTxids];
+  const conditions = [
+    "cl.network = $1",
+    "cl.listing_id = ANY($2::text[])",
+    "cl.status = ANY(ARRAY['active','sealing']::text[])",
+  ];
+  if (scope && scope !== "all") {
+    params.push(scope);
+    conditions.push("cl.token_id = $3");
+  }
+
+  const whereClause = conditions.join(" AND ");
+  const countResult = await pool.query(
+    `
+      SELECT
+        count(*) AS total_count,
+        max(cl.updated_at) AS indexed_at
+      FROM proof_indexer.credit_listings cl
+      WHERE ${whereClause}
+    `,
+    params,
+  );
+  const totalCount = rowNumber(countResult.rows[0], "total_count");
+  const rowParams = [...params, pagination.limit, pagination.offset];
+  const limitParam = rowParams.length - 1;
+  const offsetParam = rowParams.length;
+  const rowsResult =
+    totalCount > 0
+      ? await pool.query(
+          `
+            SELECT
+              cl.listing_id,
+              cl.status,
+              cl.token_id,
+              cl.seller_address,
+              cl.buyer_address,
+              cl.amount,
+              cl.price_sats,
+              cl.sale_ticket_txid,
+              cl.sale_ticket_vout,
+              cl.sale_ticket_value_sats,
+              cl.seal_txid,
+              cl.close_txid,
+              cl.payload,
+              cl.updated_at,
+              cd.ticker,
+              cd.registry_address
+            FROM proof_indexer.credit_listings cl
+            LEFT JOIN proof_indexer.credit_definitions cd
+              ON cd.network = cl.network
+             AND cd.token_id = cl.token_id
+            WHERE ${whereClause}
+            ORDER BY cl.updated_at DESC, cl.listing_id ASC
+            LIMIT $${limitParam}
+            OFFSET $${offsetParam}
+          `,
+          rowParams,
+        )
+      : { rows: [] };
+  const closeResult =
+    totalCount > 0
+      ? await pool.query(
+          `
+            SELECT DISTINCT lower(e.payload->>'listingId') AS listing_id
+            FROM proof_indexer.events e
+            WHERE e.network = $1
+              AND e.valid = true
+              AND e.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
+              AND lower(e.payload->>'listingId') = ANY($2::text[])
+          `,
+          [network, uniqueTxids],
+        )
+      : { rows: [] };
+  const closedListingIds = new Set(
+    closeResult.rows
+      .map((row) => String(row?.listing_id ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+
+  const items = rowsResult.rows
+    .map((row) => {
+      const payload = objectRecord(row.payload);
+      const saleAuthorization = objectRecord(payload.saleAuthorization);
+      const listingId = String(row.listing_id ?? payload.listingId ?? "")
+        .trim()
+        .toLowerCase();
+      return normalizeTokenHistoryListingItem({
+        ...payload,
+        amount: row.amount,
+        buyerAddress: row.buyer_address ?? payload.buyerAddress,
+        closeTxid: row.close_txid ?? payload.closeTxid,
+        confirmed: true,
+        createdAt: dateIso(payload.createdAt ?? row.updated_at),
+        listingId,
+        network,
+        priceSats: Number(row.price_sats ?? 0),
+        registryAddress:
+          row.registry_address ??
+          payload.registryAddress ??
+          saleAuthorization.registryAddress,
+        saleAuthorization,
+        saleTicketTxid: row.sale_ticket_txid,
+        saleTicketValueSats: Number(row.sale_ticket_value_sats ?? 0),
+        saleTicketVout: row.sale_ticket_vout,
+        sealTxid: row.seal_txid ?? payload.sealTxid,
+        sellerAddress: row.seller_address ?? payload.sellerAddress,
+        status: row.status,
+        ticker: row.ticker ?? payload.ticker ?? saleAuthorization.ticker,
+        tokenId: row.token_id ?? payload.tokenId ?? saleAuthorization.tokenId,
+        txid: listingId,
+      });
+    })
+    .filter(activeTokenListingHistoryItem)
+    .filter((item) => !closedListingIds.has(tokenListingId(item)))
+    .sort(compareTokenHistoryMarketItems);
+
+  return tokenHistoryPageFromItems({
+    indexedAt: dateIso(
+      countResult.rows[0]?.indexed_at ?? snapshot?.generated_at,
+    ),
+    indexedThroughBlock: rowNumber(snapshot, "indexed_through_block"),
+    items,
+    kind: "listings",
+    network,
+    pagination,
+    source: "proof-indexer-credit-listings-exact",
+    snapshot,
+  });
+}
+
 export function proofIndexLogHistoryReadEligibility(kind, searchParams) {
   const requestedKind = String(kind ?? "").trim().toLowerCase();
   const pagination = historyPaginationFromSearch(searchParams);
@@ -1048,6 +1273,12 @@ export function proofIndexTokenReadEligibility(tokenScope, searchParams) {
 function rowNumber(row, key) {
   const number = Number(row?.[key]);
   return Number.isFinite(number) ? number : 0;
+}
+
+function objectRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
 }
 
 function canonicalEventPayload(payload) {
@@ -1924,18 +2155,62 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   if (scope && scope !== "all") {
     params.push(scope);
     const scopeParam = `$${params.length}`;
-    params.push(`%${scope}%`);
-    const scopeLikeParam = `$${params.length}`;
     conditions.push(
-      `(lower(e.payload->>'tokenId') = ${scopeParam} OR lower(e.payload::text) LIKE ${scopeLikeParam})`,
+      `(
+        lower(e.payload->>'tokenId') = ${scopeParam}
+        OR lower(e.payload->'saleAuthorization'->>'tokenId') = ${scopeParam}
+        OR lower(cl_event.token_id) = ${scopeParam}
+        OR lower(cd.token_id) = ${scopeParam}
+        OR lower(cd.ticker) = lower(${scopeParam})
+        OR lower(e.payload->>'ticker') = lower(${scopeParam})
+        OR lower(e.payload->'saleAuthorization'->>'ticker') = lower(${scopeParam})
+      )`,
     );
   }
 
   const needles = tokenHistoryFilterNeedles(searchParams, pagination);
-  for (const needle of needles) {
+  const txidNeedles = needles.map(normalizedTxid).filter(Boolean);
+  if (txidNeedles.length > 0) {
+    params.push([...new Set(txidNeedles)]);
+    const param = `$${params.length}`;
+    conditions.push(
+      `(
+        lower(e.txid) = ANY(${param}::text[])
+        OR lower(e.payload->>'txid') = ANY(${param}::text[])
+        OR lower(e.payload->>'saleTxid') = ANY(${param}::text[])
+        OR lower(e.payload->>'closeTxid') = ANY(${param}::text[])
+        OR lower(e.payload->>'closedTxid') = ANY(${param}::text[])
+        OR lower(e.payload->>'listingId') = ANY(${param}::text[])
+        OR lower(cl_event.listing_id) = ANY(${param}::text[])
+        OR lower(cl_event.close_txid) = ANY(${param}::text[])
+        OR EXISTS (
+          SELECT 1
+          FROM proof_indexer.event_refs erq
+          WHERE erq.event_id = e.event_id
+            AND lower(erq.ref_value) = ANY(${param}::text[])
+        )
+      )`,
+    );
+  }
+  for (const needle of needles.filter((value) => !normalizedTxid(value))) {
     params.push(`%${needle}%`);
     const param = `$${params.length}`;
-    conditions.push(`lower(e.payload::text) LIKE ${param}`);
+    conditions.push(
+      `lower(concat_ws(
+        ' ',
+        e.txid,
+        e.payload::text,
+        cl_event.listing_id,
+        cl_event.seller_address,
+        cl_event.buyer_address,
+        cl_event.amount::text,
+        cl_event.price_sats::text,
+        cl_event.payload::text,
+        cd.token_id,
+        cd.ticker,
+        cd.registry_address
+      )) LIKE ${param}`,
+    );
   }
   if (safeKind === "listings") {
     conditions.push(
@@ -1943,15 +2218,26 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
       `(e.payload ? 'saleAuthorization')`,
       `(e.payload->'saleAuthorization'->>'version' = 'pwt-sale-v1')`,
       `(e.payload->'saleAuthorization'->>'anchorType' = 'sale-ticket-v1')`,
-      `NOT EXISTS (
-        SELECT 1
-        FROM proof_indexer.events close_event
-        WHERE close_event.network = e.network
-          AND close_event.valid = true
-          AND close_event.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
-          AND lower(close_event.payload->>'listingId') = lower(e.payload->>'listingId')
-      )`,
     );
+    if (txidNeedles.length > 0) {
+      conditions.push(
+        `(
+          cl_event.listing_id IS NULL
+          OR lower(cl_event.status) = ANY(ARRAY['active','sealing']::text[])
+        )`,
+      );
+    } else {
+      conditions.push(
+        `NOT EXISTS (
+          SELECT 1
+          FROM proof_indexer.events close_event
+          WHERE close_event.network = e.network
+            AND close_event.valid = true
+            AND close_event.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
+            AND lower(close_event.payload->>'listingId') = lower(e.payload->>'listingId')
+        )`,
+      );
+    }
   }
 
   const whereClause = conditions.join(" AND ");
@@ -1959,6 +2245,12 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     `
       SELECT count(*) AS total_count, max(e.block_height) AS indexed_through_block
       FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.credit_listings cl_event
+        ON cl_event.network = e.network
+       AND cl_event.listing_id = lower(e.payload->>'listingId')
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = e.network
+       AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
       WHERE ${whereClause}
     `,
     params,
@@ -1988,8 +2280,23 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
         e.created_at,
         e.block_height,
         e.txid,
-        e.event_id
+        e.event_id,
+        COALESCE(cd.token_id, cl_event.token_id) AS token_id,
+        cd.ticker,
+        cd.registry_address,
+        cl_event.listing_id AS linked_listing_id,
+        cl_event.seller_address AS listing_seller_address,
+        cl_event.buyer_address AS listing_buyer_address,
+        cl_event.amount AS listing_amount,
+        cl_event.price_sats AS listing_price_sats,
+        cl_event.payload AS listing_payload
       FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.credit_listings cl_event
+        ON cl_event.network = e.network
+       AND cl_event.listing_id = lower(e.payload->>'listingId')
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = e.network
+       AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
       WHERE ${whereClause}
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
@@ -2002,7 +2309,10 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   );
   const items = rowsResult.rows
     .map((row) =>
-      tokenHistoryItemFromMarketEventPayload(eventRowPayload(row, network), safeKind),
+      tokenHistoryItemFromMarketEventPayload(
+        tokenMarketEventRowPayload(row, network),
+        safeKind,
+      ),
     )
     .filter(Boolean)
     .sort(compareTokenHistoryMarketItems);
@@ -2144,13 +2454,100 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     conditions.push(eventKindSqlCondition(requestedKind, addParam));
   }
 
+  let exactQueryTxid = "";
   if (pagination.query) {
-    conditions.push(
-      `lower(e.payload::text) LIKE ${addParam(`%${pagination.query}%`)}`,
-    );
+    const queryTxid = normalizedTxid(pagination.query);
+    if (queryTxid) {
+      exactQueryTxid = queryTxid;
+      const queryParam = addParam(queryTxid);
+      conditions.push(`
+        (
+          e.txid = ${queryParam}
+          OR lower(e.payload->>'txid') = ${queryParam}
+          OR lower(e.payload->>'saleTxid') = ${queryParam}
+          OR lower(e.payload->>'closeTxid') = ${queryParam}
+          OR lower(e.payload->>'closedTxid') = ${queryParam}
+          OR lower(e.payload->>'listingId') = ${queryParam}
+          OR EXISTS (
+            SELECT 1
+            FROM proof_indexer.event_refs erq
+            WHERE erq.event_id = e.event_id
+              AND lower(erq.ref_value) = ${queryParam}
+          )
+        )
+      `);
+    } else {
+      const queryParam = addParam(`%${pagination.query}%`);
+      conditions.push(`
+        (
+          lower(e.txid) LIKE ${queryParam}
+          OR lower(e.payload::text) LIKE ${queryParam}
+          OR EXISTS (
+            SELECT 1
+            FROM proof_indexer.event_refs erq
+            WHERE erq.event_id = e.event_id
+              AND lower(erq.ref_value) LIKE ${queryParam}
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM proof_indexer.event_participants epq
+            WHERE epq.event_id = e.event_id
+              AND lower(epq.address) LIKE ${queryParam}
+          )
+        )
+      `);
+    }
   }
 
   const whereClause = conditions.join(" AND ");
+  if (exactQueryTxid) {
+    const rowLimit = Math.max(
+      pagination.limit,
+      pagination.limit + pagination.offset,
+    );
+    const rowParams = [...params, rowLimit];
+    const limitParam = `$${rowParams.length}`;
+    const rowsResult = await pool.query(
+      `
+        SELECT
+          e.payload,
+          e.protocol,
+          e.kind,
+          e.status,
+          e.event_time,
+          e.block_time,
+          e.created_at,
+          e.block_height,
+          e.txid,
+          e.event_id
+        FROM proof_indexer.events e
+        WHERE ${whereClause}
+        ORDER BY
+          COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+          e.txid DESC,
+          e.event_id DESC
+        LIMIT ${limitParam}
+      `,
+      rowParams,
+    );
+    return logHistoryPageFromItems({
+      indexedAt: snapshot.generated_at
+        ? dateIso(snapshot.generated_at)
+        : new Date().toISOString(),
+      indexedThroughBlock:
+        indexedThroughBlockFromItems(rowsResult.rows) ??
+        rowNumber(snapshot, "indexed_through_block"),
+      items: normalizeHistoryEventRows(rowsResult.rows, network, {
+        publicOnly: true,
+      }),
+      kind: requestedKind || "activity",
+      network,
+      pagination,
+      snapshot,
+      source: "proof-indexer",
+    });
+  }
+
   const countResult = await pool.query(
     `
       SELECT count(*) AS total_count, max(e.block_height) AS indexed_through_block
@@ -2303,10 +2700,16 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
   if (scope && scope !== "all") {
     params.push(scope);
     const scopeParam = `$${params.length}`;
-    params.push(`%${scope}%`);
-    const scopeLikeParam = `$${params.length}`;
     conditions.push(
-      `(lower(e.payload->>'tokenId') = ${scopeParam} OR lower(e.payload::text) LIKE ${scopeLikeParam})`,
+      `(
+        lower(e.payload->>'tokenId') = ${scopeParam}
+        OR lower(e.payload->'saleAuthorization'->>'tokenId') = ${scopeParam}
+        OR lower(cl_event.token_id) = ${scopeParam}
+        OR lower(cd.token_id) = ${scopeParam}
+        OR lower(cd.ticker) = lower(${scopeParam})
+        OR lower(e.payload->>'ticker') = lower(${scopeParam})
+        OR lower(e.payload->'saleAuthorization'->>'ticker') = lower(${scopeParam})
+      )`,
     );
   }
 
@@ -2318,6 +2721,12 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
         max(e.block_height) AS indexed_through_block,
         max(COALESCE(e.event_time, e.block_time, e.created_at)) AS indexed_at
       FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.credit_listings cl_event
+        ON cl_event.network = e.network
+       AND cl_event.listing_id = lower(e.payload->>'listingId')
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = e.network
+       AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
       WHERE ${whereClause}
     `,
     params,
@@ -2341,8 +2750,23 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
         e.created_at,
         e.block_height,
         e.txid,
-        e.event_id
+        e.event_id,
+        COALESCE(cd.token_id, cl_event.token_id) AS token_id,
+        cd.ticker,
+        cd.registry_address,
+        cl_event.listing_id AS linked_listing_id,
+        cl_event.seller_address AS listing_seller_address,
+        cl_event.buyer_address AS listing_buyer_address,
+        cl_event.amount AS listing_amount,
+        cl_event.price_sats AS listing_price_sats,
+        cl_event.payload AS listing_payload
       FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.credit_listings cl_event
+        ON cl_event.network = e.network
+       AND cl_event.listing_id = lower(e.payload->>'listingId')
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = e.network
+       AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
       WHERE ${whereClause}
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
@@ -2357,7 +2781,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
   const listings = [];
   const closedListings = [];
   for (const row of rowsResult.rows) {
-    const payload = eventRowPayload(row, network);
+    const payload = tokenMarketEventRowPayload(row, network);
     if (payload?.kind === "token-listing" || payload?.kind === "token-listings") {
       const listing = tokenListingFromEventPayload(payload);
       if (listing.listingId && listing.tokenId) {
@@ -2370,6 +2794,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
       const sale = tokenSaleFromEventPayload(payload);
       if (sale.txid && sale.listingId && sale.tokenId) {
         sales.push(sale);
+        closedListings.push(tokenClosedListingFromSalePayload(sale));
       }
       continue;
     }
@@ -2388,7 +2813,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
 
   const stats = salesStats(sales);
   return {
-    closedListings: closedListings.sort(compareTokenItemsByTime),
+    closedListings: closedListings.filter(Boolean).sort(compareTokenItemsByTime),
     indexedAt: dateIso(countResult.rows[0]?.indexed_at),
     indexedThroughBlock: rowNumber(
       countResult.rows[0],
@@ -2432,6 +2857,20 @@ export async function proofIndexTokenHistoryPayload(
   );
   if (!snapshot) {
     return null;
+  }
+
+  if (eligibility.kind === "listings") {
+    const exactListingPage = await exactActiveTokenListingHistoryPage(
+      pool,
+      network,
+      tokenScope,
+      searchParams,
+      eligibility.pagination,
+      snapshot,
+    );
+    if (exactListingPage) {
+      return exactListingPage;
+    }
   }
 
   const snapshotPage = tokenHistoryPageFromSnapshot(
@@ -2714,7 +3153,6 @@ export async function proofIndexWalletTokenOverlayPayload(
     holderParams,
   );
 
-  const addressLikeNeedles = addressNeedles.map((address) => `%${address}%`);
   const eventConditions = [
     "e.network = $1",
     "e.valid = true",
@@ -2724,7 +3162,15 @@ export async function proofIndexWalletTokenOverlayPayload(
       FROM proof_indexer.event_participants ep
       WHERE ep.event_id = e.event_id
         AND lower(ep.address) = ANY($2::text[])
-    ) OR lower(e.payload::text) LIKE ANY($3::text[]))`,
+    )
+      OR lower(e.payload->>'actor') = ANY($2::text[])
+      OR lower(e.payload->>'counterparty') = ANY($2::text[])
+      OR lower(e.payload->>'senderAddress') = ANY($2::text[])
+      OR lower(e.payload->>'recipientAddress') = ANY($2::text[])
+      OR lower(e.payload->>'sellerAddress') = ANY($2::text[])
+      OR lower(e.payload->>'buyerAddress') = ANY($2::text[])
+      OR lower(e.payload->'saleAuthorization'->>'sellerAddress') = ANY($2::text[])
+      OR lower(e.payload->'saleAuthorization'->>'buyerAddress') = ANY($2::text[]))`,
     `(
       e.kind NOT IN ('token-listings', 'token-listing')
       OR NOT EXISTS (
@@ -2737,15 +3183,19 @@ export async function proofIndexWalletTokenOverlayPayload(
       )
     )`,
   ];
-  const eventParams = [network, addressNeedles, addressLikeNeedles];
+  const eventParams = [network, addressNeedles];
   if (scoped) {
     eventParams.push(scope);
     const scopeParam = `$${eventParams.length}`;
     eventConditions.push(
       `(
         lower(e.payload->>'tokenId') = ${scopeParam}
+        OR lower(e.payload->'saleAuthorization'->>'tokenId') = ${scopeParam}
         OR lower(cl_event.token_id) = ${scopeParam}
+        OR lower(cd.token_id) = ${scopeParam}
         OR lower(cd.ticker) = lower(${scopeParam})
+        OR lower(e.payload->>'ticker') = lower(${scopeParam})
+        OR lower(e.payload->'saleAuthorization'->>'ticker') = lower(${scopeParam})
       )`,
     );
   }
@@ -2936,6 +3386,10 @@ export async function proofIndexWalletTokenOverlayPayload(
       row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
         ? row.payload
         : {};
+    const status = String(row.status ?? payload.status ?? "").trim().toLowerCase();
+    const sealTxid = String(row.seal_txid ?? payload.sealTxid ?? "")
+      .trim()
+      .toLowerCase();
     const listing = {
       ...payload,
       amount: rowNumber(row, "amount") || rowNumber(payload, "amount"),
@@ -2956,7 +3410,16 @@ export async function proofIndexWalletTokenOverlayPayload(
         rowNumber(payload, "saleTicketValueSats"),
       saleTicketVout:
         row.sale_ticket_vout ?? payload.saleTicketVout,
-      sealTxid: row.seal_txid ?? payload.sealTxid,
+      sealAt:
+        payload.sealAt ??
+        payload.blockTime ??
+        payload.timestamp ??
+        payload.createdAt ??
+        row.updated_at,
+      sealConfirmed:
+        payload.sealConfirmed === true ||
+        (validTxid(sealTxid) && status === "sealing" && row.status !== "pending"),
+      sealTxid,
       sellerAddress: row.seller_address ?? payload.sellerAddress ?? "",
       status: row.status ?? payload.status,
       ticker: payload.ticker ?? row.ticker ?? "",
@@ -3131,6 +3594,96 @@ export async function proofIndexRegistryHistoryPayload(
     eligibility.kind,
     eligibility.pagination,
   );
+}
+
+export async function proofIndexIdRecordPayload(network, id) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const idLower = String(id ?? "").trim().toLowerCase();
+  if (!idLower) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        r.network,
+        r.id_lower,
+        r.display_id,
+        r.owner_address,
+        r.receive_address,
+        r.pgp_public_key,
+        r.registration_txid,
+        r.last_event_txid,
+        r.registered_height,
+        r.updated_height,
+        r.updated_at,
+        t.status AS tx_status,
+        t.confirmed_at,
+        t.block_height,
+        t.block_time
+      FROM proof_indexer.id_records r
+      LEFT JOIN proof_indexer.transactions t
+        ON t.network = r.network
+       AND t.txid = r.registration_txid
+      WHERE r.network = $1
+        AND r.id_lower = $2
+      LIMIT 1
+    `,
+    [network, idLower],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  const createdAt = dateIso(
+    row.confirmed_at ?? row.block_time ?? row.updated_at,
+  );
+  const blockHeight =
+    rowNumber(row, "registered_height") ||
+    rowNumber(row, "block_height") ||
+    undefined;
+  const updatedHeight =
+    rowNumber(row, "updated_height") || blockHeight || undefined;
+  const confirmed = row.tx_status ? row.tx_status === "confirmed" : true;
+  const record = {
+    blockHeight,
+    confirmed,
+    createdAt,
+    id: String(row.display_id || row.id_lower),
+    lastEventTxid: String(row.last_event_txid || row.registration_txid),
+    network,
+    ownerAddress: String(row.owner_address || ""),
+    pgpKey: row.pgp_public_key || undefined,
+    receiveAddress: String(row.receive_address || row.owner_address || ""),
+    txid: String(row.registration_txid || ""),
+    updatedHeight,
+  };
+
+  return {
+    activity: [],
+    indexedAt: dateIso(row.updated_at ?? row.confirmed_at ?? row.block_time),
+    indexedThroughBlock: updatedHeight,
+    listings: [],
+    network,
+    pendingEvents: [],
+    records: [record],
+    registryAddress: "",
+    sales: [],
+    source: "proof-indexer-id-record",
+    stats: {
+      confirmed: confirmed ? 1 : 0,
+      pending: confirmed ? 0 : 1,
+      pendingChanges: 0,
+      pendingRecords: confirmed ? 0 : 1,
+      total: 1,
+      transactions: record.txid ? 1 : 0,
+    },
+  };
 }
 
 export async function proofIndexRegistryPayload(network, options = {}) {
@@ -3364,25 +3917,46 @@ function eventHistoryFilters(searchParams, pagination, baseValues = []) {
     `);
   }
   if (pagination.query) {
-    const queryParam = addValue(`%${pagination.query}%`);
-    filters.push(`
-      (
-        lower(e.txid) LIKE ${queryParam}
-        OR lower(e.payload::text) LIKE ${queryParam}
-        OR EXISTS (
-          SELECT 1
-          FROM proof_indexer.event_refs erq
-          WHERE erq.event_id = e.event_id
-            AND lower(erq.ref_value) LIKE ${queryParam}
+    const queryTxid = normalizedTxid(pagination.query);
+    if (queryTxid) {
+      const queryParam = addValue(queryTxid);
+      filters.push(`
+        (
+          lower(e.txid) = ${queryParam}
+          OR lower(e.payload->>'txid') = ${queryParam}
+          OR lower(e.payload->>'saleTxid') = ${queryParam}
+          OR lower(e.payload->>'closeTxid') = ${queryParam}
+          OR lower(e.payload->>'closedTxid') = ${queryParam}
+          OR lower(e.payload->>'listingId') = ${queryParam}
+          OR EXISTS (
+            SELECT 1
+            FROM proof_indexer.event_refs erq
+            WHERE erq.event_id = e.event_id
+              AND lower(erq.ref_value) = ${queryParam}
+          )
         )
-        OR EXISTS (
-          SELECT 1
-          FROM proof_indexer.event_participants epq
-          WHERE epq.event_id = e.event_id
-            AND lower(epq.address) LIKE ${queryParam}
+      `);
+    } else {
+      const queryParam = addValue(`%${pagination.query}%`);
+      filters.push(`
+        (
+          lower(e.txid) LIKE ${queryParam}
+          OR lower(e.payload::text) LIKE ${queryParam}
+          OR EXISTS (
+            SELECT 1
+            FROM proof_indexer.event_refs erq
+            WHERE erq.event_id = e.event_id
+              AND lower(erq.ref_value) LIKE ${queryParam}
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM proof_indexer.event_participants epq
+            WHERE epq.event_id = e.event_id
+              AND lower(epq.address) LIKE ${queryParam}
+          )
         )
-      )
-    `);
+      `);
+    }
   }
 
   return { filters, values };
@@ -3401,6 +3975,47 @@ function eventRowPayload(row, network) {
     createdAt: dateIso(row.event_time ?? row.block_time ?? row.created_at),
     network,
   };
+}
+
+function tokenMarketEventRowPayload(row, network) {
+  const payload = eventRowPayload(row, network);
+  const listingPayload = objectRecord(row?.listing_payload);
+  const merged = {
+    ...listingPayload,
+    ...payload,
+    amount:
+      payload.amount ??
+      payload.tokenAmount ??
+      listingPayload.amount ??
+      row?.listing_amount,
+    buyerAddress:
+      payload.buyerAddress ??
+      payload.actor ??
+      listingPayload.buyerAddress ??
+      row?.listing_buyer_address,
+    listingId:
+      payload.listingId ??
+      listingPayload.listingId ??
+      row?.linked_listing_id ??
+      row?.txid,
+    priceSats:
+      payload.priceSats ??
+      payload.salePriceSats ??
+      listingPayload.priceSats ??
+      row?.listing_price_sats,
+    registryAddress:
+      payload.registryAddress ??
+      listingPayload.registryAddress ??
+      row?.registry_address,
+    sellerAddress:
+      payload.sellerAddress ??
+      payload.counterparty ??
+      listingPayload.sellerAddress ??
+      row?.listing_seller_address,
+    ticker: payload.ticker ?? listingPayload.ticker ?? row?.ticker,
+    tokenId: payload.tokenId ?? listingPayload.tokenId ?? row?.token_id,
+  };
+  return normalizeEventPayload(merged, row);
 }
 
 const ADDRESS_MAIL_EVENT_KINDS = [
@@ -4011,7 +4626,24 @@ export async function proofIndexSnapshotPayload(network, key) {
     return null;
   }
 
-  const snapshot = await ledgerSnapshot(pool, network);
+  const snapshotResult = await pool.query(
+    `
+      SELECT
+        snapshot_id,
+        generated_at,
+        indexed_through_block,
+        consistency,
+        payload
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
+        AND payload ? 'summaryPayloads'
+        AND payload->'summaryPayloads' ? $2
+      ORDER BY generated_at DESC
+      LIMIT 1
+    `,
+    [network, key],
+  );
+  const snapshot = snapshotResult.rows[0] ?? null;
   if (!snapshot || !snapshotPayloadFresh(snapshot, "summaryPayloadsIndexedAt")) {
     return null;
   }
@@ -4082,7 +4714,79 @@ export async function proofIndexValueSummaryPayload(network) {
     stats: {
       confirmedComputerActions: Number(row.event_count ?? 0),
       indexedThroughBlock,
+      maxEventBlock: Number(row.max_event_block) || 0,
     },
+  };
+}
+
+export async function proofIndexConfirmedValueEventsAfterBlock(
+  network,
+  blockHeight,
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const minBlock = Number(blockHeight) || 0;
+  const result = await pool.query(
+    `
+      WITH latest_scan AS (
+        SELECT indexed_through_block, generated_at
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+        ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
+        LIMIT 1
+      ),
+      value_events AS (
+        SELECT
+          kind,
+          COALESCE(sum(amount_sats), 0)::text AS total_sats,
+          count(*)::int AS event_count,
+          max(block_height)::int AS max_event_block,
+          max(event_time) AS max_event_time
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND status = 'confirmed'
+          AND valid IS DISTINCT FROM false
+          AND block_height > $2
+        GROUP BY kind
+      )
+      SELECT
+        value_events.kind,
+        value_events.total_sats,
+        value_events.event_count,
+        value_events.max_event_block,
+        value_events.max_event_time,
+        latest_scan.indexed_through_block,
+        latest_scan.generated_at
+      FROM value_events
+      LEFT JOIN latest_scan ON true
+      ORDER BY value_events.max_event_block, value_events.kind
+    `,
+    [network, minBlock],
+  );
+
+  const events = result.rows.map((row) => ({
+    count: Number(row.event_count ?? 0),
+    indexedAt: dateIso(row.max_event_time ?? row.generated_at),
+    indexedThroughBlock: Number(row.indexed_through_block) || 0,
+    kind: String(row.kind ?? ""),
+    maxEventBlock: Number(row.max_event_block) || 0,
+    totalSats: Number(row.total_sats ?? 0),
+  }));
+  return {
+    events,
+    indexedAt: dateIso(result.rows[0]?.generated_at),
+    indexedThroughBlock: Math.max(
+      0,
+      ...events.map((event) => event.indexedThroughBlock),
+    ),
+    maxEventBlock: Math.max(0, ...events.map((event) => event.maxEventBlock)),
+    network,
+    source: "proof-indexer-value-event-delta",
+    totalCount: events.reduce((total, event) => total + event.count, 0),
+    totalSats: events.reduce((total, event) => total + event.totalSats, 0),
   };
 }
 
@@ -4117,25 +4821,118 @@ export async function proofIndexCreditListingsPayload(network, tokenId) {
     [network, tokenId],
   );
 
+  const listingIds = result.rows
+    .map((row) => String(row?.listing_id ?? "").trim().toLowerCase())
+    .filter(Boolean);
+  const closeEventsByListingId = new Map();
+  let closeEventRows = [];
+  if (listingIds.length > 0) {
+    const closeResult = await pool.query(
+      `
+        SELECT DISTINCT ON (lower(e.payload->>'listingId'))
+          lower(e.payload->>'listingId') AS linked_listing_id,
+          e.payload,
+          e.protocol,
+          e.kind,
+          e.status,
+          e.event_time,
+          e.block_time,
+          e.created_at,
+          e.block_height,
+          e.txid,
+          e.event_id
+        FROM proof_indexer.events e
+        WHERE e.network = $1
+          AND e.valid = true
+          AND e.kind = ANY(ARRAY['token-sale','token-listing-closed']::text[])
+          AND lower(e.payload->>'listingId') = ANY($2::text[])
+        ORDER BY
+          lower(e.payload->>'listingId'),
+          CASE WHEN e.kind = 'token-sale' THEN 0 ELSE 1 END,
+          COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+          e.txid DESC,
+          e.event_id DESC
+      `,
+      [network, listingIds],
+    );
+    closeEventRows = closeResult.rows;
+    for (const row of closeResult.rows) {
+      const listingId = String(row?.linked_listing_id ?? "").trim().toLowerCase();
+      if (listingId) {
+        closeEventsByListingId.set(listingId, row);
+      }
+    }
+  }
+  const newestTime = [
+    ...result.rows.map((row) => row.updated_at),
+    ...closeEventRows.map(
+      (row) => row.event_time ?? row.block_time ?? row.created_at,
+    ),
+  ]
+    .map((value) => Date.parse(value))
+    .filter(Number.isFinite)
+    .reduce((max, value) => Math.max(max, value), 0);
+
   return {
-    indexedAt: dateIso(result.rows[0]?.updated_at),
-    items: result.rows.map((row) => ({
-      ...(row.payload ?? {}),
-      amount: row.amount,
-      buyerAddress: row.buyer_address,
-      closeTxid: row.close_txid,
-      confirmed: row.status !== "pending",
-      listingId: row.listing_id,
-      priceSats: Number(row.price_sats ?? 0),
-      saleTicketTxid: row.sale_ticket_txid,
-      saleTicketValueSats: Number(row.sale_ticket_value_sats ?? 0),
-      saleTicketVout: row.sale_ticket_vout,
-      sealTxid: row.seal_txid,
-      sellerAddress: row.seller_address,
-      status: row.status,
-      tokenId: row.token_id,
-      txid: row.listing_id,
-    })),
+    indexedAt: newestTime
+      ? new Date(newestTime).toISOString()
+      : dateIso(result.rows[0]?.updated_at),
+    items: result.rows.map((row) => {
+      const payload = objectRecord(row.payload);
+      const listingId = String(row.listing_id ?? payload.listingId ?? "")
+        .trim()
+        .toLowerCase();
+      const closeRow = closeEventsByListingId.get(listingId);
+      const closePayload = closeRow
+        ? tokenMarketEventRowPayload(closeRow, network)
+        : {};
+      const closeTxid = String(
+        closePayload.txid ??
+          closePayload.closedTxid ??
+          row.close_txid ??
+          payload.closeTxid ??
+          payload.closedTxid ??
+          "",
+      )
+        .trim()
+        .toLowerCase();
+      const closeConfirmed = closeRow
+        ? closePayload.confirmed !== false
+        : payload.closedConfirmed === true;
+      const closeIsSale =
+        closePayload.kind === "token-sale" ||
+        Boolean(closePayload.saleTxid) ||
+        Boolean(closePayload.buyerAddress);
+      const status =
+        closeConfirmed && closeTxid
+          ? closeIsSale
+            ? "sold"
+            : "delisted"
+          : row.status;
+      return {
+        ...payload,
+        amount: row.amount,
+        buyerAddress:
+          closePayload.buyerAddress ?? row.buyer_address ?? payload.buyerAddress,
+        closeTxid: closeTxid || row.close_txid,
+        closedAt: closePayload.createdAt ?? payload.closedAt,
+        closedConfirmed: closeConfirmed || payload.closedConfirmed,
+        closedTxid: closeTxid || payload.closedTxid,
+        confirmed: status !== "pending",
+        listingId,
+        priceSats: Number(row.price_sats ?? 0),
+        saleTicketTxid: row.sale_ticket_txid,
+        saleTicketValueSats: Number(row.sale_ticket_value_sats ?? 0),
+        saleTicketVout: row.sale_ticket_vout,
+        saleTxid:
+          closeIsSale && closeTxid ? closeTxid : payload.saleTxid ?? undefined,
+        sealTxid: row.seal_txid,
+        sellerAddress: row.seller_address,
+        status,
+        tokenId: row.token_id,
+        txid: listingId,
+      };
+    }),
     network,
     totalCount: result.rowCount,
   };

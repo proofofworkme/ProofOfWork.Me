@@ -18,6 +18,8 @@ const GATE_LABEL = FULL_REGRESSION_MODE ? "full" : "fast";
 
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const POWB_TOKEN_ID =
+  "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
 const SELLER = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
 const LISTING_TX =
   "8d01d2d202755dda5b6debdc568f6f6fe6cd2308b75c6c700fa0604780eb8555";
@@ -57,6 +59,15 @@ const CARBONZ_DELAYED_TRANSFER_SENDER =
   "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW";
 const CARBONZ_DELAYED_TRANSFER_RECIPIENT =
   "14hKW6Z3WKrJZayZhCvLJCocMaaAtTHd9L";
+const REPORTED_STALE_SALE_TX =
+  "d5fba208f3213ff0eabe3f857b84d1be9bc63ea5318f8e945a7a6cb9b6190edb";
+const REPORTED_STALE_SALE_LISTING_TX =
+  "ed2302fc151663295633de43026e1669f21e4371cc2805866cf17ee1f78eb78e";
+const REPORTED_STALE_SALE_BUYER = "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW";
+const REPORTED_STALE_SALE_SELLER =
+  "bc1pl8vmv8y4k37jvw77cn7y8tckeawrm5u2n50qrjvglgrp04hczvtq5jyum0";
+const CARBONZ_POWB_TRANSFER_TX =
+  "18c7dba7ebe06727e2f37bf0d4885a2aadbf42aff56743936e8e076e2c691100";
 const REPORTED_WAITING_FOR_SEAL_LISTING_TX =
   "a5476c0c6a8df67569935c3cca152a3ef979d95469ce8fe8c8187f359c48a6c7";
 const REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX =
@@ -246,14 +257,18 @@ async function timedGetJson(path, params = {}) {
   };
 }
 
-async function tokenHistory(kind, params = {}) {
+async function tokenHistoryForAsset(asset, kind, params = {}) {
   return getJson("/api/v1/token-history", {
     network: "livenet",
-    asset: WORK_TOKEN_ID,
+    asset,
     kind,
     limit: 20,
     ...params,
   });
+}
+
+async function tokenHistory(kind, params = {}) {
+  return tokenHistoryForAsset(WORK_TOKEN_ID, kind, params);
 }
 
 function txids(items) {
@@ -673,6 +688,57 @@ assert(
   ),
   `${REPORTED_SECOND_BUY_LISTING_TX} is still returned as an active WORK listing`,
 );
+const reportedStaleSaleHistory = await tokenHistory("sales", {
+  fresh: 1,
+  q: REPORTED_STALE_SALE_TX,
+});
+const reportedStaleSale = (reportedStaleSaleHistory.items ?? []).find(
+  (item) =>
+    String(item?.txid ?? "").toLowerCase() === REPORTED_STALE_SALE_TX &&
+    String(item?.listingId ?? "").toLowerCase() ===
+      REPORTED_STALE_SALE_LISTING_TX,
+);
+assert(
+  reportedStaleSale?.confirmed === true &&
+    reportedStaleSale?.amount === 20000 &&
+    reportedStaleSale?.priceSats === 128000 &&
+    reportedStaleSale?.buyerAddress === REPORTED_STALE_SALE_BUYER &&
+    reportedStaleSale?.sellerAddress === REPORTED_STALE_SALE_SELLER,
+  `${REPORTED_STALE_SALE_TX} is missing or incomplete in WORK sales history`,
+);
+const reportedStaleMarketLog = await tokenHistory("market-log", {
+  fresh: 1,
+  q: REPORTED_STALE_SALE_TX,
+});
+assert(
+  txids(reportedStaleMarketLog.items).has(REPORTED_STALE_SALE_TX),
+  `${REPORTED_STALE_SALE_TX} is missing from WORK credit sales and listings log`,
+);
+const reportedStaleClosedListing = await tokenHistory("closed-listings", {
+  fresh: 1,
+  q: REPORTED_STALE_SALE_TX,
+});
+assert(
+  (reportedStaleClosedListing.items ?? []).some(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() ===
+        REPORTED_STALE_SALE_LISTING_TX &&
+      String(item?.closedTxid ?? "").toLowerCase() ===
+        REPORTED_STALE_SALE_TX &&
+      item?.closedConfirmed === true,
+  ),
+  `${REPORTED_STALE_SALE_TX} is missing from WORK closed-listings history`,
+);
+const reportedStaleActiveListing = await tokenHistory("listings", {
+  fresh: 1,
+  q: REPORTED_STALE_SALE_LISTING_TX,
+});
+assert(
+  !txids(reportedStaleActiveListing.items).has(
+    REPORTED_STALE_SALE_LISTING_TX,
+  ),
+  `${REPORTED_STALE_SALE_LISTING_TX} is still returned as an active WORK listing`,
+);
 const reportedWaitingForSealMarketLog = await tokenHistory("market-log", {
   fresh: 1,
   q: REPORTED_WAITING_FOR_SEAL_LISTING_TX,
@@ -964,6 +1030,22 @@ const delayedRecipientHolder = holderByAddress(
 assert(
   Number(delayedRecipientHolder?.balance ?? 0) >= 20000,
   `${CARBONZ_DELAYED_TRANSFER_RECIPIENT} wallet summary did not include the confirmed WORK transfer balance`,
+);
+const carbonzPowbTransferHistory = await tokenHistoryForAsset(
+  POWB_TOKEN_ID,
+  "transfers",
+  {
+    fresh: 1,
+    q: CARBONZ_POWB_TRANSFER_TX,
+  },
+);
+assert(
+  (carbonzPowbTransferHistory.items ?? []).some(
+    (item) =>
+      String(item?.txid ?? "").toLowerCase() === CARBONZ_POWB_TRANSFER_TX &&
+      item?.confirmed === true,
+  ),
+  `${CARBONZ_POWB_TRANSFER_TX} is missing from POWB transfer history`,
 );
 
 const walletSummary = await getJson("/api/v1/token-summary", {
@@ -1273,6 +1355,36 @@ assert(
       item?.confirmed === true,
   ),
   `${REPORTED_BUY_TX} is not logged as a confirmed token sale`,
+);
+const reportedStaleLogSale = await getJson("/api/v1/log-history", {
+  network: "livenet",
+  q: REPORTED_STALE_SALE_TX,
+  limit: 5,
+});
+assertRenderableLogItems(reportedStaleLogSale, "reported stale sale Log search");
+assert(
+  (reportedStaleLogSale.items ?? []).some(
+    (item) =>
+      item?.kind === "token-sale" &&
+      String(item?.txid ?? "").toLowerCase() === REPORTED_STALE_SALE_TX &&
+      item?.confirmed === true,
+  ),
+  `${REPORTED_STALE_SALE_TX} is not logged as a confirmed token sale`,
+);
+const reportedPowbTransferLog = await getJson("/api/v1/log-history", {
+  network: "livenet",
+  q: CARBONZ_POWB_TRANSFER_TX,
+  limit: 5,
+});
+assertRenderableLogItems(reportedPowbTransferLog, "reported POWB transfer Log search");
+assert(
+  (reportedPowbTransferLog.items ?? []).some(
+    (item) =>
+      item?.kind === "token-transfer" &&
+      String(item?.txid ?? "").toLowerCase() === CARBONZ_POWB_TRANSFER_TX &&
+      item?.confirmed === true,
+  ),
+  `${CARBONZ_POWB_TRANSFER_TX} is not logged as a confirmed token transfer`,
 );
 
 console.log(
