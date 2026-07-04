@@ -492,11 +492,23 @@ const creditSalePaymentFlowSats = numberValue(
 );
 const creditMinerFeeFlowSats = numberValue(actualValue.creditMinerFeeFlowSats);
 const creditNetworkValueSats = numberValue(actualValue.creditNetworkValueSats);
+const creditEventFrozenValueSats = numberValue(
+  actualValue.creditEventFrozenValueSats ??
+    actualValue.creditFrozenNetworkValueSats,
+);
+const creditEventLiveValueSats = numberValue(
+  actualValue.creditEventLiveValueSats ??
+    actualValue.creditLiveNetworkValueSats,
+);
+const creditLiveNetworkValueSats = numberValue(
+  actualValue.creditLiveNetworkValueSats ?? creditEventLiveValueSats,
+);
 expect(
   "consistency guards marketplace mutation fee accounting",
   consistencyChecks.has("marketplace-mutation-fees-counted") &&
     consistencyChecks.has("marketplace-value-includes-mutation-fees") &&
-    consistencyChecks.has("credit-network-value-includes-frozen-event-value") &&
+    consistencyChecks.has("credit-frozen-value-includes-event-components") &&
+    consistencyChecks.has("credit-live-value-is-active-network-value") &&
     consistencyChecks.has("computer-event-flow-excludes-marketplace"),
 );
 expect(
@@ -518,9 +530,9 @@ expect(
   ),
 );
 expect(
-  "credit network value includes full frozen event value",
+  "credit frozen value includes event components",
   numbersAgree(
-    creditNetworkValueSats,
+    creditEventFrozenValueSats,
     creditMovementFrozenValueSats +
       creditProofPaymentFlowSats +
       creditRegistryMutationFlowSats +
@@ -528,6 +540,11 @@ expect(
       creditSalePaymentFlowSats +
       creditMinerFeeFlowSats,
   ),
+);
+expect(
+  "credit live value is the active network value",
+  numbersAgree(creditNetworkValueSats, creditLiveNetworkValueSats) &&
+    numbersAgree(creditNetworkValueSats, creditEventLiveValueSats),
 );
 expect(
   "Infinity Bond confirmed flow is fully indexed",

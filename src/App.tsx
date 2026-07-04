@@ -1346,6 +1346,8 @@ type GrowthActualNetworkValue = {
   computerEventSats: number;
   creditEventFrozenValueSats?: number;
   creditEventLiveValueSats?: number;
+  creditFrozenNetworkValueSats?: number;
+  creditLiveNetworkValueSats?: number;
   creditMinerFeeFlowSats?: number;
   creditMarketplaceMutationFlowSats?: number;
   creditMovementFrozenValueSats?: number;
@@ -1378,6 +1380,13 @@ type GrowthActualNetworkValue = {
   tokenSats: number;
   walletFlowSats: number;
   walletSats: number;
+  frozenFloorSats?: number;
+  frozenNetworkValueSats?: number;
+  frozenTotalSats?: number;
+  liveFloorSats?: number;
+  liveNetworkValueSats?: number;
+  liveTotalSats?: number;
+  networkValueSats?: number;
   totalSats: number;
   totalUsd: number;
   modelTotalUsd?: number;
@@ -1390,7 +1399,12 @@ type WorkFloorQuote = {
   chartPoints: WorkFloorPoint[];
   indexedAt: string;
   ledgerGeneratedAt?: string;
+  floorSats?: number;
+  frozenFloorSats?: number;
+  frozenNetworkValueSats?: number;
   networkValueSats: number;
+  liveFloorSats?: number;
+  liveNetworkValueSats?: number;
   powids: number;
   snapshotId?: string;
   stats?: Record<string, number>;
@@ -1414,8 +1428,13 @@ type WorkFloorApiResponse = {
   chartPoints?: Array<Partial<WorkFloorPoint>>;
   indexedAt?: string;
   ledgerGeneratedAt?: string;
+  floorSats?: number;
+  frozenFloorSats?: number;
+  frozenNetworkValueSats?: number;
   network?: BitcoinNetwork;
   networkValueSats?: number;
+  liveFloorSats?: number;
+  liveNetworkValueSats?: number;
   powids?: number;
   snapshotId?: string;
   stats?: Record<string, number>;
@@ -10208,6 +10227,14 @@ function normalizeGrowthActualValue(
       payload,
       "creditEventLiveValueSats",
     ),
+    creditFrozenNetworkValueSats: growthNumberField(
+      payload,
+      "creditFrozenNetworkValueSats",
+    ),
+    creditLiveNetworkValueSats: growthNumberField(
+      payload,
+      "creditLiveNetworkValueSats",
+    ),
     creditMinerFeeFlowSats: growthNumberField(
       payload,
       "creditMinerFeeFlowSats",
@@ -10291,6 +10318,16 @@ function normalizeGrowthActualValue(
     tokenSats: growthNumberField(payload, "tokenSats"),
     walletFlowSats: growthNumberField(payload, "walletFlowSats"),
     walletSats: growthNumberField(payload, "walletSats"),
+    frozenFloorSats: growthNumberField(payload, "frozenFloorSats"),
+    frozenNetworkValueSats: growthNumberField(
+      payload,
+      "frozenNetworkValueSats",
+    ),
+    frozenTotalSats: growthNumberField(payload, "frozenTotalSats"),
+    liveFloorSats: growthNumberField(payload, "liveFloorSats"),
+    liveNetworkValueSats: growthNumberField(payload, "liveNetworkValueSats"),
+    liveTotalSats: growthNumberField(payload, "liveTotalSats"),
+    networkValueSats: growthNumberField(payload, "networkValueSats"),
     totalSats: growthNumberField(payload, "totalSats"),
     totalUsd: growthNumberField(payload, "totalUsd"),
     modelTotalUsd: growthNumberField(payload, "modelTotalUsd"),
@@ -10393,6 +10430,11 @@ function normalizeWorkFloorQuote(payload: WorkFloorApiResponse): WorkFloorQuote 
       typeof payload.ledgerGeneratedAt === "string"
         ? payload.ledgerGeneratedAt
         : undefined,
+    floorSats: Number(payload.floorSats) || undefined,
+    frozenFloorSats: Number(payload.frozenFloorSats) || undefined,
+    frozenNetworkValueSats: Number(payload.frozenNetworkValueSats) || undefined,
+    liveFloorSats: Number(payload.liveFloorSats) || undefined,
+    liveNetworkValueSats: Number(payload.liveNetworkValueSats) || undefined,
     networkValueSats: Number(payload.networkValueSats) || 0,
     powids: Number(payload.powids) || 0,
     snapshotId:
@@ -16210,7 +16252,7 @@ export default function App() {
             quote
               ? {
                   tone: "good",
-                  text: `WORK floor loaded. Confirmed network value ${Math.round(quote.networkValueSats).toLocaleString()} proofs.`,
+                  text: `WORK floor loaded. Live network value ${Math.round(quote.networkValueSats).toLocaleString()} proofs.`,
                 }
               : {
                   tone: "bad",
@@ -16243,7 +16285,7 @@ export default function App() {
           if (!silent) {
             setStatus({
               tone: "good",
-              text: `WORK floor loaded. Confirmed network value ${Math.round(apiQuote.networkValueSats).toLocaleString()} proofs.`,
+              text: `WORK floor loaded. Live network value ${Math.round(apiQuote.networkValueSats).toLocaleString()} proofs.`,
             });
           }
           return apiQuote;
@@ -16295,7 +16337,12 @@ export default function App() {
         const quote = {
           actualValue,
           chartPoints,
+          floorSats: actualValue.liveFloorSats,
+          frozenFloorSats: actualValue.frozenFloorSats,
+          frozenNetworkValueSats: actualValue.frozenNetworkValueSats,
           indexedAt: new Date().toISOString(),
+          liveFloorSats: actualValue.liveFloorSats,
+          liveNetworkValueSats: actualValue.liveNetworkValueSats,
           networkValueSats: actualValue.totalSats,
           powids: actualValue.powids,
           tokenFlowSats:
@@ -16305,7 +16352,7 @@ export default function App() {
         if (!silent) {
           setStatus({
             tone: "good",
-            text: `WORK floor loaded. Confirmed network value ${Math.round(actualValue.totalSats).toLocaleString()} proofs.`,
+            text: `WORK floor loaded. Live network value ${Math.round(actualValue.totalSats).toLocaleString()} proofs.`,
           });
         }
         return quote;
@@ -25402,20 +25449,39 @@ function TokenWorkspace({
     );
   const liveWorkFloorSats =
     detailShowsWorkFloor && workFloorQuote
-      ? workFloorQuote.networkValueSats / WORK_TOKEN_MAX_SUPPLY
+      ? (workFloorQuote.liveFloorSats ||
+          workFloorQuote.networkValueSats / WORK_TOKEN_MAX_SUPPLY)
+      : 0;
+  const frozenWorkFloorSats =
+    detailShowsWorkFloor && workFloorQuote
+      ? (workFloorQuote.frozenFloorSats ||
+          (workFloorQuote.frozenNetworkValueSats ?? workFloorQuote.networkValueSats) /
+            WORK_TOKEN_MAX_SUPPLY)
       : 0;
   const liveWorkFloorUsd = satsToUsd(liveWorkFloorSats, btcUsd);
   const liveWorkNetworkUsd = workFloorQuote
-    ? satsToUsd(workFloorQuote.networkValueSats, btcUsd)
+    ? satsToUsd(
+        workFloorQuote.liveNetworkValueSats ?? workFloorQuote.networkValueSats,
+        btcUsd,
+      )
     : 0;
+  const frozenWorkNetworkValueSats =
+    workFloorQuote?.frozenNetworkValueSats ??
+    workFloorQuote?.actualValue?.frozenNetworkValueSats ??
+    workFloorQuote?.actualValue?.frozenTotalSats ??
+    0;
   const workCreditNetworkValueSats =
-    workFloorQuote?.actualValue?.creditNetworkValueSats ?? 0;
-  const workCreditEventLiveValueSats =
-    workFloorQuote?.actualValue?.creditEventLiveValueSats ??
-    workFloorQuote?.actualValue?.creditMovementLiveValueSats ??
+    workFloorQuote?.actualValue?.creditNetworkValueSats ??
+    workFloorQuote?.actualValue?.creditLiveNetworkValueSats ??
+    0;
+  const workCreditEventFrozenValueSats =
+    workFloorQuote?.actualValue?.creditEventFrozenValueSats ??
+    workFloorQuote?.actualValue?.creditFrozenNetworkValueSats ??
     0;
   const workCreditMovementFrozenValueSats =
     workFloorQuote?.actualValue?.creditMovementFrozenValueSats ?? 0;
+  const workCreditMovementLiveValueSats =
+    workFloorQuote?.actualValue?.creditMovementLiveValueSats ?? 0;
   const workCreditSalePaymentFlowSats =
     workFloorQuote?.actualValue?.creditSalePaymentFlowSats ?? 0;
   const workCreditMinerFeeFlowSats =
@@ -26272,7 +26338,7 @@ function TokenWorkspace({
                   <div>
                     <h3>Live WORK floor</h3>
                     <p>
-                      Confirmed ProofOfWork Computer network value divided by{" "}
+                      Live ProofOfWork Computer network value divided by{" "}
                       {WORK_TOKEN_MAX_SUPPLY.toLocaleString()} WORK.
                     </p>
                   </div>
@@ -26294,10 +26360,11 @@ function TokenWorkspace({
                         <strong>{tokenUsd(liveWorkFloorUsd)}</strong>
                       </div>
                       <div>
-                        <span>Network value</span>
+                        <span>Live network value</span>
                         <strong>
                           {Math.round(
-                            workFloorQuote.networkValueSats,
+                            workFloorQuote.liveNetworkValueSats ??
+                              workFloorQuote.networkValueSats,
                           ).toLocaleString()}{" "}
                           proofs
                         </strong>
@@ -26306,10 +26373,29 @@ function TokenWorkspace({
                         <span>Network USD</span>
                         <strong>{tokenUsd(liveWorkNetworkUsd)}</strong>
                       </div>
+                      {frozenWorkNetworkValueSats > 0 ? (
+                        <>
+                          <div>
+                            <span>Frozen network value</span>
+                            <strong>
+                              {Math.round(
+                                frozenWorkNetworkValueSats,
+                              ).toLocaleString()}{" "}
+                              proofs
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Frozen floor</span>
+                            <strong>
+                              {tokenSatsPerUnit(frozenWorkFloorSats)} proofs / WORK
+                            </strong>
+                          </div>
+                        </>
+                      ) : null}
                       {workCreditNetworkValueSats > 0 ? (
                         <>
                           <div>
-                            <span>WORK event value</span>
+                            <span>Live WORK event value</span>
                             <strong>
                               {Math.round(
                                 workCreditNetworkValueSats,
@@ -26318,19 +26404,28 @@ function TokenWorkspace({
                             </strong>
                           </div>
                           <div>
-                            <span>WORK mark</span>
+                            <span>Frozen WORK event value</span>
                             <strong>
                               {Math.round(
-                                workCreditMovementFrozenValueSats,
+                                workCreditEventFrozenValueSats,
                               ).toLocaleString()}{" "}
                               proofs
                             </strong>
                           </div>
                           <div>
-                            <span>Live WORK value</span>
+                            <span>Live WORK mark</span>
                             <strong>
                               {Math.round(
-                                workCreditEventLiveValueSats,
+                                workCreditMovementLiveValueSats,
+                              ).toLocaleString()}{" "}
+                              proofs
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Frozen WORK mark</span>
+                            <strong>
+                              {Math.round(
+                                workCreditMovementFrozenValueSats,
                               ).toLocaleString()}{" "}
                               proofs
                             </strong>
@@ -26413,7 +26508,7 @@ function TokenWorkspace({
                       Mint price remains{" "}
                       {detailToken.mintPriceSats.toLocaleString()} proofs for{" "}
                       {detailToken.mintAmount.toLocaleString()} WORK. The live
-                      floor follows confirmed network value only; pending mints
+                      floor follows live network value from confirmed events; pending mints
                       wait for confirmation. Refreshed{" "}
                       {formatDate(workFloorQuote.indexedAt)} from confirmed
                       Computer value across{" "}
@@ -26422,14 +26517,14 @@ function TokenWorkspace({
                       ).toLocaleString()}{" "}
                       confirmed actions
                       {workCreditNetworkValueSats > 0
-                        ? `, including ${Math.round(workCreditNetworkValueSats).toLocaleString()} full frozen WORK-event proofs and ${Math.round(workCreditEventLiveValueSats).toLocaleString()} live WORK-event proofs.`
+                        ? `, including ${Math.round(workCreditNetworkValueSats).toLocaleString()} live WORK-event proofs and ${Math.round(workCreditEventFrozenValueSats).toLocaleString()} frozen WORK-event proofs.`
                         : "."}
                     </p>
                   </>
                 ) : (
                   <p className="field-note">
                     {workFloorLoading
-                      ? "Loading confirmed network value..."
+                      ? "Loading live network value..."
                       : "Refresh to load the live WORK floor."}
                   </p>
                 )}
@@ -27668,7 +27763,8 @@ function growthActualNetworkValue(
       return explicit;
     }
     return (
-      eventNumber(event.creditLiveValueSats) +
+      (eventNumber(event.creditLiveValueSats) ||
+        eventNumber(event.creditValueAtConfirmSats)) +
       eventProofPaymentSats(event) +
       eventRegistryMutationSats(event) +
       eventMarketplaceMutationSats(event) +
@@ -27681,7 +27777,9 @@ function growthActualNetworkValue(
     0,
   );
   const creditMovementLiveValueSats = creditMovementEvents.reduce(
-    (total, event) => total + (event.creditLiveValueSats ?? 0),
+    (total, event) =>
+      total +
+      (event.creditLiveValueSats ?? event.creditValueAtConfirmSats ?? 0),
     0,
   );
   const creditEventFrozenValueSats = creditEvents.reduce(
@@ -27718,8 +27816,13 @@ function growthActualNetworkValue(
     (total, fee) => total + fee,
     0,
   );
-  const creditNetworkValueSats = creditEventFrozenValueSats;
-  const totalSats =
+  const creditFrozenNetworkValueSats = creditEventFrozenValueSats;
+  const creditLiveNetworkValueSats =
+    creditEventLiveValueSats > 0
+      ? creditEventLiveValueSats
+      : creditFrozenNetworkValueSats;
+  const creditNetworkValueSats = creditLiveNetworkValueSats;
+  const baseTotalSats =
     idSats +
     mailSats +
     infinityBondSats +
@@ -27728,8 +27831,9 @@ function growthActualNetworkValue(
     browserSats +
     tokenSats +
     walletSats +
-    computerEventSats +
-    creditNetworkValueSats;
+    computerEventSats;
+  const frozenTotalSats = baseTotalSats + creditFrozenNetworkValueSats;
+  const totalSats = baseTotalSats + creditNetworkValueSats;
   const years = Math.max(
     0,
     (Math.min(cutoffMs, Date.now()) - GROWTH_MODEL_START_MS) /
@@ -27743,6 +27847,8 @@ function growthActualNetworkValue(
     computerEventSats,
     creditEventFrozenValueSats,
     creditEventLiveValueSats,
+    creditFrozenNetworkValueSats,
+    creditLiveNetworkValueSats,
     creditMinerFeeFlowSats,
     creditMarketplaceMutationFlowSats,
     creditMovementFrozenValueSats,
@@ -27775,6 +27881,13 @@ function growthActualNetworkValue(
     tokenSats,
     walletFlowSats,
     walletSats,
+    frozenFloorSats: frozenTotalSats / WORK_TOKEN_MAX_SUPPLY,
+    frozenNetworkValueSats: frozenTotalSats,
+    frozenTotalSats,
+    liveFloorSats: totalSats / WORK_TOKEN_MAX_SUPPLY,
+    liveNetworkValueSats: totalSats,
+    liveTotalSats: totalSats,
+    networkValueSats: totalSats,
     totalSats,
     totalUsd: growthSatsToUsdAtYears(totalSats, years),
   };
@@ -28261,7 +28374,7 @@ function GrowthLineChart({
       className="growth-chart"
       role="img"
       viewBox={`0 0 ${width} ${height}`}
-      aria-label="Modeled ProofOfWork Computer network value compared with real confirmed network value"
+      aria-label="Modeled ProofOfWork Computer network value compared with live real network value"
     >
       <rect
         className="growth-chart-bg"
@@ -29350,15 +29463,23 @@ function GrowthWorkspace({
   const tokenFlowSats =
     actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats;
   const walletFlowSats = actualValue.walletFlowSats;
-  const creditNetworkValueSats = actualValue.creditNetworkValueSats ?? 0;
+  const creditNetworkValueSats =
+    actualValue.creditNetworkValueSats ??
+    actualValue.creditLiveNetworkValueSats ??
+    0;
   const creditEventFrozenValueSats =
-    actualValue.creditEventFrozenValueSats ?? creditNetworkValueSats;
+    actualValue.creditEventFrozenValueSats ??
+    actualValue.creditFrozenNetworkValueSats ??
+    0;
   const creditEventLiveValueSats =
     actualValue.creditEventLiveValueSats ??
-    actualValue.creditMovementLiveValueSats ??
+    actualValue.creditLiveNetworkValueSats ??
+    creditNetworkValueSats ??
     0;
   const creditMovementFrozenValueSats =
     actualValue.creditMovementFrozenValueSats ?? 0;
+  const creditMovementLiveValueSats =
+    actualValue.creditMovementLiveValueSats ?? 0;
   const creditMinerFeeFlowSats = actualValue.creditMinerFeeFlowSats ?? 0;
   const creditProofPaymentFlowSats = actualValue.creditProofPaymentFlowSats ?? 0;
   const creditSalePaymentFlowSats = actualValue.creditSalePaymentFlowSats ?? 0;
@@ -29491,8 +29612,9 @@ function GrowthWorkspace({
         <div>
           <strong>{growthSats(creditNetworkValueSats)}</strong>
           <span>
-            WORK frozen event value · {creditMovementFrozenValueSats.toLocaleString()} WORK
-            mark · {creditSalePaymentFlowSats.toLocaleString()} sale proofs ·{" "}
+            WORK live event value · {creditMovementLiveValueSats.toLocaleString()} live
+            mark · {creditEventFrozenValueSats.toLocaleString()} frozen event ·{" "}
+            {creditSalePaymentFlowSats.toLocaleString()} sale proofs ·{" "}
             {creditMutationFlowSats.toLocaleString()} mutation proofs
           </span>
         </div>
@@ -29518,9 +29640,9 @@ function GrowthWorkspace({
           <p>
             IDs use n squared network value. Mail, Infinity Bonds, Drive,
             Marketplace, Browser, Credits, and Wallet keep their confirmed
-            payment-flow buckets. WORK credit movements add frozen
-            proof-equivalent value at confirmation plus separate miner fees,
-            then the total is translated to USD with the live price benchmark.
+            payment-flow buckets. WORK credit movements add live
+            proof-equivalent value as the active site value, while each
+            confirmation stamps its own frozen audit value plus separate miner fees.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -29551,7 +29673,7 @@ function GrowthWorkspace({
       <section className="growth-chart-card">
         <div className="id-launch-section-head">
           <div>
-            <h3>Modeled network value vs real confirmed value</h3>
+            <h3>Modeled network value vs live real value</h3>
             <p>
               Log scale, 10-year window. Values are shown in proofs and translated
               to USD through the same live price benchmark.
@@ -29776,15 +29898,15 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(creditNetworkValueSats)}
-            actualLabel={`${growthUsdForSats(creditNetworkValueSats)} · ${creditEventFrozenValueSats.toLocaleString()} frozen WORK event · ${creditEventLiveValueSats.toLocaleString()} live WORK event · ${creditMovementFrozenValueSats.toLocaleString()} WORK mark · ${creditSalePaymentFlowSats.toLocaleString()} sale proofs · ${creditProofPaymentFlowSats.toLocaleString()} mint/create proofs · ${creditMinerFeeFlowSats.toLocaleString()} miner proofs`}
+            actualLabel={`${growthUsdForSats(creditNetworkValueSats)} · ${creditEventLiveValueSats.toLocaleString()} live WORK event · ${creditEventFrozenValueSats.toLocaleString()} frozen WORK event · ${creditMovementLiveValueSats.toLocaleString()} live WORK mark · ${creditMovementFrozenValueSats.toLocaleString()} frozen WORK mark · ${creditSalePaymentFlowSats.toLocaleString()} sale proofs · ${creditProofPaymentFlowSats.toLocaleString()} mint/create proofs · ${creditMinerFeeFlowSats.toLocaleString()} miner proofs`}
             icon={<TrendingUp size={24} />}
             modelFiveYear="Tracked"
             modelFiveYearLabel="WORK movement lane"
-            modelLabel="full frozen event value"
+            modelLabel="live event value"
             modelOneYear="Tracked"
             modelOneYearLabel="WORK movement lane"
             name="WORK Credit Value"
-            note="Only WORK transfers and sales carry frozen network value at confirmation, while live value reprices from the current WORK floor. Other credits stay proof-flow only."
+            note="Only WORK transfers and sales carry live network value, while each confirmation stamps a frozen audit value. Other credits stay proof-flow only."
           />
         </div>
       </section>
@@ -31608,7 +31730,14 @@ function TokenMarketplacePanel({
     : networkSales;
   const workMarketFloorSats =
     network === "livenet" && workFloorQuote
-      ? workFloorQuote.networkValueSats / WORK_TOKEN_MAX_SUPPLY
+      ? (workFloorQuote.liveFloorSats ||
+          workFloorQuote.networkValueSats / WORK_TOKEN_MAX_SUPPLY)
+      : 0;
+  const workMarketFrozenFloorSats =
+    network === "livenet" && workFloorQuote
+      ? (workFloorQuote.frozenFloorSats ||
+          (workFloorQuote.frozenNetworkValueSats ?? workFloorQuote.networkValueSats) /
+            WORK_TOKEN_MAX_SUPPLY)
       : 0;
   const tokenReferenceById = new Map<string, TokenReferenceSnapshot>(
     rows.map((token) => [token.tokenId, token]),
@@ -31757,16 +31886,28 @@ function TokenMarketplacePanel({
   const hasTokenMarketLogItems = tokenMarketLogPage.totalCount > 0;
   const workMarketFloorUsd = satsToUsd(workMarketFloorSats, btcUsd);
   const workMarketNetworkUsd = workFloorQuote
-    ? satsToUsd(workFloorQuote.networkValueSats, btcUsd)
+    ? satsToUsd(
+        workFloorQuote.liveNetworkValueSats ?? workFloorQuote.networkValueSats,
+        btcUsd,
+      )
     : 0;
+  const workMarketFrozenNetworkValueSats =
+    workFloorQuote?.frozenNetworkValueSats ??
+    workFloorQuote?.actualValue?.frozenNetworkValueSats ??
+    workFloorQuote?.actualValue?.frozenTotalSats ??
+    0;
   const workCreditNetworkValueSats =
-    workFloorQuote?.actualValue?.creditNetworkValueSats ?? 0;
-  const workCreditEventLiveValueSats =
-    workFloorQuote?.actualValue?.creditEventLiveValueSats ??
-    workFloorQuote?.actualValue?.creditMovementLiveValueSats ??
+    workFloorQuote?.actualValue?.creditNetworkValueSats ??
+    workFloorQuote?.actualValue?.creditLiveNetworkValueSats ??
+    0;
+  const workCreditEventFrozenValueSats =
+    workFloorQuote?.actualValue?.creditEventFrozenValueSats ??
+    workFloorQuote?.actualValue?.creditFrozenNetworkValueSats ??
     0;
   const workCreditMovementFrozenValueSats =
     workFloorQuote?.actualValue?.creditMovementFrozenValueSats ?? 0;
+  const workCreditMovementLiveValueSats =
+    workFloorQuote?.actualValue?.creditMovementLiveValueSats ?? 0;
   const workCreditSalePaymentFlowSats =
     workFloorQuote?.actualValue?.creditSalePaymentFlowSats ?? 0;
   const workCreditMinerFeeFlowSats =
@@ -31834,7 +31975,7 @@ function TokenMarketplacePanel({
                   aria-label="WORK market price"
                 >
                   <div>
-                    <span>Network floor</span>
+                    <span>Live network floor</span>
                     <strong>
                       {tokenSatsPerUnit(workMarketFloorSats)} proofs / WORK
                     </strong>
@@ -31844,10 +31985,11 @@ function TokenMarketplacePanel({
                     <strong>{tokenUsd(workMarketFloorUsd)}</strong>
                   </div>
                   <div>
-                    <span>Network value</span>
+                    <span>Live network value</span>
                     <strong>
                       {Math.round(
-                        workFloorQuote.networkValueSats,
+                        workFloorQuote.liveNetworkValueSats ??
+                          workFloorQuote.networkValueSats,
                       ).toLocaleString()}{" "}
                       proofs
                     </strong>
@@ -31856,6 +31998,25 @@ function TokenMarketplacePanel({
                     <span>Network USD</span>
                     <strong>{tokenUsd(workMarketNetworkUsd)}</strong>
                   </div>
+                  {workMarketFrozenNetworkValueSats > 0 ? (
+                    <>
+                      <div>
+                        <span>Frozen network value</span>
+                        <strong>
+                          {Math.round(
+                            workMarketFrozenNetworkValueSats,
+                          ).toLocaleString()}{" "}
+                          proofs
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Frozen floor</span>
+                        <strong>
+                          {tokenSatsPerUnit(workMarketFrozenFloorSats)} proofs / WORK
+                        </strong>
+                      </div>
+                    </>
+                  ) : null}
                   <div>
                     <span>Best ask</span>
                     <strong>
@@ -31867,7 +32028,7 @@ function TokenMarketplacePanel({
                   {workCreditNetworkValueSats > 0 ? (
                     <>
                       <div>
-                        <span>WORK event value</span>
+                        <span>Live WORK event value</span>
                         <strong>
                           {Math.round(
                             workCreditNetworkValueSats,
@@ -31876,19 +32037,28 @@ function TokenMarketplacePanel({
                         </strong>
                       </div>
                       <div>
-                        <span>WORK mark</span>
+                        <span>Frozen WORK event value</span>
                         <strong>
                           {Math.round(
-                            workCreditMovementFrozenValueSats,
+                            workCreditEventFrozenValueSats,
                           ).toLocaleString()}{" "}
                           proofs
                         </strong>
                       </div>
                       <div>
-                        <span>Live WORK value</span>
+                        <span>Live WORK mark</span>
                         <strong>
                           {Math.round(
-                            workCreditEventLiveValueSats,
+                            workCreditMovementLiveValueSats,
+                          ).toLocaleString()}{" "}
+                          proofs
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Frozen WORK mark</span>
+                        <strong>
+                          {Math.round(
+                            workCreditMovementFrozenValueSats,
                           ).toLocaleString()}{" "}
                           proofs
                         </strong>
@@ -31977,7 +32147,7 @@ function TokenMarketplacePanel({
                   ).toLocaleString()}{" "}
                   confirmed actions
                   {workCreditNetworkValueSats > 0
-                    ? `, including ${Math.round(workCreditNetworkValueSats).toLocaleString()} full frozen WORK-event proofs and ${Math.round(workCreditEventLiveValueSats).toLocaleString()} live WORK-event proofs.`
+                    ? `, including ${Math.round(workCreditNetworkValueSats).toLocaleString()} live WORK-event proofs and ${Math.round(workCreditEventFrozenValueSats).toLocaleString()} frozen WORK-event proofs.`
                     : "."}
                 </p>
               </>
