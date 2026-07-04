@@ -40,7 +40,7 @@ export async function fetchProofApiJson<T>(
       (error instanceof DOMException && error.name === "AbortError")
     ) {
       throw new Error(
-        "ProofOfWork API request timed out before the node returned data. Refresh and try again after the node finishes indexing.",
+        "ProofOfWork API refresh took too long. Showing the latest indexed data when available; refresh again in a moment.",
       );
     }
 

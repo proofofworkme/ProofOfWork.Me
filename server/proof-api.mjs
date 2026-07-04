@@ -44,6 +44,7 @@ import {
   proofIndexTokenMarketSummaryOverlayPayload,
   proofIndexTxStatusPayload,
   proofIndexValueSummaryPayload,
+  proofIndexTokenSnapshotPayload,
   proofIndexWalletTokenOverlayPayload,
 } from "./db/proof-index-reader.mjs";
 
@@ -131,14 +132,23 @@ const BACKGROUND_WORK_TOKEN_REFRESH_INTERVAL_MS = Number(
 const BACKGROUND_DERIVED_REFRESH_INTERVAL_MS = Number(
   process.env.BACKGROUND_DERIVED_REFRESH_INTERVAL_MS ?? 15_000,
 );
+const ENABLE_STARTUP_EXPENSIVE_PREWARM = ["1", "true", "yes"].includes(
+  String(process.env.ENABLE_STARTUP_EXPENSIVE_PREWARM ?? "").toLowerCase(),
+);
 const BACKGROUND_STARTUP_REFRESH_DELAY_MS = Number(
-  process.env.BACKGROUND_STARTUP_REFRESH_DELAY_MS ?? 2_500,
+  process.env.BACKGROUND_STARTUP_REFRESH_DELAY_MS ?? 5 * 60_000,
 );
 const ENABLE_GLOBAL_ACTIVITY_CRAWL = ["1", "true", "yes"].includes(
   String(process.env.ENABLE_GLOBAL_ACTIVITY_CRAWL ?? "").toLowerCase(),
 );
 const ENABLE_SUMMARY_TOKEN_REFRESH = ["1", "true", "yes"].includes(
   String(process.env.ENABLE_SUMMARY_TOKEN_REFRESH ?? "").toLowerCase(),
+);
+const ENABLE_API_LEDGER_BACKGROUND_REFRESH = ["1", "true", "yes"].includes(
+  String(process.env.ENABLE_API_LEDGER_BACKGROUND_REFRESH ?? "").toLowerCase(),
+);
+const ENABLE_REQUEST_LEDGER_RECOVERY = ["1", "true", "yes"].includes(
+  String(process.env.ENABLE_REQUEST_LEDGER_RECOVERY ?? "").toLowerCase(),
 );
 const DERIVED_APP_CACHE_TTL_MS = Number(
   process.env.DERIVED_APP_CACHE_TTL_MS ?? 15 * 60_000,
@@ -11223,16 +11233,18 @@ function refreshTokenPayloadCacheInBackground(network, tokenScope = "") {
   }
 
   BACKGROUND_TOKEN_REFRESHES.add(cacheKey);
-  void safeTokenPayload(network, scope)
-    .then((payload) => {
-      cacheTokenPayload(network, scope, payload);
-    })
-    .catch((error) => {
-      console.error(`Token cache refresh failed for ${cacheKey}:`, error);
-    })
-    .finally(() => {
-      BACKGROUND_TOKEN_REFRESHES.delete(cacheKey);
-    });
+  setTimeout(() => {
+    void safeTokenPayload(network, scope)
+      .then((payload) => {
+        cacheTokenPayload(network, scope, payload);
+      })
+      .catch((error) => {
+        console.error(`Token cache refresh failed for ${cacheKey}:`, error);
+      })
+      .finally(() => {
+        BACKGROUND_TOKEN_REFRESHES.delete(cacheKey);
+      });
+  }, 1_000);
 }
 
 function refreshGlobalActivityCacheInBackground(network) {
@@ -16572,6 +16584,110 @@ function ledgerPayloadForFreshnessCompare(ledger, scope) {
   );
 }
 
+async function currentProofIndexTokenPayloadForRead(
+  network,
+  tokenScope = "",
+  label = "token-state",
+  timeoutMs = 5_000,
+) {
+  const scope = normalizeTokenScope(tokenScope);
+  if (
+    network !== "livenet" ||
+    !proofIndexReadFeatureEnabled("token-state,token-default,token")
+  ) {
+    return null;
+  }
+
+  const params = new URLSearchParams();
+  if (scope) {
+    params.set("asset", scope);
+  }
+  if (!proofIndexTokenReadEligibility(scope, params).eligible) {
+    return null;
+  }
+
+  const payload = await payloadWithFallbackAfterMs(
+    proofIndexTokenSnapshotPayload(network, scope, params).catch((error) => {
+      console.error(
+        `Proof index ${label} read failed for ${scope || "all"}: ${errorSummary(error)}`,
+      );
+      return null;
+    }),
+    null,
+    timeoutMs,
+  );
+  if (
+    payload &&
+    (await payloadWithFallbackAfterMs(
+      proofIndexPayloadCoversConfirmedTip(
+        payload,
+        network,
+        `${label}:${scope || "all"}`,
+      ),
+      false,
+      Math.min(2_500, Math.max(1_000, timeoutMs)),
+    ))
+  ) {
+    return payload;
+  }
+  return null;
+}
+
+async function currentCachedTokenPayloadForRead(
+  network,
+  tokenScope = "",
+  label = "token-cache",
+) {
+  const scope = normalizeTokenScope(tokenScope);
+  const payload = await cachedTokenPayloadSnapshotNoRefresh(network, scope).catch(
+    (error) => {
+      console.error(
+        `Cached ${label} read failed for ${scope || "all"}: ${errorSummary(error)}`,
+      );
+      return null;
+    },
+  );
+  if (
+    payload &&
+    (await payloadWithFallbackAfterMs(
+      proofIndexPayloadCoversConfirmedTip(
+        payload,
+        network,
+        `${label}:${scope || "all"}`,
+      ),
+      false,
+      2_500,
+    ))
+  ) {
+    return payload;
+  }
+  return null;
+}
+
+async function currentMemoryTokenPayloadForRead(
+  network,
+  tokenScope = "",
+  label = "token-memory-cache",
+) {
+  const scope = normalizeTokenScope(tokenScope);
+  const payload = RESPONSE_CACHE.get(`payload:token:${network}:${scope}`)?.payload;
+  if (
+    payload &&
+    (await payloadWithFallbackAfterMs(
+      proofIndexPayloadCoversConfirmedTip(
+        payload,
+        network,
+        `${label}:${scope || "all"}`,
+      ),
+      false,
+      2_500,
+    ))
+  ) {
+    return payload;
+  }
+  return null;
+}
+
 async function indexedTokenPayloadFreshnessFloor(network, scope, options = {}) {
   if (
     network !== "livenet" ||
@@ -16841,6 +16957,25 @@ async function tokenSummaryPayload(
     : [];
   if (
     network === "livenet" &&
+    fresh &&
+    summaryRecoveryAddresses.length === 0
+  ) {
+    const cachedPayload = await currentMemoryTokenPayloadForRead(
+      network,
+      scope,
+      "token-summary-fresh-memory",
+    );
+    if (cachedPayload) {
+      return compactTokenSummaryPayload(cachedPayload, scope);
+    }
+
+    throw freshDataUnavailableError(
+      `Fresh credit summary is still catching up for ${scope || "all"}.`,
+    );
+  }
+
+  if (
+    network === "livenet" &&
     summaryRecoveryAddresses.length === 0 &&
     scope !== WORK_TOKEN_ID
   ) {
@@ -16863,25 +16998,23 @@ async function tokenSummaryPayload(
     proofIndexReadFeatureEnabled("token-state,token-default,token") &&
     proofIndexTokenReadEligibility(scope, new URLSearchParams()).eligible
   ) {
-    const indexedPayload = await proofIndexTokenPayload(
+    const indexedPayload = await currentProofIndexTokenPayloadForRead(
       network,
       scope,
-      new URLSearchParams(),
-    ).catch((error) => {
-      console.error(
-        `Proof index token summary read failed: ${errorSummary(error)}`,
-      );
-      return null;
-    });
-    if (
-      indexedPayload &&
-      (await proofIndexPayloadCoversConfirmedTip(
-        indexedPayload,
-        network,
-        "token-summary",
-      ))
-    ) {
+      "token-summary",
+      10_000,
+    );
+    if (indexedPayload) {
       return compactTokenSummaryPayload(indexedPayload, scope);
+    }
+    const cachedPayload = await currentCachedTokenPayloadForRead(
+      network,
+      scope,
+      "token-summary-cache",
+    );
+    if (cachedPayload) {
+      refreshTokenPayloadCacheInBackground(network, scope);
+      return compactTokenSummaryPayload(cachedPayload, scope);
     }
   }
 
@@ -16969,16 +17102,12 @@ async function walletScopedTokenSummaryPayload(
     scope !== POWB_TOKEN_ID &&
     proofIndexReadFeatureEnabled("token-state,token-default,token")
   ) {
-    payload = await proofIndexTokenPayload(
+    payload = await currentProofIndexTokenPayloadForRead(
       network,
       scope,
-      new URLSearchParams(),
-    ).catch((error) => {
-      console.error(
-        `Proof index wallet-scoped token summary read failed: ${errorSummary(error)}`,
-      );
-      return null;
-    });
+      "wallet-scoped-token-summary",
+      5_000,
+    );
   }
 
   if (!payload) {
@@ -17056,16 +17185,12 @@ async function walletScopedTokenPayload(
     scope !== POWB_TOKEN_ID &&
     proofIndexReadFeatureEnabled("token-state,token-default,token")
   ) {
-    payload = await proofIndexTokenPayload(
+    payload = await currentProofIndexTokenPayloadForRead(
       network,
       scope,
-      new URLSearchParams(),
-    ).catch((error) => {
-      console.error(
-        `Proof index wallet-scoped token read failed: ${errorSummary(error)}`,
-      );
-      return null;
-    });
+      "wallet-scoped-token",
+      5_000,
+    );
   }
 
   if (!payload) {
@@ -17378,9 +17503,22 @@ async function workActiveListingHistoryPageFromTxidQuery(
     return null;
   }
 
-  const outspends = await firstPartyTransactionOutspends(txid, network);
+  const outspends = await payloadWithFallbackAfterMs(
+    firstPartyTransactionOutspends(txid, network),
+    null,
+    TX_OUTSPEND_PRIMARY_FETCH_TIMEOUT_MS,
+  );
   if (!Array.isArray(outspends)) {
-    return null;
+    return paginatedHistoryPayload({
+      indexedAt: tx.status?.block_time
+        ? new Date(tx.status.block_time * 1000).toISOString()
+        : new Date().toISOString(),
+      items: [],
+      kind: "listings",
+      network,
+      pagination,
+      source: "first-party-token-listing-outspend-query",
+    });
   }
 
   const activeListings = listings.filter((listing) => {
@@ -17389,7 +17527,7 @@ async function workActiveListingHistoryPageFromTxidQuery(
       return false;
     }
     const outspend = outspends[anchor.vout];
-    return outspend?.spent !== true;
+    return outspend?.spent === false;
   });
 
   return paginatedHistoryPayload({
@@ -20903,6 +21041,10 @@ async function canonicalLedgerPayload(network, fresh = false) {
 }
 
 function refreshCanonicalLedgerPayloadInBackground(network, fresh = false) {
+  if (!ENABLE_API_LEDGER_BACKGROUND_REFRESH) {
+    return;
+  }
+
   const cacheKey = `ledger:${network}`;
   if (BACKGROUND_LEDGER_REFRESHES.has(cacheKey)) {
     return;
@@ -20937,6 +21079,9 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
       "canonical ledger fallback",
     );
     if (!currentFallback) {
+      if (!ENABLE_REQUEST_LEDGER_RECOVERY) {
+        return null;
+      }
       const replayedFallback = await ledgerWithReplayedCreditNetworkValues(
         fallback,
         network,
@@ -21005,6 +21150,9 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
     );
     if (currentFallback) {
       return currentFallback;
+    }
+    if (!ENABLE_REQUEST_LEDGER_RECOVERY) {
+      return null;
     }
     const replayedFallback = await ledgerWithReplayedCreditNetworkValues(
       fallback,
@@ -23239,18 +23387,22 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     }
   }
   if (workMarketHistoryKind && queriedWorkHistory && network === "livenet") {
-    const indexedMarketPage = await proofIndexTokenMarketHistoryOverlayPayload(
-      network,
-      scope,
-      safeKind,
-      searchParams,
-      { pagination },
-    ).catch((error) => {
-      console.error(
-        `Proof index fast WORK market history read failed: ${errorSummary(error)}`,
-      );
-      return null;
-    });
+    const indexedMarketPage = await payloadWithFallbackAfterMs(
+      proofIndexTokenMarketHistoryOverlayPayload(
+        network,
+        scope,
+        safeKind,
+        searchParams,
+        { pagination },
+      ).catch((error) => {
+        console.error(
+          `Proof index fast WORK market history read failed: ${errorSummary(error)}`,
+        );
+        return null;
+      }),
+      null,
+      SUMMARY_WORK_LISTING_RECOVERY_WAIT_MS,
+    );
     if (
       indexedMarketPage &&
       (Number(indexedMarketPage.totalCount ?? 0) > 0 ||
@@ -23284,6 +23436,22 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     if (directListingPage) {
       return directListingPage;
     }
+  }
+  if (
+    workMarketHistoryKind &&
+    queriedWorkHistory &&
+    network === "livenet" &&
+    recoveryAddresses.length === 0 &&
+    pagination.query
+  ) {
+    return paginatedHistoryPayload({
+      indexedAt: new Date().toISOString(),
+      items: [],
+      kind: safeKind,
+      network,
+      pagination,
+      source: "proof-indexer-work-market-history-timeout",
+    });
   }
   const indexedWorkHolderOverlayPromise =
     safeKind === "holders" && queriedWorkHistory && network === "livenet"
@@ -23448,17 +23616,21 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     source: payload.source ?? mempoolBase(network),
   });
   if (workBalanceHistoryKind && queriedWorkHistory && network === "livenet") {
-    const overlayPage = await proofIndexTokenHistoryPayload(
-      network,
-      scope,
-      safeKind,
-      searchParams,
-    ).catch((error) => {
-      console.error(
-        `Proof index token balance overlay failed: ${errorSummary(error)}`,
-      );
-      return null;
-    });
+    const overlayPage = await payloadWithFallbackAfterMs(
+      proofIndexTokenHistoryPayload(
+        network,
+        scope,
+        safeKind,
+        searchParams,
+      ).catch((error) => {
+        console.error(
+          `Proof index token balance overlay failed: ${errorSummary(error)}`,
+        );
+        return null;
+      }),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    );
     page = mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination);
     if (safeKind === "holders") {
       const indexedWalletOverlay = await indexedWorkHolderOverlayPromise;
@@ -23492,33 +23664,41 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     }
   }
   if (workMarketHistoryKind && queriedWorkHistory && network === "livenet") {
-    const overlayPage = await proofIndexTokenHistoryPayload(
-      network,
-      scope,
-      safeKind,
-      searchParams,
-    ).catch((error) => {
-      console.error(
-        `Proof index token market history overlay failed: ${errorSummary(error)}`,
-      );
-      return null;
-    });
+    const overlayPage = await payloadWithFallbackAfterMs(
+      proofIndexTokenHistoryPayload(
+        network,
+        scope,
+        safeKind,
+        searchParams,
+      ).catch((error) => {
+        console.error(
+          `Proof index token market history overlay failed: ${errorSummary(error)}`,
+        );
+        return null;
+      }),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    );
     page = mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination, {
       addOverlayItems: !(fresh && safeKind === "listings"),
     });
   }
   if (workMarketHistoryKind && network === "livenet") {
-    const overlayPage = await proofIndexTokenMarketHistoryOverlayPayload(
-      network,
-      scope,
-      safeKind,
-      searchParams,
-    ).catch((error) => {
-      console.error(
-        `Proof index token market overlay failed: ${errorSummary(error)}`,
-      );
-      return null;
-    });
+    const overlayPage = await payloadWithFallbackAfterMs(
+      proofIndexTokenMarketHistoryOverlayPayload(
+        network,
+        scope,
+        safeKind,
+        searchParams,
+      ).catch((error) => {
+        console.error(
+          `Proof index token market overlay failed: ${errorSummary(error)}`,
+        );
+        return null;
+      }),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    );
     page = mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination, {
       addOverlayItems: !(fresh && safeKind === "listings"),
     });
@@ -26869,40 +27049,56 @@ async function handleRequest(request, response) {
         strictRecoveryAddresses.length > 0
           ? strictRecoveryAddresses
           : recoveryAddressHintsFromSearchParams(url.searchParams, network);
+      const walletReadRequested = /^(?:1|true|yes)$/iu.test(
+        String(url.searchParams.get("wallet") ?? "").trim(),
+      );
       const walletScoped =
-        recoveryAddresses.length > 0 &&
-        /^(?:1|true|yes)$/iu.test(
-          String(url.searchParams.get("wallet") ?? "").trim(),
+        recoveryAddresses.length > 0 && walletReadRequested;
+      if (walletReadRequested && recoveryAddresses.length === 0) {
+        errorResponse(
+          response,
+          400,
+          "Wallet-scoped credit read requires a valid address.",
         );
+        return;
+      }
+      if (!walletScoped && recoveryAddresses.length === 0 && freshRead) {
+        const cachedPayload = await currentMemoryTokenPayloadForRead(
+          network,
+          tokenScope,
+          "token-state-fresh-memory",
+        );
+        if (cachedPayload) {
+          jsonResponse(
+            response,
+            200,
+            cachedPayload,
+            TOKEN_READ_CACHE_CONTROL,
+          );
+          return;
+        }
+        throw freshDataUnavailableError(
+          `Fresh credit state is still catching up for ${tokenScope || "all"}.`,
+        );
+      }
       if (
         !walletScoped &&
         recoveryAddresses.length === 0 &&
         proofIndexReadFeatureEnabled("token-state,token-default,token") &&
         proofIndexTokenReadEligibility(tokenScope, url.searchParams).eligible
       ) {
-        const indexedPayload = await proofIndexTokenPayload(
+        const indexedPayload = await currentProofIndexTokenPayloadForRead(
           network,
           tokenScope,
-          url.searchParams,
-        ).catch((error) => {
-          console.error(
-            `Proof index token-state read failed: ${errorSummary(error)}`,
-          );
-          return null;
-        });
-        if (
-          indexedPayload &&
-          (await proofIndexPayloadCoversConfirmedTip(
-            indexedPayload,
-            network,
-            "token-state",
-          ))
-        ) {
+          "token-state",
+          10_000,
+        );
+        if (indexedPayload) {
           jsonResponse(
             response,
             200,
             indexedPayload,
-            freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
+            TOKEN_READ_CACHE_CONTROL,
           );
           return;
         }
@@ -26954,11 +27150,19 @@ async function handleRequest(request, response) {
         strictRecoveryAddresses.length > 0
           ? strictRecoveryAddresses
           : recoveryAddressHintsFromSearchParams(url.searchParams, network);
+      const walletReadRequested = /^(?:1|true|yes)$/iu.test(
+        String(url.searchParams.get("wallet") ?? "").trim(),
+      );
       const walletScoped =
-        recoveryAddresses.length > 0 &&
-        /^(?:1|true|yes)$/iu.test(
-          String(url.searchParams.get("wallet") ?? "").trim(),
+        recoveryAddresses.length > 0 && walletReadRequested;
+      if (walletReadRequested && recoveryAddresses.length === 0) {
+        errorResponse(
+          response,
+          400,
+          "Wallet-scoped credit summary requires a valid address.",
         );
+        return;
+      }
       jsonResponse(
         response,
         200,
@@ -27025,6 +27229,9 @@ async function handleRequest(request, response) {
           "sales",
         ].includes(historyKind) &&
         recoveryAddressHintsFromSearchParams(url.searchParams, network).length > 0;
+      const exactTxidHistoryQuery = /^[0-9a-f]{64}$/iu.test(
+        historyPaginationFromSearch(url.searchParams).query,
+      );
       if (
         (!freshRead || exactProofIndexHistoryRead || proofIndexMintHistoryRead) &&
         tokenHistoryRecoveryTxids.length === 0 &&
@@ -27036,19 +27243,24 @@ async function handleRequest(request, response) {
           url.searchParams,
         ).eligible
       ) {
-        const indexedPayload = await proofIndexTokenHistoryPayload(
-          network,
-          tokenScope,
-          historyKind,
-          url.searchParams,
-        ).catch((error) => {
-          console.error(
-            `Proof index token-history read failed: ${errorSummary(error)}`,
-          );
-          return null;
-        });
+        const indexedPayload = await payloadWithFallbackAfterMs(
+          proofIndexTokenHistoryPayload(
+            network,
+            tokenScope,
+            historyKind,
+            url.searchParams,
+          ).catch((error) => {
+            console.error(
+              `Proof index token-history read failed: ${errorSummary(error)}`,
+            );
+            return null;
+          }),
+          null,
+          SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+        );
         if (indexedPayload) {
-          const responsePayload = needsCreditNetworkValueOverlay
+          const responsePayload =
+            needsCreditNetworkValueOverlay && !exactTxidHistoryQuery
             ? await tokenHistoryPageWithCanonicalCreditValueOverlay(
                 indexedPayload,
                 network,
@@ -27555,6 +27767,10 @@ function scheduleWarmJsonCache(cacheKey, producer, ttlMs, staleMs, delayMs) {
 }
 
 function prewarmExpensiveReadCaches() {
+  if (!ENABLE_STARTUP_EXPENSIVE_PREWARM) {
+    return;
+  }
+
   BACKGROUND_REFRESH_LAST_STARTED.set("token:livenet:", Date.now());
   BACKGROUND_REFRESH_LAST_STARTED.set(
     `token:livenet:${WORK_TOKEN_ID}`,

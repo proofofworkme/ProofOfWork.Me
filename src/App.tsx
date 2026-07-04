@@ -692,6 +692,9 @@ type TokenMarketPricePoint = {
 type PowTokenHolder = {
   address: string;
   balance: number;
+  pendingDelta?: number;
+  ticker?: string;
+  tokenId?: string;
 };
 
 type PowTokenState = {
@@ -6982,24 +6985,49 @@ function tokenWalletBalancesFor(
   mints: PowTokenMint[],
   transfers: PowTokenTransfer[],
   sales: PowTokenSale[] = [],
+  holders: PowTokenHolder[] = [],
 ): PowTokenWalletBalance[] {
   if (!walletAddress) {
     return [];
   }
 
+  const normalizedWalletAddress = walletAddress.trim().toLowerCase();
   return tokens
     .map((token) => {
-      let confirmedBalance = 0;
+      const holderBaseline = holders.find((holder) => {
+        const holderAddress = String(holder.address ?? "").trim().toLowerCase();
+        if (holderAddress !== normalizedWalletAddress) {
+          return false;
+        }
+        const holderTokenId = String(holder.tokenId ?? "").trim().toLowerCase();
+        const holderTicker = normalizeTokenTicker(String(holder.ticker ?? ""));
+        return (
+          holderTokenId === token.tokenId ||
+          holderTicker === normalizeTokenTicker(token.ticker) ||
+          (!holderTokenId && !holderTicker && tokens.length === 1)
+        );
+      });
+      const holderBaselineBalance = Number(holderBaseline?.balance);
+      const hasHolderBaseline = Number.isFinite(holderBaselineBalance);
+      let confirmedBalance = hasHolderBaseline
+        ? Math.max(0, holderBaselineBalance)
+        : 0;
       let pendingIncoming = 0;
       let pendingOutgoing = 0;
 
       for (const mint of mints) {
-        if (mint.tokenId !== token.tokenId || mint.minterAddress !== walletAddress) {
+        if (
+          mint.tokenId !== token.tokenId ||
+          String(mint.minterAddress ?? "").trim().toLowerCase() !==
+            normalizedWalletAddress
+        ) {
           continue;
         }
 
         if (mint.confirmed) {
-          confirmedBalance += mint.amount;
+          if (!hasHolderBaseline) {
+            confirmedBalance += mint.amount;
+          }
         } else {
           pendingIncoming += mint.amount;
         }
@@ -7011,19 +7039,33 @@ function tokenWalletBalancesFor(
         }
 
         if (transfer.confirmed) {
-          if (transfer.senderAddress === walletAddress) {
-            confirmedBalance -= transfer.amount;
-          }
-          if (transfer.recipientAddress === walletAddress) {
-            confirmedBalance += transfer.amount;
+          if (!hasHolderBaseline) {
+            if (
+              String(transfer.senderAddress ?? "").trim().toLowerCase() ===
+              normalizedWalletAddress
+            ) {
+              confirmedBalance -= transfer.amount;
+            }
+            if (
+              String(transfer.recipientAddress ?? "").trim().toLowerCase() ===
+              normalizedWalletAddress
+            ) {
+              confirmedBalance += transfer.amount;
+            }
           }
           continue;
         }
 
-        if (transfer.senderAddress === walletAddress) {
+        if (
+          String(transfer.senderAddress ?? "").trim().toLowerCase() ===
+          normalizedWalletAddress
+        ) {
           pendingOutgoing += transfer.amount;
         }
-        if (transfer.recipientAddress === walletAddress) {
+        if (
+          String(transfer.recipientAddress ?? "").trim().toLowerCase() ===
+          normalizedWalletAddress
+        ) {
           pendingIncoming += transfer.amount;
         }
       }
@@ -7034,19 +7076,33 @@ function tokenWalletBalancesFor(
         }
 
         if (sale.confirmed) {
-          if (sale.sellerAddress === walletAddress) {
-            confirmedBalance -= sale.amount;
-          }
-          if (sale.buyerAddress === walletAddress) {
-            confirmedBalance += sale.amount;
+          if (!hasHolderBaseline) {
+            if (
+              String(sale.sellerAddress ?? "").trim().toLowerCase() ===
+              normalizedWalletAddress
+            ) {
+              confirmedBalance -= sale.amount;
+            }
+            if (
+              String(sale.buyerAddress ?? "").trim().toLowerCase() ===
+              normalizedWalletAddress
+            ) {
+              confirmedBalance += sale.amount;
+            }
           }
           continue;
         }
 
-        if (sale.sellerAddress === walletAddress) {
+        if (
+          String(sale.sellerAddress ?? "").trim().toLowerCase() ===
+          normalizedWalletAddress
+        ) {
           pendingOutgoing += sale.amount;
         }
-        if (sale.buyerAddress === walletAddress) {
+        if (
+          String(sale.buyerAddress ?? "").trim().toLowerCase() ===
+          normalizedWalletAddress
+        ) {
           pendingIncoming += sale.amount;
         }
       }
@@ -10148,6 +10204,35 @@ async function fetchTokenSupplyState(
   };
 }
 
+async function fetchTokenSupplyStateWithIndexedFallback(
+  targetNetwork: BitcoinNetwork,
+  fresh = false,
+  tokenScope = "",
+): Promise<{ indexedFallback: boolean; state: PowTokenSupplyState }> {
+  if (!fresh) {
+    return {
+      indexedFallback: false,
+      state: await fetchTokenSupplyState(targetNetwork, false, tokenScope),
+    };
+  }
+
+  try {
+    return {
+      indexedFallback: false,
+      state: await fetchTokenSupplyState(targetNetwork, true, tokenScope),
+    };
+  } catch (freshError) {
+    const state = await fetchTokenSupplyState(
+      targetNetwork,
+      false,
+      tokenScope,
+    ).catch(() => {
+      throw freshError;
+    });
+    return { indexedFallback: true, state };
+  }
+}
+
 async function fetchTokenHistoryPage<T>(
   targetNetwork: BitcoinNetwork,
   kind:
@@ -12716,6 +12801,7 @@ export default function App() {
   const [tokenDefinitions, setTokenDefinitions] = useState<
     PowTokenDefinition[]
   >([]);
+  const [tokenHolders, setTokenHolders] = useState<PowTokenHolder[]>([]);
   const [tokenMints, setTokenMints] = useState<PowTokenMint[]>([]);
   const [tokenTransfers, setTokenTransfers] = useState<PowTokenTransfer[]>([]);
   const [tokenListings, setTokenListings] = useState<PowTokenListing[]>([]);
@@ -13531,8 +13617,16 @@ export default function App() {
         tokenMints,
         tokenTransfers,
         tokenSales,
+        tokenHolders,
       ),
-    [address, dashboardTokenDefinitions, tokenMints, tokenSales, tokenTransfers],
+    [
+      address,
+      dashboardTokenDefinitions,
+      tokenHolders,
+      tokenMints,
+      tokenSales,
+      tokenTransfers,
+    ],
   );
   const powbTokenDefinitions = useMemo(
     () =>
@@ -13551,8 +13645,16 @@ export default function App() {
         tokenMints,
         tokenTransfers,
         tokenSales,
+        tokenHolders,
       ),
-    [address, powbTokenDefinitions, tokenMints, tokenSales, tokenTransfers],
+    [
+      address,
+      powbTokenDefinitions,
+      tokenHolders,
+      tokenMints,
+      tokenSales,
+      tokenTransfers,
+    ],
   );
   const powbTokenDefinition = powbTokenDefinitions[0];
   const powbMints = useMemo(
@@ -14751,6 +14853,7 @@ export default function App() {
           const tokenState = snapshot.token;
           setInfinitySummary(snapshot);
           setTokenDefinitions(tokenState.tokens);
+          setTokenHolders(tokenState.holders);
           setTokenMints(tokenState.mints);
           setTokenTransfers(tokenState.transfers);
           setTokenListings((current) =>
@@ -14783,6 +14886,7 @@ export default function App() {
             walletMode,
           );
           setTokenDefinitions(state.tokens);
+          setTokenHolders(state.holders);
           setTokenMints(state.mints);
           setTokenTransfers(state.transfers);
           setTokenListings((current) =>
@@ -15876,6 +15980,7 @@ export default function App() {
         setIdSales(snapshot.registry.sales);
         setIdActivity(snapshot.registry.activity);
         setTokenDefinitions(snapshot.token.tokens);
+        setTokenHolders(snapshot.token.holders);
         setTokenMints(snapshot.token.mints);
         setTokenTransfers(snapshot.token.transfers);
         setTokenListings((current) =>
@@ -15982,6 +16087,7 @@ export default function App() {
         }
         setInfinitySummary(snapshot);
         setTokenDefinitions(tokenState.tokens);
+        setTokenHolders(tokenState.holders);
         setTokenMints(tokenState.mints);
         setTokenTransfers(tokenState.transfers);
         setTokenListings((current) =>
@@ -16033,6 +16139,7 @@ export default function App() {
   ): Promise<PowTokenState | undefined> {
     if (!tokenIndexAddress) {
       setTokenDefinitions([]);
+      setTokenHolders([]);
       setTokenMints([]);
       setTokenTransfers([]);
       setTokenListings([]);
@@ -16120,6 +16227,7 @@ export default function App() {
           walletMode || activeFolder === "wallet",
         );
         setTokenDefinitions(state.tokens);
+        setTokenHolders(state.holders);
         setTokenMints(state.mints);
         setTokenTransfers(state.transfers);
         setTokenListings((current) =>
@@ -16396,18 +16504,35 @@ export default function App() {
     try {
       let tokenState: PowTokenState | undefined;
       let floorQuote: WorkFloorQuote | undefined;
+      let usedIndexedFallback = false;
       if (marketplaceMode || activeFolder === "marketplace") {
-        const marketplaceSummary = await refreshMarketplaceSummary(true, fresh);
+        let marketplaceSummary = await refreshMarketplaceSummary(true, fresh);
+        if (!marketplaceSummary && fresh) {
+          marketplaceSummary = await refreshMarketplaceSummary(true, false);
+          usedIndexedFallback = Boolean(marketplaceSummary);
+        }
         tokenState = marketplaceSummary?.token;
         floorQuote = includeWorkFloor ? marketplaceSummary?.workFloor : undefined;
         if (!tokenState) {
-          const [fallbackTokenState, , fallbackFloorQuote] = await Promise.all([
+          let fallbackTokenState: PowTokenState | undefined;
+          let fallbackFloorQuote: WorkFloorQuote | undefined;
+          [fallbackTokenState, , fallbackFloorQuote] = await Promise.all([
             refreshToken(true, fresh),
-            refreshTokenBtcUsd(fresh),
+            refreshTokenBtcUsd(fresh).catch(() => undefined),
             includeWorkFloor && !floorQuote
               ? refreshWorkFloor(true, fresh)
               : Promise.resolve(undefined),
           ]);
+          if (!fallbackTokenState && fresh) {
+            usedIndexedFallback = true;
+            [fallbackTokenState, , fallbackFloorQuote] = await Promise.all([
+              refreshToken(true, false),
+              refreshTokenBtcUsd(false).catch(() => undefined),
+              includeWorkFloor && !floorQuote
+                ? refreshWorkFloor(true, false)
+                : Promise.resolve(undefined),
+            ]);
+          }
           tokenState = fallbackTokenState;
           floorQuote = floorQuote ?? fallbackFloorQuote;
         }
@@ -16419,6 +16544,16 @@ export default function App() {
             ? refreshWorkFloor(true, fresh)
             : Promise.resolve(undefined),
         ]);
+        if (!tokenState && fresh) {
+          usedIndexedFallback = true;
+          [tokenState, , floorQuote] = await Promise.all([
+            refreshToken(true, false),
+            refreshTokenBtcUsd(false).catch(() => undefined),
+            includeWorkFloor
+              ? refreshWorkFloor(true, false)
+              : Promise.resolve(undefined),
+          ]);
+        }
       }
 
       if (!silent) {
@@ -16429,12 +16564,12 @@ export default function App() {
               : "";
           setStatus({
             tone: "good",
-            text: `Credit market loaded. ${tokenState.tokens.length.toLocaleString()} credit${tokenState.tokens.length === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"}.${floorText}`,
+            text: `${usedIndexedFallback ? "Credit market loaded from indexed state." : "Credit market loaded."} ${tokenState.tokens.length.toLocaleString()} credit${tokenState.tokens.length === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"}.${floorText}`,
           });
         } else {
           setStatus({
             tone: "bad",
-            text: "Credit market refresh did not return credit state.",
+            text: "Credit market refresh did not return indexed credit state.",
           });
         }
       }
@@ -16481,6 +16616,7 @@ export default function App() {
       setIdSales(registryState.sales);
       setIdActivity(activity.length > 0 ? activity : registryState.activity);
       setTokenDefinitions(tokenState.tokens);
+      setTokenHolders(tokenState.holders);
       setTokenMints(tokenState.mints);
       setTokenTransfers(tokenState.transfers);
       setTokenListings((current) =>
@@ -16669,6 +16805,7 @@ export default function App() {
           const tokenState = snapshot.token;
           setInfinitySummary(snapshot);
           setTokenDefinitions(tokenState.tokens);
+          setTokenHolders(tokenState.holders);
           setTokenMints(tokenState.mints);
           setTokenTransfers(tokenState.transfers);
           setTokenListings((current) =>
@@ -16700,6 +16837,7 @@ export default function App() {
             walletMode,
           );
           setTokenDefinitions(state.tokens);
+          setTokenHolders(state.holders);
           setTokenMints(state.mints);
           setTokenTransfers(state.transfers);
           setTokenListings((current) =>
@@ -19192,9 +19330,20 @@ export default function App() {
     });
 
     try {
-      let latestSupply = freshSupplyCheck
-        ? await fetchTokenSupplyState("livenet", true, mintTarget.tokenId)
+      const firstSupplyRead = freshSupplyCheck
+        ? await fetchTokenSupplyStateWithIndexedFallback(
+            "livenet",
+            true,
+            mintTarget.tokenId,
+          )
         : undefined;
+      let latestSupply = firstSupplyRead?.state;
+      if (firstSupplyRead?.indexedFallback) {
+        setStatus({
+          tone: "idle",
+          text: `Using latest indexed ${mintTarget.ticker} supply...`,
+        });
+      }
       let latestToken =
         latestSupply?.tokens.find((token) => token.tokenId === mintTarget.tokenId) ??
         mintTarget;
@@ -19210,11 +19359,18 @@ export default function App() {
             tone: "idle",
             text: `Checking final ${latestToken.ticker} supply...`,
           });
-          latestSupply = await fetchTokenSupplyState(
+          const finalSupplyRead = await fetchTokenSupplyStateWithIndexedFallback(
             "livenet",
             true,
             mintTarget.tokenId,
           );
+          latestSupply = finalSupplyRead.state;
+          if (finalSupplyRead.indexedFallback) {
+            setStatus({
+              tone: "idle",
+              text: `Using latest indexed ${latestToken.ticker} supply for final check...`,
+            });
+          }
           latestToken =
             latestSupply.tokens.find((token) => token.tokenId === mintTarget.tokenId) ??
             latestToken;
@@ -19468,6 +19624,7 @@ export default function App() {
         walletMode || activeFolder === "wallet",
       );
       setTokenDefinitions(latestState.tokens);
+      setTokenHolders(latestState.holders);
       setTokenMints(latestState.mints);
       setTokenTransfers(latestState.transfers);
       setTokenListings((current) =>
@@ -20326,11 +20483,18 @@ export default function App() {
           tone: "idle",
           text: `Checking final ${latestToken.ticker} supply before assistant start...`,
         });
-        latestState = await fetchTokenSupplyState(
+        const finalSupplyRead = await fetchTokenSupplyStateWithIndexedFallback(
           "livenet",
           true,
           targetToken.tokenId,
         );
+        latestState = finalSupplyRead.state;
+        if (finalSupplyRead.indexedFallback) {
+          setStatus({
+            tone: "idle",
+            text: `Using latest indexed ${latestToken.ticker} supply before assistant start...`,
+          });
+        }
         latestToken =
           latestState.tokens.find((token) => token.tokenId === targetToken.tokenId) ??
           latestToken;

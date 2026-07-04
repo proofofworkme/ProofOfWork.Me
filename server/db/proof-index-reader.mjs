@@ -3846,6 +3846,94 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
   );
 }
 
+export async function proofIndexTokenSnapshotPayload(
+  network,
+  tokenScope,
+  searchParams,
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+  const eligibility = proofIndexTokenReadEligibility(tokenScope, searchParams);
+  if (!eligibility.eligible) {
+    return null;
+  }
+
+  if (eligibility.scope !== "all") {
+    const scopedSnapshot = await tokenStateSnapshotForScope(
+      pool,
+      network,
+      "",
+      eligibility.scope,
+    );
+    const scopedPayload = scopedSnapshot?.scoped_payload;
+    if (
+      scopedSnapshot &&
+      tokenStateSnapshotAgeMs(scopedSnapshot) <= proofIndexTokenHistoryMaxAgeMs() &&
+      scopedPayload &&
+      typeof scopedPayload === "object"
+    ) {
+      return tokenStateWithSnapshotMetadata(
+        scopedPayload,
+        scopedSnapshot,
+        "proof-indexer-token-state-snapshot",
+      );
+    }
+  }
+
+  const snapshot = await ledgerSnapshotWithPayload(
+    pool,
+    network,
+    "",
+    "tokenStatePayloads",
+  );
+  if (
+    !snapshot ||
+    tokenStateSnapshotAgeMs(snapshot) > proofIndexTokenHistoryMaxAgeMs()
+  ) {
+    return null;
+  }
+
+  const statePayloads = tokenStatePayloadsFromSnapshot(snapshot);
+  if (!statePayloads) {
+    return null;
+  }
+
+  const scopedPayload = statePayloads[eligibility.scope];
+  if (scopedPayload && typeof scopedPayload === "object") {
+    return tokenStateWithSnapshotMetadata(
+      scopedPayload,
+      snapshot,
+      "proof-indexer-token-state-snapshot",
+    );
+  }
+
+  const allPayload = statePayloads.all;
+  if (!allPayload || typeof allPayload !== "object") {
+    return null;
+  }
+  if (eligibility.scope === "all") {
+    return tokenStateWithSnapshotMetadata(
+      allPayload,
+      snapshot,
+      "proof-indexer-token-state-snapshot",
+    );
+  }
+
+  const reconstructed = await scopedTokenStateFromAllPayload(
+    pool,
+    network,
+    eligibility.scope,
+    allPayload,
+  );
+  return tokenStateWithSnapshotMetadata(
+    reconstructed,
+    snapshot,
+    "proof-indexer-token-state-snapshot",
+  );
+}
+
 export async function proofIndexWalletTokenOverlayPayload(
   network,
   tokenScope,
