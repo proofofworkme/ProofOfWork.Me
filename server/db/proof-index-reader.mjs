@@ -1281,6 +1281,21 @@ function objectRecord(value) {
     : {};
 }
 
+function inputAddressesFromRawTransaction(rawTx) {
+  const tx = objectRecord(rawTx);
+  const vin = Array.isArray(tx.vin) ? tx.vin : [];
+  return [
+    ...new Set(
+      vin
+        .map((input) =>
+          String(input?.prevout?.scriptpubkey_address ?? input?.address ?? "")
+            .trim(),
+        )
+        .filter(Boolean),
+    ),
+  ];
+}
+
 function canonicalEventPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return {};
@@ -2830,6 +2845,143 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
   };
 }
 
+async function exactTokenTransferHistoryPage(
+  pool,
+  network,
+  tokenScope,
+  searchParams,
+  pagination,
+) {
+  const needles = tokenHistoryFilterNeedles(searchParams, pagination);
+  const txidNeedles = needles.map(normalizedTxid).filter(Boolean);
+  if (
+    txidNeedles.length === 0 ||
+    needles.some((value) => !normalizedTxid(value))
+  ) {
+    return null;
+  }
+
+  const scope = tokenScopeKey(tokenScope);
+  const params = [network, [...new Set(txidNeedles)]];
+  const conditions = [
+    "e.network = $1",
+    "e.status = 'confirmed'",
+    "e.valid IS DISTINCT FROM false",
+    "e.kind = 'token-transfer'",
+    `(
+      lower(e.txid) = ANY($2::text[])
+      OR lower(e.payload->>'txid') = ANY($2::text[])
+      OR EXISTS (
+        SELECT 1
+        FROM proof_indexer.event_refs erq
+        WHERE erq.event_id = e.event_id
+          AND lower(erq.ref_value) = ANY($2::text[])
+      )
+    )`,
+  ];
+  if (scope && scope !== "all") {
+    params.push(scope);
+    const scopeParam = `$${params.length}`;
+    conditions.push(
+      `(
+        lower(e.payload->>'tokenId') = ${scopeParam}
+        OR lower(cd.token_id) = ${scopeParam}
+        OR lower(cd.ticker) = lower(${scopeParam})
+        OR lower(e.payload->>'ticker') = lower(${scopeParam})
+      )`,
+    );
+  }
+
+  const whereClause = conditions.join(" AND ");
+  const result = await pool.query(
+    `
+      SELECT
+        e.network,
+        e.txid,
+        e.protocol,
+        e.kind,
+        e.status,
+        e.valid,
+        e.amount_sats,
+        e.block_height,
+        e.block_time,
+        e.event_time,
+        e.created_at,
+        e.payload,
+        t.raw_tx,
+        cd.ticker,
+        cd.registry_address,
+        cd.token_id
+      FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = e.network
+       AND cd.token_id = lower(e.payload->>'tokenId')
+      WHERE ${whereClause}
+      ORDER BY
+        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        e.txid DESC,
+        e.event_id DESC
+    `,
+    params,
+  );
+  const items = result.rows
+    .map((row) => {
+      const transfer = tokenTransferFromEventPayload(
+        normalizeEventPayload(canonicalEventPayload(row.payload), row),
+        row,
+      );
+      if (!transfer.senderAddress) {
+        const [senderAddress = ""] = inputAddressesFromRawTransaction(row.raw_tx);
+        if (senderAddress) {
+          return { ...transfer, senderAddress };
+        }
+      }
+      return transfer;
+    })
+    .filter(
+      (item) =>
+        item.txid &&
+        item.tokenId &&
+        item.amount > 0 &&
+        (item.senderAddress || item.recipientAddress),
+    )
+    .sort(compareTokenItemsByTime);
+  if (items.length === 0) {
+    return null;
+  }
+
+  const totalCount = items.length;
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  const indexedAt = dateIso(
+    result.rows.reduce((max, row) => {
+      const time = Date.parse(row.event_time ?? row.block_time ?? row.created_at ?? "");
+      return Number.isFinite(time) && time > max ? time : max;
+    }, 0),
+  );
+  return {
+    cursor: historyCursor("", start),
+    end,
+    indexedAt: indexedAt || new Date().toISOString(),
+    indexedThroughBlock: indexedThroughBlockFromItems(items),
+    items: items.slice(start, end),
+    kind: "transfers",
+    limit: pagination.limit,
+    network,
+    nextCursor: end < totalCount ? historyCursor("", end) : "",
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source: "proof-indexer-token-transfer-events-exact",
+    start,
+    totalCount,
+  };
+}
+
 export async function proofIndexTokenHistoryPayload(
   network,
   tokenScope,
@@ -2848,6 +3000,19 @@ export async function proofIndexTokenHistoryPayload(
   );
   if (!eligibility.eligible) {
     return null;
+  }
+
+  if (eligibility.kind === "transfers") {
+    const exactTransferPage = await exactTokenTransferHistoryPage(
+      pool,
+      network,
+      tokenScope,
+      searchParams,
+      eligibility.pagination,
+    );
+    if (exactTransferPage) {
+      return exactTransferPage;
+    }
   }
 
   const snapshot = await ledgerSnapshot(
@@ -3883,12 +4048,38 @@ function eventHistoryFilters(searchParams, pagination, baseValues = []) {
   }
   const address = String(params.get("address") ?? "").trim();
   if (address) {
+    const addressParam = addValue(address.toLowerCase());
     filters.push(`
-      EXISTS (
-        SELECT 1
-        FROM proof_indexer.event_participants ep
-        WHERE ep.event_id = e.event_id
-          AND lower(ep.address) = ${addValue(address.toLowerCase())}
+      (
+        EXISTS (
+          SELECT 1
+          FROM proof_indexer.event_participants ep
+          WHERE ep.event_id = e.event_id
+            AND lower(ep.address) = ${addressParam}
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM proof_indexer.mail_items mi
+          WHERE mi.network = e.network
+            AND mi.txid = e.txid
+            AND (
+              lower(COALESCE(mi.sender_address, '')) = ${addressParam}
+              OR lower(COALESCE(mi.message->>'senderAddress', '')) = ${addressParam}
+              OR lower(COALESCE(mi.message->>'recipientAddress', '')) = ${addressParam}
+              OR EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(
+                  CASE
+                    WHEN jsonb_typeof(mi.message->'recipients') = 'array'
+                      THEN mi.message->'recipients'
+                    ELSE '[]'::jsonb
+                  END
+                ) recipient
+                WHERE lower(COALESCE(recipient->>'address', '')) = ${addressParam}
+                   OR lower(COALESCE(recipient->>'display', '')) = ${addressParam}
+              )
+            )
+        )
       )
     `);
   }
@@ -4212,6 +4403,12 @@ function addressMailRowPayloads(row, address, network) {
   const subject = mailSubjectFromEvent(row, payload);
   const memo = mailMemoFromEvent(row, payload);
   const parentTxid = String(row.parent_txid ?? payload.parentTxid ?? "").trim();
+  const payloadAttachment = objectRecord(payload.attachment);
+  const rawAttachment = objectRecord(rawPayload.attachment);
+  const attachment =
+    Object.keys(payloadAttachment).length > 0
+      ? payloadAttachment
+      : rawAttachment;
   const items = [];
 
   if (actorKey && actorKey === targetKey) {
@@ -4219,6 +4416,7 @@ function addressMailRowPayloads(row, address, network) {
       folder: "sent",
       message: {
         amountSats: totalAmountSats,
+        attachment: Object.keys(attachment).length > 0 ? attachment : undefined,
         confirmedAt: confirmed ? createdAt : undefined,
         createdAt,
         feeRate: 0,
@@ -4251,6 +4449,7 @@ function addressMailRowPayloads(row, address, network) {
       message: {
         amountSats:
           positiveNumber(targetRecipient?.amountSats) || totalAmountSats,
+        attachment: Object.keys(attachment).length > 0 ? attachment : undefined,
         confirmed,
         createdAt,
         from: actor || "Unknown",
@@ -4285,6 +4484,7 @@ function mailMessageProjectionRank(message) {
       ? 2
       : 0;
   const content = [
+    message?.attachment,
     message?.memo,
     message?.subject,
     Array.isArray(message?.recipients) ? message.recipients.length : 0,
@@ -4310,6 +4510,7 @@ function mergeMailProjectionMessage(current, incoming) {
   return {
     ...secondary,
     ...primary,
+    attachment: primary.attachment ?? secondary.attachment,
     confirmedAt: primary.confirmedAt ?? secondary.confirmedAt,
     createdAt: primary.createdAt ?? secondary.createdAt,
     lastCheckedAt: primary.lastCheckedAt ?? secondary.lastCheckedAt,

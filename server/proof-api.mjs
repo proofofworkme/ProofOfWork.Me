@@ -82,6 +82,12 @@ const MAIL_INDEXED_RECENT_TX_PAGES = Number(
 const MAIL_BODY_REPAIR_MAX_TXS = Number(
   process.env.MAIL_BODY_REPAIR_MAX_TXS ?? 12,
 );
+const MAIL_INDEXED_ENRICH_WAIT_MS = Number(
+  process.env.MAIL_INDEXED_ENRICH_WAIT_MS ?? 2_500,
+);
+const EVENT_HISTORY_RECOVERY_WAIT_MS = Number(
+  process.env.EVENT_HISTORY_RECOVERY_WAIT_MS ?? 2_500,
+);
 const MAX_ACTIVITY_ADDRESSES = Number(
   process.env.MAX_ACTIVITY_ADDRESSES ?? 500,
 );
@@ -300,6 +306,12 @@ const TX_OUTSPEND_HISTORY_MAX_TXS = Number(
   process.env.TX_OUTSPEND_HISTORY_MAX_TXS ?? 500,
 );
 const TX_FETCH_TIMEOUT_MS = Number(process.env.TX_FETCH_TIMEOUT_MS ?? 5_000);
+const LEDGER_TIP_FETCH_TIMEOUT_MS = Number(
+  process.env.LEDGER_TIP_FETCH_TIMEOUT_MS ?? 3_000,
+);
+const LEDGER_TIP_CACHE_TTL_MS = Number(
+  process.env.LEDGER_TIP_CACHE_TTL_MS ?? 5_000,
+);
 const WORK_TOKEN_LIVE_DELTA_MAX_TXS = Number(
   process.env.WORK_TOKEN_LIVE_DELTA_MAX_TXS ?? 1500,
 );
@@ -582,6 +594,7 @@ const WORK_TOKEN_SEAL_RECOVERY_CACHE = new Map();
 const TOKEN_MARKET_OUTSPEND_CACHE = new Map();
 let persistedCacheWriteSequence = 0;
 let btcUsdPriceCache = null;
+const LEDGER_TIP_HEIGHT_CACHE = new Map();
 const HEAVY_READ_STALE_SECONDS = Math.max(
   60,
   Math.floor(HEAVY_READ_STALE_MS / 1000),
@@ -1969,7 +1982,7 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
     return payload;
   }
 
-  const listings = mergeTokenStateItemsByKey(
+  const mergedListings = mergeTokenStateItemsByKey(
     payload.listings,
     overlay.listings,
     tokenListingItemKey,
@@ -1988,6 +2001,17 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
       mergeTokenListingRecord,
     ),
   );
+  const closedListingIds = new Set(
+    closedListings
+      .map((listing) => String(listing?.listingId ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const listings = mergedListings.filter((listing) => {
+    const listingId = String(listing?.listingId ?? listing?.txid ?? "")
+      .trim()
+      .toLowerCase();
+    return listingId && !closedListingIds.has(listingId);
+  });
   const stats = confirmedTokenSalesStats(sales);
   return {
     ...payload,
@@ -2810,6 +2834,34 @@ function tokenHistoryKindNeedsCreditNetworkValueOverlay(kind) {
     "sales",
     "transfers",
   ]).has(normalizedTokenHistoryKind(kind));
+}
+
+function exactTransferHistoryNeedsCanonicalRecovery(
+  page,
+  tokenScope,
+  kind,
+  searchParams,
+) {
+  if (
+    normalizeTokenScope(tokenScope) !== WORK_TOKEN_ID ||
+    normalizedTokenHistoryKind(kind) !== "transfers"
+  ) {
+    return false;
+  }
+  const txids = new Set(recoveryTxidsFromSearchParams(searchParams));
+  if (txids.size === 0) {
+    return false;
+  }
+  const network = String(page?.network ?? "livenet");
+  const items = Array.isArray(page?.items) ? page.items : [];
+  return items.some((item) => {
+    const txid = String(item?.txid ?? "").trim().toLowerCase();
+    return (
+      txids.has(txid) &&
+      (!isValidBitcoinAddress(item?.senderAddress, network) ||
+        !isValidBitcoinAddress(item?.recipientAddress, network))
+    );
+  });
 }
 
 async function tokenHistoryPageWithCanonicalCreditValueOverlay(
@@ -7418,11 +7470,21 @@ async function tokenPayloadWithSpendableListings(payload, network) {
   ]) {
     closedByKey.set(`${listing.listingId}:${listing.closedTxid ?? ""}`, listing);
   }
+  const closedListingIds = new Set(
+    [...closedByKey.values()]
+      .map((listing) => String(listing?.listingId ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
 
   return {
     ...reconciledPayload,
     closedListings: sortClosedTokenListings([...closedByKey.values()]),
-    listings: tokenListings.listings,
+    listings: tokenListings.listings.filter((listing) => {
+      const listingId = String(listing?.listingId ?? listing?.txid ?? "")
+        .trim()
+        .toLowerCase();
+      return listingId && !closedListingIds.has(listingId);
+    }),
   };
 }
 
@@ -7445,11 +7507,21 @@ async function tokenPayloadWithSpendableActiveListings(payload, network) {
   ]) {
     closedByKey.set(`${listing.listingId}:${listing.closedTxid ?? ""}`, listing);
   }
+  const closedListingIds = new Set(
+    [...closedByKey.values()]
+      .map((listing) => String(listing?.listingId ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
 
   return {
     ...reconciledPayload,
     closedListings: sortClosedTokenListings([...closedByKey.values()]),
-    listings: tokenListings.listings,
+    listings: tokenListings.listings.filter((listing) => {
+      const listingId = String(listing?.listingId ?? listing?.txid ?? "")
+        .trim()
+        .toLowerCase();
+      return listingId && !closedListingIds.has(listingId);
+    }),
   };
 }
 
@@ -17856,13 +17928,30 @@ function proofIndexPayloadIndexedThroughBlock(payload) {
 }
 
 async function ledgerTipHeight(network) {
-  try {
-    const tip = await fetchText(`${mempoolBase(network)}/api/blocks/tip/height`);
-    const height = Number(tip);
-    return Number.isSafeInteger(height) && height > 0 ? height : null;
-  } catch {
-    return null;
+  const now = Date.now();
+  const cacheKey = network;
+  const cached = LEDGER_TIP_HEIGHT_CACHE.get(cacheKey);
+  if (cached && now - cached.fetchedAtMs < LEDGER_TIP_CACHE_TTL_MS) {
+    return cached.tipHeight;
   }
+
+  try {
+    const tip = await fetchText(`${mempoolBase(network)}/api/blocks/tip/height`, {
+      signal: AbortSignal.timeout(LEDGER_TIP_FETCH_TIMEOUT_MS),
+    });
+    const height = Number(tip);
+    if (Number.isSafeInteger(height) && height > 0) {
+      LEDGER_TIP_HEIGHT_CACHE.set(cacheKey, {
+        fetchedAtMs: now,
+        tipHeight: height,
+      });
+      return height;
+    }
+  } catch {
+    // A timed-out tip check should fail open for read-model freshness, matching
+    // the previous null-tip behavior while avoiding request hangs.
+  }
+  return null;
 }
 
 async function ledgerPayloadCoversTip(payload, network) {
@@ -21758,14 +21847,18 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
       tokenSummaryPayload(network, "", false),
       cachedWorkFloorPayload(network, false),
     ]);
-    return {
-      indexedAt: newerIso(workFloor?.indexedAt, token?.indexedAt),
+    return marketplaceSummaryPayloadWithIndexedMarketOverlay(
+      {
+        indexedAt: newerIso(workFloor?.indexedAt, token?.indexedAt),
+        network,
+        registry: compactRegistrySummaryPayload(emptyRegistryPayload(network)),
+        summaryOnly: true,
+        token,
+        workFloor,
+      },
       network,
-      registry: compactRegistrySummaryPayload(emptyRegistryPayload(network)),
-      summaryOnly: true,
-      token,
-      workFloor,
-    };
+      { fast: true },
+    );
   }
 
   if (fresh) {
@@ -22292,6 +22385,16 @@ async function mailActivityItemsForAddressSearch(address, network) {
   return cachedPayload(
     `direct-mail-activity:${network}:${address}`,
     async () => {
+      const indexedPayload = await indexedMailPayload(address, network);
+      const indexedItems = mailActivityItemsFromMailPayload(
+        indexedPayload,
+        address,
+        network,
+      );
+      if (indexedItems.length > 0) {
+        return indexedItems;
+      }
+
       const payload = await nodeMailPayload(address, network, {
         includeExternal: true,
         maxPages: MAIL_INDEXED_REPAIR_TX_PAGES,
@@ -25174,14 +25277,20 @@ async function mailPayload(address, network, options = {}) {
   const indexedPayload = await indexedMailPayload(address, network);
 
   if (!fresh && indexedPayload && mailPayloadHasMessages(indexedPayload)) {
-    const overlayPayload = await mailPayloadWithRecentOverlay(
+    return payloadWithFallbackAfterMs(
+      (async () => {
+        const overlayPayload = await mailPayloadWithRecentOverlay(
+          indexedPayload,
+          address,
+          network,
+        );
+        return reconcileMailPayloadStatuses(
+          await repairMailPayloadBodies(overlayPayload, address, network),
+          network,
+        );
+      })(),
       indexedPayload,
-      address,
-      network,
-    );
-    return reconcileMailPayloadStatuses(
-      await repairMailPayloadBodies(overlayPayload, address, network),
-      network,
+      MAIL_INDEXED_ENRICH_WAIT_MS,
     );
   }
 
@@ -25860,14 +25969,7 @@ async function txPayload(txid, network) {
 async function healthPayload() {
   let tipHeight = null;
   let backend = null;
-  try {
-    const tip = await fetchText(
-      `${MEMPOOL_BASE_MAINNET}/api/blocks/tip/height`,
-    );
-    tipHeight = Number(tip);
-  } catch {
-    tipHeight = null;
-  }
+  tipHeight = await ledgerTipHeight("livenet");
 
   try {
     const info = await fetchJson(`${MEMPOOL_BASE_MAINNET}/api/v1/backend-info`);
@@ -26111,9 +26213,10 @@ async function handleRequest(request, response) {
           return null;
         });
         if (indexedPayload) {
-          const recoveredPayload = await eventHistoryRecoveryPayload(
-            network,
-            url.searchParams,
+          const recoveredPayload = await payloadWithFallbackAfterMs(
+            eventHistoryRecoveryPayload(network, url.searchParams),
+            null,
+            EVENT_HISTORY_RECOVERY_WAIT_MS,
           ).catch((error) => {
             console.error(
               `Event-history recovery read failed: ${errorSummary(error)}`,
@@ -26423,19 +26526,18 @@ async function handleRequest(request, response) {
       const historyKind = String(url.searchParams.get("kind") ?? "mints")
         .trim()
         .toLowerCase();
-      const normalizedHistoryKind = normalizedTokenHistoryKind(historyKind);
-      const exactProofIndexMarketTxids = [
-        "closedListings",
-        "listings",
-        "market-log",
-        "sales",
-      ].includes(normalizedHistoryKind)
-        ? recoveryTxidsFromSearchParams(url.searchParams)
-        : [];
+      const exactProofIndexTxids = recoveryTxidsFromSearchParams(
+        url.searchParams,
+      );
+      const exactProofIndexHistoryRead =
+        exactProofIndexTxids.length > 0 &&
+        proofIndexTokenHistoryReadEligibility(
+          tokenScope,
+          historyKind,
+          url.searchParams,
+        ).eligible;
       const tokenHistoryRecoveryTxids =
-        exactProofIndexMarketTxids.length > 0
-          ? []
-          : recoveryTxidsFromSearchParams(url.searchParams);
+        exactProofIndexHistoryRead ? [] : exactProofIndexTxids;
       const needsCreditNetworkValueOverlay =
         network === "livenet" &&
         Boolean(tokenScope) &&
@@ -26457,7 +26559,7 @@ async function handleRequest(request, response) {
         ].includes(historyKind) &&
         recoveryAddressHintsFromSearchParams(url.searchParams, network).length > 0;
       if (
-        (!freshRead || exactProofIndexMarketTxids.length > 0) &&
+        (!freshRead || exactProofIndexHistoryRead) &&
         tokenHistoryRecoveryTxids.length === 0 &&
         !addressScopedMarketHistory &&
         proofIndexReadFeatureEnabled("token-history,token") &&
@@ -26488,13 +26590,22 @@ async function handleRequest(request, response) {
                 url.searchParams,
               )
             : indexedPayload;
-          jsonResponse(
-            response,
-            200,
-            responsePayload,
-            TOKEN_READ_CACHE_CONTROL,
-          );
-          return;
+          if (
+            !exactTransferHistoryNeedsCanonicalRecovery(
+              responsePayload,
+              tokenScope,
+              historyKind,
+              url.searchParams,
+            )
+          ) {
+            jsonResponse(
+              response,
+              200,
+              responsePayload,
+              TOKEN_READ_CACHE_CONTROL,
+            );
+            return;
+          }
         }
       }
       const payload = await tokenHistoryPayload(
@@ -26703,15 +26814,17 @@ async function handleRequest(request, response) {
         errorResponse(response, 400, "Invalid ProofOfWork ID.");
         return;
       }
-      const indexedRegistry = await indexedRegistryPayload(network);
-      const indexedIdRecord = indexedRegistry
+      const indexedIdRecord = await proofIndexIdRecordPayload(network, id).catch(
+        (error) => {
+          console.error(
+            `Proof index ID record read failed for ${id}: ${errorSummary(error)}`,
+          );
+          return null;
+        },
+      );
+      const indexedRegistry = indexedIdRecord
         ? null
-        : await proofIndexIdRecordPayload(network, id).catch((error) => {
-            console.error(
-              `Proof index ID record read failed for ${id}: ${errorSummary(error)}`,
-            );
-            return null;
-          });
+        : await indexedRegistryPayload(network);
       const persistedRegistry =
         indexedRegistry ??
         indexedIdRecord ??

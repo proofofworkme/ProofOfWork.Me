@@ -20,6 +20,7 @@
     "indexer:parity": "node scripts/check-proof-indexer-parity.mjs",
     "indexer:worker": "node scripts/run-proof-indexer-worker.mjs",
     "audit:ledger": "node scripts/audit-ledger-consistency.mjs",
+    "audit:computer-events": "node scripts/audit-computer-events.mjs",
     "audit:ids": "node scripts/audit-id-registry.mjs",
     "deck:general": "node scripts/build-general-deck.mjs",
     "rank:powids": "node scripts/rank-powid-transactions.mjs",
