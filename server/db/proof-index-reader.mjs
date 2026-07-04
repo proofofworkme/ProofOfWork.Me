@@ -111,6 +111,18 @@ function dateIso(value, fallback = new Date()) {
   return date.toISOString();
 }
 
+function newestDateIso(values, fallback = new Date()) {
+  const times = (Array.isArray(values) ? values : [values])
+    .map((value) => {
+      const time = Date.parse(String(value ?? ""));
+      return Number.isFinite(time) ? time : 0;
+    })
+    .filter((time) => time > 0);
+  return times.length > 0
+    ? new Date(Math.max(...times)).toISOString()
+    : dateIso(fallback);
+}
+
 function boundedInteger(value, fallback, min, max) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed)) {
@@ -586,6 +598,58 @@ function tokenTransferFromEventPayload(payload, row = {}) {
   };
 }
 
+function tokenMintFromEventPayload(payload, row = {}) {
+  const tagNumbers = tokenMarketNumbersFromTags(payload);
+  const ticker = String(row.ticker ?? payload?.ticker ?? tagNumbers.ticker ?? "")
+    .trim();
+  const minterAddress = String(
+    payload?.minterAddress ??
+      payload?.actor ??
+      payload?.senderAddress ??
+      "",
+  ).trim();
+  const registryAddress = String(
+    payload?.registryAddress ??
+      row.registry_address ??
+      payload?.counterparty ??
+      "",
+  ).trim();
+  const effectiveStatus = String(row.effective_status ?? row.status ?? "")
+    .trim()
+    .toLowerCase();
+
+  return {
+    amount:
+      rowNumber(payload, "amount") ||
+      rowNumber(payload, "tokenAmount") ||
+      tagNumbers.amount,
+    blockHeight: rowNumber(row, "block_height") || rowNumber(payload, "blockHeight"),
+    confirmed: effectiveStatus === "confirmed" || payload?.confirmed === true,
+    createdAt: dateIso(
+      payload?.createdAt ??
+        row.block_time ??
+        row.event_time ??
+        row.confirmed_at ??
+        row.last_seen_at ??
+        row.created_at,
+    ),
+    dataBytes: rowNumber(payload, "dataBytes") || rowNumber(row, "data_bytes"),
+    minterAddress,
+    minerFeeSats: rowNumber(payload, "minerFeeSats"),
+    network: payload?.network ?? row.network,
+    paidSats:
+      rowNumber(payload, "proofPaymentSats") ||
+      rowNumber(payload, "paidSats") ||
+      rowNumber(payload, "amountSats") ||
+      rowNumber(row, "amount_sats"),
+    registryAddress,
+    status: effectiveStatus || undefined,
+    ticker,
+    tokenId: String(payload?.tokenId ?? row.token_id ?? "").trim().toLowerCase(),
+    txid: String(payload?.txid ?? row.txid ?? "").trim().toLowerCase(),
+  };
+}
+
 function tokenHistoryItemFromMarketEventPayload(payload, safeKind) {
   if (payload?.kind === "token-listing" || payload?.kind === "token-listings") {
     const listing = tokenListingFromEventPayload(payload);
@@ -964,6 +1028,382 @@ function mergeTokenHistoryPages(basePage, overlayPage, safeKind, pagination) {
       Number(basePage.totalCount ?? 0),
       Number(overlayPage.totalCount ?? 0),
       items.length,
+    ),
+  };
+}
+
+function tokenMintQueryScopeCondition(scope, param) {
+  if (!scope || scope === "all") {
+    return "";
+  }
+  return `(
+    lower(e.payload->>'tokenId') = ${param}
+    OR lower(cd.token_id) = ${param}
+    OR lower(cd.ticker) = lower(${param})
+    OR lower(e.payload->>'ticker') = lower(${param})
+  )`;
+}
+
+function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination) {
+  const scope = tokenScopeKey(tokenScope);
+  const conditions = [
+    "e.network = $1",
+    "e.valid IS DISTINCT FROM false",
+    "e.kind = 'token-mint'",
+    "COALESCE(t.status, e.status) IN ('confirmed', 'pending')",
+  ];
+  const params = [network];
+
+  if (scope && scope !== "all") {
+    params.push(scope);
+    conditions.push(tokenMintQueryScopeCondition(scope, `$${params.length}`));
+  }
+
+  const needles = tokenHistoryFilterNeedles(searchParams, pagination);
+  const txidNeedles = needles.map(normalizedTxid).filter(Boolean);
+  if (txidNeedles.length > 0) {
+    params.push([...new Set(txidNeedles)]);
+    const param = `$${params.length}`;
+    conditions.push(
+      `(
+        lower(e.txid) = ANY(${param}::text[])
+        OR lower(e.payload->>'txid') = ANY(${param}::text[])
+        OR EXISTS (
+          SELECT 1
+          FROM proof_indexer.event_refs erq
+          WHERE erq.event_id = e.event_id
+            AND lower(erq.ref_value) = ANY(${param}::text[])
+        )
+      )`,
+    );
+  }
+
+  for (const needle of needles.filter((value) => !normalizedTxid(value))) {
+    params.push(`%${needle}%`);
+    const param = `$${params.length}`;
+    conditions.push(
+      `lower(concat_ws(
+        ' ',
+        e.txid,
+        e.payload::text,
+        cd.token_id,
+        cd.ticker,
+        cd.registry_address
+      )) LIKE ${param}`,
+    );
+  }
+
+  const cte = `
+    WITH mint_events AS (
+      SELECT DISTINCT ON (lower(e.txid))
+        e.payload,
+        e.protocol,
+        e.kind,
+        e.status,
+        COALESCE(t.status, e.status) AS effective_status,
+        e.event_time,
+        COALESCE(e.block_time, t.block_time) AS block_time,
+        e.created_at,
+        COALESCE(e.block_height, t.block_height) AS block_height,
+        e.txid,
+        e.event_id,
+        e.amount_sats,
+        e.data_bytes,
+        e.network,
+        t.confirmed_at,
+        t.last_seen_at,
+        t.updated_at AS tx_updated_at,
+        COALESCE(cd.token_id, lower(e.payload->>'tokenId')) AS token_id,
+        cd.ticker,
+        cd.registry_address
+      FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = e.network
+       AND cd.token_id = lower(e.payload->>'tokenId')
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY
+        lower(e.txid),
+        CASE COALESCE(t.status, e.status)
+          WHEN 'confirmed' THEN 0
+          WHEN 'pending' THEN 1
+          ELSE 2
+        END,
+        CASE WHEN COALESCE(e.block_height, t.block_height) IS NULL THEN 1 ELSE 0 END,
+        COALESCE(e.block_time, t.block_time, e.event_time, t.confirmed_at, t.last_seen_at, e.created_at) DESC,
+        e.event_id DESC
+    )
+  `;
+
+  return { cte, params };
+}
+
+function tokenMintSortSql() {
+  return `
+    COALESCE(block_time, event_time, confirmed_at, last_seen_at, created_at) DESC,
+    block_height DESC NULLS LAST,
+    txid DESC
+  `;
+}
+
+async function proofIndexTokenMintRows(
+  pool,
+  network,
+  tokenScope,
+  searchParams,
+  pagination,
+) {
+  const { cte, params } = tokenMintEventQueryParts(
+    network,
+    tokenScope,
+    searchParams,
+    pagination,
+  );
+  const result = await pool.query(
+    `
+      ${cte}
+      SELECT *
+      FROM mint_events
+      ORDER BY ${tokenMintSortSql()}
+    `,
+    params,
+  );
+  return result.rows;
+}
+
+export async function proofIndexTokenMintStatsPayload(network, tokenScope) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+  const scope = tokenScopeKey(tokenScope);
+  if (!scope || scope === "all") {
+    return null;
+  }
+
+  const { cte, params } = tokenMintEventQueryParts(
+    network,
+    scope,
+    new URLSearchParams(),
+    { limit: 1, offset: 0, page: 0, query: "", snapshotId: "" },
+  );
+  const result = await pool.query(
+    `
+      ${cte},
+      mint_amounts AS (
+        SELECT
+          *,
+          CASE
+            WHEN payload->>'amount' ~ '^[0-9]+(?:\\.[0-9]+)?$'
+              THEN (payload->>'amount')::numeric
+            WHEN payload->>'tokenAmount' ~ '^[0-9]+(?:\\.[0-9]+)?$'
+              THEN (payload->>'tokenAmount')::numeric
+            WHEN (
+              SELECT tag
+              FROM jsonb_array_elements_text(payload->'tags') AS tag
+              WHERE tag ~ '^[0-9,]+(?:\\.[0-9]+)?\\s+[A-Z0-9]+$'
+              LIMIT 1
+            ) IS NOT NULL
+              THEN regexp_replace(
+                (
+                  SELECT tag
+                  FROM jsonb_array_elements_text(payload->'tags') AS tag
+                  WHERE tag ~ '^[0-9,]+(?:\\.[0-9]+)?\\s+[A-Z0-9]+$'
+                  LIMIT 1
+                ),
+                '[^0-9.]',
+                '',
+                'g'
+              )::numeric
+            ELSE 0
+          END AS mint_amount
+        FROM mint_events
+      )
+      SELECT
+        count(*) AS total_mints,
+        count(*) FILTER (WHERE effective_status = 'confirmed') AS confirmed_mints,
+        count(*) FILTER (WHERE effective_status <> 'confirmed') AS pending_mints,
+        COALESCE(sum(mint_amount) FILTER (WHERE effective_status = 'confirmed'), 0) AS confirmed_supply,
+        COALESCE(sum(mint_amount) FILTER (WHERE effective_status <> 'confirmed'), 0) AS pending_supply,
+        max(block_height) AS indexed_through_block,
+        max(COALESCE(block_time, event_time, confirmed_at, last_seen_at, created_at)) AS indexed_at
+      FROM mint_amounts
+    `,
+    params,
+  );
+  const row = result.rows[0] ?? {};
+  const totalMints = rowNumber(row, "total_mints");
+  if (totalMints <= 0) {
+    return null;
+  }
+  return {
+    confirmedMints: rowNumber(row, "confirmed_mints"),
+    confirmedSupply: rowNumber(row, "confirmed_supply"),
+    indexedAt: dateIso(row.indexed_at),
+    indexedThroughBlock: rowNumber(row, "indexed_through_block") || undefined,
+    network,
+    pendingMints: rowNumber(row, "pending_mints"),
+    pendingSupply: rowNumber(row, "pending_supply"),
+    source: "proof-indexer-token-mint-events",
+    tokenId: scope,
+    totalMints,
+  };
+}
+
+async function exactTokenMintHistoryPage(
+  pool,
+  network,
+  tokenScope,
+  searchParams,
+  pagination,
+  snapshot,
+) {
+  const { cte, params } = tokenMintEventQueryParts(
+    network,
+    tokenScope,
+    searchParams,
+    pagination,
+  );
+  const countResult = await pool.query(
+    `
+      ${cte}
+      SELECT
+        count(*) AS total_count,
+        max(block_height) AS indexed_through_block,
+        max(COALESCE(block_time, event_time, confirmed_at, last_seen_at, created_at)) AS indexed_at
+      FROM mint_events
+    `,
+    params,
+  );
+  const totalCount = rowNumber(countResult.rows[0], "total_count");
+  if (totalCount === 0) {
+    return null;
+  }
+
+  const rowParams = [...params, pagination.limit, pagination.offset];
+  const limitParam = rowParams.length - 1;
+  const offsetParam = rowParams.length;
+  const rowsResult = await pool.query(
+    `
+      ${cte}
+      SELECT *
+      FROM mint_events
+      ORDER BY ${tokenMintSortSql()}
+      LIMIT $${limitParam}
+      OFFSET $${offsetParam}
+    `,
+    rowParams,
+  );
+  const items = rowsResult.rows
+    .map((row) => tokenMintFromEventPayload(objectRecord(row.payload), row))
+    .filter((item) => item.txid && item.tokenId && item.amount > 0);
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  const snapshotId = snapshot?.snapshot_id ?? "";
+  const page = {
+    cursor: historyCursor(snapshotId, start),
+    end,
+    indexedAt: dateIso(countResult.rows[0]?.indexed_at ?? snapshot?.generated_at),
+    indexedThroughBlock:
+      Math.max(
+        rowNumber(countResult.rows[0], "indexed_through_block"),
+        rowNumber(snapshot, "indexed_through_block"),
+      ) || undefined,
+    items,
+    kind: "mints",
+    limit: pagination.limit,
+    network,
+    nextCursor: end < totalCount ? historyCursor(snapshotId, end) : "",
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source: "proof-indexer-token-mint-events",
+    start,
+    totalCount,
+  };
+  if (snapshotId) {
+    return {
+      ...page,
+      consistency: snapshot?.consistency ?? undefined,
+      ledgerGeneratedAt: dateIso(snapshot?.generated_at),
+      snapshotId,
+    };
+  }
+  return page;
+}
+
+async function tokenStateWithMintEventOverlay(pool, network, scope, payload, snapshot) {
+  if (!payload || !scope || scope === "all") {
+    return payload;
+  }
+
+  const pagination = { limit: 100_000, offset: 0, page: 0, query: "", snapshotId: "" };
+  const rows = await proofIndexTokenMintRows(
+    pool,
+    network,
+    scope,
+    new URLSearchParams(),
+    pagination,
+  );
+  const mints = rows
+    .map((row) => tokenMintFromEventPayload(objectRecord(row.payload), row))
+    .filter((item) => item.txid && item.tokenId && item.amount > 0);
+  if (mints.length === 0) {
+    return payload;
+  }
+
+  const confirmedMints = mints.filter((mint) => mint.confirmed);
+  const pendingMints = mints.filter((mint) => !mint.confirmed);
+  const confirmedSupply = confirmedMints.reduce(
+    (total, mint) => total + Number(mint.amount ?? 0),
+    0,
+  );
+  const pendingSupply = pendingMints.reduce(
+    (total, mint) => total + Number(mint.amount ?? 0),
+    0,
+  );
+  const tokens = (Array.isArray(payload.tokens) ? payload.tokens : []).map((token) => {
+    if (!tokenMatchesScope(token, scope)) {
+      return token;
+    }
+    return {
+      ...token,
+      confirmedMints: confirmedMints.length,
+      confirmedSupply,
+      pendingMints: pendingMints.length,
+      pendingSupply,
+    };
+  });
+  const nextPayload = {
+    ...payload,
+    confirmedSupply,
+    indexedAt: newestDateIso([
+      payload.indexedAt,
+      snapshot?.generated_at,
+      ...mints.map((mint) => mint.createdAt),
+    ]),
+    indexedThroughBlock:
+      Math.max(
+        rowNumber(payload, "indexedThroughBlock"),
+        rowNumber(snapshot, "indexed_through_block"),
+        indexedThroughBlockFromItems(mints) ?? 0,
+      ) || undefined,
+    mints,
+    pendingSupply,
+    source: mergedSourceLabel(payload.source, "proof-indexer-token-mint-events"),
+    tokens,
+  };
+  return {
+    ...nextPayload,
+    stats: tokenStateStats(
+      nextPayload,
+      tokens,
+      mints,
+      Array.isArray(nextPayload.transfers) ? nextPayload.transfers : [],
+      Array.isArray(nextPayload.invalidEvents) ? nextPayload.invalidEvents : [],
     ),
   };
 }
@@ -1704,6 +2144,81 @@ async function ledgerSnapshot(pool, network, snapshotId = "") {
     [network],
   );
   return snapshotResult.rows[0] ?? null;
+}
+
+async function ledgerSnapshotWithPayload(pool, network, snapshotId, payloadKey) {
+  const requiredPayloadKey = String(payloadKey ?? "").trim();
+  if (!requiredPayloadKey) {
+    return ledgerSnapshot(pool, network, snapshotId);
+  }
+
+  const pinnedSnapshotId = normalizedSnapshotId(snapshotId);
+  if (pinnedSnapshotId) {
+    const pinnedResult = await pool.query(
+      `
+        SELECT
+          snapshot_id,
+          generated_at,
+          indexed_through_block,
+          consistency,
+          payload
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+          AND snapshot_id = $2
+          AND payload ? $3
+        LIMIT 1
+      `,
+      [network, pinnedSnapshotId, requiredPayloadKey],
+    );
+    return pinnedResult.rows[0] ?? null;
+  }
+
+  const snapshotResult = await pool.query(
+    `
+      SELECT
+        snapshot_id,
+        generated_at,
+        indexed_through_block,
+        consistency,
+        payload
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
+        AND payload ? $2
+      ORDER BY generated_at DESC
+      LIMIT 1
+    `,
+    [network, requiredPayloadKey],
+  );
+  return snapshotResult.rows[0] ?? null;
+}
+
+async function tokenStateSnapshotForScope(pool, network, snapshotId, scope) {
+  const tokenScope = tokenScopeKey(scope);
+  if (!tokenScope || tokenScope === "all") {
+    return null;
+  }
+
+  const pinnedSnapshotId = normalizedSnapshotId(snapshotId);
+  const selectSql = `
+    SELECT
+      snapshot_id,
+      generated_at,
+      indexed_through_block,
+      consistency,
+      payload->'tokenStatePayloads'->$2 AS scoped_payload
+    FROM proof_indexer.ledger_snapshots
+    WHERE network = $1
+      AND payload ? 'tokenStatePayloads'
+      AND payload->'tokenStatePayloads' ? $2
+      ${pinnedSnapshotId ? "AND snapshot_id = $3" : ""}
+    ORDER BY generated_at DESC
+    LIMIT 1
+  `;
+  const result = await pool.query(
+    selectSql,
+    pinnedSnapshotId ? [network, tokenScope, pinnedSnapshotId] : [network, tokenScope],
+  );
+  return result.rows[0] ?? null;
 }
 
 function snapshotActivityPayload(snapshot) {
@@ -3015,13 +3530,28 @@ export async function proofIndexTokenHistoryPayload(
     }
   }
 
-  const snapshot = await ledgerSnapshot(
+  const snapshot = await ledgerSnapshotWithPayload(
     pool,
     network,
     eligibility.pagination.snapshotId,
+    "tokenHistoryPayloads",
   );
   if (!snapshot) {
     return null;
+  }
+
+  if (eligibility.kind === "mints") {
+    const exactMintPage = await exactTokenMintHistoryPage(
+      pool,
+      network,
+      tokenScope,
+      searchParams,
+      eligibility.pagination,
+      snapshot,
+    );
+    if (exactMintPage) {
+      return exactMintPage;
+    }
   }
 
   if (eligibility.kind === "listings") {
@@ -3224,7 +3754,40 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
     return null;
   }
 
-  const snapshot = await ledgerSnapshot(pool, network);
+  if (eligibility.scope !== "all") {
+    const scopedSnapshot = await tokenStateSnapshotForScope(
+      pool,
+      network,
+      "",
+      eligibility.scope,
+    );
+    const scopedPayload = scopedSnapshot?.scoped_payload;
+    if (
+      scopedSnapshot &&
+      tokenStateSnapshotAgeMs(scopedSnapshot) <= proofIndexTokenHistoryMaxAgeMs() &&
+      scopedPayload &&
+      typeof scopedPayload === "object"
+    ) {
+      return tokenStateWithMintEventOverlay(
+        pool,
+        network,
+        eligibility.scope,
+        tokenStateWithSnapshotMetadata(
+          scopedPayload,
+          scopedSnapshot,
+          "proof-indexer-token-state-snapshot",
+        ),
+        scopedSnapshot,
+      );
+    }
+  }
+
+  const snapshot = await ledgerSnapshotWithPayload(
+    pool,
+    network,
+    "",
+    "tokenStatePayloads",
+  );
   if (
     !snapshot ||
     tokenStateSnapshotAgeMs(snapshot) > proofIndexTokenHistoryMaxAgeMs()
@@ -3239,10 +3802,16 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
 
   const scopedPayload = statePayloads[eligibility.scope];
   if (scopedPayload && typeof scopedPayload === "object") {
-    return tokenStateWithSnapshotMetadata(
-      scopedPayload,
+    return tokenStateWithMintEventOverlay(
+      pool,
+      network,
+      eligibility.scope,
+      tokenStateWithSnapshotMetadata(
+        scopedPayload,
+        snapshot,
+        "proof-indexer-token-state-snapshot",
+      ),
       snapshot,
-      "proof-indexer-token-state-snapshot",
     );
   }
 
@@ -3264,10 +3833,16 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
     eligibility.scope,
     allPayload,
   );
-  return tokenStateWithSnapshotMetadata(
-    reconstructed,
+  return tokenStateWithMintEventOverlay(
+    pool,
+    network,
+    eligibility.scope,
+    tokenStateWithSnapshotMetadata(
+      reconstructed,
+      snapshot,
+      "proof-indexer-token-state-snapshot",
+    ),
     snapshot,
-    "proof-indexer-token-state-snapshot",
   );
 }
 

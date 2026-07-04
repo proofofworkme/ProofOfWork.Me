@@ -15,6 +15,12 @@ const REQUEST_RETRIES = Number(process.env.POW_INDEX_FETCH_RETRIES ?? 4);
 const BITCOIN_RPC_URL = String(process.env.BITCOIN_RPC_URL ?? "").trim();
 const BITCOIN_RPC_USER = String(process.env.BITCOIN_RPC_USER ?? "").trim();
 const BITCOIN_RPC_PASSWORD = String(process.env.BITCOIN_RPC_PASSWORD ?? "").trim();
+const REPAIR_MINT_MINTERS = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_REPAIR_MINT_MINTERS ?? ""),
+);
+const REPAIR_MINT_MINTERS_LIMIT = Number(
+  process.env.POW_INDEX_REPAIR_MINT_MINTERS_LIMIT ?? 500,
+);
 const BLOCK_SCAN_MAX_BLOCKS = Number(
   process.env.POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_BLOCKS ?? 2_000,
 );
@@ -221,6 +227,61 @@ async function bitcoinRpc(method, params = []) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+const RAW_TRANSACTION_CACHE = new Map();
+
+async function rawTransactionFromCore(txid) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!isHexTxid(normalizedTxid) || !BITCOIN_RPC_URL) {
+    return null;
+  }
+  if (!RAW_TRANSACTION_CACHE.has(normalizedTxid)) {
+    RAW_TRANSACTION_CACHE.set(
+      normalizedTxid,
+      bitcoinRpc("getrawtransaction", [normalizedTxid, true]).catch(() => null),
+    );
+  }
+  return RAW_TRANSACTION_CACHE.get(normalizedTxid);
+}
+
+function prevoutFromOutput(vout) {
+  if (!vout || typeof vout !== "object") {
+    return null;
+  }
+  return {
+    scriptPubKey: vout.scriptPubKey ?? vout.scriptpubkey ?? {},
+    value: vout.value,
+  };
+}
+
+async function transactionWithInputPrevouts(tx) {
+  if (!tx || typeof tx !== "object") {
+    return tx;
+  }
+  const vin = Array.isArray(tx.vin) ? tx.vin : [];
+  if (vin.length === 0) {
+    return tx;
+  }
+
+  const hydratedVin = await Promise.all(
+    vin.map(async (input) => {
+      if (input?.prevout) {
+        return input;
+      }
+      const prevTxid = String(input?.txid ?? "").trim().toLowerCase();
+      const prevVout = Number(input?.vout);
+      if (!isHexTxid(prevTxid) || !Number.isSafeInteger(prevVout) || prevVout < 0) {
+        return input;
+      }
+      const previousTx = await rawTransactionFromCore(prevTxid);
+      const previousOutput = previousTx?.vout?.[prevVout];
+      const prevout = prevoutFromOutput(previousOutput);
+      return prevout ? { ...input, prevout } : input;
+    }),
+  );
+
+  return { ...tx, vin: hydratedVin };
 }
 
 function opReturnTextFromVout(vout) {
@@ -2048,7 +2109,7 @@ async function backfillBlockScanSource(client, source) {
         await client.query("BEGIN");
         const result = await recoverProtocolTxid(
           client,
-          { ...tx, blocktime: block?.time, height },
+          await transactionWithInputPrevouts({ ...tx, blocktime: block?.time, height }),
           messages,
         );
         await client.query("COMMIT");
@@ -2332,6 +2393,116 @@ async function backfillScopedTokenHolders(client) {
   return { indexed, skipped, source: "token-holders", tokens: tokenResult.rows.length };
 }
 
+async function repairWorkMintMinterAttribution(client) {
+  if (!REPAIR_MINT_MINTERS) {
+    return { indexed: 0, skipped: 0, source: "repair-mint-minters" };
+  }
+  if (!BITCOIN_RPC_URL) {
+    throw new Error("BITCOIN_RPC_URL is required for mint minter repair.");
+  }
+
+  const limit = Number.isFinite(REPAIR_MINT_MINTERS_LIMIT)
+    ? Math.max(1, Math.floor(REPAIR_MINT_MINTERS_LIMIT))
+    : 500;
+  const result = await client.query(
+    `
+      SELECT DISTINCT ON (lower(e.txid))
+        e.txid,
+        COALESCE(e.payload->>'tokenId', cd.token_id) AS token_id
+      FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = e.network
+       AND cd.token_id = lower(e.payload->>'tokenId')
+      WHERE e.network = $1
+        AND e.valid IS DISTINCT FROM false
+        AND e.kind = 'token-mint'
+        AND COALESCE(t.status, e.status) = 'confirmed'
+        AND (
+          lower(e.payload->>'tokenId') = $2
+          OR lower(cd.token_id) = $2
+          OR lower(cd.ticker) = 'work'
+        )
+        AND COALESCE(
+          NULLIF(e.payload->>'minterAddress', ''),
+          NULLIF(e.payload->>'senderAddress', ''),
+          NULLIF(e.payload->>'actor', ''),
+          ''
+        ) = ''
+      ORDER BY
+        lower(e.txid),
+        COALESCE(e.block_time, t.block_time, e.event_time, t.confirmed_at, e.created_at) DESC
+      LIMIT $3
+    `,
+    [NETWORK, WORK_TOKEN_ID, limit],
+  );
+
+  let indexed = 0;
+  let skipped = 0;
+  for (const row of result.rows) {
+    const txid = String(row.txid ?? "").trim().toLowerCase();
+    const tx = await rawTransactionFromCore(txid);
+    if (!tx) {
+      skipped += 1;
+      continue;
+    }
+    const hydratedTx = await transactionWithInputPrevouts({
+      ...tx,
+      blocktime: tx.blocktime ?? tx.time,
+      height: tx.blockheight ?? tx.height,
+    });
+    const messages = protocolMessagesFromTx(hydratedTx);
+    const items = messages
+      .flatMap((message) => protocolItemsFromTx(hydratedTx, message))
+      .filter(
+        (item) =>
+          item?.kind === "token-mint" &&
+          String(item?.tokenId ?? "").toLowerCase() === WORK_TOKEN_ID &&
+          item?.minterAddress,
+      );
+    if (items.length === 0) {
+      skipped += 1;
+      continue;
+    }
+
+    try {
+      await client.query("BEGIN");
+      for (const item of items) {
+        const upsert = await upsertEvent(
+          client,
+          sourceLabelForProtocolItem(item),
+          item,
+        );
+        if (upsert.skipped) {
+          skipped += 1;
+        } else {
+          indexed += 1;
+        }
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      skipped += 1;
+      console.error(
+        JSON.stringify({
+          error: error?.message ?? String(error),
+          phase: "repair-mint-minters",
+          txid,
+        }),
+      );
+    }
+  }
+
+  return {
+    indexed,
+    scanned: result.rows.length,
+    skipped,
+    source: "repair-mint-minters",
+  };
+}
+
 if (DRY_RUN) {
   console.log(
     JSON.stringify(
@@ -2341,6 +2512,7 @@ if (DRY_RUN) {
         maxPages: MAX_PAGES,
         network: NETWORK,
         pageLimit: PAGE_LIMIT,
+        repairMintMinters: REPAIR_MINT_MINTERS,
         scopedHolders: INCLUDE_SCOPED_HOLDERS,
         sources: SOURCES.map((source) => source.label),
       },
@@ -2366,6 +2538,7 @@ try {
     for (const source of SOURCES) {
       results.push(await backfillSource(client, source));
     }
+    results.push(await repairWorkMintMinterAttribution(client));
     results.push(await backfillScopedTokenHolders(client));
     const snapshot = await storeLedgerSnapshot(client);
     console.log(

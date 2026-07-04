@@ -35,6 +35,7 @@ import {
   proofIndexShadowFeatureEnabled,
   proofIndexSnapshotPayload,
   proofIndexTokenMarketHistoryOverlayPayload,
+  proofIndexTokenMintStatsPayload,
   proofIndexTokenPayload,
   proofIndexTokenHistoryReadEligibility,
   proofIndexTokenHistoryPayload,
@@ -2304,6 +2305,42 @@ async function workTokenStateForSummaryRead(network, fresh) {
     );
     return null;
   });
+}
+
+async function workTokenStateWithIndexedMintStats(state, network) {
+  if (!state || network !== "livenet") {
+    return state;
+  }
+
+  const mintStats = await proofIndexTokenMintStatsPayload(
+    network,
+    WORK_TOKEN_ID,
+  ).catch((error) => {
+    console.error(`WORK mint stats overlay failed: ${errorSummary(error)}`);
+    return null;
+  });
+  if (!mintStats) {
+    return state;
+  }
+
+  return {
+    ...state,
+    confirmedSupply: mintStats.confirmedSupply,
+    indexedAt: newerIso(state.indexedAt, mintStats.indexedAt),
+    indexedThroughBlock:
+      Math.max(
+        numericValue(state.indexedThroughBlock),
+        numericValue(mintStats.indexedThroughBlock),
+      ) || state.indexedThroughBlock,
+    pendingSupply: mintStats.pendingSupply,
+    source: mergedSourceLabel(state.source, mintStats.source),
+    stats: {
+      ...(state.stats ?? {}),
+      confirmedMints: mintStats.confirmedMints,
+      pendingMints: mintStats.pendingMints,
+      totalMints: mintStats.totalMints,
+    },
+  };
 }
 
 async function workTokenStateWithSummaryListingTruth(
@@ -16538,7 +16575,6 @@ function ledgerPayloadForFreshnessCompare(ledger, scope) {
 async function indexedTokenPayloadFreshnessFloor(network, scope, options = {}) {
   if (
     network !== "livenet" ||
-    scope === WORK_TOKEN_ID ||
     (Array.isArray(options.recoveryAddresses) &&
       options.recoveryAddresses.length > 0) ||
     (Array.isArray(options.recoveryTxids) &&
@@ -18421,7 +18457,7 @@ async function ledgerWithReplayedCreditNetworkValues(
     workFloor,
     network,
     tokenState,
-    { required: true },
+    { required: false },
   );
   const baseMetrics = ledgerMetricsFromState({
     activity,
@@ -20387,7 +20423,7 @@ async function buildIndexedCanonicalLedgerPayload(network, label = "indexed ledg
     workFloor,
     network,
     valuedTokenState,
-    { required: true },
+    { required: false },
   );
   const baseMetrics = ledgerMetricsFromState({
     activity,
@@ -20662,7 +20698,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     workFloor,
     network,
     ledgerTokenState,
-    { required: true },
+    { required: false },
   );
   const baseMetrics = ledgerMetricsFromState({
     activity,
@@ -21466,8 +21502,12 @@ async function fastLivenetWorkSummaryPayload(network) {
   const sharedTokenState = compactTokenSummaryPayload(
     ledgerPayloadForFreshnessCompare(ledger, ""),
   );
-  const baseWorkTokenState = tokenStateWithoutDroppedPendingTransactions(
+  let baseWorkTokenState = tokenStateWithoutDroppedPendingTransactions(
     scopedTokenPayloadFromState(sharedTokenState, WORK_TOKEN_ID),
+    network,
+  );
+  baseWorkTokenState = await workTokenStateWithIndexedMintStats(
+    baseWorkTokenState,
     network,
   );
   const valueWorkTokenState = marketOverlay
@@ -21524,10 +21564,14 @@ async function workSummaryPayload(network, fresh = false) {
         );
         const tokenReadReturnedCanonical =
           refreshedWorkTokenState && refreshedWorkTokenState !== baseWorkTokenState;
-        const spendableWorkTokenState = await workTokenStateWithSummaryListingTruth(
+        let spendableWorkTokenState = await workTokenStateWithSummaryListingTruth(
           refreshedWorkTokenState,
           network,
           { recoverActiveListings: !tokenReadReturnedCanonical },
+        );
+        spendableWorkTokenState = await workTokenStateWithIndexedMintStats(
+          spendableWorkTokenState,
+          network,
         );
         const overlayTokenState = tokenStateWithScopedTokenOverride(
           ledger.tokenState,
@@ -21624,12 +21668,16 @@ async function workSummaryPayload(network, fresh = false) {
           ? LEDGER_SUMMARY_CURRENT_FALLBACK_WAIT_MS
           : WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
       );
-      const spendableWorkTokenState = await payloadWithFallbackAfterMs(
+      let spendableWorkTokenState = await payloadWithFallbackAfterMs(
         tokenPayloadWithSpendableActiveListings(closedWorkTokenState, network),
         closedWorkTokenState,
         fresh
           ? LEDGER_SUMMARY_CURRENT_FALLBACK_WAIT_MS
           : WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
+      );
+      spendableWorkTokenState = await workTokenStateWithIndexedMintStats(
+        spendableWorkTokenState,
+        network,
       );
       const marketOverlay = await indexedTokenMarketSummaryOverlay(network);
       const overlayTokenState = tokenStateWithScopedTokenOverride(
@@ -26699,8 +26747,8 @@ async function handleRequest(request, response) {
           String(url.searchParams.get("wallet") ?? "").trim(),
         );
       if (
-        !freshRead &&
         !walletScoped &&
+        recoveryAddresses.length === 0 &&
         proofIndexReadFeatureEnabled("token-state,token-default,token") &&
         proofIndexTokenReadEligibility(tokenScope, url.searchParams).eligible
       ) {
@@ -26726,7 +26774,7 @@ async function handleRequest(request, response) {
             response,
             200,
             indexedPayload,
-            TOKEN_READ_CACHE_CONTROL,
+            freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
           );
           return;
         }
@@ -26820,6 +26868,13 @@ async function handleRequest(request, response) {
           historyKind,
           url.searchParams,
         ).eligible;
+      const proofIndexMintHistoryRead =
+        historyKind === "mints" &&
+        proofIndexTokenHistoryReadEligibility(
+          tokenScope,
+          historyKind,
+          url.searchParams,
+        ).eligible;
       const tokenHistoryRecoveryTxids =
         exactProofIndexHistoryRead ? [] : exactProofIndexTxids;
       const needsCreditNetworkValueOverlay =
@@ -26843,7 +26898,7 @@ async function handleRequest(request, response) {
         ].includes(historyKind) &&
         recoveryAddressHintsFromSearchParams(url.searchParams, network).length > 0;
       if (
-        (!freshRead || exactProofIndexHistoryRead) &&
+        (!freshRead || exactProofIndexHistoryRead || proofIndexMintHistoryRead) &&
         tokenHistoryRecoveryTxids.length === 0 &&
         !addressScopedMarketHistory &&
         proofIndexReadFeatureEnabled("token-history,token") &&
