@@ -380,6 +380,13 @@ live_marketplace_value_proofs =
   * value_multiple
 ```
 
+Canonical WORK adds a live/frozen movement-value layer on top of this proof-flow
+model. Live network value is the active site value and WORK floor source.
+Frozen network value is the confirmation-time audit stamp for WORK moved in
+confirmed transfers, sales, and other WORK events. Other credits remain
+proof-flow only unless a future protocol gives them a non-manipulable value
+source.
+
 ### Browser
 
 ```text
@@ -407,14 +414,14 @@ The BTC column is a proofs-denominated valuation converted into BTC as a unit of
 
 ### WORK Floor
 
-WORK has a permanent floor tied to this confirmed ProofOfWork Computer network value:
+WORK has a permanent floor tied to live confirmed ProofOfWork Computer network value:
 
 ```text
 work_floor_proofs =
-  confirmed_proofofwork_computer_value_proofs / 21,000,000 WORK
+  live_proofofwork_computer_value_proofs / 21,000,000 WORK
 ```
 
-For price-per-credit displays, use `confirmed_proofofwork_computer_value_proofs / 21,000,000`. The inverse, `21,000,000 / confirmed_proofofwork_computer_value_proofs`, is the WORK-per-proof ratio. Pending mempool records are useful visibility but do not change the canonical floor until confirmed.
+For price-per-credit displays, use `live_proofofwork_computer_value_proofs / 21,000,000`. The inverse, `21,000,000 / live_proofofwork_computer_value_proofs`, is the WORK-per-proof ratio. Pending mempool records are useful visibility but do not change the canonical floor until confirmed. Frozen network value is reported separately as a historical audit stamp, not as the current floor source.
 
 Historical WORK floor announcement:
 
@@ -425,9 +432,9 @@ message:
 Formula:
 confirmed network value / 21,000,000 WORK
 
-Current live floor:
+Historical live floor at announcement time:
 74,499,503 proofs / 21,000,000 = 3.5476 proofs per WORK
-~$0.00277 per WORK at current BTC/USD
+~$0.00277 per WORK at the BTC/USD quote used then
 
 Pending mints are visible, but only confirmed ProofOfWork history moves the canonical floor.
 
@@ -444,9 +451,10 @@ work.proofofwork.me and growth.proofofwork.me must share the same
 /api/v1/work-floor payload and /api/v1/prices/btc-usd quote.
 ```
 
-The static formula remains canonical, but current floor price, network USD, and
-credit-reference/arbitrage displays must be read live from the node/API cache path
-and refreshed in the background when expensive credit/log scans are required.
+The static formula remains canonical, but current live floor price, frozen audit
+value, network USD, and credit-reference/arbitrage displays must be read live
+from the node/API cache path and refreshed in the background when expensive
+credit/log scans are required.
 
 ## Canonical Product Growth
 

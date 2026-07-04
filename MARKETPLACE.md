@@ -52,6 +52,8 @@ The marketplace reports realized ID sale data from resolver-accepted buyer-funde
 - Sale volume is the seller price in proofs, excluding the 546-proof registry mutation fee and excluding sale-ticket refunds.
 - Marketplace flow for Growth and WORK floor accounting is seller sale volume plus marketplace mutation fees from listing, seal, delisting, and buy events.
 - Seller sale volume remains a separate public metric. Do not fold mutation fees into seller volume, and do not count marketplace mutation fees again as generic Computer event flow.
+- WORK credit sales add more than seller price. For canonical WORK only, the amount of WORK moved also contributes credit movement network value: frozen value at the live WORK floor when the sale confirms, and live value at the current live WORK floor thereafter. Negative or positive buyer arb is spread information only; it does not redefine the network floor.
+- Non-WORK credit sales do not inherit WORK's movement-value lane. They contribute their confirmed sale payments, registry/mutation fees, and marketplace flow, but their own listing floors are not network value because illiquid listings can be manipulated.
 - Confirmed sales are canonical.
 - Pending sales are mempool-visible only until confirmation.
 
@@ -121,6 +123,7 @@ The June 2026 marketplace fixes preserved these operational invariants:
 - WORK and credit sale-ticket seals are listing state. When a pending listing confirms, the confirmed listing must keep any valid pending or confirmed seal metadata instead of becoming unsealed again.
 - Pending WORK and credit txids are liveness-checked on fresh reads. If a pending transfer, listing, seal, delisting, or buy disappears from mempool visibility, it is removed from pending overlays without changing confirmed history.
 - Marketplace network value includes mutation-fee flow from listings, seals, delistings, and buys alongside seller sale volume. Mutation fees stay out of generic Computer event flow so the Growth and WORK floor ledgers do not double-count them.
+- WORK marketplace sales also carry WORK movement value in the live/frozen accounting layer. The seller price remains visible trade price, while the moved WORK amount is valued from the canonical live WORK floor and stored as frozen value at confirmation.
 - Confirmed sale-ticket spends are active-book truth. When Bitcoin Core RPC is configured, active listing reconciliation uses current UTXO spend state before falling back to slower address-history recovery, so confirmed delistings and buys clear from Marketplace and Wallet while summaries warm.
 - Closed listings, sales, market logs, Growth, and Log derive from the same sale-ticket lifecycle. A delisting should not disappear from logs, and a bought ticket should not stay visible as active in any wallet or marketplace surface.
 
