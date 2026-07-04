@@ -18272,7 +18272,7 @@ async function existingCanonicalLedgerPayload(network) {
     (ledgerPayloadHasCurrentChecks(cachedPayload) ||
       ledgerPayloadIsUsableFallback(cachedPayload))
   ) {
-    return cachedPayload;
+    return ledgerWithHistoricalWorkFloorChart(cachedPayload);
   }
 
   const persistedPayload = await persistedPayloadForCache(
@@ -18284,12 +18284,13 @@ async function existingCanonicalLedgerPayload(network) {
     (ledgerPayloadHasCurrentChecks(persistedPayload) ||
       ledgerPayloadIsUsableFallback(persistedPayload))
   ) {
+    const payload = ledgerWithHistoricalWorkFloorChart(persistedPayload);
     RESPONSE_CACHE.set(payloadKey, {
       expiresAt: Date.now() - 1,
-      payload: persistedPayload,
+      payload,
       staleUntil: Date.now() + LEDGER_CACHE_STALE_MS,
     });
-    return persistedPayload;
+    return payload;
   }
 
   return null;
@@ -18317,6 +18318,23 @@ function logStaleSnapshotPayload(label, payload, ledger) {
   console.error(
     `Rejected stale ${label}: snapshot ${payloadSnapshotId(payload) || "unknown"} does not match canonical ledger snapshot ${payloadSnapshotId(ledger) || "unknown"}.`,
   );
+}
+
+function workFloorChartPointCount(workFloor) {
+  return Array.isArray(workFloor?.chartPoints)
+    ? workFloor.chartPoints.length
+    : 0;
+}
+
+function workFloorHasHistoricalChart(workFloor) {
+  const pointCount = workFloorChartPointCount(workFloor);
+  const confirmedActions = numericValue(
+    workFloor?.stats?.confirmedComputerActions,
+  );
+  if (confirmedActions <= 2) {
+    return true;
+  }
+  return pointCount >= Math.min(confirmedActions + 1, 10);
 }
 
 async function currentProofIndexSummarySnapshotPayload(network, key, label) {
@@ -24509,11 +24527,7 @@ function growthActualValuePoints(
     years: startYears,
   });
 
-  const compactedEventTimes =
-    eventTimes.length > MAX_GROWTH_ACTUAL_CHART_EVENTS * 4
-      ? []
-      : compactGrowthEventTimes(eventTimes);
-  for (const { createdMs, label } of compactedEventTimes) {
+  for (const { createdMs, label } of compactGrowthEventTimes(eventTimes)) {
     const value = growthActualNetworkValue(
       records,
       idActivity,
@@ -25111,6 +25125,120 @@ function workFloorPayloadFromState(
           (valueTokenState.mints ?? []).length +
           tokenSalesForValue.length,
     },
+  };
+}
+
+function historicalWorkFloorChartPointsFromLedger(ledger, workFloor) {
+  if (
+    ledger?.network !== "livenet" ||
+    !ledger?.registryState ||
+    !ledger?.tokenState ||
+    !workFloor
+  ) {
+    return [];
+  }
+
+  const activityPayload = Array.isArray(ledger.activityPayload?.activity)
+    ? ledger.activityPayload
+    : {
+        activity: Array.isArray(ledger.activity)
+          ? ledger.activity
+          : ledger.registryState.activity ?? [],
+        indexedAt: ledger.generatedAt ?? new Date().toISOString(),
+        network: ledger.network,
+        source: ledger.source,
+      };
+  const workTokenState =
+    ledger.workTokenState ??
+    scopedTokenPayloadFromState(ledger.tokenState, WORK_TOKEN_ID);
+  const valueTokenState = tokenStateWithScopedTokenOverride(
+    ledger.tokenState,
+    workTokenState,
+    WORK_TOKEN_ID,
+  );
+  const rebuilt = workFloorPayloadFromState(
+    ledger.network,
+    ledger.registryState,
+    activityPayload,
+    valueTokenState,
+    workTokenState,
+    { btcUsdQuote: ledger.btcUsdQuote },
+  );
+  const chartPoints = Array.isArray(rebuilt.chartPoints)
+    ? [...rebuilt.chartPoints]
+    : [];
+  const currentValueSats = numericValue(
+    workFloor.actualValue?.totalSats ??
+      workFloor.actualValue?.liveTotalSats ??
+      workFloor.liveNetworkValueSats ??
+      workFloor.networkValueSats,
+  );
+  if (currentValueSats > 0) {
+    const nowPoint = {
+      floorSats: currentValueSats / WORK_TOKEN_MAX_SUPPLY,
+      label: "Real now",
+      networkValueSats: currentValueSats,
+      years: growthElapsedYears(),
+    };
+    const lastPoint = chartPoints[chartPoints.length - 1];
+    if (!lastPoint || lastPoint.label !== "Real now") {
+      chartPoints.push(nowPoint);
+    } else {
+      chartPoints[chartPoints.length - 1] = nowPoint;
+    }
+  }
+  return chartPoints.filter(
+    (point) =>
+      Number.isFinite(point?.floorSats) &&
+      Number.isFinite(point?.networkValueSats) &&
+      Number.isFinite(point?.years),
+  );
+}
+
+function workFloorWithHistoricalChartFromLedger(workFloor, ledger) {
+  if (
+    !workFloor ||
+    ledger?.network !== "livenet" ||
+    workFloorHasHistoricalChart(workFloor)
+  ) {
+    return workFloor;
+  }
+
+  const chartPoints = historicalWorkFloorChartPointsFromLedger(
+    ledger,
+    workFloor,
+  );
+  if (chartPoints.length <= workFloorChartPointCount(workFloor)) {
+    return workFloor;
+  }
+
+  return {
+    ...workFloor,
+    chartPoints,
+    source: mergedSourceLabel(workFloor.source, "historical-chart-replay"),
+  };
+}
+
+function ledgerWithHistoricalWorkFloorChart(ledger) {
+  if (!ledger?.workFloor || ledger.network !== "livenet") {
+    return ledger;
+  }
+
+  const workFloor = workFloorWithHistoricalChartFromLedger(
+    ledger.workFloor,
+    ledger,
+  );
+  if (workFloor === ledger.workFloor) {
+    return ledger;
+  }
+
+  return {
+    ...ledger,
+    growthSummary: growthSummaryWithCanonicalWorkFloor(
+      ledger.growthSummary,
+      workFloor,
+    ),
+    workFloor,
   };
 }
 
@@ -26981,7 +27109,7 @@ async function handleRequest(request, response) {
           "workFloor",
           "work-floor",
         );
-        if (indexedPayload) {
+        if (indexedPayload && workFloorHasHistoricalChart(indexedPayload)) {
           jsonResponse(
             response,
             200,
@@ -26993,6 +27121,11 @@ async function handleRequest(request, response) {
             READ_CACHE_CONTROL,
           );
           return;
+        }
+        if (indexedPayload) {
+          console.error(
+            `Rejected proof-index work-floor chart read: ${workFloorChartPointCount(indexedPayload)} chart point(s) for ${numericValue(indexedPayload.stats?.confirmedComputerActions)} confirmed actions.`,
+          );
         }
       }
       if (freshRead) {
