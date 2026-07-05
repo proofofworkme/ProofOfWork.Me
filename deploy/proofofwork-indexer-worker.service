@@ -12,7 +12,7 @@ EnvironmentFile=/opt/proofofwork-api/config/proof-indexer-db.env
 EnvironmentFile=-/etc/proofofwork-api/bitcoin-rpc.env
 Environment=NETWORK=livenet
 Environment=POW_API_BASE=http://127.0.0.1:8081
-Environment=POW_INDEX_WORKER_INTERVAL_MS=300000
+Environment=POW_INDEX_WORKER_INTERVAL_MS=30000
 Environment=POW_INDEX_WORKER_BACKFILL_MAX_PAGES=20
 Environment=POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan
 Environment=POW_INDEX_WORKER_BACKFILL_SOURCE_FRESH=0
@@ -21,14 +21,15 @@ Environment=POW_INDEX_WORKER_BACKFILL_TOKEN_SNAPSHOT_FRESH=0
 Environment=POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_BLOCKS=2000
 Environment=POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_TXIDS=5000
 Environment=POW_INDEX_WORKER_HOLDERS=0
-Environment=POW_INDEX_PENDING_MIN_AGE_MS=300000
-Environment=POW_INDEX_PENDING_STATUS_LIMIT=20
+Environment=POW_INDEX_WORKER_PARITY_INTERVAL_MS=900000
+Environment=POW_INDEX_PENDING_MIN_AGE_MS=60000
+Environment=POW_INDEX_PENDING_STATUS_LIMIT=100
 Environment=POW_INDEX_FETCH_TIMEOUT_MS=180000
 Environment=POW_INDEX_STATUS_FETCH_TIMEOUT_MS=15000
 Environment=POW_INDEX_FETCH_RETRIES=8
 ExecStart=/usr/bin/npm run indexer:worker -- --loop
 Restart=always
-RestartSec=30
+RestartSec=10
 NoNewPrivileges=true
 PrivateTmp=true
 

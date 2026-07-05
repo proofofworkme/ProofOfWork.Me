@@ -540,11 +540,24 @@ function protocolItemsFromTx(tx, message) {
   if (action === "seal5") {
     const ticket = decodeBase64UrlJson(parts[3]);
     const item = tokenListingItemFromTicket(tx, message, ticket);
+    const listingId = String(
+      parts[2] ?? ticket?.anchorTxid ?? item?.listingId ?? "",
+    )
+      .trim()
+      .toLowerCase();
     return [
       {
         ...(item ?? baseProtocolItem(tx, message, "token-listing-sealed")),
         kind: "token-listing-sealed",
-        listingId: parts[2] ?? item?.listingId ?? "",
+        closeTxid: undefined,
+        closedTxid: undefined,
+        listingId,
+        saleTicketTxid:
+          ticket?.anchorTxid ?? listingId ?? item?.saleTicketTxid ?? "",
+        saleTicketValueSats:
+          ticket?.anchorValueSats ?? item?.saleTicketValueSats ?? 546,
+        saleTicketVout: ticket?.anchorVout ?? item?.saleTicketVout ?? 2,
+        sealConfirmed: true,
         sealTxid: tx.txid,
       },
     ];
@@ -1834,6 +1847,13 @@ function creditListingCloseTxid(
   projectionKind,
   sourceLabel,
 ) {
+  const kind = eventKind(item, sourceLabel);
+  const isSealProjection =
+    projectionKind === "token-listing-sealed" ||
+    kind === "token-listing-sealed";
+  if (isSealProjection) {
+    return null;
+  }
   const direct =
     item?.closedTxid ?? item?.closeTxid ?? item?.closedListing?.closedTxid;
   if (isHexTxid(direct)) {
@@ -1871,16 +1891,109 @@ function creditListingProjectionPayload(item, projectedStatus) {
   return payload;
 }
 
+function summaryNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function summarySnapshotTotals(summaryPayloads = {}) {
+  const workFloor =
+    summaryPayloads.workFloor ??
+    summaryPayloads.workSummary?.floor ??
+    summaryPayloads.marketplaceSummary?.workFloor ??
+    null;
+  const growthSummary = summaryPayloads.growthSummary ?? null;
+  const workNetworkValueSats = summaryNumber(
+    workFloor?.networkValueSats ??
+      workFloor?.actualValue?.networkValueSats ??
+      workFloor?.actualValue?.totalSats,
+  );
+  const growthActualValueSats = summaryNumber(
+    growthSummary?.actualValue?.totalSats ??
+      growthSummary?.networkValueSats,
+  );
+  const growthWorkFloorValueSats = summaryNumber(
+    growthSummary?.workFloor?.networkValueSats ??
+      growthSummary?.workFloor?.actualValue?.totalSats,
+  );
+  return {
+    growthActualValueSats,
+    growthWorkFloorValueSats,
+    workActualValueSats: workNetworkValueSats,
+    workNetworkValueSats,
+  };
+}
+
+async function fallbackLedgerSnapshotPayload(
+  client,
+  previousPayload,
+  summaryPayloads,
+  error,
+) {
+  const indexedThroughBlock =
+    (await latestIndexedBlockHeight(client).catch(() => 0)) ||
+    numberOrNull(previousPayload?.indexedThroughBlock) ||
+    numberOrNull(previousPayload?.metrics?.indexedThroughBlock) ||
+    0;
+  const generatedAt = new Date().toISOString();
+  const summaryHash = createHash("sha256")
+    .update(JSON.stringify(summaryPayloads ?? {}))
+    .digest("hex");
+  const snapshotId = createHash("sha256")
+    .update(
+      JSON.stringify({
+        indexedThroughBlock,
+        network: NETWORK,
+        summaryHash,
+      }),
+    )
+    .digest("hex");
+  const metrics = {
+    ...(previousPayload?.metrics ?? {}),
+    indexedThroughBlock,
+  };
+  return {
+    checks: previousPayload?.checks ?? [],
+    generatedAt,
+    indexedThroughBlock,
+    metrics,
+    missingLogEvents: previousPayload?.missingLogEvents ?? [],
+    network: NETWORK,
+    ok: false,
+    snapshotId,
+    sourceHashes: {
+      ...(previousPayload?.sourceHashes ?? {}),
+      summarySnapshotFallback: summaryHash,
+    },
+    status: "summary-snapshot-fallback",
+    totals: summarySnapshotTotals(summaryPayloads),
+    warning: `Ledger consistency refresh failed: ${error?.message ?? String(error)}`,
+  };
+}
+
 async function storeLedgerSnapshot(client, options = {}) {
   const includeDerivedSnapshots = options.includeDerivedSnapshots !== false;
   const tokenHistoryPayloads = {};
   const tokenStatePayloads = {};
-  const payload = await readJson(
-    endpoint("/api/v1/ledger-consistency", summarySnapshotSourceParams()),
-  );
+  let payload = null;
+  let ledgerSnapshotError = null;
+  try {
+    payload = await readJson(
+      endpoint("/api/v1/ledger-consistency", summarySnapshotSourceParams()),
+      { retries: 0 },
+    );
+  } catch (error) {
+    ledgerSnapshotError = error;
+    console.error(
+      JSON.stringify({
+        error: error?.message ?? String(error),
+        phase: "ledger-snapshot",
+      }),
+    );
+  }
   const previousPayload = await storedLedgerSnapshotPayload(
     client,
-    payload.snapshotId ?? "",
+    payload?.snapshotId ?? "",
   );
   const [activityPayload, registryHistoryPayloads, summaryPayloads] =
     includeDerivedSnapshots
@@ -1894,6 +2007,14 @@ async function storeLedgerSnapshot(client, options = {}) {
           previousPayload?.registryHistoryPayloads ?? {},
           previousPayload?.summaryPayloads ?? {},
         ];
+  if (!payload) {
+    payload = await fallbackLedgerSnapshotPayload(
+      client,
+      previousPayload,
+      summaryPayloads,
+      ledgerSnapshotError,
+    );
+  }
   if (includeDerivedSnapshots) {
     for (const scope of TOKEN_HISTORY_SNAPSHOT_SCOPES) {
       try {

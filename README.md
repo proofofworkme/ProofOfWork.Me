@@ -655,6 +655,14 @@ Before any approved production ship, verify the exact touched public outputs
 against first-party full-node or confirmed transaction truth. The database is a
 speed layer over that truth; if proof-index projections disagree with node-backed
 confirmed history, repair or bypass the projection before deploy.
+For livenet summaries, verified proof-index snapshots are the fast read path and
+public requests must not rebuild broad Computer state before answering. A slow
+refresh should return the current checked snapshot and continue in the
+background, or fail closed if no current snapshot exists; false zero dashboards
+are not a valid fallback.
+Worker-written summary-snapshot fallback rows are allowed only as non-OK
+publication envelopes for verified proof-index summaries while the full
+canonical ledger catches up; they do not replace chain truth.
 
 ## Developer Map
 

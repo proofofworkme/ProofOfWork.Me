@@ -66,6 +66,11 @@ const growthWorkspaceSource = sourceSliceBetween(
   /function GrowthWorkspace\(/,
   /function IdLaunchApp\(/,
 );
+const workFloorRouteSource = sourceSliceBetween(
+  server,
+  /url\.pathname === "\/api\/v1\/work-floor"/,
+  /url\.pathname === "\/api\/v1\/work-summary"/,
+);
 
 expectAll("canonical ledger cache is first-class", server, [
   /LEDGER_CACHE_TTL_MS/,
@@ -110,7 +115,8 @@ expectAll("WORK Growth Log and token views use the same ledger", server, [
   /async function summaryCanonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*currentLedgerPayloadOrNull\([\s\S]*"canonical ledger fallback"[\s\S]*refreshCanonicalLedgerPayloadInBackground\(network,\s*true\)/,
   /async function activityPayloadWithLiveWorkTokenOverlay\(ledger,\s*fresh\s*=\s*false\)[\s\S]*liveWorkTokenStateWithFallbackAfterMs\([\s\S]*tokenActivityItemsFromState\(/,
   /async function mergedLogActivityPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*activityPayloadWithLiveWorkTokenOverlay\(ledger,\s*fresh\)[\s\S]*Current Log ledger is unavailable/,
-  /async function cachedWorkFloorPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*workFloorWithCurrentBtcUsd\(ledger\.workFloor[\s\S]*Current WORK floor ledger is unavailable/,
+  /async function proofIndexWorkFloorPayload\(network\)[\s\S]*canonical ledger required[\s\S]*return null/,
+  /async function cachedWorkFloorPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*existingCurrentCanonicalLedgerPayloadWithinMs\([\s\S]*"work-floor canonical ledger"[\s\S]*Current WORK floor ledger is unavailable[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*Fresh WORK floor ledger is unavailable/,
   /async function growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*workFloorWithSummaryMarketOverlay\([\s\S]*growthSummaryWithCanonicalWorkFloor\([\s\S]*Current Growth summary ledger is unavailable/,
   /async function tokenPayloadForRead[\s\S]*summaryCanonicalLedgerPayload\(network,\s*true\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerTokenStateForScope\(ledger,\s*scope\)/,
   /function liveWorkReadWaitMs\(options[\s\S]*Number\.isFinite\(options\.liveWorkWaitMs\)[\s\S]*liveWorkTokenStateWithFallbackAfterMs\([\s\S]*liveWorkReadWaitMs\(options\)/,
@@ -170,6 +176,14 @@ expectAll("server POWB listings recover confirmed Infinity Bond parent mints", s
 expectAll("server POWB fresh scoped reads do not return stale cached fallback", server, [
   /const scopedRefreshWaitMs = Number\.isFinite\(options\.scopedRefreshWaitMs\)[\s\S]*scope === POWB_TOKEN_ID[\s\S]*WORK_TOKEN_CANONICAL_FRESH_WAIT_MS/,
   /fallback &&[\s\S]*scope !== POWB_TOKEN_ID[\s\S]*scoped-token-fallback/,
+]);
+
+expectAll("server token reads preserve canonical ledger rows when table state regresses", server, [
+  /function tokenPayloadWithCanonicalHistoryFloor\(canonicalPayload,\s*payload\)[\s\S]*confirmedSupplyRegressed[\s\S]*holdersRegressed[\s\S]*mergeCanonicalHistoryItems/,
+  /function mergeTokenPayloadWithCanonicalFloor\(canonicalPayload,\s*payload,\s*scope\)[\s\S]*const canonicalScopedPayload = scopedTokenPayloadFromState[\s\S]*const scopedState = tokenPayloadWithCanonicalHistoryFloor/,
+  /async function indexedTokenPayloadFreshnessFloor\(network,\s*scope,\s*options = \{\}\)[\s\S]*tokenPayloadWithCanonicalLedgerFloor\([\s\S]*`token-state fresh-floor:\$\{scope \|\| "all"\}`/,
+  /const flooredScopedPayload =[\s\S]*tokenPayloadWithCanonicalLedgerFloor\([\s\S]*`scoped-token:\$\{scope\}`[\s\S]*tokenPayloadReadResult\(\s*flooredScopedPayload/,
+  /payload = await tokenPayloadWithCanonicalLedgerFloor\([\s\S]*`token-payload:\$\{scope \|\| "all"\}`/,
 ]);
 
 expectAll("server WORK transfer txid history recovers without full ledger rebuild", server, [
@@ -246,7 +260,9 @@ expectAll("API address app reads stay first-party", server, [
   /function mailMessageNeedsAttachmentRepair\(message\)[\s\S]*return !message\?\.attachment/,
   /function mailMessageNeedsContentRepair\(message\)[\s\S]*mailMessageNeedsBodyRepair\(message\)[\s\S]*mailMessageNeedsAttachmentRepair\(message\)/,
   /async function repairMailPayloadBodies\(payload,\s*address,\s*network\)[\s\S]*mailMessageNeedsContentRepair[\s\S]*fetchTransactionWithSourceFallback\(txid,\s*network\)[\s\S]*inboxMessagesFromTransactions\(\[tx\],\s*address,\s*network\)[\s\S]*repairedAttachments/,
-  /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedPayload = await indexedMailPayload\(address,\s*network\)[\s\S]*if \(!fresh && indexedPayload && mailPayloadHasMessages\(indexedPayload\)\) \{[\s\S]*repairMailPayloadBodies\(indexedPayload,\s*address,\s*network\)/,
+  /function livenetAddressMailRequiresProofIndex\(network\)[\s\S]*proofIndexReadFeatureEnabled\("address-mail,mail,event-history,events"\)/,
+  /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedPayload = await indexedMailPayload\(address,\s*network\)[\s\S]*const requiresIndexedMail = livenetAddressMailRequiresProofIndex\(network\)[\s\S]*if \(indexedPayload && \(!fresh \|\| requiresIndexedMail\)\) \{[\s\S]*return enrichIndexedPayload\(\)/,
+  /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*if \(requiresIndexedMail\) \{[\s\S]*Current indexed mailbox is unavailable/,
   /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedWasEmpty = Boolean\(indexedPayload\) && !mailPayloadHasMessages\(indexedPayload\)[\s\S]*includeExternal:\s*indexedWasEmpty \|\| fresh \|\| !indexedPayload[\s\S]*preferExternal:\s*indexedWasEmpty/,
   /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*mergeMailPayloads\(indexedPayload,\s*scannedPayload\)/,
   /mailPayload\(address,\s*network,\s*\{ fresh: freshRead \}\)/,
@@ -265,7 +281,7 @@ expectAll("proof index address mail recovers sender-only file rows", proofIndexR
   /knownMailAddress\(payload\.actor\) \|\| knownMailAddress\(rawPayload\.actor\)/,
   /m\.sender_address/,
   /t\.raw_tx AS transaction_raw_tx/,
-  /m\.sender_address = ANY\(\$2::text\[\]\)[\s\S]*t\.raw_tx->'item'->>'actor' = ANY\(\$2::text\[\]\)[\s\S]*jsonb_array_elements_text/,
+  /WITH candidate_events AS \([\s\S]*proof_indexer\.event_participants ep[\s\S]*ep\.address = ANY\(\$2::text\[\]\)[\s\S]*UNION[\s\S]*proof_indexer\.mail_items m[\s\S]*m\.sender_address = ANY\(\$2::text\[\]\)[\s\S]*JOIN candidate_events ce/,
 ]);
 expect("pending mempool bases must not hardcode public explorer data sources", !/explorerBase|explorerReadBases|mempool\.space/i.test(pendingMempoolBasesSource));
 expectAll("transaction hex PSBT reads stay first-party", txHexPayloadSource, [
@@ -280,8 +296,8 @@ expectAll("wallet scoped token reads keep confirmed lifecycle history", server, 
   /closedListings: recentClosedTokenListings\([\s\S]*closedListingLimit/,
   /function tokenStateWithPreservedListingRecords\(state,\s*sourceState\)[\s\S]*const preservedClosedListingIds = new Set\([\s\S]*sourceState\?\.closedListings[\s\S]*if \(!preservedClosedListingIds\.has\(listingId\)\)/,
   /async function tokenPayloadWithIndexedWalletOverlay\([\s\S]*proofIndexWalletTokenOverlayPayload\([\s\S]*mergeTokenStateItemsByKey\([\s\S]*transfers/,
-  /async function walletScopedTokenPayload\([\s\S]*proofIndexTokenPayload\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletOverlay[\s\S]*tokenPayloadWithIndexedWalletClosedListings/,
-  /async function walletScopedTokenSummaryPayload\([\s\S]*proofIndexTokenPayload\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletOverlay/,
+  /async function walletScopedTokenPayload\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletOverlay[\s\S]*tokenPayloadWithIndexedWalletClosedListings/,
+  /async function walletScopedTokenSummaryPayload\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletOverlay/,
   /async function indexedWalletClosedListings\([\s\S]*kind: "token-closed-listings"[\s\S]*proofIndexEventHistoryPayload/,
   /async function tokenPayloadWithIndexedWalletClosedListings\([\s\S]*tokenStateWithPreservedListingRecords/,
   /url\.pathname === "\/api\/v1\/token"[\s\S]*if \(walletScoped\) \{[\s\S]*walletScopedTokenPayload/,
@@ -296,7 +312,7 @@ expectAll("proof index wallet token overlay reads balances and events", proofInd
   /"proof-indexer-token-market-summary-overlay"/,
 ]);
 expectAll("marketplace summary and tabs keep confirmed sealed inventory canonical", server + app, [
-  /const MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS = Number\([\s\S]*0/,
+  /const MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS = Number\([\s\S]*12_000/,
   /const MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED = Number\([\s\S]*const MARKETPLACE_SUMMARY_FRESH_WAIT_MS =[\s\S]*MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS > 0[\s\S]*MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED/,
   /async function marketplaceSummaryFastFallbackPayload\(network\)[\s\S]*payloadWithFallbackAfterMs\([\s\S]*cachedMarketplaceSummaryPayloadNoRefresh/,
   /async function marketplaceSummaryPayloadWithIndexedMarketOverlay\([\s\S]*indexedTokenMarketSummaryOverlay\([\s\S]*compactTokenSummaryPayload\(tokenState\)/,
@@ -313,7 +329,7 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /function tokenSummaryListings\(items,\s*limit = SUMMARY_MARKET_LIMIT\)[\s\S]*tokenListingHasConfirmedSaleTicketSeal\(listing\)/,
   /listings:\s*tokenSummaryListings\(listings,\s*listingLimit\)/,
   /const indexedAt = newerIso\(ledger\.generatedAt,\s*tokenState\?\.indexedAt\)/,
-  /if \(fresh\) \{[\s\S]*refreshMarketplaceSummaryPayloadCache\(network,\s*true\)[\s\S]*if \(refreshed\) \{[\s\S]*return refreshed/,
+  /if \(fresh\) \{[\s\S]*const fallback = await payloadWithFallbackAfterMs\([\s\S]*marketplaceSummaryFastFallbackPayload\(network\)[\s\S]*refreshMarketplaceSummaryPayloadCache\(network,\s*true\)[\s\S]*summaryPayloadHasFiniteNetworkValue\([\s\S]*"marketplaceSummary"[\s\S]*refreshed[\s\S]*return refreshed[\s\S]*summaryPayloadHasFiniteNetworkValue\([\s\S]*"marketplaceSummary"[\s\S]*fallback[\s\S]*return fallback/,
   /url\.pathname === "\/api\/v1\/marketplace-summary"[\s\S]*await marketplaceSummaryPayload\(network,\s*freshRead\)/,
   /const sealedListings = marketListings\.filter\(\s*tokenListingHasConfirmedSaleTicketSeal,\s*\)/,
   /const unsealedListings = marketListings\.filter\(\s*\(listing\) => !tokenListingHasConfirmedSaleTicketSeal\(listing\),\s*\)/,
@@ -324,22 +340,31 @@ expect(
 );
 expectAll("summary proof-index reads reject stale snapshot ids", server, [
   /function payloadSnapshotMatchesLedger\(payload,\s*ledger\)[\s\S]*payloadSnapshotId\(payload\)[\s\S]*payloadSnapshotId\(ledger\)/,
-  /async function currentProofIndexSummarySnapshotPayload\(network,\s*key,\s*label\)[\s\S]*proofIndexSnapshotPayload\(network,\s*key\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*!payloadSnapshotMatchesLedger\(indexedPayload,\s*ledger\)/,
-  /url\.pathname === "\/api\/v1\/work-floor"[\s\S]*currentProofIndexSummarySnapshotPayload\([\s\S]*"workFloor"[\s\S]*"work-floor"/,
+  /async function currentProofIndexSummarySnapshotPayload\(network,\s*key,\s*label\)[\s\S]*existingCurrentCanonicalLedgerPayloadWithinMs\([\s\S]*`canonical snapshot check for \$\{label\}`[\s\S]*!payloadSnapshotMatchesLedger\(indexedPayload,\s*ledger\)/,
+  /url\.pathname === "\/api\/v1\/work-floor"[\s\S]*cachedWorkFloorPayload\(network,\s*true\)[\s\S]*cachedWorkFloorPayload\(network,\s*false\)/,
   /url\.pathname === "\/api\/v1\/work-summary"[\s\S]*currentProofIndexSummarySnapshotPayload\([\s\S]*"workSummary"[\s\S]*"work-summary"/,
   /url\.pathname === "\/api\/v1\/growth-summary"[\s\S]*currentProofIndexSummarySnapshotPayload\([\s\S]*"growthSummary"[\s\S]*"growth-summary"/,
   /async function cachedMarketplaceSummaryPayloadNoRefresh\(network\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*payloadSnapshotMatchesLedger\(cachedPayload,\s*ledger\)[\s\S]*payloadSnapshotMatchesLedger\(persistedPayload,\s*ledger\)/,
 ]);
+expect(
+  "work-floor route must not serve proof-index summary shortcuts",
+  !/currentProofIndexSummarySnapshotPayload/.test(workFloorRouteSource),
+);
 expectAll("wallet token listing refresh preserves bounded spendable local pending marketplace rows", app, [
   /const TOKEN_LOCAL_PENDING_LISTING_TTL_MS = 30 \* 60_000/,
   /function tokenListingShouldSurviveRefresh\(listing:\s*PowTokenListing\)[\s\S]*tokenListingHasPendingSaleTicketSeal\(listing\)[\s\S]*tokenListingHasSpendableSaleTicketAnchor\(listing\)[\s\S]*TOKEN_LOCAL_PENDING_LISTING_TTL_MS/,
   /function tokenListingsWithPreservedLocalPending\([\s\S]*tokenListingShouldSurviveRefresh\(listing\)[\s\S]*mergeTokenListingsById\(incoming,\s*preserved\)/,
   /function replaceTokenListingsForOwnerScope\([\s\S]*tokenListingShouldSurviveRefresh\(listing\)/,
-  /setTokenListings\(\(current\) =>\s*tokenListingsWithPreservedLocalPending\(/,
+  /function applyTokenState\([\s\S]*preserveListings = true[\s\S]*tokenListingsWithPreservedLocalPending\([\s\S]*current\.listings[\s\S]*applyPendingTokenListingSeals\(state\.listings\)[\s\S]*state\.closedListings[\s\S]*setTokenListings\(accepted\.listings\)/,
+]);
+expectAll("current ledger reads reject non-OK summary snapshot fallback rows", server + proofIndexerBackfill, [
+  /status:\s*"summary-snapshot-fallback"/,
+  /ok:\s*false/,
+  /function ledgerPayloadHasCurrentChecks\(payload\)[\s\S]*payload\?\.consistency\?\.status !== "summary-snapshot-fallback"[\s\S]*checkNames\.has\("ledger-covers-node-tip"\)/,
 ]);
 expectAll("DB mail reads use indexed address matching and self-send folders", proofIndexReader, [
   /function addressMailRowPayloads\(row,\s*address,\s*network\)/,
-  /target\.address = ANY\(\$2::text\[\]\)/,
+  /WITH candidate_events AS \([\s\S]*proof_indexer\.event_participants ep[\s\S]*ep\.address = ANY\(\$2::text\[\]\)/,
   /LEFT JOIN proof_indexer\.transactions t[\s\S]*AND t\.txid = e\.txid/,
   /WHEN 'confirmed' = ANY\(ARRAY\[e\.status,\s*m\.status,\s*t\.status\]\) THEN 'confirmed'/,
   /const targetIsRecipient =[\s\S]*\["recipient",\s*"receiver",\s*"counterparty"\]/,
@@ -364,6 +389,7 @@ expectAll("registry default reads use proof index with canonical fallback", serv
   /function registryIndexedPayloadRejectReason\(payload,\s*previousPayload\s*=\s*null\)[\s\S]*duplicateRegistryRecordIds\(payload\)[\s\S]*stale indexedAt[\s\S]*registryPayloadLooksWorse/,
   /async function indexedRegistryPayload\(network\)[\s\S]*proofIndexReadFeatureEnabled\([\s\S]*registry-history[\s\S]*proofIndexRegistryPayload\(network,\s*\{ registryAddress \}\)/,
   /async function indexedRegistryPayload\(network\)[\s\S]*registryIndexedPayloadRejectReason\([\s\S]*Rejected proof-index registry payload/,
+  /async function safeRegistryPayload\(network\)[\s\S]*registryConfirmedCount\(nextPayload\) <= 0[\s\S]*Current livenet registry is unavailable/,
   /async function registrySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*await indexedRegistryPayload\(network\)[\s\S]*fastJsonBackedPayload/,
   /url\.pathname === "\/api\/v1\/registry" \|\| url\.pathname === "\/api\/v1\/ids"[\s\S]*const indexedPayload = await indexedRegistryPayload\(network\)[\s\S]*if \(indexedPayload\)/,
 ]);

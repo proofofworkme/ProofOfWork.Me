@@ -84,9 +84,22 @@ const MAIL_INDEXED_RECENT_TX_PAGES = Number(
 const MAIL_BODY_REPAIR_MAX_TXS = Number(
   process.env.MAIL_BODY_REPAIR_MAX_TXS ?? 12,
 );
+const MAIL_INDEXED_EVENT_OVERLAY_LIMIT = Number(
+  process.env.MAIL_INDEXED_EVENT_OVERLAY_LIMIT ?? 100,
+);
+const MAIL_INDEXED_EVENT_HYDRATE_MAX_TXS = Number(
+  process.env.MAIL_INDEXED_EVENT_HYDRATE_MAX_TXS ?? MAIL_BODY_REPAIR_MAX_TXS,
+);
 const MAIL_INDEXED_ENRICH_WAIT_MS = Number(
   process.env.MAIL_INDEXED_ENRICH_WAIT_MS ?? 2_500,
 );
+const MAIL_INDEXED_LOOKUP_WAIT_MS = Number(
+  process.env.MAIL_INDEXED_LOOKUP_WAIT_MS ?? 2_500,
+);
+const MAIL_INDEXED_REQUEST_NODE_ENRICH_ENABLED =
+  /^(?:1|true|yes)$/iu.test(
+    String(process.env.MAIL_INDEXED_REQUEST_NODE_ENRICH ?? "").trim(),
+  );
 const EVENT_HISTORY_RECOVERY_WAIT_MS = Number(
   process.env.EVENT_HISTORY_RECOVERY_WAIT_MS ?? 2_500,
 );
@@ -203,7 +216,7 @@ const WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS = Number(
     Math.max(WORK_FLOOR_FRESH_WAIT_MS, 15_000),
 );
 const MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS = Number(
-  process.env.MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS ?? 0,
+  process.env.MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS ?? 12_000,
 );
 const MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED = Number(
   process.env.MARKETPLACE_SUMMARY_FRESH_WAIT_MS ??
@@ -265,7 +278,8 @@ const MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS = Number(
   process.env.MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS ?? 8_000,
 );
 const SUMMARY_TOKEN_CURRENT_FALLBACK_WAIT_MS = Number(
-  process.env.SUMMARY_TOKEN_CURRENT_FALLBACK_WAIT_MS ?? 90_000,
+  process.env.SUMMARY_TOKEN_CURRENT_FALLBACK_WAIT_MS ??
+    Math.max(WORK_FLOOR_FRESH_WAIT_MS, 8_000),
 );
 const SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS = Number(
   process.env.SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS ?? 2_500,
@@ -1194,6 +1208,16 @@ async function safeRegistryPayload(network) {
       `Rejected registry payload regression for ${network}: confirmed ${registryConfirmedCount(nextPayload)} < ${registryConfirmedCount(previousPayload)}.`,
     );
     return previousPayload;
+  }
+
+  if (network === "livenet" && registryConfirmedCount(nextPayload) <= 0) {
+    if (registryConfirmedCount(previousPayload) > 0) {
+      console.error(
+        "Rejected empty livenet registry payload; using previous confirmed registry state.",
+      );
+      return previousPayload;
+    }
+    throw freshDataUnavailableError("Current livenet registry is unavailable.");
   }
 
   return nextPayload;
@@ -3017,17 +3041,7 @@ async function tokenHistoryPageWithCanonicalCreditValueOverlay(
     source: mergedSourceLabel(page?.source, "canonical-credit-value-overlay"),
   });
 
-  if (safeKind === "listings") {
-    return {
-      ...page,
-      ...overlayPage,
-      indexedThroughBlock:
-        overlayPage.indexedThroughBlock ?? page?.indexedThroughBlock,
-      source: mergedSourceLabel(page?.source, overlayPage.source),
-    };
-  }
-
-  return mergeTokenHistoryPageWithOverlay(overlayPage, page, pagination);
+  return mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination);
 }
 
 function mempoolBase(network) {
@@ -6185,8 +6199,44 @@ function tokenListingWithSealFrom(listing, sealSource) {
     sealAt: sealSource.sealAt ?? listing.sealAt,
     sealConfirmed: sealSource.sealConfirmed === true,
     sealDataBytes: sealSource.sealDataBytes ?? listing.sealDataBytes,
+    sealFrozenNetworkValueSats:
+      sealSource.sealFrozenNetworkValueSats ??
+      listing.sealFrozenNetworkValueSats,
+    sealLiveNetworkValueSats:
+      sealSource.sealLiveNetworkValueSats ??
+      listing.sealLiveNetworkValueSats,
+    sealMinerFeeSats: sealSource.sealMinerFeeSats ?? listing.sealMinerFeeSats,
     sealTxid: sealSource.sealTxid ?? listing.sealTxid,
   };
+}
+
+function tokenListingSealTimeMs(listing) {
+  const timeMs = Date.parse(listing?.sealAt ?? listing?.createdAt ?? "");
+  return Number.isFinite(timeMs) ? timeMs : 0;
+}
+
+function preferredTokenListingSealSource(left, right) {
+  const leftRank = tokenListingSealRank(left);
+  const rightRank = tokenListingSealRank(right);
+  if (leftRank === 0) {
+    return rightRank > 0 ? right : null;
+  }
+  if (rightRank === 0) {
+    return left;
+  }
+  if (leftRank !== rightRank) {
+    return leftRank > rightRank ? left : right;
+  }
+
+  const leftTime = tokenListingSealTimeMs(left);
+  const rightTime = tokenListingSealTimeMs(right);
+  if (leftTime !== rightTime) {
+    return leftTime > rightTime ? left : right;
+  }
+
+  return String(left?.sealTxid ?? "").localeCompare(String(right?.sealTxid ?? "")) >= 0
+    ? left
+    : right;
 }
 
 function tokenListingCloseRank(listing) {
@@ -6220,10 +6270,10 @@ function mergeTokenListingRecord(current, incoming) {
     return current;
   }
 
-  const merged =
-    tokenListingSealRank(current) > tokenListingSealRank(incoming)
-      ? tokenListingWithSealFrom(incoming, current)
-      : incoming;
+  const sealSource = preferredTokenListingSealSource(current, incoming);
+  const merged = sealSource
+    ? tokenListingWithSealFrom(incoming, sealSource)
+    : incoming;
   return tokenListingCloseRank(current) > tokenListingCloseRank(incoming)
     ? tokenListingWithCloseFrom(merged, current)
     : tokenListingWithCloseFrom(merged, incoming);
@@ -7520,7 +7570,7 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
     };
   });
 
-  return {
+  return tokenStateWithPendingStats({
     ...state,
     closedListings,
     mints,
@@ -7563,81 +7613,83 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
         creditValue?.creditSalePaymentFlowSats,
       ),
     },
+  });
+}
+
+async function spendableTokenListingsPayload(payload, network) {
+  if (!payload || !Array.isArray(payload.listings)) {
+    return payload;
+  }
+
+  const reconciledPayload = await reconcileCachedTokenMarketPayload(payload, network);
+  const tokenListings = await filterSpendableTokenListings(
+    reconciledPayload.listings,
+    network,
+  );
+  const closedByKey = new Map();
+  for (const listing of [
+    ...(Array.isArray(reconciledPayload.closedListings)
+      ? reconciledPayload.closedListings
+      : []),
+    ...tokenListings.closedListings,
+  ]) {
+    closedByKey.set(`${listing.listingId}:${listing.closedTxid ?? ""}`, listing);
+  }
+  const closedListingIds = new Set(
+    [...closedByKey.values()]
+      .map((listing) => String(listing?.listingId ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+
+  return {
+    ...reconciledPayload,
+    closedListings: sortClosedTokenListings([...closedByKey.values()]),
+    listings: tokenListings.listings.filter((listing) => {
+      const listingId = String(listing?.listingId ?? listing?.txid ?? "")
+        .trim()
+        .toLowerCase();
+      return listingId && !closedListingIds.has(listingId);
+    }),
   };
+}
+
+async function boundedSpendableTokenListingsPayload(payload, network, label) {
+  if (!payload || !Array.isArray(payload.listings)) {
+    return payload;
+  }
+
+  if (network !== "livenet") {
+    return spendableTokenListingsPayload(payload, network);
+  }
+
+  const reconciled = await payloadWithFallbackAfterMs(
+    spendableTokenListingsPayload(payload, network),
+    null,
+    SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS,
+  );
+  if (!reconciled) {
+    console.error(
+      `${label} spendable listing reconciliation timed out after ${SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS}ms; returning indexed listing state.`,
+    );
+    return payload;
+  }
+  return reconciled;
 }
 
 async function tokenPayloadWithSpendableListings(payload, network) {
-  if (!payload || !Array.isArray(payload.listings)) {
-    return payload;
-  }
-
-  const reconciledPayload = await reconcileCachedTokenMarketPayload(payload, network);
-  const tokenListings = await filterSpendableTokenListings(
-    reconciledPayload.listings,
+  return boundedSpendableTokenListingsPayload(
+    payload,
     network,
+    "token market",
   );
-  const closedByKey = new Map();
-  for (const listing of [
-    ...(Array.isArray(reconciledPayload.closedListings)
-      ? reconciledPayload.closedListings
-      : []),
-    ...tokenListings.closedListings,
-  ]) {
-    closedByKey.set(`${listing.listingId}:${listing.closedTxid ?? ""}`, listing);
-  }
-  const closedListingIds = new Set(
-    [...closedByKey.values()]
-      .map((listing) => String(listing?.listingId ?? "").trim().toLowerCase())
-      .filter(Boolean),
-  );
-
-  return {
-    ...reconciledPayload,
-    closedListings: sortClosedTokenListings([...closedByKey.values()]),
-    listings: tokenListings.listings.filter((listing) => {
-      const listingId = String(listing?.listingId ?? listing?.txid ?? "")
-        .trim()
-        .toLowerCase();
-      return listingId && !closedListingIds.has(listingId);
-    }),
-  };
 }
 
 async function tokenPayloadWithSpendableActiveListings(payload, network) {
-  if (!payload || !Array.isArray(payload.listings)) {
-    return payload;
-  }
-
-  const reconciledPayload = await reconcileCachedTokenMarketPayload(payload, network);
-  const tokenListings = await filterSpendableTokenListings(
-    reconciledPayload.listings,
+  return boundedSpendableTokenListingsPayload(
+    payload,
     network,
+    "active token market",
   );
-  const closedByKey = new Map();
-  for (const listing of [
-    ...(Array.isArray(reconciledPayload.closedListings)
-      ? reconciledPayload.closedListings
-      : []),
-    ...tokenListings.closedListings,
-  ]) {
-    closedByKey.set(`${listing.listingId}:${listing.closedTxid ?? ""}`, listing);
-  }
-  const closedListingIds = new Set(
-    [...closedByKey.values()]
-      .map((listing) => String(listing?.listingId ?? "").trim().toLowerCase())
-      .filter(Boolean),
-  );
-
-  return {
-    ...reconciledPayload,
-    closedListings: sortClosedTokenListings([...closedByKey.values()]),
-    listings: tokenListings.listings.filter((listing) => {
-      const listingId = String(listing?.listingId ?? listing?.txid ?? "")
-        .trim()
-        .toLowerCase();
-      return listingId && !closedListingIds.has(listingId);
-    }),
-  };
 }
 
 function parseTokenPayload(message, network) {
@@ -12882,6 +12934,12 @@ async function indexedRegistryPayload(network) {
         );
         return null;
       }
+      if (network === "livenet" && registryConfirmedCount(payload) <= 0) {
+        console.error(
+          "Rejected empty proof-index registry payload for livenet.",
+        );
+        return null;
+      }
       return payload;
     })
     .catch((error) => {
@@ -13601,6 +13659,10 @@ function scopedTokenPayloadFromState(tokenState, scope) {
     stats: {
       ...(tokenState.stats ?? {}),
       confirmedMints: mints.filter((mint) => mint.confirmed).length,
+      confirmedSales: sales.filter((sale) => sale.confirmed).length,
+      confirmedSalesVolumeSats: sales
+        .filter((sale) => sale.confirmed)
+        .reduce((total, sale) => total + numericValue(sale.priceSats), 0),
       confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
         .length,
       confirmedTokens: tokens.filter((token) => token.confirmed).length,
@@ -13608,6 +13670,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
       holders: holders.length,
       invalidEvents: invalidEvents.filter((event) => event.confirmed).length,
       pendingMints: mints.filter((mint) => !mint.confirmed).length,
+      pendingSales: sales.filter((sale) => !sale.confirmed).length,
       pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
         .length,
       pendingTokens: tokens.filter((token) => !token.confirmed).length,
@@ -13713,6 +13776,10 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) 
 function compactTokenSummaryPayload(payload, tokenScope = "") {
   const holders = Array.isArray(payload.holders) ? payload.holders : [];
   const rawListings = Array.isArray(payload.listings) ? payload.listings : [];
+  const mints = Array.isArray(payload.mints) ? payload.mints : [];
+  const sales = Array.isArray(payload.sales) ? payload.sales : [];
+  const transfers = Array.isArray(payload.transfers) ? payload.transfers : [];
+  const tokenDefinitions = Array.isArray(payload.tokens) ? payload.tokens : [];
   const sealedActiveListingsByKey = new Map(
     rawListings
       .filter(tokenListingHasConfirmedSaleTicketSeal)
@@ -13811,7 +13878,7 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
         SUMMARY_MARKET_LIMIT,
       )
     : SUMMARY_MARKET_LIMIT;
-  const rawTokens = Array.isArray(payload.tokens) ? payload.tokens : [];
+  const rawTokens = tokenDefinitions;
   const tokenSummaries = tokenAggregateSummaries({ ...payload, listings });
   const preserveExistingTokenMetrics = payload.summaryOnly === true;
   const scopedTokenId =
@@ -13923,7 +13990,22 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
     transfers: [],
     stats: {
       ...stats,
+      confirmedMints: mints.filter((mint) => mint?.confirmed).length,
+      confirmedSales: sales.filter((sale) => sale?.confirmed).length,
+      confirmedSalesVolumeSats: sales
+        .filter((sale) => sale?.confirmed)
+        .reduce((total, sale) => total + numericValue(sale.priceSats), 0),
+      confirmedTransfers: transfers.filter((transfer) => transfer?.confirmed)
+        .length,
+      confirmedTokens: tokenDefinitions.filter((token) => token?.confirmed)
+        .length,
       holders: holders.length,
+      pendingMints: mints.filter((mint) => !mint?.confirmed).length,
+      pendingSales: sales.filter((sale) => !sale?.confirmed).length,
+      pendingTransfers: transfers.filter((transfer) => !transfer?.confirmed)
+        .length,
+      pendingTokens: tokenDefinitions.filter((token) => !token?.confirmed)
+        .length,
     },
   };
 }
@@ -14019,9 +14101,11 @@ function tokenStateWithPendingStats(state) {
   const mints = Array.isArray(state?.mints) ? state.mints : [];
   const transfers = Array.isArray(state?.transfers) ? state.transfers : [];
   const sales = Array.isArray(state?.sales) ? state.sales : [];
+  const holders = Array.isArray(state?.holders) ? state.holders : [];
   const pendingSupply = mints
     .filter((mint) => !mint.confirmed)
     .reduce((total, mint) => total + Number(mint.amount || 0), 0);
+  const confirmedSales = sales.filter((sale) => sale.confirmed);
 
   return {
     ...state,
@@ -14029,10 +14113,15 @@ function tokenStateWithPendingStats(state) {
     stats: {
       ...(state?.stats ?? {}),
       confirmedMints: mints.filter((mint) => mint.confirmed).length,
-      confirmedSales: sales.filter((sale) => sale.confirmed).length,
+      confirmedSales: confirmedSales.length,
+      confirmedSalesVolumeSats: confirmedSales.reduce(
+        (total, sale) => total + numericValue(sale.priceSats),
+        0,
+      ),
       confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
         .length,
       confirmedTokens: tokens.filter((token) => token.confirmed).length,
+      holders: holders.length,
       pendingMints: mints.filter((mint) => !mint.confirmed).length,
       pendingSales: sales.filter((sale) => !sale.confirmed).length,
       pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
@@ -16584,6 +16673,263 @@ function ledgerPayloadForFreshnessCompare(ledger, scope) {
   );
 }
 
+function tokenPayloadRegressesCanonical(candidate, canonical) {
+  if (!candidate || !canonical) {
+    return false;
+  }
+  const candidateRank = tokenPayloadFreshnessRank(candidate);
+  const canonicalRank = tokenPayloadFreshnessRank(canonical);
+  return (
+    candidateRank.confirmedSupply < canonicalRank.confirmedSupply ||
+    candidateRank.confirmedMints < canonicalRank.confirmedMints ||
+    candidateRank.confirmedTokens < canonicalRank.confirmedTokens ||
+    (canonicalRank.confirmedSupply > 0 &&
+      canonicalRank.holders > 0 &&
+      candidateRank.holders === 0)
+  );
+}
+
+function tokenPayloadHistoryItemKey(item) {
+  return [
+    String(item?.tokenId ?? "").trim().toLowerCase(),
+    String(item?.txid ?? "").trim().toLowerCase(),
+  ].join(":");
+}
+
+function mergeCanonicalHistoryItems(
+  canonicalItems,
+  payloadItems,
+  keyForItem,
+  mergeItem = (current, incoming) => current ?? incoming,
+) {
+  return mergeTokenStateItemsByKey(
+    canonicalItems,
+    payloadItems,
+    keyForItem,
+    mergeItem,
+  );
+}
+
+function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
+  if (!canonicalPayload || !payload) {
+    return payload;
+  }
+
+  const candidateRank = tokenPayloadFreshnessRank(payload);
+  const canonicalRank = tokenPayloadFreshnessRank(canonicalPayload);
+  const confirmedSupplyRegressed =
+    candidateRank.confirmedSupply < canonicalRank.confirmedSupply;
+  const confirmedMintsRegressed =
+    candidateRank.confirmedMints < canonicalRank.confirmedMints;
+  const confirmedTokensRegressed =
+    candidateRank.confirmedTokens < canonicalRank.confirmedTokens;
+  const holdersRegressed =
+    canonicalRank.holders > 0 && candidateRank.holders < canonicalRank.holders;
+  const salesRegressed = candidateRank.sales < canonicalRank.sales;
+  const transfersRegressed =
+    candidateRank.transfers < canonicalRank.transfers;
+  const listingsRegressed =
+    candidateRank.listings < canonicalRank.listings;
+
+  if (
+    !confirmedSupplyRegressed &&
+    !confirmedMintsRegressed &&
+    !confirmedTokensRegressed &&
+    !holdersRegressed &&
+    !salesRegressed &&
+    !transfersRegressed &&
+    !listingsRegressed
+  ) {
+    return payload;
+  }
+
+  const next = {
+    ...payload,
+    confirmedSupply: Math.max(
+      numericValue(payload?.confirmedSupply),
+      numericValue(canonicalPayload?.confirmedSupply),
+    ),
+    indexedAt: newerIso(canonicalPayload?.indexedAt, payload?.indexedAt),
+    indexedThroughBlock: Math.max(
+      numericValue(canonicalPayload?.indexedThroughBlock),
+      numericValue(payload?.indexedThroughBlock),
+    ),
+    pendingSupply: Math.max(
+      numericValue(payload?.pendingSupply),
+      numericValue(canonicalPayload?.pendingSupply),
+    ),
+    source: mergedSourceLabel(canonicalPayload?.source, payload?.source),
+    stats: {
+      ...(payload?.stats ?? {}),
+      confirmedMints: Math.max(
+        candidateRank.confirmedMints,
+        canonicalRank.confirmedMints,
+      ),
+      confirmedTokens: Math.max(
+        candidateRank.confirmedTokens,
+        canonicalRank.confirmedTokens,
+      ),
+      holders: Math.max(candidateRank.holders, canonicalRank.holders),
+    },
+  };
+
+  if (
+    confirmedTokensRegressed ||
+    confirmedMintsRegressed ||
+    confirmedSupplyRegressed ||
+    holdersRegressed
+  ) {
+    next.tokens = Array.isArray(canonicalPayload.tokens)
+      ? canonicalPayload.tokens
+      : payload.tokens;
+  }
+  if (confirmedMintsRegressed || confirmedSupplyRegressed || holdersRegressed) {
+    next.mints = mergeCanonicalHistoryItems(
+      canonicalPayload.mints,
+      payload.mints,
+      tokenPayloadHistoryItemKey,
+    );
+    next.holders = Array.isArray(canonicalPayload.holders)
+      ? canonicalPayload.holders
+      : payload.holders;
+  }
+  if (transfersRegressed || holdersRegressed) {
+    next.transfers = mergeCanonicalHistoryItems(
+      canonicalPayload.transfers,
+      payload.transfers,
+      tokenPayloadHistoryItemKey,
+      mergeTokenTransferRecord,
+    );
+  }
+  if (salesRegressed || holdersRegressed) {
+    next.sales = mergeCanonicalHistoryItems(
+      canonicalPayload.sales,
+      payload.sales,
+      tokenSaleItemKey,
+    );
+  }
+  if (listingsRegressed) {
+    next.listings = mergeCanonicalHistoryItems(
+      canonicalPayload.listings,
+      payload.listings,
+      tokenListingItemKey,
+      mergeTokenListingRecord,
+    );
+    next.closedListings = mergeCanonicalHistoryItems(
+      canonicalPayload.closedListings,
+      payload.closedListings,
+      tokenClosedListingItemKey,
+      mergeTokenListingRecord,
+    );
+  }
+
+  return tokenStateWithPendingStats(next);
+}
+
+function mergeTokenPayloadWithCanonicalFloor(canonicalPayload, payload, scope) {
+  if (!canonicalPayload) {
+    return payload;
+  }
+  if (!payload) {
+    return canonicalPayload;
+  }
+
+  const normalizedScope = normalizeTokenScope(scope);
+  let merged = canonicalPayload;
+  if (normalizedScope) {
+    const canonicalScopedPayload = scopedTokenPayloadFromState(
+      canonicalPayload,
+      normalizedScope,
+    );
+    const payloadScopedState = scopedTokenPayloadFromState(
+      payload,
+      normalizedScope,
+    );
+    const scopedState = tokenPayloadWithCanonicalHistoryFloor(
+      canonicalScopedPayload,
+      payloadScopedState,
+    );
+    merged = tokenStateWithScopedTokenOverride(
+      canonicalPayload,
+      scopedState,
+      normalizedScope,
+    );
+    merged = scopedTokenPayloadFromState(merged, normalizedScope);
+  } else {
+    const tokenIds = new Set(
+      (Array.isArray(payload.tokens) ? payload.tokens : [])
+        .map((token) => String(token?.tokenId ?? "").trim())
+        .filter(Boolean),
+    );
+    for (const tokenId of tokenIds) {
+      const canonicalScopedPayload = scopedTokenPayloadFromState(
+        canonicalPayload,
+        tokenId,
+      );
+      const payloadScopedState = scopedTokenPayloadFromState(payload, tokenId);
+      const scopedState = tokenPayloadWithCanonicalHistoryFloor(
+        canonicalScopedPayload,
+        payloadScopedState,
+      );
+      merged = tokenStateWithScopedTokenOverride(
+        merged,
+        scopedState,
+        tokenId,
+      );
+    }
+  }
+
+  return tokenStateWithPendingStats({
+    ...merged,
+    confirmedSupply: Math.max(
+      numericValue(merged?.confirmedSupply),
+      numericValue(canonicalPayload?.confirmedSupply),
+      numericValue(payload?.confirmedSupply),
+    ),
+    indexedAt: newerIso(canonicalPayload?.indexedAt, payload?.indexedAt),
+    indexedThroughBlock: Math.max(
+      numericValue(canonicalPayload?.indexedThroughBlock),
+      numericValue(payload?.indexedThroughBlock),
+    ),
+    source: mergedSourceLabel(canonicalPayload?.source, payload?.source),
+  });
+}
+
+async function tokenPayloadWithCanonicalLedgerFloor(
+  network,
+  payload,
+  scope,
+  label,
+  timeoutMs = SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+) {
+  if (network !== "livenet" || !payload) {
+    return payload;
+  }
+
+  let ledger = await existingCurrentCanonicalLedgerPayloadWithinMs(
+    network,
+    `token canonical floor:${label}:${scope || "all"}`,
+    Math.min(2_500, Math.max(1_000, timeoutMs)),
+  );
+  if (!ledger) {
+    ledger = await existingCanonicalLedgerPayload(network).catch(() => null);
+    if (ledger) {
+      refreshCanonicalLedgerPayloadInBackground(network, true);
+    }
+  }
+  const canonicalPayload = ledgerPayloadForFreshnessCompare(ledger, scope);
+  if (!canonicalPayload) {
+    return payload;
+  }
+
+  if (tokenPayloadRegressesCanonical(payload, canonicalPayload)) {
+    console.error(
+      `Merged ${label} token read with canonical ledger floor for ${scope || "all"} because the direct token read regressed confirmed history.`,
+    );
+  }
+  return mergeTokenPayloadWithCanonicalFloor(canonicalPayload, payload, scope);
+}
+
 async function currentProofIndexTokenPayloadForRead(
   network,
   tokenScope = "",
@@ -16607,7 +16953,7 @@ async function currentProofIndexTokenPayloadForRead(
   }
 
   const payload = await payloadWithFallbackAfterMs(
-    proofIndexTokenSnapshotPayload(network, scope, params).catch((error) => {
+    proofIndexTokenPayload(network, scope, params).catch((error) => {
       console.error(
         `Proof index ${label} read failed for ${scope || "all"}: ${errorSummary(error)}`,
       );
@@ -16618,6 +16964,7 @@ async function currentProofIndexTokenPayloadForRead(
   );
   if (
     payload &&
+    !rejectEmptyMainnetTokenPayload(network, payload, scope, label) &&
     (await payloadWithFallbackAfterMs(
       proofIndexPayloadCoversConfirmedTip(
         payload,
@@ -16628,7 +16975,13 @@ async function currentProofIndexTokenPayloadForRead(
       Math.min(2_500, Math.max(1_000, timeoutMs)),
     ))
   ) {
-    return payload;
+    return tokenPayloadWithCanonicalLedgerFloor(
+      network,
+      payload,
+      scope,
+      label,
+      timeoutMs,
+    );
   }
   return null;
 }
@@ -16649,6 +17002,7 @@ async function currentCachedTokenPayloadForRead(
   );
   if (
     payload &&
+    !rejectEmptyMainnetTokenPayload(network, payload, scope, label) &&
     (await payloadWithFallbackAfterMs(
       proofIndexPayloadCoversConfirmedTip(
         payload,
@@ -16659,7 +17013,7 @@ async function currentCachedTokenPayloadForRead(
       2_500,
     ))
   ) {
-    return payload;
+    return tokenPayloadWithCanonicalLedgerFloor(network, payload, scope, label);
   }
   return null;
 }
@@ -16673,6 +17027,7 @@ async function currentMemoryTokenPayloadForRead(
   const payload = RESPONSE_CACHE.get(`payload:token:${network}:${scope}`)?.payload;
   if (
     payload &&
+    !rejectEmptyMainnetTokenPayload(network, payload, scope, label) &&
     (await payloadWithFallbackAfterMs(
       proofIndexPayloadCoversConfirmedTip(
         payload,
@@ -16683,7 +17038,7 @@ async function currentMemoryTokenPayloadForRead(
       2_500,
     ))
   ) {
-    return payload;
+    return tokenPayloadWithCanonicalLedgerFloor(network, payload, scope, label);
   }
   return null;
 }
@@ -16714,13 +17069,25 @@ async function indexedTokenPayloadFreshnessFloor(network, scope, options = {}) {
   );
   if (
     payload &&
+    !rejectEmptyMainnetTokenPayload(
+      network,
+      payload,
+      scope,
+      `token-state fresh-floor:${scope || "all"}`,
+    ) &&
     (await proofIndexPayloadCoversConfirmedTip(
       payload,
       network,
-      `token-state fresh-floor:${scope || "all"}`,
+        `token-state fresh-floor:${scope || "all"}`,
     ))
   ) {
-    return payload;
+    return tokenPayloadWithCanonicalLedgerFloor(
+      network,
+      payload,
+      scope,
+      `token-state fresh-floor:${scope || "all"}`,
+      options.timeoutMs ?? SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    );
   }
   return null;
 }
@@ -16766,8 +17133,16 @@ async function tokenPayloadForRead(
           `scoped-token:${scope}`,
         )
       ) {
+        const flooredScopedPayload =
+          await tokenPayloadWithCanonicalLedgerFloor(
+            network,
+            freshScopedPayload,
+            scope,
+            `scoped-token:${scope}`,
+            scopedRefreshWaitMs,
+          );
         return tokenPayloadReadResult(
-          freshScopedPayload,
+          flooredScopedPayload,
           network,
           fresh,
           options,
@@ -16783,7 +17158,13 @@ async function tokenPayloadForRead(
         `scoped-token-fallback:${scope}`,
       ))
     ) {
-      return tokenPayloadReadResult(fallback, network, fresh, options);
+      const flooredFallback = await tokenPayloadWithCanonicalLedgerFloor(
+        network,
+        fallback,
+        scope,
+        `scoped-token-fallback:${scope}`,
+      );
+      return tokenPayloadReadResult(flooredFallback, network, fresh, options);
     }
   }
   if (network === "livenet" && useLedgerSnapshot) {
@@ -16858,9 +17239,9 @@ async function tokenPayloadForRead(
         },
         ledger,
       );
-      if (scope === WORK_TOKEN_ID) {
-        const liveOptions = {
-          recoverClosedSales: options.recoverWorkSales !== false,
+    if (scope === WORK_TOKEN_ID) {
+      const liveOptions = {
+        recoverClosedSales: options.recoverWorkSales !== false,
           recoverClosedSalesOnly: options.recoverWorkSalesOnly === true,
           recoveryAddresses: options.recoveryAddresses,
           recoveryTxids: options.recoveryTxids,
@@ -16906,6 +17287,28 @@ async function tokenPayloadForRead(
       payload,
       liveWorkReadWaitMs(options),
       liveOptions,
+    );
+  }
+  if (network === "livenet") {
+    payload = await tokenPayloadWithCanonicalLedgerFloor(
+      network,
+      payload,
+      scope,
+      `token-payload:${scope || "all"}`,
+    );
+  }
+  if (
+    !hasRecoveryAddresses &&
+    !hasRecoveryTxids &&
+    rejectEmptyMainnetTokenPayload(
+      network,
+      payload,
+      scope,
+      `token-payload:${scope || "all"}`,
+    )
+  ) {
+    throw freshDataUnavailableError(
+      `Current token payload is unavailable for ${scope || "all"}.`,
     );
   }
   return tokenPayloadReadResult(payload, network, fresh, options);
@@ -16960,6 +17363,16 @@ async function tokenSummaryPayload(
     fresh &&
     summaryRecoveryAddresses.length === 0
   ) {
+    const indexedPayload = await currentProofIndexTokenPayloadForRead(
+      network,
+      scope,
+      "token-summary-fresh",
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    );
+    if (indexedPayload) {
+      return compactTokenSummaryPayload(indexedPayload, scope);
+    }
+
     const cachedPayload = await currentMemoryTokenPayloadForRead(
       network,
       scope,
@@ -16972,23 +17385,6 @@ async function tokenSummaryPayload(
     throw freshDataUnavailableError(
       `Fresh credit summary is still catching up for ${scope || "all"}.`,
     );
-  }
-
-  if (
-    network === "livenet" &&
-    summaryRecoveryAddresses.length === 0 &&
-    scope !== WORK_TOKEN_ID
-  ) {
-    const ledger = await existingCanonicalLedgerPayload(network);
-    if (fresh) {
-      refreshCanonicalLedgerPayloadInBackground(network, true);
-    }
-    if (ledger) {
-      return compactTokenSummaryPayload(
-        ledgerPayloadForFreshnessCompare(ledger, scope),
-        scope,
-      );
-    }
   }
 
   if (
@@ -17015,6 +17411,24 @@ async function tokenSummaryPayload(
     if (cachedPayload) {
       refreshTokenPayloadCacheInBackground(network, scope);
       return compactTokenSummaryPayload(cachedPayload, scope);
+    }
+  }
+
+  if (
+    network === "livenet" &&
+    summaryRecoveryAddresses.length === 0 &&
+    scope !== WORK_TOKEN_ID
+  ) {
+    const ledger = await existingCurrentCanonicalLedgerPayloadWithinMs(
+      network,
+      `token-summary canonical ledger:${scope || "all"}`,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    );
+    if (ledger) {
+      return compactTokenSummaryPayload(
+        ledgerPayloadForFreshnessCompare(ledger, scope),
+        scope,
+      );
     }
   }
 
@@ -17786,6 +18200,85 @@ function summaryPayloadHasFiniteNetworkValue(network, key, payload) {
   return true;
 }
 
+function summaryKeyRequiresCanonicalLedger(network, key) {
+  return (
+    network === "livenet" &&
+    new Set([
+      "growthSummary",
+      "infinitySummary",
+      "marketplaceSummary",
+      "workFloor",
+      "workSummary",
+    ]).has(key)
+  );
+}
+
+function tokenPayloadHasKnownMainnetHistory(payload, scope = "") {
+  const tokenScope = normalizeTokenScope(scope);
+  const tokens = Array.isArray(payload?.tokens) ? payload.tokens : [];
+  const mints = Array.isArray(payload?.mints) ? payload.mints : [];
+  const transfers = Array.isArray(payload?.transfers) ? payload.transfers : [];
+  const listings = Array.isArray(payload?.listings) ? payload.listings : [];
+  const sales = Array.isArray(payload?.sales) ? payload.sales : [];
+  const holders = Array.isArray(payload?.holders) ? payload.holders : [];
+  const stats = payload?.stats && typeof payload.stats === "object"
+    ? payload.stats
+    : {};
+  const confirmedTokens = Math.max(
+    numericValue(stats.confirmedTokens),
+    tokens.filter((token) => token?.confirmed !== false).length,
+  );
+  const confirmedMints = Math.max(
+    numericValue(stats.confirmedMints),
+    mints.filter((mint) => mint?.confirmed !== false).length,
+  );
+  const confirmedSupply = Math.max(
+    numericValue(payload?.confirmedSupply),
+    tokens.reduce((total, token) => total + numericValue(token.confirmedSupply), 0),
+  );
+
+  if (!tokenScope) {
+    return confirmedTokens > 0 || tokens.length > 0;
+  }
+
+  if (tokenScope === WORK_TOKEN_ID) {
+    return (
+      confirmedSupply > 0 ||
+      confirmedMints > 0 ||
+      holders.length > 0 ||
+      transfers.length > 0 ||
+      listings.length > 0 ||
+      sales.length > 0
+    );
+  }
+
+  if (tokenScope === POWB_TOKEN_ID) {
+    return (
+      confirmedSupply > 0 ||
+      confirmedMints > 0 ||
+      holders.length > 0 ||
+      transfers.length > 0 ||
+      listings.length > 0 ||
+      sales.length > 0
+    );
+  }
+
+  return true;
+}
+
+function rejectEmptyMainnetTokenPayload(network, payload, scope, label) {
+  if (network !== "livenet") {
+    return false;
+  }
+  if (tokenPayloadHasKnownMainnetHistory(payload, scope)) {
+    return false;
+  }
+  console.error(
+    `Rejected empty proof-index ${label} read for ${scope || "all"} on livenet.`,
+  );
+  return true;
+}
+
 function sourceCollectionFingerprint(items) {
   const list = Array.isArray(items) ? items : [];
   const confirmed = list.filter((item) => item?.confirmed).length;
@@ -17930,6 +18423,7 @@ function ledgerPayloadHasCurrentChecks(payload) {
   );
   return (
     Boolean(payload?.snapshotId) &&
+    payload?.consistency?.status !== "summary-snapshot-fallback" &&
     ledgerPayloadHasFiniteNetworkValues(payload) &&
     checkNames.has("livenet-confirmed-history-present") &&
     checkNames.has("token-definitions-cover-confirmed-mints") &&
@@ -18296,13 +18790,86 @@ async function ledgerPayloadCoversTip(payload, network) {
   return ledgerPayloadTipStatus(payload, tipHeight).coversTip;
 }
 
-async function ledgerPayloadCoversCurrentProofEvents(payload, network, label) {
+function ledgerWithProofIndexScanFloor(ledger, scan, tipHeight) {
+  if (!ledger || !scan) {
+    return ledger;
+  }
+
+  const scanBlock = Number(scan.indexedThroughBlock) || 0;
+  const indexedThroughBlock = Math.max(
+    ledgerPayloadIndexedThroughBlock(ledger),
+    Number.isSafeInteger(scanBlock) ? scanBlock : 0,
+  );
+  if (!indexedThroughBlock) {
+    return ledger;
+  }
+
+  const normalizedTipHeight = Number(tipHeight);
+  const sourceTipHeight = Number.isSafeInteger(normalizedTipHeight)
+    ? normalizedTipHeight
+    : Number(ledger.sourceTipHeight) ||
+      Number(ledger.metrics?.sourceTipHeight) ||
+      undefined;
+  const metrics = {
+    ...(ledger.metrics ?? {}),
+    indexedThroughBlock,
+    sourceTipHeight,
+    tipLagBlocks:
+      Number.isSafeInteger(sourceTipHeight) && indexedThroughBlock
+        ? Math.max(0, sourceTipHeight - indexedThroughBlock)
+        : ledger.metrics?.tipLagBlocks,
+  };
+  const snapshotId = sha256Hex(
+    Buffer.from(
+      JSON.stringify({
+        metrics,
+        network: ledger.network,
+        proofEventScanFloor: ledger.snapshotId ?? "",
+        sourceHashes: ledger.sourceHashes ?? {},
+      }),
+    ),
+  ).slice(0, 24);
+  const floored = {
+    ...ledger,
+    generatedAt: newerIso(ledger.generatedAt, scan.indexedAt),
+    indexedThroughBlock,
+    metrics,
+    snapshotId,
+    source: mergedSourceLabel(ledger.source, scan.source),
+    sourceTipHeight,
+  };
+  const growthSummary = growthSummaryPayloadFromLedger(floored);
+  const consistency = ledgerSnapshotChecks({
+    activity: floored.activity,
+    growthSummary,
+    metrics,
+    network: floored.network,
+    seededMailActivityState: floored.seededMailActivityState,
+    tokenState: floored.tokenState,
+    workFloor: floored.workFloor,
+  });
+  const result = {
+    ...floored,
+    consistency,
+    growthSummary,
+  };
+  const infinitySummary = infinitySummaryPayloadFromLedger(result);
+  return {
+    ...result,
+    activityPayload: attachLedgerMetadata(result.activityPayload, result),
+    growthSummary: attachLedgerMetadata(growthSummary, result),
+    infinitySummary: attachLedgerMetadata(infinitySummary, result),
+    workFloor: attachLedgerMetadata(result.workFloor, result),
+  };
+}
+
+async function proofIndexScanCoversCurrentProofEvents(payload, network, label) {
   if (network !== "livenet") {
-    return false;
+    return null;
   }
   const ledgerBlock = ledgerPayloadIndexedThroughBlock(payload);
   if (!ledgerBlock) {
-    return false;
+    return null;
   }
 
   const valueSummary = await proofIndexValueSummaryPayload(network).catch(
@@ -18321,24 +18888,29 @@ async function ledgerPayloadCoversCurrentProofEvents(payload, network, label) {
       `${label} value-event coverage`,
     ))
   ) {
-    return false;
+    return null;
   }
 
   const maxEventBlock = Number(valueSummary.stats?.maxEventBlock ?? 0);
   if (!Number.isSafeInteger(maxEventBlock) || maxEventBlock <= 0) {
-    return false;
+    return null;
   }
   if (maxEventBlock > ledgerBlock) {
     console.error(
       `Rejected ${label}: proof-index has confirmed events through block ${maxEventBlock}, ledger only covers ${ledgerBlock}.`,
     );
-    return false;
+    return null;
   }
 
   console.error(
     `Accepted ${label}: ledger block ${ledgerBlock} covers current proof-index event block ${maxEventBlock}.`,
   );
-  return true;
+  return {
+    indexedAt: valueSummary.indexedAt,
+    indexedThroughBlock: proofIndexPayloadIndexedThroughBlock(valueSummary),
+    maxEventBlock,
+    source: valueSummary.source,
+  };
 }
 
 function freshDataUnavailableError(message) {
@@ -18355,12 +18927,17 @@ async function currentLedgerPayloadOrNull(payload, network, label = "ledger") {
     console.error(`Rejected ${label}: missing current ledger checks.`);
     return null;
   }
-  if (!(await ledgerPayloadCoversTip(payload, network))) {
-    if (await ledgerPayloadCoversCurrentProofEvents(payload, network, label)) {
-      return payload;
+  const tipHeight = await ledgerTipHeight(network);
+  const status = ledgerPayloadTipStatus(payload, tipHeight);
+  if (!status.coversTip) {
+    const currentScan = await proofIndexScanCoversCurrentProofEvents(
+      payload,
+      network,
+      label,
+    );
+    if (currentScan) {
+      return ledgerWithProofIndexScanFloor(payload, currentScan, tipHeight);
     }
-    const tipHeight = await ledgerTipHeight(network);
-    const status = ledgerPayloadTipStatus(payload, tipHeight);
     console.error(
       `Rejected stale ${label}: indexedThroughBlock ${status.indexedThroughBlock || "unknown"}, tip ${status.tipHeight ?? "unknown"}, lag ${Number.isFinite(status.lagBlocks) ? status.lagBlocks : "unknown"} blocks.`,
     );
@@ -18442,6 +19019,18 @@ async function existingCurrentCanonicalLedgerPayload(
   return currentLedgerPayloadOrNull(existing, network, label);
 }
 
+async function existingCurrentCanonicalLedgerPayloadWithinMs(
+  network,
+  label = "canonical ledger",
+  timeoutMs = SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+) {
+  return payloadWithFallbackAfterMs(
+    existingCurrentCanonicalLedgerPayload(network, label),
+    null,
+    timeoutMs,
+  );
+}
+
 function payloadSnapshotId(payload) {
   return String(payload?.snapshotId ?? "").trim();
 }
@@ -18488,10 +19077,14 @@ async function currentProofIndexSummarySnapshotPayload(network, key, label) {
     return null;
   }
   if (
-    !(await proofIndexPayloadCoversConfirmedTip(
-      indexedPayload,
-      network,
-      `summary:${label}`,
+    !(await payloadWithFallbackAfterMs(
+      proofIndexPayloadCoversConfirmedTip(
+        indexedPayload,
+        network,
+        `summary:${label}`,
+      ),
+      false,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
     ))
   ) {
     return null;
@@ -18503,17 +19096,17 @@ async function currentProofIndexSummarySnapshotPayload(network, key, label) {
     return null;
   }
 
-  const existingLedger = await existingCanonicalLedgerPayload(network).catch((error) => {
-    console.error(
-      `Canonical ledger snapshot check failed for ${label}: ${errorSummary(error)}`,
-    );
-    return null;
-  });
-  const ledger = await currentLedgerPayloadOrNull(
-    existingLedger,
+  const ledger = await existingCurrentCanonicalLedgerPayloadWithinMs(
     network,
     `canonical snapshot check for ${label}`,
+    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
   );
+  if (summaryKeyRequiresCanonicalLedger(network, key) && !ledger) {
+    console.error(
+      `Rejected proof-index ${label} read: no current canonical ledger is available to verify the summary.`,
+    );
+    return null;
+  }
   if (ledger && !payloadSnapshotMatchesLedger(indexedPayload, ledger)) {
     logStaleSnapshotPayload(`proof-index ${label} read`, indexedPayload, ledger);
     return null;
@@ -19171,6 +19764,7 @@ function ledgerSnapshotChecks({
 
   addCheck("token-events-logged", missingTokenLogEvents.length === 0, {
     missing: missingTokenLogEvents.length,
+    sample: missingTokenLogEvents.slice(0, 5),
   });
   addCheck(
     "token-sales-logged",
@@ -20188,21 +20782,33 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
     if (!listing || !scopeMatches(listing.tokenId, listing.ticker)) {
       continue;
     }
-    listingTermsById.set(listingId, {
+    const sealedListing = {
       ...listing,
       saleAuthorization:
         item.saleAuthorization && Object.keys(item.saleAuthorization).length > 0
           ? {
               ...listing.saleAuthorization,
               ...item.saleAuthorization,
-            }
+          }
           : listing.saleAuthorization,
       sealAt: item.createdAt ?? listing.sealAt,
       sealConfirmed: item.confirmed !== false,
       sealDataBytes: numericValue(item.dataBytes) || listing.sealDataBytes,
+      sealFrozenNetworkValueSats:
+        numericValue(item.frozenNetworkValueSats) ||
+        numericValue(item.sealFrozenNetworkValueSats) ||
+        listing.sealFrozenNetworkValueSats,
+      sealLiveNetworkValueSats:
+        numericValue(item.liveNetworkValueSats) ||
+        numericValue(item.sealLiveNetworkValueSats) ||
+        listing.sealLiveNetworkValueSats,
       sealMinerFeeSats: numericValue(item.minerFeeSats),
       sealTxid: String(item.txid ?? listing.sealTxid ?? "").trim().toLowerCase(),
-    });
+    };
+    listingTermsById.set(
+      listingId,
+      mergeTokenListingRecord(listing, sealedListing),
+    );
   }
 
   const indexedSales = [];
@@ -20345,6 +20951,48 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
   };
 }
 
+async function currentProofIndexTokenTablePayloadForLedger(network, label) {
+  if (
+    network !== "livenet" ||
+    !proofIndexReadFeatureEnabled("token-state,token-default,token")
+  ) {
+    return null;
+  }
+
+  const payload = await payloadWithFallbackAfterMs(
+    proofIndexTokenPayload(network, "", new URLSearchParams()).catch((error) => {
+      console.error(
+        `Proof index token-table overlay failed for ${label}: ${errorSummary(error)}`,
+      );
+      return null;
+    }),
+    null,
+    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+  );
+  if (
+    !payload ||
+    rejectEmptyMainnetTokenPayload(
+      network,
+      payload,
+      "",
+      `${label} token-table overlay`,
+    )
+  ) {
+    return null;
+  }
+  if (
+    !(await proofIndexPayloadCoversConfirmedTip(
+      payload,
+      network,
+      `${label} token-table overlay`,
+    ))
+  ) {
+    return null;
+  }
+
+  return payload;
+}
+
 function activityStateIsProofIndexCanonical(activityState) {
   return activityState?.source === "proof-indexer-events";
 }
@@ -20440,24 +21088,41 @@ async function buildIndexedCanonicalLedgerPayload(network, label = "indexed ledg
     activityState,
   );
   const tokenState = derivedTokenState;
-  const indexedWorkTokenState = tokenState
-    ? scopedTokenPayloadFromState(tokenState, WORK_TOKEN_ID)
+  const currentTokenTableState = await currentProofIndexTokenTablePayloadForLedger(
+    network,
+    label,
+  );
+  const ledgerTokenTableState = currentTokenTableState
+    ? mergeTokenPayloadWithCanonicalFloor(
+        tokenState,
+        currentTokenTableState,
+        "",
+      )
+    : tokenState;
+  const indexedWorkTokenState = ledgerTokenTableState
+    ? scopedTokenPayloadFromState(ledgerTokenTableState, WORK_TOKEN_ID)
     : null;
-  const indexedPowbState = tokenState
-    ? scopedTokenPayloadFromState(tokenState, POWB_TOKEN_ID)
+  const indexedPowbState = ledgerTokenTableState
+    ? scopedTokenPayloadFromState(ledgerTokenTableState, POWB_TOKEN_ID)
     : null;
 
-  if (!activityState || !registryState || !tokenState) {
+  if (!activityState || !registryState || !ledgerTokenTableState) {
     console.error(
-      `Rejected ${label}: missing indexed source(s) activity=${Boolean(activityState)} registry=${Boolean(registryState)} token=${Boolean(tokenState)}; activityItems=${numericValue(activityState?.activity?.length)} registryRecords=${numericValue(registryState?.records?.length)} tokenMints=${numericValue(tokenState?.mints?.length)} workMints=${numericValue(indexedWorkTokenState?.mints?.length)}.`,
+      `Rejected ${label}: missing indexed source(s) activity=${Boolean(activityState)} registry=${Boolean(registryState)} token=${Boolean(ledgerTokenTableState)}; activityItems=${numericValue(activityState?.activity?.length)} registryRecords=${numericValue(registryState?.records?.length)} tokenMints=${numericValue(ledgerTokenTableState?.mints?.length)} workMints=${numericValue(indexedWorkTokenState?.mints?.length)}.`,
     );
     return null;
   }
+  if (currentTokenTableState) {
+    console.error(
+      `Merged ${label} with current proof-index token tables without allowing token tables to subtract canonical ledger history.`,
+    );
+  }
 
   const baseWorkTokenState =
-    indexedWorkTokenState ?? scopedTokenPayloadFromState(tokenState, WORK_TOKEN_ID);
+    indexedWorkTokenState ??
+    scopedTokenPayloadFromState(ledgerTokenTableState, WORK_TOKEN_ID);
   const valueTokenState = tokenStateWithScopedTokenOverride(
-    tokenState,
+    ledgerTokenTableState,
     baseWorkTokenState,
     WORK_TOKEN_ID,
   );
@@ -20764,11 +21429,11 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     );
   }
   let activity = dedupeActivityItems([
-    ...baseActivity,
     ...tokenActivityItemsFromState(
       ledgerTokenState,
       ledgerTokenState?.indexAddress ?? "",
     ),
+    ...baseActivity.filter((item) => !isTokenActivityItem(item)),
   ]);
   let activityPayload = {
     activity,
@@ -20821,11 +21486,11 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     creditValueDetails,
   );
   activity = dedupeActivityItems([
-    ...baseActivity,
     ...tokenActivityItemsFromState(
       ledgerTokenState,
       ledgerTokenState?.indexAddress ?? "",
     ),
+    ...baseActivity.filter((item) => !isTokenActivityItem(item)),
   ]);
   activityPayload = {
     ...activityPayload,
@@ -20955,7 +21620,20 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
 
 async function refreshCanonicalLedgerPayload(network, fresh = false) {
   const previous = await existingCanonicalLedgerPayload(network);
-  const next = await buildCanonicalLedgerPayload(network, fresh);
+  const next = await buildCanonicalLedgerPayload(network, fresh).catch((error) => {
+    console.error(
+      `Canonical ledger refresh build failed for ${network}: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (!next) {
+    if (previous) {
+      return previous;
+    }
+    throw freshDataUnavailableError(
+      `Canonical ledger refresh is unavailable for ${network}.`,
+    );
+  }
   const [nextCoversTip, previousCoversTip] = await Promise.all([
     ledgerPayloadCoversTip(next, network),
     previous ? ledgerPayloadCoversTip(previous, network) : Promise.resolve(false),
@@ -20967,7 +21645,7 @@ async function refreshCanonicalLedgerPayload(network, fresh = false) {
 
   if (payload === previous) {
     console.error(
-      `Rejected ledger payload regression for ${network}: ${JSON.stringify(next.metrics)} < ${JSON.stringify(previous.metrics)}.`,
+      `Rejected ledger payload regression for ${network}: ${JSON.stringify(next.metrics)} < ${JSON.stringify(previous?.metrics)}.`,
     );
   }
 
@@ -21080,7 +21758,8 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
     );
     if (!currentFallback) {
       if (!ENABLE_REQUEST_LEDGER_RECOVERY) {
-        return null;
+        refreshCanonicalLedgerPayloadInBackground(network, true);
+        return ledgerPayloadHasFiniteNetworkValues(fallback) ? fallback : null;
       }
       const replayedFallback = await ledgerWithReplayedCreditNetworkValues(
         fallback,
@@ -21100,27 +21779,6 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
     if (currentFallback) {
       refreshCanonicalLedgerPayloadInBackground(network, true);
       return currentFallback;
-    }
-    const indexedLedger = await buildIndexedCanonicalLedgerPayload(
-      network,
-      "fresh indexed canonical ledger",
-    ).catch((error) => {
-      console.error(
-        `Fresh indexed canonical ledger build failed: ${errorSummary(error)}`,
-      );
-      return null;
-    });
-    const currentIndexedLedger = await currentLedgerPayloadOrNull(
-      indexedLedger,
-      network,
-      "fresh indexed canonical ledger",
-    );
-    if (
-      currentIndexedLedger &&
-      !(currentFallback && ledgerPayloadLooksWorse(currentIndexedLedger, currentFallback))
-    ) {
-      cacheCanonicalLedgerPayload(network, currentIndexedLedger);
-      return currentIndexedLedger;
     }
     const refreshed = await payloadWithFallbackAfterMs(
       canonicalLedgerPayload(network, true),
@@ -21152,7 +21810,8 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
       return currentFallback;
     }
     if (!ENABLE_REQUEST_LEDGER_RECOVERY) {
-      return null;
+      refreshCanonicalLedgerPayloadInBackground(network, true);
+      return ledgerPayloadHasFiniteNetworkValues(fallback) ? fallback : null;
     }
     const replayedFallback = await ledgerWithReplayedCreditNetworkValues(
       fallback,
@@ -21167,27 +21826,6 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
     if (currentReplayedFallback) {
       cacheCanonicalLedgerPayload(network, currentReplayedFallback);
       return currentReplayedFallback;
-    }
-    const indexedLedger = await buildIndexedCanonicalLedgerPayload(
-      network,
-      "indexed canonical ledger",
-    ).catch((error) => {
-      console.error(
-        `Indexed canonical ledger build failed: ${errorSummary(error)}`,
-      );
-      return null;
-    });
-    const currentIndexedLedger = await currentLedgerPayloadOrNull(
-      indexedLedger,
-      network,
-      "indexed canonical ledger",
-    );
-    if (
-      currentIndexedLedger &&
-      !(currentFallback && ledgerPayloadLooksWorse(currentIndexedLedger, currentFallback))
-    ) {
-      cacheCanonicalLedgerPayload(network, currentIndexedLedger);
-      return currentIndexedLedger;
     }
     const deltaFallback = await ledgerWithProofIndexEventDelta(
       fallback,
@@ -21280,6 +21918,13 @@ async function activityPayloadWithLiveWorkTokenOverlay(ledger, fresh = false) {
 }
 
 async function mergedLogActivityPayload(network, fresh = false) {
+  if (network === "livenet" && !fresh) {
+    const indexedActivity = await indexedActivityStateForCanonicalLedger(network);
+    if (indexedActivity) {
+      return indexedActivity;
+    }
+  }
+
   const ledger = await summaryCanonicalLedgerPayload(network, fresh);
   if (ledger) {
     return (
@@ -21581,70 +22226,40 @@ async function growthSummaryWithCurrentBtcUsd(
 }
 
 async function proofIndexWorkFloorPayload(network) {
-  const value = await proofIndexValueSummaryPayload(network).catch((error) => {
-    console.error(`Proof index value summary read failed: ${errorSummary(error)}`);
-    return null;
-  });
-  if (
-    !value ||
-    !(await proofIndexPayloadCoversConfirmedTip(
-      value,
-      network,
-      "value-summary",
-    ))
-  ) {
-    return null;
-  }
-
-  const networkValueSats = numericValue(value.networkValueSats);
-  const floorSats = networkValueSats / WORK_TOKEN_MAX_SUPPLY;
-  const workFloor = {
-    actualValue: {
-      ...(value.actualValue ?? {}),
-      floorSats,
-      networkValueSats,
-      totalSats: networkValueSats,
-    },
-    chartPoints: [
-      {
-        floorSats,
-        label: "Real now",
-        networkValueSats,
-        years: growthElapsedYears(),
-      },
-    ],
-    indexedAt: value.indexedAt,
-    indexedThroughBlock: value.indexedThroughBlock,
-    network,
-    networkValueSats,
-    powids: 0,
-    source: value.source,
-    stats: value.stats ?? {},
-    tokenFlowSats: value.actualValue?.tokenFlowSats ?? 0,
-  };
-  return workFloorWithCurrentBtcUsd(workFloor, network, false);
+  void network;
+  console.error(
+    "Rejected proof-index value summary as WORK floor: canonical ledger required.",
+  );
+  return null;
 }
 
 async function cachedWorkFloorPayload(network, fresh = false) {
   if (network === "livenet") {
-    const ledger = await summaryCanonicalLedgerPayload(network, fresh);
+    if (!fresh) {
+      const ledger = await existingCurrentCanonicalLedgerPayloadWithinMs(
+        network,
+        "work-floor canonical ledger",
+      );
+      if (ledger?.workFloor) {
+        return workFloorWithCurrentBtcUsd(ledger.workFloor, network, false);
+      }
+
+      throw freshDataUnavailableError(
+        "Current WORK floor ledger is unavailable.",
+      );
+    }
+
+    const ledger = await payloadWithFallbackAfterMs(
+      summaryCanonicalLedgerPayload(network, fresh),
+      null,
+      WORK_FLOOR_FRESH_WAIT_MS,
+    );
     if (ledger?.workFloor) {
       return workFloorWithCurrentBtcUsd(ledger.workFloor, network, fresh);
     }
 
-    if (fresh) {
-      throw freshDataUnavailableError("Fresh WORK floor ledger is unavailable.");
-    }
-
-    const indexedFloor = await proofIndexWorkFloorPayload(network);
-    if (indexedFloor) {
-      return workFloorWithSummaryMarketOverlay(indexedFloor, network, false);
-    }
-
     throw freshDataUnavailableError(
-      fresh
-        ? "Fresh WORK floor ledger is unavailable."
-        : "Current WORK floor ledger is unavailable.",
+      "Fresh WORK floor ledger is unavailable.",
     );
   }
 
@@ -21656,7 +22271,10 @@ async function cachedWorkFloorPayload(network, fresh = false) {
 }
 
 async function fastLivenetWorkSummaryPayload(network) {
-  const ledger = await summaryCanonicalLedgerPayload(network, false);
+  const ledger = await existingCurrentCanonicalLedgerPayloadWithinMs(
+    network,
+    "work-summary canonical ledger",
+  );
   if (!ledger) {
     throw freshDataUnavailableError("Current WORK summary ledger is unavailable.");
   }
@@ -21665,20 +22283,23 @@ async function fastLivenetWorkSummaryPayload(network) {
     network,
     WORK_TOKEN_ID,
   );
-  const sharedTokenState = compactTokenSummaryPayload(
-    ledgerPayloadForFreshnessCompare(ledger, ""),
-  );
-  let baseWorkTokenState = tokenStateWithoutDroppedPendingTransactions(
-    scopedTokenPayloadFromState(sharedTokenState, WORK_TOKEN_ID),
+  const ledgerWorkTokenState = tokenStateWithoutDroppedPendingTransactions(
+    ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
     network,
   );
-  baseWorkTokenState = await workTokenStateWithIndexedMintStats(
-    baseWorkTokenState,
+  const workTokenSummary = await tokenSummaryPayload(
     network,
-  );
+    WORK_TOKEN_ID,
+    false,
+  ).catch((error) => {
+    console.error(
+      `WORK summary token read failed: ${errorSummary(error)}`,
+    );
+    return compactTokenSummaryPayload(ledgerWorkTokenState, WORK_TOKEN_ID);
+  });
   const valueWorkTokenState = marketOverlay
-    ? tokenStateWithIndexedMarketSummaryOverlay(baseWorkTokenState, marketOverlay)
-    : baseWorkTokenState;
+    ? tokenStateWithIndexedMarketSummaryOverlay(workTokenSummary, marketOverlay)
+    : workTokenSummary;
   const overlayTokenState = tokenStateWithScopedTokenOverride(
     tokenStateWithoutDroppedPendingTransactions(ledger.tokenState, network),
     valueWorkTokenState,
@@ -21695,13 +22316,10 @@ async function fastLivenetWorkSummaryPayload(network) {
     attachLedgerMetadata(
       {
         floor,
-        indexedAt: newerIso(ledger.generatedAt, baseWorkTokenState?.indexedAt),
+        indexedAt: newerIso(ledger.generatedAt, workTokenSummary?.indexedAt),
         network,
         summaryOnly: true,
-        token: attachLedgerMetadata(
-          compactTokenSummaryPayload(baseWorkTokenState, WORK_TOKEN_ID),
-          ledger,
-        ),
+        token: attachLedgerMetadata(workTokenSummary, ledger),
       },
       ledger,
     ),
@@ -21933,7 +22551,7 @@ async function cachedMarketplaceSummaryPayloadNoRefresh(network) {
   const payloadKey = marketplaceSummaryPayloadKey(network);
   const ledger =
     network === "livenet"
-      ? await existingCurrentCanonicalLedgerPayload(
+      ? await existingCurrentCanonicalLedgerPayloadWithinMs(
           network,
           "marketplace-summary canonical ledger",
         )
@@ -22031,7 +22649,7 @@ async function marketplaceSummaryFallbackPayload(network) {
 
   const ledger =
     network === "livenet"
-      ? await existingCurrentCanonicalLedgerPayload(
+      ? await existingCurrentCanonicalLedgerPayloadWithinMs(
           network,
           "marketplace-summary fallback ledger",
         )
@@ -22042,6 +22660,10 @@ async function marketplaceSummaryFallbackPayload(network) {
       ledgerPayload,
       network,
     );
+  }
+
+  if (network === "livenet") {
+    return null;
   }
 
   const indexedFloor =
@@ -22067,16 +22689,30 @@ async function marketplaceSummaryFastFallbackPayload(network) {
     });
   }
 
-  const ledger = await payloadWithFallbackAfterMs(
-    existingCanonicalLedgerPayload(network),
-    null,
-    Math.min(2_500, MARKETPLACE_SUMMARY_FRESH_WAIT_MS),
-  );
+  const ledger =
+    network === "livenet"
+      ? await payloadWithFallbackAfterMs(
+          existingCurrentCanonicalLedgerPayload(
+            network,
+            "marketplace-summary fast fallback ledger",
+          ),
+          null,
+          Math.min(2_500, MARKETPLACE_SUMMARY_FRESH_WAIT_MS),
+        )
+      : await payloadWithFallbackAfterMs(
+          existingCanonicalLedgerPayload(network),
+          null,
+          Math.min(2_500, MARKETPLACE_SUMMARY_FRESH_WAIT_MS),
+        );
   const ledgerPayload = marketplaceSummaryPayloadFromLedger(ledger);
   if (ledgerPayload) {
     return marketplaceSummaryPayloadWithIndexedMarketOverlay(ledgerPayload, network, {
       fast: true,
     });
+  }
+
+  if (network === "livenet") {
+    return null;
   }
 
   const indexedFloor =
@@ -22285,11 +22921,29 @@ async function refreshMarketplaceSummaryPayloadCache(network, fresh = false) {
 
 async function livenetMarketplaceSummaryPayload(network, fresh = false) {
   if (!fresh) {
+    const fastFallback = await marketplaceSummaryFastFallbackPayload(network);
+    if (
+      summaryPayloadHasFiniteNetworkValue(
+        network,
+        "marketplaceSummary",
+        fastFallback,
+      )
+    ) {
+      refreshPayloadCacheInBackground(
+        marketplaceSummaryCacheKey(network),
+        marketplaceSummaryPayloadKey(network),
+        () => reconciledLivenetMarketplaceSummaryPayload(network, false),
+        MARKETPLACE_SUMMARY_CACHE_TTL_MS,
+        MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+      );
+      return fastFallback;
+    }
+
     const [token, workFloor] = await Promise.all([
       tokenSummaryPayload(network, "", false),
       cachedWorkFloorPayload(network, false),
     ]);
-    return marketplaceSummaryPayloadWithIndexedMarketOverlay(
+    const payload = marketplaceSummaryPayloadWithIndexedMarketOverlay(
       {
         indexedAt: newerIso(workFloor?.indexedAt, token?.indexedAt),
         network,
@@ -22301,35 +22955,46 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
       network,
       { fast: true },
     );
+    if (
+      summaryPayloadHasFiniteNetworkValue(
+        network,
+        "marketplaceSummary",
+        payload,
+      ) &&
+      numericValue(payload?.token?.stats?.confirmedTokens) > 0
+    ) {
+      return payload;
+    }
+    throw freshDataUnavailableError(
+      "Current marketplace summary is unavailable.",
+    );
   }
 
   if (fresh) {
-    const fallbackPromise = marketplaceSummaryFastFallbackPayload(network).catch(
-      (error) => {
+    const fallback = await payloadWithFallbackAfterMs(
+      marketplaceSummaryFastFallbackPayload(network).catch((error) => {
         console.error(
           `Marketplace summary fallback failed: ${errorSummary(error)}`,
         );
         return null;
-      },
-    );
-    const refreshWaitMs = Math.max(
-      0,
-      MARKETPLACE_SUMMARY_FRESH_WAIT_MS -
-        MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS,
-    );
-    const refreshed = await payloadWithFallbackAfterMs(
-      refreshMarketplaceSummaryPayloadCache(network, true),
-      null,
-      refreshWaitMs,
-    );
-    if (refreshed) {
-      return refreshed;
-    }
-    const fallback = await payloadWithFallbackAfterMs(
-      fallbackPromise,
+      }),
       null,
       MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS,
     );
+    const refreshed = await payloadWithFallbackAfterMs(
+      refreshMarketplaceSummaryPayloadCache(network, true),
+      fallback,
+      MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS,
+    );
+    if (
+      summaryPayloadHasFiniteNetworkValue(
+        network,
+        "marketplaceSummary",
+        refreshed,
+      )
+    ) {
+      return refreshed;
+    }
     if (
       summaryPayloadHasFiniteNetworkValue(
         network,
@@ -22338,6 +23003,67 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
       )
     ) {
       return fallback;
+    }
+
+    const ledgerFallbackPayload = marketplaceSummaryPayloadFromLedger(
+      await existingCanonicalLedgerPayload(network),
+    );
+    const currentLedgerPayload =
+      await marketplaceSummaryPayloadWithIndexedMarketOverlay(
+        ledgerFallbackPayload,
+        network,
+        { fast: true },
+      );
+    if (
+      summaryPayloadHasFiniteNetworkValue(
+        network,
+        "marketplaceSummary",
+        currentLedgerPayload,
+      ) &&
+      numericValue(currentLedgerPayload?.token?.stats?.confirmedTokens) > 0
+    ) {
+      refreshPayloadCacheInBackground(
+        marketplaceSummaryCacheKey(network),
+        marketplaceSummaryPayloadKey(network),
+        () => reconciledLivenetMarketplaceSummaryPayload(network, true),
+        MARKETPLACE_SUMMARY_CACHE_TTL_MS,
+        MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+      );
+      return currentLedgerPayload;
+    }
+
+    const [token, workFloor] = await Promise.all([
+      tokenSummaryPayload(network, "", false),
+      cachedWorkFloorPayload(network, false),
+    ]);
+    const currentPayload = marketplaceSummaryPayloadWithIndexedMarketOverlay(
+      {
+        indexedAt: newerIso(workFloor?.indexedAt, token?.indexedAt),
+        network,
+        registry: compactRegistrySummaryPayload(emptyRegistryPayload(network)),
+        summaryOnly: true,
+        token,
+        workFloor,
+      },
+      network,
+      { fast: true },
+    );
+    if (
+      summaryPayloadHasFiniteNetworkValue(
+        network,
+        "marketplaceSummary",
+        currentPayload,
+      ) &&
+      numericValue(currentPayload?.token?.stats?.confirmedTokens) > 0
+    ) {
+      refreshPayloadCacheInBackground(
+        marketplaceSummaryCacheKey(network),
+        marketplaceSummaryPayloadKey(network),
+        () => reconciledLivenetMarketplaceSummaryPayload(network, true),
+        MARKETPLACE_SUMMARY_CACHE_TTL_MS,
+        MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+      );
+      return currentPayload;
     }
 
     refreshPayloadCacheInBackground(
@@ -22433,7 +23159,17 @@ function refreshGrowthCachesInBackground(network) {
 }
 
 async function growthSummaryPayload(network, fresh = false) {
-  const ledger = await summaryCanonicalLedgerPayload(network, fresh);
+  const ledger =
+    network === "livenet" && !fresh
+      ? await existingCurrentCanonicalLedgerPayloadWithinMs(
+          network,
+          "growth-summary canonical ledger",
+        )
+      : await payloadWithFallbackAfterMs(
+          summaryCanonicalLedgerPayload(network, fresh),
+          null,
+          LEDGER_SUMMARY_FRESH_WAIT_MS,
+        );
   if (ledger) {
     const workFloor = await workFloorWithSummaryMarketOverlay(
       ledger.workFloor,
@@ -22487,26 +23223,42 @@ async function infinitySummaryFromCanonicalLedger(ledger, network, fresh = false
 
 async function proofIndexInfinitySummaryPayload(network, fresh = false) {
   const params = new URLSearchParams([["asset", POWB_TOKEN_ID]]);
-  let powbTokenState = await payloadWithFallbackAfterMs(
-    proofIndexTokenPayload(network, POWB_TOKEN_ID, params),
-    null,
+  let powbTokenState = await currentProofIndexTokenPayloadForRead(
+    network,
+    POWB_TOKEN_ID,
+    "infinity-token-state",
     SUMMARY_PROOF_INDEX_READ_WAIT_MS,
-  ).catch((error) => {
-    console.error(
-      `Proof index Infinity token-state read failed: ${errorSummary(error)}`,
-    );
-    return null;
-  });
+  );
+  if (!powbTokenState) {
+    powbTokenState = await payloadWithFallbackAfterMs(
+      proofIndexTokenPayload(network, POWB_TOKEN_ID, params),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    ).catch((error) => {
+      console.error(
+        `Proof index Infinity token-state read failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+  }
 
-  if (
-    powbTokenState &&
-    !(await proofIndexPayloadCoversConfirmedTip(
-      powbTokenState,
+  if (powbTokenState) {
+    const rejectedEmpty = rejectEmptyMainnetTokenPayload(
       network,
+      powbTokenState,
+      POWB_TOKEN_ID,
       "infinity-token-state",
-    ))
-  ) {
-    powbTokenState = null;
+    );
+    const coversTip =
+      !rejectedEmpty &&
+      (await proofIndexPayloadCoversConfirmedTip(
+        powbTokenState,
+        network,
+        "infinity-token-state",
+      ));
+    if (rejectedEmpty || !coversTip) {
+      powbTokenState = null;
+    }
   }
 
   if (!powbTokenState) {
@@ -22521,15 +23273,34 @@ async function proofIndexInfinitySummaryPayload(network, fresh = false) {
       );
       return null;
     });
+    if (powbTokenState) {
+      const rejectedEmpty = rejectEmptyMainnetTokenPayload(
+        network,
+        powbTokenState,
+        POWB_TOKEN_ID,
+        "infinity-token-state-fallback",
+      );
+      const coversTip =
+        !rejectedEmpty &&
+        (await proofIndexPayloadCoversConfirmedTip(
+          powbTokenState,
+          network,
+          "infinity-token-state-fallback",
+        ));
+      if (rejectedEmpty || !coversTip) {
+        powbTokenState = null;
+      }
+    }
   }
 
   if (!powbTokenState) {
     return null;
   }
 
-  powbTokenState = await tokenPayloadWithSpendableActiveListings(
+  powbTokenState = await payloadWithFallbackAfterMs(
+    tokenPayloadWithSpendableActiveListings(powbTokenState, network),
     powbTokenState,
-    network,
+    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
   );
   const btcUsdQuote = await btcUsdPricePayload(network, { fresh }).catch(
     () => null,
@@ -22648,13 +23419,49 @@ async function standaloneInfinitySummaryPayload(network, fresh = false) {
 }
 
 async function infinitySummaryPayload(network, fresh = false) {
-  const ledger = await summaryCanonicalLedgerPayload(network, fresh);
-  if (ledger?.infinitySummary?.registryAddress) {
-    return infinitySummaryFromCanonicalLedger(ledger, network, fresh);
-  }
+  const ledger =
+    network === "livenet" && !fresh
+      ? await existingCurrentCanonicalLedgerPayloadWithinMs(
+          network,
+          "infinity-summary canonical ledger",
+        )
+      : await payloadWithFallbackAfterMs(
+          summaryCanonicalLedgerPayload(network, fresh),
+          null,
+          LEDGER_SUMMARY_FRESH_WAIT_MS,
+        );
 
   if (network === "livenet") {
     const indexed = await proofIndexInfinitySummaryPayload(network, fresh);
+    const ledgerSummary = ledger?.infinitySummary;
+    if (
+      indexed &&
+      (!ledgerSummary?.registryAddress ||
+        (numericValue(indexed.stats?.confirmedSupply) >=
+          numericValue(ledgerSummary.stats?.confirmedSupply) &&
+          numericValue(indexed.stats?.confirmedBondActions) >=
+            numericValue(ledgerSummary.stats?.confirmedBondActions) &&
+          numericValue(indexed.stats?.holders) >=
+            numericValue(ledgerSummary.stats?.holders)))
+    ) {
+      return indexed;
+    }
+    if (ledgerSummary?.registryAddress) {
+      return infinitySummaryFromCanonicalLedger(ledger, network, fresh);
+    }
+    if (
+      fresh &&
+      proofIndexReadFeatureEnabled("infinity-summary,summary,summaries")
+    ) {
+      const indexedSummary = await currentProofIndexSummarySnapshotPayload(
+        network,
+        "infinitySummary",
+        "infinity-summary",
+      );
+      if (indexedSummary) {
+        return indexedSummary;
+      }
+    }
     if (indexed) {
       return indexed;
     }
@@ -23444,14 +24251,34 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     recoveryAddresses.length === 0 &&
     pagination.query
   ) {
-    return paginatedHistoryPayload({
-      indexedAt: new Date().toISOString(),
-      items: [],
-      kind: safeKind,
-      network,
-      pagination,
-      source: "proof-indexer-work-market-history-timeout",
-    });
+    const indexedHistoryPage = await payloadWithFallbackAfterMs(
+      proofIndexTokenHistoryPayload(
+        network,
+        scope,
+        safeKind,
+        searchParams,
+      ).catch((error) => {
+        console.error(
+          `Proof index queried WORK market history read failed: ${errorSummary(error)}`,
+        );
+        return null;
+      }),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    );
+    if (
+      indexedHistoryPage &&
+      (Number(indexedHistoryPage.totalCount ?? 0) > 0 ||
+        (indexedHistoryPage.items ?? []).length > 0)
+    ) {
+      return tokenHistoryPageWithCanonicalCreditValueOverlay(
+        indexedHistoryPage,
+        network,
+        scope,
+        safeKind,
+        searchParams,
+      );
+    }
   }
   const indexedWorkHolderOverlayPromise =
     safeKind === "holders" && queriedWorkHistory && network === "livenet"
@@ -24160,59 +24987,80 @@ function tokenStateWithScopedTokenOverride(tokenState, scopedState, tokenId) {
     return tokenState;
   }
 
-  const replaceScopedItems = (globalItems, scopedItems) => [
-    ...(Array.isArray(globalItems)
-      ? globalItems.filter((item) => item.tokenId !== tokenId)
-      : []),
-    ...(Array.isArray(scopedItems)
-      ? scopedItems.filter((item) => item.tokenId === tokenId)
-      : []),
+  const unscopedItems = (items) =>
+    (Array.isArray(items) ? items : []).filter((item) => item.tokenId !== tokenId);
+  const scopedItemsFrom = (items) =>
+    (Array.isArray(items) ? items : []).filter((item) => item.tokenId === tokenId);
+  const scopedTxidKey = (item) =>
+    [
+      String(item?.tokenId ?? "").trim().toLowerCase(),
+      String(item?.txid ?? "").trim().toLowerCase(),
+    ].join(":");
+  const scopedInvalidEventKey = (item) =>
+    [
+      String(item?.kind ?? "").trim().toLowerCase(),
+      String(item?.tokenId ?? "").trim().toLowerCase(),
+      String(item?.txid ?? "").trim().toLowerCase(),
+    ].join(":");
+  const scopedTokenKey = (item) =>
+    String(item?.tokenId ?? "").trim().toLowerCase();
+  const mergeScopedItems = (
+    globalItems,
+    scopedItems,
+    keyForItem,
+    mergeItem,
+  ) => [
+    ...unscopedItems(globalItems),
+    ...mergeTokenStateItemsByKey(
+      scopedItemsFrom(globalItems),
+      scopedItemsFrom(scopedItems),
+      keyForItem,
+      mergeItem,
+    ),
   ];
   const replaceScopedListingItems = (globalItems, scopedItems) => {
-    const unscoped = (Array.isArray(globalItems) ? globalItems : []).filter(
-      (item) => item.tokenId !== tokenId,
+    return mergeScopedItems(
+      globalItems,
+      scopedItems,
+      tokenListingItemKey,
+      mergeTokenListingRecord,
     );
-    const scopedById = new Map();
-    for (const item of Array.isArray(globalItems) ? globalItems : []) {
-      if (item?.tokenId !== tokenId || !item?.listingId) {
-        continue;
-      }
-      scopedById.set(
-        item.listingId,
-        mergeTokenListingRecord(scopedById.get(item.listingId), item),
-      );
-    }
-    for (const item of Array.isArray(scopedItems) ? scopedItems : []) {
-      if (item?.tokenId !== tokenId || !item?.listingId) {
-        continue;
-      }
-      scopedById.set(
-        item.listingId,
-        mergeTokenListingRecord(scopedById.get(item.listingId), item),
-      );
-    }
-    return [...unscoped, ...scopedById.values()];
   };
 
-  return {
+  const merged = {
     ...tokenState,
     closedListings: replaceScopedListingItems(
       tokenState?.closedListings,
       scopedState.closedListings,
     ),
-    invalidEvents: replaceScopedItems(
+    invalidEvents: mergeScopedItems(
       tokenState?.invalidEvents,
       scopedState.invalidEvents,
+      scopedInvalidEventKey,
     ),
     listings: replaceScopedListingItems(
       tokenState?.listings,
       scopedState.listings,
     ),
-    mints: replaceScopedItems(tokenState?.mints, scopedState.mints),
-    sales: replaceScopedItems(tokenState?.sales, scopedState.sales),
-    tokens: replaceScopedItems(tokenState?.tokens, scopedState.tokens),
-    transfers: replaceScopedItems(tokenState?.transfers, scopedState.transfers),
+    mints: mergeScopedItems(tokenState?.mints, scopedState.mints, scopedTxidKey),
+    sales: mergeScopedItems(
+      tokenState?.sales,
+      scopedState.sales,
+      tokenSaleItemKey,
+    ),
+    tokens: mergeScopedItems(
+      tokenState?.tokens,
+      scopedState.tokens,
+      scopedTokenKey,
+    ),
+    transfers: mergeScopedItems(
+      tokenState?.transfers,
+      scopedState.transfers,
+      scopedTxidKey,
+      mergeTokenTransferRecord,
+    ),
   };
+  return tokenStateWithPendingStats(merged);
 }
 
 function growthActualBaseNetworkValue(
@@ -25760,6 +26608,101 @@ async function mailPayloadWithRecentOverlay(payload, address, network) {
   return mergeMailPayloads(payload, recentPayload);
 }
 
+function mailEventHistoryItemNeedsActorHydration(item, address, network) {
+  const txid = String(item?.txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(txid)) {
+    return false;
+  }
+  if (mailAddressKey(item?.actor ?? item?.senderAddress) === mailAddressKey(address)) {
+    return false;
+  }
+  if (sentMessagesFromActivityItems([item], address, network).length > 0) {
+    return false;
+  }
+  return inboxMessagesFromActivityItems([item], address, network).length > 0;
+}
+
+async function mailPayloadWithIndexedEventOverlay(payload, address, network) {
+  if (
+    !payload ||
+    network !== "livenet" ||
+    !proofIndexReadFeatureEnabled("event-history,events")
+  ) {
+    return payload;
+  }
+
+  const searchParams = new URLSearchParams({
+    address,
+    limit: String(Math.max(1, MAIL_INDEXED_EVENT_OVERLAY_LIMIT)),
+    status: "confirmed",
+  });
+  const eventPage = await proofIndexEventHistoryPayload(
+    network,
+    searchParams,
+  ).catch((error) => {
+    console.error(
+      `Proof index mail event overlay failed for ${address}: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  const eventItems = (Array.isArray(eventPage?.items) ? eventPage.items : [])
+    .filter((item) => isMailRecoveryHistoryKind(item?.kind));
+  if (eventItems.length === 0) {
+    return payload;
+  }
+
+  const hydrateTxids = [
+    ...new Set(
+      eventItems
+        .filter((item) =>
+          mailEventHistoryItemNeedsActorHydration(item, address, network),
+        )
+        .map((item) => String(item.txid).trim().toLowerCase()),
+    ),
+  ].slice(0, Math.max(0, MAIL_INDEXED_EVENT_HYDRATE_MAX_TXS));
+  const hydratedResults = await Promise.allSettled(
+    hydrateTxids.map((txid) => mailActivityItemsForTxidSearch(txid, network)),
+  );
+  const hydratedItems = hydratedResults.flatMap((result) => {
+    if (result.status === "fulfilled") {
+      return result.value;
+    }
+    console.error(
+      `Proof index mail event hydration failed: ${errorSummary(result.reason)}`,
+    );
+    return [];
+  });
+  const overlayItems = dedupeActivityItems([
+    ...eventItems,
+    ...hydratedItems,
+  ]);
+  const inboxMessages = inboxMessagesFromActivityItems(
+    overlayItems,
+    address,
+    network,
+  );
+  const sentMessages = sentMessagesFromActivityItems(
+    overlayItems,
+    address,
+    network,
+  );
+  if (inboxMessages.length === 0 && sentMessages.length === 0) {
+    return payload;
+  }
+
+  return mergeMailPayloads(payload, {
+    address,
+    inboxMessages,
+    indexedAt: eventPage?.indexedAt ?? new Date().toISOString(),
+    network,
+    sentMessages,
+    source: "proof-indexer-event-mail-overlay",
+    stats: mailStats(inboxMessages, sentMessages, {
+      indexedEvents: eventItems.length,
+    }),
+  });
+}
+
 async function reconcileMailPayloadStatuses(payload, network) {
   if (!payload) {
     return payload;
@@ -25903,7 +26846,17 @@ async function indexedMailPayload(address, network) {
   }
 
   try {
-    return await proofIndexAddressMailPayload(network, address);
+    const payload = await payloadWithFallbackAfterMs(
+      proofIndexAddressMailPayload(network, address),
+      null,
+      MAIL_INDEXED_LOOKUP_WAIT_MS,
+    );
+    if (!payload) {
+      console.error(
+        `Proof index mail lookup timed out for ${address} after ${MAIL_INDEXED_LOOKUP_WAIT_MS}ms.`,
+      );
+    }
+    return payload;
   } catch (error) {
     console.error(
       `Proof index mail lookup failed for ${address}: ${errorSummary(error)}`,
@@ -25912,15 +26865,42 @@ async function indexedMailPayload(address, network) {
   }
 }
 
+function livenetAddressMailRequiresProofIndex(network) {
+  return (
+    network === "livenet" &&
+    proofIndexReadFeatureEnabled("address-mail,mail,event-history,events")
+  );
+}
+
 async function mailPayload(address, network, options = {}) {
   const fresh = Boolean(options.fresh);
   const indexedPayload = await indexedMailPayload(address, network);
+  const requiresIndexedMail = livenetAddressMailRequiresProofIndex(network);
 
-  if (!fresh && indexedPayload && mailPayloadHasMessages(indexedPayload)) {
-    return payloadWithFallbackAfterMs(
+  const indexedOnlyPayload = () =>
+    payloadWithFallbackAfterMs(
       (async () => {
-        const overlayPayload = await mailPayloadWithRecentOverlay(
+        const eventOverlayPayload = await mailPayloadWithIndexedEventOverlay(
           indexedPayload,
+          address,
+          network,
+        );
+        return reconcileMailPayloadStatuses(eventOverlayPayload, network);
+      })(),
+      indexedPayload,
+      MAIL_INDEXED_ENRICH_WAIT_MS,
+    );
+
+  const enrichIndexedPayload = () =>
+    payloadWithFallbackAfterMs(
+      (async () => {
+        const eventOverlayPayload = await mailPayloadWithIndexedEventOverlay(
+          indexedPayload,
+          address,
+          network,
+        );
+        const overlayPayload = await mailPayloadWithRecentOverlay(
+          eventOverlayPayload,
           address,
           network,
         );
@@ -25932,12 +26912,50 @@ async function mailPayload(address, network, options = {}) {
       indexedPayload,
       MAIL_INDEXED_ENRICH_WAIT_MS,
     );
+
+  if (
+    indexedPayload &&
+    requiresIndexedMail &&
+    !MAIL_INDEXED_REQUEST_NODE_ENRICH_ENABLED
+  ) {
+    return indexedOnlyPayload();
+  }
+
+  if (indexedPayload && (!fresh || requiresIndexedMail)) {
+    return enrichIndexedPayload();
+  }
+
+  if (requiresIndexedMail) {
+    throw freshDataUnavailableError("Current indexed mailbox is unavailable.");
   }
 
   const indexedWasEmpty = Boolean(indexedPayload) && !mailPayloadHasMessages(indexedPayload);
   const scannedPayload = await nodeMailPayload(address, network, {
     includeExternal: indexedWasEmpty || fresh || !indexedPayload,
     preferExternal: indexedWasEmpty,
+  }).catch((error) => {
+    console.error(
+      `Mail node scan failed for ${address}: ${errorSummary(error)}`,
+    );
+    if (indexedPayload) {
+      return {
+        ...indexedPayload,
+        scanError: errorSummary(error),
+        stats: mailStats(
+          Array.isArray(indexedPayload.inboxMessages)
+            ? indexedPayload.inboxMessages
+            : [],
+          Array.isArray(indexedPayload.sentMessages)
+            ? indexedPayload.sentMessages
+            : [],
+          {
+            ...(indexedPayload.stats ?? {}),
+            scanFailed: true,
+          },
+        ),
+      };
+    }
+    throw error;
   });
   if (!indexedPayload) {
     const overlayPayload = await mailPayloadWithRecentOverlay(
@@ -26936,25 +27954,6 @@ async function handleRequest(request, response) {
           return;
         }
       }
-      if (!freshRead && proofIndexReadFeatureEnabled("activity,log")) {
-        const indexedPayload = await proofIndexActivityPayload(network).catch(
-          (error) => {
-            console.error(
-              `Proof index activity read failed: ${errorSummary(error)}`,
-            );
-            return null;
-          },
-        );
-        if (indexedPayload) {
-          jsonResponse(
-            response,
-            200,
-            indexedPayload,
-            EXPENSIVE_READ_CACHE_CONTROL,
-          );
-          return;
-        }
-      }
       if (freshRead) {
         jsonResponse(
           response,
@@ -27062,25 +28061,6 @@ async function handleRequest(request, response) {
         );
         return;
       }
-      if (!walletScoped && recoveryAddresses.length === 0 && freshRead) {
-        const cachedPayload = await currentMemoryTokenPayloadForRead(
-          network,
-          tokenScope,
-          "token-state-fresh-memory",
-        );
-        if (cachedPayload) {
-          jsonResponse(
-            response,
-            200,
-            cachedPayload,
-            TOKEN_READ_CACHE_CONTROL,
-          );
-          return;
-        }
-        throw freshDataUnavailableError(
-          `Fresh credit state is still catching up for ${tokenScope || "all"}.`,
-        );
-      }
       if (
         !walletScoped &&
         recoveryAddresses.length === 0 &&
@@ -27102,6 +28082,25 @@ async function handleRequest(request, response) {
           );
           return;
         }
+      }
+      if (!walletScoped && recoveryAddresses.length === 0 && freshRead) {
+        const cachedPayload = await currentMemoryTokenPayloadForRead(
+          network,
+          tokenScope,
+          "token-state-fresh-memory",
+        );
+        if (cachedPayload) {
+          jsonResponse(
+            response,
+            200,
+            cachedPayload,
+            TOKEN_READ_CACHE_CONTROL,
+          );
+          return;
+        }
+        throw freshDataUnavailableError(
+          `Fresh credit state is still catching up for ${tokenScope || "all"}.`,
+        );
       }
       if (walletScoped) {
         jsonResponse(
@@ -27311,35 +28310,6 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/work-floor") {
-      if (
-        !freshRead &&
-        network === "livenet" &&
-        proofIndexReadFeatureEnabled("work-floor,summary,summaries")
-      ) {
-        const indexedPayload = await currentProofIndexSummarySnapshotPayload(
-          network,
-          "workFloor",
-          "work-floor",
-        );
-        if (indexedPayload && workFloorHasHistoricalChart(indexedPayload)) {
-          jsonResponse(
-            response,
-            200,
-            await workFloorWithSummaryMarketOverlay(
-              indexedPayload,
-              network,
-              false,
-            ),
-            READ_CACHE_CONTROL,
-          );
-          return;
-        }
-        if (indexedPayload) {
-          console.error(
-            `Rejected proof-index work-floor chart read: ${workFloorChartPointCount(indexedPayload)} chart point(s) for ${numericValue(indexedPayload.stats?.confirmedComputerActions)} confirmed actions.`,
-          );
-        }
-      }
       if (freshRead) {
         jsonResponse(
           response,

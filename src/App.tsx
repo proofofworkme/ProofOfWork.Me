@@ -10530,6 +10530,234 @@ function normalizeWorkFloorQuote(payload: WorkFloorApiResponse): WorkFloorQuote 
   };
 }
 
+type TokenStateApplyOptions = {
+  allowRegression?: boolean;
+  preserveListings?: boolean;
+  scopeKey?: string;
+};
+
+const DEFAULT_TOKEN_STATE_SCOPE_KEY = "default";
+
+function finiteNonNegativeNumber(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
+}
+
+function workFloorQuoteLiveValue(quote: WorkFloorQuote | undefined) {
+  if (!quote) {
+    return 0;
+  }
+
+  return Math.max(
+    finiteNonNegativeNumber(quote.liveNetworkValueSats),
+    finiteNonNegativeNumber(quote.actualValue?.liveNetworkValueSats),
+    finiteNonNegativeNumber(quote.networkValueSats),
+    finiteNonNegativeNumber(quote.actualValue?.totalSats),
+    finiteNonNegativeNumber(quote.actualValue?.liveTotalSats),
+  );
+}
+
+function workFloorQuoteFrozenValue(quote: WorkFloorQuote | undefined) {
+  if (!quote) {
+    return 0;
+  }
+
+  return Math.max(
+    finiteNonNegativeNumber(quote.frozenNetworkValueSats),
+    finiteNonNegativeNumber(quote.actualValue?.frozenNetworkValueSats),
+    finiteNonNegativeNumber(quote.actualValue?.frozenTotalSats),
+  );
+}
+
+function workFloorQuoteRegresses(
+  next: WorkFloorQuote | undefined,
+  current: WorkFloorQuote | undefined,
+) {
+  if (!next || !current) {
+    return false;
+  }
+
+  const currentLiveValue = workFloorQuoteLiveValue(current);
+  const nextLiveValue = workFloorQuoteLiveValue(next);
+  if (currentLiveValue > 0 && nextLiveValue < currentLiveValue) {
+    return true;
+  }
+
+  const currentFrozenValue = workFloorQuoteFrozenValue(current);
+  const nextFrozenValue = workFloorQuoteFrozenValue(next);
+  if (currentFrozenValue > 0 && nextFrozenValue < currentFrozenValue) {
+    return true;
+  }
+
+  const currentPoints = current.chartPoints.length;
+  const nextPoints = next.chartPoints.length;
+  return currentPoints > 2 && nextPoints > 0 && nextPoints < currentPoints;
+}
+
+function tokenDefinitionConfirmedSupply(token: PowTokenDefinition) {
+  return finiteNonNegativeNumber(token.confirmedSupply);
+}
+
+function tokenStateConfirmedSupplyRank(state: PowTokenState | undefined) {
+  if (!state) {
+    return 0;
+  }
+
+  return Math.max(
+    finiteNonNegativeNumber(state.confirmedSupply),
+    state.tokens.reduce(
+      (total, token) => total + tokenDefinitionConfirmedSupply(token),
+      0,
+    ),
+    state.mints
+      .filter((mint) => mint.confirmed)
+      .reduce((total, mint) => total + mint.amount, 0),
+  );
+}
+
+function tokenStateHistoryRank(state: PowTokenState | undefined) {
+  if (!state) {
+    return 0;
+  }
+
+  return (
+    state.tokens.length +
+    state.mints.length +
+    state.transfers.length +
+    state.sales.length +
+    state.closedListings.length
+  );
+}
+
+function tokenStateRegresses(
+  next: PowTokenState,
+  current: PowTokenState | undefined,
+  sameScope: boolean,
+) {
+  if (!sameScope || !current || tokenStateHistoryRank(current) === 0) {
+    return false;
+  }
+
+  if (current.tokens.length > 0 && next.tokens.length === 0) {
+    return true;
+  }
+
+  const currentSupply = tokenStateConfirmedSupplyRank(current);
+  const nextSupply = tokenStateConfirmedSupplyRank(next);
+  if (currentSupply > 0 && nextSupply < currentSupply) {
+    return true;
+  }
+
+  return (
+    (current.tokens.length > 0 && next.tokens.length < current.tokens.length) ||
+    (current.mints.length > 0 && next.mints.length < current.mints.length) ||
+    (current.transfers.length > 0 &&
+      next.transfers.length < current.transfers.length) ||
+    (current.sales.length > 0 && next.sales.length < current.sales.length) ||
+    (current.closedListings.length > 0 &&
+      next.closedListings.length < current.closedListings.length) ||
+    (current.creationSats > 0 && next.creationSats < current.creationSats)
+  );
+}
+
+function tokenStateScopeKey({
+  address,
+  network,
+  tokenScope,
+  walletScoped,
+}: {
+  address?: string;
+  network: BitcoinNetwork;
+  tokenScope?: string;
+  walletScoped?: boolean;
+}) {
+  return [
+    network,
+    walletScoped ? "wallet" : "global",
+    normalizeTokenTicker(tokenScope ?? "") || String(tokenScope ?? "").trim(),
+    walletScoped ? String(address ?? "").trim() : "",
+  ].join(":");
+}
+
+function registryStateRegresses(
+  next: PowRegistryState,
+  current: PowRegistryState | undefined,
+) {
+  if (!current || current.records.length === 0) {
+    return false;
+  }
+
+  return next.records.length === 0 || next.records.length < current.records.length;
+}
+
+function activityStatsRegress(
+  next: PowActivityStats,
+  current: PowActivityStats | undefined,
+) {
+  if (!current) {
+    return false;
+  }
+
+  const currentTotal = finiteNonNegativeNumber(current.total);
+  const nextTotal = finiteNonNegativeNumber(next.total);
+  const currentConfirmed = finiteNonNegativeNumber(current.confirmed);
+  const nextConfirmed = finiteNonNegativeNumber(next.confirmed);
+  return (
+    (currentTotal > 0 && nextTotal === 0) ||
+    (currentConfirmed > 0 && nextConfirmed === 0)
+  );
+}
+
+function growthSummaryNetworkValue(snapshot: GrowthSummarySnapshot | undefined) {
+  if (!snapshot) {
+    return 0;
+  }
+
+  return Math.max(
+    finiteNonNegativeNumber(snapshot.actualValue.liveNetworkValueSats),
+    finiteNonNegativeNumber(snapshot.actualValue.totalSats),
+    workFloorQuoteLiveValue(snapshot.workFloor),
+  );
+}
+
+function growthSummaryRegresses(
+  next: GrowthSummarySnapshot,
+  current: GrowthSummarySnapshot | undefined,
+) {
+  if (!current) {
+    return false;
+  }
+
+  const currentValue = growthSummaryNetworkValue(current);
+  const nextValue = growthSummaryNetworkValue(next);
+  if (currentValue > 0 && nextValue < currentValue) {
+    return true;
+  }
+
+  return (
+    current.counts.confirmedComputerActions > 0 &&
+    next.counts.confirmedComputerActions === 0
+  );
+}
+
+function infinitySummaryRegresses(
+  next: InfinitySummarySnapshot,
+  current: InfinitySummarySnapshot | undefined,
+) {
+  if (!current) {
+    return false;
+  }
+
+  return (
+    (current.networkValueSats > 0 && next.networkValueSats < current.networkValueSats) ||
+    (current.stats.confirmedSupply > 0 &&
+      next.stats.confirmedSupply < current.stats.confirmedSupply) ||
+    (current.stats.confirmedBondActions > 0 &&
+      next.stats.confirmedBondActions === 0) ||
+    tokenStateRegresses(next.token, current.token, true)
+  );
+}
+
 async function fetchWorkFloorQuote(
   targetNetwork: BitcoinNetwork,
   fresh = false,
@@ -13000,6 +13228,15 @@ export default function App() {
   const workFloorRefreshInFlightRef =
     useRef<Promise<WorkFloorQuote | undefined> | null>(null);
   const workFloorRefreshInFlightFreshRef = useRef(false);
+  const acceptedRegistryStateRef = useRef<PowRegistryState | undefined>();
+  const acceptedTokenStateRef = useRef<PowTokenState>(emptyTokenState());
+  const acceptedTokenStateScopeRef = useRef(DEFAULT_TOKEN_STATE_SCOPE_KEY);
+  const acceptedWorkFloorQuoteRef = useRef<WorkFloorQuote | undefined>();
+  const acceptedGrowthSummaryRef = useRef<GrowthSummarySnapshot | undefined>();
+  const acceptedInfinitySummaryRef = useRef<
+    InfinitySummarySnapshot | undefined
+  >();
+  const acceptedActivityStatsRef = useRef<PowActivityStats | undefined>();
   const tokenMintAssistantActiveRef = useRef(false);
   const tokenMintAssistantTimerRef = useRef<number | undefined>(undefined);
   const rushMintActiveRef = useRef(false);
@@ -13007,6 +13244,112 @@ export default function App() {
     useRef<PowPaginatedApiResponse<PowActivityItem> | undefined>(undefined);
   const activityProfileRef = useRef<DesktopProfile | undefined>(undefined);
   const backupInputRef = useRef<HTMLInputElement>(null);
+
+  function applyRegistryState(
+    state: PowRegistryState,
+    activity: PowActivityItem[] = state.activity,
+    allowRegression = false,
+  ) {
+    const current = acceptedRegistryStateRef.current;
+    if (!allowRegression && registryStateRegresses(state, current)) {
+      return current;
+    }
+
+    const accepted = { ...state, activity };
+    acceptedRegistryStateRef.current = accepted;
+    setIdRegistry(accepted.records);
+    setIdListings(accepted.listings);
+    setIdPendingEvents(accepted.pendingEvents);
+    setIdSales(accepted.sales);
+    setIdActivity(accepted.activity);
+    return accepted;
+  }
+
+  function applyTokenState(
+    state: PowTokenState,
+    {
+      allowRegression = false,
+      preserveListings = true,
+      scopeKey = DEFAULT_TOKEN_STATE_SCOPE_KEY,
+    }: TokenStateApplyOptions = {},
+  ) {
+    const current = acceptedTokenStateRef.current;
+    const currentScopeKey = acceptedTokenStateScopeRef.current;
+    const sameScope = currentScopeKey === scopeKey;
+    const incomingWalletScope = scopeKey.includes(":wallet:");
+    const falseZeroAcrossGlobalScope =
+      !incomingWalletScope &&
+      current.tokens.length > 0 &&
+      state.tokens.length === 0;
+
+    if (
+      !allowRegression &&
+      (falseZeroAcrossGlobalScope ||
+        tokenStateRegresses(state, current, sameScope))
+    ) {
+      return current;
+    }
+
+    const listings = preserveListings
+      ? tokenListingsWithPreservedLocalPending(
+          current.listings,
+          applyPendingTokenListingSeals(state.listings),
+          state.closedListings,
+        )
+      : activeTokenListingsExcludingClosed(
+          applyPendingTokenListingSeals(state.listings),
+          state.closedListings,
+        );
+    const accepted = { ...state, listings };
+    acceptedTokenStateRef.current = accepted;
+    acceptedTokenStateScopeRef.current = scopeKey;
+    setTokenDefinitions(accepted.tokens);
+    setTokenHolders(accepted.holders);
+    setTokenMints(accepted.mints);
+    setTokenTransfers(accepted.transfers);
+    setTokenListings(accepted.listings);
+    setTokenClosedListings(accepted.closedListings);
+    setTokenSales(accepted.sales);
+    setTokenCreationSats(accepted.creationSats);
+    return accepted;
+  }
+
+  function applyWorkFloorQuote(quote: WorkFloorQuote | undefined) {
+    if (!quote) {
+      return acceptedWorkFloorQuoteRef.current;
+    }
+
+    const current = acceptedWorkFloorQuoteRef.current;
+    if (workFloorQuoteRegresses(quote, current)) {
+      return current;
+    }
+
+    acceptedWorkFloorQuoteRef.current = quote;
+    setWorkFloorQuote(quote);
+    return quote;
+  }
+
+  function applyGrowthSummary(snapshot: GrowthSummarySnapshot) {
+    const current = acceptedGrowthSummaryRef.current;
+    if (growthSummaryRegresses(snapshot, current)) {
+      return current;
+    }
+
+    acceptedGrowthSummaryRef.current = snapshot;
+    setGrowthSummary(snapshot);
+    return snapshot;
+  }
+
+  function applyInfinitySummary(snapshot: InfinitySummarySnapshot) {
+    const current = acceptedInfinitySummaryRef.current;
+    if (infinitySummaryRegresses(snapshot, current)) {
+      return current;
+    }
+
+    acceptedInfinitySummaryRef.current = snapshot;
+    setInfinitySummary(snapshot);
+    return snapshot;
+  }
 
   const protocolPayloads = useMemo(
     () => buildProtocolPayloads(subject, memo, replyParentTxid, attachment),
@@ -13016,6 +13359,71 @@ export default function App() {
     () => dataCarrierBytesForPayloads(protocolPayloads),
     [protocolPayloads],
   );
+
+  useEffect(() => {
+    acceptedRegistryStateRef.current = {
+      activity: idActivity,
+      listings: idListings,
+      pendingEvents: idPendingEvents,
+      records: idRegistry,
+      sales: idSales,
+    };
+  }, [idActivity, idListings, idPendingEvents, idRegistry, idSales]);
+
+  useEffect(() => {
+    acceptedTokenStateRef.current = {
+      closedListings: tokenClosedListings,
+      creationSats: tokenCreationSats,
+      confirmedSupply: tokenStateConfirmedSupplyRank({
+        closedListings: tokenClosedListings,
+        creationSats: tokenCreationSats,
+        confirmedSupply: 0,
+        holders: tokenHolders,
+        listings: tokenListings,
+        mints: tokenMints,
+        pendingSupply: 0,
+        sales: tokenSales,
+        transfers: tokenTransfers,
+        tokens: tokenDefinitions,
+      }),
+      holders: tokenHolders,
+      listings: tokenListings,
+      mints: tokenMints,
+      pendingSupply: tokenDefinitions.reduce(
+        (total, token) => total + finiteNonNegativeNumber(token.pendingSupply),
+        0,
+      ),
+      sales: tokenSales,
+      transfers: tokenTransfers,
+      tokens: tokenDefinitions,
+    };
+  }, [
+    tokenClosedListings,
+    tokenCreationSats,
+    tokenDefinitions,
+    tokenHolders,
+    tokenListings,
+    tokenMints,
+    tokenSales,
+    tokenTransfers,
+  ]);
+
+  useEffect(() => {
+    acceptedWorkFloorQuoteRef.current = workFloorQuote;
+  }, [workFloorQuote]);
+
+  useEffect(() => {
+    acceptedGrowthSummaryRef.current = growthSummary;
+  }, [growthSummary]);
+
+  useEffect(() => {
+    acceptedInfinitySummaryRef.current = infinitySummary;
+  }, [infinitySummary]);
+
+  useEffect(() => {
+    acceptedActivityStatsRef.current = activityStats;
+  }, [activityStats]);
+
   const archivedKeys = useMemo(
     () =>
       new Set(
@@ -14851,21 +15259,14 @@ export default function App() {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
           const snapshot = await fetchInfinitySummary(false);
           const tokenState = snapshot.token;
-          setInfinitySummary(snapshot);
-          setTokenDefinitions(tokenState.tokens);
-          setTokenHolders(tokenState.holders);
-          setTokenMints(tokenState.mints);
-          setTokenTransfers(tokenState.transfers);
-          setTokenListings((current) =>
-            tokenListingsWithPreservedLocalPending(
-              current,
-              applyPendingTokenListingSeals(tokenState.listings),
-              tokenState.closedListings,
-            ),
-          );
-          setTokenClosedListings(tokenState.closedListings);
-          setTokenSales(tokenState.sales);
-          setTokenCreationSats(tokenState.creationSats);
+          applyInfinitySummary(snapshot);
+          applyTokenState(tokenState, {
+            scopeKey: tokenStateScopeKey({
+              network: "livenet",
+              tokenScope: POWB_TOKEN_ID,
+              walletScoped: false,
+            }),
+          });
           setTokenSelectedId(POWB_TOKEN_ID);
           setTokenDetailTarget(POWB_TOKEN_ID);
           setStatus({
@@ -14885,20 +15286,14 @@ export default function App() {
             [nextAddress],
             walletMode,
           );
-          setTokenDefinitions(state.tokens);
-          setTokenHolders(state.holders);
-          setTokenMints(state.mints);
-          setTokenTransfers(state.transfers);
-          setTokenListings((current) =>
-            tokenListingsWithPreservedLocalPending(
-              current,
-              applyPendingTokenListingSeals(state.listings),
-              state.closedListings,
-            ),
-          );
-          setTokenClosedListings(state.closedListings);
-          setTokenSales(state.sales);
-          setTokenCreationSats(state.creationSats);
+          applyTokenState(state, {
+            scopeKey: tokenStateScopeKey({
+              address: nextAddress,
+              network: "livenet",
+              tokenScope: workTokenMode ? WORK_TOKEN_ID : "",
+              walletScoped: walletMode,
+            }),
+          });
           setStatus({
             tone: "good",
             text: `${shortAddress(nextAddress)} connected. Credit wallet ready.`,
@@ -14924,11 +15319,7 @@ export default function App() {
         if (mainnetRegistryMode) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
           const state = await fetchIdRegistryState("livenet");
-          setIdRegistry(state.records);
-          setIdListings(state.listings);
-          setIdPendingEvents(state.pendingEvents);
-          setIdSales(state.sales);
-          setIdActivity(state.activity);
+          applyRegistryState(state);
           setStatus({
             tone: "good",
             text: `${shortAddress(nextAddress)} connected. ProofOfWork ID registry ready.`,
@@ -15716,9 +16107,17 @@ export default function App() {
   function applyActivityPayload(payload: PowActivityApiResponse) {
     const activity = Array.isArray(payload.activity) ? payload.activity : [];
     const stats = normalizeActivityStats(payload.stats, activity);
+    const currentStats = acceptedActivityStatsRef.current;
+    if (activity.length === 0 && activityStatsRegress(stats, currentStats)) {
+      return { activity: idActivity, stats: currentStats ?? stats };
+    }
+
+    acceptedActivityStatsRef.current = stats;
     setActivityStats(stats);
     setIdActivity((current) =>
-      payload.summaryOnly ? mergeActivityItems(current, activity) : activity,
+      payload.summaryOnly || activity.length === 0
+        ? mergeActivityItems(current, activity)
+        : activity,
     );
     return { activity, stats };
   }
@@ -15974,43 +16373,36 @@ export default function App() {
           fetchMarketplaceSummary(fresh),
           fetchBtcUsdPrice(fresh).catch(() => undefined),
         ]);
-        setIdRegistry(snapshot.registry.records);
-        setIdListings(snapshot.registry.listings);
-        setIdPendingEvents(snapshot.registry.pendingEvents);
-        setIdSales(snapshot.registry.sales);
-        setIdActivity(snapshot.registry.activity);
-        setTokenDefinitions(snapshot.token.tokens);
-        setTokenHolders(snapshot.token.holders);
-        setTokenMints(snapshot.token.mints);
-        setTokenTransfers(snapshot.token.transfers);
-        setTokenListings((current) =>
-          tokenListingsWithPreservedLocalPending(
-            current,
-            applyPendingTokenListingSeals(snapshot.token.listings),
-            snapshot.token.closedListings,
-          ),
-        );
-        setTokenClosedListings(snapshot.token.closedListings);
-        setTokenSales(snapshot.token.sales);
-        setTokenCreationSats(snapshot.token.creationSats);
+        applyRegistryState(snapshot.registry);
+        const acceptedTokenState = applyTokenState(snapshot.token, {
+          scopeKey: tokenStateScopeKey({
+            network: "livenet",
+            tokenScope: "",
+            walletScoped: false,
+          }),
+        });
         setMarketplaceDataLoaded(true);
         setTokenDataLoaded(true);
         if (btcUsdQuote) {
           setTokenBtcUsd(btcUsdQuote);
         }
-        if (snapshot.workFloor) {
-          setWorkFloorQuote(snapshot.workFloor);
-        }
+        const acceptedWorkFloor = snapshot.workFloor
+          ? applyWorkFloorQuote(snapshot.workFloor)
+          : undefined;
         if (!silent) {
-          const floorText = snapshot.workFloor
-            ? ` WORK floor ${Math.round(snapshot.workFloor.networkValueSats).toLocaleString()} proofs.`
+          const floorText = acceptedWorkFloor
+            ? ` WORK floor ${Math.round(workFloorQuoteLiveValue(acceptedWorkFloor)).toLocaleString()} proofs.`
             : "";
           setStatus({
             tone: "good",
-            text: `Marketplace loaded. ${snapshot.token.tokens.length.toLocaleString()} credit${snapshot.token.tokens.length === 1 ? "" : "s"}, ${snapshot.token.listings.length.toLocaleString()} listing${snapshot.token.listings.length === 1 ? "" : "s"}.${floorText}`,
+            text: `Marketplace loaded. ${acceptedTokenState.tokens.length.toLocaleString()} credit${acceptedTokenState.tokens.length === 1 ? "" : "s"}, ${acceptedTokenState.listings.length.toLocaleString()} listing${acceptedTokenState.listings.length === 1 ? "" : "s"}.${floorText}`,
           });
         }
-        return snapshot;
+        return {
+          ...snapshot,
+          token: acceptedTokenState,
+          workFloor: acceptedWorkFloor,
+        };
       } catch (error) {
         if (!silent) {
           setStatus({
@@ -16079,27 +16471,16 @@ export default function App() {
         ]);
         const tokenState = snapshot.token;
         if (registryState) {
-          setIdRegistry(registryState.records);
-          setIdListings(registryState.listings);
-          setIdPendingEvents(registryState.pendingEvents);
-          setIdSales(registryState.sales);
-          setIdActivity(registryState.activity);
+          applyRegistryState(registryState);
         }
-        setInfinitySummary(snapshot);
-        setTokenDefinitions(tokenState.tokens);
-        setTokenHolders(tokenState.holders);
-        setTokenMints(tokenState.mints);
-        setTokenTransfers(tokenState.transfers);
-        setTokenListings((current) =>
-          tokenListingsWithPreservedLocalPending(
-            current,
-            applyPendingTokenListingSeals(tokenState.listings),
-            tokenState.closedListings,
-          ),
-        );
-        setTokenClosedListings(tokenState.closedListings);
-        setTokenSales(tokenState.sales);
-        setTokenCreationSats(tokenState.creationSats);
+        const acceptedSnapshot = applyInfinitySummary(snapshot) ?? snapshot;
+        const acceptedTokenState = applyTokenState(tokenState, {
+          scopeKey: tokenStateScopeKey({
+            network: "livenet",
+            tokenScope: POWB_TOKEN_ID,
+            walletScoped: false,
+          }),
+        });
         setTokenSelectedId(POWB_TOKEN_ID);
         setTokenDetailTarget(POWB_TOKEN_ID);
         if (btcUsdQuote) {
@@ -16108,10 +16489,10 @@ export default function App() {
         if (!silent) {
           setStatus({
             tone: "good",
-            text: `Infinity loaded. ${snapshot.stats.confirmedSupply.toLocaleString()} POWB confirmed from ${snapshot.stats.confirmedBondActions.toLocaleString()} bond action${snapshot.stats.confirmedBondActions === 1 ? "" : "s"}.`,
+            text: `Infinity loaded. ${acceptedSnapshot.stats.confirmedSupply.toLocaleString()} POWB confirmed from ${acceptedSnapshot.stats.confirmedBondActions.toLocaleString()} bond action${acceptedSnapshot.stats.confirmedBondActions === 1 ? "" : "s"}.`,
           });
         }
-        return snapshot;
+        return { ...acceptedSnapshot, token: acceptedTokenState };
       } catch (error) {
         if (!silent) {
           setStatus({
@@ -16217,6 +16598,13 @@ export default function App() {
       const tokenScope =
         workTokenMode || activeFolder === "work" ? WORK_TOKEN_ID : "";
       const useSummary = false;
+      const walletScoped = walletMode || activeFolder === "wallet";
+      const scopeKey = tokenStateScopeKey({
+        address,
+        network,
+        tokenScope,
+        walletScoped,
+      });
       try {
         const state = await fetchTokenState(
           network,
@@ -16224,28 +16612,15 @@ export default function App() {
           tokenScope,
           useSummary,
           address ? [address] : [],
-          walletMode || activeFolder === "wallet",
+          walletScoped,
         );
-        setTokenDefinitions(state.tokens);
-        setTokenHolders(state.holders);
-        setTokenMints(state.mints);
-        setTokenTransfers(state.transfers);
-        setTokenListings((current) =>
-          tokenListingsWithPreservedLocalPending(
-            current,
-            applyPendingTokenListingSeals(state.listings),
-            state.closedListings,
-          ),
-        );
-        setTokenClosedListings(state.closedListings);
-        setTokenSales(state.sales);
-        setTokenCreationSats(state.creationSats);
+        const acceptedState = applyTokenState(state, { scopeKey });
         setTokenDataLoaded(true);
         const walletAddress = address;
         const walletTokenScope = walletTransferToken?.tokenId;
         if (
           network === "livenet" &&
-          (walletMode || activeFolder === "wallet") &&
+          walletScoped &&
           walletAddress &&
           walletTokenScope
         ) {
@@ -16258,7 +16633,7 @@ export default function App() {
                     ownerAddress: walletAddress,
                     tokenId: walletTokenScope,
                   }),
-                  state.closedListings,
+                  acceptedState.closedListings,
                 ),
               );
             })
@@ -16267,10 +16642,10 @@ export default function App() {
         if (!silent) {
           setStatus({
             tone: "good",
-            text: `Credit index loaded. ${state.tokens.length.toLocaleString()} credit${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`,
+            text: `Credit index loaded. ${acceptedState.tokens.length.toLocaleString()} credit${acceptedState.tokens.length === 1 ? "" : "s"}, ${acceptedState.mints.length.toLocaleString()} mint${acceptedState.mints.length === 1 ? "" : "s"}, ${acceptedState.transfers.length.toLocaleString()} transfer${acceptedState.transfers.length === 1 ? "" : "s"}.`,
           });
         }
-        return state;
+        return acceptedState;
       } catch (error) {
         if (!silent) {
           setStatus({
@@ -16389,14 +16764,14 @@ export default function App() {
           () => undefined,
         );
         if (apiQuote) {
-          setWorkFloorQuote(apiQuote);
+          const acceptedQuote = applyWorkFloorQuote(apiQuote) ?? apiQuote;
           if (!silent) {
             setStatus({
               tone: "good",
-              text: `WORK floor loaded. Live network value ${Math.round(apiQuote.networkValueSats).toLocaleString()} proofs.`,
+              text: `WORK floor loaded. Live network value ${Math.round(workFloorQuoteLiveValue(acceptedQuote)).toLocaleString()} proofs.`,
             });
           }
-          return apiQuote;
+          return acceptedQuote;
         }
 
         const [registryState, computerActivity, tokenState] = await Promise.all([
@@ -16456,14 +16831,14 @@ export default function App() {
           tokenFlowSats:
             actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats,
         };
-        setWorkFloorQuote(quote);
+        const acceptedQuote = applyWorkFloorQuote(quote) ?? quote;
         if (!silent) {
           setStatus({
             tone: "good",
-            text: `WORK floor loaded. Live network value ${Math.round(actualValue.totalSats).toLocaleString()} proofs.`,
+            text: `WORK floor loaded. Live network value ${Math.round(workFloorQuoteLiveValue(acceptedQuote)).toLocaleString()} proofs.`,
           });
         }
-        return quote;
+        return acceptedQuote;
       } catch (error) {
         if (!silent) {
           setStatus({
@@ -16610,40 +16985,32 @@ export default function App() {
       ]);
       const { activity, registry: registryState, snapshot, token: tokenState } =
         summaryPayload;
-      setIdRegistry(registryState.records);
-      setIdListings(registryState.listings);
-      setIdPendingEvents(registryState.pendingEvents);
-      setIdSales(registryState.sales);
-      setIdActivity(activity.length > 0 ? activity : registryState.activity);
-      setTokenDefinitions(tokenState.tokens);
-      setTokenHolders(tokenState.holders);
-      setTokenMints(tokenState.mints);
-      setTokenTransfers(tokenState.transfers);
-      setTokenListings((current) =>
-        tokenListingsWithPreservedLocalPending(
-          current,
-          applyPendingTokenListingSeals(tokenState.listings),
-          tokenState.closedListings,
-        ),
+      applyRegistryState(
+        registryState,
+        activity.length > 0 ? activity : registryState.activity,
       );
-      setTokenClosedListings(tokenState.closedListings);
-      setTokenSales(tokenState.sales);
-      setTokenCreationSats(tokenState.creationSats);
-      setGrowthSummary(snapshot);
+      applyTokenState(tokenState, {
+        scopeKey: tokenStateScopeKey({
+          network: "livenet",
+          tokenScope: "",
+          walletScoped: false,
+        }),
+      });
+      const acceptedSnapshot = applyGrowthSummary(snapshot) ?? snapshot;
       if (btcUsdQuote) {
         setTokenBtcUsd(btcUsdQuote);
       }
       if (snapshot.workFloor) {
-        setWorkFloorQuote(snapshot.workFloor);
+        applyWorkFloorQuote(snapshot.workFloor);
       }
       if (!silent) {
-        const snapshotDate = formatDate(snapshot.indexedAt);
-        const quoteDate = snapshot.btcUsdIndexedAt
-          ? ` Live USD quote ${formatDate(snapshot.btcUsdIndexedAt)}.`
+        const snapshotDate = formatDate(acceptedSnapshot.indexedAt);
+        const quoteDate = acceptedSnapshot.btcUsdIndexedAt
+          ? ` Live USD quote ${formatDate(acceptedSnapshot.btcUsdIndexedAt)}.`
           : "";
         setStatus({
           tone: "good",
-          text: `Growth metrics loaded from ledger snapshot ${snapshotDate}.${quoteDate} ${snapshot.counts.powids.toLocaleString()} IDs, ${snapshot.counts.infinityBondActions.toLocaleString()} Infinity Bond action${snapshot.counts.infinityBondActions === 1 ? "" : "s"}, ${snapshot.counts.confirmedComputerActions.toLocaleString()} computer action${snapshot.counts.confirmedComputerActions === 1 ? "" : "s"}.`,
+          text: `Growth metrics loaded from ledger snapshot ${snapshotDate}.${quoteDate} ${acceptedSnapshot.counts.powids.toLocaleString()} IDs, ${acceptedSnapshot.counts.infinityBondActions.toLocaleString()} Infinity Bond action${acceptedSnapshot.counts.infinityBondActions === 1 ? "" : "s"}, ${acceptedSnapshot.counts.confirmedComputerActions.toLocaleString()} computer action${acceptedSnapshot.counts.confirmedComputerActions === 1 ? "" : "s"}.`,
         });
       }
     } catch (error) {
@@ -16803,21 +17170,14 @@ export default function App() {
         if (infinityMode) {
           const snapshot = await fetchInfinitySummary(false);
           const tokenState = snapshot.token;
-          setInfinitySummary(snapshot);
-          setTokenDefinitions(tokenState.tokens);
-          setTokenHolders(tokenState.holders);
-          setTokenMints(tokenState.mints);
-          setTokenTransfers(tokenState.transfers);
-          setTokenListings((current) =>
-            tokenListingsWithPreservedLocalPending(
-              current,
-              applyPendingTokenListingSeals(tokenState.listings),
-              tokenState.closedListings,
-            ),
-          );
-          setTokenClosedListings(tokenState.closedListings);
-          setTokenSales(tokenState.sales);
-          setTokenCreationSats(tokenState.creationSats);
+          applyInfinitySummary(snapshot);
+          applyTokenState(tokenState, {
+            scopeKey: tokenStateScopeKey({
+              network: "livenet",
+              tokenScope: POWB_TOKEN_ID,
+              walletScoped: false,
+            }),
+          });
           setTokenSelectedId(POWB_TOKEN_ID);
           setTokenDetailTarget(POWB_TOKEN_ID);
           setStatus({
@@ -16836,20 +17196,14 @@ export default function App() {
             [firstAddress],
             walletMode,
           );
-          setTokenDefinitions(state.tokens);
-          setTokenHolders(state.holders);
-          setTokenMints(state.mints);
-          setTokenTransfers(state.transfers);
-          setTokenListings((current) =>
-            tokenListingsWithPreservedLocalPending(
-              current,
-              applyPendingTokenListingSeals(state.listings),
-              state.closedListings,
-            ),
-          );
-          setTokenClosedListings(state.closedListings);
-          setTokenSales(state.sales);
-          setTokenCreationSats(state.creationSats);
+          applyTokenState(state, {
+            scopeKey: tokenStateScopeKey({
+              address: firstAddress,
+              network: "livenet",
+              tokenScope: workTokenMode ? WORK_TOKEN_ID : "",
+              walletScoped: walletMode,
+            }),
+          });
           setStatus({
             tone: "good",
             text: `UniSat connected. Credit wallet ready.`,
@@ -16859,10 +17213,7 @@ export default function App() {
 
         if (mainnetRegistryMode) {
           const state = await fetchIdRegistryState("livenet");
-          setIdRegistry(state.records);
-          setIdListings(state.listings);
-          setIdPendingEvents(state.pendingEvents);
-          setIdSales(state.sales);
+          applyRegistryState(state);
           setIdActivity(state.activity);
           setStatus({
             tone: "good",
@@ -17110,15 +17461,11 @@ export default function App() {
             activityLoadFailed = true;
           }
         }
-        setIdRegistry(state.records);
-        setIdListings(state.listings);
-        setIdPendingEvents(state.pendingEvents);
-        setIdSales(state.sales);
-        setIdActivity(activity);
+        const acceptedState = applyRegistryState(state, activity) ?? state;
         setContacts((current) => {
           const nextContacts = refreshRegistryContactsFromRecords(
             current,
-            state.records,
+            acceptedState.records,
             network,
           );
           if (nextContacts !== current) {
@@ -17128,21 +17475,21 @@ export default function App() {
         });
 
         if (!silent) {
-          const confirmed = state.records.filter(
+          const confirmed = acceptedState.records.filter(
             (record) => record.confirmed,
           ).length;
-          const pending = state.records.length - confirmed;
-          const pendingChanges = state.pendingEvents.length;
+          const pending = acceptedState.records.length - confirmed;
+          const pendingChanges = acceptedState.pendingEvents.length;
           setStatus({
             tone: activityLoadFailed ? "idle" : "good",
             text: shouldLoadComputerLog
               ? activityLoadFailed
-                ? `Registry loaded. Log refresh unavailable; using ${activity.length.toLocaleString()} registry action${activity.length === 1 ? "" : "s"}.`
-                : `Log loaded. ${activity.length.toLocaleString()} computer action${activity.length === 1 ? "" : "s"} indexed.`
+                ? `Registry loaded. Log refresh unavailable; using ${acceptedState.activity.length.toLocaleString()} registry action${acceptedState.activity.length === 1 ? "" : "s"}.`
+                : `Log loaded. ${acceptedState.activity.length.toLocaleString()} computer action${acceptedState.activity.length === 1 ? "" : "s"} indexed.`
               : `ID registry loaded. ${confirmed} confirmed, ${pending} pending, ${pendingChanges} in flight.`,
           });
         }
-        return state;
+        return acceptedState;
       } catch (error) {
         if (!silent) {
           setStatus({
@@ -19376,9 +19723,15 @@ export default function App() {
             latestToken;
         }
       }
-      if (latestSupply) {
-        setTokenDefinitions(latestSupply.tokens);
-        setTokenCreationSats(latestSupply.creationSats);
+      if (latestSupply && latestSupply.tokens.length > 0) {
+        setTokenDefinitions((current) =>
+          latestSupply.tokens.length >= current.length
+            ? latestSupply.tokens
+            : current,
+        );
+        setTokenCreationSats((current) =>
+          Math.max(current, latestSupply.creationSats),
+        );
       }
       const latestLedger = latestSupply
         ? {
@@ -19623,34 +19976,28 @@ export default function App() {
         [address],
         walletMode || activeFolder === "wallet",
       );
-      setTokenDefinitions(latestState.tokens);
-      setTokenHolders(latestState.holders);
-      setTokenMints(latestState.mints);
-      setTokenTransfers(latestState.transfers);
-      setTokenListings((current) =>
-        tokenListingsWithPreservedLocalPending(
-          current,
-          applyPendingTokenListingSeals(latestState.listings),
-          latestState.closedListings,
-        ),
-      );
-      setTokenClosedListings(latestState.closedListings);
-      setTokenSales(latestState.sales);
-      setTokenCreationSats(latestState.creationSats);
+      const acceptedState = applyTokenState(latestState, {
+        scopeKey: tokenStateScopeKey({
+          address,
+          network: "livenet",
+          tokenScope: "",
+          walletScoped: walletMode || activeFolder === "wallet",
+        }),
+      });
       const latestToken =
-        latestState.tokens.find((item) => item.tokenId === token.tokenId) ??
+        acceptedState.tokens.find((item) => item.tokenId === token.tokenId) ??
         token;
       const latestBalance =
         tokenWalletBalancesFor(
           address,
-          latestState.tokens,
-          latestState.mints,
-          latestState.transfers,
-          latestState.sales,
+          acceptedState.tokens,
+          acceptedState.mints,
+          acceptedState.transfers,
+          acceptedState.sales,
         ).find((item) => item.token.tokenId === latestToken.tokenId)
           ?.confirmedBalance ?? 0;
       const latestReserved = tokenReservedBalanceFor(
-        latestState.listings,
+        acceptedState.listings,
         latestToken.tokenId,
         address,
       );
@@ -20499,8 +20846,16 @@ export default function App() {
           latestState.tokens.find((token) => token.tokenId === targetToken.tokenId) ??
           latestToken;
       }
-      setTokenDefinitions(latestState.tokens);
-      setTokenCreationSats(latestState.creationSats);
+      if (latestState.tokens.length > 0) {
+        setTokenDefinitions((current) =>
+          latestState.tokens.length >= current.length
+            ? latestState.tokens
+            : current,
+        );
+        setTokenCreationSats((current) =>
+          Math.max(current, latestState.creationSats),
+        );
+      }
       latestConfirmedSupply = latestState.confirmedSupply;
       latestPendingSupply = latestState.pendingSupply;
     } catch (error) {

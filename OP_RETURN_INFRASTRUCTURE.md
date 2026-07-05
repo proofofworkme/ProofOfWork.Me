@@ -104,6 +104,11 @@ can be intentionally expensive; set `POW_INDEX_BACKFILL_ACTIVITY_SNAPSHOT=1`
 only for an explicit full Log activity refresh. Database-backed Log history
 reads page from the stored activity snapshot first, then fall back to per-event
 rows only when no activity snapshot exists.
+If full ledger consistency is temporarily unavailable, the worker may write a
+summary-snapshot-only row marked non-OK so current WORK, Marketplace, Growth,
+and Infinity summaries remain available from verified proof-index reads while
+the canonical ledger refresh continues. This row is not a replacement source of
+truth for confirmed chain history.
 
 Database-backed API reads are feature-flagged. The current production
 default-read posture is:
@@ -168,7 +173,8 @@ refreshes converge on current chain and mempool truth.
 The worker script keeps the indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through
 `/api/v1/tx/:txid/status`, marking disappeared txids as `dropped`, and running
-the parity checker. Continuous worker cycles use
+the parity checker on a slower cadence than block catch-up. Continuous worker
+cycles use
 `POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan` as the hot catch-up path. The
 block scanner uses local Bitcoin Core RPC to scan blocks after the database's
 indexed height for ProofOfWork OP_RETURN prefixes, then writes discovered txids
@@ -183,6 +189,15 @@ jobs, but should not sit in the hot worker loop where slow address history reads
 can stall block catch-up for Log, Growth, WORK, Credit, Marketplace, and
 Infinity. Scoped-holder recrawls stay off by default
 (`POW_INDEX_WORKER_HOLDERS=0`) and should run as explicit full backfill jobs.
+Production runs the hot loop every 30 seconds so the database is warmed after
+new blocks rather than by public page requests. Request paths should serve a
+current checked proof-index summary snapshot first, then trigger any deeper
+canonical refresh in the background. Livenet routes must fail closed or keep a
+verified last-good snapshot; they must not fabricate empty zero summaries when
+the node, database, or cache refresh is slower than the HTTP budget.
+When a snapshot route is current from proof-index data but the full shared
+ledger is still catching up, the route can publish the bounded proof-index view
+and leave the ledger refresh in the worker/background path.
 Pending status checks use their own smaller timeout
 (`POW_INDEX_STATUS_FETCH_TIMEOUT_MS`) and batch limit
 (`POW_INDEX_PENDING_STATUS_LIMIT`) so a single cold tx lookup cannot block a

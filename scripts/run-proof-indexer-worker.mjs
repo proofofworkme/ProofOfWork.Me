@@ -75,6 +75,9 @@ const STATUS_REQUEST_TIMEOUT_MS = Number(
 const RUN_PARITY = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_WORKER_PARITY ?? "1"),
 );
+const PARITY_INTERVAL_MS = Number(
+  process.env.POW_INDEX_WORKER_PARITY_INTERVAL_MS ?? 15 * 60_000,
+);
 const INCLUDE_HOLDERS = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_WORKER_HOLDERS ?? ""),
 );
@@ -143,6 +146,8 @@ async function writeWorkerMeta(pool, value) {
     [JSON.stringify(value)],
   );
 }
+
+let lastParityAtMs = 0;
 
 async function updateTransactionStatus(client, txid, status, payload) {
   await client.query(
@@ -284,12 +289,19 @@ async function runCycle(pool) {
   await runScript("backfill-proof-indexer.mjs", [], backfillEnv);
   const pendingStatus = await refreshPendingStatuses(pool);
 
-  if (RUN_PARITY) {
+  const nowMs = Date.now();
+  const runParityNow =
+    RUN_PARITY &&
+    (ONCE ||
+      lastParityAtMs === 0 ||
+      nowMs - lastParityAtMs >= Math.max(0, PARITY_INTERVAL_MS));
+  if (runParityNow) {
     await runScript("check-proof-indexer-parity.mjs", [], {
       NETWORK,
       POW_API_BASE: API_BASE,
       POW_INDEX_DB_APP_NAME: "proof-indexer-worker-parity",
     });
+    lastParityAtMs = Date.now();
   }
 
   const finishedAt = new Date();
@@ -303,7 +315,9 @@ async function runCycle(pool) {
     holders: INCLUDE_HOLDERS,
     network: NETWORK,
     ok: true,
-    parity: RUN_PARITY,
+    parity: runParityNow,
+    parityEnabled: RUN_PARITY,
+    parityIntervalMs: PARITY_INTERVAL_MS,
     pendingStatus,
     startedAt: startedAt.toISOString(),
   };
@@ -325,6 +339,7 @@ if (DRY_RUN) {
         network: NETWORK,
         once: ONCE,
         parity: RUN_PARITY,
+        parityIntervalMs: PARITY_INTERVAL_MS,
         pendingMinAgeMs: PENDING_MIN_AGE_MS,
         pendingStatusLimit: PENDING_STATUS_LIMIT,
         statusTimeoutMs: STATUS_REQUEST_TIMEOUT_MS,
