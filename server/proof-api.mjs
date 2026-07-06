@@ -18142,9 +18142,15 @@ function compactRegistrySummaryPayload(payload) {
 }
 
 function compactActivitySummaryPayload(payload) {
+  const activity = Array.isArray(payload?.activity) ? payload.activity : [];
+  const stats =
+    payload?.summaryOnly === true
+      ? payload?.stats
+      : activityStatsFromItems(activity, payload?.stats ?? {});
   return {
     ...payload,
-    activity: recentByCreatedAt(payload.activity, SUMMARY_ACTIVITY_LIMIT),
+    activity: recentByCreatedAt(activity, SUMMARY_ACTIVITY_LIMIT),
+    stats,
     summaryOnly: true,
   };
 }

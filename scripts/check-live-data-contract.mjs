@@ -81,6 +81,11 @@ const ledgerSnapshotWithPayloadSource = sourceSliceBetween(
   /async function ledgerSnapshotWithPayload/,
   /async function tokenStateSnapshotForScope/,
 );
+const compactActivitySummarySource = sourceSliceBetween(
+  server,
+  /function compactActivitySummaryPayload/,
+  /function activityStatsFromItems/,
+);
 const proofIndexSnapshotPayloadSource = sourceSliceBetween(
   proofIndexReader,
   /export async function proofIndexSnapshotPayload/,
@@ -96,6 +101,13 @@ expectAll("canonical ledger cache is first-class", server, [
   /`json:ledger:\$\{network\}`/,
   /function ledgerPayloadHasCurrentChecks\(/,
   /function ledgerPayloadAgeMs\(/,
+]);
+
+expectAll("Log summary preserves full activity stats before compaction", compactActivitySummarySource, [
+  /const activity = Array\.isArray\(payload\?\.activity\) \? payload\.activity : \[\]/,
+  /activityStatsFromItems\(activity,\s*payload\?\.stats \?\? \{\}\)/,
+  /activity:\s*recentByCreatedAt\(activity,\s*SUMMARY_ACTIVITY_LIMIT\)/,
+  /stats,/,
 ]);
 
 expectAll("canonical ledger builder owns shared state", server, [
