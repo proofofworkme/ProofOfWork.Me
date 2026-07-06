@@ -71,6 +71,21 @@ const workFloorRouteSource = sourceSliceBetween(
   /url\.pathname === "\/api\/v1\/work-floor"/,
   /url\.pathname === "\/api\/v1\/work-summary"/,
 );
+const tokenHistoryRouteSource = sourceSliceBetween(
+  server,
+  /url\.pathname === "\/api\/v1\/token-history"/,
+  /url\.pathname === "\/api\/v1\/work-floor"/,
+);
+const ledgerSnapshotWithPayloadSource = sourceSliceBetween(
+  proofIndexReader,
+  /async function ledgerSnapshotWithPayload/,
+  /async function tokenStateSnapshotForScope/,
+);
+const proofIndexSnapshotPayloadSource = sourceSliceBetween(
+  proofIndexReader,
+  /export async function proofIndexSnapshotPayload/,
+  /export async function proofIndexValueSummaryPayload/,
+);
 
 expectAll("canonical ledger cache is first-class", server, [
   /LEDGER_CACHE_TTL_MS/,
@@ -184,6 +199,12 @@ expectAll("server token reads preserve canonical ledger rows when table state re
   /async function indexedTokenPayloadFreshnessFloor\(network,\s*scope,\s*options = \{\}\)[\s\S]*tokenPayloadWithCanonicalLedgerFloor\([\s\S]*`token-state fresh-floor:\$\{scope \|\| "all"\}`/,
   /const flooredScopedPayload =[\s\S]*tokenPayloadWithCanonicalLedgerFloor\([\s\S]*`scoped-token:\$\{scope\}`[\s\S]*tokenPayloadReadResult\(\s*flooredScopedPayload/,
   /payload = await tokenPayloadWithCanonicalLedgerFloor\([\s\S]*`token-payload:\$\{scope \|\| "all"\}`/,
+]);
+
+expectAll("server fresh token reads fall back to valid cached snapshots", server, [
+  /async function cachedTokenPayloadFallbackForRead\([\s\S]*cachedTokenPayloadSnapshotNoRefresh\(network,\s*scope\)[\s\S]*rejectEmptyMainnetTokenPayload\(network,\s*payload,\s*scope,\s*label\)[\s\S]*existingCurrentCanonicalLedgerPayloadWithinMs\([\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerPayloadForFreshnessCompare\(ledger,\s*scope\)[\s\S]*refreshTokenPayloadCacheInBackground\(network,\s*scope\)/,
+  /async function tokenSummaryPayload\([\s\S]*"token-summary-fresh-memory"[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*"token-summary-fresh-cache"[\s\S]*Fresh credit summary is still catching up/,
+  /url\.pathname === "\/api\/v1\/token"[\s\S]*"token-state-fresh-memory"[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*"token-state-fresh-cache"[\s\S]*Fresh credit state is still catching up/,
 ]);
 
 expectAll("server WORK transfer txid history recovers without full ledger rebuild", server, [
@@ -329,6 +350,8 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /function tokenSummaryListings\(items,\s*limit = SUMMARY_MARKET_LIMIT\)[\s\S]*tokenListingHasConfirmedSaleTicketSeal\(listing\)/,
   /listings:\s*tokenSummaryListings\(listings,\s*listingLimit\)/,
   /const indexedAt = newerIso\(ledger\.generatedAt,\s*tokenState\?\.indexedAt\)/,
+  /async function currentProofIndexMarketplaceSummaryFallbackPayload\([\s\S]*currentProofIndexSummarySnapshotFallbackPayload\([\s\S]*"marketplaceSummary"[\s\S]*"marketplace-summary"[\s\S]*workFloorWithSummaryMarketOverlay\([\s\S]*indexedPayload\.workFloor[\s\S]*marketplaceSummaryPayloadWithIndexedMarketOverlay/,
+  /async function marketplaceSummaryFastFallbackPayload\([\s\S]*currentProofIndexMarketplaceSummaryFallbackPayload\(network,\s*false,\s*\{[\s\S]*fast:\s*true/,
   /if \(fresh\) \{[\s\S]*const fallback = await payloadWithFallbackAfterMs\([\s\S]*marketplaceSummaryFastFallbackPayload\(network\)[\s\S]*refreshMarketplaceSummaryPayloadCache\(network,\s*true\)[\s\S]*summaryPayloadHasFiniteNetworkValue\([\s\S]*"marketplaceSummary"[\s\S]*refreshed[\s\S]*return refreshed[\s\S]*summaryPayloadHasFiniteNetworkValue\([\s\S]*"marketplaceSummary"[\s\S]*fallback[\s\S]*return fallback/,
   /url\.pathname === "\/api\/v1\/marketplace-summary"[\s\S]*await marketplaceSummaryPayload\(network,\s*freshRead\)/,
   /const sealedListings = marketListings\.filter\(\s*tokenListingHasConfirmedSaleTicketSeal,\s*\)/,
@@ -338,18 +361,72 @@ expect(
   "marketplace summary must not serve stale proof-index summary snapshots before reconciliation",
   !/proofIndexSnapshotPayload\(\s*network,\s*"marketplaceSummary"/.test(server),
 );
+expect(
+  "summary proof-index snapshots use a dedicated lookback window",
+  /const SUMMARY_SNAPSHOT_LOOKBACK_LIMIT = 5_000/.test(proofIndexReader),
+);
+expect(
+  "payload-bearing proof-index snapshots use a dedicated lookback window",
+  /const LEDGER_SNAPSHOT_PAYLOAD_LOOKBACK_LIMIT = 5_000/.test(proofIndexReader),
+);
+expectAll("summary proof-index snapshots are selected from the dedicated lookback", proofIndexSnapshotPayloadSource, [
+  /WITH recent AS \([\s\S]*FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT \$\{SUMMARY_SNAPSHOT_LOOKBACK_LIMIT\}/,
+  /FROM recent[\s\S]*WHERE payload \? 'summaryPayloads'[\s\S]*AND payload->'summaryPayloads' \? \$2[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT 1/,
+]);
+expectAll("generic payload snapshots are selected from the dedicated payload lookback", ledgerSnapshotWithPayloadSource, [
+  /WITH recent AS \([\s\S]*FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT \$\{LEDGER_SNAPSHOT_PAYLOAD_LOOKBACK_LIMIT\}/,
+  /FROM recent[\s\S]*WHERE payload \? \$2[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT 1/,
+]);
+expect(
+  "summary proof-index snapshot age must be validated by API coverage, not DB wall-clock freshness",
+  !/snapshotPayloadFresh/.test(proofIndexSnapshotPayloadSource),
+);
+expect(
+  "summary proof-index snapshots must not be hidden by the generic recent window",
+  !/LIMIT \$\{LEDGER_SNAPSHOT_RECENT_READ_LIMIT\}/.test(
+    proofIndexSnapshotPayloadSource,
+  ),
+);
 expectAll("summary proof-index reads reject stale snapshot ids", server, [
   /function payloadSnapshotMatchesLedger\(payload,\s*ledger\)[\s\S]*payloadSnapshotId\(payload\)[\s\S]*payloadSnapshotId\(ledger\)/,
-  /async function currentProofIndexSummarySnapshotPayload\(network,\s*key,\s*label\)[\s\S]*existingCurrentCanonicalLedgerPayloadWithinMs\([\s\S]*`canonical snapshot check for \$\{label\}`[\s\S]*!payloadSnapshotMatchesLedger\(indexedPayload,\s*ledger\)/,
+  /async function currentProofIndexSummarySnapshotPayload\(\s*network,\s*key,\s*label,\s*options = \{\},\s*\)[\s\S]*existingCurrentCanonicalLedgerPayloadWithinMs\([\s\S]*`canonical snapshot check for \$\{label\}`[\s\S]*summaryKeyRequiresCanonicalLedger\(network,\s*key\)[\s\S]*options\.allowWithoutCanonicalLedger !== true[\s\S]*!payloadSnapshotMatchesLedger\(indexedPayload,\s*ledger\)/,
+  /async function currentProofIndexSummarySnapshotFallbackPayload\([\s\S]*allowWithoutCanonicalLedger:\s*true[\s\S]*refreshCanonicalLedgerPayloadInBackground\(network,\s*true\)/,
+  /async function currentProofIndexWorkFloorFallbackPayload\([\s\S]*currentProofIndexSummarySnapshotFallbackPayload\([\s\S]*"workSummary"[\s\S]*workFloorWithSummaryMarketOverlay\([\s\S]*currentProofIndexSummarySnapshotFallbackPayload\([\s\S]*"growthSummary"/,
   /url\.pathname === "\/api\/v1\/work-floor"[\s\S]*cachedWorkFloorPayload\(network,\s*true\)[\s\S]*cachedWorkFloorPayload\(network,\s*false\)/,
   /url\.pathname === "\/api\/v1\/work-summary"[\s\S]*currentProofIndexSummarySnapshotPayload\([\s\S]*"workSummary"[\s\S]*"work-summary"/,
   /url\.pathname === "\/api\/v1\/growth-summary"[\s\S]*currentProofIndexSummarySnapshotPayload\([\s\S]*"growthSummary"[\s\S]*"growth-summary"/,
   /async function cachedMarketplaceSummaryPayloadNoRefresh\(network\)[\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*payloadSnapshotMatchesLedger\(cachedPayload,\s*ledger\)[\s\S]*payloadSnapshotMatchesLedger\(persistedPayload,\s*ledger\)/,
 ]);
 expect(
-  "work-floor route must not serve proof-index summary shortcuts",
+  "work-floor route must stay mediated by the checked cached payload helper",
   !/currentProofIndexSummarySnapshotPayload/.test(workFloorRouteSource),
 );
+expect(
+  "work-floor fallback must not use raw proof-index value summaries",
+  !/async function currentProofIndexWorkFloorFallbackPayload\([\s\S]*proofIndexValueSummaryPayload/.test(server),
+);
+expectAll("summary value-event deltas carry scan coverage into nested WORK/Growth payloads", server, [
+  /function workFloorWithProofIndexEventDelta\([\s\S]*Number\(deltaPayload\.indexedThroughBlock\)[\s\S]*const coveredWorkFloor[\s\S]*if \(numericValue\(deltaPayload\?\.totalSats\) <= 0\) \{[\s\S]*return coveredWorkFloor/,
+  /function growthSummaryWithProofIndexEventDelta\([\s\S]*Number\(deltaPayload\.indexedThroughBlock\)[\s\S]*const coveredGrowthSummary[\s\S]*if \(numericValue\(deltaPayload\?\.totalSats\) <= 0\) \{[\s\S]*return coveredGrowthSummary/,
+  /async function proofIndexSummaryPayloadWithValueEventDelta\([\s\S]*key === "workSummary"[\s\S]*workFloorWithProofIndexEventDelta\(payload\.floor,\s*deltaPayload\)[\s\S]*key === "growthSummary"[\s\S]*growthSummaryWithProofIndexEventDelta\(payload,\s*deltaPayload\)[\s\S]*key === "marketplaceSummary"[\s\S]*workFloorWithProofIndexEventDelta\([\s\S]*payload\.workFloor/,
+]);
+expectAll("fresh token history can use checked proof-index snapshots", tokenHistoryRouteSource, [
+  /const proofIndexTokenHistoryEligibility =[\s\S]*proofIndexTokenHistoryReadEligibility\(/,
+  /const freshProofIndexTokenHistoryRead =[\s\S]*freshRead[\s\S]*!exactProofIndexHistoryRead[\s\S]*!proofIndexMintHistoryRead[\s\S]*proofIndexTokenHistoryEligibility\.eligible/,
+  /\(!freshRead \|\|[\s\S]*exactProofIndexHistoryRead \|\|[\s\S]*proofIndexMintHistoryRead \|\|[\s\S]*freshProofIndexTokenHistoryRead\)/,
+  /proofIndexPayloadCoversConfirmedTip\([\s\S]*responsePayload[\s\S]*`token-history:\$\{tokenScope \|\| "all"\}:\$\{historyKind\}`/,
+  /freshProofIndexTokenHistoryRead[\s\S]*\? FRESH_READ_CACHE_CONTROL[\s\S]*: TOKEN_READ_CACHE_CONTROL/,
+]);
+expectAll("token history pages carry snapshot scan coverage", proofIndexReader, [
+  /function historyPageFromStoredPayload\([\s\S]*Math\.max\([\s\S]*indexedThroughBlockFromItems\(filtered\) \?\? 0[\s\S]*rowNumber\(snapshot,\s*"indexed_through_block"\) \?\? 0/,
+  /function tokenHistoryPageFromSnapshot\([\s\S]*Math\.max\([\s\S]*indexedThroughBlockFromItems\(filtered\) \?\? 0[\s\S]*rowNumber\(snapshot,\s*"indexed_through_block"\) \?\? 0/,
+]);
+expectAll("token history freshness uses current scan coverage only when no newer relevant events exist", proofIndexReader, [
+  /function tokenHistoryFreshnessEventKinds\([\s\S]*safeKind === "tokens"[\s\S]*"token-create"[\s\S]*safeKind === "holders"[\s\S]*"token-mint"[\s\S]*"token-transfer"[\s\S]*"token-sale"/,
+  /async function tokenHistoryScanCoverageAfterSnapshot\([\s\S]*ORDER BY indexed_through_block DESC NULLS LAST,\s*generated_at DESC[\s\S]*e\.block_height > \$2[\s\S]*e\.kind = ANY\(\$3::text\[\]\)/,
+  /function tokenHistoryPageWithScanCoverage\([\s\S]*coverage\.eventCount > 0[\s\S]*proof-indexer-scan-coverage/,
+  /export async function proofIndexTokenHistoryPayload\([\s\S]*tokenHistoryPageWithScanCoverage\([\s\S]*tokenHistoryScanCoverageAfterSnapshot\(/,
+]);
 expectAll("wallet token listing refresh preserves bounded spendable local pending marketplace rows", app, [
   /const TOKEN_LOCAL_PENDING_LISTING_TTL_MS = 30 \* 60_000/,
   /function tokenListingShouldSurviveRefresh\(listing:\s*PowTokenListing\)[\s\S]*tokenListingHasPendingSaleTicketSeal\(listing\)[\s\S]*tokenListingHasSpendableSaleTicketAnchor\(listing\)[\s\S]*TOKEN_LOCAL_PENDING_LISTING_TTL_MS/,

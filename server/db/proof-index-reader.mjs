@@ -36,6 +36,8 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
 ]);
 const SMALL_EVENT_HISTORY_NORMALIZE_LIMIT = 2_000;
 const LEDGER_SNAPSHOT_RECENT_READ_LIMIT = 25;
+const LEDGER_SNAPSHOT_PAYLOAD_LOOKBACK_LIMIT = 5_000;
+const SUMMARY_SNAPSHOT_LOOKBACK_LIMIT = 5_000;
 const TOKEN_STATE_EVENT_READ_LIMIT = 100_000;
 
 function proofIndexPool() {
@@ -837,6 +839,91 @@ function tokenHistoryMarketEventKinds(safeKind) {
     ];
   }
   return [];
+}
+
+function tokenHistoryFreshnessEventKinds(safeKind) {
+  if (safeKind === "tokens") {
+    return ["token-create"];
+  }
+  if (safeKind === "mints") {
+    return ["token-mint"];
+  }
+  if (safeKind === "transfers") {
+    return ["token-transfer"];
+  }
+  if (safeKind === "holders") {
+    return ["token-mint", "token-transfer", "token-sale"];
+  }
+  return tokenHistoryMarketEventKinds(safeKind);
+}
+
+async function tokenHistoryScanCoverageAfterSnapshot(
+  pool,
+  network,
+  safeKind,
+  snapshot,
+) {
+  const snapshotBlock = rowNumber(snapshot, "indexed_through_block") ?? 0;
+  const eventKinds = tokenHistoryFreshnessEventKinds(safeKind);
+  if (!snapshotBlock || eventKinds.length === 0) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      WITH latest_scan AS (
+        SELECT indexed_through_block, generated_at
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+        ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
+        LIMIT 1
+      )
+      SELECT
+        latest_scan.indexed_through_block,
+        latest_scan.generated_at,
+        count(e.event_id)::int AS event_count,
+        max(e.block_height)::int AS max_event_block,
+        max(e.event_time) AS max_event_time
+      FROM latest_scan
+      LEFT JOIN proof_indexer.events e
+        ON e.network = $1
+       AND e.status = 'confirmed'
+       AND e.valid IS DISTINCT FROM false
+       AND e.block_height > $2
+       AND e.kind = ANY($3::text[])
+      GROUP BY latest_scan.indexed_through_block, latest_scan.generated_at
+    `,
+    [network, snapshotBlock, eventKinds],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    eventCount: Number(row.event_count ?? 0),
+    indexedAt: dateIso(row.generated_at ?? row.max_event_time),
+    indexedThroughBlock: Number(row.indexed_through_block) || 0,
+    maxEventBlock: Number(row.max_event_block) || 0,
+  };
+}
+
+function tokenHistoryPageWithScanCoverage(page, coverage) {
+  if (!page || !coverage || coverage.eventCount > 0) {
+    return page;
+  }
+  const indexedThroughBlock = Math.max(
+    Number(page.indexedThroughBlock) || 0,
+    Number(coverage.indexedThroughBlock) || 0,
+  );
+  if (indexedThroughBlock <= (Number(page.indexedThroughBlock) || 0)) {
+    return page;
+  }
+  return {
+    ...page,
+    indexedAt: newestDateIso([page.indexedAt, coverage.indexedAt]),
+    indexedThroughBlock,
+    source: mergedSourceLabel(page.source, "proof-indexer-scan-coverage"),
+  };
 }
 
 function tokenListingId(item) {
@@ -2321,7 +2408,7 @@ async function ledgerSnapshotWithPayload(pool, network, snapshotId, payloadKey) 
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1
         ORDER BY generated_at DESC
-        LIMIT ${LEDGER_SNAPSHOT_RECENT_READ_LIMIT}
+        LIMIT ${LEDGER_SNAPSHOT_PAYLOAD_LOOKBACK_LIMIT}
       )
       SELECT
         snapshot_id,
@@ -2673,8 +2760,10 @@ function historyPageFromStoredPayload(
     end,
     indexedAt,
     indexedThroughBlock:
-      indexedThroughBlockFromItems(filtered) ??
-      rowNumber(snapshot, "indexed_through_block"),
+      Math.max(
+        indexedThroughBlockFromItems(filtered) ?? 0,
+        rowNumber(snapshot, "indexed_through_block") ?? 0,
+      ) || undefined,
     items: filtered.slice(start, end),
     kind,
     limit: pagination.limit,
@@ -2794,8 +2883,10 @@ function tokenHistoryPageFromSnapshot(
     end,
     indexedAt,
     indexedThroughBlock:
-      indexedThroughBlockFromItems(filtered) ??
-      rowNumber(snapshot, "indexed_through_block"),
+      Math.max(
+        indexedThroughBlockFromItems(filtered) ?? 0,
+        rowNumber(snapshot, "indexed_through_block") ?? 0,
+      ) || undefined,
     items: filtered.slice(start, end),
     kind: safeKind,
     limit: pagination.limit,
@@ -3779,7 +3870,15 @@ export async function proofIndexTokenHistoryPayload(
     page = await filterClosedTokenListingHistoryPage(pool, page, network);
   }
   if (page) {
-    return page;
+    return tokenHistoryPageWithScanCoverage(
+      page,
+      await tokenHistoryScanCoverageAfterSnapshot(
+        pool,
+        network,
+        eligibility.kind,
+        snapshot,
+      ),
+    );
   }
 
   if (
@@ -6296,7 +6395,7 @@ export async function proofIndexSnapshotPayload(network, key) {
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1
         ORDER BY generated_at DESC
-        LIMIT ${LEDGER_SNAPSHOT_RECENT_READ_LIMIT}
+        LIMIT ${SUMMARY_SNAPSHOT_LOOKBACK_LIMIT}
       )
       SELECT
         snapshot_id,
@@ -6313,10 +6412,13 @@ export async function proofIndexSnapshotPayload(network, key) {
     [network, key],
   );
   const snapshot = snapshotResult.rows[0] ?? null;
-  if (!snapshot || !snapshotPayloadFresh(snapshot, "summaryPayloadsIndexedAt")) {
+  if (!snapshot) {
     return null;
   }
 
+  // Summary freshness is checked by proof-api against the current tip and the
+  // proof-index value-event delta. A block-scan-only row can make the database
+  // current without writing a new full summary payload.
   const payload = snapshot?.payload?.summaryPayloads?.[key];
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
@@ -6429,26 +6531,34 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
         value_events.max_event_time,
         latest_scan.indexed_through_block,
         latest_scan.generated_at
-      FROM value_events
-      LEFT JOIN latest_scan ON true
+      FROM latest_scan
+      LEFT JOIN value_events ON true
       ORDER BY value_events.max_event_block, value_events.kind
     `,
     [network, minBlock],
   );
 
-  const events = result.rows.map((row) => ({
-    count: Number(row.event_count ?? 0),
-    indexedAt: dateIso(row.max_event_time ?? row.generated_at),
-    indexedThroughBlock: Number(row.indexed_through_block) || 0,
-    kind: String(row.kind ?? ""),
-    maxEventBlock: Number(row.max_event_block) || 0,
-    totalSats: Number(row.total_sats ?? 0),
-  }));
+  const events = result.rows
+    .filter((row) => row.kind)
+    .map((row) => ({
+      count: Number(row.event_count ?? 0),
+      indexedAt: dateIso(row.max_event_time ?? row.generated_at),
+      indexedThroughBlock: Number(row.indexed_through_block) || 0,
+      kind: String(row.kind ?? ""),
+      maxEventBlock: Number(row.max_event_block) || 0,
+      totalSats: Number(row.total_sats ?? 0),
+    }));
+  const latestScanBlock = Math.max(
+    0,
+    ...result.rows.map((row) => Number(row.indexed_through_block) || 0),
+  );
   return {
     events,
-    indexedAt: dateIso(result.rows[0]?.generated_at),
+    indexedAt: dateIso(
+      result.rows[0]?.generated_at ?? result.rows[0]?.max_event_time,
+    ),
     indexedThroughBlock: Math.max(
-      0,
+      latestScanBlock,
       ...events.map((event) => event.indexedThroughBlock),
     ),
     maxEventBlock: Math.max(0, ...events.map((event) => event.maxEventBlock)),
