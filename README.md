@@ -667,6 +667,17 @@ verified WORK floor snapshot and value, including nested `workFloor` payloads.
 Worker-written summary-snapshot fallback rows are allowed only as non-OK
 publication envelopes for verified proof-index summaries while the full
 canonical ledger catches up; they do not replace chain truth.
+Exact confirmed-history searches should stay narrow. A search for a concrete
+txid, listing txid, sale txid, or sale-ticket reference in Log or token history
+should use proof-index `events`/`event_refs` rows before broad snapshot scans,
+then return the same txid-backed record the canonical ledger would expose.
+This keeps direct bug reports and public verification fast without inventing a
+second truth source.
+`indexer:parity` remains the full canonical/database comparison gate, but it is
+heavy enough that production worker loops should not run it automatically when
+that would compete with block catch-up or public API requests. Run it manually
+for database-hardening windows and rely on `audit:ledger`, live-data, UI, and
+targeted regression gates for normal deploy verification.
 
 ## Developer Map
 

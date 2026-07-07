@@ -202,6 +202,12 @@ That bounded view is still one app-wide data plane: WORK, Growth, Marketplace,
 Consistency, Wallet, Credit, IDs, Infinity, Log, and Computer must agree on the
 same confirmed snapshot/verifier contract, and embedded summary objects must not
 mix a live parent total with stale child data.
+Exact txid/ref lookups are also part of the speed contract. Stable Log history,
+market-log, listing, sale, and closed-listing searches for a concrete txid or
+sale-ticket reference should use indexed `events` and `event_refs` lookups
+before loading broad activity or token-history snapshots. A confirmed txid that
+is already in the database should resolve quickly from the database and expose
+the same chain-verifiable txid, not wait on a wide canonical replay.
 Pending status checks use their own smaller timeout
 (`POW_INDEX_STATUS_FETCH_TIMEOUT_MS`) and batch limit
 (`POW_INDEX_PENDING_STATUS_LIMIT`) so a single cold tx lookup cannot block a
@@ -218,6 +224,11 @@ run has `missingLogEvents: []`, populated event participant/ref search indexes,
 matching WORK/Growth/summary snapshot ids, searchable known regression txids,
 pending rows limited to mempool visibility, and marketplace summaries containing
 every confirmed sealed WORK listing present in the full token payload.
+`indexer:parity` is a heavyweight database gate, not a public request-path task.
+Production worker parity may be disabled during normal hot-loop operation so
+block catch-up and public API latency stay healthy; run parity manually during
+quiet hardening windows or before database read-surface changes that need full
+canonical/database comparison.
 Production shipping must also verify the exact changed public outputs against
 first-party full-node or confirmed tx truth before deploy. Proof-index
 PostgreSQL tables are derived read models for speed; stale rows, stale zeros,
