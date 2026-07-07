@@ -209,6 +209,7 @@ try {
       SELECT snapshot_id, generated_at, indexed_through_block, payload
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
+        AND payload ? 'snapshotId'
       ORDER BY generated_at DESC
       LIMIT 1
     `,
@@ -793,7 +794,9 @@ try {
     check(
       checks,
       `address-mail-${mailCase.label}-db-page`,
-      indexedMail?.source === "proof-indexer-mail" &&
+      String(indexedMail?.source ?? "")
+        .split("+")
+        .includes("proof-indexer-mail") &&
         inboxCount >= numberValue(mailCase.minInbox) &&
         sentCount >= numberValue(mailCase.minSent) &&
         totalCount >= numberValue(mailCase.minTotal),

@@ -2344,6 +2344,7 @@ async function ledgerSnapshot(pool, network, snapshotId = "") {
           payload
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1 AND snapshot_id = $2
+          AND payload ? 'snapshotId'
         LIMIT 1
       `,
       [network, pinnedSnapshotId],
@@ -2361,6 +2362,7 @@ async function ledgerSnapshot(pool, network, snapshotId = "") {
         payload
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
+        AND payload ? 'snapshotId'
       ORDER BY generated_at DESC
       LIMIT 1
     `,
@@ -3637,6 +3639,7 @@ async function exactTokenTransferHistoryPage(
   tokenScope,
   searchParams,
   pagination,
+  snapshot,
 ) {
   const needles = tokenHistoryFilterNeedles(searchParams, pagination);
   const txidNeedles = needles.map(normalizedTxid).filter(Boolean);
@@ -3748,8 +3751,9 @@ async function exactTokenTransferHistoryPage(
       return Number.isFinite(time) && time > max ? time : max;
     }, 0),
   );
-  return {
-    cursor: historyCursor("", start),
+  const snapshotId = snapshot?.snapshot_id ?? "";
+  const page = {
+    cursor: historyCursor(snapshotId, start),
     end,
     indexedAt: indexedAt || new Date().toISOString(),
     indexedThroughBlock: indexedThroughBlockFromItems(items),
@@ -3757,7 +3761,7 @@ async function exactTokenTransferHistoryPage(
     kind: "transfers",
     limit: pagination.limit,
     network,
-    nextCursor: end < totalCount ? historyCursor("", end) : "",
+    nextCursor: end < totalCount ? historyCursor(snapshotId, end) : "",
     page: Math.floor(start / pagination.limit),
     pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
     pageSize: pagination.limit,
@@ -3766,6 +3770,15 @@ async function exactTokenTransferHistoryPage(
     start,
     totalCount,
   };
+  if (snapshotId) {
+    return {
+      ...page,
+      consistency: snapshot?.consistency ?? undefined,
+      ledgerGeneratedAt: dateIso(snapshot?.generated_at),
+      snapshotId,
+    };
+  }
+  return page;
 }
 
 export async function proofIndexTokenHistoryPayload(
@@ -3788,19 +3801,6 @@ export async function proofIndexTokenHistoryPayload(
     return null;
   }
 
-  if (eligibility.kind === "transfers") {
-    const exactTransferPage = await exactTokenTransferHistoryPage(
-      pool,
-      network,
-      tokenScope,
-      searchParams,
-      eligibility.pagination,
-    );
-    if (exactTransferPage) {
-      return exactTransferPage;
-    }
-  }
-
   const snapshot = await ledgerSnapshotWithPayload(
     pool,
     network,
@@ -3809,6 +3809,20 @@ export async function proofIndexTokenHistoryPayload(
   );
   if (!snapshot) {
     return null;
+  }
+
+  if (eligibility.kind === "transfers") {
+    const exactTransferPage = await exactTokenTransferHistoryPage(
+      pool,
+      network,
+      tokenScope,
+      searchParams,
+      eligibility.pagination,
+      snapshot,
+    );
+    if (exactTransferPage) {
+      return exactTransferPage;
+    }
   }
 
   if (eligibility.kind === "mints") {
@@ -4620,15 +4634,8 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
   if (!eligibility.eligible) {
     return null;
   }
-
-  const currentPayload = await proofIndexTokenPayloadFromCurrentTables(
-    pool,
-    network,
-    eligibility.scope,
-  );
-  if (currentPayload) {
-    return currentPayload;
-  }
+  const currentTablePayload = () =>
+    proofIndexTokenPayloadFromCurrentTables(pool, network, eligibility.scope);
 
   if (eligibility.scope !== "all") {
     const scopedSnapshot = await tokenStateSnapshotForScope(
@@ -4668,12 +4675,12 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
     !snapshot ||
     tokenStateSnapshotAgeMs(snapshot) > proofIndexTokenHistoryMaxAgeMs()
   ) {
-    return null;
+    return currentTablePayload();
   }
 
   const statePayloads = tokenStatePayloadsFromSnapshot(snapshot);
   if (!statePayloads) {
-    return null;
+    return currentTablePayload();
   }
 
   const scopedPayload = statePayloads[eligibility.scope];
@@ -4693,7 +4700,7 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
 
   const allPayload = statePayloads.all;
   if (!allPayload || typeof allPayload !== "object") {
-    return null;
+    return currentTablePayload();
   }
   if (eligibility.scope === "all") {
     return tokenStateWithSnapshotMetadata(
@@ -4709,6 +4716,9 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
     eligibility.scope,
     allPayload,
   );
+  if (!reconstructed) {
+    return currentTablePayload();
+  }
   return tokenStateWithMintEventOverlay(
     pool,
     network,
@@ -5291,10 +5301,11 @@ export async function proofIndexRegistryHistoryPayload(
     return null;
   }
 
-  const snapshot = await ledgerSnapshot(
+  const snapshot = await ledgerSnapshotWithPayload(
     pool,
     network,
     eligibility.pagination.snapshotId,
+    "registryHistoryPayloads",
   );
   if (
     !snapshot ||
@@ -5414,10 +5425,11 @@ export async function proofIndexRegistryPayload(network, options = {}) {
     return null;
   }
 
-  const snapshot = await ledgerSnapshot(
+  const snapshot = await ledgerSnapshotWithPayload(
     pool,
     network,
     options.snapshotId ?? "",
+    "registryHistoryPayloads",
   );
   if (
     !snapshot ||
@@ -5497,7 +5509,12 @@ export async function proofIndexActivityPayload(network) {
     return null;
   }
 
-  const snapshot = await ledgerSnapshot(pool, network);
+  const snapshot = await ledgerSnapshotWithPayload(
+    pool,
+    network,
+    "",
+    "activityPayload",
+  );
   if (!snapshot || !snapshotPayloadFresh(snapshot, "activityIndexedAt")) {
     return null;
   }
@@ -6111,6 +6128,9 @@ export async function proofIndexAddressMailPayload(network, address) {
   const addressCandidates = [
     ...new Set([targetAddress, targetAddress.toLowerCase()].filter(Boolean)),
   ];
+  const addressCandidateKeys = [
+    ...new Set(addressCandidates.map((value) => normalizedAddressKey(value))),
+  ];
 
   const rowsResult = await pool.query(
     `
@@ -6204,9 +6224,100 @@ export async function proofIndexAddressMailPayload(network, address) {
     [network, addressCandidates, ADDRESS_MAIL_EVENT_KINDS],
   );
 
+  const transactionOverlayResult = await pool.query(
+    `
+      SELECT
+        t.raw_tx->'item' AS payload,
+        COALESCE(t.raw_tx->'item'->>'kind', '') AS kind,
+        t.status,
+        COALESCE(
+          CASE
+            WHEN t.raw_tx->'item'->>'createdAt' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+              THEN (t.raw_tx->'item'->>'createdAt')::timestamptz
+            ELSE NULL
+          END,
+          t.block_time,
+          t.confirmed_at,
+          t.first_seen_at
+        ) AS event_time,
+        t.block_time,
+        t.first_seen_at AS created_at,
+        t.txid,
+        NULL::bigint AS event_id,
+        t.raw_tx AS transaction_raw_tx,
+        NULL::text AS subject,
+        COALESCE(
+          t.raw_tx->'item'->>'senderAddress',
+          t.raw_tx->'item'->>'actor'
+        ) AS sender_address,
+        NULL::text AS parent_txid,
+        t.raw_tx->'item'->>'memo' AS body_text,
+        CASE
+          WHEN t.raw_tx->'item'->>'amountSats' ~ '^[0-9]+$'
+            THEN (t.raw_tx->'item'->>'amountSats')::bigint
+          ELSE NULL
+        END AS amount_sats,
+        '[]'::jsonb AS participants
+      FROM proof_indexer.transactions t
+      WHERE t.network = $1
+        AND t.raw_tx ? 'item'
+        AND lower(COALESCE(t.raw_tx->'item'->>'kind', '')) = ANY($3::text[])
+        AND t.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+        AND (
+          lower(COALESCE(t.raw_tx->'item'->>'actor', '')) = ANY($2::text[])
+          OR lower(COALESCE(t.raw_tx->'item'->>'senderAddress', '')) = ANY($2::text[])
+          OR lower(COALESCE(t.raw_tx->'item'->>'counterparty', '')) = ANY($2::text[])
+          OR EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(
+              CASE
+                WHEN jsonb_typeof(t.raw_tx->'item'->'participants') = 'array'
+                  THEN t.raw_tx->'item'->'participants'
+                ELSE '[]'::jsonb
+              END
+            ) participant(address)
+            WHERE lower(participant.address) = ANY($2::text[])
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(
+              CASE
+                WHEN jsonb_typeof(t.raw_tx->'item'->'recipients') = 'array'
+                  THEN t.raw_tx->'item'->'recipients'
+                ELSE '[]'::jsonb
+              END
+            ) recipient(record)
+            WHERE lower(COALESCE(
+              recipient.record->>'address',
+              recipient.record->>'display',
+              ''
+            )) = ANY($2::text[])
+          )
+        )
+      ORDER BY
+        COALESCE(
+          CASE
+            WHEN t.raw_tx->'item'->>'createdAt' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+              THEN (t.raw_tx->'item'->>'createdAt')::timestamptz
+            ELSE NULL
+          END,
+          t.block_time,
+          t.confirmed_at,
+          t.first_seen_at
+        ) DESC,
+        t.txid DESC
+      LIMIT 1000
+    `,
+    [
+      network,
+      addressCandidateKeys,
+      ADDRESS_MAIL_EVENT_KINDS.map((kind) => kind.toLowerCase()),
+    ],
+  );
+
   const inboxMessages = [];
   const sentMessages = [];
-  for (const row of rowsResult.rows) {
+  for (const row of [...rowsResult.rows, ...transactionOverlayResult.rows]) {
     for (const item of addressMailRowPayloads(row, targetAddress, network)) {
       if (item.folder === "sent") {
         sentMessages.push(item.message);
@@ -6225,12 +6336,15 @@ export async function proofIndexAddressMailPayload(network, address) {
     indexedAt: new Date().toISOString(),
     network,
     sentMessages: dedupedSentMessages,
-    source: "proof-indexer-mail",
+    source:
+      transactionOverlayResult.rows.length > 0
+        ? "proof-indexer-mail+proof-indexer-transaction-mail-overlay"
+        : "proof-indexer-mail",
     stats: {
       inbox: dedupedInboxMessages.filter((message) => message.confirmed).length,
       incoming: dedupedInboxMessages.filter((message) => !message.confirmed)
         .length,
-      indexedEvents: rowsResult.rows.length,
+      indexedEvents: rowsResult.rows.length + transactionOverlayResult.rows.length,
       scanFailed: false,
       scannedTransactions: 0,
       sent: dedupedSentMessages.filter(
