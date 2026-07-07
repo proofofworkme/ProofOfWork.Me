@@ -2657,16 +2657,23 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
       )
     : await tokenPayloadWithSpendableActiveListings(overlaidTokenState, network);
   const token = compactTokenSummaryPayload(tokenState);
+  const overlaidWorkFloor = workFloorWithIndexedMarketSummaryOverlay(
+    payload.workFloor,
+    overlay,
+    tokenState,
+  );
+  const workFloor = await currentProofIndexWorkFloorIfNewer(
+    overlaidWorkFloor,
+    network,
+    false,
+    "marketplace-summary overlay",
+  );
   return marketplaceSummaryWithCurrentBtcUsd(
     {
       ...payload,
       indexedAt: newerIso(payload.indexedAt, token.indexedAt),
       token,
-      workFloor: workFloorWithIndexedMarketSummaryOverlay(
-        payload.workFloor,
-        overlay,
-        tokenState,
-      ),
+      workFloor,
     },
     network,
     false,
@@ -18749,8 +18756,12 @@ function growthSummaryWithProofIndexEventDelta(growthSummary, deltaPayload) {
   if (!growthSummary) {
     return growthSummary;
   }
+  const coveredWorkFloor = growthSummary.workFloor
+    ? workFloorWithProofIndexEventDelta(growthSummary.workFloor, deltaPayload)
+    : growthSummary.workFloor;
   const indexedThroughBlock = Math.max(
     Number(growthSummary.indexedThroughBlock) || 0,
+    Number(coveredWorkFloor?.indexedThroughBlock) || 0,
     Number(deltaPayload.indexedThroughBlock) || 0,
     Number(deltaPayload.maxEventBlock) || 0,
   );
@@ -18759,26 +18770,34 @@ function growthSummaryWithProofIndexEventDelta(growthSummary, deltaPayload) {
     indexedAt: newerIso(growthSummary.indexedAt, deltaPayload.indexedAt),
     indexedThroughBlock,
     source: mergedSourceLabel(growthSummary.source, deltaPayload.source),
+    workFloor: coveredWorkFloor,
   };
   if (numericValue(deltaPayload?.totalSats) <= 0) {
-    return coveredGrowthSummary;
+    return coveredWorkFloor
+      ? growthSummaryWithCanonicalWorkFloor(coveredGrowthSummary, coveredWorkFloor)
+      : coveredGrowthSummary;
   }
 
   const delta = growthDeltaForProofIndexEvents(deltaPayload.events);
   if (numericValue(delta.totalSats) <= 0) {
-    return coveredGrowthSummary;
+    return coveredWorkFloor
+      ? growthSummaryWithCanonicalWorkFloor(coveredGrowthSummary, coveredWorkFloor)
+      : coveredGrowthSummary;
   }
   const actualValue = actualValueWithProofIndexDelta(
     growthSummary.actualValue,
     delta,
   );
-  return {
+  const nextGrowthSummary = {
     ...coveredGrowthSummary,
     actualValue,
     frozenNetworkValueSats: numericValue(actualValue.frozenTotalSats),
     liveNetworkValueSats: actualValue.totalSats,
     networkValueSats: actualValue.totalSats,
   };
+  return coveredWorkFloor
+    ? growthSummaryWithCanonicalWorkFloor(nextGrowthSummary, coveredWorkFloor)
+    : nextGrowthSummary;
 }
 
 async function proofIndexSummaryPayloadWithValueEventDelta(
@@ -19379,6 +19398,56 @@ async function currentProofIndexWorkFloorFallbackPayload(
   }
 
   return null;
+}
+
+async function currentProofIndexWorkFloorIfNewer(
+  baseWorkFloor,
+  network,
+  fresh = false,
+  label = "WORK floor",
+) {
+  if (network !== "livenet") {
+    return baseWorkFloor;
+  }
+
+  const indexedWorkFloor = await currentProofIndexWorkFloorFallbackPayload(
+    network,
+    fresh,
+  ).catch((error) => {
+    console.error(
+      `Proof-index ${label} overlay failed: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (!indexedWorkFloor) {
+    return baseWorkFloor;
+  }
+
+  const indexedBlock = proofIndexPayloadIndexedThroughBlock(indexedWorkFloor);
+  const baseBlock = proofIndexPayloadIndexedThroughBlock(baseWorkFloor);
+  const indexedValue = numericValue(
+    indexedWorkFloor.actualValue?.totalSats ?? indexedWorkFloor.networkValueSats,
+  );
+  const baseValue = numericValue(
+    baseWorkFloor?.actualValue?.totalSats ?? baseWorkFloor?.networkValueSats,
+  );
+  if (
+    indexedBlock >= baseBlock &&
+    finitePositiveNumber(indexedValue) &&
+    (!finitePositiveNumber(baseValue) || indexedValue + 0.01 >= baseValue)
+  ) {
+    if (indexedWorkFloor !== baseWorkFloor) {
+      console.error(
+        `Accepted ${label}: proof-index WORK floor block ${indexedBlock || "unknown"} supersedes base block ${baseBlock || "unknown"}.`,
+      );
+    }
+    return indexedWorkFloor;
+  }
+
+  console.error(
+    `Rejected ${label}: proof-index WORK floor block ${indexedBlock || "unknown"} value ${indexedValue || "unknown"} is behind base block ${baseBlock || "unknown"} value ${baseValue || "unknown"}.`,
+  );
+  return baseWorkFloor;
 }
 
 async function ledgerWithReplayedCreditNetworkValues(
@@ -20321,10 +20390,176 @@ function ledgerConsistencyPayloadFromLedger(ledger) {
   };
 }
 
+function replaceLedgerConsistencyCheck(checks, name, ok, details = {}) {
+  const nextChecks = Array.isArray(checks) ? checks : [];
+  let found = false;
+  const replaced = nextChecks.map((check) => {
+    if (check?.name !== name) {
+      return check;
+    }
+    found = true;
+    return {
+      ...check,
+      details,
+      name,
+      ok,
+    };
+  });
+  if (!found) {
+    replaced.push({ details, name, ok });
+  }
+  return replaced;
+}
+
+function replaceLedgerConsistencyChecks(checks, replacements) {
+  return replacements.reduce(
+    (nextChecks, replacement) =>
+      replaceLedgerConsistencyCheck(
+        nextChecks,
+        replacement.name,
+        replacement.ok,
+        replacement.details,
+      ),
+    Array.isArray(checks) ? checks : [],
+  );
+}
+
+async function ledgerConsistencyPayloadWithCurrentSummaries(
+  payload,
+  ledger,
+  network,
+  fresh = false,
+) {
+  if (network !== "livenet" || !payload || !ledger) {
+    return payload;
+  }
+
+  const workFloor = await currentProofIndexWorkFloorIfNewer(
+    ledger.workFloor,
+    network,
+    fresh,
+    "ledger consistency",
+  );
+  if (!workFloor) {
+    return payload;
+  }
+
+  const growthSummary = growthSummaryWithCanonicalWorkFloor(
+    ledger.growthSummary,
+    workFloor,
+  );
+  const indexedThroughBlock = Math.max(
+    numericValue(payload.indexedThroughBlock),
+    numericValue(payload.metrics?.indexedThroughBlock),
+    proofIndexPayloadIndexedThroughBlock(workFloor),
+    proofIndexPayloadIndexedThroughBlock(growthSummary),
+  );
+  const tipHeight = await ledgerTipHeight(network);
+  const sourceTipHeight = Number.isSafeInteger(tipHeight)
+    ? tipHeight
+    : Number(payload.metrics?.sourceTipHeight) || undefined;
+  const tipLagBlocks =
+    Number.isSafeInteger(sourceTipHeight) && indexedThroughBlock > 0
+      ? Math.max(0, sourceTipHeight - indexedThroughBlock)
+      : payload.metrics?.tipLagBlocks;
+  const workNetworkValue = numericValue(workFloor.networkValueSats);
+  const workActualValue = numericValue(workFloor.actualValue?.totalSats);
+  const growthActualValue = numericValue(growthSummary?.actualValue?.totalSats);
+  const growthFloorValue = numericValue(
+    growthSummary?.workFloor?.networkValueSats,
+  );
+  const updatedChecks = replaceLedgerConsistencyChecks(payload.checks, [
+    {
+      details: {
+        indexedThroughBlock,
+        lagBlocks: Number.isFinite(tipLagBlocks) ? tipLagBlocks : 0,
+        maxLagBlocks: PROOF_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS,
+        tipHeight: sourceTipHeight ?? null,
+      },
+      name: "ledger-covers-node-tip",
+      ok:
+        !Number.isSafeInteger(sourceTipHeight) ||
+        (indexedThroughBlock > 0 &&
+          tipLagBlocks <= PROOF_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS),
+    },
+    {
+      details: {
+        growthActualValueSats: growthActualValue,
+        growthWorkFloorValueSats: growthFloorValue,
+        workActualValueSats: workActualValue,
+        workNetworkValueSats: workNetworkValue,
+      },
+      name: "network-values-finite",
+      ok:
+        workFloorPayloadHasFiniteNetworkValue(workFloor) &&
+        growthSummaryPayloadHasFiniteNetworkValue(growthSummary),
+    },
+    {
+      details: {
+        actualValueSats: workActualValue,
+        networkValueSats: workNetworkValue,
+      },
+      name: "work-floor-actual-total",
+      ok: numbersAgree(workNetworkValue, workActualValue),
+    },
+    {
+      details: {
+        growthValueSats: growthActualValue,
+        workValueSats: workNetworkValue,
+      },
+      name: "growth-actual-total",
+      ok: numbersAgree(workNetworkValue, growthActualValue),
+    },
+    {
+      details: {
+        growthWorkFloorSats: growthFloorValue,
+        workValueSats: workNetworkValue,
+      },
+      name: "growth-work-floor-total",
+      ok: numbersAgree(workNetworkValue, growthFloorValue),
+    },
+  ]);
+  const ok = updatedChecks.every((check) => check?.ok === true);
+  return {
+    ...payload,
+    checks: updatedChecks,
+    generatedAt: newerIso(
+      newerIso(payload.generatedAt, workFloor.indexedAt),
+      growthSummary?.indexedAt,
+    ),
+    indexedThroughBlock,
+    metrics: {
+      ...(payload.metrics ?? {}),
+      indexedThroughBlock,
+      networkValueSats: workNetworkValue,
+      sourceTipHeight,
+      tipLagBlocks,
+    },
+    ok,
+    snapshotId:
+      payloadSnapshotId(workFloor) ||
+      payloadSnapshotId(growthSummary) ||
+      payload.snapshotId,
+    status: ok ? "green" : "red",
+    totals: {
+      ...(payload.totals ?? {}),
+      growthActualValueSats: growthActualValue,
+      growthWorkFloorValueSats: growthFloorValue,
+      workActualValueSats: workActualValue,
+      workNetworkValueSats: workNetworkValue,
+    },
+  };
+}
+
 async function ledgerConsistencyPayload(network, fresh = false) {
   const ledger = await summaryCanonicalLedgerPayload(network, fresh);
   if (ledger) {
-    return ledgerConsistencyPayloadFromLedger(ledger);
+    return ledgerConsistencyPayloadWithCurrentSummaries(
+      ledgerConsistencyPayloadFromLedger(ledger),
+      ledger,
+      network,
+      fresh,
+    );
   }
 
   if (fresh) {
@@ -20333,8 +20568,12 @@ async function ledgerConsistencyPayload(network, fresh = false) {
     );
   }
 
-  return ledgerConsistencyPayloadFromLedger(
-    await canonicalLedgerPayload(network, false),
+  const fallbackLedger = await canonicalLedgerPayload(network, false);
+  return ledgerConsistencyPayloadWithCurrentSummaries(
+    ledgerConsistencyPayloadFromLedger(fallbackLedger),
+    fallbackLedger,
+    network,
+    false,
   );
 }
 
@@ -22423,15 +22662,36 @@ function growthSummaryWithCanonicalWorkFloor(growthSummary, workFloor) {
       workFloor,
     };
   }
+  const actualValue = { ...(growthSummary.actualValue ?? {}) };
+  const liveSats = numericValue(
+    workFloor.actualValue?.liveTotalSats ??
+      workFloor.actualValue?.liveNetworkValueSats ??
+      workFloor.liveNetworkValueSats,
+    totalSats,
+  );
+  const frozenSource =
+    workFloor.actualValue?.frozenTotalSats ??
+    workFloor.actualValue?.frozenNetworkValueSats ??
+    workFloor.frozenNetworkValueSats;
+  const frozenSats = Number(frozenSource);
+  actualValue.networkValueSats = totalSats;
+  actualValue.totalSats = totalSats;
+  actualValue.liveNetworkValueSats = liveSats;
+  actualValue.liveTotalSats = liveSats;
+  if (Number.isFinite(frozenSats)) {
+    actualValue.frozenFloorSats = frozenSats / WORK_TOKEN_MAX_SUPPLY;
+    actualValue.frozenNetworkValueSats = frozenSats;
+    actualValue.frozenTotalSats = frozenSats;
+  }
 
   return {
     ...growthSummary,
+    frozenNetworkValueSats: Number.isFinite(frozenSats)
+      ? frozenSats
+      : growthSummary.frozenNetworkValueSats,
+    liveNetworkValueSats: liveSats,
     networkValueSats: totalSats,
-    actualValue: {
-      ...(growthSummary.actualValue ?? {}),
-      networkValueSats: totalSats,
-      totalSats,
-    },
+    actualValue,
     workFloor,
   };
 }
@@ -23138,12 +23398,18 @@ async function reconciledLivenetMarketplaceSummaryPayload(
           overlaidTokenState,
           SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS,
         );
-        const workFloor = await workFloorWithSummaryMarketOverlay(
+        const ledgerWorkFloor = await workFloorWithSummaryMarketOverlay(
           ledger.workFloor,
           network,
           true,
           tokenState,
           marketOverlay,
+        );
+        const workFloor = await currentProofIndexWorkFloorIfNewer(
+          ledgerWorkFloor,
+          network,
+          true,
+          "marketplace-summary",
         );
         const indexedAt = newerIso(ledger.generatedAt, tokenState?.indexedAt);
         return attachLedgerMetadata(
@@ -23241,7 +23507,7 @@ async function reconciledLivenetMarketplaceSummaryPayload(
           ? MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS
           : WORK_TOKEN_SUMMARY_CLOSE_WAIT_MS,
       );
-      const workFloor = await workFloorWithCurrentBtcUsd(
+      const ledgerWorkFloor = await workFloorWithCurrentBtcUsd(
         workFloorWithIndexedMarketSummaryOverlay(
           ledger.workFloor,
           marketOverlay,
@@ -23249,6 +23515,12 @@ async function reconciledLivenetMarketplaceSummaryPayload(
         ),
         network,
         fresh,
+      );
+      const workFloor = await currentProofIndexWorkFloorIfNewer(
+        ledgerWorkFloor,
+        network,
+        fresh,
+        "marketplace-summary",
       );
       const indexedAt = newerIso(ledger.generatedAt, tokenState?.indexedAt);
       return attachLedgerMetadata(
@@ -23534,11 +23806,17 @@ async function growthSummaryPayload(network, fresh = false) {
           LEDGER_SUMMARY_FRESH_WAIT_MS,
         );
   if (ledger) {
-    const workFloor = await workFloorWithSummaryMarketOverlay(
+    const ledgerWorkFloor = await workFloorWithSummaryMarketOverlay(
       ledger.workFloor,
       network,
       fresh,
       ledger.tokenState,
+    );
+    const workFloor = await currentProofIndexWorkFloorIfNewer(
+      ledgerWorkFloor,
+      network,
+      fresh,
+      "growth-summary",
     );
     return growthSummaryWithCurrentBtcUsd(
       growthSummaryWithCanonicalWorkFloor(ledger.growthSummary, workFloor),
@@ -23554,7 +23832,17 @@ async function growthSummaryPayload(network, fresh = false) {
       "growth-summary",
     );
     if (indexedPayload) {
-      return growthSummaryWithCurrentBtcUsd(indexedPayload, network, fresh);
+      const workFloor = await currentProofIndexWorkFloorIfNewer(
+        indexedPayload.workFloor,
+        network,
+        fresh,
+        "growth-summary fallback",
+      );
+      return growthSummaryWithCurrentBtcUsd(
+        growthSummaryWithCanonicalWorkFloor(indexedPayload, workFloor),
+        network,
+        fresh,
+      );
     }
 
     if (fresh) {

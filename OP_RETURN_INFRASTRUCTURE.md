@@ -198,6 +198,10 @@ the node, database, or cache refresh is slower than the HTTP budget.
 When a snapshot route is current from proof-index data but the full shared
 ledger is still catching up, the route can publish the bounded proof-index view
 and leave the ledger refresh in the worker/background path.
+That bounded view is still one app-wide data plane: WORK, Growth, Marketplace,
+Consistency, Wallet, Credit, IDs, Infinity, Log, and Computer must agree on the
+same confirmed snapshot/verifier contract, and embedded summary objects must not
+mix a live parent total with stale child data.
 Pending status checks use their own smaller timeout
 (`POW_INDEX_STATUS_FETCH_TIMEOUT_MS`) and batch limit
 (`POW_INDEX_PENDING_STATUS_LIMIT`) so a single cold tx lookup cannot block a

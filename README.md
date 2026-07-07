@@ -269,6 +269,7 @@ Current production behavior:
 - The canonical welcome page is pinned by txid `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b` as the default ProofOfWork Computer file. It appears in Files/Desktop as a system artifact and opens in Browser so the transaction remains the source of truth.
 - Growth reads the same registry, log, Credit, and WORK floor endpoints, then auto-refreshes real confirmed network value with the same live node-backed BTC/USD benchmark used by the rest of the app. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
 - On livenet, WORK floor, Growth summary, Log/Log history, token summary, and token history are backed by the same canonical ledger payload. That payload merges registry activity, discovered Computer activity, seeded mail activity from app-derived addresses, WORK token state, credit token state, and staged protocol activity where enabled. A confirmed event that affects network value must be searchable in Log from the same snapshot. Fresh reads may return a current checked ledger fallback that covers the node tip while deeper refresh continues, but they must not present stale, lower, or internally inconsistent projections as refreshed truth.
+- The database/read-model layer is the app-wide speed plane for that contract: once prior confirmed history is indexed, public routes should answer from the current verified snapshot, update only from newer indexed blocks and transactions, and keep embedded summaries such as Growth `workFloor` and Marketplace `workFloor` on the same snapshot/value as `/api/v1/work-floor` and `/api/v1/consistency`.
 - ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which external explorers can report as a lower effective fee rate.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
@@ -660,6 +661,9 @@ public requests must not rebuild broad Computer state before answering. A slow
 refresh should return the current checked snapshot and continue in the
 background, or fail closed if no current snapshot exists; false zero dashboards
 are not a valid fallback.
+Summary responses are app-wide consistency surfaces, not isolated page caches:
+WORK, Growth, Marketplace, and Consistency must expose the same current
+verified WORK floor snapshot and value, including nested `workFloor` payloads.
 Worker-written summary-snapshot fallback rows are allowed only as non-OK
 publication envelopes for verified proof-index summaries while the full
 canonical ledger catches up; they do not replace chain truth.

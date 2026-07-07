@@ -419,7 +419,7 @@ expect(
 );
 expectAll("summary value-event deltas carry scan coverage into nested WORK/Growth payloads", server, [
   /function workFloorWithProofIndexEventDelta\([\s\S]*Number\(deltaPayload\.indexedThroughBlock\)[\s\S]*const coveredWorkFloor[\s\S]*if \(numericValue\(deltaPayload\?\.totalSats\) <= 0\) \{[\s\S]*return coveredWorkFloor/,
-  /function growthSummaryWithProofIndexEventDelta\([\s\S]*Number\(deltaPayload\.indexedThroughBlock\)[\s\S]*const coveredGrowthSummary[\s\S]*if \(numericValue\(deltaPayload\?\.totalSats\) <= 0\) \{[\s\S]*return coveredGrowthSummary/,
+  /function growthSummaryWithProofIndexEventDelta\([\s\S]*const coveredWorkFloor[\s\S]*workFloorWithProofIndexEventDelta\(growthSummary\.workFloor,\s*deltaPayload\)[\s\S]*const coveredGrowthSummary[\s\S]*workFloor: coveredWorkFloor[\s\S]*return coveredWorkFloor[\s\S]*growthSummaryWithCanonicalWorkFloor\(coveredGrowthSummary,\s*coveredWorkFloor\)/,
   /async function proofIndexSummaryPayloadWithValueEventDelta\([\s\S]*key === "workSummary"[\s\S]*workFloorWithProofIndexEventDelta\(payload\.floor,\s*deltaPayload\)[\s\S]*key === "growthSummary"[\s\S]*growthSummaryWithProofIndexEventDelta\(payload,\s*deltaPayload\)[\s\S]*key === "marketplaceSummary"[\s\S]*workFloorWithProofIndexEventDelta\([\s\S]*payload\.workFloor/,
 ]);
 expectAll("fresh token history can use checked proof-index snapshots", tokenHistoryRouteSource, [
