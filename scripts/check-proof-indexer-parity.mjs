@@ -25,6 +25,7 @@ const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
 );
 const NETWORK = process.env.NETWORK ?? "livenet";
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
+const REQUEST_RETRIES = Number(process.env.POW_INDEX_FETCH_RETRIES ?? 4);
 const STRICT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_PARITY_STRICT ?? ""),
 );
@@ -93,17 +94,42 @@ function snapshotParityParams(params = {}) {
 }
 
 async function readJson(url) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) {
-      throw new Error(`${url.pathname} returned HTTP ${response.status}`);
+  let lastError = null;
+  const retries = Number.isFinite(REQUEST_RETRIES)
+    ? Math.max(0, Math.floor(REQUEST_RETRIES))
+    : 0;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) {
+        throw new Error(`${url.pathname} returned HTTP ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= retries) {
+        break;
+      }
+      const delayMs = Math.min(30_000, 1000 * 2 ** attempt);
+      console.error(
+        JSON.stringify({
+          attempt,
+          delayMs,
+          error: error?.message ?? String(error),
+          retrying: true,
+          url: String(url),
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    } finally {
+      clearTimeout(timeout);
     }
-    return await response.json();
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw lastError;
 }
 
 function numberValue(value) {
@@ -210,6 +236,12 @@ try {
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
         AND payload ? 'snapshotId'
+        AND payload->>'snapshotId' = snapshot_id
+        AND payload ? 'activityPayload'
+        AND payload ? 'registryHistoryPayloads'
+        AND payload ? 'summaryPayloads'
+        AND payload ? 'tokenHistoryPayloads'
+        AND payload ? 'tokenStatePayloads'
       ORDER BY generated_at DESC
       LIMIT 1
     `,

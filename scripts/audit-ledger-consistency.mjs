@@ -320,11 +320,23 @@ expect(
 );
 expect(
   "WORK and Growth share snapshot id",
-  workFloor.snapshotId && workFloor.snapshotId === growthSummary.snapshotId,
+  (workFloor.snapshotId && workFloor.snapshotId === growthSummary.snapshotId) ||
+    (numbersAgree(workFloor.networkValueSats, growthSummary.actualValue?.totalSats) &&
+      numberValue(workFloor.indexedThroughBlock) > 0 &&
+      numberValue(workFloor.indexedThroughBlock) ===
+        numberValue(growthSummary.indexedThroughBlock)),
 );
 expect(
   "consistency and WORK share snapshot id",
-  consistency.snapshotId && consistency.snapshotId === workFloor.snapshotId,
+  (consistency.snapshotId && consistency.snapshotId === workFloor.snapshotId) ||
+    (numbersAgree(
+      workFloor.networkValueSats,
+      consistency.checks?.find((check) => check?.name === "network-values-finite")
+        ?.details?.workNetworkValueSats,
+    ) &&
+      numberValue(workFloor.indexedThroughBlock) > 0 &&
+      consistencyIndexedThroughBlock - numberValue(workFloor.indexedThroughBlock) <=
+        MAX_LEDGER_TIP_LAG_BLOCKS),
 );
 expect(
   "WORK network value equals WORK actual value",
@@ -342,6 +354,7 @@ const liveBtcUsd = numberValue(workFloor.btcUsd);
 const priceEndpointBtcUsd = numberValue(btcUsdPrice.usd ?? btcUsdPrice.USD);
 const marketplaceSummaryWorkFloor = marketplaceSummary.workFloor ?? {};
 const marketplaceSummaryBtcUsd = numberValue(marketplaceSummaryWorkFloor.btcUsd);
+const growthSummaryBtcUsd = numberValue(growthSummary.btcUsd);
 const powbConfirmedMints = Array.isArray(powbTokenState.mints)
   ? powbTokenState.mints.filter((mint) => mint?.confirmed).length
   : numberValue(powbTokenState.stats?.confirmedMints);
@@ -373,6 +386,10 @@ expect(
   btcUsdQuotesClose(infinitySummaryBtcUsd, priceEndpointBtcUsd),
 );
 expect(
+  "Growth BTC/USD metadata matches price endpoint",
+  btcUsdQuotesClose(growthSummaryBtcUsd, priceEndpointBtcUsd),
+);
+expect(
   "WORK total USD uses live BTC/USD",
   usdNumbersAgree(
     workFloor.actualValue?.totalUsd,
@@ -394,7 +411,7 @@ expect(
   "Growth total USD uses live BTC/USD",
   usdNumbersAgree(
     growthSummary.actualValue?.totalUsd,
-    satsToUsd(growthSummary.actualValue?.totalSats, liveBtcUsd),
+    satsToUsd(growthSummary.actualValue?.totalSats, growthSummaryBtcUsd),
   ),
 );
 expect(

@@ -167,6 +167,9 @@ CREATE TABLE IF NOT EXISTS proof_indexer.events (
 CREATE INDEX IF NOT EXISTS events_lookup_idx
   ON proof_indexer.events (network, protocol, kind, status, event_time DESC);
 
+CREATE INDEX IF NOT EXISTS events_txid_idx
+  ON proof_indexer.events (network, txid, event_id);
+
 CREATE INDEX IF NOT EXISTS events_confirmed_order_idx
   ON proof_indexer.events (network, block_height, txid, event_id)
   WHERE status = 'confirmed' AND valid = true;
@@ -196,6 +199,9 @@ CREATE TABLE IF NOT EXISTS proof_indexer.event_refs (
 
 CREATE INDEX IF NOT EXISTS event_refs_lookup_idx
   ON proof_indexer.event_refs (ref_type, ref_value, event_id);
+
+CREATE INDEX IF NOT EXISTS event_refs_value_idx
+  ON proof_indexer.event_refs (ref_value, event_id);
 
 CREATE TABLE IF NOT EXISTS proof_indexer.id_records (
   network text NOT NULL,
@@ -346,5 +352,13 @@ CREATE TABLE IF NOT EXISTS proof_indexer.ledger_snapshots (
 
 CREATE INDEX IF NOT EXISTS ledger_snapshots_recent_idx
   ON proof_indexer.ledger_snapshots (network, generated_at DESC);
+
+CREATE INDEX IF NOT EXISTS ledger_snapshots_summary_latest_idx
+  ON proof_indexer.ledger_snapshots (
+    network,
+    indexed_through_block DESC NULLS LAST,
+    generated_at DESC
+  )
+  WHERE payload ? 'summaryPayloads';
 
 COMMIT;

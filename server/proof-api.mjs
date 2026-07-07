@@ -269,7 +269,10 @@ const LEDGER_SUMMARY_FRESH_WAIT_MS = Number(
 );
 const SUMMARY_PROOF_INDEX_READ_WAIT_MS = Number(
   process.env.SUMMARY_PROOF_INDEX_READ_WAIT_MS ??
-    Math.max(WORK_FLOOR_FRESH_WAIT_MS, 3_000),
+    Math.max(WORK_FLOOR_FRESH_WAIT_MS, 45_000),
+);
+const INDEXED_FALLBACK_BACKGROUND_REFRESH = /^(?:1|true|yes)$/iu.test(
+  String(process.env.INDEXED_FALLBACK_BACKGROUND_REFRESH ?? ""),
 );
 const LEDGER_SUMMARY_CURRENT_FALLBACK_WAIT_MS = Number(
   process.env.LEDGER_SUMMARY_CURRENT_FALLBACK_WAIT_MS ?? 8_000,
@@ -2606,6 +2609,10 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
   }
 
   const fast = options.fast === true;
+  if (fast) {
+    return payload;
+  }
+
   const baseWorkTokenState = scopedTokenPayloadFromState(
     payload.token,
     WORK_TOKEN_ID,
@@ -19293,7 +19300,11 @@ async function currentProofIndexSummarySnapshotPayload(
   if (!indexedPayload) {
     return null;
   }
-  if (
+  if (options.allowWithoutCurrentCoverage === true) {
+    console.error(
+      `Accepted proof-index ${label} fallback without current coverage proof; serving latest complete indexed summary while refresh continues.`,
+    );
+  } else if (
     !(await payloadWithFallbackAfterMs(
       proofIndexPayloadCoversConfirmedTip(
         indexedPayload,
@@ -19304,13 +19315,15 @@ async function currentProofIndexSummarySnapshotPayload(
       SUMMARY_PROOF_INDEX_READ_WAIT_MS,
     ))
   ) {
-    indexedPayload = await proofIndexSummaryPayloadWithValueEventDelta(
+    const coveredPayload = await proofIndexSummaryPayloadWithValueEventDelta(
       indexedPayload,
       network,
       key,
       label,
     );
-    if (!indexedPayload) {
+    if (coveredPayload) {
+      indexedPayload = coveredPayload;
+    } else {
       return null;
     }
   }
@@ -19321,11 +19334,14 @@ async function currentProofIndexSummarySnapshotPayload(
     return null;
   }
 
-  const ledger = await existingCurrentCanonicalLedgerPayloadWithinMs(
-    network,
-    `canonical snapshot check for ${label}`,
-    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
-  );
+  const ledger =
+    options.allowWithoutCanonicalLedger === true
+      ? null
+      : await existingCurrentCanonicalLedgerPayloadWithinMs(
+          network,
+          `canonical snapshot check for ${label}`,
+          SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+        );
   if (
     summaryKeyRequiresCanonicalLedger(network, key) &&
     !ledger &&
@@ -19353,10 +19369,15 @@ async function currentProofIndexSummarySnapshotFallbackPayload(
     network,
     key,
     label,
-    { allowWithoutCanonicalLedger: true },
+    {
+      allowWithoutCanonicalLedger: true,
+      allowWithoutCurrentCoverage: true,
+    },
   );
   if (payload) {
-    refreshCanonicalLedgerPayloadInBackground(network, true);
+    if (INDEXED_FALLBACK_BACKGROUND_REFRESH) {
+      refreshCanonicalLedgerPayloadInBackground(network, true);
+    }
   }
   return payload;
 }
@@ -22762,20 +22783,20 @@ async function proofIndexWorkFloorPayload(network) {
 async function cachedWorkFloorPayload(network, fresh = false) {
   if (network === "livenet") {
     if (!fresh) {
-      const ledger = await existingCurrentCanonicalLedgerPayloadWithinMs(
-        network,
-        "work-floor canonical ledger",
-      );
-      if (ledger?.workFloor) {
-        return workFloorWithCurrentBtcUsd(ledger.workFloor, network, false);
-      }
-
       const indexedFloor = await currentProofIndexWorkFloorFallbackPayload(
         network,
         false,
       );
       if (indexedFloor) {
         return indexedFloor;
+      }
+
+      const ledger = await existingCurrentCanonicalLedgerPayloadWithinMs(
+        network,
+        "work-floor canonical ledger",
+      );
+      if (ledger?.workFloor) {
+        return workFloorWithCurrentBtcUsd(ledger.workFloor, network, false);
       }
 
       throw freshDataUnavailableError(
@@ -23243,15 +23264,18 @@ async function currentProofIndexMarketplaceSummaryFallbackPayload(
     return null;
   }
 
-  return marketplaceSummaryPayloadWithIndexedMarketOverlay(
-    {
-      ...indexedPayload,
-      workFloor: await workFloorWithSummaryMarketOverlay(
+  const workFloor = options.fast
+    ? indexedPayload.workFloor
+    : await workFloorWithSummaryMarketOverlay(
         indexedPayload.workFloor,
         network,
         fresh,
         indexedPayload.token,
-      ),
+      );
+  return marketplaceSummaryPayloadWithIndexedMarketOverlay(
+    {
+      ...indexedPayload,
+      workFloor,
     },
     network,
     options,
@@ -23297,6 +23321,16 @@ async function marketplaceSummaryFallbackPayload(network) {
 }
 
 async function marketplaceSummaryFastFallbackPayload(network) {
+  if (network === "livenet") {
+    const indexedPayload =
+      await currentProofIndexMarketplaceSummaryFallbackPayload(network, false, {
+        fast: true,
+      });
+    if (indexedPayload) {
+      return indexedPayload;
+    }
+  }
+
   const cached = await payloadWithFallbackAfterMs(
     cachedMarketplaceSummaryPayloadNoRefresh(network),
     null,
@@ -23564,13 +23598,15 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
         fastFallback,
       )
     ) {
-      refreshPayloadCacheInBackground(
-        marketplaceSummaryCacheKey(network),
-        marketplaceSummaryPayloadKey(network),
-        () => reconciledLivenetMarketplaceSummaryPayload(network, false),
-        MARKETPLACE_SUMMARY_CACHE_TTL_MS,
-        MARKETPLACE_SUMMARY_CACHE_STALE_MS,
-      );
+      if (INDEXED_FALLBACK_BACKGROUND_REFRESH) {
+        refreshPayloadCacheInBackground(
+          marketplaceSummaryCacheKey(network),
+          marketplaceSummaryPayloadKey(network),
+          () => reconciledLivenetMarketplaceSummaryPayload(network, false),
+          MARKETPLACE_SUMMARY_CACHE_TTL_MS,
+          MARKETPLACE_SUMMARY_CACHE_STALE_MS,
+        );
+      }
       return fastFallback;
     }
 
@@ -23794,6 +23830,23 @@ function refreshGrowthCachesInBackground(network) {
 }
 
 async function growthSummaryPayload(network, fresh = false) {
+  if (network === "livenet" && !fresh) {
+    const indexedPayload = await currentProofIndexSummarySnapshotFallbackPayload(
+      network,
+      "growthSummary",
+      "growth-summary",
+    );
+    if (indexedPayload) {
+      if (INDEXED_FALLBACK_BACKGROUND_REFRESH) {
+        refreshGrowthCachesInBackground(network);
+      }
+      return growthSummaryWithCanonicalWorkFloor(
+        indexedPayload,
+        indexedPayload.workFloor,
+      );
+    }
+  }
+
   const ledger =
     network === "livenet" && !fresh
       ? await existingCurrentCanonicalLedgerPayloadWithinMs(
@@ -23983,10 +24036,20 @@ async function proofIndexInfinitySummaryPayload(network, fresh = false) {
     network,
     tokenState: powbTokenState,
   });
+  const tokenSnapshotId = String(
+    powbTokenState.snapshotId ?? powbTokenState.ledgerSnapshotId ?? "",
+  ).trim();
+  const tokenLedgerGeneratedAt =
+    powbTokenState.ledgerGeneratedAt ??
+    powbTokenState.generatedAt ??
+    powbTokenState.indexedAt ??
+    generatedAt;
   return {
     ...payload,
     indexedThroughBlock:
       powbTokenState.indexedThroughBlock ?? payload.indexedThroughBlock,
+    ledgerGeneratedAt: tokenLedgerGeneratedAt,
+    ...(tokenSnapshotId ? { snapshotId: tokenSnapshotId } : {}),
     source: mergedSourceLabel(payload.source, powbTokenState.source),
   };
 }

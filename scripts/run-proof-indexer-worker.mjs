@@ -296,12 +296,17 @@ async function runCycle(pool) {
       lastParityAtMs === 0 ||
       nowMs - lastParityAtMs >= Math.max(0, PARITY_INTERVAL_MS));
   if (runParityNow) {
-    await runScript("check-proof-indexer-parity.mjs", [], {
-      NETWORK,
-      POW_API_BASE: API_BASE,
-      POW_INDEX_DB_APP_NAME: "proof-indexer-worker-parity",
-    });
-    lastParityAtMs = Date.now();
+    lastParityAtMs = nowMs;
+    try {
+      await runScript("check-proof-indexer-parity.mjs", [], {
+        NETWORK,
+        POW_API_BASE: API_BASE,
+        POW_INDEX_DB_APP_NAME: "proof-indexer-worker-parity",
+      });
+      lastParityAtMs = Date.now();
+    } catch (error) {
+      console.error(`Worker parity check failed: ${error?.message ?? error}`);
+    }
   }
 
   const finishedAt = new Date();

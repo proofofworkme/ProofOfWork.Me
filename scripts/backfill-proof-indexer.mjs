@@ -61,6 +61,9 @@ const MAIL_BACKFILL_ADDRESS_LIMIT = Number(
   process.env.POW_INDEX_BACKFILL_MAIL_ADDRESS_LIMIT ?? 200,
 );
 const DRY_RUN = process.argv.includes("--dry-run");
+const DB_SUMMARY_REPAIR = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_DB_SUMMARY_REPAIR ?? ""),
+);
 const SOURCE_FILTER = new Set(
   String(process.env.POW_INDEX_BACKFILL_SOURCES ?? "")
     .split(/[,\s]+/u)
@@ -96,8 +99,21 @@ const SOURCES = SOURCE_FILTER.size
   : ALL_SOURCES;
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
 const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
+const GROWTH_VALUE_MULTIPLE = 5;
+const ID_MARKETPLACE_MUTATION_KINDS = new Set([
+  "id-list",
+  "id-seal",
+  "id-delist",
+  "id-buy",
+]);
+const TOKEN_MARKETPLACE_MUTATION_KINDS = new Set([
+  "token-listing",
+  "token-listing-sealed",
+  "token-listing-closed",
+]);
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
 const DEFAULT_MAIL_BACKFILL_ADDRESSES = [
@@ -146,6 +162,12 @@ function endpoint(pathname, params = {}) {
       url.searchParams.set(key, String(value));
     }
   }
+  return url;
+}
+
+function unpagedEndpoint(pathname, params = {}) {
+  const url = endpoint(pathname, params);
+  url.searchParams.delete("limit");
   return url;
 }
 
@@ -1055,28 +1077,44 @@ async function tokenHistorySnapshotsForScope(scope) {
 }
 
 async function summarySnapshots() {
-  const entries = await Promise.all(
-    SUMMARY_SNAPSHOT_SOURCES.map(async (source) => {
-      try {
-        return [
-          source.key,
-          await readJson(endpoint(source.path, summarySnapshotSourceParams()), {
-            retries: 0,
-          }),
-        ];
-      } catch (error) {
-        console.error(
-          JSON.stringify({
-            error: error?.message ?? String(error),
-            phase: "summary-snapshot",
-            source: source.key,
-          }),
-        );
-        return [source.key, null];
-      }
-    }),
-  );
-  return Object.fromEntries(entries.filter(([, payload]) => payload));
+  const payloads = {};
+  for (const source of SUMMARY_SNAPSHOT_SOURCES) {
+    try {
+      payloads[source.key] = await readJson(
+        unpagedEndpoint(source.path, summarySnapshotSourceParams()),
+      );
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          error: error?.message ?? String(error),
+          phase: "summary-snapshot",
+          source: source.key,
+        }),
+      );
+    }
+  }
+  if (!REFRESH_SUMMARY_SNAPSHOT_SOURCES) {
+    return payloads;
+  }
+
+  for (const source of SUMMARY_SNAPSHOT_SOURCES) {
+    try {
+      const currentPayload = await readJson(unpagedEndpoint(source.path));
+      payloads[source.key] = strongerSummaryPayload(
+        payloads[source.key],
+        currentPayload,
+      );
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          error: error?.message ?? String(error),
+          phase: "summary-snapshot-current",
+          source: source.key,
+        }),
+      );
+    }
+  }
+  return payloads;
 }
 
 async function registryHistorySnapshots() {
@@ -1100,7 +1138,7 @@ async function registryHistorySnapshots() {
   return Object.fromEntries(entries);
 }
 
-async function storedLedgerSnapshotPayload(client, snapshotId = "") {
+async function storedLedgerSnapshotPayload(client, snapshotId = "", options = {}) {
   const requestedSnapshotId = String(snapshotId ?? "").trim();
   const params = [NETWORK];
   const snapshotFilter = requestedSnapshotId
@@ -1115,6 +1153,7 @@ async function storedLedgerSnapshotPayload(client, snapshotId = "") {
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
       ${snapshotFilter}
+      ${options.requireSummaryPayloads ? "AND payload ? 'summaryPayloads'" : ""}
       ORDER BY generated_at DESC
       LIMIT 1
     `,
@@ -1896,6 +1935,11 @@ function summaryNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function numericValue(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
 function summarySnapshotTotals(summaryPayloads = {}) {
   const workFloor =
     summaryPayloads.workFloor ??
@@ -1922,6 +1966,598 @@ function summarySnapshotTotals(summaryPayloads = {}) {
     workActualValueSats: workNetworkValueSats,
     workNetworkValueSats,
   };
+}
+
+function objectPayload(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : null;
+}
+
+function finiteSummaryNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function workFloorTotalSats(workFloor) {
+  return finiteSummaryNumber(
+    workFloor?.actualValue?.totalSats ?? workFloor?.networkValueSats,
+  );
+}
+
+function workFloorLiveSats(workFloor, totalSats) {
+  return finiteSummaryNumber(
+    workFloor?.actualValue?.liveTotalSats ??
+      workFloor?.actualValue?.liveNetworkValueSats ??
+      workFloor?.liveNetworkValueSats ??
+      totalSats,
+  );
+}
+
+function workFloorFrozenSats(workFloor) {
+  return finiteSummaryNumber(
+    workFloor?.actualValue?.frozenTotalSats ??
+      workFloor?.actualValue?.frozenNetworkValueSats ??
+      workFloor?.frozenNetworkValueSats,
+  );
+}
+
+function summaryPayloadSnapshotId(payload) {
+  const id = String(
+    payload?.snapshotId ??
+      payload?.floor?.snapshotId ??
+      payload?.workFloor?.snapshotId ??
+      "",
+  ).trim();
+  return id || null;
+}
+
+function summaryPayloadValue(payload) {
+  return finiteSummaryNumber(
+    payload?.actualValue?.totalSats ??
+      payload?.floor?.actualValue?.totalSats ??
+      payload?.workFloor?.actualValue?.totalSats ??
+      payload?.networkValueSats,
+  );
+}
+
+function strongerSummaryPayload(basePayload, candidatePayload) {
+  const base = objectPayload(basePayload);
+  const candidate = objectPayload(candidatePayload);
+  if (!base) {
+    return candidate ?? basePayload;
+  }
+  if (!candidate) {
+    return base;
+  }
+
+  const baseSnapshotId = summaryPayloadSnapshotId(base);
+  const candidateSnapshotId = summaryPayloadSnapshotId(candidate);
+  if (
+    baseSnapshotId &&
+    candidateSnapshotId &&
+    baseSnapshotId !== candidateSnapshotId
+  ) {
+    return base;
+  }
+
+  const baseValue = summaryPayloadValue(base);
+  const candidateValue = summaryPayloadValue(candidate);
+  if (candidateValue === null) {
+    return base;
+  }
+  if (baseValue === null || candidateValue > baseValue + 0.0001) {
+    return candidate;
+  }
+  return base;
+}
+
+function strongerSummaryPayloads(basePayloads, candidatePayloads) {
+  const base = objectPayload(basePayloads) ?? {};
+  const candidate = objectPayload(candidatePayloads) ?? {};
+  const next = { ...candidate };
+  const keys = new Set([...Object.keys(base), ...Object.keys(candidate)]);
+  for (const key of keys) {
+    next[key] = strongerSummaryPayload(base[key], candidate[key]);
+  }
+  return next;
+}
+
+function ledgerConsistencyValue(payload) {
+  return finiteSummaryNumber(
+    payload?.totals?.workNetworkValueSats ??
+      payload?.totals?.workActualValueSats ??
+      payload?.totals?.growthActualValueSats,
+  );
+}
+
+function strongerLedgerConsistencyPayload(basePayload, candidatePayload) {
+  const base = objectPayload(basePayload);
+  const candidate = objectPayload(candidatePayload);
+  if (!base) {
+    return candidate ?? basePayload;
+  }
+  if (!candidate) {
+    return base;
+  }
+  if (
+    base.snapshotId &&
+    candidate.snapshotId &&
+    base.snapshotId !== candidate.snapshotId
+  ) {
+    return base;
+  }
+
+  const baseValue = ledgerConsistencyValue(base);
+  const candidateValue = ledgerConsistencyValue(candidate);
+  if (candidateValue === null) {
+    return base;
+  }
+  if (baseValue === null || candidateValue > baseValue + 0.0001) {
+    return candidate;
+  }
+  const baseGeneratedAt = Date.parse(base.generatedAt ?? "");
+  const candidateGeneratedAt = Date.parse(candidate.generatedAt ?? "");
+  if (
+    Number.isFinite(candidateGeneratedAt) &&
+    (!Number.isFinite(baseGeneratedAt) ||
+      candidateGeneratedAt > baseGeneratedAt)
+  ) {
+    return candidate;
+  }
+  return base;
+}
+
+function growthSummaryWithAlignedWorkFloor(growthSummary, workFloor) {
+  const summary = objectPayload(growthSummary);
+  const floor = objectPayload(workFloor);
+  if (!summary || !floor) {
+    return growthSummary;
+  }
+
+  const totalSats = workFloorTotalSats(floor);
+  if (totalSats === null) {
+    return { ...summary, workFloor: floor };
+  }
+
+  const liveSats = workFloorLiveSats(floor, totalSats);
+  const frozenSats = workFloorFrozenSats(floor);
+  const actualValue = {
+    ...(objectPayload(summary.actualValue) ?? {}),
+    networkValueSats: totalSats,
+    totalSats,
+  };
+  if (liveSats !== null) {
+    actualValue.liveNetworkValueSats = liveSats;
+    actualValue.liveTotalSats = liveSats;
+  }
+  if (frozenSats !== null) {
+    actualValue.frozenFloorSats = frozenSats / 21_000_000;
+    actualValue.frozenNetworkValueSats = frozenSats;
+    actualValue.frozenTotalSats = frozenSats;
+  }
+  const floorUsd = finiteSummaryNumber(floor?.actualValue?.totalUsd);
+  if (floorUsd !== null) {
+    actualValue.totalUsd = floorUsd;
+  }
+
+  return {
+    ...summary,
+    actualValue,
+    frozenNetworkValueSats:
+      frozenSats !== null ? frozenSats : summary.frozenNetworkValueSats,
+    liveNetworkValueSats:
+      liveSats !== null ? liveSats : summary.liveNetworkValueSats,
+    networkValueSats: totalSats,
+    workFloor: floor,
+  };
+}
+
+function summaryPayloadsWithAlignedWorkFloor(summaryPayloads = {}) {
+  const payloads = objectPayload(summaryPayloads) ?? {};
+  const workFloor = objectPayload(payloads.workFloor);
+  if (!workFloor) {
+    return payloads;
+  }
+
+  const next = { ...payloads };
+  if (objectPayload(next.workSummary)) {
+    next.workSummary = {
+      ...next.workSummary,
+      floor: workFloor,
+    };
+  }
+  if (objectPayload(next.growthSummary)) {
+    next.growthSummary = growthSummaryWithAlignedWorkFloor(
+      next.growthSummary,
+      workFloor,
+    );
+  }
+  if (objectPayload(next.marketplaceSummary)) {
+    next.marketplaceSummary = {
+      ...next.marketplaceSummary,
+      workFloor: objectPayload(next.marketplaceSummary.workFloor) ?? workFloor,
+    };
+  }
+  return next;
+}
+
+function newerIso(left, right) {
+  const leftMs = Date.parse(left ?? "");
+  const rightMs = Date.parse(right ?? "");
+  if (!Number.isFinite(leftMs)) {
+    return Number.isFinite(rightMs) ? right : left;
+  }
+  if (!Number.isFinite(rightMs)) {
+    return left;
+  }
+  return rightMs > leftMs ? right : left;
+}
+
+function mergedSourceLabel(...sources) {
+  return [
+    ...new Set(
+      sources
+        .flatMap((source) => String(source ?? "").split("+"))
+        .map((source) => source.trim())
+        .filter(Boolean),
+    ),
+  ].join("+");
+}
+
+function proofIndexPayloadIndexedThroughBlock(payload) {
+  const height = Math.max(
+    Number(payload?.indexedThroughBlock) || 0,
+    Number(payload?.metrics?.indexedThroughBlock) || 0,
+    Number(payload?.stats?.indexedThroughBlock) || 0,
+    Number(payload?.token?.indexedThroughBlock) || 0,
+    Number(payload?.floor?.indexedThroughBlock) || 0,
+    Number(payload?.workFloor?.indexedThroughBlock) || 0,
+  );
+  return Number.isSafeInteger(height) && height > 0 ? height : 0;
+}
+
+function growthDeltaForProofIndexEvents(events) {
+  const delta = {
+    browserFlowSats: 0,
+    browserSats: 0,
+    computerEventFlowSats: 0,
+    computerEventSats: 0,
+    driveFlowSats: 0,
+    driveSats: 0,
+    idMarketplaceFeeSats: 0,
+    idMarketplaceVolumeSats: 0,
+    infinityBondFlowSats: 0,
+    infinityBondSats: 0,
+    mailFlowSats: 0,
+    mailSats: 0,
+    marketplaceFeeSats: 0,
+    marketplaceFlowSats: 0,
+    marketplaceMutationFeeSats: 0,
+    marketplaceSaleVolumeSats: 0,
+    marketplaceSats: 0,
+    marketplaceVolumeSats: 0,
+    tokenCreationFlowSats: 0,
+    tokenMarketplaceFeeSats: 0,
+    tokenMintFlowSats: 0,
+    tokenSaleFlowSats: 0,
+    tokenSaleVolumeSats: 0,
+    tokenSats: 0,
+    tokenTransferFlowSats: 0,
+    totalSats: 0,
+    walletFlowSats: 0,
+    walletSats: 0,
+  };
+  const addScaled = (flowKey, satsKey, sats) => {
+    delta[flowKey] += sats;
+    delta[satsKey] += sats * GROWTH_VALUE_MULTIPLE;
+    delta.totalSats += sats * GROWTH_VALUE_MULTIPLE;
+  };
+
+  for (const event of Array.isArray(events) ? events : []) {
+    const kind = String(event?.kind ?? "");
+    const sats = numericValue(event?.totalSats);
+    if (sats <= 0) {
+      continue;
+    }
+
+    if (kind === "mail" || kind === "reply") {
+      addScaled("mailFlowSats", "mailSats", sats);
+    } else if (kind === "file") {
+      addScaled("driveFlowSats", "driveSats", sats);
+    } else if (kind === INFINITY_BOND_KIND) {
+      addScaled("infinityBondFlowSats", "infinityBondSats", sats);
+    } else if (ID_MARKETPLACE_MUTATION_KINDS.has(kind)) {
+      delta.idMarketplaceFeeSats += sats;
+      delta.marketplaceFeeSats += sats;
+      delta.marketplaceMutationFeeSats += sats;
+      delta.marketplaceFlowSats += sats;
+      delta.marketplaceSats += sats * GROWTH_VALUE_MULTIPLE;
+      delta.totalSats += sats * GROWTH_VALUE_MULTIPLE;
+    } else if (TOKEN_MARKETPLACE_MUTATION_KINDS.has(kind)) {
+      delta.tokenMarketplaceFeeSats += sats;
+      delta.marketplaceFeeSats += sats;
+      delta.marketplaceMutationFeeSats += sats;
+      delta.marketplaceFlowSats += sats;
+      delta.marketplaceSats += sats * GROWTH_VALUE_MULTIPLE;
+      delta.totalSats += sats * GROWTH_VALUE_MULTIPLE;
+    } else if (kind === "token-create") {
+      addScaled("tokenCreationFlowSats", "tokenSats", sats);
+    } else if (kind === "token-mint") {
+      addScaled("tokenMintFlowSats", "tokenSats", sats);
+    } else if (kind === "token-transfer") {
+      delta.tokenTransferFlowSats += sats;
+      delta.walletFlowSats += sats;
+      delta.walletSats += sats * GROWTH_VALUE_MULTIPLE;
+      delta.totalSats += sats * GROWTH_VALUE_MULTIPLE;
+    } else if (kind === "token-sale") {
+      delta.tokenSaleFlowSats += sats;
+      delta.tokenSaleVolumeSats += sats;
+      delta.marketplaceSaleVolumeSats += sats;
+      delta.marketplaceVolumeSats += sats;
+      delta.marketplaceFlowSats += sats;
+      delta.marketplaceSats += sats * GROWTH_VALUE_MULTIPLE;
+      delta.totalSats += sats * GROWTH_VALUE_MULTIPLE;
+    } else {
+      addScaled("computerEventFlowSats", "computerEventSats", sats);
+    }
+  }
+
+  return delta;
+}
+
+function actualValueWithProofIndexDelta(actualValue, delta) {
+  const actual = { ...(objectPayload(actualValue) ?? {}) };
+  const deltaTotalSats = numericValue(delta.totalSats);
+  const previousTotalSats = numericValue(actual.totalSats);
+  const previousLiveTotalSats = numericValue(
+    actual.liveTotalSats ?? actual.liveNetworkValueSats ?? previousTotalSats,
+  );
+  for (const [key, value] of Object.entries(delta)) {
+    if (key === "totalSats" || value === 0) {
+      continue;
+    }
+    actual[key] = numericValue(actual[key]) + value;
+  }
+  actual.totalSats = previousTotalSats + deltaTotalSats;
+  actual.networkValueSats = actual.totalSats;
+  actual.liveTotalSats = previousLiveTotalSats + deltaTotalSats;
+  actual.liveNetworkValueSats = actual.liveTotalSats;
+  actual.liveFloorSats = actual.liveTotalSats / WORK_TOKEN_MAX_SUPPLY;
+  const previousFrozenTotal = numericValue(
+    actual.frozenTotalSats ?? actual.frozenNetworkValueSats,
+  );
+  if (previousFrozenTotal > 0) {
+    actual.frozenTotalSats = previousFrozenTotal + deltaTotalSats;
+    actual.frozenNetworkValueSats = actual.frozenTotalSats;
+    actual.frozenFloorSats = actual.frozenTotalSats / WORK_TOKEN_MAX_SUPPLY;
+  }
+  return actual;
+}
+
+function workFloorWithProofIndexEventDelta(workFloor, deltaPayload) {
+  const floor = objectPayload(workFloor);
+  if (!floor) {
+    return workFloor;
+  }
+  const indexedThroughBlock = Math.max(
+    Number(floor.indexedThroughBlock) || 0,
+    Number(deltaPayload.indexedThroughBlock) || 0,
+    Number(deltaPayload.maxEventBlock) || 0,
+  );
+  const coveredWorkFloor = {
+    ...floor,
+    indexedAt: newerIso(floor.indexedAt, deltaPayload.indexedAt),
+    indexedThroughBlock,
+    source: mergedSourceLabel(floor.source, deltaPayload.source),
+    stats: {
+      ...(floor.stats ?? {}),
+      confirmedComputerActions:
+        numericValue(floor.stats?.confirmedComputerActions) +
+        numericValue(deltaPayload.totalCount),
+      indexedThroughBlock,
+    },
+  };
+  if (numericValue(deltaPayload?.totalSats) <= 0) {
+    return coveredWorkFloor;
+  }
+
+  const delta = growthDeltaForProofIndexEvents(deltaPayload.events);
+  if (numericValue(delta.totalSats) <= 0) {
+    return coveredWorkFloor;
+  }
+  const actualValue = actualValueWithProofIndexDelta(floor.actualValue, delta);
+  return {
+    ...coveredWorkFloor,
+    actualValue,
+    floorSats: actualValue.totalSats / WORK_TOKEN_MAX_SUPPLY,
+    frozenFloorSats:
+      numericValue(actualValue.frozenTotalSats) / WORK_TOKEN_MAX_SUPPLY,
+    frozenNetworkValueSats: numericValue(actualValue.frozenTotalSats),
+    liveFloorSats: actualValue.totalSats / WORK_TOKEN_MAX_SUPPLY,
+    liveNetworkValueSats: actualValue.totalSats,
+    networkValueSats: actualValue.totalSats,
+  };
+}
+
+function growthSummaryWithProofIndexEventDelta(growthSummary, deltaPayload) {
+  const summary = objectPayload(growthSummary);
+  if (!summary) {
+    return growthSummary;
+  }
+  const coveredWorkFloor = summary.workFloor
+    ? workFloorWithProofIndexEventDelta(summary.workFloor, deltaPayload)
+    : summary.workFloor;
+  const indexedThroughBlock = Math.max(
+    Number(summary.indexedThroughBlock) || 0,
+    Number(coveredWorkFloor?.indexedThroughBlock) || 0,
+    Number(deltaPayload.indexedThroughBlock) || 0,
+    Number(deltaPayload.maxEventBlock) || 0,
+  );
+  const coveredGrowthSummary = {
+    ...summary,
+    indexedAt: newerIso(summary.indexedAt, deltaPayload.indexedAt),
+    indexedThroughBlock,
+    source: mergedSourceLabel(summary.source, deltaPayload.source),
+    workFloor: coveredWorkFloor,
+  };
+  if (numericValue(deltaPayload?.totalSats) <= 0) {
+    return coveredWorkFloor
+      ? growthSummaryWithAlignedWorkFloor(coveredGrowthSummary, coveredWorkFloor)
+      : coveredGrowthSummary;
+  }
+
+  const delta = growthDeltaForProofIndexEvents(deltaPayload.events);
+  if (numericValue(delta.totalSats) <= 0) {
+    return coveredWorkFloor
+      ? growthSummaryWithAlignedWorkFloor(coveredGrowthSummary, coveredWorkFloor)
+      : coveredGrowthSummary;
+  }
+  const actualValue = actualValueWithProofIndexDelta(summary.actualValue, delta);
+  const nextGrowthSummary = {
+    ...coveredGrowthSummary,
+    actualValue,
+    frozenNetworkValueSats: numericValue(actualValue.frozenTotalSats),
+    liveNetworkValueSats: actualValue.totalSats,
+    networkValueSats: actualValue.totalSats,
+  };
+  return coveredWorkFloor
+    ? growthSummaryWithAlignedWorkFloor(nextGrowthSummary, coveredWorkFloor)
+    : nextGrowthSummary;
+}
+
+async function proofIndexConfirmedValueEventsAfterBlock(client, blockHeight) {
+  const indexedThroughBlock = await latestIndexedBlockHeight(client).catch(() => 0);
+  const result = await client.query(
+    `
+      SELECT
+        kind,
+        COALESCE(sum(amount_sats), 0)::text AS total_sats,
+        count(*)::integer AS event_count,
+        max(block_height)::integer AS max_event_block,
+        max(event_time) AS max_event_time
+      FROM proof_indexer.events
+      WHERE network = $1
+        AND status = 'confirmed'
+        AND valid IS DISTINCT FROM false
+        AND block_height > $2
+      GROUP BY kind
+      ORDER BY kind
+    `,
+    [NETWORK, blockHeight],
+  );
+  const events = result.rows.map((row) => ({
+    count: Number(row.event_count) || 0,
+    kind: String(row.kind ?? ""),
+    maxEventBlock: Number(row.max_event_block) || 0,
+    totalSats: Number(row.total_sats) || 0,
+  }));
+  const totalCount = events.reduce((sum, event) => sum + event.count, 0);
+  const totalSats = events.reduce((sum, event) => sum + event.totalSats, 0);
+  const maxEventBlock = Math.max(
+    0,
+    ...events.map((event) => Number(event.maxEventBlock) || 0),
+  );
+  const maxEventTime = result.rows.reduce((latest, row) => {
+    const value = row.max_event_time ? new Date(row.max_event_time).toISOString() : "";
+    return newerIso(latest, value);
+  }, "");
+
+  return {
+    events,
+    indexedAt: newerIso(maxEventTime, new Date().toISOString()),
+    indexedThroughBlock: Math.max(
+      Number(indexedThroughBlock) || 0,
+      Number(blockHeight) || 0,
+      maxEventBlock,
+    ),
+    maxEventBlock,
+    source: "proof-index-db-value-events",
+    totalCount,
+    totalSats,
+  };
+}
+
+async function summaryPayloadWithProofIndexEventDelta(
+  client,
+  payload,
+  key,
+  deltaByBlock,
+) {
+  const item = objectPayload(payload);
+  if (!item) {
+    return payload;
+  }
+  const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(item);
+  if (!indexedThroughBlock) {
+    return payload;
+  }
+  if (!deltaByBlock.has(indexedThroughBlock)) {
+    deltaByBlock.set(
+      indexedThroughBlock,
+      proofIndexConfirmedValueEventsAfterBlock(client, indexedThroughBlock),
+    );
+  }
+  const deltaPayload = await deltaByBlock.get(indexedThroughBlock);
+  if (!deltaPayload) {
+    return payload;
+  }
+
+  let nextPayload = item;
+  if (key === "workFloor") {
+    nextPayload = workFloorWithProofIndexEventDelta(item, deltaPayload);
+  } else if (key === "workSummary") {
+    nextPayload = {
+      ...item,
+      floor: workFloorWithProofIndexEventDelta(item.floor, deltaPayload),
+    };
+  } else if (key === "growthSummary") {
+    nextPayload = growthSummaryWithProofIndexEventDelta(item, deltaPayload);
+  } else if (key === "marketplaceSummary") {
+    nextPayload = {
+      ...item,
+      workFloor: workFloorWithProofIndexEventDelta(
+        item.workFloor,
+        deltaPayload,
+      ),
+    };
+  } else {
+    return payload;
+  }
+
+  const mergedIndexedThroughBlock = Math.max(
+    proofIndexPayloadIndexedThroughBlock(nextPayload),
+    proofIndexPayloadIndexedThroughBlock(deltaPayload),
+    Number(deltaPayload.maxEventBlock) || 0,
+  );
+  return {
+    ...nextPayload,
+    indexedAt: newerIso(nextPayload.indexedAt, deltaPayload.indexedAt),
+    indexedThroughBlock: mergedIndexedThroughBlock,
+    source: mergedSourceLabel(nextPayload.source, deltaPayload.source),
+  };
+}
+
+async function summaryPayloadsWithProofIndexEventDeltas(client, summaryPayloads = {}) {
+  const payloads = objectPayload(summaryPayloads) ?? {};
+  const next = { ...payloads };
+  const deltaByBlock = new Map();
+  for (const key of [
+    "workFloor",
+    "workSummary",
+    "growthSummary",
+    "marketplaceSummary",
+  ]) {
+    if (objectPayload(next[key])) {
+      next[key] = await summaryPayloadWithProofIndexEventDelta(
+        client,
+        next[key],
+        key,
+        deltaByBlock,
+      );
+    }
+  }
+  return next;
 }
 
 async function fallbackLedgerSnapshotPayload(
@@ -1979,9 +2615,23 @@ async function storeLedgerSnapshot(client, options = {}) {
   let ledgerSnapshotError = null;
   try {
     payload = await readJson(
-      endpoint("/api/v1/ledger-consistency", summarySnapshotSourceParams()),
-      { retries: 0 },
+      unpagedEndpoint("/api/v1/ledger-consistency", summarySnapshotSourceParams()),
     );
+    if (REFRESH_SUMMARY_SNAPSHOT_SOURCES) {
+      try {
+        payload = strongerLedgerConsistencyPayload(
+          payload,
+          await readJson(unpagedEndpoint("/api/v1/ledger-consistency")),
+        );
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            error: error?.message ?? String(error),
+            phase: "ledger-snapshot-current",
+          }),
+        );
+      }
+    }
   } catch (error) {
     ledgerSnapshotError = error;
     console.error(
@@ -1995,7 +2645,7 @@ async function storeLedgerSnapshot(client, options = {}) {
     client,
     payload?.snapshotId ?? "",
   );
-  const [activityPayload, registryHistoryPayloads, summaryPayloads] =
+  const [activityPayload, registryHistoryPayloads, rawSummaryPayloads] =
     includeDerivedSnapshots
       ? await Promise.all([
           activitySnapshot(previousPayload),
@@ -2007,6 +2657,14 @@ async function storeLedgerSnapshot(client, options = {}) {
           previousPayload?.registryHistoryPayloads ?? {},
           previousPayload?.summaryPayloads ?? {},
         ];
+  let summaryPayloads = summaryPayloadsWithAlignedWorkFloor(rawSummaryPayloads);
+  summaryPayloads = await summaryPayloadsWithProofIndexEventDeltas(
+    client,
+    summaryPayloads,
+  );
+  summaryPayloads = summaryPayloadsWithAlignedWorkFloor(
+    strongerSummaryPayloads(previousPayload?.summaryPayloads, summaryPayloads),
+  );
   if (!payload) {
     payload = await fallbackLedgerSnapshotPayload(
       client,
@@ -2098,6 +2756,92 @@ async function storeLedgerSnapshot(client, options = {}) {
         missingLogEvents: payload.missingLogEvents ?? [],
         ok: payload.ok,
         status: payload.status,
+      }),
+      JSON.stringify(snapshotPayload),
+    ],
+  );
+  return snapshotPayload;
+}
+
+async function repairStoredSummarySnapshot(client) {
+  const previousPayload = await storedLedgerSnapshotPayload(client, "", {
+    requireSummaryPayloads: true,
+  });
+  if (!objectPayload(previousPayload?.summaryPayloads)) {
+    throw new Error("No stored summaryPayloads are available to repair.");
+  }
+
+  let summaryPayloads = summaryPayloadsWithAlignedWorkFloor(
+    previousPayload.summaryPayloads,
+  );
+  summaryPayloads = await summaryPayloadsWithProofIndexEventDeltas(
+    client,
+    summaryPayloads,
+  );
+  summaryPayloads = summaryPayloadsWithAlignedWorkFloor(
+    strongerSummaryPayloads(previousPayload.summaryPayloads, summaryPayloads),
+  );
+
+  const indexedAt = new Date().toISOString();
+  const indexedThroughBlock = Math.max(
+    numberOrNull(previousPayload.indexedThroughBlock) ?? 0,
+    numberOrNull(previousPayload.metrics?.indexedThroughBlock) ?? 0,
+    proofIndexPayloadIndexedThroughBlock(summaryPayloads.workFloor),
+    proofIndexPayloadIndexedThroughBlock(summaryPayloads.workSummary),
+    proofIndexPayloadIndexedThroughBlock(summaryPayloads.growthSummary),
+    proofIndexPayloadIndexedThroughBlock(summaryPayloads.marketplaceSummary),
+    await latestIndexedBlockHeight(client).catch(() => 0),
+  );
+  const summaryHash = createHash("sha256")
+    .update(JSON.stringify(summaryPayloads))
+    .digest("hex");
+  const metrics = {
+    ...(previousPayload.metrics ?? {}),
+    indexedThroughBlock,
+  };
+  const snapshotPayload = {
+    ...previousPayload,
+    generatedAt: newerIso(previousPayload.generatedAt, indexedAt),
+    indexedThroughBlock,
+    metrics,
+    sourceHashes: {
+      ...(previousPayload.sourceHashes ?? {}),
+      summarySnapshotDbRepair: summaryHash,
+    },
+    summaryPayloads,
+    summaryPayloadsIndexedAt: indexedAt,
+    totals: summarySnapshotTotals(summaryPayloads),
+  };
+  const snapshotId = String(snapshotPayload.snapshotId ?? "").trim();
+  if (!snapshotId) {
+    throw new Error("Stored ledger snapshot is missing snapshotId.");
+  }
+
+  await client.query(
+    `
+      UPDATE proof_indexer.ledger_snapshots
+      SET
+        generated_at = COALESCE($3::timestamptz, generated_at),
+        indexed_through_block = $4,
+        source_hashes = $5::jsonb,
+        metrics = $6::jsonb,
+        consistency = $7::jsonb,
+        payload = $8::jsonb
+      WHERE network = $1
+        AND snapshot_id = $2
+    `,
+    [
+      NETWORK,
+      snapshotId,
+      snapshotPayload.generatedAt ?? null,
+      indexedThroughBlock || numberOrNull(previousPayload.indexedThroughBlock),
+      JSON.stringify(snapshotPayload.sourceHashes ?? {}),
+      JSON.stringify(metrics),
+      JSON.stringify({
+        checks: snapshotPayload.checks ?? [],
+        missingLogEvents: snapshotPayload.missingLogEvents ?? [],
+        ok: snapshotPayload.ok,
+        status: snapshotPayload.status,
       }),
       JSON.stringify(snapshotPayload),
     ],
@@ -2655,26 +3399,43 @@ const pool = createProofIndexPool({
 try {
   const client = await pool.connect();
   try {
-    const results = [];
-    for (const source of SOURCES) {
-      results.push(await backfillSource(client, source));
+    if (DB_SUMMARY_REPAIR) {
+      const snapshot = await repairStoredSummarySnapshot(client);
+      console.log(
+        JSON.stringify(
+          {
+            dbSummaryRepair: true,
+            network: NETWORK,
+            ok: true,
+            snapshotId: snapshot.snapshotId,
+            totals: summarySnapshotTotals(snapshot.summaryPayloads),
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      const results = [];
+      for (const source of SOURCES) {
+        results.push(await backfillSource(client, source));
+      }
+      results.push(await repairWorkMintMinterAttribution(client));
+      results.push(await backfillScopedTokenHolders(client));
+      const snapshot = await storeLedgerSnapshot(client);
+      console.log(
+        JSON.stringify(
+          {
+            apiBase: API_BASE,
+            network: NETWORK,
+            ok: true,
+            results,
+            snapshotId: snapshot.snapshotId,
+          },
+          null,
+          2,
+        ),
+      );
     }
-    results.push(await repairWorkMintMinterAttribution(client));
-    results.push(await backfillScopedTokenHolders(client));
-    const snapshot = await storeLedgerSnapshot(client);
-    console.log(
-      JSON.stringify(
-        {
-          apiBase: API_BASE,
-          network: NETWORK,
-          ok: true,
-          results,
-          snapshotId: snapshot.snapshotId,
-        },
-        null,
-        2,
-      ),
-    );
   } finally {
     client.release();
   }

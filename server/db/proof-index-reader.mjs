@@ -115,6 +115,27 @@ function dateIso(value, fallback = new Date()) {
   return date.toISOString();
 }
 
+function safeBlockHeight(value) {
+  const height = Number(value);
+  return Number.isSafeInteger(height) && height > 0 ? height : 0;
+}
+
+function summaryPayloadIndexedThroughBlock(payload, snapshot) {
+  const height = Math.max(
+    safeBlockHeight(payload?.indexedThroughBlock),
+    safeBlockHeight(payload?.metrics?.indexedThroughBlock),
+    safeBlockHeight(payload?.stats?.indexedThroughBlock),
+    safeBlockHeight(payload?.floor?.indexedThroughBlock),
+    safeBlockHeight(payload?.floor?.metrics?.indexedThroughBlock),
+    safeBlockHeight(payload?.workFloor?.indexedThroughBlock),
+    safeBlockHeight(payload?.workFloor?.metrics?.indexedThroughBlock),
+    safeBlockHeight(snapshot?.indexed_through_block),
+    safeBlockHeight(snapshot?.payload?.indexedThroughBlock),
+    safeBlockHeight(snapshot?.payload?.metrics?.indexedThroughBlock),
+  );
+  return height > 0 ? height : undefined;
+}
+
 function newestDateIso(values, fallback = new Date()) {
   const times = (Array.isArray(values) ? values : [values])
     .map((value) => {
@@ -2344,7 +2365,6 @@ async function ledgerSnapshot(pool, network, snapshotId = "") {
           payload
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1 AND snapshot_id = $2
-          AND payload ? 'snapshotId'
         LIMIT 1
       `,
       [network, pinnedSnapshotId],
@@ -2363,6 +2383,54 @@ async function ledgerSnapshot(pool, network, snapshotId = "") {
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
         AND payload ? 'snapshotId'
+      ORDER BY
+        CASE
+          WHEN payload->>'snapshotId' = snapshot_id
+            AND payload ? 'activityPayload'
+            AND payload ? 'registryHistoryPayloads'
+            AND payload ? 'summaryPayloads'
+            AND payload ? 'tokenHistoryPayloads'
+            AND payload ? 'tokenStatePayloads'
+          THEN 0
+          ELSE 1
+        END,
+        generated_at DESC
+      LIMIT 1
+    `,
+    [network],
+  );
+  return snapshotResult.rows[0] ?? null;
+}
+
+async function ledgerSnapshotMetadata(pool, network, snapshotId = "") {
+  const pinnedSnapshotId = normalizedSnapshotId(snapshotId);
+  if (pinnedSnapshotId) {
+    const pinnedResult = await pool.query(
+      `
+        SELECT
+          snapshot_id,
+          generated_at,
+          indexed_through_block,
+          consistency
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1 AND snapshot_id = $2
+          AND payload ? 'snapshotId'
+        LIMIT 1
+      `,
+      [network, pinnedSnapshotId],
+    );
+    return pinnedResult.rows[0] ?? null;
+  }
+
+  const snapshotResult = await pool.query(
+    `
+      SELECT
+        snapshot_id,
+        generated_at,
+        indexed_through_block,
+        consistency
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
       ORDER BY generated_at DESC
       LIMIT 1
     `,
@@ -2966,23 +3034,33 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   const needles = tokenHistoryFilterNeedles(searchParams, pagination);
   const txidNeedles = needles.map(normalizedTxid).filter(Boolean);
   if (txidNeedles.length > 0) {
-    params.push([...new Set(txidNeedles)]);
+    const uniqueTxidNeedles = [...new Set(txidNeedles)];
+    params.push(uniqueTxidNeedles);
     const param = `$${params.length}`;
+    const payloadClauses = [];
+    for (const txidNeedle of uniqueTxidNeedles) {
+      for (const key of [
+        "txid",
+        "saleTxid",
+        "closeTxid",
+        "closedTxid",
+        "listingId",
+      ]) {
+        params.push(JSON.stringify({ [key]: txidNeedle }));
+        payloadClauses.push(`e.payload @> $${params.length}::jsonb`);
+      }
+    }
     conditions.push(
       `(
-        lower(e.txid) = ANY(${param}::text[])
-        OR lower(e.payload->>'txid') = ANY(${param}::text[])
-        OR lower(e.payload->>'saleTxid') = ANY(${param}::text[])
-        OR lower(e.payload->>'closeTxid') = ANY(${param}::text[])
-        OR lower(e.payload->>'closedTxid') = ANY(${param}::text[])
-        OR lower(e.payload->>'listingId') = ANY(${param}::text[])
-        OR lower(cl_event.listing_id) = ANY(${param}::text[])
-        OR lower(cl_event.close_txid) = ANY(${param}::text[])
+        e.txid = ANY(${param}::text[])
+        ${payloadClauses.length > 0 ? `OR ${payloadClauses.join("\n        OR ")}` : ""}
+        OR cl_event.listing_id = ANY(${param}::text[])
+        OR cl_event.close_txid = ANY(${param}::text[])
         OR EXISTS (
           SELECT 1
           FROM proof_indexer.event_refs erq
           WHERE erq.event_id = e.event_id
-            AND lower(erq.ref_value) = ANY(${param}::text[])
+            AND erq.ref_value = ANY(${param}::text[])
         )
       )`,
     );
@@ -3229,23 +3307,6 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     requestedKind,
     searchParams,
   );
-  const snapshot = await ledgerSnapshot(pool, network, pagination.snapshotId);
-  if (!snapshot) {
-    return null;
-  }
-  const snapshotPage = logHistoryPageFromSnapshot(
-    snapshot,
-    network,
-    requestedKind,
-    pagination,
-  );
-  if (
-    snapshotPage &&
-    !((requestedKind || pagination.query) && snapshotPage.totalCount === 0)
-  ) {
-    return snapshotPage;
-  }
-
   const conditions = ["e.network = $1"];
   const params = [network];
   const addParam = (value) => {
@@ -3263,19 +3324,32 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     if (queryTxid) {
       exactQueryTxid = queryTxid;
       const queryParam = addParam(queryTxid);
+      const txidPayloadParam = addParam(JSON.stringify({ txid: queryTxid }));
+      const saleTxidPayloadParam = addParam(
+        JSON.stringify({ saleTxid: queryTxid }),
+      );
+      const closeTxidPayloadParam = addParam(
+        JSON.stringify({ closeTxid: queryTxid }),
+      );
+      const closedTxidPayloadParam = addParam(
+        JSON.stringify({ closedTxid: queryTxid }),
+      );
+      const listingIdPayloadParam = addParam(
+        JSON.stringify({ listingId: queryTxid }),
+      );
       conditions.push(`
         (
           e.txid = ${queryParam}
-          OR lower(e.payload->>'txid') = ${queryParam}
-          OR lower(e.payload->>'saleTxid') = ${queryParam}
-          OR lower(e.payload->>'closeTxid') = ${queryParam}
-          OR lower(e.payload->>'closedTxid') = ${queryParam}
-          OR lower(e.payload->>'listingId') = ${queryParam}
+          OR e.payload @> ${txidPayloadParam}::jsonb
+          OR e.payload @> ${saleTxidPayloadParam}::jsonb
+          OR e.payload @> ${closeTxidPayloadParam}::jsonb
+          OR e.payload @> ${closedTxidPayloadParam}::jsonb
+          OR e.payload @> ${listingIdPayloadParam}::jsonb
           OR EXISTS (
             SELECT 1
             FROM proof_indexer.event_refs erq
             WHERE erq.event_id = e.event_id
-              AND lower(erq.ref_value) = ${queryParam}
+              AND erq.ref_value = ${queryParam}
           )
         )
       `);
@@ -3304,6 +3378,14 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
 
   const whereClause = conditions.join(" AND ");
   if (exactQueryTxid) {
+    const snapshot = await ledgerSnapshotMetadata(
+      pool,
+      network,
+      pagination.snapshotId,
+    );
+    if (!snapshot) {
+      return null;
+    }
     const rowLimit = Math.max(
       pagination.limit,
       pagination.limit + pagination.offset,
@@ -3349,6 +3431,23 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
       snapshot,
       source: "proof-indexer",
     });
+  }
+
+  const snapshot = await ledgerSnapshot(pool, network, pagination.snapshotId);
+  if (!snapshot) {
+    return null;
+  }
+  const snapshotPage = logHistoryPageFromSnapshot(
+    snapshot,
+    network,
+    requestedKind,
+    pagination,
+  );
+  if (
+    snapshotPage &&
+    !((requestedKind || pagination.query) && snapshotPage.totalCount === 0)
+  ) {
+    return snapshotPage;
   }
 
   const countResult = await pool.query(
@@ -3799,6 +3898,46 @@ export async function proofIndexTokenHistoryPayload(
   );
   if (!eligibility.eligible) {
     return null;
+  }
+
+  const exactMarketTxidNeedles = tokenHistoryFilterNeedles(
+    searchParams,
+    eligibility.pagination,
+  )
+    .map(normalizedTxid)
+    .filter(Boolean);
+  if (
+    exactMarketTxidNeedles.length > 0 &&
+    tokenHistoryMarketEventKinds(eligibility.kind).length > 0
+  ) {
+    const snapshotMetadata = await ledgerSnapshotMetadata(
+      pool,
+      network,
+      eligibility.pagination.snapshotId,
+    );
+    if (snapshotMetadata) {
+      const exactMarketPage = await proofIndexTokenMarketHistoryOverlayPayload(
+        network,
+        tokenScope,
+        eligibility.kind,
+        searchParams,
+        {
+          pagination: eligibility.pagination,
+          snapshot: snapshotMetadata,
+        },
+      );
+      if (exactMarketPage) {
+        return tokenHistoryPageWithScanCoverage(
+          exactMarketPage,
+          await tokenHistoryScanCoverageAfterSnapshot(
+            pool,
+            network,
+            eligibility.kind,
+            snapshotMetadata,
+          ),
+        );
+      }
+    }
   }
 
   const snapshot = await ledgerSnapshotWithPayload(
@@ -6497,35 +6636,55 @@ export async function proofIndexSnapshotPayload(network, key) {
     return null;
   }
 
-  const snapshotResult = await pool.query(
+  const summaryResult = await pool.query(
     `
-      WITH recent AS (
-        SELECT
-          snapshot_id,
-          generated_at,
-          indexed_through_block,
-          consistency,
-          payload
-        FROM proof_indexer.ledger_snapshots
-        WHERE network = $1
-        ORDER BY generated_at DESC
-        LIMIT ${SUMMARY_SNAPSHOT_LOOKBACK_LIMIT}
-      )
       SELECT
         snapshot_id,
         generated_at,
         indexed_through_block,
         consistency,
         payload
-      FROM recent
-      WHERE payload ? 'summaryPayloads'
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
+        AND payload ? 'summaryPayloads'
         AND payload->'summaryPayloads' ? $2
-      ORDER BY generated_at DESC
+      ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
       LIMIT 1
     `,
     [network, key],
   );
-  const snapshot = snapshotResult.rows[0] ?? null;
+  let snapshot = summaryResult.rows[0] ?? null;
+  if (!snapshot) {
+    const snapshotResult = await pool.query(
+      `
+        WITH recent AS (
+          SELECT
+            snapshot_id,
+            generated_at,
+            indexed_through_block,
+            consistency,
+            payload
+          FROM proof_indexer.ledger_snapshots
+          WHERE network = $1
+          ORDER BY generated_at DESC
+          LIMIT ${SUMMARY_SNAPSHOT_LOOKBACK_LIMIT}
+        )
+        SELECT
+          snapshot_id,
+          generated_at,
+          indexed_through_block,
+          consistency,
+          payload
+        FROM recent
+        WHERE payload ? 'summaryPayloads'
+          AND payload->'summaryPayloads' ? $2
+        ORDER BY generated_at DESC
+        LIMIT 1
+      `,
+      [network, key],
+    );
+    snapshot = snapshotResult.rows[0] ?? null;
+  }
   if (!snapshot) {
     return null;
   }
@@ -6537,7 +6696,13 @@ export async function proofIndexSnapshotPayload(network, key) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
   }
-  return payload;
+  return {
+    ...payload,
+    indexedThroughBlock: summaryPayloadIndexedThroughBlock(payload, snapshot),
+    ledgerGeneratedAt:
+      payload.ledgerGeneratedAt ?? dateIso(snapshot.generated_at),
+    snapshotId: payload.snapshotId ?? snapshot.snapshot_id,
+  };
 }
 
 export async function proofIndexValueSummaryPayload(network) {
