@@ -214,8 +214,37 @@ Pending status checks use their own smaller timeout
 full worker cycle. Production service configuration is tracked in:
 
 ```text
+deploy/electrs-open-files-override.conf
+deploy/proofofwork-api-proof-index.conf
 deploy/proofofwork-indexer-worker.service
 ```
+
+The node health contract includes those tracked service overrides. `electrs`
+must keep a high open-file limit (`LimitNOFILE=1048576`) so public address,
+history, outspend, and block-scan reads do not exhaust descriptors and restart
+the local indexer path. The API proof-index service override keeps the
+database-backed read pool and wait windows large enough for summary, mailbox,
+and indexed-search paths under public load; mailbox reads may wait for indexed
+lookup/enrichment instead of failing closed after a too-short database timeout.
+If these values drift in production, restore them from `deploy/` before trusting
+route-level health checks.
+
+Ledger snapshot repairs must keep the row as one complete data plane. A
+current summary row should carry `summaryPayloads`, a current or preserved
+`activityPayload`, row-level consistency checks, and an
+`indexed_through_block` that includes block-scan rows even when a block has no
+new ProofOfWork transactions. Database summary readers should expose the
+row-level consistency object on returned summary payloads and nested
+`floor`/`workFloor` objects so `/api/v1/work-floor`, Growth, Marketplace, and
+`/api/v1/consistency` cannot mix current top-level totals with stale embedded
+tip checks.
+
+`indexer:parity` compares the database read model with confirmed canonical
+history. Confirmed event coverage should be measured against confirmed
+canonical activity; pending canonical activity and pending database rows are
+mempool visibility, not a confirmed-history deficit. The parity report should
+still surface pending counts so mempool pressure remains visible without
+blocking a healthy confirmed ledger.
 
 Production regression gates after the June 2026 database hardening are
 `npm run audit:ledger`, `npm run indexer:parity`, `npm run check:mail-regressions`,
