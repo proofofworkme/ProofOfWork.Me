@@ -6696,9 +6696,40 @@ export async function proofIndexSnapshotPayload(network, key) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
   }
-  return {
+  const consistency =
+    snapshot?.consistency &&
+    typeof snapshot.consistency === "object" &&
+    !Array.isArray(snapshot.consistency)
+      ? snapshot.consistency
+      : payload.consistency;
+  const nestedConsistencyPayload = {
     ...payload,
-    indexedThroughBlock: summaryPayloadIndexedThroughBlock(payload, snapshot),
+    ...(consistency ? { consistency } : {}),
+    ...(payload.floor && typeof payload.floor === "object" && !Array.isArray(payload.floor)
+      ? {
+          floor: {
+            ...payload.floor,
+            ...(consistency ? { consistency } : {}),
+          },
+        }
+      : {}),
+    ...(payload.workFloor &&
+    typeof payload.workFloor === "object" &&
+    !Array.isArray(payload.workFloor)
+      ? {
+          workFloor: {
+            ...payload.workFloor,
+            ...(consistency ? { consistency } : {}),
+          },
+        }
+      : {}),
+  };
+  return {
+    ...nestedConsistencyPayload,
+    indexedThroughBlock: summaryPayloadIndexedThroughBlock(
+      nestedConsistencyPayload,
+      snapshot,
+    ),
     ledgerGeneratedAt:
       payload.ledgerGeneratedAt ?? dateIso(snapshot.generated_at),
     snapshotId: payload.snapshotId ?? snapshot.snapshot_id,

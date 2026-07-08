@@ -179,6 +179,17 @@ function uniqueActivityTxids(items) {
   );
 }
 
+function activityItemStatus(item) {
+  const status = String(item?.status ?? "").trim().toLowerCase();
+  if (["confirmed", "pending", "dropped", "orphaned"].includes(status)) {
+    return status;
+  }
+  if (item?.dropped === true) {
+    return "dropped";
+  }
+  return item?.confirmed === false ? "pending" : "confirmed";
+}
+
 function arrayLength(value) {
   return Array.isArray(value) ? value.length : 0;
 }
@@ -254,14 +265,36 @@ try {
   const missingLogEvents = Array.isArray(ledger.missingLogEvents)
     ? ledger.missingLogEvents
     : [];
-  const activityItems = numberValue(metrics.activityItems);
+  const metricActivityItems = numberValue(metrics.activityItems);
   const confirmedComputerActions = numberValue(metrics.confirmedComputerActions);
   const confirmedTokens = numberValue(metrics.confirmedTokens);
-  const canonicalActivityTxids = uniqueActivityTxids(
-    snapshotActivityItems(latestSnapshot),
-  );
+  let canonicalActivityPayload = null;
+  try {
+    canonicalActivityPayload = await readJson(endpoint("/api/v1/log", { fresh: "1" }));
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        error: error?.message ?? String(error),
+        phase: "canonical-activity-coverage",
+      }),
+    );
+  }
+  const canonicalActivityRows = Array.isArray(canonicalActivityPayload?.activity)
+    ? canonicalActivityPayload.activity
+    : snapshotActivityItems(latestSnapshot);
+  const canonicalConfirmedActivityItems = canonicalActivityRows.filter(
+    (item) => activityItemStatus(item) === "confirmed",
+  ).length;
+  const canonicalPendingActivityItems = canonicalActivityRows.filter(
+    (item) => activityItemStatus(item) === "pending",
+  ).length;
+  const canonicalActivityItemCount =
+    canonicalActivityRows.length || metricActivityItems;
+  const confirmedActivityCoverageCount =
+    canonicalConfirmedActivityItems || metricActivityItems;
+  const canonicalActivityTxids = uniqueActivityTxids(canonicalActivityRows);
   const canonicalActivityTxidCount =
-    canonicalActivityTxids.size || activityItems;
+    canonicalActivityTxids.size || metricActivityItems;
   const checks = [];
 
   check(checks, "canonical-ledger-green", ledger.ok === true && ledger.status === "green", {
@@ -290,7 +323,7 @@ try {
     "transactions-cover-canonical-activity-txids",
     rowNumber(counts, "transactions_total") >= canonicalActivityTxidCount,
     {
-      canonicalActivityItems: activityItems,
+      canonicalActivityItems: canonicalActivityItemCount,
       canonicalActivityTxids: canonicalActivityTxidCount,
       confirmedTransactions: rowNumber(counts, "transactions_confirmed"),
       pendingTransactions: rowNumber(counts, "transactions_pending"),
@@ -312,9 +345,11 @@ try {
   check(
     checks,
     "events-cover-canonical-activity",
-    rowNumber(counts, "events_confirmed") >= activityItems,
+    rowNumber(counts, "events_confirmed") >= confirmedActivityCoverageCount,
     {
-      canonicalActivityItems: activityItems,
+      canonicalActivityItems: canonicalActivityItemCount,
+      canonicalConfirmedActivityItems,
+      canonicalPendingActivityItems,
       confirmedEvents: rowNumber(counts, "events_confirmed"),
     },
   );

@@ -1117,6 +1117,24 @@ async function summarySnapshots() {
   return payloads;
 }
 
+async function currentSummarySnapshots() {
+  const payloads = {};
+  for (const source of SUMMARY_SNAPSHOT_SOURCES) {
+    try {
+      payloads[source.key] = await readJson(unpagedEndpoint(source.path));
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          error: error?.message ?? String(error),
+          phase: "summary-snapshot-current-only",
+          source: source.key,
+        }),
+      );
+    }
+  }
+  return payloads;
+}
+
 async function registryHistorySnapshots() {
   const entries = [];
   for (const kind of REGISTRY_HISTORY_SNAPSHOT_KINDS) {
@@ -1166,8 +1184,8 @@ async function storedLedgerSnapshotPayload(client, snapshotId = "", options = {}
 }
 
 async function activitySnapshot(previousPayload) {
-  if (!REFRESH_ACTIVITY_SNAPSHOT) {
-    return previousPayload?.activityPayload ?? null;
+  if (!REFRESH_ACTIVITY_SNAPSHOT && objectPayload(previousPayload?.activityPayload)) {
+    return previousPayload.activityPayload;
   }
   try {
     return await readJson(endpoint("/api/v1/log", { fresh: "1" }));
@@ -2021,6 +2039,24 @@ function summaryPayloadValue(payload) {
   );
 }
 
+function summaryPayloadFreshnessMs(payload) {
+  return Math.max(
+    Date.parse(payload?.indexedAt ?? ""),
+    Date.parse(payload?.generatedAt ?? ""),
+    Date.parse(payload?.btcUsdIndexedAt ?? ""),
+    Date.parse(payload?.actualValue?.indexedAt ?? ""),
+    0,
+  );
+}
+
+function summaryPayloadBtcUsd(payload) {
+  return finiteSummaryNumber(
+    payload?.btcUsd ??
+      payload?.floor?.btcUsd ??
+      payload?.workFloor?.btcUsd,
+  );
+}
+
 function strongerSummaryPayload(basePayload, candidatePayload) {
   const base = objectPayload(basePayload);
   const candidate = objectPayload(candidatePayload);
@@ -2048,6 +2084,22 @@ function strongerSummaryPayload(basePayload, candidatePayload) {
   }
   if (baseValue === null || candidateValue > baseValue + 0.0001) {
     return candidate;
+  }
+  if (Math.abs(candidateValue - baseValue) <= 0.0001) {
+    const baseBtcUsd = summaryPayloadBtcUsd(base);
+    const candidateBtcUsd = summaryPayloadBtcUsd(candidate);
+    if (
+      candidateBtcUsd !== null &&
+      baseBtcUsd !== null &&
+      Math.abs(candidateBtcUsd - baseBtcUsd) > 0.000001
+    ) {
+      return candidate;
+    }
+    const baseFreshness = summaryPayloadFreshnessMs(base);
+    const candidateFreshness = summaryPayloadFreshnessMs(candidate);
+    if (candidateFreshness > baseFreshness) {
+      return candidate;
+    }
   }
   return base;
 }
@@ -2144,11 +2196,14 @@ function growthSummaryWithAlignedWorkFloor(growthSummary, workFloor) {
   return {
     ...summary,
     actualValue,
+    btcUsd: floor.btcUsd ?? summary.btcUsd,
+    btcUsdIndexedAt: floor.btcUsdIndexedAt ?? summary.btcUsdIndexedAt,
     frozenNetworkValueSats:
       frozenSats !== null ? frozenSats : summary.frozenNetworkValueSats,
     liveNetworkValueSats:
       liveSats !== null ? liveSats : summary.liveNetworkValueSats,
     networkValueSats: totalSats,
+    usdSource: floor.usdSource ?? summary.usdSource,
     workFloor: floor,
   };
 }
@@ -2176,7 +2231,61 @@ function summaryPayloadsWithAlignedWorkFloor(summaryPayloads = {}) {
   if (objectPayload(next.marketplaceSummary)) {
     next.marketplaceSummary = {
       ...next.marketplaceSummary,
-      workFloor: objectPayload(next.marketplaceSummary.workFloor) ?? workFloor,
+      workFloor,
+    };
+  }
+  return next;
+}
+
+function payloadWithIndexedThroughBlock(payload, indexedThroughBlock) {
+  const item = objectPayload(payload);
+  const block = numberOrNull(indexedThroughBlock);
+  if (!item || !block) {
+    return payload;
+  }
+  return {
+    ...item,
+    indexedThroughBlock: Math.max(
+      numberOrNull(item.indexedThroughBlock) ?? 0,
+      block,
+    ),
+  };
+}
+
+function summaryPayloadsWithIndexedThroughBlock(summaryPayloads = {}, indexedThroughBlock) {
+  const payloads = objectPayload(summaryPayloads) ?? {};
+  const block = numberOrNull(indexedThroughBlock);
+  if (!block) {
+    return payloads;
+  }
+
+  const next = {};
+  for (const [key, value] of Object.entries(payloads)) {
+    next[key] = payloadWithIndexedThroughBlock(value, block);
+  }
+
+  if (objectPayload(next.workSummary?.floor)) {
+    next.workSummary = {
+      ...next.workSummary,
+      floor: payloadWithIndexedThroughBlock(next.workSummary.floor, block),
+    };
+  }
+  if (objectPayload(next.growthSummary?.workFloor)) {
+    next.growthSummary = {
+      ...next.growthSummary,
+      workFloor: payloadWithIndexedThroughBlock(
+        next.growthSummary.workFloor,
+        block,
+      ),
+    };
+  }
+  if (objectPayload(next.marketplaceSummary?.workFloor)) {
+    next.marketplaceSummary = {
+      ...next.marketplaceSummary,
+      workFloor: payloadWithIndexedThroughBlock(
+        next.marketplaceSummary.workFloor,
+        block,
+      ),
     };
   }
   return next;
@@ -2665,6 +2774,28 @@ async function storeLedgerSnapshot(client, options = {}) {
   summaryPayloads = summaryPayloadsWithAlignedWorkFloor(
     strongerSummaryPayloads(previousPayload?.summaryPayloads, summaryPayloads),
   );
+  const latestIndexedHeight = await latestIndexedBlockHeight(client).catch(() => 0);
+  const mergedIndexedThroughBlock = Math.max(
+    numberOrNull(payload?.indexedThroughBlock) ?? 0,
+    numberOrNull(payload?.metrics?.indexedThroughBlock) ?? 0,
+    latestIndexedHeight,
+  );
+  if (mergedIndexedThroughBlock > 0) {
+    summaryPayloads = summaryPayloadsWithIndexedThroughBlock(
+      summaryPayloads,
+      mergedIndexedThroughBlock,
+    );
+    if (payload) {
+      payload = {
+        ...payload,
+        indexedThroughBlock: mergedIndexedThroughBlock,
+        metrics: {
+          ...(payload.metrics ?? {}),
+          indexedThroughBlock: mergedIndexedThroughBlock,
+        },
+      };
+    }
+  }
   if (!payload) {
     payload = await fallbackLedgerSnapshotPayload(
       client,
@@ -2771,8 +2902,21 @@ async function repairStoredSummarySnapshot(client) {
     throw new Error("No stored summaryPayloads are available to repair.");
   }
 
+  const activityPayload = await activitySnapshot(previousPayload);
   let summaryPayloads = summaryPayloadsWithAlignedWorkFloor(
     previousPayload.summaryPayloads,
+  );
+  const currentSummaryPayloads = await currentSummarySnapshots().catch((error) => {
+    console.error(
+      JSON.stringify({
+        error: error?.message ?? String(error),
+        phase: "summary-snapshot-db-repair",
+      }),
+    );
+    return {};
+  });
+  summaryPayloads = summaryPayloadsWithAlignedWorkFloor(
+    strongerSummaryPayloads(summaryPayloads, currentSummaryPayloads),
   );
   summaryPayloads = await summaryPayloadsWithProofIndexEventDeltas(
     client,
@@ -2792,6 +2936,10 @@ async function repairStoredSummarySnapshot(client) {
     proofIndexPayloadIndexedThroughBlock(summaryPayloads.marketplaceSummary),
     await latestIndexedBlockHeight(client).catch(() => 0),
   );
+  summaryPayloads = summaryPayloadsWithIndexedThroughBlock(
+    summaryPayloads,
+    indexedThroughBlock,
+  );
   const summaryHash = createHash("sha256")
     .update(JSON.stringify(summaryPayloads))
     .digest("hex");
@@ -2801,6 +2949,15 @@ async function repairStoredSummarySnapshot(client) {
   };
   const snapshotPayload = {
     ...previousPayload,
+    ...(activityPayload
+      ? {
+          activityIndexedAt:
+            activityPayload === previousPayload?.activityPayload
+              ? previousPayload.activityIndexedAt ?? indexedAt
+              : indexedAt,
+          activityPayload,
+        }
+      : {}),
     generatedAt: newerIso(previousPayload.generatedAt, indexedAt),
     indexedThroughBlock,
     metrics,
@@ -2852,9 +3009,24 @@ async function repairStoredSummarySnapshot(client) {
 async function latestIndexedBlockHeight(client) {
   const result = await client.query(
     `
-      SELECT COALESCE(max(block_height), 0) AS height
-      FROM proof_indexer.transactions
-      WHERE network = $1 AND status = 'confirmed'
+      SELECT GREATEST(
+        COALESCE(
+          (
+            SELECT max(block_height)
+            FROM proof_indexer.transactions
+            WHERE network = $1 AND status = 'confirmed'
+          ),
+          0
+        ),
+        COALESCE(
+          (
+            SELECT max(indexed_through_block)
+            FROM proof_indexer.ledger_snapshots
+            WHERE network = $1
+          ),
+          0
+        )
+      ) AS height
     `,
     [NETWORK],
   );
