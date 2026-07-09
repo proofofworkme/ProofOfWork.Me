@@ -13212,6 +13212,11 @@ export default function App() {
     text: "Ready",
   });
   const [accountUtxos, setAccountUtxos] = useState<MempoolUtxo[]>([]);
+  const [accountTokenState, setAccountTokenState] = useState<PowTokenState>(() =>
+    emptyTokenState(),
+  );
+  const [accountPowbTokenState, setAccountPowbTokenState] =
+    useState<PowTokenState>(() => emptyTokenState());
   const [refreshing, setRefreshing] = useState(false);
   const [checkingBroadcasts, setCheckingBroadcasts] = useState(false);
   const allSentRef = useRef(allSent);
@@ -14068,6 +14073,30 @@ export default function App() {
       tokenTransfers,
     ],
   );
+  const accountTokenWalletBalances = useMemo(
+    () =>
+      tokenWalletBalancesFor(
+        address,
+        accountTokenState.tokens,
+        accountTokenState.mints,
+        accountTokenState.transfers,
+        accountTokenState.sales,
+        accountTokenState.holders,
+      ),
+    [accountTokenState, address],
+  );
+  const accountPowbWalletBalances = useMemo(
+    () =>
+      tokenWalletBalancesFor(
+        address,
+        accountPowbTokenState.tokens,
+        accountPowbTokenState.mints,
+        accountPowbTokenState.transfers,
+        accountPowbTokenState.sales,
+        accountPowbTokenState.holders,
+      ),
+    [accountPowbTokenState, address],
+  );
   const powbTokenDefinition = powbTokenDefinitions[0];
   const powbMints = useMemo(
     () => tokenMints.filter((mint) => mint.tokenId === POWB_TOKEN_ID),
@@ -14186,15 +14215,28 @@ export default function App() {
       (total, message) => total + (message.attachment?.size ?? 0),
       0,
     );
-    const confirmedCreditBalances = tokenWalletBalances.filter(
+    const accountCreditBalances = accountTokenWalletBalances.filter(
       (balance) =>
         balance.confirmedBalance > 0 && !isPowbTokenDefinition(balance.token),
     );
-    const powbConfirmedBalance = powbWalletBalances.reduce(
+    const routeCreditBalances = tokenWalletBalances.filter(
+      (balance) =>
+        balance.confirmedBalance > 0 && !isPowbTokenDefinition(balance.token),
+    );
+    const confirmedCreditBalances = accountCreditBalances.length > 0
+      ? accountCreditBalances
+      : routeCreditBalances;
+    const connectedPowbWalletBalances = accountPowbWalletBalances.length > 0
+      ? accountPowbWalletBalances
+      : powbWalletBalances;
+    const pendingTokenBalances = accountTokenWalletBalances.length > 0
+      ? accountTokenWalletBalances
+      : tokenWalletBalances;
+    const powbConfirmedBalance = connectedPowbWalletBalances.reduce(
       (total, balance) => total + Math.max(0, balance.confirmedBalance),
       0,
     );
-    const pendingCreditEvents = tokenWalletBalances.reduce(
+    const pendingCreditEvents = pendingTokenBalances.reduce(
       (total, balance) =>
         total +
         (balance.pendingIncoming > 0 ? 1 : 0) +
@@ -14301,6 +14343,8 @@ export default function App() {
 
     return stats;
   }, [
+    accountPowbWalletBalances,
+    accountTokenWalletBalances,
     accountUtxos,
     address,
     allFileMessages,
@@ -14738,6 +14782,49 @@ export default function App() {
       window.removeEventListener("focus", loadAccountUtxos);
     };
   }, [address, network]);
+
+  useEffect(() => {
+    if (!address || !tokenIndexAddress) {
+      setAccountTokenState(emptyTokenState());
+      setAccountPowbTokenState(emptyTokenState());
+      return;
+    }
+
+    let cancelled = false;
+    let requestId = 0;
+    setAccountTokenState(emptyTokenState());
+    setAccountPowbTokenState(emptyTokenState());
+
+    const loadAccountTokenBalances = () => {
+      const currentRequestId = ++requestId;
+
+      void fetchTokenState(network, false, "", true, [address], true)
+        .then((state) => {
+          if (!cancelled && currentRequestId === requestId) {
+            setAccountTokenState(state);
+          }
+        })
+        .catch(() => undefined);
+
+      void fetchTokenState(network, false, POWB_TOKEN_ID, true, [address], true)
+        .then((state) => {
+          if (!cancelled && currentRequestId === requestId) {
+            setAccountPowbTokenState(state);
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    loadAccountTokenBalances();
+    const interval = window.setInterval(loadAccountTokenBalances, 60_000);
+    window.addEventListener("focus", loadAccountTokenBalances);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", loadAccountTokenBalances);
+    };
+  }, [address, network, tokenIndexAddress]);
 
   useEffect(
     () => () => {

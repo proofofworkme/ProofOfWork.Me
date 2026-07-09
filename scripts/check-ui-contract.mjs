@@ -213,6 +213,17 @@ expect(
 );
 
 const app = contents.get("src/App.tsx");
+expect(
+  "connected account strip refreshes wallet-scoped token balances",
+  /accountTokenState/.test(app) &&
+    /accountPowbTokenState/.test(app) &&
+    /fetchTokenState\(\s*network,\s*false,\s*"",\s*true,\s*\[address\],\s*true\s*\)/.test(
+      app,
+    ) &&
+    /fetchTokenState\(\s*network,\s*false,\s*POWB_TOKEN_ID,\s*true,\s*\[address\],\s*true\s*\)/.test(
+      app,
+    ),
+);
 const idMarketplaceCardBlock =
   app.match(/function IdMarketplaceCard[\s\S]*?function PendingIdEventList/)?.[0] ??
   "";
