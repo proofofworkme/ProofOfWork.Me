@@ -14,7 +14,10 @@ import {
   explorerAddressUrl,
   explorerTxUrl,
 } from "../../shared/bitcoin/networks";
-import { AppHeader } from "../../shared/components/AppHeader";
+import {
+  AppHeader,
+  type AppHeaderAccountStat,
+} from "../../shared/components/AppHeader";
 import {
   AppStatusRow,
   type AppStatusState,
@@ -42,6 +45,7 @@ import {
   type RushState,
 } from "./rushProtocol";
 export type RushAppProps = {
+  accountStats?: AppHeaderAccountStat[];
   address: string;
   busy: boolean;
   connectWallet: () => void;
@@ -124,6 +128,7 @@ function networkName(network: BitcoinNetwork) {
 }
 
 export function RushApp({
+  accountStats = [],
   address,
   busy,
   connectWallet,
@@ -163,6 +168,7 @@ export function RushApp({
   return (
     <main className="id-launch-app rush-public-app">
       <AppHeader
+        accountStats={accountStats}
         address={address}
         busy={busy || minting}
         connectWallet={connectWallet}

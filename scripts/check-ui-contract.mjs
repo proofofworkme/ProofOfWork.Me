@@ -63,11 +63,11 @@ expect(
   ),
 );
 expect(
-  "standalone shells reserve the fixed topbar row",
-  /\.desktop-public-app\s*\{[\s\S]*grid-template-rows:\s*var\(--topbar-height\)\s+minmax\(0,\s*1fr\)\s+auto/.test(
+  "standalone shells reserve the shared header stack row",
+  /\.desktop-public-app\s*\{[\s\S]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/.test(
     css,
   ) &&
-    /\.desktop-public-app\.has-route-status\s*\{[\s\S]*grid-template-rows:\s*var\(--topbar-height\)\s+var\(--status-row-height\)\s+minmax\(0,\s*1fr\)\s+auto/.test(
+    /\.desktop-public-app\.has-route-status\s*\{[\s\S]*grid-template-rows:\s*auto\s+var\(--status-row-height\)\s+minmax\(0,\s*1fr\)\s+auto/.test(
       css,
     ),
 );
@@ -83,8 +83,8 @@ expect(
     !/justify-self:/.test(topbarActionsBlock),
 );
 expect(
-  "id launch shells use the same fixed chrome rows",
-  /\.id-launch-app\s*\{[\s\S]*display:\s*grid[\s\S]*grid-template-rows:\s*var\(--topbar-height\)\s+var\(--status-row-height\)\s+minmax\(0,\s*1fr\)\s+auto/.test(
+  "id launch shells use the same account-aware chrome rows",
+  /\.id-launch-app\s*\{[\s\S]*display:\s*grid[\s\S]*grid-template-rows:\s*auto\s+var\(--status-row-height\)\s+minmax\(0,\s*1fr\)\s+auto/.test(
     css,
   ),
 );
@@ -138,6 +138,12 @@ expect(
 expect(
   "AppHeader always renders the shared topbar base",
   /<header className="topbar">/.test(appHeader) && /className="brand"/.test(appHeader),
+);
+expect(
+  "AppHeader can render the shared connected account strip",
+  /type AppHeaderAccountStat/.test(appHeader) &&
+    /account-signal-bar/.test(appHeader) &&
+    /visibleAccountStats/.test(appHeader),
 );
 expect(
   "AppHeader exposes refresh as a direct topbar action",
@@ -307,9 +313,12 @@ expect(
 );
 expect(
   "route status rows stick under the shared topbar",
-  /\.desktop-public-app\.has-route-status\s+\.topbar\s*\+\s*\.desktop-route-status\s*\{[\s\S]*position:\s*sticky[\s\S]*top:\s*var\(--topbar-height\)[\s\S]*z-index:\s*var\(--sticky-status-z\)/.test(
+  /\.desktop-public-app\.has-route-status\s+\.app-header-stack\s*\+\s*\.desktop-route-status\s*\{[\s\S]*position:\s*sticky[\s\S]*top:\s*var\(--topbar-height\)[\s\S]*z-index:\s*var\(--sticky-status-z\)/.test(
     css,
-  ),
+  ) &&
+    /\.app-header-stack\.has-account-stats\s*\+\s*\.app-status-row\s*\{[\s\S]*top:\s*calc\(var\(--topbar-height\)\s*\+\s*44px\)/.test(
+      css,
+    ),
 );
 expect(
   "shared sticky chrome does not create desktop horizontal overflow",

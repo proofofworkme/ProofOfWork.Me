@@ -118,7 +118,10 @@ import {
   type RushMintRecord,
   type RushState,
 } from "./features/rush/rushProtocol";
-import { AppHeader } from "./shared/components/AppHeader";
+import {
+  AppHeader,
+  type AppHeaderAccountStat,
+} from "./shared/components/AppHeader";
 import {
   AppStatusRow,
   type AppStatusTone,
@@ -13208,6 +13211,7 @@ export default function App() {
     tone: "idle",
     text: "Ready",
   });
+  const [accountUtxos, setAccountUtxos] = useState<MempoolUtxo[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [checkingBroadcasts, setCheckingBroadcasts] = useState(false);
   const allSentRef = useRef(allSent);
@@ -14149,6 +14153,163 @@ export default function App() {
     0,
     walletTransferBalance - walletReservedTokenBalance,
   );
+  const connectedAccountStats = useMemo<AppHeaderAccountStat[]>(() => {
+    if (!address) {
+      return [];
+    }
+
+    const confirmedUtxos = accountUtxos.filter(
+      (utxo) => utxo.status?.confirmed,
+    );
+    const spendableUtxos = confirmedUtxos.filter(
+      (utxo) => utxo.value >= DUST_SATS,
+    );
+    const unconfirmedUtxos = accountUtxos.filter(
+      (utxo) => !utxo.status?.confirmed,
+    );
+    const confirmedBalanceSats = confirmedUtxos.reduce(
+      (total, utxo) => total + utxo.value,
+      0,
+    );
+    const spendableSats = spendableUtxos.reduce(
+      (total, utxo) => total + utxo.value,
+      0,
+    );
+    const unconfirmedSats = unconfirmedUtxos.reduce(
+      (total, utxo) => total + utxo.value,
+      0,
+    );
+    const ownFileMessages = allFileMessages.filter(
+      (message) => message.txid !== CANONICAL_WELCOME_TXID && message.attachment,
+    );
+    const ownFileBytes = ownFileMessages.reduce(
+      (total, message) => total + (message.attachment?.size ?? 0),
+      0,
+    );
+    const confirmedCreditBalances = tokenWalletBalances.filter(
+      (balance) =>
+        balance.confirmedBalance > 0 && !isPowbTokenDefinition(balance.token),
+    );
+    const powbConfirmedBalance = powbWalletBalances.reduce(
+      (total, balance) => total + Math.max(0, balance.confirmedBalance),
+      0,
+    );
+    const pendingCreditEvents = tokenWalletBalances.reduce(
+      (total, balance) =>
+        total +
+        (balance.pendingIncoming > 0 ? 1 : 0) +
+        (balance.pendingOutgoing > 0 ? 1 : 0),
+      0,
+    );
+    const pendingMailEvents = incomingMailAll.length + outboxMailAll.length;
+    const pendingActionEvents =
+      unconfirmedUtxos.length +
+      pendingMailEvents +
+      walletPendingIdEvents.length +
+      pendingCreditEvents;
+    const stats: AppHeaderAccountStat[] = [];
+
+    if (confirmedBalanceSats > 0) {
+      stats.push({
+        detail: "Confirmed wallet UTXO value.",
+        label: "confirmed balance",
+        tone: "strong",
+        value: `${confirmedBalanceSats.toLocaleString()} proofs`,
+      });
+    }
+
+    if (spendableUtxos.length > 0) {
+      stats.push({
+        detail: `${spendableSats.toLocaleString()} confirmed spendable proofs across ${spendableUtxos.length.toLocaleString()} UTXO${spendableUtxos.length === 1 ? "" : "s"}.`,
+        label: "spendable utxos",
+        value: spendableUtxos.length.toLocaleString(),
+      });
+    }
+
+    if (unconfirmedSats > 0 || pendingActionEvents > 0) {
+      const pendingDetail = [
+        unconfirmedUtxos.length
+          ? `${unconfirmedUtxos.length.toLocaleString()} unconfirmed UTXO${unconfirmedUtxos.length === 1 ? "" : "s"}`
+          : "",
+        pendingMailEvents
+          ? `${pendingMailEvents.toLocaleString()} mail event${pendingMailEvents === 1 ? "" : "s"}`
+          : "",
+        walletPendingIdEvents.length
+          ? `${walletPendingIdEvents.length.toLocaleString()} ID event${walletPendingIdEvents.length === 1 ? "" : "s"}`
+          : "",
+        pendingCreditEvents
+          ? `${pendingCreditEvents.toLocaleString()} credit movement${pendingCreditEvents === 1 ? "" : "s"}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      stats.push({
+        detail: pendingDetail || "Pending ProofOfWork activity.",
+        label: "unconfirmed",
+        tone: "pending",
+        value:
+          unconfirmedSats > 0
+            ? `${unconfirmedSats.toLocaleString()} proofs`
+            : `${pendingActionEvents.toLocaleString()} event${pendingActionEvents === 1 ? "" : "s"}`,
+      });
+    }
+
+    if (confirmedCreditBalances.length > 0) {
+      const creditDetail = confirmedCreditBalances
+        .slice(0, 4)
+        .map(
+          (balance) =>
+            `${balance.confirmedBalance.toLocaleString()} ${balance.token.ticker}`,
+        )
+        .join(" · ");
+      const hiddenCreditCount = Math.max(0, confirmedCreditBalances.length - 4);
+      stats.push({
+        detail: hiddenCreditCount
+          ? `${creditDetail} · ${hiddenCreditCount.toLocaleString()} more`
+          : creditDetail,
+        label: "credit balance",
+        value:
+          confirmedCreditBalances.length === 1
+            ? `${confirmedCreditBalances[0].confirmedBalance.toLocaleString()} ${confirmedCreditBalances[0].token.ticker}`
+            : `${confirmedCreditBalances.length.toLocaleString()} credits`,
+      });
+    }
+
+    if (powbConfirmedBalance > 0) {
+      stats.push({
+        detail: "Confirmed Infinity Bond / POWB balance.",
+        label: "bond balance",
+        value: `${powbConfirmedBalance.toLocaleString()} POWB`,
+      });
+    }
+
+    if (ownFileMessages.length > 0) {
+      stats.push({
+        detail: `${formatBytes(ownFileBytes)} of confirmed file payloads.`,
+        label: "files",
+        value: `${ownFileMessages.length.toLocaleString()} file${ownFileMessages.length === 1 ? "" : "s"}`,
+      });
+    }
+
+    if (ownFileBytes > 0) {
+      stats.push({
+        detail: `${ownFileMessages.length.toLocaleString()} confirmed file${ownFileMessages.length === 1 ? "" : "s"} on this Computer account.`,
+        label: "computer data",
+        value: formatBytes(ownFileBytes),
+      });
+    }
+
+    return stats;
+  }, [
+    accountUtxos,
+    address,
+    allFileMessages,
+    incomingMailAll,
+    outboxMailAll,
+    powbWalletBalances,
+    tokenWalletBalances,
+    walletPendingIdEvents,
+  ]);
 
   async function fetchWalletOwnedTokenListings(
     walletAddress: string,
@@ -14545,6 +14706,38 @@ export default function App() {
     const interval = window.setInterval(detectWallet, 1000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!address) {
+      setAccountUtxos([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadAccountUtxos = () => {
+      fetchUtxos(address, network)
+        .then((utxos) => {
+          if (!cancelled) {
+            setAccountUtxos(utxos);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setAccountUtxos([]);
+          }
+        });
+    };
+
+    loadAccountUtxos();
+    const interval = window.setInterval(loadAccountUtxos, 60_000);
+    window.addEventListener("focus", loadAccountUtxos);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", loadAccountUtxos);
+    };
+  }, [address, network]);
 
   useEffect(
     () => () => {
@@ -21149,6 +21342,7 @@ export default function App() {
   if (idLaunchMode) {
     return (
       <IdLaunchApp
+        accountStats={connectedAccountStats}
         address={address}
         busy={busy}
         canRegister={canRegisterId}
@@ -21182,6 +21376,7 @@ export default function App() {
     return (
       <>
         <MarketplaceApp
+          accountStats={connectedAccountStats}
           address={address}
           btcUsd={tokenBtcUsd}
           busy={busy}
@@ -21274,6 +21469,7 @@ export default function App() {
   if (walletMode) {
     return (
       <TokenWalletApp
+        accountStats={connectedAccountStats}
         address={address}
         balances={tokenWalletBalances}
         btcUsd={tokenBtcUsd}
@@ -21329,6 +21525,7 @@ export default function App() {
   if (infinityMode) {
     return (
       <InfinityApp
+        accountStats={connectedAccountStats}
         address={address}
         balances={powbWalletBalances}
         bondAmount={infinityBondAmount}
@@ -21388,6 +21585,7 @@ export default function App() {
   if (tokenMode || workTokenMode) {
     return (
       <TokenApp
+        accountStats={connectedAccountStats}
         address={address}
         busy={busy}
         canCreate={canCreateToken}
@@ -21472,6 +21670,7 @@ export default function App() {
   if (rushMode) {
     return (
       <RushApp
+        accountStats={connectedAccountStats}
         address={address}
         busy={busy}
         connectWallet={connectWallet}
@@ -21498,6 +21697,7 @@ export default function App() {
   if (desktopRoute) {
     return (
       <DesktopApp
+        accountStats={connectedAccountStats}
         activeNetwork={network}
         busy={desktopLoading}
         desktopQuery={desktopQuery}
@@ -21522,12 +21722,13 @@ export default function App() {
   }
 
   if (browserRoute) {
-    return <BrowserApp />;
+    return <BrowserApp accountStats={connectedAccountStats} />;
   }
 
   if (activityMode) {
     return (
       <ActivityApp
+        accountStats={connectedAccountStats}
         activeNetwork={network}
         activityHistoryPage={activityHistoryPage}
         activityStats={activityStats}
@@ -21566,6 +21767,7 @@ export default function App() {
   if (growthMode) {
     return (
       <GrowthApp
+        accountStats={connectedAccountStats}
         activeNetwork={network}
         btcUsd={tokenBtcUsd}
         busy={busy}
@@ -21612,6 +21814,7 @@ export default function App() {
   return (
     <main className="mail-app">
       <AppHeader
+        accountStats={connectedAccountStats}
         address={address}
         busy={busy}
         connectWallet={connectWallet}
@@ -22861,7 +23064,9 @@ function browserPageWithContext(page: BrowserPage) {
 }
 
 function BrowserApp({
+  accountStats = [],
 }: {
+  accountStats?: AppHeaderAccountStat[];
 }) {
   const [network, setNetwork] = useState<BitcoinNetwork>(() =>
     networkFromBrowserLocation(),
@@ -22945,6 +23150,7 @@ function BrowserApp({
   return (
     <main className="desktop-public-app browser-public-app has-route-status">
       <AppHeader
+        accountStats={accountStats}
         subtitle="HTML from ProofOfWork"
         title="ProofOfWork Browser"
       />
@@ -23492,6 +23698,7 @@ function BrowserWorkspace({
 }
 
 function DesktopApp({
+  accountStats = [],
   activeNetwork,
   busy,
   desktopQuery,
@@ -23509,6 +23716,7 @@ function DesktopApp({
   onSearch,
   onSelect,
 }: {
+  accountStats?: AppHeaderAccountStat[];
   activeNetwork: BitcoinNetwork;
   busy: boolean;
   desktopQuery: string;
@@ -23529,6 +23737,7 @@ function DesktopApp({
   return (
     <main className="desktop-public-app has-route-status">
       <AppHeader
+        accountStats={accountStats}
         network={activeNetwork}
         onRefresh={onRefresh}
         subtitle="Public file search"
@@ -23561,6 +23770,7 @@ function DesktopApp({
 }
 
 function ActivityApp({
+  accountStats = [],
   activeNetwork,
   activityHistoryPage,
   activityStats,
@@ -23577,6 +23787,7 @@ function ActivityApp({
   onRefresh,
   onSearch,
 }: {
+  accountStats?: AppHeaderAccountStat[];
   activeNetwork: BitcoinNetwork;
   activityHistoryPage?: PowPaginatedApiResponse<PowActivityItem>;
   activityStats?: PowActivityStats;
@@ -23596,6 +23807,7 @@ function ActivityApp({
   return (
     <main className="desktop-public-app activity-public-app has-route-status">
       <AppHeader
+        accountStats={accountStats}
         network={activeNetwork}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
@@ -24007,6 +24219,7 @@ function ActivityFeed({
 }
 
 type TokenWalletAppProps = {
+  accountStats?: AppHeaderAccountStat[];
   address: string;
   balances: PowTokenWalletBalance[];
   btcUsd: number;
@@ -24053,6 +24266,7 @@ type TokenWalletAppProps = {
 };
 
 type InfinityAppProps = {
+  accountStats?: AppHeaderAccountStat[];
   address: string;
   balances: PowTokenWalletBalance[];
   bondAmount: number;
@@ -24109,6 +24323,7 @@ type InfinityAppProps = {
 };
 
 function InfinityApp({
+  accountStats = [],
   address,
   balances,
   bondAmount,
@@ -24470,6 +24685,7 @@ function InfinityApp({
   return (
     <main className="id-launch-app token-public-app token-wallet-public-app">
       <AppHeader
+        accountStats={accountStats}
         address={address}
         busy={busy}
         connectWallet={connectWallet}
@@ -24493,6 +24709,7 @@ function InfinityApp({
 }
 
 function TokenWalletApp({
+  accountStats = [],
   address,
   balances,
   btcUsd,
@@ -24540,6 +24757,7 @@ function TokenWalletApp({
   return (
     <main className="id-launch-app token-public-app token-wallet-public-app">
       <AppHeader
+        accountStats={accountStats}
         address={address}
         busy={busy}
         connectWallet={connectWallet}
@@ -25432,6 +25650,7 @@ function TokenWalletWorkspace({
 }
 
 type TokenAppProps = {
+  accountStats?: AppHeaderAccountStat[];
   address: string;
   busy: boolean;
   canCreate: boolean;
@@ -25512,6 +25731,7 @@ type TokenAppProps = {
 };
 
 function TokenApp({
+  accountStats = [],
   address,
   busy,
   connectWallet,
@@ -25526,6 +25746,7 @@ function TokenApp({
   return (
     <main className="id-launch-app token-public-app">
       <AppHeader
+        accountStats={accountStats}
         address={address}
         busy={busy}
         connectWallet={connectWallet}
@@ -29761,6 +29982,7 @@ function GrowthProductCard({
 }
 
 function GrowthApp({
+  accountStats = [],
   activeNetwork,
   btcUsd,
   busy,
@@ -29778,6 +30000,7 @@ function GrowthApp({
   onNetworkChange,
   onRefresh,
 }: {
+  accountStats?: AppHeaderAccountStat[];
   activeNetwork: BitcoinNetwork;
   btcUsd: number;
   busy: boolean;
@@ -29798,6 +30021,7 @@ function GrowthApp({
   return (
     <main className="desktop-public-app activity-public-app growth-public-app has-route-status">
       <AppHeader
+        accountStats={accountStats}
         network={activeNetwork}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
@@ -30466,6 +30690,7 @@ function GrowthWorkspace({
 }
 
 function IdLaunchApp({
+  accountStats = [],
   address,
   busy,
   canRegister,
@@ -30488,6 +30713,7 @@ function IdLaunchApp({
   submit,
   onRefresh,
 }: {
+  accountStats?: AppHeaderAccountStat[];
   address: string;
   busy: boolean;
   canRegister: boolean;
@@ -30563,6 +30789,7 @@ function IdLaunchApp({
   return (
     <main className="id-launch-app">
       <AppHeader
+        accountStats={accountStats}
         address={address}
         busy={busy}
         connectWallet={connectWallet}
@@ -33533,6 +33760,7 @@ function TokenMarketplacePanel({
 }
 
 function MarketplaceApp({
+  accountStats = [],
   address,
   btcUsd,
   busy,
@@ -33584,6 +33812,7 @@ function MarketplaceApp({
   onRefreshIds,
   onRefreshTokens,
 }: {
+  accountStats?: AppHeaderAccountStat[];
   address: string;
   btcUsd: number;
   busy: boolean;
@@ -33705,6 +33934,7 @@ function MarketplaceApp({
   return (
     <main className="id-launch-app marketplace-app">
       <AppHeader
+        accountStats={accountStats}
         address={address}
         busy={busy}
         connectWallet={connectWallet}
