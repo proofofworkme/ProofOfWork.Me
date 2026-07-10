@@ -18157,20 +18157,24 @@ export default function App() {
     setBusy(true);
     setStatus({
       tone: "idle",
-      text: `Checking ${normalizedIdName}@proofofwork.me against the full registry...`,
+      text: `Checking ${normalizedIdName}@proofofwork.me availability...`,
     });
 
     try {
-      const latestState = await fetchIdRegistryState(network, true);
-      setIdRegistry(latestState.records);
-      setIdListings(latestState.listings);
-      setIdPendingEvents(latestState.pendingEvents);
-      setIdSales(latestState.sales);
-
-      const existingRecord = latestState.records.find(
-        (record) =>
-          record.network === network && record.id === normalizedIdName,
+      const latestState = await fetchIdRecordState(network, normalizedIdName);
+      setIdRegistry((current) =>
+        mergeLatestPowIdRecords(current, latestState.records),
       );
+      setIdListings((current) =>
+        mergeLatestPowIdListings(current, latestState.listings),
+      );
+
+      const existingRecord =
+        latestState.record ??
+        latestState.records.find(
+          (record) =>
+            record.network === network && record.id === normalizedIdName,
+        );
       if (existingRecord?.confirmed) {
         setStatus({
           tone: "bad",
@@ -18191,8 +18195,12 @@ export default function App() {
         tone: "idle",
         text: `Registering ${normalizedIdName}@proofofwork.me...`,
       });
-      const reservedOutpoints = activeListingAnchorOutpointsForAddress(
+      const latestListings = mergeLatestPowIdListings(
+        idListings,
         latestState.listings,
+      );
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(
+        latestListings,
         address,
         { network },
       );

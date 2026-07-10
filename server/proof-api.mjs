@@ -190,6 +190,9 @@ const REGISTRY_INDEXED_PAYLOAD_MAX_AGE_MS = Number(
     process.env.POW_INDEX_SNAPSHOT_READ_MAX_AGE_MS ??
     24 * 60 * 60_000,
 );
+const REGISTRY_FRESH_WAIT_MS = Number(
+  process.env.REGISTRY_FRESH_WAIT_MS ?? 8_000,
+);
 const WORK_FLOOR_CACHE_TTL_MS = Number(
   process.env.WORK_FLOOR_CACHE_TTL_MS ?? 15_000,
 );
@@ -1176,6 +1179,50 @@ async function existingRegistryPayload(network) {
   }
 
   return persistedPayloadForCache(`registry:${network}`, REGISTRY_CACHE_STALE_MS);
+}
+
+function cacheRegistryPayload(network, payload) {
+  const cacheKey = `registry:${network}`;
+  const jsonKey = `json:${cacheKey}`;
+  const body = JSON.stringify(payload);
+  cacheJsonBody(jsonKey, body, REGISTRY_CACHE_TTL_MS, REGISTRY_CACHE_STALE_MS);
+  if (shouldPersistJsonCache(cacheKey)) {
+    void writePersistedJsonCache(jsonKey, body);
+  }
+  invalidateDerivedCachesForBaseCache(cacheKey);
+}
+
+async function registryFallbackPayload(network) {
+  const indexedPayload = await indexedRegistryPayload(network).catch(() => null);
+  if (indexedPayload) {
+    return indexedPayload;
+  }
+
+  return existingRegistryPayload(network).catch(() => null);
+}
+
+async function freshRegistryPayloadWithFallback(network) {
+  const fallbackPayload = await registryFallbackPayload(network);
+  const refreshPromise = safeRegistryPayload(network).then((payload) => {
+    cacheRegistryPayload(network, payload);
+    return payload;
+  });
+
+  if (!fallbackPayload || REGISTRY_FRESH_WAIT_MS <= 0) {
+    return refreshPromise;
+  }
+
+  const payload = await payloadWithFallbackAfterMs(
+    refreshPromise,
+    fallbackPayload,
+    REGISTRY_FRESH_WAIT_MS,
+  );
+  if (payload === fallbackPayload) {
+    console.error(
+      `Registry fresh refresh for ${network} exceeded ${REGISTRY_FRESH_WAIT_MS}ms; returning current indexed registry fallback.`,
+    );
+  }
+  return payload;
 }
 
 async function safeRegistryPayload(network) {
@@ -22592,7 +22639,7 @@ async function mergedLogActivityPayload(network, fresh = false) {
 async function registrySummaryPayload(network, fresh = false) {
   let payload;
   if (fresh) {
-    payload = await safeRegistryPayload(network);
+    payload = await freshRegistryPayloadWithFallback(network);
   } else {
     payload = await indexedRegistryPayload(network);
     if (!payload) {
@@ -28596,11 +28643,10 @@ async function handleRequest(request, response) {
 
     if (url.pathname === "/api/v1/registry" || url.pathname === "/api/v1/ids") {
       if (freshRead) {
-        clearResponseCache(`registry:${network}`);
         refreshedJsonResponse(
           response,
           `registry:${network}`,
-          await safeRegistryPayload(network),
+          await freshRegistryPayloadWithFallback(network),
           FRESH_READ_CACHE_CONTROL,
           REGISTRY_CACHE_TTL_MS,
           REGISTRY_CACHE_STALE_MS,
