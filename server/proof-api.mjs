@@ -5847,6 +5847,73 @@ function protocolPaymentOutputs(vout) {
   });
 }
 
+function samePaymentAddress(left, right) {
+  const leftAddress = String(left ?? "").trim();
+  const rightAddress = String(right ?? "").trim();
+  if (!leftAddress || !rightAddress) {
+    return false;
+  }
+
+  if (leftAddress === rightAddress) {
+    return true;
+  }
+
+  const leftLower = leftAddress.toLowerCase();
+  const rightLower = rightAddress.toLowerCase();
+  const isBech32 =
+    /^(bc1|tb1|bcrt1)/u.test(leftLower) &&
+    /^(bc1|tb1|bcrt1)/u.test(rightLower);
+  return isBech32 && leftLower === rightLower;
+}
+
+function attachedWorkCreditsFromVout(vout, recipients, network) {
+  if (network !== "livenet" || !Array.isArray(recipients) || recipients.length === 0) {
+    return [];
+  }
+
+  const recipientAddresses = recipients.map((recipient) =>
+    String(recipient?.address ?? "").trim(),
+  );
+  const credits = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX).flatMap(
+    (message) => {
+      const parsed = parseTokenPayload(message, network);
+      if (
+        parsed?.kind !== "send" ||
+        parsed.tokenId !== WORK_TOKEN_ID ||
+        !recipientAddresses.some((recipientAddress) =>
+          samePaymentAddress(recipientAddress, parsed.recipientAddress),
+        )
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          amount: parsed.amount,
+          paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+          recipientAddress: parsed.recipientAddress,
+          registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+          ticker: WORK_TOKEN_TICKER,
+          tokenId: WORK_TOKEN_ID,
+        },
+      ];
+    },
+  );
+
+  const registryPaidSats = tokenPaymentAmountBeforeProtocol(
+    vout,
+    WORK_TOKEN_REGISTRY_ADDRESS,
+  );
+  if (
+    credits.length === 0 ||
+    registryPaidSats < TOKEN_MIN_MUTATION_PRICE_SATS * credits.length
+  ) {
+    return [];
+  }
+
+  return credits;
+}
+
 function inputAddresses(vin) {
   return vin
     .map((input) => input?.prevout?.scriptpubkey_address)
@@ -10133,6 +10200,7 @@ function mailActivityItemFromTransaction(tx, network) {
       : Date.now();
   const createdAt = new Date(blockTime).toISOString();
   const recipients = protocolPaymentOutputs(vout);
+  const attachedCredits = attachedWorkCreditsFromVout(vout, recipients, network);
   const amountSats = recipients.reduce(
     (total, recipient) => total + recipient.amountSats,
     0,
@@ -10172,6 +10240,8 @@ function mailActivityItemFromTransaction(tx, network) {
   return {
     amountSats,
     actor,
+    attachedCredits:
+      attachedCredits.length > 0 ? attachedCredits : undefined,
     blockHeight: transactionBlockHeight(tx),
     confirmed,
     counterparty,
@@ -12671,6 +12741,7 @@ function inboxMessagesFromTransactions(txs, address, network) {
     const protocolMessage = extractProtocolMemo(vout);
     const amount = receivedPaymentAmount(vout, address);
     const recipients = protocolPaymentOutputs(vout);
+    const attachedCredits = attachedWorkCreditsFromVout(vout, recipients, network);
 
     if (!protocolMessage || amount <= 0) {
       return [];
@@ -12683,6 +12754,8 @@ function inboxMessagesFromTransactions(txs, address, network) {
     const sender = senderAddress(vin, address);
     const message = {
       amountSats: amount,
+      attachedCredits:
+        attachedCredits.length > 0 ? attachedCredits : undefined,
       attachment: protocolMessage.attachment,
       confirmed: transactionConfirmed(tx),
       createdAt: new Date(blockTime).toISOString(),
@@ -12725,6 +12798,39 @@ function mailRecipientsFromActivityItem(item) {
     : [];
 }
 
+function mailAttachedCreditsFromRecord(record, network) {
+  return Array.isArray(record?.attachedCredits)
+    ? record.attachedCredits.flatMap((credit) => {
+        const tokenId = String(credit?.tokenId ?? "").trim().toLowerCase();
+        const ticker = normalizeTokenTicker(String(credit?.ticker ?? ""));
+        const recipientAddress = String(credit?.recipientAddress ?? "").trim();
+        const amount = Math.floor(numericValue(credit?.amount));
+        if (
+          tokenId !== WORK_TOKEN_ID ||
+          ticker !== WORK_TOKEN_TICKER ||
+          amount < 1 ||
+          !isValidBitcoinAddress(recipientAddress, network)
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            amount,
+            paidSats:
+              numericValue(credit?.paidSats) > 0
+                ? numericValue(credit?.paidSats)
+                : TOKEN_MIN_MUTATION_PRICE_SATS,
+            recipientAddress,
+            registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+            ticker: WORK_TOKEN_TICKER,
+            tokenId: WORK_TOKEN_ID,
+          },
+        ];
+      })
+    : [];
+}
+
 function inboxMessagesFromActivityItems(items, address, network) {
   const targetKey = mailAddressKey(address);
   return (Array.isArray(items) ? items : []).flatMap((item) => {
@@ -12734,6 +12840,7 @@ function inboxMessagesFromActivityItems(items, address, network) {
     }
     const actor = String(item?.actor ?? item?.senderAddress ?? "").trim();
     const recipients = mailRecipientsFromActivityItem(item);
+    const attachedCredits = mailAttachedCreditsFromRecord(item, network);
     const targetRecipient = recipients.find(
       (recipient) => mailAddressKey(recipient.address) === targetKey,
     );
@@ -12748,6 +12855,8 @@ function inboxMessagesFromActivityItems(items, address, network) {
           numericValue(targetRecipient.amountSats) ||
           numericValue(item?.amountSats),
         attachment: item?.attachment,
+        attachedCredits:
+          attachedCredits.length > 0 ? attachedCredits : undefined,
         confirmed: item?.confirmed !== false,
         createdAt,
         from: actor || "Unknown",
@@ -12776,6 +12885,7 @@ function sentMessagesFromTransactions(txs, address, network) {
     const protocolMessage = extractProtocolMemo(vout);
     const recipients = protocolPaymentOutputs(vout);
     const payment = recipients[0];
+    const attachedCredits = attachedWorkCreditsFromVout(vout, recipients, network);
     const txid = transactionTxid(tx);
     if (!protocolMessage || !payment || !txid) {
       return [];
@@ -12794,6 +12904,8 @@ function sentMessagesFromTransactions(txs, address, network) {
           (total, recipient) => total + recipient.amountSats,
           0,
         ),
+        attachedCredits:
+          attachedCredits.length > 0 ? attachedCredits : undefined,
         attachment: protocolMessage.attachment,
         confirmedAt: confirmed ? createdAt : undefined,
         createdAt,
@@ -12825,6 +12937,7 @@ function sentMessagesFromActivityItems(items, address, network) {
       return [];
     }
     const recipients = mailRecipientsFromActivityItem(item);
+    const attachedCredits = mailAttachedCreditsFromRecord(item, network);
     const createdAt =
       item?.createdAt ?? item?.confirmedAt ?? new Date().toISOString();
     const confirmed = item?.confirmed !== false;
@@ -12837,6 +12950,8 @@ function sentMessagesFromActivityItems(items, address, network) {
             0,
           ) || numericValue(item?.amountSats),
         attachment: item?.attachment,
+        attachedCredits:
+          attachedCredits.length > 0 ? attachedCredits : undefined,
         confirmedAt: confirmed ? createdAt : undefined,
         createdAt,
         feeRate: 0,
@@ -24287,6 +24402,7 @@ function mailActivityItemFromMailMessage(message, address, network) {
       (total, recipient) => total + numericValue(recipient.amountSats),
       0,
     );
+  const attachedCredits = mailAttachedCreditsFromRecord(message, network);
   const actor = from || address;
   const counterparty =
     to ||
@@ -24305,6 +24421,8 @@ function mailActivityItemFromMailMessage(message, address, network) {
   return {
     amountSats,
     actor,
+    attachedCredits:
+      attachedCredits.length > 0 ? attachedCredits : undefined,
     blockHeight: message?.blockHeight,
     confirmed,
     counterparty,
@@ -27009,6 +27127,9 @@ function mailMessageRichness(message) {
     message?.memo,
     message?.subject,
     message?.attachment,
+    ...(Array.isArray(message?.attachedCredits)
+      ? message.attachedCredits
+      : []),
     ...(Array.isArray(message?.recipients) ? message.recipients : []),
   ].filter(Boolean).length;
 }
@@ -27108,6 +27229,7 @@ function mergeRepairedMailMessage(message, recovered) {
 
   return {
     ...message,
+    attachedCredits: recovered?.attachedCredits ?? message.attachedCredits,
     attachment: recoveredAttachment ?? message.attachment,
     memo: hasRecoveredBody ? recovered.memo : message.memo,
     parentTxid: recovered.parentTxid ?? message.parentTxid,

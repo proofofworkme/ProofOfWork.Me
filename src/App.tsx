@@ -291,12 +291,22 @@ type MailRecipient = {
   id?: string;
 };
 
+type MailAttachedCredit = {
+  amount: number;
+  paidSats?: number;
+  recipientAddress: string;
+  registryAddress?: string;
+  ticker: string;
+  tokenId: string;
+};
+
 type DraftMessage = {
   network: BitcoinNetwork;
   from: string;
   recipient: string;
   ccRecipient?: string;
   amountSats: number;
+  workAmount?: number;
   feeRate: number;
   subject?: string;
   memo: string;
@@ -416,6 +426,7 @@ type SentMessage = {
   subject?: string;
   memo: string;
   attachment?: MailAttachment;
+  attachedCredits?: MailAttachedCredit[];
   status?: BroadcastStatus;
   lastCheckedAt?: string;
   confirmedAt?: string;
@@ -451,6 +462,7 @@ type InboxMessage = {
   subject?: string;
   memo: string;
   attachment?: MailAttachment;
+  attachedCredits?: MailAttachedCredit[];
   replyTo: string;
   parentTxid?: string;
   confirmed: boolean;
@@ -767,6 +779,7 @@ type PowActivityKind =
 type PowActivityItem = {
   amountSats?: number;
   actor?: string;
+  attachedCredits?: MailAttachedCredit[];
   blockHeight?: number;
   confirmed: boolean;
   counterparty?: string;
@@ -1305,6 +1318,11 @@ const WORK_TOKEN_DEFINITION: PowTokenDefinition = {
   tokenId: WORK_TOKEN_ID,
   txid: WORK_TOKEN_ID,
 };
+const WORK_ATTACHMENT_ALLOWED_SENDERS = new Set([
+  "1447tsdxtfsnvrwawsamyyqkpdnw4altbt",
+  "1bpvvi1gk4qkfqfmu4jhgjsqjygwjjj7x",
+  "1f1p9uehuh5ktfr7zsx93khdrqhj6t5nfv",
+]);
 const ESTIMATED_INPUT_VBYTES = 160;
 const ESTIMATED_PAYMENT_OUTPUT_VBYTES = 31;
 const DUST_SATS = 546;
@@ -3367,6 +3385,53 @@ function mailPreview(message: { attachment?: MailAttachment; memo: string }) {
     : "";
 }
 
+function attachedCreditTotal(credits: MailAttachedCredit[] | undefined) {
+  return (credits ?? [])
+    .filter(
+      (credit) =>
+        credit.tokenId === WORK_TOKEN_ID &&
+        normalizeTokenTicker(credit.ticker) === WORK_TOKEN_TICKER,
+    )
+    .reduce((total, credit) => total + Math.max(0, Math.floor(credit.amount)), 0);
+}
+
+function attachedCreditLabel(credits: MailAttachedCredit[] | undefined) {
+  const workCredits = (credits ?? []).filter(
+    (credit) =>
+      credit.tokenId === WORK_TOKEN_ID &&
+      normalizeTokenTicker(credit.ticker) === WORK_TOKEN_TICKER &&
+      Math.floor(credit.amount) > 0,
+  );
+  const total = attachedCreditTotal(workCredits);
+  if (total <= 0) {
+    return "";
+  }
+
+  const recipientCount = new Set(
+    workCredits.map((credit) => credit.recipientAddress).filter(Boolean),
+  ).size;
+  const recipientText =
+    recipientCount > 1 ? ` · ${recipientCount} recipients` : "";
+  return `${total.toLocaleString()} WORK${recipientText}`;
+}
+
+function attachedCreditDraftAmount(credits: MailAttachedCredit[] | undefined) {
+  const workCredits = (credits ?? []).filter(
+    (credit) =>
+      credit.tokenId === WORK_TOKEN_ID &&
+      normalizeTokenTicker(credit.ticker) === WORK_TOKEN_TICKER &&
+      Math.floor(credit.amount) > 0,
+  );
+  if (workCredits.length === 0) {
+    return 0;
+  }
+
+  const firstAmount = Math.floor(workCredits[0].amount);
+  return workCredits.every((credit) => Math.floor(credit.amount) === firstAmount)
+    ? firstAmount
+    : 0;
+}
+
 function attachmentHref(attachment: MailAttachment) {
   return `data:${attachment.mime};base64,${base64FromBase64Url(attachment.data)}`;
 }
@@ -4582,6 +4647,10 @@ function loadSentMessages(): SentMessage[] {
       const recipients = storedMailRecipients(sent.recipients, network);
       const toRecipients = storedMailRecipients(sent.toRecipients, network);
       const ccRecipients = storedMailRecipients(sent.ccRecipients, network);
+      const attachedCredits = storedAttachedCredits(
+        sent.attachedCredits,
+        network,
+      );
 
       return [
         {
@@ -4589,6 +4658,8 @@ function loadSentMessages(): SentMessage[] {
             typeof sent.amountSats === "number"
               ? sent.amountSats
               : DEFAULT_AMOUNT_SATS,
+          attachedCredits:
+            attachedCredits.length > 0 ? attachedCredits : undefined,
           attachment: storedAttachment(sent.attachment),
           confirmedAt:
             typeof sent.confirmedAt === "string" ? sent.confirmedAt : undefined,
@@ -5002,6 +5073,50 @@ function storedAttachment(value: unknown): MailAttachment | undefined {
   };
 }
 
+function storedAttachedCredits(
+  value: unknown,
+  network: BitcoinNetwork,
+): MailAttachedCredit[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item): MailAttachedCredit[] => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+
+    const credit = item as Partial<MailAttachedCredit>;
+    const tokenId = String(credit.tokenId ?? "").trim().toLowerCase();
+    const ticker = normalizeTokenTicker(String(credit.ticker ?? ""));
+    const recipientAddress = String(credit.recipientAddress ?? "").trim();
+    const amount = Math.floor(Number(credit.amount ?? 0));
+    if (
+      tokenId !== WORK_TOKEN_ID ||
+      ticker !== WORK_TOKEN_TICKER ||
+      amount < 1 ||
+      !isValidBitcoinAddress(recipientAddress, network)
+    ) {
+      return [];
+    }
+
+    const paidSats = Math.floor(Number(credit.paidSats ?? 0));
+    const registryAddress = String(credit.registryAddress ?? "").trim();
+    return [
+      {
+        amount,
+        paidSats: paidSats > 0 ? paidSats : undefined,
+        recipientAddress,
+        registryAddress: isValidBitcoinAddress(registryAddress, network)
+          ? registryAddress
+          : WORK_TOKEN_REGISTRY_ADDRESS,
+        ticker: WORK_TOKEN_TICKER,
+        tokenId: WORK_TOKEN_ID,
+      },
+    ];
+  });
+}
+
 function loadDraft(
   address: string,
   network: BitcoinNetwork,
@@ -5021,6 +5136,12 @@ function loadDraft(
       typeof draft.feeRate === "number" && Number.isFinite(draft.feeRate)
         ? draft.feeRate
         : DEFAULT_FEE_RATE;
+    const workAmount =
+      typeof draft.workAmount === "number" &&
+      Number.isFinite(draft.workAmount) &&
+      draft.workAmount > 0
+        ? Math.floor(draft.workAmount)
+        : 0;
     const parentTxid =
       typeof draft.parentTxid === "string" &&
       /^[0-9a-fA-F]{64}$/.test(draft.parentTxid)
@@ -5046,6 +5167,7 @@ function loadDraft(
       subject:
         typeof draft.subject === "string" ? draft.subject.slice(0, 180) : "",
       updatedAt,
+      workAmount,
     };
   } catch {
     return undefined;
@@ -5072,6 +5194,7 @@ function isDraftContentful(draft: DraftMessage) {
     draft.attachment ||
     draft.parentTxid ||
     draft.amountSats !== DEFAULT_AMOUNT_SATS ||
+    (draft.workAmount ?? 0) > 0 ||
     draft.feeRate !== DEFAULT_FEE_RATE,
   );
 }
@@ -5382,6 +5505,63 @@ function protocolPaymentOutputs(
       },
     ];
   });
+}
+
+function canAttachWorkToMessages(senderAddress: string, targetNetwork: BitcoinNetwork) {
+  return (
+    targetNetwork === "livenet" &&
+    WORK_ATTACHMENT_ALLOWED_SENDERS.has(senderAddress.trim().toLowerCase())
+  );
+}
+
+function attachedWorkCreditsFromVout(
+  vout: Array<Record<string, unknown>>,
+  recipients: MailRecipient[],
+  targetNetwork: BitcoinNetwork,
+): MailAttachedCredit[] {
+  if (targetNetwork !== "livenet" || recipients.length === 0) {
+    return [];
+  }
+
+  const recipientAddresses = recipients.map((recipient) => recipient.address);
+  const credits = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX).flatMap(
+    (message): MailAttachedCredit[] => {
+      const parsed = parseTokenPayload(message, targetNetwork);
+      if (
+        parsed?.kind !== "send" ||
+        parsed.tokenId !== WORK_TOKEN_ID ||
+        !recipientAddresses.some((recipientAddress) =>
+          samePaymentAddress(recipientAddress, parsed.recipientAddress),
+        )
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          amount: parsed.amount,
+          paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+          recipientAddress: parsed.recipientAddress,
+          registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+          ticker: WORK_TOKEN_TICKER,
+          tokenId: WORK_TOKEN_ID,
+        },
+      ];
+    },
+  );
+
+  const registryPaidSats = tokenPaymentAmountBeforeProtocol(
+    vout,
+    WORK_TOKEN_REGISTRY_ADDRESS,
+  );
+  if (
+    credits.length === 0 ||
+    registryPaidSats < TOKEN_MIN_MUTATION_PRICE_SATS * credits.length
+  ) {
+    return [];
+  }
+
+  return credits;
 }
 
 function senderAddress(
@@ -8237,6 +8417,11 @@ function inboxMessagesFromTransactions(
     const protocolMessage = extractProtocolMemo(vout);
     const amount = receivedPaymentAmount(vout, targetAddress);
     const recipients = protocolPaymentOutputs(vout);
+    const attachedCredits = attachedWorkCreditsFromVout(
+      vout,
+      recipients,
+      targetNetwork,
+    );
 
     if (!protocolMessage || amount <= 0) {
       return [];
@@ -8255,6 +8440,8 @@ function inboxMessagesFromTransactions(
       from: sender,
       to: targetAddress,
       amountSats: amount,
+      attachedCredits:
+        attachedCredits.length > 0 ? attachedCredits : undefined,
       memo: protocolMessage.memo,
       subject: protocolMessage.subject,
       attachment: protocolMessage.attachment,
@@ -8294,6 +8481,11 @@ function sentMessagesFromTransactions(
     const protocolMessage = extractProtocolMemo(vout);
     const recipients = protocolPaymentOutputs(vout);
     const payment = recipients[0];
+    const attachedCredits = attachedWorkCreditsFromVout(
+      vout,
+      recipients,
+      targetNetwork,
+    );
     const txid =
       typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/.test(tx.txid)
         ? tx.txid.toLowerCase()
@@ -8314,6 +8506,8 @@ function sentMessagesFromTransactions(
     return [
       {
         amountSats: totalRecipientSats(recipients),
+        attachedCredits:
+          attachedCredits.length > 0 ? attachedCredits : undefined,
         attachment: protocolMessage.attachment,
         confirmedAt: confirmed ? createdAt : undefined,
         createdAt,
@@ -8928,6 +9122,7 @@ function activityItemsFromAddressMail(
     return {
       amountSats: message.amountSats,
       actor: message.from,
+      attachedCredits: message.attachedCredits,
       confirmed: message.confirmed,
       counterparty: message.to,
       createdAt: message.createdAt,
@@ -8942,6 +9137,7 @@ function activityItemsFromAddressMail(
         networkLabel(message.network),
         "Inbound",
         `${message.amountSats.toLocaleString()} proofs`,
+        attachedCreditLabel(message.attachedCredits),
         isFile ? "File" : isReply ? "Reply" : "Mail",
         isBrowserHtmlMessageBody(message.memo) ? "HTML body" : "",
         message.attachment?.mime ?? "",
@@ -8964,6 +9160,7 @@ function activityItemsFromAddressMail(
     return {
       amountSats: message.amountSats,
       actor: message.from,
+      attachedCredits: message.attachedCredits,
       confirmed,
       counterparty: message.to,
       createdAt: message.createdAt,
@@ -8982,6 +9179,7 @@ function activityItemsFromAddressMail(
         networkLabel(message.network),
         "Outbound",
         `${message.amountSats.toLocaleString()} proofs`,
+        attachedCreditLabel(message.attachedCredits),
         isFile ? "File" : isReply ? "Reply" : "Mail",
         isBrowserHtmlMessageBody(message.memo) ? "HTML body" : "",
         message.attachment?.mime ?? "",
@@ -11687,6 +11885,7 @@ async function buildPaymentPsbt({
   network,
   payments,
   postProtocolPayments,
+  postProtocolPayloads = [],
   requireConfirmedUtxos = true,
   protocolPayloads,
   toAddress,
@@ -11698,6 +11897,7 @@ async function buildPaymentPsbt({
   network: BitcoinNetwork;
   payments?: PaymentOutputSpec[];
   postProtocolPayments?: PaymentOutputSpec[];
+  postProtocolPayloads?: string[];
   requireConfirmedUtxos?: boolean;
   protocolPayloads: string[];
   toAddress?: string;
@@ -11760,6 +11960,9 @@ async function buildPaymentPsbt({
     "Connected wallet",
   );
   const opReturnScripts = protocolOutputScripts(protocolPayloads);
+  const postProtocolOpReturnScripts = protocolOutputScripts(
+    postProtocolPayloads,
+  );
   const fixedOutputVbytes =
     normalizedPayments.reduce(
       (total, payment) => total + outputVbytesForScript(payment.script),
@@ -11771,6 +11974,10 @@ async function buildPaymentPsbt({
     ) +
     normalizedPostProtocolPayments.reduce(
       (total, payment) => total + outputVbytesForScript(payment.script),
+      0,
+    ) +
+    postProtocolOpReturnScripts.reduce(
+      (total, script) => total + outputVbytesForScript(script),
       0,
     );
   const changeOutputVbytes = outputVbytesForScript(changeScript);
@@ -11870,6 +12077,13 @@ async function buildPaymentPsbt({
     }
   }
 
+  for (const script of postProtocolOpReturnScripts) {
+    psbt.addOutput({
+      script,
+      value: 0n,
+    });
+  }
+
   if (selection.changeSats >= DUST_SATS) {
     psbt.addOutput({
       address: fromAddress,
@@ -11886,6 +12100,7 @@ async function buildPaymentPsbt({
       normalizedPayments.length +
       opReturnScripts.length +
       normalizedPostProtocolPayments.length +
+      postProtocolOpReturnScripts.length +
       (selection.changeSats >= DUST_SATS ? 1 : 0),
     psbtHex: psbt.toHex(),
   };
@@ -12997,6 +13212,7 @@ export default function App() {
   const [recipient, setRecipient] = useState("");
   const [ccRecipient, setCcRecipient] = useState("");
   const [amountSats, setAmountSats] = useState(DEFAULT_AMOUNT_SATS);
+  const [messageWorkAmount, setMessageWorkAmount] = useState(0);
   const [feeRate, setFeeRate] = useState(DEFAULT_FEE_RATE);
   const [subject, setSubject] = useState("");
   const [memo, setMemo] = useState(DEFAULT_MEMO);
@@ -13364,10 +13580,6 @@ export default function App() {
     () => buildProtocolPayloads(subject, memo, replyParentTxid, attachment),
     [attachment, memo, replyParentTxid, subject],
   );
-  const dataCarrierBytes = useMemo(
-    () => dataCarrierBytesForPayloads(protocolPayloads),
-    [protocolPayloads],
-  );
 
   useEffect(() => {
     acceptedRegistryStateRef.current = {
@@ -13655,6 +13867,94 @@ export default function App() {
   const totalResolvedRecipients =
     recipientResolution.recipients.length +
     ccRecipientResolution.recipients.length;
+  const messageWorkAmountValue =
+    Number.isFinite(messageWorkAmount) && messageWorkAmount > 0
+      ? Math.floor(messageWorkAmount)
+      : 0;
+  const composeAccountWorkWalletBalance = useMemo(
+    () =>
+      tokenWalletBalancesFor(
+        address,
+        accountTokenState.tokens,
+        accountTokenState.mints,
+        accountTokenState.transfers,
+        accountTokenState.sales,
+        accountTokenState.holders,
+      ).find(
+        (item) =>
+          item.token.tokenId === WORK_TOKEN_ID ||
+          normalizeTokenTicker(item.token.ticker) === WORK_TOKEN_TICKER,
+      ),
+    [accountTokenState, address],
+  );
+  const accountWorkReservedBalance = tokenReservedBalanceFor(
+    accountTokenState.listings.length > 0
+      ? accountTokenState.listings
+      : tokenListings,
+    WORK_TOKEN_ID,
+    address,
+  );
+  const workAttachmentSpendableBalance = Math.max(
+    0,
+    (composeAccountWorkWalletBalance?.confirmedBalance ?? 0) -
+      accountWorkReservedBalance,
+  );
+  const workAttachmentAllowed = canAttachWorkToMessages(address, network);
+  const workAttachmentVisible =
+    workAttachmentAllowed &&
+    (workAttachmentSpendableBalance > 0 || messageWorkAmountValue > 0);
+  const messageWorkRecipientAddresses = useMemo(() => {
+    const addresses: string[] = [];
+    const addRecipient = (recipientItem: RecipientResolution) => {
+      if (
+        !recipientItem.paymentAddress ||
+        !isValidBitcoinAddress(recipientItem.paymentAddress, network) ||
+        addresses.some((existing) =>
+          samePaymentAddress(existing, recipientItem.paymentAddress),
+        )
+      ) {
+        return;
+      }
+
+      addresses.push(recipientItem.paymentAddress);
+    };
+
+    recipientResolution.recipients.forEach(addRecipient);
+    ccRecipientResolution.recipients.forEach(addRecipient);
+    return addresses;
+  }, [ccRecipientResolution, network, recipientResolution]);
+  const workAttachmentPayloads = useMemo(
+    () =>
+      messageWorkAmountValue > 0 && workAttachmentAllowed
+        ? messageWorkRecipientAddresses.map((recipientAddress) =>
+            buildTokenSendPayload(
+              WORK_TOKEN_ID,
+              messageWorkAmountValue,
+              recipientAddress,
+            ),
+          )
+        : [],
+    [
+      messageWorkAmountValue,
+      messageWorkRecipientAddresses,
+      workAttachmentAllowed,
+    ],
+  );
+  const workAttachmentTotalAmount =
+    messageWorkAmountValue * workAttachmentPayloads.length;
+  const workAttachmentBalanceOk =
+    messageWorkAmountValue <= 0 ||
+    (workAttachmentAllowed &&
+      workAttachmentPayloads.length > 0 &&
+      workAttachmentTotalAmount <= workAttachmentSpendableBalance);
+  const composeDataCarrierBytes = useMemo(
+    () =>
+      dataCarrierBytesForPayloads([
+        ...protocolPayloads,
+        ...workAttachmentPayloads,
+      ]),
+    [protocolPayloads, workAttachmentPayloads],
+  );
   const canSend =
     Boolean(
       address &&
@@ -13668,7 +13968,8 @@ export default function App() {
     totalResolvedRecipients <= MAX_RECIPIENTS &&
     !recipientResolution.error &&
     !ccRecipientResolution.error &&
-    dataCarrierBytes <= MAX_DATA_CARRIER_BYTES &&
+    workAttachmentBalanceOk &&
+    composeDataCarrierBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
   const normalizedIdName = normalizePowId(idName);
   const idRegistrationPayload = useMemo(
@@ -14978,6 +15279,7 @@ export default function App() {
       recipient,
       subject,
       updatedAt: new Date().toISOString(),
+      workAmount: messageWorkAmountValue,
     };
 
     if (!isDraftContentful(draft)) {
@@ -14994,11 +15296,18 @@ export default function App() {
     composeOpen,
     feeRate,
     memo,
+    messageWorkAmountValue,
     network,
     recipient,
     replyParentTxid,
     subject,
   ]);
+
+  useEffect(() => {
+    if (!canAttachWorkToMessages(address, network)) {
+      setMessageWorkAmount(0);
+    }
+  }, [address, network]);
 
   useEffect(() => {
     if (
@@ -15664,6 +15973,7 @@ export default function App() {
     setRecipient(draft.recipient);
     setCcRecipient(draft.ccRecipient ?? "");
     setAmountSats(draft.amountSats);
+    setMessageWorkAmount(draft.workAmount ?? 0);
     setFeeRate(draft.feeRate);
     setSubject(draft.subject ?? "");
     setMemo(draft.memo);
@@ -15905,6 +16215,7 @@ export default function App() {
       ),
       subject: message.subject,
       updatedAt: new Date().toISOString(),
+      workAmount: attachedCreditDraftAmount(message.attachedCredits),
     };
 
     saveDraft(draft);
@@ -16077,6 +16388,7 @@ export default function App() {
     setRecipient("");
     setCcRecipient("");
     setAmountSats(DEFAULT_AMOUNT_SATS);
+    setMessageWorkAmount(0);
     setFeeRate(DEFAULT_FEE_RATE);
     setSubject("");
     setMemo(DEFAULT_MEMO);
@@ -16095,6 +16407,7 @@ export default function App() {
     setRecipient("");
     setCcRecipient("");
     setAmountSats(DEFAULT_AMOUNT_SATS);
+    setMessageWorkAmount(0);
     setFeeRate(DEFAULT_FEE_RATE);
     setSubject("");
     setMemo(DEFAULT_MEMO);
@@ -16217,6 +16530,7 @@ export default function App() {
     setRecipient(contactTarget(contact));
     setCcRecipient("");
     setAmountSats(DEFAULT_AMOUNT_SATS);
+    setMessageWorkAmount(0);
     setFeeRate(DEFAULT_FEE_RATE);
     setSubject("");
     setMemo(DEFAULT_MEMO);
@@ -17316,6 +17630,7 @@ export default function App() {
     setRecipient(recipientAddress === "Unknown" ? "" : recipientAddress);
     setCcRecipient("");
     setAmountSats(messageReplyAmount(message));
+    setMessageWorkAmount(0);
     setSubject(`Re: ${subject}`);
     setMemo("");
     setAttachment(undefined);
@@ -17353,6 +17668,7 @@ export default function App() {
     setRecipient([...targets.values()].join(", "));
     setCcRecipient("");
     setAmountSats(messageReplyAmount(message));
+    setMessageWorkAmount(0);
     setSubject(`Re: ${subject}`);
     setMemo("");
     setAttachment(undefined);
@@ -17372,6 +17688,7 @@ export default function App() {
     setCcRecipient("");
     setSubject("");
     setMemo(DEFAULT_MEMO);
+    setMessageWorkAmount(0);
     setAttachment(undefined);
     setReplyParentTxid(undefined);
   }
@@ -19077,7 +19394,7 @@ export default function App() {
       return;
     }
 
-    if (dataCarrierBytes > MAX_DATA_CARRIER_BYTES) {
+    if (composeDataCarrierBytes > MAX_DATA_CARRIER_BYTES) {
       setStatus({
         tone: "bad",
         text: "Aggregate OP_RETURN data-carrier scripts are over 100 KB.",
@@ -19210,8 +19527,131 @@ export default function App() {
           ];
         });
       const mailRecipients = [...toRecipients, ...ccRecipients];
+      const workAttachmentAmount = messageWorkAmountValue;
+      let paymentExcludeOutpoints = reservedOutpoints;
+      let attachedWorkCredits: MailAttachedCredit[] = [];
+      let attachedWorkPayloads: string[] = [];
+      let pendingWorkTransfers: PowTokenTransfer[] = [];
+
+      if (workAttachmentAmount > 0) {
+        if (!canAttachWorkToMessages(address, network)) {
+          setStatus({
+            tone: "bad",
+            text: "WORK message attachments are enabled only for approved mainnet senders.",
+          });
+          return;
+        }
+
+        if (!Number.isSafeInteger(workAttachmentAmount)) {
+          setStatus({
+            tone: "bad",
+            text: "Attach a whole-number WORK amount.",
+          });
+          return;
+        }
+
+        setStatus({ tone: "idle", text: "Checking spendable WORK..." });
+        const latestWorkState = await fetchTokenState(
+          "livenet",
+          true,
+          WORK_TOKEN_ID,
+          false,
+          [address],
+          true,
+        );
+        const latestWorkTokens = latestWorkState.tokens.some(
+          (token) => token.tokenId === WORK_TOKEN_ID,
+        )
+          ? latestWorkState.tokens
+          : [WORK_TOKEN_DEFINITION, ...latestWorkState.tokens];
+        const latestWorkBalance =
+          tokenWalletBalancesFor(
+            address,
+            latestWorkTokens,
+            latestWorkState.mints,
+            latestWorkState.transfers,
+            latestWorkState.sales,
+            latestWorkState.holders,
+          ).find((item) => item.token.tokenId === WORK_TOKEN_ID)
+            ?.confirmedBalance ?? 0;
+        const latestReservedWork = tokenReservedBalanceFor(
+          latestWorkState.listings,
+          WORK_TOKEN_ID,
+          address,
+        );
+        const latestSpendableWork = Math.max(
+          0,
+          latestWorkBalance - latestReservedWork,
+        );
+        const totalWorkToAttach = workAttachmentAmount * mailRecipients.length;
+        if (totalWorkToAttach > latestSpendableWork) {
+          setStatus({
+            tone: "bad",
+            text: `Attach up to ${latestSpendableWork.toLocaleString()} spendable WORK.`,
+          });
+          return;
+        }
+
+        attachedWorkCredits = mailRecipients.map((mailRecipient) => ({
+          amount: workAttachmentAmount,
+          paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+          recipientAddress: mailRecipient.address,
+          registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+          ticker: WORK_TOKEN_TICKER,
+          tokenId: WORK_TOKEN_ID,
+        }));
+        attachedWorkPayloads = attachedWorkCredits.map((credit) =>
+          buildTokenSendPayload(
+            credit.tokenId,
+            credit.amount,
+            credit.recipientAddress,
+          ),
+        );
+        if (
+          dataCarrierBytesForPayloads([
+            ...protocolPayloads,
+            ...attachedWorkPayloads,
+          ]) > MAX_DATA_CARRIER_BYTES
+        ) {
+          setStatus({
+            tone: "bad",
+            text: "Message plus WORK attachment OP_RETURN data is over 100 KB.",
+          });
+          return;
+        }
+
+        paymentExcludeOutpoints = [
+          ...reservedOutpoints,
+          ...activeTokenListingAnchorOutpointsForAddress(
+            latestWorkState.listings,
+            address,
+            { network: "livenet" },
+          ),
+        ];
+        pendingWorkTransfers = attachedWorkCredits.map((credit) => ({
+          amount: credit.amount,
+          confirmed: false,
+          createdAt: new Date().toISOString(),
+          dataBytes: dataCarrierBytesForPayload(
+            buildTokenSendPayload(
+              credit.tokenId,
+              credit.amount,
+              credit.recipientAddress,
+            ),
+          ),
+          network: "livenet",
+          paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+          recipientAddress: credit.recipientAddress,
+          registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+          senderAddress: address,
+          ticker: WORK_TOKEN_TICKER,
+          tokenId: WORK_TOKEN_ID,
+          txid: "",
+        }));
+      }
+
       const paymentPsbt = await buildPaymentPsbt({
-        excludeOutpoints: reservedOutpoints,
+        excludeOutpoints: paymentExcludeOutpoints,
         feeRate,
         fromAddress: address,
         network,
@@ -19219,6 +19659,18 @@ export default function App() {
           address: mailRecipient.address,
           amountSats: mailRecipient.amountSats,
         })),
+        postProtocolPayments:
+          attachedWorkPayloads.length > 0
+            ? [
+                {
+                  address: WORK_TOKEN_REGISTRY_ADDRESS,
+                  amountSats:
+                    TOKEN_MIN_MUTATION_PRICE_SATS *
+                    attachedWorkPayloads.length,
+                },
+              ]
+            : undefined,
+        postProtocolPayloads: attachedWorkPayloads,
         protocolPayloads,
       });
       if (
@@ -19263,6 +19715,8 @@ export default function App() {
         replyTo: address,
         parentTxid: replyParentTxid,
         createdAt,
+        attachedCredits:
+          attachedWorkCredits.length > 0 ? attachedWorkCredits : undefined,
       };
       const selfRecipient = mailRecipients.find((mailRecipient) =>
         samePaymentAddress(mailRecipient.address, address),
@@ -19282,12 +19736,38 @@ export default function App() {
             subject: normalizeSubject(subject) || undefined,
             to: address,
             txid,
+            attachedCredits:
+              attachedWorkCredits.length > 0 ? attachedWorkCredits : undefined,
           }
         : undefined;
+      const finalizedPendingWorkTransfers = pendingWorkTransfers.map(
+        (transfer) => ({
+          ...transfer,
+          createdAt,
+          txid,
+        }),
+      );
 
       clearDraft(address, network);
       setSavedDraft(undefined);
       setAllSent((current) => [sentMessage, ...current]);
+      if (finalizedPendingWorkTransfers.length > 0) {
+        setTokenTransfers((current) => {
+          const existingKeys = new Set(
+            current.map(
+              (transfer) =>
+                `${transfer.txid}:${transfer.tokenId}:${transfer.recipientAddress}:${transfer.amount}`,
+            ),
+          );
+          const additions = finalizedPendingWorkTransfers.filter(
+            (transfer) =>
+              !existingKeys.has(
+                `${transfer.txid}:${transfer.tokenId}:${transfer.recipientAddress}:${transfer.amount}`,
+              ),
+          );
+          return additions.length > 0 ? [...additions, ...current] : current;
+        });
+      }
       if (selfIncomingMessage) {
         setInbox((current) => [
           selfIncomingMessage,
@@ -19303,13 +19783,17 @@ export default function App() {
       setComposeOpen(false);
       setAttachment(undefined);
       setCcRecipient("");
+      setMessageWorkAmount(0);
       setSubject("");
       setReplyParentTxid(undefined);
       setSelectedKey(`sent-${network}-${txid}`);
       setStatus({
         tone: "good",
-        text: `Transaction broadcast to ${mailRecipients.length} recipient${mailRecipients.length === 1 ? "" : "s"}. ${paymentPsbt.inputCount} input${paymentPsbt.inputCount === 1 ? "" : "s"}, ${paymentPsbt.outputCount} output${paymentPsbt.outputCount === 1 ? "" : "s"}.`,
+        text: `Transaction broadcast to ${mailRecipients.length} recipient${mailRecipients.length === 1 ? "" : "s"}${attachedWorkCredits.length > 0 ? ` with ${attachedCreditLabel(attachedWorkCredits)}` : ""}. ${paymentPsbt.inputCount} input${paymentPsbt.inputCount === 1 ? "" : "s"}, ${paymentPsbt.outputCount} output${paymentPsbt.outputCount === 1 ? "" : "s"}.`,
       });
+      if (attachedWorkCredits.length > 0) {
+        void refreshToken(true);
+      }
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -22762,7 +23246,7 @@ export default function App() {
                   busy={busy}
                   canSend={canSend}
                   contacts={contactsForNetwork}
-                  dataCarrierBytes={dataCarrierBytes}
+                  dataCarrierBytes={composeDataCarrierBytes}
                   draftMode
                   feeRate={feeRate}
                   memo={memo}
@@ -22785,8 +23269,13 @@ export default function App() {
                   setMemo={setMemo}
                   setRecipient={setRecipient}
                   setSubject={setSubject}
+                  setWorkAmount={setMessageWorkAmount}
                   subject={subject}
                   submit={sendOpReturn}
+                  workAmount={messageWorkAmountValue}
+                  workAttachmentTotal={workAttachmentTotalAmount}
+                  workSpendableBalance={workAttachmentSpendableBalance}
+                  workVisible={workAttachmentVisible}
                 />
               ) : activeFolder === "drafts" ? (
                 <div className="empty-reader">
@@ -22814,7 +23303,7 @@ export default function App() {
                   contacts={contactsForNetwork}
                   feeRate={feeRate}
                   memo={memo}
-                  dataCarrierBytes={dataCarrierBytes}
+                  dataCarrierBytes={composeDataCarrierBytes}
                   network={network}
                   ccRecipient={ccRecipient}
                   ccRecipientError={Boolean(ccRecipientResolution.error)}
@@ -22833,8 +23322,13 @@ export default function App() {
                   setMemo={setMemo}
                   setRecipient={setRecipient}
                   setSubject={setSubject}
+                  setWorkAmount={setMessageWorkAmount}
                   subject={subject}
                   submit={sendOpReturn}
+                  workAmount={messageWorkAmountValue}
+                  workAttachmentTotal={workAttachmentTotalAmount}
+                  workSpendableBalance={workAttachmentSpendableBalance}
+                  workVisible={workAttachmentVisible}
                 />
               ) : selectedMessage ? (
                 <Reader
@@ -36240,6 +36734,9 @@ function MessageList({
             <div className="message-preview">{mailPreview(message)}</div>
             <div className="message-meta">
               <span>{message.amountSats.toLocaleString()} proofs</span>
+              {attachedCreditLabel(message.attachedCredits) ? (
+                <span>{attachedCreditLabel(message.attachedCredits)}</span>
+              ) : null}
               {message.folder === "sent" ? (
                 <span>{deliveryLabel(sentDeliveryStatus(message))}</span>
               ) : null}
@@ -36300,6 +36797,9 @@ function DraftList({
           </div>
           <div className="message-meta">
             <span>{draft.amountSats.toLocaleString()} proofs</span>
+            {(draft.workAmount ?? 0) > 0 ? (
+              <span>{Math.floor(draft.workAmount ?? 0).toLocaleString()} WORK each</span>
+            ) : null}
             {draft.attachment ? <span>Attachment</span> : null}
             {draft.parentTxid ? <span>Reply</span> : null}
             <span>{networkLabel(draft.network)}</span>
@@ -37097,6 +37597,11 @@ function ComposePane({
   setSubject,
   subject,
   submit,
+  workAmount,
+  workAttachmentTotal,
+  workSpendableBalance,
+  workVisible,
+  setWorkAmount,
 }: {
   amountSats: number;
   attachment?: MailAttachment;
@@ -37126,8 +37631,13 @@ function ComposePane({
   setParentTxid: (value: string | undefined) => void;
   setRecipient: (value: string) => void;
   setSubject: (value: string) => void;
+  setWorkAmount: (value: number) => void;
   subject: string;
   submit: (event: FormEvent<HTMLFormElement>) => void;
+  workAmount: number;
+  workAttachmentTotal: number;
+  workSpendableBalance: number;
+  workVisible: boolean;
 }) {
   const recipientTokens = splitRecipientInputs(recipient);
   const ccRecipientTokens = splitRecipientInputs(ccRecipient);
@@ -37291,6 +37801,27 @@ function ComposePane({
         </label>
         <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
       </div>
+
+      {workVisible ? (
+        <div className="compose-grid">
+          <label>
+            WORK each
+            <input
+              min={0}
+              onChange={(event) => setWorkAmount(Number(event.target.value))}
+              step={1}
+              type="number"
+              value={workAmount}
+            />
+          </label>
+          <div className="field-note good">
+            Spendable WORK: {workSpendableBalance.toLocaleString()}
+            {workAttachmentTotal > 0
+              ? ` · Total: ${workAttachmentTotal.toLocaleString()}`
+              : ""}
+          </div>
+        </div>
+      ) : null}
 
       <label className="memo-field">
         Message
@@ -37612,6 +38143,12 @@ function Reader({
           <dt>Value</dt>
           <dd>{message.amountSats.toLocaleString()} proofs</dd>
         </div>
+        {attachedCreditLabel(message.attachedCredits) ? (
+          <div>
+            <dt>WORK</dt>
+            <dd>{attachedCreditLabel(message.attachedCredits)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Network</dt>
           <dd>{networkLabel(explorerNetwork)}</dd>
@@ -37660,6 +38197,9 @@ function Reader({
                 <span>
                   {formatDate(threadMessage.createdAt)} ·{" "}
                   {threadMessage.amountSats.toLocaleString()} proofs
+                  {attachedCreditLabel(threadMessage.attachedCredits)
+                    ? ` · ${attachedCreditLabel(threadMessage.attachedCredits)}`
+                    : ""}
                 </span>
               </div>
               <p>{mailPreview(threadMessage)}</p>

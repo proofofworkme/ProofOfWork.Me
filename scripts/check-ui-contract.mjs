@@ -224,6 +224,23 @@ expect(
       app,
     ),
 );
+expect(
+  "mail WORK attachments use allowlisted canonical senders",
+  /WORK_ATTACHMENT_ALLOWED_SENDERS\s*=\s*new Set/.test(app) &&
+    /1447tsdxtfsnvrwawsamyyqkpdnw4altbt/.test(app) &&
+    /1bpvvi1gk4qkfqfmu4jhgjsqjygwjjj7x/.test(app) &&
+    /1f1p9uehuh5ktfr7zsx93khdrqhj6t5nfv/.test(app),
+);
+expect(
+  "mail WORK attachments preserve mail then WORK output order",
+  /postProtocolPayloads\s*=\s*\[\]/.test(app) &&
+    /for \(const script of opReturnScripts\)[\s\S]*for \(const payment of normalizedPostProtocolPayments\)[\s\S]*for \(const script of postProtocolOpReturnScripts\)/.test(
+      app,
+    ) &&
+    /postProtocolPayments:[\s\S]*WORK_TOKEN_REGISTRY_ADDRESS[\s\S]*postProtocolPayloads:\s*attachedWorkPayloads/.test(
+      app,
+    ),
+);
 const idMarketplaceCardBlock =
   app.match(/function IdMarketplaceCard[\s\S]*?function PendingIdEventList/)?.[0] ??
   "";

@@ -36,6 +36,7 @@ Mail organization features that are already implemented in the full app:
 - CC compose support for visible additional recipients.
 - Multi-recipient compose with removable recipient chips.
 - Reply All for multi-recipient mail.
+- Approved mainnet senders can attach canonical WORK credit to a message. The message remains normal mail, while the same tx also carries WORK registry mutation payment and `pwt1:send` payloads for the mail recipients.
 - Files view for confirmed attachments.
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
 - Browser view for HTML message bodies or verified `text/html` attachments by txid, rendered in a sandboxed iframe.
