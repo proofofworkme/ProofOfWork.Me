@@ -65,7 +65,7 @@ Database tooling:
 
 ```bash
 POW_INDEX_DATABASE_URL=postgres://proof_indexer:...@127.0.0.1:5432/proof_indexer npm run db:schema
-POW_INDEX_DATABASE_URL=postgres://proof_indexer:...@127.0.0.1:5432/proof_indexer POW_API_BASE=http://127.0.0.1:8081 npm run indexer:backfill
+POW_INDEX_DATABASE_URL=postgres://proof_indexer:...@127.0.0.1:5432/proof_indexer POW_API_BASE=http://127.0.0.1:8081 POW_INDEX_BACKFILL_SOURCES=registry-records,tokens,token-mints npm run indexer:backfill
 POW_INDEX_DATABASE_URL=postgres://proof_indexer:...@127.0.0.1:5432/proof_indexer POW_API_BASE=http://127.0.0.1:8081 npm run indexer:parity
 POW_INDEX_DATABASE_URL=postgres://proof_indexer:...@127.0.0.1:5432/proof_indexer POW_API_BASE=http://127.0.0.1:8081 npm run indexer:worker -- --once
 ```
@@ -74,15 +74,15 @@ The backfill script reads current canonical API history in pages and stores a
 shadow copy in PostgreSQL. `POW_INDEX_BACKFILL_SOURCES` can limit a run to
 comma-separated sources such as `registry-records,tokens,token-mints`, while
 `POW_INDEX_BACKFILL_LIMIT`, `POW_INDEX_BACKFILL_MAX_PAGES`, and
-`POW_INDEX_FETCH_TIMEOUT_MS` bound each run. Production worker runs set
-`POW_INDEX_BACKFILL_SOURCE_FRESH=1` and
-`POW_INDEX_BACKFILL_TOKEN_SNAPSHOT_FRESH=1` so database ingestion bypasses
-database-backed API fast paths for event pages and scoped token/listing
-snapshots. It also sets `POW_INDEX_BACKFILL_SUMMARY_SNAPSHOT_FRESH=1` so
-WORK, Growth, and Marketplace summaries refresh from canonical endpoints.
-`POW_INDEX_BACKFILL_SNAPSHOT_FRESH=1` is reserved for explicit broad registry
-snapshot audits, and `POW_INDEX_BACKFILL_ALL_TOKEN_SNAPSHOT_FRESH=1` is
-reserved for explicit all-token fresh snapshot audits.
+`POW_INDEX_FETCH_TIMEOUT_MS` bound each run. A bare unfiltered backfill includes
+`block-scan,mempool-scan`, so it requires the private Core RPC environment and
+an authoritative hashed checkpoint; use an explicit source list for API-only
+history jobs. The production hot worker runs
+only `block-scan,mempool-scan`, keeps the source/token/summary fresh-crawl flags
+off, and disables broad ledger snapshots. After confirmed catch-up it publishes
+one authenticated canonical-summary bundle built from the completed relational
+read models at the exact hashed Core tip. Broad source, token, registry, and
+ledger snapshot refreshes are explicit supervised jobs, not 30-second work.
 
 The parity script compares the database read model with the canonical
 `/api/v1/ledger-consistency` snapshot before any endpoint cutover. It requires a
@@ -104,11 +104,13 @@ can be intentionally expensive; set `POW_INDEX_BACKFILL_ACTIVITY_SNAPSHOT=1`
 only for an explicit full Log activity refresh. Database-backed Log history
 reads page from the stored activity snapshot first, then fall back to per-event
 rows only when no activity snapshot exists.
-If full ledger consistency is temporarily unavailable, the worker may write a
-summary-snapshot-only row marked non-OK so current WORK, Marketplace, Growth,
-and Infinity summaries remain available from verified proof-index reads while
-the canonical ledger refresh continues. This row is not a replacement source of
-truth for confirmed chain history.
+Non-OK or `summary-snapshot-fallback` rows are diagnostic only. They are never
+eligible for summary reads or health. Once the hashed relational scan reaches
+the exact Core tip, ID, Wallet, Log, mail, registry, and history reads may reopen
+without waiting for the slower summary publisher. WORK, Marketplace, Growth,
+Infinity, and work-floor summary routes remain closed until an authenticated
+`canonical-summary-refresh` row contains all five payloads from one snapshot
+with conservative coverage at that same checkpoint.
 
 Database-backed API reads are feature-flagged. The current production
 default-read posture is:
@@ -175,10 +177,25 @@ backfill pages, refreshing stale pending transaction statuses through
 `/api/v1/tx/:txid/status`, marking disappeared txids as `dropped`, and running
 the parity checker on a slower cadence than block catch-up. Continuous worker
 cycles use
-`POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan` as the hot catch-up path. The
-block scanner uses local Bitcoin Core RPC to scan blocks after the database's
+`POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan,mempool-scan` as the hot path.
+The confirmed block scanner always runs first. The bounded mempool scanner then
+gives best-effort pending visibility without being allowed to delay confirmed
+catch-up: each cycle verifies at most five protocol-bearing mempool txids, and
+each pending ordered-verifier request is capped at five seconds. Production
+pins those bounds with `POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5` and
+`POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=5000`; the backfill script also clamps
+either override to those maximums. The block scanner uses local Bitcoin Core
+RPC verbosity 2 to scan blocks after the database's
 indexed height for ProofOfWork OP_RETURN prefixes, then writes discovered txids
-through the normal projection writer. History-page sources such as token
+through the normal projection writer. It hydrates and verifies input prevouts
+only for discovered protocol transactions, deduplicates previous transaction
+lookups, and permits at most four concurrent prevout RPCs. Complete value and
+script evidence is mandatory; an addressless but complete Bitcoin script is
+allowed through to the ordered protocol validator. Core calls have their own
+15-second timeout and two-retry budget, independent of broad API-source fetch
+settings. This avoids full prevout expansion for every unrelated transaction in
+every scanned block and prevents one high-input protocol-looking transaction
+from flooding the local node. History-page sources such as token
 listings, token closed-listings, registry pages, and Log pages remain available
 as explicit backfill jobs, but should not run after block-scan in the hot loop
 where stale summary guards can turn them into retry stalls. WORK and
@@ -189,12 +206,165 @@ jobs, but should not sit in the hot worker loop where slow address history reads
 can stall block catch-up for Log, Growth, WORK, Credit, Marketplace, and
 Infinity. Scoped-holder recrawls stay off by default
 (`POW_INDEX_WORKER_HOLDERS=0`) and should run as explicit full backfill jobs.
-Production runs the hot loop every 30 seconds so the database is warmed after
-new blocks rather than by public page requests. Request paths should serve a
+
+The block scanner checkpoint is fail-closed. A normal worker start requires a
+previous authoritative `proof-indexer-block-scan` checkpoint with the exact
+Bitcoin Core block hash stored in `indexedThroughBlockHash`; it must not infer
+an initial checkpoint from an unrelated summary snapshot, accept a legacy
+hashless scan row, or silently jump to the current tip. If both a newer legacy
+hashless row and an older hashed replay checkpoint exist, the worker and health
+reader must resume from the hashed checkpoint. On a new database or a database
+that only has legacy hashless checkpoints, first seed and verify the canonical
+relational projections, then set
+`POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT=<intentional-start-height>` for the
+first supervised block-scan replay. Remove that bootstrap variable immediately
+after the first hashed checkpoint is stored; leaving it set would replay from
+the same height every cycle. Record the chosen height, its Bitcoin Core block
+hash, and the verification evidence in the deployment notes. A missing RPC URL,
+incomplete block, missing checkpoint hash, or unresolved canonical verifier
+result is a failed scan, not permission to advance coverage.
+
+Production recovery uses a clean, supervised canonical rebuild rather than a
+checkpoint-only rewind. The production protocol replay begins at block
+`948000`, before the first supported ProofOfWork protocol transaction. Use this
+order:
+
+1. Back up PostgreSQL and the active service/config files. Stop both the API and
+   worker so no public process can serve or rewrite mixed-era projections.
+2. Create `/etc/proofofwork-api/internal-verifier.env` with one strong shared
+   `POW_INTERNAL_VERIFIER_TOKEN`, owned by `root:powadmin` with mode `0640`.
+   Both the API and replay process must load that same file. The internal
+   verifier accepts only authenticated loopback requests and must never be
+   exposed through Caddy.
+3. With `NETWORK=livenet`, the database/RPC environment loaded,
+   `POW_INDEX_BACKFILL_CANONICAL_REBUILD=1`, and
+   `POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT=948000`, run
+   `npm run indexer:backfill -- --prepare-canonical-rebuild`. Preparation is
+   one database transaction: it clears only the derived canonical
+   `pwid1`/`pwt1`/`pwm1` projections, invalidates ledger snapshots, seeds the
+   synthetic WORK definition, and stores the hash of block `947999` as the
+   bootstrap checkpoint. Do not reopen public reads if preparation fails.
+4. While the API is still stopped, remove complete and temporary JSON cache
+   files from both `/data/proofofwork-api-cache` and the legacy
+   `/opt/proofofwork-api/.pow-api-cache`. These files are derived state; keeping
+   them would allow a pre-rebuild snapshot to survive the database reset.
+5. Start the API locally. Its canonical-read gate must remain `503` while the
+   rebuild metadata is active. Confirm the authenticated internal verifier on
+   `127.0.0.1` and confirm the same route is unreachable through the public
+   reverse proxy. Then run the `block-scan` backfill with the same rebuild and
+   start-height variables, plus `POW_INDEX_BACKFILL_HOLDERS=0` and
+   `POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT=0`, until the checkpoint height and
+   hash exactly match Bitcoin Core's best block. Holder crawling and snapshot
+   publication are post-rebuild jobs; leaving either enabled can make a
+   successfully committed replay batch fail afterward against the intentionally
+   closed public-read gate. Production pins
+   `POW_INTERNAL_VERIFIER_STATE_TTL_MS=120000` so every stateful transaction in
+   one busy block shares the same completed ordered state instead of rebuilding
+   it after the default short cache window. Confirmed verifier requests, cache
+   keys, and responses are bound to the exact current and previous Core block
+   hashes; a same-height replacement cannot reuse the prior branch's state.
+6. Generate one new full ledger snapshot in a supervised snapshot-only run by setting
+   `POW_INDEX_BACKFILL_SOURCES=snapshot-only`,
+   `POW_INDEX_BACKFILL_HOLDERS=0`, and
+   `POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT=1`. Run it through the authenticated
+   loopback API environment, with canonical-summary storage disabled for this
+   full writer. The shared verifier header permits the local bootstrap reads
+   while the public summary-coverage gate correctly remains closed; it is never
+   sent to a non-loopback API base. Never reuse a snapshot deleted by the
+   rebuild. Then start the worker and require a successful confirmed-first
+   cycle. It must publish the authenticated canonical-summary bundle last, from
+   one exact indexed-ledger snapshot, before health can turn green. The hot
+   worker does not repeat the broad snapshot crawl every 30 seconds.
+7. Remove the one-time rebuild/start-height variables, run parity and product
+   regression gates, then reopen public traffic only when health proves a
+   complete hashed checkpoint at the current Core tip, fresh worker state,
+   nonempty ID and WORK projections, and no canonical fault.
+
+Before the production reset, execute the same sequence against a clone of the
+production database and benchmark a late-height WORK verifier plus the combined
+ID/all verifier. Each internal verifier request must complete inside its
+30-second API deadline, and each block-scan batch must fit inside the worker's
+240-second child watchdog. A slow shadow result is a release blocker, not a
+reason to increase production timeouts blindly.
+
+For credit `list5`/`seal5`, sealing publishes the signature but never moves the
+sale-ticket anchor. The only canonical outpoint is always
+`<listing-txid>:<saleAuthorization.anchorVout>`; a seal transaction output is
+not a replacement ticket. Delists and buys must spend the original 546-proof
+listing output. Treating `<seal-txid>:<anchorVout>` as the ticket can falsely
+close listings when ordinary seal-transaction change is later spent, reject the
+real close, and corrupt every downstream credit balance.
+Legacy seal transactions that themselves spend the original listing output are
+closed because no buyable ticket remains. A `closeTxid === sealTxid` projection
+may be recovered as active only when first-party outspend truth proves the
+original listing output is still unspent; unknown or confirmed-spent state stays
+closed.
+
+If a verifier bug of that kind is discovered after an otherwise clean replay,
+repair a database clone with the bounded PWT range workflow rather than
+rewinding only the checkpoint or layering corrected event keys over stale ones:
+
+1. Stop the clone API/worker and prove the first affected marketplace height
+   from relational events plus Core prevouts. Choose a replay height at or
+   before the first marketplace event that could have been misclassified.
+2. Keep the original canonical rebuild lineage (`fromHeight`, bootstrap height,
+   and bootstrap hash). Set only
+   `POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT=<range-start>` and run
+   `npm run indexer:prepare-pwt-range-replay` with canonical rebuild mode off.
+   Preparation aborts if an earlier marketplace event or false seal-anchor close
+   exists. In one transaction it deletes every event for affected PWT txids
+   (including generic sibling aliases), resets credit definitions/listings/
+   balances from the preserved pre-range events, clears snapshots, and stores
+   the exact `<range-start - 1>` checkpoint.
+3. Remove the range-start variable immediately. Run supervised
+   `block-scan`-only passes with ledger and canonical-summary storage disabled
+   until the hashed checkpoint reaches Core tip. Do not use the normal worker
+   publisher while the replay is partial; a non-tip summary is expected to fail.
+4. Run one normal worker cycle at tip to rebuild conserved balances and publish
+   the exact canonical summary. Require lifecycle, marketplace, ledger, wallet,
+   and parity gates before considering the repaired clone promotable.
+
+Stored block hashes detect a reorganization; they do not provide automatic
+projection rollback. If the stored checkpoint hash no longer matches Bitcoin
+Core, the worker must stop and health must remain red. Operators must then:
+
+1. Stop the worker and API so detached projections are not served as current.
+2. Identify the last common ancestor with Bitcoin Core and take a database
+   backup before changing projection state.
+3. Restore a known-good database backup from before the detached branch, or
+   rebuild all affected canonical relational projections in a clean database.
+   Deleting or rewinding only the block-scan checkpoint is unsafe because event,
+   participant, ID, credit, listing, mail, and snapshot rows may also be from the
+   detached branch.
+4. Run one supervised explicit bootstrap/replay from the verified recovery
+   height through the node tip, then remove the bootstrap variable.
+5. Require zero block lag, matching checkpoint hash, complete scan metadata,
+   parity/regression gates, and exact affected tx checks before restarting
+   public service.
+
+Production runs the hot loop every 30 seconds, confirmed blocks first and the
+bounded mempool pass second, so the database is warmed after new blocks rather
+than by public page requests. Request paths should serve a
 current checked proof-index summary snapshot first, then trigger any deeper
 canonical refresh in the background. Livenet routes must fail closed or keep a
 verified last-good snapshot; they must not fabricate empty zero summaries when
 the node, database, or cache refresh is slower than the HTTP budget.
+When a new confirmed checkpoint outruns the stored summaries, the hot worker
+requests one authenticated internal bundle built from the canonical relational
+read models. The API validates the complete hashed checkpoint against Bitcoin
+Core and the Electrum header both before and after construction, requires exact
+conserved token balance/holder tables, and performs a fresh ordered RUSH
+registry read whose complete Electrum history is hydrated and ordered against
+canonical Core blocks. Each mandatory activity, registry, and token projection
+must independently cover the exact checkpoint. It then returns ledger, WORK,
+Growth, Marketplace, Infinity, and
+work-floor payloads bound to one snapshot ID. The
+publisher never derives valuation changes from aggregate DB event deltas.
+Coverage is the conservative minimum of every parent summary and its mandatory
+nested floor, so a fresh wrapper cannot hide stale child data. Full/legacy
+snapshot writers clear canonical-summary provenance; the canonical publisher
+must run last. Health and the public-read gate require eligible coverage at the
+canonical checkpoint before reporting green.
 When a snapshot route is current from proof-index data but the full shared
 ledger is still catching up, the route can publish the bounded proof-index view
 and leave the ledger refresh in the worker/background path.
@@ -217,15 +387,75 @@ full worker cycle. Production service configuration is tracked in:
 deploy/electrs-open-files-override.conf
 deploy/proofofwork-api-proof-index.conf
 deploy/proofofwork-indexer-worker.service
+deploy/proofofwork-cache-prune.service
+deploy/proofofwork-cache-prune.timer
+deploy/logrotate-timer-override.conf
+deploy/rsyslog-logrotate.conf
+deploy/journald-storage.conf
+deploy/coredump-disable-sysctl.conf
 ```
 
-The node health contract includes those tracked service overrides. `electrs`
-must keep a high open-file limit (`LimitNOFILE=1048576`) so public address,
-history, outspend, and block-scan reads do not exhaust descriptors and restart
-the local indexer path. The API proof-index service override keeps the
-database-backed read pool and wait windows large enough for summary, mailbox,
-and indexed-search paths under public load; mailbox reads may wait for indexed
-lookup/enrichment instead of failing closed after a too-short database timeout.
+The node health contract includes those tracked service overrides. Install the
+Electrs file as
+`/etc/systemd/system/electrs.service.d/zz-index-recovery.conf`, lexically after
+any older `override.conf`, and verify the effective unit with `systemctl cat`
+and `systemctl show`. Its bounded `LimitNOFILE=65536`, restart delay/start limit,
+service log rate limit, and `LimitCORE=0` prevent descriptor/runaway-log failure
+from consuming the root filesystem. The API proof-index override moves
+rebuildable cache state to `/data/proofofwork-api-cache`, requires that mount,
+sets the proof-index health freshness ceiling to 120 seconds, and disables core
+dumps. Create that directory as `powadmin` before starting the API; copy only
+complete cache JSON if retaining a warm cache, never orphan `*.tmp` files.
+
+The worker requires the real production cluster unit
+`postgresql@16-main.service`, checks `pg_isready` before startup, records
+`starting`, `running`, `idle`, and `failed` state in `worker:lastRun`, and keeps
+the last successful cycle visible across an in-progress or failed cycle. Three
+consecutive cycle failures make the process exit so systemd and health expose a
+real fault instead of an immortal stale worker. The block/mempool child has a
+240-second wall-clock watchdog, followed by `SIGTERM` and a five-second
+`SIGKILL` grace period, so a wedged child cannot freeze the confirmed loop.
+Each hot-loop child has a hard 250-block cap and a block-boundary target of 250
+discovered protocol transaction ids. The scanner preflights the next block and
+defers it when adding that whole block would cross the target. Because the
+checkpoint is atomic per Bitcoin block, the first block in a cycle is always
+processed whole even if that single block contains more than 250 protocol
+transactions; the target is not an unsafe within-block cutoff. The watchdog
+still rolls back a wedged atomic block, while a guaranteed resumable path for an
+adversarially dense single block would require future intra-block staging or a
+batched block verifier. These bounds keep measured historical catch-up batches
+inside the watchdog while the next cycle resumes from the last committed hash;
+the supervised one-time rebuild may use separately measured recovery bounds.
+Pending-status cleanup is secondary work: production limits it to five
+concurrent five-second requests inside a 15-second scheduling budget and
+defers untouched rows to the next cycle. The slower parity child has its own
+120-second watchdog. These production bounds are tracked as
+`POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS`, `POW_INDEX_BITCOIN_RPC_TIMEOUT_MS`,
+`POW_INDEX_BITCOIN_RPC_RETRIES`, `POW_INDEX_PREVOUT_HYDRATION_CONCURRENCY`,
+`POW_INDEX_PENDING_STATUS_CONCURRENCY`,
+`POW_INDEX_STATUS_FETCH_TIMEOUT_MS`, `POW_INDEX_PENDING_STATUS_BUDGET_MS`, and
+`POW_INDEX_WORKER_PARITY_TIMEOUT_MS` in the worker unit. The worker and API
+service limits also set `LimitCORE=0`.
+
+Install the cache prune unit and timer under `/etc/systemd/system/`. It deletes
+only orphan cache files named `*.tmp` older than 15 minutes. Failure to inspect
+the primary `/data/proofofwork-api-cache` path is fatal and visible in the unit;
+the legacy `/opt/proofofwork-api/.pow-api-cache` cleanup is optional. Install
+`rsyslog-logrotate.conf` as `/etc/logrotate.d/rsyslog` (replace the existing
+rsyslog rule instead of creating a duplicate path rule), and install the timer
+override under `/etc/systemd/system/logrotate.timer.d/override.conf` for hourly
+rotation. Install `journald-storage.conf` under
+`/etc/systemd/journald.conf.d/90-proofofwork-storage.conf` to bound persistent
+and runtime journal use while reserving root-disk runway.
+
+Production Ubuntu uses Apport, not `systemd-coredump`. Install
+`coredump-disable-sysctl.conf` as
+`/etc/sysctl.d/99-proofofwork-no-coredumps.conf`, stop/disable/mask
+`apport.service`, and run `sysctl --system`. Do not install a
+`systemd-coredump` storage override and assume it controls the active handler.
+After installing any units, run `systemctl daemon-reload`, restart the affected
+services, enable both timers, and verify effective `LimitNOFILE`, `LimitCORE`,
+mount requirements, timer schedules, journal limits, and `kernel.core_pattern`.
 If these values drift in production, restore them from `deploy/` before trusting
 route-level health checks.
 
@@ -246,9 +476,11 @@ mempool visibility, not a confirmed-history deficit. The parity report should
 still surface pending counts so mempool pressure remains visible without
 blocking a healthy confirmed ledger.
 
-Production regression gates after the June 2026 database hardening are
-`npm run audit:ledger`, `npm run indexer:parity`, `npm run check:mail-regressions`,
-`npm run check:marketplace-regressions`, and `npm run check:live-data`. A healthy
+Production regression gates after the July 2026 index recovery are
+`npm run check:index-recovery-behavior`, `npm run check:live-data`,
+`npm run check:work-participant-regression`, `npm run audit:ledger`,
+`npm run audit:computer-events`, `npm run indexer:parity`,
+`npm run check:mail-regressions`, and both marketplace regression modes. A healthy
 run has `missingLogEvents: []`, populated event participant/ref search indexes,
 matching WORK/Growth/summary snapshot ids, searchable known regression txids,
 pending rows limited to mempool visibility, and marketplace summaries containing
@@ -535,6 +767,7 @@ The credit endpoint:
 - Credit listing seals are one-per-active-listing. A valid existing seal blocks duplicate seal attempts, while a newly confirmed listing promotion preserves the original seal and outspend state. Listing books may show pending seal rows as sealing status, but the Sealed tab/count means confirmed and buyable only; pending seals stay in All/Unsealed until confirmation.
 - Marketplace summary compaction must keep all confirmed, unspent, buyable sealed listings even when the recent active-listing preview is capped. Public summary reads should be verified against the full WORK token payload so every confirmed sealed listing in `/api/v1/token` remains present in `/api/v1/marketplace-summary`.
 - Credit market history merges active listings, closed listings, and settled sales into a paginated `market-log` view ordered by confirmation status, event time, and txid. It is not sorted by price or arbitrage.
+- Confirmed `pwt1` attempts that fail canonical token validation remain indexed as `token-event-invalid` audit/activity rows with their txid, block position, attempted amount, sender, recipient, and reason. They are visible in address-scoped Wallet, Log, Event History, and invalid-event history, but never mutate balances, supply, valid transfer history, floor, or network value.
 - Fresh credit reads, credit summary reads, credit history reads, WORK summaries, and marketplace summaries refresh the shared credit payload cache before returning. Background refresh keeps fast first paint useful, but explicit refresh must converge on current node truth and may not leave a spent sale-ticket visible as active.
 - Fresh reads also remove dropped pending credit/WORK transactions from overlay state after liveness checks, so stale pending transfers, listings, seals, delistings, or buys do not survive after they disappear from mempool views.
 - Wallet-owned credit listing views are derived from the same active and closed listing state as Marketplace, so a connected seller can inspect confirmed, pending, delisted, and sold listings without a separate stale wallet-only book.

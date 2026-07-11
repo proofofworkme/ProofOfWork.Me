@@ -54,6 +54,13 @@ const WORK_DELIST_REGRESSION_LISTING_TXID =
   "50cd4dff315842c999a06c3ed0be3616f61c33f1a2f0fce6f645e3f48e9b023c";
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const CANONICAL_SUMMARY_KEYS = [
+  "growthSummary",
+  "infinitySummary",
+  "marketplaceSummary",
+  "workFloor",
+  "workSummary",
+];
 const ADDRESS_MAIL_REGRESSION_CASES = [
   {
     address: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
@@ -155,20 +162,66 @@ function summaryValue(payload) {
   return numberValue(candidates.find((value) => Number.isFinite(Number(value))));
 }
 
-function snapshotActivityItems(snapshot) {
-  const payload = snapshot?.payload;
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return [];
+function objectValue(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
+}
+
+function payloadIndexedThroughBlock(payload) {
+  const value = objectValue(payload);
+  return Math.max(
+    numberValue(value.indexedThroughBlock),
+    numberValue(value.metrics?.indexedThroughBlock),
+    numberValue(value.stats?.indexedThroughBlock),
+  );
+}
+
+function canonicalSummaryCoverageByKey(snapshot) {
+  const summaryPayloads = objectValue(snapshot?.payload?.summaryPayloads);
+  return Object.fromEntries(
+    CANONICAL_SUMMARY_KEYS.map((key) => {
+      const payload = objectValue(summaryPayloads[key]);
+      const parentCoverage = payloadIndexedThroughBlock(payload);
+      const nested =
+        key === "workSummary"
+          ? objectValue(payload.floor)
+          : key === "growthSummary" || key === "marketplaceSummary"
+            ? objectValue(payload.workFloor)
+            : null;
+      const nestedCoverage = nested
+        ? payloadIndexedThroughBlock(nested)
+        : key === "workFloor" || key === "infinitySummary"
+          ? parentCoverage
+          : 0;
+      return [
+        key,
+        parentCoverage > 0 && nestedCoverage > 0
+          ? Math.min(parentCoverage, nestedCoverage)
+          : 0,
+      ];
+    }),
+  );
+}
+
+function pageUsesCurrentCursorContract(page, currentSnapshotId) {
+  if (!page || !Array.isArray(page.items)) {
+    return false;
   }
-  const activityPayload =
-    payload.activityPayload &&
-    typeof payload.activityPayload === "object" &&
-    !Array.isArray(payload.activityPayload)
-      ? payload.activityPayload
-      : payload;
-  return Array.isArray(activityPayload?.activity)
-    ? activityPayload.activity
-    : [];
+  const snapshotId = String(page.snapshotId ?? "");
+  const cursor = String(page.cursor ?? "");
+  const nextCursor = String(page.nextCursor ?? "");
+  if (snapshotId) {
+    return (
+      snapshotId === currentSnapshotId &&
+      cursor.startsWith(`snapshot:${snapshotId}:`) &&
+      (!nextCursor || nextCursor.startsWith(`snapshot:${snapshotId}:`))
+    );
+  }
+  return (
+    cursor === String(numberValue(page.start)) &&
+    (!nextCursor || nextCursor === String(numberValue(page.end)))
+  );
 }
 
 function uniqueActivityTxids(items) {
@@ -243,17 +296,29 @@ try {
   );
   const latestSnapshotResult = await pool.query(
     `
-      SELECT snapshot_id, generated_at, indexed_through_block, payload
+      SELECT
+        snapshot_id,
+        generated_at,
+        indexed_through_block,
+        source_hashes,
+        consistency,
+        payload
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
         AND payload ? 'snapshotId'
         AND payload->>'snapshotId' = snapshot_id
-        AND payload ? 'activityPayload'
-        AND payload ? 'registryHistoryPayloads'
-        AND payload ? 'summaryPayloads'
-        AND payload ? 'tokenHistoryPayloads'
-        AND payload ? 'tokenStatePayloads'
-      ORDER BY generated_at DESC
+        AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
+        AND COALESCE(consistency->>'status', payload->>'status', '') <>
+          'summary-snapshot-fallback'
+        AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+        AND source_hashes ? 'canonicalSummary'
+        AND jsonb_typeof(payload->'summaryPayloads') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+      ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
       LIMIT 1
     `,
     [NETWORK],
@@ -261,6 +326,17 @@ try {
 
   const counts = countsResult.rows[0] ?? {};
   const latestSnapshot = latestSnapshotResult.rows[0] ?? null;
+  const canonicalSummaryCoverage = canonicalSummaryCoverageByKey(latestSnapshot);
+  const canonicalSummaryCoverageValues = Object.values(
+    canonicalSummaryCoverage,
+  );
+  const canonicalSummaryIndexedThroughBlock =
+    canonicalSummaryCoverageValues.length === CANONICAL_SUMMARY_KEYS.length &&
+    canonicalSummaryCoverageValues.every((height) => height > 0)
+      ? Math.min(...canonicalSummaryCoverageValues)
+      : 0;
+  const currentSnapshotId = String(latestSnapshot?.snapshot_id ?? "");
+  const ledgerIndexedThroughBlock = payloadIndexedThroughBlock(ledger);
   const metrics = ledger.metrics ?? {};
   const missingLogEvents = Array.isArray(ledger.missingLogEvents)
     ? ledger.missingLogEvents
@@ -281,7 +357,7 @@ try {
   }
   const canonicalActivityRows = Array.isArray(canonicalActivityPayload?.activity)
     ? canonicalActivityPayload.activity
-    : snapshotActivityItems(latestSnapshot);
+    : [];
   const canonicalConfirmedActivityItems = canonicalActivityRows.filter(
     (item) => activityItemStatus(item) === "confirmed",
   ).length;
@@ -304,19 +380,35 @@ try {
   check(checks, "canonical-log-complete", missingLogEvents.length === 0, {
     missing: missingLogEvents.length,
   });
-  check(checks, "database-has-ledger-snapshot", Boolean(latestSnapshot), {
+  check(checks, "database-has-canonical-summary-snapshot", Boolean(latestSnapshot), {
     latestSnapshotId: latestSnapshot?.snapshot_id ?? null,
     snapshots: rowNumber(counts, "ledger_snapshots"),
   });
   check(
     checks,
-    "database-snapshot-matches-canonical",
-    latestSnapshot?.snapshot_id === ledger.snapshotId,
+    "canonical-summary-snapshot-current",
+    Boolean(latestSnapshot) &&
+      currentSnapshotId === String(ledger.snapshotId ?? "") &&
+      String(latestSnapshot?.payload?.snapshotId ?? "") === currentSnapshotId &&
+      /^[0-9a-f]{64}$/u.test(
+        String(latestSnapshot?.source_hashes?.canonicalSummary ?? ""),
+      ) &&
+      numberValue(latestSnapshot?.indexed_through_block) ===
+        canonicalSummaryIndexedThroughBlock &&
+      canonicalSummaryIndexedThroughBlock === ledgerIndexedThroughBlock &&
+      CANONICAL_SUMMARY_KEYS.every(
+        (key) =>
+          String(latestSnapshot?.payload?.summaryPayloads?.[key]?.snapshotId ?? "") ===
+          currentSnapshotId,
+      ),
     {
+      canonicalSummaryCoverage,
       canonicalSnapshotId: ledger.snapshotId ?? null,
       databaseSnapshotId: latestSnapshot?.snapshot_id ?? null,
+      ledgerIndexedThroughBlock,
+      snapshotIndexedThroughBlock:
+        latestSnapshot?.indexed_through_block ?? null,
     },
-    STRICT ? "error" : "warning",
   );
   check(
     checks,
@@ -670,19 +762,22 @@ try {
     );
     check(
       checks,
-      `registry-history-${registryCase.label}-snapshot-pinned`,
-      Boolean(indexedRegistryPage?.snapshotId) &&
-        String(indexedRegistryPage?.cursor ?? "").startsWith(
-          `snapshot:${indexedRegistryPage?.snapshotId}:`,
+      `registry-history-${registryCase.label}-current-relational`,
+      pageUsesCurrentCursorContract(indexedRegistryPage, currentSnapshotId) &&
+        !indexedRegistryPage?.snapshotId &&
+        Number(indexedRegistryPage?.indexedThroughBlock) > 0 &&
+        String(indexedRegistryPage?.source ?? "").startsWith(
+          "proof-indexer-",
         ) &&
-        (!indexedRegistryPage?.nextCursor ||
-          String(indexedRegistryPage.nextCursor).startsWith(
-            `snapshot:${indexedRegistryPage.snapshotId}:`,
-          )),
+        arrayLength(indexedRegistryPage?.items) > 0,
       {
         cursor: indexedRegistryPage?.cursor ?? null,
+        indexedThroughBlock:
+          indexedRegistryPage?.indexedThroughBlock ?? null,
+        items: arrayLength(indexedRegistryPage?.items),
         nextCursor: indexedRegistryPage?.nextCursor ?? null,
         snapshotId: indexedRegistryPage?.snapshotId ?? null,
+        source: indexedRegistryPage?.source ?? null,
       },
     );
   }
@@ -690,16 +785,23 @@ try {
   const indexedRegistryPayload = await proofIndexRegistryPayload(NETWORK);
   check(
     checks,
-    "registry-payload-db-default",
-    indexedRegistryPayload?.source === "proof-indexer-registry-snapshot" &&
+    "registry-payload-current-relational",
+    indexedRegistryPayload?.source ===
+      "proof-indexer-current-id-events+proof-indexer-confirmed-id-records" &&
+      Number(indexedRegistryPayload?.indexedThroughBlock) ===
+        canonicalSummaryIndexedThroughBlock &&
+      Boolean(indexedRegistryPayload?.snapshotId) &&
       arrayLength(indexedRegistryPayload?.records) > 0 &&
       arrayLength(indexedRegistryPayload?.activity) > 0 &&
       arrayLength(indexedRegistryPayload?.listings) > 0 &&
       Number.isFinite(Number(indexedRegistryPayload?.stats?.confirmed)) &&
-      Number(indexedRegistryPayload?.stats?.confirmed) > 0,
+      Number(indexedRegistryPayload?.stats?.confirmed) ===
+        rowNumber(counts, "id_records"),
     {
       activity: arrayLength(indexedRegistryPayload?.activity),
       confirmed: indexedRegistryPayload?.stats?.confirmed ?? null,
+      indexedThroughBlock:
+        indexedRegistryPayload?.indexedThroughBlock ?? null,
       listings: arrayLength(indexedRegistryPayload?.listings),
       records: arrayLength(indexedRegistryPayload?.records),
       snapshotId: indexedRegistryPayload?.snapshotId ?? null,
@@ -765,12 +867,18 @@ try {
   );
   check(
     checks,
-    "token-state-snapshot-present",
-    Boolean(indexedTokenState?.snapshotId) &&
+    "token-state-current-relational",
+    indexedTokenState?.source === "proof-indexer-token-state-tables" &&
+      Number(indexedTokenState?.indexedThroughBlock) ===
+        canonicalSummaryIndexedThroughBlock &&
       arrayLength(indexedTokenState?.tokens) > 0,
     {
+      indexedThroughBlock: indexedTokenState?.indexedThroughBlock ?? null,
       listings: arrayLength(indexedTokenState?.listings),
+      mints: arrayLength(indexedTokenState?.mints),
       snapshotId: indexedTokenState?.snapshotId ?? null,
+      source: indexedTokenState?.source ?? null,
+      transfers: arrayLength(indexedTokenState?.transfers),
       tokens: arrayLength(indexedTokenState?.tokens),
     },
   );
@@ -799,13 +907,20 @@ try {
   );
   check(
     checks,
-    "work-token-state-snapshot-present",
-    Boolean(indexedWorkTokenState?.snapshotId) &&
+    "work-token-state-current-relational",
+    indexedWorkTokenState?.source === "proof-indexer-token-state-tables" &&
+      Number(indexedWorkTokenState?.indexedThroughBlock) ===
+        canonicalSummaryIndexedThroughBlock &&
       arrayLength(indexedWorkTokenState?.tokens) > 0,
     {
       holders: arrayLength(indexedWorkTokenState?.holders),
+      indexedThroughBlock:
+        indexedWorkTokenState?.indexedThroughBlock ?? null,
       listings: arrayLength(indexedWorkTokenState?.listings),
+      mints: arrayLength(indexedWorkTokenState?.mints),
       snapshotId: indexedWorkTokenState?.snapshotId ?? null,
+      source: indexedWorkTokenState?.source ?? null,
+      transfers: arrayLength(indexedWorkTokenState?.transfers),
       tokens: arrayLength(indexedWorkTokenState?.tokens),
     },
   );
@@ -879,16 +994,19 @@ try {
 
   const tokenHistoryCases = [
     {
+      expectedSources: ["proof-indexer-token-mint-events"],
       label: "all-mints",
       params: { kind: "mints", limit: 10 },
       tokenScope: "",
     },
     {
+      expectedSources: ["proof-indexer-token-transfer-events"],
       label: "all-transfers",
       params: { kind: "transfers", limit: 10 },
       tokenScope: "",
     },
     {
+      expectedSources: ["proof-indexer-token-transfer-events"],
       label: "work-transfer-query",
       params: {
         asset: WORK_TOKEN_ID,
@@ -899,16 +1017,19 @@ try {
       tokenScope: WORK_TOKEN_ID,
     },
     {
+      expectedSources: ["proof-indexer-credit-balances"],
       label: "work-holders",
       params: { asset: WORK_TOKEN_ID, kind: "holders", limit: 10 },
       tokenScope: WORK_TOKEN_ID,
     },
     {
+      expectedSources: ["proof-indexer-token-events"],
       label: "work-market-log",
       params: { asset: WORK_TOKEN_ID, kind: "market-log", limit: 10 },
       tokenScope: WORK_TOKEN_ID,
     },
     {
+      expectedSources: ["proof-indexer-token-events"],
       label: "work-delist-closed-query",
       expectedNeedle: WORK_DELIST_REGRESSION_TXID,
       params: {
@@ -989,19 +1110,20 @@ try {
     }
     check(
       checks,
-      `token-history-${tokenCase.label}-snapshot-pinned`,
-      Boolean(indexedTokenPage?.snapshotId) &&
-        String(indexedTokenPage?.cursor ?? "").startsWith(
-          `snapshot:${indexedTokenPage?.snapshotId}:`,
+      `token-history-${tokenCase.label}-current-relational`,
+      pageUsesCurrentCursorContract(indexedTokenPage, currentSnapshotId) &&
+        tokenCase.expectedSources.includes(
+          String(indexedTokenPage?.source ?? ""),
         ) &&
-        (!indexedTokenPage?.nextCursor ||
-          String(indexedTokenPage.nextCursor).startsWith(
-            `snapshot:${indexedTokenPage.snapshotId}:`,
-          )),
+        Number(indexedTokenPage?.indexedThroughBlock) > 0 &&
+        arrayLength(indexedTokenPage?.items) > 0,
       {
         cursor: indexedTokenPage?.cursor ?? null,
+        indexedThroughBlock: indexedTokenPage?.indexedThroughBlock ?? null,
+        items: arrayLength(indexedTokenPage?.items),
         nextCursor: indexedTokenPage?.nextCursor ?? null,
         snapshotId: indexedTokenPage?.snapshotId ?? null,
+        source: indexedTokenPage?.source ?? null,
       },
     );
   }
@@ -1059,12 +1181,20 @@ try {
     } else {
       check(
         checks,
-        "token-history-non-work-holders-db-page",
-        Boolean(indexedScopedHolders?.snapshotId) &&
-          (indexedScopedHolders?.items ?? []).length > 0,
+        "token-history-non-work-holders-current-relational",
+        pageUsesCurrentCursorContract(
+          indexedScopedHolders,
+          currentSnapshotId,
+        ) &&
+          indexedScopedHolders?.source === "proof-indexer-credit-balances" &&
+          Number(indexedScopedHolders?.indexedThroughBlock) > 0 &&
+          arrayLength(indexedScopedHolders?.items) > 0,
         {
+          indexedThroughBlock:
+            indexedScopedHolders?.indexedThroughBlock ?? null,
           items: indexedScopedHolders?.items?.length ?? null,
           snapshotId: indexedScopedHolders?.snapshotId ?? null,
+          source: indexedScopedHolders?.source ?? null,
           tokenId: nonWorkHolderTokenId,
         },
       );

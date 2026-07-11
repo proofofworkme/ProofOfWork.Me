@@ -32,7 +32,10 @@ const REPORTED_TX_CASES = [
     txid: "8429e3984c8dcedbb982ccbcbfe3a314f3dcc8cbfd63fe81d4e45a3483187491",
   },
   {
-    kind: "sales",
+    expectedEventKind: "token-event-invalid",
+    expectedProtocol: "pwt1",
+    expectedValid: false,
+    kind: "invalid-events",
     label: "reported WORK buy 5dcd",
     tokenId: WORK_TOKEN_ID,
     txid: "5dcdd8d4181e6166d90912c54ccb47047c69441099194a5cd102dacb57efe8cf",
@@ -44,7 +47,10 @@ const REPORTED_TX_CASES = [
     txid: "d946eea2face8675fbaf463dffef28d75df52d451c4694a3e6bc11298e43cd85",
   },
   {
-    kind: "sales",
+    expectedEventKind: "token-event-invalid",
+    expectedProtocol: "pwt1",
+    expectedValid: false,
+    kind: "invalid-events",
     label: "reported WORK buy 4e59",
     tokenId: WORK_TOKEN_ID,
     txid: "4e599fd0064642b864e8b9c7152b16b50a49fcea8c108f042d8df9294a2fb93d",
@@ -56,7 +62,10 @@ const REPORTED_TX_CASES = [
     txid: "2e577dd95c75b326cafc3c281c8e7330bf62097b779b9ac873302bb4be744a13",
   },
   {
-    kind: "sales",
+    expectedEventKind: "token-event-invalid",
+    expectedProtocol: "pwt1",
+    expectedValid: false,
+    kind: "invalid-events",
     label: "Carbonz reported WORK buy",
     tokenId: WORK_TOKEN_ID,
     txid: "7ddf760aaae819aab74a4cc5523016350e11b5888c4950acd97a7660533ba47b",
@@ -168,6 +177,27 @@ function itemTxids(items) {
   );
 }
 
+function directItemsForTxid(items, txid) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  return array(items).filter(
+    (item) => String(item?.txid ?? "").trim().toLowerCase() === normalizedTxid,
+  );
+}
+
+function itemMatchesExpectedEvent(item, txCase) {
+  const expectedValid = txCase.expectedValid !== false;
+  const status = String(item?.status ?? "").trim().toLowerCase();
+  const confirmed = item?.confirmed === true || status === "confirmed";
+  const protocol = String(item?.protocol ?? "").trim().toLowerCase();
+  const kind = String(item?.kind ?? "").trim().toLowerCase();
+  return (
+    confirmed &&
+    (expectedValid ? item?.valid !== false : item?.valid === false) &&
+    (!txCase.expectedProtocol || protocol === txCase.expectedProtocol) &&
+    (!txCase.expectedEventKind || kind === txCase.expectedEventKind)
+  );
+}
+
 function ledgerCheckNames(ledger) {
   return new Set(array(ledger?.checks).map((item) => item?.name));
 }
@@ -222,9 +252,11 @@ try {
         (SELECT count(*) FROM proof_indexer.transactions WHERE network = $1 AND status = 'confirmed' AND block_height IS NULL AND confirmed_at >= now() - make_interval(hours => $2::int)) AS recent_confirmed_transactions_missing_block,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1) AS events_total,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND valid IS DISTINCT FROM false) AS events_confirmed_valid,
-        (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND e.valid IS DISTINCT FROM false AND t.txid IS NULL) AS confirmed_events_missing_transaction,
-        (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND e.valid IS DISTINCT FROM false AND COALESCE(t.status, '') <> 'confirmed') AS confirmed_events_without_confirmed_transaction,
-        (SELECT count(*) FROM proof_indexer.events e JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND e.valid IS DISTINCT FROM false AND t.raw_tx IS NULL) AS confirmed_events_missing_raw_transaction,
+        (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND protocol = 'pwt1' AND kind = 'token-event-invalid' AND valid = false) AS events_confirmed_pwt_invalid_audit,
+        (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND (valid IS DISTINCT FROM false OR (protocol = 'pwt1' AND kind = 'token-event-invalid' AND valid = false))) AS events_confirmed_canonical_activity,
+        (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND (e.valid IS DISTINCT FROM false OR (e.protocol = 'pwt1' AND e.kind = 'token-event-invalid' AND e.valid = false)) AND t.txid IS NULL) AS confirmed_events_missing_transaction,
+        (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND (e.valid IS DISTINCT FROM false OR (e.protocol = 'pwt1' AND e.kind = 'token-event-invalid' AND e.valid = false)) AND COALESCE(t.status, '') <> 'confirmed') AS confirmed_events_without_confirmed_transaction,
+        (SELECT count(*) FROM proof_indexer.events e JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND (e.valid IS DISTINCT FROM false OR (e.protocol = 'pwt1' AND e.kind = 'token-event-invalid' AND e.valid = false)) AND t.raw_tx IS NULL) AS confirmed_events_missing_raw_transaction,
         (SELECT count(*) FROM proof_indexer.event_refs er JOIN proof_indexer.events e ON e.event_id = er.event_id WHERE e.network = $1) AS event_refs,
         (SELECT count(*) FROM proof_indexer.event_participants ep JOIN proof_indexer.events e ON e.event_id = ep.event_id WHERE e.network = $1) AS event_participants,
         (SELECT count(*) FROM proof_indexer.credit_definitions WHERE network = $1 AND confirmed = true) AS credit_definitions_confirmed,
@@ -330,9 +362,18 @@ try {
     ),
     check(
       "db-events-cover-ledger-confirmed-activity",
-      rowNumber(db, "events_confirmed_valid") >= canonicalConfirmedActivity,
+      rowNumber(db, "events_confirmed_canonical_activity") >=
+        canonicalConfirmedActivity,
       {
         canonicalConfirmedActivity,
+        eventsConfirmedCanonicalActivity: rowNumber(
+          db,
+          "events_confirmed_canonical_activity",
+        ),
+        eventsConfirmedPwtInvalidAudit: rowNumber(
+          db,
+          "events_confirmed_pwt_invalid_audit",
+        ),
         eventsConfirmedValid: rowNumber(db, "events_confirmed_valid"),
       },
     ),
@@ -455,12 +496,22 @@ try {
     });
     const logItems = array(logRead.json?.items);
     const logHasTx = itemTxids(logItems).has(txCase.txid.toLowerCase());
+    const logDirectItems = directItemsForTxid(logItems, txCase.txid);
+    const logHasExpectedEvent =
+      txCase.expectedValid === false
+        ? logDirectItems.some((item) => itemMatchesExpectedEvent(item, txCase))
+        : logHasTx;
     let historyHasTx = true;
+    let historyHasExpectedEvent = true;
     let historyElapsedMs = null;
     let historyTotalCount = null;
     if (txCase.tokenId && txCase.kind) {
       const historyRead = await readJson("/api/v1/token-history", {
-        asset: txCase.tokenId,
+        // A rejected attempt may not resolve to a canonical credit, so its
+        // durable audit row is discoverable from global invalid history.
+        ...(txCase.expectedValid === false
+          ? {}
+          : { asset: txCase.tokenId }),
         ...(FRESH_HISTORY_READS ? { fresh: 1 } : {}),
         kind: txCase.kind,
         limit: 20,
@@ -471,11 +522,23 @@ try {
       historyHasTx = itemTxids(historyRead.json?.items).has(
         txCase.txid.toLowerCase(),
       );
+      if (txCase.expectedValid === false) {
+        historyHasExpectedEvent = directItemsForTxid(
+          historyRead.json?.items,
+          txCase.txid,
+        ).some((item) => itemMatchesExpectedEvent(item, txCase));
+      }
     }
     const events = array(row?.events);
-    const hasConfirmedValidEvent = events.some(
-      (event) => event?.status === "confirmed" && event?.valid !== false,
+    const hasExpectedConfirmedEvent = events.some((event) =>
+      itemMatchesExpectedEvent(event, txCase),
     );
+    const hasConflictingConfirmedValidEvent =
+      txCase.expectedValid === false &&
+      events.some(
+        (event) =>
+          event?.status === "confirmed" && event?.valid !== false,
+      );
     const txReport = {
       blockHeight: row?.block_height ?? null,
       dbEvents: events,
@@ -483,18 +546,34 @@ try {
       dbStatus: row?.status ?? null,
       hasRawTx: row?.has_raw_tx ?? false,
       historyElapsedMs,
+      historyHasExpectedEvent,
       historyHasTx,
       historyTotalCount,
       label: txCase.label,
       logElapsedMs: logRead.elapsedMs,
+      logHasExpectedEvent,
       logHasTx,
+      expectedEventKind: txCase.expectedEventKind ?? null,
+      expectedProtocol: txCase.expectedProtocol ?? null,
+      expectedValid: txCase.expectedValid !== false,
       txid: txCase.txid,
     };
     txReports.push(txReport);
     checks.push(
-      check(`reported-tx-db-${txCase.label}`, row?.status === "confirmed" && row?.has_raw_tx === true && hasConfirmedValidEvent, txReport),
-      check(`reported-tx-log-${txCase.label}`, logHasTx, txReport),
-      check(`reported-tx-history-${txCase.label}`, historyHasTx, txReport),
+      check(
+        `reported-tx-db-${txCase.label}`,
+        row?.status === "confirmed" &&
+          row?.has_raw_tx === true &&
+          hasExpectedConfirmedEvent &&
+          !hasConflictingConfirmedValidEvent,
+        txReport,
+      ),
+      check(`reported-tx-log-${txCase.label}`, logHasExpectedEvent, txReport),
+      check(
+        `reported-tx-history-${txCase.label}`,
+        historyHasTx && historyHasExpectedEvent,
+        txReport,
+      ),
     );
   }
 

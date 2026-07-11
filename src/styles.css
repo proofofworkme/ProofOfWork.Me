@@ -3310,6 +3310,14 @@ select {
   border-color: var(--border-strong);
 }
 
+.token-list-item-rejected {
+  border-color: color-mix(in srgb, var(--red) 55%, var(--border));
+}
+
+.token-list-item-rejected > span:first-child small {
+  color: var(--red);
+}
+
 .token-list-item > span:not(.id-record-actions) {
   display: grid;
   gap: 3px;

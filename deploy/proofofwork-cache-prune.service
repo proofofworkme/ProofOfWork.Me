@@ -1,0 +1,11 @@
+[Unit]
+Description=Prune orphan ProofOfWork API cache temporary files
+RequiresMountsFor=/data/proofofwork-api-cache
+
+[Service]
+Type=oneshot
+User=powadmin
+ExecStart=/usr/bin/find /data/proofofwork-api-cache -maxdepth 1 -type f -name *.tmp -mmin +15 -delete
+ExecStart=-/usr/bin/find /opt/proofofwork-api/.pow-api-cache -maxdepth 1 -type f -name *.tmp -mmin +15 -delete
+NoNewPrivileges=true
+PrivateTmp=true

@@ -3,11 +3,22 @@ import { readFileSync } from "node:fs";
 const server = readFileSync("server/proof-api.mjs", "utf8");
 const proofIndexReader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
 const proofIndexerBackfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
+const proofIndexerWorker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
+const proofIndexerWorkerService = readFileSync(
+  "deploy/proofofwork-indexer-worker.service",
+  "utf8",
+);
 const app = readFileSync("src/App.tsx", "utf8");
 const routeRegistry = readFileSync("src/app/routeRegistry.ts", "utf8");
 const proofIndexDeploy = readFileSync("deploy/proofofwork-api-proof-index.conf", "utf8");
 const packageJson = readFileSync("package.json", "utf8");
 const failures = [];
+
+if (/\bWORK_TOKEN_REGISTRY_ADDRESS\b/u.test(server)) {
+  failures.push(
+    "proof-api references the removed WORK_TOKEN_REGISTRY_ADDRESS identifier",
+  );
+}
 
 function expect(name, condition) {
   if (!condition) {
@@ -91,6 +102,146 @@ const proofIndexSnapshotPayloadSource = sourceSliceBetween(
   /export async function proofIndexSnapshotPayload/,
   /export async function proofIndexValueSummaryPayload/,
 );
+const fetchIdRecordStateSource = sourceSliceBetween(
+  app,
+  /async function fetchIdRecordState/,
+  /async function fetchGlobalActivity/,
+);
+const registerIdSource = sourceSliceBetween(
+  app,
+  /\n  async function registerId/,
+  /\n  async function broadcastIdMutation/,
+);
+const broadcastIdMutationSource = sourceSliceBetween(
+  app,
+  /\n  async function broadcastIdMutation/,
+  /\n  async function prepareIdSaleAuthorization/,
+);
+const idSalePreflightSource = sourceSliceBetween(
+  app,
+  /\n  async function prepareIdSaleAuthorization/,
+  /\n  async function publishIdListing/,
+);
+const idLaunchAppSource = sourceSliceBetween(
+  app,
+  /function IdLaunchApp\(/,
+  /function finitePositiveNumber\(/,
+);
+const storedHistoryPageSource = sourceSliceBetween(
+  proofIndexReader,
+  /function historyPageFromStoredPayload\(/,
+  /function tokenHistoryItemsFromSnapshot\(/,
+);
+const snapshotTokenHistoryPageSource = sourceSliceBetween(
+  proofIndexReader,
+  /function tokenHistoryPageFromSnapshot\(/,
+  /export async function proofIndexTokenMarketHistoryOverlayPayload\(/,
+);
+const exactTransferRecoverySource = sourceSliceBetween(
+  server,
+  /function exactTransferHistoryNeedsCanonicalRecovery\(/,
+  /async function tokenHistoryPageWithCanonicalCreditValueOverlay\(/,
+);
+const repairWorkParticipantsSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function repairConfirmedWorkTransferParticipants\(/,
+  /async function repairWorkMintMinterAttribution\(/,
+);
+const canonicalIdRepairSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function canonicalIdRepairTarget\(/,
+  /\nif \(DRY_RUN\)/,
+);
+const tokenHistoryCoverageProjectionSource = sourceSliceBetween(
+  proofIndexReader,
+  /function tokenHistoryPageWithScanCoverage\(/,
+  /function tokenListingId\(/,
+);
+const canonicalRecoverySource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /function recoveryEndpointSpecs\(/,
+  /async function replaceCreditBalancesFromVerifier\(/,
+);
+const blockScanCheckpointSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function latestBlockScanCheckpoint\(/,
+  /async function backfillBlockScanSource\(/,
+);
+const blockScanSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function backfillBlockScanSource\(/,
+  /async function mempoolScanState\(/,
+);
+const mempoolScanSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function backfillMempoolScanSource\(/,
+  /async function backfillSource\(/,
+);
+const livePendingRegistrySource = sourceSliceBetween(
+  server,
+  /async function livePendingRegistryPayload\(/,
+  /async function proveCurrentIdAbsence\(/,
+);
+const currentIdCoverageSource = sourceSliceBetween(
+  server,
+  /async function proveCurrentIdAbsence\(/,
+  /function promiseOutcomeWithin\(/,
+);
+const exactIdRouteSource = sourceSliceBetween(
+  server,
+  /const id = normalizePowId\(decodeURIComponent\(pathParts\[3\]\)\);/,
+  /\n    if \(\n      pathParts\.length === 5/,
+);
+const tokenVerifierPayloadSource = sourceSliceBetween(
+  server,
+  /async function tokenVerifierPayload\(/,
+  /async function idVerifierStateBundle\(/,
+);
+const idVerifierPayloadSource = sourceSliceBetween(
+  server,
+  /async function idVerifierPayload\(/,
+  /function internalVerifierRequestAllowed\(/,
+);
+const indexedRegistryPayloadSource = sourceSliceBetween(
+  server,
+  /async function indexedRegistryPayload\(/,
+  /function transactionInputAddresses\(/,
+);
+const internalVerifierRoutesSource = sourceSliceBetween(
+  server,
+  /if \(url\.pathname === "\/api\/v1\/internal\/token-verifier"\)/,
+  /if \(url\.pathname === "\/api\/v1\/prices\/btc-usd"\)/,
+);
+const operationalScanMetadataSource = sourceSliceBetween(
+  proofIndexReader,
+  /async function latestProofIndexScanMetadata\(/,
+  /export async function proofIndexOperationalStatusPayload\(/,
+);
+const canonicalRebuildSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function prepareCanonicalRebuild\(/,
+  /async function latestBlockScanCheckpoint\(/,
+);
+const canonicalRawPersistenceSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function persistCanonicalBlock\(/,
+  /async function upsertTransaction\(/,
+);
+const canonicalBalanceReplaySource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function rebuildConfirmedCreditBalancesFromCanonicalEvents\(/,
+  /function snapshotSourceParams\(/,
+);
+const canonicalTransactionsReaderSource = sourceSliceBetween(
+  proofIndexReader,
+  /async function canonicalStateMetaFromPool\(/,
+  /function tokenDefinitionFromRow\(/,
+);
+const pwmAggregationSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /function aggregatePwmProtocolItem\(/,
+  /function protocolItemsFromTx\(/,
+);
 
 expectAll("canonical ledger cache is first-class", server, [
   /LEDGER_CACHE_TTL_MS/,
@@ -101,6 +252,211 @@ expectAll("canonical ledger cache is first-class", server, [
   /`json:ledger:\$\{network\}`/,
   /function ledgerPayloadHasCurrentChecks\(/,
   /function ledgerPayloadAgeMs\(/,
+]);
+
+expectAll("live index worker confirms blocks before best-effort mempool visibility", proofIndexerWorker, [
+  /const DEFAULT_WORKER_BACKFILL_SOURCES = "block-scan,mempool-scan"/,
+  /POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT:[\s\S]*BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT/,
+  /POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT: BACKFILL_STORE_LEDGER_SNAPSHOT/,
+  /const MAX_CONSECUTIVE_FAILURES = Math\.max\([\s\S]*3/,
+  /consecutiveFailures >= MAX_CONSECUTIVE_FAILURES[\s\S]*throw error/,
+]);
+expectAll("worker child processes and pending cleanup have strict wall-clock budgets", proofIndexerWorker, [
+  /const STATUS_REQUEST_TIMEOUT_MS = Number\([\s\S]*Math\.min\([\s\S]*5_000/,
+  /const PENDING_STATUS_BUDGET_MS = Number\([\s\S]*15_000/,
+  /const PENDING_STATUS_CONCURRENCY = Math\.min\([\s\S]*5/,
+  /const BACKFILL_CHILD_TIMEOUT_MS = Math\.min\([\s\S]*15 \* 60_000[\s\S]*4 \* 60_000/,
+  /function runScript\([\s\S]*child\.kill\("SIGTERM"\)[\s\S]*child\.kill\("SIGKILL"\)[\s\S]*wall-clock budget/,
+  /const deadlineMs = Date\.now\(\) \+ PENDING_STATUS_BUDGET_MS[\s\S]*await Promise\.all\([\s\S]*PENDING_STATUS_CONCURRENCY/,
+  /runScript\("backfill-proof-indexer\.mjs"[\s\S]*timeoutMs: BACKFILL_CHILD_TIMEOUT_MS/,
+  /runScript\("check-proof-indexer-parity\.mjs"[\s\S]*timeoutMs: PARITY_CHILD_TIMEOUT_MS/,
+]);
+expectAll("production worker pins confirmed-first and liveness budgets", proofIndexerWorkerService, [
+  /POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan,mempool-scan/,
+  /POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_BLOCKS=250/,
+  /POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_TXIDS=250/,
+  /POW_INDEX_WORKER_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT=1/,
+  /POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5/,
+  /POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=5000/,
+  /POW_INDEX_STATUS_FETCH_TIMEOUT_MS=5000/,
+  /POW_INDEX_PENDING_STATUS_BUDGET_MS=15000/,
+  /POW_INDEX_PENDING_STATUS_CONCURRENCY=5/,
+  /POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS=240000/,
+  /POW_INDEX_WORKER_PARITY_TIMEOUT_MS=120000/,
+]);
+expectAll("hot worker summary publication is canonical, conservative, and health-gated", proofIndexerBackfill + proofIndexReader + server, [
+  /STORE_CANONICAL_SUMMARY_SNAPSHOT/,
+  /async function storeCanonicalSummarySnapshot\(/,
+  /unpagedEndpoint\("\/api\/v1\/internal\/canonical-summary"\)/,
+  /async function internalCanonicalSummaryPayload\([\s\S]*buildIndexedCanonicalLedgerPayload\(/,
+  /const before = await exactCanonicalSummaryCheckpoint\([\s\S]*const after = await exactCanonicalSummaryCheckpoint\(/,
+  /exactCanonicalSummaryCheckpoint\([\s\S]*electrumHealthPayload\(\)[\s\S]*electrum\?\.headerHeight !== tipHeight/,
+  /buildIndexedCanonicalLedgerPayload\([\s\S]*strictCanonicalRushPayload\(network, exactHeight\)[\s\S]*exactTokenTablePayloadForCanonicalLedger\(/,
+  /async function strictCanonicalRushTransactions\([\s\S]*confirmedElectrumHistoryEntries\([\s\S]*requireCanonicalPrevouts: true[\s\S]*canonicalBlockTxidIndexFromCore\([\s\S]*transactions\.length !== entries\.length/,
+  /function tokenTablePayloadHasConservedBalances\([\s\S]*!tokenIds\.has\(tokenId\)[\s\S]*minted === held[\s\S]*mintedSupply === heldSupply/,
+  /currentProofIndexTokenTablePayloadForLedger\([\s\S]*options\.exactHeight[\s\S]*proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
+  /indexedActivityStateForCanonicalLedger\([\s\S]*options\.exactHeight[\s\S]*proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
+  /indexedRegistryStateForCanonicalLedger\([\s\S]*options\.exactHeight[\s\S]*proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
+  /summarySnapshotIds[\s\S]*value !== snapshotId/,
+  /summaryRefresh: _canonicalSummaryRefresh[\s\S]*legacyBasePayload/,
+  /storedLedgerSnapshotPayload\([\s\S]*snapshotId[\s\S]*sameSnapshotPayload/,
+  /mode: "canonical-summary-refresh"/,
+  /payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'/,
+  /previousCoverage >= latestIndexedHeight/,
+  /"infinitySummary"/,
+  /function summaryPayloadConservativeCoverage\([\s\S]*Math\.min\(parentCoverage, nestedCoverage\)/,
+  /COALESCE\(consistency->>'ok', payload->>'ok', 'false'\) = 'true'/,
+  /summary-snapshot-fallback/,
+  /latest_summary AS \([\s\S]*payload->'summaryPayloads'/,
+  /summarySnapshot:[\s\S]*coverageByKey/,
+  /const summarySnapshotOk =[\s\S]*summarySnapshot\?\.indexedThroughBlock/,
+  /readModelsOk &&[\s\S]*summarySnapshotOk/,
+]);
+expectAll("backfill source execution keeps confirmed blocks ahead of mempool work", proofIndexerBackfill, [
+  /const ALL_SOURCES = \[[\s\S]*\{ blockScan: true, label: "block-scan" \}[\s\S]*\{ label: "mempool-scan", mempoolScan: true \}/,
+]);
+expectAll("stateful block discoveries require the first-party ordered verifier", canonicalRecoverySource, [
+  /path: "\/api\/v1\/internal\/id-verifier"/,
+  /path: "\/api\/v1\/internal\/token-verifier"/,
+  /const payload = await readJson\([\s\S]*confirmed:[\s\S]*fresh: "1"[\s\S]*retries: 0/,
+  /if \(recovered\.length === 0\) \{[\s\S]*throw new Error\(`Canonical verifier did not resolve protocol transaction/,
+  /validationMode: "canonical-first-party-state"/,
+]);
+expectAll("ordered credit verifier distinguishes deterministic invalidity from unresolved state", tokenVerifierPayloadSource, [
+  /tokenVerifierItemsFromState\(state, normalizedTxid\)/,
+  /tokenVerifierDeterministicInvalidReason\(/,
+  /if \(invalidReason\) \{[\s\S]*valid: false/,
+  /if \(items\.length === 0\) \{[\s\S]*error\.statusCode = 503[\s\S]*code: "TOKEN_VERIFIER_UNRESOLVED"/,
+]);
+expect(
+  "credit verifier must not turn a current node tip into a negative state verdict",
+  !/nodeTip|tipHeight|ledgerTipHeight/.test(tokenVerifierPayloadSource),
+);
+expectAll("ordered ID verifier fails closed when registry replay has no verdict", idVerifierPayloadSource, [
+  /idVerifierItemsFromState\(bundle\.state, normalizedTxid\)/,
+  /idVerifierDeterministicInvalidReason\(/,
+  /if \(invalidReason\) \{[\s\S]*valid: false/,
+  /if \(items\.length === 0\) \{[\s\S]*error\.statusCode = 503[\s\S]*code: "ID_VERIFIER_UNRESOLVED"/,
+]);
+expectAll("internal ordered verifier routes are loopback-only and uncached", internalVerifierRoutesSource, [
+  /internalVerifierRequestAllowed\(request\)[\s\S]*errorResponse\(response, 404, "Not found\."\)/,
+  /await tokenVerifierPayload\(/,
+  /await idVerifierPayload\(/,
+  /"no-store"/,
+]);
+expectAll("authenticated loopback snapshot bootstrap bypasses only the rebuilding public gate", server + proofIndexerBackfill, [
+  /const loopbackApi = \["127\.0\.0\.1", "::1", "localhost"\]/,
+  /headers: loopbackApi && INTERNAL_VERIFIER_TOKEN\.length >= 32/,
+  /const authenticatedLoopbackRead = internalVerifierRequestAllowed\(request\)/,
+  /canonicalPublicReadGateApplies\(url\.pathname\) &&[\s\S]*!authenticatedLoopbackRead/,
+]);
+expectAll("confirmed verifier context is shared per block without eviction by token scopes", server, [
+  /key\.startsWith\("canonical-context:"\)/,
+  /entry\?\.settled && !key\.startsWith\("canonical-context:"\)/,
+  /async function loadCanonicalVerifierContextFromCheckpoint\(/,
+  /`canonical-context:\$\{network\}:h\$\{height\}:\$\{previousBlockHash\}:\$\{blockHash\}`/,
+  /cachedInternalVerifierState\([\s\S]*loadCanonicalVerifierContextFromCheckpoint\([\s\S]*network,[\s\S]*height,[\s\S]*blockHash,[\s\S]*previousBlockHash/,
+]);
+expectAll("confirmed block scan bootstraps explicitly and checkpoints canonical hashes", blockScanCheckpointSource + blockScanSource, [
+  /POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT/,
+  /source_hashes \? 'blockScan'[\s\S]*payload->>'source' = 'proof-indexer-block-scan'/,
+  /NULLIF\([\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*payload->>'blockHash'[\s\S]*IS NOT NULL/,
+  /No hashed authoritative block-scan checkpoint exists/,
+  /!\/\^\[0-9a-f\]\{64\}\$\/u\.test\(blockHash\)[\s\S]*explicit supervised replay is required/,
+  /indexedThroughBlockHash/,
+  /status: payload\.complete === true[\s\S]*"block-scan-current"[\s\S]*"block-scan-partial"/,
+  /BITCOIN_RPC_URL is required for \$\{source\.label\}; no block scan was performed/,
+  /Bitcoin reorg detected at indexed checkpoint[\s\S]*operator replay is required/,
+  /const firstHeight = latestIndexedHeight \+ 1/,
+]);
+expectAll("operational health prefers hashed replay checkpoints over newer legacy rows", operationalScanMetadataSource, [
+  /ORDER BY[\s\S]*CASE[\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*payload->>'blockHash'[\s\S]*IS NOT NULL THEN 0[\s\S]*ELSE 1[\s\S]*indexed_through_block DESC NULLS LAST/,
+]);
+expectAll("each confirmed block persists events and its checkpoint atomically", blockScanSource, [
+  /bitcoinRpc\("getblock", \[blockHash, 2\]\)/,
+  /transactionWithInputPrevouts\([\s\S]*assertHydratedProtocolTransaction/,
+  /preparedTransactions\.push\([\s\S]*preparedProtocolItemsForTx\(hydratedTx, messages\)[\s\S]*rawTx: hydratedTx/,
+  /await client\.query\("BEGIN"\)[\s\S]*persistCanonicalBlock\(client,[\s\S]*persistCanonicalRawTransaction\(client,[\s\S]*persistPreparedProtocolItems\(client, prepared\.items\)[\s\S]*storeBlockScanSnapshot\(client,[\s\S]*await client\.query\("COMMIT"\)/,
+  /await client\.query\("ROLLBACK"\)[\s\S]*stopReason = "block-transaction-failed"/,
+]);
+expectAll("supervised canonical rebuild resets mixed-era state behind a hashed bootstrap", canonicalRebuildSource + proofIndexerBackfill, [
+  /POW_INDEX_BACKFILL_CANONICAL_REBUILD/,
+  /--prepare-canonical-rebuild/,
+  /requires NETWORK=livenet and an explicit positive POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT/,
+  /DELETE FROM proof_indexer\.events[\s\S]*\["pwid1", "pwt1", "pwm1"\]/,
+  /DELETE FROM proof_indexer\.id_records/,
+  /DELETE FROM proof_indexer\.credit_balances/,
+  /DELETE FROM proof_indexer\.credit_listings/,
+  /DELETE FROM proof_indexer\.credit_definitions/,
+  /DELETE FROM proof_indexer\.mail_items/,
+  /DELETE FROM proof_indexer\.file_attachments/,
+  /UPDATE proof_indexer\.blocks[\s\S]*canonical = false/,
+  /DELETE FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1/,
+  /`mempoolScan:\$\{NETWORK\}`/,
+  /seedCanonicalWorkDefinition\(client\)/,
+  /stopReason: "canonical-rebuild-bootstrap"/,
+  /await client\.query\("BEGIN"\)[\s\S]*storeBlockScanSnapshot\(client,[\s\S]*await client\.query\("COMMIT"\)/,
+]);
+expect(
+  "canonical raw replay leaves all relational tx detail tables outside the path",
+  !/DELETE FROM proof_indexer\.(?:tx_inputs|tx_outputs|op_returns)/.test(
+    canonicalRebuildSource,
+  ),
+);
+expectAll("canonical block raw transactions replace legacy wrappers", canonicalRawPersistenceSource + blockScanSource, [
+  /canonicalBlockScan:[\s\S]*blockHash[\s\S]*height[\s\S]*network: NETWORK/,
+  /raw_tx = EXCLUDED\.raw_tx/,
+  /_powBlockIndex: blockIndex/,
+  /assertHydratedProtocolTransaction\(hydratedTx\)/,
+  /assertCanonicalBlockEnvelope\(block, height, blockHash\)/,
+]);
+expectAll("canonical replay faults before crossing a reorg", blockScanSource, [
+  /await storeCanonicalReorgFault\(client,[\s\S]*phase: "checkpoint"[\s\S]*throw new Error\([\s\S]*Bitcoin reorg detected at indexed checkpoint/,
+  /await storeCanonicalReorgFault\(client,[\s\S]*phase: "before-block"[\s\S]*throw new Error\([\s\S]*Bitcoin reorg detected before block/,
+]);
+expectAll("canonical balances replay by chain order and fail before publication", canonicalBalanceReplaySource, [
+  /e\.valid = true/,
+  /COALESCE\(t\.status, e\.status\) = 'confirmed'/,
+  /e\.payload->>'blockIndex'/,
+  /e\.payload->>'_powEventIndex'/,
+  /Canonical credit replay would make[\s\S]*negative/,
+  /replayedSupply !== minted/,
+  /storedSupply > minted/,
+  /DELETE FROM proof_indexer\.credit_balances/,
+]);
+expectAll("PWM block parsing aggregates value once and projects POWB without value duplication", pwmAggregationSource + proofIndexerBackfill, [
+  /const pwmMessages = messages\.filter/,
+  /const memo = memoChunks\.join\(""\)/,
+  /dataBytes: pwmMessages\.reduce/,
+  /validationMode: "canonical-powb-bond-projection"/,
+  /amountSats: 0/,
+  /eventKeyVout: ordinal/,
+  /Malformed or unknown aggregated PWM protocol payload/,
+]);
+expectAll("reader exposes exact canonical raw chain state", canonicalTransactionsReaderSource, [
+  /export async function proofIndexCanonicalStateMetaPayload\(/,
+  /export async function proofIndexCanonicalTransactionsPayload\(/,
+  /indexed_through_block = \$2/,
+  /!checkpoint[\s\S]*boundedHeight > Number\(rebuild\?\.bootstrapHeight\)[\s\S]*boundedHeight <= Number\(rebuild\?\.indexedThroughBlock\)/,
+  /FROM proof_indexer\.blocks[\s\S]*height = \$2[\s\S]*canonical = true/,
+  /WITH RECURSIVE canonical_chain/,
+  /raw_tx->'canonicalBlockScan'/,
+  /canonicalCoreValueSats/,
+  /scriptpubkey_type: canonicalCoreScriptType/,
+  /Duplicate canonical transaction position/,
+  /CANONICAL_BLOCK_CHAIN_INCOMPLETE/,
+]);
+expectAll("mempool discovery is bounded and unresolved pending state is retried", mempoolScanSource, [
+  /bitcoinRpc\("getrawmempool", \[true\]\)/,
+  /MEMPOOL_SCAN_MAX_TXIDS/,
+  /MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS/,
+  /preparedProtocolItemsForTx\(hydrated, messages\)/,
+  /unresolved \+= 1/,
+]);
+expectAll("pending ordered-verifier work has a small deterministic delay budget", proofIndexerBackfill + canonicalRecoverySource, [
+  /const MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS = Math\.min\([\s\S]*5/,
+  /const PENDING_VERIFIER_TIMEOUT_MS = Math\.min\([\s\S]*5_000[\s\S]*Math\.max\([\s\S]*1_000/,
+  /Number\(tx\?\.height \?\? 0\) > 0[\s\S]*\? 30_000[\s\S]*: PENDING_VERIFIER_TIMEOUT_MS/,
 ]);
 
 expectAll("Log summary preserves full activity stats before compaction", compactActivitySummarySource, [
@@ -150,6 +506,11 @@ expectAll("WORK Growth Log and token views use the same ledger", server, [
   /async function tokenSummaryPayload[\s\S]*let payload = await tokenPayloadForRead\(network,\s*scope,\s*fresh/,
   /async function tokenHistoryPayload[\s\S]*proofIndexTokenMarketHistoryOverlayPayload\([\s\S]*proofIndexWalletTokenOverlayPayload\([\s\S]*workTokenStateWithIndexedActiveListings\([\s\S]*let payload = await tokenPayloadForRead\(\s*network,\s*scope,\s*fresh \|\| scopedWorkMarketHistory/,
   /url\.pathname === "\/api\/v1\/token"[\s\S]*const tokenFreshRead[\s\S]*const payload = await tokenPayloadForRead\(network,\s*tokenScope,\s*tokenFreshRead/,
+]);
+expectAll("livenet summaries prefer one exact stored canonical snapshot", server, [
+  /async function workSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*currentProofIndexSummarySnapshotFallbackPayload\([\s\S]*"workSummary"[\s\S]*if \(!fresh\)/,
+  /async function livenetMarketplaceSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*currentProofIndexMarketplaceSummaryFallbackPayload\([\s\S]*if \(exactIndexedPayload\)[\s\S]*if \(!fresh\)/,
+  /async function growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*if \(network === "livenet"\)[\s\S]*currentProofIndexSummarySnapshotFallbackPayload\([\s\S]*"growthSummary"/,
 ]);
 
 expectAll("searched WORK balance history uses exact recovery inputs", server, [
@@ -311,7 +672,7 @@ expectAll("proof index address mail exposes file kinds for Desktop repair", proo
 expectAll("proof index address mail recovers sender-only file rows", proofIndexReader, [
   /\{\s*address:\s*row\.sender_address,\s*role:\s*"sender"\s*\}/,
   /function rawTransactionItemPayload\(row\)/,
-  /knownMailAddress\(payload\.actor\) \|\| knownMailAddress\(rawPayload\.actor\)/,
+  /knownMailAddress\(payload\.actor\)[\s\S]*knownMailAddress\(payload\.senderAddress\)[\s\S]*knownMailAddress\(rawPayload\.senderAddress\)[\s\S]*knownMailAddress\(row\.sender_address\)/,
   /m\.sender_address/,
   /t\.raw_tx AS transaction_raw_tx/,
   /WITH candidate_events AS \([\s\S]*proof_indexer\.event_participants ep[\s\S]*ep\.address = ANY\(\$2::text\[\]\)[\s\S]*UNION[\s\S]*proof_indexer\.mail_items m[\s\S]*m\.sender_address = ANY\(\$2::text\[\]\)[\s\S]*JOIN candidate_events ce/,
@@ -377,18 +738,19 @@ expect(
   "summary proof-index snapshots use a dedicated lookback window",
   /const SUMMARY_SNAPSHOT_LOOKBACK_LIMIT = 5_000/.test(proofIndexReader),
 );
-expect(
-  "payload-bearing proof-index snapshots use a dedicated lookback window",
-  /const LEDGER_SNAPSHOT_PAYLOAD_LOOKBACK_LIMIT = 5_000/.test(proofIndexReader),
-);
 expectAll("summary proof-index snapshots prefer latest summary scan rows before historical fallback", proofIndexSnapshotPayloadSource, [
   /FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*payload \? 'summaryPayloads'[\s\S]*payload->'summaryPayloads' \? \$2[\s\S]*ORDER BY indexed_through_block DESC NULLS LAST,\s*generated_at DESC[\s\S]*LIMIT 1/,
   /if \(!snapshot\) \{[\s\S]*WITH recent AS \([\s\S]*FROM proof_indexer\.ledger_snapshots[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT \$\{SUMMARY_SNAPSHOT_LOOKBACK_LIMIT\}[\s\S]*FROM recent[\s\S]*WHERE payload \? 'summaryPayloads'[\s\S]*AND payload->'summaryPayloads' \? \$2[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT 1/,
 ]);
-expectAll("generic payload snapshots are selected from the dedicated payload lookback", ledgerSnapshotWithPayloadSource, [
-  /WITH recent AS \([\s\S]*FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT \$\{LEDGER_SNAPSHOT_PAYLOAD_LOOKBACK_LIMIT\}/,
-  /FROM recent[\s\S]*WHERE payload \? \$2[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT 1/,
+expectAll("generic payload snapshots select the latest matching payload without a finite lookback", ledgerSnapshotWithPayloadSource, [
+  /FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*AND payload \? \$2[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT 1/,
 ]);
+expect(
+  "payload-bearing snapshot lookup must not hide old derived payloads behind a recent-row window",
+  !/WITH recent AS|LEDGER_SNAPSHOT_PAYLOAD_LOOKBACK_LIMIT/.test(
+    ledgerSnapshotWithPayloadSource,
+  ),
+);
 expect(
   "summary proof-index snapshot age must be validated by API coverage, not DB wall-clock freshness",
   !/snapshotPayloadFresh/.test(proofIndexSnapshotPayloadSource),
@@ -417,7 +779,7 @@ expect(
   "work-floor fallback must not use raw proof-index value summaries",
   !/async function currentProofIndexWorkFloorFallbackPayload\([\s\S]*proofIndexValueSummaryPayload/.test(server),
 );
-expectAll("summary value-event deltas carry scan coverage into nested WORK/Growth payloads", server, [
+expectAll("legacy request fallback deltas keep nested WORK/Growth coverage aligned", server, [
   /function workFloorWithProofIndexEventDelta\([\s\S]*Number\(deltaPayload\.indexedThroughBlock\)[\s\S]*const coveredWorkFloor[\s\S]*if \(numericValue\(deltaPayload\?\.totalSats\) <= 0\) \{[\s\S]*return coveredWorkFloor/,
   /function growthSummaryWithProofIndexEventDelta\([\s\S]*const coveredWorkFloor[\s\S]*workFloorWithProofIndexEventDelta\(growthSummary\.workFloor,\s*deltaPayload\)[\s\S]*const coveredGrowthSummary[\s\S]*workFloor: coveredWorkFloor[\s\S]*return coveredWorkFloor[\s\S]*growthSummaryWithCanonicalWorkFloor\(coveredGrowthSummary,\s*coveredWorkFloor\)/,
   /async function proofIndexSummaryPayloadWithValueEventDelta\([\s\S]*key === "workSummary"[\s\S]*workFloorWithProofIndexEventDelta\(payload\.floor,\s*deltaPayload\)[\s\S]*key === "growthSummary"[\s\S]*growthSummaryWithProofIndexEventDelta\(payload,\s*deltaPayload\)[\s\S]*key === "marketplaceSummary"[\s\S]*workFloorWithProofIndexEventDelta\([\s\S]*payload\.workFloor/,
@@ -429,15 +791,80 @@ expectAll("fresh token history can use checked proof-index snapshots", tokenHist
   /proofIndexPayloadCoversConfirmedTip\([\s\S]*responsePayload[\s\S]*`token-history:\$\{tokenScope \|\| "all"\}:\$\{historyKind\}`/,
   /freshProofIndexTokenHistoryRead[\s\S]*\? FRESH_READ_CACHE_CONTROL[\s\S]*: TOKEN_READ_CACHE_CONTROL/,
 ]);
-expectAll("token history pages carry snapshot scan coverage", proofIndexReader, [
-  /function historyPageFromStoredPayload\([\s\S]*Math\.max\([\s\S]*indexedThroughBlockFromItems\(filtered\) \?\? 0[\s\S]*rowNumber\(snapshot,\s*"indexed_through_block"\) \?\? 0/,
-  /function tokenHistoryPageFromSnapshot\([\s\S]*Math\.max\([\s\S]*indexedThroughBlockFromItems\(filtered\) \?\? 0[\s\S]*rowNumber\(snapshot,\s*"indexed_through_block"\) \?\? 0/,
+expectAll("token history pages carry embedded payload coverage instead of outer snapshot height", proofIndexReader, [
+  /function embeddedHistoryIndexedThroughBlock\([\s\S]*storedPayload\.indexedThroughBlock[\s\S]*storedPayload\.stats\?\.indexedThroughBlock[\s\S]*indexedThroughBlockFromItems\(storedPayload\.items\)/,
+  /function historyPageFromStoredPayload\([\s\S]*indexedThroughBlockFromItems\(filtered\) \?\? 0[\s\S]*embeddedHistoryIndexedThroughBlock\(storedPayload\)/,
+  /function tokenHistoryPageFromSnapshot\([\s\S]*indexedThroughBlockFromItems\(filtered\) \?\? 0[\s\S]*embeddedHistoryIndexedThroughBlock\(source\.payload\)/,
 ]);
-expectAll("token history freshness uses current scan coverage only when no newer relevant events exist", proofIndexReader, [
-  /function tokenHistoryFreshnessEventKinds\([\s\S]*safeKind === "tokens"[\s\S]*"token-create"[\s\S]*safeKind === "holders"[\s\S]*"token-mint"[\s\S]*"token-transfer"[\s\S]*"token-sale"/,
-  /async function tokenHistoryScanCoverageAfterSnapshot\([\s\S]*ORDER BY indexed_through_block DESC NULLS LAST,\s*generated_at DESC[\s\S]*e\.block_height > \$2[\s\S]*e\.kind = ANY\(\$3::text\[\]\)/,
-  /function tokenHistoryPageWithScanCoverage\([\s\S]*coverage\.eventCount > 0[\s\S]*proof-indexer-scan-coverage/,
-  /export async function proofIndexTokenHistoryPayload\([\s\S]*tokenHistoryPageWithScanCoverage\([\s\S]*tokenHistoryScanCoverageAfterSnapshot\(/,
+expect(
+  "outer ledger snapshot height must not be promoted into embedded token-history coverage",
+  !/rowNumber\(snapshot,\s*"indexed_through_block"\)/.test(
+    storedHistoryPageSource + snapshotTokenHistoryPageSource,
+  ),
+);
+expect(
+  "block-scan checkpoints must not relabel an older history payload as current",
+  /void coverage;[\s\S]*return page/.test(tokenHistoryCoverageProjectionSource) &&
+    !/indexedThroughBlock|mergedSourceLabel|proof-indexer-scan-coverage/.test(
+      tokenHistoryCoverageProjectionSource,
+    ),
+);
+expectAll("unpinned transfer history reads the current event and participant tables", proofIndexReader, [
+  /async function currentTokenTransferHistoryPage\(/,
+  /e\.valid = true/,
+  /e\.kind = 'token-transfer'/,
+  /COALESCE\(t\.status, e\.status\) IN \('confirmed', 'pending'\)/,
+  /FROM proof_indexer\.event_participants epq[\s\S]*lower\(epq\.address\) LIKE/,
+  /eligibility\.kind === "transfers"[\s\S]*!eligibility\.pagination\.snapshotId[\s\S]*return currentTokenTransferHistoryPage\(/,
+]);
+expectAll("exact WORK transfer reads recover when a requested tx is absent or incomplete", exactTransferRecoverySource, [
+  /const txids = new Set\(recoveryTxidsFromSearchParams\(searchParams\)\)/,
+  /const itemsByTxid = new Map\(/,
+  /return \[\.\.\.txids\]\.some\(\(requestedTxid\) =>/,
+  /const item = itemsByTxid\.get\(requestedTxid\)[\s\S]*if \(!item\) \{[\s\S]*return true/,
+  /!isValidBitcoinAddress\(item\?\.senderAddress, network\)[\s\S]*!isValidBitcoinAddress\(item\?\.recipientAddress, network\)/,
+]);
+expectAll("targeted WORK participant repair fails closed on missing or unverifiable txids", repairWorkParticipantsSource, [
+  /const explicit = REPAIR_WORK_PARTICIPANTS_TXIDS\.length > 0/,
+  /const missingRequested = REPAIR_WORK_PARTICIPANTS_TXIDS\.filter\([\s\S]*!rowsByTxid\.has\(txid\)/,
+  /if \(missingRequested\.length > 0\) \{[\s\S]*throw new Error\([\s\S]*confirmed valid event row is missing/,
+  /const tx = await rawTransactionFromCore\(txid\)[\s\S]*Number\(tx\.confirmations\) <= 0[\s\S]*transaction is not confirmed in Bitcoin Core/,
+  /await client\.query\("BEGIN"\)[\s\S]*await client\.query\("COMMIT"\)[\s\S]*await client\.query\("ROLLBACK"\)/,
+  /if \(failures\.length > 0\) \{[\s\S]*throw new Error\([\s\S]*WORK participant repair failed/,
+]);
+expectAll("canonical replay preserves readable legacy pwid1:r registrations", proofIndexerBackfill, [
+  /action === "r" \|\| action === "r2"[\s\S]*"id-register"/,
+  /action === "r" \? parts\[2\] : decodeBase64UrlText\(parts\[2\]\)/,
+  /if \(action === "r" \|\| action === "r2"\)[\s\S]*ownerAddress[\s\S]*receiveAddress/,
+]);
+expectAll("targeted canonical ID repair replaces aliases and rebuilds projections", canonicalIdRepairSource + proofIndexerBackfill, [
+  /rawTransactionFromCore\(txid\)[\s\S]*Number\(raw\?\.confirmations\) <= 0/,
+  /bitcoinRpc\("getblock", \[blockHash, 2\]\)[\s\S]*assertCanonicalBlockEnvelope/,
+  /protocolMessagesFromTx\(hydrated\)\.filter\([\s\S]*message\?\.prefix === "pwid1:"/,
+  /must include its registration transaction/,
+  /DELETE FROM proof_indexer\.events[\s\S]*protocol = 'pwid1'/,
+  /DELETE FROM proof_indexer\.id_records/,
+  /preparedProtocolItemsForTx\([\s\S]*entry\?\.item\?\.valid === false/,
+  /persistCanonicalRawTransaction\([\s\S]*persistPreparedProtocolItems/,
+  /invalidEvents !== 0/,
+  /--repair-id-txids requires POW_INDEX_REPAIR_ID_TXIDS/,
+]);
+expectAll("closed token listings preserve and repair canonical seal metadata", proofIndexerBackfill + proofIndexReader, [
+  /seal_txid = COALESCE\(NULLIF\(EXCLUDED\.seal_txid, ''\), proof_indexer\.credit_listings\.seal_txid\)/,
+  /payload = proof_indexer\.credit_listings\.payload \|\| EXCLUDED\.payload/,
+  /async function repairConfirmedListingSealMetadata\([\s\S]*kind = 'token-listing-sealed'[\s\S]*UPDATE proof_indexer\.credit_listings[\s\S]*'sealConfirmed', true[\s\S]*'sealTxid', seals\.seal_txid/,
+  /results\.push\(await repairConfirmedListingSealMetadata\(client\)\)/,
+  /function tokenClosedListingFromEventPayload\(payload\)[\s\S]*payload\?\.closedAt[\s\S]*saleAuthorization: objectRecord\(payload\?\.saleAuthorization\)[\s\S]*sealConfirmed:[\s\S]*sealTxid:/,
+  /const closedListings = uniqueTokenItems\([\s\S]*marketEvents\.closedListings[\s\S]*listingProjection\.closedListings[\s\S]*mergeTokenListingRecord/,
+]);
+expectAll("unpinned ID history reads current records and event projections", proofIndexReader, [
+  /async function currentRegistryEventHistoryPage\(/,
+  /e\.kind = ANY\(\$2::text\[\]\)/,
+  /e\.valid = true/,
+  /COALESCE\(t\.status, e\.status\) IN \('confirmed', 'pending'\)/,
+  /FROM proof_indexer\.event_participants epq[\s\S]*lower\(epq\.address\) LIKE/,
+  /async function currentRegistryRecordsHistoryPage\([\s\S]*confirmedIdRecordsFromCurrentTables\(/,
+  /if \(!eligibility\.pagination\.snapshotId\)[\s\S]*currentRegistryRecordsHistoryPage\([\s\S]*currentRegistryEventHistoryPage\(/,
 ]);
 expectAll("wallet token listing refresh preserves bounded spendable local pending marketplace rows", app, [
   /const TOKEN_LOCAL_PENDING_LISTING_TTL_MS = 30 \* 60_000/,
@@ -477,11 +904,63 @@ expectAll("registry default reads use proof index with canonical fallback", serv
   /function duplicateRegistryRecordIds\(payload\)[\s\S]*duplicates\.add\(id\)/,
   /function registryIndexedPayloadRejectReason\(payload,\s*previousPayload\s*=\s*null\)[\s\S]*duplicateRegistryRecordIds\(payload\)[\s\S]*stale indexedAt[\s\S]*registryPayloadLooksWorse/,
   /async function indexedRegistryPayload\(network\)[\s\S]*proofIndexReadFeatureEnabled\([\s\S]*registry-history[\s\S]*proofIndexRegistryPayload\(network,\s*\{ registryAddress \}\)/,
-  /async function indexedRegistryPayload\(network\)[\s\S]*registryIndexedPayloadRejectReason\([\s\S]*Rejected proof-index registry payload/,
+  /async function indexedRegistryPayload\(network\)[\s\S]*registryIndexedPayloadRejectReason\(payload\)[\s\S]*Rejected proof-index registry payload/,
   /async function safeRegistryPayload\(network\)[\s\S]*registryConfirmedCount\(nextPayload\) <= 0[\s\S]*Current livenet registry is unavailable/,
   /async function registrySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*await indexedRegistryPayload\(network\)[\s\S]*fastJsonBackedPayload/,
   /url\.pathname === "\/api\/v1\/registry" \|\| url\.pathname === "\/api\/v1\/ids"[\s\S]*const indexedPayload = await indexedRegistryPayload\(network\)[\s\S]*if \(indexedPayload\)/,
 ]);
+expectAll("current ID tables must agree with canonical registration events", proofIndexReader, [
+  /const registeredEventIds = new Set\([\s\S]*item\?\.confirmed === true[\s\S]*"id-register"/,
+  /const missingRelationalIds = \[\.\.\.registeredEventIds\][\s\S]*!confirmedIds\.has\(id\)/,
+  /const orphanRelationalIds = \[\.\.\.confirmedIds\][\s\S]*!registeredEventIds\.has\(id\)/,
+  /missingRelationalIds\.length > 0 \|\| orphanRelationalIds\.length > 0[\s\S]*return null/,
+]);
+expect(
+  "canonical proof-index registry reads can correct a stale higher cached count",
+  /registryIndexedPayloadRejectReason\(payload\)/.test(
+    indexedRegistryPayloadSource,
+  ) && !/existingRegistryPayload/.test(indexedRegistryPayloadSource),
+);
+
+expectAll("exact ID availability requires healthy confirmed and pending coverage", currentIdCoverageSource + livePendingRegistrySource, [
+  /proofIndexOperationalStatusPayload\(network\)/,
+  /healthNodeTipHeight\(\)/,
+  /livePendingRegistryPayload\(network\)/,
+  /scan\?\.scan\?\.complete === true/,
+  /Boolean\(String\(scan\?\.scan\?\.blockHash \?\? ""\)\)/,
+  /indexedThroughBlock === tipHeight/,
+  /scan\?\.worker\?\.ok === true/,
+  /workerFresh/,
+  /Number\(scan\?\.readModels\?\.confirmedIds\?\.count\) > 0/,
+  /No healthy first-party pending registry reader is available/,
+  /error\.statusCode = 503[\s\S]*code: "ID_AVAILABILITY_UNPROVEN"/,
+]);
+expectAll("exact ID route fails closed before declaring a name available", exactIdRouteSource, [
+  /try \{[\s\S]*proofIndexIdRecordPayload\(network, id\)[\s\S]*catch \(error\)[\s\S]*unavailable\.statusCode = 503/,
+  /const requireCurrent =[\s\S]*const currentProof = requireCurrent[\s\S]*await proveCurrentIdAbsence\(network\)/,
+  /if \(!records\.some\(\(record\) => record\.confirmed === true\)\) \{[\s\S]*currentProof \?\? \(await proveCurrentIdAbsence\(network\)\)[\s\S]*livePendingRecords/,
+  /status: confirmed \? "confirmed" : pending \? "pending" : "available"/,
+]);
+
+expectAll("ID registration performs a fresh exact preflight", fetchIdRecordStateSource + registerIdSource, [
+  /new URLSearchParams\(\{ current: "1", fresh: "1" \}\)/,
+  /\/api\/v1\/ids\/\$\{encodeURIComponent\(normalizedId\)\}\?\$\{params\.toString\(\)\}/,
+  /const latestState = await fetchIdRecordState\(network,\s*normalizedIdName\)/,
+]);
+expectAll("ID owner and sale actions require current exact coverage", fetchIdRecordStateSource + broadcastIdMutationSource + idSalePreflightSource, [
+  /new URLSearchParams\(\{ current: "1", fresh: "1" \}\)/,
+  /fetchIdRecordState\(network,\s*id\)/,
+  /fetchIdRecordState\(network,\s*managedIdRecord\.id\)/,
+]);
+expectAll("ID launch does not declare cache misses available", idLaunchAppSource, [
+  /needs a live check/,
+  /Submit to verify the exact ID against current chain coverage before signing/,
+  /Verify and register for 1,000 proofs/,
+]);
+expect(
+  "ID launch must not show a cache-derived open claim",
+  !/\$\{normalizedId\}@proofofwork\.me is open|Claimable now/.test(idLaunchAppSource),
+);
 
 expectAll("WORK floor USD uses live price metadata", server, [
   /function satsToUsdAtBtcUsd\(sats,\s*btcUsd\)/,
@@ -631,9 +1110,10 @@ expectAll("backfill writes powb mail as Infinity Bond projections", proofIndexer
 
 expectAll("all confirmed token state rows must be searchable in Log", server, [
   /function tokenStateLogExpectations\(tokenState\)/,
+  /function activityCoverageByTxidKind\(activity\)/,
   /kind:\s*"token-transfer"/,
   /kind:\s*"token-listing-sealed"/,
-  /activityByTxidKind\.get\(`\$\{expected\.kind\}:\$\{expected\.txid\}`\)/,
+  /activityByTxidKind\.get\(\s*`\$\{expected\.kind\}:\$\{expected\.txid\}`/,
   /"token-events-logged"/,
 ]);
 

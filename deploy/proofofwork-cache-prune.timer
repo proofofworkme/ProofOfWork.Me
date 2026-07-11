@@ -1,0 +1,12 @@
+[Unit]
+Description=Prune orphan ProofOfWork API cache temporary files hourly
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+Persistent=true
+Unit=proofofwork-cache-prune.service
+
+[Install]
+WantedBy=timers.target
