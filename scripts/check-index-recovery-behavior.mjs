@@ -467,6 +467,7 @@ check("canonical credit overlays retain explicit address scope", async () => {
     API_PATH,
     "tokenHistoryPageWithCanonicalCreditValueOverlay",
     {
+      BOND_TOKEN_IDS: new Set(["powb", "incb"]),
       POWB_TOKEN_ID: "powb",
       activeTokenListingsFromState: () => [],
       existingCanonicalLedgerPayload: async () => null,
@@ -1292,11 +1293,12 @@ check("canonical activity counts exactly match the public Log", () => {
   );
 });
 
-check("synthetic WORK and POWB definitions are not public Log actions", () => {
+check("synthetic WORK, POWB, and INCB definitions are not public Log actions", () => {
   const tokenStateLogExpectations = isolatedFunction(
     API_PATH,
     "tokenStateLogExpectations",
     {
+      BOND_TOKEN_IDS: new Set(["powb", "incb"]),
       POWB_TOKEN_ID: "powb",
       WORK_TOKEN_ID: "work",
     },
@@ -1309,6 +1311,7 @@ check("synthetic WORK and POWB definitions are not public Log actions", () => {
     tokens: [
       { confirmed: true, tokenId: "work", txid: "a".repeat(64) },
       { confirmed: true, tokenId: "powb", txid: "b".repeat(64) },
+      { confirmed: true, tokenId: "incb", txid: "d".repeat(64) },
       { confirmed: true, tokenId: "real", txid: "c".repeat(64) },
     ],
     transfers: [],
@@ -1403,7 +1406,7 @@ check("stored canonical summaries require component and public Log count checks"
   assert.match(snapshotReadSource, /check_item->>'ok'[\s\S]*'true'/u);
 });
 
-check("Infinity value uses confirmed bond payments instead of synthetic mint payment fields", () => {
+check("bond value uses confirmed payments instead of synthetic mint payment fields", () => {
   const POWB_TOKEN_ID = "powb";
   const bondAmounts = [
     ...Array.from({ length: 464 }, () => 1_000_000),
@@ -1445,20 +1448,18 @@ check("Infinity value uses confirmed bond payments instead of synthetic mint pay
     tokenId: POWB_TOKEN_ID,
     txid: `m${index}`,
   }));
-  const infinitySummaryPayloadFromLedger = isolatedFunction(
+  const bondSummaryPayloadFromLedger = isolatedFunction(
     API_PATH,
-    "infinitySummaryPayloadFromLedger",
+    "bondSummaryPayloadFromLedger",
     {
-      POWB_REGISTRY_ID: "infinity@proofofwork.me",
-      POWB_TOKEN_ID,
-      POWB_TOKEN_TICKER: "POWB",
       TOKEN_MARKETPLACE_MUTATION_KINDS: new Set(["token-listing"]),
       activityAmountSats: (item) => Number(item?.amountSats ?? 0),
       btcUsdResponseMetadata: () => ({ btcUsd: 0 }),
       compactTokenSummaryPayload: (state) => state,
       infinityBondChartPointsFromEvents: ({ bonds: items }) =>
         items.length > 0 ? [{ txid: items.at(-1).txid }] : [],
-      isInfinityBondActivityItem: (item) => item?.kind === "infinity-bond",
+      isBondActivityItem: (item, config) =>
+        item?.kind === config.kind,
       ledgerTokenStateForScope: (ledger) => ledger.tokenState,
       numericValue: (value) => {
         const number = Number(value);
@@ -1467,12 +1468,20 @@ check("Infinity value uses confirmed bond payments instead of synthetic mint pay
       satsToUsdAtBtcUsd: () => 0,
     },
   );
-  const summary = infinitySummaryPayloadFromLedger({
-    activity: [...bonds, ...mutations],
-    generatedAt: "2026-07-11T12:00:00.000Z",
-    network: "livenet",
-    tokenState,
-  });
+  const summary = bondSummaryPayloadFromLedger(
+    {
+      activity: [...bonds, ...mutations],
+      generatedAt: "2026-07-11T12:00:00.000Z",
+      network: "livenet",
+      tokenState,
+    },
+    {
+      kind: "infinity-bond",
+      registryId: "infinity@proofofwork.me",
+      ticker: "POWB",
+      tokenId: POWB_TOKEN_ID,
+    },
+  );
   assert.equal(summary.stats.confirmedBondActions, 465);
   assert.equal(summary.actualValue.bondMintFlowSats, 630_196_569);
   assert.equal(summary.actualValue.bondTransferFeeSats, 2_184);
@@ -1480,8 +1489,95 @@ check("Infinity value uses confirmed bond payments instead of synthetic mint pay
   assert.equal(summary.networkValueSats, 630_199_845);
   assert.ok(Math.abs(summary.floorSats - 1.0000051983779588) < 1e-12);
   assert.doesNotMatch(
-    topLevelFunctionSource(API_PATH, "infinitySummaryPayloadFromLedger"),
+    topLevelFunctionSource(API_PATH, "bondSummaryPayloadFromLedger"),
     /bondMintFlowSats[\s\S]*mint\.paidSats/u,
+  );
+});
+
+check("empty bond summaries cannot cross bond-family identity", () => {
+  const bondSummaryPayloadHasKnownMainnetValue = isolatedFunction(
+    API_PATH,
+    "bondSummaryPayloadHasKnownMainnetValue",
+    {
+      isValidBitcoinAddress: (address) => address === "1registry",
+      normalizePowId: (value) =>
+        String(value ?? "")
+          .trim()
+          .replace(/@proofofwork\.me$/u, "")
+          .toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+    },
+  );
+  const config = {
+    registryId: "inception@proofofwork.me",
+    ticker: "INCB",
+    tokenId: "incb",
+  };
+  const empty = {
+    actualValue: { bondMintFlowSats: 0, networkValueSats: 0 },
+    chartPoints: [],
+    networkValueSats: 0,
+    registryAddress: "1registry",
+    registryId: config.registryId,
+    stats: { confirmedBondActions: 0, confirmedSupply: 0 },
+    ticker: config.ticker,
+    tokenId: config.tokenId,
+  };
+  assert.equal(
+    bondSummaryPayloadHasKnownMainnetValue(empty, config, {
+      allowEmptyHistory: true,
+    }),
+    true,
+  );
+  assert.equal(
+    bondSummaryPayloadHasKnownMainnetValue(
+      { ...empty, ticker: "POWB", tokenId: "powb" },
+      config,
+      { allowEmptyHistory: true },
+    ),
+    false,
+  );
+});
+
+check("a canonical zero-supply INCB definition is known token history", () => {
+  const incbTokenId = "incb";
+  const tokenPayloadHasKnownMainnetHistory = isolatedFunction(
+    API_PATH,
+    "tokenPayloadHasKnownMainnetHistory",
+    {
+      BOND_TOKEN_IDS: new Set([incbTokenId]),
+      INCB_TOKEN_ID: incbTokenId,
+      WORK_TOKEN_ID: "work",
+      bondConfigForTokenId: (tokenId) =>
+        tokenId === incbTokenId
+          ? { ticker: "INCB", tokenId: incbTokenId }
+          : null,
+      isValidBitcoinAddress: (address) => address === "1registry",
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+    },
+  );
+  assert.equal(
+    tokenPayloadHasKnownMainnetHistory(
+      {
+        confirmedSupply: 0,
+        holders: [],
+        listings: [],
+        mints: [],
+        sales: [],
+        tokens: [
+          {
+            confirmed: true,
+            registryAddress: "1registry",
+            ticker: "INCB",
+            tokenId: incbTokenId,
+          },
+        ],
+        transfers: [],
+      },
+      incbTokenId,
+    ),
+    true,
   );
 });
 
@@ -1696,6 +1792,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   );
   const requiredKeys = [
     "growthSummary",
+    "inceptionSummary",
     "infinitySummary",
     "marketplaceSummary",
     "workFloor",
@@ -1805,6 +1902,7 @@ check("the canonical summary publisher rejects mixed snapshot identities", async
     Number.isFinite(Number(value)) ? Number(value) : null;
   const requiredKeys = [
     "growthSummary",
+    "inceptionSummary",
     "infinitySummary",
     "marketplaceSummary",
     "workFloor",
@@ -1969,9 +2067,9 @@ check("livenet summary routes prefer the exact stored canonical snapshot", async
     API_PATH,
     "livenetMarketplaceSummaryPayload",
   );
-  const infinitySource = topLevelFunctionSource(
+  const bondSummarySource = topLevelFunctionSource(
     API_PATH,
-    "infinitySummaryPayload",
+    "bondSummaryPayload",
   );
   const growthSource = topLevelFunctionSource(API_PATH, "growthSummaryPayload");
   const workRouteStart = requestSource.indexOf(
@@ -1981,11 +2079,11 @@ check("livenet summary routes prefer the exact stored canonical snapshot", async
     'if (url.pathname === "/api/v1/marketplace-summary")',
     workRouteStart,
   );
-  const exactInfinitySummaryRead = infinitySource.indexOf(
+  const exactInfinitySummaryRead = bondSummarySource.indexOf(
     "currentProofIndexSummarySnapshotFallbackPayload",
   );
-  const relationalInfinitySummaryRead = infinitySource.indexOf(
-    "proofIndexInfinitySummaryPayload",
+  const relationalInfinitySummaryRead = bondSummarySource.indexOf(
+    "proofIndexBondSummaryPayload",
   );
   assert.ok(workRouteStart >= 0);
   assert.ok(workRouteEnd > workRouteStart);
@@ -2016,27 +2114,45 @@ check("livenet summary routes prefer the exact stored canonical snapshot", async
   const relationalInfinity = { snapshotId: "relational-infinity" };
   let exactInfinity = canonicalInfinity;
   let relationalInfinityReads = 0;
-  const readInfinitySummary = isolatedFunction(
+  const readBondSummary = isolatedFunction(
     API_PATH,
-    "infinitySummaryPayload",
+    "bondSummaryPayload",
     {
       LEDGER_SUMMARY_FRESH_WAIT_MS: 1_000,
+      bondSummaryFromCanonicalLedger: async () => null,
       currentProofIndexSummarySnapshotFallbackPayload: async () => exactInfinity,
       existingCurrentCanonicalLedgerPayloadWithinMs: async () => null,
+      freshDataUnavailableError: (message) => new Error(message),
+      numericValue: (value) => Number(value) || 0,
       payloadWithFallbackAfterMs: async (promise, fallback) =>
         (await promise) ?? fallback,
-      proofIndexInfinitySummaryPayload: async () => {
+      proofIndexBondSummaryPayload: async () => {
         relationalInfinityReads += 1;
         return relationalInfinity;
       },
+      standaloneBondSummaryPayload: async () => null,
       summaryCanonicalLedgerPayload: async () => null,
     },
   );
-  assert.equal(await readInfinitySummary("livenet", false), canonicalInfinity);
-  assert.equal(await readInfinitySummary("livenet", true), relationalInfinity);
+  const infinityConfig = {
+    displayName: "Infinity Bond",
+    summaryKey: "infinitySummary",
+    summaryRoute: "infinity-summary",
+  };
+  assert.equal(
+    await readBondSummary("livenet", false, infinityConfig),
+    canonicalInfinity,
+  );
+  assert.equal(
+    await readBondSummary("livenet", true, infinityConfig),
+    relationalInfinity,
+  );
   assert.equal(relationalInfinityReads, 1);
   exactInfinity = null;
-  assert.equal(await readInfinitySummary("livenet", false), relationalInfinity);
+  assert.equal(
+    await readBondSummary("livenet", false, infinityConfig),
+    relationalInfinity,
+  );
   assert.equal(relationalInfinityReads, 2);
 });
 
@@ -2683,6 +2799,8 @@ check("pwm1 outputs aggregate once while staged protocols stay unscanned", () =>
       INFINITY_BOND_KIND: "infinity-bond",
       INFINITY_BOND_MEMO: "powb",
       MAIL_ATTACHMENT_MAX_BYTES: 60_000,
+      bondTagForMemo: (value) =>
+        value === "powb" ? { kind: "infinity-bond" } : null,
       baseProtocolItem: (_tx, _message, kind) => {
         baseCalls += 1;
         return { amountSats: "1000", kind, protocol: "pwm1", txid: "1".repeat(64) };
@@ -2715,7 +2833,7 @@ check("pwm1 outputs aggregate once while staged protocols stay unscanned", () =>
     "rawProtocolItemsForTx",
     {
       aggregatePwmProtocolItem,
-      canonicalPowbMintItemsFromMailItem: () => [],
+      canonicalBondMintItemsFromMailItem: () => [],
       protocolItemsFromTx: () => {
         assert.fail("staged protocol reached a raw block-scan parser");
       },
@@ -2795,6 +2913,8 @@ check("canonical PWM aggregation classifies reply, file, and bond once", () => {
       INFINITY_BOND_KIND: "infinity-bond",
       INFINITY_BOND_MEMO: "powb",
       MAIL_ATTACHMENT_MAX_BYTES: 60_000,
+      bondTagForMemo: (value) =>
+        value === "powb" ? { kind: "infinity-bond" } : null,
       baseProtocolItem: (_tx, _message, kind) => ({
         amountSats: "546",
         kind,
@@ -2913,10 +3033,11 @@ check("unproven verifier holder snapshots cannot publish balances", async () => 
     BACKFILL_PATH,
     "persistPreparedProtocolItems",
     {
+      BOND_TAGS: [],
       sourceLabelForProtocolItem: () => "token-transfers",
       CANONICAL_REBUILD: false,
       POWB_REGISTRY_ID: "infinity",
-      seedCanonicalPowbDefinition: async () => false,
+      seedCanonicalBondDefinition: async () => false,
       upsertEvent: async () => {
         upserts += 1;
         return { skipped: false };
@@ -3218,7 +3339,7 @@ check("PWT range replay removes whole stale txs and resets projections", async (
         method === "getblockhash" ? rangeCheckpointHash : 957000,
       isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
       proofIndexerMetaValue: async () => existingRebuild,
-      seedCanonicalPowbDefinition: async () => calls.push("seed-powb"),
+      seedCanonicalBondDefinitions: async () => calls.push("seed-bonds"),
       seedCanonicalWorkDefinition: async () => calls.push("seed-work"),
       sourceLabelForProtocolItem: (item) =>
         item.kind === "token-create" ? "tokens" : "token-listings",
@@ -3284,7 +3405,7 @@ check("PWT range replay removes whole stale txs and resets projections", async (
   assert.match(sql, /DELETE FROM proof_indexer\.ledger_snapshots/u);
   assert.doesNotMatch(sql, /DELETE FROM proof_indexer\.(?:id_records|mail_items)/u);
   assert.ok(calls.includes("seed-work"));
-  assert.ok(calls.includes("seed-powb"));
+  assert.ok(calls.includes("seed-bonds"));
   assert.ok(calls.some((call) => call.source === "tokens"));
   assert.ok(calls.some((call) => call.source === "token-listings"));
 });
@@ -3601,7 +3722,7 @@ check("unknown aggregated PWM emits one invalid audit event", () => {
         protocol: "pwm1",
         txid: "1".repeat(64),
       }),
-      canonicalPowbMintItemsFromMailItem: () => [],
+      canonicalBondMintItemsFromMailItem: () => [],
       invalidProtocolItem,
       protocolItemsFromTx: () => [],
     },
@@ -3616,13 +3737,19 @@ check("unknown aggregated PWM emits one invalid audit event", () => {
   assert.match(items[0].reason, /Malformed or unknown aggregated PWM/u);
 });
 
-check("POWB bond companions mint each recipient without double-counting value", () => {
-  const canonicalPowbMintItemsFromMailItem = isolatedFunction(
+check("bond companions mint each family recipient without double-counting value", () => {
+  const powbTokenId = "a".repeat(64);
+  const incbTokenId = "b".repeat(64);
+  const canonicalBondMintItemsFromMailItem = isolatedFunction(
     BACKFILL_PATH,
-    "canonicalPowbMintItemsFromMailItem",
+    "canonicalBondMintItemsFromMailItem",
     {
-      INFINITY_BOND_KIND: "infinity-bond",
-      POWB_TOKEN_ID: "a".repeat(64),
+      bondTagForKind: (kind) =>
+        kind === "infinity-bond"
+          ? { ticker: "POWB", tokenId: powbTokenId }
+          : kind === "inception-bond"
+            ? { ticker: "INCB", tokenId: incbTokenId }
+            : null,
     },
   );
   const disambiguateDuplicateProtocolItems = isolatedFunction(
@@ -3630,7 +3757,7 @@ check("POWB bond companions mint each recipient without double-counting value", 
     "disambiguateDuplicateProtocolItems",
   );
   const mints = disambiguateDuplicateProtocolItems(
-    canonicalPowbMintItemsFromMailItem({
+    canonicalBondMintItemsFromMailItem({
       amountSats: "1000",
       blockHeight: 101,
       blockIndex: 3,
@@ -3654,25 +3781,37 @@ check("POWB bond companions mint each recipient without double-counting value", 
   assert.equal(mints[0].eventKeyVout, undefined);
   assert.equal(mints[1].eventKeyVout, 1);
   assert.deepEqual(mints.map((mint) => mint._powEventIndex), [0, 1]);
+  const [incbMint] = canonicalBondMintItemsFromMailItem({
+    confirmed: true,
+    kind: "inception-bond",
+    recipients: [{ address: "carol", amountSats: "250" }],
+    txid: "3".repeat(64),
+  });
+  assert.equal(incbMint.ticker, "INCB");
+  assert.equal(incbMint.tokenId, incbTokenId);
+  assert.equal(incbMint.amountSats, 0);
 });
 
-check("POWB definition is bound to the canonical infinity ID receiver", async () => {
+check("bond definitions bind to their canonical ID receivers", async () => {
   let definition;
-  const seedCanonicalPowbDefinition = isolatedFunction(
+  const seedCanonicalBondDefinition = isolatedFunction(
     BACKFILL_PATH,
-    "seedCanonicalPowbDefinition",
+    "seedCanonicalBondDefinition",
     {
       NETWORK: "livenet",
-      POWB_REGISTRY_ID: "infinity",
-      POWB_TOKEN_CREATED_AT: "2026-06-23T00:00:00.000Z",
-      POWB_TOKEN_ID: "a".repeat(64),
-      POWB_TOKEN_MAX_SUPPLY: Number.MAX_SAFE_INTEGER,
       upsertCanonicalSyntheticCreditDefinition: async (_client, value) => {
         definition = value;
       },
     },
   );
-  await seedCanonicalPowbDefinition(
+  const infinityTag = {
+    createdAt: "2026-06-23T00:00:00.000Z",
+    registryId: "infinity",
+    ticker: "POWB",
+    tokenId: "a".repeat(64),
+    tokenMaxSupply: Number.MAX_SAFE_INTEGER,
+  };
+  await seedCanonicalBondDefinition(
     {
       async query() {
         return {
@@ -3680,14 +3819,16 @@ check("POWB definition is bound to the canonical infinity ID receiver", async ()
         };
       },
     },
+    infinityTag,
     { required: true },
   );
   assert.equal(definition.registryAddress, "bond-receiver");
   assert.equal(definition.ticker, "POWB");
 
   await rejection(
-    seedCanonicalPowbDefinition(
+    seedCanonicalBondDefinition(
       { async query() { return { rows: [] }; } },
+      infinityTag,
       { required: true },
     ),
     (error) => /confirmed infinity ID receiver/u.test(error.message),
@@ -5527,6 +5668,8 @@ check("canonical consistency reads the exact eligible summary snapshot", async (
                 growth_height: 957712,
                 growth_snapshot_id: snapshotId,
                 indexed_through_block: 957712,
+                inception_height: 957712,
+                inception_snapshot_id: snapshotId,
                 infinity_height: 957712,
                 infinity_snapshot_id: snapshotId,
                 marketplace_floor_height: 957712,
@@ -5721,6 +5864,7 @@ check("an accepted ID buy projects the buyer as the current owner", async () => 
   const upsertProjection = isolatedFunction(BACKFILL_PATH, "upsertProjection", {
     INFINITY_BOND_KIND: "infinity-bond",
     NETWORK: "livenet",
+    bondTagForKind: () => null,
     eventKind: (item) => item.kind,
     numberOrNull: (value) => (Number.isFinite(Number(value)) ? Number(value) : null),
   });

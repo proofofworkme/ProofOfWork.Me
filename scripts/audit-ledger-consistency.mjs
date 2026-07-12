@@ -12,6 +12,8 @@ const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
+const INCB_TOKEN_ID =
+  "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
 const MAX_LEDGER_TIP_LAG_BLOCKS = Number(
   process.env.MAX_LEDGER_TIP_LAG_BLOCKS ?? 6,
 );
@@ -223,6 +225,8 @@ const [
   marketplaceSummary,
   infinitySummary,
   powbTokenState,
+  inceptionSummary,
+  incbTokenState,
   growthSummary,
   btcUsdPrice,
   txLog,
@@ -252,6 +256,8 @@ const [
     "/api/v1/marketplace-summary",
     "/api/v1/infinity-summary",
     `/api/v1/token?asset=${POWB_TOKEN_ID}`,
+    "/api/v1/inception-summary",
+    `/api/v1/token?asset=${INCB_TOKEN_ID}`,
     "/api/v1/growth-summary",
     "/api/v1/prices/btc-usd?fresh=1",
     `/api/v1/log-history?q=${GULLISH_TXID}`,
@@ -301,7 +307,9 @@ const consistencyChecks = checkNames(consistency);
 expect(
   "consistency guards seeded mail coverage",
   consistencyChecks.has("seeded-mail-events-logged") &&
-    consistencyChecks.has("seeded-infinity-bonds-logged"),
+    consistencyChecks.has("seeded-infinity-bonds-logged") &&
+    consistencyChecks.has("seeded-inception-bonds-logged") &&
+    consistencyChecks.has("inception-bond-flow-matches-incb-supply"),
 );
 expect(
   "consistency guards ledger node-tip coverage",
@@ -364,7 +372,17 @@ const powbPendingMints = Array.isArray(powbTokenState.mints)
 const powbHolders = Array.isArray(powbTokenState.holders)
   ? powbTokenState.holders.length
   : numberValue(powbTokenState.stats?.holders);
+const incbConfirmedMints = Array.isArray(incbTokenState.mints)
+  ? incbTokenState.mints.filter((mint) => mint?.confirmed).length
+  : numberValue(incbTokenState.stats?.confirmedMints);
+const incbPendingMints = Array.isArray(incbTokenState.mints)
+  ? incbTokenState.mints.filter((mint) => !mint?.confirmed).length
+  : numberValue(incbTokenState.stats?.pendingMints);
+const incbHolders = Array.isArray(incbTokenState.holders)
+  ? incbTokenState.holders.length
+  : numberValue(incbTokenState.stats?.holders);
 const infinitySummaryBtcUsd = numberValue(infinitySummary.btcUsd);
+const inceptionSummaryBtcUsd = numberValue(inceptionSummary.btcUsd);
 expect("WORK exposes live BTC/USD metadata", liveBtcUsd > 0);
 expect(
   "WORK BTC/USD metadata matches price endpoint",
@@ -384,6 +402,10 @@ expect(
 expect(
   "Infinity summary BTC/USD metadata matches price endpoint",
   btcUsdQuotesClose(infinitySummaryBtcUsd, priceEndpointBtcUsd),
+);
+expect(
+  "Inception summary BTC/USD metadata matches price endpoint",
+  btcUsdQuotesClose(inceptionSummaryBtcUsd, priceEndpointBtcUsd),
 );
 expect(
   "Growth BTC/USD metadata matches price endpoint",
@@ -442,6 +464,36 @@ expect(
   usdNumbersAgree(
     infinitySummary.actualValue?.totalUsd,
     satsToUsd(infinitySummary.actualValue?.totalSats, infinitySummaryBtcUsd),
+  ),
+);
+expect(
+  "Inception summary confirmed supply matches INCB token state",
+  numbersAgree(
+    inceptionSummary.stats?.confirmedSupply,
+    incbTokenState.confirmedSupply,
+  ),
+);
+expect(
+  "Inception summary pending supply matches INCB token state",
+  numbersAgree(inceptionSummary.stats?.pendingSupply, incbTokenState.pendingSupply),
+);
+expect(
+  "Inception summary confirmed bond count matches INCB mints",
+  numbersAgree(inceptionSummary.stats?.confirmedBondActions, incbConfirmedMints),
+);
+expect(
+  "Inception summary pending bond count matches INCB mints",
+  numbersAgree(inceptionSummary.stats?.pendingBondActions, incbPendingMints),
+);
+expect(
+  "Inception summary holder count matches INCB token state",
+  numbersAgree(inceptionSummary.stats?.holders, incbHolders),
+);
+expect(
+  "Inception total USD uses live BTC/USD",
+  usdNumbersAgree(
+    inceptionSummary.actualValue?.totalUsd,
+    satsToUsd(inceptionSummary.actualValue?.totalSats, inceptionSummaryBtcUsd),
   ),
 );
 expect(

@@ -464,6 +464,9 @@ const TOKEN_PROTOCOL_PREFIX = "pwt1:";
 const RUSH_PROTOCOL_PREFIX = "pwr1:";
 const RUSH_MINT_PAYLOAD = "pwr1:m:rush";
 const INFINITY_BOND_MEMO = "powb";
+const INCEPTION_BOND_MEMO = "incb";
+const INFINITY_BOND_KIND = "infinity-bond";
+const INCEPTION_BOND_KIND = "inception-bond";
 const ID_REGISTRATION_PRICE_SATS = 1000;
 const ID_MUTATION_PRICE_SATS = 546;
 const TOKEN_CREATE_ACTION = "create";
@@ -521,6 +524,46 @@ const POWB_TOKEN_CREATED_AT = "2026-06-23T00:00:00.000Z";
 const POWB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
 const POWB_TOKEN_MINT_AMOUNT = 1;
 const POWB_TOKEN_MINT_PRICE_SATS = 1;
+const INCB_TOKEN_TICKER = "INCB";
+const INCB_TOKEN_ID =
+  "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+const INCB_REGISTRY_ID = "inception@proofofwork.me";
+const INCB_TOKEN_CREATED_AT = "2026-07-10T00:00:00.000Z";
+const INCB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
+const INCB_TOKEN_MINT_AMOUNT = 1;
+const INCB_TOKEN_MINT_PRICE_SATS = 1;
+const INFINITY_BOND_CONFIG = {
+  displayName: "Infinity Bond",
+  kind: INFINITY_BOND_KIND,
+  memo: INFINITY_BOND_MEMO,
+  registryId: POWB_REGISTRY_ID,
+  summaryKey: "infinitySummary",
+  summaryRoute: "infinity-summary",
+  ticker: POWB_TOKEN_TICKER,
+  tokenCreatedAt: POWB_TOKEN_CREATED_AT,
+  tokenId: POWB_TOKEN_ID,
+  tokenMaxSupply: POWB_TOKEN_MAX_SUPPLY,
+  tokenMintAmount: POWB_TOKEN_MINT_AMOUNT,
+  tokenMintPriceSats: POWB_TOKEN_MINT_PRICE_SATS,
+};
+const INCEPTION_BOND_CONFIG = {
+  displayName: "Inception Bond",
+  kind: INCEPTION_BOND_KIND,
+  memo: INCEPTION_BOND_MEMO,
+  registryId: INCB_REGISTRY_ID,
+  summaryKey: "inceptionSummary",
+  summaryRoute: "inception-summary",
+  ticker: INCB_TOKEN_TICKER,
+  tokenCreatedAt: INCB_TOKEN_CREATED_AT,
+  tokenId: INCB_TOKEN_ID,
+  tokenMaxSupply: INCB_TOKEN_MAX_SUPPLY,
+  tokenMintAmount: INCB_TOKEN_MINT_AMOUNT,
+  tokenMintPriceSats: INCB_TOKEN_MINT_PRICE_SATS,
+};
+const BOND_TOKEN_CONFIGS = [INFINITY_BOND_CONFIG, INCEPTION_BOND_CONFIG];
+const BOND_TOKEN_IDS = new Set(
+  BOND_TOKEN_CONFIGS.map((config) => config.tokenId),
+);
 const FULL_ACTIVITY_HISTORY_ADDRESSES = {
   livenet: new Set(
     String(
@@ -1425,20 +1468,40 @@ function canonicalWorkTokenDefinition(network = "livenet") {
 }
 
 function canonicalPowbTokenDefinition(network = "livenet", registryAddress = "") {
+  return canonicalBondTokenDefinition(
+    INFINITY_BOND_CONFIG,
+    network,
+    registryAddress,
+  );
+}
+
+function canonicalIncbTokenDefinition(network = "livenet", registryAddress = "") {
+  return canonicalBondTokenDefinition(
+    INCEPTION_BOND_CONFIG,
+    network,
+    registryAddress,
+  );
+}
+
+function canonicalBondTokenDefinition(
+  config,
+  network = "livenet",
+  registryAddress = "",
+) {
   return {
     confirmed: Boolean(registryAddress),
-    createdAt: POWB_TOKEN_CREATED_AT,
+    createdAt: config.tokenCreatedAt,
     creationFeeSats: 0,
     creatorAddress: registryAddress,
     dataBytes: 0,
-    maxSupply: POWB_TOKEN_MAX_SUPPLY,
-    mintAmount: POWB_TOKEN_MINT_AMOUNT,
-    mintPriceSats: POWB_TOKEN_MINT_PRICE_SATS,
+    maxSupply: config.tokenMaxSupply,
+    mintAmount: config.tokenMintAmount,
+    mintPriceSats: config.tokenMintPriceSats,
     network,
     registryAddress,
-    ticker: POWB_TOKEN_TICKER,
-    tokenId: POWB_TOKEN_ID,
-    txid: POWB_TOKEN_ID,
+    ticker: config.ticker,
+    tokenId: config.tokenId,
+    txid: config.tokenId,
     uncapped: true,
   };
 }
@@ -1451,12 +1514,32 @@ function registryRecordForId(registryState, id) {
 }
 
 async function powbRegistryAddressForNetwork(network, registryState = null) {
+  return bondRegistryAddressForNetwork(
+    INFINITY_BOND_CONFIG,
+    network,
+    registryState,
+  );
+}
+
+async function incbRegistryAddressForNetwork(network, registryState = null) {
+  return bondRegistryAddressForNetwork(
+    INCEPTION_BOND_CONFIG,
+    network,
+    registryState,
+  );
+}
+
+async function bondRegistryAddressForNetwork(
+  config,
+  network,
+  registryState = null,
+) {
   if (network !== "livenet") {
     return "";
   }
 
   const state = registryState ?? (await safeRegistryPayload(network).catch(() => null));
-  const record = registryRecordForId(state, POWB_REGISTRY_ID);
+  const record = registryRecordForId(state, config.registryId);
   const receiveAddress = String(record?.receiveAddress ?? "").trim();
   const ownerAddress = String(record?.ownerAddress ?? "").trim();
   if (isValidBitcoinAddress(receiveAddress, network)) {
@@ -3432,7 +3515,7 @@ async function tokenHistoryPageWithCanonicalCreditValueOverlay(
   if (
     network !== "livenet" ||
     !scope ||
-    scope === POWB_TOKEN_ID ||
+    BOND_TOKEN_IDS.has(scope) ||
     !tokenHistoryKindNeedsCreditNetworkValueOverlay(safeKind)
   ) {
     return page;
@@ -6640,11 +6723,18 @@ function normalizeTokenCreatorAddress(value) {
 
 function tokenTickerIsReserved(value) {
   const ticker = normalizeTokenTicker(value);
-  return ticker.includes(WORK_TOKEN_TICKER);
+  return (
+    ticker.includes(WORK_TOKEN_TICKER) ||
+    BOND_TOKEN_CONFIGS.some((config) => config.ticker === ticker)
+  );
 }
 
 function tokenCreationIsAllowed({ creatorAddress, ticker, tokenId }) {
-  if (String(tokenId ?? "").toLowerCase() === WORK_TOKEN_ID) {
+  const normalizedTokenId = String(tokenId ?? "").toLowerCase();
+  if (
+    normalizedTokenId === WORK_TOKEN_ID ||
+    BOND_TOKEN_IDS.has(normalizedTokenId)
+  ) {
     return true;
   }
 
@@ -8409,6 +8499,9 @@ function normalizeTokenScope(value) {
   const ticker = normalizeTokenTicker(raw);
   if (ticker === POWB_TOKEN_TICKER) {
     return POWB_TOKEN_ID;
+  }
+  if (ticker === INCB_TOKEN_TICKER) {
+    return INCB_TOKEN_ID;
   }
   return ticker === WORK_TOKEN_TICKER ? WORK_TOKEN_ID : ticker;
 }
@@ -10714,16 +10807,60 @@ function isBrowserHtmlMessageBody(value) {
   );
 }
 
+function normalizedBondMemo(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function bondConfigForMemo(value) {
+  const memo = normalizedBondMemo(value);
+  return BOND_TOKEN_CONFIGS.find((config) => config.memo === memo) ?? null;
+}
+
+function bondConfigForKind(value) {
+  const kind = String(value ?? "").trim().toLowerCase();
+  return BOND_TOKEN_CONFIGS.find((config) => config.kind === kind) ?? null;
+}
+
+function bondConfigForTokenId(value) {
+  const tokenId = String(value ?? "").trim().toLowerCase();
+  return BOND_TOKEN_CONFIGS.find((config) => config.tokenId === tokenId) ?? null;
+}
+
+function bondActivityConfig(item) {
+  const direct = bondConfigForKind(item?.kind);
+  if (direct) {
+    return direct;
+  }
+  if (String(item?.kind ?? "").trim().toLowerCase() !== "mail") {
+    return null;
+  }
+  return (
+    bondConfigForMemo(item?.memo) ??
+    bondConfigForMemo(item?.detail) ??
+    bondConfigForMemo(item?.body) ??
+    bondConfigForMemo(item?.message)
+  );
+}
+
+function isBondActivityItem(item, config = null) {
+  const matched = bondActivityConfig(item);
+  return Boolean(matched && (!config || matched.tokenId === config.tokenId));
+}
+
 function isInfinityBondMemo(value) {
-  return String(value ?? "").trim().toLowerCase() === INFINITY_BOND_MEMO;
+  return bondConfigForMemo(value)?.tokenId === POWB_TOKEN_ID;
+}
+
+function isInceptionBondMemo(value) {
+  return bondConfigForMemo(value)?.tokenId === INCB_TOKEN_ID;
 }
 
 function isInfinityBondActivityItem(item) {
-  if (item?.kind === "infinity-bond") {
-    return true;
-  }
+  return isBondActivityItem(item, INFINITY_BOND_CONFIG);
+}
 
-  return item?.kind === "mail" && isInfinityBondMemo(item.detail);
+function isInceptionBondActivityItem(item) {
+  return isBondActivityItem(item, INCEPTION_BOND_CONFIG);
 }
 
 function mailActivityItemFromTransaction(tx, network) {
@@ -10757,23 +10894,23 @@ function mailActivityItemFromTransaction(tx, network) {
         : `${recipients[0].display} +${recipients.length - 1}`;
   const isFile = Boolean(protocolMessage.attachment);
   const isReply = Boolean(protocolMessage.parentTxid);
-  const isInfinityBond =
-    !isFile && !isReply && isInfinityBondMemo(protocolMessage.memo);
+  const bondConfig =
+    !isFile && !isReply ? bondConfigForMemo(protocolMessage.memo) : null;
   const kind = isFile
     ? "file"
     : isReply
       ? "reply"
-      : isInfinityBond
-        ? "infinity-bond"
+      : bondConfig
+        ? bondConfig.kind
         : "mail";
   const noun = isFile
     ? "file"
     : isReply
       ? "reply"
-      : isInfinityBond
-        ? "infinity bond"
+      : bondConfig
+        ? bondConfig.displayName.toLowerCase()
         : "mail";
-  const title = `${isFile ? "File" : isReply ? "Reply" : isInfinityBond ? "Infinity Bond" : "Mail"} ${confirmed ? "sent" : "pending"}`;
+  const title = `${isFile ? "File" : isReply ? "Reply" : bondConfig?.displayName ?? "Mail"} ${confirmed ? "sent" : "pending"}`;
   const detail = protocolMessage.attachment
     ? `${protocolMessage.attachment.name} · ${formatBytes(protocolMessage.attachment.size)} · ${protocolMessage.attachment.mime}`
     : protocolMessage.subject
@@ -10809,8 +10946,8 @@ function mailActivityItemFromTransaction(tx, network) {
         ? "Attachment"
         : isReply
           ? "Reply"
-          : isInfinityBond
-            ? "Infinity Bond"
+          : bondConfig
+            ? bondConfig.displayName
             : "Message",
       isBrowserHtmlMessageBody(protocolMessage.memo) ? "HTML body" : "",
       recipients.length > 1 ? `${recipients.length} recipients` : "1 recipient",
@@ -10828,7 +10965,23 @@ function mailActivityItemsFromTransactions(txs, network) {
 }
 
 function powbRecipientMintsFromActivityItem(item, network) {
-  if (!isInfinityBondActivityItem(item)) {
+  return bondRecipientMintsFromActivityItem(
+    item,
+    network,
+    INFINITY_BOND_CONFIG,
+  );
+}
+
+function incbRecipientMintsFromActivityItem(item, network) {
+  return bondRecipientMintsFromActivityItem(
+    item,
+    network,
+    INCEPTION_BOND_CONFIG,
+  );
+}
+
+function bondRecipientMintsFromActivityItem(item, network, config) {
+  if (!isBondActivityItem(item, config)) {
     return [];
   }
 
@@ -10884,19 +11037,37 @@ function powbRecipientMintsFromActivityItem(item, network) {
 }
 
 function powbMintsFromActivity(activity, registryAddress, network) {
+  return bondMintsFromActivity(
+    activity,
+    registryAddress,
+    network,
+    INFINITY_BOND_CONFIG,
+  );
+}
+
+function incbMintsFromActivity(activity, registryAddress, network) {
+  return bondMintsFromActivity(
+    activity,
+    registryAddress,
+    network,
+    INCEPTION_BOND_CONFIG,
+  );
+}
+
+function bondMintsFromActivity(activity, registryAddress, network, config) {
   if (!registryAddress) {
     return [];
   }
 
   const seen = new Set();
   return (Array.isArray(activity) ? activity : [])
-    .filter((item) => item?.txid && isInfinityBondActivityItem(item))
+    .filter((item) => item?.txid && isBondActivityItem(item, config))
     .flatMap((item) => {
       const txid = String(item.txid ?? "").toLowerCase();
       if (!/^[0-9a-f]{64}$/u.test(txid)) {
         return [];
       }
-      return powbRecipientMintsFromActivityItem(item, network).flatMap(
+      return bondRecipientMintsFromActivityItem(item, network, config).flatMap(
         (recipientMint) => {
           const mintKey = `${txid}:${recipientMint.minterAddress}`;
           if (
@@ -10917,9 +11088,9 @@ function powbMintsFromActivity(activity, registryAddress, network) {
             network,
             paidSats: recipientMint.paidSats,
             registryAddress,
-            sourceKind: "infinity-bond",
-            ticker: POWB_TOKEN_TICKER,
-            tokenId: POWB_TOKEN_ID,
+            sourceKind: config.kind,
+            ticker: config.ticker,
+            tokenId: config.tokenId,
             txid,
           };
         },
@@ -10932,6 +11103,37 @@ async function powbSeedMintsWithSaleTicketParents(
   registryTxs,
   registryAddress,
   network,
+) {
+  return bondSeedMintsWithSaleTicketParents(
+    seedMints,
+    registryTxs,
+    registryAddress,
+    network,
+    INFINITY_BOND_CONFIG,
+  );
+}
+
+async function incbSeedMintsWithSaleTicketParents(
+  seedMints,
+  registryTxs,
+  registryAddress,
+  network,
+) {
+  return bondSeedMintsWithSaleTicketParents(
+    seedMints,
+    registryTxs,
+    registryAddress,
+    network,
+    INCEPTION_BOND_CONFIG,
+  );
+}
+
+async function bondSeedMintsWithSaleTicketParents(
+  seedMints,
+  registryTxs,
+  registryAddress,
+  network,
+  config,
 ) {
   if (!registryAddress) {
     return Array.isArray(seedMints) ? seedMints : [];
@@ -10968,9 +11170,9 @@ async function powbSeedMintsWithSaleTicketParents(
       const authorization = parsed?.saleAuthorization;
       if (
         parsed?.kind !== "list" ||
-        authorization?.tokenId !== POWB_TOKEN_ID ||
+        authorization?.tokenId !== config.tokenId ||
         authorization.registryAddress !== registryAddress ||
-        authorization.ticker !== POWB_TOKEN_TICKER ||
+        authorization.ticker !== config.ticker ||
         !inputAddresses(vin).includes(authorization.sellerAddress) ||
         !tokenListingAnchorIsPresent(vout, authorization)
       ) {
@@ -11003,13 +11205,14 @@ async function powbSeedMintsWithSaleTicketParents(
         const activityItem = parentTx
           ? mailActivityItemFromTransaction(parentTx, network)
           : null;
-        if (!isInfinityBondActivityItem(activityItem)) {
+        if (!isBondActivityItem(activityItem, config)) {
           continue;
         }
 
-        for (const recipientMint of powbRecipientMintsFromActivityItem(
+        for (const recipientMint of bondRecipientMintsFromActivityItem(
           activityItem,
           network,
+          config,
         )) {
           const mintKey = `${parentTxid}:${recipientMint.minterAddress}`;
           if (
@@ -11031,9 +11234,9 @@ async function powbSeedMintsWithSaleTicketParents(
             network,
             paidSats: recipientMint.paidSats,
             registryAddress,
-            sourceKind: "infinity-bond-parent",
-            ticker: POWB_TOKEN_TICKER,
-            tokenId: POWB_TOKEN_ID,
+            sourceKind: `${config.kind}-parent`,
+            ticker: config.ticker,
+            tokenId: config.tokenId,
             txid: parentTxid,
           });
         }
@@ -11045,6 +11248,22 @@ async function powbSeedMintsWithSaleTicketParents(
 }
 
 function powbRegistryAddressFromTokenTransactions(txs, network) {
+  return bondRegistryAddressFromTokenTransactions(
+    txs,
+    network,
+    INFINITY_BOND_CONFIG,
+  );
+}
+
+function incbRegistryAddressFromTokenTransactions(txs, network) {
+  return bondRegistryAddressFromTokenTransactions(
+    txs,
+    network,
+    INCEPTION_BOND_CONFIG,
+  );
+}
+
+function bondRegistryAddressFromTokenTransactions(txs, network, config) {
   for (const tx of tokenProtocolSortedTransactions(
     (Array.isArray(txs) ? txs : []).filter(Boolean),
   )) {
@@ -11055,8 +11274,8 @@ function powbRegistryAddressFromTokenTransactions(txs, network) {
         parsed?.saleAuthorization?.registryAddress ?? "",
       ).trim();
       if (
-        parsed?.saleAuthorization?.tokenId === POWB_TOKEN_ID &&
-        parsed.saleAuthorization.ticker === POWB_TOKEN_TICKER &&
+        parsed?.saleAuthorization?.tokenId === config.tokenId &&
+        parsed.saleAuthorization.ticker === config.ticker &&
         isValidBitcoinAddress(registryAddress, network) &&
         tokenPaymentAmountBeforeProtocol(vout, registryAddress) >=
           TOKEN_MIN_MUTATION_PRICE_SATS
@@ -11070,6 +11289,26 @@ function powbRegistryAddressFromTokenTransactions(txs, network) {
 }
 
 async function recoveredPowbTokenPayloadFromTransactions(network, recoveryTxs) {
+  return recoveredBondTokenPayloadFromTransactions(
+    network,
+    recoveryTxs,
+    INFINITY_BOND_CONFIG,
+  );
+}
+
+async function recoveredIncbTokenPayloadFromTransactions(network, recoveryTxs) {
+  return recoveredBondTokenPayloadFromTransactions(
+    network,
+    recoveryTxs,
+    INCEPTION_BOND_CONFIG,
+  );
+}
+
+async function recoveredBondTokenPayloadFromTransactions(
+  network,
+  recoveryTxs,
+  config,
+) {
   const confirmedTxs = (Array.isArray(recoveryTxs) ? recoveryTxs : []).filter(
     transactionConfirmed,
   );
@@ -11078,26 +11317,29 @@ async function recoveredPowbTokenPayloadFromTransactions(network, recoveryTxs) {
   }
 
   const registryAddress =
-    powbRegistryAddressFromTokenTransactions(confirmedTxs, network) ||
-    (await powbRegistryAddressForNetwork(network, null));
+    bondRegistryAddressFromTokenTransactions(confirmedTxs, network, config) ||
+    (await bondRegistryAddressForNetwork(config, network, null));
   const indexAddress = tokenIndexAddressForNetwork(network);
   if (!registryAddress || !indexAddress) {
     return null;
   }
 
-  const seedTokens = [canonicalPowbTokenDefinition(network, registryAddress)];
-  const seedMints = await powbSeedMintsWithSaleTicketParents(
+  const seedTokens = [
+    canonicalBondTokenDefinition(config, network, registryAddress),
+  ];
+  const seedMints = await bondSeedMintsWithSaleTicketParents(
     [],
     confirmedTxs,
     registryAddress,
     network,
+    config,
   );
   const state = tokenStateFromTransactions(
     [],
     new Map([[registryAddress, confirmedTxs]]),
     indexAddress,
     network,
-    POWB_TOKEN_ID,
+    config.tokenId,
     seedTokens,
     seedMints,
   );
@@ -11111,7 +11353,7 @@ async function recoveredPowbTokenPayloadFromTransactions(network, recoveryTxs) {
     indexTxid: TOKEN_INDEX_TXID,
     minMutationPriceSats: TOKEN_MIN_MUTATION_PRICE_SATS,
     network,
-    source: "first-party-powb-txid-recovery",
+    source: `first-party-${config.ticker.toLowerCase()}-txid-recovery`,
   };
 }
 
@@ -11120,10 +11362,10 @@ function infinityBondChartPointsFromEvents({
   marketplaceMutations,
   sales,
   transfers,
-}) {
+}, config = INFINITY_BOND_CONFIG) {
   const events = [
     ...(Array.isArray(bonds) ? bonds : [])
-      .filter((item) => item?.confirmed && isInfinityBondActivityItem(item))
+      .filter((item) => item?.confirmed && isBondActivityItem(item, config))
       .map((item) => ({
         amount: activityAmountSats(item),
         createdAt: item.createdAt,
@@ -11132,7 +11374,7 @@ function infinityBondChartPointsFromEvents({
         valueSats: activityAmountSats(item),
       })),
     ...(Array.isArray(transfers) ? transfers : [])
-      .filter((transfer) => transfer?.confirmed && transfer.tokenId === POWB_TOKEN_ID)
+      .filter((transfer) => transfer?.confirmed && transfer.tokenId === config.tokenId)
       .map((transfer) => ({
         amount: 0,
         createdAt: transfer.createdAt,
@@ -11141,7 +11383,7 @@ function infinityBondChartPointsFromEvents({
         valueSats: numericValue(transfer.paidSats),
       })),
     ...(Array.isArray(marketplaceMutations) ? marketplaceMutations : [])
-      .filter((item) => item?.confirmed && item.tokenId === POWB_TOKEN_ID)
+      .filter((item) => item?.confirmed && item.tokenId === config.tokenId)
       .map((item) => ({
         amount: 0,
         createdAt: item.createdAt,
@@ -11150,7 +11392,7 @@ function infinityBondChartPointsFromEvents({
         valueSats: activityAmountSats(item),
       })),
     ...(Array.isArray(sales) ? sales : [])
-      .filter((sale) => sale?.confirmed && sale.tokenId === POWB_TOKEN_ID)
+      .filter((sale) => sale?.confirmed && sale.tokenId === config.tokenId)
       .map((sale) => ({
         amount: 0,
         createdAt: sale.createdAt,
@@ -11204,7 +11446,8 @@ function tokenActivityItemsFromState(state, indexAddress) {
   const creations = (state.tokens ?? [])
     .filter(
       (token) =>
-        token?.tokenId !== WORK_TOKEN_ID && token?.tokenId !== POWB_TOKEN_ID,
+        token?.tokenId !== WORK_TOKEN_ID &&
+        !BOND_TOKEN_IDS.has(token?.tokenId),
     )
     .map((token) => ({
     amountSats: token.creationFeeSats,
@@ -11838,11 +12081,12 @@ async function buildSeededMailActivityPayload(network, seedAddresses) {
   const txs = dedupeTransactions(addressTxGroups.flat());
   const activity = mailActivityItemsFromTransactions(txs, network);
   const dataBytes = totalProtocolDataBytes(activity);
+  const inceptionBondActions = activity.filter(isInceptionBondActivityItem).length;
   const infinityBondActions = activity.filter(isInfinityBondActivityItem).length;
   const messageActions = activity.filter(
     (item) =>
       (item.kind === "mail" || item.kind === "reply") &&
-      !isInfinityBondActivityItem(item),
+      !isBondActivityItem(item),
   ).length;
 
   return {
@@ -11855,6 +12099,7 @@ async function buildSeededMailActivityPayload(network, seedAddresses) {
       addresses: addresses.length,
       dataBytes,
       files: activity.filter((item) => item.kind === "file").length,
+      inceptionBonds: inceptionBondActions,
       infinityBonds: infinityBondActions,
       messages: messageActions,
       pending: activity.filter((item) => !item.confirmed).length,
@@ -12465,11 +12710,12 @@ async function globalActivityPayload(network, fresh = false) {
   ]);
   const dataBytes = totalProtocolDataBytes(activity);
   const fileActions = activity.filter((item) => item.kind === "file").length;
+  const inceptionBondActions = activity.filter(isInceptionBondActivityItem).length;
   const infinityBondActions = activity.filter(isInfinityBondActivityItem).length;
   const messageActions = activity.filter(
     (item) =>
       (item.kind === "mail" || item.kind === "reply") &&
-      !isInfinityBondActivityItem(item),
+      !isBondActivityItem(item),
   ).length;
   const tokenActions = activity.filter((item) =>
     String(item.kind).startsWith("token-"),
@@ -12493,6 +12739,7 @@ async function globalActivityPayload(network, fresh = false) {
       dataBytes,
       files: fileActions,
       indexedThroughBlock,
+      inceptionBonds: inceptionBondActions,
       infinityBonds: infinityBondActions,
       messages: messageActions,
       pending: activity.filter((item) => !item.confirmed).length,
@@ -13753,6 +14000,14 @@ async function workTokenPayload(network, fallbackPayload = null) {
 }
 
 async function indexedPowbActivityForTokenState(network) {
+  return indexedBondActivityForTokenState(network, INFINITY_BOND_CONFIG);
+}
+
+async function indexedIncbActivityForTokenState(network) {
+  return indexedBondActivityForTokenState(network, INCEPTION_BOND_CONFIG);
+}
+
+async function indexedBondActivityForTokenState(network, config) {
   if (
     !proofIndexReadFeatureEnabled("log-history,activity-history,log")
   ) {
@@ -13770,7 +14025,7 @@ async function indexedPowbActivityForTokenState(network) {
     }
     const page = await proofIndexLogHistoryPayload(
       network,
-      "infinity-bond",
+      config.kind,
       searchParams,
     );
     if (!page) {
@@ -13791,7 +14046,9 @@ async function indexedPowbActivityForTokenState(network) {
   }
 
   return {
-    activity: dedupeActivityItems(items.filter(isInfinityBondActivityItem)),
+    activity: dedupeActivityItems(
+      items.filter((item) => isBondActivityItem(item, config)),
+    ),
     indexedAt: Number.isFinite(Date.parse(indexedAt))
       ? indexedAt
       : new Date().toISOString(),
@@ -13805,11 +14062,34 @@ async function indexedPowbActivityForTokenState(network) {
 }
 
 async function powbActivityForTokenState(network, registryState = null) {
+  return bondActivityForTokenState(
+    network,
+    registryState,
+    INFINITY_BOND_CONFIG,
+  );
+}
+
+async function incbActivityForTokenState(network, registryState = null) {
+  return bondActivityForTokenState(
+    network,
+    registryState,
+    INCEPTION_BOND_CONFIG,
+  );
+}
+
+async function bondActivityForTokenState(
+  network,
+  registryState = null,
+  config,
+) {
   void registryState;
-  const indexedActivity = await indexedPowbActivityForTokenState(network).catch(
+  const indexedActivity = await indexedBondActivityForTokenState(
+    network,
+    config,
+  ).catch(
     (error) => {
       console.error(
-        `Proof index POWB activity read failed: ${errorSummary(error)}`,
+        `Proof index ${config.ticker} activity read failed: ${errorSummary(error)}`,
       );
       return null;
     },
@@ -13819,7 +14099,7 @@ async function powbActivityForTokenState(network, registryState = null) {
     (await proofIndexPayloadCoversConfirmedTip(
       indexedActivity,
       network,
-      "powb-activity",
+      `${config.ticker.toLowerCase()}-activity`,
     ))
   ) {
     return indexedActivity.activity;
@@ -13834,7 +14114,7 @@ async function powbActivityForTokenState(network, registryState = null) {
     : cachedGlobalActivityPayloadNoRefresh(network)
   ).catch((error) => {
     console.error(
-      `POWB live activity fallback failed for ${network}: ${errorSummary(error)}`,
+      `${config.ticker} live activity fallback failed for ${network}: ${errorSummary(error)}`,
     );
     return null;
   });
@@ -13844,7 +14124,28 @@ async function powbActivityForTokenState(network, registryState = null) {
 }
 
 async function powbSeedForTokenPayload(network, registryState = null) {
-  const registryAddress = await powbRegistryAddressForNetwork(
+  return bondSeedForTokenPayload(
+    network,
+    registryState,
+    INFINITY_BOND_CONFIG,
+  );
+}
+
+async function incbSeedForTokenPayload(network, registryState = null) {
+  return bondSeedForTokenPayload(
+    network,
+    registryState,
+    INCEPTION_BOND_CONFIG,
+  );
+}
+
+async function bondSeedForTokenPayload(
+  network,
+  registryState = null,
+  config,
+) {
+  const registryAddress = await bondRegistryAddressForNetwork(
+    config,
     network,
     registryState,
   );
@@ -13852,41 +14153,65 @@ async function powbSeedForTokenPayload(network, registryState = null) {
     return { registryAddress: "", seedMints: [], seedTokens: [] };
   }
 
-  const activity = await powbActivityForTokenState(network, registryState);
+  const activity = await bondActivityForTokenState(
+    network,
+    registryState,
+    config,
+  );
   return {
     registryAddress,
-    seedMints: powbMintsFromActivity(activity, registryAddress, network),
-    seedTokens: [canonicalPowbTokenDefinition(network, registryAddress)],
+    seedMints: bondMintsFromActivity(
+      activity,
+      registryAddress,
+      network,
+      config,
+    ),
+    seedTokens: [
+      canonicalBondTokenDefinition(config, network, registryAddress),
+    ],
   };
 }
 
 async function powbTokenPayload(network, registryState = null) {
+  return bondTokenPayload(network, registryState, INFINITY_BOND_CONFIG);
+}
+
+async function incbTokenPayload(network, registryState = null) {
+  return bondTokenPayload(network, registryState, INCEPTION_BOND_CONFIG);
+}
+
+async function bondTokenPayload(network, registryState = null, config) {
   const indexAddress = tokenIndexAddressForNetwork(network);
-  const powbSeed = await powbSeedForTokenPayload(network, registryState);
-  if (!powbSeed.registryAddress) {
+  const bondSeed = await bondSeedForTokenPayload(
+    network,
+    registryState,
+    config,
+  );
+  if (!bondSeed.registryAddress) {
     return {
       ...emptyTokenPayloadSnapshot(network),
-      tokens: [canonicalPowbTokenDefinition(network, "")],
+      tokens: [canonicalBondTokenDefinition(config, network, "")],
     };
   }
 
   const registryTxs = await fetchRegistryTransactions(
-    powbSeed.registryAddress,
+    bondSeed.registryAddress,
     network,
   ).catch(() => []);
-  const seedMints = await powbSeedMintsWithSaleTicketParents(
-    powbSeed.seedMints,
+  const seedMints = await bondSeedMintsWithSaleTicketParents(
+    bondSeed.seedMints,
     registryTxs,
-    powbSeed.registryAddress,
+    bondSeed.registryAddress,
     network,
+    config,
   );
   const state = tokenStateFromTransactions(
     [],
-    new Map([[powbSeed.registryAddress, registryTxs]]),
+    new Map([[bondSeed.registryAddress, registryTxs]]),
     indexAddress,
     network,
-    POWB_TOKEN_ID,
-    powbSeed.seedTokens,
+    config.tokenId,
+    bondSeed.seedTokens,
     seedMints,
   );
   const payloadState = await tokenPayloadWithSpendableListings(state, network);
@@ -13966,9 +14291,10 @@ async function tokenPayload(network, tokenScope = "") {
     return workTokenPayload(network);
   }
 
-  const registryStateForPowb =
-    network === "livenet" && (!scope || scope === POWB_TOKEN_ID)
-      ? scope === POWB_TOKEN_ID
+  const scopedBondConfig = bondConfigForTokenId(scope);
+  const registryStateForBonds =
+    network === "livenet" && (!scope || scopedBondConfig)
+      ? scopedBondConfig
         ? ((await indexedRegistryPayload(network).catch(() => null)) ??
           (await fastJsonBackedPayload(
             `registry:${network}`,
@@ -13980,19 +14306,23 @@ async function tokenPayload(network, tokenScope = "") {
           ).catch(() => null)))
         : await safeRegistryPayload(network).catch(() => null)
       : null;
-  if (scope === POWB_TOKEN_ID) {
-    return powbTokenPayload(network, registryStateForPowb);
+  if (scopedBondConfig) {
+    return bondTokenPayload(network, registryStateForBonds, scopedBondConfig);
   }
-  const powbSeed =
-    network === "livenet" && (!scope || scope === POWB_TOKEN_ID)
-      ? await powbSeedForTokenPayload(network, registryStateForPowb)
-      : { registryAddress: "", seedMints: [], seedTokens: [] };
-  if (scope === POWB_TOKEN_ID && !powbSeed.registryAddress) {
-    return {
-      ...emptyTokenPayloadSnapshot(network),
-      tokens: [canonicalPowbTokenDefinition(network, "")],
-    };
-  }
+  const bondSeeds =
+    network === "livenet" && !scope
+      ? await Promise.all(
+          BOND_TOKEN_CONFIGS.map((config) =>
+            bondSeedForTokenPayload(
+              network,
+              registryStateForBonds,
+              config,
+            ),
+          ),
+        )
+      : [];
+  const bondSeedTokens = bondSeeds.flatMap((seed) => seed.seedTokens);
+  const bondSeedMints = bondSeeds.flatMap((seed) => seed.seedMints);
 
   const indexTxs = await fetchRegistryTransactions(indexAddress, network);
   const { tokens } = tokenDefinitionsFromTransactions(
@@ -14000,7 +14330,7 @@ async function tokenPayload(network, tokenScope = "") {
     indexAddress,
     network,
   );
-  const allTokenDefinitions = [...tokens, ...powbSeed.seedTokens];
+  const allTokenDefinitions = [...tokens, ...bondSeedTokens];
   const scopedTokens = allTokenDefinitions.filter((token) =>
     tokenMatchesScope(token, scope),
   );
@@ -14021,8 +14351,8 @@ async function tokenPayload(network, tokenScope = "") {
     indexAddress,
     network,
     scope,
-    powbSeed.seedTokens,
-    powbSeed.seedMints,
+    bondSeedTokens,
+    bondSeedMints,
   );
   const payloadState = await tokenPayloadWithSpendableListings(state, network);
   const registryTxs = registryEntries.flatMap(([, txs]) => txs);
@@ -14032,7 +14362,7 @@ async function tokenPayload(network, tokenScope = "") {
     Number.isSafeInteger(sourceTipHeight) ? sourceTipHeight : 0,
     indexedThroughBlockFromTransactions(indexTxs) ?? 0,
     indexedThroughBlockFromTransactions(registryTxs) ?? 0,
-    indexedThroughBlockFromItems(powbSeed.seedMints) ?? 0,
+    indexedThroughBlockFromItems(bondSeedMints) ?? 0,
   ) || undefined;
   return {
     ...payloadState,
@@ -17943,7 +18273,7 @@ async function tokenPayloadForRead(
     const fallback = await existingTokenPayload(network, scope);
     const scopedRefreshWaitMs = Number.isFinite(options.scopedRefreshWaitMs)
       ? options.scopedRefreshWaitMs
-      : scope === POWB_TOKEN_ID
+      : BOND_TOKEN_IDS.has(scope)
         ? Math.max(WORK_TOKEN_CANONICAL_FRESH_WAIT_MS, TOKEN_SCOPED_FRESH_WAIT_MS)
         : TOKEN_SCOPED_FRESH_WAIT_MS;
     const freshScopedPayload = await payloadWithFallbackAfterMs(
@@ -17977,7 +18307,7 @@ async function tokenPayloadForRead(
     }
     if (
       fallback &&
-      scope !== POWB_TOKEN_ID &&
+      !BOND_TOKEN_IDS.has(scope) &&
       (await proofIndexPayloadCoversConfirmedTip(
         fallback,
         network,
@@ -18332,7 +18662,7 @@ async function tokenSummaryPayload(
   }
   if (
     network === "livenet" &&
-    (scope === WORK_TOKEN_ID || scope === POWB_TOKEN_ID)
+    (scope === WORK_TOKEN_ID || BOND_TOKEN_IDS.has(scope))
   ) {
     payload = await tokenPayloadWithSpendableActiveListings(payload, network);
   }
@@ -18477,7 +18807,7 @@ async function walletScopedTokenPayload(
     recoveryAddresses,
   );
 
-  if (scope === POWB_TOKEN_ID) {
+  if (BOND_TOKEN_IDS.has(scope)) {
     return scopedPayload;
   }
 
@@ -18923,11 +19253,12 @@ function compactActivitySummaryPayload(payload) {
 function activityStatsFromItems(activity, baseStats = {}) {
   const dataBytes = totalProtocolDataBytes(activity);
   const fileActions = activity.filter((item) => item.kind === "file").length;
+  const inceptionBondActions = activity.filter(isInceptionBondActivityItem).length;
   const infinityBondActions = activity.filter(isInfinityBondActivityItem).length;
   const messageActions = activity.filter(
     (item) =>
       (item.kind === "mail" || item.kind === "reply") &&
-      !isInfinityBondActivityItem(item),
+      !isBondActivityItem(item),
   ).length;
   const tokenActions = activity.filter((item) =>
     String(item.kind).startsWith("token-"),
@@ -18945,6 +19276,7 @@ function activityStatsFromItems(activity, baseStats = {}) {
     dataBytes,
     files: fileActions,
     indexedThroughBlock: indexedThroughBlockFromItems(activity),
+    inceptionBonds: inceptionBondActions,
     infinityBonds: infinityBondActions,
     messages: messageActions,
     pending: activity.filter((item) => !item.confirmed).length,
@@ -19003,7 +19335,35 @@ function growthSummaryPayloadHasFiniteNetworkValue(growthSummary) {
 }
 
 function infinitySummaryPayloadHasKnownMainnetValue(summary) {
+  return bondSummaryPayloadHasKnownMainnetValue(
+    summary,
+    INFINITY_BOND_CONFIG,
+  );
+}
+
+function inceptionSummaryPayloadHasKnownMainnetValue(summary) {
+  return bondSummaryPayloadHasKnownMainnetValue(
+    summary,
+    INCEPTION_BOND_CONFIG,
+    { allowEmptyHistory: true },
+  );
+}
+
+function bondSummaryPayloadHasKnownMainnetValue(
+  summary,
+  config,
+  options = {},
+) {
   if (!summary) {
+    return false;
+  }
+
+  if (
+    String(summary.tokenId ?? "").trim().toLowerCase() !== config.tokenId ||
+    String(summary.ticker ?? "").trim().toUpperCase() !== config.ticker ||
+    normalizePowId(summary.registryId) !== normalizePowId(config.registryId) ||
+    !isValidBitcoinAddress(summary.registryAddress, "livenet")
+  ) {
     return false;
   }
 
@@ -19021,6 +19381,19 @@ function infinitySummaryPayloadHasKnownMainnetValue(summary) {
     numericValue(summary.networkValueSats),
     numericValue(summary.actualValue?.networkValueSats),
   );
+  if (
+    options.allowEmptyHistory === true &&
+    confirmedSupply === 0 &&
+    confirmedBondActions === 0 &&
+    bondMintFlowSats === 0 &&
+    networkValueSats === 0
+  ) {
+    return (
+      summary.tokenId === config.tokenId &&
+      summary.ticker === config.ticker &&
+      Array.isArray(summary.chartPoints)
+    );
+  }
   return (
     finitePositiveNumber(confirmedSupply) &&
     finitePositiveNumber(confirmedBondActions) &&
@@ -19064,6 +19437,9 @@ function summaryPayloadHasFiniteNetworkValue(network, key, payload) {
   if (key === "infinitySummary") {
     return infinitySummaryPayloadHasKnownMainnetValue(payload);
   }
+  if (key === "inceptionSummary") {
+    return inceptionSummaryPayloadHasKnownMainnetValue(payload);
+  }
 
   return true;
 }
@@ -19073,6 +19449,7 @@ function summaryKeyRequiresCanonicalLedger(network, key) {
     network === "livenet" &&
     new Set([
       "growthSummary",
+      "inceptionSummary",
       "infinitySummary",
       "marketplaceSummary",
       "workFloor",
@@ -19120,8 +19497,20 @@ function tokenPayloadHasKnownMainnetHistory(payload, scope = "") {
     );
   }
 
-  if (tokenScope === POWB_TOKEN_ID) {
+  if (BOND_TOKEN_IDS.has(tokenScope)) {
+    const bondConfig = bondConfigForTokenId(tokenScope);
+    const hasCanonicalEmptyDefinition =
+      bondConfig?.tokenId === INCB_TOKEN_ID &&
+      tokens.some(
+        (token) =>
+          token?.tokenId === bondConfig.tokenId &&
+          String(token?.ticker ?? "").trim().toUpperCase() ===
+            bondConfig.ticker &&
+          token?.confirmed !== false &&
+          isValidBitcoinAddress(token?.registryAddress, "livenet"),
+      );
     return (
+      hasCanonicalEmptyDefinition ||
       confirmedSupply > 0 ||
       confirmedMints > 0 ||
       holders.length > 0 ||
@@ -19145,6 +19534,26 @@ function rejectEmptyMainnetTokenPayload(network, payload, scope, label) {
     `Rejected empty proof-index ${label} read for ${scope || "all"} on livenet.`,
   );
   return true;
+}
+
+function rejectEmptyBondTokenPayload(network, payload, config, label) {
+  const hasSyntheticDefinition = (Array.isArray(payload?.tokens)
+    ? payload.tokens
+    : []
+  ).some((token) => token?.tokenId === config.tokenId);
+  if (
+    config.tokenId === INCB_TOKEN_ID &&
+    hasSyntheticDefinition &&
+    numericValue(payload?.confirmedSupply) === 0
+  ) {
+    return false;
+  }
+  return rejectEmptyMainnetTokenPayload(
+    network,
+    payload,
+    config.tokenId,
+    label,
+  );
 }
 
 function sourceCollectionFingerprint(items) {
@@ -19305,7 +19714,9 @@ function ledgerPayloadHasCurrentChecks(payload) {
     checkNames.has("computer-event-flow-excludes-marketplace") &&
     checkNames.has("token-sales-logged") &&
     checkNames.has("seeded-mail-events-logged") &&
+    checkNames.has("seeded-inception-bonds-logged") &&
     checkNames.has("seeded-infinity-bonds-logged") &&
+    checkNames.has("inception-bond-flow-matches-incb-supply") &&
     checkNames.has("infinity-bond-flow-matches-powb-supply") &&
     checkNames.has("ledger-covers-node-tip")
   );
@@ -19371,6 +19782,8 @@ function growthDeltaForProofIndexEvents(events) {
     driveSats: 0,
     idMarketplaceFeeSats: 0,
     idMarketplaceVolumeSats: 0,
+    inceptionBondFlowSats: 0,
+    inceptionBondSats: 0,
     infinityBondFlowSats: 0,
     infinityBondSats: 0,
     mailFlowSats: 0,
@@ -19409,8 +19822,10 @@ function growthDeltaForProofIndexEvents(events) {
       addScaled("mailFlowSats", "mailSats", sats);
     } else if (kind === "file") {
       addScaled("driveFlowSats", "driveSats", sats);
-    } else if (kind === "infinity-bond") {
+    } else if (kind === INFINITY_BOND_KIND) {
       addScaled("infinityBondFlowSats", "infinityBondSats", sats);
+    } else if (kind === INCEPTION_BOND_KIND) {
+      addScaled("inceptionBondFlowSats", "inceptionBondSats", sats);
     } else if (ID_MARKETPLACE_MUTATION_KINDS.has(kind)) {
       delta.idMarketplaceFeeSats += sats;
       delta.marketplaceFeeSats += sats;
@@ -19633,11 +20048,16 @@ async function proofIndexSummaryPayloadWithValueEventDelta(
     };
   } else if (
     hasValueDelta &&
-    key === "infinitySummary" &&
-    deltaEvents.some((event) => String(event?.kind ?? "") === INFINITY_BOND_KIND)
+    BOND_TOKEN_CONFIGS.some(
+      (config) =>
+        key === config.summaryKey &&
+        deltaEvents.some(
+          (event) => String(event?.kind ?? "") === config.kind,
+        ),
+    )
   ) {
     console.error(
-      `Rejected ${label} summary value-event delta: Infinity events require a refreshed Infinity summary snapshot.`,
+      `Rejected ${label} summary value-event delta: bond events require a refreshed bond summary snapshot.`,
     );
     return null;
   }
@@ -19840,11 +20260,13 @@ function ledgerWithProofIndexScanFloor(ledger, scan, tipHeight) {
     consistency,
     growthSummary,
   };
+  const inceptionSummary = inceptionSummaryPayloadFromLedger(result);
   const infinitySummary = infinitySummaryPayloadFromLedger(result);
   return {
     ...result,
     activityPayload: attachLedgerMetadata(result.activityPayload, result),
     growthSummary: attachLedgerMetadata(growthSummary, result),
+    inceptionSummary: attachLedgerMetadata(inceptionSummary, result),
     infinitySummary: attachLedgerMetadata(infinitySummary, result),
     workFloor: attachLedgerMetadata(result.workFloor, result),
   };
@@ -20439,10 +20861,12 @@ async function ledgerWithReplayedCreditNetworkValues(
     tokenState,
     workFloor,
   });
-  const infinitySummary = infinitySummaryPayloadFromLedger({
+  const summaryLedger = {
     ...replayed,
     consistency,
-  });
+  };
+  const inceptionSummary = inceptionSummaryPayloadFromLedger(summaryLedger);
+  const infinitySummary = infinitySummaryPayloadFromLedger(summaryLedger);
   const result = {
     ...replayed,
     activityPayload: attachLedgerMetadata(activityPayload, {
@@ -20451,6 +20875,10 @@ async function ledgerWithReplayedCreditNetworkValues(
     }),
     consistency,
     growthSummary: attachLedgerMetadata(growthSummary, {
+      ...replayed,
+      consistency,
+    }),
+    inceptionSummary: attachLedgerMetadata(inceptionSummary, {
       ...replayed,
       consistency,
     }),
@@ -20526,6 +20954,14 @@ function cacheCanonicalLedgerPayload(network, payload) {
       HEAVY_READ_STALE_MS,
     );
   }
+  if (payload?.inceptionSummary) {
+    cacheDerivedLedgerPayload(
+      `inception-summary:${network}`,
+      payload.inceptionSummary,
+      LEDGER_CACHE_TTL_MS,
+      HEAVY_READ_STALE_MS,
+    );
+  }
 }
 
 function ledgerTokenStateForScope(ledger, scope) {
@@ -20561,7 +20997,7 @@ function tokenStateLogExpectations(tokenState) {
     if (
       !token?.confirmed ||
       token.tokenId === WORK_TOKEN_ID ||
-      token.tokenId === POWB_TOKEN_ID
+      BOND_TOKEN_IDS.has(token.tokenId)
     ) {
       continue;
     }
@@ -20831,6 +21267,20 @@ function ledgerSnapshotChecks({
     growthSummary?.workFloor?.networkValueSats,
   );
   const confirmedActivity = (activity ?? []).filter((item) => item?.confirmed);
+  const incbTokenState = scopedTokenPayloadFromState(tokenState, INCB_TOKEN_ID);
+  const incbConfirmedSupply = numericValue(incbTokenState?.confirmedSupply);
+  const inceptionBondFlowSats = confirmedActivity
+    .filter(isInceptionBondActivityItem)
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+  addCheck(
+    "inception-bond-flow-matches-incb-supply",
+    network !== "livenet" ||
+      numbersAgree(inceptionBondFlowSats, incbConfirmedSupply, 0.01),
+    {
+      incbConfirmedSupply,
+      inceptionBondFlowSats,
+    },
+  );
   const powbTokenState = scopedTokenPayloadFromState(tokenState, POWB_TOKEN_ID);
   const powbConfirmedSupply = numericValue(powbTokenState?.confirmedSupply);
   const infinityBondFlowSats = confirmedActivity
@@ -21032,6 +21482,7 @@ function ledgerSnapshotChecks({
     (item) => item?.confirmed && item?.txid && item?.kind,
   );
   const missingSeededMailEvents = [];
+  const missingSeededInceptionBondEvents = [];
   const missingSeededInfinityBondEvents = [];
   for (const item of seededConfirmedMail) {
     if (!activityByTxidKind.has(`${item.kind}:${item.txid}`)) {
@@ -21042,11 +21493,20 @@ function ledgerSnapshotChecks({
       };
       missingSeededMailEvents.push(missing);
       missingLogEvents.push(missing);
+      if (isInceptionBondActivityItem(item)) {
+        missingSeededInceptionBondEvents.push(missing);
+      }
       if (isInfinityBondActivityItem(item)) {
         missingSeededInfinityBondEvents.push(missing);
       }
     }
   }
+  const seededInceptionBondFlowSats = seededConfirmedMail
+    .filter(isInceptionBondActivityItem)
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+  const loggedInceptionBondFlowSats = (activity ?? [])
+    .filter((item) => item?.confirmed && isInceptionBondActivityItem(item))
+    .reduce((total, item) => total + activityAmountSats(item), 0);
   const seededInfinityBondFlowSats = seededConfirmedMail
     .filter(isInfinityBondActivityItem)
     .reduce((total, item) => total + activityAmountSats(item), 0);
@@ -21057,6 +21517,17 @@ function ledgerSnapshotChecks({
     missing: missingSeededMailEvents.length,
     seeded: seededConfirmedMail.length,
   });
+  addCheck(
+    "seeded-inception-bonds-logged",
+    missingSeededInceptionBondEvents.length === 0 &&
+      loggedInceptionBondFlowSats >= seededInceptionBondFlowSats,
+    {
+      loggedFlowSats: loggedInceptionBondFlowSats,
+      missing: missingSeededInceptionBondEvents.length,
+      seeded: seededConfirmedMail.filter(isInceptionBondActivityItem).length,
+      seededFlowSats: seededInceptionBondFlowSats,
+    },
+  );
   addCheck(
     "seeded-infinity-bonds-logged",
     missingSeededInfinityBondEvents.length === 0 &&
@@ -21154,12 +21625,14 @@ function growthSummaryPayloadFromLedger(ledger) {
         (item) => item.kind === "file" && !isBrowserActivityItem(item),
       ).length,
       idListings: (registryState.listings ?? []).length,
+      inceptionBondActions: confirmedActivity.filter(isInceptionBondActivityItem)
+        .length,
       infinityBondActions: confirmedActivity.filter(isInfinityBondActivityItem)
         .length,
       mailActions: confirmedActivity.filter(
         (item) =>
           (item.kind === "mail" || item.kind === "reply") &&
-          !isInfinityBondActivityItem(item),
+          !isBondActivityItem(item),
       ).length,
       marketplaceSaleCount: marketplaceStats.confirmedSales + confirmedTokenSales,
       pendingRecords: (registryState.records ?? []).filter(
@@ -21181,18 +21654,26 @@ function growthSummaryPayloadFromLedger(ledger) {
 }
 
 function infinitySummaryPayloadFromLedger(ledger) {
-  const tokenState = ledgerTokenStateForScope(ledger, POWB_TOKEN_ID);
-  const token = compactTokenSummaryPayload(tokenState, POWB_TOKEN_ID);
+  return bondSummaryPayloadFromLedger(ledger, INFINITY_BOND_CONFIG);
+}
+
+function inceptionSummaryPayloadFromLedger(ledger) {
+  return bondSummaryPayloadFromLedger(ledger, INCEPTION_BOND_CONFIG);
+}
+
+function bondSummaryPayloadFromLedger(ledger, config) {
+  const tokenState = ledgerTokenStateForScope(ledger, config.tokenId);
+  const token = compactTokenSummaryPayload(tokenState, config.tokenId);
   const activity = Array.isArray(ledger?.activity) ? ledger.activity : [];
   const confirmedActivity = activity.filter((item) => item?.confirmed);
   const confirmedBondActions = confirmedActivity.filter(
-    isInfinityBondActivityItem,
+    (item) => isBondActivityItem(item, config),
   );
   const confirmedTransfers = (tokenState?.transfers ?? []).filter(
-    (transfer) => transfer?.confirmed && transfer.tokenId === POWB_TOKEN_ID,
+    (transfer) => transfer?.confirmed && transfer.tokenId === config.tokenId,
   );
   const confirmedSales = (tokenState?.sales ?? []).filter(
-    (sale) => sale?.confirmed && sale.tokenId === POWB_TOKEN_ID,
+    (sale) => sale?.confirmed && sale.tokenId === config.tokenId,
   );
   const bondMintFlowSats = confirmedBondActions.reduce(
     (total, item) => total + activityAmountSats(item),
@@ -21208,7 +21689,7 @@ function infinitySummaryPayloadFromLedger(ledger) {
   );
   const confirmedMarketplaceMutations = confirmedActivity.filter(
     (item) =>
-      item?.tokenId === POWB_TOKEN_ID &&
+      item?.tokenId === config.tokenId &&
       TOKEN_MARKETPLACE_MUTATION_KINDS.has(item.kind),
   );
   const bondMarketplaceMutationFeeSats = confirmedMarketplaceMutations
@@ -21232,7 +21713,7 @@ function infinitySummaryPayloadFromLedger(ledger) {
     marketplaceMutations: confirmedMarketplaceMutations,
     sales: confirmedSales,
     transfers: confirmedTransfers,
-  });
+  }, config);
 
   return {
     ...btcUsdMetadata,
@@ -21259,7 +21740,7 @@ function infinitySummaryPayloadFromLedger(ledger) {
     network: ledger.network,
     networkValueSats,
     registryAddress: tokenState?.tokens?.[0]?.registryAddress ?? "",
-    registryId: POWB_REGISTRY_ID,
+    registryId: config.registryId,
     source: tokenState?.source,
     stats: {
       confirmedBondActions: confirmedBondActions.length,
@@ -21271,13 +21752,13 @@ function infinitySummaryPayloadFromLedger(ledger) {
       confirmedTransfers: confirmedTransfers.length,
       holders: (tokenState?.holders ?? []).length,
       pendingBondActions: (tokenState?.mints ?? []).filter(
-        (mint) => !mint.confirmed && mint.tokenId === POWB_TOKEN_ID,
+        (mint) => !mint.confirmed && mint.tokenId === config.tokenId,
       ).length,
       pendingSupply: numericValue(tokenState?.pendingSupply),
     },
-    ticker: POWB_TOKEN_TICKER,
+    ticker: config.ticker,
     token,
-    tokenId: POWB_TOKEN_ID,
+    tokenId: config.tokenId,
   };
 }
 
@@ -21946,6 +22427,15 @@ function tokenDefinitionFromIndexedCreate(item, network) {
       confirmed: item.confirmed !== false,
     };
   }
+  if (tokenId === INCB_TOKEN_ID) {
+    return {
+      ...canonicalIncbTokenDefinition(
+        network,
+        indexedActivityValue(item, "actor", "creatorAddress"),
+      ),
+      confirmed: item.confirmed !== false,
+    };
+  }
 
   const detail = String(item?.detail ?? "");
   const description = String(item?.description ?? "");
@@ -22104,6 +22594,13 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
       POWB_TOKEN_ID,
       {
         ...canonicalPowbTokenDefinition(network, ""),
+        confirmed: true,
+      },
+    ],
+    [
+      INCB_TOKEN_ID,
+      {
+        ...canonicalIncbTokenDefinition(network, ""),
         confirmed: true,
       },
     ],
@@ -22590,7 +23087,8 @@ const SEEDED_MAIL_ACTIVITY_KINDS = new Set([
   "attachment",
   "browser",
   "file",
-  "infinity-bond",
+  INCEPTION_BOND_KIND,
+  INFINITY_BOND_KIND,
   "mail",
   "reply",
 ]);
@@ -22704,6 +23202,9 @@ async function buildIndexedCanonicalLedgerPayload(
   const indexedPowbState = ledgerTokenTableState
     ? scopedTokenPayloadFromState(ledgerTokenTableState, POWB_TOKEN_ID)
     : null;
+  const indexedIncbState = ledgerTokenTableState
+    ? scopedTokenPayloadFromState(ledgerTokenTableState, INCB_TOKEN_ID)
+    : null;
 
   if (!activityState || !registryState || !ledgerTokenTableState) {
     console.error(
@@ -22745,13 +23246,20 @@ async function buildIndexedCanonicalLedgerPayload(
     ...(Array.isArray(registryState?.activity) ? registryState.activity : []),
     ...(rushState ? rushActivityItemsFromState(rushState) : []),
   ]);
-  const ledgerTokenState = indexedPowbState
+  const ledgerTokenStateWithPowb = indexedPowbState
     ? tokenStateWithScopedTokenOverride(
         valueTokenState,
         indexedPowbState,
         POWB_TOKEN_ID,
       )
     : valueTokenState;
+  const ledgerTokenState = indexedIncbState
+    ? tokenStateWithScopedTokenOverride(
+        ledgerTokenStateWithPowb,
+        indexedIncbState,
+        INCB_TOKEN_ID,
+      )
+    : ledgerTokenStateWithPowb;
   let activity = dedupeActivityItems([
     ...tokenActivityItemsFromState(
       ledgerTokenState,
@@ -22918,10 +23426,12 @@ async function buildIndexedCanonicalLedgerPayload(
     tokenState: valuedTokenState,
     workFloor,
   });
-  const infinitySummary = infinitySummaryPayloadFromLedger({
+  const summaryLedger = {
     ...ledger,
     consistency,
-  });
+  };
+  const inceptionSummary = inceptionSummaryPayloadFromLedger(summaryLedger);
+  const infinitySummary = infinitySummaryPayloadFromLedger(summaryLedger);
   const result = {
     ...ledger,
     activityPayload: attachLedgerMetadata(activityPayload, {
@@ -22930,6 +23440,10 @@ async function buildIndexedCanonicalLedgerPayload(
     }),
     consistency,
     growthSummary: attachLedgerMetadata(growthSummary, {
+      ...ledger,
+      consistency,
+    }),
+    inceptionSummary: attachLedgerMetadata(inceptionSummary, {
       ...ledger,
       consistency,
     }),
@@ -23037,6 +23551,7 @@ async function internalCanonicalSummaryPayload(network) {
 
   const summaryPayloads = {
     growthSummary: ledger.growthSummary,
+    inceptionSummary: ledger.inceptionSummary,
     infinitySummary: ledger.infinitySummary,
     marketplaceSummary: marketplaceSummaryPayloadFromLedger(ledger),
     workFloor: ledger.workFloor,
@@ -23131,28 +23646,32 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     ...(rushState ? rushActivityItemsFromState(rushState) : []),
   ]);
   let ledgerTokenState = valueTokenState;
-  const powbRegistryAddress = await powbRegistryAddressForNetwork(
-    network,
-    registryState,
-  );
-  if (powbRegistryAddress) {
-    const powbRegistryTxs = await fetchRegistryTransactions(
-      powbRegistryAddress,
+  for (const config of BOND_TOKEN_CONFIGS) {
+    const registryAddress = await bondRegistryAddressForNetwork(
+      config,
+      network,
+      registryState,
+    );
+    if (!registryAddress) {
+      continue;
+    }
+    const registryTxs = await fetchRegistryTransactions(
+      registryAddress,
       network,
     ).catch(() => []);
-    const powbState = tokenStateFromTransactions(
+    const bondState = tokenStateFromTransactions(
       [],
-      new Map([[powbRegistryAddress, powbRegistryTxs]]),
+      new Map([[registryAddress, registryTxs]]),
       tokenIndexAddressForNetwork(network),
       network,
-      POWB_TOKEN_ID,
-      [canonicalPowbTokenDefinition(network, powbRegistryAddress)],
-      powbMintsFromActivity(baseActivity, powbRegistryAddress, network),
+      config.tokenId,
+      [canonicalBondTokenDefinition(config, network, registryAddress)],
+      bondMintsFromActivity(baseActivity, registryAddress, network, config),
     );
     ledgerTokenState = tokenStateWithScopedTokenOverride(
       ledgerTokenState,
-      await tokenPayloadWithSpendableListings(powbState, network),
-      POWB_TOKEN_ID,
+      await tokenPayloadWithSpendableListings(bondState, network),
+      config.tokenId,
     );
   }
   let activity = dedupeActivityItems([
@@ -23319,10 +23838,12 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     tokenState: ledgerTokenState,
     workFloor,
   });
-  const infinitySummary = infinitySummaryPayloadFromLedger({
+  const summaryLedger = {
     ...ledger,
     consistency,
-  });
+  };
+  const inceptionSummary = inceptionSummaryPayloadFromLedger(summaryLedger);
+  const infinitySummary = infinitySummaryPayloadFromLedger(summaryLedger);
 
   return {
     ...ledger,
@@ -23332,6 +23853,10 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     }),
     consistency,
     growthSummary: attachLedgerMetadata(growthSummary, {
+      ...ledger,
+      consistency,
+    }),
+    inceptionSummary: attachLedgerMetadata(inceptionSummary, {
       ...ledger,
       consistency,
     }),
@@ -25152,6 +25677,29 @@ async function growthSummaryPayload(network, fresh = false) {
 }
 
 async function infinitySummaryFromCanonicalLedger(ledger, network, fresh = false) {
+  return bondSummaryFromCanonicalLedger(
+    ledger,
+    network,
+    fresh,
+    INFINITY_BOND_CONFIG,
+  );
+}
+
+async function inceptionSummaryFromCanonicalLedger(ledger, network, fresh = false) {
+  return bondSummaryFromCanonicalLedger(
+    ledger,
+    network,
+    fresh,
+    INCEPTION_BOND_CONFIG,
+  );
+}
+
+async function bondSummaryFromCanonicalLedger(
+  ledger,
+  network,
+  fresh = false,
+  config,
+) {
   if (!ledger) {
     return null;
   }
@@ -25159,96 +25707,117 @@ async function infinitySummaryFromCanonicalLedger(ledger, network, fresh = false
   let btcUsdQuote = ledger.btcUsdQuote;
   if (network === "livenet") {
     btcUsdQuote = await btcUsdPricePayload(network, { fresh }).catch((error) => {
-      console.error(`Infinity BTC/USD overlay failed: ${errorSummary(error)}`);
+      console.error(
+        `${config.displayName} BTC/USD overlay failed: ${errorSummary(error)}`,
+      );
       return ledger.btcUsdQuote;
     });
   }
 
   return attachLedgerMetadata(
-    infinitySummaryPayloadFromLedger({
+    bondSummaryPayloadFromLedger({
       ...ledger,
       btcUsdQuote,
-    }),
+    }, config),
     ledger,
   );
 }
 
 async function proofIndexInfinitySummaryPayload(network, fresh = false) {
-  const params = new URLSearchParams([["asset", POWB_TOKEN_ID]]);
-  const bondActivityState = await indexedPowbActivityForTokenState(network).catch(
+  return proofIndexBondSummaryPayload(
+    network,
+    fresh,
+    INFINITY_BOND_CONFIG,
+  );
+}
+
+async function proofIndexInceptionSummaryPayload(network, fresh = false) {
+  return proofIndexBondSummaryPayload(
+    network,
+    fresh,
+    INCEPTION_BOND_CONFIG,
+  );
+}
+
+async function proofIndexBondSummaryPayload(network, fresh = false, config) {
+  const params = new URLSearchParams([["asset", config.tokenId]]);
+  const bondActivityState = await indexedBondActivityForTokenState(
+    network,
+    config,
+  ).catch(
     (error) => {
       console.error(
-        `Proof index Infinity bond activity read failed: ${errorSummary(error)}`,
+        `Proof index ${config.displayName} activity read failed: ${errorSummary(error)}`,
       );
       return null;
     },
   );
-  let powbTokenState = await currentProofIndexTokenPayloadForRead(
+  let bondTokenState = await currentProofIndexTokenPayloadForRead(
     network,
-    POWB_TOKEN_ID,
-    "infinity-token-state",
+    config.tokenId,
+    `${config.summaryRoute}-token-state`,
     SUMMARY_PROOF_INDEX_READ_WAIT_MS,
   );
-  if (!powbTokenState) {
-    powbTokenState = await payloadWithFallbackAfterMs(
-      proofIndexTokenPayload(network, POWB_TOKEN_ID, params),
+  if (!bondTokenState) {
+    bondTokenState = await payloadWithFallbackAfterMs(
+      proofIndexTokenPayload(network, config.tokenId, params),
       null,
       SUMMARY_PROOF_INDEX_READ_WAIT_MS,
     ).catch((error) => {
       console.error(
-        `Proof index Infinity token-state read failed: ${errorSummary(error)}`,
+        `Proof index ${config.displayName} token-state read failed: ${errorSummary(error)}`,
       );
       return null;
     });
   }
 
-  if (powbTokenState) {
-    const rejectedEmpty = rejectEmptyMainnetTokenPayload(
+  if (bondTokenState) {
+    const rejectedEmpty = rejectEmptyBondTokenPayload(
       network,
-      powbTokenState,
-      POWB_TOKEN_ID,
-      "infinity-token-state",
+      bondTokenState,
+      config,
+      `${config.summaryRoute}-token-state`,
     );
     const coversTip =
       !rejectedEmpty &&
       (await proofIndexPayloadCoversConfirmedTip(
-        powbTokenState,
+        bondTokenState,
         network,
-        "infinity-token-state",
+        `${config.summaryRoute}-token-state`,
       ));
     if (rejectedEmpty || !coversTip) {
-      powbTokenState = null;
+      bondTokenState = null;
     }
   }
 
-  if (!powbTokenState) {
-    powbTokenState = await tokenPayloadForRead(network, POWB_TOKEN_ID, fresh, {
+  if (!bondTokenState) {
+    bondTokenState = await tokenPayloadForRead(network, config.tokenId, fresh, {
       reconcileListingStatus: fresh,
       reconcileSpendable: true,
       scopedRefreshWaitMs: SUMMARY_PROOF_INDEX_READ_WAIT_MS,
       useLedgerSnapshot: false,
     }).catch((error) => {
       console.error(
-        `Canonical Infinity token-state read failed: ${errorSummary(error)}`,
+        `Canonical ${config.displayName} token-state read failed: ${errorSummary(error)}`,
       );
       return null;
     });
-    if (powbTokenState) {
-      const rejectedEmpty = rejectEmptyMainnetTokenPayload(
+    if (bondTokenState) {
+      const rejectedEmpty = rejectEmptyBondTokenPayload(
         network,
-        powbTokenState,
-        POWB_TOKEN_ID,
-        "infinity-token-state-fallback",
+        bondTokenState,
+        config,
+        `${config.summaryRoute}-token-state-fallback`,
       );
       const coversTip =
         !rejectedEmpty &&
         (await proofIndexPayloadCoversConfirmedTip(
-          powbTokenState,
+          bondTokenState,
           network,
-          "infinity-token-state-fallback",
+          `${config.summaryRoute}-token-state-fallback`,
         ));
       if (rejectedEmpty || !coversTip) {
-        powbTokenState = null;
+        bondTokenState = null;
       }
     }
   }
@@ -25258,58 +25827,89 @@ async function proofIndexInfinitySummaryPayload(network, fresh = false) {
     (await proofIndexPayloadCoversConfirmedTip(
       bondActivityState,
       network,
-      "infinity-bond-activity",
+      `${config.summaryRoute}-activity`,
     ));
-  if (!powbTokenState || !bondActivityCoversTip) {
+  if (!bondTokenState || !bondActivityCoversTip) {
+    return null;
+  }
+  const indexedBondFlowSats = (bondActivityState.activity ?? [])
+    .filter((item) => item?.confirmed && isBondActivityItem(item, config))
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+  if (
+    !numbersAgree(
+      indexedBondFlowSats,
+      numericValue(bondTokenState.confirmedSupply),
+      0.01,
+    )
+  ) {
+    console.error(
+      `Rejected ${config.displayName} summary: confirmed bond flow does not match ${config.ticker} supply.`,
+    );
     return null;
   }
 
-  powbTokenState = await payloadWithFallbackAfterMs(
-    tokenPayloadWithSpendableActiveListings(powbTokenState, network),
-    powbTokenState,
+  bondTokenState = await payloadWithFallbackAfterMs(
+    tokenPayloadWithSpendableActiveListings(bondTokenState, network),
+    bondTokenState,
     SUMMARY_PROOF_INDEX_READ_WAIT_MS,
   );
   const btcUsdQuote = await btcUsdPricePayload(network, { fresh }).catch(
     () => null,
   );
   const generatedAt = Number.isFinite(
-    Date.parse(powbTokenState.indexedAt ?? ""),
+    Date.parse(bondTokenState.indexedAt ?? ""),
   )
-    ? powbTokenState.indexedAt
+    ? bondTokenState.indexedAt
     : new Date().toISOString();
-  const payload = infinitySummaryPayloadFromLedger({
+  const payload = bondSummaryPayloadFromLedger({
     activity: dedupeActivityItems([
       ...tokenActivityItemsFromState(
-        powbTokenState,
-        powbTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
+        bondTokenState,
+        bondTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
       ),
       ...(bondActivityState.activity ?? []),
     ]),
     btcUsdQuote,
     generatedAt,
-    indexedThroughBlock: powbTokenState.indexedThroughBlock,
+    indexedThroughBlock: bondTokenState.indexedThroughBlock,
     network,
-    tokenState: powbTokenState,
-  });
+    tokenState: bondTokenState,
+  }, config);
   const tokenSnapshotId = String(
-    powbTokenState.snapshotId ?? powbTokenState.ledgerSnapshotId ?? "",
+    bondTokenState.snapshotId ?? bondTokenState.ledgerSnapshotId ?? "",
   ).trim();
   const tokenLedgerGeneratedAt =
-    powbTokenState.ledgerGeneratedAt ??
-    powbTokenState.generatedAt ??
-    powbTokenState.indexedAt ??
+    bondTokenState.ledgerGeneratedAt ??
+    bondTokenState.generatedAt ??
+    bondTokenState.indexedAt ??
     generatedAt;
   return {
     ...payload,
     indexedThroughBlock:
-      powbTokenState.indexedThroughBlock ?? payload.indexedThroughBlock,
+      bondTokenState.indexedThroughBlock ?? payload.indexedThroughBlock,
     ledgerGeneratedAt: tokenLedgerGeneratedAt,
     ...(tokenSnapshotId ? { snapshotId: tokenSnapshotId } : {}),
-    source: mergedSourceLabel(payload.source, powbTokenState.source),
+    source: mergedSourceLabel(payload.source, bondTokenState.source),
   };
 }
 
 async function standaloneInfinitySummaryPayload(network, fresh = false) {
+  return standaloneBondSummaryPayload(
+    network,
+    fresh,
+    INFINITY_BOND_CONFIG,
+  );
+}
+
+async function standaloneInceptionSummaryPayload(network, fresh = false) {
+  return standaloneBondSummaryPayload(
+    network,
+    fresh,
+    INCEPTION_BOND_CONFIG,
+  );
+}
+
+async function standaloneBondSummaryPayload(network, fresh = false, config) {
   void fresh;
   const registryState =
     (await indexedRegistryPayload(network).catch(() => null)) ??
@@ -25321,26 +25921,28 @@ async function standaloneInfinitySummaryPayload(network, fresh = false) {
         REGISTRY_CACHE_STALE_MS,
         emptyRegistryPayload(network),
       ).catch(() => null));
-  const registryAddress = await powbRegistryAddressForNetwork(
+  const registryAddress = await bondRegistryAddressForNetwork(
+    config,
     network,
     registryState,
   );
-  const indexedActivity = await indexedPowbActivityForTokenState(network).catch(
-    () => null,
-  );
+  const indexedActivity = await indexedBondActivityForTokenState(
+    network,
+    config,
+  ).catch(() => null);
   const activity = indexedActivity?.activity ?? [];
   const state = tokenStateFromTransactions(
     [],
     new Map(),
     tokenIndexAddressForNetwork(network),
     network,
-    POWB_TOKEN_ID,
-    [canonicalPowbTokenDefinition(network, registryAddress)],
+    config.tokenId,
+    [canonicalBondTokenDefinition(config, network, registryAddress)],
     registryAddress
-      ? powbMintsFromActivity(activity, registryAddress, network)
+      ? bondMintsFromActivity(activity, registryAddress, network, config)
       : [],
   );
-  const powbTokenState = {
+  const bondTokenState = {
     ...state,
     creationPriceSats: TOKEN_CREATION_PRICE_SATS,
     indexedAt: newerIso(indexedActivity?.indexedAt, registryState?.indexedAt),
@@ -25381,14 +25983,14 @@ async function standaloneInfinitySummaryPayload(network, fresh = false) {
       ? await btcUsdPricePayload(network, { fresh }).catch(() => null)
       : null;
   const indexedAt = newerIso(
-    powbTokenState.indexedAt,
+    bondTokenState.indexedAt,
     registryState?.indexedAt,
   );
-  return infinitySummaryPayloadFromLedger({
+  return bondSummaryPayloadFromLedger({
     activity: dedupeActivityItems([
       ...tokenActivityItemsFromState(
-        powbTokenState,
-        powbTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
+        bondTokenState,
+        bondTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
       ),
       ...activity,
     ]),
@@ -25397,17 +25999,25 @@ async function standaloneInfinitySummaryPayload(network, fresh = false) {
       ? indexedAt
       : new Date().toISOString(),
     network,
-    tokenState: powbTokenState,
-  });
+    tokenState: bondTokenState,
+  }, config);
 }
 
 async function infinitySummaryPayload(network, fresh = false) {
+  return bondSummaryPayload(network, fresh, INFINITY_BOND_CONFIG);
+}
+
+async function inceptionSummaryPayload(network, fresh = false) {
+  return bondSummaryPayload(network, fresh, INCEPTION_BOND_CONFIG);
+}
+
+async function bondSummaryPayload(network, fresh = false, config) {
   if (network === "livenet" && !fresh) {
     const exactIndexedPayload =
       await currentProofIndexSummarySnapshotFallbackPayload(
         network,
-        "infinitySummary",
-        "infinity-summary",
+        config.summaryKey,
+        config.summaryRoute,
       );
     if (exactIndexedPayload) {
       return exactIndexedPayload;
@@ -25418,7 +26028,7 @@ async function infinitySummaryPayload(network, fresh = false) {
     network === "livenet" && !fresh
       ? await existingCurrentCanonicalLedgerPayloadWithinMs(
           network,
-          "infinity-summary canonical ledger",
+          `${config.summaryRoute} canonical ledger`,
         )
       : await payloadWithFallbackAfterMs(
           summaryCanonicalLedgerPayload(network, fresh),
@@ -25427,8 +26037,8 @@ async function infinitySummaryPayload(network, fresh = false) {
         );
 
   if (network === "livenet") {
-    const indexed = await proofIndexInfinitySummaryPayload(network, fresh);
-    const ledgerSummary = ledger?.infinitySummary;
+    const indexed = await proofIndexBondSummaryPayload(network, fresh, config);
+    const ledgerSummary = ledger?.[config.summaryKey];
     if (
       indexed &&
       (!ledgerSummary?.registryAddress ||
@@ -25442,19 +26052,19 @@ async function infinitySummaryPayload(network, fresh = false) {
       return indexed;
     }
     if (ledgerSummary?.registryAddress) {
-      return infinitySummaryFromCanonicalLedger(ledger, network, fresh);
+      return bondSummaryFromCanonicalLedger(ledger, network, fresh, config);
     }
     if (indexed) {
       return indexed;
     }
     throw freshDataUnavailableError(
       fresh
-        ? "Fresh Infinity summary ledger is unavailable."
-        : "Current Infinity summary ledger is unavailable.",
+        ? `Fresh ${config.displayName} summary ledger is unavailable.`
+        : `Current ${config.displayName} summary ledger is unavailable.`,
     );
   }
 
-  return standaloneInfinitySummaryPayload(network, fresh);
+  return standaloneBondSummaryPayload(network, fresh, config);
 }
 
 async function registryHistoryPayload(network, kind, searchParams, fresh = false) {
@@ -25529,15 +26139,15 @@ function mailActivityItemFromMailMessage(message, address, network) {
     .toLowerCase();
   const isFile = ["attachment", "browser", "file"].includes(protocolKind);
   const isReply = Boolean(message?.parentTxid ?? message?.replyTo);
-  const isInfinityBond =
-    protocolKind === INFINITY_BOND_KIND ||
-    (!isFile && !isReply && isInfinityBondMemo(memo));
+  const bondConfig =
+    bondConfigForKind(protocolKind) ??
+    (!isFile && !isReply ? bondConfigForMemo(memo) : null);
   const kind = isFile
     ? "file"
     : isReply
       ? "reply"
-      : isInfinityBond
-        ? INFINITY_BOND_KIND
+      : bondConfig
+        ? bondConfig.kind
         : "mail";
   const amountSats =
     numericValue(message?.amountSats) ||
@@ -25571,7 +26181,7 @@ function mailActivityItemFromMailMessage(message, address, network) {
     counterparty,
     createdAt,
     dataBytes: numericValue(message?.dataBytes),
-    description: `${shortAddress(actor)} sent ${kind === INFINITY_BOND_KIND ? "infinity bond" : kind} to ${counterparty}${amountSats > 0 ? ` for ${amountSats.toLocaleString()} proofs` : ""}.`,
+    description: `${shortAddress(actor)} sent ${bondConfig ? bondConfig.displayName.toLowerCase() : kind} to ${counterparty}${amountSats > 0 ? ` for ${amountSats.toLocaleString()} proofs` : ""}.`,
     detail,
     kind,
     memo,
@@ -25586,8 +26196,8 @@ function mailActivityItemFromMailMessage(message, address, network) {
     tags: [
       activityStatusTag(confirmed),
       networkLabel(network),
-      kind === INFINITY_BOND_KIND
-        ? "Infinity Bond"
+      bondConfig
+        ? bondConfig.displayName
         : kind === "file"
           ? "Attachment"
           : kind === "reply"
@@ -25596,7 +26206,7 @@ function mailActivityItemFromMailMessage(message, address, network) {
       recipients.length > 1 ? `${recipients.length} recipients` : "1 recipient",
       amountSats > 0 ? `${amountSats.toLocaleString()} proofs` : "",
     ].filter(Boolean),
-    title: `${kind === INFINITY_BOND_KIND ? "Infinity Bond" : kind === "file" ? "File" : kind === "reply" ? "Reply" : "Mail"} ${confirmed ? "sent" : "pending"}`,
+    title: `${bondConfig?.displayName ?? (kind === "file" ? "File" : kind === "reply" ? "Reply" : "Mail")} ${confirmed ? "sent" : "pending"}`,
     txid,
   };
 }
@@ -25669,7 +26279,8 @@ function isMailRecoveryHistoryKind(kind) {
       "attachment",
       "browser",
       "file",
-      "infinity-bond",
+      INCEPTION_BOND_KIND,
+      INFINITY_BOND_KIND,
       "mail",
       "reply",
     ].includes(normalizedKind)
@@ -25949,9 +26560,10 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     scope === WORK_TOKEN_ID &&
     workMarketHistoryKind &&
     recoveryAddresses.length > 0;
+  const recoveryBondConfig = bondConfigForTokenId(scope);
   if (
     workMarketHistoryKind &&
-    scope === POWB_TOKEN_ID &&
+    recoveryBondConfig &&
     recoveryTxids.length > 0 &&
     network === "livenet"
   ) {
@@ -25960,12 +26572,13 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       network,
       recoveryTxids.length,
     );
-    const recoveredPayload = await recoveredPowbTokenPayloadFromTransactions(
+    const recoveredPayload = await recoveredBondTokenPayloadFromTransactions(
       network,
       recoveryTxs,
+      recoveryBondConfig,
     ).catch((error) => {
       console.error(
-        `Recovered POWB market history lookup failed: ${errorSummary(error)}`,
+        `Recovered ${recoveryBondConfig.ticker} market history lookup failed: ${errorSummary(error)}`,
       );
       return null;
     });
@@ -26766,7 +27379,7 @@ function activityAmountSats(item) {
 }
 
 function activityKindHasDedicatedGrowthBucket(item) {
-  if (isBrowserActivityItem(item) || isInfinityBondActivityItem(item)) {
+  if (isBrowserActivityItem(item) || isBondActivityItem(item)) {
     return true;
   }
 
@@ -27226,7 +27839,7 @@ function growthActualBaseNetworkValue(
     (mint) => mint.confirmed && Date.parse(mint.createdAt) <= cutoffMs,
   );
   const confirmedValueTokenMints = confirmedTokenMints.filter(
-    (mint) => mint.tokenId !== POWB_TOKEN_ID,
+    (mint) => !BOND_TOKEN_IDS.has(mint.tokenId),
   );
   const confirmedTokenTransfers = tokenTransfers.filter(
     (transfer) =>
@@ -27240,9 +27853,12 @@ function growthActualBaseNetworkValue(
     .filter(
       (item) =>
         (item.kind === "mail" || item.kind === "reply") &&
-        !isInfinityBondActivityItem(item) &&
+        !isBondActivityItem(item) &&
         !isBrowserActivityItem(item),
     )
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+  const inceptionBondFlowSats = confirmedActivity
+    .filter(isInceptionBondActivityItem)
     .reduce((total, item) => total + activityAmountSats(item), 0);
   const infinityBondFlowSats = confirmedActivity
     .filter(isInfinityBondActivityItem)
@@ -27295,6 +27911,8 @@ function growthActualBaseNetworkValue(
     unbucketedConfirmedComputerLogFlowSats(confirmedActivity);
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const inceptionBondSats =
+    inceptionBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const infinityBondSats =
     infinityBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
@@ -27310,6 +27928,7 @@ function growthActualBaseNetworkValue(
   const totalSats =
     idSats +
     mailSats +
+    inceptionBondSats +
     infinityBondSats +
     driveSats +
     marketplaceSats +
@@ -27331,6 +27950,8 @@ function growthActualBaseNetworkValue(
     driveFlowSats,
     driveSats,
     idSats,
+    inceptionBondFlowSats,
+    inceptionBondSats,
     mailFlowSats,
     mailSats,
     marketplaceSats,
@@ -27391,10 +28012,12 @@ function growthActualBaseNetworkValueAtProvider(
       const sats = activityAmountSats(item);
       if (
         (item.kind === "mail" || item.kind === "reply") &&
-        !isInfinityBondActivityItem(item) &&
+        !isBondActivityItem(item) &&
         !isBrowserActivityItem(item)
       ) {
         state.mailFlowSats += sats;
+      } else if (isInceptionBondActivityItem(item)) {
+        state.inceptionBondFlowSats += sats;
       } else if (isInfinityBondActivityItem(item)) {
         state.infinityBondFlowSats += sats;
       } else if (isBrowserActivityItem(item)) {
@@ -27425,7 +28048,7 @@ function growthActualBaseNetworkValueAtProvider(
     }
   }
   for (const mint of Array.isArray(tokenMints) ? tokenMints : []) {
-    if (mint?.confirmed && mint.tokenId !== POWB_TOKEN_ID) {
+    if (mint?.confirmed && !BOND_TOKEN_IDS.has(mint.tokenId)) {
       addEvent(mint.createdAt, (state) => {
         state.tokenMintFlowSats += numericValue(mint.paidSats);
       });
@@ -27453,6 +28076,7 @@ function growthActualBaseNetworkValueAtProvider(
     driveFlowSats: 0,
     idMarketplaceFeeSats: 0,
     idMarketplaceVolumeSats: 0,
+    inceptionBondFlowSats: 0,
     infinityBondFlowSats: 0,
     mailFlowSats: 0,
     powids: 0,
@@ -27480,6 +28104,7 @@ function growthActualBaseNetworkValueAtProvider(
     return (
       state.powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2 +
       state.mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
+      state.inceptionBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
       state.infinityBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
       state.driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
       marketplaceFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
@@ -27778,6 +28403,10 @@ function growthActivityKindLabel(kind) {
     return "Infinity Bond";
   }
 
+  if (kind === "inception-bond") {
+    return "Inception Bond";
+  }
+
   if (
     kind === "token-create" ||
     kind === "token-mint"
@@ -27858,8 +28487,8 @@ function growthRealEventItems(
       createdAt: item.createdAt,
       detail: item.detail || item.description,
       key: item.txid,
-      kind: isInfinityBondActivityItem(item)
-        ? "Infinity Bond"
+      kind: isBondActivityItem(item)
+        ? bondActivityConfig(item)?.displayName ?? "Bond"
         : isBrowserActivityItem(item)
         ? "Browser"
         : growthActivityKindLabel(item.kind),
@@ -27887,7 +28516,7 @@ function growthRealEventItems(
   }
 
   for (const token of tokenDefinitions) {
-    if (!token.confirmed) {
+    if (!token.confirmed || BOND_TOKEN_IDS.has(token.tokenId)) {
       continue;
     }
 
@@ -27904,7 +28533,7 @@ function growthRealEventItems(
   }
 
   for (const mint of tokenMints) {
-    if (!mint.confirmed) {
+    if (!mint.confirmed || BOND_TOKEN_IDS.has(mint.tokenId)) {
       continue;
     }
 
@@ -27971,6 +28600,8 @@ function emptyWorkFloorPayload(network) {
       idSats: 0,
       idMarketplaceFeeSats: 0,
       idMarketplaceVolumeSats: 0,
+      inceptionBondFlowSats: 0,
+      inceptionBondSats: 0,
       infinityBondFlowSats: 0,
       infinityBondSats: 0,
       mailFlowSats: 0,
@@ -28017,6 +28648,8 @@ function emptyWorkFloorPayload(network) {
       confirmedTokenMints: 0,
       confirmedTokens: 0,
       marketplaceVolumeSats: 0,
+      inceptionBondFlowSats: 0,
+      inceptionBondSats: 0,
       infinityBondFlowSats: 0,
       infinityBondSats: 0,
       idMarketplaceFeeSats: 0,
@@ -28263,6 +28896,8 @@ function workFloorPayloadFromState(
       driveFlowSats: actualValue.driveFlowSats,
       driveSats: actualValue.driveSats,
       idSats: actualValue.idSats,
+      inceptionBondFlowSats: actualValue.inceptionBondFlowSats,
+      inceptionBondSats: actualValue.inceptionBondSats,
       infinityBondFlowSats: actualValue.infinityBondFlowSats,
       infinityBondSats: actualValue.infinityBondSats,
       mailFlowSats: actualValue.mailFlowSats,
@@ -31621,6 +32256,7 @@ function canonicalSummarySnapshotReadGateApplies(pathname) {
   return new Set([
     "/api/v1/consistency",
     "/api/v1/growth-summary",
+    "/api/v1/inception-summary",
     "/api/v1/infinity-summary",
     "/api/v1/ledger-consistency",
     "/api/v1/marketplace-summary",
@@ -32431,7 +33067,7 @@ async function handleRequest(request, response) {
       const needsCreditNetworkValueOverlay =
         network === "livenet" &&
         Boolean(tokenScope) &&
-        tokenScope !== POWB_TOKEN_ID &&
+        !BOND_TOKEN_IDS.has(tokenScope) &&
         tokenHistoryKindNeedsCreditNetworkValueOverlay(historyKind);
       const addressScopedMarketHistory =
         [
@@ -32616,6 +33252,16 @@ async function handleRequest(request, response) {
         response,
         200,
         await infinitySummaryPayload(network, freshRead),
+        freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
+      );
+      return;
+    }
+
+    if (url.pathname === "/api/v1/inception-summary") {
+      jsonResponse(
+        response,
+        200,
+        await inceptionSummaryPayload(network, freshRead),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
       return;

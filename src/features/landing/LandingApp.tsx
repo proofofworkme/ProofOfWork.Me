@@ -4,6 +4,7 @@ import {
   Clock,
   FilePenLine,
   FileText,
+  GitBranch,
   Infinity as InfinityIcon,
   Mail,
   MessageSquareQuote,
@@ -19,12 +20,14 @@ import {
   DESKTOP_APP_URL,
   GROWTH_APP_URL,
   ID_APP_URL,
+  INCEPTION_APP_URL,
   INFINITY_APP_URL,
   LOCAL_BROWSER_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_GROWTH_APP_URL,
   LOCAL_ID_APP_URL,
+  LOCAL_INCEPTION_APP_URL,
   LOCAL_INFINITY_APP_URL,
   LOCAL_LOG_APP_URL,
   LOCAL_MARKETPLACE_APP_URL,
@@ -93,7 +96,7 @@ export function LandingApp({
         <div className="landing-hero-content">
           <span className="landing-kicker">
             ProofOfWork-native identity, mail, files, pages, markets, credits,
-            Infinity Bonds, logs, and growth
+            Infinity Bonds, Inception Bonds, logs, and growth
           </span>
           <h2>ProofOfWork.Me</h2>
           <p>
@@ -181,6 +184,15 @@ export function LandingApp({
               <span className="button-content">
                 <InfinityIcon size={17} />
                 <span>Infinity</span>
+              </span>
+            </a>
+            <a
+              className="secondary link-button"
+              href={appHref(INCEPTION_APP_URL, LOCAL_INCEPTION_APP_URL)}
+            >
+              <span className="button-content">
+                <GitBranch size={17} />
+                <span>Inception</span>
               </span>
             </a>
           </div>
@@ -295,6 +307,28 @@ export function LandingApp({
               <span className="button-content">
                 <AtSign size={16} />
                 <span>Go to IDs</span>
+              </span>
+            </a>
+          </article>
+
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <GitBranch size={24} />
+            </div>
+            <div>
+              <h3>Open Inception</h3>
+              <p>
+                Create Inception Bonds, track INCB supply and floor, and trade
+                INCB through the same sale-ticket market as credits.
+              </p>
+            </div>
+            <a
+              className="secondary link-button"
+              href={appHref(INCEPTION_APP_URL, LOCAL_INCEPTION_APP_URL)}
+            >
+              <span className="button-content">
+                <GitBranch size={16} />
+                <span>Open Inception</span>
               </span>
             </a>
           </article>

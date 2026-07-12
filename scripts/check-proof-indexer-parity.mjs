@@ -56,6 +56,7 @@ const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const CANONICAL_SUMMARY_KEYS = [
   "growthSummary",
+  "inceptionSummary",
   "infinitySummary",
   "marketplaceSummary",
   "workFloor",
@@ -191,7 +192,9 @@ function canonicalSummaryCoverageByKey(snapshot) {
             : null;
       const nestedCoverage = nested
         ? payloadIndexedThroughBlock(nested)
-        : key === "workFloor" || key === "infinitySummary"
+        : key === "workFloor" ||
+            key === "inceptionSummary" ||
+            key === "infinitySummary"
           ? parentCoverage
           : 0;
       return [
@@ -314,6 +317,7 @@ try {
         AND source_hashes ? 'canonicalSummary'
         AND jsonb_typeof(payload->'summaryPayloads') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
@@ -817,6 +821,11 @@ try {
 
   const summaryCases = [
     { key: "growthSummary", label: "growth-summary", path: "/api/v1/growth-summary" },
+    {
+      key: "inceptionSummary",
+      label: "inception-summary",
+      path: "/api/v1/inception-summary",
+    },
     {
       key: "infinitySummary",
       label: "infinity-summary",

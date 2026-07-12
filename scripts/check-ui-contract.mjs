@@ -217,10 +217,14 @@ expect(
   "connected account strip refreshes wallet-scoped token balances",
   /accountTokenState/.test(app) &&
     /accountPowbTokenState/.test(app) &&
+    /accountIncbTokenState/.test(app) &&
     /fetchTokenState\(\s*network,\s*false,\s*"",\s*true,\s*\[address\],\s*true\s*\)/.test(
       app,
     ) &&
     /fetchTokenState\(\s*network,\s*false,\s*POWB_TOKEN_ID,\s*true,\s*\[address\],\s*true\s*\)/.test(
+      app,
+    ) &&
+    /fetchTokenState\(\s*network,\s*false,\s*INCB_TOKEN_ID,\s*true,\s*\[address\],\s*true\s*\)/.test(
       app,
     ),
 );
@@ -230,6 +234,20 @@ expect(
     /1447tsdxtfsnvrwawsamyyqkpdnw4altbt/.test(app) &&
     /1bpvvi1gk4qkfqfmu4jhgjsqjygwjjj7x/.test(app) &&
     /1f1p9uehuh5ktfr7zsx93khdrqhj6t5nfv/.test(app),
+);
+expect(
+  "Infinity and Inception bond composers attach canonical WORK",
+  /const \[bondWorkAmount,\s*setBondWorkAmount\] = useState\(0\)/.test(app) &&
+    /async function createInfinityBond[\s\S]*canAttachWorkToMessages\(address,\s*"livenet"\)/.test(
+      app,
+    ) &&
+    /async function createInfinityBond[\s\S]*postProtocolPayments:[\s\S]*WORK_TOKEN_REGISTRY_ADDRESS[\s\S]*postProtocolPayloads:\s*attachedWorkPayloads/.test(
+      app,
+    ) &&
+    /async function createInfinityBond[\s\S]*attachedCredits:[\s\S]*attachedWorkCredits/.test(
+      app,
+    ) &&
+    /Attach WORK/.test(app),
 );
 expect(
   "mail WORK attachments preserve mail then WORK output order",
@@ -377,12 +395,16 @@ expect(
     !/openFolder\("growth"\)/.test(app),
 );
 expect(
-  "Computer includes Infinity as a real POWB workspace",
+  "Computer includes Infinity/POWB and Inception/INCB workspaces",
   /\|\s*"infinity"/.test(folderTypeBlock) &&
+    /\|\s*"inception"/.test(folderTypeBlock) &&
     /"infinity"/.test(computerFolderListBlock) &&
+    /"inception"/.test(computerFolderListBlock) &&
     /activeFolder\s*===\s*"infinity"/.test(app) &&
+    /activeFolder\s*===\s*"inception"/.test(app) &&
     /openFolder\("infinity"\)/.test(app) &&
-    /activeFolder === "infinity"\s*\?\s*\([\s\S]*<InfinityApp[\s\S]*\bembedded\b/.test(
+    /openFolder\("inception"\)/.test(app) &&
+    /activeFolder === "infinity" \|\| activeFolder === "inception" \? \([\s\S]*<InfinityApp[\s\S]*\bembedded\b/.test(
       app,
     ),
 );

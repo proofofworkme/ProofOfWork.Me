@@ -108,8 +108,8 @@ Non-OK or `summary-snapshot-fallback` rows are diagnostic only. They are never
 eligible for summary reads or health. Once the hashed relational scan reaches
 the exact Core tip, ID, Wallet, Log, mail, registry, and history reads may reopen
 without waiting for the slower summary publisher. WORK, Marketplace, Growth,
-Infinity, and work-floor summary routes remain closed until an authenticated
-`canonical-summary-refresh` row contains all five payloads from one snapshot
+Infinity, Inception, and work-floor summary routes remain closed until an authenticated
+`canonical-summary-refresh` row contains all six payloads from one snapshot
 with conservative coverage at that same checkpoint.
 
 Database-backed API reads are feature-flagged. The current production
@@ -164,10 +164,15 @@ serves DB-backed protocol/event search for indexed registry, credit,
 marketplace, mail/file, seeded, and broader Computer events; `address-mail`
 serves connected-wallet mailbox reads from the indexed mail projection,
 including confirmed Inbox/Sent and indexed pending Incoming/Outbox visibility.
-`pwm1:m:powb` is normalized as `infinity-bond` for Log/Event/summary accounting
-but still projects into `mail_items`. Each confirmed bond recipient payment
-mints POWB to that recipient address, one POWB per proof sent; self-sends are
-the self-recipient case and land in both Inbox and Sent. The `log` flag is
+`pwm1:m:powb` is normalized as `infinity-bond` and `pwm1:m:incb` as
+`inception-bond` for Log/Event/summary accounting, while both still project into
+`mail_items`. Each confirmed bond recipient payment mints the matching POWB or
+INCB synthetic credit to that recipient address, one unit per proof sent;
+self-sends are the self-recipient case and land in both Inbox and Sent. Any
+attached credit is parsed separately as canonical WORK movement. INCB uses
+`inception@proofofwork.me` and reserved credit id
+`3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`.
+The `log` flag is
 reserved for an explicit full activity snapshot refresh. Fresh reads still use
 the node/API path so explicit
 refreshes converge on current chain and mempool truth.
@@ -199,12 +204,12 @@ from flooding the local node. History-page sources such as token
 listings, token closed-listings, registry pages, and Log pages remain available
 as explicit backfill jobs, but should not run after block-scan in the hot loop
 where stale summary guards can turn them into retry stalls. WORK and
-POWB/Infinity token snapshots plus WORK, Growth, Marketplace, and Infinity
-summaries are first-class snapshot sources. Broad
+POWB/Infinity plus INCB/Inception token snapshots, together with WORK, Growth,
+Marketplace, Infinity, and Inception summaries, are first-class snapshot sources. Broad
 mailbox projection sweeps such as `address-mail` can be run as explicit backfill
 jobs, but should not sit in the hot worker loop where slow address history reads
-can stall block catch-up for Log, Growth, WORK, Credit, Marketplace, and
-Infinity. Scoped-holder recrawls stay off by default
+can stall block catch-up for Log, Growth, WORK, Credit, Marketplace, Infinity,
+and Inception. Scoped-holder recrawls stay off by default
 (`POW_INDEX_WORKER_HOLDERS=0`) and should run as explicit full backfill jobs.
 
 The block scanner checkpoint is fail-closed. A normal worker start requires a
@@ -357,7 +362,7 @@ conserved token balance/holder tables, and performs a fresh ordered RUSH
 registry read whose complete Electrum history is hydrated and ordered against
 canonical Core blocks. Each mandatory activity, registry, and token projection
 must independently cover the exact checkpoint. It then returns ledger, WORK,
-Growth, Marketplace, Infinity, and
+Growth, Marketplace, Infinity, Inception, and
 work-floor payloads bound to one snapshot ID. The
 publisher never derives valuation changes from aggregate DB event deltas.
 Coverage is the conservative minimum of every parent summary and its mandatory
@@ -369,7 +374,7 @@ When a snapshot route is current from proof-index data but the full shared
 ledger is still catching up, the route can publish the bounded proof-index view
 and leave the ledger refresh in the worker/background path.
 That bounded view is still one app-wide data plane: WORK, Growth, Marketplace,
-Consistency, Wallet, Credit, IDs, Infinity, Log, and Computer must agree on the
+Consistency, Wallet, Credit, IDs, Infinity, Inception, Log, and Computer must agree on the
 same confirmed snapshot/verifier contract, and embedded summary objects must not
 mix a live parent total with stale child data.
 Exact txid/ref lookups are also part of the speed contract. Stable Log history,
@@ -498,9 +503,9 @@ disagree with confirmed chain state.
 
 Production audits should follow the public app dependency order. Verify the
 standalone surfaces first: Home, IDs, Desktop, Browser, Marketplace, Credit,
-Wallet, WORK, Infinity, Log, and Growth. Audit `computer.proofofwork.me` last,
+Wallet, WORK, Infinity, Inception, Log, and Growth. Audit `computer.proofofwork.me` last,
 because it is the integrated shell over the same registry, mail/file, credit,
-marketplace, WORK, Infinity, Log, and Growth read paths. The final Computer
+marketplace, WORK, Infinity, Inception, Log, and Growth read paths. The final Computer
 audit should prove that standalone fixes still agree inside the combined shell.
 
 The completed production rollout followed this shadow-first ladder. Future
@@ -536,11 +541,12 @@ tokens.proofofwork.me       -> permanent redirect to https://credit.proofofwork.
 wallet.proofofwork.me       -> standalone credit wallet, transfer, listing, delisting, and sale-history app
 work.proofofwork.me         -> standalone WORK credit dashboard and mint page
 infinity.proofofwork.me     -> standalone Infinity Bond / POWB market and bond composer
+inception.proofofwork.me    -> standalone Inception Bond / INCB market and bond composer
 log.proofofwork.me          -> public ProofOfWork Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Log, and Growth from any production surface. Social links should include X, YouTube, and GitHub.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth from any production surface. Social links should include X, YouTube, and GitHub.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
@@ -616,6 +622,8 @@ On `localhost` and `127.0.0.1`, shared app navigation uses local route flags ins
 /?credit=1
 /?wallet=1
 /?work=1
+/?infinity=1
+/?inception=1
 /?rush=1
 /?log=1
 /?growth=1
@@ -634,6 +642,7 @@ VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://credit.proofofwork.me npm run build
 VITE_WALLET_ONLY=1 VITE_POW_API_BASE=https://wallet.proofofwork.me npm run build
 VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
 VITE_INFINITY_ONLY=1 VITE_POW_API_BASE=https://infinity.proofofwork.me npm run build
+VITE_INCEPTION_ONLY=1 VITE_POW_API_BASE=https://inception.proofofwork.me npm run build
 VITE_RUSH_ONLY=1 VITE_POW_API_BASE=https://rush.proofofwork.me npm run build
 VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
 VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
@@ -662,6 +671,8 @@ GET /api/v1/token-history?network=livenet
 GET /api/v1/work-floor?network=livenet
 GET /api/v1/work-summary?network=livenet
 GET /api/v1/marketplace-summary?network=livenet
+GET /api/v1/infinity-summary?network=livenet
+GET /api/v1/inception-summary?network=livenet
 GET /api/v1/log-history?network=livenet
 GET /api/v1/growth-summary?network=livenet
 GET /api/v1/consistency?network=livenet
@@ -691,12 +702,12 @@ The registry endpoint:
 
 The canonical livenet ledger payload:
 
-- Is the shared source for `/api/v1/log`, `/api/v1/log-history`, `/api/v1/work-floor`, `/api/v1/growth-summary`, `/api/v1/token`, `/api/v1/token-summary`, and `/api/v1/token-history`.
+- Is the shared source for `/api/v1/log`, `/api/v1/log-history`, `/api/v1/work-floor`, `/api/v1/growth-summary`, `/api/v1/infinity-summary`, `/api/v1/inception-summary`, `/api/v1/token`, `/api/v1/token-summary`, and `/api/v1/token-history`.
 - Merges registry activity, discovered global Computer activity, seeded mail activity from app-derived addresses, canonical WORK state, canonical credit/token state, and staged protocol activity when enabled.
-- Uses complete address history for configured mail-heavy Computer addresses, with paginated mempool/address reads as the faster path for the wider seed set. This prevents confirmed mail or Infinity Bond transactions from appearing in direct address search while missing from global Log and network value.
+- Uses complete address history for configured mail-heavy Computer addresses, with paginated mempool/address reads as the faster path for the wider seed set. This prevents confirmed mail, Infinity Bond, or Inception Bond transactions from appearing in direct address search while missing from global Log and network value.
 - Emits one `snapshotId`, source hashes, metrics, and consistency checks so WORK, Growth, Log, and credit/token history can prove they are reading the same confirmed state.
 - Fresh summary reads must reject stale ledger fallbacks. A fresh WORK,
-  Growth, Infinity, Marketplace, Log, or credit/token response must either
+  Growth, Infinity, Inception, Marketplace, Log, or credit/token response must either
   build from current canonical/proof-index event data that covers the node tip
   within the configured lag, return a current checked ledger fallback that
   already covers that tip while deeper refresh continues, or fail closed instead
@@ -725,7 +736,9 @@ These expose the ledger checks used by `npm run audit:ledger`, including
 `marketplace-value-includes-mutation-fees`,
 `computer-event-flow-excludes-marketplace`, `ledger-covers-node-tip`,
 `token-sales-logged`,
-`seeded-mail-events-logged`, and `seeded-infinity-bonds-logged`. The audit also
+`seeded-mail-events-logged`, `seeded-infinity-bonds-logged`,
+`seeded-inception-bonds-logged`, and
+`inception-bond-flow-matches-incb-supply`. The audit also
 checks that WORK/Growth live USD reconciles from `/api/v1/prices/btc-usd`.
 `missingLogEvents` must stay empty for a green production ledger.
 
@@ -936,7 +949,7 @@ After changing the API or production build, verify:
   audit, so Computer is checking integration rather than hiding an unaudited
   child surface.
 - `/health` returns `service: proofofwork-op-return-api`.
-- `/api/v1/consistency?network=livenet` is green, has no `missingLogEvents`, and includes the seeded mail and seeded Infinity Bond checks.
+- `/api/v1/consistency?network=livenet` is green, has no `missingLogEvents`, and includes the seeded mail, seeded Infinity Bond, seeded Inception Bond, and INCB supply/flow checks.
 - ID registry count matches the node-backed API and includes pending records when visible.
 - `tokens@proofofwork.me` resolves to the expected credit index address.
 - Duplicate/pending IDs cannot be routed.
@@ -947,6 +960,9 @@ After changing the API or production build, verify:
 - Credit, Wallet, and Marketplace transaction buttons can load UTXOs, previous transaction hex, and listing-anchor outspends through the first-party API before opening UniSat.
 - `infinity.proofofwork.me` loads `/api/v1/infinity-summary`, can broadcast a `pwm1:m:powb` bond message to a recipient, and shows POWB balances/listings from the same sale-ticket ledger as credits.
 - `computer.proofofwork.me/?folder=infinity` renders the embedded Infinity Bond / POWB workspace, including the Infinity Bond chart and POWB sale-ticket market, without falling back to credit-market labels.
+- `inception.proofofwork.me` loads `/api/v1/inception-summary`, prepares a `pwm1:m:incb` bond message to a recipient, and shows INCB balances/listings from the same sale-ticket ledger as credits. Wallet signing and broadcast remain local/user-authorized.
+- `computer.proofofwork.me/?folder=inception` renders the embedded Inception Bond / INCB workspace with Inception-specific chart, balance, and sale-ticket labels.
+- A confirmed `incb` transaction appears as `inception-bond`, mints only INCB to payment recipients, and keeps any attached canonical WORK transfer separate. The synthetic INCB mint contributes zero additional proof value beyond the bond payment.
 - Log can load global ProofOfWork Computer events and search an address, confirmed ProofOfWork ID, or txid.
 - Known confirmed ledger regression txids are searchable in Log, including `411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891` and `b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34`.
 - `npm run indexer:parity` passes against production and reports canonical/database snapshot parity plus populated participants/refs.

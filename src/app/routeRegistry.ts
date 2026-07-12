@@ -9,6 +9,7 @@ export type AppSurface =
   | "wallet"
   | "work"
   | "infinity"
+  | "inception"
   | "rush"
   | "log"
   | "growth";
@@ -125,6 +126,17 @@ export function isInfinityRoute() {
   );
 }
 
+export function isInceptionRoute() {
+  if (import.meta.env.VITE_INCEPTION_ONLY === "1") {
+    return true;
+  }
+
+  return (
+    hostname() === "inception.proofofwork.me" ||
+    searchIncludes("inception=1")
+  );
+}
+
 export function isRushRoute() {
   if (import.meta.env.VITE_RUSH_ONLY === "1") {
     return true;
@@ -168,6 +180,7 @@ export function detectAppSurface(): AppSurface {
   if (isWalletRoute()) return "wallet";
   if (isWorkTokenRoute()) return "work";
   if (isInfinityRoute()) return "infinity";
+  if (isInceptionRoute()) return "inception";
   if (isRushRoute()) return "rush";
   if (isActivityRoute()) return "log";
   if (isGrowthRoute()) return "growth";

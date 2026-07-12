@@ -303,6 +303,7 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /mode: "canonical-summary-refresh"/,
   /payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'/,
   /previousCoverage >= latestIndexedHeight/,
+  /"inceptionSummary"/,
   /"infinitySummary"/,
   /function summaryPayloadConservativeCoverage\([\s\S]*Math\.min\(parentCoverage, nestedCoverage\)/,
   /COALESCE\(consistency->>'ok', payload->>'ok', 'false'\) = 'true'/,
@@ -425,11 +426,11 @@ expectAll("canonical balances replay by chain order and fail before publication"
   /storedSupply > minted/,
   /DELETE FROM proof_indexer\.credit_balances/,
 ]);
-expectAll("PWM block parsing aggregates value once and projects POWB without value duplication", pwmAggregationSource + proofIndexerBackfill, [
+expectAll("PWM block parsing aggregates value once and projects bond credits without value duplication", pwmAggregationSource + proofIndexerBackfill, [
   /const pwmMessages = messages\.filter/,
   /const memo = memoChunks\.join\(""\)/,
   /dataBytes: pwmMessages\.reduce/,
-  /validationMode: "canonical-powb-bond-projection"/,
+  /validationMode: `canonical-\$\{bondTag\.ticker\.toLowerCase\(\)\}-bond-projection`/,
   /amountSats: 0/,
   /eventKeyVout: ordinal/,
   /Malformed or unknown aggregated PWM protocol payload/,
@@ -471,8 +472,8 @@ expectAll("Growth and consistency preserve the canonical public Log action count
   /const canonicalConfirmedComputerActions = Number\(\s*computerActivity\?\.stats\?\.confirmed,?\s*\)/,
   /Number\.isSafeInteger\(canonicalConfirmedComputerActions\)[\s\S]*\? canonicalConfirmedComputerActions[\s\S]*activityForGrowth\.filter/,
   /const workFloorConfirmedComputerActions = Number\([\s\S]*workFloor\?\.stats\?\.confirmedComputerActions/,
-  /function tokenActivityItemsFromState[\s\S]*token\?\.tokenId !== WORK_TOKEN_ID[\s\S]*token\?\.tokenId !== POWB_TOKEN_ID/,
-  /function tokenStateLogExpectations[\s\S]*token\.tokenId === WORK_TOKEN_ID[\s\S]*token\.tokenId === POWB_TOKEN_ID/,
+  /function tokenActivityItemsFromState[\s\S]*token\?\.tokenId !== WORK_TOKEN_ID[\s\S]*!BOND_TOKEN_IDS\.has\(token\?\.tokenId\)/,
+  /function tokenStateLogExpectations[\s\S]*token\.tokenId === WORK_TOKEN_ID[\s\S]*BOND_TOKEN_IDS\.has\(token\.tokenId\)/,
 ]);
 
 expectAll("current canonical registry coverage outlives wall-clock cache age", server, [
@@ -486,14 +487,17 @@ expectAll("canonical ledger builder owns shared state", server, [
   /activityStateForCanonicalLedger\(network,\s*fresh\)/,
   /const valueTokenState = tokenStateWithScopedTokenOverride\(/,
   /let ledgerTokenState = valueTokenState/,
-  /powbMintsFromActivity\(baseActivity,\s*powbRegistryAddress,\s*network\)/,
-  /tokenStateWithScopedTokenOverride\([\s\S]*POWB_TOKEN_ID/,
+  /const indexedPowbState = ledgerTokenTableState[\s\S]*POWB_TOKEN_ID/,
+  /const indexedIncbState = ledgerTokenTableState[\s\S]*INCB_TOKEN_ID/,
+  /tokenStateWithScopedTokenOverride\([\s\S]*indexedPowbState[\s\S]*POWB_TOKEN_ID/,
+  /tokenStateWithScopedTokenOverride\([\s\S]*indexedIncbState[\s\S]*INCB_TOKEN_ID/,
   /const seededMailActivityState = activityStateIsProofIndexCanonical\(activityState\)[\s\S]*seededMailActivityPayloadFromIndexedActivity\([\s\S]*seededMailActivityPayload\(network,\s*seedAddresses\)/,
   /\.\.\.\(Array\.isArray\(seededMailActivityState\?\.activity\)/,
   /tokenActivityItemsFromState\(\s*ledgerTokenState/,
   /workFloorPayloadFromState\(/,
   /growthSummaryPayloadFromLedger\(/,
   /infinitySummaryPayloadFromLedger\(/,
+  /inceptionSummaryPayloadFromLedger\(/,
   /ledgerSnapshotChecks\(/,
   /snapshotId/,
 ]);
@@ -562,23 +566,23 @@ expectAll("server scoped credit fresh reads use direct scoped refresh before led
   /fresh &&[\s\S]*scope &&[\s\S]*scope !== WORK_TOKEN_ID &&[\s\S]*options\.preferScopedRefresh !== false[\s\S]*refreshTokenPayload\(network,\s*scope\)/,
 ]);
 
-expectAll("server POWB activity rejects stale proof-index seed data", server, [
+expectAll("server bond activity rejects stale proof-index seed data", server, [
   /const POWB_ACTIVITY_FRESH_WAIT_MS = Number\(/,
-  /async function indexedPowbActivityForTokenState\(network\)[\s\S]*indexedThroughBlock[\s\S]*stats:\s*{[\s\S]*indexedThroughBlock/,
-  /async function powbActivityForTokenState\(network,[\s\S]*proofIndexPayloadCoversConfirmedTip\([\s\S]*"powb-activity"[\s\S]*payloadWithFallbackAfterMs\([\s\S]*globalActivityPayload\(network,\s*true\)/,
+  /async function indexedBondActivityForTokenState\(network,\s*config\)[\s\S]*indexedThroughBlock[\s\S]*stats:\s*{[\s\S]*indexedThroughBlock/,
+  /async function bondActivityForTokenState\([\s\S]*proofIndexPayloadCoversConfirmedTip\([\s\S]*`\$\{config\.ticker\.toLowerCase\(\)\}-activity`[\s\S]*payloadWithFallbackAfterMs\([\s\S]*globalActivityPayload\(network,\s*true\)/,
 ]);
 
-expectAll("server POWB listings recover confirmed Infinity Bond parent mints", server, [
-  /async function powbSeedMintsWithSaleTicketParents\([\s\S]*fetchTransactionWithSourceFallback\(parentTxid,\s*network\)[\s\S]*mailActivityItemFromTransaction\(parentTx,\s*network\)[\s\S]*isInfinityBondActivityItem\(activityItem\)/,
-  /const seedMints = await powbSeedMintsWithSaleTicketParents\([\s\S]*powbSeed\.seedMints[\s\S]*registryTxs[\s\S]*POWB_TOKEN_ID[\s\S]*seedMints/,
-  /function powbRegistryAddressFromTokenTransactions\(txs,\s*network\)[\s\S]*tokenPaymentAmountBeforeProtocol\(vout,\s*registryAddress\)/,
-  /async function recoveredPowbTokenPayloadFromTransactions\(network,\s*recoveryTxs\)[\s\S]*powbRegistryAddressFromTokenTransactions\(confirmedTxs,\s*network\)[\s\S]*powbSeedMintsWithSaleTicketParents\([\s\S]*first-party-powb-txid-recovery/,
-  /scope === POWB_TOKEN_ID &&[\s\S]*recoveryTxids\.length > 0[\s\S]*recoveredPowbTokenPayloadFromTransactions\(/,
+expectAll("server bond listings recover confirmed parent mints", server, [
+  /async function bondSeedMintsWithSaleTicketParents\([\s\S]*fetchTransactionWithSourceFallback\(parentTxid,\s*network\)[\s\S]*mailActivityItemFromTransaction\(parentTx,\s*network\)[\s\S]*isBondActivityItem\(activityItem,\s*config\)/,
+  /const seedMints = await bondSeedMintsWithSaleTicketParents\([\s\S]*bondSeed\.seedMints[\s\S]*registryTxs[\s\S]*config/,
+  /function bondRegistryAddressFromTokenTransactions\(txs,\s*network,\s*config\)[\s\S]*tokenPaymentAmountBeforeProtocol\(vout,\s*registryAddress\)/,
+  /async function recoveredBondTokenPayloadFromTransactions\([\s\S]*bondRegistryAddressFromTokenTransactions\(confirmedTxs,\s*network,\s*config\)[\s\S]*bondSeedMintsWithSaleTicketParents\([\s\S]*first-party-\$\{config\.ticker\.toLowerCase\(\)\}-txid-recovery/,
+  /BOND_TOKEN_IDS\.has\(scope\)[\s\S]*recoveryTxids\.length > 0[\s\S]*recoveredBondTokenPayloadFromTransactions\(/,
 ]);
 
-expectAll("server POWB fresh scoped reads do not return stale cached fallback", server, [
-  /const scopedRefreshWaitMs = Number\.isFinite\(options\.scopedRefreshWaitMs\)[\s\S]*scope === POWB_TOKEN_ID[\s\S]*WORK_TOKEN_CANONICAL_FRESH_WAIT_MS/,
-  /fallback &&[\s\S]*scope !== POWB_TOKEN_ID[\s\S]*scoped-token-fallback/,
+expectAll("server bond fresh scoped reads do not return stale cached fallback", server, [
+  /const scopedRefreshWaitMs = Number\.isFinite\(options\.scopedRefreshWaitMs\)[\s\S]*BOND_TOKEN_IDS\.has\(scope\)[\s\S]*WORK_TOKEN_CANONICAL_FRESH_WAIT_MS/,
+  /fallback &&[\s\S]*!BOND_TOKEN_IDS\.has\(scope\)[\s\S]*scoped-token-fallback/,
 ]);
 
 expectAll("server token reads preserve canonical ledger rows when table state regresses", server, [
@@ -1002,6 +1006,7 @@ expectAll("consistency endpoint guards the public invariant", server, [
   /"livenet-confirmed-history-present"/,
   /"token-definitions-cover-confirmed-mints"/,
   /"token-components-cover-confirmed-activity"/,
+  /"inception-bond-flow-matches-incb-supply"/,
   /"infinity-bond-flow-matches-powb-supply"/,
   /"work-floor-actual-total"/,
   /"growth-actual-total"/,
@@ -1012,6 +1017,7 @@ expectAll("consistency endpoint guards the public invariant", server, [
   /"token-events-logged"/,
   /"token-sales-logged"/,
   /"seeded-mail-events-logged"/,
+  /"seeded-inception-bonds-logged"/,
   /"seeded-infinity-bonds-logged"/,
   /"ledger-covers-node-tip"/,
   /async function ledgerConsistencyPayload\(network,\s*fresh\s*=\s*false\)/,
@@ -1023,7 +1029,9 @@ expectAll("seeded mail coverage guards confirmed Computer message value", server
   /async function buildSeededMailActivityPayload[\s\S]*return await fetchAddressTransactions\(address,\s*network\);[\s\S]*fetchAddressTransactionsViaMempoolPagination\(/,
   /const seededConfirmedMail = \(seededMailActivityState\?\.activity \?\? \[\]\)\.filter/,
   /missingSeededMailEvents\.push\(missing\)/,
+  /missingSeededInceptionBondEvents\.push\(missing\)/,
   /missingSeededInfinityBondEvents\.push\(missing\)/,
+  /loggedInceptionBondFlowSats >= seededInceptionBondFlowSats/,
   /loggedInfinityBondFlowSats >= seededInfinityBondFlowSats/,
 ]);
 
@@ -1071,9 +1079,11 @@ expectAll("canonical ledger can read direct proof-index event rows", proofIndexR
   /normalizeHistoryEventRows\(result\.rows,\s*network\)/,
   /source:\s*"proof-indexer-events"/,
 ]);
-expectAll("Infinity Bond mail normalization spans DB reads", proofIndexReader, [
+expectAll("bond-family mail normalization spans DB reads", proofIndexReader, [
   /const INFINITY_BOND_MEMO = "powb"/,
-  /function isInfinityBondEventPayload\(payload,\s*row = \{\}\)/,
+  /const INCEPTION_BOND_MEMO = "incb"/,
+  /const BOND_TAGS = \[/,
+  /function bondTagForEventPayload\(payload,\s*row = \{\}\)/,
   /function normalizeEventPayload\(payload,\s*row = \{\}\)/,
   /function normalizeHistoryEventItem\(item,\s*network,\s*\{ publicOnly = false \} = \{\}\)/,
   /function normalizeHistoryEventRows\(rows,\s*network,\s*options = \{\}\)/,
@@ -1082,66 +1092,87 @@ expectAll("Infinity Bond mail normalization spans DB reads", proofIndexReader, [
   /filters\.push\(eventKindSqlCondition\(kind,\s*addValue\)\)/,
   /items: normalizeHistoryEventRows\(rowsResult\.rows,\s*network/,
 ]);
-expectAll("Infinity Bond POWB recipient-credit market is wired", server + app + routeRegistry, [
+expectAll("Infinity and Inception recipient-credit markets are wired", server + app + routeRegistry, [
   /const POWB_TOKEN_TICKER = "POWB"/,
   /const POWB_REGISTRY_ID = "infinity@proofofwork.me"/,
-  /function powbRecipientMintsFromActivityItem\(item,\s*network\)/,
+  /const INCB_TOKEN_TICKER = "INCB"/,
+  /const INCB_REGISTRY_ID = "inception@proofofwork.me"/,
+  /const BOND_TOKEN_CONFIGS = \[INFINITY_BOND_CONFIG, INCEPTION_BOND_CONFIG\]/,
+  /function tokenPayloadHasKnownMainnetHistory[\s\S]*hasCanonicalEmptyDefinition[\s\S]*INCB_TOKEN_ID/,
+  /function bondRecipientMintsFromActivityItem\(item,\s*network,\s*config\)/,
   /function infinityBondChartPointsFromEvents\(/,
-  /const chartPoints = infinityBondChartPointsFromEvents\(/,
-  /const confirmedBondActions = confirmedActivity\.filter\([\s\S]*isInfinityBondActivityItem/,
+  /const chartPoints = infinityBondChartPointsFromEvents\([\s\S]*config/,
+  /const confirmedBondActions = confirmedActivity\.filter\([\s\S]*isBondActivityItem\(item,\s*config\)/,
   /const bondMintFlowSats = confirmedBondActions\.reduce\([\s\S]*activityAmountSats\(item\)/,
-  /async function infinitySummaryFromCanonicalLedger\(ledger,\s*network,\s*fresh\s*=\s*false\)/,
-  /infinitySummaryPayloadFromLedger\(\{\s*\.\.\.ledger,[\s\S]*btcUsdQuote,[\s\S]*\}\)/,
-  /async function infinitySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*infinitySummaryFromCanonicalLedger\(ledger,\s*network,\s*fresh\)[\s\S]*Current Infinity summary ledger is unavailable/,
+  /async function bondSummaryFromCanonicalLedger\([\s\S]*bondSummaryPayloadFromLedger\(\{[\s\S]*btcUsdQuote,[\s\S]*\},\s*config\)/,
+  /async function bondSummaryPayload\(network,\s*fresh\s*=\s*false,\s*config\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*bondSummaryFromCanonicalLedger\(ledger,\s*network,\s*fresh,\s*config\)[\s\S]*config\.displayName/,
   /item\.recipients[\s\S]*recipient\.amountSats[\s\S]*recipient\.address/,
   /minterAddress:\s*recipientMint\.minterAddress/,
   /url\.pathname === "\/api\/v1\/infinity-summary"/,
+  /url\.pathname === "\/api\/v1\/inception-summary"/,
   /function isInfinityRoute\(\)/,
+  /function isInceptionRoute\(\)/,
   /function InfinityApp\(/,
   /embedded\?:\s*boolean/,
   /activeFolder === "infinity"/,
+  /activeFolder === "inception"/,
   /openFolder\("infinity"\)/,
-  /refreshInfinity\(false,\s*true\)/,
+  /openFolder\("inception"\)/,
+  /refreshInfinity\(false,\s*true,\s*activeBondConfig\)/,
   /function InfinityBondChart\(/,
   /function InfinityBondMarketPanel\(/,
-  /POWB Sale Tickets/,
-  /POWB Sales & Listings Log/,
-  /fetchInfinitySummary\(fresh\)/,
+  /\{bondConfig\.ticker\} Sale Tickets/,
+  /\{bondConfig\.ticker\} Sales & Listings Log/,
+  /fetchBondSummary\(config,\s*fresh\)/,
   /submitBond=\{createInfinityBond\}/,
   /address:\s*resolvedRecipient\.paymentAddress/,
   /minterAddress:\s*mailRecipient\.address/,
 ]);
 expect(
-  "Infinity app must use the POWB-only market panel",
+  "bond apps must use the dedicated parameterized market panel",
   /<InfinityBondMarketPanel/.test(infinityAppSource) &&
     !/<TokenMarketplacePanel/.test(infinityAppSource),
 );
-expectAll("Growth surfaces Infinity Bond value as a first-class product lane", app, [
+expectAll("Growth surfaces both bond families as first-class product lanes", app, [
   /\|\s*"infinity-bond"/,
+  /\|\s*"inception-bond"/,
   /infinityBondFlowSats:\s*number/,
   /infinityBondSats:\s*number/,
   /infinityBondActions:\s*number/,
+  /inceptionBondFlowSats:\s*number/,
+  /inceptionBondSats:\s*number/,
+  /inceptionBondActions:\s*number/,
   /function isInfinityBondActivityItem\(item:\s*PowActivityItem\)/,
-  /confirmedValueTokenMints = confirmedTokenMints\.filter\([\s\S]*mint\.tokenId !== POWB_TOKEN_ID/,
+  /function isInceptionBondActivityItem\(item:\s*PowActivityItem\)/,
+  /confirmedValueTokenMints = confirmedTokenMints\.filter\([\s\S]*!BOND_TOKEN_IDS\.has\(mint\.tokenId\)/,
   /const infinityBondFlowSats = confirmedActivity[\s\S]*\.filter\(isInfinityBondActivityItem\)/,
+  /const inceptionBondFlowSats = confirmedActivity[\s\S]*\.filter\(isInceptionBondActivityItem\)/,
   /const infinityBondSats =[\s\S]*infinityBondFlowSats \* GROWTH_MODEL_INPUTS\.valueMultiple/,
+  /const inceptionBondSats =[\s\S]*inceptionBondFlowSats \* GROWTH_MODEL_INPUTS\.valueMultiple/,
   /infinityBondSats \+/,
+  /inceptionBondSats \+/,
   /infinityBondActions =[\s\S]*confirmedActivity\.filter\(isInfinityBondActivityItem\)\.length/,
+  /inceptionBondActions =[\s\S]*confirmedActivity\.filter\(isInceptionBondActivityItem\)\.length/,
 ]);
 expect(
-  "Growth product cards include Infinity/POWB bond value",
+  "Growth product cards include Infinity/POWB and Inception/INCB bond value",
   /name="Infinity"/.test(growthWorkspaceSource) &&
     /InfinityIcon/.test(growthWorkspaceSource) &&
     /actualValue\.infinityBondSats/.test(growthWorkspaceSource) &&
     /actualValue\.infinityBondFlowSats/.test(growthWorkspaceSource) &&
+    /name="Inception"/.test(growthWorkspaceSource) &&
+    /actualValue\.inceptionBondSats/.test(growthWorkspaceSource) &&
+    /actualValue\.inceptionBondFlowSats/.test(growthWorkspaceSource) &&
     /bond actions/.test(growthWorkspaceSource),
 );
-expectAll("backfill writes powb mail as Infinity Bond projections", proofIndexerBackfill, [
+expectAll("backfill writes both mail bond families as projections", proofIndexerBackfill, [
   /const INFINITY_BOND_MEMO = "powb"/,
-  /function isInfinityBondItem\(item,\s*kind = rawEventKind\(item\)\)/,
-  /return isInfinityBondItem\(item,\s*kind\) \? INFINITY_BOND_KIND : kind/,
+  /const INCEPTION_BOND_MEMO = "incb"/,
+  /const BOND_TAGS = \[/,
+  /function bondTagForItem\(item,\s*kind = rawEventKind\(item\)\)/,
+  /return bondTagForItem\(item,\s*kind\)\?\.kind \?\? kind/,
   /stableEventKeyKind\(item,\s*kind,\s*sourceLabel\)/,
-  /\["mail",\s*"reply",\s*"file",\s*"attachment",\s*"browser",\s*INFINITY_BOND_KIND\]\.includes/,
+  /Boolean\(bondTagForKind\(projectionKind\)\)/,
   /mailItemBodyText\(item\)/,
 ]);
 

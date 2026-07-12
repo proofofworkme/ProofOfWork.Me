@@ -6,7 +6,7 @@
 - `computer.proofofwork.me` contains the authenticated Marketplace workspace.
 - `marketplace.proofofwork.me` is the standalone asset marketplace app.
 
-Marketplace is organized by asset tabs. IDs, Credits, and POWB are live trading
+Marketplace is organized by asset tabs. IDs, Credits, POWB, and INCB are live trading
 classes. These asset classes use sale-ticket settlement so the buyer path spends
 a scarce UTXO, pays the seller, pays the registry mutation fee, and writes a
 chain-readable transfer/purchase event.
@@ -15,7 +15,7 @@ chain-readable transfer/purchase event.
 - Marketplace is for on-chain listings, seals, delistings, buyer-funded purchases, credit sales, and future asset trades.
 - Marketplace actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer/buy tx, credit sale tx, and sale-ticket UTXO references.
 - Marketplace attention metrics should be derived from valid chain events: active listings, ID sale count, credit sale count, seller-price sale volume, credit sale volume, and marketplace mutation-fee flow.
-- POWB market actions use the same credit sale-ticket machinery under the reserved POWB asset. Bond mint supply comes from confirmed `pwm1:m:powb` recipient payments, not from `pwt1:mint`.
+- POWB and INCB market actions use the same credit sale-ticket machinery under their reserved synthetic assets. Bond mint supply comes from confirmed `pwm1:m:powb` or `pwm1:m:incb` recipient payments, never from `pwt1:mint`.
 
 ## Current ID Marketplace Model
 
@@ -115,6 +115,27 @@ After the June 23, 2026 Infinity launch, POWB has both a standalone surface at
 `computer.proofofwork.me/?folder=infinity`. Both views must use POWB-specific
 market labels, charts, balances, sale tickets, and listing logs; stale credit
 market copy on the Infinity surface is a release blocker.
+
+## Current Inception Bond / INCB Model
+
+Inception Bonds are `pwm1:m:incb` message actions. A confirmed bond payment
+mints INCB to each recipient address one-for-one with proofs sent to that
+recipient. INCB is an uncapped reserved synthetic credit registered through
+`inception@proofofwork.me`; its canonical credit id is
+`3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`.
+
+INCB transfers, listings, seals, delistings, and buys reuse the same `pwt1:`
+sale-ticket lifecycle as POWB and normal credits. The Inception bond proof
+payment is the bond value lane, while its one-for-one synthetic mint has zero
+additional proof value so Growth cannot count the same payment twice. A bond
+transaction may also attach canonical WORK through a separate `pwt1:send`;
+that WORK transfer stays WORK movement and does not mint or reclassify INCB.
+
+The standalone `inception.proofofwork.me` surface and embedded
+`computer.proofofwork.me/?folder=inception` workspace must use INCB-specific
+labels, chart data, balances, sale tickets, and listing logs. The exact memo
+distinguishes the two families: `powb` maps only to POWB/Infinity and `incb`
+maps only to INCB/Inception.
 
 ## June 13-16 Ledger Hardening
 

@@ -38,6 +38,7 @@ tokens.proofofwork.me -> https://credit.proofofwork.me/
 wallet.proofofwork.me
 work.proofofwork.me
 infinity.proofofwork.me
+inception.proofofwork.me
 log.proofofwork.me
 growth.proofofwork.me
 ```
@@ -56,17 +57,18 @@ Production app roles:
 - `wallet.proofofwork.me` is the standalone credit wallet for confirmed balances, transfers, listings, delistings, and sale history touching the connected address.
 - `work.proofofwork.me` is the standalone WORK credit dashboard and mint page.
 - `infinity.proofofwork.me` is the standalone Infinity Bond / POWB market and bond composer.
+- `inception.proofofwork.me` is the standalone Inception Bond / INCB market and bond composer.
 - `log.proofofwork.me` is the standalone public ProofOfWork Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled ProofOfWork Computer network value with real confirmed chain value in proofs and USD.
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Log, and Growth. Public social links should include X, YouTube, and GitHub.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
 
 ### Audit Workflow
 
 Audit standalone public apps before the full Computer shell: Home, IDs, Desktop,
-Browser, Marketplace, Credit, Wallet, WORK, Infinity, Log, and Growth come
+Browser, Marketplace, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth come
 first. `computer.proofofwork.me` comes last because it embeds and cross-checks
 the same protocols, workspaces, and read models in one integrated ProofOfWork
 Computer.
@@ -138,7 +140,7 @@ Launch invariants for future developers/agents:
 - Replies to a message by embedding the parent txid so messages can form threads.
 - Supports Reply All for multi-recipient messages.
 - Supports CC in compose as visible additional payment-output recipients. The sender's local app preserves To/CC roles for sent mail; the chain itself only exposes recipients as payment outputs.
-- Lets approved mainnet senders attach canonical WORK credit to a message, writing the normal mail outputs and `pwm1:` payloads first, then the WORK registry mutation payment and `pwt1:send` payloads in the same locally signed transaction.
+- Lets approved mainnet senders attach canonical WORK credit to a message, Infinity Bond, or Inception Bond, writing the normal payment and `pwm1:` payloads first, then the WORK registry mutation payment and `pwt1:send` payloads in the same locally signed transaction.
 - Infers the sender from transaction inputs instead of storing an address in OP_RETURN.
 - Shows self-sends in Incoming/Inbox and Outbox/Sent based on confirmation state.
 - Auto-saves one local draft per wallet and network until the message is broadcast or discarded.
@@ -170,7 +172,7 @@ Launch invariants for future developers/agents:
 - Lets current ID owners publish on-chain marketplace listings, seal them, delist them, and execute buyer-funded ID transfers. Marketplace is tabbed by asset class: IDs and credit sale-ticket markets are live.
 - Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
-- Exposes Credits as a mainnet-only creation and mint surface, a Wallet surface for balances, transfers, listing actions, and sale history, a dedicated WORK credit dashboard, and an Infinity Bond / POWB workspace in the Computer shell. Credit creation pays the built-in index fee to `tokens@proofofwork.me`; mints, transfers, listings, seals, delistings, and buys pay each credit's own registry at the owner-set price or mutation fee.
+- Exposes Credits as a mainnet-only creation and mint surface, a Wallet surface for balances, transfers, listing actions, and sale history, a dedicated WORK credit dashboard, and Infinity Bond / POWB plus Inception Bond / INCB workspaces in the Computer shell. Credit creation pays the built-in index fee to `tokens@proofofwork.me`; mints, transfers, listings, seals, delistings, and buys pay each credit's own registry at the owner-set price or mutation fee.
 - Filters active marketplace listings by sale-ticket outspend state, using Bitcoin Core spend checks when configured, so a spent ticket leaves the active book even if a cached summary snapshot is still warming.
 - Treats `seal5` as signature publication without moving the original sale-ticket anchor. A legacy seal transaction that actually spends that anchor closes the listing because the ticket is no longer buyable. If an indexed or cached projection has `closeTxid` equal to `sealTxid`, Marketplace recovers it only when first-party outspend truth proves the original listing ticket is still unspent.
 - Promotes pending credit listings into confirmed listing state without duplicating them, so WORK and other credit books do not show stale pending shadows after confirmation.
@@ -184,12 +186,12 @@ Launch invariants for future developers/agents:
 - Credit mint surfaces treat confirmed history as canonical mint-out, but pause user mint actions when confirmed plus pending mints would fill the remaining supply. Pending mempool records are not final, but the UI avoids letting users pay for likely overfill attempts, and WORK summary data must replay confirmed mints instead of trusting stale partial supply totals.
 - Stages RUSH as an explicit development/protocol surface behind `?rush=1` or `VITE_RUSH_ONLY=1`. It is not part of shared public navigation or production domain routing until separately approved for launch.
 - Exposes Growth as a public dashboard for modeled ProofOfWork Computer network value versus real confirmed registry, log, file, marketplace, and Credit value metrics.
-- Computes WORK, Infinity, Growth, Log, and livenet credit/token views from one canonical confirmed ledger snapshot, so public searches, logged events, and network value cannot diverge after refresh.
+- Computes WORK, Infinity, Inception, Growth, Log, and livenet credit/token views from one canonical confirmed ledger snapshot, so public searches, logged events, and network value cannot diverge after refresh.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
-- Reads registry, mail, files, pagination, wallet UTXOs, transaction preparation data, broadcast status, live BTC/USD, WORK floor, Infinity summary, and app metrics through the first-party ProofOfWork OP_RETURN API.
-- Uses `/api/v1/consistency` and `npm run audit:ledger` as the regression gate for livenet ledger coverage across Log, Growth, WORK, Infinity, and credit/token history.
+- Reads registry, mail, files, pagination, wallet UTXOs, transaction preparation data, broadcast status, live BTC/USD, WORK floor, Infinity/Inception summaries, and app metrics through the first-party ProofOfWork OP_RETURN API.
+- Uses `/api/v1/consistency` and `npm run audit:ledger` as the regression gate for livenet ledger coverage across Log, Growth, WORK, Infinity, Inception, and credit/token history.
 - Uses explicit pagination for registry, marketplace, credit, wallet, log, and growth data views so large confirmed datasets remain inspectable without relying on infinite scroll.
 - Treats ProofOfWork IDs as case-insensitive names capped by the aggregate 100 KB OP_RETURN transaction limit, not arbitrary character rules.
 - Resolves ProofOfWork IDs in the compose recipient field only after a confirmed registry record exists; pending IDs cannot receive routed mail yet.
@@ -220,6 +222,7 @@ https://credit.proofofwork.me/api/*
 https://wallet.proofofwork.me/api/*
 https://work.proofofwork.me/api/*
 https://infinity.proofofwork.me/api/*
+https://inception.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
 https://growth.proofofwork.me/api/*
 ```
@@ -229,7 +232,7 @@ Current production behavior:
 - Confirmed stable mainnet registry, Log, credit/token, marketplace, summary, event, mail/file, and tx-status reads go through the ProofOfWork API and use the PostgreSQL proof index where the read flag supports that surface.
 - The proof index is a fast replayable read model, not a separate source of truth. Confirmed chain data remains canonical, and every tx-backed record should keep its txid available for normal explorer/mempool verification.
 - The production proof index is the default stable read model for confirmed Log, Event History, address mail, registry, credit/token, marketplace lifecycle, WORK, Growth, and tx-status reads where enabled. Explicit fresh reads, mempool state, raw transaction data, UTXO/outspend checks, signing support, and broadcasts still fall back to the first-party node/API path.
-- The mail and Log parsers normalize `pwm1:m:powb` as `infinity-bond` for event/search/Growth accounting while still projecting it into the mailbox model. Confirmed bond payments mint POWB to the recipient address one-for-one with proofs sent; self-sends are just the self-recipient case and appear in both Inbox and Sent.
+- The mail and Log parsers normalize `pwm1:m:powb` as `infinity-bond` and `pwm1:m:incb` as `inception-bond` for event/search/Growth accounting while still projecting both into the mailbox model. Each confirmed bond payment mints its matching synthetic credit to the recipient address one-for-one with proofs sent; self-sends are just the self-recipient case and appear in both Inbox and Sent.
 - Mail subjects and bodies are separate protocol fields. `pwm1:s` is header metadata, while `pwm1:m` is the durable message body. Indexed mailbox rows must render body text from decoded `pwm1:m` content, never from Log display detail such as `Subject: ...`; legacy subject-only rows may be repaired from raw tx data at read time.
 - The node stack does not hold funds, seed phrases, private keys, or wallet authority.
 - Browser wallets still sign locally.
@@ -245,10 +248,14 @@ Current production behavior:
 - Credit ids are creation txids. Mint events use `pwt1:mint:<token-create-txid>:<amount>` and must pay the credit registry address before OP_RETURN.
 - Credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` and require a 546-proof mutation payment to that same credit registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visible but not canonical.
 - Approved message senders can combine this canonical WORK transfer format with ProofOfWork mail in one transaction. Mail recipients remain the normal payment outputs before the first `pwm1:` output. The WORK registry mutation payment is placed after the mail `pwm1:` outputs and before the `pwt1:send` outputs so mail delivery and WORK transfer parsing stay separate while sharing one txid.
+- WORK attachments are a V1 allowlisted sender feature for `1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT`, `1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x`, and `1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv`. Other connected addresses do not see the attachment control. The same gate applies to normal messages, Infinity Bonds, and Inception Bonds.
 - The Credit tab inside Marketplace is the shared market surface for credit trades. Credit `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature without spending that output, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the credit registry mutation fee.
 - Credit active listings are spend-state aware. A sale-ticket outpoint spend closes the listing; production Core-backed spend checks keep Wallet and Marketplace aligned while summaries warm. If the spend is a valid `pwt1:buy5`, the sale appears in credit sales, credit market logs, Growth, and summary endpoints after refresh.
 - Infinity Bonds use the canonical `pwm1:m:powb` message memo. Each confirmed recipient payment mints the same number of POWB to that recipient address. POWB is a reserved, uncapped synthetic credit backed by confirmed bond proofs and registered through `infinity@proofofwork.me`; `infinity.proofofwork.me` exposes `/api/v1/infinity-summary`, the bond composer, POWB balances, and the POWB sale-ticket market. POWB supply has no maximum and can trend to infinity.
 - POWB floor accounting is confirmed bond network value divided by confirmed POWB supply. Bond network value includes confirmed bond proof payments, POWB seller sale volume, POWB transfer fees, and POWB marketplace mutation fees. POWB sale volume and mutation fees also contribute to the broader ProofOfWork Computer/WORK network floor alongside the rest of confirmed marketplace flow.
+- Inception Bonds use the canonical `pwm1:m:incb` message memo. Each confirmed recipient payment mints the same number of INCB to that recipient address. INCB is a reserved, uncapped synthetic credit backed by confirmed bond proofs and registered through `inception@proofofwork.me`; its canonical credit id is `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`. `inception.proofofwork.me` exposes `/api/v1/inception-summary`, the bond composer, INCB balances, and the INCB sale-ticket market.
+- The two bond families are classified by their exact mail memo before synthetic supply is derived: `powb` can mint only POWB and `incb` can mint only INCB. Bond proof payments and attached canonical WORK are separate value lanes in the same transaction. Attached credit is WORK-only, uses the normal `pwt1:send` mutation, and must never be mistaken for POWB or INCB mint supply.
+- INCB floor accounting mirrors POWB: confirmed Inception Bond network value divided by confirmed INCB supply. Inception proof payments, INCB seller sale volume, INCB transfer fees, and INCB marketplace mutation fees contribute through the bond and marketplace lanes without counting the synthetic one-for-one mint as a second proof payment.
 - `/api/v1/marketplace-summary` returns the reconciled marketplace lifecycle rather than a raw proof-index summary snapshot, so stale compacted snapshots cannot hide confirmed sealed listings from the public Buy book. Proof-index summary snapshots are still backfilled and checked by parity, but route output may recover a projection row where the seal txid was temporarily written as the close txid only after first-party outspend truth proves the original listing ticket remains unspent.
 - Fresh reads for credit summaries, credit histories, marketplace summaries, and WORK summaries refresh the shared credit payload cache before returning when possible. If a canonical refresh is slower than the production wait window, the route should return the best reconciled fallback instead of serving an unreconciled stale snapshot or a false empty state.
 - Credit mint prices are owner-set with a 546-proof minimum. ProofOfWork does not take a global fee on mints; the mint price goes to that credit's registry address.
@@ -452,6 +459,13 @@ To preview the credit wallet locally:
 http://localhost:5173/?wallet=1
 ```
 
+To preview the Infinity and Inception Bond markets locally:
+
+```text
+http://localhost:5173/?infinity=1
+http://localhost:5173/?inception=1
+```
+
 To preview the staged RUSH credit mint page locally:
 
 ```text
@@ -482,6 +496,8 @@ Marketplace -> /?marketplace=1
 Credit -> /?credit=1
 Wallet -> /?wallet=1
 WORK -> /?work=1
+Infinity -> /?infinity=1
+Inception -> /?inception=1
 Log -> /?log=1
 Growth -> /?growth=1
 ```
@@ -546,6 +562,12 @@ To build the standalone Infinity Bond / POWB market for production:
 
 ```bash
 VITE_INFINITY_ONLY=1 VITE_POW_API_BASE=https://infinity.proofofwork.me npm run build
+```
+
+To build the standalone Inception Bond / INCB market for production:
+
+```bash
+VITE_INCEPTION_ONLY=1 VITE_POW_API_BASE=https://inception.proofofwork.me npm run build
 ```
 
 To build the staged standalone RUSH credit mint page:
@@ -633,7 +655,7 @@ The audit checks `/api/v1/consistency`, `/api/v1/work-floor`,
 if WORK and Growth use different snapshots, if the ledger snapshot does not
 cover the current node tip within the configured lag, if network value differs
 from actual confirmed value, if live USD does not reconcile from the exposed
-BTC/USD quote, if seeded Computer mail/Infinity Bond events are missing from
+BTC/USD quote, if seeded Computer mail/Infinity/Inception Bond events are missing from
 Log, or if known confirmed regression txids are not searchable.
 
 The companion local contract check is:
@@ -696,6 +718,7 @@ Important implementation points:
 - Standalone Wallet route switch: `isWalletRoute()` in `src/app/routeRegistry.ts`.
 - Standalone WORK route switch: `isWorkTokenRoute()` in `src/app/routeRegistry.ts`.
 - Standalone Infinity route switch: `isInfinityRoute()` in `src/app/routeRegistry.ts`.
+- Standalone Inception route switch: `isInceptionRoute()` in `src/app/routeRegistry.ts`.
 - Staged RUSH route switch: `isRushRoute()` in `src/app/routeRegistry.ts`.
 - Log route switch: `isActivityRoute()` in `src/app/routeRegistry.ts`.
 - Growth route switch: `isGrowthRoute()` in `src/app/routeRegistry.ts`.
@@ -711,6 +734,7 @@ Important implementation points:
 - Wallet-only deploy switch: `VITE_WALLET_ONLY=1`.
 - WORK-only deploy switch: `VITE_WORK_TOKEN_ONLY=1`.
 - Infinity-only deploy switch: `VITE_INFINITY_ONLY=1`.
+- Inception-only deploy switch: `VITE_INCEPTION_ONLY=1`.
 - Staged RUSH-only deploy switch: `VITE_RUSH_ONLY=1`.
 - Log-only deploy switch: `VITE_LOG_ONLY=1`.
 - Growth-only deploy switch: `VITE_GROWTH_ONLY=1`.
@@ -730,7 +754,7 @@ Important implementation points:
 - Full app ID workspace: `IdsWorkspace`.
 - Standalone marketplace UI: `MarketplaceApp`.
 - Computer marketplace workspace: `MarketplaceWorkspace`.
-- Standalone Infinity Bond / POWB UI: `InfinityApp`.
+- Standalone Infinity Bond / POWB and Inception Bond / INCB UI: the parameterized `InfinityApp` bond-family surface.
 - Standalone growth dashboard: `GrowthApp`.
 - OP_RETURN API: `server/proof-api.mjs`.
 - OP_RETURN infrastructure notes: `OP_RETURN_INFRASTRUCTURE.md`.

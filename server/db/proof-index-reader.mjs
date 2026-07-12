@@ -6,6 +6,20 @@ import {
 let proofIndexReadPool = null;
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
+const INCEPTION_BOND_MEMO = "incb";
+const INCEPTION_BOND_KIND = "inception-bond";
+const BOND_TAGS = [
+  {
+    kind: INFINITY_BOND_KIND,
+    label: "Infinity Bond",
+    memo: INFINITY_BOND_MEMO,
+  },
+  {
+    kind: INCEPTION_BOND_KIND,
+    label: "Inception Bond",
+    memo: INCEPTION_BOND_MEMO,
+  },
+];
 const ID_REGISTRATION_PRICE_SATS = 1_000;
 const TOKEN_SALE_AUTH_VERSION = "pwt-sale-v1";
 const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
@@ -23,6 +37,7 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "id-seal",
   "id-transfer",
   "id-update",
+  "inception-bond",
   "infinity-bond",
   "mail",
   "reply",
@@ -1967,43 +1982,64 @@ function normalizedLowerText(value) {
   return normalizedText(value).toLowerCase();
 }
 
-function isInfinityBondMemoText(value) {
-  return normalizedLowerText(value) === INFINITY_BOND_MEMO;
+function bondTagForMemo(value) {
+  const memo = normalizedLowerText(value);
+  return BOND_TAGS.find((tag) => tag.memo === memo) ?? null;
 }
 
-function isInfinityBondEventPayload(payload, row = {}) {
+function bondTagForKind(value) {
+  const kind = normalizedLowerText(value);
+  return BOND_TAGS.find((tag) => tag.kind === kind) ?? null;
+}
+
+function bondTagForEventPayload(payload, row = {}) {
   const kind = normalizedLowerText(payload?.kind ?? row.kind);
-  if (kind === INFINITY_BOND_KIND) {
-    return true;
+  const direct = bondTagForKind(kind);
+  if (direct) {
+    return direct;
   }
   if (kind !== "mail") {
-    return false;
+    return null;
   }
-  return [
+  for (const value of [
     payload?.detail,
     payload?.memo,
     payload?.body,
     payload?.message,
     row.body_text,
-  ].some(isInfinityBondMemoText);
+  ]) {
+    const tag = bondTagForMemo(value);
+    if (tag) {
+      return tag;
+    }
+  }
+  return null;
 }
 
-function normalizedInfinityBondTags(tags) {
+function isInfinityBondEventPayload(payload, row = {}) {
+  return bondTagForEventPayload(payload, row)?.kind === INFINITY_BOND_KIND;
+}
+
+function normalizedBondTags(tags, bondTag) {
+  const bondLabels = new Set(BOND_TAGS.map((tag) => tag.label.toLowerCase()));
   const normalized = [];
   for (const tag of Array.isArray(tags) ? tags : []) {
     const value = String(tag ?? "").trim();
     if (!value) {
       continue;
     }
-    normalized.push(/^message$/iu.test(value) ? "Infinity Bond" : value);
+    if (bondLabels.has(value.toLowerCase())) {
+      continue;
+    }
+    normalized.push(/^message$/iu.test(value) ? bondTag.label : value);
   }
-  if (!normalized.some((tag) => /^infinity bond$/iu.test(tag))) {
-    normalized.push("Infinity Bond");
+  if (!normalized.some((tag) => tag.toLowerCase() === bondTag.label.toLowerCase())) {
+    normalized.push(bondTag.label);
   }
   return normalized;
 }
 
-function normalizedInfinityBondTitle(payload, row = {}) {
+function normalizedBondTitle(payload, row = {}, bondTag) {
   const title = normalizedText(payload?.title);
   if (title && !/^(?:mail|message)\b/iu.test(title)) {
     return title;
@@ -2011,34 +2047,36 @@ function normalizedInfinityBondTitle(payload, row = {}) {
   const confirmed = row.status
     ? normalizedLowerText(row.status) === "confirmed"
     : payload?.confirmed !== false;
-  return `Infinity Bond ${confirmed ? "sent" : "pending"}`;
+  return `${bondTag.label} ${confirmed ? "sent" : "pending"}`;
 }
 
 function normalizeEventPayload(payload, row = {}) {
-  if (!isInfinityBondEventPayload(payload, row)) {
+  const bondTag = bondTagForEventPayload(payload, row);
+  if (!bondTag) {
     return payload;
   }
   return {
     ...payload,
-    detail: normalizedText(payload?.detail) || INFINITY_BOND_MEMO,
-    kind: INFINITY_BOND_KIND,
-    tags: normalizedInfinityBondTags(payload?.tags),
-    title: normalizedInfinityBondTitle(payload, row),
+    detail: normalizedText(payload?.detail) || bondTag.memo,
+    kind: bondTag.kind,
+    tags: normalizedBondTags(payload?.tags, bondTag),
+    title: normalizedBondTitle(payload, row, bondTag),
   };
 }
 
 function eventKindSqlCondition(kind, addValue) {
   const normalizedKind = normalizedLowerText(kind);
-  if (normalizedKind !== INFINITY_BOND_KIND) {
+  const bondTag = bondTagForKind(normalizedKind);
+  if (!bondTag) {
     return `e.kind = ${addValue(normalizedKind)}`;
   }
 
-  const infinityBondKindParam = addValue(INFINITY_BOND_KIND);
+  const bondKindParam = addValue(bondTag.kind);
   const mailKindParam = addValue("mail");
-  const memoParam = addValue(INFINITY_BOND_MEMO);
+  const memoParam = addValue(bondTag.memo);
   return `
     (
-      e.kind = ${infinityBondKindParam}
+      e.kind = ${bondKindParam}
       OR (
         e.kind = ${mailKindParam}
         AND (
@@ -4445,6 +4483,7 @@ async function latestProofIndexScanMetadata(pool, network) {
           AND source_hashes ? 'canonicalSummary'
           AND jsonb_typeof(payload->'summaryPayloads') = 'object'
           AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+          AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
           AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
           AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
           AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
@@ -4553,6 +4592,7 @@ export async function proofIndexOperationalStatusPayload(network) {
   const summaryCoverageByKey = Object.fromEntries(
     [
       "growthSummary",
+      "inceptionSummary",
       "infinitySummary",
       "marketplaceSummary",
       "workFloor",
@@ -4577,7 +4617,9 @@ export async function proofIndexOperationalStatusPayload(network) {
               safeBlockHeight(nested.metrics?.indexedThroughBlock),
               safeBlockHeight(nested.stats?.indexedThroughBlock),
             )
-          : key === "workFloor" || key === "infinitySummary"
+          : key === "workFloor" ||
+              key === "inceptionSummary" ||
+              key === "infinitySummary"
             ? parentCoverage
             : 0;
         return [
@@ -8093,6 +8135,7 @@ const ADDRESS_MAIL_EVENT_KINDS = [
   "file",
   "attachment",
   "browser",
+  "inception-bond",
   "infinity-bond",
 ];
 
@@ -8363,10 +8406,7 @@ function compareMailMessages(left, right) {
 function mailMessageProjectionRank(message) {
   const confirmed =
     message?.confirmed === true || message?.status === "confirmed" ? 1 : 0;
-  const protocol =
-    String(message?.protocolKind ?? "").toLowerCase() === INFINITY_BOND_KIND
-      ? 2
-      : 0;
+  const protocol = bondTagForKind(message?.protocolKind) ? 2 : 0;
   const content = [
     message?.attachment,
     message?.memo,
@@ -8834,12 +8874,14 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
         consistency,
         payload->>'snapshotId' AS payload_snapshot_id,
         payload->'summaryPayloads'->'growthSummary'->>'snapshotId' AS growth_snapshot_id,
+        payload->'summaryPayloads'->'inceptionSummary'->>'snapshotId' AS inception_snapshot_id,
         payload->'summaryPayloads'->'infinitySummary'->>'snapshotId' AS infinity_snapshot_id,
         payload->'summaryPayloads'->'marketplaceSummary'->>'snapshotId' AS marketplace_snapshot_id,
         payload->'summaryPayloads'->'workFloor'->>'snapshotId' AS work_floor_snapshot_id,
         payload->'summaryPayloads'->'workSummary'->>'snapshotId' AS work_summary_snapshot_id,
         payload->'summaryPayloads'->'growthSummary'->>'indexedThroughBlock' AS growth_height,
         payload->'summaryPayloads'->'growthSummary'->'workFloor'->>'indexedThroughBlock' AS growth_floor_height,
+        payload->'summaryPayloads'->'inceptionSummary'->>'indexedThroughBlock' AS inception_height,
         payload->'summaryPayloads'->'infinitySummary'->>'indexedThroughBlock' AS infinity_height,
         payload->'summaryPayloads'->'marketplaceSummary'->>'indexedThroughBlock' AS marketplace_height,
         payload->'summaryPayloads'->'marketplaceSummary'->'workFloor'->>'indexedThroughBlock' AS marketplace_floor_height,
@@ -8854,6 +8896,7 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
         AND source_hashes ? 'canonicalSummary'
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
@@ -8887,6 +8930,7 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
   const indexedThroughBlock = safeBlockHeight(snapshot.indexed_through_block);
   const summarySnapshotIds = [
     snapshot.growth_snapshot_id,
+    snapshot.inception_snapshot_id,
     snapshot.infinity_snapshot_id,
     snapshot.marketplace_snapshot_id,
     snapshot.work_floor_snapshot_id,
@@ -8895,6 +8939,7 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
   const summaryCoverageHeights = [
     snapshot.growth_height,
     snapshot.growth_floor_height,
+    snapshot.inception_height,
     snapshot.infinity_height,
     snapshot.marketplace_height,
     snapshot.marketplace_floor_height,
@@ -8979,6 +9024,7 @@ export async function proofIndexSnapshotPayload(network, key) {
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
         AND source_hashes ? 'canonicalSummary'
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
@@ -9020,6 +9066,7 @@ export async function proofIndexSnapshotPayload(network, key) {
             AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
             AND source_hashes ? 'canonicalSummary'
             AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+            AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'

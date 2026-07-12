@@ -222,6 +222,7 @@ try {
     workFloorRead,
     growthRead,
     marketplaceRead,
+    inceptionRead,
     infinityRead,
   ] = await Promise.all([
     readJson("/health"),
@@ -229,6 +230,7 @@ try {
     readJson("/api/v1/work-floor"),
     readJson("/api/v1/growth-summary"),
     readJson("/api/v1/marketplace-summary"),
+    readJson("/api/v1/inception-summary"),
     readJson("/api/v1/infinity-summary"),
   ]);
 
@@ -237,6 +239,7 @@ try {
   const workFloor = workFloorRead.json;
   const growth = growthRead.json;
   const marketplace = marketplaceRead.json;
+  const inception = inceptionRead.json;
   const infinity = infinityRead.json;
 
   const db = await queryOne(
@@ -349,6 +352,8 @@ try {
         ledgerChecks.has("token-components-cover-confirmed-activity") &&
         ledgerChecks.has("token-sales-logged") &&
         ledgerChecks.has("seeded-mail-events-logged") &&
+        ledgerChecks.has("seeded-inception-bonds-logged") &&
+        ledgerChecks.has("inception-bond-flow-matches-incb-supply") &&
         ledgerChecks.has("seeded-infinity-bonds-logged"),
       { checks: [...ledgerChecks].sort() },
     ),
@@ -437,6 +442,20 @@ try {
         marketplaceWorkNetworkValueSats:
           marketplace?.workFloor?.networkValueSats ?? null,
         workNetworkValueSats: workFloor?.networkValueSats ?? null,
+      },
+    ),
+    check(
+      "inception-launch-ready",
+      inception?.ticker === "INCB" &&
+        inception?.registryId === "inception@proofofwork.me" &&
+        inception?.tokenId ===
+          "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d" &&
+        numberValue(inception?.actualValue?.networkValueSats) >= 0,
+      {
+        confirmedBondActions: inception?.stats?.confirmedBondActions ?? null,
+        networkValueSats: inception?.actualValue?.networkValueSats ?? null,
+        registryId: inception?.registryId ?? null,
+        ticker: inception?.ticker ?? null,
       },
     ),
     check(
@@ -579,6 +598,7 @@ try {
 
   const endpointTimings = {
     health: healthRead.elapsedMs,
+    inceptionSummary: inceptionRead.elapsedMs,
     infinitySummary: infinityRead.elapsedMs,
     ledgerConsistency: ledgerRead.elapsedMs,
     marketplaceSummary: marketplaceRead.elapsedMs,

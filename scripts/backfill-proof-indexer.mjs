@@ -287,6 +287,11 @@ const POWB_TOKEN_ID =
 const POWB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
 const POWB_REGISTRY_ID = "infinity";
 const POWB_TOKEN_CREATED_AT = "2026-06-23T00:00:00.000Z";
+const INCB_TOKEN_ID =
+  "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+const INCB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
+const INCB_REGISTRY_ID = "inception";
+const INCB_TOKEN_CREATED_AT = "2026-07-10T00:00:00.000Z";
 const GROWTH_VALUE_MULTIPLE = 5;
 const ID_MARKETPLACE_MUTATION_KINDS = new Set([
   "id-list",
@@ -301,6 +306,30 @@ const TOKEN_MARKETPLACE_MUTATION_KINDS = new Set([
 ]);
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
+const INCEPTION_BOND_MEMO = "incb";
+const INCEPTION_BOND_KIND = "inception-bond";
+const BOND_TAGS = [
+  {
+    createdAt: POWB_TOKEN_CREATED_AT,
+    kind: INFINITY_BOND_KIND,
+    label: "Infinity Bond",
+    memo: INFINITY_BOND_MEMO,
+    registryId: POWB_REGISTRY_ID,
+    ticker: "POWB",
+    tokenId: POWB_TOKEN_ID,
+    tokenMaxSupply: POWB_TOKEN_MAX_SUPPLY,
+  },
+  {
+    createdAt: INCB_TOKEN_CREATED_AT,
+    kind: INCEPTION_BOND_KIND,
+    label: "Inception Bond",
+    memo: INCEPTION_BOND_MEMO,
+    registryId: INCB_REGISTRY_ID,
+    ticker: "INCB",
+    tokenId: INCB_TOKEN_ID,
+    tokenMaxSupply: INCB_TOKEN_MAX_SUPPLY,
+  },
+];
 const DEFAULT_MAIL_BACKFILL_ADDRESSES = [
   "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
   "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH",
@@ -328,10 +357,12 @@ const TOKEN_HISTORY_SNAPSHOT_SCOPES = [
   { key: "all", params: {} },
   { key: WORK_TOKEN_ID, params: { asset: WORK_TOKEN_ID } },
   { key: POWB_TOKEN_ID, params: { asset: POWB_TOKEN_ID } },
+  { key: INCB_TOKEN_ID, params: { asset: INCB_TOKEN_ID } },
 ];
 const REGISTRY_HISTORY_SNAPSHOT_KINDS = ["activity", "listings", "records", "sales"];
 const SUMMARY_SNAPSHOT_SOURCES = [
   { key: "growthSummary", path: "/api/v1/growth-summary" },
+  { key: "inceptionSummary", path: "/api/v1/inception-summary" },
   { key: "infinitySummary", path: "/api/v1/infinity-summary" },
   { key: "marketplaceSummary", path: "/api/v1/marketplace-summary" },
   { key: "workFloor", path: "/api/v1/work-floor" },
@@ -964,8 +995,8 @@ function aggregatePwmProtocolItem(tx, messages) {
     ? "file"
     : parentTxid
       ? "reply"
-      : memo.trim().toLowerCase() === INFINITY_BOND_MEMO
-        ? INFINITY_BOND_KIND
+      : bondTagForMemo(memo)?.kind
+        ? bondTagForMemo(memo).kind
         : "mail";
   return {
     ...baseProtocolItem(tx, pwmMessages[0], kind),
@@ -983,8 +1014,9 @@ function aggregatePwmProtocolItem(tx, messages) {
   };
 }
 
-function canonicalPowbMintItemsFromMailItem(item) {
-  if (item?.kind !== INFINITY_BOND_KIND || item?.confirmed !== true) {
+function canonicalBondMintItemsFromMailItem(item) {
+  const bondTag = bondTagForKind(item?.kind);
+  if (!bondTag || item?.confirmed !== true) {
     return [];
   }
   return (Array.isArray(item?.recipients) ? item.recipients : []).flatMap(
@@ -998,7 +1030,7 @@ function canonicalPowbMintItemsFromMailItem(item) {
         {
           amount,
           // The PWM event carries the bond proofs. The companion only projects
-          // POWB units and must never count the same proofs a second time.
+          // bond credit units and must never count the same proofs a second time.
           amountSats: 0,
           blockHeight: item.blockHeight,
           blockIndex: item.blockIndex,
@@ -1010,12 +1042,12 @@ function canonicalPowbMintItemsFromMailItem(item) {
           network: item.network,
           protocol: "pwt1",
           sourceBondTxid: item.txid,
-          ticker: "POWB",
+          ticker: bondTag.ticker,
           timestamp: item.timestamp,
-          tokenId: POWB_TOKEN_ID,
+          tokenId: bondTag.tokenId,
           txid: item.txid,
           valid: true,
-          validationMode: "canonical-powb-bond-projection",
+          validationMode: `canonical-${bondTag.ticker.toLowerCase()}-bond-projection`,
         },
       ];
     },
@@ -1063,8 +1095,8 @@ function protocolItemsFromTx(tx, message) {
             ? "attachment"
             : action === "r"
               ? "reply"
-              : memo.trim().toLowerCase() === INFINITY_BOND_MEMO
-                ? INFINITY_BOND_KIND
+              : bondTagForMemo(memo)?.kind
+                ? bondTagForMemo(memo).kind
                 : "mail",
         ),
         memo,
@@ -1256,7 +1288,7 @@ function rawProtocolItemsForTx(tx, messages) {
   return [
     ...(mailItem ? [mailItem] : []),
     ...(invalidMailItem ? [invalidMailItem] : []),
-    ...canonicalPowbMintItemsFromMailItem(mailItem),
+    ...canonicalBondMintItemsFromMailItem(mailItem),
     ...messages
       .filter((message) => ["pwid1:", "pwt1:"].includes(message?.prefix))
       .flatMap((message) => protocolItemsFromTx(tx, message)),
@@ -1664,7 +1696,7 @@ async function canonicalRecoveryItemsForTx(tx, messages) {
       });
       return;
     }
-    if (rawItem?.validationMode === "canonical-powb-bond-projection") {
+    if (String(rawItem?.validationMode ?? "").endsWith("-bond-projection")) {
       normalizedRecovered.push({
         item: rawItem,
         sourceLabel: sourceLabelForProtocolItem(rawItem),
@@ -1693,7 +1725,7 @@ async function preparedProtocolItemsForTx(tx, messages) {
   ).map((item) => {
     const statefulUnknown =
       (item?.protocol === "pwt1" || item?.protocol === "pwid1") &&
-      item?.validationMode !== "canonical-powb-bond-projection";
+      !String(item?.validationMode ?? "").endsWith("-bond-projection");
     const normalizedItem = statefulUnknown
       ? invalidProtocolItem(item, "Unknown or malformed stateful protocol action.")
       : item;
@@ -1717,12 +1749,16 @@ async function persistPreparedProtocolItems(client, preparedItems) {
     } else {
       indexed += 1;
     }
+    const bondTag = BOND_TAGS.find(
+      (candidate) =>
+        String(item?.id ?? "").trim().toLowerCase() === candidate.registryId,
+    );
     if (
-      String(item?.id ?? "").trim().toLowerCase() === POWB_REGISTRY_ID &&
+      bondTag &&
       String(item?.kind ?? "").startsWith("id-") &&
       item?.confirmed !== false
     ) {
-      await seedCanonicalPowbDefinition(client);
+      await seedCanonicalBondDefinition(client, bondTag);
     }
   }
   return { indexed, skipped };
@@ -1793,6 +1829,33 @@ async function seedCanonicalWorkDefinition(client) {
 }
 
 async function seedCanonicalPowbDefinition(client, options = {}) {
+  return seedCanonicalBondDefinition(
+    client,
+    BOND_TAGS.find((tag) => tag.tokenId === POWB_TOKEN_ID),
+    options,
+  );
+}
+
+async function seedCanonicalIncbDefinition(client, options = {}) {
+  return seedCanonicalBondDefinition(
+    client,
+    BOND_TAGS.find((tag) => tag.tokenId === INCB_TOKEN_ID),
+    options,
+  );
+}
+
+async function seedCanonicalBondDefinitions(client, options = {}) {
+  const results = [];
+  for (const bondTag of BOND_TAGS) {
+    results.push(await seedCanonicalBondDefinition(client, bondTag, options));
+  }
+  return results.every(Boolean);
+}
+
+async function seedCanonicalBondDefinition(client, bondTag, options = {}) {
+  if (!bondTag) {
+    return false;
+  }
   const result = await client.query(
     `
       SELECT owner_address, receive_address
@@ -1801,7 +1864,7 @@ async function seedCanonicalPowbDefinition(client, options = {}) {
         AND id_lower = $2
       LIMIT 1
     `,
-    [NETWORK, POWB_REGISTRY_ID],
+    [NETWORK, bondTag.registryId],
   );
   const row = result.rows[0];
   const registryAddress = String(
@@ -1810,22 +1873,22 @@ async function seedCanonicalPowbDefinition(client, options = {}) {
   if (!registryAddress) {
     if (options.required === true) {
       throw new Error(
-        "Canonical rebuild cannot publish POWB without the confirmed infinity ID receiver",
+        `Canonical rebuild cannot publish ${bondTag.ticker} without the confirmed ${bondTag.registryId} ID receiver`,
       );
     }
     return false;
   }
   await upsertCanonicalSyntheticCreditDefinition(client, {
-    createdAt: POWB_TOKEN_CREATED_AT,
+    createdAt: bondTag.createdAt,
     creationFeeSats: 0,
     creatorAddress: registryAddress,
     dataBytes: 0,
-    maxSupply: POWB_TOKEN_MAX_SUPPLY,
+    maxSupply: bondTag.tokenMaxSupply,
     mintAmount: 1,
     mintPriceSats: 1,
     registryAddress,
-    ticker: "POWB",
-    tokenId: POWB_TOKEN_ID,
+    ticker: bondTag.ticker,
+    tokenId: bondTag.tokenId,
     uncapped: true,
   });
   return true;
@@ -2204,62 +2267,84 @@ function rawEventKind(item, fallback) {
   return normalizedLowerText(item?.kind ?? item?.action ?? fallback ?? "event");
 }
 
+function bondTagForMemo(value) {
+  const memo = normalizedLowerText(value);
+  return BOND_TAGS.find((tag) => tag.memo === memo) ?? null;
+}
+
+function bondTagForKind(value) {
+  const kind = normalizedLowerText(value);
+  return BOND_TAGS.find((tag) => tag.kind === kind) ?? null;
+}
+
+function bondTagForItem(item, kind = rawEventKind(item)) {
+  const direct = bondTagForKind(kind);
+  if (direct) {
+    return direct;
+  }
+  if (kind !== "mail") {
+    return null;
+  }
+  for (const value of [item?.detail, item?.memo, item?.body, item?.message]) {
+    const tag = bondTagForMemo(value);
+    if (tag) {
+      return tag;
+    }
+  }
+  return null;
+}
+
 function isInfinityBondMemoText(value) {
-  return normalizedLowerText(value) === INFINITY_BOND_MEMO;
+  return bondTagForMemo(value)?.kind === INFINITY_BOND_KIND;
 }
 
 function isInfinityBondItem(item, kind = rawEventKind(item)) {
-  if (kind === INFINITY_BOND_KIND) {
-    return true;
-  }
-  if (kind !== "mail") {
-    return false;
-  }
-  return [item?.detail, item?.memo, item?.body, item?.message].some(
-    isInfinityBondMemoText,
-  );
+  return bondTagForItem(item, kind)?.kind === INFINITY_BOND_KIND;
 }
 
 function stableEventKeyKind(item, kind, fallback) {
   const rawKind = rawEventKind(item, fallback);
-  return isInfinityBondItem(item, rawKind) || kind === INFINITY_BOND_KIND
-    ? INFINITY_BOND_KIND
-    : kind;
+  return bondTagForItem(item, rawKind)?.kind ?? bondTagForKind(kind)?.kind ?? kind;
 }
 
-function normalizedInfinityBondTags(tags) {
+function normalizedBondTags(tags, bondTag) {
+  const bondLabels = new Set(BOND_TAGS.map((tag) => tag.label.toLowerCase()));
   const normalized = [];
   for (const tag of Array.isArray(tags) ? tags : []) {
     const value = normalizedText(tag);
     if (!value) {
       continue;
     }
-    normalized.push(/^message$/iu.test(value) ? "Infinity Bond" : value);
+    if (bondLabels.has(value.toLowerCase())) {
+      continue;
+    }
+    normalized.push(/^message$/iu.test(value) ? bondTag.label : value);
   }
-  if (!normalized.some((tag) => /^infinity bond$/iu.test(tag))) {
-    normalized.push("Infinity Bond");
+  if (!normalized.some((tag) => tag.toLowerCase() === bondTag.label.toLowerCase())) {
+    normalized.push(bondTag.label);
   }
   return normalized;
 }
 
-function normalizedInfinityBondTitle(item, status) {
+function normalizedBondTitle(item, status, bondTag) {
   const title = normalizedText(item?.title);
   if (title && !/^(?:mail|message)\b/iu.test(title)) {
     return title;
   }
-  return `Infinity Bond ${status === "confirmed" ? "sent" : "pending"}`;
+  return `${bondTag.label} ${status === "confirmed" ? "sent" : "pending"}`;
 }
 
 function normalizedEventItem(item, kind, status) {
-  if (kind !== INFINITY_BOND_KIND) {
+  const bondTag = bondTagForKind(kind);
+  if (!bondTag) {
     return item;
   }
   return {
     ...item,
-    detail: normalizedText(item?.detail) || INFINITY_BOND_MEMO,
-    kind: INFINITY_BOND_KIND,
-    tags: normalizedInfinityBondTags(item?.tags),
-    title: normalizedInfinityBondTitle(item, status),
+    detail: normalizedText(item?.detail) || bondTag.memo,
+    kind: bondTag.kind,
+    tags: normalizedBondTags(item?.tags, bondTag),
+    title: normalizedBondTitle(item, status, bondTag),
   };
 }
 
@@ -2544,7 +2629,7 @@ function bigintOrZero(value) {
 
 function eventKind(item, fallback) {
   const kind = rawEventKind(item, fallback);
-  return isInfinityBondItem(item, kind) ? INFINITY_BOND_KIND : kind;
+  return bondTagForItem(item, kind)?.kind ?? kind;
 }
 
 function protocolForItem(item, kind) {
@@ -2561,7 +2646,8 @@ function protocolForItem(item, kind) {
     return "pwr1";
   }
   if (
-    ["mail", "reply", "file", "attachment", "browser", "infinity-bond"].includes(kind)
+    ["mail", "reply", "file", "attachment", "browser"].includes(kind) ||
+    Boolean(bondTagForKind(kind))
   ) {
     return "pwm1";
   }
@@ -2601,9 +2687,8 @@ function mailItemBodyText(item) {
 function addressMailMessageKind(message) {
   const explicit = normalizedLowerText(message?.protocolKind ?? message?.kind);
   if (
-    ["mail", "reply", "file", "attachment", "browser", INFINITY_BOND_KIND].includes(
-      explicit,
-    )
+    ["mail", "reply", "file", "attachment", "browser"].includes(explicit) ||
+    Boolean(bondTagForKind(explicit))
   ) {
     return explicit === "attachment" ? "file" : explicit;
   }
@@ -2613,7 +2698,7 @@ function addressMailMessageKind(message) {
   if (message?.parentTxid) {
     return "reply";
   }
-  return isInfinityBondMemoText(message?.memo) ? INFINITY_BOND_KIND : "mail";
+  return bondTagForMemo(message?.memo)?.kind ?? "mail";
 }
 
 function normalizedMailRecipients(message, fallbackAddress = "") {
@@ -2689,7 +2774,9 @@ function addressMailMessageToEvent(message, address, folder) {
     senderAddress: actor,
     status,
     subject: message?.subject,
-    title: kind === INFINITY_BOND_KIND ? "Infinity Bond sent" : "Mail sent",
+    title: bondTagForKind(kind)?.label
+      ? `${bondTagForKind(kind).label} sent`
+      : "Mail sent",
     txid,
   };
 }
@@ -3402,9 +3489,9 @@ async function upsertProjection(client, sourceLabel, item, status) {
   }
 
   if (
-    ["mail", "reply", "file", "attachment", "browser", INFINITY_BOND_KIND].includes(
+    ["mail", "reply", "file", "attachment", "browser"].includes(
       projectionKind,
-    )
+    ) || Boolean(bondTagForKind(projectionKind))
   ) {
     const txid = itemTxid(item);
     if (txid) {
@@ -4036,6 +4123,7 @@ async function storeLedgerSnapshot(client, options = {}) {
 
 const REQUIRED_CURRENT_SUMMARY_KEYS = [
   "growthSummary",
+  "inceptionSummary",
   "infinitySummary",
   "marketplaceSummary",
   "workFloor",
@@ -4061,7 +4149,10 @@ function summaryPayloadConservativeCoverage(payload, key) {
       : key === "growthSummary" || key === "marketplaceSummary"
         ? objectPayload(item.workFloor)
         : null;
-  if (!nested && !["infinitySummary", "workFloor"].includes(key)) {
+  if (
+    !nested &&
+    !["inceptionSummary", "infinitySummary", "workFloor"].includes(key)
+  ) {
     return 0;
   }
   if (!nested) {
@@ -4118,6 +4209,7 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
         AND source_hashes ? 'canonicalSummary'
         AND jsonb_typeof(payload->'summaryPayloads') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
@@ -4736,7 +4828,7 @@ async function prepareCanonicalPwtRangeReplay(client) {
       [NETWORK],
     );
     await seedCanonicalWorkDefinition(client);
-    await seedCanonicalPowbDefinition(client, { required: true });
+    await seedCanonicalBondDefinitions(client, { required: true });
     for (const row of baseDefinitions.rows) {
       await upsertProjection(client, "tokens", row.payload, row.status);
     }
@@ -5040,7 +5132,7 @@ async function backfillBlockScanSource(client, source) {
       );
       await client.query("BEGIN");
       try {
-        await seedCanonicalPowbDefinition(client, { required: true });
+        await seedCanonicalBondDefinitions(client, { required: true });
         await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
         await storeProofIndexerMeta(
           client,
@@ -5237,7 +5329,7 @@ async function backfillBlockScanSource(client, source) {
       });
       if (nextComplete) {
         if (canonicalRebuild) {
-          await seedCanonicalPowbDefinition(client, { required: true });
+          await seedCanonicalBondDefinitions(client, { required: true });
         }
         await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
       }

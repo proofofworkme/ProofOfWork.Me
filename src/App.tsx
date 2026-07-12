@@ -57,12 +57,14 @@ import {
   GROWTH_APP_URL,
   HOME_APP_URL,
   ID_APP_URL,
+  INCEPTION_APP_URL,
   INFINITY_APP_URL,
   LOCAL_BROWSER_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_GROWTH_APP_URL,
   LOCAL_ID_APP_URL,
+  LOCAL_INCEPTION_APP_URL,
   LOCAL_INFINITY_APP_URL,
   LOCAL_LOG_APP_URL,
   LOCAL_MARKETPLACE_APP_URL,
@@ -82,6 +84,7 @@ import {
   isDesktopRoute,
   isGrowthRoute,
   isIdLaunchRoute,
+  isInceptionRoute,
   isInfinityRoute,
   isLandingRoute,
   isLocalPreviewHost,
@@ -198,6 +201,7 @@ type Folder =
   | "wallet"
   | "work"
   | "infinity"
+  | "inception"
   | "log"
   | "contacts"
   | "custom";
@@ -219,6 +223,7 @@ const COMPUTER_ROUTE_FOLDERS: Folder[] = [
   "wallet",
   "work",
   "infinity",
+  "inception",
   "log",
   "contacts",
 ];
@@ -234,6 +239,7 @@ const STANDALONE_ROUTE_PARAMS = [
   "wallet",
   "work",
   "infinity",
+  "inception",
   "rush",
   "log",
   "growth",
@@ -794,6 +800,7 @@ type PowActivityKind =
   | "id-seal"
   | "id-delist"
   | "id-buy"
+  | "inception-bond"
   | "infinity-bond"
   | "mail"
   | "reply"
@@ -1316,6 +1323,54 @@ const POWB_REGISTRY_ID = "infinity@proofofwork.me";
 const POWB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
 const INFINITY_BOND_SUBJECT = "Infinity Bond";
 const INFINITY_BOND_MEMO = "powb";
+const INCB_TOKEN_TICKER = "INCB";
+const INCB_TOKEN_ID =
+  "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+const INCB_REGISTRY_ID = "inception@proofofwork.me";
+const INCB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
+const INCEPTION_BOND_SUBJECT = "Inception Bond";
+const INCEPTION_BOND_MEMO = "incb";
+type BondUiConfig = {
+  appUrl: string;
+  displayName: string;
+  folder: "infinity" | "inception";
+  localAppUrl: string;
+  memo: string;
+  pluralName: string;
+  registryId: string;
+  subject: string;
+  summaryPath: string;
+  ticker: string;
+  tokenId: string;
+};
+const INFINITY_BOND_UI: BondUiConfig = {
+  appUrl: INFINITY_APP_URL,
+  displayName: INFINITY_BOND_SUBJECT,
+  folder: "infinity",
+  localAppUrl: LOCAL_INFINITY_APP_URL,
+  memo: INFINITY_BOND_MEMO,
+  pluralName: "Infinity Bonds",
+  registryId: POWB_REGISTRY_ID,
+  subject: INFINITY_BOND_SUBJECT,
+  summaryPath: "/api/v1/infinity-summary",
+  ticker: POWB_TOKEN_TICKER,
+  tokenId: POWB_TOKEN_ID,
+};
+const INCEPTION_BOND_UI: BondUiConfig = {
+  appUrl: INCEPTION_APP_URL,
+  displayName: INCEPTION_BOND_SUBJECT,
+  folder: "inception",
+  localAppUrl: LOCAL_INCEPTION_APP_URL,
+  memo: INCEPTION_BOND_MEMO,
+  pluralName: "Inception Bonds",
+  registryId: INCB_REGISTRY_ID,
+  subject: INCEPTION_BOND_SUBJECT,
+  summaryPath: "/api/v1/inception-summary",
+  ticker: INCB_TOKEN_TICKER,
+  tokenId: INCB_TOKEN_ID,
+};
+const BOND_UI_CONFIGS = [INFINITY_BOND_UI, INCEPTION_BOND_UI] as const;
+const BOND_TOKEN_IDS = new Set(BOND_UI_CONFIGS.map((config) => config.tokenId));
 const BLOCKED_TOKEN_CREATOR_ADDRESSES = new Set([
   "bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl",
 ]);
@@ -1416,6 +1471,8 @@ type GrowthActualNetworkValue = {
   driveSats: number;
   idMarketplaceFeeSats: number;
   idMarketplaceVolumeSats: number;
+  inceptionBondFlowSats: number;
+  inceptionBondSats: number;
   infinityBondFlowSats: number;
   infinityBondSats: number;
   mailFlowSats: number;
@@ -1532,6 +1589,7 @@ type GrowthSummaryCounts = {
   confirmedTokenTransfers: number;
   driveActions: number;
   idListings: number;
+  inceptionBondActions: number;
   infinityBondActions: number;
   mailActions: number;
   marketplaceSaleCount: number;
@@ -3295,6 +3353,10 @@ function folderLabel(folder: Folder) {
     return "Infinity";
   }
 
+  if (folder === "inception") {
+    return "Inception";
+  }
+
   if (folder === "log") {
     return "Log";
   }
@@ -3345,6 +3407,10 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "infinity") {
     return "Infinity Bond / POWB market";
+  }
+
+  if (folder === "inception") {
+    return "Inception Bond / INCB market";
   }
 
   if (folder === "marketplace") {
@@ -5883,7 +5949,11 @@ function normalizeTokenCreatorAddress(value: string) {
 
 function tokenTickerIsReserved(value: string) {
   const ticker = normalizeTokenTicker(value);
-  return ticker.includes(WORK_TOKEN_TICKER) || ticker === POWB_TOKEN_TICKER;
+  return (
+    ticker.includes(WORK_TOKEN_TICKER) ||
+    ticker === POWB_TOKEN_TICKER ||
+    ticker === INCB_TOKEN_TICKER
+  );
 }
 
 function tokenTickerReservationError(value: string) {
@@ -5894,6 +5964,10 @@ function tokenTickerReservationError(value: string) {
 
   if (ticker === POWB_TOKEN_TICKER) {
     return "POWB is reserved for Infinity Bonds.";
+  }
+
+  if (ticker === INCB_TOKEN_TICKER) {
+    return "INCB is reserved for Inception Bonds.";
   }
 
   return tokenTickerIsReserved(ticker)
@@ -5914,7 +5988,7 @@ function tokenCreationIsAllowed({
     return true;
   }
 
-  if (String(tokenId ?? "").toLowerCase() === POWB_TOKEN_ID) {
+  if (BOND_TOKEN_IDS.has(String(tokenId ?? "").toLowerCase())) {
     return true;
   }
 
@@ -5934,6 +6008,22 @@ function isPowbTokenDefinition(token: Pick<PowTokenDefinition, "ticker" | "token
     String(token.tokenId ?? "").toLowerCase() === POWB_TOKEN_ID ||
     normalizeTokenTicker(token.ticker) === POWB_TOKEN_TICKER
   );
+}
+
+function isIncbTokenDefinition(token: Pick<PowTokenDefinition, "ticker" | "tokenId">) {
+  return (
+    String(token.tokenId ?? "").toLowerCase() === INCB_TOKEN_ID ||
+    normalizeTokenTicker(token.ticker) === INCB_TOKEN_TICKER
+  );
+}
+
+function isBondTokenDefinition(token: Pick<PowTokenDefinition, "ticker" | "tokenId">) {
+  return isPowbTokenDefinition(token) || isIncbTokenDefinition(token);
+}
+
+function bondUiConfigForTokenId(tokenId: string) {
+  const normalized = String(tokenId ?? "").trim().toLowerCase();
+  return BOND_UI_CONFIGS.find((config) => config.tokenId === normalized);
 }
 
 function buildTokenCreatePayload({
@@ -10714,6 +10804,11 @@ function normalizeGrowthActualValue(
       payload,
       "idMarketplaceVolumeSats",
     ),
+    inceptionBondFlowSats: growthNumberField(
+      payload,
+      "inceptionBondFlowSats",
+    ),
+    inceptionBondSats: growthNumberField(payload, "inceptionBondSats"),
     infinityBondFlowSats: growthNumberField(
       payload,
       "infinityBondFlowSats",
@@ -10789,6 +10884,7 @@ function normalizeGrowthCounts(
     confirmedTokenTransfers: numberCount("confirmedTokenTransfers"),
     driveActions: numberCount("driveActions"),
     idListings: numberCount("idListings"),
+    inceptionBondActions: numberCount("inceptionBondActions"),
     infinityBondActions: numberCount("infinityBondActions"),
     mailActions: numberCount("mailActions"),
     marketplaceSaleCount: numberCount("marketplaceSaleCount"),
@@ -11242,6 +11338,7 @@ function normalizeInfinityBondChartPoint(
 
 function normalizeInfinitySummary(
   payload: InfinitySummaryApiResponse,
+  config: BondUiConfig = INFINITY_BOND_UI,
 ): InfinitySummarySnapshot {
   const actualValue = normalizeInfinityActualValue(payload.actualValue);
   const token = normalizeTokenApiState(payload.token);
@@ -11263,29 +11360,36 @@ function normalizeInfinitySummary(
     registryAddress:
       typeof payload.registryAddress === "string"
         ? payload.registryAddress
-        : token.tokens.find((item) => item.tokenId === POWB_TOKEN_ID)
+        : token.tokens.find((item) => item.tokenId === config.tokenId)
             ?.registryAddress ?? "",
     registryId:
       typeof payload.registryId === "string"
         ? payload.registryId
-        : POWB_REGISTRY_ID,
+        : config.registryId,
     stats: normalizeInfinityStats(payload.stats),
     ticker:
-      typeof payload.ticker === "string" ? payload.ticker : POWB_TOKEN_TICKER,
+      typeof payload.ticker === "string" ? payload.ticker : config.ticker,
     token,
     tokenId:
-      typeof payload.tokenId === "string" ? payload.tokenId : POWB_TOKEN_ID,
+      typeof payload.tokenId === "string" ? payload.tokenId : config.tokenId,
   };
 }
 
 async function fetchInfinitySummary(
   fresh = false,
 ): Promise<InfinitySummarySnapshot> {
+  return fetchBondSummary(INFINITY_BOND_UI, fresh);
+}
+
+async function fetchBondSummary(
+  config: BondUiConfig,
+  fresh = false,
+): Promise<InfinitySummarySnapshot> {
   const payload = await fetchProofApiJson<InfinitySummaryApiResponse>(
-    fresh ? "/api/v1/infinity-summary?fresh=1" : "/api/v1/infinity-summary",
+    fresh ? `${config.summaryPath}?fresh=1` : config.summaryPath,
     "livenet",
   );
-  return normalizeInfinitySummary(payload);
+  return normalizeInfinitySummary(payload, config);
 }
 
 function normalizeGrowthSummary(
@@ -13375,6 +13479,12 @@ export default function App() {
   const walletMode = isWalletRoute();
   const workTokenMode = isWorkTokenRoute();
   const infinityMode = isInfinityRoute();
+  const inceptionMode = isInceptionRoute();
+  const standaloneBondConfig = inceptionMode
+    ? INCEPTION_BOND_UI
+    : infinityMode
+      ? INFINITY_BOND_UI
+      : undefined;
   const rushMode = isRushRoute();
   const activityMode = isActivityRoute();
   const growthMode = isGrowthRoute();
@@ -13385,6 +13495,7 @@ export default function App() {
     walletMode ||
     workTokenMode ||
     infinityMode ||
+    inceptionMode ||
     activityMode ||
     growthMode;
   const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
@@ -13459,15 +13570,15 @@ export default function App() {
   }, [tokenClosedListings]);
 
   const [tokenSelectedId, setTokenSelectedId] = useState(() =>
-    infinityMode
-      ? POWB_TOKEN_ID
+    standaloneBondConfig
+      ? standaloneBondConfig.tokenId
       : workTokenMode
         ? WORK_TOKEN_TICKER
         : tokenRouteTarget(),
   );
   const [tokenDetailTarget, setTokenDetailTarget] = useState(() =>
-    infinityMode
-      ? POWB_TOKEN_ID
+    standaloneBondConfig
+      ? standaloneBondConfig.tokenId
       : workTokenMode
         ? WORK_TOKEN_TICKER
         : tokenRouteTarget(),
@@ -13497,6 +13608,7 @@ export default function App() {
     InfinitySummarySnapshot | undefined
   >();
   const [infinityBondAmount, setInfinityBondAmount] = useState(1000);
+  const [bondWorkAmount, setBondWorkAmount] = useState(0);
   const [infinityBondRecipient, setInfinityBondRecipient] = useState("");
   const [workFloorLoading, setWorkFloorLoading] = useState(false);
   const [tokenPrepareMintCount, setTokenPrepareMintCount] = useState(
@@ -13574,6 +13686,7 @@ export default function App() {
       !rushMode &&
       !activityMode &&
       !infinityMode &&
+      !inceptionMode &&
       !growthMode
         ? computerFolderFromSearch()
         : undefined;
@@ -13594,6 +13707,8 @@ export default function App() {
                   ? "work"
                   : infinityMode
                     ? "infinity"
+                    : inceptionMode
+                      ? "inception"
                     : activityMode
                       ? "log"
                       : mainnetRegistryMode
@@ -13601,6 +13716,15 @@ export default function App() {
                         : "inbox")
     );
   });
+  const activeBondConfig =
+    inceptionMode || activeFolder === "inception"
+      ? INCEPTION_BOND_UI
+      : INFINITY_BOND_UI;
+  const bondWorkspaceActive = Boolean(
+    standaloneBondConfig ||
+      activeFolder === "infinity" ||
+      activeFolder === "inception",
+  );
   const [activeCustomFolderId, setActiveCustomFolderId] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("value");
   const [fileFilter, setFileFilter] = useState<FileFilter>("all");
@@ -13620,6 +13744,8 @@ export default function App() {
   );
   const [accountPowbTokenState, setAccountPowbTokenState] =
     useState<PowTokenState>(() => emptyTokenState());
+  const [accountIncbTokenState, setAccountIncbTokenState] =
+    useState<PowTokenState>(() => emptyTokenState());
   const [refreshing, setRefreshing] = useState(false);
   const [checkingBroadcasts, setCheckingBroadcasts] = useState(false);
   const allSentRef = useRef(allSent);
@@ -13636,6 +13762,7 @@ export default function App() {
   const infinityRefreshInFlightRef =
     useRef<Promise<InfinitySummarySnapshot | undefined> | null>(null);
   const infinityRefreshInFlightFreshRef = useRef(false);
+  const infinityRefreshTokenIdRef = useRef("");
   const growthRefreshInFlightRef = useRef(false);
   const workFloorRefreshInFlightRef =
     useRef<Promise<WorkFloorQuote | undefined> | null>(null);
@@ -13645,9 +13772,9 @@ export default function App() {
   const acceptedTokenStateScopeRef = useRef(DEFAULT_TOKEN_STATE_SCOPE_KEY);
   const acceptedWorkFloorQuoteRef = useRef<WorkFloorQuote | undefined>();
   const acceptedGrowthSummaryRef = useRef<GrowthSummarySnapshot | undefined>();
-  const acceptedInfinitySummaryRef = useRef<
-    InfinitySummarySnapshot | undefined
-  >();
+  const acceptedBondSummariesRef = useRef(
+    new Map<string, InfinitySummarySnapshot>(),
+  );
   const acceptedActivityStatsRef = useRef<PowActivityStats | undefined>();
   const tokenMintAssistantActiveRef = useRef(false);
   const tokenMintAssistantTimerRef = useRef<number | undefined>(undefined);
@@ -13754,12 +13881,12 @@ export default function App() {
   }
 
   function applyInfinitySummary(snapshot: InfinitySummarySnapshot) {
-    const current = acceptedInfinitySummaryRef.current;
+    const current = acceptedBondSummariesRef.current.get(snapshot.tokenId);
     if (infinitySummaryRegresses(snapshot, current)) {
       return current;
     }
 
-    acceptedInfinitySummaryRef.current = snapshot;
+    acceptedBondSummariesRef.current.set(snapshot.tokenId, snapshot);
     setInfinitySummary(snapshot);
     return snapshot;
   }
@@ -13829,7 +13956,12 @@ export default function App() {
   }, [growthSummary]);
 
   useEffect(() => {
-    acceptedInfinitySummaryRef.current = infinitySummary;
+    if (infinitySummary?.tokenId) {
+      acceptedBondSummariesRef.current.set(
+        infinitySummary.tokenId,
+        infinitySummary,
+      );
+    }
   }, [infinitySummary]);
 
   useEffect(() => {
@@ -14575,6 +14707,15 @@ export default function App() {
       ),
     [orderedTokenDefinitions],
   );
+  const incbTokenDefinitions = useMemo(
+    () =>
+      orderedTokenDefinitions.filter(
+        (token) =>
+          token.tokenId === INCB_TOKEN_ID ||
+          normalizeTokenTicker(token.ticker) === INCB_TOKEN_TICKER,
+      ),
+    [orderedTokenDefinitions],
+  );
   const powbWalletBalances = useMemo(
     () =>
       tokenWalletBalancesFor(
@@ -14588,6 +14729,25 @@ export default function App() {
     [
       address,
       powbTokenDefinitions,
+      tokenHolders,
+      tokenMints,
+      tokenSales,
+      tokenTransfers,
+    ],
+  );
+  const incbWalletBalances = useMemo(
+    () =>
+      tokenWalletBalancesFor(
+        address,
+        incbTokenDefinitions,
+        tokenMints,
+        tokenTransfers,
+        tokenSales,
+        tokenHolders,
+      ),
+    [
+      address,
+      incbTokenDefinitions,
       tokenHolders,
       tokenMints,
       tokenSales,
@@ -14618,38 +14778,89 @@ export default function App() {
       ),
     [accountPowbTokenState, address],
   );
+  const accountIncbWalletBalances = useMemo(
+    () =>
+      tokenWalletBalancesFor(
+        address,
+        accountIncbTokenState.tokens,
+        accountIncbTokenState.mints,
+        accountIncbTokenState.transfers,
+        accountIncbTokenState.sales,
+        accountIncbTokenState.holders,
+      ),
+    [accountIncbTokenState, address],
+  );
   const accountWalletBalances = useMemo(
     () =>
       mergeTokenWalletBalancesByToken(
-        accountTokenWalletBalances,
-        accountPowbWalletBalances,
+        mergeTokenWalletBalancesByToken(
+          accountTokenWalletBalances,
+          accountPowbWalletBalances,
+        ),
+        accountIncbWalletBalances,
       ),
-    [accountPowbWalletBalances, accountTokenWalletBalances],
+    [
+      accountIncbWalletBalances,
+      accountPowbWalletBalances,
+      accountTokenWalletBalances,
+    ],
   );
-  const powbTokenDefinition = powbTokenDefinitions[0];
-  const powbMints = useMemo(
-    () => tokenMints.filter((mint) => mint.tokenId === POWB_TOKEN_ID),
-    [tokenMints],
-  );
-  const powbTransfers = useMemo(
+  const activeBondTokenDefinitions = useMemo(
     () =>
-      tokenTransfers.filter((transfer) => transfer.tokenId === POWB_TOKEN_ID),
-    [tokenTransfers],
+      orderedTokenDefinitions.filter(
+        (token) => token.tokenId === activeBondConfig.tokenId,
+      ),
+    [activeBondConfig.tokenId, orderedTokenDefinitions],
   );
-  const powbListings = useMemo(
-    () => tokenListings.filter((listing) => listing.tokenId === POWB_TOKEN_ID),
-    [tokenListings],
+  const activeBondWalletBalances = useMemo(
+    () =>
+      tokenWalletBalancesFor(
+        address,
+        activeBondTokenDefinitions,
+        tokenMints,
+        tokenTransfers,
+        tokenSales,
+        tokenHolders,
+      ),
+    [
+      activeBondTokenDefinitions,
+      address,
+      tokenHolders,
+      tokenMints,
+      tokenSales,
+      tokenTransfers,
+    ],
   );
-  const powbClosedListings = useMemo(
+  const activeBondTokenDefinition = activeBondTokenDefinitions[0];
+  const activeBondMints = useMemo(
+    () => tokenMints.filter((mint) => mint.tokenId === activeBondConfig.tokenId),
+    [activeBondConfig.tokenId, tokenMints],
+  );
+  const activeBondTransfers = useMemo(
+    () =>
+      tokenTransfers.filter(
+        (transfer) => transfer.tokenId === activeBondConfig.tokenId,
+      ),
+    [activeBondConfig.tokenId, tokenTransfers],
+  );
+  const activeBondListings = useMemo(
+    () =>
+      tokenListings.filter(
+        (listing) => listing.tokenId === activeBondConfig.tokenId,
+      ),
+    [activeBondConfig.tokenId, tokenListings],
+  );
+  const activeBondClosedListings = useMemo(
     () =>
       tokenClosedListings.filter(
-        (listing) => listing.tokenId === POWB_TOKEN_ID,
+        (listing) => listing.tokenId === activeBondConfig.tokenId,
       ),
-    [tokenClosedListings],
+    [activeBondConfig.tokenId, tokenClosedListings],
   );
-  const powbSales = useMemo(
-    () => tokenSales.filter((sale) => sale.tokenId === POWB_TOKEN_ID),
-    [tokenSales],
+  const activeBondSales = useMemo(
+    () =>
+      tokenSales.filter((sale) => sale.tokenId === activeBondConfig.tokenId),
+    [activeBondConfig.tokenId, tokenSales],
   );
   const infinityBondRecipientInput = infinityBondRecipient.trim();
   const infinityBondResolution = useMemo<RecipientResolution>(
@@ -14671,13 +14882,62 @@ export default function App() {
   const infinityBondAmountValue = Number.isFinite(infinityBondAmount)
     ? Math.floor(infinityBondAmount)
     : 0;
+  const infinityBondSummary =
+    infinitySummary?.tokenId === POWB_TOKEN_ID
+      ? infinitySummary
+      : acceptedBondSummariesRef.current.get(POWB_TOKEN_ID);
+  const inceptionBondSummary =
+    infinitySummary?.tokenId === INCB_TOKEN_ID
+      ? infinitySummary
+      : acceptedBondSummariesRef.current.get(INCB_TOKEN_ID);
+  const activeBondSummary =
+    activeBondConfig.tokenId === INCB_TOKEN_ID
+      ? inceptionBondSummary
+      : infinityBondSummary;
   const infinityBondPayloads = useMemo(
-    () => buildProtocolPayloads(INFINITY_BOND_SUBJECT, INFINITY_BOND_MEMO),
-    [],
+    () =>
+      buildProtocolPayloads(activeBondConfig.subject, activeBondConfig.memo),
+    [activeBondConfig.memo, activeBondConfig.subject],
   );
+  const bondWorkAmountValue =
+    Number.isFinite(bondWorkAmount) && bondWorkAmount > 0
+      ? Math.floor(bondWorkAmount)
+      : 0;
+  const bondWorkAttachmentPayloads = useMemo(
+    () =>
+      bondWorkAmountValue > 0 &&
+      workAttachmentAllowed &&
+      infinityBondResolution.paymentAddress &&
+      isValidBitcoinAddress(infinityBondResolution.paymentAddress, "livenet")
+        ? [
+            buildTokenSendPayload(
+              WORK_TOKEN_ID,
+              bondWorkAmountValue,
+              infinityBondResolution.paymentAddress,
+            ),
+          ]
+        : [],
+    [
+      bondWorkAmountValue,
+      infinityBondResolution.paymentAddress,
+      workAttachmentAllowed,
+    ],
+  );
+  const bondWorkAttachmentBalanceOk =
+    bondWorkAmountValue <= 0 ||
+    (workAttachmentAllowed &&
+      bondWorkAttachmentPayloads.length === 1 &&
+      bondWorkAmountValue <= workAttachmentSpendableBalance);
+  const bondWorkAttachmentVisible =
+    workAttachmentAllowed &&
+    (workAttachmentSpendableBalance > 0 || bondWorkAmountValue > 0);
   const infinityBondBytes = useMemo(
-    () => dataCarrierBytesForPayloads(infinityBondPayloads),
-    [infinityBondPayloads],
+    () =>
+      dataCarrierBytesForPayloads([
+        ...infinityBondPayloads,
+        ...bondWorkAttachmentPayloads,
+      ]),
+    [bondWorkAttachmentPayloads, infinityBondPayloads],
   );
   const canCreateInfinityBond =
     Boolean(
@@ -14688,6 +14948,7 @@ export default function App() {
       !infinityBondResolution.error &&
       isValidBitcoinAddress(infinityBondResolution.paymentAddress, "livenet"),
     ) &&
+    bondWorkAttachmentBalanceOk &&
     infinityBondBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
   const walletTransferToken =
@@ -14695,8 +14956,8 @@ export default function App() {
       (item) => item.token.tokenId === tokenTransferTokenId,
     )?.token ??
     tokenWalletBalances[0]?.token ??
-    (infinityMode || activeFolder === "infinity"
-      ? powbTokenDefinition
+    (bondWorkspaceActive
+      ? activeBondTokenDefinition
       : !address && !walletMode && activeFolder !== "wallet"
         ? workTokenDefinition ?? WORK_TOKEN_DEFINITION
         : undefined);
@@ -14724,6 +14985,7 @@ export default function App() {
         [
           ...accountTokenState.listings,
           ...accountPowbTokenState.listings,
+          ...accountIncbTokenState.listings,
           ...tokenListings,
         ],
         address,
@@ -14747,29 +15009,29 @@ export default function App() {
     );
     const accountCreditBalances = accountWalletBalances.filter(
       (balance) =>
-        balance.confirmedBalance > 0 && !isPowbTokenDefinition(balance.token),
+        balance.confirmedBalance > 0 && !isBondTokenDefinition(balance.token),
     );
     const routeCreditBalances = tokenWalletBalances.filter(
       (balance) =>
-        balance.confirmedBalance > 0 && !isPowbTokenDefinition(balance.token),
+        balance.confirmedBalance > 0 && !isBondTokenDefinition(balance.token),
     );
     const confirmedCreditBalances = accountCreditBalances.length > 0
       ? accountCreditBalances
       : routeCreditBalances;
-    const accountPowbBalances = accountWalletBalances.filter(
+    const accountBondBalances = accountWalletBalances.filter(
       (balance) =>
-        balance.confirmedBalance > 0 && isPowbTokenDefinition(balance.token),
+        balance.confirmedBalance > 0 && isBondTokenDefinition(balance.token),
     );
-    const connectedPowbWalletBalances = accountPowbBalances.length > 0
-      ? accountPowbBalances
-      : powbWalletBalances;
+    const routeBondBalances = mergeTokenWalletBalancesByToken(
+      powbWalletBalances,
+      incbWalletBalances,
+    ).filter((balance) => balance.confirmedBalance > 0);
+    const connectedBondWalletBalances = accountBondBalances.length > 0
+      ? accountBondBalances
+      : routeBondBalances;
     const pendingTokenBalances = accountWalletBalances.length > 0
       ? accountWalletBalances
       : tokenWalletBalances;
-    const powbConfirmedBalance = connectedPowbWalletBalances.reduce(
-      (total, balance) => total + Math.max(0, balance.confirmedBalance),
-      0,
-    );
     const pendingCreditEvents = pendingTokenBalances.reduce(
       (total, balance) =>
         total +
@@ -14851,11 +15113,12 @@ export default function App() {
       });
     }
 
-    if (powbConfirmedBalance > 0) {
+    for (const balance of connectedBondWalletBalances) {
+      const config = bondUiConfigForTokenId(balance.token.tokenId);
       stats.push({
-        detail: "Confirmed Infinity Bond / POWB balance.",
-        label: "bond balance",
-        value: `${powbConfirmedBalance.toLocaleString()} POWB`,
+        detail: `Confirmed ${config?.displayName ?? "bond"} credit balance.`,
+        label: `${balance.token.ticker.toLowerCase()} balance`,
+        value: `${balance.confirmedBalance.toLocaleString()} ${balance.token.ticker}`,
       });
     }
 
@@ -14877,6 +15140,7 @@ export default function App() {
 
     return stats;
   }, [
+    accountIncbTokenState.listings,
     accountPowbTokenState.listings,
     accountTokenState.listings,
     accountUtxos,
@@ -14885,6 +15149,7 @@ export default function App() {
     allFileMessages,
     idListings,
     incomingMailAll,
+    incbWalletBalances,
     network,
     outboxMailAll,
     powbWalletBalances,
@@ -15246,6 +15511,7 @@ export default function App() {
                 activeFolder === "wallet" ||
                 activeFolder === "work" ||
                 activeFolder === "infinity" ||
+                activeFolder === "inception" ||
                 activeFolder === "log"
             ? busy || refreshInProgress || !registryAddress
             : !address || busy || refreshInProgress;
@@ -15325,6 +15591,7 @@ export default function App() {
     if (!address || !tokenIndexAddress) {
       setAccountTokenState(emptyTokenState());
       setAccountPowbTokenState(emptyTokenState());
+      setAccountIncbTokenState(emptyTokenState());
       return;
     }
 
@@ -15332,6 +15599,7 @@ export default function App() {
     let requestId = 0;
     setAccountTokenState(emptyTokenState());
     setAccountPowbTokenState(emptyTokenState());
+    setAccountIncbTokenState(emptyTokenState());
 
     const loadAccountTokenBalances = () => {
       const currentRequestId = ++requestId;
@@ -15348,6 +15616,14 @@ export default function App() {
         .then((state) => {
           if (!cancelled && currentRequestId === requestId) {
             setAccountPowbTokenState(state);
+          }
+        })
+        .catch(() => undefined);
+
+      void fetchTokenState(network, false, INCB_TOKEN_ID, true, [address], true)
+        .then((state) => {
+          if (!cancelled && currentRequestId === requestId) {
+            setAccountIncbTokenState(state);
           }
         })
         .catch(() => undefined);
@@ -15543,6 +15819,7 @@ export default function App() {
   useEffect(() => {
     if (!canAttachWorkToMessages(address, network)) {
       setMessageWorkAmount(0);
+      setBondWorkAmount(0);
     }
   }, [address, network]);
 
@@ -15554,6 +15831,7 @@ export default function App() {
       walletMode ||
       workTokenMode ||
       infinityMode ||
+      inceptionMode ||
       rushMode
     ) {
       return;
@@ -15566,14 +15844,15 @@ export default function App() {
       activeFolder === "wallet" ||
       activeFolder === "work" ||
       activeFolder === "infinity" ||
+      activeFolder === "inception" ||
       activeFolder === "contacts"
     ) {
-      if (activeFolder === "infinity") {
+      if (activeFolder === "infinity" || activeFolder === "inception") {
         if (network !== "livenet") {
           setNetwork("livenet");
           return;
         }
-        void refreshInfinity(true, false);
+        void refreshInfinity(true, false, activeBondConfig);
         return;
       }
 
@@ -15591,6 +15870,7 @@ export default function App() {
     activeFolder,
     activityMode,
     growthMode,
+    inceptionMode,
     infinityMode,
     network,
     rushMode,
@@ -15617,6 +15897,7 @@ export default function App() {
       walletMode ||
       workTokenMode ||
       infinityMode ||
+      inceptionMode ||
       rushMode
     ) {
       return;
@@ -15627,6 +15908,7 @@ export default function App() {
   }, [
     activityMode,
     growthMode,
+    inceptionMode,
     infinityMode,
     mainnetRegistryMode,
     marketplaceMode,
@@ -15640,7 +15922,7 @@ export default function App() {
   useEffect(() => {
     if (
       (!marketplaceMode && !tokenMode && !walletMode && !workTokenMode) ||
-      infinityMode ||
+      Boolean(standaloneBondConfig) ||
       network !== "livenet"
     ) {
       return;
@@ -15671,7 +15953,7 @@ export default function App() {
     };
   }, [
     activeFolder,
-    infinityMode,
+    standaloneBondConfig,
     marketplaceMode,
     network,
     tokenMode,
@@ -15822,11 +16104,13 @@ export default function App() {
       !growthMode &&
       !workTokenMode &&
       !infinityMode &&
+      !inceptionMode &&
       activeFolder !== "marketplace" &&
       activeFolder !== "token" &&
       activeFolder !== "wallet" &&
       activeFolder !== "work" &&
-      activeFolder !== "infinity"
+      activeFolder !== "infinity" &&
+      activeFolder !== "inception"
     ) {
       return;
     }
@@ -15848,6 +16132,7 @@ export default function App() {
   }, [
     activeFolder,
     growthMode,
+    inceptionMode,
     infinityMode,
     marketplaceMode,
     tokenMode,
@@ -15920,7 +16205,7 @@ export default function App() {
   }, [marketplaceMode, network]);
 
   useEffect(() => {
-    if (!infinityMode && activeFolder !== "infinity") {
+    if (!bondWorkspaceActive) {
       return;
     }
 
@@ -15931,11 +16216,11 @@ export default function App() {
 
     let cancelled = false;
     void (async () => {
-      await refreshInfinity(true, false);
+      await refreshInfinity(true, false, activeBondConfig);
       if (!cancelled && document.visibilityState === "visible") {
         window.setTimeout(() => {
           if (!cancelled && document.visibilityState === "visible") {
-            void refreshInfinity(true, true);
+            void refreshInfinity(true, true, activeBondConfig);
           }
         }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
       }
@@ -15944,7 +16229,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeFolder, infinityMode, network]);
+  }, [activeBondConfig, bondWorkspaceActive, network]);
 
   useEffect(() => {
     if (
@@ -15958,7 +16243,7 @@ export default function App() {
           needsRegistryResolution(tokenCreateRegistryAddress, network)
         ) &&
         !(
-          (infinityMode || activeFolder === "infinity") &&
+          bondWorkspaceActive &&
           needsRegistryResolution(infinityBondRecipient, "livenet")
         )) ||
       !registryAddress
@@ -15983,8 +16268,10 @@ export default function App() {
     };
   }, [
     activeFolder,
+    bondWorkspaceActive,
     ccRecipient,
     infinityBondRecipient,
+    inceptionMode,
     infinityMode,
     network,
     recipient,
@@ -16067,8 +16354,8 @@ export default function App() {
                 ? "wallet"
                 : marketplaceMode
                   ? "marketplace"
-                  : infinityMode
-                    ? "marketplace"
+                  : standaloneBondConfig
+                    ? standaloneBondConfig.folder
                   : mainnetRegistryMode
                     ? "ids"
                     : "inbox",
@@ -16081,23 +16368,23 @@ export default function App() {
       }
 
       try {
-        if (infinityMode) {
+        if (standaloneBondConfig) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
-          const snapshot = await fetchInfinitySummary(false);
+          const snapshot = await fetchBondSummary(standaloneBondConfig, false);
           const tokenState = snapshot.token;
           applyInfinitySummary(snapshot);
           applyTokenState(tokenState, {
             scopeKey: tokenStateScopeKey({
               network: "livenet",
-              tokenScope: POWB_TOKEN_ID,
+              tokenScope: standaloneBondConfig.tokenId,
               walletScoped: false,
             }),
           });
-          setTokenSelectedId(POWB_TOKEN_ID);
-          setTokenDetailTarget(POWB_TOKEN_ID);
+          setTokenSelectedId(standaloneBondConfig.tokenId);
+          setTokenDetailTarget(standaloneBondConfig.tokenId);
           setStatus({
             tone: "good",
-            text: `${shortAddress(nextAddress)} connected. Infinity Bonds ready.`,
+            text: `${shortAddress(nextAddress)} connected. ${standaloneBondConfig.pluralName} ready.`,
           });
           return;
         }
@@ -16207,12 +16494,14 @@ export default function App() {
     desktopRoute,
     growthMode,
     hasUnisat,
+    inceptionMode,
     infinityMode,
     landingMode,
     mainnetRegistryMode,
     marketplaceMode,
     network,
     rushMode,
+    standaloneBondConfig,
     tokenMode,
     walletMode,
     workTokenMode,
@@ -16491,6 +16780,7 @@ export default function App() {
       walletMode ||
       workTokenMode ||
       infinityMode ||
+      inceptionMode ||
       rushMode ||
       activityMode ||
       growthMode
@@ -16527,6 +16817,7 @@ export default function App() {
       walletMode ||
       workTokenMode ||
       infinityMode ||
+      inceptionMode ||
       rushMode ||
       activityMode ||
       growthMode
@@ -17273,25 +17564,28 @@ export default function App() {
   async function refreshInfinity(
     silent = false,
     fresh = false,
+    config: BondUiConfig = activeBondConfig,
   ): Promise<InfinitySummarySnapshot | undefined> {
     if (network !== "livenet") {
       return undefined;
     }
 
     if (infinityRefreshInFlightRef.current) {
+      const needsDifferentBond =
+        infinityRefreshTokenIdRef.current !== config.tokenId;
       const needsFreshRefresh =
         fresh && !infinityRefreshInFlightFreshRef.current;
       if (!silent) {
         setBusy(true);
         setStatus({
           tone: "idle",
-          text: "Infinity refresh already in progress...",
+          text: `${config.displayName} refresh already in progress...`,
         });
       }
       try {
         const snapshot = await infinityRefreshInFlightRef.current;
-        if (needsFreshRefresh) {
-          return refreshInfinity(silent, fresh);
+        if (needsDifferentBond || needsFreshRefresh) {
+          return refreshInfinity(silent, fresh, config);
         }
         return snapshot;
       } finally {
@@ -17304,12 +17598,12 @@ export default function App() {
     const refreshPromise = (async () => {
       if (!silent) {
         setBusy(true);
-        setStatus({ tone: "idle", text: "Refreshing Infinity Bonds..." });
+        setStatus({ tone: "idle", text: `Refreshing ${config.pluralName}...` });
       }
 
       try {
         const [snapshot, registryState, btcUsdQuote] = await Promise.all([
-          fetchInfinitySummary(fresh),
+          fetchBondSummary(config, fresh),
           fetchIdRegistryState("livenet", fresh, true).catch(() => undefined),
           fetchBtcUsdPrice(fresh).catch(() => undefined),
         ]);
@@ -17321,19 +17615,19 @@ export default function App() {
         const acceptedTokenState = applyTokenState(tokenState, {
           scopeKey: tokenStateScopeKey({
             network: "livenet",
-            tokenScope: POWB_TOKEN_ID,
+            tokenScope: config.tokenId,
             walletScoped: false,
           }),
         });
-        setTokenSelectedId(POWB_TOKEN_ID);
-        setTokenDetailTarget(POWB_TOKEN_ID);
+        setTokenSelectedId(config.tokenId);
+        setTokenDetailTarget(config.tokenId);
         if (btcUsdQuote) {
           setTokenBtcUsd(btcUsdQuote);
         }
         if (!silent) {
           setStatus({
             tone: "good",
-            text: `Infinity loaded. ${acceptedSnapshot.stats.confirmedSupply.toLocaleString()} POWB confirmed from ${acceptedSnapshot.stats.confirmedBondActions.toLocaleString()} bond action${acceptedSnapshot.stats.confirmedBondActions === 1 ? "" : "s"}.`,
+            text: `${config.displayName} loaded. ${acceptedSnapshot.stats.confirmedSupply.toLocaleString()} ${config.ticker} confirmed from ${acceptedSnapshot.stats.confirmedBondActions.toLocaleString()} bond action${acceptedSnapshot.stats.confirmedBondActions === 1 ? "" : "s"}.`,
           });
         }
         return { ...acceptedSnapshot, token: acceptedTokenState };
@@ -17341,19 +17635,21 @@ export default function App() {
         if (!silent) {
           setStatus({
             tone: "bad",
-            text: errorMessage(error, "Infinity refresh failed."),
+            text: errorMessage(error, `${config.displayName} refresh failed.`),
           });
         }
         return undefined;
       } finally {
         infinityRefreshInFlightRef.current = null;
         infinityRefreshInFlightFreshRef.current = false;
+        infinityRefreshTokenIdRef.current = "";
         if (!silent) {
           setBusy(false);
         }
       }
     })();
     infinityRefreshInFlightFreshRef.current = fresh;
+    infinityRefreshTokenIdRef.current = config.tokenId;
     infinityRefreshInFlightRef.current = refreshPromise;
     return refreshPromise;
   }
@@ -17882,7 +18178,7 @@ export default function App() {
           : "";
         setStatus({
           tone: "good",
-          text: `Growth metrics loaded from ledger snapshot ${snapshotDate}.${quoteDate} ${acceptedSnapshot.counts.powids.toLocaleString()} IDs, ${acceptedSnapshot.counts.infinityBondActions.toLocaleString()} Infinity Bond action${acceptedSnapshot.counts.infinityBondActions === 1 ? "" : "s"}, ${acceptedSnapshot.counts.confirmedComputerActions.toLocaleString()} computer action${acceptedSnapshot.counts.confirmedComputerActions === 1 ? "" : "s"}.`,
+          text: `Growth metrics loaded from ledger snapshot ${snapshotDate}.${quoteDate} ${acceptedSnapshot.counts.powids.toLocaleString()} IDs, ${(acceptedSnapshot.counts.infinityBondActions + acceptedSnapshot.counts.inceptionBondActions).toLocaleString()} bond action${acceptedSnapshot.counts.infinityBondActions + acceptedSnapshot.counts.inceptionBondActions === 1 ? "" : "s"}, ${acceptedSnapshot.counts.confirmedComputerActions.toLocaleString()} computer action${acceptedSnapshot.counts.confirmedComputerActions === 1 ? "" : "s"}.`,
         });
       }
     } catch (error) {
@@ -18033,8 +18329,8 @@ export default function App() {
                 ? "work"
                 : marketplaceMode
                   ? "marketplace"
-                  : infinityMode
-                    ? "infinity"
+                  : standaloneBondConfig
+                    ? standaloneBondConfig.folder
                   : mainnetRegistryMode
                     ? "ids"
                     : "inbox",
@@ -18042,22 +18338,22 @@ export default function App() {
       setComposeOpen(false);
 
       try {
-        if (infinityMode) {
-          const snapshot = await fetchInfinitySummary(false);
+        if (standaloneBondConfig) {
+          const snapshot = await fetchBondSummary(standaloneBondConfig, false);
           const tokenState = snapshot.token;
           applyInfinitySummary(snapshot);
           applyTokenState(tokenState, {
             scopeKey: tokenStateScopeKey({
               network: "livenet",
-              tokenScope: POWB_TOKEN_ID,
+              tokenScope: standaloneBondConfig.tokenId,
               walletScoped: false,
             }),
           });
-          setTokenSelectedId(POWB_TOKEN_ID);
-          setTokenDetailTarget(POWB_TOKEN_ID);
+          setTokenSelectedId(standaloneBondConfig.tokenId);
+          setTokenDetailTarget(standaloneBondConfig.tokenId);
           setStatus({
             tone: "good",
-            text: `UniSat connected. Infinity Bonds ready.`,
+            text: `UniSat connected. ${standaloneBondConfig.pluralName} ready.`,
           });
           return;
         }
@@ -20274,7 +20570,7 @@ export default function App() {
     }
 
     if (network !== "livenet") {
-      setStatus({ tone: "bad", text: "Infinity Bonds are mainnet only." });
+      setStatus({ tone: "bad", text: `${activeBondConfig.pluralName} are mainnet only.` });
       return;
     }
 
@@ -20289,7 +20585,7 @@ export default function App() {
     if (infinityBondBytes > MAX_DATA_CARRIER_BYTES) {
       setStatus({
         tone: "bad",
-        text: "Infinity Bond OP_RETURN is over 100 KB.",
+        text: `${activeBondConfig.displayName} OP_RETURN is over 100 KB.`,
       });
       return;
     }
@@ -20300,7 +20596,7 @@ export default function App() {
       tone: "idle",
       text: infinityBondRecipientInput
         ? "Checking bond recipient..."
-        : "Building Infinity Bond...",
+        : `Building ${activeBondConfig.displayName}...`,
     });
 
     try {
@@ -20348,8 +20644,111 @@ export default function App() {
         address,
         { network: "livenet" },
       );
+      let paymentExcludeOutpoints = [
+        ...reservedIdOutpoints,
+        ...reservedTokenOutpoints,
+      ];
+      let attachedWorkCredits: MailAttachedCredit[] = [];
+      let attachedWorkPayloads: string[] = [];
+      const workAmountToAttach = bondWorkAmountValue;
+
+      if (workAmountToAttach > 0) {
+        if (!canAttachWorkToMessages(address, "livenet")) {
+          setStatus({
+            tone: "bad",
+            text: "WORK bond attachments are enabled only for approved mainnet senders.",
+          });
+          return;
+        }
+
+        if (!Number.isSafeInteger(workAmountToAttach)) {
+          setStatus({ tone: "bad", text: "Attach a whole-number WORK amount." });
+          return;
+        }
+
+        setStatus({ tone: "idle", text: "Checking spendable WORK..." });
+        const latestWorkState = await fetchTokenState(
+          "livenet",
+          true,
+          WORK_TOKEN_ID,
+          false,
+          [address],
+          true,
+        );
+        const latestWorkTokens = latestWorkState.tokens.some(
+          (token) => token.tokenId === WORK_TOKEN_ID,
+        )
+          ? latestWorkState.tokens
+          : [WORK_TOKEN_DEFINITION, ...latestWorkState.tokens];
+        const latestWorkBalance =
+          tokenWalletBalancesFor(
+            address,
+            latestWorkTokens,
+            latestWorkState.mints,
+            latestWorkState.transfers,
+            latestWorkState.sales,
+            latestWorkState.holders,
+          ).find((item) => item.token.tokenId === WORK_TOKEN_ID)
+            ?.confirmedBalance ?? 0;
+        const latestReservedWork = tokenReservedBalanceFor(
+          latestWorkState.listings,
+          WORK_TOKEN_ID,
+          address,
+        );
+        const latestSpendableWork = Math.max(
+          0,
+          latestWorkBalance - latestReservedWork,
+        );
+        if (workAmountToAttach > latestSpendableWork) {
+          setStatus({
+            tone: "bad",
+            text: `Attach up to ${latestSpendableWork.toLocaleString()} spendable WORK.`,
+          });
+          return;
+        }
+
+        attachedWorkCredits = [
+          {
+            amount: workAmountToAttach,
+            paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+            recipientAddress: resolvedRecipient.paymentAddress,
+            registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+            ticker: WORK_TOKEN_TICKER,
+            tokenId: WORK_TOKEN_ID,
+          },
+        ];
+        attachedWorkPayloads = [
+          buildTokenSendPayload(
+            WORK_TOKEN_ID,
+            workAmountToAttach,
+            resolvedRecipient.paymentAddress,
+          ),
+        ];
+        if (
+          dataCarrierBytesForPayloads([
+            ...infinityBondPayloads,
+            ...attachedWorkPayloads,
+          ]) > MAX_DATA_CARRIER_BYTES
+        ) {
+          setStatus({
+            tone: "bad",
+            text: `${activeBondConfig.displayName} plus WORK attachment OP_RETURN is over 100 KB.`,
+          });
+          return;
+        }
+
+        paymentExcludeOutpoints = [
+          ...paymentExcludeOutpoints,
+          ...activeTokenListingAnchorOutpointsForAddress(
+            latestWorkState.listings,
+            address,
+            { network: "livenet" },
+          ),
+        ];
+      }
+
       const paymentPsbt = await buildPaymentPsbt({
-        excludeOutpoints: [...reservedIdOutpoints, ...reservedTokenOutpoints],
+        excludeOutpoints: paymentExcludeOutpoints,
         feeRate,
         fromAddress: address,
         network: "livenet",
@@ -20359,6 +20758,16 @@ export default function App() {
             amountSats: infinityBondAmountValue,
           },
         ],
+        postProtocolPayments:
+          attachedWorkPayloads.length > 0
+            ? [
+                {
+                  address: WORK_TOKEN_REGISTRY_ADDRESS,
+                  amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+                },
+              ]
+            : undefined,
+        postProtocolPayloads: attachedWorkPayloads,
         protocolPayloads: infinityBondPayloads,
         requireConfirmedUtxos: true,
       });
@@ -20396,16 +20805,18 @@ export default function App() {
       };
       const sentMessage: SentMessage = {
         amountSats: infinityBondAmountValue,
+        attachedCredits:
+          attachedWorkCredits.length > 0 ? attachedWorkCredits : undefined,
         createdAt,
         feeRate,
         from: address,
         lastCheckedAt: createdAt,
-        memo: INFINITY_BOND_MEMO,
+        memo: activeBondConfig.memo,
         network: "livenet",
         recipients: [mailRecipient],
         replyTo: address,
         status: "pending",
-        subject: INFINITY_BOND_SUBJECT,
+        subject: activeBondConfig.subject,
         to: mailRecipient.display,
         txid,
       };
@@ -20415,14 +20826,16 @@ export default function App() {
       )
         ? {
             amountSats: infinityBondAmountValue,
+            attachedCredits:
+              attachedWorkCredits.length > 0 ? attachedWorkCredits : undefined,
             confirmed: false,
             createdAt,
             from: address,
-            memo: INFINITY_BOND_MEMO,
+            memo: activeBondConfig.memo,
             network: "livenet",
             recipients: [mailRecipient],
             replyTo: address,
-            subject: INFINITY_BOND_SUBJECT,
+            subject: activeBondConfig.subject,
             to: address,
             txid,
           }
@@ -20436,13 +20849,30 @@ export default function App() {
         network: "livenet",
         paidSats: infinityBondAmountValue,
         registryAddress:
-          infinitySummary?.registryAddress ||
-          powbTokenDefinition?.registryAddress ||
+          activeBondSummary?.registryAddress ||
+          activeBondTokenDefinition?.registryAddress ||
           "",
-        ticker: POWB_TOKEN_TICKER,
-        tokenId: POWB_TOKEN_ID,
+        ticker: activeBondConfig.ticker,
+        tokenId: activeBondConfig.tokenId,
         txid,
       };
+      const pendingWorkTransfer: PowTokenTransfer | undefined =
+        attachedWorkCredits.length > 0
+          ? {
+              amount: attachedWorkCredits[0].amount,
+              confirmed: false,
+              createdAt,
+              dataBytes: dataCarrierBytesForPayload(attachedWorkPayloads[0]),
+              network: "livenet",
+              paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+              recipientAddress: mailRecipient.address,
+              registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+              senderAddress: address,
+              ticker: WORK_TOKEN_TICKER,
+              tokenId: WORK_TOKEN_ID,
+              txid,
+            }
+          : undefined;
 
       setAllSent((current) =>
         current.some((message) => message.txid === txid)
@@ -20465,16 +20895,32 @@ export default function App() {
           ? current
           : [pendingMint, ...current],
       );
+      if (pendingWorkTransfer) {
+        setTokenTransfers((current) =>
+          current.some(
+            (transfer) =>
+              transfer.txid === txid &&
+              transfer.tokenId === WORK_TOKEN_ID &&
+              transfer.recipientAddress === pendingWorkTransfer.recipientAddress,
+          )
+            ? current
+            : [pendingWorkTransfer, ...current],
+        );
+      }
       setInfinityBondRecipient("");
+      setBondWorkAmount(0);
       setStatus({
         tone: "good",
-        text: `${infinityBondAmountValue.toLocaleString()} proof Infinity Bond broadcast: ${shortAddress(txid)}.`,
+        text: `${infinityBondAmountValue.toLocaleString()} proof ${activeBondConfig.displayName}${pendingWorkTransfer ? ` with ${pendingWorkTransfer.amount.toLocaleString()} WORK` : ""} broadcast: ${shortAddress(txid)}.`,
       });
-      void refreshInfinity(true, true);
+      if (pendingWorkTransfer) {
+        void refreshToken(true);
+      }
+      void refreshInfinity(true, true, activeBondConfig);
     } catch (error) {
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Infinity Bond failed."),
+        text: errorMessage(error, `${activeBondConfig.displayName} failed.`),
       });
     } finally {
       setBusy(false);
@@ -22548,23 +22994,27 @@ export default function App() {
     );
   }
 
-  if (infinityMode) {
+  if (standaloneBondConfig) {
     return (
       <InfinityApp
         accountStats={connectedAccountStats}
         address={address}
-        balances={powbWalletBalances}
+        balances={activeBondWalletBalances}
+        bondConfig={standaloneBondConfig}
         bondAmount={infinityBondAmount}
         bondBytes={infinityBondBytes}
         bondRecipient={infinityBondRecipient}
         bondRecipientResolution={infinityBondResolution}
+        bondWorkAmount={bondWorkAmount}
+        bondWorkAttachmentVisible={bondWorkAttachmentVisible}
+        bondWorkSpendableBalance={workAttachmentSpendableBalance}
         btcUsd={tokenBtcUsd}
         busy={busy}
         buyListing={buyTokenListing}
         canCreateBond={canCreateInfinityBond}
         canList={canListToken}
         canTransfer={canTransferToken}
-        closedListings={powbClosedListings}
+        closedListings={activeBondClosedListings}
         connectWallet={connectWallet}
         delistListing={delistTokenListing}
         disconnectWallet={disconnectWallet}
@@ -22574,16 +23024,17 @@ export default function App() {
         listBuyerAddress={tokenListBuyerAddress}
         listPriceSats={tokenListPriceSats}
         listing={tokenAction === "list"}
-        listings={powbListings}
+        listings={activeBondListings}
         listSpendableBalance={walletSpendableTokenBalance}
         network={network}
         onNetworkChange={chooseNetwork}
-        onRefresh={() => void refreshInfinity(false, true)}
-        sales={powbSales}
+        onRefresh={() => void refreshInfinity(false, true, standaloneBondConfig)}
+        sales={activeBondSales}
         sealListing={sealTokenListing}
-        selectedTokenId={POWB_TOKEN_ID}
+        selectedTokenId={standaloneBondConfig.tokenId}
         setBondAmount={setInfinityBondAmount}
         setBondRecipient={setInfinityBondRecipient}
+        setBondWorkAmount={setBondWorkAmount}
         setFeeRate={setFeeRate}
         setListAmount={setTokenListAmount}
         setListBuyerAddress={setTokenListBuyerAddress}
@@ -22595,9 +23046,9 @@ export default function App() {
         submitBond={createInfinityBond}
         submitList={listToken}
         submitTransfer={transferToken}
-        summary={infinitySummary}
-        tokens={powbTokenDefinitions}
-        transfers={powbTransfers}
+        summary={activeBondSummary}
+        tokens={activeBondTokenDefinitions}
+        transfers={activeBondTransfers}
         transferAmount={tokenTransferAmount}
         transferBalance={walletTransferBalance}
         transferBytes={tokenTransferBytes}
@@ -22838,7 +23289,8 @@ export default function App() {
     activeFolder === "token" ||
     activeFolder === "wallet" ||
     activeFolder === "work" ||
-    activeFolder === "infinity"
+    activeFolder === "infinity" ||
+    activeFolder === "inception"
       ? "is-token-workspace"
       : "",
     activeFolder === "marketplace" ? "is-marketplace-workspace" : "",
@@ -22862,8 +23314,11 @@ export default function App() {
           refreshDisabled
             ? undefined
             : () => {
-                if (activeFolder === "infinity") {
-                  void refreshInfinity(false, true);
+                if (
+                  activeFolder === "infinity" ||
+                  activeFolder === "inception"
+                ) {
+                  void refreshInfinity(false, true, activeBondConfig);
                   return;
                 }
 
@@ -23157,7 +23612,20 @@ export default function App() {
                 <span>Infinity</span>
               </span>
               <strong>
-                {(infinitySummary?.stats.confirmedSupply ?? 0).toLocaleString()}
+                {(infinityBondSummary?.stats.confirmedSupply ?? 0).toLocaleString()}
+              </strong>
+            </button>
+            <button
+              aria-current={activeFolder === "inception"}
+              onClick={() => openFolder("inception")}
+              type="button"
+            >
+              <span className="folder-label">
+                <GitBranch size={17} />
+                <span>Inception</span>
+              </span>
+              <strong>
+                {(inceptionBondSummary?.stats.confirmedSupply ?? 0).toLocaleString()}
               </strong>
             </button>
             <button
@@ -23472,21 +23940,25 @@ export default function App() {
               })
             }
           />
-        ) : activeFolder === "infinity" ? (
+        ) : activeFolder === "infinity" || activeFolder === "inception" ? (
           <InfinityApp
             address={address}
-            balances={powbWalletBalances}
+            balances={activeBondWalletBalances}
+            bondConfig={activeBondConfig}
             bondAmount={infinityBondAmount}
             bondBytes={infinityBondBytes}
             bondRecipient={infinityBondRecipient}
             bondRecipientResolution={infinityBondResolution}
+            bondWorkAmount={bondWorkAmount}
+            bondWorkAttachmentVisible={bondWorkAttachmentVisible}
+            bondWorkSpendableBalance={workAttachmentSpendableBalance}
             btcUsd={tokenBtcUsd}
             busy={busy}
             buyListing={buyTokenListing}
             canCreateBond={canCreateInfinityBond}
             canList={canListToken}
             canTransfer={canTransferToken}
-            closedListings={powbClosedListings}
+            closedListings={activeBondClosedListings}
             connectWallet={connectWallet}
             delistListing={delistTokenListing}
             disconnectWallet={disconnectWallet}
@@ -23497,16 +23969,17 @@ export default function App() {
             listBuyerAddress={tokenListBuyerAddress}
             listPriceSats={tokenListPriceSats}
             listing={tokenAction === "list"}
-            listings={powbListings}
+            listings={activeBondListings}
             listSpendableBalance={walletSpendableTokenBalance}
             network={network}
             onNetworkChange={chooseNetwork}
-            onRefresh={() => void refreshInfinity(false, true)}
-            sales={powbSales}
+            onRefresh={() => void refreshInfinity(false, true, activeBondConfig)}
+            sales={activeBondSales}
             sealListing={sealTokenListing}
-            selectedTokenId={POWB_TOKEN_ID}
+            selectedTokenId={activeBondConfig.tokenId}
             setBondAmount={setInfinityBondAmount}
             setBondRecipient={setInfinityBondRecipient}
+            setBondWorkAmount={setBondWorkAmount}
             setFeeRate={setFeeRate}
             setListAmount={setTokenListAmount}
             setListBuyerAddress={setTokenListBuyerAddress}
@@ -23518,9 +23991,9 @@ export default function App() {
             submitBond={createInfinityBond}
             submitList={listToken}
             submitTransfer={transferToken}
-            summary={infinitySummary}
-            tokens={powbTokenDefinitions}
-            transfers={powbTransfers}
+            summary={activeBondSummary}
+            tokens={activeBondTokenDefinitions}
+            transfers={activeBondTransfers}
             transferAmount={tokenTransferAmount}
             transferBalance={walletTransferBalance}
             transferBytes={tokenTransferBytes}
@@ -25320,8 +25793,12 @@ type InfinityAppProps = {
   balances: PowTokenWalletBalance[];
   bondAmount: number;
   bondBytes: number;
+  bondConfig: BondUiConfig;
   bondRecipient: string;
   bondRecipientResolution: RecipientResolution;
+  bondWorkAmount: number;
+  bondWorkAttachmentVisible: boolean;
+  bondWorkSpendableBalance: number;
   btcUsd: number;
   busy: boolean;
   buyListing: (listing: PowTokenListing) => void;
@@ -25349,6 +25826,7 @@ type InfinityAppProps = {
   selectedTokenId: string;
   setBondAmount: (value: number) => void;
   setBondRecipient: (value: string) => void;
+  setBondWorkAmount: (value: number) => void;
   setFeeRate: (value: number) => void;
   setListAmount: (value: number) => void;
   setListBuyerAddress: (value: string) => void;
@@ -25377,8 +25855,12 @@ function InfinityApp({
   balances,
   bondAmount,
   bondBytes,
+  bondConfig,
   bondRecipient,
   bondRecipientResolution,
+  bondWorkAmount,
+  bondWorkAttachmentVisible,
+  bondWorkSpendableBalance,
   btcUsd,
   busy,
   buyListing,
@@ -25406,6 +25888,7 @@ function InfinityApp({
   selectedTokenId,
   setBondAmount,
   setBondRecipient,
+  setBondWorkAmount,
   setFeeRate,
   setListAmount,
   setListBuyerAddress,
@@ -25431,11 +25914,12 @@ function InfinityApp({
     useState<InfinityBondChartMetric>("supply");
   const confirmedSupply =
     summary?.stats.confirmedSupply ??
-    tokens.find((token) => token.tokenId === POWB_TOKEN_ID)?.confirmedSupply ??
+    tokens.find((token) => token.tokenId === bondConfig.tokenId)
+      ?.confirmedSupply ??
     0;
   const pendingSupply =
     summary?.stats.pendingSupply ??
-    tokens.find((token) => token.tokenId === POWB_TOKEN_ID)?.pendingSupply ??
+    tokens.find((token) => token.tokenId === bondConfig.tokenId)?.pendingSupply ??
     0;
   const floorSats = summary?.actualValue.floorSats ?? summary?.floorSats ?? 0;
   const networkValueSats =
@@ -25473,23 +25957,23 @@ function InfinityApp({
               <TrendingUp size={24} />
             </div>
             <div>
-              <p>POWB</p>
-              <h2>Infinity Bond Market</h2>
-              <span>{POWB_REGISTRY_ID}</span>
+              <p>{bondConfig.ticker}</p>
+              <h2>{bondConfig.displayName} Market</h2>
+              <span>{bondConfig.registryId}</span>
             </div>
           </div>
           <div className="id-launch-stats token-stats-row">
             <div>
               <span>Confirmed supply</span>
-              <strong>{confirmedSupply.toLocaleString()} POWB</strong>
+              <strong>{confirmedSupply.toLocaleString()} {bondConfig.ticker}</strong>
             </div>
             <div>
               <span>Pending supply</span>
-              <strong>{pendingSupply.toLocaleString()} POWB</strong>
+              <strong>{pendingSupply.toLocaleString()} {bondConfig.ticker}</strong>
             </div>
             <div>
               <span>Bond floor</span>
-              <strong>{tokenSatsPerUnit(floorSats)} proofs / POWB</strong>
+              <strong>{tokenSatsPerUnit(floorSats)} proofs / {bondConfig.ticker}</strong>
             </div>
             <div>
               <span>Network value</span>
@@ -25512,17 +25996,17 @@ function InfinityApp({
               <TrendingUp size={24} />
             </div>
             <div>
-              <p>POWB history</p>
-              <h2>Infinity Bond Chart</h2>
+              <p>{bondConfig.ticker} history</p>
+              <h2>{bondConfig.displayName} Chart</h2>
               <span>
-                Confirmed bond proofs, POWB supply, sales, transfers, and mutation
+                Confirmed bond proofs, {bondConfig.ticker} supply, sales, transfers, and mutation
                 fees.
               </span>
             </div>
           </div>
           <div
             className="id-launch-stats token-floor-stats"
-            aria-label="Infinity Bond chart stats"
+            aria-label={`${bondConfig.displayName} chart stats`}
           >
             <div>
               <span>Chart points</span>
@@ -25538,7 +26022,7 @@ function InfinityApp({
               <span>Latest supply</span>
               <strong>
                 {(infinityLatestChartPoint?.confirmedSupply ?? confirmedSupply).toLocaleString()}{" "}
-                POWB
+                {bondConfig.ticker}
               </strong>
             </div>
             <div>
@@ -25547,14 +26031,14 @@ function InfinityApp({
                 {tokenSatsPerUnit(
                   infinityLatestChartPoint?.floorSats ?? floorSats,
                 )}{" "}
-                proofs / POWB
+                proofs / {bondConfig.ticker}
               </strong>
             </div>
           </div>
           <div className="work-floor-chart-toolbar">
             <div
               className="network-tabs work-floor-chart-toggle"
-              aria-label="Infinity Bond chart metric"
+              aria-label={`${bondConfig.displayName} chart metric`}
             >
               {INFINITY_BOND_CHART_OPTIONS.map((option) => (
                 <button
@@ -25571,16 +26055,17 @@ function InfinityApp({
           {infinityChartPoints.length ? (
             <>
               <InfinityBondChart
+                bondConfig={bondConfig}
                 metric={infinityChartMetric}
                 points={infinityChartPoints}
               />
               <div className="work-floor-chart-meta">
                 <span>
-                  Low {infinityBondAxisLabel(infinityChartMin, infinityChartMetric)}
+                  Low {infinityBondAxisLabel(infinityChartMin, infinityChartMetric, bondConfig.ticker)}
                 </span>
                 <span>
                   High{" "}
-                  {infinityBondAxisLabel(infinityChartMax, infinityChartMetric)}
+                  {infinityBondAxisLabel(infinityChartMax, infinityChartMetric, bondConfig.ticker)}
                 </span>
                 <span>
                   Refreshed {formatDate(summary?.indexedAt ?? new Date().toISOString())}
@@ -25589,7 +26074,7 @@ function InfinityApp({
             </>
           ) : (
             <p className="field-note">
-              Bond chart appears after confirmed POWB bond events index.
+              Bond chart appears after confirmed {bondConfig.ticker} bond events index.
             </p>
           )}
         </section>
@@ -25601,7 +26086,7 @@ function InfinityApp({
             </div>
             <div>
               <h2>Create Bond</h2>
-              <p>{summary?.registryAddress || POWB_REGISTRY_ID}</p>
+              <p>{summary?.registryAddress || bondConfig.registryId}</p>
             </div>
           </div>
           <form className="id-form" onSubmit={submitBond}>
@@ -25623,12 +26108,26 @@ function InfinityApp({
                   value={bondRecipient}
                 />
               </label>
+              {bondWorkAttachmentVisible ? (
+                <label>
+                  Attach WORK
+                  <input
+                    max={Math.floor(bondWorkSpendableBalance)}
+                    min={0}
+                    onChange={(event) =>
+                      setBondWorkAmount(Number(event.target.value))
+                    }
+                    type="number"
+                    value={bondWorkAmount}
+                  />
+                </label>
+              ) : null}
             </div>
             <div className="id-launch-stats token-stats-row">
               <div>
-                <span>POWB credit</span>
+                <span>{bondConfig.ticker} credit</span>
                 <strong>
-                  {Math.max(0, Math.floor(bondAmount || 0)).toLocaleString()} POWB
+                  {Math.max(0, Math.floor(bondAmount || 0)).toLocaleString()} {bondConfig.ticker}
                 </strong>
               </div>
               <div>
@@ -25639,6 +26138,12 @@ function InfinityApp({
                 <span>Payload</span>
                 <strong>{bondBytes.toLocaleString()} bytes</strong>
               </div>
+              {bondWorkAmount > 0 ? (
+                <div>
+                  <span>WORK attached</span>
+                  <strong>{Math.floor(bondWorkAmount).toLocaleString()} WORK</strong>
+                </div>
+              ) : null}
             </div>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
             <button className="primary" disabled={!canCreateBond} type="submit">
@@ -25687,31 +26192,28 @@ function InfinityApp({
           transfers={transfers}
           workFloorLoading={false}
           copy={{
-            balancesDescription: "POWB held by the connected address.",
-            fallbackTicker: "POWB",
-            listingDescription:
-              "Creates a POWB sale-ticket listing paid to the Infinity registry.",
-            listingFeeDescription:
-              "Used when sealing or closing your POWB listings.",
-            listButton: "List POWB",
+            balancesDescription: `${bondConfig.ticker} held by the connected address.`,
+            fallbackTicker: bondConfig.ticker,
+            listingDescription: `Creates a ${bondConfig.ticker} sale-ticket listing paid to the ${bondConfig.displayName} registry.`,
+            listingFeeDescription: `Used when sealing or closing your ${bondConfig.ticker} listings.`,
+            listButton: `List ${bondConfig.ticker}`,
             listProgressButton: "Listing",
-            movementsEmptyBody:
-              "Your POWB transfer and trade history will appear here.",
+            movementsEmptyBody: `Your ${bondConfig.ticker} transfer and trade history will appear here.`,
             noBalanceBody: "Create or receive a bond, then refresh this wallet.",
-            noBalanceOption: "No POWB balance",
-            noBalanceTitle: "No POWB balance yet",
-            ownedLabel: "POWB positions",
-            transferButton: "Transfer POWB",
-            transferDescription:
-              "Sends a `pwt1:send` POWB event and pays the Infinity registry.",
+            noBalanceOption: `No ${bondConfig.ticker} balance`,
+            noBalanceTitle: `No ${bondConfig.ticker} balance yet`,
+            ownedLabel: `${bondConfig.ticker} positions`,
+            transferButton: `Transfer ${bondConfig.ticker}`,
+            transferDescription: `Sends a pwt1:send ${bondConfig.ticker} event and pays the ${bondConfig.displayName} registry.`,
             transferProgressButton: "Transferring",
-            transferSelectLabel: "POWB",
-            walletEyebrow: "POWB wallet",
+            transferSelectLabel: bondConfig.ticker,
+            walletEyebrow: `${bondConfig.ticker} wallet`,
           }}
         />
 
         <InfinityBondMarketPanel
           address={address}
+          bondConfig={bondConfig}
           btcUsd={btcUsd}
           busy={busy}
           buyListing={buyListing}
@@ -25740,12 +26242,12 @@ function InfinityApp({
         connectWallet={connectWallet}
         disconnectWallet={disconnectWallet}
         hasUnisat={hasUnisat}
-        homeHref={appHref(INFINITY_APP_URL, LOCAL_INFINITY_APP_URL)}
+        homeHref={appHref(bondConfig.appUrl, bondConfig.localAppUrl)}
         network={network}
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
-        subtitle="$POWB bond market"
-        title="Infinity Bonds"
+        subtitle={`${bondConfig.ticker} bond market`}
+        title={bondConfig.pluralName}
       />
 
       <AppStatusRow className="desktop-route-status" persistent status={status} />
@@ -29400,8 +29902,25 @@ function isInfinityBondActivityItem(item: PowActivityItem) {
   return item.kind === "mail" && detail === "powb";
 }
 
+function isInceptionBondActivityItem(item: PowActivityItem) {
+  if (item.kind === "inception-bond") {
+    return true;
+  }
+
+  const detail = String(item.detail ?? item.description ?? "")
+    .trim()
+    .toLowerCase();
+  return item.kind === "mail" && detail === "incb";
+}
+
+function isBondActivityItem(item: PowActivityItem) {
+  return (
+    isInfinityBondActivityItem(item) || isInceptionBondActivityItem(item)
+  );
+}
+
 function activityKindHasDedicatedGrowthBucket(item: PowActivityItem) {
-  if (isBrowserActivityItem(item) || isInfinityBondActivityItem(item)) {
+  if (isBrowserActivityItem(item) || isBondActivityItem(item)) {
     return true;
   }
 
@@ -29460,7 +29979,7 @@ function growthActualNetworkValue(
     (mint) => mint.confirmed && Date.parse(mint.createdAt) <= cutoffMs,
   );
   const confirmedValueTokenMints = confirmedTokenMints.filter(
-    (mint) => mint.tokenId !== POWB_TOKEN_ID,
+    (mint) => !BOND_TOKEN_IDS.has(mint.tokenId),
   );
   const confirmedTokenTransfers = tokenTransfers.filter(
     (transfer) =>
@@ -29488,9 +30007,12 @@ function growthActualNetworkValue(
     .filter(
       (item) =>
         (item.kind === "mail" || item.kind === "reply") &&
-        !isInfinityBondActivityItem(item) &&
+        !isBondActivityItem(item) &&
         !isBrowserActivityItem(item),
     )
+    .reduce((total, item) => total + (item.amountSats ?? 0), 0);
+  const inceptionBondFlowSats = confirmedActivity
+    .filter(isInceptionBondActivityItem)
     .reduce((total, item) => total + (item.amountSats ?? 0), 0);
   const infinityBondFlowSats = confirmedActivity
     .filter(isInfinityBondActivityItem)
@@ -29543,6 +30065,8 @@ function growthActualNetworkValue(
     unbucketedConfirmedComputerLogFlowSats(confirmedActivity);
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const inceptionBondSats =
+    inceptionBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const infinityBondSats =
     infinityBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
@@ -29708,6 +30232,7 @@ function growthActualNetworkValue(
   const baseTotalSats =
     idSats +
     mailSats +
+    inceptionBondSats +
     infinityBondSats +
     driveSats +
     marketplaceSats +
@@ -29742,6 +30267,8 @@ function growthActualNetworkValue(
     creditSalePaymentFlowSats,
     driveFlowSats,
     driveSats,
+    inceptionBondFlowSats,
+    inceptionBondSats,
     infinityBondFlowSats,
     infinityBondSats,
     mailFlowSats,
@@ -30013,6 +30540,14 @@ function growthActivityKindLabel(kind: PowActivityKind) {
     return "Wallet";
   }
 
+  if (kind === "infinity-bond") {
+    return "Infinity Bond";
+  }
+
+  if (kind === "inception-bond") {
+    return "Inception Bond";
+  }
+
   if (
     kind === "token-create" ||
     kind === "token-mint"
@@ -30120,7 +30655,7 @@ function growthRealEventItems(
   }
 
   for (const token of tokenDefinitions) {
-    if (!token.confirmed) {
+    if (!token.confirmed || BOND_TOKEN_IDS.has(token.tokenId)) {
       continue;
     }
 
@@ -30137,7 +30672,7 @@ function growthRealEventItems(
   }
 
   for (const mint of tokenMints) {
-    if (!mint.confirmed) {
+    if (!mint.confirmed || BOND_TOKEN_IDS.has(mint.tokenId)) {
       continue;
     }
 
@@ -30615,6 +31150,7 @@ function infinityBondChartValue(
 function infinityBondAxisLabel(
   value: number,
   metric: InfinityBondChartMetric,
+  ticker = POWB_TOKEN_TICKER,
 ) {
   if (metric === "floor") {
     return value > 0 ? `${tokenSatsPerUnit(value)} proofs` : "0 proofs";
@@ -30624,25 +31160,30 @@ function infinityBondAxisLabel(
     return `${growthCompactNumber(value, 1)} proofs`;
   }
 
-  return `${growthCompactNumber(value, 1)} POWB`;
+  return `${growthCompactNumber(value, 1)} ${ticker}`;
 }
 
-function infinityBondMetricTitle(metric: InfinityBondChartMetric) {
+function infinityBondMetricTitle(
+  metric: InfinityBondChartMetric,
+  ticker = POWB_TOKEN_TICKER,
+) {
   if (metric === "floor") {
-    return "Floor / POWB";
+    return `Floor / ${ticker}`;
   }
 
   if (metric === "value") {
     return "Backing proofs";
   }
 
-  return "POWB supply";
+  return `${ticker} supply`;
 }
 
 function InfinityBondChart({
+  bondConfig,
   metric,
   points,
 }: {
+  bondConfig: BondUiConfig;
   metric: InfinityBondChartMetric;
   points: InfinityBondChartPoint[];
 }) {
@@ -30717,7 +31258,7 @@ function InfinityBondChart({
       className="work-floor-chart token-market-price-chart"
       role="img"
       viewBox={`0 0 ${width} ${height}`}
-      aria-label={`Confirmed Infinity Bond ${infinityBondMetricTitle(metric)} history`}
+      aria-label={`Confirmed ${bondConfig.displayName} ${infinityBondMetricTitle(metric, bondConfig.ticker)} history`}
     >
       <rect
         className="growth-chart-bg"
@@ -30733,7 +31274,7 @@ function InfinityBondChart({
         y="18"
         textAnchor="start"
       >
-        {infinityBondMetricTitle(metric)}
+        {infinityBondMetricTitle(metric, bondConfig.ticker)}
       </text>
       {yTicks.map((tick) => (
         <g key={`infinity-y-${tick}`}>
@@ -30750,7 +31291,7 @@ function InfinityBondChart({
             y={yFor(tick) + 4}
             textAnchor="end"
           >
-            {infinityBondAxisLabel(tick, metric)}
+            {infinityBondAxisLabel(tick, metric, bondConfig.ticker)}
           </text>
         </g>
       ))}
@@ -31313,8 +31854,11 @@ function GrowthWorkspace({
     confirmedActivity.filter(
       (item) =>
         (item.kind === "mail" || item.kind === "reply") &&
-        !isInfinityBondActivityItem(item),
+        !isBondActivityItem(item),
     ).length;
+  const inceptionBondActions =
+    summaryCounts?.inceptionBondActions ??
+    confirmedActivity.filter(isInceptionBondActivityItem).length;
   const infinityBondActions =
     summaryCounts?.infinityBondActions ??
     confirmedActivity.filter(isInfinityBondActivityItem).length;
@@ -31390,7 +31934,7 @@ function GrowthWorkspace({
           <p>
             The candle-gold line is modeled ProofOfWork Computer network value. The
             olive line is real confirmed mainnet value from IDs, Mail, Infinity
-            Bonds, Drive, Marketplace, Browser, Credits, and Wallet.
+            Bonds, Inception Bonds, Drive, Marketplace, Browser, Credits, and Wallet.
           </p>
         </div>
         <div className="growth-model-card">
@@ -31517,7 +32061,7 @@ function GrowthWorkspace({
           <h3>Candle-gold is the success case. Olive is ProofOfWork history.</h3>
           <p>
             The model asks what the ProofOfWork Computer can become if IDs, Mail,
-            Infinity Bonds, Drive, Marketplace, Browser, Credits, and Wallet
+            Infinity Bonds, Inception Bonds, Drive, Marketplace, Browser, Credits, and Wallet
             compound together. The real line only counts confirmed mainnet
             records that already exist.
           </p>
@@ -31526,7 +32070,7 @@ function GrowthWorkspace({
           <span>Network value</span>
           <h3>Everything is valued in proofs first.</h3>
           <p>
-            IDs use n squared network value. Mail, Infinity Bonds, Drive,
+            IDs use n squared network value. Mail, Infinity Bonds, Inception Bonds, Drive,
             Marketplace, Browser, Credits, and Wallet keep their confirmed
             payment-flow buckets. WORK credit movements add live
             proof-equivalent value as the active site value, while each
@@ -31538,7 +32082,7 @@ function GrowthWorkspace({
           <h3>The olive line moves when ProofOfWork confirms.</h3>
           <p>
             Registrations, messages, replies, file writes, HTML page writes,
-            Infinity Bonds, marketplace listings, seals, delistings,
+            Infinity Bonds, Inception Bonds, marketplace listings, seals, delistings,
             buyer-funded buys, credit creations, credit mints, and credit
             transfers are pulled from live endpoints. WORK credit transfers
             and sales also carry frozen and live network value. Other credits
@@ -31552,7 +32096,7 @@ function GrowthWorkspace({
           <p>
             A product needs real chain inputs, a usage assumption, a value
             assumption, fee elasticity, and blockspace cost. That keeps every
-            merged app beside IDs, Mail, Infinity, Drive, Marketplace, Browser,
+            merged app beside IDs, Mail, Infinity, Inception, Drive, Marketplace, Browser,
             Credits, and Wallet instead of bolted on.
           </p>
         </article>
@@ -31711,6 +32255,18 @@ function GrowthWorkspace({
             modelOneYearLabel="confirmed bond lane"
             name="Infinity"
             note="Confirmed Infinity Bonds and POWB bond proofs feed the same WORK floor ledger."
+          />
+          <GrowthProductCard
+            actual={growthSats(actualValue.inceptionBondSats)}
+            actualLabel={`${growthUsdForSats(actualValue.inceptionBondSats)} · ${actualValue.inceptionBondFlowSats.toLocaleString()} bond proofs · ${inceptionBondActions.toLocaleString()} bond actions`}
+            icon={<GitBranch size={24} />}
+            modelFiveYear="Tracked"
+            modelFiveYearLabel="confirmed bond lane"
+            modelLabel="confirmed bond value"
+            modelOneYear="Tracked"
+            modelOneYearLabel="confirmed bond lane"
+            name="Inception"
+            note="Confirmed Inception Bonds and INCB bond proofs feed the same WORK floor ledger."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.driveSats)}
@@ -32860,6 +33416,7 @@ function marketplaceStatusForTab({
 
 function InfinityBondMarketPanel({
   address,
+  bondConfig,
   btcUsd,
   busy,
   buyListing,
@@ -32873,6 +33430,7 @@ function InfinityBondMarketPanel({
   tokens,
 }: {
   address: string;
+  bondConfig: BondUiConfig;
   btcUsd: number;
   busy: boolean;
   buyListing: (listing: PowTokenListing) => void;
@@ -32892,13 +33450,15 @@ function InfinityBondMarketPanel({
   const [tokenListingBookFilter, setTokenListingBookFilter] =
     useState<MarketplaceListingBookFilter>("all");
   const marketListings = listings.filter(
-    (listing) => listing.network === network && listing.tokenId === POWB_TOKEN_ID,
+    (listing) =>
+      listing.network === network && listing.tokenId === bondConfig.tokenId,
   );
   const marketClosedListings = closedListings.filter(
-    (listing) => listing.network === network && listing.tokenId === POWB_TOKEN_ID,
+    (listing) =>
+      listing.network === network && listing.tokenId === bondConfig.tokenId,
   );
   const marketSales = sales.filter(
-    (sale) => sale.network === network && sale.tokenId === POWB_TOKEN_ID,
+    (sale) => sale.network === network && sale.tokenId === bondConfig.tokenId,
   );
   const sealedListings = marketListings.filter(
     tokenListingHasConfirmedSaleTicketSeal,
@@ -32913,7 +33473,8 @@ function InfinityBondMarketPanel({
         ? unsealedListings
         : marketListings;
   const powbToken = tokens.find(
-    (token) => token.network === network && token.tokenId === POWB_TOKEN_ID,
+    (token) =>
+      token.network === network && token.tokenId === bondConfig.tokenId,
   );
   const powbReferenceSats =
     summary?.actualValue.floorSats ?? summary?.floorSats ?? 0;
@@ -32922,11 +33483,11 @@ function InfinityBondMarketPanel({
     mintAmount: powbToken?.mintAmount ?? 1,
     mintPriceSats: powbToken?.mintPriceSats ?? Math.max(1, powbReferenceSats),
     pricePerToken: powbReferenceSats,
-    ticker: POWB_TOKEN_TICKER,
-    tokenId: POWB_TOKEN_ID,
+    ticker: bondConfig.ticker,
+    tokenId: bondConfig.tokenId,
   };
   const tokenReferenceById = new Map<string, TokenReferenceSnapshot>([
-    [POWB_TOKEN_ID, powbReference],
+    [bondConfig.tokenId, powbReference],
   ]);
   const sortedMarketListings = sortTokenListings(
     visibleMarketListings,
@@ -32981,23 +33542,23 @@ function InfinityBondMarketPanel({
             <Wallet size={24} />
           </div>
           <div>
-            <h3>POWB Sale Tickets</h3>
+            <h3>{bondConfig.ticker} Sale Tickets</h3>
             <p>
-              Open POWB listings reserve seller balance, then buyers spend the
-              sealed ticket and pay the seller plus Infinity registry.
+              Open {bondConfig.ticker} listings reserve seller balance, then buyers spend the
+              sealed ticket and pay the seller plus {bondConfig.displayName} registry.
             </p>
           </div>
         </div>
         <div
           className="id-launch-stats token-floor-stats"
-          aria-label="POWB sale-ticket market"
+          aria-label={`${bondConfig.ticker} sale-ticket market`}
         >
           <div>
             <span>Bond floor</span>
-            <strong>{tokenSatsPerUnit(powbReferenceSats)} proofs / POWB</strong>
+            <strong>{tokenSatsPerUnit(powbReferenceSats)} proofs / {bondConfig.ticker}</strong>
           </div>
           <div>
-            <span>USD/POWB</span>
+            <span>USD/{bondConfig.ticker}</span>
             <strong>{tokenUsd(powbFloorUsd)}</strong>
           </div>
           <div>
@@ -33012,13 +33573,13 @@ function InfinityBondMarketPanel({
         <div className="listing-fee-control token-listing-fee-control">
           <div>
             <strong>Buy fee rate</strong>
-            <span>Used when buying POWB sale tickets.</span>
+            <span>Used when buying {bondConfig.ticker} sale tickets.</span>
           </div>
           <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
         </div>
         <MarketplaceListingBookTabs
           allCount={marketListings.length}
-          label="POWB order book filter"
+          label={`${bondConfig.ticker} order book filter`}
           onChange={setTokenListingBookFilter}
           sealedCount={sealedListings.length}
           unsealedCount={unsealedListings.length}
@@ -33078,7 +33639,7 @@ function InfinityBondMarketPanel({
                 >
                   <div>
                     <strong>
-                      {listing.amount.toLocaleString()} {POWB_TOKEN_TICKER}
+                      {listing.amount.toLocaleString()} {bondConfig.ticker}
                     </strong>
                     <span>
                       {!hasSeal
@@ -33101,7 +33662,7 @@ function InfinityBondMarketPanel({
                       <dt>Unit</dt>
                       <dd>
                         {tokenSatsPerUnit(listingUnitSats)} proofs /{" "}
-                        {POWB_TOKEN_TICKER}
+                        {bondConfig.ticker}
                       </dd>
                     </div>
                     <div>
@@ -33116,7 +33677,7 @@ function InfinityBondMarketPanel({
                   <p className="field-note">
                     Reference:{" "}
                     {powbReferenceSats > 0
-                      ? `${tokenSatsPerUnit(powbReferenceSats)} proofs / ${POWB_TOKEN_TICKER} bond floor`
+                      ? `${tokenSatsPerUnit(powbReferenceSats)} proofs / ${bondConfig.ticker} bond floor`
                       : "no confirmed bond floor yet"}
                   </p>
                   <div className="id-record-actions">
@@ -33150,21 +33711,21 @@ function InfinityBondMarketPanel({
             <h3>
               {marketListings.length
                 ? tokenListingBookFilter === "sealed"
-                  ? "No sealed POWB tickets"
-                  : "No unsealed POWB tickets"
-                : "No POWB sale tickets yet"}
+                  ? `No sealed ${bondConfig.ticker} tickets`
+                  : `No unsealed ${bondConfig.ticker} tickets`
+                : `No ${bondConfig.ticker} sale tickets yet`}
             </h3>
             <p>
               {marketListings.length
                 ? tokenListingBookFilter === "sealed"
-                  ? "No POWB sale tickets in this view have a seal or pending seal yet."
-                  : "Every POWB sale ticket in this view already has a seal or pending seal."
-                : "List POWB from the wallet to open a bond sale ticket."}
+                  ? `No ${bondConfig.ticker} sale tickets in this view have a seal or pending seal yet.`
+                  : `Every ${bondConfig.ticker} sale ticket in this view already has a seal or pending seal.`
+                : `List ${bondConfig.ticker} from the wallet to open a bond sale ticket.`}
             </p>
           </div>
         )}
         <PaginationControls
-          label="POWB sale tickets"
+          label={`${bondConfig.ticker} sale tickets`}
           onPageChange={setTokenListingPageIndex}
           page={tokenListingPage}
         />
@@ -33176,8 +33737,8 @@ function InfinityBondMarketPanel({
             <FileText size={24} />
           </div>
           <div>
-            <h3>POWB Sales & Listings Log</h3>
-            <p>POWB listings, seals, closes, and sale settlements.</p>
+            <h3>{bondConfig.ticker} Sales & Listings Log</h3>
+            <p>{bondConfig.ticker} listings, seals, closes, and sale settlements.</p>
           </div>
         </div>
         {hasTokenMarketLogItems ? (
@@ -33191,11 +33752,11 @@ function InfinityBondMarketPanel({
                 return (
                   <article
                     className="id-record token-market-row"
-                    key={`powb-closed-listing-${closedListing.listingId}-${closedTxid}`}
+                    key={`${bondConfig.ticker.toLowerCase()}-closed-listing-${closedListing.listingId}-${closedTxid}`}
                   >
                     <div>
                       <strong>
-                        {closedListing.amount.toLocaleString()} {POWB_TOKEN_TICKER}
+                        {closedListing.amount.toLocaleString()} {bondConfig.ticker}
                       </strong>
                       <span>
                         {closedListing.closedConfirmed
@@ -33211,7 +33772,7 @@ function InfinityBondMarketPanel({
                       <div>
                         <dt>Unit</dt>
                         <dd>
-                          {tokenSatsPerUnit(unitSats)} proofs / {POWB_TOKEN_TICKER}
+                          {tokenSatsPerUnit(unitSats)} proofs / {bondConfig.ticker}
                         </dd>
                       </div>
                       <div>
@@ -33277,11 +33838,11 @@ function InfinityBondMarketPanel({
                 return (
                   <article
                     className="id-record token-market-row"
-                    key={`powb-sale-${item.sale.txid}`}
+                    key={`${bondConfig.ticker.toLowerCase()}-sale-${item.sale.txid}`}
                   >
                     <div>
                       <strong>
-                        {item.sale.amount.toLocaleString()} {POWB_TOKEN_TICKER}
+                        {item.sale.amount.toLocaleString()} {bondConfig.ticker}
                       </strong>
                       <span>
                         {item.sale.confirmed ? "Confirmed sale" : "Pending sale"}
@@ -33295,7 +33856,7 @@ function InfinityBondMarketPanel({
                       <div>
                         <dt>Unit</dt>
                         <dd>
-                          {tokenSatsPerUnit(unitSats)} proofs / {POWB_TOKEN_TICKER}
+                          {tokenSatsPerUnit(unitSats)} proofs / {bondConfig.ticker}
                         </dd>
                       </div>
                       <div>
@@ -33355,11 +33916,11 @@ function InfinityBondMarketPanel({
               return (
                 <article
                   className="id-record token-market-row"
-                  key={`powb-listing-${item.listing.listingId}`}
+                  key={`${bondConfig.ticker.toLowerCase()}-listing-${item.listing.listingId}`}
                 >
                   <div>
                     <strong>
-                      {item.listing.amount.toLocaleString()} {POWB_TOKEN_TICKER}
+                      {item.listing.amount.toLocaleString()} {bondConfig.ticker}
                     </strong>
                     <span>
                       {!item.listing.confirmed
@@ -33379,7 +33940,7 @@ function InfinityBondMarketPanel({
                     <div>
                       <dt>Unit</dt>
                       <dd>
-                        {tokenSatsPerUnit(unitSats)} proofs / {POWB_TOKEN_TICKER}
+                        {tokenSatsPerUnit(unitSats)} proofs / {bondConfig.ticker}
                       </dd>
                     </div>
                     <div>
@@ -33442,12 +34003,12 @@ function InfinityBondMarketPanel({
         ) : (
           <div className="empty-state">
             <FileText size={28} />
-            <h3>No POWB market history yet</h3>
-            <p>POWB listings and sales will appear here after they index.</p>
+            <h3>No {bondConfig.ticker} market history yet</h3>
+            <p>{bondConfig.ticker} listings and sales will appear here after they index.</p>
           </div>
         )}
         <PaginationControls
-          label="POWB sales and listings"
+          label={`${bondConfig.ticker} sales and listings`}
           onPageChange={setTokenMarketLogPageIndex}
           page={tokenMarketLogPage}
         />

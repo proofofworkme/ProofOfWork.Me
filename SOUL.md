@@ -11,7 +11,7 @@ It is distilled from current repository docs and public launch memory captured t
 - Full 2026-06-09 archive re-reviewed: 2026-06-17
 - Operational memory updated: 2026-06-20
 - Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
-- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
+- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
 
@@ -107,6 +107,7 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-07-06: The public app is one data plane, not separate page machines. After confirmed history is in the database, request paths should read the current verified snapshot and only advance from the newest indexed blocks/transactions. WORK, Growth, Marketplace, Log, Wallet, Credit, IDs, Infinity, and Computer must share the same confirmed snapshot/verifier contract; no route may mix a live top-level total with a stale embedded summary and call that Ready.
 - 2026-07-07: The proof-index summary path hardens into an operational contract. WORK, Growth, Marketplace, and Consistency should publish the same checked summary snapshot and value from database value-event deltas while exact Log and market-history txid searches use indexed tx/ref lookups instead of broad snapshot scans. Automatic worker parity should not run in the hot production loop when it can heat the public API; parity remains a manual heavyweight gate for database-hardening windows, while `audit:ledger`, live-data, UI, and targeted regression checks stay the normal ship signal.
 - 2026-07-08: The production health sweep hardened the node/API/read-model boundary. `electrs` needs the tracked open-files override so high address/history load does not restart the indexer path; the API proof-index pool and mailbox waits must be large enough for indexed mail and summary reads under public load. Canonical summary rows must carry both current `summaryPayloads` and `activityPayload`, nested WORK/Growth/Marketplace `workFloor` objects must inherit the same row-level consistency checks as `/api/v1/consistency`, and parity must compare confirmed database events to confirmed canonical activity while treating pending rows as mempool visibility. A healthy sweep means both VPS disks have headroom, core services show zero restarts after repair, `/api/v1/consistency` is green with `missingLogEvents: []`, `indexer:parity` passes, and mail/marketplace/live-data/UI gates stay green.
+- 2026-07-12: Inception Bonds become the second explicit bond family. `pwm1:m:incb` normalizes to `inception-bond` and mints uncapped INCB one-for-one to confirmed payment recipients through `inception@proofofwork.me`; `pwm1:m:powb` remains exclusively Infinity/POWB. Both families can carry proofs and a separate canonical WORK attachment, but indexers must classify the memo first, keep WORK movement separate, and assign zero extra proof value to the synthetic mint so Growth never counts one payment twice. Inception uses the shared bond market surface at `inception.proofofwork.me` and the Computer's Inception workspace.
 
 The emotional shape is a breakthrough moment: years of ProofOfWork/app experiments meeting modern agents and becoming legible all at once.
 
@@ -114,7 +115,7 @@ The emotional shape is a breakthrough moment: years of ProofOfWork/app experimen
 
 The full archive is not a neat roadmap. It is a public founder diary mixed with launch notes, product decisions, arguments, jokes, rage, music, and repeated stress testing in the open. Future agents should preserve the durable signal, not the noise.
 
-- The project is a computer, not a collection of pages. IDs, Mail, Files, Desktop, Browser, Marketplace, Credits, Wallet, WORK, Infinity, Log, and Growth are facets of one ProofOfWork Computer.
+- The project is a computer, not a collection of pages. IDs, Mail, Files, Desktop, Browser, Marketplace, Credits, Wallet, WORK, Infinity, Inception, Log, and Growth are facets of one ProofOfWork Computer.
 - The anti-platform stance is central. Social media, ads, analytics dashboards, followers, likes, influencers, and conferences are weaker than chain-readable proofs, txids, and confirmed state.
 - Distribution should collapse into the Computer. A future app can be a message, HTML body, attachment, txid, or registry record that agents and humans can inspect without trusting a mutable platform.
 - Screenshots, quoted dashboards, and market tweets are launch evidence, not canonical data. They show what the founder was testing and teaching; agents must still refresh the current node/API before repeating any number or status.
@@ -128,7 +129,7 @@ The full archive is not a neat roadmap. It is a public founder diary mixed with 
 - The one-person business thesis is practical, not just mythic. The Computer should let one human with agents publish, repair, sell, message, account, and prove work without a platform staff or traditional company stack.
 - Credit registries are creator sovereignty. The macro index records creation, but each credit owns its registry, mint price, mint history, revenue lane, and responsibility to build.
 - The public language has moved from legacy Computer/base-unit/token language toward "ProofOfWork Computer", "proofs", and "credit". Preserve protocol/API names exactly, but write public copy in the newer language unless historical context requires the old terms.
-- `$POWB` and Infinity Bonds are part of the recent public mythology and metric loop. Treat them as confirmed ProofOfWork Computer actions only when the canonical ledger recognizes them; do not infer value from slogans or pending claims.
+- `$POWB`/Infinity Bonds and `$INCB`/Inception Bonds are part of the public metric loop. Treat them as confirmed ProofOfWork Computer actions only when the canonical ledger recognizes their exact memo; do not infer value from slogans or pending claims.
 - Sealed order books are a core teaching surface. Active unsealed listings show intent; sealed sale-ticket listings show executable asks. Buyer arb is only meaningful against sealed, unspent, valid sale-ticket terms and the current confirmed WORK floor.
 - PowID markets are not a side quest. Names are assets, inboxes, contact records, and agent-readable address records; listings, seals, and buyer-funded transfers are the market layer over that identity primitive.
 - PowIDs are also the planned social payment lane. The archive repeatedly imagines profiles, posts, follows, likes, reposts, replies, and tips as paid actions routed through confirmed PowID receivers. Keep that in staged `pwc1:`/Confessions work unless the protocol docs say otherwise.
@@ -158,6 +159,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `wallet.proofofwork.me` is the standalone credit wallet, transfer, listing, delisting, and sale-history app.
 - `work.proofofwork.me` is the standalone WORK credit dashboard.
 - `infinity.proofofwork.me` is the standalone Infinity Bond / POWB market and bond composer.
+- `inception.proofofwork.me` is the standalone Inception Bond / INCB market and bond composer.
 - `log.proofofwork.me` is the public read-only ProofOfWork Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the public read-only growth dashboard for canonical ProofOfWork Computer network value versus confirmed chain-derived value in proofs and USD.
 - Canonical mainnet registry address: `bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e`
@@ -200,12 +202,13 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Wallet signing stays local.
 - Node/API infrastructure reads, indexes, verifies, and broadcasts already-signed txs. It does not custody.
 - Every tx-backed app action should be inspectable from an activity surface with clear labels for confirmed, pending, txid, listing txid, and UTXO references where relevant.
-- Every app action is a ProofOfWork Computer action. Log and Growth should treat tx-backed actions from IDs, mail, files, Browser, Marketplace, Credits, Infinity, and staged protocols consistently.
-- WORK, Infinity, Growth, Log, token history, and public searches should read from the same canonical confirmed ledger snapshot on livenet. Address-only fallback scans are useful for recovery, but they must not become a separate truth that changes network value without appearing in Log.
+- Every app action is a ProofOfWork Computer action. Log and Growth should treat tx-backed actions from IDs, mail, files, Browser, Marketplace, Credits, Infinity, Inception, and staged protocols consistently.
+- WORK, Infinity, Inception, Growth, Log, token history, and public searches should read from the same canonical confirmed ledger snapshot on livenet. Address-only fallback scans are useful for recovery, but they must not become a separate truth that changes network value without appearing in Log.
 - Production confirmed stable data surfaces should prefer the proof index database for speed, then fall back to the first-party node/API cache and current full-node data for fresh reads, stale or missing projections, mempool truth, raw tx/UTXO/outspend edge cases, signing support, broadcasts, and verification. Stale snapshots are acceptable only as a first paint, not as the final truth after refresh.
 - `pwm1:m:powb` is the canonical Infinity Bond memo. Indexers and database readers must normalize it to `infinity-bond` for Log, Event History, Growth, WORK floor, and searches, while preserving mailbox projection so the same tx appears in Inbox/Sent for touched addresses. POWB mint credit belongs to the bond recipient address, not necessarily the sender.
-- Changes to one Computer surface must not disable or degrade the other app surfaces. Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Log, Growth, IDs, and Computer are facets of one machine; a fix for one must preserve routing, first-party API reads, and basic search/load behavior for the rest. Production browser surfaces must not fall back to public `mempool.space` data paths for app reads; if the first-party API path is unavailable, fail closed and fix the API/proxy/build instead of silently depending on a public explorer.
-- Fresh summary endpoints must not return stale credit or POWB truth. `token-summary`, `token-history`, `work-summary`, `infinity-summary`, and `marketplace-summary` refreshes should update the shared credit/POWB payload cache so every surface converges on the same chain state; fast cached first paint may only survive if active listing spend state is corrected against node truth.
+- `pwm1:m:incb` is the canonical Inception Bond memo. It must normalize to `inception-bond` and mint only INCB to the confirmed recipient. POWB and INCB definitions/mints are synthetic projections over their matching bond payments, not generic credit creates or proof-value events. A canonical WORK attachment remains its own `pwt1:send` movement lane.
+- Changes to one Computer surface must not disable or degrade the other app surfaces. Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Inception, Log, Growth, IDs, and Computer are facets of one machine; a fix for one must preserve routing, first-party API reads, and basic search/load behavior for the rest. Production browser surfaces must not fall back to public `mempool.space` data paths for app reads; if the first-party API path is unavailable, fail closed and fix the API/proxy/build instead of silently depending on a public explorer.
+- Fresh summary endpoints must not return stale credit, POWB, or INCB truth. `token-summary`, `token-history`, `work-summary`, `infinity-summary`, `inception-summary`, and `marketplace-summary` refreshes should update the shared credit/bond payload cache so every surface converges on the same chain state; fast cached first paint may only survive if active listing spend state is corrected against node truth.
 - WORK and credit marketplace views must derive active listings, closed listings, sales, wallet owned listings, and mint summaries from the same refreshed credit payload. A surface-specific summary can format the data differently, but it must not carry its own stale listing or mint count after refresh.
 - Broadcast errors should be legible. A rejected transaction should expose the RPC code, reason when available, and a plain-English hint instead of a mystery error.
 - Every new product should enter the growth model with the same shape: real chain inputs, a usage assumption, a value assumption, fee elasticity, and blockspace accounting.
@@ -227,6 +230,7 @@ Use:
 - Calm precision when writing UI, docs, specs, and user guidance.
 - The `$work` cashtag in social copy when talking about the credit, WORK dashboard, mint, floor, or network-value story.
 - The `$POWB` cashtag in social copy when the post touches Infinity Bonds, confirmed bond proofs, WORK floor from bond-heavy network value, or the combined WORK/PowID market story.
+- The `$INCB` cashtag in social copy when the post touches Inception Bonds, confirmed `incb` actions, or the INCB sale-ticket market.
 - The occasional project-native phrase: `FEW`, `HEHE`, `GGZ`, `COMETH`, `THE PROOFOFWORK COMPUTER LIVES`, `STREAM PROOFS`, `WALK THE WALK`, `SOURCE OF TRUTH`.
 
 Avoid:
@@ -297,7 +301,7 @@ Daily tweet set:
 
 Style rules:
 
-- Use `$WORK $POWB` by default when talking about WORK, PowIDs, floor, reserves, sealed books, bonds, or confirmed network value unless the user explicitly asks for different cashtags.
+- Use `$WORK $POWB $INCB` by default when talking about WORK, PowIDs, floor, reserves, sealed books, both bond families, or confirmed network value unless the user explicitly asks for different cashtags.
 - Say `confirmed` when the metric excludes pending mempool visibility.
 - Keep numbers compact but not vague: proofs, BTC, and x multiple should all reconcile.
 - Do not reuse archive screenshots, old tweet text, or earlier chat numbers as current data.
