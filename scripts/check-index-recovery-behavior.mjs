@@ -5318,6 +5318,199 @@ check("token verifier uses event-specific seal and close confirmation", () => {
   assert.equal(tokenVerifierItemsFromState(state, closeTxid)[0].confirmed, true);
 });
 
+check("canonical consistency reads the exact eligible summary snapshot", async () => {
+  const snapshotId = "summary-snapshot";
+  const checks = [
+    {
+      name: "token-components-cover-confirmed-activity",
+      ok: true,
+    },
+    {
+      name: "canonical-activity-count-matches-public-log",
+      ok: true,
+    },
+  ];
+  let queryText = "";
+  const readCanonicalSummary = isolatedFunction(
+    READER_PATH,
+    "proofIndexCanonicalSummaryLedgerPayload",
+    {
+      dateIso: (value) => new Date(value).toISOString(),
+      proofIndexPool: () => ({
+        async query(sql, params) {
+          queryText = String(sql);
+          assert.deepEqual(Array.from(params), ["livenet"]);
+          return {
+            rows: [
+              {
+                consistency: {
+                  checks,
+                  missingLogEvents: [],
+                  ok: true,
+                  status: "green",
+                },
+                generated_at: "2026-07-12T14:16:59.808Z",
+                growth_floor_height: 957712,
+                growth_height: 957712,
+                growth_snapshot_id: snapshotId,
+                indexed_through_block: 957712,
+                infinity_height: 957712,
+                infinity_snapshot_id: snapshotId,
+                marketplace_floor_height: 957712,
+                marketplace_height: 957712,
+                marketplace_snapshot_id: snapshotId,
+                metrics: {
+                  activityItems: 23591,
+                  confirmedComputerActions: 23585,
+                  indexedThroughBlock: 957712,
+                },
+                payload_snapshot_id: snapshotId,
+                snapshot_id: snapshotId,
+                source_hashes: {
+                  activity: { confirmed: 23585, count: 23591 },
+                },
+                totals: {
+                  growthActualValueSats: 8_171_663_094,
+                  growthWorkFloorValueSats: 8_171_663_094,
+                  workActualValueSats: 8_171_663_094,
+                  workNetworkValueSats: 8_171_663_094,
+                },
+                work_floor_height: 957712,
+                work_floor_snapshot_id: snapshotId,
+                work_summary_floor_height: 957712,
+                work_summary_height: 957712,
+                work_summary_snapshot_id: snapshotId,
+              },
+            ],
+          };
+        },
+      }),
+      safeBlockHeight: (value) =>
+        Number.isSafeInteger(Number(value)) && Number(value) > 0
+          ? Number(value)
+          : 0,
+    },
+  );
+  const result = await readCanonicalSummary("livenet");
+  assert.match(
+    queryText,
+    /canonical-activity-count-matches-public-log/u,
+  );
+  assert.equal(result.snapshotId, snapshotId);
+  assert.equal(result.metrics.activityItems, 23591);
+  assert.equal(result.metrics.confirmedComputerActions, 23585);
+  assert.equal(result.consistency.checks.length, 2);
+  assert.equal(result.workFloor.networkValueSats, 8_171_663_094);
+});
+
+check("public consistency prefers the eligible database snapshot", async () => {
+  let legacyReads = 0;
+  const indexedLedger = {
+    snapshotId: "current-summary",
+    metrics: {
+      activityItems: 23591,
+      confirmedComputerActions: 23585,
+    },
+  };
+  const ledgerConsistencyPayload = isolatedFunction(
+    API_PATH,
+    "ledgerConsistencyPayload",
+    {
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 100,
+      ENABLE_REQUEST_LEDGER_RECOVERY: false,
+      errorSummary: (error) => String(error?.message ?? error),
+      ledgerPayloadCoversTip: async () => true,
+      ledgerPayloadHasCurrentChecks: () => true,
+      ledgerConsistencyPayloadFromLedger: (ledger) => ({
+        metrics: ledger.metrics,
+        snapshotId: ledger.snapshotId,
+      }),
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexCanonicalSummaryLedgerPayload: async () => indexedLedger,
+      summaryCanonicalLedgerPayload: async () => {
+        legacyReads += 1;
+        return null;
+      },
+    },
+  );
+  const result = await ledgerConsistencyPayload("livenet", true);
+  assert.equal(result.snapshotId, indexedLedger.snapshotId);
+  assert.equal(result.metrics.activityItems, 23591);
+  assert.equal(legacyReads, 0);
+});
+
+check("public consistency fails closed without an eligible database snapshot", async () => {
+  let legacyReads = 0;
+  let indexedLedger = null;
+  const ledgerConsistencyPayload = isolatedFunction(
+    API_PATH,
+    "ledgerConsistencyPayload",
+    {
+      ENABLE_REQUEST_LEDGER_RECOVERY: false,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 100,
+      errorSummary: (error) => String(error?.message ?? error),
+      freshDataUnavailableError: (message) => {
+        const error = new Error(message);
+        error.statusCode = 503;
+        return error;
+      },
+      ledgerPayloadCoversTip: async () => true,
+      ledgerPayloadHasCurrentChecks: (payload) =>
+        payload?.eligible === true,
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexCanonicalSummaryLedgerPayload: async () => indexedLedger,
+      summaryCanonicalLedgerPayload: async () => {
+        legacyReads += 1;
+        return null;
+      },
+    },
+  );
+  for (const candidate of [null, { eligible: false }]) {
+    indexedLedger = candidate;
+    await rejection(
+      ledgerConsistencyPayload("livenet", false),
+      (error) => error?.statusCode === 503,
+    );
+  }
+  assert.equal(legacyReads, 0);
+});
+
+check("consistency recovery remains available only when explicitly enabled", async () => {
+  const ledgerConsistencyPayload = isolatedFunction(
+    API_PATH,
+    "ledgerConsistencyPayload",
+    {
+      ENABLE_REQUEST_LEDGER_RECOVERY: true,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 100,
+      errorSummary: (error) => String(error?.message ?? error),
+      ledgerConsistencyPayloadFromLedger: (ledger) => ({
+        snapshotId: ledger.snapshotId,
+      }),
+      ledgerConsistencyPayloadWithCurrentSummaries: async (payload) => payload,
+      ledgerPayloadCoversTip: async () => false,
+      ledgerPayloadHasCurrentChecks: () => false,
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexCanonicalSummaryLedgerPayload: async () => null,
+      summaryCanonicalLedgerPayload: async () => ({
+        snapshotId: "recovered-ledger",
+      }),
+    },
+  );
+  assert.equal(
+    (await ledgerConsistencyPayload("livenet", false)).snapshotId,
+    "recovered-ledger",
+  );
+});
+
+check("both consistency routes require an eligible summary snapshot", () => {
+  const applies = isolatedFunction(
+    API_PATH,
+    "canonicalSummarySnapshotReadGateApplies",
+  );
+  assert.equal(applies("/api/v1/consistency"), true);
+  assert.equal(applies("/api/v1/ledger-consistency"), true);
+});
+
 check("an accepted ID buy projects the buyer as the current owner", async () => {
   const txid = "9".repeat(64);
   const listingId = "a".repeat(64);

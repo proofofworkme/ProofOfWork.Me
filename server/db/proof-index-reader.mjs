@@ -8802,6 +8802,147 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
   };
 }
 
+export async function proofIndexCanonicalSummaryLedgerPayload(network) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        snapshot_id,
+        generated_at,
+        indexed_through_block,
+        source_hashes,
+        metrics,
+        consistency,
+        payload->>'snapshotId' AS payload_snapshot_id,
+        payload->'summaryPayloads'->'growthSummary'->>'snapshotId' AS growth_snapshot_id,
+        payload->'summaryPayloads'->'infinitySummary'->>'snapshotId' AS infinity_snapshot_id,
+        payload->'summaryPayloads'->'marketplaceSummary'->>'snapshotId' AS marketplace_snapshot_id,
+        payload->'summaryPayloads'->'workFloor'->>'snapshotId' AS work_floor_snapshot_id,
+        payload->'summaryPayloads'->'workSummary'->>'snapshotId' AS work_summary_snapshot_id,
+        payload->'summaryPayloads'->'growthSummary'->>'indexedThroughBlock' AS growth_height,
+        payload->'summaryPayloads'->'growthSummary'->'workFloor'->>'indexedThroughBlock' AS growth_floor_height,
+        payload->'summaryPayloads'->'infinitySummary'->>'indexedThroughBlock' AS infinity_height,
+        payload->'summaryPayloads'->'marketplaceSummary'->>'indexedThroughBlock' AS marketplace_height,
+        payload->'summaryPayloads'->'marketplaceSummary'->'workFloor'->>'indexedThroughBlock' AS marketplace_floor_height,
+        payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlock' AS work_floor_height,
+        payload->'summaryPayloads'->'workSummary'->>'indexedThroughBlock' AS work_summary_height,
+        payload->'summaryPayloads'->'workSummary'->'floor'->>'indexedThroughBlock' AS work_summary_floor_height,
+        payload->'totals' AS totals
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
+        AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
+        AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
+        AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+        AND source_hashes ? 'canonicalSummary'
+        AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+          WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+          WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
+      ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
+      LIMIT 1
+    `,
+    [network],
+  );
+  const snapshot = result.rows[0];
+  if (
+    !snapshot ||
+    String(snapshot.payload_snapshot_id ?? "") !==
+      String(snapshot.snapshot_id ?? "")
+  ) {
+    return null;
+  }
+
+  const indexedThroughBlock = safeBlockHeight(snapshot.indexed_through_block);
+  const summarySnapshotIds = [
+    snapshot.growth_snapshot_id,
+    snapshot.infinity_snapshot_id,
+    snapshot.marketplace_snapshot_id,
+    snapshot.work_floor_snapshot_id,
+    snapshot.work_summary_snapshot_id,
+  ].map((value) => String(value ?? ""));
+  const summaryCoverageHeights = [
+    snapshot.growth_height,
+    snapshot.growth_floor_height,
+    snapshot.infinity_height,
+    snapshot.marketplace_height,
+    snapshot.marketplace_floor_height,
+    snapshot.work_floor_height,
+    snapshot.work_summary_height,
+    snapshot.work_summary_floor_height,
+  ].map(safeBlockHeight);
+  if (
+    !indexedThroughBlock ||
+    summarySnapshotIds.some(
+      (value) => value !== String(snapshot.snapshot_id ?? ""),
+    ) ||
+    summaryCoverageHeights.some((height) => height !== indexedThroughBlock)
+  ) {
+    return null;
+  }
+
+  const totals =
+    snapshot.totals &&
+    typeof snapshot.totals === "object" &&
+    !Array.isArray(snapshot.totals)
+      ? snapshot.totals
+      : {};
+  const workNetworkValueSats = Number(totals.workNetworkValueSats);
+  const workActualValueSats = Number(totals.workActualValueSats);
+  const growthActualValueSats = Number(totals.growthActualValueSats);
+  const growthWorkFloorValueSats = Number(
+    totals.growthWorkFloorValueSats,
+  );
+  if (
+    ![
+      workNetworkValueSats,
+      workActualValueSats,
+      growthActualValueSats,
+      growthWorkFloorValueSats,
+    ].every((value) => Number.isFinite(value) && value > 0)
+  ) {
+    return null;
+  }
+
+  return {
+    consistency: snapshot.consistency,
+    generatedAt: dateIso(snapshot.generated_at),
+    growthSummary: {
+      actualValue: { totalSats: growthActualValueSats },
+      workFloor: {
+        actualValue: { totalSats: growthWorkFloorValueSats },
+        networkValueSats: growthWorkFloorValueSats,
+      },
+    },
+    indexedThroughBlock,
+    metrics: snapshot.metrics ?? {},
+    network,
+    snapshotId: snapshot.snapshot_id,
+    source: "proof-indexer-canonical-summary-ledger",
+    sourceHashes: snapshot.source_hashes ?? {},
+    workFloor: {
+      actualValue: { totalSats: workActualValueSats },
+      networkValueSats: workNetworkValueSats,
+    },
+  };
+}
+
 export async function proofIndexSnapshotPayload(network, key) {
   const pool = proofIndexPool();
   if (!pool) {

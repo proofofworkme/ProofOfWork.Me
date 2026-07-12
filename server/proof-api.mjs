@@ -23,6 +23,7 @@ import {
   proofIndexActivityPayload,
   proofIndexAddressMailPayload,
   proofIndexCanonicalActivityPayload,
+  proofIndexCanonicalSummaryLedgerPayload,
   proofIndexCanonicalStateMetaPayload,
   proofIndexCanonicalTransactionsPayload,
   proofIndexConfirmedValueEventsAfterBlock,
@@ -21426,6 +21427,30 @@ async function ledgerConsistencyPayloadWithCurrentSummaries(
 }
 
 async function ledgerConsistencyPayload(network, fresh = false) {
+  if (network === "livenet") {
+    const indexedLedger = await payloadWithFallbackAfterMs(
+      proofIndexCanonicalSummaryLedgerPayload(network),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    ).catch((error) => {
+      console.error(
+        `Proof index canonical consistency read failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    if (
+      ledgerPayloadHasCurrentChecks(indexedLedger) &&
+      (await ledgerPayloadCoversTip(indexedLedger, network))
+    ) {
+      return ledgerConsistencyPayloadFromLedger(indexedLedger);
+    }
+    if (!ENABLE_REQUEST_LEDGER_RECOVERY) {
+      throw freshDataUnavailableError(
+        "The canonical consistency snapshot is unavailable.",
+      );
+    }
+  }
+
   const ledger = await summaryCanonicalLedgerPayload(network, fresh);
   if (ledger) {
     return ledgerConsistencyPayloadWithCurrentSummaries(
@@ -31554,8 +31579,10 @@ function canonicalPublicReadGateApplies(pathname) {
 
 function canonicalSummarySnapshotReadGateApplies(pathname) {
   return new Set([
+    "/api/v1/consistency",
     "/api/v1/growth-summary",
     "/api/v1/infinity-summary",
+    "/api/v1/ledger-consistency",
     "/api/v1/marketplace-summary",
     "/api/v1/work-floor",
     "/api/v1/work-summary",
