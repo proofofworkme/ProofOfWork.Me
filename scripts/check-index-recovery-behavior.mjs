@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import ts from "typescript";
 
 const API_PATH = new URL("../server/proof-api.mjs", import.meta.url);
 const APP_PATH = new URL("../src/App.tsx", import.meta.url);
@@ -57,6 +58,28 @@ function isolatedFunction(path, name, globals = {}) {
   return context.__checkedFunction;
 }
 
+function isolatedTypeScriptFunction(path, name, globals = {}) {
+  const context = vm.createContext({
+    console: {
+      error() {},
+      log() {},
+      warn() {},
+    },
+    ...globals,
+  });
+  const definition = topLevelFunctionSource(path, name);
+  const transpiled = ts.transpileModule(definition, {
+    compilerOptions: {
+      module: ts.ModuleKind.None,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  new vm.Script(`${transpiled}\nthis.__checkedFunction = ${name};`, {
+    filename: path.pathname,
+  }).runInContext(context);
+  return context.__checkedFunction;
+}
+
 async function rejection(promise, predicate, message) {
   try {
     await promise;
@@ -71,6 +94,289 @@ const tests = [];
 function check(name, run) {
   tests.push({ name, run });
 }
+
+check("a current market lifecycle overlay owns sold and active state", () => {
+  const listingId =
+    "e95c6299b1fdd132b192ea040bcb8683140632b81dbde82946c5b754a8f87dbc";
+  const purchaseTxid =
+    "66e601cdc087d55b9d97421acd45dcdc73a441870d333ce0ba0095f9f5fbdaaf";
+  const mergeTokenStateItemsByKey = (
+    baseItems,
+    overlayItems,
+    keyForItem,
+    mergeItem = (_current, incoming) => incoming,
+  ) => {
+    const byKey = new Map();
+    for (const item of Array.isArray(baseItems) ? baseItems : []) {
+      byKey.set(keyForItem(item), item);
+    }
+    for (const item of Array.isArray(overlayItems) ? overlayItems : []) {
+      const key = keyForItem(item);
+      byKey.set(key, mergeItem(byKey.get(key), item));
+    }
+    return [...byKey.values()];
+  };
+  const applyOverlay = isolatedFunction(
+    API_PATH,
+    "tokenStateWithIndexedMarketSummaryOverlay",
+    {
+      confirmedTokenSalesStats: (sales) => ({
+        confirmedSales: sales.filter((sale) => sale.confirmed).length,
+        confirmedSalesVolumeSats: sales.reduce(
+          (total, sale) => total + Number(sale.priceSats ?? 0),
+          0,
+        ),
+      }),
+      mergeTokenListingRecord: (current, incoming) => ({
+        ...(current ?? {}),
+        ...(incoming ?? {}),
+      }),
+      mergeTokenStateItemsByKey,
+      mergedSourceLabel: (...sources) => sources.filter(Boolean).join("+"),
+      newerIso: (_left, right) => right,
+      numericValue: (value) => Number(value) || 0,
+      safeStatNumber: (payload, key) => Number(payload?.stats?.[key]) || 0,
+      sortClosedTokenListings: (items) => items,
+      tokenClosedListingItemKey: (item) =>
+        `${item.network}:${item.listingId}:${item.closedTxid}`,
+      tokenListingItemKey: (item) => `${item.network}:${item.listingId}`,
+      tokenSaleItemKey: (item) => item.txid,
+    },
+  );
+  const lifecycleOverlay = isolatedFunction(
+    API_PATH,
+    "tokenMarketLifecycleOverlayFromCreditListings",
+    {
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+    },
+  )({
+    indexedAt: "2026-07-12T01:52:58.000Z",
+    indexedThroughBlock: 957637,
+    items: [
+      {
+        amount: 10000,
+        buyerAddress: "buyer",
+        closedAt: "2026-07-12T01:52:42.000Z",
+        closedConfirmed: true,
+        closedTxid: purchaseTxid,
+        confirmed: true,
+        listingId,
+        network: "livenet",
+        priceSats: 86590,
+        saleTxid: purchaseTxid,
+        sellerAddress: "seller",
+        status: "sold",
+        ticker: "WORK",
+        tokenId: "work",
+      },
+    ],
+    network: "livenet",
+    source: "proof-indexer-credit-listing-lifecycle",
+    stats: { complete: true, totalCount: 1 },
+  });
+
+  const result = applyOverlay(
+    {
+      closedListings: [],
+      indexedAt: "2026-07-12T01:40:00.000Z",
+      listings: [{ listingId, network: "livenet", status: "active" }],
+      sales: [],
+      source: "stale-summary",
+      stats: {},
+    },
+    lifecycleOverlay,
+  );
+  assert.equal(result.listings.length, 0);
+  assert.equal(result.closedListings[0].closedTxid, purchaseTxid);
+  assert.equal(result.sales[0].txid, purchaseTxid);
+
+  const activeListingId =
+    "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa";
+  const reopened = applyOverlay(
+    {
+      closedListings: [
+        {
+          closedTxid: "f".repeat(64),
+          listingId: activeListingId,
+          network: "livenet",
+        },
+      ],
+      listings: [],
+      sales: [
+        {
+          listingId: activeListingId,
+          txid: "e".repeat(64),
+        },
+      ],
+      source: "stale-summary",
+      stats: {},
+    },
+    {
+      closedListings: [],
+      indexedAt: "2026-07-12T14:28:54.000Z",
+      listings: [
+        {
+          confirmed: true,
+          listingId: activeListingId,
+          network: "livenet",
+          sellerAddress: "seller",
+        },
+      ],
+      sales: [],
+      source: "proof-indexer-credit-listing-lifecycle",
+      stats: { complete: true },
+    },
+  );
+  assert.equal(reopened.listings[0].listingId, activeListingId);
+  assert.equal(reopened.closedListings.length, 0);
+  assert.equal(reopened.sales.length, 0);
+});
+
+check("marketplace fast fallback fails closed without lifecycle coverage", async () => {
+  const fastMarketplaceOverlay = isolatedFunction(
+    API_PATH,
+    "marketplaceSummaryPayloadWithIndexedMarketOverlay",
+    {
+      compactTokenSummaryPayload: (payload) => payload,
+      indexedTokenMarketSummaryOverlay: async () => null,
+      marketplaceSummaryWithCurrentBtcUsd: (payload) => payload,
+      newerIso: (_left, right) => right,
+      tokenStateWithIndexedMarketSummaryOverlay: (payload) => payload,
+      workFloorWithIndexedMarketSummaryOverlay: (payload) => payload,
+    },
+  );
+  assert.equal(
+    await fastMarketplaceOverlay(
+      { token: { listings: [{ listingId: "stale" }] }, workFloor: {} },
+      "livenet",
+      { fast: true },
+    ),
+    null,
+  );
+});
+
+check("market lifecycle remains live when event enrichment is slow", async () => {
+  const listingId =
+    "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa";
+  const indexedTokenMarketSummaryOverlay = isolatedFunction(
+    API_PATH,
+    "indexedTokenMarketSummaryOverlay",
+    {
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 10,
+      errorSummary: (error) => String(error?.message ?? error),
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+      payloadWithFallbackAfterMs: (promise, fallback) =>
+        Promise.race([
+          promise,
+          new Promise((resolve) => setImmediate(() => resolve(fallback))),
+        ]),
+      proofIndexCreditListingsPayload: async () => ({
+        indexedAt: "2026-07-12T14:28:54.000Z",
+        indexedThroughBlock: 957712,
+        items: [{ listingId }],
+        stats: { complete: true, totalCount: 1 },
+      }),
+      proofIndexPayloadCoversConfirmedTip: async () => true,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexTokenMarketSummaryOverlayPayload: () =>
+        new Promise(() => {}),
+      setImmediate,
+      tokenMarketLifecycleOverlayFromCreditListings: (payload) => ({
+        closedListings: [],
+        indexedAt: payload.indexedAt,
+        indexedThroughBlock: payload.indexedThroughBlock,
+        listings: payload.items,
+        sales: [],
+        source: "proof-indexer-credit-listing-lifecycle",
+        stats: payload.stats,
+      }),
+    },
+  );
+  const result = await indexedTokenMarketSummaryOverlay("livenet", "");
+  assert.equal(result.listings[0].listingId, listingId);
+  assert.equal(result.indexedThroughBlock, 957712);
+});
+
+check("market lifecycle overrides stale event closures", async () => {
+  const listingId =
+    "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa";
+  const indexedTokenMarketSummaryOverlay = isolatedFunction(
+    API_PATH,
+    "indexedTokenMarketSummaryOverlay",
+    {
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 10,
+      errorSummary: (error) => String(error?.message ?? error),
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexCreditListingsPayload: async () => ({
+        indexedAt: "2026-07-12T14:28:54.000Z",
+        indexedThroughBlock: 957712,
+        items: [{ listingId }],
+        stats: { complete: true, totalCount: 1 },
+      }),
+      proofIndexPayloadCoversConfirmedTip: async () => true,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexTokenMarketSummaryOverlayPayload: async () => ({
+        closedListings: [
+          { closedTxid: "f".repeat(64), listingId },
+        ],
+        listings: [{ listingId: "e".repeat(64) }],
+        stats: { complete: true },
+      }),
+      tokenMarketLifecycleOverlayFromCreditListings: (payload) => ({
+        closedListings: [],
+        indexedAt: payload.indexedAt,
+        indexedThroughBlock: payload.indexedThroughBlock,
+        listings: payload.items,
+        sales: [],
+        source: "proof-indexer-credit-listing-lifecycle",
+        stats: payload.stats,
+      }),
+      tokenStateWithIndexedMarketSummaryOverlay: (_history, lifecycle) =>
+        lifecycle,
+    },
+  );
+  const result = await indexedTokenMarketSummaryOverlay("livenet", "");
+  assert.equal(result.listings[0].listingId, listingId);
+  assert.equal(result.closedListings.length, 0);
+});
+
+check("unscoped credit lifecycle reads query every token", async () => {
+  const scopes = [];
+  const proofIndexCreditListingsPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexCreditListingsPayload",
+    {
+      boundedInteger: (value, fallback, min, max) =>
+        Math.min(max, Math.max(min, Number(value ?? fallback))),
+      dateIso: (value) => new Date(value).toISOString(),
+      latestProofIndexScanMetadata: async () => ({
+        generated_at: "2026-07-12T14:28:54.000Z",
+        indexed_through_block: 957712,
+      }),
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      proofIndexPool: () => ({
+        async query(sql, params) {
+          scopes.push(params[1]);
+          return /count\(\*\) AS total_count/u.test(String(sql))
+            ? { rows: [{ total_count: 0 }] }
+            : { rows: [] };
+        },
+      }),
+      rowNumber: (row, key) => Number(row?.[key] ?? 0),
+      tokenScopeKey: (value) =>
+        String(value ?? "").trim().toLowerCase() || "all",
+    },
+  );
+  await proofIndexCreditListingsPayload("livenet", "");
+  assert.deepEqual(scopes, ["", ""]);
+});
 
 check("an exact WORK transfer miss requests canonical recovery", () => {
   const txid = "a".repeat(64);
@@ -255,6 +561,237 @@ check("current ID reads exclude dropped registration transactions", async () => 
   );
   assert.equal(dropped.length, 0);
   assert.deepEqual(Array.from(calls[1].params), ["livenet", "dropped-name"]);
+  assert.match(calls[0].sql, /e\.payload->>'blockIndex'/u);
+  assert.match(calls[0].sql, /registration_event\.registration_event_id DESC/u);
+  assert.match(
+    calls[0].sql,
+    /COALESCE\(r\.registered_height, t\.block_height\) DESC/u,
+  );
+});
+
+check("Electrum registry hydration preserves canonical history heights", async () => {
+  const armyTxid = "a8622941a8ac1ed6ac8a8df58ce40795fc7d97b3615d81e9dc23ca6c0cf820fa";
+  const registryTxid = "664f605a032a726f248c7ea298773e04ccabd063555cf109cfd02736935bc84e";
+  const fetchAddressTransactionsFromElectrum = isolatedFunction(
+    API_PATH,
+    "fetchAddressTransactionsFromElectrum",
+    {
+      ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS: 1_000,
+      TX_FETCH_CONCURRENCY: 2,
+      dedupeTransactions: (transactions) => transactions,
+      electrumRequest: async () => [
+        { height: 948_376, tx_hash: armyTxid },
+        { height: 948_376, tx_hash: registryTxid },
+      ],
+      fetchTransactionFromElectrum: async (txid) => ({
+        status: {
+          block_hash: "f".repeat(64),
+          confirmed: true,
+        },
+        txid,
+      }),
+      fetchTransactionWithSourceFallback: async () => null,
+      mapWithConcurrency: async (items, _limit, mapper) =>
+        Promise.all(items.map(mapper)),
+      scriptHashForAddress: () => "scripthash",
+    },
+  );
+  const transactions = await fetchAddressTransactionsFromElectrum(
+    "bc1registry",
+    "livenet",
+  );
+  assert.deepEqual(
+    Array.from(transactions, (transaction) => transaction.status.block_height),
+    [948_376, 948_376],
+  );
+});
+
+check("ID records pin canonical block position and newest-first display", () => {
+  const records = [
+    {
+      blockHeight: 948_376,
+      blockIndex: 1_601,
+      confirmed: true,
+      id: "armyofyouth",
+      txid: "a8622941a8ac1ed6ac8a8df58ce40795fc7d97b3615d81e9dc23ca6c0cf820fa",
+    },
+    {
+      blockHeight: 948_376,
+      blockIndex: 1_602,
+      confirmed: true,
+      id: "satoshin",
+      txid: "74312caa53ee552d2ff85944d99e700fe313208378db17506b490f0e99349b0f",
+    },
+    {
+      blockHeight: 948_376,
+      blockIndex: 2_080,
+      confirmed: true,
+      id: "bitcoin",
+      txid: "6ef73916cdc421e62df2a7df7bb4269b40db7b8616f9545f99f34a15e7a1932e",
+    },
+    {
+      blockHeight: 948_376,
+      blockIndex: 2_081,
+      confirmed: true,
+      id: "registry",
+      txid: "664f605a032a726f248c7ea298773e04ccabd063555cf109cfd02736935bc84e",
+    },
+  ];
+  const compareRegistryRecordDisplayOrder = isolatedFunction(
+    API_PATH,
+    "compareRegistryRecordDisplayOrder",
+  );
+  const expected = ["registry", "bitcoin", "satoshin", "armyofyouth"];
+  const freshOrder = records
+    .slice()
+    .sort(compareRegistryRecordDisplayOrder)
+    .map((record) => record.id);
+  const indexedOrder = records
+    .slice()
+    .reverse()
+    .sort(compareRegistryRecordDisplayOrder)
+    .map((record) => record.id);
+  assert.deepEqual(freshOrder, expected);
+  assert.deepEqual(indexedOrder, expected);
+
+  const crossBlock = [
+    { blockHeight: 948_377, blockIndex: 1, confirmed: true, txid: "1" },
+    { blockHeight: 948_376, blockIndex: 3_000, confirmed: true, txid: "2" },
+  ].sort(compareRegistryRecordDisplayOrder);
+  assert.equal(crossBlock[0].blockHeight, 948_377);
+});
+
+check("wallet holder overlays preserve WORK and POWB for one address", () => {
+  const mergeWalletHolders = isolatedFunction(
+    API_PATH,
+    "mergeWalletHolders",
+  );
+  const address = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
+  const holders = mergeWalletHolders([], [
+    {
+      address,
+      balance: 3_639_060,
+      ticker: "WORK",
+      tokenId: "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+    },
+    {
+      address,
+      balance: 225_001,
+      ticker: "POWB",
+      tokenId: "a3d05fcb82548bfb800f293f7574740e09a1b117f5bfe3d6d4d696c4d0d66f50",
+    },
+  ]);
+  assert.equal(holders.length, 2);
+  assert.deepEqual(
+    Array.from(holders, (holder) => [holder.ticker, holder.balance]),
+    [
+      ["WORK", 3_639_060],
+      ["POWB", 225_001],
+    ],
+  );
+
+  for (const functionName of [
+    "walletScopedTokenSummaryPayload",
+    "walletScopedTokenPayload",
+  ]) {
+    const source = topLevelFunctionSource(API_PATH, functionName);
+    assert.doesNotMatch(source, /scope !== POWB_TOKEN_ID/u);
+    assert.match(source, /tokenPayloadWithIndexedWalletOverlay/u);
+  }
+
+  const appSource = fileSource(APP_PATH);
+  const walletBalanceSource = topLevelFunctionSource(
+    APP_PATH,
+    "tokenWalletBalancesFor",
+  );
+  assert.match(walletBalanceSource, /hasConfirmedReplayBase/u);
+  assert.match(walletBalanceSource, /canReplayConfirmedBalance/u);
+  const tokenWalletBalancesFor = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenWalletBalancesFor",
+    {
+      normalizeTokenTicker: (ticker) => String(ticker ?? "").toUpperCase(),
+    },
+  );
+  const tokens = [
+    {
+      ticker: "WORK",
+      tokenId: "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+    },
+    {
+      ticker: "POWB",
+      tokenId: "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+    },
+  ];
+  const walletBalances = tokenWalletBalancesFor(
+    address,
+    tokens,
+    [],
+    [],
+    [
+      {
+        amount: 30_060,
+        buyerAddress: address,
+        confirmed: true,
+        tokenId: tokens[0].tokenId,
+      },
+    ],
+    holders,
+  );
+  assert.deepEqual(
+    Array.from(walletBalances, (balance) => [
+      balance.token.ticker,
+      balance.confirmedBalance,
+    ]),
+    [
+      ["WORK", 3_639_060],
+      ["POWB", 225_001],
+    ],
+  );
+  assert.equal(
+    tokenWalletBalancesFor(
+      address,
+      [tokens[0]],
+      [],
+      [],
+      [
+        {
+          amount: 30_060,
+          buyerAddress: address,
+          confirmed: true,
+          tokenId: tokens[0].tokenId,
+        },
+      ],
+      [],
+    ).length,
+    0,
+  );
+  assert.match(appSource, /mergeTokenWalletBalancesByToken\(\s*accountTokenWalletBalances,\s*accountPowbWalletBalances/u);
+  assert.match(appSource, /accountUtxoAvailability\(accountUtxos, reservedListingOutpoints\)/u);
+  assert.match(appSource, /activeListingAnchorOutpointsForAddress\(idListings/u);
+  assert.match(appSource, /activeTokenListingAnchorOutpointsForAddress/u);
+
+  const accountUtxoAvailability = isolatedTypeScriptFunction(
+    APP_PATH,
+    "accountUtxoAvailability",
+    { DUST_SATS: 546 },
+  );
+  const values = [100_000, 10_000, 5_000, 3_000, 1_500, 1_000, 641, 546, 546];
+  const utxos = values.map((value, index) => ({
+    status: { confirmed: true },
+    txid: String(index + 1).padStart(64, "0"),
+    value,
+    vout: 0,
+  }));
+  const availability = accountUtxoAvailability(
+    utxos,
+    utxos.slice(-2).map(({ txid, vout }) => ({ txid, vout })),
+  );
+  assert.equal(availability.confirmedBalanceSats, 122_233);
+  assert.equal(availability.confirmedUtxos.length, 9);
+  assert.equal(availability.reservedListingUtxos.length, 2);
+  assert.equal(availability.spendableSats, 121_141);
+  assert.equal(availability.spendableUtxos.length, 7);
 });
 
 check("confirmed invalid credit events remain visible without becoming valid", async () => {
@@ -598,64 +1135,23 @@ check("invalid listing attempts inherit their canonical credit scope", () => {
   assert.deepEqual(Array.from(query.params[2]), [txid]);
 });
 
-check("public Log admits only value-neutral canonical token invalid events", async () => {
+check("public Log counts only valid confirmed or pending actions", async () => {
   const readerSource = fileSource(READER_PATH);
   const publicKinds = /const PUBLIC_LOG_EVENT_KINDS = new Set\(\[([\s\S]*?)\]\);/u.exec(
     readerSource,
   )?.[1] ?? "";
-  assert.match(publicKinds, /"token-event-invalid"/u);
-
-  const rowNumber = (row, key) => Number(row?.[key] ?? 0);
-  const eventPayloadParticipants = isolatedFunction(
-    READER_PATH,
-    "eventPayloadParticipants",
-    {
-      normalizedText: (value) => String(value ?? "").trim(),
-      objectRecord: (value) =>
-        value && typeof value === "object" && !Array.isArray(value)
-          ? value
-          : {},
-    },
-  );
-  const eventRowPayload = isolatedFunction(READER_PATH, "eventRowPayload", {
-    canonicalEventPayload: (payload) => payload ?? {},
-    dateIso: (value) => new Date(value).toISOString(),
-    eventPayloadParticipants,
-    normalizeEventPayload: (payload) => payload,
-    normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
-    rowNumber,
-  });
-  const invalid = eventRowPayload(
-    {
-      block_height: 950_123,
-      event_time: "2026-05-20T12:00:00.000Z",
-      kind: "token-event-invalid",
-      payload: {
-        amount: 42_000,
-        amountSats: 546,
-        kind: "token-event-invalid",
-        liveNetworkValueSats: 546,
-        participants: ["bc1sender"],
-        registryAddress: "bc1registry",
-        tokenId: "4".repeat(64),
-      },
-      protocol: "pwt1",
-      status: "confirmed",
-      txid: "6".repeat(64),
-    },
-    "livenet",
-  );
-  assert.equal(invalid.valid, false);
-  assert.equal(invalid.amount, 42_000);
-  assert.equal(invalid.attemptedAmountSats, 546);
-  assert.equal(invalid.amountSats, 0);
-  assert.equal(invalid.liveNetworkValueSats, 0);
-  assert.deepEqual(
-    [...invalid.participants].sort(),
-    ["bc1registry", "bc1sender"],
+  assert.doesNotMatch(publicKinds, /"token-event-invalid"/u);
+  assert.match(
+    topLevelFunctionSource(READER_PATH, "normalizeHistoryEventItem"),
+    /publicOnly[\s\S]*item\?\.valid === false/u,
   );
 
   let activitySql = "";
+  let activityParams = [];
+  const rows = Array.from({ length: 23_585 }, (_, index) => ({
+    event_time: "2026-07-11T12:00:00.000Z",
+    txid: index.toString(16).padStart(64, "0"),
+  }));
   const proofIndexCanonicalActivityPayload = isolatedFunction(
     READER_PATH,
     "proofIndexCanonicalActivityPayload",
@@ -663,23 +1159,38 @@ check("public Log admits only value-neutral canonical token invalid events", asy
       indexedThroughBlockFromItems: () => 950_123,
       latestProofIndexScanMetadata: async () => null,
       newestDateIso: () => "2026-05-20T12:00:00.000Z",
-      normalizeHistoryEventRows: () => [invalid],
+      normalizeHistoryEventRows: (items) =>
+        items.map((item) => ({ confirmed: true, txid: item.txid })),
+      PUBLIC_LOG_EVENT_KINDS: new Set(["mail", "token-mint"]),
       proofIndexPool: () => ({
-        async query(sql) {
+        async query(sql, params) {
           activitySql = String(sql);
-          return { rows: [{ event_time: "2026-05-20T12:00:00.000Z" }] };
+          activityParams = params;
+          return { rows };
         },
       }),
-      rowNumber,
+      rowNumber: () => 0,
     },
   );
   const activity = await proofIndexCanonicalActivityPayload("livenet");
-  assert.equal(activity.activity[0].amountSats, 0);
-  assert.match(activitySql, /e\.protocol = 'pwt1'/u);
-  assert.match(activitySql, /e\.kind = 'token-event-invalid'/u);
-  assert.match(activitySql, /e\.valid = false/u);
-  assert.match(activitySql, /e\.status = 'confirmed'/u);
-  assert.match(activitySql, /e\.valid = true\s+OR/u);
+  assert.equal(activity.stats.confirmed, 23_585);
+  assert.equal(activity.stats.total, 23_585);
+  assert.match(activitySql, /e\.valid = true/u);
+  assert.match(activitySql, /e\.status IN \('confirmed', 'pending'\)/u);
+  assert.match(activitySql, /e\.kind = ANY\(\$2::text\[\]\)/u);
+  assert.doesNotMatch(activitySql, /token-event-invalid/u);
+  assert.deepEqual(Array.from(activityParams[1]), ["mail", "token-mint"]);
+
+  const logHistorySource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexLogHistoryPayload",
+  );
+  assert.match(logHistorySource, /"e\.valid = true"/u);
+  assert.match(
+    logHistorySource,
+    /"e\.status IN \('confirmed', 'pending'\)"/u,
+  );
+  assert.match(logHistorySource, /"e\.kind = ANY\(\$2::text\[\]\)"/u);
 });
 
 check("canonical consistency aggregates participants across same-tx events", () => {
@@ -704,6 +1215,273 @@ check("canonical consistency aggregates participants across same-tx events", () 
   assert.deepEqual(
     [...coverage.participants].sort(),
     ["bc1buyer", "bc1registry", "bc1seller"],
+  );
+});
+
+check("canonical consistency rejects zero token components behind token activity", () => {
+  const tokenComponentCoverageFromConfirmedActivity = isolatedFunction(
+    API_PATH,
+    "tokenComponentCoverageFromConfirmedActivity",
+  );
+  const missing = tokenComponentCoverageFromConfirmedActivity(
+    [
+      { confirmed: true, kind: "token-create" },
+      { confirmed: true, kind: "token-mint" },
+      { confirmed: true, kind: "token-transfer" },
+      { confirmed: true, kind: "token-sale" },
+    ],
+    { mints: [], sales: [], tokens: [], transfers: [] },
+  );
+  assert.equal(missing.ok, false);
+  assert.deepEqual(Array.from(missing.missing).sort(), [
+    "mints",
+    "sales",
+    "tokens",
+    "transfers",
+  ]);
+
+  const complete = tokenComponentCoverageFromConfirmedActivity(
+    [
+      { confirmed: true, kind: "token-create" },
+      { confirmed: true, kind: "token-mint" },
+      { confirmed: true, kind: "token-transfer" },
+      { confirmed: true, kind: "token-sale" },
+    ],
+    {
+      mints: [{ confirmed: true }],
+      sales: [{ confirmed: true }],
+      tokens: [{ confirmed: true }],
+      transfers: [{ confirmed: true }],
+    },
+  );
+  assert.equal(complete.ok, true);
+  assert.deepEqual(Array.from(complete.missing), []);
+});
+
+check("canonical activity counts exactly match the public Log", () => {
+  const canonicalActivityCountCoverage = isolatedFunction(
+    API_PATH,
+    "canonicalActivityCountCoverage",
+    {
+      numericValue: (value, fallback = 0) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : fallback;
+      },
+    },
+  );
+  assert.equal(
+    canonicalActivityCountCoverage(
+      { activityItems: 3, confirmedComputerActions: 2 },
+      { activity: { count: 2, confirmed: 2 } },
+    ).ok,
+    false,
+  );
+  assert.equal(
+    canonicalActivityCountCoverage(
+      { activityItems: 2, confirmedComputerActions: 2 },
+      { activity: { count: 2, confirmed: 1 } },
+    ).ok,
+    false,
+  );
+  assert.equal(
+    canonicalActivityCountCoverage(
+      { activityItems: 2, confirmedComputerActions: 1 },
+      { activity: { count: 2, confirmed: 1 } },
+    ).ok,
+    true,
+  );
+});
+
+check("synthetic WORK and POWB definitions are not public Log actions", () => {
+  const tokenStateLogExpectations = isolatedFunction(
+    API_PATH,
+    "tokenStateLogExpectations",
+    {
+      POWB_TOKEN_ID: "powb",
+      WORK_TOKEN_ID: "work",
+    },
+  );
+  const expectations = tokenStateLogExpectations({
+    closedListings: [],
+    listings: [],
+    mints: [],
+    sales: [],
+    tokens: [
+      { confirmed: true, tokenId: "work", txid: "a".repeat(64) },
+      { confirmed: true, tokenId: "powb", txid: "b".repeat(64) },
+      { confirmed: true, tokenId: "real", txid: "c".repeat(64) },
+    ],
+    transfers: [],
+  });
+  assert.deepEqual(
+    Array.from(expectations, (item) => item.tokenId),
+    ["real"],
+  );
+});
+
+check("stale registry age can be bypassed only with explicit current tip coverage", async () => {
+  let tipHeight;
+  const proofIndexPayloadHasExplicitCurrentCoverage = isolatedFunction(
+    API_PATH,
+    "proofIndexPayloadHasExplicitCurrentCoverage",
+    {
+      PROOF_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS: 6,
+      ledgerTipHeight: async () => tipHeight,
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock),
+    },
+  );
+  assert.equal(
+    await proofIndexPayloadHasExplicitCurrentCoverage(
+      { indexedThroughBlock: 100 },
+      "livenet",
+    ),
+    false,
+  );
+  tipHeight = 105;
+  assert.equal(
+    await proofIndexPayloadHasExplicitCurrentCoverage(
+      { indexedThroughBlock: 100 },
+      "livenet",
+    ),
+    true,
+  );
+  tipHeight = 107;
+  assert.equal(
+    await proofIndexPayloadHasExplicitCurrentCoverage(
+      { indexedThroughBlock: 100 },
+      "livenet",
+    ),
+    false,
+  );
+});
+
+check("stored canonical summaries require component and public Log count checks", () => {
+  const eligibleCanonicalSummarySnapshotPayload = isolatedFunction(
+    BACKFILL_PATH,
+    "eligibleCanonicalSummarySnapshotPayload",
+    {
+      canonicalSummaryCoverage: () => 957_641,
+      objectPayload: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : null,
+    },
+  );
+  const payload = {
+    checks: [],
+    ok: true,
+    sourceHashes: { canonicalSummary: "a".repeat(64) },
+    status: "green",
+    summaryPayloads: {},
+    summaryRefresh: { mode: "canonical-summary-refresh" },
+  };
+  assert.equal(eligibleCanonicalSummarySnapshotPayload(payload), false);
+  payload.checks.push({
+    name: "token-components-cover-confirmed-activity",
+    ok: true,
+  });
+  assert.equal(eligibleCanonicalSummarySnapshotPayload(payload), false);
+  payload.checks.push({
+    name: "canonical-activity-count-matches-public-log",
+    ok: true,
+  });
+  assert.equal(eligibleCanonicalSummarySnapshotPayload(payload), true);
+
+  const snapshotReadSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexSnapshotPayload",
+  );
+  assert.match(
+    snapshotReadSource,
+    /token-components-cover-confirmed-activity/u,
+  );
+  assert.match(
+    snapshotReadSource,
+    /canonical-activity-count-matches-public-log/u,
+  );
+  assert.match(snapshotReadSource, /check_item->>'ok'[\s\S]*'true'/u);
+});
+
+check("Infinity value uses confirmed bond payments instead of synthetic mint payment fields", () => {
+  const POWB_TOKEN_ID = "powb";
+  const bondAmounts = [
+    ...Array.from({ length: 464 }, () => 1_000_000),
+    166_196_569,
+  ];
+  const bonds = bondAmounts.map((amountSats, index) => ({
+    amountSats,
+    confirmed: true,
+    createdAt: new Date(1_700_000_000_000 + index * 1_000).toISOString(),
+    kind: "infinity-bond",
+    txid: index.toString(16).padStart(64, "0"),
+  }));
+  const tokenState = {
+    confirmedSupply: 630_196_569,
+    holders: [{ address: "bc1holder", balance: 630_196_569 }],
+    listings: [],
+    mints: bonds.map((bond) => ({
+      amount: bond.amountSats,
+      confirmed: true,
+      paidSats: 0,
+      tokenId: POWB_TOKEN_ID,
+      txid: bond.txid,
+    })),
+    pendingSupply: 0,
+    sales: [],
+    source: "fixture",
+    tokens: [{ registryAddress: "bc1registry", tokenId: POWB_TOKEN_ID }],
+    transfers: Array.from({ length: 4 }, (_, index) => ({
+      confirmed: true,
+      paidSats: 546,
+      tokenId: POWB_TOKEN_ID,
+      txid: `t${index}`,
+    })),
+  };
+  const mutations = Array.from({ length: 2 }, (_, index) => ({
+    amountSats: 546,
+    confirmed: true,
+    kind: "token-listing",
+    tokenId: POWB_TOKEN_ID,
+    txid: `m${index}`,
+  }));
+  const infinitySummaryPayloadFromLedger = isolatedFunction(
+    API_PATH,
+    "infinitySummaryPayloadFromLedger",
+    {
+      POWB_REGISTRY_ID: "infinity@proofofwork.me",
+      POWB_TOKEN_ID,
+      POWB_TOKEN_TICKER: "POWB",
+      TOKEN_MARKETPLACE_MUTATION_KINDS: new Set(["token-listing"]),
+      activityAmountSats: (item) => Number(item?.amountSats ?? 0),
+      btcUsdResponseMetadata: () => ({ btcUsd: 0 }),
+      compactTokenSummaryPayload: (state) => state,
+      infinityBondChartPointsFromEvents: ({ bonds: items }) =>
+        items.length > 0 ? [{ txid: items.at(-1).txid }] : [],
+      isInfinityBondActivityItem: (item) => item?.kind === "infinity-bond",
+      ledgerTokenStateForScope: (ledger) => ledger.tokenState,
+      numericValue: (value) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : 0;
+      },
+      satsToUsdAtBtcUsd: () => 0,
+    },
+  );
+  const summary = infinitySummaryPayloadFromLedger({
+    activity: [...bonds, ...mutations],
+    generatedAt: "2026-07-11T12:00:00.000Z",
+    network: "livenet",
+    tokenState,
+  });
+  assert.equal(summary.stats.confirmedBondActions, 465);
+  assert.equal(summary.actualValue.bondMintFlowSats, 630_196_569);
+  assert.equal(summary.actualValue.bondTransferFeeSats, 2_184);
+  assert.equal(summary.actualValue.bondMarketplaceMutationFeeSats, 1_092);
+  assert.equal(summary.networkValueSats, 630_199_845);
+  assert.ok(Math.abs(summary.floorSats - 1.0000051983779588) < 1e-12);
+  assert.doesNotMatch(
+    topLevelFunctionSource(API_PATH, "infinitySummaryPayloadFromLedger"),
+    /bondMintFlowSats[\s\S]*mint\.paidSats/u,
   );
 });
 
@@ -1242,20 +2020,24 @@ check("livenet summary routes prefer the exact stored canonical snapshot", async
     API_PATH,
     "infinitySummaryPayload",
     {
+      LEDGER_SUMMARY_FRESH_WAIT_MS: 1_000,
       currentProofIndexSummarySnapshotFallbackPayload: async () => exactInfinity,
       existingCurrentCanonicalLedgerPayloadWithinMs: async () => null,
+      payloadWithFallbackAfterMs: async (promise, fallback) =>
+        (await promise) ?? fallback,
       proofIndexInfinitySummaryPayload: async () => {
         relationalInfinityReads += 1;
         return relationalInfinity;
       },
+      summaryCanonicalLedgerPayload: async () => null,
     },
   );
   assert.equal(await readInfinitySummary("livenet", false), canonicalInfinity);
-  assert.equal(await readInfinitySummary("livenet", true), canonicalInfinity);
-  assert.equal(relationalInfinityReads, 0);
+  assert.equal(await readInfinitySummary("livenet", true), relationalInfinity);
+  assert.equal(relationalInfinityReads, 1);
   exactInfinity = null;
   assert.equal(await readInfinitySummary("livenet", false), relationalInfinity);
-  assert.equal(relationalInfinityReads, 1);
+  assert.equal(relationalInfinityReads, 2);
 });
 
 check("exact token tables own the current active listing set", () => {
@@ -1384,6 +2166,7 @@ check("canonical registry state can replace a stale higher cached count", async 
     API_PATH,
     "indexedRegistryPayload",
     {
+      compareRegistryRecordDisplayOrder: () => 0,
       errorSummary: (error) => String(error?.message ?? error),
       proofIndexReadFeatureEnabled: () => true,
       proofIndexRegistryPayload: async () => payload,
@@ -1396,9 +2179,15 @@ check("canonical registry state can replace a stale higher cached count", async 
     },
   );
 
-  assert.equal(await indexedRegistryPayload("livenet"), payload);
+  const accepted = await indexedRegistryPayload("livenet");
+  assert.equal(accepted.indexedThroughBlock, payload.indexedThroughBlock);
+  assert.equal(accepted.records.length, payload.records.length);
   assert.equal(rejectArguments.length, 1);
-  assert.equal(rejectArguments[0], payload);
+  assert.equal(
+    rejectArguments[0].indexedThroughBlock,
+    payload.indexedThroughBlock,
+  );
+  assert.equal(rejectArguments[0].records.length, payload.records.length);
 });
 
 check("strict RUSH history is complete and ordered by canonical blocks", async () => {
@@ -3956,6 +4745,11 @@ check("canonical read gating exempts node primitives only", () => {
 
 check("summary catch-up does not brown out current relational reads", async () => {
   const blockHash = "a".repeat(64);
+  let confirmedEventMaxBlock = 99;
+  const summarySnapshotCoversCanonicalReadModels = isolatedFunction(
+    API_PATH,
+    "summarySnapshotCoversCanonicalReadModels",
+  );
   const loadCanonicalPublicReadGate = isolatedFunction(
     API_PATH,
     "loadCanonicalPublicReadGate",
@@ -3973,8 +4767,9 @@ check("summary catch-up does not brown out current relational reads", async () =
       proofIndexOperationalStatusPayload: async () => ({
         indexedThroughBlock: 100,
         readModels: {
-          confirmedIds: { count: 1 },
-          confirmedTransfers: { count: 1 },
+          confirmedEvents: { count: 10, maxBlock: confirmedEventMaxBlock },
+          confirmedIds: { count: 1, maxBlock: 90 },
+          confirmedTransfers: { count: 1, maxBlock: 95 },
         },
         scan: { blockHash, complete: true },
         summarySnapshot: {
@@ -3986,11 +4781,15 @@ check("summary catch-up does not brown out current relational reads", async () =
           ok: true,
         },
       }),
+      summarySnapshotCoversCanonicalReadModels,
     },
   );
   const gate = await loadCanonicalPublicReadGate("livenet");
   assert.equal(gate.ok, true);
-  assert.equal(gate.summarySnapshotOk, false);
+  assert.equal(gate.summarySnapshotOk, true);
+  confirmedEventMaxBlock = 100;
+  const changedGate = await loadCanonicalPublicReadGate("livenet");
+  assert.equal(changedGate.summarySnapshotOk, false);
 
   const summaryGate = isolatedFunction(
     API_PATH,
@@ -4690,6 +5489,199 @@ check("token verifier uses event-specific seal and close confirmation", () => {
   state.closedListings[0].closedConfirmed = true;
   assert.equal(tokenVerifierItemsFromState(state, sealTxid)[0].confirmed, true);
   assert.equal(tokenVerifierItemsFromState(state, closeTxid)[0].confirmed, true);
+});
+
+check("canonical consistency reads the exact eligible summary snapshot", async () => {
+  const snapshotId = "summary-snapshot";
+  const checks = [
+    {
+      name: "token-components-cover-confirmed-activity",
+      ok: true,
+    },
+    {
+      name: "canonical-activity-count-matches-public-log",
+      ok: true,
+    },
+  ];
+  let queryText = "";
+  const readCanonicalSummary = isolatedFunction(
+    READER_PATH,
+    "proofIndexCanonicalSummaryLedgerPayload",
+    {
+      dateIso: (value) => new Date(value).toISOString(),
+      proofIndexPool: () => ({
+        async query(sql, params) {
+          queryText = String(sql);
+          assert.deepEqual(Array.from(params), ["livenet"]);
+          return {
+            rows: [
+              {
+                consistency: {
+                  checks,
+                  missingLogEvents: [],
+                  ok: true,
+                  status: "green",
+                },
+                generated_at: "2026-07-12T14:16:59.808Z",
+                growth_floor_height: 957712,
+                growth_height: 957712,
+                growth_snapshot_id: snapshotId,
+                indexed_through_block: 957712,
+                infinity_height: 957712,
+                infinity_snapshot_id: snapshotId,
+                marketplace_floor_height: 957712,
+                marketplace_height: 957712,
+                marketplace_snapshot_id: snapshotId,
+                metrics: {
+                  activityItems: 23591,
+                  confirmedComputerActions: 23585,
+                  indexedThroughBlock: 957712,
+                },
+                payload_snapshot_id: snapshotId,
+                snapshot_id: snapshotId,
+                source_hashes: {
+                  activity: { confirmed: 23585, count: 23591 },
+                },
+                totals: {
+                  growthActualValueSats: 8_171_663_094,
+                  growthWorkFloorValueSats: 8_171_663_094,
+                  workActualValueSats: 8_171_663_094,
+                  workNetworkValueSats: 8_171_663_094,
+                },
+                work_floor_height: 957712,
+                work_floor_snapshot_id: snapshotId,
+                work_summary_floor_height: 957712,
+                work_summary_height: 957712,
+                work_summary_snapshot_id: snapshotId,
+              },
+            ],
+          };
+        },
+      }),
+      safeBlockHeight: (value) =>
+        Number.isSafeInteger(Number(value)) && Number(value) > 0
+          ? Number(value)
+          : 0,
+    },
+  );
+  const result = await readCanonicalSummary("livenet");
+  assert.match(
+    queryText,
+    /canonical-activity-count-matches-public-log/u,
+  );
+  assert.equal(result.snapshotId, snapshotId);
+  assert.equal(result.metrics.activityItems, 23591);
+  assert.equal(result.metrics.confirmedComputerActions, 23585);
+  assert.equal(result.consistency.checks.length, 2);
+  assert.equal(result.workFloor.networkValueSats, 8_171_663_094);
+});
+
+check("public consistency prefers the eligible database snapshot", async () => {
+  let legacyReads = 0;
+  const indexedLedger = {
+    snapshotId: "current-summary",
+    metrics: {
+      activityItems: 23591,
+      confirmedComputerActions: 23585,
+    },
+  };
+  const ledgerConsistencyPayload = isolatedFunction(
+    API_PATH,
+    "ledgerConsistencyPayload",
+    {
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 100,
+      ENABLE_REQUEST_LEDGER_RECOVERY: false,
+      errorSummary: (error) => String(error?.message ?? error),
+      ledgerPayloadCoversTip: async () => true,
+      ledgerPayloadHasCurrentChecks: () => true,
+      ledgerConsistencyPayloadFromLedger: (ledger) => ({
+        metrics: ledger.metrics,
+        snapshotId: ledger.snapshotId,
+      }),
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexCanonicalSummaryLedgerPayload: async () => indexedLedger,
+      summaryCanonicalLedgerPayload: async () => {
+        legacyReads += 1;
+        return null;
+      },
+    },
+  );
+  const result = await ledgerConsistencyPayload("livenet", true);
+  assert.equal(result.snapshotId, indexedLedger.snapshotId);
+  assert.equal(result.metrics.activityItems, 23591);
+  assert.equal(legacyReads, 0);
+});
+
+check("public consistency fails closed without an eligible database snapshot", async () => {
+  let legacyReads = 0;
+  let indexedLedger = null;
+  const ledgerConsistencyPayload = isolatedFunction(
+    API_PATH,
+    "ledgerConsistencyPayload",
+    {
+      ENABLE_REQUEST_LEDGER_RECOVERY: false,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 100,
+      errorSummary: (error) => String(error?.message ?? error),
+      freshDataUnavailableError: (message) => {
+        const error = new Error(message);
+        error.statusCode = 503;
+        return error;
+      },
+      ledgerPayloadCoversTip: async () => true,
+      ledgerPayloadHasCurrentChecks: (payload) =>
+        payload?.eligible === true,
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexCanonicalSummaryLedgerPayload: async () => indexedLedger,
+      summaryCanonicalLedgerPayload: async () => {
+        legacyReads += 1;
+        return null;
+      },
+    },
+  );
+  for (const candidate of [null, { eligible: false }]) {
+    indexedLedger = candidate;
+    await rejection(
+      ledgerConsistencyPayload("livenet", false),
+      (error) => error?.statusCode === 503,
+    );
+  }
+  assert.equal(legacyReads, 0);
+});
+
+check("consistency recovery remains available only when explicitly enabled", async () => {
+  const ledgerConsistencyPayload = isolatedFunction(
+    API_PATH,
+    "ledgerConsistencyPayload",
+    {
+      ENABLE_REQUEST_LEDGER_RECOVERY: true,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 100,
+      errorSummary: (error) => String(error?.message ?? error),
+      ledgerConsistencyPayloadFromLedger: (ledger) => ({
+        snapshotId: ledger.snapshotId,
+      }),
+      ledgerConsistencyPayloadWithCurrentSummaries: async (payload) => payload,
+      ledgerPayloadCoversTip: async () => false,
+      ledgerPayloadHasCurrentChecks: () => false,
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexCanonicalSummaryLedgerPayload: async () => null,
+      summaryCanonicalLedgerPayload: async () => ({
+        snapshotId: "recovered-ledger",
+      }),
+    },
+  );
+  assert.equal(
+    (await ledgerConsistencyPayload("livenet", false)).snapshotId,
+    "recovered-ledger",
+  );
+});
+
+check("both consistency routes require an eligible summary snapshot", () => {
+  const applies = isolatedFunction(
+    API_PATH,
+    "canonicalSummarySnapshotReadGateApplies",
+  );
+  assert.equal(applies("/api/v1/consistency"), true);
+  assert.equal(applies("/api/v1/ledger-consistency"), true);
 });
 
 check("an accepted ID buy projects the buyer as the current owner", async () => {

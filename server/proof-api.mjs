@@ -23,6 +23,7 @@ import {
   proofIndexActivityPayload,
   proofIndexAddressMailPayload,
   proofIndexCanonicalActivityPayload,
+  proofIndexCanonicalSummaryLedgerPayload,
   proofIndexCanonicalStateMetaPayload,
   proofIndexCanonicalTransactionsPayload,
   proofIndexConfirmedValueEventsAfterBlock,
@@ -1822,24 +1823,34 @@ function mergeTokenTransferRecord(current, incoming) {
 }
 
 function mergeWalletHolders(baseHolders, overlayHolders) {
-  const byAddress = new Map();
-  for (const holder of Array.isArray(baseHolders) ? baseHolders : []) {
+  const byTokenAndAddress = new Map();
+  const holderKey = (holder) => {
     const address = String(holder?.address ?? "").trim().toLowerCase();
-    if (address) {
-      byAddress.set(address, holder);
+    const tokenId = String(holder?.tokenId ?? "").trim().toLowerCase();
+    const ticker = String(holder?.ticker ?? "").trim().toLowerCase();
+    const tokenKey = tokenId || (ticker ? `ticker:${ticker}` : "unknown");
+    return address ? `${tokenKey}:${address}` : "";
+  };
+  for (const holder of Array.isArray(baseHolders) ? baseHolders : []) {
+    const key = holderKey(holder);
+    if (key) {
+      byTokenAndAddress.set(key, holder);
     }
   }
   for (const holder of Array.isArray(overlayHolders) ? overlayHolders : []) {
-    const address = String(holder?.address ?? "").trim().toLowerCase();
-    if (address) {
-      byAddress.set(address, holder);
+    const key = holderKey(holder);
+    if (key) {
+      byTokenAndAddress.set(key, holder);
     }
   }
-  return [...byAddress.values()]
+  return [...byTokenAndAddress.values()]
     .filter((holder) => Number(holder?.balance ?? 0) > 0)
     .sort(
       (left, right) =>
         Number(right.balance ?? 0) - Number(left.balance ?? 0) ||
+        String(left.tokenId ?? left.ticker ?? "").localeCompare(
+          String(right.tokenId ?? right.ticker ?? ""),
+        ) ||
         String(left.address ?? "").localeCompare(String(right.address ?? "")),
     );
 }
@@ -2160,6 +2171,15 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
     return payload;
   }
 
+  const activeOverlayListingIds = new Set(
+    (Array.isArray(overlay.listings) ? overlay.listings : [])
+      .map((listing) =>
+        String(listing?.listingId ?? listing?.txid ?? "")
+          .trim()
+          .toLowerCase(),
+      )
+      .filter(Boolean),
+  );
   const mergedListings = mergeTokenStateItemsByKey(
     payload.listings,
     overlay.listings,
@@ -2167,13 +2187,26 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
     (current, incoming) => mergeTokenListingRecord(incoming, current),
   );
   const sales = mergeTokenStateItemsByKey(
-    payload.sales,
+    (Array.isArray(payload.sales) ? payload.sales : []).filter(
+      (sale) =>
+        !activeOverlayListingIds.has(
+          String(sale?.listingId ?? "").trim().toLowerCase(),
+        ),
+    ),
     overlay.sales,
     tokenSaleItemKey,
   );
   const closedListings = sortClosedTokenListings(
     mergeTokenStateItemsByKey(
-      payload.closedListings,
+      (Array.isArray(payload.closedListings)
+        ? payload.closedListings
+        : []
+      ).filter(
+        (listing) =>
+          !activeOverlayListingIds.has(
+            String(listing?.listingId ?? "").trim().toLowerCase(),
+          ),
+      ),
       overlay.closedListings,
       tokenClosedListingItemKey,
       mergeTokenListingRecord,
@@ -2214,6 +2247,122 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
   };
 }
 
+function tokenMarketLifecycleOverlayFromCreditListings(payload) {
+  if (!payload || payload.stats?.complete !== true) {
+    return null;
+  }
+
+  const listings = [];
+  const closedListings = [];
+  const sales = [];
+  for (const item of Array.isArray(payload.items) ? payload.items : []) {
+    const listingId = String(item?.listingId ?? item?.txid ?? "")
+      .trim()
+      .toLowerCase();
+    const tokenId = normalizeTokenScope(
+      item?.tokenId ?? item?.saleAuthorization?.tokenId,
+    );
+    if (!/^[0-9a-f]{64}$/u.test(listingId) || !tokenId) {
+      continue;
+    }
+
+    const status = String(item?.status ?? "").trim().toLowerCase();
+    const closeTxid = String(item?.closedTxid ?? item?.closeTxid ?? "")
+      .trim()
+      .toLowerCase();
+    const listing = {
+      ...item,
+      confirmed: item?.confirmed !== false,
+      listingId,
+      network: item?.network ?? payload.network,
+      tokenId,
+      txid: listingId,
+    };
+    if (
+      !closeTxid &&
+      ["active", "pending", "sealing"].includes(status)
+    ) {
+      listings.push(listing);
+      continue;
+    }
+    if (!/^[0-9a-f]{64}$/u.test(closeTxid)) {
+      continue;
+    }
+
+    const closedAt =
+      item?.closedAt ?? item?.updatedAt ?? item?.createdAt ?? payload.indexedAt;
+    closedListings.push({
+      ...listing,
+      closedAt,
+      closedConfirmed: item?.closedConfirmed !== false,
+      closedTxid: closeTxid,
+    });
+    const saleTxid = String(item?.saleTxid ?? "").trim().toLowerCase();
+    if (
+      status === "sold" ||
+      /^[0-9a-f]{64}$/u.test(saleTxid) ||
+      Boolean(item?.buyerAddress)
+    ) {
+      sales.push({
+        amount: numericValue(item?.amount),
+        buyerAddress: item?.buyerAddress ?? "",
+        confirmed: item?.closedConfirmed !== false,
+        createdAt: closedAt,
+        listingId,
+        network: item?.network ?? payload.network,
+        paidSats: numericValue(item?.paidSats ?? item?.priceSats),
+        priceSats: numericValue(item?.priceSats),
+        registryAddress: item?.registryAddress ?? "",
+        sellerAddress: item?.sellerAddress ?? "",
+        ticker: item?.ticker ?? item?.saleAuthorization?.ticker ?? "",
+        tokenId,
+        txid: /^[0-9a-f]{64}$/u.test(saleTxid) ? saleTxid : closeTxid,
+      });
+    }
+  }
+
+  return {
+    closedListings,
+    indexedAt: payload.indexedAt,
+    indexedThroughBlock: payload.indexedThroughBlock,
+    listings,
+    sales,
+    source: payload.source ?? "proof-indexer-credit-listing-lifecycle",
+    stats: {
+      complete: true,
+      totalCount: numericValue(payload.stats?.totalCount ?? payload.totalCount),
+    },
+  };
+}
+
+function tokenSummaryListingIdsMissingFromMarketLifecycle(payload, lifecycle) {
+  const lifecycleListingIds = new Set(
+    [
+      ...(Array.isArray(lifecycle?.listings) ? lifecycle.listings : []),
+      ...(Array.isArray(lifecycle?.closedListings)
+        ? lifecycle.closedListings
+        : []),
+    ]
+      .map((item) => String(item?.listingId ?? "").trim().toLowerCase())
+      .filter((listingId) => /^[0-9a-f]{64}$/u.test(listingId)),
+  );
+  return (Array.isArray(payload?.listings) ? payload.listings : [])
+    .filter((item) => item?.confirmed !== false)
+    .map((item) =>
+      String(item?.listingId ?? item?.txid ?? "").trim().toLowerCase(),
+    )
+    .filter(
+      (listingId) => listingId && !lifecycleListingIds.has(listingId),
+    );
+}
+
+function tokenSummaryListingsCoveredByMarketLifecycle(payload, lifecycle) {
+  return (
+    tokenSummaryListingIdsMissingFromMarketLifecycle(payload, lifecycle)
+      .length === 0
+  );
+}
+
 async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
   if (
     network !== "livenet" ||
@@ -2222,16 +2371,68 @@ async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
     return null;
   }
 
-  return payloadWithFallbackAfterMs(
-    proofIndexTokenMarketSummaryOverlayPayload(network, tokenScope),
-    null,
-    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
-  ).catch((error) => {
+  const [eventPayload, lifecyclePayload] = await Promise.all([
+    payloadWithFallbackAfterMs(
+      proofIndexTokenMarketSummaryOverlayPayload(network, tokenScope),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    ).catch((error) => {
+      console.error(
+        `Proof index token market event overlay failed: ${errorSummary(error)}`,
+      );
+      return null;
+    }),
+    payloadWithFallbackAfterMs(
+      proofIndexCreditListingsPayload(network, tokenScope, { limit: 5000 }),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    ).catch((error) => {
+      console.error(
+        `Proof index token market lifecycle overlay failed: ${errorSummary(error)}`,
+      );
+      return null;
+    }),
+  ]);
+  const lifecycle = tokenMarketLifecycleOverlayFromCreditListings(
+    lifecyclePayload,
+  );
+  if (!lifecycle) {
     console.error(
-      `Proof index token market summary overlay failed: ${errorSummary(error)}`,
+      "Rejected unavailable or incomplete proof-index credit-listing lifecycle overlay.",
     );
     return null;
-  });
+  }
+  const completeEventPayload =
+    eventPayload?.stats?.complete === true ? eventPayload : null;
+  const payload = completeEventPayload
+    ? tokenStateWithIndexedMarketSummaryOverlay(
+        {
+          ...completeEventPayload,
+          // Active state belongs to credit_listings. Historical event rows may
+          // enrich sales/closures but cannot resurrect an untracked listing.
+          listings: [],
+        },
+        lifecycle,
+      )
+    : lifecycle;
+  // The current lifecycle table is the active/sold authority. An event page
+  // that raced ahead must not promote older listing lifecycle coverage.
+  payload.indexedThroughBlock = numericValue(lifecycle.indexedThroughBlock);
+  payload.stats = {
+    ...(payload.stats ?? {}),
+    complete: true,
+    lifecycleTotalCount: numericValue(lifecycle.stats?.totalCount),
+  };
+  if (
+    !(await proofIndexPayloadCoversConfirmedTip(
+      payload,
+      network,
+      `token-market-lifecycle:${normalizeTokenScope(tokenScope) || "all"}`,
+    ))
+  ) {
+    return null;
+  }
+  return payload;
 }
 
 async function indexedWorkTokenStateForMarketplaceSummary(
@@ -2768,7 +2969,36 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
 
   const fast = options.fast === true;
   if (fast) {
-    return payload;
+    const overlay = await indexedTokenMarketSummaryOverlay(network);
+    const missingLifecycleListingIds = overlay
+      ? tokenSummaryListingIdsMissingFromMarketLifecycle(payload.token, overlay)
+      : [];
+    if (!overlay || missingLifecycleListingIds.length > 0) {
+      console.error(
+        `Rejected marketplace summary fast fallback without complete current PostgreSQL lifecycle coverage: ${JSON.stringify({ missingLifecycleListingIds: missingLifecycleListingIds.slice(0, 10), overlayAvailable: Boolean(overlay), overlayClosedListings: overlay?.closedListings?.length ?? 0, overlayListings: overlay?.listings?.length ?? 0, payloadListings: payload?.token?.listings?.length ?? 0 })}.`,
+      );
+      return null;
+    }
+    const tokenState = tokenStateWithIndexedMarketSummaryOverlay(
+      payload.token,
+      overlay,
+    );
+    const token = compactTokenSummaryPayload(tokenState);
+    const workFloor = workFloorWithIndexedMarketSummaryOverlay(
+      payload.workFloor,
+      overlay,
+      tokenState,
+    );
+    return marketplaceSummaryWithCurrentBtcUsd(
+      {
+        ...payload,
+        indexedAt: newerIso(payload.indexedAt, overlay.indexedAt),
+        token,
+        workFloor,
+      },
+      network,
+      false,
+    );
   }
 
   const baseWorkTokenState = scopedTokenPayloadFromState(
@@ -4670,6 +4900,18 @@ async function fetchAddressTransactionsFromElectrum(address, network) {
     ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS,
   );
   const entries = Array.isArray(history) ? history : [];
+  const confirmedHeightByTxid = new Map();
+  for (const entry of entries) {
+    const txid = String(entry?.tx_hash ?? "").trim().toLowerCase();
+    const height = Number(entry?.height);
+    if (
+      /^[0-9a-f]{64}$/u.test(txid) &&
+      Number.isSafeInteger(height) &&
+      height > 0
+    ) {
+      confirmedHeightByTxid.set(txid, height);
+    }
+  }
   const txids = [
     ...new Set(
       entries
@@ -4687,10 +4929,20 @@ async function fetchAddressTransactionsFromElectrum(address, network) {
     TX_FETCH_CONCURRENCY,
     async (txid) => {
       try {
-        return (
+        const tx =
           (await fetchTransactionFromElectrum(txid, network).catch(() => null)) ??
-          (await fetchTransactionWithSourceFallback(txid, network))
-        );
+          (await fetchTransactionWithSourceFallback(txid, network));
+        const blockHeight = confirmedHeightByTxid.get(txid);
+        return tx && Number.isSafeInteger(blockHeight)
+          ? {
+              ...tx,
+              status: {
+                ...(tx.status ?? {}),
+                block_height: blockHeight,
+                confirmed: true,
+              },
+            }
+          : tx;
       } catch {
         failedFetches += 1;
         return null;
@@ -9854,6 +10106,49 @@ function compareRegistryEventOrder(left, right) {
   );
 }
 
+function compareRegistryRecordDisplayOrder(left, right) {
+  if (left?.confirmed !== right?.confirmed) {
+    return Number(right?.confirmed === true) - Number(left?.confirmed === true);
+  }
+
+  if (left?.confirmed === true && right?.confirmed === true) {
+    const leftHeight = Number.isSafeInteger(Number(left?.blockHeight))
+      ? Number(left.blockHeight)
+      : Number.NEGATIVE_INFINITY;
+    const rightHeight = Number.isSafeInteger(Number(right?.blockHeight))
+      ? Number(right.blockHeight)
+      : Number.NEGATIVE_INFINITY;
+    if (leftHeight !== rightHeight) {
+      return rightHeight - leftHeight;
+    }
+
+    const leftIndex = Number.isSafeInteger(Number(left?.blockIndex))
+      ? Number(left.blockIndex)
+      : Number.NEGATIVE_INFINITY;
+    const rightIndex = Number.isSafeInteger(Number(right?.blockIndex))
+      ? Number(right.blockIndex)
+      : Number.NEGATIVE_INFINITY;
+    if (leftIndex !== rightIndex) {
+      return rightIndex - leftIndex;
+    }
+
+    const leftEventId = Number.isSafeInteger(Number(left?.registrationEventId))
+      ? Number(left.registrationEventId)
+      : Number.NEGATIVE_INFINITY;
+    const rightEventId = Number.isSafeInteger(Number(right?.registrationEventId))
+      ? Number(right.registrationEventId)
+      : Number.NEGATIVE_INFINITY;
+    if (leftEventId !== rightEventId) {
+      return rightEventId - leftEventId;
+    }
+  }
+
+  return (
+    Date.parse(right?.createdAt ?? "") - Date.parse(left?.createdAt ?? "") ||
+    String(right?.txid ?? "").localeCompare(String(left?.txid ?? ""))
+  );
+}
+
 function parseIdMarketplaceTransferPayload(payload, network) {
   const parts = payload.split(":");
   if (
@@ -10821,20 +11116,20 @@ async function recoveredPowbTokenPayloadFromTransactions(network, recoveryTxs) {
 }
 
 function infinityBondChartPointsFromEvents({
+  bonds,
   marketplaceMutations,
-  mints,
   sales,
   transfers,
 }) {
   const events = [
-    ...(Array.isArray(mints) ? mints : [])
-      .filter((mint) => mint?.confirmed && mint.tokenId === POWB_TOKEN_ID)
-      .map((mint) => ({
-        amount: numericValue(mint.amount),
-        createdAt: mint.createdAt,
+    ...(Array.isArray(bonds) ? bonds : [])
+      .filter((item) => item?.confirmed && isInfinityBondActivityItem(item))
+      .map((item) => ({
+        amount: activityAmountSats(item),
+        createdAt: item.createdAt,
         order: 0,
-        txid: String(mint.txid ?? ""),
-        valueSats: numericValue(mint.paidSats),
+        txid: String(item.txid ?? ""),
+        valueSats: activityAmountSats(item),
       })),
     ...(Array.isArray(transfers) ? transfers : [])
       .filter((transfer) => transfer?.confirmed && transfer.tokenId === POWB_TOKEN_ID)
@@ -10906,7 +11201,12 @@ function tokenActivityItemsFromState(state, indexAddress) {
       ])
       .filter(([tokenId]) => tokenId),
   );
-  const creations = (state.tokens ?? []).map((token) => ({
+  const creations = (state.tokens ?? [])
+    .filter(
+      (token) =>
+        token?.tokenId !== WORK_TOKEN_ID && token?.tokenId !== POWB_TOKEN_ID,
+    )
+    .map((token) => ({
     amountSats: token.creationFeeSats,
     actor: token.creatorAddress,
     blockHeight: token.blockHeight,
@@ -10939,7 +11239,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     title: token.confirmed ? "Credit created" : "Credit creation pending",
     tokenId: token.tokenId,
     txid: token.txid,
-  }));
+    }));
 
   const mints = (state.mints ?? []).map((mint) => ({
     amountSats: mint.paidSats,
@@ -11253,81 +11553,6 @@ function tokenActivityItemsFromState(state, indexAddress) {
     txid: sale.txid,
   }));
 
-  const invalidEvents = (state.invalidEvents ?? []).map((event) => {
-    const tokenId = String(event?.tokenId ?? "").trim().toLowerCase();
-    const ticker =
-      String(event?.ticker ?? "").trim() ||
-      tickerByTokenId.get(tokenId) ||
-      "credit";
-    const senderAddress = String(
-      event?.senderAddress ?? event?.actor ?? "",
-    ).trim();
-    const recipientAddress = String(
-      event?.recipientAddress ?? event?.counterparty ?? "",
-    ).trim();
-    const protocolPayload = String(
-      event?.payload ?? event?.protocolPayload ?? "",
-    ).trim();
-    const attemptedKind = String(
-      event?.attemptedKind ?? event?.eventKind ?? event?.kind ?? "",
-    )
-      .trim()
-      .toLowerCase();
-    const transferAttempt =
-      attemptedKind === "send" || protocolPayload.startsWith("pwt1:send:");
-    const amount = numericValue(
-      event?.amount ?? event?.creditAmountMoved ?? event?.attemptedAmount,
-    );
-    const reason = String(event?.reason ?? "no-valid-token-event").trim();
-    const participants = [
-      ...(Array.isArray(event?.participants) ? event.participants : []),
-      senderAddress,
-      recipientAddress,
-      event?.registryAddress,
-    ]
-      .map((address) => String(address ?? "").trim())
-      .filter(Boolean);
-    const transferDescription = `${amount.toLocaleString()} ${ticker} transfer attempt from ${shortAddress(senderAddress)} to ${shortAddress(recipientAddress)} was rejected by canonical token validation.`;
-
-    return {
-      amountSats: 0,
-      actor: senderAddress,
-      blockHeight: event?.blockHeight,
-      blockIndex: event?.blockIndex,
-      confirmed: event?.confirmed === true,
-      counterparty: recipientAddress,
-      createdAt:
-        event?.createdAt ??
-        event?.blockTime ??
-        event?.timestamp ??
-        new Date().toISOString(),
-      creditAmountMoved: amount,
-      dataBytes: numericValue(event?.dataBytes),
-      description:
-        transferAttempt && amount > 0 && senderAddress && recipientAddress
-          ? transferDescription
-          : `${ticker} protocol event was rejected by canonical token validation.`,
-      detail: `Canonical validation: ${reason}`,
-      kind: "token-event-invalid",
-      network: event?.network ?? state.network,
-      participants: [...new Set(participants)],
-      tags: [
-        activityStatusTag(event?.confirmed === true),
-        networkLabel(event?.network ?? state.network),
-        "Credit",
-        transferAttempt ? "Transfer attempt" : "Protocol event",
-        "Rejected",
-        ticker,
-        reason,
-      ],
-      title: transferAttempt
-        ? "Credit transfer rejected"
-        : "Credit event rejected",
-      tokenId,
-      txid: String(event?.txid ?? "").trim().toLowerCase(),
-    };
-  });
-
   return [
     ...creations,
     ...mints,
@@ -11336,7 +11561,6 @@ function tokenActivityItemsFromState(state, indexAddress) {
     ...sealedListings,
     ...closedListings,
     ...sales,
-    ...invalidEvents,
   ];
 }
 
@@ -12456,6 +12680,8 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
 
       records.set(event.id, {
         amountSats: event.amountSats,
+        blockHeight: event.blockHeight,
+        blockIndex: event.blockIndex,
         confirmed: true,
         createdAt: event.createdAt,
         id: event.id,
@@ -13065,7 +13291,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         left.txid.localeCompare(right.txid),
     ),
     pendingEvents,
-    records: accepted,
+    records: accepted.sort(compareRegistryRecordDisplayOrder),
     sales: publicMarketplaceSales([...confirmedSales, ...pendingSales]).sort(
       compareMarketplaceSales,
     ),
@@ -13392,24 +13618,45 @@ async function indexedRegistryPayload(network) {
 
   return proofIndexRegistryPayload(network, { registryAddress })
     .then(async (payload) => {
+      const orderedPayload = payload
+        ? {
+            ...payload,
+            records: (Array.isArray(payload.records) ? payload.records : [])
+              .slice()
+              .sort(compareRegistryRecordDisplayOrder),
+          }
+        : payload;
       // An unpinned proof-index registry payload is built only after the reader
       // verifies a complete, hashed canonical block-scan checkpoint. It must be
       // allowed to correct a stale cache whose (noncanonical) record count was
       // higher. The live crawler path keeps its separate regression guard.
-      const rejectReason = registryIndexedPayloadRejectReason(payload);
+      let rejectReason = registryIndexedPayloadRejectReason(orderedPayload);
+      if (
+        rejectReason.startsWith("stale indexedAt") &&
+        (await proofIndexPayloadHasExplicitCurrentCoverage(
+          orderedPayload,
+          network,
+          "indexed-registry-current-coverage",
+        ))
+      ) {
+        rejectReason = "";
+      }
       if (rejectReason) {
         console.error(
           `Rejected proof-index registry payload for ${network}: ${rejectReason}.`,
         );
         return null;
       }
-      if (network === "livenet" && registryConfirmedCount(payload) <= 0) {
+      if (
+        network === "livenet" &&
+        registryConfirmedCount(orderedPayload) <= 0
+      ) {
         console.error(
           "Rejected empty proof-index registry payload for livenet.",
         );
         return null;
       }
-      return payload;
+      return orderedPayload;
     })
     .catch((error) => {
       console.error(
@@ -18101,7 +18348,6 @@ async function walletScopedTokenSummaryPayload(
   let payload = null;
   if (
     network === "livenet" &&
-    scope !== POWB_TOKEN_ID &&
     proofIndexReadFeatureEnabled("token-state,token-default,token")
   ) {
     payload = await currentProofIndexTokenPayloadForRead(
@@ -18138,20 +18384,18 @@ async function walletScopedTokenSummaryPayload(
       WALLET_SCOPED_RECOVERY_WAIT_MS,
     );
   }
-  if (scope !== POWB_TOKEN_ID) {
-    scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
-      scopedPayload,
-      network,
-      scope,
-      recoveryAddresses,
-    );
-    scopedPayload = await tokenPayloadWithWalletActiveListings(
-      scopedPayload,
-      network,
-      scope,
-      recoveryAddresses,
-    );
-  }
+  scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
+  );
+  scopedPayload = await tokenPayloadWithWalletActiveListings(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
+  );
   if (scope === WORK_TOKEN_ID) {
     scopedPayload = await payloadWithFallbackAfterMs(
       tokenPayloadWithRecoveredWalletWorkTransfers(
@@ -18184,7 +18428,6 @@ async function walletScopedTokenPayload(
   let payload = null;
   if (
     network === "livenet" &&
-    scope !== POWB_TOKEN_ID &&
     proofIndexReadFeatureEnabled("token-state,token-default,token")
   ) {
     payload = await currentProofIndexTokenPayloadForRead(
@@ -18221,20 +18464,18 @@ async function walletScopedTokenPayload(
       WALLET_SCOPED_RECOVERY_WAIT_MS,
     );
   }
-  if (scope !== POWB_TOKEN_ID) {
-    scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
-      scopedPayload,
-      network,
-      scope,
-      recoveryAddresses,
-    );
-    scopedPayload = await tokenPayloadWithWalletActiveListings(
-      scopedPayload,
-      network,
-      scope,
-      recoveryAddresses,
-    );
-  }
+  scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
+  );
+  scopedPayload = await tokenPayloadWithWalletActiveListings(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
+  );
 
   if (scope === POWB_TOKEN_ID) {
     return scopedPayload;
@@ -18767,14 +19008,27 @@ function infinitySummaryPayloadHasKnownMainnetValue(summary) {
   }
 
   const token = summary.token;
+  const confirmedSupply = Math.max(
+    numericValue(summary.stats?.confirmedSupply),
+    numericValue(token?.confirmedSupply),
+  );
+  const confirmedBondActions = Math.max(
+    numericValue(summary.stats?.confirmedBondActions),
+    numericValue(token?.stats?.confirmedMints),
+  );
+  const bondMintFlowSats = numericValue(summary.actualValue?.bondMintFlowSats);
+  const networkValueSats = Math.max(
+    numericValue(summary.networkValueSats),
+    numericValue(summary.actualValue?.networkValueSats),
+  );
   return (
-    finitePositiveNumber(summary.networkValueSats) ||
-    finitePositiveNumber(summary.actualValue?.networkValueSats) ||
-    finitePositiveNumber(summary.stats?.confirmedSupply) ||
-    finitePositiveNumber(summary.stats?.confirmedBondActions) ||
-    finitePositiveNumber(token?.confirmedSupply) ||
-    finitePositiveNumber(token?.stats?.confirmedMints) ||
-    (Array.isArray(summary.chartPoints) && summary.chartPoints.length > 0)
+    finitePositiveNumber(confirmedSupply) &&
+    finitePositiveNumber(confirmedBondActions) &&
+    finitePositiveNumber(bondMintFlowSats) &&
+    finitePositiveNumber(networkValueSats) &&
+    networkValueSats >= bondMintFlowSats &&
+    Array.isArray(summary.chartPoints) &&
+    summary.chartPoints.length > 0
   );
 }
 
@@ -18952,21 +19206,20 @@ function ledgerMetricsFromState({
   tokenState,
   workFloor,
 }) {
-  const records = registryState?.records ?? [];
   const tokenDefinitions = tokenState?.tokens ?? [];
   const tokenMints = tokenState?.mints ?? [];
   const tokenTransfers = tokenState?.transfers ?? [];
   const tokenSales = tokenState?.sales ?? [];
+  const workFloorConfirmedComputerActions = Number(
+    workFloor?.stats?.confirmedComputerActions,
+  );
   const confirmedComputerActions =
-    workFloor?.stats?.confirmedComputerActions ??
-    confirmedComputerActionCount(
-      records,
-      activity,
-      tokenDefinitions,
-      tokenMints,
-      tokenTransfers,
-      tokenSales,
-    );
+    Number.isSafeInteger(workFloorConfirmedComputerActions) &&
+    workFloorConfirmedComputerActions >= 0
+      ? workFloorConfirmedComputerActions
+      : (Array.isArray(activity) ? activity : []).filter(
+          (item) => item?.confirmed && item?.valid !== false,
+        ).length;
 
   return {
     activityItems: Array.isArray(activity) ? activity.length : 0,
@@ -19032,15 +19285,18 @@ function ledgerPayloadLooksWorse(nextPayload, previousPayload) {
 }
 
 function ledgerPayloadHasCurrentChecks(payload) {
-  const checkNames = new Set(
-    (payload?.consistency?.checks ?? []).map((check) => check?.name),
-  );
+  const checks = payload?.consistency?.checks ?? [];
+  const checkNames = new Set(checks.map((check) => check?.name));
   return (
     Boolean(payload?.snapshotId) &&
+    payload?.consistency?.ok === true &&
     payload?.consistency?.status !== "summary-snapshot-fallback" &&
+    checks.every((check) => check?.ok === true) &&
     ledgerPayloadHasFiniteNetworkValues(payload) &&
     checkNames.has("livenet-confirmed-history-present") &&
     checkNames.has("token-definitions-cover-confirmed-mints") &&
+    checkNames.has("token-components-cover-confirmed-activity") &&
+    checkNames.has("canonical-activity-count-matches-public-log") &&
     checkNames.has("network-values-finite") &&
     checkNames.has("marketplace-mutation-fees-counted") &&
     checkNames.has("marketplace-value-includes-mutation-fees") &&
@@ -19050,6 +19306,7 @@ function ledgerPayloadHasCurrentChecks(payload) {
     checkNames.has("token-sales-logged") &&
     checkNames.has("seeded-mail-events-logged") &&
     checkNames.has("seeded-infinity-bonds-logged") &&
+    checkNames.has("infinity-bond-flow-matches-powb-supply") &&
     checkNames.has("ledger-covers-node-tip")
   );
 }
@@ -19574,6 +19831,7 @@ function ledgerWithProofIndexScanFloor(ledger, scan, tipHeight) {
     metrics,
     network: floored.network,
     seededMailActivityState: floored.seededMailActivityState,
+    sourceHashes: floored.sourceHashes,
     tokenState: floored.tokenState,
     workFloor: floored.workFloor,
   });
@@ -19705,6 +19963,34 @@ async function proofIndexPayloadCoversConfirmedTip(
     `Rejected stale ${label} proof-index read: indexedThroughBlock ${indexedThroughBlock}, tip ${tipHeight}, lag ${lagBlocks} blocks.`,
   );
   return false;
+}
+
+async function proofIndexPayloadHasExplicitCurrentCoverage(
+  payload,
+  network,
+  label = "proof-index",
+) {
+  if (network !== "livenet") {
+    return true;
+  }
+  const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
+  const tipHeight = await ledgerTipHeight(network);
+  if (
+    !Number.isSafeInteger(indexedThroughBlock) ||
+    indexedThroughBlock <= 0 ||
+    !Number.isSafeInteger(tipHeight) ||
+    tipHeight <= 0
+  ) {
+    console.error(
+      `Rejected ${label} proof-index read without explicit indexed/tip coverage.`,
+    );
+    return false;
+  }
+  const lagBlocks = tipHeight - indexedThroughBlock;
+  return (
+    lagBlocks >= 0 &&
+    lagBlocks <= PROOF_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS
+  );
 }
 
 async function existingCanonicalLedgerPayload(network) {
@@ -20149,6 +20435,7 @@ async function ledgerWithReplayedCreditNetworkValues(
     metrics,
     network,
     seededMailActivityState: ledger.seededMailActivityState,
+    sourceHashes,
     tokenState,
     workFloor,
   });
@@ -20271,7 +20558,11 @@ function tokenStateLogExpectations(tokenState) {
   };
 
   for (const token of tokenState?.tokens ?? []) {
-    if (!token?.confirmed) {
+    if (
+      !token?.confirmed ||
+      token.tokenId === WORK_TOKEN_ID ||
+      token.tokenId === POWB_TOKEN_ID
+    ) {
       continue;
     }
     add({
@@ -20414,12 +20705,57 @@ function activityCoverageByTxidKind(activity) {
   return coverageByKey;
 }
 
+function tokenComponentCoverageFromConfirmedActivity(activity, tokenState) {
+  const confirmedActivity = (Array.isArray(activity) ? activity : []).filter(
+    (item) => item?.confirmed && item?.valid !== false,
+  );
+  const activityCounts = {
+    mints: confirmedActivity.filter((item) => item?.kind === "token-mint").length,
+    sales: confirmedActivity.filter((item) => item?.kind === "token-sale").length,
+    tokens: confirmedActivity.filter((item) => item?.kind === "token-create").length,
+    transfers: confirmedActivity.filter((item) => item?.kind === "token-transfer")
+      .length,
+  };
+  const stateCounts = {
+    mints: (tokenState?.mints ?? []).filter((item) => item?.confirmed).length,
+    sales: (tokenState?.sales ?? []).filter((item) => item?.confirmed).length,
+    tokens: (tokenState?.tokens ?? []).filter((item) => item?.confirmed).length,
+    transfers: (tokenState?.transfers ?? []).filter((item) => item?.confirmed)
+      .length,
+  };
+  const missing = Object.keys(activityCounts).filter(
+    (key) => activityCounts[key] > 0 && stateCounts[key] === 0,
+  );
+  return { activityCounts, missing, ok: missing.length === 0, stateCounts };
+}
+
+function canonicalActivityCountCoverage(metrics, sourceHashes) {
+  const canonicalActivityCount = numericValue(sourceHashes?.activity?.count);
+  const canonicalConfirmedActivityCount = numericValue(
+    sourceHashes?.activity?.confirmed,
+  );
+  const ledgerActivityCount = numericValue(metrics?.activityItems);
+  const ledgerConfirmedActivityCount = numericValue(
+    metrics?.confirmedComputerActions,
+  );
+  return {
+    canonicalActivityCount,
+    canonicalConfirmedActivityCount,
+    ledgerActivityCount,
+    ledgerConfirmedActivityCount,
+    ok:
+      ledgerActivityCount === canonicalActivityCount &&
+      ledgerConfirmedActivityCount === canonicalConfirmedActivityCount,
+  };
+}
+
 function ledgerSnapshotChecks({
   activity,
   growthSummary,
   metrics,
   network,
   seededMailActivityState,
+  sourceHashes,
   tokenState,
   workFloor,
 }) {
@@ -20450,6 +20786,24 @@ function ledgerSnapshotChecks({
       confirmedTokens: numericValue(metrics?.confirmedTokens),
     },
   );
+  const tokenComponentCoverage = tokenComponentCoverageFromConfirmedActivity(
+    activity,
+    tokenState,
+  );
+  addCheck(
+    "token-components-cover-confirmed-activity",
+    network !== "livenet" || tokenComponentCoverage.ok,
+    tokenComponentCoverage,
+  );
+  const canonicalActivityCoverage = canonicalActivityCountCoverage(
+    metrics,
+    sourceHashes,
+  );
+  addCheck(
+    "canonical-activity-count-matches-public-log",
+    network !== "livenet" || canonicalActivityCoverage.ok,
+    canonicalActivityCoverage,
+  );
   const indexedThroughBlock = numericValue(metrics?.indexedThroughBlock);
   const sourceTipHeight = numericValue(metrics?.sourceTipHeight);
   const tipLagBlocks =
@@ -20477,6 +20831,21 @@ function ledgerSnapshotChecks({
     growthSummary?.workFloor?.networkValueSats,
   );
   const confirmedActivity = (activity ?? []).filter((item) => item?.confirmed);
+  const powbTokenState = scopedTokenPayloadFromState(tokenState, POWB_TOKEN_ID);
+  const powbConfirmedSupply = numericValue(powbTokenState?.confirmedSupply);
+  const infinityBondFlowSats = confirmedActivity
+    .filter(isInfinityBondActivityItem)
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+  addCheck(
+    "infinity-bond-flow-matches-powb-supply",
+    network !== "livenet" ||
+      (powbConfirmedSupply > 0 &&
+        numbersAgree(infinityBondFlowSats, powbConfirmedSupply, 0.01)),
+    {
+      infinityBondFlowSats,
+      powbConfirmedSupply,
+    },
+  );
   const confirmedMarketplaceMutationFeeSats = confirmedActivityFlowSats(
     confirmedActivity,
     MARKETPLACE_MUTATION_KINDS,
@@ -20816,8 +21185,8 @@ function infinitySummaryPayloadFromLedger(ledger) {
   const token = compactTokenSummaryPayload(tokenState, POWB_TOKEN_ID);
   const activity = Array.isArray(ledger?.activity) ? ledger.activity : [];
   const confirmedActivity = activity.filter((item) => item?.confirmed);
-  const confirmedMints = (tokenState?.mints ?? []).filter(
-    (mint) => mint?.confirmed && mint.tokenId === POWB_TOKEN_ID,
+  const confirmedBondActions = confirmedActivity.filter(
+    isInfinityBondActivityItem,
   );
   const confirmedTransfers = (tokenState?.transfers ?? []).filter(
     (transfer) => transfer?.confirmed && transfer.tokenId === POWB_TOKEN_ID,
@@ -20825,8 +21194,8 @@ function infinitySummaryPayloadFromLedger(ledger) {
   const confirmedSales = (tokenState?.sales ?? []).filter(
     (sale) => sale?.confirmed && sale.tokenId === POWB_TOKEN_ID,
   );
-  const bondMintFlowSats = confirmedMints.reduce(
-    (total, mint) => total + numericValue(mint.paidSats),
+  const bondMintFlowSats = confirmedBondActions.reduce(
+    (total, item) => total + activityAmountSats(item),
     0,
   );
   const bondSaleVolumeSats = confirmedSales.reduce(
@@ -20859,8 +21228,8 @@ function infinitySummaryPayloadFromLedger(ledger) {
       ? satsToUsdAtBtcUsd(networkValueSats, btcUsdMetadata.btcUsd)
       : 0;
   const chartPoints = infinityBondChartPointsFromEvents({
+    bonds: confirmedBondActions,
     marketplaceMutations: confirmedMarketplaceMutations,
-    mints: confirmedMints,
     sales: confirmedSales,
     transfers: confirmedTransfers,
   });
@@ -20893,7 +21262,7 @@ function infinitySummaryPayloadFromLedger(ledger) {
     registryId: POWB_REGISTRY_ID,
     source: tokenState?.source,
     stats: {
-      confirmedBondActions: confirmedMints.length,
+      confirmedBondActions: confirmedBondActions.length,
       confirmedListings: (tokenState?.listings ?? []).filter(
         (listing) => listing.confirmed,
       ).length,
@@ -21100,6 +21469,30 @@ async function ledgerConsistencyPayloadWithCurrentSummaries(
 }
 
 async function ledgerConsistencyPayload(network, fresh = false) {
+  if (network === "livenet") {
+    const indexedLedger = await payloadWithFallbackAfterMs(
+      proofIndexCanonicalSummaryLedgerPayload(network),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    ).catch((error) => {
+      console.error(
+        `Proof index canonical consistency read failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    if (
+      ledgerPayloadHasCurrentChecks(indexedLedger) &&
+      (await ledgerPayloadCoversTip(indexedLedger, network))
+    ) {
+      return ledgerConsistencyPayloadFromLedger(indexedLedger);
+    }
+    if (!ENABLE_REQUEST_LEDGER_RECOVERY) {
+      throw freshDataUnavailableError(
+        "The canonical consistency snapshot is unavailable.",
+      );
+    }
+  }
+
   const ledger = await summaryCanonicalLedgerPayload(network, fresh);
   if (ledger) {
     return ledgerConsistencyPayloadWithCurrentSummaries(
@@ -22521,6 +22914,7 @@ async function buildIndexedCanonicalLedgerPayload(
     metrics,
     network,
     seededMailActivityState,
+    sourceHashes,
     tokenState: valuedTokenState,
     workFloor,
   });
@@ -22921,6 +23315,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     metrics,
     network,
     seededMailActivityState,
+    sourceHashes,
     tokenState: ledgerTokenState,
     workFloor,
   });
@@ -24451,7 +24846,7 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
       tokenSummaryPayload(network, "", false),
       cachedWorkFloorPayload(network, false),
     ]);
-    const payload = marketplaceSummaryPayloadWithIndexedMarketOverlay(
+    const payload = await marketplaceSummaryPayloadWithIndexedMarketOverlay(
       {
         indexedAt: newerIso(workFloor?.indexedAt, token?.indexedAt),
         network,
@@ -24544,7 +24939,7 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
       tokenSummaryPayload(network, "", false),
       cachedWorkFloorPayload(network, false),
     ]);
-    const currentPayload = marketplaceSummaryPayloadWithIndexedMarketOverlay(
+    const currentPayload = await marketplaceSummaryPayloadWithIndexedMarketOverlay(
       {
         indexedAt: newerIso(workFloor?.indexedAt, token?.indexedAt),
         network,
@@ -24780,6 +25175,14 @@ async function infinitySummaryFromCanonicalLedger(ledger, network, fresh = false
 
 async function proofIndexInfinitySummaryPayload(network, fresh = false) {
   const params = new URLSearchParams([["asset", POWB_TOKEN_ID]]);
+  const bondActivityState = await indexedPowbActivityForTokenState(network).catch(
+    (error) => {
+      console.error(
+        `Proof index Infinity bond activity read failed: ${errorSummary(error)}`,
+      );
+      return null;
+    },
+  );
   let powbTokenState = await currentProofIndexTokenPayloadForRead(
     network,
     POWB_TOKEN_ID,
@@ -24850,7 +25253,14 @@ async function proofIndexInfinitySummaryPayload(network, fresh = false) {
     }
   }
 
-  if (!powbTokenState) {
+  const bondActivityCoversTip =
+    bondActivityState &&
+    (await proofIndexPayloadCoversConfirmedTip(
+      bondActivityState,
+      network,
+      "infinity-bond-activity",
+    ));
+  if (!powbTokenState || !bondActivityCoversTip) {
     return null;
   }
 
@@ -24868,10 +25278,13 @@ async function proofIndexInfinitySummaryPayload(network, fresh = false) {
     ? powbTokenState.indexedAt
     : new Date().toISOString();
   const payload = infinitySummaryPayloadFromLedger({
-    activity: tokenActivityItemsFromState(
-      powbTokenState,
-      powbTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
-    ),
+    activity: dedupeActivityItems([
+      ...tokenActivityItemsFromState(
+        powbTokenState,
+        powbTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
+      ),
+      ...(bondActivityState.activity ?? []),
+    ]),
     btcUsdQuote,
     generatedAt,
     indexedThroughBlock: powbTokenState.indexedThroughBlock,
@@ -24972,10 +25385,13 @@ async function standaloneInfinitySummaryPayload(network, fresh = false) {
     registryState?.indexedAt,
   );
   return infinitySummaryPayloadFromLedger({
-    activity: tokenActivityItemsFromState(
-      powbTokenState,
-      powbTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
-    ),
+    activity: dedupeActivityItems([
+      ...tokenActivityItemsFromState(
+        powbTokenState,
+        powbTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
+      ),
+      ...activity,
+    ]),
     btcUsdQuote,
     generatedAt: Number.isFinite(Date.parse(indexedAt ?? ""))
       ? indexedAt
@@ -24986,7 +25402,7 @@ async function standaloneInfinitySummaryPayload(network, fresh = false) {
 }
 
 async function infinitySummaryPayload(network, fresh = false) {
-  if (network === "livenet") {
+  if (network === "livenet" && !fresh) {
     const exactIndexedPayload =
       await currentProofIndexSummarySnapshotFallbackPayload(
         network,
@@ -27699,14 +28115,16 @@ function workFloorPayloadFromState(
   const tokenSalesForValue = Array.isArray(valueTokenState.sales)
     ? valueTokenState.sales
     : [];
-  const confirmedComputerActions = confirmedComputerActionCount(
-    registryState.records ?? [],
-    activityForGrowth,
-    valueTokenState.tokens ?? [],
-    valueTokenState.mints ?? [],
-    valueTokenState.transfers ?? [],
-    tokenSalesForValue,
+  const canonicalConfirmedComputerActions = Number(
+    computerActivity?.stats?.confirmed,
   );
+  const confirmedComputerActions =
+    Number.isSafeInteger(canonicalConfirmedComputerActions) &&
+    canonicalConfirmedComputerActions >= 0
+      ? canonicalConfirmedComputerActions
+      : activityForGrowth.filter(
+          (item) => item?.confirmed && item?.valid !== false,
+        ).length;
   const actualValue = growthActualNetworkValue(
     registryState.records ?? [],
     activityForGrowth,
@@ -31084,9 +31502,7 @@ async function healthPayload() {
     Number(database?.readModels?.confirmedIds?.count) > 0 &&
     Number(database?.readModels?.confirmedTransfers?.count) > 0;
   const summarySnapshotOk =
-    database?.summarySnapshot?.eligible === true &&
-    Number(database?.summarySnapshot?.indexedThroughBlock ?? 0) >=
-    indexedThroughBlock;
+    summarySnapshotCoversCanonicalReadModels(database);
   const indexOk =
     Boolean(database) &&
     database?.scan?.complete === true &&
@@ -31203,12 +31619,33 @@ function canonicalPublicReadGateApplies(pathname) {
 
 function canonicalSummarySnapshotReadGateApplies(pathname) {
   return new Set([
+    "/api/v1/consistency",
     "/api/v1/growth-summary",
     "/api/v1/infinity-summary",
+    "/api/v1/ledger-consistency",
     "/api/v1/marketplace-summary",
     "/api/v1/work-floor",
     "/api/v1/work-summary",
   ]).has(String(pathname ?? ""));
+}
+
+function summarySnapshotCoversCanonicalReadModels(status) {
+  const summaryIndexedThroughBlock = Number(
+    status?.summarySnapshot?.indexedThroughBlock ?? 0,
+  );
+  const latestConfirmedEventBlock = Math.max(
+    Number(status?.readModels?.confirmedEvents?.maxBlock ?? 0),
+    Number(status?.readModels?.confirmedIds?.maxBlock ?? 0),
+    Number(status?.readModels?.confirmedTransfers?.maxBlock ?? 0),
+  );
+  return (
+    status?.summarySnapshot?.eligible === true &&
+    Number.isSafeInteger(summaryIndexedThroughBlock) &&
+    summaryIndexedThroughBlock > 0 &&
+    Number.isSafeInteger(latestConfirmedEventBlock) &&
+    latestConfirmedEventBlock > 0 &&
+    summaryIndexedThroughBlock >= latestConfirmedEventBlock
+  );
 }
 
 async function loadCanonicalPublicReadGate(network) {
@@ -31238,9 +31675,7 @@ async function loadCanonicalPublicReadGate(network) {
     Number(status?.readModels?.confirmedIds?.count) > 0 &&
     Number(status?.readModels?.confirmedTransfers?.count) > 0;
   const summarySnapshotOk =
-    status?.summarySnapshot?.eligible === true &&
-    Number(status?.summarySnapshot?.indexedThroughBlock ?? 0) >=
-    indexedThroughBlock;
+    summarySnapshotCoversCanonicalReadModels(status);
   const ok =
     Boolean(status) &&
     Boolean(canonical) &&

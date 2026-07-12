@@ -251,12 +251,12 @@ try {
         (SELECT count(*) FROM proof_indexer.transactions WHERE network = $1 AND status = 'confirmed' AND block_height IS NULL) AS confirmed_transactions_missing_block,
         (SELECT count(*) FROM proof_indexer.transactions WHERE network = $1 AND status = 'confirmed' AND block_height IS NULL AND confirmed_at >= now() - make_interval(hours => $2::int)) AS recent_confirmed_transactions_missing_block,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1) AS events_total,
-        (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND valid IS DISTINCT FROM false) AS events_confirmed_valid,
+        (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND valid = true) AS events_confirmed_valid,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND protocol = 'pwt1' AND kind = 'token-event-invalid' AND valid = false) AS events_confirmed_pwt_invalid_audit,
-        (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND (valid IS DISTINCT FROM false OR (protocol = 'pwt1' AND kind = 'token-event-invalid' AND valid = false))) AS events_confirmed_canonical_activity,
-        (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND (e.valid IS DISTINCT FROM false OR (e.protocol = 'pwt1' AND e.kind = 'token-event-invalid' AND e.valid = false)) AND t.txid IS NULL) AS confirmed_events_missing_transaction,
-        (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND (e.valid IS DISTINCT FROM false OR (e.protocol = 'pwt1' AND e.kind = 'token-event-invalid' AND e.valid = false)) AND COALESCE(t.status, '') <> 'confirmed') AS confirmed_events_without_confirmed_transaction,
-        (SELECT count(*) FROM proof_indexer.events e JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND (e.valid IS DISTINCT FROM false OR (e.protocol = 'pwt1' AND e.kind = 'token-event-invalid' AND e.valid = false)) AND t.raw_tx IS NULL) AS confirmed_events_missing_raw_transaction,
+        (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND valid = true) AS events_confirmed_canonical_activity,
+        (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND e.valid = true AND t.txid IS NULL) AS confirmed_events_missing_transaction,
+        (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND e.valid = true AND COALESCE(t.status, '') <> 'confirmed') AS confirmed_events_without_confirmed_transaction,
+        (SELECT count(*) FROM proof_indexer.events e JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND e.valid = true AND t.raw_tx IS NULL) AS confirmed_events_missing_raw_transaction,
         (SELECT count(*) FROM proof_indexer.event_refs er JOIN proof_indexer.events e ON e.event_id = er.event_id WHERE e.network = $1) AS event_refs,
         (SELECT count(*) FROM proof_indexer.event_participants ep JOIN proof_indexer.events e ON e.event_id = ep.event_id WHERE e.network = $1) AS event_participants,
         (SELECT count(*) FROM proof_indexer.credit_definitions WHERE network = $1 AND confirmed = true) AS credit_definitions_confirmed,
@@ -346,6 +346,7 @@ try {
     check(
       "ledger-has-required-log-coverage-checks",
       ledgerChecks.has("token-events-logged") &&
+        ledgerChecks.has("token-components-cover-confirmed-activity") &&
         ledgerChecks.has("token-sales-logged") &&
         ledgerChecks.has("seeded-mail-events-logged") &&
         ledgerChecks.has("seeded-infinity-bonds-logged"),
@@ -496,10 +497,9 @@ try {
     });
     const logItems = array(logRead.json?.items);
     const logHasTx = itemTxids(logItems).has(txCase.txid.toLowerCase());
-    const logDirectItems = directItemsForTxid(logItems, txCase.txid);
     const logHasExpectedEvent =
       txCase.expectedValid === false
-        ? logDirectItems.some((item) => itemMatchesExpectedEvent(item, txCase))
+        ? !logHasTx
         : logHasTx;
     let historyHasTx = true;
     let historyHasExpectedEvent = true;

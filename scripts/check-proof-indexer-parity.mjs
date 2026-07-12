@@ -318,6 +318,12 @@ try {
         AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+          WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
       ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
       LIMIT 1
     `,

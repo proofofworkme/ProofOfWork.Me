@@ -4088,10 +4088,18 @@ function canonicalSummaryCoverage(summaryPayloads = {}) {
 
 function eligibleCanonicalSummarySnapshotPayload(payload) {
   const item = objectPayload(payload);
+  const tokenComponentCheck = (Array.isArray(item?.checks) ? item.checks : []).find(
+    (check) => check?.name === "token-components-cover-confirmed-activity",
+  );
+  const publicLogCountCheck = (Array.isArray(item?.checks) ? item.checks : []).find(
+    (check) => check?.name === "canonical-activity-count-matches-public-log",
+  );
   return Boolean(
     item &&
       item.ok === true &&
       item.status !== "summary-snapshot-fallback" &&
+      tokenComponentCheck?.ok === true &&
+      publicLogCountCheck?.ok === true &&
       item.summaryRefresh?.mode === "canonical-summary-refresh" &&
       /^[0-9a-f]{64}$/u.test(String(item.sourceHashes?.canonicalSummary ?? "")) &&
       canonicalSummaryCoverage(item.summaryPayloads) > 0,
@@ -4114,6 +4122,18 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
         AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+          WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+          WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
       ORDER BY generated_at DESC
       LIMIT 1
     `,

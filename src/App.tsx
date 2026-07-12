@@ -470,9 +470,12 @@ type InboxMessage = {
 };
 
 type PowIdRecord = {
+  blockHeight?: number;
+  blockIndex?: number;
   id: string;
   ownerAddress: string;
   receiveAddress: string;
+  registrationEventId?: number;
   pgpKey?: string;
   txid: string;
   network: BitcoinNetwork;
@@ -1493,6 +1496,20 @@ type WorkFloorApiResponse = {
   stats?: Record<string, number>;
   tokenFlowSats?: number;
   usdSource?: string;
+};
+
+type WorkSummaryApiResponse = {
+  floor?: WorkFloorApiResponse;
+  indexedAt?: string;
+  network?: BitcoinNetwork;
+  summaryOnly?: boolean;
+  token?: PowTokenApiResponse;
+};
+
+type WorkSummarySnapshot = {
+  floor?: WorkFloorQuote;
+  indexedAt: string;
+  token: PowTokenState;
 };
 
 type GrowthRealEvent = {
@@ -6274,6 +6291,44 @@ function activeTokenListingAnchorOutpointsForAddress(
   });
 }
 
+function accountUtxoAvailability(
+  utxos: MempoolUtxo[],
+  reservedOutpoints: PowIdSpentOutpoint[],
+) {
+  const reservedOutpointKeys = new Set(
+    reservedOutpoints.map((outpoint) => `${outpoint.txid}:${outpoint.vout}`),
+  );
+  const confirmedUtxos = utxos.filter((utxo) => utxo.status?.confirmed);
+  const unconfirmedUtxos = utxos.filter((utxo) => !utxo.status?.confirmed);
+  const confirmedCandidateUtxos = confirmedUtxos.filter(
+    (utxo) => utxo.value >= DUST_SATS,
+  );
+  const reservedListingUtxos = confirmedCandidateUtxos.filter((utxo) =>
+    reservedOutpointKeys.has(`${utxo.txid}:${utxo.vout}`),
+  );
+  const spendableUtxos = confirmedCandidateUtxos.filter(
+    (utxo) => !reservedOutpointKeys.has(`${utxo.txid}:${utxo.vout}`),
+  );
+  return {
+    confirmedBalanceSats: confirmedUtxos.reduce(
+      (total, utxo) => total + utxo.value,
+      0,
+    ),
+    confirmedUtxos,
+    reservedListingUtxos,
+    spendableSats: spendableUtxos.reduce(
+      (total, utxo) => total + utxo.value,
+      0,
+    ),
+    spendableUtxos,
+    unconfirmedSats: unconfirmedUtxos.reduce(
+      (total, utxo) => total + utxo.value,
+      0,
+    ),
+    unconfirmedUtxos,
+  };
+}
+
 function spendsTokenListingAnchor(
   spentOutpoints: PowIdSpentOutpoint[],
   listing: PowTokenListing,
@@ -7246,6 +7301,13 @@ function tokenWalletBalancesFor(
       });
       const holderBaselineBalance = Number(holderBaseline?.balance);
       const hasHolderBaseline = Number.isFinite(holderBaselineBalance);
+      const hasConfirmedReplayBase = mints.some(
+        (mint) => mint.confirmed && mint.tokenId === token.tokenId,
+      );
+      // A compact wallet summary may contain recent sales without the complete
+      // issuance ledger. Never turn that partial history into a wallet total.
+      const canReplayConfirmedBalance =
+        !hasHolderBaseline && hasConfirmedReplayBase;
       let confirmedBalance = hasHolderBaseline
         ? Math.max(0, holderBaselineBalance)
         : 0;
@@ -7262,7 +7324,7 @@ function tokenWalletBalancesFor(
         }
 
         if (mint.confirmed) {
-          if (!hasHolderBaseline) {
+          if (canReplayConfirmedBalance) {
             confirmedBalance += mint.amount;
           }
         } else {
@@ -7276,7 +7338,7 @@ function tokenWalletBalancesFor(
         }
 
         if (transfer.confirmed) {
-          if (!hasHolderBaseline) {
+          if (canReplayConfirmedBalance) {
             if (
               String(transfer.senderAddress ?? "").trim().toLowerCase() ===
               normalizedWalletAddress
@@ -7313,7 +7375,7 @@ function tokenWalletBalancesFor(
         }
 
         if (sale.confirmed) {
-          if (!hasHolderBaseline) {
+          if (canReplayConfirmedBalance) {
             if (
               String(sale.sellerAddress ?? "").trim().toLowerCase() ===
               normalizedWalletAddress
@@ -7363,6 +7425,28 @@ function tokenWalletBalancesFor(
         left.token.ticker.localeCompare(right.token.ticker) ||
         left.token.tokenId.localeCompare(right.token.tokenId),
     );
+}
+
+function mergeTokenWalletBalancesByToken(
+  ...groups: PowTokenWalletBalance[][]
+): PowTokenWalletBalance[] {
+  const byToken = new Map<string, PowTokenWalletBalance>();
+  for (const balances of groups) {
+    for (const balance of balances) {
+      const tokenId = String(balance.token.tokenId ?? "").trim().toLowerCase();
+      const ticker = normalizeTokenTicker(String(balance.token.ticker ?? ""));
+      const key = tokenId || (ticker ? `ticker:${ticker}` : "");
+      if (key) {
+        byToken.set(key, balance);
+      }
+    }
+  }
+  return [...byToken.values()].sort(
+    (left, right) =>
+      right.confirmedBalance - left.confirmedBalance ||
+      left.token.ticker.localeCompare(right.token.ticker) ||
+      left.token.tokenId.localeCompare(right.token.tokenId),
+  );
 }
 
 function tokenReservedBalanceFor(
@@ -11040,6 +11124,33 @@ async function fetchWorkFloorQuote(
   return normalizeWorkFloorQuote(payload);
 }
 
+async function fetchWorkSummary(
+  targetNetwork: BitcoinNetwork,
+  fresh = false,
+): Promise<WorkSummarySnapshot> {
+  const payload = await fetchProofApiJson<WorkSummaryApiResponse>(
+    fresh ? "/api/v1/work-summary?fresh=1" : "/api/v1/work-summary",
+    targetNetwork,
+  );
+  const token = normalizeTokenApiState(payload.token);
+  const hasWorkDefinition = token.tokens.some(
+    (item) =>
+      item.tokenId === WORK_TOKEN_ID || item.ticker === WORK_TOKEN_TICKER,
+  );
+  if (!hasWorkDefinition) {
+    throw new Error("WORK summary did not contain the canonical WORK ledger.");
+  }
+
+  return {
+    floor: payload.floor ? normalizeWorkFloorQuote(payload.floor) : undefined,
+    indexedAt:
+      typeof payload.indexedAt === "string"
+        ? payload.indexedAt
+        : new Date().toISOString(),
+    token,
+  };
+}
+
 async function fetchMarketplaceSummary(
   fresh = false,
 ): Promise<MarketplaceSummarySnapshot> {
@@ -13335,8 +13446,11 @@ export default function App() {
   const [tokenCreationSats, setTokenCreationSats] = useState(0);
   const [tokenDataLoading, setTokenDataLoading] = useState(false);
   const [tokenDataLoaded, setTokenDataLoaded] = useState(false);
+  const [tokenDataError, setTokenDataError] = useState("");
   const [marketplaceDataLoading, setMarketplaceDataLoading] = useState(false);
   const [marketplaceDataLoaded, setMarketplaceDataLoaded] = useState(false);
+  const [tokenMarketHistoryRefreshNonce, setTokenMarketHistoryRefreshNonce] =
+    useState(0);
 
   useEffect(() => {
     setTokenListings((current) =>
@@ -14364,6 +14478,7 @@ export default function App() {
   const tokenDataPriming =
     network === "livenet" &&
     !tokenDataLoaded &&
+    !tokenDataError &&
     tokenDefinitions.length === 0 &&
     (tokenMode ||
       walletMode ||
@@ -14385,6 +14500,20 @@ export default function App() {
     () => tokenLedgerFor(tokenDetailToken, tokenMints, tokenTransfers, tokenSales),
     [tokenDetailToken, tokenMints, tokenSales, tokenTransfers],
   );
+  const tokenDetailHolders = useMemo(() => {
+    if (!tokenDetailToken) {
+      return tokenDetailLedger.holders;
+    }
+    const indexedHolders = tokenHolders.filter(
+      (holder) =>
+        holder.tokenId === tokenDetailToken.tokenId ||
+        (!holder.tokenId &&
+          normalizeTokenTicker(holder.ticker ?? "") === tokenDetailToken.ticker),
+    );
+    return indexedHolders.length > 0
+      ? indexedHolders
+      : tokenDetailLedger.holders;
+  }, [tokenDetailLedger.holders, tokenDetailToken, tokenHolders]);
   const workTokenDefinition = useMemo(
     () =>
       orderedTokenDefinitions.find(
@@ -14404,6 +14533,20 @@ export default function App() {
     () => tokenLedgerFor(selectedToken, tokenMints, tokenTransfers, tokenSales),
     [selectedToken, tokenMints, tokenSales, tokenTransfers],
   );
+  const selectedTokenHolders = useMemo(() => {
+    if (!selectedToken) {
+      return selectedTokenLedger.holders;
+    }
+    const indexedHolders = tokenHolders.filter(
+      (holder) =>
+        holder.tokenId === selectedToken.tokenId ||
+        (!holder.tokenId &&
+          normalizeTokenTicker(holder.ticker ?? "") === selectedToken.ticker),
+    );
+    return indexedHolders.length > 0
+      ? indexedHolders
+      : selectedTokenLedger.holders;
+  }, [selectedToken, selectedTokenLedger.holders, tokenHolders]);
   const tokenWalletBalances = useMemo(
     () =>
       tokenWalletBalancesFor(
@@ -14474,6 +14617,14 @@ export default function App() {
         accountPowbTokenState.holders,
       ),
     [accountPowbTokenState, address],
+  );
+  const accountWalletBalances = useMemo(
+    () =>
+      mergeTokenWalletBalancesByToken(
+        accountTokenWalletBalances,
+        accountPowbWalletBalances,
+      ),
+    [accountPowbWalletBalances, accountTokenWalletBalances],
   );
   const powbTokenDefinition = powbTokenDefinitions[0];
   const powbMints = useMemo(
@@ -14565,27 +14716,28 @@ export default function App() {
       return [];
     }
 
-    const confirmedUtxos = accountUtxos.filter(
-      (utxo) => utxo.status?.confirmed,
-    );
-    const spendableUtxos = confirmedUtxos.filter(
-      (utxo) => utxo.value >= DUST_SATS,
-    );
-    const unconfirmedUtxos = accountUtxos.filter(
-      (utxo) => !utxo.status?.confirmed,
-    );
-    const confirmedBalanceSats = confirmedUtxos.reduce(
-      (total, utxo) => total + utxo.value,
-      0,
-    );
-    const spendableSats = spendableUtxos.reduce(
-      (total, utxo) => total + utxo.value,
-      0,
-    );
-    const unconfirmedSats = unconfirmedUtxos.reduce(
-      (total, utxo) => total + utxo.value,
-      0,
-    );
+    const reservedListingOutpoints = [
+      ...activeListingAnchorOutpointsForAddress(idListings, address, {
+        network,
+      }),
+      ...activeTokenListingAnchorOutpointsForAddress(
+        [
+          ...accountTokenState.listings,
+          ...accountPowbTokenState.listings,
+          ...tokenListings,
+        ],
+        address,
+        { network },
+      ),
+    ];
+    const {
+      confirmedBalanceSats,
+      reservedListingUtxos,
+      spendableSats,
+      spendableUtxos,
+      unconfirmedSats,
+      unconfirmedUtxos,
+    } = accountUtxoAvailability(accountUtxos, reservedListingOutpoints);
     const ownFileMessages = allFileMessages.filter(
       (message) => message.txid !== CANONICAL_WELCOME_TXID && message.attachment,
     );
@@ -14593,7 +14745,7 @@ export default function App() {
       (total, message) => total + (message.attachment?.size ?? 0),
       0,
     );
-    const accountCreditBalances = accountTokenWalletBalances.filter(
+    const accountCreditBalances = accountWalletBalances.filter(
       (balance) =>
         balance.confirmedBalance > 0 && !isPowbTokenDefinition(balance.token),
     );
@@ -14604,11 +14756,15 @@ export default function App() {
     const confirmedCreditBalances = accountCreditBalances.length > 0
       ? accountCreditBalances
       : routeCreditBalances;
-    const connectedPowbWalletBalances = accountPowbWalletBalances.length > 0
-      ? accountPowbWalletBalances
+    const accountPowbBalances = accountWalletBalances.filter(
+      (balance) =>
+        balance.confirmedBalance > 0 && isPowbTokenDefinition(balance.token),
+    );
+    const connectedPowbWalletBalances = accountPowbBalances.length > 0
+      ? accountPowbBalances
       : powbWalletBalances;
-    const pendingTokenBalances = accountTokenWalletBalances.length > 0
-      ? accountTokenWalletBalances
+    const pendingTokenBalances = accountWalletBalances.length > 0
+      ? accountWalletBalances
       : tokenWalletBalances;
     const powbConfirmedBalance = connectedPowbWalletBalances.reduce(
       (total, balance) => total + Math.max(0, balance.confirmedBalance),
@@ -14640,7 +14796,7 @@ export default function App() {
 
     if (spendableUtxos.length > 0) {
       stats.push({
-        detail: `${spendableSats.toLocaleString()} confirmed spendable proofs across ${spendableUtxos.length.toLocaleString()} UTXO${spendableUtxos.length === 1 ? "" : "s"}.`,
+        detail: `${spendableSats.toLocaleString()} confirmed spendable proofs across ${spendableUtxos.length.toLocaleString()} UTXO${spendableUtxos.length === 1 ? "" : "s"}.${reservedListingUtxos.length > 0 ? ` ${reservedListingUtxos.length.toLocaleString()} active listing anchor${reservedListingUtxos.length === 1 ? " is" : "s are"} reserved.` : ""}`,
         label: "spendable utxos",
         value: spendableUtxos.length.toLocaleString(),
       });
@@ -14721,14 +14877,18 @@ export default function App() {
 
     return stats;
   }, [
-    accountPowbWalletBalances,
-    accountTokenWalletBalances,
+    accountPowbTokenState.listings,
+    accountTokenState.listings,
     accountUtxos,
+    accountWalletBalances,
     address,
     allFileMessages,
+    idListings,
     incomingMailAll,
+    network,
     outboxMailAll,
     powbWalletBalances,
+    tokenListings,
     tokenWalletBalances,
     walletPendingIdEvents,
   ]);
@@ -15944,25 +16104,37 @@ export default function App() {
 
         if (tokenMode || walletMode || workTokenMode) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
-          const state = await fetchTokenState(
-            "livenet",
-            false,
-            workTokenMode ? WORK_TOKEN_ID : "",
-            false,
-            [nextAddress],
-            walletMode,
-          );
+          const workSummary = workTokenMode
+            ? await fetchWorkSummary("livenet", false)
+            : undefined;
+          const state =
+            workSummary?.token ??
+            (await fetchTokenState(
+              "livenet",
+              false,
+              "",
+              false,
+              [nextAddress],
+              walletMode,
+            ));
+          if (workSummary?.floor) {
+            applyWorkFloorQuote(workSummary.floor);
+          }
           applyTokenState(state, {
             scopeKey: tokenStateScopeKey({
-              address: nextAddress,
+              address: workTokenMode ? "" : nextAddress,
               network: "livenet",
               tokenScope: workTokenMode ? WORK_TOKEN_ID : "",
               walletScoped: walletMode,
             }),
           });
+          setTokenDataLoaded(true);
+          setTokenDataError("");
           setStatus({
             tone: "good",
-            text: `${shortAddress(nextAddress)} connected. Credit wallet ready.`,
+            text: workTokenMode
+              ? `${shortAddress(nextAddress)} connected. WORK dashboard ready.`
+              : `${shortAddress(nextAddress)} connected. Credit wallet ready.`,
           });
           return;
         }
@@ -17054,6 +17226,7 @@ export default function App() {
         });
         setMarketplaceDataLoaded(true);
         setTokenDataLoaded(true);
+        setTokenMarketHistoryRefreshNonce((current) => current + 1);
         if (btcUsdQuote) {
           setTokenBtcUsd(btcUsdQuote);
         }
@@ -17201,6 +17374,7 @@ export default function App() {
       setTokenCreationSats(0);
       setTokenDataLoaded(false);
       setTokenDataLoading(false);
+      setTokenDataError("No credit index is configured for this network.");
       if (!silent) {
         setStatus({
           tone: "idle",
@@ -17209,6 +17383,19 @@ export default function App() {
       }
       return undefined;
     }
+
+    const workSummaryRead =
+      network === "livenet" && (workTokenMode || activeFolder === "work");
+    const tokenLoadStatusText = (state: PowTokenState) => {
+      if (workSummaryRead) {
+        const work = state.tokens.find(
+          (item) =>
+            item.tokenId === WORK_TOKEN_ID || item.ticker === WORK_TOKEN_TICKER,
+        );
+        return `WORK summary loaded. ${Math.round(Number(work?.confirmedSupply) || state.confirmedSupply).toLocaleString()} confirmed WORK, ${state.holders.length.toLocaleString()} holder${state.holders.length === 1 ? "" : "s"}.`;
+      }
+      return `Credit index loaded. ${state.tokens.length.toLocaleString()} credit${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`;
+    };
 
     if (tokenRefreshInFlightRef.current) {
       const needsFreshRefresh =
@@ -17225,6 +17412,7 @@ export default function App() {
         const state = await tokenRefreshInFlightRef.current;
         if (state) {
           setTokenDataLoaded(true);
+          setTokenDataError("");
         }
         if (needsFreshRefresh) {
           if (!silent) {
@@ -17240,7 +17428,7 @@ export default function App() {
             state
               ? {
                   tone: "good",
-                  text: `Credit index loaded. ${state.tokens.length.toLocaleString()} credit${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`,
+                  text: tokenLoadStatusText(state),
                 }
               : {
                   tone: "bad",
@@ -17261,6 +17449,7 @@ export default function App() {
 
     const refreshPromise = (async () => {
       setTokenDataLoading(true);
+      setTokenDataError("");
       if (!silent) {
         setBusy(true);
       }
@@ -17269,25 +17458,34 @@ export default function App() {
       }
       const tokenScope =
         workTokenMode || activeFolder === "work" ? WORK_TOKEN_ID : "";
-      const useSummary = false;
       const walletScoped = walletMode || activeFolder === "wallet";
       const scopeKey = tokenStateScopeKey({
-        address,
+        address: workSummaryRead ? "" : address,
         network,
         tokenScope,
         walletScoped,
       });
       try {
-        const state = await fetchTokenState(
-          network,
-          fresh,
-          tokenScope,
-          useSummary,
-          address ? [address] : [],
-          walletScoped,
-        );
+        let state: PowTokenState;
+        if (workSummaryRead) {
+          const summary = await fetchWorkSummary(network, fresh);
+          state = summary.token;
+          if (summary.floor) {
+            applyWorkFloorQuote(summary.floor);
+          }
+        } else {
+          state = await fetchTokenState(
+            network,
+            fresh,
+            tokenScope,
+            false,
+            address ? [address] : [],
+            walletScoped,
+          );
+        }
         const acceptedState = applyTokenState(state, { scopeKey });
         setTokenDataLoaded(true);
+        setTokenDataError("");
         const walletAddress = address;
         const walletTokenScope = walletTransferToken?.tokenId;
         if (
@@ -17314,15 +17512,17 @@ export default function App() {
         if (!silent) {
           setStatus({
             tone: "good",
-            text: `Credit index loaded. ${acceptedState.tokens.length.toLocaleString()} credit${acceptedState.tokens.length === 1 ? "" : "s"}, ${acceptedState.mints.length.toLocaleString()} mint${acceptedState.mints.length === 1 ? "" : "s"}, ${acceptedState.transfers.length.toLocaleString()} transfer${acceptedState.transfers.length === 1 ? "" : "s"}.`,
+            text: tokenLoadStatusText(acceptedState),
           });
         }
         return acceptedState;
       } catch (error) {
+        const message = errorMessage(error, "Credit scan failed.");
+        setTokenDataError(message);
         if (!silent) {
           setStatus({
             tone: "bad",
-            text: errorMessage(error, "Credit scan failed."),
+            text: message,
           });
         }
         return undefined;
@@ -17863,25 +18063,37 @@ export default function App() {
         }
 
         if (tokenMode || walletMode || workTokenMode) {
-          const state = await fetchTokenState(
-            "livenet",
-            false,
-            workTokenMode ? WORK_TOKEN_ID : "",
-            false,
-            [firstAddress],
-            walletMode,
-          );
+          const workSummary = workTokenMode
+            ? await fetchWorkSummary("livenet", false)
+            : undefined;
+          const state =
+            workSummary?.token ??
+            (await fetchTokenState(
+              "livenet",
+              false,
+              "",
+              false,
+              [firstAddress],
+              walletMode,
+            ));
+          if (workSummary?.floor) {
+            applyWorkFloorQuote(workSummary.floor);
+          }
           applyTokenState(state, {
             scopeKey: tokenStateScopeKey({
-              address: firstAddress,
+              address: workTokenMode ? "" : firstAddress,
               network: "livenet",
               tokenScope: workTokenMode ? WORK_TOKEN_ID : "",
               walletScoped: walletMode,
             }),
           });
+          setTokenDataLoaded(true);
+          setTokenDataError("");
           setStatus({
             tone: "good",
-            text: `UniSat connected. Credit wallet ready.`,
+            text: workTokenMode
+              ? "UniSat connected. WORK dashboard ready."
+              : "UniSat connected. Credit wallet ready.",
           });
           return;
         }
@@ -22250,6 +22462,7 @@ export default function App() {
           tokenTransfers={tokenTransfers.filter(
             (transfer) => transfer.network === "livenet",
           )}
+          tokenMarketHistoryRefreshNonce={tokenMarketHistoryRefreshNonce}
           tokenMarketLoading={tokenMarketplaceLoading}
           workFloorLoading={workFloorLoading}
           workFloorQuote={workFloorQuote}
@@ -22417,7 +22630,7 @@ export default function App() {
         creationSats={tokenCreationSats}
         createToken={createToken}
         detailConfirmedSupply={tokenDetailLedger.confirmedSupply}
-        detailHolders={tokenDetailLedger.holders}
+        detailHolders={tokenDetailHolders}
         detailMints={tokenDetailLedger.mints}
         detailPendingSupply={tokenDetailLedger.pendingSupply}
         detailToken={tokenDetailToken}
@@ -22425,7 +22638,8 @@ export default function App() {
         feeRate={feeRate}
         btcUsd={tokenBtcUsd}
         hasUnisat={hasUnisat}
-        holders={selectedTokenLedger.holders}
+        holders={selectedTokenHolders}
+        ledgerError={workTokenMode ? tokenDataError : ""}
         mintBytes={tokenMintBytes}
         network={network}
         onNetworkChange={chooseNetwork}
@@ -22457,7 +22671,16 @@ export default function App() {
         setPrepareMintCount={setTokenPrepareMintCount}
         setSelectedTokenId={setTokenSelectedId}
         setTokenDetailTarget={setTokenDetailTarget}
-        status={status}
+        status={
+          workTokenMode && tokenDataError
+            ? { tone: "bad", text: tokenDataError }
+            : workTokenMode && tokenLedgerLoading
+              ? {
+                  tone: "idle",
+                  text: "Loading current WORK summary from the ProofOfWork index...",
+                }
+              : status
+        }
         tokenDetailTarget={effectiveTokenDetailTarget}
         tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
         ledgerLoading={tokenLedgerLoading}
@@ -23107,6 +23330,7 @@ export default function App() {
             tokenSales={tokenSales}
             tokens={orderedTokenDefinitions}
             tokenTransfers={tokenTransfers}
+            tokenMarketHistoryRefreshNonce={tokenMarketHistoryRefreshNonce}
             tokenMarketLoading={tokenMarketplaceLoading}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
@@ -26569,6 +26793,7 @@ type TokenAppProps = {
   feeRate: number;
   btcUsd: number;
   hasUnisat: boolean;
+  ledgerError?: string;
   ledgerLoading?: boolean;
   network: BitcoinNetwork;
   holders: PowTokenHolder[];
@@ -26694,6 +26919,7 @@ function TokenWorkspace({
   feeRate,
   btcUsd,
   holders,
+  ledgerError = "",
   ledgerLoading = false,
   mintBytes,
   network,
@@ -27170,10 +27396,14 @@ function TokenWorkspace({
     detailRemoteMintPage?.totalCount ?? detailMints.length;
   const detailHolderBalance =
     detailHolders.find((holder) => holder.address === address)?.balance ?? 0;
-  const detailConfirmedMintCount = detailMints.filter(
-    (mint) => mint.confirmed,
-  ).length;
-  const detailPendingMintCount = detailMints.length - detailConfirmedMintCount;
+  const detailConfirmedMintCount = Math.max(
+    detailMints.filter((mint) => mint.confirmed).length,
+    Number(detailToken?.confirmedMints) || 0,
+  );
+  const detailPendingMintCount = Math.max(
+    detailMints.filter((mint) => !mint.confirmed).length,
+    Number(detailToken?.pendingMints) || 0,
+  );
   const detailRegistryLabel =
     detailToken?.registryAddress === WORK_TOKEN_REGISTRY_ADDRESS
       ? `${WORK_TOKEN_DEFAULT_REGISTRY_ID} / ${shortAddress(WORK_TOKEN_REGISTRY_ADDRESS)}`
@@ -27793,6 +28023,28 @@ function TokenWorkspace({
     detailConfirmedSupply === 0 &&
     detailHolders.length === 0 &&
     detailMints.length === 0;
+
+  if (detailMode && ledgerError) {
+    return (
+      <section className={`${workspaceClassName} token-detail-page`}>
+        <div className="token-detail-toolbar">
+          <button className="secondary small" onClick={onRefresh} type="button">
+            <span className="button-content">
+              <RefreshCw size={15} />
+              <span>Retry</span>
+            </span>
+          </button>
+        </div>
+        <section className="id-launch-card token-detail-empty">
+          <div className="empty-icon" aria-hidden="true">
+            <TrendingUp size={24} />
+          </div>
+          <h2>WORK ledger unavailable</h2>
+          <p>{ledgerError}</p>
+        </section>
+      </section>
+    );
+  }
 
   if (detailMode && detailLedgerLoading) {
     return (
@@ -33222,6 +33474,7 @@ function TokenMarketplacePanel({
   sales,
   selectedTokenMarketId: controlledSelectedTokenMarketId,
   setFeeRate,
+  tokenMarketHistoryRefreshNonce = 0,
   tokenMarketLoading = false,
   tokens,
   transfers,
@@ -33245,6 +33498,7 @@ function TokenMarketplacePanel({
   sales: PowTokenSale[];
   selectedTokenMarketId?: string;
   setFeeRate: (value: number) => void;
+  tokenMarketHistoryRefreshNonce?: number;
   tokenMarketLoading?: boolean;
   tokens: PowTokenDefinition[];
   transfers: PowTokenTransfer[];
@@ -33447,6 +33701,7 @@ function TokenMarketplacePanel({
     tokenMarketLogPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
     tokenMarketLogDataVersion,
+    tokenMarketHistoryRefreshNonce,
   ].join(":");
   useEffect(() => {
     if (network !== "livenet") {
@@ -33457,6 +33712,7 @@ function TokenMarketplacePanel({
     let cancelled = false;
     setTokenMarketLogPageLoading(true);
     void fetchTokenHistoryPage<TokenMarketLogItem>(network, "market-log", {
+      fresh: tokenMarketHistoryRefreshNonce > 0,
       pageIndex: tokenMarketLogPageIndex,
       pageSize: TOKEN_LIST_PREVIEW_COUNT,
       tokenScope: selectedMarketToken?.tokenId ?? "",
@@ -33485,6 +33741,7 @@ function TokenMarketplacePanel({
     selectedMarketToken?.tokenId,
     tokenMarketLogKey,
     tokenMarketLogPageIndex,
+    tokenMarketHistoryRefreshNonce,
   ]);
   const visibleRows = selectedMarketToken ? [selectedMarketToken] : rows;
   const sortedVisibleRows = sortTokenDirectoryRows(
@@ -34691,6 +34948,7 @@ function MarketplaceApp({
   tokenSales,
   tokens,
   tokenTransfers,
+  tokenMarketHistoryRefreshNonce,
   tokenMarketLoading,
   workFloorLoading,
   workFloorQuote,
@@ -34745,6 +35003,7 @@ function MarketplaceApp({
   tokenSales: PowTokenSale[];
   tokens: PowTokenDefinition[];
   tokenTransfers: PowTokenTransfer[];
+  tokenMarketHistoryRefreshNonce: number;
   tokenMarketLoading: boolean;
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
@@ -35051,6 +35310,7 @@ function MarketplaceApp({
             setFeeRate={setFeeRate}
             tokens={tokens}
             transfers={tokenTransfers}
+            tokenMarketHistoryRefreshNonce={tokenMarketHistoryRefreshNonce}
             tokenMarketLoading={tokenMarketLoading}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
@@ -35104,6 +35364,7 @@ function MarketplaceWorkspace({
   tokenSales,
   tokens,
   tokenTransfers,
+  tokenMarketHistoryRefreshNonce,
   tokenMarketLoading,
   workFloorLoading,
   workFloorQuote,
@@ -35155,6 +35416,7 @@ function MarketplaceWorkspace({
   tokenSales: PowTokenSale[];
   tokens: PowTokenDefinition[];
   tokenTransfers: PowTokenTransfer[];
+  tokenMarketHistoryRefreshNonce: number;
   tokenMarketLoading: boolean;
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
@@ -35457,6 +35719,7 @@ function MarketplaceWorkspace({
             setFeeRate={setFeeRate}
             tokens={tokens}
             transfers={tokenTransfers}
+            tokenMarketHistoryRefreshNonce={tokenMarketHistoryRefreshNonce}
             tokenMarketLoading={tokenMarketLoading}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}

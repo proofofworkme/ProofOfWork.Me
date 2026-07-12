@@ -309,7 +309,8 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /summary-snapshot-fallback/,
   /latest_summary AS \([\s\S]*payload->'summaryPayloads'/,
   /summarySnapshot:[\s\S]*coverageByKey/,
-  /const summarySnapshotOk =[\s\S]*summarySnapshot\?\.indexedThroughBlock/,
+  /function summarySnapshotCoversCanonicalReadModels\([\s\S]*confirmedEvents\?\.maxBlock[\s\S]*summaryIndexedThroughBlock >= latestConfirmedEventBlock/,
+  /confirmed_events AS \([\s\S]*confirmed_event_max_block/,
   /readModelsOk &&[\s\S]*summarySnapshotOk/,
 ]);
 expectAll("backfill source execution keeps confirmed blocks ahead of mempool work", proofIndexerBackfill, [
@@ -464,6 +465,20 @@ expectAll("Log summary preserves full activity stats before compaction", compact
   /activityStatsFromItems\(activity,\s*payload\?\.stats \?\? \{\}\)/,
   /activity:\s*recentByCreatedAt\(activity,\s*SUMMARY_ACTIVITY_LIMIT\)/,
   /stats,/,
+]);
+
+expectAll("Growth and consistency preserve the canonical public Log action count", server, [
+  /const canonicalConfirmedComputerActions = Number\(\s*computerActivity\?\.stats\?\.confirmed,?\s*\)/,
+  /Number\.isSafeInteger\(canonicalConfirmedComputerActions\)[\s\S]*\? canonicalConfirmedComputerActions[\s\S]*activityForGrowth\.filter/,
+  /const workFloorConfirmedComputerActions = Number\([\s\S]*workFloor\?\.stats\?\.confirmedComputerActions/,
+  /function tokenActivityItemsFromState[\s\S]*token\?\.tokenId !== WORK_TOKEN_ID[\s\S]*token\?\.tokenId !== POWB_TOKEN_ID/,
+  /function tokenStateLogExpectations[\s\S]*token\.tokenId === WORK_TOKEN_ID[\s\S]*token\.tokenId === POWB_TOKEN_ID/,
+]);
+
+expectAll("current canonical registry coverage outlives wall-clock cache age", server, [
+  /rejectReason\.startsWith\("stale indexedAt"\)/,
+  /proofIndexPayloadHasExplicitCurrentCoverage\([\s\S]*indexed-registry-current-coverage/,
+  /function proofIndexPayloadHasExplicitCurrentCoverage[\s\S]*!Number\.isSafeInteger\(tipHeight\)[\s\S]*return false/,
 ]);
 
 expectAll("canonical ledger builder owns shared state", server, [
@@ -702,6 +717,8 @@ expectAll("proof index wallet token overlay reads balances and events", proofInd
   /proof_indexer\.credit_balances cb/,
   /e\.kind IN \([\s\S]*'token-transfer'[\s\S]*'token-sale'[\s\S]*'token-listing'[\s\S]*'token-listing-closed'[\s\S]*\)/,
   /export async function proofIndexTokenMarketSummaryOverlayPayload\(/,
+  /proofIndexTokenMarketSummaryOverlayPayload\([\s\S]*latestProofIndexScanMetadata\(pool,\s*network\)[\s\S]*scanIndexedThroughBlock[\s\S]*stats:[\s\S]*complete:/,
+  /export async function proofIndexCreditListingsPayload\([\s\S]*latestProofIndexScanMetadata\(pool,\s*network\)[\s\S]*proof_indexer\.credit_listings[\s\S]*stats:[\s\S]*complete:/,
   /e\.kind = ANY\(\$2::text\[\]\)/,
   /"proof-indexer-token-market-summary-overlay"/,
 ]);
@@ -710,6 +727,10 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /const MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED = Number\([\s\S]*const MARKETPLACE_SUMMARY_FRESH_WAIT_MS =[\s\S]*MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS > 0[\s\S]*MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED/,
   /async function marketplaceSummaryFastFallbackPayload\(network\)[\s\S]*payloadWithFallbackAfterMs\([\s\S]*cachedMarketplaceSummaryPayloadNoRefresh/,
   /async function marketplaceSummaryPayloadWithIndexedMarketOverlay\([\s\S]*indexedTokenMarketSummaryOverlay\([\s\S]*compactTokenSummaryPayload\(tokenState\)/,
+  /async function indexedTokenMarketSummaryOverlay\([\s\S]*tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*proofIndexPayloadCoversConfirmedTip\(/,
+  /function tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*closedListings\.push\([\s\S]*sales\.push\(/,
+  /async function indexedTokenMarketSummaryOverlay\([\s\S]*proofIndexCreditListingsPayload\(network,\s*tokenScope,\s*\{ limit: 5000 \}\)/,
+  /const fast = options\.fast === true;[\s\S]*if \(fast\) \{[\s\S]*indexedTokenMarketSummaryOverlay\(network\)[\s\S]*return null;[\s\S]*tokenStateWithIndexedMarketSummaryOverlay\(/,
   /async function marketplaceSummaryWithCurrentBtcUsd\([\s\S]*workFloorWithCurrentBtcUsd\(/,
   /function tokenStateWithIndexedMarketSummaryOverlay\([\s\S]*overlay\.listings[\s\S]*tokenListingItemKey/,
   /async function workTokenStateForSummaryRead\([\s\S]*tokenPayloadForRead\([\s\S]*reconcileListingStatus:\s*fresh[\s\S]*reconcileSpendable:\s*fresh/,
@@ -729,6 +750,7 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /url\.pathname === "\/api\/v1\/marketplace-summary"[\s\S]*await marketplaceSummaryPayload\(network,\s*freshRead\)/,
   /const sealedListings = marketListings\.filter\(\s*tokenListingHasConfirmedSaleTicketSeal,\s*\)/,
   /const unsealedListings = marketListings\.filter\(\s*\(listing\) => !tokenListingHasConfirmedSaleTicketSeal\(listing\),\s*\)/,
+  /tokenMarketHistoryRefreshNonce[\s\S]*fresh:\s*tokenMarketHistoryRefreshNonce > 0/,
 ]);
 expect(
   "marketplace summary must not serve stale proof-index summary snapshots before reconciliation",
@@ -904,7 +926,7 @@ expectAll("registry default reads use proof index with canonical fallback", serv
   /function duplicateRegistryRecordIds\(payload\)[\s\S]*duplicates\.add\(id\)/,
   /function registryIndexedPayloadRejectReason\(payload,\s*previousPayload\s*=\s*null\)[\s\S]*duplicateRegistryRecordIds\(payload\)[\s\S]*stale indexedAt[\s\S]*registryPayloadLooksWorse/,
   /async function indexedRegistryPayload\(network\)[\s\S]*proofIndexReadFeatureEnabled\([\s\S]*registry-history[\s\S]*proofIndexRegistryPayload\(network,\s*\{ registryAddress \}\)/,
-  /async function indexedRegistryPayload\(network\)[\s\S]*registryIndexedPayloadRejectReason\(payload\)[\s\S]*Rejected proof-index registry payload/,
+  /async function indexedRegistryPayload\(network\)[\s\S]*records:[\s\S]*sort\(compareRegistryRecordDisplayOrder\)[\s\S]*registryIndexedPayloadRejectReason\(orderedPayload\)[\s\S]*Rejected proof-index registry payload/,
   /async function safeRegistryPayload\(network\)[\s\S]*registryConfirmedCount\(nextPayload\) <= 0[\s\S]*Current livenet registry is unavailable/,
   /async function registrySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*await indexedRegistryPayload\(network\)[\s\S]*fastJsonBackedPayload/,
   /url\.pathname === "\/api\/v1\/registry" \|\| url\.pathname === "\/api\/v1\/ids"[\s\S]*const indexedPayload = await indexedRegistryPayload\(network\)[\s\S]*if \(indexedPayload\)/,
@@ -917,7 +939,7 @@ expectAll("current ID tables must agree with canonical registration events", pro
 ]);
 expect(
   "canonical proof-index registry reads can correct a stale higher cached count",
-  /registryIndexedPayloadRejectReason\(payload\)/.test(
+  /registryIndexedPayloadRejectReason\(orderedPayload\)/.test(
     indexedRegistryPayloadSource,
   ) && !/existingRegistryPayload/.test(indexedRegistryPayloadSource),
 );
@@ -979,6 +1001,8 @@ expectAll("consistency endpoint guards the public invariant", server, [
   /function ledgerSnapshotChecks\(/,
   /"livenet-confirmed-history-present"/,
   /"token-definitions-cover-confirmed-mints"/,
+  /"token-components-cover-confirmed-activity"/,
+  /"infinity-bond-flow-matches-powb-supply"/,
   /"work-floor-actual-total"/,
   /"growth-actual-total"/,
   /"growth-work-floor-total"/,
@@ -1030,6 +1054,17 @@ expectAll("log history searches fall back to direct DB event rows", proofIndexRe
   /lower\(e\.payload::text\) LIKE/,
   /source:\s*"proof-indexer"/,
 ]);
+const publicLogKinds = /const PUBLIC_LOG_EVENT_KINDS = new Set\(\[([\s\S]*?)\]\);/u.exec(
+  proofIndexReader,
+)?.[1] ?? "";
+expect(
+  "public Log must exclude invalid protocol attempts",
+  !/"token-event-invalid"/u.test(publicLogKinds),
+);
+expectAll("public Log SQL counts valid confirmed or pending actions only", proofIndexReader, [
+  /const conditions = \[[\s\S]*"e\.valid = true"[\s\S]*"e\.status IN \('confirmed', 'pending'\)"[\s\S]*"e\.kind = ANY\(\$2::text\[\]\)"/,
+  /export async function proofIndexCanonicalActivityPayload\(network\)[\s\S]*AND e\.valid = true[\s\S]*AND e\.status IN \('confirmed', 'pending'\)[\s\S]*AND e\.kind = ANY\(\$2::text\[\]\)/,
+]);
 expectAll("canonical ledger can read direct proof-index event rows", proofIndexReader, [
   /export async function proofIndexCanonicalActivityPayload\(network\)/,
   /FROM proof_indexer\.events e/,
@@ -1053,6 +1088,8 @@ expectAll("Infinity Bond POWB recipient-credit market is wired", server + app + 
   /function powbRecipientMintsFromActivityItem\(item,\s*network\)/,
   /function infinityBondChartPointsFromEvents\(/,
   /const chartPoints = infinityBondChartPointsFromEvents\(/,
+  /const confirmedBondActions = confirmedActivity\.filter\([\s\S]*isInfinityBondActivityItem/,
+  /const bondMintFlowSats = confirmedBondActions\.reduce\([\s\S]*activityAmountSats\(item\)/,
   /async function infinitySummaryFromCanonicalLedger\(ledger,\s*network,\s*fresh\s*=\s*false\)/,
   /infinitySummaryPayloadFromLedger\(\{\s*\.\.\.ledger,[\s\S]*btcUsdQuote,[\s\S]*\}\)/,
   /async function infinitySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*infinitySummaryFromCanonicalLedger\(ledger,\s*network,\s*fresh\)[\s\S]*Current Infinity summary ledger is unavailable/,

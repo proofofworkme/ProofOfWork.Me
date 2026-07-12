@@ -28,7 +28,6 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "reply",
   "rush-mint",
   "token-create",
-  "token-event-invalid",
   "token-listing",
   "token-listing-closed",
   "token-listing-sealed",
@@ -2141,7 +2140,10 @@ function safeEventTags(item, network, confirmed) {
 
 function normalizeHistoryEventItem(item, network, { publicOnly = false } = {}) {
   const kind = normalizedLowerText(item?.kind);
-  if (publicOnly && !PUBLIC_LOG_EVENT_KINDS.has(kind)) {
+  if (
+    publicOnly &&
+    (item?.valid === false || !PUBLIC_LOG_EVENT_KINDS.has(kind))
+  ) {
     return null;
   }
 
@@ -3281,8 +3283,13 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     requestedKind,
     searchParams,
   );
-  const conditions = ["e.network = $1"];
-  const params = [network];
+  const conditions = [
+    "e.network = $1",
+    "e.valid = true",
+    "e.status IN ('confirmed', 'pending')",
+    "e.kind = ANY($2::text[])",
+  ];
+  const params = [network, [...PUBLIC_LOG_EVENT_KINDS]];
   const addParam = (value) => {
     params.push(value);
     return `$${params.length}`;
@@ -3563,6 +3570,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
 
   const scope = tokenScopeKey(tokenScope);
   const maxRows = boundedInteger(options.limit, 5000, 1, 10000);
+  const scan = await latestProofIndexScanMetadata(pool, network);
   const conditions = [
     "e.network = $1",
     "e.valid = true",
@@ -3688,15 +3696,21 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
   }
 
   const stats = salesStats(sales);
+  const eventIndexedThroughBlock = rowNumber(
+    countResult.rows[0],
+    "indexed_through_block",
+  );
+  const scanIndexedThroughBlock = rowNumber(scan, "indexed_through_block");
   return {
     closedListings: closedListings.filter(Boolean).sort(compareTokenItemsByTime),
-    indexedAt: dateIso(countResult.rows[0]?.indexed_at),
-    indexedThroughBlock: rowNumber(
-      countResult.rows[0],
-      "indexed_through_block",
+    indexedAt: dateIso(scan?.generated_at ?? countResult.rows[0]?.indexed_at),
+    indexedThroughBlock: Math.max(
+      eventIndexedThroughBlock,
+      scanIndexedThroughBlock,
     ),
     listings: listings.sort(compareTokenItemsByTime),
     sales: sales.sort(compareTokenItemsByTime),
+    scanSnapshotId: String(scan?.snapshot_id ?? ""),
     source: "proof-indexer-token-market-summary-overlay",
     stats: {
       ...stats,
@@ -4435,6 +4449,18 @@ async function latestProofIndexScanMetadata(pool, network) {
           AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
           AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
           AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+            WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+              AND COALESCE(check_item->>'ok', 'false') = 'true'
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+            WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
+              AND COALESCE(check_item->>'ok', 'false') = 'true'
+          )
         ORDER BY generated_at DESC
         LIMIT 1
       ),
@@ -4463,6 +4489,14 @@ async function latestProofIndexScanMetadata(pool, network) {
           AND e.status = 'confirmed'
           AND e.valid = true
       ),
+      confirmed_events AS (
+        SELECT
+          count(*)::int AS confirmed_event_count,
+          max(e.block_height)::int AS confirmed_event_max_block
+        FROM proof_indexer.events e
+        WHERE e.network = $1
+          AND e.status = 'confirmed'
+      ),
       worker_meta AS (
         SELECT value, updated_at
         FROM proof_indexer.meta
@@ -4485,10 +4519,13 @@ async function latestProofIndexScanMetadata(pool, network) {
         confirmed_ids.confirmed_id_max_block,
         confirmed_transfers.confirmed_transfer_count,
         confirmed_transfers.confirmed_transfer_max_block,
+        confirmed_events.confirmed_event_count,
+        confirmed_events.confirmed_event_max_block,
         worker_meta.value AS worker,
         worker_meta.updated_at AS worker_updated_at
       FROM confirmed_ids
       CROSS JOIN confirmed_transfers
+      CROSS JOIN confirmed_events
       LEFT JOIN latest_scan ON true
       LEFT JOIN latest_summary ON true
       LEFT JOIN worker_meta ON true
@@ -4570,6 +4607,10 @@ export async function proofIndexOperationalStatusPayload(network) {
       confirmedTransfers: {
         count: rowNumber(row, "confirmed_transfer_count"),
         maxBlock: rowNumber(row, "confirmed_transfer_max_block"),
+      },
+      confirmedEvents: {
+        count: rowNumber(row, "confirmed_event_count"),
+        maxBlock: rowNumber(row, "confirmed_event_max_block"),
       },
     },
     summarySnapshot: {
@@ -6624,9 +6665,18 @@ function confirmedIdRecordFromRow(row, network) {
     rowNumber(row, "registered_height") ||
     rowNumber(row, "block_height") ||
     undefined;
+  const blockIndex = Number(row.registration_block_index);
+  const registrationEventId = Number(row.registration_event_id);
   return {
     amountSats: ID_REGISTRATION_PRICE_SATS,
     blockHeight,
+    blockIndex:
+      row.registration_block_index !== null &&
+      row.registration_block_index !== undefined &&
+      Number.isSafeInteger(blockIndex) &&
+      blockIndex >= 0
+        ? blockIndex
+        : undefined,
     confirmed: true,
     createdAt: dateIso(
       row.confirmed_at ?? row.block_time ?? row.updated_at,
@@ -6637,6 +6687,13 @@ function confirmedIdRecordFromRow(row, network) {
     ownerAddress: String(row.owner_address || ""),
     pgpKey: row.pgp_public_key || undefined,
     receiveAddress: String(row.receive_address || row.owner_address || ""),
+    registrationEventId:
+      row.registration_event_id !== null &&
+      row.registration_event_id !== undefined &&
+      Number.isSafeInteger(registrationEventId) &&
+      registrationEventId > 0
+        ? registrationEventId
+        : undefined,
     txid: String(row.registration_txid || ""),
     updatedHeight:
       rowNumber(row, "updated_height") || blockHeight || undefined,
@@ -6666,15 +6723,38 @@ async function confirmedIdRecordsFromCurrentTables(pool, network, idLower = "") 
         r.updated_at,
         t.confirmed_at,
         t.block_height,
-        t.block_time
+        t.block_time,
+        registration_event.registration_block_index,
+        registration_event.registration_event_id
       FROM proof_indexer.id_records r
       JOIN proof_indexer.transactions t
         ON t.network = r.network
        AND t.txid = r.registration_txid
        AND t.status = 'confirmed'
+      LEFT JOIN LATERAL (
+        SELECT
+          CASE
+            WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+              THEN (e.payload->>'blockIndex')::integer
+            ELSE NULL
+          END AS registration_block_index,
+          e.event_id AS registration_event_id
+        FROM proof_indexer.events e
+        WHERE e.network = r.network
+          AND e.txid = r.registration_txid
+          AND e.kind = 'id-register'
+          AND e.valid = true
+          AND lower(COALESCE(e.payload->>'id', '')) = r.id_lower
+        ORDER BY e.event_id ASC
+        LIMIT 1
+      ) registration_event ON true
       WHERE r.network = $1
         ${idCondition}
-      ORDER BY r.registered_height ASC NULLS LAST, r.registration_txid ASC
+      ORDER BY
+        COALESCE(r.registered_height, t.block_height) DESC NULLS LAST,
+        registration_event.registration_block_index DESC NULLS LAST,
+        registration_event.registration_event_id DESC NULLS LAST,
+        r.registration_txid DESC
     `,
     params,
   );
@@ -7716,22 +7796,15 @@ export async function proofIndexCanonicalActivityPayload(network) {
         e.event_id
       FROM proof_indexer.events e
       WHERE e.network = $1
-        AND (
-          e.valid = true
-          OR (
-            e.protocol = 'pwt1'
-            AND e.kind = 'token-event-invalid'
-            AND e.valid = false
-            AND e.status = 'confirmed'
-          )
-        )
+        AND e.valid = true
         AND e.status IN ('confirmed', 'pending')
+        AND e.kind = ANY($2::text[])
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC
     `,
-    [network],
+    [network, [...PUBLIC_LOG_EVENT_KINDS]],
   );
   const snapshot = await latestProofIndexScanMetadata(pool, network).catch(
     () => null,
@@ -8744,6 +8817,147 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
   };
 }
 
+export async function proofIndexCanonicalSummaryLedgerPayload(network) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        snapshot_id,
+        generated_at,
+        indexed_through_block,
+        source_hashes,
+        metrics,
+        consistency,
+        payload->>'snapshotId' AS payload_snapshot_id,
+        payload->'summaryPayloads'->'growthSummary'->>'snapshotId' AS growth_snapshot_id,
+        payload->'summaryPayloads'->'infinitySummary'->>'snapshotId' AS infinity_snapshot_id,
+        payload->'summaryPayloads'->'marketplaceSummary'->>'snapshotId' AS marketplace_snapshot_id,
+        payload->'summaryPayloads'->'workFloor'->>'snapshotId' AS work_floor_snapshot_id,
+        payload->'summaryPayloads'->'workSummary'->>'snapshotId' AS work_summary_snapshot_id,
+        payload->'summaryPayloads'->'growthSummary'->>'indexedThroughBlock' AS growth_height,
+        payload->'summaryPayloads'->'growthSummary'->'workFloor'->>'indexedThroughBlock' AS growth_floor_height,
+        payload->'summaryPayloads'->'infinitySummary'->>'indexedThroughBlock' AS infinity_height,
+        payload->'summaryPayloads'->'marketplaceSummary'->>'indexedThroughBlock' AS marketplace_height,
+        payload->'summaryPayloads'->'marketplaceSummary'->'workFloor'->>'indexedThroughBlock' AS marketplace_floor_height,
+        payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlock' AS work_floor_height,
+        payload->'summaryPayloads'->'workSummary'->>'indexedThroughBlock' AS work_summary_height,
+        payload->'summaryPayloads'->'workSummary'->'floor'->>'indexedThroughBlock' AS work_summary_floor_height,
+        payload->'totals' AS totals
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
+        AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
+        AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
+        AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+        AND source_hashes ? 'canonicalSummary'
+        AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+          WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+          WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
+      ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
+      LIMIT 1
+    `,
+    [network],
+  );
+  const snapshot = result.rows[0];
+  if (
+    !snapshot ||
+    String(snapshot.payload_snapshot_id ?? "") !==
+      String(snapshot.snapshot_id ?? "")
+  ) {
+    return null;
+  }
+
+  const indexedThroughBlock = safeBlockHeight(snapshot.indexed_through_block);
+  const summarySnapshotIds = [
+    snapshot.growth_snapshot_id,
+    snapshot.infinity_snapshot_id,
+    snapshot.marketplace_snapshot_id,
+    snapshot.work_floor_snapshot_id,
+    snapshot.work_summary_snapshot_id,
+  ].map((value) => String(value ?? ""));
+  const summaryCoverageHeights = [
+    snapshot.growth_height,
+    snapshot.growth_floor_height,
+    snapshot.infinity_height,
+    snapshot.marketplace_height,
+    snapshot.marketplace_floor_height,
+    snapshot.work_floor_height,
+    snapshot.work_summary_height,
+    snapshot.work_summary_floor_height,
+  ].map(safeBlockHeight);
+  if (
+    !indexedThroughBlock ||
+    summarySnapshotIds.some(
+      (value) => value !== String(snapshot.snapshot_id ?? ""),
+    ) ||
+    summaryCoverageHeights.some((height) => height !== indexedThroughBlock)
+  ) {
+    return null;
+  }
+
+  const totals =
+    snapshot.totals &&
+    typeof snapshot.totals === "object" &&
+    !Array.isArray(snapshot.totals)
+      ? snapshot.totals
+      : {};
+  const workNetworkValueSats = Number(totals.workNetworkValueSats);
+  const workActualValueSats = Number(totals.workActualValueSats);
+  const growthActualValueSats = Number(totals.growthActualValueSats);
+  const growthWorkFloorValueSats = Number(
+    totals.growthWorkFloorValueSats,
+  );
+  if (
+    ![
+      workNetworkValueSats,
+      workActualValueSats,
+      growthActualValueSats,
+      growthWorkFloorValueSats,
+    ].every((value) => Number.isFinite(value) && value > 0)
+  ) {
+    return null;
+  }
+
+  return {
+    consistency: snapshot.consistency,
+    generatedAt: dateIso(snapshot.generated_at),
+    growthSummary: {
+      actualValue: { totalSats: growthActualValueSats },
+      workFloor: {
+        actualValue: { totalSats: growthWorkFloorValueSats },
+        networkValueSats: growthWorkFloorValueSats,
+      },
+    },
+    indexedThroughBlock,
+    metrics: snapshot.metrics ?? {},
+    network,
+    snapshotId: snapshot.snapshot_id,
+    source: "proof-indexer-canonical-summary-ledger",
+    sourceHashes: snapshot.source_hashes ?? {},
+    workFloor: {
+      actualValue: { totalSats: workActualValueSats },
+      networkValueSats: workNetworkValueSats,
+    },
+  };
+}
+
 export async function proofIndexSnapshotPayload(network, key) {
   const pool = proofIndexPool();
   if (!pool) {
@@ -8769,6 +8983,18 @@ export async function proofIndexSnapshotPayload(network, key) {
         AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+          WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+          WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
         AND payload ? 'summaryPayloads'
         AND payload->'summaryPayloads' ? $2
       ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
@@ -8798,6 +9024,18 @@ export async function proofIndexSnapshotPayload(network, key) {
             AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+            AND EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+              WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+                AND COALESCE(check_item->>'ok', 'false') = 'true'
+            )
+            AND EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+              WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
+                AND COALESCE(check_item->>'ok', 'false') = 'true'
+            )
           ORDER BY generated_at DESC
           LIMIT ${SUMMARY_SNAPSHOT_LOOKBACK_LIMIT}
         )
@@ -9023,11 +9261,32 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
   };
 }
 
-export async function proofIndexCreditListingsPayload(network, tokenId) {
+export async function proofIndexCreditListingsPayload(
+  network,
+  tokenId = "",
+  options = {},
+) {
   const pool = proofIndexPool();
   if (!pool) {
     return null;
   }
+
+  const requestedScope = tokenScopeKey(tokenId);
+  const scope = requestedScope === "all" ? "" : requestedScope;
+  const maxRows = boundedInteger(options.limit, 500, 1, 5000);
+  const [scan, countResult] = await Promise.all([
+    latestProofIndexScanMetadata(pool, network),
+    pool.query(
+      `
+        SELECT count(*) AS total_count
+        FROM proof_indexer.credit_listings
+        WHERE network = $1
+          AND ($2 = '' OR lower(token_id) = $2)
+      `,
+      [network, scope],
+    ),
+  ]);
+  const totalCount = rowNumber(countResult.rows[0], "total_count");
 
   const result = await pool.query(
     `
@@ -9047,11 +9306,12 @@ export async function proofIndexCreditListingsPayload(network, tokenId) {
         payload,
         updated_at
       FROM proof_indexer.credit_listings
-      WHERE network = $1 AND token_id = $2
+      WHERE network = $1
+        AND ($2 = '' OR lower(token_id) = $2)
       ORDER BY updated_at DESC, listing_id ASC
-      LIMIT 500
+      LIMIT $3
     `,
-    [network, tokenId],
+    [network, scope, maxRows],
   );
 
   const listingIds = result.rows
@@ -9107,9 +9367,11 @@ export async function proofIndexCreditListingsPayload(network, tokenId) {
     .reduce((max, value) => Math.max(max, value), 0);
 
   return {
-    indexedAt: newestTime
-      ? new Date(newestTime).toISOString()
-      : dateIso(result.rows[0]?.updated_at),
+    indexedAt: dateIso(
+      scan?.generated_at ??
+        (newestTime ? new Date(newestTime).toISOString() : result.rows[0]?.updated_at),
+    ),
+    indexedThroughBlock: rowNumber(scan, "indexed_through_block"),
     items: result.rows.map((row) => {
       const payload = objectRecord(row.payload);
       const saleAuthorization = objectRecord(payload.saleAuthorization);
@@ -9157,6 +9419,7 @@ export async function proofIndexCreditListingsPayload(network, tokenId) {
         closedTxid: closeTxid,
         confirmed: status !== "pending",
         listingId,
+        network,
         priceSats: Number(row.price_sats ?? 0),
         saleAuthorization,
         saleTicketTxid: tokenListingEffectiveSaleTicketTxid(
@@ -9175,10 +9438,16 @@ export async function proofIndexCreditListingsPayload(network, tokenId) {
         status,
         tokenId: row.token_id,
         txid: listingId,
+        updatedAt: dateIso(row.updated_at),
       };
     }),
     network,
-    totalCount: result.rowCount,
+    source: "proof-indexer-credit-listing-lifecycle",
+    stats: {
+      complete: result.rows.length >= totalCount,
+      totalCount,
+    },
+    totalCount,
   };
 }
 
