@@ -466,6 +466,20 @@ expectAll("Log summary preserves full activity stats before compaction", compact
   /stats,/,
 ]);
 
+expectAll("Growth and consistency preserve the canonical public Log action count", server, [
+  /const canonicalConfirmedComputerActions = Number\(\s*computerActivity\?\.stats\?\.confirmed,?\s*\)/,
+  /Number\.isSafeInteger\(canonicalConfirmedComputerActions\)[\s\S]*\? canonicalConfirmedComputerActions[\s\S]*activityForGrowth\.filter/,
+  /const workFloorConfirmedComputerActions = Number\([\s\S]*workFloor\?\.stats\?\.confirmedComputerActions/,
+  /function tokenActivityItemsFromState[\s\S]*token\?\.tokenId !== WORK_TOKEN_ID[\s\S]*token\?\.tokenId !== POWB_TOKEN_ID/,
+  /function tokenStateLogExpectations[\s\S]*token\.tokenId === WORK_TOKEN_ID[\s\S]*token\.tokenId === POWB_TOKEN_ID/,
+]);
+
+expectAll("current canonical registry coverage outlives wall-clock cache age", server, [
+  /rejectReason\.startsWith\("stale indexedAt"\)/,
+  /proofIndexPayloadHasExplicitCurrentCoverage\([\s\S]*indexed-registry-current-coverage/,
+  /function proofIndexPayloadHasExplicitCurrentCoverage[\s\S]*!Number\.isSafeInteger\(tipHeight\)[\s\S]*return false/,
+]);
+
 expectAll("canonical ledger builder owns shared state", server, [
   /async function buildCanonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)/,
   /activityStateForCanonicalLedger\(network,\s*fresh\)/,

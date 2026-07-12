@@ -11158,7 +11158,12 @@ function tokenActivityItemsFromState(state, indexAddress) {
       ])
       .filter(([tokenId]) => tokenId),
   );
-  const creations = (state.tokens ?? []).map((token) => ({
+  const creations = (state.tokens ?? [])
+    .filter(
+      (token) =>
+        token?.tokenId !== WORK_TOKEN_ID && token?.tokenId !== POWB_TOKEN_ID,
+    )
+    .map((token) => ({
     amountSats: token.creationFeeSats,
     actor: token.creatorAddress,
     blockHeight: token.blockHeight,
@@ -11191,7 +11196,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     title: token.confirmed ? "Credit created" : "Credit creation pending",
     tokenId: token.tokenId,
     txid: token.txid,
-  }));
+    }));
 
   const mints = (state.mints ?? []).map((mint) => ({
     amountSats: mint.paidSats,
@@ -13582,7 +13587,17 @@ async function indexedRegistryPayload(network) {
       // verifies a complete, hashed canonical block-scan checkpoint. It must be
       // allowed to correct a stale cache whose (noncanonical) record count was
       // higher. The live crawler path keeps its separate regression guard.
-      const rejectReason = registryIndexedPayloadRejectReason(orderedPayload);
+      let rejectReason = registryIndexedPayloadRejectReason(orderedPayload);
+      if (
+        rejectReason.startsWith("stale indexedAt") &&
+        (await proofIndexPayloadHasExplicitCurrentCoverage(
+          orderedPayload,
+          network,
+          "indexed-registry-current-coverage",
+        ))
+      ) {
+        rejectReason = "";
+      }
       if (rejectReason) {
         console.error(
           `Rejected proof-index registry payload for ${network}: ${rejectReason}.`,
@@ -19152,9 +19167,16 @@ function ledgerMetricsFromState({
   const tokenMints = tokenState?.mints ?? [];
   const tokenTransfers = tokenState?.transfers ?? [];
   const tokenSales = tokenState?.sales ?? [];
-  const confirmedComputerActions = (Array.isArray(activity) ? activity : []).filter(
-    (item) => item?.confirmed && item?.valid !== false,
-  ).length;
+  const workFloorConfirmedComputerActions = Number(
+    workFloor?.stats?.confirmedComputerActions,
+  );
+  const confirmedComputerActions =
+    Number.isSafeInteger(workFloorConfirmedComputerActions) &&
+    workFloorConfirmedComputerActions >= 0
+      ? workFloorConfirmedComputerActions
+      : (Array.isArray(activity) ? activity : []).filter(
+          (item) => item?.confirmed && item?.valid !== false,
+        ).length;
 
   return {
     activityItems: Array.isArray(activity) ? activity.length : 0,
@@ -19231,6 +19253,7 @@ function ledgerPayloadHasCurrentChecks(payload) {
     checkNames.has("livenet-confirmed-history-present") &&
     checkNames.has("token-definitions-cover-confirmed-mints") &&
     checkNames.has("token-components-cover-confirmed-activity") &&
+    checkNames.has("canonical-activity-count-matches-public-log") &&
     checkNames.has("network-values-finite") &&
     checkNames.has("marketplace-mutation-fees-counted") &&
     checkNames.has("marketplace-value-includes-mutation-fees") &&
@@ -19765,6 +19788,7 @@ function ledgerWithProofIndexScanFloor(ledger, scan, tipHeight) {
     metrics,
     network: floored.network,
     seededMailActivityState: floored.seededMailActivityState,
+    sourceHashes: floored.sourceHashes,
     tokenState: floored.tokenState,
     workFloor: floored.workFloor,
   });
@@ -19896,6 +19920,34 @@ async function proofIndexPayloadCoversConfirmedTip(
     `Rejected stale ${label} proof-index read: indexedThroughBlock ${indexedThroughBlock}, tip ${tipHeight}, lag ${lagBlocks} blocks.`,
   );
   return false;
+}
+
+async function proofIndexPayloadHasExplicitCurrentCoverage(
+  payload,
+  network,
+  label = "proof-index",
+) {
+  if (network !== "livenet") {
+    return true;
+  }
+  const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
+  const tipHeight = await ledgerTipHeight(network);
+  if (
+    !Number.isSafeInteger(indexedThroughBlock) ||
+    indexedThroughBlock <= 0 ||
+    !Number.isSafeInteger(tipHeight) ||
+    tipHeight <= 0
+  ) {
+    console.error(
+      `Rejected ${label} proof-index read without explicit indexed/tip coverage.`,
+    );
+    return false;
+  }
+  const lagBlocks = tipHeight - indexedThroughBlock;
+  return (
+    lagBlocks >= 0 &&
+    lagBlocks <= PROOF_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS
+  );
 }
 
 async function existingCanonicalLedgerPayload(network) {
@@ -20340,6 +20392,7 @@ async function ledgerWithReplayedCreditNetworkValues(
     metrics,
     network,
     seededMailActivityState: ledger.seededMailActivityState,
+    sourceHashes,
     tokenState,
     workFloor,
   });
@@ -20462,7 +20515,11 @@ function tokenStateLogExpectations(tokenState) {
   };
 
   for (const token of tokenState?.tokens ?? []) {
-    if (!token?.confirmed) {
+    if (
+      !token?.confirmed ||
+      token.tokenId === WORK_TOKEN_ID ||
+      token.tokenId === POWB_TOKEN_ID
+    ) {
       continue;
     }
     add({
@@ -20629,12 +20686,33 @@ function tokenComponentCoverageFromConfirmedActivity(activity, tokenState) {
   return { activityCounts, missing, ok: missing.length === 0, stateCounts };
 }
 
+function canonicalActivityCountCoverage(metrics, sourceHashes) {
+  const canonicalActivityCount = numericValue(sourceHashes?.activity?.count);
+  const canonicalConfirmedActivityCount = numericValue(
+    sourceHashes?.activity?.confirmed,
+  );
+  const ledgerActivityCount = numericValue(metrics?.activityItems);
+  const ledgerConfirmedActivityCount = numericValue(
+    metrics?.confirmedComputerActions,
+  );
+  return {
+    canonicalActivityCount,
+    canonicalConfirmedActivityCount,
+    ledgerActivityCount,
+    ledgerConfirmedActivityCount,
+    ok:
+      ledgerActivityCount === canonicalActivityCount &&
+      ledgerConfirmedActivityCount === canonicalConfirmedActivityCount,
+  };
+}
+
 function ledgerSnapshotChecks({
   activity,
   growthSummary,
   metrics,
   network,
   seededMailActivityState,
+  sourceHashes,
   tokenState,
   workFloor,
 }) {
@@ -20673,6 +20751,15 @@ function ledgerSnapshotChecks({
     "token-components-cover-confirmed-activity",
     network !== "livenet" || tokenComponentCoverage.ok,
     tokenComponentCoverage,
+  );
+  const canonicalActivityCoverage = canonicalActivityCountCoverage(
+    metrics,
+    sourceHashes,
+  );
+  addCheck(
+    "canonical-activity-count-matches-public-log",
+    network !== "livenet" || canonicalActivityCoverage.ok,
+    canonicalActivityCoverage,
   );
   const indexedThroughBlock = numericValue(metrics?.indexedThroughBlock);
   const sourceTipHeight = numericValue(metrics?.sourceTipHeight);
@@ -22760,6 +22847,7 @@ async function buildIndexedCanonicalLedgerPayload(
     metrics,
     network,
     seededMailActivityState,
+    sourceHashes,
     tokenState: valuedTokenState,
     workFloor,
   });
@@ -23160,6 +23248,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     metrics,
     network,
     seededMailActivityState,
+    sourceHashes,
     tokenState: ledgerTokenState,
     workFloor,
   });
@@ -27959,9 +28048,16 @@ function workFloorPayloadFromState(
   const tokenSalesForValue = Array.isArray(valueTokenState.sales)
     ? valueTokenState.sales
     : [];
-  const confirmedComputerActions = activityForGrowth.filter(
-    (item) => item?.confirmed && item?.valid !== false,
-  ).length;
+  const canonicalConfirmedComputerActions = Number(
+    computerActivity?.stats?.confirmed,
+  );
+  const confirmedComputerActions =
+    Number.isSafeInteger(canonicalConfirmedComputerActions) &&
+    canonicalConfirmedComputerActions >= 0
+      ? canonicalConfirmedComputerActions
+      : activityForGrowth.filter(
+          (item) => item?.confirmed && item?.valid !== false,
+        ).length;
   const actualValue = growthActualNetworkValue(
     registryState.records ?? [],
     activityForGrowth,

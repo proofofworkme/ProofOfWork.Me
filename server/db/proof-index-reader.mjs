@@ -4455,6 +4455,12 @@ async function latestProofIndexScanMetadata(pool, network) {
             WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
               AND COALESCE(check_item->>'ok', 'false') = 'true'
           )
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+            WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
+              AND COALESCE(check_item->>'ok', 'false') = 'true'
+          )
         ORDER BY generated_at DESC
         LIMIT 1
       ),
@@ -8827,6 +8833,12 @@ export async function proofIndexSnapshotPayload(network, key) {
           WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
             AND COALESCE(check_item->>'ok', 'false') = 'true'
         )
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+          WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
         AND payload ? 'summaryPayloads'
         AND payload->'summaryPayloads' ? $2
       ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
@@ -8860,6 +8872,12 @@ export async function proofIndexSnapshotPayload(network, key) {
               SELECT 1
               FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
               WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+                AND COALESCE(check_item->>'ok', 'false') = 'true'
+            )
+            AND EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+              WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
                 AND COALESCE(check_item->>'ok', 'false') = 'true'
             )
           ORDER BY generated_at DESC

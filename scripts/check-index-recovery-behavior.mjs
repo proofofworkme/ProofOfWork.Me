@@ -1095,7 +1095,105 @@ check("canonical consistency rejects zero token components behind token activity
   assert.deepEqual(Array.from(complete.missing), []);
 });
 
-check("stored canonical summaries require the non-vacuous token component check", () => {
+check("canonical activity counts exactly match the public Log", () => {
+  const canonicalActivityCountCoverage = isolatedFunction(
+    API_PATH,
+    "canonicalActivityCountCoverage",
+    {
+      numericValue: (value, fallback = 0) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : fallback;
+      },
+    },
+  );
+  assert.equal(
+    canonicalActivityCountCoverage(
+      { activityItems: 3, confirmedComputerActions: 2 },
+      { activity: { count: 2, confirmed: 2 } },
+    ).ok,
+    false,
+  );
+  assert.equal(
+    canonicalActivityCountCoverage(
+      { activityItems: 2, confirmedComputerActions: 2 },
+      { activity: { count: 2, confirmed: 1 } },
+    ).ok,
+    false,
+  );
+  assert.equal(
+    canonicalActivityCountCoverage(
+      { activityItems: 2, confirmedComputerActions: 1 },
+      { activity: { count: 2, confirmed: 1 } },
+    ).ok,
+    true,
+  );
+});
+
+check("synthetic WORK and POWB definitions are not public Log actions", () => {
+  const tokenStateLogExpectations = isolatedFunction(
+    API_PATH,
+    "tokenStateLogExpectations",
+    {
+      POWB_TOKEN_ID: "powb",
+      WORK_TOKEN_ID: "work",
+    },
+  );
+  const expectations = tokenStateLogExpectations({
+    closedListings: [],
+    listings: [],
+    mints: [],
+    sales: [],
+    tokens: [
+      { confirmed: true, tokenId: "work", txid: "a".repeat(64) },
+      { confirmed: true, tokenId: "powb", txid: "b".repeat(64) },
+      { confirmed: true, tokenId: "real", txid: "c".repeat(64) },
+    ],
+    transfers: [],
+  });
+  assert.deepEqual(
+    Array.from(expectations, (item) => item.tokenId),
+    ["real"],
+  );
+});
+
+check("stale registry age can be bypassed only with explicit current tip coverage", async () => {
+  let tipHeight;
+  const proofIndexPayloadHasExplicitCurrentCoverage = isolatedFunction(
+    API_PATH,
+    "proofIndexPayloadHasExplicitCurrentCoverage",
+    {
+      PROOF_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS: 6,
+      ledgerTipHeight: async () => tipHeight,
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock),
+    },
+  );
+  assert.equal(
+    await proofIndexPayloadHasExplicitCurrentCoverage(
+      { indexedThroughBlock: 100 },
+      "livenet",
+    ),
+    false,
+  );
+  tipHeight = 105;
+  assert.equal(
+    await proofIndexPayloadHasExplicitCurrentCoverage(
+      { indexedThroughBlock: 100 },
+      "livenet",
+    ),
+    true,
+  );
+  tipHeight = 107;
+  assert.equal(
+    await proofIndexPayloadHasExplicitCurrentCoverage(
+      { indexedThroughBlock: 100 },
+      "livenet",
+    ),
+    false,
+  );
+});
+
+check("stored canonical summaries require component and public Log count checks", () => {
   const eligibleCanonicalSummarySnapshotPayload = isolatedFunction(
     BACKFILL_PATH,
     "eligibleCanonicalSummarySnapshotPayload",
@@ -1120,6 +1218,11 @@ check("stored canonical summaries require the non-vacuous token component check"
     name: "token-components-cover-confirmed-activity",
     ok: true,
   });
+  assert.equal(eligibleCanonicalSummarySnapshotPayload(payload), false);
+  payload.checks.push({
+    name: "canonical-activity-count-matches-public-log",
+    ok: true,
+  });
   assert.equal(eligibleCanonicalSummarySnapshotPayload(payload), true);
 
   const snapshotReadSource = topLevelFunctionSource(
@@ -1129,6 +1232,10 @@ check("stored canonical summaries require the non-vacuous token component check"
   assert.match(
     snapshotReadSource,
     /token-components-cover-confirmed-activity/u,
+  );
+  assert.match(
+    snapshotReadSource,
+    /canonical-activity-count-matches-public-log/u,
   );
   assert.match(snapshotReadSource, /check_item->>'ok'[\s\S]*'true'/u);
 });
