@@ -6,6 +6,7 @@ import {
 let proofIndexReadPool = null;
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
+const ID_REGISTRATION_PRICE_SATS = 1_000;
 const TOKEN_SALE_AUTH_VERSION = "pwt-sale-v1";
 const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
 const TOKEN_LISTING_ANCHOR_VALUE_SATS = 546;
@@ -27,6 +28,7 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "reply",
   "rush-mint",
   "token-create",
+  "token-event-invalid",
   "token-listing",
   "token-listing-closed",
   "token-listing-sealed",
@@ -36,7 +38,6 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
 ]);
 const SMALL_EVENT_HISTORY_NORMALIZE_LIMIT = 2_000;
 const LEDGER_SNAPSHOT_RECENT_READ_LIMIT = 25;
-const LEDGER_SNAPSHOT_PAYLOAD_LOOKBACK_LIMIT = 5_000;
 const SUMMARY_SNAPSHOT_LOOKBACK_LIMIT = 5_000;
 const TOKEN_STATE_EVENT_READ_LIMIT = 100_000;
 
@@ -121,18 +122,32 @@ function safeBlockHeight(value) {
 }
 
 function summaryPayloadIndexedThroughBlock(payload, snapshot) {
-  const height = Math.max(
+  void snapshot;
+  const parentHeight = Math.max(
     safeBlockHeight(payload?.indexedThroughBlock),
     safeBlockHeight(payload?.metrics?.indexedThroughBlock),
     safeBlockHeight(payload?.stats?.indexedThroughBlock),
-    safeBlockHeight(payload?.floor?.indexedThroughBlock),
-    safeBlockHeight(payload?.floor?.metrics?.indexedThroughBlock),
-    safeBlockHeight(payload?.workFloor?.indexedThroughBlock),
-    safeBlockHeight(payload?.workFloor?.metrics?.indexedThroughBlock),
-    safeBlockHeight(snapshot?.indexed_through_block),
-    safeBlockHeight(snapshot?.payload?.indexedThroughBlock),
-    safeBlockHeight(snapshot?.payload?.metrics?.indexedThroughBlock),
   );
+  if (parentHeight <= 0) {
+    return undefined;
+  }
+  const nestedHeights = [payload?.floor, payload?.workFloor].flatMap(
+    (nested) => {
+      if (!nested || typeof nested !== "object" || Array.isArray(nested)) {
+        return [];
+      }
+      const height = Math.max(
+        safeBlockHeight(nested.indexedThroughBlock),
+        safeBlockHeight(nested.metrics?.indexedThroughBlock),
+        safeBlockHeight(nested.stats?.indexedThroughBlock),
+      );
+      return height > 0 ? [height] : [0];
+    },
+  );
+  const height =
+    nestedHeights.length > 0
+      ? Math.min(parentHeight, ...nestedHeights)
+      : parentHeight;
   return height > 0 ? height : undefined;
 }
 
@@ -594,12 +609,15 @@ function tokenClosedListingFromEventPayload(payload) {
   const createdAt = dateIso(
     payload?.createdAt ?? payload?.timestamp ?? payload?.blockTime,
   );
+  const closedAt = dateIso(
+    payload?.closedAt ?? payload?.blockTime ?? payload?.timestamp ?? createdAt,
+  );
   return {
     amount:
       rowNumber(payload, "amount") ||
       rowNumber(payload, "tokenAmount") ||
       amount,
-    closedAt: createdAt,
+    closedAt,
     closedConfirmed: payload?.confirmed === true,
     closedFrozenNetworkValueSats: rowNumber(
       payload,
@@ -622,7 +640,13 @@ function tokenClosedListingFromEventPayload(payload) {
       rowNumber(payload, "salePriceSats") ||
       priceSats,
     registryAddress,
-    saleAuthorization: {},
+    saleAuthorization: objectRecord(payload?.saleAuthorization),
+    sealAt: dateIso(payload?.sealAt),
+    sealConfirmed:
+      payload?.sealConfirmed === true || validTxid(payload?.sealTxid),
+    sealDataBytes: rowNumber(payload, "sealDataBytes"),
+    sealMinerFeeSats: rowNumber(payload, "sealMinerFeeSats"),
+    sealTxid: String(payload?.sealTxid ?? "").trim().toLowerCase(),
     sellerAddress,
     ticker,
     tokenId: String(payload?.tokenId ?? "").trim().toLowerCase(),
@@ -862,95 +886,34 @@ function tokenHistoryMarketEventKinds(safeKind) {
   return [];
 }
 
-function tokenHistoryFreshnessEventKinds(safeKind) {
-  if (safeKind === "tokens") {
-    return ["token-create"];
-  }
-  if (safeKind === "mints") {
-    return ["token-mint"];
-  }
-  if (safeKind === "transfers") {
-    return ["token-transfer"];
-  }
-  if (safeKind === "holders") {
-    return ["token-mint", "token-transfer", "token-sale"];
-  }
-  return tokenHistoryMarketEventKinds(safeKind);
-}
-
-async function tokenHistoryScanCoverageAfterSnapshot(
-  pool,
-  network,
-  safeKind,
-  snapshot,
-) {
-  const snapshotBlock = rowNumber(snapshot, "indexed_through_block") ?? 0;
-  const eventKinds = tokenHistoryFreshnessEventKinds(safeKind);
-  if (!snapshotBlock || eventKinds.length === 0) {
-    return null;
-  }
-
-  const result = await pool.query(
-    `
-      WITH latest_scan AS (
-        SELECT indexed_through_block, generated_at
-        FROM proof_indexer.ledger_snapshots
-        WHERE network = $1
-        ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
-        LIMIT 1
-      )
-      SELECT
-        latest_scan.indexed_through_block,
-        latest_scan.generated_at,
-        count(e.event_id)::int AS event_count,
-        max(e.block_height)::int AS max_event_block,
-        max(e.event_time) AS max_event_time
-      FROM latest_scan
-      LEFT JOIN proof_indexer.events e
-        ON e.network = $1
-       AND e.status = 'confirmed'
-       AND e.valid IS DISTINCT FROM false
-       AND e.block_height > $2
-       AND e.kind = ANY($3::text[])
-      GROUP BY latest_scan.indexed_through_block, latest_scan.generated_at
-    `,
-    [network, snapshotBlock, eventKinds],
-  );
-  const row = result.rows[0];
-  if (!row) {
-    return null;
-  }
-  return {
-    eventCount: Number(row.event_count ?? 0),
-    indexedAt: dateIso(row.generated_at ?? row.max_event_time),
-    indexedThroughBlock: Number(row.indexed_through_block) || 0,
-    maxEventBlock: Number(row.max_event_block) || 0,
-  };
-}
-
 function tokenHistoryPageWithScanCoverage(page, coverage) {
-  if (!page || !coverage || coverage.eventCount > 0) {
-    return page;
-  }
-  const indexedThroughBlock = Math.max(
-    Number(page.indexedThroughBlock) || 0,
-    Number(coverage.indexedThroughBlock) || 0,
-  );
-  if (indexedThroughBlock <= (Number(page.indexedThroughBlock) || 0)) {
-    return page;
-  }
-  return {
-    ...page,
-    indexedAt: newestDateIso([page.indexedAt, coverage.indexedAt]),
-    indexedThroughBlock,
-    source: mergedSourceLabel(page.source, "proof-indexer-scan-coverage"),
-  };
+  // A scan checkpoint is operational evidence only. It cannot change the
+  // generation height or source label of an older embedded history page.
+  void coverage;
+  return page;
 }
 
 function tokenListingId(item) {
   return String(item?.listingId ?? item?.listing?.listingId ?? "")
     .trim()
     .toLowerCase();
+}
+
+function currentRelationalHistoryPageWithScanCoverage(page, scan) {
+  if (!page) {
+    return null;
+  }
+  return {
+    ...page,
+    indexedAt: dateIso(
+      newestDateIso([page.indexedAt, scan?.generated_at]),
+    ),
+    indexedThroughBlock:
+      Math.max(
+        rowNumber(page, "indexedThroughBlock"),
+        rowNumber(scan, "indexed_through_block"),
+      ) || undefined,
+  };
 }
 
 function tokenHistoryItemKey(item, safeKind) {
@@ -1529,10 +1492,7 @@ async function exactTokenMintHistoryPage(
     end,
     indexedAt: dateIso(countResult.rows[0]?.indexed_at ?? snapshot?.generated_at),
     indexedThroughBlock:
-      Math.max(
-        rowNumber(countResult.rows[0], "indexed_through_block"),
-        rowNumber(snapshot, "indexed_through_block"),
-      ) || undefined,
+      rowNumber(countResult.rows[0], "indexed_through_block") || undefined,
     items,
     kind: "mints",
     limit: pagination.limit,
@@ -1844,7 +1804,7 @@ async function exactActiveTokenListingHistoryPage(
     indexedAt: dateIso(
       countResult.rows[0]?.indexed_at ?? snapshot?.generated_at,
     ),
-    indexedThroughBlock: rowNumber(snapshot, "indexed_through_block"),
+    indexedThroughBlock: undefined,
     items,
     kind: "listings",
     network,
@@ -2468,26 +2428,15 @@ async function ledgerSnapshotWithPayload(pool, network, snapshotId, payloadKey) 
 
   const snapshotResult = await pool.query(
     `
-      WITH recent AS (
-        SELECT
-          snapshot_id,
-          generated_at,
-          indexed_through_block,
-          consistency,
-          payload
-        FROM proof_indexer.ledger_snapshots
-        WHERE network = $1
-        ORDER BY generated_at DESC
-        LIMIT ${LEDGER_SNAPSHOT_PAYLOAD_LOOKBACK_LIMIT}
-      )
       SELECT
         snapshot_id,
         generated_at,
         indexed_through_block,
         consistency,
         payload
-      FROM recent
-      WHERE payload ? $2
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
+        AND payload ? $2
       ORDER BY generated_at DESC
       LIMIT 1
     `,
@@ -2608,6 +2557,34 @@ function registryHistoryPayloadsFromSnapshot(snapshot) {
     return payload.registryHistoryPayloads;
   }
   return null;
+}
+
+function embeddedHistoryIndexedThroughBlock(storedPayload) {
+  if (
+    !storedPayload ||
+    typeof storedPayload !== "object" ||
+    Array.isArray(storedPayload)
+  ) {
+    return 0;
+  }
+  return Math.max(
+    safeBlockHeight(storedPayload.indexedThroughBlock),
+    safeBlockHeight(storedPayload.stats?.indexedThroughBlock),
+    indexedThroughBlockFromItems(storedPayload.items) ?? 0,
+  );
+}
+
+function tokenHistoryEmbeddedIndexedThroughBlock(snapshot, safeKind) {
+  const payloads = tokenHistoryPayloadsFromSnapshot(snapshot);
+  if (!payloads) {
+    return 0;
+  }
+  return Math.max(
+    0,
+    ...Object.values(payloads).map((scopePayload) =>
+      embeddedHistoryIndexedThroughBlock(scopePayload?.[safeKind]),
+    ),
+  );
 }
 
 function proofIndexTokenHistoryMaxAgeMs(env = process.env) {
@@ -2832,7 +2809,7 @@ function historyPageFromStoredPayload(
     indexedThroughBlock:
       Math.max(
         indexedThroughBlockFromItems(filtered) ?? 0,
-        rowNumber(snapshot, "indexed_through_block") ?? 0,
+        embeddedHistoryIndexedThroughBlock(storedPayload),
       ) || undefined,
     items: filtered.slice(start, end),
     kind,
@@ -2955,7 +2932,7 @@ function tokenHistoryPageFromSnapshot(
     indexedThroughBlock:
       Math.max(
         indexedThroughBlockFromItems(filtered) ?? 0,
-        rowNumber(snapshot, "indexed_through_block") ?? 0,
+        embeddedHistoryIndexedThroughBlock(source.payload),
       ) || undefined,
     items: filtered.slice(start, end),
     kind: safeKind,
@@ -3138,10 +3115,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   );
   const totalCount = rowNumber(countResult.rows[0], "total_count");
   const indexedThroughBlock =
-    Math.max(
-      rowNumber(countResult.rows[0], "indexed_through_block"),
-      rowNumber(snapshot, "indexed_through_block"),
-    ) || undefined;
+    rowNumber(countResult.rows[0], "indexed_through_block") || undefined;
   if (totalCount === 0) {
     return null;
   }
@@ -3732,64 +3706,111 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
   };
 }
 
-async function exactTokenTransferHistoryPage(
+async function currentTokenTransferHistoryPage(
   pool,
   network,
   tokenScope,
   searchParams,
   pagination,
-  snapshot,
 ) {
-  const needles = tokenHistoryFilterNeedles(searchParams, pagination);
-  const txidNeedles = needles.map(normalizedTxid).filter(Boolean);
-  if (
-    txidNeedles.length === 0 ||
-    needles.some((value) => !normalizedTxid(value))
-  ) {
-    return null;
-  }
-
   const scope = tokenScopeKey(tokenScope);
-  const params = [network, [...new Set(txidNeedles)]];
+  const params = [network];
   const conditions = [
     "e.network = $1",
-    "e.status = 'confirmed'",
-    "e.valid IS DISTINCT FROM false",
+    "e.valid = true",
     "e.kind = 'token-transfer'",
-    `(
-      lower(e.txid) = ANY($2::text[])
-      OR lower(e.payload->>'txid') = ANY($2::text[])
+    "COALESCE(t.status, e.status) IN ('confirmed', 'pending')",
+  ];
+  const scan = await latestProofIndexScanMetadata(pool, network);
+
+  if (scope && scope !== "all") {
+    params.push(scope);
+    const scopeParam = `$${params.length}`;
+    conditions.push(`(
+      lower(e.payload->>'tokenId') = ${scopeParam}
+      OR lower(cd.token_id) = ${scopeParam}
+      OR lower(cd.ticker) = lower(${scopeParam})
+      OR lower(e.payload->>'ticker') = lower(${scopeParam})
+    )`);
+  }
+
+  const needles = tokenHistoryFilterNeedles(searchParams, pagination);
+  const txidNeedles = [
+    ...new Set(needles.map(normalizedTxid).filter(Boolean)),
+  ];
+  if (txidNeedles.length > 0) {
+    params.push(txidNeedles);
+    const txidParam = `$${params.length}`;
+    conditions.push(`(
+        lower(e.txid) = ANY(${txidParam}::text[])
+        OR lower(e.payload->>'txid') = ANY(${txidParam}::text[])
+        OR EXISTS (
+          SELECT 1
+          FROM proof_indexer.event_refs erq
+          WHERE erq.event_id = e.event_id
+            AND lower(erq.ref_value) = ANY(${txidParam}::text[])
+        )
+      )`);
+  }
+
+  for (const needle of needles.filter((value) => !normalizedTxid(value))) {
+    params.push(`%${needle}%`);
+    const needleParam = `$${params.length}`;
+    conditions.push(`(
+      lower(e.txid) LIKE ${needleParam}
+      OR lower(e.payload::text) LIKE ${needleParam}
+      OR lower(COALESCE(cd.token_id, '')) LIKE ${needleParam}
+      OR lower(COALESCE(cd.ticker, '')) LIKE ${needleParam}
+      OR lower(COALESCE(cd.registry_address, '')) LIKE ${needleParam}
+      OR EXISTS (
+        SELECT 1
+        FROM proof_indexer.event_participants epq
+        WHERE epq.event_id = e.event_id
+          AND (
+            lower(epq.address) LIKE ${needleParam}
+            OR lower(COALESCE(epq.powid, '')) LIKE ${needleParam}
+          )
+      )
       OR EXISTS (
         SELECT 1
         FROM proof_indexer.event_refs erq
         WHERE erq.event_id = e.event_id
-          AND lower(erq.ref_value) = ANY($2::text[])
+          AND lower(erq.ref_value) LIKE ${needleParam}
       )
-    )`,
-  ];
-  if (scope && scope !== "all") {
-    params.push(scope);
-    const scopeParam = `$${params.length}`;
-    conditions.push(
-      `(
-        lower(e.payload->>'tokenId') = ${scopeParam}
-        OR lower(cd.token_id) = ${scopeParam}
-        OR lower(cd.ticker) = lower(${scopeParam})
-        OR lower(e.payload->>'ticker') = lower(${scopeParam})
-      )`,
-    );
+    )`);
   }
 
-  const whereClause = conditions.join(" AND ");
-  const result = await pool.query(
+  const fromSql = `
+    FROM proof_indexer.events e
+    LEFT JOIN proof_indexer.transactions t
+      ON t.network = e.network
+     AND t.txid = e.txid
+    LEFT JOIN proof_indexer.credit_definitions cd
+      ON cd.network = e.network
+     AND cd.token_id = lower(e.payload->>'tokenId')
+    WHERE ${conditions.join(" AND ")}
+  `;
+  const countResult = await pool.query(
+    `
+      SELECT
+        count(*) AS total_count,
+        max(e.block_height) AS indexed_through_block,
+        max(COALESCE(e.event_time, e.block_time, e.created_at)) AS indexed_at
+      ${fromSql}
+    `,
+    params,
+  );
+  const totalCount = rowNumber(countResult.rows[0], "total_count");
+  const rowParams = [...params, pagination.limit, pagination.offset];
+  const limitParam = `$${rowParams.length - 1}`;
+  const offsetParam = `$${rowParams.length}`;
+  const rowsResult = await pool.query(
     `
       SELECT
         e.network,
         e.txid,
-        e.protocol,
-        e.kind,
-        e.status,
-        e.valid,
+        e.status AS event_status,
+        COALESCE(t.status, e.status) AS status,
         e.amount_sats,
         e.block_height,
         e.block_time,
@@ -3799,32 +3820,127 @@ async function exactTokenTransferHistoryPage(
         t.raw_tx,
         cd.ticker,
         cd.registry_address,
-        cd.token_id
-      FROM proof_indexer.events e
-      LEFT JOIN proof_indexer.transactions t
-        ON t.network = e.network
-       AND t.txid = e.txid
-      LEFT JOIN proof_indexer.credit_definitions cd
-        ON cd.network = e.network
-       AND cd.token_id = lower(e.payload->>'tokenId')
-      WHERE ${whereClause}
+        cd.token_id,
+        ARRAY(
+          SELECT ep.address
+          FROM proof_indexer.event_participants ep
+          WHERE ep.event_id = e.event_id
+          ORDER BY ep.role, ep.address
+        ) AS participant_addresses,
+        (
+          SELECT ep.address
+          FROM proof_indexer.event_participants ep
+          WHERE ep.event_id = e.event_id
+            AND lower(ep.role) IN ('sender', 'actor', 'owner')
+          ORDER BY
+            CASE lower(ep.role)
+              WHEN 'sender' THEN 0
+              WHEN 'actor' THEN 1
+              ELSE 2
+            END,
+            ep.address
+          LIMIT 1
+        ) AS participant_sender_address,
+        (
+          SELECT ep.address
+          FROM proof_indexer.event_participants ep
+          WHERE ep.event_id = e.event_id
+            AND lower(ep.role) IN ('recipient', 'counterparty', 'receiver')
+          ORDER BY
+            CASE lower(ep.role)
+              WHEN 'recipient' THEN 0
+              WHEN 'counterparty' THEN 1
+              ELSE 2
+            END,
+            ep.address
+          LIMIT 1
+        ) AS participant_recipient_address
+      ${fromSql}
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC
+      LIMIT ${limitParam}
+      OFFSET ${offsetParam}
     `,
-    params,
+    rowParams,
   );
-  const items = result.rows
+
+  const exactTxids = txidNeedles;
+  const invalidPage =
+    exactTxids.length > 0
+      ? await currentTokenInvalidEventHistoryPage(
+          pool,
+          network,
+          tokenScope,
+          searchParams,
+          {
+            ...pagination,
+            limit: Math.max(pagination.limit, exactTxids.length),
+            offset: 0,
+          },
+        )
+      : null;
+  const canonicalInvalidTxids = [
+    ...new Set(
+      (Array.isArray(invalidPage?.items) ? invalidPage.items : [])
+        .map((item) => normalizedTxid(item?.txid))
+        .filter((txid) => txid && exactTxids.includes(txid)),
+    ),
+  ];
+
+  const items = rowsResult.rows
     .map((row) => {
-      const transfer = tokenTransferFromEventPayload(
-        normalizeEventPayload(canonicalEventPayload(row.payload), row),
+      const payload = normalizeEventPayload(
+        canonicalEventPayload(row.payload),
+        row,
+      );
+      const participantAddresses = Array.isArray(row.participant_addresses)
+        ? row.participant_addresses.map(String).filter(Boolean)
+        : [];
+      const recipientAddress = String(
+        payload.recipientAddress ??
+          payload.to ??
+          payload.counterparty ??
+          row.participant_recipient_address ??
+          "",
+      ).trim();
+      const registryAddress = String(
+        payload.registryAddress ?? row.registry_address ?? "",
+      ).trim();
+      const inferredSender = participantAddresses.find((address) => {
+        const key = address.toLowerCase();
+        return (
+          key !== recipientAddress.toLowerCase() &&
+          key !== registryAddress.toLowerCase()
+        );
+      });
+      const senderAddress = String(
+        payload.senderAddress ??
+          payload.from ??
+          payload.actor ??
+          row.participant_sender_address ??
+          inferredSender ??
+          "",
+      ).trim();
+      let transfer = tokenTransferFromEventPayload(
+        {
+          ...payload,
+          participants:
+            participantAddresses.length > 0
+              ? participantAddresses
+              : payload.participants,
+          recipientAddress,
+          senderAddress,
+        },
         row,
       );
       if (!transfer.senderAddress) {
-        const [senderAddress = ""] = inputAddressesFromRawTransaction(row.raw_tx);
-        if (senderAddress) {
-          return { ...transfer, senderAddress };
+        const [rawSenderAddress = ""] = inputAddressesFromRawTransaction(
+          row.raw_tx,
+        );
+        if (rawSenderAddress) {
+          transfer = { ...transfer, senderAddress: rawSenderAddress };
         }
       }
       return transfer;
@@ -3835,49 +3951,112 @@ async function exactTokenTransferHistoryPage(
         item.tokenId &&
         item.amount > 0 &&
         (item.senderAddress || item.recipientAddress),
-    )
-    .sort(compareTokenItemsByTime);
-  if (items.length === 0) {
-    return null;
-  }
-
-  const totalCount = items.length;
+    );
   const start = Math.min(pagination.offset, totalCount);
   const end = Math.min(totalCount, start + pagination.limit);
   const indexedAt = dateIso(
-    result.rows.reduce((max, row) => {
-      const time = Date.parse(row.event_time ?? row.block_time ?? row.created_at ?? "");
-      return Number.isFinite(time) && time > max ? time : max;
-    }, 0),
+    newestDateIso([scan?.generated_at, countResult.rows[0]?.indexed_at]),
   );
-  const snapshotId = snapshot?.snapshot_id ?? "";
-  const page = {
-    cursor: historyCursor(snapshotId, start),
+
+  return {
+    canonicalInvalidTxids,
+    cursor: historyCursor("", start),
     end,
-    indexedAt: indexedAt || new Date().toISOString(),
-    indexedThroughBlock: indexedThroughBlockFromItems(items),
-    items: items.slice(start, end),
+    indexedAt,
+    indexedThroughBlock:
+      Math.max(
+        rowNumber(scan, "indexed_through_block"),
+        rowNumber(countResult.rows[0], "indexed_through_block"),
+      ) || undefined,
+    items,
     kind: "transfers",
     limit: pagination.limit,
     network,
-    nextCursor: end < totalCount ? historyCursor(snapshotId, end) : "",
+    nextCursor: end < totalCount ? historyCursor("", end) : "",
     page: Math.floor(start / pagination.limit),
     pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
     pageSize: pagination.limit,
     query: pagination.query,
-    source: "proof-indexer-token-transfer-events-exact",
+    source: "proof-indexer-token-transfer-events",
     start,
     totalCount,
   };
-  if (snapshotId) {
-    return {
-      ...page,
-      consistency: snapshot?.consistency ?? undefined,
-      ledgerGeneratedAt: dateIso(snapshot?.generated_at),
-      snapshotId,
-    };
-  }
-  return page;
+}
+
+async function currentTokenInvalidEventHistoryPage(
+  pool,
+  network,
+  tokenScope,
+  searchParams,
+  pagination,
+) {
+  const query = tokenInvalidEventQueryParts(
+    network,
+    tokenScope,
+    searchParams,
+    pagination,
+  );
+  const scan = await latestProofIndexScanMetadata(pool, network);
+  const countResult = await pool.query(
+    `
+      SELECT
+        count(*) AS total_count,
+        max(COALESCE(t.block_height, e.block_height)) AS indexed_through_block,
+        max(COALESCE(t.block_time, e.event_time, e.block_time, e.created_at)) AS indexed_at
+      ${query.fromSql}
+    `,
+    query.params,
+  );
+  const totalCount = rowNumber(countResult.rows[0], "total_count");
+  const rowParams = [
+    ...query.params,
+    pagination.limit,
+    pagination.offset,
+  ];
+  const limitParam = `$${rowParams.length - 1}`;
+  const offsetParam = `$${rowParams.length}`;
+  const rowsResult = await pool.query(
+    `
+      SELECT
+        ${tokenInvalidEventSelectSql()}
+      ${query.fromSql}
+      ORDER BY
+        COALESCE(t.block_time, e.event_time, e.block_time, e.created_at) DESC,
+        e.txid DESC,
+        e.event_id DESC
+      LIMIT ${limitParam}
+      OFFSET ${offsetParam}
+    `,
+    rowParams,
+  );
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  const indexedAt = dateIso(
+    newestDateIso([scan?.generated_at, countResult.rows[0]?.indexed_at]),
+  );
+
+  return {
+    cursor: historyCursor("", start),
+    end,
+    indexedAt,
+    indexedThroughBlock:
+      Math.max(
+        rowNumber(scan, "indexed_through_block"),
+        rowNumber(countResult.rows[0], "indexed_through_block"),
+      ) || undefined,
+    items: rowsResult.rows.map(tokenInvalidEventFromRow),
+    kind: "invalidEvents",
+    limit: pagination.limit,
+    network,
+    nextCursor: end < totalCount ? historyCursor("", end) : "",
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source: "proof-indexer-token-invalid-events",
+    start,
+    totalCount,
+  };
 }
 
 export async function proofIndexTokenHistoryPayload(
@@ -3907,6 +4086,7 @@ export async function proofIndexTokenHistoryPayload(
     .map(normalizedTxid)
     .filter(Boolean);
   if (
+    !eligibility.pagination.snapshotId &&
     exactMarketTxidNeedles.length > 0 &&
     tokenHistoryMarketEventKinds(eligibility.kind).length > 0
   ) {
@@ -3927,16 +4107,118 @@ export async function proofIndexTokenHistoryPayload(
         },
       );
       if (exactMarketPage) {
-        return tokenHistoryPageWithScanCoverage(
-          exactMarketPage,
-          await tokenHistoryScanCoverageAfterSnapshot(
-            pool,
-            network,
-            eligibility.kind,
-            snapshotMetadata,
-          ),
-        );
+        return tokenHistoryPageWithScanCoverage(exactMarketPage, null);
       }
+    }
+  }
+
+  // Unpinned transfer history is a live read-model query. In particular, the
+  // participant index is authoritative for address searches after a targeted
+  // participant repair; falling back to an older embedded snapshot would hide
+  // the repaired transfer again.
+  if (
+    eligibility.kind === "transfers" &&
+    !eligibility.pagination.snapshotId
+  ) {
+    return currentTokenTransferHistoryPage(
+      pool,
+      network,
+      tokenScope,
+      searchParams,
+      eligibility.pagination,
+    );
+  }
+
+  // Invalid credit attempts are live canonical audit rows. Unpinned history
+  // must use the relational participant/ref indexes instead of waiting for a
+  // later embedded token-history snapshot to republish them.
+  if (
+    eligibility.kind === "invalidEvents" &&
+    !eligibility.pagination.snapshotId
+  ) {
+    return currentTokenInvalidEventHistoryPage(
+      pool,
+      network,
+      tokenScope,
+      searchParams,
+      eligibility.pagination,
+    );
+  }
+
+  if (
+    eligibility.kind === "holders" &&
+    eligibility.scope !== "all" &&
+    !eligibility.pagination.snapshotId
+  ) {
+    const scan = await latestProofIndexScanMetadata(pool, network);
+    const page = await proofIndexScopedHolderHistoryPayload(
+      pool,
+      network,
+      eligibility.scope,
+      eligibility.pagination,
+      scan
+        ? {
+            generated_at: scan.generated_at,
+            payload: {},
+            snapshot_id: "",
+          }
+        : null,
+    );
+    return page
+      ? {
+          ...page,
+          indexedThroughBlock:
+            rowNumber(scan, "indexed_through_block") || undefined,
+          source: "proof-indexer-credit-balances",
+        }
+      : null;
+  }
+
+  // Unpinned mint history is a current event-table read. Do not require a
+  // deprecated embedded token-history snapshot before querying canonical
+  // mint rows.
+  if (
+    eligibility.kind === "mints" &&
+    !eligibility.pagination.snapshotId
+  ) {
+    const scan = await latestProofIndexScanMetadata(pool, network);
+    const page = await exactTokenMintHistoryPage(
+      pool,
+      network,
+      tokenScope,
+      searchParams,
+      eligibility.pagination,
+      null,
+    );
+    if (page) {
+      return currentRelationalHistoryPageWithScanCoverage(page, scan);
+    }
+  }
+
+  // Broad unpinned market history is likewise relational. Exact txid market
+  // searches already take the summary-pinned branch above; the default page
+  // must not disappear merely because embedded history blobs are retired.
+  if (
+    eligibility.kind === "market-log" &&
+    !eligibility.pagination.snapshotId &&
+    exactMarketTxidNeedles.length === 0
+  ) {
+    const scan = await latestProofIndexScanMetadata(pool, network);
+    const page = await proofIndexTokenMarketHistoryOverlayPayload(
+      network,
+      tokenScope,
+      eligibility.kind,
+      searchParams,
+      {
+        pagination: eligibility.pagination,
+        snapshot: {
+          generated_at: scan?.generated_at,
+          snapshot_id: "",
+        },
+      },
+    );
+    if (page) {
+      return currentRelationalHistoryPageWithScanCoverage(page, scan);
     }
   }
 
@@ -3950,21 +4232,10 @@ export async function proofIndexTokenHistoryPayload(
     return null;
   }
 
-  if (eligibility.kind === "transfers") {
-    const exactTransferPage = await exactTokenTransferHistoryPage(
-      pool,
-      network,
-      tokenScope,
-      searchParams,
-      eligibility.pagination,
-      snapshot,
-    );
-    if (exactTransferPage) {
-      return exactTransferPage;
-    }
-  }
-
-  if (eligibility.kind === "mints") {
+  if (
+    eligibility.kind === "mints" &&
+    !eligibility.pagination.snapshotId
+  ) {
     const exactMintPage = await exactTokenMintHistoryPage(
       pool,
       network,
@@ -3978,7 +4249,10 @@ export async function proofIndexTokenHistoryPayload(
     }
   }
 
-  if (eligibility.kind === "listings") {
+  if (
+    eligibility.kind === "listings" &&
+    !eligibility.pagination.snapshotId
+  ) {
     const exactListingPage = await exactActiveTokenListingHistoryPage(
       pool,
       network,
@@ -4000,16 +4274,18 @@ export async function proofIndexTokenHistoryPayload(
     searchParams,
     eligibility.pagination,
   );
-  const marketOverlayPage = await proofIndexTokenMarketHistoryOverlayPayload(
-    network,
-    tokenScope,
-    eligibility.kind,
-    searchParams,
-    {
-      pagination: eligibility.pagination,
-      snapshot,
-    },
-  );
+  const marketOverlayPage = eligibility.pagination.snapshotId
+    ? null
+    : await proofIndexTokenMarketHistoryOverlayPayload(
+        network,
+        tokenScope,
+        eligibility.kind,
+        searchParams,
+        {
+          pagination: eligibility.pagination,
+          snapshot,
+        },
+      );
   let page = snapshotPage;
   if (marketOverlayPage) {
     page = mergeTokenHistoryPages(
@@ -4019,19 +4295,15 @@ export async function proofIndexTokenHistoryPayload(
       eligibility.pagination,
     );
   }
-  if (page && eligibility.kind === "listings") {
+  if (
+    page &&
+    eligibility.kind === "listings" &&
+    !eligibility.pagination.snapshotId
+  ) {
     page = await filterClosedTokenListingHistoryPage(pool, page, network);
   }
   if (page) {
-    return tokenHistoryPageWithScanCoverage(
-      page,
-      await tokenHistoryScanCoverageAfterSnapshot(
-        pool,
-        network,
-        eligibility.kind,
-        snapshot,
-      ),
-    );
+    return tokenHistoryPageWithScanCoverage(page, null);
   }
 
   if (
@@ -4067,13 +4339,17 @@ function tokenStateWithSnapshotMetadata(payload, snapshot, source) {
     return null;
   }
   const snapshotId = payload.snapshotId ?? snapshot?.snapshot_id ?? "";
+  const indexedThroughBlock = Math.max(
+    rowNumber(payload, "indexedThroughBlock"),
+    rowNumber(payload?.stats, "indexedThroughBlock"),
+    rowNumber(payload?.metrics, "indexedThroughBlock"),
+  );
   return {
     ...payload,
-    indexedThroughBlock: rowNumber(snapshot, "indexed_through_block"),
+    indexedThroughBlock: indexedThroughBlock || undefined,
     indexedAt: dateIso(
       payload.indexedAt ??
-        snapshot?.payload?.tokenStatePayloadsIndexedAt ??
-        snapshot?.generated_at,
+        snapshot?.payload?.tokenStatePayloadsIndexedAt,
     ),
     source: payload.source ?? source,
     ...(snapshotId ? { snapshotId } : {}),
@@ -4109,15 +4385,640 @@ function tokenStateStats(payload, tokens, mints, transfers, invalidEvents) {
 async function latestProofIndexScanMetadata(pool, network) {
   const result = await pool.query(
     `
-      SELECT indexed_through_block, generated_at
-      FROM proof_indexer.ledger_snapshots
-      WHERE network = $1
-      ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
-      LIMIT 1
+      WITH latest_scan AS (
+        SELECT
+          snapshot_id,
+          generated_at,
+          indexed_through_block,
+          source_hashes,
+          metrics,
+          consistency,
+          payload
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+          AND (
+            source_hashes ? 'blockScan'
+            OR
+            payload->>'source' = 'proof-indexer-block-scan'
+            OR consistency->>'status' LIKE 'block-scan%'
+          )
+        ORDER BY
+          CASE
+            WHEN NULLIF(
+              COALESCE(
+                NULLIF(payload->>'indexedThroughBlockHash', ''),
+                NULLIF(payload->>'blockHash', '')
+              ),
+              ''
+            ) IS NOT NULL THEN 0
+            ELSE 1
+          END,
+          indexed_through_block DESC NULLS LAST,
+          generated_at DESC
+        LIMIT 1
+      ),
+      latest_summary AS (
+        SELECT
+          snapshot_id,
+          generated_at,
+          payload->'summaryPayloads' AS summary_payloads,
+          payload->>'summaryPayloadsIndexedAt' AS summary_indexed_at
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+          AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
+          AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
+          AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+          AND source_hashes ? 'canonicalSummary'
+          AND jsonb_typeof(payload->'summaryPayloads') = 'object'
+          AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+          AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
+          AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+          AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
+          AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+        ORDER BY generated_at DESC
+        LIMIT 1
+      ),
+      confirmed_ids AS (
+        SELECT
+          count(*)::int AS confirmed_id_count,
+          max(GREATEST(
+            COALESCE(r.registered_height, 0),
+            COALESCE(r.updated_height, 0),
+            COALESCE(t.block_height, 0)
+          ))::int AS confirmed_id_max_block
+        FROM proof_indexer.id_records r
+        JOIN proof_indexer.transactions t
+          ON t.network = r.network
+         AND t.txid = r.registration_txid
+         AND t.status = 'confirmed'
+        WHERE r.network = $1
+      ),
+      confirmed_transfers AS (
+        SELECT
+          count(*)::int AS confirmed_transfer_count,
+          max(e.block_height)::int AS confirmed_transfer_max_block
+        FROM proof_indexer.events e
+        WHERE e.network = $1
+          AND e.kind = 'token-transfer'
+          AND e.status = 'confirmed'
+          AND e.valid = true
+      ),
+      worker_meta AS (
+        SELECT value, updated_at
+        FROM proof_indexer.meta
+        WHERE key = 'worker:lastRun'
+        LIMIT 1
+      )
+      SELECT
+        latest_scan.snapshot_id,
+        latest_scan.generated_at,
+        latest_scan.indexed_through_block,
+        latest_scan.source_hashes,
+        latest_scan.metrics,
+        latest_scan.consistency,
+        latest_scan.payload,
+        latest_summary.snapshot_id AS summary_snapshot_id,
+        latest_summary.generated_at AS summary_generated_at,
+        latest_summary.summary_payloads,
+        latest_summary.summary_indexed_at,
+        confirmed_ids.confirmed_id_count,
+        confirmed_ids.confirmed_id_max_block,
+        confirmed_transfers.confirmed_transfer_count,
+        confirmed_transfers.confirmed_transfer_max_block,
+        worker_meta.value AS worker,
+        worker_meta.updated_at AS worker_updated_at
+      FROM confirmed_ids
+      CROSS JOIN confirmed_transfers
+      LEFT JOIN latest_scan ON true
+      LEFT JOIN latest_summary ON true
+      LEFT JOIN worker_meta ON true
     `,
     [network],
   );
   return result.rows[0] ?? null;
+}
+
+export async function proofIndexOperationalStatusPayload(network) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+  const row = await latestProofIndexScanMetadata(pool, network);
+  if (!row) {
+    return null;
+  }
+  const payload = objectRecord(row.payload);
+  const metrics = objectRecord(row.metrics);
+  const consistency = objectRecord(row.consistency);
+  const worker = objectRecord(row.worker);
+  const summaryPayloads = objectRecord(row.summary_payloads);
+  const indexedThroughBlock = rowNumber(row, "indexed_through_block");
+  const summaryCoverageByKey = Object.fromEntries(
+    [
+      "growthSummary",
+      "infinitySummary",
+      "marketplaceSummary",
+      "workFloor",
+      "workSummary",
+    ].map(
+      (key) => {
+        const item = objectRecord(summaryPayloads[key]);
+        const parentCoverage = Math.max(
+          safeBlockHeight(item.indexedThroughBlock),
+          safeBlockHeight(item.metrics?.indexedThroughBlock),
+          safeBlockHeight(item.stats?.indexedThroughBlock),
+        );
+        const nested =
+          key === "workSummary"
+            ? objectRecord(item.floor)
+            : key === "growthSummary" || key === "marketplaceSummary"
+              ? objectRecord(item.workFloor)
+              : null;
+        const nestedCoverage = nested
+          ? Math.max(
+              safeBlockHeight(nested.indexedThroughBlock),
+              safeBlockHeight(nested.metrics?.indexedThroughBlock),
+              safeBlockHeight(nested.stats?.indexedThroughBlock),
+            )
+          : key === "workFloor" || key === "infinitySummary"
+            ? parentCoverage
+            : 0;
+        return [
+          key,
+          parentCoverage > 0 && nestedCoverage > 0
+            ? Math.min(parentCoverage, nestedCoverage)
+            : 0,
+        ];
+      },
+    ),
+  );
+  const summaryCoverageValues = Object.values(summaryCoverageByKey);
+  const summaryIndexedThroughBlock = summaryCoverageValues.every(
+    (height) => height > 0,
+  )
+    ? Math.min(...summaryCoverageValues)
+    : 0;
+  return {
+    indexedAt: row.generated_at ? dateIso(row.generated_at) : undefined,
+    indexedThroughBlock,
+    network,
+    readModels: {
+      confirmedIds: {
+        count: rowNumber(row, "confirmed_id_count"),
+        maxBlock: rowNumber(row, "confirmed_id_max_block"),
+      },
+      confirmedTransfers: {
+        count: rowNumber(row, "confirmed_transfer_count"),
+        maxBlock: rowNumber(row, "confirmed_transfer_max_block"),
+      },
+    },
+    summarySnapshot: {
+      coverageByKey: summaryCoverageByKey,
+      eligible:
+        Boolean(String(row.summary_snapshot_id ?? "")) &&
+        summaryIndexedThroughBlock > 0,
+      generatedAt: row.summary_generated_at
+        ? dateIso(row.summary_generated_at)
+        : undefined,
+      indexedAt: row.summary_indexed_at
+        ? dateIso(row.summary_indexed_at)
+        : undefined,
+      indexedThroughBlock: summaryIndexedThroughBlock,
+      snapshotId: String(row.summary_snapshot_id ?? ""),
+    },
+    scan: {
+      blockHash: String(
+        payload.indexedThroughBlockHash ||
+          payload.blockHash ||
+          objectRecord(row.source_hashes).blockHash ||
+          "",
+      ),
+      complete:
+        payload.complete === true ||
+        metrics.complete === true ||
+        consistency.complete === true,
+      snapshotId: String(row.snapshot_id ?? ""),
+      stopReason: String(payload.stopReason ?? metrics.stopReason ?? ""),
+      tipHeight:
+        rowNumber(payload, "tipHeight") ||
+        rowNumber(metrics, "tipHeight") ||
+        indexedThroughBlock,
+    },
+    source: "proof-indexer-block-scan",
+    worker:
+      Object.keys(worker).length > 0
+        ? {
+            ...worker,
+            updatedAt: row.worker_updated_at
+              ? dateIso(row.worker_updated_at)
+              : worker.updatedAt,
+          }
+        : null,
+  };
+}
+
+async function canonicalStateMetaFromPool(pool, network) {
+  const result = await pool.query(
+    `
+      SELECT key, value, updated_at
+      FROM proof_indexer.meta
+      WHERE key = ANY($1::text[])
+    `,
+    [["canonical:rebuild", "canonical:fault"]],
+  );
+  const values = new Map(
+    result.rows.map((row) => [String(row.key ?? ""), objectRecord(row.value)]),
+  );
+  const forNetwork = (key) => {
+    const value = values.get(key);
+    if (!value || value.network !== network) {
+      return null;
+    }
+    return value;
+  };
+  return {
+    fault: forNetwork("canonical:fault"),
+    rebuild: forNetwork("canonical:rebuild"),
+  };
+}
+
+export async function proofIndexCanonicalStateMetaPayload(network) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+  return canonicalStateMetaFromPool(pool, network);
+}
+
+function canonicalCoreScriptType(type) {
+  return {
+    nulldata: "op_return",
+    pubkeyhash: "p2pkh",
+    scripthash: "p2sh",
+    witness_v0_keyhash: "v0_p2wpkh",
+    witness_v0_scripthash: "v0_p2wsh",
+    witness_v1_taproot: "v1_p2tr",
+  }[String(type ?? "")] ?? String(type ?? "");
+}
+
+function canonicalCoreValueSats(value, label) {
+  const amount = Number(value);
+  const sats = Math.round(amount * 100_000_000);
+  if (!Number.isFinite(amount) || amount < 0 || !Number.isSafeInteger(sats)) {
+    throw new Error(`Canonical raw transaction has invalid ${label}.`);
+  }
+  return sats;
+}
+
+function canonicalCoreOutput(output, label) {
+  const value = objectRecord(output);
+  const script = objectRecord(value.scriptPubKey);
+  return {
+    scriptpubkey: String(script.hex ?? ""),
+    scriptpubkey_address: String(
+      script.address ?? (Array.isArray(script.addresses) ? script.addresses[0] : "") ?? "",
+    ),
+    scriptpubkey_asm: String(script.asm ?? ""),
+    scriptpubkey_type: canonicalCoreScriptType(script.type),
+    value: canonicalCoreValueSats(value.value, label),
+  };
+}
+
+function canonicalRawTransactionFromRow(row, network) {
+  const raw = objectRecord(row?.raw_tx);
+  const marker = objectRecord(raw.canonicalBlockScan);
+  const { canonicalBlockScan: _marker, ...transaction } = raw;
+  const blockHeight = rowNumber(row, "block_height") || rowNumber(marker, "height");
+  const rawBlockIndex = Number(transaction._powBlockIndex);
+  const blockTimeMs = Date.parse(row?.block_time ?? "");
+  const blockTime = Number.isFinite(Number(transaction.blocktime))
+    ? Number(transaction.blocktime)
+    : Number.isFinite(blockTimeMs)
+      ? Math.floor(blockTimeMs / 1000)
+      : undefined;
+  const blockHash = String(
+    transaction.blockhash ?? row?.block_hash ?? marker.blockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const txid = String(transaction.txid ?? row?.txid ?? "").trim().toLowerCase();
+  if (
+    marker.network !== network ||
+    rowNumber(marker, "height") !== blockHeight ||
+    String(marker.blockHash ?? "").trim().toLowerCase() !== blockHash ||
+    String(row?.txid ?? "").trim().toLowerCase() !== txid ||
+    !/^[0-9a-f]{64}$/u.test(txid) ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !Number.isSafeInteger(rawBlockIndex) ||
+    rawBlockIndex < 0 ||
+    !Array.isArray(transaction.vin) ||
+    !Array.isArray(transaction.vout)
+  ) {
+    throw new Error(`Malformed canonical raw transaction ${row?.txid ?? "unknown"}.`);
+  }
+  const vin = transaction.vin.map((input, index) => {
+    const value = objectRecord(input);
+    const scriptSig = objectRecord(value.scriptSig);
+    const prevout = value.prevout
+      ? canonicalCoreOutput(value.prevout, `vin ${index} prevout value`)
+      : undefined;
+    return {
+      ...(prevout ? { prevout } : {}),
+      scriptsig: String(scriptSig.hex ?? value.scriptsig ?? ""),
+      scriptsig_asm: String(scriptSig.asm ?? value.scriptsig_asm ?? ""),
+      sequence: Number(value.sequence ?? 0),
+      txid: String(value.txid ?? "").trim().toLowerCase(),
+      vout: Number(value.vout ?? -1),
+      witness: Array.isArray(value.txinwitness)
+        ? value.txinwitness
+        : Array.isArray(value.witness)
+          ? value.witness
+          : [],
+    };
+  });
+  const vout = transaction.vout.map((output, index) =>
+    canonicalCoreOutput(output, `vout ${index} value`),
+  );
+  const rawFee = Number(transaction.fee);
+  const relationalFee = Number(row?.fee_sats);
+  const fee = Number.isSafeInteger(relationalFee) && relationalFee >= 0
+    ? relationalFee
+    : Number.isFinite(rawFee) && rawFee >= 0
+      ? canonicalCoreValueSats(rawFee, "fee")
+      : 0;
+  return {
+    _powBlockIndex: rawBlockIndex,
+    blockhash: blockHash,
+    blocktime: blockTime,
+    confirmations:
+      Number.isFinite(Number(transaction.confirmations)) &&
+      Number(transaction.confirmations) > 0
+        ? Number(transaction.confirmations)
+        : 1,
+    fee,
+    height: blockHeight,
+    locktime: Number(transaction.locktime ?? row?.locktime ?? 0),
+    size: Number(transaction.size ?? 0),
+    status: {
+      block_hash: blockHash,
+      block_height: blockHeight,
+      block_time: blockTime,
+      confirmed: true,
+    },
+    txid,
+    version: Number(transaction.version ?? row?.version ?? 0),
+    vin,
+    vout,
+    weight: Number(transaction.weight ?? row?.weight ?? 0),
+  };
+}
+
+function canonicalTransactionFault(network, code, message, details = {}) {
+  return {
+    active: true,
+    code,
+    detectedAt: new Date().toISOString(),
+    message,
+    network,
+    status: "fault",
+    ...details,
+  };
+}
+
+export async function proofIndexCanonicalTransactionsPayload(
+  network,
+  indexedThroughBlock,
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+  const requestedHeight = Number(indexedThroughBlock);
+  const boundedHeight =
+    Number.isSafeInteger(requestedHeight) && requestedHeight >= 0
+      ? requestedHeight
+      : 0;
+  const [checkpointResult, stateMeta] = await Promise.all([
+    pool.query(
+      `
+        SELECT
+          indexed_through_block,
+          payload,
+          source_hashes
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+          AND (
+            source_hashes ? 'blockScan'
+            OR payload->>'source' = 'proof-indexer-block-scan'
+          )
+          AND COALESCE(
+            NULLIF(payload->>'indexedThroughBlockHash', ''),
+            NULLIF(payload->>'blockHash', '')
+          ) IS NOT NULL
+          AND ($2::integer <= 0 OR indexed_through_block = $2)
+        ORDER BY indexed_through_block DESC, generated_at DESC
+        LIMIT 1
+      `,
+      [network, boundedHeight],
+    ),
+    canonicalStateMetaFromPool(pool, network),
+  ]);
+  let checkpoint = checkpointResult.rows[0];
+  const rebuild = stateMeta.rebuild;
+  if (
+    !checkpoint &&
+    boundedHeight > 0 &&
+    rebuild?.network === network &&
+    ["active", "complete"].includes(String(rebuild?.status ?? "")) &&
+    boundedHeight > Number(rebuild?.bootstrapHeight) &&
+    boundedHeight <= Number(rebuild?.indexedThroughBlock)
+  ) {
+    const blockResult = await pool.query(
+      `
+        SELECT height, block_hash
+        FROM proof_indexer.blocks
+        WHERE network = $1
+          AND height = $2
+          AND canonical = true
+        LIMIT 1
+      `,
+      [network, boundedHeight],
+    );
+    const block = blockResult.rows[0];
+    const blockHash = String(block?.block_hash ?? "").trim().toLowerCase();
+    if (
+      Number(block?.height) === boundedHeight &&
+      /^[0-9a-f]{64}$/u.test(blockHash)
+    ) {
+      checkpoint = {
+        indexed_through_block: boundedHeight,
+        payload: { indexedThroughBlockHash: blockHash },
+        source_hashes: { blockScan: blockHash },
+      };
+    }
+  }
+  const actualHeight = rowNumber(checkpoint, "indexed_through_block");
+  const checkpointPayload = objectRecord(checkpoint?.payload);
+  const checkpointHash = String(
+    checkpointPayload.indexedThroughBlockHash ?? checkpointPayload.blockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  let fault = stateMeta.fault;
+  if (!rebuild || rebuild.network !== network) {
+    fault = canonicalTransactionFault(
+      network,
+      "CANONICAL_REBUILD_META_MISSING",
+      "Canonical rebuild metadata is unavailable for this network.",
+    );
+  } else if (
+    boundedHeight > 0 &&
+    (boundedHeight < Number(rebuild.bootstrapHeight) ||
+      boundedHeight > Number(rebuild.indexedThroughBlock))
+  ) {
+    fault = canonicalTransactionFault(
+      network,
+      "CANONICAL_HEIGHT_OUTSIDE_REBUILD",
+      "Requested canonical height is outside the rebuilt range.",
+      { requestedHeight: boundedHeight },
+    );
+  }
+  if (!checkpoint || !/^[0-9a-f]{64}$/u.test(checkpointHash)) {
+    fault = fault ?? canonicalTransactionFault(
+      network,
+      "CANONICAL_CHECKPOINT_MISSING",
+      "An exact hashed canonical checkpoint is unavailable.",
+      { requestedHeight: boundedHeight },
+    );
+    return {
+      checkpointHash: "",
+      fault,
+      indexedThroughBlock: 0,
+      rebuild,
+      transactions: [],
+    };
+  }
+  if (fault?.active) {
+    return {
+      checkpointHash,
+      fault,
+      indexedThroughBlock: actualHeight,
+      rebuild,
+      transactions: [],
+    };
+  }
+
+  const fromHeight = Number(rebuild?.fromHeight);
+  const bootstrapHeight = Number(rebuild?.bootstrapHeight);
+  const bootstrapHash = String(rebuild?.bootstrapHash ?? "").toLowerCase();
+  const chainResult = actualHeight > bootstrapHeight
+    ? await pool.query(
+        `
+          WITH RECURSIVE canonical_chain AS (
+            SELECT height, block_hash, previous_block_hash
+            FROM proof_indexer.blocks
+            WHERE network = $1
+              AND height = $2
+              AND block_hash = $3
+              AND canonical = true
+            UNION ALL
+            SELECT previous.height, previous.block_hash, previous.previous_block_hash
+            FROM proof_indexer.blocks previous
+            JOIN canonical_chain current
+              ON previous.network = $1
+             AND previous.block_hash = current.previous_block_hash
+             AND previous.height = current.height - 1
+             AND previous.canonical = true
+            WHERE current.height > $4
+          )
+          SELECT height, block_hash, previous_block_hash
+          FROM canonical_chain
+          ORDER BY height ASC
+        `,
+        [network, actualHeight, checkpointHash, fromHeight],
+      )
+    : { rows: [] };
+  const expectedBlockCount = Math.max(0, actualHeight - bootstrapHeight);
+  if (
+    !Number.isSafeInteger(fromHeight) ||
+    !Number.isSafeInteger(bootstrapHeight) ||
+    !/^[0-9a-f]{64}$/u.test(bootstrapHash) ||
+    chainResult.rows.length !== expectedBlockCount ||
+    (expectedBlockCount > 0 &&
+      (Number(chainResult.rows[0]?.height) !== fromHeight ||
+        String(chainResult.rows[0]?.previous_block_hash ?? "").toLowerCase() !==
+          bootstrapHash))
+  ) {
+    fault = fault ?? canonicalTransactionFault(
+      network,
+      "CANONICAL_BLOCK_CHAIN_INCOMPLETE",
+      "Canonical block lineage does not connect to the rebuild bootstrap.",
+      { actualHeight, fromHeight },
+    );
+  }
+  const canonicalBlocks = new Map(
+    chainResult.rows.map((row) => [
+      Number(row.height),
+      String(row.block_hash ?? "").toLowerCase(),
+    ]),
+  );
+
+  const transactionsResult = await pool.query(
+    `
+      SELECT
+        txid,
+        block_hash,
+        block_height,
+        block_time,
+        fee_sats,
+        locktime,
+        raw_tx
+      FROM proof_indexer.transactions
+      WHERE network = $1
+        AND status = 'confirmed'
+        AND block_height BETWEEN $2 AND $3
+        AND jsonb_typeof(raw_tx->'canonicalBlockScan') = 'object'
+        AND raw_tx->'canonicalBlockScan'->>'network' = $1
+      ORDER BY
+        block_height ASC,
+        CASE
+          WHEN raw_tx->>'_powBlockIndex' ~ '^[0-9]+$'
+            THEN (raw_tx->>'_powBlockIndex')::integer
+          ELSE 2147483647
+        END ASC,
+        txid ASC
+    `,
+    [network, fromHeight, actualHeight],
+  );
+  const transactions = [];
+  const positions = new Set();
+  try {
+    for (const row of transactionsResult.rows) {
+      if (canonicalBlocks.get(Number(row.block_height)) !== row.block_hash) {
+        throw new Error(`Transaction ${row.txid} is not on the checkpoint chain.`);
+      }
+      const transaction = canonicalRawTransactionFromRow(row, network);
+      const position = `${transaction.height}:${transaction._powBlockIndex}`;
+      if (positions.has(position)) {
+        throw new Error(`Duplicate canonical transaction position ${position}.`);
+      }
+      positions.add(position);
+      transactions.push(transaction);
+    }
+  } catch (error) {
+    fault = fault ?? canonicalTransactionFault(
+      network,
+      "CANONICAL_RAW_TRANSACTION_INVALID",
+      error?.message ?? String(error),
+    );
+  }
+  return {
+    checkpointHash,
+    fault,
+    indexedThroughBlock: actualHeight,
+    rebuild,
+    transactions: fault?.active ? [] : transactions,
+  };
 }
 
 function tokenDefinitionFromRow(row) {
@@ -4447,6 +5348,272 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
     .sort(compareTokenItemsByTime);
 }
 
+function tokenInvalidEventFromRow(row) {
+  const payload = normalizeEventPayload(
+    canonicalEventPayload(row?.payload),
+    row,
+  );
+  const participantDetails = (Array.isArray(row?.participants)
+    ? row.participants
+    : []
+  )
+    .map((participant) => ({
+      address: String(participant?.address ?? "").trim(),
+      powid: String(participant?.powid ?? "").trim(),
+      role: String(participant?.role ?? "").trim().toLowerCase(),
+    }))
+    .filter((participant) => participant.address);
+  const payloadParticipants = (Array.isArray(payload.participants)
+    ? payload.participants
+    : []
+  )
+    .map((participant) =>
+      String(
+        participant && typeof participant === "object"
+          ? participant.address
+          : participant,
+      ).trim(),
+    )
+    .filter(Boolean);
+  const participants = [
+    ...new Set([
+      ...payloadParticipants,
+      ...participantDetails.map((participant) => participant.address),
+    ]),
+  ];
+  const addressForRoles = (...roles) =>
+    participantDetails.find((participant) => roles.includes(participant.role))
+      ?.address ?? "";
+  const firstText = (...values) =>
+    values.map((value) => String(value ?? "").trim()).find(Boolean) ?? "";
+  const effectiveStatus = String(
+    row?.effective_status ?? row?.status ?? payload.status ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const validationErrors = Array.isArray(row?.validation_errors)
+    ? row.validation_errors.map(String).filter(Boolean)
+    : [];
+  const senderAddress = firstText(
+    payload.senderAddress,
+    payload.from,
+    payload.actor,
+    addressForRoles("sender", "actor"),
+  );
+  const recipientAddress = firstText(
+    payload.recipientAddress,
+    payload.to,
+    payload.counterparty,
+    addressForRoles("recipient", "counterparty"),
+  );
+  const registryAddress = firstText(
+    payload.registryAddress,
+    row?.registry_address,
+    addressForRoles("registry"),
+  );
+
+  return {
+    ...payload,
+    amount:
+      rowNumber(payload, "amount") || rowNumber(payload, "tokenAmount"),
+    blockHash: String(row?.block_hash ?? payload.blockHash ?? "")
+      .trim()
+      .toLowerCase(),
+    blockHeight:
+      rowNumber(row, "transaction_block_height") ||
+      rowNumber(row, "block_height") ||
+      rowNumber(payload, "blockHeight"),
+    confirmed: effectiveStatus === "confirmed",
+    createdAt: dateIso(
+      payload.createdAt ??
+        row?.transaction_block_time ??
+        row?.block_time ??
+        row?.event_time ??
+        row?.created_at,
+    ),
+    kind: String(payload.kind ?? row?.kind ?? "token-event-invalid")
+      .trim()
+      .toLowerCase(),
+    network: payload.network ?? row?.network,
+    participantDetails,
+    participants,
+    protocol: String(payload.protocol ?? row?.protocol ?? "pwt1")
+      .trim()
+      .toLowerCase(),
+    reason: String(payload.reason ?? validationErrors[0] ?? "").trim(),
+    recipientAddress,
+    registryAddress,
+    senderAddress,
+    status: effectiveStatus,
+    ticker: String(row?.ticker ?? payload.ticker ?? "").trim(),
+    tokenId: String(payload.tokenId ?? row?.token_id ?? "")
+      .trim()
+      .toLowerCase(),
+    txid: String(payload.txid ?? row?.txid ?? "").trim().toLowerCase(),
+    valid: false,
+    validationErrors,
+  };
+}
+
+function tokenInvalidEventSelectSql() {
+  return `
+    e.network,
+    e.txid,
+    e.protocol,
+    e.kind,
+    e.status,
+    e.valid,
+    e.validation_errors,
+    e.block_height,
+    e.block_time,
+    e.event_time,
+    e.created_at,
+    e.payload,
+    t.status AS effective_status,
+    t.block_hash,
+    t.block_height AS transaction_block_height,
+    t.block_time AS transaction_block_time,
+    cd.ticker,
+    cd.registry_address,
+    COALESCE(
+      cd.token_id,
+      cl_invalid.token_id,
+      lower(e.payload->>'tokenId')
+    ) AS token_id,
+    COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'address', ep.address,
+            'role', ep.role,
+            'powid', ep.powid
+          )
+          ORDER BY ep.role, ep.address
+        )
+        FROM proof_indexer.event_participants ep
+        WHERE ep.event_id = e.event_id
+      ),
+      '[]'::jsonb
+    ) AS participants
+  `;
+}
+
+function tokenInvalidEventQueryParts(
+  network,
+  tokenScope,
+  searchParams = new URLSearchParams(),
+  pagination = { query: "" },
+) {
+  const scope = tokenScopeKey(tokenScope);
+  const params = [network];
+  const conditions = [
+    "e.network = $1",
+    "e.protocol = 'pwt1'",
+    "e.status = 'confirmed'",
+    "t.status = 'confirmed'",
+    "(e.valid = false OR e.kind = 'token-event-invalid')",
+  ];
+
+  if (scope && scope !== "all") {
+    params.push(scope);
+    const scopeParam = `$${params.length}`;
+    conditions.push(`(
+      lower(e.payload->>'tokenId') = ${scopeParam}
+      OR lower(cl_invalid.token_id) = ${scopeParam}
+      OR lower(cd.token_id) = ${scopeParam}
+      OR lower(cd.ticker) = lower(${scopeParam})
+      OR lower(e.payload->>'ticker') = lower(${scopeParam})
+    )`);
+  }
+
+  const needles = tokenHistoryFilterNeedles(searchParams, pagination);
+  const txidNeedles = [
+    ...new Set(needles.map(normalizedTxid).filter(Boolean)),
+  ];
+  if (txidNeedles.length > 0) {
+    params.push(txidNeedles);
+    const txidParam = `$${params.length}`;
+    conditions.push(`(
+        lower(e.txid) = ANY(${txidParam}::text[])
+        OR lower(e.payload->>'txid') = ANY(${txidParam}::text[])
+        OR EXISTS (
+          SELECT 1
+          FROM proof_indexer.event_refs erq
+          WHERE erq.event_id = e.event_id
+            AND lower(erq.ref_value) = ANY(${txidParam}::text[])
+        )
+      )`);
+  }
+
+  for (const needle of needles.filter((value) => !normalizedTxid(value))) {
+    params.push(`%${needle}%`);
+    const needleParam = `$${params.length}`;
+    conditions.push(`(
+      lower(e.txid) LIKE ${needleParam}
+      OR lower(e.payload::text) LIKE ${needleParam}
+      OR lower(COALESCE(cd.token_id, '')) LIKE ${needleParam}
+      OR lower(COALESCE(cd.ticker, '')) LIKE ${needleParam}
+      OR lower(COALESCE(cd.registry_address, '')) LIKE ${needleParam}
+      OR EXISTS (
+        SELECT 1
+        FROM proof_indexer.event_participants epq
+        WHERE epq.event_id = e.event_id
+          AND (
+            lower(epq.address) LIKE ${needleParam}
+            OR lower(COALESCE(epq.powid, '')) LIKE ${needleParam}
+          )
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM proof_indexer.event_refs erq
+        WHERE erq.event_id = e.event_id
+          AND lower(erq.ref_value) LIKE ${needleParam}
+      )
+    )`);
+  }
+
+  return {
+    fromSql: `
+      FROM proof_indexer.events e
+      JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
+      LEFT JOIN proof_indexer.credit_listings cl_invalid
+        ON cl_invalid.network = e.network
+       AND cl_invalid.listing_id = lower(e.payload->>'listingId')
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = e.network
+       AND cd.token_id = COALESCE(
+         lower(e.payload->>'tokenId'),
+         cl_invalid.token_id
+       )
+      WHERE ${conditions.join(" AND ")}
+    `,
+    params,
+  };
+}
+
+async function proofIndexTokenInvalidEventsFromTables(pool, network, scope) {
+  const query = tokenInvalidEventQueryParts(network, scope);
+  const result = await pool.query(
+    `
+      SELECT
+        ${tokenInvalidEventSelectSql()}
+      ${query.fromSql}
+      ORDER BY
+        COALESCE(t.block_time, e.event_time, e.block_time, e.created_at) DESC,
+        e.txid DESC,
+        e.event_id DESC
+      LIMIT ${TOKEN_STATE_EVENT_READ_LIMIT}
+    `,
+    query.params,
+  );
+  return result.rows
+    .map(tokenInvalidEventFromRow)
+    .filter((item) => item.txid && item.confirmed && item.valid === false)
+    .sort(compareTokenItemsByTime);
+}
+
 async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
   const scoped = scope && scope !== "all";
   const result = await pool.query(
@@ -4525,7 +5692,7 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
   };
 }
 
-function uniqueTokenItems(items, keyForItem) {
+function uniqueTokenItems(items, keyForItem, mergeItems = null) {
   const merged = new Map();
   for (const item of Array.isArray(items) ? items : []) {
     const key = keyForItem(item);
@@ -4533,6 +5700,10 @@ function uniqueTokenItems(items, keyForItem) {
       continue;
     }
     const current = merged.get(key);
+    if (current && typeof mergeItems === "function") {
+      merged.set(key, mergeItems(current, item));
+      continue;
+    }
     if (
       !current ||
       (item.confirmed && !current.confirmed) ||
@@ -4552,21 +5723,35 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
   }
 
   const tokenIds = tokens.map((token) => token.tokenId);
-  const [holders, mintRows, listingProjection, transfers, marketEvents, scan] =
-    await Promise.all([
-      proofIndexTokenHoldersFromTables(pool, network, tokenIds, scope),
-      proofIndexTokenMintRows(
-        pool,
-        network,
-        scope,
-        new URLSearchParams(),
-        { limit: TOKEN_STATE_EVENT_READ_LIMIT, offset: 0, page: 0, query: "", snapshotId: "" },
-      ),
-      proofIndexTokenListingsFromTables(pool, network, scope),
-      proofIndexTokenTransferEventsFromTables(pool, network, scope),
-      proofIndexTokenMarketEventsFromTables(pool, network, scope),
-      latestProofIndexScanMetadata(pool, network),
-    ]);
+  const [
+    holders,
+    mintRows,
+    listingProjection,
+    transfers,
+    invalidEvents,
+    marketEvents,
+    scan,
+  ] = await Promise.all([
+    proofIndexTokenHoldersFromTables(pool, network, tokenIds, scope),
+    proofIndexTokenMintRows(
+      pool,
+      network,
+      scope,
+      new URLSearchParams(),
+      {
+        limit: TOKEN_STATE_EVENT_READ_LIMIT,
+        offset: 0,
+        page: 0,
+        query: "",
+        snapshotId: "",
+      },
+    ),
+    proofIndexTokenListingsFromTables(pool, network, scope),
+    proofIndexTokenTransferEventsFromTables(pool, network, scope),
+    proofIndexTokenInvalidEventsFromTables(pool, network, scope),
+    proofIndexTokenMarketEventsFromTables(pool, network, scope),
+    latestProofIndexScanMetadata(pool, network),
+  ]);
 
   const mints = mintRows
     .map((row) =>
@@ -4627,8 +5812,8 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     [...marketEvents.closedListings, ...listingProjection.closedListings],
     (listing) =>
       `${listing.network ?? network}:${listing.listingId}:${listing.closedTxid ?? listing.txid}`,
+    mergeTokenListingRecord,
   );
-  const invalidEvents = [];
   const confirmedSupply = holders.reduce(
     (total, holder) => total + Number(holder.balance ?? 0),
     0,
@@ -4651,6 +5836,7 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     rowNumber(scan, "indexed_through_block"),
     indexedThroughBlockFromItems(mints) ?? 0,
     indexedThroughBlockFromItems(transfers) ?? 0,
+    indexedThroughBlockFromItems(invalidEvents) ?? 0,
     indexedThroughBlockFromItems(sales) ?? 0,
     indexedThroughBlockFromItems(closedListings) ?? 0,
   );
@@ -4659,6 +5845,7 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     ...holders.map((holder) => holder.updatedAt),
     ...mints.map((mint) => mint.createdAt),
     ...transfers.map((transfer) => transfer.createdAt),
+    ...invalidEvents.map((event) => event.createdAt),
     ...sales.map((sale) => sale.createdAt),
     ...closedListings.map((listing) => listing.closedAt ?? listing.createdAt),
   ]);
@@ -4775,6 +5962,14 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
   }
   const currentTablePayload = () =>
     proofIndexTokenPayloadFromCurrentTables(pool, network, eligibility.scope);
+
+  // Stable, unscoped token-state reads are live relational projections. The
+  // block scanner updates events and balances atomically, while embedded JSON
+  // snapshots are retained only as last-good/pinned audit material.
+  const currentPayload = await currentTablePayload();
+  if (currentPayload) {
+    return currentPayload;
+  }
 
   if (eligibility.scope !== "all") {
     const scopedSnapshot = await tokenStateSnapshotForScope(
@@ -5402,7 +6597,9 @@ async function proofIndexScopedHolderHistoryPayload(
     cursor,
     end,
     indexedAt,
-    indexedThroughBlock: rowNumber(snapshot, "indexed_through_block"),
+    indexedThroughBlock:
+      tokenHistoryEmbeddedIndexedThroughBlock(snapshot, "holders") ||
+      undefined,
     items: rowsResult.rows.map((row) => ({
       address: row.address,
       balance: Number(row.confirmed_balance),
@@ -5420,6 +6617,728 @@ async function proofIndexScopedHolderHistoryPayload(
     totalCount,
     snapshotId,
   };
+}
+
+function confirmedIdRecordFromRow(row, network) {
+  const blockHeight =
+    rowNumber(row, "registered_height") ||
+    rowNumber(row, "block_height") ||
+    undefined;
+  return {
+    amountSats: ID_REGISTRATION_PRICE_SATS,
+    blockHeight,
+    confirmed: true,
+    createdAt: dateIso(
+      row.confirmed_at ?? row.block_time ?? row.updated_at,
+    ),
+    id: String(row.display_id || row.id_lower),
+    lastEventTxid: String(row.last_event_txid || row.registration_txid),
+    network,
+    ownerAddress: String(row.owner_address || ""),
+    pgpKey: row.pgp_public_key || undefined,
+    receiveAddress: String(row.receive_address || row.owner_address || ""),
+    txid: String(row.registration_txid || ""),
+    updatedHeight:
+      rowNumber(row, "updated_height") || blockHeight || undefined,
+  };
+}
+
+async function confirmedIdRecordsFromCurrentTables(pool, network, idLower = "") {
+  const normalizedId = String(idLower ?? "").trim().toLowerCase();
+  const params = [network];
+  const idCondition = normalizedId ? "AND r.id_lower = $2" : "";
+  if (normalizedId) {
+    params.push(normalizedId);
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        r.network,
+        r.id_lower,
+        r.display_id,
+        r.owner_address,
+        r.receive_address,
+        r.pgp_public_key,
+        r.registration_txid,
+        r.last_event_txid,
+        r.registered_height,
+        r.updated_height,
+        r.updated_at,
+        t.confirmed_at,
+        t.block_height,
+        t.block_time
+      FROM proof_indexer.id_records r
+      JOIN proof_indexer.transactions t
+        ON t.network = r.network
+       AND t.txid = r.registration_txid
+       AND t.status = 'confirmed'
+      WHERE r.network = $1
+        ${idCondition}
+      ORDER BY r.registered_height ASC NULLS LAST, r.registration_txid ASC
+    `,
+    params,
+  );
+  return result.rows.map((row) => confirmedIdRecordFromRow(row, network));
+}
+
+function idLifecycleStateFromItems(items, network, id) {
+  const idLower = normalizedLowerText(id);
+  const matchesTargetId = (value) =>
+    !idLower || normalizedLowerText(value) === idLower;
+  const listingsById = new Map();
+  const salesByTxid = new Map();
+  const activity = [];
+  const supportedKinds = new Set([
+    "id-list",
+    "id-seal",
+    "id-delist",
+    "id-buy",
+    "id-transfer",
+  ]);
+  const eventNumber = (item, key, fallback = Number.MAX_SAFE_INTEGER) => {
+    const value = Number(item?.[key]);
+    return Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+  };
+  const orderedItems = (Array.isArray(items) ? items : [])
+    .filter(
+      (item) =>
+        item?.confirmed === true &&
+        supportedKinds.has(normalizedLowerText(item?.kind)),
+    )
+    .sort(
+      (left, right) =>
+        eventNumber(left, "blockHeight") - eventNumber(right, "blockHeight") ||
+        eventNumber(left, "blockIndex") - eventNumber(right, "blockIndex") ||
+        eventNumber(left, "_powEventIndex") -
+          eventNumber(right, "_powEventIndex") ||
+        eventNumber(left, "eventId") - eventNumber(right, "eventId") ||
+        normalizedLowerText(left?.txid).localeCompare(
+          normalizedLowerText(right?.txid),
+        ),
+    );
+
+  for (const item of orderedItems) {
+    const kind = normalizedLowerText(item?.kind);
+    const itemId = normalizedLowerText(item?.id);
+    const listingId = normalizedTxid(
+      item?.listingId ?? (kind === "id-list" ? item?.txid : ""),
+    );
+
+    if (kind === "id-list") {
+      if (!listingId || !itemId || !matchesTargetId(itemId)) {
+        continue;
+      }
+      const saleAuthorization = objectRecord(item?.saleAuthorization);
+      const authorizationVersion = normalizedLowerText(
+        saleAuthorization.version,
+      );
+      const listingVersion =
+        normalizedLowerText(item?.listingVersion) ||
+        ({
+          "pwid-sale-v1": "list2",
+          "pwid-sale-v2": "list3",
+          "pwid-sale-v3": "list4",
+          "pwid-sale-v4": "list5",
+        }[authorizationVersion] ?? "");
+      const sellerAddress = normalizedText(
+        item?.sellerAddress ?? saleAuthorization.sellerAddress,
+      );
+      listingsById.set(listingId, {
+        ...item,
+        anchorSigHashType:
+          item?.anchorSigHashType ?? saleAuthorization.anchorSigHashType,
+        anchorSignature:
+          item?.anchorSignature ?? saleAuthorization.anchorSignature,
+        anchorScriptPubKey:
+          item?.anchorScriptPubKey ?? saleAuthorization.anchorScriptPubKey,
+        anchorTxid: item?.anchorTxid ?? saleAuthorization.anchorTxid,
+        anchorType: item?.anchorType ?? saleAuthorization.anchorType,
+        anchorValueSats:
+          item?.anchorValueSats ?? saleAuthorization.anchorValueSats,
+        anchorVout: item?.anchorVout ?? saleAuthorization.anchorVout,
+        buyerAddress:
+          item?.buyerAddress ?? saleAuthorization.buyerAddress ?? undefined,
+        confirmed: true,
+        createdAt: dateIso(item?.createdAt),
+        expiresAt: item?.expiresAt ?? saleAuthorization.expiresAt,
+        id: normalizedText(item?.id),
+        listingId,
+        ...(listingVersion ? { listingVersion } : {}),
+        network,
+        priceSats: Number(
+          item?.priceSats ?? saleAuthorization.priceSats ?? 0,
+        ),
+        receiveAddress:
+          item?.receiveAddress ?? saleAuthorization.receiveAddress ?? undefined,
+        saleAuthorization,
+        sellerAddress,
+        sellerPublicKey:
+          item?.sellerPublicKey ?? saleAuthorization.sellerPublicKey,
+        txid: listingId,
+      });
+      activity.push({ ...item, listingId, network });
+      continue;
+    }
+
+    if (kind === "id-transfer") {
+      if (!itemId || !matchesTargetId(itemId)) {
+        continue;
+      }
+      for (const [activeListingId, listing] of listingsById) {
+        if (normalizedLowerText(listing?.id) === itemId) {
+          listingsById.delete(activeListingId);
+        }
+      }
+      activity.push({ ...item, network });
+      continue;
+    }
+
+    const currentListing = listingId ? listingsById.get(listingId) : null;
+    const lifecycleId = itemId || normalizedLowerText(currentListing?.id);
+    if (!lifecycleId || !matchesTargetId(lifecycleId)) {
+      continue;
+    }
+
+    if (kind === "id-seal") {
+      if (!currentListing) {
+        continue;
+      }
+      const sealTxid = normalizedTxid(item?.sealTxid ?? item?.txid);
+      const sealedAuthorization = objectRecord(item?.saleAuthorization);
+      const saleAuthorization = {
+        ...objectRecord(currentListing.saleAuthorization),
+        ...sealedAuthorization,
+      };
+      listingsById.set(listingId, {
+        ...currentListing,
+        anchorSigHashType:
+          item?.anchorSigHashType ??
+          saleAuthorization.anchorSigHashType ??
+          currentListing.anchorSigHashType,
+        anchorSignature:
+          item?.anchorSignature ??
+          saleAuthorization.anchorSignature ??
+          currentListing.anchorSignature,
+        anchorScriptPubKey:
+          item?.anchorScriptPubKey ??
+          saleAuthorization.anchorScriptPubKey ??
+          currentListing.anchorScriptPubKey,
+        anchorTxid:
+          item?.anchorTxid ??
+          saleAuthorization.anchorTxid ??
+          currentListing.anchorTxid,
+        anchorType:
+          item?.anchorType ??
+          saleAuthorization.anchorType ??
+          currentListing.anchorType,
+        anchorValueSats:
+          item?.anchorValueSats ??
+          saleAuthorization.anchorValueSats ??
+          currentListing.anchorValueSats,
+        anchorVout:
+          item?.anchorVout ??
+          saleAuthorization.anchorVout ??
+          currentListing.anchorVout,
+        saleAuthorization,
+        ...(sealTxid ? { sealTxid } : {}),
+      });
+      activity.push({ ...item, listingId, network });
+      continue;
+    }
+
+    if (kind !== "id-buy") {
+      if (listingId) {
+        listingsById.delete(listingId);
+      }
+      activity.push({ ...item, ...(listingId ? { listingId } : {}), network });
+      continue;
+    }
+
+    const buyerAddress = normalizedText(
+      item?.buyerAddress ?? item?.ownerAddress ?? item?.actor,
+    );
+    const sellerAddress = normalizedText(
+      item?.sellerAddress ?? currentListing?.sellerAddress,
+    );
+    const receiveAddress = normalizedText(
+      item?.receiveAddress ?? buyerAddress,
+    );
+    const saleId = normalizedText(item?.id ?? currentListing?.id);
+    const txid = normalizedTxid(item?.txid);
+    for (const [activeListingId, listing] of listingsById) {
+      if (normalizedLowerText(listing?.id) === normalizedLowerText(saleId)) {
+        listingsById.delete(activeListingId);
+      }
+    }
+    activity.push({ ...item, ...(listingId ? { listingId } : {}), network });
+    if (
+      normalizedLowerText(item?.transferVersion) !== "buy5" ||
+      !saleId ||
+      !buyerAddress ||
+      !sellerAddress ||
+      !txid
+    ) {
+      continue;
+    }
+    salesByTxid.set(txid, {
+      ...item,
+      amountSats: Number(item?.amountSats ?? 0),
+      buyerAddress,
+      confirmed: true,
+      createdAt: dateIso(item?.createdAt),
+      id: saleId,
+      ...(listingId ? { listingId } : {}),
+      network,
+      priceSats: Number(item?.priceSats ?? currentListing?.priceSats ?? 0),
+      receiveAddress,
+      sellerAddress,
+      txid,
+    });
+  }
+
+  return {
+    activity: [...activity].sort(compareHistoryItems),
+    listings: [...listingsById.values()].sort(compareHistoryItems),
+    sales: [...salesByTxid.values()].sort(compareHistoryItems),
+  };
+}
+
+async function confirmedIdLifecycleFromCurrentEvents(pool, network, idLower) {
+  const result = await pool.query(
+    `
+      WITH target_listings AS (
+        SELECT lower(COALESCE(NULLIF(e.payload->>'listingId', ''), e.txid)) AS listing_id
+        FROM proof_indexer.events e
+        JOIN proof_indexer.transactions t
+          ON t.network = e.network
+         AND t.txid = e.txid
+         AND t.status = 'confirmed'
+        WHERE e.network = $1
+          AND e.kind = 'id-list'
+          AND e.status = 'confirmed'
+          AND e.valid = true
+          AND lower(COALESCE(e.payload->>'id', '')) = $2
+      )
+      SELECT
+        e.event_id,
+        e.payload,
+        e.protocol,
+        e.kind,
+        e.status,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        COALESCE(e.block_height, t.block_height) AS block_height,
+        e.txid
+      FROM proof_indexer.events e
+      JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
+       AND t.status = 'confirmed'
+      WHERE e.network = $1
+        AND e.status = 'confirmed'
+        AND e.valid = true
+        AND e.kind = ANY(
+          ARRAY['id-list','id-seal','id-delist','id-buy','id-transfer']::text[]
+        )
+        AND (
+          lower(COALESCE(e.payload->>'id', '')) = $2
+          OR lower(COALESCE(e.payload->>'listingId', '')) IN (
+            SELECT listing_id FROM target_listings
+          )
+          OR lower(e.txid) IN (SELECT listing_id FROM target_listings)
+        )
+      ORDER BY
+        COALESCE(e.block_height, t.block_height) ASC NULLS LAST,
+        CASE
+          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'blockIndex')::integer
+          ELSE 2147483647
+        END ASC,
+        CASE
+          WHEN e.payload->>'_powEventIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'_powEventIndex')::integer
+          ELSE 2147483647
+        END ASC,
+        e.event_id ASC
+    `,
+    [network, idLower],
+  );
+  const items = result.rows.map((row) => ({
+    ...eventRowPayload(row, network),
+    eventId: rowNumber(row, "event_id"),
+  }));
+  return idLifecycleStateFromItems(items, network, idLower);
+}
+
+function pendingIdRegistryStateFromActivity(activity, network) {
+  const pendingRecordsById = new Map();
+  const pendingEvents = [];
+  const pendingSales = [];
+  const pendingKindByEventKind = new Map([
+    ["id-update", "update"],
+    ["id-transfer", "transfer"],
+    ["id-list", "list"],
+    ["id-seal", "seal"],
+    ["id-delist", "delist"],
+    ["id-buy", "marketTransfer"],
+  ]);
+
+  for (const item of Array.isArray(activity) ? activity : []) {
+    if (item?.confirmed === true) {
+      continue;
+    }
+    const kind = normalizedLowerText(item?.kind);
+    const id = normalizedLowerText(item?.id);
+    if (kind === "id-register") {
+      const ownerAddress = normalizedText(item?.ownerAddress ?? item?.actor);
+      const receiveAddress = normalizedText(
+        item?.receiveAddress ?? ownerAddress,
+      );
+      const txid = normalizedTxid(item?.txid);
+      if (
+        id &&
+        ownerAddress &&
+        receiveAddress &&
+        txid &&
+        !pendingRecordsById.has(id)
+      ) {
+        pendingRecordsById.set(id, {
+          amountSats: Number(item?.amountSats ?? 0),
+          confirmed: false,
+          createdAt: dateIso(item?.createdAt),
+          id: normalizedText(item?.id),
+          network,
+          ownerAddress,
+          pgpKey: item?.pgpKey ?? item?.pgpPublicKey ?? undefined,
+          receiveAddress,
+          txid,
+        });
+      }
+      continue;
+    }
+
+    const pendingKind = pendingKindByEventKind.get(kind);
+    if (!pendingKind) {
+      continue;
+    }
+    pendingEvents.push({
+      ...item,
+      kind: pendingKind,
+      network,
+    });
+
+    if (
+      kind !== "id-buy" ||
+      normalizedLowerText(item?.transferVersion) !== "buy5"
+    ) {
+      continue;
+    }
+    const buyerAddress = normalizedText(
+      item?.buyerAddress ?? item?.ownerAddress ?? item?.actor,
+    );
+    const sellerAddress = normalizedText(item?.sellerAddress);
+    const receiveAddress = normalizedText(
+      item?.receiveAddress ?? buyerAddress,
+    );
+    const txid = normalizedTxid(item?.txid);
+    if (!id || !buyerAddress || !sellerAddress || !receiveAddress || !txid) {
+      continue;
+    }
+    pendingSales.push({
+      ...item,
+      amountSats: Number(item?.amountSats ?? 0),
+      buyerAddress,
+      confirmed: false,
+      createdAt: dateIso(item?.createdAt),
+      id: normalizedText(item?.id),
+      network,
+      priceSats: Number(item?.priceSats ?? 0),
+      receiveAddress,
+      sellerAddress,
+      txid,
+    });
+  }
+
+  return {
+    pendingEvents: [...pendingEvents].sort(compareHistoryItems),
+    pendingRecords: [...pendingRecordsById.values()].sort(compareHistoryItems),
+    pendingSales: [...pendingSales].sort(compareHistoryItems),
+  };
+}
+
+async function currentIdRegistryEventState(pool, network) {
+  const eventKinds = [
+    "id-register",
+    "id-update",
+    "id-transfer",
+    "id-list",
+    "id-seal",
+    "id-delist",
+    "id-buy",
+  ];
+  const result = await pool.query(
+    `
+      SELECT
+        e.event_id,
+        e.payload,
+        e.protocol,
+        e.kind,
+        t.status,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        COALESCE(e.block_height, t.block_height) AS block_height,
+        e.txid
+      FROM proof_indexer.events e
+      JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
+      WHERE e.network = $1
+        AND e.valid = true
+        AND e.kind = ANY($2::text[])
+        AND t.status IN ('confirmed', 'pending')
+      ORDER BY
+        COALESCE(e.block_height, t.block_height) ASC NULLS LAST,
+        CASE
+          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'blockIndex')::integer
+          ELSE 2147483647
+        END ASC,
+        CASE
+          WHEN e.payload->>'_powEventIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'_powEventIndex')::integer
+          ELSE 2147483647
+        END ASC,
+        e.event_id ASC
+    `,
+    [network, eventKinds],
+  );
+  const canonicalItems = result.rows.map((row) => ({
+    ...eventRowPayload(row, network),
+    eventId: rowNumber(row, "event_id"),
+  }));
+  const activity = normalizeHistoryEventRows(result.rows, network);
+  const lifecycle = idLifecycleStateFromItems(canonicalItems, network, "");
+  return {
+    ...lifecycle,
+    activity,
+    ...pendingIdRegistryStateFromActivity(activity, network),
+  };
+}
+
+function registryHistoryEventKinds(safeKind) {
+  if (safeKind === "listings") {
+    return ["id-list"];
+  }
+  if (safeKind === "sales") {
+    return ["id-buy"];
+  }
+  if (safeKind === "activity") {
+    return [
+      "id-register",
+      "id-update",
+      "id-transfer",
+      "id-list",
+      "id-seal",
+      "id-delist",
+      "id-buy",
+    ];
+  }
+  return [];
+}
+
+async function currentRegistryEventHistoryPage(
+  pool,
+  network,
+  safeKind,
+  pagination,
+) {
+  const eventKinds = registryHistoryEventKinds(safeKind);
+  if (eventKinds.length === 0) {
+    return null;
+  }
+  const params = [network, eventKinds];
+  const conditions = [
+    "e.network = $1",
+    "e.kind = ANY($2::text[])",
+    "e.valid = true",
+    "COALESCE(t.status, e.status) IN ('confirmed', 'pending')",
+  ];
+  if (safeKind === "listings") {
+    conditions.push(`NOT EXISTS (
+      SELECT 1
+      FROM proof_indexer.events close_event
+      WHERE close_event.network = e.network
+        AND close_event.valid = true
+        AND close_event.status = 'confirmed'
+        AND close_event.kind IN ('id-delist', 'id-buy')
+        AND EXISTS (
+          SELECT 1
+          FROM proof_indexer.transactions close_transaction
+          WHERE close_transaction.network = close_event.network
+            AND close_transaction.txid = close_event.txid
+            AND close_transaction.status = 'confirmed'
+        )
+        AND lower(close_event.payload->>'listingId') = lower(
+          COALESCE(e.payload->>'listingId', e.txid)
+        )
+    )`);
+    conditions.push(`NOT EXISTS (
+      SELECT 1
+      FROM proof_indexer.events transfer_event
+      JOIN proof_indexer.transactions transfer_transaction
+        ON transfer_transaction.network = transfer_event.network
+       AND transfer_transaction.txid = transfer_event.txid
+       AND transfer_transaction.status = 'confirmed'
+      WHERE transfer_event.network = e.network
+        AND transfer_event.valid = true
+        AND transfer_event.status = 'confirmed'
+        AND transfer_event.kind IN ('id-transfer', 'id-buy')
+        AND lower(COALESCE(transfer_event.payload->>'id', '')) =
+          lower(COALESCE(e.payload->>'id', ''))
+        AND (
+          COALESCE(transfer_event.block_height, 0),
+          transfer_event.event_id
+        ) > (
+          COALESCE(e.block_height, 0),
+          e.event_id
+        )
+    )`);
+  }
+  if (pagination.query) {
+    const queryTxid = normalizedTxid(pagination.query);
+    if (queryTxid) {
+      params.push(queryTxid);
+      const queryParam = `$${params.length}`;
+      conditions.push(`(
+        lower(e.txid) = ${queryParam}
+        OR lower(e.payload->>'txid') = ${queryParam}
+        OR lower(e.payload->>'listingId') = ${queryParam}
+        OR EXISTS (
+          SELECT 1
+          FROM proof_indexer.event_refs erq
+          WHERE erq.event_id = e.event_id
+            AND lower(erq.ref_value) = ${queryParam}
+        )
+      )`);
+    } else {
+      params.push(`%${pagination.query}%`);
+      const queryParam = `$${params.length}`;
+      conditions.push(`(
+        lower(e.txid) LIKE ${queryParam}
+        OR lower(e.payload::text) LIKE ${queryParam}
+        OR EXISTS (
+          SELECT 1
+          FROM proof_indexer.event_refs erq
+          WHERE erq.event_id = e.event_id
+            AND lower(erq.ref_value) LIKE ${queryParam}
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM proof_indexer.event_participants epq
+          WHERE epq.event_id = e.event_id
+            AND (
+              lower(epq.address) LIKE ${queryParam}
+              OR lower(COALESCE(epq.powid, '')) LIKE ${queryParam}
+            )
+        )
+      )`);
+    }
+  }
+  const whereClause = conditions.join(" AND ");
+  const countResult = await pool.query(
+    `
+      SELECT
+        count(*) AS total_count,
+        max(e.block_height) AS indexed_through_block,
+        max(COALESCE(e.event_time, e.block_time, e.created_at)) AS indexed_at
+      FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
+      WHERE ${whereClause}
+    `,
+    params,
+  );
+  const totalCount = rowNumber(countResult.rows[0], "total_count");
+  const rowParams = [...params, pagination.limit, pagination.offset];
+  const limitParam = `$${rowParams.length - 1}`;
+  const offsetParam = `$${rowParams.length}`;
+  const rowsResult = await pool.query(
+    `
+      SELECT
+        e.payload,
+        e.protocol,
+        e.kind,
+        COALESCE(t.status, e.status) AS status,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        e.block_height,
+        e.txid,
+        e.event_id
+      FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
+      WHERE ${whereClause}
+      ORDER BY
+        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        e.txid DESC,
+        e.event_id DESC
+      LIMIT ${limitParam}
+      OFFSET ${offsetParam}
+    `,
+    rowParams,
+  );
+  const items = normalizeHistoryEventRows(rowsResult.rows, network);
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+
+  return {
+    cursor: historyCursor("", start),
+    end,
+    indexedAt: countResult.rows[0]?.indexed_at
+      ? dateIso(countResult.rows[0].indexed_at)
+      : new Date().toISOString(),
+    indexedThroughBlock:
+      rowNumber(countResult.rows[0], "indexed_through_block") || undefined,
+    items,
+    kind: safeKind,
+    limit: pagination.limit,
+    network,
+    nextCursor: end < totalCount ? historyCursor("", end) : "",
+    page: Math.floor(start / pagination.limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit,
+    query: pagination.query,
+    source: "proof-indexer-id-events",
+    start,
+    totalCount,
+  };
+}
+
+async function currentRegistryRecordsHistoryPage(
+  pool,
+  network,
+  pagination,
+) {
+  const records = await confirmedIdRecordsFromCurrentTables(pool, network);
+  return historyPageFromStoredPayload(
+    {
+      complete: true,
+      indexedAt: newestDateIso(records.map((record) => record.createdAt)),
+      indexedThroughBlock: indexedThroughBlockFromItems(records),
+      items: records,
+      source: "proof-indexer-confirmed-id-records",
+      totalCount: records.length,
+    },
+    null,
+    network,
+    "records",
+    pagination,
+  );
 }
 
 export async function proofIndexRegistryHistoryPayload(
@@ -5440,16 +7359,29 @@ export async function proofIndexRegistryHistoryPayload(
     return null;
   }
 
+  if (!eligibility.pagination.snapshotId) {
+    if (eligibility.kind === "records") {
+      return currentRegistryRecordsHistoryPage(
+        pool,
+        network,
+        eligibility.pagination,
+      );
+    }
+    return currentRegistryEventHistoryPage(
+      pool,
+      network,
+      eligibility.kind,
+      eligibility.pagination,
+    );
+  }
+
   const snapshot = await ledgerSnapshotWithPayload(
     pool,
     network,
     eligibility.pagination.snapshotId,
     "registryHistoryPayloads",
   );
-  if (
-    !snapshot ||
-    !snapshotPayloadFresh(snapshot, "registryHistoryIndexedAt")
-  ) {
+  if (!snapshot) {
     return null;
   }
 
@@ -5479,81 +7411,169 @@ export async function proofIndexIdRecordPayload(network, id) {
     return null;
   }
 
-  const result = await pool.query(
-    `
-      SELECT
-        r.network,
-        r.id_lower,
-        r.display_id,
-        r.owner_address,
-        r.receive_address,
-        r.pgp_public_key,
-        r.registration_txid,
-        r.last_event_txid,
-        r.registered_height,
-        r.updated_height,
-        r.updated_at,
-        t.status AS tx_status,
-        t.confirmed_at,
-        t.block_height,
-        t.block_time
-      FROM proof_indexer.id_records r
-      LEFT JOIN proof_indexer.transactions t
-        ON t.network = r.network
-       AND t.txid = r.registration_txid
-      WHERE r.network = $1
-        AND r.id_lower = $2
-      LIMIT 1
-    `,
-    [network, idLower],
-  );
-  const row = result.rows[0];
-  if (!row) {
+  const [[record], lifecycle] = await Promise.all([
+    confirmedIdRecordsFromCurrentTables(pool, network, idLower),
+    confirmedIdLifecycleFromCurrentEvents(pool, network, idLower),
+  ]);
+  if (!record) {
     return null;
   }
 
-  const createdAt = dateIso(
-    row.confirmed_at ?? row.block_time ?? row.updated_at,
-  );
-  const blockHeight =
-    rowNumber(row, "registered_height") ||
-    rowNumber(row, "block_height") ||
-    undefined;
-  const updatedHeight =
-    rowNumber(row, "updated_height") || blockHeight || undefined;
-  const confirmed = row.tx_status ? row.tx_status === "confirmed" : true;
-  const record = {
-    blockHeight,
-    confirmed,
-    createdAt,
-    id: String(row.display_id || row.id_lower),
-    lastEventTxid: String(row.last_event_txid || row.registration_txid),
-    network,
-    ownerAddress: String(row.owner_address || ""),
-    pgpKey: row.pgp_public_key || undefined,
-    receiveAddress: String(row.receive_address || row.owner_address || ""),
-    txid: String(row.registration_txid || ""),
-    updatedHeight,
-  };
+  const lifecycleItems = [
+    ...(Array.isArray(lifecycle?.activity) ? lifecycle.activity : []),
+    ...(Array.isArray(lifecycle?.listings) ? lifecycle.listings : []),
+    ...(Array.isArray(lifecycle?.sales) ? lifecycle.sales : []),
+  ];
 
   return {
-    activity: [],
-    indexedAt: dateIso(row.updated_at ?? row.confirmed_at ?? row.block_time),
-    indexedThroughBlock: updatedHeight,
-    listings: [],
+    activity: lifecycle.activity,
+    indexedAt: newestDateIso([
+      record.createdAt,
+      ...lifecycleItems.map((item) => item?.createdAt),
+    ]),
+    indexedThroughBlock: Math.max(
+      Number(record.updatedHeight) || 0,
+      Number(indexedThroughBlockFromItems(lifecycleItems)) || 0,
+    ),
+    listings: lifecycle.listings,
     network,
     pendingEvents: [],
     records: [record],
     registryAddress: "",
-    sales: [],
-    source: "proof-indexer-id-record",
+    sales: lifecycle.sales,
+    source: "proof-indexer-id-record-lifecycle",
     stats: {
-      confirmed: confirmed ? 1 : 0,
-      pending: confirmed ? 0 : 1,
+      confirmed: 1,
+      pending: 0,
       pendingChanges: 0,
-      pendingRecords: confirmed ? 0 : 1,
+      pendingRecords: 0,
       total: 1,
-      transactions: record.txid ? 1 : 0,
+      transactions:
+        (record.txid ? 1 : 0) +
+        (Array.isArray(lifecycle?.activity) ? lifecycle.activity.length : 0),
+    },
+  };
+}
+
+async function currentProofIndexRegistryPayload(pool, network, options = {}) {
+  const [confirmedRecords, eventState, scan] = await Promise.all([
+    confirmedIdRecordsFromCurrentTables(pool, network),
+    currentIdRegistryEventState(pool, network),
+    latestProofIndexScanMetadata(pool, network),
+  ]);
+  const scanPayload = objectRecord(scan?.payload);
+  const scanBlockHash = normalizedLowerText(
+    scanPayload.indexedThroughBlockHash ?? scanPayload.blockHash,
+  );
+  const scanIndexedThroughBlock = rowNumber(scan, "indexed_through_block");
+  if (
+    scanPayload.complete !== true ||
+    !/^[0-9a-f]{64}$/u.test(scanBlockHash) ||
+    !Number.isSafeInteger(scanIndexedThroughBlock) ||
+    scanIndexedThroughBlock <= 0
+  ) {
+    return null;
+  }
+
+  const confirmedIds = new Set(
+    confirmedRecords
+      .map((record) => normalizedLowerText(record?.id))
+      .filter(Boolean),
+  );
+  const registeredEventIds = new Set(
+    (Array.isArray(eventState?.activity) ? eventState.activity : [])
+      .filter(
+        (item) =>
+          item?.confirmed === true &&
+          normalizedLowerText(item?.kind) === "id-register",
+      )
+      .map((item) => normalizedLowerText(item?.id))
+      .filter(Boolean),
+  );
+  const missingRelationalIds = [...registeredEventIds].filter(
+    (id) => !confirmedIds.has(id),
+  );
+  const orphanRelationalIds = [...confirmedIds].filter(
+    (id) => !registeredEventIds.has(id),
+  );
+  if (missingRelationalIds.length > 0 || orphanRelationalIds.length > 0) {
+    console.error(
+      `Rejected inconsistent current ID projection: missing records=${missingRelationalIds.slice(0, 8).join(",") || "none"}; records without valid registrations=${orphanRelationalIds.slice(0, 8).join(",") || "none"}.`,
+    );
+    return null;
+  }
+  const pendingRecords = (Array.isArray(eventState?.pendingRecords)
+    ? eventState.pendingRecords
+    : []
+  ).filter((record) => !confirmedIds.has(normalizedLowerText(record?.id)));
+  const records = [...confirmedRecords, ...pendingRecords];
+  const listings = Array.isArray(eventState?.listings)
+    ? eventState.listings
+    : [];
+  const activity = Array.isArray(eventState?.activity)
+    ? eventState.activity
+    : [];
+  const pendingEvents = Array.isArray(eventState?.pendingEvents)
+    ? eventState.pendingEvents
+    : [];
+  const sales = [
+    ...(Array.isArray(eventState?.sales) ? eventState.sales : []),
+    ...(Array.isArray(eventState?.pendingSales)
+      ? eventState.pendingSales
+      : []),
+  ]
+    .filter(
+      (sale) => normalizedLowerText(sale?.transferVersion) === "buy5",
+    )
+    .sort(compareHistoryItems);
+  const confirmed = confirmedRecords.length;
+  const marketplaceStats = salesStats(sales);
+  const registryItems = [
+    ...records,
+    ...listings,
+    ...sales,
+    ...activity,
+    ...pendingEvents,
+  ];
+  const indexedAt = dateIso(
+    newestDateIso([
+      scan?.generated_at,
+      ...registryItems.map((item) => item?.createdAt),
+    ]),
+  );
+  const indexedThroughBlock = Math.max(
+    scanIndexedThroughBlock,
+    indexedThroughBlockFromItems(registryItems) ?? 0,
+    ...confirmedRecords.map((record) => Number(record?.updatedHeight) || 0),
+  );
+
+  return {
+    activity,
+    indexedAt,
+    indexedThroughBlock,
+    listings,
+    network,
+    pendingEvents,
+    records,
+    registryAddress: String(options.registryAddress ?? ""),
+    sales,
+    snapshotId: String(scan?.snapshot_id ?? ""),
+    source:
+      "proof-indexer-current-id-events+proof-indexer-confirmed-id-records",
+    stats: {
+      confirmed,
+      confirmedSales: marketplaceStats.confirmedSales,
+      confirmedSalesVolumeSats: marketplaceStats.confirmedSalesVolumeSats,
+      pending: pendingRecords.length + pendingEvents.length,
+      pendingChanges: pendingEvents.length,
+      pendingRecords: pendingRecords.length,
+      pendingSales: marketplaceStats.pendingSales,
+      pendingSalesVolumeSats: marketplaceStats.pendingSalesVolumeSats,
+      sales: marketplaceStats.sales,
+      salesVolumeSats: marketplaceStats.salesVolumeSats,
+      total: records.length,
+      transactions:
+        uniqueTxidCount(activity) || uniqueTxidCount(registryItems),
     },
   };
 }
@@ -5564,16 +7584,22 @@ export async function proofIndexRegistryPayload(network, options = {}) {
     return null;
   }
 
+  const requestedSnapshotId = String(options.snapshotId ?? "").trim();
+  const pinnedSnapshotId = normalizedSnapshotId(requestedSnapshotId);
+  if (requestedSnapshotId && !pinnedSnapshotId) {
+    return null;
+  }
+  if (!pinnedSnapshotId) {
+    return currentProofIndexRegistryPayload(pool, network, options);
+  }
+
   const snapshot = await ledgerSnapshotWithPayload(
     pool,
     network,
-    options.snapshotId ?? "",
+    pinnedSnapshotId,
     "registryHistoryPayloads",
   );
-  if (
-    !snapshot ||
-    !snapshotPayloadFresh(snapshot, "registryHistoryIndexedAt")
-  ) {
+  if (!snapshot) {
     return null;
   }
 
@@ -5596,10 +7622,13 @@ export async function proofIndexRegistryPayload(network, options = {}) {
   const pendingRecords = records.length - confirmed;
   const marketplaceStats = salesStats(sales);
   const indexedAt = dateIso(
-    recordsPayload?.indexedAt ??
+    newestDateIso([
+      recordsPayload?.indexedAt,
+      ...records.map((record) => record.createdAt),
       activityPayload?.indexedAt ??
-      snapshot?.payload?.registryHistoryIndexedAt ??
-      snapshot?.generated_at,
+        snapshot?.payload?.registryHistoryIndexedAt ??
+        snapshot?.generated_at,
+    ]),
   );
   const snapshotId = snapshot?.snapshot_id ?? "";
   const registryItems = [
@@ -5614,8 +7643,13 @@ export async function proofIndexRegistryPayload(network, options = {}) {
     activity,
     indexedAt,
     indexedThroughBlock:
-      indexedThroughBlockFromItems(registryItems) ??
-      rowNumber(snapshot, "indexed_through_block"),
+      Math.max(
+        indexedThroughBlockFromItems(registryItems) ?? 0,
+        embeddedHistoryIndexedThroughBlock(recordsPayload),
+        embeddedHistoryIndexedThroughBlock(listingsPayload),
+        embeddedHistoryIndexedThroughBlock(salesPayload),
+        embeddedHistoryIndexedThroughBlock(activityPayload),
+      ) || undefined,
     listings,
     network,
     pendingEvents,
@@ -5682,7 +7716,15 @@ export async function proofIndexCanonicalActivityPayload(network) {
         e.event_id
       FROM proof_indexer.events e
       WHERE e.network = $1
-        AND e.valid = true
+        AND (
+          e.valid = true
+          OR (
+            e.protocol = 'pwt1'
+            AND e.kind = 'token-event-invalid'
+            AND e.valid = false
+            AND e.status = 'confirmed'
+          )
+        )
         AND e.status IN ('confirmed', 'pending')
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
@@ -5869,14 +7911,61 @@ function eventHistoryFilters(searchParams, pagination, baseValues = []) {
   return { filters, values };
 }
 
+function eventPayloadParticipants(payload) {
+  const authorization = objectRecord(payload?.saleAuthorization);
+  const participants = [
+    ...(Array.isArray(payload?.participants) ? payload.participants : []),
+    payload?.actor,
+    payload?.counterparty,
+    payload?.ownerAddress,
+    payload?.receiveAddress,
+    payload?.senderAddress,
+    payload?.recipientAddress,
+    payload?.registryAddress,
+    payload?.creatorAddress,
+    payload?.minterAddress,
+    payload?.sellerAddress,
+    payload?.buyerAddress,
+    authorization.sellerAddress,
+    authorization.buyerAddress,
+    authorization.registryAddress,
+    ...(Array.isArray(payload?.recipients)
+      ? payload.recipients.map((recipient) => recipient?.address)
+      : []),
+  ]
+    .map(normalizedText)
+    .filter(Boolean);
+  return [...new Set(participants)];
+}
+
 function eventRowPayload(row, network) {
   const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
+  const kind = normalizedLowerText(payload.kind ?? row.kind);
+  const invalidTokenEvent = kind === "token-event-invalid";
+  const attemptedAmountSats = invalidTokenEvent
+    ? rowNumber(payload, "amountSats") || rowNumber(row, "amount_sats")
+    : 0;
   return {
     ...payload,
+    ...(invalidTokenEvent
+      ? {
+          amountSats: 0,
+          attemptedAmountSats,
+          frozenNetworkValueSats: 0,
+          liveNetworkValueSats: 0,
+          marketplaceMutationFeeSats: 0,
+          minerFeeSats: 0,
+          proofPaymentSats: 0,
+          registryMutationFeeSats: 0,
+          salePaymentSats: 0,
+          valid: false,
+        }
+      : {}),
     blockHeight: rowNumber(row, "block_height") || payload.blockHeight,
     txid: row.txid ?? payload.txid,
     protocol: row.protocol ?? payload.protocol,
-    kind: normalizedLowerText(payload.kind ?? row.kind),
+    kind,
+    participants: eventPayloadParticipants(payload),
     status: row.status ?? payload.status,
     confirmed: row.status ? row.status === "confirmed" : payload.confirmed,
     createdAt: dateIso(row.event_time ?? row.block_time ?? row.created_at),
@@ -6026,7 +8115,9 @@ function mailParticipantRecordsFromRow(row, payload, rawPayload = {}) {
     ...recipientAddressRecords(payload.recipients),
     ...recipientAddressRecords(rawPayload.recipients),
     { address: payload.actor, role: "sender" },
+    { address: payload.senderAddress, role: "sender" },
     { address: rawPayload.actor, role: "sender" },
+    { address: rawPayload.senderAddress, role: "sender" },
     { address: payload.counterparty, role: "recipient" },
     { address: rawPayload.counterparty, role: "recipient" },
   ];
@@ -6084,7 +8175,11 @@ function addressMailRowPayloads(row, address, network) {
   const targetAddress = normalizedAddress(address);
   const targetKey = normalizedAddressKey(targetAddress);
   const actor =
-    knownMailAddress(payload.actor) || knownMailAddress(rawPayload.actor);
+    knownMailAddress(payload.actor) ||
+    knownMailAddress(payload.senderAddress) ||
+    knownMailAddress(rawPayload.actor) ||
+    knownMailAddress(rawPayload.senderAddress) ||
+    knownMailAddress(row.sender_address);
   const actorKey = normalizedAddressKey(actor);
   const participantRecords = mailParticipantRecordsFromRow(row, payload, rawPayload);
   const participants = mailParticipantsFromRow(row, payload, rawPayload);
@@ -6289,7 +8384,26 @@ export async function proofIndexAddressMailPayload(network, address) {
           ON e.network = m.network
          AND e.txid = m.txid
         WHERE m.network = $1
-          AND m.sender_address = ANY($2::text[])
+          AND (
+            m.sender_address = ANY($2::text[])
+            OR lower(COALESCE(m.message->>'senderAddress', '')) = ANY($2::text[])
+            OR lower(COALESCE(m.message->>'recipientAddress', '')) = ANY($2::text[])
+            OR EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(
+                CASE
+                  WHEN jsonb_typeof(m.message->'recipients') = 'array'
+                    THEN m.message->'recipients'
+                  ELSE '[]'::jsonb
+                END
+              ) recipient(record)
+              WHERE lower(COALESCE(
+                recipient.record->>'address',
+                recipient.record->>'display',
+                ''
+              )) = ANY($2::text[])
+            )
+          )
       )
       SELECT
         e.payload,
@@ -6646,6 +8760,15 @@ export async function proofIndexSnapshotPayload(network, key) {
         payload
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
+        AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
+        AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
+        AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+        AND source_hashes ? 'canonicalSummary'
+        AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
         AND payload ? 'summaryPayloads'
         AND payload->'summaryPayloads' ? $2
       ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
@@ -6666,6 +8789,15 @@ export async function proofIndexSnapshotPayload(network, key) {
             payload
           FROM proof_indexer.ledger_snapshots
           WHERE network = $1
+            AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
+            AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
+            AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+            AND source_hashes ? 'canonicalSummary'
+            AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+            AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
+            AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+            AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
+            AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
           ORDER BY generated_at DESC
           LIMIT ${SUMMARY_SNAPSHOT_LOOKBACK_LIMIT}
         )
@@ -6689,9 +8821,9 @@ export async function proofIndexSnapshotPayload(network, key) {
     return null;
   }
 
-  // Summary freshness is checked by proof-api against the current tip and the
-  // proof-index value-event delta. A block-scan-only row can make the database
-  // current without writing a new full summary payload.
+  // Only authenticated canonical-summary refresh rows are eligible here.
+  // proof-api separately requires their conservative embedded coverage to
+  // reach the hashed block-scan checkpoint before opening public reads.
   const payload = snapshot?.payload?.summaryPayloads?.[key];
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
@@ -6748,6 +8880,12 @@ export async function proofIndexValueSummaryPayload(network) {
         SELECT indexed_through_block, generated_at
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1
+          AND (
+            source_hashes ? 'blockScan'
+            OR
+            payload->>'source' = 'proof-indexer-block-scan'
+            OR consistency->>'status' LIKE 'block-scan%'
+          )
         ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
         LIMIT 1
       ),
@@ -6816,6 +8954,12 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
         SELECT indexed_through_block, generated_at
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1
+          AND (
+            source_hashes ? 'blockScan'
+            OR
+            payload->>'source' = 'proof-indexer-block-scan'
+            OR consistency->>'status' LIKE 'block-scan%'
+          )
         ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
         LIMIT 1
       ),

@@ -514,6 +514,11 @@ type PowIdMarketplaceSale = {
   txid: string;
 };
 
+type PowIdExactStateItem = {
+  id?: string;
+  network: BitcoinNetwork;
+};
+
 type PowTokenDefinition = {
   confirmed: boolean;
   confirmedMints?: number;
@@ -584,6 +589,28 @@ type PowTokenTransfer = {
   ticker: string;
   tokenId: string;
   txid: string;
+};
+
+type PowTokenInvalidEvent = {
+  amount: number;
+  blockHeight?: number;
+  blockIndex?: number;
+  confirmed: boolean;
+  createdAt: string;
+  dataBytes?: number;
+  kind: "token-event-invalid";
+  network: BitcoinNetwork;
+  participants?: string[];
+  payload?: string;
+  reason: string;
+  recipientAddress?: string;
+  registryAddress?: string;
+  senderAddress?: string;
+  ticker?: string;
+  tokenId: string;
+  txid: string;
+  valid: false;
+  validationErrors?: string[];
 };
 
 type PowTokenSaleAuthorizationDraft = {
@@ -717,6 +744,7 @@ type PowTokenState = {
   creationSats: number;
   confirmedSupply: number;
   holders: PowTokenHolder[];
+  invalidEvents: PowTokenInvalidEvent[];
   listings: PowTokenListing[];
   mints: PowTokenMint[];
   pendingSupply: number;
@@ -774,6 +802,7 @@ type PowActivityKind =
   | "token-listing-closed"
   | "token-sale"
   | "token-transfer"
+  | "token-event-invalid"
   | "rush-mint";
 
 type PowActivityItem = {
@@ -2619,6 +2648,24 @@ function mergeLatestPowIdListings(
       Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
       left.listingId.localeCompare(right.listingId),
   );
+}
+
+function replaceExactPowIdStateItems<T extends PowIdExactStateItem>(
+  current: T[],
+  incoming: T[],
+  id: string,
+  network: BitcoinNetwork,
+) {
+  const idLower = normalizePowId(id);
+  if (!idLower) {
+    return current;
+  }
+  const matchesExactId = (item: T) =>
+    item.network === network && normalizePowId(item.id ?? "") === idLower;
+  return [
+    ...incoming.filter(matchesExactId),
+    ...current.filter((item) => !matchesExactId(item)),
+  ];
 }
 
 function idRecordMatchesSearch(record: PowIdRecord, query: string) {
@@ -6428,6 +6475,7 @@ function emptyTokenState(): PowTokenState {
     creationSats: 0,
     confirmedSupply: 0,
     holders: [],
+    invalidEvents: [],
     listings: [],
     mints: [],
     pendingSupply: 0,
@@ -6899,8 +6947,9 @@ function tokenStateFromTransactions(
       .sort(
         (left, right) =>
           right.balance - left.balance ||
-        left.address.localeCompare(right.address),
+          left.address.localeCompare(right.address),
       ),
+    invalidEvents: [],
     listings: [...listings.values()]
       .filter((listing) => !tokenListingIsExpired(listing))
       .sort(
@@ -7078,6 +7127,9 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
   const transfers = state.transfers.filter((transfer) =>
     allowedTokenIds.has(transfer.tokenId),
   );
+  const invalidEvents = (state.invalidEvents ?? []).filter((event) =>
+    allowedTokenIds.has(event.tokenId),
+  );
   const closedListings = normalizeTokenListingRecords(
     state.closedListings ?? [],
   ).filter((listing) => allowedTokenIds.has(listing.tokenId));
@@ -7126,6 +7178,7 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
       creationSats: scopedTokens[0].creationFeeSats,
       confirmedSupply,
       holders: summaryOnly && state.holders.length > 0 ? state.holders : ledger.holders,
+      invalidEvents,
       listings,
       mints,
       pendingSupply,
@@ -7148,6 +7201,7 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
           .filter((mint) => mint.confirmed)
           .reduce((total, mint) => total + mint.amount, 0),
     holders: summaryOnly ? state.holders : [],
+    invalidEvents,
     listings,
     mints,
     pendingSupply: summaryOnly
@@ -10161,8 +10215,9 @@ async function fetchIdRecordState(
     throw new Error("Choose a confirmed ProofOfWork ID first.");
   }
 
+  const params = new URLSearchParams({ current: "1", fresh: "1" });
   const payload = await fetchProofApiJson<PowRegistryApiResponse>(
-    `/api/v1/ids/${encodeURIComponent(normalizedId)}`,
+    `/api/v1/ids/${encodeURIComponent(normalizedId)}?${params.toString()}`,
     targetNetwork,
   );
   const state = normalizeRegistryApiState(payload);
@@ -10280,6 +10335,18 @@ function normalizeTokenApiState(
       ? Number(payload?.confirmedSupply)
       : 0,
     holders: Array.isArray(payload?.holders) ? payload.holders : [],
+    invalidEvents: Array.isArray(payload?.invalidEvents)
+      ? payload.invalidEvents.map((event) => ({
+          ...event,
+          amount: Math.max(0, Math.floor(Number(event?.amount) || 0)),
+          confirmed: event?.confirmed === true,
+          kind: "token-event-invalid",
+          reason: String(event?.reason ?? "no-valid-token-event"),
+          tokenId: String(event?.tokenId ?? "").trim().toLowerCase(),
+          txid: String(event?.txid ?? "").trim().toLowerCase(),
+          valid: false,
+        }))
+      : [],
     listings: Array.isArray(payload?.listings) ? payload.listings : [],
     mints: Array.isArray(payload?.mints) ? payload.mints : [],
     pendingSupply: Number.isSafeInteger(payload?.pendingSupply)
@@ -10825,6 +10892,7 @@ function tokenStateHistoryRank(state: PowTokenState | undefined) {
     state.tokens.length +
     state.mints.length +
     state.transfers.length +
+    state.invalidEvents.length +
     state.sales.length +
     state.closedListings.length
   );
@@ -10854,6 +10922,8 @@ function tokenStateRegresses(
     (current.mints.length > 0 && next.mints.length < current.mints.length) ||
     (current.transfers.length > 0 &&
       next.transfers.length < current.transfers.length) ||
+    (current.invalidEvents.length > 0 &&
+      next.invalidEvents.length < current.invalidEvents.length) ||
     (current.sales.length > 0 && next.sales.length < current.sales.length) ||
     (current.closedListings.length > 0 &&
       next.closedListings.length < current.closedListings.length) ||
@@ -13251,6 +13321,9 @@ export default function App() {
   const [tokenHolders, setTokenHolders] = useState<PowTokenHolder[]>([]);
   const [tokenMints, setTokenMints] = useState<PowTokenMint[]>([]);
   const [tokenTransfers, setTokenTransfers] = useState<PowTokenTransfer[]>([]);
+  const [tokenInvalidEvents, setTokenInvalidEvents] = useState<
+    PowTokenInvalidEvent[]
+  >([]);
   const [tokenListings, setTokenListings] = useState<PowTokenListing[]>([]);
   const [tokenClosedListings, setTokenClosedListings] = useState<
     PowTokenClosedListing[]
@@ -13532,6 +13605,7 @@ export default function App() {
     setTokenHolders(accepted.holders);
     setTokenMints(accepted.mints);
     setTokenTransfers(accepted.transfers);
+    setTokenInvalidEvents(accepted.invalidEvents);
     setTokenListings(accepted.listings);
     setTokenClosedListings(accepted.closedListings);
     setTokenSales(accepted.sales);
@@ -13600,6 +13674,7 @@ export default function App() {
         creationSats: tokenCreationSats,
         confirmedSupply: 0,
         holders: tokenHolders,
+        invalidEvents: tokenInvalidEvents,
         listings: tokenListings,
         mints: tokenMints,
         pendingSupply: 0,
@@ -13608,6 +13683,7 @@ export default function App() {
         tokens: tokenDefinitions,
       }),
       holders: tokenHolders,
+      invalidEvents: tokenInvalidEvents,
       listings: tokenListings,
       mints: tokenMints,
       pendingSupply: tokenDefinitions.reduce(
@@ -13623,6 +13699,7 @@ export default function App() {
     tokenCreationSats,
     tokenDefinitions,
     tokenHolders,
+    tokenInvalidEvents,
     tokenListings,
     tokenMints,
     tokenSales,
@@ -17117,6 +17194,7 @@ export default function App() {
       setTokenHolders([]);
       setTokenMints([]);
       setTokenTransfers([]);
+      setTokenInvalidEvents([]);
       setTokenListings([]);
       setTokenClosedListings([]);
       setTokenSales([]);
@@ -18163,10 +18241,36 @@ export default function App() {
     try {
       const latestState = await fetchIdRecordState(network, normalizedIdName);
       setIdRegistry((current) =>
-        mergeLatestPowIdRecords(current, latestState.records),
+        replaceExactPowIdStateItems(
+          current,
+          latestState.records,
+          normalizedIdName,
+          network,
+        ),
       );
       setIdListings((current) =>
-        mergeLatestPowIdListings(current, latestState.listings),
+        replaceExactPowIdStateItems(
+          current,
+          latestState.listings,
+          normalizedIdName,
+          network,
+        ),
+      );
+      setIdPendingEvents((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.pendingEvents,
+          normalizedIdName,
+          network,
+        ),
+      );
+      setIdSales((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.sales,
+          normalizedIdName,
+          network,
+        ),
       );
 
       const existingRecord =
@@ -18195,9 +18299,11 @@ export default function App() {
         tone: "idle",
         text: `Registering ${normalizedIdName}@proofofwork.me...`,
       });
-      const latestListings = mergeLatestPowIdListings(
+      const latestListings = replaceExactPowIdStateItems(
         idListings,
         latestState.listings,
+        normalizedIdName,
+        network,
       );
       const reservedOutpoints = activeListingAnchorOutpointsForAddress(
         latestListings,
@@ -18332,15 +18438,33 @@ export default function App() {
     });
 
     try {
-      const latestState = await fetchIdRegistryState(network, true);
-      setIdRegistry(latestState.records);
-      setIdListings(latestState.listings);
-      setIdPendingEvents(latestState.pendingEvents);
-      setIdSales(latestState.sales);
-      const latestRecord = latestState.records.find(
-        (record) =>
-          record.network === network && record.id === id && record.confirmed,
+      const latestState = await fetchIdRecordState(network, id);
+      setIdRegistry((current) =>
+        replaceExactPowIdStateItems(current, latestState.records, id, network),
       );
+      setIdListings((current) =>
+        replaceExactPowIdStateItems(current, latestState.listings, id, network),
+      );
+      setIdPendingEvents((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.pendingEvents,
+          id,
+          network,
+        ),
+      );
+      setIdSales((current) =>
+        replaceExactPowIdStateItems(current, latestState.sales, id, network),
+      );
+      const latestRecord =
+        latestState.record?.confirmed === true
+          ? latestState.record
+          : latestState.records.find(
+              (record) =>
+                record.network === network &&
+                record.id === id &&
+                record.confirmed,
+            );
 
       if (!latestRecord) {
         setStatus({
@@ -18448,17 +18572,37 @@ export default function App() {
 
     const latestState = await fetchIdRecordState(network, managedIdRecord.id);
     setIdRegistry((current) =>
-      mergeLatestPowIdRecords(current, latestState.records),
+      replaceExactPowIdStateItems(
+        current,
+        latestState.records,
+        managedIdRecord.id,
+        network,
+      ),
     );
     setIdListings((current) =>
-      mergeLatestPowIdListings(current, latestState.listings),
+      replaceExactPowIdStateItems(
+        current,
+        latestState.listings,
+        managedIdRecord.id,
+        network,
+      ),
     );
-    if (latestState.pendingEvents.length > 0) {
-      setIdPendingEvents(latestState.pendingEvents);
-    }
-    if (latestState.sales.length > 0) {
-      setIdSales(latestState.sales);
-    }
+    setIdPendingEvents((current) =>
+      replaceExactPowIdStateItems(
+        current,
+        latestState.pendingEvents,
+        managedIdRecord.id,
+        network,
+      ),
+    );
+    setIdSales((current) =>
+      replaceExactPowIdStateItems(
+        current,
+        latestState.sales,
+        managedIdRecord.id,
+        network,
+      ),
+    );
     const latestRecord =
       latestState.record?.confirmed === true
         ? latestState.record
@@ -18520,7 +18664,12 @@ export default function App() {
     return {
       authorization: { ...draft, signature: "" },
       reservedOutpoints: activeListingAnchorOutpointsForAddress(
-        mergeLatestPowIdListings(idListings, latestState.listings),
+        replaceExactPowIdStateItems(
+          idListings,
+          latestState.listings,
+          managedIdRecord.id,
+          network,
+        ),
         address,
         { network },
       ),
@@ -18669,11 +18818,39 @@ export default function App() {
     });
 
     try {
-      const latestState = await fetchIdRegistryState(network, true);
-      setIdRegistry(latestState.records);
-      setIdListings(latestState.listings);
-      setIdPendingEvents(latestState.pendingEvents);
-      setIdSales(latestState.sales);
+      const latestState = await fetchIdRecordState(network, listing.id);
+      setIdRegistry((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.records,
+          listing.id,
+          network,
+        ),
+      );
+      setIdListings((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.listings,
+          listing.id,
+          network,
+        ),
+      );
+      setIdPendingEvents((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.pendingEvents,
+          listing.id,
+          network,
+        ),
+      );
+      setIdSales((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.sales,
+          listing.id,
+          network,
+        ),
+      );
       const latestListing = latestState.listings.find(
         (item) =>
           item.listingId === listing.listingId && item.network === network,
@@ -18842,11 +19019,39 @@ export default function App() {
       });
 
       try {
-        const latestState = await fetchIdRegistryState(network, true);
-        setIdRegistry(latestState.records);
-        setIdListings(latestState.listings);
-        setIdPendingEvents(latestState.pendingEvents);
-        setIdSales(latestState.sales);
+        const latestState = await fetchIdRecordState(network, listing.id);
+        setIdRegistry((current) =>
+          replaceExactPowIdStateItems(
+            current,
+            latestState.records,
+            listing.id,
+            network,
+          ),
+        );
+        setIdListings((current) =>
+          replaceExactPowIdStateItems(
+            current,
+            latestState.listings,
+            listing.id,
+            network,
+          ),
+        );
+        setIdPendingEvents((current) =>
+          replaceExactPowIdStateItems(
+            current,
+            latestState.pendingEvents,
+            listing.id,
+            network,
+          ),
+        );
+        setIdSales((current) =>
+          replaceExactPowIdStateItems(
+            current,
+            latestState.sales,
+            listing.id,
+            network,
+          ),
+        );
         const latestListing = latestState.listings.find(
           (item) =>
             item.listingId === listing.listingId && item.network === network,
@@ -19077,11 +19282,39 @@ export default function App() {
     });
 
     try {
-      const latestState = await fetchIdRegistryState(network, true);
-      setIdRegistry(latestState.records);
-      setIdListings(latestState.listings);
-      setIdPendingEvents(latestState.pendingEvents);
-      setIdSales(latestState.sales);
+      const latestState = await fetchIdRecordState(network, authorization.id);
+      setIdRegistry((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.records,
+          authorization.id,
+          network,
+        ),
+      );
+      setIdListings((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.listings,
+          authorization.id,
+          network,
+        ),
+      );
+      setIdPendingEvents((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.pendingEvents,
+          authorization.id,
+          network,
+        ),
+      );
+      setIdSales((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.sales,
+          authorization.id,
+          network,
+        ),
+      );
       const latestListing = latestState.listings.find(
         (listing) =>
           listing.network === network &&
@@ -22061,6 +22294,7 @@ export default function App() {
         disconnectWallet={disconnectWallet}
         feeRate={feeRate}
         hasUnisat={hasUnisat}
+        invalidEvents={tokenInvalidEvents}
         listAmount={tokenListAmount}
         listBuyerAddress={tokenListBuyerAddress}
         listPriceSats={tokenListPriceSats}
@@ -22905,6 +23139,7 @@ export default function App() {
             compact
             delistListing={delistTokenListing}
             feeRate={feeRate}
+            invalidEvents={tokenInvalidEvents}
             listAmount={tokenListAmount}
             listBuyerAddress={tokenListBuyerAddress}
             listPriceSats={tokenListPriceSats}
@@ -24821,6 +25056,7 @@ type TokenWalletAppProps = {
   disconnectWallet: () => void;
   feeRate: number;
   hasUnisat: boolean;
+  invalidEvents: PowTokenInvalidEvent[];
   listAmount: number;
   listBuyerAddress: string;
   listPriceSats: number;
@@ -25311,6 +25547,7 @@ function TokenWalletApp({
   disconnectWallet,
   feeRate,
   hasUnisat,
+  invalidEvents,
   listAmount,
   listBuyerAddress,
   listPriceSats,
@@ -25372,6 +25609,7 @@ function TokenWalletApp({
         compact={false}
         delistListing={delistListing}
         feeRate={feeRate}
+        invalidEvents={invalidEvents}
         listAmount={listAmount}
         listBuyerAddress={listBuyerAddress}
         listPriceSats={listPriceSats}
@@ -25445,6 +25683,23 @@ const DEFAULT_TOKEN_WALLET_WORKSPACE_COPY: Required<TokenWalletWorkspaceCopy> = 
   walletEyebrow: "Credit wallet",
 };
 
+type TokenWalletMovement = {
+  amount: number;
+  confirmed: boolean;
+  createdAt: string;
+  frozenNetworkValueSats?: number;
+  key: string;
+  label: string;
+  liveNetworkValueSats?: number;
+  network: BitcoinNetwork;
+  priceSats: number;
+  reason?: string;
+  rejected?: boolean;
+  ticker: string;
+  txid: string;
+  type: "closed-listing" | "invalid" | "listing" | "sale" | "seal" | "transfer";
+};
+
 function TokenWalletWorkspace({
   address,
   balances,
@@ -25455,6 +25710,7 @@ function TokenWalletWorkspace({
   compact,
   delistListing,
   feeRate,
+  invalidEvents = [],
   listAmount,
   listBuyerAddress,
   listPriceSats,
@@ -25523,6 +25779,7 @@ function TokenWalletWorkspace({
 > & {
   compact: boolean;
   copy?: TokenWalletWorkspaceCopy;
+  invalidEvents?: PowTokenInvalidEvent[];
 }) {
   const walletCopy = { ...DEFAULT_TOKEN_WALLET_WORKSPACE_COPY, ...copy };
   const [walletListingPageIndex, setWalletListingPageIndex] = useState(0);
@@ -25539,6 +25796,18 @@ function TokenWalletWorkspace({
           transfer.recipientAddress === address,
       )
     : [];
+  const normalizedWalletAddress = address.trim().toLowerCase();
+  const walletInvalidEvents = normalizedWalletAddress
+    ? invalidEvents.filter((event) =>
+        [
+          event.senderAddress,
+          event.recipientAddress,
+          ...(event.participants ?? []),
+        ]
+          .map((candidate) => String(candidate ?? "").trim().toLowerCase())
+          .includes(normalizedWalletAddress),
+      )
+    : [];
   const walletListingEvents = address
     ? listings.filter(
         (item) =>
@@ -25553,7 +25822,7 @@ function TokenWalletWorkspace({
           item.saleAuthorization.buyerAddress === address,
       )
     : [];
-  const walletMovements = [
+  const walletMovements: TokenWalletMovement[] = [
     ...walletTransfers.map((transfer) => ({
       amount: transfer.amount,
       confirmed: transfer.confirmed,
@@ -25567,6 +25836,28 @@ function TokenWalletWorkspace({
       ticker: transfer.ticker,
       txid: transfer.txid,
       type: "transfer" as const,
+    })),
+    ...walletInvalidEvents.map((event) => ({
+      amount: Math.max(0, Math.floor(Number(event.amount) || 0)),
+      confirmed: event.confirmed,
+      createdAt: event.createdAt,
+      key: `invalid:${event.txid}`,
+      label:
+        String(event.senderAddress ?? "").trim().toLowerCase() ===
+        normalizedWalletAddress
+          ? "Attempted send"
+          : "Attempted receive",
+      network: event.network,
+      priceSats: 0,
+      reason: event.reason,
+      rejected: true,
+      ticker:
+        event.ticker ||
+        balances.find((balance) => balance.token.tokenId === event.tokenId)?.token
+          .ticker ||
+        "CREDIT",
+      txid: event.txid,
+      type: "invalid" as const,
     })),
     ...walletListingEvents.map((item) => ({
       amount: item.amount,
@@ -26181,7 +26472,7 @@ function TokenWalletWorkspace({
           </div>
           <div>
             <h2>Transfer log</h2>
-            <p>Transfers and trades touching the connected address.</p>
+            <p>Transfers, trades, and rejected attempts touching the connected address.</p>
           </div>
         </div>
         {walletMovements.length ? (
@@ -26189,7 +26480,11 @@ function TokenWalletWorkspace({
             <div className="token-list compact-token-list">
               {walletTransferPage.items.map((movement) => (
                 <a
-                  className="token-list-item"
+                  className={
+                    movement.rejected
+                      ? "token-list-item token-list-item-rejected"
+                      : "token-list-item"
+                  }
                   href={explorerTxUrl(movement.txid, movement.network)}
                   key={movement.key}
                   rel="noreferrer"
@@ -26201,7 +26496,14 @@ function TokenWalletWorkspace({
                     </strong>
                     <small>
                       {movement.label} ·{" "}
-                      {movement.confirmed ? "confirmed" : "pending"}
+                      {movement.rejected
+                        ? movement.confirmed
+                          ? "confirmed tx · rejected credit event"
+                          : "rejected credit event"
+                        : movement.confirmed
+                          ? "confirmed"
+                          : "pending"}
+                      {movement.reason ? ` · ${movement.reason}` : ""}
                       {movement.priceSats > 0
                         ? ` · ${movement.priceSats.toLocaleString()} sale proofs`
                         : ""}
@@ -29455,7 +29757,7 @@ function growthActivityKindLabel(kind: PowActivityKind) {
     return "Drive";
   }
 
-  if (kind === "token-transfer") {
+  if (kind === "token-transfer" || kind === "token-event-invalid") {
     return "Wallet";
   }
 
@@ -29514,7 +29816,9 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${record.amountSats.toLocaleString()} proofs`,
+      amountLabel: `${finiteNonNegativeNumber(
+        record.amountSats ?? ID_REGISTRATION_PRICE_SATS,
+      ).toLocaleString()} proofs`,
       createdAt: record.createdAt,
       detail: `${record.id}@proofofwork.me joined the confirmed ID graph.`,
       key: record.txid,
@@ -31340,27 +31644,21 @@ function IdLaunchApp({
   const pendingMatch = normalizedId
     ? pendingRecords.find((record) => record.id === normalizedId)
     : undefined;
-  const availabilityTone = !normalizedId
-    ? "idle"
-    : confirmedMatch
-      ? "bad"
-      : pendingMatch
-        ? "idle"
-        : "good";
+  const availabilityTone = normalizedId && confirmedMatch ? "bad" : "idle";
   const availabilityTitle = !normalizedId
     ? "Search any ID"
     : confirmedMatch
       ? `${normalizedId}@proofofwork.me is taken`
       : pendingMatch
         ? `${normalizedId}@proofofwork.me is pending`
-        : `${normalizedId}@proofofwork.me is open`;
+        : `${normalizedId}@proofofwork.me needs a live check`;
   const availabilityText = !normalizedId
     ? "Enter a name to check the ProofOfWork registry before you claim."
     : confirmedMatch
       ? `First confirmed registration won in ${shortAddress(confirmedMatch.txid)}.`
       : pendingMatch
         ? "Pending is not final. First confirmed valid registration wins."
-        : "Claimable now. Registration pays 1,000 proofs to the canonical registry.";
+        : "Submit to verify the exact ID against current chain coverage before signing.";
   const registerButtonLabel = busy
     ? "Registering"
     : !address
@@ -31373,7 +31671,7 @@ function IdLaunchApp({
             ? "ID pending"
             : !canRegister
               ? "Complete registration"
-              : "Register for 1,000 proofs";
+              : "Verify and register for 1,000 proofs";
 
   return (
     <main className="id-launch-app">

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
+import { timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
@@ -22,11 +23,14 @@ import {
   proofIndexActivityPayload,
   proofIndexAddressMailPayload,
   proofIndexCanonicalActivityPayload,
+  proofIndexCanonicalStateMetaPayload,
+  proofIndexCanonicalTransactionsPayload,
   proofIndexConfirmedValueEventsAfterBlock,
   proofIndexCreditListingsPayload,
   proofIndexEventHistoryPayload,
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
+  proofIndexOperationalStatusPayload,
   proofIndexReadFeatureEnabled,
   proofIndexReadUnconfirmedTxStatus,
   proofIndexIdRecordPayload,
@@ -430,6 +434,21 @@ const PENDING_TOKEN_LIVENESS_CHECK_CONCURRENCY = Number(
 );
 const PERSISTED_CACHE_DIR =
   process.env.POW_API_CACHE_DIR ?? path.join(process.cwd(), ".pow-api-cache");
+const PROOF_INDEX_HEALTH_MAX_AGE_MS = Number(
+  process.env.POW_INDEX_HEALTH_MAX_AGE_MS ?? 120_000,
+);
+const HEALTH_CHECK_TIMEOUT_MS = Number(
+  process.env.POW_API_HEALTH_CHECK_TIMEOUT_MS ?? 5_000,
+);
+const HEALTH_DISK_MIN_FREE_BYTES = Number(
+  process.env.POW_API_DISK_MIN_FREE_BYTES ?? 5 * 1024 * 1024 * 1024,
+);
+const HEALTH_DISK_MAX_USED_PERCENT = Number(
+  process.env.POW_API_DISK_MAX_USED_PERCENT ?? 90,
+);
+const PROOF_INDEX_REQUIRED = !/^(?:0|false|no)$/iu.test(
+  String(process.env.POW_INDEX_REQUIRED ?? "1"),
+);
 const SLIPSTREAM_SUBMIT_TX_URL = "https://slipstream.mara.com/api/transactions";
 const SLIPSTREAM_TX_URL = "https://slipstream.mara.com/tx";
 const SLIPSTREAM_CLIENT_CODE = String(
@@ -784,11 +803,12 @@ async function readPersistedJsonCache(jsonKey) {
 }
 
 async function writePersistedJsonCache(jsonKey, body) {
+  let tempFile = "";
   try {
     await fs.mkdir(PERSISTED_CACHE_DIR, { recursive: true });
     const file = persistedJsonCachePath(jsonKey);
     persistedCacheWriteSequence += 1;
-    const tempFile = `${file}.${process.pid}.${Date.now()}.${persistedCacheWriteSequence}.${process.hrtime.bigint()}.tmp`;
+    tempFile = `${file}.${process.pid}.${Date.now()}.${persistedCacheWriteSequence}.${process.hrtime.bigint()}.tmp`;
     await fs.writeFile(
       tempFile,
       JSON.stringify({ body, savedAt: new Date().toISOString() }),
@@ -796,8 +816,35 @@ async function writePersistedJsonCache(jsonKey, body) {
     );
     await fs.rename(tempFile, file);
   } catch (error) {
+    if (tempFile) {
+      await fs.rm(tempFile, { force: true }).catch(() => {});
+    }
     console.error(`Persisted cache write failed for ${jsonKey}:`, error);
   }
+}
+
+async function pruneGeneratedPersistedCacheTemps(maxAgeMs = 60 * 60_000) {
+  const now = Date.now();
+  const entries = await fs
+    .readdir(PERSISTED_CACHE_DIR, { withFileTypes: true })
+    .catch(() => []);
+  await Promise.all(
+    entries.flatMap((entry) => {
+      if (!entry.isFile() || !entry.name.endsWith(".tmp")) {
+        return [];
+      }
+      const file = path.join(PERSISTED_CACHE_DIR, entry.name);
+      return [
+        fs.stat(file)
+          .then((stats) =>
+            now - stats.mtimeMs >= maxAgeMs
+              ? fs.rm(file, { force: true })
+              : undefined,
+          )
+          .catch(() => undefined),
+      ];
+    }),
+  );
 }
 
 function cacheJsonBody(jsonKey, body, ttlMs, staleMs) {
@@ -1273,6 +1320,50 @@ async function safeRegistryPayload(network) {
   return nextPayload;
 }
 
+function exactIdRecordsWithIndexedConfirmation(
+  registry,
+  indexedIdRecord,
+  id,
+) {
+  const exactRecords = (payload) =>
+    (Array.isArray(payload?.records) ? payload.records : []).filter(
+      (record) => normalizePowId(String(record?.id ?? "")) === id,
+    );
+  const registryRecords = exactRecords(registry);
+  const indexedConfirmedRecords = exactRecords(indexedIdRecord).filter(
+    (record) => record?.confirmed === true,
+  );
+  if (indexedConfirmedRecords.length === 0) {
+    return registryRecords;
+  }
+  const registryConfirmed = registryRecords.find(
+    (record) => record?.confirmed === true,
+  );
+  const indexedConfirmed = indexedConfirmedRecords[0];
+  const recordOrder = (record) => ({
+    height: Number(record?.updatedHeight ?? record?.blockHeight ?? 0) || 0,
+    time: Date.parse(record?.updatedAt ?? record?.createdAt ?? "") || 0,
+  });
+  if (registryConfirmed) {
+    const liveOrder = recordOrder(registryConfirmed);
+    const indexedOrder = recordOrder(indexedConfirmed);
+    if (
+      liveOrder.height > indexedOrder.height ||
+      (liveOrder.height === indexedOrder.height &&
+        liveOrder.time > indexedOrder.time)
+    ) {
+      return [
+        registryConfirmed,
+        ...registryRecords.filter((record) => record?.confirmed !== true),
+      ];
+    }
+  }
+  return [
+    ...indexedConfirmedRecords,
+    ...registryRecords.filter((record) => record?.confirmed !== true),
+  ];
+}
+
 function tokenPayloadMetrics(payload) {
   const confirmedTokenItems = confirmedItemCount(payload?.tokens);
   const confirmedTokenStats = safeStatNumber(payload, "confirmedTokens");
@@ -1395,7 +1486,9 @@ function tokenPayloadLooksWorse(nextPayload, previousPayload) {
 }
 
 async function existingTokenPayload(network, tokenScope = "") {
-  const scope = normalizeTokenScope(tokenScope);
+  const scope = String(tokenScope ?? "").trim().toLowerCase() === "all"
+    ? ""
+    : normalizeTokenScope(tokenScope);
   const payloadKey = `payload:token:${network}:${scope}`;
   const cachedPayload = RESPONSE_CACHE.get(payloadKey)?.payload;
   if (cachedPayload) {
@@ -2252,7 +2345,7 @@ async function indexedWorkActiveListingStateForSummary(network) {
   };
 }
 
-function workTokenListingFromCreditListingItem(item, network, indexedAt) {
+async function workTokenListingFromCreditListingItem(item, network, indexedAt) {
   if (!item || typeof item !== "object" || Array.isArray(item)) {
     return null;
   }
@@ -2297,7 +2390,7 @@ function workTokenListingFromCreditListingItem(item, network, indexedAt) {
       /^[0-9a-f]{64}$/u.test(sealTxid) &&
       tokenSaleAuthorizationUsesSaleTicketAnchor(saleAuthorization));
 
-  return {
+  const listing = {
     ...item,
     amount:
       numericValue(item.amount) ||
@@ -2325,6 +2418,21 @@ function workTokenListingFromCreditListingItem(item, network, indexedAt) {
     ticker: item.ticker ?? saleAuthorization.ticker ?? WORK_TOKEN_TICKER,
     tokenId,
   };
+  if (!isSealCloseProjection) {
+    return listing;
+  }
+
+  const activeListing = tokenListingWithoutCloseMetadata(listing);
+  const outspend = await tokenListingAnchorOutspend(
+    activeListing,
+    network,
+  ).catch((error) => {
+    console.error(
+      `WORK seal-close projection outspend check failed for ${listingId}: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  return outspend?.spent === false ? activeListing : null;
 }
 
 async function indexedWorkCreditListingStateForSummary(network) {
@@ -2349,15 +2457,18 @@ async function indexedWorkCreditListingStateForSummary(network) {
     return null;
   });
 
-  const listings = (Array.isArray(payload?.items) ? payload.items : [])
-    .map((item) =>
-      workTokenListingFromCreditListingItem(
-        item,
-        network,
-        payload?.indexedAt,
-      ),
+  const listings = (
+    await mapWithConcurrency(
+      Array.isArray(payload?.items) ? payload.items : [],
+      Math.max(1, Math.min(TX_FETCH_CONCURRENCY, 4)),
+      (item) =>
+        workTokenListingFromCreditListingItem(
+          item,
+          network,
+          payload?.indexedAt,
+        ),
     )
-    .filter(Boolean);
+  ).filter(Boolean);
   if (listings.length === 0) {
     return null;
   }
@@ -3048,10 +3159,31 @@ function exactTransferHistoryNeedsCanonicalRecovery(
   }
   const network = String(page?.network ?? "livenet");
   const items = Array.isArray(page?.items) ? page.items : [];
-  return items.some((item) => {
-    const txid = String(item?.txid ?? "").trim().toLowerCase();
+  const itemsByTxid = new Map(
+    items.map((item) => [
+      String(item?.txid ?? "").trim().toLowerCase(),
+      item,
+    ]),
+  );
+  const canonicalInvalidTxids = new Set(
+    (Array.isArray(page?.canonicalInvalidTxids)
+      ? page.canonicalInvalidTxids
+      : []
+    )
+      .map((txid) => String(txid ?? "").trim().toLowerCase())
+      .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
+  );
+  if ([...txids].some((txid) => canonicalInvalidTxids.has(txid))) {
+    return false;
+  }
+  return [...txids].some((requestedTxid) => {
+    const item = itemsByTxid.get(requestedTxid);
+    if (!item) {
+      return true;
+    }
+    const itemTxid = String(item?.txid ?? "").trim().toLowerCase();
     return (
-      txids.has(txid) &&
+      txids.has(itemTxid) &&
       (!isValidBitcoinAddress(item?.senderAddress, network) ||
         !isValidBitcoinAddress(item?.recipientAddress, network))
     );
@@ -3087,6 +3219,10 @@ async function tokenHistoryPageWithCanonicalCreditValueOverlay(
 
   const state = ledgerTokenStateForScope(ledger, scope);
   const pagination = historyPaginationFromSearch(searchParams);
+  const addressHints = recoveryAddressHintsFromSearchParams(
+    searchParams,
+    network,
+  );
   const rawItems =
     safeKind === "market-log"
       ? tokenMarketLogItemsFromState(state)
@@ -3095,14 +3231,16 @@ async function tokenHistoryPageWithCanonicalCreditValueOverlay(
       : (state?.[safeKind] ?? []);
   const overlayPage = paginatedHistoryPayload({
     indexedAt: ledger.generatedAt ?? state?.indexedAt ?? page?.indexedAt,
-    items: historyItemsMatchingAddresses(rawItems, []),
+    items: historyItemsMatchingAddresses(rawItems, addressHints),
     kind: safeKind,
     network,
     pagination,
     source: mergedSourceLabel(page?.source, "canonical-credit-value-overlay"),
   });
 
-  return mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination);
+  return mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination, {
+    addOverlayItems: false,
+  });
 }
 
 function mempoolBase(network) {
@@ -4191,6 +4329,8 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
   const cached = TRANSACTION_CACHE.get(cacheKey);
   if (
     cached &&
+    (!options.requireCanonicalPrevouts ||
+      cached?._powCanonicalRpcHydration === true) &&
     (options.includePrevouts === false || transactionInputsHavePrevouts(cached))
   ) {
     return cached;
@@ -4206,18 +4346,46 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
         `Bitcoin RPC getrawtransaction failed for ${normalizedTxid}: ${errorSummary(response.error)}`,
       );
     }
+    if (options.requireCanonicalPrevouts) {
+      throw new Error(
+        `Bitcoin Core could not resolve canonical transaction ${normalizedTxid}.`,
+      );
+    }
     return null;
   }
 
   const raw = response.result;
+  if (
+    options.requireCanonicalPrevouts &&
+    !(Array.isArray(raw.vout) ? raw.vout : []).every((output) => {
+      const script = output?.scriptPubKey;
+      const scriptHex = script?.hex;
+      return (
+        Number.isFinite(Number(output?.value)) &&
+        Number(output.value) >= 0 &&
+        script &&
+        typeof script === "object" &&
+        typeof scriptHex === "string" &&
+        scriptHex.length % 2 === 0 &&
+        /^[0-9a-f]*$/iu.test(scriptHex)
+      );
+    })
+  ) {
+    throw new Error(
+      `Bitcoin Core returned incomplete canonical outputs for ${normalizedTxid}.`,
+    );
+  }
   const vout = (Array.isArray(raw.vout) ? raw.vout : []).map(
     coreVoutToMempoolVout,
   );
   const vin = await mapWithConcurrency(
     Array.isArray(raw.vin) ? raw.vin : [],
-    TX_FETCH_CONCURRENCY,
+    options.requireCanonicalPrevouts
+      ? Math.min(2, Math.max(1, TX_FETCH_CONCURRENCY))
+      : TX_FETCH_CONCURRENCY,
     async (input) => {
       const nextInput = {
+        ...(input?.coinbase ? { coinbase: String(input.coinbase) } : {}),
         scriptsig: String(input?.scriptSig?.hex ?? ""),
         scriptsig_asm: String(input?.scriptSig?.asm ?? ""),
         sequence: Number(input?.sequence ?? 0),
@@ -4230,14 +4398,24 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
         Number.isSafeInteger(nextInput.vout) &&
         nextInput.vout >= 0
       ) {
-        const prevTx = await fetchTransactionFromBitcoinRpc(
+        const previousRequest = fetchTransactionFromBitcoinRpc(
           nextInput.txid,
           network,
-          { includePrevouts: false },
-        ).catch(() => null);
+          {
+            includePrevouts: false,
+            requireCanonicalPrevouts: options.requireCanonicalPrevouts === true,
+          },
+        );
+        const prevTx = options.requireCanonicalPrevouts
+          ? await previousRequest
+          : await previousRequest.catch(() => null);
         const prevout = prevTx?.vout?.[nextInput.vout];
         if (prevout) {
           nextInput.prevout = prevout;
+        } else if (options.requireCanonicalPrevouts) {
+          throw new Error(
+            `Bitcoin Core could not hydrate canonical prevout ${nextInput.txid}:${nextInput.vout}.`,
+          );
         }
       }
       return nextInput;
@@ -4246,6 +4424,9 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
   const confirmations = Number(raw.confirmations ?? 0);
   const confirmed = confirmations > 0;
   const tx = {
+    ...(options.requireCanonicalPrevouts
+      ? { _powCanonicalRpcHydration: true }
+      : {}),
     fee: Number.isFinite(Number(raw.fee))
       ? Math.round(Number(raw.fee) * 100_000_000)
       : undefined,
@@ -4263,6 +4444,16 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
     vout,
     weight: Number(raw.weight ?? 0),
   };
+
+  if (
+    options.requireCanonicalPrevouts &&
+    options.includePrevouts !== false &&
+    !transactionHasCompleteCanonicalPrevouts(tx)
+  ) {
+    throw new Error(
+      `Bitcoin Core returned incomplete canonical prevouts for ${normalizedTxid}.`,
+    );
+  }
 
   if (confirmed) {
     TRANSACTION_CACHE.set(cacheKey, tx);
@@ -5939,7 +6130,7 @@ function attachedWorkCreditsFromVout(vout, recipients, network) {
           amount: parsed.amount,
           paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
           recipientAddress: parsed.recipientAddress,
-          registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+          registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
           ticker: WORK_TOKEN_TICKER,
           tokenId: WORK_TOKEN_ID,
         },
@@ -5949,7 +6140,7 @@ function attachedWorkCreditsFromVout(vout, recipients, network) {
 
   const registryPaidSats = tokenPaymentAmountBeforeProtocol(
     vout,
-    WORK_TOKEN_REGISTRY_ADDRESS,
+    WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
   );
   if (
     credits.length === 0 ||
@@ -5970,6 +6161,23 @@ function inputAddresses(vin) {
 function transactionInputsHavePrevouts(tx) {
   const vin = Array.isArray(tx?.vin) ? tx.vin : [];
   return vin.every((input) => input?.prevout && typeof input.prevout === "object");
+}
+
+function transactionHasCompleteCanonicalPrevouts(tx) {
+  const vin = Array.isArray(tx?.vin) ? tx.vin : [];
+  return vin.every((input) => {
+    if (input?.coinbase) {
+      return true;
+    }
+    const prevout = input?.prevout;
+    return Boolean(
+      prevout &&
+        typeof prevout === "object" &&
+        Number.isSafeInteger(Number(prevout.value)) &&
+        Number(prevout.value) >= 0 &&
+        typeof prevout.scriptpubkey === "string",
+    );
+  });
 }
 
 function transactionMinerFeeSats(tx) {
@@ -6745,16 +6953,8 @@ function tokenListingAnchorOutpoint(listing) {
     return null;
   }
 
-  const sealTxid = String(listing?.sealTxid ?? "")
-    .trim()
-    .toLowerCase();
   return {
-    txid:
-      listing.sealConfirmed === true &&
-      /^[0-9a-f]{64}$/u.test(sealTxid) &&
-      tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)
-        ? sealTxid
-        : listing.listingId,
+    txid: listing.listingId,
     vout: listing.saleAuthorization.anchorVout,
   };
 }
@@ -7135,6 +7335,7 @@ async function filterSpendableTokenListings(listings, network) {
 
 function tokenListingWithoutCloseMetadata(listing) {
   const {
+    closeTxid,
     closedAt,
     closedConfirmed,
     closedTxid,
@@ -10697,6 +10898,14 @@ function infinityBondChartPointsFromEvents({
 }
 
 function tokenActivityItemsFromState(state, indexAddress) {
+  const tickerByTokenId = new Map(
+    (state.tokens ?? [])
+      .map((token) => [
+        String(token?.tokenId ?? "").trim().toLowerCase(),
+        String(token?.ticker ?? "").trim(),
+      ])
+      .filter(([tokenId]) => tokenId),
+  );
   const creations = (state.tokens ?? []).map((token) => ({
     amountSats: token.creationFeeSats,
     actor: token.creatorAddress,
@@ -11044,6 +11253,81 @@ function tokenActivityItemsFromState(state, indexAddress) {
     txid: sale.txid,
   }));
 
+  const invalidEvents = (state.invalidEvents ?? []).map((event) => {
+    const tokenId = String(event?.tokenId ?? "").trim().toLowerCase();
+    const ticker =
+      String(event?.ticker ?? "").trim() ||
+      tickerByTokenId.get(tokenId) ||
+      "credit";
+    const senderAddress = String(
+      event?.senderAddress ?? event?.actor ?? "",
+    ).trim();
+    const recipientAddress = String(
+      event?.recipientAddress ?? event?.counterparty ?? "",
+    ).trim();
+    const protocolPayload = String(
+      event?.payload ?? event?.protocolPayload ?? "",
+    ).trim();
+    const attemptedKind = String(
+      event?.attemptedKind ?? event?.eventKind ?? event?.kind ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    const transferAttempt =
+      attemptedKind === "send" || protocolPayload.startsWith("pwt1:send:");
+    const amount = numericValue(
+      event?.amount ?? event?.creditAmountMoved ?? event?.attemptedAmount,
+    );
+    const reason = String(event?.reason ?? "no-valid-token-event").trim();
+    const participants = [
+      ...(Array.isArray(event?.participants) ? event.participants : []),
+      senderAddress,
+      recipientAddress,
+      event?.registryAddress,
+    ]
+      .map((address) => String(address ?? "").trim())
+      .filter(Boolean);
+    const transferDescription = `${amount.toLocaleString()} ${ticker} transfer attempt from ${shortAddress(senderAddress)} to ${shortAddress(recipientAddress)} was rejected by canonical token validation.`;
+
+    return {
+      amountSats: 0,
+      actor: senderAddress,
+      blockHeight: event?.blockHeight,
+      blockIndex: event?.blockIndex,
+      confirmed: event?.confirmed === true,
+      counterparty: recipientAddress,
+      createdAt:
+        event?.createdAt ??
+        event?.blockTime ??
+        event?.timestamp ??
+        new Date().toISOString(),
+      creditAmountMoved: amount,
+      dataBytes: numericValue(event?.dataBytes),
+      description:
+        transferAttempt && amount > 0 && senderAddress && recipientAddress
+          ? transferDescription
+          : `${ticker} protocol event was rejected by canonical token validation.`,
+      detail: `Canonical validation: ${reason}`,
+      kind: "token-event-invalid",
+      network: event?.network ?? state.network,
+      participants: [...new Set(participants)],
+      tags: [
+        activityStatusTag(event?.confirmed === true),
+        networkLabel(event?.network ?? state.network),
+        "Credit",
+        transferAttempt ? "Transfer attempt" : "Protocol event",
+        "Rejected",
+        ticker,
+        reason,
+      ],
+      title: transferAttempt
+        ? "Credit transfer rejected"
+        : "Credit event rejected",
+      tokenId,
+      txid: String(event?.txid ?? "").trim().toLowerCase(),
+    };
+  });
+
   return [
     ...creations,
     ...mints,
@@ -11052,6 +11336,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     ...sealedListings,
     ...closedListings,
     ...sales,
+    ...invalidEvents,
   ];
 }
 
@@ -11063,6 +11348,7 @@ const TOKEN_ACTIVITY_KINDS = new Set([
   "token-listing-sealed",
   "token-listing-closed",
   "token-sale",
+  "token-event-invalid",
 ]);
 
 function isTokenActivityItem(item) {
@@ -11220,6 +11506,15 @@ function addTokenStateActivityAddresses(addresses, tokenState, network) {
     addActivityAddress(addresses, sale.buyerAddress, network);
     addActivityAddress(addresses, sale.sellerAddress, network);
     addActivityAddress(addresses, sale.registryAddress, network);
+  }
+
+  for (const event of tokenState.invalidEvents ?? []) {
+    addActivityAddress(addresses, event.senderAddress, network);
+    addActivityAddress(addresses, event.recipientAddress, network);
+    addActivityAddress(addresses, event.registryAddress, network);
+    for (const participant of event.participants ?? []) {
+      addActivityAddress(addresses, participant, network);
+    }
   }
 }
 
@@ -12869,7 +13164,7 @@ function mailAttachedCreditsFromRecord(record, network) {
                 ? numericValue(credit?.paidSats)
                 : TOKEN_MIN_MUTATION_PRICE_SATS,
             recipientAddress,
-            registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+            registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
             ticker: WORK_TOKEN_TICKER,
             tokenId: WORK_TOKEN_ID,
           },
@@ -13097,13 +13392,11 @@ async function indexedRegistryPayload(network) {
 
   return proofIndexRegistryPayload(network, { registryAddress })
     .then(async (payload) => {
-      const previousPayload = await existingRegistryPayload(network).catch(
-        () => null,
-      );
-      const rejectReason = registryIndexedPayloadRejectReason(
-        payload,
-        previousPayload,
-      );
+      // An unpinned proof-index registry payload is built only after the reader
+      // verifies a complete, hashed canonical block-scan checkpoint. It must be
+      // allowed to correct a stale cache whose (noncanonical) record count was
+      // higher. The live crawler path keeps its separate regression guard.
+      const rejectReason = registryIndexedPayloadRejectReason(payload);
       if (rejectReason) {
         console.error(
           `Rejected proof-index registry payload for ${network}: ${rejectReason}.`,
@@ -17071,6 +17364,61 @@ function mergeTokenPayloadWithCanonicalFloor(canonicalPayload, payload, scope) {
   });
 }
 
+function tokenStateWithAuthoritativeCurrentListings(tokenState, currentState) {
+  if (
+    !tokenState ||
+    !currentState ||
+    !Array.isArray(currentState.tokens) ||
+    !Array.isArray(currentState.listings) ||
+    !Array.isArray(currentState.closedListings)
+  ) {
+    return tokenState;
+  }
+
+  const currentTokenIds = new Set(
+    currentState.tokens
+      .map((token) => normalizeTokenScope(token?.tokenId))
+      .filter(Boolean),
+  );
+  if (currentTokenIds.size === 0) {
+    return tokenState;
+  }
+
+  const existingListingsByKey = new Map(
+    (Array.isArray(tokenState.listings) ? tokenState.listings : []).map(
+      (listing) => [tokenListingItemKey(listing), listing],
+    ),
+  );
+  const authoritativeListings = currentState.listings
+    .filter((listing) =>
+      currentTokenIds.has(normalizeTokenScope(listing?.tokenId)),
+    )
+    .map((listing) =>
+      mergeTokenListingRecord(
+        existingListingsByKey.get(tokenListingItemKey(listing)),
+        listing,
+      ),
+    );
+  const unscopedListings = (
+    Array.isArray(tokenState.listings) ? tokenState.listings : []
+  ).filter(
+    (listing) =>
+      !currentTokenIds.has(normalizeTokenScope(listing?.tokenId)),
+  );
+  const closedListings = mergeTokenStateItemsByKey(
+    tokenState.closedListings,
+    currentState.closedListings,
+    tokenClosedListingItemKey,
+    mergeTokenListingRecord,
+  );
+
+  return tokenStateWithPendingStats({
+    ...tokenState,
+    closedListings,
+    listings: [...unscopedListings, ...authoritativeListings],
+  });
+}
+
 async function tokenPayloadWithCanonicalLedgerFloor(
   network,
   payload,
@@ -20042,6 +20390,30 @@ function tokenStateLogExpectations(tokenState) {
   return expectations;
 }
 
+function activityCoverageByTxidKind(activity) {
+  const coverageByKey = new Map();
+  for (const item of activity ?? []) {
+    if (!item?.txid || !item?.kind) {
+      continue;
+    }
+    const key = `${item.kind}:${item.txid}`;
+    const coverage = coverageByKey.get(key) ?? {
+      items: 0,
+      participants: new Set(),
+    };
+    coverage.items += 1;
+    for (const participant of Array.isArray(item?.participants)
+      ? item.participants
+      : []) {
+      if (participant) {
+        coverage.participants.add(participant);
+      }
+    }
+    coverageByKey.set(key, coverage);
+  }
+  return coverageByKey;
+}
+
 function ledgerSnapshotChecks({
   activity,
   growthSummary,
@@ -20251,24 +20623,17 @@ function ledgerSnapshotChecks({
     },
   );
 
-  const activityByTxidKind = new Map();
-  for (const item of activity ?? []) {
-    if (!item?.txid || !item?.kind) {
-      continue;
-    }
-    activityByTxidKind.set(`${item.kind}:${item.txid}`, item);
-  }
+  const activityByTxidKind = activityCoverageByTxidKind(activity);
 
   const missingTokenLogEvents = [];
   for (const expected of tokenStateLogExpectations(tokenState)) {
-    const item = activityByTxidKind.get(`${expected.kind}:${expected.txid}`);
-    const participants = new Set(
-      Array.isArray(item?.participants) ? item.participants : [],
+    const coverage = activityByTxidKind.get(
+      `${expected.kind}:${expected.txid}`,
     );
     const participantOk = expected.participants.every((address) =>
-      participants.has(address),
+      coverage?.participants.has(address),
     );
-    if (!item || !participantOk) {
+    if (!coverage || !participantOk) {
       const missing = {
         kind: expected.kind,
         listingId: expected.listingId,
@@ -20802,7 +21167,7 @@ async function ledgerTokenPayload(network, tokenScope = "", fresh = false) {
   );
 }
 
-async function indexedActivityStateForCanonicalLedger(network) {
+async function indexedActivityStateForCanonicalLedger(network, options = {}) {
   if (
     network !== "livenet" ||
     !proofIndexReadFeatureEnabled("log-history,activity-history,log,event-history")
@@ -20821,7 +21186,15 @@ async function indexedActivityStateForCanonicalLedger(network) {
   if (!payload?.activity?.length) {
     return null;
   }
-  if (
+  const exactHeight = Number(options.exactHeight);
+  if (Number.isSafeInteger(exactHeight) && exactHeight > 0) {
+    if (proofIndexPayloadIndexedThroughBlock(payload) !== exactHeight) {
+      console.error(
+        `Rejected canonical activity: coverage is not exact at block ${exactHeight}.`,
+      );
+      return null;
+    }
+  } else if (
     !(await proofIndexPayloadCoversConfirmedTip(
       payload,
       network,
@@ -20843,23 +21216,32 @@ async function activityStateForCanonicalLedger(network, fresh) {
     : cachedGlobalActivityPayloadNoRefresh(network);
 }
 
-async function indexedRegistryStateForCanonicalLedger(network) {
+async function indexedRegistryStateForCanonicalLedger(network, options = {}) {
   if (network !== "livenet") {
     return null;
   }
 
   const payload = await indexedRegistryPayload(network);
-  if (
-    payload &&
-    (await proofIndexPayloadCoversConfirmedTip(
-      payload,
-      network,
-      "canonical-registry-state",
-    ))
-  ) {
+  if (!payload) {
+    return null;
+  }
+  const exactHeight = Number(options.exactHeight);
+  if (Number.isSafeInteger(exactHeight) && exactHeight > 0) {
+    if (proofIndexPayloadIndexedThroughBlock(payload) !== exactHeight) {
+      console.error(
+        `Rejected canonical registry state: coverage is not exact at block ${exactHeight}.`,
+      );
+      return null;
+    }
     return payload;
   }
-  return null;
+  return (await proofIndexPayloadCoversConfirmedTip(
+    payload,
+    network,
+    "canonical-registry-state",
+  ))
+    ? payload
+    : null;
 }
 
 async function indexedTokenStateForCanonicalLedger(network, scope = "") {
@@ -21042,6 +21424,29 @@ function registryStateFromIndexedActivity(network, activityState) {
           item.salePriceSats ??
           item.saleAuthorization?.priceSats,
       );
+      if (id) {
+        const record = recordsById.get(id);
+        if (record) {
+          const ownerAddress = indexedActivityValue(
+            item,
+            "ownerAddress",
+            "buyerAddress",
+            "actor",
+          );
+          const receiveAddress = indexedActivityValue(
+            item,
+            "receiveAddress",
+            "currentReceiveAddress",
+          );
+          recordsById.set(id, {
+            ...record,
+            ownerAddress: ownerAddress || record.ownerAddress,
+            receiveAddress:
+              receiveAddress || ownerAddress || record.receiveAddress,
+            updatedAt: item.createdAt,
+          });
+        }
+      }
       sales.push({
         amountSats: activityAmountSats(item),
         buyerAddress: indexedActivityValue(
@@ -21639,7 +22044,11 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
   };
 }
 
-async function currentProofIndexTokenTablePayloadForLedger(network, label) {
+async function currentProofIndexTokenTablePayloadForLedger(
+  network,
+  label,
+  options = {},
+) {
   if (
     network !== "livenet" ||
     !proofIndexReadFeatureEnabled("token-state,token-default,token")
@@ -21668,7 +22077,15 @@ async function currentProofIndexTokenTablePayloadForLedger(network, label) {
   ) {
     return null;
   }
-  if (
+  const exactHeight = Number(options.exactHeight);
+  if (Number.isSafeInteger(exactHeight) && exactHeight > 0) {
+    if (proofIndexPayloadIndexedThroughBlock(payload) !== exactHeight) {
+      console.error(
+        `Rejected ${label} token-table overlay: coverage is not exact at block ${exactHeight}.`,
+      );
+      return null;
+    }
+  } else if (
     !(await proofIndexPayloadCoversConfirmedTip(
       payload,
       network,
@@ -21678,6 +22095,97 @@ async function currentProofIndexTokenTablePayloadForLedger(network, label) {
     return null;
   }
 
+  return payload;
+}
+
+function tokenTablePayloadHasConservedBalances(payload) {
+  const tokens = Array.isArray(payload?.tokens) ? payload.tokens : [];
+  const mints = Array.isArray(payload?.mints) ? payload.mints : [];
+  const holders = Array.isArray(payload?.holders) ? payload.holders : [];
+  if (tokens.length === 0 || mints.length === 0 || holders.length === 0) {
+    return false;
+  }
+  const tokenIds = new Set();
+  for (const token of tokens) {
+    const tokenId = String(token?.tokenId ?? "").trim().toLowerCase();
+    if (!tokenId || tokenIds.has(tokenId)) {
+      return false;
+    }
+    tokenIds.add(tokenId);
+  }
+  const mintedByToken = new Map();
+  for (const mint of mints) {
+    if (mint?.confirmed !== true) {
+      continue;
+    }
+    const tokenId = String(mint?.tokenId ?? "").trim().toLowerCase();
+    const amount = Number(mint?.amount);
+    if (!tokenId || !Number.isSafeInteger(amount) || amount <= 0) {
+      return false;
+    }
+    if (!tokenIds.has(tokenId)) {
+      return false;
+    }
+    mintedByToken.set(tokenId, (mintedByToken.get(tokenId) ?? 0) + amount);
+  }
+  const heldByToken = new Map();
+  for (const holder of holders) {
+    const tokenId = String(holder?.tokenId ?? "").trim().toLowerCase();
+    const balance = Number(holder?.balance);
+    if (!tokenId || !Number.isSafeInteger(balance) || balance <= 0) {
+      return false;
+    }
+    if (!tokenIds.has(tokenId)) {
+      return false;
+    }
+    heldByToken.set(tokenId, (heldByToken.get(tokenId) ?? 0) + balance);
+  }
+  const conserved = tokens.every((token) => {
+    const tokenId = String(token?.tokenId ?? "").trim().toLowerCase();
+    const minted = mintedByToken.get(tokenId) ?? 0;
+    const held = heldByToken.get(tokenId) ?? 0;
+    const declaredSupply = Number(token?.confirmedSupply);
+    return (
+      minted === held &&
+      (!Number.isFinite(declaredSupply) || declaredSupply === minted)
+    );
+  });
+  const mintedSupply = [...mintedByToken.values()].reduce(
+    (total, amount) => total + amount,
+    0,
+  );
+  const heldSupply = [...heldByToken.values()].reduce(
+    (total, amount) => total + amount,
+    0,
+  );
+  const payloadSupply = Number(payload?.confirmedSupply);
+  return (
+    conserved &&
+    mintedSupply === heldSupply &&
+    (!Number.isFinite(payloadSupply) || payloadSupply === mintedSupply)
+  );
+}
+
+async function exactTokenTablePayloadForCanonicalLedger(
+  network,
+  label,
+  exactHeight,
+) {
+  if (!Number.isSafeInteger(exactHeight) || exactHeight <= 0) {
+    throw freshDataUnavailableError(
+      `Rejected ${label}: an exact positive token-table checkpoint is required.`,
+    );
+  }
+  const payload = await currentProofIndexTokenTablePayloadForLedger(
+    network,
+    label,
+    { exactHeight },
+  );
+  if (!payload || !tokenTablePayloadHasConservedBalances(payload)) {
+    throw freshDataUnavailableError(
+      `Rejected ${label}: exact conserved token balances are unavailable.`,
+    );
+  }
   return payload;
 }
 
@@ -21747,9 +22255,19 @@ function seededMailActivityPayloadFromIndexedActivity(
   };
 }
 
-async function buildIndexedCanonicalLedgerPayload(network, label = "indexed ledger") {
+async function buildIndexedCanonicalLedgerPayload(
+  network,
+  label = "indexed ledger",
+  options = {},
+) {
   if (network !== "livenet") {
     return null;
+  }
+  const exactHeight = Number(options.exactHeight);
+  if (!Number.isSafeInteger(exactHeight) || exactHeight <= 0) {
+    throw freshDataUnavailableError(
+      `Rejected ${label}: an exact positive canonical checkpoint is required.`,
+    );
   }
 
   const [
@@ -21757,36 +22275,36 @@ async function buildIndexedCanonicalLedgerPayload(network, label = "indexed ledg
     registrySnapshot,
     rushState,
     btcUsdQuote,
-    sourceTipHeight,
   ] = await Promise.all([
-    indexedActivityStateForCanonicalLedger(network),
-    indexedRegistryStateForCanonicalLedger(network),
-    cachedRushPayload(network).catch(() => null),
+    indexedActivityStateForCanonicalLedger(network, { exactHeight }),
+    indexedRegistryStateForCanonicalLedger(network, { exactHeight }),
+    strictCanonicalRushPayload(network, exactHeight),
     payloadWithFallbackAfterMs(
       btcUsdPricePayload(network, { fresh: false }),
       null,
       SUMMARY_PROOF_INDEX_READ_WAIT_MS,
     ),
-    ledgerTipHeight(network).catch(() => null),
   ]);
-  const registryState =
-    registrySnapshot ?? registryStateFromIndexedActivity(network, activityState);
+  const sourceTipHeight = exactHeight;
+  const registryState = registrySnapshot;
   const derivedTokenState = await tokenValueStateFromIndexedActivity(
     network,
     activityState,
   );
   const tokenState = derivedTokenState;
-  const currentTokenTableState = await currentProofIndexTokenTablePayloadForLedger(
+  const currentTokenTableState = await exactTokenTablePayloadForCanonicalLedger(
     network,
     label,
+    exactHeight,
   );
-  const ledgerTokenTableState = currentTokenTableState
-    ? mergeTokenPayloadWithCanonicalFloor(
-        tokenState,
-        currentTokenTableState,
-        "",
-      )
-    : tokenState;
+  const ledgerTokenTableState = tokenStateWithAuthoritativeCurrentListings(
+    mergeTokenPayloadWithCanonicalFloor(
+      tokenState,
+      currentTokenTableState,
+      "",
+    ),
+    currentTokenTableState,
+  );
   const indexedWorkTokenState = ledgerTokenTableState
     ? scopedTokenPayloadFromState(ledgerTokenTableState, WORK_TOKEN_ID)
     : null;
@@ -21802,7 +22320,7 @@ async function buildIndexedCanonicalLedgerPayload(network, label = "indexed ledg
   }
   if (currentTokenTableState) {
     console.error(
-      `Merged ${label} with current proof-index token tables without allowing token tables to subtract canonical ledger history.`,
+      `Merged ${label} with current proof-index token tables while preserving canonical movement history and accepting exact current listing state.`,
     );
   }
 
@@ -22031,6 +22549,133 @@ async function buildIndexedCanonicalLedgerPayload(network, label = "indexed ledg
     }),
   };
   return result;
+}
+
+function internalCanonicalWorkSummaryPayload(ledger) {
+  const workTokenState = ledgerTokenStateForScope(ledger, WORK_TOKEN_ID);
+  return attachLedgerMetadata(
+    {
+      floor: ledger.workFloor,
+      indexedAt: ledger.generatedAt,
+      network: ledger.network,
+      summaryOnly: true,
+      token: attachLedgerMetadata(
+        compactTokenSummaryPayload(workTokenState, WORK_TOKEN_ID),
+        ledger,
+      ),
+    },
+    ledger,
+  );
+}
+
+async function exactCanonicalSummaryCheckpoint(network) {
+  const [status, canonical, chainResponse, electrum] = await Promise.all([
+    proofIndexOperationalStatusPayload(network),
+    proofIndexCanonicalStateMetaPayload(network),
+    bitcoinRpc("getblockchaininfo", []),
+    electrumHealthPayload(),
+  ]);
+  const chainInfo = chainResponse?.ok ? chainResponse.result : null;
+  const tipHeight = Number(chainInfo?.blocks);
+  const tipHash = String(chainInfo?.bestblockhash ?? "").trim().toLowerCase();
+  const indexedThroughBlock = Number(status?.indexedThroughBlock) || 0;
+  const storedHash = String(status?.scan?.blockHash ?? "").trim().toLowerCase();
+  const rebuild = canonical?.rebuild ?? {};
+  const fault = canonical?.fault ?? {};
+  const readModelsOk =
+    Number(status?.readModels?.confirmedIds?.count) > 0 &&
+    Number(status?.readModels?.confirmedTransfers?.count) > 0;
+  if (
+    network !== "livenet" ||
+    !status ||
+    !canonical ||
+    status?.scan?.complete !== true ||
+    !Number.isSafeInteger(tipHeight) ||
+    indexedThroughBlock !== tipHeight ||
+    !/^[0-9a-f]{64}$/u.test(tipHash) ||
+    storedHash !== tipHash ||
+    fault?.active === true ||
+    rebuild?.active === true ||
+    rebuild?.status !== "complete" ||
+    electrum?.ok !== true ||
+    electrum?.headerHeight !== tipHeight ||
+    !readModelsOk
+  ) {
+    throw freshDataUnavailableError(
+      "The indexed canonical summary checkpoint is not exactly at the Bitcoin Core tip.",
+    );
+  }
+  return {
+    electrumHeaderHeight: electrum.headerHeight,
+    indexedThroughBlock,
+    tipHash,
+  };
+}
+
+async function internalCanonicalSummaryPayload(network) {
+  const before = await exactCanonicalSummaryCheckpoint(network);
+  const ledger = await buildIndexedCanonicalLedgerPayload(
+    network,
+    "internal canonical summary",
+    { exactHeight: before.indexedThroughBlock },
+  );
+  if (
+    !ledger ||
+    ledger?.consistency?.ok !== true ||
+    !ledgerPayloadHasCurrentChecks(ledger) ||
+    ledgerPayloadIndexedThroughBlock(ledger) !== before.indexedThroughBlock
+  ) {
+    console.error(
+      "Rejected internal canonical summary ledger:",
+      JSON.stringify({
+        consistency: ledger?.consistency ?? null,
+        expectedIndexedThroughBlock: before.indexedThroughBlock,
+        hasCurrentChecks: Boolean(ledger && ledgerPayloadHasCurrentChecks(ledger)),
+        indexedThroughBlock: ledger
+          ? ledgerPayloadIndexedThroughBlock(ledger)
+          : null,
+      }),
+    );
+    throw freshDataUnavailableError(
+      "The indexed canonical ledger could not produce an exact consistent summary.",
+    );
+  }
+
+  const summaryPayloads = {
+    growthSummary: ledger.growthSummary,
+    infinitySummary: ledger.infinitySummary,
+    marketplaceSummary: marketplaceSummaryPayloadFromLedger(ledger),
+    workFloor: ledger.workFloor,
+    workSummary: internalCanonicalWorkSummaryPayload(ledger),
+  };
+  for (const [key, payload] of Object.entries(summaryPayloads)) {
+    if (
+      !payload ||
+      payloadSnapshotId(payload) !== ledger.snapshotId ||
+      proofIndexPayloadIndexedThroughBlock(payload) !== before.indexedThroughBlock
+    ) {
+      throw freshDataUnavailableError(
+        `The indexed canonical ${key} payload is not bound to the exact ledger snapshot.`,
+      );
+    }
+  }
+
+  const after = await exactCanonicalSummaryCheckpoint(network);
+  if (
+    after.indexedThroughBlock !== before.indexedThroughBlock ||
+    after.tipHash !== before.tipHash
+  ) {
+    throw freshDataUnavailableError(
+      "The Bitcoin Core tip changed during canonical summary construction.",
+    );
+  }
+  return {
+    indexedThroughBlock: before.indexedThroughBlock,
+    ledger: ledgerConsistencyPayloadFromLedger(ledger),
+    network,
+    snapshotId: ledger.snapshotId,
+    summaryPayloads,
+  };
 }
 
 async function buildCanonicalLedgerPayload(network, fresh = false) {
@@ -23076,6 +23721,27 @@ async function fastLivenetWorkSummaryPayload(network) {
 
 async function workSummaryPayload(network, fresh = false) {
   if (network === "livenet") {
+    const exactIndexedPayload =
+      await currentProofIndexSummarySnapshotFallbackPayload(
+        network,
+        "workSummary",
+        "work-summary",
+      );
+    if (exactIndexedPayload) {
+      return workSummaryWithCurrentBtcUsd(
+        {
+          ...exactIndexedPayload,
+          floor: await workFloorWithSummaryMarketOverlay(
+            exactIndexedPayload.floor,
+            network,
+            fresh,
+            exactIndexedPayload.token,
+          ),
+        },
+        network,
+        fresh,
+      );
+    }
     if (!fresh) {
       return fastLivenetWorkSummaryPayload(network);
     }
@@ -23751,6 +24417,15 @@ async function refreshMarketplaceSummaryPayloadCache(network, fresh = false) {
 }
 
 async function livenetMarketplaceSummaryPayload(network, fresh = false) {
+  const exactIndexedPayload =
+    await currentProofIndexMarketplaceSummaryFallbackPayload(
+      network,
+      fresh,
+      { fast: !fresh },
+    );
+  if (exactIndexedPayload) {
+    return exactIndexedPayload;
+  }
   if (!fresh) {
     const fastFallback = await marketplaceSummaryFastFallbackPayload(network);
     if (
@@ -23992,19 +24667,24 @@ function refreshGrowthCachesInBackground(network) {
 }
 
 async function growthSummaryPayload(network, fresh = false) {
-  if (network === "livenet" && !fresh) {
+  if (network === "livenet") {
     const indexedPayload = await currentProofIndexSummarySnapshotFallbackPayload(
       network,
       "growthSummary",
       "growth-summary",
     );
     if (indexedPayload) {
+      const currentIndexedPayload = await growthSummaryWithCurrentBtcUsd(
+        indexedPayload,
+        network,
+        fresh,
+      );
       if (INDEXED_FALLBACK_BACKGROUND_REFRESH) {
         refreshGrowthCachesInBackground(network);
       }
       return growthSummaryWithCanonicalWorkFloor(
-        indexedPayload,
-        indexedPayload.workFloor,
+        currentIndexedPayload,
+        currentIndexedPayload.workFloor,
       );
     }
   }
@@ -24306,6 +24986,18 @@ async function standaloneInfinitySummaryPayload(network, fresh = false) {
 }
 
 async function infinitySummaryPayload(network, fresh = false) {
+  if (network === "livenet") {
+    const exactIndexedPayload =
+      await currentProofIndexSummarySnapshotFallbackPayload(
+        network,
+        "infinitySummary",
+        "infinity-summary",
+      );
+    if (exactIndexedPayload) {
+      return exactIndexedPayload;
+    }
+  }
+
   const ledger =
     network === "livenet" && !fresh
       ? await existingCurrentCanonicalLedgerPayloadWithinMs(
@@ -24335,18 +25027,6 @@ async function infinitySummaryPayload(network, fresh = false) {
     }
     if (ledgerSummary?.registryAddress) {
       return infinitySummaryFromCanonicalLedger(ledger, network, fresh);
-    }
-    if (
-      proofIndexReadFeatureEnabled("infinity-summary,summary,summaries")
-    ) {
-      const indexedSummary = await currentProofIndexSummarySnapshotFallbackPayload(
-        network,
-        "infinitySummary",
-        "infinity-summary",
-      );
-      if (indexedSummary) {
-        return indexedSummary;
-      }
     }
     if (indexed) {
       return indexed;
@@ -25443,6 +26123,158 @@ async function rushPayload(network) {
   };
 }
 
+function confirmedElectrumHistoryEntries(history, indexedThroughBlock) {
+  const checkpoint = Number(indexedThroughBlock);
+  if (!Number.isSafeInteger(checkpoint) || checkpoint <= 0) {
+    throw new Error("A positive canonical checkpoint is required for Electrum history.");
+  }
+  const entriesByTxid = new Map();
+  for (const entry of Array.isArray(history) ? history : []) {
+    const txid = String(entry?.tx_hash ?? "").trim().toLowerCase();
+    const height = Number(entry?.height);
+    if (!/^[0-9a-f]{64}$/u.test(txid) || !Number.isSafeInteger(height)) {
+      throw new Error("Electrum returned a malformed address-history entry.");
+    }
+    if (height <= 0) {
+      continue;
+    }
+    if (height > checkpoint) {
+      throw new Error(
+        `Electrum history entry ${txid} is ahead of canonical checkpoint ${checkpoint}.`,
+      );
+    }
+    const previousHeight = entriesByTxid.get(txid);
+    if (previousHeight !== undefined && previousHeight !== height) {
+      throw new Error(`Electrum returned conflicting heights for ${txid}.`);
+    }
+    entriesByTxid.set(txid, height);
+  }
+  return [...entriesByTxid].map(([txid, height]) => ({ height, txid }));
+}
+
+async function canonicalBlockTxidIndexFromCore(blockHash) {
+  const normalizedHash = String(blockHash ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedHash)) {
+    throw new Error("A canonical block hash is required for transaction ordering.");
+  }
+  const response = await bitcoinRpc("getblock", [normalizedHash, 1]);
+  const block = response?.ok ? response.result : null;
+  const txids = Array.isArray(block?.tx) ? block.tx : [];
+  if (
+    String(block?.hash ?? "").trim().toLowerCase() !== normalizedHash ||
+    txids.length === 0 ||
+    txids.some((txid) => !/^[0-9a-f]{64}$/iu.test(String(txid)))
+  ) {
+    throw new Error(`Bitcoin Core could not provide canonical order for ${normalizedHash}.`);
+  }
+  return new Map(
+    txids.map((txid, index) => [String(txid).toLowerCase(), index]),
+  );
+}
+
+async function strictCanonicalRushTransactions(
+  registryAddress,
+  network,
+  indexedThroughBlock,
+) {
+  if (
+    network !== "livenet" ||
+    !registryAddress ||
+    !ELECTRUM_HOST ||
+    !ELECTRUM_PORT
+  ) {
+    throw freshDataUnavailableError(
+      "Strict canonical RUSH history requires the local Electrum index.",
+    );
+  }
+  const scripthash = scriptHashForAddress(registryAddress, network);
+  const history = await electrumRequest(
+    "blockchain.scripthash.get_history",
+    [scripthash],
+    ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS,
+  );
+  if (!Array.isArray(history)) {
+    throw freshDataUnavailableError("Electrum did not return RUSH address history.");
+  }
+  const entries = confirmedElectrumHistoryEntries(
+    history,
+    indexedThroughBlock,
+  );
+  const blockHashByHeight = new Map();
+  const blockIndexByHash = new Map();
+  const transactions = await mapWithConcurrency(
+    entries,
+    Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
+    async ({ height, txid }) => {
+      const tx = await fetchTransactionFromBitcoinRpc(txid, network, {
+        requireCanonicalPrevouts: true,
+      });
+      if (!tx || !transactionConfirmed(tx) || transactionTxid(tx) !== txid) {
+        throw new Error(`Bitcoin Core could not hydrate confirmed RUSH tx ${txid}.`);
+      }
+      if (!blockHashByHeight.has(height)) {
+        blockHashByHeight.set(
+          height,
+          bitcoinRpc("getblockhash", [height]).then((response) => {
+            const hash = response?.ok
+              ? String(response.result ?? "").trim().toLowerCase()
+              : "";
+            if (!/^[0-9a-f]{64}$/u.test(hash)) {
+              throw new Error(`Bitcoin Core has no canonical block ${height}.`);
+            }
+            return hash;
+          }),
+        );
+      }
+      const blockHash = await blockHashByHeight.get(height);
+      if (transactionBlockHash(tx) !== blockHash) {
+        throw new Error(`RUSH tx ${txid} is not canonical at block ${height}.`);
+      }
+      if (!blockIndexByHash.has(blockHash)) {
+        blockIndexByHash.set(
+          blockHash,
+          canonicalBlockTxidIndexFromCore(blockHash),
+        );
+      }
+      const blockIndex = (await blockIndexByHash.get(blockHash)).get(txid);
+      if (!Number.isSafeInteger(blockIndex) || blockIndex < 0) {
+        throw new Error(`RUSH tx ${txid} is absent from canonical block ${height}.`);
+      }
+      return {
+        ...tx,
+        _powBlockIndex: blockIndex,
+        status: {
+          ...(tx.status ?? {}),
+          block_hash: blockHash,
+          block_height: height,
+          confirmed: true,
+        },
+      };
+    },
+  );
+  if (transactions.length !== entries.length) {
+    throw freshDataUnavailableError(
+      "Strict canonical RUSH history hydration was incomplete.",
+    );
+  }
+  return transactions;
+}
+
+async function strictCanonicalRushPayload(network, indexedThroughBlock) {
+  const registryAddress = RUSH_REGISTRY_ADDRESSES[network] ?? "";
+  const transactions = await strictCanonicalRushTransactions(
+    registryAddress,
+    network,
+    indexedThroughBlock,
+  );
+  return {
+    ...rushStateFromTransactions(transactions, registryAddress, network),
+    indexedThroughBlock,
+    source: "bitcoin-core-electrum-strict",
+    transactions: transactions.length,
+  };
+}
+
 function growthElapsedYears() {
   return Math.max(0, (Date.now() - GROWTH_MODEL_START_MS) / MS_PER_MODEL_YEAR);
 }
@@ -26522,7 +27354,7 @@ function growthActivityKindLabel(kind) {
     return "Drive";
   }
 
-  if (kind === "token-transfer") {
+  if (kind === "token-transfer" || kind === "token-event-invalid") {
     return "Wallet";
   }
 
@@ -26585,7 +27417,9 @@ function growthRealEventItems(
     }
 
     setEvent({
-      amountLabel: `${record.amountSats.toLocaleString()} proofs`,
+      amountLabel: `${numericValue(
+        record.amountSats ?? ID_REGISTRATION_PRICE_SATS,
+      ).toLocaleString()} proofs`,
       createdAt: record.createdAt,
       detail: `${record.id}@proofofwork.me joined the confirmed ID graph.`,
       key: record.txid,
@@ -28517,26 +29351,1971 @@ async function txPayload(txid, network) {
   };
 }
 
-async function healthPayload() {
-  let tipHeight = null;
-  let backend = null;
-  tipHeight = await ledgerTipHeight("livenet");
+const INTERNAL_VERIFIER_STATE_TTL_MS = Math.max(
+  1_000,
+  Number(process.env.POW_INTERNAL_VERIFIER_STATE_TTL_MS ?? 10_000),
+);
+const INTERNAL_VERIFIER_TOKEN = String(
+  process.env.POW_INTERNAL_VERIFIER_TOKEN ?? "",
+).trim();
+const INTERNAL_VERIFIER_STATE_CACHE = new Map();
 
+function pruneInternalVerifierStateCache(activeBlockHeight = 0) {
+  const now = Date.now();
+  const activeMarker = activeBlockHeight > 0 ? `:h${activeBlockHeight}:` : "";
+  for (const [key, entry] of INTERNAL_VERIFIER_STATE_CACHE) {
+    const completeState =
+      key.startsWith("token-complete:") ||
+      key.startsWith("id-complete:") ||
+      key.startsWith("canonical-context:");
+    if (
+      (entry?.settled && entry.expiresAt <= now) ||
+      (activeMarker && completeState && !key.includes(activeMarker))
+    ) {
+      INTERNAL_VERIFIER_STATE_CACHE.delete(key);
+    }
+  }
+  while (INTERNAL_VERIFIER_STATE_CACHE.size >= 16) {
+    const oldestSettled = [...INTERNAL_VERIFIER_STATE_CACHE].find(
+      ([key, entry]) =>
+        entry?.settled && !key.startsWith("canonical-context:"),
+    );
+    if (!oldestSettled) {
+      break;
+    }
+    INTERNAL_VERIFIER_STATE_CACHE.delete(oldestSettled[0]);
+  }
+}
+
+async function cachedInternalVerifierState(key, loader) {
+  pruneInternalVerifierStateCache();
+  const now = Date.now();
+  const cached = INTERNAL_VERIFIER_STATE_CACHE.get(key);
+  if (cached && (!cached.settled || cached.expiresAt > now)) {
+    return cached.promise;
+  }
+  const entry = {
+    expiresAt: Number.POSITIVE_INFINITY,
+    promise: null,
+    settled: false,
+  };
+  const promise = Promise.resolve()
+    .then(loader)
+    .then((value) => {
+      entry.expiresAt = Date.now() + INTERNAL_VERIFIER_STATE_TTL_MS;
+      entry.settled = true;
+      return value;
+    });
+  entry.promise = promise;
+  INTERNAL_VERIFIER_STATE_CACHE.set(key, entry);
   try {
-    const info = await fetchJson(`${MEMPOOL_BASE_MAINNET}/api/v1/backend-info`);
-    backend = info?.backend ?? null;
+    return await promise;
+  } catch (error) {
+    if (INTERNAL_VERIFIER_STATE_CACHE.get(key)?.promise === promise) {
+      INTERNAL_VERIFIER_STATE_CACHE.delete(key);
+    }
+    throw error;
+  }
+}
+
+function transactionHasCanonicalVerifierProtocol(tx) {
+  const vout = Array.isArray(tx?.vout) ? tx.vout : [];
+  return [PROTOCOL_PREFIX, ID_PROTOCOL_PREFIX, TOKEN_PROTOCOL_PREFIX].some(
+    (prefix) => decodedProtocolMessages(vout, prefix).length > 0,
+  );
+}
+
+async function canonicalVerifierCurrentBlock(
+  network,
+  requiredBlockHeight,
+  expectedPreviousHash,
+  expectedBlockHash,
+) {
+  if (network !== "livenet") {
+    throw new Error("Canonical block verification is only configured for livenet.");
+  }
+  const hashResponse = await bitcoinRpc("getblockhash", [requiredBlockHeight]);
+  const blockHash = String(hashResponse?.ok ? hashResponse.result : "")
+    .trim()
+    .toLowerCase();
+  if (
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    blockHash !== String(expectedBlockHash ?? "").trim().toLowerCase()
+  ) {
+    throw new Error(
+      `Bitcoin Core block ${requiredBlockHeight} does not match the requested canonical hash.`,
+    );
+  }
+  const blockResponse = await bitcoinRpc("getblock", [blockHash, 2]);
+  const block = blockResponse?.ok ? blockResponse.result : null;
+  const blockTransactions = Array.isArray(block?.tx) ? block.tx : [];
+  if (
+    Number(block?.height) !== requiredBlockHeight ||
+    String(block?.hash ?? "").toLowerCase() !== blockHash ||
+    String(block?.previousblockhash ?? "").toLowerCase() !==
+      String(expectedPreviousHash ?? "").toLowerCase() ||
+    Number(block?.nTx) !== blockTransactions.length ||
+    blockTransactions.length === 0 ||
+    blockTransactions.some(
+      (tx) => !/^[0-9a-f]{64}$/u.test(String(tx?.txid ?? "").toLowerCase()),
+    )
+  ) {
+    throw new Error(
+      `Canonical verifier block ${requiredBlockHeight} does not extend its stored checkpoint.`,
+    );
+  }
+  const candidates = blockTransactions.flatMap(
+    (raw, blockIndex) => {
+      const txid = String(raw?.txid ?? "").trim().toLowerCase();
+      const vout = (Array.isArray(raw?.vout) ? raw.vout : []).map(
+        coreVoutToMempoolVout,
+      );
+      return /^[0-9a-f]{64}$/u.test(txid) &&
+        transactionHasCanonicalVerifierProtocol({ vout })
+        ? [{ blockIndex, txid }]
+        : [];
+    },
+  );
+  const transactions = await mapWithConcurrency(
+    candidates,
+    Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
+    async ({ blockIndex, txid }) => {
+      const tx = await fetchTransactionFromBitcoinRpc(txid, network, {
+        requireCanonicalPrevouts: true,
+      });
+      if (
+        !tx ||
+        !transactionConfirmed(tx) ||
+        transactionTxid(tx) !== txid ||
+        transactionBlockHash(tx) !== blockHash
+      ) {
+        throw new Error(
+          `Bitcoin Core could not hydrate canonical verifier transaction ${txid}.`,
+        );
+      }
+      return {
+        ...tx,
+        _powBlockIndex: blockIndex,
+        status: {
+          ...(tx.status ?? {}),
+          block_hash: blockHash,
+          block_height: requiredBlockHeight,
+          block_time: Number(block?.time) || tx.status?.block_time,
+          confirmed: true,
+        },
+      };
+    },
+  );
+  return { blockHash, transactions };
+}
+
+async function loadCanonicalVerifierContextFromCheckpoint(
+  network,
+  requiredBlockHeight,
+  expectedBlockHash,
+  expectedPreviousBlockHash,
+) {
+  const priorHeight = Number(requiredBlockHeight) - 1;
+  if (!Number.isSafeInteger(priorHeight) || priorHeight < 1) {
+    throw new Error("Canonical verifier requires a positive prior block height.");
+  }
+  const prior = await proofIndexCanonicalTransactionsPayload(
+    network,
+    priorHeight,
+  );
+  const checkpointHash = String(prior?.checkpointHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    Number(prior?.indexedThroughBlock) !== priorHeight ||
+    !/^[0-9a-f]{64}$/u.test(checkpointHash) ||
+    checkpointHash !==
+      String(expectedPreviousBlockHash ?? "").trim().toLowerCase() ||
+    prior?.fault?.active === true
+  ) {
+    throw new Error(
+      `Canonical verifier DB coverage is not authoritative through block ${priorHeight}.`,
+    );
+  }
+  const canonicalHashResponse = await bitcoinRpc("getblockhash", [priorHeight]);
+  const canonicalHash = String(
+    canonicalHashResponse?.ok ? canonicalHashResponse.result : "",
+  )
+    .trim()
+    .toLowerCase();
+  if (canonicalHash !== checkpointHash) {
+    throw new Error(
+      `Canonical verifier checkpoint ${priorHeight} no longer matches Bitcoin Core.`,
+    );
+  }
+  const current = await canonicalVerifierCurrentBlock(
+    network,
+    requiredBlockHeight,
+    checkpointHash,
+    expectedBlockHash,
+  );
+  const transactions = dedupeTransactions([
+    ...(Array.isArray(prior?.transactions) ? prior.transactions : []),
+    ...current.transactions,
+  ]);
+  return {
+    blockHash: current.blockHash,
+    canonicalCoverage: true,
+    coverageHeight: requiredBlockHeight,
+    indexedThroughBlock: requiredBlockHeight,
+    previousBlockHash: checkpointHash,
+    transactions,
+  };
+}
+
+async function canonicalVerifierContextFromCheckpoint(
+  network,
+  requiredBlockHeight,
+  expectedBlockHash,
+  expectedPreviousBlockHash,
+) {
+  const height = Number(requiredBlockHeight);
+  if (!Number.isSafeInteger(height) || height <= 0) {
+    throw new Error("Canonical verifier requires a positive block height.");
+  }
+  const blockHash = String(expectedBlockHash ?? "").trim().toLowerCase();
+  const previousBlockHash = String(expectedPreviousBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !/^[0-9a-f]{64}$/u.test(previousBlockHash)
+  ) {
+    throw new Error(
+      "Canonical verifier requires exact current and previous block hashes.",
+    );
+  }
+  pruneInternalVerifierStateCache(height);
+  return cachedInternalVerifierState(
+    `canonical-context:${network}:h${height}:${previousBlockHash}:${blockHash}`,
+    () =>
+      loadCanonicalVerifierContextFromCheckpoint(
+        network,
+        height,
+        blockHash,
+        previousBlockHash,
+      ),
+  );
+}
+
+async function canonicalTokenListingScopeEvidenceFromCore(
+  context,
+  network,
+  listingId,
+) {
+  if (network !== "livenet") {
+    return {
+      reason: "canonical-listing-lookup-is-not-configured",
+      status: "unresolved",
+    };
+  }
+  let transactionResponse;
+  try {
+    transactionResponse = await bitcoinRpc("getrawtransaction", [listingId, true]);
   } catch {
-    backend = null;
+    return {
+      reason: "canonical-listing-lookup-failed",
+      status: "unresolved",
+    };
+  }
+  if (!transactionResponse) {
+    return {
+      reason: "canonical-listing-lookup-is-not-configured",
+      status: "unresolved",
+    };
+  }
+  if (!transactionResponse.ok) {
+    const errorCode = Number(transactionResponse?.error?.code);
+    return errorCode === -5
+      ? {
+          reason: "referenced-listing-does-not-exist",
+          status: "deterministically-invalid",
+        }
+      : {
+          reason: "canonical-listing-lookup-failed",
+          status: "unresolved",
+        };
+  }
+  const raw = transactionResponse.result;
+  const blockHash = String(raw?.blockhash ?? "").trim().toLowerCase();
+  if (
+    !raw ||
+    typeof raw !== "object" ||
+    Number(raw?.confirmations ?? 0) <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(blockHash)
+  ) {
+    return {
+      reason: "referenced-listing-is-not-prior-canonical-state",
+      status: "deterministically-invalid",
+    };
+  }
+  let headerResponse;
+  try {
+    headerResponse = await bitcoinRpc("getblockheader", [blockHash, true]);
+  } catch {
+    return {
+      reason: "canonical-listing-header-lookup-failed",
+      status: "unresolved",
+    };
+  }
+  const listingHeight = Number(
+    headerResponse?.ok ? headerResponse.result?.height : Number.NaN,
+  );
+  if (!Number.isSafeInteger(listingHeight) || listingHeight < 0) {
+    return {
+      reason: "canonical-listing-header-lookup-failed",
+      status: "unresolved",
+    };
+  }
+  let canonicalHashResponse;
+  try {
+    canonicalHashResponse = await bitcoinRpc("getblockhash", [listingHeight]);
+  } catch {
+    return {
+      reason: "canonical-listing-hash-lookup-failed",
+      status: "unresolved",
+    };
+  }
+  if (
+    !canonicalHashResponse?.ok ||
+    String(canonicalHashResponse.result ?? "").trim().toLowerCase() !== blockHash
+  ) {
+    return {
+      reason: "referenced-listing-is-not-on-the-canonical-chain",
+      status: "deterministically-invalid",
+    };
+  }
+  if (listingHeight >= Number(context?.coverageHeight ?? 0)) {
+    return {
+      reason: "referenced-listing-is-not-prior-canonical-state",
+      status: "deterministically-invalid",
+    };
+  }
+  const tokenIds = new Set(
+    decodedProtocolMessages(
+      (Array.isArray(raw?.vout) ? raw.vout : []).map(coreVoutToMempoolVout),
+      TOKEN_PROTOCOL_PREFIX,
+    ).flatMap((message) => {
+      const parsed = parseTokenPayload(message, network);
+      const tokenId = String(parsed?.saleAuthorization?.tokenId ?? "")
+        .trim()
+        .toLowerCase();
+      return parsed?.kind === "list" && /^[0-9a-f]{64}$/u.test(tokenId)
+        ? [tokenId]
+        : [];
+    }),
+  );
+  if (tokenIds.size === 1) {
+    return {
+      reason: "canonical-listing-is-missing-from-index-context",
+      status: "unresolved",
+      tokenIds: [...tokenIds],
+    };
+  }
+  if (tokenIds.size > 1) {
+    return {
+      reason: "canonical-listing-has-ambiguous-token-scope",
+      status: "unresolved",
+      tokenIds: [...tokenIds].sort(),
+    };
+  }
+  return {
+    reason: "referenced-transaction-is-not-a-valid-token-listing",
+    status: "deterministically-invalid",
+  };
+}
+
+async function confirmedTokenVerifierScopeFromContext(
+  context,
+  network,
+  targetTxid,
+) {
+  const normalizedTargetTxid = String(targetTxid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTargetTxid)) {
+    return {
+      reason: "invalid-target-txid",
+      status: "unresolved",
+    };
+  }
+  const transactionsByTxid = new Map(
+    (Array.isArray(context?.transactions) ? context.transactions : []).flatMap(
+      (tx) => {
+        const txid = transactionTxid(tx);
+        return /^[0-9a-f]{64}$/u.test(txid) ? [[txid, tx]] : [];
+      },
+    ),
+  );
+  const target = transactionsByTxid.get(normalizedTargetTxid);
+  if (!target) {
+    return {
+      reason: "target-not-in-canonical-context",
+      status: "unresolved",
+    };
+  }
+  if (
+    transactionBlockHeight(target) !== Number(context?.coverageHeight ?? 0) ||
+    transactionBlockHash(target) !==
+      String(context?.blockHash ?? "").trim().toLowerCase()
+  ) {
+    return {
+      reason: "target-is-not-in-the-requested-canonical-block",
+      status: "unresolved",
+    };
+  }
+  const parseMessages = (tx) =>
+    decodedProtocolMessages(tx?.vout ?? [], TOKEN_PROTOCOL_PREFIX).map(
+      (message) => parseTokenPayload(message, network),
+    );
+  const targetMessages = parseMessages(target);
+  if (targetMessages.length === 0) {
+    return {
+      reason: "target-has-no-token-message",
+      status: "unresolved",
+    };
+  }
+  const parsedTargetMessages = targetMessages.filter(Boolean);
+  if (parsedTargetMessages.length === 0) {
+    return {
+      reason: "malformed-target-token-payload",
+      status: "deterministically-invalid",
+    };
   }
 
-  return {
-    backend,
-    indexedAt: new Date().toISOString(),
-    mempoolBase: MEMPOOL_BASE_MAINNET,
-    ok: true,
-    service: "proofofwork-op-return-api",
-    tipHeight,
+  const tokenIds = new Set();
+  let deterministicallyInvalidMessages = 0;
+  let unresolvedMessages = 0;
+  const addTokenId = (value) => {
+    const tokenId = String(value ?? "").trim().toLowerCase();
+    if (/^[0-9a-f]{64}$/u.test(tokenId)) {
+      tokenIds.add(tokenId);
+    }
   };
+  for (const parsed of parsedTargetMessages) {
+    if (parsed.kind === "create") {
+      addTokenId(normalizedTargetTxid);
+      continue;
+    }
+    if (parsed.kind === "mint" || parsed.kind === "send") {
+      addTokenId(parsed.tokenId);
+      continue;
+    }
+    if (parsed.kind === "list" || parsed.kind === "seal") {
+      addTokenId(parsed.saleAuthorization?.tokenId);
+      continue;
+    }
+    if (parsed.kind !== "buy" && parsed.kind !== "delist") {
+      continue;
+    }
+    const listingId = String(parsed.listingId ?? "").trim().toLowerCase();
+    const listingTransaction = transactionsByTxid.get(listingId);
+    if (!listingTransaction) {
+      const evidence = await canonicalTokenListingScopeEvidenceFromCore(
+        context,
+        network,
+        listingId,
+      );
+      if (evidence.status === "unresolved") {
+        return evidence;
+      }
+      deterministicallyInvalidMessages += 1;
+      continue;
+    }
+    const listingMessages = parseMessages(listingTransaction).filter(Boolean);
+    const listingTokenIds = new Set();
+    for (const listing of listingMessages) {
+      if (listing?.kind === "list") {
+        const tokenId = String(listing.saleAuthorization?.tokenId ?? "")
+          .trim()
+          .toLowerCase();
+        if (/^[0-9a-f]{64}$/u.test(tokenId)) {
+          listingTokenIds.add(tokenId);
+        }
+      }
+    }
+    if (listingTokenIds.size === 0) {
+      deterministicallyInvalidMessages += 1;
+      continue;
+    }
+    if (listingTokenIds.size > 1) {
+      unresolvedMessages += 1;
+      continue;
+    }
+    addTokenId([...listingTokenIds][0]);
+  }
+  if (unresolvedMessages > 0 || tokenIds.size > 1) {
+    return {
+      reason: "ambiguous-token-scope",
+      status: "unresolved",
+      tokenIds: [...tokenIds].sort(),
+    };
+  }
+  if (tokenIds.size === 1) {
+    return {
+      scope: [...tokenIds][0],
+      status: "resolved",
+    };
+  }
+  if (deterministicallyInvalidMessages > 0) {
+    return {
+      reason: "referenced-listing-is-not-canonical",
+      status: "deterministically-invalid",
+    };
+  }
+  return {
+    reason: "token-scope-not-resolved",
+    status: "unresolved",
+  };
+}
+
+async function completeTokenVerifierState(
+  network,
+  tokenScope,
+  requiredBlockHeight,
+  targetTxid = "",
+  expectedBlockHash = "",
+  expectedPreviousBlockHash = "",
+) {
+  const requestedScope = String(tokenScope ?? "").trim().toLowerCase() === "all"
+    ? ""
+    : normalizeTokenScope(tokenScope);
+  const context = await canonicalVerifierContextFromCheckpoint(
+    network,
+    requiredBlockHeight,
+    expectedBlockHash,
+    expectedPreviousBlockHash,
+  );
+  const scopeResolution = requestedScope
+    ? { scope: requestedScope, status: "resolved" }
+    : await confirmedTokenVerifierScopeFromContext(
+        context,
+        network,
+        targetTxid,
+      );
+  if (scopeResolution.status === "unresolved") {
+    const error = new Error(
+      "The canonical credit verifier could not resolve an unambiguous token scope.",
+    );
+    error.statusCode = 503;
+    error.details = {
+      code: "TOKEN_VERIFIER_SCOPE_UNRESOLVED",
+      reason: scopeResolution.reason,
+      requiredBlockHeight,
+      txid: String(targetTxid ?? "").trim().toLowerCase(),
+    };
+    throw error;
+  }
+  const scope = scopeResolution.scope ?? "";
+  if (!scope) {
+    return {
+      ...emptyTokenState(),
+      ...context,
+      scopeResolution,
+      source: "canonical-block-scan-db-core-verifier",
+    };
+  }
+  const indexAddress = tokenIndexAddressForNetwork(network);
+  if (scope === WORK_TOKEN_ID) {
+    const workToken = canonicalWorkTokenDefinition(network);
+    return {
+      ...tokenStateFromTransactions(
+        [],
+        new Map([[WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS, context.transactions]]),
+        indexAddress,
+        network,
+        WORK_TOKEN_ID,
+        [workToken],
+      ),
+      ...context,
+      source: "canonical-block-scan-db-core-verifier",
+    };
+  }
+
+  const idRegistryAddress = registryAddressForNetwork(network);
+  const idState = idRegistryStateFromTransactions(
+    context.transactions,
+    idRegistryAddress,
+    network,
+  );
+  const { tokens } = tokenDefinitionsFromTransactions(
+    context.transactions,
+    indexAddress,
+    network,
+  );
+  const powbRecord = (Array.isArray(idState?.records) ? idState.records : []).find(
+    (record) => normalizePowId(record?.id) === normalizePowId(POWB_REGISTRY_ID),
+  );
+  const powbRegistryAddress = String(
+    powbRecord?.receiveAddress ?? powbRecord?.ownerAddress ?? "",
+  ).trim();
+  const powbSeedTokens = powbRegistryAddress
+    ? [canonicalPowbTokenDefinition(network, powbRegistryAddress)]
+    : [];
+  const powbActivity = mailActivityItemsFromTransactions(
+    context.transactions,
+    network,
+  );
+  const powbSeedMints = powbRegistryAddress
+    ? powbMintsFromActivity(powbActivity, powbRegistryAddress, network)
+    : [];
+  const allTokens = [...tokens, ...powbSeedTokens];
+  const scopedTokens = allTokens.filter((token) =>
+    tokenMatchesScope(token, scope),
+  );
+  const registryAddresses = [
+    ...new Set(scopedTokens.map((token) => token.registryAddress).filter(Boolean)),
+  ];
+  return {
+    ...tokenStateFromTransactions(
+      context.transactions,
+      new Map(
+        registryAddresses.map((registryAddress) => [
+          registryAddress,
+          context.transactions,
+        ]),
+      ),
+      indexAddress,
+      network,
+      scope,
+      powbSeedTokens,
+      powbSeedMints,
+    ),
+    ...context,
+    source: "canonical-block-scan-db-core-verifier",
+  };
+}
+
+async function completeIdVerifierStateBundle(
+  network,
+  requiredBlockHeight,
+  expectedBlockHash = "",
+  expectedPreviousBlockHash = "",
+) {
+  const registryAddress = registryAddressForNetwork(network);
+  if (!registryAddress) {
+    throw new Error("ProofOfWork ID registry is not configured.");
+  }
+  const context = await canonicalVerifierContextFromCheckpoint(
+    network,
+    requiredBlockHeight,
+    expectedBlockHash,
+    expectedPreviousBlockHash,
+  );
+  return {
+    blockHash: context.blockHash,
+    canonicalCoverage: true,
+    coverageHeight: context.coverageHeight,
+    previousBlockHash: context.previousBlockHash,
+    registryAddress,
+    state: idRegistryStateFromTransactions(
+      context.transactions,
+      registryAddress,
+      network,
+    ),
+    transactions: context.transactions,
+  };
+}
+
+function tokenVerifierItemsFromState(state, txid) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const items = [];
+  const add = (
+    item,
+    kind,
+    valid = true,
+    confirmationField = "confirmed",
+    blockHeightField = "blockHeight",
+  ) => {
+    if (!item || typeof item !== "object") {
+      return;
+    }
+    items.push({
+      ...item,
+      blockHeight: item?.[blockHeightField] ?? item?.blockHeight,
+      confirmed: item?.[confirmationField] === true,
+      kind,
+      txid: normalizedTxid,
+      valid,
+    });
+  };
+  for (const token of Array.isArray(state?.tokens) ? state.tokens : []) {
+    if (
+      [token?.txid, token?.tokenId].some(
+        (value) => String(value ?? "").toLowerCase() === normalizedTxid,
+      )
+    ) {
+      add(token, "token-create");
+    }
+  }
+  for (const mint of Array.isArray(state?.mints) ? state.mints : []) {
+    if (String(mint?.txid ?? "").toLowerCase() === normalizedTxid) {
+      add(mint, "token-mint");
+    }
+  }
+  for (const transfer of Array.isArray(state?.transfers) ? state.transfers : []) {
+    if (String(transfer?.txid ?? "").toLowerCase() === normalizedTxid) {
+      add(transfer, "token-transfer");
+    }
+  }
+  for (const listing of Array.isArray(state?.listings) ? state.listings : []) {
+    if (String(listing?.listingId ?? "").toLowerCase() === normalizedTxid) {
+      add(listing, "token-listing");
+    }
+    if (String(listing?.sealTxid ?? "").toLowerCase() === normalizedTxid) {
+      add(
+        listing,
+        "token-listing-sealed",
+        true,
+        "sealConfirmed",
+        "sealBlockHeight",
+      );
+    }
+  }
+  for (const listing of Array.isArray(state?.closedListings)
+    ? state.closedListings
+    : []) {
+    if (String(listing?.listingId ?? "").toLowerCase() === normalizedTxid) {
+      add(listing, "token-listing");
+    }
+    if (String(listing?.sealTxid ?? "").toLowerCase() === normalizedTxid) {
+      add(
+        listing,
+        "token-listing-sealed",
+        true,
+        "sealConfirmed",
+        "sealBlockHeight",
+      );
+    }
+    if (String(listing?.closedTxid ?? "").toLowerCase() === normalizedTxid) {
+      add(
+        listing,
+        "token-listing-closed",
+        true,
+        "closedConfirmed",
+        "closedBlockHeight",
+      );
+    }
+  }
+  for (const sale of Array.isArray(state?.sales) ? state.sales : []) {
+    if (String(sale?.txid ?? "").toLowerCase() === normalizedTxid) {
+      add(sale, "token-sale");
+    }
+  }
+  if (state?.canonicalCoverage === true) {
+    for (const invalidEvent of Array.isArray(state?.invalidEvents)
+      ? state.invalidEvents
+      : []) {
+      if (String(invalidEvent?.txid ?? "").toLowerCase() === normalizedTxid) {
+        add(invalidEvent, "token-event-invalid", false);
+      }
+    }
+  }
+  return items;
+}
+
+function verifierBalanceSnapshot(state, tokenId) {
+  const normalizedTokenId = String(tokenId ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTokenId)) {
+    return null;
+  }
+  const holders = (Array.isArray(state?.holders) ? state.holders : []).flatMap(
+    (holder) => {
+      const address = String(holder?.address ?? "").trim();
+      const balance = Number(holder?.balance ?? holder?.confirmedBalance ?? 0);
+      return isValidBitcoinAddress(address, "livenet") &&
+        Number.isSafeInteger(balance) &&
+        balance > 0
+        ? [{ address, balance }]
+        : [];
+    },
+  );
+  return {
+    holders,
+    indexedThroughBlock: state?.indexedThroughBlock ?? null,
+    tokenId: normalizedTokenId,
+  };
+}
+
+function tokenListingForVerifier(state, listingId) {
+  const normalizedListingId = String(listingId ?? "").trim().toLowerCase();
+  return [
+    ...(Array.isArray(state?.listings) ? state.listings : []),
+    ...(Array.isArray(state?.closedListings) ? state.closedListings : []),
+  ].find(
+    (listing) =>
+      String(listing?.listingId ?? "").toLowerCase() === normalizedListingId,
+  );
+}
+
+async function tokenVerifierDeterministicInvalidReason(
+  network,
+  state,
+  txid,
+  requireConfirmed,
+) {
+  const tx = requireConfirmed
+    ? state?.canonicalCoverage === true
+      ? (Array.isArray(state.transactions) ? state.transactions : []).find(
+          (candidate) =>
+            transactionTxid(candidate) === txid &&
+            transactionBlockHeight(candidate) ===
+              Number(state?.coverageHeight ?? 0),
+        )
+      : null
+    : await fetchTransactionFromBitcoinRpc(txid, network).catch(() => null);
+  if (!tx || (requireConfirmed && !transactionConfirmed(tx))) {
+    return "";
+  }
+  const messages = decodedProtocolMessages(tx.vout ?? [], TOKEN_PROTOCOL_PREFIX);
+  if (messages.length === 0) {
+    return "";
+  }
+  const parsedMessages = messages.map((message) => parseTokenPayload(message, network));
+  if (parsedMessages.some((parsed) => !parsed)) {
+    return "Malformed ProofOfWork credit protocol payload.";
+  }
+  const tokenById = new Map(
+    (Array.isArray(state?.tokens) ? state.tokens : []).map((token) => [
+      String(token?.tokenId ?? "").toLowerCase(),
+      token,
+    ]),
+  );
+  const indexAddress = tokenIndexAddressForNetwork(network);
+  for (const parsed of parsedMessages) {
+    let registryAddress = "";
+    let minimumPayment = TOKEN_MIN_MUTATION_PRICE_SATS;
+    if (parsed.kind === "create") {
+      registryAddress = indexAddress;
+      minimumPayment = TOKEN_CREATION_PRICE_SATS;
+    } else if (parsed.kind === "mint" || parsed.kind === "send") {
+      const token = tokenById.get(parsed.tokenId);
+      if (!token?.registryAddress) {
+        return "";
+      }
+      registryAddress = token.registryAddress;
+      minimumPayment =
+        parsed.kind === "mint"
+          ? numericValue(token.mintPriceSats)
+          : TOKEN_MIN_MUTATION_PRICE_SATS;
+    } else if (parsed.kind === "list") {
+      registryAddress = parsed.saleAuthorization?.registryAddress ?? "";
+    } else {
+      const listing = tokenListingForVerifier(state, parsed.listingId);
+      if (!listing?.registryAddress) {
+        return "";
+      }
+      registryAddress = listing.registryAddress;
+    }
+    if (
+      registryAddress &&
+      tokenPaymentAmountBeforeProtocol(tx.vout ?? [], registryAddress) <
+        minimumPayment
+    ) {
+      return "Required ProofOfWork credit registry payment is missing or misplaced.";
+    }
+  }
+  return "";
+}
+
+async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    const error = new Error("Invalid verifier txid.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const requireConfirmed = options.requireConfirmed === true;
+  const requiredBlockHeight = Number(options.blockHeight) || 0;
+  const requiredBlockHash = String(options.blockHash ?? "").trim().toLowerCase();
+  const requiredPreviousBlockHash = String(options.previousBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    requireConfirmed &&
+    (!Number.isSafeInteger(requiredBlockHeight) ||
+      requiredBlockHeight <= 0 ||
+      !/^[0-9a-f]{64}$/u.test(requiredBlockHash) ||
+      !/^[0-9a-f]{64}$/u.test(requiredPreviousBlockHash))
+  ) {
+    const error = new Error(
+      "A confirmed verifier request needs an exact height and current/previous block hashes.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  const scope = String(tokenScope ?? "").trim().toLowerCase() === "all"
+    ? ""
+    : normalizeTokenScope(tokenScope);
+  const confirmedStateScope = scope || `tx:${normalizedTxid}`;
+  const stateKey = requireConfirmed
+    ? `token-complete:${network}:${confirmedStateScope}:h${requiredBlockHeight}:${requiredPreviousBlockHash}:${requiredBlockHash}`
+    : `token:${network}:${scope || "all"}`;
+  if (requireConfirmed) {
+    pruneInternalVerifierStateCache(requiredBlockHeight);
+  }
+  const stateLoader = () =>
+    requireConfirmed
+      ? completeTokenVerifierState(
+          network,
+          scope,
+          requiredBlockHeight,
+          normalizedTxid,
+          requiredBlockHash,
+          requiredPreviousBlockHash,
+        )
+      : scope === WORK_TOKEN_ID
+        ? workTokenPayload(network, null)
+        : tokenPayload(network, scope);
+  let state = await cachedInternalVerifierState(stateKey, stateLoader);
+  if (
+    requireConfirmed &&
+    (Number(state?.coverageHeight ?? state?.indexedThroughBlock ?? 0) !==
+      requiredBlockHeight ||
+      String(state?.blockHash ?? "").trim().toLowerCase() !== requiredBlockHash ||
+      String(state?.previousBlockHash ?? "").trim().toLowerCase() !==
+        requiredPreviousBlockHash)
+  ) {
+    INTERNAL_VERIFIER_STATE_CACHE.delete(stateKey);
+    state = await cachedInternalVerifierState(stateKey, stateLoader);
+  }
+  if (
+    requireConfirmed &&
+    (Number(state?.coverageHeight ?? state?.indexedThroughBlock ?? 0) !==
+      requiredBlockHeight ||
+      String(state?.blockHash ?? "").trim().toLowerCase() !== requiredBlockHash ||
+      String(state?.previousBlockHash ?? "").trim().toLowerCase() !==
+        requiredPreviousBlockHash)
+  ) {
+    const error = new Error(
+      "The ordered credit verifier has not proven coverage through this block.",
+    );
+    error.statusCode = 503;
+    error.details = {
+      code: "TOKEN_VERIFIER_COVERAGE_UNPROVEN",
+      coverageHeight: Number(
+        state?.coverageHeight ?? state?.indexedThroughBlock ?? 0,
+      ) || null,
+      requiredBlockHeight,
+      tokenScope: scope || "all",
+      txid: normalizedTxid,
+    };
+    throw error;
+  }
+  const items = tokenVerifierItemsFromState(state, normalizedTxid).filter(
+    (item) =>
+      !requireConfirmed ||
+      (item.confirmed === true &&
+        Number(item?.blockHeight ?? 0) === requiredBlockHeight),
+  );
+  if (items.length === 0) {
+    const invalidReason = await tokenVerifierDeterministicInvalidReason(
+      network,
+      state,
+      normalizedTxid,
+      requireConfirmed,
+    );
+    if (invalidReason) {
+      items.push({
+        blockHeight: requiredBlockHeight || null,
+        confirmed: requireConfirmed,
+        kind: "token-event-invalid",
+        network,
+        reason: invalidReason,
+        txid: normalizedTxid,
+        valid: false,
+      });
+    }
+  }
+  if (
+    items.length === 0 &&
+    requireConfirmed &&
+    state?.canonicalCoverage === true &&
+    (Array.isArray(state.transactions) ? state.transactions : []).some(
+      (tx) =>
+        transactionTxid(tx) === normalizedTxid &&
+        transactionBlockHeight(tx) === requiredBlockHeight &&
+        decodedProtocolMessages(tx?.vout ?? [], TOKEN_PROTOCOL_PREFIX).length > 0,
+    )
+  ) {
+    items.push({
+      blockHeight: requiredBlockHeight,
+      confirmed: true,
+      kind: "token-event-invalid",
+      network,
+      reason: "no-valid-token-event",
+      txid: normalizedTxid,
+      valid: false,
+    });
+  }
+  if (items.length === 0) {
+    const error = new Error(
+      "The ordered credit verifier has not resolved this transaction.",
+    );
+    error.statusCode = 503;
+    error.details = {
+      code: "TOKEN_VERIFIER_UNRESOLVED",
+      indexedAt: state?.indexedAt ?? null,
+      indexedThroughBlock: state?.indexedThroughBlock ?? null,
+      requiredBlockHeight: requiredBlockHeight || null,
+      tokenScope: scope || "all",
+      txid: normalizedTxid,
+    };
+    throw error;
+  }
+  const acceptedTokenIds = [
+    ...new Set(
+      items
+        .filter((item) => item?.valid !== false)
+        .map((item) => String(item?.tokenId ?? "").trim().toLowerCase())
+        .filter((tokenId) => /^[0-9a-f]{64}$/u.test(tokenId)),
+    ),
+  ];
+  const balanceTokenId = /^[0-9a-f]{64}$/u.test(scope)
+    ? scope
+    : acceptedTokenIds.length === 1
+      ? acceptedTokenIds[0]
+      : "";
+  let balanceSnapshot = null;
+  if (!requireConfirmed && balanceTokenId) {
+    const balanceState =
+      scope === balanceTokenId
+        ? state
+        : await cachedInternalVerifierState(
+            `token:${network}:${balanceTokenId}`,
+            () =>
+              balanceTokenId === WORK_TOKEN_ID
+                ? workTokenPayload(network, null)
+                : tokenPayload(network, balanceTokenId),
+          );
+    balanceSnapshot = verifierBalanceSnapshot(balanceState, balanceTokenId);
+  }
+  return {
+    ...(balanceSnapshot ? { balanceSnapshot } : {}),
+    ...(requireConfirmed
+      ? {
+          blockHash: String(state?.blockHash ?? "").trim().toLowerCase(),
+          previousBlockHash: String(state?.previousBlockHash ?? "")
+            .trim()
+            .toLowerCase(),
+        }
+      : {}),
+    indexedAt: state?.indexedAt ?? new Date().toISOString(),
+    indexedThroughBlock: state?.indexedThroughBlock ?? null,
+    items,
+    network,
+    source: requireConfirmed
+      ? "canonical-block-scan-db-core-credit-verifier"
+      : "full-ordered-credit-verifier",
+    tokenScope: scope || "all",
+    txid: normalizedTxid,
+  };
+}
+
+async function idVerifierStateBundle(network) {
+  const registryAddress = registryAddressForNetwork(network);
+  if (!registryAddress) {
+    throw new Error("ProofOfWork ID registry is not configured.");
+  }
+  const transactions = await fetchRegistryTransactions(registryAddress, network);
+  return {
+    registryAddress,
+    state: idRegistryStateFromTransactions(
+      transactions,
+      registryAddress,
+      network,
+    ),
+    transactions,
+  };
+}
+
+function idVerifierItemsFromState(state, txid) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const activity = (Array.isArray(state?.activity) ? state.activity : []).filter(
+    (item) =>
+      [
+        item?.txid,
+        item?.eventTxid,
+        item?.listingId,
+        item?.sealTxid,
+        item?.closedTxid,
+        item?.saleTxid,
+      ].some(
+        (value) =>
+          String(value ?? "").trim().toLowerCase() === normalizedTxid,
+      ),
+  );
+  return activity.map((item) => {
+    const listingId = String(item?.listingId ?? "").toLowerCase();
+    const sale = (Array.isArray(state?.sales) ? state.sales : []).find(
+      (candidate) =>
+        String(candidate?.txid ?? "").toLowerCase() === normalizedTxid,
+    );
+    const listing = [
+      ...(Array.isArray(state?.listings) ? state.listings : []),
+      ...(Array.isArray(state?.activity) ? state.activity : []).filter(
+        (candidate) => candidate?.kind === "id-list",
+      ),
+    ].find(
+      (candidate) =>
+        String(candidate?.listingId ?? candidate?.txid ?? "").toLowerCase() ===
+        listingId,
+    );
+    return {
+      ...(listing ?? {}),
+      ...(sale ?? {}),
+      ...item,
+      id: item?.id ?? sale?.id ?? listing?.id,
+      ownerAddress:
+        item?.ownerAddress ?? sale?.buyerAddress ?? sale?.ownerAddress,
+      receiveAddress:
+        item?.receiveAddress ?? sale?.receiveAddress ?? sale?.buyerAddress,
+      sellerAddress: item?.sellerAddress ?? sale?.sellerAddress,
+    };
+  });
+}
+
+async function idVerifierDeterministicInvalidReason(
+  network,
+  bundle,
+  txid,
+  requireConfirmed,
+) {
+  const tx = requireConfirmed
+    ? bundle?.canonicalCoverage === true
+      ? (Array.isArray(bundle.transactions) ? bundle.transactions : []).find(
+          (candidate) =>
+            transactionTxid(candidate) === txid &&
+            transactionBlockHeight(candidate) ===
+              Number(bundle?.coverageHeight ?? 0),
+        )
+      : null
+    : await fetchTransactionFromBitcoinRpc(txid, network).catch(() => null);
+  if (!tx || (requireConfirmed && !transactionConfirmed(tx))) {
+    return "";
+  }
+  const messages = decodedProtocolMessages(tx.vout ?? [], ID_PROTOCOL_PREFIX);
+  if (messages.length === 0) {
+    return "";
+  }
+  const parsed = messages.map((message) => parseIdEventPayload(message, network));
+  if (parsed.some((item) => !item)) {
+    return "Malformed ProofOfWork ID protocol payload.";
+  }
+  const registryAddress = registryAddressForNetwork(network);
+  const requiredPayment = parsed.reduce(
+    (total, item) =>
+      total +
+      (item.kind === "register"
+        ? ID_REGISTRATION_PRICE_SATS
+        : ID_MUTATION_PRICE_SATS),
+    0,
+  );
+  if (
+    !registryAddress ||
+    paymentAmountBeforeIdProtocol(tx.vout ?? [], registryAddress) <
+      requiredPayment
+  ) {
+    return "Required ProofOfWork ID registry payment is missing or misplaced.";
+  }
+  return "";
+}
+
+async function idVerifierPayload(network, txid, options = {}) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    const error = new Error("Invalid verifier txid.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const requireConfirmed = options.requireConfirmed === true;
+  const requiredBlockHeight = Number(options.blockHeight) || 0;
+  const requiredBlockHash = String(options.blockHash ?? "").trim().toLowerCase();
+  const requiredPreviousBlockHash = String(options.previousBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    requireConfirmed &&
+    (!Number.isSafeInteger(requiredBlockHeight) ||
+      requiredBlockHeight <= 0 ||
+      !/^[0-9a-f]{64}$/u.test(requiredBlockHash) ||
+      !/^[0-9a-f]{64}$/u.test(requiredPreviousBlockHash))
+  ) {
+    const error = new Error(
+      "A confirmed verifier request needs an exact height and current/previous block hashes.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  const stateKey = requireConfirmed
+    ? `id-complete:${network}:h${requiredBlockHeight}:${requiredPreviousBlockHash}:${requiredBlockHash}`
+    : `id:${network}`;
+  if (requireConfirmed) {
+    pruneInternalVerifierStateCache(requiredBlockHeight);
+  }
+  const stateLoader = () =>
+    requireConfirmed
+      ? completeIdVerifierStateBundle(
+          network,
+          requiredBlockHeight,
+          requiredBlockHash,
+          requiredPreviousBlockHash,
+        )
+      : idVerifierStateBundle(network);
+  let bundle = await cachedInternalVerifierState(stateKey, stateLoader);
+  if (
+    requireConfirmed &&
+    (Number(bundle?.coverageHeight ?? 0) !== requiredBlockHeight ||
+      String(bundle?.blockHash ?? "").trim().toLowerCase() !==
+        requiredBlockHash ||
+      String(bundle?.previousBlockHash ?? "").trim().toLowerCase() !==
+        requiredPreviousBlockHash)
+  ) {
+    INTERNAL_VERIFIER_STATE_CACHE.delete(stateKey);
+    bundle = await cachedInternalVerifierState(stateKey, stateLoader);
+  }
+  if (
+    requireConfirmed &&
+    (Number(bundle?.coverageHeight ?? 0) !== requiredBlockHeight ||
+      String(bundle?.blockHash ?? "").trim().toLowerCase() !==
+        requiredBlockHash ||
+      String(bundle?.previousBlockHash ?? "").trim().toLowerCase() !==
+        requiredPreviousBlockHash)
+  ) {
+    const error = new Error(
+      "The ordered ID verifier has not proven coverage through this block.",
+    );
+    error.statusCode = 503;
+    error.details = {
+      code: "ID_VERIFIER_COVERAGE_UNPROVEN",
+      coverageHeight: Number(bundle?.coverageHeight ?? 0) || null,
+      requiredBlockHeight,
+      txid: normalizedTxid,
+    };
+    throw error;
+  }
+  const items = idVerifierItemsFromState(bundle.state, normalizedTxid).filter(
+    (item) =>
+      !requireConfirmed ||
+      (item.confirmed === true &&
+        Number(item?.blockHeight ?? 0) === requiredBlockHeight),
+  );
+  if (items.length === 0) {
+    const invalidReason = await idVerifierDeterministicInvalidReason(
+      network,
+      bundle,
+      normalizedTxid,
+      requireConfirmed,
+    );
+    if (invalidReason) {
+      items.push({
+        blockHeight: requiredBlockHeight || null,
+        confirmed: requireConfirmed,
+        kind: "id-event-invalid",
+        network,
+        reason: invalidReason,
+        txid: normalizedTxid,
+        valid: false,
+      });
+    }
+  }
+  if (
+    items.length === 0 &&
+    requireConfirmed &&
+    bundle?.canonicalCoverage === true &&
+    (Array.isArray(bundle.transactions) ? bundle.transactions : []).some(
+      (tx) =>
+        transactionTxid(tx) === normalizedTxid &&
+        transactionBlockHeight(tx) === requiredBlockHeight &&
+        decodedProtocolMessages(tx?.vout ?? [], ID_PROTOCOL_PREFIX).length > 0,
+    )
+  ) {
+    items.push({
+      blockHeight: requiredBlockHeight,
+      confirmed: true,
+      kind: "id-event-invalid",
+      network,
+      reason: "no-valid-id-event",
+      txid: normalizedTxid,
+      valid: false,
+    });
+  }
+  if (items.length === 0) {
+    const error = new Error("The ID verifier has not resolved this transaction.");
+    error.statusCode = 503;
+    error.details = {
+      code: "ID_VERIFIER_UNRESOLVED",
+      requiredBlockHeight: requiredBlockHeight || null,
+      txid: normalizedTxid,
+    };
+    throw error;
+  }
+  return {
+    ...(requireConfirmed
+      ? {
+          blockHash: String(bundle?.blockHash ?? "").trim().toLowerCase(),
+          previousBlockHash: String(bundle?.previousBlockHash ?? "")
+            .trim()
+            .toLowerCase(),
+        }
+      : {}),
+    indexedAt: new Date().toISOString(),
+    indexedThroughBlock: requireConfirmed
+      ? Number(bundle.coverageHeight) || null
+      : indexedThroughBlockFromTransactions(bundle.transactions) ?? null,
+    items,
+    network,
+    source: requireConfirmed
+      ? "canonical-block-scan-db-core-id-verifier"
+      : "full-ordered-id-verifier",
+    txid: normalizedTxid,
+  };
+}
+
+function internalVerifierRequestAllowed(request) {
+  const hostHeader = String(request.headers.host ?? "").toLowerCase();
+  const closingBracket = hostHeader.indexOf("]");
+  const requestHost = hostHeader.startsWith("[") && closingBracket > 1
+    ? hostHeader.slice(1, closingBracket)
+    : hostHeader.split(":")[0];
+  const remoteAddress = String(request.socket.remoteAddress ?? "").toLowerCase();
+  const presentedToken = String(
+    request.headers["x-pow-internal-verifier"] ?? "",
+  ).trim();
+  const expectedBytes = Buffer.from(INTERNAL_VERIFIER_TOKEN);
+  const presentedBytes = Buffer.from(presentedToken);
+  const tokenMatches =
+    expectedBytes.length >= 32 &&
+    expectedBytes.length === presentedBytes.length &&
+    timingSafeEqual(expectedBytes, presentedBytes);
+  return (
+    tokenMatches &&
+    ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(remoteAddress) &&
+    ["127.0.0.1", "localhost", "::1"].includes(requestHost)
+  );
+}
+
+async function electrumPendingScripthashEntries(scriptHash) {
+  try {
+    const entries = await electrumRequest(
+      "blockchain.scripthash.get_mempool",
+      [scriptHash],
+      HEALTH_CHECK_TIMEOUT_MS,
+    );
+    if (!Array.isArray(entries)) {
+      throw new Error("Electrum returned an invalid pending response.");
+    }
+    return entries;
+  } catch (error) {
+    if (!/method not found/iu.test(errorSummary(error))) {
+      throw error;
+    }
+    const history = await electrumRequest(
+      "blockchain.scripthash.get_history",
+      [scriptHash],
+      HEALTH_CHECK_TIMEOUT_MS,
+    );
+    if (!Array.isArray(history)) {
+      throw new Error("Electrum returned an invalid address history response.");
+    }
+    return history.filter((entry) => Number(entry?.height) <= 0);
+  }
+}
+
+async function livePendingRegistryPayload(network) {
+  const registryAddress = registryAddressForNetwork(network);
+  if (!registryAddress) {
+    throw new Error("ProofOfWork ID registry is not configured.");
+  }
+  let transactions = null;
+  let source = "";
+  for (const baseUrl of firstPartyAddressReadBases(network)) {
+    try {
+      transactions = await fetchAddressTransactionsPageFromBase(
+        baseUrl,
+        registryAddress,
+        "txs/mempool",
+        { timeoutMs: HEALTH_CHECK_TIMEOUT_MS },
+      );
+      source = baseUrl;
+      break;
+    } catch {
+      // Try the next first-party reader before the local Electrum fallback.
+    }
+  }
+  if (
+    transactions === null &&
+    network === "livenet" &&
+    String(ELECTRUM_HOST).trim() &&
+    ELECTRUM_PORT > 0
+  ) {
+    const entries = await electrumPendingScripthashEntries(
+      scriptHashForAddress(registryAddress, network),
+    );
+    const txids = [
+      ...new Set(
+        entries
+          .map((entry) => String(entry?.tx_hash ?? "").toLowerCase())
+          .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
+      ),
+    ];
+    transactions = await mapWithConcurrency(
+      txids,
+      Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
+      (txid) => fetchTransactionWithSourceFallback(txid, network),
+    );
+    if (transactions.some((tx) => !tx)) {
+      throw new Error("A pending registry transaction could not be loaded.");
+    }
+    source = `electrum://${ELECTRUM_HOST}:${ELECTRUM_PORT}`;
+  }
+  if (transactions === null) {
+    throw new Error("No healthy first-party pending registry reader is available.");
+  }
+  const state = idRegistryStateFromTransactions(
+    dedupeTransactions(transactions),
+    registryAddress,
+    network,
+  );
+  return {
+    ...state,
+    indexedAt: new Date().toISOString(),
+    network,
+    registryAddress,
+    source,
+  };
+}
+
+async function proveCurrentIdAbsence(network) {
+  const [scan, tipHeight, pending] = await Promise.all([
+    proofIndexOperationalStatusPayload(network),
+    healthNodeTipHeight(),
+    livePendingRegistryPayload(network),
+  ]);
+  const indexedThroughBlock = Number(scan?.indexedThroughBlock) || 0;
+  const workerLastSuccessMs = Date.parse(scan?.worker?.lastSuccessAt ?? "");
+  const workerFresh =
+    Number.isFinite(workerLastSuccessMs) &&
+    Date.now() - workerLastSuccessMs <= PROOF_INDEX_HEALTH_MAX_AGE_MS;
+  const current =
+    Boolean(scan) &&
+    scan?.scan?.complete === true &&
+    Boolean(String(scan?.scan?.blockHash ?? "")) &&
+    Number.isSafeInteger(tipHeight) &&
+    indexedThroughBlock === tipHeight &&
+    scan?.worker?.ok === true &&
+    workerFresh &&
+    Number(scan?.readModels?.confirmedIds?.count) > 0;
+  if (!current) {
+    const error = new Error(
+      "ProofOfWork ID availability cannot be proven until the confirmed index reaches the node tip.",
+    );
+    error.statusCode = 503;
+    error.details = {
+      code: "ID_AVAILABILITY_UNPROVEN",
+      indexedThroughBlock: indexedThroughBlock || null,
+      tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
+    };
+    throw error;
+  }
+  return pending;
+}
+
+function promiseOutcomeWithin(promise, timeoutMs) {
+  let timer;
+  const timeout = Math.max(1, Number(timeoutMs) || 1);
+  return Promise.race([
+    Promise.resolve(promise).then(
+      (value) => ({ ok: true, timedOut: false, value }),
+      (error) => ({ error, ok: false, timedOut: false, value: null }),
+    ),
+    new Promise((resolve) => {
+      timer = setTimeout(
+        () => resolve({ ok: false, timedOut: true, value: null }),
+        timeout,
+      );
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+async function healthNodeTipHeight() {
+  const rpc = await bitcoinRpc("getblockcount", []).catch(() => null);
+  const rpcHeight = Number(rpc?.result);
+  if (rpc?.ok && Number.isSafeInteger(rpcHeight) && rpcHeight > 0) {
+    return rpcHeight;
+  }
+  return ledgerTipHeight("livenet");
+}
+
+async function addressIndexHealthPayload() {
+  const registryAddress = registryAddressForNetwork("livenet");
+  if (!registryAddress) {
+    return { error: "Registry address is not configured.", ok: false };
+  }
+  if (String(ELECTRUM_HOST).trim() && ELECTRUM_PORT > 0) {
+    const addresses = [registryAddress, WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS];
+    const histories = await Promise.all(
+      addresses.map((address) =>
+        promiseOutcomeWithin(
+          electrumRequest(
+            "blockchain.scripthash.get_history",
+            [scriptHashForAddress(address, "livenet")],
+            HEALTH_CHECK_TIMEOUT_MS,
+          ),
+          HEALTH_CHECK_TIMEOUT_MS,
+        ),
+      ),
+    );
+    const valid = histories.every(
+      (outcome) => outcome.ok && Array.isArray(outcome.value),
+    );
+    const counts = histories.map((outcome) =>
+      Array.isArray(outcome.value) ? outcome.value.length : 0,
+    );
+    return {
+      addresses: addresses.map((address, index) => ({
+        address,
+        historyCount: counts[index],
+        maxConfirmedHeight: Math.max(
+          0,
+          ...(Array.isArray(histories[index].value)
+            ? histories[index].value.map((entry) => Number(entry?.height) || 0)
+            : []),
+        ),
+      })),
+      ok: valid && counts.every((count) => count > 0),
+      source: `electrum://${ELECTRUM_HOST}:${ELECTRUM_PORT}`,
+    };
+  }
+  for (const baseUrl of firstPartyAddressReadBases("livenet")) {
+    const outcome = await promiseOutcomeWithin(
+      fetchAddressTransactionsPageFromBase(
+        baseUrl,
+        registryAddress,
+        "txs/mempool",
+        { timeoutMs: HEALTH_CHECK_TIMEOUT_MS },
+      ),
+      HEALTH_CHECK_TIMEOUT_MS,
+    );
+    if (outcome.ok) {
+      return {
+        itemCount: Array.isArray(outcome.value) ? outcome.value.length : 0,
+        ok: true,
+        source: baseUrl,
+      };
+    }
+  }
+  return { error: "No first-party address index is configured.", ok: false };
+}
+
+async function electrumHealthPayload() {
+  if (!String(ELECTRUM_HOST).trim() || ELECTRUM_PORT <= 0) {
+    return { configured: false, ok: true };
+  }
+  const [versionOutcome, headerOutcome] = await Promise.all([
+    promiseOutcomeWithin(
+      electrumRequest(
+        "server.version",
+        ["ProofOfWork.Me health", "1.4"],
+        HEALTH_CHECK_TIMEOUT_MS,
+      ),
+      HEALTH_CHECK_TIMEOUT_MS,
+    ),
+    promiseOutcomeWithin(
+      electrumRequest(
+        "blockchain.headers.subscribe",
+        [],
+        HEALTH_CHECK_TIMEOUT_MS,
+      ),
+      HEALTH_CHECK_TIMEOUT_MS,
+    ),
+  ]);
+  const headerHeight = Number(headerOutcome.value?.height);
+  const ok =
+    versionOutcome.ok &&
+    headerOutcome.ok &&
+    Number.isSafeInteger(headerHeight) &&
+    headerHeight > 0;
+  return {
+    configured: true,
+    error: ok
+      ? ""
+      : errorSummary(versionOutcome.error ?? headerOutcome.error),
+    headerHeight: Number.isSafeInteger(headerHeight) ? headerHeight : null,
+    ok,
+    timedOut:
+      versionOutcome.timedOut === true || headerOutcome.timedOut === true,
+    version: versionOutcome.ok ? versionOutcome.value : null,
+  };
+}
+
+async function filesystemHealthPayload(targetPath) {
+  let probePath = path.resolve(targetPath);
+  let stats;
+  while (true) {
+    try {
+      stats = await fs.statfs(probePath);
+      break;
+    } catch (error) {
+      const parent = path.dirname(probePath);
+      if (error?.code !== "ENOENT" || parent === probePath) {
+        return { error: errorSummary(error), ok: false, path: targetPath };
+      }
+      probePath = parent;
+    }
+  }
+  const blockSize = Number(stats.bsize ?? 0);
+  const totalBytes = Number(stats.blocks ?? 0) * blockSize;
+  const availableBytes = Number(stats.bavail ?? 0) * blockSize;
+  const usedPercent =
+    totalBytes > 0 ? ((totalBytes - availableBytes) / totalBytes) * 100 : null;
+  const ok =
+    totalBytes > 0 &&
+    availableBytes >= HEALTH_DISK_MIN_FREE_BYTES &&
+    usedPercent !== null &&
+    usedPercent <= HEALTH_DISK_MAX_USED_PERCENT;
+  return {
+    availableBytes,
+    maxUsedPercent: HEALTH_DISK_MAX_USED_PERCENT,
+    minFreeBytes: HEALTH_DISK_MIN_FREE_BYTES,
+    ok,
+    path: targetPath,
+    probePath,
+    totalBytes,
+    usedPercent,
+  };
+}
+
+async function healthPayload() {
+  const [
+    databaseOutcome,
+    canonicalOutcome,
+    tipOutcome,
+    backendOutcome,
+    addressIndex,
+    electrum,
+    rootDisk,
+    cacheDisk,
+  ] = await Promise.all([
+    promiseOutcomeWithin(
+      proofIndexOperationalStatusPayload("livenet"),
+      HEALTH_CHECK_TIMEOUT_MS,
+    ),
+    promiseOutcomeWithin(
+      proofIndexCanonicalStateMetaPayload("livenet"),
+      HEALTH_CHECK_TIMEOUT_MS,
+    ),
+    promiseOutcomeWithin(
+      bitcoinRpc("getblockchaininfo", []),
+      HEALTH_CHECK_TIMEOUT_MS,
+    ),
+    promiseOutcomeWithin(
+      fetchJson(`${MEMPOOL_BASE_MAINNET}/api/v1/backend-info`, {
+        signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+      }),
+      HEALTH_CHECK_TIMEOUT_MS,
+    ),
+    addressIndexHealthPayload(),
+    electrumHealthPayload(),
+    filesystemHealthPayload("/"),
+    filesystemHealthPayload(PERSISTED_CACHE_DIR),
+  ]);
+  const database = databaseOutcome.ok ? databaseOutcome.value : null;
+  const canonical = canonicalOutcome.ok ? canonicalOutcome.value : null;
+  const chainInfo = tipOutcome.value?.ok ? tipOutcome.value.result : null;
+  const tipHeight = Number(chainInfo?.blocks);
+  const sampledBestBlockHash = String(chainInfo?.bestblockhash ?? "")
+    .trim()
+    .toLowerCase();
+  const indexedThroughBlock = Number(database?.indexedThroughBlock) || 0;
+  const checkpointOutcome =
+    indexedThroughBlock > 0 && indexedThroughBlock !== tipHeight
+      ? await promiseOutcomeWithin(
+          bitcoinRpc("getblockhash", [indexedThroughBlock]),
+          HEALTH_CHECK_TIMEOUT_MS,
+        )
+      : { ok: indexedThroughBlock === tipHeight, value: null };
+  const canonicalCheckpointHash = String(
+    indexedThroughBlock === tipHeight
+      ? sampledBestBlockHash
+      : checkpointOutcome.value?.ok
+        ? checkpointOutcome.value.result
+        : "",
+  )
+    .trim()
+    .toLowerCase();
+  const storedCheckpointHash = String(database?.scan?.blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const checkpointCanonical =
+    /^[0-9a-f]{64}$/u.test(storedCheckpointHash) &&
+    canonicalCheckpointHash === storedCheckpointHash;
+  const lagBlocks =
+    Number.isSafeInteger(tipHeight) && indexedThroughBlock > 0
+      ? Math.max(0, tipHeight - indexedThroughBlock)
+      : null;
+  const aheadBlocks =
+    Number.isSafeInteger(tipHeight) && indexedThroughBlock > 0
+      ? Math.max(0, indexedThroughBlock - tipHeight)
+      : null;
+  const workerLastSuccessAt = String(database?.worker?.lastSuccessAt ?? "");
+  const workerLastSuccessMs = Date.parse(workerLastSuccessAt);
+  const workerAgeMs = Number.isFinite(workerLastSuccessMs)
+    ? Math.max(0, Date.now() - workerLastSuccessMs)
+    : null;
+  const workerFresh =
+    workerAgeMs !== null && workerAgeMs <= PROOF_INDEX_HEALTH_MAX_AGE_MS;
+  const workerOk = database?.worker?.ok === true;
+  const canonicalFault = canonical?.fault ?? {};
+  const canonicalRebuild = canonical?.rebuild ?? {};
+  const canonicalStateOk =
+    Boolean(canonical) &&
+    Boolean(canonical?.rebuild) &&
+    canonicalFault?.active !== true &&
+    canonicalRebuild?.active !== true &&
+    canonicalRebuild.status === "complete";
+  const electrumAtTip =
+    electrum.configured !== true ||
+    (Number.isSafeInteger(tipHeight) && electrum.headerHeight === tipHeight);
+  const readModelsOk =
+    Number(database?.readModels?.confirmedIds?.count) > 0 &&
+    Number(database?.readModels?.confirmedTransfers?.count) > 0;
+  const summarySnapshotOk =
+    database?.summarySnapshot?.eligible === true &&
+    Number(database?.summarySnapshot?.indexedThroughBlock ?? 0) >=
+    indexedThroughBlock;
+  const indexOk =
+    Boolean(database) &&
+    database?.scan?.complete === true &&
+    checkpointCanonical &&
+    lagBlocks === 0 &&
+    aheadBlocks === 0 &&
+    canonicalStateOk &&
+    workerOk &&
+    workerFresh &&
+    readModelsOk &&
+    summarySnapshotOk;
+  const diskOk = rootDisk.ok && cacheDisk.ok;
+  const ok =
+    Number.isSafeInteger(tipHeight) &&
+    backendOutcome.ok &&
+    addressIndex.ok &&
+    electrum.ok &&
+    electrumAtTip &&
+    diskOk &&
+    (PROOF_INDEX_REQUIRED ? indexOk : true);
+
+  return {
+    backend: backendOutcome.ok ? backendOutcome.value?.backend ?? null : null,
+    checks: {
+      addressIndex,
+      backend: { ok: backendOutcome.ok, timedOut: backendOutcome.timedOut },
+      database: {
+        canonicalMetaOk: canonicalOutcome.ok && Boolean(canonical),
+        ok:
+          databaseOutcome.ok &&
+          Boolean(database) &&
+          canonicalOutcome.ok &&
+          Boolean(canonical),
+        required: PROOF_INDEX_REQUIRED,
+        timedOut: databaseOutcome.timedOut,
+      },
+      disk: { cache: cacheDisk, ok: diskOk, root: rootDisk },
+      electrum: {
+        ...electrum,
+        atTip: electrumAtTip,
+        ok: electrum.ok && electrumAtTip,
+      },
+      index: {
+        aheadBlocks,
+        checkpointHash: database?.scan?.blockHash ?? "",
+        complete: database?.scan?.complete === true,
+        canonicalState: {
+          fault: canonicalFault,
+          ok: canonicalStateOk,
+          rebuild: canonicalRebuild,
+        },
+        checkpointCanonical,
+        canonicalCheckpointHash,
+        indexedThroughBlock,
+        lagBlocks,
+        ok: indexOk,
+        readModels: database?.readModels ?? null,
+        summarySnapshot: {
+          ...(database?.summarySnapshot ?? {}),
+          ok: summarySnapshotOk,
+        },
+        scanTipHeight: database?.scan?.tipHeight ?? null,
+        stopReason: database?.scan?.stopReason ?? "",
+      },
+      node: {
+        bestBlockHash: sampledBestBlockHash || null,
+        ok:
+          Number.isSafeInteger(tipHeight) &&
+          /^[0-9a-f]{64}$/u.test(sampledBestBlockHash),
+        tipHeight,
+      },
+      worker: {
+        ageMs: workerAgeMs,
+        consecutiveFailures: Number(
+          database?.worker?.consecutiveFailures ?? 0,
+        ),
+        error: String(database?.worker?.error ?? ""),
+        lastSuccessAt:
+          Number.isFinite(workerLastSuccessMs) ? workerLastSuccessAt : null,
+        maxAgeMs: PROOF_INDEX_HEALTH_MAX_AGE_MS,
+        ok: workerOk && workerFresh,
+        phase: database?.worker?.phase ?? database?.worker?.state ?? null,
+      },
+    },
+    indexedAt: new Date().toISOString(),
+    indexedThroughBlock,
+    lagBlocks,
+    mempoolBase: MEMPOOL_BASE_MAINNET,
+    ok,
+    service: "proofofwork-op-return-api",
+    tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
+  };
+}
+
+const CANONICAL_PUBLIC_READ_GATE_TTL_MS = 2_000;
+const canonicalPublicReadGateCache = new Map();
+
+function canonicalPublicReadGateApplies(pathname) {
+  const path = String(pathname ?? "");
+  if (!path.startsWith("/api/v1/")) {
+    return false;
+  }
+  if (/^\/api\/v1\/address\/[^/]+\/(?:utxo|txs(?:\/.*)?)$/u.test(path)) {
+    return false;
+  }
+  return ![
+    "/api/v1/internal/",
+    "/api/v1/broadcast/",
+    "/api/v1/block/",
+    "/api/v1/prices/",
+    "/api/v1/tx/",
+  ].some((prefix) => path.startsWith(prefix));
+}
+
+function canonicalSummarySnapshotReadGateApplies(pathname) {
+  return new Set([
+    "/api/v1/growth-summary",
+    "/api/v1/infinity-summary",
+    "/api/v1/marketplace-summary",
+    "/api/v1/work-floor",
+    "/api/v1/work-summary",
+  ]).has(String(pathname ?? ""));
+}
+
+async function loadCanonicalPublicReadGate(network) {
+  if (network !== "livenet" || !PROOF_INDEX_REQUIRED) {
+    return { ok: true };
+  }
+  const [status, canonical, tipResponse] = await Promise.all([
+    proofIndexOperationalStatusPayload(network),
+    proofIndexCanonicalStateMetaPayload(network),
+    bitcoinRpc("getblockchaininfo", []),
+  ]);
+  const indexedThroughBlock = Number(status?.indexedThroughBlock) || 0;
+  const chainInfo = tipResponse?.ok ? tipResponse.result : null;
+  const tipHeight = Number(chainInfo?.blocks);
+  const bestBlockHash = String(chainInfo?.bestblockhash ?? "")
+    .trim()
+    .toLowerCase();
+  const storedHash = String(status?.scan?.blockHash ?? "").toLowerCase();
+  const canonicalHash = indexedThroughBlock === tipHeight ? bestBlockHash : "";
+  const rebuild = canonical?.rebuild ?? {};
+  const fault = canonical?.fault ?? {};
+  const workerLastSuccessMs = Date.parse(status?.worker?.lastSuccessAt ?? "");
+  const workerFresh =
+    Number.isFinite(workerLastSuccessMs) &&
+    Date.now() - workerLastSuccessMs <= PROOF_INDEX_HEALTH_MAX_AGE_MS;
+  const readModelsOk =
+    Number(status?.readModels?.confirmedIds?.count) > 0 &&
+    Number(status?.readModels?.confirmedTransfers?.count) > 0;
+  const summarySnapshotOk =
+    status?.summarySnapshot?.eligible === true &&
+    Number(status?.summarySnapshot?.indexedThroughBlock ?? 0) >=
+    indexedThroughBlock;
+  const ok =
+    Boolean(status) &&
+    Boolean(canonical) &&
+    status?.scan?.complete === true &&
+    Number.isSafeInteger(tipHeight) &&
+    indexedThroughBlock === tipHeight &&
+    /^[0-9a-f]{64}$/u.test(storedHash) &&
+    canonicalHash === storedHash &&
+    fault?.active !== true &&
+    Boolean(canonical?.rebuild) &&
+    rebuild?.active !== true &&
+    rebuild.status === "complete" &&
+    status?.worker?.ok === true &&
+    workerFresh &&
+    readModelsOk;
+  return {
+    canonicalHash: canonicalHash || null,
+    fault,
+    indexedThroughBlock: indexedThroughBlock || null,
+    ok,
+    rebuild,
+    storedHash: storedHash || null,
+    tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
+    workerFresh,
+    workerOk: status?.worker?.ok === true,
+    readModelsOk,
+    summarySnapshot: status?.summarySnapshot ?? null,
+    summarySnapshotOk,
+  };
+}
+
+async function canonicalPublicReadGate(network) {
+  const now = Date.now();
+  const cached = canonicalPublicReadGateCache.get(network);
+  if (
+    cached &&
+    (!cached.settled || cached.expiresAt > now)
+  ) {
+    return cached.promise;
+  }
+  const entry = {
+    expiresAt: Number.POSITIVE_INFINITY,
+    network,
+    promise: null,
+    settled: false,
+  };
+  const promise = promiseOutcomeWithin(
+    loadCanonicalPublicReadGate(network),
+    HEALTH_CHECK_TIMEOUT_MS,
+  )
+    .then((outcome) => {
+      entry.expiresAt =
+        Date.now() +
+        (outcome.timedOut
+          ? Math.max(30_000, HEALTH_CHECK_TIMEOUT_MS)
+          : CANONICAL_PUBLIC_READ_GATE_TTL_MS);
+      entry.settled = true;
+      return outcome.ok
+        ? outcome.value
+        : {
+            error: outcome.timedOut
+              ? "Canonical read gate timed out."
+              : errorSummary(outcome.error),
+            ok: false,
+            timedOut: outcome.timedOut === true,
+          };
+    })
+    .catch((error) => {
+      entry.expiresAt = Date.now() + CANONICAL_PUBLIC_READ_GATE_TTL_MS;
+      entry.settled = true;
+      return { error: errorSummary(error), ok: false };
+  });
+  entry.promise = promise;
+  canonicalPublicReadGateCache.set(network, entry);
+  return promise;
 }
 
 async function handleRequest(request, response) {
@@ -28589,12 +31368,109 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/health" || url.pathname === "/api/v1/health") {
-      jsonResponse(response, 200, await healthPayload(), "no-store");
+      const payload = await healthPayload();
+      jsonResponse(response, payload.ok ? 200 : 503, payload, "no-store");
       return;
     }
 
     const network = networkFromSearch(url.searchParams);
     const freshRead = freshReadRequested(url.searchParams);
+
+    const authenticatedLoopbackRead = internalVerifierRequestAllowed(request);
+    if (
+      canonicalPublicReadGateApplies(url.pathname) &&
+      !authenticatedLoopbackRead
+    ) {
+      const gate = await canonicalPublicReadGate(network);
+      if (!gate.ok) {
+        errorResponse(
+          response,
+          503,
+          "The canonical ProofOfWork index is rebuilding or no longer matches Bitcoin Core.",
+          { code: "CANONICAL_INDEX_UNAVAILABLE", ...gate },
+        );
+        return;
+      }
+      if (
+        canonicalSummarySnapshotReadGateApplies(url.pathname) &&
+        !gate.summarySnapshotOk
+      ) {
+        errorResponse(
+          response,
+          503,
+          "The canonical ProofOfWork summary snapshot is catching up.",
+          { code: "CANONICAL_SUMMARY_UNAVAILABLE", ...gate },
+        );
+        return;
+      }
+    }
+
+    if (url.pathname === "/api/v1/internal/token-verifier") {
+      if (!internalVerifierRequestAllowed(request)) {
+        errorResponse(response, 404, "Not found.");
+        return;
+      }
+      jsonResponse(
+        response,
+        200,
+        await tokenVerifierPayload(
+          network,
+          url.searchParams.get("asset") ?? "",
+          url.searchParams.get("txid") ?? "",
+          {
+            blockHash: url.searchParams.get("blockHash") ?? "",
+            blockHeight: Number(url.searchParams.get("blockHeight") ?? 0),
+            previousBlockHash:
+              url.searchParams.get("previousBlockHash") ?? "",
+            requireConfirmed: /^(?:1|true|yes)$/iu.test(
+              String(url.searchParams.get("confirmed") ?? ""),
+            ),
+          },
+        ),
+        "no-store",
+      );
+      return;
+    }
+
+    if (url.pathname === "/api/v1/internal/canonical-summary") {
+      if (!internalVerifierRequestAllowed(request)) {
+        errorResponse(response, 404, "Not found.");
+        return;
+      }
+      jsonResponse(
+        response,
+        200,
+        await internalCanonicalSummaryPayload(network),
+        "no-store",
+      );
+      return;
+    }
+
+    if (url.pathname === "/api/v1/internal/id-verifier") {
+      if (!internalVerifierRequestAllowed(request)) {
+        errorResponse(response, 404, "Not found.");
+        return;
+      }
+      jsonResponse(
+        response,
+        200,
+        await idVerifierPayload(
+          network,
+          url.searchParams.get("txid") ?? "",
+          {
+            blockHash: url.searchParams.get("blockHash") ?? "",
+            blockHeight: Number(url.searchParams.get("blockHeight") ?? 0),
+            previousBlockHash:
+              url.searchParams.get("previousBlockHash") ?? "",
+            requireConfirmed: /^(?:1|true|yes)$/iu.test(
+              String(url.searchParams.get("confirmed") ?? ""),
+            ),
+          },
+        ),
+        "no-store",
+      );
+      return;
+    }
 
     if (url.pathname === "/api/v1/prices/btc-usd") {
       jsonResponse(
@@ -29137,9 +32013,6 @@ async function handleRequest(request, response) {
           "sales",
         ].includes(historyKind) &&
         recoveryAddressHintsFromSearchParams(url.searchParams, network).length > 0;
-      const exactTxidHistoryQuery = /^[0-9a-f]{64}$/iu.test(
-        historyPaginationFromSearch(url.searchParams).query,
-      );
       if (
         (!freshRead ||
           exactProofIndexHistoryRead ||
@@ -29167,7 +32040,8 @@ async function handleRequest(request, response) {
         );
         if (indexedPayload) {
           const responsePayload =
-            needsCreditNetworkValueOverlay && !exactTxidHistoryQuery
+            needsCreditNetworkValueOverlay &&
+              exactProofIndexTxids.length === 0
             ? await tokenHistoryPageWithCanonicalCreditValueOverlay(
                 indexedPayload,
                 network,
@@ -29251,15 +32125,6 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/work-summary") {
-      if (!freshRead && network === "livenet") {
-        jsonResponse(
-          response,
-          200,
-          await fastLivenetWorkSummaryPayload(network),
-          READ_CACHE_CONTROL,
-        );
-        return;
-      }
       if (
         !freshRead &&
         network !== "livenet" &&
@@ -29390,59 +32255,134 @@ async function handleRequest(request, response) {
         errorResponse(response, 400, "Invalid ProofOfWork ID.");
         return;
       }
-      const indexedIdRecord = await proofIndexIdRecordPayload(network, id).catch(
-        (error) => {
-          console.error(
-            `Proof index ID record read failed for ${id}: ${errorSummary(error)}`,
-          );
-          return null;
-        },
+      let indexedIdRecord;
+      try {
+        indexedIdRecord = await proofIndexIdRecordPayload(network, id);
+      } catch (error) {
+        const unavailable = new Error(
+          "ProofOfWork ID availability cannot be proven while the index is unavailable.",
+        );
+        unavailable.statusCode = 503;
+        unavailable.details = {
+          cause: errorSummary(error),
+          code: "ID_AVAILABILITY_UNPROVEN",
+          id,
+        };
+        throw unavailable;
+      }
+      const requireCurrent = /^(?:1|true|yes)$/iu.test(
+        String(url.searchParams.get("current") ?? ""),
       );
-      const indexedRegistry = indexedIdRecord
-        ? null
-        : await indexedRegistryPayload(network);
-      const persistedRegistry =
-        indexedRegistry ??
-        indexedIdRecord ??
-        (await existingRegistryPayload(network).catch(() => null));
-      const registry =
-        persistedRegistry ??
-        (await cachedPayload(`registry:${network}`, () =>
-          safeRegistryPayload(network),
-        ));
-      const records = (Array.isArray(registry.records) ? registry.records : [])
-        .filter((record) => normalizePowId(String(record?.id ?? "")) === id);
+      const currentProof = requireCurrent
+        ? await proveCurrentIdAbsence(network)
+        : null;
+      let registry =
+        indexedIdRecord ?? {
+          indexedAt: new Date().toISOString(),
+          listings: [],
+          network,
+          pendingEvents: [],
+          records: [],
+          sales: [],
+          source: "proof-index:registry-id",
+        };
+      // Livenet availability is proven by the canonical Core block scan plus
+      // the separate live pending check. A cached address-registry fallback
+      // must never turn a confirmed DB absence into a green availability claim.
+      if (!indexedIdRecord && network !== "livenet") {
+        try {
+          registry = await safeRegistryPayload(network);
+        } catch (error) {
+          const unavailable = new Error(
+            "ProofOfWork ID availability could not be verified against the live registry.",
+          );
+          unavailable.statusCode = 503;
+          unavailable.details = {
+            cause: errorSummary(error),
+            code: "ID_AVAILABILITY_UNPROVEN",
+            id,
+          };
+          throw unavailable;
+        }
+      }
+      let records = exactIdRecordsWithIndexedConfirmation(
+        registry,
+        indexedIdRecord,
+        id,
+      );
+      if (indexedIdRecord) {
+        registry = {
+          ...registry,
+          records,
+          source: mergedSourceLabel(registry?.source, indexedIdRecord?.source),
+        };
+      }
+      if (!records.some((record) => record.confirmed === true)) {
+        const pendingRegistry =
+          currentProof ?? (await proveCurrentIdAbsence(network));
+        const livePendingRecords = (Array.isArray(pendingRegistry?.records)
+          ? pendingRegistry.records
+          : []
+        ).filter(
+          (record) =>
+            record?.confirmed !== true &&
+            normalizePowId(String(record?.id ?? "")) === id,
+        );
+        records = [
+          ...records.filter((record) => record?.confirmed === true),
+          ...livePendingRecords,
+        ];
+        registry = {
+          ...registry,
+          pendingEvents: pendingRegistry?.pendingEvents ?? [],
+          records,
+          source: mergedSourceLabel(registry?.source, pendingRegistry?.source),
+        };
+      }
+      if (currentProof) {
+        registry = {
+          ...registry,
+          pendingEvents: currentProof.pendingEvents ?? [],
+          source: mergedSourceLabel(registry?.source, currentProof?.source),
+        };
+      }
       const confirmed = records.find((record) => record.confirmed);
       const pending = records.find((record) => !record.confirmed);
-      const ownerAddress = String(
-        confirmed?.ownerAddress ?? pending?.ownerAddress ?? "",
-      );
       const listings = (Array.isArray(registry.listings) ? registry.listings : [])
         .filter(
-          (listing) =>
-            normalizePowId(String(listing?.id ?? "")) === id ||
-            (ownerAddress && listing?.sellerAddress === ownerAddress),
+          (listing) => normalizePowId(String(listing?.id ?? "")) === id,
         );
+      const exactListingIds = new Set(
+        listings
+          .map((listing) => String(listing?.listingId ?? "").toLowerCase())
+          .filter((listingId) => /^[0-9a-f]{64}$/u.test(listingId)),
+      );
       const pendingEvents = (Array.isArray(registry.pendingEvents)
         ? registry.pendingEvents
         : []
       ).filter(
         (event) =>
           normalizePowId(String(event?.id ?? "")) === id ||
-          (ownerAddress &&
-            (event?.ownerAddress === ownerAddress ||
-              event?.sellerAddress === ownerAddress ||
-              event?.currentOwnerAddress === ownerAddress)),
+          exactListingIds.has(String(event?.listingId ?? "").toLowerCase()),
       );
       const sales = (Array.isArray(registry.sales) ? registry.sales : []).filter(
-        (sale) =>
-          normalizePowId(String(sale?.id ?? "")) === id ||
-          (ownerAddress &&
-            (sale?.sellerAddress === ownerAddress ||
-              sale?.buyerAddress === ownerAddress)),
+        (sale) => normalizePowId(String(sale?.id ?? "")) === id,
+      );
+      const lifecycleTxids = new Set([
+        ...listings.map((listing) => String(listing?.listingId ?? "").toLowerCase()),
+        ...sales.map((sale) => String(sale?.txid ?? "").toLowerCase()),
+      ]);
+      const activity = (Array.isArray(registry.activity)
+        ? registry.activity
+        : []
+      ).filter(
+        (item) =>
+          normalizePowId(String(item?.id ?? "")) === id ||
+          lifecycleTxids.has(String(item?.txid ?? "").toLowerCase()) ||
+          exactListingIds.has(String(item?.listingId ?? "").toLowerCase()),
       );
       jsonResponse(response, 200, {
-        activity: [],
+        activity,
         id,
         indexedAt: registry.indexedAt,
         listings,
@@ -29453,7 +32393,7 @@ async function handleRequest(request, response) {
         routable: Boolean(confirmed),
         sales,
         source:
-          indexedRegistry || indexedIdRecord
+          indexedIdRecord && !requireCurrent
             ? "proof-index:registry-id"
             : registry.source,
         status: confirmed ? "confirmed" : pending ? "pending" : "available",
@@ -29638,6 +32578,12 @@ async function handleRequest(request, response) {
       error && typeof error === "object" && Number.isInteger(error.statusCode)
         ? error.statusCode
         : 500;
+    if (statusCode >= 500) {
+      console.error(
+        `${request.method ?? "GET"} ${url.pathname} failed:`,
+        error instanceof Error ? error.stack ?? error.message : error,
+      );
+    }
     errorResponse(
       response,
       statusCode,
@@ -29676,5 +32622,6 @@ function prewarmExpensiveReadCaches() {
 server.listen(PORT, HOST, () => {
   console.log(`ProofOfWork OP_RETURN API listening on http://${HOST}:${PORT}`);
   console.log(`Mainnet mempool source: ${MEMPOOL_BASE_MAINNET}`);
+  void pruneGeneratedPersistedCacheTemps();
   prewarmExpensiveReadCaches();
 });

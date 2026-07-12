@@ -1,8 +1,8 @@
 [Unit]
 Description=ProofOfWork.Me PostgreSQL event indexer worker
-After=network-online.target postgresql.service proofofwork-api.service
-Wants=network-online.target
-Requires=postgresql.service
+After=network-online.target postgresql@16-main.service proofofwork-api.service
+Wants=network-online.target proofofwork-api.service
+Requires=postgresql@16-main.service
 
 [Service]
 Type=simple
@@ -10,29 +10,49 @@ User=powadmin
 WorkingDirectory=/opt/proofofwork-api
 EnvironmentFile=/opt/proofofwork-api/config/proof-indexer-db.env
 EnvironmentFile=-/etc/proofofwork-api/bitcoin-rpc.env
+EnvironmentFile=/etc/proofofwork-api/internal-verifier.env
 Environment=NETWORK=livenet
 Environment=POW_API_BASE=http://127.0.0.1:8081
 Environment=POW_INDEX_WORKER_INTERVAL_MS=30000
 Environment=POW_INDEX_WORKER_BACKFILL_MAX_PAGES=20
-Environment=POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan
+Environment=POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan,mempool-scan
 Environment=POW_INDEX_WORKER_BACKFILL_SOURCE_FRESH=0
-Environment=POW_INDEX_WORKER_BACKFILL_SUMMARY_SNAPSHOT_FRESH=1
+Environment=POW_INDEX_WORKER_BACKFILL_SUMMARY_SNAPSHOT_FRESH=0
 Environment=POW_INDEX_WORKER_BACKFILL_TOKEN_SNAPSHOT_FRESH=0
-Environment=POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_BLOCKS=2000
-Environment=POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_TXIDS=5000
+Environment=POW_INDEX_WORKER_BACKFILL_STORE_LEDGER_SNAPSHOT=0
+Environment=POW_INDEX_WORKER_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT=1
+Environment=POW_INDEX_CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS=120000
+Environment=POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_BLOCKS=250
+Environment=POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_TXIDS=250
+Environment=POW_INDEX_BITCOIN_RPC_TIMEOUT_MS=15000
+Environment=POW_INDEX_BITCOIN_RPC_RETRIES=2
+Environment=POW_INDEX_PREVOUT_HYDRATION_CONCURRENCY=4
+Environment=POW_INDEX_MEMPOOL_SCAN_MAX_TXIDS=500
+Environment=POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5
+Environment=POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=5000
 Environment=POW_INDEX_WORKER_HOLDERS=0
 Environment=POW_INDEX_WORKER_PARITY=0
 Environment=POW_INDEX_WORKER_PARITY_INTERVAL_MS=900000
 Environment=POW_INDEX_PENDING_MIN_AGE_MS=60000
 Environment=POW_INDEX_PENDING_STATUS_LIMIT=25
+Environment=POW_INDEX_PENDING_STATUS_BUDGET_MS=15000
+Environment=POW_INDEX_PENDING_STATUS_CONCURRENCY=5
 Environment=POW_INDEX_FETCH_TIMEOUT_MS=180000
-Environment=POW_INDEX_STATUS_FETCH_TIMEOUT_MS=15000
+Environment=POW_INDEX_STATUS_FETCH_TIMEOUT_MS=5000
 Environment=POW_INDEX_FETCH_RETRIES=8
+Environment=POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS=240000
+Environment=POW_INDEX_WORKER_PARITY_TIMEOUT_MS=120000
+Environment=POW_INDEX_WORKER_MAX_CONSECUTIVE_FAILURES=3
+ExecStartPre=/usr/bin/pg_isready --quiet --host=127.0.0.1 --port=5432 --dbname=proof_indexer
 ExecStart=/usr/bin/npm run indexer:worker -- --loop
-Restart=always
-RestartSec=10
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=30
+KillMode=control-group
+LimitCORE=0
 NoNewPrivileges=true
 PrivateTmp=true
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target

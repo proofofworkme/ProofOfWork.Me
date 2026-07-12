@@ -51,6 +51,8 @@ const CARBONZ_LISTING_TX =
   "d0697f88d7648ac4221af34d17d3e8c55852b917f820100d9029143085b29a13";
 const CARBONZ_SEAL_TX =
   "e365ada0deb8a7bf8f8c4c012897633e4f00938e7f0ca85999de884f939cbc68";
+const CARBONZ_SALE_TX =
+  "c74632a45a987b25de86f5f37c1b02f7642bc49c22355515f488c9dd5527855d";
 const REPORTED_TRANSFER_TX =
   "90cdafde9e7e050a1831fcc3b412f29e529368fa6d9afc8f053c681c204449d4";
 const CARBONZ_DELAYED_TRANSFER_TX =
@@ -888,17 +890,53 @@ const carbonzBuyerWalletToken = await getJson("/api/v1/token", {
 });
 const carbonzBuyerSale = (carbonzBuyerWalletToken.sales ?? []).find(
   (item) =>
-    String(item?.txid ?? "").toLowerCase() === CARBONZ_REPORTED_BUY_TX &&
-    String(item?.listingId ?? "").toLowerCase() ===
-      CARBONZ_REPORTED_BUY_LISTING_TX,
+    String(item?.txid ?? "").toLowerCase() === CARBONZ_REPORTED_BUY_TX,
 );
 assert(
-  carbonzBuyerSale?.confirmed === true &&
-    carbonzBuyerSale?.amount === 7000 &&
-    carbonzBuyerSale?.priceSats === 49000 &&
-    carbonzBuyerSale?.buyerAddress === CARBONZ_REPORTED_BUY_BUYER &&
-    carbonzBuyerSale?.sellerAddress === CARBONZ_REPORTED_BUY_SELLER,
-  `${CARBONZ_REPORTED_BUY_TX} is missing from buyer wallet-scoped sales`,
+  !carbonzBuyerSale,
+  `${CARBONZ_REPORTED_BUY_TX} is canonically invalid but leaked into buyer wallet-scoped sales`,
+);
+const carbonzInvalidBuyHistory = await getJson("/api/v1/token-history", {
+  network: "livenet",
+  fresh: 1,
+  // The rejected listing never resolved to a canonical WORK listing, so its
+  // value-neutral audit event belongs to global invalid history.
+  kind: "invalid-events",
+  limit: 20,
+  q: CARBONZ_REPORTED_BUY_TX,
+});
+const carbonzInvalidBuy = (carbonzInvalidBuyHistory.items ?? []).find(
+  (item) =>
+    String(item?.txid ?? "").toLowerCase() === CARBONZ_REPORTED_BUY_TX,
+);
+assert(
+  carbonzInvalidBuy?.kind === "token-event-invalid" &&
+    carbonzInvalidBuy?.protocol === "pwt1" &&
+    carbonzInvalidBuy?.confirmed === true &&
+    carbonzInvalidBuy?.valid === false &&
+    carbonzInvalidBuy?.reason === "no-valid-token-event" &&
+    String(carbonzInvalidBuy?.listingId ?? "").toLowerCase() ===
+      CARBONZ_REPORTED_BUY_LISTING_TX &&
+    carbonzInvalidBuy?.buyerAddress === CARBONZ_REPORTED_BUY_BUYER &&
+    carbonzInvalidBuy?.senderAddress === CARBONZ_REPORTED_BUY_SELLER,
+  `${CARBONZ_REPORTED_BUY_TX} is missing or incomplete in canonical invalid-event history`,
+);
+const carbonzInvalidBuyLog = await getJson("/api/v1/log-history", {
+  network: "livenet",
+  q: CARBONZ_REPORTED_BUY_TX,
+  limit: 5,
+});
+assertRenderableLogItems(carbonzInvalidBuyLog, "Carbonz invalid buy Log search");
+const carbonzInvalidBuyLogItem = (carbonzInvalidBuyLog.items ?? []).find(
+  (item) =>
+    String(item?.txid ?? "").toLowerCase() === CARBONZ_REPORTED_BUY_TX,
+);
+assert(
+  carbonzInvalidBuyLogItem?.kind === "token-event-invalid" &&
+    carbonzInvalidBuyLogItem?.protocol === "pwt1" &&
+    carbonzInvalidBuyLogItem?.confirmed === true &&
+    carbonzInvalidBuyLogItem?.valid === false,
+  `${CARBONZ_REPORTED_BUY_TX} is not logged as a confirmed canonical invalid token event`,
 );
 const carbonzTaprootWalletToken = await getJson("/api/v1/token", {
   network: "livenet",
@@ -1279,14 +1317,34 @@ const carbonzWalletToken = await getJson("/api/v1/token", {
   address: CARBONZ_ADDRESS,
   wallet: 1,
 });
-const carbonzListing = (carbonzWalletToken.listings ?? []).find(
+const carbonzActiveListing = (carbonzWalletToken.listings ?? []).find(
   (item) => String(item?.listingId ?? "").toLowerCase() === CARBONZ_LISTING_TX,
 );
 assert(
-  carbonzListing &&
-    String(carbonzListing.sealTxid ?? "").toLowerCase() === CARBONZ_SEAL_TX &&
-    carbonzListing.sealConfirmed === true,
-  `${CARBONZ_LISTING_TX} is missing its confirmed seal in carbonz wallet-scoped token payload`,
+  !carbonzActiveListing,
+  `${CARBONZ_LISTING_TX} was sold by ${CARBONZ_SALE_TX} but remains active in the carbonz wallet-scoped token payload`,
+);
+const carbonzClosedListing = (carbonzWalletToken.closedListings ?? []).find(
+  (item) => String(item?.listingId ?? "").toLowerCase() === CARBONZ_LISTING_TX,
+);
+assert(
+  carbonzClosedListing?.closedConfirmed === true &&
+    String(carbonzClosedListing.closedTxid ?? "").toLowerCase() ===
+      CARBONZ_SALE_TX &&
+    carbonzClosedListing.sealConfirmed === true &&
+    String(carbonzClosedListing.sealTxid ?? "").toLowerCase() ===
+      CARBONZ_SEAL_TX,
+  `${CARBONZ_LISTING_TX} is missing its confirmed seal and sale close in carbonz wallet-scoped history`,
+);
+assert(
+  (carbonzWalletToken.sales ?? []).some(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() === CARBONZ_LISTING_TX &&
+      String(item?.txid ?? item?.saleTxid ?? "").toLowerCase() ===
+        CARBONZ_SALE_TX &&
+      item?.confirmed === true,
+  ),
+  `${CARBONZ_SALE_TX} is missing from carbonz wallet-scoped sales`,
 );
 const carbonzMarketLog = await tokenHistory("market-log", {
   address: CARBONZ_ADDRESS,
