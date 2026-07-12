@@ -979,6 +979,8 @@ expectAll("consistency endpoint guards the public invariant", server, [
   /function ledgerSnapshotChecks\(/,
   /"livenet-confirmed-history-present"/,
   /"token-definitions-cover-confirmed-mints"/,
+  /"token-components-cover-confirmed-activity"/,
+  /"infinity-bond-flow-matches-powb-supply"/,
   /"work-floor-actual-total"/,
   /"growth-actual-total"/,
   /"growth-work-floor-total"/,
@@ -1030,6 +1032,17 @@ expectAll("log history searches fall back to direct DB event rows", proofIndexRe
   /lower\(e\.payload::text\) LIKE/,
   /source:\s*"proof-indexer"/,
 ]);
+const publicLogKinds = /const PUBLIC_LOG_EVENT_KINDS = new Set\(\[([\s\S]*?)\]\);/u.exec(
+  proofIndexReader,
+)?.[1] ?? "";
+expect(
+  "public Log must exclude invalid protocol attempts",
+  !/"token-event-invalid"/u.test(publicLogKinds),
+);
+expectAll("public Log SQL counts valid confirmed or pending actions only", proofIndexReader, [
+  /const conditions = \[[\s\S]*"e\.valid = true"[\s\S]*"e\.status IN \('confirmed', 'pending'\)"[\s\S]*"e\.kind = ANY\(\$2::text\[\]\)"/,
+  /export async function proofIndexCanonicalActivityPayload\(network\)[\s\S]*AND e\.valid = true[\s\S]*AND e\.status IN \('confirmed', 'pending'\)[\s\S]*AND e\.kind = ANY\(\$2::text\[\]\)/,
+]);
 expectAll("canonical ledger can read direct proof-index event rows", proofIndexReader, [
   /export async function proofIndexCanonicalActivityPayload\(network\)/,
   /FROM proof_indexer\.events e/,
@@ -1053,6 +1066,8 @@ expectAll("Infinity Bond POWB recipient-credit market is wired", server + app + 
   /function powbRecipientMintsFromActivityItem\(item,\s*network\)/,
   /function infinityBondChartPointsFromEvents\(/,
   /const chartPoints = infinityBondChartPointsFromEvents\(/,
+  /const confirmedBondActions = confirmedActivity\.filter\([\s\S]*isInfinityBondActivityItem/,
+  /const bondMintFlowSats = confirmedBondActions\.reduce\([\s\S]*activityAmountSats\(item\)/,
   /async function infinitySummaryFromCanonicalLedger\(ledger,\s*network,\s*fresh\s*=\s*false\)/,
   /infinitySummaryPayloadFromLedger\(\{\s*\.\.\.ledger,[\s\S]*btcUsdQuote,[\s\S]*\}\)/,
   /async function infinitySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*infinitySummaryFromCanonicalLedger\(ledger,\s*network,\s*fresh\)[\s\S]*Current Infinity summary ledger is unavailable/,

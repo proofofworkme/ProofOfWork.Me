@@ -852,64 +852,23 @@ check("invalid listing attempts inherit their canonical credit scope", () => {
   assert.deepEqual(Array.from(query.params[2]), [txid]);
 });
 
-check("public Log admits only value-neutral canonical token invalid events", async () => {
+check("public Log counts only valid confirmed or pending actions", async () => {
   const readerSource = fileSource(READER_PATH);
   const publicKinds = /const PUBLIC_LOG_EVENT_KINDS = new Set\(\[([\s\S]*?)\]\);/u.exec(
     readerSource,
   )?.[1] ?? "";
-  assert.match(publicKinds, /"token-event-invalid"/u);
-
-  const rowNumber = (row, key) => Number(row?.[key] ?? 0);
-  const eventPayloadParticipants = isolatedFunction(
-    READER_PATH,
-    "eventPayloadParticipants",
-    {
-      normalizedText: (value) => String(value ?? "").trim(),
-      objectRecord: (value) =>
-        value && typeof value === "object" && !Array.isArray(value)
-          ? value
-          : {},
-    },
-  );
-  const eventRowPayload = isolatedFunction(READER_PATH, "eventRowPayload", {
-    canonicalEventPayload: (payload) => payload ?? {},
-    dateIso: (value) => new Date(value).toISOString(),
-    eventPayloadParticipants,
-    normalizeEventPayload: (payload) => payload,
-    normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
-    rowNumber,
-  });
-  const invalid = eventRowPayload(
-    {
-      block_height: 950_123,
-      event_time: "2026-05-20T12:00:00.000Z",
-      kind: "token-event-invalid",
-      payload: {
-        amount: 42_000,
-        amountSats: 546,
-        kind: "token-event-invalid",
-        liveNetworkValueSats: 546,
-        participants: ["bc1sender"],
-        registryAddress: "bc1registry",
-        tokenId: "4".repeat(64),
-      },
-      protocol: "pwt1",
-      status: "confirmed",
-      txid: "6".repeat(64),
-    },
-    "livenet",
-  );
-  assert.equal(invalid.valid, false);
-  assert.equal(invalid.amount, 42_000);
-  assert.equal(invalid.attemptedAmountSats, 546);
-  assert.equal(invalid.amountSats, 0);
-  assert.equal(invalid.liveNetworkValueSats, 0);
-  assert.deepEqual(
-    [...invalid.participants].sort(),
-    ["bc1registry", "bc1sender"],
+  assert.doesNotMatch(publicKinds, /"token-event-invalid"/u);
+  assert.match(
+    topLevelFunctionSource(READER_PATH, "normalizeHistoryEventItem"),
+    /publicOnly[\s\S]*item\?\.valid === false/u,
   );
 
   let activitySql = "";
+  let activityParams = [];
+  const rows = Array.from({ length: 23_585 }, (_, index) => ({
+    event_time: "2026-07-11T12:00:00.000Z",
+    txid: index.toString(16).padStart(64, "0"),
+  }));
   const proofIndexCanonicalActivityPayload = isolatedFunction(
     READER_PATH,
     "proofIndexCanonicalActivityPayload",
@@ -917,23 +876,38 @@ check("public Log admits only value-neutral canonical token invalid events", asy
       indexedThroughBlockFromItems: () => 950_123,
       latestProofIndexScanMetadata: async () => null,
       newestDateIso: () => "2026-05-20T12:00:00.000Z",
-      normalizeHistoryEventRows: () => [invalid],
+      normalizeHistoryEventRows: (items) =>
+        items.map((item) => ({ confirmed: true, txid: item.txid })),
+      PUBLIC_LOG_EVENT_KINDS: new Set(["mail", "token-mint"]),
       proofIndexPool: () => ({
-        async query(sql) {
+        async query(sql, params) {
           activitySql = String(sql);
-          return { rows: [{ event_time: "2026-05-20T12:00:00.000Z" }] };
+          activityParams = params;
+          return { rows };
         },
       }),
-      rowNumber,
+      rowNumber: () => 0,
     },
   );
   const activity = await proofIndexCanonicalActivityPayload("livenet");
-  assert.equal(activity.activity[0].amountSats, 0);
-  assert.match(activitySql, /e\.protocol = 'pwt1'/u);
-  assert.match(activitySql, /e\.kind = 'token-event-invalid'/u);
-  assert.match(activitySql, /e\.valid = false/u);
-  assert.match(activitySql, /e\.status = 'confirmed'/u);
-  assert.match(activitySql, /e\.valid = true\s+OR/u);
+  assert.equal(activity.stats.confirmed, 23_585);
+  assert.equal(activity.stats.total, 23_585);
+  assert.match(activitySql, /e\.valid = true/u);
+  assert.match(activitySql, /e\.status IN \('confirmed', 'pending'\)/u);
+  assert.match(activitySql, /e\.kind = ANY\(\$2::text\[\]\)/u);
+  assert.doesNotMatch(activitySql, /token-event-invalid/u);
+  assert.deepEqual(Array.from(activityParams[1]), ["mail", "token-mint"]);
+
+  const logHistorySource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexLogHistoryPayload",
+  );
+  assert.match(logHistorySource, /"e\.valid = true"/u);
+  assert.match(
+    logHistorySource,
+    /"e\.status IN \('confirmed', 'pending'\)"/u,
+  );
+  assert.match(logHistorySource, /"e\.kind = ANY\(\$2::text\[\]\)"/u);
 });
 
 check("canonical consistency aggregates participants across same-tx events", () => {
@@ -958,6 +932,166 @@ check("canonical consistency aggregates participants across same-tx events", () 
   assert.deepEqual(
     [...coverage.participants].sort(),
     ["bc1buyer", "bc1registry", "bc1seller"],
+  );
+});
+
+check("canonical consistency rejects zero token components behind token activity", () => {
+  const tokenComponentCoverageFromConfirmedActivity = isolatedFunction(
+    API_PATH,
+    "tokenComponentCoverageFromConfirmedActivity",
+  );
+  const missing = tokenComponentCoverageFromConfirmedActivity(
+    [
+      { confirmed: true, kind: "token-create" },
+      { confirmed: true, kind: "token-mint" },
+      { confirmed: true, kind: "token-transfer" },
+      { confirmed: true, kind: "token-sale" },
+    ],
+    { mints: [], sales: [], tokens: [], transfers: [] },
+  );
+  assert.equal(missing.ok, false);
+  assert.deepEqual(Array.from(missing.missing).sort(), [
+    "mints",
+    "sales",
+    "tokens",
+    "transfers",
+  ]);
+
+  const complete = tokenComponentCoverageFromConfirmedActivity(
+    [
+      { confirmed: true, kind: "token-create" },
+      { confirmed: true, kind: "token-mint" },
+      { confirmed: true, kind: "token-transfer" },
+      { confirmed: true, kind: "token-sale" },
+    ],
+    {
+      mints: [{ confirmed: true }],
+      sales: [{ confirmed: true }],
+      tokens: [{ confirmed: true }],
+      transfers: [{ confirmed: true }],
+    },
+  );
+  assert.equal(complete.ok, true);
+  assert.deepEqual(Array.from(complete.missing), []);
+});
+
+check("stored canonical summaries require the non-vacuous token component check", () => {
+  const eligibleCanonicalSummarySnapshotPayload = isolatedFunction(
+    BACKFILL_PATH,
+    "eligibleCanonicalSummarySnapshotPayload",
+    {
+      canonicalSummaryCoverage: () => 957_641,
+      objectPayload: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : null,
+    },
+  );
+  const payload = {
+    checks: [],
+    ok: true,
+    sourceHashes: { canonicalSummary: "a".repeat(64) },
+    status: "green",
+    summaryPayloads: {},
+    summaryRefresh: { mode: "canonical-summary-refresh" },
+  };
+  assert.equal(eligibleCanonicalSummarySnapshotPayload(payload), false);
+  payload.checks.push({
+    name: "token-components-cover-confirmed-activity",
+    ok: true,
+  });
+  assert.equal(eligibleCanonicalSummarySnapshotPayload(payload), true);
+
+  const snapshotReadSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexSnapshotPayload",
+  );
+  assert.match(
+    snapshotReadSource,
+    /token-components-cover-confirmed-activity/u,
+  );
+  assert.match(snapshotReadSource, /check_item->>'ok'[\s\S]*'true'/u);
+});
+
+check("Infinity value uses confirmed bond payments instead of synthetic mint payment fields", () => {
+  const POWB_TOKEN_ID = "powb";
+  const bondAmounts = [
+    ...Array.from({ length: 464 }, () => 1_000_000),
+    166_196_569,
+  ];
+  const bonds = bondAmounts.map((amountSats, index) => ({
+    amountSats,
+    confirmed: true,
+    createdAt: new Date(1_700_000_000_000 + index * 1_000).toISOString(),
+    kind: "infinity-bond",
+    txid: index.toString(16).padStart(64, "0"),
+  }));
+  const tokenState = {
+    confirmedSupply: 630_196_569,
+    holders: [{ address: "bc1holder", balance: 630_196_569 }],
+    listings: [],
+    mints: bonds.map((bond) => ({
+      amount: bond.amountSats,
+      confirmed: true,
+      paidSats: 0,
+      tokenId: POWB_TOKEN_ID,
+      txid: bond.txid,
+    })),
+    pendingSupply: 0,
+    sales: [],
+    source: "fixture",
+    tokens: [{ registryAddress: "bc1registry", tokenId: POWB_TOKEN_ID }],
+    transfers: Array.from({ length: 4 }, (_, index) => ({
+      confirmed: true,
+      paidSats: 546,
+      tokenId: POWB_TOKEN_ID,
+      txid: `t${index}`,
+    })),
+  };
+  const mutations = Array.from({ length: 2 }, (_, index) => ({
+    amountSats: 546,
+    confirmed: true,
+    kind: "token-listing",
+    tokenId: POWB_TOKEN_ID,
+    txid: `m${index}`,
+  }));
+  const infinitySummaryPayloadFromLedger = isolatedFunction(
+    API_PATH,
+    "infinitySummaryPayloadFromLedger",
+    {
+      POWB_REGISTRY_ID: "infinity@proofofwork.me",
+      POWB_TOKEN_ID,
+      POWB_TOKEN_TICKER: "POWB",
+      TOKEN_MARKETPLACE_MUTATION_KINDS: new Set(["token-listing"]),
+      activityAmountSats: (item) => Number(item?.amountSats ?? 0),
+      btcUsdResponseMetadata: () => ({ btcUsd: 0 }),
+      compactTokenSummaryPayload: (state) => state,
+      infinityBondChartPointsFromEvents: ({ bonds: items }) =>
+        items.length > 0 ? [{ txid: items.at(-1).txid }] : [],
+      isInfinityBondActivityItem: (item) => item?.kind === "infinity-bond",
+      ledgerTokenStateForScope: (ledger) => ledger.tokenState,
+      numericValue: (value) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : 0;
+      },
+      satsToUsdAtBtcUsd: () => 0,
+    },
+  );
+  const summary = infinitySummaryPayloadFromLedger({
+    activity: [...bonds, ...mutations],
+    generatedAt: "2026-07-11T12:00:00.000Z",
+    network: "livenet",
+    tokenState,
+  });
+  assert.equal(summary.stats.confirmedBondActions, 465);
+  assert.equal(summary.actualValue.bondMintFlowSats, 630_196_569);
+  assert.equal(summary.actualValue.bondTransferFeeSats, 2_184);
+  assert.equal(summary.actualValue.bondMarketplaceMutationFeeSats, 1_092);
+  assert.equal(summary.networkValueSats, 630_199_845);
+  assert.ok(Math.abs(summary.floorSats - 1.0000051983779588) < 1e-12);
+  assert.doesNotMatch(
+    topLevelFunctionSource(API_PATH, "infinitySummaryPayloadFromLedger"),
+    /bondMintFlowSats[\s\S]*mint\.paidSats/u,
   );
 });
 
@@ -1496,20 +1630,24 @@ check("livenet summary routes prefer the exact stored canonical snapshot", async
     API_PATH,
     "infinitySummaryPayload",
     {
+      LEDGER_SUMMARY_FRESH_WAIT_MS: 1_000,
       currentProofIndexSummarySnapshotFallbackPayload: async () => exactInfinity,
       existingCurrentCanonicalLedgerPayloadWithinMs: async () => null,
+      payloadWithFallbackAfterMs: async (promise, fallback) =>
+        (await promise) ?? fallback,
       proofIndexInfinitySummaryPayload: async () => {
         relationalInfinityReads += 1;
         return relationalInfinity;
       },
+      summaryCanonicalLedgerPayload: async () => null,
     },
   );
   assert.equal(await readInfinitySummary("livenet", false), canonicalInfinity);
-  assert.equal(await readInfinitySummary("livenet", true), canonicalInfinity);
-  assert.equal(relationalInfinityReads, 0);
+  assert.equal(await readInfinitySummary("livenet", true), relationalInfinity);
+  assert.equal(relationalInfinityReads, 1);
   exactInfinity = null;
   assert.equal(await readInfinitySummary("livenet", false), relationalInfinity);
-  assert.equal(relationalInfinityReads, 1);
+  assert.equal(relationalInfinityReads, 2);
 });
 
 check("exact token tables own the current active listing set", () => {

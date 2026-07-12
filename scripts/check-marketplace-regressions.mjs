@@ -921,22 +921,34 @@ assert(
     carbonzInvalidBuy?.senderAddress === CARBONZ_REPORTED_BUY_SELLER,
   `${CARBONZ_REPORTED_BUY_TX} is missing or incomplete in canonical invalid-event history`,
 );
-const carbonzInvalidBuyLog = await getJson("/api/v1/log-history", {
+const carbonzInvalidBuyAudit = await getJson("/api/v1/event-history", {
   network: "livenet",
+  kind: "token-event-invalid",
   q: CARBONZ_REPORTED_BUY_TX,
   limit: 5,
 });
-assertRenderableLogItems(carbonzInvalidBuyLog, "Carbonz invalid buy Log search");
-const carbonzInvalidBuyLogItem = (carbonzInvalidBuyLog.items ?? []).find(
+const carbonzInvalidBuyAuditItem = (carbonzInvalidBuyAudit.items ?? []).find(
   (item) =>
     String(item?.txid ?? "").toLowerCase() === CARBONZ_REPORTED_BUY_TX,
 );
 assert(
-  carbonzInvalidBuyLogItem?.kind === "token-event-invalid" &&
-    carbonzInvalidBuyLogItem?.protocol === "pwt1" &&
-    carbonzInvalidBuyLogItem?.confirmed === true &&
-    carbonzInvalidBuyLogItem?.valid === false,
-  `${CARBONZ_REPORTED_BUY_TX} is not logged as a confirmed canonical invalid token event`,
+  carbonzInvalidBuyAuditItem?.kind === "token-event-invalid" &&
+    carbonzInvalidBuyAuditItem?.protocol === "pwt1" &&
+    carbonzInvalidBuyAuditItem?.confirmed === true &&
+    carbonzInvalidBuyAuditItem?.valid === false,
+  `${CARBONZ_REPORTED_BUY_TX} is missing from confirmed invalid event audit history`,
+);
+const carbonzInvalidBuyPublicLog = await getJson("/api/v1/log-history", {
+  network: "livenet",
+  q: CARBONZ_REPORTED_BUY_TX,
+  limit: 5,
+});
+assert(
+  !(carbonzInvalidBuyPublicLog.items ?? []).some(
+    (item) =>
+      String(item?.txid ?? "").toLowerCase() === CARBONZ_REPORTED_BUY_TX,
+  ),
+  `${CARBONZ_REPORTED_BUY_TX} leaked into the valid-action public Log`,
 );
 const carbonzTaprootWalletToken = await getJson("/api/v1/token", {
   network: "livenet",

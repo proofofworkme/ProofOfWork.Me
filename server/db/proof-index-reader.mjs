@@ -28,7 +28,6 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "reply",
   "rush-mint",
   "token-create",
-  "token-event-invalid",
   "token-listing",
   "token-listing-closed",
   "token-listing-sealed",
@@ -2141,7 +2140,10 @@ function safeEventTags(item, network, confirmed) {
 
 function normalizeHistoryEventItem(item, network, { publicOnly = false } = {}) {
   const kind = normalizedLowerText(item?.kind);
-  if (publicOnly && !PUBLIC_LOG_EVENT_KINDS.has(kind)) {
+  if (
+    publicOnly &&
+    (item?.valid === false || !PUBLIC_LOG_EVENT_KINDS.has(kind))
+  ) {
     return null;
   }
 
@@ -3281,8 +3283,13 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     requestedKind,
     searchParams,
   );
-  const conditions = ["e.network = $1"];
-  const params = [network];
+  const conditions = [
+    "e.network = $1",
+    "e.valid = true",
+    "e.status IN ('confirmed', 'pending')",
+    "e.kind = ANY($2::text[])",
+  ];
+  const params = [network, [...PUBLIC_LOG_EVENT_KINDS]];
   const addParam = (value) => {
     params.push(value);
     return `$${params.length}`;
@@ -4435,6 +4442,12 @@ async function latestProofIndexScanMetadata(pool, network) {
           AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
           AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
           AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+            WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+              AND COALESCE(check_item->>'ok', 'false') = 'true'
+          )
         ORDER BY generated_at DESC
         LIMIT 1
       ),
@@ -7755,22 +7768,15 @@ export async function proofIndexCanonicalActivityPayload(network) {
         e.event_id
       FROM proof_indexer.events e
       WHERE e.network = $1
-        AND (
-          e.valid = true
-          OR (
-            e.protocol = 'pwt1'
-            AND e.kind = 'token-event-invalid'
-            AND e.valid = false
-            AND e.status = 'confirmed'
-          )
-        )
+        AND e.valid = true
         AND e.status IN ('confirmed', 'pending')
+        AND e.kind = ANY($2::text[])
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC
     `,
-    [network],
+    [network, [...PUBLIC_LOG_EVENT_KINDS]],
   );
   const snapshot = await latestProofIndexScanMetadata(pool, network).catch(
     () => null,
@@ -8808,6 +8814,12 @@ export async function proofIndexSnapshotPayload(network, key) {
         AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+          WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
         AND payload ? 'summaryPayloads'
         AND payload->'summaryPayloads' ? $2
       ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
@@ -8837,6 +8849,12 @@ export async function proofIndexSnapshotPayload(network, key) {
             AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+            AND EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+              WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+                AND COALESCE(check_item->>'ok', 'false') = 'true'
+            )
           ORDER BY generated_at DESC
           LIMIT ${SUMMARY_SNAPSHOT_LOOKBACK_LIMIT}
         )

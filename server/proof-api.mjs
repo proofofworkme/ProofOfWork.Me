@@ -10896,20 +10896,20 @@ async function recoveredPowbTokenPayloadFromTransactions(network, recoveryTxs) {
 }
 
 function infinityBondChartPointsFromEvents({
+  bonds,
   marketplaceMutations,
-  mints,
   sales,
   transfers,
 }) {
   const events = [
-    ...(Array.isArray(mints) ? mints : [])
-      .filter((mint) => mint?.confirmed && mint.tokenId === POWB_TOKEN_ID)
-      .map((mint) => ({
-        amount: numericValue(mint.amount),
-        createdAt: mint.createdAt,
+    ...(Array.isArray(bonds) ? bonds : [])
+      .filter((item) => item?.confirmed && isInfinityBondActivityItem(item))
+      .map((item) => ({
+        amount: activityAmountSats(item),
+        createdAt: item.createdAt,
         order: 0,
-        txid: String(mint.txid ?? ""),
-        valueSats: numericValue(mint.paidSats),
+        txid: String(item.txid ?? ""),
+        valueSats: activityAmountSats(item),
       })),
     ...(Array.isArray(transfers) ? transfers : [])
       .filter((transfer) => transfer?.confirmed && transfer.tokenId === POWB_TOKEN_ID)
@@ -11328,81 +11328,6 @@ function tokenActivityItemsFromState(state, indexAddress) {
     txid: sale.txid,
   }));
 
-  const invalidEvents = (state.invalidEvents ?? []).map((event) => {
-    const tokenId = String(event?.tokenId ?? "").trim().toLowerCase();
-    const ticker =
-      String(event?.ticker ?? "").trim() ||
-      tickerByTokenId.get(tokenId) ||
-      "credit";
-    const senderAddress = String(
-      event?.senderAddress ?? event?.actor ?? "",
-    ).trim();
-    const recipientAddress = String(
-      event?.recipientAddress ?? event?.counterparty ?? "",
-    ).trim();
-    const protocolPayload = String(
-      event?.payload ?? event?.protocolPayload ?? "",
-    ).trim();
-    const attemptedKind = String(
-      event?.attemptedKind ?? event?.eventKind ?? event?.kind ?? "",
-    )
-      .trim()
-      .toLowerCase();
-    const transferAttempt =
-      attemptedKind === "send" || protocolPayload.startsWith("pwt1:send:");
-    const amount = numericValue(
-      event?.amount ?? event?.creditAmountMoved ?? event?.attemptedAmount,
-    );
-    const reason = String(event?.reason ?? "no-valid-token-event").trim();
-    const participants = [
-      ...(Array.isArray(event?.participants) ? event.participants : []),
-      senderAddress,
-      recipientAddress,
-      event?.registryAddress,
-    ]
-      .map((address) => String(address ?? "").trim())
-      .filter(Boolean);
-    const transferDescription = `${amount.toLocaleString()} ${ticker} transfer attempt from ${shortAddress(senderAddress)} to ${shortAddress(recipientAddress)} was rejected by canonical token validation.`;
-
-    return {
-      amountSats: 0,
-      actor: senderAddress,
-      blockHeight: event?.blockHeight,
-      blockIndex: event?.blockIndex,
-      confirmed: event?.confirmed === true,
-      counterparty: recipientAddress,
-      createdAt:
-        event?.createdAt ??
-        event?.blockTime ??
-        event?.timestamp ??
-        new Date().toISOString(),
-      creditAmountMoved: amount,
-      dataBytes: numericValue(event?.dataBytes),
-      description:
-        transferAttempt && amount > 0 && senderAddress && recipientAddress
-          ? transferDescription
-          : `${ticker} protocol event was rejected by canonical token validation.`,
-      detail: `Canonical validation: ${reason}`,
-      kind: "token-event-invalid",
-      network: event?.network ?? state.network,
-      participants: [...new Set(participants)],
-      tags: [
-        activityStatusTag(event?.confirmed === true),
-        networkLabel(event?.network ?? state.network),
-        "Credit",
-        transferAttempt ? "Transfer attempt" : "Protocol event",
-        "Rejected",
-        ticker,
-        reason,
-      ],
-      title: transferAttempt
-        ? "Credit transfer rejected"
-        : "Credit event rejected",
-      tokenId,
-      txid: String(event?.txid ?? "").trim().toLowerCase(),
-    };
-  });
-
   return [
     ...creations,
     ...mints,
@@ -11411,7 +11336,6 @@ function tokenActivityItemsFromState(state, indexAddress) {
     ...sealedListings,
     ...closedListings,
     ...sales,
-    ...invalidEvents,
   ];
 }
 
@@ -18849,14 +18773,27 @@ function infinitySummaryPayloadHasKnownMainnetValue(summary) {
   }
 
   const token = summary.token;
+  const confirmedSupply = Math.max(
+    numericValue(summary.stats?.confirmedSupply),
+    numericValue(token?.confirmedSupply),
+  );
+  const confirmedBondActions = Math.max(
+    numericValue(summary.stats?.confirmedBondActions),
+    numericValue(token?.stats?.confirmedMints),
+  );
+  const bondMintFlowSats = numericValue(summary.actualValue?.bondMintFlowSats);
+  const networkValueSats = Math.max(
+    numericValue(summary.networkValueSats),
+    numericValue(summary.actualValue?.networkValueSats),
+  );
   return (
-    finitePositiveNumber(summary.networkValueSats) ||
-    finitePositiveNumber(summary.actualValue?.networkValueSats) ||
-    finitePositiveNumber(summary.stats?.confirmedSupply) ||
-    finitePositiveNumber(summary.stats?.confirmedBondActions) ||
-    finitePositiveNumber(token?.confirmedSupply) ||
-    finitePositiveNumber(token?.stats?.confirmedMints) ||
-    (Array.isArray(summary.chartPoints) && summary.chartPoints.length > 0)
+    finitePositiveNumber(confirmedSupply) &&
+    finitePositiveNumber(confirmedBondActions) &&
+    finitePositiveNumber(bondMintFlowSats) &&
+    finitePositiveNumber(networkValueSats) &&
+    networkValueSats >= bondMintFlowSats &&
+    Array.isArray(summary.chartPoints) &&
+    summary.chartPoints.length > 0
   );
 }
 
@@ -19034,21 +18971,13 @@ function ledgerMetricsFromState({
   tokenState,
   workFloor,
 }) {
-  const records = registryState?.records ?? [];
   const tokenDefinitions = tokenState?.tokens ?? [];
   const tokenMints = tokenState?.mints ?? [];
   const tokenTransfers = tokenState?.transfers ?? [];
   const tokenSales = tokenState?.sales ?? [];
-  const confirmedComputerActions =
-    workFloor?.stats?.confirmedComputerActions ??
-    confirmedComputerActionCount(
-      records,
-      activity,
-      tokenDefinitions,
-      tokenMints,
-      tokenTransfers,
-      tokenSales,
-    );
+  const confirmedComputerActions = (Array.isArray(activity) ? activity : []).filter(
+    (item) => item?.confirmed && item?.valid !== false,
+  ).length;
 
   return {
     activityItems: Array.isArray(activity) ? activity.length : 0,
@@ -19114,15 +19043,17 @@ function ledgerPayloadLooksWorse(nextPayload, previousPayload) {
 }
 
 function ledgerPayloadHasCurrentChecks(payload) {
-  const checkNames = new Set(
-    (payload?.consistency?.checks ?? []).map((check) => check?.name),
-  );
+  const checks = payload?.consistency?.checks ?? [];
+  const checkNames = new Set(checks.map((check) => check?.name));
   return (
     Boolean(payload?.snapshotId) &&
+    payload?.consistency?.ok === true &&
     payload?.consistency?.status !== "summary-snapshot-fallback" &&
+    checks.every((check) => check?.ok === true) &&
     ledgerPayloadHasFiniteNetworkValues(payload) &&
     checkNames.has("livenet-confirmed-history-present") &&
     checkNames.has("token-definitions-cover-confirmed-mints") &&
+    checkNames.has("token-components-cover-confirmed-activity") &&
     checkNames.has("network-values-finite") &&
     checkNames.has("marketplace-mutation-fees-counted") &&
     checkNames.has("marketplace-value-includes-mutation-fees") &&
@@ -19132,6 +19063,7 @@ function ledgerPayloadHasCurrentChecks(payload) {
     checkNames.has("token-sales-logged") &&
     checkNames.has("seeded-mail-events-logged") &&
     checkNames.has("seeded-infinity-bonds-logged") &&
+    checkNames.has("infinity-bond-flow-matches-powb-supply") &&
     checkNames.has("ledger-covers-node-tip")
   );
 }
@@ -20496,6 +20428,30 @@ function activityCoverageByTxidKind(activity) {
   return coverageByKey;
 }
 
+function tokenComponentCoverageFromConfirmedActivity(activity, tokenState) {
+  const confirmedActivity = (Array.isArray(activity) ? activity : []).filter(
+    (item) => item?.confirmed && item?.valid !== false,
+  );
+  const activityCounts = {
+    mints: confirmedActivity.filter((item) => item?.kind === "token-mint").length,
+    sales: confirmedActivity.filter((item) => item?.kind === "token-sale").length,
+    tokens: confirmedActivity.filter((item) => item?.kind === "token-create").length,
+    transfers: confirmedActivity.filter((item) => item?.kind === "token-transfer")
+      .length,
+  };
+  const stateCounts = {
+    mints: (tokenState?.mints ?? []).filter((item) => item?.confirmed).length,
+    sales: (tokenState?.sales ?? []).filter((item) => item?.confirmed).length,
+    tokens: (tokenState?.tokens ?? []).filter((item) => item?.confirmed).length,
+    transfers: (tokenState?.transfers ?? []).filter((item) => item?.confirmed)
+      .length,
+  };
+  const missing = Object.keys(activityCounts).filter(
+    (key) => activityCounts[key] > 0 && stateCounts[key] === 0,
+  );
+  return { activityCounts, missing, ok: missing.length === 0, stateCounts };
+}
+
 function ledgerSnapshotChecks({
   activity,
   growthSummary,
@@ -20532,6 +20488,15 @@ function ledgerSnapshotChecks({
       confirmedTokens: numericValue(metrics?.confirmedTokens),
     },
   );
+  const tokenComponentCoverage = tokenComponentCoverageFromConfirmedActivity(
+    activity,
+    tokenState,
+  );
+  addCheck(
+    "token-components-cover-confirmed-activity",
+    network !== "livenet" || tokenComponentCoverage.ok,
+    tokenComponentCoverage,
+  );
   const indexedThroughBlock = numericValue(metrics?.indexedThroughBlock);
   const sourceTipHeight = numericValue(metrics?.sourceTipHeight);
   const tipLagBlocks =
@@ -20559,6 +20524,21 @@ function ledgerSnapshotChecks({
     growthSummary?.workFloor?.networkValueSats,
   );
   const confirmedActivity = (activity ?? []).filter((item) => item?.confirmed);
+  const powbTokenState = scopedTokenPayloadFromState(tokenState, POWB_TOKEN_ID);
+  const powbConfirmedSupply = numericValue(powbTokenState?.confirmedSupply);
+  const infinityBondFlowSats = confirmedActivity
+    .filter(isInfinityBondActivityItem)
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+  addCheck(
+    "infinity-bond-flow-matches-powb-supply",
+    network !== "livenet" ||
+      (powbConfirmedSupply > 0 &&
+        numbersAgree(infinityBondFlowSats, powbConfirmedSupply, 0.01)),
+    {
+      infinityBondFlowSats,
+      powbConfirmedSupply,
+    },
+  );
   const confirmedMarketplaceMutationFeeSats = confirmedActivityFlowSats(
     confirmedActivity,
     MARKETPLACE_MUTATION_KINDS,
@@ -20898,8 +20878,8 @@ function infinitySummaryPayloadFromLedger(ledger) {
   const token = compactTokenSummaryPayload(tokenState, POWB_TOKEN_ID);
   const activity = Array.isArray(ledger?.activity) ? ledger.activity : [];
   const confirmedActivity = activity.filter((item) => item?.confirmed);
-  const confirmedMints = (tokenState?.mints ?? []).filter(
-    (mint) => mint?.confirmed && mint.tokenId === POWB_TOKEN_ID,
+  const confirmedBondActions = confirmedActivity.filter(
+    isInfinityBondActivityItem,
   );
   const confirmedTransfers = (tokenState?.transfers ?? []).filter(
     (transfer) => transfer?.confirmed && transfer.tokenId === POWB_TOKEN_ID,
@@ -20907,8 +20887,8 @@ function infinitySummaryPayloadFromLedger(ledger) {
   const confirmedSales = (tokenState?.sales ?? []).filter(
     (sale) => sale?.confirmed && sale.tokenId === POWB_TOKEN_ID,
   );
-  const bondMintFlowSats = confirmedMints.reduce(
-    (total, mint) => total + numericValue(mint.paidSats),
+  const bondMintFlowSats = confirmedBondActions.reduce(
+    (total, item) => total + activityAmountSats(item),
     0,
   );
   const bondSaleVolumeSats = confirmedSales.reduce(
@@ -20941,8 +20921,8 @@ function infinitySummaryPayloadFromLedger(ledger) {
       ? satsToUsdAtBtcUsd(networkValueSats, btcUsdMetadata.btcUsd)
       : 0;
   const chartPoints = infinityBondChartPointsFromEvents({
+    bonds: confirmedBondActions,
     marketplaceMutations: confirmedMarketplaceMutations,
-    mints: confirmedMints,
     sales: confirmedSales,
     transfers: confirmedTransfers,
   });
@@ -20975,7 +20955,7 @@ function infinitySummaryPayloadFromLedger(ledger) {
     registryId: POWB_REGISTRY_ID,
     source: tokenState?.source,
     stats: {
-      confirmedBondActions: confirmedMints.length,
+      confirmedBondActions: confirmedBondActions.length,
       confirmedListings: (tokenState?.listings ?? []).filter(
         (listing) => listing.confirmed,
       ).length,
@@ -24862,6 +24842,14 @@ async function infinitySummaryFromCanonicalLedger(ledger, network, fresh = false
 
 async function proofIndexInfinitySummaryPayload(network, fresh = false) {
   const params = new URLSearchParams([["asset", POWB_TOKEN_ID]]);
+  const bondActivityState = await indexedPowbActivityForTokenState(network).catch(
+    (error) => {
+      console.error(
+        `Proof index Infinity bond activity read failed: ${errorSummary(error)}`,
+      );
+      return null;
+    },
+  );
   let powbTokenState = await currentProofIndexTokenPayloadForRead(
     network,
     POWB_TOKEN_ID,
@@ -24932,7 +24920,14 @@ async function proofIndexInfinitySummaryPayload(network, fresh = false) {
     }
   }
 
-  if (!powbTokenState) {
+  const bondActivityCoversTip =
+    bondActivityState &&
+    (await proofIndexPayloadCoversConfirmedTip(
+      bondActivityState,
+      network,
+      "infinity-bond-activity",
+    ));
+  if (!powbTokenState || !bondActivityCoversTip) {
     return null;
   }
 
@@ -24950,10 +24945,13 @@ async function proofIndexInfinitySummaryPayload(network, fresh = false) {
     ? powbTokenState.indexedAt
     : new Date().toISOString();
   const payload = infinitySummaryPayloadFromLedger({
-    activity: tokenActivityItemsFromState(
-      powbTokenState,
-      powbTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
-    ),
+    activity: dedupeActivityItems([
+      ...tokenActivityItemsFromState(
+        powbTokenState,
+        powbTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
+      ),
+      ...(bondActivityState.activity ?? []),
+    ]),
     btcUsdQuote,
     generatedAt,
     indexedThroughBlock: powbTokenState.indexedThroughBlock,
@@ -25054,10 +25052,13 @@ async function standaloneInfinitySummaryPayload(network, fresh = false) {
     registryState?.indexedAt,
   );
   return infinitySummaryPayloadFromLedger({
-    activity: tokenActivityItemsFromState(
-      powbTokenState,
-      powbTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
-    ),
+    activity: dedupeActivityItems([
+      ...tokenActivityItemsFromState(
+        powbTokenState,
+        powbTokenState.indexAddress ?? tokenIndexAddressForNetwork(network),
+      ),
+      ...activity,
+    ]),
     btcUsdQuote,
     generatedAt: Number.isFinite(Date.parse(indexedAt ?? ""))
       ? indexedAt
@@ -25068,7 +25069,7 @@ async function standaloneInfinitySummaryPayload(network, fresh = false) {
 }
 
 async function infinitySummaryPayload(network, fresh = false) {
-  if (network === "livenet") {
+  if (network === "livenet" && !fresh) {
     const exactIndexedPayload =
       await currentProofIndexSummarySnapshotFallbackPayload(
         network,
@@ -27781,14 +27782,9 @@ function workFloorPayloadFromState(
   const tokenSalesForValue = Array.isArray(valueTokenState.sales)
     ? valueTokenState.sales
     : [];
-  const confirmedComputerActions = confirmedComputerActionCount(
-    registryState.records ?? [],
-    activityForGrowth,
-    valueTokenState.tokens ?? [],
-    valueTokenState.mints ?? [],
-    valueTokenState.transfers ?? [],
-    tokenSalesForValue,
-  );
+  const confirmedComputerActions = activityForGrowth.filter(
+    (item) => item?.confirmed && item?.valid !== false,
+  ).length;
   const actualValue = growthActualNetworkValue(
     registryState.records ?? [],
     activityForGrowth,
