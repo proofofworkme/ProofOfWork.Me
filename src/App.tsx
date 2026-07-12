@@ -7381,13 +7381,7 @@ function tokenWalletBalancesFor(
         if (holderAddress !== normalizedWalletAddress) {
           return false;
         }
-        const holderTokenId = String(holder.tokenId ?? "").trim().toLowerCase();
-        const holderTicker = normalizeTokenTicker(String(holder.ticker ?? ""));
-        return (
-          holderTokenId === token.tokenId ||
-          holderTicker === normalizeTokenTicker(token.ticker) ||
-          (!holderTokenId && !holderTicker && tokens.length === 1)
-        );
+        return tokenHolderMatchesDefinition(holder, token, tokens);
       });
       const holderBaselineBalance = Number(holderBaseline?.balance);
       const hasHolderBaseline = Number.isFinite(holderBaselineBalance);
@@ -7515,6 +7509,48 @@ function tokenWalletBalancesFor(
         left.token.ticker.localeCompare(right.token.ticker) ||
         left.token.tokenId.localeCompare(right.token.tokenId),
     );
+}
+
+function tokenHolderMatchesDefinition(
+  holder: PowTokenHolder,
+  token: PowTokenDefinition,
+  scopedTokens: PowTokenDefinition[],
+) {
+  const holderTokenId = String(holder.tokenId ?? "").trim().toLowerCase();
+  const holderTicker = normalizeTokenTicker(String(holder.ticker ?? ""));
+  const singleTokenScope =
+    scopedTokens.length === 1 &&
+    scopedTokens[0]?.tokenId === token.tokenId;
+  return (
+    holderTokenId === token.tokenId ||
+    holderTicker === normalizeTokenTicker(token.ticker) ||
+    (!holderTokenId && !holderTicker && singleTokenScope)
+  );
+}
+
+function tokenHoldersForDefinition(
+  token: PowTokenDefinition | undefined,
+  scopedTokens: PowTokenDefinition[],
+  indexedHolders: PowTokenHolder[],
+  fallbackHolders: PowTokenHolder[],
+) {
+  if (!token) {
+    return fallbackHolders;
+  }
+  const matchingHolders = indexedHolders.filter((holder) =>
+    tokenHolderMatchesDefinition(holder, token, scopedTokens),
+  );
+  return matchingHolders.length > 0 ? matchingHolders : fallbackHolders;
+}
+
+function tokenHolderTotalCount(
+  token: PowTokenDefinition | undefined,
+  holders: PowTokenHolder[],
+) {
+  const canonicalCount = Number(token?.holderCount);
+  return Number.isSafeInteger(canonicalCount) && canonicalCount >= holders.length
+    ? canonicalCount
+    : holders.length;
 }
 
 function mergeTokenWalletBalancesByToken(
@@ -7889,8 +7925,17 @@ function tokenProgressPercent(confirmedSupply: number, maxSupply: number) {
 
 function tokenProgressLabel(confirmedSupply: number, maxSupply: number) {
   const progress = tokenProgressPercent(confirmedSupply, maxSupply);
+  if (progress >= 100) {
+    return "100%";
+  }
   if (progress > 0 && progress < 0.01) {
     return "<0.01%";
+  }
+  if (progress >= 99.9) {
+    const truncated = Math.floor(progress * 1000) / 1000;
+    return `${truncated.toLocaleString(undefined, {
+      maximumFractionDigits: 3,
+    })}%`;
   }
 
   return `${progress.toLocaleString(undefined, {
@@ -14633,19 +14678,18 @@ export default function App() {
     [tokenDetailToken, tokenMints, tokenSales, tokenTransfers],
   );
   const tokenDetailHolders = useMemo(() => {
-    if (!tokenDetailToken) {
-      return tokenDetailLedger.holders;
-    }
-    const indexedHolders = tokenHolders.filter(
-      (holder) =>
-        holder.tokenId === tokenDetailToken.tokenId ||
-        (!holder.tokenId &&
-          normalizeTokenTicker(holder.ticker ?? "") === tokenDetailToken.ticker),
+    return tokenHoldersForDefinition(
+      tokenDetailToken,
+      tokenDefinitions,
+      tokenHolders,
+      tokenDetailLedger.holders,
     );
-    return indexedHolders.length > 0
-      ? indexedHolders
-      : tokenDetailLedger.holders;
-  }, [tokenDetailLedger.holders, tokenDetailToken, tokenHolders]);
+  }, [
+    tokenDefinitions,
+    tokenDetailLedger.holders,
+    tokenDetailToken,
+    tokenHolders,
+  ]);
   const workTokenDefinition = useMemo(
     () =>
       orderedTokenDefinitions.find(
@@ -14666,19 +14710,13 @@ export default function App() {
     [selectedToken, tokenMints, tokenSales, tokenTransfers],
   );
   const selectedTokenHolders = useMemo(() => {
-    if (!selectedToken) {
-      return selectedTokenLedger.holders;
-    }
-    const indexedHolders = tokenHolders.filter(
-      (holder) =>
-        holder.tokenId === selectedToken.tokenId ||
-        (!holder.tokenId &&
-          normalizeTokenTicker(holder.ticker ?? "") === selectedToken.ticker),
+    return tokenHoldersForDefinition(
+      selectedToken,
+      tokenDefinitions,
+      tokenHolders,
+      selectedTokenLedger.holders,
     );
-    return indexedHolders.length > 0
-      ? indexedHolders
-      : selectedTokenLedger.holders;
-  }, [selectedToken, selectedTokenLedger.holders, tokenHolders]);
+  }, [selectedToken, selectedTokenLedger.holders, tokenDefinitions, tokenHolders]);
   const tokenWalletBalances = useMemo(
     () =>
       tokenWalletBalancesFor(
@@ -17688,7 +17726,8 @@ export default function App() {
           (item) =>
             item.tokenId === WORK_TOKEN_ID || item.ticker === WORK_TOKEN_TICKER,
         );
-        return `WORK summary loaded. ${Math.round(Number(work?.confirmedSupply) || state.confirmedSupply).toLocaleString()} confirmed WORK, ${state.holders.length.toLocaleString()} holder${state.holders.length === 1 ? "" : "s"}.`;
+        const holderCount = tokenHolderTotalCount(work, state.holders);
+        return `WORK summary loaded. ${Math.round(Number(work?.confirmedSupply) || state.confirmedSupply).toLocaleString()} confirmed WORK, ${holderCount.toLocaleString()} holder${holderCount === 1 ? "" : "s"}.`;
       }
       return `Credit index loaded. ${state.tokens.length.toLocaleString()} credit${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`;
     };
@@ -23138,6 +23177,7 @@ export default function App() {
         tokenListings={tokenListings}
         tokenSales={tokenSales}
         tokens={dashboardTokenDefinitions}
+        walletBalances={accountWalletBalances}
         workFloorLoading={workFloorLoading}
         workFloorQuote={workFloorQuote}
         startMintAssistant={startTokenMintAssistant}
@@ -23880,13 +23920,13 @@ export default function App() {
             creationSats={tokenCreationSats}
             createToken={createToken}
             detailConfirmedSupply={tokenDetailLedger.confirmedSupply}
-            detailHolders={tokenDetailLedger.holders}
+            detailHolders={tokenDetailHolders}
             detailMints={tokenDetailLedger.mints}
             detailPendingSupply={tokenDetailLedger.pendingSupply}
             detailToken={tokenDetailToken}
             feeRate={feeRate}
             btcUsd={tokenBtcUsd}
-            holders={selectedTokenLedger.holders}
+            holders={selectedTokenHolders}
             mintBytes={tokenMintBytes}
             network={network}
             mintAssistantCompleted={tokenMintAssistantCompleted}
@@ -23926,6 +23966,7 @@ export default function App() {
             tokenListings={tokenListings}
             tokenSales={tokenSales}
             tokens={orderedTokenDefinitions}
+            walletBalances={accountWalletBalances}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
             startMintAssistant={startTokenMintAssistant}
@@ -27334,6 +27375,7 @@ type TokenAppProps = {
   tokenListings: PowTokenListing[];
   tokenSales: PowTokenSale[];
   tokens: PowTokenDefinition[];
+  walletBalances?: PowTokenWalletBalance[];
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
   startMintAssistant: (tokenId?: string) => void;
@@ -27461,6 +27503,7 @@ function TokenWorkspace({
   tokenListings,
   tokenSales,
   tokens,
+  walletBalances = [],
   workFloorLoading,
   workFloorQuote,
   workTokenOnly,
@@ -27511,6 +27554,13 @@ function TokenWorkspace({
     holderQuery,
     TOKEN_LIST_PREVIEW_COUNT,
   ].join(":");
+  const holderHistoryLocalCount = detailMode
+    ? detailHolders.length
+    : holders.length;
+  const holderHistoryTotalHint = tokenHolderTotalCount(
+    holderHistoryToken,
+    detailMode ? detailHolders : holders,
+  );
   const mintHistoryLocalCount = detailMode ? detailMints.length : mints.length;
   const mintHistoryTotalHint =
     (Number(mintHistoryToken?.confirmedMints) || 0) +
@@ -27532,7 +27582,15 @@ function TokenWorkspace({
     setHolderPageIndex(0);
   }, [holderHistoryToken?.tokenId, holderQuery]);
   useEffect(() => {
-    if (!holderQuery || !holderHistoryToken?.tokenId || network !== "livenet") {
+    const needsRemotePage =
+      Boolean(holderQuery) ||
+      holderHistoryTotalHint > holderHistoryLocalCount ||
+      holderPageIndex > 0;
+    if (
+      !holderHistoryToken?.tokenId ||
+      network !== "livenet" ||
+      !needsRemotePage
+    ) {
       setRemoteHolderPage(undefined);
       setRemoteHolderPageLoading(false);
       return;
@@ -27568,7 +27626,9 @@ function TokenWorkspace({
     };
   }, [
     holderHistoryKey,
+    holderHistoryLocalCount,
     holderHistoryToken?.tokenId,
+    holderHistoryTotalHint,
     holderPageIndex,
     holderQuery,
     network,
@@ -27620,8 +27680,13 @@ function TokenWorkspace({
     mintQuery,
     network,
   ]);
+  const selectedWalletBalance = walletBalances.find(
+    (balance) => balance.token.tokenId === selectedToken?.tokenId,
+  );
   const holderBalance =
-    holders.find((holder) => holder.address === address)?.balance ?? 0;
+    selectedWalletBalance?.confirmedBalance ??
+    holders.find((holder) => holder.address === address)?.balance ??
+    0;
   const selectedMatchingHolders = holders.filter((holder) =>
     tokenHolderMatchesSearch(holder, holderQuery),
   );
@@ -27644,7 +27709,9 @@ function TokenWorkspace({
   const selectedHolderMatchingCount =
     selectedRemoteHolderPage?.totalCount ?? selectedMatchingHolders.length;
   const selectedHolderTotalCount =
-    selectedRemoteHolderPage?.totalCount ?? holders.length;
+    !holderQuery && selectedRemoteHolderPage
+      ? selectedRemoteHolderPage.totalCount
+      : tokenHolderTotalCount(selectedToken, holders);
   const selectedMatchingMints = mints.filter((mint) =>
     tokenMintMatchesSearch(mint, mintQuery),
   );
@@ -27876,7 +27943,9 @@ function TokenWorkspace({
   const detailHolderMatchingCount =
     detailRemoteHolderPage?.totalCount ?? detailMatchingHolders.length;
   const detailHolderTotalCount =
-    detailRemoteHolderPage?.totalCount ?? detailHolders.length;
+    !holderQuery && detailRemoteHolderPage
+      ? detailRemoteHolderPage.totalCount
+      : tokenHolderTotalCount(detailToken, detailHolders);
   const detailMatchingMints = detailMints.filter((mint) =>
     tokenMintMatchesSearch(mint, mintQuery),
   );
@@ -27896,8 +27965,13 @@ function TokenWorkspace({
     detailRemoteMintPage?.totalCount ?? detailMatchingMints.length;
   const detailMintTotalCount =
     detailRemoteMintPage?.totalCount ?? detailMints.length;
+  const detailWalletBalance = walletBalances.find(
+    (balance) => balance.token.tokenId === detailToken?.tokenId,
+  );
   const detailHolderBalance =
-    detailHolders.find((holder) => holder.address === address)?.balance ?? 0;
+    detailWalletBalance?.confirmedBalance ??
+    detailHolders.find((holder) => holder.address === address)?.balance ??
+    0;
   const detailConfirmedMintCount = Math.max(
     detailMints.filter((mint) => mint.confirmed).length,
     Number(detailToken?.confirmedMints) || 0,
@@ -28705,7 +28779,7 @@ function TokenWorkspace({
                 <span>Confirmed minted</span>
               </div>
               <div>
-                <strong>{detailHolders.length.toLocaleString()}</strong>
+                <strong>{detailHolderTotalCount.toLocaleString()}</strong>
                 <span>Holders</span>
               </div>
               <div>
