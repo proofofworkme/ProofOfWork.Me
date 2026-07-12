@@ -95,7 +95,7 @@ function check(name, run) {
   tests.push({ name, run });
 }
 
-check("a current market lifecycle overlay removes a sold listing", () => {
+check("a current market lifecycle overlay owns sold and active state", () => {
   const listingId =
     "e95c6299b1fdd132b192ea040bcb8683140632b81dbde82946c5b754a8f87dbc";
   const purchaseTxid =
@@ -190,6 +190,47 @@ check("a current market lifecycle overlay removes a sold listing", () => {
   assert.equal(result.listings.length, 0);
   assert.equal(result.closedListings[0].closedTxid, purchaseTxid);
   assert.equal(result.sales[0].txid, purchaseTxid);
+
+  const activeListingId =
+    "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa";
+  const reopened = applyOverlay(
+    {
+      closedListings: [
+        {
+          closedTxid: "f".repeat(64),
+          listingId: activeListingId,
+          network: "livenet",
+        },
+      ],
+      listings: [],
+      sales: [
+        {
+          listingId: activeListingId,
+          txid: "e".repeat(64),
+        },
+      ],
+      source: "stale-summary",
+      stats: {},
+    },
+    {
+      closedListings: [],
+      indexedAt: "2026-07-12T14:28:54.000Z",
+      listings: [
+        {
+          confirmed: true,
+          listingId: activeListingId,
+          network: "livenet",
+          sellerAddress: "seller",
+        },
+      ],
+      sales: [],
+      source: "proof-indexer-credit-listing-lifecycle",
+      stats: { complete: true },
+    },
+  );
+  assert.equal(reopened.listings[0].listingId, activeListingId);
+  assert.equal(reopened.closedListings.length, 0);
+  assert.equal(reopened.sales.length, 0);
 });
 
 check("marketplace fast fallback fails closed without lifecycle coverage", async () => {
@@ -213,6 +254,128 @@ check("marketplace fast fallback fails closed without lifecycle coverage", async
     ),
     null,
   );
+});
+
+check("market lifecycle remains live when event enrichment is slow", async () => {
+  const listingId =
+    "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa";
+  const indexedTokenMarketSummaryOverlay = isolatedFunction(
+    API_PATH,
+    "indexedTokenMarketSummaryOverlay",
+    {
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 10,
+      errorSummary: (error) => String(error?.message ?? error),
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+      payloadWithFallbackAfterMs: (promise, fallback) =>
+        Promise.race([
+          promise,
+          new Promise((resolve) => setImmediate(() => resolve(fallback))),
+        ]),
+      proofIndexCreditListingsPayload: async () => ({
+        indexedAt: "2026-07-12T14:28:54.000Z",
+        indexedThroughBlock: 957712,
+        items: [{ listingId }],
+        stats: { complete: true, totalCount: 1 },
+      }),
+      proofIndexPayloadCoversConfirmedTip: async () => true,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexTokenMarketSummaryOverlayPayload: () =>
+        new Promise(() => {}),
+      setImmediate,
+      tokenMarketLifecycleOverlayFromCreditListings: (payload) => ({
+        closedListings: [],
+        indexedAt: payload.indexedAt,
+        indexedThroughBlock: payload.indexedThroughBlock,
+        listings: payload.items,
+        sales: [],
+        source: "proof-indexer-credit-listing-lifecycle",
+        stats: payload.stats,
+      }),
+    },
+  );
+  const result = await indexedTokenMarketSummaryOverlay("livenet", "");
+  assert.equal(result.listings[0].listingId, listingId);
+  assert.equal(result.indexedThroughBlock, 957712);
+});
+
+check("market lifecycle overrides stale event closures", async () => {
+  const listingId =
+    "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa";
+  const indexedTokenMarketSummaryOverlay = isolatedFunction(
+    API_PATH,
+    "indexedTokenMarketSummaryOverlay",
+    {
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 10,
+      errorSummary: (error) => String(error?.message ?? error),
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexCreditListingsPayload: async () => ({
+        indexedAt: "2026-07-12T14:28:54.000Z",
+        indexedThroughBlock: 957712,
+        items: [{ listingId }],
+        stats: { complete: true, totalCount: 1 },
+      }),
+      proofIndexPayloadCoversConfirmedTip: async () => true,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexTokenMarketSummaryOverlayPayload: async () => ({
+        closedListings: [
+          { closedTxid: "f".repeat(64), listingId },
+        ],
+        listings: [{ listingId: "e".repeat(64) }],
+        stats: { complete: true },
+      }),
+      tokenMarketLifecycleOverlayFromCreditListings: (payload) => ({
+        closedListings: [],
+        indexedAt: payload.indexedAt,
+        indexedThroughBlock: payload.indexedThroughBlock,
+        listings: payload.items,
+        sales: [],
+        source: "proof-indexer-credit-listing-lifecycle",
+        stats: payload.stats,
+      }),
+      tokenStateWithIndexedMarketSummaryOverlay: (_history, lifecycle) =>
+        lifecycle,
+    },
+  );
+  const result = await indexedTokenMarketSummaryOverlay("livenet", "");
+  assert.equal(result.listings[0].listingId, listingId);
+  assert.equal(result.closedListings.length, 0);
+});
+
+check("unscoped credit lifecycle reads query every token", async () => {
+  const scopes = [];
+  const proofIndexCreditListingsPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexCreditListingsPayload",
+    {
+      boundedInteger: (value, fallback, min, max) =>
+        Math.min(max, Math.max(min, Number(value ?? fallback))),
+      dateIso: (value) => new Date(value).toISOString(),
+      latestProofIndexScanMetadata: async () => ({
+        generated_at: "2026-07-12T14:28:54.000Z",
+        indexed_through_block: 957712,
+      }),
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      proofIndexPool: () => ({
+        async query(sql, params) {
+          scopes.push(params[1]);
+          return /count\(\*\) AS total_count/u.test(String(sql))
+            ? { rows: [{ total_count: 0 }] }
+            : { rows: [] };
+        },
+      }),
+      rowNumber: (row, key) => Number(row?.[key] ?? 0),
+      tokenScopeKey: (value) =>
+        String(value ?? "").trim().toLowerCase() || "all",
+    },
+  );
+  await proofIndexCreditListingsPayload("livenet", "");
+  assert.deepEqual(scopes, ["", ""]);
 });
 
 check("an exact WORK transfer miss requests canonical recovery", () => {
@@ -4582,6 +4745,11 @@ check("canonical read gating exempts node primitives only", () => {
 
 check("summary catch-up does not brown out current relational reads", async () => {
   const blockHash = "a".repeat(64);
+  let confirmedEventMaxBlock = 99;
+  const summarySnapshotCoversCanonicalReadModels = isolatedFunction(
+    API_PATH,
+    "summarySnapshotCoversCanonicalReadModels",
+  );
   const loadCanonicalPublicReadGate = isolatedFunction(
     API_PATH,
     "loadCanonicalPublicReadGate",
@@ -4599,8 +4767,9 @@ check("summary catch-up does not brown out current relational reads", async () =
       proofIndexOperationalStatusPayload: async () => ({
         indexedThroughBlock: 100,
         readModels: {
-          confirmedIds: { count: 1 },
-          confirmedTransfers: { count: 1 },
+          confirmedEvents: { count: 10, maxBlock: confirmedEventMaxBlock },
+          confirmedIds: { count: 1, maxBlock: 90 },
+          confirmedTransfers: { count: 1, maxBlock: 95 },
         },
         scan: { blockHash, complete: true },
         summarySnapshot: {
@@ -4612,11 +4781,15 @@ check("summary catch-up does not brown out current relational reads", async () =
           ok: true,
         },
       }),
+      summarySnapshotCoversCanonicalReadModels,
     },
   );
   const gate = await loadCanonicalPublicReadGate("livenet");
   assert.equal(gate.ok, true);
-  assert.equal(gate.summarySnapshotOk, false);
+  assert.equal(gate.summarySnapshotOk, true);
+  confirmedEventMaxBlock = 100;
+  const changedGate = await loadCanonicalPublicReadGate("livenet");
+  assert.equal(changedGate.summarySnapshotOk, false);
 
   const summaryGate = isolatedFunction(
     API_PATH,

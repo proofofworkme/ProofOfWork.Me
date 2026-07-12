@@ -2171,6 +2171,15 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
     return payload;
   }
 
+  const activeOverlayListingIds = new Set(
+    (Array.isArray(overlay.listings) ? overlay.listings : [])
+      .map((listing) =>
+        String(listing?.listingId ?? listing?.txid ?? "")
+          .trim()
+          .toLowerCase(),
+      )
+      .filter(Boolean),
+  );
   const mergedListings = mergeTokenStateItemsByKey(
     payload.listings,
     overlay.listings,
@@ -2178,13 +2187,26 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
     (current, incoming) => mergeTokenListingRecord(incoming, current),
   );
   const sales = mergeTokenStateItemsByKey(
-    payload.sales,
+    (Array.isArray(payload.sales) ? payload.sales : []).filter(
+      (sale) =>
+        !activeOverlayListingIds.has(
+          String(sale?.listingId ?? "").trim().toLowerCase(),
+        ),
+    ),
     overlay.sales,
     tokenSaleItemKey,
   );
   const closedListings = sortClosedTokenListings(
     mergeTokenStateItemsByKey(
-      payload.closedListings,
+      (Array.isArray(payload.closedListings)
+        ? payload.closedListings
+        : []
+      ).filter(
+        (listing) =>
+          !activeOverlayListingIds.has(
+            String(listing?.listingId ?? "").trim().toLowerCase(),
+          ),
+      ),
       overlay.closedListings,
       tokenClosedListingItemKey,
       mergeTokenListingRecord,
@@ -2313,7 +2335,7 @@ function tokenMarketLifecycleOverlayFromCreditListings(payload) {
   };
 }
 
-function tokenSummaryListingsCoveredByMarketLifecycle(payload, lifecycle) {
+function tokenSummaryListingIdsMissingFromMarketLifecycle(payload, lifecycle) {
   const lifecycleListingIds = new Set(
     [
       ...(Array.isArray(lifecycle?.listings) ? lifecycle.listings : []),
@@ -2326,11 +2348,19 @@ function tokenSummaryListingsCoveredByMarketLifecycle(payload, lifecycle) {
   );
   return (Array.isArray(payload?.listings) ? payload.listings : [])
     .filter((item) => item?.confirmed !== false)
-    .every((item) =>
-      lifecycleListingIds.has(
-        String(item?.listingId ?? item?.txid ?? "").trim().toLowerCase(),
-      ),
+    .map((item) =>
+      String(item?.listingId ?? item?.txid ?? "").trim().toLowerCase(),
+    )
+    .filter(
+      (listingId) => listingId && !lifecycleListingIds.has(listingId),
     );
+}
+
+function tokenSummaryListingsCoveredByMarketLifecycle(payload, lifecycle) {
+  return (
+    tokenSummaryListingIdsMissingFromMarketLifecycle(payload, lifecycle)
+      .length === 0
+  );
 }
 
 async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
@@ -2341,19 +2371,28 @@ async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
     return null;
   }
 
-  const [eventPayload, lifecyclePayload] = await payloadWithFallbackAfterMs(
-    Promise.all([
+  const [eventPayload, lifecyclePayload] = await Promise.all([
+    payloadWithFallbackAfterMs(
       proofIndexTokenMarketSummaryOverlayPayload(network, tokenScope),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    ).catch((error) => {
+      console.error(
+        `Proof index token market event overlay failed: ${errorSummary(error)}`,
+      );
+      return null;
+    }),
+    payloadWithFallbackAfterMs(
       proofIndexCreditListingsPayload(network, tokenScope, { limit: 5000 }),
-    ]),
-    [null, null],
-    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
-  ).catch((error) => {
-    console.error(
-      `Proof index token market summary overlay failed: ${errorSummary(error)}`,
-    );
-    return [null, null];
-  });
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    ).catch((error) => {
+      console.error(
+        `Proof index token market lifecycle overlay failed: ${errorSummary(error)}`,
+      );
+      return null;
+    }),
+  ]);
   const lifecycle = tokenMarketLifecycleOverlayFromCreditListings(
     lifecyclePayload,
   );
@@ -2366,12 +2405,15 @@ async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
   const completeEventPayload =
     eventPayload?.stats?.complete === true ? eventPayload : null;
   const payload = completeEventPayload
-    ? tokenStateWithIndexedMarketSummaryOverlay(lifecycle, {
-        ...completeEventPayload,
-        // Active state belongs to credit_listings. Historical event rows may
-        // enrich sales/closures but cannot resurrect an untracked listing.
-        listings: [],
-      })
+    ? tokenStateWithIndexedMarketSummaryOverlay(
+        {
+          ...completeEventPayload,
+          // Active state belongs to credit_listings. Historical event rows may
+          // enrich sales/closures but cannot resurrect an untracked listing.
+          listings: [],
+        },
+        lifecycle,
+      )
     : lifecycle;
   // The current lifecycle table is the active/sold authority. An event page
   // that raced ahead must not promote older listing lifecycle coverage.
@@ -2928,12 +2970,12 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
   const fast = options.fast === true;
   if (fast) {
     const overlay = await indexedTokenMarketSummaryOverlay(network);
-    if (
-      !overlay ||
-      !tokenSummaryListingsCoveredByMarketLifecycle(payload.token, overlay)
-    ) {
+    const missingLifecycleListingIds = overlay
+      ? tokenSummaryListingIdsMissingFromMarketLifecycle(payload.token, overlay)
+      : [];
+    if (!overlay || missingLifecycleListingIds.length > 0) {
       console.error(
-        "Rejected marketplace summary fast fallback without complete current PostgreSQL lifecycle coverage.",
+        `Rejected marketplace summary fast fallback without complete current PostgreSQL lifecycle coverage: ${JSON.stringify({ missingLifecycleListingIds: missingLifecycleListingIds.slice(0, 10), overlayAvailable: Boolean(overlay), overlayClosedListings: overlay?.closedListings?.length ?? 0, overlayListings: overlay?.listings?.length ?? 0, payloadListings: payload?.token?.listings?.length ?? 0 })}.`,
       );
       return null;
     }
@@ -31460,9 +31502,7 @@ async function healthPayload() {
     Number(database?.readModels?.confirmedIds?.count) > 0 &&
     Number(database?.readModels?.confirmedTransfers?.count) > 0;
   const summarySnapshotOk =
-    database?.summarySnapshot?.eligible === true &&
-    Number(database?.summarySnapshot?.indexedThroughBlock ?? 0) >=
-    indexedThroughBlock;
+    summarySnapshotCoversCanonicalReadModels(database);
   const indexOk =
     Boolean(database) &&
     database?.scan?.complete === true &&
@@ -31589,6 +31629,25 @@ function canonicalSummarySnapshotReadGateApplies(pathname) {
   ]).has(String(pathname ?? ""));
 }
 
+function summarySnapshotCoversCanonicalReadModels(status) {
+  const summaryIndexedThroughBlock = Number(
+    status?.summarySnapshot?.indexedThroughBlock ?? 0,
+  );
+  const latestConfirmedEventBlock = Math.max(
+    Number(status?.readModels?.confirmedEvents?.maxBlock ?? 0),
+    Number(status?.readModels?.confirmedIds?.maxBlock ?? 0),
+    Number(status?.readModels?.confirmedTransfers?.maxBlock ?? 0),
+  );
+  return (
+    status?.summarySnapshot?.eligible === true &&
+    Number.isSafeInteger(summaryIndexedThroughBlock) &&
+    summaryIndexedThroughBlock > 0 &&
+    Number.isSafeInteger(latestConfirmedEventBlock) &&
+    latestConfirmedEventBlock > 0 &&
+    summaryIndexedThroughBlock >= latestConfirmedEventBlock
+  );
+}
+
 async function loadCanonicalPublicReadGate(network) {
   if (network !== "livenet" || !PROOF_INDEX_REQUIRED) {
     return { ok: true };
@@ -31616,9 +31675,7 @@ async function loadCanonicalPublicReadGate(network) {
     Number(status?.readModels?.confirmedIds?.count) > 0 &&
     Number(status?.readModels?.confirmedTransfers?.count) > 0;
   const summarySnapshotOk =
-    status?.summarySnapshot?.eligible === true &&
-    Number(status?.summarySnapshot?.indexedThroughBlock ?? 0) >=
-    indexedThroughBlock;
+    summarySnapshotCoversCanonicalReadModels(status);
   const ok =
     Boolean(status) &&
     Boolean(canonical) &&

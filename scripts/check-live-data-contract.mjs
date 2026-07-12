@@ -309,7 +309,8 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /summary-snapshot-fallback/,
   /latest_summary AS \([\s\S]*payload->'summaryPayloads'/,
   /summarySnapshot:[\s\S]*coverageByKey/,
-  /const summarySnapshotOk =[\s\S]*summarySnapshot\?\.indexedThroughBlock/,
+  /function summarySnapshotCoversCanonicalReadModels\([\s\S]*confirmedEvents\?\.maxBlock[\s\S]*summaryIndexedThroughBlock >= latestConfirmedEventBlock/,
+  /confirmed_events AS \([\s\S]*confirmed_event_max_block/,
   /readModelsOk &&[\s\S]*summarySnapshotOk/,
 ]);
 expectAll("backfill source execution keeps confirmed blocks ahead of mempool work", proofIndexerBackfill, [

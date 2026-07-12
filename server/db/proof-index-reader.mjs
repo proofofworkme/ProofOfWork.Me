@@ -4489,6 +4489,14 @@ async function latestProofIndexScanMetadata(pool, network) {
           AND e.status = 'confirmed'
           AND e.valid = true
       ),
+      confirmed_events AS (
+        SELECT
+          count(*)::int AS confirmed_event_count,
+          max(e.block_height)::int AS confirmed_event_max_block
+        FROM proof_indexer.events e
+        WHERE e.network = $1
+          AND e.status = 'confirmed'
+      ),
       worker_meta AS (
         SELECT value, updated_at
         FROM proof_indexer.meta
@@ -4511,10 +4519,13 @@ async function latestProofIndexScanMetadata(pool, network) {
         confirmed_ids.confirmed_id_max_block,
         confirmed_transfers.confirmed_transfer_count,
         confirmed_transfers.confirmed_transfer_max_block,
+        confirmed_events.confirmed_event_count,
+        confirmed_events.confirmed_event_max_block,
         worker_meta.value AS worker,
         worker_meta.updated_at AS worker_updated_at
       FROM confirmed_ids
       CROSS JOIN confirmed_transfers
+      CROSS JOIN confirmed_events
       LEFT JOIN latest_scan ON true
       LEFT JOIN latest_summary ON true
       LEFT JOIN worker_meta ON true
@@ -4596,6 +4607,10 @@ export async function proofIndexOperationalStatusPayload(network) {
       confirmedTransfers: {
         count: rowNumber(row, "confirmed_transfer_count"),
         maxBlock: rowNumber(row, "confirmed_transfer_max_block"),
+      },
+      confirmedEvents: {
+        count: rowNumber(row, "confirmed_event_count"),
+        maxBlock: rowNumber(row, "confirmed_event_max_block"),
       },
     },
     summarySnapshot: {
@@ -9256,7 +9271,8 @@ export async function proofIndexCreditListingsPayload(
     return null;
   }
 
-  const scope = tokenScopeKey(tokenId);
+  const requestedScope = tokenScopeKey(tokenId);
+  const scope = requestedScope === "all" ? "" : requestedScope;
   const maxRows = boundedInteger(options.limit, 500, 1, 5000);
   const [scan, countResult] = await Promise.all([
     latestProofIndexScanMetadata(pool, network),
