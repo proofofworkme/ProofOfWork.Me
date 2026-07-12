@@ -2224,6 +2224,114 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
   };
 }
 
+function tokenMarketLifecycleOverlayFromCreditListings(payload) {
+  if (!payload || payload.stats?.complete !== true) {
+    return null;
+  }
+
+  const listings = [];
+  const closedListings = [];
+  const sales = [];
+  for (const item of Array.isArray(payload.items) ? payload.items : []) {
+    const listingId = String(item?.listingId ?? item?.txid ?? "")
+      .trim()
+      .toLowerCase();
+    const tokenId = normalizeTokenScope(
+      item?.tokenId ?? item?.saleAuthorization?.tokenId,
+    );
+    if (!/^[0-9a-f]{64}$/u.test(listingId) || !tokenId) {
+      continue;
+    }
+
+    const status = String(item?.status ?? "").trim().toLowerCase();
+    const closeTxid = String(item?.closedTxid ?? item?.closeTxid ?? "")
+      .trim()
+      .toLowerCase();
+    const listing = {
+      ...item,
+      confirmed: item?.confirmed !== false,
+      listingId,
+      network: item?.network ?? payload.network,
+      tokenId,
+      txid: listingId,
+    };
+    if (
+      !closeTxid &&
+      ["active", "pending", "sealing"].includes(status)
+    ) {
+      listings.push(listing);
+      continue;
+    }
+    if (!/^[0-9a-f]{64}$/u.test(closeTxid)) {
+      continue;
+    }
+
+    const closedAt =
+      item?.closedAt ?? item?.updatedAt ?? item?.createdAt ?? payload.indexedAt;
+    closedListings.push({
+      ...listing,
+      closedAt,
+      closedConfirmed: item?.closedConfirmed !== false,
+      closedTxid: closeTxid,
+    });
+    const saleTxid = String(item?.saleTxid ?? "").trim().toLowerCase();
+    if (
+      status === "sold" ||
+      /^[0-9a-f]{64}$/u.test(saleTxid) ||
+      Boolean(item?.buyerAddress)
+    ) {
+      sales.push({
+        amount: numericValue(item?.amount),
+        buyerAddress: item?.buyerAddress ?? "",
+        confirmed: item?.closedConfirmed !== false,
+        createdAt: closedAt,
+        listingId,
+        network: item?.network ?? payload.network,
+        paidSats: numericValue(item?.paidSats ?? item?.priceSats),
+        priceSats: numericValue(item?.priceSats),
+        registryAddress: item?.registryAddress ?? "",
+        sellerAddress: item?.sellerAddress ?? "",
+        ticker: item?.ticker ?? item?.saleAuthorization?.ticker ?? "",
+        tokenId,
+        txid: /^[0-9a-f]{64}$/u.test(saleTxid) ? saleTxid : closeTxid,
+      });
+    }
+  }
+
+  return {
+    closedListings,
+    indexedAt: payload.indexedAt,
+    indexedThroughBlock: payload.indexedThroughBlock,
+    listings,
+    sales,
+    source: payload.source ?? "proof-indexer-credit-listing-lifecycle",
+    stats: {
+      complete: true,
+      totalCount: numericValue(payload.stats?.totalCount ?? payload.totalCount),
+    },
+  };
+}
+
+function tokenSummaryListingsCoveredByMarketLifecycle(payload, lifecycle) {
+  const lifecycleListingIds = new Set(
+    [
+      ...(Array.isArray(lifecycle?.listings) ? lifecycle.listings : []),
+      ...(Array.isArray(lifecycle?.closedListings)
+        ? lifecycle.closedListings
+        : []),
+    ]
+      .map((item) => String(item?.listingId ?? "").trim().toLowerCase())
+      .filter((listingId) => /^[0-9a-f]{64}$/u.test(listingId)),
+  );
+  return (Array.isArray(payload?.listings) ? payload.listings : [])
+    .filter((item) => item?.confirmed !== false)
+    .every((item) =>
+      lifecycleListingIds.has(
+        String(item?.listingId ?? item?.txid ?? "").trim().toLowerCase(),
+      ),
+    );
+}
+
 async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
   if (
     network !== "livenet" ||
@@ -2232,16 +2340,56 @@ async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
     return null;
   }
 
-  return payloadWithFallbackAfterMs(
-    proofIndexTokenMarketSummaryOverlayPayload(network, tokenScope),
-    null,
+  const [eventPayload, lifecyclePayload] = await payloadWithFallbackAfterMs(
+    Promise.all([
+      proofIndexTokenMarketSummaryOverlayPayload(network, tokenScope),
+      proofIndexCreditListingsPayload(network, tokenScope, { limit: 5000 }),
+    ]),
+    [null, null],
     SUMMARY_PROOF_INDEX_READ_WAIT_MS,
   ).catch((error) => {
     console.error(
       `Proof index token market summary overlay failed: ${errorSummary(error)}`,
     );
-    return null;
+    return [null, null];
   });
+  const lifecycle = tokenMarketLifecycleOverlayFromCreditListings(
+    lifecyclePayload,
+  );
+  if (!lifecycle) {
+    console.error(
+      "Rejected unavailable or incomplete proof-index credit-listing lifecycle overlay.",
+    );
+    return null;
+  }
+  const completeEventPayload =
+    eventPayload?.stats?.complete === true ? eventPayload : null;
+  const payload = completeEventPayload
+    ? tokenStateWithIndexedMarketSummaryOverlay(lifecycle, {
+        ...completeEventPayload,
+        // Active state belongs to credit_listings. Historical event rows may
+        // enrich sales/closures but cannot resurrect an untracked listing.
+        listings: [],
+      })
+    : lifecycle;
+  // The current lifecycle table is the active/sold authority. An event page
+  // that raced ahead must not promote older listing lifecycle coverage.
+  payload.indexedThroughBlock = numericValue(lifecycle.indexedThroughBlock);
+  payload.stats = {
+    ...(payload.stats ?? {}),
+    complete: true,
+    lifecycleTotalCount: numericValue(lifecycle.stats?.totalCount),
+  };
+  if (
+    !(await proofIndexPayloadCoversConfirmedTip(
+      payload,
+      network,
+      `token-market-lifecycle:${normalizeTokenScope(tokenScope) || "all"}`,
+    ))
+  ) {
+    return null;
+  }
+  return payload;
 }
 
 async function indexedWorkTokenStateForMarketplaceSummary(
@@ -2778,7 +2926,36 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
 
   const fast = options.fast === true;
   if (fast) {
-    return payload;
+    const overlay = await indexedTokenMarketSummaryOverlay(network);
+    if (
+      !overlay ||
+      !tokenSummaryListingsCoveredByMarketLifecycle(payload.token, overlay)
+    ) {
+      console.error(
+        "Rejected marketplace summary fast fallback without complete current PostgreSQL lifecycle coverage.",
+      );
+      return null;
+    }
+    const tokenState = tokenStateWithIndexedMarketSummaryOverlay(
+      payload.token,
+      overlay,
+    );
+    const token = compactTokenSummaryPayload(tokenState);
+    const workFloor = workFloorWithIndexedMarketSummaryOverlay(
+      payload.workFloor,
+      overlay,
+      tokenState,
+    );
+    return marketplaceSummaryWithCurrentBtcUsd(
+      {
+        ...payload,
+        indexedAt: newerIso(payload.indexedAt, overlay.indexedAt),
+        token,
+        workFloor,
+      },
+      network,
+      false,
+    );
   }
 
   const baseWorkTokenState = scopedTokenPayloadFromState(
@@ -24513,7 +24690,7 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
       tokenSummaryPayload(network, "", false),
       cachedWorkFloorPayload(network, false),
     ]);
-    const payload = marketplaceSummaryPayloadWithIndexedMarketOverlay(
+    const payload = await marketplaceSummaryPayloadWithIndexedMarketOverlay(
       {
         indexedAt: newerIso(workFloor?.indexedAt, token?.indexedAt),
         network,
@@ -24606,7 +24783,7 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
       tokenSummaryPayload(network, "", false),
       cachedWorkFloorPayload(network, false),
     ]);
-    const currentPayload = marketplaceSummaryPayloadWithIndexedMarketOverlay(
+    const currentPayload = await marketplaceSummaryPayloadWithIndexedMarketOverlay(
       {
         indexedAt: newerIso(workFloor?.indexedAt, token?.indexedAt),
         network,

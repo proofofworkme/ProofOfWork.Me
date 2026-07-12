@@ -68,6 +68,10 @@ const REPORTED_STALE_SALE_LISTING_TX =
 const REPORTED_STALE_SALE_BUYER = "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW";
 const REPORTED_STALE_SALE_SELLER =
   "bc1pl8vmv8y4k37jvw77cn7y8tckeawrm5u2n50qrjvglgrp04hczvtq5jyum0";
+const REPORTED_JULY_PURCHASE_TX =
+  "66e601cdc087d55b9d97421acd45dcdc73a441870d333ce0ba0095f9f5fbdaaf";
+const REPORTED_JULY_PURCHASE_LISTING_TX =
+  "e95c6299b1fdd132b192ea040bcb8683140632b81dbde82946c5b754a8f87dbc";
 const CARBONZ_POWB_TRANSFER_TX =
   "18c7dba7ebe06727e2f37bf0d4885a2aadbf42aff56743936e8e076e2c691100";
 const REPORTED_WAITING_FOR_SEAL_LISTING_TX =
@@ -273,6 +277,58 @@ async function tokenHistory(kind, params = {}) {
   return tokenHistoryForAsset(WORK_TOKEN_ID, kind, params);
 }
 
+async function assertReportedJulyPurchaseLifecycle() {
+  const saleHistory = await tokenHistory("sales", {
+    fresh: 1,
+    q: REPORTED_JULY_PURCHASE_TX,
+  });
+  assert(
+    (saleHistory.items ?? []).some(
+      (item) =>
+        String(item?.txid ?? "").toLowerCase() ===
+          REPORTED_JULY_PURCHASE_TX &&
+        String(item?.listingId ?? "").toLowerCase() ===
+          REPORTED_JULY_PURCHASE_LISTING_TX &&
+        item?.confirmed === true,
+    ),
+    `${REPORTED_JULY_PURCHASE_TX} is missing from confirmed WORK sales history`,
+  );
+
+  const marketLog = await tokenHistory("market-log", {
+    fresh: 1,
+    q: REPORTED_JULY_PURCHASE_TX,
+  });
+  assert(
+    txids(marketLog.items).has(REPORTED_JULY_PURCHASE_TX),
+    `${REPORTED_JULY_PURCHASE_TX} is missing from Credit Sales & Listings Log`,
+  );
+
+  const closedListings = await tokenHistory("closed-listings", {
+    fresh: 1,
+    q: REPORTED_JULY_PURCHASE_TX,
+  });
+  assert(
+    (closedListings.items ?? []).some(
+      (item) =>
+        String(item?.listingId ?? "").toLowerCase() ===
+          REPORTED_JULY_PURCHASE_LISTING_TX &&
+        String(item?.closedTxid ?? "").toLowerCase() ===
+          REPORTED_JULY_PURCHASE_TX &&
+        item?.closedConfirmed === true,
+    ),
+    `${REPORTED_JULY_PURCHASE_LISTING_TX} is missing its confirmed purchase closure`,
+  );
+
+  const activeListings = await tokenHistory("listings", {
+    fresh: 1,
+    q: REPORTED_JULY_PURCHASE_LISTING_TX,
+  });
+  assert(
+    !txids(activeListings.items).has(REPORTED_JULY_PURCHASE_LISTING_TX),
+    `${REPORTED_JULY_PURCHASE_LISTING_TX} is still active after ${REPORTED_JULY_PURCHASE_TX}`,
+  );
+}
+
 function txids(items) {
   return new Set(
     (Array.isArray(items) ? items : [])
@@ -374,6 +430,8 @@ async function runFastMarketplaceRegressionGate() {
       ),
       `${REPORTED_DELIST_TX} is not returned as a confirmed closed listing`,
     );
+
+    await assertReportedJulyPurchaseLifecycle();
   });
 
   await step("seller wallet active and unsealed listing state", async () => {
@@ -512,6 +570,14 @@ async function runFastMarketplaceRegressionGate() {
       ),
       `${REPORTED_SPENT_SEAL_LISTING_TX} is still returned as active in marketplace summary after ${REPORTED_SPENT_SEAL_TX} spent its sale-ticket anchor`,
     );
+    assert(
+      !(marketplaceSummary.token?.listings ?? []).some(
+        (item) =>
+          String(item?.listingId ?? "").toLowerCase() ===
+          REPORTED_JULY_PURCHASE_LISTING_TX,
+      ),
+      `${REPORTED_JULY_PURCHASE_LISTING_TX} is still returned as active in marketplace summary after ${REPORTED_JULY_PURCHASE_TX}`,
+    );
     for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
       const item = listingById(marketplaceSummary.token?.listings, txid);
       assert(
@@ -604,6 +670,7 @@ assert(
   txids(reportedMarketLog.items).has(REPORTED_SALE_TX),
   `${REPORTED_SALE_TX} is missing from credit sales and listings log`,
 );
+await assertReportedJulyPurchaseLifecycle();
 const reportedBuySaleHistory = await tokenHistory("sales", {
   fresh: 1,
   q: REPORTED_BUY_TX,

@@ -3570,6 +3570,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
 
   const scope = tokenScopeKey(tokenScope);
   const maxRows = boundedInteger(options.limit, 5000, 1, 10000);
+  const scan = await latestProofIndexScanMetadata(pool, network);
   const conditions = [
     "e.network = $1",
     "e.valid = true",
@@ -3695,15 +3696,21 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
   }
 
   const stats = salesStats(sales);
+  const eventIndexedThroughBlock = rowNumber(
+    countResult.rows[0],
+    "indexed_through_block",
+  );
+  const scanIndexedThroughBlock = rowNumber(scan, "indexed_through_block");
   return {
     closedListings: closedListings.filter(Boolean).sort(compareTokenItemsByTime),
-    indexedAt: dateIso(countResult.rows[0]?.indexed_at),
-    indexedThroughBlock: rowNumber(
-      countResult.rows[0],
-      "indexed_through_block",
+    indexedAt: dateIso(scan?.generated_at ?? countResult.rows[0]?.indexed_at),
+    indexedThroughBlock: Math.max(
+      eventIndexedThroughBlock,
+      scanIndexedThroughBlock,
     ),
     listings: listings.sort(compareTokenItemsByTime),
     sales: sales.sort(compareTokenItemsByTime),
+    scanSnapshotId: String(scan?.snapshot_id ?? ""),
     source: "proof-indexer-token-market-summary-overlay",
     stats: {
       ...stats,
@@ -9080,11 +9087,31 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
   };
 }
 
-export async function proofIndexCreditListingsPayload(network, tokenId) {
+export async function proofIndexCreditListingsPayload(
+  network,
+  tokenId = "",
+  options = {},
+) {
   const pool = proofIndexPool();
   if (!pool) {
     return null;
   }
+
+  const scope = tokenScopeKey(tokenId);
+  const maxRows = boundedInteger(options.limit, 500, 1, 5000);
+  const [scan, countResult] = await Promise.all([
+    latestProofIndexScanMetadata(pool, network),
+    pool.query(
+      `
+        SELECT count(*) AS total_count
+        FROM proof_indexer.credit_listings
+        WHERE network = $1
+          AND ($2 = '' OR lower(token_id) = $2)
+      `,
+      [network, scope],
+    ),
+  ]);
+  const totalCount = rowNumber(countResult.rows[0], "total_count");
 
   const result = await pool.query(
     `
@@ -9104,11 +9131,12 @@ export async function proofIndexCreditListingsPayload(network, tokenId) {
         payload,
         updated_at
       FROM proof_indexer.credit_listings
-      WHERE network = $1 AND token_id = $2
+      WHERE network = $1
+        AND ($2 = '' OR lower(token_id) = $2)
       ORDER BY updated_at DESC, listing_id ASC
-      LIMIT 500
+      LIMIT $3
     `,
-    [network, tokenId],
+    [network, scope, maxRows],
   );
 
   const listingIds = result.rows
@@ -9164,9 +9192,11 @@ export async function proofIndexCreditListingsPayload(network, tokenId) {
     .reduce((max, value) => Math.max(max, value), 0);
 
   return {
-    indexedAt: newestTime
-      ? new Date(newestTime).toISOString()
-      : dateIso(result.rows[0]?.updated_at),
+    indexedAt: dateIso(
+      scan?.generated_at ??
+        (newestTime ? new Date(newestTime).toISOString() : result.rows[0]?.updated_at),
+    ),
+    indexedThroughBlock: rowNumber(scan, "indexed_through_block"),
     items: result.rows.map((row) => {
       const payload = objectRecord(row.payload);
       const saleAuthorization = objectRecord(payload.saleAuthorization);
@@ -9214,6 +9244,7 @@ export async function proofIndexCreditListingsPayload(network, tokenId) {
         closedTxid: closeTxid,
         confirmed: status !== "pending",
         listingId,
+        network,
         priceSats: Number(row.price_sats ?? 0),
         saleAuthorization,
         saleTicketTxid: tokenListingEffectiveSaleTicketTxid(
@@ -9232,10 +9263,16 @@ export async function proofIndexCreditListingsPayload(network, tokenId) {
         status,
         tokenId: row.token_id,
         txid: listingId,
+        updatedAt: dateIso(row.updated_at),
       };
     }),
     network,
-    totalCount: result.rowCount,
+    source: "proof-indexer-credit-listing-lifecycle",
+    stats: {
+      complete: result.rows.length >= totalCount,
+      totalCount,
+    },
+    totalCount,
   };
 }
 

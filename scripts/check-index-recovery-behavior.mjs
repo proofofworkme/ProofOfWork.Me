@@ -95,6 +95,126 @@ function check(name, run) {
   tests.push({ name, run });
 }
 
+check("a current market lifecycle overlay removes a sold listing", () => {
+  const listingId =
+    "e95c6299b1fdd132b192ea040bcb8683140632b81dbde82946c5b754a8f87dbc";
+  const purchaseTxid =
+    "66e601cdc087d55b9d97421acd45dcdc73a441870d333ce0ba0095f9f5fbdaaf";
+  const mergeTokenStateItemsByKey = (
+    baseItems,
+    overlayItems,
+    keyForItem,
+    mergeItem = (_current, incoming) => incoming,
+  ) => {
+    const byKey = new Map();
+    for (const item of Array.isArray(baseItems) ? baseItems : []) {
+      byKey.set(keyForItem(item), item);
+    }
+    for (const item of Array.isArray(overlayItems) ? overlayItems : []) {
+      const key = keyForItem(item);
+      byKey.set(key, mergeItem(byKey.get(key), item));
+    }
+    return [...byKey.values()];
+  };
+  const applyOverlay = isolatedFunction(
+    API_PATH,
+    "tokenStateWithIndexedMarketSummaryOverlay",
+    {
+      confirmedTokenSalesStats: (sales) => ({
+        confirmedSales: sales.filter((sale) => sale.confirmed).length,
+        confirmedSalesVolumeSats: sales.reduce(
+          (total, sale) => total + Number(sale.priceSats ?? 0),
+          0,
+        ),
+      }),
+      mergeTokenListingRecord: (current, incoming) => ({
+        ...(current ?? {}),
+        ...(incoming ?? {}),
+      }),
+      mergeTokenStateItemsByKey,
+      mergedSourceLabel: (...sources) => sources.filter(Boolean).join("+"),
+      newerIso: (_left, right) => right,
+      numericValue: (value) => Number(value) || 0,
+      safeStatNumber: (payload, key) => Number(payload?.stats?.[key]) || 0,
+      sortClosedTokenListings: (items) => items,
+      tokenClosedListingItemKey: (item) =>
+        `${item.network}:${item.listingId}:${item.closedTxid}`,
+      tokenListingItemKey: (item) => `${item.network}:${item.listingId}`,
+      tokenSaleItemKey: (item) => item.txid,
+    },
+  );
+  const lifecycleOverlay = isolatedFunction(
+    API_PATH,
+    "tokenMarketLifecycleOverlayFromCreditListings",
+    {
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+    },
+  )({
+    indexedAt: "2026-07-12T01:52:58.000Z",
+    indexedThroughBlock: 957637,
+    items: [
+      {
+        amount: 10000,
+        buyerAddress: "buyer",
+        closedAt: "2026-07-12T01:52:42.000Z",
+        closedConfirmed: true,
+        closedTxid: purchaseTxid,
+        confirmed: true,
+        listingId,
+        network: "livenet",
+        priceSats: 86590,
+        saleTxid: purchaseTxid,
+        sellerAddress: "seller",
+        status: "sold",
+        ticker: "WORK",
+        tokenId: "work",
+      },
+    ],
+    network: "livenet",
+    source: "proof-indexer-credit-listing-lifecycle",
+    stats: { complete: true, totalCount: 1 },
+  });
+
+  const result = applyOverlay(
+    {
+      closedListings: [],
+      indexedAt: "2026-07-12T01:40:00.000Z",
+      listings: [{ listingId, network: "livenet", status: "active" }],
+      sales: [],
+      source: "stale-summary",
+      stats: {},
+    },
+    lifecycleOverlay,
+  );
+  assert.equal(result.listings.length, 0);
+  assert.equal(result.closedListings[0].closedTxid, purchaseTxid);
+  assert.equal(result.sales[0].txid, purchaseTxid);
+});
+
+check("marketplace fast fallback fails closed without lifecycle coverage", async () => {
+  const fastMarketplaceOverlay = isolatedFunction(
+    API_PATH,
+    "marketplaceSummaryPayloadWithIndexedMarketOverlay",
+    {
+      compactTokenSummaryPayload: (payload) => payload,
+      indexedTokenMarketSummaryOverlay: async () => null,
+      marketplaceSummaryWithCurrentBtcUsd: (payload) => payload,
+      newerIso: (_left, right) => right,
+      tokenStateWithIndexedMarketSummaryOverlay: (payload) => payload,
+      workFloorWithIndexedMarketSummaryOverlay: (payload) => payload,
+    },
+  );
+  assert.equal(
+    await fastMarketplaceOverlay(
+      { token: { listings: [{ listingId: "stale" }] }, workFloor: {} },
+      "livenet",
+      { fast: true },
+    ),
+    null,
+  );
+});
+
 check("an exact WORK transfer miss requests canonical recovery", () => {
   const txid = "a".repeat(64);
   const exactTransferHistoryNeedsCanonicalRecovery = isolatedFunction(

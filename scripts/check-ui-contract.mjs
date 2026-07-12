@@ -431,6 +431,21 @@ expect(
     ),
 );
 expect(
+  "WORK bootstraps from the compact summary and pages history",
+  /async function fetchWorkSummary[\s\S]*\/api\/v1\/work-summary/.test(app) &&
+    /const workSummaryRead =[\s\S]*fetchWorkSummary\(network,\s*fresh\)/.test(
+      app,
+    ) &&
+    /fetchTokenHistoryPage<PowTokenMint>[\s\S]*"mints"/.test(app) &&
+    /Loading current WORK summary from the ProofOfWork index/.test(app),
+);
+expect(
+  "WORK connected-wallet sync stays on the global compact summary",
+  /const workSummary = workTokenMode[\s\S]*fetchWorkSummary\("livenet",\s*false\)[\s\S]*address:\s*workTokenMode \? "" :/.test(
+    app,
+  ),
+);
+expect(
   "Computer marketplace shows loading states before credit market data arrives",
   /tokenMarketLoading/.test(app) &&
     /Loading credit markets/.test(app) &&
