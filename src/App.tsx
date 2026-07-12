@@ -470,9 +470,12 @@ type InboxMessage = {
 };
 
 type PowIdRecord = {
+  blockHeight?: number;
+  blockIndex?: number;
   id: string;
   ownerAddress: string;
   receiveAddress: string;
+  registrationEventId?: number;
   pgpKey?: string;
   txid: string;
   network: BitcoinNetwork;
@@ -6274,6 +6277,44 @@ function activeTokenListingAnchorOutpointsForAddress(
   });
 }
 
+function accountUtxoAvailability(
+  utxos: MempoolUtxo[],
+  reservedOutpoints: PowIdSpentOutpoint[],
+) {
+  const reservedOutpointKeys = new Set(
+    reservedOutpoints.map((outpoint) => `${outpoint.txid}:${outpoint.vout}`),
+  );
+  const confirmedUtxos = utxos.filter((utxo) => utxo.status?.confirmed);
+  const unconfirmedUtxos = utxos.filter((utxo) => !utxo.status?.confirmed);
+  const confirmedCandidateUtxos = confirmedUtxos.filter(
+    (utxo) => utxo.value >= DUST_SATS,
+  );
+  const reservedListingUtxos = confirmedCandidateUtxos.filter((utxo) =>
+    reservedOutpointKeys.has(`${utxo.txid}:${utxo.vout}`),
+  );
+  const spendableUtxos = confirmedCandidateUtxos.filter(
+    (utxo) => !reservedOutpointKeys.has(`${utxo.txid}:${utxo.vout}`),
+  );
+  return {
+    confirmedBalanceSats: confirmedUtxos.reduce(
+      (total, utxo) => total + utxo.value,
+      0,
+    ),
+    confirmedUtxos,
+    reservedListingUtxos,
+    spendableSats: spendableUtxos.reduce(
+      (total, utxo) => total + utxo.value,
+      0,
+    ),
+    spendableUtxos,
+    unconfirmedSats: unconfirmedUtxos.reduce(
+      (total, utxo) => total + utxo.value,
+      0,
+    ),
+    unconfirmedUtxos,
+  };
+}
+
 function spendsTokenListingAnchor(
   spentOutpoints: PowIdSpentOutpoint[],
   listing: PowTokenListing,
@@ -7246,6 +7287,13 @@ function tokenWalletBalancesFor(
       });
       const holderBaselineBalance = Number(holderBaseline?.balance);
       const hasHolderBaseline = Number.isFinite(holderBaselineBalance);
+      const hasConfirmedReplayBase = mints.some(
+        (mint) => mint.confirmed && mint.tokenId === token.tokenId,
+      );
+      // A compact wallet summary may contain recent sales without the complete
+      // issuance ledger. Never turn that partial history into a wallet total.
+      const canReplayConfirmedBalance =
+        !hasHolderBaseline && hasConfirmedReplayBase;
       let confirmedBalance = hasHolderBaseline
         ? Math.max(0, holderBaselineBalance)
         : 0;
@@ -7262,7 +7310,7 @@ function tokenWalletBalancesFor(
         }
 
         if (mint.confirmed) {
-          if (!hasHolderBaseline) {
+          if (canReplayConfirmedBalance) {
             confirmedBalance += mint.amount;
           }
         } else {
@@ -7276,7 +7324,7 @@ function tokenWalletBalancesFor(
         }
 
         if (transfer.confirmed) {
-          if (!hasHolderBaseline) {
+          if (canReplayConfirmedBalance) {
             if (
               String(transfer.senderAddress ?? "").trim().toLowerCase() ===
               normalizedWalletAddress
@@ -7313,7 +7361,7 @@ function tokenWalletBalancesFor(
         }
 
         if (sale.confirmed) {
-          if (!hasHolderBaseline) {
+          if (canReplayConfirmedBalance) {
             if (
               String(sale.sellerAddress ?? "").trim().toLowerCase() ===
               normalizedWalletAddress
@@ -7363,6 +7411,28 @@ function tokenWalletBalancesFor(
         left.token.ticker.localeCompare(right.token.ticker) ||
         left.token.tokenId.localeCompare(right.token.tokenId),
     );
+}
+
+function mergeTokenWalletBalancesByToken(
+  ...groups: PowTokenWalletBalance[][]
+): PowTokenWalletBalance[] {
+  const byToken = new Map<string, PowTokenWalletBalance>();
+  for (const balances of groups) {
+    for (const balance of balances) {
+      const tokenId = String(balance.token.tokenId ?? "").trim().toLowerCase();
+      const ticker = normalizeTokenTicker(String(balance.token.ticker ?? ""));
+      const key = tokenId || (ticker ? `ticker:${ticker}` : "");
+      if (key) {
+        byToken.set(key, balance);
+      }
+    }
+  }
+  return [...byToken.values()].sort(
+    (left, right) =>
+      right.confirmedBalance - left.confirmedBalance ||
+      left.token.ticker.localeCompare(right.token.ticker) ||
+      left.token.tokenId.localeCompare(right.token.tokenId),
+  );
 }
 
 function tokenReservedBalanceFor(
@@ -14475,6 +14545,14 @@ export default function App() {
       ),
     [accountPowbTokenState, address],
   );
+  const accountWalletBalances = useMemo(
+    () =>
+      mergeTokenWalletBalancesByToken(
+        accountTokenWalletBalances,
+        accountPowbWalletBalances,
+      ),
+    [accountPowbWalletBalances, accountTokenWalletBalances],
+  );
   const powbTokenDefinition = powbTokenDefinitions[0];
   const powbMints = useMemo(
     () => tokenMints.filter((mint) => mint.tokenId === POWB_TOKEN_ID),
@@ -14565,27 +14643,28 @@ export default function App() {
       return [];
     }
 
-    const confirmedUtxos = accountUtxos.filter(
-      (utxo) => utxo.status?.confirmed,
-    );
-    const spendableUtxos = confirmedUtxos.filter(
-      (utxo) => utxo.value >= DUST_SATS,
-    );
-    const unconfirmedUtxos = accountUtxos.filter(
-      (utxo) => !utxo.status?.confirmed,
-    );
-    const confirmedBalanceSats = confirmedUtxos.reduce(
-      (total, utxo) => total + utxo.value,
-      0,
-    );
-    const spendableSats = spendableUtxos.reduce(
-      (total, utxo) => total + utxo.value,
-      0,
-    );
-    const unconfirmedSats = unconfirmedUtxos.reduce(
-      (total, utxo) => total + utxo.value,
-      0,
-    );
+    const reservedListingOutpoints = [
+      ...activeListingAnchorOutpointsForAddress(idListings, address, {
+        network,
+      }),
+      ...activeTokenListingAnchorOutpointsForAddress(
+        [
+          ...accountTokenState.listings,
+          ...accountPowbTokenState.listings,
+          ...tokenListings,
+        ],
+        address,
+        { network },
+      ),
+    ];
+    const {
+      confirmedBalanceSats,
+      reservedListingUtxos,
+      spendableSats,
+      spendableUtxos,
+      unconfirmedSats,
+      unconfirmedUtxos,
+    } = accountUtxoAvailability(accountUtxos, reservedListingOutpoints);
     const ownFileMessages = allFileMessages.filter(
       (message) => message.txid !== CANONICAL_WELCOME_TXID && message.attachment,
     );
@@ -14593,7 +14672,7 @@ export default function App() {
       (total, message) => total + (message.attachment?.size ?? 0),
       0,
     );
-    const accountCreditBalances = accountTokenWalletBalances.filter(
+    const accountCreditBalances = accountWalletBalances.filter(
       (balance) =>
         balance.confirmedBalance > 0 && !isPowbTokenDefinition(balance.token),
     );
@@ -14604,11 +14683,15 @@ export default function App() {
     const confirmedCreditBalances = accountCreditBalances.length > 0
       ? accountCreditBalances
       : routeCreditBalances;
-    const connectedPowbWalletBalances = accountPowbWalletBalances.length > 0
-      ? accountPowbWalletBalances
+    const accountPowbBalances = accountWalletBalances.filter(
+      (balance) =>
+        balance.confirmedBalance > 0 && isPowbTokenDefinition(balance.token),
+    );
+    const connectedPowbWalletBalances = accountPowbBalances.length > 0
+      ? accountPowbBalances
       : powbWalletBalances;
-    const pendingTokenBalances = accountTokenWalletBalances.length > 0
-      ? accountTokenWalletBalances
+    const pendingTokenBalances = accountWalletBalances.length > 0
+      ? accountWalletBalances
       : tokenWalletBalances;
     const powbConfirmedBalance = connectedPowbWalletBalances.reduce(
       (total, balance) => total + Math.max(0, balance.confirmedBalance),
@@ -14640,7 +14723,7 @@ export default function App() {
 
     if (spendableUtxos.length > 0) {
       stats.push({
-        detail: `${spendableSats.toLocaleString()} confirmed spendable proofs across ${spendableUtxos.length.toLocaleString()} UTXO${spendableUtxos.length === 1 ? "" : "s"}.`,
+        detail: `${spendableSats.toLocaleString()} confirmed spendable proofs across ${spendableUtxos.length.toLocaleString()} UTXO${spendableUtxos.length === 1 ? "" : "s"}.${reservedListingUtxos.length > 0 ? ` ${reservedListingUtxos.length.toLocaleString()} active listing anchor${reservedListingUtxos.length === 1 ? " is" : "s are"} reserved.` : ""}`,
         label: "spendable utxos",
         value: spendableUtxos.length.toLocaleString(),
       });
@@ -14721,14 +14804,18 @@ export default function App() {
 
     return stats;
   }, [
-    accountPowbWalletBalances,
-    accountTokenWalletBalances,
+    accountPowbTokenState.listings,
+    accountTokenState.listings,
     accountUtxos,
+    accountWalletBalances,
     address,
     allFileMessages,
+    idListings,
     incomingMailAll,
+    network,
     outboxMailAll,
     powbWalletBalances,
+    tokenListings,
     tokenWalletBalances,
     walletPendingIdEvents,
   ]);

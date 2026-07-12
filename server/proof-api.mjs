@@ -1822,24 +1822,34 @@ function mergeTokenTransferRecord(current, incoming) {
 }
 
 function mergeWalletHolders(baseHolders, overlayHolders) {
-  const byAddress = new Map();
-  for (const holder of Array.isArray(baseHolders) ? baseHolders : []) {
+  const byTokenAndAddress = new Map();
+  const holderKey = (holder) => {
     const address = String(holder?.address ?? "").trim().toLowerCase();
-    if (address) {
-      byAddress.set(address, holder);
+    const tokenId = String(holder?.tokenId ?? "").trim().toLowerCase();
+    const ticker = String(holder?.ticker ?? "").trim().toLowerCase();
+    const tokenKey = tokenId || (ticker ? `ticker:${ticker}` : "unknown");
+    return address ? `${tokenKey}:${address}` : "";
+  };
+  for (const holder of Array.isArray(baseHolders) ? baseHolders : []) {
+    const key = holderKey(holder);
+    if (key) {
+      byTokenAndAddress.set(key, holder);
     }
   }
   for (const holder of Array.isArray(overlayHolders) ? overlayHolders : []) {
-    const address = String(holder?.address ?? "").trim().toLowerCase();
-    if (address) {
-      byAddress.set(address, holder);
+    const key = holderKey(holder);
+    if (key) {
+      byTokenAndAddress.set(key, holder);
     }
   }
-  return [...byAddress.values()]
+  return [...byTokenAndAddress.values()]
     .filter((holder) => Number(holder?.balance ?? 0) > 0)
     .sort(
       (left, right) =>
         Number(right.balance ?? 0) - Number(left.balance ?? 0) ||
+        String(left.tokenId ?? left.ticker ?? "").localeCompare(
+          String(right.tokenId ?? right.ticker ?? ""),
+        ) ||
         String(left.address ?? "").localeCompare(String(right.address ?? "")),
     );
 }
@@ -4670,6 +4680,18 @@ async function fetchAddressTransactionsFromElectrum(address, network) {
     ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS,
   );
   const entries = Array.isArray(history) ? history : [];
+  const confirmedHeightByTxid = new Map();
+  for (const entry of entries) {
+    const txid = String(entry?.tx_hash ?? "").trim().toLowerCase();
+    const height = Number(entry?.height);
+    if (
+      /^[0-9a-f]{64}$/u.test(txid) &&
+      Number.isSafeInteger(height) &&
+      height > 0
+    ) {
+      confirmedHeightByTxid.set(txid, height);
+    }
+  }
   const txids = [
     ...new Set(
       entries
@@ -4687,10 +4709,20 @@ async function fetchAddressTransactionsFromElectrum(address, network) {
     TX_FETCH_CONCURRENCY,
     async (txid) => {
       try {
-        return (
+        const tx =
           (await fetchTransactionFromElectrum(txid, network).catch(() => null)) ??
-          (await fetchTransactionWithSourceFallback(txid, network))
-        );
+          (await fetchTransactionWithSourceFallback(txid, network));
+        const blockHeight = confirmedHeightByTxid.get(txid);
+        return tx && Number.isSafeInteger(blockHeight)
+          ? {
+              ...tx,
+              status: {
+                ...(tx.status ?? {}),
+                block_height: blockHeight,
+                confirmed: true,
+              },
+            }
+          : tx;
       } catch {
         failedFetches += 1;
         return null;
@@ -9854,6 +9886,49 @@ function compareRegistryEventOrder(left, right) {
   );
 }
 
+function compareRegistryRecordDisplayOrder(left, right) {
+  if (left?.confirmed !== right?.confirmed) {
+    return Number(right?.confirmed === true) - Number(left?.confirmed === true);
+  }
+
+  if (left?.confirmed === true && right?.confirmed === true) {
+    const leftHeight = Number.isSafeInteger(Number(left?.blockHeight))
+      ? Number(left.blockHeight)
+      : Number.NEGATIVE_INFINITY;
+    const rightHeight = Number.isSafeInteger(Number(right?.blockHeight))
+      ? Number(right.blockHeight)
+      : Number.NEGATIVE_INFINITY;
+    if (leftHeight !== rightHeight) {
+      return rightHeight - leftHeight;
+    }
+
+    const leftIndex = Number.isSafeInteger(Number(left?.blockIndex))
+      ? Number(left.blockIndex)
+      : Number.NEGATIVE_INFINITY;
+    const rightIndex = Number.isSafeInteger(Number(right?.blockIndex))
+      ? Number(right.blockIndex)
+      : Number.NEGATIVE_INFINITY;
+    if (leftIndex !== rightIndex) {
+      return rightIndex - leftIndex;
+    }
+
+    const leftEventId = Number.isSafeInteger(Number(left?.registrationEventId))
+      ? Number(left.registrationEventId)
+      : Number.NEGATIVE_INFINITY;
+    const rightEventId = Number.isSafeInteger(Number(right?.registrationEventId))
+      ? Number(right.registrationEventId)
+      : Number.NEGATIVE_INFINITY;
+    if (leftEventId !== rightEventId) {
+      return rightEventId - leftEventId;
+    }
+  }
+
+  return (
+    Date.parse(right?.createdAt ?? "") - Date.parse(left?.createdAt ?? "") ||
+    String(right?.txid ?? "").localeCompare(String(left?.txid ?? ""))
+  );
+}
+
 function parseIdMarketplaceTransferPayload(payload, network) {
   const parts = payload.split(":");
   if (
@@ -12456,6 +12531,8 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
 
       records.set(event.id, {
         amountSats: event.amountSats,
+        blockHeight: event.blockHeight,
+        blockIndex: event.blockIndex,
         confirmed: true,
         createdAt: event.createdAt,
         id: event.id,
@@ -13065,7 +13142,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         left.txid.localeCompare(right.txid),
     ),
     pendingEvents,
-    records: accepted,
+    records: accepted.sort(compareRegistryRecordDisplayOrder),
     sales: publicMarketplaceSales([...confirmedSales, ...pendingSales]).sort(
       compareMarketplaceSales,
     ),
@@ -13392,24 +13469,35 @@ async function indexedRegistryPayload(network) {
 
   return proofIndexRegistryPayload(network, { registryAddress })
     .then(async (payload) => {
+      const orderedPayload = payload
+        ? {
+            ...payload,
+            records: (Array.isArray(payload.records) ? payload.records : [])
+              .slice()
+              .sort(compareRegistryRecordDisplayOrder),
+          }
+        : payload;
       // An unpinned proof-index registry payload is built only after the reader
       // verifies a complete, hashed canonical block-scan checkpoint. It must be
       // allowed to correct a stale cache whose (noncanonical) record count was
       // higher. The live crawler path keeps its separate regression guard.
-      const rejectReason = registryIndexedPayloadRejectReason(payload);
+      const rejectReason = registryIndexedPayloadRejectReason(orderedPayload);
       if (rejectReason) {
         console.error(
           `Rejected proof-index registry payload for ${network}: ${rejectReason}.`,
         );
         return null;
       }
-      if (network === "livenet" && registryConfirmedCount(payload) <= 0) {
+      if (
+        network === "livenet" &&
+        registryConfirmedCount(orderedPayload) <= 0
+      ) {
         console.error(
           "Rejected empty proof-index registry payload for livenet.",
         );
         return null;
       }
-      return payload;
+      return orderedPayload;
     })
     .catch((error) => {
       console.error(
@@ -18101,7 +18189,6 @@ async function walletScopedTokenSummaryPayload(
   let payload = null;
   if (
     network === "livenet" &&
-    scope !== POWB_TOKEN_ID &&
     proofIndexReadFeatureEnabled("token-state,token-default,token")
   ) {
     payload = await currentProofIndexTokenPayloadForRead(
@@ -18138,20 +18225,18 @@ async function walletScopedTokenSummaryPayload(
       WALLET_SCOPED_RECOVERY_WAIT_MS,
     );
   }
-  if (scope !== POWB_TOKEN_ID) {
-    scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
-      scopedPayload,
-      network,
-      scope,
-      recoveryAddresses,
-    );
-    scopedPayload = await tokenPayloadWithWalletActiveListings(
-      scopedPayload,
-      network,
-      scope,
-      recoveryAddresses,
-    );
-  }
+  scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
+  );
+  scopedPayload = await tokenPayloadWithWalletActiveListings(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
+  );
   if (scope === WORK_TOKEN_ID) {
     scopedPayload = await payloadWithFallbackAfterMs(
       tokenPayloadWithRecoveredWalletWorkTransfers(
@@ -18184,7 +18269,6 @@ async function walletScopedTokenPayload(
   let payload = null;
   if (
     network === "livenet" &&
-    scope !== POWB_TOKEN_ID &&
     proofIndexReadFeatureEnabled("token-state,token-default,token")
   ) {
     payload = await currentProofIndexTokenPayloadForRead(
@@ -18221,20 +18305,18 @@ async function walletScopedTokenPayload(
       WALLET_SCOPED_RECOVERY_WAIT_MS,
     );
   }
-  if (scope !== POWB_TOKEN_ID) {
-    scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
-      scopedPayload,
-      network,
-      scope,
-      recoveryAddresses,
-    );
-    scopedPayload = await tokenPayloadWithWalletActiveListings(
-      scopedPayload,
-      network,
-      scope,
-      recoveryAddresses,
-    );
-  }
+  scopedPayload = await tokenPayloadWithIndexedWalletOverlay(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
+  );
+  scopedPayload = await tokenPayloadWithWalletActiveListings(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
+  );
 
   if (scope === POWB_TOKEN_ID) {
     return scopedPayload;

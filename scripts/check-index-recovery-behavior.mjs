@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import ts from "typescript";
 
 const API_PATH = new URL("../server/proof-api.mjs", import.meta.url);
 const APP_PATH = new URL("../src/App.tsx", import.meta.url);
@@ -52,6 +53,28 @@ function isolatedFunction(path, name, globals = {}) {
   });
   const definition = topLevelFunctionSource(path, name);
   new vm.Script(`${definition}\nthis.__checkedFunction = ${name};`, {
+    filename: path.pathname,
+  }).runInContext(context);
+  return context.__checkedFunction;
+}
+
+function isolatedTypeScriptFunction(path, name, globals = {}) {
+  const context = vm.createContext({
+    console: {
+      error() {},
+      log() {},
+      warn() {},
+    },
+    ...globals,
+  });
+  const definition = topLevelFunctionSource(path, name);
+  const transpiled = ts.transpileModule(definition, {
+    compilerOptions: {
+      module: ts.ModuleKind.None,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  new vm.Script(`${transpiled}\nthis.__checkedFunction = ${name};`, {
     filename: path.pathname,
   }).runInContext(context);
   return context.__checkedFunction;
@@ -255,6 +278,237 @@ check("current ID reads exclude dropped registration transactions", async () => 
   );
   assert.equal(dropped.length, 0);
   assert.deepEqual(Array.from(calls[1].params), ["livenet", "dropped-name"]);
+  assert.match(calls[0].sql, /e\.payload->>'blockIndex'/u);
+  assert.match(calls[0].sql, /registration_event\.registration_event_id DESC/u);
+  assert.match(
+    calls[0].sql,
+    /COALESCE\(r\.registered_height, t\.block_height\) DESC/u,
+  );
+});
+
+check("Electrum registry hydration preserves canonical history heights", async () => {
+  const armyTxid = "a8622941a8ac1ed6ac8a8df58ce40795fc7d97b3615d81e9dc23ca6c0cf820fa";
+  const registryTxid = "664f605a032a726f248c7ea298773e04ccabd063555cf109cfd02736935bc84e";
+  const fetchAddressTransactionsFromElectrum = isolatedFunction(
+    API_PATH,
+    "fetchAddressTransactionsFromElectrum",
+    {
+      ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS: 1_000,
+      TX_FETCH_CONCURRENCY: 2,
+      dedupeTransactions: (transactions) => transactions,
+      electrumRequest: async () => [
+        { height: 948_376, tx_hash: armyTxid },
+        { height: 948_376, tx_hash: registryTxid },
+      ],
+      fetchTransactionFromElectrum: async (txid) => ({
+        status: {
+          block_hash: "f".repeat(64),
+          confirmed: true,
+        },
+        txid,
+      }),
+      fetchTransactionWithSourceFallback: async () => null,
+      mapWithConcurrency: async (items, _limit, mapper) =>
+        Promise.all(items.map(mapper)),
+      scriptHashForAddress: () => "scripthash",
+    },
+  );
+  const transactions = await fetchAddressTransactionsFromElectrum(
+    "bc1registry",
+    "livenet",
+  );
+  assert.deepEqual(
+    Array.from(transactions, (transaction) => transaction.status.block_height),
+    [948_376, 948_376],
+  );
+});
+
+check("ID records pin canonical block position and newest-first display", () => {
+  const records = [
+    {
+      blockHeight: 948_376,
+      blockIndex: 1_601,
+      confirmed: true,
+      id: "armyofyouth",
+      txid: "a8622941a8ac1ed6ac8a8df58ce40795fc7d97b3615d81e9dc23ca6c0cf820fa",
+    },
+    {
+      blockHeight: 948_376,
+      blockIndex: 1_602,
+      confirmed: true,
+      id: "satoshin",
+      txid: "74312caa53ee552d2ff85944d99e700fe313208378db17506b490f0e99349b0f",
+    },
+    {
+      blockHeight: 948_376,
+      blockIndex: 2_080,
+      confirmed: true,
+      id: "bitcoin",
+      txid: "6ef73916cdc421e62df2a7df7bb4269b40db7b8616f9545f99f34a15e7a1932e",
+    },
+    {
+      blockHeight: 948_376,
+      blockIndex: 2_081,
+      confirmed: true,
+      id: "registry",
+      txid: "664f605a032a726f248c7ea298773e04ccabd063555cf109cfd02736935bc84e",
+    },
+  ];
+  const compareRegistryRecordDisplayOrder = isolatedFunction(
+    API_PATH,
+    "compareRegistryRecordDisplayOrder",
+  );
+  const expected = ["registry", "bitcoin", "satoshin", "armyofyouth"];
+  const freshOrder = records
+    .slice()
+    .sort(compareRegistryRecordDisplayOrder)
+    .map((record) => record.id);
+  const indexedOrder = records
+    .slice()
+    .reverse()
+    .sort(compareRegistryRecordDisplayOrder)
+    .map((record) => record.id);
+  assert.deepEqual(freshOrder, expected);
+  assert.deepEqual(indexedOrder, expected);
+
+  const crossBlock = [
+    { blockHeight: 948_377, blockIndex: 1, confirmed: true, txid: "1" },
+    { blockHeight: 948_376, blockIndex: 3_000, confirmed: true, txid: "2" },
+  ].sort(compareRegistryRecordDisplayOrder);
+  assert.equal(crossBlock[0].blockHeight, 948_377);
+});
+
+check("wallet holder overlays preserve WORK and POWB for one address", () => {
+  const mergeWalletHolders = isolatedFunction(
+    API_PATH,
+    "mergeWalletHolders",
+  );
+  const address = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
+  const holders = mergeWalletHolders([], [
+    {
+      address,
+      balance: 3_639_060,
+      ticker: "WORK",
+      tokenId: "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+    },
+    {
+      address,
+      balance: 225_001,
+      ticker: "POWB",
+      tokenId: "a3d05fcb82548bfb800f293f7574740e09a1b117f5bfe3d6d4d696c4d0d66f50",
+    },
+  ]);
+  assert.equal(holders.length, 2);
+  assert.deepEqual(
+    Array.from(holders, (holder) => [holder.ticker, holder.balance]),
+    [
+      ["WORK", 3_639_060],
+      ["POWB", 225_001],
+    ],
+  );
+
+  for (const functionName of [
+    "walletScopedTokenSummaryPayload",
+    "walletScopedTokenPayload",
+  ]) {
+    const source = topLevelFunctionSource(API_PATH, functionName);
+    assert.doesNotMatch(source, /scope !== POWB_TOKEN_ID/u);
+    assert.match(source, /tokenPayloadWithIndexedWalletOverlay/u);
+  }
+
+  const appSource = fileSource(APP_PATH);
+  const walletBalanceSource = topLevelFunctionSource(
+    APP_PATH,
+    "tokenWalletBalancesFor",
+  );
+  assert.match(walletBalanceSource, /hasConfirmedReplayBase/u);
+  assert.match(walletBalanceSource, /canReplayConfirmedBalance/u);
+  const tokenWalletBalancesFor = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenWalletBalancesFor",
+    {
+      normalizeTokenTicker: (ticker) => String(ticker ?? "").toUpperCase(),
+    },
+  );
+  const tokens = [
+    {
+      ticker: "WORK",
+      tokenId: "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+    },
+    {
+      ticker: "POWB",
+      tokenId: "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+    },
+  ];
+  const walletBalances = tokenWalletBalancesFor(
+    address,
+    tokens,
+    [],
+    [],
+    [
+      {
+        amount: 30_060,
+        buyerAddress: address,
+        confirmed: true,
+        tokenId: tokens[0].tokenId,
+      },
+    ],
+    holders,
+  );
+  assert.deepEqual(
+    Array.from(walletBalances, (balance) => [
+      balance.token.ticker,
+      balance.confirmedBalance,
+    ]),
+    [
+      ["WORK", 3_639_060],
+      ["POWB", 225_001],
+    ],
+  );
+  assert.equal(
+    tokenWalletBalancesFor(
+      address,
+      [tokens[0]],
+      [],
+      [],
+      [
+        {
+          amount: 30_060,
+          buyerAddress: address,
+          confirmed: true,
+          tokenId: tokens[0].tokenId,
+        },
+      ],
+      [],
+    ).length,
+    0,
+  );
+  assert.match(appSource, /mergeTokenWalletBalancesByToken\(\s*accountTokenWalletBalances,\s*accountPowbWalletBalances/u);
+  assert.match(appSource, /accountUtxoAvailability\(accountUtxos, reservedListingOutpoints\)/u);
+  assert.match(appSource, /activeListingAnchorOutpointsForAddress\(idListings/u);
+  assert.match(appSource, /activeTokenListingAnchorOutpointsForAddress/u);
+
+  const accountUtxoAvailability = isolatedTypeScriptFunction(
+    APP_PATH,
+    "accountUtxoAvailability",
+    { DUST_SATS: 546 },
+  );
+  const values = [100_000, 10_000, 5_000, 3_000, 1_500, 1_000, 641, 546, 546];
+  const utxos = values.map((value, index) => ({
+    status: { confirmed: true },
+    txid: String(index + 1).padStart(64, "0"),
+    value,
+    vout: 0,
+  }));
+  const availability = accountUtxoAvailability(
+    utxos,
+    utxos.slice(-2).map(({ txid, vout }) => ({ txid, vout })),
+  );
+  assert.equal(availability.confirmedBalanceSats, 122_233);
+  assert.equal(availability.confirmedUtxos.length, 9);
+  assert.equal(availability.reservedListingUtxos.length, 2);
+  assert.equal(availability.spendableSats, 121_141);
+  assert.equal(availability.spendableUtxos.length, 7);
 });
 
 check("confirmed invalid credit events remain visible without becoming valid", async () => {
@@ -1384,6 +1638,7 @@ check("canonical registry state can replace a stale higher cached count", async 
     API_PATH,
     "indexedRegistryPayload",
     {
+      compareRegistryRecordDisplayOrder: () => 0,
       errorSummary: (error) => String(error?.message ?? error),
       proofIndexReadFeatureEnabled: () => true,
       proofIndexRegistryPayload: async () => payload,
@@ -1396,9 +1651,15 @@ check("canonical registry state can replace a stale higher cached count", async 
     },
   );
 
-  assert.equal(await indexedRegistryPayload("livenet"), payload);
+  const accepted = await indexedRegistryPayload("livenet");
+  assert.equal(accepted.indexedThroughBlock, payload.indexedThroughBlock);
+  assert.equal(accepted.records.length, payload.records.length);
   assert.equal(rejectArguments.length, 1);
-  assert.equal(rejectArguments[0], payload);
+  assert.equal(
+    rejectArguments[0].indexedThroughBlock,
+    payload.indexedThroughBlock,
+  );
+  assert.equal(rejectArguments[0].records.length, payload.records.length);
 });
 
 check("strict RUSH history is complete and ordered by canonical blocks", async () => {

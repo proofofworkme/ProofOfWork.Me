@@ -6624,9 +6624,18 @@ function confirmedIdRecordFromRow(row, network) {
     rowNumber(row, "registered_height") ||
     rowNumber(row, "block_height") ||
     undefined;
+  const blockIndex = Number(row.registration_block_index);
+  const registrationEventId = Number(row.registration_event_id);
   return {
     amountSats: ID_REGISTRATION_PRICE_SATS,
     blockHeight,
+    blockIndex:
+      row.registration_block_index !== null &&
+      row.registration_block_index !== undefined &&
+      Number.isSafeInteger(blockIndex) &&
+      blockIndex >= 0
+        ? blockIndex
+        : undefined,
     confirmed: true,
     createdAt: dateIso(
       row.confirmed_at ?? row.block_time ?? row.updated_at,
@@ -6637,6 +6646,13 @@ function confirmedIdRecordFromRow(row, network) {
     ownerAddress: String(row.owner_address || ""),
     pgpKey: row.pgp_public_key || undefined,
     receiveAddress: String(row.receive_address || row.owner_address || ""),
+    registrationEventId:
+      row.registration_event_id !== null &&
+      row.registration_event_id !== undefined &&
+      Number.isSafeInteger(registrationEventId) &&
+      registrationEventId > 0
+        ? registrationEventId
+        : undefined,
     txid: String(row.registration_txid || ""),
     updatedHeight:
       rowNumber(row, "updated_height") || blockHeight || undefined,
@@ -6666,15 +6682,38 @@ async function confirmedIdRecordsFromCurrentTables(pool, network, idLower = "") 
         r.updated_at,
         t.confirmed_at,
         t.block_height,
-        t.block_time
+        t.block_time,
+        registration_event.registration_block_index,
+        registration_event.registration_event_id
       FROM proof_indexer.id_records r
       JOIN proof_indexer.transactions t
         ON t.network = r.network
        AND t.txid = r.registration_txid
        AND t.status = 'confirmed'
+      LEFT JOIN LATERAL (
+        SELECT
+          CASE
+            WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+              THEN (e.payload->>'blockIndex')::integer
+            ELSE NULL
+          END AS registration_block_index,
+          e.event_id AS registration_event_id
+        FROM proof_indexer.events e
+        WHERE e.network = r.network
+          AND e.txid = r.registration_txid
+          AND e.kind = 'id-register'
+          AND e.valid = true
+          AND lower(COALESCE(e.payload->>'id', '')) = r.id_lower
+        ORDER BY e.event_id ASC
+        LIMIT 1
+      ) registration_event ON true
       WHERE r.network = $1
         ${idCondition}
-      ORDER BY r.registered_height ASC NULLS LAST, r.registration_txid ASC
+      ORDER BY
+        COALESCE(r.registered_height, t.block_height) DESC NULLS LAST,
+        registration_event.registration_block_index DESC NULLS LAST,
+        registration_event.registration_event_id DESC NULLS LAST,
+        r.registration_txid DESC
     `,
     params,
   );
