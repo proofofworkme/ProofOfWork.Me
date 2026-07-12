@@ -662,6 +662,130 @@ check("ID records pin canonical block position and newest-first display", () => 
   assert.equal(crossBlock[0].blockHeight, 948_377);
 });
 
+check("scoped WORK summaries preserve canonical holder totals and identity", async () => {
+  const normalizeTokenTicker = (ticker) =>
+    String(ticker ?? "").trim().toUpperCase();
+  const tokenHolderMatchesDefinition = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenHolderMatchesDefinition",
+    { normalizeTokenTicker },
+  );
+  const tokenHoldersForDefinition = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenHoldersForDefinition",
+    { tokenHolderMatchesDefinition },
+  );
+  const tokenHolderTotalCount = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenHolderTotalCount",
+  );
+  const work = {
+    holderCount: 311,
+    ticker: "WORK",
+    tokenId: "work-token-id",
+  };
+  const previewHolders = Array.from({ length: 40 }, (_, index) => ({
+    address: `preview-${index}`,
+    balance: 40 - index,
+  }));
+  const compactSaleReplay = Array.from({ length: 13 }, (_, index) => ({
+    address: `sale-${index}`,
+    balance: 13 - index,
+  }));
+  const resolved = tokenHoldersForDefinition(
+    work,
+    [work],
+    previewHolders,
+    compactSaleReplay,
+  );
+  assert.equal(resolved.length, 40);
+  assert.equal(resolved[0].address, "preview-0");
+  assert.equal(tokenHolderTotalCount(work, resolved), 311);
+
+  const other = { ticker: "OTHER", tokenId: "other-token-id" };
+  const ambiguous = tokenHoldersForDefinition(
+    work,
+    [work, other],
+    previewHolders,
+    compactSaleReplay,
+  );
+  assert.equal(ambiguous.length, 13);
+  assert.equal(ambiguous[0].address, "sale-0");
+
+  const normalizeTokenScope = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const tokenMatchesScope = (token, scope) =>
+    normalizeTokenScope(token?.tokenId) === scope ||
+    normalizeTokenScope(token?.ticker) === scope;
+  const tokenPayloadWithScopedHolderIdentity = isolatedFunction(
+    API_PATH,
+    "tokenPayloadWithScopedHolderIdentity",
+    { normalizeTokenScope, tokenMatchesScope },
+  );
+  const scopedPayload = tokenPayloadWithScopedHolderIdentity(
+    { holders: previewHolders, tokens: [work] },
+    work.tokenId,
+  );
+  assert.equal(scopedPayload.holders.length, 40);
+  assert.ok(
+    scopedPayload.holders.every(
+      (holder) =>
+        holder.tokenId === work.tokenId && holder.ticker === work.ticker,
+    ),
+  );
+  const multiTokenPayload = {
+    holders: previewHolders,
+    tokens: [work, other],
+  };
+  assert.equal(
+    tokenPayloadWithScopedHolderIdentity(multiTokenPayload, work.tokenId),
+    multiTokenPayload,
+  );
+
+  let holderSql = "";
+  const scopedHoldersFromBalances = isolatedFunction(
+    READER_PATH,
+    "scopedHoldersFromBalances",
+  );
+  const indexedHolders = await scopedHoldersFromBalances(
+    {
+      async query(sql) {
+        holderSql = String(sql);
+        return {
+          rows: [
+            {
+              address: "bc1holder",
+              confirmed_balance: "1234",
+              ticker: "WORK",
+              token_id: "WORK-TOKEN-ID",
+            },
+          ],
+        };
+      },
+    },
+    "livenet",
+    work.tokenId,
+  );
+  assert.match(holderSql, /JOIN proof_indexer\.credit_definitions/u);
+  assert.equal(indexedHolders[0].balance, 1234);
+  assert.equal(indexedHolders[0].ticker, "WORK");
+  assert.equal(indexedHolders[0].tokenId, "work-token-id");
+});
+
+check("WORK mint progress stays below 100 until max supply confirms", () => {
+  const tokenProgressPercent = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenProgressPercent",
+  );
+  const tokenProgressLabel = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenProgressLabel",
+    { tokenProgressPercent },
+  );
+  assert.equal(tokenProgressLabel(20_999_000, 21_000_000), "99.995%");
+  assert.equal(tokenProgressLabel(21_000_000, 21_000_000), "100%");
+});
+
 check("wallet holder overlays preserve WORK and POWB for one address", () => {
   const mergeWalletHolders = isolatedFunction(
     API_PATH,
@@ -712,6 +836,14 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
     "tokenWalletBalancesFor",
     {
       normalizeTokenTicker: (ticker) => String(ticker ?? "").toUpperCase(),
+      tokenHolderMatchesDefinition: isolatedTypeScriptFunction(
+        APP_PATH,
+        "tokenHolderMatchesDefinition",
+        {
+          normalizeTokenTicker: (ticker) =>
+            String(ticker ?? "").toUpperCase(),
+        },
+      ),
     },
   );
   const tokens = [

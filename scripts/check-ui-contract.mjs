@@ -462,6 +462,30 @@ expect(
     /Loading current WORK summary from the ProofOfWork index/.test(app),
 );
 expect(
+  "WORK preserves scoped holder previews and canonical holder totals",
+  /function tokenHolderMatchesDefinition[\s\S]*singleTokenScope/.test(app) &&
+    /function tokenHoldersForDefinition[\s\S]*tokenHolderMatchesDefinition/.test(
+      app,
+    ) &&
+    /const holderHistoryTotalHint = tokenHolderTotalCount/.test(app) &&
+    /holderHistoryTotalHint > holderHistoryLocalCount/.test(app) &&
+    /detailHolderTotalCount\.toLocaleString\(\)/.test(app) &&
+    /detailHolders=\{tokenDetailHolders\}/.test(app) &&
+    /holders=\{selectedTokenHolders\}/.test(app),
+);
+expect(
+  "WORK uses wallet-scoped balances independently of the holder preview",
+  (app.match(/walletBalances=\{accountWalletBalances\}/g) || []).length >= 2 &&
+    /selectedWalletBalance\?\.confirmedBalance/.test(app) &&
+    /detailWalletBalance\?\.confirmedBalance/.test(app),
+);
+expect(
+  "WORK mint progress cannot round an incomplete supply to 100 percent",
+  /function tokenProgressLabel[\s\S]*if \(progress >= 100\)[\s\S]*Math\.floor\(progress \* 1000\) \/ 1000/.test(
+    app,
+  ),
+);
+expect(
   "WORK connected-wallet sync stays on the global compact summary",
   /const workSummary = workTokenMode[\s\S]*fetchWorkSummary\("livenet",\s*false\)[\s\S]*address:\s*workTokenMode \? "" :/.test(
     app,

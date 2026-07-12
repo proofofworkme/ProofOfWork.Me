@@ -547,9 +547,19 @@ expectAll("frontend holder searches use remote holder history", app, [
   /const \[remoteHolderPage,\s*setRemoteHolderPage\] = useState/,
   /fetchTokenHistoryPage<PowTokenHolder>\(network,\s*"holders"/,
   /fresh:\s*true/,
+  /holderHistoryTotalHint > holderHistoryLocalCount/,
   /const selectedRemoteHolderPage =[\s\S]*historyPageToPagedItems\([\s\S]*activeRemoteHolderPage/,
   /const detailRemoteHolderPage =[\s\S]*historyPageToPagedItems\([\s\S]*activeRemoteHolderPage/,
   /renderHolderList = \([\s\S]*loadingRemotePage = false/,
+]);
+
+expectAll("scoped token holder identity survives summary compaction and paging", server + proofIndexReader, [
+  /function tokenPayloadWithScopedHolderIdentity\([\s\S]*tokens\.length !== 1[\s\S]*ticker: token\.ticker[\s\S]*tokenId: token\.tokenId/,
+  /function scopedTokenPayloadFromState\([\s\S]*return tokenPayloadWithScopedHolderIdentity\([\s\S]*normalizedScope\)/,
+  /function compactTokenSummaryPayload\([\s\S]*return tokenPayloadWithScopedHolderIdentity\([\s\S]*scope\)/,
+  /async function workSummaryWithCurrentBtcUsd\([\s\S]*tokenPayloadWithScopedHolderIdentity\([\s\S]*WORK_TOKEN_ID/,
+  /async function scopedHoldersFromBalances\([\s\S]*JOIN proof_indexer\.credit_definitions[\s\S]*ticker: row\.ticker[\s\S]*tokenId:/,
+  /async function proofIndexScopedHolderHistoryPayload\([\s\S]*ticker: token\.ticker[\s\S]*tokenId: token\.token_id/,
 ]);
 
 expectAll("frontend scoped credit mint supply ignores global summary totals", app, [
@@ -992,7 +1002,7 @@ expectAll("WORK floor USD uses live price metadata", server, [
   /function satsToUsdAtBtcUsd\(sats,\s*btcUsd\)/,
   /function btcUsdResponseMetadata\(quote\)/,
   /btcUsdPricePayload\(network,\s*\{\s*fresh\s*\}\)/,
-  /async function workSummaryWithCurrentBtcUsd\([\s\S]*floor: await workFloorWithCurrentBtcUsd\(payload\.floor,\s*network,\s*fresh\)/,
+  /async function workSummaryWithCurrentBtcUsd\([\s\S]*floor: await workFloorWithCurrentBtcUsd\([\s\S]*scopedPayload\.floor,[\s\S]*network,[\s\S]*fresh/,
   /url\.pathname === "\/api\/v1\/work-summary"[\s\S]*await workSummaryWithCurrentBtcUsd\([\s\S]*workFloorWithSummaryMarketOverlay\([\s\S]*indexedPayload\.floor/,
   /url\.pathname === "\/api\/v1\/growth-summary"[\s\S]*await growthSummaryWithCurrentBtcUsd\([\s\S]*indexedPayload[\s\S]*network[\s\S]*false/,
   /modelTotalUsd/,

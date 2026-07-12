@@ -14609,6 +14609,31 @@ function mergedTokenSummaryMetric(token, summary, key, preserveExisting) {
   return summaryValue ?? tokenValue;
 }
 
+function tokenPayloadWithScopedHolderIdentity(payload, scope) {
+  if (!payload) {
+    return payload;
+  }
+  const normalizedScope = normalizeTokenScope(scope);
+  const tokens = Array.isArray(payload.tokens) ? payload.tokens : [];
+  const matchingTokens = tokens.filter(
+    (token) => tokenMatchesScope(token, normalizedScope),
+  );
+  if (!normalizedScope || tokens.length !== 1 || matchingTokens.length !== 1) {
+    return payload;
+  }
+  const token = matchingTokens[0];
+  return {
+    ...payload,
+    holders: (Array.isArray(payload.holders) ? payload.holders : []).map(
+      (holder) => ({
+        ...holder,
+        ticker: token.ticker,
+        tokenId: token.tokenId,
+      }),
+    ),
+  };
+}
+
 function scopedTokenPayloadFromState(tokenState, scope) {
   const normalizedScope = normalizeTokenScope(scope);
   if (!normalizedScope) {
@@ -14689,7 +14714,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
     0,
   );
 
-  return {
+  return tokenPayloadWithScopedHolderIdentity({
     ...tokenState,
     closedListings,
     creationSats,
@@ -14724,7 +14749,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
         tokens.map((token) => token.registryAddress).filter(Boolean),
       ).size,
     },
-  };
+  }, normalizedScope);
 }
 
 async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) {
@@ -15021,7 +15046,7 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
     return next;
   });
 
-  return {
+  return tokenPayloadWithScopedHolderIdentity({
     ...payload,
     closedListings: recentClosedTokenListings(
       closedListings,
@@ -15053,7 +15078,7 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
       pendingTokens: tokenDefinitions.filter((token) => !token?.confirmed)
         .length,
     },
-  };
+  }, scope);
 }
 
 function workTokenLiveSeenTxids(network) {
@@ -24386,13 +24411,26 @@ async function workFloorWithSummaryMarketOverlay(
 }
 
 async function workSummaryWithCurrentBtcUsd(payload, network, fresh = false) {
-  if (!payload?.floor) {
-    return payload;
+  const scopedPayload = payload
+    ? {
+        ...payload,
+        token: tokenPayloadWithScopedHolderIdentity(
+          payload.token,
+          WORK_TOKEN_ID,
+        ),
+      }
+    : payload;
+  if (!scopedPayload?.floor) {
+    return scopedPayload;
   }
 
   return {
-    ...payload,
-    floor: await workFloorWithCurrentBtcUsd(payload.floor, network, fresh),
+    ...scopedPayload,
+    floor: await workFloorWithCurrentBtcUsd(
+      scopedPayload.floor,
+      network,
+      fresh,
+    ),
   };
 }
 

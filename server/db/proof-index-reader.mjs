@@ -5967,18 +5967,23 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
 async function scopedHoldersFromBalances(pool, network, tokenId) {
   const result = await pool.query(
     `
-      SELECT address, confirmed_balance
-      FROM proof_indexer.credit_balances
-      WHERE network = $1
-        AND token_id = $2
-        AND confirmed_balance > 0
-      ORDER BY confirmed_balance DESC, address ASC
+      SELECT cb.address, cb.confirmed_balance, cb.token_id, cd.ticker
+      FROM proof_indexer.credit_balances cb
+      JOIN proof_indexer.credit_definitions cd
+        ON cd.network = cb.network
+       AND cd.token_id = cb.token_id
+      WHERE cb.network = $1
+        AND cb.token_id = $2
+        AND cb.confirmed_balance > 0
+      ORDER BY cb.confirmed_balance DESC, cb.address ASC
     `,
     [network, tokenId],
   );
   return result.rows.map((row) => ({
     address: row.address,
     balance: Number(row.confirmed_balance),
+    ticker: row.ticker,
+    tokenId: String(row.token_id ?? "").toLowerCase(),
   }));
 }
 
@@ -6686,6 +6691,8 @@ async function proofIndexScopedHolderHistoryPayload(
     items: rowsResult.rows.map((row) => ({
       address: row.address,
       balance: Number(row.confirmed_balance),
+      ticker: token.ticker,
+      tokenId: token.token_id,
     })),
     kind: "holders",
     limit: pagination.limit,
