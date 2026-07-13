@@ -266,14 +266,26 @@ expect(
 );
 expect(
   "WORK attachment sends retry canonical preflight without stale fallback",
-  /const WORK_SPENDABLE_RECHECK_DELAYS_MS = \[0, 2_000, 5_000, 10_000\]/.test(
+  /const TOKEN_SPENDABLE_RECHECK_DELAYS_MS = \[0, 2_000, 5_000, 10_000\]/.test(
     app,
   ) &&
-    /async function fetchFreshWalletWorkState[\s\S]*isTransientProofApiReadError[\s\S]*No transaction was created/.test(
+    /async function fetchFreshWalletTokenPreflightState[\s\S]*authoritativeWallet !== true[\s\S]*proof-indexer-wallet-token-overlay[\s\S]*isTransientProofApiReadError[\s\S]*No transaction was created/.test(
       app,
     ) &&
     (app.match(/await fetchFreshWalletWorkState\(/gu)?.length ?? 0) === 2 &&
     /The index caught a new block\. Rechecking WORK/.test(app),
+);
+expect(
+  "direct credit sends fail closed on canonical wallet spendability before PSBT creation",
+  /async function transferToken[\s\S]*fetchFreshWalletTokenPreflightState\([\s\S]*tokenSpendabilityForWallet\([\s\S]*No transaction was created\.[\s\S]*buildPaymentPsbt\(/.test(
+    app,
+  ) &&
+    /function tokenSpendabilityForWallet[\s\S]*confirmedBalance - reservedBalance - pendingOutgoing/.test(
+      app,
+    ) &&
+    /Registry and miner fees are final once broadcast[\s\S]*not automatically refunded/.test(
+      app,
+    ),
 );
 expect(
   "Infinity and Inception bond composers attach canonical WORK",

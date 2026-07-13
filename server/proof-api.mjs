@@ -1779,7 +1779,7 @@ function historyItemsMatchingAddresses(items, addresses) {
   });
 }
 
-function tokenPayloadScopedToAddresses(payload, addresses) {
+function tokenPayloadScopedToAddresses(payload, addresses, tokenScope = "") {
   if (!payload || !Array.isArray(addresses) || addresses.length === 0) {
     return payload;
   }
@@ -1802,6 +1802,7 @@ function tokenPayloadScopedToAddresses(payload, addresses) {
     payload.invalidEvents ?? [],
     addresses,
   );
+  const holders = historyItemsMatchingAddresses(payload.holders ?? [], addresses);
   const tokenIds = new Set(
     [
       ...mints,
@@ -1810,18 +1811,29 @@ function tokenPayloadScopedToAddresses(payload, addresses) {
       ...closedListings,
       ...sales,
       ...invalidEvents,
+      ...holders,
     ]
       .map((item) => item?.tokenId)
       .filter(Boolean),
   );
-  const tokens = (payload.tokens ?? []).filter((token) =>
-    tokenIds.has(token.tokenId),
+  const tokenTickers = new Set(
+    holders.map((holder) => String(holder?.ticker ?? "").toLowerCase()).filter(Boolean),
+  );
+  const scope = normalizeTokenScope(tokenScope);
+  const tokens = (payload.tokens ?? []).filter(
+    (token) =>
+      tokenIds.has(token.tokenId) ||
+      tokenTickers.has(String(token?.ticker ?? "").toLowerCase()) ||
+      (scope &&
+        (String(token?.tokenId ?? "").toLowerCase() === scope ||
+          String(token?.ticker ?? "").toLowerCase() === scope)) ||
+      ((payload.tokens ?? []).length === 1 && holders.length > 0),
   );
 
   return {
     ...payload,
     closedListings,
-    holders: historyItemsMatchingAddresses(payload.holders ?? [], addresses),
+    holders,
     invalidEvents,
     listings,
     mints,
@@ -1927,7 +1939,7 @@ function mergeWalletHolders(baseHolders, overlayHolders) {
     }
   }
   return [...byTokenAndAddress.values()]
-    .filter((holder) => Number(holder?.balance ?? 0) > 0)
+    .filter((holder) => Number(holder?.balance ?? 0) >= 0)
     .sort(
       (left, right) =>
         Number(right.balance ?? 0) - Number(left.balance ?? 0) ||
@@ -1955,6 +1967,7 @@ async function tokenPayloadWithIndexedWalletOverlay(
   network,
   tokenScope,
   recoveryAddresses,
+  sourceTokens = [],
 ) {
   if (
     network !== "livenet" ||
@@ -2007,13 +2020,61 @@ async function tokenPayloadWithIndexedWalletOverlay(
         .toLowerCase()}`,
     mergeTokenListingRecord,
   );
+  const invalidEvents = mergeTokenStateItemsByKey(
+    payload?.invalidEvents,
+    overlay.invalidEvents,
+    (item) =>
+      `${String(item?.tokenId ?? "").trim().toLowerCase()}:${String(
+        item?.txid ?? "",
+      )
+        .trim()
+        .toLowerCase()}`,
+  );
   const holders = mergeWalletHolders(payload?.holders, overlay.holders);
+  const walletTokenIds = new Set(
+    [
+      ...holders,
+      ...invalidEvents,
+      ...transfers,
+      ...sales,
+      ...listings,
+      ...closedListings,
+    ]
+      .map((item) => String(item?.tokenId ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const walletTokenTickers = new Set(
+    [
+      ...holders,
+      ...invalidEvents,
+      ...transfers,
+      ...sales,
+      ...listings,
+      ...closedListings,
+    ]
+      .map((item) => String(item?.ticker ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const normalizedScope = normalizeTokenScope(tokenScope);
+  const tokens = mergeTokenStateItemsByKey(
+    payload?.tokens,
+    (Array.isArray(sourceTokens) ? sourceTokens : []).filter(
+      (token) =>
+        walletTokenIds.has(String(token?.tokenId ?? "").toLowerCase()) ||
+        walletTokenTickers.has(String(token?.ticker ?? "").toLowerCase()) ||
+        (normalizedScope &&
+          (String(token?.tokenId ?? "").toLowerCase() === normalizedScope ||
+            String(token?.ticker ?? "").toLowerCase() === normalizedScope)),
+    ),
+    (item) => String(item?.tokenId ?? "").trim().toLowerCase(),
+  );
   const hasOverlayRows = [
     overlay.transfers,
     overlay.sales,
     overlay.listings,
     overlay.closedListings,
     overlay.holders,
+    overlay.invalidEvents,
   ].some((items) => Array.isArray(items) && items.length > 0);
   if (
     !hasOverlayRows &&
@@ -2022,7 +2083,10 @@ async function tokenPayloadWithIndexedWalletOverlay(
     listings.length === (Array.isArray(payload?.listings) ? payload.listings.length : 0) &&
     closedListings.length ===
       (Array.isArray(payload?.closedListings) ? payload.closedListings.length : 0) &&
-    holders.length === (Array.isArray(payload?.holders) ? payload.holders.length : 0)
+    holders.length === (Array.isArray(payload?.holders) ? payload.holders.length : 0) &&
+    invalidEvents.length ===
+      (Array.isArray(payload?.invalidEvents) ? payload.invalidEvents.length : 0) &&
+    tokens.length === (Array.isArray(payload?.tokens) ? payload.tokens.length : 0)
   ) {
     return payload;
   }
@@ -2032,6 +2096,7 @@ async function tokenPayloadWithIndexedWalletOverlay(
     closedListings,
     holders,
     indexedAt: newerIso(payload?.indexedAt, overlay.indexedAt),
+    invalidEvents,
     listings,
     sales,
     source: mergedSourceLabel(payload?.source, overlay.source),
@@ -2042,6 +2107,7 @@ async function tokenPayloadWithIndexedWalletOverlay(
       confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
         .length,
       holders: holders.length,
+      invalidEvents: invalidEvents.length,
       pendingListings: listings.filter((listing) => !listing.confirmed).length,
       pendingSales: sales.filter((sale) => !sale.confirmed).length,
       pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
@@ -2049,6 +2115,7 @@ async function tokenPayloadWithIndexedWalletOverlay(
       walletScoped: true,
     },
     transfers,
+    tokens,
     walletScoped: true,
   }, {
     closedListings: overlay.closedListings,
@@ -8636,6 +8703,33 @@ function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
   };
 }
 
+function insufficientTokenBalanceInvalidEvent({
+  actorAddress,
+  amount,
+  confirmedBalance,
+  recipientAddress,
+  reservedBalance,
+  ticker,
+  tokenId,
+}) {
+  const spendableBalance = Math.max(0, confirmedBalance - reservedBalance);
+  return {
+    amount,
+    attemptedAmount: amount,
+    availableAmount: spendableBalance,
+    confirmedBalance,
+    participants: [actorAddress, recipientAddress],
+    reason: `Insufficient spendable ${ticker} balance: ${spendableBalance.toLocaleString("en-US")} available; ${amount.toLocaleString("en-US")} attempted.`,
+    reasonCode: "insufficient-spendable-balance",
+    recipientAddress,
+    reservedBalance,
+    senderAddress: actorAddress,
+    spendableBalance,
+    ticker,
+    tokenId,
+  };
+}
+
 function tokenStateFromTransactions(
   indexTxs,
   registryTxsByAddress,
@@ -8838,6 +8932,7 @@ function tokenStateFromTransactions(
       let parsedTxMessage = false;
       let parsedTxKind = "";
       let parsedTxTokenId = "";
+      let rejectedTxMessage = null;
 
       for (const message of messages) {
         const parsed = parseTokenPayload(message, network);
@@ -8922,10 +9017,24 @@ function tokenStateFromTransactions(
             parsed.recipientAddress,
           );
           const senderBalance = balances.get(senderBalanceKey) ?? 0;
-          if (
-            confirmed &&
-            spendableBalanceFor(sentToken.tokenId, actorAddress) < parsed.amount
-          ) {
+          const reservedBalance = reservedBalanceFor(
+            sentToken.tokenId,
+            actorAddress,
+          );
+          const spendableBalance = spendableBalanceFor(
+            sentToken.tokenId,
+            actorAddress,
+          );
+          if (confirmed && spendableBalance < parsed.amount) {
+            rejectedTxMessage = insufficientTokenBalanceInvalidEvent({
+              actorAddress,
+              amount: parsed.amount,
+              confirmedBalance: senderBalance,
+              recipientAddress: parsed.recipientAddress,
+              reservedBalance,
+              ticker: sentToken.ticker,
+              tokenId: sentToken.tokenId,
+            });
             continue;
           }
 
@@ -9145,11 +9254,18 @@ function tokenStateFromTransactions(
         originalRegistrySats >= TOKEN_MIN_MUTATION_PRICE_SATS
       ) {
         invalidEvents.push({
+          ...(rejectedTxMessage ?? {}),
+          amount: rejectedTxMessage?.amount ?? 0,
+          auditMinerFeeSats: minerFeeSats,
+          auditRegistryPaymentSats: originalRegistrySats,
+          auditTotalCostSats: minerFeeSats + originalRegistrySats,
+          blockHeight,
+          blockIndex,
           confirmed,
           createdAt,
           kind: parsedTxKind || "unknown",
           network,
-          reason: "no-valid-token-event",
+          reason: rejectedTxMessage?.reason ?? "no-valid-token-event",
           registryAddress,
           tokenId: parsedTxTokenId,
           txid,
@@ -16484,10 +16600,14 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     const eventSpentOutpoints = spentOutpoints(vin);
     const confirmed = transactionConfirmed(tx);
     const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+    const minerFeeSats = transactionMinerFeeSats(tx);
+    const blockHeight = transactionBlockHeight(tx);
+    const blockIndex = transactionBlockIndex(tx);
     let acceptedTxMessage = false;
     let parsedTxMessage = false;
     let parsedTxKind = "";
     let parsedTxTokenId = "";
+    let rejectedTxMessage = null;
 
     for (const message of messages) {
       const parsed = parseTokenPayload(message, network);
@@ -16542,12 +16662,26 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
       }
 
       if (parsed.kind === "send") {
+        const confirmedBalance = holderBalances.get(actorAddress) ?? 0;
+        const spendableBalance = spendableBalanceFor(actorAddress);
         if (
           parsed.tokenId !== WORK_TOKEN_ID ||
           !hasActorAddress ||
-          remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
-          (confirmed && spendableBalanceFor(actorAddress) < parsed.amount)
+          remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS
         ) {
+          continue;
+        }
+        if (confirmed && spendableBalance < parsed.amount) {
+          const reservedBalance = reservedBalanceFor(actorAddress);
+          rejectedTxMessage = insufficientTokenBalanceInvalidEvent({
+            actorAddress,
+            amount: parsed.amount,
+            confirmedBalance,
+            recipientAddress: parsed.recipientAddress,
+            reservedBalance,
+            ticker: WORK_TOKEN_TICKER,
+            tokenId: WORK_TOKEN_ID,
+          });
           continue;
         }
 
@@ -16736,20 +16870,36 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     if (
       confirmed &&
       parsedTxMessage &&
-      originalRegistrySats >= TOKEN_MIN_MUTATION_PRICE_SATS &&
-      !invalidEvents.some((event) => event.txid === txid)
+      originalRegistrySats >= TOKEN_MIN_MUTATION_PRICE_SATS
     ) {
-      invalidEvents.push({
+      const invalidEvent = {
+        ...(rejectedTxMessage ?? {}),
+        amount: rejectedTxMessage?.amount ?? 0,
+        auditMinerFeeSats: minerFeeSats,
+        auditRegistryPaymentSats: originalRegistrySats,
+        auditTotalCostSats: minerFeeSats + originalRegistrySats,
+        blockHeight,
+        blockIndex,
         confirmed,
         createdAt,
         kind: parsedTxKind || "unknown",
         network,
-        reason: "no-valid-work-token-event",
+        reason:
+          rejectedTxMessage?.reason ?? "no-valid-work-token-event",
         registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
         tokenId: parsedTxTokenId,
         txid,
-      });
-      changed = true;
+      };
+      const existingInvalidIndex = invalidEvents.findIndex(
+        (event) => event.txid === txid,
+      );
+      if (existingInvalidIndex < 0) {
+        invalidEvents.push(invalidEvent);
+        changed = true;
+      } else if (rejectedTxMessage) {
+        invalidEvents[existingInvalidIndex] = invalidEvent;
+        changed = true;
+      }
     }
   }
 
@@ -18726,7 +18876,11 @@ async function walletScopedTokenSummaryPayload(
     });
   }
 
-  let scopedPayload = tokenPayloadScopedToAddresses(payload, recoveryAddresses);
+  let scopedPayload = tokenPayloadScopedToAddresses(
+    payload,
+    recoveryAddresses,
+    scope,
+  );
   if (scope === WORK_TOKEN_ID) {
     scopedPayload = workTokenStateWithRecoveredListingClosesFromTransactions(
       scopedPayload,
@@ -18744,6 +18898,7 @@ async function walletScopedTokenSummaryPayload(
     network,
     scope,
     recoveryAddresses,
+    payload?.tokens,
   );
   scopedPayload = await tokenPayloadWithWalletActiveListings(
     scopedPayload,
@@ -18778,8 +18933,11 @@ async function walletScopedTokenPayload(
   network,
   tokenScope = "",
   recoveryAddresses = [],
+  options = {},
 ) {
   const scope = normalizeTokenScope(tokenScope);
+  const requireCurrent =
+    options.requireCurrent === true && network === "livenet";
   let payload = null;
   if (
     network === "livenet" &&
@@ -18788,9 +18946,17 @@ async function walletScopedTokenPayload(
     payload = await currentProofIndexTokenPayloadForRead(
       network,
       scope,
-      "wallet-scoped-token",
+      requireCurrent ? "wallet-scoped-token-fresh" : "wallet-scoped-token",
       5_000,
     );
+  }
+
+  if (!payload && requireCurrent) {
+    const unavailable = freshDataUnavailableError(
+      `Fresh wallet credit state is still catching up for ${scope || "all"}.`,
+    );
+    unavailable.details = { code: "CANONICAL_INDEX_UNAVAILABLE" };
+    throw unavailable;
   }
 
   if (!payload) {
@@ -18806,7 +18972,11 @@ async function walletScopedTokenPayload(
     });
   }
 
-  let scopedPayload = tokenPayloadScopedToAddresses(payload, recoveryAddresses);
+  let scopedPayload = tokenPayloadScopedToAddresses(
+    payload,
+    recoveryAddresses,
+    scope,
+  );
   if (scope === WORK_TOKEN_ID) {
     scopedPayload = workTokenStateWithRecoveredListingClosesFromTransactions(
       scopedPayload,
@@ -18824,6 +18994,7 @@ async function walletScopedTokenPayload(
     network,
     scope,
     recoveryAddresses,
+    payload?.tokens,
   );
   scopedPayload = await tokenPayloadWithWalletActiveListings(
     scopedPayload,
@@ -18833,7 +19004,9 @@ async function walletScopedTokenPayload(
   );
 
   if (BOND_TOKEN_IDS.has(scope)) {
-    return scopedPayload;
+    return requireCurrent
+      ? { ...scopedPayload, authoritativeWallet: true }
+      : scopedPayload;
   }
 
   if (scope === WORK_TOKEN_ID) {
@@ -18848,13 +19021,17 @@ async function walletScopedTokenPayload(
       WALLET_SCOPED_RECOVERY_WAIT_MS,
     );
   }
-  return scope === WORK_TOKEN_ID
+  const finalPayload = scope === WORK_TOKEN_ID
     ? payloadWithFallbackAfterMs(
         workTokenStateWithRecoveredListingCloseSales(scopedPayload, network),
         scopedPayload,
         WALLET_SCOPED_RECOVERY_WAIT_MS,
       )
     : scopedPayload;
+  const resolvedPayload = await finalPayload;
+  return requireCurrent
+    ? { ...resolvedPayload, authoritativeWallet: true }
+    : resolvedPayload;
 }
 
 async function indexedWalletClosedListings(network, tokenScope, addresses) {
@@ -33009,8 +33186,13 @@ async function handleRequest(request, response) {
         jsonResponse(
           response,
           200,
-          await walletScopedTokenPayload(network, tokenScope, recoveryAddresses),
-          TOKEN_READ_CACHE_CONTROL,
+          await walletScopedTokenPayload(
+            network,
+            tokenScope,
+            recoveryAddresses,
+            { requireCurrent: freshRead },
+          ),
+          freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
         );
         return;
       }

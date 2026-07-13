@@ -5431,6 +5431,77 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
     .sort(compareTokenItemsByTime);
 }
 
+function canonicalRawTransactionMinerFeeSats(rawTx) {
+  const transaction = objectRecord(rawTx);
+  const marker = objectRecord(transaction.canonicalBlockScan);
+  if (!marker.network) {
+    return 0;
+  }
+  const bitcoinValueSats = (value) => {
+    const amount = Number(value);
+    const sats = Math.round(amount * 100_000_000);
+    return Number.isFinite(amount) && amount >= 0 && Number.isSafeInteger(sats)
+      ? sats
+      : Number.NaN;
+  };
+  const inputValues = (Array.isArray(transaction.vin) ? transaction.vin : []).map(
+    (input) => {
+      const explicitSats = Number(input?.prevout?.valueSats);
+      return Number.isSafeInteger(explicitSats) && explicitSats >= 0
+        ? explicitSats
+        : bitcoinValueSats(input?.prevout?.value);
+    },
+  );
+  const outputValues = (Array.isArray(transaction.vout) ? transaction.vout : []).map(
+    (output) => {
+      const explicitSats = Number(output?.valueSats);
+      return Number.isSafeInteger(explicitSats) && explicitSats >= 0
+        ? explicitSats
+        : bitcoinValueSats(output?.value);
+    },
+  );
+  if (
+    inputValues.length > 0 &&
+    outputValues.length > 0 &&
+    inputValues.every(Number.isSafeInteger) &&
+    outputValues.every(Number.isSafeInteger)
+  ) {
+    return Math.max(
+      0,
+      inputValues.reduce((total, value) => total + value, 0) -
+        outputValues.reduce((total, value) => total + value, 0),
+    );
+  }
+  const rawFee = Number(transaction.fee);
+  const feeSats = Math.round(Math.abs(rawFee) * 100_000_000);
+  return Number.isFinite(rawFee) && Number.isSafeInteger(feeSats)
+    ? feeSats
+    : 0;
+}
+
+function tokenInvalidAuditCosts(payload, row, registryAddress) {
+  const auditMinerFeeSats =
+    rowNumber(payload, "auditMinerFeeSats") ||
+    rowNumber(row, "transaction_fee_sats") ||
+    canonicalRawTransactionMinerFeeSats(row?.transaction_raw_tx);
+  const auditRegistryPaymentSats =
+    rowNumber(payload, "auditRegistryPaymentSats") ||
+    (Array.isArray(payload?.recipients) ? payload.recipients : []).reduce(
+      (total, recipient) =>
+        String(recipient?.address ?? "").trim() === registryAddress
+          ? total + rowNumber(recipient, "amountSats")
+          : total,
+      0,
+    );
+  return {
+    auditMinerFeeSats,
+    auditRegistryPaymentSats,
+    auditTotalCostSats:
+      rowNumber(payload, "auditTotalCostSats") ||
+      auditMinerFeeSats + auditRegistryPaymentSats,
+  };
+}
+
 function tokenInvalidEventFromRow(row) {
   const payload = normalizeEventPayload(
     canonicalEventPayload(row?.payload),
@@ -5494,11 +5565,14 @@ function tokenInvalidEventFromRow(row) {
     row?.registry_address,
     addressForRoles("registry"),
   );
+  const auditCosts = tokenInvalidAuditCosts(payload, row, registryAddress);
 
   return {
     ...payload,
     amount:
       rowNumber(payload, "amount") || rowNumber(payload, "tokenAmount"),
+    amountSats: 0,
+    ...auditCosts,
     blockHash: String(row?.block_hash ?? payload.blockHash ?? "")
       .trim()
       .toLowerCase(),
@@ -5518,6 +5592,10 @@ function tokenInvalidEventFromRow(row) {
       .trim()
       .toLowerCase(),
     network: payload.network ?? row?.network,
+    frozenNetworkValueSats: 0,
+    liveNetworkValueSats: 0,
+    marketplaceMutationFeeSats: 0,
+    minerFeeSats: 0,
     participantDetails,
     participants,
     protocol: String(payload.protocol ?? row?.protocol ?? "pwt1")
@@ -5525,7 +5603,10 @@ function tokenInvalidEventFromRow(row) {
       .toLowerCase(),
     reason: String(payload.reason ?? validationErrors[0] ?? "").trim(),
     recipientAddress,
+    proofPaymentSats: 0,
     registryAddress,
+    registryMutationFeeSats: 0,
+    salePaymentSats: 0,
     senderAddress,
     status: effectiveStatus,
     ticker: String(row?.ticker ?? payload.ticker ?? "").trim(),
@@ -5556,6 +5637,8 @@ function tokenInvalidEventSelectSql() {
     t.block_hash,
     t.block_height AS transaction_block_height,
     t.block_time AS transaction_block_time,
+    t.fee_sats AS transaction_fee_sats,
+    t.raw_tx AS transaction_raw_tx,
     cd.ticker,
     cd.registry_address,
     COALESCE(
@@ -6288,6 +6371,36 @@ export async function proofIndexWalletTokenOverlayPayload(
     `,
     holderParams,
   );
+  const invalidQuery = tokenInvalidEventQueryParts(network, scope);
+  const invalidAddressParam = `$${invalidQuery.params.length + 1}`;
+  const invalidLimitParam = `$${invalidQuery.params.length + 2}`;
+  const invalidResult = await pool.query(
+    `
+      SELECT
+        ${tokenInvalidEventSelectSql()}
+      ${invalidQuery.fromSql}
+        AND (
+          EXISTS (
+            SELECT 1
+            FROM proof_indexer.event_participants ep_wallet_invalid
+            WHERE ep_wallet_invalid.event_id = e.event_id
+              AND lower(ep_wallet_invalid.address) = ANY(${invalidAddressParam}::text[])
+          )
+          OR lower(e.payload->>'actor') = ANY(${invalidAddressParam}::text[])
+          OR lower(e.payload->>'counterparty') = ANY(${invalidAddressParam}::text[])
+          OR lower(e.payload->>'senderAddress') = ANY(${invalidAddressParam}::text[])
+          OR lower(e.payload->>'recipientAddress') = ANY(${invalidAddressParam}::text[])
+          OR lower(e.payload->>'sellerAddress') = ANY(${invalidAddressParam}::text[])
+          OR lower(e.payload->>'buyerAddress') = ANY(${invalidAddressParam}::text[])
+        )
+      ORDER BY
+        COALESCE(t.block_time, e.event_time, e.block_time, e.created_at) DESC,
+        e.txid DESC,
+        e.event_id DESC
+      LIMIT ${invalidLimitParam}
+    `,
+    [...invalidQuery.params, addressNeedles, 500],
+  );
 
   const eventConditions = [
     "e.network = $1",
@@ -6433,7 +6546,7 @@ export async function proofIndexWalletTokenOverlayPayload(
       ticker: row.ticker,
       tokenId: String(row.token_id ?? "").toLowerCase(),
     }))
-    .filter((holder) => holder.address && holder.balance > 0)
+    .filter((holder) => holder.address && holder.balance >= 0)
     .sort(
       (left, right) =>
         right.balance - left.balance ||
@@ -6443,6 +6556,10 @@ export async function proofIndexWalletTokenOverlayPayload(
   const sales = [];
   const listings = [];
   const closedListings = [];
+  const invalidEvents = invalidResult.rows
+    .map(tokenInvalidEventFromRow)
+    .filter((item) => item.txid && item.confirmed && item.valid === false)
+    .sort(compareTokenItemsByTime);
   for (const row of eventResult.rows) {
     const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
     if (payload?.kind === "token-listing" || payload?.kind === "token-listings") {
@@ -6595,6 +6712,7 @@ export async function proofIndexWalletTokenOverlayPayload(
       (row) => row.event_time ?? row.block_time ?? row.created_at,
     ),
     ...listingResult.rows.map((row) => row.updated_at),
+    ...invalidEvents.map((event) => event.createdAt),
   ]
     .map((value) => Date.parse(value))
     .filter(Number.isFinite)
@@ -6603,6 +6721,7 @@ export async function proofIndexWalletTokenOverlayPayload(
   return {
     holders,
     indexedAt: newestTime ? new Date(newestTime).toISOString() : undefined,
+    invalidEvents,
     closedListings: closedListings.sort(compareTokenItemsByTime),
     listings: listings.sort(compareTokenItemsByTime),
     sales: sales.sort(compareTokenItemsByTime),
@@ -8067,11 +8186,18 @@ function eventRowPayload(row, network) {
   const attemptedAmountSats = invalidTokenEvent
     ? rowNumber(payload, "amountSats") || rowNumber(row, "amount_sats")
     : 0;
+  const registryAddress = normalizedText(
+    payload.registryAddress ?? row.registry_address,
+  );
+  const auditCosts = invalidTokenEvent
+    ? tokenInvalidAuditCosts(payload, row, registryAddress)
+    : {};
   return {
     ...payload,
     ...(invalidTokenEvent
       ? {
           amountSats: 0,
+          ...auditCosts,
           attemptedAmountSats,
           frozenNetworkValueSats: 0,
           liveNetworkValueSats: 0,
@@ -8775,8 +8901,16 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
           e.created_at,
           e.block_height,
           e.txid,
-          e.event_id
+          e.event_id,
+          t.fee_sats AS transaction_fee_sats,
+          CASE
+            WHEN e.kind = 'token-event-invalid' THEN t.raw_tx
+            ELSE NULL
+          END AS transaction_raw_tx
         FROM proof_indexer.events e
+        LEFT JOIN proof_indexer.transactions t
+          ON t.network = e.network
+         AND t.txid = e.txid
         WHERE ${whereClause}
         ORDER BY
           COALESCE(e.event_time, e.block_time, e.created_at) DESC,
@@ -8827,8 +8961,16 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
         e.created_at,
         e.block_height,
         e.txid,
-        e.event_id
+        e.event_id,
+        t.fee_sats AS transaction_fee_sats,
+        CASE
+          WHEN e.kind = 'token-event-invalid' THEN t.raw_tx
+          ELSE NULL
+        END AS transaction_raw_tx
       FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
       WHERE ${whereClause}
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,

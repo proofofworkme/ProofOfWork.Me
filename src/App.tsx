@@ -603,6 +603,9 @@ type PowTokenTransfer = {
 
 type PowTokenInvalidEvent = {
   amount: number;
+  auditMinerFeeSats?: number;
+  auditRegistryPaymentSats?: number;
+  auditTotalCostSats?: number;
   blockHeight?: number;
   blockIndex?: number;
   confirmed: boolean;
@@ -1169,9 +1172,20 @@ type PowRegistryState = {
 type RushApiResponse = Partial<RushState>;
 
 type PowTokenApiResponse = Partial<PowTokenState> & {
+  authoritativeWallet?: boolean;
   registryAddress?: string;
   reserveAddress?: string;
+  source?: string;
   summaryOnly?: boolean;
+  walletScoped?: boolean;
+};
+
+type PowTokenWalletPreflightState = Pick<
+  PowTokenState,
+  "closedListings" | "holders" | "listings" | "sales" | "transfers"
+> & {
+  source: string;
+  walletScoped: boolean;
 };
 
 type PowActivityApiResponse = {
@@ -4702,6 +4716,21 @@ async function switchWalletNetwork(
   }
 }
 
+async function assertActiveWalletAddress(
+  wallet: UnisatWallet,
+  expectedAddress: string,
+) {
+  if (!wallet.getAccounts) {
+    return;
+  }
+  const [activeAddress] = await wallet.getAccounts();
+  if (!activeAddress || !samePaymentAddress(activeAddress, expectedAddress)) {
+    throw new Error(
+      "The active UniSat account changed. No transaction was created.",
+    );
+  }
+}
+
 function storedMailRecipients(
   value: unknown,
   network: BitcoinNetwork,
@@ -7618,6 +7647,150 @@ function tokenReservedBalanceFor(
         ? total + listing.amount
         : total,
     0,
+  );
+}
+
+function tokenSpendabilityForWallet(
+  walletAddress: string,
+  token: PowTokenDefinition,
+  state: Pick<
+    PowTokenState,
+    "closedListings" | "holders" | "listings" | "sales" | "transfers"
+  >,
+  localListings: PowTokenListing[] = [],
+  localClosedListings: PowTokenClosedListing[] = [],
+  localTransfers: PowTokenTransfer[] = [],
+  localSales: PowTokenSale[] = [],
+) {
+  const normalizedWalletAddress = walletAddress.trim().toLowerCase();
+  const holder = state.holders.find(
+    (item) =>
+      String(item.address ?? "").trim().toLowerCase() ===
+        normalizedWalletAddress &&
+      tokenHolderMatchesDefinition(item, token, [token]),
+  );
+  const confirmedBalance = Number(holder?.balance);
+  if (
+    !holder ||
+    !Number.isSafeInteger(confirmedBalance) ||
+    confirmedBalance < 0
+  ) {
+    throw new Error(
+      `The ProofOfWork index could not verify your ${token.ticker} balance. No transaction was created.`,
+    );
+  }
+
+  const closedListingsByKey = new Map<string, PowTokenClosedListing>();
+  for (const listing of [...state.closedListings, ...localClosedListings]) {
+    const key = tokenListingStateKey(listing);
+    const current = closedListingsByKey.get(key);
+    const currentConfirmed = Boolean(
+      current && (current.closedConfirmed ?? current.confirmed),
+    );
+    const incomingConfirmed = Boolean(
+      listing.closedConfirmed ?? listing.confirmed,
+    );
+    if (!current || incomingConfirmed || !currentConfirmed) {
+      closedListingsByKey.set(key, listing);
+    }
+  }
+  const closedListings = [...closedListingsByKey.values()];
+  const confirmedClosedListings = closedListings.filter((listing) =>
+    Boolean(listing.closedConfirmed ?? listing.confirmed),
+  );
+  const pendingClosedListings = closedListings.filter(
+    (listing) => !Boolean(listing.closedConfirmed ?? listing.confirmed),
+  );
+  const activeListings = mergeTokenListingsById(
+    tokenListingsWithPreservedLocalPending(
+      localListings,
+      state.listings,
+      confirmedClosedListings,
+    ),
+    pendingClosedListings,
+  );
+  const reservedBalance = tokenReservedBalanceFor(
+    activeListings,
+    token.tokenId,
+    walletAddress,
+  );
+  const activeListingIds = new Set(
+    activeListings
+      .filter(
+        (listing) =>
+          listing.tokenId === token.tokenId &&
+          listing.sellerAddress === walletAddress,
+      )
+      .map((listing) => listing.listingId),
+  );
+
+  const transfersByTxid = new Map<string, PowTokenTransfer>();
+  for (const transfer of [...state.transfers, ...localTransfers]) {
+    if (transfer.tokenId !== token.tokenId || !transfer.txid) {
+      continue;
+    }
+    const current = transfersByTxid.get(transfer.txid);
+    if (!current || transfer.confirmed || !current.confirmed) {
+      transfersByTxid.set(transfer.txid, transfer);
+    }
+  }
+  const pendingDirectTransfers = [...transfersByTxid.values()]
+    .filter(
+      (transfer) =>
+        !transfer.confirmed &&
+        transfer.senderAddress.trim().toLowerCase() === normalizedWalletAddress,
+    )
+    .reduce((total, transfer) => total + transfer.amount, 0);
+
+  const salesByKey = new Map<string, PowTokenSale>();
+  for (const sale of [...state.sales, ...localSales]) {
+    if (sale.tokenId !== token.tokenId || !sale.txid) {
+      continue;
+    }
+    const key = sale.listingId || sale.txid;
+    const current = salesByKey.get(key);
+    if (!current || sale.confirmed || !current.confirmed) {
+      salesByKey.set(key, sale);
+    }
+  }
+  const uncoveredPendingSales = [...salesByKey.values()]
+    .filter(
+      (sale) =>
+        !sale.confirmed &&
+        sale.sellerAddress.trim().toLowerCase() === normalizedWalletAddress &&
+        !activeListingIds.has(sale.listingId),
+    )
+    .reduce((total, sale) => total + sale.amount, 0);
+  const pendingOutgoing = pendingDirectTransfers + uncoveredPendingSales;
+
+  return {
+    activeListings,
+    confirmedBalance,
+    pendingOutgoing,
+    reservedBalance,
+    spendableBalance: Math.max(
+      0,
+      confirmedBalance - reservedBalance - pendingOutgoing,
+    ),
+  };
+}
+
+function mergeTokenInvalidEventsByTxid(
+  ...groups: PowTokenInvalidEvent[][]
+) {
+  const byKey = new Map<string, PowTokenInvalidEvent>();
+  for (const events of groups) {
+    for (const event of events) {
+      const key = `${event.tokenId}:${event.txid}`;
+      if (event.txid) {
+        byKey.set(key, event);
+      }
+    }
+  }
+  return [...byKey.values()].sort(
+    (left, right) =>
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      left.txid.localeCompare(right.txid),
   );
 }
 
@@ -10644,32 +10817,56 @@ async function fetchTokenState(
   return normalizeTokenApiState(payload);
 }
 
-const WORK_SPENDABLE_RECHECK_DELAYS_MS = [0, 2_000, 5_000, 10_000];
+const TOKEN_SPENDABLE_RECHECK_DELAYS_MS = [0, 2_000, 5_000, 10_000];
 
-async function fetchFreshWalletWorkState(
+async function fetchFreshWalletTokenPreflightState(
   address: string,
+  tokenId: string,
   onRetry?: (attempt: number, totalAttempts: number) => void,
-) {
+): Promise<PowTokenWalletPreflightState> {
   for (
     let attemptIndex = 0;
-    attemptIndex < WORK_SPENDABLE_RECHECK_DELAYS_MS.length;
+    attemptIndex < TOKEN_SPENDABLE_RECHECK_DELAYS_MS.length;
     attemptIndex += 1
   ) {
-    const delayMs = WORK_SPENDABLE_RECHECK_DELAYS_MS[attemptIndex];
+    const delayMs = TOKEN_SPENDABLE_RECHECK_DELAYS_MS[attemptIndex];
     if (delayMs > 0) {
-      onRetry?.(attemptIndex + 1, WORK_SPENDABLE_RECHECK_DELAYS_MS.length);
+      onRetry?.(attemptIndex + 1, TOKEN_SPENDABLE_RECHECK_DELAYS_MS.length);
       await delay(delayMs);
     }
 
     try {
-      return await fetchTokenState(
+      const params = new URLSearchParams({
+        address,
+        asset: tokenId,
+        fresh: "1",
+        wallet: "1",
+      });
+      const payload = await fetchProofApiJson<PowTokenApiResponse>(
+        `/api/v1/token?${params.toString()}`,
         "livenet",
-        true,
-        WORK_TOKEN_ID,
-        false,
-        [address],
-        true,
       );
+      const source = String(payload?.source ?? "");
+      if (
+        payload?.authoritativeWallet !== true ||
+        payload?.walletScoped !== true ||
+        !source.includes("proof-indexer-wallet-token-overlay")
+      ) {
+        throw new Error(
+          "The ProofOfWork index could not verify this wallet balance. No transaction was created.",
+        );
+      }
+      return {
+        closedListings: Array.isArray(payload.closedListings)
+          ? payload.closedListings
+          : [],
+        holders: Array.isArray(payload.holders) ? payload.holders : [],
+        listings: Array.isArray(payload.listings) ? payload.listings : [],
+        sales: Array.isArray(payload.sales) ? payload.sales : [],
+        source,
+        transfers: Array.isArray(payload.transfers) ? payload.transfers : [],
+        walletScoped: true,
+      };
     } catch (error) {
       if (!isTransientProofApiReadError(error)) {
         throw error;
@@ -10679,6 +10876,17 @@ async function fetchFreshWalletWorkState(
 
   throw new Error(
     "The ProofOfWork index is catching up to the latest block. No transaction was created. Try again in a moment.",
+  );
+}
+
+async function fetchFreshWalletWorkState(
+  address: string,
+  onRetry?: (attempt: number, totalAttempts: number) => void,
+) {
+  return fetchFreshWalletTokenPreflightState(
+    address,
+    WORK_TOKEN_ID,
+    onRetry,
   );
 }
 
@@ -14957,6 +15165,23 @@ export default function App() {
       accountWorkWalletBalances,
     ],
   );
+  const accountWalletInvalidEvents = useMemo(
+    () =>
+      mergeTokenInvalidEventsByTxid(
+        tokenInvalidEvents,
+        accountTokenState.invalidEvents,
+        accountWorkTokenState.invalidEvents,
+        accountPowbTokenState.invalidEvents,
+        accountIncbTokenState.invalidEvents,
+      ),
+    [
+      accountIncbTokenState.invalidEvents,
+      accountPowbTokenState.invalidEvents,
+      accountTokenState.invalidEvents,
+      accountWorkTokenState.invalidEvents,
+      tokenInvalidEvents,
+    ],
+  );
   const activeBondTokenDefinitions = useMemo(
     () =>
       orderedTokenDefinitions.filter(
@@ -15103,26 +15328,35 @@ export default function App() {
     bondWorkAttachmentBalanceOk &&
     infinityBondBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
+  const walletTransferBalances = address
+    ? accountWalletBalances
+    : tokenWalletBalances;
   const walletTransferToken =
-    tokenWalletBalances.find(
+    walletTransferBalances.find(
       (item) => item.token.tokenId === tokenTransferTokenId,
     )?.token ??
-    tokenWalletBalances[0]?.token ??
+    walletTransferBalances[0]?.token ??
     (bondWorkspaceActive
       ? activeBondTokenDefinition
       : !address && !walletMode && activeFolder !== "wallet"
         ? workTokenDefinition ?? WORK_TOKEN_DEFINITION
         : undefined);
   const walletTransferBalance =
-    tokenWalletBalances.find(
+    walletTransferBalances.find(
       (item) => item.token.tokenId === walletTransferToken?.tokenId,
     )?.confirmedBalance ?? 0;
+  const walletPendingTokenBalance =
+    walletTransferBalances.find(
+      (item) => item.token.tokenId === walletTransferToken?.tokenId,
+    )?.pendingOutgoing ?? 0;
   const walletReservedTokenBalance = walletTransferToken
     ? tokenReservedBalanceFor(tokenListings, walletTransferToken.tokenId, address)
     : 0;
   const walletSpendableTokenBalance = Math.max(
     0,
-    walletTransferBalance - walletReservedTokenBalance,
+    walletTransferBalance -
+      walletReservedTokenBalance -
+      walletPendingTokenBalance,
   );
   const connectedAccountStats = useMemo<AppHeaderAccountStat[]>(() => {
     if (!address) {
@@ -15510,8 +15744,7 @@ export default function App() {
       tokenTransferPayload &&
       isValidBitcoinAddress(tokenTransferRecipient.trim(), "livenet") &&
       Number.isSafeInteger(Math.floor(tokenTransferAmount)) &&
-      Math.floor(tokenTransferAmount) >= 1 &&
-      Math.floor(tokenTransferAmount) <= walletSpendableTokenBalance,
+      Math.floor(tokenTransferAmount) >= 1,
     ) &&
     tokenTransferBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
@@ -20481,30 +20714,15 @@ export default function App() {
             });
           },
         );
-        const latestWorkTokens = latestWorkState.tokens.some(
-          (token) => token.tokenId === WORK_TOKEN_ID,
-        )
-          ? latestWorkState.tokens
-          : [WORK_TOKEN_DEFINITION, ...latestWorkState.tokens];
-        const latestWorkBalance =
-          tokenWalletBalancesFor(
-            address,
-            latestWorkTokens,
-            latestWorkState.mints,
-            latestWorkState.transfers,
-            latestWorkState.sales,
-            latestWorkState.holders,
-          ).find((item) => item.token.tokenId === WORK_TOKEN_ID)
-            ?.confirmedBalance ?? 0;
-        const latestReservedWork = tokenReservedBalanceFor(
-          latestWorkState.listings,
-          WORK_TOKEN_ID,
+        const latestSpendableWork = tokenSpendabilityForWallet(
           address,
-        );
-        const latestSpendableWork = Math.max(
-          0,
-          latestWorkBalance - latestReservedWork,
-        );
+          WORK_TOKEN_DEFINITION,
+          latestWorkState,
+          tokenListings,
+          tokenClosedListings,
+          tokenTransfers,
+          tokenSales,
+        ).spendableBalance;
         const totalWorkToAttach = workAttachmentAmount * mailRecipients.length;
         if (totalWorkToAttach > latestSpendableWork) {
           setStatus({
@@ -20849,30 +21067,15 @@ export default function App() {
             });
           },
         );
-        const latestWorkTokens = latestWorkState.tokens.some(
-          (token) => token.tokenId === WORK_TOKEN_ID,
-        )
-          ? latestWorkState.tokens
-          : [WORK_TOKEN_DEFINITION, ...latestWorkState.tokens];
-        const latestWorkBalance =
-          tokenWalletBalancesFor(
-            address,
-            latestWorkTokens,
-            latestWorkState.mints,
-            latestWorkState.transfers,
-            latestWorkState.sales,
-            latestWorkState.holders,
-          ).find((item) => item.token.tokenId === WORK_TOKEN_ID)
-            ?.confirmedBalance ?? 0;
-        const latestReservedWork = tokenReservedBalanceFor(
-          latestWorkState.listings,
-          WORK_TOKEN_ID,
+        const latestSpendableWork = tokenSpendabilityForWallet(
           address,
-        );
-        const latestSpendableWork = Math.max(
-          0,
-          latestWorkBalance - latestReservedWork,
-        );
+          WORK_TOKEN_DEFINITION,
+          latestWorkState,
+          tokenListings,
+          tokenClosedListings,
+          tokenTransfers,
+          tokenSales,
+        ).spendableBalance;
         if (workAmountToAttach > latestSpendableWork) {
           setStatus({
             tone: "bad",
@@ -21657,7 +21860,6 @@ export default function App() {
     if (
       !Number.isSafeInteger(amount) ||
       amount < 1 ||
-      amount > walletSpendableTokenBalance ||
       !isValidBitcoinAddress(recipientAddress, "livenet")
     ) {
       setStatus({
@@ -21688,11 +21890,44 @@ export default function App() {
       if (currentNetwork !== "livenet") {
         await switchWalletNetwork(window.unisat, "livenet");
       }
+      await assertActiveWalletAddress(window.unisat, address);
+
+      setStatus({
+        tone: "idle",
+        text: `Checking spendable ${token.ticker}...`,
+      });
+      const freshState = await fetchFreshWalletTokenPreflightState(
+        address,
+        token.tokenId,
+        (attempt, totalAttempts) => {
+          setStatus({
+            tone: "idle",
+            text: `Rechecking spendable ${token.ticker} (${attempt}/${totalAttempts})...`,
+          });
+        },
+      );
+      const spendability = tokenSpendabilityForWallet(
+        address,
+        token,
+        freshState,
+        tokenListings,
+        tokenClosedListings,
+        tokenTransfers,
+        tokenSales,
+      );
+      if (amount > spendability.spendableBalance) {
+        setStatus({
+          tone: "bad",
+          text: `${spendability.spendableBalance.toLocaleString()} ${token.ticker} available; ${amount.toLocaleString()} attempted. No transaction was created.`,
+        });
+        return;
+      }
+      await assertActiveWalletAddress(window.unisat, address);
 
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
         excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
-          tokenListings,
+          spendability.activeListings,
           address,
           { network: "livenet" },
         ),
@@ -21713,6 +21948,7 @@ export default function App() {
         setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
         return;
       }
+      await assertActiveWalletAddress(window.unisat, address);
 
       const txid = await signAndBroadcastPsbt({
         inputCount: paymentPsbt.inputCount,
@@ -23116,7 +23352,7 @@ export default function App() {
       <TokenWalletApp
         accountStats={connectedAccountStats}
         address={address}
-        balances={tokenWalletBalances}
+        balances={walletTransferBalances}
         btcUsd={tokenBtcUsd}
         busy={busy}
         canList={canListToken}
@@ -23127,7 +23363,7 @@ export default function App() {
         disconnectWallet={disconnectWallet}
         feeRate={feeRate}
         hasUnisat={hasUnisat}
-        invalidEvents={tokenInvalidEvents}
+        invalidEvents={accountWalletInvalidEvents}
         listAmount={tokenListAmount}
         listBuyerAddress={tokenListBuyerAddress}
         listPriceSats={tokenListPriceSats}
@@ -23155,7 +23391,7 @@ export default function App() {
         submitList={listToken}
         submitTransfer={transferToken}
         transferAmount={tokenTransferAmount}
-        transferBalance={walletTransferBalance}
+        transferBalance={walletSpendableTokenBalance}
         transferBytes={tokenTransferBytes}
         transferRecipient={tokenTransferRecipient}
         transferToken={walletTransferToken}
@@ -23224,7 +23460,7 @@ export default function App() {
         tokens={activeBondTokenDefinitions}
         transfers={activeBondTransfers}
         transferAmount={tokenTransferAmount}
-        transferBalance={walletTransferBalance}
+        transferBalance={walletSpendableTokenBalance}
         transferBytes={tokenTransferBytes}
         transferRecipient={tokenTransferRecipient}
         transferToken={walletTransferToken}
@@ -23998,7 +24234,7 @@ export default function App() {
         ) : activeFolder === "wallet" ? (
           <TokenWalletWorkspace
             address={address}
-            balances={tokenWalletBalances}
+            balances={walletTransferBalances}
             btcUsd={tokenBtcUsd}
             canList={canListToken}
             canTransfer={canTransferToken}
@@ -24006,7 +24242,7 @@ export default function App() {
             compact
             delistListing={delistTokenListing}
             feeRate={feeRate}
-            invalidEvents={tokenInvalidEvents}
+            invalidEvents={accountWalletInvalidEvents}
             listAmount={tokenListAmount}
             listBuyerAddress={tokenListBuyerAddress}
             listPriceSats={tokenListPriceSats}
@@ -24026,7 +24262,7 @@ export default function App() {
             submitTransfer={transferToken}
             tokenSales={tokenSales}
             transferAmount={tokenTransferAmount}
-            transferBalance={walletTransferBalance}
+            transferBalance={walletSpendableTokenBalance}
             transferBytes={tokenTransferBytes}
             transferRecipient={tokenTransferRecipient}
             transferToken={walletTransferToken}
@@ -24171,7 +24407,7 @@ export default function App() {
             tokens={activeBondTokenDefinitions}
             transfers={activeBondTransfers}
             transferAmount={tokenTransferAmount}
-            transferBalance={walletTransferBalance}
+            transferBalance={walletSpendableTokenBalance}
             transferBytes={tokenTransferBytes}
             transferRecipient={tokenTransferRecipient}
             transferToken={walletTransferToken}
@@ -26587,6 +26823,9 @@ const DEFAULT_TOKEN_WALLET_WORKSPACE_COPY: Required<TokenWalletWorkspaceCopy> = 
 
 type TokenWalletMovement = {
   amount: number;
+  auditMinerFeeSats?: number;
+  auditRegistryPaymentSats?: number;
+  auditTotalCostSats?: number;
   confirmed: boolean;
   createdAt: string;
   frozenNetworkValueSats?: number;
@@ -26741,6 +26980,9 @@ function TokenWalletWorkspace({
     })),
     ...walletInvalidEvents.map((event) => ({
       amount: Math.max(0, Math.floor(Number(event.amount) || 0)),
+      auditMinerFeeSats: event.auditMinerFeeSats,
+      auditRegistryPaymentSats: event.auditRegistryPaymentSats,
+      auditTotalCostSats: event.auditTotalCostSats,
       confirmed: event.confirmed,
       createdAt: event.createdAt,
       key: `invalid:${event.txid}`,
@@ -27102,7 +27344,7 @@ function TokenWalletWorkspace({
                   balances.map((balance) => (
                     <option key={balance.token.tokenId} value={balance.token.tokenId}>
                       {balance.token.ticker} ·{" "}
-                      {balance.confirmedBalance.toLocaleString()} available
+                      {balance.confirmedBalance.toLocaleString()} confirmed
                     </option>
                   ))
                 ) : (
@@ -27115,7 +27357,6 @@ function TokenWalletWorkspace({
                 Amount
                 <input
                   min={1}
-                  max={Math.max(1, transferBalance)}
                   onChange={(event) => setTransferAmount(Number(event.target.value))}
                   type="number"
                   value={transferAmount}
@@ -27147,6 +27388,10 @@ function TokenWalletWorkspace({
                 <strong>{transferBytes.toLocaleString()} bytes</strong>
               </div>
             </div>
+            <p className="field-note">
+              Registry and miner fees are final once broadcast. Rejected credit
+              events are not automatically refunded.
+            </p>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
             <button className="primary" disabled={!canTransfer} type="submit">
               <span className="button-content">
@@ -27406,6 +27651,9 @@ function TokenWalletWorkspace({
                           ? "confirmed"
                           : "pending"}
                       {movement.reason ? ` · ${movement.reason}` : ""}
+                      {movement.auditTotalCostSats
+                        ? ` · ${(movement.auditRegistryPaymentSats ?? 0).toLocaleString()} registry + ${(movement.auditMinerFeeSats ?? 0).toLocaleString()} miner = ${movement.auditTotalCostSats.toLocaleString()} proofs paid, not refunded`
+                        : ""}
                       {movement.priceSats > 0
                         ? ` · ${movement.priceSats.toLocaleString()} sale proofs`
                         : ""}

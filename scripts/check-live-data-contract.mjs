@@ -730,16 +730,21 @@ expectAll("wallet scoped token reads keep confirmed lifecycle history", server, 
   /closedListings: recentClosedTokenListings\([\s\S]*closedListingLimit/,
   /function tokenStateWithPreservedListingRecords\(state,\s*sourceState\)[\s\S]*const preservedClosedListingIds = new Set\([\s\S]*sourceState\?\.closedListings[\s\S]*if \(!preservedClosedListingIds\.has\(listingId\)\)/,
   /async function tokenPayloadWithIndexedWalletOverlay\([\s\S]*proofIndexWalletTokenOverlayPayload\([\s\S]*mergeTokenStateItemsByKey\([\s\S]*transfers/,
+  /async function tokenPayloadWithIndexedWalletOverlay\([\s\S]*const invalidEvents = mergeTokenStateItemsByKey\([\s\S]*overlay\.invalidEvents[\s\S]*invalidEvents: invalidEvents\.length/,
+  /async function tokenPayloadWithIndexedWalletOverlay\([\s\S]*sourceTokens = \[\][\s\S]*walletTokenIds[\s\S]*const tokens = mergeTokenStateItemsByKey/,
   /async function walletScopedTokenPayload\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletOverlay[\s\S]*tokenPayloadWithIndexedWalletClosedListings/,
+  /async function walletScopedTokenPayload\([\s\S]*requireCurrent[\s\S]*Fresh wallet credit state is still catching up[\s\S]*authoritativeWallet: true/,
   /async function walletScopedTokenSummaryPayload\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletOverlay/,
   /async function indexedWalletClosedListings\([\s\S]*kind: "token-closed-listings"[\s\S]*proofIndexEventHistoryPayload/,
   /async function tokenPayloadWithIndexedWalletClosedListings\([\s\S]*tokenStateWithPreservedListingRecords/,
   /url\.pathname === "\/api\/v1\/token"[\s\S]*if \(walletScoped\) \{[\s\S]*walletScopedTokenPayload/,
+  /url\.pathname === "\/api\/v1\/token"[\s\S]*walletScopedTokenPayload\([\s\S]*requireCurrent: freshRead/,
   /url\.pathname === "\/api\/v1\/token-summary"[\s\S]*const walletScoped =[\s\S]*walletScopedTokenSummaryPayload/,
 ]);
 expectAll("proof index wallet token overlay reads balances and events", proofIndexReader, [
   /export async function proofIndexWalletTokenOverlayPayload\(/,
   /proof_indexer\.credit_balances cb/,
+  /const invalidResult = await pool\.query\([\s\S]*tokenInvalidEventSelectSql\(\)[\s\S]*ep_wallet_invalid[\s\S]*invalidEvents/,
   /e\.kind IN \([\s\S]*'token-transfer'[\s\S]*'token-sale'[\s\S]*'token-listing'[\s\S]*'token-listing-closed'[\s\S]*\)/,
   /export async function proofIndexTokenMarketSummaryOverlayPayload\(/,
   /proofIndexTokenMarketSummaryOverlayPayload\([\s\S]*latestProofIndexScanMetadata\(pool,\s*network\)[\s\S]*scanIndexedThroughBlock[\s\S]*stats:[\s\S]*complete:/,
@@ -1218,9 +1223,20 @@ expectAll("marketplace mutation fees are first-class network value", server, [
 expectAll("confirmed token protocol failures stay diagnosable", server, [
   /invalidEvents:\s*\[\]/,
   /reason:\s*"no-valid-token-event"/,
-  /reason:\s*"no-valid-work-token-event"/,
+  /reasonCode:\s*"insufficient-spendable-balance"/,
+  /availableAmount:\s*spendableBalance/,
+  /function insufficientTokenBalanceInvalidEvent\([\s\S]*attemptedAmount:\s*amount/,
+  /auditMinerFeeSats:\s*minerFeeSats/,
+  /auditRegistryPaymentSats:\s*originalRegistrySats/,
+  /auditTotalCostSats:\s*minerFeeSats \+ originalRegistrySats/,
   /\["invalid-events",\s*"invalidEvents"\]/,
   /invalidTokenEvents:\s*confirmedItemCount\(tokenState\?\.invalidEvents\)/,
+]);
+expectAll("invalid credit costs stay audit-only", proofIndexReader, [
+  /function tokenInvalidAuditCosts\([\s\S]*auditMinerFeeSats[\s\S]*auditRegistryPaymentSats[\s\S]*auditTotalCostSats/,
+  /function canonicalRawTransactionMinerFeeSats\([\s\S]*canonicalBlockScan[\s\S]*valueSats[\s\S]*100_000_000/,
+  /function eventRowPayload\([\s\S]*invalidTokenEvent[\s\S]*amountSats:\s*0[\s\S]*minerFeeSats:\s*0[\s\S]*registryMutationFeeSats:\s*0/,
+  /function tokenInvalidEventFromRow\([\s\S]*amountSats:\s*0[\s\S]*auditCosts[\s\S]*minerFeeSats:\s*0[\s\S]*registryMutationFeeSats:\s*0/,
 ]);
 
 expectAll("WORK fresh replay favors correctness over recent-page luck", server, [

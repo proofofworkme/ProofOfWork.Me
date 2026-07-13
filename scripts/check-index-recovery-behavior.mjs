@@ -786,33 +786,228 @@ check("WORK mint progress stays below 100 until max supply confirms", () => {
   assert.equal(tokenProgressLabel(21_000_000, 21_000_000), "100%");
 });
 
-check("WORK send preflight retries transient canonical reads only", async () => {
+check("token send preflight retries transient canonical reads only", async () => {
   let attempts = 0;
   const retryNotices = [];
-  const fetchFreshWalletWorkState = isolatedTypeScriptFunction(
+  const fetchFreshWalletTokenPreflightState = isolatedTypeScriptFunction(
     APP_PATH,
-    "fetchFreshWalletWorkState",
+    "fetchFreshWalletTokenPreflightState",
     {
-      WORK_SPENDABLE_RECHECK_DELAYS_MS: [0, 1, 1],
-      WORK_TOKEN_ID: "work-token-id",
+      TOKEN_SPENDABLE_RECHECK_DELAYS_MS: [0, 1, 1],
+      URLSearchParams,
       delay: async () => {},
-      fetchTokenState: async () => {
+      fetchProofApiJson: async (path, network) => {
         attempts += 1;
         if (attempts === 1) {
           throw new Error("canonical gate");
         }
-        return { holders: [{ balance: 1 }] };
+        assert.equal(network, "livenet");
+        assert.match(path, /fresh=1/u);
+        assert.match(path, /wallet=1/u);
+        assert.match(path, /asset=work-token-id/u);
+        return {
+          authoritativeWallet: true,
+          closedListings: [],
+          holders: [{ balance: 1 }],
+          listings: [],
+          sales: [],
+          source: "proof-indexer-wallet-token-overlay",
+          transfers: [],
+          walletScoped: true,
+        };
       },
       isTransientProofApiReadError: (error) =>
         error instanceof Error && error.message === "canonical gate",
     },
   );
-  const state = await fetchFreshWalletWorkState("sender", (attempt, total) => {
-    retryNotices.push([attempt, total]);
-  });
+  const state = await fetchFreshWalletTokenPreflightState(
+    "sender",
+    "work-token-id",
+    (attempt, total) => {
+      retryNotices.push([attempt, total]);
+    },
+  );
   assert.equal(attempts, 2);
   assert.equal(state.holders[0].balance, 1);
   assert.deepEqual(retryNotices, [[2, 3]]);
+
+  const unavailablePreflight = isolatedTypeScriptFunction(
+    APP_PATH,
+    "fetchFreshWalletTokenPreflightState",
+    {
+      TOKEN_SPENDABLE_RECHECK_DELAYS_MS: [0, 1],
+      URLSearchParams,
+      delay: async () => {},
+      fetchProofApiJson: async () => ({
+        authoritativeWallet: false,
+        holders: [{ balance: 99_000 }],
+        source: "stale-token-cache",
+        walletScoped: true,
+      }),
+      isTransientProofApiReadError: () => false,
+    },
+  );
+  await rejection(
+    unavailablePreflight("sender", "work-token-id"),
+    (error) =>
+      /could not verify this wallet balance/u.test(String(error?.message)) &&
+      /No transaction was created/u.test(String(error?.message)),
+  );
+});
+
+check("fresh wallet token reads never fall back behind canonical coverage", async () => {
+  let fallbackReads = 0;
+  const walletScopedTokenPayload = isolatedFunction(
+    API_PATH,
+    "walletScopedTokenPayload",
+    {
+      BOND_TOKEN_IDS: new Set(),
+      WORK_TOKEN_ID: "work-token-id",
+      currentProofIndexTokenPayloadForRead: async () => null,
+      freshDataUnavailableError: (message) => new Error(message),
+      normalizeTokenScope: (value) => value,
+      proofIndexReadFeatureEnabled: () => true,
+      tokenPayloadForRead: async () => {
+        fallbackReads += 1;
+        return {};
+      },
+    },
+  );
+  await rejection(
+    walletScopedTokenPayload(
+      "livenet",
+      "work-token-id",
+      ["sender"],
+      { requireCurrent: true },
+    ),
+    (error) => /still catching up/u.test(String(error?.message)),
+  );
+  assert.equal(fallbackReads, 0);
+
+  const currentWalletScopedTokenPayload = isolatedFunction(
+    API_PATH,
+    "walletScopedTokenPayload",
+    {
+      BOND_TOKEN_IDS: new Set(),
+      WORK_TOKEN_ID: "work-token-id",
+      currentProofIndexTokenPayloadForRead: async () => ({
+        holders: [],
+        tokens: [{ tokenId: "other-token-id" }],
+      }),
+      normalizeTokenScope: (value) => value,
+      proofIndexReadFeatureEnabled: () => true,
+      tokenPayloadScopedToAddresses: (payload) => payload,
+      tokenPayloadWithIndexedWalletOverlay: async (payload) => payload,
+      tokenPayloadWithWalletActiveListings: async (payload) => payload,
+    },
+  );
+  const current = await currentWalletScopedTokenPayload(
+    "livenet",
+    "other-token-id",
+    ["sender"],
+    { requireCurrent: true },
+  );
+  assert.equal(current.authoritativeWallet, true);
+});
+
+check("token spendability deducts reservations and pending sends once", () => {
+  const tokenSpendabilityForWallet = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenSpendabilityForWallet",
+    {
+      mergeTokenListingsById: (current, incoming) => [...current, ...incoming],
+      tokenHolderMatchesDefinition: (holder, token) =>
+        holder.tokenId === token.tokenId,
+      tokenListingStateKey: (listing) => listing.listingId,
+      tokenListingsWithPreservedLocalPending: (_local, indexed) => indexed,
+      tokenReservedBalanceFor: (listings) =>
+        listings.reduce((total, listing) => total + listing.amount, 0),
+    },
+  );
+  const token = { ticker: "WORK", tokenId: "work-token-id" };
+  const pendingTransfer = {
+    amount: 1_000,
+    confirmed: false,
+    recipientAddress: "recipient",
+    senderAddress: "sender",
+    tokenId: token.tokenId,
+    txid: "pending-send",
+  };
+  const result = tokenSpendabilityForWallet(
+    "sender",
+    token,
+    {
+      closedListings: [],
+      holders: [{ address: "sender", balance: 10_763, tokenId: token.tokenId }],
+      listings: [
+        {
+          amount: 2_000,
+          listingId: "reserved-listing",
+          sellerAddress: "sender",
+          tokenId: token.tokenId,
+        },
+      ],
+      sales: [],
+      transfers: [pendingTransfer],
+    },
+    [],
+    [],
+    [pendingTransfer],
+    [],
+  );
+  assert.equal(result.confirmedBalance, 10_763);
+  assert.equal(result.reservedBalance, 2_000);
+  assert.equal(result.pendingOutgoing, 1_000);
+  assert.equal(result.spendableBalance, 7_763);
+
+  const pendingCloseResult = tokenSpendabilityForWallet(
+    "sender",
+    token,
+    {
+      closedListings: [],
+      holders: [{ address: "sender", balance: 10_000, tokenId: token.tokenId }],
+      listings: [],
+      sales: [],
+      transfers: [],
+    },
+    [],
+    [
+      {
+        amount: 8_000,
+        closedConfirmed: false,
+        confirmed: true,
+        listingId: "pending-delist",
+        sellerAddress: "sender",
+        tokenId: token.tokenId,
+      },
+    ],
+    [],
+    [],
+  );
+  assert.equal(pendingCloseResult.reservedBalance, 8_000);
+  assert.equal(pendingCloseResult.spendableBalance, 2_000);
+});
+
+check("insufficient credit balance records exact attempted and available amounts", () => {
+  const insufficientTokenBalanceInvalidEvent = isolatedFunction(
+    API_PATH,
+    "insufficientTokenBalanceInvalidEvent",
+  );
+  const event = insufficientTokenBalanceInvalidEvent({
+    actorAddress: "1PNdpSender",
+    amount: 99_000,
+    confirmedBalance: 10_763,
+    recipientAddress: "1Pg9Recipient",
+    reservedBalance: 0,
+    ticker: "WORK",
+    tokenId: "4".repeat(64),
+  });
+  assert.equal(event.reasonCode, "insufficient-spendable-balance");
+  assert.equal(event.attemptedAmount, 99_000);
+  assert.equal(event.availableAmount, 10_763);
+  assert.equal(event.confirmedBalance, 10_763);
+  assert.equal(event.spendableBalance, 10_763);
+  assert.match(event.reason, /10,763 available; 99,000 attempted/u);
 });
 
 check("wallet holder overlays preserve WORK and POWB for one address", () => {
@@ -843,6 +1038,16 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
       ["POWB", 225_001],
     ],
   );
+  const zeroBalanceHolder = mergeWalletHolders([], [
+    {
+      address,
+      balance: 0,
+      ticker: "WORK",
+      tokenId: "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+    },
+  ]);
+  assert.equal(zeroBalanceHolder.length, 1);
+  assert.equal(zeroBalanceHolder[0].balance, 0);
 
   for (const functionName of [
     "walletScopedTokenSummaryPayload",
@@ -963,6 +1168,116 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
   assert.equal(availability.spendableUtxos.length, 7);
 });
 
+check("wallet token scope preserves holder definitions and indexed invalids", async () => {
+  const address = "1SenderAddress";
+  const tokenId = "4".repeat(64);
+  const txid = "6".repeat(64);
+  const valueSearchText = isolatedFunction(API_PATH, "valueSearchText");
+  const historyItemsMatchingAddresses = isolatedFunction(
+    API_PATH,
+    "historyItemsMatchingAddresses",
+    { valueSearchText },
+  );
+  const tokenPayloadScopedToAddresses = isolatedFunction(
+    API_PATH,
+    "tokenPayloadScopedToAddresses",
+    {
+      historyItemsMatchingAddresses,
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+    },
+  );
+  const scoped = tokenPayloadScopedToAddresses(
+    {
+      closedListings: [],
+      holders: [{ address, balance: 3_263, ticker: "WORK", tokenId }],
+      invalidEvents: [],
+      listings: [],
+      mints: [],
+      sales: [],
+      stats: {},
+      tokens: [{ ticker: "WORK", tokenId }],
+      transfers: [],
+    },
+    [address],
+  );
+  assert.equal(scoped.tokens.length, 1);
+  assert.equal(scoped.tokens[0].tokenId, tokenId);
+
+  const mergeTokenStateItemsByKey = (
+    baseItems,
+    overlayItems,
+    keyForItem,
+    mergeItem = (_current, incoming) => incoming,
+  ) => {
+    const byKey = new Map();
+    for (const item of Array.isArray(baseItems) ? baseItems : []) {
+      byKey.set(keyForItem(item), item);
+    }
+    for (const item of Array.isArray(overlayItems) ? overlayItems : []) {
+      const key = keyForItem(item);
+      byKey.set(key, mergeItem(byKey.get(key), item));
+    }
+    return [...byKey.values()];
+  };
+  const tokenPayloadWithIndexedWalletOverlay = isolatedFunction(
+    API_PATH,
+    "tokenPayloadWithIndexedWalletOverlay",
+    {
+      errorSummary: () => "",
+      mergeTokenListingRecord: (_current, incoming) => incoming,
+      mergeTokenStateItemsByKey,
+      mergeTokenTransferRecord: (_current, incoming) => incoming,
+      mergeWalletHolders: (base, overlay) => [...base, ...overlay],
+      mergedSourceLabel: (base, overlay) => `${base}+${overlay}`,
+      newerIso: (left, right) => right ?? left,
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexWalletTokenOverlayPayload: async () => ({
+        closedListings: [],
+        holders: [],
+        indexedAt: "2026-07-13T00:00:00.000Z",
+        invalidEvents: [
+          {
+            confirmed: true,
+            createdAt: "2026-07-06T07:53:19.000Z",
+            reasonCode: "insufficient-spendable-balance",
+            tokenId,
+            txid,
+            valid: false,
+          },
+        ],
+        listings: [],
+        sales: [],
+        source: "proof-indexer-wallet-token-overlay",
+        transfers: [],
+      }),
+      tokenStateWithPreservedListingRecords: (state) => state,
+    },
+  );
+  const merged = await tokenPayloadWithIndexedWalletOverlay(
+    {
+      closedListings: [],
+      holders: [],
+      indexedAt: "2026-07-12T00:00:00.000Z",
+      invalidEvents: [],
+      listings: [],
+      sales: [],
+      source: "canonical",
+      stats: {},
+      transfers: [],
+    },
+    "livenet",
+    tokenId,
+    [address],
+    [{ ticker: "WORK", tokenId }],
+  );
+  assert.equal(merged.invalidEvents.length, 1);
+  assert.equal(merged.invalidEvents[0].txid, txid);
+  assert.equal(merged.stats.invalidEvents, 1);
+  assert.equal(merged.tokens.length, 1);
+  assert.equal(merged.tokens[0].tokenId, tokenId);
+});
+
 check("confirmed invalid credit events remain visible without becoming valid", async () => {
   const tokenId = "4".repeat(64);
   const txid = "6".repeat(64);
@@ -971,6 +1286,19 @@ check("confirmed invalid credit events remain visible without becoming valid", a
   const recipientAddress = "18xrecipient";
   const registryAddress = "bc1pregistry";
   const rowNumber = (row, key) => Number(row?.[key] ?? 0);
+  const canonicalRawTransactionMinerFeeSats = isolatedFunction(
+    READER_PATH,
+    "canonicalRawTransactionMinerFeeSats",
+    {
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value) ? value : {},
+    },
+  );
+  const tokenInvalidAuditCosts = isolatedFunction(
+    READER_PATH,
+    "tokenInvalidAuditCosts",
+    { canonicalRawTransactionMinerFeeSats, rowNumber },
+  );
   const tokenInvalidEventFromRow = isolatedFunction(
     READER_PATH,
     "tokenInvalidEventFromRow",
@@ -979,6 +1307,7 @@ check("confirmed invalid credit events remain visible without becoming valid", a
       dateIso: (value) => new Date(value).toISOString(),
       normalizeEventPayload: (payload) => payload,
       rowNumber,
+      tokenInvalidAuditCosts,
     },
   );
   const row = {
@@ -997,6 +1326,10 @@ check("confirmed invalid credit events remain visible without becoming valid", a
       counterparty: recipientAddress,
       kind: "token-event-invalid",
       reason: "no-valid-token-event",
+      recipients: [
+        { address: registryAddress, amountSats: "546" },
+        { address: "bc1pchange", amountSats: "646876" },
+      ],
       tokenId,
       txid,
     },
@@ -1006,6 +1339,12 @@ check("confirmed invalid credit events remain visible without becoming valid", a
     token_id: tokenId,
     transaction_block_height: 950_123,
     transaction_block_time: "2026-05-20T12:00:00.000Z",
+    transaction_fee_sats: null,
+    transaction_raw_tx: {
+      canonicalBlockScan: { network: "livenet" },
+      vin: [{ prevout: { valueSats: 648_152 } }],
+      vout: [{ valueSats: 546 }, { valueSats: 646_876 }],
+    },
     txid,
     validation_errors: ["no-valid-token-event"],
   };
@@ -1015,6 +1354,12 @@ check("confirmed invalid credit events remain visible without becoming valid", a
   assert.equal(mapped.kind, "token-event-invalid");
   assert.equal(mapped.reason, "no-valid-token-event");
   assert.equal(mapped.amount, 12_345);
+  assert.equal(mapped.auditMinerFeeSats, 730);
+  assert.equal(mapped.auditRegistryPaymentSats, 546);
+  assert.equal(mapped.auditTotalCostSats, 1_276);
+  assert.equal(mapped.amountSats, 0);
+  assert.equal(mapped.minerFeeSats, 0);
+  assert.equal(mapped.registryMutationFeeSats, 0);
   assert.equal(mapped.blockHeight, 950_123);
   assert.equal(mapped.blockHash, blockHash);
   assert.equal(mapped.senderAddress, senderAddress);
@@ -1025,6 +1370,76 @@ check("confirmed invalid credit events remain visible without becoming valid", a
     registryAddress,
   ]);
   assert.equal(mapped.participantDetails[0].powid, "sender-id");
+
+  const tokenVerifierItemsFromState = isolatedFunction(
+    API_PATH,
+    "tokenVerifierItemsFromState",
+  );
+  const verifierItems = tokenVerifierItemsFromState(
+    {
+      canonicalCoverage: true,
+      invalidEvents: [
+        {
+          ...mapped,
+          amount: 99_000,
+          attemptedAmount: 99_000,
+          availableAmount: 10_763,
+          blockHeight: 956_893,
+          reason:
+            "Insufficient spendable WORK balance: 10,763 available; 99,000 attempted.",
+          reasonCode: "insufficient-spendable-balance",
+        },
+      ],
+    },
+    txid,
+  );
+  assert.equal(verifierItems.length, 1);
+  assert.equal(verifierItems[0].kind, "token-event-invalid");
+  assert.equal(verifierItems[0].valid, false);
+  assert.equal(verifierItems[0].blockHeight, 956_893);
+  assert.equal(verifierItems[0].attemptedAmount, 99_000);
+  assert.equal(verifierItems[0].availableAmount, 10_763);
+  assert.equal(
+    verifierItems[0].reasonCode,
+    "insufficient-spendable-balance",
+  );
+
+  const eventRowPayload = isolatedFunction(READER_PATH, "eventRowPayload", {
+    canonicalEventPayload: (payload) => payload ?? {},
+    dateIso: (value) => new Date(value).toISOString(),
+    eventPayloadParticipants: () => [],
+    normalizeEventPayload: (payload) => payload,
+    normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+    normalizedText: (value) => String(value ?? "").trim(),
+    rowNumber,
+    tokenInvalidAuditCosts,
+  });
+  const auditEvent = eventRowPayload(
+    {
+      ...row,
+      block_height: 950_123,
+      block_time: "2026-05-20T12:00:00.000Z",
+      created_at: "2026-05-20T12:00:00.000Z",
+      event_time: "2026-05-20T12:00:00.000Z",
+      status: "confirmed",
+    },
+    "livenet",
+  );
+  assert.equal(auditEvent.auditMinerFeeSats, 730);
+  assert.equal(auditEvent.auditRegistryPaymentSats, 546);
+  assert.equal(auditEvent.auditTotalCostSats, 1_276);
+  for (const field of [
+    "amountSats",
+    "frozenNetworkValueSats",
+    "liveNetworkValueSats",
+    "marketplaceMutationFeeSats",
+    "minerFeeSats",
+    "proofPaymentSats",
+    "registryMutationFeeSats",
+    "salePaymentSats",
+  ]) {
+    assert.equal(auditEvent[field], 0, `${field} must stay out of accounting`);
+  }
 
   let query;
   const normalizedTxid = isolatedFunction(READER_PATH, "normalizedTxid");
@@ -1069,6 +1484,7 @@ check("confirmed invalid credit events remain visible without becoming valid", a
   assert.match(query.sql, /e\.protocol = 'pwt1'/u);
   assert.match(query.sql, /e\.valid = false OR e\.kind = 'token-event-invalid'/u);
   assert.match(query.sql, /t\.status = 'confirmed'/u);
+  assert.match(query.sql, /t\.raw_tx AS transaction_raw_tx/u);
   assert.match(query.sql, /FROM proof_indexer\.event_participants/u);
 
   const normalizedSnapshotId = isolatedFunction(
