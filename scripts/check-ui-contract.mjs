@@ -216,9 +216,13 @@ const app = contents.get("src/App.tsx");
 expect(
   "connected account strip refreshes wallet-scoped token balances",
   /accountTokenState/.test(app) &&
+    /accountWorkTokenState/.test(app) &&
     /accountPowbTokenState/.test(app) &&
     /accountIncbTokenState/.test(app) &&
     /fetchTokenState\(\s*network,\s*false,\s*"",\s*true,\s*\[address\],\s*true\s*\)/.test(
+      app,
+    ) &&
+    /fetchTokenState\(\s*network,\s*false,\s*WORK_TOKEN_ID,\s*false,\s*\[address\],\s*true,?\s*\)/.test(
       app,
     ) &&
     /fetchTokenState\(\s*network,\s*false,\s*POWB_TOKEN_ID,\s*true,\s*\[address\],\s*true\s*\)/.test(
@@ -231,9 +235,22 @@ expect(
 expect(
   "mail WORK attachments use allowlisted canonical senders",
   /WORK_ATTACHMENT_ALLOWED_SENDERS\s*=\s*new Set/.test(app) &&
-    /1447tsdxtfsnvrwawsamyyqkpdnw4altbt/.test(app) &&
-    /1bpvvi1gk4qkfqfmu4jhgjsqjygwjjj7x/.test(app) &&
-    /1f1p9uehuh5ktfr7zsx93khdrqhj6t5nfv/.test(app),
+    /1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT/.test(app) &&
+    /1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x/.test(app) &&
+    /1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv/.test(app) &&
+    /\.map\(\(senderAddress\) => senderAddress\.toLowerCase\(\)\)/.test(app),
+);
+expect(
+  "WORK attachment controls fall back to already-loaded route balances",
+  /function bestKnownTokenWalletBalance[\s\S]*right\.confirmedBalance - left\.confirmedBalance/.test(
+    app,
+  ) &&
+    /const composeAccountWorkWalletBalance = useMemo[\s\S]*const scopedAccountBalances = tokenWalletBalancesFor[\s\S]*const routeBalances = tokenWalletBalancesFor[\s\S]*bestKnownTokenWalletBalance/.test(
+      app,
+    ) &&
+    /const workAttachmentVisible =[\s\S]*workAttachmentSpendableBalance > 0/.test(
+      app,
+    ),
 );
 expect(
   "Infinity and Inception bond composers attach canonical WORK",

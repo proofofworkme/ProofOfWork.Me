@@ -1405,11 +1405,13 @@ const WORK_TOKEN_DEFINITION: PowTokenDefinition = {
   tokenId: WORK_TOKEN_ID,
   txid: WORK_TOKEN_ID,
 };
-const WORK_ATTACHMENT_ALLOWED_SENDERS = new Set([
-  "1447tsdxtfsnvrwawsamyyqkpdnw4altbt",
-  "1bpvvi1gk4qkfqfmu4jhgjsqjygwjjj7x",
-  "1f1p9uehuh5ktfr7zsx93khdrqhj6t5nfv",
-]);
+const WORK_ATTACHMENT_ALLOWED_SENDERS = new Set(
+  [
+    "1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT",
+    "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+    "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv",
+  ].map((senderAddress) => senderAddress.toLowerCase()),
+);
 const ESTIMATED_INPUT_VBYTES = 160;
 const ESTIMATED_PAYMENT_OUTPUT_VBYTES = 31;
 const DUST_SATS = 546;
@@ -7573,6 +7575,28 @@ function mergeTokenWalletBalancesByToken(
       left.token.ticker.localeCompare(right.token.ticker) ||
       left.token.tokenId.localeCompare(right.token.tokenId),
   );
+}
+
+function bestKnownTokenWalletBalance(
+  tokenId: string,
+  ticker: string,
+  ...groups: PowTokenWalletBalance[][]
+) {
+  const normalizedTokenId = String(tokenId ?? "").trim().toLowerCase();
+  const normalizedTicker = normalizeTokenTicker(ticker);
+  return groups
+    .flat()
+    .filter(
+      (balance) =>
+        String(balance.token.tokenId ?? "").trim().toLowerCase() ===
+          normalizedTokenId ||
+        normalizeTokenTicker(balance.token.ticker) === normalizedTicker,
+    )
+    .sort(
+      (left, right) =>
+        right.confirmedBalance - left.confirmedBalance ||
+        right.pendingIncoming - left.pendingIncoming,
+    )[0];
 }
 
 function tokenReservedBalanceFor(
@@ -13787,6 +13811,8 @@ export default function App() {
   const [accountTokenState, setAccountTokenState] = useState<PowTokenState>(() =>
     emptyTokenState(),
   );
+  const [accountWorkTokenState, setAccountWorkTokenState] =
+    useState<PowTokenState>(() => emptyTokenState());
   const [accountPowbTokenState, setAccountPowbTokenState] =
     useState<PowTokenState>(() => emptyTokenState());
   const [accountIncbTokenState, setAccountIncbTokenState] =
@@ -14239,26 +14265,59 @@ export default function App() {
     Number.isFinite(messageWorkAmount) && messageWorkAmount > 0
       ? Math.floor(messageWorkAmount)
       : 0;
-  const composeAccountWorkWalletBalance = useMemo(
-    () =>
-      tokenWalletBalancesFor(
-        address,
-        accountTokenState.tokens,
-        accountTokenState.mints,
-        accountTokenState.transfers,
-        accountTokenState.sales,
-        accountTokenState.holders,
-      ).find(
-        (item) =>
-          item.token.tokenId === WORK_TOKEN_ID ||
-          normalizeTokenTicker(item.token.ticker) === WORK_TOKEN_TICKER,
-      ),
-    [accountTokenState, address],
-  );
+  const composeAccountWorkWalletBalance = useMemo(() => {
+    const globalAccountBalances = tokenWalletBalancesFor(
+      address,
+      accountTokenState.tokens,
+      accountTokenState.mints,
+      accountTokenState.transfers,
+      accountTokenState.sales,
+      accountTokenState.holders,
+    );
+    const scopedAccountBalances = tokenWalletBalancesFor(
+      address,
+      accountWorkTokenState.tokens,
+      accountWorkTokenState.mints,
+      accountWorkTokenState.transfers,
+      accountWorkTokenState.sales,
+      accountWorkTokenState.holders,
+    );
+    const routeWorkTokens = tokenDefinitions.filter(
+      (token) =>
+        token.tokenId === WORK_TOKEN_ID ||
+        normalizeTokenTicker(token.ticker) === WORK_TOKEN_TICKER,
+    );
+    const routeBalances = tokenWalletBalancesFor(
+      address,
+      routeWorkTokens.length > 0 ? routeWorkTokens : [WORK_TOKEN_DEFINITION],
+      tokenMints,
+      tokenTransfers,
+      tokenSales,
+      tokenHolders,
+    );
+    return bestKnownTokenWalletBalance(
+      WORK_TOKEN_ID,
+      WORK_TOKEN_TICKER,
+      scopedAccountBalances,
+      globalAccountBalances,
+      routeBalances,
+    );
+  }, [
+    accountTokenState,
+    accountWorkTokenState,
+    address,
+    tokenDefinitions,
+    tokenHolders,
+    tokenMints,
+    tokenSales,
+    tokenTransfers,
+  ]);
   const accountWorkReservedBalance = tokenReservedBalanceFor(
-    accountTokenState.listings.length > 0
-      ? accountTokenState.listings
-      : tokenListings,
+    accountWorkTokenState.listings.length > 0
+      ? accountWorkTokenState.listings
+      : accountTokenState.listings.length > 0
+        ? accountTokenState.listings
+        : tokenListings,
     WORK_TOKEN_ID,
     address,
   );
@@ -14804,6 +14863,18 @@ export default function App() {
       ),
     [accountTokenState, address],
   );
+  const accountWorkWalletBalances = useMemo(
+    () =>
+      tokenWalletBalancesFor(
+        address,
+        accountWorkTokenState.tokens,
+        accountWorkTokenState.mints,
+        accountWorkTokenState.transfers,
+        accountWorkTokenState.sales,
+        accountWorkTokenState.holders,
+      ),
+    [accountWorkTokenState, address],
+  );
   const accountPowbWalletBalances = useMemo(
     () =>
       tokenWalletBalancesFor(
@@ -14832,7 +14903,10 @@ export default function App() {
     () =>
       mergeTokenWalletBalancesByToken(
         mergeTokenWalletBalancesByToken(
-          accountTokenWalletBalances,
+          mergeTokenWalletBalancesByToken(
+            accountTokenWalletBalances,
+            accountWorkWalletBalances,
+          ),
           accountPowbWalletBalances,
         ),
         accountIncbWalletBalances,
@@ -14841,6 +14915,7 @@ export default function App() {
       accountIncbWalletBalances,
       accountPowbWalletBalances,
       accountTokenWalletBalances,
+      accountWorkWalletBalances,
     ],
   );
   const activeBondTokenDefinitions = useMemo(
@@ -15022,6 +15097,7 @@ export default function App() {
       ...activeTokenListingAnchorOutpointsForAddress(
         [
           ...accountTokenState.listings,
+          ...accountWorkTokenState.listings,
           ...accountPowbTokenState.listings,
           ...accountIncbTokenState.listings,
           ...tokenListings,
@@ -15181,6 +15257,7 @@ export default function App() {
     accountIncbTokenState.listings,
     accountPowbTokenState.listings,
     accountTokenState.listings,
+    accountWorkTokenState.listings,
     accountUtxos,
     accountWalletBalances,
     address,
@@ -15628,6 +15705,7 @@ export default function App() {
   useEffect(() => {
     if (!address || !tokenIndexAddress) {
       setAccountTokenState(emptyTokenState());
+      setAccountWorkTokenState(emptyTokenState());
       setAccountPowbTokenState(emptyTokenState());
       setAccountIncbTokenState(emptyTokenState());
       return;
@@ -15636,6 +15714,7 @@ export default function App() {
     let cancelled = false;
     let requestId = 0;
     setAccountTokenState(emptyTokenState());
+    setAccountWorkTokenState(emptyTokenState());
     setAccountPowbTokenState(emptyTokenState());
     setAccountIncbTokenState(emptyTokenState());
 
@@ -15646,6 +15725,21 @@ export default function App() {
         .then((state) => {
           if (!cancelled && currentRequestId === requestId) {
             setAccountTokenState(state);
+          }
+        })
+        .catch(() => undefined);
+
+      void fetchTokenState(
+        network,
+        false,
+        WORK_TOKEN_ID,
+        false,
+        [address],
+        true,
+      )
+        .then((state) => {
+          if (!cancelled && currentRequestId === requestId) {
+            setAccountWorkTokenState(state);
           }
         })
         .catch(() => undefined);
