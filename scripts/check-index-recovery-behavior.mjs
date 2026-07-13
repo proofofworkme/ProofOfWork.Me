@@ -6315,6 +6315,127 @@ check("token verifier uses event-specific seal and close confirmation", () => {
   assert.equal(tokenVerifierItemsFromState(state, closeTxid)[0].confirmed, true);
 });
 
+check("operational status preserves compact canonical health coverage", async () => {
+  let row = {
+    confirmed_event_count: 23_914,
+    confirmed_event_max_block: 123,
+    confirmed_id_count: 493,
+    confirmed_id_max_block: 118,
+    confirmed_transfer_count: 87,
+    confirmed_transfer_max_block: 121,
+    generated_at: "2026-07-13T14:30:31.811Z",
+    indexed_through_block: 123,
+    scan_block_hash: "a".repeat(64),
+    scan_consistency_complete: false,
+    scan_metrics_complete: true,
+    scan_metrics_stop_reason: "reached-tip",
+    scan_metrics_tip_height: 123,
+    scan_payload_complete: false,
+    scan_payload_stop_reason: null,
+    scan_payload_tip_height: 0,
+    snapshot_id: "scan-snapshot",
+    summary_coverage: {
+      growthSummary: {
+        nested: [119, 118, null],
+        parent: [121, 120, null],
+      },
+      inceptionSummary: { parent: [118, null, null] },
+      infinitySummary: { parent: [117, null, null] },
+      marketplaceSummary: {
+        nested: [116, 115, null],
+        parent: [120, 119, null],
+      },
+      workFloor: { parent: [115, null, null] },
+      workSummary: {
+        nested: [114, 113, null],
+        parent: [122, 121, null],
+      },
+    },
+    summary_generated_at: "2026-07-13T14:29:00.000Z",
+    summary_indexed_at: "2026-07-13T14:29:01.000Z",
+    summary_snapshot_id: "summary-snapshot",
+    worker: {
+      lastSuccessAt: "2026-07-13T14:30:00.000Z",
+      ok: true,
+      updatedAt: "stale-value",
+    },
+    worker_updated_at: "2026-07-13T14:30:00.818Z",
+  };
+  const operationalStatus = isolatedFunction(
+    READER_PATH,
+    "proofIndexOperationalStatusPayload",
+    {
+      dateIso: (value) => new Date(value).toISOString(),
+      latestProofIndexOperationalMetadata: async () => row,
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      proofIndexPool: () => ({}),
+      rowNumber: (value, key) => Number(value?.[key] ?? 0),
+      safeBlockHeight: (value) => {
+        const height = Number(value);
+        return Number.isSafeInteger(height) && height > 0 ? height : 0;
+      },
+    },
+  );
+
+  const status = JSON.parse(
+    JSON.stringify(await operationalStatus("livenet")),
+  );
+  assert.equal(status.indexedAt, "2026-07-13T14:30:31.811Z");
+  assert.equal(status.indexedThroughBlock, 123);
+  assert.deepEqual(status.readModels, {
+    confirmedEvents: { count: 23_914, maxBlock: 123 },
+    confirmedIds: { count: 493, maxBlock: 118 },
+    confirmedTransfers: { count: 87, maxBlock: 121 },
+  });
+  assert.deepEqual(status.scan, {
+    blockHash: "a".repeat(64),
+    complete: true,
+    snapshotId: "scan-snapshot",
+    stopReason: "reached-tip",
+    tipHeight: 123,
+  });
+  assert.deepEqual(status.summarySnapshot, {
+    coverageByKey: {
+      growthSummary: 119,
+      inceptionSummary: 118,
+      infinitySummary: 117,
+      marketplaceSummary: 116,
+      workFloor: 115,
+      workSummary: 114,
+    },
+    eligible: true,
+    generatedAt: "2026-07-13T14:29:00.000Z",
+    indexedAt: "2026-07-13T14:29:01.000Z",
+    indexedThroughBlock: 114,
+    snapshotId: "summary-snapshot",
+  });
+  assert.deepEqual(status.worker, {
+    lastSuccessAt: "2026-07-13T14:30:00.000Z",
+    ok: true,
+    updatedAt: "2026-07-13T14:30:00.818Z",
+  });
+
+  row = {
+    ...row,
+    summary_coverage: {
+      ...row.summary_coverage,
+      growthSummary: {
+        ...row.summary_coverage.growthSummary,
+        nested: [],
+      },
+    },
+  };
+  const incomplete = JSON.parse(
+    JSON.stringify(await operationalStatus("livenet")),
+  );
+  assert.equal(incomplete.summarySnapshot.coverageByKey.growthSummary, 0);
+  assert.equal(incomplete.summarySnapshot.indexedThroughBlock, 0);
+  assert.equal(incomplete.summarySnapshot.eligible, false);
+});
+
 check("canonical consistency reads the exact eligible summary snapshot", async () => {
   const snapshotId = "summary-snapshot";
   const checks = [

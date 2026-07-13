@@ -217,6 +217,11 @@ const operationalScanMetadataSource = sourceSliceBetween(
   /async function latestProofIndexScanMetadata\(/,
   /export async function proofIndexOperationalStatusPayload\(/,
 );
+const operationalHealthMetadataSource = sourceSliceBetween(
+  proofIndexReader,
+  /async function latestProofIndexOperationalMetadata\(/,
+  /export async function proofIndexOperationalStatusPayload\(/,
+);
 const canonicalRebuildSource = sourceSliceBetween(
   proofIndexerBackfill,
   /async function prepareCanonicalRebuild\(/,
@@ -385,6 +390,32 @@ expectAll("confirmed block scan bootstraps explicitly and checkpoints canonical 
 expectAll("operational health prefers hashed replay checkpoints over newer legacy rows", operationalScanMetadataSource, [
   /ORDER BY[\s\S]*CASE[\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*payload->>'blockHash'[\s\S]*IS NOT NULL THEN 0[\s\S]*ELSE 1[\s\S]*indexed_through_block DESC NULLS LAST/,
 ]);
+expectAll("operational health uses compact indexed snapshot projections", operationalHealthMetadataSource, [
+  /source_hashes \? 'blockScan'[\s\S]*ORDER BY[\s\S]*CASE[\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*payload->>'blockHash'[\s\S]*source_hashes->>'blockHash'[\s\S]*IS NOT NULL THEN 0[\s\S]*ELSE 1[\s\S]*indexed_through_block DESC NULLS LAST[\s\S]*generated_at DESC/,
+  /COALESCE\([\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*payload->>'blockHash'[\s\S]*source_hashes->>'blockHash'[\s\S]*AS scan_block_hash/,
+  /payload \? 'summaryPayloads'/,
+  /ORDER BY[\s\S]*indexed_through_block DESC NULLS LAST[\s\S]*generated_at DESC[\s\S]*LIMIT 1/,
+  /jsonb_build_object\([\s\S]*AS summary_coverage/,
+  /\{summaryPayloads,growthSummary,indexedThroughBlock\}/,
+  /\{summaryPayloads,growthSummary,workFloor,indexedThroughBlock\}/,
+  /\{summaryPayloads,inceptionSummary,indexedThroughBlock\}/,
+  /\{summaryPayloads,infinitySummary,indexedThroughBlock\}/,
+  /\{summaryPayloads,marketplaceSummary,indexedThroughBlock\}/,
+  /\{summaryPayloads,marketplaceSummary,workFloor,indexedThroughBlock\}/,
+  /\{summaryPayloads,workFloor,indexedThroughBlock\}/,
+  /\{summaryPayloads,workSummary,indexedThroughBlock\}/,
+  /\{summaryPayloads,workSummary,floor,indexedThroughBlock\}/,
+  /confirmed_id_count[\s\S]*confirmed_id_max_block/,
+  /confirmed_transfer_count[\s\S]*confirmed_transfer_max_block/,
+  /confirmed_event_count[\s\S]*confirmed_event_max_block/,
+  /worker_meta\.value AS worker[\s\S]*worker_meta\.updated_at AS worker_updated_at/,
+]);
+expect(
+  "operational health must not hydrate full ledger or summary snapshot JSON",
+  !/latest_scan\.(?:payload|metrics|consistency|source_hashes)|latest_summary\.summary_payloads|payload->'summaryPayloads'\s+AS\s+summary_payloads/u.test(
+    operationalHealthMetadataSource,
+  ),
+);
 expectAll("each confirmed block persists events and its checkpoint atomically", blockScanSource, [
   /bitcoinRpc\("getblock", \[blockHash, 2\]\)/,
   /transactionWithInputPrevouts\([\s\S]*assertHydratedProtocolTransaction/,

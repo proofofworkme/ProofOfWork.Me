@@ -4574,20 +4574,226 @@ async function latestProofIndexScanMetadata(pool, network) {
   return result.rows[0] ?? null;
 }
 
+async function latestProofIndexOperationalMetadata(pool, network) {
+  const result = await pool.query(
+    `
+      WITH latest_scan AS (
+        SELECT
+          snapshot_id,
+          generated_at,
+          indexed_through_block,
+          COALESCE(
+            NULLIF(payload->>'indexedThroughBlockHash', ''),
+            NULLIF(payload->>'blockHash', ''),
+            NULLIF(source_hashes->>'blockHash', '')
+          ) AS scan_block_hash,
+          payload->'complete' AS scan_payload_complete,
+          metrics->'complete' AS scan_metrics_complete,
+          consistency->'complete' AS scan_consistency_complete,
+          payload->>'stopReason' AS scan_payload_stop_reason,
+          metrics->>'stopReason' AS scan_metrics_stop_reason,
+          payload->'tipHeight' AS scan_payload_tip_height,
+          metrics->'tipHeight' AS scan_metrics_tip_height
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+          AND source_hashes ? 'blockScan'
+        ORDER BY
+          CASE
+            WHEN NULLIF(
+              COALESCE(
+                NULLIF(payload->>'indexedThroughBlockHash', ''),
+                NULLIF(payload->>'blockHash', ''),
+                NULLIF(source_hashes->>'blockHash', '')
+              ),
+              ''
+            ) IS NOT NULL THEN 0
+            ELSE 1
+          END,
+          indexed_through_block DESC NULLS LAST,
+          generated_at DESC
+        LIMIT 1
+      ),
+      latest_summary AS (
+        SELECT
+          snapshot_id,
+          generated_at,
+          payload->>'summaryPayloadsIndexedAt' AS summary_indexed_at,
+          jsonb_build_object(
+            'growthSummary', jsonb_build_object(
+              'parent', jsonb_build_array(
+                payload #> '{summaryPayloads,growthSummary,indexedThroughBlock}',
+                payload #> '{summaryPayloads,growthSummary,metrics,indexedThroughBlock}',
+                payload #> '{summaryPayloads,growthSummary,stats,indexedThroughBlock}'
+              ),
+              'nested', jsonb_build_array(
+                payload #> '{summaryPayloads,growthSummary,workFloor,indexedThroughBlock}',
+                payload #> '{summaryPayloads,growthSummary,workFloor,metrics,indexedThroughBlock}',
+                payload #> '{summaryPayloads,growthSummary,workFloor,stats,indexedThroughBlock}'
+              )
+            ),
+            'inceptionSummary', jsonb_build_object(
+              'parent', jsonb_build_array(
+                payload #> '{summaryPayloads,inceptionSummary,indexedThroughBlock}',
+                payload #> '{summaryPayloads,inceptionSummary,metrics,indexedThroughBlock}',
+                payload #> '{summaryPayloads,inceptionSummary,stats,indexedThroughBlock}'
+              )
+            ),
+            'infinitySummary', jsonb_build_object(
+              'parent', jsonb_build_array(
+                payload #> '{summaryPayloads,infinitySummary,indexedThroughBlock}',
+                payload #> '{summaryPayloads,infinitySummary,metrics,indexedThroughBlock}',
+                payload #> '{summaryPayloads,infinitySummary,stats,indexedThroughBlock}'
+              )
+            ),
+            'marketplaceSummary', jsonb_build_object(
+              'parent', jsonb_build_array(
+                payload #> '{summaryPayloads,marketplaceSummary,indexedThroughBlock}',
+                payload #> '{summaryPayloads,marketplaceSummary,metrics,indexedThroughBlock}',
+                payload #> '{summaryPayloads,marketplaceSummary,stats,indexedThroughBlock}'
+              ),
+              'nested', jsonb_build_array(
+                payload #> '{summaryPayloads,marketplaceSummary,workFloor,indexedThroughBlock}',
+                payload #> '{summaryPayloads,marketplaceSummary,workFloor,metrics,indexedThroughBlock}',
+                payload #> '{summaryPayloads,marketplaceSummary,workFloor,stats,indexedThroughBlock}'
+              )
+            ),
+            'workFloor', jsonb_build_object(
+              'parent', jsonb_build_array(
+                payload #> '{summaryPayloads,workFloor,indexedThroughBlock}',
+                payload #> '{summaryPayloads,workFloor,metrics,indexedThroughBlock}',
+                payload #> '{summaryPayloads,workFloor,stats,indexedThroughBlock}'
+              )
+            ),
+            'workSummary', jsonb_build_object(
+              'parent', jsonb_build_array(
+                payload #> '{summaryPayloads,workSummary,indexedThroughBlock}',
+                payload #> '{summaryPayloads,workSummary,metrics,indexedThroughBlock}',
+                payload #> '{summaryPayloads,workSummary,stats,indexedThroughBlock}'
+              ),
+              'nested', jsonb_build_array(
+                payload #> '{summaryPayloads,workSummary,floor,indexedThroughBlock}',
+                payload #> '{summaryPayloads,workSummary,floor,metrics,indexedThroughBlock}',
+                payload #> '{summaryPayloads,workSummary,floor,stats,indexedThroughBlock}'
+              )
+            )
+          ) AS summary_coverage
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+          AND payload ? 'summaryPayloads'
+          AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
+          AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
+          AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+          AND source_hashes ? 'canonicalSummary'
+          AND jsonb_typeof(payload->'summaryPayloads') = 'object'
+          AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
+          AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
+          AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
+          AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+          AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
+          AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+            WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+              AND COALESCE(check_item->>'ok', 'false') = 'true'
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+            WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
+              AND COALESCE(check_item->>'ok', 'false') = 'true'
+          )
+        ORDER BY
+          indexed_through_block DESC NULLS LAST,
+          generated_at DESC
+        LIMIT 1
+      ),
+      confirmed_ids AS (
+        SELECT
+          count(*)::int AS confirmed_id_count,
+          max(GREATEST(
+            COALESCE(r.registered_height, 0),
+            COALESCE(r.updated_height, 0),
+            COALESCE(t.block_height, 0)
+          ))::int AS confirmed_id_max_block
+        FROM proof_indexer.id_records r
+        JOIN proof_indexer.transactions t
+          ON t.network = r.network
+         AND t.txid = r.registration_txid
+         AND t.status = 'confirmed'
+        WHERE r.network = $1
+      ),
+      confirmed_transfers AS (
+        SELECT
+          count(*)::int AS confirmed_transfer_count,
+          max(e.block_height)::int AS confirmed_transfer_max_block
+        FROM proof_indexer.events e
+        WHERE e.network = $1
+          AND e.kind = 'token-transfer'
+          AND e.status = 'confirmed'
+          AND e.valid = true
+      ),
+      confirmed_events AS (
+        SELECT
+          count(*)::int AS confirmed_event_count,
+          max(e.block_height)::int AS confirmed_event_max_block
+        FROM proof_indexer.events e
+        WHERE e.network = $1
+          AND e.status = 'confirmed'
+      ),
+      worker_meta AS (
+        SELECT value, updated_at
+        FROM proof_indexer.meta
+        WHERE key = 'worker:lastRun'
+        LIMIT 1
+      )
+      SELECT
+        latest_scan.snapshot_id,
+        latest_scan.generated_at,
+        latest_scan.indexed_through_block,
+        latest_scan.scan_block_hash,
+        latest_scan.scan_payload_complete,
+        latest_scan.scan_metrics_complete,
+        latest_scan.scan_consistency_complete,
+        latest_scan.scan_payload_stop_reason,
+        latest_scan.scan_metrics_stop_reason,
+        latest_scan.scan_payload_tip_height,
+        latest_scan.scan_metrics_tip_height,
+        latest_summary.snapshot_id AS summary_snapshot_id,
+        latest_summary.generated_at AS summary_generated_at,
+        latest_summary.summary_coverage,
+        latest_summary.summary_indexed_at,
+        confirmed_ids.confirmed_id_count,
+        confirmed_ids.confirmed_id_max_block,
+        confirmed_transfers.confirmed_transfer_count,
+        confirmed_transfers.confirmed_transfer_max_block,
+        confirmed_events.confirmed_event_count,
+        confirmed_events.confirmed_event_max_block,
+        worker_meta.value AS worker,
+        worker_meta.updated_at AS worker_updated_at
+      FROM confirmed_ids
+      CROSS JOIN confirmed_transfers
+      CROSS JOIN confirmed_events
+      LEFT JOIN latest_scan ON true
+      LEFT JOIN latest_summary ON true
+      LEFT JOIN worker_meta ON true
+    `,
+    [network],
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function proofIndexOperationalStatusPayload(network) {
   const pool = proofIndexPool();
   if (!pool) {
     return null;
   }
-  const row = await latestProofIndexScanMetadata(pool, network);
+  const row = await latestProofIndexOperationalMetadata(pool, network);
   if (!row) {
     return null;
   }
-  const payload = objectRecord(row.payload);
-  const metrics = objectRecord(row.metrics);
-  const consistency = objectRecord(row.consistency);
   const worker = objectRecord(row.worker);
-  const summaryPayloads = objectRecord(row.summary_payloads);
+  const summaryCoverage = objectRecord(row.summary_coverage);
   const indexedThroughBlock = rowNumber(row, "indexed_through_block");
   const summaryCoverageByKey = Object.fromEntries(
     [
@@ -4599,23 +4805,17 @@ export async function proofIndexOperationalStatusPayload(network) {
       "workSummary",
     ].map(
       (key) => {
-        const item = objectRecord(summaryPayloads[key]);
+        const item = objectRecord(summaryCoverage[key]);
         const parentCoverage = Math.max(
-          safeBlockHeight(item.indexedThroughBlock),
-          safeBlockHeight(item.metrics?.indexedThroughBlock),
-          safeBlockHeight(item.stats?.indexedThroughBlock),
+          0,
+          ...(Array.isArray(item.parent) ? item.parent : []).map(
+            safeBlockHeight,
+          ),
         );
-        const nested =
-          key === "workSummary"
-            ? objectRecord(item.floor)
-            : key === "growthSummary" || key === "marketplaceSummary"
-              ? objectRecord(item.workFloor)
-              : null;
-        const nestedCoverage = nested
+        const nestedCoverage = Array.isArray(item.nested)
           ? Math.max(
-              safeBlockHeight(nested.indexedThroughBlock),
-              safeBlockHeight(nested.metrics?.indexedThroughBlock),
-              safeBlockHeight(nested.stats?.indexedThroughBlock),
+              0,
+              ...item.nested.map(safeBlockHeight),
             )
           : key === "workFloor" ||
               key === "inceptionSummary" ||
@@ -4670,21 +4870,18 @@ export async function proofIndexOperationalStatusPayload(network) {
       snapshotId: String(row.summary_snapshot_id ?? ""),
     },
     scan: {
-      blockHash: String(
-        payload.indexedThroughBlockHash ||
-          payload.blockHash ||
-          objectRecord(row.source_hashes).blockHash ||
-          "",
-      ),
+      blockHash: String(row.scan_block_hash ?? ""),
       complete:
-        payload.complete === true ||
-        metrics.complete === true ||
-        consistency.complete === true,
+        row.scan_payload_complete === true ||
+        row.scan_metrics_complete === true ||
+        row.scan_consistency_complete === true,
       snapshotId: String(row.snapshot_id ?? ""),
-      stopReason: String(payload.stopReason ?? metrics.stopReason ?? ""),
+      stopReason: String(
+        row.scan_payload_stop_reason ?? row.scan_metrics_stop_reason ?? "",
+      ),
       tipHeight:
-        rowNumber(payload, "tipHeight") ||
-        rowNumber(metrics, "tipHeight") ||
+        rowNumber(row, "scan_payload_tip_height") ||
+        rowNumber(row, "scan_metrics_tip_height") ||
         indexedThroughBlock,
     },
     source: "proof-indexer-block-scan",
