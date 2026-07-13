@@ -419,7 +419,13 @@ async function readJson(url, options = {}) {
         return { items: [] };
       }
       if (!response.ok) {
-        throw new Error(`${url.pathname} returned HTTP ${response.status}`);
+        const responseText = await response.text().catch(() => "");
+        const requestError = new Error(
+          `${url.pathname} returned HTTP ${response.status}`,
+        );
+        requestError.statusCode = response.status;
+        requestError.responseText = responseText;
+        throw requestError;
       }
       return await response.json();
     } catch (error) {
@@ -4235,6 +4241,21 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
   return eligibleCanonicalSummarySnapshotPayload(payload) ? payload : null;
 }
 
+function canonicalSummaryRefreshCanDefer(error) {
+  const statusCode = Number(error?.statusCode ?? 0);
+  const errorText = [error?.message, error?.responseText]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    error?.name === "AbortError" ||
+    /operation was aborted/iu.test(errorText) ||
+    (statusCode === 503 &&
+      /(?:not exactly at the Bitcoin Core tip|tip changed during canonical summary construction|canonical summary.*(?:timed out|catching up))/iu.test(
+        errorText,
+      ))
+  );
+}
+
 async function storeCanonicalSummarySnapshot(client) {
   const latestIndexedHeight = (
     await latestBlockScanCheckpoint(client, { useStoredCheckpoint: true })
@@ -4254,13 +4275,36 @@ async function storeCanonicalSummarySnapshot(client) {
     };
   }
 
-  const canonicalBundle = await readJson(
-    unpagedEndpoint("/api/v1/internal/canonical-summary"),
-    {
-      retries: 0,
-      timeoutMs: CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS,
-    },
-  );
+  let canonicalBundle;
+  try {
+    canonicalBundle = await readJson(
+      unpagedEndpoint("/api/v1/internal/canonical-summary"),
+      {
+        retries: 0,
+        timeoutMs: CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS,
+      },
+    );
+  } catch (error) {
+    if (!previousPayload || !canonicalSummaryRefreshCanDefer(error)) {
+      throw error;
+    }
+    console.error(
+      JSON.stringify({
+        error: error?.message ?? String(error),
+        indexedThroughBlock: previousCoverage,
+        latestIndexedHeight,
+        phase: "canonical-summary-refresh",
+        retryingNextCycle: true,
+      }),
+    );
+    return {
+      indexedThroughBlock: previousCoverage,
+      latestIndexedHeight,
+      reason: "canonical-summary-deferred",
+      skipped: true,
+      snapshotId: previousPayload.snapshotId ?? null,
+    };
+  }
   const ledger = objectPayload(canonicalBundle?.ledger);
   const ledgerCoverage = Math.max(
     numberOrNull(ledger?.indexedThroughBlock) ?? 0,

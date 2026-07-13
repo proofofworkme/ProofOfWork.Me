@@ -256,6 +256,9 @@ expectAll("canonical ledger cache is first-class", server, [
 
 expectAll("live index worker confirms blocks before best-effort mempool visibility", proofIndexerWorker, [
   /const DEFAULT_WORKER_BACKFILL_SOURCES = "block-scan,mempool-scan"/,
+  /const BACKFILL_RETRIES = Math\.min\(/,
+  /async function runBackfillWithRetries\([\s\S]*await runScript\("backfill-proof-indexer\.mjs"[\s\S]*phase: "worker-backfill-retry"/,
+  /await runBackfillWithRetries\(backfillEnv\)/,
   /POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT:[\s\S]*BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT/,
   /POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT: BACKFILL_STORE_LEDGER_SNAPSHOT/,
   /const MAX_CONSECUTIVE_FAILURES = Math\.max\([\s\S]*3/,
@@ -286,7 +289,9 @@ expectAll("production worker pins confirmed-first and liveness budgets", proofIn
 ]);
 expectAll("hot worker summary publication is canonical, conservative, and health-gated", proofIndexerBackfill + proofIndexReader + server, [
   /STORE_CANONICAL_SUMMARY_SNAPSHOT/,
+  /function canonicalSummaryRefreshCanDefer\([\s\S]*statusCode === 503[\s\S]*Bitcoin Core tip/,
   /async function storeCanonicalSummarySnapshot\(/,
+  /canonicalSummaryRefreshCanDefer\(error\)[\s\S]*reason: "canonical-summary-deferred"/,
   /unpagedEndpoint\("\/api\/v1\/internal\/canonical-summary"\)/,
   /async function internalCanonicalSummaryPayload\([\s\S]*buildIndexedCanonicalLedgerPayload\(/,
   /const before = await exactCanonicalSummaryCheckpoint\([\s\S]*const after = await exactCanonicalSummaryCheckpoint\(/,
@@ -313,6 +318,12 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /function summarySnapshotCoversCanonicalReadModels\([\s\S]*confirmedEvents\?\.maxBlock[\s\S]*summaryIndexedThroughBlock >= latestConfirmedEventBlock/,
   /confirmed_events AS \([\s\S]*confirmed_event_max_block/,
   /readModelsOk &&[\s\S]*summarySnapshotOk/,
+]);
+expectAll("canonical read gate timeouts recover without a pinned public outage", server, [
+  /const CANONICAL_PUBLIC_READ_GATE_TIMEOUT_MS = Math\.min\([\s\S]*15_000/,
+  /const CANONICAL_PUBLIC_READ_GATE_TIMEOUT_TTL_MS = Math\.min\(/,
+  /loadCanonicalPublicReadGate\(network\),[\s\S]*CANONICAL_PUBLIC_READ_GATE_TIMEOUT_MS/,
+  /outcome\.timedOut[\s\S]*CANONICAL_PUBLIC_READ_GATE_TIMEOUT_TTL_MS[\s\S]*CANONICAL_PUBLIC_READ_GATE_TTL_MS/,
 ]);
 expectAll("backfill source execution keeps confirmed blocks ahead of mempool work", proofIndexerBackfill, [
   /const ALL_SOURCES = \[[\s\S]*\{ blockScan: true, label: "block-scan" \}[\s\S]*\{ label: "mempool-scan", mempoolScan: true \}/,

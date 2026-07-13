@@ -32271,6 +32271,20 @@ async function healthPayload() {
 }
 
 const CANONICAL_PUBLIC_READ_GATE_TTL_MS = 2_000;
+const CANONICAL_PUBLIC_READ_GATE_TIMEOUT_MS = Math.min(
+  30_000,
+  Math.max(
+    HEALTH_CHECK_TIMEOUT_MS,
+    Number(process.env.POW_API_CANONICAL_GATE_TIMEOUT_MS ?? 15_000) || 15_000,
+  ),
+);
+const CANONICAL_PUBLIC_READ_GATE_TIMEOUT_TTL_MS = Math.min(
+  10_000,
+  Math.max(
+    1_000,
+    Number(process.env.POW_API_CANONICAL_GATE_TIMEOUT_TTL_MS ?? 2_000) || 2_000,
+  ),
+);
 const canonicalPublicReadGateCache = new Map();
 
 function canonicalPublicReadGateApplies(pathname) {
@@ -32362,8 +32376,6 @@ async function loadCanonicalPublicReadGate(network) {
     Boolean(canonical?.rebuild) &&
     rebuild?.active !== true &&
     rebuild.status === "complete" &&
-    status?.worker?.ok === true &&
-    workerFresh &&
     readModelsOk;
   return {
     canonicalHash: canonicalHash || null,
@@ -32398,13 +32410,13 @@ async function canonicalPublicReadGate(network) {
   };
   const promise = promiseOutcomeWithin(
     loadCanonicalPublicReadGate(network),
-    HEALTH_CHECK_TIMEOUT_MS,
+    CANONICAL_PUBLIC_READ_GATE_TIMEOUT_MS,
   )
     .then((outcome) => {
       entry.expiresAt =
         Date.now() +
         (outcome.timedOut
-          ? Math.max(30_000, HEALTH_CHECK_TIMEOUT_MS)
+          ? CANONICAL_PUBLIC_READ_GATE_TIMEOUT_TTL_MS
           : CANONICAL_PUBLIC_READ_GATE_TTL_MS);
       entry.settled = true;
       return outcome.ok

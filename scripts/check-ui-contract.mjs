@@ -11,6 +11,7 @@ const files = [
   "src/app/routeRegistry.ts",
   "src/features/landing/LandingApp.tsx",
   "src/features/rush/RushApp.tsx",
+  "src/shared/api/proofApiClient.ts",
   "src/shared/components/AppHeader.tsx",
   "src/shared/components/AppStatusRow.tsx",
   "src/shared/components/BrowserNetworkTabs.tsx",
@@ -213,6 +214,17 @@ expect(
 );
 
 const app = contents.get("src/App.tsx");
+const proofApiClient = contents.get("src/shared/api/proofApiClient.ts");
+expect(
+  "Proof API errors preserve canonical error codes without raw JSON UI",
+  /class ProofApiRequestError/.test(proofApiClient) &&
+    /JSON\.parse\(responseText\)/.test(proofApiClient) &&
+    /isTransientProofApiReadError/.test(proofApiClient) &&
+    /CANONICAL_INDEX_UNAVAILABLE/.test(proofApiClient) &&
+    /throw proofApiResponseError\(responseText, response\.status\)/.test(
+      proofApiClient,
+    ),
+);
 expect(
   "connected account strip refreshes wallet-scoped token balances",
   /accountTokenState/.test(app) &&
@@ -251,6 +263,17 @@ expect(
     /const workAttachmentVisible =[\s\S]*workAttachmentSpendableBalance > 0/.test(
       app,
     ),
+);
+expect(
+  "WORK attachment sends retry canonical preflight without stale fallback",
+  /const WORK_SPENDABLE_RECHECK_DELAYS_MS = \[0, 2_000, 5_000, 10_000\]/.test(
+    app,
+  ) &&
+    /async function fetchFreshWalletWorkState[\s\S]*isTransientProofApiReadError[\s\S]*No transaction was created/.test(
+      app,
+    ) &&
+    (app.match(/await fetchFreshWalletWorkState\(/gu)?.length ?? 0) === 2 &&
+    /The index caught a new block\. Rechecking WORK/.test(app),
 );
 expect(
   "Infinity and Inception bond composers attach canonical WORK",

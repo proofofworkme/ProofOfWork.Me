@@ -139,6 +139,7 @@ import {
 import { MAX_DATA_CARRIER_BYTES } from "./shared/bitcoin/protocolLimits";
 import {
   fetchProofApiJson,
+  isTransientProofApiReadError,
   proofApiUrl,
 } from "./shared/api/proofApiClient";
 import {
@@ -10643,6 +10644,44 @@ async function fetchTokenState(
   return normalizeTokenApiState(payload);
 }
 
+const WORK_SPENDABLE_RECHECK_DELAYS_MS = [0, 2_000, 5_000, 10_000];
+
+async function fetchFreshWalletWorkState(
+  address: string,
+  onRetry?: (attempt: number, totalAttempts: number) => void,
+) {
+  for (
+    let attemptIndex = 0;
+    attemptIndex < WORK_SPENDABLE_RECHECK_DELAYS_MS.length;
+    attemptIndex += 1
+  ) {
+    const delayMs = WORK_SPENDABLE_RECHECK_DELAYS_MS[attemptIndex];
+    if (delayMs > 0) {
+      onRetry?.(attemptIndex + 1, WORK_SPENDABLE_RECHECK_DELAYS_MS.length);
+      await delay(delayMs);
+    }
+
+    try {
+      return await fetchTokenState(
+        "livenet",
+        true,
+        WORK_TOKEN_ID,
+        false,
+        [address],
+        true,
+      );
+    } catch (error) {
+      if (!isTransientProofApiReadError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error(
+    "The ProofOfWork index is catching up to the latest block. No transaction was created. Try again in a moment.",
+  );
+}
+
 async function fetchTokenSupplyState(
   targetNetwork: BitcoinNetwork,
   fresh = false,
@@ -20433,13 +20472,14 @@ export default function App() {
         }
 
         setStatus({ tone: "idle", text: "Checking spendable WORK..." });
-        const latestWorkState = await fetchTokenState(
-          "livenet",
-          true,
-          WORK_TOKEN_ID,
-          false,
-          [address],
-          true,
+        const latestWorkState = await fetchFreshWalletWorkState(
+          address,
+          (attempt, totalAttempts) => {
+            setStatus({
+              tone: "idle",
+              text: `The index caught a new block. Rechecking WORK (${attempt}/${totalAttempts})...`,
+            });
+          },
         );
         const latestWorkTokens = latestWorkState.tokens.some(
           (token) => token.tokenId === WORK_TOKEN_ID,
@@ -20800,13 +20840,14 @@ export default function App() {
         }
 
         setStatus({ tone: "idle", text: "Checking spendable WORK..." });
-        const latestWorkState = await fetchTokenState(
-          "livenet",
-          true,
-          WORK_TOKEN_ID,
-          false,
-          [address],
-          true,
+        const latestWorkState = await fetchFreshWalletWorkState(
+          address,
+          (attempt, totalAttempts) => {
+            setStatus({
+              tone: "idle",
+              text: `The index caught a new block. Rechecking WORK (${attempt}/${totalAttempts})...`,
+            });
+          },
         );
         const latestWorkTokens = latestWorkState.tokens.some(
           (token) => token.tokenId === WORK_TOKEN_ID,

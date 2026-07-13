@@ -101,6 +101,21 @@ const BACKFILL_CHILD_TIMEOUT_MS = Math.min(
       4 * 60_000,
   ),
 );
+const BACKFILL_RETRIES = Math.min(
+  5,
+  Math.max(
+    0,
+    Math.floor(Number(process.env.POW_INDEX_WORKER_BACKFILL_RETRIES ?? 2) || 0),
+  ),
+);
+const BACKFILL_RETRY_DELAY_MS = Math.min(
+  30_000,
+  Math.max(
+    250,
+    Number(process.env.POW_INDEX_WORKER_BACKFILL_RETRY_DELAY_MS ?? 1_000) ||
+      1_000,
+  ),
+);
 const PARITY_CHILD_TIMEOUT_MS = Math.min(
   5 * 60_000,
   Math.max(
@@ -204,6 +219,38 @@ function runScript(
       );
     });
   });
+}
+
+async function runBackfillWithRetries(backfillEnv) {
+  let lastError;
+  for (let attempt = 0; attempt <= BACKFILL_RETRIES; attempt += 1) {
+    try {
+      await runScript("backfill-proof-indexer.mjs", [], backfillEnv, {
+        timeoutMs: BACKFILL_CHILD_TIMEOUT_MS,
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= BACKFILL_RETRIES) {
+        break;
+      }
+      const delayMs = Math.min(
+        30_000,
+        BACKFILL_RETRY_DELAY_MS * 2 ** attempt,
+      );
+      console.error(
+        JSON.stringify({
+          attempt: attempt + 1,
+          delayMs,
+          error: error?.message ?? String(error),
+          phase: "worker-backfill-retry",
+          retrying: true,
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
 }
 
 async function writeWorkerMeta(pool, value) {
@@ -421,9 +468,7 @@ async function runCycle(pool, lastSuccess) {
     POW_INDEX_DB_APP_NAME: "proof-indexer-worker-backfill",
   };
 
-  await runScript("backfill-proof-indexer.mjs", [], backfillEnv, {
-    timeoutMs: BACKFILL_CHILD_TIMEOUT_MS,
-  });
+  await runBackfillWithRetries(backfillEnv);
   const pendingStatus = await refreshPendingStatuses(pool);
 
   const nowMs = Date.now();
@@ -504,6 +549,8 @@ if (DRY_RUN) {
         pendingStatusConcurrency: PENDING_STATUS_CONCURRENCY,
         pendingStatusLimit: PENDING_STATUS_LIMIT,
         backfillTimeoutMs: BACKFILL_CHILD_TIMEOUT_MS,
+        backfillRetries: BACKFILL_RETRIES,
+        backfillRetryDelayMs: BACKFILL_RETRY_DELAY_MS,
         parityTimeoutMs: PARITY_CHILD_TIMEOUT_MS,
         statusTimeoutMs: STATUS_REQUEST_TIMEOUT_MS,
       },

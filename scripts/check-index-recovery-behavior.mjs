@@ -786,6 +786,35 @@ check("WORK mint progress stays below 100 until max supply confirms", () => {
   assert.equal(tokenProgressLabel(21_000_000, 21_000_000), "100%");
 });
 
+check("WORK send preflight retries transient canonical reads only", async () => {
+  let attempts = 0;
+  const retryNotices = [];
+  const fetchFreshWalletWorkState = isolatedTypeScriptFunction(
+    APP_PATH,
+    "fetchFreshWalletWorkState",
+    {
+      WORK_SPENDABLE_RECHECK_DELAYS_MS: [0, 1, 1],
+      WORK_TOKEN_ID: "work-token-id",
+      delay: async () => {},
+      fetchTokenState: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("canonical gate");
+        }
+        return { holders: [{ balance: 1 }] };
+      },
+      isTransientProofApiReadError: (error) =>
+        error instanceof Error && error.message === "canonical gate",
+    },
+  );
+  const state = await fetchFreshWalletWorkState("sender", (attempt, total) => {
+    retryNotices.push([attempt, total]);
+  });
+  assert.equal(attempts, 2);
+  assert.equal(state.holders[0].balance, 1);
+  assert.deepEqual(retryNotices, [[2, 3]]);
+});
+
 check("wallet holder overlays preserve WORK and POWB for one address", () => {
   const mergeWalletHolders = isolatedFunction(
     API_PATH,
@@ -899,7 +928,14 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
     ).length,
     0,
   );
-  assert.match(appSource, /mergeTokenWalletBalancesByToken\(\s*accountTokenWalletBalances,\s*accountPowbWalletBalances/u);
+  assert.match(
+    appSource,
+    /mergeTokenWalletBalancesByToken\(\s*accountTokenWalletBalances,\s*accountWorkWalletBalances/u,
+  );
+  assert.match(
+    appSource,
+    /mergeTokenWalletBalancesByToken\([\s\S]*accountWorkWalletBalances[\s\S]*accountPowbWalletBalances/u,
+  );
   assert.match(appSource, /accountUtxoAvailability\(accountUtxos, reservedListingOutpoints\)/u);
   assert.match(appSource, /activeListingAnchorOutpointsForAddress\(idListings/u);
   assert.match(appSource, /activeTokenListingAnchorOutpointsForAddress/u);
@@ -1794,6 +1830,32 @@ check("a timed-out worker child is terminated and reported failed", async () => 
   assert.deepEqual(kills, ["SIGTERM"]);
 });
 
+check("the index worker retries a failed block cycle before going unhealthy", async () => {
+  let attempts = 0;
+  const runBackfillWithRetries = isolatedFunction(
+    WORKER_PATH,
+    "runBackfillWithRetries",
+    {
+      BACKFILL_CHILD_TIMEOUT_MS: 1_000,
+      BACKFILL_RETRIES: 2,
+      BACKFILL_RETRY_DELAY_MS: 1,
+      console: { error() {} },
+      runScript: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("tip changed");
+        }
+      },
+      setTimeout: (callback) => {
+        queueMicrotask(callback);
+        return 1;
+      },
+    },
+  );
+  await runBackfillWithRetries({});
+  assert.equal(attempts, 2);
+});
+
 check("pending status cleanup is concurrent but capped", async () => {
   let activeReads = 0;
   let maxActiveReads = 0;
@@ -2024,6 +2086,30 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     Object.values(stored.summaryPayloads).every(
       (payload) => payload.indexedThroughBlock === 101,
     ),
+  );
+});
+
+check("canonical summary tip races defer without failing the block worker", () => {
+  const canonicalSummaryRefreshCanDefer = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalSummaryRefreshCanDefer",
+  );
+  const tipRace = Object.assign(
+    new Error("/api/v1/internal/canonical-summary returned HTTP 503"),
+    {
+      responseText: JSON.stringify({
+        error:
+          "The indexed canonical summary checkpoint is not exactly at the Bitcoin Core tip.",
+      }),
+      statusCode: 503,
+    },
+  );
+  assert.equal(canonicalSummaryRefreshCanDefer(tipRace), true);
+  assert.equal(
+    canonicalSummaryRefreshCanDefer(
+      Object.assign(new Error("database failed"), { statusCode: 503 }),
+    ),
+    false,
   );
 });
 
@@ -5077,6 +5163,54 @@ check("summary catch-up does not brown out current relational reads", async () =
   assert.equal(summaryGate("/api/v1/growth-summary"), true);
 });
 
+check("long worker cycles do not brown out exact canonical reads", async () => {
+  const blockHash = "b".repeat(64);
+  const summarySnapshotCoversCanonicalReadModels = isolatedFunction(
+    API_PATH,
+    "summarySnapshotCoversCanonicalReadModels",
+  );
+  const loadCanonicalPublicReadGate = isolatedFunction(
+    API_PATH,
+    "loadCanonicalPublicReadGate",
+    {
+      PROOF_INDEX_HEALTH_MAX_AGE_MS: 120_000,
+      PROOF_INDEX_REQUIRED: true,
+      bitcoinRpc: async () => ({
+        ok: true,
+        result: { bestblockhash: blockHash, blocks: 100 },
+      }),
+      proofIndexCanonicalStateMetaPayload: async () => ({
+        fault: {},
+        rebuild: { active: false, status: "complete" },
+      }),
+      proofIndexOperationalStatusPayload: async () => ({
+        indexedThroughBlock: 100,
+        readModels: {
+          confirmedEvents: { count: 10, maxBlock: 100 },
+          confirmedIds: { count: 1, maxBlock: 90 },
+          confirmedTransfers: { count: 1, maxBlock: 95 },
+        },
+        scan: { blockHash, complete: true },
+        summarySnapshot: {
+          eligible: true,
+          indexedThroughBlock: 99,
+        },
+        worker: {
+          lastSuccessAt: new Date(Date.now() - 300_000).toISOString(),
+          ok: false,
+        },
+      }),
+      summarySnapshotCoversCanonicalReadModels,
+    },
+  );
+
+  const gate = await loadCanonicalPublicReadGate("livenet");
+  assert.equal(gate.ok, true);
+  assert.equal(gate.workerFresh, false);
+  assert.equal(gate.workerOk, false);
+  assert.equal(gate.summarySnapshotOk, false);
+});
+
 check("canonical public-read gates cache each network independently", async () => {
   const loads = [];
   const canonicalPublicReadGate = isolatedFunction(
@@ -5084,7 +5218,8 @@ check("canonical public-read gates cache each network independently", async () =
     "canonicalPublicReadGate",
     {
       CANONICAL_PUBLIC_READ_GATE_TTL_MS: 2_000,
-      HEALTH_CHECK_TIMEOUT_MS: 5_000,
+      CANONICAL_PUBLIC_READ_GATE_TIMEOUT_MS: 15_000,
+      CANONICAL_PUBLIC_READ_GATE_TIMEOUT_TTL_MS: 2_000,
       canonicalPublicReadGateCache: new Map(),
       errorSummary: (error) => String(error?.message ?? error),
       loadCanonicalPublicReadGate: async (network) => {
