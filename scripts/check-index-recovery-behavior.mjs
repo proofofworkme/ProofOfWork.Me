@@ -5487,6 +5487,263 @@ check("canonical raw transaction time survives event projection upserts", async 
   );
 });
 
+check("health address checks use bounded Electrum balance responses", async () => {
+  const calls = [];
+  const healthScripthash = "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21";
+  let balance = { confirmed: 0, unconfirmed: 0 };
+  const addressIndexHealthPayload = isolatedFunction(
+    API_PATH,
+    "addressIndexHealthPayload",
+    {
+      ELECTRUM_HOST: "127.0.0.1",
+      ELECTRUM_PORT: 50_001,
+      ELECTRUM_HEALTH_SCRIPTHASH: healthScripthash,
+      HEALTH_CHECK_TIMEOUT_MS: 5_000,
+      electrumRequest: async (method, params) => {
+        calls.push({ method, params });
+        return balance;
+      },
+      errorSummary: (error) => String(error?.message ?? error),
+      firstPartyAddressReadBases: () => [],
+      promiseOutcomeWithin: async (promise) => {
+        try {
+          return {
+            error: null,
+            ok: true,
+            timedOut: false,
+            value: await promise,
+          };
+        } catch (error) {
+          return { error, ok: false, timedOut: false, value: null };
+        }
+      },
+      registryAddressForNetwork: () => "bc1registry",
+    },
+  );
+
+  const healthy = JSON.parse(
+    JSON.stringify(await addressIndexHealthPayload()),
+  );
+  assert.equal(healthy.ok, true);
+  assert.equal(healthy.timedOut, false);
+  assert.deepEqual(healthy.canary, {
+    confirmedSats: 0,
+    scripthash: healthScripthash,
+    unconfirmedSats: 0,
+  });
+  assert.deepEqual(calls.map((call) => call.method), [
+    "blockchain.scripthash.get_balance",
+  ]);
+  assert.deepEqual(calls.map((call) => Array.from(call.params)), [
+    [healthScripthash],
+  ]);
+
+  calls.length = 0;
+  balance = { confirmed: null, unconfirmed: 0 };
+  const invalid = JSON.parse(
+    JSON.stringify(await addressIndexHealthPayload()),
+  );
+  assert.equal(invalid.ok, false);
+  assert.match(invalid.error, /invalid balance response/iu);
+
+  balance = { confirmed: "0", unconfirmed: 0 };
+  const coerced = JSON.parse(
+    JSON.stringify(await addressIndexHealthPayload()),
+  );
+  assert.equal(coerced.ok, false);
+  assert.match(coerced.error, /invalid balance response/iu);
+});
+
+check("Electrum health proves the exact sampled Core block header", async () => {
+  const calls = [];
+  let derivedHash = "a".repeat(64);
+  let headerResponse = "00".repeat(80);
+  const electrumHealthPayload = isolatedFunction(
+    API_PATH,
+    "electrumHealthPayload",
+    {
+      Buffer,
+      ELECTRUM_HOST: "127.0.0.1",
+      ELECTRUM_PORT: 50_001,
+      HEALTH_CHECK_TIMEOUT_MS: 5_000,
+      bitcoin: {
+        crypto: {
+          hash256: () => Buffer.from(derivedHash, "hex").reverse(),
+        },
+      },
+      electrumRequest: async (method, params) => {
+        calls.push({ method, params });
+        return headerResponse;
+      },
+      errorSummary: (error) => String(error?.message ?? error),
+      promiseOutcomeWithin: async (promise) => {
+        try {
+          return {
+            error: null,
+            ok: true,
+            timedOut: false,
+            value: await promise,
+          };
+        } catch (error) {
+          return { error, ok: false, timedOut: false, value: null };
+        }
+      },
+    },
+  );
+
+  const healthy = JSON.parse(
+    JSON.stringify(await electrumHealthPayload(957_864, derivedHash)),
+  );
+  assert.deepEqual(healthy, {
+    configured: true,
+    error: "",
+    headerHash: derivedHash,
+    headerHeight: 957_864,
+    ok: true,
+    timedOut: false,
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    { method: "blockchain.block.header", params: [957_864] },
+  ]);
+
+  const mismatch = JSON.parse(
+    JSON.stringify(await electrumHealthPayload(957_864, "b".repeat(64))),
+  );
+  assert.equal(mismatch.ok, false);
+  assert.equal(mismatch.headerHash, derivedHash);
+  assert.match(mismatch.error, /does not match Bitcoin Core/iu);
+
+  headerResponse = "00";
+  derivedHash = "c".repeat(64);
+  const malformed = JSON.parse(
+    JSON.stringify(await electrumHealthPayload(957_864, derivedHash)),
+  );
+  assert.equal(malformed.ok, false);
+  assert.equal(malformed.headerHash, null);
+  assert.match(malformed.error, /invalid block header/iu);
+
+  const callCount = calls.length;
+  const missingCore = JSON.parse(
+    JSON.stringify(await electrumHealthPayload(0, "")),
+  );
+  assert.equal(missingCore.ok, false);
+  assert.match(missingCore.error, /Core tip is unavailable/iu);
+  assert.equal(calls.length, callCount);
+});
+
+check("health Electrum probes stop after canary failure and share one deadline", async () => {
+  const calls = [];
+  let now = 1_000;
+  const boundedHealthElectrumPayload = isolatedFunction(
+    API_PATH,
+    "boundedHealthElectrumPayload",
+    {
+      Date: { now: () => now },
+      ELECTRUM_HOST: "127.0.0.1",
+      ELECTRUM_PORT: 50_001,
+      HEALTH_CHECK_TIMEOUT_MS: 5_000,
+      electrumHealthPayload: async (...args) => {
+        calls.push(args);
+        return { configured: true, ok: true };
+      },
+    },
+  );
+
+  const canaryFailure = JSON.parse(
+    JSON.stringify(
+      await boundedHealthElectrumPayload(
+        { ok: false, timedOut: true },
+        957_864,
+        "a".repeat(64),
+        5_750,
+      ),
+    ),
+  );
+  assert.equal(canaryFailure.ok, false);
+  assert.equal(canaryFailure.timedOut, true);
+  assert.match(canaryFailure.error, /canary failed/iu);
+  assert.equal(calls.length, 0);
+
+  now = 5_750;
+  const expired = JSON.parse(
+    JSON.stringify(
+      await boundedHealthElectrumPayload(
+        { ok: true },
+        957_864,
+        "a".repeat(64),
+        5_750,
+      ),
+    ),
+  );
+  assert.equal(expired.ok, false);
+  assert.equal(expired.timedOut, true);
+  assert.match(expired.error, /budget expired/iu);
+  assert.equal(calls.length, 0);
+
+  now = 4_000;
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(
+        await boundedHealthElectrumPayload(
+          { ok: true },
+          957_864,
+          "a".repeat(64),
+          5_750,
+        ),
+      ),
+    ),
+    { configured: true, ok: true },
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    [957_864, "a".repeat(64), 1_750],
+  ]);
+});
+
+check("concurrent and adjacent health requests share one dependency sweep", async () => {
+  let loads = 0;
+  let resolveLoad;
+  let now = 1_000;
+  const pending = new Promise((resolve) => {
+    resolveLoad = resolve;
+  });
+  const healthPayload = isolatedFunction(API_PATH, "healthPayload", {
+    Date: { now: () => now },
+    HEALTH_CHECK_TIMEOUT_MS: 5_000,
+    HEALTH_PAYLOAD_CACHE_TTL_MS: 2_000,
+    healthPayloadCache: null,
+    loadHealthPayload: () => {
+      loads += 1;
+      return pending;
+    },
+    process: { env: {} },
+  });
+
+  const first = healthPayload();
+  const second = healthPayload();
+  assert.equal(loads, 1);
+  resolveLoad({ ok: true, sweep: 1 });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(await Promise.all([first, second]))),
+    [
+      { ok: true, sweep: 1 },
+      { ok: true, sweep: 1 },
+    ],
+  );
+
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(await healthPayload())),
+    { ok: true, sweep: 1 },
+  );
+  assert.equal(loads, 1);
+
+  now = 3_001;
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(await healthPayload())),
+    { ok: true, sweep: 1 },
+  );
+  assert.equal(loads, 2);
+});
+
 check("canonical read gating exempts node primitives only", () => {
   const canonicalPublicReadGateApplies = isolatedFunction(
     API_PATH,

@@ -74,6 +74,8 @@ const BITCOIN_RPC_PASSWORD = String(
 ).trim();
 const ELECTRUM_HOST = process.env.ELECTRUM_HOST ?? "127.0.0.1";
 const ELECTRUM_PORT = Number(process.env.ELECTRUM_PORT ?? 50001);
+const ELECTRUM_HEALTH_SCRIPTHASH =
+  "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21";
 const MAX_REGISTRY_TX_PAGES = Number(process.env.MAX_REGISTRY_TX_PAGES ?? 250);
 const MAX_ADDRESS_TX_PAGES = Number(process.env.MAX_ADDRESS_TX_PAGES ?? 50);
 const MAIL_ADDRESS_TX_PAGES = Number(
@@ -440,6 +442,13 @@ const PROOF_INDEX_HEALTH_MAX_AGE_MS = Number(
 );
 const HEALTH_CHECK_TIMEOUT_MS = Number(
   process.env.POW_API_HEALTH_CHECK_TIMEOUT_MS ?? 5_000,
+);
+const HEALTH_PAYLOAD_CACHE_TTL_MS = Math.max(
+  0,
+  Math.min(
+    10_000,
+    Number(process.env.POW_API_HEALTH_CACHE_TTL_MS ?? 2_000) || 0,
+  ),
 );
 const HEALTH_DISK_MIN_FREE_BYTES = Number(
   process.env.POW_API_DISK_MIN_FREE_BYTES ?? 5 * 1024 * 1024 * 1024,
@@ -23679,15 +23688,15 @@ function internalCanonicalWorkSummaryPayload(ledger) {
 }
 
 async function exactCanonicalSummaryCheckpoint(network) {
-  const [status, canonical, chainResponse, electrum] = await Promise.all([
+  const [status, canonical, chainResponse] = await Promise.all([
     proofIndexOperationalStatusPayload(network),
     proofIndexCanonicalStateMetaPayload(network),
     bitcoinRpc("getblockchaininfo", []),
-    electrumHealthPayload(),
   ]);
   const chainInfo = chainResponse?.ok ? chainResponse.result : null;
   const tipHeight = Number(chainInfo?.blocks);
   const tipHash = String(chainInfo?.bestblockhash ?? "").trim().toLowerCase();
+  const electrum = await electrumHealthPayload(tipHeight, tipHash);
   const indexedThroughBlock = Number(status?.indexedThroughBlock) || 0;
   const storedHash = String(status?.scan?.blockHash ?? "").trim().toLowerCase();
   const rebuild = canonical?.rebuild ?? {};
@@ -32118,44 +32127,51 @@ async function healthNodeTipHeight() {
   return ledgerTipHeight("livenet");
 }
 
-async function addressIndexHealthPayload() {
+async function addressIndexHealthPayload(timeoutMs = HEALTH_CHECK_TIMEOUT_MS) {
   const registryAddress = registryAddressForNetwork("livenet");
   if (!registryAddress) {
     return { error: "Registry address is not configured.", ok: false };
   }
+  const requestTimeoutMs = Math.max(
+    1,
+    Math.min(HEALTH_CHECK_TIMEOUT_MS, Number(timeoutMs) || 1),
+  );
   if (String(ELECTRUM_HOST).trim() && ELECTRUM_PORT > 0) {
-    const addresses = [registryAddress, WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS];
-    const histories = await Promise.all(
-      addresses.map((address) =>
-        promiseOutcomeWithin(
-          electrumRequest(
-            "blockchain.scripthash.get_history",
-            [scriptHashForAddress(address, "livenet")],
-            HEALTH_CHECK_TIMEOUT_MS,
-          ),
-          HEALTH_CHECK_TIMEOUT_MS,
-        ),
+    const balanceOutcome = await promiseOutcomeWithin(
+      electrumRequest(
+        "blockchain.scripthash.get_balance",
+        [ELECTRUM_HEALTH_SCRIPTHASH],
+        requestTimeoutMs,
       ),
+      requestTimeoutMs,
     );
-    const valid = histories.every(
-      (outcome) => outcome.ok && Array.isArray(outcome.value),
-    );
-    const counts = histories.map((outcome) =>
-      Array.isArray(outcome.value) ? outcome.value.length : 0,
-    );
+    const confirmedSats = balanceOutcome.value?.confirmed;
+    const unconfirmedSats = balanceOutcome.value?.unconfirmed;
+    const valid =
+      balanceOutcome.ok &&
+      Number.isSafeInteger(confirmedSats) &&
+      confirmedSats === 0 &&
+      Number.isSafeInteger(unconfirmedSats) &&
+      unconfirmedSats === 0;
     return {
-      addresses: addresses.map((address, index) => ({
-        address,
-        historyCount: counts[index],
-        maxConfirmedHeight: Math.max(
-          0,
-          ...(Array.isArray(histories[index].value)
-            ? histories[index].value.map((entry) => Number(entry?.height) || 0)
-            : []),
-        ),
-      })),
-      ok: valid && counts.every((count) => count > 0),
+      canary: {
+        confirmedSats: Number.isSafeInteger(confirmedSats)
+          ? confirmedSats
+          : null,
+        scripthash: ELECTRUM_HEALTH_SCRIPTHASH,
+        unconfirmedSats: Number.isSafeInteger(unconfirmedSats)
+          ? unconfirmedSats
+          : null,
+      },
+      error: valid
+        ? ""
+        : errorSummary(
+            balanceOutcome.error ??
+              new Error("Electrum returned an invalid balance response."),
+          ),
+      ok: valid,
       source: `electrum://${ELECTRUM_HOST}:${ELECTRUM_PORT}`,
+      timedOut: balanceOutcome.timedOut === true,
     };
   }
   for (const baseUrl of firstPartyAddressReadBases("livenet")) {
@@ -32164,9 +32180,9 @@ async function addressIndexHealthPayload() {
         baseUrl,
         registryAddress,
         "txs/mempool",
-        { timeoutMs: HEALTH_CHECK_TIMEOUT_MS },
+        { timeoutMs: requestTimeoutMs },
       ),
-      HEALTH_CHECK_TIMEOUT_MS,
+      requestTimeoutMs,
     );
     if (outcome.ok) {
       return {
@@ -32179,45 +32195,105 @@ async function addressIndexHealthPayload() {
   return { error: "No first-party address index is configured.", ok: false };
 }
 
-async function electrumHealthPayload() {
+async function electrumHealthPayload(
+  expectedHeight,
+  expectedHash,
+  timeoutMs = HEALTH_CHECK_TIMEOUT_MS,
+) {
   if (!String(ELECTRUM_HOST).trim() || ELECTRUM_PORT <= 0) {
     return { configured: false, ok: true };
   }
-  const [versionOutcome, headerOutcome] = await Promise.all([
-    promiseOutcomeWithin(
-      electrumRequest(
-        "server.version",
-        ["ProofOfWork.Me health", "1.4"],
-        HEALTH_CHECK_TIMEOUT_MS,
-      ),
-      HEALTH_CHECK_TIMEOUT_MS,
+  const height = Number(expectedHeight);
+  const coreHash = String(expectedHash ?? "").trim().toLowerCase();
+  if (
+    !Number.isSafeInteger(height) ||
+    height <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(coreHash)
+  ) {
+    return {
+      configured: true,
+      error: "Bitcoin Core tip is unavailable for the Electrum health proof.",
+      headerHash: null,
+      headerHeight: Number.isSafeInteger(height) ? height : null,
+      ok: false,
+      timedOut: false,
+    };
+  }
+  const headerOutcome = await promiseOutcomeWithin(
+    electrumRequest(
+      "blockchain.block.header",
+      [height],
+      Math.max(1, Math.min(HEALTH_CHECK_TIMEOUT_MS, Number(timeoutMs) || 1)),
     ),
-    promiseOutcomeWithin(
-      electrumRequest(
-        "blockchain.headers.subscribe",
-        [],
-        HEALTH_CHECK_TIMEOUT_MS,
-      ),
-      HEALTH_CHECK_TIMEOUT_MS,
-    ),
-  ]);
-  const headerHeight = Number(headerOutcome.value?.height);
-  const ok =
-    versionOutcome.ok &&
-    headerOutcome.ok &&
-    Number.isSafeInteger(headerHeight) &&
-    headerHeight > 0;
+    Math.max(1, Math.min(HEALTH_CHECK_TIMEOUT_MS, Number(timeoutMs) || 1)),
+  );
+  const headerHex =
+    typeof headerOutcome.value === "string"
+      ? headerOutcome.value.trim().toLowerCase()
+      : "";
+  const headerHash = /^[0-9a-f]{160}$/u.test(headerHex)
+    ? Buffer.from(
+        bitcoin.crypto.hash256(Buffer.from(headerHex, "hex")),
+      )
+        .reverse()
+        .toString("hex")
+    : "";
+  const ok = headerOutcome.ok && headerHash === coreHash;
+  const mismatchError = headerHash
+    ? `Electrum block header does not match Bitcoin Core at height ${height}.`
+    : "Electrum returned an invalid block header.";
   return {
     configured: true,
     error: ok
       ? ""
-      : errorSummary(versionOutcome.error ?? headerOutcome.error),
-    headerHeight: Number.isSafeInteger(headerHeight) ? headerHeight : null,
+      : errorSummary(headerOutcome.error ?? new Error(mismatchError)),
+    headerHash: headerHash || null,
+    headerHeight: height,
     ok,
-    timedOut:
-      versionOutcome.timedOut === true || headerOutcome.timedOut === true,
-    version: versionOutcome.ok ? versionOutcome.value : null,
+    timedOut: headerOutcome.timedOut === true,
   };
+}
+
+async function boundedHealthElectrumPayload(
+  addressIndex,
+  expectedHeight,
+  expectedHash,
+  deadlineMs,
+) {
+  if (!String(ELECTRUM_HOST).trim() || ELECTRUM_PORT <= 0) {
+    return electrumHealthPayload(expectedHeight, expectedHash);
+  }
+  if (addressIndex?.ok !== true) {
+    return {
+      configured: true,
+      error:
+        "Electrum tip proof was skipped because the bounded address-index canary failed.",
+      headerHash: null,
+      headerHeight: Number.isSafeInteger(Number(expectedHeight))
+        ? Number(expectedHeight)
+        : null,
+      ok: false,
+      timedOut: addressIndex?.timedOut === true,
+    };
+  }
+  const remainingMs = Math.floor(Number(deadlineMs) - Date.now());
+  if (!Number.isSafeInteger(remainingMs) || remainingMs <= 0) {
+    return {
+      configured: true,
+      error: "Electrum health budget expired before the exact tip proof.",
+      headerHash: null,
+      headerHeight: Number.isSafeInteger(Number(expectedHeight))
+        ? Number(expectedHeight)
+        : null,
+      ok: false,
+      timedOut: true,
+    };
+  }
+  return electrumHealthPayload(
+    expectedHeight,
+    expectedHash,
+    Math.min(HEALTH_CHECK_TIMEOUT_MS, remainingMs),
+  );
 }
 
 async function filesystemHealthPayload(targetPath) {
@@ -32257,14 +32333,15 @@ async function filesystemHealthPayload(targetPath) {
   };
 }
 
-async function healthPayload() {
+async function loadHealthPayload() {
+  const electrumHealthDeadlineMs =
+    Date.now() + Math.max(1, HEALTH_CHECK_TIMEOUT_MS - 250);
   const [
     databaseOutcome,
     canonicalOutcome,
     tipOutcome,
     backendOutcome,
     addressIndex,
-    electrum,
     rootDisk,
     cacheDisk,
   ] = await Promise.all([
@@ -32286,8 +32363,9 @@ async function healthPayload() {
       }),
       HEALTH_CHECK_TIMEOUT_MS,
     ),
-    addressIndexHealthPayload(),
-    electrumHealthPayload(),
+    addressIndexHealthPayload(
+      Math.max(1, electrumHealthDeadlineMs - Date.now()),
+    ),
     filesystemHealthPayload("/"),
     filesystemHealthPayload(PERSISTED_CACHE_DIR),
   ]);
@@ -32298,6 +32376,12 @@ async function healthPayload() {
   const sampledBestBlockHash = String(chainInfo?.bestblockhash ?? "")
     .trim()
     .toLowerCase();
+  const electrum = await boundedHealthElectrumPayload(
+    addressIndex,
+    tipHeight,
+    sampledBestBlockHash,
+    electrumHealthDeadlineMs,
+  );
   const indexedThroughBlock = Number(database?.indexedThroughBlock) || 0;
   const checkpointOutcome =
     indexedThroughBlock > 0 && indexedThroughBlock !== tipHeight
@@ -32445,6 +32529,40 @@ async function healthPayload() {
     service: "proofofwork-op-return-api",
     tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
   };
+}
+
+let healthPayloadCache = null;
+
+async function healthPayload() {
+  const now = Date.now();
+  if (
+    healthPayloadCache &&
+    (!healthPayloadCache.settled || healthPayloadCache.expiresAt > now)
+  ) {
+    return healthPayloadCache.promise;
+  }
+  const entry = {
+    expiresAt: Number.POSITIVE_INFINITY,
+    promise: null,
+    settled: false,
+  };
+  entry.promise = loadHealthPayload();
+  healthPayloadCache = entry;
+  try {
+    const payload = await entry.promise;
+    entry.expiresAt = Date.now() + HEALTH_PAYLOAD_CACHE_TTL_MS;
+    entry.settled = true;
+    return payload;
+  } catch (error) {
+    if (healthPayloadCache === entry) {
+      healthPayloadCache = null;
+    }
+    throw error;
+  } finally {
+    if (!entry.settled && healthPayloadCache === entry) {
+      healthPayloadCache = null;
+    }
+  }
 }
 
 const CANONICAL_PUBLIC_READ_GATE_TTL_MS = 2_000;

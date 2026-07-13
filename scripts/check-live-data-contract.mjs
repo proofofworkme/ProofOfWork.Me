@@ -222,6 +222,26 @@ const operationalHealthMetadataSource = sourceSliceBetween(
   /async function latestProofIndexOperationalMetadata\(/,
   /export async function proofIndexOperationalStatusPayload\(/,
 );
+const addressIndexHealthSource = sourceSliceBetween(
+  server,
+  /async function addressIndexHealthPayload\(/,
+  /async function electrumHealthPayload\(/,
+);
+const electrumHealthSource = sourceSliceBetween(
+  server,
+  /async function electrumHealthPayload\(/,
+  /async function boundedHealthElectrumPayload\(/,
+);
+const boundedHealthElectrumSource = sourceSliceBetween(
+  server,
+  /async function boundedHealthElectrumPayload\(/,
+  /async function filesystemHealthPayload\(/,
+);
+const healthPayloadSource = sourceSliceBetween(
+  server,
+  /async function loadHealthPayload\(/,
+  /const CANONICAL_PUBLIC_READ_GATE_TTL_MS/,
+);
 const canonicalRebuildSource = sourceSliceBetween(
   proofIndexerBackfill,
   /async function prepareCanonicalRebuild\(/,
@@ -300,7 +320,7 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /unpagedEndpoint\("\/api\/v1\/internal\/canonical-summary"\)/,
   /async function internalCanonicalSummaryPayload\([\s\S]*buildIndexedCanonicalLedgerPayload\(/,
   /const before = await exactCanonicalSummaryCheckpoint\([\s\S]*const after = await exactCanonicalSummaryCheckpoint\(/,
-  /exactCanonicalSummaryCheckpoint\([\s\S]*electrumHealthPayload\(\)[\s\S]*electrum\?\.headerHeight !== tipHeight/,
+  /exactCanonicalSummaryCheckpoint\([\s\S]*electrumHealthPayload\(tipHeight, tipHash\)[\s\S]*electrum\?\.headerHeight !== tipHeight/,
   /buildIndexedCanonicalLedgerPayload\([\s\S]*strictCanonicalRushPayload\(network, exactHeight\)[\s\S]*exactTokenTablePayloadForCanonicalLedger\(/,
   /async function strictCanonicalRushTransactions\([\s\S]*confirmedElectrumHistoryEntries\([\s\S]*requireCanonicalPrevouts: true[\s\S]*canonicalBlockTxidIndexFromCore\([\s\S]*transactions\.length !== entries\.length/,
   /function tokenTablePayloadHasConservedBalances\([\s\S]*!tokenIds\.has\(tokenId\)[\s\S]*minted === held[\s\S]*mintedSupply === heldSupply/,
@@ -416,6 +436,53 @@ expect(
     operationalHealthMetadataSource,
   ),
 );
+expectAll("health probes use bounded Electrum balance checks", addressIndexHealthSource, [
+  /blockchain\.scripthash\.get_balance/,
+  /ELECTRUM_HEALTH_SCRIPTHASH/,
+  /Number\.isSafeInteger\(confirmedSats\)[\s\S]*confirmedSats === 0/,
+  /Number\.isSafeInteger\(unconfirmedSats\)[\s\S]*unconfirmedSats === 0/,
+  /canary:/,
+  /confirmedSats:/,
+  /unconfirmedSats:/,
+  /timedOut: balanceOutcome\.timedOut === true/,
+]);
+expect(
+  "health probes must not hydrate full Electrum address histories",
+  !/blockchain\.scripthash\.(?:get_history|listunspent)/u.test(
+    addressIndexHealthSource,
+  ),
+);
+expectAll("Electrum health proves the exact Core tip with one bounded header", electrumHealthSource, [
+  /async function electrumHealthPayload\(\s*expectedHeight,\s*expectedHash,\s*timeoutMs = HEALTH_CHECK_TIMEOUT_MS,\s*\)/,
+  /blockchain\.block\.header/,
+  /\[height\]/,
+  /\^\[0-9a-f\]\{160\}\$/,
+  /bitcoin\.crypto\.hash256/,
+  /headerHash === coreHash/,
+]);
+expect(
+  "Electrum health must not create one-shot subscriptions or version sessions",
+  !/server\.version|blockchain\.headers\.subscribe/u.test(electrumHealthSource),
+);
+expectAll("health Electrum probes share one deadline and fail without a second socket", boundedHealthElectrumSource, [
+  /addressIndex\?\.ok !== true/,
+  /tip proof was skipped/,
+  /Number\(deadlineMs\) - Date\.now\(\)/,
+  /remainingMs <= 0/,
+  /electrumHealthPayload\([\s\S]*Math\.min\(HEALTH_CHECK_TIMEOUT_MS, remainingMs\)/,
+]);
+expectAll("health calls bind Electrum to the sampled Core checkpoint", server, [
+  /exactCanonicalSummaryCheckpoint\(network\)[\s\S]*electrumHealthPayload\(tipHeight, tipHash\)/,
+  /loadHealthPayload\(\)[\s\S]*boundedHealthElectrumPayload\([\s\S]*addressIndex,[\s\S]*tipHeight,[\s\S]*sampledBestBlockHash/,
+]);
+expectAll("concurrent and adjacent health requests share one dependency sweep", healthPayloadSource, [
+  /let healthPayloadCache = null/,
+  /!healthPayloadCache\.settled \|\| healthPayloadCache\.expiresAt > now/,
+  /return healthPayloadCache\.promise/,
+  /entry\.promise = loadHealthPayload\(\)[\s\S]*healthPayloadCache = entry/,
+  /entry\.expiresAt = Date\.now\(\) \+ HEALTH_PAYLOAD_CACHE_TTL_MS/,
+  /entry\.settled = true/,
+]);
 expectAll("each confirmed block persists events and its checkpoint atomically", blockScanSource, [
   /bitcoinRpc\("getblock", \[blockHash, 2\]\)/,
   /transactionWithInputPrevouts\([\s\S]*assertHydratedProtocolTransaction/,
