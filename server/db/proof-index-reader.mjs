@@ -5683,6 +5683,139 @@ async function proofIndexTokenDefinitionsFromTables(pool, network, scope) {
   return result.rows.map(tokenDefinitionFromRow).filter((token) => token.tokenId);
 }
 
+async function proofIndexTokenDefinitionsByIds(pool, network, tokenIds) {
+  const normalizedTokenIds = [
+    ...new Set(
+      (Array.isArray(tokenIds) ? tokenIds : [])
+        .map((tokenId) => String(tokenId ?? "").trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ].sort();
+  if (normalizedTokenIds.length === 0) {
+    return [];
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        token_id,
+        ticker,
+        creator_address,
+        registry_address,
+        max_supply,
+        mint_amount,
+        mint_price_sats,
+        create_txid,
+        confirmed,
+        created_height,
+        metadata
+      FROM proof_indexer.credit_definitions
+      WHERE network = $1
+        AND token_id = ANY($2::text[])
+      ORDER BY upper(ticker), token_id
+    `,
+    [network, normalizedTokenIds],
+  );
+  const tokens = result.rows
+    .map(tokenDefinitionFromRow)
+    .filter((token) => token.tokenId);
+  const definedTokenIds = new Set(tokens.map((token) => token.tokenId));
+  const missingTokenIds = normalizedTokenIds.filter(
+    (tokenId) => !definedTokenIds.has(tokenId),
+  );
+  if (missingTokenIds.length > 0) {
+    throw new Error(
+      `Wallet token overlay cannot publish token state without canonical definitions: ${missingTokenIds.join(", ")}`,
+    );
+  }
+  return tokens;
+}
+
+async function proofIndexWalletTokenDefinitions(
+  pool,
+  network,
+  scope,
+  tokenIds,
+) {
+  const scoped = scope && scope !== "all";
+  const [itemDefinitions, scopedDefinitions] = await Promise.all([
+    proofIndexTokenDefinitionsByIds(pool, network, tokenIds),
+    scoped
+      ? proofIndexTokenDefinitionsFromTables(pool, network, scope)
+      : Promise.resolve([]),
+  ]);
+  const definitionsById = new Map();
+  for (const token of [...itemDefinitions, ...scopedDefinitions]) {
+    const tokenId = String(token?.tokenId ?? "").trim().toLowerCase();
+    if (tokenId) {
+      definitionsById.set(tokenId, token);
+    }
+  }
+  return [...definitionsById.values()].sort(
+    (left, right) =>
+      String(left?.ticker ?? "").localeCompare(String(right?.ticker ?? "")) ||
+      String(left?.tokenId ?? "").localeCompare(String(right?.tokenId ?? "")),
+  );
+}
+
+async function proofIndexWalletCheckpointMetadata(pool, network) {
+  const result = await pool.query(
+    `
+      SELECT
+        snapshot_id,
+        generated_at,
+        indexed_through_block,
+        source_hashes,
+        COALESCE(
+          NULLIF(payload->>'indexedThroughBlockHash', ''),
+          NULLIF(payload->>'blockHash', '')
+        ) AS indexed_through_block_hash,
+        payload->'complete' AS payload_complete,
+        metrics->'complete' AS metrics_complete,
+        consistency->'complete' AS consistency_complete
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
+        AND NOT (source_hashes ? 'canonicalSummary')
+        AND (
+          source_hashes ? 'blockScan'
+          OR payload->>'source' = 'proof-indexer-block-scan'
+          OR consistency->>'status' LIKE 'block-scan%'
+        )
+        AND COALESCE(
+          NULLIF(payload->>'indexedThroughBlockHash', ''),
+          NULLIF(payload->>'blockHash', '')
+        ) IS NOT NULL
+      ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
+      LIMIT 1
+    `,
+    [network],
+  );
+  const row = result.rows[0];
+  const indexedThroughBlock = rowNumber(row, "indexed_through_block");
+  const indexedThroughBlockHash = normalizedLowerText(
+    row?.indexed_through_block_hash,
+  );
+  if (
+    !row ||
+    !Number.isSafeInteger(indexedThroughBlock) ||
+    indexedThroughBlock <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash)
+  ) {
+    return null;
+  }
+  return {
+    checkpointComplete:
+      row.payload_complete === true ||
+      row.metrics_complete === true ||
+      row.consistency_complete === true,
+    generatedAt: dateIso(row.generated_at),
+    indexedThroughBlock,
+    indexedThroughBlockHash,
+    snapshotId: String(row.snapshot_id ?? "").trim(),
+    sourceHashes: objectRecord(row.source_hashes),
+  };
+}
+
 async function proofIndexTokenHoldersFromTables(pool, network, tokenIds, scope) {
   const scoped = scope && scope !== "all";
   if (scoped && tokenIds.length === 0) {
@@ -6836,6 +6969,18 @@ export async function proofIndexTokenSnapshotPayload(
   );
 }
 
+function walletProjectionExceedsLimit(rows, limit, status = "") {
+  const normalizedStatus = normalizedLowerText(status);
+  const candidates = Array.isArray(rows)
+    ? normalizedStatus
+      ? rows.filter(
+          (row) => normalizedLowerText(row?.status) === normalizedStatus,
+        )
+      : rows
+    : [];
+  return candidates.length > limit;
+}
+
 export async function proofIndexWalletTokenOverlayPayload(
   network,
   tokenScope,
@@ -6845,7 +6990,12 @@ export async function proofIndexWalletTokenOverlayPayload(
   const addressNeedles = [
     ...new Set(
       (Array.isArray(addresses) ? addresses : [])
-        .map((address) => String(address ?? "").trim().toLowerCase())
+        .map((address) => String(address ?? "").trim())
+        .map((address) =>
+          /^(?:bc1|tb1|bcrt1)/iu.test(address)
+            ? address.toLowerCase()
+            : address,
+        )
         .filter(Boolean),
     ),
   ];
@@ -6855,6 +7005,13 @@ export async function proofIndexWalletTokenOverlayPayload(
 
   const scope = tokenScopeKey(tokenScope);
   const scoped = scope && scope !== "all";
+  const checkpointBeforeRead = await proofIndexWalletCheckpointMetadata(
+    pool,
+    network,
+  );
+  if (!checkpointBeforeRead) {
+    return null;
+  }
   const scopeCondition = scoped
     ? "AND (lower(cb.token_id) = $3 OR lower(cd.ticker) = lower($3))"
     : "";
@@ -6876,7 +7033,7 @@ export async function proofIndexWalletTokenOverlayPayload(
         ON cd.network = cb.network
        AND cd.token_id = cb.token_id
       WHERE cb.network = $1
-        AND lower(cb.address) = ANY($2::text[])
+        AND cb.address = ANY($2::text[])
         ${scopeCondition}
       ORDER BY cb.updated_at DESC, cb.address ASC
     `,
@@ -6895,14 +7052,14 @@ export async function proofIndexWalletTokenOverlayPayload(
             SELECT 1
             FROM proof_indexer.event_participants ep_wallet_invalid
             WHERE ep_wallet_invalid.event_id = e.event_id
-              AND lower(ep_wallet_invalid.address) = ANY(${invalidAddressParam}::text[])
+              AND ep_wallet_invalid.address = ANY(${invalidAddressParam}::text[])
           )
-          OR lower(e.payload->>'actor') = ANY(${invalidAddressParam}::text[])
-          OR lower(e.payload->>'counterparty') = ANY(${invalidAddressParam}::text[])
-          OR lower(e.payload->>'senderAddress') = ANY(${invalidAddressParam}::text[])
-          OR lower(e.payload->>'recipientAddress') = ANY(${invalidAddressParam}::text[])
-          OR lower(e.payload->>'sellerAddress') = ANY(${invalidAddressParam}::text[])
-          OR lower(e.payload->>'buyerAddress') = ANY(${invalidAddressParam}::text[])
+          OR e.payload->>'actor' = ANY(${invalidAddressParam}::text[])
+          OR e.payload->>'counterparty' = ANY(${invalidAddressParam}::text[])
+          OR e.payload->>'senderAddress' = ANY(${invalidAddressParam}::text[])
+          OR e.payload->>'recipientAddress' = ANY(${invalidAddressParam}::text[])
+          OR e.payload->>'sellerAddress' = ANY(${invalidAddressParam}::text[])
+          OR e.payload->>'buyerAddress' = ANY(${invalidAddressParam}::text[])
         )
       ORDER BY
         COALESCE(t.block_time, e.event_time, e.block_time, e.created_at) DESC,
@@ -6921,16 +7078,16 @@ export async function proofIndexWalletTokenOverlayPayload(
       SELECT 1
       FROM proof_indexer.event_participants ep
       WHERE ep.event_id = e.event_id
-        AND lower(ep.address) = ANY($2::text[])
+        AND ep.address = ANY($2::text[])
     )
-      OR lower(e.payload->>'actor') = ANY($2::text[])
-      OR lower(e.payload->>'counterparty') = ANY($2::text[])
-      OR lower(e.payload->>'senderAddress') = ANY($2::text[])
-      OR lower(e.payload->>'recipientAddress') = ANY($2::text[])
-      OR lower(e.payload->>'sellerAddress') = ANY($2::text[])
-      OR lower(e.payload->>'buyerAddress') = ANY($2::text[])
-      OR lower(e.payload->'saleAuthorization'->>'sellerAddress') = ANY($2::text[])
-      OR lower(e.payload->'saleAuthorization'->>'buyerAddress') = ANY($2::text[]))`,
+      OR e.payload->>'actor' = ANY($2::text[])
+      OR e.payload->>'counterparty' = ANY($2::text[])
+      OR e.payload->>'senderAddress' = ANY($2::text[])
+      OR e.payload->>'recipientAddress' = ANY($2::text[])
+      OR e.payload->>'sellerAddress' = ANY($2::text[])
+      OR e.payload->>'buyerAddress' = ANY($2::text[])
+      OR e.payload->'saleAuthorization'->>'sellerAddress' = ANY($2::text[])
+      OR e.payload->'saleAuthorization'->>'buyerAddress' = ANY($2::text[]))`,
     `(
       e.kind NOT IN ('token-listings', 'token-listing')
       OR NOT EXISTS (
@@ -6944,6 +7101,7 @@ export async function proofIndexWalletTokenOverlayPayload(
     )`,
   ];
   const eventParams = [network, addressNeedles];
+  const walletAuthoritativeRowLimit = 500;
   if (scoped) {
     eventParams.push(scope);
     const scopeParam = `$${eventParams.length}`;
@@ -6960,7 +7118,10 @@ export async function proofIndexWalletTokenOverlayPayload(
     );
   }
   const eventWhere = eventConditions.join(" AND ");
-  const eventParamsWithLimit = [...eventParams, 500];
+  const eventParamsWithLimit = [
+    ...eventParams,
+    walletAuthoritativeRowLimit + 1,
+  ];
   const eventLimitParam = `$${eventParamsWithLimit.length}`;
   const eventResult = await pool.query(
     `
@@ -6998,6 +7159,7 @@ export async function proofIndexWalletTokenOverlayPayload(
           'token-listing-closed'
         )
       ORDER BY
+        CASE WHEN e.status = 'pending' THEN 0 ELSE 1 END ASC,
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC
@@ -7008,7 +7170,7 @@ export async function proofIndexWalletTokenOverlayPayload(
 
   const listingConditions = [
     "cl.network = $1",
-    "lower(cl.seller_address) = ANY($2::text[])",
+    "cl.seller_address = ANY($2::text[])",
     "cl.status IN ('active', 'sealing', 'pending')",
   ];
   const listingParams = [network, addressNeedles];
@@ -7019,6 +7181,11 @@ export async function proofIndexWalletTokenOverlayPayload(
       `(lower(cl.token_id) = ${scopeParam} OR lower(cd.ticker) = lower(${scopeParam}))`,
     );
   }
+  const listingParamsWithLimit = [
+    ...listingParams,
+    walletAuthoritativeRowLimit + 1,
+  ];
+  const listingLimitParam = `$${listingParamsWithLimit.length}`;
   const listingResult = await pool.query(
     `
       SELECT
@@ -7044,10 +7211,32 @@ export async function proofIndexWalletTokenOverlayPayload(
        AND cd.token_id = cl.token_id
       WHERE ${listingConditions.join(" AND ")}
       ORDER BY cl.updated_at DESC, cl.listing_id ASC
-      LIMIT 500
+      LIMIT ${listingLimitParam}
     `,
-    listingParams,
+    listingParamsWithLimit,
   );
+
+  if (
+    walletProjectionExceedsLimit(
+      eventResult.rows,
+      walletAuthoritativeRowLimit,
+      "pending",
+    )
+  ) {
+    throw new Error(
+      `Wallet token overlay exceeds the ${walletAuthoritativeRowLimit}-pending-event authoritative limit.`,
+    );
+  }
+  if (
+    walletProjectionExceedsLimit(
+      listingResult.rows,
+      walletAuthoritativeRowLimit,
+    )
+  ) {
+    throw new Error(
+      `Wallet token overlay exceeds the ${walletAuthoritativeRowLimit}-active-listing authoritative limit.`,
+    );
+  }
 
   const holders = holderResult.rows
     .map((row) => ({
@@ -7217,7 +7406,36 @@ export async function proofIndexWalletTokenOverlayPayload(
     }
   }
 
+  const tokenBearingItems = [
+    ...holders,
+    ...transfers,
+    ...sales,
+    ...listings,
+    ...closedListings,
+  ];
+  const [tokens, checkpoint] = await Promise.all([
+    proofIndexWalletTokenDefinitions(
+      pool,
+      network,
+      scope,
+      tokenBearingItems.map((item) => item?.tokenId),
+    ),
+    proofIndexWalletCheckpointMetadata(pool, network),
+  ]);
+  if (
+    !checkpoint ||
+    checkpoint.indexedThroughBlock !==
+      checkpointBeforeRead.indexedThroughBlock ||
+    checkpoint.indexedThroughBlockHash !==
+      checkpointBeforeRead.indexedThroughBlockHash
+  ) {
+    throw new Error(
+      "Wallet token overlay checkpoint changed during its scoped read.",
+    );
+  }
+
   const newestTime = [
+    checkpoint?.generatedAt,
     ...holderResult.rows.map((row) => row.updated_at),
     ...eventResult.rows.map(
       (row) => row.event_time ?? row.block_time ?? row.created_at,
@@ -7230,13 +7448,21 @@ export async function proofIndexWalletTokenOverlayPayload(
     .reduce((max, value) => Math.max(max, value), 0);
 
   return {
+    checkpointComplete: checkpoint?.checkpointComplete,
     holders,
     indexedAt: newestTime ? new Date(newestTime).toISOString() : undefined,
+    indexedThroughBlock: checkpoint?.indexedThroughBlock,
+    indexedThroughBlockHash: checkpoint?.indexedThroughBlockHash,
     invalidEvents,
     closedListings: closedListings.sort(compareTokenItemsByTime),
     listings: listings.sort(compareTokenItemsByTime),
+    network,
     sales: sales.sort(compareTokenItemsByTime),
+    snapshotId: checkpoint?.snapshotId,
     source: "proof-indexer-wallet-token-overlay",
+    sourceHashes: checkpoint?.sourceHashes,
+    tokenScope: scope,
+    tokens,
     transfers: transfers.sort(compareTokenItemsByTime),
   };
 }

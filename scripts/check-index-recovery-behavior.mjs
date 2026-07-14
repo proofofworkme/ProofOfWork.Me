@@ -858,7 +858,7 @@ check("token send preflight retries transient canonical reads only", async () =>
 
 check("fresh wallet token reads never fall back behind canonical coverage", async () => {
   let fallbackReads = 0;
-  let indexedWaitMs = 0;
+  let indexedReads = 0;
   const walletScopedTokenPayload = isolatedFunction(
     API_PATH,
     "walletScopedTokenPayload",
@@ -870,14 +870,15 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
         _network,
         _scope,
         _label,
-        timeoutMs,
+        _timeoutMs,
       ) => {
-        indexedWaitMs = timeoutMs;
+        indexedReads += 1;
         return null;
       },
       freshDataUnavailableError: (message) => new Error(message),
       normalizeTokenScope: (value) => value,
       proofIndexReadFeatureEnabled: () => true,
+      proofIndexWalletScopedTokenPayloadForRead: async () => null,
       tokenPayloadForRead: async () => {
         fallbackReads += 1;
         return {};
@@ -894,7 +895,7 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
     (error) => /still catching up/u.test(String(error?.message)),
   );
   assert.equal(fallbackReads, 0);
-  assert.equal(indexedWaitMs, 10_000);
+  assert.equal(indexedReads, 0);
 
   const currentWalletScopedTokenPayload = isolatedFunction(
     API_PATH,
@@ -903,15 +904,15 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
       BOND_TOKEN_IDS: new Set(),
       WALLET_SCOPED_INDEX_WAIT_MS: 10_000,
       WORK_TOKEN_ID: "work-token-id",
-      currentProofIndexTokenPayloadForRead: async () => ({
+      currentProofIndexTokenPayloadForRead: async () => {
+        throw new Error("fresh reads must not use an unbound global payload");
+      },
+      normalizeTokenScope: (value) => value,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexWalletScopedTokenPayloadForRead: async () => ({
         holders: [],
         tokens: [{ tokenId: "other-token-id" }],
       }),
-      normalizeTokenScope: (value) => value,
-      proofIndexReadFeatureEnabled: () => true,
-      tokenPayloadScopedToAddresses: (payload) => payload,
-      tokenPayloadWithIndexedWalletOverlay: async (payload) => payload,
-      tokenPayloadWithWalletActiveListings: async (payload) => payload,
     },
   );
   const current = await currentWalletScopedTokenPayload(
@@ -923,12 +924,48 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
   assert.equal(current.authoritativeWallet, true);
 });
 
+check("authoritative wallet projections reject truncated pending or listing sets", () => {
+  const walletProjectionExceedsLimit = isolatedFunction(
+    READER_PATH,
+    "walletProjectionExceedsLimit",
+    {
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  const pendingRows = Array.from({ length: 501 }, () => ({
+    status: "pending",
+  }));
+  assert.equal(walletProjectionExceedsLimit(pendingRows, 500, "pending"), true);
+  assert.equal(
+    walletProjectionExceedsLimit(
+      [...pendingRows.slice(0, 500), { status: "confirmed" }],
+      500,
+      "pending",
+    ),
+    false,
+  );
+  assert.equal(
+    walletProjectionExceedsLimit(Array.from({ length: 501 }, () => ({})), 500),
+    true,
+  );
+});
+
 check("token spendability deducts reservations and pending sends once", () => {
+  const tokenTransferSpendabilityKey = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenTransferSpendabilityKey",
+  );
+  const mergeTokenTransfersForSpendability = isolatedTypeScriptFunction(
+    APP_PATH,
+    "mergeTokenTransfersForSpendability",
+    { tokenTransferSpendabilityKey },
+  );
   const tokenSpendabilityForWallet = isolatedTypeScriptFunction(
     APP_PATH,
     "tokenSpendabilityForWallet",
     {
       mergeTokenListingsById: (current, incoming) => [...current, ...incoming],
+      mergeTokenTransfersForSpendability,
       tokenHolderMatchesDefinition: (holder, token) =>
         holder.tokenId === token.tokenId,
       tokenListingStateKey: (listing) => listing.listingId,
@@ -946,6 +983,11 @@ check("token spendability deducts reservations and pending sends once", () => {
     tokenId: token.tokenId,
     txid: "pending-send",
   };
+  const secondPendingTransfer = {
+    ...pendingTransfer,
+    amount: 2_000,
+    recipientAddress: "second-recipient",
+  };
   const result = tokenSpendabilityForWallet(
     "sender",
     token,
@@ -961,17 +1003,35 @@ check("token spendability deducts reservations and pending sends once", () => {
         },
       ],
       sales: [],
-      transfers: [pendingTransfer],
+      transfers: [pendingTransfer, secondPendingTransfer],
     },
     [],
     [],
-    [pendingTransfer],
+    [pendingTransfer, secondPendingTransfer],
     [],
   );
   assert.equal(result.confirmedBalance, 10_763);
   assert.equal(result.reservedBalance, 2_000);
-  assert.equal(result.pendingOutgoing, 1_000);
-  assert.equal(result.spendableBalance, 7_763);
+  assert.equal(result.pendingOutgoing, 3_000);
+  assert.equal(result.spendableBalance, 5_763);
+
+  const identicalRecipientResult = tokenSpendabilityForWallet(
+    "sender",
+    token,
+    {
+      closedListings: [],
+      holders: [{ address: "sender", balance: 10_000, tokenId: token.tokenId }],
+      listings: [],
+      sales: [],
+      transfers: [pendingTransfer, pendingTransfer],
+    },
+    [],
+    [],
+    [pendingTransfer, pendingTransfer],
+    [],
+  );
+  assert.equal(identicalRecipientResult.pendingOutgoing, 2_000);
+  assert.equal(identicalRecipientResult.spendableBalance, 8_000);
 
   const pendingCloseResult = tokenSpendabilityForWallet(
     "sender",
@@ -999,6 +1059,146 @@ check("token spendability deducts reservations and pending sends once", () => {
   );
   assert.equal(pendingCloseResult.reservedBalance, 8_000);
   assert.equal(pendingCloseResult.spendableBalance, 2_000);
+});
+
+check("clean scoped account lanes suppress stale WORK and bond positives", () => {
+  const tokenScopeMatchesToken = (
+    token,
+    tokenScope = "",
+  ) => {
+    const normalizedScope = String(tokenScope).trim();
+    return (
+      normalizedScope.length > 0 &&
+      (token.tokenId === normalizedScope ||
+        token.ticker === String(normalizedScope).trim().toUpperCase())
+    );
+  };
+  const mergeTokenWalletBalancesByToken = isolatedTypeScriptFunction(
+    APP_PATH,
+    "mergeTokenWalletBalancesByToken",
+    { normalizeTokenTicker: (value) => String(value).trim().toUpperCase() },
+  );
+  const accountTokenBalanceMatchesLane = isolatedTypeScriptFunction(
+    APP_PATH,
+    "accountTokenBalanceMatchesLane",
+    { tokenScopeMatchesToken },
+  );
+  const mergeAccountTokenWalletBalanceLanes = isolatedTypeScriptFunction(
+    APP_PATH,
+    "mergeAccountTokenWalletBalanceLanes",
+    { accountTokenBalanceMatchesLane, mergeTokenWalletBalancesByToken },
+  );
+  const balance = (tokenId, ticker, confirmedBalance) => ({
+    confirmedBalance,
+    pendingIncoming: 0,
+    pendingOutgoing: 0,
+    token: { ticker, tokenId },
+  });
+  const stale = [
+    balance("work-token-id", "WORK", 30),
+    balance("powb-token-id", "POWB", 20),
+    balance("incb-token-id", "INCB", 10),
+    balance("other-token-id", "OTHER", 5),
+  ];
+  const merged = mergeAccountTokenWalletBalanceLanes(stale, false, [
+    {
+      balances: [],
+      clean: true,
+      ticker: "WORK",
+      tokenId: "work-token-id",
+    },
+    {
+      balances: [],
+      clean: true,
+      ticker: "POWB",
+      tokenId: "powb-token-id",
+    },
+    {
+      balances: [],
+      clean: true,
+      ticker: "INCB",
+      tokenId: "incb-token-id",
+    },
+  ]);
+  assert.equal(
+    merged.map((item) => item.token.ticker).join(","),
+    "OTHER",
+  );
+  const cleanAllWithFailedScopedLane = mergeAccountTokenWalletBalanceLanes(
+    [balance("work-token-id", "WORK", 30)],
+    true,
+    [
+      {
+        balances: [balance("work-token-id", "WORK", 999)],
+        clean: false,
+        ticker: "WORK",
+        tokenId: "work-token-id",
+      },
+    ],
+  );
+  assert.equal(cleanAllWithFailedScopedLane[0].confirmedBalance, 30);
+
+  const accountTokenLaneForDefinition = isolatedTypeScriptFunction(
+    APP_PATH,
+    "accountTokenLaneForDefinition",
+    {
+      INCB_TOKEN_ID: "incb-token-id",
+      INCB_TOKEN_TICKER: "INCB",
+      POWB_TOKEN_ID: "powb-token-id",
+      POWB_TOKEN_TICKER: "POWB",
+      WORK_TOKEN_ID: "work-token-id",
+      WORK_TOKEN_TICKER: "WORK",
+      tokenScopeMatchesToken,
+    },
+  );
+  const accountTokenLaneHasCleanAuthority = isolatedTypeScriptFunction(
+    APP_PATH,
+    "accountTokenLaneHasCleanAuthority",
+    { accountTokenLaneForDefinition },
+  );
+  const statuses = {
+    all: { error: "", loaded: false, loading: false },
+    work: { error: "", loaded: true, loading: false },
+    powb: { error: "", loaded: true, loading: false },
+    incb: { error: "", loaded: true, loading: false },
+  };
+  assert.equal(
+    accountTokenLaneHasCleanAuthority(stale[0].token, statuses),
+    true,
+  );
+  assert.equal(
+    accountTokenLaneHasCleanAuthority(stale[1].token, statuses),
+    true,
+  );
+  assert.equal(
+    accountTokenLaneHasCleanAuthority(stale[2].token, statuses),
+    true,
+  );
+  assert.equal(
+    accountTokenLaneHasCleanAuthority(stale[3].token, statuses),
+    false,
+  );
+  assert.equal(
+    accountTokenLaneHasCleanAuthority(stale[0].token, {
+      ...statuses,
+      work: { error: "stale", loaded: true, loading: false },
+    }),
+    false,
+  );
+  assert.equal(
+    accountTokenLaneHasCleanAuthority(stale[3].token, {
+      ...statuses,
+      all: { error: "", loaded: true, loading: false },
+    }),
+    true,
+  );
+
+  const walletBalancesForConnection = isolatedTypeScriptFunction(
+    APP_PATH,
+    "walletBalancesForConnection",
+  );
+  assert.deepEqual(walletBalancesForConnection("connected", [], stale), []);
+  assert.deepEqual(walletBalancesForConnection("", [], stale), stale);
 });
 
 check("insufficient credit balance records exact attempted and available amounts", () => {
@@ -1148,11 +1348,11 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
   );
   assert.match(
     appSource,
-    /mergeTokenWalletBalancesByToken\(\s*accountTokenWalletBalances,\s*accountWorkWalletBalances/u,
+    /mergeAccountTokenWalletBalanceLanes\(\s*accountTokenWalletBalances/u,
   );
   assert.match(
     appSource,
-    /mergeTokenWalletBalancesByToken\([\s\S]*accountWorkWalletBalances[\s\S]*accountPowbWalletBalances/u,
+    /mergeAccountTokenWalletBalanceLanes\([\s\S]*accountWorkWalletBalances[\s\S]*accountPowbWalletBalances/u,
   );
   assert.match(appSource, /accountUtxoAvailability\(accountUtxos, reservedListingOutpoints\)/u);
   assert.match(appSource, /activeListingAnchorOutpointsForAddress\(idListings/u);
@@ -1183,6 +1383,7 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
 
 check("wallet token scope preserves holder definitions and indexed invalids", async () => {
   const address = "1SenderAddress";
+  const blockHash = "7".repeat(64);
   const tokenId = "4".repeat(64);
   const txid = "6".repeat(64);
   const valueSearchText = isolatedFunction(API_PATH, "valueSearchText");
@@ -1246,9 +1447,12 @@ check("wallet token scope preserves holder definitions and indexed invalids", as
       normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
       proofIndexReadFeatureEnabled: () => true,
       proofIndexWalletTokenOverlayPayload: async () => ({
+        checkpointComplete: true,
         closedListings: [],
         holders: [],
         indexedAt: "2026-07-13T00:00:00.000Z",
+        indexedThroughBlock: 957_935,
+        indexedThroughBlockHash: blockHash,
         invalidEvents: [
           {
             confirmed: true,
@@ -1261,10 +1465,14 @@ check("wallet token scope preserves holder definitions and indexed invalids", as
         ],
         listings: [],
         sales: [],
+        snapshotId: "wallet-overlay-checkpoint",
         source: "proof-indexer-wallet-token-overlay",
+        sourceHashes: { blockScan: blockHash },
         transfers: [],
       }),
       tokenStateWithPreservedListingRecords: (state) => state,
+      walletTokenOverlayMatchesPayloadCheckpoint: () => true,
+      walletTokenPayloadWithCanonicalDefinitions: (state) => state,
     },
   );
   const merged = await tokenPayloadWithIndexedWalletOverlay(
@@ -1289,6 +1497,426 @@ check("wallet token scope preserves holder definitions and indexed invalids", as
   assert.equal(merged.stats.invalidEvents, 1);
   assert.equal(merged.tokens.length, 1);
   assert.equal(merged.tokens[0].tokenId, tokenId);
+  assert.equal(merged.indexedThroughBlock, 957_935);
+  assert.equal(merged.indexedThroughBlockHash, blockHash);
+  assert.equal(merged.snapshotId, "wallet-overlay-checkpoint");
+});
+
+check("wallet index overlay binds every WORK and bond holder to a canonical definition", async () => {
+  const address = "1WalletDefinitionInvariant";
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const powbTokenId =
+    "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
+  const incbTokenId =
+    "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+  const blockHash = "7".repeat(64);
+  const objectRecord = (value) =>
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const rowNumber = (row, key) => Number(row?.[key] ?? 0);
+  const dateIso = (value) => new Date(value).toISOString();
+  const tokenDefinitionFromRow = isolatedFunction(
+    READER_PATH,
+    "tokenDefinitionFromRow",
+    { dateIso, objectRecord, rowNumber },
+  );
+  const proofIndexTokenDefinitionsByIds = isolatedFunction(
+    READER_PATH,
+    "proofIndexTokenDefinitionsByIds",
+    { tokenDefinitionFromRow },
+  );
+  const tokenStateScopeSql = isolatedFunction(
+    READER_PATH,
+    "tokenStateScopeSql",
+  );
+  const proofIndexTokenDefinitionsFromTables = isolatedFunction(
+    READER_PATH,
+    "proofIndexTokenDefinitionsFromTables",
+    { tokenDefinitionFromRow, tokenStateScopeSql },
+  );
+  const proofIndexWalletTokenDefinitions = isolatedFunction(
+    READER_PATH,
+    "proofIndexWalletTokenDefinitions",
+    {
+      proofIndexTokenDefinitionsByIds,
+      proofIndexTokenDefinitionsFromTables,
+    },
+  );
+  const proofIndexWalletCheckpointMetadata = isolatedFunction(
+    READER_PATH,
+    "proofIndexWalletCheckpointMetadata",
+    {
+      dateIso,
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      objectRecord,
+      rowNumber,
+    },
+  );
+  const definitions = [
+    {
+      confirmed: true,
+      create_txid: workTokenId,
+      created_height: 896_321,
+      creator_address: "work-creator",
+      max_supply: "21000000",
+      metadata: { createdAt: "2026-05-15T02:57:28.000Z" },
+      mint_amount: "1000",
+      mint_price_sats: "1000",
+      registry_address: "work-registry",
+      ticker: "WORK",
+      token_id: workTokenId,
+    },
+    {
+      confirmed: true,
+      create_txid: powbTokenId,
+      created_height: 903_001,
+      creator_address: "infinity-registry",
+      max_supply: String(Number.MAX_SAFE_INTEGER),
+      metadata: {
+        createdAt: "2026-06-23T00:00:00.000Z",
+        uncapped: true,
+      },
+      mint_amount: "1",
+      mint_price_sats: "1",
+      registry_address: "infinity-registry",
+      ticker: "POWB",
+      token_id: powbTokenId,
+    },
+    {
+      confirmed: true,
+      create_txid: incbTokenId,
+      created_height: 956_001,
+      creator_address: "inception-registry",
+      max_supply: String(Number.MAX_SAFE_INTEGER),
+      metadata: {
+        createdAt: "2026-07-10T00:00:00.000Z",
+        uncapped: true,
+      },
+      mint_amount: "1",
+      mint_price_sats: "1",
+      registry_address: "inception-registry",
+      ticker: "INCB",
+      token_id: incbTokenId,
+    },
+  ];
+  let definitionQuery = null;
+  let checkpointQueries = 0;
+  const pool = {
+    async query(sql, params) {
+      const text = String(sql);
+      if (text.includes("FROM proof_indexer.credit_balances cb")) {
+        return {
+          rows: definitions.map((definition, index) => ({
+            address,
+            confirmed_balance: String([3_654_060, 225_001, 1_000][index]),
+            pending_delta: "0",
+            registry_address: definition.registry_address,
+            ticker: definition.ticker,
+            token_id: definition.token_id,
+            updated_at: "2026-07-13T21:00:00.000Z",
+          })),
+        };
+      }
+      if (text.includes("wallet_definition_invalid_marker")) {
+        return { rows: [] };
+      }
+      if (text.includes("e.kind IN")) {
+        return { rows: [] };
+      }
+      if (text.includes("FROM proof_indexer.credit_listings cl")) {
+        return { rows: [] };
+      }
+      if (text.includes("FROM proof_indexer.credit_definitions")) {
+        if (text.includes("token_id = ANY")) {
+          definitionQuery = { params, text };
+          return { rows: definitions };
+        }
+        return {
+          rows: definitions.filter(
+            (definition) =>
+              !params[1] ||
+              definition.token_id === params[1] ||
+              definition.ticker.toLowerCase() === String(params[1]).toLowerCase(),
+          ),
+        };
+      }
+      if (text.includes("FROM proof_indexer.ledger_snapshots")) {
+        checkpointQueries += 1;
+        return {
+          rows: [{
+            consistency_complete: false,
+            generated_at: "2026-07-13T21:01:00.000Z",
+            indexed_through_block: 957_926,
+            indexed_through_block_hash: blockHash,
+            metrics_complete: false,
+            payload_complete: true,
+            snapshot_id: "wallet-checkpoint",
+            source_hashes: { blockScan: blockHash },
+          }],
+        };
+      }
+      assert.fail(`Unexpected wallet overlay query: ${text}`);
+    },
+  };
+  const proofIndexWalletTokenOverlayPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexWalletTokenOverlayPayload",
+    {
+      activeTokenListingHistoryItem: () => false,
+      canonicalEventPayload: (payload) => payload ?? {},
+      compareTokenItemsByTime: () => 0,
+      dateIso,
+      normalizeEventPayload: (payload) => payload,
+      objectRecord,
+      proofIndexPool: () => pool,
+      proofIndexWalletTokenDefinitions,
+      proofIndexWalletCheckpointMetadata,
+      rowNumber,
+      tokenClosedListingFromEventPayload: () => ({}),
+      tokenInvalidEventFromRow: (row) => row,
+      tokenInvalidEventQueryParts: () => ({
+        fromSql: "FROM proof_indexer.events e WHERE e.network = $1",
+        params: ["livenet"],
+      }),
+      tokenInvalidEventSelectSql: () =>
+        "'wallet_definition_invalid_marker' AS wallet_definition_invalid_marker",
+      tokenListingEffectiveCloseTxid: () => "",
+      tokenListingEffectiveSaleTicketTxid: () => "",
+      tokenListingFromEventPayload: () => ({}),
+      tokenSaleFromEventPayload: () => ({}),
+      tokenScopeKey: (value) => String(value ?? "").trim().toLowerCase(),
+      tokenTransferFromEventPayload: () => ({}),
+      validTxid: () => false,
+      walletProjectionExceedsLimit: () => false,
+    },
+  );
+
+  const overlay = await proofIndexWalletTokenOverlayPayload(
+    "livenet",
+    "all",
+    [address],
+  );
+  const definedById = new Map(
+    overlay.tokens.map((token) => [token.tokenId, token]),
+  );
+  assert.equal(overlay.holders.length, 3);
+  assert.equal(overlay.tokens.length, 3);
+  for (const holder of overlay.holders) {
+    assert.ok(
+      definedById.has(holder.tokenId),
+      `${holder.ticker} holder is missing its canonical definition`,
+    );
+    assert.equal(definedById.get(holder.tokenId).ticker, holder.ticker);
+  }
+  assert.equal(definedById.get(workTokenId).maxSupply, 21_000_000);
+  assert.equal(definedById.get(powbTokenId).uncapped, true);
+  assert.equal(definedById.get(incbTokenId).uncapped, true);
+  assert.match(definitionQuery.text, /token_id = ANY\(\$2::text\[\]\)/u);
+  assert.deepEqual(
+    [...definitionQuery.params[1]].sort(),
+    [workTokenId, powbTokenId, incbTokenId].sort(),
+  );
+  assert.equal(overlay.checkpointComplete, true);
+  assert.equal(overlay.indexedThroughBlock, 957_926);
+  assert.equal(overlay.indexedThroughBlockHash, blockHash);
+  assert.equal(checkpointQueries, 2);
+  const zeroBalanceScopedDefinitions = await proofIndexWalletTokenDefinitions(
+    pool,
+    "livenet",
+    incbTokenId,
+    [],
+  );
+  assert.equal(
+    JSON.stringify(
+      zeroBalanceScopedDefinitions.map((token) => [token.tokenId, token.ticker]),
+    ),
+    JSON.stringify([[incbTokenId, "INCB"]]),
+  );
+  assert.equal(overlay.network, "livenet");
+  assert.equal(overlay.snapshotId, "wallet-checkpoint");
+  assert.equal(overlay.sourceHashes.blockScan, blockHash);
+  assert.equal(overlay.tokenScope, "all");
+});
+
+check("wallet scoped token payload deduplicates lifecycle rows before reserving balances", () => {
+  const mergeTokenStateItemsByKey = (baseItems, overlayItems, keyForItem) => {
+    const byKey = new Map();
+    for (const item of [...baseItems, ...overlayItems]) {
+      const key = keyForItem(item);
+      if (key) {
+        byKey.set(key, item);
+      }
+    }
+    return [...byKey.values()];
+  };
+  const walletScopedTokenPayloadFromOverlay = isolatedFunction(
+    API_PATH,
+    "walletScopedTokenPayloadFromOverlay",
+    {
+      mergeTokenStateItemsByKey,
+      mergedSourceLabel: (...values) => values.filter(Boolean).join("+"),
+      normalizeTokenScope: (value) => String(value ?? "").trim().toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+      tokenClosedListingItemKey: (item) =>
+        `${item.network}:${item.listingId}:${item.closedTxid}`,
+      tokenListingItemKey: (item) => `${item.network}:${item.listingId}`,
+      tokenSaleItemKey: (item) => item.txid,
+      walletTokenPayloadWithCanonicalDefinitions: (payload) => payload,
+    },
+  );
+  const payload = walletScopedTokenPayloadFromOverlay(
+    {
+      closedListings: [
+        {
+          closedTxid: "close-1",
+          confirmed: true,
+          listingId: "listing-1",
+          network: "livenet",
+        },
+        {
+          closedTxid: "close-1",
+          confirmed: true,
+          listingId: "listing-1",
+          network: "livenet",
+        },
+      ],
+      holders: [],
+      invalidEvents: [],
+      listings: [
+        {
+          amount: 5_000,
+          confirmed: true,
+          listingId: "listing-2",
+          network: "livenet",
+          status: "event",
+        },
+        {
+          amount: 5_000,
+          confirmed: true,
+          listingId: "listing-2",
+          network: "livenet",
+          status: "active",
+        },
+      ],
+      sales: [
+        { confirmed: true, network: "livenet", txid: "sale-1" },
+        { confirmed: true, network: "livenet", txid: "sale-1" },
+      ],
+      source: "proof-indexer-wallet-token-overlay",
+      tokens: [],
+      transfers: [],
+    },
+    "livenet",
+    "all",
+  );
+
+  assert.equal(payload.listings.length, 1);
+  assert.equal(payload.listings[0].amount, 5_000);
+  assert.equal(payload.listings[0].status, "active");
+  assert.equal(payload.closedListings.length, 1);
+  assert.equal(payload.sales.length, 1);
+  assert.equal(payload.stats.confirmedListings, 1);
+  assert.equal(payload.stats.confirmedSales, 1);
+});
+
+check("wallet overlays cannot cross canonical checkpoints", () => {
+  const walletTokenOverlayMatchesPayloadCheckpoint = isolatedFunction(
+    API_PATH,
+    "walletTokenOverlayMatchesPayloadCheckpoint",
+    {
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock),
+      walletTokenOverlayHasExactCheckpoint: () => true,
+    },
+  );
+  const blockHash = "8".repeat(64);
+  const overlay = {
+    indexedThroughBlock: 957_935,
+    indexedThroughBlockHash: blockHash,
+  };
+  assert.equal(
+    walletTokenOverlayMatchesPayloadCheckpoint(
+      { indexedThroughBlock: 957_935, indexedThroughBlockHash: blockHash },
+      overlay,
+    ),
+    true,
+  );
+  assert.equal(
+    walletTokenOverlayMatchesPayloadCheckpoint(
+      { indexedThroughBlock: 957_934, indexedThroughBlockHash: blockHash },
+      overlay,
+    ),
+    false,
+  );
+  assert.equal(
+    walletTokenOverlayMatchesPayloadCheckpoint(
+      {
+        indexedThroughBlock: 957_935,
+        indexedThroughBlockHash: "9".repeat(64),
+      },
+      overlay,
+    ),
+    false,
+  );
+  assert.equal(
+    walletTokenOverlayMatchesPayloadCheckpoint(
+      { indexedThroughBlockHash: blockHash },
+      overlay,
+    ),
+    false,
+  );
+  assert.equal(
+    walletTokenOverlayMatchesPayloadCheckpoint(
+      { indexedThroughBlock: 957_935 },
+      overlay,
+    ),
+    false,
+  );
+});
+
+check("fresh wallet overlays must match the exact canonical tip", () => {
+  const walletTokenOverlayMatchesCanonicalGate = isolatedFunction(
+    API_PATH,
+    "walletTokenOverlayMatchesCanonicalGate",
+    { walletTokenOverlayHasExactCheckpoint: () => true },
+  );
+  const blockHash = "8".repeat(64);
+  const overlay = {
+    indexedThroughBlock: 957_935,
+    indexedThroughBlockHash: blockHash,
+  };
+  const exactGate = {
+    canonicalHash: blockHash,
+    indexedThroughBlock: 957_935,
+    ready: true,
+    storedHash: blockHash,
+    tipHeight: 957_935,
+  };
+  assert.equal(
+    walletTokenOverlayMatchesCanonicalGate(overlay, exactGate),
+    true,
+  );
+  assert.equal(
+    walletTokenOverlayMatchesCanonicalGate(overlay, {
+      ...exactGate,
+      ready: false,
+    }),
+    false,
+  );
+  assert.equal(
+    walletTokenOverlayMatchesCanonicalGate(overlay, {
+      ...exactGate,
+      canonicalHash: "9".repeat(64),
+    }),
+    false,
+  );
+  assert.equal(
+    walletTokenOverlayMatchesCanonicalGate(overlay, {
+      ...exactGate,
+      tipHeight: 957_936,
+    }),
+    false,
+  );
 });
 
 check("confirmed invalid credit events remain visible without becoming valid", async () => {
@@ -6557,6 +7185,10 @@ check("health address checks use bounded Electrum balance responses", async () =
         calls.push({ method, params });
         return balance;
       },
+      interactiveElectrumRequest: async (method, params) => {
+        calls.push({ method, params });
+        return balance;
+      },
       errorSummary: (error) => String(error?.message ?? error),
       firstPartyAddressReadBases: () => [],
       promiseOutcomeWithin: async (promise) => {
@@ -6626,6 +7258,10 @@ check("Electrum health proves the exact sampled Core block header", async () => 
         },
       },
       electrumRequest: async (method, params) => {
+        calls.push({ method, params });
+        return headerResponse;
+      },
+      interactiveElectrumRequest: async (method, params) => {
         calls.push({ method, params });
         return headerResponse;
       },

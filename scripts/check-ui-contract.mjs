@@ -286,12 +286,32 @@ expect(
     /fetchTokenState\(\s*network,\s*false,\s*WORK_TOKEN_ID,\s*false,\s*\[address\],\s*true,?\s*\)/.test(
       app,
     ) &&
-    /fetchTokenState\(\s*network,\s*false,\s*POWB_TOKEN_ID,\s*true,\s*\[address\],\s*true\s*\)/.test(
+    /fetchTokenState\(\s*network,\s*false,\s*POWB_TOKEN_ID,\s*true,\s*\[address\],\s*true,?\s*\)/.test(
       app,
     ) &&
-    /fetchTokenState\(\s*network,\s*false,\s*INCB_TOKEN_ID,\s*true,\s*\[address\],\s*true\s*\)/.test(
+    /fetchTokenState\(\s*network,\s*false,\s*INCB_TOKEN_ID,\s*true,\s*\[address\],\s*true,?\s*\)/.test(
       app,
     ),
+);
+expect(
+  "wallet balance lanes commit independently and preserve per-lane last-good data",
+  /const loadAccountTokenLane = \([\s\S]*\[lane\]: \{ \.\.\.current\[lane\], loading: true \}[\s\S]*void load\(\)[\s\S]*commit\(state\)[\s\S]*\[lane\]: \{ error: "", loaded: true, loading: false \}[\s\S]*\.catch\(\(error\)[\s\S]*\.\.\.current\[lane\][\s\S]*loading: false/.test(
+    app,
+  ) &&
+    /loadAccountTokenLane\(\s*"all"[\s\S]*setAccountTokenState/.test(app) &&
+    /loadAccountTokenLane\(\s*"work"[\s\S]*setAccountWorkTokenState/.test(
+      app,
+    ) &&
+    /loadAccountTokenLane\(\s*"powb"[\s\S]*setAccountPowbTokenState/.test(
+      app,
+    ) &&
+    /loadAccountTokenLane\(\s*"incb"[\s\S]*setAccountIncbTokenState/.test(
+      app,
+    ) &&
+    !/void Promise\.all\(\[\s*fetchTokenState\(network, false, "", true, \[address\], true\)/.test(
+      app,
+    ) &&
+    /Last verified balances remain visible\./.test(app),
 );
 expect(
   "mail WORK attachments use allowlisted canonical senders",
@@ -309,9 +329,116 @@ expect(
     /const composeAccountWorkWalletBalance = useMemo[\s\S]*const scopedAccountBalances = tokenWalletBalancesFor[\s\S]*const routeBalances = tokenWalletBalancesFor[\s\S]*bestKnownTokenWalletBalance/.test(
       app,
     ) &&
+    /const accountWorkListings = accountWorkTokenLaneClean[\s\S]*accountWorkTokenState\.listings[\s\S]*accountAllTokenLaneClean[\s\S]*accountTokenState\.listings/.test(
+      app,
+    ) &&
     /const workAttachmentVisible =[\s\S]*workAttachmentSpendableBalance > 0/.test(
       app,
     ),
+);
+expect(
+  "clean zero WORK lanes cannot fall through to stale route balances",
+  /if \(accountWorkTokenLaneClean\) \{\s*return scopedAccountBalance;\s*\}[\s\S]*if \(accountAllTokenLaneClean\) \{\s*return globalAccountBalance;\s*\}[\s\S]*return bestKnownTokenWalletBalance/.test(
+    app,
+  ) &&
+    !/accountWorkTokenLaneClean && scopedAccountBalance/.test(app) &&
+    !/accountAllTokenLaneClean && globalAccountBalance/.test(app) &&
+    /composeAccountWorkWalletBalance\?\.confirmedBalance \?\? 0/.test(app),
+);
+expect(
+  "clean scoped account lanes suppress stale zero WORK and bond balances",
+  /function mergeAccountTokenWalletBalanceLanes\([\s\S]*allLaneClean: boolean[\s\S]*if \(lane\.clean\)[\s\S]*merged\.filter[\s\S]*else if \(allLaneClean\)[\s\S]*mergeTokenWalletBalancesByToken/.test(
+    app,
+  ) &&
+    /mergeAccountTokenWalletBalanceLanes\([\s\S]*accountTokenWalletBalances,[\s\S]*accountAllTokenLaneClean,[\s\S]*accountWorkTokenLaneClean[\s\S]*accountPowbTokenLaneClean[\s\S]*accountIncbTokenLaneClean/.test(
+      app,
+    ) &&
+    /function accountTokenLaneHasCleanAuthority\([\s\S]*statuses\.all\.loaded[\s\S]*statuses\[lane\]\.loaded/.test(
+      app,
+    ) &&
+    /const confirmedCreditBalances = mergeTokenWalletBalancesByToken\([\s\S]*routeCreditBalances,[\s\S]*accountCreditBalances/.test(
+      app,
+    ) &&
+    /const connectedBondWalletBalances = mergeTokenWalletBalancesByToken\([\s\S]*routeBondBalances,[\s\S]*accountBondBalances/.test(
+      app,
+    ) &&
+    !/accountCreditBalances\.length > 0\s*\?/.test(app) &&
+    !/accountBondBalances\.length > 0\s*\?/.test(app),
+);
+expect(
+  "connected wallet consumers never resurrect clean canonical zero balances",
+  /function walletBalancesForConnection\([\s\S]*return address \? accountBalances : routeBalances/.test(
+    app,
+  ) &&
+    /const accountActiveBondWalletBalances = useMemo\([\s\S]*accountWalletBalances\.filter[\s\S]*activeBondConfig\.tokenId[\s\S]*const activeBondWalletBalances = walletBalancesForConnection\([\s\S]*accountActiveBondWalletBalances,[\s\S]*routeActiveBondWalletBalances/.test(
+      app,
+    ) &&
+    /const walletTransferBalances = walletBalancesForConnection\([\s\S]*address,[\s\S]*accountWalletBalances,[\s\S]*tokenWalletBalances/.test(
+      app,
+    ) &&
+    /const walletOperationBalances = bondWorkspaceActive[\s\S]*activeBondWalletBalances[\s\S]*walletTransferBalances/.test(
+      app,
+    ) &&
+    /const accountActiveBondTokenDefinition =[\s\S]*accountActiveBondWalletBalances\[0\]\?\.token[\s\S]*accountIncbTokenState\.tokens[\s\S]*accountPowbTokenState\.tokens[\s\S]*accountTokenState\.tokens\.find/.test(
+      app,
+    ) &&
+    /const activeBondTokenDefinition =[\s\S]*accountActiveBondTokenDefinition \?\? activeBondTokenDefinitions\[0\]/.test(
+      app,
+    ) &&
+    /const walletTransferToken = bondWorkspaceActive[\s\S]*\? activeBondTokenDefinition/.test(
+      app,
+    ) &&
+    /const walletTransferBalance =[\s\S]*walletOperationBalances\.find[\s\S]*const walletPendingTokenBalance =[\s\S]*walletOperationBalances\.find/.test(
+      app,
+    ) &&
+    /Math\.floor\(tokenTransferAmount\) <= walletSpendableTokenBalance/.test(
+      app,
+    ) &&
+    /if \(walletTransferBalances\.length === 0\)[\s\S]*walletTransferBalances\.some[\s\S]*setTokenTransferTokenId\(walletTransferBalances\[0\]\.token\.tokenId\)/.test(
+      app,
+    ) &&
+    /const walletBalanceCountLoaded = address[\s\S]*accountTokenLaneStatuses\.all\.loaded[\s\S]*activeTokenStateLoaded/.test(
+      app,
+    ) &&
+    /\{walletBalanceCountLoaded[\s\S]*walletTransferBalances\.length\.toLocaleString\(\)/.test(
+      app,
+    ) &&
+    !/\? tokenWalletBalances\.length\.toLocaleString\(\)/.test(app),
+);
+expect(
+  "pending WORK preflight preserves multi-recipient transfer multiplicity",
+  /function tokenTransferSpendabilityKey\(transfer:[\s\S]*transfer\.txid[\s\S]*transfer\.tokenId[\s\S]*transfer\.senderAddress[\s\S]*transfer\.recipientAddress[\s\S]*transfer\.amount/.test(
+    app,
+  ) &&
+    /function mergeTokenTransfersForSpendability\([\s\S]*groupedSources[\s\S]*confirmedSource[\s\S]*pendingSource[\s\S]*merged\.push/.test(
+      app,
+    ) &&
+    /const pendingDirectTransfers = mergeTokenTransfersForSpendability\([\s\S]*state\.transfers,[\s\S]*localTransfers[\s\S]*transfer\.tokenId === token\.tokenId/.test(
+      app,
+    ) &&
+    !/const transfersByTxid = new Map/.test(app),
+);
+expect(
+  "approved bond WORK attachment stays visible while balance verification is pending",
+  /const bondWorkAttachmentVisible = workAttachmentAllowed;/.test(app) &&
+    /const bondWorkBalanceHasCleanLane =[\s\S]*accountWorkTokenLaneClean \|\| accountAllTokenLaneClean/.test(
+      app,
+    ) &&
+    /const bondWorkBalanceLoaded =[\s\S]*accountTokenLaneStatuses\.work\.loaded \|\|[\s\S]*accountTokenLaneStatuses\.all\.loaded/.test(
+      app,
+    ) &&
+    /const bondWorkBalanceError = bondWorkBalanceHasCleanLane[\s\S]*\? ""[\s\S]*accountTokenLaneStatuses\.work\.error \|\|[\s\S]*accountTokenLaneStatuses\.all\.error/.test(
+      app,
+    ) &&
+    /const bondWorkAttachmentBalanceOk =[\s\S]*!bondWorkBalanceLoaded[\s\S]*Boolean\(bondWorkBalanceError\)/.test(
+      app,
+    ) &&
+    /max=\{[\s\S]*bondWorkBalanceLoaded && !bondWorkBalanceError[\s\S]*: undefined/.test(
+      app,
+    ) &&
+    /Loading the confirmed WORK balance\./.test(app) &&
+    /The WORK balance preview is temporarily unavailable\./.test(app) &&
+    /A fresh spendability check runs before signing\./.test(app),
 );
 expect(
   "WORK attachment sends retry canonical preflight without stale fallback",

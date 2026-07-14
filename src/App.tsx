@@ -773,6 +773,42 @@ type PowTokenState = {
   tokens: PowTokenDefinition[];
 };
 
+type AccountTokenLane = "all" | "work" | "powb" | "incb";
+
+type AccountTokenLaneStatus = {
+  error: string;
+  loaded: boolean;
+  loading: boolean;
+};
+
+type AccountTokenLaneStatuses = Record<
+  AccountTokenLane,
+  AccountTokenLaneStatus
+>;
+
+type AccountTokenBalanceLane = {
+  balances: PowTokenWalletBalance[];
+  clean: boolean;
+  ticker: string;
+  tokenId: string;
+};
+
+const ACCOUNT_TOKEN_LANE_LABELS: Record<AccountTokenLane, string> = {
+  all: "all credits",
+  work: "WORK",
+  powb: "POWB",
+  incb: "INCB",
+};
+
+function emptyAccountTokenLaneStatuses(): AccountTokenLaneStatuses {
+  return {
+    all: { error: "", loaded: false, loading: false },
+    work: { error: "", loaded: false, loading: false },
+    powb: { error: "", loaded: false, loading: false },
+    incb: { error: "", loaded: false, loading: false },
+  };
+}
+
 type PowTokenSupplyState = Pick<
   PowTokenState,
   "creationSats" | "confirmedSupply" | "pendingSupply" | "tokens"
@@ -7638,6 +7674,79 @@ function mergeTokenWalletBalancesByToken(
   );
 }
 
+function accountTokenBalanceMatchesLane(
+  balance: PowTokenWalletBalance,
+  lane: Pick<AccountTokenBalanceLane, "ticker" | "tokenId">,
+) {
+  return (
+    tokenScopeMatchesToken(balance.token, lane.tokenId) ||
+    tokenScopeMatchesToken(balance.token, lane.ticker)
+  );
+}
+
+function mergeAccountTokenWalletBalanceLanes(
+  allBalances: PowTokenWalletBalance[],
+  allLaneClean: boolean,
+  scopedLanes: AccountTokenBalanceLane[],
+) {
+  let merged = allBalances;
+  for (const lane of scopedLanes) {
+    const laneBalances = lane.balances.filter((balance) =>
+      accountTokenBalanceMatchesLane(balance, lane),
+    );
+    if (lane.clean) {
+      merged = merged.filter(
+        (balance) => !accountTokenBalanceMatchesLane(balance, lane),
+      );
+    } else if (allLaneClean) {
+      continue;
+    }
+    merged = mergeTokenWalletBalancesByToken(merged, laneBalances);
+  }
+  return merged;
+}
+
+function walletBalancesForConnection(
+  address: string,
+  accountBalances: PowTokenWalletBalance[],
+  routeBalances: PowTokenWalletBalance[],
+) {
+  return address ? accountBalances : routeBalances;
+}
+
+function accountTokenLaneForDefinition(token: PowTokenDefinition) {
+  if (
+    tokenScopeMatchesToken(token, WORK_TOKEN_ID) ||
+    tokenScopeMatchesToken(token, WORK_TOKEN_TICKER)
+  ) {
+    return "work" as const;
+  }
+  if (
+    tokenScopeMatchesToken(token, POWB_TOKEN_ID) ||
+    tokenScopeMatchesToken(token, POWB_TOKEN_TICKER)
+  ) {
+    return "powb" as const;
+  }
+  if (
+    tokenScopeMatchesToken(token, INCB_TOKEN_ID) ||
+    tokenScopeMatchesToken(token, INCB_TOKEN_TICKER)
+  ) {
+    return "incb" as const;
+  }
+  return null;
+}
+
+function accountTokenLaneHasCleanAuthority(
+  token: PowTokenDefinition,
+  statuses: AccountTokenLaneStatuses,
+) {
+  if (statuses.all.loaded && !statuses.all.error) {
+    return true;
+  }
+  const lane = accountTokenLaneForDefinition(token);
+  return Boolean(lane && statuses[lane].loaded && !statuses[lane].error);
+}
+
 function bestKnownTokenWalletBalance(
   tokenId: string,
   ticker: string,
@@ -7679,6 +7788,58 @@ function tokenReservedBalanceFor(
         : total,
     0,
   );
+}
+
+function tokenTransferSpendabilityKey(transfer: PowTokenTransfer) {
+  const txid = String(transfer.txid ?? "").trim().toLowerCase();
+  const tokenId = String(transfer.tokenId ?? "").trim().toLowerCase();
+  const senderAddress = String(transfer.senderAddress ?? "")
+    .trim()
+    .toLowerCase();
+  const recipientAddress = String(transfer.recipientAddress ?? "")
+    .trim()
+    .toLowerCase();
+  const amount = Number(transfer.amount);
+  return txid && tokenId && Number.isSafeInteger(amount) && amount > 0
+    ? `${txid}:${tokenId}:${senderAddress}:${recipientAddress}:${amount}`
+    : "";
+}
+
+function mergeTokenTransfersForSpendability(
+  indexedTransfers: PowTokenTransfer[],
+  localTransfers: PowTokenTransfer[],
+) {
+  const groupedSources = [indexedTransfers, localTransfers].map((transfers) => {
+    const grouped = new Map<string, PowTokenTransfer[]>();
+    for (const transfer of transfers) {
+      const key = tokenTransferSpendabilityKey(transfer);
+      if (!key) {
+        continue;
+      }
+      grouped.set(key, [...(grouped.get(key) ?? []), transfer]);
+    }
+    return grouped;
+  });
+  const keys = new Set(groupedSources.flatMap((grouped) => [...grouped.keys()]));
+  const merged: PowTokenTransfer[] = [];
+  for (const key of keys) {
+    const candidates = groupedSources.map((grouped) => grouped.get(key) ?? []);
+    const confirmedCandidates = candidates.map((items) =>
+      items.filter((transfer) => transfer.confirmed),
+    );
+    const confirmedSource = confirmedCandidates.reduce((best, items) =>
+      items.length > best.length ? items : best,
+    );
+    if (confirmedSource.length > 0) {
+      merged.push(...confirmedSource);
+      continue;
+    }
+    const pendingSource = candidates.reduce((best, items) =>
+      items.length > best.length ? items : best,
+    );
+    merged.push(...pendingSource);
+  }
+  return merged;
 }
 
 function tokenSpendabilityForWallet(
@@ -7755,19 +7916,13 @@ function tokenSpendabilityForWallet(
       .map((listing) => listing.listingId),
   );
 
-  const transfersByTxid = new Map<string, PowTokenTransfer>();
-  for (const transfer of [...state.transfers, ...localTransfers]) {
-    if (transfer.tokenId !== token.tokenId || !transfer.txid) {
-      continue;
-    }
-    const current = transfersByTxid.get(transfer.txid);
-    if (!current || transfer.confirmed || !current.confirmed) {
-      transfersByTxid.set(transfer.txid, transfer);
-    }
-  }
-  const pendingDirectTransfers = [...transfersByTxid.values()]
+  const pendingDirectTransfers = mergeTokenTransfersForSpendability(
+    state.transfers,
+    localTransfers,
+  )
     .filter(
       (transfer) =>
+        transfer.tokenId === token.tokenId &&
         !transfer.confirmed &&
         transfer.senderAddress.trim().toLowerCase() === normalizedWalletAddress,
     )
@@ -14354,8 +14509,8 @@ export default function App() {
     useState<PowTokenState>(() => emptyTokenState());
   const [accountIncbTokenState, setAccountIncbTokenState] =
     useState<PowTokenState>(() => emptyTokenState());
-  const [accountTokensLoaded, setAccountTokensLoaded] = useState(false);
-  const [accountTokensError, setAccountTokensError] = useState("");
+  const [accountTokenLaneStatuses, setAccountTokenLaneStatuses] =
+    useState<AccountTokenLaneStatuses>(() => emptyAccountTokenLaneStatuses());
   const [refreshing, setRefreshing] = useState(false);
   const [checkingBroadcasts, setCheckingBroadcasts] = useState(false);
   const allSentRef = useRef(allSent);
@@ -14854,6 +15009,18 @@ export default function App() {
     Number.isFinite(messageWorkAmount) && messageWorkAmount > 0
       ? Math.floor(messageWorkAmount)
       : 0;
+  const accountWorkTokenLaneClean =
+    accountTokenLaneStatuses.work.loaded &&
+    !accountTokenLaneStatuses.work.error;
+  const accountAllTokenLaneClean =
+    accountTokenLaneStatuses.all.loaded &&
+    !accountTokenLaneStatuses.all.error;
+  const accountPowbTokenLaneClean =
+    accountTokenLaneStatuses.powb.loaded &&
+    !accountTokenLaneStatuses.powb.error;
+  const accountIncbTokenLaneClean =
+    accountTokenLaneStatuses.incb.loaded &&
+    !accountTokenLaneStatuses.incb.error;
   const composeAccountWorkWalletBalance = useMemo(() => {
     const globalAccountBalances = tokenWalletBalancesFor(
       address,
@@ -14884,6 +15051,22 @@ export default function App() {
       tokenSales,
       tokenHolders,
     );
+    const scopedAccountBalance = bestKnownTokenWalletBalance(
+      WORK_TOKEN_ID,
+      WORK_TOKEN_TICKER,
+      scopedAccountBalances,
+    );
+    const globalAccountBalance = bestKnownTokenWalletBalance(
+      WORK_TOKEN_ID,
+      WORK_TOKEN_TICKER,
+      globalAccountBalances,
+    );
+    if (accountWorkTokenLaneClean) {
+      return scopedAccountBalance;
+    }
+    if (accountAllTokenLaneClean) {
+      return globalAccountBalance;
+    }
     return bestKnownTokenWalletBalance(
       WORK_TOKEN_ID,
       WORK_TOKEN_TICKER,
@@ -14892,7 +15075,9 @@ export default function App() {
       routeBalances,
     );
   }, [
+    accountAllTokenLaneClean,
     accountTokenState,
+    accountWorkTokenLaneClean,
     accountWorkTokenState,
     address,
     tokenDefinitions,
@@ -14901,12 +15086,17 @@ export default function App() {
     tokenSales,
     tokenTransfers,
   ]);
+  const accountWorkListings = accountWorkTokenLaneClean
+    ? accountWorkTokenState.listings
+    : accountAllTokenLaneClean
+      ? accountTokenState.listings
+      : accountWorkTokenState.listings.length > 0
+        ? accountWorkTokenState.listings
+        : accountTokenState.listings.length > 0
+          ? accountTokenState.listings
+          : tokenListings;
   const accountWorkReservedBalance = tokenReservedBalanceFor(
-    accountWorkTokenState.listings.length > 0
-      ? accountWorkTokenState.listings
-      : accountTokenState.listings.length > 0
-        ? accountTokenState.listings
-        : tokenListings,
+    accountWorkListings,
     WORK_TOKEN_ID,
     address,
   );
@@ -14915,6 +15105,19 @@ export default function App() {
     (composeAccountWorkWalletBalance?.confirmedBalance ?? 0) -
       accountWorkReservedBalance,
   );
+  const bondWorkBalanceHasCleanLane =
+    accountWorkTokenLaneClean || accountAllTokenLaneClean;
+  const bondWorkBalanceLoaded =
+    accountTokenLaneStatuses.work.loaded ||
+    accountTokenLaneStatuses.all.loaded;
+  const bondWorkBalanceLoading =
+    !bondWorkBalanceHasCleanLane &&
+    (accountTokenLaneStatuses.work.loading ||
+      accountTokenLaneStatuses.all.loading);
+  const bondWorkBalanceError = bondWorkBalanceHasCleanLane
+    ? ""
+    : accountTokenLaneStatuses.work.error ||
+      accountTokenLaneStatuses.all.error;
   const workAttachmentAllowed = canAttachWorkToMessages(address, network);
   const workAttachmentVisible =
     workAttachmentAllowed &&
@@ -15492,20 +15695,38 @@ export default function App() {
   );
   const accountWalletBalances = useMemo(
     () =>
-      mergeTokenWalletBalancesByToken(
-        mergeTokenWalletBalancesByToken(
-          mergeTokenWalletBalancesByToken(
-            accountTokenWalletBalances,
-            accountWorkWalletBalances,
-          ),
-          accountPowbWalletBalances,
-        ),
-        accountIncbWalletBalances,
+      mergeAccountTokenWalletBalanceLanes(
+        accountTokenWalletBalances,
+        accountAllTokenLaneClean,
+        [
+          {
+            balances: accountWorkWalletBalances,
+            clean: accountWorkTokenLaneClean,
+            ticker: WORK_TOKEN_TICKER,
+            tokenId: WORK_TOKEN_ID,
+          },
+          {
+            balances: accountPowbWalletBalances,
+            clean: accountPowbTokenLaneClean,
+            ticker: POWB_TOKEN_TICKER,
+            tokenId: POWB_TOKEN_ID,
+          },
+          {
+            balances: accountIncbWalletBalances,
+            clean: accountIncbTokenLaneClean,
+            ticker: INCB_TOKEN_TICKER,
+            tokenId: INCB_TOKEN_ID,
+          },
+        ],
       ),
     [
+      accountAllTokenLaneClean,
+      accountIncbTokenLaneClean,
       accountIncbWalletBalances,
+      accountPowbTokenLaneClean,
       accountPowbWalletBalances,
       accountTokenWalletBalances,
+      accountWorkTokenLaneClean,
       accountWorkWalletBalances,
     ],
   );
@@ -15533,7 +15754,7 @@ export default function App() {
       ),
     [activeBondConfig.tokenId, orderedTokenDefinitions],
   );
-  const activeBondWalletBalances = useMemo(
+  const routeActiveBondWalletBalances = useMemo(
     () =>
       tokenWalletBalancesFor(
         address,
@@ -15552,7 +15773,29 @@ export default function App() {
       tokenTransfers,
     ],
   );
-  const activeBondTokenDefinition = activeBondTokenDefinitions[0];
+  const accountActiveBondWalletBalances = useMemo(
+    () =>
+      accountWalletBalances.filter((balance) =>
+        tokenScopeMatchesToken(balance.token, activeBondConfig.tokenId),
+      ),
+    [accountWalletBalances, activeBondConfig.tokenId],
+  );
+  const activeBondWalletBalances = walletBalancesForConnection(
+    address,
+    accountActiveBondWalletBalances,
+    routeActiveBondWalletBalances,
+  );
+  const accountActiveBondTokenDefinition =
+    accountActiveBondWalletBalances[0]?.token ??
+    (activeBondConfig.tokenId === INCB_TOKEN_ID
+      ? accountIncbTokenState.tokens
+      : accountPowbTokenState.tokens
+    ).find((token) => token.tokenId === activeBondConfig.tokenId) ??
+    accountTokenState.tokens.find(
+      (token) => token.tokenId === activeBondConfig.tokenId,
+    );
+  const activeBondTokenDefinition =
+    accountActiveBondTokenDefinition ?? activeBondTokenDefinitions[0];
   const activeBondMints = useMemo(
     () => tokenMints.filter((mint) => mint.tokenId === activeBondConfig.tokenId),
     [activeBondConfig.tokenId, tokenMints],
@@ -15648,10 +15891,10 @@ export default function App() {
     bondWorkAmountValue <= 0 ||
     (workAttachmentAllowed &&
       bondWorkAttachmentPayloads.length === 1 &&
-      bondWorkAmountValue <= workAttachmentSpendableBalance);
-  const bondWorkAttachmentVisible =
-    workAttachmentAllowed &&
-    (workAttachmentSpendableBalance > 0 || bondWorkAmountValue > 0);
+      (!bondWorkBalanceLoaded ||
+        Boolean(bondWorkBalanceError) ||
+        bondWorkAmountValue <= workAttachmentSpendableBalance));
+  const bondWorkAttachmentVisible = workAttachmentAllowed;
   const infinityBondBytes = useMemo(
     () =>
       dataCarrierBytesForPayloads([
@@ -15672,25 +15915,32 @@ export default function App() {
     bondWorkAttachmentBalanceOk &&
     infinityBondBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
-  const walletTransferBalances = address
-    ? accountWalletBalances
-    : tokenWalletBalances;
-  const walletTransferToken =
-    walletTransferBalances.find(
-      (item) => item.token.tokenId === tokenTransferTokenId,
-    )?.token ??
-    walletTransferBalances[0]?.token ??
-    (bondWorkspaceActive
-      ? activeBondTokenDefinition
-      : !address && !walletMode && activeFolder !== "wallet"
+  const walletTransferBalances = walletBalancesForConnection(
+    address,
+    accountWalletBalances,
+    tokenWalletBalances,
+  );
+  const walletBalanceCountLoaded = address
+    ? accountTokenLaneStatuses.all.loaded
+    : activeTokenStateLoaded;
+  const walletOperationBalances = bondWorkspaceActive
+    ? activeBondWalletBalances
+    : walletTransferBalances;
+  const walletTransferToken = bondWorkspaceActive
+    ? activeBondTokenDefinition
+    : walletTransferBalances.find(
+          (item) => item.token.tokenId === tokenTransferTokenId,
+        )?.token ??
+      walletTransferBalances[0]?.token ??
+      (!address && !walletMode && activeFolder !== "wallet"
         ? workTokenDefinition ?? WORK_TOKEN_DEFINITION
         : undefined);
   const walletTransferBalance =
-    walletTransferBalances.find(
+    walletOperationBalances.find(
       (item) => item.token.tokenId === walletTransferToken?.tokenId,
     )?.confirmedBalance ?? 0;
   const walletPendingTokenBalance =
-    walletTransferBalances.find(
+    walletOperationBalances.find(
       (item) => item.token.tokenId === walletTransferToken?.tokenId,
     )?.pendingOutgoing ?? 0;
   const walletReservedTokenBalance = walletTransferToken
@@ -15744,11 +15994,17 @@ export default function App() {
     );
     const routeCreditBalances = tokenWalletBalances.filter(
       (balance) =>
-        balance.confirmedBalance > 0 && !isBondTokenDefinition(balance.token),
+        balance.confirmedBalance > 0 &&
+        !isBondTokenDefinition(balance.token) &&
+        !accountTokenLaneHasCleanAuthority(
+          balance.token,
+          accountTokenLaneStatuses,
+        ),
     );
-    const confirmedCreditBalances = accountCreditBalances.length > 0
-      ? accountCreditBalances
-      : routeCreditBalances;
+    const confirmedCreditBalances = mergeTokenWalletBalancesByToken(
+      routeCreditBalances,
+      accountCreditBalances,
+    );
     const accountBondBalances = accountWalletBalances.filter(
       (balance) =>
         balance.confirmedBalance > 0 && isBondTokenDefinition(balance.token),
@@ -15756,13 +16012,28 @@ export default function App() {
     const routeBondBalances = mergeTokenWalletBalancesByToken(
       powbWalletBalances,
       incbWalletBalances,
-    ).filter((balance) => balance.confirmedBalance > 0);
-    const connectedBondWalletBalances = accountBondBalances.length > 0
-      ? accountBondBalances
-      : routeBondBalances;
-    const pendingTokenBalances = accountWalletBalances.length > 0
-      ? accountWalletBalances
-      : tokenWalletBalances;
+    ).filter(
+      (balance) =>
+        balance.confirmedBalance > 0 &&
+        !accountTokenLaneHasCleanAuthority(
+          balance.token,
+          accountTokenLaneStatuses,
+        ),
+    );
+    const connectedBondWalletBalances = mergeTokenWalletBalancesByToken(
+      routeBondBalances,
+      accountBondBalances,
+    );
+    const pendingTokenBalances = mergeTokenWalletBalancesByToken(
+      tokenWalletBalances.filter(
+        (balance) =>
+          !accountTokenLaneHasCleanAuthority(
+            balance.token,
+            accountTokenLaneStatuses,
+          ),
+      ),
+      accountWalletBalances,
+    );
     const pendingCreditEvents = pendingTokenBalances.reduce(
       (total, balance) =>
         total +
@@ -15793,18 +16064,57 @@ export default function App() {
       });
     }
 
-    if (!accountTokensLoaded || accountTokensError) {
+    const accountTokenLaneEntries = Object.entries(
+      accountTokenLaneStatuses,
+    ) as Array<[AccountTokenLane, AccountTokenLaneStatus]>;
+    const loadedTokenLanes = accountTokenLaneEntries.filter(
+      ([, laneStatus]) => laneStatus.loaded,
+    );
+    const loadingTokenLanes = accountTokenLaneEntries.filter(
+      ([, laneStatus]) => laneStatus.loading,
+    );
+    const erroredTokenLanes = accountTokenLaneEntries.filter(
+      ([, laneStatus]) => Boolean(laneStatus.error),
+    );
+    if (
+      loadedTokenLanes.length < accountTokenLaneEntries.length ||
+      loadingTokenLanes.length > 0 ||
+      erroredTokenLanes.length > 0
+    ) {
+      const loadingDetail = loadingTokenLanes.length
+        ? `Loading ${loadingTokenLanes
+            .map(([lane]) => ACCOUNT_TOKEN_LANE_LABELS[lane])
+            .join(", ")}.`
+        : "";
+      const errorDetail = erroredTokenLanes
+        .map(
+          ([lane, laneStatus]) =>
+            `${ACCOUNT_TOKEN_LANE_LABELS[lane]}: ${laneStatus.error}`,
+        )
+        .join(" · ");
       stats.push({
         detail:
-          accountTokensError ||
+          [
+            loadingDetail,
+            errorDetail,
+            erroredTokenLanes.some(([, laneStatus]) => laneStatus.loaded)
+              ? "Last verified balances remain visible."
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ") ||
           "Waiting for the indexed ledger to verify wallet credit balances.",
         label: "credit balances",
         tone: "pending",
-        value: accountTokensError
-          ? accountTokensLoaded
+        value: erroredTokenLanes.length
+          ? erroredTokenLanes.every(([, laneStatus]) => laneStatus.loaded)
             ? "Last verified"
-            : "Unavailable"
-          : "Loading",
+            : loadedTokenLanes.length > 0
+              ? "Partial"
+              : "Unavailable"
+          : loadedTokenLanes.length > 0
+            ? "Refreshing"
+            : "Loading",
       });
     }
 
@@ -15903,9 +16213,8 @@ export default function App() {
   }, [
     accountIncbTokenState.listings,
     accountPowbTokenState.listings,
+    accountTokenLaneStatuses,
     accountTokenState.listings,
-    accountTokensError,
-    accountTokensLoaded,
     accountWorkTokenState.listings,
     accountUtxos,
     accountUtxosError,
@@ -16122,7 +16431,8 @@ export default function App() {
       tokenTransferPayload &&
       isValidBitcoinAddress(tokenTransferRecipient.trim(), "livenet") &&
       Number.isSafeInteger(Math.floor(tokenTransferAmount)) &&
-      Math.floor(tokenTransferAmount) >= 1,
+      Math.floor(tokenTransferAmount) >= 1 &&
+      Math.floor(tokenTransferAmount) <= walletSpendableTokenBalance,
     ) &&
     tokenTransferBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
@@ -16431,8 +16741,7 @@ export default function App() {
       setAccountWorkTokenState(emptyTokenState());
       setAccountPowbTokenState(emptyTokenState());
       setAccountIncbTokenState(emptyTokenState());
-      setAccountTokensLoaded(false);
-      setAccountTokensError("");
+      setAccountTokenLaneStatuses(emptyAccountTokenLaneStatuses());
       return;
     }
 
@@ -16442,41 +16751,90 @@ export default function App() {
     setAccountWorkTokenState(emptyTokenState());
     setAccountPowbTokenState(emptyTokenState());
     setAccountIncbTokenState(emptyTokenState());
-    setAccountTokensLoaded(false);
-    setAccountTokensError("");
+    setAccountTokenLaneStatuses(emptyAccountTokenLaneStatuses());
 
     const loadAccountTokenBalances = () => {
       const currentRequestId = ++requestId;
-      void Promise.all([
-        fetchTokenState(network, false, "", true, [address], true),
-        fetchTokenState(
-          network,
-          false,
-          WORK_TOKEN_ID,
-          false,
-          [address],
-          true,
-        ),
-        fetchTokenState(network, false, POWB_TOKEN_ID, true, [address], true),
-        fetchTokenState(network, false, INCB_TOKEN_ID, true, [address], true),
-      ])
-        .then(([allCredits, work, powb, incb]) => {
-          if (!cancelled && currentRequestId === requestId) {
-            setAccountTokenState(allCredits);
-            setAccountWorkTokenState(work);
-            setAccountPowbTokenState(powb);
-            setAccountIncbTokenState(incb);
-            setAccountTokensLoaded(true);
-            setAccountTokensError("");
-          }
-        })
-        .catch((error) => {
-          if (!cancelled && currentRequestId === requestId) {
-            setAccountTokensError(
-              errorMessage(error, "Wallet credit balances are unavailable."),
-            );
-          }
-        });
+      const loadAccountTokenLane = (
+        lane: AccountTokenLane,
+        load: () => Promise<PowTokenState>,
+        commit: (state: PowTokenState) => void,
+      ) => {
+        setAccountTokenLaneStatuses((current) => ({
+          ...current,
+          [lane]: { ...current[lane], loading: true },
+        }));
+        void load()
+          .then((state) => {
+            if (!cancelled && currentRequestId === requestId) {
+              commit(state);
+              setAccountTokenLaneStatuses((current) => ({
+                ...current,
+                [lane]: { error: "", loaded: true, loading: false },
+              }));
+            }
+          })
+          .catch((error) => {
+            if (!cancelled && currentRequestId === requestId) {
+              setAccountTokenLaneStatuses((current) => ({
+                ...current,
+                [lane]: {
+                  ...current[lane],
+                  error: errorMessage(
+                    error,
+                    `${ACCOUNT_TOKEN_LANE_LABELS[lane]} wallet balances are unavailable.`,
+                  ),
+                  loading: false,
+                },
+              }));
+            }
+          });
+      };
+
+      loadAccountTokenLane(
+        "all",
+        () => fetchTokenState(network, false, "", true, [address], true),
+        setAccountTokenState,
+      );
+      loadAccountTokenLane(
+        "work",
+        () =>
+          fetchTokenState(
+            network,
+            false,
+            WORK_TOKEN_ID,
+            false,
+            [address],
+            true,
+          ),
+        setAccountWorkTokenState,
+      );
+      loadAccountTokenLane(
+        "powb",
+        () =>
+          fetchTokenState(
+            network,
+            false,
+            POWB_TOKEN_ID,
+            true,
+            [address],
+            true,
+          ),
+        setAccountPowbTokenState,
+      );
+      loadAccountTokenLane(
+        "incb",
+        () =>
+          fetchTokenState(
+            network,
+            false,
+            INCB_TOKEN_ID,
+            true,
+            [address],
+            true,
+          ),
+        setAccountIncbTokenState,
+      );
     };
 
     loadAccountTokenBalances();
@@ -16587,20 +16945,20 @@ export default function App() {
   }, [address, network]);
 
   useEffect(() => {
-    if (tokenWalletBalances.length === 0) {
+    if (walletTransferBalances.length === 0) {
       setTokenTransferTokenId("");
       return;
     }
 
     if (
       !tokenTransferTokenId ||
-      !tokenWalletBalances.some(
+      !walletTransferBalances.some(
         (item) => item.token.tokenId === tokenTransferTokenId,
       )
     ) {
-      setTokenTransferTokenId(tokenWalletBalances[0].token.tokenId);
+      setTokenTransferTokenId(walletTransferBalances[0].token.tokenId);
     }
-  }, [tokenTransferTokenId, tokenWalletBalances]);
+  }, [tokenTransferTokenId, walletTransferBalances]);
 
   useEffect(() => {
     if (ownerControlledIds.length === 0) {
@@ -24015,6 +24373,9 @@ export default function App() {
         bondRecipientResolution={infinityBondResolution}
         bondWorkAmount={bondWorkAmount}
         bondWorkAttachmentVisible={bondWorkAttachmentVisible}
+        bondWorkBalanceError={bondWorkBalanceError}
+        bondWorkBalanceLoaded={bondWorkBalanceLoaded}
+        bondWorkBalanceLoading={bondWorkBalanceLoading}
         bondWorkSpendableBalance={workAttachmentSpendableBalance}
         btcUsd={tokenBtcUsd}
         busy={busy}
@@ -24612,8 +24973,8 @@ export default function App() {
                 <span>Wallet</span>
               </span>
               <strong>
-                {activeTokenStateLoaded
-                  ? tokenWalletBalances.length.toLocaleString()
+                {walletBalanceCountLoaded
+                  ? walletTransferBalances.length.toLocaleString()
                   : "…"}
               </strong>
             </button>
@@ -24993,6 +25354,9 @@ export default function App() {
             bondRecipientResolution={infinityBondResolution}
             bondWorkAmount={bondWorkAmount}
             bondWorkAttachmentVisible={bondWorkAttachmentVisible}
+            bondWorkBalanceError={bondWorkBalanceError}
+            bondWorkBalanceLoaded={bondWorkBalanceLoaded}
+            bondWorkBalanceLoading={bondWorkBalanceLoading}
             bondWorkSpendableBalance={workAttachmentSpendableBalance}
             btcUsd={tokenBtcUsd}
             busy={busy}
@@ -27101,6 +27465,9 @@ type InfinityAppProps = {
   bondRecipientResolution: RecipientResolution;
   bondWorkAmount: number;
   bondWorkAttachmentVisible: boolean;
+  bondWorkBalanceError: string;
+  bondWorkBalanceLoaded: boolean;
+  bondWorkBalanceLoading: boolean;
   bondWorkSpendableBalance: number;
   btcUsd: number;
   busy: boolean;
@@ -27163,6 +27530,9 @@ function InfinityApp({
   bondRecipientResolution,
   bondWorkAmount,
   bondWorkAttachmentVisible,
+  bondWorkBalanceError,
+  bondWorkBalanceLoaded,
+  bondWorkBalanceLoading,
   bondWorkSpendableBalance,
   btcUsd,
   busy,
@@ -27415,7 +27785,12 @@ function InfinityApp({
                 <label>
                   Attach WORK
                   <input
-                    max={Math.floor(bondWorkSpendableBalance)}
+                    aria-describedby="bond-work-balance-note"
+                    max={
+                      bondWorkBalanceLoaded && !bondWorkBalanceError
+                        ? Math.floor(bondWorkSpendableBalance)
+                        : undefined
+                    }
                     min={0}
                     onChange={(event) =>
                       setBondWorkAmount(Number(event.target.value))
@@ -27423,6 +27798,16 @@ function InfinityApp({
                     type="number"
                     value={bondWorkAmount}
                   />
+                  <span className="field-note" id="bond-work-balance-note">
+                    {bondWorkBalanceLoaded
+                      ? `${Math.floor(bondWorkSpendableBalance).toLocaleString()} spendable WORK${bondWorkBalanceError ? " from the last verified balance" : ""}.`
+                      : bondWorkBalanceLoading
+                        ? "Loading the confirmed WORK balance."
+                        : bondWorkBalanceError
+                          ? "The WORK balance preview is temporarily unavailable."
+                          : "Waiting for the confirmed WORK balance."}{" "}
+                    A fresh spendability check runs before signing.
+                  </span>
                 </label>
               ) : null}
             </div>

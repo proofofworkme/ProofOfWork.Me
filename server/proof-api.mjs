@@ -81,10 +81,27 @@ const ELECTRUM_MAX_QUEUE = Number(process.env.ELECTRUM_MAX_QUEUE ?? 256);
 const ELECTRUM_MAX_RESPONSE_BYTES = Number(
   process.env.ELECTRUM_MAX_RESPONSE_BYTES ?? 16_777_216,
 );
+const ELECTRUM_INTERACTIVE_MAX_IN_FLIGHT = Number(
+  process.env.ELECTRUM_INTERACTIVE_MAX_IN_FLIGHT ?? 4,
+);
+const ELECTRUM_INTERACTIVE_MAX_QUEUE = Number(
+  process.env.ELECTRUM_INTERACTIVE_MAX_QUEUE ?? 32,
+);
 const ELECTRUM_CLIENT = createElectrumClient({
   host: ELECTRUM_HOST,
   maxInFlight: ELECTRUM_MAX_IN_FLIGHT,
   maxQueue: ELECTRUM_MAX_QUEUE,
+  maxResponseBytes: ELECTRUM_MAX_RESPONSE_BYTES,
+  port: ELECTRUM_PORT,
+});
+// Wallet UTXO and readiness probes must not queue behind large background
+// history recovery sweeps on the shared transport. A small independent lane
+// keeps user-facing reads bounded while still querying the same local electrs
+// index and canonical Bitcoin Core tip.
+const ELECTRUM_INTERACTIVE_CLIENT = createElectrumClient({
+  host: ELECTRUM_HOST,
+  maxInFlight: ELECTRUM_INTERACTIVE_MAX_IN_FLIGHT,
+  maxQueue: ELECTRUM_INTERACTIVE_MAX_QUEUE,
   maxResponseBytes: ELECTRUM_MAX_RESPONSE_BYTES,
   port: ELECTRUM_PORT,
 });
@@ -1933,6 +1950,266 @@ function tokenPayloadScopedToAddresses(payload, addresses, tokenScope = "") {
   };
 }
 
+function walletTokenItemIds(payload) {
+  return new Set(
+    [
+      ...(payload?.holders ?? []),
+      ...(payload?.mints ?? []),
+      ...(payload?.transfers ?? []),
+      ...(payload?.sales ?? []),
+      ...(payload?.listings ?? []),
+      ...(payload?.closedListings ?? []),
+    ]
+      .map((item) => String(item?.tokenId ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+function walletTokenPayloadWithCanonicalDefinitions(payload, network) {
+  const tokensById = new Map(
+    (Array.isArray(payload?.tokens) ? payload.tokens : [])
+      .map((token) => [
+        String(token?.tokenId ?? "").trim().toLowerCase(),
+        token,
+      ])
+      .filter(([tokenId]) => tokenId),
+  );
+  for (const tokenId of walletTokenItemIds(payload)) {
+    if (tokensById.has(tokenId)) {
+      continue;
+    }
+    if (tokenId === WORK_TOKEN_ID) {
+      tokensById.set(tokenId, canonicalWorkTokenDefinition(network));
+    } else if (tokenId === POWB_TOKEN_ID) {
+      tokensById.set(tokenId, {
+        ...canonicalPowbTokenDefinition(network, ""),
+        confirmed: true,
+      });
+    } else if (tokenId === INCB_TOKEN_ID) {
+      tokensById.set(tokenId, {
+        ...canonicalIncbTokenDefinition(network, ""),
+        confirmed: true,
+      });
+    }
+  }
+  return { ...payload, tokens: [...tokensById.values()] };
+}
+
+function walletTokenPayloadMissingDefinitions(payload) {
+  const definitions = new Set(
+    (Array.isArray(payload?.tokens) ? payload.tokens : [])
+      .map((token) => String(token?.tokenId ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return [...walletTokenItemIds(payload)].filter(
+    (tokenId) => !definitions.has(tokenId),
+  );
+}
+
+function walletScopedTokenPayloadFromOverlay(overlay, network, tokenScope) {
+  const canonicalOverlay = walletTokenPayloadWithCanonicalDefinitions(
+    overlay,
+    network,
+  );
+  const tokens = Array.isArray(canonicalOverlay?.tokens)
+    ? canonicalOverlay.tokens
+    : [];
+  const holders = Array.isArray(canonicalOverlay?.holders)
+    ? canonicalOverlay.holders
+    : [];
+  const transfers = Array.isArray(canonicalOverlay?.transfers)
+    ? canonicalOverlay.transfers
+    : [];
+  const rawSales = Array.isArray(canonicalOverlay?.sales)
+    ? canonicalOverlay.sales
+    : [];
+  const rawListings = Array.isArray(canonicalOverlay?.listings)
+    ? canonicalOverlay.listings
+    : [];
+  const rawClosedListings = Array.isArray(canonicalOverlay?.closedListings)
+    ? canonicalOverlay.closedListings
+    : [];
+  const invalidEvents = Array.isArray(canonicalOverlay?.invalidEvents)
+    ? canonicalOverlay.invalidEvents
+    : [];
+  const sales = mergeTokenStateItemsByKey([], rawSales, tokenSaleItemKey);
+  const listings = mergeTokenStateItemsByKey(
+    [],
+    rawListings,
+    tokenListingItemKey,
+  );
+  const closedListings = mergeTokenStateItemsByKey(
+    [],
+    rawClosedListings,
+    tokenClosedListingItemKey,
+  );
+  return {
+    ...canonicalOverlay,
+    closedListings,
+    confirmedSupply: 0,
+    creationSats: tokens.reduce(
+      (total, token) => total + numericValue(token?.creationFeeSats),
+      0,
+    ),
+    holders,
+    invalidEvents,
+    listings,
+    mints: [],
+    network,
+    pendingSupply: 0,
+    sales,
+    source: mergedSourceLabel(
+      canonicalOverlay?.source,
+      "proof-indexer-wallet-address-state",
+    ),
+    stats: {
+      ...(canonicalOverlay?.stats ?? {}),
+      confirmedListings: listings.filter((listing) => listing.confirmed).length,
+      confirmedSales: sales.filter((sale) => sale.confirmed).length,
+      confirmedTokens: tokens.filter((token) => token.confirmed).length,
+      confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
+        .length,
+      holders: holders.length,
+      invalidEvents: invalidEvents.length,
+      pendingListings: listings.filter((listing) => !listing.confirmed).length,
+      pendingSales: sales.filter((sale) => !sale.confirmed).length,
+      pendingTokens: tokens.filter((token) => !token.confirmed).length,
+      pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+        .length,
+      tokenScope: normalizeTokenScope(tokenScope),
+      walletScoped: true,
+    },
+    summaryOnly: true,
+    tokens,
+    transfers,
+    walletScoped: true,
+  };
+}
+
+function walletTokenOverlayHasExactCheckpoint(overlay) {
+  const indexedThroughBlock = Number(overlay?.indexedThroughBlock);
+  const indexedThroughBlockHash = String(
+    overlay?.indexedThroughBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const sourceBlockHash = String(overlay?.sourceHashes?.blockScan ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    overlay?.checkpointComplete === true &&
+    Number.isSafeInteger(indexedThroughBlock) &&
+    indexedThroughBlock > 0 &&
+    /^[0-9a-f]{64}$/u.test(indexedThroughBlockHash) &&
+    sourceBlockHash === indexedThroughBlockHash &&
+    Boolean(String(overlay?.snapshotId ?? "").trim())
+  );
+}
+
+function walletTokenOverlayMatchesPayloadCheckpoint(payload, overlay) {
+  if (!walletTokenOverlayHasExactCheckpoint(overlay)) {
+    return false;
+  }
+  const payloadHeight = proofIndexPayloadIndexedThroughBlock(payload);
+  const overlayHeight = Number(overlay.indexedThroughBlock);
+  const payloadHash = String(
+    payload?.indexedThroughBlockHash ??
+      payload?.stats?.indexedThroughBlockHash ??
+      payload?.sourceHashes?.blockScan ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  return (
+    Number.isSafeInteger(payloadHeight) &&
+    payloadHeight > 0 &&
+    payloadHeight === overlayHeight &&
+    /^[0-9a-f]{64}$/u.test(payloadHash) &&
+    payloadHash === overlay.indexedThroughBlockHash
+  );
+}
+
+function walletTokenOverlayMatchesCanonicalGate(overlay, gate) {
+  if (
+    !walletTokenOverlayHasExactCheckpoint(overlay) ||
+    gate?.ready !== true
+  ) {
+    return false;
+  }
+  const overlayHeight = Number(overlay.indexedThroughBlock);
+  const overlayHash = String(overlay.indexedThroughBlockHash)
+    .trim()
+    .toLowerCase();
+  const canonicalHash = String(gate?.canonicalHash ?? "")
+    .trim()
+    .toLowerCase();
+  const storedHash = String(gate?.storedHash ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    Number(gate?.indexedThroughBlock) === overlayHeight &&
+    Number(gate?.tipHeight) === overlayHeight &&
+    canonicalHash === overlayHash &&
+    storedHash === overlayHash
+  );
+}
+
+async function proofIndexWalletScopedTokenPayloadForRead(
+  network,
+  tokenScope,
+  recoveryAddresses,
+  label,
+  options = {},
+) {
+  if (
+    network !== "livenet" ||
+    !proofIndexReadFeatureEnabled("token-state,token-default,token")
+  ) {
+    return null;
+  }
+  const overlay = await proofIndexWalletTokenOverlayPayload(
+    network,
+    tokenScope,
+    recoveryAddresses,
+  ).catch((error) => {
+    console.error(
+      `Proof index ${label} wallet projection failed: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (!overlay) {
+    return null;
+  }
+  if (!walletTokenOverlayHasExactCheckpoint(overlay)) {
+    console.error(
+      `Rejected ${label} wallet projection without an exact hashed checkpoint.`,
+    );
+    return null;
+  }
+  if (options.requireCurrent === true) {
+    const gate = await canonicalPublicReadGate(network, { force: true });
+    if (!walletTokenOverlayMatchesCanonicalGate(overlay, gate)) {
+      console.error(
+        `Rejected ${label} wallet projection outside the exact canonical tip.`,
+      );
+      return null;
+    }
+  }
+  const payload = walletScopedTokenPayloadFromOverlay(
+    overlay,
+    network,
+    tokenScope,
+  );
+  const missingDefinitions = walletTokenPayloadMissingDefinitions(payload);
+  if (missingDefinitions.length > 0) {
+    console.error(
+      `Rejected ${label} wallet projection without definitions for ${missingDefinitions.join(", ")}.`,
+    );
+    return null;
+  }
+  return payload;
+}
+
 function mergeTokenStateItemsByKey(
   baseItems,
   overlayItems,
@@ -2076,6 +2353,12 @@ async function tokenPayloadWithIndexedWalletOverlay(
   if (!overlay) {
     return payload;
   }
+  if (!walletTokenOverlayMatchesPayloadCheckpoint(payload, overlay)) {
+    console.error(
+      "Rejected wallet token overlay without a matching exact checkpoint.",
+    );
+    return payload;
+  }
 
   const transfers = mergeTokenStateItemsByKey(
     payload?.transfers,
@@ -2141,9 +2424,13 @@ async function tokenPayloadWithIndexedWalletOverlay(
       .filter(Boolean),
   );
   const normalizedScope = normalizeTokenScope(tokenScope);
+  const definitionCandidates = [
+    ...(Array.isArray(sourceTokens) ? sourceTokens : []),
+    ...(Array.isArray(overlay.tokens) ? overlay.tokens : []),
+  ];
   const tokens = mergeTokenStateItemsByKey(
     payload?.tokens,
-    (Array.isArray(sourceTokens) ? sourceTokens : []).filter(
+    definitionCandidates.filter(
       (token) =>
         walletTokenIds.has(String(token?.tokenId ?? "").toLowerCase()) ||
         walletTokenTickers.has(String(token?.ticker ?? "").toLowerCase()) ||
@@ -2153,59 +2440,49 @@ async function tokenPayloadWithIndexedWalletOverlay(
     ),
     (item) => String(item?.tokenId ?? "").trim().toLowerCase(),
   );
-  const hasOverlayRows = [
-    overlay.transfers,
-    overlay.sales,
-    overlay.listings,
-    overlay.closedListings,
-    overlay.holders,
-    overlay.invalidEvents,
-  ].some((items) => Array.isArray(items) && items.length > 0);
-  if (
-    !hasOverlayRows &&
-    transfers.length === (Array.isArray(payload?.transfers) ? payload.transfers.length : 0) &&
-    sales.length === (Array.isArray(payload?.sales) ? payload.sales.length : 0) &&
-    listings.length === (Array.isArray(payload?.listings) ? payload.listings.length : 0) &&
-    closedListings.length ===
-      (Array.isArray(payload?.closedListings) ? payload.closedListings.length : 0) &&
-    holders.length === (Array.isArray(payload?.holders) ? payload.holders.length : 0) &&
-    invalidEvents.length ===
-      (Array.isArray(payload?.invalidEvents) ? payload.invalidEvents.length : 0) &&
-    tokens.length === (Array.isArray(payload?.tokens) ? payload.tokens.length : 0)
-  ) {
-    return payload;
-  }
-
-  return tokenStateWithPreservedListingRecords({
-    ...payload,
-    closedListings,
-    holders,
-    indexedAt: newerIso(payload?.indexedAt, overlay.indexedAt),
-    invalidEvents,
-    listings,
-    sales,
-    source: mergedSourceLabel(payload?.source, overlay.source),
-    stats: {
-      ...(payload?.stats ?? {}),
-      confirmedListings: listings.filter((listing) => listing.confirmed).length,
-      confirmedSales: sales.filter((sale) => sale.confirmed).length,
-      confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
-        .length,
-      holders: holders.length,
-      invalidEvents: invalidEvents.length,
-      pendingListings: listings.filter((listing) => !listing.confirmed).length,
-      pendingSales: sales.filter((sale) => !sale.confirmed).length,
-      pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
-        .length,
-      walletScoped: true,
-    },
-    transfers,
-    tokens,
-    walletScoped: true,
-  }, {
-    closedListings: overlay.closedListings,
-    listings: overlay.listings,
-  });
+  return walletTokenPayloadWithCanonicalDefinitions(
+    tokenStateWithPreservedListingRecords(
+      {
+        ...payload,
+        checkpointComplete: true,
+        closedListings,
+        holders,
+        indexedAt: newerIso(payload?.indexedAt, overlay.indexedAt),
+        indexedThroughBlock: overlay.indexedThroughBlock,
+        indexedThroughBlockHash: overlay.indexedThroughBlockHash,
+        invalidEvents,
+        listings,
+        sales,
+        snapshotId: overlay.snapshotId,
+        source: mergedSourceLabel(payload?.source, overlay.source),
+        sourceHashes: overlay.sourceHashes,
+        stats: {
+          ...(payload?.stats ?? {}),
+          confirmedListings: listings.filter((listing) => listing.confirmed)
+            .length,
+          confirmedSales: sales.filter((sale) => sale.confirmed).length,
+          confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
+            .length,
+          holders: holders.length,
+          invalidEvents: invalidEvents.length,
+          pendingListings: listings.filter((listing) => !listing.confirmed)
+            .length,
+          pendingSales: sales.filter((sale) => !sale.confirmed).length,
+          pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+            .length,
+          walletScoped: true,
+        },
+        transfers,
+        tokens,
+        walletScoped: true,
+      },
+      {
+        closedListings: overlay.closedListings,
+        listings: overlay.listings,
+      },
+    ),
+    network,
+  );
 }
 
 function transferBalanceDeltaForAddress(transfer, address) {
@@ -4903,6 +5180,10 @@ function electrumRequest(method, params, timeoutMs = 30_000) {
   return ELECTRUM_CLIENT.request(method, params, timeoutMs);
 }
 
+function interactiveElectrumRequest(method, params, timeoutMs = 30_000) {
+  return ELECTRUM_INTERACTIVE_CLIENT.request(method, params, timeoutMs);
+}
+
 async function mapWithConcurrency(items, concurrency, mapper) {
   const results = Array.from({ length: items.length });
   let nextIndex = 0;
@@ -5426,7 +5707,7 @@ async function fetchAddressUtxosFromElectrum(address, network) {
   }
 
   const scripthash = scriptHashForAddress(address, network);
-  const unspent = await electrumRequest(
+  const unspent = await interactiveElectrumRequest(
     "blockchain.scripthash.listunspent",
     [scripthash],
     ADDRESS_UTXO_FETCH_TIMEOUT_MS,
@@ -19464,6 +19745,15 @@ async function walletScopedTokenSummaryPayload(
   recoveryAddresses = [],
 ) {
   const scope = normalizeTokenScope(tokenScope);
+  const addressScopedPayload = await proofIndexWalletScopedTokenPayloadForRead(
+    network,
+    scope,
+    recoveryAddresses,
+    "wallet-scoped-token-summary",
+  );
+  if (addressScopedPayload) {
+    return compactTokenSummaryPayload(addressScopedPayload, scope);
+  }
   let payload = null;
   if (
     network === "livenet" &&
@@ -19552,6 +19842,25 @@ async function walletScopedTokenPayload(
   const scope = normalizeTokenScope(tokenScope);
   const requireCurrent =
     options.requireCurrent === true && network === "livenet";
+  const addressScopedPayload = await proofIndexWalletScopedTokenPayloadForRead(
+    network,
+    scope,
+    recoveryAddresses,
+    requireCurrent ? "wallet-scoped-token-fresh" : "wallet-scoped-token",
+    { requireCurrent },
+  );
+  if (addressScopedPayload) {
+    return requireCurrent
+      ? { ...addressScopedPayload, authoritativeWallet: true }
+      : addressScopedPayload;
+  }
+  if (requireCurrent) {
+    const unavailable = freshDataUnavailableError(
+      `Fresh wallet credit state is still catching up for ${scope || "all"}.`,
+    );
+    unavailable.details = { code: "CANONICAL_WALLET_INDEX_UNAVAILABLE" };
+    throw unavailable;
+  }
   let payload = null;
   if (
     network === "livenet" &&
@@ -19563,14 +19872,6 @@ async function walletScopedTokenPayload(
       requireCurrent ? "wallet-scoped-token-fresh" : "wallet-scoped-token",
       requireCurrent ? WALLET_SCOPED_INDEX_WAIT_MS : 5_000,
     );
-  }
-
-  if (!payload && requireCurrent) {
-    const unavailable = freshDataUnavailableError(
-      `Fresh wallet credit state is still catching up for ${scope || "all"}.`,
-    );
-    unavailable.details = { code: "CANONICAL_INDEX_UNAVAILABLE" };
-    throw unavailable;
   }
 
   if (!payload) {
@@ -31310,7 +31611,7 @@ async function mailPayload(address, network, options = {}) {
   );
 }
 
-async function addressUtxoPayload(address, network) {
+async function firstPartyAddressUtxoPayload(address, network) {
   const fetchUtxosFromBase = async (base) => {
     const url = `${base}/api/address/${address}/utxo`;
     const timeoutMs = String(base).startsWith("https://")
@@ -31331,62 +31632,67 @@ async function addressUtxoPayload(address, network) {
   };
 
   let lastError = null;
-  const candidates = [
-    {
-      label: "Electrum",
-      read: () => fetchAddressUtxosFromElectrum(address, network),
-    },
-    ...firstPartyAddressReadBases(network).map((base) => ({
-      label: base,
-      read: () => requireUtxoArray(base, fetchUtxosFromBase(base)),
-    })),
-    ...(network === "livenet"
-      ? [
-          {
-            label: "Blockchain.info",
-            read: () => fetchAddressUtxosFromBlockchainInfo(address, network),
-          },
-        ]
-      : [
-          {
-            label: "secondary explorers",
-            read: () => fetchAddressUtxosFromSecondaryExplorers(address, network),
-          },
-        ]),
-  ];
-  const results = await Promise.all(
-    candidates.map(async (candidate) => {
-      try {
-        const utxos = await candidate.read();
-        return Array.isArray(utxos)
-          ? { ok: true, utxos }
-          : { ok: false };
-      } catch (error) {
-        lastError = error;
-        console.error(
-          `UTXO lookup failed for ${candidate.label} ${address}: ${errorSummary(error)}`,
-        );
-        return { ok: false };
-      }
-    }),
-  );
-  const arrays = results
-    .filter((result) => result.ok && Array.isArray(result.utxos))
-    .map((result) => result.utxos);
-  const nonEmpty = arrays.find((utxos) => utxos.length > 0);
-  if (nonEmpty) {
-    return nonEmpty;
-  }
-  if (arrays.length > 0) {
-    return arrays[0];
+  if (
+    network === "livenet" &&
+    String(ELECTRUM_HOST).trim() &&
+    ELECTRUM_PORT > 0
+  ) {
+    try {
+      return await requireUtxoArray(
+        "Electrum",
+        fetchAddressUtxosFromElectrum(address, network),
+      );
+    } catch (error) {
+      console.error(
+        `UTXO lookup failed for Electrum ${address}: ${errorSummary(error)}`,
+      );
+      throw error;
+    }
   }
 
-  const error = new Error(
-    `Wallet UTXO lookup timed out for ${shortAddress(address)}. The node could not return spendable outputs before timeout. Refresh and try again.`,
-  );
-  error.statusCode = 503;
-  error.details = lastError ? { cause: errorSummary(lastError) } : undefined;
-  throw error;
+  const candidates = firstPartyAddressReadBases(network).map((base) => ({
+      label: base,
+      read: () => requireUtxoArray(base, fetchUtxosFromBase(base)),
+    }));
+  for (const candidate of candidates) {
+    try {
+      return await candidate.read();
+    } catch (error) {
+      lastError = error;
+      console.error(
+        `UTXO lookup failed for ${candidate.label} ${address}: ${errorSummary(error)}`,
+      );
+    }
+  }
+
+  if (network !== "livenet") {
+    try {
+      return await requireUtxoArray(
+        "secondary explorers",
+        fetchAddressUtxosFromSecondaryExplorers(address, network),
+      );
+    } catch (error) {
+      lastError = error;
+      console.error(
+        `UTXO lookup failed for secondary explorers ${address}: ${errorSummary(error)}`,
+      );
+    }
+  }
+
+  throw lastError ?? new Error("No first-party wallet UTXO reader is configured.");
+}
+
+async function addressUtxoPayload(address, network) {
+  try {
+    return await firstPartyAddressUtxoPayload(address, network);
+  } catch (lastError) {
+    const error = new Error(
+      `Wallet UTXO lookup timed out for ${shortAddress(address)}. The node could not return spendable outputs before timeout. Refresh and try again.`,
+    );
+    error.statusCode = 503;
+    error.details = { cause: errorSummary(lastError) };
+    throw error;
+  }
 }
 
 async function txHexPayload(txid, network) {
@@ -33465,7 +33771,7 @@ async function addressIndexHealthPayload(timeoutMs = HEALTH_CHECK_TIMEOUT_MS) {
   );
   if (String(ELECTRUM_HOST).trim() && ELECTRUM_PORT > 0) {
     const balanceOutcome = await promiseOutcomeWithin(
-      electrumRequest(
+      interactiveElectrumRequest(
         "blockchain.scripthash.get_balance",
         [ELECTRUM_HEALTH_SCRIPTHASH],
         requestTimeoutMs,
@@ -33547,7 +33853,7 @@ async function electrumHealthPayload(
     };
   }
   const headerOutcome = await promiseOutcomeWithin(
-    electrumRequest(
+    interactiveElectrumRequest(
       "blockchain.block.header",
       [height],
       Math.max(1, Math.min(HEALTH_CHECK_TIMEOUT_MS, Number(timeoutMs) || 1)),

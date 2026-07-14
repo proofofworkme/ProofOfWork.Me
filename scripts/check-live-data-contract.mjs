@@ -261,6 +261,21 @@ const boundedHealthElectrumSource = sourceSliceBetween(
   /async function boundedHealthElectrumPayload\(/,
   /async function filesystemHealthPayload\(/,
 );
+const fetchAddressUtxosFromElectrumSource = sourceSliceBetween(
+  server,
+  /async function fetchAddressUtxosFromElectrum\(/,
+  /async function fetchAddressUtxosFromBlockchainInfo\(/,
+);
+const firstPartyAddressUtxoSource = sourceSliceBetween(
+  server,
+  /async function firstPartyAddressUtxoPayload\(/,
+  /async function addressUtxoPayload\(/,
+);
+const addressUtxoPayloadSource = sourceSliceBetween(
+  server,
+  /async function addressUtxoPayload\(/,
+  /async function txHexPayload\(/,
+);
 const healthPayloadSource = sourceSliceBetween(
   server,
   /async function loadHealthPayload\(/,
@@ -300,6 +315,16 @@ const pwmAggregationSource = sourceSliceBetween(
   proofIndexerBackfill,
   /function aggregatePwmProtocolItem\(/,
   /function protocolItemsFromTx\(/,
+);
+const indexedWalletTokenOverlaySource = sourceSliceBetween(
+  proofIndexReader,
+  /export async function proofIndexWalletTokenOverlayPayload\(/,
+  /async function proofIndexScopedHolderHistoryPayload\(/,
+);
+const walletTokenOverlayMergeSource = sourceSliceBetween(
+  server,
+  /async function tokenPayloadWithIndexedWalletOverlay\(/,
+  /function transferBalanceDeltaForAddress\(/,
 );
 
 expectAll("canonical ledger cache is first-class", server, [
@@ -879,8 +904,32 @@ expectAll("API address app reads stay first-party", server, [
   /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*const indexedWasEmpty = Boolean\(indexedPayload\) && !mailPayloadHasMessages\(indexedPayload\)[\s\S]*includeExternal:\s*indexedWasEmpty \|\| fresh \|\| !indexedPayload[\s\S]*preferExternal:\s*indexedWasEmpty/,
   /async function mailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*mergeMailPayloads\(indexedPayload,\s*scannedPayload\)/,
   /mailPayload\(address,\s*network,\s*\{ fresh: freshRead \}\)/,
-  /async function addressUtxoPayload\(address,\s*network\)[\s\S]*for \(const base of firstPartyAddressReadBases\(network\)\)/,
+  /async function firstPartyAddressUtxoPayload\(address,\s*network\)[\s\S]*firstPartyAddressReadBases\(network\)/,
 ]);
+expectAll("interactive wallet UTXO reads use an isolated local Electrum lane", server, [
+  /const ELECTRUM_INTERACTIVE_CLIENT = createElectrumClient\(\{[\s\S]*maxInFlight: ELECTRUM_INTERACTIVE_MAX_IN_FLIGHT[\s\S]*maxQueue: ELECTRUM_INTERACTIVE_MAX_QUEUE/,
+  /function interactiveElectrumRequest\(method,\s*params,\s*timeoutMs = 30_000\)[\s\S]*ELECTRUM_INTERACTIVE_CLIENT\.request\(method,\s*params,\s*timeoutMs\)/,
+]);
+expectAll("interactive wallet UTXO reads prefer authoritative Electrum", fetchAddressUtxosFromElectrumSource, [
+  /interactiveElectrumRequest\([\s\S]*"blockchain\.scripthash\.listunspent"/,
+  /ADDRESS_UTXO_FETCH_TIMEOUT_MS/,
+]);
+expectAll("mainnet wallet UTXO resolution fails closed on the first-party lane", firstPartyAddressUtxoSource + addressUtxoPayloadSource, [
+  /network === "livenet"[\s\S]*return await requireUtxoArray\([\s\S]*"Electrum"[\s\S]*fetchAddressUtxosFromElectrum\(address,\s*network\)[\s\S]*catch \(error\)[\s\S]*throw error/,
+  /const candidates = firstPartyAddressReadBases\(network\)[\s\S]*for \(const candidate of candidates\)[\s\S]*return await candidate\.read\(\)/,
+  /network !== "livenet"[\s\S]*fetchAddressUtxosFromSecondaryExplorers\(address,\s*network\)/,
+  /async function addressUtxoPayload\(address,\s*network\)[\s\S]*return await firstPartyAddressUtxoPayload\(address,\s*network\)/,
+]);
+expect(
+  "interactive wallet UTXO resolution must not wait for every slow fallback",
+  !/Promise\.all/.test(firstPartyAddressUtxoSource + addressUtxoPayloadSource),
+);
+expect(
+  "mainnet wallet UTXO resolution must not call external explorer fallbacks",
+  !/fetchAddressUtxosFromBlockchainInfo|Blockchain\.info/.test(
+    firstPartyAddressUtxoSource + addressUtxoPayloadSource,
+  ),
+);
 expectAll("proof index mail body projection separates subject from body", proofIndexReader + proofIndexerBackfill, [
   /function mailMemoFromEvent\(row,\s*payload\)[\s\S]*payload\.body \?\? payload\.message \?\? payload\.memo[\s\S]*!subjectOnlyMailBody\(storedBody\)/,
   /function mailItemBodyText\(item\)[\s\S]*item\?\.body \?\? item\?\.message \?\? item\?\.memo[\s\S]*!subjectOnlyMailBody\(detail\)/,
@@ -930,6 +979,66 @@ expectAll("proof index wallet token overlay reads balances and events", proofInd
   /export async function proofIndexCreditListingsPayload\([\s\S]*latestProofIndexScanMetadata\(pool,\s*network\)[\s\S]*proof_indexer\.credit_listings[\s\S]*stats:[\s\S]*complete:/,
   /e\.kind = ANY\(\$2::text\[\]\)/,
   /"proof-indexer-token-market-summary-overlay"/,
+]);
+expectAll("wallet token overlays publish canonical token definitions", proofIndexReader, [
+  /async function proofIndexTokenDefinitionsByIds\(pool,\s*network,\s*tokenIds\)[\s\S]*normalizedTokenIds/,
+  /FROM proof_indexer\.credit_definitions[\s\S]*token_id = ANY\(\$2::text\[\]\)/,
+  /const tokens = result\.rows[\s\S]*\.map\(tokenDefinitionFromRow\)[\s\S]*\.filter\(\(token\) => token\.tokenId\)/,
+]);
+expectAll("wallet token overlays enforce the holder-to-definition invariant", proofIndexReader, [
+  /const definedTokenIds = new Set\(tokens\.map\(\(token\) => token\.tokenId\)\)/,
+  /const missingTokenIds = normalizedTokenIds\.filter\([\s\S]*!definedTokenIds\.has\(tokenId\)/,
+  /if \(missingTokenIds\.length > 0\) \{[\s\S]*throw new Error\([\s\S]*without canonical definitions/,
+]);
+expectAll("wallet token overlay definitions cover every returned token-bearing row", indexedWalletTokenOverlaySource, [
+  /const tokenBearingItems = \[[\s\S]*\.\.\.holders,[\s\S]*\.\.\.transfers,[\s\S]*\.\.\.sales,[\s\S]*\.\.\.listings,[\s\S]*\.\.\.closedListings,[\s\S]*\]/,
+  /proofIndexWalletTokenDefinitions\([\s\S]*scope,[\s\S]*tokenBearingItems\.map\(\(item\) => item\?\.tokenId\)/,
+  /return \{[\s\S]*tokens,[\s\S]*transfers:/,
+]);
+expectAll("scoped zero-balance wallet projections retain their canonical definition", proofIndexReader, [
+  /async function proofIndexWalletTokenDefinitions\(/,
+  /scoped[\s\S]*proofIndexTokenDefinitionsFromTables\(pool, network, scope\)/,
+  /for \(const token of \[\.\.\.itemDefinitions, \.\.\.scopedDefinitions\]\)/,
+]);
+expectAll("wallet token overlays use indexed exact-address lookups", indexedWalletTokenOverlaySource, [
+  /cb\.address = ANY\(\$2::text\[\]\)/,
+  /ep_wallet_invalid\.address = ANY\([^)]*::text\[\]\)/,
+  /ep\.address = ANY\(\$2::text\[\]\)/,
+  /cl\.seller_address = ANY\(\$2::text\[\]\)/,
+]);
+expectAll("authoritative wallet projections fail closed before row caps can hide spendability", indexedWalletTokenOverlaySource, [
+  /walletAuthoritativeRowLimit = 500/,
+  /walletAuthoritativeRowLimit \+ 1/,
+  /CASE WHEN e\.status = 'pending' THEN 0 ELSE 1 END ASC/,
+  /walletProjectionExceedsLimit\([\s\S]*eventResult\.rows[\s\S]*"pending"[\s\S]*throw new Error/,
+  /walletProjectionExceedsLimit\([\s\S]*listingResult\.rows[\s\S]*throw new Error/,
+]);
+expect(
+  "wallet token overlays must not bypass address indexes with lower expressions",
+  !/lower\((?:cb|ep|ep_wallet_invalid|cl)\.(?:address|seller_address)\)/.test(
+    indexedWalletTokenOverlaySource,
+  ),
+);
+expectAll("API wallet overlay merge consumes indexed canonical token definitions", walletTokenOverlayMergeSource, [
+  /const definitionCandidates = \[[\s\S]*sourceTokens[\s\S]*overlay\.tokens/,
+  /const tokens = mergeTokenStateItemsByKey\([\s\S]*definitionCandidates\.filter\(/,
+]);
+expectAll("wallet balance reads require an exact hashed index checkpoint", server, [
+  /function walletTokenOverlayHasExactCheckpoint\(overlay\)[\s\S]*checkpointComplete === true[\s\S]*Number\.isSafeInteger\(indexedThroughBlock\)[\s\S]*sourceBlockHash === indexedThroughBlockHash[\s\S]*snapshotId/,
+  /function walletTokenOverlayMatchesPayloadCheckpoint\(payload,\s*overlay\)[\s\S]*walletTokenOverlayHasExactCheckpoint\(overlay\)[\s\S]*payloadHeight === overlayHeight[\s\S]*\^\[0-9a-f\]\{64\}[\s\S]*payloadHash === overlay\.indexedThroughBlockHash/,
+  /function walletTokenOverlayMatchesCanonicalGate\(overlay,\s*gate\)[\s\S]*gate\?\.ready !== true[\s\S]*gate\?\.tipHeight[\s\S]*canonicalHash === overlayHash[\s\S]*storedHash === overlayHash/,
+  /async function proofIndexWalletScopedTokenPayloadForRead\([\s\S]*if \(!walletTokenOverlayHasExactCheckpoint\(overlay\)\)[\s\S]*return null/,
+  /proofIndexWalletScopedTokenPayloadForRead\([\s\S]*\{ requireCurrent \}[\s\S]*authoritativeWallet:\s*true/,
+  /if \(requireCurrent\) \{[\s\S]*CANONICAL_WALLET_INDEX_UNAVAILABLE[\s\S]*throw unavailable/,
+  /function walletScopedTokenPayloadFromOverlay\(overlay,\s*network,\s*tokenScope\)[\s\S]*walletTokenPayloadWithCanonicalDefinitions\([\s\S]*confirmedTokens:\s*tokens\.filter/,
+]);
+expectAll("fresh wallet overlays preserve their exact checkpoint proof", walletTokenOverlayMergeSource, [
+  /walletTokenOverlayMatchesPayloadCheckpoint\(payload,\s*overlay\)/,
+  /checkpointComplete:\s*true/,
+  /indexedThroughBlock:\s*overlay\.indexedThroughBlock/,
+  /indexedThroughBlockHash:\s*overlay\.indexedThroughBlockHash/,
+  /snapshotId:\s*overlay\.snapshotId/,
+  /sourceHashes:\s*overlay\.sourceHashes/,
 ]);
 expectAll("marketplace summary and tabs keep confirmed sealed inventory canonical", server + app, [
   /const MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS = Number\([\s\S]*12_000/,
