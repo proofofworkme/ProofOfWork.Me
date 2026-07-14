@@ -908,18 +908,21 @@ expect(
     /Direct proof issuance/.test(infinityAppBlock) &&
     /Attached WORK issuance/.test(infinityAppBlock) &&
     /Total issued/.test(infinityAppBlock) &&
-    /Exact bond issuance value/.test(infinityAppBlock) &&
-    /H-1 WORK floor/.test(infinityAppBlock) &&
-    /H-1 WORK network value/.test(infinityAppBlock) &&
-    /Value snapshot block/.test(infinityAppBlock) &&
-    /Bond block provenance/.test(infinityAppBlock) &&
-    /last confirmed green canonical live[\s\S]*WORK summary at H-1/.test(
+    /Exact cumulative issuance value/.test(infinityAppBlock) &&
+    /Weighted H-1 WORK floor/.test(infinityAppBlock) &&
+    /Latest H-1 WORK network value/.test(infinityAppBlock) &&
+    /Latest value snapshot block/.test(infinityAppBlock) &&
+    /Latest bond block provenance/.test(infinityAppBlock) &&
+    /Each bond is fixed from its last[\s\S]*confirmed green live WORK summary at H-1/.test(
       infinityAppBlock,
     ) &&
-    /Every transaction in the bond block is[\s\S]*excluded/.test(
+    /Every transaction in that[\s\S]*bond block is excluded/.test(
       infinityAppBlock,
     ) &&
-    /current or post-bond network value changes only the live INCB floor/.test(
+    /current or post-bond network value changes only[\s\S]*the live INCB floor/.test(
+      infinityAppBlock,
+    ) &&
+    /"Latest historical floor"\s*:\s*"Latest floor"/.test(
       infinityAppBlock,
     ) &&
     /exact previous block hash/.test(infinityAppBlock) &&
@@ -1025,6 +1028,27 @@ expect(
     ) &&
     /fetchTokenHistoryPage<PowTokenMint>[\s\S]*"mints"/.test(app) &&
     /Loading current WORK summary from the ProofOfWork index/.test(app),
+);
+expect(
+  "WORK labels last-good snapshots while the exact-tip index catches up",
+  /function workFloorLastGoodReference[\s\S]*indexedThroughBlock[\s\S]*snapshotId/.test(
+    app,
+  ) &&
+    /function workFloorLastGoodStatusText[\s\S]*WORK index catching up[\s\S]*Showing last-good[\s\S]*Pending mints, bonds, and transfers do not affect the confirmed WORK floor/.test(
+      app,
+    ) &&
+    /catch \(error\)[\s\S]*fresh && lastGoodQuote[\s\S]*setWorkFloorUsingLastGood\(true\)[\s\S]*workFloorLastGoodStatusText\(lastGoodQuote\)/.test(
+      refreshWorkFloorBlock,
+    ) &&
+    /includeWorkFloor && !floorQuote && fresh[\s\S]*refreshWorkFloor\(true, false\)[\s\S]*usedIndexedFallback/.test(
+      app,
+    ) &&
+    /workFloorUsingLastGood \? \([\s\S]*WORK index catching up[\s\S]*workFloorLastGoodReference\(workFloorQuote\)[\s\S]*Pending mints, bonds, and transfers do not affect the[\s\S]*confirmed/.test(
+      app,
+    ) &&
+    /pending mints, bonds, and transfers wait for confirmation[\s\S]*do not affect the floor/.test(
+      app,
+    ),
 );
 expect(
   "WORK preserves scoped holder previews and canonical holder totals",

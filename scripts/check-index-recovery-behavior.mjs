@@ -473,7 +473,9 @@ check("canonical credit overlays retain explicit address scope", async () => {
     {
       BOND_TOKEN_IDS: new Set(["powb", "incb"]),
       POWB_TOKEN_ID: "powb",
+      WORK_TOKEN_ID: "work",
       activeTokenListingsFromState: () => [],
+      currentCanonicalWorkTransferValueSummary: async () => ({}),
       existingCanonicalLedgerPayload: async () => null,
       existingCurrentCanonicalLedgerPayload: async () => ({
         generatedAt: "2026-07-11T00:00:00.000Z",
@@ -507,6 +509,7 @@ check("canonical credit overlays retain explicit address scope", async () => {
       recoveryTxidsFromSearchParams: (params) =>
         [params.get("txid")].filter(Boolean),
       tokenHistoryKindNeedsCreditNetworkValueOverlay: () => true,
+      tokenHistoryPageWithCanonicalWorkTransferValues: (page) => page,
       tokenMarketLogItemsFromState: () => [],
     },
   );
@@ -4378,6 +4381,7 @@ check("livenet Inception issuance uses the published H-1 snapshot and excludes i
         "token-listing-closed",
       ]),
       TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      canonicalInceptionWorkMovementOracleByIdentity: () => new Map(),
       canonicalReplayPrefixLengthAtMs,
       canonicalReplayTimeline,
       compareCreditValueReplayEvents,
@@ -5203,6 +5207,10 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
         "canonical-pre-bond-live-network-value-v2",
       INCB_VALUE_SNAPSHOT_MODEL:
         "canonical-summary-h-minus-one-v1",
+      WORK_TOKEN_ID:
+        "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+      WORK_TRANSFER_VALUE_PROJECTION_MODEL:
+        "canonical-work-transfer-value-projection-v1",
       objectPayload: (value) =>
         value && typeof value === "object" && !Array.isArray(value)
           ? value
@@ -5237,6 +5245,14 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     canonicalSummaryAccountingModelsCurrent({
       inceptionSummary: {
         actualValue: currentInceptionActual,
+        token: { stats: { confirmedMints: 1 } },
+      },
+      workSummary: {
+        token: { stats: { confirmedTransfers: 0 } },
+        workTransferValueProjection: {
+          items: [],
+          model: "canonical-work-transfer-value-projection-v1",
+        },
       },
       workFloor: {
         actualValue: {
@@ -5288,6 +5304,14 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     }
     if (key === "inceptionSummary") {
       payload.actualValue = currentInceptionActual;
+      payload.token = { stats: { confirmedMints: 1 } };
+    }
+    if (key === "workSummary") {
+      payload.token = { stats: { confirmedTransfers: 0 } };
+      payload.workTransferValueProjection = {
+        items: [],
+        model: "canonical-work-transfer-value-projection-v1",
+      };
     }
     return payload;
   };
@@ -5391,6 +5415,16 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   };
   currentSummaryPayloads.inceptionSummary.actualValue =
     currentInceptionActual;
+  currentSummaryPayloads.inceptionSummary.token = {
+    stats: { confirmedMints: 1 },
+  };
+  currentSummaryPayloads.workSummary.token = {
+    stats: { confirmedTransfers: 0 },
+  };
+  currentSummaryPayloads.workSummary.workTransferValueProjection = {
+    items: [],
+    model: "canonical-work-transfer-value-projection-v1",
+  };
   previousPayload = {
     ok: true,
     snapshotId: "full-101-current-models",
@@ -5406,6 +5440,253 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   assert.equal(currentResult.reason, "already-current");
   assert.equal(currentResult.snapshotId, "full-101-current-models");
   assert.equal(inserted.length, 1);
+});
+
+check("canonical summary publication allows cumulative INCB dust across independently floored mints", () => {
+  const canonicalSummaryAccountingModelsCurrent = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalSummaryAccountingModelsCurrent",
+    {
+      INCB_ISSUANCE_ACCOUNTING_MODEL:
+        "canonical-pre-bond-live-network-value-v2",
+      INCB_VALUE_SNAPSHOT_MODEL:
+        "canonical-summary-h-minus-one-v1",
+      WORK_TOKEN_ID:
+        "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+      WORK_TRANSFER_VALUE_PROJECTION_MODEL:
+        "canonical-work-transfer-value-projection-v1",
+    },
+  );
+  const minerFeeCoverage = {
+    complete: true,
+    confirmedEvents: 2,
+    confirmedTransactions: 1,
+    coveredConfirmedEvents: 2,
+    coveredConfirmedTransactions: 1,
+    missingConfirmedEvents: 0,
+    missingConfirmedTransactions: 0,
+    missingConfirmedTxids: [],
+    source: "proof-indexer-normalized-input-output-totals",
+  };
+  const actualValue = {
+    attachedWorkIssuanceUnits: 3_132_313_922,
+    attachedWorkLiveValueAtSendSats: 3_132_313_923.5410833,
+    attachmentAccountingModel:
+      "canonical-pre-bond-live-network-value-v2",
+    confirmedIssuanceUnits: 3_132_315_014,
+    directProofIssuanceUnits: 1_092,
+    issuanceAccountingModel:
+      "canonical-pre-bond-live-network-value-v2",
+    issuanceCheckpointBlockHeight: 958_007,
+    issuanceCheckpointMode: "bond-transaction-provenance",
+    issuanceDustSats: 1.5410833358764648,
+    issuanceFloorSats: 3_132_315_015.5410833 / 3_132_315_014,
+    issuanceNetworkValueSats: 3_132_315_015.5410833,
+    issuanceValueSnapshotBlockHash: "a".repeat(64),
+    issuanceValueSnapshotBlockHeight: 958_006,
+    issuanceValueSnapshotCanonicalSummaryHash: "b".repeat(64),
+    issuanceValueSnapshotGeneratedAt: "2026-07-14T06:00:00.000Z",
+    issuanceValueSnapshotId: "latest-pre-bond-snapshot",
+    issuanceValueSnapshotMode: "canonical-summary-refresh",
+    issuanceValueSnapshotModel: "canonical-summary-h-minus-one-v1",
+    issuanceValueSnapshotWorkNetworkValueSats: 9_857_361_066.004198,
+  };
+  const firstExactIssuance = 1_421_799_461.6275952;
+  const secondExactIssuance = 1_710_515_553.9134884;
+  const independentlyFlooredIssuance =
+    Math.floor(firstExactIssuance) + Math.floor(secondExactIssuance);
+  const combinedFloor = Math.floor(firstExactIssuance + secondExactIssuance);
+  const cumulativeDust =
+    firstExactIssuance +
+    secondExactIssuance -
+    independentlyFlooredIssuance;
+  assert.equal(independentlyFlooredIssuance, 3_132_315_014);
+  assert.equal(combinedFloor, 3_132_315_015);
+  assert.ok(Math.abs(cumulativeDust - 1.5410833358764648) < 1e-12);
+  const summaryPayloads = (confirmedMints) => ({
+    inceptionSummary: {
+      actualValue,
+      token: { stats: { confirmedMints } },
+    },
+    workFloor: {
+      actualValue: {
+        creditMinerFeeAccountingModel:
+          "canonical-unique-tx-input-output-v1",
+        creditMinerFeeCoverage: minerFeeCoverage,
+      },
+    },
+    workSummary: {
+      token: { stats: { confirmedTransfers: 0 } },
+      workTransferValueProjection: {
+        items: [],
+        model: "canonical-work-transfer-value-projection-v1",
+      },
+    },
+  });
+
+  assert.equal(
+    canonicalSummaryAccountingModelsCurrent(summaryPayloads(2)),
+    true,
+    "two independent mint floors may leave cumulative dust above one proof",
+  );
+  assert.equal(
+    canonicalSummaryAccountingModelsCurrent(summaryPayloads(1)),
+    false,
+    "cumulative dust must remain below the number of confirmed mints",
+  );
+
+  const exactTipLiveFloorSats = 683.8074244507424;
+  const creditAmountMoved = 3_644_060;
+  const creditValueAtConfirmSats = 1_710_515_007.9134884;
+  const creditLiveValueSats = creditAmountMoved * exactTipLiveFloorSats;
+  const projectedTransfer = {
+    amount: creditAmountMoved,
+    confirmed: true,
+    creditAmountMoved,
+    creditFloorAtConfirmModel:
+      "canonical-incb-h-minus-one-live-work-v1",
+    creditFloorAtConfirmSats: 469.3981460001999,
+    creditLiveFloorSats: exactTipLiveFloorSats,
+    creditLiveValueSats,
+    creditRevaluationFloorSats: exactTipLiveFloorSats,
+    creditValueAtConfirmSats,
+    frozenNetworkValueSats: creditValueAtConfirmSats + 546,
+    liveNetworkValueSats: creditLiveValueSats + 546,
+    tokenId:
+      "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+    txid: "d8b3760f694ec6dda316d93867d61ca39a1f105bed406110dbe28f5d0f56ce21",
+    valueSnapshotBlockHash: "c".repeat(64),
+    valueSnapshotBlockHeight: 958_006,
+    valueSnapshotId: "exact-h-minus-one-snapshot",
+  };
+  const firstProjectedTransfer = {
+    ...projectedTransfer,
+    creditFloorAtConfirmSats: 390.168909301053,
+    creditValueAtConfirmSats: 1_421_798_915.6275952,
+    frozenNetworkValueSats: 1_421_799_461.6275952,
+    liveNetworkValueSats: creditLiveValueSats + 546,
+    txid: "dd743fb69c519200cc190627219ba34ca2e63e6893e600b73e9aee8d4dac8fa4",
+    valueSnapshotBlockHash:
+      "00000000000000000001bda6bfa328f15edf597bfc364e02da42ea92a518a15e",
+    valueSnapshotBlockHeight: 957_949,
+    valueSnapshotId: "first-exact-h-minus-one-snapshot",
+  };
+  const exactProjectionSummary = summaryPayloads(2);
+  exactProjectionSummary.workSummary = {
+    floor: { liveFloorSats: exactTipLiveFloorSats },
+    token: { stats: { confirmedTransfers: 2 } },
+    workTransferValueProjection: {
+      items: [firstProjectedTransfer, projectedTransfer],
+      model: "canonical-work-transfer-value-projection-v1",
+    },
+  };
+  assert.equal(
+    canonicalSummaryAccountingModelsCurrent(exactProjectionSummary),
+    true,
+    "the projection must reconcile immutable H-1 value with the exact-tip live floor",
+  );
+  assert.equal(
+    canonicalSummaryAccountingModelsCurrent({
+      ...exactProjectionSummary,
+      workSummary: {
+        ...exactProjectionSummary.workSummary,
+        workTransferValueProjection: {
+          ...exactProjectionSummary.workSummary.workTransferValueProjection,
+          items: [
+            firstProjectedTransfer,
+            {
+              ...projectedTransfer,
+              creditLiveFloorSats: exactTipLiveFloorSats - 1,
+            },
+          ],
+        },
+      },
+    }),
+    false,
+    "an intermediate or stale per-transfer live floor must not publish",
+  );
+  assert.equal(
+    canonicalSummaryAccountingModelsCurrent({
+      ...exactProjectionSummary,
+      workSummary: {
+        ...exactProjectionSummary.workSummary,
+        workTransferValueProjection: {
+          ...exactProjectionSummary.workSummary.workTransferValueProjection,
+          items: [
+            firstProjectedTransfer,
+            {
+              ...projectedTransfer,
+              liveNetworkValueSats: projectedTransfer.liveNetworkValueSats + 1,
+            },
+          ],
+        },
+      },
+    }),
+    false,
+    "a projected live network value must preserve the transfer's fixed event flow",
+  );
+  assert.equal(
+    canonicalSummaryAccountingModelsCurrent({
+      ...exactProjectionSummary,
+      workSummary: {
+        ...exactProjectionSummary.workSummary,
+        workTransferValueProjection: {
+          ...exactProjectionSummary.workSummary.workTransferValueProjection,
+          items: [
+            firstProjectedTransfer,
+            {
+              ...projectedTransfer,
+              frozenNetworkValueSats:
+                projectedTransfer.creditValueAtConfirmSats - 1,
+            },
+          ],
+        },
+      },
+    }),
+    false,
+    "a negative fixed event-flow component must not publish",
+  );
+  assert.equal(
+    canonicalSummaryAccountingModelsCurrent({
+      ...exactProjectionSummary,
+      workSummary: {
+        ...exactProjectionSummary.workSummary,
+        workTransferValueProjection: {
+          ...exactProjectionSummary.workSummary.workTransferValueProjection,
+          items: [
+            firstProjectedTransfer,
+            {
+              ...projectedTransfer,
+              creditValueAtConfirmSats:
+                firstProjectedTransfer.creditValueAtConfirmSats,
+            },
+          ],
+        },
+      },
+    }),
+    false,
+    "each transfer's frozen credit value must equal its own H-1 floor",
+  );
+  assert.equal(
+    canonicalSummaryAccountingModelsCurrent({
+      ...exactProjectionSummary,
+      workSummary: {
+        ...exactProjectionSummary.workSummary,
+        workTransferValueProjection: {
+          ...exactProjectionSummary.workSummary.workTransferValueProjection,
+          items: [
+            firstProjectedTransfer,
+            {
+              ...projectedTransfer,
+              txid: firstProjectedTransfer.txid,
+            },
+          ],
+        },
+      },
+    }),
+    false,
+    "duplicate movement identities cannot replace a missing projection row",
+  );
 });
 
 check("canonical summary tip races defer without failing the block worker", () => {
@@ -12875,6 +13156,7 @@ check("WORK replay counts one canonical miner fee without collapsing same-tx mov
         "token-listing-closed",
       ]),
       TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      canonicalInceptionWorkMovementOracleByIdentity: () => new Map(),
       compareCreditValueReplayEvents,
       creditMovementIdentity,
       creditReplayTransactionMinerFeeSats,
@@ -13063,6 +13345,640 @@ check("WORK replay counts one canonical miner fee without collapsing same-tx mov
   );
 });
 
+check("Inception-bound WORK movements freeze once at each bond's own H-1 live oracle", () => {
+  const WORK_TOKEN_ID =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const INCB_TOKEN_ID =
+    "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+  const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
+  const INCEPTION_WORK_MOVEMENT_ORACLE_MODEL =
+    "canonical-incb-h-minus-one-live-work-v1";
+  const recipientAddress = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
+  const attachedWorkAmount = 3_644_060;
+  const first = {
+    blockHash:
+      "000000000000000000016ea78b0d57a7979de3542518c8690a1e5a808e691cc5",
+    blockHeight: 957_950,
+    blockIndex: 382,
+    createdMs: 100,
+    snapshotBlockHash:
+      "00000000000000000001bda6bfa328f15edf597bfc364e02da42ea92a518a15e",
+    snapshotBlockHeight: 957_949,
+    snapshotId: "b8e77cd30cbed6855977c514",
+    txid: "dd743fb69c519200cc190627219ba34ca2e63e6893e600b73e9aee8d4dac8fa4",
+    workNetworkValueSats: 8_193_547_095.322113,
+  };
+  const second = {
+    blockHash:
+      "00000000000000000000db5329facae5d3bdd11f7d2e9df4bdcdda580069afa9",
+    blockHeight: 958_007,
+    blockIndex: 1_079,
+    createdMs: 200,
+    snapshotBlockHash:
+      "00000000000000000000a9c98064bcf92b25b7c43576c8479befdcb17dfb85cd",
+    snapshotBlockHeight: 958_006,
+    snapshotId: "c8b800384da576c962ae82a5",
+    txid: "d8b3760f694ec6dda316d93867d61ca39a1f105bed406110dbe28f5d0f56ce21",
+    workNetworkValueSats: 9_857_361_066.004198,
+  };
+  const numericValue = (value, fallback = 0) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  };
+  const numbersAgree = (left, right, tolerance = 0) =>
+    Math.abs(Number(left) - Number(right)) <= tolerance;
+  const samePaymentAddress = (left, right) =>
+    String(left ?? "").trim() === String(right ?? "").trim();
+  const creditMovementIdentity = isolatedFunction(
+    API_PATH,
+    "creditMovementIdentity",
+    { numericValue },
+  );
+  const issuanceMetadataFromMint = (mints) => {
+    const mint = Array.isArray(mints) ? mints[0] : null;
+    if (!mint?.validCanonicalIssuance) {
+      return {
+        attachedWorkAmount: 0,
+        canonicalMints: 0,
+        complete: false,
+        confirmedMints: mint ? 1 : 0,
+      };
+    }
+    return {
+      attachedWorkAmount: mint.attachedWorkAmount,
+      attachedWorkLiveValueAtSendSats:
+        mint.attachedWorkLiveValueAtSendSats,
+      canonicalMints: 1,
+      complete: true,
+      confirmedMints: 1,
+      issuanceValueSnapshotBlockHash:
+        mint.issuanceValueSnapshotBlockHash,
+      issuanceValueSnapshotBlockHeight:
+        mint.issuanceValueSnapshotBlockHeight,
+      issuanceValueSnapshotCanonicalSummaryHash:
+        mint.issuanceValueSnapshotCanonicalSummaryHash,
+      issuanceValueSnapshotGeneratedAt:
+        mint.issuanceValueSnapshotGeneratedAt,
+      issuanceValueSnapshotId: mint.issuanceValueSnapshotId,
+      issuanceValueSnapshotWorkNetworkValueSats:
+        mint.issuanceValueSnapshotWorkNetworkValueSats,
+    };
+  };
+  const canonicalInceptionWorkMovementOracleByIdentity = isolatedFunction(
+    API_PATH,
+    "canonicalInceptionWorkMovementOracleByIdentity",
+    {
+      INCB_TOKEN_ID,
+      INCEPTION_WORK_MOVEMENT_ORACLE_MODEL,
+      WORK_TOKEN_ID,
+      WORK_TOKEN_MAX_SUPPLY,
+      creditMovementIdentity,
+      inceptionIssuanceMetadataFromMints: issuanceMetadataFromMint,
+      numbersAgree,
+      numericValue,
+      samePaymentAddress,
+    },
+  );
+  const transferFor = (bond) => ({
+    _powEventIndex: 2,
+    amount: attachedWorkAmount,
+    blockHash: bond.blockHash,
+    blockHeight: bond.blockHeight,
+    blockIndex: bond.blockIndex,
+    confirmed: true,
+    createdMs: bond.createdMs,
+    minerFeeSats: 0,
+    network: "livenet",
+    paidSats: 546,
+    protocolVout: 3,
+    recipientAddress,
+    senderAddress: recipientAddress,
+    tokenId: WORK_TOKEN_ID,
+    txid: bond.txid,
+  });
+  const mintFor = (bond) => {
+    const attachedWorkLiveValueAtSendSats =
+      attachedWorkAmount *
+      (bond.workNetworkValueSats / WORK_TOKEN_MAX_SUPPLY);
+    return {
+      attachedWorkAmount,
+      attachedWorkLiveValueAtSendSats,
+      bondRecipientAddress: recipientAddress,
+      confirmed: true,
+      issuanceCheckpointBlockHash: bond.blockHash,
+      issuanceCheckpointBlockHeight: bond.blockHeight,
+      issuanceCheckpointBlockIndex: bond.blockIndex,
+      issuanceValueSnapshotBlockHash: bond.snapshotBlockHash,
+      issuanceValueSnapshotBlockHeight: bond.snapshotBlockHeight,
+      issuanceValueSnapshotCanonicalSummaryHash: "a".repeat(64),
+      issuanceValueSnapshotGeneratedAt: "2026-07-14T13:05:51.033Z",
+      issuanceValueSnapshotId: bond.snapshotId,
+      issuanceValueSnapshotWorkNetworkValueSats:
+        bond.workNetworkValueSats,
+      tokenId: INCB_TOKEN_ID,
+      txid: bond.txid,
+      validCanonicalIssuance: true,
+    };
+  };
+  const firstTransfer = transferFor(first);
+  const secondTransfer = transferFor(second);
+  const firstMint = mintFor(first);
+  const secondMint = mintFor(second);
+
+  const presentNonNegativeNumber = isolatedFunction(
+    API_PATH,
+    "presentNonNegativeNumber",
+  );
+  const creditReplayTransactionMinerFeeSats = isolatedFunction(
+    API_PATH,
+    "creditReplayTransactionMinerFeeSats",
+    { presentNonNegativeNumber },
+  );
+  const verifiedCanonicalMinerFeeCoverage = isolatedFunction(
+    API_PATH,
+    "verifiedCanonicalMinerFeeCoverage",
+  );
+  const creditNetworkValueMetrics = isolatedFunction(
+    API_PATH,
+    "creditNetworkValueMetrics",
+    {
+      CREDIT_MINER_FEE_ACCOUNTING_MODEL:
+        "canonical-unique-tx-input-output-v1",
+      TOKEN_MARKETPLACE_MUTATION_KINDS: new Set([
+        "token-listing",
+        "token-listing-sealed",
+        "token-listing-closed",
+      ]),
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      canonicalInceptionWorkMovementOracleByIdentity,
+      compareCreditValueReplayEvents: (left, right) =>
+        left.createdMs - right.createdMs || left.order - right.order,
+      creditMovementIdentity,
+      creditReplayTransactionMinerFeeSats,
+      creditValueEventMs: (item) => Number(item?.createdMs),
+      isTokenActivityItem: (item) =>
+        String(item?.kind ?? "").startsWith("token-"),
+      numericValue,
+      tokenCanUseCreditNetworkFloor: (token) =>
+        token?.tokenId === WORK_TOKEN_ID,
+      verifiedCanonicalMinerFeeCoverage,
+    },
+  );
+  const baseValueAt = () => 50_000_000;
+  const metrics = creditNetworkValueMetrics({
+    baseValueAt,
+    cutoffMs: 300,
+    includeEvents: true,
+    tokenDefinitions: [
+      {
+        maxSupply: WORK_TOKEN_MAX_SUPPLY,
+        ticker: "WORK",
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    tokenMints: [firstMint, secondMint],
+    tokenTransfers: [firstTransfer, secondTransfer],
+  });
+  const firstEvent = metrics.events.find((event) => event.txid === first.txid);
+  const secondEvent = metrics.events.find(
+    (event) => event.txid === second.txid,
+  );
+  const firstExpectedValue =
+    attachedWorkAmount *
+    (first.workNetworkValueSats / WORK_TOKEN_MAX_SUPPLY);
+  const secondExpectedValue =
+    attachedWorkAmount *
+    (second.workNetworkValueSats / WORK_TOKEN_MAX_SUPPLY);
+
+  assert.equal(metrics.events.length, 2);
+  assert.equal(
+    metrics.events.filter((event) => event.txid === first.txid).length,
+    1,
+  );
+  assert.equal(
+    metrics.events.filter((event) => event.txid === second.txid).length,
+    1,
+  );
+  assert.equal(
+    firstEvent.creditFloorAtConfirmModel,
+    INCEPTION_WORK_MOVEMENT_ORACLE_MODEL,
+  );
+  assert.equal(
+    secondEvent.creditFloorAtConfirmModel,
+    INCEPTION_WORK_MOVEMENT_ORACLE_MODEL,
+  );
+  assert.ok(
+    Math.abs(
+      firstEvent.creditFloorAtConfirmSats -
+        first.workNetworkValueSats / WORK_TOKEN_MAX_SUPPLY,
+    ) < 1e-12,
+  );
+  assert.ok(
+    Math.abs(
+      secondEvent.creditFloorAtConfirmSats -
+        second.workNetworkValueSats / WORK_TOKEN_MAX_SUPPLY,
+    ) < 1e-12,
+  );
+  assert.ok(
+    Math.abs(firstEvent.creditValueAtConfirmSats - firstExpectedValue) < 0.01,
+  );
+  assert.ok(
+    Math.abs(secondEvent.creditValueAtConfirmSats - secondExpectedValue) <
+      0.01,
+  );
+  assert.ok(
+    Math.abs(
+      metrics.creditMovementFrozenValueSats -
+        (firstExpectedValue + secondExpectedValue),
+    ) < 0.01,
+    "each attached WORK movement must enter frozen value exactly once",
+  );
+  assert.equal(firstEvent.valueSnapshotBlockHeight, first.snapshotBlockHeight);
+  assert.equal(
+    secondEvent.valueSnapshotBlockHeight,
+    second.snapshotBlockHeight,
+  );
+
+  const canonicalReplayTimeline = isolatedFunction(
+    API_PATH,
+    "canonicalReplayTimeline",
+  );
+  const canonicalReplayPrefixLengthAtMs = isolatedFunction(
+    API_PATH,
+    "canonicalReplayPrefixLengthAtMs",
+  );
+  const growthActualLiveTotalSatsAtProvider = isolatedFunction(
+    API_PATH,
+    "growthActualLiveTotalSatsAtProvider",
+    {
+      TOKEN_MARKETPLACE_MUTATION_KINDS: new Set([
+        "token-listing",
+        "token-listing-sealed",
+        "token-listing-closed",
+      ]),
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      canonicalInceptionWorkMovementOracleByIdentity,
+      canonicalReplayPrefixLengthAtMs,
+      canonicalReplayTimeline,
+      compareCreditValueReplayEvents: (left, right) =>
+        left.createdMs - right.createdMs || left.order - right.order,
+      creditMovementIdentity,
+      creditReplayTransactionMinerFeeSats,
+      creditValueEventMs: (item) => Number(item?.createdMs),
+      growthActualBaseNetworkValueAtProvider: () => () => 50_000_000,
+      growthActualBaseNetworkValueBeforeCanonicalItemProvider:
+        (_collections, provider) => (_source, createdMs) =>
+          provider(createdMs - 1),
+      isTokenActivityItem: (item) =>
+        String(item?.kind ?? "").startsWith("token-"),
+      numericValue,
+      tokenCanUseCreditNetworkFloor: (token) =>
+        token?.tokenId === WORK_TOKEN_ID,
+    },
+  );
+  const growthTotalAt = growthActualLiveTotalSatsAtProvider(
+    [],
+    [],
+    [],
+    [
+      {
+        maxSupply: WORK_TOKEN_MAX_SUPPLY,
+        ticker: "WORK",
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    [firstMint, secondMint],
+    [firstTransfer, secondTransfer],
+    [],
+  );
+  const movementLiveFactor = attachedWorkAmount / WORK_TOKEN_MAX_SUPPLY;
+  const fixedTransferFlowSats = 546;
+  const expectedAfterFirst =
+    50_000_000 +
+    (50_000_000 + firstExpectedValue + fixedTransferFlowSats) *
+      movementLiveFactor +
+    fixedTransferFlowSats;
+  const expectedAfterSecond =
+    50_000_000 +
+    (50_000_000 +
+      firstExpectedValue +
+      secondExpectedValue +
+      fixedTransferFlowSats * 2) *
+      (movementLiveFactor * 2) +
+    fixedTransferFlowSats * 2;
+  assert.ok(
+    Math.abs(growthTotalAt(first.createdMs) - expectedAfterFirst) < 0.01,
+    "Growth history must replay the first bond at its own H-1 oracle",
+  );
+  assert.ok(
+    Math.abs(growthTotalAt(second.createdMs) - expectedAfterSecond) < 0.01,
+    "Growth history must replay both bonds once at their separate H-1 oracles",
+  );
+
+  const wrongRecipientTransfer = {
+    ...secondTransfer,
+    recipientAddress: "1CQud1ZkoR4NSRJ2Lw31KssCpR4zSYMLJL",
+  };
+  const wrongBlockTransfer = {
+    ...secondTransfer,
+    blockHash: "f".repeat(64),
+  };
+  assert.equal(
+    canonicalInceptionWorkMovementOracleByIdentity(
+      [secondMint],
+      [wrongRecipientTransfer],
+    ).size,
+    0,
+  );
+  assert.equal(
+    canonicalInceptionWorkMovementOracleByIdentity(
+      [secondMint],
+      [wrongBlockTransfer],
+    ).size,
+    0,
+  );
+  const mismatchMetrics = creditNetworkValueMetrics({
+    baseValueAt,
+    cutoffMs: 300,
+    includeEvents: true,
+    tokenDefinitions: [
+      {
+        maxSupply: WORK_TOKEN_MAX_SUPPLY,
+        ticker: "WORK",
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    tokenMints: [secondMint],
+    tokenTransfers: [wrongBlockTransfer],
+  });
+  assert.equal(
+    mismatchMetrics.events[0].creditFloorAtConfirmModel,
+    "canonical-frozen-credit-replay-v1",
+  );
+  assert.ok(
+    Math.abs(
+      mismatchMetrics.events[0].creditValueAtConfirmSats -
+        secondExpectedValue,
+    ) > 1,
+    "a provenance mismatch must not inherit the Inception H-1 oracle",
+  );
+});
+
+check("exact-tip WORK transfer projection preserves both Inception H-1 values", () => {
+  const WORK_TOKEN_ID =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const WORK_TRANSFER_VALUE_PROJECTION_MODEL =
+    "canonical-work-transfer-value-projection-v1";
+  const numericFields = [
+    "creditAmountMoved",
+    "creditFloorAtConfirmSats",
+    "creditLiveFloorSats",
+    "creditLiveValueSats",
+    "creditRevaluationFloorSats",
+    "creditValueAtConfirmSats",
+    "frozenNetworkValueSats",
+    "liveNetworkValueSats",
+  ];
+  const projectedFields = [
+    "amount",
+    "confirmed",
+    "creditFloorAtConfirmModel",
+    "eventKeyVout",
+    "recipientAddress",
+    "senderAddress",
+    "tokenId",
+    "txid",
+    "valueSnapshotBlockHash",
+    "valueSnapshotBlockHeight",
+    "valueSnapshotCanonicalSummaryHash",
+    "valueSnapshotGeneratedAt",
+    "valueSnapshotId",
+    ...numericFields,
+  ];
+  const fromState = isolatedFunction(
+    API_PATH,
+    "canonicalWorkTransferValueProjectionFromState",
+    {
+      WORK_TOKEN_ID,
+      WORK_TRANSFER_VALUE_PROJECTION_FIELD_NAMES: projectedFields,
+      WORK_TRANSFER_VALUE_PROJECTION_MODEL,
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value, fallback = 0) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : fallback;
+      },
+    },
+  );
+  const isUsable = isolatedFunction(
+    API_PATH,
+    "canonicalWorkTransferValueProjectionIsUsable",
+    { WORK_TRANSFER_VALUE_PROJECTION_MODEL },
+  );
+  const mergeCreditNetworkValueRecord = isolatedFunction(
+    API_PATH,
+    "mergeCreditNetworkValueRecord",
+    { CREDIT_NETWORK_VALUE_FIELD_NAMES: numericFields },
+  );
+  const transferHistoryItemKey = isolatedFunction(
+    API_PATH,
+    "tokenTransferHistoryItemKey",
+    {
+      numericValue: (value, fallback = 0) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : fallback;
+      },
+    },
+  );
+  const mergeItems = (base, overlay, keyFor, merge) => {
+    const byKey = new Map((base ?? []).map((item) => [keyFor(item), item]));
+    for (const item of overlay ?? []) {
+      const key = keyFor(item);
+      byKey.set(key, merge(byKey.get(key), item));
+    }
+    return [...byKey.values()];
+  };
+  const apply = isolatedFunction(
+    API_PATH,
+    "tokenStateWithCanonicalWorkTransferValues",
+    {
+      canonicalWorkTransferValueProjectionIsUsable: isUsable,
+      mergeTokenStateItemsByKey: mergeItems,
+      mergeTokenTransferRecord: mergeCreditNetworkValueRecord,
+      tokenStateWithPendingStats: (state) => state,
+      tokenTransferHistoryItemKey: transferHistoryItemKey,
+    },
+  );
+  const values = [
+    {
+      floor: 390.168909301053,
+      frozen: 1_421_798_915.6275952,
+      hash: "00000000000000000001bda6bfa328f15edf597bfc364e02da42ea92a518a15e",
+      height: 957_949,
+      snapshotId: "first-h-minus-one-snapshot",
+      txid: "dd743fb69c519200cc190627219ba34ca2e63e6893e600b73e9aee8d4dac8fa4",
+    },
+    {
+      floor: 469.3981460001999,
+      frozen: 1_710_515_007.9134884,
+      hash: "00000000000000000000a9c98064bcf92b25b7c43576c8479befdcb17dfb85cd",
+      height: 958_006,
+      snapshotId: "second-h-minus-one-snapshot",
+      txid: "d8b3760f694ec6dda316d93867d61ca39a1f105bed406110dbe28f5d0f56ce21",
+    },
+  ];
+  const rawTransfers = values.map((value, index) => ({
+    amount: 3_644_060,
+    creditFloorAtConfirmSats: 0,
+    creditValueAtConfirmSats: 0,
+    eventKeyVout: index + 1,
+    tokenId: WORK_TOKEN_ID,
+    txid: value.txid,
+  }));
+  const valuedTransfers = values.map((value) => ({
+    ...rawTransfers.find((item) => item.txid === value.txid),
+    confirmed: true,
+    creditAmountMoved: 3_644_060,
+    creditFloorAtConfirmModel: "canonical-incb-h-minus-one-live-work-v1",
+    creditFloorAtConfirmSats: value.floor,
+    creditLiveFloorSats: 344.16840058442443,
+    creditLiveValueSats: 3_644_060 * 344.16840058442443,
+    creditRevaluationFloorSats: 344.16840058442443,
+    creditValueAtConfirmSats: value.frozen,
+    frozenNetworkValueSats: value.frozen + 546,
+    liveNetworkValueSats: 3_644_060 * 344.16840058442443 + 546,
+    recipientAddress: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+    senderAddress: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+    valueSnapshotBlockHash: value.hash,
+    valueSnapshotBlockHeight: value.height,
+    valueSnapshotCanonicalSummaryHash: `${value.txid.slice(0, 63)}a`,
+    valueSnapshotGeneratedAt: `2026-07-14T${value.height === 957_949 ? "03" : "06"}:00:00.000Z`,
+    valueSnapshotId: value.snapshotId,
+  }));
+  const exactTipLiveFloorSats = 683.8074244507424;
+  const projection = fromState(
+    {
+      mints: Array.from({ length: 100 }, (_, index) => ({ index })),
+      transfers: [
+        ...valuedTransfers,
+        { ...valuedTransfers[0], confirmed: false, txid: "f".repeat(64) },
+      ],
+    },
+    exactTipLiveFloorSats,
+  );
+  const projected = apply({ transfers: rawTransfers }, projection);
+
+  assert.equal(projection.model, WORK_TRANSFER_VALUE_PROJECTION_MODEL);
+  assert.equal(projection.items.length, 2, "only confirmed transfers are projected");
+  for (const value of values) {
+    const item = projected.transfers.find((row) => row.txid === value.txid);
+    assert.ok(Math.abs(item.creditFloorAtConfirmSats - value.floor) < 1e-12);
+    assert.ok(Math.abs(item.creditValueAtConfirmSats - value.frozen) < 0.01);
+    assert.equal(item.creditLiveFloorSats, exactTipLiveFloorSats);
+    assert.equal(item.creditRevaluationFloorSats, exactTipLiveFloorSats);
+    assert.ok(
+      Math.abs(
+        item.creditLiveValueSats -
+          item.creditAmountMoved * exactTipLiveFloorSats,
+      ) < 0.01,
+    );
+    assert.ok(
+      Math.abs(
+        item.liveNetworkValueSats - (item.creditLiveValueSats + 546),
+      ) < 0.01,
+    );
+    assert.equal(item.valueSnapshotBlockHeight, value.height);
+    assert.equal(item.valueSnapshotBlockHash, value.hash);
+    assert.equal(item.valueSnapshotId, value.snapshotId);
+  }
+  const absentTxid = "e".repeat(64);
+  const projectedWithoutAddition = apply(
+    { transfers: rawTransfers },
+    {
+      ...projection,
+      items: [
+        ...projection.items,
+        {
+          ...projection.items[0],
+          eventKeyVout: 99,
+          txid: absentTxid,
+        },
+      ],
+    },
+  );
+  assert.equal(projectedWithoutAddition.transfers.length, rawTransfers.length);
+  assert.equal(
+    projectedWithoutAddition.transfers.some(
+      (item) => item.txid === absentTxid,
+    ),
+    false,
+    "a valuation projection cannot create a transfer absent from the indexed page",
+  );
+
+  const matches = isolatedFunction(
+    API_PATH,
+    "canonicalWorkTransferValueSummaryMatchesPayload",
+    {
+      canonicalWorkTransferValueProjectionIsUsable: isUsable,
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock),
+    },
+  );
+  const blockHash = "b".repeat(64);
+  const summary = {
+    indexedThroughBlock: 958_016,
+    indexedThroughBlockHash: blockHash,
+    snapshotId: "exact-tip-snapshot",
+    workTransferValueProjection: projection,
+  };
+  const gate = {
+    canonicalHash: blockHash,
+    indexedThroughBlock: 958_016,
+    ready: true,
+    storedHash: blockHash,
+    summarySnapshot: { snapshotId: "exact-tip-snapshot" },
+    summarySnapshotOk: true,
+    tipHeight: 958_016,
+  };
+  assert.equal(matches(summary, { indexedThroughBlock: 958_016 }, gate), true);
+  assert.equal(
+    matches(summary, { indexedThroughBlock: 958_015 }, gate),
+    false,
+    "a mixed-height token page cannot receive the projection",
+  );
+  assert.equal(
+    matches(summary, { indexedThroughBlock: 958_016 }, {
+      ...gate,
+      canonicalHash: "c".repeat(64),
+    }),
+    false,
+    "a hash mismatch must fail closed",
+  );
+  assert.equal(
+    matches(summary, { indexedThroughBlock: 958_016 }, {
+      ...gate,
+      storedHash: "d".repeat(64),
+    }),
+    false,
+    "a stored checkpoint hash mismatch must fail closed",
+  );
+  assert.equal(
+    matches(summary, { indexedThroughBlock: 958_016 }, {
+      ...gate,
+      summarySnapshotOk: false,
+    }),
+    false,
+    "an ineligible database summary must fail closed",
+  );
+  assert.equal(
+    matches(summary, { indexedThroughBlock: 958_016 }, {
+      ...gate,
+      summarySnapshot: { snapshotId: "different-snapshot" },
+    }),
+    false,
+    "a different eligible database summary cannot lend its gate to the projection",
+  );
+});
+
 check("growth chart replay is linear and matches exact credit valuation", () => {
   const numericValue = (value, fallback = 0) => {
     const number = Number(value);
@@ -13105,6 +14021,7 @@ check("growth chart replay is linear and matches exact credit valuation", () => 
       "token-listing-closed",
     ]),
     TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+    canonicalInceptionWorkMovementOracleByIdentity: () => new Map(),
     compareCreditValueReplayEvents,
     canonicalReplayPrefixLengthAtMs,
     canonicalReplayTimeline,

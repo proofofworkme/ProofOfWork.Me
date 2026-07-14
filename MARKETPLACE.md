@@ -147,8 +147,10 @@ confirmed_incb_issuance = floor(
 ```
 
 One whole proof in that value issues one INCB. Sub-proof dust remains network
-value. Confirmation fixes the resulting INCB balance and supply. Current and
-post-bond network value change only the live INCB floor; they cannot
+value. The same persisted H-1 oracle fixes the attachment's one shared frozen
+WORK movement value; a sequential replay floor cannot replace it. Confirmation
+fixes the resulting INCB balance and supply. Current and post-bond network value
+change only live WORK revaluation and the live INCB floor; they cannot
 self-compound, reprice, mint, or burn historical issuance. The underlying WORK
 transfer remains one canonical shared-ledger
 movement; the Inception view must not add it to Growth/WORK network value a

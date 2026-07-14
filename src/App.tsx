@@ -11709,6 +11709,27 @@ function workFloorQuoteFrozenValue(quote: WorkFloorQuote | undefined) {
   );
 }
 
+function workFloorLastGoodReference(quote: WorkFloorQuote) {
+  const indexedThroughBlock = Number(quote.stats?.indexedThroughBlock);
+  const snapshotId = String(quote.snapshotId ?? "").trim();
+  const references: string[] = [];
+
+  if (Number.isSafeInteger(indexedThroughBlock) && indexedThroughBlock >= 0) {
+    references.push(`block ${indexedThroughBlock.toLocaleString()}`);
+  }
+  if (snapshotId) {
+    references.push(`snapshot ${snapshotId}`);
+  }
+
+  return references.length > 0
+    ? references.join(", ")
+    : `snapshot indexed ${formatDate(quote.indexedAt)}`;
+}
+
+function workFloorLastGoodStatusText(quote: WorkFloorQuote) {
+  return `WORK index catching up. Showing last-good ${workFloorLastGoodReference(quote)}. Pending mints, bonds, and transfers do not affect the confirmed WORK floor until they confirm and an exact-tip snapshot is published.`;
+}
+
 function workFloorQuoteRegresses(
   next: WorkFloorQuote | undefined,
   current: WorkFloorQuote | undefined,
@@ -14484,6 +14505,7 @@ export default function App() {
   const [bondWorkAmount, setBondWorkAmount] = useState(0);
   const [infinityBondRecipient, setInfinityBondRecipient] = useState("");
   const [workFloorLoading, setWorkFloorLoading] = useState(false);
+  const [workFloorUsingLastGood, setWorkFloorUsingLastGood] = useState(false);
   const [tokenPrepareMintCount, setTokenPrepareMintCount] = useState(
     TOKEN_PREPARE_DEFAULT_MINT_COUNT,
   );
@@ -19474,6 +19496,7 @@ export default function App() {
           return refreshWorkFloor(silent, fresh);
         }
         if (!silent) {
+          const lastGoodQuote = acceptedWorkFloorQuoteRef.current;
           setStatusForWorkspace(
             requestWorkspaceKey,
             quote
@@ -19481,6 +19504,11 @@ export default function App() {
                   tone: "good",
                   text: `WORK floor loaded. Live network value ${Math.round(quote.networkValueSats).toLocaleString()} proofs.`,
                 }
+              : fresh && lastGoodQuote
+                ? {
+                    tone: "idle",
+                    text: workFloorLastGoodStatusText(lastGoodQuote),
+                  }
               : {
                   tone: "bad",
                   text: "WORK floor refresh failed.",
@@ -19514,15 +19542,30 @@ export default function App() {
           );
         }
         const acceptedQuote = applyWorkFloorQuote(apiQuote) ?? apiQuote;
+        const retainedEarlierQuote = acceptedQuote !== apiQuote;
+        if (fresh) {
+          setWorkFloorUsingLastGood(retainedEarlierQuote);
+        }
         if (!silent) {
           setStatusForWorkspace(requestWorkspaceKey, {
-            tone: "good",
-            text: `WORK floor loaded. Live network value ${Math.round(workFloorQuoteLiveValue(acceptedQuote)).toLocaleString()} proofs.`,
+            tone: retainedEarlierQuote ? "idle" : "good",
+            text: retainedEarlierQuote
+              ? workFloorLastGoodStatusText(acceptedQuote)
+              : `WORK floor loaded. Live network value ${Math.round(workFloorQuoteLiveValue(acceptedQuote)).toLocaleString()} proofs.`,
           });
         }
         return acceptedQuote;
       } catch (error) {
-        if (!silent) {
+        const lastGoodQuote = acceptedWorkFloorQuoteRef.current;
+        if (fresh && lastGoodQuote) {
+          setWorkFloorUsingLastGood(true);
+          if (requestIsActive()) {
+            setStatusForWorkspace(requestWorkspaceKey, {
+              tone: "idle",
+              text: workFloorLastGoodStatusText(lastGoodQuote),
+            });
+          }
+        } else if (!silent) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
             text: errorMessage(error, "WORK floor refresh failed."),
@@ -19566,6 +19609,7 @@ export default function App() {
       let tokenState: PowTokenState | undefined;
       let floorQuote: WorkFloorQuote | undefined;
       let usedIndexedFallback = false;
+      const workSurface = workTokenMode || activeFolder === "work";
       if (marketplaceMode || activeFolder === "marketplace") {
         let marketplaceSummary = await refreshMarketplaceSummary(true, fresh);
         if (!marketplaceSummary && fresh) {
@@ -19617,16 +19661,39 @@ export default function App() {
         }
       }
 
+      if (includeWorkFloor && !floorQuote && fresh) {
+        floorQuote = await refreshWorkFloor(true, false);
+        usedIndexedFallback = usedIndexedFallback || Boolean(floorQuote);
+      }
+
+      if (
+        workSurface &&
+        fresh &&
+        tokenState &&
+        floorQuote &&
+        usedIndexedFallback
+      ) {
+        setWorkFloorUsingLastGood(true);
+      }
+
       if (!silent) {
         if (tokenState) {
           const floorText =
             includeWorkFloor && floorQuote
               ? ` WORK floor ${Math.round(floorQuote.networkValueSats).toLocaleString()} proofs.`
               : "";
-          setStatusForWorkspace(requestWorkspaceKey, {
-            tone: "good",
-            text: `${usedIndexedFallback ? "Credit market loaded from indexed state." : "Credit market loaded."} ${tokenState.tokens.length.toLocaleString()} credit${tokenState.tokens.length === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"}.${floorText}`,
-          });
+          setStatusForWorkspace(
+            requestWorkspaceKey,
+            workSurface && usedIndexedFallback && floorQuote
+              ? {
+                  tone: "idle",
+                  text: workFloorLastGoodStatusText(floorQuote),
+                }
+              : {
+                  tone: "good",
+                  text: `${usedIndexedFallback ? "Credit market loaded from indexed state." : "Credit market loaded."} ${tokenState.tokens.length.toLocaleString()} credit${tokenState.tokens.length === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"}.${floorText}`,
+                },
+          );
         } else {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
@@ -24658,6 +24725,7 @@ export default function App() {
         walletBalances={accountWalletBalances}
         workFloorLoading={workFloorLoading}
         workFloorQuote={workFloorQuote}
+        workFloorUsingLastGood={workFloorUsingLastGood}
         startMintAssistant={startTokenMintAssistant}
         stopMintAssistant={stopTokenMintAssistant}
         submitMint={mintToken}
@@ -25479,6 +25547,7 @@ export default function App() {
             walletBalances={accountWalletBalances}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
+            workFloorUsingLastGood={workFloorUsingLastGood}
             startMintAssistant={startTokenMintAssistant}
             stopMintAssistant={stopTokenMintAssistant}
             workTokenOnly={activeFolder === "work"}
@@ -27883,9 +27952,9 @@ function InfinityApp({
           {inceptionIssuanceAvailable ? (
             <div>
               <p className="field-note">
-                <strong>INCB issuance</strong> · Fixed from the last confirmed
-                green live WORK summary at H-1, hash-bound to the exact block
-                before the bond.
+                <strong>INCB issuance</strong> · Each bond is fixed from its last
+                confirmed green live WORK summary at H-1, hash-bound to the
+                exact block before that bond.
               </p>
               <div
                 aria-label="INCB issuance breakdown"
@@ -27913,7 +27982,7 @@ function InfinityApp({
                   </strong>
                 </div>
                 <div>
-                  <span>Exact bond issuance value</span>
+                  <span>Exact cumulative issuance value</span>
                   <strong>
                     {issuanceNetworkValueSats.toLocaleString(undefined, {
                       maximumFractionDigits: 6,
@@ -27921,13 +27990,17 @@ function InfinityApp({
                   </strong>
                 </div>
                 <div>
-                  <span>H-1 WORK floor</span>
+                  <span>
+                    {attachedWorkActions > 1
+                      ? "Weighted H-1 WORK floor"
+                      : "H-1 WORK floor"}
+                  </span>
                   <strong>
                     {tokenSatsPerUnit(attachedWorkLiveFloorAtSendSats)} proofs / WORK
                   </strong>
                 </div>
                 <div>
-                  <span>H-1 WORK network value</span>
+                  <span>Latest H-1 WORK network value</span>
                   <strong>
                     {Math.round(
                       issuanceValueSnapshotWorkNetworkValueSats,
@@ -27935,7 +28008,7 @@ function InfinityApp({
                   </strong>
                 </div>
                 <div>
-                  <span>Value snapshot block</span>
+                  <span>Latest value snapshot block</span>
                   <strong>
                     {Math.floor(
                       issuanceValueSnapshotBlockHeight ?? 0,
@@ -27943,7 +28016,7 @@ function InfinityApp({
                   </strong>
                 </div>
                 <div>
-                  <span>Bond block provenance</span>
+                  <span>Latest bond block provenance</span>
                   <strong>
                     {Math.floor(
                       issuanceCheckpointBlockHeight ?? 0,
@@ -27954,10 +28027,11 @@ function InfinityApp({
                 </div>
               </div>
               <p className="field-note">
-                Send-time valuation uses the last confirmed green canonical live
-                WORK summary at H-1. Every transaction in the bond block is
-                excluded. Confirmation fixes the resulting INCB balance and supply;
-                current or post-bond network value changes only the live INCB floor
+                Each send-time valuation uses the last confirmed green canonical
+                live WORK summary at that bond's H-1. Every transaction in that
+                bond block is excluded. Confirmation fixes the resulting INCB
+                balance and supply; current or post-bond network value changes only
+                the live INCB floor
                 {attachedWorkActions > 0
                   ? `; ${Math.floor(attachedWorkActions).toLocaleString()} confirmed WORK attachment${Math.floor(attachedWorkActions) === 1 ? "" : "s"} contributed to issuance`
                   : ""}
@@ -27967,7 +28041,7 @@ function InfinityApp({
                 .
               </p>
               <p className="field-note">
-                Snapshot {issuanceValueSnapshotId} · value block {issuanceValueSnapshotBlockHash.slice(0, 12)}…
+                Latest snapshot {issuanceValueSnapshotId} · value block {issuanceValueSnapshotBlockHash.slice(0, 12)}…
                 {" · "}canonical summary {issuanceValueSnapshotCanonicalSummaryHash.slice(0, 12)}…
                 {" · "}published {issuanceValueSnapshotGeneratedAt}
                 {" · "}bond block {issuanceCheckpointBlockHash.slice(0, 12)}…
@@ -28015,7 +28089,9 @@ function InfinityApp({
               </strong>
             </div>
             <div>
-              <span>Latest floor</span>
+              <span>
+                {inceptionAccounting ? "Latest historical floor" : "Latest floor"}
+              </span>
               <strong>
                 {tokenSatsPerUnit(
                   infinityLatestChartPoint?.floorSats ?? floorSats,
@@ -29367,6 +29443,7 @@ type TokenAppProps = {
   walletBalances?: PowTokenWalletBalance[];
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
+  workFloorUsingLastGood?: boolean;
   startMintAssistant: (tokenId?: string) => void;
   stopMintAssistant: () => void;
   submitMint: (
@@ -29495,6 +29572,7 @@ function TokenWorkspace({
   walletBalances = [],
   workFloorLoading,
   workFloorQuote,
+  workFloorUsingLastGood = false,
   workTokenOnly,
   onOpenTokenFactory,
   onRefresh,
@@ -30793,6 +30871,15 @@ function TokenWorkspace({
                 </div>
                 {workFloorQuote ? (
                   <>
+                    {workFloorUsingLastGood ? (
+                      <p className="field-note">
+                        <strong>WORK index catching up.</strong> Showing
+                        last-good {workFloorLastGoodReference(workFloorQuote)}.
+                        Pending mints, bonds, and transfers do not affect the
+                        confirmed WORK floor until they confirm and an exact-tip
+                        snapshot is published.
+                      </p>
+                    ) : null}
                     <div
                       className="id-launch-stats token-floor-stats"
                       aria-label="Live WORK floor"
@@ -30958,8 +31045,9 @@ function TokenWorkspace({
                       Mint price remains{" "}
                       {detailToken.mintPriceSats.toLocaleString()} proofs for{" "}
                       {detailToken.mintAmount.toLocaleString()} WORK. The live
-                      floor follows live network value from confirmed events; pending mints
-                      wait for confirmation. Refreshed{" "}
+                      floor follows live network value from confirmed events;
+                      pending mints, bonds, and transfers wait for confirmation
+                      and do not affect the floor. Refreshed{" "}
                       {formatDate(workFloorQuote.indexedAt)} from confirmed
                       Computer value across{" "}
                       {Math.round(

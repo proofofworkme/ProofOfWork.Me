@@ -449,6 +449,8 @@ const INCB_TOKEN_CREATED_AT = "2026-07-10T00:00:00.000Z";
 const INCB_ISSUANCE_ACCOUNTING_MODEL =
   "canonical-pre-bond-live-network-value-v2";
 const INCB_VALUE_SNAPSHOT_MODEL = "canonical-summary-h-minus-one-v1";
+const WORK_TRANSFER_VALUE_PROJECTION_MODEL =
+  "canonical-work-transfer-value-projection-v1";
 const CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS = new Map([
   [
     "dd743fb69c519200cc190627219ba34ca2e63e6893e600b73e9aee8d4dac8fa4",
@@ -6417,6 +6419,126 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
   const issuanceValueSnapshotWorkNetworkValueSats = Number(
     inceptionActual?.issuanceValueSnapshotWorkNetworkValueSats,
   );
+  const confirmedInceptionMints = Number(
+    summaryPayloads?.inceptionSummary?.token?.stats?.confirmedMints,
+  );
+  const workTransferProjection =
+    summaryPayloads?.workSummary?.workTransferValueProjection;
+  const workTransferProjectionItems = Array.isArray(
+    workTransferProjection?.items,
+  )
+    ? workTransferProjection.items
+    : [];
+  const confirmedWorkTransfers = Number(
+    summaryPayloads?.workSummary?.token?.stats?.confirmedTransfers,
+  );
+  const workLiveFloorSats = Number(
+    summaryPayloads?.workSummary?.floor?.liveFloorSats ??
+      summaryPayloads?.workSummary?.floor?.floorSats,
+  );
+  const workTransferProjectionItemKeys = workTransferProjectionItems.map(
+    (item) => {
+      const identity = [
+        item?._powEventIndex,
+        item?.eventKeyVout,
+        item?.protocolVout,
+        item?.eventId,
+      ]
+        .filter(
+          (value) => value !== undefined && value !== null && value !== "",
+        )
+        .map((value) => Number(value))
+        .find((value) => Number.isSafeInteger(value) && value >= 0);
+      const fallback = [
+        Number(item?.amount),
+        String(item?.senderAddress ?? "").trim().toLowerCase(),
+        String(item?.recipientAddress ?? "").trim().toLowerCase(),
+      ].join(":");
+      return [
+        String(item?.tokenId ?? "").trim().toLowerCase(),
+        String(item?.txid ?? "").trim().toLowerCase(),
+        identity === undefined ? `movement:${fallback}` : `event:${identity}`,
+      ].join(":");
+    },
+  );
+  const workTransferProjectionIdentitiesCurrent =
+    workTransferProjectionItemKeys.every(Boolean) &&
+    new Set(workTransferProjectionItemKeys).size ===
+      workTransferProjectionItems.length;
+  const workTransferProjectionCurrent =
+    workTransferProjection?.model === WORK_TRANSFER_VALUE_PROJECTION_MODEL &&
+    Number.isSafeInteger(confirmedWorkTransfers) &&
+    confirmedWorkTransfers >= 0 &&
+    (confirmedWorkTransfers === 0 ||
+      (Number.isFinite(workLiveFloorSats) && workLiveFloorSats > 0)) &&
+    workTransferProjectionIdentitiesCurrent &&
+    workTransferProjectionItems.length === confirmedWorkTransfers &&
+    workTransferProjectionItems.every((item) => {
+      const confirmationModel = String(
+        item?.creditFloorAtConfirmModel ?? "",
+      );
+      const inceptionBound =
+        confirmationModel === "canonical-incb-h-minus-one-live-work-v1";
+      const creditAmountMoved = Number(item?.creditAmountMoved);
+      const creditFloorAtConfirmSats = Number(
+        item?.creditFloorAtConfirmSats,
+      );
+      const creditLiveFloorSats = Number(item?.creditLiveFloorSats);
+      const creditRevaluationFloorSats = Number(
+        item?.creditRevaluationFloorSats,
+      );
+      const creditValueAtConfirmSats = Number(
+        item?.creditValueAtConfirmSats,
+      );
+      const creditLiveValueSats = Number(item?.creditLiveValueSats);
+      const frozenNetworkValueSats = Number(item?.frozenNetworkValueSats);
+      const liveNetworkValueSats = Number(item?.liveNetworkValueSats);
+      const expectedCreditLiveValueSats =
+        creditAmountMoved * workLiveFloorSats;
+      const expectedCreditValueAtConfirmSats =
+        creditAmountMoved * creditFloorAtConfirmSats;
+      const expectedLiveNetworkValueSats =
+        expectedCreditLiveValueSats +
+        Math.max(0, frozenNetworkValueSats - creditValueAtConfirmSats);
+      return (
+        item?.confirmed === true &&
+        String(item?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID &&
+        /^[0-9a-f]{64}$/u.test(
+          String(item?.txid ?? "").trim().toLowerCase(),
+        ) &&
+        creditAmountMoved > 0 &&
+        Number(item?.amount) === creditAmountMoved &&
+        creditFloorAtConfirmSats > 0 &&
+        creditLiveFloorSats > 0 &&
+        creditValueAtConfirmSats > 0 &&
+        creditLiveValueSats > 0 &&
+        frozenNetworkValueSats > 0 &&
+        liveNetworkValueSats > 0 &&
+        frozenNetworkValueSats >= creditValueAtConfirmSats &&
+        Math.abs(
+          creditValueAtConfirmSats - expectedCreditValueAtConfirmSats,
+        ) <= 0.01 &&
+        Math.abs(creditLiveFloorSats - workLiveFloorSats) <= 1e-9 &&
+        Math.abs(creditRevaluationFloorSats - workLiveFloorSats) <= 1e-9 &&
+        Math.abs(creditLiveValueSats - expectedCreditLiveValueSats) <= 0.01 &&
+        Math.abs(liveNetworkValueSats - expectedLiveNetworkValueSats) <=
+          0.01 &&
+        confirmationModel.length > 0 &&
+        (!inceptionBound ||
+          (Number.isSafeInteger(Number(item?.valueSnapshotBlockHeight)) &&
+            Number(item.valueSnapshotBlockHeight) > 0 &&
+            /^[0-9a-f]{64}$/u.test(
+              String(item?.valueSnapshotBlockHash ?? "")
+                .trim()
+                .toLowerCase(),
+            ) &&
+            String(item?.valueSnapshotId ?? "").trim().length > 0))
+      );
+    });
+  const attachedWorkIssuanceDustSats =
+    attachedWorkLiveValueAtSendSats - attachedWorkIssuanceUnits;
+  const issuanceAggregateDustSats =
+    issuanceNetworkValueSats - confirmedIssuanceUnits;
   const inceptionIssuanceCurrent =
     inceptionActual?.attachmentAccountingModel ===
       INCB_ISSUANCE_ACCOUNTING_MODEL &&
@@ -6452,6 +6574,8 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
     ) &&
     Number.isFinite(issuanceValueSnapshotWorkNetworkValueSats) &&
     issuanceValueSnapshotWorkNetworkValueSats > 0 &&
+    Number.isSafeInteger(confirmedInceptionMints) &&
+    confirmedInceptionMints > 0 &&
     Number.isSafeInteger(confirmedIssuanceUnits) &&
     confirmedIssuanceUnits > 0 &&
     Number.isSafeInteger(directProofIssuanceUnits) &&
@@ -6462,10 +6586,11 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
       confirmedIssuanceUnits &&
     Number.isFinite(attachedWorkLiveValueAtSendSats) &&
     attachedWorkLiveValueAtSendSats >= 0 &&
-    Math.floor(attachedWorkLiveValueAtSendSats) ===
-      attachedWorkIssuanceUnits &&
+    attachedWorkIssuanceDustSats >= 0 &&
+    attachedWorkIssuanceDustSats < confirmedInceptionMints &&
     Number.isFinite(issuanceNetworkValueSats) &&
-    Math.floor(issuanceNetworkValueSats) === confirmedIssuanceUnits &&
+    issuanceAggregateDustSats >= 0 &&
+    issuanceAggregateDustSats < confirmedInceptionMints &&
     Math.abs(
       issuanceNetworkValueSats -
         (directProofIssuanceUnits +
@@ -6473,10 +6598,12 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
     ) <= 0.01 &&
     Number.isFinite(issuanceDustSats) &&
     issuanceDustSats >= 0 &&
-    issuanceDustSats < 1 &&
+    issuanceDustSats < confirmedInceptionMints &&
     Math.abs(
-      issuanceDustSats -
-        (issuanceNetworkValueSats - confirmedIssuanceUnits),
+      issuanceDustSats - issuanceAggregateDustSats,
+    ) <= 0.01 &&
+    Math.abs(
+      issuanceDustSats - attachedWorkIssuanceDustSats,
     ) <= 0.01 &&
     Number.isFinite(issuanceFloorSats) &&
     issuanceFloorSats >= 1 &&
@@ -6489,6 +6616,7 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
       summaryPayloads?.workFloor?.actualValue
         ?.creditMinerFeeAccountingModel ?? "",
     ) === "canonical-unique-tx-input-output-v1" &&
+    workTransferProjectionCurrent &&
     inceptionIssuanceCurrent &&
     coverage?.complete === true &&
     coverage?.source ===
