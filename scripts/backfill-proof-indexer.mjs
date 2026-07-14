@@ -2346,6 +2346,11 @@ function rawProtocolItemMatchesCanonical(rawItem, canonicalItem, kind) {
 
 async function canonicalRecoveryItemsForTx(tx, messages) {
   const txid = String(tx?.txid ?? "").trim().toLowerCase();
+  const pendingTransaction = Number(tx?.height ?? 0) <= 0;
+  const pendingEnvelopeCanStandAlone =
+    pendingTransaction &&
+    messages.some((message) => message?.prefix === "pwm1:");
+  let deferredPendingVerifier = false;
   const specs = new Map();
   for (const message of messages) {
     for (const spec of recoveryEndpointSpecs(txid, message)) {
@@ -2359,27 +2364,39 @@ async function canonicalRecoveryItemsForTx(tx, messages) {
 
   const recovered = [];
   for (const spec of specs.values()) {
-    const payload = await readJson(
-      endpoint(spec.path, {
-        ...(spec.params ?? {}),
-        blockHash: Number(tx?.height ?? 0) > 0
-          ? String(tx?._powBlockHash ?? "").trim().toLowerCase()
-          : undefined,
-        blockHeight: Number(tx?.height ?? 0) || undefined,
-        confirmed: Number(tx?.height ?? 0) > 0 ? "1" : "0",
-        fresh: "1",
-        previousBlockHash: Number(tx?.height ?? 0) > 0
-          ? String(tx?._powPreviousBlockHash ?? "").trim().toLowerCase()
-          : undefined,
-      }),
-      {
-        retries: 0,
-        timeoutMs:
-          Number(tx?.height ?? 0) > 0
-            ? 30_000
-            : PENDING_VERIFIER_TIMEOUT_MS,
-      },
-    );
+    let payload;
+    try {
+      payload = await readJson(
+        endpoint(spec.path, {
+          ...(spec.params ?? {}),
+          blockHash: Number(tx?.height ?? 0) > 0
+            ? String(tx?._powBlockHash ?? "").trim().toLowerCase()
+            : undefined,
+          blockHeight: Number(tx?.height ?? 0) || undefined,
+          confirmed: Number(tx?.height ?? 0) > 0 ? "1" : "0",
+          fresh: "1",
+          previousBlockHash: Number(tx?.height ?? 0) > 0
+            ? String(tx?._powPreviousBlockHash ?? "").trim().toLowerCase()
+            : undefined,
+        }),
+        {
+          retries: 0,
+          timeoutMs:
+            Number(tx?.height ?? 0) > 0
+              ? 30_000
+              : PENDING_VERIFIER_TIMEOUT_MS,
+        },
+      );
+    } catch (error) {
+      if (
+        pendingEnvelopeCanStandAlone &&
+        Number(error?.statusCode ?? 0) === 503
+      ) {
+        deferredPendingVerifier = true;
+        continue;
+      }
+      throw error;
+    }
     if (Number(tx?.height ?? 0) > 0) {
       const coverageHeight = Number(payload?.indexedThroughBlock ?? 0);
       const expectedBlockHash = String(tx?._powBlockHash ?? "")
@@ -2424,13 +2441,18 @@ async function canonicalRecoveryItemsForTx(tx, messages) {
       }
     }
   }
-  if (recovered.length === 0) {
-    throw new Error(`Canonical verifier did not resolve protocol transaction ${txid}`);
-  }
-
   const rawItems = disambiguateDuplicateProtocolItems(
     rawProtocolItemsForTx(tx, messages),
   );
+  if (
+    recovered.length === 0 &&
+    !(
+      deferredPendingVerifier &&
+      rawItems.some((rawItem) => rawItem?.protocol === "pwm1")
+    )
+  ) {
+    throw new Error(`Canonical verifier did not resolve protocol transaction ${txid}`);
+  }
   const usedRawItems = new Set();
   const normalizedRecovered = [];
   for (const recoveredItem of recovered) {
@@ -2542,6 +2564,13 @@ async function canonicalRecoveryItemsForTx(tx, messages) {
         item: rawItem,
         sourceLabel: sourceLabelForProtocolItem(rawItem),
       });
+      return;
+    }
+    if (deferredPendingVerifier && pendingTransaction) {
+      // Preserve the independently parseable pending PWM envelope while its
+      // staged credit/ID companion remains unresolved. Never label an
+      // unresolved pending mutation invalid, and never apply this exception
+      // to confirmed canonical block processing.
       return;
     }
     if (String(rawItem?.validationMode ?? "").endsWith("-bond-projection")) {

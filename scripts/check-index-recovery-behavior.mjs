@@ -11616,6 +11616,101 @@ check("canonical buy recovery counts price and one registry close only", async (
   );
 });
 
+check("pending PWM envelopes survive unresolved staged verifier companions", async () => {
+  const txid = "9".repeat(64);
+  const tokenId = "8".repeat(64);
+  const canonicalRecoveryItemsForTx = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalRecoveryItemsForTx",
+    {
+      NETWORK: "livenet",
+      PENDING_VERIFIER_TIMEOUT_MS: 5_000,
+      canonicalKindForSourceLabel: isolatedFunction(
+        BACKFILL_PATH,
+        "canonicalKindForSourceLabel",
+      ),
+      canonicalRecoveryItemMatchesTxid: isolatedFunction(
+        BACKFILL_PATH,
+        "canonicalRecoveryItemMatchesTxid",
+      ),
+      disambiguateDuplicateProtocolItems: isolatedFunction(
+        BACKFILL_PATH,
+        "disambiguateDuplicateProtocolItems",
+      ),
+      endpoint: () => "http://127.0.0.1/internal/token-verifier",
+      invalidProtocolItem: isolatedFunction(BACKFILL_PATH, "invalidProtocolItem"),
+      rawProtocolItemMatchesCanonical: isolatedFunction(
+        BACKFILL_PATH,
+        "rawProtocolItemMatchesCanonical",
+      ),
+      rawProtocolItemsForTx: () => [
+        {
+          confirmed: false,
+          kind: "inception-bond",
+          protocol: "pwm1",
+          status: "pending",
+          txid,
+        },
+        {
+          amount: 1_000,
+          confirmed: false,
+          kind: "token-transfer",
+          protocol: "pwt1",
+          status: "pending",
+          tokenId,
+          txid,
+        },
+      ],
+      readJson: async () => {
+        const error = new Error("ordered verifier unresolved");
+        error.statusCode = 503;
+        throw error;
+      },
+      recoveryEndpointSpecs: () => [
+        {
+          label: "token-verifier",
+          params: { asset: tokenId, txid },
+          path: "/api/v1/internal/token-verifier",
+        },
+      ],
+      reservedBondCreditViolationReason: () => "",
+      sourceLabelForProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "sourceLabelForProtocolItem",
+      ),
+      tokenProtocolIntegrityInvalidItem: (item) => item,
+    },
+  );
+  const messages = [
+    { prefix: "pwm1:", text: "pwm1:m:incb" },
+    { prefix: "pwt1:", text: `pwt1:send:${tokenId}:1000:fixture` },
+  ];
+  const pending = await canonicalRecoveryItemsForTx(
+    { height: 0, txid },
+    messages,
+  );
+  assert.equal(
+    JSON.stringify(pending.map(({ item }) => item.kind)),
+    JSON.stringify(["inception-bond"]),
+  );
+  assert.equal(pending[0].item.confirmed, false);
+  assert.equal(pending[0].item.valid, undefined);
+
+  await rejection(
+    canonicalRecoveryItemsForTx(
+      {
+        _powBlockHash: "a".repeat(64),
+        _powPreviousBlockHash: "b".repeat(64),
+        height: 101,
+        txid,
+      },
+      messages,
+    ),
+    (error) => error.statusCode === 503,
+    "A confirmed block event bypassed an unresolved canonical verifier",
+  );
+});
+
 check("sealed credit listings keep the original sale-ticket anchor", () => {
   const listingId = "a".repeat(64);
   const sealTxid = "b".repeat(64);

@@ -479,8 +479,8 @@ expectAll("backfill source execution keeps confirmed blocks ahead of mempool wor
 expectAll("stateful block discoveries require the first-party ordered verifier", canonicalRecoverySource, [
   /path: "\/api\/v1\/internal\/id-verifier"/,
   /path: "\/api\/v1\/internal\/token-verifier"/,
-  /const payload = await readJson\([\s\S]*confirmed:[\s\S]*fresh: "1"[\s\S]*retries: 0/,
-  /if \(recovered\.length === 0\) \{[\s\S]*throw new Error\(`Canonical verifier did not resolve protocol transaction/,
+  /payload = await readJson\([\s\S]*confirmed:[\s\S]*fresh: "1"[\s\S]*retries: 0/,
+  /recovered\.length === 0[\s\S]*throw new Error\(`Canonical verifier did not resolve protocol transaction/,
   /validationMode: "canonical-first-party-state"/,
 ]);
 expectAll("ordered credit verifier distinguishes deterministic invalidity from unresolved state", tokenVerifierPayloadSource, [
@@ -1446,10 +1446,10 @@ expect(
 );
 expectAll("public Log SQL counts valid confirmed or pending actions only", proofIndexReader, [
   /const conditions = \[[\s\S]*"e\.valid = true"[\s\S]*"e\.status IN \('confirmed', 'pending'\)"[\s\S]*"e\.kind = ANY\(\$2::text\[\]\)"/,
-  /export async function proofIndexCanonicalActivityPayload\(network\)[\s\S]*AND e\.valid = true[\s\S]*AND e\.status IN \('confirmed', 'pending'\)[\s\S]*AND e\.kind = ANY\(\$2::text\[\]\)/,
+  /export async function proofIndexCanonicalActivityPayload\(\s*network,\s*options = \{\},?\s*\)[\s\S]*AND e\.valid = true[\s\S]*AND e\.status IN \('confirmed', 'pending'\)[\s\S]*AND e\.kind = ANY\(\$2::text\[\]\)/,
 ]);
 expectAll("canonical ledger can read direct proof-index event rows", proofIndexReader, [
-  /export async function proofIndexCanonicalActivityPayload\(network\)/,
+  /export async function proofIndexCanonicalActivityPayload\(\s*network,\s*options = \{\},?\s*\)/,
   /FROM proof_indexer\.events e/,
   /normalizeHistoryEventRows\(result\.rows,\s*network\)/,
   /source:\s*"proof-indexer-events"/,
@@ -1664,7 +1664,7 @@ expectAll("endpoint caches cannot bypass the ledger", server, [
 
 expectAll("fresh reads do not rebuild the ledger in a tight loop", server, [
   /ledgerPayloadAgeMs\(cached\.payload,\s*now\)\s*<\s*LEDGER_FRESH_MIN_INTERVAL_MS/,
-  /if \(url\.pathname === "\/api\/v1\/activity" \|\| url\.pathname === "\/api\/v1\/log"\)[\s\S]*await mergedLogActivityPayload\(network,\s*true\)/,
+  /if \(url\.pathname === "\/api\/v1\/activity" \|\| url\.pathname === "\/api\/v1\/log"\)[\s\S]*if \(freshRead\)[\s\S]*await freshProofIndexLogPayload\(network\)/,
 ]);
 
 expect(
