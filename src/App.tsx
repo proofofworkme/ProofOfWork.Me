@@ -562,6 +562,7 @@ type PowTokenDefinition = {
 
 type PowTokenMint = {
   amount: number;
+  attributedMinerFeeSats?: number;
   confirmed: boolean;
   creditAmountMoved?: number;
   creditLiveFloorSats?: number;
@@ -585,6 +586,7 @@ type PowTokenMint = {
 type PowTokenTransfer = {
   amount: number;
   arbSats?: number;
+  attributedMinerFeeSats?: number;
   confirmed: boolean;
   creditAmountMoved?: number;
   creditFloorAtConfirmSats?: number;
@@ -706,6 +708,7 @@ type PendingTokenListingSeal = {
 type PowTokenSale = {
   amount: number;
   arbSats?: number;
+  attributedMinerFeeSats?: number;
   buyerAddress: string;
   confirmed: boolean;
   creditAmountMoved?: number;
@@ -864,6 +867,7 @@ type PowActivityKind =
 type PowActivityItem = {
   amountSats?: number;
   actor?: string;
+  attributedMinerFeeSats?: number;
   attachedCredits?: MailAttachedCredit[];
   blockHeight?: number;
   confirmed: boolean;
@@ -1369,6 +1373,10 @@ const WORK_TOKEN_MINT_AMOUNT = 1000;
 const WORK_TOKEN_MINT_PRICE_SATS = 1000;
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const CREDIT_MINER_FEE_ACCOUNTING_MODEL =
+  "canonical-unique-tx-input-output-v1";
+const WORK_MINER_FEES_EXPLANATION =
+  "All-time cumulative Bitcoin transaction fees paid to miners across confirmed WORK transactions. This is not platform revenue, a balance, or a current charge.";
 const POWB_TOKEN_TICKER = "POWB";
 const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
@@ -1505,6 +1513,18 @@ type GrowthValuePoint = {
   years: number;
 };
 
+type CanonicalMinerFeeCoverage = {
+  complete: true;
+  confirmedEvents: number;
+  confirmedTransactions: number;
+  coveredConfirmedEvents: number;
+  coveredConfirmedTransactions: number;
+  missingConfirmedEvents: 0;
+  missingConfirmedTransactions: 0;
+  missingConfirmedTxids: string[];
+  source: "proof-indexer-normalized-input-output-totals";
+};
+
 type GrowthActualNetworkValue = {
   browserFlowSats: number;
   browserSats: number;
@@ -1514,6 +1534,8 @@ type GrowthActualNetworkValue = {
   creditEventLiveValueSats?: number;
   creditFrozenNetworkValueSats?: number;
   creditLiveNetworkValueSats?: number;
+  creditMinerFeeAccountingModel?: string;
+  creditMinerFeeCoverage?: CanonicalMinerFeeCoverage;
   creditMinerFeeFlowSats?: number;
   creditMarketplaceMutationFlowSats?: number;
   creditMovementFrozenValueSats?: number;
@@ -1699,12 +1721,20 @@ type MarketplaceSummaryApiResponse = {
 };
 
 type InfinityActualValue = {
+  attachedWorkActions?: number;
+  attachedWorkAmount?: number;
+  attachedWorkFrozenValueSats?: number;
+  attachedWorkLiveValueSats?: number;
   bondMarketplaceMutationFeeSats: number;
   bondMintFlowSats: number;
   bondSaleVolumeSats: number;
   bondTransferFeeSats: number;
   floorSats: number;
   floorUsd: number;
+  frozenFloorSats?: number;
+  frozenNetworkValueSats?: number;
+  liveFloorSats?: number;
+  liveNetworkValueSats?: number;
   networkValueSats: number;
   networkUsd: number;
   totalSats: number;
@@ -11297,9 +11327,69 @@ function growthNumberField(
   return Number.isFinite(value) ? value : 0;
 }
 
+function normalizeCanonicalMinerFeeCoverage(
+  value: unknown,
+): CanonicalMinerFeeCoverage | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const coverage = value as Partial<CanonicalMinerFeeCoverage>;
+  const confirmedEvents = Number(coverage.confirmedEvents);
+  const confirmedTransactions = Number(coverage.confirmedTransactions);
+  const coveredConfirmedEvents = Number(coverage.coveredConfirmedEvents);
+  const coveredConfirmedTransactions = Number(
+    coverage.coveredConfirmedTransactions,
+  );
+  const missingConfirmedEvents = Number(coverage.missingConfirmedEvents);
+  const missingConfirmedTransactions = Number(
+    coverage.missingConfirmedTransactions,
+  );
+  if (
+    coverage.complete !== true ||
+    coverage.source !== "proof-indexer-normalized-input-output-totals" ||
+    !Number.isSafeInteger(confirmedEvents) ||
+    confirmedEvents <= 0 ||
+    !Number.isSafeInteger(confirmedTransactions) ||
+    confirmedTransactions <= 0 ||
+    coveredConfirmedEvents !== confirmedEvents ||
+    coveredConfirmedTransactions !== confirmedTransactions ||
+    missingConfirmedEvents !== 0 ||
+    missingConfirmedTransactions !== 0 ||
+    !Array.isArray(coverage.missingConfirmedTxids) ||
+    coverage.missingConfirmedTxids.length !== 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    complete: true,
+    confirmedEvents,
+    confirmedTransactions,
+    coveredConfirmedEvents,
+    coveredConfirmedTransactions,
+    missingConfirmedEvents: 0,
+    missingConfirmedTransactions: 0,
+    missingConfirmedTxids: [],
+    source: "proof-indexer-normalized-input-output-totals",
+  };
+}
+
+function growthActualValueHasCanonicalMinerFees(
+  value: GrowthActualNetworkValue | undefined,
+) {
+  return (
+    value?.creditMinerFeeAccountingModel ===
+      CREDIT_MINER_FEE_ACCOUNTING_MODEL &&
+    Boolean(value.creditMinerFeeCoverage?.complete)
+  );
+}
+
 function normalizeGrowthActualValue(
   payload?: Partial<GrowthActualNetworkValue>,
 ): GrowthActualNetworkValue {
+  const creditMinerFeeCoverage = normalizeCanonicalMinerFeeCoverage(
+    payload?.creditMinerFeeCoverage,
+  );
   return {
     browserFlowSats: growthNumberField(payload, "browserFlowSats"),
     browserSats: growthNumberField(payload, "browserSats"),
@@ -11324,6 +11414,11 @@ function normalizeGrowthActualValue(
       payload,
       "creditLiveNetworkValueSats",
     ),
+    creditMinerFeeAccountingModel:
+      typeof payload?.creditMinerFeeAccountingModel === "string"
+        ? payload.creditMinerFeeAccountingModel
+        : undefined,
+    creditMinerFeeCoverage,
     creditMinerFeeFlowSats: growthNumberField(
       payload,
       "creditMinerFeeFlowSats",
@@ -11483,7 +11578,10 @@ function normalizeGrowthEvent(
   };
 }
 
-function normalizeWorkFloorQuote(payload: WorkFloorApiResponse): WorkFloorQuote {
+function normalizeWorkFloorQuote(
+  payload: WorkFloorApiResponse,
+  targetNetwork: BitcoinNetwork = payload.network ?? "livenet",
+): WorkFloorQuote {
   const stats =
     payload.stats && typeof payload.stats === "object"
       ? Object.fromEntries(
@@ -11493,10 +11591,20 @@ function normalizeWorkFloorQuote(payload: WorkFloorApiResponse): WorkFloorQuote 
         )
       : undefined;
 
+  const actualValue = payload.actualValue
+    ? normalizeGrowthActualValue(payload.actualValue)
+    : undefined;
+  if (
+    targetNetwork === "livenet" &&
+    !growthActualValueHasCanonicalMinerFees(actualValue)
+  ) {
+    throw new Error(
+      "WORK floor lacks complete canonical Bitcoin miner-fee coverage.",
+    );
+  }
+
   return {
-    actualValue: payload.actualValue
-      ? normalizeGrowthActualValue(payload.actualValue)
-      : undefined,
+    actualValue,
     btcUsd: Number(payload.btcUsd) || undefined,
     btcUsdIndexedAt:
       typeof payload.btcUsdIndexedAt === "string"
@@ -11779,7 +11887,7 @@ async function fetchWorkFloorQuote(
     fresh ? "/api/v1/work-floor?fresh=1" : "/api/v1/work-floor",
     targetNetwork,
   );
-  return normalizeWorkFloorQuote(payload);
+  return normalizeWorkFloorQuote(payload, targetNetwork);
 }
 
 async function fetchWorkSummary(
@@ -11800,7 +11908,9 @@ async function fetchWorkSummary(
   }
 
   return {
-    floor: payload.floor ? normalizeWorkFloorQuote(payload.floor) : undefined,
+    floor: payload.floor
+      ? normalizeWorkFloorQuote(payload.floor, targetNetwork)
+      : undefined,
     indexedAt:
       typeof payload.indexedAt === "string"
         ? payload.indexedAt
@@ -11839,8 +11949,20 @@ function normalizeInfinityActualValue(
     const value = Number(payload?.[key]);
     return Number.isFinite(value) ? value : 0;
   };
+  const optionalNumberValue = (key: keyof InfinityActualValue) => {
+    const value = Number(payload?.[key]);
+    return Number.isFinite(value) ? value : undefined;
+  };
 
   return {
+    attachedWorkActions: optionalNumberValue("attachedWorkActions"),
+    attachedWorkAmount: optionalNumberValue("attachedWorkAmount"),
+    attachedWorkFrozenValueSats: optionalNumberValue(
+      "attachedWorkFrozenValueSats",
+    ),
+    attachedWorkLiveValueSats: optionalNumberValue(
+      "attachedWorkLiveValueSats",
+    ),
     bondMarketplaceMutationFeeSats: numberValue(
       "bondMarketplaceMutationFeeSats",
     ),
@@ -11849,6 +11971,10 @@ function normalizeInfinityActualValue(
     bondTransferFeeSats: numberValue("bondTransferFeeSats"),
     floorSats: numberValue("floorSats"),
     floorUsd: numberValue("floorUsd"),
+    frozenFloorSats: optionalNumberValue("frozenFloorSats"),
+    frozenNetworkValueSats: optionalNumberValue("frozenNetworkValueSats"),
+    liveFloorSats: optionalNumberValue("liveFloorSats"),
+    liveNetworkValueSats: optionalNumberValue("liveNetworkValueSats"),
     networkValueSats: numberValue("networkValueSats"),
     networkUsd: numberValue("networkUsd"),
     totalSats: numberValue("totalSats"),
@@ -11963,6 +12089,11 @@ function normalizeGrowthSummary(
   const actualValue = normalizeGrowthActualValue(
     payload.actualValue ?? workFloor?.actualValue,
   );
+  if (!growthActualValueHasCanonicalMinerFees(actualValue)) {
+    throw new Error(
+      "Growth summary lacks complete canonical Bitcoin miner-fee coverage.",
+    );
+  }
 
   return {
     actualValue,
@@ -19294,78 +19425,13 @@ export default function App() {
         });
       }
       try {
-        const apiQuote = await fetchWorkFloorQuote("livenet", fresh).catch(
-          () => undefined,
-        );
-        if (apiQuote) {
-          const acceptedQuote = applyWorkFloorQuote(apiQuote) ?? apiQuote;
-          if (!silent) {
-            setStatusForWorkspace(requestWorkspaceKey, {
-              tone: "good",
-              text: `WORK floor loaded. Live network value ${Math.round(workFloorQuoteLiveValue(acceptedQuote)).toLocaleString()} proofs.`,
-            });
-          }
-          return acceptedQuote;
+        const apiQuote = await fetchWorkFloorQuote("livenet", fresh);
+        if (!apiQuote) {
+          throw new Error(
+            "Verified WORK floor is unavailable. Retaining the last verified value.",
+          );
         }
-
-        const [registryState, computerActivity, tokenState] = await Promise.all([
-          fetchIdRegistryState("livenet", fresh),
-          fetchGlobalActivity("livenet", fresh).catch(() => []),
-          fetchTokenState("livenet", fresh),
-        ]);
-        const activityForGrowth =
-          computerActivity.length > 0
-            ? computerActivity
-            : registryState.activity;
-        const actualValue = growthActualNetworkValue(
-          registryState.records,
-          activityForGrowth,
-          registryState.sales,
-          tokenState.tokens,
-          tokenState.mints,
-          tokenState.transfers,
-          tokenState.sales,
-        );
-        const workToken = tokenState.tokens.find(
-          (token) =>
-            token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER,
-        );
-        const workCreatedMs = workToken
-          ? Date.parse(workToken.createdAt)
-          : GROWTH_MODEL_START_MS;
-        const chartPoints = growthActualValuePoints(
-          registryState.records,
-          activityForGrowth,
-          registryState.sales,
-          tokenState.tokens,
-          tokenState.mints,
-          tokenState.transfers,
-          tokenState.sales,
-          {
-            startLabel: "WORK deploy",
-            startMs: workCreatedMs,
-          },
-        ).map((point) => ({
-          floorSats: point.sats / WORK_TOKEN_MAX_SUPPLY,
-          label: point.label,
-          networkValueSats: point.sats,
-          years: point.years,
-        }));
-        const quote = {
-          actualValue,
-          chartPoints,
-          floorSats: actualValue.liveFloorSats,
-          frozenFloorSats: actualValue.frozenFloorSats,
-          frozenNetworkValueSats: actualValue.frozenNetworkValueSats,
-          indexedAt: new Date().toISOString(),
-          liveFloorSats: actualValue.liveFloorSats,
-          liveNetworkValueSats: actualValue.liveNetworkValueSats,
-          networkValueSats: actualValue.totalSats,
-          powids: actualValue.powids,
-          tokenFlowSats:
-            actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats,
-        };
-        const acceptedQuote = applyWorkFloorQuote(quote) ?? quote;
+        const acceptedQuote = applyWorkFloorQuote(apiQuote) ?? apiQuote;
         if (!silent) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "good",
@@ -27585,6 +27651,7 @@ function InfinityApp({
 }: InfinityAppProps) {
   const [infinityChartMetric, setInfinityChartMetric] =
     useState<InfinityBondChartMetric>("supply");
+  const inceptionAccounting = bondConfig.folder === "inception";
   const confirmedSupply =
     summary?.stats.confirmedSupply ??
     tokens.find((token) => token.tokenId === bondConfig.tokenId)
@@ -27594,9 +27661,32 @@ function InfinityApp({
     summary?.stats.pendingSupply ??
     tokens.find((token) => token.tokenId === bondConfig.tokenId)?.pendingSupply ??
     0;
-  const floorSats = summary?.actualValue.floorSats ?? summary?.floorSats ?? 0;
+  const floorSats =
+    (inceptionAccounting ? summary?.actualValue.liveFloorSats : undefined) ??
+    summary?.actualValue.floorSats ??
+    summary?.floorSats ??
+    0;
   const networkValueSats =
-    summary?.actualValue.networkValueSats ?? summary?.networkValueSats ?? 0;
+    (inceptionAccounting
+      ? summary?.actualValue.liveNetworkValueSats
+      : undefined) ??
+    summary?.actualValue.networkValueSats ??
+    summary?.networkValueSats ??
+    0;
+  const attachedWorkAccountingAvailable = Boolean(
+    inceptionAccounting &&
+      summary &&
+      summary.actualValue.attachedWorkAmount !== undefined,
+  );
+  const attachedWorkAmount = summary?.actualValue.attachedWorkAmount ?? 0;
+  const attachedWorkActions = summary?.actualValue.attachedWorkActions ?? 0;
+  const attachedWorkFrozenValueSats =
+    summary?.actualValue.attachedWorkFrozenValueSats ?? 0;
+  const attachedWorkLiveValueSats =
+    summary?.actualValue.attachedWorkLiveValueSats ?? 0;
+  const frozenNetworkValueSats =
+    summary?.actualValue.frozenNetworkValueSats ?? networkValueSats;
+  const frozenFloorSats = summary?.actualValue.frozenFloorSats ?? floorSats;
   const floorUsd = summary?.actualValue.floorUsd ?? satsToUsd(floorSats, btcUsd);
   const networkUsd =
     summary?.actualValue.networkUsd ?? satsToUsd(networkValueSats, btcUsd);
@@ -27645,21 +27735,67 @@ function InfinityApp({
               <strong>{pendingSupply.toLocaleString()} {bondConfig.ticker}</strong>
             </div>
             <div>
-              <span>Bond floor</span>
+              <span>{inceptionAccounting ? "Live INCB floor" : "Bond floor"}</span>
               <strong>{tokenSatsPerUnit(floorSats)} proofs / {bondConfig.ticker}</strong>
             </div>
             <div>
-              <span>Network value</span>
+              <span>{inceptionAccounting ? "Live network value" : "Network value"}</span>
               <strong>{Math.round(networkValueSats).toLocaleString()} proofs</strong>
             </div>
             <div>
-              <span>Floor USD</span>
+              <span>{inceptionAccounting ? "Live floor USD" : "Floor USD"}</span>
               <strong>{tokenUsd(floorUsd)}</strong>
             </div>
             <div>
-              <span>Network USD</span>
+              <span>{inceptionAccounting ? "Live network USD" : "Network USD"}</span>
               <strong>{tokenUsd(networkUsd)}</strong>
             </div>
+            {attachedWorkAccountingAvailable ? (
+              <>
+                <div>
+                  <span>Bond proofs</span>
+                  <strong>
+                    {Math.round(
+                      summary?.actualValue.bondMintFlowSats ?? 0,
+                    ).toLocaleString()} proofs
+                  </strong>
+                </div>
+                <div>
+                  <span>Attached WORK</span>
+                  <strong>
+                    {Math.floor(attachedWorkAmount).toLocaleString()} WORK ·{" "}
+                    {Math.floor(attachedWorkActions).toLocaleString()} confirmed{" "}
+                    attachment{Math.floor(attachedWorkActions) === 1 ? "" : "s"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Attached WORK at confirmation</span>
+                  <strong>
+                    {Math.round(
+                      attachedWorkFrozenValueSats,
+                    ).toLocaleString()} proofs
+                  </strong>
+                </div>
+                <div>
+                  <span>Attached WORK at live floor</span>
+                  <strong>
+                    {Math.round(attachedWorkLiveValueSats).toLocaleString()} proofs
+                  </strong>
+                </div>
+                <div>
+                  <span>Frozen network value</span>
+                  <strong>
+                    {Math.round(frozenNetworkValueSats).toLocaleString()} proofs
+                  </strong>
+                </div>
+                <div>
+                  <span>Frozen INCB floor</span>
+                  <strong>
+                    {tokenSatsPerUnit(frozenFloorSats)} proofs / {bondConfig.ticker}
+                  </strong>
+                </div>
+              </>
+            ) : null}
           </div>
         </section>
 
@@ -27672,8 +27808,9 @@ function InfinityApp({
               <p>{bondConfig.ticker} history</p>
               <h2>{bondConfig.displayName} Chart</h2>
               <span>
-                Confirmed bond proofs, {bondConfig.ticker} supply, sales, transfers, and mutation
-                fees.
+                {inceptionAccounting
+                  ? `Confirmed bond proofs and attached WORK valued at confirmation, ${bondConfig.ticker} supply, sales, transfers, and mutation fees.`
+                  : `Confirmed bond proofs, ${bondConfig.ticker} supply, sales, transfers, and mutation fees.`}
               </span>
             </div>
           </div>
@@ -30558,7 +30695,9 @@ function TokenWorkspace({
                             </strong>
                           </div>
                           <div>
-                            <span>Credit miner fees</span>
+                            <span title={WORK_MINER_FEES_EXPLANATION}>
+                              Bitcoin miner fees paid
+                            </span>
                             <strong>
                               {Math.round(
                                 workCreditMinerFeeFlowSats,
@@ -31835,6 +31974,32 @@ function growthActualNetworkValue(
     const number = Number(value);
     return Number.isFinite(number) ? number : 0;
   };
+  const eventTxid = (
+    event: PowTokenMint | PowTokenTransfer | PowTokenSale | PowActivityItem,
+  ) => String(event.txid ?? "").trim().toLowerCase();
+  const creditMinerFeesByTxid = new Map<string, number>();
+  for (const event of creditEvents) {
+    const txid = eventTxid(event);
+    const minerFeeSats = Math.max(0, eventNumber(event.minerFeeSats));
+    if (txid && minerFeeSats > (creditMinerFeesByTxid.get(txid) ?? 0)) {
+      creditMinerFeesByTxid.set(txid, minerFeeSats);
+    }
+  }
+  const eventMinerFeeSatsOnce = (
+    event: PowTokenMint | PowTokenTransfer | PowTokenSale | PowActivityItem,
+    attributedTxids: Set<string>,
+  ) => {
+    const txid = eventTxid(event);
+    const minerFeeSats = Math.max(0, eventNumber(event.minerFeeSats));
+    if (!txid) {
+      return minerFeeSats;
+    }
+    if (attributedTxids.has(txid)) {
+      return 0;
+    }
+    attributedTxids.add(txid);
+    return creditMinerFeesByTxid.get(txid) ?? minerFeeSats;
+  };
   const eventProofPaymentSats = (
     event: PowTokenMint | PowTokenTransfer | PowTokenSale | PowActivityItem,
   ) => {
@@ -31881,10 +32046,20 @@ function growthActualNetworkValue(
         : 0;
   const eventFrozenNetworkValueSats = (
     event: PowTokenMint | PowTokenTransfer | PowTokenSale | PowActivityItem,
+    attributedMinerFeeSats: number,
   ) => {
     const explicit = eventNumber(event.frozenNetworkValueSats);
     if (explicit > 0) {
-      return explicit;
+      return (
+        Math.max(
+          0,
+          explicit -
+            eventNumber(
+              event.attributedMinerFeeSats ?? event.minerFeeSats,
+            ),
+        ) +
+        attributedMinerFeeSats
+      );
     }
     return (
       eventNumber(event.creditValueAtConfirmSats) +
@@ -31892,15 +32067,25 @@ function growthActualNetworkValue(
       eventRegistryMutationSats(event) +
       eventMarketplaceMutationSats(event) +
       eventSalePaymentSats(event) +
-      eventNumber(event.minerFeeSats)
+      attributedMinerFeeSats
     );
   };
   const eventLiveNetworkValueSats = (
     event: PowTokenMint | PowTokenTransfer | PowTokenSale | PowActivityItem,
+    attributedMinerFeeSats: number,
   ) => {
     const explicit = eventNumber(event.liveNetworkValueSats);
     if (explicit > 0) {
-      return explicit;
+      return (
+        Math.max(
+          0,
+          explicit -
+            eventNumber(
+              event.attributedMinerFeeSats ?? event.minerFeeSats,
+            ),
+        ) +
+        attributedMinerFeeSats
+      );
     }
     return (
       (eventNumber(event.creditLiveValueSats) ||
@@ -31909,7 +32094,7 @@ function growthActualNetworkValue(
       eventRegistryMutationSats(event) +
       eventMarketplaceMutationSats(event) +
       eventSalePaymentSats(event) +
-      eventNumber(event.minerFeeSats)
+      attributedMinerFeeSats
     );
   };
   const creditMovementFrozenValueSats = creditMovementEvents.reduce(
@@ -31922,12 +32107,24 @@ function growthActualNetworkValue(
       (event.creditLiveValueSats ?? event.creditValueAtConfirmSats ?? 0),
     0,
   );
+  const frozenMinerFeeTxids = new Set<string>();
   const creditEventFrozenValueSats = creditEvents.reduce(
-    (total, event) => total + eventFrozenNetworkValueSats(event),
+    (total, event) =>
+      total +
+      eventFrozenNetworkValueSats(
+        event,
+        eventMinerFeeSatsOnce(event, frozenMinerFeeTxids),
+      ),
     0,
   );
+  const liveMinerFeeTxids = new Set<string>();
   const creditEventLiveValueSats = creditEvents.reduce(
-    (total, event) => total + eventLiveNetworkValueSats(event),
+    (total, event) =>
+      total +
+      eventLiveNetworkValueSats(
+        event,
+        eventMinerFeeSatsOnce(event, liveMinerFeeTxids),
+      ),
     0,
   );
   const creditProofPaymentFlowSats = creditEvents.reduce(
@@ -31946,16 +32143,18 @@ function growthActualNetworkValue(
     (total, event) => total + eventSalePaymentSats(event),
     0,
   );
-  const creditMinerFeesByTxid = new Map<string, number>();
-  for (const event of creditEvents) {
-    if (event.txid && event.minerFeeSats) {
-      creditMinerFeesByTxid.set(event.txid, event.minerFeeSats);
-    }
-  }
-  const creditMinerFeeFlowSats = [...creditMinerFeesByTxid.values()].reduce(
-    (total, fee) => total + fee,
-    0,
-  );
+  const creditMinerFeeFlowSats =
+    [...creditMinerFeesByTxid.values()].reduce(
+      (total, fee) => total + fee,
+      0,
+    ) +
+    creditEvents.reduce(
+      (total, event) =>
+        eventTxid(event)
+          ? total
+          : total + Math.max(0, eventNumber(event.minerFeeSats)),
+      0,
+    );
   const creditFrozenNetworkValueSats = creditEventFrozenValueSats;
   const creditLiveNetworkValueSats =
     creditEventLiveValueSats > 0
@@ -33503,25 +33702,36 @@ function GrowthWorkspace({
   const [growthEventPageIndex, setGrowthEventPageIndex] = useState(0);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
   const confirmedActivity = idActivity.filter((item) => item.confirmed);
-  const computedActualValue = growthActualNetworkValue(
-    registryRecords,
-    idActivity,
-    registrySales,
-    tokenDefinitions,
-    tokenMints,
-    tokenTransfers,
-    tokenSales,
-  );
-  const actualValue = growthSummary?.actualValue ?? computedActualValue;
-  const actualPoints = growthActualValuePoints(
-    registryRecords,
-    idActivity,
-    registrySales,
-    tokenDefinitions,
-    tokenMints,
-    tokenTransfers,
-    tokenSales,
-  );
+  const actualValue = growthSummary?.actualValue ?? workFloorQuote?.actualValue;
+  if (!actualValue) {
+    return (
+      <section className="growth-workspace">
+        <section className="growth-events-card" aria-live="polite">
+          <div className="id-launch-section-head">
+            <div>
+              <h3>Verified Growth ledger unavailable</h3>
+              <p>
+                Live financial totals are hidden until the node returns a WORK
+                ledger with complete canonical Bitcoin miner-fee coverage. The
+                last verified value will remain visible after it has loaded once.
+              </p>
+            </div>
+            <button
+              className="secondary small"
+              disabled={busy}
+              onClick={onRefresh}
+              type="button"
+            >
+              <span className="button-content">
+                <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
+                <span>{busy ? "Refreshing" : "Retry verified ledger"}</span>
+              </span>
+            </button>
+          </div>
+        </section>
+      </section>
+    );
+  }
   const liveBtcUsd = Number.isFinite(btcUsd) && btcUsd > 0 ? btcUsd : 0;
   const usdForSats = (sats: number) => satsToUsd(sats, liveBtcUsd);
   const growthUsdForSats = (sats: number) => growthUsd(usdForSats(sats));
@@ -33540,10 +33750,7 @@ function GrowthWorkspace({
           usd: usdForSats(point.networkValueSats),
           years: point.years,
         }))
-      : actualPoints.map((point) => ({
-          ...point,
-          usd: usdForSats(point.sats),
-        }));
+      : [];
   const realEvents =
     growthSummary?.events && growthSummary.events.length > 0
       ? growthSummary.events
@@ -36257,7 +36464,9 @@ function TokenMarketplacePanel({
                         </strong>
                       </div>
                       <div>
-                        <span>Credit miner fees</span>
+                        <span title={WORK_MINER_FEES_EXPLANATION}>
+                          Bitcoin miner fees paid
+                        </span>
                         <strong>
                           {Math.round(
                             workCreditMinerFeeFlowSats,

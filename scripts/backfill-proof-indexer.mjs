@@ -3764,6 +3764,32 @@ async function persistCanonicalRawTransaction(
       ? new Date(Number(blockTime) * 1000).toISOString()
       : itemTime(tx);
   const details = canonicalTransactionDetailRows(tx);
+  const coinbase = details.inputs.some(
+    (input) => input.prev_txid === null && input.value_sats === null,
+  );
+  const inputValueSats = coinbase
+    ? null
+    : details.inputs.reduce((total, input) => {
+        if (!Number.isSafeInteger(input.value_sats)) {
+          throw new Error(
+            `Canonical transaction ${txid} has an input without a value.`,
+          );
+        }
+        return total + input.value_sats;
+      }, 0);
+  const outputValueSats = coinbase
+    ? null
+    : details.outputs.reduce(
+        (total, output) => total + output.value_sats,
+        0,
+      );
+  const feeSats = coinbase ? null : inputValueSats - outputValueSats;
+  if (
+    feeSats !== null &&
+    (!Number.isSafeInteger(feeSats) || feeSats < 0)
+  ) {
+    throw new Error(`Canonical transaction ${txid} has an invalid miner fee.`);
+  }
   await client.query(
     `
       INSERT INTO proof_indexer.transactions (
@@ -3776,6 +3802,7 @@ async function persistCanonicalRawTransaction(
         block_hash,
         block_height,
         block_time,
+        fee_sats,
         vsize,
         weight,
         version,
@@ -3797,8 +3824,9 @@ async function persistCanonicalRawTransaction(
         $7,
         $8,
         $9,
+        $10,
         'canonical-block-scan',
-        $10::jsonb
+        $11::jsonb
       )
       ON CONFLICT (network, txid)
       DO UPDATE SET
@@ -3808,6 +3836,7 @@ async function persistCanonicalRawTransaction(
         block_hash = EXCLUDED.block_hash,
         block_height = EXCLUDED.block_height,
         block_time = EXCLUDED.block_time,
+        fee_sats = EXCLUDED.fee_sats,
         vsize = COALESCE(EXCLUDED.vsize, proof_indexer.transactions.vsize),
         weight = COALESCE(EXCLUDED.weight, proof_indexer.transactions.weight),
         version = COALESCE(EXCLUDED.version, proof_indexer.transactions.version),
@@ -3822,6 +3851,7 @@ async function persistCanonicalRawTransaction(
       eventTime,
       String(blockHash ?? "").trim().toLowerCase(),
       height,
+      feeSats,
       numberOrNull(tx?.vsize),
       numberOrNull(tx?.weight),
       numberOrNull(tx?.version),
@@ -5645,6 +5675,40 @@ function canonicalSummaryCoverage(summaryPayloads = {}) {
     : 0;
 }
 
+function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
+  const coverage =
+    summaryPayloads?.workFloor?.actualValue?.creditMinerFeeCoverage;
+  const confirmedEvents = Number(coverage?.confirmedEvents);
+  const coveredConfirmedEvents = Number(coverage?.coveredConfirmedEvents);
+  const confirmedTransactions = Number(coverage?.confirmedTransactions);
+  const coveredConfirmedTransactions = Number(
+    coverage?.coveredConfirmedTransactions,
+  );
+  return (
+    String(
+      summaryPayloads?.workFloor?.actualValue
+        ?.creditMinerFeeAccountingModel ?? "",
+    ) === "canonical-unique-tx-input-output-v1" &&
+    String(
+      summaryPayloads?.inceptionSummary?.actualValue
+        ?.attachmentAccountingModel ?? "",
+    ) === "canonical-same-tx-work-composite-v1" &&
+    coverage?.complete === true &&
+    coverage?.source ===
+      "proof-indexer-normalized-input-output-totals" &&
+    Number.isSafeInteger(confirmedEvents) &&
+    confirmedEvents > 0 &&
+    coveredConfirmedEvents === confirmedEvents &&
+    Number(coverage?.missingConfirmedEvents) === 0 &&
+    Number.isSafeInteger(confirmedTransactions) &&
+    confirmedTransactions > 0 &&
+    coveredConfirmedTransactions === confirmedTransactions &&
+    Number(coverage?.missingConfirmedTransactions) === 0 &&
+    Array.isArray(coverage?.missingConfirmedTxids) &&
+    coverage.missingConfirmedTxids.length === 0
+  );
+}
+
 function eligibleCanonicalSummarySnapshotPayload(payload) {
   const item = objectPayload(payload);
   const tokenComponentCheck = (Array.isArray(item?.checks) ? item.checks : []).find(
@@ -5666,7 +5730,8 @@ function eligibleCanonicalSummarySnapshotPayload(payload) {
       String(item.summaryRefresh?.indexedThroughBlockHash ?? "").toLowerCase() ===
         String(item.indexedThroughBlockHash ?? "").toLowerCase() &&
       /^[0-9a-f]{64}$/u.test(String(item.sourceHashes?.canonicalSummary ?? "")) &&
-      canonicalSummaryCoverage(item.summaryPayloads) > 0,
+      canonicalSummaryCoverage(item.summaryPayloads) > 0 &&
+      canonicalSummaryAccountingModelsCurrent(item.summaryPayloads),
   );
 }
 
@@ -5748,7 +5813,8 @@ async function storeCanonicalSummarySnapshot(client) {
     .toLowerCase();
   if (
     previousCoverage === latestIndexedHeight &&
-    previousIndexedThroughBlockHash === latestIndexedThroughBlockHash
+    previousIndexedThroughBlockHash === latestIndexedThroughBlockHash &&
+    canonicalSummaryAccountingModelsCurrent(previousPayload?.summaryPayloads)
   ) {
     return {
       indexedThroughBlock: previousCoverage,
@@ -5829,6 +5895,7 @@ async function storeCanonicalSummarySnapshot(client) {
   );
   if (
     indexedThroughBlock !== latestIndexedHeight ||
+    !canonicalSummaryAccountingModelsCurrent(summaryPayloads) ||
     !snapshotId ||
     String(ledger.snapshotId ?? "").trim() !== snapshotId ||
     summarySnapshotIds.some((value) => value !== snapshotId) ||

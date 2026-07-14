@@ -130,6 +130,12 @@ payment is the bond value lane, while its one-for-one synthetic mint has zero
 additional proof value so Growth cannot count the same payment twice. A bond
 transaction may also attach canonical WORK through a separate `pwt1:send`;
 that WORK transfer stays WORK movement and does not mint or reclassify INCB.
+When it is valid, confirmed, recipient-matched, and in the same transaction,
+the Inception summary joins the attachment into composite bond value: frozen
+value uses the confirmation-time WORK floor and live value uses the current
+WORK floor. INCB supply remains the confirmed bond proofs only. The underlying
+WORK transfer remains one canonical shared-ledger movement; the Inception view
+must not add it to Growth/WORK network value a second time.
 
 The standalone `inception.proofofwork.me` surface and embedded
 `computer.proofofwork.me/?folder=inception` workspace must use INCB-specific

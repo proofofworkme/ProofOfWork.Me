@@ -579,6 +579,10 @@ const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
 const WORK_TOKEN_MINT_AMOUNT = 1000;
 const WORK_TOKEN_MINT_PRICE_SATS = 1000;
 const WORK_TOKEN_PRICE_SATS_PER_WORK = 1;
+const CREDIT_MINER_FEE_ACCOUNTING_MODEL =
+  "canonical-unique-tx-input-output-v1";
+const INCEPTION_ATTACHMENT_ACCOUNTING_MODEL =
+  "canonical-same-tx-work-composite-v1";
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const DEFAULT_WORK_TOKEN_TRANSFER_RECOVERY_TXIDS = [
@@ -2256,8 +2260,7 @@ function mergeTokenTransferRecord(current, incoming) {
   }
 
   return {
-    ...current,
-    ...incoming,
+    ...mergeCreditNetworkValueRecord(current, incoming),
     amount: transferMergeNumber(current, incoming, "amount"),
     blockHeight: transferMergeNumber(current, incoming, "blockHeight"),
     blockIndex: transferMergeNumber(current, incoming, "blockIndex"),
@@ -2363,7 +2366,7 @@ async function tokenPayloadWithIndexedWalletOverlay(
   const transfers = mergeTokenStateItemsByKey(
     payload?.transfers,
     overlay.transfers,
-    (item) => String(item?.txid ?? "").trim().toLowerCase(),
+    tokenTransferHistoryItemKey,
     mergeTokenTransferRecord,
   );
   const sales = mergeTokenStateItemsByKey(
@@ -2553,17 +2556,17 @@ async function tokenPayloadWithRecoveredWalletWorkTransfers(
   for (const transfer of Array.isArray(payload?.transfers)
     ? payload.transfers
     : []) {
-    const txid = String(transfer?.txid ?? "").trim().toLowerCase();
-    if (txid) {
-      transfersByTxid.set(txid, transfer);
+    const key = tokenTransferHistoryItemKey(transfer);
+    if (key) {
+      transfersByTxid.set(key, transfer);
     }
   }
   for (const transfer of relevantRecoveredTransfers) {
-    const txid = String(transfer?.txid ?? "").trim().toLowerCase();
-    if (txid) {
+    const key = tokenTransferHistoryItemKey(transfer);
+    if (key) {
       transfersByTxid.set(
-        txid,
-        mergeTokenTransferRecord(transfersByTxid.get(txid), transfer),
+        key,
+        mergeTokenTransferRecord(transfersByTxid.get(key), transfer),
       );
     }
   }
@@ -3668,6 +3671,12 @@ function tokenHistoryPageItemKey(item, kind) {
   if (kind === "sales") {
     return `sale:${String(item?.txid ?? "").toLowerCase()}`;
   }
+  if (kind === "transfers") {
+    return `transfer:${tokenTransferHistoryItemKey(item)}`;
+  }
+  if (kind === "mints") {
+    return `mint:${tokenMintHistoryItemKey(item)}`;
+  }
   return String(item?.txid ?? item?.listingId ?? JSON.stringify(item));
 }
 
@@ -3764,6 +3773,8 @@ function mergeTokenHistoryPageItem(current, incoming, kind) {
 
 const CREDIT_NETWORK_VALUE_FIELD_NAMES = [
   "arbSats",
+  "attributedMinerFeeSats",
+  "canonicalMinerFeeSats",
   "creditAmountMoved",
   "creditFloorAtConfirmSats",
   "creditLiveFloorSats",
@@ -3779,6 +3790,7 @@ const CREDIT_NETWORK_VALUE_FIELD_NAMES = [
   "proofPaymentSats",
   "registryMutationFeeSats",
   "salePaymentSats",
+  "transactionMinerFeeSats",
 ];
 
 function mergeCreditNetworkValueRecord(current, incoming) {
@@ -3795,6 +3807,28 @@ function mergeCreditNetworkValueRecord(current, incoming) {
       (!Number.isFinite(incomingNumber) || incomingNumber === 0)
     ) {
       merged[field] = current[field];
+    }
+  }
+  const canonicalCreditSource =
+    incoming?.canonicalMinerFeeCovered === true
+      ? incoming
+      : current?.canonicalMinerFeeCovered === true
+        ? current
+        : null;
+  if (canonicalCreditSource) {
+    merged.canonicalMinerFeeCovered = true;
+    for (const field of CREDIT_NETWORK_VALUE_FIELD_NAMES) {
+      if (Object.prototype.hasOwnProperty.call(canonicalCreditSource, field)) {
+        merged[field] = canonicalCreditSource[field];
+      }
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(
+        canonicalCreditSource,
+        "minerFeeSource",
+      )
+    ) {
+      merged.minerFeeSource = canonicalCreditSource.minerFeeSource;
     }
   }
   return merged;
@@ -3973,15 +4007,36 @@ async function tokenHistoryPageWithCanonicalCreditValueOverlay(
     searchParams,
     network,
   );
+  const txidHints = new Set(recoveryTxidsFromSearchParams(searchParams));
   const rawItems =
     safeKind === "market-log"
       ? tokenMarketLogItemsFromState(state)
       : safeKind === "listings"
         ? activeTokenListingsFromState(state)
       : (state?.[safeKind] ?? []);
+  const txidScopedItems =
+    txidHints.size === 0
+      ? rawItems
+      : rawItems.filter((item) => {
+          const candidateTxids = [
+            item?.txid,
+            item?.listingId,
+            item?.closedTxid,
+            item?.saleTxid,
+            item?.listing?.listingId,
+            item?.listing?.sealTxid,
+            item?.closedListing?.closedTxid,
+            item?.closedListing?.listingId,
+            item?.sale?.txid,
+            item?.sale?.listingId,
+          ]
+            .map((value) => String(value ?? "").trim().toLowerCase())
+            .filter(Boolean);
+          return candidateTxids.some((txid) => txidHints.has(txid));
+        });
   const overlayPage = paginatedHistoryPayload({
     indexedAt: ledger.generatedAt ?? state?.indexedAt ?? page?.indexedAt,
-    items: historyItemsMatchingAddresses(rawItems, addressHints),
+    items: historyItemsMatchingAddresses(txidScopedItems, addressHints),
     kind: safeKind,
     network,
     pagination,
@@ -7077,8 +7132,8 @@ function attachedWorkCreditsFromVout(vout, recipients, network) {
   const recipientAddresses = recipients.map((recipient) =>
     String(recipient?.address ?? "").trim(),
   );
-  const credits = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX).flatMap(
-    (message) => {
+  const credits = vout.flatMap((output, protocolVout) =>
+    decodedProtocolMessages([output], TOKEN_PROTOCOL_PREFIX).flatMap((message) => {
       const parsed = parseTokenPayload(message, network);
       if (
         parsed?.kind !== "send" ||
@@ -7094,13 +7149,14 @@ function attachedWorkCreditsFromVout(vout, recipients, network) {
         {
           amount: parsed.amount,
           paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+          protocolVout,
           recipientAddress: parsed.recipientAddress,
           registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
           ticker: WORK_TOKEN_TICKER,
           tokenId: WORK_TOKEN_ID,
         },
       ];
-    },
+    }),
   );
 
   const registryPaidSats = tokenPaymentAmountBeforeProtocol(
@@ -7497,7 +7553,10 @@ function tokenListingSealRank(listing) {
     return 0;
   }
 
-  return listing?.sealConfirmed === true ? 2 : 1;
+  if (listing?.sealConfirmed !== true) {
+    return 1;
+  }
+  return listing?.sealMinerFeeCanonical === true ? 3 : 2;
 }
 
 function tokenListingWithSealFrom(listing, sealSource) {
@@ -7517,6 +7576,11 @@ function tokenListingWithSealFrom(listing, sealSource) {
     sealLiveNetworkValueSats:
       sealSource.sealLiveNetworkValueSats ??
       listing.sealLiveNetworkValueSats,
+    sealMinerFeeCanonical:
+      sealSource.sealMinerFeeCanonical === true ||
+      listing.sealMinerFeeCanonical === true,
+    sealMinerFeeSource:
+      sealSource.sealMinerFeeSource ?? listing.sealMinerFeeSource,
     sealMinerFeeSats: sealSource.sealMinerFeeSats ?? listing.sealMinerFeeSats,
     sealTxid: sealSource.sealTxid ?? listing.sealTxid,
   };
@@ -7557,7 +7621,10 @@ function tokenListingCloseRank(listing) {
     return 0;
   }
 
-  return listing?.closedConfirmed === true ? 2 : 1;
+  if (listing?.closedConfirmed !== true) {
+    return 1;
+  }
+  return listing?.closedMinerFeeCanonical === true ? 3 : 2;
 }
 
 function tokenListingWithCloseFrom(listing, closeSource) {
@@ -7568,7 +7635,34 @@ function tokenListingWithCloseFrom(listing, closeSource) {
   return {
     ...listing,
     closedAt: closeSource.closedAt ?? listing.closedAt,
+    closedBlockHeight:
+      closeSource.closedBlockHeight ??
+      closeSource.blockHeight ??
+      listing.closedBlockHeight,
+    closedBlockIndex:
+      closeSource.closedBlockIndex ??
+      closeSource.blockIndex ??
+      listing.closedBlockIndex,
     closedConfirmed: closeSource.closedConfirmed === true,
+    closedDataBytes:
+      closeSource.closedDataBytes ??
+      closeSource.dataBytes ??
+      listing.closedDataBytes,
+    closedFrozenNetworkValueSats:
+      closeSource.closedFrozenNetworkValueSats ??
+      listing.closedFrozenNetworkValueSats,
+    closedLiveNetworkValueSats:
+      closeSource.closedLiveNetworkValueSats ??
+      listing.closedLiveNetworkValueSats,
+    closedMinerFeeCanonical:
+      closeSource.closedMinerFeeCanonical === true ||
+      listing.closedMinerFeeCanonical === true,
+    closedMinerFeeSats:
+      closeSource.closedMinerFeeSats ?? listing.closedMinerFeeSats,
+    closedMinerFeeSource:
+      closeSource.closedMinerFeeSource ??
+      closeSource.minerFeeSource ??
+      listing.closedMinerFeeSource,
     closedTxid: closeSource.closedTxid ?? listing.closedTxid,
     closedVin: closeSource.closedVin ?? listing.closedVin,
   };
@@ -8693,6 +8787,14 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       event,
     ]),
   );
+  const eventByMovementIdentity = new Map(
+    (Array.isArray(creditValue?.events) ? creditValue.events : [])
+      .map((event) => [String(event.movementIdentity ?? ""), event])
+      .filter(([identity]) => identity),
+  );
+  const eventDetailFor = (item, kind) =>
+    eventByMovementIdentity.get(creditMovementIdentity(item, kind)) ??
+    eventByTxid.get(String(item?.txid ?? "").toLowerCase());
   const valueTokenIds = new Set(
     (Array.isArray(state.tokens) ? state.tokens : [])
       .filter(tokenCanUseCreditNetworkFloor)
@@ -8726,8 +8828,15 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
     if (!tokenUsesCreditNetworkFloor(mint.tokenId)) {
       return mint;
     }
-    const detail = eventByTxid.get(String(mint.txid ?? "").toLowerCase());
-    const minerFeeSats = numericValue(mint.minerFeeSats);
+    const detail = eventDetailFor(mint, "mint");
+    const minerFeeSats = numericValue(
+      detail?.transactionMinerFeeSats ??
+        mint.canonicalMinerFeeSats ??
+        mint.minerFeeSats,
+    );
+    const attributedMinerFeeSats = numericValue(
+      detail?.minerFeeSats ?? minerFeeSats,
+    );
     const proofPaymentSats = numericValue(mint.paidSats);
     const creditValueAtConfirmSats = numericValue(
       detail?.creditValueAtConfirmSats,
@@ -8740,10 +8849,10 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       numericValue(mint.amount) * creditLiveFloorSats;
     const frozenNetworkValueSats =
       numericValue(detail?.frozenNetworkValueSats) ||
-      proofPaymentSats + creditValueAtConfirmSats + minerFeeSats;
+      proofPaymentSats + creditValueAtConfirmSats + attributedMinerFeeSats;
     const liveNetworkValueSats =
       numericValue(detail?.liveNetworkValueSats) ||
-      proofPaymentSats + creditLiveValueSats + minerFeeSats;
+      proofPaymentSats + creditLiveValueSats + attributedMinerFeeSats;
     return {
       ...mint,
       creditAmountMoved: numericValue(mint.amount),
@@ -8753,6 +8862,7 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       creditValueAtConfirmSats,
       frozenNetworkValueSats,
       liveNetworkValueSats,
+      attributedMinerFeeSats,
       minerFeeSats,
       proofPaymentSats,
     };
@@ -8762,10 +8872,15 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       if (!tokenUsesCreditNetworkFloor(transfer.tokenId)) {
         return transfer;
       }
-      const detail = eventByTxid.get(String(transfer.txid ?? "").toLowerCase());
+      const detail = eventDetailFor(transfer, "transfer");
       const registryMutationFeeSats = numericValue(transfer.paidSats);
       const minerFeeSats = numericValue(
-        detail?.minerFeeSats ?? transfer.minerFeeSats,
+        detail?.transactionMinerFeeSats ??
+          transfer.canonicalMinerFeeSats ??
+          transfer.minerFeeSats,
+      );
+      const attributedMinerFeeSats = numericValue(
+        detail?.minerFeeSats ?? minerFeeSats,
       );
       const creditValueAtConfirmSats = numericValue(
         detail?.creditValueAtConfirmSats,
@@ -8787,9 +8902,14 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
         creditLiveValueSats,
         creditValueAtConfirmSats,
         frozenNetworkValueSats:
-          creditValueAtConfirmSats + registryMutationFeeSats + minerFeeSats,
+          creditValueAtConfirmSats +
+          registryMutationFeeSats +
+          attributedMinerFeeSats,
         liveNetworkValueSats:
-          creditLiveValueSats + registryMutationFeeSats + minerFeeSats,
+          creditLiveValueSats +
+          registryMutationFeeSats +
+          attributedMinerFeeSats,
+        attributedMinerFeeSats,
         minerFeeSats,
         registryMutationFeeSats,
       };
@@ -8799,9 +8919,16 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
     if (!tokenUsesCreditNetworkFloor(sale.tokenId)) {
       return sale;
     }
-    const detail = eventByTxid.get(String(sale.txid ?? "").toLowerCase());
+    const detail = eventDetailFor(sale, "sale");
     const marketplaceMutationFeeSats = TOKEN_MIN_MUTATION_PRICE_SATS;
-    const minerFeeSats = numericValue(detail?.minerFeeSats ?? sale.minerFeeSats);
+    const minerFeeSats = numericValue(
+      detail?.transactionMinerFeeSats ??
+        sale.canonicalMinerFeeSats ??
+        sale.minerFeeSats,
+    );
+    const attributedMinerFeeSats = numericValue(
+      detail?.minerFeeSats ?? minerFeeSats,
+    );
     const salePaymentSats = numericValue(sale.priceSats);
     const creditValueAtConfirmSats = numericValue(
       detail?.creditValueAtConfirmSats,
@@ -8824,12 +8951,13 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
         creditValueAtConfirmSats +
         salePaymentSats +
         marketplaceMutationFeeSats +
-        minerFeeSats,
+        attributedMinerFeeSats,
       liveNetworkValueSats:
         creditLiveValueSats +
         salePaymentSats +
         marketplaceMutationFeeSats +
-        minerFeeSats,
+        attributedMinerFeeSats,
+      attributedMinerFeeSats,
       marketplaceMutationFeeSats,
       minerFeeSats,
       salePaymentSats,
@@ -8840,8 +8968,12 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       if (!tokenUsesCreditNetworkFloor(listing.tokenId)) {
         return listing;
       }
-      const minerFeeSats = numericValue(listing.minerFeeSats);
-      const sealMinerFeeSats = numericValue(listing.sealMinerFeeSats);
+      const minerFeeSats = numericValue(
+        listing.canonicalMinerFeeSats ?? listing.minerFeeSats,
+      );
+      const sealMinerFeeSats = numericValue(
+        listing.sealCanonicalMinerFeeSats ?? listing.sealMinerFeeSats,
+      );
       return {
         ...listing,
         frozenNetworkValueSats: TOKEN_MIN_MUTATION_PRICE_SATS + minerFeeSats,
@@ -8864,7 +8996,9 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
     if (!tokenUsesCreditNetworkFloor(listing.tokenId)) {
       return listing;
     }
-    const minerFeeSats = numericValue(listing.closedMinerFeeSats);
+    const minerFeeSats = numericValue(
+      listing.closedCanonicalMinerFeeSats ?? listing.closedMinerFeeSats,
+    );
     return {
       ...listing,
       closedFrozenNetworkValueSats:
@@ -11543,12 +11677,36 @@ function dedupeActivityItems(items) {
 
     const key = activityKey(item);
     const current = merged.get(key);
-    if (
+    const preferItem =
       !current ||
       (item.confirmed && !current.confirmed) ||
       (item.confirmed === current.confirmed &&
-        activityItemRichness(item) > activityItemRichness(current))
-    ) {
+        activityItemRichness(item) > activityItemRichness(current));
+    const selected = preferItem ? item : current;
+    const canonicalFeeSource =
+      item?.canonicalMinerFeeCovered === true
+        ? item
+        : current?.canonicalMinerFeeCovered === true
+          ? current
+          : null;
+    if (canonicalFeeSource) {
+      const canonicalMinerFeeSats = numericValue(
+        canonicalFeeSource.canonicalMinerFeeSats,
+      );
+      merged.set(key, {
+        ...selected,
+        canonicalMinerFeeCovered: true,
+        canonicalMinerFeeSats,
+        minerFeeSource: canonicalFeeSource.minerFeeSource,
+        minerFeeSats: canonicalMinerFeeSats,
+        ...(selected?.kind === "token-listing-sealed"
+          ? { sealMinerFeeSats: canonicalMinerFeeSats }
+          : {}),
+        ...(selected?.kind === "token-listing-closed"
+          ? { closedMinerFeeSats: canonicalMinerFeeSats }
+          : {}),
+      });
+    } else if (preferItem) {
       merged.set(key, item);
     }
   }
@@ -12158,12 +12316,204 @@ async function recoveredBondTokenPayloadFromTransactions(
   };
 }
 
+function bondAttachedWorkValueDetails(
+  ledger,
+  confirmedBondActions,
+  config = INFINITY_BOND_CONFIG,
+) {
+  const empty = {
+    attachedWorkActions: 0,
+    attachedWorkAmount: 0,
+    attachedWorkFrozenValueByTxid: new Map(),
+    attachedWorkFrozenValueSats: 0,
+    attachedWorkLiveValueSats: 0,
+    attachedWorkUnmatchedActions: 0,
+    attachedWorkUnvaluedActions: 0,
+  };
+  if (config.tokenId !== INCB_TOKEN_ID) {
+    return empty;
+  }
+  const canonicalOrdinal = (value) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const ordinal = Number(value);
+    return Number.isSafeInteger(ordinal) && ordinal >= 0 ? ordinal : null;
+  };
+
+  const workTokenState = ledgerTokenStateForScope(ledger, WORK_TOKEN_ID);
+  const workTransfers = (Array.isArray(workTokenState?.transfers)
+    ? workTokenState.transfers
+    : []
+  ).filter(
+    (transfer) =>
+      transfer?.confirmed &&
+      transfer?.valid !== false &&
+      transfer.tokenId === WORK_TOKEN_ID &&
+      numericValue(transfer.amount) > 0,
+  );
+  const workTransfersByTxid = new Map();
+  for (const transfer of workTransfers) {
+    const txid = String(transfer.txid ?? "").trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(txid)) {
+      continue;
+    }
+    const current = workTransfersByTxid.get(txid) ?? [];
+    current.push(transfer);
+    workTransfersByTxid.set(txid, current);
+  }
+
+  const liveWorkFloorSats = numericValue(
+    ledger?.workFloor?.liveFloorSats ??
+      ledger?.workFloor?.actualValue?.liveFloorSats ??
+      ledger?.workFloor?.floorSats,
+  );
+  const seen = new Set();
+  let attachedWorkActions = 0;
+  let attachedWorkAmount = 0;
+  let attachedWorkFrozenValueSats = 0;
+  let attachedWorkLiveValueSats = 0;
+  let attachedWorkUnmatchedActions = 0;
+  let attachedWorkUnvaluedActions = 0;
+  const attachedWorkFrozenValueByTxid = new Map();
+
+  for (const bond of Array.isArray(confirmedBondActions)
+    ? confirmedBondActions
+    : []) {
+    const txid = String(bond?.txid ?? "").trim().toLowerCase();
+    const transfers = workTransfersByTxid.get(txid) ?? [];
+    const bondRecipients = (Array.isArray(bond?.recipients)
+      ? bond.recipients
+      : []
+    )
+      .map((recipient) => String(recipient?.address ?? "").trim())
+      .filter(Boolean);
+    const declaredCredits = (Array.isArray(bond?.attachedCredits)
+      ? bond.attachedCredits
+      : []
+    ).filter(
+      (credit) =>
+        credit?.tokenId === WORK_TOKEN_ID &&
+        numericValue(credit.amount) > 0 &&
+        String(credit.recipientAddress ?? "").trim(),
+    );
+    const unmatchedDeclaredCredits = declaredCredits.map((credit, index) => ({
+      credit,
+      index,
+    }));
+    const candidates = transfers.flatMap((transfer) => {
+      const recipientAddress = String(
+        transfer?.recipientAddress ?? "",
+      ).trim();
+      const amount = numericValue(transfer?.amount);
+      if (!recipientAddress || amount <= 0) {
+        return [];
+      }
+      if (declaredCredits.length > 0) {
+        const matchedIndex = unmatchedDeclaredCredits.findIndex(
+          ({ credit }) => {
+            const declaredVout = canonicalOrdinal(credit.protocolVout);
+            const transferVout = canonicalOrdinal(transfer.protocolVout);
+            return (
+              numericValue(credit.amount) === amount &&
+              samePaymentAddress(credit.recipientAddress, recipientAddress) &&
+              (declaredVout === null ||
+                transferVout === null ||
+                declaredVout === transferVout)
+            );
+          },
+        );
+        if (matchedIndex < 0) {
+          return [];
+        }
+        const [declared] = unmatchedDeclaredCredits.splice(matchedIndex, 1);
+        return [{ declared, transfer }];
+      }
+      return bondRecipients.some((address) =>
+        samePaymentAddress(address, recipientAddress),
+      )
+        ? [{ declared: null, transfer }]
+        : [];
+    });
+
+    attachedWorkUnmatchedActions += unmatchedDeclaredCredits.length;
+
+    for (const { declared, transfer } of candidates) {
+      const recipientAddress = String(
+        transfer?.recipientAddress ?? "",
+      ).trim();
+      const amount = numericValue(transfer.amount);
+      const declaredVout = canonicalOrdinal(
+        declared?.credit?.protocolVout,
+      );
+      const declaredIdentity = declaredVout !== null
+        ? `declared-vout:${declaredVout}`
+        : "";
+      const transferIdentity = [
+        transfer?._powEventIndex,
+        transfer?.eventKeyVout,
+        transfer?.protocolVout,
+        transfer?.eventId,
+      ]
+        .map(canonicalOrdinal)
+        .find((value) => value !== null);
+      const canonicalIdentity = declaredIdentity ||
+        (transferIdentity !== undefined
+          ? `event:${transferIdentity}`
+          : `movement:${recipientAddress.toLowerCase()}:${amount}`);
+      const key = `${txid}:${canonicalIdentity}`;
+      if (seen.has(key)) {
+        attachedWorkUnvaluedActions += 1;
+        continue;
+      }
+      seen.add(key);
+
+      const frozenFloorSats = numericValue(
+        transfer.creditFloorAtConfirmSats,
+      );
+      const liveFloorSats = liveWorkFloorSats;
+      const frozenValueSats =
+        numericValue(transfer.creditValueAtConfirmSats) ||
+        amount * frozenFloorSats;
+      const liveValueSats = amount * liveFloorSats;
+      if (frozenValueSats <= 0 || liveValueSats <= 0) {
+        attachedWorkUnvaluedActions += 1;
+        continue;
+      }
+
+      attachedWorkActions += 1;
+      attachedWorkAmount += amount;
+      attachedWorkFrozenValueSats += frozenValueSats;
+      attachedWorkLiveValueSats += liveValueSats;
+      attachedWorkFrozenValueByTxid.set(
+        txid,
+        numericValue(attachedWorkFrozenValueByTxid.get(txid)) +
+          frozenValueSats,
+      );
+    }
+  }
+
+  return {
+    attachedWorkActions,
+    attachedWorkAmount,
+    attachedWorkFrozenValueByTxid,
+    attachedWorkFrozenValueSats,
+    attachedWorkLiveValueSats,
+    attachedWorkUnmatchedActions,
+    attachedWorkUnvaluedActions,
+  };
+}
+
 function infinityBondChartPointsFromEvents({
   bonds,
   marketplaceMutations,
   sales,
   transfers,
-}, config = INFINITY_BOND_CONFIG) {
+}, config = INFINITY_BOND_CONFIG, options = {}) {
+  const bondFrozenValueByTxid =
+    options.bondFrozenValueByTxid instanceof Map
+      ? options.bondFrozenValueByTxid
+      : new Map();
   const events = [
     ...(Array.isArray(bonds) ? bonds : [])
       .filter((item) => item?.confirmed && isBondActivityItem(item, config))
@@ -12172,7 +12522,13 @@ function infinityBondChartPointsFromEvents({
         createdAt: item.createdAt,
         order: 0,
         txid: String(item.txid ?? ""),
-        valueSats: activityAmountSats(item),
+        valueSats:
+          activityAmountSats(item) +
+          numericValue(
+            bondFrozenValueByTxid.get(
+              String(item.txid ?? "").trim().toLowerCase(),
+            ),
+          ),
       })),
     ...(Array.isArray(transfers) ? transfers : [])
       .filter((transfer) => transfer?.confirmed && transfer.tokenId === config.tokenId)
@@ -12500,7 +12856,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
       confirmed: Boolean(listing.closedConfirmed),
       counterparty: listing.registryAddress,
       createdAt: listing.closedAt ?? listing.createdAt,
-      dataBytes: listing.dataBytes,
+      dataBytes: listing.closedDataBytes ?? listing.dataBytes,
       description: `${listing.amount.toLocaleString()} ${listing.ticker} listing closed because its sale-ticket output was spent${spentBy}.`,
       detail: closedTxid
         ? `Sale ticket spent by ${shortAddress(closedTxid)}`
@@ -14442,6 +14798,7 @@ function mailAttachedCreditsFromRecord(record, network) {
 
         return [
           {
+            ...canonicalEventIdentityDetails(credit),
             amount,
             paidSats:
               numericValue(credit?.paidSats) > 0
@@ -18747,10 +19104,46 @@ function tokenPayloadRegressesCanonical(candidate, canonical) {
   );
 }
 
-function tokenPayloadHistoryItemKey(item) {
+function tokenMintHistoryItemKey(item) {
+  const identity = [
+    item?._powEventIndex,
+    item?.eventKeyVout,
+    item?.protocolVout,
+    item?.eventId,
+  ]
+    .filter((value) => value !== undefined && value !== null && value !== "")
+    .map((value) => Number(value))
+    .find((value) => Number.isSafeInteger(value) && value >= 0);
+  const fallback = [
+    numericValue(item?.amount),
+    String(item?.minterAddress ?? "").trim().toLowerCase(),
+  ].join(":");
   return [
     String(item?.tokenId ?? "").trim().toLowerCase(),
     String(item?.txid ?? "").trim().toLowerCase(),
+    identity === undefined ? `mint:${fallback}` : `event:${identity}`,
+  ].join(":");
+}
+
+function tokenTransferHistoryItemKey(item) {
+  const identity = [
+    item?._powEventIndex,
+    item?.eventKeyVout,
+    item?.protocolVout,
+    item?.eventId,
+  ]
+    .filter((value) => value !== undefined && value !== null && value !== "")
+    .map((value) => Number(value))
+    .find((value) => Number.isSafeInteger(value) && value >= 0);
+  const fallback = [
+    numericValue(item?.amount),
+    String(item?.senderAddress ?? "").trim().toLowerCase(),
+    String(item?.recipientAddress ?? "").trim().toLowerCase(),
+  ].join(":");
+  return [
+    String(item?.tokenId ?? "").trim().toLowerCase(),
+    String(item?.txid ?? "").trim().toLowerCase(),
+    identity === undefined ? `movement:${fallback}` : `event:${identity}`,
   ].join(":");
 }
 
@@ -18798,7 +19191,40 @@ function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
     !transfersRegressed &&
     !listingsRegressed
   ) {
-    return payload;
+    return tokenStateWithPendingStats({
+      ...payload,
+      closedListings: mergeCanonicalHistoryItems(
+        canonicalPayload.closedListings,
+        payload.closedListings,
+        tokenClosedListingItemKey,
+        mergeTokenListingRecord,
+      ),
+      listings: mergeCanonicalHistoryItems(
+        canonicalPayload.listings,
+        payload.listings,
+        tokenListingItemKey,
+        mergeTokenListingRecord,
+      ),
+      mints: mergeCanonicalHistoryItems(
+        canonicalPayload.mints,
+        payload.mints,
+        tokenMintHistoryItemKey,
+        mergeCreditNetworkValueRecord,
+      ),
+      sales: mergeCanonicalHistoryItems(
+        canonicalPayload.sales,
+        payload.sales,
+        tokenSaleItemKey,
+        mergeCreditNetworkValueRecord,
+      ),
+      source: mergedSourceLabel(canonicalPayload?.source, payload?.source),
+      transfers: mergeCanonicalHistoryItems(
+        canonicalPayload.transfers,
+        payload.transfers,
+        tokenTransferHistoryItemKey,
+        mergeCreditNetworkValueRecord,
+      ),
+    });
   }
 
   const next = {
@@ -18845,7 +19271,8 @@ function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
     next.mints = mergeCanonicalHistoryItems(
       canonicalPayload.mints,
       payload.mints,
-      tokenPayloadHistoryItemKey,
+      tokenMintHistoryItemKey,
+      mergeCreditNetworkValueRecord,
     );
     next.holders = Array.isArray(canonicalPayload.holders)
       ? canonicalPayload.holders
@@ -18855,7 +19282,7 @@ function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
     next.transfers = mergeCanonicalHistoryItems(
       canonicalPayload.transfers,
       payload.transfers,
-      tokenPayloadHistoryItemKey,
+      tokenTransferHistoryItemKey,
       mergeTokenTransferRecord,
     );
   }
@@ -18864,6 +19291,7 @@ function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
       canonicalPayload.sales,
       payload.sales,
       tokenSaleItemKey,
+      mergeCreditNetworkValueRecord,
     );
   }
   if (listingsRegressed) {
@@ -20498,6 +20926,72 @@ function numericValue(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function canonicalEventIdentityDetails(item = {}) {
+  return ["_powEventIndex", "eventKeyVout", "protocolVout", "eventId"]
+    .reduce((details, key) => {
+      const value = Number(item?.[key]);
+      if (Number.isSafeInteger(value) && value >= 0) {
+        details[key] = value;
+      }
+      return details;
+    }, {});
+}
+
+function verifiedCanonicalMinerFeeCoverage(value) {
+  const coverage = value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : null;
+  if (!coverage) {
+    return null;
+  }
+  const confirmedEvents = Number(coverage.confirmedEvents);
+  const coveredConfirmedEvents = Number(coverage.coveredConfirmedEvents);
+  const missingConfirmedEvents = Number(coverage.missingConfirmedEvents);
+  const confirmedTransactions = Number(coverage.confirmedTransactions);
+  const coveredConfirmedTransactions = Number(
+    coverage.coveredConfirmedTransactions,
+  );
+  const missingConfirmedTransactions = Number(
+    coverage.missingConfirmedTransactions,
+  );
+  const missingConfirmedTxids = Array.isArray(coverage.missingConfirmedTxids)
+    ? coverage.missingConfirmedTxids
+        .map((txid) => String(txid ?? "").trim().toLowerCase())
+        .filter(Boolean)
+    : null;
+  if (
+    coverage.complete !== true ||
+    coverage.source !== "proof-indexer-normalized-input-output-totals" ||
+    !Number.isSafeInteger(confirmedEvents) ||
+    confirmedEvents <= 0 ||
+    !Number.isSafeInteger(coveredConfirmedEvents) ||
+    coveredConfirmedEvents !== confirmedEvents ||
+    !Number.isSafeInteger(missingConfirmedEvents) ||
+    missingConfirmedEvents !== 0 ||
+    !Number.isSafeInteger(confirmedTransactions) ||
+    confirmedTransactions <= 0 ||
+    !Number.isSafeInteger(coveredConfirmedTransactions) ||
+    coveredConfirmedTransactions !== confirmedTransactions ||
+    !Number.isSafeInteger(missingConfirmedTransactions) ||
+    missingConfirmedTransactions !== 0 ||
+    !missingConfirmedTxids ||
+    missingConfirmedTxids.length !== 0
+  ) {
+    return null;
+  }
+  return {
+    complete: true,
+    confirmedEvents,
+    coveredConfirmedEvents,
+    missingConfirmedEvents: 0,
+    confirmedTransactions,
+    coveredConfirmedTransactions,
+    missingConfirmedTransactions: 0,
+    missingConfirmedTxids: [],
+    source: coverage.source,
+  };
+}
+
 function numbersAgree(left, right, tolerance = 0.000001) {
   return Math.abs(numericValue(left) - numericValue(right)) <= tolerance;
 }
@@ -20520,7 +21014,17 @@ function workFloorPayloadHasFiniteNetworkValue(workFloor) {
     workFloor.frozenNetworkValueSats ??
     workFloor.actualValue?.frozenNetworkValueSats ??
     workFloor.actualValue?.frozenTotalSats;
+  const hasCurrentMinerFeeAccounting =
+    workFloor.network !== "livenet" ||
+    (workFloor.actualValue?.creditMinerFeeAccountingModel ===
+      CREDIT_MINER_FEE_ACCOUNTING_MODEL &&
+      Boolean(
+        verifiedCanonicalMinerFeeCoverage(
+          workFloor.actualValue?.creditMinerFeeCoverage,
+        ),
+      ));
   return (
+    hasCurrentMinerFeeAccounting &&
     finitePositiveNumber(networkValue) &&
     finitePositiveNumber(totalValue) &&
     numbersAgree(networkValue, totalValue, 0.01) &&
@@ -20584,6 +21088,15 @@ function bondSummaryPayloadHasKnownMainnetValue(
     numericValue(token?.stats?.confirmedMints),
   );
   const bondMintFlowSats = numericValue(summary.actualValue?.bondMintFlowSats);
+  const bondSaleVolumeSats = numericValue(
+    summary.actualValue?.bondSaleVolumeSats,
+  );
+  const bondTransferFeeSats = numericValue(
+    summary.actualValue?.bondTransferFeeSats,
+  );
+  const bondMarketplaceMutationFeeSats = numericValue(
+    summary.actualValue?.bondMarketplaceMutationFeeSats,
+  );
   const networkValueSats = Math.max(
     numericValue(summary.networkValueSats),
     numericValue(summary.actualValue?.networkValueSats),
@@ -20601,12 +21114,93 @@ function bondSummaryPayloadHasKnownMainnetValue(
       Array.isArray(summary.chartPoints)
     );
   }
+  const hasCurrentInceptionAttachmentContract =
+    config.tokenId !== INCB_TOKEN_ID ||
+    (summary.actualValue?.attachmentAccountingModel ===
+      INCEPTION_ATTACHMENT_ACCOUNTING_MODEL &&
+      [
+        "attachedWorkActions",
+        "attachedWorkAmount",
+        "attachedWorkFrozenValueSats",
+        "attachedWorkLiveValueSats",
+        "attachedWorkUnmatchedActions",
+        "attachedWorkUnvaluedActions",
+        "baseNetworkValueSats",
+        "frozenFloorSats",
+        "frozenNetworkValueSats",
+        "liveFloorSats",
+        "liveNetworkValueSats",
+      ].every(
+        (field) =>
+          Object.prototype.hasOwnProperty.call(
+            summary.actualValue ?? {},
+            field,
+          ) && Number.isFinite(Number(summary.actualValue?.[field])),
+      ));
+  const baseNetworkValueSats = numericValue(
+    summary.actualValue?.baseNetworkValueSats,
+  );
+  const frozenNetworkValueSats = numericValue(
+    summary.actualValue?.frozenNetworkValueSats,
+  );
+  const liveNetworkValueSats = numericValue(
+    summary.actualValue?.liveNetworkValueSats,
+  );
+  const attachedWorkActions = numericValue(
+    summary.actualValue?.attachedWorkActions,
+  );
+  const attachedWorkAmount = numericValue(
+    summary.actualValue?.attachedWorkAmount,
+  );
+  const attachedWorkFrozenValueSats = numericValue(
+    summary.actualValue?.attachedWorkFrozenValueSats,
+  );
+  const attachedWorkLiveValueSats = numericValue(
+    summary.actualValue?.attachedWorkLiveValueSats,
+  );
+  const inceptionAttachmentValuesAgree =
+    config.tokenId !== INCB_TOKEN_ID ||
+    (numericValue(summary.actualValue?.attachedWorkUnmatchedActions) === 0 &&
+      numericValue(summary.actualValue?.attachedWorkUnvaluedActions) === 0 &&
+      numbersAgree(baseNetworkValueSats, bondMintFlowSats +
+        bondSaleVolumeSats + bondTransferFeeSats +
+        bondMarketplaceMutationFeeSats, 0.01) &&
+      numbersAgree(
+        frozenNetworkValueSats,
+        baseNetworkValueSats + attachedWorkFrozenValueSats,
+        0.01,
+      ) &&
+      numbersAgree(
+        liveNetworkValueSats,
+        baseNetworkValueSats + attachedWorkLiveValueSats,
+        0.01,
+      ) &&
+      numbersAgree(networkValueSats, liveNetworkValueSats, 0.01) &&
+      numbersAgree(
+        numericValue(summary.actualValue?.frozenFloorSats) * confirmedSupply,
+        frozenNetworkValueSats,
+        0.01,
+      ) &&
+      numbersAgree(
+        numericValue(summary.actualValue?.liveFloorSats) * confirmedSupply,
+        liveNetworkValueSats,
+        0.01,
+      ) &&
+      (attachedWorkActions > 0
+        ? attachedWorkAmount > 0 &&
+          attachedWorkFrozenValueSats > 0 &&
+          attachedWorkLiveValueSats > 0
+        : attachedWorkAmount === 0 &&
+          attachedWorkFrozenValueSats === 0 &&
+          attachedWorkLiveValueSats === 0));
   return (
     finitePositiveNumber(confirmedSupply) &&
     finitePositiveNumber(confirmedBondActions) &&
     finitePositiveNumber(bondMintFlowSats) &&
     finitePositiveNumber(networkValueSats) &&
     networkValueSats >= bondMintFlowSats &&
+    hasCurrentInceptionAttachmentContract &&
+    inceptionAttachmentValuesAgree &&
     Array.isArray(summary.chartPoints) &&
     summary.chartPoints.length > 0
   );
@@ -21946,11 +22540,15 @@ async function ledgerWithReplayedCreditNetworkValues(
   network,
   label = "ledger",
 ) {
+  const canonicalMinerFeeCoverage = verifiedCanonicalMinerFeeCoverage(
+    ledger?.workFloor?.actualValue?.creditMinerFeeCoverage,
+  );
   if (
     network !== "livenet" ||
     !ledgerPayloadIsUsableFallback(ledger) ||
     !ledger?.registryState ||
-    !ledger?.tokenState
+    !ledger?.tokenState ||
+    !canonicalMinerFeeCoverage
   ) {
     return null;
   }
@@ -21986,6 +22584,7 @@ async function ledgerWithReplayedCreditNetworkValues(
       initialTokenState.transfers ?? [],
       initialTokenState.sales ?? [],
     ),
+    canonicalMinerFeeCoverage,
     confirmedActivity: baseActivity,
     cutoffMs: Date.now(),
     includeEvents: true,
@@ -22012,6 +22611,7 @@ async function ledgerWithReplayedCreditNetworkValues(
   const activityPayload = {
     ...(ledger.activityPayload ?? {}),
     activity,
+    canonicalMinerFeeCoverage,
     indexedAt: new Date().toISOString(),
     network,
     source: mergedSourceLabel(
@@ -23203,13 +23803,27 @@ function bondSummaryPayloadFromLedger(ledger, config) {
   );
   const bondMarketplaceMutationFeeSats = confirmedMarketplaceMutations
     .reduce((total, item) => total + activityAmountSats(item), 0);
-  const networkValueSats =
+  const baseNetworkValueSats =
     bondMintFlowSats +
     bondSaleVolumeSats +
     bondTransferFeeSats +
     bondMarketplaceMutationFeeSats;
+  const attachedWork = bondAttachedWorkValueDetails(
+    ledger,
+    confirmedBondActions,
+    config,
+  );
+  const frozenNetworkValueSats =
+    baseNetworkValueSats + attachedWork.attachedWorkFrozenValueSats;
+  const liveNetworkValueSats =
+    baseNetworkValueSats + attachedWork.attachedWorkLiveValueSats;
+  const networkValueSats = liveNetworkValueSats;
   const confirmedSupply = numericValue(tokenState?.confirmedSupply);
-  const floorSats = confirmedSupply > 0 ? networkValueSats / confirmedSupply : 0;
+  const frozenFloorSats =
+    confirmedSupply > 0 ? frozenNetworkValueSats / confirmedSupply : 0;
+  const liveFloorSats =
+    confirmedSupply > 0 ? liveNetworkValueSats / confirmedSupply : 0;
+  const floorSats = liveFloorSats;
   const btcUsdMetadata = btcUsdResponseMetadata(ledger?.btcUsdQuote);
   const floorUsd =
     btcUsdMetadata.btcUsd > 0 ? satsToUsdAtBtcUsd(floorSats, btcUsdMetadata.btcUsd) : 0;
@@ -23222,17 +23836,37 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     marketplaceMutations: confirmedMarketplaceMutations,
     sales: confirmedSales,
     transfers: confirmedTransfers,
-  }, config);
+  }, config, {
+    bondFrozenValueByTxid: attachedWork.attachedWorkFrozenValueByTxid,
+  });
 
   return {
     ...btcUsdMetadata,
     actualValue: {
+      attachedWorkActions: attachedWork.attachedWorkActions,
+      attachedWorkAmount: attachedWork.attachedWorkAmount,
+      attachmentAccountingModel:
+        config.tokenId === INCB_TOKEN_ID
+          ? INCEPTION_ATTACHMENT_ACCOUNTING_MODEL
+          : undefined,
+      attachedWorkFrozenValueSats:
+        attachedWork.attachedWorkFrozenValueSats,
+      attachedWorkLiveValueSats: attachedWork.attachedWorkLiveValueSats,
+      attachedWorkUnmatchedActions:
+        attachedWork.attachedWorkUnmatchedActions,
+      attachedWorkUnvaluedActions:
+        attachedWork.attachedWorkUnvaluedActions,
       bondMarketplaceMutationFeeSats,
       bondMintFlowSats,
       bondSaleVolumeSats,
       bondTransferFeeSats,
+      baseNetworkValueSats,
       floorSats,
       floorUsd,
+      frozenFloorSats,
+      frozenNetworkValueSats,
+      liveFloorSats,
+      liveNetworkValueSats,
       networkValueSats,
       networkUsd,
       totalSats: networkValueSats,
@@ -23241,17 +23875,22 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     chartPoints,
     floorSats,
     floorUsd,
+    frozenFloorSats,
+    frozenNetworkValueSats,
     indexedAt: ledger.generatedAt,
     indexedThroughBlock:
       ledger.indexedThroughBlock ??
       ledger.metrics?.indexedThroughBlock ??
       tokenState?.indexedThroughBlock,
     network: ledger.network,
+    liveFloorSats,
+    liveNetworkValueSats,
     networkValueSats,
     registryAddress: tokenState?.tokens?.[0]?.registryAddress ?? "",
     registryId: config.registryId,
     source: tokenState?.source,
     stats: {
+      confirmedAttachedWorkActions: attachedWork.attachedWorkActions,
       confirmedBondActions: confirmedBondActions.length,
       confirmedListings: (tokenState?.listings ?? []).filter(
         (listing) => listing.confirmed,
@@ -23595,6 +24234,21 @@ async function indexedActivityStateForCanonicalLedger(network, options = {}) {
   if (!payload?.activity?.length) {
     return null;
   }
+  const canonicalMinerFeeCoverage =
+    payload.canonicalMinerFeeCoverage ??
+    payload.stats?.canonicalMinerFeeCoverage;
+  const verifiedMinerFeeCoverage = verifiedCanonicalMinerFeeCoverage(
+    canonicalMinerFeeCoverage,
+  );
+  if (
+    options.requireCanonicalMinerFeeCoverage !== false &&
+    !verifiedMinerFeeCoverage
+  ) {
+    console.error(
+      `Rejected canonical activity: normalized miner-fee coverage is incomplete for ${Number(canonicalMinerFeeCoverage?.missingConfirmedEvents) || 0} confirmed event(s) across ${Number(canonicalMinerFeeCoverage?.missingConfirmedTransactions) || 0} transaction(s).`,
+    );
+    return null;
+  }
   const exactHeight = Number(options.exactHeight);
   if (Number.isSafeInteger(exactHeight) && exactHeight > 0) {
     if (proofIndexPayloadIndexedThroughBlock(payload) !== exactHeight) {
@@ -23612,13 +24266,23 @@ async function indexedActivityStateForCanonicalLedger(network, options = {}) {
   ) {
     return null;
   }
-  return payload;
+  return verifiedMinerFeeCoverage
+    ? {
+        ...payload,
+        canonicalMinerFeeCoverage: verifiedMinerFeeCoverage,
+      }
+    : payload;
 }
 
 async function activityStateForCanonicalLedger(network, fresh) {
   const indexedActivity = await indexedActivityStateForCanonicalLedger(network);
   if (indexedActivity) {
     return indexedActivity;
+  }
+  if (network === "livenet") {
+    throw freshDataUnavailableError(
+      "Canonical activity with complete normalized miner-fee coverage is unavailable.",
+    );
   }
   return fresh && ENABLE_GLOBAL_ACTIVITY_CRAWL
     ? globalActivityPayload(network, true)
@@ -23945,6 +24609,15 @@ function tokenTickerFromActivityItem(item) {
   );
 }
 
+function canonicalMinerFeeDetailsFromActivity(item) {
+  return item?.canonicalMinerFeeCovered === true
+    ? {
+        canonicalMinerFeeCovered: true,
+        canonicalMinerFeeSats: numericValue(item.canonicalMinerFeeSats),
+      }
+    : {};
+}
+
 function tokenDefinitionFromIndexedCreate(item, network) {
   const tokenId = String(item?.tokenId ?? item?.txid ?? "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/u.test(tokenId)) {
@@ -24020,6 +24693,7 @@ function tokenDefinitionFromIndexedCreate(item, network) {
     maxSupply,
     mintAmount,
     mintPriceSats,
+    ...canonicalMinerFeeDetailsFromActivity(item),
     minerFeeSats: numericValue(item.minerFeeSats),
     network,
     registryAddress,
@@ -24118,6 +24792,55 @@ async function completeTokenMarketOverlayItems(network, scope, kind) {
   return items;
 }
 
+function tokenTransferFromIndexedActivityItem(item, token, network) {
+  const amount = creditAmountFromActivityItem(item, token.ticker);
+  if (amount <= 0 || item?.confirmed === false) {
+    return null;
+  }
+  return {
+    ...canonicalEventIdentityDetails(item),
+    amount,
+    arbSats: numericValue(item.arbSats),
+    blockHeight: numericValue(item.blockHeight),
+    confirmed: true,
+    creditAmountMoved: numericValue(item.creditAmountMoved),
+    creditFloorAtConfirmSats: numericValue(
+      item.creditFloorAtConfirmSats,
+    ),
+    creditLiveFloorSats: numericValue(item.creditLiveFloorSats),
+    creditLiveValueSats: numericValue(item.creditLiveValueSats),
+    creditValueAtConfirmSats: numericValue(
+      item.creditValueAtConfirmSats,
+    ),
+    createdAt: item.createdAt,
+    dataBytes: numericValue(item.dataBytes),
+    frozenNetworkValueSats: numericValue(item.frozenNetworkValueSats),
+    ...canonicalMinerFeeDetailsFromActivity(item),
+    minerFeeSats: numericValue(item.minerFeeSats),
+    network,
+    paidSats: numericValue(
+      item.registryMutationFeeSats ?? item.paidSats ?? item.amountSats,
+    ),
+    recipientAddress: indexedActivityValue(
+      item,
+      "recipientAddress",
+      "counterparty",
+    ),
+    registryAddress:
+      item.registryAddress ??
+      token.registryAddress ??
+      item.recipients?.[0]?.address ??
+      "",
+    registryMutationFeeSats: numericValue(item.registryMutationFeeSats),
+    senderAddress: indexedActivityValue(item, "senderAddress", "actor"),
+    ticker: token.ticker,
+    tokenId: token.tokenId,
+    txid: String(item.txid ?? "").toLowerCase(),
+    valid: item.valid !== false,
+    liveNetworkValueSats: numericValue(item.liveNetworkValueSats),
+  };
+}
+
 async function tokenValueStateFromIndexedActivity(network, activityState, scope = "") {
   if (!Array.isArray(activityState?.activity)) {
     return null;
@@ -24182,6 +24905,7 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
         confirmed: true,
         createdAt: item.createdAt,
         dataBytes: numericValue(item.dataBytes),
+        ...canonicalMinerFeeDetailsFromActivity(item),
         minterAddress: indexedActivityValue(
           item,
           "minterAddress",
@@ -24203,32 +24927,14 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
         txid: String(item.txid ?? "").toLowerCase(),
       });
     } else if (item.kind === "token-transfer") {
-      const amount = creditAmountFromActivityItem(item, token.ticker);
-      if (amount <= 0 || item.confirmed === false) {
-        continue;
-      }
-      transfers.push({
-        amount,
-        blockHeight: numericValue(item.blockHeight),
-        confirmed: true,
-        createdAt: item.createdAt,
-        dataBytes: numericValue(item.dataBytes),
-        minerFeeSats: numericValue(item.minerFeeSats),
+      const transfer = tokenTransferFromIndexedActivityItem(
+        item,
+        token,
         network,
-        paidSats: numericValue(
-          item.registryMutationFeeSats ?? item.paidSats ?? item.amountSats,
-        ),
-        recipientAddress: indexedActivityValue(item, "recipientAddress", "counterparty"),
-        registryAddress:
-          item.registryAddress ??
-          token.registryAddress ??
-          item.recipients?.[0]?.address ??
-          "",
-        senderAddress: indexedActivityValue(item, "senderAddress", "actor"),
-        ticker: token.ticker,
-        tokenId: token.tokenId,
-        txid: String(item.txid ?? "").toLowerCase(),
-      });
+      );
+      if (transfer) {
+        transfers.push(transfer);
+      }
     } else if (
       item.kind === "token-listing" ||
       item.kind === "token-listings"
@@ -24264,7 +24970,9 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
         confirmed: true,
         createdAt: item.createdAt,
         dataBytes: numericValue(item.dataBytes),
+        ...canonicalMinerFeeDetailsFromActivity(item),
         listingId,
+        minerFeeSats: numericValue(item.minerFeeSats),
         network,
         priceSats,
         registryAddress,
@@ -24320,6 +25028,13 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
         numericValue(item.liveNetworkValueSats) ||
         numericValue(item.sealLiveNetworkValueSats) ||
         listing.sealLiveNetworkValueSats,
+      ...(item?.canonicalMinerFeeCovered === true
+        ? {
+            sealCanonicalMinerFeeSats: numericValue(
+              item.canonicalMinerFeeSats,
+            ),
+          }
+        : {}),
       sealMinerFeeSats: numericValue(item.minerFeeSats),
       sealTxid: String(item.txid ?? listing.sealTxid ?? "").trim().toLowerCase(),
     };
@@ -24354,6 +25069,7 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
       confirmed: true,
       createdAt: item.createdAt,
       dataBytes: numericValue(item.dataBytes),
+      ...canonicalMinerFeeDetailsFromActivity(item),
       listingId,
       marketplaceMutationFeeSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       minerFeeSats: numericValue(item.minerFeeSats),
@@ -24378,6 +25094,14 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
       confirmed: true,
       createdAt: listing.createdAt,
       dataBytes: numericValue(item.dataBytes),
+      ...(item?.canonicalMinerFeeCovered === true
+        ? {
+            closedCanonicalMinerFeeSats: numericValue(
+              item.canonicalMinerFeeSats,
+            ),
+          }
+        : {}),
+      closedMinerFeeSats: numericValue(item.minerFeeSats),
       listingId,
       network,
       priceSats: listing.priceSats,
@@ -24818,6 +25542,7 @@ async function buildIndexedCanonicalLedgerPayload(
   ]);
   let activityPayload = {
     activity,
+    canonicalMinerFeeCoverage: activityState?.canonicalMinerFeeCoverage,
     indexedAt: new Date().toISOString(),
     network,
     source: mergedSourceLabel(activityState?.source, "indexed-canonical-ledger"),
@@ -24851,6 +25576,7 @@ async function buildIndexedCanonicalLedgerPayload(
       ledgerTokenState.transfers ?? [],
       ledgerTokenState.sales ?? [],
     ),
+    canonicalMinerFeeCoverage: activityState?.canonicalMinerFeeCoverage,
     confirmedActivity: activity,
     cutoffMs: Date.now(),
     includeEvents: true,
@@ -25161,10 +25887,11 @@ async function internalCanonicalSummaryPayload(network) {
     if (
       !payload ||
       payloadSnapshotId(payload) !== hashBoundLedger.snapshotId ||
-      proofIndexPayloadIndexedThroughBlock(payload) !== before.indexedThroughBlock
+      proofIndexPayloadIndexedThroughBlock(payload) !== before.indexedThroughBlock ||
+      !summaryPayloadHasFiniteNetworkValue(network, key, payload)
     ) {
       throw freshDataUnavailableError(
-        `The indexed canonical ${key} payload is not bound to the exact ledger snapshot.`,
+        `The indexed canonical ${key} payload is not a valid exact-ledger summary.`,
       );
     }
   }
@@ -25284,6 +26011,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
   ]);
   let activityPayload = {
     activity,
+    canonicalMinerFeeCoverage: activityState?.canonicalMinerFeeCoverage,
     indexedAt: new Date().toISOString(),
     network,
     source: activityState?.source ?? mempoolBase(network),
@@ -25316,6 +26044,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
       ledgerTokenState.transfers ?? [],
       ledgerTokenState.sales ?? [],
     ),
+    canonicalMinerFeeCoverage: activityState?.canonicalMinerFeeCoverage,
     confirmedActivity: activity,
     cutoffMs: Date.now(),
     includeEvents: true,
@@ -25755,7 +26484,10 @@ async function activityPayloadWithLiveWorkTokenOverlay(ledger, fresh = false) {
 
 async function mergedLogActivityPayload(network, fresh = false) {
   if (network === "livenet" && !fresh) {
-    const indexedActivity = await indexedActivityStateForCanonicalLedger(network);
+    const indexedActivity = await indexedActivityStateForCanonicalLedger(
+      network,
+      { requireCanonicalMinerFeeCoverage: false },
+    );
     if (indexedActivity) {
       return indexedActivity;
     }
@@ -27379,7 +28111,12 @@ async function proofIndexInceptionSummaryPayload(network, fresh = false) {
   );
 }
 
-async function proofIndexBondSummaryPayload(network, fresh = false, config) {
+async function proofIndexBondSummaryPayload(
+  network,
+  fresh = false,
+  config,
+  canonicalLedger = null,
+) {
   const params = new URLSearchParams([["asset", config.tokenId]]);
   const bondActivityState = await indexedBondActivityForTokenState(
     network,
@@ -27472,6 +28209,16 @@ async function proofIndexBondSummaryPayload(network, fresh = false, config) {
   if (!bondTokenState || !bondActivityCoversTip) {
     return null;
   }
+  if (
+    config.tokenId === INCB_TOKEN_ID &&
+    numericValue(bondTokenState.confirmedSupply) > 0 &&
+    !canonicalLedger?.workTokenState
+  ) {
+    console.error(
+      `Rejected ${config.displayName} summary: canonical WORK valuation state is unavailable.`,
+    );
+    return null;
+  }
   const indexedBondFlowSats = (bondActivityState.activity ?? [])
     .filter((item) => item?.confirmed && isBondActivityItem(item, config))
     .reduce((total, item) => total + activityAmountSats(item), 0);
@@ -27514,7 +28261,24 @@ async function proofIndexBondSummaryPayload(network, fresh = false, config) {
     indexedThroughBlock: bondTokenState.indexedThroughBlock,
     network,
     tokenState: bondTokenState,
+    ...(canonicalLedger?.workFloor
+      ? { workFloor: canonicalLedger.workFloor }
+      : {}),
+    ...(canonicalLedger?.workTokenState
+      ? { workTokenState: canonicalLedger.workTokenState }
+      : {}),
   }, config);
+  if (
+    network === "livenet" &&
+    !bondSummaryPayloadHasKnownMainnetValue(payload, config, {
+      allowEmptyHistory: config.tokenId === INCB_TOKEN_ID,
+    })
+  ) {
+    console.error(
+      `Rejected ${config.displayName} summary: composite value contract is incomplete.`,
+    );
+    return null;
+  }
   const tokenSnapshotId = String(
     bondTokenState.snapshotId ?? bondTokenState.ledgerSnapshotId ?? "",
   ).trim();
@@ -27664,12 +28428,23 @@ async function bondSummaryPayload(network, fresh = false, config) {
     }
   }
 
-  const ledger =
-    network === "livenet" && !fresh
+  const currentLedger =
+    network === "livenet"
       ? await existingCurrentCanonicalLedgerPayloadWithinMs(
           network,
           `${config.summaryRoute} canonical ledger`,
         )
+      : null;
+  const ledger =
+    network === "livenet"
+      ? currentLedger ??
+        (fresh
+          ? await payloadWithFallbackAfterMs(
+              summaryCanonicalLedgerPayload(network, true),
+              null,
+              LEDGER_SUMMARY_FRESH_WAIT_MS,
+            )
+          : null)
       : await payloadWithFallbackAfterMs(
           summaryCanonicalLedgerPayload(network, fresh),
           null,
@@ -27677,7 +28452,12 @@ async function bondSummaryPayload(network, fresh = false, config) {
         );
 
   if (network === "livenet") {
-    const indexed = await proofIndexBondSummaryPayload(network, fresh, config);
+    const indexed = await proofIndexBondSummaryPayload(
+      network,
+      fresh,
+      config,
+      ledger,
+    );
     const ledgerSummary = ledger?.[config.summaryKey];
     if (
       indexed &&
@@ -27692,7 +28472,24 @@ async function bondSummaryPayload(network, fresh = false, config) {
       return indexed;
     }
     if (ledgerSummary?.registryAddress) {
-      return bondSummaryFromCanonicalLedger(ledger, network, fresh, config);
+      const canonicalPayload = await bondSummaryFromCanonicalLedger(
+        ledger,
+        network,
+        fresh,
+        config,
+      );
+      if (
+        summaryPayloadHasFiniteNetworkValue(
+          network,
+          config.summaryKey,
+          canonicalPayload,
+        )
+      ) {
+        return canonicalPayload;
+      }
+      console.error(
+        `Rejected ${config.displayName} canonical-ledger summary: composite value contract is incomplete.`,
+      );
     }
     if (indexed) {
       return indexed;
@@ -29019,6 +29816,27 @@ function activityKindHasDedicatedGrowthBucket(item) {
   );
 }
 
+function creditMovementIdentity(item, kind) {
+  const text = (value) => String(value ?? "").trim().toLowerCase();
+  return [
+    text(kind),
+    text(item?.tokenId),
+    text(item?.txid),
+    numericValue(item?.amount),
+    text(
+      item?.senderAddress ?? item?.minterAddress ?? item?.buyerAddress,
+    ),
+    text(item?.recipientAddress ?? item?.sellerAddress),
+    text(item?.listingId),
+    text(
+      item?._powEventIndex ??
+        item?.eventKeyVout ??
+        item?.protocolVout ??
+        item?.eventId,
+    ),
+  ].join(":");
+}
+
 function unbucketedConfirmedComputerLogFlowSats(confirmedActivity) {
   return confirmedActivity
     .filter((item) => !activityKindHasDedicatedGrowthBucket(item))
@@ -29064,8 +29882,55 @@ function compareCreditValueReplayEvents(left, right) {
   );
 }
 
+function presentNonNegativeNumber(item, field) {
+  if (
+    !item ||
+    item[field] === undefined ||
+    item[field] === null ||
+    item[field] === ""
+  ) {
+    return null;
+  }
+  const value = Number(item[field]);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function creditReplayTransactionMinerFeeSats(
+  event,
+  activity,
+  options = {},
+) {
+  for (const item of [activity, event?.source, event]) {
+    if (item?.canonicalMinerFeeCovered !== true) {
+      continue;
+    }
+    const value = presentNonNegativeNumber(item, "canonicalMinerFeeSats");
+    if (value !== null) {
+      return value;
+    }
+  }
+  if (options.requireCanonical === true) {
+    return null;
+  }
+  for (const [item, field] of [
+    [activity, "canonicalMinerFeeSats"],
+    [event?.source, "canonicalMinerFeeSats"],
+    [event, "canonicalMinerFeeSats"],
+    [activity, "minerFeeSats"],
+    [event?.source, "minerFeeSats"],
+    [event, "minerFeeSats"],
+  ]) {
+    const value = presentNonNegativeNumber(item, field);
+    if (value !== null) {
+      return value;
+    }
+  }
+  return 0;
+}
+
 function creditNetworkValueMetrics({
   baseValueAt,
+  canonicalMinerFeeCoverage = null,
   confirmedActivity = [],
   cutoffMs = Date.now(),
   includeEvents = false,
@@ -29074,6 +29939,17 @@ function creditNetworkValueMetrics({
   tokenSales = [],
   tokenTransfers = [],
 }) {
+  const verifiedMinerFeeCoverage = verifiedCanonicalMinerFeeCoverage(
+    canonicalMinerFeeCoverage,
+  );
+  let canonicalReplayFeesComplete = true;
+  const minerFeeAccounting = () =>
+    verifiedMinerFeeCoverage && canonicalReplayFeesComplete
+      ? {
+          creditMinerFeeAccountingModel: CREDIT_MINER_FEE_ACCOUNTING_MODEL,
+          creditMinerFeeCoverage: verifiedMinerFeeCoverage,
+        }
+      : {};
   const tokensById = new Map(
     (Array.isArray(tokenDefinitions) ? tokenDefinitions : [])
       .filter(tokenCanUseCreditNetworkFloor)
@@ -29081,6 +29957,7 @@ function creditNetworkValueMetrics({
   );
   if (tokensById.size === 0) {
     return {
+      ...minerFeeAccounting(),
       creditEventFrozenValueSats: 0,
       creditEventLiveValueSats: 0,
       creditMinerFeeFlowSats: 0,
@@ -29147,6 +30024,7 @@ function creditNetworkValueMetrics({
       amount,
       createdMs,
       kind,
+      movementIdentity: creditMovementIdentity(item, kind),
       order: 1,
       source: item,
       token,
@@ -29227,6 +30105,7 @@ function creditNetworkValueMetrics({
   let creditSalePaymentFlowSats = 0;
   const eventDetails = [];
   let cumulativeFrozenCreditValueSats = 0;
+  const countedMinerFeeTxids = new Set();
   const replayEvents = [
     ...movementEvents,
     ...mutationEvents,
@@ -29241,9 +30120,24 @@ function creditNetworkValueMetrics({
     const creditValueAtConfirmSats =
       event.amount * creditFloorAtConfirmSats;
     const activity = activityByTxid.get(event.txid);
-    const minerFeeSats = numericValue(
-      event.minerFeeSats ?? event.source?.minerFeeSats ?? activity?.minerFeeSats,
+    const canonicalTransactionMinerFeeSats = creditReplayTransactionMinerFeeSats(
+      event,
+      activity,
+      { requireCanonical: Boolean(verifiedMinerFeeCoverage) },
     );
+    if (
+      verifiedMinerFeeCoverage &&
+      canonicalTransactionMinerFeeSats === null
+    ) {
+      canonicalReplayFeesComplete = false;
+    }
+    const transactionMinerFeeSats = numericValue(
+      canonicalTransactionMinerFeeSats,
+    );
+    const minerFeeSats = countedMinerFeeTxids.has(event.txid)
+      ? 0
+      : transactionMinerFeeSats;
+    countedMinerFeeTxids.add(event.txid);
     const proofPaymentSats =
       event.kind === "mint"
         ? numericValue(event.source?.paidSats)
@@ -29289,6 +30183,7 @@ function creditNetworkValueMetrics({
       liveNetworkValueBeforeEventSats: networkValueBeforeEvent,
       marketplaceMutationFeeSats,
       minerFeeSats,
+      movementIdentity: event.movementIdentity,
       networkValueBeforeEventSats: networkValueBeforeEvent,
       proofPaymentSats,
       registryMutationFeeSats,
@@ -29296,6 +30191,7 @@ function creditNetworkValueMetrics({
       sourceKind: event.sourceKind ?? `token-${event.kind}`,
       ticker: event.token.ticker,
       tokenId: event.token.tokenId,
+      transactionMinerFeeSats,
       txid: event.txid,
     });
   }
@@ -29330,6 +30226,7 @@ function creditNetworkValueMetrics({
     baseNow + creditEventLiveValueSats;
 
   return {
+    ...minerFeeAccounting(),
     creditEventFrozenValueSats,
     creditEventLiveValueSats,
     creditFrozenNetworkValueSats: creditEventFrozenValueSats,
@@ -29365,11 +30262,6 @@ function tokenStateWithScopedTokenOverride(tokenState, scopedState, tokenId) {
     (Array.isArray(items) ? items : []).filter((item) => item.tokenId !== tokenId);
   const scopedItemsFrom = (items) =>
     (Array.isArray(items) ? items : []).filter((item) => item.tokenId === tokenId);
-  const scopedTxidKey = (item) =>
-    [
-      String(item?.tokenId ?? "").trim().toLowerCase(),
-      String(item?.txid ?? "").trim().toLowerCase(),
-    ].join(":");
   const scopedInvalidEventKey = (item) =>
     [
       String(item?.kind ?? "").trim().toLowerCase(),
@@ -29416,7 +30308,11 @@ function tokenStateWithScopedTokenOverride(tokenState, scopedState, tokenId) {
       tokenState?.listings,
       scopedState.listings,
     ),
-    mints: mergeScopedItems(tokenState?.mints, scopedState.mints, scopedTxidKey),
+    mints: mergeScopedItems(
+      tokenState?.mints,
+      scopedState.mints,
+      tokenMintHistoryItemKey,
+    ),
     sales: mergeScopedItems(
       tokenState?.sales,
       scopedState.sales,
@@ -29430,7 +30326,7 @@ function tokenStateWithScopedTokenOverride(tokenState, scopedState, tokenId) {
     transfers: mergeScopedItems(
       tokenState?.transfers,
       scopedState.transfers,
-      scopedTxidKey,
+      tokenTransferHistoryItemKey,
       mergeTokenTransferRecord,
     ),
   };
@@ -29766,6 +30662,7 @@ function growthActualNetworkValue(
   tokenTransfers = [],
   tokenSales = [],
   cutoffMs = Date.now(),
+  options = {},
 ) {
   const baseValue = growthActualBaseNetworkValue(
     records,
@@ -29787,6 +30684,7 @@ function growthActualNetworkValue(
       tokenTransfers,
       tokenSales,
     ),
+    canonicalMinerFeeCoverage: options.canonicalMinerFeeCoverage,
     confirmedActivity: idActivity,
     cutoffMs,
     tokenDefinitions,
@@ -29807,6 +30705,13 @@ function growthActualNetworkValue(
 
   return {
     ...baseValue,
+    ...(creditValue.creditMinerFeeAccountingModel
+      ? {
+          creditMinerFeeAccountingModel:
+            creditValue.creditMinerFeeAccountingModel,
+          creditMinerFeeCoverage: creditValue.creditMinerFeeCoverage,
+        }
+      : {}),
     creditMinerFeeFlowSats: creditValue.creditMinerFeeFlowSats,
     creditEventFrozenValueSats: creditValue.creditEventFrozenValueSats,
     creditEventLiveValueSats: creditValue.creditEventLiveValueSats,
@@ -29995,6 +30900,7 @@ function growthActualLiveTotalSatsAtProvider(
   }
 
   let cumulativeFrozenCreditValueSats = 0;
+  const countedMinerFeeTxids = new Set();
   const replayEvents = [...movementEvents, ...mutationEvents]
     .sort(compareCreditValueReplayEvents)
     .map((event) => {
@@ -30007,11 +30913,14 @@ function growthActualLiveTotalSatsAtProvider(
           ? event.amount * (networkValueBeforeEvent / maxSupply)
           : 0;
       const activity = activityByTxid.get(event.txid);
-      const minerFeeSats = numericValue(
-        event.minerFeeSats ??
-          event.source?.minerFeeSats ??
-          activity?.minerFeeSats,
+      const transactionMinerFeeSats = creditReplayTransactionMinerFeeSats(
+        event,
+        activity,
       );
+      const minerFeeSats = countedMinerFeeTxids.has(event.txid)
+        ? 0
+        : transactionMinerFeeSats;
+      countedMinerFeeTxids.add(event.txid);
       const proofPaymentSats =
         event.kind === "mint"
           ? numericValue(event.source?.paidSats)
@@ -30605,6 +31514,12 @@ function workFloorPayloadFromState(
     valueTokenState.mints ?? [],
     valueTokenState.transfers ?? [],
     tokenSalesForValue,
+    Date.now(),
+    {
+      canonicalMinerFeeCoverage:
+        computerActivity?.canonicalMinerFeeCoverage ??
+        computerActivity?.stats?.canonicalMinerFeeCoverage,
+    },
   );
   const globalWorkMintFlowSats = (valueTokenState.mints ?? [])
     .filter((mint) => mint.confirmed && mint.tokenId === WORK_TOKEN_ID)
@@ -35276,8 +36191,7 @@ async function handleRequest(request, response) {
         );
         if (indexedPayload) {
           const responsePayload =
-            needsCreditNetworkValueOverlay &&
-              exactProofIndexTxids.length === 0
+            needsCreditNetworkValueOverlay
             ? await tokenHistoryPageWithCanonicalCreditValueOverlay(
                 indexedPayload,
                 network,

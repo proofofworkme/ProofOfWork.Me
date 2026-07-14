@@ -410,6 +410,15 @@ function tokenSaleFromEventPayload(payload) {
     amount,
     arbSats: rowNumber(payload, "arbSats"),
     buyerAddress,
+    canonicalMinerFeeCovered: payload?.canonicalMinerFeeCovered === true,
+    canonicalMinerFeeSats: rowNumber(payload, "canonicalMinerFeeSats"),
+    closedMinerFeeCanonical:
+      payload?.canonicalMinerFeeCovered === true &&
+      String(payload?.kind ?? "").trim().toLowerCase() === "token-sale",
+    closedMinerFeeSource:
+      payload?.canonicalMinerFeeCovered === true
+        ? String(payload?.minerFeeSource ?? "").trim()
+        : String(payload?.closedMinerFeeSource ?? "").trim(),
     confirmed: payload?.confirmed === true,
     creditAmountMoved: rowNumber(payload, "creditAmountMoved"),
     creditFloorAtConfirmSats: rowNumber(payload, "creditFloorAtConfirmSats"),
@@ -420,11 +429,15 @@ function tokenSaleFromEventPayload(payload) {
       payload?.createdAt ?? payload?.timestamp ?? payload?.blockTime,
     ),
     dataBytes: rowNumber(payload, "dataBytes"),
+    closedMinerFeeSats:
+      rowNumber(payload, "closedMinerFeeSats") ||
+      rowNumber(payload, "minerFeeSats"),
     frozenNetworkValueSats: rowNumber(payload, "frozenNetworkValueSats"),
     listingId: String(payload?.listingId ?? "").trim().toLowerCase(),
     liveNetworkValueSats: rowNumber(payload, "liveNetworkValueSats"),
     marketplaceMutationFeeSats: rowNumber(payload, "marketplaceMutationFeeSats"),
     minerFeeSats: rowNumber(payload, "minerFeeSats"),
+    minerFeeSource: String(payload?.minerFeeSource ?? "").trim(),
     network: payload?.network,
     paidSats: rowNumber(payload, "paidSats") || rowNumber(payload, "amountSats"),
     priceSats,
@@ -463,6 +476,8 @@ function tokenListingFromEventPayload(payload) {
   const normalizedTicker = String(ticker || saleAuthorization.ticker || "").trim();
   return {
     amount: rowNumber(payload, "amount") || rowNumber(saleAuthorization, "amount") || amount,
+    canonicalMinerFeeCovered: payload?.canonicalMinerFeeCovered === true,
+    canonicalMinerFeeSats: rowNumber(payload, "canonicalMinerFeeSats"),
     confirmed: payload?.confirmed === true,
     createdAt: dateIso(payload?.createdAt),
     dataBytes: rowNumber(payload, "dataBytes"),
@@ -473,6 +488,7 @@ function tokenListingFromEventPayload(payload) {
     liveNetworkValueSats: rowNumber(payload, "liveNetworkValueSats"),
     marketplaceMutationFeeSats: rowNumber(payload, "marketplaceMutationFeeSats"),
     minerFeeSats: rowNumber(payload, "minerFeeSats"),
+    minerFeeSource: String(payload?.minerFeeSource ?? "").trim(),
     network: payload?.network,
     priceSats:
       rowNumber(payload, "priceSats") ||
@@ -487,6 +503,16 @@ function tokenListingFromEventPayload(payload) {
         ? payload.sealConfirmed
         : undefined,
     sealLiveNetworkValueSats: rowNumber(payload, "sealLiveNetworkValueSats"),
+    sealMinerFeeCanonical:
+      payload?.canonicalMinerFeeCovered === true &&
+      String(payload?.kind ?? "").trim().toLowerCase() ===
+        "token-listing-sealed",
+    sealMinerFeeSource:
+      payload?.canonicalMinerFeeCovered === true &&
+      String(payload?.kind ?? "").trim().toLowerCase() ===
+        "token-listing-sealed"
+        ? String(payload?.minerFeeSource ?? "").trim()
+        : String(payload?.sealMinerFeeSource ?? "").trim(),
     sealMinerFeeSats: rowNumber(payload, "sealMinerFeeSats"),
     sealTxid: String(payload?.sealTxid ?? "").trim().toLowerCase(),
     sellerAddress,
@@ -651,6 +677,13 @@ function tokenClosedListingFromEventPayload(payload) {
     ),
     closedLiveNetworkValueSats: rowNumber(payload, "closedLiveNetworkValueSats"),
     closedMinerFeeSats: rowNumber(payload, "closedMinerFeeSats"),
+    canonicalMinerFeeCovered: payload?.canonicalMinerFeeCovered === true,
+    canonicalMinerFeeSats: rowNumber(payload, "canonicalMinerFeeSats"),
+    closedMinerFeeCanonical: payload?.canonicalMinerFeeCovered === true,
+    closedMinerFeeSource:
+      payload?.canonicalMinerFeeCovered === true
+        ? String(payload?.minerFeeSource ?? "").trim()
+        : String(payload?.closedMinerFeeSource ?? "").trim(),
     closedTxid: String(payload?.txid ?? "").trim().toLowerCase(),
     confirmed: true,
     createdAt,
@@ -659,6 +692,7 @@ function tokenClosedListingFromEventPayload(payload) {
     liveNetworkValueSats: rowNumber(payload, "liveNetworkValueSats"),
     marketplaceMutationFeeSats: rowNumber(payload, "marketplaceMutationFeeSats"),
     minerFeeSats: rowNumber(payload, "minerFeeSats"),
+    minerFeeSource: String(payload?.minerFeeSource ?? "").trim(),
     listingId: String(payload?.listingId ?? "").trim().toLowerCase(),
     network: payload?.network,
     priceSats:
@@ -698,6 +732,10 @@ function tokenTransferFromEventPayload(payload, row = {}) {
     rowNumber(payload, "tokenAmount") ||
     tokenTransferAmountFromTags(payload, ticker);
   return {
+    ...canonicalEventIdentityDetails({
+      ...payload,
+      eventId: payload?.eventId ?? row?.event_id,
+    }),
     amount,
     confirmed:
       row.status === "confirmed" || payload?.confirmed === true,
@@ -1006,7 +1044,10 @@ function tokenListingSealRank(listing) {
   if (!validTxid(listing?.sealTxid)) {
     return 0;
   }
-  return listing?.sealConfirmed === true ? 2 : 1;
+  if (listing?.sealConfirmed !== true) {
+    return 1;
+  }
+  return listing?.sealMinerFeeCanonical === true ? 3 : 2;
 }
 
 function tokenListingWithSealFrom(listing, sealSource) {
@@ -1026,6 +1067,11 @@ function tokenListingWithSealFrom(listing, sealSource) {
     sealLiveNetworkValueSats:
       sealSource.sealLiveNetworkValueSats ??
       listing.sealLiveNetworkValueSats,
+    sealMinerFeeCanonical:
+      sealSource.sealMinerFeeCanonical === true ||
+      listing.sealMinerFeeCanonical === true,
+    sealMinerFeeSource:
+      sealSource.sealMinerFeeSource ?? listing.sealMinerFeeSource,
     sealMinerFeeSats: sealSource.sealMinerFeeSats ?? listing.sealMinerFeeSats,
     sealTxid: sealSource.sealTxid ?? listing.sealTxid,
   };
@@ -1064,7 +1110,10 @@ function tokenListingCloseRank(listing) {
   if (!validTxid(listing?.closedTxid)) {
     return 0;
   }
-  return listing?.closedConfirmed === true ? 2 : 1;
+  if (listing?.closedConfirmed !== true) {
+    return 1;
+  }
+  return listing?.closedMinerFeeCanonical === true ? 3 : 2;
 }
 
 function tokenListingWithCloseFrom(listing, closeSource) {
@@ -1075,7 +1124,34 @@ function tokenListingWithCloseFrom(listing, closeSource) {
   return {
     ...listing,
     closedAt: closeSource.closedAt ?? listing.closedAt,
+    closedBlockHeight:
+      closeSource.closedBlockHeight ??
+      closeSource.blockHeight ??
+      listing.closedBlockHeight,
+    closedBlockIndex:
+      closeSource.closedBlockIndex ??
+      closeSource.blockIndex ??
+      listing.closedBlockIndex,
     closedConfirmed: closeSource.closedConfirmed === true,
+    closedDataBytes:
+      closeSource.closedDataBytes ??
+      closeSource.dataBytes ??
+      listing.closedDataBytes,
+    closedFrozenNetworkValueSats:
+      closeSource.closedFrozenNetworkValueSats ??
+      listing.closedFrozenNetworkValueSats,
+    closedLiveNetworkValueSats:
+      closeSource.closedLiveNetworkValueSats ??
+      listing.closedLiveNetworkValueSats,
+    closedMinerFeeCanonical:
+      closeSource.closedMinerFeeCanonical === true ||
+      listing.closedMinerFeeCanonical === true,
+    closedMinerFeeSats:
+      closeSource.closedMinerFeeSats ?? listing.closedMinerFeeSats,
+    closedMinerFeeSource:
+      closeSource.closedMinerFeeSource ??
+      closeSource.minerFeeSource ??
+      listing.closedMinerFeeSource,
     closedTxid: closeSource.closedTxid ?? listing.closedTxid,
     closedVin: closeSource.closedVin ?? listing.closedVin,
   };
@@ -2011,6 +2087,17 @@ export function proofIndexTokenReadEligibility(tokenScope, searchParams) {
 function rowNumber(row, key) {
   const number = Number(row?.[key]);
   return Number.isFinite(number) ? number : 0;
+}
+
+function canonicalEventIdentityDetails(item = {}) {
+  return ["_powEventIndex", "eventKeyVout", "protocolVout", "eventId"]
+    .reduce((details, key) => {
+      const value = Number(item?.[key]);
+      if (Number.isSafeInteger(value) && value >= 0) {
+        details[key] = value;
+      }
+      return details;
+    }, {});
 }
 
 function objectRecord(value) {
@@ -3987,6 +4074,7 @@ async function currentTokenTransferHistoryPage(
   const rowsResult = await pool.query(
     `
       SELECT
+        e.event_id,
         e.network,
         e.txid,
         e.status AS event_status,
@@ -6027,6 +6115,7 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
   const result = await pool.query(
     `
       SELECT
+        e.event_id,
         e.network,
         e.txid,
         e.protocol,
@@ -6429,6 +6518,7 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
   const result = await pool.query(
     `
       SELECT
+        e.event_id,
         e.payload,
         e.protocol,
         e.kind,
@@ -7126,6 +7216,7 @@ export async function proofIndexWalletTokenOverlayPayload(
   const eventResult = await pool.query(
     `
       SELECT
+        e.event_id,
         e.payload,
         e.status,
         e.event_time,
@@ -8688,6 +8779,56 @@ export async function proofIndexCanonicalActivityPayload(network) {
 
   const result = await pool.query(
     `
+      WITH selected_events AS (
+        SELECT
+          e.payload,
+          e.protocol,
+          e.kind,
+          e.status,
+          e.event_time,
+          e.block_time,
+          e.created_at,
+          e.block_height,
+          e.txid,
+          e.event_id,
+          e.network
+        FROM proof_indexer.events e
+        WHERE e.network = $1
+          AND e.valid = true
+          AND e.status IN ('confirmed', 'pending')
+          AND e.kind = ANY($2::text[])
+      ),
+      selected_txids AS (
+        SELECT DISTINCT network, txid
+        FROM selected_events
+        WHERE status = 'confirmed'
+      ),
+      input_totals AS (
+        SELECT
+          i.network,
+          i.txid,
+          COUNT(*)::integer AS input_count,
+          COUNT(i.value_sats)::integer AS valued_input_count,
+          SUM(i.value_sats)::numeric AS input_value_sats
+        FROM proof_indexer.tx_inputs i
+        JOIN selected_txids selected
+          ON selected.network = i.network
+         AND selected.txid = i.txid
+        GROUP BY i.network, i.txid
+      ),
+      output_totals AS (
+        SELECT
+          o.network,
+          o.txid,
+          COUNT(*)::integer AS output_count,
+          COUNT(o.value_sats)::integer AS valued_output_count,
+          SUM(o.value_sats)::numeric AS output_value_sats
+        FROM proof_indexer.tx_outputs o
+        JOIN selected_txids selected
+          ON selected.network = o.network
+         AND selected.txid = o.txid
+        GROUP BY o.network, o.txid
+      )
       SELECT
         e.payload,
         e.protocol,
@@ -8698,12 +8839,160 @@ export async function proofIndexCanonicalActivityPayload(network) {
         e.created_at,
         e.block_height,
         e.txid,
-        e.event_id
-      FROM proof_indexer.events e
-      WHERE e.network = $1
-        AND e.valid = true
-        AND e.status IN ('confirmed', 'pending')
-        AND e.kind = ANY($2::text[])
+        e.event_id,
+        CASE
+          WHEN e.status = 'confirmed'
+            AND transaction_row.status = 'confirmed'
+            AND transaction_row.block_hash IS NOT NULL
+            AND transaction_row.block_height IS NOT NULL
+            AND canonical_block.canonical = true
+            AND canonical_block.block_hash = transaction_row.block_hash
+            AND canonical_block.height = transaction_row.block_height
+            AND (
+              e.block_height IS NULL
+              OR e.block_height = transaction_row.block_height
+            )
+            AND jsonb_typeof(transaction_row.raw_tx) = 'object'
+            AND jsonb_typeof(
+              transaction_row.raw_tx->'canonicalBlockScan'
+            ) = 'object'
+            AND transaction_row.raw_tx->'canonicalBlockScan'->>'network' =
+              transaction_row.network
+            AND transaction_row.raw_tx->'canonicalBlockScan'->>'height' =
+              transaction_row.block_height::text
+            AND lower(
+              transaction_row.raw_tx->'canonicalBlockScan'->>'blockHash'
+            ) = lower(transaction_row.block_hash)
+            AND lower(COALESCE(transaction_row.raw_tx->>'txid', '')) = e.txid
+            AND jsonb_typeof(transaction_row.raw_tx->'vin') = 'array'
+            AND jsonb_typeof(transaction_row.raw_tx->'vout') = 'array'
+            AND output_totals.output_count > 0
+            AND output_totals.valued_output_count =
+              output_totals.output_count
+            AND output_totals.output_count =
+              jsonb_array_length(
+                CASE
+                  WHEN jsonb_typeof(transaction_row.raw_tx->'vout') = 'array'
+                    THEN transaction_row.raw_tx->'vout'
+                  ELSE '[]'::jsonb
+                END
+              )
+            AND (
+              (
+                jsonb_array_length(transaction_row.raw_tx->'vin') = 1
+                AND jsonb_typeof(transaction_row.raw_tx->'vin'->0) = 'object'
+                AND jsonb_exists(
+                  transaction_row.raw_tx->'vin'->0,
+                  'coinbase'
+                )
+                AND input_totals.input_count = 1
+                AND input_totals.valued_input_count = 0
+              )
+              OR (
+                NOT jsonb_exists(
+                  transaction_row.raw_tx->'vin'->0,
+                  'coinbase'
+                )
+                AND
+                input_totals.input_count > 0
+                AND input_totals.valued_input_count = input_totals.input_count
+                AND input_totals.input_count =
+                  jsonb_array_length(transaction_row.raw_tx->'vin')
+                AND input_totals.input_value_sats >=
+                  output_totals.output_value_sats
+              )
+            )
+          THEN CASE
+            WHEN jsonb_exists(
+              transaction_row.raw_tx->'vin'->0,
+              'coinbase'
+            ) THEN 0
+            ELSE (
+              input_totals.input_value_sats - output_totals.output_value_sats
+            )::bigint
+          END
+          ELSE NULL
+        END AS canonical_miner_fee_sats,
+        CASE
+          WHEN e.status = 'confirmed'
+            AND transaction_row.status = 'confirmed'
+            AND transaction_row.block_hash IS NOT NULL
+            AND transaction_row.block_height IS NOT NULL
+            AND canonical_block.canonical = true
+            AND canonical_block.block_hash = transaction_row.block_hash
+            AND canonical_block.height = transaction_row.block_height
+            AND (
+              e.block_height IS NULL
+              OR e.block_height = transaction_row.block_height
+            )
+            AND jsonb_typeof(transaction_row.raw_tx) = 'object'
+            AND jsonb_typeof(
+              transaction_row.raw_tx->'canonicalBlockScan'
+            ) = 'object'
+            AND transaction_row.raw_tx->'canonicalBlockScan'->>'network' =
+              transaction_row.network
+            AND transaction_row.raw_tx->'canonicalBlockScan'->>'height' =
+              transaction_row.block_height::text
+            AND lower(
+              transaction_row.raw_tx->'canonicalBlockScan'->>'blockHash'
+            ) = lower(transaction_row.block_hash)
+            AND lower(COALESCE(transaction_row.raw_tx->>'txid', '')) = e.txid
+            AND jsonb_typeof(transaction_row.raw_tx->'vin') = 'array'
+            AND jsonb_typeof(transaction_row.raw_tx->'vout') = 'array'
+            AND output_totals.output_count > 0
+            AND output_totals.valued_output_count =
+              output_totals.output_count
+            AND output_totals.output_count =
+              jsonb_array_length(
+                CASE
+                  WHEN jsonb_typeof(transaction_row.raw_tx->'vout') = 'array'
+                    THEN transaction_row.raw_tx->'vout'
+                  ELSE '[]'::jsonb
+                END
+              )
+            AND (
+              (
+                jsonb_array_length(transaction_row.raw_tx->'vin') = 1
+                AND jsonb_typeof(transaction_row.raw_tx->'vin'->0) = 'object'
+                AND jsonb_exists(
+                  transaction_row.raw_tx->'vin'->0,
+                  'coinbase'
+                )
+                AND input_totals.input_count = 1
+                AND input_totals.valued_input_count = 0
+              )
+              OR (
+                NOT jsonb_exists(
+                  transaction_row.raw_tx->'vin'->0,
+                  'coinbase'
+                )
+                AND
+                input_totals.input_count > 0
+                AND input_totals.valued_input_count = input_totals.input_count
+                AND input_totals.input_count =
+                  jsonb_array_length(transaction_row.raw_tx->'vin')
+                AND input_totals.input_value_sats >=
+                  output_totals.output_value_sats
+              )
+            )
+          THEN true
+          ELSE false
+        END AS canonical_miner_fee_covered
+      FROM selected_events e
+      LEFT JOIN proof_indexer.transactions transaction_row
+        ON transaction_row.network = e.network
+       AND transaction_row.txid = e.txid
+      LEFT JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = transaction_row.network
+       AND canonical_block.block_hash = transaction_row.block_hash
+       AND canonical_block.height = transaction_row.block_height
+       AND canonical_block.canonical = true
+      LEFT JOIN input_totals
+        ON input_totals.network = e.network
+       AND input_totals.txid = e.txid
+      LEFT JOIN output_totals
+        ON output_totals.network = e.network
+       AND output_totals.txid = e.txid
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
@@ -8720,6 +9009,43 @@ export async function proofIndexCanonicalActivityPayload(network) {
   }
 
   const confirmed = items.filter((item) => item.confirmed).length;
+  const confirmedRows = result.rows.filter(
+    (row) => row?.status === "confirmed",
+  );
+  const confirmedTxids = new Set(
+    confirmedRows.map((row) => normalizedTxid(row?.txid)).filter(Boolean),
+  );
+  const coveredConfirmedRows = confirmedRows.filter(
+    (row) => row?.canonical_miner_fee_covered === true,
+  );
+  const coveredConfirmedTxids = new Set(
+    coveredConfirmedRows
+      .map((row) => normalizedTxid(row?.txid))
+      .filter(Boolean),
+  );
+  const missingConfirmedTxids = [
+    ...new Set(
+      confirmedRows
+        .filter((row) => row?.canonical_miner_fee_covered !== true)
+        .map((row) => normalizedTxid(row?.txid))
+        .filter(Boolean),
+    ),
+  ];
+  const canonicalMinerFeeCoverage = {
+    complete:
+      confirmedTxids.size > 0 &&
+      missingConfirmedTxids.length === 0 &&
+      coveredConfirmedRows.length === confirmedRows.length,
+    confirmedEvents: confirmedRows.length,
+    coveredConfirmedEvents: coveredConfirmedRows.length,
+    missingConfirmedEvents:
+      confirmedRows.length - coveredConfirmedRows.length,
+    confirmedTransactions: confirmedTxids.size,
+    coveredConfirmedTransactions: coveredConfirmedTxids.size,
+    missingConfirmedTransactions: missingConfirmedTxids.length,
+    missingConfirmedTxids: missingConfirmedTxids.slice(0, 100),
+    source: "proof-indexer-normalized-input-output-totals",
+  };
   const indexedThroughBlock =
     Math.max(
       indexedThroughBlockFromItems(items) ?? 0,
@@ -8734,11 +9060,13 @@ export async function proofIndexCanonicalActivityPayload(network) {
 
   return {
     activity: items,
+    canonicalMinerFeeCoverage,
     indexedAt,
     indexedThroughBlock,
     network,
     source: "proof-indexer-events",
     stats: {
+      canonicalMinerFeeCoverage,
       confirmed,
       indexedThroughBlock,
       pending: items.length - confirmed,
@@ -8920,6 +9248,25 @@ function eventRowPayload(row, network) {
   const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
   const kind = normalizedLowerText(payload.kind ?? row.kind);
   const invalidTokenEvent = kind === "token-event-invalid";
+  const canonicalMinerFeeCovered =
+    row?.canonical_miner_fee_covered === true;
+  const canonicalMinerFeeSats = canonicalMinerFeeCovered
+    ? rowNumber(row, "canonical_miner_fee_sats")
+    : undefined;
+  const canonicalMinerFeePatch = canonicalMinerFeeCovered
+    ? {
+        canonicalMinerFeeCovered: true,
+        canonicalMinerFeeSats,
+        minerFeeSats: canonicalMinerFeeSats,
+        minerFeeSource: "proof-indexer-normalized-input-output-totals",
+        ...(kind === "token-listing-sealed"
+          ? { sealMinerFeeSats: canonicalMinerFeeSats }
+          : {}),
+        ...(kind === "token-listing-closed" || kind === "token-sale"
+          ? { closedMinerFeeSats: canonicalMinerFeeSats }
+          : {}),
+      }
+    : {};
   const attemptedAmountSats = invalidTokenEvent
     ? rowNumber(payload, "amountSats") || rowNumber(row, "amount_sats")
     : 0;
@@ -8931,6 +9278,11 @@ function eventRowPayload(row, network) {
     : {};
   return {
     ...payload,
+    ...canonicalEventIdentityDetails({
+      ...payload,
+      eventId: payload?.eventId ?? row?.event_id,
+    }),
+    ...canonicalMinerFeePatch,
     ...(invalidTokenEvent
       ? {
           amountSats: 0,

@@ -865,6 +865,65 @@ expect(
     ),
 );
 expect(
+  "Inception consumes attached WORK live and frozen accounting",
+  /attachedWorkAmount\?: number/.test(app) &&
+    /attachedWorkFrozenValueSats\?: number/.test(app) &&
+    /attachedWorkLiveValueSats\?: number/.test(app) &&
+    /liveNetworkValueSats\?: number/.test(app) &&
+    /frozenNetworkValueSats\?: number/.test(app) &&
+    /inceptionAccounting = bondConfig\.folder === "inception"/.test(app) &&
+    /Attached WORK at confirmation/.test(app) &&
+    /Attached WORK at live floor/.test(app) &&
+    /Frozen network value/.test(app) &&
+    /Live network value/.test(app),
+);
+expect(
+  "WORK miner fee cards disclose cumulative Bitcoin miner cost",
+  (app.match(/Bitcoin miner fees paid/g) || []).length >= 2 &&
+    /All-time cumulative Bitcoin transaction fees paid to miners across confirmed WORK transactions/.test(
+      app,
+    ) &&
+    !/Credit miner fees/.test(app),
+);
+expect(
+  "WORK client fallback attributes each Bitcoin miner fee once in frozen and live totals",
+  /const creditMinerFeesByTxid = new Map<string, number>\(\)/.test(app) &&
+    /const eventMinerFeeSatsOnce =/.test(app) &&
+    /eventMinerFeeSatsOnce\(event, frozenMinerFeeTxids\)/.test(app) &&
+    /eventMinerFeeSatsOnce\(event, liveMinerFeeTxids\)/.test(app) &&
+    (app.match(/event\.attributedMinerFeeSats \?\? event\.minerFeeSats/g) || [])
+      .length === 2,
+);
+const refreshWorkFloorBlock =
+  app.match(
+    /async function refreshWorkFloor\([\s\S]*?\n  async function refreshTokenMarketData/u,
+  )?.[0] ?? "";
+expect(
+  "WORK floor refresh fails closed instead of synthesizing unverified livenet accounting",
+  /fetchWorkFloorQuote\("livenet", fresh\)/.test(refreshWorkFloorBlock) &&
+    /Verified WORK floor is unavailable/.test(refreshWorkFloorBlock) &&
+    !/fetchIdRegistryState|fetchGlobalActivity|fetchTokenState|growthActualNetworkValue|growthActualValuePoints/.test(
+      refreshWorkFloorBlock,
+    ),
+);
+expect(
+  "livenet WORK and Growth normalizers preserve and require canonical miner-fee proof",
+  /creditMinerFeeAccountingModel:\s*[\s\S]*payload\.creditMinerFeeAccountingModel/.test(
+    app,
+  ) &&
+    /creditMinerFeeCoverage/.test(app) &&
+    /WORK floor lacks complete canonical Bitcoin miner-fee coverage/.test(app) &&
+    /Growth summary lacks complete canonical Bitcoin miner-fee coverage/.test(app),
+);
+expect(
+  "Growth financial display has no local livenet accounting fallback",
+  /const actualValue =\s*growthSummary\?\.actualValue \?\? workFloorQuote\?\.actualValue/.test(
+    app,
+  ) &&
+    /Verified Growth ledger unavailable/.test(app) &&
+    !/growthSummary\?\.actualValue \?\? computedActualValue/.test(app),
+);
+expect(
   "wallet standalone has explicit public alignment shell",
   /token-wallet-public-app/.test(app) && /token-wallet-workspace/.test(app),
 );
