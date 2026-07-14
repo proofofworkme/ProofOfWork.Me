@@ -18283,13 +18283,30 @@ async function tokenStateWithLivePendingTransactionCheck(state, network) {
         return;
       }
 
+      if (network === "livenet") {
+        const status = await bitcoinCoreTxStatusPayload(txid, network).catch(
+          (error) => {
+            console.error(
+              `Pending token liveness proof deferred for ${txid}: ${errorSummary(error)}`,
+            );
+            return null;
+          },
+        );
+        if (status?.status === "dropped" && status.absenceProven === true) {
+          markDroppedPendingTokenTransaction(
+            txid,
+            network,
+            "pending-liveness-core-proof",
+          );
+        }
+        return;
+      }
+
       const tx = await fetchTransactionWithPendingFallback(txid, network).catch(
         () => null,
       );
       if (tx) {
         cachePendingTokenTransaction(tx, network, "pending-liveness");
-      } else {
-        markDroppedPendingTokenTransaction(txid, network, "pending-liveness");
       }
     },
   );
@@ -26120,6 +26137,15 @@ async function ledgerConsistencyPayload(network, fresh = false) {
 
 async function ledgerTokenPayload(network, tokenScope = "", fresh = false) {
   const scope = normalizeTokenScope(tokenScope);
+  const indexedFallback =
+    network === "livenet"
+      ? await indexedTokenStateForCanonicalLedger(network, scope)
+      : null;
+  if (indexedFallback) {
+    return fresh
+      ? tokenStateWithLivePendingTransactionCheck(indexedFallback, network)
+      : tokenStateWithoutDroppedPendingTransactions(indexedFallback, network);
+  }
   let fallback = await fastTokenPayloadSnapshot(network, scope, {
     reconcileSpendable: false,
   });
@@ -28684,6 +28710,12 @@ async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
     throw error;
   }
 
+  await verifiedFreshLogCheckpointAfterRead(
+    summary,
+    network,
+    "log-history",
+  );
+
   return {
     ...page,
     consistency: summary.consistency,
@@ -28696,6 +28728,156 @@ async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
       surface: "log-history",
     },
     snapshotId: summarySnapshotId,
+  };
+}
+
+async function verifiedFreshLogCheckpointAfterRead(summary, network, surface) {
+  try {
+    const checkpoint = await verifiedSummaryPayloadCheckpoint(
+      summary,
+      network,
+      true,
+      surface,
+    );
+    if (
+      checkpoint?.exactTip !== true ||
+      checkpoint.indexedThroughBlock !==
+        proofIndexPayloadIndexedThroughBlock(summary) ||
+      checkpoint.indexedThroughBlockHash !==
+        payloadIndexedThroughBlockHash(summary)
+    ) {
+      throw new Error("Post-read checkpoint is not the requested exact tip.");
+    }
+    return checkpoint;
+  } catch (cause) {
+    const error = freshDataUnavailableError(
+      `${surface} canonical tip changed during the relational read.`,
+    );
+    error.details = {
+      causeCode: cause?.details?.code ?? null,
+      code:
+        surface === "log-history"
+          ? "CANONICAL_LOG_HISTORY_TIP_CHANGED"
+          : "CANONICAL_LOG_TIP_CHANGED",
+      indexedThroughBlock: proofIndexPayloadIndexedThroughBlock(summary) || null,
+      indexedThroughBlockHash: payloadIndexedThroughBlockHash(summary) || null,
+      snapshotId: payloadSnapshotId(summary) || null,
+      surface,
+    };
+    throw error;
+  }
+}
+
+async function freshProofIndexLogPayload(network) {
+  const summary = await summaryPayloadWithCanonicalProvenance(
+    await activitySummaryPayload(network, true),
+    network,
+    true,
+    "log-summary",
+  );
+  const summarySnapshotId = payloadSnapshotId(summary);
+  const summaryHeight = proofIndexPayloadIndexedThroughBlock(summary);
+  const summaryTotal = Number(
+    summary.totalCount ?? summary.stats?.total ?? summary.activity?.length ?? 0,
+  );
+  const summaryPending = Number(summary.stats?.pending ?? -1);
+  if (!summarySnapshotId || summaryHeight <= 0 || summaryTotal < 0) {
+    const error = freshDataUnavailableError(
+      "Fresh Log cannot bind to the exact canonical Log summary.",
+    );
+    error.details = {
+      code: "CANONICAL_LOG_SNAPSHOT_UNAVAILABLE",
+      summaryHeight: summaryHeight || null,
+      summarySnapshotId: summarySnapshotId || null,
+      summaryTotal,
+    };
+    throw error;
+  }
+
+  const page = await proofIndexCanonicalActivityPayload(network, {
+    snapshotId: summarySnapshotId,
+  });
+  const activity = Array.isArray(page?.activity) ? page.activity : [];
+  const pageHeight = proofIndexPayloadIndexedThroughBlock(page);
+  const pageSnapshotId = payloadSnapshotId(page);
+  const pageTotal = Number(
+    page?.totalCount ?? page?.stats?.total ?? activity.length,
+  );
+  const pageSnapshotTotal = Number(page?.snapshotTotalCount ?? -1);
+  const pagePending = activity.filter((item) => !item?.confirmed).length;
+  const canonicalMinerFeeCoverage = verifiedCanonicalMinerFeeCoverage(
+    page?.canonicalMinerFeeCoverage ?? page?.stats?.canonicalMinerFeeCoverage,
+  );
+  const summaryLatestEventBlock = Number(
+    summary.stats?.latestEventBlock ?? 0,
+  );
+  const pageLatestEventBlock = Number(page?.latestEventBlock ?? 0);
+  if (
+    !page ||
+    pageHeight !== summaryHeight ||
+    !pageSnapshotId ||
+    pageSnapshotId !== summarySnapshotId ||
+    pageTotal !== summaryTotal ||
+    pageSnapshotTotal !== summaryTotal ||
+    activity.length !== summaryTotal ||
+    (summaryPending >= 0 && pagePending !== summaryPending) ||
+    !canonicalMinerFeeCoverage ||
+    (summaryLatestEventBlock > 0 &&
+      pageLatestEventBlock !== summaryLatestEventBlock)
+  ) {
+    const error = freshDataUnavailableError(
+      "Fresh relational Log does not match the exact canonical Log summary.",
+    );
+    error.details = {
+      code: "CANONICAL_LOG_MISMATCH",
+      pageHeight: pageHeight || null,
+      pageLatestEventBlock: pageLatestEventBlock || null,
+      pagePending,
+      pageSnapshotId: pageSnapshotId || null,
+      pageSnapshotTotal,
+      pageTotal,
+      canonicalMinerFeeCoverage:
+        page?.canonicalMinerFeeCoverage ??
+        page?.stats?.canonicalMinerFeeCoverage ??
+        null,
+      summaryHeight,
+      summaryLatestEventBlock: summaryLatestEventBlock || null,
+      summaryPending,
+      summarySnapshotId,
+      summaryTotal,
+    };
+    throw error;
+  }
+
+  await verifiedFreshLogCheckpointAfterRead(summary, network, "log");
+
+  const stats = {
+    ...activityStatsFromItems(activity, {
+      ...(summary.stats ?? {}),
+      canonicalMinerFeeCoverage,
+    }),
+    indexedThroughBlock: summaryHeight,
+    latestEventBlock: pageLatestEventBlock || undefined,
+  };
+  return {
+    activity,
+    canonicalMinerFeeCoverage,
+    consistency: summary.consistency,
+    hasMore: false,
+    indexedAt: summary.indexedAt ?? page.indexedAt,
+    indexedThroughBlock: summaryHeight,
+    indexedThroughBlockHash: payloadIndexedThroughBlockHash(summary),
+    ledgerGeneratedAt: summary.ledgerGeneratedAt ?? page.ledgerGeneratedAt,
+    network,
+    provenance: {
+      ...(summary.provenance ?? {}),
+      surface: "log",
+    },
+    snapshotId: summarySnapshotId,
+    source: page.source,
+    stats,
+    summaryOnly: false,
+    totalCount: summaryTotal,
   };
 }
 
@@ -35783,6 +35965,223 @@ async function txOutspendPayload(txid, vout, network) {
   return historyOutspend ?? primaryOutspend ?? unknownUnspent;
 }
 
+async function bitcoinCoreTxStatusPayload(txid, network) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const unavailable = (message, details = {}) => {
+    const error = freshDataUnavailableError(message);
+    error.details = {
+      code: "TX_STATUS_UNAVAILABLE",
+      network,
+      txid: normalizedTxid,
+      ...details,
+    };
+    return error;
+  };
+  if (network !== "livenet" || !/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    throw unavailable("Authoritative Bitcoin Core status is unavailable.");
+  }
+
+  const observedAt = new Date().toISOString();
+  let transactionResponse;
+  try {
+    transactionResponse = await bitcoinRpc("getrawtransaction", [
+      normalizedTxid,
+      true,
+    ]);
+  } catch (error) {
+    throw unavailable("Bitcoin Core transaction status lookup failed.", {
+      cause: errorSummary(error),
+    });
+  }
+  if (!transactionResponse) {
+    throw unavailable("Bitcoin Core transaction status is not configured.");
+  }
+
+  if (!transactionResponse.ok) {
+    const errorCode = Number(transactionResponse?.error?.code);
+    if (errorCode !== -5) {
+      throw unavailable("Bitcoin Core transaction status lookup failed.", {
+        rpcCode: Number.isFinite(errorCode) ? errorCode : undefined,
+      });
+    }
+
+    let mempoolResponse;
+    let chainResponse;
+    let indexResponse;
+    try {
+      [mempoolResponse, chainResponse, indexResponse] = await Promise.all([
+        bitcoinRpc("getmempoolentry", [normalizedTxid]),
+        bitcoinRpc("getblockchaininfo", []),
+        bitcoinRpc("getindexinfo", ["txindex"]),
+      ]);
+    } catch (error) {
+      throw unavailable("Bitcoin Core absence proof could not be completed.", {
+        cause: errorSummary(error),
+      });
+    }
+    const mempoolErrorCode = Number(mempoolResponse?.error?.code);
+    const chain = chainResponse?.ok ? chainResponse.result : null;
+    const blocks = Number(chain?.blocks);
+    const headers = Number(chain?.headers);
+    const verificationProgress = Number(chain?.verificationprogress);
+    const txindex = indexResponse?.ok ? indexResponse.result?.txindex : null;
+    const txindexHeight = Number(txindex?.best_block_height);
+    if (
+      !mempoolResponse ||
+      mempoolResponse.ok ||
+      mempoolErrorCode !== -5 ||
+      !chain ||
+      chain.chain !== "main" ||
+      chain.pruned === true ||
+      chain.initialblockdownload === true ||
+      !Number.isSafeInteger(blocks) ||
+      !Number.isSafeInteger(headers) ||
+      headers - blocks > 1 ||
+      !Number.isFinite(verificationProgress) ||
+      verificationProgress < 0.999 ||
+      !txindex ||
+      txindex.synced !== true ||
+      !Number.isSafeInteger(txindexHeight) ||
+      txindexHeight !== blocks
+    ) {
+      throw unavailable("Bitcoin Core absence proof was inconclusive.");
+    }
+    return {
+      absenceProven: true,
+      confirmed: false,
+      contract: "proof-of-work-tx-status-v2",
+      droppedAt: observedAt,
+      indexedAt: observedAt,
+      network,
+      observedAt,
+      reason:
+        "absent-from-synced-unpruned-mainnet-bitcoin-core-txindex-and-mempool",
+      sources: [
+        "bitcoin-core:getrawtransaction",
+        "bitcoin-core:getmempoolentry",
+        "bitcoin-core:getblockchaininfo",
+        "bitcoin-core:getindexinfo:txindex",
+      ],
+      status: "dropped",
+      txid: normalizedTxid,
+    };
+  }
+
+  const transaction = transactionResponse.result;
+  if (
+    !transaction ||
+    typeof transaction !== "object" ||
+    String(transaction.txid ?? "").trim().toLowerCase() !== normalizedTxid
+  ) {
+    throw unavailable("Bitcoin Core returned invalid transaction evidence.");
+  }
+  const confirmations = Number(transaction.confirmations ?? 0);
+  if (!(confirmations > 0)) {
+    let mempoolResponse;
+    try {
+      mempoolResponse = await bitcoinRpc("getmempoolentry", [normalizedTxid]);
+    } catch (error) {
+      throw unavailable("Bitcoin Core mempool evidence lookup failed.", {
+        cause: errorSummary(error),
+      });
+    }
+    const mempoolTime = Number(mempoolResponse?.result?.time);
+    if (
+      !mempoolResponse?.ok ||
+      !Number.isSafeInteger(mempoolTime) ||
+      mempoolTime * 1000 < Date.UTC(2009, 0, 3, 18, 15, 5)
+    ) {
+      throw unavailable("Bitcoin Core pending status lacks mempool evidence.");
+    }
+    return {
+      confirmed: false,
+      contract: "proof-of-work-tx-status-v2",
+      indexedAt: observedAt,
+      mempoolFirstSeenAt: new Date(mempoolTime * 1000).toISOString(),
+      mempoolSeen: true,
+      network,
+      observedAt,
+      sources: [
+        "bitcoin-core:getrawtransaction",
+        "bitcoin-core:getmempoolentry",
+      ],
+      status: "pending",
+      txid: normalizedTxid,
+    };
+  }
+
+  const blockHash = String(transaction.blockhash ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(blockHash)) {
+    throw unavailable("Bitcoin Core confirmation lacks a block hash.");
+  }
+  let headerResponse;
+  let blockResponse;
+  try {
+    [headerResponse, blockResponse] = await Promise.all([
+      bitcoinRpc("getblockheader", [blockHash, true]),
+      bitcoinRpc("getblock", [blockHash, 1]),
+    ]);
+  } catch (error) {
+    throw unavailable("Bitcoin Core canonical block proof lookup failed.", {
+      cause: errorSummary(error),
+    });
+  }
+  const header = headerResponse?.ok ? headerResponse.result : null;
+  const block = blockResponse?.ok ? blockResponse.result : null;
+  const blockHeight = Number(header?.height);
+  const blockTime = Number(header?.time);
+  if (
+    !header ||
+    !block ||
+    Number(header.confirmations) <= 0 ||
+    !Number.isSafeInteger(blockHeight) ||
+    blockHeight <= 0 ||
+    !Number.isSafeInteger(blockTime) ||
+    blockTime * 1000 < Date.UTC(2009, 0, 3, 18, 15, 5) ||
+    String(header.hash ?? "").trim().toLowerCase() !== blockHash ||
+    String(block.hash ?? "").trim().toLowerCase() !== blockHash ||
+    Number(block.height) !== blockHeight ||
+    !(Array.isArray(block.tx) ? block.tx : []).some(
+      (candidate) => String(candidate).trim().toLowerCase() === normalizedTxid,
+    )
+  ) {
+    throw unavailable("Bitcoin Core canonical block evidence was invalid.");
+  }
+  let canonicalHashResponse;
+  try {
+    canonicalHashResponse = await bitcoinRpc("getblockhash", [blockHeight]);
+  } catch (error) {
+    throw unavailable("Bitcoin Core canonical height lookup failed.", {
+      cause: errorSummary(error),
+    });
+  }
+  if (
+    !canonicalHashResponse?.ok ||
+    String(canonicalHashResponse.result ?? "").trim().toLowerCase() !== blockHash
+  ) {
+    throw unavailable("Bitcoin Core block is not canonical at its height.");
+  }
+  return {
+    blockHash,
+    blockHeight,
+    blockTime: new Date(blockTime * 1000).toISOString(),
+    canonical: true,
+    confirmed: true,
+    contract: "proof-of-work-tx-status-v2",
+    indexedAt: observedAt,
+    network,
+    observedAt,
+    sources: [
+      "bitcoin-core:getrawtransaction",
+      "bitcoin-core:getblockheader",
+      "bitcoin-core:getblock",
+      "bitcoin-core:getblockhash",
+    ],
+    status: "confirmed",
+    txid: normalizedTxid,
+  };
+}
+
 async function txStatusPayload(txid, network) {
   if (proofIndexReadFeatureEnabled("tx-status,tx")) {
     const indexedStatus = await proofIndexTxStatusPayload(txid, network, {
@@ -35798,24 +36197,44 @@ async function txStatusPayload(txid, network) {
     }
   }
 
-  const tx = await fetchTransactionWithSourceFallback(txid, network).catch(
-    () => null,
-  );
-  if (!tx) {
-    return {
-      confirmed: false,
-      indexedAt: new Date().toISOString(),
-      network,
-      status: "dropped",
-      txid,
-    };
+  if (network === "livenet") {
+    return bitcoinCoreTxStatusPayload(txid, network);
   }
 
+  const tx = await fetchTransactionWithSourceFallback(txid, network).catch(
+    (error) => {
+      const unavailable = freshDataUnavailableError(
+        "Transaction status sources are unavailable.",
+      );
+      unavailable.details = {
+        cause: errorSummary(error),
+        code: "TX_STATUS_UNAVAILABLE",
+        network,
+        txid,
+      };
+      throw unavailable;
+    },
+  );
+  if (!tx) {
+    const unavailable = freshDataUnavailableError(
+      "Transaction absence could not be proven.",
+    );
+    unavailable.details = {
+      code: "TX_STATUS_UNAVAILABLE",
+      network,
+      txid,
+    };
+    throw unavailable;
+  }
   const confirmed = transactionConfirmed(tx);
+  const observedAt = new Date().toISOString();
   return {
     confirmed,
-    indexedAt: new Date().toISOString(),
+    contract: "proof-of-work-tx-status-v2",
+    indexedAt: observedAt,
     network,
+    observedAt,
+    sources: ["configured-transaction-source"],
     status: confirmed ? "confirmed" : "pending",
     txid,
   };
@@ -38667,7 +39086,7 @@ async function handleRequest(request, response) {
         jsonResponse(
           response,
           200,
-          await mergedLogActivityPayload(network, true),
+          await freshProofIndexLogPayload(network),
           FRESH_READ_CACHE_CONTROL,
         );
         return;
@@ -38700,18 +39119,26 @@ async function handleRequest(request, response) {
         : "";
       if (
         proofIndexReadFeatureEnabled("log-history,activity-history,log") &&
-        logHistoryEligibility.eligible
+        (logHistoryEligibility.eligible ||
+          (freshRead && !exactLogQueryTxid))
       ) {
-        const indexedPayload = await proofIndexLogHistoryPayload(
-          network,
-          historyKind,
-          url.searchParams,
-        ).catch((error) => {
-          console.error(
-            `Proof index log-history read failed: ${errorSummary(error)}`,
-          );
-          return null;
-        });
+        const indexedPayload =
+          freshRead && !exactLogQueryTxid
+            ? await freshProofIndexLogHistoryPayload(
+                network,
+                historyKind,
+                url.searchParams,
+              )
+            : await proofIndexLogHistoryPayload(
+                network,
+                historyKind,
+                url.searchParams,
+              ).catch((error) => {
+                console.error(
+                  `Proof index log-history read failed: ${errorSummary(error)}`,
+                );
+                return null;
+              });
         if (indexedPayload) {
           const indexedTotal = Number(
             indexedPayload.totalCount ?? indexedPayload.items?.length ?? 0,

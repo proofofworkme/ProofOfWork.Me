@@ -64,6 +64,12 @@ const BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT = String(
 ).trim();
 const PENDING_STATUS_LIMIT = Number(process.env.POW_INDEX_PENDING_STATUS_LIMIT ?? 100);
 const PENDING_MIN_AGE_MS = Number(process.env.POW_INDEX_PENDING_MIN_AGE_MS ?? 300_000);
+const PENDING_DROP_CONFIRMATION_MS = Math.max(
+  0,
+  Number(
+    process.env.POW_INDEX_PENDING_DROP_CONFIRMATION_MS ?? 5 * 60_000,
+  ) || 0,
+);
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
 const STATUS_REQUEST_TIMEOUT_MS = Number(
   Math.min(
@@ -296,60 +302,486 @@ function lastSuccessFromMeta(value) {
 let lastParityAtMs = 0;
 
 async function updateTransactionStatus(client, txid, status, payload) {
-  await client.query(
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const normalizedStatus = String(status ?? "").trim().toLowerCase();
+  const observedAtMs = Date.parse(payload?.observedAt ?? "");
+  const sourceList = Array.isArray(payload?.sources)
+    ? payload.sources.map((source) => String(source))
+    : [];
+  const coreObserved = sourceList.some((source) =>
+    source.startsWith("bitcoin-core:"),
+  );
+  if (
+    !/^[0-9a-f]{64}$/u.test(normalizedTxid) ||
+    !["pending", "confirmed", "dropped"].includes(normalizedStatus) ||
+    payload?.contract !== "proof-of-work-tx-status-v2" ||
+    String(payload?.network ?? "") !== NETWORK ||
+    String(payload?.txid ?? "").trim().toLowerCase() !== normalizedTxid ||
+    !Number.isFinite(observedAtMs) ||
+    observedAtMs < Date.UTC(2009, 0, 3, 18, 15, 5) ||
+    observedAtMs > Date.now() + 5 * 60_000
+  ) {
+    throw new Error(`Invalid authoritative status envelope for ${normalizedTxid}.`);
+  }
+
+  let transitionTimeMs = observedAtMs;
+  if (normalizedStatus === "confirmed") {
+    const blockHash = String(payload?.blockHash ?? "").trim().toLowerCase();
+    const blockHeight = Number(payload?.blockHeight);
+    const blockTimeMs = Date.parse(payload?.blockTime ?? "");
+    if (
+      payload?.confirmed !== true ||
+      payload?.canonical !== true ||
+      !/^[0-9a-f]{64}$/u.test(blockHash) ||
+      !Number.isSafeInteger(blockHeight) ||
+      blockHeight <= 0 ||
+      !Number.isFinite(blockTimeMs) ||
+      blockTimeMs < Date.UTC(2009, 0, 3, 18, 15, 5) ||
+      !coreObserved
+    ) {
+      throw new Error(`Unproven confirmed status for ${normalizedTxid}.`);
+    }
+    transitionTimeMs = blockTimeMs;
+  } else if (normalizedStatus === "pending") {
+    const mempoolTimeMs = Date.parse(payload?.mempoolFirstSeenAt ?? "");
+    if (
+      payload?.confirmed !== false ||
+      payload?.mempoolSeen !== true ||
+      !Number.isFinite(mempoolTimeMs) ||
+      mempoolTimeMs < Date.UTC(2009, 0, 3, 18, 15, 5) ||
+      !coreObserved
+    ) {
+      throw new Error(`Unproven pending status for ${normalizedTxid}.`);
+    }
+    transitionTimeMs = mempoolTimeMs;
+  } else if (
+    payload?.confirmed !== false ||
+    payload?.absenceProven !== true ||
+    !String(payload?.reason ?? "").trim() ||
+    !coreObserved
+  ) {
+    throw new Error(`Unproven dropped status for ${normalizedTxid}.`);
+  }
+
+  const locked = await client.query(
+    `
+      SELECT status, raw_tx
+      FROM proof_indexer.transactions
+      WHERE network = $1 AND txid = $2
+      FOR UPDATE
+    `,
+    [NETWORK, normalizedTxid],
+  );
+  const row = locked.rows[0];
+  if (!row || row.status !== "pending") {
+    return { applied: false, reason: "status-race" };
+  }
+
+  if (normalizedStatus === "confirmed") {
+    return { applied: false, reason: "canonical-block-scan-required" };
+  }
+
+  const evidence = {
+    absenceCount: 0,
+    contract: payload.contract,
+    observedAt: payload.observedAt,
+    reason: payload.reason ?? undefined,
+    sources: sourceList,
+    status: normalizedStatus,
+  };
+  if (normalizedStatus === "pending") {
+    const updated = await client.query(
+      `
+        UPDATE proof_indexer.transactions
+        SET
+          first_seen_at = LEAST(first_seen_at, to_timestamp($3::double precision / 1000)),
+          last_seen_at = now(),
+          confirmed_at = NULL,
+          dropped_at = NULL,
+          dropped_reason = NULL,
+          replaced_by_txid = NULL,
+          block_hash = NULL,
+          block_height = NULL,
+          block_time = NULL,
+          raw_tx =
+            (COALESCE(raw_tx, '{}'::jsonb) - 'statusObservation')
+            || jsonb_build_object('statusObservation', $4::jsonb),
+          updated_at = now()
+        WHERE network = $1 AND txid = $2 AND status = 'pending'
+      `,
+      [
+        NETWORK,
+        normalizedTxid,
+        transitionTimeMs,
+        JSON.stringify(evidence),
+      ],
+    );
+    if (updated.rowCount !== 1) {
+      return { applied: false, reason: "status-race" };
+    }
+    await client.query(
+      `
+        UPDATE proof_indexer.events
+        SET
+          block_height = NULL,
+          block_time = NULL,
+          event_time = CASE
+            WHEN event_time IS NULL
+              OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+            THEN to_timestamp($3::double precision / 1000)
+            ELSE event_time
+          END,
+          payload =
+            (
+              payload
+              - 'blockHash'
+              - 'blockHeight'
+              - 'blockTime'
+              - 'height'
+              - '_powBlockHash'
+              - '_powBlockIndex'
+              - 'createdAt'
+            )
+            || jsonb_build_object(
+              'confirmed', false,
+              'createdAt', CASE
+                WHEN event_time IS NULL
+                  OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+                THEN to_timestamp($3::double precision / 1000)
+                ELSE event_time
+              END,
+              'status', 'pending'
+            ),
+          updated_at = now()
+        WHERE network = $1 AND txid = $2 AND status = 'pending'
+      `,
+      [NETWORK, normalizedTxid, transitionTimeMs],
+    );
+    await client.query(
+      `
+        UPDATE proof_indexer.mail_items
+        SET
+          event_time = CASE
+            WHEN event_time IS NULL
+              OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+            THEN to_timestamp($3::double precision / 1000)
+            ELSE event_time
+          END,
+          message =
+            (message - 'blockHash' - 'blockHeight' - 'blockTime' - 'height')
+            || jsonb_build_object('confirmed', false, 'status', 'pending')
+        WHERE network = $1 AND txid = $2 AND status = 'pending'
+      `,
+      [NETWORK, normalizedTxid, transitionTimeMs],
+    );
+    await client.query(
+      `
+        UPDATE proof_indexer.file_attachments
+        SET
+          event_time = CASE
+            WHEN event_time IS NULL
+              OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+            THEN to_timestamp($3::double precision / 1000)
+            ELSE event_time
+          END,
+          metadata =
+            (metadata - 'blockHash' - 'blockHeight' - 'blockTime' - 'height')
+            || jsonb_build_object('confirmed', false, 'status', 'pending')
+        WHERE network = $1 AND txid = $2 AND status = 'pending'
+      `,
+      [NETWORK, normalizedTxid, transitionTimeMs],
+    );
+    return { applied: true, reason: "mempool-evidence" };
+  }
+
+  const priorObservation =
+    row.raw_tx?.statusObservation &&
+    typeof row.raw_tx.statusObservation === "object"
+      ? row.raw_tx.statusObservation
+      : null;
+  const priorObservedAtMs = Date.parse(priorObservation?.observedAt ?? "");
+  const priorAbsenceCount = Number(priorObservation?.absenceCount ?? 0);
+  const repeatedAbsence =
+    priorObservation?.status === "dropped" &&
+    Number.isSafeInteger(priorAbsenceCount) &&
+    priorAbsenceCount > 0 &&
+    Number.isFinite(priorObservedAtMs) &&
+    observedAtMs >= priorObservedAtMs + PENDING_DROP_CONFIRMATION_MS;
+  evidence.absenceCount = repeatedAbsence ? priorAbsenceCount + 1 : 1;
+
+  if (!repeatedAbsence) {
+    await client.query(
+      `
+        UPDATE proof_indexer.transactions
+        SET
+          raw_tx =
+            (COALESCE(raw_tx, '{}'::jsonb) - 'statusObservation')
+            || jsonb_build_object('statusObservation', $3::jsonb),
+          updated_at = now()
+        WHERE network = $1 AND txid = $2 AND status = 'pending'
+      `,
+      [NETWORK, normalizedTxid, JSON.stringify(evidence)],
+    );
+    return { applied: false, reason: "repeat-absence-required" };
+  }
+
+  const dropped = await client.query(
     `
       UPDATE proof_indexer.transactions
       SET
-        status = $3,
-        last_seen_at = CASE WHEN $3 = 'pending' THEN now() ELSE last_seen_at END,
-        confirmed_at = CASE WHEN $3 = 'confirmed' THEN COALESCE(confirmed_at, now()) ELSE confirmed_at END,
-        dropped_at = CASE WHEN $3 = 'dropped' THEN COALESCE(dropped_at, now()) ELSE NULL END,
-        raw_tx = COALESCE(raw_tx, $4::jsonb),
+        status = 'dropped',
+        confirmed_at = NULL,
+        dropped_at = to_timestamp($4::double precision / 1000),
+        dropped_reason = $5,
+        block_hash = NULL,
+        block_height = NULL,
+        block_time = NULL,
+        raw_tx =
+          (COALESCE(raw_tx, '{}'::jsonb) - 'statusObservation')
+          || jsonb_build_object('statusObservation', $3::jsonb),
         updated_at = now()
-      WHERE network = $1 AND txid = $2
+      WHERE network = $1 AND txid = $2 AND status = 'pending'
     `,
-    [NETWORK, txid, status, JSON.stringify({ statusPayload: payload })],
+    [
+      NETWORK,
+      normalizedTxid,
+      JSON.stringify(evidence),
+      observedAtMs,
+      String(payload.reason),
+    ],
   );
-
+  if (dropped.rowCount !== 1) {
+    return { applied: false, reason: "status-race" };
+  }
   await client.query(
     `
       UPDATE proof_indexer.events
-      SET status = $3, updated_at = now()
-      WHERE network = $1 AND txid = $2 AND status <> $3
+      SET
+        status = 'dropped',
+        block_height = NULL,
+        block_time = NULL,
+        payload =
+          (
+            payload
+            - 'blockHash'
+            - 'blockHeight'
+            - 'blockTime'
+            - 'height'
+            - '_powBlockHash'
+            - '_powBlockIndex'
+          )
+          || jsonb_build_object('confirmed', false, 'status', 'dropped'),
+        updated_at = now()
+      WHERE network = $1 AND txid = $2 AND status = 'pending'
     `,
-    [NETWORK, txid, status],
+    [NETWORK, normalizedTxid],
   );
-
   await client.query(
     `
       UPDATE proof_indexer.mail_items
-      SET status = $3
-      WHERE network = $1 AND txid = $2 AND status <> $3
+      SET
+        status = 'dropped',
+        message =
+          (message - 'blockHash' - 'blockHeight' - 'blockTime' - 'height')
+          || jsonb_build_object('confirmed', false, 'status', 'dropped')
+      WHERE network = $1 AND txid = $2 AND status = 'pending'
     `,
-    [NETWORK, txid, status],
+    [NETWORK, normalizedTxid],
   );
-
   await client.query(
     `
       UPDATE proof_indexer.file_attachments
-      SET status = $3
-      WHERE network = $1 AND txid = $2 AND status <> $3
+      SET
+        status = 'dropped',
+        metadata =
+          (metadata - 'blockHash' - 'blockHeight' - 'blockTime' - 'height')
+          || jsonb_build_object('confirmed', false, 'status', 'dropped')
+      WHERE network = $1 AND txid = $2 AND status = 'pending'
     `,
-    [NETWORK, txid, status],
+    [NETWORK, normalizedTxid],
   );
-
-  if (status === "dropped") {
-    await client.query(
-      `
-        UPDATE proof_indexer.credit_listings
-        SET status = 'dropped', updated_at = now()
-        WHERE network = $1
-          AND status IN ('pending', 'sealing')
-          AND (listing_id = $2 OR seal_txid = $2 OR close_txid = $2)
-      `,
-      [NETWORK, txid],
-    );
-  }
+  await client.query(
+    `
+      UPDATE proof_indexer.credit_definitions
+      SET
+        confirmed = false,
+        created_height = NULL,
+        metadata = metadata || jsonb_build_object(
+          'confirmed', false,
+          'status', 'dropped'
+        )
+      WHERE network = $1 AND create_txid = $2 AND confirmed = false
+    `,
+    [NETWORK, normalizedTxid],
+  );
+  await client.query(
+    `
+      UPDATE proof_indexer.credit_listings
+      SET
+        status = 'dropped',
+        seal_txid = NULL,
+        close_txid = NULL,
+        buyer_address = NULL,
+        payload =
+          (
+            payload
+            - 'sealTxid'
+            - 'closeTxid'
+            - 'closedTxid'
+            - 'saleTxid'
+            - 'buyerAddress'
+          )
+          || jsonb_build_object(
+          'confirmed', false,
+          'closedConfirmed', false,
+          'sealPending', false,
+          'status', 'dropped'
+        ),
+        updated_at = now()
+      WHERE network = $1 AND listing_id = $2 AND status = 'pending'
+    `,
+    [NETWORK, normalizedTxid],
+  );
+  await client.query(
+    `
+      WITH affected AS (
+        SELECT cl.listing_id
+        FROM proof_indexer.credit_listings cl
+        WHERE cl.network = $1
+          AND (
+            (cl.seal_txid = $2 AND cl.status = 'sealing')
+            OR (
+              cl.close_txid = $2
+              AND cl.status IN ('pending', 'sealing')
+            )
+          )
+      ),
+      restoration AS (
+        SELECT
+          affected.listing_id,
+          base_event.payload AS base_payload,
+          surviving_seal.txid AS confirmed_seal_txid,
+          surviving_seal.payload AS confirmed_seal_payload
+        FROM affected
+        LEFT JOIN LATERAL (
+          SELECT e.payload
+          FROM proof_indexer.events e
+          WHERE e.network = $1
+            AND e.txid = affected.listing_id
+            AND e.kind = 'token-listing'
+            AND e.status = 'confirmed'
+            AND e.valid = true
+          ORDER BY e.block_height DESC NULLS LAST, e.event_id DESC
+          LIMIT 1
+        ) base_event ON true
+        LEFT JOIN LATERAL (
+          SELECT e.txid, e.payload
+          FROM proof_indexer.events e
+          WHERE e.network = $1
+            AND e.kind = 'token-listing-sealed'
+            AND e.status = 'confirmed'
+            AND e.valid = true
+            AND e.txid <> $2
+            AND lower(e.payload->>'listingId') = affected.listing_id
+          ORDER BY e.block_height DESC NULLS LAST, e.event_id DESC
+          LIMIT 1
+        ) surviving_seal ON true
+      )
+      UPDATE proof_indexer.credit_listings cl
+      SET
+        status = CASE
+          WHEN restoration.base_payload IS NULL THEN 'dropped'
+          WHEN restoration.confirmed_seal_txid IS NOT NULL THEN 'sealing'
+          ELSE 'active'
+        END,
+        seller_address = COALESCE(
+          NULLIF(restoration.base_payload->>'sellerAddress', ''),
+          cl.seller_address
+        ),
+        buyer_address = NULL,
+        amount = CASE
+          WHEN restoration.base_payload->>'amount' ~ '^[0-9]+$'
+            THEN (restoration.base_payload->>'amount')::numeric
+          ELSE cl.amount
+        END,
+        price_sats = CASE
+          WHEN restoration.base_payload->>'priceSats' ~ '^[0-9]+$'
+            THEN (restoration.base_payload->>'priceSats')::bigint
+          ELSE cl.price_sats
+        END,
+        sale_ticket_txid = COALESCE(
+          NULLIF(restoration.base_payload->>'saleTicketTxid', ''),
+          cl.sale_ticket_txid
+        ),
+        seal_txid = restoration.confirmed_seal_txid,
+        close_txid = NULL,
+        payload = CASE
+          WHEN restoration.base_payload IS NULL THEN
+            (
+              cl.payload
+              - 'sealTxid'
+              - 'sealAt'
+              - 'sealedAt'
+              - 'closeTxid'
+              - 'closedTxid'
+              - 'closedAt'
+              - 'closeAt'
+              - 'saleTxid'
+              - 'buyerAddress'
+            )
+            || jsonb_build_object(
+              'confirmed', false,
+              'closedConfirmed', false,
+              'sealPending', false,
+              'status', 'dropped'
+            )
+          ELSE
+            (
+              restoration.base_payload
+              || CASE
+                WHEN restoration.confirmed_seal_payload IS NULL
+                  THEN '{}'::jsonb
+                ELSE
+                  restoration.confirmed_seal_payload
+                  - 'txid'
+                  - 'eventTxid'
+                  - 'createdAt'
+                  - 'kind'
+                  - 'protocol'
+                  - 'blockHash'
+                  - 'blockHeight'
+                  - 'blockTime'
+                  - 'closeTxid'
+                  - 'closedTxid'
+                  - 'closedAt'
+                  - 'closeAt'
+                  - 'saleTxid'
+                  - 'buyerAddress'
+                END
+            )
+            || jsonb_build_object(
+              'confirmed', true,
+              'closedConfirmed', false,
+              'listingId', restoration.listing_id,
+              'sealConfirmed',
+                restoration.confirmed_seal_txid IS NOT NULL,
+              'sealPending', false,
+              'status', CASE
+                WHEN restoration.confirmed_seal_txid IS NOT NULL
+                  THEN 'sealing'
+                ELSE 'active'
+              END,
+              'txid', restoration.listing_id
+            )
+        END,
+        updated_at = now()
+      FROM restoration
+      WHERE cl.network = $1
+        AND cl.listing_id = restoration.listing_id
+    `,
+    [NETWORK, normalizedTxid],
+  );
+  return { applied: true, reason: "repeated-core-absence" };
 }
 
 async function refreshPendingStatuses(pool) {
@@ -402,16 +834,24 @@ async function refreshPendingStatuses(pool) {
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
-          await updateTransactionStatus(client, txid, status, payload);
+          const outcome = await updateTransactionStatus(
+            client,
+            txid,
+            status,
+            payload,
+          );
           await client.query("COMMIT");
+          if (outcome?.applied) {
+            summary[status] += 1;
+          } else {
+            summary.deferred += 1;
+          }
         } catch (error) {
           await client.query("ROLLBACK");
           throw error;
         } finally {
           client.release();
         }
-
-        summary[status] += 1;
       } catch (error) {
         summary.errors += 1;
         console.error(
@@ -435,7 +875,7 @@ async function refreshPendingStatuses(pool) {
       () => worker(),
     ),
   );
-  summary.deferred = Math.max(0, pendingResult.rows.length - summary.checked);
+  summary.deferred += Math.max(0, pendingResult.rows.length - summary.checked);
 
   return summary;
 }
@@ -468,8 +908,8 @@ async function runCycle(pool, lastSuccess) {
     POW_INDEX_DB_APP_NAME: "proof-indexer-worker-backfill",
   };
 
-  await runBackfillWithRetries(backfillEnv);
   const pendingStatus = await refreshPendingStatuses(pool);
+  await runBackfillWithRetries(backfillEnv);
 
   const nowMs = Date.now();
   const runParityNow =
@@ -544,6 +984,7 @@ if (DRY_RUN) {
         once: ONCE,
         parity: RUN_PARITY,
         parityIntervalMs: PARITY_INTERVAL_MS,
+        pendingDropConfirmationMs: PENDING_DROP_CONFIRMATION_MS,
         pendingMinAgeMs: PENDING_MIN_AGE_MS,
         pendingStatusBudgetMs: PENDING_STATUS_BUDGET_MS,
         pendingStatusConcurrency: PENDING_STATUS_CONCURRENCY,

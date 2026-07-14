@@ -300,9 +300,39 @@ try {
             AND (
               transaction_row.block_height IS NULL
               OR transaction_row.block_hash IS NULL
+              OR transaction_row.block_time IS NULL
               OR canonical_block.block_hash IS NULL
+              OR NOT CASE
+                WHEN jsonb_typeof(
+                  transaction_row.raw_tx->'canonicalBlockScan'
+                ) = 'object'
+                  AND transaction_row.raw_tx->'canonicalBlockScan'->>'network' = $1
+                  AND transaction_row.raw_tx->'canonicalBlockScan'->>'height' ~
+                    '^[0-9]+$'
+                  AND transaction_row.raw_tx->'canonicalBlockScan'->>'blockHash' ~
+                    '^[0-9a-fA-F]{64}$'
+                THEN
+                  (transaction_row.raw_tx->'canonicalBlockScan'->>'height')::integer =
+                    transaction_row.block_height
+                  AND lower(
+                    transaction_row.raw_tx->'canonicalBlockScan'->>'blockHash'
+                  ) = lower(transaction_row.block_hash)
+                ELSE false
+              END
             )
         ) AS confirmed_transactions_without_canonical_block,
+        (
+          SELECT count(*)
+          FROM proof_indexer.transactions
+          WHERE network = $1
+            AND status IN ('pending', 'dropped', 'orphaned')
+            AND (
+              block_hash IS NOT NULL
+              OR block_height IS NOT NULL
+              OR block_time IS NOT NULL
+              OR confirmed_at IS NOT NULL
+            )
+        ) AS nonconfirmed_transactions_with_block_metadata,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1) AS events_total,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed') AS events_confirmed,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'pending') AS events_pending,
@@ -312,6 +342,47 @@ try {
         (SELECT count(DISTINCT txid) FROM proof_indexer.events WHERE network = $1 AND status IN ('confirmed', 'pending') AND valid = true) AS canonical_activity_txids,
         (SELECT count(DISTINCT e.txid) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status IN ('confirmed', 'pending') AND e.valid = true AND t.txid IS NULL) AS canonical_activity_txids_missing_transaction,
         (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND e.valid = true AND COALESCE(t.status, '') <> 'confirmed') AS confirmed_activity_events_without_confirmed_transaction,
+        (
+          SELECT count(*)
+          FROM proof_indexer.events e
+          JOIN proof_indexer.transactions t
+            ON t.network = e.network AND t.txid = e.txid
+          WHERE e.network = $1
+            AND e.status = 'confirmed'
+            AND e.valid = true
+            AND (
+              t.status <> 'confirmed'
+              OR e.block_height IS DISTINCT FROM t.block_height
+              OR e.block_time IS DISTINCT FROM t.block_time
+              OR e.event_time IS NULL
+              OR e.event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+            )
+        ) AS confirmed_events_without_parent_metadata,
+        (
+          SELECT count(*)
+          FROM proof_indexer.events
+          WHERE network = $1
+            AND status IN ('pending', 'dropped', 'orphaned')
+            AND (block_height IS NOT NULL OR block_time IS NOT NULL)
+        ) AS nonconfirmed_events_with_block_metadata,
+        (
+          SELECT count(*)
+          FROM proof_indexer.events
+          WHERE network = $1
+            AND (
+              (status = 'confirmed' AND payload->>'confirmed' = 'false')
+              OR (status <> 'confirmed' AND payload->>'confirmed' = 'true')
+              OR (
+                lower(COALESCE(payload->>'status', '')) IN (
+                  'pending',
+                  'confirmed',
+                  'dropped',
+                  'orphaned'
+                )
+                AND lower(payload->>'status') <> status
+              )
+            )
+        ) AS event_payload_status_mismatches,
         (SELECT count(*) FROM proof_indexer.event_refs er JOIN proof_indexer.events e ON e.event_id = er.event_id WHERE e.network = $1) AS event_refs,
         (SELECT count(*) FROM proof_indexer.event_participants ep JOIN proof_indexer.events e ON e.event_id = ep.event_id WHERE e.network = $1) AS event_participants,
         (SELECT count(*) FROM proof_indexer.credit_definitions WHERE network = $1 AND confirmed = true) AS credit_definitions_confirmed,
@@ -509,6 +580,44 @@ try {
         counts,
         "confirmed_transactions_without_canonical_block",
       ),
+    },
+  );
+  check(
+    checks,
+    "nonconfirmed-transactions-have-no-block-metadata",
+    rowNumber(counts, "nonconfirmed_transactions_with_block_metadata") === 0,
+    {
+      mismatches: rowNumber(
+        counts,
+        "nonconfirmed_transactions_with_block_metadata",
+      ),
+    },
+  );
+  check(
+    checks,
+    "confirmed-events-match-canonical-parent-metadata",
+    rowNumber(counts, "confirmed_events_without_parent_metadata") === 0,
+    {
+      mismatches: rowNumber(
+        counts,
+        "confirmed_events_without_parent_metadata",
+      ),
+    },
+  );
+  check(
+    checks,
+    "nonconfirmed-events-have-no-block-metadata",
+    rowNumber(counts, "nonconfirmed_events_with_block_metadata") === 0,
+    {
+      mismatches: rowNumber(counts, "nonconfirmed_events_with_block_metadata"),
+    },
+  );
+  check(
+    checks,
+    "event-payload-status-matches-relational-status",
+    rowNumber(counts, "event_payload_status_mismatches") === 0,
+    {
+      mismatches: rowNumber(counts, "event_payload_status_mismatches"),
     },
   );
   check(

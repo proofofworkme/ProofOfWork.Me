@@ -4,8 +4,23 @@ import { readFileSync } from "node:fs";
 
 const server = readFileSync("server/proof-api.mjs", "utf8");
 const reader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
+const backfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
+const worker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
 const service = readFileSync("deploy/proofofwork-api-proof-index.conf", "utf8");
 const failures = [];
+const readerPublicLogKinds =
+  /const PUBLIC_LOG_EVENT_KINDS = new Set\(\[([\s\S]*?)\]\);/u.exec(
+    reader,
+  )?.[1] ?? "";
+const backfillPublicLogKinds =
+  /const PUBLIC_LOG_EVENT_KINDS = new Set\(\[([\s\S]*?)\]\);/u.exec(
+    backfill,
+  )?.[1] ?? "";
+const normalizedQuotedItems = (value) =>
+  [...String(value).matchAll(/"([^"]+)"/gu)]
+    .map((match) => match[1])
+    .sort()
+    .join(",");
 
 function expect(name, condition) {
   if (!condition) {
@@ -69,6 +84,18 @@ expect(
   "fresh canonical summaries require an exact-tip ledger",
   /exactTipLedgerPayloadOrNull/u.test(summaryRead) &&
     /Fresh canonical ledger is catching up/u.test(summaryRead),
+);
+expect(
+  "fresh ledger token fallback starts from the exact relational token state",
+  /async function ledgerTokenPayload[\s\S]*indexedTokenStateForCanonicalLedger\(network, scope\)[\s\S]*tokenStateWithLivePendingTransactionCheck\(indexedFallback, network\)[\s\S]*fastTokenPayloadSnapshot/u.test(
+    server,
+  ),
+);
+expect(
+  "pending credit liveness only drops after affirmative Core absence proof",
+  /async function tokenStateWithLivePendingTransactionCheck[\s\S]*bitcoinCoreTxStatusPayload\(txid, network\)[\s\S]*status\.absenceProven === true[\s\S]*pending-liveness-core-proof/u.test(
+    server,
+  ),
 );
 expect(
   "fresh canonical summaries do not return the finite stale fallback",
@@ -152,9 +179,105 @@ expect(
     /offsetRaw[\s\S]*transactionId/u.test(reader),
 );
 expect(
+  "fresh full Log reads use canonical transaction truth bound to the exact summary",
+  /async function freshProofIndexLogPayload/u.test(server) &&
+    /proofIndexCanonicalActivityPayload\(network, \{[\s\S]*snapshotId: summarySnapshotId/u.test(
+      server,
+    ) &&
+    /pageSnapshotTotal !== summaryTotal/u.test(server) &&
+    /activity\.length !== summaryTotal/u.test(server) &&
+    /pagePending !== summaryPending/u.test(server) &&
+    /verifiedCanonicalMinerFeeCoverage/u.test(server) &&
+    /verifiedFreshLogCheckpointAfterRead\(summary, network, "log"\)/u.test(
+      server,
+    ) &&
+    /await freshProofIndexLogPayload\(network\)/u.test(logRoute) &&
+    /e\.updated_at <= \$4::timestamptz/u.test(reader) &&
+    /snapshotTotalCount: requestedSnapshotId \? items\.length/u.test(reader),
+);
+expect(
+  "fresh standalone Log history uses the same exact-summary relational gate",
+  (server.match(/freshRead && !exactLogQueryTxid/gu) ?? []).length >= 2 &&
+    (server.match(/\? await freshProofIndexLogHistoryPayload/gu) ?? [])
+      .length >= 2 &&
+    /logHistoryEligibility\.eligible \|\|[\s\S]*freshRead && !exactLogQueryTxid/u.test(
+      server,
+    ) &&
+    /verifiedFreshLogCheckpointAfterRead\([\s\S]*"log-history"/u.test(
+      server,
+    ) &&
+    /CANONICAL_LOG_HISTORY_TIP_CHANGED/u.test(server),
+);
+expect(
   "Core and Electrum pending reads preserve Bitcoin Core mempool admission time",
   (server.match(/bitcoinRpc\("getmempoolentry"/gu) ?? []).length >= 2 &&
     (server.match(/mempool_time: mempoolTime/gu) ?? []).length >= 2,
+);
+expect(
+  "transaction status requires authoritative v2 evidence and never maps dependency failure to dropped",
+  /async function bitcoinCoreTxStatusPayload/u.test(server) &&
+    /proof-of-work-tx-status-v2/u.test(server) &&
+    /TX_STATUS_UNAVAILABLE/u.test(server) &&
+    /absenceProven: true/u.test(server) &&
+    /bitcoinRpc\("getindexinfo", \["txindex"\]\)/u.test(server) &&
+    /chain\.chain !== "main"/u.test(server) &&
+    /txindex\.synced !== true/u.test(server) &&
+    /bitcoinRpc\("getblockhash"/u.test(server) &&
+    /bitcoinRpc\("getblock"/u.test(server) &&
+    /canonical_scan_proof/u.test(reader),
+);
+expect(
+  "worker status transitions are locked, evidence-gated, and canonical promotions are deferred",
+  /SELECT status, raw_tx[\s\S]*FOR UPDATE/u.test(worker) &&
+    /WHERE network = \$1 AND txid = \$2 AND status = 'pending'/u.test(worker) &&
+    /canonical-block-scan-required/u.test(worker) &&
+    /repeat-absence-required/u.test(worker) &&
+    /block_hash = NULL/u.test(worker) &&
+    !/SET status = 'dropped'[\s\S]*\(listing_id = \$2 OR seal_txid = \$2 OR close_txid = \$2\)/u.test(
+      worker,
+    ),
+);
+expect(
+  "dropped token definitions cannot remain in current token state",
+  (reader.match(
+    /definition_transaction\.status IN \('confirmed', 'pending'\)/gu,
+  ) ?? []).length >= 2 &&
+    (reader.match(/metadata->>'canonicalSynthetic' = 'true'/gu) ?? [])
+      .length >= 2,
+);
+expect(
+  "same-height pending Log membership versions the canonical summary",
+  normalizedQuotedItems(backfillPublicLogKinds) ===
+    normalizedQuotedItems(readerPublicLogKinds) &&
+    /async function publicLogRelationalFingerprint/u.test(backfill) &&
+    /publicLogFingerprintsMatch\([\s\S]*currentPublicLogFingerprint[\s\S]*previousPublicLogFingerprint/u.test(
+      backfill,
+    ) &&
+    /publicLogRelational: finalPublicLogFingerprint\.hash/u.test(backfill) &&
+    /publicLogFingerprint: finalPublicLogFingerprint/u.test(backfill) &&
+    /const pendingStatus = await refreshPendingStatuses\(pool\);[\s\S]*await runBackfillWithRetries\(backfillEnv\);/u.test(
+      worker,
+    ),
+);
+expect(
+  "rebroadcasts and dropped listing actions cannot retain stale terminal state",
+  /dropped_at = CASE[\s\S]*EXCLUDED\.status IN \('pending', 'confirmed'\)[\s\S]*THEN NULL/u.test(
+    backfill,
+  ) &&
+    /- 'statusObservation'/u.test(backfill) &&
+    /WITH affected AS[\s\S]*base_event\.payload AS base_payload/u.test(
+      worker,
+    ) &&
+    /buyer_address = NULL/u.test(worker) &&
+    /- 'closeTxid'[\s\S]*- 'closedTxid'[\s\S]*- 'buyerAddress'/u.test(
+      worker,
+    ),
+);
+expect(
+  "event block heights are inserted with an explicit integer parameter type",
+  /CASE WHEN \$3 = 'confirmed' THEN \$5::integer ELSE NULL END/u.test(
+    backfill,
+  ),
 );
 expect(
   "browser broadcast origins are validated",

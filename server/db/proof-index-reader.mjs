@@ -2924,12 +2924,27 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
       SELECT
         transaction_row.txid,
         transaction_row.status,
+        transaction_row.first_seen_at,
         transaction_row.confirmed_at,
         transaction_row.dropped_at,
         transaction_row.last_seen_at,
         transaction_row.updated_at,
         transaction_row.block_hash,
         transaction_row.block_height,
+        transaction_row.block_time,
+        CASE
+          WHEN jsonb_typeof(transaction_row.raw_tx->'canonicalBlockScan') = 'object'
+            AND transaction_row.raw_tx->'canonicalBlockScan'->>'network' = $1
+            AND transaction_row.raw_tx->'canonicalBlockScan'->>'height' ~ '^[0-9]+$'
+            AND (transaction_row.raw_tx->'canonicalBlockScan'->>'height')::integer =
+              transaction_row.block_height
+            AND transaction_row.raw_tx->'canonicalBlockScan'->>'blockHash' ~
+              '^[0-9a-fA-F]{64}$'
+            AND lower(transaction_row.raw_tx->'canonicalBlockScan'->>'blockHash') =
+              lower(transaction_row.block_hash)
+          THEN true
+          ELSE false
+        END AS canonical_scan_proof,
         canonical_block.canonical AS block_canonical
       FROM proof_indexer.transactions transaction_row
       LEFT JOIN proof_indexer.blocks canonical_block
@@ -2951,6 +2966,10 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
   if (!status) {
     return null;
   }
+  const blockTimeMs = new Date(row.block_time ?? "").getTime();
+  const blockTime = Number.isFinite(blockTimeMs)
+    ? new Date(blockTimeMs).toISOString()
+    : "";
   if (status === "confirmed") {
     const blockHeight = Number(row.block_height);
     const blockHash = String(row.block_hash ?? "").trim().toLowerCase();
@@ -2958,7 +2977,10 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
       !Number.isSafeInteger(blockHeight) ||
       blockHeight <= 0 ||
       !/^[0-9a-f]{64}$/u.test(blockHash) ||
-      row.block_canonical !== true
+      row.block_canonical !== true ||
+      row.canonical_scan_proof !== true ||
+      !blockTime ||
+      blockTimeMs < BITCOIN_GENESIS_TIME_MS
     ) {
       return null;
     }
@@ -2967,15 +2989,39 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
     return null;
   }
 
-  return {
+  const observedAt = dateIso(
+    row.updated_at ?? row.confirmed_at ?? row.dropped_at ?? row.last_seen_at,
+  );
+  const payload = {
     confirmed: status === "confirmed",
-    indexedAt: dateIso(
-      row.updated_at ?? row.confirmed_at ?? row.dropped_at ?? row.last_seen_at,
-    ),
+    contract: "proof-of-work-tx-status-v2",
+    indexedAt: observedAt,
     network,
+    observedAt,
+    sources: ["proof-indexer-canonical-block-scan"],
     status,
     txid: row.txid,
   };
+  if (status === "confirmed") {
+    return {
+      ...payload,
+      blockHash: String(row.block_hash).trim().toLowerCase(),
+      blockHeight: Number(row.block_height),
+      blockTime,
+      canonical: true,
+    };
+  }
+  if (status === "pending") {
+    const firstSeenMs = new Date(row.first_seen_at ?? "").getTime();
+    return {
+      ...payload,
+      ...(Number.isFinite(firstSeenMs) && firstSeenMs >= BITCOIN_GENESIS_TIME_MS
+        ? { mempoolFirstSeenAt: new Date(firstSeenMs).toISOString() }
+        : {}),
+      mempoolSeen: true,
+    };
+  }
+  return payload;
 }
 
 async function ledgerSnapshot(pool, network, snapshotId = "") {
@@ -6318,6 +6364,18 @@ async function proofIndexTokenDefinitionsFromTables(pool, network, scope) {
         metadata
       FROM proof_indexer.credit_definitions
       WHERE network = $1
+        AND (
+          metadata->>'canonicalSynthetic' = 'true'
+          OR EXISTS (
+            SELECT 1
+            FROM proof_indexer.transactions definition_transaction
+            WHERE definition_transaction.network =
+                proof_indexer.credit_definitions.network
+              AND definition_transaction.txid =
+                proof_indexer.credit_definitions.create_txid
+              AND definition_transaction.status IN ('confirmed', 'pending')
+          )
+        )
         ${tokenStateScopeSql(scope, "token_id", "ticker")}
       ORDER BY upper(ticker), token_id
     `,
@@ -6355,6 +6413,18 @@ async function proofIndexTokenDefinitionsByIds(pool, network, tokenIds) {
       FROM proof_indexer.credit_definitions
       WHERE network = $1
         AND token_id = ANY($2::text[])
+        AND (
+          metadata->>'canonicalSynthetic' = 'true'
+          OR EXISTS (
+            SELECT 1
+            FROM proof_indexer.transactions definition_transaction
+            WHERE definition_transaction.network =
+                proof_indexer.credit_definitions.network
+              AND definition_transaction.txid =
+                proof_indexer.credit_definitions.create_txid
+              AND definition_transaction.status IN ('confirmed', 'pending')
+          )
+        )
       ORDER BY upper(ticker), token_id
     `,
     [network, normalizedTokenIds],
@@ -9430,11 +9500,60 @@ export async function proofIndexActivityPayload(network) {
   return snapshotActivityPayload(snapshot);
 }
 
-export async function proofIndexCanonicalActivityPayload(network) {
+export async function proofIndexCanonicalActivityPayload(
+  network,
+  options = {},
+) {
   const pool = proofIndexPool();
   if (!pool) {
     return null;
   }
+
+  const requestedSnapshotId = String(options.snapshotId ?? "").trim();
+  if (
+    requestedSnapshotId &&
+    (requestedSnapshotId.length > 128 || /\s/u.test(requestedSnapshotId))
+  ) {
+    return null;
+  }
+  const boundSnapshot = requestedSnapshotId
+    ? await ledgerSnapshotMetadata(pool, network, requestedSnapshotId)
+    : null;
+  if (requestedSnapshotId && !boundSnapshot) {
+    return null;
+  }
+  const snapshotHeight = rowNumber(boundSnapshot, "indexed_through_block");
+  const snapshotGeneratedAt = boundSnapshot?.generated_at ?? null;
+  if (
+    requestedSnapshotId &&
+    (snapshotHeight <= 0 || !Number.isFinite(Date.parse(snapshotGeneratedAt)))
+  ) {
+    return null;
+  }
+  const snapshotWhere = requestedSnapshotId
+    ? `
+          AND e.updated_at <= $4::timestamptz
+          AND (
+            (
+              e.status = 'confirmed'
+              AND e.block_height > 0
+              AND e.block_height <= $3
+            )
+            OR (
+              e.status = 'pending'
+              AND e.created_at <= $4::timestamptz
+            )
+          )
+      `
+    : "";
+  const queryParams = requestedSnapshotId
+    ? [
+        network,
+        [...PUBLIC_LOG_EVENT_KINDS],
+        snapshotHeight,
+        snapshotGeneratedAt,
+      ]
+    : [network, [...PUBLIC_LOG_EVENT_KINDS]];
 
   const result = await pool.query(
     `
@@ -9456,6 +9575,7 @@ export async function proofIndexCanonicalActivityPayload(network) {
           AND e.valid = true
           AND e.status IN ('confirmed', 'pending')
           AND e.kind = ANY($2::text[])
+          ${snapshotWhere}
       ),
       selected_txids AS (
         SELECT DISTINCT network, txid
@@ -9669,11 +9789,11 @@ export async function proofIndexCanonicalActivityPayload(network) {
         e.txid DESC,
         e.event_id DESC
     `,
-    [network, [...PUBLIC_LOG_EVENT_KINDS]],
+    queryParams,
   );
-  const snapshot = await latestProofIndexScanMetadata(pool, network).catch(
-    () => null,
-  );
+  const snapshot =
+    boundSnapshot ??
+    (await latestProofIndexScanMetadata(pool, network).catch(() => null));
   const items = normalizeHistoryEventRows(result.rows, network);
   if (items.length === 0) {
     return null;
@@ -9717,9 +9837,10 @@ export async function proofIndexCanonicalActivityPayload(network) {
     missingConfirmedTxids: missingConfirmedTxids.slice(0, 100),
     source: "proof-indexer-normalized-input-output-totals",
   };
+  const latestEventBlock = indexedThroughBlockFromItems(items) ?? 0;
   const indexedThroughBlock =
     Math.max(
-      indexedThroughBlockFromItems(items) ?? 0,
+      latestEventBlock,
       rowNumber(snapshot, "indexed_through_block"),
     ) || undefined;
   const indexedAt = newestDateIso([
@@ -9732,17 +9853,26 @@ export async function proofIndexCanonicalActivityPayload(network) {
   return {
     activity: items,
     canonicalMinerFeeCoverage,
+    consistency: snapshot?.consistency ?? undefined,
     indexedAt,
     indexedThroughBlock,
+    latestEventBlock,
+    ledgerGeneratedAt: snapshot?.generated_at
+      ? dateIso(snapshot.generated_at)
+      : indexedAt,
     network,
+    snapshotId: snapshot?.snapshot_id ?? undefined,
+    snapshotTotalCount: requestedSnapshotId ? items.length : undefined,
     source: "proof-indexer-events",
     stats: {
       canonicalMinerFeeCoverage,
       confirmed,
       indexedThroughBlock,
+      latestEventBlock,
       pending: items.length - confirmed,
       total: items.length,
     },
+    totalCount: items.length,
   };
 }
 

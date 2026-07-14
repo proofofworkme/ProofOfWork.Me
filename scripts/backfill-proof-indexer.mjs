@@ -12,6 +12,30 @@ const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
   "",
 );
 const NETWORK = process.env.NETWORK ?? "livenet";
+const PUBLIC_LOG_EVENT_KINDS = new Set([
+  "attachment",
+  "browser",
+  "file",
+  "id-buy",
+  "id-delist",
+  "id-list",
+  "id-register",
+  "id-seal",
+  "id-transfer",
+  "id-update",
+  "inception-bond",
+  "infinity-bond",
+  "mail",
+  "reply",
+  "rush-mint",
+  "token-create",
+  "token-listing",
+  "token-listing-closed",
+  "token-listing-sealed",
+  "token-mint",
+  "token-sale",
+  "token-transfer",
+]);
 const PAGE_LIMIT = Number(process.env.POW_INDEX_BACKFILL_LIMIT ?? 200);
 const MAX_PAGES = Number(process.env.POW_INDEX_BACKFILL_MAX_PAGES ?? 2000);
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
@@ -5256,7 +5280,7 @@ async function upsertTransaction(client, item, txid, status, sourceLabel) {
         now(),
         now(),
         CASE WHEN $3 = 'confirmed' THEN COALESCE($4::timestamptz, now()) ELSE NULL END,
-        CASE WHEN $3 = 'confirmed' THEN $5 ELSE NULL END,
+        CASE WHEN $3 = 'confirmed' THEN $5::integer ELSE NULL END,
         CASE WHEN $3 = 'confirmed' THEN $4::timestamptz ELSE NULL END,
         $6,
         $7::jsonb
@@ -5277,6 +5301,18 @@ async function upsertTransaction(client, item, txid, status, sourceLabel) {
             THEN COALESCE(proof_indexer.transactions.confirmed_at, EXCLUDED.confirmed_at)
           ELSE NULL
         END,
+        dropped_at = CASE
+          WHEN EXCLUDED.status IN ('pending', 'confirmed') THEN NULL
+          ELSE proof_indexer.transactions.dropped_at
+        END,
+        dropped_reason = CASE
+          WHEN EXCLUDED.status IN ('pending', 'confirmed') THEN NULL
+          ELSE proof_indexer.transactions.dropped_reason
+        END,
+        replaced_by_txid = CASE
+          WHEN EXCLUDED.status IN ('pending', 'confirmed') THEN NULL
+          ELSE proof_indexer.transactions.replaced_by_txid
+        END,
         block_height = CASE
           WHEN proof_indexer.transactions.raw_tx ? 'canonicalBlockScan'
             THEN proof_indexer.transactions.block_height
@@ -5296,7 +5332,17 @@ async function upsertTransaction(client, item, txid, status, sourceLabel) {
             THEN proof_indexer.transactions.source
           ELSE COALESCE(EXCLUDED.source, proof_indexer.transactions.source)
         END,
-        raw_tx = COALESCE(proof_indexer.transactions.raw_tx, EXCLUDED.raw_tx),
+        raw_tx = CASE
+          WHEN proof_indexer.transactions.raw_tx ? 'canonicalBlockScan'
+            THEN proof_indexer.transactions.raw_tx
+          WHEN EXCLUDED.status IN ('pending', 'confirmed')
+            THEN COALESCE(
+              proof_indexer.transactions.raw_tx,
+              EXCLUDED.raw_tx,
+              '{}'::jsonb
+            ) - 'statusObservation'
+          ELSE COALESCE(proof_indexer.transactions.raw_tx, EXCLUDED.raw_tx)
+        END,
         updated_at = now()
     `,
     [
@@ -6742,6 +6788,72 @@ function eligibleCanonicalSummarySnapshotPayload(payload) {
   );
 }
 
+async function publicLogRelationalFingerprint(client) {
+  const result = await client.query(
+    `
+      SELECT
+        e.event_id,
+        e.txid,
+        e.protocol,
+        e.kind,
+        e.status,
+        e.valid,
+        e.block_height,
+        e.block_time,
+        e.event_time,
+        e.created_at,
+        md5(e.payload::text) AS payload_hash
+      FROM proof_indexer.events e
+      WHERE e.network = $1
+        AND e.valid = true
+        AND e.status IN ('confirmed', 'pending')
+        AND e.kind = ANY($2::text[])
+      ORDER BY e.event_id ASC
+    `,
+    [NETWORK, [...PUBLIC_LOG_EVENT_KINDS]],
+  );
+  const hash = createHash("sha256");
+  let pending = 0;
+  for (const row of result.rows) {
+    if (row.status === "pending") {
+      pending += 1;
+    }
+    hash.update(
+      JSON.stringify([
+        String(row.event_id),
+        row.txid,
+        row.protocol,
+        row.kind,
+        row.status,
+        row.valid,
+        row.block_height,
+        row.block_time,
+        row.event_time,
+        row.created_at,
+        row.payload_hash,
+      ]),
+    );
+    hash.update("\n");
+  }
+  return {
+    contract: "proof-index-public-log-fingerprint-v1",
+    count: result.rows.length,
+    hash: hash.digest("hex"),
+    pending,
+  };
+}
+
+function publicLogFingerprintsMatch(left, right) {
+  return Boolean(
+    left?.contract === "proof-index-public-log-fingerprint-v1" &&
+      right?.contract === left.contract &&
+      Number(right.count) === Number(left.count) &&
+      Number(right.pending) === Number(left.pending) &&
+      /^[0-9a-f]{64}$/u.test(String(left.hash ?? "")) &&
+      right.hash === left.hash,
+  );
+}
+
 async function storedEligibleCanonicalSummarySnapshotPayload(client) {
   const result = await client.query(
     `
@@ -6818,10 +6930,20 @@ async function storeCanonicalSummarySnapshot(client) {
   )
     .trim()
     .toLowerCase();
+  const currentPublicLogFingerprint = await publicLogRelationalFingerprint(
+    client,
+  );
+  const previousPublicLogFingerprint = objectPayload(
+    previousPayload?.summaryRefresh?.publicLogFingerprint,
+  );
   if (
     previousCoverage === latestIndexedHeight &&
     previousIndexedThroughBlockHash === latestIndexedThroughBlockHash &&
-    canonicalSummaryAccountingModelsCurrent(previousPayload?.summaryPayloads)
+    canonicalSummaryAccountingModelsCurrent(previousPayload?.summaryPayloads) &&
+    publicLogFingerprintsMatch(
+      currentPublicLogFingerprint,
+      previousPublicLogFingerprint,
+    )
   ) {
     return {
       indexedThroughBlock: previousCoverage,
@@ -6890,6 +7012,7 @@ async function storeCanonicalSummarySnapshot(client) {
   const summaryPayloads = summaryPayloadsWithAlignedWorkFloor(
     canonicalBundle?.summaryPayloads,
   );
+  const finalPublicLogFingerprint = await publicLogRelationalFingerprint(client);
   const indexedThroughBlock = canonicalSummaryCoverage(summaryPayloads);
   const snapshotId = String(canonicalBundle?.snapshotId ?? "").trim();
   const summarySnapshotIds = REQUIRED_CURRENT_SUMMARY_KEYS.map((key) =>
@@ -6900,8 +7023,19 @@ async function storeCanonicalSummarySnapshot(client) {
       .trim()
       .toLowerCase(),
   );
+  const logSummary = objectPayload(summaryPayloads.logSummary);
+  const logSummaryTotal = Number(
+    logSummary?.totalCount ?? logSummary?.stats?.total ?? -1,
+  );
+  const logSummaryPending = Number(logSummary?.stats?.pending ?? -1);
   if (
     indexedThroughBlock !== latestIndexedHeight ||
+    !publicLogFingerprintsMatch(
+      currentPublicLogFingerprint,
+      finalPublicLogFingerprint,
+    ) ||
+    logSummaryTotal !== finalPublicLogFingerprint.count ||
+    logSummaryPending !== finalPublicLogFingerprint.pending ||
     !canonicalSummaryAccountingModelsCurrent(summaryPayloads) ||
     !snapshotId ||
     String(ledger.snapshotId ?? "").trim() !== snapshotId ||
@@ -6934,6 +7068,7 @@ async function storeCanonicalSummarySnapshot(client) {
       ...(ledger.sourceHashes ?? {}),
       blockScan: latestIndexedThroughBlockHash,
       canonicalSummary: summaryHash,
+      publicLogRelational: finalPublicLogFingerprint.hash,
     },
     summaryPayloads,
     summaryPayloadsIndexedAt: generatedAt,
@@ -6942,6 +7077,7 @@ async function storeCanonicalSummarySnapshot(client) {
       indexedThroughBlockHash: latestIndexedThroughBlockHash,
       mode: "canonical-summary-refresh",
       previousCoverage,
+      publicLogFingerprint: finalPublicLogFingerprint,
     },
     totals: summarySnapshotTotals(summaryPayloads),
   };

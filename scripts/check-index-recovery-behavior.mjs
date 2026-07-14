@@ -5080,7 +5080,7 @@ check("pending status cleanup is concurrent but capped", async () => {
         activeReads -= 1;
         return { status: "pending" };
       },
-      updateTransactionStatus: async () => {},
+      updateTransactionStatus: async () => ({ applied: true }),
     },
   );
   const pool = {
@@ -5099,6 +5099,311 @@ check("pending status cleanup is concurrent but capped", async () => {
   assert.equal(summary.pending, rows.length);
   assert.equal(summary.deferred, 0);
   assert.equal(maxActiveReads, 5);
+});
+
+check("worker status transitions are proven, race-safe, and projection-safe", async () => {
+  const txid = "9".repeat(64);
+  const now = Date.now();
+  const observedAt = new Date(now).toISOString();
+  const mempoolFirstSeenAt = new Date(now - 60_000).toISOString();
+  const statusUpdate = isolatedFunction(
+    WORKER_PATH,
+    "updateTransactionStatus",
+    {
+      NETWORK: "livenet",
+      PENDING_DROP_CONFIRMATION_MS: 1_000,
+    },
+  );
+  const pendingEnvelope = {
+    confirmed: false,
+    contract: "proof-of-work-tx-status-v2",
+    mempoolFirstSeenAt,
+    mempoolSeen: true,
+    network: "livenet",
+    observedAt,
+    sources: ["bitcoin-core:getmempoolentry"],
+    status: "pending",
+    txid,
+  };
+
+  const pendingQueries = [];
+  const pendingClient = {
+    async query(sql, params) {
+      pendingQueries.push({ params, sql });
+      if (/SELECT status, raw_tx/iu.test(sql)) {
+        return { rows: [{ raw_tx: {}, status: "pending" }] };
+      }
+      return { rowCount: 1, rows: [] };
+    },
+  };
+  const pendingOutcome = await statusUpdate(
+    pendingClient,
+    txid,
+    "pending",
+    pendingEnvelope,
+  );
+  assert.equal(pendingOutcome.applied, true);
+  assert.equal(pendingQueries.length, 5);
+  assert.match(pendingQueries[1].sql, /block_hash = NULL/iu);
+  assert.match(pendingQueries[2].sql, /status = 'pending'/iu);
+  assert.match(pendingQueries[2].sql, /WHERE[\s\S]*status = 'pending'/iu);
+
+  const confirmedQueries = [];
+  const confirmedOutcome = await statusUpdate(
+    {
+      async query(sql) {
+        confirmedQueries.push(sql);
+        return { rows: [{ raw_tx: {}, status: "pending" }] };
+      },
+    },
+    txid,
+    "confirmed",
+    {
+      blockHash: "a".repeat(64),
+      blockHeight: 123,
+      blockTime: new Date(now - 120_000).toISOString(),
+      canonical: true,
+      confirmed: true,
+      contract: "proof-of-work-tx-status-v2",
+      network: "livenet",
+      observedAt,
+      sources: ["bitcoin-core:getblock"],
+      status: "confirmed",
+      txid,
+    },
+  );
+  assert.equal(confirmedOutcome.applied, false);
+  assert.equal(confirmedOutcome.reason, "canonical-block-scan-required");
+  assert.equal(confirmedQueries.length, 1);
+
+  let invalidQueries = 0;
+  await rejection(
+    statusUpdate(
+      {
+        async query() {
+          invalidQueries += 1;
+        },
+      },
+      txid,
+      "confirmed",
+      {
+        confirmed: true,
+        contract: "proof-of-work-tx-status-v2",
+        network: "livenet",
+        observedAt,
+        sources: ["bitcoin-core:getblock"],
+        status: "confirmed",
+        txid,
+      },
+    ),
+    (error) => /Unproven confirmed status/iu.test(error.message),
+  );
+  assert.equal(invalidQueries, 0);
+
+  const raceQueries = [];
+  const raceOutcome = await statusUpdate(
+    {
+      async query(sql) {
+        raceQueries.push(sql);
+        return { rows: [{ raw_tx: {}, status: "confirmed" }] };
+      },
+    },
+    txid,
+    "pending",
+    pendingEnvelope,
+  );
+  assert.equal(raceOutcome.applied, false);
+  assert.equal(raceOutcome.reason, "status-race");
+  assert.equal(raceQueries.length, 1);
+
+  const absentEnvelope = {
+    absenceProven: true,
+    confirmed: false,
+    contract: "proof-of-work-tx-status-v2",
+    network: "livenet",
+    observedAt,
+    reason: "absent-from-healthy-bitcoin-core-chain-and-mempool",
+    sources: ["bitcoin-core:getrawtransaction"],
+    status: "dropped",
+    txid,
+  };
+  const firstAbsenceQueries = [];
+  const firstAbsence = await statusUpdate(
+    {
+      async query(sql) {
+        firstAbsenceQueries.push(sql);
+        if (/SELECT status, raw_tx/iu.test(sql)) {
+          return { rows: [{ raw_tx: {}, status: "pending" }] };
+        }
+        return { rowCount: 1, rows: [] };
+      },
+    },
+    txid,
+    "dropped",
+    absentEnvelope,
+  );
+  assert.equal(firstAbsence.applied, false);
+  assert.equal(firstAbsence.reason, "repeat-absence-required");
+  assert.equal(firstAbsenceQueries.length, 2);
+
+  const repeatedAbsenceQueries = [];
+  const repeatedAbsence = await statusUpdate(
+    {
+      async query(sql) {
+        repeatedAbsenceQueries.push(sql);
+        if (/SELECT status, raw_tx/iu.test(sql)) {
+          return {
+            rows: [
+              {
+                raw_tx: {
+                  statusObservation: {
+                    absenceCount: 1,
+                    observedAt: new Date(now - 60_000).toISOString(),
+                    status: "dropped",
+                  },
+                },
+                status: "pending",
+              },
+            ],
+          };
+        }
+        return { rowCount: 1, rows: [] };
+      },
+    },
+    txid,
+    "dropped",
+    absentEnvelope,
+  );
+  assert.equal(repeatedAbsence.applied, true);
+  const listingUpdates = repeatedAbsenceQueries.filter((sql) =>
+    /UPDATE proof_indexer\.credit_listings/iu.test(sql),
+  );
+  assert.equal(listingUpdates.length, 2);
+  const initialListingDrop = listingUpdates.find((sql) =>
+    /listing_id = \$2 AND status = 'pending'/iu.test(sql),
+  );
+  const lifecycleRestore = listingUpdates.find((sql) =>
+    /WITH affected AS/iu.test(sql),
+  );
+  assert.match(initialListingDrop, /status = 'dropped'/iu);
+  assert.match(lifecycleRestore, /ELSE 'active'/iu);
+  assert.match(lifecycleRestore, /THEN 'sealing'/iu);
+  assert.match(lifecycleRestore, /buyer_address = NULL/iu);
+  assert.match(lifecycleRestore, /base_event\.payload AS base_payload/iu);
+  for (const staleKey of [
+    "buyerAddress",
+    "closeTxid",
+    "closedTxid",
+    "saleTxid",
+  ]) {
+    assert.match(lifecycleRestore, new RegExp(`- '${staleKey}'`, "u"));
+  }
+});
+
+check("rebroadcast pending transactions clear every prior drop observation", async () => {
+  let statement = "";
+  const upsertTransaction = isolatedFunction(
+    BACKFILL_PATH,
+    "upsertTransaction",
+    {
+      NETWORK: "livenet",
+      itemTime: (item) => item.createdAt,
+      numberOrNull: (value) =>
+        Number.isFinite(Number(value)) ? Number(value) : null,
+    },
+  );
+  await upsertTransaction(
+    {
+      async query(sql) {
+        statement = String(sql);
+        return { rows: [] };
+      },
+    },
+    { confirmed: false, createdAt: "2026-07-14T18:00:00.000Z" },
+    "a".repeat(64),
+    "pending",
+    "mempool-scan",
+  );
+  assert.match(statement, /dropped_at = CASE[\s\S]*THEN NULL/u);
+  assert.match(statement, /dropped_reason = CASE[\s\S]*THEN NULL/u);
+  assert.match(statement, /replaced_by_txid = CASE[\s\S]*THEN NULL/u);
+  assert.match(statement, /- 'statusObservation'/u);
+});
+
+check("same-height pending membership versions the canonical Log snapshot", async () => {
+  const readerKinds = /const PUBLIC_LOG_EVENT_KINDS = new Set\(\[([\s\S]*?)\]\);/u.exec(
+    fileSource(READER_PATH),
+  )?.[1];
+  const backfillKinds = /const PUBLIC_LOG_EVENT_KINDS = new Set\(\[([\s\S]*?)\]\);/u.exec(
+    fileSource(BACKFILL_PATH),
+  )?.[1];
+  const parseKinds = (source) =>
+    [...String(source ?? "").matchAll(/"([^"]+)"/gu)]
+      .map((match) => match[1])
+      .sort();
+  assert.deepEqual(parseKinds(backfillKinds), parseKinds(readerKinds));
+
+  let rows = [
+    {
+      block_height: 100,
+      block_time: "2026-07-14T17:00:00.000Z",
+      created_at: "2026-07-14T17:00:00.000Z",
+      event_id: "1",
+      event_time: "2026-07-14T17:00:00.000Z",
+      kind: "mail",
+      payload_hash: "1".repeat(32),
+      protocol: "pwm1",
+      status: "confirmed",
+      txid: "1".repeat(64),
+      valid: true,
+    },
+  ];
+  let fingerprintSql = "";
+  const publicLogRelationalFingerprint = isolatedFunction(
+    BACKFILL_PATH,
+    "publicLogRelationalFingerprint",
+    {
+      NETWORK: "livenet",
+      PUBLIC_LOG_EVENT_KINDS: new Set(["mail"]),
+      createHash,
+    },
+  );
+  const client = {
+    async query(sql) {
+      fingerprintSql = String(sql);
+      return { rows };
+    },
+  };
+  const before = await publicLogRelationalFingerprint(client);
+  rows = [
+    ...rows,
+    {
+      block_height: null,
+      block_time: null,
+      created_at: "2026-07-14T18:00:00.000Z",
+      event_id: "2",
+      event_time: "2026-07-14T18:00:00.000Z",
+      kind: "mail",
+      payload_hash: "2".repeat(32),
+      protocol: "pwm1",
+      status: "pending",
+      txid: "2".repeat(64),
+      valid: true,
+    },
+  ];
+  const after = await publicLogRelationalFingerprint(client);
+  assert.equal(before.count, 1);
+  assert.equal(after.count, 2);
+  assert.equal(after.pending, 1);
+  assert.notEqual(after.hash, before.hash);
+  assert.match(fingerprintSql, /md5\(e\.payload::text\)/u);
+  assert.doesNotMatch(fingerprintSql, /e\.updated_at/u);
+
+  const runCycleSource = topLevelFunctionSource(WORKER_PATH, "runCycle");
+  assert.match(
+    runCycleSource,
+    /const pendingStatus = await refreshPendingStatuses\(pool\);[\s\S]*await runBackfillWithRetries\(backfillEnv\);/u,
+  );
 });
 
 check("an outer ledger height cannot promote embedded history coverage", () => {
@@ -5189,10 +5494,18 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     "growthSummary",
     "inceptionSummary",
     "infinitySummary",
+    "logSummary",
     "marketplaceSummary",
+    "tokenSummary",
     "workFloor",
     "workSummary",
   ];
+  const publicLogFingerprint = {
+    contract: "proof-index-public-log-fingerprint-v1",
+    count: 2,
+    hash: "f".repeat(64),
+    pending: 0,
+  };
   const canonicalSummaryCoverage = isolatedFunction(
     BACKFILL_PATH,
     "canonicalSummaryCoverage",
@@ -5315,6 +5628,10 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
         model: "canonical-work-transfer-value-projection-v1",
       };
     }
+    if (key === "logSummary") {
+      payload.stats = { pending: 0, total: 2 };
+      payload.totalCount = 2;
+    }
     return payload;
   };
   let previousPayload = {
@@ -5342,6 +5659,11 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
       latestBlockScanCheckpoint: async () => ({ height: 101 }),
       numberOrNull,
       objectPayload,
+      publicLogRelationalFingerprint: async () => publicLogFingerprint,
+      publicLogFingerprintsMatch: (left, right) =>
+        left?.hash === right?.hash &&
+        left?.count === right?.count &&
+        left?.pending === right?.pending,
       readJson: async (url, options) => {
         assert.equal(url.pathname, "/api/v1/internal/canonical-summary");
         assert.equal(options.retries, 0);
@@ -5389,6 +5711,10 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   assert.equal(stored.tokenState.marker, "canonical");
   assert.equal(stored.summaryRefresh.indexedThroughBlock, 101);
   assert.equal(stored.summaryRefresh.mode, "canonical-summary-refresh");
+  assert.deepEqual(
+    stored.summaryRefresh.publicLogFingerprint,
+    publicLogFingerprint,
+  );
   assert.equal(stored.activityPayload.marker, "derived-full-101");
   assert.ok(stored.sourceHashes.canonicalSummary);
   assert.ok(
@@ -5432,6 +5758,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     snapshotId: "full-101-current-models",
     status: "consistent",
     summaryPayloads: currentSummaryPayloads,
+    summaryRefresh: { publicLogFingerprint },
   };
   const currentResult = await storeCanonicalSummarySnapshot({
     async query() {
@@ -5743,6 +6070,17 @@ check("canonical summary timeouts fail closed unless an eligible prior snapshot 
         blockHash: latestHash,
         height: 101,
       }),
+      publicLogRelationalFingerprint: async () => ({
+        contract: "proof-index-public-log-fingerprint-v1",
+        count: 1,
+        hash: "f".repeat(64),
+        pending: 0,
+      }),
+      publicLogFingerprintsMatch: (left, right) => left?.hash === right?.hash,
+      objectPayload: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : null,
       readJson: async (_url, options) => {
         canonicalRequestTimeoutMs = options.timeoutMs;
         throw abortError();
@@ -6079,6 +6417,13 @@ check("the canonical summary publisher rejects mixed snapshot identities", async
       latestBlockScanCheckpoint: async () => ({ height: 101 }),
       numberOrNull,
       objectPayload,
+      publicLogRelationalFingerprint: async () => ({
+        contract: "proof-index-public-log-fingerprint-v1",
+        count: 1,
+        hash: "f".repeat(64),
+        pending: 0,
+      }),
+      publicLogFingerprintsMatch: (left, right) => left?.hash === right?.hash,
       readJson: async () => ({
         indexedThroughBlock: 101,
         ledger: {
@@ -6546,6 +6891,9 @@ check("transaction status trusts only canonical block-backed confirmations", asy
     block_canonical: true,
     block_hash: "a".repeat(64),
     block_height: 123,
+    block_time: "2026-07-14T00:00:00.000Z",
+    canonical_scan_proof: true,
+    first_seen_at: "2026-07-13T23:55:00.000Z",
     status: "confirmed",
     txid: "1".repeat(64),
     updated_at: "2026-07-14T00:00:00.000Z",
@@ -6554,6 +6902,7 @@ check("transaction status trusts only canonical block-backed confirmations", asy
     READER_PATH,
     "proofIndexTxStatusPayload",
     {
+      BITCOIN_GENESIS_TIME_MS: Date.UTC(2009, 0, 3, 18, 15, 5),
       dateIso: (value) => new Date(value).toISOString(),
       normalizedStatus: (value) => String(value ?? "").toLowerCase(),
       proofIndexPool: () => ({
@@ -6564,18 +6913,196 @@ check("transaction status trusts only canonical block-backed confirmations", asy
     },
   );
 
-  assert.equal((await readStatus(row.txid, "livenet"))?.status, "confirmed");
+  const confirmedStatus = await readStatus(row.txid, "livenet");
+  assert.equal(confirmedStatus?.status, "confirmed");
+  assert.equal(confirmedStatus?.contract, "proof-of-work-tx-status-v2");
+  assert.equal(confirmedStatus?.canonical, true);
+  assert.equal(confirmedStatus?.blockHash, "a".repeat(64));
+  assert.equal(confirmedStatus?.blockHeight, 123);
+  assert.equal(confirmedStatus?.blockTime, "2026-07-14T00:00:00.000Z");
   row = { ...row, block_height: null };
   assert.equal(await readStatus(row.txid, "livenet"), null);
   row = { ...row, block_height: 123, block_canonical: false };
   assert.equal(await readStatus(row.txid, "livenet"), null);
-  row = { ...row, block_canonical: true, status: "pending" };
+  row = {
+    ...row,
+    block_canonical: true,
+    block_hash: null,
+    block_height: null,
+    block_time: null,
+    canonical_scan_proof: false,
+    status: "pending",
+  };
   assert.equal(await readStatus(row.txid, "livenet"), null);
+  const pendingStatus = await readStatus(row.txid, "livenet", {
+    includeUnconfirmed: true,
+  });
+  assert.equal(pendingStatus?.status, "pending");
+  assert.equal(pendingStatus?.mempoolSeen, true);
   assert.equal(
-    (await readStatus(row.txid, "livenet", { includeUnconfirmed: true }))
-      ?.status,
-    "pending",
+    pendingStatus?.mempoolFirstSeenAt,
+    "2026-07-13T23:55:00.000Z",
   );
+});
+
+check("authoritative transaction status distinguishes proof from dependency failure", async () => {
+  const txid = "1".repeat(64);
+  const blockHash = "a".repeat(64);
+  const unavailableError = (message) => {
+    const error = new Error(message);
+    error.statusCode = 503;
+    return error;
+  };
+  const confirmedStatus = isolatedFunction(
+    API_PATH,
+    "bitcoinCoreTxStatusPayload",
+    {
+      bitcoinRpc: async (method) => {
+        if (method === "getrawtransaction") {
+          return {
+            ok: true,
+            result: { blockhash: blockHash, confirmations: 2, txid },
+          };
+        }
+        if (method === "getblockheader") {
+          return {
+            ok: true,
+            result: {
+              confirmations: 2,
+              hash: blockHash,
+              height: 123,
+              time: 1_783_000_000,
+            },
+          };
+        }
+        if (method === "getblock") {
+          return {
+            ok: true,
+            result: { hash: blockHash, height: 123, tx: [txid] },
+          };
+        }
+        if (method === "getblockhash") {
+          return { ok: true, result: blockHash };
+        }
+        assert.fail(`unexpected RPC method ${method}`);
+      },
+      errorSummary: (error) => error.message,
+      freshDataUnavailableError: unavailableError,
+    },
+  );
+  const confirmed = await confirmedStatus(txid, "livenet");
+  assert.equal(confirmed.status, "confirmed");
+  assert.equal(confirmed.canonical, true);
+  assert.equal(confirmed.blockHash, blockHash);
+  assert.equal(confirmed.blockHeight, 123);
+  assert.equal(confirmed.contract, "proof-of-work-tx-status-v2");
+
+  const pendingStatus = isolatedFunction(
+    API_PATH,
+    "bitcoinCoreTxStatusPayload",
+    {
+      bitcoinRpc: async (method) =>
+        method === "getrawtransaction"
+          ? { ok: true, result: { confirmations: 0, txid } }
+          : { ok: true, result: { time: 1_783_000_000 } },
+      errorSummary: (error) => error.message,
+      freshDataUnavailableError: unavailableError,
+    },
+  );
+  const pending = await pendingStatus(txid, "livenet");
+  assert.equal(pending.status, "pending");
+  assert.equal(pending.mempoolSeen, true);
+  assert.equal(
+    pending.mempoolFirstSeenAt,
+    new Date(1_783_000_000_000).toISOString(),
+  );
+
+  const absentStatus = isolatedFunction(
+    API_PATH,
+    "bitcoinCoreTxStatusPayload",
+    {
+      bitcoinRpc: async (method) => {
+        if (method === "getrawtransaction" || method === "getmempoolentry") {
+          return { error: { code: -5 }, ok: false };
+        }
+        if (method === "getindexinfo") {
+          return {
+            ok: true,
+            result: {
+              txindex: { best_block_height: 123, synced: true },
+            },
+          };
+        }
+        return {
+          ok: true,
+          result: {
+            blocks: 123,
+            chain: "main",
+            headers: 123,
+            initialblockdownload: false,
+            pruned: false,
+            verificationprogress: 1,
+          },
+        };
+      },
+      errorSummary: (error) => error.message,
+      freshDataUnavailableError: unavailableError,
+    },
+  );
+  const absent = await absentStatus(txid, "livenet");
+  assert.equal(absent.status, "dropped");
+  assert.equal(absent.absenceProven, true);
+
+  const missingTxindexStatus = isolatedFunction(
+    API_PATH,
+    "bitcoinCoreTxStatusPayload",
+    {
+      bitcoinRpc: async (method) => {
+        if (method === "getrawtransaction" || method === "getmempoolentry") {
+          return { error: { code: -5 }, ok: false };
+        }
+        if (method === "getindexinfo") {
+          return { ok: true, result: {} };
+        }
+        return {
+          ok: true,
+          result: {
+            blocks: 123,
+            chain: "main",
+            headers: 123,
+            initialblockdownload: false,
+            pruned: false,
+            verificationprogress: 1,
+          },
+        };
+      },
+      errorSummary: (error) => error.message,
+      freshDataUnavailableError: unavailableError,
+    },
+  );
+  await rejection(
+    missingTxindexStatus(txid, "livenet"),
+    (error) =>
+      error.statusCode === 503 && error.details?.code === "TX_STATUS_UNAVAILABLE",
+  );
+
+  const unavailableStatus = isolatedFunction(
+    API_PATH,
+    "bitcoinCoreTxStatusPayload",
+    {
+      bitcoinRpc: async () => {
+        throw new Error("rpc timeout");
+      },
+      errorSummary: (error) => error.message,
+      freshDataUnavailableError: unavailableError,
+    },
+  );
+  const failure = await rejection(
+    unavailableStatus(txid, "livenet"),
+    (error) =>
+      error.statusCode === 503 && error.details?.code === "TX_STATUS_UNAVAILABLE",
+  );
+  assert.match(failure.message, /lookup failed/iu);
 });
 
 check("pending transaction times never turn zero into the Unix epoch", () => {
@@ -6689,6 +7216,7 @@ check("Log coverage separates the latest event from the verified checkpoint", as
         stats: { total: 1 },
         totalCount: 1,
       }),
+      verifiedFreshLogCheckpointAfterRead: async () => ({ exactTip: true }),
     },
   );
   const page = await freshPage("livenet", "", new URLSearchParams("limit=1"));
@@ -6700,6 +7228,139 @@ check("Log coverage separates the latest event from the verified checkpoint", as
   const error = await rejection(
     freshPage("livenet", "", new URLSearchParams("limit=1")),
     (candidate) => candidate?.details?.code === "CANONICAL_LOG_HISTORY_MISMATCH",
+  );
+  assert.equal(error.statusCode, 503);
+
+  const canonicalFullItems = [
+    {
+      blockHash: "b".repeat(64),
+      canonicalMinerFeeCovered: true,
+      canonicalMinerFeeSats: 846,
+      confirmed: true,
+    },
+    { confirmed: false },
+  ];
+  let fullItems = canonicalFullItems;
+  let postReadCurrent = true;
+  const freshFull = isolatedFunction(API_PATH, "freshProofIndexLogPayload", {
+    activityStatsFromItems: (items, stats) => ({
+      ...stats,
+      pending: items.filter((item) => !item.confirmed).length,
+      total: items.length,
+    }),
+    activitySummaryPayload: async () => ({ marker: "summary" }),
+    freshDataUnavailableError: (message) => {
+      const candidate = new Error(message);
+      candidate.statusCode = 503;
+      return candidate;
+    },
+    payloadIndexedThroughBlockHash: (payload) =>
+      payload.indexedThroughBlockHash ?? "",
+    payloadSnapshotId: (payload) => payload.snapshotId ?? "",
+    proofIndexCanonicalActivityPayload: async () => ({
+      activity: fullItems,
+      canonicalMinerFeeCoverage: { complete: true },
+      indexedThroughBlock: 105,
+      latestEventBlock: 100,
+      ledgerGeneratedAt: "2026-07-14T12:00:00.000Z",
+      snapshotId: "snapshot-105",
+      snapshotTotalCount: 2,
+      source: "proof-indexer-events",
+      totalCount: 2,
+    }),
+    proofIndexPayloadIndexedThroughBlock: (payload) =>
+      Number(payload.indexedThroughBlock) || 0,
+    summaryPayloadWithCanonicalProvenance: async () => ({
+      consistency: { ok: true },
+      indexedAt: "2026-07-14T12:00:00.000Z",
+      indexedThroughBlock: 105,
+      indexedThroughBlockHash: "a".repeat(64),
+      ledgerGeneratedAt: "2026-07-14T12:00:00.000Z",
+      provenance: { ready: true },
+      snapshotId: "snapshot-105",
+      stats: { latestEventBlock: 100, pending: 1, total: 2 },
+      totalCount: 2,
+    }),
+    verifiedCanonicalMinerFeeCoverage: (value) =>
+      value?.complete === true ? value : null,
+    verifiedFreshLogCheckpointAfterRead: async () => {
+      if (!postReadCurrent) {
+        const candidate = new Error("Tip changed.");
+        candidate.details = { code: "CANONICAL_LOG_TIP_CHANGED" };
+        candidate.statusCode = 503;
+        throw candidate;
+      }
+      return { exactTip: true };
+    },
+  });
+  const fullPayload = await freshFull("livenet");
+  assert.equal(fullPayload.activity.length, 2);
+  assert.equal(fullPayload.indexedThroughBlock, 105);
+  assert.equal(fullPayload.provenance.surface, "log");
+  assert.equal(fullPayload.stats.pending, 1);
+  assert.equal(fullPayload.activity[0].blockHash, "b".repeat(64));
+  assert.equal(fullPayload.activity[0].canonicalMinerFeeSats, 846);
+  assert.equal(fullPayload.activity[0].canonicalMinerFeeCovered, true);
+  assert.equal(fullPayload.activity[1].blockHash, undefined);
+  assert.equal(fullPayload.canonicalMinerFeeCoverage.complete, true);
+  assert.equal(
+    fullPayload.stats.canonicalMinerFeeCoverage.complete,
+    true,
+  );
+
+  fullItems = [{ confirmed: true }, { confirmed: true }];
+  const fullError = await rejection(
+    freshFull("livenet"),
+    (candidate) => candidate?.details?.code === "CANONICAL_LOG_MISMATCH",
+  );
+  assert.equal(fullError.statusCode, 503);
+
+  fullItems = canonicalFullItems;
+  postReadCurrent = false;
+  const tipRaceError = await rejection(
+    freshFull("livenet"),
+    (candidate) => candidate?.details?.code === "CANONICAL_LOG_TIP_CHANGED",
+  );
+  assert.equal(tipRaceError.statusCode, 503);
+});
+
+check("fresh Log post-read checkpoint detects an exact-tip race", async () => {
+  let exactTip = true;
+  const checkpointHash = "a".repeat(64);
+  const verifyAfterRead = isolatedFunction(
+    API_PATH,
+    "verifiedFreshLogCheckpointAfterRead",
+    {
+      freshDataUnavailableError: (message) => {
+        const error = new Error(message);
+        error.statusCode = 503;
+        return error;
+      },
+      payloadIndexedThroughBlockHash: (payload) =>
+        payload.indexedThroughBlockHash,
+      payloadSnapshotId: (payload) => payload.snapshotId,
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        payload.indexedThroughBlock,
+      verifiedSummaryPayloadCheckpoint: async () => ({
+        exactTip,
+        indexedThroughBlock: 105,
+        indexedThroughBlockHash: checkpointHash,
+      }),
+    },
+  );
+  const summary = {
+    indexedThroughBlock: 105,
+    indexedThroughBlockHash: checkpointHash,
+    snapshotId: "snapshot-105",
+  };
+  assert.equal(
+    (await verifyAfterRead(summary, "livenet", "log")).exactTip,
+    true,
+  );
+  exactTip = false;
+  const error = await rejection(
+    verifyAfterRead(summary, "livenet", "log"),
+    (candidate) => candidate?.details?.code === "CANONICAL_LOG_TIP_CHANGED",
   );
   assert.equal(error.statusCode, 503);
 });
