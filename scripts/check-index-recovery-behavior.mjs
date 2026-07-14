@@ -5146,6 +5146,10 @@ check("worker status transitions are proven, race-safe, and projection-safe", as
   assert.equal(pendingQueries.length, 5);
   assert.match(pendingQueries[1].sql, /block_hash = NULL/iu);
   assert.match(pendingQueries[2].sql, /status = 'pending'/iu);
+  assert.match(
+    pendingQueries[2].sql,
+    /ELSE LEAST\([\s\S]*event_time[\s\S]*to_timestamp/iu,
+  );
   assert.match(pendingQueries[2].sql, /WHERE[\s\S]*status = 'pending'/iu);
 
   const confirmedQueries = [];

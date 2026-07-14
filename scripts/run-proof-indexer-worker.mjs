@@ -429,7 +429,10 @@ async function updateTransactionStatus(client, txid, status, payload) {
             WHEN event_time IS NULL
               OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
             THEN to_timestamp($3::double precision / 1000)
-            ELSE event_time
+            ELSE LEAST(
+              event_time,
+              to_timestamp($3::double precision / 1000)
+            )
           END,
           payload =
             (
@@ -448,7 +451,10 @@ async function updateTransactionStatus(client, txid, status, payload) {
                 WHEN event_time IS NULL
                   OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
                 THEN to_timestamp($3::double precision / 1000)
-                ELSE event_time
+                ELSE LEAST(
+                  event_time,
+                  to_timestamp($3::double precision / 1000)
+                )
               END,
               'status', 'pending'
             ),
@@ -465,7 +471,10 @@ async function updateTransactionStatus(client, txid, status, payload) {
             WHEN event_time IS NULL
               OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
             THEN to_timestamp($3::double precision / 1000)
-            ELSE event_time
+            ELSE LEAST(
+              event_time,
+              to_timestamp($3::double precision / 1000)
+            )
           END,
           message =
             (message - 'blockHash' - 'blockHeight' - 'blockTime' - 'height')
@@ -482,7 +491,10 @@ async function updateTransactionStatus(client, txid, status, payload) {
             WHEN event_time IS NULL
               OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
             THEN to_timestamp($3::double precision / 1000)
-            ELSE event_time
+            ELSE LEAST(
+              event_time,
+              to_timestamp($3::double precision / 1000)
+            )
           END,
           metadata =
             (metadata - 'blockHash' - 'blockHeight' - 'blockTime' - 'height')
