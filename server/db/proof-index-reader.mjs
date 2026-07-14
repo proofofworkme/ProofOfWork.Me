@@ -135,6 +135,21 @@ function dateIso(value, fallback = new Date()) {
   return date.toISOString();
 }
 
+const BITCOIN_GENESIS_TIME_MS = Date.UTC(2009, 0, 3, 18, 15, 5);
+
+function plausibleBitcoinEventTime(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === "") {
+      continue;
+    }
+    const parsed = value instanceof Date ? value.getTime() : Date.parse(value);
+    if (Number.isFinite(parsed) && parsed >= BITCOIN_GENESIS_TIME_MS) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 function safeBlockHeight(value) {
   const height = Number(value);
   return Number.isSafeInteger(height) && height > 0 ? height : 0;
@@ -2771,7 +2786,15 @@ function normalizeHistoryEventItem(item, network, { publicOnly = false } = {}) {
     typeof item?.confirmed === "boolean"
       ? item.confirmed
       : normalizedLowerText(item?.status) === "confirmed";
-  const createdAt = dateIso(item?.createdAt);
+  const createdAt = dateIso(
+    plausibleBitcoinEventTime(
+      item?.createdAt,
+      item?.blockTime,
+      item?.timestamp,
+      item?.confirmedAt,
+      item?.indexedAt,
+    ),
+  );
   const title = normalizedText(item?.title) || eventKindTitle(kind, confirmed);
   const description =
     normalizedText(item?.description) ||
@@ -2898,9 +2921,23 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
 
   const result = await pool.query(
     `
-      SELECT txid, status, confirmed_at, dropped_at, last_seen_at, updated_at
-      FROM proof_indexer.transactions
-      WHERE network = $1 AND txid = $2
+      SELECT
+        transaction_row.txid,
+        transaction_row.status,
+        transaction_row.confirmed_at,
+        transaction_row.dropped_at,
+        transaction_row.last_seen_at,
+        transaction_row.updated_at,
+        transaction_row.block_hash,
+        transaction_row.block_height,
+        canonical_block.canonical AS block_canonical
+      FROM proof_indexer.transactions transaction_row
+      LEFT JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = transaction_row.network
+       AND canonical_block.block_hash = transaction_row.block_hash
+       AND canonical_block.height = transaction_row.block_height
+       AND canonical_block.canonical = true
+      WHERE transaction_row.network = $1 AND transaction_row.txid = $2
       LIMIT 1
     `,
     [network, String(txid ?? "").toLowerCase()],
@@ -2913,6 +2950,18 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
   const status = normalizedStatus(row.status);
   if (!status) {
     return null;
+  }
+  if (status === "confirmed") {
+    const blockHeight = Number(row.block_height);
+    const blockHash = String(row.block_hash ?? "").trim().toLowerCase();
+    if (
+      !Number.isSafeInteger(blockHeight) ||
+      blockHeight <= 0 ||
+      !/^[0-9a-f]{64}$/u.test(blockHash) ||
+      row.block_canonical !== true
+    ) {
+      return null;
+    }
   }
   if (status !== "confirmed" && !options.includeUnconfirmed) {
     return null;
@@ -3887,7 +3936,12 @@ export async function proofIndexTokenListingCloseOutspendPayload(
   };
 }
 
-export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
+export async function proofIndexLogHistoryPayload(
+  network,
+  kind,
+  searchParams,
+  options = {},
+) {
   const pool = proofIndexPool();
   if (!pool) {
     return null;
@@ -3942,8 +3996,8 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     }
   }
 
-  const whereClause = conditions.join(" AND ");
   if (exactQueryTxid) {
+    const whereClause = conditions.join(" AND ");
     const snapshot = await ledgerSnapshotMetadata(
       pool,
       network,
@@ -4077,16 +4131,47 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     return queryDisposition ? { ...page, queryDisposition } : page;
   }
 
-  const snapshot = await ledgerSnapshot(pool, network, pagination.snapshotId);
+  const currentRelational = options.currentRelational === true;
+  const snapshot = currentRelational
+    ? await ledgerSnapshotMetadata(pool, network, pagination.snapshotId)
+    : await ledgerSnapshot(pool, network, pagination.snapshotId);
   if (!snapshot) {
     return null;
   }
-  const snapshotPage = logHistoryPageFromSnapshot(
-    snapshot,
-    network,
-    requestedKind,
-    pagination,
-  );
+  let snapshotHeight = 0;
+  let snapshotGeneratedAt = null;
+  if (currentRelational) {
+    snapshotHeight = rowNumber(snapshot, "indexed_through_block");
+    snapshotGeneratedAt = snapshot.generated_at ?? null;
+    if (snapshotHeight <= 0 || !snapshotGeneratedAt) {
+      return null;
+    }
+    const snapshotHeightParam = addParam(snapshotHeight);
+    const snapshotTimeParam = addParam(snapshotGeneratedAt);
+    conditions.push(`
+      e.updated_at <= ${snapshotTimeParam}::timestamptz
+      AND (
+        (
+          e.status = 'confirmed'
+          AND e.block_height > 0
+          AND e.block_height <= ${snapshotHeightParam}
+        )
+        OR (
+          e.status = 'pending'
+          AND e.created_at <= ${snapshotTimeParam}::timestamptz
+        )
+      )
+    `);
+  }
+  const whereClause = conditions.join(" AND ");
+  const snapshotPage = currentRelational
+    ? null
+    : logHistoryPageFromSnapshot(
+        snapshot,
+        network,
+        requestedKind,
+        pagination,
+      );
   if (
     snapshotPage &&
     !((requestedKind || pagination.query) && snapshotPage.totalCount === 0)
@@ -4103,9 +4188,48 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     params,
   );
   const totalCount = rowNumber(countResult.rows[0], "total_count");
-  const indexedThroughBlock = rowNumber(
+  const snapshotTotalCount = currentRelational
+    ? rowNumber(
+        (
+          await pool.query(
+            `
+              SELECT count(*) AS total_count
+              FROM proof_indexer.events e
+              WHERE e.network = $1
+                AND e.valid = true
+                AND e.status IN ('confirmed', 'pending')
+                AND e.kind = ANY($2::text[])
+                AND e.updated_at <= $4::timestamptz
+                AND (
+                  (
+                    e.status = 'confirmed'
+                    AND e.block_height > 0
+                    AND e.block_height <= $3
+                  )
+                  OR (
+                    e.status = 'pending'
+                    AND e.created_at <= $4::timestamptz
+                  )
+                )
+            `,
+            [
+              network,
+              [...PUBLIC_LOG_EVENT_KINDS],
+              snapshotHeight,
+              snapshotGeneratedAt,
+            ],
+          )
+        ).rows[0],
+        "total_count",
+      )
+    : totalCount;
+  const latestEventBlock = rowNumber(
     countResult.rows[0],
     "indexed_through_block",
+  );
+  const indexedThroughBlock = Math.max(
+    latestEventBlock,
+    currentRelational ? rowNumber(snapshot, "indexed_through_block") : 0,
   );
 
   if (
@@ -4135,7 +4259,7 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
       `,
       params,
     );
-    return logHistoryPageFromItems({
+    const page = logHistoryPageFromItems({
       indexedAt: snapshot.generated_at
         ? dateIso(snapshot.generated_at)
         : new Date().toISOString(),
@@ -4149,6 +4273,9 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
       snapshot,
       source: "proof-indexer",
     });
+    return currentRelational
+      ? { ...page, latestEventBlock, snapshotTotalCount }
+      : page;
   }
 
   const rowParams = [...params, pagination.limit, pagination.offset];
@@ -4193,6 +4320,8 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     end,
     indexedAt,
     indexedThroughBlock,
+    ...(currentRelational ? { latestEventBlock } : {}),
+    ...(currentRelational ? { snapshotTotalCount } : {}),
     items: normalizeHistoryEventRows(rowsResult.rows, network, {
       publicOnly: true,
     }),
@@ -9858,7 +9987,16 @@ function eventRowPayload(row, network) {
     participants: eventPayloadParticipants(payload),
     status: row.status ?? payload.status,
     confirmed: row.status ? row.status === "confirmed" : payload.confirmed,
-    createdAt: dateIso(row.event_time ?? row.block_time ?? row.created_at),
+    createdAt: dateIso(
+      plausibleBitcoinEventTime(
+        row.event_time,
+        row.block_time,
+        payload.blockTime,
+        payload.timestamp,
+        payload.createdAt,
+        row.created_at,
+      ),
+    ),
     network,
   };
 }

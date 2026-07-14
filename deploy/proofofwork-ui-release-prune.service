@@ -1,0 +1,14 @@
+[Unit]
+Description=Prune managed ProofOfWork UI release backups
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/proofofwork-release-prune /var/backups/proofofwork-ui/releases 5
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/proofofwork-ui/releases
+CapabilityBoundingSet=
+AmbientCapabilities=

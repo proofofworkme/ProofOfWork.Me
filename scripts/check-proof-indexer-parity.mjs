@@ -287,6 +287,22 @@ try {
         (SELECT count(*) FROM proof_indexer.transactions WHERE network = $1 AND status = 'confirmed') AS transactions_confirmed,
         (SELECT count(*) FROM proof_indexer.transactions WHERE network = $1 AND status = 'pending') AS transactions_pending,
         (SELECT count(*) FROM proof_indexer.transactions WHERE network = $1 AND status = 'dropped') AS transactions_dropped,
+        (
+          SELECT count(*)
+          FROM proof_indexer.transactions transaction_row
+          LEFT JOIN proof_indexer.blocks canonical_block
+            ON canonical_block.network = transaction_row.network
+           AND canonical_block.block_hash = transaction_row.block_hash
+           AND canonical_block.height = transaction_row.block_height
+           AND canonical_block.canonical = true
+          WHERE transaction_row.network = $1
+            AND transaction_row.status = 'confirmed'
+            AND (
+              transaction_row.block_height IS NULL
+              OR transaction_row.block_hash IS NULL
+              OR canonical_block.block_hash IS NULL
+            )
+        ) AS confirmed_transactions_without_canonical_block,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1) AS events_total,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed') AS events_confirmed,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'pending') AS events_pending,
@@ -483,6 +499,17 @@ try {
       pendingTransactions: rowNumber(counts, "transactions_pending"),
     },
     "warning",
+  );
+  check(
+    checks,
+    "confirmed-transactions-have-canonical-block-proof",
+    rowNumber(counts, "confirmed_transactions_without_canonical_block") === 0,
+    {
+      missing: rowNumber(
+        counts,
+        "confirmed_transactions_without_canonical_block",
+      ),
+    },
   );
   check(
     checks,

@@ -168,24 +168,6 @@ log.proofofwork.me {
 	import common_activity_app
 }
 
-activity.proofofwork.me {
-	import common_headers
-	redir https://log.proofofwork.me{uri} permanent
-}
-
-(common_pay2speak_app) {
-	import common_static_policy
-	handle {
-		root * /var/www/proofofwork-pay2speak
-		try_files {path} /index.html
-		file_server
-	}
-}
-
-pay2speak.proofofwork.me {
-	import common_pay2speak_app
-}
-
 (common_nft_app) {
 	import common_static_policy
 	handle {

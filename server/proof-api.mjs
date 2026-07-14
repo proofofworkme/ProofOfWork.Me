@@ -5601,6 +5601,28 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
   );
   const confirmations = Number(raw.confirmations ?? 0);
   const confirmed = confirmations > 0;
+  const mempoolEntry = confirmed
+    ? null
+    : await bitcoinRpc("getmempoolentry", [normalizedTxid]).catch(() => null);
+  const blockTime = Number(raw.blocktime ?? raw.time);
+  const mempoolTime = Number(
+    mempoolEntry?.ok ? mempoolEntry.result?.time : undefined,
+  );
+  const status = {
+    confirmed,
+    ...(String(raw.blockhash ?? "").trim()
+      ? { block_hash: String(raw.blockhash).trim() }
+      : {}),
+    ...(Number(raw.height) > 0
+      ? { block_height: Number(raw.height) }
+      : {}),
+    ...(Number.isFinite(blockTime) && blockTime > 0
+      ? { block_time: blockTime }
+      : {}),
+    ...(Number.isFinite(mempoolTime) && mempoolTime > 0
+      ? { mempool_time: mempoolTime }
+      : {}),
+  };
   const tx = {
     ...(options.requireCanonicalPrevouts
       ? { _powCanonicalRpcHydration: true }
@@ -5610,12 +5632,7 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
       : undefined,
     locktime: Number(raw.locktime ?? 0),
     size: Number(raw.size ?? 0),
-    status: {
-      block_hash: String(raw.blockhash ?? ""),
-      block_height: Number(raw.height ?? 0) || undefined,
-      block_time: Number(raw.blocktime ?? raw.time ?? 0),
-      confirmed,
-    },
+    status,
     txid: String(raw.txid ?? normalizedTxid).toLowerCase(),
     version: Number(raw.version ?? 0),
     vin,
@@ -5792,6 +5809,13 @@ async function fetchTransactionFromElectrum(
   );
 
   const confirmed = Number(raw.confirmations ?? 0) > 0;
+  const blockTime = Number(raw.blocktime ?? raw.time);
+  const mempoolEntry = confirmed
+    ? null
+    : await bitcoinRpc("getmempoolentry", [normalizedTxid]).catch(() => null);
+  const mempoolTime = Number(
+    mempoolEntry?.ok ? mempoolEntry.result?.time : undefined,
+  );
   const tx = {
     fee: Number.isFinite(Number(raw.fee))
       ? Math.round(Number(raw.fee) * 100_000_000)
@@ -5799,9 +5823,16 @@ async function fetchTransactionFromElectrum(
     locktime: Number(raw.locktime ?? 0),
     size: Number(raw.size ?? 0),
     status: {
-      block_hash: String(raw.blockhash ?? ""),
-      block_time: Number(raw.blocktime ?? raw.time ?? 0),
       confirmed,
+      ...(String(raw.blockhash ?? "").trim()
+        ? { block_hash: String(raw.blockhash).trim() }
+        : {}),
+      ...(Number.isFinite(blockTime) && blockTime > 0
+        ? { block_time: blockTime }
+        : {}),
+      ...(Number.isFinite(mempoolTime) && mempoolTime > 0
+        ? { mempool_time: mempoolTime }
+        : {}),
     },
     txid: String(raw.txid ?? normalizedTxid).toLowerCase(),
     version: Number(raw.version ?? 0),
@@ -9509,9 +9540,13 @@ function emptyTokenState() {
 }
 
 function tokenTransactionTime(tx) {
-  return typeof tx.status?.block_time === "number"
-    ? tx.status.block_time * 1000
-    : Date.now();
+  for (const value of [tx.status?.block_time, tx.status?.mempool_time]) {
+    const seconds = Number(value);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return seconds * 1000;
+    }
+  }
+  return Date.now();
 }
 
 function tokenProtocolSortedTransactions(txs) {
@@ -12179,10 +12214,7 @@ function mailActivityItemFromTransaction(tx, network) {
   }
 
   const confirmed = transactionConfirmed(tx);
-  const blockTime =
-    typeof tx.status?.block_time === "number"
-      ? tx.status.block_time * 1000
-      : Date.now();
+  const blockTime = tokenTransactionTime(tx);
   const createdAt = new Date(blockTime).toISOString();
   const recipients = protocolPaymentOutputs(vout);
   const attachedCredits = attachedWorkCreditsFromVout(vout, recipients, network);
@@ -15521,10 +15553,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       return [];
     }
 
-    const blockTime =
-      typeof tx.status?.block_time === "number"
-        ? tx.status.block_time * 1000
-        : Date.now();
+    const blockTime = tokenTransactionTime(tx);
     const baseEvent = {
       amountSats: amount,
       blockHash: transactionBlockHash(tx),
@@ -16322,10 +16351,7 @@ function inboxMessagesFromTransactions(txs, address, network) {
       return [];
     }
 
-    const blockTime =
-      typeof tx.status?.block_time === "number"
-        ? tx.status.block_time * 1000
-        : Date.now();
+    const blockTime = tokenTransactionTime(tx);
     const sender = senderAddress(vin, address);
     const message = {
       amountSats: amount,
@@ -16468,10 +16494,7 @@ function sentMessagesFromTransactions(txs, address, network) {
     }
 
     const confirmed = transactionConfirmed(tx);
-    const blockTime =
-      typeof tx.status?.block_time === "number"
-        ? tx.status.block_time * 1000
-        : Date.now();
+    const blockTime = tokenTransactionTime(tx);
     const createdAt = new Date(blockTime).toISOString();
 
     return [
@@ -22362,9 +22385,7 @@ async function workActiveListingHistoryPageFromTxidQuery(
   );
   if (!Array.isArray(outspends)) {
     return paginatedHistoryPayload({
-      indexedAt: tx.status?.block_time
-        ? new Date(tx.status.block_time * 1000).toISOString()
-        : new Date().toISOString(),
+      indexedAt: new Date(tokenTransactionTime(tx)).toISOString(),
       items: [],
       kind: "listings",
       network,
@@ -22383,9 +22404,7 @@ async function workActiveListingHistoryPageFromTxidQuery(
   });
 
   return paginatedHistoryPayload({
-    indexedAt: tx.status?.block_time
-      ? new Date(tx.status.block_time * 1000).toISOString()
-      : new Date().toISOString(),
+    indexedAt: new Date(tokenTransactionTime(tx)).toISOString(),
     items: activeListings,
     kind: "listings",
     network,
@@ -22599,12 +22618,25 @@ function compactRegistrySummaryPayload(payload) {
   };
 }
 
-function compactActivitySummaryPayload(payload) {
+function compactActivitySummaryPayload(payload, verifiedIndexedThroughBlock = 0) {
   const activity = Array.isArray(payload?.activity) ? payload.activity : [];
-  const stats =
+  const sourceStats =
     payload?.summaryOnly === true
       ? payload?.stats
       : activityStatsFromItems(activity, payload?.stats ?? {});
+  const latestEventBlock = Math.max(
+    Number(sourceStats?.latestEventBlock) || 0,
+    Number(sourceStats?.indexedThroughBlock) || 0,
+    Number(indexedThroughBlockFromItems(activity)) || 0,
+  );
+  const coverage = Number(verifiedIndexedThroughBlock);
+  const stats = {
+    ...(sourceStats ?? {}),
+    ...(latestEventBlock > 0 ? { latestEventBlock } : {}),
+    ...(Number.isSafeInteger(coverage) && coverage > 0
+      ? { indexedThroughBlock: coverage }
+      : {}),
+  };
   const compactActivity = recentByCreatedAt(activity, SUMMARY_ACTIVITY_LIMIT);
   const totalCount = Number(
     payload?.totalCount ?? stats?.total ?? activity.length,
@@ -25518,7 +25550,10 @@ function growthSummaryPayloadFromLedger(ledger) {
     workFloor,
   } = ledger;
   const registrySummary = compactRegistrySummaryPayload(registryState);
-  const activitySummary = compactActivitySummaryPayload(activityPayload);
+  const activitySummary = compactActivitySummaryPayload(
+    activityPayload,
+    ledger.metrics?.indexedThroughBlock,
+  );
   const tokenSummary = compactTokenSummaryPayload(tokenState);
   const registry = attachLedgerMetadata(
     {
@@ -27866,7 +27901,10 @@ async function internalCanonicalSummaryPayload(network) {
       hashBoundLedger,
     ),
     logSummary: attachLedgerMetadata(
-      compactActivitySummaryPayload(hashBoundLedger.activityPayload),
+      compactActivitySummaryPayload(
+        hashBoundLedger.activityPayload,
+        hashBoundLedger.metrics?.indexedThroughBlock,
+      ),
       hashBoundLedger,
     ),
     marketplaceSummary: marketplaceSummaryPayloadFromLedger(hashBoundLedger),
@@ -28571,6 +28609,96 @@ async function mergedLogActivityPayload(network, fresh = false) {
   );
 }
 
+async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
+  const requestedKind = String(kind ?? "").trim().toLowerCase();
+  const eligibility = proofIndexLogHistoryReadEligibility(
+    requestedKind,
+    searchParams,
+  );
+  const summary = await summaryPayloadWithCanonicalProvenance(
+    await activitySummaryPayload(network, true),
+    network,
+    true,
+    "log-summary",
+  );
+  const summarySnapshotId = payloadSnapshotId(summary);
+  const requestedSnapshotId = String(
+    eligibility.pagination.snapshotId ?? "",
+  ).trim();
+  if (
+    !summarySnapshotId ||
+    (requestedSnapshotId && requestedSnapshotId !== summarySnapshotId)
+  ) {
+    const error = freshDataUnavailableError(
+      "Fresh Log history cannot bind to the exact canonical Log summary.",
+    );
+    error.details = {
+      code: "CANONICAL_LOG_HISTORY_SNAPSHOT_MISMATCH",
+      requestedSnapshotId: requestedSnapshotId || null,
+      summarySnapshotId: summarySnapshotId || null,
+    };
+    throw error;
+  }
+  const boundSearchParams = new URLSearchParams(searchParams ?? undefined);
+  boundSearchParams.set("snapshot", summarySnapshotId);
+  const page = await proofIndexLogHistoryPayload(
+    network,
+    requestedKind,
+    boundSearchParams,
+    { currentRelational: true },
+  );
+  if (!page) {
+    throw freshDataUnavailableError(
+      "Fresh relational Log history is unavailable.",
+    );
+  }
+  const pageHeight = proofIndexPayloadIndexedThroughBlock(page);
+  const summaryHeight = proofIndexPayloadIndexedThroughBlock(summary);
+  const pageSnapshotId = payloadSnapshotId(page);
+  const pageTotal = Number(page.totalCount ?? page.items?.length ?? 0);
+  const pageSnapshotTotal = Number(page.snapshotTotalCount ?? -1);
+  const summaryTotal = Number(
+    summary.totalCount ?? summary.stats?.total ?? summary.activity?.length ?? 0,
+  );
+  if (
+    pageHeight <= 0 ||
+    pageHeight !== summaryHeight ||
+    !pageSnapshotId ||
+    pageSnapshotId !== summarySnapshotId ||
+    pageSnapshotTotal !== summaryTotal
+  ) {
+    const error = freshDataUnavailableError(
+      "Fresh Log history does not match the exact canonical Log summary.",
+    );
+    error.details = {
+      code: "CANONICAL_LOG_HISTORY_MISMATCH",
+      pageHeight: pageHeight || null,
+      pageSnapshotId: pageSnapshotId || null,
+      pageSnapshotTotal,
+      pageTotal,
+      requestedKind: requestedKind || null,
+      summaryHeight: summaryHeight || null,
+      summarySnapshotId: summarySnapshotId || null,
+      summaryTotal,
+    };
+    throw error;
+  }
+
+  return {
+    ...page,
+    consistency: summary.consistency,
+    indexedAt: summary.indexedAt ?? page.indexedAt,
+    indexedThroughBlock: summaryHeight,
+    indexedThroughBlockHash: payloadIndexedThroughBlockHash(summary),
+    ledgerGeneratedAt: summary.ledgerGeneratedAt ?? page.ledgerGeneratedAt,
+    provenance: {
+      ...(summary.provenance ?? {}),
+      surface: "log-history",
+    },
+    snapshotId: summarySnapshotId,
+  };
+}
+
 async function registrySummaryPayload(network, fresh = false) {
   let payload;
   if (fresh) {
@@ -28628,7 +28756,10 @@ async function activitySummaryPayload(network, fresh = false) {
     );
   }
   return attachLedgerMetadata(
-    compactActivitySummaryPayload(ledger.activityPayload),
+    compactActivitySummaryPayload(
+      ledger.activityPayload,
+      ledger.metrics?.indexedThroughBlock,
+    ),
     ledger,
   );
 }
@@ -38466,45 +38597,50 @@ async function handleRequest(request, response) {
         )
           ? logHistoryEligibility.pagination.query
           : "";
-        if (!freshRead || exactLogQueryTxid) {
-          const indexedPayload = await proofIndexLogHistoryPayload(
-            network,
-            historyKind,
-            url.searchParams,
-          ).catch((error) => {
-            console.error(
-              `Proof index filtered log read failed: ${errorSummary(error)}`,
-            );
-            return null;
-          });
-          if (indexedPayload) {
-            const indexedTotal = Number(
-              indexedPayload.totalCount ?? indexedPayload.items?.length ?? 0,
-            );
-            const definitiveEmpty = new Set([
-              "confirmed-invalid-nonpublic",
-              "confirmed-nonpublic",
-              "nonpublic-kind-filter",
-              "terminal-nonpublic",
-            ]).has(indexedPayload.queryDisposition);
-            const responsePayload =
-              exactLogQueryTxid && indexedTotal === 0 && !definitiveEmpty
-                ? await exactLogHistoryMissPayload(
-                    indexedPayload,
-                    network,
-                    exactLogQueryTxid,
-                  )
-                : indexedPayload;
-            jsonResponse(
-              response,
-              200,
-              responsePayload,
-              freshRead
-                ? FRESH_READ_CACHE_CONTROL
-                : EXPENSIVE_READ_CACHE_CONTROL,
-            );
-            return;
-          }
+        const indexedPayload =
+          freshRead && !exactLogQueryTxid
+            ? await freshProofIndexLogHistoryPayload(
+                network,
+                historyKind,
+                url.searchParams,
+              )
+            : await proofIndexLogHistoryPayload(
+                network,
+                historyKind,
+                url.searchParams,
+              ).catch((error) => {
+                console.error(
+                  `Proof index filtered log read failed: ${errorSummary(error)}`,
+                );
+                return null;
+              });
+        if (indexedPayload) {
+          const indexedTotal = Number(
+            indexedPayload.totalCount ?? indexedPayload.items?.length ?? 0,
+          );
+          const definitiveEmpty = new Set([
+            "confirmed-invalid-nonpublic",
+            "confirmed-nonpublic",
+            "nonpublic-kind-filter",
+            "terminal-nonpublic",
+          ]).has(indexedPayload.queryDisposition);
+          const responsePayload =
+            exactLogQueryTxid && indexedTotal === 0 && !definitiveEmpty
+              ? await exactLogHistoryMissPayload(
+                  indexedPayload,
+                  network,
+                  exactLogQueryTxid,
+                )
+              : indexedPayload;
+          jsonResponse(
+            response,
+            200,
+            responsePayload,
+            freshRead
+              ? FRESH_READ_CACHE_CONTROL
+              : EXPENSIVE_READ_CACHE_CONTROL,
+          );
+          return;
         }
         if (exactLogQueryTxid) {
           throw freshDataUnavailableError(

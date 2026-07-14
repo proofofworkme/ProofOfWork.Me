@@ -3294,15 +3294,21 @@ function isHexTxid(value) {
 }
 
 function itemTxid(item) {
+  const tokenId = String(item?.tokenId ?? "").trim().toLowerCase();
   const candidates = [
     item?.txid,
     item?.eventTxid,
     item?.listingId,
     item?.closedTxid,
     item?.sealTxid,
-    item?.tokenId,
   ];
-  return String(candidates.find(isHexTxid) ?? "").toLowerCase();
+  const directTxid = String(candidates.find(isHexTxid) ?? "").toLowerCase();
+  if (directTxid) {
+    return BOND_TOKEN_IDS.has(tokenId) && directTxid === tokenId
+      ? ""
+      : directTxid;
+  }
+  return isHexTxid(tokenId) && !BOND_TOKEN_IDS.has(tokenId) ? tokenId : "";
 }
 
 function itemStatus(item) {
@@ -3318,18 +3324,37 @@ function itemStatus(item) {
 
 function itemTime(item) {
   const kind = String(item?.kind ?? item?.action ?? "").toLowerCase();
-  if (kind === "token-listing-sealed" && item?.sealAt) {
-    return item.sealAt;
+  const plausibleTime = (...values) => {
+    for (const value of values) {
+      if (value === null || value === undefined || value === "") {
+        continue;
+      }
+      const parsed = Date.parse(value);
+      if (Number.isFinite(parsed) && parsed >= Date.UTC(2009, 0, 3, 18, 15, 5)) {
+        return value;
+      }
+    }
+    return null;
+  };
+  if (kind === "token-listing-sealed") {
+    const sealTime = plausibleTime(item?.sealAt);
+    if (sealTime) {
+      return sealTime;
+    }
   }
-  if (kind === "token-listing-closed" && item?.closedAt) {
-    return item.closedAt;
+  if (kind === "token-listing-closed") {
+    const closedTime = plausibleTime(item?.closedAt);
+    if (closedTime) {
+      return closedTime;
+    }
   }
-  return (
-    item?.createdAt ??
-    item?.confirmedAt ??
-    item?.indexedAt ??
-    item?.updatedAt ??
-    null
+  return plausibleTime(
+    item?.createdAt,
+    item?.blockTime,
+    item?.timestamp,
+    item?.confirmedAt,
+    item?.indexedAt,
+    item?.updatedAt,
   );
 }
 
@@ -3413,16 +3438,18 @@ function normalizedBondTitle(item, status, bondTag) {
 }
 
 function normalizedEventItem(item, kind, status) {
+  const eventTime = itemTime(item);
+  const timestampedItem = eventTime ? { ...item, createdAt: eventTime } : item;
   const bondTag = bondTagForKind(kind);
   if (!bondTag) {
-    return item;
+    return timestampedItem;
   }
   return {
-    ...item,
-    detail: normalizedText(item?.detail) || bondTag.memo,
+    ...timestampedItem,
+    detail: normalizedText(timestampedItem?.detail) || bondTag.memo,
     kind: bondTag.kind,
-    tags: normalizedBondTags(item?.tags, bondTag),
-    title: normalizedBondTitle(item, status, bondTag),
+    tags: normalizedBondTags(timestampedItem?.tags, bondTag),
+    title: normalizedBondTitle(timestampedItem, status, bondTag),
   };
 }
 
@@ -5229,29 +5256,40 @@ async function upsertTransaction(client, item, txid, status, sourceLabel) {
         now(),
         now(),
         CASE WHEN $3 = 'confirmed' THEN COALESCE($4::timestamptz, now()) ELSE NULL END,
-        $5,
-        $4::timestamptz,
+        CASE WHEN $3 = 'confirmed' THEN $5 ELSE NULL END,
+        CASE WHEN $3 = 'confirmed' THEN $4::timestamptz ELSE NULL END,
         $6,
         $7::jsonb
       )
       ON CONFLICT (network, txid)
       DO UPDATE SET
-        status = EXCLUDED.status,
+        status = CASE
+          WHEN proof_indexer.transactions.raw_tx ? 'canonicalBlockScan'
+            AND proof_indexer.transactions.status = 'confirmed'
+          THEN proof_indexer.transactions.status
+          ELSE EXCLUDED.status
+        END,
         last_seen_at = now(),
         confirmed_at = CASE
           WHEN proof_indexer.transactions.raw_tx ? 'canonicalBlockScan'
             THEN proof_indexer.transactions.confirmed_at
-          ELSE COALESCE(proof_indexer.transactions.confirmed_at, EXCLUDED.confirmed_at)
+          WHEN EXCLUDED.status = 'confirmed'
+            THEN COALESCE(proof_indexer.transactions.confirmed_at, EXCLUDED.confirmed_at)
+          ELSE NULL
         END,
         block_height = CASE
           WHEN proof_indexer.transactions.raw_tx ? 'canonicalBlockScan'
             THEN proof_indexer.transactions.block_height
-          ELSE COALESCE(EXCLUDED.block_height, proof_indexer.transactions.block_height)
+          WHEN EXCLUDED.status = 'confirmed'
+            THEN COALESCE(EXCLUDED.block_height, proof_indexer.transactions.block_height)
+          ELSE NULL
         END,
         block_time = CASE
           WHEN proof_indexer.transactions.raw_tx ? 'canonicalBlockScan'
             THEN proof_indexer.transactions.block_time
-          ELSE COALESCE(EXCLUDED.block_time, proof_indexer.transactions.block_time)
+          WHEN EXCLUDED.status = 'confirmed'
+            THEN COALESCE(EXCLUDED.block_time, proof_indexer.transactions.block_time)
+          ELSE NULL
         END,
         source = CASE
           WHEN proof_indexer.transactions.raw_tx ? 'canonicalBlockScan'
@@ -5356,9 +5394,24 @@ async function upsertEvent(client, sourceLabel, item) {
         validation_errors = EXCLUDED.validation_errors,
         amount_sats = EXCLUDED.amount_sats,
         data_bytes = EXCLUDED.data_bytes,
-        block_height = COALESCE(EXCLUDED.block_height, proof_indexer.events.block_height),
-        block_time = COALESCE(EXCLUDED.block_time, proof_indexer.events.block_time),
-        event_time = COALESCE(EXCLUDED.event_time, proof_indexer.events.event_time),
+        block_height = CASE
+          WHEN EXCLUDED.status = 'confirmed'
+            THEN COALESCE(EXCLUDED.block_height, proof_indexer.events.block_height)
+          ELSE NULL
+        END,
+        block_time = CASE
+          WHEN EXCLUDED.status = 'confirmed'
+            THEN COALESCE(EXCLUDED.block_time, proof_indexer.events.block_time)
+          ELSE NULL
+        END,
+        event_time = CASE
+          WHEN EXCLUDED.status = 'confirmed'
+            THEN COALESCE(EXCLUDED.block_time, EXCLUDED.event_time, proof_indexer.events.event_time)
+          WHEN proof_indexer.events.status = 'pending'
+            AND proof_indexer.events.event_time >= TIMESTAMPTZ '2009-01-03 18:15:05+00'
+          THEN proof_indexer.events.event_time
+          ELSE COALESCE(EXCLUDED.event_time, proof_indexer.events.event_time)
+        END,
         raw_payload = EXCLUDED.raw_payload,
         payload =
           (proof_indexer.events.payload || EXCLUDED.payload)
@@ -5413,7 +5466,24 @@ async function upsertEvent(client, sourceLabel, item) {
             )
           ),
         updated_at = now()
-      RETURNING event_id, payload
+      WHERE NOT (
+        proof_indexer.events.status = 'confirmed'
+        AND EXCLUDED.status <> 'confirmed'
+        AND EXISTS (
+          SELECT 1
+          FROM proof_indexer.transactions canonical_transaction
+          JOIN proof_indexer.blocks canonical_block
+            ON canonical_block.network = canonical_transaction.network
+           AND canonical_block.block_hash = canonical_transaction.block_hash
+           AND canonical_block.height = canonical_transaction.block_height
+           AND canonical_block.canonical = true
+          WHERE canonical_transaction.network = proof_indexer.events.network
+            AND canonical_transaction.txid = proof_indexer.events.txid
+            AND canonical_transaction.status = 'confirmed'
+            AND canonical_transaction.raw_tx ? 'canonicalBlockScan'
+        )
+      )
+      RETURNING event_id, payload, status
     `,
     [
       NETWORK,
@@ -5426,15 +5496,21 @@ async function upsertEvent(client, sourceLabel, item) {
       indexedInput?.reason ? [String(indexedInput.reason)] : [],
       amountSats(indexedInput),
       dataBytes(indexedInput),
-      numberOrNull(indexedInput?.blockHeight ?? indexedInput?.height),
-      eventTime,
+      status === "confirmed"
+        ? numberOrNull(indexedInput?.blockHeight ?? indexedInput?.height)
+        : null,
+      status === "confirmed" ? eventTime : null,
       eventTime,
       indexedInput?.payload ? String(indexedInput.payload) : "",
       JSON.stringify({ ...indexedInput, indexedFrom: sourceLabel }),
     ],
   );
+  if (result.rows.length === 0) {
+    return { canonicalConfirmed: true, skipped: true };
+  }
   const eventId = result.rows[0].event_id;
   const indexedItem = result.rows[0].payload ?? indexedInput;
+  const indexedStatus = itemStatus({ status: result.rows[0].status });
 
   await client.query("DELETE FROM proof_indexer.event_participants WHERE event_id = $1", [
     eventId,
@@ -5465,7 +5541,7 @@ async function upsertEvent(client, sourceLabel, item) {
   }
 
   if (indexedItem?.valid !== false) {
-    await upsertProjection(client, sourceLabel, indexedItem, status);
+    await upsertProjection(client, sourceLabel, indexedItem, indexedStatus);
   }
   return { skipped: false };
 }

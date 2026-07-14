@@ -3,6 +3,48 @@ import { readFileSync } from "node:fs";
 
 const caddy = readFileSync("deploy/Caddyfile", "utf8");
 const caddyService = readFileSync("deploy/caddy-hardening.conf", "utf8");
+const journaldStorage = readFileSync("deploy/journald-storage.conf", "utf8");
+const logrotateTimer = readFileSync(
+  "deploy/logrotate-timer-override.conf",
+  "utf8",
+);
+const rsyslogLogrotate = readFileSync(
+  "deploy/rsyslog-logrotate.conf",
+  "utf8",
+);
+const ufwLogrotate = readFileSync("deploy/ufw-logrotate.conf", "utf8");
+const ufwTmpfiles = readFileSync(
+  "deploy/proofofwork-ufw-log-tmpfiles.conf",
+  "utf8",
+);
+const postgresBackup = readFileSync(
+  "deploy/proofofwork-postgres-logical-backup.sh",
+  "utf8",
+);
+const postgresBackupService = readFileSync(
+  "deploy/proofofwork-postgres-logical-backup.service",
+  "utf8",
+);
+const postgresBackupTimer = readFileSync(
+  "deploy/proofofwork-postgres-logical-backup.timer",
+  "utf8",
+);
+const postgresBackupMount = readFileSync(
+  "deploy/var-backups-postgresql.mount",
+  "utf8",
+);
+const postgresBackupConfig = readFileSync(
+  "deploy/postgresql-backup.conf",
+  "utf8",
+);
+const postgresBasebackupTimer = readFileSync(
+  "deploy/pg-basebackup-timer-override.conf",
+  "utf8",
+);
+const releasePrune = readFileSync(
+  "deploy/proofofwork-release-prune.sh",
+  "utf8",
+);
 const apiService = readFileSync(
   "deploy/proofofwork-api-proof-index.conf",
   "utf8",
@@ -87,7 +129,6 @@ assert.match(
 assert.doesNotMatch(caddy, /browser-sandbox|navigate-to|sandbox allow-scripts/u);
 for (const redirectHost of [
   "proofofwork.me",
-  "activity.proofofwork.me",
   "token.proofofwork.me",
   "tokens.proofofwork.me",
 ]) {
@@ -96,6 +137,8 @@ for (const redirectHost of [
     `${redirectHost} redirect must carry the security headers.`,
   );
 }
+assert.doesNotMatch(caddy, /activity\.proofofwork\.me/u);
+assert.doesNotMatch(caddy, /pay2speak\.proofofwork\.me/u);
 
 for (const service of [
   bitcoinService,
@@ -111,6 +154,8 @@ for (const service of [
 }
 assert.match(caddyService, /NoNewPrivileges=true/u);
 assert.match(caddyService, /ProtectHome=true/u);
+assert.match(caddyService, /Restart=on-failure/u);
+assert.match(caddyService, /RestartSec=5s/u);
 assert.match(
   caddyService,
   /CapabilityBoundingSet=\nCapabilityBoundingSet=CAP_NET_BIND_SERVICE/u,
@@ -129,12 +174,51 @@ assert.match(
   workerService,
   /ExecStart=\/opt\/node-v24\.18\.0-linux-x64\/bin\/node \/opt\/proofofwork-api\/scripts\/run-proof-indexer-worker\.mjs --loop/u,
 );
+assert.match(
+  apiService,
+  /EnvironmentFile=\/etc\/proofofwork-api\/proof-indexer-db\.env/u,
+);
+assert.match(
+  workerService,
+  /EnvironmentFile=\/etc\/proofofwork-api\/proof-indexer-db\.env/u,
+);
 assert.match(nodeRuntimeInstaller, /version="24\.18\.0"/u);
 assert.match(
   nodeRuntimeInstaller,
   /expected_sha256="55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742"/u,
 );
 assert.match(nodeRuntimeInstaller, /sha256sum --check --strict/u);
+assert.match(journaldStorage, /SystemMaxUse=1G/u);
+assert.match(journaldStorage, /MaxRetentionSec=7day/u);
+assert.match(logrotateTimer, /OnCalendar=hourly/u);
+assert.match(rsyslogLogrotate, /hourly/u);
+assert.match(ufwLogrotate, /create 0640 syslog adm/u);
+assert.match(ufwTmpfiles, /f \/var\/log\/ufw\.log 0640 syslog adm/u);
+assert.match(postgresBackupConfig, /max_slot_wal_keep_size = '16GB'/u);
+assert.match(
+  postgresBackupMount,
+  /What=\/data\/proofofwork-postgres-backups\/physical/u,
+);
+assert.match(postgresBackupMount, /Options=bind,nodev,nosuid,noexec/u);
+assert.match(postgresBackup, /pg_dump[\s\S]*--format=custom/u);
+assert.match(postgresBackup, /pg_dumpall[\s\S]*--globals-only/u);
+assert.match(postgresBackup, /pg_restore --list/u);
+assert.match(postgresBackup, /sha256sum/u);
+assert.match(postgresBackup, /\.dumpset/u);
+assert.match(postgresBackupService, /ProtectSystem=strict/u);
+assert.match(
+  postgresBackupService,
+  /ReadWritePaths=\/data\/proofofwork-postgres-backups\/logical/u,
+);
+assert.match(postgresBackupTimer, /OnCalendar=\*-\*-\* 03:15:00 UTC/u);
+assert.match(postgresBasebackupTimer, /Persistent=true/u);
+assert.match(
+  releasePrune,
+  /Refusing unapproved release-retention target/u,
+);
+assert.match(releasePrune, /checksum_lines/u);
+assert.match(releasePrune, /referenced_name.*!=.*name/u);
+assert.match(releasePrune, /sha256sum --check --status --strict/u);
 for (const directive of [
   "NoNewPrivileges=true",
   "PrivateDevices=true",

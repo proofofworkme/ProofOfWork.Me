@@ -1,0 +1,13 @@
+[Unit]
+Description=ProofOfWork PostgreSQL backup storage
+RequiresMountsFor=/data
+Before=pg_receivewal@16-main.service pg_basebackup@16-main.service pg_compresswal@16-main.service
+
+[Mount]
+What=/data/proofofwork-postgres-backups/physical
+Where=/var/backups/postgresql
+Type=none
+Options=bind,nodev,nosuid,noexec
+
+[Install]
+WantedBy=multi-user.target

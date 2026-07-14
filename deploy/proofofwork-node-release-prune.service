@@ -1,0 +1,15 @@
+[Unit]
+Description=Prune managed ProofOfWork node release backups
+RequiresMountsFor=/data/proofofwork-release-backups
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/proofofwork-release-prune /data/proofofwork-release-backups/managed 3
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/data/proofofwork-release-backups/managed
+CapabilityBoundingSet=
+AmbientCapabilities=

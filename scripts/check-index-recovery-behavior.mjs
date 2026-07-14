@@ -2249,6 +2249,8 @@ check("confirmed invalid credit events remain visible without becoming valid", a
     normalizeEventPayload: (payload) => payload,
     normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
     normalizedText: (value) => String(value ?? "").trim(),
+    plausibleBitcoinEventTime: (...values) =>
+      values.find((value) => Number.isFinite(Date.parse(value))),
     rowNumber,
     tokenInvalidAuditCosts,
   });
@@ -6537,6 +6539,169 @@ check("ambiguous exact Log misses fail fast instead of scanning all history", as
     (candidate) => candidate?.statusCode === 503,
   );
   assert.equal(error.details.code, "CANONICAL_LOG_PROJECTION_MISSING");
+});
+
+check("transaction status trusts only canonical block-backed confirmations", async () => {
+  let row = {
+    block_canonical: true,
+    block_hash: "a".repeat(64),
+    block_height: 123,
+    status: "confirmed",
+    txid: "1".repeat(64),
+    updated_at: "2026-07-14T00:00:00.000Z",
+  };
+  const readStatus = isolatedFunction(
+    READER_PATH,
+    "proofIndexTxStatusPayload",
+    {
+      dateIso: (value) => new Date(value).toISOString(),
+      normalizedStatus: (value) => String(value ?? "").toLowerCase(),
+      proofIndexPool: () => ({
+        async query() {
+          return { rows: row ? [row] : [] };
+        },
+      }),
+    },
+  );
+
+  assert.equal((await readStatus(row.txid, "livenet"))?.status, "confirmed");
+  row = { ...row, block_height: null };
+  assert.equal(await readStatus(row.txid, "livenet"), null);
+  row = { ...row, block_height: 123, block_canonical: false };
+  assert.equal(await readStatus(row.txid, "livenet"), null);
+  row = { ...row, block_canonical: true, status: "pending" };
+  assert.equal(await readStatus(row.txid, "livenet"), null);
+  assert.equal(
+    (await readStatus(row.txid, "livenet", { includeUnconfirmed: true }))
+      ?.status,
+    "pending",
+  );
+});
+
+check("pending transaction times never turn zero into the Unix epoch", () => {
+  const serverTime = isolatedFunction(API_PATH, "tokenTransactionTime");
+  const clientTime = isolatedTypeScriptFunction(APP_PATH, "tokenTransactionTime");
+  const mempoolSeconds = 1_783_000_000;
+  for (const transactionTime of [serverTime, clientTime]) {
+    assert.equal(
+      transactionTime({
+        status: { block_time: 0, mempool_time: mempoolSeconds },
+      }),
+      mempoolSeconds * 1000,
+    );
+    assert.ok(transactionTime({ status: { block_time: 0 } }) > 1_230_768_905_000);
+  }
+
+  const plausibleTime = isolatedFunction(
+    READER_PATH,
+    "plausibleBitcoinEventTime",
+    { BITCOIN_GENESIS_TIME_MS: Date.UTC(2009, 0, 3, 18, 15, 5) },
+  );
+  assert.equal(
+    plausibleTime(
+      "1970-01-01T00:00:00.000Z",
+      "2026-07-12T04:11:53.155Z",
+    ),
+    "2026-07-12T04:11:53.155Z",
+  );
+});
+
+check("canonical confirmed events reject stale non-confirmed upserts", () => {
+  const source = fileSource(BACKFILL_PATH);
+  assert.match(
+    source,
+    /proof_indexer\.events\.status = 'confirmed'[\s\S]*EXCLUDED\.status <> 'confirmed'[\s\S]*canonical_transaction\.raw_tx \? 'canonicalBlockScan'/u,
+  );
+  assert.match(
+    source,
+    /if \(result\.rows\.length === 0\)[\s\S]*canonicalConfirmed: true/u,
+  );
+});
+
+check("synthetic bond definitions are not indexed as Bitcoin transactions", () => {
+  const powbTokenId =
+    "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
+  const incbTokenId =
+    "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+  const itemTxid = isolatedFunction(BACKFILL_PATH, "itemTxid", {
+    BOND_TOKEN_IDS: new Set([powbTokenId, incbTokenId]),
+    isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
+  });
+  assert.equal(itemTxid({ tokenId: powbTokenId, txid: powbTokenId }), "");
+  assert.equal(itemTxid({ tokenId: incbTokenId }), "");
+  assert.equal(
+    itemTxid({ tokenId: powbTokenId, txid: "9".repeat(64) }),
+    "9".repeat(64),
+  );
+  assert.equal(itemTxid({ tokenId: "8".repeat(64) }), "8".repeat(64));
+});
+
+check("Log coverage separates the latest event from the verified checkpoint", async () => {
+  const compact = isolatedFunction(API_PATH, "compactActivitySummaryPayload", {
+    SUMMARY_ACTIVITY_LIMIT: 10,
+    activityStatsFromItems: (_items, stats) => stats,
+    indexedThroughBlockFromItems: () => 100,
+    recentByCreatedAt: (items) => items,
+  });
+  const summary = compact(
+    {
+      activity: [{ blockHeight: 100 }],
+      stats: { indexedThroughBlock: 100, total: 1 },
+    },
+    105,
+  );
+  assert.equal(summary.stats.latestEventBlock, 100);
+  assert.equal(summary.stats.indexedThroughBlock, 105);
+
+  let pageTotal = 1;
+  const freshPage = isolatedFunction(
+    API_PATH,
+    "freshProofIndexLogHistoryPayload",
+    {
+      activitySummaryPayload: async () => ({ marker: "summary" }),
+      freshDataUnavailableError: (message) => {
+        const error = new Error(message);
+        error.statusCode = 503;
+        return error;
+      },
+      payloadIndexedThroughBlockHash: (payload) =>
+        payload.indexedThroughBlockHash ?? "",
+      payloadSnapshotId: (payload) => payload.snapshotId ?? "",
+      proofIndexLogHistoryPayload: async () => ({
+        indexedThroughBlock: 105,
+        items: [{}],
+        latestEventBlock: 100,
+        snapshotId: "snapshot-105",
+        snapshotTotalCount: pageTotal,
+        totalCount: pageTotal,
+      }),
+      proofIndexLogHistoryReadEligibility: () => ({
+        pagination: { query: "", snapshotId: "" },
+      }),
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload.indexedThroughBlock) || 0,
+      summaryPayloadWithCanonicalProvenance: async () => ({
+        consistency: { ok: true },
+        indexedThroughBlock: 105,
+        indexedThroughBlockHash: "a".repeat(64),
+        provenance: { ready: true },
+        snapshotId: "snapshot-105",
+        stats: { total: 1 },
+        totalCount: 1,
+      }),
+    },
+  );
+  const page = await freshPage("livenet", "", new URLSearchParams("limit=1"));
+  assert.equal(page.indexedThroughBlock, 105);
+  assert.equal(page.latestEventBlock, 100);
+  assert.equal(page.provenance.surface, "log-history");
+
+  pageTotal = 2;
+  const error = await rejection(
+    freshPage("livenet", "", new URLSearchParams("limit=1")),
+    (candidate) => candidate?.details?.code === "CANONICAL_LOG_HISTORY_MISMATCH",
+  );
+  assert.equal(error.statusCode, 503);
 });
 
 check("exact token tables own the current active listing set", () => {

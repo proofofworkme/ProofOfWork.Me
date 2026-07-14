@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily managed ProofOfWork UI release retention
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=15min
+FixedRandomDelay=true
+Persistent=true
+Unit=proofofwork-ui-release-prune.service
+
+[Install]
+WantedBy=timers.target

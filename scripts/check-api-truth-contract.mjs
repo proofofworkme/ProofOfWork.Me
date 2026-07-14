@@ -131,17 +131,30 @@ expect(
     /CANONICAL_INDEX_CATCHING_UP/u.test(requestGate),
 );
 expect(
-  "legacy Log reads paginate while exact fresh txids stay on the bounded index path",
+  "fresh paginated Log reads use relational state bound to the exact summary",
   /"limit"/u.test(logRoute) &&
     /"offset"/u.test(logRoute) &&
-    /if \(!freshRead \|\| exactLogQueryTxid\)/u.test(logRoute) &&
+    /freshRead && !exactLogQueryTxid[\s\S]*freshProofIndexLogHistoryPayload/u.test(
+      logRoute,
+    ) &&
     /exactLogHistoryMissPayload/u.test(logRoute) &&
     /if \(exactLogQueryTxid\)[\s\S]*indexed exact Log lookup is temporarily unavailable/u.test(
       logRoute,
     ) &&
     /activityHistoryPayload/u.test(logRoute) &&
+    /pageSnapshotTotal !== summaryTotal/u.test(server) &&
+    /boundSearchParams\.set\("snapshot", summarySnapshotId\)/u.test(
+      server,
+    ) &&
+    /e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz/u.test(reader) &&
+    /snapshotTotalCount/u.test(reader) &&
     /offsetRaw[\s\S]*transactionId/u.test(server) &&
     /offsetRaw[\s\S]*transactionId/u.test(reader),
+);
+expect(
+  "Core and Electrum pending reads preserve Bitcoin Core mempool admission time",
+  (server.match(/bitcoinRpc\("getmempoolentry"/gu) ?? []).length >= 2 &&
+    (server.match(/mempool_time: mempoolTime/gu) ?? []).length >= 2,
 );
 expect(
   "browser broadcast origins are validated",

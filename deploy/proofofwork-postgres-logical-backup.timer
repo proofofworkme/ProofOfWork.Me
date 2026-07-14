@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily ProofOfWork PostgreSQL logical backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+AccuracySec=1min
+RandomizedDelaySec=15min
+FixedRandomDelay=true
+Persistent=true
+Unit=proofofwork-postgres-logical-backup.service
+
+[Install]
+WantedBy=timers.target

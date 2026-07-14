@@ -151,6 +151,12 @@ POW_INDEX_READ_UNCONFIRMED_TX_STATUS=0
 enables the first low-risk read adapter for confirmed transaction statuses, with
 canonical node/API fallback for unknown, pending, or dropped rows unless
 `POW_INDEX_READ_UNCONFIRMED_TX_STATUS=1` is explicitly set.
+The confirmed fast path additionally requires a positive block height, a
+64-character block hash, and a matching canonical `proof_indexer.blocks` row.
+A legacy wrapper marked confirmed without that block proof falls through to
+Bitcoin Core. Synthetic POWB and INCB definition identifiers are credit IDs,
+not Bitcoin transaction IDs, and must not create transaction rows or Deploy TX
+links.
 `POW_INDEX_READS=tx-status,log-history` enables hybrid Log history reads:
 database-backed reads are used for stable `q`/`search` queries, `kind` filters,
 and older unfiltered activity pages. The volatile unfiltered first page remains
@@ -217,6 +223,11 @@ to precede the mint in canonical block and transaction order.
 The `log` flag is reserved for an explicit full activity snapshot refresh.
 Volatile broad activity and mempool reads still use the node/API path so explicit
 refreshes converge on current chain and mempool truth.
+Paginated fresh Log reads use current relational events only when they match the
+same hash-bound exact-tip Log summary. `indexedThroughBlock` is verified scan
+coverage, while `latestEventBlock` is the newest block containing a matching
+protocol event; an empty run of Bitcoin blocks must not be presented as index
+lag. A count, snapshot, height, hash, or readiness mismatch remains a 503.
 
 The worker script keeps the indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through
@@ -457,8 +468,22 @@ deploy/proofofwork-cache-prune.service
 deploy/proofofwork-cache-prune.timer
 deploy/logrotate-timer-override.conf
 deploy/rsyslog-logrotate.conf
+deploy/ufw-logrotate.conf
+deploy/proofofwork-ufw-log-tmpfiles.conf
 deploy/journald-storage.conf
 deploy/coredump-disable-sysctl.conf
+deploy/postgresql-backup.conf
+deploy/pg-basebackup-timer-override.conf
+deploy/var-backups-postgresql.mount
+deploy/proofofwork-postgres-logical-backup.sh
+deploy/proofofwork-postgres-logical-backup.service
+deploy/proofofwork-postgres-logical-backup.timer
+deploy/proofofwork-release-prune.sh
+deploy/proofofwork-ui-release-prune.service
+deploy/proofofwork-ui-release-prune.timer
+deploy/proofofwork-node-release-prune.service
+deploy/proofofwork-node-release-prune.timer
+deploy/proofofwork-deploy-tmpfiles.conf
 ```
 
 The node health contract includes those tracked service overrides. Install the
@@ -568,6 +593,52 @@ override under `/etc/systemd/system/logrotate.timer.d/override.conf` for hourly
 rotation. Install `journald-storage.conf` under
 `/etc/systemd/journald.conf.d/90-proofofwork-storage.conf` to bound persistent
 and runtime journal use while reserving root-disk runway.
+Install `ufw-logrotate.conf` as `/etc/logrotate.d/ufw` and
+`proofofwork-ufw-log-tmpfiles.conf` under `/etc/tmpfiles.d/` on both VPSs.
+Run `systemd-tmpfiles --create` before restarting rsyslog. The dedicated UFW
+target must exist as `syslog:adm 0640`; otherwise rsyslog cannot recreate it
+after dropping privileges and will amplify one missing file into a repeated
+suspend/resume loop. Install `proofofwork-deploy-tmpfiles.conf` to keep deploy
+scratch under its own three-day `/var/tmp/proofofwork-deploy` namespace rather
+than deleting arbitrary `/tmp` content.
+
+PostgreSQL recovery uses two independent layers. Bind
+`/data/proofofwork-postgres-backups/physical` onto
+`/var/backups/postgresql` with the tracked mount unit, then enable Ubuntu's
+`pg_receivewal@16-main`, weekly `pg_basebackup@16-main.timer`, and daily
+`pg_compresswal@16-main.timer`. Install `postgresql-backup.conf` as a cluster
+configuration fragment and reload PostgreSQL so a failed physical-WAL receiver
+can retain at most 16 GB in PostgreSQL's live `pg_wal` on the root filesystem.
+That setting does not cap the received WAL archive on `/data`; successful base
+backups, `pg_archivecleanup`, backup-age checks, and `/data` free-space checks
+remain mandatory. Install `pg-basebackup-timer-override.conf` as
+`/etc/systemd/system/pg_basebackup@16-main.timer.d/override.conf` so a missed
+weekly run is started after the host returns. The tracked daily logical service publishes one atomic `dumpset`
+directory containing the custom-format `proof_indexer` dump, a
+`pg_dumpall --globals-only` role archive, and verified SHA-256 manifest. It
+keeps 14 sets under `/data/proofofwork-postgres-backups/logical`; globals may
+contain password hashes and must remain `postgres`-only and encrypted before
+any off-host copy. Take the first physical and logical backups, restore the
+latest logical dump into a disposable scratch database, validate representative
+counts, and drop the scratch database before treating either timer as
+operational. Restore globals before the database on a clean cluster. Enabling
+PostgreSQL data checksums remains a separate maintenance operation because it
+requires a clean database shutdown. Local physical and logical copies protect
+against database/root-volume failures, but an encrypted off-host copy is still
+required for independent disaster recovery.
+
+Database credentials live in
+`/etc/proofofwork-api/proof-indexer-db.env`, never inside the live Git checkout.
+Production application releases must be staged from one exact commit, install
+dependencies before the swap, preserve one rollback outside the live path, and
+leave `/opt/proofofwork-api` as a clean checkout at the recorded commit. Managed
+UI and node release archives have dedicated allowlisted retention directories;
+each deployment publishes its archive and SHA-256 sidecar from temporary names
+before invoking retention. The prune service validates every sidecar, accepts
+only the host-specific UI or node filename family, and must never target
+historical recovery trees or a live release. Install root-executed scripts as
+`root:root 0755`, unit/config files as `root:root 0644`, and create their
+mandatory retention directories before starting the services.
 
 Production Ubuntu uses Apport, not `systemd-coredump`. Install
 `coredump-disable-sysctl.conf` as

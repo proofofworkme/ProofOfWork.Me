@@ -251,8 +251,39 @@ try {
         (SELECT count(*) FROM proof_indexer.transactions WHERE network = $1 AND status = 'pending') AS transactions_pending,
         (SELECT count(*) FROM proof_indexer.transactions WHERE network = $1 AND status = 'dropped') AS transactions_dropped,
         (SELECT count(*) FROM proof_indexer.transactions WHERE network = $1 AND status = 'confirmed' AND raw_tx IS NULL) AS confirmed_transactions_missing_raw,
-        (SELECT count(*) FROM proof_indexer.transactions WHERE network = $1 AND status = 'confirmed' AND block_height IS NULL) AS confirmed_transactions_missing_block,
-        (SELECT count(*) FROM proof_indexer.transactions WHERE network = $1 AND status = 'confirmed' AND block_height IS NULL AND confirmed_at >= now() - make_interval(hours => $2::int)) AS recent_confirmed_transactions_missing_block,
+        (
+          SELECT count(*)
+          FROM proof_indexer.transactions transaction_row
+          LEFT JOIN proof_indexer.blocks canonical_block
+            ON canonical_block.network = transaction_row.network
+           AND canonical_block.block_hash = transaction_row.block_hash
+           AND canonical_block.height = transaction_row.block_height
+           AND canonical_block.canonical = true
+          WHERE transaction_row.network = $1
+            AND transaction_row.status = 'confirmed'
+            AND (
+              transaction_row.block_height IS NULL
+              OR transaction_row.block_hash IS NULL
+              OR canonical_block.block_hash IS NULL
+            )
+        ) AS confirmed_transactions_missing_block,
+        (
+          SELECT count(*)
+          FROM proof_indexer.transactions transaction_row
+          LEFT JOIN proof_indexer.blocks canonical_block
+            ON canonical_block.network = transaction_row.network
+           AND canonical_block.block_hash = transaction_row.block_hash
+           AND canonical_block.height = transaction_row.block_height
+           AND canonical_block.canonical = true
+          WHERE transaction_row.network = $1
+            AND transaction_row.status = 'confirmed'
+            AND transaction_row.confirmed_at >= now() - make_interval(hours => $2::int)
+            AND (
+              transaction_row.block_height IS NULL
+              OR transaction_row.block_hash IS NULL
+              OR canonical_block.block_hash IS NULL
+            )
+        ) AS recent_confirmed_transactions_missing_block,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1) AS events_total,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND valid = true) AS events_confirmed_valid,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND protocol = 'pwt1' AND kind = 'token-event-invalid' AND valid = false) AS events_confirmed_pwt_invalid_audit,
@@ -420,7 +451,6 @@ try {
         missing: rowNumber(db, "confirmed_transactions_missing_block"),
         sourceGaps: sourceGapResult.rows,
       },
-      "warning",
     ),
     check(
       "op-return-table-populated",

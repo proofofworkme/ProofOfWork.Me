@@ -6783,9 +6783,13 @@ function emptyTokenState(): PowTokenState {
 
 function tokenTransactionTime(tx: Record<string, unknown>) {
   const status = tx.status as Record<string, unknown> | undefined;
-  return typeof status?.block_time === "number"
-    ? status.block_time * 1000
-    : Date.now();
+  for (const value of [status?.block_time, status?.mempool_time]) {
+    const seconds = Number(value);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return seconds * 1000;
+    }
+  }
+  return Date.now();
 }
 
 function tokenProtocolSortedTransactions(txs: Array<Record<string, unknown>>) {
@@ -9137,10 +9141,7 @@ function inboxMessagesFromTransactions(
     }
 
     const status = tx.status as Record<string, unknown> | undefined;
-    const blockTime =
-      typeof status?.block_time === "number"
-        ? status.block_time * 1000
-        : Date.now();
+    const blockTime = tokenTransactionTime(tx);
     const sender = senderAddress(vin, targetAddress);
 
     const message: InboxMessage = {
@@ -9206,10 +9207,7 @@ function sentMessagesFromTransactions(
 
     const status = tx.status as Record<string, unknown> | undefined;
     const confirmed = Boolean(status?.confirmed);
-    const blockTime =
-      typeof status?.block_time === "number"
-        ? status.block_time * 1000
-        : Date.now();
+    const blockTime = tokenTransactionTime(tx);
     const createdAt = new Date(blockTime).toISOString();
 
     return [
@@ -9414,10 +9412,7 @@ function browserPageFromTransaction(
   }
 
   const status = tx.status as Record<string, unknown> | undefined;
-  const blockTime =
-    typeof status?.block_time === "number"
-      ? status.block_time * 1000
-      : Date.now();
+  const blockTime = tokenTransactionTime(tx);
   const recipients = protocolPaymentOutputs(vout);
   const inputAddresses = transactionInputAddresses(vin);
 
@@ -9985,10 +9980,7 @@ function idRegistryStateFromTransactions(
 
     const status = tx.status as Record<string, unknown> | undefined;
     const confirmed = Boolean(status?.confirmed);
-    const blockTime =
-      typeof status?.block_time === "number"
-        ? status.block_time * 1000
-        : Date.now();
+    const blockTime = tokenTransactionTime(tx);
     const baseEvent = {
       amountSats: amount,
       blockHeight: transactionBlockHeight(tx),
@@ -30791,17 +30783,19 @@ function TokenWorkspace({
                 </div>
               </div>
               <div className="token-detail-actions">
-                <a
-                  className="secondary small"
-                  href={explorerTxUrl(detailToken.txid, detailToken.network)}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  <span className="button-content">
-                    <ArrowUpRight size={15} />
-                    <span>Deploy TX</span>
-                  </span>
-                </a>
+                {!BOND_TOKEN_IDS.has(detailToken.tokenId) ? (
+                  <a
+                    className="secondary small"
+                    href={explorerTxUrl(detailToken.txid, detailToken.network)}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <span className="button-content">
+                      <ArrowUpRight size={15} />
+                      <span>Deploy TX</span>
+                    </span>
+                  </a>
+                ) : null}
                 <a
                   className="secondary small"
                   href={explorerAddressUrl(
@@ -32788,7 +32782,11 @@ function confirmedComputerActionCount(
 
   records.forEach((record) => add(record.confirmed, record.txid));
   idActivity.forEach((item) => add(item.confirmed, item.txid));
-  tokenDefinitions.forEach((token) => add(token.confirmed, token.txid));
+  tokenDefinitions.forEach((token) => {
+    if (!BOND_TOKEN_IDS.has(token.tokenId)) {
+      add(token.confirmed, token.txid);
+    }
+  });
   tokenMints.forEach((mint) => add(mint.confirmed, mint.txid));
   tokenTransfers.forEach((transfer) => add(transfer.confirmed, transfer.txid));
   tokenSales.forEach((sale) => add(sale.confirmed, sale.txid));
@@ -37095,17 +37093,19 @@ function TokenMarketplacePanel({
                         </span>
                       </a>
                     )}
-                    <a
-                      className="secondary small"
-                      href={explorerTxUrl(token.txid, token.network)}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      <span className="button-content">
-                        <ArrowUpRight size={15} />
-                        <span>Deploy TX</span>
-                      </span>
-                    </a>
+                    {!BOND_TOKEN_IDS.has(token.tokenId) ? (
+                      <a
+                        className="secondary small"
+                        href={explorerTxUrl(token.txid, token.network)}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <span className="button-content">
+                          <ArrowUpRight size={15} />
+                          <span>Deploy TX</span>
+                        </span>
+                      </a>
+                    ) : null}
                   </div>
                 </article>
               ))}

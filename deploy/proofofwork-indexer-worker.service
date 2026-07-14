@@ -8,7 +8,7 @@ Requires=postgresql@16-main.service
 Type=simple
 User=powadmin
 WorkingDirectory=/opt/proofofwork-api
-EnvironmentFile=/opt/proofofwork-api/config/proof-indexer-db.env
+EnvironmentFile=/etc/proofofwork-api/proof-indexer-db.env
 EnvironmentFile=-/etc/proofofwork-api/bitcoin-rpc.env
 EnvironmentFile=/etc/proofofwork-api/internal-verifier.env
 Environment=NETWORK=livenet
