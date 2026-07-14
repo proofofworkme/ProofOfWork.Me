@@ -74,10 +74,18 @@ function shortAddress(value: string) {
 
 export function LandingApp({
   registryAddress,
+  registryError = "",
+  registryFresh = false,
+  registryLoaded = true,
+  registryLoading = false,
   registryRecords,
   onRefresh,
 }: {
   registryAddress: string;
+  registryError?: string;
+  registryFresh?: boolean;
+  registryLoaded?: boolean;
+  registryLoading?: boolean;
   registryRecords: LandingRegistryRecord[];
   onRefresh: () => void;
 }) {
@@ -90,7 +98,31 @@ export function LandingApp({
         subtitle="The final network"
         title="ProofOfWork.Me"
       />
-      <AppStatusRow persistent status={{ tone: "idle", text: "Ready" }} />
+      <AppStatusRow
+        persistent
+        status={
+          registryLoading
+            ? {
+                tone: "idle",
+                text: registryLoaded
+                  ? "Refreshing the ID registry through the full node..."
+                  : "Loading the indexed ProofOfWork ID registry summary...",
+              }
+            : registryError
+              ? { tone: "bad", text: registryError }
+              : registryLoaded
+                ? {
+                    tone: "good",
+                    text: registryFresh
+                      ? "Full-node ProofOfWork ID registry summary verified."
+                      : "Indexed ProofOfWork ID registry summary loaded.",
+                  }
+                : {
+                    tone: "idle",
+                    text: "ProofOfWork ID registry summary has not loaded yet.",
+                  }
+        }
+      />
 
       <section className="landing-hero">
         <div className="landing-hero-content">
@@ -270,20 +302,31 @@ export function LandingApp({
         >
           <div>
             <span>Confirmed IDs</span>
-            <strong>{confirmedRecords.length.toLocaleString()}</strong>
+            <strong>
+              {registryLoaded ? confirmedRecords.length.toLocaleString() : "…"}
+            </strong>
           </div>
           <div>
             <span>Pending IDs</span>
-            <strong>{pendingRecords.length.toLocaleString()}</strong>
+            <strong>
+              {registryLoaded ? pendingRecords.length.toLocaleString() : "…"}
+            </strong>
           </div>
           <div>
             <span>Visible records</span>
-            <strong>{registryRecords.length.toLocaleString()}</strong>
+            <strong>
+              {registryLoaded ? registryRecords.length.toLocaleString() : "…"}
+            </strong>
           </div>
-          <button className="secondary" onClick={onRefresh} type="button">
+          <button
+            className="secondary"
+            disabled={registryLoading}
+            onClick={onRefresh}
+            type="button"
+          >
             <span className="button-content">
               <RefreshCw size={16} />
-              <span>Refresh Registry</span>
+              <span>{registryLoading ? "Refreshing" : "Refresh Registry"}</span>
             </span>
           </button>
         </section>

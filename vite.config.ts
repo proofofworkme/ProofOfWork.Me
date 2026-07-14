@@ -24,13 +24,20 @@ export default defineConfig(({ mode }) => ({
             return undefined;
           }
 
-          if (id.includes("react") || id.includes("react-dom")) {
+          if (id.includes("/node_modules/lucide-react/")) {
+            return "icons";
+          }
+
+          if (
+            id.includes("/node_modules/react/") ||
+            id.includes("/node_modules/react-dom/") ||
+            id.includes("/node_modules/scheduler/")
+          ) {
             return "react";
           }
 
           if (
             id.includes("bitcoinjs-lib") ||
-            id.includes("bip322-js") ||
             id.includes("@bitcoinerlab") ||
             id.includes("ecpair") ||
             id.includes("tiny-secp256k1") ||
@@ -39,11 +46,7 @@ export default defineConfig(({ mode }) => ({
             return "proofofwork";
           }
 
-          if (id.includes("lucide-react")) {
-            return "icons";
-          }
-
-          return "vendor";
+          return undefined;
         },
       },
     },

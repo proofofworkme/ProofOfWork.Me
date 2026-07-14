@@ -1,0 +1,25 @@
+[Unit]
+Description=ProofOfWork API WireGuard socket proxy
+After=proofofwork-api.service
+Requires=proofofwork-api.service
+BindsTo=wg-quick@wg0.service
+PartOf=proofofwork-api-wg.socket wg-quick@wg0.service
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:8081
+DynamicUser=true
+LimitCORE=0
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native

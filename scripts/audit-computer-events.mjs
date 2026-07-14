@@ -257,6 +257,7 @@ try {
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND valid = true) AS events_confirmed_valid,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND protocol = 'pwt1' AND kind = 'token-event-invalid' AND valid = false) AS events_confirmed_pwt_invalid_audit,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND valid = true) AS events_confirmed_canonical_activity,
+        (SELECT count(DISTINCT txid) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND valid = true) AS confirmed_canonical_action_txids,
         (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND e.valid = true AND t.txid IS NULL) AS confirmed_events_missing_transaction,
         (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND e.valid = true AND COALESCE(t.status, '') <> 'confirmed') AS confirmed_events_without_confirmed_transaction,
         (SELECT count(*) FROM proof_indexer.events e JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND e.valid = true AND t.raw_tx IS NULL) AS confirmed_events_missing_raw_transaction,
@@ -358,10 +359,14 @@ try {
       { checks: [...ledgerChecks].sort() },
     ),
     check(
-      "db-confirmed-transactions-cover-ledger-actions",
+      "db-confirmed-transactions-cover-canonical-action-txids",
       rowNumber(db, "transactions_confirmed") >=
-        numberValue(ledger?.metrics?.confirmedComputerActions),
+        rowNumber(db, "confirmed_canonical_action_txids"),
       {
+        confirmedCanonicalActionTxids: rowNumber(
+          db,
+          "confirmed_canonical_action_txids",
+        ),
         confirmedComputerActions: ledger?.metrics?.confirmedComputerActions ?? null,
         transactionsConfirmed: rowNumber(db, "transactions_confirmed"),
       },

@@ -1,0 +1,13 @@
+[Unit]
+Description=ProofOfWork API WireGuard listener
+After=network-online.target wg-quick@wg0.service
+BindsTo=wg-quick@wg0.service
+PartOf=wg-quick@wg0.service
+
+[Socket]
+ListenStream=10.77.0.2:8081
+NoDelay=true
+Accept=false
+
+[Install]
+WantedBy=sockets.target

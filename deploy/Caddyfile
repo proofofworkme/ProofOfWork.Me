@@ -1,0 +1,275 @@
+(common_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.proofofwork.me wss://*.proofofwork.me; frame-src 'self'; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
+		Cross-Origin-Opener-Policy "same-origin-allow-popups"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+	}
+}
+
+(landing_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.proofofwork.me wss://*.proofofwork.me; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
+		Cross-Origin-Opener-Policy "same-origin-allow-popups"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+	}
+}
+
+(common_api_proxy) {
+	handle /api/* {
+		reverse_proxy http://10.77.0.2:8081 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle /health* {
+		reverse_proxy http://10.77.0.2:8081 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+}
+
+(common_static_policy) {
+	encode zstd gzip
+	import common_headers
+	import common_api_proxy
+	@immutable path_regexp immutable ^/assets/.*-[A-Za-z0-9_-]{8,}\..+$
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+	@document {
+		not path /assets/* /api/* /health*
+	}
+	header @document Cache-Control "no-cache, must-revalidate"
+}
+
+(common_landing_app) {
+	encode zstd gzip
+	import landing_headers
+	import common_api_proxy
+	@immutable path_regexp immutable ^/assets/.*-[A-Za-z0-9_-]{8,}\..+$
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+	@document {
+		not path /assets/* /api/* /health*
+	}
+	header @document Cache-Control "no-cache, must-revalidate"
+	handle {
+		root * /var/www/proofofwork-landing
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+(common_id_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-id
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+(common_computer_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-computer
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+(common_desktop_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-desktop
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+(common_browser_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-browser
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+(common_marketplace_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-marketplace
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+(common_growth_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-growth
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+(common_activity_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-activity
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+http://77.42.91.106 {
+	respond "HTTPS hostname required." 421
+}
+
+proofofwork.me {
+	import common_headers
+	redir https://www.proofofwork.me{uri} permanent
+}
+
+www.proofofwork.me {
+	import common_landing_app
+}
+
+id.proofofwork.me {
+	import common_id_app
+}
+
+computer.proofofwork.me {
+	import common_computer_app
+}
+
+desktop.proofofwork.me {
+	import common_desktop_app
+}
+
+browser.proofofwork.me {
+	import common_browser_app
+}
+
+marketplace.proofofwork.me {
+	import common_marketplace_app
+}
+
+growth.proofofwork.me {
+	import common_growth_app
+}
+
+log.proofofwork.me {
+	import common_activity_app
+}
+
+activity.proofofwork.me {
+	import common_headers
+	redir https://log.proofofwork.me{uri} permanent
+}
+
+(common_pay2speak_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-pay2speak
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+pay2speak.proofofwork.me {
+	import common_pay2speak_app
+}
+
+(common_nft_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-nft
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+nft.proofofwork.me {
+	import common_nft_app
+}
+
+(common_token_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-token
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+credit.proofofwork.me {
+	import common_token_app
+}
+
+token.proofofwork.me {
+	import common_headers
+	redir https://credit.proofofwork.me{uri} permanent
+}
+
+tokens.proofofwork.me {
+	import common_headers
+	redir https://credit.proofofwork.me{uri} permanent
+}
+
+(common_wallet_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-wallet
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+wallet.proofofwork.me {
+	import common_wallet_app
+}
+
+(common_work_token_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-work
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+work.proofofwork.me {
+	import common_work_token_app
+}
+
+(common_infinity_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-infinity
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+infinity.proofofwork.me {
+	import common_infinity_app
+}
+
+(common_inception_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-inception
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+inception.proofofwork.me {
+	import common_inception_app
+}

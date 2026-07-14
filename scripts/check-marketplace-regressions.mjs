@@ -15,6 +15,7 @@ const FULL_REGRESSION_MODE = ["full", "audit", "slow"].includes(
   REGRESSION_MODE,
 );
 const GATE_LABEL = FULL_REGRESSION_MODE ? "full" : "fast";
+const EXACT_HISTORY_MAX_MS = 10_000;
 
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
@@ -888,12 +889,23 @@ assert(
     sealableItem?.saleAuthorization?.anchorValueSats === 546,
   `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} is missing complete sale-ticket listing fields`,
 );
-const reportedDroppedListing = await tokenHistory("listings", {
+const {
+  elapsedMs: reportedDroppedListingMs,
+  json: reportedDroppedListing,
+} = await timedGetJson("/api/v1/token-history", {
+  network: "livenet",
+  asset: WORK_TOKEN_ID,
+  kind: "listings",
+  limit: 20,
   q: REPORTED_DROPPED_LISTING_TX,
 });
 assert(
   !txids(reportedDroppedListing.items).has(REPORTED_DROPPED_LISTING_TX),
   `${REPORTED_DROPPED_LISTING_TX} is still returned as an active listing`,
+);
+assert(
+  reportedDroppedListingMs <= EXACT_HISTORY_MAX_MS,
+  `terminal listing lookup took ${reportedDroppedListingMs}ms, expected <= ${EXACT_HISTORY_MAX_MS}ms`,
 );
 
 const walletToken = await getJson("/api/v1/token", {
@@ -1005,7 +1017,10 @@ assert(
     carbonzInvalidBuyAuditItem?.valid === false,
   `${CARBONZ_REPORTED_BUY_TX} is missing from confirmed invalid event audit history`,
 );
-const carbonzInvalidBuyPublicLog = await getJson("/api/v1/log-history", {
+const {
+  elapsedMs: carbonzInvalidBuyPublicLogMs,
+  json: carbonzInvalidBuyPublicLog,
+} = await timedGetJson("/api/v1/log-history", {
   network: "livenet",
   q: CARBONZ_REPORTED_BUY_TX,
   limit: 5,
@@ -1016,6 +1031,46 @@ assert(
       String(item?.txid ?? "").toLowerCase() === CARBONZ_REPORTED_BUY_TX,
   ),
   `${CARBONZ_REPORTED_BUY_TX} leaked into the valid-action public Log`,
+);
+assert(
+  carbonzInvalidBuyPublicLogMs <= EXACT_HISTORY_MAX_MS,
+  `invalid-only Log lookup took ${carbonzInvalidBuyPublicLogMs}ms, expected <= ${EXACT_HISTORY_MAX_MS}ms`,
+);
+const randomExactLogTxid = "f".repeat(64);
+const {
+  elapsedMs: randomExactLogMs,
+  json: randomExactLog,
+} = await timedGetJson("/api/v1/log-history", {
+  network: "livenet",
+  q: randomExactLogTxid,
+  limit: 5,
+});
+assert(
+  Number(randomExactLog.totalCount ?? 0) === 0 &&
+    randomExactLog.queryDisposition === "not-indexed-proof-event",
+  "random exact Log miss did not return the bounded indexed disposition",
+);
+assert(
+  randomExactLogMs <= EXACT_HISTORY_MAX_MS,
+  `random exact Log miss took ${randomExactLogMs}ms, expected <= ${EXACT_HISTORY_MAX_MS}ms`,
+);
+const {
+  elapsedMs: randomExactLogAliasMs,
+  json: randomExactLogAlias,
+} = await timedGetJson("/api/v1/log", {
+  network: "livenet",
+  q: randomExactLogTxid,
+  limit: 5,
+  fresh: 1,
+});
+assert(
+  Number(randomExactLogAlias.totalCount ?? 0) === 0 &&
+    randomExactLogAlias.queryDisposition === "not-indexed-proof-event",
+  "random exact fresh Log alias miss did not return the bounded indexed disposition",
+);
+assert(
+  randomExactLogAliasMs <= EXACT_HISTORY_MAX_MS,
+  `random exact fresh Log alias miss took ${randomExactLogAliasMs}ms, expected <= ${EXACT_HISTORY_MAX_MS}ms`,
 );
 const carbonzTaprootWalletToken = await getJson("/api/v1/token", {
   network: "livenet",

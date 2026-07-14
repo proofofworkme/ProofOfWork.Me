@@ -1521,6 +1521,10 @@ code {
   width: 100%;
 }
 
+.sidebar-toggle {
+  display: none;
+}
+
 .folders {
   display: grid;
   gap: 4px;
@@ -4423,6 +4427,11 @@ pre {
 
 .landing-hero::before {
   background: url("/landing-banner.png") center / cover no-repeat;
+  background: image-set(
+      url("/landing-banner.webp") type("image/webp"),
+      url("/landing-banner.png") type("image/png")
+    )
+    center / cover no-repeat;
   filter: brightness(1.24) saturate(1.08);
 }
 
@@ -6237,6 +6246,29 @@ pre {
   .sidebar {
     grid-template-rows: auto auto auto;
     overflow: visible;
+  }
+
+  .sidebar-toggle {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .sidebar-toggle strong {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 750;
+  }
+
+  .sidebar:not(.is-expanded) {
+    grid-template-rows: auto;
+  }
+
+  .sidebar:not(.is-expanded) > .compose-button,
+  .sidebar:not(.is-expanded) > .folders,
+  .sidebar:not(.is-expanded) > .account-box {
+    display: none;
   }
 
   .folders {

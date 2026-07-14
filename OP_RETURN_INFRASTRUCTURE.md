@@ -36,10 +36,14 @@ useful local/dev option but not the preferred long-running production store.
 
 The database is not the source of truth. It is a durable read model derived from
 Bitcoin Core, electrs/mempool, and the ProofOfWork parsers. Confirmed chain data
-remains canonical. Production stable confirmed reads should prefer the database
+remains canonical. Production confirmed reads should prefer the database
 projection first, then fall back to the canonical node/API path when a projection
-is missing, stale, scoped outside the indexed snapshot, explicitly fresh, or an
-edge read needs raw node truth. Pending mempool data is useful visibility and may
+is missing, stale, scoped outside the indexed snapshot, or an edge read needs raw
+node truth. Stable and fresh summary routes prefer the stored hash-bound canonical
+summary bundle. A fresh summary verifies that bundle's height, block hash,
+component snapshot ids, and exact-tip readiness against Bitcoin Core instead of
+rebuilding broad Computer history in the request; if provenance cannot be proved,
+the route returns HTTP 503. Pending mempool data is useful visibility and may
 be stored, but pending rows must not change canonical routing, ownership, credit
 balances, WORK floor, Growth value, Log totals, or durable Files/Desktop state.
 
@@ -83,6 +87,26 @@ off, and disables broad ledger snapshots. After confirmed catch-up it publishes
 one authenticated canonical-summary bundle built from the completed relational
 read models at the exact hashed Core tip. Broad source, token, registry, and
 ledger snapshot refreshes are explicit supervised jobs, not 30-second work.
+For every hydrated protocol transaction, canonical replay also upserts
+full-node `tx_inputs`, `tx_outputs`, safely decoded `op_returns`, and canonical
+spend links. These normalized rows accelerate exact transaction/outpoint audits
+without replacing Bitcoin Core as the source of truth.
+Existing confirmed canonical raw rows can be hydrated without replaying or
+rewinding projections:
+
+```bash
+NETWORK=livenet \
+POW_INDEX_TX_DETAIL_HYDRATION_BATCH_SIZE=200 \
+POW_INDEX_TX_DETAIL_HYDRATION_MAX_ROWS=10000 \
+npm run indexer:backfill -- --hydrate-transaction-details
+```
+
+Use `--dry-run` first. The detail-only job uses bounded keyset batches and
+upserts only normalized inputs, outputs, OP_RETURN rows, and spend-link columns.
+If it reports `limitReached`, resume from the returned height, block-index, and
+txid cursor through the matching `POW_INDEX_TX_DETAIL_HYDRATION_AFTER_*`
+variables. Legacy wrapper rows without canonical `vin`/`vout` envelopes are
+excluded rather than guessed.
 
 The parity script compares the database read model with the canonical
 `/api/v1/ledger-consistency` snapshot before any endpoint cutover. It requires a
@@ -108,15 +132,17 @@ Non-OK or `summary-snapshot-fallback` rows are diagnostic only. They are never
 eligible for summary reads or health. Once the hashed relational scan reaches
 the exact Core tip, ID, Wallet, Log, mail, registry, and history reads may reopen
 without waiting for the slower summary publisher. WORK, Marketplace, Growth,
-Infinity, Inception, and work-floor summary routes remain closed until an authenticated
-`canonical-summary-refresh` row contains all six payloads from one snapshot
-with conservative coverage at that same checkpoint.
+Infinity, Inception, and work-floor summary routes remain closed until an
+authenticated `canonical-summary-refresh` row contains all eight required
+payloads—Growth, Inception, Infinity, Log, Marketplace, Token, WORK floor, and
+WORK summary—from one snapshot with conservative coverage at that same
+checkpoint.
 
 Database-backed API reads are feature-flagged. The current production
 default-read posture is:
 
 ```text
-POW_INDEX_READS=tx-status,log-history,token-history,token-state,registry-history,work-floor,work-summary,marketplace-summary,growth-summary,event-history,address-mail
+POW_INDEX_READS=tx-status,log-history,token-history,token-state,registry-history,work-floor,work-summary,marketplace-summary,growth-summary,infinity-summary,inception-summary,event-history,address-mail
 POW_INDEX_SHADOW_READS=log-history,token-history
 POW_INDEX_READ_UNCONFIRMED_TX_STATUS=0
 ```
@@ -130,20 +156,23 @@ database-backed reads are used for stable `q`/`search` queries, `kind` filters,
 and older unfiltered activity pages. The volatile unfiltered first page remains
 canonical; later unfiltered pagination is pinned to a stored ledger snapshot
 through snapshot cursors so pending mempool churn cannot shift page boundaries
-between reads. Fresh reads still use the canonical node/API path.
+between reads. Exact transaction searches use current indexed events and refs;
+volatile unfiltered reads still use the canonical node/API path.
 `POW_INDEX_SHADOW_READS=log-history` compares Log history DB output against the
 canonical response without changing the public response for DB-eligible query
 shapes.
 `POW_INDEX_READS=tx-status,log-history,token-history` also enables snapshot-backed
 Token History reads. The indexer stores canonical `/api/v1/token-history?fresh=1`
 pages in the ledger snapshot and the API repaginates those stored pages with
-snapshot cursors. Token history and token state snapshots use a 24-hour stable
-confirmed-data guard by default, with explicit fresh reads still taking the
-canonical node/API path. `POW_INDEX_READS=token-state` enables default `/api/v1/token`
+snapshot cursors. Unscoped `/api/v1/token-history?kind=tokens` directory reads use
+an exact current proof-index page or paginate the stored hash-bound Token summary;
+`fresh=1` verifies that checkpoint against the Core tip instead of materializing
+the full credit ledger. Token history and token state snapshots use a 24-hour
+stable confirmed-data guard by default. `POW_INDEX_READS=token-state` enables default `/api/v1/token`
 reads from stored token-state snapshots for global and scoped credit views,
 including Marketplace active/sealed books and sale-ticket lifecycle arrays.
-Missing, stale, incomplete, wallet-scoped, address-scoped, query-scoped, or
-fresh reads fall back to the canonical node/API path. `POW_INDEX_SHADOW_READS=token-history`
+Missing, stale, incomplete, wallet-scoped, or address-scoped state reads fall
+back to the canonical node/API path. `POW_INDEX_SHADOW_READS=token-history`
 compares eligible DB output against canonical Token History without changing the
 public response.
 Additional snapshot-backed read flags are available for the broader default-read
@@ -157,9 +186,10 @@ be dropped by an older compacted proof-index summary snapshot. A valid sale
 ticket seal spend is active sealed inventory, not a close; if a projection row
 temporarily carries `closeTxid === sealTxid`, the summary builder must recover
 the row as sealed unless a later real buy, delist, or other non-seal spend
-closes it. Fresh marketplace reads should honor the configured production wait
-window and return a reconciled fallback rather than a raw stale snapshot or 503
-when canonical refresh is slower than the request budget. `event-history`
+closes it. Fresh marketplace and summary reads must return one coherent snapshot
+at the exact hash-verified Core tip; if that cannot be proved inside the request
+budget they return 503. Stable reads may serve a coherent hash-verified last-good
+snapshot with explicit indexed height, tip, lag, and snapshot provenance. `event-history`
 serves DB-backed protocol/event search for indexed registry, credit,
 marketplace, mail/file, seeded, and broader Computer events; `address-mail`
 serves connected-wallet mailbox reads from the indexed mail projection,
@@ -172,9 +202,12 @@ self-sends are the self-recipient case and land in both Inbox and Sent. Any
 attached credit is parsed separately as canonical WORK movement. INCB uses
 `inception@proofofwork.me` and reserved credit id
 `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`.
-The `log` flag is
-reserved for an explicit full activity snapshot refresh. Fresh reads still use
-the node/API path so explicit
+Generic `pwt1:create` and `pwt1:mint` events are invalid for both reserved bond
+families. Their synthetic supply can be issued only by the matching canonical
+bond projection. All other generic mints require the confirmed credit definition
+to precede the mint in canonical block and transaction order.
+The `log` flag is reserved for an explicit full activity snapshot refresh.
+Volatile broad activity and mempool reads still use the node/API path so explicit
 refreshes converge on current chain and mempool truth.
 
 The worker script keeps the indexer warm by repeatedly running bounded
@@ -377,12 +410,19 @@ That bounded view is still one app-wide data plane: WORK, Growth, Marketplace,
 Consistency, Wallet, Credit, IDs, Infinity, Inception, Log, and Computer must agree on the
 same confirmed snapshot/verifier contract, and embedded summary objects must not
 mix a live parent total with stale child data.
-Exact txid/ref lookups are also part of the speed contract. Stable Log history,
-market-log, listing, sale, and closed-listing searches for a concrete txid or
-sale-ticket reference should use indexed `events` and `event_refs` lookups
-before loading broad activity or token-history snapshots. A confirmed txid that
-is already in the database should resolve quickly from the database and expose
-the same chain-verifiable txid, not wait on a wide canonical replay.
+Exact txid/ref lookups are also part of the speed contract. Log searches use
+indexed transaction ids and `event_refs`; explicitly invalid, nonpublic, dropped,
+or orphaned records return a classified empty result. An indexed confirmed or
+pending transaction missing its required public Log projection fails closed with
+`CANONICAL_LOG_PROJECTION_MISSING`. Exact active-listing searches match listing,
+sale-ticket, seal, and close txids; they return an empty terminal result only
+when the database contains explicit terminal evidence, otherwise canonical
+recovery remains eligible. Exact 64-character searches never fall through to a
+broad history replay.
+Fresh wallet credit state uses the exact relational token projection with a
+dedicated 10-second production wait, clamped between 5 and 15 seconds. A timed
+out or unprovable read still returns `CANONICAL_INDEX_UNAVAILABLE`; it never
+falls back to legacy history materialization.
 Pending status checks use their own smaller timeout
 (`POW_INDEX_STATUS_FETCH_TIMEOUT_MS`) and batch limit
 (`POW_INDEX_PENDING_STATUS_LIMIT`) so a single cold tx lookup cannot block a
@@ -390,8 +430,21 @@ full worker cycle. Production service configuration is tracked in:
 
 ```text
 deploy/electrs-open-files-override.conf
+deploy/electrs-hardening.conf
+deploy/electrs-network.toml
+deploy/bitcoin-rpc-network.conf
+deploy/bitcoind-hardening.conf
 deploy/proofofwork-api-proof-index.conf
+deploy/proofofwork-api-node-runtime.conf
+deploy/install-node-runtime.sh
 deploy/proofofwork-indexer-worker.service
+deploy/Caddyfile
+deploy/caddy-hardening.conf
+deploy/wireguard-ui.conf
+deploy/wireguard-node.conf
+deploy/zz-proofofwork-api-private-network.conf
+deploy/proofofwork-api-wg.socket
+deploy/proofofwork-api-wg.service
 deploy/proofofwork-cache-prune.service
 deploy/proofofwork-cache-prune.timer
 deploy/logrotate-timer-override.conf
@@ -401,16 +454,66 @@ deploy/coredump-disable-sysctl.conf
 ```
 
 The node health contract includes those tracked service overrides. Install the
-Electrs file as
+checksum-pinned Node.js 24 LTS runtime with `deploy/install-node-runtime.sh`,
+then install `deploy/proofofwork-api-node-runtime.conf` as
+`/etc/systemd/system/proofofwork-api.service.d/30-node-runtime.conf`. The API
+and indexer worker both use the exact versioned binary under `/opt`; they must
+not fall back to Ubuntu's end-of-life Node.js 18 package. The worker invokes its
+entrypoint directly instead of adding the npm wrapper to the service process.
+For a future production dependency install, prepend
+`/opt/node-v24.18.0-linux-x64/bin` to `PATH` before invoking npm; never use the
+Ubuntu `/usr/bin/npm` runtime for this application.
+Install the
+Bitcoin Core hardening file as
+`/etc/systemd/system/bitcoind.service.d/90-hardening.conf`. Replace the broad
+RPC bind/allow rules in `/etc/bitcoin/bitcoin.conf` with the tracked loopback and
+`172.27.0.0/16` mempool bridge fragment, preserving the existing credentials and
+all unrelated node settings. After restart, Core RPC must listen only on
+`127.0.0.1:8332` and `172.27.0.1:8332`; never on the public node address or a
+wildcard socket. Install `deploy/verify-bitcoin-rpc-bridge.sh` as executable
+`/usr/local/sbin/proofofwork-bitcoin-rpc-bridge-ready`. The tracked unit orders
+Core after Docker and refuses startup unless the `mempool_mempool` network and
+its exact `172.27.0.1/16` bridge address are present, so a missing or recreated
+bridge fails closed instead of leaving Core in a restart loop with an ambiguous
+RPC exposure.
+Install `deploy/electrs-hardening.conf` as
+`/etc/systemd/system/electrs.service.d/90-hardening.conf`, and install
+`deploy/electrs-open-files-override.conf` as
 `/etc/systemd/system/electrs.service.d/zz-index-recovery.conf`, lexically after
-any older `override.conf`, and verify the effective unit with `systemctl cat`
-and `systemctl show`. Its bounded `LimitNOFILE=65536`, restart delay/start limit,
-service log rate limit, and `LimitCORE=0` prevent descriptor/runaway-log failure
-from consuming the root filesystem. The API proof-index override moves
+any older `override.conf`. Verify the combined effective unit with `systemctl cat`
+and `systemctl show`. The hardening layer removes all capabilities, disables core
+dumps, hides devices and home directories, and protects kernel and control-group
+state. The recovery layer bounds `LimitNOFILE=65536`, restart delay/start limit,
+and service log rate so descriptor/runaway-log failure cannot consume the root
+filesystem. Merge `deploy/electrs-network.toml` into
+`/etc/electrs/config.toml`: the Electrum RPC listener binds only to the verified
+`172.27.0.1` mempool bridge, while both the API and worker use that same private
+address. The hardening unit runs the Docker bridge preflight before electrs so a
+missing or changed bridge fails closed; never restore a wildcard Electrum
+listener. The API proof-index override moves
 rebuildable cache state to `/data/proofofwork-api-cache`, requires that mount,
 sets the proof-index health freshness ceiling to 120 seconds, and disables core
 dumps. Create that directory as `powadmin` before starting the API; copy only
 complete cache JSON if retaining a warm cache, never orphan `*.tmp` files.
+The public UI host and node host use the tracked WireGuard templates as a
+private transport. The API process binds only to `127.0.0.1:8081`; the hardened
+socket proxy exposes `10.77.0.2:8081` only on the tunnel, and Caddy proxies
+`/api/*` plus `/health*` to that address. Host firewalls allow the tunnel peer
+and required public web/SSH ports only. The proxy service has an empty capability
+set and `LimitCORE=0`; the socket unit itself does not execute application code.
+Install the Caddy unit hardening drop-in,
+validate the tracked Caddyfile, then verify HSTS, CSP, COOP, immutable hashed
+asset caching, document revalidation, and gzip/zstd responses on every public
+surface. Verify the effective Caddy unit retains only `CAP_NET_BIND_SERVICE` in
+both its capability bounding and ambient sets. Browser HTML is always rendered as static content inside an opaque
+iframe with both scripts and forms disabled; confirmed content never receives a
+wallet-provider execution lane. Before `srcdoc` serialization, the Browser parses
+HTML in an inert template, removes meta/base/executable/embed elements, strips
+navigation and form URLs, replaces forms with inert containers, and permits only
+in-memory `data:`/`blob:` media. The child deny-all CSP and the shared parent
+frame policy then provide independent network and navigation defenses. Only the
+landing-page header policy grants the separate YouTube frame origins used by its
+public video.
 
 The worker requires the real production cluster unit
 `postgresql@16-main.service`, checks `pg_isready` before startup, records
@@ -588,7 +691,7 @@ The default `MEMPOOL_BASE` is designed for the node server where mempool is alre
 
 `PENDING_MEMPOOL_BASE` is optional. It exists because unconfirmed transactions are gossip, not canonical chain state. Two honest nodes can temporarily see different mempools. Production uses ProofOfWork-controlled node/indexer infrastructure for confirmed history and pending visibility.
 
-Production raw transaction broadcasts use `MEMPOOL_BASE` through the first-party API. The browser sends only final signed transaction hex; wallet signing stays local and the API does not receive seed phrases, private keys, or unsigned wallet authority.
+Production raw transaction broadcasts use `MEMPOOL_BASE` through the first-party API. The browser sends only final signed transaction hex; wallet signing stays local and the API does not receive seed phrases, private keys, or unsigned wallet authority. Before submission the client verifies the signed transaction still has the intended inputs, outputs, values, and OP_RETURN payloads, then requires the API txid to match its locally decoded txid. The API validates browser origins, enforces per-client/global/concurrency limits, and requires an exact-tip canonical index for livenet broadcast admission.
 
 Production transaction preparation also uses the first-party API for wallet UTXO reads, previous transaction hex, and listing-anchor outspend checks. These reads are public chain/indexer data needed to build PSBTs locally in the browser before UniSat signs. The API still never receives private keys, seed phrases, or unsigned wallet authority.
 
@@ -659,6 +762,7 @@ unless a specific generated artifact is intentionally tracked.
 
 ```text
 GET /health
+GET /health/live
 GET /api/v1/registry?network=livenet
 GET /api/v1/log?network=livenet
 GET /api/v1/ids?network=livenet
@@ -781,7 +885,7 @@ The credit endpoint:
 - Marketplace summary compaction must keep all confirmed, unspent, buyable sealed listings even when the recent active-listing preview is capped. Public summary reads should be verified against the full WORK token payload so every confirmed sealed listing in `/api/v1/token` remains present in `/api/v1/marketplace-summary`.
 - Credit market history merges active listings, closed listings, and settled sales into a paginated `market-log` view ordered by confirmation status, event time, and txid. It is not sorted by price or arbitrage.
 - Confirmed `pwt1` attempts that fail canonical token validation remain indexed as `token-event-invalid` audit rows with their txid, block position, attempted amount, sender, recipient, and reason. They are visible in address-scoped Wallet, Event History, and invalid-event history, but are excluded from the public canonical Log and its action totals. They never mutate balances, supply, valid transfer history, floor, or network value.
-- Fresh credit reads, credit summary reads, credit history reads, WORK summaries, and marketplace summaries refresh the shared credit payload cache before returning. Background refresh keeps fast first paint useful, but explicit refresh must converge on current node truth and may not leave a spent sale-ticket visible as active.
+- Fresh credit-directory and summary reads verify the stored hash-bound canonical checkpoint against Bitcoin Core instead of rebuilding the shared credit ledger in the request. Scoped wallet/history reads may still use bounded canonical recovery; explicit refresh must converge on current node truth and may not leave a spent sale-ticket visible as active.
 - Fresh reads also remove dropped pending credit/WORK transactions from overlay state after liveness checks, so stale pending transfers, listings, seals, delistings, or buys do not survive after they disappear from mempool views.
 - Wallet-owned credit listing views are derived from the same active and closed listing state as Marketplace, so a connected seller can inspect confirmed, pending, delisted, and sold listings without a separate stale wallet-only book.
 - Credit UI surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per credit and per mint from BTC/USD.
@@ -828,8 +932,8 @@ The tx endpoint:
 - Returns a normalized transaction payload from the same local/pending source order.
 - Lets Browser reconstruct HTML from `pwm1:m` message bodies or verified `pwm1:a` attachments by txid without depending on public mempool.space from production browsers.
 - Does not turn pending transactions into canonical history; Browser labels pending pages as pending.
-- Lets confirmed Browser pages run scripts in an opaque sandbox while keeping wallet signing outside Browser pages.
-- Keeps pending Browser pages script-disabled. The API never receives seed phrases, private keys, or wallet authority.
+- Keeps both confirmed and pending Browser pages script- and form-disabled in an opaque static sandbox. On-chain HTML receives no wallet-provider or signing execution lane.
+- The API never receives seed phrases, private keys, or wallet authority.
 
 Files/Desktop projection:
 
@@ -949,6 +1053,7 @@ After changing the API or production build, verify:
   audit, so Computer is checking integration rather than hiding an unaudited
   child surface.
 - `/health` returns `service: proofofwork-op-return-api`.
+- `/health` is the exact-tip readiness contract; `/health/live` reports the separately labeled availability contract. Both must traverse the private WireGuard API path through Caddy.
 - `/api/v1/consistency?network=livenet` is green, has no `missingLogEvents`, and includes the seeded mail, seeded Infinity Bond, seeded Inception Bond, and INCB supply/flow checks.
 - ID registry count matches the node-backed API and includes pending records when visible.
 - `tokens@proofofwork.me` resolves to the expected credit index address.
@@ -958,6 +1063,7 @@ After changing the API or production build, verify:
 - Browser can load a txid with HTML in the message body or a verified `text/html` attachment, render it in a sandbox, and reject non-HTML message/attachment data.
 - Standalone Marketplace can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Credit, Wallet, and Marketplace transaction buttons can load UTXOs, previous transaction hex, and listing-anchor outspends through the first-party API before opening UniSat.
+- Generic funding selection excludes every active ProofOfWork ID and credit listing anchor owned by the connected wallet, even when that listing belongs to a different app or asset scope.
 - `infinity.proofofwork.me` loads `/api/v1/infinity-summary`, can broadcast a `pwm1:m:powb` bond message to a recipient, and shows POWB balances/listings from the same sale-ticket ledger as credits.
 - `computer.proofofwork.me/?folder=infinity` renders the embedded Infinity Bond / POWB workspace, including the Infinity Bond chart and POWB sale-ticket market, without falling back to credit-market labels.
 - `inception.proofofwork.me` loads `/api/v1/inception-summary`, prepares a `pwm1:m:incb` bond message to a recipient, and shows INCB balances/listings from the same sale-ticket ledger as credits. Wallet signing and broadcast remain local/user-authorized.
@@ -972,6 +1078,7 @@ After changing the API or production build, verify:
 - Growth can load real chain metrics, including credit creations, mints, transfers, listings, and sales, and render the modeled-vs-real proofs/USD value graph without layout overlap on desktop and mobile.
 - WORK and Growth show matching confirmed network value in proofs/live USD using `/api/v1/work-floor` and `/api/v1/prices/btc-usd`; `actualValue.totalUsd` reconciles to `actualValue.totalSats / 100000000 * btcUsd`.
 - `npm run check:live-data` passes locally.
+- `npm run check:api-truth`, `npm run check:hardening`, and `npm run check:ui` pass locally.
 - `npm run audit:ledger` passes against production.
 - Known attachment transactions reconstruct with valid size and SHA-256.
 - Known HTML message-body transactions render through Browser from `pwm1:m`.

@@ -194,9 +194,8 @@ Behavior:
 - Render HTML-like message bodies directly from `pwm1:m` chunks.
 - Reconstruct HTML attachments through the same size and SHA-256 checks as Files/Desktop.
 - Render only HTML-like content: message bodies that look like HTML, or attachments marked `text/html`, `application/xhtml+xml`, `.html`, or `.xhtml`.
-- Render pending pages inside a sandboxed iframe with scripts disabled.
-- Render confirmed pages inside a sandboxed iframe that may run page scripts, but without same-origin privileges.
-- Keep wallet signing outside Browser iframes. Browser renders verified HTML, but iframe scripts do not get a parent signing bridge.
+- Sanitize both pending and confirmed pages into the same opaque static iframe: remove refresh/base/navigation URLs, neutralize forms, keep only in-memory media, and disable scripts plus external requests with CSP.
+- Keep wallet signing outside Browser iframes. Browser renders verified static HTML and provides no parent or injected-provider signing lane.
 - Show proof metadata: txid, status, network, sender, proofs, protocol bytes, size, and SHA-256.
 - Expose a simple Computer-native HTML template users can copy before publishing as a message body or download before publishing as a normal ProofOfWork file attachment.
 - Treat pending pages as pending visibility, not final truth.

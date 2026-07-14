@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const files = [
   "README.md",
@@ -10,6 +10,8 @@ const files = [
   "src/app/appLinks.ts",
   "src/app/routeRegistry.ts",
   "src/features/landing/LandingApp.tsx",
+  "src/features/landing/LandingRoot.tsx",
+  "src/main.tsx",
   "src/features/rush/RushApp.tsx",
   "src/shared/api/proofApiClient.ts",
   "src/shared/components/AppHeader.tsx",
@@ -17,7 +19,9 @@ const files = [
   "src/shared/components/BrowserNetworkTabs.tsx",
   "src/shared/components/DomainNav.tsx",
   "src/shared/components/HeaderActionsMenu.tsx",
+  "src/shared/protocol/idRegistry.ts",
   "src/styles.css",
+  "vite.config.ts",
 ];
 
 const read = (path) => readFileSync(path, "utf8");
@@ -181,9 +185,53 @@ expect(
 );
 
 const landingApp = contents.get("src/features/landing/LandingApp.tsx");
+const landingRoot = contents.get("src/features/landing/LandingRoot.tsx");
+const main = contents.get("src/main.tsx");
+const viteConfig = contents.get("vite.config.ts");
 expect(
   "landing uses the shared header contract",
   !/landing-topbar|landing-brand|domainNavCompact=\{false\}/.test(landingApp),
+);
+expect(
+  "landing route is selected before the transaction-capable App import",
+  /detectAppSurface\(\) === "landing"[\s\S]*import\("\.\/features\/landing\/LandingRoot"\)[\s\S]*import\("\.\/App"\)/.test(
+    main,
+  ),
+);
+expect(
+  "landing root reads only the first-party registry summary and preserves unknown state",
+  /fetchProofApiJson<RegistrySummaryResponse>[\s\S]*\/api\/v1\/registry-summary/.test(
+    landingRoot,
+  ) &&
+    /fresh=1/.test(landingRoot) &&
+    /refreshRegistry\(false\)[\s\S]*refreshRegistry\(true\)/.test(landingRoot) &&
+    /registryLoaded/.test(landingRoot) &&
+    /registryFresh/.test(landingRoot) &&
+    /AbortController/.test(landingRoot) &&
+    /payload\.records\.map\(\(record, index\)/.test(landingRoot) &&
+    /Registry summary record \$\{index \+ 1\} is malformed/.test(landingRoot) &&
+    !/payload\.records\.flatMap/.test(landingRoot) &&
+    !/from "\.\.\/\.\.\/App"|bitcoinjs|signPsbt|buildPaymentPsbt/.test(
+      landingRoot,
+    ) &&
+    /registryLoaded \? confirmedRecords\.length\.toLocaleString\(\) : "…"/.test(
+      landingApp,
+    ),
+);
+expect(
+  "landing and Computer share one canonical ID registry address helper",
+  /registryAddressForNetwork/.test(landingRoot) &&
+    /registryAddressForNetwork/.test(contents.get("src/shared/protocol/idRegistry.ts")) &&
+    /from "\.\/shared\/protocol\/idRegistry"/.test(
+      contents.get("src/App.tsx"),
+    ),
+);
+expect(
+  "landing dependencies are split from Bitcoin signing dependencies",
+  /\/node_modules\/lucide-react\//.test(viteConfig) &&
+    /\/node_modules\/react\//.test(viteConfig) &&
+    /return undefined;/.test(viteConfig) &&
+    !/return "vendor"/.test(viteConfig),
 );
 
 const appLinks = contents.get("src/app/appLinks.ts");
@@ -215,6 +263,7 @@ expect(
 
 const app = contents.get("src/App.tsx");
 const proofApiClient = contents.get("src/shared/api/proofApiClient.ts");
+const routeRegistry = contents.get("src/app/routeRegistry.ts");
 expect(
   "Proof API errors preserve canonical error codes without raw JSON UI",
   /class ProofApiRequestError/.test(proofApiClient) &&
@@ -347,6 +396,8 @@ expect(
   notContains("src/App.tsx", pattern, `no per-route AppHeader override ${pattern}`),
 );
 const browserAppBlock = app.match(/function BrowserApp[\s\S]*?function BrowserWorkspace/)?.[0] ?? "";
+const browserWorkspaceBlock =
+  app.match(/function BrowserWorkspace[\s\S]*?function DesktopApp/)?.[0] ?? "";
 expect(
   "standalone Browser route has dedicated metadata and canonical URLs",
   [
@@ -355,12 +406,238 @@ expect(
   /function browserRoutePath\(txid:\s*string,\s*network:\s*BitcoinNetwork\)/,
   /params\.set\("browser",\s*"1"\)/,
   /window\.history\.pushState\(null,\s*"",\s*nextPath\)/,
-  /syncBrowserRoute\(txid,\s*network\)/,
+  /syncBrowserRoute\(txid,\s*targetNetwork\)/,
   ].every((pattern) => pattern.test(app)),
 );
 expect(
   "Browser iframes do not grant clipboard write to rendered pages",
   !/allow="clipboard-write"/.test(app),
+);
+expect(
+  "confirmed and pending Browser pages share one static iframe renderer",
+  /function BrowserPageFrame\(\{ page \}: \{ page: BrowserPage \}\)/.test(app) &&
+    /sandbox=""[\s\S]{0,100}srcDoc=\{browserStaticDocument\(page\.html\)\}/.test(
+      app,
+    ) &&
+    (app.match(/<BrowserPageFrame\b/g) || []).length === 2 &&
+    !/<ConfirmedBrowserPageFrame\b/.test(app),
+);
+expect(
+  "Browser rendering has no script bridge, context injection, or bridge assets",
+  !/allow-scripts|allow-same-origin|postMessage|POW_CONTEXT|browserPageContext|browser-sandbox/.test(
+    app,
+  ) &&
+    !existsSync("public/browser-sandbox.html") &&
+    !existsSync("public/browser-sandbox.js"),
+);
+expect(
+  "Browser static HTML is sanitized in an inert template before serialization",
+  /const template = document\.createElement\("template"\)/.test(app) &&
+    /template\.innerHTML = browserStaticStructuralShells\(html\);[\s\S]{0,100}sanitizeBrowserStaticFragment\(template\.content\)/.test(
+      app,
+    ) &&
+    /<body\$\{bodyAttributes\} data-pow-static-page="" inert="">/.test(app) &&
+    !/new DOMParser\(/.test(app),
+);
+expect(
+  "Browser sanitizer preserves safe document and body presentation attributes",
+  /function browserStaticStructuralShells\(html: string\)/.test(app) &&
+    /html\|head\|body/.test(app) &&
+    /pow-static-\$\{name\.toLowerCase\(\)\}/.test(app) &&
+    /function browserStaticAttributeMarkup/.test(app) &&
+    /const htmlAttributes = browserStaticAttributeMarkup\(htmlShell\)/.test(
+      app,
+    ) &&
+    /const bodyAttributes = browserStaticAttributeMarkup/.test(app) &&
+    /headHtml/.test(app) &&
+    /bodyHtml/.test(app),
+);
+expect(
+  "Browser sanitizer removes refresh, base, executable, and embedded navigation elements",
+  /"base"/.test(app) &&
+    /"meta"/.test(app) &&
+    /"script"/.test(app) &&
+    /"iframe"/.test(app) &&
+    /"object"/.test(app) &&
+    /BROWSER_STATIC_REMOVED_ELEMENTS/.test(app) &&
+    /fragment\.querySelectorAll\([\s\S]{0,100}BROWSER_STATIC_REMOVED_ELEMENTS/.test(
+      app,
+    ) &&
+    /element\.remove\(\)/.test(app),
+);
+expect(
+  "Browser sanitizer strips navigation and form URLs while allowing only in-memory media",
+  [
+    '"action"',
+    '"formaction"',
+    '"href"',
+    '"ping"',
+    '"src"',
+    '"srcdoc"',
+    '"srcset"',
+    '"xlink:href"',
+    '"formmethod"',
+    '"formtarget"',
+    '"target"',
+  ].every((attribute) => app.includes(attribute)) &&
+    /!\/\^\(\?:blob\|data\):\/iu\.test\(normalizedValue\)/.test(app) &&
+    /attributeName\.startsWith\("on"\)/.test(app) &&
+    /element\.removeAttribute\(attribute\.name\)/.test(app),
+);
+expect(
+  "Browser forms are replaced with inert non-form containers",
+  /fragment\.querySelectorAll\("form"\)/.test(app) &&
+    /document\.createElement\("div"\)/.test(app) &&
+    /data-pow-static-form/.test(app) &&
+    /replacement\.setAttribute\("inert", ""\)/.test(app) &&
+    /form\.replaceWith\(replacement\)/.test(app),
+);
+expect(
+  "route flags use exact URLSearchParams matching",
+  /new URLSearchParams\(window\.location\.search\)\.get\(name\) === "1"/.test(
+    routeRegistry,
+  ) && !/window\.location\.search\.includes/.test(routeRegistry),
+);
+expect(
+  "Computer restores exact folder routes on browser history navigation",
+  /window\.addEventListener\("popstate", restoreComputerLocation\)/.test(app) &&
+    /computerFolderFromSearch\(\) \?\? "inbox"/.test(app),
+);
+expect(
+  "standalone Browser restores txid and network from browser history",
+  /window\.addEventListener\("popstate", restoreBrowserLocation\)/.test(
+    browserAppBlock,
+  ) &&
+    /networkFromBrowserLocation\(\)/.test(browserAppBlock) &&
+    /txidFromBrowserLocation\(\)/.test(browserAppBlock) &&
+    /loadGenerationRef\.current/.test(browserAppBlock) &&
+    /loadPage\(nextTxid, nextNetwork, false\)/.test(browserAppBlock),
+);
+expect(
+  "Computer Browser ignores late page loads after network changes",
+  /const loadGenerationRef = useRef\(0\)/.test(browserWorkspaceBlock) &&
+    /const generation = \+\+loadGenerationRef\.current/.test(
+      browserWorkspaceBlock,
+    ) &&
+    /generation !== loadGenerationRef\.current/.test(browserWorkspaceBlock) &&
+    /generation === loadGenerationRef\.current/.test(browserWorkspaceBlock) &&
+    /loadGenerationRef\.current \+= 1;[\s\S]{0,120}setNetwork\(activeNetwork\)/.test(
+      browserWorkspaceBlock,
+    ),
+);
+expect(
+  "Desktop and Files never substitute hardcoded Welcome bytes",
+  !/canonicalWelcomeAttachment|canonicalWelcomeFileMessage|withCanonicalWelcomeFile|CANONICAL_WELCOME_HTML/.test(
+    app,
+  ) &&
+    /fileSurfaceMessages\(\s*publicDesktopMail\(inboxMessages, sentMessages\),?\s*\)/.test(
+      app,
+    ),
+);
+expect(
+  "attachment reconstruction caps declared part counts before allocation",
+  /const MAX_ATTACHMENT_PARTS = 1_024/.test(app) &&
+    /total > MAX_ATTACHMENT_PARTS[\s\S]{0,1000}Array\.from\(\{ length: total \}/.test(
+      app,
+    ),
+);
+expect(
+  "Browser static document CSP blocks scripts and rendered-page capabilities",
+  /function browserStaticDocument\(html: string\)[\s\S]*script-src 'none'/.test(
+    app,
+  ) &&
+    /connect-src 'none'/.test(app) &&
+    /form-action 'none'/.test(app) &&
+    /frame-src 'none'/.test(app) &&
+    /object-src 'none'/.test(app) &&
+    /worker-src 'none'/.test(app) &&
+    /http-equiv="Content-Security-Policy"/.test(app),
+);
+expect(
+  "signed PSBT intent and node txid are verified before broadcast",
+  /function assertSignedTransactionIntent/.test(app) &&
+    (app.match(/assertSignedTransactionIntent\(/g) || []).length >= 3 &&
+    /result\.txid !== localTxid/.test(app) &&
+    /No transaction was broadcast/.test(app),
+);
+const detailedSignerBlock =
+  app.match(
+    /async function signAndBroadcastPsbtDetailed[\s\S]*?async function signAndBroadcastPsbt\(/,
+  )?.[0] ?? "";
+expect(
+  "failed signed PSBT extraction cannot bypass checks through wallet push",
+  !/pushPsbt\(/.test(detailedSignerBlock),
+);
+expect(
+  "Computer credit state and in-flight reads are isolated by scope",
+  /acceptedTokenStatesRef = useRef\(\s*new Map<string, PowTokenState>\(\)/.test(
+    app,
+  ) &&
+    /tokenRefreshInFlightRef = useRef\(\s*new Map/.test(app) &&
+    /activeTokenStateScopeRef\.current !== scopeKey/.test(app),
+);
+expect(
+  "workspace status and busy completions stay with their originating folder",
+  /workspaceStatusesRef = useRef\(\s*new Map<string, WorkspaceStatus>/.test(
+    app,
+  ) &&
+    /setStatusForWorkspace/.test(app) &&
+    /activeWorkspaceStatusKeyRef\.current === workspaceKey/.test(app) &&
+    /async function refreshMarketplaceSummary[\s\S]*requestWorkspaceKey[\s\S]*setStatusForWorkspace\(requestWorkspaceKey/.test(
+      app,
+    ) &&
+    /async function refreshInfinity[\s\S]*requestWorkspaceKey[\s\S]*setBusyForWorkspace\(requestWorkspaceKey/.test(
+      app,
+    ),
+);
+const chooseSellerAnchorPlanBlock =
+  app.match(/async function chooseSellerAnchorPlan[\s\S]*?async function fetchBroadcastStatus/)?.[0] ?? "";
+const selectChainedInitialInputsBlock =
+  app.match(/async function selectChainedInitialInputs[\s\S]*?function buildChainedMintPsbt/)?.[0] ?? "";
+const buildPaymentPsbtBlock =
+  app.match(/async function buildPaymentPsbt[\s\S]*?async function signSellerAnchorAuthorization/)?.[0] ?? "";
+const buildAnchoredMarketplacePsbtBlock =
+  app.match(/async function buildAnchoredMarketplacePsbt[\s\S]*?async function broadcastRawTransactionViaProofApi/)?.[0] ?? "";
+expect(
+  "all ProofOfWork sale-ticket anchors are freshly excluded from funding selection",
+  /async function fetchFreshWalletTokenListingsForAnchors[\s\S]*fresh: "1"[\s\S]*wallet: "1"[\s\S]*authoritativeWallet !== true[\s\S]*walletScoped !== true[\s\S]*Array\.isArray\(payload\.listings\)/.test(
+    app,
+  ) &&
+    /async function fetchFreshProofOfWorkListingAnchorOutpoints[\s\S]*\["", WORK_TOKEN_ID, POWB_TOKEN_ID, INCB_TOKEN_ID\][\s\S]*fetchIdRegistryState\(network, true\)[\s\S]*fetchFreshWalletTokenListingsForAnchors[\s\S]*activeListingAnchorOutpointsForAddress[\s\S]*activeTokenListingAnchorOutpointsForAddress[\s\S]*No transaction was created/.test(
+    app,
+  ) &&
+    /fetchFreshProofOfWorkListingAnchorOutpoints/.test(
+      chooseSellerAnchorPlanBlock,
+    ) &&
+    /fetchFreshProofOfWorkListingAnchorOutpoints[\s\S]*mergeListingAnchorOutpoints\(\s*excludeOutpoints \?\? \[\],[\s\S]*reservedListingAnchors/.test(
+      selectChainedInitialInputsBlock,
+    ) &&
+    /fetchFreshProofOfWorkListingAnchorOutpoints[\s\S]*mergeListingAnchorOutpoints\(\s*excludeOutpoints \?\? \[\],[\s\S]*reservedListingAnchors/.test(
+      buildPaymentPsbtBlock,
+    ) &&
+    /fetchFreshProofOfWorkListingAnchorOutpoints[\s\S]*mergeListingAnchorOutpoints\(\s*excludeOutpoints \?\? \[\],[\s\S]*reservedListingAnchors,[\s\S]*anchor\.txid/.test(
+      buildAnchoredMarketplacePsbtBlock,
+    ),
+);
+const walletSyncBlock =
+  app.match(/const syncWallet = async \(\) => \{[\s\S]*?const handleWalletChange/)?.[0] ?? "";
+expect(
+  "wallet account and network events preserve the active Computer workspace",
+  /walletSyncGenerationRef/.test(walletSyncBlock) &&
+    /ensureWalletNetwork/.test(walletSyncBlock) &&
+    !/setActiveFolder\(/.test(walletSyncBlock),
+);
+expect(
+  "mobile Computer navigation is collapsed until explicitly opened",
+  /className="sidebar-toggle"/.test(app) &&
+    /aria-expanded=\{sidebarExpanded\}/.test(app) &&
+    /\.sidebar:not\(\.is-expanded\) > \.folders/.test(css),
+);
+expect(
+  "Proof API reads expose caller cancellation without losing timeout protection",
+  /signal\?: AbortSignal/.test(proofApiClient) &&
+    /options\.signal\?\.addEventListener\("abort"/.test(proofApiClient) &&
+    /options\.signal\?\.removeEventListener\("abort"/.test(proofApiClient),
 );
 expect(
   "standalone Browser keeps the network selector in the form, not the shared topbar",
@@ -539,7 +816,7 @@ expect(
 );
 expect(
   "WORK connected-wallet sync stays on the global compact summary",
-  /const workSummary = workTokenMode[\s\S]*fetchWorkSummary\("livenet",\s*false\)[\s\S]*address:\s*workTokenMode \? "" :/.test(
+  /const workWorkspace = workTokenMode \|\| activeFolder === "work"[\s\S]*const workSummary = workWorkspace[\s\S]*fetchWorkSummary\("livenet",\s*false\)[\s\S]*address:\s*workWorkspace \? "" :/.test(
     app,
   ),
 );

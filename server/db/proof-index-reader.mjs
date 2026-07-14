@@ -229,15 +229,27 @@ function historyPaginationFromSearch(searchParams) {
   const page = boundedInteger(params.get("page"), 0, 0, 1_000_000);
   const cursorRaw = String(params.get("cursor") ?? "").trim();
   const cursor = historyCursorFromSearch(cursorRaw);
-  const offset = cursorRaw ? cursor.offset : page * limit;
+  const offsetRaw = String(params.get("offset") ?? "").trim();
+  const offset = cursorRaw
+    ? cursor.offset
+    : offsetRaw
+      ? boundedInteger(offsetRaw, 0, 0, 100_000_000)
+      : page * limit;
   const snapshotId =
     cursor.snapshotId ||
     normalizedSnapshotId(
       params.get("snapshot") ?? params.get("snapshotId") ?? "",
     );
-  const query = String(params.get("q") ?? params.get("search") ?? "")
-    .trim()
-    .toLowerCase();
+  const query = [
+    "q",
+    "search",
+    "txid",
+    "transaction",
+    "transactionId",
+  ]
+    .map((key) => String(params.get(key) ?? "").trim())
+    .find(Boolean)
+    ?.toLowerCase() ?? "";
 
   return { limit, offset, page, query, snapshotId };
 }
@@ -1679,7 +1691,12 @@ async function exactActiveTokenListingHistoryPage(
   const params = [network, uniqueTxids];
   const conditions = [
     "cl.network = $1",
-    "cl.listing_id = ANY($2::text[])",
+    `(
+      cl.listing_id = ANY($2::text[])
+      OR cl.sale_ticket_txid = ANY($2::text[])
+      OR cl.seal_txid = ANY($2::text[])
+      OR cl.close_txid = ANY($2::text[])
+    )`,
     "cl.status = ANY(ARRAY['active','sealing']::text[])",
   ];
   if (scope && scope !== "all") {
@@ -1699,6 +1716,66 @@ async function exactActiveTokenListingHistoryPage(
     params,
   );
   const totalCount = rowNumber(countResult.rows[0], "total_count");
+  let terminalMiss = false;
+  if (totalCount === 0) {
+    const terminalResult = await pool.query(
+      `
+        WITH candidate_events AS (
+          SELECT direct.event_id
+          FROM proof_indexer.events direct
+          WHERE direct.network = $1
+            AND direct.txid = ANY($2::text[])
+          UNION
+          SELECT refs.event_id
+          FROM proof_indexer.event_refs refs
+          JOIN proof_indexer.events referenced
+            ON referenced.event_id = refs.event_id
+           AND referenced.network = $1
+          WHERE refs.ref_value = ANY($2::text[])
+        )
+        SELECT (
+          EXISTS (
+            SELECT 1
+            FROM proof_indexer.transactions terminal_tx
+            WHERE terminal_tx.network = $1
+              AND terminal_tx.txid = ANY($2::text[])
+              AND terminal_tx.status IN ('dropped', 'orphaned')
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM proof_indexer.credit_listings terminal_listing
+            WHERE terminal_listing.network = $1
+              AND (
+                terminal_listing.listing_id = ANY($2::text[])
+                OR terminal_listing.sale_ticket_txid = ANY($2::text[])
+                OR terminal_listing.seal_txid = ANY($2::text[])
+                OR terminal_listing.close_txid = ANY($2::text[])
+              )
+              AND terminal_listing.status IN (
+                'sold',
+                'delisted',
+                'dropped',
+                'orphaned'
+              )
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM candidate_events candidate
+            JOIN proof_indexer.events terminal_event
+              ON terminal_event.event_id = candidate.event_id
+            WHERE terminal_event.valid = false
+              OR terminal_event.status IN ('dropped', 'orphaned')
+              OR terminal_event.kind IN ('token-listing-closed', 'token-sale')
+          )
+        ) AS terminal
+      `,
+      [network, uniqueTxids],
+    );
+    terminalMiss = terminalResult.rows[0]?.terminal === true;
+    if (!terminalMiss) {
+      return null;
+    }
+  }
   const rowParams = [...params, pagination.limit, pagination.offset];
   const limitParam = rowParams.length - 1;
   const offsetParam = rowParams.length;
@@ -1818,12 +1895,15 @@ async function exactActiveTokenListingHistoryPage(
     indexedAt: dateIso(
       countResult.rows[0]?.indexed_at ?? snapshot?.generated_at,
     ),
-    indexedThroughBlock: undefined,
+    indexedThroughBlock:
+      rowNumber(snapshot, "indexed_through_block") || undefined,
     items,
     kind: "listings",
     network,
     pagination,
-    source: "proof-indexer-credit-listings-exact",
+    source: terminalMiss
+      ? "proof-indexer-credit-listings-terminal"
+      : "proof-indexer-credit-listings-exact",
     snapshot,
   });
 }
@@ -3342,36 +3422,6 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
     const queryTxid = normalizedTxid(pagination.query);
     if (queryTxid) {
       exactQueryTxid = queryTxid;
-      const queryParam = addParam(queryTxid);
-      const txidPayloadParam = addParam(JSON.stringify({ txid: queryTxid }));
-      const saleTxidPayloadParam = addParam(
-        JSON.stringify({ saleTxid: queryTxid }),
-      );
-      const closeTxidPayloadParam = addParam(
-        JSON.stringify({ closeTxid: queryTxid }),
-      );
-      const closedTxidPayloadParam = addParam(
-        JSON.stringify({ closedTxid: queryTxid }),
-      );
-      const listingIdPayloadParam = addParam(
-        JSON.stringify({ listingId: queryTxid }),
-      );
-      conditions.push(`
-        (
-          e.txid = ${queryParam}
-          OR e.payload @> ${txidPayloadParam}::jsonb
-          OR e.payload @> ${saleTxidPayloadParam}::jsonb
-          OR e.payload @> ${closeTxidPayloadParam}::jsonb
-          OR e.payload @> ${closedTxidPayloadParam}::jsonb
-          OR e.payload @> ${listingIdPayloadParam}::jsonb
-          OR EXISTS (
-            SELECT 1
-            FROM proof_indexer.event_refs erq
-            WHERE erq.event_id = e.event_id
-              AND erq.ref_value = ${queryParam}
-          )
-        )
-      `);
     } else {
       const queryParam = addParam(`%${pagination.query}%`);
       conditions.push(`
@@ -3409,10 +3459,25 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
       pagination.limit,
       pagination.limit + pagination.offset,
     );
-    const rowParams = [...params, rowLimit];
+    const exactParams = [...params, exactQueryTxid];
+    const exactQueryParam = `$${exactParams.length}`;
+    const rowParams = [...exactParams, rowLimit];
     const limitParam = `$${rowParams.length}`;
     const rowsResult = await pool.query(
       `
+        WITH matched_events AS (
+          SELECT direct.event_id
+          FROM proof_indexer.events direct
+          WHERE direct.network = $1
+            AND direct.txid = ${exactQueryParam}
+          UNION
+          SELECT refs.event_id
+          FROM proof_indexer.event_refs refs
+          JOIN proof_indexer.events referenced
+            ON referenced.event_id = refs.event_id
+           AND referenced.network = $1
+          WHERE refs.ref_value = ${exactQueryParam}
+        )
         SELECT
           e.payload,
           e.protocol,
@@ -3424,7 +3489,9 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
           e.block_height,
           e.txid,
           e.event_id
-        FROM proof_indexer.events e
+        FROM matched_events matched
+        JOIN proof_indexer.events e
+          ON e.event_id = matched.event_id
         WHERE ${whereClause}
         ORDER BY
           COALESCE(e.event_time, e.block_time, e.created_at) DESC,
@@ -3434,7 +3501,67 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
       `,
       rowParams,
     );
-    return logHistoryPageFromItems({
+    let queryDisposition =
+      requestedKind && !PUBLIC_LOG_EVENT_KINDS.has(requestedKind)
+        ? "nonpublic-kind-filter"
+        : undefined;
+    if (rowsResult.rows.length === 0 && !queryDisposition) {
+      const dispositionResult = await pool.query(
+        `
+          SELECT
+            terminal_tx.status,
+            terminal_tx.block_height,
+            terminal_tx.raw_tx IS NOT NULL AS has_raw_tx,
+            count(candidate.event_id)::integer AS event_count,
+            count(candidate.event_id) FILTER (
+              WHERE candidate.valid = false
+            )::integer AS invalid_event_count,
+            count(candidate.event_id) FILTER (
+              WHERE candidate.valid = true
+                AND candidate.status IN ('confirmed', 'pending')
+                AND candidate.kind = ANY($3::text[])
+            )::integer AS public_event_count
+          FROM proof_indexer.transactions terminal_tx
+          LEFT JOIN proof_indexer.events candidate
+            ON candidate.network = terminal_tx.network
+           AND candidate.txid = terminal_tx.txid
+          WHERE terminal_tx.network = $1
+            AND terminal_tx.txid = $2
+          GROUP BY
+            terminal_tx.status,
+            terminal_tx.block_height,
+            terminal_tx.raw_tx
+        `,
+        [network, exactQueryTxid, [...PUBLIC_LOG_EVENT_KINDS]],
+      );
+      const disposition = dispositionResult.rows[0];
+      const eventCount = rowNumber(disposition, "event_count");
+      const invalidEventCount = rowNumber(
+        disposition,
+        "invalid_event_count",
+      );
+      const publicEventCount = rowNumber(
+        disposition,
+        "public_event_count",
+      );
+      if (["dropped", "orphaned"].includes(disposition?.status)) {
+        queryDisposition = "terminal-nonpublic";
+      } else if (
+        disposition?.status === "confirmed" &&
+        rowNumber(disposition, "block_height") > 0 &&
+        rowNumber(disposition, "block_height") <=
+          rowNumber(snapshot, "indexed_through_block") &&
+        disposition?.has_raw_tx === true &&
+        eventCount > 0 &&
+        publicEventCount === 0
+      ) {
+        queryDisposition =
+          invalidEventCount === eventCount
+            ? "confirmed-invalid-nonpublic"
+            : "confirmed-nonpublic";
+      }
+    }
+    const page = logHistoryPageFromItems({
       indexedAt: snapshot.generated_at
         ? dateIso(snapshot.generated_at)
         : new Date().toISOString(),
@@ -3450,6 +3577,7 @@ export async function proofIndexLogHistoryPayload(network, kind, searchParams) {
       snapshot,
       source: "proof-indexer",
     });
+    return queryDisposition ? { ...page, queryDisposition } : page;
   }
 
   const snapshot = await ledgerSnapshot(pool, network, pagination.snapshotId);
@@ -4139,6 +4267,30 @@ export async function proofIndexTokenHistoryPayload(
     .filter(Boolean);
   if (
     !eligibility.pagination.snapshotId &&
+    eligibility.kind === "listings" &&
+    exactMarketTxidNeedles.length > 0
+  ) {
+    const snapshotMetadata = await ledgerSnapshotMetadata(
+      pool,
+      network,
+      eligibility.pagination.snapshotId,
+    );
+    if (snapshotMetadata) {
+      const exactListingPage = await exactActiveTokenListingHistoryPage(
+        pool,
+        network,
+        tokenScope,
+        searchParams,
+        eligibility.pagination,
+        snapshotMetadata,
+      );
+      if (exactListingPage) {
+        return exactListingPage;
+      }
+    }
+  }
+  if (
+    !eligibility.pagination.snapshotId &&
     exactMarketTxidNeedles.length > 0 &&
     tokenHistoryMarketEventKinds(eligibility.kind).length > 0
   ) {
@@ -4448,6 +4600,7 @@ async function latestProofIndexScanMetadata(pool, network) {
           payload
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1
+          AND NOT (source_hashes ? 'canonicalSummary')
           AND (
             source_hashes ? 'blockScan'
             OR
@@ -4597,6 +4750,7 @@ async function latestProofIndexOperationalMetadata(pool, network) {
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1
           AND source_hashes ? 'blockScan'
+          AND NOT (source_hashes ? 'canonicalSummary')
         ORDER BY
           CASE
             WHEN NULLIF(
@@ -4617,6 +4771,11 @@ async function latestProofIndexOperationalMetadata(pool, network) {
         SELECT
           snapshot_id,
           generated_at,
+          COALESCE(
+            NULLIF(payload->>'indexedThroughBlockHash', ''),
+            NULLIF(payload->'summaryRefresh'->>'indexedThroughBlockHash', ''),
+            NULLIF(source_hashes->>'blockScan', '')
+          ) AS summary_block_hash,
           payload->>'summaryPayloadsIndexedAt' AS summary_indexed_at,
           jsonb_build_object(
             'growthSummary', jsonb_build_object(
@@ -4645,6 +4804,13 @@ async function latestProofIndexOperationalMetadata(pool, network) {
                 payload #> '{summaryPayloads,infinitySummary,stats,indexedThroughBlock}'
               )
             ),
+            'logSummary', jsonb_build_object(
+              'parent', jsonb_build_array(
+                payload #> '{summaryPayloads,logSummary,indexedThroughBlock}',
+                payload #> '{summaryPayloads,logSummary,metrics,indexedThroughBlock}',
+                payload #> '{summaryPayloads,logSummary,stats,indexedThroughBlock}'
+              )
+            ),
             'marketplaceSummary', jsonb_build_object(
               'parent', jsonb_build_array(
                 payload #> '{summaryPayloads,marketplaceSummary,indexedThroughBlock}',
@@ -4655,6 +4821,13 @@ async function latestProofIndexOperationalMetadata(pool, network) {
                 payload #> '{summaryPayloads,marketplaceSummary,workFloor,indexedThroughBlock}',
                 payload #> '{summaryPayloads,marketplaceSummary,workFloor,metrics,indexedThroughBlock}',
                 payload #> '{summaryPayloads,marketplaceSummary,workFloor,stats,indexedThroughBlock}'
+              )
+            ),
+            'tokenSummary', jsonb_build_object(
+              'parent', jsonb_build_array(
+                payload #> '{summaryPayloads,tokenSummary,indexedThroughBlock}',
+                payload #> '{summaryPayloads,tokenSummary,metrics,indexedThroughBlock}',
+                payload #> '{summaryPayloads,tokenSummary,stats,indexedThroughBlock}'
               )
             ),
             'workFloor', jsonb_build_object(
@@ -4760,6 +4933,7 @@ async function latestProofIndexOperationalMetadata(pool, network) {
         latest_scan.scan_payload_tip_height,
         latest_scan.scan_metrics_tip_height,
         latest_summary.snapshot_id AS summary_snapshot_id,
+        latest_summary.summary_block_hash,
         latest_summary.generated_at AS summary_generated_at,
         latest_summary.summary_coverage,
         latest_summary.summary_indexed_at,
@@ -4800,7 +4974,9 @@ export async function proofIndexOperationalStatusPayload(network) {
       "growthSummary",
       "inceptionSummary",
       "infinitySummary",
+      "logSummary",
       "marketplaceSummary",
+      "tokenSummary",
       "workFloor",
       "workSummary",
     ].map(
@@ -4819,7 +4995,9 @@ export async function proofIndexOperationalStatusPayload(network) {
             )
           : key === "workFloor" ||
               key === "inceptionSummary" ||
-              key === "infinitySummary"
+              key === "infinitySummary" ||
+              key === "logSummary" ||
+              key === "tokenSummary"
             ? parentCoverage
             : 0;
         return [
@@ -4856,10 +5034,14 @@ export async function proofIndexOperationalStatusPayload(network) {
       },
     },
     summarySnapshot: {
+      blockHash: String(row.summary_block_hash ?? "").trim().toLowerCase(),
       coverageByKey: summaryCoverageByKey,
       eligible:
         Boolean(String(row.summary_snapshot_id ?? "")) &&
-        summaryIndexedThroughBlock > 0,
+        summaryIndexedThroughBlock > 0 &&
+        /^[0-9a-f]{64}$/u.test(
+          String(row.summary_block_hash ?? "").trim().toLowerCase(),
+        ),
       generatedAt: row.summary_generated_at
         ? dateIso(row.summary_generated_at)
         : undefined,
@@ -4928,6 +5110,137 @@ export async function proofIndexCanonicalStateMetaPayload(network) {
     return null;
   }
   return canonicalStateMetaFromPool(pool, network);
+}
+
+export async function proofIndexRushPayload(network, expectedHeight = 0) {
+  const pool = proofIndexPool();
+  if (!pool || network !== "livenet") {
+    return null;
+  }
+  const status = await proofIndexOperationalStatusPayload(network);
+  const indexedThroughBlock = Number(status?.indexedThroughBlock);
+  const indexedThroughBlockHash = String(status?.scan?.blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    status?.scan?.complete !== true ||
+    !Number.isSafeInteger(indexedThroughBlock) ||
+    indexedThroughBlock <= 0 ||
+    (Number.isSafeInteger(Number(expectedHeight)) &&
+      Number(expectedHeight) > 0 &&
+      indexedThroughBlock !== Number(expectedHeight)) ||
+    !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash)
+  ) {
+    return null;
+  }
+
+  const markerResult = await pool.query(
+    `
+      SELECT value
+      FROM proof_indexer.meta
+      WHERE key = $1
+      LIMIT 1
+    `,
+    [`rushCanonicalBootstrap:${network}`],
+  );
+  const marker = objectRecord(markerResult.rows[0]?.value);
+  const bootstrapHeight = Number(marker?.indexedThroughBlock);
+  const bootstrapHash = normalizedLowerText(marker?.indexedThroughBlockHash);
+  const expectedMintCount = Number(marker?.mintCount);
+  if (
+    Number(marker?.version) !== 1 ||
+    marker?.network !== network ||
+    !Number.isSafeInteger(bootstrapHeight) ||
+    bootstrapHeight <= 0 ||
+    bootstrapHeight > indexedThroughBlock ||
+    !/^[0-9a-f]{64}$/u.test(bootstrapHash) ||
+    !Number.isSafeInteger(expectedMintCount) ||
+    expectedMintCount < 0
+  ) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      WITH bootstrap_block AS (
+        SELECT canonical
+        FROM proof_indexer.blocks
+        WHERE network = $1
+          AND height = $2
+          AND block_hash = $3
+        LIMIT 1
+      ),
+      rush_events AS (
+        SELECT
+          e.*,
+          count(*) FILTER (WHERE e.block_height <= $2) OVER ()::int AS bootstrap_mint_count
+        FROM proof_indexer.events e
+        WHERE e.network = $1
+          AND e.protocol = 'pwr1'
+          AND e.kind = 'rush-mint'
+          AND e.status = 'confirmed'
+          AND e.valid = true
+          AND e.block_height <= $4
+      )
+      SELECT
+        rush_events.*,
+        COALESCE((SELECT canonical FROM bootstrap_block), false) AS bootstrap_canonical
+      FROM rush_events
+      ORDER BY
+        block_height ASC,
+        CASE
+          WHEN payload->>'blockIndex' ~ '^[0-9]+$'
+            THEN (payload->>'blockIndex')::integer
+          ELSE 2147483647
+        END ASC,
+        txid ASC,
+        event_id ASC
+    `,
+    [network, bootstrapHeight, bootstrapHash, indexedThroughBlock],
+  );
+  const bootstrapMintCount = Number(
+    result.rows[0]?.bootstrap_mint_count ?? (expectedMintCount === 0 ? 0 : -1),
+  );
+  const bootstrapCanonical =
+    result.rows[0]?.bootstrap_canonical === true ||
+    (expectedMintCount === 0 &&
+      Boolean(
+        (
+          await pool.query(
+            `
+              SELECT 1
+              FROM proof_indexer.blocks
+              WHERE network = $1
+                AND height = $2
+                AND block_hash = $3
+                AND canonical = true
+              LIMIT 1
+            `,
+            [network, bootstrapHeight, bootstrapHash],
+          )
+        ).rows[0],
+      ));
+  if (
+    !bootstrapCanonical ||
+    bootstrapMintCount !== expectedMintCount ||
+    result.rows.some(
+      (row) =>
+        Number(row.block_height) > indexedThroughBlock ||
+        normalizedLowerText(row.protocol) !== "pwr1",
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    bootstrap: marker,
+    indexedAt: status.indexedAt,
+    indexedThroughBlock,
+    indexedThroughBlockHash,
+    mints: result.rows.map((row) => eventRowPayload(row, network)),
+    network,
+    source: "proof-indexer-rush-canonical",
+  };
 }
 
 function canonicalCoreScriptType(type) {
@@ -5087,6 +5400,7 @@ export async function proofIndexCanonicalTransactionsPayload(
           source_hashes
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1
+          AND NOT (source_hashes ? 'canonicalSummary')
           AND (
             source_hashes ? 'blockScan'
             OR payload->>'source' = 'proof-indexer-block-scan'
@@ -9222,15 +9536,19 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
         payload->'summaryPayloads'->'growthSummary'->>'snapshotId' AS growth_snapshot_id,
         payload->'summaryPayloads'->'inceptionSummary'->>'snapshotId' AS inception_snapshot_id,
         payload->'summaryPayloads'->'infinitySummary'->>'snapshotId' AS infinity_snapshot_id,
+        payload->'summaryPayloads'->'logSummary'->>'snapshotId' AS log_snapshot_id,
         payload->'summaryPayloads'->'marketplaceSummary'->>'snapshotId' AS marketplace_snapshot_id,
+        payload->'summaryPayloads'->'tokenSummary'->>'snapshotId' AS token_snapshot_id,
         payload->'summaryPayloads'->'workFloor'->>'snapshotId' AS work_floor_snapshot_id,
         payload->'summaryPayloads'->'workSummary'->>'snapshotId' AS work_summary_snapshot_id,
         payload->'summaryPayloads'->'growthSummary'->>'indexedThroughBlock' AS growth_height,
         payload->'summaryPayloads'->'growthSummary'->'workFloor'->>'indexedThroughBlock' AS growth_floor_height,
         payload->'summaryPayloads'->'inceptionSummary'->>'indexedThroughBlock' AS inception_height,
         payload->'summaryPayloads'->'infinitySummary'->>'indexedThroughBlock' AS infinity_height,
+        payload->'summaryPayloads'->'logSummary'->>'indexedThroughBlock' AS log_height,
         payload->'summaryPayloads'->'marketplaceSummary'->>'indexedThroughBlock' AS marketplace_height,
         payload->'summaryPayloads'->'marketplaceSummary'->'workFloor'->>'indexedThroughBlock' AS marketplace_floor_height,
+        payload->'summaryPayloads'->'tokenSummary'->>'indexedThroughBlock' AS token_height,
         payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlock' AS work_floor_height,
         payload->'summaryPayloads'->'workSummary'->>'indexedThroughBlock' AS work_summary_height,
         payload->'summaryPayloads'->'workSummary'->'floor'->>'indexedThroughBlock' AS work_summary_floor_height,
@@ -9244,7 +9562,9 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'logSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'tokenSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
         AND EXISTS (
@@ -9278,7 +9598,9 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
     snapshot.growth_snapshot_id,
     snapshot.inception_snapshot_id,
     snapshot.infinity_snapshot_id,
+    snapshot.log_snapshot_id,
     snapshot.marketplace_snapshot_id,
+    snapshot.token_snapshot_id,
     snapshot.work_floor_snapshot_id,
     snapshot.work_summary_snapshot_id,
   ].map((value) => String(value ?? ""));
@@ -9287,8 +9609,10 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
     snapshot.growth_floor_height,
     snapshot.inception_height,
     snapshot.infinity_height,
+    snapshot.log_height,
     snapshot.marketplace_height,
     snapshot.marketplace_floor_height,
+    snapshot.token_height,
     snapshot.work_floor_height,
     snapshot.work_summary_height,
     snapshot.work_summary_floor_height,
@@ -9337,6 +9661,11 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
       },
     },
     indexedThroughBlock,
+    indexedThroughBlockHash: String(
+      snapshot.source_hashes?.blockScan ?? "",
+    )
+      .trim()
+      .toLowerCase(),
     metrics: snapshot.metrics ?? {},
     network,
     snapshotId: snapshot.snapshot_id,
@@ -9372,7 +9701,9 @@ export async function proofIndexSnapshotPayload(network, key) {
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'logSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'tokenSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
         AND EXISTS (
@@ -9414,7 +9745,9 @@ export async function proofIndexSnapshotPayload(network, key) {
             AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
+            AND jsonb_typeof(payload->'summaryPayloads'->'logSummary') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+            AND jsonb_typeof(payload->'summaryPayloads'->'tokenSummary') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
             AND EXISTS (
@@ -9468,6 +9801,16 @@ export async function proofIndexSnapshotPayload(network, key) {
   const nestedConsistencyPayload = {
     ...payload,
     ...(consistency ? { consistency } : {}),
+    ...(payload.activity &&
+    typeof payload.activity === "object" &&
+    !Array.isArray(payload.activity)
+      ? {
+          activity: {
+            ...payload.activity,
+            ...(consistency ? { consistency } : {}),
+          },
+        }
+      : {}),
     ...(payload.floor && typeof payload.floor === "object" && !Array.isArray(payload.floor)
       ? {
           floor: {
@@ -9482,6 +9825,16 @@ export async function proofIndexSnapshotPayload(network, key) {
       ? {
           workFloor: {
             ...payload.workFloor,
+            ...(consistency ? { consistency } : {}),
+          },
+        }
+      : {}),
+    ...(payload.token &&
+    typeof payload.token === "object" &&
+    !Array.isArray(payload.token)
+      ? {
+          token: {
+            ...payload.token,
             ...(consistency ? { consistency } : {}),
           },
         }
@@ -9511,6 +9864,7 @@ export async function proofIndexValueSummaryPayload(network) {
         SELECT indexed_through_block, generated_at
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1
+          AND NOT (source_hashes ? 'canonicalSummary')
           AND (
             source_hashes ? 'blockScan'
             OR
@@ -9585,6 +9939,7 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
         SELECT indexed_through_block, generated_at
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1
+          AND NOT (source_hashes ? 'canonicalSummary')
           AND (
             source_hashes ? 'blockScan'
             OR

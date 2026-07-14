@@ -79,6 +79,10 @@ export function proofApiUrl(path: string, network: BitcoinNetwork) {
 export async function fetchProofApiJson<T>(
   path: string,
   network: BitcoinNetwork,
+  options: {
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  } = {},
 ): Promise<T> {
   const url = proofApiUrl(path, network);
   const isFreshRead = /(?:[?&](?:fresh|refresh|nocache)=)/u.test(url);
@@ -87,10 +91,16 @@ export async function fetchProofApiJson<T>(
   );
   const controller = new AbortController();
   let timedOut = false;
+  const abortFromCaller = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) {
+    abortFromCaller();
+  } else {
+    options.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
   const timeout = globalThis.setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, isAddressMailRead ? 180_000 : 60_000);
+  }, options.timeoutMs ?? (isAddressMailRead ? 180_000 : 60_000));
 
   let response: Response;
   try {
@@ -106,6 +116,9 @@ export async function fetchProofApiJson<T>(
       timedOut ||
       (error instanceof DOMException && error.name === "AbortError")
     ) {
+      if (!timedOut && options.signal?.aborted) {
+        throw error;
+      }
       throw new Error(
         "ProofOfWork API refresh took too long. Showing the latest indexed data when available; refresh again in a moment.",
       );
@@ -114,6 +127,7 @@ export async function fetchProofApiJson<T>(
     throw error;
   } finally {
     globalThis.clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", abortFromCaller);
   }
 
   if (!response.ok) {

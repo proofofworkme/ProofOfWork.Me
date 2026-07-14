@@ -30,6 +30,7 @@ import {
   InfinityIcon,
   LogOut,
   Mail,
+  Menu,
   MessageSquareQuote,
   Monitor,
   Paperclip,
@@ -100,7 +101,6 @@ import {
   CHAINED_MINT_MAX_COUNT,
   executeChainedMintRun,
 } from "./chained-mint";
-import { LandingApp } from "./features/landing/LandingApp";
 import { RushApp } from "./features/rush/RushApp";
 import {
   buildRushMintPayload,
@@ -136,6 +136,7 @@ import {
   explorerAddressUrl,
   explorerTxUrl,
 } from "./shared/bitcoin/networks";
+import { registryAddressForNetwork } from "./shared/protocol/idRegistry";
 import { MAX_DATA_CARRIER_BYTES } from "./shared/bitcoin/protocolLimits";
 import {
   fetchProofApiJson,
@@ -185,6 +186,11 @@ type LegacyBitcoinNetwork = "livenet" | "testnet";
 type UniSatChain = "BITCOIN_MAINNET" | "BITCOIN_TESTNET" | "BITCOIN_TESTNET4";
 type UniSatEvent = "accountsChanged" | "networkChanged" | "chainChanged";
 type StatusTone = AppStatusTone;
+type WorkspaceStatus = { tone: StatusTone; text: string };
+const INITIAL_COMPUTER_STATUS: WorkspaceStatus = {
+  tone: "idle",
+  text: "ProofOfWork Computer ready. Connect UniSat to load account data.",
+};
 type Folder =
   | "inbox"
   | "incoming"
@@ -1242,12 +1248,11 @@ const BACKUP_MAX_BYTES = 5 * 1024 * 1024;
 const UNISAT_DOWNLOAD_URL = "https://unisat.io/download";
 const CANONICAL_WELCOME_TXID =
   "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b";
-const CANONICAL_WELCOME_HTML =
-  '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Welcome to ProofOfWork.Me</title><main style="font-family:system-ui,sans-serif;max-width:680px;margin:40px auto;padding:0 18px;line-height:1.55;color:#111"><p style="color:#06c;font-weight:800;text-transform:uppercase">ProofOfWork Computer</p><h1>Welcome to ProofOfWork.Me</h1><p><b>ProofOfWork.Me is a computer built on ProofOfWork.</b></p><p>It turns transactions into identity, mail, files, pages, marketplace actions, logs, and proof.</p><p>Your ProofOfWork ID is your ProofOfWork-native name. Your Computer is where your ID, messages, files, contacts, pages, and history become usable.</p><p>Most apps ask you to trust a server. ProofOfWork.Me asks you to check the chain. ProofOfWork history is the source of truth.</p><p>Claim an ID. Send mail. Save a file. Open a txid in the Browser. Watch the Log.</p><p><b>This is the ProofOfWork Computer. Small today. Already real.</b></p><p><code>ProofOfWork.Me</code></p></main>\n';
-const CANONICAL_WELCOME_SENDER = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
-const CANONICAL_WELCOME_RECIPIENT = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
-const CANONICAL_WELCOME_CREATED_AT = "2026-05-13T17:58:01.000Z";
 const MAX_ATTACHMENT_BYTES = 60_000;
+const MAX_ATTACHMENT_PARTS = 1_024;
+const MAX_ATTACHMENT_BASE64URL_BYTES = Math.ceil(
+  (MAX_ATTACHMENT_BYTES * 4) / 3,
+) + 4;
 const MAX_REGISTRY_TX_PAGES = 100;
 const MAX_TOKEN_HISTORY_PAGES = 100;
 const DATA_PAGE_SIZE = 25;
@@ -1292,9 +1297,6 @@ const ID_LISTING_ANCHOR_VOUT = 2;
 const ID_LISTING_ANCHOR_SIGHASH_TYPE =
   bitcoin.Transaction.SIGHASH_SINGLE | bitcoin.Transaction.SIGHASH_ANYONECANPAY;
 const ID_LISTING_ANCHOR_SEAL_FEE_SATS = 500;
-const ID_REGISTRY_ADDRESSES: Partial<Record<BitcoinNetwork, string>> = {
-  livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
-};
 const TOKEN_PROTOCOL_PREFIX = "pwt1:";
 const TOKEN_CREATE_ACTION = "create";
 const TOKEN_MINT_ACTION = "mint";
@@ -2400,10 +2402,6 @@ function MarketplacePurchaseReceiptModal({
       </section>
     </div>
   );
-}
-
-function registryAddressForNetwork(network: BitcoinNetwork) {
-  return ID_REGISTRY_ADDRESSES[network] ?? "";
 }
 
 function tokenIndexAddressForNetwork(network: BitcoinNetwork) {
@@ -4716,6 +4714,37 @@ async function switchWalletNetwork(
   }
 }
 
+async function ensureWalletNetwork(
+  wallet: UnisatWallet,
+  expectedNetwork: BitcoinNetwork,
+  expectedAddress = "",
+) {
+  const currentNetwork = await getWalletNetwork(wallet);
+  if (currentNetwork !== expectedNetwork) {
+    await switchWalletNetwork(wallet, expectedNetwork);
+  }
+
+  const verifiedNetwork = await getWalletNetwork(wallet);
+  if (verifiedNetwork !== expectedNetwork) {
+    throw new Error(
+      `UniSat did not switch to ${networkLabel(expectedNetwork)}. No transaction was created.`,
+    );
+  }
+
+  const [verifiedAddress = ""] =
+    (await wallet.getAccounts?.().catch(() => [])) ?? [];
+  if (
+    expectedAddress &&
+    (!verifiedAddress || !samePaymentAddress(verifiedAddress, expectedAddress))
+  ) {
+    throw new Error(
+      "The active UniSat account changed during the network switch. No transaction was created.",
+    );
+  }
+
+  return verifiedAddress || expectedAddress;
+}
+
 async function assertActiveWalletAddress(
   wallet: UnisatWallet,
   expectedAddress: string,
@@ -5464,8 +5493,10 @@ function parseAttachmentPayload(
     !Number.isSafeInteger(index) ||
     !Number.isSafeInteger(total) ||
     total < 1 ||
+    total > MAX_ATTACHMENT_PARTS ||
     index < 0 ||
-    index >= total
+    index >= total ||
+    chunk.length > MAX_ATTACHMENT_BASE64URL_BYTES
   ) {
     return current;
   }
@@ -9064,55 +9095,6 @@ function isBrowserHtmlMessageBody(value: string) {
   );
 }
 
-function canonicalWelcomeAttachment(): MailAttachment {
-  const bytes = new TextEncoder().encode(CANONICAL_WELCOME_HTML);
-  return {
-    data: base64UrlEncodeBytes(bytes),
-    mime: "text/html",
-    name: "Welcome to ProofOfWork.Me.html",
-    sha256: sha256Hex(bytes),
-    size: bytes.byteLength,
-  };
-}
-
-function canonicalWelcomeFileMessage(): FileSurfaceMessage {
-  return {
-    amountSats: DEFAULT_AMOUNT_SATS,
-    attachment: canonicalWelcomeAttachment(),
-    confirmed: true,
-    createdAt: CANONICAL_WELCOME_CREATED_AT,
-    folder: "inbox",
-    from: CANONICAL_WELCOME_SENDER,
-    memo: CANONICAL_WELCOME_HTML,
-    network: "livenet",
-    recipients: [
-      {
-        address: CANONICAL_WELCOME_RECIPIENT,
-        amountSats: DEFAULT_AMOUNT_SATS,
-        display: shortAddress(CANONICAL_WELCOME_RECIPIENT),
-      },
-    ],
-    replyTo: CANONICAL_WELCOME_SENDER,
-    subject: "Welcome to ProofOfWork.Me",
-    to: CANONICAL_WELCOME_RECIPIENT,
-    txid: CANONICAL_WELCOME_TXID,
-  };
-}
-
-function withCanonicalWelcomeFile(
-  messages: FileSurfaceMessage[],
-  network: BitcoinNetwork,
-) {
-  if (network !== "livenet") {
-    return messages;
-  }
-
-  const withoutExistingWelcome = messages.filter(
-    (message) => message.txid !== CANONICAL_WELCOME_TXID,
-  );
-  return [canonicalWelcomeFileMessage(), ...withoutExistingWelcome];
-}
-
 function fileSurfaceMessages(messages: MailMessage[]): FileSurfaceMessage[] {
   return messages
     .filter(
@@ -9247,10 +9229,15 @@ function browserPageFromTransaction(
 }
 
 async function fetchBrowserPage(txid: string, targetNetwork: BitcoinNetwork) {
-  return browserPageFromTransaction(
-    await fetchTransactionJson(txid, targetNetwork),
-    targetNetwork,
-  );
+  const normalizedTxid = txid.trim().toLowerCase();
+  const transaction = await fetchTransactionJson(normalizedTxid, targetNetwork);
+  const payloadTxid = String(transaction.txid ?? "").trim().toLowerCase();
+  if (payloadTxid !== normalizedTxid) {
+    throw new Error(
+      "The ProofOfWork API returned a different transaction than the requested txid.",
+    );
+  }
+  return browserPageFromTransaction(transaction, targetNetwork);
 }
 
 function publicDesktopMail(
@@ -10890,6 +10877,110 @@ async function fetchFreshWalletWorkState(
   );
 }
 
+function mergeListingAnchorOutpoints(
+  ...groups: Array<Array<PowIdSpentOutpoint | null | undefined>>
+) {
+  const byOutpoint = new Map<string, PowIdSpentOutpoint>();
+  for (const outpoint of groups.flat()) {
+    if (!outpoint || !/^[0-9a-f]{64}$/iu.test(outpoint.txid)) {
+      continue;
+    }
+    const txid = outpoint.txid.toLowerCase();
+    const vout = Math.floor(outpoint.vout);
+    if (!Number.isSafeInteger(vout) || vout < 0) {
+      continue;
+    }
+    byOutpoint.set(`${txid}:${vout}`, { txid, vout });
+  }
+  return [...byOutpoint.values()];
+}
+
+async function fetchFreshWalletTokenListingsForAnchors(
+  walletAddress: string,
+  tokenScope: string,
+) {
+  let lastError: unknown;
+  for (const delayMs of TOKEN_SPENDABLE_RECHECK_DELAYS_MS) {
+    if (delayMs > 0) {
+      await delay(delayMs);
+    }
+    try {
+      const params = new URLSearchParams({
+        address: walletAddress,
+        asset: tokenScope,
+        fresh: "1",
+        wallet: "1",
+      });
+      const payload = await fetchProofApiJson<PowTokenApiResponse>(
+        `/api/v1/token?${params.toString()}`,
+        "livenet",
+      );
+      if (
+        payload.authoritativeWallet !== true ||
+        payload.walletScoped !== true ||
+        !String(payload.source ?? "").trim() ||
+        !Array.isArray(payload.listings)
+      ) {
+        throw new Error(
+          "The current wallet listing index could not be verified for reserved anchors.",
+        );
+      }
+      return normalizeTokenListingRecords(payload.listings);
+    } catch (error) {
+      lastError = error;
+      if (!isTransientProofApiReadError(error)) {
+        throw error;
+      }
+    }
+  }
+  throw lastError ?? new Error("Fresh wallet listing verification failed.");
+}
+
+async function fetchFreshProofOfWorkListingAnchorOutpoints(
+  walletAddress: string,
+  network: BitcoinNetwork,
+) {
+  const normalizedAddress = walletAddress.trim();
+  if (!normalizedAddress) {
+    throw new Error(
+      "A connected wallet address is required to verify reserved listing anchors.",
+    );
+  }
+
+  try {
+    const tokenScopes =
+      network === "livenet"
+        ? ["", WORK_TOKEN_ID, POWB_TOKEN_ID, INCB_TOKEN_ID]
+        : [];
+    const [registryState, ...walletTokenListings] = await Promise.all([
+      fetchIdRegistryState(network, true),
+      ...tokenScopes.map((tokenScope) =>
+        fetchFreshWalletTokenListingsForAnchors(
+          normalizedAddress,
+          tokenScope,
+        ),
+      ),
+    ]);
+    const idAnchors = activeListingAnchorOutpointsForAddress(
+      registryState.listings,
+      normalizedAddress,
+      { network },
+    );
+    const tokenAnchors = walletTokenListings.flatMap((listings) =>
+      activeTokenListingAnchorOutpointsForAddress(
+        listings,
+        normalizedAddress,
+        { network },
+      ),
+    );
+    return mergeListingAnchorOutpoints(idAnchors, tokenAnchors);
+  } catch (error) {
+    throw new Error(
+      `${errorMessage(error, "Reserved ProofOfWork listing anchors could not be verified.")} No transaction was created.`,
+    );
+  }
+}
+
 async function fetchTokenSupplyState(
   targetNetwork: BitcoinNetwork,
   fresh = false,
@@ -12016,9 +12107,22 @@ async function chooseSellerAnchorPlan(
   network: BitcoinNetwork,
   priceSats: number,
 ) {
-  const walletUtxos = await fetchUtxos(fromAddress, network);
+  const [walletUtxos, reservedListingAnchors] = await Promise.all([
+    fetchUtxos(fromAddress, network),
+    fetchFreshProofOfWorkListingAnchorOutpoints(fromAddress, network),
+  ]);
+  const reserved = new Set(
+    reservedListingAnchors.map(
+      (outpoint) => `${outpoint.txid}:${outpoint.vout}`,
+    ),
+  );
   const confirmedUtxos = walletUtxos
-    .filter((utxo) => utxo.status?.confirmed && utxo.value >= DUST_SATS)
+    .filter(
+      (utxo) =>
+        utxo.status?.confirmed &&
+        utxo.value >= DUST_SATS &&
+        !reserved.has(`${utxo.txid}:${utxo.vout}`),
+    )
     .sort(
       (left, right) =>
         left.value - right.value ||
@@ -12318,9 +12422,16 @@ async function selectChainedInitialInputs({
   network: BitcoinNetwork;
   totalRequiredSats: number;
 }) {
-  const walletUtxos = await fetchUtxos(fromAddress, network);
+  const [walletUtxos, reservedListingAnchors] = await Promise.all([
+    fetchUtxos(fromAddress, network),
+    fetchFreshProofOfWorkListingAnchorOutpoints(fromAddress, network),
+  ]);
+  const mergedExclusions = mergeListingAnchorOutpoints(
+    excludeOutpoints ?? [],
+    reservedListingAnchors,
+  );
   const excluded = new Set(
-    (excludeOutpoints ?? []).map(
+    mergedExclusions.map(
       (outpoint) => `${outpoint.txid}:${outpoint.vout}`,
     ),
   );
@@ -12582,9 +12693,16 @@ async function buildPaymentPsbt({
       0,
     );
   const changeOutputVbytes = outputVbytesForScript(changeScript);
-  const walletUtxos = await fetchUtxos(fromAddress, network);
+  const [walletUtxos, reservedListingAnchors] = await Promise.all([
+    fetchUtxos(fromAddress, network),
+    fetchFreshProofOfWorkListingAnchorOutpoints(fromAddress, network),
+  ]);
+  const mergedExclusions = mergeListingAnchorOutpoints(
+    excludeOutpoints ?? [],
+    reservedListingAnchors,
+  );
   const excluded = new Set(
-    (excludeOutpoints ?? []).map(
+    mergedExclusions.map(
       (outpoint) => `${outpoint.txid}:${outpoint.vout}`,
     ),
   );
@@ -13230,11 +13348,19 @@ async function buildAnchoredMarketplacePsbt({
       0,
     );
   const changeOutputVbytes = outputVbytesForScript(changeScript);
-  const walletUtxos = await fetchUtxos(fromAddress, network);
+  const [walletUtxos, reservedListingAnchors] = await Promise.all([
+    fetchUtxos(fromAddress, network),
+    fetchFreshProofOfWorkListingAnchorOutpoints(fromAddress, network),
+  ]);
   const anchorOutpointKey = `${anchor.txid}:${anchor.vout}`;
+  const mergedExclusions = mergeListingAnchorOutpoints(
+    excludeOutpoints ?? [],
+    reservedListingAnchors,
+    [{ txid: anchor.txid, vout: anchor.vout }],
+  );
   const excluded = new Set([
     anchorOutpointKey,
-    ...(excludeOutpoints ?? []).map(
+    ...mergedExclusions.map(
       (outpoint) => `${outpoint.txid}:${outpoint.vout}`,
     ),
   ]);
@@ -13418,6 +13544,67 @@ function rawTransactionTxid(rawTx: string) {
     return normalizeBroadcastTxid(bitcoin.Transaction.fromHex(rawTx).getId());
   } catch {
     return "";
+  }
+}
+
+type UnsignedTransactionIntent = {
+  inputs: Array<{
+    hash: string;
+    index: number;
+    sequence: number;
+  }>;
+  locktime: number;
+  outputs: Array<{
+    script: string;
+    value: string;
+  }>;
+  version: number;
+};
+
+function psbtUnsignedTransactionIntent(
+  psbt: bitcoin.Psbt,
+): UnsignedTransactionIntent {
+  return {
+    inputs: psbt.txInputs.map((input) => ({
+      hash: bytesToHex(input.hash),
+      index: input.index,
+      sequence: input.sequence ?? bitcoin.Transaction.DEFAULT_SEQUENCE,
+    })),
+    locktime: psbt.locktime,
+    outputs: psbt.txOutputs.map((output) => ({
+      script: bytesToHex(output.script),
+      value: output.value.toString(),
+    })),
+    version: psbt.version,
+  };
+}
+
+function rawUnsignedTransactionIntent(
+  transaction: bitcoin.Transaction,
+): UnsignedTransactionIntent {
+  return {
+    inputs: transaction.ins.map((input) => ({
+      hash: bytesToHex(input.hash),
+      index: input.index,
+      sequence: input.sequence,
+    })),
+    locktime: transaction.locktime,
+    outputs: transaction.outs.map((output) => ({
+      script: bytesToHex(output.script),
+      value: output.value.toString(),
+    })),
+    version: transaction.version,
+  };
+}
+
+function assertSignedTransactionIntent(
+  expected: UnsignedTransactionIntent,
+  actual: UnsignedTransactionIntent,
+) {
+  if (JSON.stringify(expected) !== JSON.stringify(actual)) {
+    throw new Error(
+      "UniSat changed the transaction inputs, outputs, amounts, fee, version, or locktime. No transaction was broadcast.",
+    );
   }
 }
 
@@ -13606,6 +13793,11 @@ async function broadcastRawTransactionViaProofApi(
     }
 
     if (result?.ok && result.txid) {
+      if (localTxid && result.txid !== localTxid) {
+        throw new Error(
+          "The ProofOfWork node returned a different transaction ID than the locally signed transaction. Broadcast result rejected.",
+        );
+      }
       return {
         opReturnCount,
         source:
@@ -13710,6 +13902,11 @@ async function signAndBroadcastPsbtDetailed({
     );
   }
 
+  const unsignedPsbt = bitcoin.Psbt.fromHex(psbtHex, {
+    network: bitcoinNetwork(network),
+  });
+  const expectedIntent = psbtUnsignedTransactionIntent(unsignedPsbt);
+
   let signedPsbtHex = "";
   const requestedSignInputs = signInputIndexes?.map((index) => ({
     address: signingAddress,
@@ -13752,28 +13949,19 @@ async function signAndBroadcastPsbtDetailed({
     });
   }
 
-  let rawTx = "";
-  try {
-    const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, {
-      network: bitcoinNetwork(network),
-    });
-    rawTx = signedPsbt.extractTransaction().toHex();
-  } catch (error) {
-    if (wallet.pushPsbt) {
-      const txid = normalizeBroadcastTxid(await wallet.pushPsbt(signedPsbtHex));
-      if (!txid) {
-        throw new Error("Wallet broadcast did not return a valid txid.");
-      }
-
-      return {
-        opReturnCount: 0,
-        source: "wallet",
-        txid,
-      };
-    }
-
-    throw error;
-  }
+  const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, {
+    network: bitcoinNetwork(network),
+  });
+  assertSignedTransactionIntent(
+    expectedIntent,
+    psbtUnsignedTransactionIntent(signedPsbt),
+  );
+  const signedTransaction = signedPsbt.extractTransaction();
+  assertSignedTransactionIntent(
+    expectedIntent,
+    rawUnsignedTransactionIntent(signedTransaction),
+  );
+  const rawTx = signedTransaction.toHex();
 
   return broadcastSignedRawTransaction(rawTx, network, broadcastStrategy);
 }
@@ -13873,6 +14061,7 @@ export default function App() {
   const [tokenCreationSats, setTokenCreationSats] = useState(0);
   const [tokenDataLoading, setTokenDataLoading] = useState(false);
   const [tokenDataLoaded, setTokenDataLoaded] = useState(false);
+  const [tokenDataLoadedScopeKey, setTokenDataLoadedScopeKey] = useState("");
   const [tokenDataError, setTokenDataError] = useState("");
   const [marketplaceDataLoading, setMarketplaceDataLoading] = useState(false);
   const [marketplaceDataLoaded, setMarketplaceDataLoaded] = useState(false);
@@ -14041,20 +14230,121 @@ export default function App() {
       activeFolder === "infinity" ||
       activeFolder === "inception",
   );
+  const mainnetWorkspaceMode =
+    mainnetRegistryMode ||
+    [
+      "ids",
+      "marketplace",
+      "token",
+      "wallet",
+      "work",
+      "infinity",
+      "inception",
+    ].includes(activeFolder);
+  const activeTokenStateScopeKey = tokenStateScopeKey({
+    address,
+    network,
+    tokenScope:
+      standaloneBondConfig?.tokenId ??
+      (activeFolder === "infinity"
+        ? POWB_TOKEN_ID
+        : activeFolder === "inception"
+          ? INCB_TOKEN_ID
+          : workTokenMode || activeFolder === "work"
+            ? WORK_TOKEN_ID
+            : ""),
+    walletScoped: walletMode || activeFolder === "wallet",
+  });
   const [activeCustomFolderId, setActiveCustomFolderId] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("value");
   const [fileFilter, setFileFilter] = useState<FileFilter>("all");
   const [selectedKey, setSelectedKey] = useState("");
   const [composeOpen, setComposeOpen] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [replyParentTxid, setReplyParentTxid] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   const [idMarketplaceAction, setIdMarketplaceAction] =
     useState<IdMarketplaceAction>("idle");
-  const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({
-    tone: "idle",
-    text: "Ready",
-  });
+  const activeWorkspaceStatusKey = landingMode
+    ? "landing"
+    : idLaunchMode
+      ? "id-launch"
+      : desktopRoute
+        ? "desktop"
+        : browserRoute
+          ? "browser"
+          : marketplaceMode
+            ? "marketplace"
+            : tokenMode
+              ? "token"
+              : walletMode
+                ? "wallet"
+                : workTokenMode
+                  ? "work"
+                  : infinityMode
+                    ? "infinity"
+                    : inceptionMode
+                      ? "inception"
+                      : rushMode
+                        ? "rush"
+                        : activityMode
+                          ? "log"
+                          : growthMode
+                            ? "growth"
+                            : `computer:${activeFolder}${
+                                activeFolder === "custom" && activeCustomFolderId
+                                  ? `:${activeCustomFolderId}`
+                                  : ""
+                              }`;
+  const activeWorkspaceStatusKeyRef = useRef(activeWorkspaceStatusKey);
+  activeWorkspaceStatusKeyRef.current = activeWorkspaceStatusKey;
+  const workspaceStatusesRef = useRef(
+    new Map<string, WorkspaceStatus>([
+      [activeWorkspaceStatusKey, INITIAL_COMPUTER_STATUS],
+    ]),
+  );
+  const [status, setVisibleStatus] = useState<WorkspaceStatus>(
+    INITIAL_COMPUTER_STATUS,
+  );
+  const setStatusForWorkspace = useCallback(
+    (workspaceKey: string, nextStatus: WorkspaceStatus) => {
+      workspaceStatusesRef.current.set(workspaceKey, nextStatus);
+      if (activeWorkspaceStatusKeyRef.current === workspaceKey) {
+        setVisibleStatus(nextStatus);
+      }
+    },
+    [],
+  );
+  const setStatus = useCallback(
+    (
+      nextStatus:
+        | WorkspaceStatus
+        | ((currentStatus: WorkspaceStatus) => WorkspaceStatus),
+    ) => {
+      const workspaceKey = activeWorkspaceStatusKeyRef.current;
+      const currentStatus =
+        workspaceStatusesRef.current.get(workspaceKey) ??
+        INITIAL_COMPUTER_STATUS;
+      setStatusForWorkspace(
+        workspaceKey,
+        typeof nextStatus === "function"
+          ? nextStatus(currentStatus)
+          : nextStatus,
+      );
+    },
+    [setStatusForWorkspace],
+  );
+  const setBusyForWorkspace = useCallback(
+    (workspaceKey: string, nextBusy: boolean) => {
+      if (activeWorkspaceStatusKeyRef.current === workspaceKey) {
+        setBusy(nextBusy);
+      }
+    },
+    [],
+  );
   const [accountUtxos, setAccountUtxos] = useState<MempoolUtxo[]>([]);
+  const [accountUtxosLoaded, setAccountUtxosLoaded] = useState(false);
+  const [accountUtxosError, setAccountUtxosError] = useState("");
   const [accountTokenState, setAccountTokenState] = useState<PowTokenState>(() =>
     emptyTokenState(),
   );
@@ -14064,6 +14354,8 @@ export default function App() {
     useState<PowTokenState>(() => emptyTokenState());
   const [accountIncbTokenState, setAccountIncbTokenState] =
     useState<PowTokenState>(() => emptyTokenState());
+  const [accountTokensLoaded, setAccountTokensLoaded] = useState(false);
+  const [accountTokensError, setAccountTokensError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [checkingBroadcasts, setCheckingBroadcasts] = useState(false);
   const allSentRef = useRef(allSent);
@@ -14071,9 +14363,12 @@ export default function App() {
   const idRefreshInFlightRef =
     useRef<Promise<PowRegistryState | undefined> | null>(null);
   const idRefreshInFlightFreshRef = useRef(false);
-  const tokenRefreshInFlightRef =
-    useRef<Promise<PowTokenState | undefined> | null>(null);
-  const tokenRefreshInFlightFreshRef = useRef(false);
+  const tokenRefreshInFlightRef = useRef(
+    new Map<
+      string,
+      { fresh: boolean; promise: Promise<PowTokenState | undefined> }
+    >(),
+  );
   const marketplaceSummaryRefreshInFlightRef =
     useRef<Promise<MarketplaceSummarySnapshot | undefined> | null>(null);
   const marketplaceSummaryRefreshInFlightFreshRef = useRef(false);
@@ -14086,8 +14381,14 @@ export default function App() {
     useRef<Promise<WorkFloorQuote | undefined> | null>(null);
   const workFloorRefreshInFlightFreshRef = useRef(false);
   const acceptedRegistryStateRef = useRef<PowRegistryState | undefined>();
-  const acceptedTokenStateRef = useRef<PowTokenState>(emptyTokenState());
-  const acceptedTokenStateScopeRef = useRef(DEFAULT_TOKEN_STATE_SCOPE_KEY);
+  const acceptedTokenStatesRef = useRef(
+    new Map<string, PowTokenState>(),
+  );
+  const activeTokenStateScopeRef = useRef(activeTokenStateScopeKey);
+  activeTokenStateScopeRef.current = activeTokenStateScopeKey;
+  const activeFolderRef = useRef(activeFolder);
+  activeFolderRef.current = activeFolder;
+  const walletSyncGenerationRef = useRef(0);
   const acceptedWorkFloorQuoteRef = useRef<WorkFloorQuote | undefined>();
   const acceptedGrowthSummaryRef = useRef<GrowthSummarySnapshot | undefined>();
   const acceptedBondSummariesRef = useRef(
@@ -14122,6 +14423,21 @@ export default function App() {
     return accepted;
   }
 
+  function renderTokenState(state: PowTokenState, scopeKey: string) {
+    setTokenDefinitions(state.tokens);
+    setTokenHolders(state.holders);
+    setTokenMints(state.mints);
+    setTokenTransfers(state.transfers);
+    setTokenInvalidEvents(state.invalidEvents);
+    setTokenListings(state.listings);
+    setTokenClosedListings(state.closedListings);
+    setTokenSales(state.sales);
+    setTokenCreationSats(state.creationSats);
+    setTokenDataLoaded(true);
+    setTokenDataLoadedScopeKey(scopeKey);
+    setTokenDataError("");
+  }
+
   function applyTokenState(
     state: PowTokenState,
     {
@@ -14130,26 +14446,27 @@ export default function App() {
       scopeKey = DEFAULT_TOKEN_STATE_SCOPE_KEY,
     }: TokenStateApplyOptions = {},
   ) {
-    const current = acceptedTokenStateRef.current;
-    const currentScopeKey = acceptedTokenStateScopeRef.current;
-    const sameScope = currentScopeKey === scopeKey;
+    const current = acceptedTokenStatesRef.current.get(scopeKey);
     const incomingWalletScope = scopeKey.includes(":wallet:");
     const falseZeroAcrossGlobalScope =
       !incomingWalletScope &&
-      current.tokens.length > 0 &&
+      Boolean(current?.tokens.length) &&
       state.tokens.length === 0;
 
     if (
       !allowRegression &&
       (falseZeroAcrossGlobalScope ||
-        tokenStateRegresses(state, current, sameScope))
+        tokenStateRegresses(state, current, true))
     ) {
-      return current;
+      if (current && scopeKey === activeTokenStateScopeRef.current) {
+        renderTokenState(current, scopeKey);
+      }
+      return current ?? state;
     }
 
     const listings = preserveListings
       ? tokenListingsWithPreservedLocalPending(
-          current.listings,
+          current ? current.listings : [],
           applyPendingTokenListingSeals(state.listings),
           state.closedListings,
         )
@@ -14158,17 +14475,11 @@ export default function App() {
           state.closedListings,
         );
     const accepted = { ...state, listings };
-    acceptedTokenStateRef.current = accepted;
-    acceptedTokenStateScopeRef.current = scopeKey;
-    setTokenDefinitions(accepted.tokens);
-    setTokenHolders(accepted.holders);
-    setTokenMints(accepted.mints);
-    setTokenTransfers(accepted.transfers);
-    setTokenInvalidEvents(accepted.invalidEvents);
-    setTokenListings(accepted.listings);
-    setTokenClosedListings(accepted.closedListings);
-    setTokenSales(accepted.sales);
-    setTokenCreationSats(accepted.creationSats);
+    acceptedTokenStatesRef.current.set(scopeKey, accepted);
+    if (scopeKey === activeTokenStateScopeRef.current) {
+      setTokenListings(accepted.listings);
+      renderTokenState(accepted, scopeKey);
+    }
     return accepted;
   }
 
@@ -14225,7 +14536,14 @@ export default function App() {
   }, [idActivity, idListings, idPendingEvents, idRegistry, idSales]);
 
   useEffect(() => {
-    acceptedTokenStateRef.current = {
+    if (
+      !tokenDataLoaded ||
+      tokenDataLoadedScopeKey !== activeTokenStateScopeKey
+    ) {
+      return;
+    }
+
+    acceptedTokenStatesRef.current.set(tokenDataLoadedScopeKey, {
       closedListings: tokenClosedListings,
       creationSats: tokenCreationSats,
       confirmedSupply: tokenStateConfirmedSupplyRank({
@@ -14252,10 +14570,13 @@ export default function App() {
       sales: tokenSales,
       transfers: tokenTransfers,
       tokens: tokenDefinitions,
-    };
+    });
   }, [
+    activeTokenStateScopeKey,
     tokenClosedListings,
     tokenCreationSats,
+    tokenDataLoaded,
+    tokenDataLoadedScopeKey,
     tokenDefinitions,
     tokenHolders,
     tokenInvalidEvents,
@@ -14264,6 +14585,30 @@ export default function App() {
     tokenSales,
     tokenTransfers,
   ]);
+
+  useEffect(() => {
+    const cached = acceptedTokenStatesRef.current.get(activeTokenStateScopeKey);
+    setTokenDataLoading(
+      tokenRefreshInFlightRef.current.has(activeTokenStateScopeKey),
+    );
+    if (cached) {
+      renderTokenState(cached, activeTokenStateScopeKey);
+      return;
+    }
+
+    setTokenDefinitions([]);
+    setTokenHolders([]);
+    setTokenMints([]);
+    setTokenTransfers([]);
+    setTokenInvalidEvents([]);
+    setTokenListings([]);
+    setTokenClosedListings([]);
+    setTokenSales([]);
+    setTokenCreationSats(0);
+    setTokenDataLoaded(false);
+    setTokenDataLoadedScopeKey("");
+    setTokenDataError("");
+  }, [activeTokenStateScopeKey]);
 
   useEffect(() => {
     acceptedWorkFloorQuoteRef.current = workFloorQuote;
@@ -14418,15 +14763,12 @@ export default function App() {
   );
   const allFileMessages = useMemo(
     () =>
-      withCanonicalWelcomeFile(
-        fileSurfaceMessages(
-          allMail.filter(
-            (message) => message.folder !== "inbox" || message.confirmed,
-          ),
+      fileSurfaceMessages(
+        allMail.filter(
+          (message) => message.folder !== "inbox" || message.confirmed,
         ),
-        network,
       ),
-    [allMail, network],
+    [allMail],
   );
   const desktopFileMessages = useMemo(
     () => desktopMail.filter(hasAttachment),
@@ -14958,9 +15300,11 @@ export default function App() {
     tokenMode &&
     (effectiveTokenDetailTarget === WORK_TOKEN_ID ||
       normalizeTokenTicker(effectiveTokenDetailTarget) === WORK_TOKEN_TICKER);
+  const activeTokenStateLoaded =
+    tokenDataLoaded && tokenDataLoadedScopeKey === activeTokenStateScopeKey;
   const tokenDataPriming =
     network === "livenet" &&
-    !tokenDataLoaded &&
+    !activeTokenStateLoaded &&
     !tokenDataError &&
     tokenDefinitions.length === 0 &&
     (tokenMode ||
@@ -15434,6 +15778,36 @@ export default function App() {
       pendingCreditEvents;
     const stats: AppHeaderAccountStat[] = [];
 
+    if (!accountUtxosLoaded || accountUtxosError) {
+      stats.push({
+        detail:
+          accountUtxosError ||
+          "Waiting for the first-party node to verify wallet UTXOs.",
+        label: "wallet proofs",
+        tone: "pending",
+        value: accountUtxosError
+          ? accountUtxosLoaded
+            ? "Last verified"
+            : "Unavailable"
+          : "Loading",
+      });
+    }
+
+    if (!accountTokensLoaded || accountTokensError) {
+      stats.push({
+        detail:
+          accountTokensError ||
+          "Waiting for the indexed ledger to verify wallet credit balances.",
+        label: "credit balances",
+        tone: "pending",
+        value: accountTokensError
+          ? accountTokensLoaded
+            ? "Last verified"
+            : "Unavailable"
+          : "Loading",
+      });
+    }
+
     if (confirmedBalanceSats > 0) {
       stats.push({
         detail: "Confirmed wallet UTXO value.",
@@ -15530,8 +15904,12 @@ export default function App() {
     accountIncbTokenState.listings,
     accountPowbTokenState.listings,
     accountTokenState.listings,
+    accountTokensError,
+    accountTokensLoaded,
     accountWorkTokenState.listings,
     accountUtxos,
+    accountUtxosError,
+    accountUtxosLoaded,
     accountWalletBalances,
     address,
     allFileMessages,
@@ -15908,6 +16286,70 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const nextStatus =
+      workspaceStatusesRef.current.get(activeWorkspaceStatusKey) ??
+      ({
+        tone: "idle",
+        text: "Workspace selected. Refresh to load verified ProofOfWork data.",
+      } satisfies WorkspaceStatus);
+    workspaceStatusesRef.current.set(activeWorkspaceStatusKey, nextStatus);
+    setVisibleStatus(nextStatus);
+    setBusy(false);
+  }, [activeWorkspaceStatusKey]);
+
+  useEffect(() => {
+    if (
+      landingMode ||
+      idLaunchMode ||
+      desktopRoute ||
+      browserRoute ||
+      marketplaceMode ||
+      tokenMode ||
+      walletMode ||
+      workTokenMode ||
+      infinityMode ||
+      inceptionMode ||
+      rushMode ||
+      activityMode ||
+      growthMode
+    ) {
+      return;
+    }
+
+    const restoreComputerLocation = () => {
+      const folder = computerFolderFromSearch() ?? "inbox";
+      const asset = tokenRouteTarget();
+      setActiveFolder(folder);
+      setActiveCustomFolderId("");
+      setComposeOpen(false);
+      setSelectedKey("");
+      if (folder === "token" || folder === "work") {
+        setTokenSelectedId(asset || (folder === "work" ? WORK_TOKEN_ID : ""));
+        setTokenDetailTarget(asset || (folder === "work" ? WORK_TOKEN_ID : ""));
+      } else if (folder === "wallet" && asset) {
+        setTokenTransferTokenId(asset);
+      }
+    };
+
+    window.addEventListener("popstate", restoreComputerLocation);
+    return () => window.removeEventListener("popstate", restoreComputerLocation);
+  }, [
+    activityMode,
+    browserRoute,
+    desktopRoute,
+    growthMode,
+    idLaunchMode,
+    inceptionMode,
+    infinityMode,
+    landingMode,
+    marketplaceMode,
+    rushMode,
+    tokenMode,
+    walletMode,
+    workTokenMode,
+  ]);
+
+  useEffect(() => {
     applyDocumentMetadata(
       idLaunchMode
         ? {
@@ -15945,6 +16387,8 @@ export default function App() {
   useEffect(() => {
     if (!address) {
       setAccountUtxos([]);
+      setAccountUtxosLoaded(false);
+      setAccountUtxosError("");
       return;
     }
 
@@ -15954,15 +16398,22 @@ export default function App() {
         .then((utxos) => {
           if (!cancelled) {
             setAccountUtxos(utxos);
+            setAccountUtxosLoaded(true);
+            setAccountUtxosError("");
           }
         })
-        .catch(() => {
+        .catch((error) => {
           if (!cancelled) {
-            setAccountUtxos([]);
+            setAccountUtxosError(
+              errorMessage(error, "Wallet UTXOs are unavailable."),
+            );
           }
         });
     };
 
+    setAccountUtxos([]);
+    setAccountUtxosLoaded(false);
+    setAccountUtxosError("");
     loadAccountUtxos();
     const interval = window.setInterval(loadAccountUtxos, 60_000);
     window.addEventListener("focus", loadAccountUtxos);
@@ -15980,6 +16431,8 @@ export default function App() {
       setAccountWorkTokenState(emptyTokenState());
       setAccountPowbTokenState(emptyTokenState());
       setAccountIncbTokenState(emptyTokenState());
+      setAccountTokensLoaded(false);
+      setAccountTokensError("");
       return;
     }
 
@@ -15989,48 +16442,41 @@ export default function App() {
     setAccountWorkTokenState(emptyTokenState());
     setAccountPowbTokenState(emptyTokenState());
     setAccountIncbTokenState(emptyTokenState());
+    setAccountTokensLoaded(false);
+    setAccountTokensError("");
 
     const loadAccountTokenBalances = () => {
       const currentRequestId = ++requestId;
-
-      void fetchTokenState(network, false, "", true, [address], true)
-        .then((state) => {
+      void Promise.all([
+        fetchTokenState(network, false, "", true, [address], true),
+        fetchTokenState(
+          network,
+          false,
+          WORK_TOKEN_ID,
+          false,
+          [address],
+          true,
+        ),
+        fetchTokenState(network, false, POWB_TOKEN_ID, true, [address], true),
+        fetchTokenState(network, false, INCB_TOKEN_ID, true, [address], true),
+      ])
+        .then(([allCredits, work, powb, incb]) => {
           if (!cancelled && currentRequestId === requestId) {
-            setAccountTokenState(state);
+            setAccountTokenState(allCredits);
+            setAccountWorkTokenState(work);
+            setAccountPowbTokenState(powb);
+            setAccountIncbTokenState(incb);
+            setAccountTokensLoaded(true);
+            setAccountTokensError("");
           }
         })
-        .catch(() => undefined);
-
-      void fetchTokenState(
-        network,
-        false,
-        WORK_TOKEN_ID,
-        false,
-        [address],
-        true,
-      )
-        .then((state) => {
+        .catch((error) => {
           if (!cancelled && currentRequestId === requestId) {
-            setAccountWorkTokenState(state);
+            setAccountTokensError(
+              errorMessage(error, "Wallet credit balances are unavailable."),
+            );
           }
-        })
-        .catch(() => undefined);
-
-      void fetchTokenState(network, false, POWB_TOKEN_ID, true, [address], true)
-        .then((state) => {
-          if (!cancelled && currentRequestId === requestId) {
-            setAccountPowbTokenState(state);
-          }
-        })
-        .catch(() => undefined);
-
-      void fetchTokenState(network, false, INCB_TOKEN_ID, true, [address], true)
-        .then((state) => {
-          if (!cancelled && currentRequestId === requestId) {
-            setAccountIncbTokenState(state);
-          }
-        })
-        .catch(() => undefined);
+        });
     };
 
     loadAccountTokenBalances();
@@ -16251,20 +16697,30 @@ export default function App() {
       activeFolder === "inception" ||
       activeFolder === "contacts"
     ) {
-      if (activeFolder === "infinity" || activeFolder === "inception") {
-        if (network !== "livenet") {
+      const requiresMainnet =
+        activeFolder !== "contacts" &&
+        [
+          "ids",
+          "marketplace",
+          "token",
+          "wallet",
+          "work",
+          "infinity",
+          "inception",
+        ].includes(activeFolder);
+      if (requiresMainnet && network !== "livenet") {
+        if (!address) {
           setNetwork("livenet");
-          return;
         }
+        return;
+      }
+
+      if (activeFolder === "infinity" || activeFolder === "inception") {
         void refreshInfinity(true, false, activeBondConfig);
         return;
       }
 
       if (activeFolder === "token" || activeFolder === "wallet" || activeFolder === "work") {
-        if (network !== "livenet") {
-          setNetwork("livenet");
-          return;
-        }
         void refreshToken(true);
         return;
       }
@@ -16272,6 +16728,7 @@ export default function App() {
     }
   }, [
     activeFolder,
+    address,
     activityMode,
     growthMode,
     inceptionMode,
@@ -16700,18 +17157,56 @@ export default function App() {
       return;
     }
 
-    if (mainnetRegistryMode) {
-      setNetwork("livenet");
-      return;
+    let cancelled = false;
+    if (mainnetWorkspaceMode) {
+      void (async () => {
+        const wallet = window.unisat as UnisatWallet;
+        const [currentAddress = ""] =
+          (await wallet.getAccounts?.().catch(() => [])) ?? [];
+        if (!currentAddress) {
+          if (!cancelled) {
+            setNetwork("livenet");
+          }
+          return;
+        }
+
+        try {
+          const verifiedAddress = await ensureWalletNetwork(
+            wallet,
+            "livenet",
+            currentAddress,
+          );
+          if (!cancelled) {
+            setAddress(verifiedAddress);
+            setNetwork("livenet");
+          }
+        } catch (error) {
+          if (!cancelled) {
+            setStatus({
+              tone: "bad",
+              text: errorMessage(
+                error,
+                "Switch UniSat to mainnet before using this workspace.",
+              ),
+            });
+          }
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
 
     getWalletNetwork(window.unisat)
       .then((walletNetwork) => {
-        if (walletNetwork) {
+        if (!cancelled && walletNetwork) {
           setNetwork(walletNetwork);
         }
       })
       .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, [
     activityMode,
     browserRoute,
@@ -16719,7 +17214,7 @@ export default function App() {
     growthMode,
     hasUnisat,
     landingMode,
-    mainnetRegistryMode,
+    mainnetWorkspaceMode,
   ]);
 
   useEffect(() => {
@@ -16738,32 +17233,27 @@ export default function App() {
     }
 
     const syncWallet = async () => {
-      const accounts = await window.unisat?.getAccounts?.().catch(() => []);
-      const nextAddress = accounts?.[0] ?? "";
-      const nextNetwork = mainnetRegistryMode
+      const wallet = window.unisat as UnisatWallet;
+      const generation = ++walletSyncGenerationRef.current;
+      let accounts = await wallet.getAccounts?.().catch(() => []);
+      let nextAddress = accounts?.[0] ?? "";
+      if (mainnetWorkspaceMode) {
+        nextAddress = await ensureWalletNetwork(wallet, "livenet", nextAddress);
+        accounts = await wallet.getAccounts?.().catch(() => []);
+        nextAddress = accounts?.[0] ?? nextAddress;
+      }
+      const nextNetwork = mainnetWorkspaceMode
         ? "livenet"
-        : ((await getWalletNetwork(window.unisat as UnisatWallet)) ?? network);
+        : ((await getWalletNetwork(wallet)) ?? network);
+      if (generation !== walletSyncGenerationRef.current) {
+        return;
+      }
 
       setAddress(nextAddress);
       setNetwork(nextNetwork);
       setInbox([]);
       setChainSent([]);
       setSelectedKey("");
-      setActiveFolder(
-        workTokenMode
-            ? "work"
-            : tokenMode
-              ? "token"
-              : walletMode
-                ? "wallet"
-                : marketplaceMode
-                  ? "marketplace"
-                  : standaloneBondConfig
-                    ? standaloneBondConfig.folder
-                  : mainnetRegistryMode
-                    ? "ids"
-                    : "inbox",
-      );
       setComposeOpen(false);
 
       if (!nextAddress) {
@@ -16772,30 +17262,47 @@ export default function App() {
       }
 
       try {
-        if (standaloneBondConfig) {
-          await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
-          const snapshot = await fetchBondSummary(standaloneBondConfig, false);
+        if (
+          standaloneBondConfig ||
+          activeFolder === "infinity" ||
+          activeFolder === "inception"
+        ) {
+          const config = standaloneBondConfig ?? activeBondConfig;
+          await ensureWalletNetwork(wallet, "livenet", nextAddress);
+          const snapshot = await fetchBondSummary(config, false);
+          if (generation !== walletSyncGenerationRef.current) {
+            return;
+          }
           const tokenState = snapshot.token;
           applyInfinitySummary(snapshot);
           applyTokenState(tokenState, {
             scopeKey: tokenStateScopeKey({
               network: "livenet",
-              tokenScope: standaloneBondConfig.tokenId,
+              tokenScope: config.tokenId,
               walletScoped: false,
             }),
           });
-          setTokenSelectedId(standaloneBondConfig.tokenId);
-          setTokenDetailTarget(standaloneBondConfig.tokenId);
+          setTokenSelectedId(config.tokenId);
+          setTokenDetailTarget(config.tokenId);
           setStatus({
             tone: "good",
-            text: `${shortAddress(nextAddress)} connected. ${standaloneBondConfig.pluralName} ready.`,
+            text: `${shortAddress(nextAddress)} connected. ${config.pluralName} ready.`,
           });
           return;
         }
 
-        if (tokenMode || walletMode || workTokenMode) {
-          await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
-          const workSummary = workTokenMode
+        if (
+          tokenMode ||
+          walletMode ||
+          workTokenMode ||
+          activeFolder === "token" ||
+          activeFolder === "wallet" ||
+          activeFolder === "work"
+        ) {
+          await ensureWalletNetwork(wallet, "livenet", nextAddress);
+          const workWorkspace = workTokenMode || activeFolder === "work";
+          const walletWorkspace = walletMode || activeFolder === "wallet";
+          const workSummary = workWorkspace
             ? await fetchWorkSummary("livenet", false)
             : undefined;
           const state =
@@ -16806,24 +17313,25 @@ export default function App() {
               "",
               false,
               [nextAddress],
-              walletMode,
+              walletWorkspace,
             ));
+          if (generation !== walletSyncGenerationRef.current) {
+            return;
+          }
           if (workSummary?.floor) {
             applyWorkFloorQuote(workSummary.floor);
           }
           applyTokenState(state, {
             scopeKey: tokenStateScopeKey({
-              address: workTokenMode ? "" : nextAddress,
+              address: workWorkspace ? "" : nextAddress,
               network: "livenet",
-              tokenScope: workTokenMode ? WORK_TOKEN_ID : "",
-              walletScoped: walletMode,
+              tokenScope: workWorkspace ? WORK_TOKEN_ID : "",
+              walletScoped: walletWorkspace,
             }),
           });
-          setTokenDataLoaded(true);
-          setTokenDataError("");
           setStatus({
             tone: "good",
-            text: workTokenMode
+            text: workWorkspace
               ? `${shortAddress(nextAddress)} connected. WORK dashboard ready.`
               : `${shortAddress(nextAddress)} connected. Credit wallet ready.`,
           });
@@ -16834,7 +17342,11 @@ export default function App() {
           const rushNetwork = rushRegistryAddressForNetwork(nextNetwork)
             ? nextNetwork
             : "livenet";
-          await switchWalletNetwork(window.unisat as UnisatWallet, rushNetwork);
+          await ensureWalletNetwork(
+            window.unisat as UnisatWallet,
+            rushNetwork,
+            nextAddress,
+          );
           const state = await fetchRushState(rushNetwork, true);
           setNetwork(rushNetwork);
           setRushState(state);
@@ -16845,9 +17357,12 @@ export default function App() {
           return;
         }
 
-        if (mainnetRegistryMode) {
-          await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
+        if (mainnetWorkspaceMode) {
+          await ensureWalletNetwork(wallet, "livenet", nextAddress);
           const state = await fetchIdRegistryState("livenet");
+          if (generation !== walletSyncGenerationRef.current) {
+            return;
+          }
           applyRegistryState(state);
           setStatus({
             tone: "good",
@@ -16857,6 +17372,9 @@ export default function App() {
         }
 
         const mailState = await fetchAddressMail(nextAddress, nextNetwork);
+        if (generation !== walletSyncGenerationRef.current) {
+          return;
+        }
         const { inboxMessages, sentMessages } = mailState;
         setInbox(inboxMessages);
         setChainSent(sentMessages);
@@ -16873,15 +17391,17 @@ export default function App() {
       }
     };
 
-    const accountsChanged = () => {
-      void syncWallet();
+    const handleWalletChange = () => {
+      void syncWallet().catch((error) => {
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "Wallet state could not be verified."),
+        });
+      });
     };
-    const networkChanged = () => {
-      void syncWallet();
-    };
-    const chainChanged = () => {
-      void syncWallet();
-    };
+    const accountsChanged = handleWalletChange;
+    const networkChanged = handleWalletChange;
+    const chainChanged = handleWalletChange;
 
     window.unisat.on("accountsChanged", accountsChanged);
     window.unisat.on("networkChanged", networkChanged);
@@ -16893,6 +17413,8 @@ export default function App() {
       window.unisat?.removeListener?.("chainChanged", chainChanged);
     };
   }, [
+    activeBondConfig,
+    activeFolder,
     activityMode,
     browserRoute,
     desktopRoute,
@@ -16902,6 +17424,7 @@ export default function App() {
     infinityMode,
     landingMode,
     mainnetRegistryMode,
+    mainnetWorkspaceMode,
     marketplaceMode,
     network,
     rushMode,
@@ -17248,6 +17771,7 @@ export default function App() {
 
   function openFolder(folder: Folder) {
     rememberComputerFolder(folder);
+    setSidebarExpanded(false);
 
     if (folder === "drafts") {
       const draft = address ? loadDraft(address, network) : savedDraft;
@@ -17329,6 +17853,7 @@ export default function App() {
   }
 
   function composeNew() {
+    setSidebarExpanded(false);
     setRecipient("");
     setCcRecipient("");
     setAmountSats(DEFAULT_AMOUNT_SATS);
@@ -17556,9 +18081,12 @@ export default function App() {
   }
 
   async function loadDesktopTarget(target = desktopQuery) {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const requestIsActive = () =>
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
     const query = target.trim();
     if (!query) {
-      setStatus({
+      setStatusForWorkspace(requestWorkspaceKey, {
         tone: "bad",
         text: "Enter a ProofOfWork address or confirmed ProofOfWork ID.",
       });
@@ -17566,7 +18094,10 @@ export default function App() {
     }
 
     setDesktopLoading(true);
-    setStatus({ tone: "idle", text: "Opening public desktop..." });
+    setStatusForWorkspace(requestWorkspaceKey, {
+      tone: "idle",
+      text: "Opening public desktop...",
+    });
 
     try {
       let resolved = resolveRecipientInput(
@@ -17587,7 +18118,7 @@ export default function App() {
       }
 
       if (resolved.error || !resolved.paymentAddress) {
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
           text:
             resolved.error ||
@@ -17598,9 +18129,8 @@ export default function App() {
 
       const mailState = await fetchAddressMail(resolved.paymentAddress, network);
       const { inboxMessages, sentMessages } = mailState;
-      const publicMail = withCanonicalWelcomeFile(
-        fileSurfaceMessages(publicDesktopMail(inboxMessages, sentMessages)),
-        network,
+      const publicMail = fileSurfaceMessages(
+        publicDesktopMail(inboxMessages, sentMessages),
       );
       const files = publicMail.filter(hasAttachment);
       const profile: DesktopProfile = {
@@ -17614,6 +18144,10 @@ export default function App() {
         resolvedId: resolved.id,
       };
 
+      if (!requestIsActive()) {
+        return;
+      }
+
       setDesktopQuery(query);
       setDesktopProfile(profile);
       setDesktopMail(publicMail);
@@ -17621,12 +18155,12 @@ export default function App() {
       setActiveFolder("desktop");
       setComposeOpen(false);
       setSelectedKey("");
-      setStatus({
+      setStatusForWorkspace(requestWorkspaceKey, {
         tone: "good",
         text: `${profile.label} desktop loaded. ${files.length.toLocaleString()} public file${files.length === 1 ? "" : "s"}.`,
       });
     } catch (error) {
-      setStatus({
+      setStatusForWorkspace(requestWorkspaceKey, {
         tone: "bad",
         text: errorMessage(error, "Desktop search failed."),
       });
@@ -17661,13 +18195,17 @@ export default function App() {
   }
 
   async function loadLogHead(silent = true, fresh = false) {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     if (network !== "livenet") {
       return undefined;
     }
 
     if (!silent) {
-      setBusy(true);
-      setStatus({ tone: "idle", text: "Loading cached Computer log..." });
+      setBusyForWorkspace(requestWorkspaceKey, true);
+      setStatusForWorkspace(requestWorkspaceKey, {
+        tone: "idle",
+        text: "Loading cached Computer log...",
+      });
     }
 
     try {
@@ -17675,7 +18213,7 @@ export default function App() {
       const { activity, stats } = applyActivityPayload(payload);
       if (!silent) {
         const total = stats.total ?? activity.length;
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "good",
           text: `Log loaded from indexed ledger. ${total.toLocaleString()} computer action${total === 1 ? "" : "s"} tracked.`,
         });
@@ -17683,7 +18221,7 @@ export default function App() {
       return payload;
     } catch (error) {
       if (!silent) {
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
           text: errorMessage(error, "Computer log load failed."),
         });
@@ -17691,7 +18229,7 @@ export default function App() {
       return undefined;
     } finally {
       if (!silent) {
-        setBusy(false);
+        setBusyForWorkspace(requestWorkspaceKey, false);
       }
     }
   }
@@ -17702,6 +18240,7 @@ export default function App() {
     query = activityQuery,
     options: { snapshotId?: string } = {},
   ) {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     if (network !== "livenet") {
       return undefined;
     }
@@ -17725,7 +18264,7 @@ export default function App() {
       return page;
     } catch (error) {
       if (!silent) {
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
           text: errorMessage(error, "Computer log history failed."),
         });
@@ -17745,18 +18284,27 @@ export default function App() {
   }
 
   async function loadActivityTarget(target = activityQuery) {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const requestIsActive = () =>
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
     const query = target.trim();
     if (!query) {
       setActivityProfile(undefined);
       setActivityMail([]);
       await loadLogHistoryPage(0, true, "");
-      setStatus({ tone: "idle", text: "Log search cleared." });
+      setStatusForWorkspace(requestWorkspaceKey, {
+        tone: "idle",
+        text: "Log search cleared.",
+      });
       return;
     }
 
     const txidOnly = /^[0-9a-fA-F]{64}$/u.test(query);
     setActivityLoading(true);
-    setStatus({ tone: "idle", text: "Searching ProofOfWork log..." });
+    setStatusForWorkspace(requestWorkspaceKey, {
+      tone: "idle",
+      text: "Searching ProofOfWork log...",
+    });
 
     try {
       if (txidOnly) {
@@ -17766,6 +18314,9 @@ export default function App() {
           pageSize: ACTIVITY_FEED_PAGE_SIZE,
           query: normalizedTxid,
         });
+        if (!requestIsActive()) {
+          return;
+        }
         activityHistoryPageRef.current = page;
         setActivityHistoryPage(page);
         setIdActivity((current) =>
@@ -17774,7 +18325,7 @@ export default function App() {
         setActivityQuery(normalizedTxid);
         setActivityProfile(undefined);
         setActivityMail([]);
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "good",
           text: `Log search found ${(page.totalCount ?? page.items?.length ?? 0).toLocaleString()} matching action${(page.totalCount ?? page.items?.length ?? 0) === 1 ? "" : "s"}.`,
         });
@@ -17802,7 +18353,7 @@ export default function App() {
       }
 
       if (resolved.error || !resolved.paymentAddress) {
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
           text:
             resolved.error ||
@@ -17816,6 +18367,9 @@ export default function App() {
         pageSize: ACTIVITY_FEED_PAGE_SIZE,
         query: resolved.paymentAddress,
       });
+      if (!requestIsActive()) {
+        return;
+      }
       activityHistoryPageRef.current = page;
       setActivityHistoryPage(page);
       setIdActivity((current) =>
@@ -17836,12 +18390,12 @@ export default function App() {
       setActivityProfile(profile);
       setActivityMail([]);
       const total = page.totalCount ?? page.items?.length ?? 0;
-      setStatus({
+      setStatusForWorkspace(requestWorkspaceKey, {
         tone: "good",
         text: `${profile.label} log loaded. ${total.toLocaleString()} matching action${total === 1 ? "" : "s"}.`,
       });
     } catch (error) {
-      setStatus({
+      setStatusForWorkspace(requestWorkspaceKey, {
         tone: "bad",
         text: errorMessage(error, "Log search failed."),
       });
@@ -17862,6 +18416,9 @@ export default function App() {
     silent = false,
     fresh = false,
   ): Promise<MarketplaceSummarySnapshot | undefined> {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const requestIsActive = () =>
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
     if (network !== "livenet") {
       return undefined;
     }
@@ -17869,11 +18426,14 @@ export default function App() {
     if (marketplaceSummaryRefreshInFlightRef.current) {
       const needsFreshRefresh =
         fresh && !marketplaceSummaryRefreshInFlightFreshRef.current;
+      let chainedRefresh = false;
       setMarketplaceDataLoading(true);
       if (!silent) {
-        setBusy(true);
-        setWorkFloorLoading(true);
-        setStatus({
+        setBusyForWorkspace(requestWorkspaceKey, true);
+        if (requestIsActive()) {
+          setWorkFloorLoading(true);
+        }
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "idle",
           text: "Marketplace summary refresh already in progress...",
         });
@@ -17882,19 +18442,21 @@ export default function App() {
         const snapshot = await marketplaceSummaryRefreshInFlightRef.current;
         if (snapshot) {
           setMarketplaceDataLoaded(true);
-          setTokenDataLoaded(true);
         }
-        if (needsFreshRefresh) {
+        if (needsFreshRefresh && requestIsActive()) {
+          chainedRefresh = true;
           return refreshMarketplaceSummary(silent, fresh);
         }
         return snapshot;
       } finally {
-        if (!needsFreshRefresh) {
+        if (!chainedRefresh) {
           setMarketplaceDataLoading(false);
         }
-        if (!silent && !needsFreshRefresh) {
-          setBusy(false);
-          setWorkFloorLoading(false);
+        if (!silent && !chainedRefresh) {
+          setBusyForWorkspace(requestWorkspaceKey, false);
+          if (requestIsActive()) {
+            setWorkFloorLoading(false);
+          }
         }
       }
     }
@@ -17902,9 +18464,14 @@ export default function App() {
     const refreshPromise = (async () => {
       setMarketplaceDataLoading(true);
       if (!silent) {
-        setBusy(true);
-        setWorkFloorLoading(true);
-        setStatus({ tone: "idle", text: "Refreshing marketplace summary..." });
+        setBusyForWorkspace(requestWorkspaceKey, true);
+        if (requestIsActive()) {
+          setWorkFloorLoading(true);
+        }
+        setStatusForWorkspace(requestWorkspaceKey, {
+          tone: "idle",
+          text: "Refreshing marketplace summary...",
+        });
       }
       try {
         const [snapshot, btcUsdQuote] = await Promise.all([
@@ -17920,7 +18487,6 @@ export default function App() {
           }),
         });
         setMarketplaceDataLoaded(true);
-        setTokenDataLoaded(true);
         setTokenMarketHistoryRefreshNonce((current) => current + 1);
         if (btcUsdQuote) {
           setTokenBtcUsd(btcUsdQuote);
@@ -17932,7 +18498,7 @@ export default function App() {
           const floorText = acceptedWorkFloor
             ? ` WORK floor ${Math.round(workFloorQuoteLiveValue(acceptedWorkFloor)).toLocaleString()} proofs.`
             : "";
-          setStatus({
+          setStatusForWorkspace(requestWorkspaceKey, {
             tone: "good",
             text: `Marketplace loaded. ${acceptedTokenState.tokens.length.toLocaleString()} credit${acceptedTokenState.tokens.length === 1 ? "" : "s"}, ${acceptedTokenState.listings.length.toLocaleString()} listing${acceptedTokenState.listings.length === 1 ? "" : "s"}.${floorText}`,
           });
@@ -17944,7 +18510,7 @@ export default function App() {
         };
       } catch (error) {
         if (!silent) {
-          setStatus({
+          setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
             text: errorMessage(error, "Marketplace summary refresh failed."),
           });
@@ -17955,8 +18521,10 @@ export default function App() {
         marketplaceSummaryRefreshInFlightFreshRef.current = false;
         setMarketplaceDataLoading(false);
         if (!silent) {
-          setBusy(false);
-          setWorkFloorLoading(false);
+          setBusyForWorkspace(requestWorkspaceKey, false);
+          if (requestIsActive()) {
+            setWorkFloorLoading(false);
+          }
         }
       }
     })();
@@ -17970,6 +18538,9 @@ export default function App() {
     fresh = false,
     config: BondUiConfig = activeBondConfig,
   ): Promise<InfinitySummarySnapshot | undefined> {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const requestIsActive = () =>
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
     if (network !== "livenet") {
       return undefined;
     }
@@ -17980,29 +18551,32 @@ export default function App() {
       const needsFreshRefresh =
         fresh && !infinityRefreshInFlightFreshRef.current;
       if (!silent) {
-        setBusy(true);
-        setStatus({
+        setBusyForWorkspace(requestWorkspaceKey, true);
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "idle",
           text: `${config.displayName} refresh already in progress...`,
         });
       }
       try {
         const snapshot = await infinityRefreshInFlightRef.current;
-        if (needsDifferentBond || needsFreshRefresh) {
+        if ((needsDifferentBond || needsFreshRefresh) && requestIsActive()) {
           return refreshInfinity(silent, fresh, config);
         }
         return snapshot;
       } finally {
-        if (!silent && !needsFreshRefresh) {
-          setBusy(false);
+        if (!silent && !needsFreshRefresh && !needsDifferentBond) {
+          setBusyForWorkspace(requestWorkspaceKey, false);
         }
       }
     }
 
     const refreshPromise = (async () => {
       if (!silent) {
-        setBusy(true);
-        setStatus({ tone: "idle", text: `Refreshing ${config.pluralName}...` });
+        setBusyForWorkspace(requestWorkspaceKey, true);
+        setStatusForWorkspace(requestWorkspaceKey, {
+          tone: "idle",
+          text: `Refreshing ${config.pluralName}...`,
+        });
       }
 
       try {
@@ -18023,13 +18597,15 @@ export default function App() {
             walletScoped: false,
           }),
         });
-        setTokenSelectedId(config.tokenId);
-        setTokenDetailTarget(config.tokenId);
+        if (requestIsActive()) {
+          setTokenSelectedId(config.tokenId);
+          setTokenDetailTarget(config.tokenId);
+        }
         if (btcUsdQuote) {
           setTokenBtcUsd(btcUsdQuote);
         }
         if (!silent) {
-          setStatus({
+          setStatusForWorkspace(requestWorkspaceKey, {
             tone: "good",
             text: `${config.displayName} loaded. ${acceptedSnapshot.stats.confirmedSupply.toLocaleString()} ${config.ticker} confirmed from ${acceptedSnapshot.stats.confirmedBondActions.toLocaleString()} bond action${acceptedSnapshot.stats.confirmedBondActions === 1 ? "" : "s"}.`,
           });
@@ -18037,7 +18613,7 @@ export default function App() {
         return { ...acceptedSnapshot, token: acceptedTokenState };
       } catch (error) {
         if (!silent) {
-          setStatus({
+          setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
             text: errorMessage(error, `${config.displayName} refresh failed.`),
           });
@@ -18048,7 +18624,7 @@ export default function App() {
         infinityRefreshInFlightFreshRef.current = false;
         infinityRefreshTokenIdRef.current = "";
         if (!silent) {
-          setBusy(false);
+          setBusyForWorkspace(requestWorkspaceKey, false);
         }
       }
     })();
@@ -18062,6 +18638,7 @@ export default function App() {
     silent = false,
     fresh = false,
   ): Promise<PowTokenState | undefined> {
+    const requestFolder = activeFolder;
     if (!tokenIndexAddress) {
       setTokenDefinitions([]);
       setTokenHolders([]);
@@ -18086,6 +18663,18 @@ export default function App() {
 
     const workSummaryRead =
       network === "livenet" && (workTokenMode || activeFolder === "work");
+    const tokenScope =
+      workTokenMode || activeFolder === "work" ? WORK_TOKEN_ID : "";
+    const walletScoped = walletMode || activeFolder === "wallet";
+    const scopeKey = tokenStateScopeKey({
+      address: workSummaryRead ? "" : address,
+      network,
+      tokenScope,
+      walletScoped,
+    });
+    const requestStillActive = () =>
+      activeFolderRef.current === requestFolder &&
+      activeTokenStateScopeRef.current === scopeKey;
     const tokenLoadStatusText = (state: PowTokenState) => {
       if (workSummaryRead) {
         const work = state.tokens.find(
@@ -18098,25 +18687,23 @@ export default function App() {
       return `Credit index loaded. ${state.tokens.length.toLocaleString()} credit${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`;
     };
 
-    if (tokenRefreshInFlightRef.current) {
-      const needsFreshRefresh =
-        fresh && !tokenRefreshInFlightFreshRef.current;
-      setTokenDataLoading(true);
-      if (!silent) {
+    const existingRequest = tokenRefreshInFlightRef.current.get(scopeKey);
+    if (existingRequest) {
+      const needsFreshRefresh = fresh && !existingRequest.fresh;
+      if (requestStillActive()) {
+        setTokenDataLoading(true);
+      }
+      if (!silent && requestStillActive()) {
         setBusy(true);
         setStatus({
           tone: "idle",
-              text: "Credit index refresh already in progress...",
+          text: "Credit index refresh already in progress...",
         });
       }
       try {
-        const state = await tokenRefreshInFlightRef.current;
-        if (state) {
-          setTokenDataLoaded(true);
-          setTokenDataError("");
-        }
+        const state = await existingRequest.promise;
         if (needsFreshRefresh) {
-          if (!silent) {
+          if (!silent && requestStillActive()) {
             setStatus({
               tone: "idle",
               text: "Starting fresh credit index refresh...",
@@ -18124,7 +18711,7 @@ export default function App() {
           }
           return refreshToken(silent, fresh);
         }
-        if (!silent) {
+        if (!silent && requestStillActive()) {
           setStatus(
             state
               ? {
@@ -18139,33 +18726,24 @@ export default function App() {
         }
         return state;
       } finally {
-        if (!needsFreshRefresh) {
+        if (!needsFreshRefresh && requestStillActive()) {
           setTokenDataLoading(false);
         }
-        if (!silent && !needsFreshRefresh) {
+        if (!silent && !needsFreshRefresh && requestStillActive()) {
           setBusy(false);
         }
       }
     }
 
     const refreshPromise = (async () => {
-      setTokenDataLoading(true);
-      setTokenDataError("");
-      if (!silent) {
-        setBusy(true);
+      if (requestStillActive()) {
+        setTokenDataLoading(true);
+        setTokenDataError("");
       }
-      if (!silent) {
+      if (!silent && requestStillActive()) {
+        setBusy(true);
         setStatus({ tone: "idle", text: "Scanning credit index..." });
       }
-      const tokenScope =
-        workTokenMode || activeFolder === "work" ? WORK_TOKEN_ID : "";
-      const walletScoped = walletMode || activeFolder === "wallet";
-      const scopeKey = tokenStateScopeKey({
-        address: workSummaryRead ? "" : address,
-        network,
-        tokenScope,
-        walletScoped,
-      });
       try {
         let state: PowTokenState;
         if (workSummaryRead) {
@@ -18185,8 +18763,6 @@ export default function App() {
           );
         }
         const acceptedState = applyTokenState(state, { scopeKey });
-        setTokenDataLoaded(true);
-        setTokenDataError("");
         const walletAddress = address;
         const walletTokenScope = walletTransferToken?.tokenId;
         if (
@@ -18197,6 +18773,9 @@ export default function App() {
         ) {
           void fetchWalletOwnedTokenListings(walletAddress, walletTokenScope, fresh)
             .then((ownedListings) => {
+              if (activeTokenStateScopeRef.current !== scopeKey) {
+                return;
+              }
               setTokenListings((current) =>
                 activeTokenListingsExcludingClosed(
                   replaceTokenListingsForOwnerScope(current, ownedListings, {
@@ -18210,7 +18789,7 @@ export default function App() {
             })
             .catch(() => undefined);
         }
-        if (!silent) {
+        if (!silent && requestStillActive()) {
           setStatus({
             tone: "good",
             text: tokenLoadStatusText(acceptedState),
@@ -18219,8 +18798,10 @@ export default function App() {
         return acceptedState;
       } catch (error) {
         const message = errorMessage(error, "Credit scan failed.");
-        setTokenDataError(message);
-        if (!silent) {
+        if (requestStillActive()) {
+          setTokenDataError(message);
+        }
+        if (!silent && requestStillActive()) {
           setStatus({
             tone: "bad",
             text: message,
@@ -18228,25 +18809,29 @@ export default function App() {
         }
         return undefined;
       } finally {
-        tokenRefreshInFlightRef.current = null;
-        tokenRefreshInFlightFreshRef.current = false;
-        setTokenDataLoading(false);
-        if (!silent) {
+        tokenRefreshInFlightRef.current.delete(scopeKey);
+        if (requestStillActive()) {
+          setTokenDataLoading(false);
+        }
+        if (!silent && requestStillActive()) {
           setBusy(false);
         }
       }
     })();
-    tokenRefreshInFlightFreshRef.current = fresh;
-    tokenRefreshInFlightRef.current = refreshPromise;
+    tokenRefreshInFlightRef.current.set(scopeKey, {
+      fresh,
+      promise: refreshPromise,
+    });
     return refreshPromise;
   }
 
   async function refreshRush(silent = false, fresh = false) {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     const registryAddress = rushRegistryAddressForNetwork(network);
     if (!registryAddress) {
       setRushState(emptyRushState(network));
       if (!silent) {
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "idle",
           text: `No RUSH registry configured for ${networkLabel(network)}.`,
         });
@@ -18254,27 +18839,34 @@ export default function App() {
       return;
     }
 
-    setBusy(true);
     if (!silent) {
-      setStatus({ tone: "idle", text: "Scanning RUSH registry..." });
+      setBusyForWorkspace(requestWorkspaceKey, true);
+      setStatusForWorkspace(requestWorkspaceKey, {
+        tone: "idle",
+        text: "Scanning RUSH registry...",
+      });
     }
 
     try {
       const state = await fetchRushState(network, fresh);
       setRushState(state);
       if (!silent) {
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "good",
           text: `RUSH loaded. ${state.stats.confirmedMints.toLocaleString()} confirmed mint${state.stats.confirmedMints === 1 ? "" : "s"}, ${state.stats.pendingMints.toLocaleString()} pending.`,
         });
       }
     } catch (error) {
-      setStatus({
-        tone: "bad",
-        text: errorMessage(error, "RUSH scan failed."),
-      });
+      if (!silent) {
+        setStatusForWorkspace(requestWorkspaceKey, {
+          tone: "bad",
+          text: errorMessage(error, "RUSH scan failed."),
+        });
+      }
     } finally {
-      setBusy(false);
+      if (!silent) {
+        setBusyForWorkspace(requestWorkspaceKey, false);
+      }
     }
   }
 
@@ -18282,21 +18874,28 @@ export default function App() {
     silent = false,
     fresh = !silent,
   ): Promise<WorkFloorQuote | undefined> {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const requestIsActive = () =>
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
     if (workFloorRefreshInFlightRef.current) {
       const needsFreshRefresh =
         fresh && !workFloorRefreshInFlightFreshRef.current;
+      let chainedRefresh = false;
       if (!silent) {
-        setWorkFloorLoading(true);
-        setStatus({
+        if (requestIsActive()) {
+          setWorkFloorLoading(true);
+        }
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "idle",
           text: "WORK floor refresh already in progress...",
         });
       }
       try {
         const quote = await workFloorRefreshInFlightRef.current;
-        if (needsFreshRefresh) {
+        if (needsFreshRefresh && requestIsActive()) {
+          chainedRefresh = true;
           if (!silent) {
-            setStatus({
+            setStatusForWorkspace(requestWorkspaceKey, {
               tone: "idle",
               text: "Starting fresh WORK floor refresh...",
             });
@@ -18304,7 +18903,8 @@ export default function App() {
           return refreshWorkFloor(silent, fresh);
         }
         if (!silent) {
-          setStatus(
+          setStatusForWorkspace(
+            requestWorkspaceKey,
             quote
               ? {
                   tone: "good",
@@ -18318,7 +18918,7 @@ export default function App() {
         }
         return quote;
       } finally {
-        if (!silent && !needsFreshRefresh) {
+        if (!silent && !chainedRefresh) {
           setWorkFloorLoading(false);
         }
       }
@@ -18326,11 +18926,14 @@ export default function App() {
 
     const refreshPromise = (async () => {
       const showLoading = !silent;
-      if (showLoading) {
+      if (showLoading && requestIsActive()) {
         setWorkFloorLoading(true);
       }
       if (!silent) {
-        setStatus({ tone: "idle", text: "Refreshing WORK floor..." });
+        setStatusForWorkspace(requestWorkspaceKey, {
+          tone: "idle",
+          text: "Refreshing WORK floor...",
+        });
       }
       try {
         const apiQuote = await fetchWorkFloorQuote("livenet", fresh).catch(
@@ -18339,7 +18942,7 @@ export default function App() {
         if (apiQuote) {
           const acceptedQuote = applyWorkFloorQuote(apiQuote) ?? apiQuote;
           if (!silent) {
-            setStatus({
+            setStatusForWorkspace(requestWorkspaceKey, {
               tone: "good",
               text: `WORK floor loaded. Live network value ${Math.round(workFloorQuoteLiveValue(acceptedQuote)).toLocaleString()} proofs.`,
             });
@@ -18406,7 +19009,7 @@ export default function App() {
         };
         const acceptedQuote = applyWorkFloorQuote(quote) ?? quote;
         if (!silent) {
-          setStatus({
+          setStatusForWorkspace(requestWorkspaceKey, {
             tone: "good",
             text: `WORK floor loaded. Live network value ${Math.round(workFloorQuoteLiveValue(acceptedQuote)).toLocaleString()} proofs.`,
           });
@@ -18414,7 +19017,7 @@ export default function App() {
         return acceptedQuote;
       } catch (error) {
         if (!silent) {
-          setStatus({
+          setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
             text: errorMessage(error, "WORK floor refresh failed."),
           });
@@ -18423,7 +19026,7 @@ export default function App() {
       } finally {
         workFloorRefreshInFlightRef.current = null;
         workFloorRefreshInFlightFreshRef.current = false;
-        if (showLoading) {
+        if (showLoading && requestIsActive()) {
           setWorkFloorLoading(false);
         }
       }
@@ -18444,9 +19047,13 @@ export default function App() {
     label?: string;
     silent?: boolean;
   } = {}) {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     if (!silent) {
-      setBusy(true);
-      setStatus({ tone: "idle", text: `Refreshing ${label}...` });
+      setBusyForWorkspace(requestWorkspaceKey, true);
+      setStatusForWorkspace(requestWorkspaceKey, {
+        tone: "idle",
+        text: `Refreshing ${label}...`,
+      });
     }
 
     try {
@@ -18510,12 +19117,12 @@ export default function App() {
             includeWorkFloor && floorQuote
               ? ` WORK floor ${Math.round(floorQuote.networkValueSats).toLocaleString()} proofs.`
               : "";
-          setStatus({
+          setStatusForWorkspace(requestWorkspaceKey, {
             tone: "good",
             text: `${usedIndexedFallback ? "Credit market loaded from indexed state." : "Credit market loaded."} ${tokenState.tokens.length.toLocaleString()} credit${tokenState.tokens.length === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"}.${floorText}`,
           });
         } else {
-          setStatus({
+          setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
             text: "Credit market refresh did not return indexed credit state.",
           });
@@ -18525,7 +19132,7 @@ export default function App() {
       return { floorQuote, tokenState };
     } catch (error) {
       if (!silent) {
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
           text: errorMessage(error, "Credit market refresh failed."),
         });
@@ -18533,22 +19140,26 @@ export default function App() {
       return { floorQuote: undefined, tokenState: undefined };
     } finally {
       if (!silent) {
-        setBusy(false);
+        setBusyForWorkspace(requestWorkspaceKey, false);
       }
     }
   }
 
   async function refreshGrowth(silent = false, fresh = !silent) {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     if (growthRefreshInFlightRef.current) {
       return;
     }
 
     growthRefreshInFlightRef.current = true;
     if (!silent) {
-      setBusy(true);
+      setBusyForWorkspace(requestWorkspaceKey, true);
     }
     if (!silent) {
-      setStatus({ tone: "idle", text: "Refreshing Growth metrics..." });
+      setStatusForWorkspace(requestWorkspaceKey, {
+        tone: "idle",
+        text: "Refreshing Growth metrics...",
+      });
     }
 
     try {
@@ -18581,14 +19192,14 @@ export default function App() {
         const quoteDate = acceptedSnapshot.btcUsdIndexedAt
           ? ` Live USD quote ${formatDate(acceptedSnapshot.btcUsdIndexedAt)}.`
           : "";
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "good",
           text: `Growth metrics loaded from ledger snapshot ${snapshotDate}.${quoteDate} ${acceptedSnapshot.counts.powids.toLocaleString()} IDs, ${(acceptedSnapshot.counts.infinityBondActions + acceptedSnapshot.counts.inceptionBondActions).toLocaleString()} bond action${acceptedSnapshot.counts.infinityBondActions + acceptedSnapshot.counts.inceptionBondActions === 1 ? "" : "s"}, ${acceptedSnapshot.counts.confirmedComputerActions.toLocaleString()} computer action${acceptedSnapshot.counts.confirmedComputerActions === 1 ? "" : "s"}.`,
         });
       }
     } catch (error) {
       if (!silent) {
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
           text: errorMessage(error, "Growth metrics refresh failed."),
         });
@@ -18596,7 +19207,7 @@ export default function App() {
     } finally {
       growthRefreshInFlightRef.current = false;
       if (!silent) {
-        setBusy(false);
+        setBusyForWorkspace(requestWorkspaceKey, false);
       }
     }
   }
@@ -18661,8 +19272,7 @@ export default function App() {
     setChainSent([]);
     setSavedDraft(undefined);
     setSelectedKey("");
-    setActiveFolder("inbox");
-    setComposeOpen(true);
+    setComposeOpen(false);
     setRecipient("");
     setCcRecipient("");
     setSubject("");
@@ -18702,31 +19312,45 @@ export default function App() {
     setStatus({ tone: "idle", text: "Opening UniSat..." });
 
     try {
+      const generation = ++walletSyncGenerationRef.current;
       const accounts = window.unisat.requestAccounts
         ? await window.unisat.requestAccounts()
         : await window.unisat.getAccounts?.();
 
-      const firstAddress = accounts?.[0];
+      let firstAddress = accounts?.[0];
       if (!firstAddress) {
         throw new Error("UniSat did not return an address.");
       }
 
       const walletNetwork = await getWalletNetwork(window.unisat);
-      if (mainnetRegistryMode) {
-        if (walletNetwork !== "livenet") {
-          await switchWalletNetwork(window.unisat, "livenet");
-        }
+      if (mainnetWorkspaceMode) {
+        firstAddress = await ensureWalletNetwork(
+          window.unisat,
+          "livenet",
+          firstAddress,
+        );
         setNetwork("livenet");
       } else if (walletNetwork) {
         setNetwork(walletNetwork);
+      }
+      if (generation !== walletSyncGenerationRef.current) {
+        return;
       }
 
       setAddress(firstAddress);
       setInbox([]);
       setChainSent([]);
       setSelectedKey("");
-      setActiveFolder(
-        tokenMode
+      if (
+        tokenMode ||
+        walletMode ||
+        workTokenMode ||
+        marketplaceMode ||
+        standaloneBondConfig ||
+        mainnetRegistryMode
+      ) {
+        setActiveFolder(
+          tokenMode
             ? "token"
             : walletMode
               ? "wallet"
@@ -18738,33 +19362,51 @@ export default function App() {
                     ? standaloneBondConfig.folder
                   : mainnetRegistryMode
                     ? "ids"
-                    : "inbox",
-      );
+                    : activeFolder,
+        );
+      }
       setComposeOpen(false);
 
       try {
-        if (standaloneBondConfig) {
-          const snapshot = await fetchBondSummary(standaloneBondConfig, false);
+        if (
+          standaloneBondConfig ||
+          activeFolder === "infinity" ||
+          activeFolder === "inception"
+        ) {
+          const config = standaloneBondConfig ?? activeBondConfig;
+          const snapshot = await fetchBondSummary(config, false);
+          if (generation !== walletSyncGenerationRef.current) {
+            return;
+          }
           const tokenState = snapshot.token;
           applyInfinitySummary(snapshot);
           applyTokenState(tokenState, {
             scopeKey: tokenStateScopeKey({
               network: "livenet",
-              tokenScope: standaloneBondConfig.tokenId,
+              tokenScope: config.tokenId,
               walletScoped: false,
             }),
           });
-          setTokenSelectedId(standaloneBondConfig.tokenId);
-          setTokenDetailTarget(standaloneBondConfig.tokenId);
+          setTokenSelectedId(config.tokenId);
+          setTokenDetailTarget(config.tokenId);
           setStatus({
             tone: "good",
-            text: `UniSat connected. ${standaloneBondConfig.pluralName} ready.`,
+            text: `UniSat connected. ${config.pluralName} ready.`,
           });
           return;
         }
 
-        if (tokenMode || walletMode || workTokenMode) {
-          const workSummary = workTokenMode
+        if (
+          tokenMode ||
+          walletMode ||
+          workTokenMode ||
+          activeFolder === "token" ||
+          activeFolder === "wallet" ||
+          activeFolder === "work"
+        ) {
+          const workWorkspace = workTokenMode || activeFolder === "work";
+          const walletWorkspace = walletMode || activeFolder === "wallet";
+          const workSummary = workWorkspace
             ? await fetchWorkSummary("livenet", false)
             : undefined;
           const state =
@@ -18775,32 +19417,36 @@ export default function App() {
               "",
               false,
               [firstAddress],
-              walletMode,
+              walletWorkspace,
             ));
+          if (generation !== walletSyncGenerationRef.current) {
+            return;
+          }
           if (workSummary?.floor) {
             applyWorkFloorQuote(workSummary.floor);
           }
           applyTokenState(state, {
             scopeKey: tokenStateScopeKey({
-              address: workTokenMode ? "" : firstAddress,
+              address: workWorkspace ? "" : firstAddress,
               network: "livenet",
-              tokenScope: workTokenMode ? WORK_TOKEN_ID : "",
-              walletScoped: walletMode,
+              tokenScope: workWorkspace ? WORK_TOKEN_ID : "",
+              walletScoped: walletWorkspace,
             }),
           });
-          setTokenDataLoaded(true);
-          setTokenDataError("");
           setStatus({
             tone: "good",
-            text: workTokenMode
+            text: workWorkspace
               ? "UniSat connected. WORK dashboard ready."
               : "UniSat connected. Credit wallet ready.",
           });
           return;
         }
 
-        if (mainnetRegistryMode) {
+        if (mainnetWorkspaceMode) {
           const state = await fetchIdRegistryState("livenet");
+          if (generation !== walletSyncGenerationRef.current) {
+            return;
+          }
           applyRegistryState(state);
           setIdActivity(state.activity);
           setStatus({
@@ -18812,6 +19458,9 @@ export default function App() {
 
         const scanNetwork = walletNetwork ?? network;
         const mailState = await fetchAddressMail(firstAddress, scanNetwork);
+        if (generation !== walletSyncGenerationRef.current) {
+          return;
+        }
         const { inboxMessages, sentMessages } = mailState;
         setInbox(inboxMessages);
         setChainSent(sentMessages);
@@ -18859,12 +19508,19 @@ export default function App() {
   }
 
   async function chooseNetwork(nextNetwork: BitcoinNetwork) {
-    setNetwork(nextNetwork);
-    setInbox([]);
-    setChainSent([]);
-    setSelectedKey("");
+    if (mainnetWorkspaceMode && nextNetwork !== "livenet") {
+      setStatus({
+        tone: "bad",
+        text: "This workspace is mainnet-only. UniSat was not switched.",
+      });
+      return;
+    }
 
     if (!window.unisat?.switchChain && !window.unisat?.switchNetwork) {
+      setNetwork(nextNetwork);
+      setInbox([]);
+      setChainSent([]);
+      setSelectedKey("");
       setStatus({
         tone: "idle",
         text: `${networkLabel(nextNetwork)} selected.`,
@@ -18879,13 +19535,19 @@ export default function App() {
     });
 
     try {
-      await switchWalletNetwork(window.unisat, nextNetwork);
-      const activeWalletNetwork =
-        (await getWalletNetwork(window.unisat)) ?? nextNetwork;
+      const verifiedAddress = await ensureWalletNetwork(
+        window.unisat,
+        nextNetwork,
+        address,
+      );
+      const activeWalletNetwork = await getWalletNetwork(window.unisat);
+      if (activeWalletNetwork !== nextNetwork) {
+        throw new Error("UniSat network verification failed.");
+      }
       const accounts = window.unisat.getAccounts
         ? await window.unisat.getAccounts()
         : [];
-      const nextAddress = accounts[0] ?? address;
+      const nextAddress = accounts[0] ?? verifiedAddress;
       setNetwork(activeWalletNetwork);
       setAddress(nextAddress);
       setInbox([]);
@@ -18953,6 +19615,9 @@ export default function App() {
     silent = false,
     fresh = !silent,
   ): Promise<PowRegistryState | undefined> {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const requestIsActive = () =>
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
     if (!registryAddress) {
       setIdRegistry([]);
       setIdListings([]);
@@ -18960,7 +19625,7 @@ export default function App() {
       setIdSales([]);
       setIdActivity([]);
       if (!silent) {
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "idle",
           text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.`,
         });
@@ -18971,17 +19636,17 @@ export default function App() {
     if (idRefreshInFlightRef.current) {
       const needsFreshRefresh = fresh && !idRefreshInFlightFreshRef.current;
       if (!silent) {
-        setBusy(true);
-        setStatus({
+        setBusyForWorkspace(requestWorkspaceKey, true);
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "idle",
           text: "ID registry refresh already in progress...",
         });
       }
       try {
         const state = await idRefreshInFlightRef.current;
-        if (needsFreshRefresh) {
+        if (needsFreshRefresh && requestIsActive()) {
           if (!silent) {
-            setStatus({
+            setStatusForWorkspace(requestWorkspaceKey, {
               tone: "idle",
               text: "Starting fresh ID registry refresh...",
             });
@@ -18994,12 +19659,12 @@ export default function App() {
               (record) => record.confirmed,
             ).length;
             const pending = state.records.length - confirmed;
-            setStatus({
+            setStatusForWorkspace(requestWorkspaceKey, {
               tone: "good",
               text: `ID registry loaded. ${confirmed} confirmed, ${pending} pending, ${state.pendingEvents.length} in flight.`,
             });
           } else {
-            setStatus({
+            setStatusForWorkspace(requestWorkspaceKey, {
               tone: "bad",
               text: "ID registry scan failed.",
             });
@@ -19008,17 +19673,17 @@ export default function App() {
         return state;
       } finally {
         if (!silent && !needsFreshRefresh) {
-          setBusy(false);
+          setBusyForWorkspace(requestWorkspaceKey, false);
         }
       }
     }
 
     const refreshPromise = (async () => {
       if (!silent) {
-        setBusy(true);
+        setBusyForWorkspace(requestWorkspaceKey, true);
       }
       if (!silent) {
-        setStatus({
+        setStatusForWorkspace(requestWorkspaceKey, {
           tone: "idle",
           text:
             activityMode || growthMode || activeFolder === "log"
@@ -19068,7 +19733,7 @@ export default function App() {
           ).length;
           const pending = acceptedState.records.length - confirmed;
           const pendingChanges = acceptedState.pendingEvents.length;
-          setStatus({
+          setStatusForWorkspace(requestWorkspaceKey, {
             tone: activityLoadFailed ? "idle" : "good",
             text: shouldLoadComputerLog
               ? activityLoadFailed
@@ -19080,7 +19745,7 @@ export default function App() {
         return acceptedState;
       } catch (error) {
         if (!silent) {
-          setStatus({
+          setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
             text: errorMessage(error, "ID registry scan failed."),
           });
@@ -19090,7 +19755,7 @@ export default function App() {
         idRefreshInFlightRef.current = null;
         idRefreshInFlightFreshRef.current = false;
         if (!silent) {
-          setBusy(false);
+          setBusyForWorkspace(requestWorkspaceKey, false);
         }
       }
     })();
@@ -19224,10 +19889,7 @@ export default function App() {
         { network },
       );
 
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== network) {
-        await switchWalletNetwork(window.unisat, network);
-      }
+      await ensureWalletNetwork(window.unisat, network, address);
 
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: ID_REGISTRATION_PRICE_SATS,
@@ -19395,10 +20057,7 @@ export default function App() {
         return;
       }
 
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== network) {
-        await switchWalletNetwork(window.unisat, network);
-      }
+      await ensureWalletNetwork(window.unisat, network, address);
 
       setStatus({ tone: "idle", text: `${successText}...` });
       const reservedOutpoints = activeListingAnchorOutpointsForAddress(
@@ -19538,10 +20197,7 @@ export default function App() {
       );
     }
 
-    const currentNetwork = await getWalletNetwork(window.unisat);
-    if (currentNetwork !== network) {
-      await switchWalletNetwork(window.unisat, network);
-    }
+    await ensureWalletNetwork(window.unisat, network, address);
 
     setStatus({ tone: "idle", text: "Preparing sale-ticket listing..." });
     const sellerPublicKey =
@@ -19791,10 +20447,7 @@ export default function App() {
         return;
       }
 
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== network) {
-        await switchWalletNetwork(window.unisat, network);
-      }
+      await ensureWalletNetwork(window.unisat, network, address);
 
       setStatus({
         tone: "idle",
@@ -19992,10 +20645,7 @@ export default function App() {
           return;
         }
 
-        const currentNetwork = await getWalletNetwork(window.unisat);
-        if (currentNetwork !== network) {
-          await switchWalletNetwork(window.unisat, network);
-        }
+        await ensureWalletNetwork(window.unisat, network, address);
 
         const reservedOutpoints = activeListingAnchorOutpointsForAddress(
           latestState.listings,
@@ -20261,10 +20911,7 @@ export default function App() {
         return;
       }
 
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== network) {
-        await switchWalletNetwork(window.unisat, network);
-      }
+      await ensureWalletNetwork(window.unisat, network, address);
 
       const payments: PaymentOutputSpec[] = [
         {
@@ -20629,10 +21276,7 @@ export default function App() {
       }
 
       setStatus({ tone: "idle", text: "Building PSBT..." });
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== network) {
-        await switchWalletNetwork(window.unisat, network);
-      }
+      await ensureWalletNetwork(window.unisat, network, address);
 
       let reservedOutpoints: PowIdSpentOutpoint[] = [];
       if (registryAddress) {
@@ -21020,10 +21664,7 @@ export default function App() {
         return;
       }
 
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== "livenet") {
-        await switchWalletNetwork(window.unisat, "livenet");
-      }
+      await ensureWalletNetwork(window.unisat, "livenet", address);
 
       const reservedIdOutpoints = activeListingAnchorOutpointsForAddress(
         idListings,
@@ -21428,10 +22069,7 @@ export default function App() {
     setStatus({ tone: "idle", text: `Creating ${ticker} credit...` });
 
     try {
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== "livenet") {
-        await switchWalletNetwork(window.unisat, "livenet");
-      }
+      await ensureWalletNetwork(window.unisat, "livenet", address);
 
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: TOKEN_CREATION_PRICE_SATS,
@@ -21535,10 +22173,7 @@ export default function App() {
     if (!wallet?.signPsbt) {
       throw new Error("UniSat signPsbt is not available.");
     }
-    const currentNetwork = await getWalletNetwork(wallet);
-    if (currentNetwork !== "livenet") {
-      await switchWalletNetwork(wallet, "livenet");
-    }
+    await ensureWalletNetwork(wallet, "livenet", address);
 
     const total = Math.min(
       CHAINED_MINT_MAX_COUNT,
@@ -21801,10 +22436,7 @@ export default function App() {
         return undefined;
       }
 
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== "livenet") {
-        await switchWalletNetwork(window.unisat, "livenet");
-      }
+      await ensureWalletNetwork(window.unisat, "livenet", address);
 
       setStatus({
         tone: "idle",
@@ -21886,11 +22518,7 @@ export default function App() {
     });
 
     try {
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== "livenet") {
-        await switchWalletNetwork(window.unisat, "livenet");
-      }
-      await assertActiveWalletAddress(window.unisat, address);
+      await ensureWalletNetwork(window.unisat, "livenet", address);
 
       setStatus({
         tone: "idle",
@@ -22036,10 +22664,7 @@ export default function App() {
     });
 
     try {
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== "livenet") {
-        await switchWalletNetwork(window.unisat, "livenet");
-      }
+      await ensureWalletNetwork(window.unisat, "livenet", address);
 
       const latestState = await fetchTokenState(
         "livenet",
@@ -22218,10 +22843,7 @@ export default function App() {
     setStatus({ tone: "idle", text: "Sealing credit listing..." });
 
     try {
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== "livenet") {
-        await switchWalletNetwork(window.unisat, "livenet");
-      }
+      await ensureWalletNetwork(window.unisat, "livenet", address);
 
       const anchorSignature = await signTokenSaleTicketAuthorization({
         listing,
@@ -22327,10 +22949,7 @@ export default function App() {
     setStatus({ tone: "idle", text: "Delisting credit listing..." });
 
     try {
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== "livenet") {
-        await switchWalletNetwork(window.unisat, "livenet");
-      }
+      await ensureWalletNetwork(window.unisat, "livenet", address);
 
       const payload = buildTokenDelistingPayload(listing.listingId);
       const paymentPsbt = await buildAnchoredMarketplacePsbt({
@@ -22461,10 +23080,7 @@ export default function App() {
     });
 
     try {
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== "livenet") {
-        await switchWalletNetwork(window.unisat, "livenet");
-      }
+      await ensureWalletNetwork(window.unisat, "livenet", address);
 
       const payload = buildTokenBuyPayload(listing.listingId, address);
       const paymentPsbt = await buildAnchoredMarketplacePsbt({
@@ -22595,10 +23211,7 @@ export default function App() {
     if (!registryAddress) {
       throw new Error(`No RUSH registry configured for ${networkLabel(mintNetwork)}.`);
     }
-    const currentNetwork = await getWalletNetwork(wallet);
-    if (currentNetwork !== mintNetwork) {
-      await switchWalletNetwork(wallet, mintNetwork);
-    }
+    await ensureWalletNetwork(wallet, mintNetwork, address);
 
     const total = Math.min(
       RUSH_CHAINED_MINT_MAX_COUNT,
@@ -23159,10 +23772,7 @@ export default function App() {
     });
 
     try {
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== "livenet") {
-        await switchWalletNetwork(window.unisat, "livenet");
-      }
+      await ensureWalletNetwork(window.unisat, "livenet", address);
 
       const paymentPsbt = await buildPaymentPsbt({
         feeRate: prepareFeeRate,
@@ -23205,18 +23815,6 @@ export default function App() {
       setTokenAction("");
       setBusy(false);
     }
-  }
-
-  if (landingMode) {
-    return (
-      <LandingApp
-        registryAddress={registryAddressForNetwork("livenet")}
-        registryRecords={idRegistry.filter(
-          (record) => record.network === "livenet",
-        )}
-        onRefresh={() => void refreshIds()}
-      />
-    );
   }
 
   if (idLaunchMode) {
@@ -23790,7 +24388,19 @@ export default function App() {
       <AppStatusRow persistent status={status} />
 
       <section className={layoutClassName}>
-        <aside className="sidebar">
+        <aside className={sidebarExpanded ? "sidebar is-expanded" : "sidebar"}>
+          <button
+            aria-expanded={sidebarExpanded}
+            className="sidebar-toggle"
+            onClick={() => setSidebarExpanded((current) => !current)}
+            type="button"
+          >
+            <span className="button-content">
+              <Menu size={17} />
+              <span>{sidebarExpanded ? "Close navigation" : "Open navigation"}</span>
+            </span>
+            <strong>{folderLabel(activeFolder)}</strong>
+          </button>
           <button className="compose-button" onClick={composeNew} type="button">
             <span className="button-content">
               <PenLine size={17} />
@@ -23884,6 +24494,7 @@ export default function App() {
                     activeCustomFolderId === folder.id
                   }
                   onClick={() => {
+                    setSidebarExpanded(false);
                     setActiveFolder("custom");
                     setActiveCustomFolderId(folder.id);
                     setComposeOpen(false);
@@ -23985,7 +24596,11 @@ export default function App() {
                 <FilePenLine size={17} />
                 <span>Credit</span>
               </span>
-              <strong>{tokenDefinitions.length}</strong>
+              <strong>
+                {activeTokenStateLoaded
+                  ? tokenDefinitions.length.toLocaleString()
+                  : "…"}
+              </strong>
             </button>
             <button
               aria-current={activeFolder === "wallet"}
@@ -23996,7 +24611,11 @@ export default function App() {
                 <Wallet size={17} />
                 <span>Wallet</span>
               </span>
-              <strong>{tokenWalletBalances.length}</strong>
+              <strong>
+                {activeTokenStateLoaded
+                  ? tokenWalletBalances.length.toLocaleString()
+                  : "…"}
+              </strong>
             </button>
             <button
               aria-current={activeFolder === "work"}
@@ -24008,7 +24627,8 @@ export default function App() {
                 <span>WORK</span>
               </span>
               <strong>
-                {tokenLedgerLoading && workTokenLedger.confirmedSupply === 0
+                {!activeTokenStateLoaded ||
+                (tokenLedgerLoading && workTokenLedger.confirmedSupply === 0)
                   ? "..."
                   : workTokenLedger.confirmedSupply.toLocaleString()}
               </strong>
@@ -24023,7 +24643,9 @@ export default function App() {
                 <span>Infinity</span>
               </span>
               <strong>
-                {(infinityBondSummary?.stats.confirmedSupply ?? 0).toLocaleString()}
+                {infinityBondSummary
+                  ? infinityBondSummary.stats.confirmedSupply.toLocaleString()
+                  : "…"}
               </strong>
             </button>
             <button
@@ -24036,7 +24658,9 @@ export default function App() {
                 <span>Inception</span>
               </span>
               <strong>
-                {(inceptionBondSummary?.stats.confirmedSupply ?? 0).toLocaleString()}
+                {inceptionBondSummary
+                  ? inceptionBondSummary.stats.confirmedSupply.toLocaleString()
+                  : "…"}
               </strong>
             </button>
             <button
@@ -24049,7 +24673,9 @@ export default function App() {
                 <span>Log</span>
               </span>
               <strong>
-                {(activityStats?.total ?? idActivity.length).toLocaleString()}
+                {activityStats
+                  ? (activityStats.total ?? idActivity.length).toLocaleString()
+                  : "…"}
               </strong>
             </button>
             <button
@@ -24069,7 +24695,11 @@ export default function App() {
                 aria-label="ProofOfWork ID registry network total"
               >
                 <span>Registry Network</span>
-                <strong>{idRegistry.length.toLocaleString()}</strong>
+                <strong>
+                  {idRegistry.length > 0
+                    ? idRegistry.length.toLocaleString()
+                    : "…"}
+                </strong>
                 <small>
                   {confirmedIdCount.toLocaleString()} confirmed ·{" "}
                   {pendingIdCount.toLocaleString()} pending IDs
@@ -24980,20 +25610,221 @@ function PaginationControls({
   );
 }
 
-function browserPageWithContext(page: BrowserPage) {
-  const context = JSON.stringify({
-    amountSats: page.amountSats,
-    confirmed: page.confirmed,
-    network: page.network,
-    protocolBytes: page.protocolBytes,
-    sender: page.sender,
-    source: page.source,
-    txid: page.txid,
-  }).replace(/</gu, "\\u003c");
-  const contextScript = `<script>window.POW_CONTEXT=${context};</script>\n`;
-  return /^<!doctype[^>]*>/iu.test(page.html)
-    ? page.html.replace(/^<!doctype[^>]*>/iu, (doctype) => `${doctype}\n${contextScript}`)
-    : `${contextScript}${page.html}`;
+const BROWSER_STATIC_REMOVED_ELEMENTS = [
+  "applet",
+  "base",
+  "embed",
+  "fencedframe",
+  "frame",
+  "iframe",
+  "link",
+  "meta",
+  "object",
+  "portal",
+  "script",
+  "svg animate",
+  "svg animateMotion",
+  "svg animateTransform",
+  "svg set",
+].join(", ");
+
+const BROWSER_STATIC_URL_ATTRIBUTES = new Set([
+  "action",
+  "archive",
+  "background",
+  "cite",
+  "classid",
+  "codebase",
+  "data",
+  "formaction",
+  "href",
+  "imagesrcset",
+  "longdesc",
+  "manifest",
+  "ping",
+  "poster",
+  "profile",
+  "src",
+  "srcdoc",
+  "srcset",
+  "xlink:href",
+]);
+
+const BROWSER_STATIC_INTERACTION_ATTRIBUTES = new Set([
+  "autofocus",
+  "download",
+  "form",
+  "formenctype",
+  "formmethod",
+  "formnovalidate",
+  "formtarget",
+  "shadowrootclonable",
+  "shadowrootdelegatesfocus",
+  "shadowrootmode",
+  "shadowrootserializable",
+  "target",
+]);
+
+function browserStaticEmbeddedUrlAllowed(
+  element: Element,
+  attributeName: string,
+  value: string,
+) {
+  const tagName = element.localName.toLowerCase();
+  const normalizedValue = value.trim();
+  if (
+    tagName === "use" &&
+    (attributeName === "href" || attributeName === "xlink:href") &&
+    normalizedValue.startsWith("#")
+  ) {
+    return true;
+  }
+
+  if (!/^(?:blob|data):/iu.test(normalizedValue)) {
+    return false;
+  }
+
+  return (
+    (attributeName === "src" &&
+      ["audio", "img", "source", "track", "video"].includes(tagName)) ||
+    (attributeName === "poster" && tagName === "video") ||
+    ((attributeName === "href" || attributeName === "xlink:href") &&
+      tagName === "image")
+  );
+}
+
+function sanitizeBrowserStaticFragment(fragment: DocumentFragment) {
+  for (const element of fragment.querySelectorAll(
+    BROWSER_STATIC_REMOVED_ELEMENTS,
+  )) {
+    element.remove();
+  }
+
+  for (const element of fragment.querySelectorAll("*")) {
+    for (const attribute of [...element.attributes]) {
+      const attributeName = attribute.name.toLowerCase();
+      if (
+        attributeName.startsWith("on") ||
+        BROWSER_STATIC_INTERACTION_ATTRIBUTES.has(attributeName) ||
+        (BROWSER_STATIC_URL_ATTRIBUTES.has(attributeName) &&
+          !browserStaticEmbeddedUrlAllowed(
+            element,
+            attributeName,
+            attribute.value,
+          ))
+      ) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  }
+
+  for (const form of [...fragment.querySelectorAll("form")]) {
+    const replacement = document.createElement("div");
+    for (const attribute of [...form.attributes]) {
+      replacement.setAttribute(attribute.name, attribute.value);
+    }
+    replacement.setAttribute("data-pow-static-form", "");
+    replacement.setAttribute("inert", "");
+    replacement.append(...form.childNodes);
+    form.replaceWith(replacement);
+  }
+
+  for (const nestedTemplate of fragment.querySelectorAll("template")) {
+    sanitizeBrowserStaticFragment(nestedTemplate.content);
+  }
+}
+
+function browserStaticStructuralShells(html: string) {
+  return html.replace(
+    /<(\/?)(html|head|body)(?=[\t\n\f\r />])/giu,
+    (_tag, closing: string, name: string) =>
+      `<${closing}pow-static-${name.toLowerCase()}`,
+  );
+}
+
+function browserStaticAttributeMarkup(
+  element: Element | null,
+  excludedNames: ReadonlySet<string> = new Set(),
+) {
+  if (!element) {
+    return "";
+  }
+
+  return [...element.attributes]
+    .filter((attribute) => !excludedNames.has(attribute.name.toLowerCase()))
+    .map(
+      (attribute) =>
+        ` ${attribute.name}="${attribute.value
+          .replace(/&/gu, "&amp;")
+          .replace(/"/gu, "&quot;")
+          .replace(/</gu, "&lt;")}"`,
+    )
+    .join("");
+}
+
+function browserStaticDocument(html: string) {
+  const template = document.createElement("template");
+  template.innerHTML = browserStaticStructuralShells(html);
+  sanitizeBrowserStaticFragment(template.content);
+
+  const htmlShell = template.content.querySelector("pow-static-html");
+  const shellRoot = htmlShell ?? template.content;
+  const headShell = shellRoot.querySelector("pow-static-head");
+  const bodyShell = shellRoot.querySelector("pow-static-body");
+  const headHtml = headShell?.innerHTML ?? "";
+  let bodyHtml = "";
+  if (bodyShell) {
+    bodyHtml = bodyShell.innerHTML;
+  } else {
+    headShell?.remove();
+    bodyHtml = htmlShell?.innerHTML ?? template.innerHTML;
+  }
+
+  const htmlAttributes = browserStaticAttributeMarkup(htmlShell);
+  const bodyAttributes = browserStaticAttributeMarkup(
+    bodyShell,
+    new Set(["data-pow-static-page", "inert"]),
+  );
+
+  const contentSecurityPolicy = [
+    "default-src 'none'",
+    "base-uri 'none'",
+    "connect-src 'none'",
+    "font-src data:",
+    "form-action 'none'",
+    "frame-src 'none'",
+    "img-src data: blob:",
+    "media-src data: blob:",
+    "object-src 'none'",
+    "script-src 'none'",
+    "style-src 'unsafe-inline'",
+    "worker-src 'none'",
+  ].join("; ");
+  return [
+    "<!doctype html>",
+    `<html${htmlAttributes}>`,
+    "<head>",
+    '<meta charset="utf-8">',
+    '<meta name="referrer" content="no-referrer">',
+    `<meta http-equiv="Content-Security-Policy" content="${contentSecurityPolicy}">`,
+    headHtml,
+    "</head>",
+    `<body${bodyAttributes} data-pow-static-page="" inert="">`,
+    bodyHtml,
+    "</body>",
+    "</html>",
+  ].join("\n");
+}
+
+function BrowserPageFrame({ page }: { page: BrowserPage }) {
+  return (
+    <iframe
+      referrerPolicy="no-referrer"
+      sandbox=""
+      srcDoc={browserStaticDocument(page.html)}
+      title={`${page.attachment.name} rendered from ${page.txid}`}
+    />
+  );
 }
 
 function BrowserApp({
@@ -25007,7 +25838,10 @@ function BrowserApp({
   const [query, setQuery] = useState(() => txidFromBrowserLocation());
   const [page, setPage] = useState<BrowserPage | undefined>();
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({ tone: "idle", text: "Ready" });
+  const [status, setStatus] = useState<WorkspaceStatus>({
+    tone: "idle",
+    text: "Enter a ProofOfWork txid to load verified HTML.",
+  });
   const [templateTitle, setTemplateTitle] = useState("My ProofOfWork Page");
   const [templateKicker, setTemplateKicker] = useState(
     "ProofOfWork.Me Browser",
@@ -25017,6 +25851,7 @@ function BrowserApp({
   );
   const [templateCopied, setTemplateCopied] = useState(false);
   const initialLoadRef = useRef(false);
+  const loadGenerationRef = useRef(0);
   const template = useMemo(() => browserTemplateHtml(templateTitle, templateKicker, templateBody), [templateBody, templateKicker, templateTitle]);
   const templateBytes = useMemo(() => byteLength(template), [template]);
   const templateSha256 = useMemo(
@@ -25026,9 +25861,16 @@ function BrowserApp({
   const templateHref = `data:text/html;charset=utf-8,${encodeURIComponent(template)}`;
 
   const loadPage = useCallback(
-    async (target = query) => {
+    async (
+      target = query,
+      targetNetwork = network,
+      updateHistory = true,
+    ) => {
+      const generation = ++loadGenerationRef.current;
       const txid = target.trim().toLowerCase();
       if (!/^[0-9a-f]{64}$/u.test(txid)) {
+        setLoading(false);
+        setPage(undefined);
         setStatus({ tone: "bad", text: "Enter a valid ProofOfWork txid." });
         return;
       }
@@ -25039,10 +25881,16 @@ function BrowserApp({
         text: "Loading verified page from ProofOfWork...",
       });
       try {
-        const loadedPage = await fetchBrowserPage(txid, network);
+        const loadedPage = await fetchBrowserPage(txid, targetNetwork);
+        if (generation !== loadGenerationRef.current) {
+          return;
+        }
         setPage(loadedPage);
         setQuery(txid);
-        syncBrowserRoute(txid, network);
+        setNetwork(targetNetwork);
+        if (updateHistory) {
+          syncBrowserRoute(txid, targetNetwork);
+        }
         setStatus({
           tone: loadedPage.confirmed ? "good" : "idle",
           text: loadedPage.confirmed
@@ -25050,13 +25898,18 @@ function BrowserApp({
             : "Verified pending HTML page. Confirmation is still final truth.",
         });
       } catch (error) {
+        if (generation !== loadGenerationRef.current) {
+          return;
+        }
         setPage(undefined);
         setStatus({
           tone: "bad",
           text: errorMessage(error, "Could not load Browser page."),
         });
       } finally {
-        setLoading(false);
+        if (generation === loadGenerationRef.current) {
+          setLoading(false);
+        }
       }
     },
     [network, query],
@@ -25070,8 +25923,32 @@ function BrowserApp({
     initialLoadRef.current = true;
     const initialTxid = txidFromBrowserLocation();
     if (initialTxid) {
-      void loadPage(initialTxid);
+      void loadPage(initialTxid, networkFromBrowserLocation(), false);
     }
+  }, [loadPage]);
+
+  useEffect(() => {
+    const restoreBrowserLocation = () => {
+      const nextNetwork = networkFromBrowserLocation();
+      const nextTxid = txidFromBrowserLocation();
+      setNetwork(nextNetwork);
+      setQuery(nextTxid);
+      setPage(undefined);
+      if (nextTxid) {
+        void loadPage(nextTxid, nextNetwork, false);
+        return;
+      }
+
+      loadGenerationRef.current += 1;
+      setLoading(false);
+      setStatus({
+        tone: "idle",
+        text: "Enter a ProofOfWork txid to load verified HTML.",
+      });
+    };
+
+    window.addEventListener("popstate", restoreBrowserLocation);
+    return () => window.removeEventListener("popstate", restoreBrowserLocation);
   }, [loadPage]);
 
   async function copyTemplate() {
@@ -25097,7 +25974,8 @@ function BrowserApp({
             <h2>Paste a txid. Render the page.</h2>
             <p>
               HTML pages are ProofOfWork message bodies or file attachments,
-              reconstructed from OP_RETURN chunks and rendered inside a sandbox.
+              reconstructed from OP_RETURN chunks and rendered inside a static,
+              script-disabled sandbox.
             </p>
           </div>
           <form
@@ -25149,11 +26027,9 @@ function BrowserApp({
                   </span>
                 </a>
               </div>
-              <iframe
-                referrerPolicy="no-referrer"
-                sandbox={page.confirmed ? "allow-scripts" : ""}
-                srcDoc={browserPageWithContext(page)}
-                title={`${page.attachment.name} rendered from ${page.txid}`}
+              <BrowserPageFrame
+                key={`${page.network}:${page.txid}:${page.attachment.sha256}`}
+                page={page}
               />
             </article>
 
@@ -25340,6 +26216,7 @@ function BrowserWorkspace({
     "This page lives as HTML carried by the ProofOfWork Computer.",
   );
   const [templateCopied, setTemplateCopied] = useState(false);
+  const loadGenerationRef = useRef(0);
   const template = useMemo(
     () => browserTemplateHtml(templateTitle, templateKicker, templateBody),
     [templateBody, templateKicker, templateTitle],
@@ -25352,13 +26229,19 @@ function BrowserWorkspace({
   const templateHref = `data:text/html;charset=utf-8,${encodeURIComponent(template)}`;
 
   useEffect(() => {
+    loadGenerationRef.current += 1;
     setNetwork(activeNetwork);
+    setPage(undefined);
+    setLoading(false);
   }, [activeNetwork]);
 
   const loadPage = useCallback(
     async (target = query) => {
+      const generation = ++loadGenerationRef.current;
       const txid = target.trim().toLowerCase();
       if (!/^[0-9a-f]{64}$/u.test(txid)) {
+        setLoading(false);
+        setPage(undefined);
         setStatus({ tone: "bad", text: "Enter a valid ProofOfWork txid." });
         return;
       }
@@ -25370,6 +26253,9 @@ function BrowserWorkspace({
       });
       try {
         const loadedPage = await fetchBrowserPage(txid, network);
+        if (generation !== loadGenerationRef.current) {
+          return;
+        }
         setPage(loadedPage);
         setQuery(txid);
         setStatus({
@@ -25379,13 +26265,18 @@ function BrowserWorkspace({
             : "Verified pending HTML page. Confirmation is still final truth.",
         });
       } catch (error) {
+        if (generation !== loadGenerationRef.current) {
+          return;
+        }
         setPage(undefined);
         setStatus({
           tone: "bad",
           text: errorMessage(error, "Could not load Browser page."),
         });
       } finally {
-        setLoading(false);
+        if (generation === loadGenerationRef.current) {
+          setLoading(false);
+        }
       }
     },
     [network, query],
@@ -25411,7 +26302,9 @@ function BrowserWorkspace({
           <h2>Browser</h2>
           <p>
             Paste a txid to render HTML from a ProofOfWork message body or the
-            same verified attachment protocol used by Files and Desktop.
+            same verified attachment protocol used by Files and Desktop. Pages
+            stay static: scripts, forms, navigation, and external network
+            requests are disabled.
           </p>
         </div>
         <form
@@ -25463,11 +26356,9 @@ function BrowserWorkspace({
                 </span>
               </a>
             </div>
-            <iframe
-              referrerPolicy="no-referrer"
-              sandbox={page.confirmed ? "allow-scripts" : ""}
-              srcDoc={browserPageWithContext(page)}
-              title={`${page.attachment.name} rendered from ${page.txid}`}
+            <BrowserPageFrame
+              key={`${page.network}:${page.txid}:${page.attachment.sha256}`}
+              page={page}
             />
           </article>
 

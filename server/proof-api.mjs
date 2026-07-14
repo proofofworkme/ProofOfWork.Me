@@ -5,13 +5,13 @@ import { timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
-import net from "node:net";
 import path from "node:path";
 import dns from "node:dns";
 import { URL } from "node:url";
-import bip322 from "bip322-js";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
+import { verifyBitcoinMessageSignature } from "./bitcoin-message-verifier.mjs";
+import { createElectrumClient } from "./electrum-client.mjs";
 import {
   errorResponse,
   jsonResponse,
@@ -37,6 +37,7 @@ import {
   proofIndexIdRecordPayload,
   proofIndexRegistryHistoryPayload,
   proofIndexRegistryPayload,
+  proofIndexRushPayload,
   proofIndexShadowFeatureEnabled,
   proofIndexSnapshotPayload,
   proofIndexTokenMarketHistoryOverlayPayload,
@@ -55,7 +56,6 @@ import {
 
 bitcoin.initEccLib(ecc);
 dns.setDefaultResultOrder("ipv4first");
-const { Verifier } = bip322;
 
 const HOST = process.env.HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PORT ?? 8081);
@@ -74,6 +74,20 @@ const BITCOIN_RPC_PASSWORD = String(
 ).trim();
 const ELECTRUM_HOST = process.env.ELECTRUM_HOST ?? "127.0.0.1";
 const ELECTRUM_PORT = Number(process.env.ELECTRUM_PORT ?? 50001);
+const ELECTRUM_MAX_IN_FLIGHT = Number(
+  process.env.ELECTRUM_MAX_IN_FLIGHT ?? 8,
+);
+const ELECTRUM_MAX_QUEUE = Number(process.env.ELECTRUM_MAX_QUEUE ?? 256);
+const ELECTRUM_MAX_RESPONSE_BYTES = Number(
+  process.env.ELECTRUM_MAX_RESPONSE_BYTES ?? 16_777_216,
+);
+const ELECTRUM_CLIENT = createElectrumClient({
+  host: ELECTRUM_HOST,
+  maxInFlight: ELECTRUM_MAX_IN_FLIGHT,
+  maxQueue: ELECTRUM_MAX_QUEUE,
+  maxResponseBytes: ELECTRUM_MAX_RESPONSE_BYTES,
+  port: ELECTRUM_PORT,
+});
 const ELECTRUM_HEALTH_SCRIPTHASH =
   "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21";
 const MAX_REGISTRY_TX_PAGES = Number(process.env.MAX_REGISTRY_TX_PAGES ?? 250);
@@ -270,6 +284,13 @@ const TOKEN_ADDRESS_TRANSFER_RECOVERY_WAIT_MS = Number(
 const WALLET_SCOPED_RECOVERY_WAIT_MS = Number(
   process.env.WALLET_SCOPED_RECOVERY_WAIT_MS ?? 15_000,
 );
+const WALLET_SCOPED_INDEX_WAIT_MS = Math.min(
+  15_000,
+  Math.max(
+    5_000,
+    Number(process.env.WALLET_SCOPED_INDEX_WAIT_MS ?? 10_000) || 10_000,
+  ),
+);
 const WORK_TOKEN_CANONICAL_FRESH_WAIT_MS = Number(
   process.env.WORK_TOKEN_CANONICAL_FRESH_WAIT_MS ?? TOKEN_SCOPED_FRESH_WAIT_MS,
 );
@@ -455,6 +476,46 @@ const HEALTH_DISK_MIN_FREE_BYTES = Number(
 );
 const HEALTH_DISK_MAX_USED_PERCENT = Number(
   process.env.POW_API_DISK_MAX_USED_PERCENT ?? 90,
+);
+const BROADCAST_RATE_WINDOW_MS = Math.max(
+  1_000,
+  Number(process.env.POW_API_BROADCAST_RATE_WINDOW_MS ?? 60_000) || 60_000,
+);
+const BROADCAST_RATE_PER_CLIENT = Math.max(
+  1,
+  Number(process.env.POW_API_BROADCAST_RATE_PER_CLIENT ?? 12) || 12,
+);
+const BROADCAST_RATE_GLOBAL = Math.max(
+  BROADCAST_RATE_PER_CLIENT,
+  Number(process.env.POW_API_BROADCAST_RATE_GLOBAL ?? 120) || 120,
+);
+const BROADCAST_CONCURRENCY_MAX = Math.max(
+  1,
+  Number(process.env.POW_API_BROADCAST_CONCURRENCY_MAX ?? 4) || 4,
+);
+const BROADCAST_EXTRA_ALLOWED_ORIGINS = new Set(
+  String(process.env.POW_API_BROADCAST_ALLOWED_ORIGINS ?? "")
+    .split(/[\s,]+/u)
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean),
+);
+const BROADCAST_ALLOW_MISSING_ORIGIN = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_API_BROADCAST_ALLOW_MISSING_ORIGIN ?? "0"),
+);
+const HTTP_HEADERS_TIMEOUT_MS = Math.max(
+  1_000,
+  Number(process.env.POW_API_HEADERS_TIMEOUT_MS ?? 10_000) || 10_000,
+);
+const HTTP_REQUEST_TIMEOUT_MS = Math.max(
+  HTTP_HEADERS_TIMEOUT_MS,
+  Number(process.env.POW_API_REQUEST_TIMEOUT_MS ?? 30_000) || 30_000,
+);
+const BROADCAST_BODY_TIMEOUT_MS = Math.max(
+  1_000,
+  Math.min(
+    HTTP_REQUEST_TIMEOUT_MS,
+    Number(process.env.POW_API_BROADCAST_BODY_TIMEOUT_MS ?? 10_000) || 10_000,
+  ),
 );
 const PROOF_INDEX_REQUIRED = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_REQUIRED ?? "1"),
@@ -695,6 +756,9 @@ const WORK_TOKEN_PARTICIPANT_RECOVERY_CACHE = new Map();
 const WORK_TOKEN_EXPLICIT_CLOSE_RECOVERY_CACHE = new Map();
 const WORK_TOKEN_SEAL_RECOVERY_CACHE = new Map();
 const TOKEN_MARKET_OUTSPEND_CACHE = new Map();
+const BROADCAST_CLIENT_ATTEMPTS = new Map();
+let broadcastActiveRequests = 0;
+let broadcastGlobalAttempts = [];
 let persistedCacheWriteSequence = 0;
 let btcUsdPriceCache = null;
 const LEDGER_TIP_HEIGHT_CACHE = new Map();
@@ -1662,10 +1726,22 @@ function historyPaginationFromSearch(searchParams) {
   );
   const page = boundedInteger(searchParams.get("page"), 0, 0, 1_000_000);
   const cursorRaw = String(searchParams.get("cursor") ?? "").trim();
-  const offset = cursorRaw ? historyCursorOffset(cursorRaw) : page * limit;
-  const query = String(searchParams.get("q") ?? searchParams.get("search") ?? "")
-    .trim()
-    .toLowerCase();
+  const offsetRaw = String(searchParams.get("offset") ?? "").trim();
+  const offset = cursorRaw
+    ? historyCursorOffset(cursorRaw)
+    : offsetRaw
+      ? boundedInteger(offsetRaw, 0, 0, 100_000_000)
+      : page * limit;
+  const query = [
+    "q",
+    "search",
+    "txid",
+    "transaction",
+    "transactionId",
+  ]
+    .map((key) => String(searchParams.get(key) ?? "").trim())
+    .find(Boolean)
+    ?.toLowerCase() ?? "";
 
   return {
     limit,
@@ -3126,6 +3202,13 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
     return payload;
   }
 
+  // A persisted ledger snapshot is immutable. A newer lifecycle overlay may
+  // be useful to build the next canonical snapshot, but merging it into an
+  // older response while retaining that snapshot id creates mixed-era truth.
+  if (payloadSnapshotId(payload) && options.allowSnapshotMutation !== true) {
+    return payload;
+  }
+
   const fast = options.fast === true;
   if (fast) {
     const overlay = await indexedTokenMarketSummaryOverlay(network);
@@ -3259,6 +3342,7 @@ function paginatedHistoryPayload({
   return {
     cursor: String(start),
     end,
+    hasMore: end < totalCount,
     indexedAt,
     indexedThroughBlock,
     items: pageItems,
@@ -3893,25 +3977,90 @@ async function fetchText(url, init = {}) {
   return response.text();
 }
 
-function readRequestBody(request, maxBytes = 1_000_000) {
+function requestBodyReadError(message, statusCode, code) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.details = { code };
+  return error;
+}
+
+function readRequestBody(request, maxBytes = 1_000_000, options = {}) {
   return new Promise((resolve, reject) => {
     let body = "";
+    let settled = false;
+    let timer = null;
+    const timeoutMs = Math.max(1, Number(options.timeoutMs) || 30_000);
+    const label = String(options.label ?? "Request body").trim() || "Request body";
 
-    request.setEncoding("utf8");
-    request.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > maxBytes) {
-        reject(new Error("Request body is too large."));
+    const cleanup = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      request.off("aborted", onAborted);
+      request.off("data", onData);
+      request.off("end", onEnd);
+      request.off("error", onError);
+    };
+    const settle = (callback, value, destroy = false) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      callback(value);
+      if (destroy && request.destroyed !== true) {
         request.destroy();
       }
-    });
-    request.on("end", () => resolve(body));
-    request.on("error", reject);
+    };
+    const onAborted = () =>
+      settle(
+        reject,
+        requestBodyReadError(
+          `${label} was aborted before completion.`,
+          400,
+          "REQUEST_BODY_ABORTED",
+        ),
+      );
+    const onData = (chunk) => {
+      body += chunk;
+      if (body.length > maxBytes) {
+        settle(
+          reject,
+          requestBodyReadError(
+            `${label} is too large.`,
+            413,
+            "REQUEST_BODY_TOO_LARGE",
+          ),
+          true,
+        );
+      }
+    };
+    const onEnd = () => settle(resolve, body);
+    const onError = (error) => settle(reject, error);
+
+    request.setEncoding("utf8");
+    request.on("aborted", onAborted);
+    request.on("data", onData);
+    request.on("end", onEnd);
+    request.on("error", onError);
+    timer = setTimeout(() => {
+      settle(
+        reject,
+        requestBodyReadError(
+          `${label} timed out before completion.`,
+          408,
+          "REQUEST_BODY_TIMEOUT",
+        ),
+        true,
+      );
+    }, timeoutMs);
+    timer.unref?.();
   });
 }
 
-async function readJsonRequestBody(request, maxBytes) {
-  const body = await readRequestBody(request, maxBytes);
+async function readJsonRequestBody(request, maxBytes, options = {}) {
+  const body = await readRequestBody(request, maxBytes, options);
   if (!body.trim()) {
     return {};
   }
@@ -4204,13 +4353,171 @@ async function submitSlipstreamTransaction(txHex) {
   };
 }
 
-async function broadcastSlipstreamPayload(request) {
-  const payload = await readJsonRequestBody(request, 1_000_000);
+function broadcastOriginAllowed(request) {
+  const origin = String(request.headers.origin ?? "").trim();
+  if (!origin) {
+    return BROADCAST_ALLOW_MISSING_ORIGIN;
+  }
+  if (BROADCAST_EXTRA_ALLOWED_ORIGINS.has(origin.toLowerCase())) {
+    return true;
+  }
+  try {
+    const parsed = new URL(origin);
+    const hostname = parsed.hostname.toLowerCase();
+    if (
+      hostname === "proofofwork.me" ||
+      hostname.endsWith(".proofofwork.me")
+    ) {
+      return parsed.protocol === "https:";
+    }
+    return (
+      ["localhost", "127.0.0.1", "::1"].includes(hostname) &&
+      ["http:", "https:"].includes(parsed.protocol)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function broadcastClientKey(request) {
+  const remoteAddress = String(request.socket.remoteAddress ?? "unknown")
+    .trim()
+    .toLowerCase();
+  const trustedProxy = [
+    "127.0.0.1",
+    "::1",
+    "::ffff:127.0.0.1",
+  ].includes(remoteAddress);
+  const forwarded = trustedProxy
+    ? String(request.headers["x-forwarded-for"] ?? "")
+        .split(",")[0]
+        .trim()
+        .toLowerCase()
+    : "";
+  return (forwarded || remoteAddress).slice(0, 160);
+}
+
+function broadcastRateLimitError(message, code) {
+  const error = new Error(message);
+  error.statusCode = 429;
+  error.details = {
+    code,
+    retryAfterMs: BROADCAST_RATE_WINDOW_MS,
+  };
+  return error;
+}
+
+function consumeBroadcastRateLimit(request) {
+  const now = Date.now();
+  const floor = now - BROADCAST_RATE_WINDOW_MS;
+  broadcastGlobalAttempts = broadcastGlobalAttempts.filter(
+    (timestamp) => timestamp > floor,
+  );
+  if (broadcastGlobalAttempts.length >= BROADCAST_RATE_GLOBAL) {
+    throw broadcastRateLimitError(
+      "The broadcast gateway is receiving too many requests.",
+      "BROADCAST_GLOBAL_RATE_LIMIT",
+    );
+  }
+
+  const clientKey = broadcastClientKey(request);
+  const clientAttempts = (BROADCAST_CLIENT_ATTEMPTS.get(clientKey) ?? []).filter(
+    (timestamp) => timestamp > floor,
+  );
+  if (clientAttempts.length >= BROADCAST_RATE_PER_CLIENT) {
+    BROADCAST_CLIENT_ATTEMPTS.set(clientKey, clientAttempts);
+    throw broadcastRateLimitError(
+      "This client is broadcasting too frequently.",
+      "BROADCAST_CLIENT_RATE_LIMIT",
+    );
+  }
+
+  clientAttempts.push(now);
+  broadcastGlobalAttempts.push(now);
+  BROADCAST_CLIENT_ATTEMPTS.set(clientKey, clientAttempts);
+  if (BROADCAST_CLIENT_ATTEMPTS.size > 10_000) {
+    for (const [key, attempts] of BROADCAST_CLIENT_ATTEMPTS) {
+      if (!attempts.some((timestamp) => timestamp > floor)) {
+        BROADCAST_CLIENT_ATTEMPTS.delete(key);
+      }
+    }
+  }
+}
+
+async function withBroadcastAdmission(
+  request,
+  network,
+  producer,
+  options = {},
+) {
+  if (!broadcastOriginAllowed(request)) {
+    const error = new Error("This browser origin may not use the broadcast gateway.");
+    error.statusCode = 403;
+    error.details = { code: "BROADCAST_ORIGIN_REJECTED" };
+    throw error;
+  }
+  consumeBroadcastRateLimit(request);
+  if (broadcastActiveRequests >= BROADCAST_CONCURRENCY_MAX) {
+    throw broadcastRateLimitError(
+      "The broadcast gateway is busy. Retry shortly.",
+      "BROADCAST_CONCURRENCY_LIMIT",
+    );
+  }
+  broadcastActiveRequests += 1;
+  try {
+    let admittedGate = null;
+    if (network === "livenet" && options.requireCanonical === true) {
+      admittedGate = await canonicalPublicReadGate(network, { force: true });
+      if (admittedGate?.ready !== true) {
+        const error = freshDataUnavailableError(
+          "Broadcast is paused until the canonical index reaches the verified Bitcoin Core tip.",
+        );
+        error.details = {
+          code: "BROADCAST_CANONICAL_INDEX_NOT_READY",
+          ...admittedGate,
+        };
+        throw error;
+      }
+    }
+    const beforeSubmit = async () => {
+      if (!admittedGate) {
+        return;
+      }
+      const finalGate = await canonicalPublicReadGate(network, { force: true });
+      if (
+        finalGate?.ready !== true ||
+        finalGate.tipHeight !== admittedGate.tipHeight ||
+        finalGate.canonicalHash !== admittedGate.canonicalHash ||
+        finalGate.storedHash !== admittedGate.storedHash
+      ) {
+        const error = freshDataUnavailableError(
+          "Broadcast is paused because the verified Bitcoin Core checkpoint changed during admission.",
+        );
+        error.details = {
+          admittedGate,
+          code: "BROADCAST_CANONICAL_CHECKPOINT_CHANGED",
+          finalGate,
+        };
+        throw error;
+      }
+    };
+    return await producer({ beforeSubmit });
+  } finally {
+    broadcastActiveRequests -= 1;
+  }
+}
+
+async function broadcastSlipstreamPayload(request, options = {}) {
+  const payload = await readJsonRequestBody(request, 1_000_000, {
+    label: "Broadcast request body",
+    timeoutMs: BROADCAST_BODY_TIMEOUT_MS,
+  });
   const txHex = String(payload?.txHex ?? payload?.tx_hex ?? "").trim();
   if (!/^[0-9a-fA-F]+$/u.test(txHex) || txHex.length % 2 !== 0) {
     throw new Error("Invalid transaction hex.");
   }
 
+  await options.beforeSubmit?.();
   const result = await submitSlipstreamTransaction(txHex);
   await cachePendingTokenTransactionByTxid(
     result.txid,
@@ -4286,13 +4593,17 @@ async function submitNodeTransaction(txHex, network) {
   };
 }
 
-async function broadcastNodePayload(request, network) {
-  const payload = await readJsonRequestBody(request, 1_000_000);
+async function broadcastNodePayload(request, network, options = {}) {
+  const payload = await readJsonRequestBody(request, 1_000_000, {
+    label: "Broadcast request body",
+    timeoutMs: BROADCAST_BODY_TIMEOUT_MS,
+  });
   const txHex = String(payload?.txHex ?? payload?.tx_hex ?? "").trim();
   if (!/^[0-9a-fA-F]+$/u.test(txHex) || txHex.length % 2 !== 0) {
     throw new Error("Invalid transaction hex.");
   }
 
+  await options.beforeSubmit?.();
   const result = await submitNodeTransaction(txHex, network);
   await cachePendingTokenTransactionByTxid(
     result.txid,
@@ -4506,13 +4817,34 @@ function bitcoinNetwork(network) {
     : bitcoin.networks.testnet;
 }
 
+const BITCOIN_ADDRESS_VALIDATION_CACHE_MAX = 20_000;
+const BITCOIN_ADDRESS_VALIDATION_CACHE = new Map();
+
 function isValidBitcoinAddress(address, network) {
-  try {
-    bitcoin.address.toOutputScript(address, bitcoinNetwork(network));
-    return true;
-  } catch {
+  if (typeof address !== "string" || !address) {
     return false;
   }
+  const cacheKey = `${network}:${address}`;
+  if (BITCOIN_ADDRESS_VALIDATION_CACHE.has(cacheKey)) {
+    return BITCOIN_ADDRESS_VALIDATION_CACHE.get(cacheKey);
+  }
+  let valid = false;
+  try {
+    bitcoin.address.toOutputScript(address, bitcoinNetwork(network));
+    valid = true;
+  } catch {
+    valid = false;
+  }
+  BITCOIN_ADDRESS_VALIDATION_CACHE.set(cacheKey, valid);
+  while (
+    BITCOIN_ADDRESS_VALIDATION_CACHE.size >
+    BITCOIN_ADDRESS_VALIDATION_CACHE_MAX
+  ) {
+    BITCOIN_ADDRESS_VALIDATION_CACHE.delete(
+      BITCOIN_ADDRESS_VALIDATION_CACHE.keys().next().value,
+    );
+  }
+  return valid;
 }
 
 function marketplaceLegacyAnchorWitnessScript() {
@@ -4568,66 +4900,7 @@ function scriptHashForScriptHex(scriptHex) {
 }
 
 function electrumRequest(method, params, timeoutMs = 30_000) {
-  return new Promise((resolve, reject) => {
-    const socket = net.createConnection({
-      host: ELECTRUM_HOST,
-      port: ELECTRUM_PORT,
-    });
-    const requestId = Date.now();
-    let settled = false;
-    let buffer = "";
-
-    const timer = setTimeout(() => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      socket.destroy();
-      reject(new Error(`Electrum request timed out: ${method}`));
-    }, timeoutMs);
-
-    socket.on("connect", () => {
-      socket.write(`${JSON.stringify({ id: requestId, method, params })}\n`);
-    });
-
-    socket.on("data", (data) => {
-      buffer += data.toString("utf8");
-      const newlineIndex = buffer.indexOf("\n");
-      if (newlineIndex === -1 || settled) {
-        return;
-      }
-
-      const line = buffer.slice(0, newlineIndex);
-      settled = true;
-      clearTimeout(timer);
-      socket.end();
-
-      try {
-        const parsed = JSON.parse(line);
-        if (parsed.error) {
-          reject(
-            new Error(parsed.error.message ?? `Electrum error for ${method}`),
-          );
-          return;
-        }
-
-        resolve(parsed.result);
-      } catch (error) {
-        reject(error);
-      }
-    });
-
-    socket.on("error", (error) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timer);
-      reject(error);
-    });
-  });
+  return ELECTRUM_CLIENT.request(method, params, timeoutMs);
 }
 
 async function mapWithConcurrency(items, concurrency, mapper) {
@@ -6807,11 +7080,15 @@ function tokenTickerIsReserved(value) {
 
 function tokenCreationIsAllowed({ creatorAddress, ticker, tokenId }) {
   const normalizedTokenId = String(tokenId ?? "").toLowerCase();
-  if (
-    normalizedTokenId === WORK_TOKEN_ID ||
-    BOND_TOKEN_IDS.has(normalizedTokenId)
-  ) {
+  if (normalizedTokenId === WORK_TOKEN_ID) {
     return true;
+  }
+
+  // POWB and INCB are synthetic projections of their matching confirmed bond
+  // payments. They must never be created through the generic pwt1 namespace,
+  // even if a transaction somehow hashes to a reserved asset id.
+  if (BOND_TOKEN_IDS.has(normalizedTokenId)) {
+    return false;
   }
 
   if (
@@ -8712,6 +8989,43 @@ function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
   };
 }
 
+function tokenDefinitionPrecedesTransaction(token, tx) {
+  const tokenId = String(token?.tokenId ?? "").trim().toLowerCase();
+  if (tokenId === WORK_TOKEN_ID || BOND_TOKEN_IDS.has(tokenId)) {
+    return true;
+  }
+
+  // Generic credits do not exist until their create transaction confirms.
+  // Pending definitions cannot authorize mints or mutations, and a confirmed
+  // event must sort strictly after its confirmed definition.
+  if (token?.confirmed !== true) {
+    return false;
+  }
+  if (!transactionConfirmed(tx)) {
+    return true;
+  }
+
+  const definitionHeight = Number(token?.blockHeight);
+  const eventHeight = Number(transactionBlockHeight(tx));
+  if (
+    !Number.isSafeInteger(definitionHeight) ||
+    !Number.isSafeInteger(eventHeight)
+  ) {
+    return false;
+  }
+  if (definitionHeight !== eventHeight) {
+    return definitionHeight < eventHeight;
+  }
+
+  const definitionIndex = Number(token?.blockIndex);
+  const eventIndex = Number(transactionBlockIndex(tx));
+  return (
+    Number.isSafeInteger(definitionIndex) &&
+    Number.isSafeInteger(eventIndex) &&
+    definitionIndex < eventIndex
+  );
+}
+
 function insufficientTokenBalanceInvalidEvent({
   actorAddress,
   amount,
@@ -8957,6 +9271,8 @@ function tokenStateFromTransactions(
           const mintedToken = tokensById.get(parsed.tokenId);
           if (
             !mintedToken ||
+            BOND_TOKEN_IDS.has(parsed.tokenId) ||
+            !tokenDefinitionPrecedesTransaction(mintedToken, tx) ||
             mintedToken.registryAddress !== registryAddress ||
             parsed.amount !== mintedToken.mintAmount ||
             remainingRegistrySats < mintedToken.mintPriceSats
@@ -9629,6 +9945,85 @@ function rushStateFromTransactions(txs, registryAddress, network) {
   };
 }
 
+function rushStateFromIndexedMintEvents(
+  items,
+  registryAddress,
+  network,
+  indexedAt,
+) {
+  if (!registryAddress || !Array.isArray(items)) {
+    throw freshDataUnavailableError(
+      "The canonical indexed RUSH mint stream is unavailable.",
+    );
+  }
+  const ordered = [...items].sort(
+    (left, right) =>
+      numericValue(left?.blockHeight) - numericValue(right?.blockHeight) ||
+      numericValue(left?.blockIndex) - numericValue(right?.blockIndex) ||
+      String(left?.txid ?? "").localeCompare(String(right?.txid ?? "")),
+  );
+  const seen = new Set();
+  const mints = ordered.map((item, index) => {
+    const txid = String(item?.txid ?? "").trim().toLowerCase();
+    const blockHeight = Number(item?.blockHeight);
+    const blockIndex = Number(item?.blockIndex);
+    const minterAddress = String(
+      item?.minterAddress ?? item?.senderAddress ?? item?.actor ?? "",
+    ).trim();
+    if (
+      item?.kind !== "rush-mint" ||
+      item?.confirmed !== true ||
+      item?.valid === false ||
+      item?.validationMode !== "canonical-ordered-rush-index" ||
+      item?.registryAddress !== registryAddress ||
+      numericValue(item?.paidSats ?? item?.amountSats) < RUSH_MINT_PRICE_SATS ||
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      seen.has(txid) ||
+      !Number.isSafeInteger(blockHeight) ||
+      blockHeight <= 0 ||
+      !Number.isSafeInteger(blockIndex) ||
+      blockIndex < 0 ||
+      !isValidBitcoinAddress(minterAddress, network)
+    ) {
+      throw freshDataUnavailableError(
+        `The indexed RUSH mint at ordinal ${index + 1} is not canonical.`,
+      );
+    }
+    seen.add(txid);
+    const ordinal = index + 1;
+    const rewardUnits = rushRewardUnitsForOrdinal(ordinal);
+    const phase = rushPhaseForOrdinal(ordinal);
+    return {
+      amount: formatRushUnits(rewardUnits),
+      amountUnits: rewardUnits.toString(),
+      blockHeight,
+      blockIndex,
+      confirmed: true,
+      createdAt: new Date(item.createdAt ?? item.blockTime).toISOString(),
+      dataBytes: numericValue(item.dataBytes),
+      minterAddress,
+      network,
+      ordinal,
+      overflow: rewardUnits === 0n,
+      paidSats: RUSH_MINT_PRICE_SATS,
+      phase: phase?.phase,
+      registryAddress,
+      txid,
+    };
+  });
+  const sortedMints = mints.sort(
+    (left, right) =>
+      right.ordinal - left.ordinal || left.txid.localeCompare(right.txid),
+  );
+  return {
+    indexedAt: indexedAt ?? new Date().toISOString(),
+    mints: sortedMints,
+    network,
+    registryAddress,
+    stats: rushStatsFromMints(sortedMints),
+  };
+}
+
 function idEventMinimumPaymentSats(kind) {
   return kind === "register"
     ? ID_REGISTRATION_PRICE_SATS
@@ -10085,7 +10480,7 @@ function saleAuthorizationVerified(authorization) {
   }
 
   try {
-    return Verifier.verifySignature(
+    return verifyBitcoinMessageSignature(
       authorization.sellerAddress,
       saleAuthorizationMessage(saleAuthorizationMessageDraft(authorization)),
       authorization.signature,
@@ -12125,14 +12520,24 @@ function canonicalMailSeedAddresses({
 
   for (const address of activityAddressesFromRegistry(registryState, network)) {
     addActivityAddress(addresses, address, network);
+    if (addresses.size >= SEEDED_MAIL_ACTIVITY_MAX_ADDRESSES) {
+      return [...addresses];
+    }
   }
 
   for (const item of activityState?.activity ?? []) {
     addActivityItemAddresses(addresses, item, network);
+    if (addresses.size >= SEEDED_MAIL_ACTIVITY_MAX_ADDRESSES) {
+      return [...addresses];
+    }
   }
 
-  addTokenStateActivityAddresses(addresses, tokenState, network);
-  addTokenStateActivityAddresses(addresses, workTokenState, network);
+  if (addresses.size < SEEDED_MAIL_ACTIVITY_MAX_ADDRESSES) {
+    addTokenStateActivityAddresses(addresses, tokenState, network);
+  }
+  if (addresses.size < SEEDED_MAIL_ACTIVITY_MAX_ADDRESSES) {
+    addTokenStateActivityAddresses(addresses, workTokenState, network);
+  }
 
   return [...addresses].slice(0, SEEDED_MAIL_ACTIVITY_MAX_ADDRESSES);
 }
@@ -15077,6 +15482,41 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
   const rawTokens = tokenDefinitions;
   const tokenSummaries = tokenAggregateSummaries({ ...payload, listings });
   const preserveExistingTokenMetrics = payload.summaryOnly === true;
+  const explicitCount = (value) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : undefined;
+  };
+  const authoritativeStat = (key, computed) => {
+    const existing = explicitCount(stats[key]);
+    return preserveExistingTokenMetrics && existing !== undefined
+      ? existing
+      : computed;
+  };
+  const totalCountFrom = (key, computed, statKeys = []) => {
+    const existing = explicitCount(payload.totalCounts?.[key]);
+    if (existing !== undefined) {
+      return existing;
+    }
+    if (!preserveExistingTokenMetrics) {
+      return computed;
+    }
+    for (const statKey of statKeys) {
+      const stat = explicitCount(stats[statKey]);
+      if (stat !== undefined) {
+        return stat;
+      }
+    }
+    return null;
+  };
+  const combinedStats = (...keys) => {
+    const values = keys.map((key) => explicitCount(stats[key]));
+    return values.every((value) => value !== undefined)
+      ? values.reduce((total, value) => total + value, 0)
+      : undefined;
+  };
   const scopedTokenId =
     scope && rawTokens.length === 1 && tokenMatchesScope(rawTokens[0], scope)
       ? rawTokens[0].tokenId
@@ -15125,7 +15565,7 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
         token,
         summary,
         "openListings",
-        false,
+        preserveExistingTokenMetrics,
       ),
       pendingMints: mergedTokenSummaryMetric(
         token,
@@ -15171,37 +15611,144 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
     return next;
   });
 
+  const compactClosedListings = recentClosedTokenListings(
+    closedListings,
+    closedListingLimit,
+  );
+  const compactHolders = holders.slice(0, holderLimit);
+  const compactListings = tokenSummaryListings(listings, listingLimit);
+  const compactSales = recentByCreatedAt(payload.sales, saleLimit);
+  const summarizedOpenListings = (() => {
+    const counts = tokens.map((token) => explicitCount(token?.openListings));
+    return counts.length > 0 && counts.every((value) => value !== undefined)
+      ? counts.reduce((total, value) => total + value, 0)
+      : undefined;
+  })();
+  const totalCounts = {
+    ...(payload.totalCounts ?? {}),
+    closedListings: totalCountFrom(
+      "closedListings",
+      closedListings.length,
+      ["totalClosedListings", "closedListings"],
+    ),
+    holders: totalCountFrom("holders", holders.length, ["holders"]),
+    listings:
+      totalCountFrom("listings", listings.length, [
+        "totalListings",
+        "openListings",
+        "listings",
+      ]) ?? summarizedOpenListings ?? null,
+    mints:
+      totalCountFrom("mints", mints.length, ["totalMints"]) ??
+      combinedStats("confirmedMints", "pendingMints") ??
+      null,
+    sales:
+      totalCountFrom("sales", sales.length, ["totalSales"]) ??
+      combinedStats("confirmedSales", "pendingSales") ??
+      null,
+    tokens:
+      totalCountFrom("tokens", tokenDefinitions.length, ["totalTokens"]) ??
+      combinedStats("confirmedTokens", "pendingTokens") ??
+      null,
+    transfers:
+      totalCountFrom("transfers", transfers.length, ["totalTransfers"]) ??
+      combinedStats("confirmedTransfers", "pendingTransfers") ??
+      null,
+  };
+  const collectionHasMoreValue = (key, total, visible) =>
+    Number.isFinite(total)
+      ? total > visible
+      : payload.collectionHasMore?.[key] === true;
+  const collectionHasMore = {
+    closedListings: collectionHasMoreValue(
+      "closedListings",
+      totalCounts.closedListings,
+      compactClosedListings.length,
+    ),
+    holders: collectionHasMoreValue(
+      "holders",
+      totalCounts.holders,
+      compactHolders.length,
+    ),
+    listings: collectionHasMoreValue(
+      "listings",
+      totalCounts.listings,
+      compactListings.length,
+    ),
+    mints: collectionHasMoreValue("mints", totalCounts.mints, 0),
+    sales: collectionHasMoreValue(
+      "sales",
+      totalCounts.sales,
+      compactSales.length,
+    ),
+    tokens: collectionHasMoreValue("tokens", totalCounts.tokens, tokens.length),
+    transfers: collectionHasMoreValue("transfers", totalCounts.transfers, 0),
+  };
+
   return tokenPayloadWithScopedHolderIdentity({
     ...payload,
-    closedListings: recentClosedTokenListings(
-      closedListings,
-      closedListingLimit,
-    ),
-    holders: holders.slice(0, holderLimit),
-    listings: tokenSummaryListings(listings, listingLimit),
+    closedListings: compactClosedListings,
+    collectionHasMore,
+    hasMore: Object.values(collectionHasMore).some(Boolean),
+    holders: compactHolders,
+    listings: compactListings,
     mints: [],
-    sales: recentByCreatedAt(payload.sales, saleLimit),
+    sales: compactSales,
     summaryOnly: true,
+    totalCount:
+      explicitCount(payload.totalCount) ??
+      explicitCount(stats.transactions) ??
+      (Object.values(totalCounts).every(Number.isFinite)
+        ? totalCounts.tokens +
+          totalCounts.mints +
+          totalCounts.transfers +
+          totalCounts.listings +
+          totalCounts.sales
+        : null),
+    totalCounts,
     tokens,
     transfers: [],
     stats: {
       ...stats,
-      confirmedMints: mints.filter((mint) => mint?.confirmed).length,
-      confirmedSales: sales.filter((sale) => sale?.confirmed).length,
-      confirmedSalesVolumeSats: sales
-        .filter((sale) => sale?.confirmed)
-        .reduce((total, sale) => total + numericValue(sale.priceSats), 0),
-      confirmedTransfers: transfers.filter((transfer) => transfer?.confirmed)
-        .length,
-      confirmedTokens: tokenDefinitions.filter((token) => token?.confirmed)
-        .length,
-      holders: holders.length,
-      pendingMints: mints.filter((mint) => !mint?.confirmed).length,
-      pendingSales: sales.filter((sale) => !sale?.confirmed).length,
-      pendingTransfers: transfers.filter((transfer) => !transfer?.confirmed)
-        .length,
-      pendingTokens: tokenDefinitions.filter((token) => !token?.confirmed)
-        .length,
+      confirmedMints: authoritativeStat(
+        "confirmedMints",
+        mints.filter((mint) => mint?.confirmed).length,
+      ),
+      confirmedSales: authoritativeStat(
+        "confirmedSales",
+        sales.filter((sale) => sale?.confirmed).length,
+      ),
+      confirmedSalesVolumeSats: authoritativeStat(
+        "confirmedSalesVolumeSats",
+        sales
+          .filter((sale) => sale?.confirmed)
+          .reduce((total, sale) => total + numericValue(sale.priceSats), 0),
+      ),
+      confirmedTransfers: authoritativeStat(
+        "confirmedTransfers",
+        transfers.filter((transfer) => transfer?.confirmed).length,
+      ),
+      confirmedTokens: authoritativeStat(
+        "confirmedTokens",
+        tokenDefinitions.filter((token) => token?.confirmed).length,
+      ),
+      holders: authoritativeStat("holders", holders.length),
+      pendingMints: authoritativeStat(
+        "pendingMints",
+        mints.filter((mint) => !mint?.confirmed).length,
+      ),
+      pendingSales: authoritativeStat(
+        "pendingSales",
+        sales.filter((sale) => !sale?.confirmed).length,
+      ),
+      pendingTransfers: authoritativeStat(
+        "pendingTransfers",
+        transfers.filter((transfer) => !transfer?.confirmed).length,
+      ),
+      pendingTokens: authoritativeStat(
+        "pendingTokens",
+        tokenDefinitions.filter((token) => !token?.confirmed).length,
+      ),
     },
   }, scope);
 }
@@ -18654,6 +19201,84 @@ async function tokenPayloadForRead(
   return tokenPayloadReadResult(payload, network, fresh, options);
 }
 
+async function storedCanonicalTokenSummaryPayload(network, tokenScope = "") {
+  if (network !== "livenet") {
+    return null;
+  }
+  const scope = normalizeTokenScope(tokenScope);
+  const parentKey =
+    scope === WORK_TOKEN_ID
+      ? "workSummary"
+      : scope === POWB_TOKEN_ID
+        ? "infinitySummary"
+        : scope === INCB_TOKEN_ID
+          ? "inceptionSummary"
+          : scope
+            ? ""
+            : "tokenSummary";
+  if (parentKey) {
+    const stored = await proofIndexSnapshotPayload(network, parentKey).catch(
+      (error) => {
+        console.error(
+          `Proof index canonical token summary read failed for ${scope || "all"}: ${errorSummary(error)}`,
+        );
+        return null;
+      },
+    );
+    const payload = scope ? stored?.token : stored;
+    if (
+      payload &&
+      typeof payload === "object" &&
+      !Array.isArray(payload) &&
+      payloadSnapshotId(payload) &&
+      payloadIndexedThroughBlockHash(payload)
+    ) {
+      return {
+        ...payload,
+        ...(stored?.consistency ? { consistency: stored.consistency } : {}),
+      };
+    }
+  }
+
+  if (!scope || !proofIndexReadFeatureEnabled("token-state,token-default,token")) {
+    return null;
+  }
+  const params = new URLSearchParams({ asset: scope });
+  if (!proofIndexTokenReadEligibility(scope, params).eligible) {
+    return null;
+  }
+  const [binding, indexedPayload] = await Promise.all([
+    proofIndexCanonicalSummaryLedgerPayload(network).catch(() => null),
+    payloadWithFallbackAfterMs(
+      proofIndexTokenPayload(network, scope, params).catch(() => null),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    ),
+  ]);
+  const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(binding);
+  const indexedThroughBlockHash = payloadIndexedThroughBlockHash(binding);
+  if (
+    !binding ||
+    !indexedPayload ||
+    indexedThroughBlock <= 0 ||
+    proofIndexPayloadIndexedThroughBlock(indexedPayload) !== indexedThroughBlock ||
+    !indexedThroughBlockHash
+  ) {
+    return null;
+  }
+  return attachLedgerMetadata(
+    compactTokenSummaryPayload(indexedPayload, scope),
+    {
+      ...binding,
+      indexedThroughBlockHash,
+      metrics: {
+        ...(binding.metrics ?? {}),
+        indexedThroughBlock,
+      },
+    },
+  );
+}
+
 async function tokenSummaryPayload(
   network,
   tokenScope = "",
@@ -18700,39 +19325,19 @@ async function tokenSummaryPayload(
     : [];
   if (
     network === "livenet" &&
-    fresh &&
     summaryRecoveryAddresses.length === 0
   ) {
-    const indexedPayload = await currentProofIndexTokenPayloadForRead(
+    const storedSummary = await storedCanonicalTokenSummaryPayload(
       network,
       scope,
-      "token-summary-fresh",
-      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
     );
-    if (indexedPayload) {
-      return compactTokenSummaryPayload(indexedPayload, scope);
+    if (storedSummary) {
+      return storedSummary;
     }
-
-    const cachedPayload = await currentMemoryTokenPayloadForRead(
-      network,
-      scope,
-      "token-summary-fresh-memory",
-    );
-    if (cachedPayload) {
-      return compactTokenSummaryPayload(cachedPayload, scope);
-    }
-
-    const fallbackPayload = await cachedTokenPayloadFallbackForRead(
-      network,
-      scope,
-      "token-summary-fresh-cache",
-    );
-    if (fallbackPayload) {
-      return compactTokenSummaryPayload(fallbackPayload, scope);
-    }
-
     throw freshDataUnavailableError(
-      `Fresh credit summary is still catching up for ${scope || "all"}.`,
+      fresh
+        ? `Fresh hash-bound credit summary is still catching up for ${scope || "all"}.`
+        : `Current hash-bound credit summary is unavailable for ${scope || "all"}.`,
     );
   }
 
@@ -18956,7 +19561,7 @@ async function walletScopedTokenPayload(
       network,
       scope,
       requireCurrent ? "wallet-scoped-token-fresh" : "wallet-scoped-token",
-      5_000,
+      requireCurrent ? WALLET_SCOPED_INDEX_WAIT_MS : 5_000,
     );
   }
 
@@ -19437,13 +20042,97 @@ function emptyRegistryPayload(network) {
 }
 
 function compactRegistrySummaryPayload(payload) {
+  const activity = Array.isArray(payload?.activity) ? payload.activity : [];
+  const listings = Array.isArray(payload?.listings) ? payload.listings : [];
+  const pendingEvents = Array.isArray(payload?.pendingEvents)
+    ? payload.pendingEvents
+    : [];
+  const sales = Array.isArray(payload?.sales) ? payload.sales : [];
+  const compactActivity = recentByCreatedAt(activity, SUMMARY_ACTIVITY_LIMIT);
+  const compactListings = recentByCreatedAt(listings, SUMMARY_MARKET_LIMIT);
+  const compactPendingEvents = recentByCreatedAt(
+    pendingEvents,
+    SUMMARY_MARKET_LIMIT,
+  );
+  const compactSales = recentByCreatedAt(sales, SUMMARY_MARKET_LIMIT);
+  const summaryOnly = payload?.summaryOnly === true;
+  const explicitCount = (value) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : undefined;
+  };
+  const totalCountFrom = (key, computed, statKeys = []) => {
+    const existing = explicitCount(payload?.totalCounts?.[key]);
+    if (existing !== undefined) {
+      return existing;
+    }
+    if (!summaryOnly) {
+      return computed;
+    }
+    for (const statKey of statKeys) {
+      const stat = explicitCount(payload?.stats?.[statKey]);
+      if (stat !== undefined) {
+        return stat;
+      }
+    }
+    return null;
+  };
+  const totalCounts = {
+    ...(payload?.totalCounts ?? {}),
+    activity:
+      totalCountFrom("activity", activity.length, ["total", "activity"]) ??
+      explicitCount(payload?.totalCount) ??
+      null,
+    listings: totalCountFrom("listings", listings.length, ["listings"]),
+    pendingEvents: totalCountFrom(
+      "pendingEvents",
+      pendingEvents.length,
+      ["pendingChanges", "pendingEvents"],
+    ),
+    sales: totalCountFrom("sales", sales.length, ["sales"]),
+  };
+  const collectionHasMoreValue = (key, total, visible) =>
+    Number.isFinite(total)
+      ? total > visible
+      : payload?.collectionHasMore?.[key] === true;
+  const collectionHasMore = {
+    activity: collectionHasMoreValue(
+      "activity",
+      totalCounts.activity,
+      compactActivity.length,
+    ),
+    listings: collectionHasMoreValue(
+      "listings",
+      totalCounts.listings,
+      compactListings.length,
+    ),
+    pendingEvents: collectionHasMoreValue(
+      "pendingEvents",
+      totalCounts.pendingEvents,
+      compactPendingEvents.length,
+    ),
+    sales: collectionHasMoreValue(
+      "sales",
+      totalCounts.sales,
+      compactSales.length,
+    ),
+  };
   return {
     ...payload,
-    activity: recentByCreatedAt(payload.activity, SUMMARY_ACTIVITY_LIMIT),
-    listings: recentByCreatedAt(payload.listings, SUMMARY_MARKET_LIMIT),
-    pendingEvents: recentByCreatedAt(payload.pendingEvents, SUMMARY_MARKET_LIMIT),
-    sales: recentByCreatedAt(payload.sales, SUMMARY_MARKET_LIMIT),
+    activity: compactActivity,
+    collectionHasMore,
+    hasMore: Object.values(collectionHasMore).some(Boolean),
+    listings: compactListings,
+    pendingEvents: compactPendingEvents,
+    sales: compactSales,
     summaryOnly: true,
+    totalCount:
+      explicitCount(payload?.totalCount) ??
+      explicitCount(payload?.stats?.total) ??
+      (summaryOnly ? null : activity.length),
+    totalCounts,
   };
 }
 
@@ -19453,11 +20142,17 @@ function compactActivitySummaryPayload(payload) {
     payload?.summaryOnly === true
       ? payload?.stats
       : activityStatsFromItems(activity, payload?.stats ?? {});
+  const compactActivity = recentByCreatedAt(activity, SUMMARY_ACTIVITY_LIMIT);
+  const totalCount = Number(
+    payload?.totalCount ?? stats?.total ?? activity.length,
+  );
   return {
     ...payload,
-    activity: recentByCreatedAt(activity, SUMMARY_ACTIVITY_LIMIT),
+    activity: compactActivity,
+    hasMore: totalCount > compactActivity.length,
     stats,
     summaryOnly: true,
+    totalCount,
   };
 }
 
@@ -20403,7 +21098,7 @@ async function ledgerPayloadCoversTip(payload, network) {
   if (network !== "livenet") {
     return true;
   }
-  const tipHeight = await ledgerTipHeight(network);
+  const tipHeight = await healthNodeTipHeight();
   return ledgerPayloadTipStatus(payload, tipHeight).coversTip;
 }
 
@@ -20566,6 +21261,28 @@ async function currentLedgerPayloadOrNull(payload, network, label = "ledger") {
   return payload;
 }
 
+async function exactTipLedgerPayloadOrNull(payload, network, label = "ledger") {
+  if (!payload || !ledgerPayloadHasCurrentChecks(payload)) {
+    return null;
+  }
+  if (network !== "livenet") {
+    return payload;
+  }
+  const tipHeight = await healthNodeTipHeight();
+  const indexedThroughBlock = ledgerPayloadIndexedThroughBlock(payload);
+  if (
+    !Number.isSafeInteger(tipHeight) ||
+    !Number.isSafeInteger(indexedThroughBlock) ||
+    indexedThroughBlock !== tipHeight
+  ) {
+    console.error(
+      `Rejected non-fresh ${label}: indexedThroughBlock ${indexedThroughBlock || "unknown"}, tip ${Number.isSafeInteger(tipHeight) ? tipHeight : "unknown"}.`,
+    );
+    return null;
+  }
+  return payload;
+}
+
 async function proofIndexPayloadCoversConfirmedTip(
   payload,
   network,
@@ -20681,6 +21398,20 @@ async function existingCurrentCanonicalLedgerPayloadWithinMs(
 
 function payloadSnapshotId(payload) {
   return String(payload?.snapshotId ?? "").trim();
+}
+
+function payloadIndexedThroughBlockHash(payload) {
+  for (const value of [
+    payload?.indexedThroughBlockHash,
+    payload?.provenance?.indexedThroughBlockHash,
+    payload?.sourceHashes?.blockScan,
+  ]) {
+    const hash = String(value ?? "").trim().toLowerCase();
+    if (/^[0-9a-f]{64}$/u.test(hash)) {
+      return hash;
+    }
+  }
+  return "";
 }
 
 function payloadSnapshotMatchesLedger(payload, ledger) {
@@ -20870,6 +21601,15 @@ async function currentProofIndexWorkFloorIfNewer(
     return null;
   });
   if (!indexedWorkFloor) {
+    return baseWorkFloor;
+  }
+
+  if (
+    payloadSnapshotId(indexedWorkFloor) &&
+    payloadSnapshotId(baseWorkFloor) &&
+    !payloadSnapshotMatchesLedger(indexedWorkFloor, baseWorkFloor)
+  ) {
+    logStaleSnapshotPayload(label, indexedWorkFloor, baseWorkFloor);
     return baseWorkFloor;
   }
 
@@ -21761,12 +22501,257 @@ function ledgerSnapshotChecks({
 }
 
 function attachLedgerMetadata(payload, ledger) {
+  const indexedThroughBlockHash = String(
+    ledger?.indexedThroughBlockHash ?? payload?.indexedThroughBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
   return {
     ...payload,
     consistency: ledger.consistency,
     indexedThroughBlock: ledger.metrics.indexedThroughBlock,
+    ...(/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash)
+      ? { indexedThroughBlockHash }
+      : {}),
     ledgerGeneratedAt: ledger.generatedAt,
     snapshotId: ledger.snapshotId,
+  };
+}
+
+function summaryPayloadRequiredComponents(payload, surface) {
+  const required = [["root", payload]];
+  const add = (...names) => {
+    for (const name of names) {
+      required.push([name, payload?.[name]]);
+    }
+  };
+  if (surface === "growth-summary") {
+    add("activity", "registry", "token", "workFloor");
+  } else if (surface === "marketplace-summary") {
+    add("registry", "token", "workFloor");
+  } else if (surface === "work-summary") {
+    add("floor", "token");
+  } else if (
+    surface === "inception-summary" ||
+    surface === "infinity-summary"
+  ) {
+    add("token");
+  }
+  return required;
+}
+
+async function canonicalBlockHashAtHeight(height) {
+  const response = await bitcoinRpc("getblockhash", [height]);
+  const hash = String(response?.ok ? response.result : "")
+    .trim()
+    .toLowerCase();
+  return /^[0-9a-f]{64}$/u.test(hash) ? hash : "";
+}
+
+async function verifiedSummaryPayloadCheckpoint(
+  payload,
+  network,
+  requestedFresh,
+  surface,
+) {
+  const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
+  const indexedThroughBlockHash = payloadIndexedThroughBlockHash(payload);
+  if (network !== "livenet") {
+    return {
+      exactTip: true,
+      indexedThroughBlock,
+      indexedThroughBlockHash: indexedThroughBlockHash || null,
+      tipHash: null,
+      tipHeight: indexedThroughBlock || null,
+    };
+  }
+  if (indexedThroughBlock <= 0 || !indexedThroughBlockHash) {
+    const error = freshDataUnavailableError(
+      `${surface} has no hash-bound canonical checkpoint.`,
+    );
+    error.details = {
+      code: "CANONICAL_SUMMARY_CHECKPOINT_MISSING",
+      indexedThroughBlock: indexedThroughBlock || null,
+      indexedThroughBlockHash: indexedThroughBlockHash || null,
+      surface,
+    };
+    throw error;
+  }
+
+  const firstGate = await canonicalPublicReadGate(network, { force: true });
+  const firstTipHeight = Number(firstGate?.tipHeight);
+  if (
+    firstGate?.ok !== true ||
+    !Number.isSafeInteger(firstTipHeight) ||
+    indexedThroughBlock > firstTipHeight ||
+    (requestedFresh &&
+      (firstGate?.ready !== true || indexedThroughBlock !== firstTipHeight))
+  ) {
+    const error = freshDataUnavailableError(
+      `${surface} cannot prove its checkpoint against the current canonical index.`,
+    );
+    error.details = {
+      code: "CANONICAL_SUMMARY_CHECKPOINT_UNAVAILABLE",
+      indexedThroughBlock,
+      indexedThroughBlockHash,
+      requestedFresh,
+      surface,
+      ...firstGate,
+    };
+    throw error;
+  }
+
+  const canonicalHash = await canonicalBlockHashAtHeight(indexedThroughBlock);
+  if (!canonicalHash || canonicalHash !== indexedThroughBlockHash) {
+    const error = freshDataUnavailableError(
+      `${surface} checkpoint no longer matches Bitcoin Core.`,
+    );
+    error.details = {
+      canonicalHash: canonicalHash || null,
+      code: "CANONICAL_SUMMARY_CHECKPOINT_MISMATCH",
+      indexedThroughBlock,
+      indexedThroughBlockHash,
+      surface,
+    };
+    throw error;
+  }
+
+  let finalGate = firstGate;
+  if (requestedFresh) {
+    finalGate = await canonicalPublicReadGate(network, { force: true });
+    if (
+      finalGate?.ready !== true ||
+      finalGate?.tipHeight !== firstGate.tipHeight ||
+      finalGate?.canonicalHash !== firstGate.canonicalHash ||
+      finalGate?.storedHash !== firstGate.storedHash ||
+      finalGate?.tipHeight !== indexedThroughBlock ||
+      finalGate?.canonicalHash !== indexedThroughBlockHash
+    ) {
+      const error = freshDataUnavailableError(
+        `${surface} canonical tip changed during checkpoint verification.`,
+      );
+      error.details = {
+        code: "CANONICAL_SUMMARY_TIP_CHANGED",
+        firstGate,
+        finalGate,
+        indexedThroughBlock,
+        indexedThroughBlockHash,
+        surface,
+      };
+      throw error;
+    }
+  }
+
+  return {
+    exactTip:
+      finalGate?.ready === true &&
+      indexedThroughBlock === finalGate.tipHeight &&
+      indexedThroughBlockHash === finalGate.canonicalHash,
+    indexedThroughBlock,
+    indexedThroughBlockHash,
+    tipHash: finalGate?.canonicalHash ?? null,
+    tipHeight: Number.isSafeInteger(Number(finalGate?.tipHeight))
+      ? Number(finalGate.tipHeight)
+      : null,
+  };
+}
+
+async function summaryPayloadWithCanonicalProvenance(
+  payload,
+  network,
+  requestedFresh,
+  surface,
+) {
+  if (!payload || typeof payload !== "object") {
+    throw freshDataUnavailableError(
+      `${surface} has no canonical summary payload.`,
+    );
+  }
+
+  const requiredComponents = summaryPayloadRequiredComponents(payload, surface);
+  const componentSnapshotIds = Object.fromEntries(
+    requiredComponents.map(([name, candidate]) => [
+      name,
+      candidate && typeof candidate === "object" && !Array.isArray(candidate)
+        ? payloadSnapshotId(candidate)
+        : "",
+    ]),
+  );
+  const missingSnapshotIds = Object.entries(componentSnapshotIds)
+    .filter(([, snapshotId]) => !snapshotId)
+    .map(([name]) => name);
+  const snapshotIds = [
+    ...new Set(Object.values(componentSnapshotIds).filter(Boolean)),
+  ];
+  const snapshotId = snapshotIds[0] ?? "";
+  const coherent = missingSnapshotIds.length === 0 && snapshotIds.length === 1;
+  if (!coherent || (network === "livenet" && !snapshotId)) {
+    const error = freshDataUnavailableError(
+      `${surface} cannot prove one coherent canonical snapshot.`,
+    );
+    error.details = {
+      code: "CANONICAL_SUMMARY_INCOHERENT",
+      coherent,
+      componentSnapshotIds,
+      missingSnapshotIds,
+      snapshotIds,
+      surface,
+    };
+    throw error;
+  }
+
+  const checkpoint = await verifiedSummaryPayloadCheckpoint(
+    payload,
+    network,
+    requestedFresh,
+    surface,
+  );
+  const indexedThroughBlock = checkpoint.indexedThroughBlock;
+  const tipHeight = checkpoint.tipHeight;
+  const lagBlocks =
+    Number.isSafeInteger(tipHeight) && indexedThroughBlock > 0
+      ? Math.max(0, tipHeight - indexedThroughBlock)
+      : null;
+  const exactTip = checkpoint.exactTip;
+  const ready =
+    coherent && exactTip && (network !== "livenet" || Boolean(snapshotId));
+
+  if (requestedFresh && !ready) {
+    const error = freshDataUnavailableError(
+      `${surface} is catching up and cannot prove an exact-tip fresh snapshot.`,
+    );
+    error.details = {
+      code: "CANONICAL_SUMMARY_CATCHING_UP",
+      coherent,
+      indexedThroughBlock: indexedThroughBlock || null,
+      lagBlocks,
+      snapshotIds,
+      surface,
+      tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
+    };
+    throw error;
+  }
+
+  return {
+    ...payload,
+    provenance: {
+      catchingUp: lagBlocks === null ? null : lagBlocks > 0,
+      coherent,
+      componentSnapshotIds,
+      contract: "proof-of-work-canonical-summary-v1",
+      generatedAt:
+        payload.ledgerGeneratedAt ?? payload.generatedAt ?? payload.indexedAt ?? null,
+      indexedThroughBlock: indexedThroughBlock || null,
+      indexedThroughBlockHash: checkpoint.indexedThroughBlockHash,
+      lagBlocks,
+      ready,
+      requested: requestedFresh ? "fresh" : "stable",
+      served: ready ? "exact-tip" : "last-good",
+      snapshotId: snapshotId || null,
+      surface,
+      tipHash: checkpoint.tipHash,
+      tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
+    },
   };
 }
 
@@ -21781,25 +22766,34 @@ function growthSummaryPayloadFromLedger(ledger) {
   const registrySummary = compactRegistrySummaryPayload(registryState);
   const activitySummary = compactActivitySummaryPayload(activityPayload);
   const tokenSummary = compactTokenSummaryPayload(tokenState);
-  const registry = {
-    ...registrySummary,
-    activity: [],
-    listings: [],
-    pendingEvents: [],
-    records: [],
-    sales: [],
-  };
-  const compactActivity = {
-    ...activitySummary,
-    activity: [],
-  };
-  const token = {
-    ...tokenSummary,
-    holders: [],
-    listings: [],
-    sales: [],
-    tokens: [],
-  };
+  const registry = attachLedgerMetadata(
+    {
+      ...registrySummary,
+      activity: [],
+      listings: [],
+      pendingEvents: [],
+      records: [],
+      sales: [],
+    },
+    ledger,
+  );
+  const compactActivity = attachLedgerMetadata(
+    {
+      ...activitySummary,
+      activity: [],
+    },
+    ledger,
+  );
+  const token = attachLedgerMetadata(
+    {
+      ...tokenSummary,
+      holders: [],
+      listings: [],
+      sales: [],
+      tokens: [],
+    },
+    ledger,
+  );
   const tokenMints = tokenState.mints ?? [];
   const tokenTransfers = tokenState.transfers ?? [];
   const tokenSales = Array.isArray(tokenState.sales) ? tokenState.sales : [];
@@ -21860,7 +22854,7 @@ function growthSummaryPayloadFromLedger(ledger) {
     token,
     usdSource: workFloor.usdSource,
     usdSourceUrl: workFloor.usdSourceUrl,
-    workFloor,
+    workFloor: attachLedgerMetadata(workFloor, ledger),
   };
 }
 
@@ -21874,7 +22868,10 @@ function inceptionSummaryPayloadFromLedger(ledger) {
 
 function bondSummaryPayloadFromLedger(ledger, config) {
   const tokenState = ledgerTokenStateForScope(ledger, config.tokenId);
-  const token = compactTokenSummaryPayload(tokenState, config.tokenId);
+  const token = attachLedgerMetadata(
+    compactTokenSummaryPayload(tokenState, config.tokenId),
+    ledger,
+  );
   const activity = Array.isArray(ledger?.activity) ? ledger.activity : [];
   const confirmedActivity = activity.filter((item) => item?.confirmed);
   const confirmedBondActions = confirmedActivity.filter(
@@ -21979,6 +22976,9 @@ function ledgerConsistencyPayloadFromLedger(ledger) {
     checks: ledger.consistency.checks,
     generatedAt: ledger.generatedAt,
     indexedThroughBlock: ledger.metrics.indexedThroughBlock,
+    ...(payloadIndexedThroughBlockHash(ledger)
+      ? { indexedThroughBlockHash: payloadIndexedThroughBlockHash(ledger) }
+      : {}),
     metrics: ledger.metrics,
     missingLogEvents: ledger.consistency.missingLogEvents,
     network: ledger.network,
@@ -22172,11 +23172,25 @@ async function ledgerConsistencyPayload(network, fresh = false) {
       );
       return null;
     });
-    if (
-      ledgerPayloadHasCurrentChecks(indexedLedger) &&
-      (await ledgerPayloadCoversTip(indexedLedger, network))
-    ) {
-      return ledgerConsistencyPayloadFromLedger(indexedLedger);
+    if (ledgerPayloadHasCurrentChecks(indexedLedger)) {
+      const indexedPayload = ledgerConsistencyPayloadFromLedger(indexedLedger);
+      if (fresh) {
+        try {
+          await verifiedSummaryPayloadCheckpoint(
+            indexedPayload,
+            network,
+            true,
+            "ledger-consistency",
+          );
+          return indexedPayload;
+        } catch (error) {
+          console.error(
+            `Rejected non-exact fresh consistency snapshot: ${errorSummary(error)}`,
+          );
+        }
+      } else if (await ledgerPayloadCoversTip(indexedLedger, network)) {
+        return indexedPayload;
+      }
     }
     if (!ENABLE_REQUEST_LEDGER_RECOVERY) {
       throw freshDataUnavailableError(
@@ -22187,12 +23201,21 @@ async function ledgerConsistencyPayload(network, fresh = false) {
 
   const ledger = await summaryCanonicalLedgerPayload(network, fresh);
   if (ledger) {
-    return ledgerConsistencyPayloadWithCurrentSummaries(
+    const payload = await ledgerConsistencyPayloadWithCurrentSummaries(
       ledgerConsistencyPayloadFromLedger(ledger),
       ledger,
       network,
       fresh,
     );
+    if (fresh) {
+      await verifiedSummaryPayloadCheckpoint(
+        payload,
+        network,
+        true,
+        "ledger-consistency",
+      );
+    }
+    return payload;
   }
 
   if (fresh) {
@@ -23371,12 +24394,22 @@ async function buildIndexedCanonicalLedgerPayload(
       `Rejected ${label}: an exact positive canonical checkpoint is required.`,
     );
   }
+  const timingStartedAt = Date.now();
+  let timingPreviousAt = timingStartedAt;
+  const timingMs = {};
+  const markTiming = (stage) => {
+    const now = Date.now();
+    timingMs[stage] = now - timingPreviousAt;
+    timingPreviousAt = now;
+  };
 
   const [
     activityState,
     registrySnapshot,
     rushState,
     btcUsdQuote,
+    currentTokenTableState,
+    currentMarketOverlay,
   ] = await Promise.all([
     indexedActivityStateForCanonicalLedger(network, { exactHeight }),
     indexedRegistryStateForCanonicalLedger(network, { exactHeight }),
@@ -23386,7 +24419,15 @@ async function buildIndexedCanonicalLedgerPayload(
       null,
       SUMMARY_PROOF_INDEX_READ_WAIT_MS,
     ),
+    exactTokenTablePayloadForCanonicalLedger(network, label, exactHeight),
+    indexedTokenMarketSummaryOverlay(network).catch((error) => {
+      console.error(
+        `WORK pre-consistency marketplace overlay failed: ${errorSummary(error)}`,
+      );
+      return null;
+    }),
   ]);
+  markTiming("sources");
   const sourceTipHeight = exactHeight;
   const registryState = registrySnapshot;
   const derivedTokenState = await tokenValueStateFromIndexedActivity(
@@ -23394,11 +24435,6 @@ async function buildIndexedCanonicalLedgerPayload(
     activityState,
   );
   const tokenState = derivedTokenState;
-  const currentTokenTableState = await exactTokenTablePayloadForCanonicalLedger(
-    network,
-    label,
-    exactHeight,
-  );
   const ledgerTokenTableState = tokenStateWithAuthoritativeCurrentListings(
     mergeTokenPayloadWithCanonicalFloor(
       tokenState,
@@ -23416,6 +24452,7 @@ async function buildIndexedCanonicalLedgerPayload(
   const indexedIncbState = ledgerTokenTableState
     ? scopedTokenPayloadFromState(ledgerTokenTableState, INCB_TOKEN_ID)
     : null;
+  markTiming("token-state");
 
   if (!activityState || !registryState || !ledgerTokenTableState) {
     console.error(
@@ -23494,6 +24531,7 @@ async function buildIndexedCanonicalLedgerPayload(
       seededMail: seededMailActivityState?.stats?.total,
     }),
   };
+  markTiming("activity");
   let workFloor = workFloorPayloadFromState(
     network,
     registryState,
@@ -23520,6 +24558,7 @@ async function buildIndexedCanonicalLedgerPayload(
     tokenSales: ledgerTokenState.sales ?? [],
     tokenTransfers: ledgerTokenState.transfers ?? [],
   });
+  markTiming("credit-value");
   const valuedTokenState = tokenStateWithCreditNetworkValueDetails(
     ledgerTokenState,
     creditValueDetails,
@@ -23558,12 +24597,15 @@ async function buildIndexedCanonicalLedgerPayload(
     valuedWorkTokenState,
     { btcUsdQuote },
   );
-  workFloor = await workFloorWithPreConsistencyMarketOverlay(
-    workFloor,
-    network,
-    valuedTokenState,
-    { required: false },
-  );
+  markTiming("valued-state");
+  if (currentMarketOverlay) {
+    workFloor = workFloorWithIndexedMarketSummaryOverlay(
+      workFloor,
+      currentMarketOverlay,
+      valuedTokenState,
+    );
+  }
+  markTiming("market-overlay");
   const baseMetrics = ledgerMetricsFromState({
     activity,
     registryState,
@@ -23667,6 +24709,22 @@ async function buildIndexedCanonicalLedgerPayload(
       consistency,
     }),
   };
+  markTiming("finalize");
+  console.error(
+    JSON.stringify({
+      activityItems: activity.length,
+      indexedThroughBlock,
+      label,
+      phase: "canonical-ledger-timing",
+      timingMs: {
+        ...timingMs,
+        total: Date.now() - timingStartedAt,
+      },
+      tokenMints: Array.isArray(valuedTokenState?.mints)
+        ? valuedTokenState.mints.length
+        : 0,
+    }),
+  );
   return result;
 }
 
@@ -23674,7 +24732,7 @@ function internalCanonicalWorkSummaryPayload(ledger) {
   const workTokenState = ledgerTokenStateForScope(ledger, WORK_TOKEN_ID);
   return attachLedgerMetadata(
     {
-      floor: ledger.workFloor,
+      floor: attachLedgerMetadata(ledger.workFloor, ledger),
       indexedAt: ledger.generatedAt,
       network: ledger.network,
       summaryOnly: true,
@@ -23696,7 +24754,6 @@ async function exactCanonicalSummaryCheckpoint(network) {
   const chainInfo = chainResponse?.ok ? chainResponse.result : null;
   const tipHeight = Number(chainInfo?.blocks);
   const tipHash = String(chainInfo?.bestblockhash ?? "").trim().toLowerCase();
-  const electrum = await electrumHealthPayload(tipHeight, tipHash);
   const indexedThroughBlock = Number(status?.indexedThroughBlock) || 0;
   const storedHash = String(status?.scan?.blockHash ?? "").trim().toLowerCase();
   const rebuild = canonical?.rebuild ?? {};
@@ -23716,8 +24773,6 @@ async function exactCanonicalSummaryCheckpoint(network) {
     fault?.active === true ||
     rebuild?.active === true ||
     rebuild?.status !== "complete" ||
-    electrum?.ok !== true ||
-    electrum?.headerHeight !== tipHeight ||
     !readModelsOk
   ) {
     throw freshDataUnavailableError(
@@ -23725,7 +24780,6 @@ async function exactCanonicalSummaryCheckpoint(network) {
     );
   }
   return {
-    electrumHeaderHeight: electrum.headerHeight,
     indexedThroughBlock,
     tipHash,
   };
@@ -23760,18 +24814,52 @@ async function internalCanonicalSummaryPayload(network) {
     );
   }
 
+  const checkpointSnapshotId = sha256Hex(
+    Buffer.from(
+      JSON.stringify({
+        indexedThroughBlock: before.indexedThroughBlock,
+        indexedThroughBlockHash: before.tipHash,
+        sourceSnapshotId: ledger.snapshotId,
+      }),
+    ),
+  ).slice(0, 24);
+  const hashBoundLedger = {
+    ...ledger,
+    indexedThroughBlockHash: before.tipHash,
+    snapshotId: checkpointSnapshotId,
+  };
   const summaryPayloads = {
-    growthSummary: ledger.growthSummary,
-    inceptionSummary: ledger.inceptionSummary,
-    infinitySummary: ledger.infinitySummary,
-    marketplaceSummary: marketplaceSummaryPayloadFromLedger(ledger),
-    workFloor: ledger.workFloor,
-    workSummary: internalCanonicalWorkSummaryPayload(ledger),
+    growthSummary: attachLedgerMetadata(
+      growthSummaryPayloadFromLedger(hashBoundLedger),
+      hashBoundLedger,
+    ),
+    inceptionSummary: attachLedgerMetadata(
+      inceptionSummaryPayloadFromLedger(hashBoundLedger),
+      hashBoundLedger,
+    ),
+    infinitySummary: attachLedgerMetadata(
+      infinitySummaryPayloadFromLedger(hashBoundLedger),
+      hashBoundLedger,
+    ),
+    logSummary: attachLedgerMetadata(
+      compactActivitySummaryPayload(hashBoundLedger.activityPayload),
+      hashBoundLedger,
+    ),
+    marketplaceSummary: marketplaceSummaryPayloadFromLedger(hashBoundLedger),
+    tokenSummary: attachLedgerMetadata(
+      compactTokenSummaryPayload(
+        ledgerTokenStateForScope(hashBoundLedger, ""),
+        "",
+      ),
+      hashBoundLedger,
+    ),
+    workFloor: attachLedgerMetadata(hashBoundLedger.workFloor, hashBoundLedger),
+    workSummary: internalCanonicalWorkSummaryPayload(hashBoundLedger),
   };
   for (const [key, payload] of Object.entries(summaryPayloads)) {
     if (
       !payload ||
-      payloadSnapshotId(payload) !== ledger.snapshotId ||
+      payloadSnapshotId(payload) !== hashBoundLedger.snapshotId ||
       proofIndexPayloadIndexedThroughBlock(payload) !== before.indexedThroughBlock
     ) {
       throw freshDataUnavailableError(
@@ -23791,9 +24879,10 @@ async function internalCanonicalSummaryPayload(network) {
   }
   return {
     indexedThroughBlock: before.indexedThroughBlock,
-    ledger: ledgerConsistencyPayloadFromLedger(ledger),
+    indexedThroughBlockHash: before.tipHash,
+    ledger: ledgerConsistencyPayloadFromLedger(hashBoundLedger),
     network,
-    snapshotId: ledger.snapshotId,
+    snapshotId: hashBoundLedger.snapshotId,
     summaryPayloads,
   };
 }
@@ -24215,31 +25304,11 @@ function refreshCanonicalLedgerPayloadInBackground(network, fresh = false) {
 async function summaryCanonicalLedgerPayload(network, fresh = false) {
   const fallback = await existingCanonicalLedgerPayload(network);
   if (fresh) {
-    const currentFallback = await currentLedgerPayloadOrNull(
+    const currentFallback = await exactTipLedgerPayloadOrNull(
       fallback,
       network,
-      "canonical ledger fallback",
+      "fresh canonical ledger fallback",
     );
-    if (!currentFallback) {
-      if (!ENABLE_REQUEST_LEDGER_RECOVERY) {
-        refreshCanonicalLedgerPayloadInBackground(network, true);
-        return ledgerPayloadHasFiniteNetworkValues(fallback) ? fallback : null;
-      }
-      const replayedFallback = await ledgerWithReplayedCreditNetworkValues(
-        fallback,
-        network,
-        "fresh canonical ledger fallback",
-      );
-      const currentReplayedFallback = await currentLedgerPayloadOrNull(
-        replayedFallback,
-        network,
-        "fresh credit-value replay fallback",
-      );
-      if (currentReplayedFallback) {
-        cacheCanonicalLedgerPayload(network, currentReplayedFallback);
-        return currentReplayedFallback;
-      }
-    }
     if (currentFallback) {
       refreshCanonicalLedgerPayloadInBackground(network, true);
       return currentFallback;
@@ -24249,7 +25318,7 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
       null,
       LEDGER_SUMMARY_FRESH_WAIT_MS,
     );
-    const currentRefreshed = await currentLedgerPayloadOrNull(
+    const currentRefreshed = await exactTipLedgerPayloadOrNull(
       refreshed,
       network,
       "fresh canonical ledger",
@@ -24261,7 +25330,9 @@ async function summaryCanonicalLedgerPayload(network, fresh = false) {
       return currentRefreshed;
     }
     refreshCanonicalLedgerPayloadInBackground(network, true);
-    return currentFallback;
+    throw freshDataUnavailableError(
+      "Fresh canonical ledger is catching up to the Bitcoin Core tip.",
+    );
   }
 
   if (network === "livenet") {
@@ -24437,8 +25508,41 @@ async function registrySummaryPayload(network, fresh = false) {
 }
 
 async function activitySummaryPayload(network, fresh = false) {
-  const payload = await mergedLogActivityPayload(network, fresh);
-  return compactActivitySummaryPayload(payload);
+  if (network === "livenet") {
+    const storedSummary = await proofIndexSnapshotPayload(
+      network,
+      "logSummary",
+    ).catch((error) => {
+      console.error(
+        `Proof index canonical Log summary read failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    if (
+      storedSummary &&
+      payloadSnapshotId(storedSummary) &&
+      payloadIndexedThroughBlockHash(storedSummary)
+    ) {
+      return storedSummary;
+    }
+    throw freshDataUnavailableError(
+      fresh
+        ? "Fresh hash-bound Log summary is still catching up."
+        : "Current hash-bound Log summary is unavailable.",
+    );
+  }
+  const ledger = await summaryCanonicalLedgerPayload(network, fresh);
+  if (!ledger?.activityPayload) {
+    throw freshDataUnavailableError(
+      fresh
+        ? "Fresh Log summary ledger is unavailable."
+        : "Current Log summary ledger is unavailable.",
+    );
+  }
+  return attachLedgerMetadata(
+    compactActivitySummaryPayload(ledger.activityPayload),
+    ledger,
+  );
 }
 
 function payloadWithFallbackAfterMs(promise, fallbackPayload, timeoutMs) {
@@ -24733,15 +25837,15 @@ async function proofIndexWorkFloorPayload(network) {
 
 async function cachedWorkFloorPayload(network, fresh = false) {
   if (network === "livenet") {
-    if (!fresh) {
-      const indexedFloor = await currentProofIndexWorkFloorFallbackPayload(
-        network,
-        false,
-      );
-      if (indexedFloor) {
-        return indexedFloor;
-      }
+    const indexedFloor = await currentProofIndexWorkFloorFallbackPayload(
+      network,
+      fresh,
+    );
+    if (indexedFloor) {
+      return indexedFloor;
+    }
 
+    if (!fresh) {
       const ledger = await existingCurrentCanonicalLedgerPayloadWithinMs(
         network,
         "work-floor canonical ledger",
@@ -24762,14 +25866,6 @@ async function cachedWorkFloorPayload(network, fresh = false) {
     );
     if (ledger?.workFloor) {
       return workFloorWithCurrentBtcUsd(ledger.workFloor, network, fresh);
-    }
-
-    const indexedFloor = await currentProofIndexWorkFloorFallbackPayload(
-      network,
-      true,
-    );
-    if (indexedFloor) {
-      return indexedFloor;
     }
 
     throw freshDataUnavailableError(
@@ -24850,7 +25946,7 @@ async function fastLivenetWorkSummaryPayload(network) {
   return workSummaryWithCurrentBtcUsd(
     attachLedgerMetadata(
       {
-        floor,
+        floor: attachLedgerMetadata(floor, ledger),
         indexedAt: newerIso(ledger.generatedAt, workTokenSummary?.indexedAt),
         network,
         summaryOnly: true,
@@ -24927,7 +26023,7 @@ async function workSummaryPayload(network, fresh = false) {
         return workSummaryWithCurrentBtcUsd(
           attachLedgerMetadata(
             {
-              floor,
+              floor: attachLedgerMetadata(floor, ledger),
               indexedAt: ledger.generatedAt,
               network,
               summaryOnly: true,
@@ -25035,7 +26131,7 @@ async function workSummaryPayload(network, fresh = false) {
       return workSummaryWithCurrentBtcUsd(
         attachLedgerMetadata(
           {
-            floor,
+            floor: attachLedgerMetadata(floor, ledger),
             indexedAt: ledger.generatedAt,
             network,
             summaryOnly: true,
@@ -25195,15 +26291,95 @@ function marketplaceSummaryPayloadFromLedger(
     {
       indexedAt: ledger.generatedAt,
       network: ledger.network,
-      registry: compactRegistrySummaryPayload(ledger.registryState),
+      registry: attachLedgerMetadata(
+        compactRegistrySummaryPayload(ledger.registryState),
+        ledger,
+      ),
       summaryOnly: true,
       token: attachLedgerMetadata(
         compactTokenSummaryPayload(tokenState),
         ledger,
       ),
-      workFloor: ledger.workFloor,
+      workFloor: attachLedgerMetadata(ledger.workFloor, ledger),
     },
     ledger,
+  );
+}
+
+function summaryWithDerivedSnapshot(payload, label, evidence) {
+  const sourceSnapshotId = payloadSnapshotId(payload);
+  if (!sourceSnapshotId) {
+    return payload;
+  }
+  const snapshotId = sha256Hex(
+    Buffer.from(
+      JSON.stringify({
+        evidence,
+        label,
+        sourceSnapshotId,
+      }),
+    ),
+  ).slice(0, 24);
+  const rebind = (nested) =>
+    nested && payloadSnapshotId(nested)
+      ? { ...nested, snapshotId }
+      : nested;
+  return {
+    ...payload,
+    derivedFromSnapshotId: sourceSnapshotId,
+    floor: rebind(payload.floor),
+    registry: rebind(payload.registry),
+    snapshotId,
+    token: rebind(payload.token),
+    workFloor: rebind(payload.workFloor),
+  };
+}
+
+async function marketplaceSummaryWithSpendableIdListings(payload, network) {
+  const listings = Array.isArray(payload?.registry?.listings)
+    ? payload.registry.listings
+    : [];
+  if (network !== "livenet" || listings.length === 0) {
+    return payload;
+  }
+  const ownersById = new Map(
+    (Array.isArray(payload?.registry?.records) ? payload.registry.records : [])
+      .filter((record) => record?.confirmed !== false)
+      .map((record) => [
+        normalizePowId(record?.id),
+        String(record?.ownerAddress ?? "").trim(),
+      ]),
+  );
+  const ownedListings = listings.filter((listing) => {
+    const owner = ownersById.get(normalizePowId(listing?.id));
+    return !owner || owner === String(listing?.sellerAddress ?? "").trim();
+  });
+  const spendableListings = await filterSpendableListings(
+    ownedListings,
+    network,
+  );
+  if (spendableListings.length === listings.length) {
+    return payload;
+  }
+  const nextPayload = {
+    ...payload,
+    registry: {
+      ...payload.registry,
+      listings: spendableListings,
+      source: mergedSourceLabel(
+        payload.registry?.source,
+        "first-party-id-listing-outspends",
+      ),
+      totalCounts: {
+        ...(payload.registry?.totalCounts ?? {}),
+        listings: spendableListings.length,
+      },
+    },
+  };
+  return summaryWithDerivedSnapshot(
+    nextPayload,
+    "marketplace-id-listing-reconciliation",
+    spendableListings.map((listing) => listing?.listingId).filter(Boolean),
   );
 }
 
@@ -25417,18 +26593,31 @@ async function reconciledLivenetMarketplaceSummaryPayload(
           true,
           "marketplace-summary",
         );
+        const spendableRegistryListings = await filterSpendableListings(
+          Array.isArray(ledger.registryState?.listings)
+            ? ledger.registryState.listings
+            : [],
+          network,
+        );
+        const registryState = {
+          ...ledger.registryState,
+          listings: spendableRegistryListings,
+        };
         const indexedAt = newerIso(ledger.generatedAt, tokenState?.indexedAt);
         return attachLedgerMetadata(
           {
             indexedAt,
             network,
-            registry: compactRegistrySummaryPayload(ledger.registryState),
+            registry: attachLedgerMetadata(
+              compactRegistrySummaryPayload(registryState),
+              ledger,
+            ),
             summaryOnly: true,
             token: attachLedgerMetadata(
               compactTokenSummaryPayload(tokenState),
               ledger,
             ),
-            workFloor,
+            workFloor: attachLedgerMetadata(workFloor, ledger),
           },
           ledger,
         );
@@ -25533,13 +26722,16 @@ async function reconciledLivenetMarketplaceSummaryPayload(
         {
           indexedAt,
           network,
-          registry: compactRegistrySummaryPayload(ledger.registryState),
+          registry: attachLedgerMetadata(
+            compactRegistrySummaryPayload(ledger.registryState),
+            ledger,
+          ),
           summaryOnly: true,
           token: attachLedgerMetadata(
             compactTokenSummaryPayload(tokenState),
             ledger,
           ),
-          workFloor,
+          workFloor: attachLedgerMetadata(workFloor, ledger),
         },
         ledger,
       );
@@ -25565,10 +26757,13 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
     await currentProofIndexMarketplaceSummaryFallbackPayload(
       network,
       fresh,
-      { fast: !fresh },
+      { fast: true },
     );
   if (exactIndexedPayload) {
-    return exactIndexedPayload;
+    return marketplaceSummaryWithSpendableIdListings(
+      exactIndexedPayload,
+      network,
+    );
   }
   if (!fresh) {
     const fastFallback = await marketplaceSummaryFastFallbackPayload(network);
@@ -25588,7 +26783,10 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
           MARKETPLACE_SUMMARY_CACHE_STALE_MS,
         );
       }
-      return fastFallback;
+      return marketplaceSummaryWithSpendableIdListings(
+        fastFallback,
+        network,
+      );
     }
 
     const [token, workFloor] = await Promise.all([
@@ -25623,19 +26821,9 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
   }
 
   if (fresh) {
-    const fallback = await payloadWithFallbackAfterMs(
-      marketplaceSummaryFastFallbackPayload(network).catch((error) => {
-        console.error(
-          `Marketplace summary fallback failed: ${errorSummary(error)}`,
-        );
-        return null;
-      }),
-      null,
-      MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS,
-    );
     const refreshed = await payloadWithFallbackAfterMs(
       refreshMarketplaceSummaryPayloadCache(network, true),
-      fallback,
+      null,
       MARKETPLACE_SUMMARY_CURRENT_FALLBACK_WAIT_MS,
     );
     if (
@@ -25647,77 +26835,6 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
     ) {
       return refreshed;
     }
-    if (
-      summaryPayloadHasFiniteNetworkValue(
-        network,
-        "marketplaceSummary",
-        fallback,
-      )
-    ) {
-      return fallback;
-    }
-
-    const ledgerFallbackPayload = marketplaceSummaryPayloadFromLedger(
-      await existingCanonicalLedgerPayload(network),
-    );
-    const currentLedgerPayload =
-      await marketplaceSummaryPayloadWithIndexedMarketOverlay(
-        ledgerFallbackPayload,
-        network,
-        { fast: true },
-      );
-    if (
-      summaryPayloadHasFiniteNetworkValue(
-        network,
-        "marketplaceSummary",
-        currentLedgerPayload,
-      ) &&
-      numericValue(currentLedgerPayload?.token?.stats?.confirmedTokens) > 0
-    ) {
-      refreshPayloadCacheInBackground(
-        marketplaceSummaryCacheKey(network),
-        marketplaceSummaryPayloadKey(network),
-        () => reconciledLivenetMarketplaceSummaryPayload(network, true),
-        MARKETPLACE_SUMMARY_CACHE_TTL_MS,
-        MARKETPLACE_SUMMARY_CACHE_STALE_MS,
-      );
-      return currentLedgerPayload;
-    }
-
-    const [token, workFloor] = await Promise.all([
-      tokenSummaryPayload(network, "", false),
-      cachedWorkFloorPayload(network, false),
-    ]);
-    const currentPayload = await marketplaceSummaryPayloadWithIndexedMarketOverlay(
-      {
-        indexedAt: newerIso(workFloor?.indexedAt, token?.indexedAt),
-        network,
-        registry: compactRegistrySummaryPayload(emptyRegistryPayload(network)),
-        summaryOnly: true,
-        token,
-        workFloor,
-      },
-      network,
-      { fast: true },
-    );
-    if (
-      summaryPayloadHasFiniteNetworkValue(
-        network,
-        "marketplaceSummary",
-        currentPayload,
-      ) &&
-      numericValue(currentPayload?.token?.stats?.confirmedTokens) > 0
-    ) {
-      refreshPayloadCacheInBackground(
-        marketplaceSummaryCacheKey(network),
-        marketplaceSummaryPayloadKey(network),
-        () => reconciledLivenetMarketplaceSummaryPayload(network, true),
-        MARKETPLACE_SUMMARY_CACHE_TTL_MS,
-        MARKETPLACE_SUMMARY_CACHE_STALE_MS,
-      );
-      return currentPayload;
-    }
-
     refreshPayloadCacheInBackground(
       marketplaceSummaryCacheKey(network),
       marketplaceSummaryPayloadKey(network),
@@ -25884,13 +27001,11 @@ async function growthSummaryPayload(network, fresh = false) {
       );
     }
 
-    if (fresh) {
-      throw freshDataUnavailableError(
-        "Fresh Growth summary ledger is unavailable.",
-      );
-    }
-
-    throw freshDataUnavailableError("Current Growth summary ledger is unavailable.");
+    throw freshDataUnavailableError(
+      fresh
+        ? "Fresh Growth summary ledger is unavailable."
+        : "Current Growth summary ledger is unavailable.",
+    );
   }
 
   return growthSummaryWithCurrentBtcUsd(
@@ -26236,7 +27351,7 @@ async function inceptionSummaryPayload(network, fresh = false) {
 }
 
 async function bondSummaryPayload(network, fresh = false, config) {
-  if (network === "livenet" && !fresh) {
+  if (network === "livenet") {
     const exactIndexedPayload =
       await currentProofIndexSummarySnapshotFallbackPayload(
         network,
@@ -26635,6 +27750,48 @@ async function recoveredWorkTokenActivityItemsForLogSearch(
   );
 }
 
+async function exactLogHistoryMissPayload(indexedPayload, network, txid) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!indexedPayload || !/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    return null;
+  }
+
+  const status = await payloadWithFallbackAfterMs(
+    proofIndexTxStatusPayload(normalizedTxid, network, {
+      includeUnconfirmed: true,
+    }).catch((error) => {
+      console.error(
+        `Exact Log transaction disposition failed for ${normalizedTxid}: ${errorSummary(error)}`,
+      );
+      return null;
+    }),
+    null,
+    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+  );
+  if (!status) {
+    return {
+      ...indexedPayload,
+      queryDisposition: "not-indexed-proof-event",
+    };
+  }
+  if (status.status === "dropped") {
+    return {
+      ...indexedPayload,
+      queryDisposition: "terminal-nonpublic",
+    };
+  }
+
+  const unavailable = freshDataUnavailableError(
+    "The canonical Log projection is unavailable for this indexed transaction.",
+  );
+  unavailable.details = {
+    code: "CANONICAL_LOG_PROJECTION_MISSING",
+    status: status.status,
+    txid: normalizedTxid,
+  };
+  throw unavailable;
+}
+
 async function activityHistoryPayload(network, kind, searchParams, fresh = false) {
   const payload = await mergedLogActivityPayload(network, fresh);
   const requestedKind = String(kind ?? "").trim();
@@ -26727,6 +27884,57 @@ function mergeEventHistoryRecoveryPayload(
   };
 }
 
+async function canonicalTokenDirectoryPayload(
+  network,
+  tokenScope,
+  pagination,
+  fresh = false,
+) {
+  const scope = normalizeTokenScope(tokenScope);
+  const storedSummary = await storedCanonicalTokenSummaryPayload(network, scope);
+  if (!storedSummary) {
+    throw freshDataUnavailableError(
+      fresh
+        ? `Fresh hash-bound credit directory is still catching up for ${scope || "all"}.`
+        : `Current hash-bound credit directory is unavailable for ${scope || "all"}.`,
+    );
+  }
+  const canonicalSummary = await summaryPayloadWithCanonicalProvenance(
+    storedSummary,
+    network,
+    fresh,
+    `token-directory:${scope || "all"}`,
+  );
+  const page = paginatedHistoryPayload({
+    indexedAt:
+      canonicalSummary.indexedAt ??
+      canonicalSummary.generatedAt ??
+      canonicalSummary.ledgerGeneratedAt,
+    items: Array.isArray(canonicalSummary.tokens)
+      ? canonicalSummary.tokens
+      : [],
+    kind: "tokens",
+    network,
+    pagination,
+    source: canonicalSummary.source,
+  });
+  return {
+    ...page,
+    consistency: canonicalSummary.consistency,
+    indexedThroughBlock:
+      proofIndexPayloadIndexedThroughBlock(canonicalSummary) ||
+      page.indexedThroughBlock,
+    indexedThroughBlockHash:
+      payloadIndexedThroughBlockHash(canonicalSummary) || undefined,
+    ledgerGeneratedAt:
+      canonicalSummary.ledgerGeneratedAt ??
+      canonicalSummary.generatedAt ??
+      canonicalSummary.indexedAt,
+    provenance: canonicalSummary.provenance,
+    snapshotId: canonicalSummary.snapshotId,
+  };
+}
+
 async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fresh = false) {
   const scope = normalizeTokenScope(tokenScope);
   const strictRecoveryAddresses = recoveryAddressesFromSearchParams(
@@ -26760,6 +27968,19 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     ["transfers", "transfers"],
   ]);
   const safeKind = kindMap.get(kind) ?? "mints";
+  if (
+    network === "livenet" &&
+    safeKind === "tokens" &&
+    recoveryAddresses.length === 0 &&
+    recoveryTxids.length === 0
+  ) {
+    return canonicalTokenDirectoryPayload(
+      network,
+      scope,
+      pagination,
+      fresh,
+    );
+  }
   const workMarketHistoryKind =
     safeKind === "sales" ||
     safeKind === "market-log" ||
@@ -27376,155 +28597,33 @@ async function rushPayload(network) {
   };
 }
 
-function confirmedElectrumHistoryEntries(history, indexedThroughBlock) {
-  const checkpoint = Number(indexedThroughBlock);
-  if (!Number.isSafeInteger(checkpoint) || checkpoint <= 0) {
-    throw new Error("A positive canonical checkpoint is required for Electrum history.");
-  }
-  const entriesByTxid = new Map();
-  for (const entry of Array.isArray(history) ? history : []) {
-    const txid = String(entry?.tx_hash ?? "").trim().toLowerCase();
-    const height = Number(entry?.height);
-    if (!/^[0-9a-f]{64}$/u.test(txid) || !Number.isSafeInteger(height)) {
-      throw new Error("Electrum returned a malformed address-history entry.");
-    }
-    if (height <= 0) {
-      continue;
-    }
-    if (height > checkpoint) {
-      throw new Error(
-        `Electrum history entry ${txid} is ahead of canonical checkpoint ${checkpoint}.`,
-      );
-    }
-    const previousHeight = entriesByTxid.get(txid);
-    if (previousHeight !== undefined && previousHeight !== height) {
-      throw new Error(`Electrum returned conflicting heights for ${txid}.`);
-    }
-    entriesByTxid.set(txid, height);
-  }
-  return [...entriesByTxid].map(([txid, height]) => ({ height, txid }));
-}
-
-async function canonicalBlockTxidIndexFromCore(blockHash) {
-  const normalizedHash = String(blockHash ?? "").trim().toLowerCase();
-  if (!/^[0-9a-f]{64}$/u.test(normalizedHash)) {
-    throw new Error("A canonical block hash is required for transaction ordering.");
-  }
-  const response = await bitcoinRpc("getblock", [normalizedHash, 1]);
-  const block = response?.ok ? response.result : null;
-  const txids = Array.isArray(block?.tx) ? block.tx : [];
-  if (
-    String(block?.hash ?? "").trim().toLowerCase() !== normalizedHash ||
-    txids.length === 0 ||
-    txids.some((txid) => !/^[0-9a-f]{64}$/iu.test(String(txid)))
-  ) {
-    throw new Error(`Bitcoin Core could not provide canonical order for ${normalizedHash}.`);
-  }
-  return new Map(
-    txids.map((txid, index) => [String(txid).toLowerCase(), index]),
-  );
-}
-
-async function strictCanonicalRushTransactions(
-  registryAddress,
-  network,
-  indexedThroughBlock,
-) {
-  if (
-    network !== "livenet" ||
-    !registryAddress ||
-    !ELECTRUM_HOST ||
-    !ELECTRUM_PORT
-  ) {
-    throw freshDataUnavailableError(
-      "Strict canonical RUSH history requires the local Electrum index.",
-    );
-  }
-  const scripthash = scriptHashForAddress(registryAddress, network);
-  const history = await electrumRequest(
-    "blockchain.scripthash.get_history",
-    [scripthash],
-    ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS,
-  );
-  if (!Array.isArray(history)) {
-    throw freshDataUnavailableError("Electrum did not return RUSH address history.");
-  }
-  const entries = confirmedElectrumHistoryEntries(
-    history,
-    indexedThroughBlock,
-  );
-  const blockHashByHeight = new Map();
-  const blockIndexByHash = new Map();
-  const transactions = await mapWithConcurrency(
-    entries,
-    Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
-    async ({ height, txid }) => {
-      const tx = await fetchTransactionFromBitcoinRpc(txid, network, {
-        requireCanonicalPrevouts: true,
-      });
-      if (!tx || !transactionConfirmed(tx) || transactionTxid(tx) !== txid) {
-        throw new Error(`Bitcoin Core could not hydrate confirmed RUSH tx ${txid}.`);
-      }
-      if (!blockHashByHeight.has(height)) {
-        blockHashByHeight.set(
-          height,
-          bitcoinRpc("getblockhash", [height]).then((response) => {
-            const hash = response?.ok
-              ? String(response.result ?? "").trim().toLowerCase()
-              : "";
-            if (!/^[0-9a-f]{64}$/u.test(hash)) {
-              throw new Error(`Bitcoin Core has no canonical block ${height}.`);
-            }
-            return hash;
-          }),
-        );
-      }
-      const blockHash = await blockHashByHeight.get(height);
-      if (transactionBlockHash(tx) !== blockHash) {
-        throw new Error(`RUSH tx ${txid} is not canonical at block ${height}.`);
-      }
-      if (!blockIndexByHash.has(blockHash)) {
-        blockIndexByHash.set(
-          blockHash,
-          canonicalBlockTxidIndexFromCore(blockHash),
-        );
-      }
-      const blockIndex = (await blockIndexByHash.get(blockHash)).get(txid);
-      if (!Number.isSafeInteger(blockIndex) || blockIndex < 0) {
-        throw new Error(`RUSH tx ${txid} is absent from canonical block ${height}.`);
-      }
-      return {
-        ...tx,
-        _powBlockIndex: blockIndex,
-        status: {
-          ...(tx.status ?? {}),
-          block_hash: blockHash,
-          block_height: height,
-          confirmed: true,
-        },
-      };
-    },
-  );
-  if (transactions.length !== entries.length) {
-    throw freshDataUnavailableError(
-      "Strict canonical RUSH history hydration was incomplete.",
-    );
-  }
-  return transactions;
-}
-
 async function strictCanonicalRushPayload(network, indexedThroughBlock) {
   const registryAddress = RUSH_REGISTRY_ADDRESSES[network] ?? "";
-  const transactions = await strictCanonicalRushTransactions(
-    registryAddress,
+  const payload = await proofIndexRushPayload(
     network,
     indexedThroughBlock,
   );
+  if (
+    !payload ||
+    payload.source !== "proof-indexer-rush-canonical" ||
+    payload.indexedThroughBlock !== indexedThroughBlock ||
+    !/^[0-9a-f]{64}$/u.test(payload.indexedThroughBlockHash ?? "")
+  ) {
+    throw freshDataUnavailableError(
+      "The full-node-verified RUSH index is not exact at the canonical checkpoint.",
+    );
+  }
   return {
-    ...rushStateFromTransactions(transactions, registryAddress, network),
+    ...rushStateFromIndexedMintEvents(
+      payload.mints,
+      registryAddress,
+      network,
+      payload.indexedAt,
+    ),
     indexedThroughBlock,
-    source: "bitcoin-core-electrum-strict",
-    transactions: transactions.length,
+    indexedThroughBlockHash: payload.indexedThroughBlockHash,
+    source: payload.source,
+    transactions: payload.mints.length,
   };
 }
 
@@ -28455,6 +29554,235 @@ function compactGrowthEventTimes(eventTimes) {
     .filter(Boolean);
 }
 
+function growthActualLiveTotalSatsAtProvider(
+  records,
+  idActivity,
+  sales,
+  tokenDefinitions,
+  tokenMints,
+  tokenTransfers = [],
+  tokenSales = [],
+) {
+  const baseValueForCredit = growthActualBaseNetworkValueAtProvider(
+    records,
+    idActivity,
+    sales,
+    tokenDefinitions,
+    tokenMints,
+    tokenTransfers,
+    tokenSales,
+  );
+  const baseValueAt = growthActualBaseNetworkValueAtProvider(
+    records,
+    idActivity,
+    sales,
+    tokenDefinitions,
+    tokenMints,
+    tokenTransfers,
+    tokenSales,
+  );
+  const tokensById = new Map(
+    (Array.isArray(tokenDefinitions) ? tokenDefinitions : [])
+      .filter(tokenCanUseCreditNetworkFloor)
+      .map((token) => [String(token.tokenId ?? "").toLowerCase(), token]),
+  );
+  if (tokensById.size === 0) {
+    return (atMs) => numericValue(baseValueAt(atMs));
+  }
+
+  const activityByTxid = new Map();
+  for (const item of Array.isArray(idActivity) ? idActivity : []) {
+    const txid = String(item?.txid ?? "").toLowerCase();
+    if (
+      !item?.confirmed ||
+      !isTokenActivityItem(item) ||
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !tokensById.has(String(item?.tokenId ?? "").toLowerCase())
+    ) {
+      continue;
+    }
+    const current = activityByTxid.get(txid);
+    if (
+      !current ||
+      numericValue(item?.minerFeeSats) > numericValue(current?.minerFeeSats) ||
+      numericValue(item?.frozenNetworkValueSats) >
+        numericValue(current?.frozenNetworkValueSats)
+    ) {
+      activityByTxid.set(txid, item);
+    }
+  }
+
+  const movementEvents = [];
+  const movementTxids = new Set();
+  const addMovementEvent = (item, kind) => {
+    const token = tokensById.get(String(item?.tokenId ?? "").toLowerCase());
+    const txid = String(item?.txid ?? "").toLowerCase();
+    const createdMs = creditValueEventMs(item);
+    const amount = numericValue(item?.amount);
+    if (
+      !token ||
+      !item?.confirmed ||
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !Number.isFinite(createdMs) ||
+      amount <= 0
+    ) {
+      return;
+    }
+    movementEvents.push({
+      amount,
+      createdMs,
+      kind,
+      order: 1,
+      source: item,
+      token,
+      txid,
+    });
+    movementTxids.add(txid);
+  };
+  for (const mint of Array.isArray(tokenMints) ? tokenMints : []) {
+    addMovementEvent(mint, "mint");
+  }
+  for (const transfer of Array.isArray(tokenTransfers) ? tokenTransfers : []) {
+    addMovementEvent(transfer, "transfer");
+  }
+  for (const sale of Array.isArray(tokenSales) ? tokenSales : []) {
+    addMovementEvent(sale, "sale");
+  }
+
+  const mutationEvents = [];
+  for (const item of activityByTxid.values()) {
+    const txid = String(item?.txid ?? "").toLowerCase();
+    const kind = String(item?.kind ?? "");
+    const token = tokensById.get(String(item?.tokenId ?? "").toLowerCase());
+    const createdMs = creditValueEventMs(item);
+    if (
+      !token ||
+      !Number.isFinite(createdMs) ||
+      movementTxids.has(txid) ||
+      ![
+        "token-create",
+        "token-listing",
+        "token-listing-sealed",
+        "token-listing-closed",
+      ].includes(kind)
+    ) {
+      continue;
+    }
+    const proofPaymentSats =
+      kind === "token-create"
+        ? numericValue(item?.proofPaymentSats ?? item?.amountSats)
+        : 0;
+    const marketplaceMutationFeeSats =
+      TOKEN_MARKETPLACE_MUTATION_KINDS.has(kind)
+        ? numericValue(item?.marketplaceMutationFeeSats ?? item?.amountSats) ||
+          TOKEN_MIN_MUTATION_PRICE_SATS
+        : 0;
+    mutationEvents.push({
+      amount: 0,
+      createdMs,
+      kind: kind.replace(/^token-/u, ""),
+      marketplaceMutationFeeSats,
+      minerFeeSats: numericValue(item?.minerFeeSats),
+      order: 2,
+      proofPaymentSats,
+      registryMutationFeeSats: 0,
+      salePaymentSats: 0,
+      source: item,
+      token,
+      txid,
+    });
+  }
+
+  let cumulativeFrozenCreditValueSats = 0;
+  const replayEvents = [...movementEvents, ...mutationEvents]
+    .sort(compareCreditValueReplayEvents)
+    .map((event) => {
+      const baseBefore = numericValue(baseValueForCredit(event.createdMs - 1));
+      const networkValueBeforeEvent =
+        baseBefore + cumulativeFrozenCreditValueSats;
+      const maxSupply = numericValue(event.token.maxSupply);
+      const creditValueAtConfirmSats =
+        maxSupply > 0
+          ? event.amount * (networkValueBeforeEvent / maxSupply)
+          : 0;
+      const activity = activityByTxid.get(event.txid);
+      const minerFeeSats = numericValue(
+        event.minerFeeSats ??
+          event.source?.minerFeeSats ??
+          activity?.minerFeeSats,
+      );
+      const proofPaymentSats =
+        event.kind === "mint"
+          ? numericValue(event.source?.paidSats)
+          : numericValue(event.proofPaymentSats);
+      const registryMutationFeeSats =
+        event.kind === "transfer"
+          ? numericValue(event.source?.paidSats)
+          : numericValue(event.registryMutationFeeSats);
+      const marketplaceMutationFeeSats =
+        event.kind === "sale"
+          ? numericValue(event.source?.marketplaceMutationFeeSats) ||
+            TOKEN_MIN_MUTATION_PRICE_SATS
+          : numericValue(event.marketplaceMutationFeeSats);
+      const salePaymentSats =
+        event.kind === "sale" ? numericValue(event.source?.priceSats) : 0;
+      const fixedEventFlowSats =
+        proofPaymentSats +
+        registryMutationFeeSats +
+        marketplaceMutationFeeSats +
+        salePaymentSats +
+        minerFeeSats;
+      cumulativeFrozenCreditValueSats +=
+        creditValueAtConfirmSats + fixedEventFlowSats;
+      return {
+        createdMs: event.createdMs,
+        fixedEventFlowSats,
+        frozenNetworkValueSats:
+          creditValueAtConfirmSats + fixedEventFlowSats,
+        movementLiveFactor: maxSupply > 0 ? event.amount / maxSupply : 0,
+      };
+    });
+
+  let cursor = 0;
+  let cursorMs = Number.NEGATIVE_INFINITY;
+  let frozenCreditSats = 0;
+  let fixedCreditSats = 0;
+  let movementLiveFactor = 0;
+  const reset = () => {
+    cursor = 0;
+    cursorMs = Number.NEGATIVE_INFINITY;
+    frozenCreditSats = 0;
+    fixedCreditSats = 0;
+    movementLiveFactor = 0;
+  };
+  return (atMs) => {
+    const targetMs = Number(atMs);
+    if (!Number.isFinite(targetMs)) {
+      return 0;
+    }
+    if (targetMs < cursorMs) {
+      reset();
+    }
+    while (
+      cursor < replayEvents.length &&
+      replayEvents[cursor].createdMs <= targetMs
+    ) {
+      const event = replayEvents[cursor];
+      frozenCreditSats += event.frozenNetworkValueSats;
+      fixedCreditSats += event.fixedEventFlowSats;
+      movementLiveFactor += event.movementLiveFactor;
+      cursor += 1;
+    }
+    cursorMs = targetMs;
+    const baseNow = numericValue(baseValueAt(targetMs));
+    return (
+      baseNow +
+      (baseNow + frozenCreditSats) * movementLiveFactor +
+      fixedCreditSats
+    );
+  };
+}
+
 function growthActualValuePoints(
   records,
   idActivity,
@@ -28523,8 +29851,10 @@ function growthActualValuePoints(
     }
   }
 
-  const points = [];
-  const startValue = growthActualNetworkValue(
+  // Replaying the full ledger once per chart point is quadratic at current
+  // chain volume. This provider preserves the same frozen/live credit math
+  // while advancing the canonical event stream only once.
+  const totalSatsAt = growthActualLiveTotalSatsAtProvider(
     records,
     idActivity,
     sales,
@@ -28532,31 +29862,23 @@ function growthActualValuePoints(
     tokenMints,
     tokenTransfers,
     tokenSales,
-    startMs,
   );
+  const points = [];
+  const startValueSats = totalSatsAt(startMs);
   points.push({
     label: options.startLabel ?? "Model start",
-    sats: numericValue(startValue.totalSats),
-    usd: growthSatsToUsdAtYears(numericValue(startValue.totalSats), startYears),
+    sats: startValueSats,
+    usd: growthSatsToUsdAtYears(startValueSats, startYears),
     years: startYears,
   });
 
   for (const { createdMs, label } of compactGrowthEventTimes(eventTimes)) {
-    const value = growthActualNetworkValue(
-      records,
-      idActivity,
-      sales,
-      tokenDefinitions,
-      tokenMints,
-      tokenTransfers,
-      tokenSales,
-      createdMs,
-    );
+    const valueSats = totalSatsAt(createdMs);
     points.push({
       label,
-      sats: numericValue(value.totalSats),
+      sats: valueSats,
       usd: growthSatsToUsdAtYears(
-        numericValue(value.totalSats),
+        valueSats,
         Math.max(0, (createdMs - GROWTH_MODEL_START_MS) / MS_PER_MODEL_YEAR),
       ),
       years: Math.max(
@@ -28567,25 +29889,17 @@ function growthActualValuePoints(
   }
 
   const elapsed = growthElapsedYears();
-  const nowValue = growthActualNetworkValue(
-    records,
-    idActivity,
-    sales,
-    tokenDefinitions,
-    tokenMints,
-    tokenTransfers,
-    tokenSales,
-  );
+  const nowValueSats = totalSatsAt(Date.now());
   const lastPoint = points[points.length - 1];
   if (
     !lastPoint ||
-    lastPoint.sats !== nowValue.totalSats ||
+    lastPoint.sats !== nowValueSats ||
     lastPoint.years < elapsed
   ) {
     points.push({
       label: "Real now",
-      sats: numericValue(nowValue.totalSats),
-      usd: growthSatsToUsdAtYears(numericValue(nowValue.totalSats), elapsed),
+      sats: nowValueSats,
+      usd: growthSatsToUsdAtYears(nowValueSats, elapsed),
       years: elapsed,
     });
   }
@@ -31223,23 +32537,36 @@ async function completeTokenVerifierState(
     indexAddress,
     network,
   );
-  const powbRecord = (Array.isArray(idState?.records) ? idState.records : []).find(
-    (record) => normalizePowId(record?.id) === normalizePowId(POWB_REGISTRY_ID),
-  );
-  const powbRegistryAddress = String(
-    powbRecord?.receiveAddress ?? powbRecord?.ownerAddress ?? "",
-  ).trim();
-  const powbSeedTokens = powbRegistryAddress
-    ? [canonicalPowbTokenDefinition(network, powbRegistryAddress)]
-    : [];
-  const powbActivity = mailActivityItemsFromTransactions(
+  const bondActivity = mailActivityItemsFromTransactions(
     context.transactions,
     network,
   );
-  const powbSeedMints = powbRegistryAddress
-    ? powbMintsFromActivity(powbActivity, powbRegistryAddress, network)
-    : [];
-  const allTokens = [...tokens, ...powbSeedTokens];
+  const bondSeedTokens = [];
+  const bondSeedMints = [];
+  for (const config of BOND_TOKEN_CONFIGS) {
+    const record = (Array.isArray(idState?.records) ? idState.records : []).find(
+      (candidate) =>
+        normalizePowId(candidate?.id) === normalizePowId(config.registryId),
+    );
+    const registryAddress = String(
+      record?.receiveAddress ?? record?.ownerAddress ?? "",
+    ).trim();
+    if (!isValidBitcoinAddress(registryAddress, network)) {
+      continue;
+    }
+    bondSeedTokens.push(
+      canonicalBondTokenDefinition(config, network, registryAddress),
+    );
+    bondSeedMints.push(
+      ...bondMintsFromActivity(
+        bondActivity,
+        registryAddress,
+        network,
+        config,
+      ),
+    );
+  }
+  const allTokens = [...tokens, ...bondSeedTokens];
   const scopedTokens = allTokens.filter((token) =>
     tokenMatchesScope(token, scope),
   );
@@ -31258,8 +32585,8 @@ async function completeTokenVerifierState(
       indexAddress,
       network,
       scope,
-      powbSeedTokens,
-      powbSeedMints,
+      bondSeedTokens,
+      bondSeedMints,
     ),
     ...context,
     source: "canonical-block-scan-db-core-verifier",
@@ -32448,17 +33775,26 @@ async function loadHealthPayload() {
     workerFresh &&
     readModelsOk &&
     summarySnapshotOk;
+  const indexAvailable =
+    Boolean(database) &&
+    database?.scan?.complete === true &&
+    checkpointCanonical &&
+    aheadBlocks === 0 &&
+    canonicalStateOk &&
+    readModelsOk;
   const diskOk = rootDisk.ok && cacheDisk.ok;
-  const ok =
+  const available =
     Number.isSafeInteger(tipHeight) &&
     backendOutcome.ok &&
     addressIndex.ok &&
     electrum.ok &&
     electrumAtTip &&
     diskOk &&
-    (PROOF_INDEX_REQUIRED ? indexOk : true);
+    (PROOF_INDEX_REQUIRED ? indexAvailable : true);
+  const ok = available && (PROOF_INDEX_REQUIRED ? indexOk : true);
 
   return {
+    available,
     backend: backendOutcome.ok ? backendOutcome.value?.backend ?? null : null,
     checks: {
       addressIndex,
@@ -32492,6 +33828,7 @@ async function loadHealthPayload() {
         canonicalCheckpointHash,
         indexedThroughBlock,
         lagBlocks,
+        available: indexAvailable,
         ok: indexOk,
         readModels: database?.readModels ?? null,
         summarySnapshot: {
@@ -32526,6 +33863,7 @@ async function loadHealthPayload() {
     lagBlocks,
     mempoolBase: MEMPOOL_BASE_MAINNET,
     ok,
+    ready: ok,
     service: "proofofwork-op-return-api",
     tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
   };
@@ -32533,7 +33871,10 @@ async function loadHealthPayload() {
 
 let healthPayloadCache = null;
 
-async function healthPayload() {
+async function healthPayload(options = {}) {
+  if (options.force === true) {
+    return loadHealthPayload();
+  }
   const now = Date.now();
   if (
     healthPayloadCache &&
@@ -32601,11 +33942,13 @@ function canonicalPublicReadGateApplies(pathname) {
 
 function canonicalSummarySnapshotReadGateApplies(pathname) {
   return new Set([
+    "/api/v1/activity-summary",
     "/api/v1/consistency",
     "/api/v1/growth-summary",
     "/api/v1/inception-summary",
     "/api/v1/infinity-summary",
     "/api/v1/ledger-consistency",
+    "/api/v1/log-summary",
     "/api/v1/marketplace-summary",
     "/api/v1/work-floor",
     "/api/v1/work-summary",
@@ -32616,18 +33959,22 @@ function summarySnapshotCoversCanonicalReadModels(status) {
   const summaryIndexedThroughBlock = Number(
     status?.summarySnapshot?.indexedThroughBlock ?? 0,
   );
-  const latestConfirmedEventBlock = Math.max(
-    Number(status?.readModels?.confirmedEvents?.maxBlock ?? 0),
-    Number(status?.readModels?.confirmedIds?.maxBlock ?? 0),
-    Number(status?.readModels?.confirmedTransfers?.maxBlock ?? 0),
-  );
+  const indexedThroughBlock = Number(status?.indexedThroughBlock ?? 0);
+  const scanTipHeight = Number(status?.scan?.tipHeight ?? 0);
+  const summaryBlockHash = String(status?.summarySnapshot?.blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const scanBlockHash = String(status?.scan?.blockHash ?? "")
+    .trim()
+    .toLowerCase();
   return (
     status?.summarySnapshot?.eligible === true &&
     Number.isSafeInteger(summaryIndexedThroughBlock) &&
     summaryIndexedThroughBlock > 0 &&
-    Number.isSafeInteger(latestConfirmedEventBlock) &&
-    latestConfirmedEventBlock > 0 &&
-    summaryIndexedThroughBlock >= latestConfirmedEventBlock
+    summaryIndexedThroughBlock === indexedThroughBlock &&
+    indexedThroughBlock === scanTipHeight &&
+    /^[0-9a-f]{64}$/u.test(summaryBlockHash) &&
+    summaryBlockHash === scanBlockHash
   );
 }
 
@@ -32647,7 +33994,21 @@ async function loadCanonicalPublicReadGate(network) {
     .trim()
     .toLowerCase();
   const storedHash = String(status?.scan?.blockHash ?? "").toLowerCase();
-  const canonicalHash = indexedThroughBlock === tipHeight ? bestBlockHash : "";
+  const indexedHashResponse =
+    Number.isSafeInteger(indexedThroughBlock) &&
+    indexedThroughBlock > 0 &&
+    indexedThroughBlock !== tipHeight
+      ? await bitcoinRpc("getblockhash", [indexedThroughBlock]).catch(() => null)
+      : null;
+  const canonicalHash = String(
+    indexedThroughBlock === tipHeight
+      ? bestBlockHash
+      : indexedHashResponse?.ok
+        ? indexedHashResponse.result
+        : "",
+  )
+    .trim()
+    .toLowerCase();
   const rebuild = canonical?.rebuild ?? {};
   const fault = canonical?.fault ?? {};
   const workerLastSuccessMs = Date.parse(status?.worker?.lastSuccessAt ?? "");
@@ -32659,12 +34020,13 @@ async function loadCanonicalPublicReadGate(network) {
     Number(status?.readModels?.confirmedTransfers?.count) > 0;
   const summarySnapshotOk =
     summarySnapshotCoversCanonicalReadModels(status);
-  const ok =
+  const available =
     Boolean(status) &&
     Boolean(canonical) &&
     status?.scan?.complete === true &&
     Number.isSafeInteger(tipHeight) &&
-    indexedThroughBlock === tipHeight &&
+    indexedThroughBlock > 0 &&
+    indexedThroughBlock <= tipHeight &&
     /^[0-9a-f]{64}$/u.test(storedHash) &&
     canonicalHash === storedHash &&
     fault?.active !== true &&
@@ -32672,11 +34034,22 @@ async function loadCanonicalPublicReadGate(network) {
     rebuild?.active !== true &&
     rebuild.status === "complete" &&
     readModelsOk;
+  const ready =
+    available &&
+    indexedThroughBlock === tipHeight &&
+    workerFresh &&
+    status?.worker?.ok === true;
   return {
+    available,
     canonicalHash: canonicalHash || null,
     fault,
     indexedThroughBlock: indexedThroughBlock || null,
-    ok,
+    lagBlocks:
+      Number.isSafeInteger(tipHeight) && indexedThroughBlock > 0
+        ? Math.max(0, tipHeight - indexedThroughBlock)
+        : null,
+    ok: available,
+    ready,
     rebuild,
     storedHash: storedHash || null,
     tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
@@ -32688,7 +34061,22 @@ async function loadCanonicalPublicReadGate(network) {
   };
 }
 
-async function canonicalPublicReadGate(network) {
+async function canonicalPublicReadGate(network, options = {}) {
+  if (options.force === true) {
+    const outcome = await promiseOutcomeWithin(
+      loadCanonicalPublicReadGate(network),
+      CANONICAL_PUBLIC_READ_GATE_TIMEOUT_MS,
+    );
+    return outcome.ok
+      ? outcome.value
+      : {
+          error: outcome.timedOut
+            ? "Canonical read gate timed out."
+            : errorSummary(outcome.error),
+          ok: false,
+          timedOut: outcome.timedOut === true,
+        };
+  }
   const now = Date.now();
   const cached = canonicalPublicReadGateCache.get(network);
   if (
@@ -32754,7 +34142,12 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await broadcastSlipstreamPayload(request),
+        await withBroadcastAdmission(
+          request,
+          "livenet",
+          (admission) => broadcastSlipstreamPayload(request, admission),
+          { requireCanonical: true },
+        ),
         "no-store",
       );
       return;
@@ -32764,10 +34157,17 @@ async function handleRequest(request, response) {
       request.method === "POST" &&
       url.pathname === "/api/v1/broadcast/tx"
     ) {
+      const broadcastNetwork = networkFromSearch(url.searchParams);
       jsonResponse(
         response,
         200,
-        await broadcastNodePayload(request, networkFromSearch(url.searchParams)),
+        await withBroadcastAdmission(
+          request,
+          broadcastNetwork,
+          (admission) =>
+            broadcastNodePayload(request, broadcastNetwork, admission),
+          { requireCanonical: true },
+        ),
         "no-store",
       );
       return;
@@ -32783,9 +34183,23 @@ async function handleRequest(request, response) {
       return;
     }
 
-    if (url.pathname === "/health" || url.pathname === "/api/v1/health") {
-      const payload = await healthPayload();
-      jsonResponse(response, payload.ok ? 200 : 503, payload, "no-store");
+    if (
+      url.pathname === "/health" ||
+      url.pathname === "/api/v1/health" ||
+      url.pathname === "/health/live" ||
+      url.pathname === "/api/v1/health/live"
+    ) {
+      const livenessRead = url.pathname.endsWith("/live");
+      const payload = await healthPayload({ force: !livenessRead });
+      jsonResponse(
+        response,
+        (livenessRead ? payload.available : payload.ready) ? 200 : 503,
+        {
+          ...payload,
+          mode: livenessRead ? "availability" : "readiness",
+        },
+        "no-store",
+      );
       return;
     }
 
@@ -32797,7 +34211,7 @@ async function handleRequest(request, response) {
       canonicalPublicReadGateApplies(url.pathname) &&
       !authenticatedLoopbackRead
     ) {
-      const gate = await canonicalPublicReadGate(network);
+      const gate = await canonicalPublicReadGate(network, { force: freshRead });
       if (!gate.ok) {
         errorResponse(
           response,
@@ -32807,7 +34221,17 @@ async function handleRequest(request, response) {
         );
         return;
       }
+      if (freshRead && gate.ready !== true) {
+        errorResponse(
+          response,
+          503,
+          "The canonical ProofOfWork index is catching up to the Bitcoin Core tip.",
+          { code: "CANONICAL_INDEX_CATCHING_UP", ...gate },
+        );
+        return;
+      }
       if (
+        freshRead &&
         canonicalSummarySnapshotReadGateApplies(url.pathname) &&
         !gate.summarySnapshotOk
       ) {
@@ -33020,7 +34444,12 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await activitySummaryPayload(network, freshRead),
+        await summaryPayloadWithCanonicalProvenance(
+          await activitySummaryPayload(network, freshRead),
+          network,
+          freshRead,
+          "log-summary",
+        ),
         freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
       );
       return;
@@ -33112,31 +34541,83 @@ async function handleRequest(request, response) {
           "transaction",
           "transactionId",
           "cursor",
+          "limit",
+          "offset",
           "page",
         ].some((key) => url.searchParams.has(key));
       if (logHistoryLikeRequest) {
         const historyKind = String(url.searchParams.get("kind") ?? "")
           .trim()
           .toLowerCase();
-        const indexedPayload = await proofIndexLogHistoryPayload(
+        const logHistoryEligibility = proofIndexLogHistoryReadEligibility(
+          historyKind,
+          url.searchParams,
+        );
+        const exactLogQueryTxid = /^[0-9a-f]{64}$/u.test(
+          logHistoryEligibility.pagination.query,
+        )
+          ? logHistoryEligibility.pagination.query
+          : "";
+        if (!freshRead || exactLogQueryTxid) {
+          const indexedPayload = await proofIndexLogHistoryPayload(
+            network,
+            historyKind,
+            url.searchParams,
+          ).catch((error) => {
+            console.error(
+              `Proof index filtered log read failed: ${errorSummary(error)}`,
+            );
+            return null;
+          });
+          if (indexedPayload) {
+            const indexedTotal = Number(
+              indexedPayload.totalCount ?? indexedPayload.items?.length ?? 0,
+            );
+            const definitiveEmpty = new Set([
+              "confirmed-invalid-nonpublic",
+              "confirmed-nonpublic",
+              "nonpublic-kind-filter",
+              "terminal-nonpublic",
+            ]).has(indexedPayload.queryDisposition);
+            const responsePayload =
+              exactLogQueryTxid && indexedTotal === 0 && !definitiveEmpty
+                ? await exactLogHistoryMissPayload(
+                    indexedPayload,
+                    network,
+                    exactLogQueryTxid,
+                  )
+                : indexedPayload;
+            jsonResponse(
+              response,
+              200,
+              responsePayload,
+              freshRead
+                ? FRESH_READ_CACHE_CONTROL
+                : EXPENSIVE_READ_CACHE_CONTROL,
+            );
+            return;
+          }
+        }
+        if (exactLogQueryTxid) {
+          throw freshDataUnavailableError(
+            "The indexed exact Log lookup is temporarily unavailable.",
+          );
+        }
+        const fallbackPayload = await activityHistoryPayload(
           network,
           historyKind,
           url.searchParams,
-        ).catch((error) => {
-          console.error(
-            `Proof index filtered log read failed: ${errorSummary(error)}`,
-          );
-          return null;
-        });
-        if (indexedPayload) {
-          jsonResponse(
-            response,
-            200,
-            indexedPayload,
-            EXPENSIVE_READ_CACHE_CONTROL,
-          );
-          return;
-        }
+          freshRead,
+        );
+        jsonResponse(
+          response,
+          200,
+          fallbackPayload,
+          freshRead
+            ? FRESH_READ_CACHE_CONTROL
+            : EXPENSIVE_READ_CACHE_CONTROL,
+        );
+        return;
       }
       if (freshRead) {
         jsonResponse(
@@ -33168,8 +34649,12 @@ async function handleRequest(request, response) {
         historyKind,
         url.searchParams,
       );
+      const exactLogQueryTxid = /^[0-9a-f]{64}$/u.test(
+        logHistoryEligibility.pagination.query,
+      )
+        ? logHistoryEligibility.pagination.query
+        : "";
       if (
-        !freshRead &&
         proofIndexReadFeatureEnabled("log-history,activity-history,log") &&
         logHistoryEligibility.eligible
       ) {
@@ -33187,19 +34672,35 @@ async function handleRequest(request, response) {
           const indexedTotal = Number(
             indexedPayload.totalCount ?? indexedPayload.items?.length ?? 0,
           );
-          const shouldUseCanonicalTxidFallback =
-            indexedTotal === 0 &&
-            /^[0-9a-f]{64}$/u.test(logHistoryEligibility.pagination.query);
-          if (!shouldUseCanonicalTxidFallback) {
-            jsonResponse(
-              response,
-              200,
-              indexedPayload,
-              EXPENSIVE_READ_CACHE_CONTROL,
-            );
-            return;
-          }
+          const definitiveEmpty = new Set([
+            "confirmed-invalid-nonpublic",
+            "confirmed-nonpublic",
+            "nonpublic-kind-filter",
+            "terminal-nonpublic",
+          ]).has(indexedPayload.queryDisposition);
+          const responsePayload =
+            exactLogQueryTxid && indexedTotal === 0 && !definitiveEmpty
+              ? await exactLogHistoryMissPayload(
+                  indexedPayload,
+                  network,
+                  exactLogQueryTxid,
+                )
+              : indexedPayload;
+          jsonResponse(
+            response,
+            200,
+            responsePayload,
+            freshRead
+              ? FRESH_READ_CACHE_CONTROL
+              : EXPENSIVE_READ_CACHE_CONTROL,
+          );
+          return;
         }
+      }
+      if (exactLogQueryTxid) {
+        throw freshDataUnavailableError(
+          "The indexed exact Log lookup is temporarily unavailable.",
+        );
       }
       const payload = await activityHistoryPayload(
         network,
@@ -33365,18 +34866,26 @@ async function handleRequest(request, response) {
         );
         return;
       }
+      const tokenSummary = walletScoped
+        ? await walletScopedTokenSummaryPayload(
+            network,
+            tokenScope,
+            recoveryAddresses,
+          )
+        : await tokenSummaryPayload(network, tokenScope, freshRead, {
+            recoveryAddresses,
+          });
       jsonResponse(
         response,
         200,
         walletScoped
-          ? await walletScopedTokenSummaryPayload(
+          ? tokenSummary
+          : await summaryPayloadWithCanonicalProvenance(
+              tokenSummary,
               network,
-              tokenScope,
-              recoveryAddresses,
-            )
-          : await tokenSummaryPayload(network, tokenScope, freshRead, {
-              recoveryAddresses,
-            }),
+              freshRead,
+              `token-summary:${tokenScope || "all"}`,
+            ),
         freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
       return;
@@ -33531,14 +35040,24 @@ async function handleRequest(request, response) {
         jsonResponse(
           response,
           200,
-          await cachedWorkFloorPayload(network, true),
+          await summaryPayloadWithCanonicalProvenance(
+            await cachedWorkFloorPayload(network, true),
+            network,
+            true,
+            "work-floor",
+          ),
           FRESH_READ_CACHE_CONTROL,
         );
       } else {
         jsonResponse(
           response,
           200,
-          await cachedWorkFloorPayload(network, false),
+          await summaryPayloadWithCanonicalProvenance(
+            await cachedWorkFloorPayload(network, false),
+            network,
+            false,
+            "work-floor",
+          ),
           READ_CACHE_CONTROL,
         );
       }
@@ -33581,7 +35100,12 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await workSummaryPayload(network, freshRead),
+        await summaryPayloadWithCanonicalProvenance(
+          await workSummaryPayload(network, freshRead),
+          network,
+          freshRead,
+          "work-summary",
+        ),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
       return;
@@ -33591,7 +35115,12 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await marketplaceSummaryPayload(network, freshRead),
+        await summaryPayloadWithCanonicalProvenance(
+          await marketplaceSummaryPayload(network, freshRead),
+          network,
+          freshRead,
+          "marketplace-summary",
+        ),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
       return;
@@ -33601,7 +35130,12 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await infinitySummaryPayload(network, freshRead),
+        await summaryPayloadWithCanonicalProvenance(
+          await infinitySummaryPayload(network, freshRead),
+          network,
+          freshRead,
+          "infinity-summary",
+        ),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
       return;
@@ -33611,7 +35145,12 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await inceptionSummaryPayload(network, freshRead),
+        await summaryPayloadWithCanonicalProvenance(
+          await inceptionSummaryPayload(network, freshRead),
+          network,
+          freshRead,
+          "inception-summary",
+        ),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
       return;
@@ -33645,7 +35184,12 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await growthSummaryPayload(network, freshRead),
+        await summaryPayloadWithCanonicalProvenance(
+          await growthSummaryPayload(network, freshRead),
+          network,
+          freshRead,
+          "growth-summary",
+        ),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
       return;
@@ -34009,6 +35553,12 @@ async function handleRequest(request, response) {
       error && typeof error === "object" && Number.isInteger(error.statusCode)
         ? error.statusCode
         : 500;
+    if (statusCode === 429) {
+      response.setHeader(
+        "Retry-After",
+        String(Math.max(1, Math.ceil(BROADCAST_RATE_WINDOW_MS / 1000))),
+      );
+    }
     if (statusCode >= 500) {
       console.error(
         `${request.method ?? "GET"} ${url.pathname} failed:`,
@@ -34027,6 +35577,8 @@ async function handleRequest(request, response) {
 const server = http.createServer((request, response) => {
   void handleRequest(request, response);
 });
+server.headersTimeout = HTTP_HEADERS_TIMEOUT_MS;
+server.requestTimeout = HTTP_REQUEST_TIMEOUT_MS;
 
 function scheduleWarmJsonCache(cacheKey, producer, ttlMs, staleMs, delayMs) {
   const delay = Math.max(0, Number(delayMs) || 0);

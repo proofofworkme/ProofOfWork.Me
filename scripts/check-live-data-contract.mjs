@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 const server = readFileSync("server/proof-api.mjs", "utf8");
+const electrumClient = readFileSync("server/electrum-client.mjs", "utf8");
 const proofIndexReader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
 const proofIndexerBackfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const proofIndexerWorker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
@@ -13,6 +14,29 @@ const routeRegistry = readFileSync("src/app/routeRegistry.ts", "utf8");
 const proofIndexDeploy = readFileSync("deploy/proofofwork-api-proof-index.conf", "utf8");
 const packageJson = readFileSync("package.json", "utf8");
 const failures = [];
+
+expectAll("API Electrum reads use one bounded persistent client", server, [
+  /import \{ createElectrumClient \} from "\.\/electrum-client\.mjs"/,
+  /const ELECTRUM_CLIENT = createElectrumClient\(\{[\s\S]*maxInFlight:[\s\S]*maxQueue:[\s\S]*maxResponseBytes:/,
+  /function electrumRequest\(method, params, timeoutMs = 30_000\) \{[\s\S]*ELECTRUM_CLIENT\.request\(method, params, timeoutMs\)/,
+]);
+expectAll("Electrum transport is multiplexed and capacity bounded", electrumClient, [
+  /class ElectrumClient/,
+  /#operationsById = new Map\(\)/,
+  /#queue = \[\]/,
+  /#singleflight = new Map\(\)/,
+  /new ElectrumQueueFullError/,
+  /setKeepAlive\?\.\(true/,
+  /this\.#operationsById\.set\(String\(id\), operation\)/,
+]);
+expectAll("canonical summary work is linear and latency-overlapped", server, [
+  /function growthActualLiveTotalSatsAtProvider/,
+  /This provider preserves the same frozen\/live credit math/,
+  /const BITCOIN_ADDRESS_VALIDATION_CACHE_MAX = 20_000/,
+  /addresses\.size >= SEEDED_MAIL_ACTIVITY_MAX_ADDRESSES/,
+  /currentTokenTableState,[\s\S]*currentMarketOverlay,[\s\S]*= await Promise\.all/,
+  /workFloorWithIndexedMarketSummaryOverlay\([\s\S]*currentMarketOverlay/,
+]);
 
 if (/\bWORK_TOKEN_REGISTRY_ADDRESS\b/u.test(server)) {
   failures.push(
@@ -247,9 +271,19 @@ const canonicalRebuildSource = sourceSliceBetween(
   /async function prepareCanonicalRebuild\(/,
   /async function latestBlockScanCheckpoint\(/,
 );
+const canonicalTransactionDetailsSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /function canonicalOpReturnPayloadFromVout\(/,
+  /async function persistCanonicalBlock\(/,
+);
 const canonicalRawPersistenceSource = sourceSliceBetween(
   proofIndexerBackfill,
   /async function persistCanonicalBlock\(/,
+  /async function upsertTransaction\(/,
+);
+const historicalTransactionDetailHydrationSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function hydrateHistoricalCanonicalTransactionDetails\(/,
   /async function upsertTransaction\(/,
 );
 const canonicalBalanceReplaySource = sourceSliceBetween(
@@ -320,9 +354,11 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /unpagedEndpoint\("\/api\/v1\/internal\/canonical-summary"\)/,
   /async function internalCanonicalSummaryPayload\([\s\S]*buildIndexedCanonicalLedgerPayload\(/,
   /const before = await exactCanonicalSummaryCheckpoint\([\s\S]*const after = await exactCanonicalSummaryCheckpoint\(/,
-  /exactCanonicalSummaryCheckpoint\([\s\S]*electrumHealthPayload\(tipHeight, tipHash\)[\s\S]*electrum\?\.headerHeight !== tipHeight/,
+  /exactCanonicalSummaryCheckpoint\([\s\S]*indexedThroughBlock !== tipHeight[\s\S]*storedHash !== tipHash/,
   /buildIndexedCanonicalLedgerPayload\([\s\S]*strictCanonicalRushPayload\(network, exactHeight\)[\s\S]*exactTokenTablePayloadForCanonicalLedger\(/,
-  /async function strictCanonicalRushTransactions\([\s\S]*confirmedElectrumHistoryEntries\([\s\S]*requireCanonicalPrevouts: true[\s\S]*canonicalBlockTxidIndexFromCore\([\s\S]*transactions\.length !== entries\.length/,
+  /async function strictCanonicalRushPayload\([\s\S]*proofIndexRushPayload\([\s\S]*proof-indexer-rush-canonical[\s\S]*rushStateFromIndexedMintEvents\(/,
+  /RUSH_BOOTSTRAP_META_KEY[\s\S]*RUSH_DISCOVERY_META_KEY[\s\S]*async function ensureCanonicalRushBootstrap\([\s\S]*canonicalRushDiscovery\([\s\S]*canonicalRushBootstrapTransaction\([\s\S]*persistCanonicalRawTransaction\([\s\S]*RUSH_BOOTSTRAP_META_KEY/,
+  /const PROTOCOL_PREFIXES = \["pwm1:", "pwid1:", "pwr1:", "pwt1:"\]/,
   /function tokenTablePayloadHasConservedBalances\([\s\S]*!tokenIds\.has\(tokenId\)[\s\S]*minted === held[\s\S]*mintedSupply === heldSupply/,
   /currentProofIndexTokenTablePayloadForLedger\([\s\S]*options\.exactHeight[\s\S]*proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
   /indexedActivityStateForCanonicalLedger\([\s\S]*options\.exactHeight[\s\S]*proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
@@ -332,7 +368,8 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /storedLedgerSnapshotPayload\([\s\S]*snapshotId[\s\S]*sameSnapshotPayload/,
   /mode: "canonical-summary-refresh"/,
   /payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'/,
-  /previousCoverage >= latestIndexedHeight/,
+  /previousCoverage === latestIndexedHeight[\s\S]*previousIndexedThroughBlockHash === latestIndexedThroughBlockHash/,
+  /indexedThroughBlockHash: latestIndexedThroughBlockHash[\s\S]*blockScan: latestIndexedThroughBlockHash/,
   /"inceptionSummary"/,
   /"infinitySummary"/,
   /function summaryPayloadConservativeCoverage\([\s\S]*Math\.min\(parentCoverage, nestedCoverage\)/,
@@ -340,7 +377,7 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /summary-snapshot-fallback/,
   /latest_summary AS \([\s\S]*payload->'summaryPayloads'/,
   /summarySnapshot:[\s\S]*coverageByKey/,
-  /function summarySnapshotCoversCanonicalReadModels\([\s\S]*confirmedEvents\?\.maxBlock[\s\S]*summaryIndexedThroughBlock >= latestConfirmedEventBlock/,
+  /function summarySnapshotCoversCanonicalReadModels\([\s\S]*summaryIndexedThroughBlock === indexedThroughBlock[\s\S]*indexedThroughBlock === scanTipHeight[\s\S]*summaryBlockHash === scanBlockHash/,
   /confirmed_events AS \([\s\S]*confirmed_event_max_block/,
   /readModelsOk &&[\s\S]*summarySnapshotOk/,
 ]);
@@ -472,7 +509,6 @@ expectAll("health Electrum probes share one deadline and fail without a second s
   /electrumHealthPayload\([\s\S]*Math\.min\(HEALTH_CHECK_TIMEOUT_MS, remainingMs\)/,
 ]);
 expectAll("health calls bind Electrum to the sampled Core checkpoint", server, [
-  /exactCanonicalSummaryCheckpoint\(network\)[\s\S]*electrumHealthPayload\(tipHeight, tipHash\)/,
   /loadHealthPayload\(\)[\s\S]*boundedHealthElectrumPayload\([\s\S]*addressIndex,[\s\S]*tipHeight,[\s\S]*sampledBestBlockHash/,
 ]);
 expectAll("concurrent and adjacent health requests share one dependency sweep", healthPayloadSource, [
@@ -494,7 +530,7 @@ expectAll("supervised canonical rebuild resets mixed-era state behind a hashed b
   /POW_INDEX_BACKFILL_CANONICAL_REBUILD/,
   /--prepare-canonical-rebuild/,
   /requires NETWORK=livenet and an explicit positive POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT/,
-  /DELETE FROM proof_indexer\.events[\s\S]*\["pwid1", "pwt1", "pwm1"\]/,
+  /DELETE FROM proof_indexer\.events[\s\S]*\["pwid1", "pwt1", "pwm1", "pwr1"\]/,
   /DELETE FROM proof_indexer\.id_records/,
   /DELETE FROM proof_indexer\.credit_balances/,
   /DELETE FROM proof_indexer\.credit_listings/,
@@ -509,7 +545,7 @@ expectAll("supervised canonical rebuild resets mixed-era state behind a hashed b
   /await client\.query\("BEGIN"\)[\s\S]*storeBlockScanSnapshot\(client,[\s\S]*await client\.query\("COMMIT"\)/,
 ]);
 expect(
-  "canonical raw replay leaves all relational tx detail tables outside the path",
+  "canonical rebuild preserves relational tx details for idempotent raw replay",
   !/DELETE FROM proof_indexer\.(?:tx_inputs|tx_outputs|op_returns)/.test(
     canonicalRebuildSource,
   ),
@@ -521,6 +557,46 @@ expectAll("canonical block raw transactions replace legacy wrappers", canonicalR
   /assertHydratedProtocolTransaction\(hydratedTx\)/,
   /assertCanonicalBlockEnvelope\(block, height, blockHash\)/,
 ]);
+expectAll(
+  "canonical raw transactions materialize full-node relational details idempotently",
+  canonicalTransactionDetailsSource + canonicalRawPersistenceSource,
+  [
+    /function canonicalTransactionDetailRows\(tx\)/,
+    /input\?\.txinwitness \?\? input\?\.witness/,
+    /address: address \|\| null,[\s\S]*prev_txid:[\s\S]*prev_vout:[\s\S]*sequence:[\s\S]*value_sats:[\s\S]*witness/,
+    /scriptpubkey:[\s\S]*scriptpubkey_asm:[\s\S]*scriptpubkey_type:[\s\S]*value_sats:[\s\S]*vout/,
+    /INSERT INTO proof_indexer\.tx_inputs[\s\S]*ON CONFLICT \(network, txid, vin\)[\s\S]*witness = EXCLUDED\.witness/,
+    /INSERT INTO proof_indexer\.tx_outputs[\s\S]*ON CONFLICT \(network, txid, vout\)[\s\S]*scriptpubkey_type = EXCLUDED\.scriptpubkey_type/,
+    /function canonicalOpReturnPayloadFromVout\(vout\)[\s\S]*script\[0\] !== 0x6a[\s\S]*payloadHex: payload\.toString\("hex"\)/,
+    /INSERT INTO proof_indexer\.op_returns[\s\S]*ON CONFLICT \(network, txid, vout, output_index\)[\s\S]*data_bytes = EXCLUDED\.data_bytes/,
+    /SELECT[\s\S]*spent_output\.spent_by_txid[\s\S]*FOR UPDATE OF spent_output/,
+    /Canonical spend-link conflict/,
+    /UPDATE proof_indexer\.tx_outputs AS spent_output[\s\S]*spent_by_txid = \$2[\s\S]*spent_by_vin = incoming\.vin[\s\S]*spent_by_txid IS NULL[\s\S]*spent_by_vin IS NOT DISTINCT FROM incoming\.vin/,
+  ],
+);
+expectAll(
+  "historical canonical transaction details hydrate explicitly in bounded batches",
+  proofIndexerBackfill + historicalTransactionDetailHydrationSource,
+  [
+    /--hydrate-transaction-details/,
+    /POW_INDEX_TX_DETAIL_HYDRATION_BATCH_SIZE/,
+    /POW_INDEX_TX_DETAIL_HYDRATION_MAX_ROWS/,
+    /Historical transaction-detail hydration is exclusive with rebuild and repair modes/,
+    /JOIN proof_indexer\.blocks AS canonical_block[\s\S]*canonical_block\.network = transaction_row\.network[\s\S]*canonical_block\.block_hash = transaction_row\.block_hash[\s\S]*canonical_block\.height = transaction_row\.block_height[\s\S]*canonical_block\.canonical = true/,
+    /jsonb_typeof\(transaction_row\.raw_tx->'canonicalBlockScan'\) = 'object'/,
+    /canonicalBlockScan'->>'network' = \$1[\s\S]*canonicalBlockScan'->>'height'[\s\S]*transaction_row\.block_height[\s\S]*canonicalBlockScan'->>'blockHash'[\s\S]*transaction_row\.block_hash/,
+    /AND \(block_height, block_index, txid\) >[\s\S]*ORDER BY block_height, block_index, txid[\s\S]*LIMIT \$5/,
+    /await client\.query\("BEGIN"\)[\s\S]*persistCanonicalTransactionDetails\([\s\S]*await client\.query\("COMMIT"\)/,
+    /await client\.query\("ROLLBACK"\)/,
+    /historicalTransactionDetailHydration: true/,
+  ],
+);
+expect(
+  "historical transaction hydration cannot mutate checkpoints or event projections",
+  !/\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+proof_indexer\.(?:meta|events|credit_|id_records|ledger_snapshots|blocks)\b/iu.test(
+    historicalTransactionDetailHydrationSource,
+  ),
+);
 expectAll("canonical replay faults before crossing a reorg", blockScanSource, [
   /await storeCanonicalReorgFault\(client,[\s\S]*phase: "checkpoint"[\s\S]*throw new Error\([\s\S]*Bitcoin reorg detected at indexed checkpoint/,
   /await storeCanonicalReorgFault\(client,[\s\S]*phase: "before-block"[\s\S]*throw new Error\([\s\S]*Bitcoin reorg detected before block/,
@@ -573,7 +649,7 @@ expectAll("pending ordered-verifier work has a small deterministic delay budget"
 expectAll("Log summary preserves full activity stats before compaction", compactActivitySummarySource, [
   /const activity = Array\.isArray\(payload\?\.activity\) \? payload\.activity : \[\]/,
   /activityStatsFromItems\(activity,\s*payload\?\.stats \?\? \{\}\)/,
-  /activity:\s*recentByCreatedAt\(activity,\s*SUMMARY_ACTIVITY_LIMIT\)/,
+  /const compactActivity = recentByCreatedAt\(activity,\s*SUMMARY_ACTIVITY_LIMIT\)[\s\S]*activity:\s*compactActivity/,
   /stats,/,
 ]);
 
@@ -712,10 +788,15 @@ expectAll("server token reads preserve canonical ledger rows when table state re
   /payload = await tokenPayloadWithCanonicalLedgerFloor\([\s\S]*`token-payload:\$\{scope \|\| "all"\}`/,
 ]);
 
-expectAll("server fresh token reads fall back to valid cached snapshots", server, [
+expectAll("server fresh token state reads fall back to valid cached snapshots", server, [
   /async function cachedTokenPayloadFallbackForRead\([\s\S]*cachedTokenPayloadSnapshotNoRefresh\(network,\s*scope\)[\s\S]*rejectEmptyMainnetTokenPayload\(network,\s*payload,\s*scope,\s*label\)[\s\S]*existingCurrentCanonicalLedgerPayloadWithinMs\([\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerPayloadForFreshnessCompare\(ledger,\s*scope\)[\s\S]*refreshTokenPayloadCacheInBackground\(network,\s*scope\)/,
-  /async function tokenSummaryPayload\([\s\S]*"token-summary-fresh-memory"[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*"token-summary-fresh-cache"[\s\S]*Fresh credit summary is still catching up/,
   /url\.pathname === "\/api\/v1\/token"[\s\S]*"token-state-fresh-memory"[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*"token-state-fresh-cache"[\s\S]*Fresh credit state is still catching up/,
+]);
+
+expectAll("server canonical summaries require hash-bound database snapshots", server, [
+  /async function storedCanonicalTokenSummaryPayload\([\s\S]*proofIndexSnapshotPayload\([\s\S]*payloadIndexedThroughBlockHash/,
+  /async function tokenSummaryPayload\([\s\S]*storedCanonicalTokenSummaryPayload\([\s\S]*Fresh hash-bound credit summary is still catching up/,
+  /async function activitySummaryPayload\([\s\S]*"logSummary"[\s\S]*payloadIndexedThroughBlockHash\(storedSummary\)/,
 ]);
 
 expectAll("server WORK transfer txid history recovers without full ledger rebuild", server, [
@@ -825,7 +906,7 @@ expect("transaction hex PSBT reads must not call public explorer fallbacks", !/e
 expectAll("wallet scoped token reads keep confirmed lifecycle history", server, [
   /function compactTokenSummaryPayload\(payload,\s*tokenScope = ""\)[\s\S]*const walletScopedSummary =[\s\S]*payload\.walletScoped === true \|\| stats\.walletScoped === true/,
   /const closedListingLimit = walletScopedSummary[\s\S]*Math\.max\(closedListings\.length,\s*SUMMARY_MARKET_LIMIT\)/,
-  /closedListings: recentClosedTokenListings\([\s\S]*closedListingLimit/,
+  /const compactClosedListings = recentClosedTokenListings\([\s\S]*closedListingLimit[\s\S]*closedListings:\s*compactClosedListings/,
   /function tokenStateWithPreservedListingRecords\(state,\s*sourceState\)[\s\S]*const preservedClosedListingIds = new Set\([\s\S]*sourceState\?\.closedListings[\s\S]*if \(!preservedClosedListingIds\.has\(listingId\)\)/,
   /async function tokenPayloadWithIndexedWalletOverlay\([\s\S]*proofIndexWalletTokenOverlayPayload\([\s\S]*mergeTokenStateItemsByKey\([\s\S]*transfers/,
   /async function tokenPayloadWithIndexedWalletOverlay\([\s\S]*const invalidEvents = mergeTokenStateItemsByKey\([\s\S]*overlay\.invalidEvents[\s\S]*invalidEvents: invalidEvents\.length/,
@@ -865,16 +946,16 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /async function tokenSummaryPayload\([\s\S]*summaryRecoveryAddresses\.length === 0 &&[\s\S]*scope !== WORK_TOKEN_ID/,
   /async function reconciledLivenetMarketplaceSummaryPayload\([\s\S]*workTokenStateForSummaryRead\([\s\S]*tokenStateWithPreservedListingRecords/,
   /const includeAllActiveListings = walletScopedSummary \|\| Boolean\(scope\)/,
-  /openListings: mergedTokenSummaryMetric\([\s\S]*"openListings"[\s\S]*false/,
+  /openListings: mergedTokenSummaryMetric\([\s\S]*"openListings"[\s\S]*preserveExistingTokenMetrics/,
   /function workFloorWithIndexedMarketSummaryOverlay\([\s\S]*tokenSaleVolumeSats[\s\S]*marketplaceSaleVolumeSats/,
   /function marketplaceSummaryHasIndexedMarketOverlay\([\s\S]*proof-indexer-token-market-summary-overlay/,
   /function compactTokenSummaryPayload\([\s\S]*sealedActiveListingsByKey[\s\S]*closedTxid[\s\S]*activeListing\.sealTxid/,
   /function tokenSummaryListings\(items,\s*limit = SUMMARY_MARKET_LIMIT\)[\s\S]*tokenListingHasConfirmedSaleTicketSeal\(listing\)/,
-  /listings:\s*tokenSummaryListings\(listings,\s*listingLimit\)/,
+  /const compactListings = tokenSummaryListings\(listings,\s*listingLimit\)[\s\S]*listings:\s*compactListings/,
   /const indexedAt = newerIso\(ledger\.generatedAt,\s*tokenState\?\.indexedAt\)/,
   /async function currentProofIndexMarketplaceSummaryFallbackPayload\([\s\S]*currentProofIndexSummarySnapshotFallbackPayload\([\s\S]*"marketplaceSummary"[\s\S]*"marketplace-summary"[\s\S]*workFloorWithSummaryMarketOverlay\([\s\S]*indexedPayload\.workFloor[\s\S]*marketplaceSummaryPayloadWithIndexedMarketOverlay/,
   /async function marketplaceSummaryFastFallbackPayload\([\s\S]*currentProofIndexMarketplaceSummaryFallbackPayload\(network,\s*false,\s*\{[\s\S]*fast:\s*true/,
-  /if \(fresh\) \{[\s\S]*const fallback = await payloadWithFallbackAfterMs\([\s\S]*marketplaceSummaryFastFallbackPayload\(network\)[\s\S]*refreshMarketplaceSummaryPayloadCache\(network,\s*true\)[\s\S]*summaryPayloadHasFiniteNetworkValue\([\s\S]*"marketplaceSummary"[\s\S]*refreshed[\s\S]*return refreshed[\s\S]*summaryPayloadHasFiniteNetworkValue\([\s\S]*"marketplaceSummary"[\s\S]*fallback[\s\S]*return fallback/,
+  /if \(fresh\) \{[\s\S]*refreshMarketplaceSummaryPayloadCache\(network,\s*true\)[\s\S]*summaryPayloadHasFiniteNetworkValue\([\s\S]*"marketplaceSummary"[\s\S]*refreshed[\s\S]*return refreshed[\s\S]*throw freshDataUnavailableError\([\s\S]*"Fresh marketplace summary is unavailable\."/,
   /url\.pathname === "\/api\/v1\/marketplace-summary"[\s\S]*await marketplaceSummaryPayload\(network,\s*freshRead\)/,
   /const sealedListings = marketListings\.filter\(\s*tokenListingHasConfirmedSaleTicketSeal,\s*\)/,
   /const unsealedListings = marketListings\.filter\(\s*\(listing\) => !tokenListingHasConfirmedSaleTicketSeal\(listing\),\s*\)/,
@@ -1345,7 +1426,7 @@ expectAll("WORK fresh replay favors correctness over recent-page luck", server, 
 
 expectAll("endpoint caches cannot bypass the ledger", server, [
   /jsonResponse\(\s*response,\s*200,\s*await mergedLogActivityPayload\(network\)/,
-  /jsonResponse\(\s*response,\s*200,\s*await growthSummaryPayload\(network,\s*freshRead\)/,
+  /summaryPayloadWithCanonicalProvenance\(\s*await growthSummaryPayload\(network,\s*freshRead\)/,
   /attachLedgerMetadata\(\s*\{[\s\S]*ledgerTokenStateForScope\(ledger,\s*scope\)[\s\S]*indexedAt:\s*ledger\.generatedAt[\s\S]*\},\s*ledger,?\s*\)/,
   /return payload\.snapshotId[\s\S]*\.\.\.page[\s\S]*ledgerGeneratedAt:\s*payload\.ledgerGeneratedAt[\s\S]*snapshotId:\s*payload\.snapshotId/,
 ]);

@@ -242,6 +242,7 @@ check("marketplace fast fallback fails closed without lifecycle coverage", async
       indexedTokenMarketSummaryOverlay: async () => null,
       marketplaceSummaryWithCurrentBtcUsd: (payload) => payload,
       newerIso: (_left, right) => right,
+      payloadSnapshotId: () => "",
       tokenStateWithIndexedMarketSummaryOverlay: (payload) => payload,
       workFloorWithIndexedMarketSummaryOverlay: (payload) => payload,
     },
@@ -857,13 +858,23 @@ check("token send preflight retries transient canonical reads only", async () =>
 
 check("fresh wallet token reads never fall back behind canonical coverage", async () => {
   let fallbackReads = 0;
+  let indexedWaitMs = 0;
   const walletScopedTokenPayload = isolatedFunction(
     API_PATH,
     "walletScopedTokenPayload",
     {
       BOND_TOKEN_IDS: new Set(),
+      WALLET_SCOPED_INDEX_WAIT_MS: 10_000,
       WORK_TOKEN_ID: "work-token-id",
-      currentProofIndexTokenPayloadForRead: async () => null,
+      currentProofIndexTokenPayloadForRead: async (
+        _network,
+        _scope,
+        _label,
+        timeoutMs,
+      ) => {
+        indexedWaitMs = timeoutMs;
+        return null;
+      },
       freshDataUnavailableError: (message) => new Error(message),
       normalizeTokenScope: (value) => value,
       proofIndexReadFeatureEnabled: () => true,
@@ -883,12 +894,14 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
     (error) => /still catching up/u.test(String(error?.message)),
   );
   assert.equal(fallbackReads, 0);
+  assert.equal(indexedWaitMs, 10_000);
 
   const currentWalletScopedTokenPayload = isolatedFunction(
     API_PATH,
     "walletScopedTokenPayload",
     {
       BOND_TOKEN_IDS: new Set(),
+      WALLET_SCOPED_INDEX_WAIT_MS: 10_000,
       WORK_TOKEN_ID: "work-token-id",
       currentProofIndexTokenPayloadForRead: async () => ({
         holders: [],
@@ -1957,11 +1970,15 @@ check("stored canonical summaries require component and public Log count checks"
   );
   const payload = {
     checks: [],
+    indexedThroughBlockHash: "b".repeat(64),
     ok: true,
     sourceHashes: { canonicalSummary: "a".repeat(64) },
     status: "green",
     summaryPayloads: {},
-    summaryRefresh: { mode: "canonical-summary-refresh" },
+    summaryRefresh: {
+      indexedThroughBlockHash: "b".repeat(64),
+      mode: "canonical-summary-refresh",
+    },
   };
   assert.equal(eligibleCanonicalSummarySnapshotPayload(payload), false);
   payload.checks.push({
@@ -2038,6 +2055,7 @@ check("bond value uses confirmed payments instead of synthetic mint payment fiel
     {
       TOKEN_MARKETPLACE_MUTATION_KINDS: new Set(["token-listing"]),
       activityAmountSats: (item) => Number(item?.amountSats ?? 0),
+      attachLedgerMetadata: (payload) => payload,
       btcUsdResponseMetadata: () => ({ btcUsd: 0 }),
       compactTokenSummaryPayload: (state) => state,
       infinityBondChartPointsFromEvents: ({ bonds: items }) =>
@@ -2779,15 +2797,235 @@ check("livenet summary routes prefer the exact stored canonical snapshot", async
   );
   assert.equal(
     await readBondSummary("livenet", true, infinityConfig),
-    relationalInfinity,
+    canonicalInfinity,
   );
-  assert.equal(relationalInfinityReads, 1);
+  assert.equal(relationalInfinityReads, 0);
   exactInfinity = null;
   assert.equal(
     await readBondSummary("livenet", false, infinityConfig),
     relationalInfinity,
   );
+  assert.equal(
+    await readBondSummary("livenet", true, infinityConfig),
+    relationalInfinity,
+  );
   assert.equal(relationalInfinityReads, 2);
+});
+
+check("exact listing misses bypass chain recovery only with terminal database proof", async () => {
+  const txid = "6".repeat(64);
+  let terminal = true;
+  const sqlReads = [];
+  const pool = {
+    async query(sql) {
+      sqlReads.push(sql);
+      if (sql.includes("AS terminal")) {
+        return { rows: [{ terminal }] };
+      }
+      return { rows: [{ indexed_at: null, total_count: 0 }] };
+    },
+  };
+  const exactActiveTokenListingHistoryPage = isolatedFunction(
+    READER_PATH,
+    "exactActiveTokenListingHistoryPage",
+    {
+      activeTokenListingHistoryItem: () => true,
+      compareTokenHistoryMarketItems: () => 0,
+      dateIso: (value) => value ?? "2026-07-13T00:00:00.000Z",
+      normalizedTxid: (value) =>
+        /^[0-9a-f]{64}$/u.test(String(value ?? "")) ? String(value) : "",
+      rowNumber: (row, key) => Number(row?.[key]) || 0,
+      tokenHistoryFilterNeedles: () => [txid],
+      tokenHistoryPageFromItems: (options) => ({
+        indexedThroughBlock: options.indexedThroughBlock,
+        items: options.items,
+        snapshotId: options.snapshot?.snapshot_id,
+        source: options.source,
+        totalCount: options.items.length,
+      }),
+      tokenScopeKey: (value) => String(value ?? "").toLowerCase(),
+    },
+  );
+  const pagination = { limit: 20, offset: 0, query: txid };
+  const snapshot = {
+    generated_at: "2026-07-13T00:00:00.000Z",
+    indexed_through_block: 957913,
+    snapshot_id: "current",
+  };
+  const terminalPage = await exactActiveTokenListingHistoryPage(
+    pool,
+    "livenet",
+    "work",
+    new URLSearchParams({ q: txid }),
+    pagination,
+    snapshot,
+  );
+  assert.equal(terminalPage.totalCount, 0);
+  assert.equal(terminalPage.indexedThroughBlock, 957913);
+  assert.equal(terminalPage.source, "proof-indexer-credit-listings-terminal");
+  assert.match(sqlReads[0], /cl\.sale_ticket_txid = ANY/u);
+  assert.match(sqlReads[0], /cl\.seal_txid = ANY/u);
+  assert.match(sqlReads[0], /cl\.close_txid = ANY/u);
+  assert.match(sqlReads[1], /terminal_tx\.status IN \('dropped', 'orphaned'\)/u);
+
+  terminal = false;
+  sqlReads.length = 0;
+  assert.equal(
+    await exactActiveTokenListingHistoryPage(
+      pool,
+      "livenet",
+      "work",
+      new URLSearchParams({ q: txid }),
+      pagination,
+      snapshot,
+    ),
+    null,
+  );
+  assert.equal(sqlReads.length, 2);
+
+  const readerSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenHistoryPayload",
+  );
+  assert.ok(
+    readerSource.indexOf("exactActiveTokenListingHistoryPage") <
+      readerSource.indexOf("proofIndexTokenMarketHistoryOverlayPayload"),
+  );
+});
+
+check("exact Log txid reads use indexed refs and trust an exact empty page", async () => {
+  const txid = "7".repeat(64);
+  const queryReads = [];
+  const proofIndexLogHistoryPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexLogHistoryPayload",
+    {
+      PUBLIC_LOG_EVENT_KINDS: new Set(["token-mint"]),
+      dateIso: (value) => value,
+      eventKindSqlCondition: (kind, addValue) =>
+        `e.kind = ${addValue(kind)}`,
+      indexedThroughBlockFromItems: () => undefined,
+      ledgerSnapshotMetadata: async () => ({
+        generated_at: "2026-07-13T00:00:00.000Z",
+        indexed_through_block: 957913,
+        snapshot_id: "current",
+      }),
+      logHistoryPageFromItems: (options) => ({
+        indexedThroughBlock: options.indexedThroughBlock,
+        items: options.items,
+        source: options.source,
+        totalCount: options.items.length,
+      }),
+      normalizeHistoryEventRows: (rows) => rows,
+      normalizedTxid: (value) =>
+        /^[0-9a-f]{64}$/u.test(String(value ?? "")) ? String(value) : "",
+      proofIndexLogHistoryReadEligibility: () => ({
+        pagination: {
+          limit: 5,
+          offset: 0,
+          query: txid,
+          snapshotId: "",
+        },
+      }),
+      proofIndexPool: () => ({
+        async query(sql, params) {
+          queryReads.push({ params, sql });
+          if (sql.includes("invalid_event_count")) {
+            return {
+              rows: [{
+                block_height: 955618,
+                event_count: 1,
+                has_raw_tx: true,
+                invalid_event_count: 1,
+                public_event_count: 0,
+                status: "confirmed",
+              }],
+            };
+          }
+          return { rows: [] };
+        },
+      }),
+      rowNumber: (row, key) => Number(row?.[key]) || 0,
+    },
+  );
+  const result = await proofIndexLogHistoryPayload(
+    "livenet",
+    "",
+    new URLSearchParams({ q: txid }),
+  );
+  assert.equal(result.totalCount, 0);
+  assert.equal(result.indexedThroughBlock, 957913);
+  assert.equal(result.queryDisposition, "confirmed-invalid-nonpublic");
+  assert.match(queryReads[0].sql, /WITH matched_events AS/u);
+  assert.match(queryReads[0].sql, /proof_indexer\.event_refs/u);
+  assert.doesNotMatch(queryReads[0].sql, /payload @>/u);
+  assert.equal(queryReads[0].params[2], txid);
+  assert.match(queryReads[1].sql, /public_event_count/u);
+  const nonpublicFilter = await proofIndexLogHistoryPayload(
+    "livenet",
+    "token-event-invalid",
+    new URLSearchParams({ q: txid }),
+  );
+  assert.equal(nonpublicFilter.totalCount, 0);
+  assert.equal(nonpublicFilter.queryDisposition, "nonpublic-kind-filter");
+  assert.equal(queryReads.length, 3);
+  assert.doesNotMatch(
+    topLevelFunctionSource(API_PATH, "handleRequest"),
+    /shouldUseCanonicalTxidFallback/u,
+  );
+  assert.match(
+    topLevelFunctionSource(API_PATH, "handleRequest"),
+    /exactLogHistoryMissPayload/u,
+  );
+});
+
+check("ambiguous exact Log misses fail fast instead of scanning all history", async () => {
+  let indexedStatus = null;
+  const exactLogHistoryMissPayload = isolatedFunction(
+    API_PATH,
+    "exactLogHistoryMissPayload",
+    {
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 100,
+      errorSummary: (error) => String(error?.message ?? error),
+      freshDataUnavailableError: (message) => {
+        const error = new Error(message);
+        error.statusCode = 503;
+        return error;
+      },
+      payloadWithFallbackAfterMs: async (promise, fallback) =>
+        (await promise) ?? fallback,
+      proofIndexTxStatusPayload: async () => indexedStatus,
+    },
+  );
+  const txid = "8".repeat(64);
+  const emptyPage = { items: [], totalCount: 0 };
+  assert.equal(
+    (
+      await exactLogHistoryMissPayload(
+        emptyPage,
+        "livenet",
+        txid,
+      )
+    ).queryDisposition,
+    "not-indexed-proof-event",
+  );
+  indexedStatus = { status: "dropped" };
+  assert.equal(
+    (
+      await exactLogHistoryMissPayload(
+        emptyPage,
+        "livenet",
+        txid,
+      )
+    ).queryDisposition,
+    "terminal-nonpublic",
+  );
+  indexedStatus = { status: "confirmed" };
+  const error = await rejection(
+    exactLogHistoryMissPayload(emptyPage, "livenet", txid),
+    (candidate) => candidate?.statusCode === 503,
+  );
+  assert.equal(error.details.code, "CANONICAL_LOG_PROJECTION_MISSING");
 });
 
 check("exact token tables own the current active listing set", () => {
@@ -2940,33 +3178,36 @@ check("canonical registry state can replace a stale higher cached count", async 
   assert.equal(rejectArguments[0].records.length, payload.records.length);
 });
 
-check("strict RUSH history is complete and ordered by canonical blocks", async () => {
-  const confirmedElectrumHistoryEntries = isolatedFunction(
-    API_PATH,
-    "confirmedElectrumHistoryEntries",
-  );
+check("indexed RUSH history is complete and ordered by canonical blocks", async () => {
   const firstTxid = "1".repeat(64);
   const secondTxid = "2".repeat(64);
-  const blockHash = "a".repeat(64);
+  const canonicalRushHistoryEntries = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalRushHistoryEntries",
+    { isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)) },
+  );
   assert.deepEqual(
-    Array.from(
-      confirmedElectrumHistoryEntries(
-        [
-          { height: 100, tx_hash: secondTxid },
-          { height: 0, tx_hash: "3".repeat(64) },
-          { height: 100, tx_hash: firstTxid },
-        ],
-        101,
+    JSON.parse(
+      JSON.stringify(
+        canonicalRushHistoryEntries(
+          [
+            { height: 100, tx_hash: secondTxid },
+            { height: 0, tx_hash: "3".repeat(64) },
+            { height: 102, tx_hash: "4".repeat(64) },
+            { height: 100, tx_hash: firstTxid },
+          ],
+          101,
+        ),
       ),
-    ).map((entry) => ({ height: entry.height, txid: entry.txid })),
+    ),
     [
-      { height: 100, txid: secondTxid },
       { height: 100, txid: firstTxid },
+      { height: 100, txid: secondTxid },
     ],
   );
   assert.throws(
     () =>
-      confirmedElectrumHistoryEntries(
+      canonicalRushHistoryEntries(
         [
           { height: 100, tx_hash: firstTxid },
           { height: 101, tx_hash: firstTxid },
@@ -2975,68 +3216,65 @@ check("strict RUSH history is complete and ordered by canonical blocks", async (
       ),
     /conflicting heights/u,
   );
-
-  let failingTxid = "";
-  const strictCanonicalRushTransactions = isolatedFunction(
+  const rushStateFromIndexedMintEvents = isolatedFunction(
     API_PATH,
-    "strictCanonicalRushTransactions",
+    "rushStateFromIndexedMintEvents",
     {
-      ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS: 5_000,
-      ELECTRUM_HOST: "127.0.0.1",
-      ELECTRUM_PORT: 50_001,
-      TX_FETCH_CONCURRENCY: 4,
-      bitcoinRpc: async (method, params) => {
-        assert.equal(method, "getblockhash");
-        assert.equal(params[0], 100);
-        return { ok: true, result: blockHash };
-      },
-      canonicalBlockTxidIndexFromCore: async () =>
-        new Map([
-          [secondTxid, 0],
-          [firstTxid, 1],
-        ]),
-      confirmedElectrumHistoryEntries,
-      electrumRequest: async () => [
-        { height: 100, tx_hash: firstTxid },
-        { height: 100, tx_hash: secondTxid },
-      ],
-      fetchTransactionFromBitcoinRpc: async (txid) => {
-        if (txid === failingTxid) {
-          throw new Error("fixture hydration failed");
-        }
-        return {
-          status: { block_hash: blockHash, confirmed: true },
-          txid,
-          vin: [],
-          vout: [],
-        };
-      },
       freshDataUnavailableError: (message) => new Error(message),
-      mapWithConcurrency: async (items, _concurrency, mapper) =>
-        Promise.all(items.map(mapper)),
-      scriptHashForAddress: () => "fixture-scripthash",
-      transactionBlockHash: (tx) => tx.status.block_hash,
-      transactionConfirmed: (tx) => tx.status.confirmed === true,
-      transactionTxid: (tx) => tx.txid,
+      formatRushUnits: (units) => String(units),
+      isValidBitcoinAddress: (address) => address.startsWith("bc1"),
+      numericValue: (value) => Number(value ?? 0),
+      RUSH_MINT_PRICE_SATS: 1_000,
+      rushPhaseForOrdinal: (ordinal) => ({ phase: ordinal }),
+      rushRewardUnitsForOrdinal: (ordinal) => BigInt(ordinal * 10),
+      rushStatsFromMints: (mints) => ({ confirmedMints: mints.length }),
     },
   );
-  const transactions = await strictCanonicalRushTransactions(
+  const indexedItem = (txid, blockIndex) => ({
+    blockHeight: 100,
+    blockIndex,
+    confirmed: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    dataBytes: 11,
+    kind: "rush-mint",
+    minterAddress: `bc1minter${blockIndex}`,
+    paidSats: 1_000,
+    registryAddress: "bc1registry",
+    txid,
+    valid: true,
+    validationMode: "canonical-ordered-rush-index",
+  });
+  const state = rushStateFromIndexedMintEvents(
+    [indexedItem(firstTxid, 1), indexedItem(secondTxid, 0)],
     "bc1registry",
     "livenet",
-    101,
+    "2026-01-02T00:00:00.000Z",
   );
   assert.deepEqual(
-    transactions.map((tx) => [tx.txid, tx.status.block_height, tx._powBlockIndex]),
+    JSON.parse(
+      JSON.stringify(
+        state.mints.map((mint) => [mint.txid, mint.blockIndex, mint.ordinal]),
+      ),
+    ),
     [
-      [firstTxid, 100, 1],
-      [secondTxid, 100, 0],
+      [firstTxid, 1, 2],
+      [secondTxid, 0, 1],
     ],
   );
-  failingTxid = secondTxid;
-  await rejection(
-    strictCanonicalRushTransactions("bc1registry", "livenet", 101),
-    (error) => /fixture hydration failed/u.test(error.message),
-    "One failed RUSH hydration must abort the complete canonical history",
+  assert.equal(state.stats.confirmedMints, 2);
+  assert.throws(
+    () =>
+      rushStateFromIndexedMintEvents(
+        [
+          {
+            ...indexedItem(firstTxid, 0),
+            validationMode: "unproven",
+          },
+        ],
+        "bc1registry",
+        "livenet",
+      ),
+    /not canonical/u,
   );
 });
 
@@ -3468,9 +3706,10 @@ check("pwm1 outputs aggregate once while staged protocols stay unscanned", () =>
     {
       aggregatePwmProtocolItem,
       canonicalBondMintItemsFromMailItem: () => [],
-      protocolItemsFromTx: () => {
-        assert.fail("staged protocol reached a raw block-scan parser");
-      },
+      protocolItemsFromTx: (_tx, message) =>
+        message?.prefix === "pwr1:"
+          ? [{ kind: "rush-mint", protocol: "pwr1" }]
+          : assert.fail("unexpected protocol reached the raw block-scan parser"),
     },
   );
   const aggregated = rawProtocolItemsForTx(
@@ -3481,14 +3720,47 @@ check("pwm1 outputs aggregate once while staged protocols stay unscanned", () =>
       { prefix: "pwc1:", text: "pwc1:profile:staged", voutIndex: 6 },
     ],
   );
-  assert.equal(aggregated.length, 1);
+  assert.equal(aggregated.length, 2);
   assert.equal(aggregated[0].amountSats, "1000");
+  assert.equal(aggregated[1].kind, "rush-mint");
+
+  const parseRush = isolatedFunction(BACKFILL_PATH, "protocolItemsFromTx", {
+    RUSH_MINT_PAYLOAD: "pwr1:m:rush",
+    RUSH_MINT_PRICE_SATS: 1_000n,
+    RUSH_REGISTRY_ADDRESS: "bc1rushregistry",
+    baseProtocolItem: () => ({
+      confirmed: true,
+      kind: "rush-mint",
+      recipients: [{ address: "bc1rushregistry", amountSats: "1000" }],
+      txid: "4".repeat(64),
+    }),
+    invalidProtocolItem: (item, reason) => ({
+      ...item,
+      kind: `${item.kind}-invalid`,
+      reason,
+      valid: false,
+    }),
+    senderAddressFromTx: () => "bc1rushminter",
+  });
+  const validRush = parseRush(
+    { txid: "4".repeat(64) },
+    { prefix: "pwr1:", text: "pwr1:m:rush", voutIndex: 2 },
+  );
+  assert.equal(validRush[0].kind, "rush-mint");
+  assert.equal(validRush[0].valid, true);
+  assert.equal(validRush[0].validationMode, "canonical-ordered-rush-index");
+  const invalidRush = parseRush(
+    { txid: "5".repeat(64) },
+    { prefix: "pwr1:", text: "pwr1:m:unknown", voutIndex: 2 },
+  );
+  assert.equal(invalidRush[0].kind, "rush-mint-invalid");
+  assert.equal(invalidRush[0].valid, false);
 
   const protocolMessagesFromTx = isolatedFunction(
     BACKFILL_PATH,
     "protocolMessagesFromTx",
     {
-      PROTOCOL_PREFIXES: ["pwm1:", "pwid1:", "pwt1:"],
+      PROTOCOL_PREFIXES: ["pwm1:", "pwid1:", "pwr1:", "pwt1:"],
       opReturnTextFromVout: (vout) => vout.text,
     },
   );
@@ -3499,7 +3771,10 @@ check("pwm1 outputs aggregate once while staged protocols stay unscanned", () =>
       { text: "pwm1:m:hello" },
     ],
   });
-  assert.deepEqual(Array.from(scanned, (message) => message.prefix), ["pwm1:"]);
+  assert.deepEqual(Array.from(scanned, (message) => message.prefix), [
+    "pwr1:",
+    "pwm1:",
+  ]);
 });
 
 check("legacy pwid1:r registrations retain plain IDs and projection fields", () => {
@@ -3661,6 +3936,239 @@ check("wallet mail projection recognizes canonical senderAddress as sent activit
   assert.equal(projected[0].message.to, recipient);
 });
 
+check("reserved bond credits reject generic create and mint supply", () => {
+  const txid = "a".repeat(64);
+  const powbTokenId = "b".repeat(64);
+  const incbTokenId = "c".repeat(64);
+  const bondTags = [
+    { ticker: "POWB", tokenId: powbTokenId },
+    { ticker: "INCB", tokenId: incbTokenId },
+  ];
+  const canonicalBondMintProjection = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalBondMintProjection",
+    { BOND_TAGS: bondTags },
+  );
+  const reservedBondCreditViolationReason = isolatedFunction(
+    BACKFILL_PATH,
+    "reservedBondCreditViolationReason",
+    {
+      BOND_TOKEN_IDS: new Set(bondTags.map((tag) => tag.tokenId)),
+      BOND_TOKEN_TICKERS: new Set(bondTags.map((tag) => tag.ticker)),
+      canonicalBondMintProjection,
+    },
+  );
+
+  assert.match(
+    reservedBondCreditViolationReason({
+      kind: "token-create",
+      ticker: "POWB",
+      tokenId: txid,
+    }),
+    /reserved synthetic bond credits/u,
+  );
+  assert.match(
+    reservedBondCreditViolationReason({
+      kind: "token-mint",
+      protocol: "pwt1",
+      tokenId: incbTokenId,
+      txid,
+    }),
+    /generic pwt1 create and mint/u,
+  );
+  assert.equal(
+    reservedBondCreditViolationReason({
+      kind: "token-transfer",
+      tokenId: powbTokenId,
+      txid,
+    }),
+    "",
+    "POWB/INCB transfers and sale-ticket markets remain permitted",
+  );
+  assert.equal(
+    reservedBondCreditViolationReason({
+      amount: "100",
+      amountSats: 0,
+      confirmed: true,
+      kind: "token-mint",
+      minterAddress: "bc1pbondholder",
+      protocol: "pwt1",
+      sourceBondTxid: txid,
+      ticker: "POWB",
+      tokenId: powbTokenId,
+      txid,
+      validationMode: "canonical-powb-bond-projection",
+    }),
+    "",
+    "a canonical PWM bond projection must remain the only POWB mint lane",
+  );
+
+  assert.match(
+    topLevelFunctionSource(BACKFILL_PATH, "canonicalRecoveryItemsForTx"),
+    /reservedBondCreditViolationReason\(normalizedItem\)/u,
+  );
+  assert.match(
+    topLevelFunctionSource(BACKFILL_PATH, "persistPreparedProtocolItems"),
+    /protocolIntegrityItemForPersistence/u,
+  );
+});
+
+check("ordered credit verifier seeds both bond families without generic minting", () => {
+  const workTokenId = "1".repeat(64);
+  const powbTokenId = "2".repeat(64);
+  const incbTokenId = "3".repeat(64);
+  const tokenCreationIsAllowed = isolatedFunction(
+    API_PATH,
+    "tokenCreationIsAllowed",
+    {
+      BLOCKED_TOKEN_CREATOR_ADDRESSES: new Set(),
+      BOND_TOKEN_IDS: new Set([powbTokenId, incbTokenId]),
+      WORK_TOKEN_ID: workTokenId,
+      normalizeTokenCreatorAddress: (value) => String(value ?? "").toLowerCase(),
+      tokenTickerIsReserved: (value) => ["WORK", "POWB", "INCB"].includes(value),
+    },
+  );
+  assert.equal(
+    tokenCreationIsAllowed({ ticker: "POWB", tokenId: powbTokenId }),
+    false,
+  );
+  assert.equal(
+    tokenCreationIsAllowed({ ticker: "INCB", tokenId: incbTokenId }),
+    false,
+  );
+  assert.equal(
+    tokenCreationIsAllowed({ ticker: "WORK", tokenId: workTokenId }),
+    true,
+  );
+
+  const tokenDefinitionPrecedesTransaction = isolatedFunction(
+    API_PATH,
+    "tokenDefinitionPrecedesTransaction",
+    {
+      BOND_TOKEN_IDS: new Set([powbTokenId, incbTokenId]),
+      WORK_TOKEN_ID: workTokenId,
+      transactionBlockHeight: (tx) => tx.blockHeight,
+      transactionBlockIndex: (tx) => tx.blockIndex,
+      transactionConfirmed: (tx) => tx.confirmed === true,
+    },
+  );
+  const definition = {
+    blockHeight: 100,
+    blockIndex: 2,
+    confirmed: true,
+    tokenId: "4".repeat(64),
+  };
+  assert.equal(
+    tokenDefinitionPrecedesTransaction(definition, {
+      blockHeight: 100,
+      blockIndex: 3,
+      confirmed: true,
+    }),
+    true,
+  );
+  assert.equal(
+    tokenDefinitionPrecedesTransaction(definition, {
+      blockHeight: 100,
+      blockIndex: 1,
+      confirmed: true,
+    }),
+    false,
+  );
+  assert.equal(
+    tokenDefinitionPrecedesTransaction(
+      { ...definition, confirmed: false },
+      { blockHeight: 101, blockIndex: 0, confirmed: true },
+    ),
+    false,
+  );
+
+  const tokenReplaySource = topLevelFunctionSource(
+    API_PATH,
+    "tokenStateFromTransactions",
+  );
+  assert.match(
+    tokenReplaySource,
+    /parsed\.kind === "mint"[\s\S]*BOND_TOKEN_IDS\.has\(parsed\.tokenId\)[\s\S]*tokenDefinitionPrecedesTransaction/u,
+  );
+  const confirmedVerifierSource = topLevelFunctionSource(
+    API_PATH,
+    "completeTokenVerifierState",
+  );
+  assert.match(confirmedVerifierSource, /for \(const config of BOND_TOKEN_CONFIGS\)/u);
+  assert.match(
+    confirmedVerifierSource,
+    /canonicalBondTokenDefinition\(config, network, registryAddress\)/u,
+  );
+  assert.match(
+    confirmedVerifierSource,
+    /bondMintsFromActivity\([\s\S]*registryAddress,[\s\S]*network,[\s\S]*config/u,
+  );
+});
+
+check("credit mint persistence requires a prior confirmed definition", async () => {
+  const tokenId = "d".repeat(64);
+  const canonicalBondMintProjection = () => false;
+  const tokenMintDefinitionOrderInvalidReason = isolatedFunction(
+    BACKFILL_PATH,
+    "tokenMintDefinitionOrderInvalidReason",
+    {
+      NETWORK: "livenet",
+      canonicalBondMintProjection,
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
+    },
+  );
+  const item = {
+    blockHeight: 200,
+    blockIndex: 4,
+    confirmed: true,
+    kind: "token-mint",
+    tokenId,
+  };
+  const clientFor = (row) => ({
+    async query() {
+      return { rows: row ? [row] : [] };
+    },
+  });
+
+  assert.match(
+    await tokenMintDefinitionOrderInvalidReason(clientFor(null), item),
+    /not confirmed before/u,
+  );
+  assert.match(
+    await tokenMintDefinitionOrderInvalidReason(
+      clientFor({
+        confirmed: true,
+        created_height: 201,
+        metadata: { blockIndex: 0 },
+      }),
+      item,
+    ),
+    /appears before/u,
+  );
+  assert.match(
+    await tokenMintDefinitionOrderInvalidReason(
+      clientFor({
+        confirmed: true,
+        created_height: 200,
+        metadata: { blockIndex: 4 },
+      }),
+      item,
+    ),
+    /does not appear after/u,
+  );
+  assert.equal(
+    await tokenMintDefinitionOrderInvalidReason(
+      clientFor({
+        confirmed: true,
+        created_height: 200,
+        metadata: { blockIndex: 3 },
+      }),
+      item,
+    ),
+    "",
+  );
+});
+
 check("unproven verifier holder snapshots cannot publish balances", async () => {
   let upserts = 0;
   const persistPreparedProtocolItems = isolatedFunction(
@@ -3671,6 +4179,7 @@ check("unproven verifier holder snapshots cannot publish balances", async () => 
       sourceLabelForProtocolItem: () => "token-transfers",
       CANONICAL_REBUILD: false,
       POWB_REGISTRY_ID: "infinity",
+      protocolIntegrityItemForPersistence: async (_client, item) => item,
       seedCanonicalBondDefinition: async () => false,
       upsertEvent: async () => {
         upserts += 1;
@@ -3710,7 +4219,16 @@ check("complete canonical token replay publishes conserved balances", async () =
     async query(sql, params) {
       const text = String(sql);
       if (text.includes("FROM proof_indexer.credit_definitions")) {
-        return { rows: [{ max_supply: "100", token_id: tokenId }] };
+        return {
+          rows: [{
+            confirmed: true,
+            created_height: 100,
+            max_supply: "100",
+            metadata: { blockIndex: 0 },
+            ticker: "TEST",
+            token_id: tokenId,
+          }],
+        };
       }
       if (text.includes("FROM proof_indexer.events")) {
         return {
@@ -3794,7 +4312,16 @@ check("negative canonical token replay fails before balance publication", async 
     async query(sql) {
       const text = String(sql);
       if (text.includes("FROM proof_indexer.credit_definitions")) {
-        return { rows: [{ max_supply: "100", token_id: tokenId }] };
+        return {
+          rows: [{
+            confirmed: true,
+            created_height: 100,
+            max_supply: "100",
+            metadata: { blockIndex: 0 },
+            ticker: "TEST",
+            token_id: tokenId,
+          }],
+        };
       }
       if (text.includes("FROM proof_indexer.events")) {
         return {
@@ -3851,11 +4378,13 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
     {
       BLOCK_SCAN_FROM_HEIGHT: 0,
       CANONICAL_REBUILD: true,
+      HYDRATE_TRANSACTION_DETAILS_ONLY: false,
       NETWORK: "livenet",
       PREPARE_CANONICAL_REBUILD_ONLY: true,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
       REPAIR_ID_TXIDS: [],
       REPAIR_ID_TXIDS_ONLY: false,
+      REPAIR_WORK_PARTICIPANTS_ONLY: false,
     },
   );
   assert.throws(invalid, /explicit positive/u);
@@ -3865,14 +4394,49 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
     {
       BLOCK_SCAN_FROM_HEIGHT: 100,
       CANONICAL_REBUILD: true,
+      HYDRATE_TRANSACTION_DETAILS_ONLY: false,
       NETWORK: "livenet",
       PREPARE_CANONICAL_REBUILD_ONLY: true,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
       REPAIR_ID_TXIDS: [],
       REPAIR_ID_TXIDS_ONLY: false,
+      REPAIR_WORK_PARTICIPANTS_ONLY: false,
     },
   );
   assert.doesNotThrow(valid);
+
+  const hydration = isolatedFunction(
+    BACKFILL_PATH,
+    "assertCanonicalRebuildConfiguration",
+    {
+      CANONICAL_REBUILD: false,
+      HYDRATE_TRANSACTION_DETAILS_ONLY: true,
+      PREPARE_CANONICAL_REBUILD_ONLY: false,
+      PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
+      REPAIR_ID_TXIDS_ONLY: false,
+      REPAIR_WORK_PARTICIPANTS_ONLY: false,
+      TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX: -1,
+      TX_DETAIL_HYDRATION_AFTER_HEIGHT: -1,
+      TX_DETAIL_HYDRATION_AFTER_TXID: "",
+      TX_DETAIL_HYDRATION_BATCH_SIZE: 200,
+      TX_DETAIL_HYDRATION_MAX_ROWS: 10_000,
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+    },
+  );
+  assert.doesNotThrow(hydration);
+  const conflictingHydration = isolatedFunction(
+    BACKFILL_PATH,
+    "assertCanonicalRebuildConfiguration",
+    {
+      CANONICAL_REBUILD: true,
+      HYDRATE_TRANSACTION_DETAILS_ONLY: true,
+      PREPARE_CANONICAL_REBUILD_ONLY: false,
+      PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
+      REPAIR_ID_TXIDS_ONLY: false,
+      REPAIR_WORK_PARTICIPANTS_ONLY: false,
+    },
+  );
+  assert.throws(conflictingHydration, /exclusive/u);
 });
 
 check("canonical rebuild reset and hashed bootstrap are one transaction", async () => {
@@ -3932,7 +4496,12 @@ check("canonical rebuild reset and hashed bootstrap are one transaction", async 
   const eventDelete = calls.find((call) =>
     call.sql?.includes("DELETE FROM proof_indexer.events"),
   );
-  assert.deepEqual(Array.from(eventDelete.params[1]), ["pwid1", "pwt1", "pwm1"]);
+  assert.deepEqual(Array.from(eventDelete.params[1]), [
+    "pwid1",
+    "pwt1",
+    "pwm1",
+    "pwr1",
+  ]);
   assert.ok(calls.includes("seed-work"));
   assert.ok(
     calls.some(
@@ -4077,24 +4646,192 @@ check("completed canonical metadata advances through H+1 and H+2 catch-up", () =
   assert.equal(atH2.indexedThroughBlockHash, "d".repeat(64));
 });
 
+check("canonical transaction detail rows preserve full-node input and output truth", () => {
+  const satsFromVoutValue = isolatedFunction(
+    BACKFILL_PATH,
+    "satsFromVoutValue",
+  );
+  const prevoutFromOutput = isolatedFunction(
+    BACKFILL_PATH,
+    "prevoutFromOutput",
+    { satsFromVoutValue },
+  );
+  const addressFromVout = isolatedFunction(BACKFILL_PATH, "addressFromVout");
+  const canonicalOpReturnPayloadFromVout = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalOpReturnPayloadFromVout",
+    { Buffer },
+  );
+  const canonicalTransactionDetailRows = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalTransactionDetailRows",
+    {
+      PROTOCOL_PREFIXES: ["pwm1:", "pwid1:", "pwt1:"],
+      addressFromVout,
+      canonicalOpReturnPayloadFromVout,
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      prevoutFromOutput,
+    },
+  );
+  const payload = Buffer.from("pwm1:b:POWB:100", "utf8");
+  const opReturnScript = Buffer.concat([
+    Buffer.from([0x6a, payload.length]),
+    payload,
+  ]).toString("hex");
+  const rows = canonicalTransactionDetailRows({
+    txid: "a".repeat(64),
+    vin: [
+      {
+        prevout: {
+          scriptPubKey: {
+            address: "bc1psender",
+            asm: "1 sender",
+            hex: "5120" + "1".repeat(64),
+            type: "witness_v1_taproot",
+          },
+          value: 0.001,
+          valueSats: 100_000,
+        },
+        scriptSig: { hex: "" },
+        sequence: 4_294_967_293,
+        txid: "b".repeat(64),
+        txinwitness: ["aa", "bb"],
+        vout: 2,
+      },
+    ],
+    vout: [
+      {
+        n: 0,
+        scriptPubKey: {
+          address: "bc1preceiver",
+          asm: "1 receiver",
+          hex: "5120" + "2".repeat(64),
+          type: "witness_v1_taproot",
+        },
+        value: 0.00000546,
+      },
+      {
+        n: 1,
+        scriptPubKey: {
+          asm: `OP_RETURN ${payload.toString("hex")}`,
+          hex: opReturnScript,
+          type: "nulldata",
+        },
+        value: 0,
+      },
+    ],
+  });
+  assert.equal(rows.inputs.length, 1);
+  assert.equal(rows.inputs[0].prev_txid, "b".repeat(64));
+  assert.equal(rows.inputs[0].prev_vout, 2);
+  assert.equal(rows.inputs[0].address, "bc1psender");
+  assert.equal(rows.inputs[0].value_sats, 100_000);
+  assert.equal(rows.inputs[0].sequence, 4_294_967_293);
+  assert.deepEqual(Array.from(rows.inputs[0].witness), ["aa", "bb"]);
+  assert.equal(rows.outputs[0].value_sats, 546);
+  assert.equal(rows.outputs[0].address, "bc1preceiver");
+  assert.equal(rows.outputs[0].scriptpubkey_type, "witness_v1_taproot");
+  assert.equal(rows.opReturns.length, 1);
+  assert.equal(rows.opReturns[0].vout, 1);
+  assert.equal(rows.opReturns[0].protocol, "pwm1");
+  assert.equal(rows.opReturns[0].payload_text, "pwm1:b:POWB:100");
+  assert.equal(rows.opReturns[0].payload_hex, payload.toString("hex"));
+  assert.equal(rows.opReturns[0].data_bytes, payload.length);
+  assert.equal(
+    canonicalOpReturnPayloadFromVout({
+      scriptPubKey: { hex: "6a4c02ff" },
+    }),
+    null,
+  );
+  const binaryPayload = canonicalOpReturnPayloadFromVout({
+    scriptPubKey: { hex: "6a02fffe" },
+  });
+  assert.equal(binaryPayload.payloadText, null);
+  assert.equal(binaryPayload.payloadHex, "fffe");
+  assert.throws(
+    () =>
+      canonicalTransactionDetailRows({
+        txid: "a".repeat(64),
+        vin: [{ coinbase: "00", sequence: 4_294_967_295 }],
+        vout: [{ n: 1, scriptPubKey: { hex: "00" }, value: 0 }],
+      }),
+    /mismatched index/u,
+  );
+});
+
 check("canonical raw tx replaces legacy wrappers without entering event payloads", async () => {
   const txid = "b".repeat(64);
-  let call;
+  const calls = [];
+  const details = {
+    inputs: [
+      {
+        address: "sender",
+        prev_txid: "a".repeat(64),
+        prev_vout: 0,
+        script_sig: null,
+        sequence: 1,
+        value_sats: 10_000,
+        vin: 0,
+        witness: ["aa"],
+      },
+    ],
+    opReturns: [
+      {
+        data_bytes: 6,
+        output_index: 0,
+        payload_hex: "70776d313a78",
+        payload_text: "pwm1:x",
+        protocol: "pwm1",
+        vout: 1,
+      },
+    ],
+    outputs: [
+      {
+        address: "receiver",
+        scriptpubkey: "51",
+        scriptpubkey_asm: "1",
+        scriptpubkey_type: "nonstandard",
+        value_sats: 546,
+        vout: 0,
+      },
+      {
+        address: null,
+        scriptpubkey: "6a0670776d313a78",
+        scriptpubkey_asm: "OP_RETURN 70776d313a78",
+        scriptpubkey_type: "nulldata",
+        value_sats: 0,
+        vout: 1,
+      },
+    ],
+  };
+  const canonicalTransactionDetailRows = () => details;
+  const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
+  const persistCanonicalTransactionDetails = isolatedFunction(
+    BACKFILL_PATH,
+    "persistCanonicalTransactionDetails",
+    {
+      NETWORK: "livenet",
+      canonicalTransactionDetailRows,
+      isHexTxid,
+    },
+  );
   const persistCanonicalRawTransaction = isolatedFunction(
     BACKFILL_PATH,
     "persistCanonicalRawTransaction",
     {
       NETWORK: "livenet",
-      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      canonicalTransactionDetailRows,
+      isHexTxid,
       itemTime: () => null,
       numberOrNull: (value) =>
         Number.isFinite(Number(value)) ? Number(value) : null,
+      persistCanonicalTransactionDetails,
     },
   );
   await persistCanonicalRawTransaction(
     {
       async query(sql, params) {
-        call = { params: Array.from(params), sql: String(sql) };
+        calls.push({ params: Array.from(params), sql: String(sql) });
         return { rows: [] };
       },
     },
@@ -4106,14 +4843,312 @@ check("canonical raw tx replaces legacy wrappers without entering event payloads
     },
     { blockHash: "c".repeat(64), blockTime: 1_700_000_000, height: 101 },
   );
-  assert.match(call.sql, /raw_tx = EXCLUDED\.raw_tx/u);
-  const raw = JSON.parse(call.params[9]);
+  assert.equal(calls.length, 6);
+  assert.match(calls[0].sql, /raw_tx = EXCLUDED\.raw_tx/u);
+  const raw = JSON.parse(calls[0].params[9]);
   assert.equal(raw.canonicalBlockScan.height, 101);
   assert.equal(raw.canonicalBlockScan.network, "livenet");
   assert.equal(raw._powBlockIndex, 7);
   assert.equal(raw.item, undefined);
   assert.equal(raw.vin.length, 1);
   assert.equal(raw.vout.length, 1);
+  assert.match(calls[1].sql, /INSERT INTO proof_indexer\.tx_inputs/u);
+  assert.match(calls[1].sql, /ON CONFLICT \(network, txid, vin\)/u);
+  assert.equal(JSON.parse(calls[1].params[2])[0].value_sats, 10_000);
+  assert.match(calls[2].sql, /INSERT INTO proof_indexer\.tx_outputs/u);
+  assert.match(calls[2].sql, /scriptpubkey_asm = EXCLUDED\.scriptpubkey_asm/u);
+  assert.doesNotMatch(calls[2].sql, /spent_by_txid = EXCLUDED/u);
+  assert.match(calls[3].sql, /INSERT INTO proof_indexer\.op_returns/u);
+  assert.match(
+    calls[3].sql,
+    /ON CONFLICT \(network, txid, vout, output_index\)/u,
+  );
+  assert.match(calls[4].sql, /FOR UPDATE OF spent_output/u);
+  assert.equal(calls[4].params.length, 2);
+  assert.equal(JSON.parse(calls[4].params[1])[0].prev_txid, "a".repeat(64));
+  assert.match(calls[5].sql, /UPDATE proof_indexer\.tx_outputs AS spent_output/u);
+  assert.match(
+    calls[5].sql,
+    /spent_by_txid IS NULL[\s\S]*spent_by_vin IS NOT DISTINCT FROM incoming\.vin/u,
+  );
+  assert.equal(calls[5].params[1], txid);
+});
+
+check("canonical spend links reject conflicts and permit idempotent replays", async () => {
+  const txid = "b".repeat(64);
+  const parentTxid = "a".repeat(64);
+  const details = {
+    inputs: [
+      {
+        address: "sender",
+        prev_txid: parentTxid,
+        prev_vout: 1,
+        script_sig: null,
+        sequence: 1,
+        value_sats: 10_000,
+        vin: 0,
+        witness: [],
+      },
+    ],
+    opReturns: [],
+    outputs: [],
+  };
+  const persistCanonicalTransactionDetails = isolatedFunction(
+    BACKFILL_PATH,
+    "persistCanonicalTransactionDetails",
+    {
+      NETWORK: "livenet",
+      canonicalTransactionDetailRows: () => details,
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+    },
+  );
+  const run = async (lockedRows) => {
+    let updates = 0;
+    const client = {
+      async query(sql) {
+        const text = String(sql);
+        if (text.includes("FOR UPDATE OF spent_output")) {
+          return { rows: lockedRows };
+        }
+        if (text.includes("UPDATE proof_indexer.tx_outputs AS spent_output")) {
+          updates += 1;
+        }
+        return { rows: [] };
+      },
+    };
+    const operation = persistCanonicalTransactionDetails(
+      client,
+      { txid },
+      { details, spentAt: "2026-07-13T00:00:00.000Z" },
+    );
+    return { operation, updates: () => updates };
+  };
+
+  const idempotent = await run([
+    {
+      incoming_vin: 0,
+      prev_txid: parentTxid,
+      prev_vout: 1,
+      spent_by_txid: txid,
+      spent_by_vin: 0,
+    },
+  ]);
+  await idempotent.operation;
+  assert.equal(idempotent.updates(), 1);
+
+  for (const conflict of [
+    {
+      incoming_vin: 0,
+      prev_txid: parentTxid,
+      prev_vout: 1,
+      spent_by_txid: "c".repeat(64),
+      spent_by_vin: 0,
+    },
+    {
+      incoming_vin: 0,
+      prev_txid: parentTxid,
+      prev_vout: 1,
+      spent_by_txid: txid,
+      spent_by_vin: 2,
+    },
+  ]) {
+    const rejected = await run([conflict]);
+    await assert.rejects(rejected.operation, /Canonical spend-link conflict/u);
+    assert.equal(rejected.updates(), 0);
+  }
+});
+
+check("historical transaction detail hydration is bounded and projection-neutral", async () => {
+  const firstTxid = "1".repeat(64);
+  const secondTxid = "2".repeat(64);
+  const persisted = [];
+  const hydrateHistoricalCanonicalTransactionDetails = isolatedFunction(
+    BACKFILL_PATH,
+    "hydrateHistoricalCanonicalTransactionDetails",
+    {
+      NETWORK: "livenet",
+      TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX: -1,
+      TX_DETAIL_HYDRATION_AFTER_HEIGHT: -1,
+      TX_DETAIL_HYDRATION_AFTER_TXID: "",
+      TX_DETAIL_HYDRATION_BATCH_SIZE: 2,
+      TX_DETAIL_HYDRATION_MAX_ROWS: 2,
+      assertHydratedProtocolTransaction: () => {},
+      canonicalTransactionDetailRows: (tx) => ({
+        inputs: [{ vin: 0 }],
+        opReturns: [{ vout: 1 }],
+        outputs: [{ vout: 0 }, { vout: 1 }],
+        txid: tx.txid,
+      }),
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      itemTime: () => "2026-07-13T00:00:00.000Z",
+      persistCanonicalTransactionDetails: async (_client, tx, options) => {
+        persisted.push({ options, txid: tx.txid });
+        return { inputs: 1, opReturns: 1, outputs: 2 };
+      },
+      protocolMessagesFromTx: () => [{ prefix: "pwm1:" }],
+    },
+  );
+  const calls = [];
+  const client = {
+    async query(sql, params = []) {
+      const text = String(sql).trim();
+      calls.push({ params: Array.from(params), sql: text });
+      if (text.startsWith("WITH candidates AS")) {
+        return {
+          rows: [
+            {
+              block_canonical: true,
+              block_hash: "a".repeat(64),
+              block_height: 100,
+              block_index: 3,
+              block_time: "2026-07-13T00:00:00.000Z",
+              canonical_block_hash: "a".repeat(64),
+              raw_tx: {
+                _powBlockIndex: 3,
+                canonicalBlockScan: {
+                  blockHash: "a".repeat(64),
+                  height: 100,
+                  network: "livenet",
+                },
+                txid: firstTxid,
+              },
+              txid: firstTxid,
+            },
+            {
+              block_canonical: true,
+              block_hash: "a".repeat(64),
+              block_height: 100,
+              block_index: 4,
+              block_time: "2026-07-13T00:01:00.000Z",
+              canonical_block_hash: "a".repeat(64),
+              raw_tx: {
+                _powBlockIndex: 4,
+                canonicalBlockScan: {
+                  blockHash: "a".repeat(64),
+                  height: 100,
+                  network: "livenet",
+                },
+                txid: secondTxid,
+              },
+              txid: secondTxid,
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+  const result = await hydrateHistoricalCanonicalTransactionDetails(client);
+  assert.equal(result.hydrated, 2);
+  assert.equal(result.inputs, 2);
+  assert.equal(result.outputs, 4);
+  assert.equal(result.opReturns, 2);
+  assert.equal(result.batches, 1);
+  assert.equal(result.limitReached, true);
+  assert.equal(result.cursor.afterHeight, 100);
+  assert.equal(result.cursor.afterBlockIndex, 4);
+  assert.equal(result.cursor.afterTxid, secondTxid);
+  assert.deepEqual(
+    persisted.map((entry) => entry.txid),
+    [firstTxid, secondTxid],
+  );
+  assert.deepEqual(
+    calls.map((call) => call.sql === "BEGIN" || call.sql === "COMMIT"
+      ? call.sql
+      : "SELECT"),
+    ["SELECT", "BEGIN", "COMMIT"],
+  );
+  assert.deepEqual(calls[0].params, ["livenet", -1, -1, "", 2]);
+  assert.match(
+    calls[0].sql,
+    /JOIN proof_indexer\.blocks AS canonical_block[\s\S]*canonical_block\.block_hash = transaction_row\.block_hash[\s\S]*canonical_block\.height = transaction_row\.block_height[\s\S]*canonical_block\.canonical = true/u,
+  );
+  assert.match(
+    calls[0].sql,
+    /jsonb_typeof\(transaction_row\.raw_tx->'vin'\) = 'array'/u,
+  );
+  assert.match(
+    calls[0].sql,
+    /canonicalBlockScan'->>'height'[\s\S]*transaction_row\.block_height[\s\S]*canonicalBlockScan'->>'blockHash'[\s\S]*transaction_row\.block_hash/u,
+  );
+  assert.match(
+    calls[0].sql,
+    /ORDER BY block_height, block_index, txid[\s\S]*LIMIT \$5/u,
+  );
+  const source = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "hydrateHistoricalCanonicalTransactionDetails",
+  );
+  assert.doesNotMatch(
+    source,
+    /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+proof_indexer\.(?:meta|events|credit_|id_records|ledger_snapshots|blocks)\b/iu,
+  );
+});
+
+check("historical detail hydration fails closed on detached block membership", async () => {
+  const txid = "3".repeat(64);
+  let persisted = false;
+  const hydrateHistoricalCanonicalTransactionDetails = isolatedFunction(
+    BACKFILL_PATH,
+    "hydrateHistoricalCanonicalTransactionDetails",
+    {
+      NETWORK: "livenet",
+      TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX: -1,
+      TX_DETAIL_HYDRATION_AFTER_HEIGHT: -1,
+      TX_DETAIL_HYDRATION_AFTER_TXID: "",
+      TX_DETAIL_HYDRATION_BATCH_SIZE: 1,
+      TX_DETAIL_HYDRATION_MAX_ROWS: 1,
+      assertHydratedProtocolTransaction: () => {},
+      canonicalTransactionDetailRows: () => ({
+        inputs: [{ vin: 0 }],
+        opReturns: [{ vout: 1 }],
+        outputs: [{ vout: 0 }, { vout: 1 }],
+      }),
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      itemTime: () => "2026-07-13T00:00:00.000Z",
+      persistCanonicalTransactionDetails: async () => {
+        persisted = true;
+        return { inputs: 1, opReturns: 1, outputs: 2 };
+      },
+      protocolMessagesFromTx: () => [{ prefix: "pwm1:" }],
+    },
+  );
+  const blockHash = "4".repeat(64);
+  const client = {
+    async query(sql) {
+      if (String(sql).trim().startsWith("WITH candidates AS")) {
+        return {
+          rows: [
+            {
+              block_canonical: false,
+              block_hash: blockHash,
+              block_height: 200,
+              block_index: 1,
+              block_time: "2026-07-13T00:00:00.000Z",
+              canonical_block_hash: blockHash,
+              raw_tx: {
+                _powBlockIndex: 1,
+                canonicalBlockScan: {
+                  blockHash,
+                  height: 200,
+                  network: "livenet",
+                },
+                txid,
+              },
+              txid,
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+
+  await assert.rejects(
+    hydrateHistoricalCanonicalTransactionDetails(client),
+    /Stored canonical transaction detail envelope is invalid/u,
+  );
+  assert.equal(persisted, false);
 });
 
 check("canonical block envelopes and protocol prevout values fail closed", () => {
@@ -4482,7 +5517,14 @@ check("POWB bond mints rebuild holder supply before dependent transfers", async 
       const text = String(sql);
       if (text.includes("FROM proof_indexer.credit_definitions")) {
         return {
-          rows: [{ max_supply: String(Number.MAX_SAFE_INTEGER), token_id: tokenId }],
+          rows: [{
+            confirmed: true,
+            created_height: null,
+            max_supply: String(Number.MAX_SAFE_INTEGER),
+            metadata: { canonicalSynthetic: true, uncapped: true },
+            ticker: "POWB",
+            token_id: tokenId,
+          }],
         };
       }
       if (text.includes("FROM proof_indexer.events")) {
@@ -4511,9 +5553,14 @@ check("POWB bond mints rebuild holder supply before dependent transfers", async 
               payload: {
                 _powEventIndex: 1,
                 amount: 400,
+                amountSats: 0,
                 blockIndex: 0,
+                confirmed: true,
                 minterAddress: "bob",
+                sourceBondTxid: "2".repeat(64),
+                ticker: "POWB",
                 tokenId,
+                validationMode: "canonical-powb-bond-projection",
               },
               txid: "2".repeat(64),
             },
@@ -4524,9 +5571,14 @@ check("POWB bond mints rebuild holder supply before dependent transfers", async 
               payload: {
                 _powEventIndex: 0,
                 amount: 600,
+                amountSats: 0,
                 blockIndex: 0,
+                confirmed: true,
                 minterAddress: "alice",
+                sourceBondTxid: "2".repeat(64),
+                ticker: "POWB",
                 tokenId,
+                validationMode: "canonical-powb-bond-projection",
               },
               txid: "2".repeat(64),
             },
@@ -5214,6 +6266,7 @@ check("canonical buy recovery counts price and one registry close only", async (
         BACKFILL_PATH,
         "rawProtocolItemMatchesCanonical",
       ),
+      reservedBondCreditViolationReason: () => "",
       rawProtocolItemsForTx: () => [
         {
           amount: 10,
@@ -5272,6 +6325,7 @@ check("canonical buy recovery counts price and one registry close only", async (
         BACKFILL_PATH,
         "sourceLabelForProtocolItem",
       ),
+      tokenProtocolIntegrityInvalidItem: (item) => item,
     },
   );
   const recovered = await canonicalRecoveryItemsForTx(
@@ -5777,7 +6831,7 @@ check("canonical read gating exempts node primitives only", () => {
 
 check("summary catch-up does not brown out current relational reads", async () => {
   const blockHash = "a".repeat(64);
-  let confirmedEventMaxBlock = 99;
+  let summaryIndexedThroughBlock = 99;
   const summarySnapshotCoversCanonicalReadModels = isolatedFunction(
     API_PATH,
     "summarySnapshotCoversCanonicalReadModels",
@@ -5799,14 +6853,15 @@ check("summary catch-up does not brown out current relational reads", async () =
       proofIndexOperationalStatusPayload: async () => ({
         indexedThroughBlock: 100,
         readModels: {
-          confirmedEvents: { count: 10, maxBlock: confirmedEventMaxBlock },
+          confirmedEvents: { count: 10, maxBlock: 99 },
           confirmedIds: { count: 1, maxBlock: 90 },
           confirmedTransfers: { count: 1, maxBlock: 95 },
         },
-        scan: { blockHash, complete: true },
+        scan: { blockHash, complete: true, tipHeight: 100 },
         summarySnapshot: {
+          blockHash,
           eligible: true,
-          indexedThroughBlock: 99,
+          indexedThroughBlock: summaryIndexedThroughBlock,
         },
         worker: {
           lastSuccessAt: new Date().toISOString(),
@@ -5818,10 +6873,10 @@ check("summary catch-up does not brown out current relational reads", async () =
   );
   const gate = await loadCanonicalPublicReadGate("livenet");
   assert.equal(gate.ok, true);
-  assert.equal(gate.summarySnapshotOk, true);
-  confirmedEventMaxBlock = 100;
+  assert.equal(gate.summarySnapshotOk, false);
+  summaryIndexedThroughBlock = 100;
   const changedGate = await loadCanonicalPublicReadGate("livenet");
-  assert.equal(changedGate.summarySnapshotOk, false);
+  assert.equal(changedGate.summarySnapshotOk, true);
 
   const summaryGate = isolatedFunction(
     API_PATH,
@@ -5863,8 +6918,9 @@ check("long worker cycles do not brown out exact canonical reads", async () => {
           confirmedIds: { count: 1, maxBlock: 90 },
           confirmedTransfers: { count: 1, maxBlock: 95 },
         },
-        scan: { blockHash, complete: true },
+        scan: { blockHash, complete: true, tipHeight: 100 },
         summarySnapshot: {
+          blockHash,
           eligible: true,
           indexedThroughBlock: 99,
         },
@@ -6598,10 +7654,12 @@ check("operational status preserves compact canonical health coverage", async ()
       },
       inceptionSummary: { parent: [118, null, null] },
       infinitySummary: { parent: [117, null, null] },
+      logSummary: { parent: [120, null, null] },
       marketplaceSummary: {
         nested: [116, 115, null],
         parent: [120, 119, null],
       },
+      tokenSummary: { parent: [119, null, null] },
       workFloor: { parent: [115, null, null] },
       workSummary: {
         nested: [114, 113, null],
@@ -6609,6 +7667,7 @@ check("operational status preserves compact canonical health coverage", async ()
       },
     },
     summary_generated_at: "2026-07-13T14:29:00.000Z",
+    summary_block_hash: "a".repeat(64),
     summary_indexed_at: "2026-07-13T14:29:01.000Z",
     summary_snapshot_id: "summary-snapshot",
     worker: {
@@ -6655,11 +7714,14 @@ check("operational status preserves compact canonical health coverage", async ()
     tipHeight: 123,
   });
   assert.deepEqual(status.summarySnapshot, {
+    blockHash: "a".repeat(64),
     coverageByKey: {
       growthSummary: 119,
       inceptionSummary: 118,
       infinitySummary: 117,
+      logSummary: 120,
       marketplaceSummary: 116,
+      tokenSummary: 119,
       workFloor: 115,
       workSummary: 114,
     },
@@ -6733,6 +7795,8 @@ check("canonical consistency reads the exact eligible summary snapshot", async (
                 inception_snapshot_id: snapshotId,
                 infinity_height: 957712,
                 infinity_snapshot_id: snapshotId,
+                log_height: 957712,
+                log_snapshot_id: snapshotId,
                 marketplace_floor_height: 957712,
                 marketplace_height: 957712,
                 marketplace_snapshot_id: snapshotId,
@@ -6745,7 +7809,10 @@ check("canonical consistency reads the exact eligible summary snapshot", async (
                 snapshot_id: snapshotId,
                 source_hashes: {
                   activity: { confirmed: 23585, count: 23591 },
+                  blockScan: "a".repeat(64),
                 },
+                token_height: 957712,
+                token_snapshot_id: snapshotId,
                 totals: {
                   growthActualValueSats: 8_171_663_094,
                   growthWorkFloorValueSats: 8_171_663_094,
@@ -6808,12 +7875,79 @@ check("public consistency prefers the eligible database snapshot", async () => {
         legacyReads += 1;
         return null;
       },
+      verifiedSummaryPayloadCheckpoint: async () => ({ exactTip: true }),
     },
   );
   const result = await ledgerConsistencyPayload("livenet", true);
   assert.equal(result.snapshotId, indexedLedger.snapshotId);
   assert.equal(result.metrics.activityItems, 23591);
   assert.equal(legacyReads, 0);
+});
+
+check("credit directory reads the hash-bound database checkpoint", async () => {
+  const snapshotId = "exact-token-checkpoint";
+  let storedReads = 0;
+  let provenanceReads = 0;
+  const canonicalTokenDirectoryPayload = isolatedFunction(
+    API_PATH,
+    "canonicalTokenDirectoryPayload",
+    {
+      freshDataUnavailableError: (message) => {
+        const error = new Error(message);
+        error.statusCode = 503;
+        return error;
+      },
+      normalizeTokenScope: (scope) => String(scope ?? "").trim(),
+      paginatedHistoryPayload: ({ indexedAt, items, kind, network, pagination, source }) => ({
+        indexedAt,
+        indexedThroughBlock: 100,
+        items: items.slice(pagination.offset, pagination.offset + pagination.limit),
+        kind,
+        network,
+        source,
+        totalCount: items.length,
+      }),
+      payloadIndexedThroughBlockHash: (payload) =>
+        payload.indexedThroughBlockHash,
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        payload.indexedThroughBlock,
+      storedCanonicalTokenSummaryPayload: async () => {
+        storedReads += 1;
+        return {
+          indexedAt: "2026-07-13T22:35:58.045Z",
+          indexedThroughBlock: 957912,
+          indexedThroughBlockHash: "a".repeat(64),
+          snapshotId,
+          source: "proof-index",
+          tokens: [{ tokenId: "one" }, { tokenId: "two" }],
+        };
+      },
+      summaryPayloadWithCanonicalProvenance: async (payload, network, fresh, surface) => {
+        provenanceReads += 1;
+        assert.equal(network, "livenet");
+        assert.equal(fresh, true);
+        assert.equal(surface, "token-directory:all");
+        return {
+          ...payload,
+          provenance: { ready: true, served: "exact-tip" },
+        };
+      },
+    },
+  );
+  const result = await canonicalTokenDirectoryPayload(
+    "livenet",
+    "",
+    { limit: 1, offset: 0, query: "" },
+    true,
+  );
+  assert.equal(storedReads, 1);
+  assert.equal(provenanceReads, 1);
+  assert.equal(result.totalCount, 2);
+  assert.equal(result.items[0].tokenId, "one");
+  assert.equal(result.indexedThroughBlock, 957912);
+  assert.equal(result.indexedThroughBlockHash, "a".repeat(64));
+  assert.equal(result.snapshotId, snapshotId);
+  assert.equal(result.provenance.served, "exact-tip");
 });
 
 check("public consistency fails closed without an eligible database snapshot", async () => {
@@ -6879,6 +8013,458 @@ check("consistency recovery remains available only when explicitly enabled", asy
   );
 });
 
+check("legacy Log pagination honors offset and transaction aliases in both paths", () => {
+  const apiBoundedInteger = isolatedFunction(API_PATH, "boundedInteger");
+  const apiHistoryCursorOffset = isolatedFunction(
+    API_PATH,
+    "historyCursorOffset",
+    { boundedInteger: apiBoundedInteger },
+  );
+  const apiPagination = isolatedFunction(
+    API_PATH,
+    "historyPaginationFromSearch",
+    {
+      HISTORY_PAGE_DEFAULT_LIMIT: 200,
+      HISTORY_PAGE_MAX_LIMIT: 500,
+      boundedInteger: apiBoundedInteger,
+      historyCursorOffset: apiHistoryCursorOffset,
+    },
+  );
+  const readerBoundedInteger = isolatedFunction(READER_PATH, "boundedInteger");
+  const normalizedSnapshotId = isolatedFunction(
+    READER_PATH,
+    "normalizedSnapshotId",
+  );
+  const readerCursor = isolatedFunction(
+    READER_PATH,
+    "historyCursorFromSearch",
+    {
+      boundedInteger: readerBoundedInteger,
+      normalizedSnapshotId,
+    },
+  );
+  const readerPagination = isolatedFunction(
+    READER_PATH,
+    "historyPaginationFromSearch",
+    {
+      boundedInteger: readerBoundedInteger,
+      historyCursorFromSearch: readerCursor,
+      normalizedSnapshotId,
+    },
+  );
+  for (const pagination of [apiPagination, readerPagination]) {
+    const params = new URLSearchParams({
+      limit: "2",
+      offset: "7",
+      page: "99",
+      transactionId: "A".repeat(64),
+    });
+    const result = pagination(params);
+    assert.equal(result.limit, 2);
+    assert.equal(result.offset, 7);
+    assert.equal(result.query, "a".repeat(64));
+
+    params.set("cursor", "11");
+    assert.equal(pagination(params).offset, 11, "cursor must outrank offset");
+  }
+});
+
+check("recompacting summary-only payloads never turns truncated arrays into totals", () => {
+  const compactTokenSummaryPayload = isolatedFunction(
+    API_PATH,
+    "compactTokenSummaryPayload",
+    {
+      SUMMARY_MARKET_LIMIT: 10,
+      mergedTokenSummaryMetric: (token, summary, key) =>
+        token?.[key] ?? summary?.[key],
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+      recentByCreatedAt: (items, limit) =>
+        (Array.isArray(items) ? items : []).slice(0, limit),
+      recentClosedTokenListings: (items, limit) => items.slice(0, limit),
+      tokenAggregateSummaries: () => new Map(),
+      tokenListingHasConfirmedSaleTicketSeal: () => false,
+      tokenMatchesScope: () => false,
+      tokenPayloadWithScopedHolderIdentity: (payload) => payload,
+      tokenSummaryListings: (items, limit) => items.slice(0, limit),
+      tokenSummaryMetricValue: (value) =>
+        Number.isFinite(Number(value)) ? Number(value) : undefined,
+    },
+  );
+  const compactRegistrySummaryPayload = isolatedFunction(
+    API_PATH,
+    "compactRegistrySummaryPayload",
+    {
+      SUMMARY_ACTIVITY_LIMIT: 10,
+      SUMMARY_MARKET_LIMIT: 10,
+      recentByCreatedAt: (items, limit) =>
+        (Array.isArray(items) ? items : []).slice(0, limit),
+    },
+  );
+  const tokenSummary = {
+    closedListings: [{ listingId: "closed" }],
+    collectionHasMore: { closedListings: true },
+    holders: [{ address: "holder", balance: 1 }],
+    listings: [{ listingId: "open" }],
+    mints: [{ confirmed: true }],
+    sales: [{ confirmed: true, priceSats: 1 }],
+    stats: {
+      confirmedMints: 40,
+      confirmedSales: 20,
+      confirmedTokens: 3,
+      confirmedTransfers: 30,
+      holders: 100,
+      pendingMints: 2,
+      pendingSales: 1,
+      pendingTokens: 0,
+      pendingTransfers: 4,
+      transactions: 999,
+    },
+    summaryOnly: true,
+    tokens: [{ openListings: 77, tokenId: "token" }],
+    transfers: [{ confirmed: true }],
+  };
+  const once = compactTokenSummaryPayload(tokenSummary);
+  const twice = compactTokenSummaryPayload(once);
+  assert.equal(twice.totalCounts.closedListings, null);
+  assert.equal(twice.totalCounts.holders, 100);
+  assert.equal(twice.totalCounts.listings, 77);
+  assert.equal(twice.totalCounts.mints, 42);
+  assert.equal(twice.totalCounts.sales, 21);
+  assert.equal(twice.totalCounts.transfers, 34);
+  assert.equal(twice.totalCount, 999);
+  assert.equal(twice.collectionHasMore.closedListings, true);
+
+  const registryOnce = compactRegistrySummaryPayload({
+    activity: [{ txid: "one" }],
+    collectionHasMore: { listings: true },
+    listings: [{ listingId: "one" }],
+    pendingEvents: [{ txid: "pending" }],
+    sales: [{ txid: "sale" }],
+    stats: { pendingChanges: 8, total: 250 },
+    summaryOnly: true,
+  });
+  const registryTwice = compactRegistrySummaryPayload(registryOnce);
+  assert.equal(registryTwice.totalCounts.activity, 250);
+  assert.equal(registryTwice.totalCounts.listings, null);
+  assert.equal(registryTwice.totalCounts.pendingEvents, 8);
+  assert.equal(registryTwice.totalCounts.sales, null);
+  assert.equal(registryTwice.collectionHasMore.listings, true);
+});
+
+check("summary provenance rejects missing and mismatched required component IDs", async () => {
+  const summaryPayloadRequiredComponents = isolatedFunction(
+    API_PATH,
+    "summaryPayloadRequiredComponents",
+  );
+  const payloadSnapshotId = isolatedFunction(API_PATH, "payloadSnapshotId");
+  const freshDataUnavailableError = (message) => {
+    const error = new Error(message);
+    error.statusCode = 503;
+    return error;
+  };
+  const provenance = isolatedFunction(
+    API_PATH,
+    "summaryPayloadWithCanonicalProvenance",
+    {
+      freshDataUnavailableError,
+      payloadSnapshotId,
+      summaryPayloadRequiredComponents,
+      verifiedSummaryPayloadCheckpoint: async () => ({
+        exactTip: true,
+        indexedThroughBlock: 100,
+        indexedThroughBlockHash: "a".repeat(64),
+        tipHash: "a".repeat(64),
+        tipHeight: 100,
+      }),
+    },
+  );
+  const base = {
+    indexedThroughBlock: 100,
+    indexedThroughBlockHash: "a".repeat(64),
+    registry: { snapshotId: "snapshot" },
+    snapshotId: "snapshot",
+    token: {},
+    workFloor: { snapshotId: "snapshot" },
+  };
+  const missing = await rejection(
+    provenance(base, "livenet", true, "marketplace-summary"),
+    (error) => error?.details?.code === "CANONICAL_SUMMARY_INCOHERENT",
+  );
+  assert.deepEqual(Array.from(missing.details.missingSnapshotIds), ["token"]);
+
+  await rejection(
+    provenance(
+      { ...base, token: { snapshotId: "other" } },
+      "livenet",
+      true,
+      "marketplace-summary",
+    ),
+    (error) => error?.details?.code === "CANONICAL_SUMMARY_INCOHERENT",
+  );
+
+  const accepted = await provenance(
+    { ...base, token: { snapshotId: "snapshot" } },
+    "livenet",
+    true,
+    "marketplace-summary",
+  );
+  assert.equal(accepted.provenance.coherent, true);
+  assert.equal(accepted.provenance.served, "exact-tip");
+  assert.equal(accepted.provenance.componentSnapshotIds.token, "snapshot");
+});
+
+check("fresh summary checkpoint verification detects a same-height reorg race", async () => {
+  const payloadIndexedThroughBlockHash = isolatedFunction(
+    API_PATH,
+    "payloadIndexedThroughBlockHash",
+  );
+  const proofIndexPayloadIndexedThroughBlock = isolatedFunction(
+    API_PATH,
+    "proofIndexPayloadIndexedThroughBlock",
+  );
+  const freshDataUnavailableError = (message) => {
+    const error = new Error(message);
+    error.statusCode = 503;
+    return error;
+  };
+  const firstHash = "a".repeat(64);
+  const secondHash = "b".repeat(64);
+  const gates = [
+    {
+      canonicalHash: firstHash,
+      ok: true,
+      ready: true,
+      storedHash: firstHash,
+      tipHeight: 100,
+    },
+    {
+      canonicalHash: secondHash,
+      ok: true,
+      ready: true,
+      storedHash: secondHash,
+      tipHeight: 100,
+    },
+  ];
+  const verify = isolatedFunction(
+    API_PATH,
+    "verifiedSummaryPayloadCheckpoint",
+    {
+      canonicalBlockHashAtHeight: async () => firstHash,
+      canonicalPublicReadGate: async (_network, options) => {
+        assert.equal(options.force, true);
+        return gates.shift();
+      },
+      freshDataUnavailableError,
+      payloadIndexedThroughBlockHash,
+      proofIndexPayloadIndexedThroughBlock,
+    },
+  );
+  await rejection(
+    verify(
+      { indexedThroughBlock: 100, indexedThroughBlockHash: firstHash },
+      "livenet",
+      true,
+      "work-floor",
+    ),
+    (error) => error?.details?.code === "CANONICAL_SUMMARY_TIP_CHANGED",
+  );
+});
+
+check("broadcast rate identity trusts only the loopback proxy boundary", () => {
+  const broadcastClientKey = isolatedFunction(
+    API_PATH,
+    "broadcastClientKey",
+  );
+  assert.equal(
+    broadcastClientKey({
+      headers: { "x-forwarded-for": "203.0.113.7, 10.77.0.1" },
+      socket: { remoteAddress: "127.0.0.1" },
+    }),
+    "203.0.113.7",
+  );
+  assert.equal(
+    broadcastClientKey({
+      headers: { "x-forwarded-for": "203.0.113.8" },
+      socket: { remoteAddress: "10.77.0.1" },
+    }),
+    "10.77.0.1",
+  );
+});
+
+check("broadcast rejects absent origins and a checkpoint change before submit", async () => {
+  const allowed = isolatedFunction(API_PATH, "broadcastOriginAllowed", {
+    BROADCAST_ALLOW_MISSING_ORIGIN: false,
+    BROADCAST_EXTRA_ALLOWED_ORIGINS: new Set(),
+    URL,
+  });
+  assert.equal(allowed({ headers: {} }), false);
+  assert.equal(
+    allowed({ headers: { origin: "https://wallet.proofofwork.me" } }),
+    true,
+  );
+
+  const firstHash = "c".repeat(64);
+  const secondHash = "d".repeat(64);
+  const gates = [
+    {
+      canonicalHash: firstHash,
+      ready: true,
+      storedHash: firstHash,
+      tipHeight: 100,
+    },
+    {
+      canonicalHash: secondHash,
+      ready: true,
+      storedHash: secondHash,
+      tipHeight: 100,
+    },
+  ];
+  let submitted = false;
+  const admission = isolatedFunction(API_PATH, "withBroadcastAdmission", {
+    BROADCAST_CONCURRENCY_MAX: 4,
+    broadcastActiveRequests: 0,
+    broadcastOriginAllowed: () => true,
+    canonicalPublicReadGate: async (_network, options) => {
+      assert.equal(options.force, true);
+      return gates.shift();
+    },
+    consumeBroadcastRateLimit: () => {},
+    freshDataUnavailableError: (message) => {
+      const error = new Error(message);
+      error.statusCode = 503;
+      return error;
+    },
+  });
+  await rejection(
+    admission(
+      { headers: {} },
+      "livenet",
+      async ({ beforeSubmit }) => {
+        await beforeSubmit();
+        submitted = true;
+      },
+      { requireCanonical: true },
+    ),
+    (error) => error?.details?.code === "BROADCAST_CANONICAL_CHECKPOINT_CHANGED",
+  );
+  assert.equal(submitted, false);
+});
+
+check("slow broadcast bodies time out and release every concurrency lane", async () => {
+  class SlowRequest extends EventEmitter {
+    constructor() {
+      super();
+      this.destroyed = false;
+      this.headers = {};
+    }
+
+    destroy() {
+      this.destroyed = true;
+    }
+
+    setEncoding() {}
+  }
+
+  const requestBodyReadError = isolatedFunction(
+    API_PATH,
+    "requestBodyReadError",
+  );
+  const readRequestBody = isolatedFunction(API_PATH, "readRequestBody", {
+    clearTimeout,
+    requestBodyReadError,
+    setTimeout,
+  });
+  const admission = isolatedFunction(API_PATH, "withBroadcastAdmission", {
+    BROADCAST_CONCURRENCY_MAX: 4,
+    broadcastActiveRequests: 0,
+    broadcastOriginAllowed: () => true,
+    broadcastRateLimitError: (message, code) => {
+      const error = new Error(message);
+      error.statusCode = 429;
+      error.details = { code };
+      return error;
+    },
+    consumeBroadcastRateLimit: () => {},
+  });
+  const requests = Array.from({ length: 4 }, () => new SlowRequest());
+  const keeper = setTimeout(() => {}, 100);
+  try {
+    const occupied = requests.map((request) =>
+      admission(request, "testnet", () =>
+        readRequestBody(request, 1_000, {
+          label: "Broadcast request body",
+          timeoutMs: 15,
+        }),
+      ),
+    );
+    await rejection(
+      admission(new SlowRequest(), "testnet", async () => "unexpected"),
+      (error) => error?.details?.code === "BROADCAST_CONCURRENCY_LIMIT",
+    );
+    const settled = await Promise.allSettled(occupied);
+    assert.equal(
+      settled.every(
+        (result) =>
+          result.status === "rejected" &&
+          result.reason?.details?.code === "REQUEST_BODY_TIMEOUT",
+      ),
+      true,
+    );
+    assert.equal(requests.every((request) => request.destroyed), true);
+    assert.equal(
+      requests.every(
+        (request) =>
+          request.listenerCount("data") === 0 &&
+          request.listenerCount("end") === 0 &&
+          request.listenerCount("error") === 0,
+      ),
+      true,
+      "timed-out body listeners were not cleaned up",
+    );
+    assert.equal(
+      await admission(new SlowRequest(), "testnet", async () => "released"),
+      "released",
+    );
+  } finally {
+    clearTimeout(keeper);
+  }
+});
+
+check("fresh consistency fails closed when its database snapshot is not exact-tip", async () => {
+  const freshDataUnavailableError = (message) => {
+    const error = new Error(message);
+    error.statusCode = 503;
+    return error;
+  };
+  const ledgerConsistencyPayload = isolatedFunction(
+    API_PATH,
+    "ledgerConsistencyPayload",
+    {
+      ENABLE_REQUEST_LEDGER_RECOVERY: false,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 100,
+      errorSummary: (error) => String(error?.message ?? error),
+      freshDataUnavailableError,
+      ledgerConsistencyPayloadFromLedger: (ledger) => ledger,
+      ledgerPayloadHasCurrentChecks: () => true,
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexCanonicalSummaryLedgerPayload: async () => ({
+        indexedThroughBlock: 99,
+        indexedThroughBlockHash: "e".repeat(64),
+        snapshotId: "stale",
+      }),
+      summaryCanonicalLedgerPayload: async () => null,
+      verifiedSummaryPayloadCheckpoint: async () => {
+        throw freshDataUnavailableError("not exact");
+      },
+    },
+  );
+  await rejection(
+    ledgerConsistencyPayload("livenet", true),
+    (error) => error?.statusCode === 503,
+  );
+});
+
 check("both consistency routes require an eligible summary snapshot", () => {
   const applies = isolatedFunction(
     API_PATH,
@@ -6886,6 +8472,115 @@ check("both consistency routes require an eligible summary snapshot", () => {
   );
   assert.equal(applies("/api/v1/consistency"), true);
   assert.equal(applies("/api/v1/ledger-consistency"), true);
+});
+
+check("growth chart replay is linear and matches exact credit valuation", () => {
+  const numericValue = (value, fallback = 0) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  };
+  const baseValueProvider = () => (atMs) =>
+    1_000 + Math.max(0, Math.floor(Number(atMs) / 100)) * 100;
+  const compareCreditValueReplayEvents = (left, right) =>
+    left.createdMs - right.createdMs ||
+    left.order - right.order ||
+    String(left.txid ?? "").localeCompare(String(right.txid ?? ""));
+  const globals = {
+    TOKEN_MARKETPLACE_MUTATION_KINDS: new Set([
+      "token-listing",
+      "token-listing-sealed",
+      "token-listing-closed",
+    ]),
+    TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+    compareCreditValueReplayEvents,
+    creditValueEventMs: (item) => Number(item?.createdMs),
+    growthActualBaseNetworkValueAtProvider: baseValueProvider,
+    isTokenActivityItem: (item) => String(item?.kind ?? "").startsWith("token-"),
+    numericValue,
+    tokenCanUseCreditNetworkFloor: () => true,
+  };
+  const fastProvider = isolatedFunction(
+    API_PATH,
+    "growthActualLiveTotalSatsAtProvider",
+    globals,
+  );
+  const exactMetrics = isolatedFunction(
+    API_PATH,
+    "creditNetworkValueMetrics",
+    globals,
+  );
+  const tokenId = "a".repeat(64);
+  const tokenDefinitions = [
+    { maxSupply: 1_000, ticker: "FAST", tokenId },
+  ];
+  const row = (kind, txid, createdMs, extra = {}) => ({
+    confirmed: true,
+    createdMs,
+    kind,
+    tokenId,
+    txid,
+    ...extra,
+  });
+  const idActivity = [
+    row("token-create", "1".repeat(64), 50, {
+      amountSats: 546,
+      minerFeeSats: 10,
+      proofPaymentSats: 546,
+    }),
+    row("token-mint", "2".repeat(64), 100, { minerFeeSats: 30 }),
+    row("token-listing", "3".repeat(64), 150, {
+      marketplaceMutationFeeSats: 546,
+      minerFeeSats: 20,
+    }),
+    row("token-transfer", "4".repeat(64), 200, { minerFeeSats: 40 }),
+    row("token-sale", "5".repeat(64), 300, { minerFeeSats: 50 }),
+  ];
+  const tokenMints = [
+    row("mint", "2".repeat(64), 100, { amount: 100, paidSats: 1_000 }),
+  ];
+  const tokenTransfers = [
+    row("transfer", "4".repeat(64), 200, { amount: 20, paidSats: 546 }),
+  ];
+  const tokenSales = [
+    row("sale", "5".repeat(64), 300, {
+      amount: 10,
+      marketplaceMutationFeeSats: 600,
+      priceSats: 5_000,
+    }),
+  ];
+  const at = fastProvider(
+    [],
+    idActivity,
+    [],
+    tokenDefinitions,
+    tokenMints,
+    tokenTransfers,
+    tokenSales,
+  );
+  const expectedAt = (cutoffMs) => {
+    const baseValueAt = baseValueProvider();
+    const base = baseValueAt(cutoffMs);
+    const credit = exactMetrics({
+      baseValueAt,
+      confirmedActivity: idActivity,
+      cutoffMs,
+      tokenDefinitions,
+      tokenMints,
+      tokenSales,
+      tokenTransfers,
+    });
+    return base + credit.creditEventLiveValueSats;
+  };
+  for (const cutoffMs of [0, 50, 100, 150, 200, 300, 400]) {
+    assert.ok(
+      Math.abs(at(cutoffMs) - expectedAt(cutoffMs)) < 1e-9,
+      `linear chart value diverged at ${cutoffMs}`,
+    );
+  }
+  assert.ok(
+    Math.abs(at(100) - expectedAt(100)) < 1e-9,
+    "linear chart replay did not reset for an earlier cutoff",
+  );
 });
 
 check("an accepted ID buy projects the buyer as the current owner", async () => {

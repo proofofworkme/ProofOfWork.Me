@@ -18,8 +18,8 @@ function hostname() {
   return window.location.hostname.toLowerCase();
 }
 
-function searchIncludes(value: string) {
-  return window.location.search.includes(value);
+function searchFlag(name: string) {
+  return new URLSearchParams(window.location.search).get(name) === "1";
 }
 
 export function isLocalPreviewHost() {
@@ -41,7 +41,7 @@ export function isIdLaunchRoute() {
     return true;
   }
 
-  return hostname() === "id.proofofwork.me" || searchIncludes("id-launch=1");
+  return hostname() === "id.proofofwork.me" || searchFlag("id-launch");
 }
 
 export function isLandingRoute() {
@@ -53,7 +53,7 @@ export function isLandingRoute() {
   return (
     currentHostname === "proofofwork.me" ||
     currentHostname === "www.proofofwork.me" ||
-    searchIncludes("landing=1")
+    searchFlag("landing")
   );
 }
 
@@ -62,7 +62,7 @@ export function isDesktopRoute() {
     return true;
   }
 
-  return hostname() === "desktop.proofofwork.me" || searchIncludes("desktop=1");
+  return hostname() === "desktop.proofofwork.me" || searchFlag("desktop");
 }
 
 export function isBrowserRoute() {
@@ -70,7 +70,7 @@ export function isBrowserRoute() {
     return true;
   }
 
-  return hostname() === "browser.proofofwork.me" || searchIncludes("browser=1");
+  return hostname() === "browser.proofofwork.me" || searchFlag("browser");
 }
 
 export function isMarketplaceRoute() {
@@ -80,7 +80,7 @@ export function isMarketplaceRoute() {
 
   return (
     hostname() === "marketplace.proofofwork.me" ||
-    searchIncludes("marketplace=1")
+    searchFlag("marketplace")
   );
 }
 
@@ -94,8 +94,8 @@ export function isTokenRoute() {
     currentHostname === "credit.proofofwork.me" ||
     currentHostname === "token.proofofwork.me" ||
     currentHostname === "tokens.proofofwork.me" ||
-    searchIncludes("credit=1") ||
-    searchIncludes("token=1")
+    searchFlag("credit") ||
+    searchFlag("token")
   );
 }
 
@@ -104,7 +104,7 @@ export function isWalletRoute() {
     return true;
   }
 
-  return hostname() === "wallet.proofofwork.me" || searchIncludes("wallet=1");
+  return hostname() === "wallet.proofofwork.me" || searchFlag("wallet");
 }
 
 export function isWorkTokenRoute() {
@@ -112,7 +112,7 @@ export function isWorkTokenRoute() {
     return true;
   }
 
-  return hostname() === "work.proofofwork.me" || searchIncludes("work=1");
+  return hostname() === "work.proofofwork.me" || searchFlag("work");
 }
 
 export function isInfinityRoute() {
@@ -122,7 +122,7 @@ export function isInfinityRoute() {
 
   return (
     hostname() === "infinity.proofofwork.me" ||
-    searchIncludes("infinity=1")
+    searchFlag("infinity")
   );
 }
 
@@ -133,7 +133,7 @@ export function isInceptionRoute() {
 
   return (
     hostname() === "inception.proofofwork.me" ||
-    searchIncludes("inception=1")
+    searchFlag("inception")
   );
 }
 
@@ -142,7 +142,7 @@ export function isRushRoute() {
     return true;
   }
 
-  return searchIncludes("rush=1");
+  return searchFlag("rush");
 }
 
 export function isActivityRoute() {
@@ -157,8 +157,8 @@ export function isActivityRoute() {
   return (
     currentHostname === "log.proofofwork.me" ||
     currentHostname === "activity.proofofwork.me" ||
-    searchIncludes("log=1") ||
-    searchIncludes("activity=1")
+    searchFlag("log") ||
+    searchFlag("activity")
   );
 }
 
@@ -167,7 +167,7 @@ export function isGrowthRoute() {
     return true;
   }
 
-  return hostname() === "growth.proofofwork.me" || searchIncludes("growth=1");
+  return hostname() === "growth.proofofwork.me" || searchFlag("growth");
 }
 
 export function detectAppSurface(): AppSurface {

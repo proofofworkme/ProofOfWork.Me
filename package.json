@@ -3,12 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "dev:prod-api": "vite --host 0.0.0.0 --mode prod-api",
     "build": "tsc && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "check:ui": "node scripts/check-ui-contract.mjs",
+    "check:hardening": "node scripts/check-hardening-contract.mjs",
+    "check:api-truth": "node scripts/check-api-truth-contract.mjs",
+    "check:electrum-client": "node scripts/check-electrum-client.mjs",
+    "check:message-signatures": "node scripts/check-bitcoin-message-signatures.mjs",
     "check:live-data": "node scripts/check-live-data-contract.mjs",
     "check:index-recovery-behavior": "node scripts/check-index-recovery-behavior.mjs",
     "check:send-prep-regressions": "node scripts/check-send-prep-regressions.mjs",
@@ -31,7 +38,6 @@
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",
-    "bip322-js": "^3.0.0",
     "bitcoinjs-lib": "^7.0.1",
     "buffer": "^6.0.3",
     "lucide-react": "^1.14.0",
@@ -42,8 +48,8 @@
   "devDependencies": {
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
-    "@vitejs/plugin-react": "^5.0.4",
+    "@vitejs/plugin-react": "^6.0.3",
     "typescript": "^5.7.2",
-    "vite": "^6.0.3"
+    "vite": "^8.1.4"
   }
 }

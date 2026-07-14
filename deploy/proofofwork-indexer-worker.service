@@ -27,6 +27,10 @@ Environment=POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_TXIDS=250
 Environment=POW_INDEX_BITCOIN_RPC_TIMEOUT_MS=15000
 Environment=POW_INDEX_BITCOIN_RPC_RETRIES=2
 Environment=POW_INDEX_PREVOUT_HYDRATION_CONCURRENCY=4
+Environment=POW_INDEX_RUSH_BOOTSTRAP_BATCH_SIZE=250
+Environment=POW_INDEX_RUSH_ELECTRUM_TIMEOUT_MS=120000
+Environment=ELECTRUM_HOST=172.27.0.1
+Environment=ELECTRUM_PORT=50001
 Environment=POW_INDEX_MEMPOOL_SCAN_MAX_TXIDS=500
 Environment=POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5
 Environment=POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=5000
@@ -44,7 +48,7 @@ Environment=POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS=240000
 Environment=POW_INDEX_WORKER_PARITY_TIMEOUT_MS=120000
 Environment=POW_INDEX_WORKER_MAX_CONSECUTIVE_FAILURES=3
 ExecStartPre=/usr/bin/pg_isready --quiet --host=127.0.0.1 --port=5432 --dbname=proof_indexer
-ExecStart=/usr/bin/npm run indexer:worker -- --loop
+ExecStart=/opt/node-v24.18.0-linux-x64/bin/node /opt/proofofwork-api/scripts/run-proof-indexer-worker.mjs --loop
 Restart=on-failure
 RestartSec=15
 TimeoutStopSec=30
@@ -52,6 +56,19 @@ KillMode=control-group
 LimitCORE=0
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=full
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
 UMask=0027
 
 [Install]

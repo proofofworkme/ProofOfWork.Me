@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import net from "node:net";
+
+import * as bitcoin from "bitcoinjs-lib";
 
 import { createProofIndexPool } from "../server/db/postgres.mjs";
 
@@ -125,8 +128,54 @@ const MEMPOOL_SCAN_SEEN_LIMIT = Number(
   process.env.POW_INDEX_MEMPOOL_SCAN_SEEN_LIMIT ?? 10_000,
 );
 // Only protocols with a canonical block-scan parser/verifier belong here.
-// pwc1 is staged and pwr1 still relies on its separate ordered validator.
-const PROTOCOL_PREFIXES = ["pwm1:", "pwid1:", "pwt1:"];
+// pwc1 remains staged. RUSH is indexed as an ordered, full-node-verified
+// stream so canonical summaries never need to replay its complete history.
+const PROTOCOL_PREFIXES = ["pwm1:", "pwid1:", "pwr1:", "pwt1:"];
+const RUSH_PROTOCOL_PREFIX = "pwr1:";
+const RUSH_MINT_PAYLOAD = "pwr1:m:rush";
+const RUSH_REGISTRY_ADDRESS = "bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e";
+const RUSH_MINT_PRICE_SATS = 1_000n;
+const RUSH_BOOTSTRAP_META_KEY = `rushCanonicalBootstrap:${NETWORK}`;
+const RUSH_DISCOVERY_META_KEY = `rushCanonicalDiscovery:${NETWORK}`;
+const RUSH_BOOTSTRAP_VERSION = 1;
+const RUSH_BOOTSTRAP_ONLY = process.argv.includes("--bootstrap-rush");
+const RUSH_BOOTSTRAP_ENABLED =
+  RUSH_BOOTSTRAP_ONLY ||
+  !/^(?:0|false|no|off)$/iu.test(
+    String(process.env.POW_INDEX_RUSH_BOOTSTRAP_ENABLED ?? "1"),
+  );
+const RUSH_BOOTSTRAP_BATCH_SIZE = Math.min(
+  1_000,
+  Math.max(
+    1,
+    Math.floor(
+      Number(process.env.POW_INDEX_RUSH_BOOTSTRAP_BATCH_SIZE ?? 250) || 250,
+    ),
+  ),
+);
+const RUSH_BOOTSTRAP_MAX_TXIDS = Math.max(
+  0,
+  Math.floor(
+    Number(
+      process.env.POW_INDEX_RUSH_BOOTSTRAP_MAX_TXIDS ??
+        (RUSH_BOOTSTRAP_ONLY ? 0 : RUSH_BOOTSTRAP_BATCH_SIZE),
+    ) || 0,
+  ),
+);
+const RUSH_ELECTRUM_HOST = String(
+  process.env.ELECTRUM_HOST ?? "127.0.0.1",
+).trim();
+const RUSH_ELECTRUM_PORT = Number(process.env.ELECTRUM_PORT ?? 50_001);
+const RUSH_ELECTRUM_TIMEOUT_MS = Math.min(
+  180_000,
+  Math.max(
+    10_000,
+    Math.floor(
+      Number(process.env.POW_INDEX_RUSH_ELECTRUM_TIMEOUT_MS ?? 120_000) ||
+        120_000,
+    ),
+  ),
+);
 const MAIL_ATTACHMENT_MAX_BYTES = 60_000;
 const INCLUDE_SCOPED_HOLDERS = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_HOLDERS ?? "1"),
@@ -168,8 +217,73 @@ const PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY = process.argv.includes(
   "--prepare-canonical-pwt-range-replay",
 );
 const REPAIR_ID_TXIDS_ONLY = process.argv.includes("--repair-id-txids");
+const HYDRATE_TRANSACTION_DETAILS_ONLY = process.argv.includes(
+  "--hydrate-transaction-details",
+);
+const TX_DETAIL_HYDRATION_BATCH_SIZE = Number(
+  process.env.POW_INDEX_TX_DETAIL_HYDRATION_BATCH_SIZE ?? 200,
+);
+const TX_DETAIL_HYDRATION_MAX_ROWS = Number(
+  process.env.POW_INDEX_TX_DETAIL_HYDRATION_MAX_ROWS ?? 10_000,
+);
+const TX_DETAIL_HYDRATION_AFTER_HEIGHT = Number(
+  process.env.POW_INDEX_TX_DETAIL_HYDRATION_AFTER_HEIGHT ?? -1,
+);
+const TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX = Number(
+  process.env.POW_INDEX_TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX ?? -1,
+);
+const TX_DETAIL_HYDRATION_AFTER_TXID = String(
+  process.env.POW_INDEX_TX_DETAIL_HYDRATION_AFTER_TXID ?? "",
+)
+  .trim()
+  .toLowerCase();
 
 function assertCanonicalRebuildConfiguration() {
+  if (
+    HYDRATE_TRANSACTION_DETAILS_ONLY &&
+    (PREPARE_CANONICAL_REBUILD_ONLY ||
+      PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
+      REPAIR_ID_TXIDS_ONLY ||
+      REPAIR_WORK_PARTICIPANTS_ONLY ||
+      CANONICAL_REBUILD)
+  ) {
+    throw new Error(
+      "Historical transaction-detail hydration is exclusive with rebuild and repair modes.",
+    );
+  }
+  if (HYDRATE_TRANSACTION_DETAILS_ONLY) {
+    if (
+      !Number.isSafeInteger(TX_DETAIL_HYDRATION_BATCH_SIZE) ||
+      TX_DETAIL_HYDRATION_BATCH_SIZE < 1 ||
+      TX_DETAIL_HYDRATION_BATCH_SIZE > 500 ||
+      !Number.isSafeInteger(TX_DETAIL_HYDRATION_MAX_ROWS) ||
+      TX_DETAIL_HYDRATION_MAX_ROWS < 1 ||
+      TX_DETAIL_HYDRATION_MAX_ROWS > 100_000
+    ) {
+      throw new Error(
+        "Historical transaction-detail hydration requires batch size 1-500 and max rows 1-100000.",
+      );
+    }
+    if (
+      !Number.isSafeInteger(TX_DETAIL_HYDRATION_AFTER_HEIGHT) ||
+      TX_DETAIL_HYDRATION_AFTER_HEIGHT < -1 ||
+      !Number.isSafeInteger(TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX) ||
+      TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX < -1 ||
+      (TX_DETAIL_HYDRATION_AFTER_HEIGHT === -1 &&
+        (TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX !== -1 ||
+          TX_DETAIL_HYDRATION_AFTER_TXID)) ||
+      (TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX >= 0 &&
+        TX_DETAIL_HYDRATION_AFTER_HEIGHT < 0) ||
+      (TX_DETAIL_HYDRATION_AFTER_TXID &&
+        (TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX < 0 ||
+          !isHexTxid(TX_DETAIL_HYDRATION_AFTER_TXID)))
+    ) {
+      throw new Error(
+        "Historical transaction-detail hydration has an invalid resume cursor.",
+      );
+    }
+    return;
+  }
   if (
     PREPARE_CANONICAL_REBUILD_ONLY &&
     PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY
@@ -330,6 +444,8 @@ const BOND_TAGS = [
     tokenMaxSupply: INCB_TOKEN_MAX_SUPPLY,
   },
 ];
+const BOND_TOKEN_IDS = new Set(BOND_TAGS.map((tag) => tag.tokenId));
+const BOND_TOKEN_TICKERS = new Set(BOND_TAGS.map((tag) => tag.ticker));
 const DEFAULT_MAIL_BACKFILL_ADDRESSES = [
   "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
   "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH",
@@ -364,7 +480,9 @@ const SUMMARY_SNAPSHOT_SOURCES = [
   { key: "growthSummary", path: "/api/v1/growth-summary" },
   { key: "inceptionSummary", path: "/api/v1/inception-summary" },
   { key: "infinitySummary", path: "/api/v1/infinity-summary" },
+  { key: "logSummary", path: "/api/v1/log-summary" },
   { key: "marketplaceSummary", path: "/api/v1/marketplace-summary" },
+  { key: "tokenSummary", path: "/api/v1/token-summary" },
   { key: "workFloor", path: "/api/v1/work-floor" },
   { key: "workSummary", path: "/api/v1/work-summary" },
 ];
@@ -521,6 +639,16 @@ async function bitcoinRpc(method, params = []) {
 }
 
 const RAW_TRANSACTION_CACHE = new Map();
+const RAW_TRANSACTION_CACHE_LIMIT = Math.min(
+  20_000,
+  Math.max(
+    100,
+    Math.floor(
+      Number(process.env.POW_INDEX_RAW_TRANSACTION_CACHE_LIMIT ?? 2_000) ||
+        2_000,
+    ),
+  ),
+);
 
 async function rawTransactionFromCore(txid) {
   const normalizedTxid = String(txid ?? "").trim().toLowerCase();
@@ -542,6 +670,9 @@ async function rawTransactionFromCore(txid) {
       },
     );
     RAW_TRANSACTION_CACHE.set(normalizedTxid, pending);
+    while (RAW_TRANSACTION_CACHE.size > RAW_TRANSACTION_CACHE_LIMIT) {
+      RAW_TRANSACTION_CACHE.delete(RAW_TRANSACTION_CACHE.keys().next().value);
+    }
   }
   return RAW_TRANSACTION_CACHE.get(normalizedTxid);
 }
@@ -1182,6 +1313,42 @@ function protocolItemsFromTx(tx, message) {
     return [{ ...base, id }];
   }
 
+  if (message.prefix === "pwr1:") {
+    const base = baseProtocolItem(tx, message, "rush-mint");
+    const registryPaymentSats = (Array.isArray(base.recipients)
+      ? base.recipients
+      : []
+    ).reduce(
+      (total, recipient) =>
+        String(recipient?.address ?? "") === RUSH_REGISTRY_ADDRESS
+          ? total + BigInt(String(recipient?.amountSats ?? "0"))
+          : total,
+      0n,
+    );
+    const minterAddress = senderAddressFromTx(tx);
+    const item = {
+      ...base,
+      amountSats: RUSH_MINT_PRICE_SATS.toString(),
+      minterAddress,
+      paidSats: RUSH_MINT_PRICE_SATS.toString(),
+      registryAddress: RUSH_REGISTRY_ADDRESS,
+      validationMode: "canonical-ordered-rush-index",
+    };
+    if (
+      String(message.text ?? "") !== RUSH_MINT_PAYLOAD ||
+      !minterAddress ||
+      registryPaymentSats < RUSH_MINT_PRICE_SATS
+    ) {
+      return [
+        invalidProtocolItem(
+          item,
+          "Malformed RUSH mint or missing canonical registry payment.",
+        ),
+      ];
+    }
+    return [{ ...item, valid: true }];
+  }
+
   if (message.prefix !== "pwt1:") {
     return [baseProtocolItem(tx, message, `${message.prefix.replace(/:$/u, "")}-event`)];
   }
@@ -1276,6 +1443,11 @@ function protocolItemsFromTx(tx, message) {
 function rawProtocolItemsForTx(tx, messages) {
   const mailItem = aggregatePwmProtocolItem(tx, messages);
   const pwmMessages = messages.filter((message) => message?.prefix === "pwm1:");
+  const rushMessage =
+    messages.find(
+      (message) =>
+        message?.prefix === "pwr1:" && message?.text === "pwr1:m:rush",
+    ) ?? messages.find((message) => message?.prefix === "pwr1:");
   const invalidMailItem =
     pwmMessages.length > 0 && !mailItem
       ? invalidProtocolItem(
@@ -1295,8 +1467,11 @@ function rawProtocolItemsForTx(tx, messages) {
     ...(mailItem ? [mailItem] : []),
     ...(invalidMailItem ? [invalidMailItem] : []),
     ...canonicalBondMintItemsFromMailItem(mailItem),
+    ...(rushMessage ? protocolItemsFromTx(tx, rushMessage) : []),
     ...messages
-      .filter((message) => ["pwid1:", "pwt1:"].includes(message?.prefix))
+      .filter((message) =>
+        ["pwid1:", "pwt1:"].includes(message?.prefix),
+      )
       .flatMap((message) => protocolItemsFromTx(tx, message)),
   ];
 }
@@ -1435,6 +1610,141 @@ function invalidProtocolItem(item, reason) {
     reason,
     valid: false,
   };
+}
+
+function canonicalBondMintProjection(item) {
+  const tokenId = String(item?.tokenId ?? "").trim().toLowerCase();
+  const bondTag = BOND_TAGS.find((candidate) => candidate.tokenId === tokenId);
+  const txid = String(item?.txid ?? "").trim().toLowerCase();
+  const sourceBondTxid = String(item?.sourceBondTxid ?? "")
+    .trim()
+    .toLowerCase();
+  return Boolean(
+    bondTag &&
+      String(item?.kind ?? "").toLowerCase() === "token-mint" &&
+      String(item?.protocol ?? "").toLowerCase() === "pwt1" &&
+      item?.confirmed === true &&
+      String(item?.ticker ?? "").trim().toUpperCase() === bondTag.ticker &&
+      String(item?.validationMode ?? "") ===
+        `canonical-${bondTag.ticker.toLowerCase()}-bond-projection` &&
+      /^[0-9a-f]{64}$/u.test(txid) &&
+      sourceBondTxid === txid &&
+      String(item?.minterAddress ?? "").trim().length > 0 &&
+      /^[1-9]\d*$/u.test(String(item?.amount ?? "").trim()) &&
+      Number(item?.amountSats ?? 0) === 0,
+  );
+}
+
+function reservedBondCreditViolationReason(item) {
+  if (item?.valid === false || canonicalBondMintProjection(item)) {
+    return "";
+  }
+  const kind = String(item?.kind ?? "").trim().toLowerCase();
+  const tokenId = String(item?.tokenId ?? "").trim().toLowerCase();
+  const ticker = String(item?.ticker ?? "").trim().toUpperCase();
+  if (
+    (kind === "token-create" && BOND_TOKEN_TICKERS.has(ticker)) ||
+    (kind === "token-mint" && BOND_TOKEN_IDS.has(tokenId))
+  ) {
+    return "POWB and INCB are reserved synthetic bond credits; generic pwt1 create and mint actions cannot create their supply.";
+  }
+  return "";
+}
+
+function tokenProtocolIntegrityInvalidItem(item, reason, reasonCode) {
+  return {
+    ...item,
+    attemptedKind: String(item?.attemptedKind ?? item?.kind ?? "token-event"),
+    kind: "token-event-invalid",
+    reason,
+    reasonCode,
+    valid: false,
+  };
+}
+
+async function tokenMintDefinitionOrderInvalidReason(client, item) {
+  if (
+    item?.valid === false ||
+    String(item?.kind ?? "").toLowerCase() !== "token-mint" ||
+    canonicalBondMintProjection(item)
+  ) {
+    return "";
+  }
+  const tokenId = String(item?.tokenId ?? "").trim().toLowerCase();
+  if (!isHexTxid(tokenId)) {
+    return "The credit mint does not reference a valid credit definition txid.";
+  }
+  const definitionResult = await client.query(
+    `
+      SELECT confirmed, created_height, metadata
+      FROM proof_indexer.credit_definitions
+      WHERE network = $1
+        AND token_id = $2
+      LIMIT 1
+    `,
+    [NETWORK, tokenId],
+  );
+  const definition = definitionResult.rows[0];
+  if (!definition || definition.confirmed !== true) {
+    return "The credit definition was not confirmed before this mint action.";
+  }
+  if (definition?.metadata?.canonicalSynthetic === true) {
+    return "";
+  }
+  if (item?.confirmed !== true) {
+    return "";
+  }
+  const definitionHeight = Number(definition.created_height);
+  const definitionBlockIndex = Number(definition?.metadata?.blockIndex);
+  const mintHeight = Number(item?.blockHeight ?? item?.height);
+  const mintBlockIndex = Number(item?.blockIndex);
+  if (
+    !Number.isSafeInteger(definitionHeight) ||
+    definitionHeight < 0 ||
+    !Number.isSafeInteger(mintHeight) ||
+    mintHeight < 0
+  ) {
+    return "The credit definition and mint do not have a complete canonical order.";
+  }
+  if (definitionHeight > mintHeight) {
+    return "The credit mint appears before its confirmed credit definition.";
+  }
+  if (definitionHeight < mintHeight) {
+    return "";
+  }
+  if (
+    !Number.isSafeInteger(definitionBlockIndex) ||
+    definitionBlockIndex < 0 ||
+    !Number.isSafeInteger(mintBlockIndex) ||
+    mintBlockIndex < 0
+  ) {
+    return "The same-block credit definition and mint do not have a complete transaction order.";
+  }
+  return definitionBlockIndex < mintBlockIndex
+    ? ""
+    : "The credit mint does not appear after its confirmed credit definition.";
+}
+
+async function protocolIntegrityItemForPersistence(client, item) {
+  const reservedReason = reservedBondCreditViolationReason(item);
+  if (reservedReason) {
+    return tokenProtocolIntegrityInvalidItem(
+      item,
+      reservedReason,
+      "reserved-bond-credit-namespace",
+    );
+  }
+  const definitionOrderReason = await tokenMintDefinitionOrderInvalidReason(
+    client,
+    item,
+  );
+  return definitionOrderReason
+    ? tokenProtocolIntegrityInvalidItem(
+        item,
+        definitionOrderReason,
+        "token-definition-not-prior",
+      )
+    : item;
 }
 
 function disambiguateDuplicateProtocolItems(items) {
@@ -1684,10 +1994,18 @@ async function canonicalRecoveryItemsForTx(tx, messages) {
       protocol: rawItem?.protocol ?? canonicalItem?.protocol,
       txid,
     };
+    const reservedReason = reservedBondCreditViolationReason(normalizedItem);
+    const integrityItem = reservedReason
+      ? tokenProtocolIntegrityInvalidItem(
+          normalizedItem,
+          reservedReason,
+          "reserved-bond-credit-namespace",
+        )
+      : normalizedItem;
     normalizedRecovered.push({
       ...recoveredItem,
-      item: normalizedItem,
-      sourceLabel: sourceLabelForProtocolItem(normalizedItem),
+      item: integrityItem,
+      sourceLabel: sourceLabelForProtocolItem(integrityItem),
     });
   }
 
@@ -1746,9 +2064,15 @@ async function persistPreparedProtocolItems(client, preparedItems) {
   let indexed = 0;
   let skipped = 0;
   for (const prepared of preparedItems) {
-    const item = prepared.item ?? prepared;
+    const originalItem = prepared.item ?? prepared;
+    const item = await protocolIntegrityItemForPersistence(
+      client,
+      originalItem,
+    );
     const sourceLabel =
-      prepared.sourceLabel ?? sourceLabelForProtocolItem(item);
+      item === originalItem && prepared.sourceLabel
+        ? prepared.sourceLabel
+        : sourceLabelForProtocolItem(item);
     const result = await upsertEvent(client, sourceLabel, item);
     if (result.skipped) {
       skipped += 1;
@@ -1933,7 +2257,7 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
 
   const definitionsResult = await client.query(
     `
-      SELECT token_id, max_supply, metadata
+      SELECT token_id, ticker, max_supply, confirmed, created_height, metadata
       FROM proof_indexer.credit_definitions
       WHERE network = $1
         AND confirmed = true
@@ -1944,10 +2268,15 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
     definitionsResult.rows.map((row) => [
       String(row.token_id ?? "").trim().toLowerCase(),
       {
+        canonicalSynthetic: row?.metadata?.canonicalSynthetic === true,
+        confirmed: row.confirmed === true,
+        createdBlockIndex: Number(row?.metadata?.blockIndex),
+        createdHeight: Number(row.created_height),
         maxSupply: nonnegativeInteger(
           row.max_supply,
           `credit ${row.token_id} max supply`,
         ),
+        ticker: String(row.ticker ?? "").trim().toUpperCase(),
         uncapped: row?.metadata?.uncapped === true,
       },
     ]),
@@ -2054,6 +2383,48 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
     const eventLabel = `${row.kind}:${row.txid ?? row.event_key ?? row.event_id}`;
     if (!/^[0-9a-f]{64}$/u.test(tokenId) || !definitions.has(tokenId)) {
       throw new Error(`Canonical credit event ${eventLabel} has no confirmed definition`);
+    }
+    const definition = definitions.get(tokenId);
+    if (row.kind === "token-mint") {
+      const expectedBondProjection =
+        ["POWB", "INCB"].includes(definition.ticker) &&
+        payload.confirmed === true &&
+        String(payload.ticker ?? "").trim().toUpperCase() ===
+          definition.ticker &&
+        String(payload.validationMode ?? "") ===
+          `canonical-${definition.ticker.toLowerCase()}-bond-projection` &&
+        String(payload.sourceBondTxid ?? "").trim().toLowerCase() ===
+          String(row.txid ?? "").trim().toLowerCase() &&
+        String(payload.minterAddress ?? "").trim().length > 0 &&
+        /^[1-9]\d*$/u.test(String(payload.amount ?? "").trim()) &&
+        Number(payload.amountSats ?? 0) === 0;
+      if (["POWB", "INCB"].includes(definition.ticker) && !expectedBondProjection) {
+        throw new Error(
+          `Canonical credit event ${eventLabel} attempts a generic mint in the reserved ${definition.ticker} namespace`,
+        );
+      }
+      if (!definition.canonicalSynthetic) {
+        const eventHeight = Number(row.canonical_block_height);
+        const eventBlockIndex = Number(payload.blockIndex);
+        if (
+          !definition.confirmed ||
+          !Number.isSafeInteger(eventHeight) ||
+          eventHeight < 0 ||
+          !Number.isSafeInteger(definition.createdHeight) ||
+          definition.createdHeight < 0 ||
+          definition.createdHeight > eventHeight ||
+          (definition.createdHeight === eventHeight &&
+            (!Number.isSafeInteger(eventBlockIndex) ||
+              eventBlockIndex < 0 ||
+              !Number.isSafeInteger(definition.createdBlockIndex) ||
+              definition.createdBlockIndex < 0 ||
+              definition.createdBlockIndex >= eventBlockIndex))
+        ) {
+          throw new Error(
+            `Canonical credit event ${eventLabel} does not appear after its confirmed definition`,
+          );
+        }
+      }
     }
     const amount = integerAmount(payload.amount, `${eventLabel} amount`);
     if (row.kind === "token-mint") {
@@ -2890,6 +3261,444 @@ function refsForItem(item) {
   return refs;
 }
 
+function canonicalOpReturnPayloadFromVout(vout) {
+  const scriptHex = String(
+    vout?.scriptPubKey?.hex ?? vout?.scriptpubkey ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  if (
+    scriptHex.length < 2 ||
+    scriptHex.length % 2 !== 0 ||
+    !/^[0-9a-f]+$/u.test(scriptHex)
+  ) {
+    return null;
+  }
+
+  const script = Buffer.from(scriptHex, "hex");
+  if (script[0] !== 0x6a) {
+    return null;
+  }
+
+  const chunks = [];
+  let cursor = 1;
+  while (cursor < script.length) {
+    const opcode = script[cursor];
+    cursor += 1;
+    let length;
+    if (opcode === 0) {
+      length = 0;
+    } else if (opcode <= 0x4b) {
+      length = opcode;
+    } else if (opcode === 0x4c) {
+      if (cursor + 1 > script.length) {
+        return null;
+      }
+      length = script[cursor];
+      cursor += 1;
+    } else if (opcode === 0x4d) {
+      if (cursor + 2 > script.length) {
+        return null;
+      }
+      length = script.readUInt16LE(cursor);
+      cursor += 2;
+    } else if (opcode === 0x4e) {
+      if (cursor + 4 > script.length) {
+        return null;
+      }
+      length = script.readUInt32LE(cursor);
+      cursor += 4;
+    } else {
+      return null;
+    }
+    if (length > script.length - cursor) {
+      return null;
+    }
+    chunks.push(script.subarray(cursor, cursor + length));
+    cursor += length;
+  }
+
+  const payload = Buffer.concat(chunks);
+  if (payload.length === 0) {
+    return null;
+  }
+  const decodedText = payload.toString("utf8");
+  const payloadText =
+    !decodedText.includes("\u0000") &&
+    Buffer.from(decodedText, "utf8").equals(payload)
+      ? decodedText
+      : null;
+  return {
+    dataBytes: payload.length,
+    payloadHex: payload.toString("hex"),
+    payloadText,
+  };
+}
+
+function canonicalTransactionDetailRows(tx) {
+  const txid = String(tx?.txid ?? "").trim().toLowerCase();
+  if (!isHexTxid(txid)) {
+    throw new Error("Canonical transaction details have an invalid transaction id.");
+  }
+  if (!Array.isArray(tx?.vin) || tx.vin.length === 0) {
+    throw new Error(`Canonical transaction ${txid} has no inputs.`);
+  }
+  if (!Array.isArray(tx?.vout) || tx.vout.length === 0) {
+    throw new Error(`Canonical transaction ${txid} has no outputs.`);
+  }
+
+  const safeUnsignedInteger = (value, label, { optional = false } = {}) => {
+    if ((value === undefined || value === null || value === "") && optional) {
+      return null;
+    }
+    const numeric = Number(value);
+    if (!Number.isSafeInteger(numeric) || numeric < 0) {
+      throw new Error(`Canonical transaction ${txid} has an invalid ${label}.`);
+    }
+    return numeric;
+  };
+  const safeHex = (value, label, { optional = false } = {}) => {
+    if ((value === undefined || value === null || value === "") && optional) {
+      return null;
+    }
+    const hex = String(value ?? "").trim().toLowerCase();
+    if (hex.length % 2 !== 0 || !/^[0-9a-f]*$/u.test(hex)) {
+      throw new Error(`Canonical transaction ${txid} has an invalid ${label}.`);
+    }
+    return hex;
+  };
+
+  const inputs = tx.vin.map((input, vin) => {
+    if (!input || typeof input !== "object") {
+      throw new Error(`Canonical transaction ${txid} has an invalid input ${vin}.`);
+    }
+    const coinbase = typeof input.coinbase === "string";
+    const prevTxid = String(input?.txid ?? "").trim().toLowerCase();
+    const prevVout = Number(input?.vout);
+    const prevout = input?.prevout;
+    if (
+      !coinbase &&
+      (!isHexTxid(prevTxid) ||
+        !Number.isSafeInteger(prevVout) ||
+        prevVout < 0 ||
+        !prevout ||
+        !Number.isSafeInteger(Number(prevout?.valueSats)) ||
+        Number(prevout.valueSats) < 0)
+    ) {
+      throw new Error(
+        `Canonical transaction ${txid} input ${vin} has incomplete prevout details.`,
+      );
+    }
+
+    const scriptSigValue =
+      input?.scriptSig?.hex ?? input?.scriptsig ?? input?.coinbase;
+    const witnessValue = input?.txinwitness ?? input?.witness ?? [];
+    if (!Array.isArray(witnessValue)) {
+      throw new Error(
+        `Canonical transaction ${txid} input ${vin} has an invalid witness.`,
+      );
+    }
+    const witness = witnessValue.map((value, witnessIndex) =>
+      safeHex(value, `input ${vin} witness ${witnessIndex}`),
+    );
+    const address = coinbase ? "" : addressFromVout(prevout).trim();
+
+    return {
+      address: address || null,
+      prev_txid: coinbase ? null : prevTxid,
+      prev_vout: coinbase ? null : prevVout,
+      script_sig: safeHex(scriptSigValue, `input ${vin} script signature`, {
+        optional: true,
+      }),
+      sequence: safeUnsignedInteger(input?.sequence, `input ${vin} sequence`, {
+        optional: true,
+      }),
+      value_sats: coinbase ? null : Number(prevout.valueSats),
+      vin,
+      witness,
+    };
+  });
+
+  const opReturns = [];
+  const outputs = tx.vout.map((vout, index) => {
+    if (!vout || typeof vout !== "object") {
+      throw new Error(`Canonical transaction ${txid} has an invalid output ${index}.`);
+    }
+    const declaredVout =
+      vout?.n === undefined || vout?.n === null
+        ? index
+        : safeUnsignedInteger(vout.n, `output ${index} index`);
+    if (declaredVout !== index) {
+      throw new Error(
+        `Canonical transaction ${txid} output ${index} has a mismatched index.`,
+      );
+    }
+    const normalized = prevoutFromOutput(vout);
+    if (!normalized) {
+      throw new Error(
+        `Canonical transaction ${txid} output ${index} is incomplete.`,
+      );
+    }
+    const address = addressFromVout(vout).trim();
+    const script = normalized.scriptPubKey;
+    const payload = canonicalOpReturnPayloadFromVout(vout);
+    if (payload) {
+      const prefix = PROTOCOL_PREFIXES.find((candidate) =>
+        payload.payloadText?.startsWith(candidate),
+      );
+      opReturns.push({
+        data_bytes: payload.dataBytes,
+        output_index: 0,
+        payload_hex: payload.payloadHex,
+        payload_text: payload.payloadText,
+        protocol: prefix ? prefix.slice(0, -1) : null,
+        vout: index,
+      });
+    }
+    return {
+      address: address || null,
+      scriptpubkey: safeHex(script?.hex, `output ${index} script`),
+      scriptpubkey_asm: String(script?.asm ?? "").trim() || null,
+      scriptpubkey_type: String(script?.type ?? "").trim() || null,
+      value_sats: Number(normalized.valueSats),
+      vout: index,
+    };
+  });
+
+  return { inputs, opReturns, outputs };
+}
+
+async function persistCanonicalTransactionDetails(
+  client,
+  tx,
+  { details = canonicalTransactionDetailRows(tx), spentAt = null } = {},
+) {
+  const txid = String(tx?.txid ?? "").trim().toLowerCase();
+  if (!isHexTxid(txid)) {
+    throw new Error("Canonical transaction details have an invalid transaction id.");
+  }
+  const inputRows = JSON.stringify(details.inputs);
+  if (details.inputs.length > 0) {
+    await client.query(
+      `
+        INSERT INTO proof_indexer.tx_inputs (
+          network,
+          txid,
+          vin,
+          prev_txid,
+          prev_vout,
+          address,
+          value_sats,
+          sequence,
+          script_sig,
+          witness
+        )
+        SELECT
+          $1,
+          $2,
+          input_row.vin,
+          input_row.prev_txid,
+          input_row.prev_vout,
+          input_row.address,
+          input_row.value_sats,
+          input_row.sequence,
+          input_row.script_sig,
+          input_row.witness
+        FROM jsonb_to_recordset($3::jsonb) AS input_row (
+          vin integer,
+          prev_txid text,
+          prev_vout integer,
+          address text,
+          value_sats bigint,
+          sequence bigint,
+          script_sig text,
+          witness jsonb
+        )
+        ON CONFLICT (network, txid, vin)
+        DO UPDATE SET
+          prev_txid = EXCLUDED.prev_txid,
+          prev_vout = EXCLUDED.prev_vout,
+          address = EXCLUDED.address,
+          value_sats = EXCLUDED.value_sats,
+          sequence = EXCLUDED.sequence,
+          script_sig = EXCLUDED.script_sig,
+          witness = EXCLUDED.witness
+      `,
+      [NETWORK, txid, inputRows],
+    );
+  }
+  if (details.outputs.length > 0) {
+    await client.query(
+      `
+        INSERT INTO proof_indexer.tx_outputs (
+          network,
+          txid,
+          vout,
+          value_sats,
+          address,
+          scriptpubkey,
+          scriptpubkey_asm,
+          scriptpubkey_type
+        )
+        SELECT
+          $1,
+          $2,
+          output_row.vout,
+          output_row.value_sats,
+          output_row.address,
+          output_row.scriptpubkey,
+          output_row.scriptpubkey_asm,
+          output_row.scriptpubkey_type
+        FROM jsonb_to_recordset($3::jsonb) AS output_row (
+          vout integer,
+          value_sats bigint,
+          address text,
+          scriptpubkey text,
+          scriptpubkey_asm text,
+          scriptpubkey_type text
+        )
+        ON CONFLICT (network, txid, vout)
+        DO UPDATE SET
+          value_sats = EXCLUDED.value_sats,
+          address = EXCLUDED.address,
+          scriptpubkey = EXCLUDED.scriptpubkey,
+          scriptpubkey_asm = EXCLUDED.scriptpubkey_asm,
+          scriptpubkey_type = EXCLUDED.scriptpubkey_type
+      `,
+      [NETWORK, txid, JSON.stringify(details.outputs)],
+    );
+  }
+  if (details.opReturns.length > 0) {
+    await client.query(
+      `
+        INSERT INTO proof_indexer.op_returns (
+          network,
+          txid,
+          vout,
+          output_index,
+          protocol,
+          payload_text,
+          payload_hex,
+          data_bytes
+        )
+        SELECT
+          $1,
+          $2,
+          op_return_row.vout,
+          op_return_row.output_index,
+          op_return_row.protocol,
+          op_return_row.payload_text,
+          op_return_row.payload_hex,
+          op_return_row.data_bytes
+        FROM jsonb_to_recordset($3::jsonb) AS op_return_row (
+          vout integer,
+          output_index integer,
+          protocol text,
+          payload_text text,
+          payload_hex text,
+          data_bytes integer
+        )
+        ON CONFLICT (network, txid, vout, output_index)
+        DO UPDATE SET
+          protocol = EXCLUDED.protocol,
+          payload_text = EXCLUDED.payload_text,
+          payload_hex = EXCLUDED.payload_hex,
+          data_bytes = EXCLUDED.data_bytes
+      `,
+      [NETWORK, txid, JSON.stringify(details.opReturns)],
+    );
+  }
+  if (details.inputs.some((input) => input.prev_txid !== null)) {
+    const lockedSpendLinks = await client.query(
+      `
+        WITH incoming AS (
+          SELECT input_row.vin, input_row.prev_txid, input_row.prev_vout
+          FROM jsonb_to_recordset($2::jsonb) AS input_row (
+            vin integer,
+            prev_txid text,
+            prev_vout integer
+          )
+          WHERE input_row.prev_txid IS NOT NULL
+            AND input_row.prev_vout IS NOT NULL
+        )
+        SELECT
+          spent_output.txid AS prev_txid,
+          spent_output.vout AS prev_vout,
+          spent_output.spent_by_txid,
+          spent_output.spent_by_vin,
+          incoming.vin AS incoming_vin
+        FROM proof_indexer.tx_outputs AS spent_output
+        JOIN incoming
+          ON incoming.prev_txid = spent_output.txid
+         AND incoming.prev_vout = spent_output.vout
+        WHERE spent_output.network = $1
+        FOR UPDATE OF spent_output
+      `,
+      [NETWORK, inputRows],
+    );
+    const conflictingSpend = lockedSpendLinks.rows.find((row) => {
+      const existingTxid = String(row?.spent_by_txid ?? "")
+        .trim()
+        .toLowerCase();
+      if (!existingTxid) {
+        return false;
+      }
+      return (
+        existingTxid !== txid ||
+        Number(row?.spent_by_vin) !== Number(row?.incoming_vin)
+      );
+    });
+    if (conflictingSpend) {
+      throw new Error(
+        `Canonical spend-link conflict for ${conflictingSpend.prev_txid}:${conflictingSpend.prev_vout}; ` +
+          `stored ${conflictingSpend.spent_by_txid}:${conflictingSpend.spent_by_vin}, ` +
+          `incoming ${txid}:${conflictingSpend.incoming_vin}.`,
+      );
+    }
+    await client.query(
+      `
+        WITH incoming AS (
+          SELECT input_row.vin, input_row.prev_txid, input_row.prev_vout
+          FROM jsonb_to_recordset($3::jsonb) AS input_row (
+            vin integer,
+            prev_txid text,
+            prev_vout integer
+          )
+          WHERE input_row.prev_txid IS NOT NULL
+            AND input_row.prev_vout IS NOT NULL
+        )
+        UPDATE proof_indexer.tx_outputs AS spent_output
+        SET
+          spent_by_txid = $2,
+          spent_by_vin = incoming.vin,
+          spent_at = COALESCE(
+            $4::timestamptz,
+            spent_output.spent_at,
+            now()
+          )
+        FROM incoming
+        WHERE spent_output.network = $1
+          AND spent_output.txid = incoming.prev_txid
+          AND spent_output.vout = incoming.prev_vout
+          AND (
+            spent_output.spent_by_txid IS NULL
+            OR (
+              lower(spent_output.spent_by_txid) = $2
+              AND spent_output.spent_by_vin IS NOT DISTINCT FROM incoming.vin
+            )
+          )
+      `,
+      [NETWORK, txid, inputRows, spentAt],
+    );
+  }
+  return {
+    inputs: details.inputs.length,
+    opReturns: details.opReturns.length,
+    outputs: details.outputs.length,
+    txid,
+  };
+}
+
 async function persistCanonicalBlock(client, block, height, blockHash) {
   const blockTime = Number(block?.time);
   const medianTime = Number(block?.mediantime);
@@ -2954,6 +3763,7 @@ async function persistCanonicalRawTransaction(
     Number.isFinite(Number(blockTime)) && Number(blockTime) > 0
       ? new Date(Number(blockTime) * 1000).toISOString()
       : itemTime(tx);
+  const details = canonicalTransactionDetailRows(tx);
   await client.query(
     `
       INSERT INTO proof_indexer.transactions (
@@ -3019,6 +3829,650 @@ async function persistCanonicalRawTransaction(
       JSON.stringify(canonicalRawTx),
     ],
   );
+  await persistCanonicalTransactionDetails(client, tx, {
+    details,
+    spentAt: eventTime,
+  });
+}
+
+function rushElectrumScriptHash() {
+  const script = bitcoin.address.toOutputScript(
+    RUSH_REGISTRY_ADDRESS,
+    bitcoin.networks.bitcoin,
+  );
+  return Buffer.from(createHash("sha256").update(script).digest())
+    .reverse()
+    .toString("hex");
+}
+
+function rushElectrumHistory() {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({
+      host: RUSH_ELECTRUM_HOST,
+      port: RUSH_ELECTRUM_PORT,
+    });
+    let buffer = "";
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      if (error) {
+        reject(error);
+      } else {
+        resolve(value);
+      }
+    };
+    const timer = setTimeout(
+      () => finish(new Error("RUSH Electrum history discovery timed out.")),
+      RUSH_ELECTRUM_TIMEOUT_MS,
+    );
+    socket.setKeepAlive(true, 30_000);
+    socket.setNoDelay(true);
+    socket.on("connect", () => {
+      socket.write(
+        `${JSON.stringify({
+          id: "rush-canonical-bootstrap",
+          jsonrpc: "2.0",
+          method: "blockchain.scripthash.get_history",
+          params: [rushElectrumScriptHash()],
+        })}\n`,
+      );
+    });
+    socket.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      if (Buffer.byteLength(buffer, "utf8") > 32 * 1024 * 1024) {
+        finish(new Error("RUSH Electrum history exceeded the response limit."));
+        return;
+      }
+      const newline = buffer.indexOf("\n");
+      if (newline < 0) {
+        return;
+      }
+      try {
+        const response = JSON.parse(buffer.slice(0, newline));
+        if (response?.error) {
+          finish(
+            new Error(
+              response.error.message ?? "RUSH Electrum history failed.",
+            ),
+          );
+          return;
+        }
+        if (!Array.isArray(response?.result)) {
+          finish(new Error("RUSH Electrum history returned an invalid result."));
+          return;
+        }
+        finish(null, response.result);
+      } catch (error) {
+        finish(error);
+      }
+    });
+    socket.on("error", (error) => finish(error));
+    socket.on("end", () => {
+      if (!settled) {
+        finish(new Error("RUSH Electrum history connection ended early."));
+      }
+    });
+  });
+}
+
+function canonicalRushHistoryEntries(history, indexedThroughBlock) {
+  if (!Number.isSafeInteger(indexedThroughBlock) || indexedThroughBlock <= 0) {
+    throw new Error("RUSH discovery requires a positive canonical checkpoint.");
+  }
+  const entriesByTxid = new Map();
+  for (const entry of Array.isArray(history) ? history : []) {
+    const txid = String(entry?.tx_hash ?? "").trim().toLowerCase();
+    const height = Number(entry?.height);
+    if (!isHexTxid(txid) || !Number.isSafeInteger(height)) {
+      throw new Error("RUSH Electrum history contains a malformed entry.");
+    }
+    if (height <= 0 || height > indexedThroughBlock) {
+      continue;
+    }
+    const previous = entriesByTxid.get(txid);
+    if (previous !== undefined && previous !== height) {
+      throw new Error(`RUSH history has conflicting heights for ${txid}.`);
+    }
+    entriesByTxid.set(txid, height);
+  }
+  return [...entriesByTxid]
+    .map(([txid, height]) => ({ height, txid }))
+    .sort((left, right) => left.height - right.height || left.txid.localeCompare(right.txid));
+}
+
+function rushDiscoveryHash(entries) {
+  return createHash("sha256").update(JSON.stringify(entries)).digest("hex");
+}
+
+async function validRushMintCountThroughHeight(client, height) {
+  const result = await client.query(
+    `
+      SELECT count(*)::int AS count
+      FROM proof_indexer.events
+      WHERE network = $1
+        AND protocol = 'pwr1'
+        AND kind = 'rush-mint'
+        AND status = 'confirmed'
+        AND valid = true
+        AND block_height <= $2
+    `,
+    [NETWORK, height],
+  );
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+async function canonicalRushBootstrapIsComplete(client, checkpoint) {
+  const marker = await proofIndexerMetaValue(client, RUSH_BOOTSTRAP_META_KEY);
+  if (
+    marker?.version !== RUSH_BOOTSTRAP_VERSION ||
+    marker?.network !== NETWORK ||
+    marker?.registryAddress !== RUSH_REGISTRY_ADDRESS ||
+    !Number.isSafeInteger(Number(marker?.indexedThroughBlock)) ||
+    Number(marker.indexedThroughBlock) <= 0 ||
+    !isHexTxid(marker?.indexedThroughBlockHash) ||
+    Number(marker.indexedThroughBlock) > Number(checkpoint?.height) ||
+    !Number.isSafeInteger(Number(marker?.mintCount)) ||
+    Number(marker.mintCount) < 0
+  ) {
+    return null;
+  }
+  const canonicalHash = String(
+    await bitcoinRpc("getblockhash", [Number(marker.indexedThroughBlock)]),
+  )
+    .trim()
+    .toLowerCase();
+  if (canonicalHash !== marker.indexedThroughBlockHash) {
+    return null;
+  }
+  const mintCount = await validRushMintCountThroughHeight(
+    client,
+    Number(marker.indexedThroughBlock),
+  );
+  return mintCount === Number(marker.mintCount)
+    ? { ...marker, complete: true }
+    : null;
+}
+
+async function canonicalRushDiscovery(client, checkpoint) {
+  const stored = await proofIndexerMetaValue(client, RUSH_DISCOVERY_META_KEY);
+  if (
+    stored?.version === RUSH_BOOTSTRAP_VERSION &&
+    stored?.network === NETWORK &&
+    stored?.registryAddress === RUSH_REGISTRY_ADDRESS &&
+    Number.isSafeInteger(Number(stored?.indexedThroughBlock)) &&
+    Number(stored.indexedThroughBlock) > 0 &&
+    isHexTxid(stored?.indexedThroughBlockHash) &&
+    Array.isArray(stored?.entries) &&
+    Number.isSafeInteger(Number(stored?.cursor)) &&
+    Number(stored.cursor) >= 0 &&
+    Number(stored.cursor) <= stored.entries.length &&
+    stored?.historyHash === rushDiscoveryHash(stored.entries)
+  ) {
+    const canonicalHash = String(
+      await bitcoinRpc("getblockhash", [Number(stored.indexedThroughBlock)]),
+    )
+      .trim()
+      .toLowerCase();
+    if (canonicalHash === stored.indexedThroughBlockHash) {
+      return stored;
+    }
+  }
+
+  const history = await rushElectrumHistory();
+  const entries = canonicalRushHistoryEntries(history, checkpoint.height);
+  const checkpointHash = String(
+    await bitcoinRpc("getblockhash", [checkpoint.height]),
+  )
+    .trim()
+    .toLowerCase();
+  if (checkpointHash !== checkpoint.blockHash) {
+    throw new Error(
+      `RUSH discovery checkpoint ${checkpoint.height} changed before persistence.`,
+    );
+  }
+  const discovery = {
+    cursor: 0,
+    discoveredAt: new Date().toISOString(),
+    entries,
+    historyEntryCount: entries.length,
+    historyHash: rushDiscoveryHash(entries),
+    indexedTransactions: 0,
+    indexedThroughBlock: checkpoint.height,
+    indexedThroughBlockHash: checkpoint.blockHash,
+    network: NETWORK,
+    registryAddress: RUSH_REGISTRY_ADDRESS,
+    version: RUSH_BOOTSTRAP_VERSION,
+  };
+  await storeProofIndexerMeta(client, RUSH_DISCOVERY_META_KEY, discovery);
+  return discovery;
+}
+
+async function canonicalRushBootstrapTransaction(entry, blockCache) {
+  const height = Number(entry?.height);
+  const txid = String(entry?.txid ?? "").trim().toLowerCase();
+  if (!Number.isSafeInteger(height) || height <= 0 || !isHexTxid(txid)) {
+    throw new Error("RUSH bootstrap received an invalid history entry.");
+  }
+  const blockHash = String(await bitcoinRpc("getblockhash", [height]))
+    .trim()
+    .toLowerCase();
+  const raw = await rawTransactionFromCore(txid);
+  if (
+    !isHexTxid(blockHash) ||
+    !raw ||
+    Number(raw.confirmations) <= 0 ||
+    String(raw.blockhash ?? "").trim().toLowerCase() !== blockHash
+  ) {
+    throw new Error(`Bitcoin Core rejected RUSH transaction ${txid}.`);
+  }
+  const messages = protocolMessagesFromTx(raw).filter(
+    (message) => message?.prefix === RUSH_PROTOCOL_PREFIX,
+  );
+  if (messages.length === 0) {
+    return null;
+  }
+
+  // The registry history contains unrelated payments. Only actual pwr1
+  // candidates need a full block envelope, canonical transaction position,
+  // and input-prevout hydration.
+  if (!blockCache.has(height)) {
+    blockCache.set(
+      height,
+      (async () => {
+        const block = await bitcoinRpc("getblock", [blockHash, 1]);
+        const txids = Array.isArray(block?.tx) ? block.tx : [];
+        if (
+          !isHexTxid(blockHash) ||
+          String(block?.hash ?? "").trim().toLowerCase() !== blockHash ||
+          Number(block?.height) !== height ||
+          txids.length === 0 ||
+          txids.some((candidate) => !isHexTxid(candidate))
+        ) {
+          throw new Error(`Bitcoin Core returned an invalid RUSH block ${height}.`);
+        }
+        return { block, blockHash, txids };
+      })(),
+    );
+  }
+  const { block, txids } = await blockCache.get(height);
+  const blockIndex = txids.findIndex(
+    (candidate) => String(candidate).toLowerCase() === txid,
+  );
+  if (blockIndex < 0) {
+    throw new Error(`RUSH transaction ${txid} is absent from block ${height}.`);
+  }
+  const hydrated = await transactionWithInputPrevouts({
+    ...raw,
+    _powBlockHash: blockHash,
+    _powBlockIndex: blockIndex,
+    _powPreviousBlockHash: String(block?.previousblockhash ?? "")
+      .trim()
+      .toLowerCase(),
+    blocktime: block?.time,
+    height,
+  });
+  assertHydratedProtocolTransaction(hydrated);
+  const hydratedMessages = protocolMessagesFromTx(hydrated).filter(
+    (message) => message?.prefix === RUSH_PROTOCOL_PREFIX,
+  );
+  if (
+    hydratedMessages.length !== messages.length ||
+    hydratedMessages.some(
+      (message, index) =>
+        message.text !== messages[index]?.text ||
+        message.voutIndex !== messages[index]?.voutIndex,
+    )
+  ) {
+    throw new Error(`RUSH transaction ${txid} changed during hydration.`);
+  }
+  return {
+    block,
+    blockHash,
+    height,
+    hydrated,
+    items: await preparedProtocolItemsForTx(hydrated, hydratedMessages),
+    txid,
+  };
+}
+
+async function ensureCanonicalRushBootstrap(client) {
+  if (!RUSH_BOOTSTRAP_ENABLED || NETWORK !== "livenet") {
+    return {
+      complete: NETWORK !== "livenet",
+      disabled: true,
+      source: "rush-canonical-bootstrap",
+    };
+  }
+  const checkpoint = await latestBlockScanCheckpoint(client, {
+    useStoredCheckpoint: true,
+  });
+  if (!Number.isSafeInteger(checkpoint?.height) || !isHexTxid(checkpoint?.blockHash)) {
+    throw new Error("RUSH bootstrap requires a canonical block-scan checkpoint.");
+  }
+  const complete = await canonicalRushBootstrapIsComplete(client, checkpoint);
+  if (complete) {
+    return {
+      complete: true,
+      indexedThroughBlock: checkpoint.height,
+      mintCount: complete.mintCount,
+      source: "rush-canonical-bootstrap",
+    };
+  }
+
+  let discovery = await canonicalRushDiscovery(client, checkpoint);
+  let processedThisRun = 0;
+  while (
+    discovery.cursor < discovery.entries.length &&
+    (RUSH_BOOTSTRAP_MAX_TXIDS === 0 ||
+      processedThisRun < RUSH_BOOTSTRAP_MAX_TXIDS)
+  ) {
+    const remainingBudget =
+      RUSH_BOOTSTRAP_MAX_TXIDS === 0
+        ? RUSH_BOOTSTRAP_BATCH_SIZE
+        : Math.min(
+            RUSH_BOOTSTRAP_BATCH_SIZE,
+            RUSH_BOOTSTRAP_MAX_TXIDS - processedThisRun,
+          );
+    const entries = discovery.entries.slice(
+      discovery.cursor,
+      discovery.cursor + remainingBudget,
+    );
+    const blockCache = new Map();
+    const prepared = await mapWithConcurrency(
+      entries,
+      PREVOUT_HYDRATION_CONCURRENCY,
+      (entry) => canonicalRushBootstrapTransaction(entry, blockCache),
+    );
+    const canonicalAtCommit = String(
+      await bitcoinRpc("getblockhash", [discovery.indexedThroughBlock]),
+    )
+      .trim()
+      .toLowerCase();
+    if (canonicalAtCommit !== discovery.indexedThroughBlockHash) {
+      throw new Error("RUSH bootstrap checkpoint changed before batch commit.");
+    }
+
+    await client.query("BEGIN");
+    try {
+      let indexedTransactions = Number(discovery.indexedTransactions) || 0;
+      for (const item of prepared.filter(Boolean)) {
+        await persistCanonicalBlock(
+          client,
+          item.block,
+          item.height,
+          item.blockHash,
+        );
+        await persistCanonicalRawTransaction(client, item.hydrated, {
+          blockHash: item.blockHash,
+          blockTime: item.block?.time,
+          height: item.height,
+        });
+        await persistPreparedProtocolItems(client, item.items);
+        indexedTransactions += 1;
+      }
+      discovery = {
+        ...discovery,
+        cursor: discovery.cursor + entries.length,
+        indexedTransactions,
+        updatedAt: new Date().toISOString(),
+      };
+      await storeProofIndexerMeta(client, RUSH_DISCOVERY_META_KEY, discovery);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
+    processedThisRun += entries.length;
+    console.log(
+      JSON.stringify({
+        cursor: discovery.cursor,
+        historyEntryCount: discovery.entries.length,
+        indexedTransactions: discovery.indexedTransactions,
+        phase: "rush-canonical-bootstrap",
+      }),
+    );
+  }
+
+  if (discovery.cursor < discovery.entries.length) {
+    return {
+      complete: false,
+      cursor: discovery.cursor,
+      historyEntryCount: discovery.entries.length,
+      indexedTransactions: discovery.indexedTransactions,
+      source: "rush-canonical-bootstrap",
+    };
+  }
+
+  const canonicalHash = String(
+    await bitcoinRpc("getblockhash", [discovery.indexedThroughBlock]),
+  )
+    .trim()
+    .toLowerCase();
+  if (canonicalHash !== discovery.indexedThroughBlockHash) {
+    throw new Error("RUSH bootstrap checkpoint changed before completion.");
+  }
+  const mintCount = await validRushMintCountThroughHeight(
+    client,
+    discovery.indexedThroughBlock,
+  );
+  const marker = {
+    completedAt: new Date().toISOString(),
+    historyEntryCount: discovery.historyEntryCount,
+    historyHash: discovery.historyHash,
+    indexedThroughBlock: discovery.indexedThroughBlock,
+    indexedThroughBlockHash: discovery.indexedThroughBlockHash,
+    indexedTransactions: discovery.indexedTransactions,
+    mintCount,
+    network: NETWORK,
+    registryAddress: RUSH_REGISTRY_ADDRESS,
+    version: RUSH_BOOTSTRAP_VERSION,
+  };
+  const checkpointBlock = await bitcoinRpc("getblock", [canonicalHash, 1]);
+  if (
+    String(checkpointBlock?.hash ?? "").trim().toLowerCase() !== canonicalHash ||
+    Number(checkpointBlock?.height) !== discovery.indexedThroughBlock
+  ) {
+    throw new Error("Bitcoin Core returned an invalid RUSH completion block.");
+  }
+  await client.query("BEGIN");
+  try {
+    await persistCanonicalBlock(
+      client,
+      checkpointBlock,
+      discovery.indexedThroughBlock,
+      canonicalHash,
+    );
+    await storeProofIndexerMeta(client, RUSH_BOOTSTRAP_META_KEY, marker);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+  return {
+    complete: true,
+    indexedThroughBlock: checkpoint.height,
+    mintCount,
+    source: "rush-canonical-bootstrap",
+  };
+}
+
+async function hydrateHistoricalCanonicalTransactionDetails(client) {
+  let afterHeight = TX_DETAIL_HYDRATION_AFTER_HEIGHT;
+  let afterBlockIndex = TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX;
+  let afterTxid = TX_DETAIL_HYDRATION_AFTER_TXID;
+  let batches = 0;
+  let hydrated = 0;
+  let inputs = 0;
+  let opReturns = 0;
+  let outputs = 0;
+  let limitReached = false;
+
+  while (hydrated < TX_DETAIL_HYDRATION_MAX_ROWS) {
+    const limit = Math.min(
+      TX_DETAIL_HYDRATION_BATCH_SIZE,
+      TX_DETAIL_HYDRATION_MAX_ROWS - hydrated,
+    );
+    const result = await client.query(
+      `
+        WITH candidates AS (
+          SELECT
+            transaction_row.txid,
+            transaction_row.block_hash,
+            transaction_row.block_height,
+            transaction_row.block_time,
+            transaction_row.raw_tx,
+            canonical_block.block_hash AS canonical_block_hash,
+            canonical_block.canonical AS block_canonical,
+            CASE
+              WHEN transaction_row.raw_tx->>'_powBlockIndex' ~ '^[0-9]+$'
+                THEN (transaction_row.raw_tx->>'_powBlockIndex')::integer
+              ELSE -1
+            END AS block_index
+          FROM proof_indexer.transactions AS transaction_row
+          JOIN proof_indexer.blocks AS canonical_block
+            ON canonical_block.network = transaction_row.network
+           AND canonical_block.block_hash = transaction_row.block_hash
+           AND canonical_block.height = transaction_row.block_height
+           AND canonical_block.canonical = true
+          WHERE transaction_row.network = $1
+            AND transaction_row.status = 'confirmed'
+            AND transaction_row.block_height IS NOT NULL
+            AND transaction_row.block_hash IS NOT NULL
+            AND jsonb_typeof(transaction_row.raw_tx) = 'object'
+            AND jsonb_typeof(transaction_row.raw_tx->'vin') = 'array'
+            AND jsonb_typeof(transaction_row.raw_tx->'vout') = 'array'
+            AND jsonb_typeof(transaction_row.raw_tx->'canonicalBlockScan') = 'object'
+            AND transaction_row.raw_tx->'canonicalBlockScan'->>'network' = $1
+            AND transaction_row.raw_tx->'canonicalBlockScan'->>'height' ~ '^[0-9]+$'
+            AND (transaction_row.raw_tx->'canonicalBlockScan'->>'height')::integer =
+              transaction_row.block_height
+            AND transaction_row.raw_tx->'canonicalBlockScan'->>'blockHash' ~
+              '^[0-9a-fA-F]{64}$'
+            AND lower(transaction_row.raw_tx->'canonicalBlockScan'->>'blockHash') =
+              lower(transaction_row.block_hash)
+        )
+        SELECT
+          txid,
+          block_hash,
+          block_height,
+          block_time,
+          block_index,
+          raw_tx,
+          canonical_block_hash,
+          block_canonical
+        FROM candidates
+        WHERE block_index >= 0
+          AND (block_height, block_index, txid) >
+            ($2::integer, $3::integer, $4::text)
+        ORDER BY block_height, block_index, txid
+        LIMIT $5
+      `,
+      [NETWORK, afterHeight, afterBlockIndex, afterTxid, limit],
+    );
+    if (result.rows.length === 0) {
+      break;
+    }
+
+    const prepared = result.rows.map((row) => {
+      const tx = row?.raw_tx;
+      const txid = String(row?.txid ?? "").trim().toLowerCase();
+      const blockHash = String(row?.block_hash ?? "").trim().toLowerCase();
+      const canonicalBlockHash = String(row?.canonical_block_hash ?? "")
+        .trim()
+        .toLowerCase();
+      const blockHeight = Number(row?.block_height);
+      const blockIndex = Number(row?.block_index);
+      if (
+        !tx ||
+        typeof tx !== "object" ||
+        String(tx?.txid ?? "").trim().toLowerCase() !== txid ||
+        !isHexTxid(txid) ||
+        !Number.isSafeInteger(blockHeight) ||
+        blockHeight < 0 ||
+        row?.block_canonical !== true ||
+        !isHexTxid(blockHash) ||
+        canonicalBlockHash !== blockHash ||
+        String(tx?.canonicalBlockScan?.blockHash ?? "")
+          .trim()
+          .toLowerCase() !== blockHash ||
+        Number(tx?.canonicalBlockScan?.height) !== blockHeight ||
+        String(tx?.canonicalBlockScan?.network ?? "") !== NETWORK ||
+        !Number.isSafeInteger(blockIndex) ||
+        blockIndex < 0 ||
+        Number(tx?._powBlockIndex) !== blockIndex
+      ) {
+        throw new Error(
+          `Stored canonical transaction detail envelope is invalid for ${txid || "unknown"}.`,
+        );
+      }
+      assertHydratedProtocolTransaction(tx);
+      if (protocolMessagesFromTx(tx).length === 0) {
+        throw new Error(
+          `Stored canonical transaction ${txid} has no recognized protocol output.`,
+        );
+      }
+      return {
+        blockHeight,
+        blockIndex,
+        details: canonicalTransactionDetailRows(tx),
+        spentAt: row?.block_time ?? itemTime(tx),
+        tx,
+        txid,
+      };
+    });
+
+    await client.query("BEGIN");
+    try {
+      for (const item of prepared) {
+        const persisted = await persistCanonicalTransactionDetails(
+          client,
+          item.tx,
+          { details: item.details, spentAt: item.spentAt },
+        );
+        hydrated += 1;
+        inputs += persisted.inputs;
+        opReturns += persisted.opReturns;
+        outputs += persisted.outputs;
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
+
+    batches += 1;
+    const last = prepared.at(-1);
+    afterHeight = last.blockHeight;
+    afterBlockIndex = last.blockIndex;
+    afterTxid = last.txid;
+    if (result.rows.length < limit) {
+      break;
+    }
+    if (hydrated >= TX_DETAIL_HYDRATION_MAX_ROWS) {
+      limitReached = true;
+      break;
+    }
+  }
+
+  return {
+    batches,
+    cursor: {
+      afterBlockIndex,
+      afterHeight,
+      afterTxid,
+    },
+    hydrated,
+    inputs,
+    limitReached,
+    opReturns,
+    outputs,
+    source: "historical-canonical-transaction-details",
+  };
 }
 
 async function upsertTransaction(client, item, txid, status, sourceLabel) {
@@ -4131,7 +5585,9 @@ const REQUIRED_CURRENT_SUMMARY_KEYS = [
   "growthSummary",
   "inceptionSummary",
   "infinitySummary",
+  "logSummary",
   "marketplaceSummary",
+  "tokenSummary",
   "workFloor",
   "workSummary",
 ];
@@ -4157,7 +5613,13 @@ function summaryPayloadConservativeCoverage(payload, key) {
         : null;
   if (
     !nested &&
-    !["inceptionSummary", "infinitySummary", "workFloor"].includes(key)
+    ![
+      "inceptionSummary",
+      "infinitySummary",
+      "logSummary",
+      "tokenSummary",
+      "workFloor",
+    ].includes(key)
   ) {
     return 0;
   }
@@ -4198,6 +5660,11 @@ function eligibleCanonicalSummarySnapshotPayload(payload) {
       tokenComponentCheck?.ok === true &&
       publicLogCountCheck?.ok === true &&
       item.summaryRefresh?.mode === "canonical-summary-refresh" &&
+      /^[0-9a-f]{64}$/u.test(
+        String(item.indexedThroughBlockHash ?? "").toLowerCase(),
+      ) &&
+      String(item.summaryRefresh?.indexedThroughBlockHash ?? "").toLowerCase() ===
+        String(item.indexedThroughBlockHash ?? "").toLowerCase() &&
       /^[0-9a-f]{64}$/u.test(String(item.sourceHashes?.canonicalSummary ?? "")) &&
       canonicalSummaryCoverage(item.summaryPayloads) > 0,
   );
@@ -4212,12 +5679,16 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
         AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+        AND payload->>'indexedThroughBlockHash' ~ '^[0-9a-fA-F]{64}$'
+        AND payload->'summaryRefresh'->>'indexedThroughBlockHash' = payload->>'indexedThroughBlockHash'
         AND source_hashes ? 'canonicalSummary'
         AND jsonb_typeof(payload->'summaryPayloads') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'logSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'tokenSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
         AND EXISTS (
@@ -4257,16 +5728,28 @@ function canonicalSummaryRefreshCanDefer(error) {
 }
 
 async function storeCanonicalSummarySnapshot(client) {
-  const latestIndexedHeight = (
-    await latestBlockScanCheckpoint(client, { useStoredCheckpoint: true })
-  ).height;
+  const latestCheckpoint = await latestBlockScanCheckpoint(client, {
+    useStoredCheckpoint: true,
+  });
+  const latestIndexedHeight = latestCheckpoint.height;
+  const latestIndexedThroughBlockHash = String(latestCheckpoint.blockHash ?? "")
+    .trim()
+    .toLowerCase();
   const previousPayload = await storedEligibleCanonicalSummarySnapshotPayload(
     client,
   );
   const previousCoverage = previousPayload
     ? canonicalSummaryCoverage(previousPayload.summaryPayloads)
     : 0;
-  if (previousCoverage >= latestIndexedHeight) {
+  const previousIndexedThroughBlockHash = String(
+    previousPayload?.indexedThroughBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  if (
+    previousCoverage === latestIndexedHeight &&
+    previousIndexedThroughBlockHash === latestIndexedThroughBlockHash
+  ) {
     return {
       indexedThroughBlock: previousCoverage,
       reason: "already-current",
@@ -4306,6 +5789,14 @@ async function storeCanonicalSummarySnapshot(client) {
     };
   }
   const ledger = objectPayload(canonicalBundle?.ledger);
+  const canonicalBundleHash = String(
+    canonicalBundle?.indexedThroughBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const ledgerHash = String(ledger?.indexedThroughBlockHash ?? "")
+    .trim()
+    .toLowerCase();
   const ledgerCoverage = Math.max(
     numberOrNull(ledger?.indexedThroughBlock) ?? 0,
     numberOrNull(ledger?.metrics?.indexedThroughBlock) ?? 0,
@@ -4314,7 +5805,9 @@ async function storeCanonicalSummarySnapshot(client) {
     ledger?.ok !== true ||
     ledger?.status === "summary-snapshot-fallback" ||
     ledgerCoverage !== latestIndexedHeight ||
-    numberOrNull(canonicalBundle?.indexedThroughBlock) !== latestIndexedHeight
+    numberOrNull(canonicalBundle?.indexedThroughBlock) !== latestIndexedHeight ||
+    canonicalBundleHash !== latestIndexedThroughBlockHash ||
+    ledgerHash !== latestIndexedThroughBlockHash
   ) {
     throw new Error(
       `Canonical ledger summary refresh is not current through block ${latestIndexedHeight}`,
@@ -4329,11 +5822,19 @@ async function storeCanonicalSummarySnapshot(client) {
   const summarySnapshotIds = REQUIRED_CURRENT_SUMMARY_KEYS.map((key) =>
     summaryPayloadSnapshotId(summaryPayloads?.[key]),
   );
+  const summaryCheckpointHashes = REQUIRED_CURRENT_SUMMARY_KEYS.map((key) =>
+    String(summaryPayloads?.[key]?.indexedThroughBlockHash ?? "")
+      .trim()
+      .toLowerCase(),
+  );
   if (
     indexedThroughBlock !== latestIndexedHeight ||
     !snapshotId ||
     String(ledger.snapshotId ?? "").trim() !== snapshotId ||
-    summarySnapshotIds.some((value) => value !== snapshotId)
+    summarySnapshotIds.some((value) => value !== snapshotId) ||
+    summaryCheckpointHashes.some(
+      (value) => value !== latestIndexedThroughBlockHash,
+    )
   ) {
     throw new Error(
       `Canonical summary refresh is not one exact snapshot through block ${latestIndexedHeight}`,
@@ -4353,15 +5854,18 @@ async function storeCanonicalSummarySnapshot(client) {
     ...(sameSnapshotPayload ?? {}),
     ...ledger,
     generatedAt,
+    indexedThroughBlockHash: latestIndexedThroughBlockHash,
     snapshotId,
     sourceHashes: {
       ...(ledger.sourceHashes ?? {}),
+      blockScan: latestIndexedThroughBlockHash,
       canonicalSummary: summaryHash,
     },
     summaryPayloads,
     summaryPayloadsIndexedAt: generatedAt,
     summaryRefresh: {
       indexedThroughBlock,
+      indexedThroughBlockHash: latestIndexedThroughBlockHash,
       mode: "canonical-summary-refresh",
       previousCoverage,
     },
@@ -4525,7 +6029,7 @@ async function prepareCanonicalRebuild(client) {
         WHERE network = $1
           AND protocol = ANY($2::text[])
       `,
-      [NETWORK, ["pwid1", "pwt1", "pwm1"]],
+      [NETWORK, ["pwid1", "pwt1", "pwm1", "pwr1"]],
     );
     await client.query(`DELETE FROM proof_indexer.id_records WHERE network = $1`, [
       NETWORK,
@@ -4579,6 +6083,12 @@ async function prepareCanonicalRebuild(client) {
     ]);
     await client.query(`DELETE FROM proof_indexer.meta WHERE key = $1`, [
       `mempoolScan:${NETWORK}`,
+    ]);
+    await client.query(`DELETE FROM proof_indexer.meta WHERE key = ANY($1::text[])`, [
+      [
+        `rushCanonicalBootstrap:${NETWORK}`,
+        `rushCanonicalDiscovery:${NETWORK}`,
+      ],
     ]);
     await storeProofIndexerMeta(client, CANONICAL_REBUILD_META_KEY, value);
     await storeBlockScanSnapshot(client, {
@@ -6513,10 +8023,17 @@ if (DRY_RUN) {
       {
         apiBase: API_BASE,
         dryRun: true,
+        hydrateTransactionDetailsOnly: HYDRATE_TRANSACTION_DETAILS_ONLY,
         maxPages: MAX_PAGES,
         network: NETWORK,
         pageLimit: PAGE_LIMIT,
         repairMintMinters: REPAIR_MINT_MINTERS,
+        rushBootstrap: {
+          batchSize: RUSH_BOOTSTRAP_BATCH_SIZE,
+          enabled: RUSH_BOOTSTRAP_ENABLED,
+          maxTxids: RUSH_BOOTSTRAP_MAX_TXIDS,
+          only: RUSH_BOOTSTRAP_ONLY,
+        },
         repairIdTxids: REPAIR_ID_TXIDS,
         repairIdTxidsOnly: REPAIR_ID_TXIDS_ONLY,
         repairWorkParticipants: REPAIR_WORK_PARTICIPANTS,
@@ -6529,6 +8046,13 @@ if (DRY_RUN) {
         sources: SOURCES.map((source) => source.label),
         storeCanonicalSummarySnapshot: STORE_CANONICAL_SUMMARY_SNAPSHOT,
         storeLedgerSnapshot: STORE_LEDGER_SNAPSHOT,
+        transactionDetailHydration: {
+          afterBlockIndex: TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX,
+          afterHeight: TX_DETAIL_HYDRATION_AFTER_HEIGHT,
+          afterTxid: TX_DETAIL_HYDRATION_AFTER_TXID,
+          batchSize: TX_DETAIL_HYDRATION_BATCH_SIZE,
+          maxRows: TX_DETAIL_HYDRATION_MAX_ROWS,
+        },
       },
       null,
       2,
@@ -6548,7 +8072,40 @@ const pool = createProofIndexPool({
 try {
   const client = await pool.connect();
   try {
-    if (PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY) {
+    if (HYDRATE_TRANSACTION_DETAILS_ONLY) {
+      const hydration = await hydrateHistoricalCanonicalTransactionDetails(
+        client,
+      );
+      console.log(
+        JSON.stringify(
+          {
+            historicalTransactionDetailHydration: true,
+            hydration,
+            network: NETWORK,
+            ok: true,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (RUSH_BOOTSTRAP_ONLY) {
+      const rushBootstrap = await ensureCanonicalRushBootstrap(client);
+      console.log(
+        JSON.stringify(
+          {
+            apiBase: API_BASE,
+            network: NETWORK,
+            ok: rushBootstrap.complete === true,
+            rushBootstrap,
+          },
+          null,
+          2,
+        ),
+      );
+      if (rushBootstrap.complete !== true) {
+        process.exitCode = 1;
+      }
+    } else if (PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY) {
       const prepared = await prepareCanonicalPwtRangeReplay(client);
       console.log(
         JSON.stringify(
@@ -6612,10 +8169,13 @@ try {
       );
     } else {
       const results = [];
+      let rushBootstrap = null;
       if (!REPAIR_WORK_PARTICIPANTS_ONLY) {
         for (const source of SOURCES) {
           results.push(await backfillSource(client, source));
         }
+        rushBootstrap = await ensureCanonicalRushBootstrap(client);
+        results.push(rushBootstrap);
         results.push(await repairMailParticipants(client));
         results.push(await repairConfirmedListingSealMetadata(client));
       }
@@ -6641,9 +8201,15 @@ try {
         const snapshot = STORE_LEDGER_SNAPSHOT
           ? await storeLedgerSnapshot(client)
           : null;
-        const canonicalSummarySnapshot = STORE_CANONICAL_SUMMARY_SNAPSHOT
+        const canonicalSummarySnapshot =
+          STORE_CANONICAL_SUMMARY_SNAPSHOT && rushBootstrap?.complete === true
           ? await storeCanonicalSummarySnapshot(client)
-          : null;
+          : STORE_CANONICAL_SUMMARY_SNAPSHOT
+            ? {
+                reason: "rush-canonical-bootstrap-in-progress",
+                skipped: true,
+              }
+            : null;
         console.log(
           JSON.stringify(
             {

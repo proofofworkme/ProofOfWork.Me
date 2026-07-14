@@ -1,0 +1,4 @@
+# Merge this exact listener setting into /etc/electrs/config.toml.
+# The host API and mempool container both reach electrs through the verified
+# mempool_mempool bridge; electrs must not listen on a public interface.
+electrum_rpc_addr = "172.27.0.1:50001"

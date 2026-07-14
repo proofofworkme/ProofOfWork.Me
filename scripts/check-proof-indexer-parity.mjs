@@ -58,7 +58,9 @@ const CANONICAL_SUMMARY_KEYS = [
   "growthSummary",
   "inceptionSummary",
   "infinitySummary",
+  "logSummary",
   "marketplaceSummary",
+  "tokenSummary",
   "workFloor",
   "workSummary",
 ];
@@ -194,7 +196,9 @@ function canonicalSummaryCoverageByKey(snapshot) {
         ? payloadIndexedThroughBlock(nested)
         : key === "workFloor" ||
             key === "inceptionSummary" ||
-            key === "infinitySummary"
+            key === "infinitySummary" ||
+            key === "logSummary" ||
+            key === "tokenSummary"
           ? parentCoverage
           : 0;
       return [
@@ -287,6 +291,11 @@ try {
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed') AS events_confirmed,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'pending') AS events_pending,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'dropped') AS events_dropped,
+        (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND valid = true) AS events_confirmed_valid,
+        (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'pending' AND valid = true) AS events_pending_valid,
+        (SELECT count(DISTINCT txid) FROM proof_indexer.events WHERE network = $1 AND status IN ('confirmed', 'pending') AND valid = true) AS canonical_activity_txids,
+        (SELECT count(DISTINCT e.txid) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status IN ('confirmed', 'pending') AND e.valid = true AND t.txid IS NULL) AS canonical_activity_txids_missing_transaction,
+        (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND e.valid = true AND COALESCE(t.status, '') <> 'confirmed') AS confirmed_activity_events_without_confirmed_transaction,
         (SELECT count(*) FROM proof_indexer.event_refs er JOIN proof_indexer.events e ON e.event_id = er.event_id WHERE e.network = $1) AS event_refs,
         (SELECT count(*) FROM proof_indexer.event_participants ep JOIN proof_indexer.events e ON e.event_id = ep.event_id WHERE e.network = $1) AS event_participants,
         (SELECT count(*) FROM proof_indexer.credit_definitions WHERE network = $1 AND confirmed = true) AS credit_definitions_confirmed,
@@ -314,18 +323,29 @@ try {
         AND COALESCE(consistency->>'status', payload->>'status', '') <>
           'summary-snapshot-fallback'
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+        AND payload->>'indexedThroughBlockHash' ~ '^[0-9a-fA-F]{64}$'
+        AND payload->'summaryRefresh'->>'indexedThroughBlockHash' =
+          payload->>'indexedThroughBlockHash'
         AND source_hashes ? 'canonicalSummary'
         AND jsonb_typeof(payload->'summaryPayloads') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'logSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+        AND jsonb_typeof(payload->'summaryPayloads'->'tokenSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
         AND EXISTS (
           SELECT 1
           FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
           WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
+          WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
             AND COALESCE(check_item->>'ok', 'false') = 'true'
         )
       ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
@@ -355,15 +375,19 @@ try {
   const confirmedComputerActions = numberValue(metrics.confirmedComputerActions);
   const confirmedTokens = numberValue(metrics.confirmedTokens);
   let canonicalActivityPayload = null;
-  try {
-    canonicalActivityPayload = await readJson(endpoint("/api/v1/log", { fresh: "1" }));
-  } catch (error) {
-    console.error(
-      JSON.stringify({
-        error: error?.message ?? String(error),
-        phase: "canonical-activity-coverage",
-      }),
-    );
+  if (CHECK_ACTIVITY_SNAPSHOT) {
+    try {
+      canonicalActivityPayload = await readJson(
+        endpoint("/api/v1/log", { fresh: "1" }),
+      );
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          error: error?.message ?? String(error),
+          phase: "canonical-activity-coverage",
+        }),
+      );
+    }
   }
   const canonicalActivityRows = Array.isArray(canonicalActivityPayload?.activity)
     ? canonicalActivityPayload.activity
@@ -376,11 +400,17 @@ try {
   ).length;
   const canonicalActivityItemCount =
     canonicalActivityRows.length || metricActivityItems;
-  const confirmedActivityCoverageCount =
-    canonicalConfirmedActivityItems || metricActivityItems;
   const canonicalActivityTxids = uniqueActivityTxids(canonicalActivityRows);
   const canonicalActivityTxidCount =
-    canonicalActivityTxids.size || metricActivityItems;
+    canonicalActivityTxids.size || rowNumber(counts, "canonical_activity_txids");
+  const expectedConfirmedActivityItems =
+    canonicalActivityRows.length > 0
+      ? canonicalConfirmedActivityItems
+      : confirmedComputerActions;
+  const expectedPendingActivityItems =
+    canonicalActivityRows.length > 0
+      ? canonicalPendingActivityItems
+      : Math.max(0, metricActivityItems - confirmedComputerActions);
   const checks = [];
 
   check(checks, "canonical-ledger-green", ledger.ok === true && ledger.status === "green", {
@@ -423,10 +453,15 @@ try {
   check(
     checks,
     "transactions-cover-canonical-activity-txids",
-    rowNumber(counts, "transactions_total") >= canonicalActivityTxidCount,
+    rowNumber(counts, "transactions_total") >= canonicalActivityTxidCount &&
+      rowNumber(counts, "canonical_activity_txids_missing_transaction") === 0,
     {
       canonicalActivityItems: canonicalActivityItemCount,
       canonicalActivityTxids: canonicalActivityTxidCount,
+      missingCanonicalActivityTxids: rowNumber(
+        counts,
+        "canonical_activity_txids_missing_transaction",
+      ),
       confirmedTransactions: rowNumber(counts, "transactions_confirmed"),
       pendingTransactions: rowNumber(counts, "transactions_pending"),
       totalTransactions: rowNumber(counts, "transactions_total"),
@@ -436,9 +471,14 @@ try {
   check(
     checks,
     "confirmed-transaction-status-lag",
-    rowNumber(counts, "transactions_confirmed") >= confirmedComputerActions,
+    rowNumber(counts, "confirmed_activity_events_without_confirmed_transaction") ===
+      0,
     {
       canonicalConfirmedComputerActions: confirmedComputerActions,
+      confirmedActivityEventsWithoutConfirmedTransaction: rowNumber(
+        counts,
+        "confirmed_activity_events_without_confirmed_transaction",
+      ),
       confirmedTransactions: rowNumber(counts, "transactions_confirmed"),
       pendingTransactions: rowNumber(counts, "transactions_pending"),
     },
@@ -447,12 +487,17 @@ try {
   check(
     checks,
     "events-cover-canonical-activity",
-    rowNumber(counts, "events_confirmed") >= confirmedActivityCoverageCount,
+    rowNumber(counts, "events_confirmed_valid") ===
+      expectedConfirmedActivityItems &&
+      rowNumber(counts, "events_pending_valid") === expectedPendingActivityItems,
     {
       canonicalActivityItems: canonicalActivityItemCount,
       canonicalConfirmedActivityItems,
       canonicalPendingActivityItems,
-      confirmedEvents: rowNumber(counts, "events_confirmed"),
+      confirmedEvents: rowNumber(counts, "events_confirmed_valid"),
+      expectedConfirmedActivityItems,
+      expectedPendingActivityItems,
+      pendingEvents: rowNumber(counts, "events_pending_valid"),
     },
   );
   check(
@@ -714,19 +759,22 @@ try {
 
   if (CHECK_ACTIVITY_SNAPSHOT) {
     const indexedActivityPayload = await proofIndexActivityPayload(NETWORK);
-    const canonicalActivityPayload = await readJson(
-      endpoint("/api/v1/log", { fresh: "1" }),
-    );
+    const canonicalActivityComparisonPayload =
+      canonicalActivityPayload ??
+      (await readJson(endpoint("/api/v1/log", { fresh: "1" })));
     check(
       checks,
       "log-payload-snapshot-parity",
       Boolean(indexedActivityPayload?.snapshotId) &&
-        indexedActivityPayload?.snapshotId === canonicalActivityPayload?.snapshotId &&
+        indexedActivityPayload?.snapshotId ===
+          canonicalActivityComparisonPayload?.snapshotId &&
         (indexedActivityPayload?.activity ?? []).length ===
-          (canonicalActivityPayload?.activity ?? []).length,
+          (canonicalActivityComparisonPayload?.activity ?? []).length,
       {
-        canonicalActivityItems: canonicalActivityPayload?.activity?.length ?? null,
-        canonicalSnapshotId: canonicalActivityPayload?.snapshotId ?? null,
+        canonicalActivityItems:
+          canonicalActivityComparisonPayload?.activity?.length ?? null,
+        canonicalSnapshotId:
+          canonicalActivityComparisonPayload?.snapshotId ?? null,
         indexedActivityItems: indexedActivityPayload?.activity?.length ?? null,
         indexedSnapshotId: indexedActivityPayload?.snapshotId ?? null,
       },

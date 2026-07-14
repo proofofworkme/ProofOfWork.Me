@@ -125,6 +125,7 @@ Launch invariants for future developers/agents:
 - Sends ProofOfWork payments to one or more recipient addresses or confirmed ProofOfWork IDs.
 - Builds a PSBT with ProofOfWork payment outputs, ProofOfWork.Me OP_RETURN outputs, and change.
 - Uses UniSat to sign the PSBT, then broadcasts signed hex through the first-party ProofOfWork node API.
+- Verifies that wallet signing did not change the intended inputs, outputs, values, or OP_RETURN payloads, and rejects a broadcast response whose txid differs from the locally decoded signed transaction.
 - Shows the txid and an external explorer link.
 - Scans the connected address for incoming and sent ProofOfWork.Me OP_RETURN payments.
 - Refreshes on demand to rescan address mail and check pending transaction statuses.
@@ -160,7 +161,7 @@ Launch invariants for future developers/agents:
 - Keeps wallet signing outside Browser-rendered HTML pages.
 - Exposes Browser as a first-class Computer sidebar workspace, so HTML pages are part of the ProofOfWork Computer and not only a standalone subdomain.
 - Stages Confessions as a 140-character social app for ProofOfWork IDs. Links, Files-backed small image attachments, editable social profiles, replies, likes, reposts, follows, tips, profile earnings, and the Following timeline are planned as a separate `pwc1:` meta protocol, not as ID registry mutations.
-- Pins the canonical `Welcome to ProofOfWork.Me.html` ProofOfWork Computer page as a default system file in Files/Desktop, opening through Browser by txid.
+- Recognizes the canonical `Welcome to ProofOfWork.Me.html` transaction by txid only after its body or attachment has been returned and verified from chain-backed API data; the client does not synthesize replacement file contents.
 - Projects Browser-readable HTML message bodies into Files/Desktop as virtual `.html` files, so users can send HTML as a message body without needing an attachment.
 - Supports fractional fee rates, including sub-1 proof/vB values like `0.1`.
 - Uses the correct external explorer path for the connected chain, including `/testnet4`.
@@ -174,6 +175,7 @@ Launch invariants for future developers/agents:
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Exposes Credits as a mainnet-only creation and mint surface, a Wallet surface for balances, transfers, listing actions, and sale history, a dedicated WORK credit dashboard, and Infinity Bond / POWB plus Inception Bond / INCB workspaces in the Computer shell. Credit creation pays the built-in index fee to `tokens@proofofwork.me`; mints, transfers, listings, seals, delistings, and buys pay each credit's own registry at the owner-set price or mutation fee.
 - Filters active marketplace listings by sale-ticket outspend state, using Bitcoin Core spend checks when configured, so a spent ticket leaves the active book even if a cached summary snapshot is still warming.
+- Excludes every active ProofOfWork ID and credit sale-ticket outpoint owned by the connected address from generic funding selection, independent of the currently open app or asset scope.
 - Treats `seal5` as signature publication without moving the original sale-ticket anchor. A legacy seal transaction that actually spends that anchor closes the listing because the ticket is no longer buyable. If an indexed or cached projection has `closeTxid` equal to `sealTxid`, Marketplace recovers it only when first-party outspend truth proves the original listing ticket is still unspent.
 - Promotes pending credit listings into confirmed listing state without duplicating them, so WORK and other credit books do not show stale pending shadows after confirmation.
 - Preserves credit sale-ticket seal metadata when pending listings promote to confirmed state, so WORK listings stay sealed or sealing across cache refreshes.
@@ -231,21 +233,24 @@ Current production behavior:
 
 - Confirmed stable mainnet registry, Log, credit/token, marketplace, summary, event, mail/file, and tx-status reads go through the ProofOfWork API and use the PostgreSQL proof index where the read flag supports that surface.
 - The proof index is a fast replayable read model, not a separate source of truth. Confirmed chain data remains canonical, and every tx-backed record should keep its txid available for normal explorer/mempool verification.
-- The production proof index is the default stable read model for confirmed Log, Event History, address mail, registry, credit/token, marketplace lifecycle, WORK, Growth, and tx-status reads where enabled. Explicit fresh reads, mempool state, raw transaction data, UTXO/outspend checks, signing support, and broadcasts still fall back to the first-party node/API path.
+- Canonical block replay stores normalized full-node transaction inputs, outputs, decoded OP_RETURN records, and spend links alongside the replayable event projections. These tables are a speed and audit plane over Bitcoin Core data, not a new truth source.
+- The production proof index is the default read model for confirmed Log, Event History, address mail, registry, credit/token, marketplace lifecycle, WORK, Growth, and tx-status reads where enabled. Fresh summary reads validate the stored canonical checkpoint against Bitcoin Core; volatile mempool state, raw transaction data, UTXO/outspend checks, signing support, and broadcasts still use the first-party node/API path.
+- Stable summary reads may serve the latest hash-verified coherent checkpoint and expose `served: last-good`, indexed height, Core tip, lag, and snapshot id. A requested fresh summary must contain one coherent snapshot at the exact verified Core tip; otherwise it fails closed with HTTP 503 instead of relabeling stale data as fresh.
 - The mail and Log parsers normalize `pwm1:m:powb` as `infinity-bond` and `pwm1:m:incb` as `inception-bond` for event/search/Growth accounting while still projecting both into the mailbox model. Each confirmed bond payment mints its matching synthetic credit to the recipient address one-for-one with proofs sent; self-sends are just the self-recipient case and appear in both Inbox and Sent.
 - Mail subjects and bodies are separate protocol fields. `pwm1:s` is header metadata, while `pwm1:m` is the durable message body. Indexed mailbox rows must render body text from decoded `pwm1:m` content, never from Log display detail such as `Subject: ...`; legacy subject-only rows may be repaired from raw tx data at read time.
 - The node stack does not hold funds, seed phrases, private keys, or wallet authority.
 - Browser wallets still sign locally.
-- Production raw transaction broadcasts use the same first-party node path through `POST /api/v1/broadcast/tx`. The API receives only final signed transaction hex.
+- Production raw transaction broadcasts use the same first-party node path through `POST /api/v1/broadcast/tx`. The API receives only final signed transaction hex, accepts approved ProofOfWork browser origins, applies per-client/global/concurrency limits, and pauses livenet broadcast unless the canonical index is at the exact verified Core tip.
 - Unconfirmed transactions are mempool gossip, not global truth.
 - For pending visibility, the API merges the local node/indexer view with `PENDING_MEMPOOL_BASE` when configured. By default this stays on the same local node/indexer stack.
-- Fresh reads, mempool checks, raw tx lookups, UTXO/outspend checks, broadcasts, and projection fallback still use the first-party node/API path.
+- The unscoped credit directory (`token-history?kind=tokens`) paginates exact-tip proof-index data or the stored hash-bound Token summary instead of rebuilding full credit history. Mempool checks, raw tx lookups, UTXO/outspend checks, broadcasts, and projection fallback still use the first-party node/API path.
 - Confirmed database projections are the default fast path for supported stable reads; pending records are visible but not final.
 - Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
 - Marketplace ID sale count and seller-price volume are derived from resolver-accepted `buy5` sale-ticket purchases, with confirmed sales canonical and pending sales shown as mempool visibility. Older legacy buy events remain replayable protocol history but do not seed the public marketplace stats.
 - The credit API scans `tokens@proofofwork.me` at `1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn` for `pwt1:create` events, using tx `7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19` as the current ID record for the credit index.
 - Credit creation requires a 546-proof payment to `tokens@proofofwork.me` before the OP_RETURN. The create event defines ticker, max supply, mint amount, mint price, and the credit's own registry address. The UI may accept a confirmed ProofOfWork ID such as `work@proofofwork.me` for the credit registry field, but the on-chain create payload stores the resolved ProofOfWork address.
 - Credit ids are creation txids. Mint events use `pwt1:mint:<token-create-txid>:<amount>` and must pay the credit registry address before OP_RETURN.
+- A generic credit mint is valid only when its confirmed definition precedes the mint in canonical block/transaction order. Generic `pwt1:create` and `pwt1:mint` events cannot create or issue reserved POWB/INCB assets; only their matching confirmed bond-proof projections can mint them.
 - Credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` and require a 546-proof mutation payment to that same credit registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visible but not canonical.
 - Approved message senders can combine this canonical WORK transfer format with ProofOfWork mail in one transaction. Mail recipients remain the normal payment outputs before the first `pwm1:` output. The WORK registry mutation payment is placed after the mail `pwm1:` outputs and before the `pwt1:send` outputs so mail delivery and WORK transfer parsing stay separate while sharing one txid.
 - WORK attachments are a V1 allowlisted sender feature for `1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT`, `1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x`, and `1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv`. Other connected addresses do not see the attachment control. The same gate applies to normal messages, Infinity Bonds, and Inception Bonds.
@@ -257,7 +262,7 @@ Current production behavior:
 - The two bond families are classified by their exact mail memo before synthetic supply is derived: `powb` can mint only POWB and `incb` can mint only INCB. Bond proof payments and attached canonical WORK are separate value lanes in the same transaction. Attached credit is WORK-only, uses the normal `pwt1:send` mutation, and must never be mistaken for POWB or INCB mint supply.
 - INCB floor accounting mirrors POWB: confirmed Inception Bond network value divided by confirmed INCB supply. Inception proof payments, INCB seller sale volume, INCB transfer fees, and INCB marketplace mutation fees contribute through the bond and marketplace lanes without counting the synthetic one-for-one mint as a second proof payment.
 - `/api/v1/marketplace-summary` returns the reconciled marketplace lifecycle rather than a raw proof-index summary snapshot, so stale compacted snapshots cannot hide confirmed sealed listings from the public Buy book. Proof-index summary snapshots are still backfilled and checked by parity, but route output may recover a projection row where the seal txid was temporarily written as the close txid only after first-party outspend truth proves the original listing ticket remains unspent.
-- Fresh reads for credit summaries, credit histories, marketplace summaries, and WORK summaries refresh the shared credit payload cache before returning when possible. If a canonical refresh is slower than the production wait window, the route should return the best reconciled fallback instead of serving an unreconciled stale snapshot or a false empty state.
+- Fresh reads for credit summaries, credit histories, marketplace summaries, and WORK summaries return only a coherent exact-tip canonical result. A slower or incomplete refresh returns HTTP 503; stable reads may continue to serve a labeled, hash-verified last-good snapshot and must never substitute a false empty state.
 - Credit mint prices are owner-set with a 546-proof minimum. ProofOfWork does not take a global fee on mints; the mint price goes to that credit's registry address.
 - Credit surfaces show the starting unit price as mint price divided by mint amount, plus live node-backed USD per credit and per mint from BTC/USD.
 - `wallet.proofofwork.me` shows connected-address credit balances, transfer logs, active and closed owned listings, sale history, and non-custodial transfers/listings/delistings through UniSat. `work.proofofwork.me` shows the WORK dashboard: mint progress, holders, credit facts, mint action, mint log, live floor, pending mint pressure, and confirmed floor history. `credit.proofofwork.me` stays focused on credit creation and mint selection.
@@ -273,13 +278,14 @@ Current production behavior:
 - The staged RUSH API scans the configured network registry for valid `pwr1:m:rush` mints that pay at least 1,000 proofs to the registry before OP_RETURN. Confirmed mint ordinals determine the phase reward; pending mints are visibility only.
 - The log API exposes a normalized ProofOfWork Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, and credit sales. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
 - Browser renders ProofOfWork HTML by txid from either the `pwm1:m` message body or a verified `pwm1:a` file attachment. It does not introduce an outside carrier; attachments keep the same size/SHA-256 verification as Files/Desktop, and message-body HTML remains bound to the transaction that carries it.
-- Confirmed Browser pages may run scripts in an opaque sandbox, but wallet signing remains outside Browser pages. Pending Browser pages render as visibility only and cannot run scripts.
+- Confirmed and pending Browser pages render as sanitized static HTML in an opaque sandbox. The renderer strips refresh/base/navigation URLs, neutralizes forms, permits only in-memory `data:`/`blob:` media, and applies a deny-all CSP so on-chain content cannot make external requests or reach a wallet signing lane.
 - Files/Desktop treat Browser-readable `pwm1:m` HTML bodies as derived `.html` files for navigation and opening, while the original transaction remains a message-body record on-chain.
-- The canonical welcome page is pinned by txid `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b` as the default ProofOfWork Computer file. It appears in Files/Desktop as a system artifact and opens in Browser so the transaction remains the source of truth.
+- The canonical welcome page txid is `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b`. Files/Desktop/Browser may show it only from verified transaction body or attachment data returned by the first-party API; no hardcoded client artifact may impersonate the transaction.
 - Growth reads the same registry, log, Credit, and WORK floor endpoints, then auto-refreshes real confirmed network value with the same live node-backed BTC/USD benchmark used by the rest of the app. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
-- On livenet, WORK floor, Growth summary, Log/Log history, token summary, and token history are backed by the same canonical ledger payload. That payload merges registry activity, discovered Computer activity, seeded mail activity from app-derived addresses, WORK token state, credit token state, and staged protocol activity where enabled. A confirmed event that affects network value must be searchable in Log from the same snapshot. Fresh reads may return a current checked ledger fallback that covers the node tip while deeper refresh continues, but they must not present stale, lower, or internally inconsistent projections as refreshed truth.
+- On livenet, WORK floor, Growth summary, Log/Log history, token summary, and token history are backed by the same canonical ledger payload. That payload merges registry activity, discovered Computer activity, seeded mail activity from app-derived addresses, WORK token state, credit token state, and staged protocol activity where enabled. A confirmed event that affects network value must be searchable in Log from the same snapshot. Fresh reads require that one snapshot at the exact verified Core tip; stable reads can expose a coherent last-good checkpoint with explicit lag provenance.
 - The database/read-model layer is the app-wide speed plane for that contract: once prior confirmed history is indexed, public routes should answer from the current verified snapshot, update only from newer indexed blocks and transactions, and keep embedded summaries such as Growth `workFloor` and Marketplace `workFloor` on the same snapshot/value as `/api/v1/work-floor` and `/api/v1/consistency`.
 - ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which external explorers can report as a lower effective fee rate.
+- Generic wallet funding also reserves all active ProofOfWork ID and credit listing anchors for that address before selection, so working in one asset view cannot accidentally spend another asset's sale ticket.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
 
@@ -610,6 +616,12 @@ To run the OP_RETURN API on the node server or locally:
 npm run proof-api
 ```
 
+Frontend builds require Node.js `^20.19.0` or `>=22.12.0`. Production pins the
+API and indexer worker to the checksum-verified Node.js 24 LTS runtime installed
+by `deploy/install-node-runtime.sh`; the matching systemd override is
+`deploy/proofofwork-api-node-runtime.conf`. Production dependency maintenance
+must prepend `/opt/node-v24.18.0-linux-x64/bin` to `PATH` before invoking npm.
+
 Useful API environment variables:
 
 ```text
@@ -620,11 +632,20 @@ PENDING_MEMPOOL_BASE=http://127.0.0.1:8080
 BITCOIN_RPC_URL=
 BITCOIN_RPC_USER=
 BITCOIN_RPC_PASSWORD=
+POW_API_BROADCAST_RATE_WINDOW_MS=60000
+POW_API_BROADCAST_RATE_PER_CLIENT=12
+POW_API_BROADCAST_RATE_GLOBAL=120
+POW_API_BROADCAST_CONCURRENCY_MAX=4
+WALLET_SCOPED_INDEX_WAIT_MS=10000
 ```
 
 `MEMPOOL_BASE` should point at the local private mempool/electrs HTTP API. `PENDING_MEMPOOL_BASE` is optional and exists because unconfirmed tx gossip can differ between nodes; production should keep it on ProofOfWork-controlled node infrastructure.
-`POST /api/v1/broadcast/tx` submits already-signed raw transaction hex to `MEMPOOL_BASE`; it never receives wallet keys or unsigned wallet authority.
+`POST /api/v1/broadcast/tx` submits already-signed raw transaction hex to `MEMPOOL_BASE`; it never receives wallet keys or unsigned wallet authority. Browser origin validation, bounded request rates/concurrency, and an exact-tip canonical admission gate protect this mutation path.
+Fresh wallet credit reads stay on the exact relational proof index and use the
+bounded `WALLET_SCOPED_INDEX_WAIT_MS` window; they fail closed instead of
+falling back to a broad history replay.
 `BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, and `BITCOIN_RPC_PASSWORD` are optional server-only Bitcoin Core RPC settings. When configured, the API can attach the node's exact `testmempoolaccept` reject reason to failed broadcasts, hydrate transactions with `getrawtransaction`, and verify sale-ticket spend state with `gettxout` so confirmed delistings and buys clear active books without waiting on slower address-history scans. Do not expose Bitcoin Core RPC publicly.
+Production keeps Core RPC and the API listener private. Caddy reaches the API through the host-to-host WireGuard address, while the Node API process itself remains bound to loopback behind a hardened socket proxy.
 
 ## Registry Audit
 
@@ -662,6 +683,8 @@ The companion local contract check is:
 
 ```bash
 npm run check:live-data
+npm run check:api-truth
+npm run check:hardening
 ```
 
 The broader proof-index regression gates are:
@@ -670,6 +693,7 @@ The broader proof-index regression gates are:
 npm run indexer:parity
 npm run check:mail-regressions
 npm run check:marketplace-regressions
+npm run check:ui
 ```
 
 `check:mail-regressions` proves indexed Inbox/Sent mail, Infinity Bond Log/Event search for the OTC self-send regression tx, and subject/body rendering for historical mail whose body must be repaired from raw tx data. `check:marketplace-regressions` proves WORK delist, sale, wallet, summary, sold-listing closure, confirmed sealed listing visibility, POWB transfer visibility, and Log close/sale/transfer status stay aligned. `indexer:parity` proves the database snapshot, event rows, participants/refs, registry, summaries, token history, address-mail, and tx-status samples match the canonical ledger contract.
@@ -697,6 +721,8 @@ should use proof-index `events`/`event_refs` rows before broad snapshot scans,
 then return the same txid-backed record the canonical ledger would expose.
 This keeps direct bug reports and public verification fast without inventing a
 second truth source.
+`check:marketplace-regressions` enforces a 10-second ceiling for terminal listing
+lookup, invalid-only Log lookup, and unknown exact Log misses.
 `indexer:parity` remains the full canonical/database comparison gate, but it is
 heavy enough that production worker loops should not run it automatically when
 that would compete with block catch-up or public API requests. Run it manually
