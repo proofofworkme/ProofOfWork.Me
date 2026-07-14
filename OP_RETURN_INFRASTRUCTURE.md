@@ -199,7 +199,11 @@ including confirmed Inbox/Sent and indexed pending Incoming/Outbox visibility.
 `mail_items`. Each confirmed bond recipient payment mints the matching POWB or
 INCB synthetic credit to that recipient address, one unit per proof sent;
 self-sends are the self-recipient case and land in both Inbox and Sent. Any
-attached credit is parsed separately as canonical WORK movement. INCB uses
+attached credit is parsed separately as canonical WORK movement. A valid
+confirmed same-transaction WORK attachment is also joined into the Inception
+summary's composite value: frozen at its confirmation-time WORK floor and live
+at the current WORK floor. That read-model join does not change INCB supply and
+does not create a second global WORK movement/value event. INCB uses
 `inception@proofofwork.me` and reserved credit id
 `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`.
 Generic `pwt1:create` and `pwt1:mint` events are invalid for both reserved bond
@@ -820,6 +824,8 @@ The canonical livenet ledger payload:
 - Keeps pending records visible where useful, but only confirmed records affect canonical network value and the WORK floor.
 - Keeps live and frozen network value separate. Live network value is the active site value and WORK floor source. Frozen network value is the immutable confirmation-time audit stamp for WORK movement and fixed event components.
 - Applies credit movement value only to canonical WORK. Other credits remain proof-flow only: confirmed proof payments, registry/mutation fees, sale payments, and marketplace flow can count, but their listing floors do not reprice network value.
+- Counts cumulative WORK miner fees once per confirmed transaction id from complete full-node input value minus output value. This is historical Bitcoin blockspace/security expenditure, not platform revenue, retained reserves, or spendable backing.
+- Joins valid confirmed same-transaction WORK attachments into Inception's frozen/live composite summary without changing INCB supply or duplicating the underlying WORK movement in global Growth/WORK value.
 - Rejects or avoids replacing a useful cached ledger with a worse confirmed-history payload when guarded counts regress.
 - May serve a useful cached ledger for fast first paint only when summary projections also correct active sale-ticket listings against current node spend state; deep refresh continues in the background and must converge on confirmed chain truth.
 - Replays WORK mint summaries from canonical mint events and treats pending WORK mints as availability pressure only. Pending mints can reduce available mint slots in the UI, but they do not change confirmed supply, holders, floor, or network value.

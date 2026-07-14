@@ -1419,7 +1419,7 @@ expectAll("Infinity and Inception recipient-credit markets are wired", server + 
   /const confirmedBondActions = confirmedActivity\.filter\([\s\S]*isBondActivityItem\(item,\s*config\)/,
   /const bondMintFlowSats = confirmedBondActions\.reduce\([\s\S]*activityAmountSats\(item\)/,
   /async function bondSummaryFromCanonicalLedger\([\s\S]*bondSummaryPayloadFromLedger\(\{[\s\S]*btcUsdQuote,[\s\S]*\},\s*config\)/,
-  /async function bondSummaryPayload\(network,\s*fresh\s*=\s*false,\s*config\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*bondSummaryFromCanonicalLedger\(ledger,\s*network,\s*fresh,\s*config\)[\s\S]*config\.displayName/,
+  /async function bondSummaryPayload\(network,\s*fresh\s*=\s*false,\s*config\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*bondSummaryFromCanonicalLedger\(\s*ledger,\s*network,\s*fresh,\s*config,?\s*\)[\s\S]*config\.displayName/,
   /item\.recipients[\s\S]*recipient\.amountSats[\s\S]*recipient\.address/,
   /minterAddress:\s*recipientMint\.minterAddress/,
   /url\.pathname === "\/api\/v1\/infinity-summary"/,
