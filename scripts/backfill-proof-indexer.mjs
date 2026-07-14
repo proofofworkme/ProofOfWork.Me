@@ -2388,10 +2388,14 @@ async function canonicalRecoveryItemsForTx(tx, messages) {
         },
       );
     } catch (error) {
-      if (
-        pendingEnvelopeCanStandAlone &&
-        Number(error?.statusCode ?? 0) === 503
-      ) {
+      if (pendingEnvelopeCanStandAlone) {
+        console.error(
+          JSON.stringify({
+            error: error?.message ?? String(error),
+            phase: "pending-envelope-verifier-deferred",
+            txid,
+          }),
+        );
         deferredPendingVerifier = true;
         continue;
       }

@@ -11663,7 +11663,7 @@ check("pending PWM envelopes survive unresolved staged verifier companions", asy
       ],
       readJson: async () => {
         const error = new Error("ordered verifier unresolved");
-        error.statusCode = 503;
+        error.name = "AbortError";
         throw error;
       },
       recoveryEndpointSpecs: () => [
@@ -11706,7 +11706,7 @@ check("pending PWM envelopes survive unresolved staged verifier companions", asy
       },
       messages,
     ),
-    (error) => error.statusCode === 503,
+    (error) => error.name === "AbortError",
     "A confirmed block event bypassed an unresolved canonical verifier",
   );
 });
