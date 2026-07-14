@@ -864,18 +864,68 @@ expect(
       app,
     ),
 );
+const infinityAppBlock =
+  app.match(/function InfinityApp[\s\S]*?function TokenWalletApp/)?.[0] ?? "";
 expect(
-  "Inception consumes attached WORK live and frozen accounting",
+  "Inception issues fixed INCB from the hash-bound H-1 live WORK summary",
   /attachedWorkAmount\?: number/.test(app) &&
-    /attachedWorkFrozenValueSats\?: number/.test(app) &&
-    /attachedWorkLiveValueSats\?: number/.test(app) &&
+    /attachedWorkIssuanceUnits\?: number/.test(app) &&
+    /attachedWorkLiveFloorAtSendSats\?: number/.test(app) &&
+    /attachedWorkLiveValueAtSendSats\?: number/.test(app) &&
+    /confirmedIssuanceUnits\?: number/.test(app) &&
+    /directProofIssuanceUnits\?: number/.test(app) &&
+    /issuanceAccountingModel\?: string/.test(app) &&
+    /issuanceCheckpointBlockHash\?: string/.test(app) &&
+    /issuanceCheckpointBlockHeight\?: number/.test(app) &&
+    /issuanceCheckpointBlockIndex\?: number/.test(app) &&
+    /issuanceCheckpointMode\?: string/.test(app) &&
+    /issuanceNetworkValueSats\?: number/.test(app) &&
+    /issuanceValuationFixedAtSend\?: boolean/.test(app) &&
+    /issuanceValueSnapshotBlockHash\?: string/.test(app) &&
+    /issuanceValueSnapshotBlockHeight\?: number/.test(app) &&
+    /issuanceValueSnapshotCanonicalSummaryHash\?: string/.test(app) &&
+    /issuanceValueSnapshotGeneratedAt\?: string/.test(app) &&
+    /issuanceValueSnapshotId\?: string/.test(app) &&
+    /issuanceValueSnapshotMode\?: string/.test(app) &&
+    /issuanceValueSnapshotModel\?: string/.test(app) &&
+    /issuanceValueSnapshotWorkNetworkValueSats\?: number/.test(app) &&
     /liveNetworkValueSats\?: number/.test(app) &&
-    /frozenNetworkValueSats\?: number/.test(app) &&
-    /inceptionAccounting = bondConfig\.folder === "inception"/.test(app) &&
-    /Attached WORK at confirmation/.test(app) &&
-    /Attached WORK at live floor/.test(app) &&
-    /Frozen network value/.test(app) &&
-    /Live network value/.test(app),
+    /inceptionAccounting = bondConfig\.folder === "inception"/.test(
+      infinityAppBlock,
+    ) &&
+    /canonical-pre-bond-live-network-value-v2/.test(infinityAppBlock) &&
+    /canonical-summary-h-minus-one-v1/.test(infinityAppBlock) &&
+    /canonical-summary-refresh/.test(infinityAppBlock) &&
+    /bond-transaction-provenance/.test(infinityAppBlock) &&
+    /issuanceValuationFixedAtSend === true/.test(infinityAppBlock) &&
+    /inceptionIssuanceAvailable/.test(infinityAppBlock) &&
+    /"Live INCB floor"\s*:\s*"Bond floor"[\s\S]*"Live Inception value"\s*:\s*"Network value"[\s\S]*"Live floor USD"\s*:\s*"Floor USD"[\s\S]*"Live network USD"\s*:\s*"Network USD"/.test(
+      infinityAppBlock,
+    ) &&
+    /"Fixed issued supply"\s*:\s*"Confirmed supply"/.test(
+      infinityAppBlock,
+    ) &&
+    /Direct proof issuance/.test(infinityAppBlock) &&
+    /Attached WORK issuance/.test(infinityAppBlock) &&
+    /Total issued/.test(infinityAppBlock) &&
+    /Exact bond issuance value/.test(infinityAppBlock) &&
+    /H-1 WORK floor/.test(infinityAppBlock) &&
+    /H-1 WORK network value/.test(infinityAppBlock) &&
+    /Value snapshot block/.test(infinityAppBlock) &&
+    /Bond block provenance/.test(infinityAppBlock) &&
+    /last confirmed green canonical live[\s\S]*WORK summary at H-1/.test(
+      infinityAppBlock,
+    ) &&
+    /Every transaction in the bond block is[\s\S]*excluded/.test(
+      infinityAppBlock,
+    ) &&
+    /current or post-bond network value changes only the live INCB floor/.test(
+      infinityAppBlock,
+    ) &&
+    /exact previous block hash/.test(infinityAppBlock) &&
+    !/issuanceCheckpointWorkNetworkValueSats|send-time pre-transaction checkpoint|Attached WORK at confirmation|Frozen network value|Frozen INCB floor/.test(
+      infinityAppBlock,
+    ),
 );
 expect(
   "WORK miner fee cards disclose cumulative Bitcoin miner cost",

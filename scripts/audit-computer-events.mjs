@@ -354,7 +354,7 @@ try {
         ledgerChecks.has("token-sales-logged") &&
         ledgerChecks.has("seeded-mail-events-logged") &&
         ledgerChecks.has("seeded-inception-bonds-logged") &&
-        ledgerChecks.has("inception-bond-flow-matches-incb-supply") &&
+        ledgerChecks.has("inception-live-issuance-matches-incb-supply") &&
         ledgerChecks.has("seeded-infinity-bonds-logged"),
       { checks: [...ledgerChecks].sort() },
     ),
@@ -455,9 +455,36 @@ try {
         inception?.registryId === "inception@proofofwork.me" &&
         inception?.tokenId ===
           "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d" &&
+        inception?.actualValue?.issuanceAccountingModel ===
+          "canonical-pre-bond-live-network-value-v2" &&
+        inception?.actualValue?.issuanceCheckpointMode ===
+          "bond-transaction-provenance" &&
+        inception?.actualValue?.issuanceValueSnapshotModel ===
+          "canonical-summary-h-minus-one-v1" &&
+        inception?.actualValue?.issuanceValueSnapshotMode ===
+          "canonical-summary-refresh" &&
+        numberValue(
+          inception?.actualValue?.issuanceValueSnapshotBlockHeight,
+        ) ===
+          numberValue(
+            inception?.actualValue?.issuanceCheckpointBlockHeight,
+          ) -
+            1 &&
+        /^[0-9a-f]{64}$/u.test(
+          String(inception?.actualValue?.issuanceCheckpointBlockHash ?? ""),
+        ) &&
+        numbersAgree(
+          inception?.actualValue?.confirmedIssuanceUnits,
+          inception?.stats?.confirmedSupply,
+          0.01,
+        ) &&
         numberValue(inception?.actualValue?.networkValueSats) >= 0,
       {
         confirmedBondActions: inception?.stats?.confirmedBondActions ?? null,
+        confirmedIssuanceUnits:
+          inception?.actualValue?.confirmedIssuanceUnits ?? null,
+        issuanceAccountingModel:
+          inception?.actualValue?.issuanceAccountingModel ?? null,
         networkValueSats: inception?.actualValue?.networkValueSats ?? null,
         registryId: inception?.registryId ?? null,
         ticker: inception?.ticker ?? null,

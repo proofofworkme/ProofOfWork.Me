@@ -309,7 +309,7 @@ expect(
   consistencyChecks.has("seeded-mail-events-logged") &&
     consistencyChecks.has("seeded-infinity-bonds-logged") &&
     consistencyChecks.has("seeded-inception-bonds-logged") &&
-    consistencyChecks.has("inception-bond-flow-matches-incb-supply"),
+    consistencyChecks.has("inception-live-issuance-matches-incb-supply"),
 );
 expect(
   "consistency guards ledger node-tip coverage",
@@ -488,6 +488,61 @@ expect(
 expect(
   "Inception summary holder count matches INCB token state",
   numbersAgree(inceptionSummary.stats?.holders, incbHolders),
+);
+const inceptionActual = inceptionSummary.actualValue ?? {};
+expect(
+  "Inception uses the canonical pre-bond live-value issuance model",
+  inceptionActual.issuanceAccountingModel ===
+      "canonical-pre-bond-live-network-value-v2" &&
+    inceptionActual.attachmentAccountingModel ===
+      "canonical-pre-bond-live-network-value-v2" &&
+    inceptionActual.issuanceCheckpointMode ===
+      "bond-transaction-provenance" &&
+    /^[0-9a-f]{64}$/u.test(
+      String(inceptionActual.issuanceCheckpointBlockHash ?? ""),
+    ) &&
+    Number.isSafeInteger(
+      numberValue(inceptionActual.issuanceCheckpointBlockHeight),
+    ) &&
+    Number.isSafeInteger(
+      numberValue(inceptionActual.issuanceCheckpointBlockIndex),
+    ) &&
+    inceptionActual.issuanceValueSnapshotModel ===
+      "canonical-summary-h-minus-one-v1" &&
+    inceptionActual.issuanceValueSnapshotMode ===
+      "canonical-summary-refresh" &&
+    numberValue(inceptionActual.issuanceValueSnapshotBlockHeight) ===
+      numberValue(inceptionActual.issuanceCheckpointBlockHeight) - 1 &&
+    /^[0-9a-f]{64}$/u.test(
+      String(inceptionActual.issuanceValueSnapshotBlockHash ?? ""),
+    ) &&
+    /^[0-9a-f]{64}$/u.test(
+      String(
+        inceptionActual.issuanceValueSnapshotCanonicalSummaryHash ?? "",
+      ),
+    ) &&
+    String(inceptionActual.issuanceValueSnapshotId ?? "").trim().length > 0 &&
+    numberValue(
+      inceptionActual.issuanceValueSnapshotWorkNetworkValueSats,
+    ) > 0,
+);
+expect(
+  "Inception synthetic issuance reconciles to INCB supply",
+  numbersAgree(
+    inceptionActual.confirmedIssuanceUnits,
+    incbTokenState.confirmedSupply,
+  ) &&
+    numbersAgree(
+      numberValue(inceptionActual.directProofIssuanceUnits) +
+        numberValue(inceptionActual.attachedWorkIssuanceUnits),
+      inceptionActual.confirmedIssuanceUnits,
+    ) &&
+    numbersAgree(
+      inceptionActual.issuanceNetworkValueSats,
+      numberValue(inceptionActual.directProofIssuanceUnits) +
+        numberValue(inceptionActual.attachedWorkLiveValueAtSendSats),
+      0.01,
+    ),
 );
 expect(
   "Inception total USD uses live BTC/USD",

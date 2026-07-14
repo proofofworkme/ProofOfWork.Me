@@ -581,8 +581,12 @@ const WORK_TOKEN_MINT_PRICE_SATS = 1000;
 const WORK_TOKEN_PRICE_SATS_PER_WORK = 1;
 const CREDIT_MINER_FEE_ACCOUNTING_MODEL =
   "canonical-unique-tx-input-output-v1";
+const INCEPTION_ISSUANCE_ACCOUNTING_MODEL =
+  "canonical-pre-bond-live-network-value-v2";
+const INCEPTION_VALUE_SNAPSHOT_MODEL =
+  "canonical-summary-h-minus-one-v1";
 const INCEPTION_ATTACHMENT_ACCOUNTING_MODEL =
-  "canonical-same-tx-work-composite-v1";
+  INCEPTION_ISSUANCE_ACCOUNTING_MODEL;
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const DEFAULT_WORK_TOKEN_TRANSFER_RECOVERY_TXIDS = [
@@ -1597,6 +1601,13 @@ function canonicalBondTokenDefinition(
     tokenId: config.tokenId,
     txid: config.tokenId,
     uncapped: true,
+    ...(config.tokenId === INCB_TOKEN_ID
+      ? {
+          issuanceAccountingModel: INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
+          issuanceUnitSats: 1,
+          issuanceValuationFixedAtSend: true,
+        }
+      : {}),
   };
 }
 
@@ -7100,6 +7111,7 @@ function protocolPaymentOutputs(vout) {
         address: output.scriptpubkey_address,
         amountSats: output.value,
         display: output.scriptpubkey_address,
+        vout: index,
       },
     ];
   });
@@ -9322,6 +9334,107 @@ function tokenProtocolSortedTransactions(txs) {
   });
 }
 
+function canonicalTokenReplayOrdinal(item) {
+  for (const value of [
+    item?._powEventIndex,
+    item?.eventKeyVout,
+    item?.protocolVout,
+    item?.eventId,
+    item?.recipientOrdinal,
+  ]) {
+    const ordinal = Number(value);
+    if (Number.isSafeInteger(ordinal) && ordinal >= 0) {
+      return ordinal;
+    }
+  }
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function tokenReplayEntriesForRegistry(
+  txs,
+  seedMints,
+  tokensById,
+  registryAddress,
+) {
+  const entries = tokenProtocolSortedTransactions(
+    Array.isArray(txs) ? txs : [],
+  ).map((tx) => ({
+    blockHeight: transactionBlockHeight(tx),
+    blockIndex: transactionBlockIndex(tx),
+    confirmed: transactionConfirmed(tx),
+    createdAt: new Date(tokenTransactionTime(tx)).toISOString(),
+    kind: "transaction",
+    ordinal: -1,
+    tx,
+    txid: transactionTxid(tx),
+  }));
+  for (const mint of Array.isArray(seedMints) ? seedMints : []) {
+    const token = tokensById.get(String(mint?.tokenId ?? "").toLowerCase());
+    if (!token || token.registryAddress !== registryAddress) {
+      continue;
+    }
+    entries.push({
+      blockHeight: Number.isSafeInteger(Number(mint?.blockHeight))
+        ? Number(mint.blockHeight)
+        : undefined,
+      blockIndex: Number.isSafeInteger(Number(mint?.blockIndex))
+        ? Number(mint.blockIndex)
+        : undefined,
+      confirmed: mint?.confirmed === true,
+      createdAt: mint?.createdAt,
+      kind: "seed-mint",
+      mint,
+      ordinal: canonicalTokenReplayOrdinal(mint),
+      txid: String(mint?.txid ?? "").trim().toLowerCase(),
+    });
+  }
+
+  return entries.sort((left, right) => {
+    if (left.confirmed !== right.confirmed) {
+      return Number(right.confirmed) - Number(left.confirmed);
+    }
+    const leftHeight = Number.isSafeInteger(left.blockHeight)
+      ? left.blockHeight
+      : Number.MAX_SAFE_INTEGER;
+    const rightHeight = Number.isSafeInteger(right.blockHeight)
+      ? right.blockHeight
+      : Number.MAX_SAFE_INTEGER;
+    if (leftHeight !== rightHeight) {
+      return leftHeight - rightHeight;
+    }
+    const leftIndex = Number.isSafeInteger(left.blockIndex)
+      ? left.blockIndex
+      : Number.MAX_SAFE_INTEGER;
+    const rightIndex = Number.isSafeInteger(right.blockIndex)
+      ? right.blockIndex
+      : Number.MAX_SAFE_INTEGER;
+    if (leftIndex !== rightIndex) {
+      return leftIndex - rightIndex;
+    }
+    if (left.txid === right.txid && left.kind !== right.kind) {
+      // Synthetic bond credit does not exist until the whole bond
+      // transaction has been processed. A token message in the same
+      // transaction therefore cannot spend its newly issued credit.
+      return left.kind === "transaction" ? -1 : 1;
+    }
+    if (left.ordinal !== right.ordinal) {
+      return left.ordinal - right.ordinal;
+    }
+    const txidSort = left.txid.localeCompare(right.txid);
+    if (txidSort) {
+      return txidSort;
+    }
+    const timeSort =
+      Date.parse(left.createdAt ?? "") - Date.parse(right.createdAt ?? "");
+    if (Number.isFinite(timeSort) && timeSort !== 0) {
+      return timeSort;
+    }
+    return String(left.mint?.minterAddress ?? "").localeCompare(
+      String(right.mint?.minterAddress ?? ""),
+    );
+  });
+}
+
 function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
   const tokens = [];
   let creationSats = 0;
@@ -9345,6 +9458,7 @@ function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
     }
 
     const minerFeeSats = transactionMinerFeeSats(tx);
+    const blockHash = transactionBlockHash(tx);
     const blockHeight = transactionBlockHeight(tx);
     const blockIndex = transactionBlockIndex(tx);
     let remainingCreationSats = tokenPaymentAmountBeforeProtocol(
@@ -9373,6 +9487,7 @@ function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
       remainingCreationSats -= TOKEN_CREATION_PRICE_SATS;
       creationSats += TOKEN_CREATION_PRICE_SATS;
       tokens.push({
+        blockHash,
         blockHeight,
         blockIndex,
         confirmed,
@@ -9543,6 +9658,7 @@ function tokenStateFromTransactions(
     closedListings.push({
       ...listing,
       closedAt: event.createdAt,
+      closedBlockHash: event.blockHash,
       closedBlockHeight: event.blockHeight,
       closedBlockIndex: event.blockIndex,
       closedConfirmed: event.confirmed,
@@ -9565,7 +9681,7 @@ function tokenStateFromTransactions(
     ...new Set(tokens.map((token) => token.registryAddress).filter(Boolean)),
   ];
 
-  for (const mint of Array.isArray(seedMints) ? seedMints : []) {
+  const applySeedMint = (mint) => {
     const mintedToken = tokensById.get(String(mint?.tokenId ?? "").toLowerCase());
     const minterAddress = String(mint?.minterAddress ?? "").trim();
     const amount = Number(mint?.amount ?? 0);
@@ -9583,7 +9699,7 @@ function tokenStateFromTransactions(
           item.minterAddress === minterAddress,
       )
     ) {
-      continue;
+      return;
     }
 
     const confirmed = mint.confirmed === true;
@@ -9596,7 +9712,7 @@ function tokenStateFromTransactions(
       currentSupply.confirmed + currentSupply.pending + amount >
         mintedToken.maxSupply
     ) {
-      continue;
+      return;
     }
 
     if (confirmed) {
@@ -9611,7 +9727,10 @@ function tokenStateFromTransactions(
     tokenSupply.set(mintedToken.tokenId, currentSupply);
 
     mints.push({
+      ...canonicalEventIdentityDetails(mint),
+      ...canonicalInceptionMintMetadata(mint),
       amount,
+      blockHash: String(mint.blockHash ?? "").trim().toLowerCase() || undefined,
       blockHeight: Number.isSafeInteger(Number(mint.blockHeight))
         ? Number(mint.blockHeight)
         : undefined,
@@ -9631,11 +9750,22 @@ function tokenStateFromTransactions(
       tokenId: mintedToken.tokenId,
       txid,
     });
-  }
+  };
 
   for (const registryAddress of registryAddresses) {
     const txs = registryTxsByAddress.get(registryAddress) ?? [];
-    for (const tx of tokenProtocolSortedTransactions(txs)) {
+    const replayEntries = tokenReplayEntriesForRegistry(
+      txs,
+      seedMints,
+      tokensById,
+      registryAddress,
+    );
+    for (const replayEntry of replayEntries) {
+      if (replayEntry.kind === "seed-mint") {
+        applySeedMint(replayEntry.mint);
+        continue;
+      }
+      const tx = replayEntry.tx;
       const txid = transactionTxid(tx);
       if (!txid) {
         continue;
@@ -9649,8 +9779,12 @@ function tokenStateFromTransactions(
         continue;
       }
 
-      const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
-      if (messages.length === 0) {
+      const messageEntries = vout.flatMap((output, protocolVout) =>
+        decodedProtocolMessages([output], TOKEN_PROTOCOL_PREFIX).map(
+          (message) => ({ message, protocolVout }),
+        ),
+      );
+      if (messageEntries.length === 0) {
         continue;
       }
 
@@ -9664,6 +9798,7 @@ function tokenStateFromTransactions(
       const confirmed = transactionConfirmed(tx);
       const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
       const minerFeeSats = transactionMinerFeeSats(tx);
+      const blockHash = transactionBlockHash(tx);
       const blockHeight = transactionBlockHeight(tx);
       const blockIndex = transactionBlockIndex(tx);
       let acceptedTxMessage = false;
@@ -9672,7 +9807,7 @@ function tokenStateFromTransactions(
       let parsedTxTokenId = "";
       let rejectedTxMessage = null;
 
-      for (const message of messages) {
+      for (const { message, protocolVout } of messageEntries) {
         const parsed = parseTokenPayload(message, network);
         if (!parsed) {
           continue;
@@ -9723,6 +9858,7 @@ function tokenStateFromTransactions(
 
           mints.push({
             amount: parsed.amount,
+            blockHash,
             blockHeight,
             blockIndex,
             confirmed,
@@ -9789,6 +9925,7 @@ function tokenStateFromTransactions(
 
           transfers.push({
             amount: parsed.amount,
+            blockHash,
             blockHeight,
             blockIndex,
             confirmed,
@@ -9797,6 +9934,7 @@ function tokenStateFromTransactions(
             minerFeeSats,
             network,
             paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+            protocolVout,
             recipientAddress: parsed.recipientAddress,
             registryAddress: sentToken.registryAddress,
             senderAddress: actorAddress,
@@ -9829,6 +9967,7 @@ function tokenStateFromTransactions(
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
           listings.set(txid, {
             amount: authorization.amount,
+            blockHash,
             blockHeight,
             blockIndex,
             confirmed,
@@ -9870,6 +10009,7 @@ function tokenStateFromTransactions(
             ...listing,
             saleAuthorization: authorization,
             sealAt: createdAt,
+            sealBlockHash: blockHash,
             sealBlockHeight: blockHeight,
             sealBlockIndex: blockIndex,
             sealConfirmed: confirmed,
@@ -9894,6 +10034,7 @@ function tokenStateFromTransactions(
 
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
           closeListing(listing, {
+            blockHash,
             blockHeight,
             blockIndex,
             confirmed,
@@ -9938,6 +10079,7 @@ function tokenStateFromTransactions(
 
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
           closeListing(listing, {
+            blockHash,
             blockHeight,
             blockIndex,
             confirmed,
@@ -9957,6 +10099,7 @@ function tokenStateFromTransactions(
 
           sales.push({
             amount: listing.amount,
+            blockHash,
             blockHeight,
             blockIndex,
             buyerAddress: parsed.buyerAddress,
@@ -9980,6 +10123,7 @@ function tokenStateFromTransactions(
       }
 
       closeListingsSpentByEvent(eventSpentOutpoints, {
+        blockHash,
         blockHeight,
         blockIndex,
         confirmed,
@@ -9999,6 +10143,7 @@ function tokenStateFromTransactions(
           auditMinerFeeSats: minerFeeSats,
           auditRegistryPaymentSats: originalRegistrySats,
           auditTotalCostSats: minerFeeSats + originalRegistrySats,
+          blockHash,
           blockHeight,
           blockIndex,
           confirmed,
@@ -10111,6 +10256,7 @@ function workTransfersFromTransactions(txs, network) {
       remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
       transfers.push({
         amount: parsed.amount,
+        blockHash: transactionBlockHash(tx),
         blockHeight: transactionBlockHeight(tx),
         blockIndex: transactionBlockIndex(tx),
         confirmed,
@@ -11498,7 +11644,9 @@ function idActivityItemsFromEvents(events) {
     const base = {
       amountSats: event.amountSats,
       actor: event.inputAddresses[0],
+      blockHash: event.blockHash,
       blockHeight: event.blockHeight,
+      blockIndex: event.blockIndex,
       confirmed: event.confirmed,
       createdAt: event.createdAt,
       dataBytes: event.dataBytes ?? 0,
@@ -11881,7 +12029,9 @@ function mailActivityItemFromTransaction(tx, network) {
     actor,
     attachedCredits:
       attachedCredits.length > 0 ? attachedCredits : undefined,
+    blockHash: transactionBlockHash(tx),
     blockHeight: transactionBlockHeight(tx),
+    blockIndex: transactionBlockIndex(tx),
     confirmed,
     counterparty,
     createdAt,
@@ -11946,9 +12096,13 @@ function bondRecipientMintsFromActivityItem(item, network, config) {
 
   const recipients = Array.isArray(item?.recipients)
     ? item.recipients
-        .map((recipient) => ({
+        .map((recipient, recipientOrdinal) => ({
           address: String(recipient?.address ?? "").trim(),
           amountSats: numericValue(recipient?.amountSats),
+          bondRecipientVout:
+            canonicalEventOrdinal(
+              recipient?.vout ?? recipient?.protocolVout,
+            ) ?? recipientOrdinal,
         }))
         .filter(
           (recipient) =>
@@ -11959,15 +12113,18 @@ function bondRecipientMintsFromActivityItem(item, network, config) {
   if (recipients.length > 0) {
     const byAddress = new Map();
     for (const recipient of recipients) {
-      byAddress.set(
-        recipient.address,
-        (byAddress.get(recipient.address) ?? 0) + recipient.amountSats,
-      );
+      const current = byAddress.get(recipient.address) ?? {
+        amountSats: 0,
+        bondRecipientVout: recipient.bondRecipientVout,
+      };
+      current.amountSats += recipient.amountSats;
+      byAddress.set(recipient.address, current);
     }
-    return [...byAddress.entries()].map(([address, amountSats]) => ({
-      amount: amountSats,
+    return [...byAddress.entries()].map(([address, recipient]) => ({
+      amount: recipient.amountSats,
+      bondRecipientVout: recipient.bondRecipientVout,
       minterAddress: address,
-      paidSats: amountSats,
+      paidSats: recipient.amountSats,
     }));
   }
 
@@ -11978,7 +12135,7 @@ function bondRecipientMintsFromActivityItem(item, network, config) {
 
   const counterparty = String(item?.counterparty ?? "").trim();
   if (isValidBitcoinAddress(counterparty, network)) {
-    return [{ amount, minterAddress: counterparty, paidSats: amount }];
+    return [{ amount, bondRecipientVout: 0, minterAddress: counterparty, paidSats: amount }];
   }
 
   const actor = String(item?.actor ?? "").trim();
@@ -11991,7 +12148,7 @@ function bondRecipientMintsFromActivityItem(item, network, config) {
     .find((participant) => isValidBitcoinAddress(participant, network));
   const fallbackRecipient = participantRecipient || actor;
   return isValidBitcoinAddress(fallbackRecipient, network)
-    ? [{ amount, minterAddress: fallbackRecipient, paidSats: amount }]
+    ? [{ amount, bondRecipientVout: 0, minterAddress: fallbackRecipient, paidSats: amount }]
     : [];
 }
 
@@ -12039,7 +12196,12 @@ function bondMintsFromActivity(activity, registryAddress, network, config) {
           seen.add(mintKey);
           return {
             amount: recipientMint.amount,
+            bondRecipientAddress: recipientMint.minterAddress,
+            bondRecipientAmountSats: recipientMint.paidSats,
+            bondRecipientVout: recipientMint.bondRecipientVout,
+            blockHash: String(item.blockHash ?? "").trim().toLowerCase(),
             blockHeight: item.blockHeight,
+            blockIndex: item.blockIndex,
             confirmed: item.confirmed === true,
             createdAt: item.createdAt,
             dataBytes: numericValue(item.dataBytes),
@@ -12185,7 +12347,12 @@ async function bondSeedMintsWithSaleTicketParents(
           seen.add(mintKey);
           mints.push({
             amount: recipientMint.amount,
+            bondRecipientAddress: recipientMint.minterAddress,
+            bondRecipientAmountSats: recipientMint.paidSats,
+            bondRecipientVout: recipientMint.bondRecipientVout,
+            blockHash: String(activityItem.blockHash ?? "").trim().toLowerCase(),
             blockHeight: activityItem.blockHeight,
+            blockIndex: activityItem.blockIndex,
             confirmed: activityItem.confirmed === true,
             createdAt: activityItem.createdAt,
             dataBytes: numericValue(activityItem.dataBytes),
@@ -12263,6 +12430,1225 @@ async function recoveredIncbTokenPayloadFromTransactions(network, recoveryTxs) {
   );
 }
 
+function canonicalEventOrdinal(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const ordinal = Number(value);
+  return Number.isSafeInteger(ordinal) && ordinal >= 0 ? ordinal : null;
+}
+
+function canonicalInceptionMintMetadata(mint) {
+  if (
+    mint?.issuanceAccountingModel !== INCEPTION_ISSUANCE_ACCOUNTING_MODEL
+  ) {
+    return {};
+  }
+  return {
+    amountSats: numericValue(mint.amountSats),
+    attachedWorkAmount: numericValue(mint.attachedWorkAmount),
+    attachedWorkIssuanceUnits: numericValue(
+      mint.attachedWorkIssuanceUnits,
+    ),
+    attachedWorkLiveFloorAtSendSats: numericValue(
+      mint.attachedWorkLiveFloorAtSendSats,
+    ),
+    attachedWorkLiveValueAtSendSats: numericValue(
+      mint.attachedWorkLiveValueAtSendSats,
+    ),
+    bondRecipientAddress: String(mint.bondRecipientAddress ?? "").trim(),
+    bondRecipientAmountSats: numericValue(mint.bondRecipientAmountSats),
+    bondRecipientVout: numericValue(mint.bondRecipientVout),
+    confirmedIssuanceUnits: numericValue(mint.confirmedIssuanceUnits),
+    directProofIssuanceUnits: numericValue(mint.directProofIssuanceUnits),
+    issuanceAccountingModel: mint.issuanceAccountingModel,
+    issuanceAmount: numericValue(mint.issuanceAmount),
+    issuanceCheckpointBlockHash: String(
+      mint.issuanceCheckpointBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase(),
+    issuanceCheckpointBlockHeight: numericValue(
+      mint.issuanceCheckpointBlockHeight,
+    ),
+    issuanceCheckpointBlockIndex: numericValue(
+      mint.issuanceCheckpointBlockIndex,
+    ),
+    issuanceCheckpointMode: String(mint.issuanceCheckpointMode ?? ""),
+    issuanceValueSnapshotBlockHash: String(
+      mint.issuanceValueSnapshotBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase(),
+    issuanceValueSnapshotBlockHeight: numericValue(
+      mint.issuanceValueSnapshotBlockHeight,
+    ),
+    issuanceValueSnapshotCanonicalSummaryHash: String(
+      mint.issuanceValueSnapshotCanonicalSummaryHash ?? "",
+    )
+      .trim()
+      .toLowerCase(),
+    issuanceValueSnapshotGeneratedAt: String(
+      mint.issuanceValueSnapshotGeneratedAt ?? "",
+    ).trim(),
+    issuanceValueSnapshotId: String(
+      mint.issuanceValueSnapshotId ?? "",
+    ).trim(),
+    issuanceValueSnapshotMode: String(
+      mint.issuanceValueSnapshotMode ?? "",
+    ).trim(),
+    issuanceValueSnapshotModel: String(
+      mint.issuanceValueSnapshotModel ?? "",
+    ).trim(),
+    issuanceValueSnapshotWorkNetworkValueSats: numericValue(
+      mint.issuanceValueSnapshotWorkNetworkValueSats,
+    ),
+    issuanceDustSats: numericValue(mint.issuanceDustSats),
+    issuanceFloorSats: numericValue(mint.issuanceFloorSats),
+    issuanceNetworkValueSats: numericValue(mint.issuanceNetworkValueSats),
+    issuanceUnitSats: numericValue(mint.issuanceUnitSats),
+    issuanceValuationFixedAtSend:
+      mint.issuanceValuationFixedAtSend === true,
+    proofPaymentSats: numericValue(
+      mint.proofPaymentSats ?? mint.paidSats,
+    ),
+    sourceBondTxid: String(mint.sourceBondTxid ?? "")
+      .trim()
+      .toLowerCase(),
+    validationMode: String(mint.validationMode ?? "").trim(),
+  };
+}
+
+function inceptionAttachmentMatchesForBond(ledger, bond) {
+  const txid = String(bond?.txid ?? "").trim().toLowerCase();
+  const workTokenState = ledgerTokenStateForScope(ledger, WORK_TOKEN_ID);
+  const transfers = (Array.isArray(workTokenState?.transfers)
+    ? workTokenState.transfers
+    : []
+  ).filter(
+    (transfer) =>
+      transfer?.confirmed &&
+      transfer?.valid !== false &&
+      transfer.tokenId === WORK_TOKEN_ID &&
+      String(transfer.txid ?? "").trim().toLowerCase() === txid &&
+      numericValue(transfer.amount) > 0,
+  );
+  const bondRecipients = new Set(
+    (Array.isArray(bond?.recipients) ? bond.recipients : [])
+      .map((recipient) => String(recipient?.address ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const declaredCredits = (Array.isArray(bond?.attachedCredits)
+    ? bond.attachedCredits
+    : []
+  ).filter(
+    (credit) =>
+      credit?.tokenId === WORK_TOKEN_ID &&
+      numericValue(credit.amount) > 0 &&
+      String(credit.recipientAddress ?? "").trim(),
+  );
+  const available = transfers.map((transfer, index) => ({ index, transfer }));
+  const matches = [];
+  let unmatchedActions = 0;
+
+  for (const credit of declaredCredits) {
+    const recipientAddress = String(credit.recipientAddress ?? "").trim();
+    const declaredVout = canonicalEventOrdinal(credit.protocolVout);
+    if (
+      declaredVout === null ||
+      !bondRecipients.has(recipientAddress.toLowerCase())
+    ) {
+      unmatchedActions += 1;
+      continue;
+    }
+    const matchIndex = available.findIndex(({ transfer }) => {
+      const transferVout = canonicalEventOrdinal(transfer.protocolVout);
+      return (
+        transferVout !== null &&
+        transferVout === declaredVout &&
+        numericValue(transfer.amount) === numericValue(credit.amount) &&
+        samePaymentAddress(transfer.recipientAddress, recipientAddress)
+      );
+    });
+    if (matchIndex < 0) {
+      unmatchedActions += 1;
+      continue;
+    }
+    const [{ transfer }] = available.splice(matchIndex, 1);
+    matches.push({
+      amount: numericValue(transfer.amount),
+      protocolVout: declaredVout,
+      recipientAddress,
+      transfer,
+    });
+  }
+
+  return {
+    declaredActions: declaredCredits.length,
+    matches,
+    unmatchedActions,
+  };
+}
+
+function inceptionIssuanceMetadataFromMints(mints) {
+  const confirmed = (Array.isArray(mints) ? mints : []).filter(
+    (mint) => mint?.confirmed && mint.tokenId === INCB_TOKEN_ID,
+  );
+  const canonical = confirmed.filter(
+    (mint) => {
+      const amount = Number(mint.amount);
+      const direct = Number(mint.directProofIssuanceUnits);
+      const attachedAmount = Number(mint.attachedWorkAmount);
+      const attachedUnits = Number(mint.attachedWorkIssuanceUnits);
+      const attachedFloor = Number(mint.attachedWorkLiveFloorAtSendSats);
+      const attachedValue = Number(mint.attachedWorkLiveValueAtSendSats);
+      const checkpointHeight = Number(mint.issuanceCheckpointBlockHeight);
+      const checkpointIndex = Number(mint.issuanceCheckpointBlockIndex);
+      const checkpointValue = Number(
+        mint.issuanceValueSnapshotWorkNetworkValueSats,
+      );
+      const issuanceValue = Number(mint.issuanceNetworkValueSats);
+      const dust = Number(mint.issuanceDustSats);
+      const issuanceFloor = Number(mint.issuanceFloorSats);
+      const valueSnapshotHeight = Number(
+        mint.issuanceValueSnapshotBlockHeight,
+      );
+      const valueSnapshotHash = String(
+        mint.issuanceValueSnapshotBlockHash ?? "",
+      )
+        .trim()
+        .toLowerCase();
+      const valueSnapshotCanonicalSummaryHash = String(
+        mint.issuanceValueSnapshotCanonicalSummaryHash ?? "",
+      )
+        .trim()
+        .toLowerCase();
+      const valueSnapshotGeneratedAt = String(
+        mint.issuanceValueSnapshotGeneratedAt ?? "",
+      ).trim();
+      const valueSnapshotId = String(
+        mint.issuanceValueSnapshotId ?? "",
+      ).trim();
+      const valueSnapshotWorkNetworkValueSats = Number(
+        mint.issuanceValueSnapshotWorkNetworkValueSats,
+      );
+      const txid = String(mint.txid ?? "").trim().toLowerCase();
+      const checkpointHash = String(
+        mint.issuanceCheckpointBlockHash ?? "",
+      )
+        .trim()
+        .toLowerCase();
+      const blockHash = String(mint.blockHash ?? "").trim().toLowerCase();
+      const blockHeight = Number(mint.blockHeight);
+      const blockIndex = Number(mint.blockIndex);
+      const paidSats = Number(mint.paidSats);
+      const proofPaymentSats = Number(mint.proofPaymentSats);
+      return (
+        mint.issuanceAccountingModel === INCEPTION_ISSUANCE_ACCOUNTING_MODEL &&
+        mint.issuanceValuationFixedAtSend === true &&
+        Number(mint.issuanceUnitSats) === 1 &&
+        String(mint.ticker ?? "").trim().toUpperCase() === "INCB" &&
+        String(mint.minterAddress ?? "").trim().length > 0 &&
+        samePaymentAddress(
+          mint.bondRecipientAddress,
+          mint.minterAddress,
+        ) &&
+        Number(mint.bondRecipientAmountSats) === direct &&
+        Number.isSafeInteger(Number(mint.bondRecipientVout)) &&
+        Number(mint.bondRecipientVout) >= 0 &&
+        /^[0-9a-f]{64}$/u.test(txid) &&
+        String(mint.sourceBondTxid ?? "").trim().toLowerCase() === txid &&
+        String(mint.validationMode ?? "") ===
+          "canonical-incb-bond-projection" &&
+        Number(mint.amountSats) === 0 &&
+        mint.issuanceCheckpointMode === "bond-transaction-provenance" &&
+        /^[0-9a-f]{64}$/u.test(checkpointHash) &&
+        blockHash === checkpointHash &&
+        Number.isSafeInteger(checkpointHeight) &&
+        checkpointHeight > 0 &&
+        blockHeight === checkpointHeight &&
+        Number.isSafeInteger(checkpointIndex) &&
+        checkpointIndex >= 0 &&
+        blockIndex === checkpointIndex &&
+        mint.issuanceValueSnapshotModel ===
+          INCEPTION_VALUE_SNAPSHOT_MODEL &&
+        mint.issuanceValueSnapshotMode ===
+          "canonical-summary-refresh" &&
+        Number.isSafeInteger(valueSnapshotHeight) &&
+        valueSnapshotHeight === checkpointHeight - 1 &&
+        /^[0-9a-f]{64}$/u.test(valueSnapshotHash) &&
+        /^[0-9a-f]{64}$/u.test(
+          valueSnapshotCanonicalSummaryHash,
+        ) &&
+        valueSnapshotId.length > 0 &&
+        Number.isFinite(Date.parse(valueSnapshotGeneratedAt)) &&
+        Number.isFinite(valueSnapshotWorkNetworkValueSats) &&
+        numbersAgree(
+          valueSnapshotWorkNetworkValueSats,
+          checkpointValue,
+          0.01,
+        ) &&
+        Number.isFinite(checkpointValue) &&
+        checkpointValue > 0 &&
+        Number.isSafeInteger(amount) &&
+        amount > 0 &&
+        amount === Number(mint.issuanceAmount) &&
+        amount === Number(mint.confirmedIssuanceUnits) &&
+        Number.isSafeInteger(direct) &&
+        direct > 0 &&
+        paidSats === direct &&
+        proofPaymentSats === direct &&
+        Number.isSafeInteger(attachedAmount) &&
+        attachedAmount >= 0 &&
+        Number.isSafeInteger(attachedUnits) &&
+        attachedUnits >= 0 &&
+        direct + attachedUnits === amount &&
+        Number.isFinite(attachedFloor) &&
+        attachedFloor > 0 &&
+        numbersAgree(
+          attachedFloor,
+          checkpointValue / WORK_TOKEN_MAX_SUPPLY,
+          1e-9,
+        ) &&
+        Number.isFinite(attachedValue) &&
+        attachedValue >= 0 &&
+        numbersAgree(attachedValue, attachedAmount * attachedFloor, 0.01) &&
+        Math.floor(attachedValue) === attachedUnits &&
+        Number.isFinite(issuanceValue) &&
+        numbersAgree(issuanceValue, direct + attachedValue, 0.01) &&
+        Math.floor(issuanceValue) === amount &&
+        Number.isFinite(dust) &&
+        dust >= 0 &&
+        dust < 1 &&
+        numbersAgree(dust, issuanceValue - amount, 0.01) &&
+        Number.isFinite(issuanceFloor) &&
+        issuanceFloor >= 1 &&
+        numbersAgree(issuanceFloor * amount, issuanceValue, 0.01)
+      );
+    },
+  );
+  const sum = (field) =>
+    canonical.reduce((total, mint) => total + numericValue(mint?.[field]), 0);
+  const confirmedIssuanceUnits = sum("confirmedIssuanceUnits");
+  const issuanceNetworkValueSats = sum("issuanceNetworkValueSats");
+  const attachedWorkAmount = sum("attachedWorkAmount");
+  const attachedWorkLiveValueAtSendSats = sum(
+    "attachedWorkLiveValueAtSendSats",
+  );
+  const latestCheckpoint = [...canonical].sort(
+    (left, right) =>
+      numericValue(right.issuanceCheckpointBlockHeight) -
+        numericValue(left.issuanceCheckpointBlockHeight) ||
+      numericValue(right.issuanceCheckpointBlockIndex) -
+        numericValue(left.issuanceCheckpointBlockIndex),
+  )[0];
+  return {
+    attachedWorkAmount,
+    attachedWorkIssuanceUnits: sum("attachedWorkIssuanceUnits"),
+    attachedWorkLiveFloorAtSendSats:
+      attachedWorkAmount > 0
+        ? attachedWorkLiveValueAtSendSats / attachedWorkAmount
+        : numericValue(latestCheckpoint?.attachedWorkLiveFloorAtSendSats),
+    attachedWorkLiveValueAtSendSats,
+    canonicalMints: canonical.length,
+    complete: canonical.length === confirmed.length,
+    confirmedIssuanceUnits,
+    confirmedMints: confirmed.length,
+    directProofIssuanceUnits: sum("directProofIssuanceUnits"),
+    issuanceAccountingModel: INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
+    issuanceUnitSats: 1,
+    issuanceValuationFixedAtSend: true,
+    issuanceCheckpointBlockHash: String(
+      latestCheckpoint?.issuanceCheckpointBlockHash ?? "",
+    ),
+    issuanceCheckpointBlockHeight: numericValue(
+      latestCheckpoint?.issuanceCheckpointBlockHeight,
+    ),
+    issuanceCheckpointBlockIndex: numericValue(
+      latestCheckpoint?.issuanceCheckpointBlockIndex,
+    ),
+    issuanceCheckpointMode: "bond-transaction-provenance",
+    issuanceValueSnapshotBlockHash: String(
+      latestCheckpoint?.issuanceValueSnapshotBlockHash ?? "",
+    ),
+    issuanceValueSnapshotBlockHeight: numericValue(
+      latestCheckpoint?.issuanceValueSnapshotBlockHeight,
+    ),
+    issuanceValueSnapshotCanonicalSummaryHash: String(
+      latestCheckpoint?.issuanceValueSnapshotCanonicalSummaryHash ?? "",
+    ),
+    issuanceValueSnapshotGeneratedAt: String(
+      latestCheckpoint?.issuanceValueSnapshotGeneratedAt ?? "",
+    ),
+    issuanceValueSnapshotId: String(
+      latestCheckpoint?.issuanceValueSnapshotId ?? "",
+    ),
+    issuanceValueSnapshotMode: String(
+      latestCheckpoint?.issuanceValueSnapshotMode ?? "",
+    ),
+    issuanceValueSnapshotModel: String(
+      latestCheckpoint?.issuanceValueSnapshotModel ?? "",
+    ),
+    issuanceValueSnapshotWorkNetworkValueSats: numericValue(
+      latestCheckpoint?.issuanceValueSnapshotWorkNetworkValueSats,
+    ),
+    issuanceDustSats: Math.max(
+      0,
+      issuanceNetworkValueSats - confirmedIssuanceUnits,
+    ),
+    issuanceFloorSats:
+      confirmedIssuanceUnits > 0
+        ? issuanceNetworkValueSats / confirmedIssuanceUnits
+        : 0,
+    issuanceNetworkValueSats,
+  };
+}
+
+function inceptionMintHasCanonicalBondBinding(mint, bond) {
+  if (
+    !mint ||
+    mint.issuanceAccountingModel !== INCEPTION_ISSUANCE_ACCOUNTING_MODEL ||
+    !inceptionIssuanceMetadataFromMints([mint]).complete
+  ) {
+    return false;
+  }
+  const txid = String(mint.txid ?? "").trim().toLowerCase();
+  const bondTxid = String(bond?.txid ?? "").trim().toLowerCase();
+  const minterAddress = String(mint.minterAddress ?? "").trim();
+  const recipients = (Array.isArray(bond?.recipients) ? bond.recipients : [])
+    .filter((candidate) =>
+      samePaymentAddress(candidate?.address, minterAddress),
+    );
+  const recipientAmountSats = recipients.reduce(
+    (total, recipient) => total + numericValue(recipient?.amountSats),
+    0,
+  );
+  const recipientVout = recipients
+    .map((recipient, index) =>
+      canonicalEventOrdinal(recipient?.vout ?? recipient?.protocolVout) ??
+      (Array.isArray(bond?.recipients)
+        ? bond.recipients.indexOf(recipient)
+        : index),
+    )
+    .sort((left, right) => left - right)[0];
+  return Boolean(
+    txid &&
+      txid === bondTxid &&
+      recipients.length > 0 &&
+      recipientAmountSats ===
+        numericValue(mint.directProofIssuanceUnits) &&
+      samePaymentAddress(mint.bondRecipientAddress, minterAddress) &&
+      numericValue(mint.bondRecipientAmountSats) ===
+        recipientAmountSats &&
+      canonicalEventOrdinal(mint.bondRecipientVout) ===
+        recipientVout &&
+      String(bond?.blockHash ?? "").trim().toLowerCase() ===
+        String(mint.blockHash ?? "").trim().toLowerCase() &&
+      Number(bond?.blockHeight) === Number(mint.blockHeight) &&
+      Number(bond?.blockIndex) === Number(mint.blockIndex),
+  );
+}
+
+function canonicalItemPrecedesBondTransaction(item, bond) {
+  if (!item?.confirmed) {
+    return false;
+  }
+  const itemTxid = String(item?.txid ?? "").trim().toLowerCase();
+  const bondTxid = String(bond?.txid ?? "").trim().toLowerCase();
+  if (itemTxid && itemTxid === bondTxid) {
+    return false;
+  }
+  const bondHeight = Number(bond?.blockHeight);
+  const itemHeight = Number(item?.blockHeight);
+  const bondIndex = Number(bond?.blockIndex);
+  const itemIndex = Number(item?.blockIndex);
+  const bondHasCanonicalPosition =
+    Number.isSafeInteger(bondHeight) &&
+    bondHeight > 0 &&
+    Number.isSafeInteger(bondIndex) &&
+    bondIndex >= 0;
+  const itemHasCanonicalPosition =
+    Number.isSafeInteger(itemHeight) &&
+    itemHeight > 0 &&
+    Number.isSafeInteger(itemIndex) &&
+    itemIndex >= 0;
+  if (bondHasCanonicalPosition) {
+    // A positioned livenet checkpoint must never admit an unknown-position
+    // item merely because its block timestamp appears earlier.
+    if (!itemHasCanonicalPosition) {
+      return false;
+    }
+    if (itemHeight !== bondHeight) {
+      return itemHeight < bondHeight;
+    }
+    const bondHash = String(bond?.blockHash ?? "").trim().toLowerCase();
+    const itemHash = String(item?.blockHash ?? "").trim().toLowerCase();
+    if (
+      /^[0-9a-f]{64}$/u.test(bondHash) &&
+      (!/^[0-9a-f]{64}$/u.test(itemHash) || itemHash !== bondHash)
+    ) {
+      return false;
+    }
+    return itemIndex < bondIndex;
+  }
+  if (
+    itemHasCanonicalPosition ||
+    item?.network === "livenet" ||
+    bond?.network === "livenet"
+  ) {
+    return false;
+  }
+  const itemMs = Date.parse(item?.createdAt ?? "");
+  const bondMs = Date.parse(bond?.createdAt ?? "");
+  return Number.isFinite(itemMs) && Number.isFinite(bondMs) && itemMs < bondMs;
+}
+
+function inceptionPreBondLiveNetworkValueSats(ledger, bond) {
+  const before = (items) =>
+    (Array.isArray(items) ? items : []).filter((item) =>
+      canonicalItemPrecedesBondTransaction(item, bond),
+    );
+  const tokenState = ledger?.tokenState ?? {};
+  const registryState = ledger?.registryState ?? {};
+  const provider = growthActualLiveTotalSatsAtProvider(
+    before(registryState.records),
+    before(ledger?.activity),
+    before(registryState.sales),
+    before(tokenState.tokens),
+    before(tokenState.mints),
+    before(tokenState.transfers),
+    before(tokenState.sales),
+  );
+  return numericValue(provider(Number.MAX_SAFE_INTEGER));
+}
+
+function historicalWorkValueSnapshotHasFiniteNetworkValue(
+  workFloor,
+  expectedNetworkValueSats,
+) {
+  if (
+    !workFloor ||
+    typeof workFloor !== "object" ||
+    Array.isArray(workFloor)
+  ) {
+    return false;
+  }
+  const actualTotalSats = workFloor.actualValue?.totalSats;
+  const liveNetworkValueSats =
+    workFloor.liveNetworkValueSats ??
+    workFloor.actualValue?.liveNetworkValueSats ??
+    workFloor.actualValue?.liveTotalSats ??
+    actualTotalSats;
+  const declaredNetworkValueSats =
+    workFloor.networkValueSats ?? liveNetworkValueSats;
+  return (
+    finitePositiveNumber(expectedNetworkValueSats) &&
+    finitePositiveNumber(actualTotalSats) &&
+    finitePositiveNumber(liveNetworkValueSats) &&
+    finitePositiveNumber(declaredNetworkValueSats) &&
+    numbersAgree(expectedNetworkValueSats, actualTotalSats, 0.01) &&
+    numbersAgree(expectedNetworkValueSats, liveNetworkValueSats, 0.01) &&
+    numbersAgree(expectedNetworkValueSats, declaredNetworkValueSats, 0.01)
+  );
+}
+
+function canonicalInceptionValueSnapshotCheckpoint(snapshot, bond) {
+  const bondBlockHash = String(bond?.blockHash ?? "").trim().toLowerCase();
+  const bondBlockHeight = Number(bond?.blockHeight);
+  const bondBlockIndex = Number(bond?.blockIndex);
+  const valueSnapshotBlockHash = String(
+    snapshot?.indexedThroughBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const valueSnapshotBlockHeight = Number(snapshot?.indexedThroughBlock);
+  const valueSnapshotCanonicalSummaryHash = String(
+    snapshot?.canonicalSummaryHash ??
+      snapshot?.sourceHashes?.canonicalSummary ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  const valueSnapshotGeneratedAt = String(snapshot?.generatedAt ?? "").trim();
+  const valueSnapshotId = String(snapshot?.snapshotId ?? "").trim();
+  const valueSnapshotMode = String(snapshot?.valuationModel ?? "").trim();
+  const workFloor = snapshot?.workFloor;
+  const workNetworkValueSats = Number(
+    snapshot?.workNetworkValueSats ??
+      workFloor?.liveNetworkValueSats ??
+      workFloor?.actualValue?.liveNetworkValueSats ??
+      workFloor?.actualValue?.liveTotalSats ??
+      workFloor?.actualValue?.totalSats,
+  );
+  const generatedAtMs = Date.parse(valueSnapshotGeneratedAt);
+  if (
+    !/^[0-9a-f]{64}$/u.test(bondBlockHash) ||
+    !Number.isSafeInteger(bondBlockHeight) ||
+    bondBlockHeight <= 1 ||
+    !Number.isSafeInteger(bondBlockIndex) ||
+    bondBlockIndex < 0 ||
+    snapshot?.network !== "livenet" ||
+    snapshot?.source !== "proof-indexer-canonical-summary-ledger" ||
+    snapshot?.consistency?.ok !== true ||
+    snapshot?.consistency?.status !== "green" ||
+    valueSnapshotMode !== "canonical-summary-refresh" ||
+    valueSnapshotBlockHeight !== bondBlockHeight - 1 ||
+    !/^[0-9a-f]{64}$/u.test(valueSnapshotBlockHash) ||
+    !/^[0-9a-f]{64}$/u.test(valueSnapshotCanonicalSummaryHash) ||
+    !valueSnapshotId ||
+    !Number.isFinite(generatedAtMs) ||
+    !historicalWorkValueSnapshotHasFiniteNetworkValue(
+      workFloor,
+      workNetworkValueSats,
+    )
+  ) {
+    return null;
+  }
+  return {
+    blockHash: bondBlockHash,
+    blockHeight: bondBlockHeight,
+    blockIndex: bondBlockIndex,
+    valueSnapshotBlockHash,
+    valueSnapshotBlockHeight,
+    valueSnapshotCanonicalSummaryHash,
+    valueSnapshotGeneratedAt,
+    valueSnapshotId,
+    valueSnapshotMode,
+    valueSnapshotModel: INCEPTION_VALUE_SNAPSHOT_MODEL,
+    workNetworkValueSats,
+  };
+}
+
+function inceptionValueSnapshotUnavailableError(bond, details = {}) {
+  const txid = String(bond?.txid ?? "").trim().toLowerCase();
+  const error = new Error(
+    `The canonical H-1 WORK value snapshot is unavailable for Inception Bond ${txid || "unknown"}.`,
+  );
+  error.statusCode = 503;
+  error.details = {
+    code: "INCEPTION_VALUE_SNAPSHOT_UNAVAILABLE",
+    blockHeight: numericValue(bond?.blockHeight),
+    txid,
+    ...details,
+  };
+  return error;
+}
+
+async function canonicalInceptionPreviousBlockHash(
+  network,
+  bond,
+  knownPreviousBlockHashes = new Map(),
+) {
+  const blockHash = String(bond?.blockHash ?? "").trim().toLowerCase();
+  const blockHeight = Number(bond?.blockHeight);
+  if (
+    network !== "livenet" ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !Number.isSafeInteger(blockHeight) ||
+    blockHeight <= 1
+  ) {
+    return "";
+  }
+  const known = String(knownPreviousBlockHashes.get(blockHash) ?? "")
+    .trim()
+    .toLowerCase();
+  if (/^[0-9a-f]{64}$/u.test(known)) {
+    return known;
+  }
+  const [headerResponse, canonicalHashResponse] = await Promise.all([
+    bitcoinRpc("getblockheader", [blockHash, true]),
+    bitcoinRpc("getblockhash", [blockHeight]),
+  ]);
+  const header = headerResponse?.ok ? headerResponse.result : null;
+  const canonicalHash = String(
+    canonicalHashResponse?.ok ? canonicalHashResponse.result : "",
+  )
+    .trim()
+    .toLowerCase();
+  const previousBlockHash = String(header?.previousblockhash ?? "")
+    .trim()
+    .toLowerCase();
+  return Number(header?.height) === blockHeight &&
+    canonicalHash === blockHash &&
+    /^[0-9a-f]{64}$/u.test(previousBlockHash)
+    ? previousBlockHash
+    : "";
+}
+
+async function canonicalInceptionIssuanceOptions(
+  network,
+  activity,
+  options = {},
+) {
+  if (network !== "livenet") {
+    return {};
+  }
+  const bondsByTxid = new Map();
+  for (const bond of Array.isArray(activity) ? activity : []) {
+    const txid = String(bond?.txid ?? "").trim().toLowerCase();
+    if (
+      bond?.confirmed &&
+      isInceptionBondActivityItem(bond) &&
+      /^[0-9a-f]{64}$/u.test(txid)
+    ) {
+      bondsByTxid.set(txid, bond);
+    }
+  }
+  if (bondsByTxid.size === 0) {
+    return {};
+  }
+  const knownPreviousBlockHashes =
+    options.previousBlockHashByBlockHash instanceof Map
+      ? options.previousBlockHashByBlockHash
+      : new Map();
+  const checkpoints = await Promise.all(
+    [...bondsByTxid.entries()].map(async ([txid, bond]) => {
+      const bondBlockHash = String(bond?.blockHash ?? "")
+        .trim()
+        .toLowerCase();
+      const checkpoint = await cachedInternalVerifierState(
+        `incb-value-snapshot:h${Number(bond?.blockHeight)}:${bondBlockHash}`,
+        async () => {
+          const previousBlockHash = await canonicalInceptionPreviousBlockHash(
+            network,
+            bond,
+            knownPreviousBlockHashes,
+          );
+          if (!previousBlockHash) {
+            throw inceptionValueSnapshotUnavailableError(bond, {
+              reason: "previous-block-hash-unavailable",
+            });
+          }
+          const snapshot = await proofIndexCanonicalSummaryLedgerPayload(
+            network,
+            Number(bond.blockHeight) - 1,
+            previousBlockHash,
+          );
+          const bound = canonicalInceptionValueSnapshotCheckpoint(
+            snapshot,
+            bond,
+          );
+          if (
+            !bound ||
+            bound.valueSnapshotBlockHash !== previousBlockHash
+          ) {
+            throw inceptionValueSnapshotUnavailableError(bond, {
+              expectedPreviousBlockHash: previousBlockHash,
+              reason: "green-h-minus-one-summary-unavailable",
+            });
+          }
+          return bound;
+        },
+      );
+      return [txid, checkpoint];
+    }),
+  );
+  const checkpointsByTxid = new Map(checkpoints);
+  return {
+    preBondCheckpoint: (bond) =>
+      checkpointsByTxid.get(
+        String(bond?.txid ?? "").trim().toLowerCase(),
+      ) ?? null,
+  };
+}
+
+function inceptionIssuanceCheckpoint(
+  ledger,
+  bond,
+  mint,
+  attachmentMatches,
+  options = {},
+) {
+  const sources = [
+    bond,
+    mint,
+    ...(Array.isArray(attachmentMatches)
+      ? attachmentMatches.map((match) => match?.transfer)
+      : []),
+  ];
+  const provenance = sources.map((source) => ({
+    blockHash: String(source?.blockHash ?? "").trim().toLowerCase(),
+    blockHeight: Number(source?.blockHeight),
+    blockIndex: Number(source?.blockIndex),
+  }));
+  const checkpoint = provenance[0];
+  if (
+    !checkpoint ||
+    !/^[0-9a-f]{64}$/u.test(checkpoint.blockHash) ||
+    !Number.isSafeInteger(checkpoint.blockHeight) ||
+    checkpoint.blockHeight <= 0 ||
+    !Number.isSafeInteger(checkpoint.blockIndex) ||
+    checkpoint.blockIndex < 0 ||
+    provenance.some(
+      (item) =>
+        item.blockHash !== checkpoint.blockHash ||
+        item.blockHeight !== checkpoint.blockHeight ||
+        item.blockIndex !== checkpoint.blockIndex,
+    )
+  ) {
+    return null;
+  }
+  const override =
+    typeof options.preBondCheckpoint === "function"
+      ? options.preBondCheckpoint(bond, mint, ledger)
+      : null;
+  const requiresPublishedValueSnapshot =
+    bond?.network === "livenet" ||
+    mint?.network === "livenet" ||
+    ledger?.network === "livenet";
+  if (
+    (requiresPublishedValueSnapshot &&
+      typeof options.preBondCheckpoint !== "function") ||
+    (typeof options.preBondCheckpoint === "function" && !override) ||
+    (override &&
+      (String(override.blockHash ?? "").trim().toLowerCase() !==
+        checkpoint.blockHash ||
+        Number(override.blockHeight) !== checkpoint.blockHeight ||
+        Number(override.blockIndex) !== checkpoint.blockIndex ||
+        Number(override.valueSnapshotBlockHeight) !==
+          checkpoint.blockHeight - 1 ||
+        !/^[0-9a-f]{64}$/u.test(
+          String(override.valueSnapshotBlockHash ?? "")
+            .trim()
+            .toLowerCase(),
+        ) ||
+        !/^[0-9a-f]{64}$/u.test(
+          String(override.valueSnapshotCanonicalSummaryHash ?? "")
+            .trim()
+            .toLowerCase(),
+        ) ||
+        !String(override.valueSnapshotId ?? "").trim() ||
+        !Number.isFinite(
+          Date.parse(String(override.valueSnapshotGeneratedAt ?? "")),
+        ) ||
+        String(override.valueSnapshotMode ?? "") !==
+          "canonical-summary-refresh" ||
+        String(override.valueSnapshotModel ?? "") !==
+          INCEPTION_VALUE_SNAPSHOT_MODEL))
+  ) {
+    return null;
+  }
+  const workNetworkValueSats = numericValue(
+    override?.workNetworkValueSats ??
+      inceptionPreBondLiveNetworkValueSats(ledger, bond),
+  );
+  if (workNetworkValueSats <= 0) {
+    return null;
+  }
+  return {
+    blockHash: checkpoint.blockHash,
+    blockHeight: checkpoint.blockHeight,
+    blockIndex: checkpoint.blockIndex,
+    mode: "bond-transaction-provenance",
+    ...(override
+      ? {
+          valueSnapshotBlockHash: String(
+            override.valueSnapshotBlockHash ?? "",
+          )
+            .trim()
+            .toLowerCase(),
+          valueSnapshotBlockHeight: Number(
+            override.valueSnapshotBlockHeight,
+          ),
+          valueSnapshotCanonicalSummaryHash: String(
+            override.valueSnapshotCanonicalSummaryHash ?? "",
+          )
+            .trim()
+            .toLowerCase(),
+          valueSnapshotGeneratedAt: String(
+            override.valueSnapshotGeneratedAt ?? "",
+          ).trim(),
+          valueSnapshotId: String(override.valueSnapshotId ?? "").trim(),
+          valueSnapshotMode: String(
+            override.valueSnapshotMode ?? "",
+          ).trim(),
+          valueSnapshotModel: String(
+            override.valueSnapshotModel ?? "",
+          ).trim(),
+        }
+      : {}),
+    workNetworkValueSats,
+  };
+}
+
+function inceptionMintsWithLiveIssuance(
+  seedMints,
+  activity,
+  ledger,
+  options = {},
+) {
+  const mints = Array.isArray(seedMints) ? seedMints : [];
+  const confirmedBonds = (Array.isArray(activity) ? activity : []).filter(
+    (item) => item?.confirmed && isInceptionBondActivityItem(item),
+  );
+  if (confirmedBonds.length === 0) {
+    return mints;
+  }
+  const bondsByTxid = new Map(
+    confirmedBonds.map((bond) => [
+      String(bond.txid ?? "").trim().toLowerCase(),
+      bond,
+    ]),
+  );
+
+  return mints.map((mint) => {
+    if (!mint?.confirmed || mint.tokenId !== INCB_TOKEN_ID) {
+      return mint;
+    }
+    const txid = String(mint.txid ?? "").trim().toLowerCase();
+    const bond = bondsByTxid.get(txid);
+    if (!bond) {
+      return mint;
+    }
+    // Persisted v2 issuance is an immutable historical fact. A valid bound
+    // mint is returned by identity; an invalid v2 mint is left invalid so the
+    // canonical gates fail closed instead of silently repricing it.
+    if (mint.issuanceAccountingModel === INCEPTION_ISSUANCE_ACCOUNTING_MODEL) {
+      if (!inceptionMintHasCanonicalBondBinding(mint, bond)) {
+        return mint;
+      }
+      const publishedCheckpoint =
+        typeof options.preBondCheckpoint === "function"
+          ? options.preBondCheckpoint(bond, mint, ledger)
+          : null;
+      const requiresPublishedValueSnapshot =
+        bond?.network === "livenet" ||
+        mint?.network === "livenet" ||
+        ledger?.network === "livenet";
+      if (
+        (requiresPublishedValueSnapshot && !publishedCheckpoint) ||
+        (publishedCheckpoint &&
+          (String(mint.issuanceValueSnapshotId ?? "").trim() !==
+            String(publishedCheckpoint.valueSnapshotId ?? "").trim() ||
+            Number(mint.issuanceValueSnapshotBlockHeight) !==
+              Number(publishedCheckpoint.valueSnapshotBlockHeight) ||
+            String(mint.issuanceValueSnapshotBlockHash ?? "")
+              .trim()
+              .toLowerCase() !==
+              String(publishedCheckpoint.valueSnapshotBlockHash ?? "")
+                .trim()
+                .toLowerCase() ||
+            String(mint.issuanceValueSnapshotCanonicalSummaryHash ?? "")
+              .trim()
+              .toLowerCase() !==
+              String(
+                publishedCheckpoint.valueSnapshotCanonicalSummaryHash ?? "",
+              )
+                .trim()
+                .toLowerCase() ||
+            String(mint.issuanceValueSnapshotMode ?? "") !==
+              String(publishedCheckpoint.valueSnapshotMode ?? "") ||
+            String(mint.issuanceValueSnapshotModel ?? "") !==
+              String(publishedCheckpoint.valueSnapshotModel ?? "") ||
+            String(mint.issuanceValueSnapshotGeneratedAt ?? "") !==
+              String(publishedCheckpoint.valueSnapshotGeneratedAt ?? "") ||
+            !numbersAgree(
+              mint.issuanceValueSnapshotWorkNetworkValueSats,
+              publishedCheckpoint.workNetworkValueSats,
+              0.01,
+            )))
+      ) {
+        return {
+          ...mint,
+          issuanceValueSnapshotModel: "",
+          validationMode: "canonical-incb-value-snapshot-mismatch",
+        };
+      }
+      return mint;
+    }
+    if (
+      options.legacyBondTxids instanceof Set &&
+      !options.legacyBondTxids.has(txid)
+    ) {
+      return mint;
+    }
+    const attachment = inceptionAttachmentMatchesForBond(ledger, bond);
+    if (attachment.unmatchedActions > 0) {
+      return mint;
+    }
+    const checkpoint = inceptionIssuanceCheckpoint(
+      ledger,
+      bond,
+      mint,
+      attachment.matches,
+      options,
+    );
+    if (!checkpoint) {
+      return mint;
+    }
+    const attachedWorkLiveFloorAtSendSats =
+      checkpoint.workNetworkValueSats / WORK_TOKEN_MAX_SUPPLY;
+    const minterAddress = String(mint.minterAddress ?? "").trim();
+    const bondRecipients = (Array.isArray(bond?.recipients)
+      ? bond.recipients
+      : []
+    ).filter((recipient) =>
+      samePaymentAddress(recipient?.address, minterAddress),
+    );
+    if (bondRecipients.length === 0) {
+      return mint;
+    }
+    const bondRecipientAmountSats = bondRecipients.reduce(
+      (total, recipient) => total + numericValue(recipient?.amountSats),
+      0,
+    );
+    const bondRecipientVout = bondRecipients
+      .map((recipient, index) =>
+        canonicalEventOrdinal(recipient?.vout ?? recipient?.protocolVout) ??
+        bond.recipients.indexOf(recipient) ?? index,
+      )
+      .sort((left, right) => left - right)[0];
+    const matchedAttachments = attachment.matches.filter(({ recipientAddress }) =>
+      samePaymentAddress(recipientAddress, minterAddress),
+    );
+    const attachedWorkAmount = matchedAttachments.reduce(
+      (total, match) => total + numericValue(match.amount),
+      0,
+    );
+    if (attachedWorkLiveFloorAtSendSats <= 0) {
+      return mint;
+    }
+    const directProofIssuanceUnits = numericValue(
+      bondRecipientAmountSats,
+    );
+    if (
+      !Number.isSafeInteger(directProofIssuanceUnits) ||
+      directProofIssuanceUnits < 1
+    ) {
+      return mint;
+    }
+    const attachedWorkLiveValueAtSendSats =
+      attachedWorkAmount * attachedWorkLiveFloorAtSendSats;
+    const issuanceNetworkValueSats =
+      directProofIssuanceUnits + attachedWorkLiveValueAtSendSats;
+    const confirmedIssuanceUnits = Math.floor(issuanceNetworkValueSats);
+    if (!Number.isSafeInteger(confirmedIssuanceUnits) || confirmedIssuanceUnits < 1) {
+      return mint;
+    }
+    return {
+      ...mint,
+      amount: confirmedIssuanceUnits,
+      amountSats: 0,
+      attachedWorkAmount,
+      attachedWorkLiveFloorAtSendSats,
+      attachedWorkIssuanceUnits:
+        confirmedIssuanceUnits - directProofIssuanceUnits,
+      attachedWorkLiveValueAtSendSats,
+      bondRecipientAddress: minterAddress,
+      bondRecipientAmountSats: directProofIssuanceUnits,
+      bondRecipientVout,
+      confirmedIssuanceUnits,
+      directProofIssuanceUnits,
+      issuanceAccountingModel: INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
+      issuanceAmount: confirmedIssuanceUnits,
+      issuanceCheckpointBlockHash: checkpoint.blockHash,
+      issuanceCheckpointBlockHeight: checkpoint.blockHeight,
+      issuanceCheckpointBlockIndex: checkpoint.blockIndex,
+      issuanceCheckpointMode: checkpoint.mode,
+      issuanceValueSnapshotBlockHash:
+        checkpoint.valueSnapshotBlockHash,
+      issuanceValueSnapshotBlockHeight:
+        checkpoint.valueSnapshotBlockHeight,
+      issuanceValueSnapshotCanonicalSummaryHash:
+        checkpoint.valueSnapshotCanonicalSummaryHash,
+      issuanceValueSnapshotGeneratedAt:
+        checkpoint.valueSnapshotGeneratedAt,
+      issuanceValueSnapshotId: checkpoint.valueSnapshotId,
+      issuanceValueSnapshotMode: checkpoint.valueSnapshotMode,
+      issuanceValueSnapshotModel: checkpoint.valueSnapshotModel,
+      issuanceValueSnapshotWorkNetworkValueSats:
+        checkpoint.workNetworkValueSats,
+      issuanceDustSats:
+        issuanceNetworkValueSats - confirmedIssuanceUnits,
+      issuanceFloorSats:
+        issuanceNetworkValueSats / confirmedIssuanceUnits,
+      issuanceNetworkValueSats,
+      issuanceUnitSats: 1,
+      issuanceValuationFixedAtSend: true,
+      blockHash: checkpoint.blockHash,
+      blockHeight: checkpoint.blockHeight,
+      blockIndex: checkpoint.blockIndex,
+      minterAddress,
+      paidSats: directProofIssuanceUnits,
+      proofPaymentSats: directProofIssuanceUnits,
+      sourceBondTxid: txid,
+      ticker: "INCB",
+      tokenId: INCB_TOKEN_ID,
+      txid,
+      validationMode: "canonical-incb-bond-projection",
+    };
+  });
+}
+
+function inceptionSeedMintReplaySignature(mints) {
+  return JSON.stringify(
+    (Array.isArray(mints) ? mints : []).map((mint) => ({
+      amount: mint?.amount,
+      minterAddress: mint?.minterAddress,
+      tokenId: mint?.tokenId,
+      txid: mint?.txid,
+      ...canonicalInceptionMintMetadata(mint),
+    })),
+  );
+}
+
+function tokenStateFromTransactionsWithCanonicalInceptionIssuance(
+  indexTxs,
+  registryTxsByAddress,
+  indexAddress,
+  network,
+  tokenScope,
+  seedTokens,
+  seedMints,
+  bondActivity,
+  ledger = {},
+  options = {},
+) {
+  let replayMints = Array.isArray(seedMints) ? seedMints : [];
+  const confirmedBondCount = (Array.isArray(bondActivity) ? bondActivity : [])
+    .filter((item) => item?.confirmed && isInceptionBondActivityItem(item))
+    .length;
+  const maxPasses = Math.max(2, confirmedBondCount + 2);
+  let state = null;
+
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    state = tokenStateFromTransactions(
+      indexTxs,
+      registryTxsByAddress,
+      indexAddress,
+      network,
+      tokenScope,
+      seedTokens,
+      replayMints,
+    );
+    const scope = normalizeTokenScope(tokenScope);
+    const combinedTokenState = scope
+      ? tokenStateWithScopedTokenOverride(
+          ledger?.tokenState ?? emptyTokenState(),
+          state,
+          INCB_TOKEN_ID,
+        )
+      : state;
+    const historicalActivity = dedupeActivityItems([
+      ...tokenActivityItemsFromState(combinedTokenState, indexAddress),
+      ...(Array.isArray(ledger?.activity) ? ledger.activity : bondActivity)
+        .filter((item) => !isTokenActivityItem(item)),
+    ]);
+    const nextLegacyBond = (Array.isArray(bondActivity) ? bondActivity : [])
+      .filter(
+        (bond) =>
+          bond?.confirmed &&
+          isInceptionBondActivityItem(bond) &&
+          replayMints.some(
+            (mint) =>
+              mint?.confirmed &&
+              mint.tokenId === INCB_TOKEN_ID &&
+              mint.issuanceAccountingModel !==
+                INCEPTION_ISSUANCE_ACCOUNTING_MODEL &&
+              String(mint.txid ?? "").trim().toLowerCase() ===
+                String(bond.txid ?? "").trim().toLowerCase(),
+          ),
+      )
+      .sort(
+        (left, right) =>
+          numericValue(left.blockHeight) - numericValue(right.blockHeight) ||
+          numericValue(left.blockIndex) - numericValue(right.blockIndex) ||
+          String(left.txid ?? "").localeCompare(String(right.txid ?? "")),
+      )[0];
+    const nextMints = inceptionMintsWithLiveIssuance(
+      replayMints,
+      bondActivity,
+      {
+        ...ledger,
+        activity: historicalActivity,
+        tokenState: combinedTokenState,
+        workTokenState:
+          ledger?.workTokenState ??
+          scopedTokenPayloadFromState(combinedTokenState, WORK_TOKEN_ID),
+      },
+      {
+        ...options,
+        ...(nextLegacyBond
+          ? {
+              legacyBondTxids: new Set([
+                String(nextLegacyBond.txid ?? "").trim().toLowerCase(),
+              ]),
+            }
+          : {}),
+      },
+    );
+    if (
+      inceptionSeedMintReplaySignature(nextMints) ===
+      inceptionSeedMintReplaySignature(replayMints)
+    ) {
+      return state;
+    }
+    replayMints = nextMints;
+  }
+
+  // The last expansion still receives a strict replay from zero.
+  return tokenStateFromTransactions(
+    indexTxs,
+    registryTxsByAddress,
+    indexAddress,
+    network,
+    tokenScope,
+    seedTokens,
+    replayMints,
+  );
+}
+
+function tokenStateWithCanonicalInceptionIssuance(
+  tokenState,
+  activity,
+  ledger,
+  options = {},
+) {
+  if (!tokenState) {
+    return tokenState;
+  }
+  const adjustedMints = inceptionMintsWithLiveIssuance(
+    tokenState.mints,
+    activity,
+    {
+      ...ledger,
+      activity: Array.isArray(ledger?.activity) ? ledger.activity : activity,
+      tokenState,
+    },
+    options,
+  );
+  const next = tokenStateWithPendingStats({
+    ...tokenState,
+    confirmedSupply: adjustedMints
+      .filter((mint) => mint?.confirmed)
+      .reduce((total, mint) => total + numericValue(mint.amount), 0),
+    mints: adjustedMints,
+  });
+  const scoped = scopedTokenPayloadFromState(next, INCB_TOKEN_ID);
+  const onlyInception =
+    Array.isArray(next.tokens) &&
+    next.tokens.length > 0 &&
+    next.tokens.every((token) => token?.tokenId === INCB_TOKEN_ID);
+  return tokenStateWithPendingStats({
+    ...next,
+    // Global holder rows do not carry token ids, so attempting to replace
+    // only their INCB subset would duplicate balances. A scoped INCB state
+    // can safely publish the holder replay; global consumers derive the
+    // scoped holder view from the adjusted mint projection.
+    holders: onlyInception ? scoped.holders : next.holders,
+    tokens: (Array.isArray(next.tokens) ? next.tokens : []).map((token) =>
+      token?.tokenId === INCB_TOKEN_ID
+        ? {
+            ...token,
+            confirmedSupply: scoped.confirmedSupply,
+            holderCount: scoped.holders.length,
+            pendingSupply: scoped.pendingSupply,
+          }
+        : token,
+    ),
+  });
+}
+
 async function recoveredBondTokenPayloadFromTransactions(
   network,
   recoveryTxs,
@@ -12329,46 +13715,29 @@ function bondAttachedWorkValueDetails(
     attachedWorkLiveValueSats: 0,
     attachedWorkUnmatchedActions: 0,
     attachedWorkUnvaluedActions: 0,
+    bondIssuanceByTxid: new Map(),
+    bondIssuanceNetworkValueByTxid: new Map(),
   };
   if (config.tokenId !== INCB_TOKEN_ID) {
     return empty;
   }
-  const canonicalOrdinal = (value) => {
-    if (value === undefined || value === null || value === "") {
-      return null;
-    }
-    const ordinal = Number(value);
-    return Number.isSafeInteger(ordinal) && ordinal >= 0 ? ordinal : null;
-  };
-
-  const workTokenState = ledgerTokenStateForScope(ledger, WORK_TOKEN_ID);
-  const workTransfers = (Array.isArray(workTokenState?.transfers)
-    ? workTokenState.transfers
-    : []
-  ).filter(
-    (transfer) =>
-      transfer?.confirmed &&
-      transfer?.valid !== false &&
-      transfer.tokenId === WORK_TOKEN_ID &&
-      numericValue(transfer.amount) > 0,
-  );
-  const workTransfersByTxid = new Map();
-  for (const transfer of workTransfers) {
-    const txid = String(transfer.txid ?? "").trim().toLowerCase();
-    if (!/^[0-9a-f]{64}$/u.test(txid)) {
-      continue;
-    }
-    const current = workTransfersByTxid.get(txid) ?? [];
-    current.push(transfer);
-    workTransfersByTxid.set(txid, current);
-  }
-
   const liveWorkFloorSats = numericValue(
     ledger?.workFloor?.liveFloorSats ??
       ledger?.workFloor?.actualValue?.liveFloorSats ??
       ledger?.workFloor?.floorSats,
   );
-  const seen = new Set();
+  const incbTokenState = ledgerTokenStateForScope(ledger, INCB_TOKEN_ID);
+  const confirmedMints = (Array.isArray(incbTokenState?.mints)
+    ? incbTokenState.mints
+    : []
+  ).filter((mint) => mint?.confirmed && mint.tokenId === INCB_TOKEN_ID);
+  const mintsByTxid = new Map();
+  for (const mint of confirmedMints) {
+    const txid = String(mint.txid ?? "").trim().toLowerCase();
+    const current = mintsByTxid.get(txid) ?? [];
+    current.push(mint);
+    mintsByTxid.set(txid, current);
+  }
   let attachedWorkActions = 0;
   let attachedWorkAmount = 0;
   let attachedWorkFrozenValueSats = 0;
@@ -12376,121 +13745,45 @@ function bondAttachedWorkValueDetails(
   let attachedWorkUnmatchedActions = 0;
   let attachedWorkUnvaluedActions = 0;
   const attachedWorkFrozenValueByTxid = new Map();
+  const bondIssuanceByTxid = new Map();
+  const bondIssuanceNetworkValueByTxid = new Map();
 
   for (const bond of Array.isArray(confirmedBondActions)
     ? confirmedBondActions
     : []) {
     const txid = String(bond?.txid ?? "").trim().toLowerCase();
-    const transfers = workTransfersByTxid.get(txid) ?? [];
-    const bondRecipients = (Array.isArray(bond?.recipients)
-      ? bond.recipients
-      : []
-    )
-      .map((recipient) => String(recipient?.address ?? "").trim())
-      .filter(Boolean);
-    const declaredCredits = (Array.isArray(bond?.attachedCredits)
-      ? bond.attachedCredits
-      : []
-    ).filter(
-      (credit) =>
-        credit?.tokenId === WORK_TOKEN_ID &&
-        numericValue(credit.amount) > 0 &&
-        String(credit.recipientAddress ?? "").trim(),
-    );
-    const unmatchedDeclaredCredits = declaredCredits.map((credit, index) => ({
-      credit,
-      index,
-    }));
-    const candidates = transfers.flatMap((transfer) => {
-      const recipientAddress = String(
-        transfer?.recipientAddress ?? "",
-      ).trim();
-      const amount = numericValue(transfer?.amount);
-      if (!recipientAddress || amount <= 0) {
-        return [];
-      }
-      if (declaredCredits.length > 0) {
-        const matchedIndex = unmatchedDeclaredCredits.findIndex(
-          ({ credit }) => {
-            const declaredVout = canonicalOrdinal(credit.protocolVout);
-            const transferVout = canonicalOrdinal(transfer.protocolVout);
-            return (
-              numericValue(credit.amount) === amount &&
-              samePaymentAddress(credit.recipientAddress, recipientAddress) &&
-              (declaredVout === null ||
-                transferVout === null ||
-                declaredVout === transferVout)
-            );
-          },
-        );
-        if (matchedIndex < 0) {
-          return [];
-        }
-        const [declared] = unmatchedDeclaredCredits.splice(matchedIndex, 1);
-        return [{ declared, transfer }];
-      }
-      return bondRecipients.some((address) =>
-        samePaymentAddress(address, recipientAddress),
-      )
-        ? [{ declared: null, transfer }]
-        : [];
-    });
-
-    attachedWorkUnmatchedActions += unmatchedDeclaredCredits.length;
-
-    for (const { declared, transfer } of candidates) {
-      const recipientAddress = String(
-        transfer?.recipientAddress ?? "",
-      ).trim();
-      const amount = numericValue(transfer.amount);
-      const declaredVout = canonicalOrdinal(
-        declared?.credit?.protocolVout,
+    const attachment = inceptionAttachmentMatchesForBond(ledger, bond);
+    const bondMints = mintsByTxid.get(txid) ?? [];
+    const issuance = inceptionIssuanceMetadataFromMints(bondMints);
+    attachedWorkUnmatchedActions += attachment.unmatchedActions;
+    if (
+      !issuance.complete ||
+      issuance.confirmedMints === 0 ||
+      attachment.matches.length !== attachment.declaredActions ||
+      (attachment.matches.length > 0 && liveWorkFloorSats <= 0)
+    ) {
+      attachedWorkUnvaluedActions += Math.max(
+        1,
+        attachment.declaredActions,
       );
-      const declaredIdentity = declaredVout !== null
-        ? `declared-vout:${declaredVout}`
-        : "";
-      const transferIdentity = [
-        transfer?._powEventIndex,
-        transfer?.eventKeyVout,
-        transfer?.protocolVout,
-        transfer?.eventId,
-      ]
-        .map(canonicalOrdinal)
-        .find((value) => value !== null);
-      const canonicalIdentity = declaredIdentity ||
-        (transferIdentity !== undefined
-          ? `event:${transferIdentity}`
-          : `movement:${recipientAddress.toLowerCase()}:${amount}`);
-      const key = `${txid}:${canonicalIdentity}`;
-      if (seen.has(key)) {
-        attachedWorkUnvaluedActions += 1;
-        continue;
-      }
-      seen.add(key);
-
-      const frozenFloorSats = numericValue(
-        transfer.creditFloorAtConfirmSats,
-      );
-      const liveFloorSats = liveWorkFloorSats;
-      const frozenValueSats =
-        numericValue(transfer.creditValueAtConfirmSats) ||
-        amount * frozenFloorSats;
-      const liveValueSats = amount * liveFloorSats;
-      if (frozenValueSats <= 0 || liveValueSats <= 0) {
-        attachedWorkUnvaluedActions += 1;
-        continue;
-      }
-
-      attachedWorkActions += 1;
-      attachedWorkAmount += amount;
-      attachedWorkFrozenValueSats += frozenValueSats;
-      attachedWorkLiveValueSats += liveValueSats;
-      attachedWorkFrozenValueByTxid.set(
-        txid,
-        numericValue(attachedWorkFrozenValueByTxid.get(txid)) +
-          frozenValueSats,
-      );
+      continue;
     }
+    const bondAttachedAmount = attachment.matches.reduce(
+      (total, match) => total + numericValue(match.amount),
+      0,
+    );
+    const frozenValueSats = issuance.attachedWorkLiveValueAtSendSats;
+    const liveValueSats = bondAttachedAmount * liveWorkFloorSats;
+    attachedWorkActions += attachment.matches.length;
+    attachedWorkAmount += bondAttachedAmount;
+    attachedWorkFrozenValueSats += frozenValueSats;
+    attachedWorkLiveValueSats += liveValueSats;
+    attachedWorkFrozenValueByTxid.set(txid, frozenValueSats);
+    bondIssuanceByTxid.set(txid, issuance.confirmedIssuanceUnits);
+    bondIssuanceNetworkValueByTxid.set(
+      txid,
+      issuance.issuanceNetworkValueSats,
+    );
   }
 
   return {
@@ -12501,6 +13794,8 @@ function bondAttachedWorkValueDetails(
     attachedWorkLiveValueSats,
     attachedWorkUnmatchedActions,
     attachedWorkUnvaluedActions,
+    bondIssuanceByTxid,
+    bondIssuanceNetworkValueByTxid,
   };
 }
 
@@ -12514,27 +13809,46 @@ function infinityBondChartPointsFromEvents({
     options.bondFrozenValueByTxid instanceof Map
       ? options.bondFrozenValueByTxid
       : new Map();
+  const bondSupplyByTxid =
+    options.bondSupplyByTxid instanceof Map
+      ? options.bondSupplyByTxid
+      : new Map();
+  const bondValueByTxid =
+    options.bondValueByTxid instanceof Map
+      ? options.bondValueByTxid
+      : new Map();
   const events = [
     ...(Array.isArray(bonds) ? bonds : [])
       .filter((item) => item?.confirmed && isBondActivityItem(item, config))
-      .map((item) => ({
-        amount: activityAmountSats(item),
-        createdAt: item.createdAt,
-        order: 0,
-        txid: String(item.txid ?? ""),
-        valueSats:
-          activityAmountSats(item) +
-          numericValue(
-            bondFrozenValueByTxid.get(
-              String(item.txid ?? "").trim().toLowerCase(),
-            ),
-          ),
-      })),
+      .map((item) => {
+        const txid = String(item.txid ?? "");
+        const normalizedTxid = txid.trim().toLowerCase();
+        return {
+          amount:
+            numericValue(bondSupplyByTxid.get(normalizedTxid)) ||
+            activityAmountSats(item),
+          blockHash: item.blockHash,
+          blockHeight: item.blockHeight,
+          blockIndex: item.blockIndex,
+          createdAt: item.createdAt,
+          eventOrdinal: canonicalTokenReplayOrdinal(item),
+          order: 0,
+          txid,
+          valueSats:
+            numericValue(bondValueByTxid.get(normalizedTxid)) ||
+            activityAmountSats(item) +
+              numericValue(bondFrozenValueByTxid.get(normalizedTxid)),
+        };
+      }),
     ...(Array.isArray(transfers) ? transfers : [])
       .filter((transfer) => transfer?.confirmed && transfer.tokenId === config.tokenId)
       .map((transfer) => ({
         amount: 0,
+        blockHash: transfer.blockHash,
+        blockHeight: transfer.blockHeight,
+        blockIndex: transfer.blockIndex,
         createdAt: transfer.createdAt,
+        eventOrdinal: canonicalTokenReplayOrdinal(transfer),
         order: 1,
         txid: String(transfer.txid ?? ""),
         valueSats: numericValue(transfer.paidSats),
@@ -12543,7 +13857,11 @@ function infinityBondChartPointsFromEvents({
       .filter((item) => item?.confirmed && item.tokenId === config.tokenId)
       .map((item) => ({
         amount: 0,
+        blockHash: item.blockHash,
+        blockHeight: item.blockHeight,
+        blockIndex: item.blockIndex,
         createdAt: item.createdAt,
+        eventOrdinal: canonicalTokenReplayOrdinal(item),
         order: 2,
         txid: String(item.txid ?? ""),
         valueSats: activityAmountSats(item),
@@ -12552,7 +13870,11 @@ function infinityBondChartPointsFromEvents({
       .filter((sale) => sale?.confirmed && sale.tokenId === config.tokenId)
       .map((sale) => ({
         amount: 0,
+        blockHash: sale.blockHash,
+        blockHeight: sale.blockHeight,
+        blockIndex: sale.blockIndex,
         createdAt: sale.createdAt,
+        eventOrdinal: canonicalTokenReplayOrdinal(sale),
         order: 3,
         txid: String(sale.txid ?? ""),
         valueSats: numericValue(sale.priceSats),
@@ -12565,6 +13887,24 @@ function infinityBondChartPointsFromEvents({
         Number.isFinite(Date.parse(event.createdAt)),
     )
     .sort((left, right) => {
+      const leftHasPosition =
+        Number.isSafeInteger(Number(left.blockHeight)) &&
+        Number.isSafeInteger(Number(left.blockIndex));
+      const rightHasPosition =
+        Number.isSafeInteger(Number(right.blockHeight)) &&
+        Number.isSafeInteger(Number(right.blockIndex));
+      if (leftHasPosition && rightHasPosition) {
+        return (
+          Number(left.blockHeight) - Number(right.blockHeight) ||
+          Number(left.blockIndex) - Number(right.blockIndex) ||
+          left.order - right.order ||
+          left.eventOrdinal - right.eventOrdinal ||
+          left.txid.localeCompare(right.txid)
+        );
+      }
+      if (leftHasPosition !== rightHasPosition) {
+        return leftHasPosition ? -1 : 1;
+      }
       const timeSort = Date.parse(left.createdAt) - Date.parse(right.createdAt);
       return timeSort || left.order - right.order || left.txid.localeCompare(right.txid);
     });
@@ -12580,6 +13920,9 @@ function infinityBondChartPointsFromEvents({
     networkValueSats += event.valueSats;
     points.push({
       bondActions,
+      blockHash: event.blockHash,
+      blockHeight: event.blockHeight,
+      blockIndex: event.blockIndex,
       confirmedSupply,
       createdAt: event.createdAt,
       floorSats: confirmedSupply > 0 ? networkValueSats / confirmedSupply : 0,
@@ -12609,6 +13952,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     .map((token) => ({
     amountSats: token.creationFeeSats,
     actor: token.creatorAddress,
+    blockHash: token.blockHash,
     blockHeight: token.blockHeight,
     blockIndex: token.blockIndex,
     confirmed: token.confirmed,
@@ -12642,8 +13986,15 @@ function tokenActivityItemsFromState(state, indexAddress) {
     }));
 
   const mints = (state.mints ?? []).map((mint) => ({
-    amountSats: mint.paidSats,
+    ...canonicalEventIdentityDetails(mint),
+    ...canonicalInceptionMintMetadata(mint),
+    amountSats:
+      mint.tokenId === INCB_TOKEN_ID &&
+      mint.issuanceAccountingModel === INCEPTION_ISSUANCE_ACCOUNTING_MODEL
+        ? 0
+        : mint.paidSats,
     actor: mint.minterAddress,
+    blockHash: mint.blockHash,
     blockHeight: mint.blockHeight,
     blockIndex: mint.blockIndex,
     confirmed: mint.confirmed,
@@ -12680,6 +14031,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
   const transfers = (state.transfers ?? []).map((transfer) => ({
     amountSats: transfer.paidSats,
     actor: transfer.senderAddress,
+    blockHash: transfer.blockHash,
     blockHeight: transfer.blockHeight,
     blockIndex: transfer.blockIndex,
     confirmed: transfer.confirmed,
@@ -12735,6 +14087,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     return {
       amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       actor: listing.sellerAddress,
+      blockHash: listing.blockHash,
       blockHeight: listing.blockHeight,
       blockIndex: listing.blockIndex,
       confirmed: listing.confirmed,
@@ -12800,6 +14153,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     sealedListings.push({
       amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       actor: listing.sellerAddress,
+      blockHash: listing.sealBlockHash ?? listing.blockHash,
       blockHeight: listing.sealBlockHeight ?? listing.blockHeight,
       blockIndex: listing.sealBlockIndex ?? listing.blockIndex,
       confirmed: sealConfirmed,
@@ -12851,6 +14205,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     return {
       amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       actor: listing.sellerAddress,
+      blockHash: listing.closedBlockHash ?? listing.blockHash,
       blockHeight: listing.closedBlockHeight ?? listing.blockHeight,
       blockIndex: listing.closedBlockIndex ?? listing.blockIndex,
       confirmed: Boolean(listing.closedConfirmed),
@@ -12901,6 +14256,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
   const sales = (state.sales ?? []).map((sale) => ({
     amountSats: sale.paidSats,
     actor: sale.buyerAddress,
+    blockHash: sale.blockHash,
     blockHeight: sale.blockHeight,
     blockIndex: sale.blockIndex,
     confirmed: sale.confirmed,
@@ -13954,6 +15310,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         : Date.now();
     const baseEvent = {
       amountSats: amount,
+      blockHash: transactionBlockHash(tx),
       blockHeight: transactionBlockHeight(tx),
       blockIndex: transactionBlockIndex(tx),
       confirmed: transactionConfirmed(tx),
@@ -14094,6 +15451,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
 
       records.set(event.id, {
         amountSats: event.amountSats,
+        blockHash: event.blockHash,
         blockHeight: event.blockHeight,
         blockIndex: event.blockIndex,
         confirmed: true,
@@ -14205,6 +15563,9 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         records.set(listing.id, {
           ...current,
           amountSats: event.amountSats,
+          blockHash: event.blockHash,
+          blockHeight: event.blockHeight,
+          blockIndex: event.blockIndex,
           createdAt: event.createdAt,
           ownerAddress: event.ownerAddress,
           receiveAddress: event.receiveAddress,
@@ -14212,6 +15573,9 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         });
         confirmedSales.push({
           amountSats: event.amountSats,
+          blockHash: event.blockHash,
+          blockHeight: event.blockHeight,
+          blockIndex: event.blockIndex,
           buyerAddress: event.ownerAddress,
           confirmed: true,
           createdAt: event.createdAt,
@@ -14261,6 +15625,9 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         records.set(event.id, {
           ...current,
           amountSats: event.amountSats,
+          blockHash: event.blockHash,
+          blockHeight: event.blockHeight,
+          blockIndex: event.blockIndex,
           createdAt: event.createdAt,
           ownerAddress: event.ownerAddress,
           receiveAddress: event.receiveAddress,
@@ -14268,6 +15635,9 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         });
         confirmedSales.push({
           amountSats: event.amountSats,
+          blockHash: event.blockHash,
+          blockHeight: event.blockHeight,
+          blockIndex: event.blockIndex,
           buyerAddress: event.ownerAddress,
           confirmed: true,
           createdAt: event.createdAt,
@@ -14344,6 +15714,9 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       records.set(event.id, {
         ...current,
         amountSats: event.amountSats,
+        blockHash: event.blockHash,
+        blockHeight: event.blockHeight,
+        blockIndex: event.blockIndex,
         createdAt: event.createdAt,
         receiveAddress: event.receiveAddress,
         txid: event.txid,
@@ -14355,6 +15728,9 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     records.set(event.id, {
       ...current,
       amountSats: event.amountSats,
+      blockHash: event.blockHash,
+      blockHeight: event.blockHeight,
+      blockIndex: event.blockIndex,
       createdAt: event.createdAt,
       ownerAddress: event.ownerAddress,
       receiveAddress: event.receiveAddress,
@@ -21118,16 +22494,31 @@ function bondSummaryPayloadHasKnownMainnetValue(
     config.tokenId !== INCB_TOKEN_ID ||
     (summary.actualValue?.attachmentAccountingModel ===
       INCEPTION_ATTACHMENT_ACCOUNTING_MODEL &&
+      summary.actualValue?.issuanceAccountingModel ===
+        INCEPTION_ISSUANCE_ACCOUNTING_MODEL &&
       [
         "attachedWorkActions",
         "attachedWorkAmount",
         "attachedWorkFrozenValueSats",
+        "attachedWorkIssuanceUnits",
+        "attachedWorkLiveFloorAtSendSats",
         "attachedWorkLiveValueSats",
+        "attachedWorkLiveValueAtSendSats",
         "attachedWorkUnmatchedActions",
         "attachedWorkUnvaluedActions",
         "baseNetworkValueSats",
+        "confirmedIssuanceUnits",
+        "directProofIssuanceUnits",
         "frozenFloorSats",
         "frozenNetworkValueSats",
+        "issuanceDustSats",
+        "issuanceFloorSats",
+        "issuanceNetworkValueSats",
+        "issuanceUnitSats",
+        "issuanceCheckpointBlockHeight",
+        "issuanceCheckpointBlockIndex",
+        "issuanceValueSnapshotBlockHeight",
+        "issuanceValueSnapshotWorkNetworkValueSats",
         "liveFloorSats",
         "liveNetworkValueSats",
       ].every(
@@ -21136,6 +22527,45 @@ function bondSummaryPayloadHasKnownMainnetValue(
             summary.actualValue ?? {},
             field,
           ) && Number.isFinite(Number(summary.actualValue?.[field])),
+      ) &&
+      summary.actualValue?.issuanceCheckpointMode ===
+        "bond-transaction-provenance" &&
+      summary.actualValue?.issuanceValuationFixedAtSend === true &&
+      Number(summary.actualValue?.issuanceUnitSats) === 1 &&
+      summary.actualValue?.issuanceValueSnapshotModel ===
+        INCEPTION_VALUE_SNAPSHOT_MODEL &&
+      summary.actualValue?.issuanceValueSnapshotMode ===
+        "canonical-summary-refresh" &&
+      Number(summary.actualValue?.issuanceValueSnapshotBlockHeight) ===
+        Number(summary.actualValue?.issuanceCheckpointBlockHeight) - 1 &&
+      String(summary.actualValue?.issuanceValueSnapshotId ?? "").trim()
+        .length > 0 &&
+      Number.isFinite(
+        Date.parse(
+          String(
+            summary.actualValue?.issuanceValueSnapshotGeneratedAt ?? "",
+          ),
+        ),
+      ) &&
+      /^[0-9a-f]{64}$/u.test(
+        String(
+          summary.actualValue?.issuanceValueSnapshotBlockHash ?? "",
+        )
+          .trim()
+          .toLowerCase(),
+      ) &&
+      /^[0-9a-f]{64}$/u.test(
+        String(
+          summary.actualValue
+            ?.issuanceValueSnapshotCanonicalSummaryHash ?? "",
+        )
+          .trim()
+          .toLowerCase(),
+      ) &&
+      /^[0-9a-f]{64}$/u.test(
+        String(summary.actualValue?.issuanceCheckpointBlockHash ?? "")
+          .trim()
+          .toLowerCase(),
       ));
   const baseNetworkValueSats = numericValue(
     summary.actualValue?.baseNetworkValueSats,
@@ -21158,16 +22588,59 @@ function bondSummaryPayloadHasKnownMainnetValue(
   const attachedWorkLiveValueSats = numericValue(
     summary.actualValue?.attachedWorkLiveValueSats,
   );
+  const attachedWorkLiveFloorAtSendSats = numericValue(
+    summary.actualValue?.attachedWorkLiveFloorAtSendSats,
+  );
+  const attachedWorkLiveValueAtSendSats = numericValue(
+    summary.actualValue?.attachedWorkLiveValueAtSendSats,
+  );
+  const attachedWorkIssuanceUnits = numericValue(
+    summary.actualValue?.attachedWorkIssuanceUnits,
+  );
+  const confirmedIssuanceUnits = numericValue(
+    summary.actualValue?.confirmedIssuanceUnits,
+  );
+  const directProofIssuanceUnits = numericValue(
+    summary.actualValue?.directProofIssuanceUnits,
+  );
+  const issuanceNetworkValueSats = numericValue(
+    summary.actualValue?.issuanceNetworkValueSats,
+  );
   const inceptionAttachmentValuesAgree =
     config.tokenId !== INCB_TOKEN_ID ||
     (numericValue(summary.actualValue?.attachedWorkUnmatchedActions) === 0 &&
       numericValue(summary.actualValue?.attachedWorkUnvaluedActions) === 0 &&
+      numbersAgree(confirmedSupply, confirmedIssuanceUnits, 0.01) &&
+      numbersAgree(directProofIssuanceUnits, bondMintFlowSats, 0.01) &&
+      directProofIssuanceUnits + attachedWorkIssuanceUnits ===
+        confirmedIssuanceUnits &&
+      numbersAgree(
+        issuanceNetworkValueSats,
+        directProofIssuanceUnits + attachedWorkLiveValueAtSendSats,
+        0.01,
+      ) &&
+      numbersAgree(
+        numericValue(summary.actualValue?.issuanceDustSats),
+        issuanceNetworkValueSats - confirmedIssuanceUnits,
+        0.01,
+      ) &&
+      numbersAgree(
+        numericValue(summary.actualValue?.issuanceFloorSats) *
+          confirmedIssuanceUnits,
+        issuanceNetworkValueSats,
+        0.01,
+      ) &&
       numbersAgree(baseNetworkValueSats, bondMintFlowSats +
         bondSaleVolumeSats + bondTransferFeeSats +
         bondMarketplaceMutationFeeSats, 0.01) &&
       numbersAgree(
         frozenNetworkValueSats,
-        baseNetworkValueSats + attachedWorkFrozenValueSats,
+        baseNetworkValueSats + attachedWorkLiveValueAtSendSats,
+        0.01,
+      ) &&
+      numbersAgree(
+        attachedWorkFrozenValueSats,
+        attachedWorkLiveValueAtSendSats,
         0.01,
       ) &&
       numbersAgree(
@@ -21188,11 +22661,20 @@ function bondSummaryPayloadHasKnownMainnetValue(
       ) &&
       (attachedWorkActions > 0
         ? attachedWorkAmount > 0 &&
+          attachedWorkLiveFloorAtSendSats > 0 &&
+          numbersAgree(
+            attachedWorkLiveValueAtSendSats,
+            attachedWorkAmount * attachedWorkLiveFloorAtSendSats,
+            0.01,
+          ) &&
           attachedWorkFrozenValueSats > 0 &&
-          attachedWorkLiveValueSats > 0
+          attachedWorkLiveValueSats > 0 &&
+          attachedWorkIssuanceUnits > 0
         : attachedWorkAmount === 0 &&
           attachedWorkFrozenValueSats === 0 &&
-          attachedWorkLiveValueSats === 0));
+          attachedWorkLiveValueSats === 0 &&
+          attachedWorkLiveValueAtSendSats === 0 &&
+          attachedWorkIssuanceUnits === 0));
   return (
     finitePositiveNumber(confirmedSupply) &&
     finitePositiveNumber(confirmedBondActions) &&
@@ -21517,7 +22999,7 @@ function ledgerPayloadHasCurrentChecks(payload) {
     checkNames.has("seeded-mail-events-logged") &&
     checkNames.has("seeded-inception-bonds-logged") &&
     checkNames.has("seeded-infinity-bonds-logged") &&
-    checkNames.has("inception-bond-flow-matches-incb-supply") &&
+    checkNames.has("inception-live-issuance-matches-incb-supply") &&
     checkNames.has("infinity-bond-flow-matches-powb-supply") &&
     checkNames.has("ledger-covers-node-tip")
   );
@@ -23121,16 +24603,25 @@ function ledgerSnapshotChecks({
   const confirmedActivity = (activity ?? []).filter((item) => item?.confirmed);
   const incbTokenState = scopedTokenPayloadFromState(tokenState, INCB_TOKEN_ID);
   const incbConfirmedSupply = numericValue(incbTokenState?.confirmedSupply);
-  const inceptionBondFlowSats = confirmedActivity
-    .filter(isInceptionBondActivityItem)
-    .reduce((total, item) => total + activityAmountSats(item), 0);
+  const inceptionIssuance = inceptionIssuanceMetadataFromMints(
+    incbTokenState?.mints,
+  );
   addCheck(
-    "inception-bond-flow-matches-incb-supply",
+    "inception-live-issuance-matches-incb-supply",
     network !== "livenet" ||
-      numbersAgree(inceptionBondFlowSats, incbConfirmedSupply, 0.01),
+      (inceptionIssuance.complete &&
+        numbersAgree(
+          inceptionIssuance.confirmedIssuanceUnits,
+          incbConfirmedSupply,
+          0.01,
+        )),
     {
+      canonicalMints: inceptionIssuance.canonicalMints,
+      confirmedIssuanceUnits: inceptionIssuance.confirmedIssuanceUnits,
+      confirmedMints: inceptionIssuance.confirmedMints,
       incbConfirmedSupply,
-      inceptionBondFlowSats,
+      issuanceAccountingModel: inceptionIssuance.issuanceAccountingModel,
+      issuanceNetworkValueSats: inceptionIssuance.issuanceNetworkValueSats,
     },
   );
   const powbTokenState = scopedTokenPayloadFromState(tokenState, POWB_TOKEN_ID);
@@ -23272,6 +24763,10 @@ function ledgerSnapshotChecks({
         creditMarketplaceMutationFlowSats +
         creditSalePaymentFlowSats +
         creditMinerFeeFlowSats,
+      // Frozen credit value contains fractional WORK-floor products summed in
+      // a different order from its components. Keep this local tolerance far
+      // below one proof while avoiding a floating-point false negative.
+      0.01,
     ),
     {
       creditMinerFeeFlowSats,
@@ -23813,6 +25308,10 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     confirmedBondActions,
     config,
   );
+  const issuance =
+    config.tokenId === INCB_TOKEN_ID
+      ? inceptionIssuanceMetadataFromMints(tokenState?.mints)
+      : null;
   const frozenNetworkValueSats =
     baseNetworkValueSats + attachedWork.attachedWorkFrozenValueSats;
   const liveNetworkValueSats =
@@ -23838,6 +25337,8 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     transfers: confirmedTransfers,
   }, config, {
     bondFrozenValueByTxid: attachedWork.attachedWorkFrozenValueByTxid,
+    bondSupplyByTxid: attachedWork.bondIssuanceByTxid,
+    bondValueByTxid: attachedWork.bondIssuanceNetworkValueByTxid,
   });
 
   return {
@@ -23845,6 +25346,12 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     actualValue: {
       attachedWorkActions: attachedWork.attachedWorkActions,
       attachedWorkAmount: attachedWork.attachedWorkAmount,
+      attachedWorkIssuanceUnits:
+        issuance?.attachedWorkIssuanceUnits ?? 0,
+      attachedWorkLiveFloorAtSendSats:
+        issuance?.attachedWorkLiveFloorAtSendSats ?? 0,
+      attachedWorkLiveValueAtSendSats:
+        issuance?.attachedWorkLiveValueAtSendSats ?? 0,
       attachmentAccountingModel:
         config.tokenId === INCB_TOKEN_ID
           ? INCEPTION_ATTACHMENT_ACCOUNTING_MODEL
@@ -23861,10 +25368,55 @@ function bondSummaryPayloadFromLedger(ledger, config) {
       bondSaleVolumeSats,
       bondTransferFeeSats,
       baseNetworkValueSats,
+      confirmedIssuanceUnits: issuance?.confirmedIssuanceUnits ?? 0,
+      directProofIssuanceUnits:
+        issuance?.directProofIssuanceUnits ?? 0,
       floorSats,
       floorUsd,
       frozenFloorSats,
       frozenNetworkValueSats,
+      issuanceAccountingModel:
+        config.tokenId === INCB_TOKEN_ID
+          ? INCEPTION_ISSUANCE_ACCOUNTING_MODEL
+          : undefined,
+      issuanceUnitSats:
+        config.tokenId === INCB_TOKEN_ID ? 1 : undefined,
+      issuanceValuationFixedAtSend:
+        config.tokenId === INCB_TOKEN_ID ? true : undefined,
+      issuanceCheckpointBlockHash:
+        issuance?.issuanceCheckpointBlockHash ?? "",
+      issuanceCheckpointBlockHeight:
+        issuance?.issuanceCheckpointBlockHeight ?? 0,
+      issuanceCheckpointBlockIndex:
+        issuance?.issuanceCheckpointBlockIndex ?? 0,
+      issuanceCheckpointMode:
+        config.tokenId === INCB_TOKEN_ID
+          ? issuance?.issuanceCheckpointMode ?? ""
+          : undefined,
+      issuanceValueSnapshotBlockHash:
+        issuance?.issuanceValueSnapshotBlockHash ?? "",
+      issuanceValueSnapshotBlockHeight:
+        issuance?.issuanceValueSnapshotBlockHeight ?? 0,
+      issuanceValueSnapshotCanonicalSummaryHash:
+        issuance?.issuanceValueSnapshotCanonicalSummaryHash ?? "",
+      issuanceValueSnapshotGeneratedAt:
+        issuance?.issuanceValueSnapshotGeneratedAt ?? "",
+      issuanceValueSnapshotId:
+        issuance?.issuanceValueSnapshotId ?? "",
+      issuanceValueSnapshotMode:
+        config.tokenId === INCB_TOKEN_ID
+          ? issuance?.issuanceValueSnapshotMode ?? ""
+          : undefined,
+      issuanceValueSnapshotModel:
+        config.tokenId === INCB_TOKEN_ID
+          ? issuance?.issuanceValueSnapshotModel ?? ""
+          : undefined,
+      issuanceValueSnapshotWorkNetworkValueSats:
+        issuance?.issuanceValueSnapshotWorkNetworkValueSats ?? 0,
+      issuanceDustSats: issuance?.issuanceDustSats ?? 0,
+      issuanceFloorSats: issuance?.issuanceFloorSats ?? 0,
+      issuanceNetworkValueSats:
+        issuance?.issuanceNetworkValueSats ?? 0,
       liveFloorSats,
       liveNetworkValueSats,
       networkValueSats,
@@ -24801,7 +26353,9 @@ function tokenTransferFromIndexedActivityItem(item, token, network) {
     ...canonicalEventIdentityDetails(item),
     amount,
     arbSats: numericValue(item.arbSats),
+    blockHash: String(item.blockHash ?? "").trim().toLowerCase(),
     blockHeight: numericValue(item.blockHeight),
+    blockIndex: numericValue(item.blockIndex),
     confirmed: true,
     creditAmountMoved: numericValue(item.creditAmountMoved),
     creditFloorAtConfirmSats: numericValue(
@@ -24900,8 +26454,54 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
         continue;
       }
       mints.push({
+        ...canonicalEventIdentityDetails(item),
         amount,
+        ...(item.issuanceAccountingModel ===
+        INCEPTION_ISSUANCE_ACCOUNTING_MODEL
+          ? {
+              ...canonicalInceptionMintMetadata(item),
+              attachedWorkAmount: numericValue(item.attachedWorkAmount),
+              attachedWorkLiveFloorAtSendSats: numericValue(
+                item.attachedWorkLiveFloorAtSendSats,
+              ),
+              attachedWorkIssuanceUnits: numericValue(
+                item.attachedWorkIssuanceUnits,
+              ),
+              attachedWorkLiveValueAtSendSats: numericValue(
+                item.attachedWorkLiveValueAtSendSats,
+              ),
+              confirmedIssuanceUnits: numericValue(
+                item.confirmedIssuanceUnits,
+              ),
+              directProofIssuanceUnits: numericValue(
+                item.directProofIssuanceUnits,
+              ),
+              issuanceAccountingModel: item.issuanceAccountingModel,
+              issuanceAmount: numericValue(item.issuanceAmount),
+              issuanceDustSats: numericValue(item.issuanceDustSats),
+              issuanceFloorSats: numericValue(item.issuanceFloorSats),
+              issuanceNetworkValueSats: numericValue(
+                item.issuanceNetworkValueSats,
+              ),
+              issuanceCheckpointBlockHash: String(
+                item.issuanceCheckpointBlockHash ?? "",
+              )
+                .trim()
+                .toLowerCase(),
+              issuanceCheckpointBlockHeight: numericValue(
+                item.issuanceCheckpointBlockHeight,
+              ),
+              issuanceCheckpointBlockIndex: numericValue(
+                item.issuanceCheckpointBlockIndex,
+              ),
+              issuanceCheckpointMode: String(
+                item.issuanceCheckpointMode ?? "",
+              ),
+            }
+          : {}),
+        blockHash: String(item.blockHash ?? "").trim().toLowerCase(),
         blockHeight: numericValue(item.blockHeight),
+        blockIndex: numericValue(item.blockIndex),
         confirmed: true,
         createdAt: item.createdAt,
         dataBytes: numericValue(item.dataBytes),
@@ -25533,6 +27133,27 @@ async function buildIndexedCanonicalLedgerPayload(
         INCB_TOKEN_ID,
       )
     : ledgerTokenStateWithPowb;
+  const indexedInceptionState = scopedTokenPayloadFromState(
+    ledgerTokenState,
+    INCB_TOKEN_ID,
+  );
+  const indexedInceptionIssuance = inceptionIssuanceMetadataFromMints(
+    indexedInceptionState.mints,
+  );
+  if (
+    (numericValue(indexedInceptionState.confirmedSupply) > 0 ||
+      indexedInceptionIssuance.confirmedMints > 0) &&
+    (!indexedInceptionIssuance.complete ||
+      !numbersAgree(
+        indexedInceptionIssuance.confirmedIssuanceUnits,
+        numericValue(indexedInceptionState.confirmedSupply),
+        0.01,
+      ))
+  ) {
+    throw freshDataUnavailableError(
+      `Rejected ${label}: indexed INCB is not a fully bound v2 replay.`,
+    );
+  }
   let activity = dedupeActivityItems([
     ...tokenActivityItemsFromState(
       ledgerTokenState,
@@ -25558,14 +27179,6 @@ async function buildIndexedCanonicalLedgerPayload(
     }),
   };
   markTiming("activity");
-  let workFloor = workFloorPayloadFromState(
-    network,
-    registryState,
-    activityPayload,
-    ledgerTokenState,
-    baseWorkTokenState,
-    { btcUsdQuote },
-  );
   const creditValueDetails = creditNetworkValueMetrics({
     baseValueAt: growthActualBaseNetworkValueAtProvider(
       registryState.records ?? [],
@@ -25616,13 +27229,14 @@ async function buildIndexedCanonicalLedgerPayload(
       seededMail: seededMailActivityState?.stats?.total,
     }),
   };
-  workFloor = workFloorPayloadFromState(
+  const canonicalBaseLookupDiagnostics = {};
+  let workFloor = workFloorPayloadFromState(
     network,
     registryState,
     activityPayload,
     valuedTokenState,
     valuedWorkTokenState,
-    { btcUsdQuote },
+    { btcUsdQuote, canonicalBaseLookupDiagnostics },
   );
   markTiming("valued-state");
   if (currentMarketOverlay) {
@@ -25747,6 +27361,7 @@ async function buildIndexedCanonicalLedgerPayload(
         ...timingMs,
         total: Date.now() - timingStartedAt,
       },
+      canonicalBaseLookup: canonicalBaseLookupDiagnostics,
       tokenMints: Array.isArray(valuedTokenState?.mints)
         ? valuedTokenState.mints.length
         : 0,
@@ -25884,12 +27499,43 @@ async function internalCanonicalSummaryPayload(network) {
     workSummary: internalCanonicalWorkSummaryPayload(hashBoundLedger),
   };
   for (const [key, payload] of Object.entries(summaryPayloads)) {
+    const snapshotMatches =
+      payloadSnapshotId(payload) === hashBoundLedger.snapshotId;
+    const coverageMatches =
+      proofIndexPayloadIndexedThroughBlock(payload) ===
+      before.indexedThroughBlock;
+    const networkValueValid = summaryPayloadHasFiniteNetworkValue(
+      network,
+      key,
+      payload,
+    );
     if (
       !payload ||
-      payloadSnapshotId(payload) !== hashBoundLedger.snapshotId ||
-      proofIndexPayloadIndexedThroughBlock(payload) !== before.indexedThroughBlock ||
-      !summaryPayloadHasFiniteNetworkValue(network, key, payload)
+      !snapshotMatches ||
+      !coverageMatches ||
+      !networkValueValid
     ) {
+      console.error(
+        "Rejected internal canonical summary payload:",
+        JSON.stringify({
+          actualValue: payload?.actualValue ?? null,
+          chartPoints: Array.isArray(payload?.chartPoints)
+            ? payload.chartPoints.length
+            : null,
+          coverageMatches,
+          expectedIndexedThroughBlock: before.indexedThroughBlock,
+          indexedThroughBlock: proofIndexPayloadIndexedThroughBlock(payload),
+          key,
+          networkValueValid,
+          registryAddress: payload?.registryAddress ?? null,
+          registryId: payload?.registryId ?? null,
+          snapshotMatches,
+          stats: payload?.stats ?? null,
+          ticker: payload?.ticker ?? null,
+          tokenId: payload?.tokenId ?? null,
+          tokenStats: payload?.token?.stats ?? null,
+        }),
+      );
       throw freshDataUnavailableError(
         `The indexed canonical ${key} payload is not a valid exact-ledger summary.`,
       );
@@ -25987,15 +27633,42 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
       registryAddress,
       network,
     ).catch(() => []);
-    const bondState = tokenStateFromTransactions(
+    const bondSeedTokens = [
+      canonicalBondTokenDefinition(config, network, registryAddress),
+    ];
+    const bondSeedMints = bondMintsFromActivity(
+      baseActivity,
+      registryAddress,
+      network,
+      config,
+    );
+    const inceptionIssuanceOptions =
+      config.tokenId === INCB_TOKEN_ID
+        ? await canonicalInceptionIssuanceOptions(network, baseActivity)
+        : {};
+    const replayArguments = [
       [],
       new Map([[registryAddress, registryTxs]]),
       tokenIndexAddressForNetwork(network),
       network,
       config.tokenId,
-      [canonicalBondTokenDefinition(config, network, registryAddress)],
-      bondMintsFromActivity(baseActivity, registryAddress, network, config),
-    );
+      bondSeedTokens,
+      bondSeedMints,
+    ];
+    const bondState =
+      config.tokenId === INCB_TOKEN_ID
+        ? tokenStateFromTransactionsWithCanonicalInceptionIssuance(
+            ...replayArguments,
+            baseActivity,
+            {
+              activity: baseActivity,
+              registryState,
+              tokenState: ledgerTokenState,
+              workTokenState,
+            },
+            inceptionIssuanceOptions,
+          )
+        : tokenStateFromTransactions(...replayArguments);
     ledgerTokenState = tokenStateWithScopedTokenOverride(
       ledgerTokenState,
       await tokenPayloadWithSpendableListings(bondState, network),
@@ -28222,15 +29895,25 @@ async function proofIndexBondSummaryPayload(
   const indexedBondFlowSats = (bondActivityState.activity ?? [])
     .filter((item) => item?.confirmed && isBondActivityItem(item, config))
     .reduce((total, item) => total + activityAmountSats(item), 0);
+  const inceptionIssuance = inceptionIssuanceMetadataFromMints(
+    bondTokenState.mints,
+  );
   if (
-    !numbersAgree(
-      indexedBondFlowSats,
-      numericValue(bondTokenState.confirmedSupply),
-      0.01,
-    )
+    config.tokenId === INCB_TOKEN_ID
+      ? !inceptionIssuance.complete ||
+        !numbersAgree(
+          inceptionIssuance.confirmedIssuanceUnits,
+          numericValue(bondTokenState.confirmedSupply),
+          0.01,
+        )
+      : !numbersAgree(
+          indexedBondFlowSats,
+          numericValue(bondTokenState.confirmedSupply),
+          0.01,
+        )
   ) {
     console.error(
-      `Rejected ${config.displayName} summary: confirmed bond flow does not match ${config.ticker} supply.`,
+      `Rejected ${config.displayName} summary: canonical issuance does not match ${config.ticker} supply.`,
     );
     return null;
   }
@@ -28613,7 +30296,9 @@ function mailActivityItemFromMailMessage(message, address, network) {
     actor,
     attachedCredits:
       attachedCredits.length > 0 ? attachedCredits : undefined,
+    blockHash: String(message?.blockHash ?? "").trim().toLowerCase(),
     blockHeight: message?.blockHeight,
+    blockIndex: message?.blockIndex,
     confirmed,
     counterparty,
     createdAt,
@@ -29873,13 +31558,350 @@ function creditValueEventIndex(item) {
 }
 
 function compareCreditValueReplayEvents(left, right) {
+  const leftHeight = creditValueEventHeight(left.source);
+  const rightHeight = creditValueEventHeight(right.source);
+  const leftIndex = creditValueEventIndex(left.source);
+  const rightIndex = creditValueEventIndex(right.source);
+  const leftPositioned =
+    leftHeight !== Number.MAX_SAFE_INTEGER &&
+    leftIndex !== Number.MAX_SAFE_INTEGER;
+  const rightPositioned =
+    rightHeight !== Number.MAX_SAFE_INTEGER &&
+    rightIndex !== Number.MAX_SAFE_INTEGER;
+  if (leftPositioned && rightPositioned) {
+    return (
+      leftHeight - rightHeight ||
+      leftIndex - rightIndex ||
+      canonicalTokenReplayOrdinal(left.source) -
+        canonicalTokenReplayOrdinal(right.source) ||
+      left.order - right.order ||
+      String(left.txid ?? "").localeCompare(String(right.txid ?? ""))
+    );
+  }
+  if (leftPositioned !== rightPositioned) {
+    return leftPositioned ? -1 : 1;
+  }
+  const canonicalUnpositioned = (event) =>
+    event?.source?.confirmed === true && event?.source?.network === "livenet";
+  if (canonicalUnpositioned(left) || canonicalUnpositioned(right)) {
+    return (
+      left.order - right.order ||
+      String(left.txid ?? "").localeCompare(String(right.txid ?? ""))
+    );
+  }
   return (
     left.createdMs - right.createdMs ||
-    creditValueEventHeight(left.source) - creditValueEventHeight(right.source) ||
-    creditValueEventIndex(left.source) - creditValueEventIndex(right.source) ||
     left.order - right.order ||
     String(left.txid ?? "").localeCompare(String(right.txid ?? ""))
   );
+}
+
+function growthActualBaseNetworkValueBeforeCanonicalItem(
+  source,
+  collections,
+  createdMs,
+  timestampProvider,
+) {
+  const positionedLivenet =
+    source?.confirmed === true &&
+    source?.network === "livenet" &&
+    Number.isSafeInteger(Number(source?.blockHeight)) &&
+    Number(source.blockHeight) > 0 &&
+    Number.isSafeInteger(Number(source?.blockIndex)) &&
+    Number(source.blockIndex) >= 0;
+  if (!positionedLivenet) {
+    return numericValue(timestampProvider(createdMs - 1));
+  }
+  const before = (items) =>
+    (Array.isArray(items) ? items : []).filter((item) =>
+      canonicalItemPrecedesBondTransaction(item, source),
+    );
+  return numericValue(
+    growthActualBaseNetworkValue(
+      before(collections.records),
+      before(collections.idActivity),
+      before(collections.sales),
+      before(collections.tokenDefinitions),
+      before(collections.tokenMints),
+      before(collections.tokenTransfers),
+      before(collections.tokenSales),
+      Number.MAX_SAFE_INTEGER,
+    ).totalSats,
+  );
+}
+
+function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
+  collections,
+  timestampProvider,
+  diagnostics = null,
+) {
+  const buildStartedAt = Date.now();
+  if (diagnostics && typeof diagnostics === "object") {
+    for (const field of [
+      "allHashLookups",
+      "blockHashFallbacks",
+      "canonicalPositions",
+      "canonicalRows",
+      "canonicalValueEvents",
+      "cursorResets",
+      "exactHashLookups",
+      "invalidCreatedAtRows",
+      "lookups",
+      "prefixBuildMs",
+      "prefixLookups",
+      "providerBuilds",
+      "sameTxAdjustments",
+      "sameTxFallbacks",
+      "slowFallbacks",
+      "timestampLookups",
+    ]) {
+      if (!Number.isFinite(Number(diagnostics[field]))) {
+        diagnostics[field] = 0;
+      }
+    }
+  }
+  const incrementDiagnostic = (field, amount = 1) => {
+    if (!diagnostics || typeof diagnostics !== "object") {
+      return;
+    }
+    diagnostics[field] = numericValue(diagnostics[field]) + amount;
+  };
+  incrementDiagnostic("providerBuilds");
+  const collectionNames = [
+    "records",
+    "idActivity",
+    "sales",
+    "tokenDefinitions",
+    "tokenMints",
+    "tokenTransfers",
+    "tokenSales",
+  ];
+  const canonicalPositionKeys = new Set();
+
+  for (const name of collectionNames) {
+    for (const item of Array.isArray(collections?.[name])
+      ? collections[name]
+      : []) {
+      const blockHeight = Number(item?.blockHeight);
+      const blockIndex = Number(item?.blockIndex);
+      if (
+        item?.confirmed !== true ||
+        !Number.isSafeInteger(blockHeight) ||
+        blockHeight <= 0 ||
+        !Number.isSafeInteger(blockIndex) ||
+        blockIndex < 0
+      ) {
+        continue;
+      }
+      if (!Number.isFinite(Date.parse(item?.createdAt ?? ""))) {
+        // The legacy exact scan also drops these rows in
+        // growthActualBaseNetworkValue's timestamp cutoff. Keeping them out
+        // of the prefix is therefore exact, not an inferred timestamp.
+        incrementDiagnostic("invalidCreatedAtRows");
+        continue;
+      }
+      incrementDiagnostic("canonicalRows");
+      canonicalPositionKeys.add(`${blockHeight}:${blockIndex}`);
+    }
+  }
+
+  const canonicalEvents = growthActualBaseNetworkValueEvents(
+    collections?.records,
+    collections?.idActivity,
+    collections?.sales,
+    collections?.tokenDefinitions,
+    collections?.tokenMints,
+    collections?.tokenTransfers,
+    collections?.tokenSales,
+  ).filter(
+    (event) =>
+      Number.isSafeInteger(event.blockHeight) &&
+      event.blockHeight > 0 &&
+      Number.isSafeInteger(event.blockIndex) &&
+      event.blockIndex >= 0,
+  );
+  const eventsByHeight = new Map();
+  const eventsByTxid = new Map();
+  for (const event of canonicalEvents) {
+    if (!eventsByHeight.has(event.blockHeight)) {
+      eventsByHeight.set(event.blockHeight, []);
+    }
+    eventsByHeight.get(event.blockHeight).push(event);
+    if (event.txid) {
+      if (!eventsByTxid.has(event.txid)) {
+        eventsByTxid.set(event.txid, []);
+      }
+      eventsByTxid.get(event.txid).push(event);
+    }
+  }
+  const heightGroups = [...eventsByHeight.entries()]
+    .map(([blockHeight, events]) => ({
+      blockHeight,
+      events: events.sort(
+        (left, right) =>
+          left.blockIndex - right.blockIndex ||
+          left.txid.localeCompare(right.txid),
+      ),
+    }))
+    .sort((left, right) => left.blockHeight - right.blockHeight);
+  incrementDiagnostic("canonicalPositions", canonicalPositionKeys.size);
+  incrementDiagnostic("canonicalValueEvents", canonicalEvents.length);
+  incrementDiagnostic("prefixBuildMs", Date.now() - buildStartedAt);
+
+  let lowerState;
+  let heightCursor;
+  let activeHeight;
+  let activeGroup;
+  let activeCursor;
+  let activeAllHashState;
+  let activeStateByHash;
+  let lastTargetHeight;
+  let lastTargetIndex;
+  const resetCanonicalCursor = () => {
+    lowerState = emptyGrowthActualBaseState();
+    heightCursor = 0;
+    activeHeight = null;
+    activeGroup = null;
+    activeCursor = 0;
+    activeAllHashState = emptyGrowthActualBaseState();
+    activeStateByHash = new Map();
+    lastTargetHeight = Number.NEGATIVE_INFINITY;
+    lastTargetIndex = Number.NEGATIVE_INFINITY;
+  };
+  resetCanonicalCursor();
+  const applyEvent = (state, event, multiplier = 1) =>
+    growthActualBaseStateApplyContribution(
+      state,
+      event.contribution,
+      multiplier,
+    );
+  const prepareCanonicalPrefix = (blockHeight, blockIndex) => {
+    if (
+      blockHeight < lastTargetHeight ||
+      (blockHeight === lastTargetHeight && blockIndex < lastTargetIndex)
+    ) {
+      incrementDiagnostic("cursorResets");
+      resetCanonicalCursor();
+    }
+    while (
+      heightCursor < heightGroups.length &&
+      heightGroups[heightCursor].blockHeight < blockHeight
+    ) {
+      for (const event of heightGroups[heightCursor].events) {
+        applyEvent(lowerState, event);
+      }
+      heightCursor += 1;
+    }
+    if (activeHeight !== blockHeight) {
+      activeHeight = blockHeight;
+      activeGroup =
+        heightGroups[heightCursor]?.blockHeight === blockHeight
+          ? heightGroups[heightCursor]
+          : null;
+      activeCursor = 0;
+      activeAllHashState = emptyGrowthActualBaseState();
+      activeStateByHash = new Map();
+    }
+    while (
+      activeGroup &&
+      activeCursor < activeGroup.events.length &&
+      activeGroup.events[activeCursor].blockIndex < blockIndex
+    ) {
+      const event = activeGroup.events[activeCursor];
+      applyEvent(activeAllHashState, event);
+      if (!activeStateByHash.has(event.blockHash)) {
+        activeStateByHash.set(event.blockHash, emptyGrowthActualBaseState());
+      }
+      applyEvent(activeStateByHash.get(event.blockHash), event);
+      activeCursor += 1;
+    }
+    lastTargetHeight = blockHeight;
+    lastTargetIndex = blockIndex;
+  };
+
+  return (source, createdMs) => {
+    incrementDiagnostic("lookups");
+    const blockHeight = Number(source?.blockHeight);
+    const blockIndex = Number(source?.blockIndex);
+    const positionedLivenet =
+      source?.confirmed === true &&
+      source?.network === "livenet" &&
+      Number.isSafeInteger(blockHeight) &&
+      blockHeight > 0 &&
+      Number.isSafeInteger(blockIndex) &&
+      blockIndex >= 0;
+    if (!positionedLivenet) {
+      incrementDiagnostic("timestampLookups");
+      return numericValue(timestampProvider(createdMs - 1));
+    }
+
+    prepareCanonicalPrefix(blockHeight, blockIndex);
+    const blockHash = String(source?.blockHash ?? "")
+      .trim()
+      .toLowerCase();
+    const exactHash = /^[0-9a-f]{64}$/u.test(blockHash);
+    const state = emptyGrowthActualBaseState();
+    growthActualBaseStateAdd(state, lowerState);
+    if (exactHash) {
+      incrementDiagnostic("exactHashLookups");
+      growthActualBaseStateAdd(state, activeStateByHash.get(blockHash));
+    } else {
+      incrementDiagnostic("allHashLookups");
+      growthActualBaseStateAdd(state, activeAllHashState);
+    }
+
+    const txid = String(source?.txid ?? "").trim().toLowerCase();
+    let sameTxAdjustments = 0;
+    for (const event of txid ? eventsByTxid.get(txid) ?? [] : []) {
+      const included =
+        event.blockHeight < blockHeight ||
+        (event.blockHeight === blockHeight &&
+          event.blockIndex < blockIndex &&
+          (!exactHash || event.blockHash === blockHash));
+      if (included) {
+        applyEvent(state, event, -1);
+        sameTxAdjustments += 1;
+      }
+    }
+    incrementDiagnostic("sameTxAdjustments", sameTxAdjustments);
+    incrementDiagnostic("prefixLookups");
+    return numericValue(growthActualBaseStateTotalSats(state));
+  };
+}
+
+function canonicalReplayTimeline(events) {
+  let prefixLength = 0;
+  return (Array.isArray(events) ? events : [])
+    .map((event, index) => ({ createdMs: event.createdMs, index }))
+    .filter((entry) => Number.isFinite(entry.createdMs))
+    .sort(
+      (left, right) =>
+        left.createdMs - right.createdMs || left.index - right.index,
+    )
+    .map((entry) => {
+      prefixLength = Math.max(prefixLength, entry.index + 1);
+      return { ...entry, prefixLength };
+    });
+}
+
+function canonicalReplayPrefixLengthAtMs(timeline, atMs) {
+  const targetMs = Number(atMs);
+  if (!Number.isFinite(targetMs)) {
+    return 0;
+  }
+  let low = 0;
+  let high = timeline.length - 1;
+  let prefixLength = 0;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (timeline[middle].createdMs <= targetMs) {
+      prefixLength = timeline[middle].prefixLength;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return prefixLength;
 }
 
 function presentNonNegativeNumber(item, field) {
@@ -30499,98 +32521,8 @@ function growthActualBaseNetworkValue(
   };
 }
 
-function growthActualBaseNetworkValueAtProvider(
-  records,
-  idActivity,
-  sales,
-  tokenDefinitions,
-  tokenMints,
-  tokenTransfers = [],
-  tokenSales = [],
-) {
-  const events = [];
-  const addEvent = (createdAt, apply) => {
-    const createdMs = Date.parse(createdAt ?? "");
-    if (!Number.isFinite(createdMs)) {
-      return;
-    }
-    events.push({ apply, createdMs });
-  };
-
-  for (const record of Array.isArray(records) ? records : []) {
-    if (record?.confirmed) {
-      addEvent(record.createdAt, (state) => {
-        state.powids += 1;
-      });
-    }
-  }
-  for (const item of Array.isArray(idActivity) ? idActivity : []) {
-    if (!item?.confirmed) {
-      continue;
-    }
-    addEvent(item.createdAt, (state) => {
-      const sats = activityAmountSats(item);
-      if (
-        (item.kind === "mail" || item.kind === "reply") &&
-        !isBondActivityItem(item) &&
-        !isBrowserActivityItem(item)
-      ) {
-        state.mailFlowSats += sats;
-      } else if (isInceptionBondActivityItem(item)) {
-        state.inceptionBondFlowSats += sats;
-      } else if (isInfinityBondActivityItem(item)) {
-        state.infinityBondFlowSats += sats;
-      } else if (isBrowserActivityItem(item)) {
-        state.browserFlowSats += sats;
-      } else if (item.kind === "file" && !isBrowserActivityItem(item)) {
-        state.driveFlowSats += sats;
-      } else if (ID_MARKETPLACE_MUTATION_KINDS.has(item.kind)) {
-        state.idMarketplaceFeeSats += sats;
-      } else if (TOKEN_MARKETPLACE_MUTATION_KINDS.has(item.kind)) {
-        state.tokenMarketplaceFeeSats += sats;
-      } else if (!activityKindHasDedicatedGrowthBucket(item)) {
-        state.computerEventFlowSats += sats;
-      }
-    });
-  }
-  for (const sale of publicMarketplaceSales(Array.isArray(sales) ? sales : [])) {
-    if (sale?.confirmed) {
-      addEvent(sale.createdAt, (state) => {
-        state.idMarketplaceVolumeSats += numericValue(sale.priceSats);
-      });
-    }
-  }
-  for (const token of Array.isArray(tokenDefinitions) ? tokenDefinitions : []) {
-    if (token?.confirmed) {
-      addEvent(token.createdAt, (state) => {
-        state.tokenCreationFlowSats += numericValue(token.creationFeeSats);
-      });
-    }
-  }
-  for (const mint of Array.isArray(tokenMints) ? tokenMints : []) {
-    if (mint?.confirmed && !BOND_TOKEN_IDS.has(mint.tokenId)) {
-      addEvent(mint.createdAt, (state) => {
-        state.tokenMintFlowSats += numericValue(mint.paidSats);
-      });
-    }
-  }
-  for (const transfer of Array.isArray(tokenTransfers) ? tokenTransfers : []) {
-    if (transfer?.confirmed) {
-      addEvent(transfer.createdAt, (state) => {
-        state.tokenTransferFlowSats += numericValue(transfer.paidSats);
-      });
-    }
-  }
-  for (const sale of Array.isArray(tokenSales) ? tokenSales : []) {
-    if (sale?.confirmed) {
-      addEvent(sale.createdAt, (state) => {
-        state.tokenSaleVolumeSats += numericValue(sale.priceSats);
-      });
-    }
-  }
-
-  events.sort((left, right) => left.createdMs - right.createdMs);
-  const initialState = () => ({
+function emptyGrowthActualBaseState() {
+  return {
     browserFlowSats: 0,
     computerEventFlowSats: 0,
     driveFlowSats: 0,
@@ -30605,35 +32537,164 @@ function growthActualBaseNetworkValueAtProvider(
     tokenMintFlowSats: 0,
     tokenSaleVolumeSats: 0,
     tokenTransferFlowSats: 0,
-  });
+  };
+}
+
+function growthActualBaseStateApplyContribution(
+  state,
+  contribution,
+  multiplier = 1,
+) {
+  const field = String(contribution?.field ?? "");
+  if (Object.hasOwn(state, field)) {
+    state[field] += numericValue(contribution?.value) * multiplier;
+  }
+  return state;
+}
+
+function growthActualBaseStateAdd(state, addition, multiplier = 1) {
+  for (const field of Object.keys(state)) {
+    state[field] += numericValue(addition?.[field]) * multiplier;
+  }
+  return state;
+}
+
+function growthActualBaseStateTotalSats(state) {
+  const marketplaceSaleVolumeSats =
+    state.idMarketplaceVolumeSats + state.tokenSaleVolumeSats;
+  const marketplaceMutationFeeSats =
+    state.idMarketplaceFeeSats + state.tokenMarketplaceFeeSats;
+  const marketplaceFlowSats =
+    marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
+  return (
+    state.powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2 +
+    state.mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
+    state.inceptionBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
+    state.infinityBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
+    state.driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
+    marketplaceFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
+    state.browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
+    (state.tokenCreationFlowSats + state.tokenMintFlowSats) *
+      GROWTH_MODEL_INPUTS.valueMultiple +
+    state.tokenTransferFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
+    state.computerEventFlowSats * GROWTH_MODEL_INPUTS.valueMultiple
+  );
+}
+
+function growthActualBaseNetworkValueEvents(
+  records,
+  idActivity,
+  sales,
+  tokenDefinitions,
+  tokenMints,
+  tokenTransfers = [],
+  tokenSales = [],
+) {
+  const events = [];
+  const addEvent = (source, field, value) => {
+    const createdMs = Date.parse(source?.createdAt ?? "");
+    if (!Number.isFinite(createdMs)) {
+      return;
+    }
+    events.push({
+      blockHash: String(source?.blockHash ?? "").trim().toLowerCase(),
+      blockHeight: Number(source?.blockHeight),
+      blockIndex: Number(source?.blockIndex),
+      contribution: { field, value: numericValue(value) },
+      createdMs,
+      source,
+      txid: String(source?.txid ?? "").trim().toLowerCase(),
+    });
+  };
+
+  for (const record of Array.isArray(records) ? records : []) {
+    if (record?.confirmed) {
+      addEvent(record, "powids", 1);
+    }
+  }
+  for (const item of Array.isArray(idActivity) ? idActivity : []) {
+    if (!item?.confirmed) {
+      continue;
+    }
+    const sats = activityAmountSats(item);
+    if (
+      (item.kind === "mail" || item.kind === "reply") &&
+      !isBondActivityItem(item) &&
+      !isBrowserActivityItem(item)
+    ) {
+      addEvent(item, "mailFlowSats", sats);
+    } else if (isInceptionBondActivityItem(item)) {
+      addEvent(item, "inceptionBondFlowSats", sats);
+    } else if (isInfinityBondActivityItem(item)) {
+      addEvent(item, "infinityBondFlowSats", sats);
+    } else if (isBrowserActivityItem(item)) {
+      addEvent(item, "browserFlowSats", sats);
+    } else if (item.kind === "file" && !isBrowserActivityItem(item)) {
+      addEvent(item, "driveFlowSats", sats);
+    } else if (ID_MARKETPLACE_MUTATION_KINDS.has(item.kind)) {
+      addEvent(item, "idMarketplaceFeeSats", sats);
+    } else if (TOKEN_MARKETPLACE_MUTATION_KINDS.has(item.kind)) {
+      addEvent(item, "tokenMarketplaceFeeSats", sats);
+    } else if (!activityKindHasDedicatedGrowthBucket(item)) {
+      addEvent(item, "computerEventFlowSats", sats);
+    }
+  }
+  for (const sale of publicMarketplaceSales(Array.isArray(sales) ? sales : [])) {
+    if (sale?.confirmed) {
+      addEvent(sale, "idMarketplaceVolumeSats", sale.priceSats);
+    }
+  }
+  for (const token of Array.isArray(tokenDefinitions) ? tokenDefinitions : []) {
+    if (token?.confirmed) {
+      addEvent(token, "tokenCreationFlowSats", token.creationFeeSats);
+    }
+  }
+  for (const mint of Array.isArray(tokenMints) ? tokenMints : []) {
+    if (mint?.confirmed && !BOND_TOKEN_IDS.has(mint.tokenId)) {
+      addEvent(mint, "tokenMintFlowSats", mint.paidSats);
+    }
+  }
+  for (const transfer of Array.isArray(tokenTransfers) ? tokenTransfers : []) {
+    if (transfer?.confirmed) {
+      addEvent(transfer, "tokenTransferFlowSats", transfer.paidSats);
+    }
+  }
+  for (const sale of Array.isArray(tokenSales) ? tokenSales : []) {
+    if (sale?.confirmed) {
+      addEvent(sale, "tokenSaleVolumeSats", sale.priceSats);
+    }
+  }
+
+  return events;
+}
+
+function growthActualBaseNetworkValueAtProvider(
+  records,
+  idActivity,
+  sales,
+  tokenDefinitions,
+  tokenMints,
+  tokenTransfers = [],
+  tokenSales = [],
+) {
+  const events = growthActualBaseNetworkValueEvents(
+    records,
+    idActivity,
+    sales,
+    tokenDefinitions,
+    tokenMints,
+    tokenTransfers,
+    tokenSales,
+  );
+
+  events.sort((left, right) => left.createdMs - right.createdMs);
   let cursor = 0;
   let cursorMs = Number.NEGATIVE_INFINITY;
-  let state = initialState();
+  let state = emptyGrowthActualBaseState();
   const reset = () => {
     cursor = 0;
     cursorMs = Number.NEGATIVE_INFINITY;
-    state = initialState();
-  };
-  const totalForState = () => {
-    const marketplaceSaleVolumeSats =
-      state.idMarketplaceVolumeSats + state.tokenSaleVolumeSats;
-    const marketplaceMutationFeeSats =
-      state.idMarketplaceFeeSats + state.tokenMarketplaceFeeSats;
-    const marketplaceFlowSats =
-      marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
-    return (
-      state.powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2 +
-      state.mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-      state.inceptionBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-      state.infinityBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-      state.driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-      marketplaceFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-      state.browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-      (state.tokenCreationFlowSats + state.tokenMintFlowSats) *
-        GROWTH_MODEL_INPUTS.valueMultiple +
-      state.tokenTransferFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-      state.computerEventFlowSats * GROWTH_MODEL_INPUTS.valueMultiple
-    );
+    state = emptyGrowthActualBaseState();
   };
 
   return (atMs) => {
@@ -30645,11 +32706,14 @@ function growthActualBaseNetworkValueAtProvider(
       reset();
     }
     while (cursor < events.length && events[cursor].createdMs <= targetMs) {
-      events[cursor].apply(state);
+      growthActualBaseStateApplyContribution(
+        state,
+        events[cursor].contribution,
+      );
       cursor += 1;
     }
     cursorMs = targetMs;
-    return totalForState();
+    return growthActualBaseStateTotalSats(state);
   };
 }
 
@@ -30768,6 +32832,7 @@ function growthActualLiveTotalSatsAtProvider(
   tokenMints,
   tokenTransfers = [],
   tokenSales = [],
+  options = {},
 ) {
   const baseValueForCredit = growthActualBaseNetworkValueAtProvider(
     records,
@@ -30787,6 +32852,21 @@ function growthActualLiveTotalSatsAtProvider(
     tokenTransfers,
     tokenSales,
   );
+  const baseCollections = {
+    idActivity,
+    records,
+    sales,
+    tokenDefinitions,
+    tokenMints,
+    tokenSales,
+    tokenTransfers,
+  };
+  const baseValueBeforeCanonicalItem =
+    growthActualBaseNetworkValueBeforeCanonicalItemProvider(
+      baseCollections,
+      baseValueForCredit,
+      options.canonicalBaseLookupDiagnostics,
+    );
   const tokensById = new Map(
     (Array.isArray(tokenDefinitions) ? tokenDefinitions : [])
       .filter(tokenCanUseCreditNetworkFloor)
@@ -30904,7 +32984,9 @@ function growthActualLiveTotalSatsAtProvider(
   const replayEvents = [...movementEvents, ...mutationEvents]
     .sort(compareCreditValueReplayEvents)
     .map((event) => {
-      const baseBefore = numericValue(baseValueForCredit(event.createdMs - 1));
+      const baseBefore = numericValue(
+        baseValueBeforeCanonicalItem(event.source, event.createdMs),
+      );
       const networkValueBeforeEvent =
         baseBefore + cumulativeFrozenCreditValueSats;
       const maxSupply = numericValue(event.token.maxSupply);
@@ -30954,13 +33036,12 @@ function growthActualLiveTotalSatsAtProvider(
     });
 
   let cursor = 0;
-  let cursorMs = Number.NEGATIVE_INFINITY;
   let frozenCreditSats = 0;
   let fixedCreditSats = 0;
   let movementLiveFactor = 0;
+  const replayTimeline = canonicalReplayTimeline(replayEvents);
   const reset = () => {
     cursor = 0;
-    cursorMs = Number.NEGATIVE_INFINITY;
     frozenCreditSats = 0;
     fixedCreditSats = 0;
     movementLiveFactor = 0;
@@ -30970,20 +33051,20 @@ function growthActualLiveTotalSatsAtProvider(
     if (!Number.isFinite(targetMs)) {
       return 0;
     }
-    if (targetMs < cursorMs) {
+    const prefixLength = canonicalReplayPrefixLengthAtMs(
+      replayTimeline,
+      targetMs,
+    );
+    if (prefixLength < cursor) {
       reset();
     }
-    while (
-      cursor < replayEvents.length &&
-      replayEvents[cursor].createdMs <= targetMs
-    ) {
+    while (cursor < prefixLength) {
       const event = replayEvents[cursor];
       frozenCreditSats += event.frozenNetworkValueSats;
       fixedCreditSats += event.fixedEventFlowSats;
       movementLiveFactor += event.movementLiveFactor;
       cursor += 1;
     }
-    cursorMs = targetMs;
     const baseNow = numericValue(baseValueAt(targetMs));
     return (
       baseNow +
@@ -31072,6 +33153,7 @@ function growthActualValuePoints(
     tokenMints,
     tokenTransfers,
     tokenSales,
+    options,
   );
   const points = [];
   const startValueSats = totalSatsAt(startMs);
@@ -31596,6 +33678,8 @@ function workFloorPayloadFromState(
     valueTokenState.transfers ?? [],
     tokenSalesForValue,
     {
+      canonicalBaseLookupDiagnostics:
+        options.canonicalBaseLookupDiagnostics,
       startLabel: "WORK deploy",
       startMs: workCreatedMs,
     },
@@ -33787,28 +35871,88 @@ async function completeTokenVerifierState(
       ),
     );
   }
-  const allTokens = [...tokens, ...bondSeedTokens];
+  const canonicalWorkToken = canonicalWorkTokenDefinition(network);
+  const allSeedTokens = [canonicalWorkToken, ...bondSeedTokens];
+  const allTokens = [...tokens, ...allSeedTokens].filter(
+    (token, index, items) =>
+      items.findIndex((candidate) => candidate.tokenId === token.tokenId) ===
+      index,
+  );
   const scopedTokens = allTokens.filter((token) =>
     tokenMatchesScope(token, scope),
   );
+  const verifierTokens = scope === INCB_TOKEN_ID ? allTokens : scopedTokens;
   const registryAddresses = [
-    ...new Set(scopedTokens.map((token) => token.registryAddress).filter(Boolean)),
-  ];
-  return {
-    ...tokenStateFromTransactions(
-      context.transactions,
-      new Map(
-        registryAddresses.map((registryAddress) => [
-          registryAddress,
-          context.transactions,
-        ]),
-      ),
-      indexAddress,
-      network,
-      scope,
-      bondSeedTokens,
-      bondSeedMints,
+    ...new Set(
+      verifierTokens.map((token) => token.registryAddress).filter(Boolean),
     ),
+  ];
+  const verifierReplayArguments = [
+    context.transactions,
+    new Map(
+      registryAddresses.map((registryAddress) => [
+        registryAddress,
+        context.transactions,
+      ]),
+    ),
+    indexAddress,
+    network,
+    scope === INCB_TOKEN_ID ? "" : scope,
+    allSeedTokens,
+    bondSeedMints,
+  ];
+  const inceptionIssuanceOptions =
+    scope === INCB_TOKEN_ID
+      ? await canonicalInceptionIssuanceOptions(network, bondActivity, {
+          previousBlockHashByBlockHash: new Map([
+            [
+              String(context.blockHash ?? "").trim().toLowerCase(),
+              String(context.previousBlockHash ?? "").trim().toLowerCase(),
+            ],
+          ]),
+        })
+      : {};
+  let state =
+    scope === INCB_TOKEN_ID
+      ? tokenStateFromTransactionsWithCanonicalInceptionIssuance(
+          ...verifierReplayArguments,
+          bondActivity,
+          {
+            activity: [
+              ...bondActivity,
+              ...(Array.isArray(idState?.activity) ? idState.activity : []),
+            ],
+            registryState: idState,
+          },
+          inceptionIssuanceOptions,
+        )
+      : tokenStateFromTransactions(...verifierReplayArguments);
+  if (scope === INCB_TOKEN_ID) {
+    state = scopedTokenPayloadFromState(state, INCB_TOKEN_ID);
+    const issuance = inceptionIssuanceMetadataFromMints(state.mints);
+    if (
+      !issuance.complete ||
+      issuance.confirmedMints === 0 ||
+      !numbersAgree(
+        issuance.confirmedIssuanceUnits,
+        numericValue(state.confirmedSupply),
+        0.01,
+      )
+    ) {
+      const error = new Error(
+        "The canonical Inception issuance verifier could not prove live-value issuance.",
+      );
+      error.statusCode = 503;
+      error.details = {
+        code: "INCEPTION_LIVE_ISSUANCE_UNAVAILABLE",
+        requiredBlockHeight,
+        txid: String(targetTxid ?? "").trim().toLowerCase(),
+      };
+      throw error;
+    }
+  }
+  return {
+    ...state,
     ...context,
     source: "canonical-block-scan-db-core-verifier",
   };

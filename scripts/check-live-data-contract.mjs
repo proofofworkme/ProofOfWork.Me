@@ -31,12 +31,37 @@ expectAll("Electrum transport is multiplexed and capacity bounded", electrumClie
 ]);
 expectAll("canonical summary work is linear and latency-overlapped", server, [
   /function growthActualLiveTotalSatsAtProvider/,
+  /function growthActualBaseNetworkValueBeforeCanonicalItemProvider/,
+  /const baseValueBeforeCanonicalItem =\s*growthActualBaseNetworkValueBeforeCanonicalItemProvider\(/,
+  /canonicalBaseLookup: canonicalBaseLookupDiagnostics/,
+  /invalidCreatedAtRows/,
   /This provider preserves the same frozen\/live credit math/,
   /const BITCOIN_ADDRESS_VALIDATION_CACHE_MAX = 20_000/,
   /addresses\.size >= SEEDED_MAIL_ACTIVITY_MAX_ADDRESSES/,
   /currentTokenTableState,[\s\S]*currentMarketOverlay,[\s\S]*= await Promise\.all/,
   /workFloorWithIndexedMarketSummaryOverlay\([\s\S]*currentMarketOverlay/,
 ]);
+const canonicalLedgerBuilderSource = sourceSliceBetween(
+  server,
+  /async function buildIndexedCanonicalLedgerPayload/,
+  /function internalCanonicalWorkSummaryPayload/,
+);
+const ledgerSnapshotChecksSource = sourceSliceBetween(
+  server,
+  /function ledgerSnapshotChecks\(/,
+  /function attachLedgerMetadata/,
+);
+expect(
+  "canonical ledger builds the expensive WORK floor exactly once",
+  (canonicalLedgerBuilderSource.match(/workFloorPayloadFromState\(/gu) ?? [])
+    .length === 1,
+);
+expect(
+  "frozen credit component reconciliation uses only a sub-proof local tolerance",
+  /"credit-frozen-value-includes-event-components"[\s\S]*creditMinerFeeFlowSats,[\s\S]*0\.01,/u.test(
+    ledgerSnapshotChecksSource,
+  ),
+);
 
 if (/\bWORK_TOKEN_REGISTRY_ADDRESS\b/u.test(server)) {
   failures.push(
@@ -64,6 +89,18 @@ function sourceSliceBetween(text, startPattern, endPattern) {
   const rest = text.slice(start);
   const end = rest.search(endPattern);
   return end === -1 ? rest : rest.slice(0, end);
+}
+
+function serviceEnvironmentNumber(name) {
+  const matches = [
+    ...proofIndexerWorkerService.matchAll(
+      new RegExp(`^Environment=${name}=([0-9]+)\\s*$`, "gmu"),
+    ),
+  ];
+  if (matches.length !== 1) {
+    return Number.NaN;
+  }
+  return Number(matches[0][1]);
 }
 
 const fetchAddressMailSource = sourceSliceBetween(
@@ -358,6 +395,14 @@ expectAll("worker child processes and pending cleanup have strict wall-clock bud
   /runScript\("backfill-proof-indexer\.mjs"[\s\S]*timeoutMs: BACKFILL_CHILD_TIMEOUT_MS/,
   /runScript\("check-proof-indexer-parity\.mjs"[\s\S]*timeoutMs: PARITY_CHILD_TIMEOUT_MS/,
 ]);
+expectAll("cold canonical-summary rebuilds retain a finite supervised budget", proofIndexerBackfill, [
+  /const CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS = Math\.min\([\s\S]*10 \* 60_000[\s\S]*120_000/,
+  /import \{ request as httpRequest \} from "node:http"/,
+  /const CANONICAL_SUMMARY_RESPONSE_MAX_BYTES = 64 \* 1024 \* 1024/,
+  /function readCanonicalSummaryJsonViaLoopbackHttp\([\s\S]*agent: false[\s\S]*method: "GET"[\s\S]*signal: options\.signal/,
+  /response\.headers\["content-length"\][\s\S]*receivedBytes > maxBytes[\s\S]*response\.complete !== true/,
+  /url\.pathname === "\/api\/v1\/internal\/canonical-summary"[\s\S]*loopbackApi[\s\S]*url\.protocol === "http:"[\s\S]*readCanonicalSummaryJsonViaLoopbackHttp/,
+]);
 expectAll("production worker pins confirmed-first and liveness budgets", proofIndexerWorkerService, [
   /POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan,mempool-scan/,
   /POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_BLOCKS=250/,
@@ -368,9 +413,25 @@ expectAll("production worker pins confirmed-first and liveness budgets", proofIn
   /POW_INDEX_STATUS_FETCH_TIMEOUT_MS=5000/,
   /POW_INDEX_PENDING_STATUS_BUDGET_MS=15000/,
   /POW_INDEX_PENDING_STATUS_CONCURRENCY=5/,
-  /POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS=240000/,
+  /POW_INDEX_CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS=600000/,
+  /POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS=900000/,
   /POW_INDEX_WORKER_PARITY_TIMEOUT_MS=120000/,
 ]);
+const canonicalSummaryRefreshTimeoutMs = serviceEnvironmentNumber(
+  "POW_INDEX_CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS",
+);
+const workerBackfillTimeoutMs = serviceEnvironmentNumber(
+  "POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS",
+);
+expect(
+  "production worker canonical-summary timeout parses as the configured 600000ms",
+  canonicalSummaryRefreshTimeoutMs === 600_000,
+);
+expect(
+  "production worker child timeout leaves at least 300000ms beyond canonical-summary work",
+  Number.isSafeInteger(workerBackfillTimeoutMs) &&
+    workerBackfillTimeoutMs >= canonicalSummaryRefreshTimeoutMs + 300_000,
+);
 expectAll("hot worker summary publication is canonical, conservative, and health-gated", proofIndexerBackfill + proofIndexReader + server, [
   /STORE_CANONICAL_SUMMARY_SNAPSHOT/,
   /function canonicalSummaryRefreshCanDefer\([\s\S]*statusCode === 503[\s\S]*Bitcoin Core tip/,
@@ -445,8 +506,8 @@ expectAll("internal ordered verifier routes are loopback-only and uncached", int
   /"no-store"/,
 ]);
 expectAll("authenticated loopback snapshot bootstrap bypasses only the rebuilding public gate", server + proofIndexerBackfill, [
-  /const loopbackApi = \["127\.0\.0\.1", "::1", "localhost"\]/,
-  /headers: loopbackApi && INTERNAL_VERIFIER_TOKEN\.length >= 32/,
+  /const loopbackApi = \["127\.0\.0\.1", "::1", "\[::1\]", "localhost"\]/,
+  /const headers = loopbackApi && INTERNAL_VERIFIER_TOKEN\.length >= 32/,
   /const authenticatedLoopbackRead = internalVerifierRequestAllowed\(request\)/,
   /canonicalPublicReadGateApplies\(url\.pathname\) &&[\s\S]*!authenticatedLoopbackRead/,
 ]);
@@ -1320,7 +1381,7 @@ expectAll("consistency endpoint guards the public invariant", server, [
   /"livenet-confirmed-history-present"/,
   /"token-definitions-cover-confirmed-mints"/,
   /"token-components-cover-confirmed-activity"/,
-  /"inception-bond-flow-matches-incb-supply"/,
+  /"inception-live-issuance-matches-incb-supply"/,
   /"infinity-bond-flow-matches-powb-supply"/,
   /"work-floor-actual-total"/,
   /"growth-actual-total"/,
@@ -1442,6 +1503,67 @@ expectAll("Infinity and Inception recipient-credit markets are wired", server + 
   /address:\s*resolvedRecipient\.paymentAddress/,
   /minterAddress:\s*mailRecipient\.address/,
 ]);
+expectAll("Inception issuance is fixed from the exact green H-1 WORK snapshot", server, [
+  /"canonical-pre-bond-live-network-value-v2"/,
+  /"canonical-summary-h-minus-one-v1"/,
+  /function canonicalInceptionValueSnapshotCheckpoint\(/,
+  /async function canonicalInceptionIssuanceOptions\(/,
+  /function inceptionIssuanceCheckpoint\(/,
+  /issuanceCheckpointMode:\s*"bond-transaction-provenance"/,
+  /issuanceCheckpointBlockHeight/,
+  /issuanceCheckpointBlockHash/,
+  /issuanceCheckpointBlockIndex/,
+  /issuanceValueSnapshotId/,
+  /issuanceValueSnapshotBlockHeight/,
+  /issuanceValueSnapshotBlockHash/,
+  /issuanceValueSnapshotCanonicalSummaryHash/,
+  /issuanceValueSnapshotWorkNetworkValueSats/,
+  /attachedWorkLiveFloorAtSendSats/,
+  /attachedWorkLiveValueAtSendSats/,
+  /issuanceValuationFixedAtSend:\s*true/,
+]);
+expectAll(
+  "INCB index repair is exact, transactional, scoped, and pre-bond pinned",
+  proofIndexerBackfill + proofIndexReader,
+  [
+    /--repair-incb-issuance/,
+    /dd743fb69c519200cc190627219ba34ca2e63e6893e600b73e9aee8d4dac8fa4/,
+    /000000000000000000016ea78b0d57a7979de3542518c8690a1e5a808e691cc5/,
+    /recipientAddress:\s*"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x"/,
+    /recipientVout:\s*0/,
+    /workAttachmentAmount:\s*3_644_060/,
+    /workAttachmentProtocolVout:\s*3/,
+    /confirmedIssuanceUnits:\s*1_421_799_461/,
+    /issuanceValueSnapshotId:\s*"b8e77cd30cbed6855977c514"/,
+    /issuanceValueSnapshotCanonicalSummaryHash:[\s\S]*"4f00b3494afb46ef88990948784a0ba8f2a22856615a39e15c3131f0ec979bdc"/,
+    /issuanceValueSnapshotWorkNetworkValueSats:[\s\S]*8_193_547_095\.322113/,
+    /async function canonicalIncbIssuanceRepairTarget\(/,
+    /async function repairCanonicalIncbIssuance\(/,
+    /await client\.query\("BEGIN"\)/,
+    /LOCK TABLE proof_indexer\.ledger_snapshots IN SHARE ROW EXCLUSIVE MODE/,
+    /UPDATE proof_indexer\.events[\s\S]*attachedWorkLiveValueAtConfirmationSats[\s\S]*issuanceCheckpointWorkNetworkValueSats[\s\S]*\|\| \$5::jsonb/,
+    /rebuildConfirmedCreditBalancesFromCanonicalEvents\([\s\S]*supplyCorrectionMode:\s*"canonical-incb-issuance-repair"[\s\S]*supplyCorrectionTokenIds:\s*\[INCB_TOKEN_ID\][\s\S]*tokenIds:\s*\[INCB_TOKEN_ID\]/,
+    /finalBlockHash[\s\S]*bitcoinRpc\("getblockhash",\s*\[target\.height\]\)[\s\S]*finalBlock[\s\S]*bitcoinRpc\("getblock",\s*\[finalBlockHash,\s*1\]\)[\s\S]*finalTxids\[target\.blockIndex\]/,
+    /finalRaw[\s\S]*bitcoinRpc\("getrawtransaction",\s*\[[\s\S]*target\.txid[\s\S]*true/,
+    /canonicalBlockScanSnapshotPredicate[\s\S]*NOT COALESCE\(source_hashes \? 'canonicalSummary', false\)[\s\S]*COALESCE\(source_hashes \? 'blockScan', false\)[\s\S]*payload->>'source' = 'proof-indexer-block-scan'/,
+    /DELETE FROM proof_indexer\.ledger_snapshots[\s\S]*AND NOT \(\$\{canonicalBlockScanSnapshotPredicate\}\)[\s\S]*snapshot_id = ANY\(\$2::text\[\]\)/,
+    /await client\.query\("ROLLBACK"\)/,
+    /function incbIssuanceMetadataFault\(/,
+    /function assertCanonicalIncbCurrentProjection\(/,
+    /issuanceValuationFixedAtSend/,
+  ],
+);
+const canonicalIncbRepairSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function repairCanonicalIncbIssuance\(/,
+  /async function canonicalIdRepairTarget\(/,
+);
+expect(
+  "INCB repair must not delete pure block-scan checkpoints wholesale",
+  !/DELETE FROM proof_indexer\.ledger_snapshots WHERE network = \$1/.test(
+    canonicalIncbRepairSource,
+  ),
+);
 expect(
   "bond apps must use the dedicated parameterized market panel",
   /<InfinityBondMarketPanel/.test(infinityAppSource) &&

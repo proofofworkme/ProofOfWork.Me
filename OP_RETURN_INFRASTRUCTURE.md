@@ -196,14 +196,18 @@ serves connected-wallet mailbox reads from the indexed mail projection,
 including confirmed Inbox/Sent and indexed pending Incoming/Outbox visibility.
 `pwm1:m:powb` is normalized as `infinity-bond` and `pwm1:m:incb` as
 `inception-bond` for Log/Event/summary accounting, while both still project into
-`mail_items`. Each confirmed bond recipient payment mints the matching POWB or
-INCB synthetic credit to that recipient address, one unit per proof sent;
-self-sends are the self-recipient case and land in both Inbox and Sent. Any
-attached credit is parsed separately as canonical WORK movement. A valid
-confirmed same-transaction WORK attachment is also joined into the Inception
-summary's composite value: frozen at its confirmation-time WORK floor and live
-at the current WORK floor. That read-model join does not change INCB supply and
-does not create a second global WORK movement/value event. INCB uses
+`mail_items`. Each confirmed Infinity recipient payment mints one POWB per proof
+sent. Each confirmed Inception bond issues one INCB per whole proof in its
+direct payment plus attached WORK value measured by the send-time oracle: the
+last confirmed green canonical live WORK summary at H-1, hash-bound to the exact
+previous block. Every transaction in the bond block is excluded. Confirmation
+fixes the resulting INCB balance and supply. Self-sends are the self-recipient
+case and land in both Inbox and Sent.
+Any attached credit is parsed separately as canonical WORK movement. The valid
+recipient-matched same-transaction WORK attachment contributes to INCB issuance
+without creating a second global WORK movement/value event. Current and
+post-bond value change only the live INCB floor; they never reprice issuance.
+INCB uses
 `inception@proofofwork.me` and reserved credit id
 `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`.
 Generic `pwt1:create` and `pwt1:mint` events are invalid for both reserved bond
@@ -541,7 +545,12 @@ the supervised one-time rebuild may use separately measured recovery bounds.
 Pending-status cleanup is secondary work: production limits it to five
 concurrent five-second requests inside a 15-second scheduling budget and
 defers untouched rows to the next cycle. The slower parity child has its own
-120-second watchdog. These production bounds are tracked as
+120-second watchdog. A normal warm canonical-summary refresh remains fast, but
+the first refresh after an explicit derived-snapshot invalidation is allowed a
+finite 10-minute request budget inside a 15-minute worker-child watchdog. This
+cold-rebuild allowance changes only the watchdog; the refresh still must publish
+one exact green hash-bound snapshot or fail closed. These production bounds are
+tracked as `POW_INDEX_CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS`,
 `POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS`, `POW_INDEX_BITCOIN_RPC_TIMEOUT_MS`,
 `POW_INDEX_BITCOIN_RPC_RETRIES`, `POW_INDEX_PREVOUT_HYDRATION_CONCURRENCY`,
 `POW_INDEX_PENDING_STATUS_CONCURRENCY`,
@@ -825,7 +834,7 @@ The canonical livenet ledger payload:
 - Keeps live and frozen network value separate. Live network value is the active site value and WORK floor source. Frozen network value is the immutable confirmation-time audit stamp for WORK movement and fixed event components.
 - Applies credit movement value only to canonical WORK. Other credits remain proof-flow only: confirmed proof payments, registry/mutation fees, sale payments, and marketplace flow can count, but their listing floors do not reprice network value.
 - Counts cumulative WORK miner fees once per confirmed transaction id from complete full-node input value minus output value. This is historical Bitcoin blockspace/security expenditure, not platform revenue, retained reserves, or spendable backing.
-- Joins valid confirmed same-transaction WORK attachments into Inception's frozen/live composite summary without changing INCB supply or duplicating the underlying WORK movement in global Growth/WORK value.
+- Values a valid recipient-matched same-transaction WORK attachment from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. Confirmation fixes the resulting INCB balance and supply while the underlying WORK movement stays single-counted in global Growth/WORK value. Current and post-bond network value change only the live INCB floor; they never reprice issuance.
 - Rejects or avoids replacing a useful cached ledger with a worse confirmed-history payload when guarded counts regress.
 - May serve a useful cached ledger for fast first paint only when summary projections also correct active sale-ticket listings against current node spend state; deep refresh continues in the background and must converge on confirmed chain truth.
 - Replays WORK mint summaries from canonical mint events and treats pending WORK mints as availability pressure only. Pending mints can reduce available mint slots in the UI, but they do not change confirmed supply, holders, floor, or network value.
@@ -848,7 +857,7 @@ These expose the ledger checks used by `npm run audit:ledger`, including
 `token-sales-logged`,
 `seeded-mail-events-logged`, `seeded-infinity-bonds-logged`,
 `seeded-inception-bonds-logged`, and
-`inception-bond-flow-matches-incb-supply`. The audit also
+`inception-live-issuance-matches-incb-supply`. The audit also
 checks that WORK/Growth live USD reconciles from `/api/v1/prices/btc-usd`.
 `missingLogEvents` must stay empty for a green production ledger.
 
@@ -1060,7 +1069,7 @@ After changing the API or production build, verify:
   child surface.
 - `/health` returns `service: proofofwork-op-return-api`.
 - `/health` is the exact-tip readiness contract; `/health/live` reports the separately labeled availability contract. Both must traverse the private WireGuard API path through Caddy.
-- `/api/v1/consistency?network=livenet` is green, has no `missingLogEvents`, and includes the seeded mail, seeded Infinity Bond, seeded Inception Bond, and INCB supply/flow checks.
+- `/api/v1/consistency?network=livenet` is green, has no `missingLogEvents`, and includes the seeded mail, seeded Infinity Bond, seeded Inception Bond, and INCB live-issuance/supply checks.
 - ID registry count matches the node-backed API and includes pending records when visible.
 - `tokens@proofofwork.me` resolves to the expected credit index address.
 - Duplicate/pending IDs cannot be routed.
@@ -1074,7 +1083,7 @@ After changing the API or production build, verify:
 - `computer.proofofwork.me/?folder=infinity` renders the embedded Infinity Bond / POWB workspace, including the Infinity Bond chart and POWB sale-ticket market, without falling back to credit-market labels.
 - `inception.proofofwork.me` loads `/api/v1/inception-summary`, prepares a `pwm1:m:incb` bond message to a recipient, and shows INCB balances/listings from the same sale-ticket ledger as credits. Wallet signing and broadcast remain local/user-authorized.
 - `computer.proofofwork.me/?folder=inception` renders the embedded Inception Bond / INCB workspace with Inception-specific chart, balance, and sale-ticket labels.
-- A confirmed `incb` transaction appears as `inception-bond`, mints only INCB to payment recipients, and keeps any attached canonical WORK transfer separate. The synthetic INCB mint contributes zero additional proof value beyond the bond payment.
+- A confirmed `incb` transaction appears as `inception-bond` and issues only INCB to its payment recipient from direct bond proofs plus attached WORK valued from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. Confirmation fixes the resulting balance and supply. Any attached canonical WORK remains a separate single-counted movement lane. Current and post-bond network value change only the live INCB floor, and the synthetic issuance contributes zero additional proof value.
 - Log can load global ProofOfWork Computer events and search an address, confirmed ProofOfWork ID, or txid.
 - Known confirmed ledger regression txids are searchable in Log, including `411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891` and `b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34`.
 - `npm run indexer:parity` passes against production and reports canonical/database snapshot parity plus populated participants/refs.

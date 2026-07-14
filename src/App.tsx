@@ -1724,15 +1724,37 @@ type InfinityActualValue = {
   attachedWorkActions?: number;
   attachedWorkAmount?: number;
   attachedWorkFrozenValueSats?: number;
+  attachedWorkIssuanceUnits?: number;
+  attachedWorkLiveFloorAtSendSats?: number;
+  attachedWorkLiveValueAtSendSats?: number;
   attachedWorkLiveValueSats?: number;
   bondMarketplaceMutationFeeSats: number;
   bondMintFlowSats: number;
   bondSaleVolumeSats: number;
   bondTransferFeeSats: number;
+  confirmedIssuanceUnits?: number;
+  directProofIssuanceUnits?: number;
   floorSats: number;
   floorUsd: number;
   frozenFloorSats?: number;
   frozenNetworkValueSats?: number;
+  issuanceAccountingModel?: string;
+  issuanceCheckpointBlockHash?: string;
+  issuanceCheckpointBlockHeight?: number;
+  issuanceCheckpointBlockIndex?: number;
+  issuanceCheckpointMode?: string;
+  issuanceDustSats?: number;
+  issuanceFloorSats?: number;
+  issuanceNetworkValueSats?: number;
+  issuanceValuationFixedAtSend?: boolean;
+  issuanceValueSnapshotBlockHash?: string;
+  issuanceValueSnapshotBlockHeight?: number;
+  issuanceValueSnapshotCanonicalSummaryHash?: string;
+  issuanceValueSnapshotGeneratedAt?: string;
+  issuanceValueSnapshotId?: string;
+  issuanceValueSnapshotMode?: string;
+  issuanceValueSnapshotModel?: string;
+  issuanceValueSnapshotWorkNetworkValueSats?: number;
   liveFloorSats?: number;
   liveNetworkValueSats?: number;
   networkValueSats: number;
@@ -11953,12 +11975,29 @@ function normalizeInfinityActualValue(
     const value = Number(payload?.[key]);
     return Number.isFinite(value) ? value : undefined;
   };
+  const optionalStringValue = (key: keyof InfinityActualValue) => {
+    const value = payload?.[key];
+    return typeof value === "string" && value.trim() ? value : undefined;
+  };
+  const optionalBooleanValue = (key: keyof InfinityActualValue) => {
+    const value = payload?.[key];
+    return typeof value === "boolean" ? value : undefined;
+  };
 
   return {
     attachedWorkActions: optionalNumberValue("attachedWorkActions"),
     attachedWorkAmount: optionalNumberValue("attachedWorkAmount"),
     attachedWorkFrozenValueSats: optionalNumberValue(
       "attachedWorkFrozenValueSats",
+    ),
+    attachedWorkIssuanceUnits: optionalNumberValue(
+      "attachedWorkIssuanceUnits",
+    ),
+    attachedWorkLiveFloorAtSendSats: optionalNumberValue(
+      "attachedWorkLiveFloorAtSendSats",
+    ),
+    attachedWorkLiveValueAtSendSats: optionalNumberValue(
+      "attachedWorkLiveValueAtSendSats",
     ),
     attachedWorkLiveValueSats: optionalNumberValue(
       "attachedWorkLiveValueSats",
@@ -11969,10 +12008,53 @@ function normalizeInfinityActualValue(
     bondMintFlowSats: numberValue("bondMintFlowSats"),
     bondSaleVolumeSats: numberValue("bondSaleVolumeSats"),
     bondTransferFeeSats: numberValue("bondTransferFeeSats"),
+    confirmedIssuanceUnits: optionalNumberValue("confirmedIssuanceUnits"),
+    directProofIssuanceUnits: optionalNumberValue(
+      "directProofIssuanceUnits",
+    ),
     floorSats: numberValue("floorSats"),
     floorUsd: numberValue("floorUsd"),
     frozenFloorSats: optionalNumberValue("frozenFloorSats"),
     frozenNetworkValueSats: optionalNumberValue("frozenNetworkValueSats"),
+    issuanceAccountingModel: optionalStringValue("issuanceAccountingModel"),
+    issuanceCheckpointBlockHash: optionalStringValue(
+      "issuanceCheckpointBlockHash",
+    ),
+    issuanceCheckpointBlockHeight: optionalNumberValue(
+      "issuanceCheckpointBlockHeight",
+    ),
+    issuanceCheckpointBlockIndex: optionalNumberValue(
+      "issuanceCheckpointBlockIndex",
+    ),
+    issuanceCheckpointMode: optionalStringValue("issuanceCheckpointMode"),
+    issuanceDustSats: optionalNumberValue("issuanceDustSats"),
+    issuanceFloorSats: optionalNumberValue("issuanceFloorSats"),
+    issuanceNetworkValueSats: optionalNumberValue("issuanceNetworkValueSats"),
+    issuanceValuationFixedAtSend: optionalBooleanValue(
+      "issuanceValuationFixedAtSend",
+    ),
+    issuanceValueSnapshotBlockHash: optionalStringValue(
+      "issuanceValueSnapshotBlockHash",
+    ),
+    issuanceValueSnapshotBlockHeight: optionalNumberValue(
+      "issuanceValueSnapshotBlockHeight",
+    ),
+    issuanceValueSnapshotCanonicalSummaryHash: optionalStringValue(
+      "issuanceValueSnapshotCanonicalSummaryHash",
+    ),
+    issuanceValueSnapshotGeneratedAt: optionalStringValue(
+      "issuanceValueSnapshotGeneratedAt",
+    ),
+    issuanceValueSnapshotId: optionalStringValue("issuanceValueSnapshotId"),
+    issuanceValueSnapshotMode: optionalStringValue(
+      "issuanceValueSnapshotMode",
+    ),
+    issuanceValueSnapshotModel: optionalStringValue(
+      "issuanceValueSnapshotModel",
+    ),
+    issuanceValueSnapshotWorkNetworkValueSats: optionalNumberValue(
+      "issuanceValueSnapshotWorkNetworkValueSats",
+    ),
     liveFloorSats: optionalNumberValue("liveFloorSats"),
     liveNetworkValueSats: optionalNumberValue("liveNetworkValueSats"),
     networkValueSats: numberValue("networkValueSats"),
@@ -27673,20 +27755,67 @@ function InfinityApp({
     summary?.actualValue.networkValueSats ??
     summary?.networkValueSats ??
     0;
-  const attachedWorkAccountingAvailable = Boolean(
-    inceptionAccounting &&
-      summary &&
-      summary.actualValue.attachedWorkAmount !== undefined,
-  );
   const attachedWorkAmount = summary?.actualValue.attachedWorkAmount ?? 0;
   const attachedWorkActions = summary?.actualValue.attachedWorkActions ?? 0;
-  const attachedWorkFrozenValueSats =
-    summary?.actualValue.attachedWorkFrozenValueSats ?? 0;
-  const attachedWorkLiveValueSats =
-    summary?.actualValue.attachedWorkLiveValueSats ?? 0;
-  const frozenNetworkValueSats =
-    summary?.actualValue.frozenNetworkValueSats ?? networkValueSats;
-  const frozenFloorSats = summary?.actualValue.frozenFloorSats ?? floorSats;
+  const attachedWorkIssuanceUnits =
+    summary?.actualValue.attachedWorkIssuanceUnits ?? 0;
+  const directProofIssuanceUnits =
+    summary?.actualValue.directProofIssuanceUnits ?? 0;
+  const issuanceDustSats = summary?.actualValue.issuanceDustSats ?? 0;
+  const issuanceNetworkValueSats =
+    summary?.actualValue.issuanceNetworkValueSats ?? 0;
+  const issuanceCheckpointBlockHash =
+    summary?.actualValue.issuanceCheckpointBlockHash ?? "";
+  const issuanceCheckpointBlockHeight =
+    summary?.actualValue.issuanceCheckpointBlockHeight;
+  const issuanceCheckpointBlockIndex =
+    summary?.actualValue.issuanceCheckpointBlockIndex;
+  const issuanceValueSnapshotBlockHash =
+    summary?.actualValue.issuanceValueSnapshotBlockHash ?? "";
+  const issuanceValueSnapshotBlockHeight =
+    summary?.actualValue.issuanceValueSnapshotBlockHeight;
+  const issuanceValueSnapshotCanonicalSummaryHash =
+    summary?.actualValue.issuanceValueSnapshotCanonicalSummaryHash ?? "";
+  const issuanceValueSnapshotGeneratedAt =
+    summary?.actualValue.issuanceValueSnapshotGeneratedAt ?? "";
+  const issuanceValueSnapshotId =
+    summary?.actualValue.issuanceValueSnapshotId ?? "";
+  const issuanceValueSnapshotMode =
+    summary?.actualValue.issuanceValueSnapshotMode ?? "";
+  const issuanceValueSnapshotModel =
+    summary?.actualValue.issuanceValueSnapshotModel ?? "";
+  const issuanceValueSnapshotWorkNetworkValueSats =
+    summary?.actualValue.issuanceValueSnapshotWorkNetworkValueSats ?? 0;
+  const attachedWorkLiveFloorAtSendSats =
+    summary?.actualValue.attachedWorkLiveFloorAtSendSats ?? 0;
+  const confirmedIssuanceUnits =
+    summary?.actualValue.confirmedIssuanceUnits ?? 0;
+  const inceptionIssuanceAvailable = Boolean(
+    inceptionAccounting &&
+      summary &&
+      summary.actualValue.issuanceAccountingModel ===
+        "canonical-pre-bond-live-network-value-v2" &&
+      summary.actualValue.issuanceValuationFixedAtSend === true &&
+      summary.actualValue.issuanceCheckpointMode ===
+        "bond-transaction-provenance" &&
+      summary.actualValue.issuanceValueSnapshotMode ===
+        "canonical-summary-refresh" &&
+      summary.actualValue.issuanceValueSnapshotModel ===
+        "canonical-summary-h-minus-one-v1" &&
+      summary.actualValue.confirmedIssuanceUnits !== undefined &&
+      summary.actualValue.issuanceNetworkValueSats !== undefined &&
+      issuanceCheckpointBlockHeight !== undefined &&
+      issuanceCheckpointBlockIndex !== undefined &&
+      issuanceCheckpointBlockHash.length > 0 &&
+      issuanceValueSnapshotBlockHeight !== undefined &&
+      issuanceValueSnapshotBlockHeight + 1 ===
+        issuanceCheckpointBlockHeight &&
+      issuanceValueSnapshotBlockHash.length > 0 &&
+      issuanceValueSnapshotCanonicalSummaryHash.length > 0 &&
+      issuanceValueSnapshotGeneratedAt.length > 0 &&
+      issuanceValueSnapshotId.length > 0 &&
+      issuanceValueSnapshotWorkNetworkValueSats > 0,
+  );
   const floorUsd = summary?.actualValue.floorUsd ?? satsToUsd(floorSats, btcUsd);
   const networkUsd =
     summary?.actualValue.networkUsd ?? satsToUsd(networkValueSats, btcUsd);
@@ -27727,11 +27856,11 @@ function InfinityApp({
           </div>
           <div className="id-launch-stats token-stats-row">
             <div>
-              <span>Confirmed supply</span>
+              <span>{inceptionAccounting ? "Fixed issued supply" : "Confirmed supply"}</span>
               <strong>{confirmedSupply.toLocaleString()} {bondConfig.ticker}</strong>
             </div>
             <div>
-              <span>Pending supply</span>
+              <span>{inceptionAccounting ? "Pending issuance" : "Pending supply"}</span>
               <strong>{pendingSupply.toLocaleString()} {bondConfig.ticker}</strong>
             </div>
             <div>
@@ -27739,7 +27868,7 @@ function InfinityApp({
               <strong>{tokenSatsPerUnit(floorSats)} proofs / {bondConfig.ticker}</strong>
             </div>
             <div>
-              <span>{inceptionAccounting ? "Live network value" : "Network value"}</span>
+              <span>{inceptionAccounting ? "Live Inception value" : "Network value"}</span>
               <strong>{Math.round(networkValueSats).toLocaleString()} proofs</strong>
             </div>
             <div>
@@ -27750,53 +27879,103 @@ function InfinityApp({
               <span>{inceptionAccounting ? "Live network USD" : "Network USD"}</span>
               <strong>{tokenUsd(networkUsd)}</strong>
             </div>
-            {attachedWorkAccountingAvailable ? (
-              <>
-                <div>
-                  <span>Bond proofs</span>
-                  <strong>
-                    {Math.round(
-                      summary?.actualValue.bondMintFlowSats ?? 0,
-                    ).toLocaleString()} proofs
-                  </strong>
-                </div>
-                <div>
-                  <span>Attached WORK</span>
-                  <strong>
-                    {Math.floor(attachedWorkAmount).toLocaleString()} WORK ·{" "}
-                    {Math.floor(attachedWorkActions).toLocaleString()} confirmed{" "}
-                    attachment{Math.floor(attachedWorkActions) === 1 ? "" : "s"}
-                  </strong>
-                </div>
-                <div>
-                  <span>Attached WORK at confirmation</span>
-                  <strong>
-                    {Math.round(
-                      attachedWorkFrozenValueSats,
-                    ).toLocaleString()} proofs
-                  </strong>
-                </div>
-                <div>
-                  <span>Attached WORK at live floor</span>
-                  <strong>
-                    {Math.round(attachedWorkLiveValueSats).toLocaleString()} proofs
-                  </strong>
-                </div>
-                <div>
-                  <span>Frozen network value</span>
-                  <strong>
-                    {Math.round(frozenNetworkValueSats).toLocaleString()} proofs
-                  </strong>
-                </div>
-                <div>
-                  <span>Frozen INCB floor</span>
-                  <strong>
-                    {tokenSatsPerUnit(frozenFloorSats)} proofs / {bondConfig.ticker}
-                  </strong>
-                </div>
-              </>
-            ) : null}
           </div>
+          {inceptionIssuanceAvailable ? (
+            <div>
+              <p className="field-note">
+                <strong>INCB issuance</strong> · Fixed from the last confirmed
+                green live WORK summary at H-1, hash-bound to the exact block
+                before the bond.
+              </p>
+              <div
+                aria-label="INCB issuance breakdown"
+                className="id-launch-stats token-floor-stats"
+              >
+                <div>
+                  <span>Direct proof issuance</span>
+                  <strong>
+                    {Math.floor(directProofIssuanceUnits).toLocaleString()} {bondConfig.ticker}
+                  </strong>
+                </div>
+                <div>
+                  <span>Attached WORK issuance</span>
+                  <strong>
+                    {Math.floor(attachedWorkIssuanceUnits).toLocaleString()} {bondConfig.ticker}
+                    {attachedWorkAmount > 0
+                      ? ` · ${Math.floor(attachedWorkAmount).toLocaleString()} WORK`
+                      : ""}
+                  </strong>
+                </div>
+                <div>
+                  <span>Total issued</span>
+                  <strong>
+                    {Math.floor(confirmedIssuanceUnits).toLocaleString()} {bondConfig.ticker}
+                  </strong>
+                </div>
+                <div>
+                  <span>Exact bond issuance value</span>
+                  <strong>
+                    {issuanceNetworkValueSats.toLocaleString(undefined, {
+                      maximumFractionDigits: 6,
+                    })} proofs
+                  </strong>
+                </div>
+                <div>
+                  <span>H-1 WORK floor</span>
+                  <strong>
+                    {tokenSatsPerUnit(attachedWorkLiveFloorAtSendSats)} proofs / WORK
+                  </strong>
+                </div>
+                <div>
+                  <span>H-1 WORK network value</span>
+                  <strong>
+                    {Math.round(
+                      issuanceValueSnapshotWorkNetworkValueSats,
+                    ).toLocaleString()} proofs
+                  </strong>
+                </div>
+                <div>
+                  <span>Value snapshot block</span>
+                  <strong>
+                    {Math.floor(
+                      issuanceValueSnapshotBlockHeight ?? 0,
+                    ).toLocaleString()}
+                  </strong>
+                </div>
+                <div>
+                  <span>Bond block provenance</span>
+                  <strong>
+                    {Math.floor(
+                      issuanceCheckpointBlockHeight ?? 0,
+                    ).toLocaleString()} · tx {Math.floor(
+                      issuanceCheckpointBlockIndex ?? 0,
+                    ).toLocaleString()}
+                  </strong>
+                </div>
+              </div>
+              <p className="field-note">
+                Send-time valuation uses the last confirmed green canonical live
+                WORK summary at H-1. Every transaction in the bond block is
+                excluded. Confirmation fixes the resulting INCB balance and supply;
+                current or post-bond network value changes only the live INCB floor
+                {attachedWorkActions > 0
+                  ? `; ${Math.floor(attachedWorkActions).toLocaleString()} confirmed WORK attachment${Math.floor(attachedWorkActions) === 1 ? "" : "s"} contributed to issuance`
+                  : ""}
+                {issuanceDustSats > 0
+                  ? "; sub-proof dust stays in network value and is not issued"
+                  : ""}
+                .
+              </p>
+              <p className="field-note">
+                Snapshot {issuanceValueSnapshotId} · value block {issuanceValueSnapshotBlockHash.slice(0, 12)}…
+                {" · "}canonical summary {issuanceValueSnapshotCanonicalSummaryHash.slice(0, 12)}…
+                {" · "}published {issuanceValueSnapshotGeneratedAt}
+                {" · "}bond block {issuanceCheckpointBlockHash.slice(0, 12)}…
+                {" · "}{issuanceValueSnapshotMode}
+                {" · "}{issuanceValueSnapshotModel}
+              </p>
+            </div>
+          ) : null}
         </section>
 
         <section className="id-launch-card token-dashboard-card marketplace-work-floor-card">
@@ -27809,7 +27988,7 @@ function InfinityApp({
               <h2>{bondConfig.displayName} Chart</h2>
               <span>
                 {inceptionAccounting
-                  ? `Confirmed bond proofs and attached WORK valued at confirmation, ${bondConfig.ticker} supply, sales, transfers, and mutation fees.`
+                  ? `Confirmed live-value issuance, ${bondConfig.ticker} supply, network value, sales, transfers, and mutation fees.`
                   : `Confirmed bond proofs, ${bondConfig.ticker} supply, sales, transfers, and mutation fees.`}
               </span>
             </div>
@@ -27950,9 +28129,13 @@ function InfinityApp({
             </div>
             <div className="id-launch-stats token-stats-row">
               <div>
-                <span>{bondConfig.ticker} credit</span>
+                <span>
+                  {inceptionAccounting
+                    ? "Direct bond proofs"
+                    : `${bondConfig.ticker} credit`}
+                </span>
                 <strong>
-                  {Math.max(0, Math.floor(bondAmount || 0)).toLocaleString()} {bondConfig.ticker}
+                  {Math.max(0, Math.floor(bondAmount || 0)).toLocaleString()} {inceptionAccounting ? "proofs" : bondConfig.ticker}
                 </strong>
               </div>
               <div>
@@ -27970,6 +28153,16 @@ function InfinityApp({
                 </div>
               ) : null}
             </div>
+            {inceptionAccounting ? (
+              <p className="field-note">
+                Final INCB issuance uses the send-time value oracle: the last
+                confirmed green canonical live WORK summary at H-1, bound to the
+                exact previous block hash. Every transaction in the bond block is
+                excluded. Confirmation fixes 1 INCB per whole proof of direct and
+                attached WORK value. Current and post-bond network value can change
+                only the live INCB floor; it cannot reprice issued supply.
+              </p>
+            ) : null}
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
             <button className="primary" disabled={!canCreateBond} type="submit">
               <span className="button-content">

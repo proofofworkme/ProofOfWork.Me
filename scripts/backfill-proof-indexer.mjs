@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { request as httpRequest } from "node:http";
 import net from "node:net";
 
 import * as bitcoin from "bitcoinjs-lib";
@@ -15,8 +16,13 @@ const PAGE_LIMIT = Number(process.env.POW_INDEX_BACKFILL_LIMIT ?? 200);
 const MAX_PAGES = Number(process.env.POW_INDEX_BACKFILL_MAX_PAGES ?? 2000);
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
 const REQUEST_RETRIES = Number(process.env.POW_INDEX_FETCH_RETRIES ?? 4);
+const CANONICAL_SUMMARY_RESPONSE_MAX_BYTES = 64 * 1024 * 1024;
+// A deliberate derived-snapshot invalidation leaves the first canonical
+// summary refresh with no warm read model. Keep the ordinary default bounded,
+// but allow a supervised cold rebuild enough time to finish and publish one
+// exact hash-bound snapshot instead of being killed by the old 220s ceiling.
 const CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS = Math.min(
-  220_000,
+  10 * 60_000,
   Math.max(
     30_000,
     Math.floor(
@@ -76,6 +82,14 @@ const REPAIR_WORK_PARTICIPANTS_TXIDS = [
 const REPAIR_ID_TXIDS = [
   ...new Set(
     String(process.env.POW_INDEX_REPAIR_ID_TXIDS ?? "")
+      .split(/[,\s]+/u)
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => /^[0-9a-f]{64}$/u.test(value)),
+  ),
+];
+const REPAIR_INCB_ISSUANCE_TXIDS = [
+  ...new Set(
+    String(process.env.POW_INDEX_REPAIR_INCB_ISSUANCE_TXIDS ?? "")
       .split(/[,\s]+/u)
       .map((value) => value.trim().toLowerCase())
       .filter((value) => /^[0-9a-f]{64}$/u.test(value)),
@@ -217,6 +231,9 @@ const PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY = process.argv.includes(
   "--prepare-canonical-pwt-range-replay",
 );
 const REPAIR_ID_TXIDS_ONLY = process.argv.includes("--repair-id-txids");
+const REPAIR_INCB_ISSUANCE_ONLY = process.argv.includes(
+  "--repair-incb-issuance",
+);
 const HYDRATE_TRANSACTION_DETAILS_ONLY = process.argv.includes(
   "--hydrate-transaction-details",
 );
@@ -244,6 +261,7 @@ function assertCanonicalRebuildConfiguration() {
     (PREPARE_CANONICAL_REBUILD_ONLY ||
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
       REPAIR_ID_TXIDS_ONLY ||
+      REPAIR_INCB_ISSUANCE_ONLY ||
       REPAIR_WORK_PARTICIPANTS_ONLY ||
       CANONICAL_REBUILD)
   ) {
@@ -292,13 +310,35 @@ function assertCanonicalRebuildConfiguration() {
   }
   if (
     REPAIR_ID_TXIDS_ONLY &&
-    (PREPARE_CANONICAL_REBUILD_ONLY || PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY)
+    (PREPARE_CANONICAL_REBUILD_ONLY ||
+      PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
+      REPAIR_INCB_ISSUANCE_ONLY)
   ) {
     throw new Error("Canonical ID repair and replay preparation are exclusive.");
   }
   if (REPAIR_ID_TXIDS_ONLY && REPAIR_ID_TXIDS.length === 0) {
     throw new Error(
       "--repair-id-txids requires POW_INDEX_REPAIR_ID_TXIDS with at least one transaction id",
+    );
+  }
+  if (
+    REPAIR_INCB_ISSUANCE_ONLY &&
+    (PREPARE_CANONICAL_REBUILD_ONLY ||
+      PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
+      REPAIR_ID_TXIDS_ONLY ||
+      REPAIR_WORK_PARTICIPANTS_ONLY ||
+      CANONICAL_REBUILD)
+  ) {
+    throw new Error(
+      "Canonical INCB issuance repair is exclusive with rebuild and other repair modes.",
+    );
+  }
+  if (
+    REPAIR_INCB_ISSUANCE_ONLY &&
+    REPAIR_INCB_ISSUANCE_TXIDS.length === 0
+  ) {
+    throw new Error(
+      "--repair-incb-issuance requires POW_INDEX_REPAIR_INCB_ISSUANCE_TXIDS with at least one transaction id",
     );
   }
   if (PREPARE_CANONICAL_REBUILD_ONLY && !CANONICAL_REBUILD) {
@@ -406,6 +446,48 @@ const INCB_TOKEN_ID =
 const INCB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
 const INCB_REGISTRY_ID = "inception";
 const INCB_TOKEN_CREATED_AT = "2026-07-10T00:00:00.000Z";
+const INCB_ISSUANCE_ACCOUNTING_MODEL =
+  "canonical-pre-bond-live-network-value-v2";
+const INCB_VALUE_SNAPSHOT_MODEL = "canonical-summary-h-minus-one-v1";
+const CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS = new Map([
+  [
+    "dd743fb69c519200cc190627219ba34ca2e63e6893e600b73e9aee8d4dac8fa4",
+    {
+      attachedWorkAmount: 3_644_060,
+      attachedWorkIssuanceUnits: 1_421_798_915,
+      attachedWorkLiveFloorAtSendSats: 390.168909301053,
+      attachedWorkLiveValueAtSendSats: 1_421_798_915.6275952,
+      blockHash:
+        "000000000000000000016ea78b0d57a7979de3542518c8690a1e5a808e691cc5",
+      blockHeight: 957_950,
+      blockIndex: 382,
+      confirmedIssuanceUnits: 1_421_799_461,
+      directProofIssuanceUnits: 546,
+      issuanceDustSats: 0.6275952,
+      issuanceFloorSats: 1.0000000004414091,
+      issuanceNetworkValueSats: 1_421_799_461.6275952,
+      issuanceValueSnapshotBlockHash:
+        "00000000000000000001bda6bfa328f15edf597bfc364e02da42ea92a518a15e",
+      issuanceValueSnapshotBlockHeight: 957_949,
+      issuanceValueSnapshotCanonicalSummaryHash:
+        "4f00b3494afb46ef88990948784a0ba8f2a22856615a39e15c3131f0ec979bdc",
+      issuanceValueSnapshotGeneratedAt: "2026-07-14T03:03:04.765Z",
+      issuanceValueSnapshotId: "b8e77cd30cbed6855977c514",
+      issuanceValueSnapshotMode: "canonical-summary-refresh",
+      issuanceValueSnapshotModel: INCB_VALUE_SNAPSHOT_MODEL,
+      issuanceValueSnapshotWorkNetworkValueSats:
+        8_193_547_095.322113,
+      recipientAddress: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+      recipientAmountSats: 546,
+      recipientVout: 0,
+      workAttachmentAmount: 3_644_060,
+      workAttachmentProtocolVout: 3,
+      workAttachmentRecipientAddress:
+        "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+      workAttachmentTokenId: WORK_TOKEN_ID,
+    },
+  ],
+]);
 const GROWTH_VALUE_MULTIPLE = 5;
 const ID_MARKETPLACE_MUTATION_KINDS = new Set([
   "id-list",
@@ -435,6 +517,7 @@ const BOND_TAGS = [
   },
   {
     createdAt: INCB_TOKEN_CREATED_AT,
+    issuanceAccountingModel: INCB_ISSUANCE_ACCOUNTING_MODEL,
     kind: INCEPTION_BOND_KIND,
     label: "Inception Bond",
     memo: INCEPTION_BOND_MEMO,
@@ -505,6 +588,138 @@ function unpagedEndpoint(pathname, params = {}) {
   return url;
 }
 
+function readCanonicalSummaryJsonViaLoopbackHttp(url, options = {}) {
+  const maxBytes = Number.isFinite(options.maxBytes)
+    ? Math.max(1, Math.floor(Number(options.maxBytes)))
+    : CANONICAL_SUMMARY_RESPONSE_MAX_BYTES;
+
+  return new Promise((resolve, reject) => {
+    let request;
+    let settled = false;
+    const settle = (callback, value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      callback(value);
+    };
+    const responseTooLargeError = (receivedBytes) => {
+      const error = new Error(
+        `${url.pathname} response exceeded the ${maxBytes}-byte limit`,
+      );
+      error.code = "POW_CANONICAL_SUMMARY_RESPONSE_TOO_LARGE";
+      error.maxBytes = maxBytes;
+      error.receivedBytes = receivedBytes;
+      return error;
+    };
+
+    try {
+      request = httpRequest(
+        url,
+        {
+          agent: false,
+          headers: options.headers,
+          method: "GET",
+          signal: options.signal,
+        },
+        (response) => {
+          const statusCode = Number(response.statusCode ?? 0);
+          const declaredLength = Number(response.headers["content-length"]);
+          if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+            const error = responseTooLargeError(declaredLength);
+            settle(reject, error);
+            response.destroy(error);
+            request?.destroy(error);
+            return;
+          }
+
+          const chunks = [];
+          let receivedBytes = 0;
+          response.on("data", (chunk) => {
+            if (settled) {
+              return;
+            }
+            const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            receivedBytes += buffer.length;
+            if (receivedBytes > maxBytes) {
+              const error = responseTooLargeError(receivedBytes);
+              settle(reject, error);
+              response.destroy(error);
+              request?.destroy(error);
+              return;
+            }
+            chunks.push(buffer);
+          });
+          response.on("end", () => {
+            if (settled) {
+              return;
+            }
+            if (response.complete !== true) {
+              const error = new Error(
+                `${url.pathname} response ended before the HTTP message was complete`,
+              );
+              error.code = "POW_CANONICAL_SUMMARY_RESPONSE_INCOMPLETE";
+              settle(reject, error);
+              response.destroy(error);
+              request?.destroy(error);
+              return;
+            }
+            const responseText = Buffer.concat(chunks, receivedBytes).toString(
+              "utf8",
+            );
+            if (statusCode === 404 && options.allowNotFound === true) {
+              settle(resolve, { items: [] });
+              return;
+            }
+            if (statusCode < 200 || statusCode >= 300) {
+              const requestError = new Error(
+                `${url.pathname} returned HTTP ${statusCode}`,
+              );
+              requestError.statusCode = statusCode;
+              requestError.responseText = responseText;
+              settle(reject, requestError);
+              return;
+            }
+            try {
+              settle(resolve, JSON.parse(responseText));
+            } catch (error) {
+              settle(reject, error);
+            }
+          });
+          response.on("aborted", () => {
+            const error = new Error(
+              `${url.pathname} response was aborted before completion`,
+            );
+            error.code = "POW_CANONICAL_SUMMARY_RESPONSE_ABORTED";
+            settle(reject, error);
+            request?.destroy(error);
+          });
+          response.on("close", () => {
+            if (settled || response.complete === true) {
+              return;
+            }
+            const error = new Error(
+              `${url.pathname} response closed before completion`,
+            );
+            error.code = "POW_CANONICAL_SUMMARY_RESPONSE_INCOMPLETE";
+            settle(reject, error);
+            response.destroy(error);
+            request?.destroy(error);
+          });
+          response.on("error", (error) => {
+            request?.destroy(error);
+            settle(reject, error);
+          });
+        },
+      );
+      request.on("error", (error) => settle(reject, error));
+      request.end();
+    } catch (error) {
+      settle(reject, error);
+    }
+  });
+}
+
 async function readJson(url, options = {}) {
   let lastError = null;
   const retries = Number.isFinite(options.retries)
@@ -519,7 +734,7 @@ async function readJson(url, options = {}) {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const internalVerifier = url.pathname.startsWith("/api/v1/internal/");
-      const loopbackApi = ["127.0.0.1", "::1", "localhost"].includes(
+      const loopbackApi = ["127.0.0.1", "::1", "[::1]", "localhost"].includes(
         url.hostname.toLowerCase(),
       );
       if (internalVerifier && INTERNAL_VERIFIER_TOKEN.length < 32) {
@@ -527,10 +742,24 @@ async function readJson(url, options = {}) {
           "POW_INTERNAL_VERIFIER_TOKEN is required for canonical verifier calls",
         );
       }
+      const headers = loopbackApi && INTERNAL_VERIFIER_TOKEN.length >= 32
+        ? { "X-PoW-Internal-Verifier": INTERNAL_VERIFIER_TOKEN }
+        : undefined;
+      if (
+        internalVerifier &&
+        url.pathname === "/api/v1/internal/canonical-summary" &&
+        loopbackApi &&
+        url.protocol === "http:"
+      ) {
+        return await readCanonicalSummaryJsonViaLoopbackHttp(url, {
+          allowNotFound: options.allowNotFound,
+          headers,
+          maxBytes: CANONICAL_SUMMARY_RESPONSE_MAX_BYTES,
+          signal: controller.signal,
+        });
+      }
       const response = await fetch(url, {
-        headers: loopbackApi && INTERNAL_VERIFIER_TOKEN.length >= 32
-          ? { "X-PoW-Internal-Verifier": INTERNAL_VERIFIER_TOKEN }
-          : undefined,
+        headers,
         signal: controller.signal,
       });
       if (response.status === 404 && options.allowNotFound === true) {
@@ -1175,6 +1404,9 @@ function canonicalBondMintItemsFromMailItem(item) {
           confirmed: true,
           dataBytes: 0,
           kind: "token-mint",
+          bondRecipientAddress: minterAddress,
+          bondRecipientAmountSats: amount,
+          bondRecipientVout: Number(recipient?.vout),
           minterAddress,
           network: item.network,
           protocol: "pwt1",
@@ -1185,6 +1417,13 @@ function canonicalBondMintItemsFromMailItem(item) {
           txid: item.txid,
           valid: true,
           validationMode: `canonical-${bondTag.ticker.toLowerCase()}-bond-projection`,
+          ...(bondTag.issuanceAccountingModel
+            ? {
+                issuanceAccountingModel: bondTag.issuanceAccountingModel,
+                issuanceUnitSats: 1,
+                issuanceValuationFixedAtSend: true,
+              }
+            : {}),
         },
       ];
     },
@@ -1574,6 +1813,19 @@ function tokenRecoveryKindsForProtocolMessage(text) {
 }
 
 function recoveryEndpointSpecs(txid, message) {
+  if (
+    message.prefix === "pwm1:" &&
+    String(message.text ?? "").trim().toLowerCase() ===
+      `pwm1:m:${INCEPTION_BOND_MEMO}`
+  ) {
+    return [
+      {
+        label: "token-verifier",
+        params: { asset: INCB_TOKEN_ID, txid },
+        path: "/api/v1/internal/token-verifier",
+      },
+    ];
+  }
   if (message.prefix === "pwid1:") {
     return [
       {
@@ -1612,6 +1864,213 @@ function invalidProtocolItem(item, reason) {
   };
 }
 
+function canonicalIntegerText(value, { positive = false } = {}) {
+  const text = String(value ?? "").trim();
+  if (!(positive ? /^[1-9]\d*$/u : /^\d+$/u).test(text)) {
+    return "";
+  }
+  return text;
+}
+
+function incbIssuanceMetadataInvalidReason(item) {
+  if (
+    String(item?.issuanceAccountingModel ?? "") !==
+    INCB_ISSUANCE_ACCOUNTING_MODEL
+  ) {
+    return "missing canonical INCB issuance accounting model";
+  }
+  const minterAddress = String(item?.minterAddress ?? "").trim();
+  const bondRecipientAddress = String(
+    item?.bondRecipientAddress ?? "",
+  ).trim();
+  const bondRecipientAmountText = canonicalIntegerText(
+    item?.bondRecipientAmountSats,
+    { positive: true },
+  );
+  const bondRecipientVoutText = canonicalIntegerText(
+    item?.bondRecipientVout,
+  );
+  if (
+    !minterAddress ||
+    bondRecipientAddress !== minterAddress ||
+    !bondRecipientAmountText ||
+    !bondRecipientVoutText ||
+    item?.issuanceValuationFixedAtSend !== true ||
+    Number(item?.issuanceUnitSats) !== 1
+  ) {
+    return "INCB issuance is missing its exact bond recipient or fixed one-proof unit binding";
+  }
+  const amountText = canonicalIntegerText(item?.amount, { positive: true });
+  const issuanceAmountText = canonicalIntegerText(item?.issuanceAmount, {
+    positive: true,
+  });
+  const confirmedIssuanceText = canonicalIntegerText(
+    item?.confirmedIssuanceUnits,
+    { positive: true },
+  );
+  const directText = canonicalIntegerText(item?.directProofIssuanceUnits);
+  const attachedText = canonicalIntegerText(item?.attachedWorkIssuanceUnits);
+  if (
+    !amountText ||
+    amountText !== issuanceAmountText ||
+    amountText !== confirmedIssuanceText ||
+    !directText ||
+    !attachedText
+  ) {
+    return "INCB issuance units are missing or inconsistent";
+  }
+  const amount = BigInt(amountText);
+  const direct = BigInt(directText);
+  const attached = BigInt(attachedText);
+  if (direct <= 0n || direct + attached !== amount) {
+    return "INCB direct and attached issuance units do not conserve supply";
+  }
+  const safeAmount = Number(amount);
+  const safeDirect = Number(direct);
+  const safeAttached = Number(attached);
+  if (
+    !Number.isSafeInteger(safeAmount) ||
+    !Number.isSafeInteger(safeDirect) ||
+    !Number.isSafeInteger(safeAttached)
+  ) {
+    return "INCB issuance exceeds exact JavaScript integer range";
+  }
+  const issuanceNetworkValueSats = Number(item?.issuanceNetworkValueSats);
+  const issuanceDustSats = Number(item?.issuanceDustSats);
+  const issuanceFloorSats = Number(item?.issuanceFloorSats);
+  const attachedWorkLiveValueAtSendSats = Number(
+    item?.attachedWorkLiveValueAtSendSats,
+  );
+  if (
+    !Number.isFinite(issuanceNetworkValueSats) ||
+    issuanceNetworkValueSats <= 0 ||
+    Math.floor(issuanceNetworkValueSats) !== safeAmount ||
+    !Number.isFinite(issuanceDustSats) ||
+    issuanceDustSats < 0 ||
+    issuanceDustSats >= 1 ||
+    Math.abs(
+      issuanceDustSats - (issuanceNetworkValueSats - safeAmount),
+    ) > 1e-6 ||
+    !Number.isFinite(issuanceFloorSats) ||
+    issuanceFloorSats <= 0 ||
+    Math.abs(issuanceFloorSats - issuanceNetworkValueSats / safeAmount) >
+      1e-9 ||
+    !Number.isFinite(attachedWorkLiveValueAtSendSats) ||
+    attachedWorkLiveValueAtSendSats < 0 ||
+    Math.abs(
+      issuanceNetworkValueSats -
+        (safeDirect + attachedWorkLiveValueAtSendSats),
+    ) > 1e-6 ||
+    Math.floor(attachedWorkLiveValueAtSendSats) !== safeAttached
+  ) {
+    return "INCB issuance value, dust, or one-proof unit floor is inconsistent";
+  }
+  const directPayment = Number(
+    item?.proofPaymentSats ?? item?.paidSats,
+  );
+  if (
+    !Number.isSafeInteger(directPayment) ||
+    directPayment !== safeDirect ||
+    BigInt(bondRecipientAmountText) !== direct
+  ) {
+    return "INCB direct proof issuance is not bound to the confirmed payment";
+  }
+  if (safeAttached > 0) {
+    const attachedWorkAmount = Number(item?.attachedWorkAmount);
+    const attachedWorkLiveFloorAtSendSats = Number(
+      item?.attachedWorkLiveFloorAtSendSats,
+    );
+    if (
+      !Number.isSafeInteger(attachedWorkAmount) ||
+      attachedWorkAmount <= 0 ||
+      !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
+      attachedWorkLiveFloorAtSendSats <= 0 ||
+      Math.abs(
+        attachedWorkLiveValueAtSendSats -
+          attachedWorkAmount * attachedWorkLiveFloorAtSendSats,
+      ) > 1e-5
+    ) {
+      return "INCB attached WORK issuance basis is missing or inconsistent";
+    }
+  } else if (attachedWorkLiveValueAtSendSats !== 0) {
+    return "INCB proof-only issuance carries unexpected attached WORK value";
+  }
+  const checkpointMode = String(item?.issuanceCheckpointMode ?? "");
+  const checkpointHeight = Number(item?.issuanceCheckpointBlockHeight);
+  const checkpointHash = String(item?.issuanceCheckpointBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const checkpointIndex = Number(item?.issuanceCheckpointBlockIndex);
+  const checkpointWorkNetworkValueSats = Number(
+    item?.issuanceValueSnapshotWorkNetworkValueSats,
+  );
+  const attachedWorkLiveFloorAtSendSats = Number(
+    item?.attachedWorkLiveFloorAtSendSats,
+  );
+  const eventHeight = Number(item?.blockHeight ?? item?.height);
+  const eventHash = String(item?.blockHash ?? item?._powBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const eventIndex = Number(item?.blockIndex ?? item?._powBlockIndex);
+  if (
+    checkpointMode !== "bond-transaction-provenance" ||
+    !Number.isSafeInteger(checkpointHeight) ||
+    checkpointHeight <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(checkpointHash) ||
+    !Number.isSafeInteger(checkpointIndex) ||
+    checkpointIndex < 0 ||
+    !Number.isFinite(checkpointWorkNetworkValueSats) ||
+    checkpointWorkNetworkValueSats <= 0 ||
+    !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
+    attachedWorkLiveFloorAtSendSats <= 0 ||
+    Math.abs(
+      attachedWorkLiveFloorAtSendSats -
+        checkpointWorkNetworkValueSats / WORK_TOKEN_MAX_SUPPLY,
+    ) > 1e-9 ||
+    eventHeight !== checkpointHeight ||
+    eventHash !== checkpointHash ||
+    eventIndex !== checkpointIndex
+  ) {
+    return "INCB pre-bond valuation checkpoint is missing or inconsistent";
+  }
+  const valueSnapshotHeight = Number(
+    item?.issuanceValueSnapshotBlockHeight,
+  );
+  const valueSnapshotHash = String(
+    item?.issuanceValueSnapshotBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const valueSnapshotCanonicalSummaryHash = String(
+    item?.issuanceValueSnapshotCanonicalSummaryHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const valueSnapshotGeneratedAt = String(
+    item?.issuanceValueSnapshotGeneratedAt ?? "",
+  ).trim();
+  if (
+    item?.issuanceValueSnapshotModel !== INCB_VALUE_SNAPSHOT_MODEL ||
+    item?.issuanceValueSnapshotMode !== "canonical-summary-refresh" ||
+    !Number.isSafeInteger(valueSnapshotHeight) ||
+    valueSnapshotHeight !== checkpointHeight - 1 ||
+    !/^[0-9a-f]{64}$/u.test(valueSnapshotHash) ||
+    !/^[0-9a-f]{64}$/u.test(valueSnapshotCanonicalSummaryHash) ||
+    !String(item?.issuanceValueSnapshotId ?? "").trim() ||
+    !Number.isFinite(Date.parse(valueSnapshotGeneratedAt))
+  ) {
+    return "INCB H-1 canonical WORK value snapshot provenance is missing or inconsistent";
+  }
+  return "";
+}
+
+function canonicalIncbIssuanceMintProjection(item) {
+  return (
+    String(item?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID &&
+    !incbIssuanceMetadataInvalidReason(item)
+  );
+}
+
 function canonicalBondMintProjection(item) {
   const tokenId = String(item?.tokenId ?? "").trim().toLowerCase();
   const bondTag = BOND_TAGS.find((candidate) => candidate.tokenId === tokenId);
@@ -1619,7 +2078,7 @@ function canonicalBondMintProjection(item) {
   const sourceBondTxid = String(item?.sourceBondTxid ?? "")
     .trim()
     .toLowerCase();
-  return Boolean(
+  const canonicalStructure = Boolean(
     bondTag &&
       String(item?.kind ?? "").toLowerCase() === "token-mint" &&
       String(item?.protocol ?? "").toLowerCase() === "pwt1" &&
@@ -1632,6 +2091,10 @@ function canonicalBondMintProjection(item) {
       String(item?.minterAddress ?? "").trim().length > 0 &&
       /^[1-9]\d*$/u.test(String(item?.amount ?? "").trim()) &&
       Number(item?.amountSats ?? 0) === 0,
+  );
+  return (
+    canonicalStructure &&
+    (bondTag.ticker !== "INCB" || canonicalIncbIssuanceMintProjection(item))
   );
 }
 
@@ -1835,6 +2298,23 @@ function rawProtocolItemMatchesCanonical(rawItem, canonicalItem, kind) {
   }
   const canonicalAmount = String(canonicalItem?.amount ?? "").trim();
   const rawAmount = String(rawItem?.amount ?? "").trim();
+  if (
+    kind === "token-mint" &&
+    String(rawItem?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID &&
+    String(canonicalItem?.tokenId ?? "").trim().toLowerCase() ===
+      INCB_TOKEN_ID &&
+    canonicalIncbIssuanceMintProjection(canonicalItem)
+  ) {
+    const rawMinterAddress = String(rawItem?.minterAddress ?? "").trim();
+    const canonicalMinterAddress = String(
+      canonicalItem?.minterAddress ?? "",
+    ).trim();
+    return Boolean(
+      rawMinterAddress &&
+        canonicalMinterAddress &&
+        rawMinterAddress === canonicalMinterAddress,
+    );
+  }
   return !canonicalAmount || !rawAmount || canonicalAmount === rawAmount;
 }
 
@@ -1951,7 +2431,15 @@ async function canonicalRecoveryItemsForTx(tx, messages) {
     }
     let normalizedAmountSats = canonicalItem?.amountSats;
     if (String(normalizedKind).startsWith("token-")) {
-      if (normalizedKind === "token-sale") {
+      if (
+        normalizedKind === "token-mint" &&
+        canonicalIncbIssuanceMintProjection(canonicalItem)
+      ) {
+        // The INCB units are a synthetic projection over the bond's fixed
+        // pre-bond live network value. The underlying PWM/PWT events
+        // carry the proof value; the mint companion must stay zero-value.
+        normalizedAmountSats = 0;
+      } else if (normalizedKind === "token-sale") {
         // Sale volume is the seller price only. The sale-ticket anchor refund
         // is not revenue/value, and the 546 registry mutation is projected by
         // the closed-listing companion below.
@@ -1994,6 +2482,16 @@ async function canonicalRecoveryItemsForTx(tx, messages) {
       protocol: rawItem?.protocol ?? canonicalItem?.protocol,
       txid,
     };
+    if (
+      normalizedKind === "token-mint" &&
+      canonicalIncbIssuanceMintProjection(normalizedItem)
+    ) {
+      normalizedItem.amountSats = 0;
+      normalizedItem.protocol = "pwt1";
+      normalizedItem.sourceBondTxid = txid;
+      normalizedItem.validationMode =
+        "canonical-incb-bond-projection";
+    }
     const reservedReason = reservedBondCreditViolationReason(normalizedItem);
     const integrityItem = reservedReason
       ? tokenProtocolIntegrityInvalidItem(
@@ -2039,25 +2537,132 @@ async function canonicalRecoveryItemsForTx(tx, messages) {
   return normalizedRecovered;
 }
 
+function sameCanonicalPaymentAddress(left, right) {
+  const leftAddress = String(left ?? "").trim();
+  const rightAddress = String(right ?? "").trim();
+  if (!leftAddress || !rightAddress) {
+    return false;
+  }
+  if (leftAddress === rightAddress) {
+    return true;
+  }
+  const leftLower = leftAddress.toLowerCase();
+  const rightLower = rightAddress.toLowerCase();
+  return (
+    /^(?:bc1|tb1|bcrt1)/u.test(leftLower) &&
+    /^(?:bc1|tb1|bcrt1)/u.test(rightLower) &&
+    leftLower === rightLower
+  );
+}
+
+function preparedProtocolItemsWithCanonicalInceptionAttachments(
+  preparedItems,
+) {
+  const prepared = Array.isArray(preparedItems) ? preparedItems : [];
+  const canonicalWorkTransfersByTxid = new Map();
+  const canonicalWorkTransferVouts = new Set();
+  const ambiguousWorkTransferTxids = new Set();
+
+  for (const entry of prepared) {
+    const item = entry?.item ?? entry;
+    const txid = String(item?.txid ?? "").trim().toLowerCase();
+    const amount = canonicalIntegerText(item?.amount, { positive: true });
+    const protocolVout = Number(item?.protocolVout);
+    const recipientAddress = String(item?.recipientAddress ?? "").trim();
+    if (
+      item?.kind !== "token-transfer" ||
+      item?.confirmed !== true ||
+      item?.valid === false ||
+      String(item?.tokenId ?? "").trim().toLowerCase() !== WORK_TOKEN_ID ||
+      !isHexTxid(txid) ||
+      !amount ||
+      !Number.isSafeInteger(protocolVout) ||
+      protocolVout < 0 ||
+      !recipientAddress
+    ) {
+      continue;
+    }
+    const transferKey = `${txid}:${protocolVout}`;
+    if (canonicalWorkTransferVouts.has(transferKey)) {
+      ambiguousWorkTransferTxids.add(txid);
+      continue;
+    }
+    canonicalWorkTransferVouts.add(transferKey);
+    const transfers = canonicalWorkTransfersByTxid.get(txid) ?? [];
+    transfers.push({
+      ...(Number.isSafeInteger(Number(item?._powEventIndex)) &&
+      Number(item._powEventIndex) >= 0
+        ? { _powEventIndex: Number(item._powEventIndex) }
+        : {}),
+      amount,
+      paidSats: item?.paidSats,
+      protocolVout,
+      recipientAddress,
+      registryAddress: item?.registryAddress,
+      ticker: item?.ticker ?? WORK_TOKEN_TICKER,
+      tokenId: WORK_TOKEN_ID,
+    });
+    canonicalWorkTransfersByTxid.set(txid, transfers);
+  }
+
+  return prepared.map((entry) => {
+    const item = entry?.item ?? entry;
+    if (
+      item?.kind !== INCEPTION_BOND_KIND ||
+      item?.confirmed !== true
+    ) {
+      return entry;
+    }
+    const txid = String(item?.txid ?? "").trim().toLowerCase();
+    const recipients = Array.isArray(item?.recipients) ? item.recipients : [];
+    const attachedCredits = (ambiguousWorkTransferTxids.has(txid)
+      ? []
+      : canonicalWorkTransfersByTxid.get(txid) ?? [])
+      .filter((credit) =>
+        recipients.some((recipient) =>
+          sameCanonicalPaymentAddress(
+            recipient?.address,
+            credit.recipientAddress,
+          ),
+        ),
+      )
+      .sort(
+        (left, right) =>
+          left.protocolVout - right.protocolVout ||
+          left.recipientAddress.localeCompare(right.recipientAddress),
+      );
+    const nextItem = {
+      ...item,
+      attachedCredits:
+        attachedCredits.length > 0 ? attachedCredits : undefined,
+    };
+    return entry?.item
+      ? { ...entry, item: nextItem }
+      : nextItem;
+  });
+}
+
 async function preparedProtocolItemsForTx(tx, messages) {
   const recovered = await canonicalRecoveryItemsForTx(tx, messages);
   if (recovered.length > 0) {
-    return recovered;
+    return preparedProtocolItemsWithCanonicalInceptionAttachments(recovered);
   }
-  return disambiguateDuplicateProtocolItems(
-    rawProtocolItemsForTx(tx, messages),
-  ).map((item) => {
-    const statefulUnknown =
-      (item?.protocol === "pwt1" || item?.protocol === "pwid1") &&
-      !String(item?.validationMode ?? "").endsWith("-bond-projection");
-    const normalizedItem = statefulUnknown
-      ? invalidProtocolItem(item, "Unknown or malformed stateful protocol action.")
-      : item;
-    return {
-      item: normalizedItem,
-      sourceLabel: sourceLabelForProtocolItem(normalizedItem),
-    };
-  });
+  return preparedProtocolItemsWithCanonicalInceptionAttachments(
+    disambiguateDuplicateProtocolItems(
+      rawProtocolItemsForTx(tx, messages),
+    ).map((item) => {
+      const statefulUnknown =
+        (item?.protocol === "pwt1" || item?.protocol === "pwid1") &&
+        !String(item?.validationMode ?? "").endsWith("-bond-projection");
+      const normalizedItem = statefulUnknown
+        ? invalidProtocolItem(item, "Unknown or malformed stateful protocol action.")
+        : item;
+      return {
+        item: normalizedItem,
+        sourceLabel: sourceLabelForProtocolItem(normalizedItem),
+      };
+    }),
+  );
 }
 
 async function persistPreparedProtocolItems(client, preparedItems) {
@@ -2213,6 +2818,13 @@ async function seedCanonicalBondDefinition(client, bondTag, options = {}) {
     creationFeeSats: 0,
     creatorAddress: registryAddress,
     dataBytes: 0,
+    ...(bondTag.issuanceAccountingModel
+      ? {
+          issuanceAccountingModel: bondTag.issuanceAccountingModel,
+          issuanceValuationFixedAtSend: true,
+          issuanceUnitSats: 1,
+        }
+      : {}),
     maxSupply: bondTag.tokenMaxSupply,
     mintAmount: 1,
     mintPriceSats: 1,
@@ -2224,7 +2836,48 @@ async function seedCanonicalBondDefinition(client, bondTag, options = {}) {
   return true;
 }
 
-async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
+async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
+  client,
+  options = {},
+) {
+  const requestedTokenIds = [
+    ...new Set(
+      (Array.isArray(options.tokenIds) ? options.tokenIds : [])
+        .map((tokenId) => String(tokenId ?? "").trim().toLowerCase())
+        .filter((tokenId) => /^[0-9a-f]{64}$/u.test(tokenId)),
+    ),
+  ].sort();
+  const scopedReplay = requestedTokenIds.length > 0;
+  const supplyCorrectionMode = String(
+    options.supplyCorrectionMode ?? "",
+  ).trim();
+  const supplyCorrectionTokenIds = [
+    ...new Set(
+      (Array.isArray(options.supplyCorrectionTokenIds)
+        ? options.supplyCorrectionTokenIds
+        : [])
+        .map((tokenId) => String(tokenId ?? "").trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ].sort();
+  if (
+    supplyCorrectionMode ||
+    supplyCorrectionTokenIds.length > 0
+  ) {
+    if (
+      supplyCorrectionMode !== "canonical-incb-issuance-repair" ||
+      !scopedReplay ||
+      requestedTokenIds.length !== 1 ||
+      requestedTokenIds[0] !== INCB_TOKEN_ID ||
+      supplyCorrectionTokenIds.length !== 1 ||
+      supplyCorrectionTokenIds[0] !== INCB_TOKEN_ID
+    ) {
+      throw new Error(
+        "Canonical credit supply correction is restricted to the explicit scoped INCB issuance repair.",
+      );
+    }
+  }
+  const supplyCorrectionSet = new Set(supplyCorrectionTokenIds);
   const integerAmount = (value, label) => {
     if (typeof value === "bigint") {
       if (value > 0n) return value;
@@ -2261,8 +2914,9 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
       FROM proof_indexer.credit_definitions
       WHERE network = $1
         AND confirmed = true
+        ${scopedReplay ? "AND token_id = ANY($2::text[])" : ""}
     `,
-    [NETWORK],
+    scopedReplay ? [NETWORK, requestedTokenIds] : [NETWORK],
   );
   const definitions = new Map(
     definitionsResult.rows.map((row) => [
@@ -2278,9 +2932,25 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
         ),
         ticker: String(row.ticker ?? "").trim().toUpperCase(),
         uncapped: row?.metadata?.uncapped === true,
+        issuanceAccountingModel: String(
+          row?.metadata?.issuanceAccountingModel ?? "",
+        ),
+        issuanceUnitSats: Number(row?.metadata?.issuanceUnitSats),
+        issuanceValuationFixedAtSend:
+          row?.metadata?.issuanceValuationFixedAtSend === true,
       },
     ]),
   );
+  if (
+    scopedReplay &&
+    requestedTokenIds.some((tokenId) => !definitions.has(tokenId))
+  ) {
+    throw new Error(
+      `Canonical credit replay is missing definitions for ${requestedTokenIds
+        .filter((tokenId) => !definitions.has(tokenId))
+        .join(", ")}`,
+    );
+  }
   const eventsResult = await client.query(
     `
       SELECT
@@ -2299,6 +2969,11 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
         AND e.valid = true
         AND COALESCE(t.status, e.status) = 'confirmed'
         AND e.kind IN ('token-mint', 'token-transfer', 'token-sale')
+        ${
+          scopedReplay
+            ? "AND lower(COALESCE(e.payload->>'tokenId', '')) = ANY($2::text[])"
+            : ""
+        }
       ORDER BY
         COALESCE(e.block_height, t.block_height) ASC NULLS LAST,
         CASE
@@ -2313,16 +2988,17 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
         END ASC,
         e.event_key ASC
     `,
-    [NETWORK],
+    scopedReplay ? [NETWORK, requestedTokenIds] : [NETWORK],
   );
   const existingResult = await client.query(
     `
       SELECT token_id, COALESCE(sum(confirmed_balance), 0) AS confirmed_supply
       FROM proof_indexer.credit_balances
       WHERE network = $1
+        ${scopedReplay ? "AND token_id = ANY($2::text[])" : ""}
       GROUP BY token_id
     `,
-    [NETWORK],
+    scopedReplay ? [NETWORK, requestedTokenIds] : [NETWORK],
   );
   const existingSupply = new Map(
     existingResult.rows.map((row) => [
@@ -2387,17 +3063,23 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
     const definition = definitions.get(tokenId);
     if (row.kind === "token-mint") {
       const expectedBondProjection =
-        ["POWB", "INCB"].includes(definition.ticker) &&
-        payload.confirmed === true &&
-        String(payload.ticker ?? "").trim().toUpperCase() ===
-          definition.ticker &&
-        String(payload.validationMode ?? "") ===
-          `canonical-${definition.ticker.toLowerCase()}-bond-projection` &&
-        String(payload.sourceBondTxid ?? "").trim().toLowerCase() ===
-          String(row.txid ?? "").trim().toLowerCase() &&
-        String(payload.minterAddress ?? "").trim().length > 0 &&
-        /^[1-9]\d*$/u.test(String(payload.amount ?? "").trim()) &&
-        Number(payload.amountSats ?? 0) === 0;
+        definition.ticker === "INCB"
+          ? definition.issuanceAccountingModel ===
+              INCB_ISSUANCE_ACCOUNTING_MODEL &&
+            definition.issuanceValuationFixedAtSend === true &&
+            definition.issuanceUnitSats === 1 &&
+            canonicalBondMintProjection(payload)
+          : definition.ticker === "POWB" &&
+            payload.confirmed === true &&
+            String(payload.ticker ?? "").trim().toUpperCase() ===
+              definition.ticker &&
+            String(payload.validationMode ?? "") ===
+              `canonical-${definition.ticker.toLowerCase()}-bond-projection` &&
+            String(payload.sourceBondTxid ?? "").trim().toLowerCase() ===
+              String(row.txid ?? "").trim().toLowerCase() &&
+            String(payload.minterAddress ?? "").trim().length > 0 &&
+            /^[1-9]\d*$/u.test(String(payload.amount ?? "").trim()) &&
+            Number(payload.amountSats ?? 0) === 0;
       if (["POWB", "INCB"].includes(definition.ticker) && !expectedBondProjection) {
         throw new Error(
           `Canonical credit event ${eventLabel} attempts a generic mint in the reserved ${definition.ticker} namespace`,
@@ -2448,6 +3130,17 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
     addBalance(tokenId, recipient, amount, eventLabel);
   }
 
+  if (scopedReplay) {
+    const missingReplayTokenIds = requestedTokenIds.filter(
+      (tokenId) => !balancesByToken.has(tokenId),
+    );
+    if (missingReplayTokenIds.length > 0) {
+      throw new Error(
+        `Canonical scoped credit replay found no mint history for ${missingReplayTokenIds.join(", ")}`,
+      );
+    }
+  }
+
   for (const [tokenId, balances] of balancesByToken) {
     const minted = mintedByToken.get(tokenId) ?? 0n;
     const definition = definitions.get(tokenId);
@@ -2470,15 +3163,15 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
       );
     }
     const storedSupply = existingSupply.get(tokenId) ?? 0n;
-    if (storedSupply > minted) {
+    if (storedSupply > minted && !supplyCorrectionSet.has(tokenId)) {
       throw new Error(
         `Canonical credit replay for ${tokenId} is incomplete: stored ${storedSupply}, replayed ${minted}`,
       );
     }
   }
 
-  const tokenIds = [...balancesByToken.keys()].sort();
-  if (tokenIds.length === 0) {
+  const replayedTokenIds = [...balancesByToken.keys()].sort();
+  if (replayedTokenIds.length === 0) {
     return { holders: 0, tokens: 0 };
   }
   await client.query(
@@ -2487,10 +3180,10 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
       WHERE network = $1
         AND token_id = ANY($2::text[])
     `,
-    [NETWORK, tokenIds],
+    [NETWORK, replayedTokenIds],
   );
   let holders = 0;
-  for (const tokenId of tokenIds) {
+  for (const tokenId of replayedTokenIds) {
     const balances = balancesByToken.get(tokenId);
     for (const [address, balance] of [...balances.entries()].sort((left, right) =>
       left[0].localeCompare(right[0]),
@@ -2515,7 +3208,13 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(client) {
       holders += 1;
     }
   }
-  return { holders, tokens: tokenIds.length };
+  return {
+    correctedSupplyTokenIds: replayedTokenIds.filter((tokenId) =>
+      supplyCorrectionSet.has(tokenId),
+    ),
+    holders,
+    tokens: replayedTokenIds.length,
+  };
 }
 
 function snapshotSourceParams(params = {}) {
@@ -5678,21 +6377,119 @@ function canonicalSummaryCoverage(summaryPayloads = {}) {
 function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
   const coverage =
     summaryPayloads?.workFloor?.actualValue?.creditMinerFeeCoverage;
+  const inceptionActualCandidate =
+    summaryPayloads?.inceptionSummary?.actualValue;
+  const inceptionActual =
+    inceptionActualCandidate &&
+    typeof inceptionActualCandidate === "object" &&
+    !Array.isArray(inceptionActualCandidate)
+      ? inceptionActualCandidate
+      : null;
   const confirmedEvents = Number(coverage?.confirmedEvents);
   const coveredConfirmedEvents = Number(coverage?.coveredConfirmedEvents);
   const confirmedTransactions = Number(coverage?.confirmedTransactions);
   const coveredConfirmedTransactions = Number(
     coverage?.coveredConfirmedTransactions,
   );
+  const confirmedIssuanceUnits = Number(
+    inceptionActual?.confirmedIssuanceUnits,
+  );
+  const directProofIssuanceUnits = Number(
+    inceptionActual?.directProofIssuanceUnits,
+  );
+  const attachedWorkIssuanceUnits = Number(
+    inceptionActual?.attachedWorkIssuanceUnits,
+  );
+  const attachedWorkLiveValueAtSendSats = Number(
+    inceptionActual?.attachedWorkLiveValueAtSendSats,
+  );
+  const issuanceNetworkValueSats = Number(
+    inceptionActual?.issuanceNetworkValueSats,
+  );
+  const issuanceDustSats = Number(inceptionActual?.issuanceDustSats);
+  const issuanceFloorSats = Number(inceptionActual?.issuanceFloorSats);
+  const issuanceCheckpointBlockHeight = Number(
+    inceptionActual?.issuanceCheckpointBlockHeight,
+  );
+  const issuanceValueSnapshotBlockHeight = Number(
+    inceptionActual?.issuanceValueSnapshotBlockHeight,
+  );
+  const issuanceValueSnapshotWorkNetworkValueSats = Number(
+    inceptionActual?.issuanceValueSnapshotWorkNetworkValueSats,
+  );
+  const inceptionIssuanceCurrent =
+    inceptionActual?.attachmentAccountingModel ===
+      INCB_ISSUANCE_ACCOUNTING_MODEL &&
+    inceptionActual?.issuanceAccountingModel ===
+      INCB_ISSUANCE_ACCOUNTING_MODEL &&
+    inceptionActual?.issuanceCheckpointMode ===
+      "bond-transaction-provenance" &&
+    inceptionActual?.issuanceValueSnapshotModel ===
+      INCB_VALUE_SNAPSHOT_MODEL &&
+    inceptionActual?.issuanceValueSnapshotMode ===
+      "canonical-summary-refresh" &&
+    Number.isSafeInteger(issuanceCheckpointBlockHeight) &&
+    issuanceCheckpointBlockHeight > 1 &&
+    issuanceValueSnapshotBlockHeight ===
+      issuanceCheckpointBlockHeight - 1 &&
+    /^[0-9a-f]{64}$/u.test(
+      String(inceptionActual?.issuanceValueSnapshotBlockHash ?? "")
+        .trim()
+        .toLowerCase(),
+    ) &&
+    /^[0-9a-f]{64}$/u.test(
+      String(
+        inceptionActual?.issuanceValueSnapshotCanonicalSummaryHash ?? "",
+      )
+        .trim()
+        .toLowerCase(),
+    ) &&
+    String(inceptionActual?.issuanceValueSnapshotId ?? "").trim().length > 0 &&
+    Number.isFinite(
+      Date.parse(
+        String(inceptionActual?.issuanceValueSnapshotGeneratedAt ?? ""),
+      ),
+    ) &&
+    Number.isFinite(issuanceValueSnapshotWorkNetworkValueSats) &&
+    issuanceValueSnapshotWorkNetworkValueSats > 0 &&
+    Number.isSafeInteger(confirmedIssuanceUnits) &&
+    confirmedIssuanceUnits > 0 &&
+    Number.isSafeInteger(directProofIssuanceUnits) &&
+    directProofIssuanceUnits > 0 &&
+    Number.isSafeInteger(attachedWorkIssuanceUnits) &&
+    attachedWorkIssuanceUnits >= 0 &&
+    directProofIssuanceUnits + attachedWorkIssuanceUnits ===
+      confirmedIssuanceUnits &&
+    Number.isFinite(attachedWorkLiveValueAtSendSats) &&
+    attachedWorkLiveValueAtSendSats >= 0 &&
+    Math.floor(attachedWorkLiveValueAtSendSats) ===
+      attachedWorkIssuanceUnits &&
+    Number.isFinite(issuanceNetworkValueSats) &&
+    Math.floor(issuanceNetworkValueSats) === confirmedIssuanceUnits &&
+    Math.abs(
+      issuanceNetworkValueSats -
+        (directProofIssuanceUnits +
+          attachedWorkLiveValueAtSendSats),
+    ) <= 0.01 &&
+    Number.isFinite(issuanceDustSats) &&
+    issuanceDustSats >= 0 &&
+    issuanceDustSats < 1 &&
+    Math.abs(
+      issuanceDustSats -
+        (issuanceNetworkValueSats - confirmedIssuanceUnits),
+    ) <= 0.01 &&
+    Number.isFinite(issuanceFloorSats) &&
+    issuanceFloorSats >= 1 &&
+    Math.abs(
+      issuanceFloorSats * confirmedIssuanceUnits -
+        issuanceNetworkValueSats,
+    ) <= 0.01;
   return (
     String(
       summaryPayloads?.workFloor?.actualValue
         ?.creditMinerFeeAccountingModel ?? "",
     ) === "canonical-unique-tx-input-output-v1" &&
-    String(
-      summaryPayloads?.inceptionSummary?.actualValue
-        ?.attachmentAccountingModel ?? "",
-    ) === "canonical-same-tx-work-composite-v1" &&
+    inceptionIssuanceCurrent &&
     coverage?.complete === true &&
     coverage?.source ===
       "proof-indexer-normalized-input-output-totals" &&
@@ -5717,12 +6514,18 @@ function eligibleCanonicalSummarySnapshotPayload(payload) {
   const publicLogCountCheck = (Array.isArray(item?.checks) ? item.checks : []).find(
     (check) => check?.name === "canonical-activity-count-matches-public-log",
   );
+  const inceptionIssuanceCheck = (
+    Array.isArray(item?.checks) ? item.checks : []
+  ).find(
+    (check) => check?.name === "inception-live-issuance-matches-incb-supply",
+  );
   return Boolean(
     item &&
       item.ok === true &&
       item.status !== "summary-snapshot-fallback" &&
       tokenComponentCheck?.ok === true &&
       publicLogCountCheck?.ok === true &&
+      inceptionIssuanceCheck?.ok === true &&
       item.summaryRefresh?.mode === "canonical-summary-refresh" &&
       /^[0-9a-f]{64}$/u.test(
         String(item.indexedThroughBlockHash ?? "").toLowerCase(),
@@ -6563,9 +7366,13 @@ async function latestBlockScanCheckpoint(client, options = {}) {
         ) AS block_hash
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
+        AND NOT COALESCE(source_hashes ? 'canonicalSummary', false)
         AND (
-          source_hashes ? 'blockScan'
-          OR payload->>'source' = 'proof-indexer-block-scan'
+          COALESCE(source_hashes ? 'blockScan', false)
+          OR COALESCE(
+            payload->>'source' = 'proof-indexer-block-scan',
+            false
+          )
         )
         AND COALESCE(
           NULLIF(payload->>'indexedThroughBlockHash', ''),
@@ -7879,6 +8686,1023 @@ async function repairWorkMintMinterAttribution(client) {
   };
 }
 
+async function canonicalIncbIssuanceRepairTarget(txid) {
+  const expectation = CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS.get(txid);
+  if (!expectation) {
+    throw new Error(
+      `Canonical INCB issuance repair has no pinned full-node oracle for ${txid}.`,
+    );
+  }
+  const raw = await rawTransactionFromCore(txid);
+  const blockHash = String(raw?.blockhash ?? "").trim().toLowerCase();
+  if (
+    !raw ||
+    Number(raw?.confirmations) <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(blockHash)
+  ) {
+    throw new Error(
+      `Canonical INCB issuance repair transaction ${txid} is not confirmed.`,
+    );
+  }
+  const block = await bitcoinRpc("getblock", [blockHash, 2]);
+  const height = Number(block?.height);
+  assertCanonicalBlockEnvelope(block, height, blockHash);
+  const canonicalBlockHash = String(
+    await bitcoinRpc("getblockhash", [height]),
+  )
+    .trim()
+    .toLowerCase();
+  if (canonicalBlockHash !== blockHash) {
+    throw new Error(
+      `Canonical INCB issuance repair block ${height} no longer matches Bitcoin Core.`,
+    );
+  }
+  if (
+    height !== expectation.blockHeight ||
+    blockHash !== expectation.blockHash
+  ) {
+    throw new Error(
+      `Canonical INCB issuance repair ${txid} does not match its pinned block ${expectation.blockHeight}:${expectation.blockHash}.`,
+    );
+  }
+  const blockIndex = (Array.isArray(block?.tx) ? block.tx : []).findIndex(
+    (candidate) => String(candidate?.txid ?? "").trim().toLowerCase() === txid,
+  );
+  if (blockIndex < 0) {
+    throw new Error(
+      `Canonical INCB issuance repair transaction ${txid} is absent from block ${blockHash}.`,
+    );
+  }
+  if (blockIndex !== expectation.blockIndex) {
+    throw new Error(
+      `Canonical INCB issuance repair ${txid} moved from pinned block index ${expectation.blockIndex} to ${blockIndex}.`,
+    );
+  }
+  const hydrated = await transactionWithInputPrevouts({
+    ...block.tx[blockIndex],
+    _powBlockHash: blockHash,
+    _powBlockIndex: blockIndex,
+    _powPreviousBlockHash: String(block?.previousblockhash ?? "")
+      .trim()
+      .toLowerCase(),
+    blocktime: block?.time,
+    height,
+  });
+  assertHydratedProtocolTransaction(hydrated);
+  const messages = protocolMessagesFromTx(hydrated);
+  const mailItem = aggregatePwmProtocolItem(hydrated, messages);
+  if (
+    !mailItem ||
+    mailItem.kind !== INCEPTION_BOND_KIND ||
+    String(mailItem.txid ?? "").trim().toLowerCase() !== txid
+  ) {
+    throw new Error(
+      `Canonical INCB issuance repair transaction ${txid} is not an Inception Bond.`,
+    );
+  }
+  const prepared = await preparedProtocolItemsForTx(hydrated, messages);
+  if (prepared.length === 0 || prepared.some((entry) => entry?.item?.valid === false)) {
+    throw new Error(
+      `Canonical INCB issuance verifier returned an invalid projection for ${txid}.`,
+    );
+  }
+  const preparedItems = prepared.map((entry) => entry?.item ?? entry);
+  const bondItems = preparedItems.filter(
+    (item) =>
+      String(item?.kind ?? "").trim().toLowerCase() ===
+        INCEPTION_BOND_KIND &&
+      String(item?.txid ?? "").trim().toLowerCase() === txid,
+  );
+  if (bondItems.length !== 1) {
+    throw new Error(
+      `Canonical INCB issuance verifier did not return exactly one bond event for ${txid}.`,
+    );
+  }
+  const [bondItem] = bondItems;
+  const bondRecipients = Array.isArray(mailItem?.recipients)
+    ? mailItem.recipients
+    : [];
+  if (
+    bondRecipients.length !== 1 ||
+    String(bondRecipients[0]?.address ?? "").trim() !==
+      expectation.recipientAddress ||
+    Number(bondRecipients[0]?.amountSats) !== expectation.recipientAmountSats ||
+    Number(bondRecipients[0]?.vout) !== expectation.recipientVout
+  ) {
+    throw new Error(
+      `Canonical INCB issuance repair ${txid} does not match its pinned bond recipient payment.`,
+    );
+  }
+  const workAttachmentItems = preparedItems.filter(
+    (item) =>
+      String(item?.kind ?? "").trim().toLowerCase() === "token-transfer" &&
+      String(item?.tokenId ?? "").trim().toLowerCase() ===
+        expectation.workAttachmentTokenId,
+  );
+  if (
+    workAttachmentItems.length !== 1 ||
+    Number(workAttachmentItems[0]?.amount) !== expectation.workAttachmentAmount ||
+    Number(workAttachmentItems[0]?.protocolVout) !==
+      expectation.workAttachmentProtocolVout ||
+    String(workAttachmentItems[0]?.recipientAddress ?? "").trim() !==
+      expectation.workAttachmentRecipientAddress
+  ) {
+    throw new Error(
+      `Canonical INCB issuance repair ${txid} does not match its pinned WORK attachment transfer.`,
+    );
+  }
+  const [workAttachmentItem] = workAttachmentItems;
+  const attachedCredits = Array.isArray(bondItem?.attachedCredits)
+    ? bondItem.attachedCredits
+    : [];
+  if (
+    attachedCredits.length !== 1 ||
+    Number(attachedCredits[0]?.amount) !== expectation.workAttachmentAmount ||
+    Number(attachedCredits[0]?.protocolVout) !==
+      expectation.workAttachmentProtocolVout ||
+    String(attachedCredits[0]?.recipientAddress ?? "").trim() !==
+      expectation.workAttachmentRecipientAddress ||
+    String(attachedCredits[0]?.tokenId ?? "").trim().toLowerCase() !==
+      expectation.workAttachmentTokenId
+  ) {
+    throw new Error(
+      `Canonical INCB issuance verifier did not bind the exact WORK attachment to the bond event for ${txid}.`,
+    );
+  }
+  const mintItems = preparedItems
+    .filter(
+      (item) =>
+        String(item?.kind ?? "").trim().toLowerCase() === "token-mint" &&
+        String(item?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID,
+    );
+  if (
+    mintItems.length !== 1 ||
+    mintItems.some(
+      (item) =>
+        !canonicalBondMintProjection(item) ||
+        incbIssuanceMetadataInvalidReason(item),
+    )
+  ) {
+    throw new Error(
+      `Canonical INCB issuance verifier did not return complete ${INCB_ISSUANCE_ACCOUNTING_MODEL} mint metadata for ${txid}.`,
+    );
+  }
+  const [mintItem] = mintItems;
+  if (
+    String(mintItem?.minterAddress ?? "").trim() !==
+      expectation.recipientAddress ||
+    String(mintItem?.bondRecipientAddress ?? "").trim() !==
+      expectation.recipientAddress ||
+    String(mintItem?.minterAddress ?? "").trim() !==
+      String(workAttachmentItem?.recipientAddress ?? "").trim() ||
+    Number(mintItem?.bondRecipientAmountSats) !==
+      expectation.recipientAmountSats ||
+    Number(mintItem?.bondRecipientVout) !== expectation.recipientVout
+  ) {
+    throw new Error(
+      `Canonical INCB issuance verifier did not bind the mint recipient to the bond payment and WORK attachment for ${txid}.`,
+    );
+  }
+  const closeTo = (actual, expected, tolerance = 1e-6) =>
+    Number.isFinite(Number(actual)) &&
+    Math.abs(Number(actual) - expected) <= tolerance;
+  if (
+    String(mintItem.issuanceCheckpointMode ?? "") !==
+      "bond-transaction-provenance" ||
+    Number(mintItem.issuanceCheckpointBlockHeight) !== expectation.blockHeight ||
+    String(mintItem.issuanceCheckpointBlockHash ?? "")
+      .trim()
+      .toLowerCase() !== expectation.blockHash ||
+    Number(mintItem.issuanceCheckpointBlockIndex) !== expectation.blockIndex ||
+    String(mintItem.issuanceValueSnapshotId ?? "").trim() !==
+      expectation.issuanceValueSnapshotId ||
+    Number(mintItem.issuanceValueSnapshotBlockHeight) !==
+      expectation.issuanceValueSnapshotBlockHeight ||
+    String(mintItem.issuanceValueSnapshotBlockHash ?? "")
+      .trim()
+      .toLowerCase() !== expectation.issuanceValueSnapshotBlockHash ||
+    String(mintItem.issuanceValueSnapshotCanonicalSummaryHash ?? "")
+      .trim()
+      .toLowerCase() !==
+      expectation.issuanceValueSnapshotCanonicalSummaryHash ||
+    String(mintItem.issuanceValueSnapshotMode ?? "") !==
+      expectation.issuanceValueSnapshotMode ||
+    String(mintItem.issuanceValueSnapshotModel ?? "") !==
+      expectation.issuanceValueSnapshotModel ||
+    new Date(mintItem.issuanceValueSnapshotGeneratedAt).toISOString() !==
+      expectation.issuanceValueSnapshotGeneratedAt ||
+    !closeTo(
+      mintItem.issuanceValueSnapshotWorkNetworkValueSats,
+      expectation.issuanceValueSnapshotWorkNetworkValueSats,
+    ) ||
+    Number(mintItem.attachedWorkAmount) !== expectation.attachedWorkAmount ||
+    Number(mintItem.attachedWorkIssuanceUnits) !==
+      expectation.attachedWorkIssuanceUnits ||
+    !closeTo(
+      mintItem.attachedWorkLiveFloorAtSendSats,
+      expectation.attachedWorkLiveFloorAtSendSats,
+      1e-9,
+    ) ||
+    !closeTo(
+      mintItem.attachedWorkLiveValueAtSendSats,
+      expectation.attachedWorkLiveValueAtSendSats,
+    ) ||
+    Number(mintItem.directProofIssuanceUnits) !==
+      expectation.directProofIssuanceUnits ||
+    Number(mintItem.confirmedIssuanceUnits) !==
+      expectation.confirmedIssuanceUnits ||
+    Number(mintItem.amount) !== expectation.confirmedIssuanceUnits ||
+    !closeTo(
+      mintItem.issuanceNetworkValueSats,
+      expectation.issuanceNetworkValueSats,
+    ) ||
+    !closeTo(
+      mintItem.issuanceFloorSats,
+      expectation.issuanceFloorSats,
+      1e-12,
+    ) ||
+    !closeTo(mintItem.issuanceDustSats, expectation.issuanceDustSats)
+  ) {
+    throw new Error(
+      `Canonical INCB issuance verifier disagrees with the pinned pre-bond oracle for ${txid}.`,
+    );
+  }
+  const issuanceUnits = mintItems.reduce(
+    (total, item) => total + BigInt(String(item.amount)),
+    0n,
+  );
+  if (issuanceUnits <= 0n) {
+    throw new Error(
+      `Canonical INCB issuance repair transaction ${txid} has zero issuance.`,
+    );
+  }
+  return {
+    blockHash,
+    blockIndex,
+    height,
+    hydrated,
+    issuanceUnits,
+    bondItem,
+    mintItems,
+    oracle: expectation,
+    txid,
+  };
+}
+
+function canonicalIncbValueSnapshotBinding(item) {
+  const invalidReason = incbIssuanceMetadataInvalidReason(item);
+  if (invalidReason) {
+    throw new Error(
+      `Canonical INCB value snapshot binding is invalid: ${invalidReason}.`,
+    );
+  }
+  return {
+    blockHash: String(item.issuanceValueSnapshotBlockHash).toLowerCase(),
+    blockHeight: Number(item.issuanceValueSnapshotBlockHeight),
+    canonicalSummaryHash: String(
+      item.issuanceValueSnapshotCanonicalSummaryHash,
+    ).toLowerCase(),
+    generatedAt: new Date(item.issuanceValueSnapshotGeneratedAt).toISOString(),
+    mode: String(item.issuanceValueSnapshotMode),
+    model: String(item.issuanceValueSnapshotModel),
+    snapshotId: String(item.issuanceValueSnapshotId).trim(),
+    workNetworkValueSats: Number(
+      item.issuanceValueSnapshotWorkNetworkValueSats,
+    ),
+  };
+}
+
+function canonicalIncbValueSnapshotBindings(targets) {
+  const bindings = new Map();
+  for (const target of targets) {
+    for (const item of target.mintItems) {
+      const binding = canonicalIncbValueSnapshotBinding(item);
+      const previous = bindings.get(binding.snapshotId);
+      if (
+        previous &&
+        JSON.stringify(previous) !== JSON.stringify(binding)
+      ) {
+        throw new Error(
+          `Canonical INCB issuance targets disagree about value snapshot ${binding.snapshotId}.`,
+        );
+      }
+      bindings.set(binding.snapshotId, binding);
+    }
+  }
+  return bindings;
+}
+
+async function lockedCanonicalIncbValueSnapshots(client, snapshotIds) {
+  if (!Array.isArray(snapshotIds) || snapshotIds.length === 0) {
+    return [];
+  }
+  const result = await client.query(
+    `
+      SELECT
+        snapshot_id,
+        indexed_through_block,
+        generated_at,
+        source_hashes->>'blockScan' AS source_block_hash,
+        source_hashes->>'canonicalSummary' AS canonical_summary_hash,
+        consistency->>'ok' AS consistency_ok,
+        COALESCE(consistency->>'status', payload->>'status', '') AS consistency_status,
+        payload->>'snapshotId' AS payload_snapshot_id,
+        payload->>'indexedThroughBlockHash' AS payload_block_hash,
+        payload->'summaryRefresh'->>'mode' AS summary_refresh_mode,
+        payload->'summaryRefresh'->>'indexedThroughBlockHash' AS summary_refresh_block_hash,
+        payload->'summaryPayloads'->'workFloor'->>'snapshotId' AS work_floor_snapshot_id,
+        payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlock' AS work_floor_height,
+        payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlockHash' AS work_floor_block_hash,
+        COALESCE(
+          NULLIF(payload #>> '{summaryPayloads,workFloor,liveNetworkValueSats}', ''),
+          NULLIF(payload #>> '{summaryPayloads,workFloor,actualValue,liveNetworkValueSats}', ''),
+          NULLIF(payload #>> '{summaryPayloads,workFloor,actualValue,liveTotalSats}', ''),
+          NULLIF(payload #>> '{summaryPayloads,workFloor,actualValue,totalSats}', '')
+        ) AS work_network_value_sats_text
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
+        AND snapshot_id = ANY($2::text[])
+      ORDER BY snapshot_id ASC
+      FOR UPDATE
+    `,
+    [NETWORK, snapshotIds],
+  );
+  return result.rows;
+}
+
+function canonicalIncbValueSnapshotFingerprint(row) {
+  return JSON.stringify({
+    canonicalSummaryHash: String(row?.canonical_summary_hash ?? "").toLowerCase(),
+    consistencyOk: String(row?.consistency_ok ?? ""),
+    consistencyStatus: String(row?.consistency_status ?? ""),
+    generatedAt: new Date(row?.generated_at).toISOString(),
+    indexedThroughBlock: Number(row?.indexed_through_block),
+    payloadBlockHash: String(row?.payload_block_hash ?? "").toLowerCase(),
+    payloadSnapshotId: String(row?.payload_snapshot_id ?? ""),
+    snapshotId: String(row?.snapshot_id ?? ""),
+    sourceBlockHash: String(row?.source_block_hash ?? "").toLowerCase(),
+    summaryRefreshBlockHash: String(
+      row?.summary_refresh_block_hash ?? "",
+    ).toLowerCase(),
+    summaryRefreshMode: String(row?.summary_refresh_mode ?? ""),
+    workFloorBlockHash: String(row?.work_floor_block_hash ?? "").toLowerCase(),
+    workFloorHeight: Number(row?.work_floor_height),
+    workFloorSnapshotId: String(row?.work_floor_snapshot_id ?? ""),
+    workNetworkValueSatsText: String(
+      row?.work_network_value_sats_text ?? "",
+    ),
+  });
+}
+
+function verifiedCanonicalIncbValueSnapshotFingerprints(rows, bindings) {
+  if (rows.length !== bindings.size) {
+    throw new Error(
+      `INCB issuance repair expected ${bindings.size} locked value snapshots but found ${rows.length}.`,
+    );
+  }
+  const fingerprints = new Map();
+  for (const row of rows) {
+    const snapshotId = String(row?.snapshot_id ?? "");
+    const binding = bindings.get(snapshotId);
+    const generatedAt = new Date(row?.generated_at).toISOString();
+    const blockHashes = [
+      row?.source_block_hash,
+      row?.payload_block_hash,
+      row?.summary_refresh_block_hash,
+      row?.work_floor_block_hash,
+    ].map((value) => String(value ?? "").trim().toLowerCase());
+    if (
+      !binding ||
+      String(row?.consistency_ok ?? "") !== "true" ||
+      row?.consistency_status !== "green" ||
+      row?.summary_refresh_mode !== "canonical-summary-refresh" ||
+      String(row?.payload_snapshot_id ?? "") !== snapshotId ||
+      String(row?.work_floor_snapshot_id ?? "") !== snapshotId ||
+      Number(row?.indexed_through_block) !== binding.blockHeight ||
+      Number(row?.work_floor_height) !== binding.blockHeight ||
+      blockHashes.some((hash) => hash !== binding.blockHash) ||
+      String(row?.canonical_summary_hash ?? "").trim().toLowerCase() !==
+        binding.canonicalSummaryHash ||
+      generatedAt !== binding.generatedAt ||
+      binding.mode !== "canonical-summary-refresh" ||
+      binding.model !== INCB_VALUE_SNAPSHOT_MODEL ||
+      !Number.isFinite(Number(row?.work_network_value_sats_text)) ||
+      Math.abs(
+        Number(row.work_network_value_sats_text) -
+          binding.workNetworkValueSats,
+      ) > 0.01
+    ) {
+      throw new Error(
+        `INCB issuance repair value snapshot ${snapshotId || "unknown"} does not match its mint provenance.`,
+      );
+    }
+    fingerprints.set(
+      snapshotId,
+      canonicalIncbValueSnapshotFingerprint(row),
+    );
+  }
+  return fingerprints;
+}
+
+async function repairCanonicalIncbIssuance(client) {
+  const targets = [];
+  for (const txid of REPAIR_INCB_ISSUANCE_TXIDS) {
+    targets.push(await canonicalIncbIssuanceRepairTarget(txid));
+  }
+  targets.sort(
+    (left, right) =>
+      left.height - right.height ||
+      left.blockIndex - right.blockIndex ||
+      left.txid.localeCompare(right.txid),
+  );
+  const targetTxids = targets.map((target) => target.txid);
+  const targetByTxid = new Map(
+    targets.map((target) => [target.txid, target]),
+  );
+  const expectedIssuance = targets.reduce(
+    (total, target) => total + target.issuanceUnits,
+    0n,
+  );
+  const valueSnapshotBindings = canonicalIncbValueSnapshotBindings(targets);
+  const valueSnapshotIds = [...valueSnapshotBindings.keys()].sort();
+
+  await client.query("BEGIN");
+  try {
+    // Coordinate with every snapshot INSERT/UPDATE/DELETE writer. PostgreSQL
+    // RowExclusive locks taken by those writers conflict with this mode, so a
+    // writer already in flight completes before the repair reads snapshots and
+    // no new snapshot can race the selective invalidation before COMMIT.
+    await client.query(
+      "LOCK TABLE proof_indexer.ledger_snapshots IN SHARE ROW EXCLUSIVE MODE",
+    );
+    const lockedValueSnapshotsBefore =
+      await lockedCanonicalIncbValueSnapshots(client, valueSnapshotIds);
+    const valueSnapshotFingerprintsBefore =
+      verifiedCanonicalIncbValueSnapshotFingerprints(
+        lockedValueSnapshotsBefore,
+        valueSnapshotBindings,
+      );
+    const transactionRows = await client.query(
+      `
+        SELECT txid, status, block_hash, block_height
+        FROM proof_indexer.transactions
+        WHERE network = $1
+          AND txid = ANY($2::text[])
+        FOR UPDATE
+      `,
+      [NETWORK, targetTxids],
+    );
+    const transactionByTxid = new Map(
+      transactionRows.rows.map((row) => [String(row.txid), row]),
+    );
+    for (const target of targets) {
+      const row = transactionByTxid.get(target.txid);
+      if (
+        row?.status !== "confirmed" ||
+        Number(row?.block_height) !== target.height ||
+        String(row?.block_hash ?? "").trim().toLowerCase() !== target.blockHash
+      ) {
+        throw new Error(
+          `Stored INCB transaction ${target.txid} does not match the confirmed Bitcoin Core block.`,
+        );
+      }
+    }
+
+    const existingBonds = await client.query(
+      `
+        SELECT event_id, txid, payload, status, valid
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND txid = ANY($2::text[])
+          AND protocol = 'pwm1'
+          AND kind = 'inception-bond'
+        FOR UPDATE
+      `,
+      [NETWORK, targetTxids],
+    );
+    if (existingBonds.rows.length !== targets.length) {
+      throw new Error(
+        `INCB issuance repair expected ${targets.length} stored bond rows but found ${existingBonds.rows.length}.`,
+      );
+    }
+    const existingBondByTxid = new Map();
+    for (const row of existingBonds.rows) {
+      const txid = String(row?.txid ?? "").trim().toLowerCase();
+      if (
+        !txid ||
+        existingBondByTxid.has(txid) ||
+        row?.status !== "confirmed" ||
+        row?.valid !== true
+      ) {
+        throw new Error(
+          `INCB issuance repair requires one valid confirmed bond row per target; rejected ${txid || "unknown"}.`,
+        );
+      }
+      existingBondByTxid.set(txid, row);
+    }
+
+    const existingEvents = await client.query(
+      `
+        SELECT event_id, txid, payload
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND txid = ANY($2::text[])
+          AND protocol = 'pwt1'
+          AND kind = 'token-mint'
+          AND lower(COALESCE(payload->>'tokenId', '')) = $3
+        FOR UPDATE
+      `,
+      [NETWORK, targetTxids, INCB_TOKEN_ID],
+    );
+    const expectedRows = targets.reduce(
+      (total, target) => total + target.mintItems.length,
+      0,
+    );
+    if (existingEvents.rows.length !== expectedRows) {
+      throw new Error(
+        `INCB issuance repair expected ${expectedRows} stored mint rows but found ${existingEvents.rows.length}.`,
+      );
+    }
+    const existingEventByTxid = new Map();
+    for (const row of existingEvents.rows) {
+      const txid = String(row?.txid ?? "").trim().toLowerCase();
+      if (!txid || existingEventByTxid.has(txid)) {
+        throw new Error(
+          `INCB issuance repair requires exactly one stored mint row per target transaction; duplicate ${txid || "unknown"}.`,
+        );
+      }
+      existingEventByTxid.set(txid, row);
+    }
+    const beforeTargetIssuance = existingEvents.rows.reduce((total, row) => {
+      const amountText = canonicalIntegerText(row?.payload?.amount, {
+        positive: true,
+      });
+      if (!amountText) {
+        throw new Error(
+          `Stored INCB mint ${row?.txid ?? "unknown"} has no exact positive amount.`,
+        );
+      }
+      return total + BigInt(amountText);
+    }, 0n);
+    const beforeCanonicalMintRows = existingEvents.rows.filter(
+      (row) => canonicalIncbIssuanceMintProjection(row?.payload),
+    ).length;
+    const beforeBalances = await client.query(
+      `
+        SELECT address, confirmed_balance
+        FROM proof_indexer.credit_balances
+        WHERE network = $1
+          AND token_id = $2
+        FOR UPDATE
+      `,
+      [NETWORK, INCB_TOKEN_ID],
+    );
+    const beforeBalanceSupply = beforeBalances.rows.reduce((total, row) => {
+      const balanceText = canonicalIntegerText(row?.confirmed_balance);
+      if (!balanceText) {
+        throw new Error(
+          `Stored INCB balance for ${row?.address ?? "unknown"} is not an exact non-negative integer.`,
+        );
+      }
+      return total + BigInt(balanceText);
+    }, 0n);
+
+    await seedCanonicalIncbDefinition(client, { required: true });
+    for (const target of targets) {
+      const existingBond = existingBondByTxid.get(target.txid);
+      const attachedCredits = Array.isArray(target?.bondItem?.attachedCredits)
+        ? target.bondItem.attachedCredits
+        : [];
+      if (!existingBond || attachedCredits.length === 0) {
+        throw new Error(
+          `INCB issuance repair has no canonical attachment-bound bond row for ${target.txid}.`,
+        );
+      }
+      const updated = await client.query(
+        `
+          UPDATE proof_indexer.events
+          SET payload = jsonb_set(
+            COALESCE(payload, '{}'::jsonb),
+            '{attachedCredits}',
+            $4::jsonb,
+            true
+          )
+          WHERE network = $1
+            AND event_id = $2
+            AND txid = $3
+            AND protocol = 'pwm1'
+            AND kind = 'inception-bond'
+            AND status = 'confirmed'
+            AND valid = true
+          RETURNING event_id
+        `,
+        [
+          NETWORK,
+          existingBond.event_id,
+          target.txid,
+          JSON.stringify(attachedCredits),
+        ],
+      );
+      if (updated.rowCount !== 1) {
+        throw new Error(
+          `INCB issuance repair could not update the locked bond row for ${target.txid}.`,
+        );
+      }
+    }
+    for (const target of targets) {
+      for (const item of target.mintItems) {
+        const integrityItem = await protocolIntegrityItemForPersistence(
+          client,
+          item,
+        );
+        if (
+          integrityItem?.valid === false ||
+          !canonicalBondMintProjection(integrityItem)
+        ) {
+          throw new Error(
+            `INCB issuance repair rejected canonical mint ${target.txid}.`,
+          );
+        }
+        const existingEvent = existingEventByTxid.get(target.txid);
+        if (!existingEvent) {
+          throw new Error(
+            `INCB issuance repair has no locked mint row for ${target.txid}.`,
+          );
+        }
+        const normalizedMint = normalizedEventItem(
+          integrityItem,
+          "token-mint",
+          "confirmed",
+        );
+        const updated = await client.query(
+          `
+            UPDATE proof_indexer.events
+            SET
+              status = 'confirmed',
+              valid = true,
+              validation_errors = ARRAY[]::text[],
+              amount_sats = 0,
+              data_bytes = COALESCE($4, data_bytes),
+              payload = (
+                payload
+                  - 'attachedWorkFloorAtConfirmationSats'
+                  - 'attachedWorkLiveValueAtConfirmationSats'
+                  - 'issuanceFixedAtConfirmation'
+                  - 'issuanceCheckpointWorkNetworkValueSats'
+              ) || $5::jsonb
+            WHERE network = $1
+              AND event_id = $2
+              AND txid = $3
+              AND protocol = 'pwt1'
+              AND kind = 'token-mint'
+              AND lower(COALESCE(payload->>'tokenId', '')) = $6
+            RETURNING event_id
+          `,
+          [
+            NETWORK,
+            existingEvent.event_id,
+            target.txid,
+            numberOrNull(normalizedMint?.dataBytes),
+            JSON.stringify(normalizedMint),
+            INCB_TOKEN_ID,
+          ],
+        );
+        if (updated.rowCount !== 1) {
+          throw new Error(
+            `INCB issuance repair could not update the locked mint row for ${target.txid}.`,
+          );
+        }
+      }
+    }
+
+    const repairedBonds = await client.query(
+      `
+        SELECT txid, payload, status, valid
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND txid = ANY($2::text[])
+          AND protocol = 'pwm1'
+          AND kind = 'inception-bond'
+        FOR UPDATE
+      `,
+      [NETWORK, targetTxids],
+    );
+    if (
+      repairedBonds.rows.length !== targets.length ||
+      repairedBonds.rows.some((row) => {
+        const target = targetByTxid.get(
+          String(row?.txid ?? "").trim().toLowerCase(),
+        );
+        const attachedCredits = Array.isArray(row?.payload?.attachedCredits)
+          ? row.payload.attachedCredits
+          : [];
+        return (
+          !target ||
+          row?.status !== "confirmed" ||
+          row?.valid !== true ||
+          attachedCredits.length !== 1 ||
+          Number(attachedCredits[0]?.amount) !==
+            target.oracle.workAttachmentAmount ||
+          Number(attachedCredits[0]?.protocolVout) !==
+            target.oracle.workAttachmentProtocolVout ||
+          String(attachedCredits[0]?.recipientAddress ?? "").trim() !==
+            target.oracle.workAttachmentRecipientAddress ||
+          String(attachedCredits[0]?.tokenId ?? "")
+            .trim()
+            .toLowerCase() !== target.oracle.workAttachmentTokenId
+        );
+      })
+    ) {
+      throw new Error(
+        "INCB issuance repair did not persist the exact WORK attachment on the canonical bond row.",
+      );
+    }
+
+    const repairedEvents = await client.query(
+      `
+        SELECT txid, payload, status, valid
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND txid = ANY($2::text[])
+          AND protocol = 'pwt1'
+          AND kind = 'token-mint'
+          AND lower(COALESCE(payload->>'tokenId', '')) = $3
+        FOR UPDATE
+      `,
+      [NETWORK, targetTxids, INCB_TOKEN_ID],
+    );
+    if (
+      repairedEvents.rows.length !== expectedRows ||
+      repairedEvents.rows.some(
+        (row) => {
+          const target = targetByTxid.get(
+            String(row?.txid ?? "").trim().toLowerCase(),
+          );
+          const expectedBinding = valueSnapshotBindings.get(
+            String(row?.payload?.issuanceValueSnapshotId ?? "").trim(),
+          );
+          const persistedBinding = target
+            ? canonicalIncbValueSnapshotBinding(row.payload)
+            : null;
+          return (
+            !target ||
+            !expectedBinding ||
+            JSON.stringify(persistedBinding) !==
+              JSON.stringify(expectedBinding) ||
+            row?.status !== "confirmed" ||
+            row?.valid !== true ||
+            !canonicalIncbIssuanceMintProjection(row?.payload) ||
+            String(row?.payload?.minterAddress ?? "").trim() !==
+              target.oracle.recipientAddress ||
+            String(row?.payload?.bondRecipientAddress ?? "").trim() !==
+              target.oracle.recipientAddress ||
+            Number(row?.payload?.bondRecipientAmountSats) !==
+              target.oracle.recipientAmountSats ||
+            Number(row?.payload?.bondRecipientVout) !==
+              target.oracle.recipientVout
+          );
+        },
+      )
+    ) {
+      throw new Error(
+        "INCB issuance repair did not persist the exact confirmed canonical mint row set.",
+      );
+    }
+    const repairedTargetIssuance = repairedEvents.rows.reduce(
+      (total, row) => total + BigInt(String(row.payload.amount)),
+      0n,
+    );
+    if (repairedTargetIssuance !== expectedIssuance) {
+      throw new Error(
+        `INCB issuance repair target mismatch: expected=${expectedIssuance}, stored=${repairedTargetIssuance}.`,
+      );
+    }
+
+    const replay = await rebuildConfirmedCreditBalancesFromCanonicalEvents(
+      client,
+      {
+        supplyCorrectionMode: "canonical-incb-issuance-repair",
+        supplyCorrectionTokenIds: [INCB_TOKEN_ID],
+        tokenIds: [INCB_TOKEN_ID],
+      },
+    );
+    const verification = await client.query(
+      `
+        SELECT
+          COALESCE((
+            SELECT sum((e.payload->>'amount')::numeric)
+            FROM proof_indexer.events e
+            LEFT JOIN proof_indexer.transactions t
+              ON t.network = e.network
+             AND t.txid = e.txid
+            WHERE e.network = $1
+              AND e.protocol = 'pwt1'
+              AND e.kind = 'token-mint'
+              AND e.valid = true
+              AND COALESCE(t.status, e.status) = 'confirmed'
+              AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
+              AND e.payload->>'issuanceAccountingModel' = $3
+              AND e.payload->>'amount' ~ '^[1-9][0-9]*$'
+          ), 0)::text AS minted_supply,
+          COALESCE((
+            SELECT sum(cb.confirmed_balance)
+            FROM proof_indexer.credit_balances cb
+            WHERE cb.network = $1
+              AND cb.token_id = $2
+          ), 0)::text AS balance_supply
+      `,
+      [NETWORK, INCB_TOKEN_ID, INCB_ISSUANCE_ACCOUNTING_MODEL],
+    );
+    const mintedSupply = BigInt(verification.rows[0]?.minted_supply ?? "0");
+    const balanceSupply = BigInt(verification.rows[0]?.balance_supply ?? "0");
+    if (
+      mintedSupply < expectedIssuance ||
+      balanceSupply !== mintedSupply
+    ) {
+      throw new Error(
+        `INCB issuance repair conservation failed: target=${expectedIssuance}, mints=${mintedSupply}, balances=${balanceSupply}.`,
+      );
+    }
+
+    // Re-read the canonical block hash and target transaction from Bitcoin Core
+    // after every database write and conservation check. A reorg between the
+    // initial oracle read and this point aborts and rolls back the transaction.
+    for (const target of targets) {
+      const finalBlockHash = String(
+        await bitcoinRpc("getblockhash", [target.height]),
+      )
+        .trim()
+        .toLowerCase();
+      const finalRaw = await bitcoinRpc("getrawtransaction", [
+        target.txid,
+        true,
+      ]);
+      if (
+        finalBlockHash !== target.blockHash ||
+        Number(finalRaw?.confirmations) <= 0 ||
+        String(finalRaw?.blockhash ?? "").trim().toLowerCase() !==
+          target.blockHash
+      ) {
+        throw new Error(
+          `Canonical INCB issuance repair ${target.txid} changed chain position before commit.`,
+        );
+      }
+    }
+
+    const canonicalBlockScanSnapshotPredicate = `
+      NOT COALESCE(source_hashes ? 'canonicalSummary', false)
+      AND (
+        COALESCE(source_hashes ? 'blockScan', false)
+        OR COALESCE(
+          payload->>'source' = 'proof-indexer-block-scan',
+          false
+        )
+      )
+    `;
+    const preservedBefore = await client.query(
+      `
+        SELECT snapshot_id, indexed_through_block
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+          AND (${canonicalBlockScanSnapshotPredicate})
+        ORDER BY indexed_through_block DESC, generated_at DESC, snapshot_id DESC
+      `,
+      [NETWORK],
+    );
+    // Invalidate only derived read-model/value snapshots. Pure block-scan
+    // checkpoints are canonical resume anchors and must survive the repair.
+    const invalidated = await client.query(
+      `
+        DELETE FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+          AND NOT (${canonicalBlockScanSnapshotPredicate})
+          AND NOT (snapshot_id = ANY($2::text[]))
+      `,
+      [NETWORK, valueSnapshotIds],
+    );
+    const preservedAfter = await client.query(
+      `
+        SELECT snapshot_id, indexed_through_block
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+          AND (${canonicalBlockScanSnapshotPredicate})
+        ORDER BY indexed_through_block DESC, generated_at DESC, snapshot_id DESC
+      `,
+      [NETWORK],
+    );
+    const preservedBeforeIds = preservedBefore.rows.map((row) =>
+      String(row?.snapshot_id ?? ""),
+    );
+    const preservedAfterIds = preservedAfter.rows.map((row) =>
+      String(row?.snapshot_id ?? ""),
+    );
+    if (
+      preservedBeforeIds.length !== preservedAfterIds.length ||
+      preservedBeforeIds.some(
+        (snapshotId, index) => snapshotId !== preservedAfterIds[index],
+      ) ||
+      String(preservedBefore.rows[0]?.snapshot_id ?? "") !==
+        String(preservedAfter.rows[0]?.snapshot_id ?? "") ||
+      Number(preservedBefore.rows[0]?.indexed_through_block ?? 0) !==
+        Number(preservedAfter.rows[0]?.indexed_through_block ?? 0)
+    ) {
+      throw new Error(
+        "INCB issuance repair changed an authoritative block-scan checkpoint.",
+      );
+    }
+    const lockedValueSnapshotsAfter =
+      await lockedCanonicalIncbValueSnapshots(client, valueSnapshotIds);
+    const valueSnapshotFingerprintsAfter =
+      verifiedCanonicalIncbValueSnapshotFingerprints(
+        lockedValueSnapshotsAfter,
+        valueSnapshotBindings,
+      );
+    if (
+      valueSnapshotFingerprintsAfter.size !==
+        valueSnapshotFingerprintsBefore.size ||
+      [...valueSnapshotFingerprintsBefore].some(
+        ([snapshotId, fingerprint]) =>
+          valueSnapshotFingerprintsAfter.get(snapshotId) !== fingerprint,
+      )
+    ) {
+      throw new Error(
+        "INCB issuance repair changed a locked issuance value snapshot.",
+      );
+    }
+
+    // This is intentionally the final operation before COMMIT. Prove both the
+    // current canonical block hash and the target's exact transaction index
+    // again after snapshot invalidation so a reorg cannot commit a stale mint.
+    for (const target of targets) {
+      const finalBlockHash = String(
+        await bitcoinRpc("getblockhash", [target.height]),
+      )
+        .trim()
+        .toLowerCase();
+      const finalBlock = await bitcoinRpc("getblock", [finalBlockHash, 1]);
+      const finalTxids = Array.isArray(finalBlock?.tx) ? finalBlock.tx : [];
+      const finalRaw = await bitcoinRpc("getrawtransaction", [
+        target.txid,
+        true,
+      ]);
+      if (
+        finalBlockHash !== target.blockHash ||
+        Number(finalBlock?.height) !== target.height ||
+        String(finalTxids[target.blockIndex] ?? "").trim().toLowerCase() !==
+          target.txid ||
+        Number(finalRaw?.confirmations) <= 0 ||
+        String(finalRaw?.blockhash ?? "").trim().toLowerCase() !==
+          target.blockHash
+      ) {
+        throw new Error(
+          `Canonical INCB issuance repair ${target.txid} changed exact chain position before commit.`,
+        );
+      }
+    }
+    await client.query("COMMIT");
+    return {
+      after: {
+        balanceSupply: balanceSupply.toString(),
+        canonicalTargetBondRows: repairedBonds.rows.length,
+        canonicalTargetMintRows: repairedEvents.rows.length,
+        targetIssuanceUnits: repairedTargetIssuance.toString(),
+      },
+      balanceSupply: balanceSupply.toString(),
+      before: {
+        balanceSupply: beforeBalanceSupply.toString(),
+        canonicalTargetBondRows: existingBonds.rows.length,
+        canonicalTargetMintRows: beforeCanonicalMintRows,
+        targetIssuanceUnits: beforeTargetIssuance.toString(),
+      },
+      holders: replay.holders,
+      invalidatedSnapshots: invalidated.rowCount,
+      latestPreservedBlockScanSnapshot: {
+        indexedThroughBlock: Number(
+          preservedAfter.rows[0]?.indexed_through_block ?? 0,
+        ),
+        snapshotId: String(preservedAfter.rows[0]?.snapshot_id ?? ""),
+      },
+      preservedBlockScanSnapshots: preservedAfterIds.length,
+      preservedIssuanceValueSnapshotIds: valueSnapshotIds,
+      preservedIssuanceValueSnapshots: valueSnapshotIds.length,
+      issuanceAccountingModel: INCB_ISSUANCE_ACCOUNTING_MODEL,
+      mintedSupply: mintedSupply.toString(),
+      targetIssuanceUnits: expectedIssuance.toString(),
+      targets: targets.map((target) => ({
+        blockHash: target.blockHash,
+        blockHeight: target.height,
+        blockIndex: target.blockIndex,
+        issuanceUnits: target.issuanceUnits.toString(),
+        oracle: target.oracle,
+        txid: target.txid,
+      })),
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
 async function canonicalIdRepairTarget(txid) {
   const raw = await rawTransactionFromCore(txid);
   const blockHash = String(raw?.blockhash ?? "").trim().toLowerCase();
@@ -8103,6 +9927,8 @@ if (DRY_RUN) {
         },
         repairIdTxids: REPAIR_ID_TXIDS,
         repairIdTxidsOnly: REPAIR_ID_TXIDS_ONLY,
+        repairIncbIssuance: REPAIR_INCB_ISSUANCE_ONLY,
+        repairIncbIssuanceTxids: REPAIR_INCB_ISSUANCE_TXIDS,
         repairWorkParticipants: REPAIR_WORK_PARTICIPANTS,
         repairWorkParticipantsOnly: REPAIR_WORK_PARTICIPANTS_ONLY,
         repairWorkParticipantsTxids: REPAIR_WORK_PARTICIPANTS_TXIDS,
@@ -8199,6 +10025,21 @@ try {
             ok: true,
             resumed: prepared?.resumed === true,
             state: prepared?.value ?? null,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (REPAIR_INCB_ISSUANCE_ONLY) {
+      const repair = await repairCanonicalIncbIssuance(client);
+      console.log(
+        JSON.stringify(
+          {
+            apiBase: API_BASE,
+            canonicalIncbIssuanceRepair: true,
+            network: NETWORK,
+            ok: true,
+            repair,
           },
           null,
           2,

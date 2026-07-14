@@ -8,6 +8,11 @@ const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
 const INCEPTION_BOND_MEMO = "incb";
 const INCEPTION_BOND_KIND = "inception-bond";
+const INCB_TOKEN_ID =
+  "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+const INCB_ISSUANCE_ACCOUNTING_MODEL =
+  "canonical-pre-bond-live-network-value-v2";
+const INCB_VALUE_SNAPSHOT_MODEL = "canonical-summary-h-minus-one-v1";
 const BOND_TAGS = [
   {
     kind: INFINITY_BOND_KIND,
@@ -737,6 +742,20 @@ function tokenTransferFromEventPayload(payload, row = {}) {
       eventId: payload?.eventId ?? row?.event_id,
     }),
     amount,
+    blockHash: String(
+      row?.block_hash ?? payload?.blockHash ?? payload?._powBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase(),
+    blockHeight:
+      rowNumber(row, "block_height") || rowNumber(payload, "blockHeight"),
+    blockIndex: rowNumber(
+      {
+        value:
+          row?.block_index ?? payload?.blockIndex ?? payload?._powBlockIndex,
+      },
+      "value",
+    ),
     confirmed:
       row.status === "confirmed" || payload?.confirmed === true,
     createdAt: dateIso(
@@ -764,6 +783,250 @@ function tokenTransferFromEventPayload(payload, row = {}) {
   };
 }
 
+function exactSafeInteger(value, { positive = false } = {}) {
+  const text = String(value ?? "").trim();
+  if (!(positive ? /^[1-9]\d*$/u : /^\d+$/u).test(text)) {
+    return null;
+  }
+  const number = Number(text);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function incbIssuanceMetadataFault(payload, row = {}) {
+  const tokenId = String(payload?.tokenId ?? row?.token_id ?? "")
+    .trim()
+    .toLowerCase();
+  if (tokenId !== INCB_TOKEN_ID) {
+    return "";
+  }
+  const effectiveStatus = String(row?.effective_status ?? row?.status ?? "")
+    .trim()
+    .toLowerCase();
+  if (effectiveStatus !== "confirmed" && payload?.confirmed !== true) {
+    return "";
+  }
+  if (
+    String(payload?.issuanceAccountingModel ?? "") !==
+    INCB_ISSUANCE_ACCOUNTING_MODEL
+  ) {
+    return "missing canonical pre-bond live-value accounting model";
+  }
+  const minterAddress = String(payload?.minterAddress ?? "").trim();
+  const bondRecipientAddress = String(
+    payload?.bondRecipientAddress ?? "",
+  ).trim();
+  const bondRecipientAmount = exactSafeInteger(
+    payload?.bondRecipientAmountSats,
+    { positive: true },
+  );
+  const bondRecipientVout = exactSafeInteger(payload?.bondRecipientVout);
+  if (
+    !minterAddress ||
+    bondRecipientAddress !== minterAddress ||
+    bondRecipientAmount === null ||
+    bondRecipientVout === null ||
+    payload?.issuanceValuationFixedAtSend !== true ||
+    Number(payload?.issuanceUnitSats) !== 1
+  ) {
+    return "canonical Inception Bond recipient is missing";
+  }
+  const amount = exactSafeInteger(payload?.amount, { positive: true });
+  const issuanceAmount = exactSafeInteger(payload?.issuanceAmount, {
+    positive: true,
+  });
+  const confirmedIssuanceUnits = exactSafeInteger(
+    payload?.confirmedIssuanceUnits,
+    { positive: true },
+  );
+  const directProofIssuanceUnits = exactSafeInteger(
+    payload?.directProofIssuanceUnits,
+  );
+  const attachedWorkIssuanceUnits = exactSafeInteger(
+    payload?.attachedWorkIssuanceUnits,
+  );
+  if (
+    amount === null ||
+    issuanceAmount !== amount ||
+    confirmedIssuanceUnits !== amount ||
+    directProofIssuanceUnits === null ||
+    directProofIssuanceUnits <= 0 ||
+    attachedWorkIssuanceUnits === null ||
+    directProofIssuanceUnits + attachedWorkIssuanceUnits !== amount
+  ) {
+    return "issuance units are missing or do not conserve supply";
+  }
+  const issuanceNetworkValueSats = Number(payload?.issuanceNetworkValueSats);
+  const issuanceDustSats = Number(payload?.issuanceDustSats);
+  const issuanceFloorSats = Number(payload?.issuanceFloorSats);
+  const attachedWorkLiveValueAtSendSats = Number(
+    payload?.attachedWorkLiveValueAtSendSats,
+  );
+  if (
+    !Number.isFinite(issuanceNetworkValueSats) ||
+    issuanceNetworkValueSats <= 0 ||
+    Math.floor(issuanceNetworkValueSats) !== amount ||
+    !Number.isFinite(issuanceDustSats) ||
+    issuanceDustSats < 0 ||
+    issuanceDustSats >= 1 ||
+    Math.abs(
+      issuanceDustSats - (issuanceNetworkValueSats - amount),
+    ) > 1e-6 ||
+    !Number.isFinite(issuanceFloorSats) ||
+    issuanceFloorSats < 1 ||
+    Math.abs(issuanceFloorSats - issuanceNetworkValueSats / amount) > 1e-9 ||
+    !Number.isFinite(attachedWorkLiveValueAtSendSats) ||
+    attachedWorkLiveValueAtSendSats < 0 ||
+    Math.floor(attachedWorkLiveValueAtSendSats) !==
+      attachedWorkIssuanceUnits ||
+    Math.abs(
+      issuanceNetworkValueSats -
+        (directProofIssuanceUnits +
+          attachedWorkLiveValueAtSendSats),
+    ) > 1e-6
+  ) {
+    return "issuance value, dust, or one-proof unit floor is inconsistent";
+  }
+  const directProofPayment = exactSafeInteger(
+    payload?.proofPaymentSats ?? payload?.paidSats,
+  );
+  if (
+    directProofPayment !== directProofIssuanceUnits ||
+    bondRecipientAmount !== directProofIssuanceUnits
+  ) {
+    return "direct issuance does not equal the confirmed proof payment";
+  }
+  if (attachedWorkIssuanceUnits > 0) {
+    const attachedWorkAmount = exactSafeInteger(payload?.attachedWorkAmount, {
+      positive: true,
+    });
+    const attachedWorkLiveFloorAtSendSats = Number(
+      payload?.attachedWorkLiveFloorAtSendSats,
+    );
+    if (
+      attachedWorkAmount === null ||
+      !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
+      attachedWorkLiveFloorAtSendSats <= 0 ||
+      Math.abs(
+        attachedWorkLiveValueAtSendSats -
+          attachedWorkAmount * attachedWorkLiveFloorAtSendSats,
+      ) > 1e-5
+    ) {
+      return "attached WORK valuation basis is missing or inconsistent";
+    }
+  } else if (attachedWorkLiveValueAtSendSats !== 0) {
+    return "proof-only issuance carries attached WORK value";
+  }
+  const checkpointMode = String(payload?.issuanceCheckpointMode ?? "");
+  const checkpointHeight = exactSafeInteger(
+    payload?.issuanceCheckpointBlockHeight,
+    { positive: true },
+  );
+  const checkpointHash = String(
+    payload?.issuanceCheckpointBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const checkpointIndex = exactSafeInteger(
+    payload?.issuanceCheckpointBlockIndex,
+  );
+  const checkpointWorkNetworkValueSats = Number(
+    payload?.issuanceValueSnapshotWorkNetworkValueSats,
+  );
+  const attachedWorkLiveFloorAtSendSats = Number(
+    payload?.attachedWorkLiveFloorAtSendSats,
+  );
+  if (
+    checkpointMode !== "bond-transaction-provenance" ||
+    checkpointHeight === null ||
+    !/^[0-9a-f]{64}$/u.test(checkpointHash) ||
+    checkpointIndex === null ||
+    !Number.isFinite(checkpointWorkNetworkValueSats) ||
+    checkpointWorkNetworkValueSats <= 0 ||
+    !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
+    attachedWorkLiveFloorAtSendSats <= 0 ||
+    Math.abs(
+      attachedWorkLiveFloorAtSendSats -
+        checkpointWorkNetworkValueSats / 21_000_000,
+    ) > 1e-9
+  ) {
+    return "pre-bond valuation checkpoint is missing or inconsistent";
+  }
+  const valueSnapshotHeight = exactSafeInteger(
+    payload?.issuanceValueSnapshotBlockHeight,
+    { positive: true },
+  );
+  const valueSnapshotHash = String(
+    payload?.issuanceValueSnapshotBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const valueSnapshotCanonicalSummaryHash = String(
+    payload?.issuanceValueSnapshotCanonicalSummaryHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const valueSnapshotGeneratedAt = String(
+    payload?.issuanceValueSnapshotGeneratedAt ?? "",
+  ).trim();
+  if (
+    payload?.issuanceValueSnapshotModel !== INCB_VALUE_SNAPSHOT_MODEL ||
+    payload?.issuanceValueSnapshotMode !== "canonical-summary-refresh" ||
+    valueSnapshotHeight !== checkpointHeight - 1 ||
+    !/^[0-9a-f]{64}$/u.test(valueSnapshotHash) ||
+    !/^[0-9a-f]{64}$/u.test(valueSnapshotCanonicalSummaryHash) ||
+    !String(payload?.issuanceValueSnapshotId ?? "").trim() ||
+    !Number.isFinite(Date.parse(valueSnapshotGeneratedAt))
+  ) {
+    return "H-1 canonical WORK value snapshot provenance is missing or inconsistent";
+  }
+  const txid = String(payload?.txid ?? row?.txid ?? "")
+    .trim()
+    .toLowerCase();
+  const canonicalBlockHeight = exactSafeInteger(
+    row?.block_height ??
+      row?.transaction_block_height ??
+      payload?.blockHeight,
+    { positive: true },
+  );
+  const canonicalBlockHash = String(
+    row?.block_hash ?? payload?.blockHash ?? payload?._powBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const canonicalBlockIndex = exactSafeInteger(
+    row?.block_index ?? payload?.blockIndex ?? payload?._powBlockIndex,
+  );
+  if (
+    String(payload?.ticker ?? "").trim().toUpperCase() !== "INCB" ||
+    String(payload?.sourceBondTxid ?? "").trim().toLowerCase() !== txid ||
+    !/^[0-9a-f]{64}$/u.test(txid) ||
+    String(payload?.validationMode ?? "") !==
+      "canonical-incb-bond-projection" ||
+    Number(payload?.amountSats) !== 0 ||
+    canonicalBlockHeight !== checkpointHeight ||
+    canonicalBlockHash !== checkpointHash ||
+    canonicalBlockIndex !== checkpointIndex
+  ) {
+    return "mint is not bound to its canonical Inception Bond projection";
+  }
+  return "";
+}
+
+function assertCanonicalIncbDefinition(token, context) {
+  if (String(token?.tokenId ?? "").trim().toLowerCase() !== INCB_TOKEN_ID) {
+    return;
+  }
+  if (
+    token?.issuanceAccountingModel !== INCB_ISSUANCE_ACCOUNTING_MODEL ||
+    token?.issuanceValuationFixedAtSend !== true ||
+    Number(token?.issuanceUnitSats) !== 1
+  ) {
+    throw new Error(
+      `${context} cannot publish INCB without the canonical pre-bond live-value definition.`,
+    );
+  }
+}
+
 function tokenMintFromEventPayload(payload, row = {}) {
   const tagNumbers = tokenMarketNumbersFromTags(payload);
   const ticker = String(row.ticker ?? payload?.ticker ?? tagNumbers.ticker ?? "")
@@ -784,12 +1047,52 @@ function tokenMintFromEventPayload(payload, row = {}) {
     .trim()
     .toLowerCase();
 
+  const issuanceFault = incbIssuanceMetadataFault(payload, row);
+  if (issuanceFault) {
+    throw new Error(
+      `Proof index INCB mint ${String(payload?.txid ?? row?.txid ?? "unknown")} is invalid: ${issuanceFault}.`,
+    );
+  }
+
   return {
+    ...canonicalEventIdentityDetails({
+      ...payload,
+      eventId: payload?.eventId ?? row?.event_id,
+    }),
     amount:
       rowNumber(payload, "amount") ||
       rowNumber(payload, "tokenAmount") ||
       tagNumbers.amount,
+    amountSats: rowNumber(payload, "amountSats"),
+    bondRecipientAddress: String(payload?.bondRecipientAddress ?? "").trim(),
+    bondRecipientAmountSats: rowNumber(payload, "bondRecipientAmountSats"),
+    bondRecipientVout: rowNumber(payload, "bondRecipientVout"),
+    attachedWorkAmount: rowNumber(payload, "attachedWorkAmount"),
+    attachedWorkLiveFloorAtSendSats: rowNumber(
+      payload,
+      "attachedWorkLiveFloorAtSendSats",
+    ),
+    attachedWorkIssuanceUnits: rowNumber(
+      payload,
+      "attachedWorkIssuanceUnits",
+    ),
+    attachedWorkLiveValueAtSendSats: rowNumber(
+      payload,
+      "attachedWorkLiveValueAtSendSats",
+    ),
+    blockHash: String(
+      row?.block_hash ?? payload?.blockHash ?? payload?._powBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase(),
     blockHeight: rowNumber(row, "block_height") || rowNumber(payload, "blockHeight"),
+    blockIndex: rowNumber(
+      {
+        value:
+          row?.block_index ?? payload?.blockIndex ?? payload?._powBlockIndex,
+      },
+      "value",
+    ),
     confirmed: effectiveStatus === "confirmed" || payload?.confirmed === true,
     createdAt: dateIso(
       payload?.createdAt ??
@@ -800,6 +1103,70 @@ function tokenMintFromEventPayload(payload, row = {}) {
         row.created_at,
     ),
     dataBytes: rowNumber(payload, "dataBytes") || rowNumber(row, "data_bytes"),
+    confirmedIssuanceUnits: rowNumber(payload, "confirmedIssuanceUnits"),
+    directProofIssuanceUnits: rowNumber(
+      payload,
+      "directProofIssuanceUnits",
+    ),
+    issuanceAccountingModel: String(
+      payload?.issuanceAccountingModel ?? "",
+    ),
+    issuanceAmount: rowNumber(payload, "issuanceAmount"),
+    issuanceDustSats: rowNumber(payload, "issuanceDustSats"),
+    issuanceFloorSats: rowNumber(payload, "issuanceFloorSats"),
+    issuanceNetworkValueSats: rowNumber(
+      payload,
+      "issuanceNetworkValueSats",
+    ),
+    issuanceUnitSats: rowNumber(payload, "issuanceUnitSats"),
+    issuanceValuationFixedAtSend:
+      payload?.issuanceValuationFixedAtSend === true,
+    issuanceCheckpointBlockHash: String(
+      payload?.issuanceCheckpointBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase(),
+    issuanceCheckpointBlockHeight: rowNumber(
+      payload,
+      "issuanceCheckpointBlockHeight",
+    ),
+    issuanceCheckpointBlockIndex: rowNumber(
+      payload,
+      "issuanceCheckpointBlockIndex",
+    ),
+    issuanceCheckpointMode: String(
+      payload?.issuanceCheckpointMode ?? "",
+    ),
+    issuanceValueSnapshotBlockHash: String(
+      payload?.issuanceValueSnapshotBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase(),
+    issuanceValueSnapshotBlockHeight: rowNumber(
+      payload,
+      "issuanceValueSnapshotBlockHeight",
+    ),
+    issuanceValueSnapshotCanonicalSummaryHash: String(
+      payload?.issuanceValueSnapshotCanonicalSummaryHash ?? "",
+    )
+      .trim()
+      .toLowerCase(),
+    issuanceValueSnapshotGeneratedAt: String(
+      payload?.issuanceValueSnapshotGeneratedAt ?? "",
+    ).trim(),
+    issuanceValueSnapshotId: String(
+      payload?.issuanceValueSnapshotId ?? "",
+    ).trim(),
+    issuanceValueSnapshotMode: String(
+      payload?.issuanceValueSnapshotMode ?? "",
+    ).trim(),
+    issuanceValueSnapshotModel: String(
+      payload?.issuanceValueSnapshotModel ?? "",
+    ).trim(),
+    issuanceValueSnapshotWorkNetworkValueSats: rowNumber(
+      payload,
+      "issuanceValueSnapshotWorkNetworkValueSats",
+    ),
     minterAddress,
     minerFeeSats: rowNumber(payload, "minerFeeSats"),
     network: payload?.network ?? row.network,
@@ -808,11 +1175,16 @@ function tokenMintFromEventPayload(payload, row = {}) {
       rowNumber(payload, "paidSats") ||
       rowNumber(payload, "amountSats") ||
       rowNumber(row, "amount_sats"),
+    proofPaymentSats: rowNumber(payload, "proofPaymentSats"),
     registryAddress,
+    sourceBondTxid: String(payload?.sourceBondTxid ?? "")
+      .trim()
+      .toLowerCase(),
     status: effectiveStatus || undefined,
     ticker,
     tokenId: String(payload?.tokenId ?? row.token_id ?? "").trim().toLowerCase(),
     txid: String(payload?.txid ?? row.txid ?? "").trim().toLowerCase(),
+    validationMode: String(payload?.validationMode ?? "").trim(),
   };
 }
 
@@ -1381,8 +1753,8 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
   }
 
   const cte = `
-    WITH mint_events AS (
-      SELECT DISTINCT ON (lower(e.txid))
+    WITH mint_candidates AS (
+      SELECT
         e.payload,
         e.protocol,
         e.kind,
@@ -1392,6 +1764,16 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
         COALESCE(e.block_time, t.block_time) AS block_time,
         e.created_at,
         COALESCE(e.block_height, t.block_height) AS block_height,
+        t.block_hash AS block_hash,
+        CASE
+          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'blockIndex')::integer
+          WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'_powBlockIndex')::integer
+          WHEN t.raw_tx->'canonicalBlockScan'->>'blockIndex' ~ '^[0-9]+$'
+            THEN (t.raw_tx->'canonicalBlockScan'->>'blockIndex')::integer
+          ELSE NULL
+        END AS block_index,
         e.txid,
         e.event_id,
         e.amount_sats,
@@ -1402,7 +1784,18 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
         t.updated_at AS tx_updated_at,
         COALESCE(cd.token_id, lower(e.payload->>'tokenId')) AS token_id,
         cd.ticker,
-        cd.registry_address
+        cd.registry_address,
+        CASE
+          WHEN e.payload->>'eventKeyVout' ~ '^[0-9]{1,9}$'
+            THEN (e.payload->>'eventKeyVout')::integer
+          ELSE 0
+        END AS mint_ordinal,
+        COALESCE(
+          NULLIF(btrim(e.payload->>'minterAddress'), ''),
+          NULLIF(btrim(e.payload->>'actor'), ''),
+          NULLIF(btrim(e.payload->>'senderAddress'), ''),
+          ''
+        ) AS mint_recipient_address
       FROM proof_indexer.events e
       LEFT JOIN proof_indexer.transactions t
         ON t.network = e.network
@@ -1411,16 +1804,29 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
         ON cd.network = e.network
        AND cd.token_id = lower(e.payload->>'tokenId')
       WHERE ${conditions.join(" AND ")}
+    ),
+    mint_events AS (
+      SELECT DISTINCT ON (
+        lower(txid),
+        lower(COALESCE(token_id, '')),
+        mint_ordinal,
+        lower(mint_recipient_address)
+      )
+        *
+      FROM mint_candidates
       ORDER BY
-        lower(e.txid),
-        CASE COALESCE(t.status, e.status)
+        lower(txid),
+        lower(COALESCE(token_id, '')),
+        mint_ordinal,
+        lower(mint_recipient_address),
+        CASE effective_status
           WHEN 'confirmed' THEN 0
           WHEN 'pending' THEN 1
           ELSE 2
         END,
-        CASE WHEN COALESCE(e.block_height, t.block_height) IS NULL THEN 1 ELSE 0 END,
-        COALESCE(e.block_time, t.block_time, e.event_time, t.confirmed_at, t.last_seen_at, e.created_at) DESC,
-        e.event_id DESC
+        CASE WHEN block_height IS NULL THEN 1 ELSE 0 END,
+        COALESCE(block_time, event_time, confirmed_at, last_seen_at, created_at) DESC,
+        event_id DESC
     )
   `;
 
@@ -1431,7 +1837,10 @@ function tokenMintSortSql() {
   return `
     COALESCE(block_time, event_time, confirmed_at, last_seen_at, created_at) DESC,
     block_height DESC NULLS LAST,
-    txid DESC
+    txid DESC,
+    mint_ordinal ASC,
+    lower(mint_recipient_address) ASC,
+    event_id DESC
   `;
 }
 
@@ -1470,69 +1879,70 @@ export async function proofIndexTokenMintStatsPayload(network, tokenScope) {
     return null;
   }
 
-  const { cte, params } = tokenMintEventQueryParts(
+  const rows = await proofIndexTokenMintRows(
+    pool,
     network,
     scope,
     new URLSearchParams(),
-    { limit: 1, offset: 0, page: 0, query: "", snapshotId: "" },
+    { limit: TOKEN_STATE_EVENT_READ_LIMIT, offset: 0, page: 0, query: "", snapshotId: "" },
   );
-  const result = await pool.query(
-    `
-      ${cte},
-      mint_amounts AS (
-        SELECT
-          *,
-          CASE
-            WHEN payload->>'amount' ~ '^[0-9]+(?:\\.[0-9]+)?$'
-              THEN (payload->>'amount')::numeric
-            WHEN payload->>'tokenAmount' ~ '^[0-9]+(?:\\.[0-9]+)?$'
-              THEN (payload->>'tokenAmount')::numeric
-            WHEN (
-              SELECT tag
-              FROM jsonb_array_elements_text(payload->'tags') AS tag
-              WHERE tag ~ '^[0-9,]+(?:\\.[0-9]+)?\\s+[A-Z0-9]+$'
-              LIMIT 1
-            ) IS NOT NULL
-              THEN regexp_replace(
-                (
-                  SELECT tag
-                  FROM jsonb_array_elements_text(payload->'tags') AS tag
-                  WHERE tag ~ '^[0-9,]+(?:\\.[0-9]+)?\\s+[A-Z0-9]+$'
-                  LIMIT 1
-                ),
-                '[^0-9.]',
-                '',
-                'g'
-              )::numeric
-            ELSE 0
-          END AS mint_amount
-        FROM mint_events
-      )
-      SELECT
-        count(*) AS total_mints,
-        count(*) FILTER (WHERE effective_status = 'confirmed') AS confirmed_mints,
-        count(*) FILTER (WHERE effective_status <> 'confirmed') AS pending_mints,
-        COALESCE(sum(mint_amount) FILTER (WHERE effective_status = 'confirmed'), 0) AS confirmed_supply,
-        COALESCE(sum(mint_amount) FILTER (WHERE effective_status <> 'confirmed'), 0) AS pending_supply,
-        max(block_height) AS indexed_through_block,
-        max(COALESCE(block_time, event_time, confirmed_at, last_seen_at, created_at)) AS indexed_at
-      FROM mint_amounts
-    `,
-    params,
+  // Parse every selected row before publishing any aggregate. In particular,
+  // confirmed INCB rows pass through the same full issuance and bond-binding
+  // validator as history and current token-state reads.
+  const mints = rows.map((row) =>
+    tokenMintFromEventPayload(objectRecord(row.payload), row),
   );
-  const row = result.rows[0] ?? {};
-  const totalMints = rowNumber(row, "total_mints");
+  const totalMints = mints.length;
   if (totalMints <= 0) {
     return null;
   }
+
+  let confirmedMints = 0;
+  let confirmedSupply = 0;
+  let pendingMints = 0;
+  let pendingSupply = 0;
+  for (const mint of mints) {
+    const amount = Number(mint.amount);
+    if (!Number.isSafeInteger(amount) || amount < 0) {
+      throw new Error(
+        `Proof index mint statistics contain an inexact amount for ${mint.txid || "an unknown transaction"}.`,
+      );
+    }
+    if (mint.confirmed) {
+      confirmedMints += 1;
+      confirmedSupply += amount;
+      if (!Number.isSafeInteger(confirmedSupply)) {
+        throw new Error("Proof index confirmed mint supply is inexact.");
+      }
+    } else {
+      pendingMints += 1;
+      pendingSupply += amount;
+      if (!Number.isSafeInteger(pendingSupply)) {
+        throw new Error("Proof index pending mint supply is inexact.");
+      }
+    }
+  }
+
+  const indexedThroughBlock = Math.max(
+    0,
+    ...rows.map((row) => rowNumber(row, "block_height")),
+  );
   return {
-    confirmedMints: rowNumber(row, "confirmed_mints"),
-    confirmedSupply: rowNumber(row, "confirmed_supply"),
-    indexedAt: dateIso(row.indexed_at),
-    indexedThroughBlock: rowNumber(row, "indexed_through_block") || undefined,
+    confirmedMints,
+    confirmedSupply,
+    indexedAt: newestDateIso(
+      rows.flatMap((row) => [
+        row.block_time,
+        row.event_time,
+        row.confirmed_at,
+        row.last_seen_at,
+        row.created_at,
+      ]),
+    ),
+    indexedThroughBlock: indexedThroughBlock || undefined,
     network,
-    pendingMints: rowNumber(row, "pending_mints"),
-    pendingSupply: rowNumber(row, "pending_supply"),
+    pendingMints,
+    pendingSupply,
     source: "proof-indexer-token-mint-events",
     tokenId: scope,
     totalMints,
@@ -4081,6 +4491,16 @@ async function currentTokenTransferHistoryPage(
         COALESCE(t.status, e.status) AS status,
         e.amount_sats,
         e.block_height,
+        t.block_hash AS block_hash,
+        CASE
+          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'blockIndex')::integer
+          WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'_powBlockIndex')::integer
+          WHEN t.raw_tx->'canonicalBlockScan'->>'blockIndex' ~ '^[0-9]+$'
+            THEN (t.raw_tx->'canonicalBlockScan'->>'blockIndex')::integer
+          ELSE NULL
+        END AS block_index,
         e.block_time,
         e.event_time,
         e.created_at,
@@ -4630,6 +5050,12 @@ function tokenStateWithSnapshotMetadata(payload, snapshot, source) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
   }
+  assertCanonicalIncbCurrentProjection(
+    payload.tokens,
+    payload.mints,
+    payload.holders,
+    "Proof index token snapshot",
+  );
   const snapshotId = payload.snapshotId ?? snapshot?.snapshot_id ?? "";
   const indexedThroughBlock = Math.max(
     rowNumber(payload, "indexedThroughBlock"),
@@ -6124,6 +6550,16 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
         e.valid,
         e.amount_sats,
         e.block_height,
+        t.block_hash AS block_hash,
+        CASE
+          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'blockIndex')::integer
+          WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'_powBlockIndex')::integer
+          WHEN t.raw_tx->'canonicalBlockScan'->>'blockIndex' ~ '^[0-9]+$'
+            THEN (t.raw_tx->'canonicalBlockScan'->>'blockIndex')::integer
+          ELSE NULL
+        END AS block_index,
         e.block_time,
         e.event_time,
         e.created_at,
@@ -6132,6 +6568,9 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
         cd.registry_address,
         COALESCE(cd.token_id, lower(e.payload->>'tokenId')) AS token_id
       FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = e.network
        AND cd.token_id = lower(e.payload->>'tokenId')
@@ -6616,10 +7055,72 @@ function uniqueTokenItems(items, keyForItem, mergeItems = null) {
   return [...merged.values()].sort(compareTokenItemsByTime);
 }
 
+function assertCanonicalIncbCurrentProjection(tokens, mints, holders, context) {
+  const incbToken = (Array.isArray(tokens) ? tokens : []).find(
+    (token) =>
+      String(token?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID,
+  );
+  if (!incbToken) {
+    return;
+  }
+  assertCanonicalIncbDefinition(incbToken, context);
+  const confirmedMints = (Array.isArray(mints) ? mints : []).filter(
+    (mint) =>
+      mint?.confirmed === true &&
+      String(mint?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID,
+  );
+  const incbHolders = (Array.isArray(holders) ? holders : []).filter(
+    (holder) =>
+      String(holder?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID,
+  );
+  const confirmedMintSupply = confirmedMints.reduce((total, mint) => {
+    const issuanceFault = incbIssuanceMetadataFault(
+      mint,
+      {
+        block_hash: mint?.blockHash,
+        block_height: mint?.blockHeight,
+        block_index: mint?.blockIndex,
+        status: "confirmed",
+        token_id: INCB_TOKEN_ID,
+        txid: mint?.txid,
+      },
+    );
+    if (issuanceFault) {
+      throw new Error(
+        `${context} contains invalid confirmed INCB issuance: ${issuanceFault}.`,
+      );
+    }
+    const amount = exactSafeInteger(mint?.amount, { positive: true });
+    if (amount === null || !Number.isSafeInteger(total + amount)) {
+      throw new Error(`${context} contains an inexact INCB mint amount.`);
+    }
+    return total + amount;
+  }, 0);
+  const confirmedBalanceSupply = incbHolders.reduce((total, holder) => {
+    const balance = exactSafeInteger(holder?.balance, { positive: true });
+    if (balance === null || !Number.isSafeInteger(total + balance)) {
+      throw new Error(`${context} contains an inexact INCB holder balance.`);
+    }
+    return total + balance;
+  }, 0);
+  if (
+    confirmedMints.length === 0 ||
+    confirmedMintSupply <= 0 ||
+    confirmedMintSupply !== confirmedBalanceSupply
+  ) {
+    throw new Error(
+      `${context} cannot publish INCB: canonical mint supply ${confirmedMintSupply} does not equal holder supply ${confirmedBalanceSupply}.`,
+    );
+  }
+}
+
 async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
   const tokens = await proofIndexTokenDefinitionsFromTables(pool, network, scope);
   if (tokens.length === 0) {
     return null;
+  }
+  for (const token of tokens) {
+    assertCanonicalIncbDefinition(token, "Proof index token state");
   }
 
   const tokenIds = tokens.map((token) => token.tokenId);
@@ -6662,6 +7163,12 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     )
     .filter((item) => item.txid && item.tokenId && item.amount > 0)
     .sort(compareTokenItemsByTime);
+  assertCanonicalIncbCurrentProjection(
+    tokens,
+    mints,
+    holders,
+    "Proof index token state",
+  );
   const holderSummaries = tokenMetricSummariesFromHolders(holders);
   const mintSummaries = new Map();
   for (const mint of mints) {
@@ -7223,6 +7730,16 @@ export async function proofIndexWalletTokenOverlayPayload(
         e.block_time,
         e.created_at,
         e.block_height,
+        t.block_hash AS block_hash,
+        CASE
+          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'blockIndex')::integer
+          WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'_powBlockIndex')::integer
+          WHEN t.raw_tx->'canonicalBlockScan'->>'blockIndex' ~ '^[0-9]+$'
+            THEN (t.raw_tx->'canonicalBlockScan'->>'blockIndex')::integer
+          ELSE NULL
+        END AS block_index,
         e.txid,
         e.network,
         COALESCE(cd.token_id, cl_event.token_id) AS token_id,
@@ -7235,6 +7752,9 @@ export async function proofIndexWalletTokenOverlayPayload(
         cl_event.price_sats AS listing_price_sats,
         cl_event.payload AS listing_payload
       FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
       LEFT JOIN proof_indexer.credit_listings cl_event
         ON cl_event.network = e.network
        AND cl_event.listing_id = lower(e.payload->>'listingId')
@@ -7513,6 +8033,9 @@ export async function proofIndexWalletTokenOverlayPayload(
     ),
     proofIndexWalletCheckpointMetadata(pool, network),
   ]);
+  for (const token of tokens) {
+    assertCanonicalIncbDefinition(token, "Proof index wallet overlay");
+  }
   if (
     !checkpoint ||
     checkpoint.indexedThroughBlock !==
@@ -7567,7 +8090,7 @@ async function proofIndexScopedHolderHistoryPayload(
 ) {
   const tokenResult = await pool.query(
     `
-      SELECT token_id, ticker
+      SELECT token_id, ticker, metadata
       FROM proof_indexer.credit_definitions
       WHERE network = $1
         AND (token_id = $2 OR lower(ticker) = lower($2))
@@ -7579,6 +8102,13 @@ async function proofIndexScopedHolderHistoryPayload(
   if (!token) {
     return null;
   }
+  assertCanonicalIncbDefinition(
+    {
+      ...objectRecord(token.metadata),
+      tokenId: token.token_id,
+    },
+    "Proof index holder history",
+  );
 
   const countResult = await pool.query(
     `
@@ -8840,6 +9370,18 @@ export async function proofIndexCanonicalActivityPayload(network) {
         e.block_height,
         e.txid,
         e.event_id,
+        transaction_row.block_hash AS block_hash,
+        CASE
+          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'blockIndex')::integer
+          WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
+            THEN (e.payload->>'_powBlockIndex')::integer
+          WHEN transaction_row.raw_tx->'canonicalBlockScan'->>'blockIndex' ~ '^[0-9]+$'
+            THEN (
+              transaction_row.raw_tx->'canonicalBlockScan'->>'blockIndex'
+            )::integer
+          ELSE NULL
+        END AS block_index,
         CASE
           WHEN e.status = 'confirmed'
             AND transaction_row.status = 'confirmed'
@@ -9276,6 +9818,9 @@ function eventRowPayload(row, network) {
   const auditCosts = invalidTokenEvent
     ? tokenInvalidAuditCosts(payload, row, registryAddress)
     : {};
+  const blockIndex = Number(
+    row?.block_index ?? payload.blockIndex ?? payload._powBlockIndex,
+  );
   return {
     ...payload,
     ...canonicalEventIdentityDetails({
@@ -9298,7 +9843,15 @@ function eventRowPayload(row, network) {
           valid: false,
         }
       : {}),
+    blockHash: String(
+      row?.block_hash ?? payload.blockHash ?? payload._powBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase(),
     blockHeight: rowNumber(row, "block_height") || payload.blockHeight,
+    ...(Number.isSafeInteger(blockIndex) && blockIndex >= 0
+      ? { blockIndex }
+      : {}),
     txid: row.txid ?? payload.txid,
     protocol: row.protocol ?? payload.protocol,
     kind,
@@ -10095,9 +10648,26 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
   };
 }
 
-export async function proofIndexCanonicalSummaryLedgerPayload(network) {
+export async function proofIndexCanonicalSummaryLedgerPayload(
+  network,
+  requiredIndexedThroughBlock = 0,
+  requiredIndexedThroughBlockHash = "",
+) {
   const pool = proofIndexPool();
   if (!pool) {
+    return null;
+  }
+
+  const requestedHeight = safeBlockHeight(requiredIndexedThroughBlock);
+  const requestedHash = String(requiredIndexedThroughBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const exactCheckpointRequested =
+    requiredIndexedThroughBlock !== 0 || requestedHash.length > 0;
+  if (
+    exactCheckpointRequested &&
+    (!requestedHeight || !/^[0-9a-f]{64}$/u.test(requestedHash))
+  ) {
     return null;
   }
 
@@ -10110,6 +10680,9 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
         source_hashes,
         metrics,
         consistency,
+        payload->>'indexedThroughBlockHash' AS payload_indexed_through_block_hash,
+        payload->'summaryRefresh'->>'mode' AS summary_refresh_mode,
+        payload->'summaryRefresh'->>'indexedThroughBlockHash' AS summary_refresh_block_hash,
         payload->>'snapshotId' AS payload_snapshot_id,
         payload->'summaryPayloads'->'growthSummary'->>'snapshotId' AS growth_snapshot_id,
         payload->'summaryPayloads'->'inceptionSummary'->>'snapshotId' AS inception_snapshot_id,
@@ -10128,15 +10701,27 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
         payload->'summaryPayloads'->'marketplaceSummary'->'workFloor'->>'indexedThroughBlock' AS marketplace_floor_height,
         payload->'summaryPayloads'->'tokenSummary'->>'indexedThroughBlock' AS token_height,
         payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlock' AS work_floor_height,
+        payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlockHash' AS work_floor_block_hash,
+        payload->'summaryPayloads'->'workFloor' AS work_floor,
         payload->'summaryPayloads'->'workSummary'->>'indexedThroughBlock' AS work_summary_height,
         payload->'summaryPayloads'->'workSummary'->'floor'->>'indexedThroughBlock' AS work_summary_floor_height,
         payload->'totals' AS totals
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
-        AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
+        AND COALESCE(consistency->>'status', payload->>'status', '') = 'green'
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
         AND source_hashes ? 'canonicalSummary'
+        AND ($2::integer = 0 OR indexed_through_block = $2)
+        AND (
+          $3::text = ''
+          OR (
+            lower(COALESCE(source_hashes->>'blockScan', '')) = $3
+            AND lower(COALESCE(payload->>'indexedThroughBlockHash', '')) = $3
+            AND lower(COALESCE(payload->'summaryRefresh'->>'indexedThroughBlockHash', '')) = $3
+            AND lower(COALESCE(payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlockHash', '')) = $3
+          )
+        )
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
@@ -10158,13 +10743,16 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
             AND COALESCE(check_item->>'ok', 'false') = 'true'
         )
       ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
-      LIMIT 1
+      LIMIT 2
     `,
-    [network],
+    [network, requestedHeight, requestedHash],
   );
   const snapshot = result.rows[0];
   if (
     !snapshot ||
+    (exactCheckpointRequested && result.rows.length !== 1) ||
+    snapshot.consistency?.ok !== true ||
+    snapshot.consistency?.status !== "green" ||
     String(snapshot.payload_snapshot_id ?? "") !==
       String(snapshot.snapshot_id ?? "")
   ) {
@@ -10197,10 +10785,37 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
   ].map(safeBlockHeight);
   if (
     !indexedThroughBlock ||
+    (exactCheckpointRequested && indexedThroughBlock !== requestedHeight) ||
     summarySnapshotIds.some(
       (value) => value !== String(snapshot.snapshot_id ?? ""),
     ) ||
     summaryCoverageHeights.some((height) => height !== indexedThroughBlock)
+  ) {
+    return null;
+  }
+
+  const indexedThroughBlockHash = String(
+    snapshot.source_hashes?.blockScan ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const boundCheckpointHashes = [
+    indexedThroughBlockHash,
+    snapshot.payload_indexed_through_block_hash,
+    snapshot.summary_refresh_block_hash,
+    snapshot.work_floor_block_hash,
+  ].map((value) => String(value ?? "").trim().toLowerCase());
+  const canonicalSummaryHash = String(
+    snapshot.source_hashes?.canonicalSummary ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  if (
+    snapshot.summary_refresh_mode !== "canonical-summary-refresh" ||
+    !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash) ||
+    !/^[0-9a-f]{64}$/u.test(canonicalSummaryHash) ||
+    boundCheckpointHashes.some((hash) => hash !== indexedThroughBlockHash) ||
+    (exactCheckpointRequested && indexedThroughBlockHash !== requestedHash)
   ) {
     return null;
   }
@@ -10217,18 +10832,35 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
   const growthWorkFloorValueSats = Number(
     totals.growthWorkFloorValueSats,
   );
+  const workFloor =
+    snapshot.work_floor &&
+    typeof snapshot.work_floor === "object" &&
+    !Array.isArray(snapshot.work_floor)
+      ? snapshot.work_floor
+      : null;
+  const publishedWorkNetworkValueSats = Number(
+    workFloor?.liveNetworkValueSats ??
+      workFloor?.actualValue?.liveNetworkValueSats ??
+      workFloor?.actualValue?.liveTotalSats ??
+      workFloor?.actualValue?.totalSats,
+  );
   if (
+    !workFloor ||
     ![
       workNetworkValueSats,
       workActualValueSats,
       growthActualValueSats,
       growthWorkFloorValueSats,
+      publishedWorkNetworkValueSats,
     ].every((value) => Number.isFinite(value) && value > 0)
+    || Math.abs(workNetworkValueSats - publishedWorkNetworkValueSats) > 0.01
+    || Math.abs(workActualValueSats - publishedWorkNetworkValueSats) > 0.01
   ) {
     return null;
   }
 
   return {
+    canonicalSummaryHash,
     consistency: snapshot.consistency,
     generatedAt: dateIso(snapshot.generated_at),
     growthSummary: {
@@ -10239,20 +10871,15 @@ export async function proofIndexCanonicalSummaryLedgerPayload(network) {
       },
     },
     indexedThroughBlock,
-    indexedThroughBlockHash: String(
-      snapshot.source_hashes?.blockScan ?? "",
-    )
-      .trim()
-      .toLowerCase(),
+    indexedThroughBlockHash,
     metrics: snapshot.metrics ?? {},
     network,
     snapshotId: snapshot.snapshot_id,
     source: "proof-indexer-canonical-summary-ledger",
     sourceHashes: snapshot.source_hashes ?? {},
-    workFloor: {
-      actualValue: { totalSats: workActualValueSats },
-      networkValueSats: workNetworkValueSats,
-    },
+    valuationModel: "canonical-summary-refresh",
+    workFloor,
+    workNetworkValueSats: publishedWorkNetworkValueSats,
   };
 }
 
