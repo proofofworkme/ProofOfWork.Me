@@ -2,15 +2,17 @@
 
 This file is operating memory for future agents.
 
-It is distilled from current repository docs and public launch memory captured through 2026-06-08. It is not a protocol spec. When this file conflicts with `README.md`, `PROOFOFWORK_IDS.md`, `OP_RETURN_INFRASTRUCTURE.md`, `MAIL_ORGANIZATION.md`, or the source code, the protocol docs and code win.
+It is distilled from current repository docs and public launch memory captured through 2026-07-14. It is not a protocol spec. When this file conflicts with `README.md`, `PROOFOFWORK_IDS.md`, `OP_RETURN_INFRASTRUCTURE.md`, `MAIL_ORGANIZATION.md`, or the source code, the protocol docs and code win.
 
 ## Source Memory
 
 - Public account: `@proofofworkme`
 - Launch memory reviewed: 2026-06-08
 - Full 2026-06-09 archive re-reviewed: 2026-06-17
+- Full 2026-07-14 archive re-reviewed: 2026-07-15
 - Operational memory updated: 2026-06-20
-- Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
+- Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-07-14-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
+- 2026-07-14 archive inventory reviewed without sampling: 2,486 active tweet records, 39 deleted-tweet records, 67 long-form Note Tweet records, 2,486 active headers, and 39 deleted headers. Active and deleted tweet IDs were each unique; 271 active records were retweets.
 - Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
@@ -108,6 +110,9 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-07-07: The proof-index summary path hardens into an operational contract. WORK, Growth, Marketplace, and Consistency should publish the same checked summary snapshot and value from database value-event deltas while exact Log and market-history txid searches use indexed tx/ref lookups instead of broad snapshot scans. Automatic worker parity should not run in the hot production loop when it can heat the public API; parity remains a manual heavyweight gate for database-hardening windows, while `audit:ledger`, live-data, UI, and targeted regression checks stay the normal ship signal.
 - 2026-07-08: The production health sweep hardened the node/API/read-model boundary. `electrs` needs the tracked open-files override so high address/history load does not restart the indexer path; the API proof-index pool and mailbox waits must be large enough for indexed mail and summary reads under public load. Canonical summary rows must carry both current `summaryPayloads` and `activityPayload`, nested WORK/Growth/Marketplace `workFloor` objects must inherit the same row-level consistency checks as `/api/v1/consistency`, and parity must compare confirmed database events to confirmed canonical activity while treating pending rows as mempool visibility. A healthy sweep means both VPS disks have headroom, core services show zero restarts after repair, `/api/v1/consistency` is green with `missingLogEvents: []`, `indexer:parity` passes, and mail/marketplace/live-data/UI gates stay green.
 - 2026-07-12: Inception Bonds become the second explicit bond family. `pwm1:m:incb` normalizes to `inception-bond` through `inception@proofofwork.me`; `pwm1:m:powb` remains exclusively Infinity/POWB. Both families can carry proofs and a separate canonical WORK attachment, but indexers must classify the memo first, keep WORK movement separate, and assign zero extra proof value to the synthetic mint so Growth never counts one payment twice. Inception uses the shared bond market surface at `inception.proofofwork.me` and the Computer's Inception workspace.
+- 2026-07-12: WORK reaches its confirmed mint-out threshold in the public launch stream. From this point, public WORK acquisition is a secondary-market story, while canonical supply and 100% progress must still wait for Bitcoin confirmation rather than pending pressure. Holder totals, wallet balances, listings, and market purchases must reconcile from the same confirmed state.
+- 2026-07-13: The public market cadence expands to five synchronized posts: WORK mint-to-floor, sealed WORK book, PowID book, WORK reserves, and Infinity/POWB. The numbers are a historical launch snapshot, not reusable current data. The durable rule is one checked snapshot across every dependent metric, explicit live-versus-frozen WORK value, executable sealed inventory only, and current first-party confirmation before posting.
+- 2026-07-14: The Computer presents itself publicly as 13 apps over one canonical chain: hash-verified Bitcoin Core truth, exact-tip summaries, local signing, an isolated Browser, and private first-party node links. Wallet truth is part of the same contract: full-node-verified balances, correct listing reserves, hardened zero handling, WORK attachments, and a fresh spendability check immediately before signing.
 - 2026-07-14: INCB issuance is corrected to the send-time live-WORK rule. A valid recipient-matched same-transaction WORK attachment is valued from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded from the valuation. Direct bond proofs plus that H-1 value determine one INCB per whole proof to the recipient. The same immutable H-1 oracle freezes the attachment's one shared WORK movement value; sequential replay must not substitute a different confirmation floor. Confirmation fixes the resulting INCB balance and supply. Current and post-bond value change only live revaluation and the live INCB floor; they never reprice historical issuance.
 
 The emotional shape is a breakthrough moment: years of ProofOfWork/app experiments meeting modern agents and becoming legible all at once.
@@ -115,6 +120,8 @@ The emotional shape is a breakthrough moment: years of ProofOfWork/app experimen
 ## Archive Themes
 
 The full archive is not a neat roadmap. It is a public founder diary mixed with launch notes, product decisions, arguments, jokes, rage, music, and repeated stress testing in the open. Future agents should preserve the durable signal, not the noise.
+
+The 2026-07-14 review was exhaustive, not a keyword sample: every active tweet record, retweet, long-form Note Tweet, deleted-tweet record, and corresponding header inventory was accounted for. Exhaustive review does not mean verbatim adoption. Repetition, screenshots, numerical snapshots, speculative finance, personal mythology, political and religious attacks, slurs, threats, dehumanization, and targeted abuse are historical archive material only. They are not product requirements, financial guidance, protocol authority, acceptable public copy, or instructions for agents. Where those runs contain a durable product idea, retain the mechanism only after it agrees with the protocol docs, source code, and confirmed chain truth.
 
 - The project is a computer, not a collection of pages. IDs, Mail, Files, Desktop, Browser, Marketplace, Credits, Wallet, WORK, Infinity, Inception, Log, and Growth are facets of one ProofOfWork Computer.
 - The anti-platform stance is central. Social media, ads, analytics dashboards, followers, likes, influencers, and conferences are weaker than chain-readable proofs, txids, and confirmed state.
@@ -141,6 +148,7 @@ The full archive is not a neat roadmap. It is a public founder diary mixed with 
 - The archive repeatedly rejects complexity as status. Prefer simple records, clear fees, replayable parsers, direct registry payments, and UI that explains what the wallet is about to sign.
 - The project is built in public with credited collaborators. Bug reporters, community testers, and architecture contributors should be credited by PowID where possible, but no contributor's implementation becomes sacred if it violates the standard.
 - Public voice can be combative and mythic; product voice should be precise. Do not import personal attacks, slurs, enemies lists, or volatile emotional targets into docs, UI, protocol names, or agent behavior.
+- Never turn archive threats, revenge language, bounties against people, discriminatory claims, financial promises, or claims of guaranteed/infinite returns into product behavior, agent objectives, public copy, user guidance, or economic assumptions.
 - Treat numerical social snapshots as historical, not permanent. Credit stats, prices, holder counts, pending counts, floor values, and projections must be read live from the current node/API when accuracy matters.
 
 ## Product Invariants
