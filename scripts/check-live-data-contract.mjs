@@ -450,7 +450,7 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /function canonicalSummaryRefreshCanDefer\([\s\S]*statusCode === 503[\s\S]*Bitcoin Core tip/,
   /async function storeCanonicalSummarySnapshot\(/,
   /canonicalSummaryRefreshCanDefer\(error\)[\s\S]*reason: "canonical-summary-deferred"/,
-  /unpagedEndpoint\("\/api\/v1\/internal\/canonical-summary"\)/,
+  /unpagedEndpoint\(\s*"\/api\/v1\/internal\/canonical-summary",?\s*\)/,
   /async function internalCanonicalSummaryPayload\([\s\S]*buildIndexedCanonicalLedgerPayload\(/,
   /const before = await exactCanonicalSummaryCheckpoint\([\s\S]*const after = await exactCanonicalSummaryCheckpoint\(/,
   /exactCanonicalSummaryCheckpoint\([\s\S]*indexedThroughBlock !== tipHeight[\s\S]*storedHash !== tipHash/,
@@ -1439,8 +1439,8 @@ expectAll("registry default reads use proof index with canonical fallback", serv
   /proofIndexRegistryPayload/,
   /function duplicateRegistryRecordIds\(payload\)[\s\S]*duplicates\.add\(id\)/,
   /function registryIndexedPayloadRejectReason\(payload,\s*previousPayload\s*=\s*null\)[\s\S]*duplicateRegistryRecordIds\(payload\)[\s\S]*stale indexedAt[\s\S]*registryPayloadLooksWorse/,
-  /async function indexedRegistryPayload\(network\)[\s\S]*proofIndexReadFeatureEnabled\([\s\S]*registry-history[\s\S]*proofIndexRegistryPayload\(network,\s*\{ registryAddress \}\)/,
-  /async function indexedRegistryPayload\(network\)[\s\S]*records:[\s\S]*sort\(compareRegistryRecordDisplayOrder\)[\s\S]*registryIndexedPayloadRejectReason\(orderedPayload\)[\s\S]*Rejected proof-index registry payload/,
+  /async function indexedRegistryPayload\(network,\s*options\s*=\s*\{\}\)[\s\S]*proofIndexReadFeatureEnabled\([\s\S]*registry-history[\s\S]*proofIndexRegistryPayload\(network,\s*\{[\s\S]*allowIncompleteScan:\s*true[\s\S]*expectedHash:\s*exactHash[\s\S]*expectedHeight:\s*exactHeight[\s\S]*registryAddress/,
+  /async function indexedRegistryPayload\(network,\s*options\s*=\s*\{\}\)[\s\S]*records:[\s\S]*sort\(compareRegistryRecordDisplayOrder\)[\s\S]*registryIndexedPayloadRejectReason\(orderedPayload\)[\s\S]*exactCheckpointMatches[\s\S]*Rejected proof-index registry payload/,
   /async function safeRegistryPayload\(network\)[\s\S]*registryConfirmedCount\(nextPayload\) <= 0[\s\S]*Current livenet registry is unavailable/,
   /async function registrySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*await indexedRegistryPayload\(network\)[\s\S]*fastJsonBackedPayload/,
   /url\.pathname === "\/api\/v1\/registry" \|\| url\.pathname === "\/api\/v1\/ids"[\s\S]*const indexedPayload = await indexedRegistryPayload\(network\)[\s\S]*if \(indexedPayload\)/,
@@ -1450,6 +1450,12 @@ expectAll("current ID tables must agree with canonical registration events", pro
   /const missingRelationalIds = \[\.\.\.registeredEventIds\][\s\S]*!confirmedIds\.has\(id\)/,
   /const orphanRelationalIds = \[\.\.\.confirmedIds\][\s\S]*!registeredEventIds\.has\(id\)/,
   /missingRelationalIds\.length > 0 \|\| orphanRelationalIds\.length > 0[\s\S]*return null/,
+]);
+expectAll("checkpoint registry reads are exact and default reads stay complete-only", proofIndexReader, [
+  /async function currentProofIndexRegistryPayload\(pool,\s*network,\s*options\s*=\s*\{\}\)/,
+  /expectedCheckpointOptionPresent[\s\S]*exactCheckpointRequested[\s\S]*allowIncompleteExactCheckpoint/,
+  /scanPayload\.complete !== true && !allowIncompleteExactCheckpoint/,
+  /scanIndexedThroughBlock !== expectedHeight[\s\S]*scanBlockHash !== expectedHash/,
 ]);
 expect(
   "canonical proof-index registry reads can correct a stale higher cached count",
