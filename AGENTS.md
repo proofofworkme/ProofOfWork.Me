@@ -24,4 +24,5 @@ Core operating rules:
 - Treat confirmed ProofOfWork history as canonical and pending mempool data as best-effort visibility.
 - Build features so future agents can inspect, verify, and act from chain-readable records.
 - Keep product/UI copy calm and precise; keep launch/social copy alive with the ProofOfWork.Me voice.
+- In public/social copy, use ProofOfWork, ProofOfWork-native, and proofs; do not use Bitcoin or BTC. Put `$WORK $POWB $INCB` on every ProofOfWork.Me public/social post unless the user explicitly requests different cashtags.
 - After a user-approved production workflow has been production-verified, committed, deployed, and pushed, immediately provide tweet-ready public copy in the ProofOfWork.Me voice unless the user explicitly says not to.

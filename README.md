@@ -8,7 +8,7 @@ Before modifying ProofOfWork.Me, read `SOUL.md`.
 
 This repository is built for agent collaboration. `SOUL.md` explains the project's voice, thesis, and long-term direction. Protocol behavior lives in `README.md`, `PROOFOFWORK_IDS.md`, `MARKETPLACE.md`, and the source code.
 
-Public language uses `proofs` for sat-denominated value across ProofOfWork.Me social copy, dashboards, and user-facing labels. Agents must still preserve exact protocol/API names such as `amountSats`, `priceSats`, `paidSats`, `networkValueSats`, and `floorSats`; `proofs` is display language, not a JSON or serialized protocol rename. Daily WORK and PowID tweet structure lives in `SOUL.md`.
+Public language uses `proofs` for sat-denominated value across ProofOfWork.Me social copy, dashboards, and user-facing labels. Agents must still preserve exact protocol/API names such as `amountSats`, `priceSats`, `paidSats`, `networkValueSats`, and `floorSats`; `proofs` is display language, not a JSON or serialized protocol rename. Public/social copy uses ProofOfWork and ProofOfWork-native language and must not use Bitcoin or BTC. Every ProofOfWork.Me public/social post carries `$WORK $POWB $INCB` unless the user explicitly requests different cashtags. The recurring six-post market structure lives in `SOUL.md`.
 
 ## Phase 1 Launch
 
