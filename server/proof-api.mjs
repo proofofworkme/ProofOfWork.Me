@@ -27840,19 +27840,63 @@ function internalCanonicalWorkSummaryPayload(ledger) {
   );
 }
 
-async function exactCanonicalSummaryCheckpoint(network) {
-  const [status, canonical, chainResponse] = await Promise.all([
-    proofIndexOperationalStatusPayload(network),
-    proofIndexCanonicalStateMetaPayload(network),
-    bitcoinRpc("getblockchaininfo", []),
-  ]);
+async function exactCanonicalSummaryCheckpoint(network, options = {}) {
+  const checkpointHeight = Number(options.checkpointHeight);
+  const checkpointHash = String(options.checkpointHash ?? "")
+    .trim()
+    .toLowerCase();
+  const checkpointRequested =
+    checkpointHeight > 0 || checkpointHash.length > 0;
+  if (
+    checkpointRequested &&
+    (!Number.isSafeInteger(checkpointHeight) ||
+      checkpointHeight <= 0 ||
+      !/^[0-9a-f]{64}$/u.test(checkpointHash))
+  ) {
+    throw freshDataUnavailableError(
+      "The requested canonical summary checkpoint is malformed.",
+    );
+  }
+  const [status, canonical, chainResponse, checkpointResponse] =
+    await Promise.all([
+      proofIndexOperationalStatusPayload(network),
+      proofIndexCanonicalStateMetaPayload(network),
+      bitcoinRpc("getblockchaininfo", []),
+      checkpointRequested
+        ? bitcoinRpc("getblockhash", [checkpointHeight])
+        : Promise.resolve(null),
+    ]);
   const chainInfo = chainResponse?.ok ? chainResponse.result : null;
   const tipHeight = Number(chainInfo?.blocks);
   const tipHash = String(chainInfo?.bestblockhash ?? "").trim().toLowerCase();
+  const canonicalCheckpointHash = checkpointRequested
+    ? String(checkpointResponse?.ok ? checkpointResponse.result : "")
+        .trim()
+        .toLowerCase()
+    : tipHash;
   const indexedThroughBlock = Number(status?.indexedThroughBlock) || 0;
   const storedHash = String(status?.scan?.blockHash ?? "").trim().toLowerCase();
   const rebuild = canonical?.rebuild ?? {};
   const fault = canonical?.fault ?? {};
+  const rebuildHeight = Number(rebuild?.indexedThroughBlock);
+  const rebuildHash = String(rebuild?.indexedThroughBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const rebuildCheckpointMatches =
+    rebuild?.network === network &&
+    rebuildHeight === indexedThroughBlock &&
+    rebuildHash === storedHash;
+  const rebuildStateValid = checkpointRequested
+    ? rebuildCheckpointMatches &&
+      ((rebuild?.active === true &&
+        rebuild?.complete === false &&
+        rebuild?.status === "active") ||
+        (rebuild?.active === false &&
+          rebuild?.complete === true &&
+          rebuild?.status === "complete"))
+    : rebuild?.active === false &&
+      rebuild?.complete === true &&
+      rebuild?.status === "complete";
   const readModelsOk =
     Number(status?.readModels?.confirmedIds?.count) > 0 &&
     Number(status?.readModels?.confirmedTransfers?.count) > 0;
@@ -27860,28 +27904,34 @@ async function exactCanonicalSummaryCheckpoint(network) {
     network !== "livenet" ||
     !status ||
     !canonical ||
-    status?.scan?.complete !== true ||
     !Number.isSafeInteger(tipHeight) ||
-    indexedThroughBlock !== tipHeight ||
     !/^[0-9a-f]{64}$/u.test(tipHash) ||
-    storedHash !== tipHash ||
+    (checkpointRequested
+      ? checkpointHeight > tipHeight ||
+        indexedThroughBlock !== checkpointHeight ||
+        storedHash !== checkpointHash ||
+        canonicalCheckpointHash !== checkpointHash
+      : status?.scan?.complete !== true ||
+        indexedThroughBlock !== tipHeight ||
+        storedHash !== tipHash) ||
     fault?.active === true ||
-    rebuild?.active === true ||
-    rebuild?.status !== "complete" ||
+    !rebuildStateValid ||
     !readModelsOk
   ) {
     throw freshDataUnavailableError(
-      "The indexed canonical summary checkpoint is not exactly at the Bitcoin Core tip.",
+      checkpointRequested
+        ? "The requested indexed canonical summary checkpoint is not exact and hash-bound."
+        : "The indexed canonical summary checkpoint is not exactly at the Bitcoin Core tip.",
     );
   }
   return {
     indexedThroughBlock,
-    tipHash,
+    tipHash: checkpointRequested ? checkpointHash : tipHash,
   };
 }
 
-async function internalCanonicalSummaryPayload(network) {
-  const before = await exactCanonicalSummaryCheckpoint(network);
+async function internalCanonicalSummaryPayload(network, options = {}) {
+  const before = await exactCanonicalSummaryCheckpoint(network, options);
   const ledger = await buildIndexedCanonicalLedgerPayload(
     network,
     "internal canonical summary",
@@ -27998,7 +28048,7 @@ async function internalCanonicalSummaryPayload(network) {
     }
   }
 
-  const after = await exactCanonicalSummaryCheckpoint(network);
+  const after = await exactCanonicalSummaryCheckpoint(network, options);
   if (
     after.indexedThroughBlock !== before.indexedThroughBlock ||
     after.tipHash !== before.tipHash
@@ -32090,6 +32140,7 @@ async function strictCanonicalRushPayload(network, indexedThroughBlock) {
   const payload = await proofIndexRushPayload(
     network,
     indexedThroughBlock,
+    { allowIncompleteScan: true },
   );
   if (
     !payload ||
@@ -39482,7 +39533,12 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await internalCanonicalSummaryPayload(network),
+        await internalCanonicalSummaryPayload(network, {
+          checkpointHash: url.searchParams.get("checkpointHash") ?? "",
+          checkpointHeight: Number(
+            url.searchParams.get("checkpointHeight") ?? 0,
+          ),
+        }),
         "no-store",
       );
       return;

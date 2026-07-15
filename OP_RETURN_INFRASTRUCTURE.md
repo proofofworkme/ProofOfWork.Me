@@ -87,6 +87,19 @@ off, and disables broad ledger snapshots. After confirmed catch-up it publishes
 one authenticated canonical-summary bundle built from the completed relational
 read models at the exact hashed Core tip. Broad source, token, registry, and
 ledger snapshot refreshes are explicit supervised jobs, not 30-second work.
+Before a confirmed Inception Bond block is verified, the scanner also enforces
+an authenticated H-1 summary barrier. If the immediately preceding hashed scan
+checkpoint is behind Core, the internal summary route may publish that one
+explicit checkpoint only when its requested height and hash equal the current
+database checkpoint and `getblockhash(height)` still returns the same hash.
+This exception is loopback-only, non-deferrable, and checked again after summary
+construction; ordinary summary publication remains exact-tip-only. It exists so
+consecutive Inception blocks cannot ask the ordered verifier for H-1 value
+before H-1 has a canonical summary. An active canonical-rebuild marker is
+accepted only when that marker carries the same requested checkpoint height and
+hash; public readiness remains closed until the rebuild and scan reach Core.
+Do not use the barrier to promote an arbitrary scan row, skip replay, or declare
+partial broad rebuild state healthy.
 Canonical-summary publication also bounds the snapshot table: it keeps the
 newest 4,096 canonical-summary versions and 20,000 scan/derived checkpoints by
 default, while preserving every snapshot referenced by an Inception issuance

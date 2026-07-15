@@ -8129,6 +8129,77 @@ check("canonical summary timeouts fail closed unless an eligible prior snapshot 
   assert.equal(insertQueries, 0);
 });
 
+check("an Inception summary barrier is exact and cannot defer", async () => {
+  const checkpointHash = "d".repeat(64);
+  const priorHash = "c".repeat(64);
+  let requestedUrl = null;
+  const storeCanonicalSummarySnapshot = isolatedFunction(
+    BACKFILL_PATH,
+    "storeCanonicalSummarySnapshot",
+    {
+      CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS: 600_000,
+      canonicalSummaryAccountingModelsCurrent: () => true,
+      canonicalSummaryCoverage: () => 100,
+      canonicalSummaryRefreshCanDefer: () => true,
+      latestBlockScanCheckpoint: async () => ({
+        blockHash: checkpointHash,
+        height: 101,
+      }),
+      objectPayload: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : null,
+      publicLogFingerprintsMatch: () => true,
+      publicLogRelationalFingerprint: async () => ({ hash: "f".repeat(64) }),
+      readJson: async (url) => {
+        requestedUrl = url;
+        throw Object.assign(new Error("summary timed out"), {
+          name: "AbortError",
+        });
+      },
+      storedEligibleCanonicalSummarySnapshotPayload: async () => ({
+        indexedThroughBlockHash: priorHash,
+        snapshotId: "prior",
+        summaryPayloads: {},
+      }),
+      unpagedEndpoint: (pathname) =>
+        new URL(`http://127.0.0.1:8081${pathname}`),
+    },
+  );
+  await rejection(
+    storeCanonicalSummarySnapshot(
+      { async query() { return { rows: [] }; } },
+      {
+        requiredCheckpoint: {
+          blockHash: checkpointHash,
+          height: 101,
+        },
+      },
+    ),
+    (error) => error?.name === "AbortError",
+    "A required H-1 summary silently deferred to an older snapshot",
+  );
+  assert.equal(requestedUrl.searchParams.get("checkpointHeight"), "101");
+  assert.equal(
+    requestedUrl.searchParams.get("checkpointHash"),
+    checkpointHash,
+  );
+
+  await rejection(
+    storeCanonicalSummarySnapshot(
+      { async query() { return { rows: [] }; } },
+      {
+        requiredCheckpoint: {
+          blockHash: "e".repeat(64),
+          height: 101,
+        },
+      },
+    ),
+    (error) => /does not match required checkpoint/u.test(error.message),
+    "A required H-1 hash mismatch reached the summary service",
+  );
+});
+
 check("only the loopback canonical summary read bypasses Undici", async () => {
   const internalToken = "x".repeat(64);
   const canonicalCalls = [];
@@ -9857,6 +9928,75 @@ check("indexed RUSH history is complete and ordered by canonical blocks", async 
   );
 });
 
+check("partial RUSH reads require the explicit exact-checkpoint mode", async () => {
+  const blockHash = "9".repeat(64);
+  const bootstrapHash = "8".repeat(64);
+  let queries = 0;
+  const pool = {
+    async query(sql) {
+      queries += 1;
+      if (String(sql).includes("SELECT value")) {
+        return {
+          rows: [
+            {
+              value: {
+                indexedThroughBlock: 100,
+                indexedThroughBlockHash: bootstrapHash,
+                mintCount: 1,
+                network: "livenet",
+                version: 1,
+              },
+            },
+          ],
+        };
+      }
+      return {
+        rows: [
+          {
+            block_height: 100,
+            bootstrap_canonical: true,
+            bootstrap_mint_count: 1,
+            payload: { kind: "rush-mint", txid: "7".repeat(64) },
+            protocol: "pwr1",
+          },
+        ],
+      };
+    },
+  };
+  const proofIndexRushPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexRushPayload",
+    {
+      eventRowPayload: (row) => row.payload,
+      normalizedLowerText: (value) => String(value ?? "").toLowerCase(),
+      objectRecord: (value) => value ?? {},
+      proofIndexOperationalStatusPayload: async () => ({
+        indexedAt: "2026-07-15T00:00:00.000Z",
+        indexedThroughBlock: 101,
+        scan: { blockHash, complete: false },
+      }),
+      proofIndexPool: () => pool,
+    },
+  );
+
+  assert.equal(await proofIndexRushPayload("livenet", 101), null);
+  assert.equal(queries, 0);
+  assert.equal(
+    await proofIndexRushPayload("livenet", 102, {
+      allowIncompleteScan: true,
+    }),
+    null,
+  );
+  assert.equal(queries, 0);
+  const accepted = await proofIndexRushPayload("livenet", 101, {
+    allowIncompleteScan: true,
+  });
+  assert.equal(accepted.indexedThroughBlock, 101);
+  assert.equal(accepted.indexedThroughBlockHash, blockHash);
+  assert.equal(accepted.mints.length, 1);
+  assert.equal(queries, 2);
+});
+
 check("internal canonical routes require token, loopback socket, and loopback Host", () => {
   const token = "t".repeat(64);
   const internalVerifierRequestAllowed = isolatedFunction(
@@ -9892,6 +10032,112 @@ check("internal canonical routes require token, loopback socket, and loopback Ho
       request(token, "127.0.0.1", "computer.proofofwork.me"),
     ),
     false,
+  );
+});
+
+check("an authenticated canonical summary can bind the current scan checkpoint behind Core", async () => {
+  const checkpointHash = "a".repeat(64);
+  const tipHash = "b".repeat(64);
+  let faultActive = false;
+  let canonicalCheckpointHash = checkpointHash;
+  let rebuildActive = false;
+  let rebuildCheckpointHash = checkpointHash;
+  const exactCanonicalSummaryCheckpoint = isolatedFunction(
+    API_PATH,
+    "exactCanonicalSummaryCheckpoint",
+    {
+      bitcoinRpc: async (method, params = []) => {
+        if (method === "getblockchaininfo") {
+          return {
+            ok: true,
+            result: { bestblockhash: tipHash, blocks: 105 },
+          };
+        }
+        if (method === "getblockhash" && params[0] === 101) {
+          return { ok: true, result: canonicalCheckpointHash };
+        }
+        throw new Error(`unexpected RPC method ${method}`);
+      },
+      freshDataUnavailableError: (message) => {
+        const error = new Error(message);
+        error.statusCode = 503;
+        return error;
+      },
+      proofIndexCanonicalStateMetaPayload: async () => ({
+        fault: { active: faultActive },
+        rebuild: {
+          active: rebuildActive,
+          complete: !rebuildActive,
+          indexedThroughBlock: 101,
+          indexedThroughBlockHash: rebuildCheckpointHash,
+          network: "livenet",
+          status: rebuildActive ? "active" : "complete",
+        },
+      }),
+      proofIndexOperationalStatusPayload: async () => ({
+        indexedThroughBlock: 101,
+        readModels: {
+          confirmedIds: { count: 1 },
+          confirmedTransfers: { count: 1 },
+        },
+        scan: {
+          blockHash: checkpointHash,
+          complete: false,
+          tipHeight: 105,
+        },
+      }),
+    },
+  );
+
+  await rejection(
+    exactCanonicalSummaryCheckpoint("livenet"),
+    (error) => /Bitcoin Core tip/u.test(error.message),
+    "The ordinary canonical summary route accepted a lagging scan checkpoint",
+  );
+  const accepted = await exactCanonicalSummaryCheckpoint("livenet", {
+    checkpointHash,
+    checkpointHeight: 101,
+  });
+  assert.equal(accepted.indexedThroughBlock, 101);
+  assert.equal(accepted.tipHash, checkpointHash);
+
+  rebuildActive = true;
+  const acceptedDuringCatchup = await exactCanonicalSummaryCheckpoint(
+    "livenet",
+    { checkpointHash, checkpointHeight: 101 },
+  );
+  assert.equal(acceptedDuringCatchup.indexedThroughBlock, 101);
+  assert.equal(acceptedDuringCatchup.tipHash, checkpointHash);
+  rebuildCheckpointHash = "c".repeat(64);
+  await rejection(
+    exactCanonicalSummaryCheckpoint("livenet", {
+      checkpointHash,
+      checkpointHeight: 101,
+    }),
+    (error) => /hash-bound/u.test(error.message),
+    "A mismatched active rebuild marker was allowed to publish a checkpoint",
+  );
+  rebuildCheckpointHash = checkpointHash;
+  rebuildActive = false;
+
+  canonicalCheckpointHash = "c".repeat(64);
+  await rejection(
+    exactCanonicalSummaryCheckpoint("livenet", {
+      checkpointHash,
+      checkpointHeight: 101,
+    }),
+    (error) => /hash-bound/u.test(error.message),
+    "A reorged requested checkpoint was accepted",
+  );
+  canonicalCheckpointHash = checkpointHash;
+  faultActive = true;
+  await rejection(
+    exactCanonicalSummaryCheckpoint("livenet", {
+      checkpointHash,
+      checkpointHeight: 101,
+    }),
+    (error) => /hash-bound/u.test(error.message),
+    "An active canonical fault was allowed to publish a checkpoint",
   );
 });
 
@@ -10006,6 +10252,217 @@ check("block verification completes before the atomic block transaction", async 
     "checkpoint",
     "COMMIT",
   ]);
+});
+
+check("consecutive Inception blocks publish each exact H-1 checkpoint before verification", async () => {
+  const hashes = {
+    100: "1".repeat(64),
+    101: "2".repeat(64),
+    102: "3".repeat(64),
+  };
+  const txids = {
+    101: "4".repeat(64),
+    102: "5".repeat(64),
+  };
+  const events = [];
+  let rebuildState = {
+    active: false,
+    complete: true,
+    indexedThroughBlock: 100,
+    indexedThroughBlockHash: hashes[100],
+    network: "livenet",
+    status: "complete",
+  };
+  const canonicalRebuildCheckpointValue = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalRebuildCheckpointValue",
+  );
+  const backfillBlockScanSource = isolatedFunction(
+    BACKFILL_PATH,
+    "backfillBlockScanSource",
+    {
+      BITCOIN_RPC_URL: "http://core.invalid",
+      BLOCK_SCAN_MAX_BLOCKS: 0,
+      BLOCK_SCAN_MAX_TXIDS: Number.POSITIVE_INFINITY,
+      CANONICAL_FAULT_META_KEY: "canonical:fault",
+      CANONICAL_REBUILD: false,
+      CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+      NETWORK: "livenet",
+      STORE_CANONICAL_SUMMARY_SNAPSHOT: true,
+      assertCanonicalBlockEnvelope: () => {},
+      assertHydratedProtocolTransaction: () => {},
+      bitcoinRpc: async (method, params = []) => {
+        if (method === "getblockcount") return 102;
+        if (method === "getblockhash") return hashes[params[0]];
+        if (method === "getblock") {
+          const height = Number(
+            Object.entries(hashes).find(([, hash]) => hash === params[0])?.[0],
+          );
+          return {
+            hash: hashes[height],
+            height,
+            nTx: 1,
+            previousblockhash: hashes[height - 1],
+            time: 1_700_000_000 + height,
+            tx: [{ height, txid: txids[height] }],
+          };
+        }
+        throw new Error(`unexpected RPC method ${method}`);
+      },
+      canonicalRebuildCheckpointValue,
+      latestBlockScanCheckpoint: async () => ({
+        blockHash: hashes[100],
+        height: 100,
+      }),
+      persistCanonicalBlock: async (_client, _block, height) => {
+        events.push(`block:${height}`);
+      },
+      persistCanonicalRawTransaction: async (client, tx) => {
+        events.push(`raw:${tx.height}`);
+      },
+      persistPreparedProtocolItems: async (client, prepared) => {
+        events.push(`persist:${prepared[0].item.blockHeight}`);
+        return { indexed: 1, skipped: 0 };
+      },
+      preparedProtocolItemsForTx: async (tx) => {
+        events.push(`verify:${tx.height}`);
+        return [
+          {
+            item: {
+              blockHeight: tx.height,
+              confirmed: true,
+              kind: "inception-bond",
+              txid: tx.txid,
+            },
+          },
+        ];
+      },
+      proofIndexerMetaValue: async (_client, key) =>
+        key === "canonical:rebuild" ? rebuildState : null,
+      protocolMessagesContainInceptionBond: (messages) =>
+        messages.some((message) => message.text === "pwm1:m:incb"),
+      protocolMessagesFromTx: (tx) => [
+        { prefix: "pwm1:", text: "pwm1:m:incb", voutIndex: 1, tx },
+      ],
+      rebuildConfirmedCreditBalancesFromCanonicalEvents: async () => {
+        events.push("balances");
+      },
+      removeVolatileWorkMintDecisionEvents: async () => {},
+      seedCanonicalBondDefinitions: async () => {},
+      storeBlockScanSnapshot: async (client, payload) => {
+        events.push(`checkpoint:${payload.indexedThroughBlock}`);
+      },
+      storeCanonicalSummarySnapshot: async (client, options) => {
+        const checkpoint = options.requiredCheckpoint;
+        assert.equal(rebuildState.indexedThroughBlock, checkpoint.height);
+        assert.equal(
+          rebuildState.indexedThroughBlockHash,
+          checkpoint.blockHash,
+        );
+        events.push(`summary:${checkpoint.height}`);
+        return {
+          indexedThroughBlock: checkpoint.height,
+          indexedThroughBlockHash: checkpoint.blockHash,
+        };
+      },
+      storeProofIndexerMeta: async (_client, key, value) => {
+        assert.equal(key, "canonical:rebuild");
+        rebuildState = value;
+      },
+      transactionWithInputPrevouts: async (tx) => tx,
+    },
+  );
+  const client = {
+    async query(sql) {
+      const statement = String(sql).trim();
+      if (statement === "COMMIT" || statement === "ROLLBACK") {
+        events.push(statement.toLowerCase());
+      }
+      return { rows: [] };
+    },
+  };
+
+  const result = await backfillBlockScanSource(client, {
+    label: "block-scan",
+  });
+  assert.equal(result.indexedThroughBlock, 102);
+  assert.equal(result.complete, true);
+  assert.ok(events.indexOf("summary:100") < events.indexOf("verify:101"));
+  assert.ok(events.indexOf("commit") < events.indexOf("summary:101"));
+  assert.ok(events.indexOf("summary:101") < events.indexOf("verify:102"));
+  assert.equal(events.filter((event) => event === "summary:100").length, 1);
+  assert.equal(events.filter((event) => event === "summary:101").length, 1);
+});
+
+check("an invalid Inception H-1 barrier cannot begin the next block", async () => {
+  const checkpointHash = "6".repeat(64);
+  const blockHash = "7".repeat(64);
+  let verified = 0;
+  let transactions = 0;
+  const backfillBlockScanSource = isolatedFunction(
+    BACKFILL_PATH,
+    "backfillBlockScanSource",
+    {
+      BITCOIN_RPC_URL: "http://core.invalid",
+      BLOCK_SCAN_MAX_BLOCKS: 0,
+      BLOCK_SCAN_MAX_TXIDS: Number.POSITIVE_INFINITY,
+      CANONICAL_FAULT_META_KEY: "canonical:fault",
+      CANONICAL_REBUILD: false,
+      CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+      NETWORK: "livenet",
+      STORE_CANONICAL_SUMMARY_SNAPSHOT: true,
+      assertCanonicalBlockEnvelope: () => {},
+      bitcoinRpc: async (method, params = []) => {
+        if (method === "getblockcount") return 101;
+        if (method === "getblockhash") {
+          return params[0] === 100 ? checkpointHash : blockHash;
+        }
+        if (method === "getblock") {
+          return {
+            hash: blockHash,
+            height: 101,
+            nTx: 1,
+            previousblockhash: checkpointHash,
+            time: 1_700_000_101,
+            tx: [{ txid: "8".repeat(64) }],
+          };
+        }
+        throw new Error(`unexpected RPC method ${method}`);
+      },
+      latestBlockScanCheckpoint: async () => ({
+        blockHash: checkpointHash,
+        height: 100,
+      }),
+      proofIndexerMetaValue: async () => null,
+      protocolMessagesContainInceptionBond: () => true,
+      protocolMessagesFromTx: () => [
+        { prefix: "pwm1:", text: "pwm1:m:incb", voutIndex: 1 },
+      ],
+      preparedProtocolItemsForTx: async () => {
+        verified += 1;
+        return [];
+      },
+      storeCanonicalSummarySnapshot: async () => ({
+        indexedThroughBlock: 99,
+        indexedThroughBlockHash: "9".repeat(64),
+      }),
+    },
+  );
+  await rejection(
+    backfillBlockScanSource(
+      {
+        async query() {
+          transactions += 1;
+          return { rows: [] };
+        },
+      },
+      { label: "block-scan" },
+    ),
+    (error) => /H-1 summary barrier failed/u.test(error.message),
+    "The scanner advanced past an invalid H-1 summary barrier",
+  );
+  assert.equal(verified, 0);
+  assert.equal(transactions, 0);
 });
 
 check("a verifier error cannot begin or advance a block checkpoint", async () => {

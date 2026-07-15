@@ -1237,6 +1237,15 @@ function protocolMessagesFromTx(tx) {
   return messages;
 }
 
+function protocolMessagesContainInceptionBond(messages) {
+  return (Array.isArray(messages) ? messages : []).some((message) => {
+    const text = String(
+      typeof message === "string" ? message : message?.text ?? "",
+    ).trim().toLowerCase();
+    return text === "pwm1:m:incb";
+  });
+}
+
 function satsFromVoutValue(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) {
@@ -7137,7 +7146,7 @@ async function pruneLedgerSnapshots(
   };
 }
 
-async function storeCanonicalSummarySnapshot(client) {
+async function storeCanonicalSummarySnapshot(client, options = {}) {
   const latestCheckpoint = await latestBlockScanCheckpoint(client, {
     useStoredCheckpoint: true,
   });
@@ -7145,6 +7154,24 @@ async function storeCanonicalSummarySnapshot(client) {
   const latestIndexedThroughBlockHash = String(latestCheckpoint.blockHash ?? "")
     .trim()
     .toLowerCase();
+  const requiredCheckpoint = objectPayload(options.requiredCheckpoint);
+  const requiredCheckpointHeight = Number(requiredCheckpoint?.height);
+  const requiredCheckpointHash = String(requiredCheckpoint?.blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const checkpointRequired = requiredCheckpoint !== null;
+  if (
+    checkpointRequired &&
+    (!Number.isSafeInteger(requiredCheckpointHeight) ||
+      requiredCheckpointHeight <= 0 ||
+      !/^[0-9a-f]{64}$/u.test(requiredCheckpointHash) ||
+      latestIndexedHeight !== requiredCheckpointHeight ||
+      latestIndexedThroughBlockHash !== requiredCheckpointHash)
+  ) {
+    throw new Error(
+      `Canonical summary checkpoint ${latestIndexedHeight}:${latestIndexedThroughBlockHash || "missing"} does not match required checkpoint ${requiredCheckpointHeight}:${requiredCheckpointHash || "missing"}`,
+    );
+  }
   const previousPayload = await storedEligibleCanonicalSummarySnapshotPayload(
     client,
   );
@@ -7173,6 +7200,7 @@ async function storeCanonicalSummarySnapshot(client) {
   ) {
     return {
       indexedThroughBlock: previousCoverage,
+      indexedThroughBlockHash: previousIndexedThroughBlockHash,
       reason: "already-current",
       skipped: true,
       snapshotId: previousPayload?.snapshotId ?? null,
@@ -7181,15 +7209,32 @@ async function storeCanonicalSummarySnapshot(client) {
 
   let canonicalBundle;
   try {
+    const canonicalSummaryUrl = unpagedEndpoint(
+      "/api/v1/internal/canonical-summary",
+    );
+    if (checkpointRequired) {
+      canonicalSummaryUrl.searchParams.set(
+        "checkpointHeight",
+        String(requiredCheckpointHeight),
+      );
+      canonicalSummaryUrl.searchParams.set(
+        "checkpointHash",
+        requiredCheckpointHash,
+      );
+    }
     canonicalBundle = await readJson(
-      unpagedEndpoint("/api/v1/internal/canonical-summary"),
+      canonicalSummaryUrl,
       {
         retries: 0,
         timeoutMs: CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS,
       },
     );
   } catch (error) {
-    if (!previousPayload || !canonicalSummaryRefreshCanDefer(error)) {
+    if (
+      checkpointRequired ||
+      !previousPayload ||
+      !canonicalSummaryRefreshCanDefer(error)
+    ) {
       throw error;
     }
     console.error(
@@ -7203,6 +7248,7 @@ async function storeCanonicalSummarySnapshot(client) {
     );
     return {
       indexedThroughBlock: previousCoverage,
+      indexedThroughBlockHash: previousIndexedThroughBlockHash,
       latestIndexedHeight,
       reason: "canonical-summary-deferred",
       skipped: true,
@@ -7348,6 +7394,7 @@ async function storeCanonicalSummarySnapshot(client) {
   const snapshotRetention = await pruneLedgerSnapshots(client);
   return {
     indexedThroughBlock,
+    indexedThroughBlockHash: latestIndexedThroughBlockHash,
     previousCoverage,
     skipped: false,
     snapshotId,
@@ -8228,6 +8275,30 @@ async function backfillBlockScanSource(client, source) {
       const messages = protocolMessagesFromTx(tx);
       return messages.length > 0 ? [{ blockIndex, messages, tx }] : [];
     });
+    if (
+      typeof STORE_CANONICAL_SUMMARY_SNAPSHOT !== "undefined" &&
+      STORE_CANONICAL_SUMMARY_SNAPSHOT &&
+      protocolCandidates.some(({ messages }) =>
+        protocolMessagesContainInceptionBond(messages)
+      )
+    ) {
+      const requiredCheckpoint = {
+        blockHash: String(block?.previousblockhash ?? "").trim().toLowerCase(),
+        height: height - 1,
+      };
+      const barrier = await storeCanonicalSummarySnapshot(client, {
+        requiredCheckpoint,
+      });
+      if (
+        Number(barrier?.indexedThroughBlock) !== requiredCheckpoint.height ||
+        String(barrier?.indexedThroughBlockHash ?? "").trim().toLowerCase() !==
+          requiredCheckpoint.blockHash
+      ) {
+        throw new Error(
+          `Canonical Inception H-1 summary barrier failed at block ${height}`,
+        );
+      }
+    }
     if (
       scannedBlocks > 0 &&
       Number.isFinite(maxProtocolTxids) &&

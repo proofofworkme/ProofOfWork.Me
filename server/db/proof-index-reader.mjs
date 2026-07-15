@@ -5934,7 +5934,11 @@ export async function proofIndexCanonicalStateMetaPayload(network) {
   return canonicalStateMetaFromPool(pool, network);
 }
 
-export async function proofIndexRushPayload(network, expectedHeight = 0) {
+export async function proofIndexRushPayload(
+  network,
+  expectedHeight = 0,
+  options = {},
+) {
   const pool = proofIndexPool();
   if (!pool || network !== "livenet") {
     return null;
@@ -5945,7 +5949,8 @@ export async function proofIndexRushPayload(network, expectedHeight = 0) {
     .trim()
     .toLowerCase();
   if (
-    status?.scan?.complete !== true ||
+    (options.allowIncompleteScan !== true &&
+      status?.scan?.complete !== true) ||
     !Number.isSafeInteger(indexedThroughBlock) ||
     indexedThroughBlock <= 0 ||
     (Number.isSafeInteger(Number(expectedHeight)) &&
