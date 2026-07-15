@@ -7321,6 +7321,7 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
        AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
       WHERE e.network = $1
         AND e.valid IS DISTINCT FROM false
+        AND e.status IN ('confirmed', 'pending')
         AND e.kind = ANY(ARRAY['token-sale','token-listing-closed']::text[])
         ${tokenStateScopeSql(scope, "COALESCE(cd.token_id, cl_event.token_id)", "cd.ticker")}
       ORDER BY
@@ -7388,6 +7389,17 @@ function uniqueTokenItems(items, keyForItem, mergeItems = null) {
     }
   }
   return [...merged.values()].sort(compareTokenItemsByTime);
+}
+
+function tokenListingsWithoutClosedEvents(listings, closedListings) {
+  const closedListingIds = new Set(
+    (Array.isArray(closedListings) ? closedListings : [])
+      .map(tokenListingId)
+      .filter(Boolean),
+  );
+  return (Array.isArray(listings) ? listings : []).filter(
+    (listing) => !closedListingIds.has(tokenListingId(listing)),
+  );
 }
 
 function assertCanonicalIncbCurrentProjection(tokens, mints, holders, context) {
@@ -7542,10 +7554,6 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     };
   });
 
-  const listings = uniqueTokenItems(
-    listingProjection.listings,
-    (listing) => `${listing.network ?? network}:${listing.listingId}`,
-  );
   const sales = uniqueTokenItems(
     [...marketEvents.sales, ...listingProjection.sales],
     (sale) => `${sale.network ?? network}:${sale.txid}`,
@@ -7555,6 +7563,13 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     (listing) =>
       `${listing.network ?? network}:${listing.listingId}:${listing.closedTxid ?? listing.txid}`,
     mergeTokenListingRecord,
+  );
+  const listings = tokenListingsWithoutClosedEvents(
+    uniqueTokenItems(
+      listingProjection.listings,
+      (listing) => `${listing.network ?? network}:${listing.listingId}`,
+    ),
+    closedListings,
   );
   const confirmedSupply = holders.reduce(
     (total, holder) => total + Number(holder.balance ?? 0),

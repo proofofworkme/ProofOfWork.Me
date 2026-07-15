@@ -266,6 +266,36 @@ check("full token mint reads deduplicate without sorting wide payloads", async (
   assert.doesNotMatch(queries[0].sql, /FROM mint_events/u);
 });
 
+check("current token state removes listings with live close events", () => {
+  const tokenListingId = isolatedFunction(READER_PATH, "tokenListingId");
+  const tokenListingsWithoutClosedEvents = isolatedFunction(
+    READER_PATH,
+    "tokenListingsWithoutClosedEvents",
+    { tokenListingId },
+  );
+  const firstListingId = "a".repeat(64);
+  const secondListingId = "b".repeat(64);
+  const thirdListingId = "c".repeat(64);
+  assert.deepEqual(
+    tokenListingsWithoutClosedEvents(
+      [
+        { listingId: firstListingId },
+        { listingId: secondListingId },
+        { listing: { listingId: thirdListingId } },
+      ],
+      [
+        { listingId: secondListingId },
+        { listing: { listingId: thirdListingId } },
+      ],
+    ).map(tokenListingId),
+    [firstListingId],
+  );
+  assert.match(
+    fileSource(READER_PATH),
+    /e\.status IN \('confirmed', 'pending'\)[\s\S]*e\.kind = ANY\(ARRAY\['token-sale','token-listing-closed'\]/u,
+  );
+});
+
 check("a current market lifecycle overlay owns sold and active state", () => {
   const listingId =
     "e95c6299b1fdd132b192ea040bcb8683140632b81dbde82946c5b754a8f87dbc";
