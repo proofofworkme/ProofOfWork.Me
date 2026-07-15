@@ -519,6 +519,7 @@ expectAll("pending WORK marketplace verification replays only Core-current exact
   /marketplaceKinds = new Set\(\["buy", "delist", "list", "seal"\]\)/,
   /tokenIds\.size !== 1 \|\| !tokenIds\.has\(WORK_TOKEN_ID\)/,
   /coreMempoolEntryPresent\(finalMempoolResponse\)[\s\S]*cachePendingTokenTransaction\(/,
+  /token-indexed-current:[\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*pending-core-work-marketplace-verifier[\s\S]*10_000[\s\S]*PENDING_WORK_MARKETPLACE_BASE_UNAVAILABLE/,
   /token-pending-core:[\s\S]*workTokenStateWithDeltaTransactions\(/,
   /confirmedClosedListing[\s\S]*Referenced ProofOfWork credit listing is already closed/,
 ]);
@@ -787,6 +788,7 @@ expectAll("mempool priority recovery rotates independently and preserves invalid
   /function storePendingWorkMintAttemptPreinspection\([\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded', true[\s\S]*pendingWorkMintResolvedInvalid', false[\s\S]*canonicalBlockScan[\s\S]*!~ '\^\[1-9\]\[0-9\]\*\$'/,
   /const PENDING_LEGACY_VERIFIER_TIMEOUT_MS = 30_000[\s\S]*async function canonicalRecoveryItemsForTx\(tx, messages, options = \{\}\)[\s\S]*options\?\.pendingVerifierTimeoutMs/,
   /const workMintAttemptCount = pendingWorkMintAttemptCount\(messages\)[\s\S]*storePendingWorkMintAttemptPreinspection\([\s\S]*PENDING_LEGACY_VERIFIER_TIMEOUT_MS[\s\S]*preparedProtocolItemsForTx/,
+  /function pendingCoreMarketplaceVerifierNeeded\([\s\S]*buy5[\s\S]*delist5[\s\S]*list5[\s\S]*seal5[\s\S]*const extendedPendingVerifier =[\s\S]*pendingCoreMarketplaceVerifierNeeded\(messages\)[\s\S]*PENDING_LEGACY_VERIFIER_TIMEOUT_MS/,
   /const protocolResolvedInvalid =[\s\S]*rawVerifiedPrepared\.length > 0[\s\S]*rawVerifiedPrepared\.every\([\s\S]*valid === false[\s\S]*storePendingWorkMintInspection\([\s\S]*protocolResolvedInvalid/,
   /row\.status === "pending"[\s\S]*row\.eventCount === 0[\s\S]*!row\.protocolResolvedInvalid[\s\S]*!row\.resolvedInvalid/,
   /const resolvedInvalids = items\.filter\([\s\S]*token-event-invalid[\s\S]*Number\.isSafeInteger\(workMintAttemptCount\)[\s\S]*workMintAttemptCount > 0[\s\S]*return \{ kind: "resolved-invalid", persistInvalid: false \}/,

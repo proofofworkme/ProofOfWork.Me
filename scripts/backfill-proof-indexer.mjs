@@ -8872,6 +8872,19 @@ function pendingWorkMintAttemptCount(messages) {
   }).length;
 }
 
+function pendingCoreMarketplaceVerifierNeeded(messages) {
+  return (Array.isArray(messages) ? messages : []).some((message) => {
+    if (message?.prefix !== "pwt1:") {
+      return false;
+    }
+    const action = String(message?.text ?? "")
+      .split(":")[1]
+      ?.trim()
+      .toLowerCase();
+    return ["buy5", "delist5", "list5", "seal5"].includes(action);
+  });
+}
+
 function pendingWorkMintVerifierResolved(preparedItems) {
   return (Array.isArray(preparedItems) ? preparedItems : [])
     .map((entry) => entry?.item ?? entry)
@@ -9267,11 +9280,14 @@ async function backfillMempoolScanSource(client, source) {
           txid,
           workMintAttemptCount,
         );
+      const extendedPendingVerifier =
+        legacyWorkInspection > 0 ||
+        pendingCoreMarketplaceVerifierNeeded(messages);
       const hydrated = await transactionWithInputPrevouts(tx);
       const rawVerifiedPrepared = await preparedProtocolItemsForTx(
         hydrated,
         messages,
-        legacyWorkInspection > 0
+        extendedPendingVerifier
           ? { pendingVerifierTimeoutMs: PENDING_LEGACY_VERIFIER_TIMEOUT_MS }
           : undefined,
       );

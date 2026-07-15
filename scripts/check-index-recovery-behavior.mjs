@@ -6374,6 +6374,10 @@ check("pending WORK inspection survives a persisted sibling envelope", async () 
     BACKFILL_PATH,
     "pendingProtocolTransactionObservation",
   );
+  const pendingCoreMarketplaceVerifierNeeded = isolatedFunction(
+    BACKFILL_PATH,
+    "pendingCoreMarketplaceVerifierNeeded",
+  );
   const storePendingWorkMintInspection = isolatedFunction(
     BACKFILL_PATH,
     "storePendingWorkMintInspection",
@@ -6392,6 +6396,19 @@ check("pending WORK inspection survives a persisted sibling envelope", async () 
       valid: true,
     },
   }];
+  assert.equal(
+    pendingCoreMarketplaceVerifierNeeded([
+      { prefix: "pwt1:", text: "pwt1:delist5:listing" },
+    ]),
+    true,
+  );
+  assert.equal(
+    pendingCoreMarketplaceVerifierNeeded([
+      { prefix: "pwt1:", text: `pwt1:mint:${workTokenId}:1000` },
+      { prefix: "pwm1:", text: "pwm1:m:hello" },
+    ]),
+    false,
+  );
   assert.equal(pendingWorkMintVerifierResolved(siblingEnvelope), false);
   assert.equal(
     pendingWorkMintVerifierResolved([
@@ -6611,6 +6628,7 @@ check("Core-present dropped protocol transactions revive through verifier and up
         status: "pending",
         txid: target,
       }),
+      pendingCoreMarketplaceVerifierNeeded: () => false,
       pendingWorkMintDecision: () => null,
       pendingWorkMintAttemptCount: () => 0,
       pendingWorkMintVerifierResolved: () => true,
@@ -13962,6 +13980,7 @@ check("pending unscoped WORK marketplace verification uses a per-tx Core replay"
   const tokenId = "d".repeat(64);
   const cacheKeys = [];
   let broadLoads = 0;
+  let indexedBaseLoads = 0;
   const targetTransaction = { confirmed: false, txid };
   const tokenVerifierPayload = isolatedFunction(
     API_PATH,
@@ -13972,6 +13991,19 @@ check("pending unscoped WORK marketplace verification uses a per-tx Core replay"
       cachedInternalVerifierState: async (key, loader) => {
         cacheKeys.push(key);
         return loader();
+      },
+      currentProofIndexTokenPayloadForRead: async (
+        network,
+        scope,
+        label,
+        timeoutMs,
+      ) => {
+        assert.equal(network, "livenet");
+        assert.equal(scope, tokenId);
+        assert.equal(label, "pending-core-work-marketplace-verifier");
+        assert.equal(timeoutMs, 10_000);
+        indexedBaseLoads += 1;
+        return { source: "exact-indexed-work-base" };
       },
       normalizeTokenScope: (scope) => String(scope).toLowerCase(),
       pendingCoreWorkMarketplaceVerifierContext: async () => ({
@@ -13996,7 +14028,9 @@ check("pending unscoped WORK marketplace verification uses a per-tx Core replay"
             }]
           : [],
       verifierBalanceSnapshot: () => null,
-      workTokenPayload: async () => ({ source: "work-base" }),
+      workTokenPayload: async () => {
+        throw new Error("The Core marketplace replay must use indexed state.");
+      },
       workTokenStateWithDeltaTransactions: (state, transactions) => ({
         ...state,
         replayed: transactions.at(-1) === targetTransaction,
@@ -14009,7 +14043,8 @@ check("pending unscoped WORK marketplace verification uses a per-tx Core replay"
   assert.equal(payload.items[0].confirmed, false);
   assert.equal(payload.items[0].kind, "token-listing-closed");
   assert.equal(broadLoads, 0);
-  assert.ok(cacheKeys.includes(`token:livenet:${tokenId}`));
+  assert.equal(indexedBaseLoads, 1);
+  assert.ok(cacheKeys.includes(`token-indexed-current:livenet:${tokenId}`));
   assert.ok(
     cacheKeys.includes(`token-pending-core:livenet:${tokenId}:${txid}`),
   );

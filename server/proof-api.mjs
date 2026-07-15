@@ -37971,8 +37971,28 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
         )
       : usePendingCoreWorkState
         ? cachedInternalVerifierState(
-            `token:${network}:${WORK_TOKEN_ID}`,
-            () => workTokenPayload(network, null),
+            `token-indexed-current:${network}:${WORK_TOKEN_ID}`,
+            async () => {
+              const indexedState = await currentProofIndexTokenPayloadForRead(
+                network,
+                WORK_TOKEN_ID,
+                "pending-core-work-marketplace-verifier",
+                10_000,
+              );
+              if (!indexedState) {
+                const error = new Error(
+                  "The pending WORK marketplace verifier has no exact-tip indexed base state.",
+                );
+                error.statusCode = 503;
+                error.details = {
+                  code: "PENDING_WORK_MARKETPLACE_BASE_UNAVAILABLE",
+                  tokenScope: WORK_TOKEN_ID,
+                  txid: normalizedTxid,
+                };
+                throw error;
+              }
+              return indexedState;
+            },
           ).then((baseWorkState) =>
             workTokenStateWithDeltaTransactions(
               baseWorkState,
@@ -38099,7 +38119,8 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
   let balanceSnapshot = null;
   if (!requireConfirmed && balanceTokenId) {
     const balanceState =
-      scope === balanceTokenId
+      scope === balanceTokenId ||
+      (usePendingCoreWorkState && balanceTokenId === WORK_TOKEN_ID)
         ? state
         : await cachedInternalVerifierState(
             `token:${network}:${balanceTokenId}`,
