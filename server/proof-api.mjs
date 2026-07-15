@@ -16643,7 +16643,7 @@ async function registryPayload(network) {
   };
 }
 
-async function indexedRegistryPayload(network) {
+async function indexedRegistryPayload(network, options = {}) {
   if (
     !proofIndexReadFeatureEnabled(
       "registry,ids,registry-state,ids-state,registry-history,ids-history",
@@ -16657,7 +16657,24 @@ async function indexedRegistryPayload(network) {
     return null;
   }
 
-  return proofIndexRegistryPayload(network, { registryAddress })
+  const exactHeight = Number(options.exactHeight);
+  const exactHash = String(options.exactHash ?? "")
+    .trim()
+    .toLowerCase();
+  const exactCheckpointRequested =
+    Number.isSafeInteger(exactHeight) &&
+    exactHeight > 0 &&
+    /^[0-9a-f]{64}$/u.test(exactHash);
+  return proofIndexRegistryPayload(network, {
+    ...(exactCheckpointRequested
+      ? {
+          allowIncompleteScan: true,
+          expectedHash: exactHash,
+          expectedHeight: exactHeight,
+        }
+      : {}),
+    registryAddress,
+  })
     .then(async (payload) => {
       const orderedPayload = payload
         ? {
@@ -16672,13 +16689,20 @@ async function indexedRegistryPayload(network) {
       // allowed to correct a stale cache whose (noncanonical) record count was
       // higher. The live crawler path keeps its separate regression guard.
       let rejectReason = registryIndexedPayloadRejectReason(orderedPayload);
+      const exactCheckpointMatches =
+        exactCheckpointRequested &&
+        proofIndexPayloadIndexedThroughBlock(orderedPayload) === exactHeight &&
+        String(orderedPayload?.indexedThroughBlockHash ?? "")
+          .trim()
+          .toLowerCase() === exactHash;
       if (
         rejectReason.startsWith("stale indexedAt") &&
-        (await proofIndexPayloadHasExplicitCurrentCoverage(
-          orderedPayload,
-          network,
-          "indexed-registry-current-coverage",
-        ))
+        (exactCheckpointMatches ||
+          (await proofIndexPayloadHasExplicitCurrentCoverage(
+            orderedPayload,
+            network,
+            "indexed-registry-current-coverage",
+          )))
       ) {
         rejectReason = "";
       }
@@ -26275,15 +26299,34 @@ async function indexedRegistryStateForCanonicalLedger(network, options = {}) {
     return null;
   }
 
-  const payload = await indexedRegistryPayload(network);
+  const exactHeight = Number(options.exactHeight);
+  const exactHash = String(options.exactHash ?? "").trim().toLowerCase();
+  if (
+    Number.isSafeInteger(exactHeight) &&
+    exactHeight > 0 &&
+    !/^[0-9a-f]{64}$/u.test(exactHash)
+  ) {
+    console.error(
+      `Rejected canonical registry state: checkpoint hash is invalid at block ${exactHeight}.`,
+    );
+    return null;
+  }
+  const payload = await indexedRegistryPayload(network, {
+    exactHash,
+    exactHeight,
+  });
   if (!payload) {
     return null;
   }
-  const exactHeight = Number(options.exactHeight);
   if (Number.isSafeInteger(exactHeight) && exactHeight > 0) {
-    if (proofIndexPayloadIndexedThroughBlock(payload) !== exactHeight) {
+    if (
+      proofIndexPayloadIndexedThroughBlock(payload) !== exactHeight ||
+      String(payload?.indexedThroughBlockHash ?? "")
+        .trim()
+        .toLowerCase() !== exactHash
+    ) {
       console.error(
-        `Rejected canonical registry state: coverage is not exact at block ${exactHeight}.`,
+        `Rejected canonical registry state: coverage is not exact and hash-bound at block ${exactHeight}.`,
       );
       return null;
     }
@@ -27462,9 +27505,15 @@ async function buildIndexedCanonicalLedgerPayload(
     return null;
   }
   const exactHeight = Number(options.exactHeight);
+  const exactHash = String(options.exactHash ?? "").trim().toLowerCase();
   if (!Number.isSafeInteger(exactHeight) || exactHeight <= 0) {
     throw freshDataUnavailableError(
       `Rejected ${label}: an exact positive canonical checkpoint is required.`,
+    );
+  }
+  if (!/^[0-9a-f]{64}$/u.test(exactHash)) {
+    throw freshDataUnavailableError(
+      `Rejected ${label}: an exact canonical checkpoint hash is required.`,
     );
   }
   const timingStartedAt = Date.now();
@@ -27485,7 +27534,10 @@ async function buildIndexedCanonicalLedgerPayload(
     currentMarketOverlay,
   ] = await Promise.all([
     indexedActivityStateForCanonicalLedger(network, { exactHeight }),
-    indexedRegistryStateForCanonicalLedger(network, { exactHeight }),
+    indexedRegistryStateForCanonicalLedger(network, {
+      exactHash,
+      exactHeight,
+    }),
     strictCanonicalRushPayload(network, exactHeight),
     payloadWithFallbackAfterMs(
       btcUsdPricePayload(network, { fresh: false }),
@@ -27935,7 +27987,10 @@ async function internalCanonicalSummaryPayload(network, options = {}) {
   const ledger = await buildIndexedCanonicalLedgerPayload(
     network,
     "internal canonical summary",
-    { exactHeight: before.indexedThroughBlock },
+    {
+      exactHash: before.tipHash,
+      exactHeight: before.indexedThroughBlock,
+    },
   );
   if (
     !ledger ||

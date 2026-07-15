@@ -9769,12 +9769,21 @@ check("exact canonical source reads reject lagging activity and registry payload
   );
   assert.equal(livenetFallbackReads, 0);
 
-  const registryPayload = { indexedThroughBlock: 100, records: [{}] };
+  const registryHash = "a".repeat(64);
+  const registryPayload = {
+    indexedThroughBlock: 100,
+    indexedThroughBlockHash: registryHash,
+    records: [{}],
+  };
+  const registryReadOptions = [];
   const indexedRegistryStateForCanonicalLedger = isolatedFunction(
     API_PATH,
     "indexedRegistryStateForCanonicalLedger",
     {
-      indexedRegistryPayload: async () => registryPayload,
+      indexedRegistryPayload: async (_network, options) => {
+        registryReadOptions.push(options);
+        return registryPayload;
+      },
       proofIndexPayloadCoversConfirmedTip: async () => true,
       proofIndexPayloadIndexedThroughBlock: (payload) =>
         Number(payload?.indexedThroughBlock) || 0,
@@ -9782,15 +9791,163 @@ check("exact canonical source reads reject lagging activity and registry payload
   );
   assert.equal(
     await indexedRegistryStateForCanonicalLedger("livenet", {
+      exactHash: registryHash,
       exactHeight: 101,
     }),
     null,
   );
   assert.equal(
     await indexedRegistryStateForCanonicalLedger("livenet", {
+      exactHash: registryHash,
       exactHeight: 100,
     }),
     registryPayload,
+  );
+  assert.equal(
+    await indexedRegistryStateForCanonicalLedger("livenet", {
+      exactHeight: 100,
+    }),
+    null,
+    "an exact registry height without its hash must fail closed",
+  );
+  assert.deepEqual(
+    Array.from(registryReadOptions, (option) => ({
+      exactHash: String(option?.exactHash ?? ""),
+      exactHeight: Number(option?.exactHeight),
+    })),
+    [
+      { exactHash: registryHash, exactHeight: 101 },
+      { exactHash: registryHash, exactHeight: 100 },
+    ],
+  );
+});
+
+check("exact canonical registry reads accept age only at the requested checkpoint", async () => {
+  const payload = {
+    indexedAt: "2026-07-15T09:42:21.000Z",
+    indexedThroughBlock: 958_137,
+    indexedThroughBlockHash: "a".repeat(64),
+    records: [{}],
+  };
+  let currentCoverageReads = 0;
+  let rejectReason = `stale indexedAt ${payload.indexedAt}`;
+  const readerOptions = [];
+  const indexedRegistryPayload = isolatedFunction(
+    API_PATH,
+    "indexedRegistryPayload",
+    {
+      compareRegistryRecordDisplayOrder: () => 0,
+      errorSummary: (error) => String(error?.message ?? error),
+      proofIndexPayloadHasExplicitCurrentCoverage: async () => {
+        currentCoverageReads += 1;
+        return false;
+      },
+      proofIndexPayloadIndexedThroughBlock: (value) =>
+        Number(value?.indexedThroughBlock) || 0,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexRegistryPayload: async (_network, options) => {
+        readerOptions.push(options);
+        return payload;
+      },
+      registryAddressForNetwork: () => "bc1registry",
+      registryConfirmedCount: (value) => value?.records?.length ?? 0,
+      registryIndexedPayloadRejectReason: () => rejectReason,
+    },
+  );
+
+  assert.equal(await indexedRegistryPayload("livenet"), null);
+  assert.equal(currentCoverageReads, 1);
+  assert.equal(
+    await indexedRegistryPayload("livenet", {
+      exactHash: payload.indexedThroughBlockHash,
+      exactHeight: 958_136,
+    }),
+    null,
+  );
+  assert.equal(currentCoverageReads, 2);
+  assert.equal(
+    await indexedRegistryPayload("livenet", {
+      exactHash: payload.indexedThroughBlockHash,
+      exactHeight: 958_138,
+    }),
+    null,
+  );
+  assert.equal(currentCoverageReads, 3);
+  assert.equal(
+    await indexedRegistryPayload("livenet", {
+      exactHash: "b".repeat(64),
+      exactHeight: 958_137,
+    }),
+    null,
+  );
+  assert.equal(currentCoverageReads, 4);
+  const exactPayload = await indexedRegistryPayload("livenet", {
+    exactHash: payload.indexedThroughBlockHash,
+    exactHeight: 958_137,
+  });
+  assert.equal(
+    Number(exactPayload?.indexedThroughBlock),
+    payload.indexedThroughBlock,
+  );
+  assert.equal(
+    String(exactPayload?.indexedThroughBlockHash),
+    payload.indexedThroughBlockHash,
+  );
+  assert.equal(
+    currentCoverageReads,
+    4,
+    "an exact checkpoint must not need current-tip coverage",
+  );
+  assert.deepEqual(
+    Array.from(readerOptions, (option) => ({
+      allowIncompleteScan: option?.allowIncompleteScan === true,
+      expectedHash: String(option?.expectedHash ?? ""),
+      expectedHeight: Number(option?.expectedHeight) || 0,
+      registryAddress: String(option?.registryAddress ?? ""),
+    })),
+    [
+      {
+        allowIncompleteScan: false,
+        expectedHash: "",
+        expectedHeight: 0,
+        registryAddress: "bc1registry",
+      },
+      ...Array.from({ length: 4 }, (_unused, index) => ({
+        allowIncompleteScan: true,
+        expectedHash:
+          index === 3
+            ? payload.indexedThroughBlockHash
+            : index === 2
+              ? "b".repeat(64)
+              : payload.indexedThroughBlockHash,
+        expectedHeight:
+          index === 0
+            ? 958_136
+            : index === 1
+              ? 958_138
+              : 958_137,
+        registryAddress: "bc1registry",
+      })),
+    ],
+  );
+  rejectReason = "duplicate ID records: duplicated-id";
+  assert.equal(
+    await indexedRegistryPayload("livenet", {
+      exactHash: payload.indexedThroughBlockHash,
+      exactHeight: 958_137,
+    }),
+    null,
+    "exact checkpoint mode must retain duplicate-ID rejection",
+  );
+  rejectReason = `stale indexedAt ${payload.indexedAt}`;
+  payload.records = [];
+  assert.equal(
+    await indexedRegistryPayload("livenet", {
+      exactHash: payload.indexedThroughBlockHash,
+      exactHeight: 958_137,
+    }),
+    null,
+    "exact checkpoint mode must retain empty-livenet rejection",
   );
 });
 
@@ -9808,6 +9965,8 @@ check("canonical registry state can replace a stale higher cached count", async 
       errorSummary: (error) => String(error?.message ?? error),
       proofIndexReadFeatureEnabled: () => true,
       proofIndexRegistryPayload: async () => payload,
+      proofIndexPayloadIndexedThroughBlock: (value) =>
+        Number(value?.indexedThroughBlock) || 0,
       registryAddressForNetwork: () => "bc1registry",
       registryConfirmedCount: (value) => value?.records?.length ?? 0,
       registryIndexedPayloadRejectReason: (...args) => {
@@ -17015,6 +17174,9 @@ check("unpinned broad ID registry uses current relational event state", async ()
     txid: confirmedRecord.txid,
   };
   let registryActivity = [confirmedRegistration, pendingEvent, listing];
+  let scanComplete = true;
+  let scanHeight = 101;
+  let scanHash = "f".repeat(64);
   const currentProofIndexRegistryPayload = isolatedFunction(
     READER_PATH,
     "currentProofIndexRegistryPayload",
@@ -17034,10 +17196,10 @@ check("unpinned broad ID registry uses current relational event state", async ()
       indexedThroughBlockFromItems: () => 100,
       latestProofIndexScanMetadata: async () => ({
         generated_at: "2026-07-11T00:13:00.000Z",
-        indexed_through_block: 101,
+        indexed_through_block: scanHeight,
         payload: {
-          complete: true,
-          indexedThroughBlockHash: "f".repeat(64),
+          complete: scanComplete,
+          indexedThroughBlockHash: scanHash,
         },
         snapshot_id: "current-scan",
       }),
@@ -17077,11 +17239,60 @@ check("unpinned broad ID registry uses current relational event state", async ()
   assert.equal(current.stats.pendingRecords, 1);
   assert.equal(current.stats.pendingChanges, 1);
   assert.equal(current.indexedThroughBlock, 101);
+  assert.equal(current.indexedThroughBlockHash, "f".repeat(64));
   assert.equal(current.snapshotId, "current-scan");
   assert.equal(
     current.source,
     "proof-indexer-current-id-events+proof-indexer-confirmed-id-records",
   );
+  scanComplete = false;
+  assert.equal(
+    await currentProofIndexRegistryPayload({}, "livenet", {
+      registryAddress: "bc1registry",
+    }),
+    null,
+    "ordinary reads must reject an incomplete scan",
+  );
+  assert.equal(
+    (
+      await currentProofIndexRegistryPayload({}, "livenet", {
+        allowIncompleteScan: true,
+        expectedHash: scanHash,
+        expectedHeight: scanHeight,
+        registryAddress: "bc1registry",
+      })
+    )?.indexedThroughBlockHash,
+    scanHash,
+    "an incomplete scan is readable only at its exact checkpoint",
+  );
+  assert.equal(
+    await currentProofIndexRegistryPayload({}, "livenet", {
+      allowIncompleteScan: true,
+      expectedHash: "e".repeat(64),
+      expectedHeight: scanHeight,
+      registryAddress: "bc1registry",
+    }),
+    null,
+  );
+  assert.equal(
+    await currentProofIndexRegistryPayload({}, "livenet", {
+      allowIncompleteScan: true,
+      expectedHash: scanHash,
+      expectedHeight: scanHeight - 1,
+      registryAddress: "bc1registry",
+    }),
+    null,
+  );
+  assert.equal(
+    await currentProofIndexRegistryPayload({}, "livenet", {
+      allowIncompleteScan: true,
+      expectedHeight: scanHeight,
+      registryAddress: "bc1registry",
+    }),
+    null,
+    "one-sided checkpoint options must fail closed",
+  );
+  scanComplete = true;
   registryActivity = [
     ...registryActivity,
     {

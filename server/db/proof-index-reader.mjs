@@ -9428,11 +9428,30 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
     scanPayload.indexedThroughBlockHash ?? scanPayload.blockHash,
   );
   const scanIndexedThroughBlock = rowNumber(scan, "indexed_through_block");
+  const expectedHeightOptionPresent = options.expectedHeight !== undefined;
+  const expectedHashOptionPresent = options.expectedHash !== undefined;
+  const expectedCheckpointOptionPresent =
+    expectedHeightOptionPresent || expectedHashOptionPresent;
+  const expectedHeight = Number(options.expectedHeight);
+  const expectedHash = normalizedLowerText(options.expectedHash);
+  const exactCheckpointRequested =
+    expectedHeightOptionPresent &&
+    expectedHashOptionPresent &&
+    Number.isSafeInteger(expectedHeight) &&
+    expectedHeight > 0 &&
+    /^[0-9a-f]{64}$/u.test(expectedHash);
+  const allowIncompleteExactCheckpoint =
+    options.allowIncompleteScan === true && exactCheckpointRequested;
   if (
-    scanPayload.complete !== true ||
+    (expectedCheckpointOptionPresent && !exactCheckpointRequested) ||
+    (options.allowIncompleteScan === true && !exactCheckpointRequested) ||
+    (scanPayload.complete !== true && !allowIncompleteExactCheckpoint) ||
     !/^[0-9a-f]{64}$/u.test(scanBlockHash) ||
     !Number.isSafeInteger(scanIndexedThroughBlock) ||
-    scanIndexedThroughBlock <= 0
+    scanIndexedThroughBlock <= 0 ||
+    (exactCheckpointRequested &&
+      (scanIndexedThroughBlock !== expectedHeight ||
+        scanBlockHash !== expectedHash))
   ) {
     return null;
   }
@@ -9513,6 +9532,7 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
     activity,
     indexedAt,
     indexedThroughBlock,
+    indexedThroughBlockHash: scanBlockHash,
     listings,
     network,
     pendingEvents,
