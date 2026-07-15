@@ -579,6 +579,7 @@ const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
 const WORK_TOKEN_MINT_AMOUNT = 1000;
 const WORK_TOKEN_MINT_PRICE_SATS = 1000;
 const WORK_TOKEN_PRICE_SATS_PER_WORK = 1;
+const PENDING_WORK_MINT_WITNESS_LIMIT = 32;
 const CREDIT_MINER_FEE_ACCOUNTING_MODEL =
   "canonical-unique-tx-input-output-v1";
 const INCEPTION_ISSUANCE_ACCOUNTING_MODEL =
@@ -13336,8 +13337,8 @@ async function canonicalInceptionIssuanceOptions(
       const bondBlockHash = String(bond?.blockHash ?? "")
         .trim()
         .toLowerCase();
-      const checkpoint = await cachedInternalVerifierState(
-        `incb-value-snapshot:h${Number(bond?.blockHeight)}:${bondBlockHash}`,
+      const checkpointSource = await cachedInternalVerifierState(
+        `incb-value-snapshot-source:${network}:h${Number(bond?.blockHeight)}:${bondBlockHash}`,
         async () => {
           const previousBlockHash = await canonicalInceptionPreviousBlockHash(
             network,
@@ -13354,22 +13355,23 @@ async function canonicalInceptionIssuanceOptions(
             Number(bond.blockHeight) - 1,
             previousBlockHash,
           );
-          const bound = canonicalInceptionValueSnapshotCheckpoint(
-            snapshot,
-            bond,
-          );
-          if (
-            !bound ||
-            bound.valueSnapshotBlockHash !== previousBlockHash
-          ) {
-            throw inceptionValueSnapshotUnavailableError(bond, {
-              expectedPreviousBlockHash: previousBlockHash,
-              reason: "green-h-minus-one-summary-unavailable",
-            });
-          }
-          return bound;
+          return { previousBlockHash, snapshot };
         },
       );
+      const checkpoint = canonicalInceptionValueSnapshotCheckpoint(
+        checkpointSource?.snapshot,
+        bond,
+      );
+      if (
+        !checkpoint ||
+        checkpoint.valueSnapshotBlockHash !==
+          checkpointSource?.previousBlockHash
+      ) {
+        throw inceptionValueSnapshotUnavailableError(bond, {
+          expectedPreviousBlockHash: checkpointSource?.previousBlockHash,
+          reason: "green-h-minus-one-summary-unavailable",
+        });
+      }
       return [txid, checkpoint];
     }),
   );
@@ -13764,7 +13766,7 @@ function tokenStateFromTransactionsWithCanonicalInceptionIssuance(
       ...(Array.isArray(ledger?.activity) ? ledger.activity : bondActivity)
         .filter((item) => !isTokenActivityItem(item)),
     ]);
-    const nextLegacyBond = (Array.isArray(bondActivity) ? bondActivity : [])
+    const legacyBonds = (Array.isArray(bondActivity) ? bondActivity : [])
       .filter(
         (bond) =>
           bond?.confirmed &&
@@ -13784,7 +13786,17 @@ function tokenStateFromTransactionsWithCanonicalInceptionIssuance(
           numericValue(left.blockHeight) - numericValue(right.blockHeight) ||
           numericValue(left.blockIndex) - numericValue(right.blockIndex) ||
           String(left.txid ?? "").localeCompare(String(right.txid ?? "")),
-      )[0];
+      );
+    const publishedCheckpointReplay =
+      typeof options.preBondCheckpoint === "function";
+    // Published H-1 checkpoints make each bond valuation absolute, so every
+    // legacy mint can expand before one strict replay rebuilds downstream
+    // balances. Retrospective fallback remains chronological one bond at a time.
+    const legacyBondTxids = new Set(
+      (publishedCheckpointReplay ? legacyBonds : legacyBonds.slice(0, 1)).map(
+        (bond) => String(bond.txid ?? "").trim().toLowerCase(),
+      ),
+    );
     const nextMints = inceptionMintsWithLiveIssuance(
       replayMints,
       bondActivity,
@@ -13798,11 +13810,9 @@ function tokenStateFromTransactionsWithCanonicalInceptionIssuance(
       },
       {
         ...options,
-        ...(nextLegacyBond
+        ...(legacyBondTxids.size > 0
           ? {
-              legacyBondTxids: new Set([
-                String(nextLegacyBond.txid ?? "").trim().toLowerCase(),
-              ]),
+              legacyBondTxids,
             }
           : {}),
       },
@@ -19210,8 +19220,8 @@ function sortWorkMintsForDisplay(mints) {
 function sortWorkMintsForPendingCap(mints) {
   return [...(Array.isArray(mints) ? mints : [])].sort(
     (left, right) =>
-      Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
-      String(left.txid ?? "").localeCompare(String(right.txid ?? "")),
+      String(left.txid ?? "").localeCompare(String(right.txid ?? "")) ||
+      Date.parse(left.createdAt) - Date.parse(right.createdAt),
   );
 }
 
@@ -37038,6 +37048,13 @@ async function completeTokenVerifierState(
       error.statusCode = 503;
       error.details = {
         code: "INCEPTION_LIVE_ISSUANCE_UNAVAILABLE",
+        confirmedIssuanceUnits: numericValue(
+          issuance.confirmedIssuanceUnits,
+        ),
+        confirmedMints: numericValue(issuance.confirmedMints),
+        confirmedSupply: numericValue(state.confirmedSupply),
+        issuanceComplete: issuance.complete === true,
+        mintCount: Array.isArray(state.mints) ? state.mints.length : 0,
         requiredBlockHeight,
         txid: String(targetTxid ?? "").trim().toLowerCase(),
       };
@@ -37213,6 +37230,391 @@ function tokenListingForVerifier(state, listingId) {
   );
 }
 
+function pendingWorkMintFromHydratedTransaction(tx, network, txid) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const vin = Array.isArray(tx?.vin) ? tx.vin : [];
+  const actorAddress = inputAddresses(vin)[0] ?? "";
+  if (
+    network !== "livenet" ||
+    tx?._powCanonicalRpcHydration !== true ||
+    transactionTxid(tx) !== normalizedTxid ||
+    transactionConfirmed(tx) ||
+    vin.length === 0 ||
+    !transactionHasCompleteCanonicalPrevouts(tx) ||
+    !isValidBitcoinAddress(actorAddress, network)
+  ) {
+    return null;
+  }
+  const vout = Array.isArray(tx.vout) ? tx.vout : [];
+  const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
+  if (messages.length !== 1) {
+    return null;
+  }
+  const parsed = parseTokenPayload(messages[0], network);
+  if (
+    parsed?.kind !== "mint" ||
+    parsed.tokenId !== WORK_TOKEN_ID ||
+    parsed.amount !== WORK_TOKEN_MINT_AMOUNT ||
+    tokenPaymentAmountBeforeProtocol(
+        vout,
+        WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      ) !== WORK_TOKEN_MINT_PRICE_SATS
+  ) {
+    return null;
+  }
+  return { ...parsed, actorAddress };
+}
+
+function coreMempoolEntryPresent(response) {
+  return (
+    response?.ok === true &&
+    response.result &&
+    typeof response.result === "object" &&
+    !Array.isArray(response.result)
+  );
+}
+
+function exactCoreTipFromBlockchainInfo(response) {
+  const info = response?.ok === true ? response.result : null;
+  const height = Number(info?.blocks);
+  const headers = Number(info?.headers);
+  const blockHash = String(info?.bestblockhash ?? "").trim().toLowerCase();
+  if (
+    !Number.isSafeInteger(height) ||
+    height <= 0 ||
+    !Number.isSafeInteger(headers) ||
+    headers !== height ||
+    !/^[0-9a-f]{64}$/u.test(blockHash)
+  ) {
+    return null;
+  }
+  return { blockHash, height };
+}
+
+function proofIndexExactlyCoversCoreTip(status, canonical, tip) {
+  const scanHash = String(status?.scan?.blockHash ?? "").trim().toLowerCase();
+  const fault = canonical?.fault;
+  const rebuild = canonical?.rebuild;
+  return (
+    status?.network === "livenet" &&
+    status?.source === "proof-indexer-block-scan" &&
+    status?.scan?.complete === true &&
+    Number(status?.indexedThroughBlock) === tip?.height &&
+    Number(status?.scan?.tipHeight) === tip?.height &&
+    scanHash === tip?.blockHash &&
+    (fault == null || fault?.active === false) &&
+    rebuild &&
+    typeof rebuild === "object" &&
+    rebuild.active === false &&
+    rebuild.status === "complete"
+  );
+}
+
+function exactPendingWorkMintStats(stats, txid) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const confirmedMints = Number(stats?.confirmedMints);
+  const confirmedSupply = Number(stats?.confirmedSupply);
+  const pendingCandidateCount = Number(stats?.pendingCandidateCount);
+  const pendingCandidateSupply = Number(stats?.pendingCandidateSupply);
+  const pendingCandidates = Array.isArray(stats?.pendingCandidates)
+    ? stats.pendingCandidates
+    : [];
+  const pendingMints = Number(stats?.pendingMints);
+  const pendingSupply = Number(stats?.pendingSupply);
+  const pendingWitnessLimit = Number(stats?.pendingWitnessLimit);
+  const totalMints = Number(stats?.totalMints);
+  const target = stats?.targetMintStats;
+  const targetConfirmedMints = Number(target?.confirmedMints);
+  const targetPendingMints = Number(target?.pendingMints);
+  const targetTotalMints = Number(target?.totalMints);
+  const exactNonNegativeInteger = (value) =>
+    Number.isSafeInteger(value) && value >= 0;
+  if (
+    stats?.network !== "livenet" ||
+    stats?.source !== "proof-indexer-token-mint-events" ||
+    String(stats?.tokenId ?? "").trim().toLowerCase() !== WORK_TOKEN_ID ||
+    ![
+      confirmedMints,
+      confirmedSupply,
+      pendingCandidateCount,
+      pendingCandidateSupply,
+      pendingMints,
+      pendingSupply,
+      pendingWitnessLimit,
+      totalMints,
+      targetConfirmedMints,
+      targetPendingMints,
+      targetTotalMints,
+    ].every(exactNonNegativeInteger) ||
+    totalMints !== confirmedMints + pendingMints ||
+    confirmedSupply !== confirmedMints * WORK_TOKEN_MINT_AMOUNT ||
+    pendingSupply !== pendingMints * WORK_TOKEN_MINT_AMOUNT ||
+    pendingWitnessLimit !== PENDING_WORK_MINT_WITNESS_LIMIT ||
+    stats?.pendingCandidatesComplete !== true ||
+    pendingCandidateCount !== pendingMints ||
+    pendingCandidates.length !== pendingCandidateCount ||
+    pendingCandidateSupply !== pendingSupply ||
+    String(target?.txid ?? "").trim().toLowerCase() !== normalizedTxid ||
+    targetTotalMints !== targetConfirmedMints + targetPendingMints ||
+    targetConfirmedMints !== 0 ||
+    targetPendingMints !== 0
+  ) {
+    return null;
+  }
+  const seenCandidateTxids = new Set();
+  let candidateSupply = 0;
+  let previousTxid = "";
+  const exactCandidates = [];
+  for (const candidate of pendingCandidates) {
+    const candidateTxid = String(candidate?.txid ?? "").trim().toLowerCase();
+    const amount = Number(candidate?.amount);
+    if (
+      !/^[0-9a-f]{64}$/u.test(candidateTxid) ||
+      amount !== WORK_TOKEN_MINT_AMOUNT ||
+      seenCandidateTxids.has(candidateTxid) ||
+      (previousTxid && previousTxid.localeCompare(candidateTxid) >= 0)
+    ) {
+      return null;
+    }
+    candidateSupply += amount;
+    if (!Number.isSafeInteger(candidateSupply)) {
+      return null;
+    }
+    seenCandidateTxids.add(candidateTxid);
+    previousTxid = candidateTxid;
+    exactCandidates.push({ amount, txid: candidateTxid });
+  }
+  if (
+    candidateSupply !== pendingCandidateSupply ||
+    confirmedSupply < 0 ||
+    confirmedSupply > WORK_TOKEN_MAX_SUPPLY
+  ) {
+    return null;
+  }
+  return {
+    confirmedSupply,
+    pendingCandidates: exactCandidates,
+    pendingSupply,
+  };
+}
+
+function pendingWorkMintWitnessProof(supply, targetTxid, targetAmount) {
+  const normalizedTargetTxid = String(targetTxid ?? "").trim().toLowerCase();
+  const amount = Number(targetAmount);
+  if (
+    !supply ||
+    !/^[0-9a-f]{64}$/u.test(normalizedTargetTxid) ||
+    amount !== WORK_TOKEN_MINT_AMOUNT ||
+    !Number.isSafeInteger(Number(supply.confirmedSupply))
+  ) {
+    return null;
+  }
+  let witnessSupply = 0;
+  const witnesses = [];
+  if (supply.confirmedSupply + amount > WORK_TOKEN_MAX_SUPPLY) {
+    return { witnessSupply, witnesses };
+  }
+  for (const candidate of supply.pendingCandidates) {
+    if (candidate.txid.localeCompare(normalizedTargetTxid) >= 0) {
+      break;
+    }
+    witnesses.push(candidate);
+    witnessSupply += candidate.amount;
+    if (
+      Number.isSafeInteger(witnessSupply) &&
+      supply.confirmedSupply + witnessSupply + amount > WORK_TOKEN_MAX_SUPPLY
+    ) {
+      return { witnessSupply, witnesses };
+    }
+  }
+  return null;
+}
+
+async function pendingWorkMintSupplyCapVerifierPayload(
+  network,
+  tokenScope,
+  txid,
+  options = {},
+) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (
+    network !== "livenet" ||
+    options.requireConfirmed === true ||
+    tokenScope !== WORK_TOKEN_ID ||
+    !/^[0-9a-f]{64}$/u.test(normalizedTxid)
+  ) {
+    return null;
+  }
+
+  const [transaction, mempoolResponse] = await Promise.all([
+    fetchTransactionFromBitcoinRpc(normalizedTxid, network, {
+      requireCanonicalPrevouts: true,
+    }),
+    bitcoinRpc("getmempoolentry", [normalizedTxid]),
+  ]);
+  const mint = pendingWorkMintFromHydratedTransaction(
+    transaction,
+    network,
+    normalizedTxid,
+  );
+  if (
+    !mint ||
+    !coreMempoolEntryPresent(mempoolResponse)
+  ) {
+    return null;
+  }
+
+  const [tipResponse, status, canonical, mintStats] = await Promise.all([
+    bitcoinRpc("getblockchaininfo", []),
+    proofIndexOperationalStatusPayload(network),
+    proofIndexCanonicalStateMetaPayload(network),
+    proofIndexTokenMintStatsPayload(network, WORK_TOKEN_ID, {
+      targetTxid: normalizedTxid,
+    }),
+  ]);
+  const tip = exactCoreTipFromBlockchainInfo(tipResponse);
+  const supply = exactPendingWorkMintStats(mintStats, normalizedTxid);
+  const witnessProof = pendingWorkMintWitnessProof(
+    supply,
+    normalizedTxid,
+    mint.amount,
+  );
+  if (
+    !tip ||
+    !proofIndexExactlyCoversCoreTip(status, canonical, tip) ||
+    !supply ||
+    !witnessProof
+  ) {
+    return null;
+  }
+
+  const validatedWitnesses = await mapWithConcurrency(
+    witnessProof.witnesses,
+    4,
+    async (candidate) => {
+      const [witnessTransaction, witnessMempoolResponse] =
+        await Promise.all([
+          fetchTransactionFromBitcoinRpc(candidate.txid, network, {
+            requireCanonicalPrevouts: true,
+          }),
+          bitcoinRpc("getmempoolentry", [candidate.txid]),
+        ]);
+      const witnessMint = pendingWorkMintFromHydratedTransaction(
+        witnessTransaction,
+        network,
+        candidate.txid,
+      );
+      return witnessMint?.amount === candidate.amount &&
+          coreMempoolEntryPresent(witnessMempoolResponse)
+        ? candidate
+        : null;
+    },
+  );
+  const validatedWitnessSupply = validatedWitnesses.reduce(
+    (total, witness) => total + Number(witness?.amount ?? 0),
+    0,
+  );
+  if (
+    validatedWitnesses.some((witness) => !witness) ||
+    !Number.isSafeInteger(validatedWitnessSupply) ||
+    validatedWitnessSupply !== witnessProof.witnessSupply ||
+    supply.confirmedSupply + validatedWitnessSupply + mint.amount <=
+      WORK_TOKEN_MAX_SUPPLY
+  ) {
+    return null;
+  }
+
+  const [
+    finalTipResponse,
+    finalStatus,
+    finalCanonical,
+    finalMintStats,
+    finalMempoolMembership,
+  ] = await Promise.all([
+    bitcoinRpc("getblockchaininfo", []),
+    proofIndexOperationalStatusPayload(network),
+    proofIndexCanonicalStateMetaPayload(network),
+    proofIndexTokenMintStatsPayload(network, WORK_TOKEN_ID, {
+      targetTxid: normalizedTxid,
+    }),
+    mapWithConcurrency(
+      [normalizedTxid, ...validatedWitnesses.map((witness) => witness.txid)],
+      4,
+      async (memberTxid) =>
+        coreMempoolEntryPresent(
+          await bitcoinRpc("getmempoolentry", [memberTxid]),
+        ),
+    ),
+  ]);
+  const finalTip = exactCoreTipFromBlockchainInfo(finalTipResponse);
+  const finalSupply = exactPendingWorkMintStats(
+    finalMintStats,
+    normalizedTxid,
+  );
+  const finalWitnessProof = pendingWorkMintWitnessProof(
+    finalSupply,
+    normalizedTxid,
+    mint.amount,
+  );
+  if (
+    !finalTip ||
+    finalTip.height !== tip.height ||
+    finalTip.blockHash !== tip.blockHash ||
+    !proofIndexExactlyCoversCoreTip(finalStatus, finalCanonical, finalTip) ||
+    !finalSupply ||
+    finalSupply.confirmedSupply !== supply.confirmedSupply ||
+    !finalWitnessProof ||
+    finalWitnessProof.witnessSupply !== validatedWitnessSupply ||
+    finalWitnessProof.witnesses.length !== validatedWitnesses.length ||
+    finalWitnessProof.witnesses.some(
+      (witness, index) =>
+        witness.txid !== validatedWitnesses[index]?.txid ||
+        witness.amount !== validatedWitnesses[index]?.amount,
+    ) ||
+    finalMempoolMembership.length !== validatedWitnesses.length + 1 ||
+    finalMempoolMembership.some((present) => present !== true)
+  ) {
+    return null;
+  }
+
+  const reason =
+    `WORK mint exceeds max supply: ` +
+    `${supply.confirmedSupply.toLocaleString("en-US")} confirmed + ` +
+    `${validatedWitnessSupply.toLocaleString("en-US")} earlier pending + ` +
+    `${mint.amount.toLocaleString("en-US")} requested > ` +
+    `${WORK_TOKEN_MAX_SUPPLY.toLocaleString("en-US")} max.`;
+  return {
+    classification: "supply-cap",
+    indexedAt:
+      finalStatus.indexedAt ??
+      finalMintStats.indexedAt ??
+      new Date().toISOString(),
+    indexedThroughBlock: tip.height,
+    items: [{
+      amount: mint.amount,
+      blockHeight: null,
+      confirmed: false,
+      kind: "token-event-invalid",
+      network,
+      provisional: true,
+      provisionalReason: "supply-cap",
+      reason,
+      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      status: "pending",
+      ticker: WORK_TOKEN_TICKER,
+      tokenId: WORK_TOKEN_ID,
+      txid: normalizedTxid,
+      valid: false,
+    }],
+    network,
+    provisional: true,
+    source: "proof-indexer-pending-work-supply-cap-verifier",
+    supplyCapWitnessTxids: validatedWitnesses.map((witness) => witness.txid),
+    tokenScope: WORK_TOKEN_ID,
+    txid: normalizedTxid,
+  };
+}
+
 async function tokenVerifierDeterministicInvalidReason(
   network,
   state,
@@ -37250,6 +37652,7 @@ async function tokenVerifierDeterministicInvalidReason(
   for (const parsed of parsedMessages) {
     let registryAddress = "";
     let minimumPayment = TOKEN_MIN_MUTATION_PRICE_SATS;
+    let mintedToken = null;
     if (parsed.kind === "create") {
       registryAddress = indexAddress;
       minimumPayment = TOKEN_CREATION_PRICE_SATS;
@@ -37263,6 +37666,9 @@ async function tokenVerifierDeterministicInvalidReason(
         parsed.kind === "mint"
           ? numericValue(token.mintPriceSats)
           : TOKEN_MIN_MUTATION_PRICE_SATS;
+      if (parsed.kind === "mint") {
+        mintedToken = token;
+      }
     } else if (parsed.kind === "list") {
       registryAddress = parsed.saleAuthorization?.registryAddress ?? "";
     } else {
@@ -37278,6 +37684,40 @@ async function tokenVerifierDeterministicInvalidReason(
         minimumPayment
     ) {
       return "Required ProofOfWork credit registry payment is missing or misplaced.";
+    }
+    if (mintedToken && mintedToken.uncapped !== true) {
+      const maxSupply = Number(mintedToken.maxSupply);
+      const acceptedMints = (Array.isArray(state?.mints) ? state.mints : [])
+        .filter(
+          (mint) =>
+            String(mint?.tokenId ?? "").trim().toLowerCase() ===
+              parsed.tokenId &&
+            Number.isSafeInteger(Number(mint?.amount)) &&
+            Number(mint.amount) > 0,
+        );
+      const confirmedSupply = acceptedMints
+        .filter((mint) => mint?.confirmed === true)
+        .reduce((total, mint) => total + Number(mint.amount), 0);
+      const pendingSupply = acceptedMints
+        .filter((mint) => mint?.confirmed !== true)
+        .reduce((total, mint) => total + Number(mint.amount), 0);
+      if (
+        Number.isSafeInteger(maxSupply) &&
+        maxSupply > 0 &&
+        Number.isSafeInteger(confirmedSupply) &&
+        Number.isSafeInteger(pendingSupply) &&
+        confirmedSupply + pendingSupply + parsed.amount > maxSupply
+      ) {
+        const ticker =
+          String(mintedToken.ticker ?? "credit").trim() || "credit";
+        return (
+          `${ticker} mint exceeds max supply: ` +
+          `${confirmedSupply.toLocaleString("en-US")} confirmed + ` +
+          `${pendingSupply.toLocaleString("en-US")} pending + ` +
+          `${parsed.amount.toLocaleString("en-US")} requested > ` +
+          `${maxSupply.toLocaleString("en-US")} max.`
+        );
+      }
     }
   }
   return "";
@@ -37312,6 +37752,20 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
   const scope = String(tokenScope ?? "").trim().toLowerCase() === "all"
     ? ""
     : normalizeTokenScope(tokenScope);
+  const provisionalSupplyCapPayload = await pendingWorkMintSupplyCapVerifierPayload(
+    network,
+    scope,
+    normalizedTxid,
+    { requireConfirmed },
+  ).catch((error) => {
+    console.error(
+      `Pending WORK supply-cap verifier fell back to ordered replay for ${normalizedTxid}: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (provisionalSupplyCapPayload) {
+    return provisionalSupplyCapPayload;
+  }
   const confirmedStateScope = scope || `tx:${normalizedTxid}`;
   const stateKey = requireConfirmed
     ? `token-complete:${network}:${confirmedStateScope}:h${requiredBlockHeight}:${requiredPreviousBlockHash}:${requiredBlockHash}`

@@ -6,6 +6,10 @@ const server = readFileSync("server/proof-api.mjs", "utf8");
 const reader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
 const backfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const worker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
+const ledgerAudit = readFileSync(
+  "scripts/audit-ledger-consistency.mjs",
+  "utf8",
+);
 const service = readFileSync("deploy/proofofwork-api-proof-index.conf", "utf8");
 const failures = [];
 const readerPublicLogKinds =
@@ -79,6 +83,15 @@ const verifier = sliceBetween(
   /async function completeTokenVerifierState/,
   /async function completeIdVerifierStateBundle/,
 );
+const pendingWorkSupplyCapVerifier = sliceBetween(
+  /function pendingWorkMintFromHydratedTransaction/,
+  /async function tokenVerifierDeterministicInvalidReason/,
+);
+const stableCrossLedgerAudit = (() => {
+  const start = ledgerAudit.indexOf("async function readStableCrossLedgerBatch");
+  const end = ledgerAudit.indexOf("function isGullishBuyerTokenSale", start);
+  return start < 0 ? "" : ledgerAudit.slice(start, end < 0 ? undefined : end);
+})();
 
 expect(
   "fresh canonical summaries require an exact-tip ledger",
@@ -228,10 +241,45 @@ expect(
 );
 expect(
   "worker status transitions are locked, evidence-gated, and canonical promotions are deferred",
-  /SELECT status, raw_tx[\s\S]*FOR UPDATE/u.test(worker) &&
+  /const PENDING_DROP_CONFIRMATION_MS = pendingDropConfirmationMs\(\s*process\.env\.POW_INDEX_PENDING_DROP_CONFIRMATION_MS/u.test(
+    worker,
+  ) &&
+    /function pendingDropConfirmationMs[\s\S]*Math\.max\(\s*5 \* 60_000,[\s\S]*Number\.isFinite\(configured\)/u.test(
+      worker,
+    ) &&
+    /function authoritativeDroppedStatusEvidence[\s\S]*sources\.length === requiredSources\.length[\s\S]*requiredSources\.every/u.test(
+      worker,
+    ) &&
+    [
+      "absent-from-synced-unpruned-mainnet-bitcoin-core-txindex-and-mempool",
+      "bitcoin-core:getrawtransaction",
+      "bitcoin-core:getmempoolentry",
+      "bitcoin-core:getblockchaininfo",
+      "bitcoin-core:getindexinfo:txindex",
+    ].every((value) => worker.includes(value)) &&
+    /SELECT status, raw_tx[\s\S]*FOR UPDATE/u.test(worker) &&
     /WHERE network = \$1 AND txid = \$2 AND status = 'pending'/u.test(worker) &&
     /canonical-block-scan-required/u.test(worker) &&
     /repeat-absence-required/u.test(worker) &&
+    /priorObservation\?\.absenceStartedAt \?\? ""/u.test(
+      worker,
+    ) &&
+    /evidence\.absenceStartedAt = new Date\(absenceStartedAtMs\)\.toISOString\(\)/u.test(
+      worker,
+    ) &&
+    /observedAtMs >= absenceStartedAtMs \+ PENDING_DROP_CONFIRMATION_MS/u.test(
+      worker,
+    ) &&
+    /normalizedStatus === "confirmed"[\s\S]*statusObservation[\s\S]*canonical-block-scan-required/u.test(
+      worker,
+    ) &&
+    /absenceProven:[\s\S]*normalizedStatus === "dropped" \? payload\.absenceProven : undefined/u.test(
+      worker,
+    ) &&
+    /priorObservation\?\.status === "dropped" &&[\s\S]*authoritativeDroppedStatusEvidence\(priorObservation\)/u.test(
+      worker,
+    ) &&
+    (worker.match(/'dropped', true/gu) ?? []).length >= 3 &&
     /block_hash = NULL/u.test(worker) &&
     !/SET status = 'dropped'[\s\S]*\(listing_id = \$2 OR seal_txid = \$2 OR close_txid = \$2\)/u.test(
       worker,
@@ -336,6 +384,75 @@ expect(
   "the ordered verifier seeds every configured bond family",
   /for \(const config of BOND_TOKEN_CONFIGS\)/u.test(verifier) &&
     /bondMintsFromActivity/u.test(verifier),
+);
+expect(
+  "pending WORK supply-cap classification is Core-current and exact-tip indexed",
+  /network !== "livenet"[\s\S]*tokenScope !== WORK_TOKEN_ID/u.test(
+    pendingWorkSupplyCapVerifier,
+  ) &&
+    /fetchTransactionFromBitcoinRpc[\s\S]*requireCanonicalPrevouts: true[\s\S]*getmempoolentry/u.test(
+      pendingWorkSupplyCapVerifier,
+    ) &&
+    /inputAddresses\(vin\)\[0\][\s\S]*isValidBitcoinAddress\(actorAddress, network\)/u.test(
+      pendingWorkSupplyCapVerifier,
+    ) &&
+    /proofIndexExactlyCoversCoreTip/u.test(pendingWorkSupplyCapVerifier) &&
+    /targetPendingMints !== 0/u.test(pendingWorkSupplyCapVerifier) &&
+    /pendingCandidatesComplete !== true/u.test(pendingWorkSupplyCapVerifier) &&
+    /candidate\.txid\.localeCompare\(normalizedTargetTxid\) >= 0/u.test(
+      pendingWorkSupplyCapVerifier,
+    ) &&
+    (pendingWorkSupplyCapVerifier.match(
+      /proofIndexTokenMintStatsPayload\(/gu,
+    ) ?? []).length === 2 &&
+    /validatedWitnessSupply !== witnessProof\.witnessSupply/u.test(
+      pendingWorkSupplyCapVerifier,
+    ) &&
+    /finalMempoolMembership\.some\(\(present\) => present !== true\)/u.test(
+      pendingWorkSupplyCapVerifier,
+    ) &&
+    /finalWitnessProof\.witnesses\.some/u.test(
+      pendingWorkSupplyCapVerifier,
+    ) &&
+    !/supply\.acceptedSupply/u.test(pendingWorkSupplyCapVerifier) &&
+    /proof-indexer-pending-work-supply-cap-verifier/u.test(
+      pendingWorkSupplyCapVerifier,
+    ),
+);
+expect(
+  "ledger audit brackets fresh cross-ledger reads with stable sentinels",
+  /CROSS_LEDGER_AUDIT_MAX_ATTEMPTS = 3/u.test(ledgerAudit) &&
+    (stableCrossLedgerAudit.match(
+      /readJson\(\s*"\/api\/v1\/work-floor\?fresh=1"/gu,
+    ) ?? []).length === 2 &&
+    [
+      '"/api/v1/consistency"',
+      '"/api/v1/marketplace-summary?fresh=1"',
+      '"/api/v1/infinity-summary?fresh=1"',
+      '"/api/v1/inception-summary?fresh=1"',
+      '"/api/v1/growth-summary?fresh=1"',
+      "`/api/v1/token?asset=${POWB_TOKEN_ID}&fresh=1`",
+      "`/api/v1/token?asset=${INCB_TOKEN_ID}&fresh=1`",
+    ].every((path) => stableCrossLedgerAudit.includes(path)) &&
+    /if \(snapshotSentinelsMatch\(before, after\)\) \{[\s\S]*return \{/u.test(
+      stableCrossLedgerAudit,
+    ) &&
+    /payloadMatchesAuditSentinel\(payload, after, false\)/u.test(
+      stableCrossLedgerAudit,
+    ) &&
+    /cross-ledger payloads diverged inside one stable canonical snapshot/u.test(
+      stableCrossLedgerAudit,
+    ) &&
+    (stableCrossLedgerAudit.match(/\bcontinue;/gu) ?? []).length === 1 &&
+    /if \(attempt < CROSS_LEDGER_AUDIT_MAX_ATTEMPTS\)[\s\S]*continue;/u.test(
+      stableCrossLedgerAudit,
+    ),
+);
+expect(
+  "WORK pending cap ordering matches canonical pending transaction replay",
+  /function sortWorkMintsForPendingCap[\s\S]*String\(left\.txid[\s\S]*localeCompare\(String\(right\.txid[\s\S]*Date\.parse\(left\.createdAt\)/u.test(
+    server,
+  ),
 );
 expect(
   "live USD remains derived from actual total proofs",

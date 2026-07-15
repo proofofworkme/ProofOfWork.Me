@@ -3580,7 +3580,13 @@ function normalizedBondTitle(item, status, bondTag) {
 
 function normalizedEventItem(item, kind, status) {
   const eventTime = itemTime(item);
-  const timestampedItem = eventTime ? { ...item, createdAt: eventTime } : item;
+  const timestampedItem = {
+    ...item,
+    ...(eventTime ? { createdAt: eventTime } : {}),
+    confirmed: status === "confirmed",
+    dropped: status === "dropped",
+    status,
+  };
   const bondTag = bondTagForKind(kind);
   if (!bondTag) {
     return timestampedItem;
@@ -8312,6 +8318,7 @@ async function mempoolScanState(client) {
   return {
     cursor: normalizedMempoolScanCursor(value?.cursor),
     key,
+    priorityCursor: normalizedMempoolScanCursor(value?.priorityCursor),
     processedTxids: new Set(
       Array.isArray(value?.processedTxids)
         ? value.processedTxids
@@ -8403,7 +8410,10 @@ function plannedMempoolScanCandidates(
       .map((txid) => String(txid ?? "").trim().toLowerCase())
       .filter(isHexTxid),
   );
-  for (const entry of mempoolEntriesAfterCursor(entries, state?.cursor)) {
+  for (const entry of mempoolEntriesAfterCursor(
+    entries,
+    state?.priorityCursor,
+  )) {
     if (candidates.length >= urgentLimit) {
       break;
     }
@@ -8493,6 +8503,7 @@ async function storeMempoolScanState(
   key,
   processedTxids,
   cursor,
+  priorityCursor,
 ) {
   await client.query(
     `
@@ -8505,11 +8516,27 @@ async function storeMempoolScanState(
       key,
       JSON.stringify({
         cursor: normalizedMempoolScanCursor(cursor),
+        priorityCursor: normalizedMempoolScanCursor(priorityCursor),
         processedTxids,
         scannedAt: new Date().toISOString(),
       }),
     ],
   );
+}
+
+function pendingTransactionObservationItem(preparedItems, txid) {
+  const prepared = Array.isArray(preparedItems) ? preparedItems : [];
+  const items = prepared.map((entry) => entry?.item ?? entry).filter(Boolean);
+  if (items.length === 0 || items.some((item) => item?.valid !== false)) {
+    return null;
+  }
+  return {
+    ...items[0],
+    confirmed: false,
+    dropped: false,
+    status: "pending",
+    txid,
+  };
 }
 
 async function backfillMempoolScanSource(client, source) {
@@ -8564,6 +8591,7 @@ async function backfillMempoolScanSource(client, source) {
     [...state.processedTxids].filter((txid) => mempool?.[txid]),
   );
   let cursor = state.cursor;
+  let priorityCursor = state.priorityCursor;
   let canonicalDeferred = 0;
   let cursorScanned = 0;
   let headScanned = 0;
@@ -8585,6 +8613,8 @@ async function backfillMempoolScanSource(client, source) {
       headScanned += 1;
     } else if (candidate.lane === "priority") {
       priorityScanned += 1;
+      priorityCursor =
+        mempoolScanCursorForEntry(candidate.entry) ?? priorityCursor;
     }
     const tx = await freshRawTransactionFromCore(txid);
     if (!tx) {
@@ -8608,8 +8638,17 @@ async function backfillMempoolScanSource(client, source) {
     let transactionOpen = false;
     try {
       const hydrated = await transactionWithInputPrevouts(tx);
-      const prepared = (await preparedProtocolItemsForTx(hydrated, messages))
-        .filter((entry) => (entry.item ?? entry)?.valid !== false);
+      const verifiedPrepared = await preparedProtocolItemsForTx(
+        hydrated,
+        messages,
+      );
+      const prepared = verifiedPrepared.filter(
+        (entry) => (entry.item ?? entry)?.valid !== false,
+      );
+      const pendingObservation = pendingTransactionObservationItem(
+        verifiedPrepared,
+        txid,
+      );
       const beforeWrite = await freshRawTransactionFromCore(txid);
       if (!beforeWrite) {
         throw new Error(
@@ -8622,6 +8661,15 @@ async function backfillMempoolScanSource(client, source) {
       }
       await client.query("BEGIN");
       transactionOpen = true;
+      if (pendingObservation) {
+        await upsertTransaction(
+          client,
+          pendingObservation,
+          txid,
+          "pending",
+          source.label,
+        );
+      }
       const result = await persistPreparedProtocolItems(client, prepared);
       const beforeCommit = await freshRawTransactionFromCore(txid);
       if (!beforeCommit) {
@@ -8658,7 +8706,13 @@ async function backfillMempoolScanSource(client, source) {
     .map(([txid]) => txid)
     .filter((txid) => processed.has(txid))
     .slice(0, seenLimit);
-  await storeMempoolScanState(client, state.key, nextProcessed, cursor);
+  await storeMempoolScanState(
+    client,
+    state.key,
+    nextProcessed,
+    cursor,
+    priorityCursor,
+  );
   return {
     canonicalDeferred,
     cursor,
@@ -8667,6 +8721,7 @@ async function backfillMempoolScanSource(client, source) {
     indexed,
     mempoolSize: entries.length,
     priorityCandidates: priorityTxids.length,
+    priorityCursor,
     priorityScanned,
     protocolTxids,
     scanned,

@@ -59,6 +59,7 @@ const SMALL_EVENT_HISTORY_NORMALIZE_LIMIT = 2_000;
 const LEDGER_SNAPSHOT_RECENT_READ_LIMIT = 25;
 const SUMMARY_SNAPSHOT_LOOKBACK_LIMIT = 5_000;
 const TOKEN_STATE_EVENT_READ_LIMIT = 100_000;
+const TOKEN_PENDING_MINT_WITNESS_LIMIT = 32;
 
 function proofIndexPool() {
   if (!proofIndexDatabaseConfigured()) {
@@ -579,6 +580,13 @@ function activeTokenListingHistoryItem(listing) {
 function activeOrSealingListingStatus(status) {
   return ["active", "pending", "sealing"].includes(
     String(status ?? "").trim().toLowerCase(),
+  );
+}
+
+function tokenListingSealConfirmedFromTransaction(row, sealTxid) {
+  return (
+    validTxid(sealTxid) &&
+    normalizedLowerText(row?.seal_tx_status) === "confirmed"
   );
 }
 
@@ -1884,7 +1892,11 @@ async function proofIndexTokenMintRows(
   return result.rows;
 }
 
-export async function proofIndexTokenMintStatsPayload(network, tokenScope) {
+export async function proofIndexTokenMintStatsPayload(
+  network,
+  tokenScope,
+  options = {},
+) {
   const pool = proofIndexPool();
   if (!pool) {
     return null;
@@ -1893,6 +1905,7 @@ export async function proofIndexTokenMintStatsPayload(network, tokenScope) {
   if (!scope || scope === "all") {
     return null;
   }
+  const targetTxid = normalizedTxid(options.targetTxid);
 
   const rows = await proofIndexTokenMintRows(
     pool,
@@ -1916,6 +1929,9 @@ export async function proofIndexTokenMintStatsPayload(network, tokenScope) {
   let confirmedSupply = 0;
   let pendingMints = 0;
   let pendingSupply = 0;
+  let targetConfirmedMints = 0;
+  let targetPendingMints = 0;
+  const pendingCandidatesByTxid = new Map();
   for (const mint of mints) {
     const amount = Number(mint.amount);
     if (!Number.isSafeInteger(amount) || amount < 0) {
@@ -1926,12 +1942,31 @@ export async function proofIndexTokenMintStatsPayload(network, tokenScope) {
     if (mint.confirmed) {
       confirmedMints += 1;
       confirmedSupply += amount;
+      if (targetTxid && normalizedTxid(mint.txid) === targetTxid) {
+        targetConfirmedMints += 1;
+      }
       if (!Number.isSafeInteger(confirmedSupply)) {
         throw new Error("Proof index confirmed mint supply is inexact.");
       }
     } else {
       pendingMints += 1;
       pendingSupply += amount;
+      const mintTxid = normalizedTxid(mint.txid);
+      if (!mintTxid) {
+        throw new Error("Proof index pending mint statistics contain an invalid txid.");
+      }
+      const existingCandidate = pendingCandidatesByTxid.get(mintTxid);
+      const candidateAmount = Number(existingCandidate?.amount ?? 0) + amount;
+      if (!Number.isSafeInteger(candidateAmount)) {
+        throw new Error("Proof index pending mint candidate supply is inexact.");
+      }
+      pendingCandidatesByTxid.set(mintTxid, {
+        amount: candidateAmount,
+        txid: mintTxid,
+      });
+      if (targetTxid && mintTxid === targetTxid) {
+        targetPendingMints += 1;
+      }
       if (!Number.isSafeInteger(pendingSupply)) {
         throw new Error("Proof index pending mint supply is inexact.");
       }
@@ -1942,6 +1977,16 @@ export async function proofIndexTokenMintStatsPayload(network, tokenScope) {
     0,
     ...rows.map((row) => rowNumber(row, "block_height")),
   );
+  const pendingCandidateRows = [...pendingCandidatesByTxid.values()].sort(
+    (left, right) => left.txid.localeCompare(right.txid),
+  );
+  const pendingCandidateSupply = pendingCandidateRows.reduce(
+    (total, candidate) => total + candidate.amount,
+    0,
+  );
+  if (!Number.isSafeInteger(pendingCandidateSupply)) {
+    throw new Error("Proof index pending mint witness supply is inexact.");
+  }
   return {
     confirmedMints,
     confirmedSupply,
@@ -1956,9 +2001,28 @@ export async function proofIndexTokenMintStatsPayload(network, tokenScope) {
     ),
     indexedThroughBlock: indexedThroughBlock || undefined,
     network,
+    pendingCandidateCount: pendingCandidateRows.length,
+    pendingCandidates: pendingCandidateRows.slice(
+      0,
+      TOKEN_PENDING_MINT_WITNESS_LIMIT,
+    ),
+    pendingCandidatesComplete:
+      pendingCandidateRows.length <= TOKEN_PENDING_MINT_WITNESS_LIMIT,
+    pendingCandidateSupply,
     pendingMints,
     pendingSupply,
+    pendingWitnessLimit: TOKEN_PENDING_MINT_WITNESS_LIMIT,
     source: "proof-indexer-token-mint-events",
+    ...(targetTxid
+      ? {
+          targetMintStats: {
+            confirmedMints: targetConfirmedMints,
+            pendingMints: targetPendingMints,
+            totalMints: targetConfirmedMints + targetPendingMints,
+            txid: targetTxid,
+          },
+        }
+      : {}),
     tokenId: scope,
     totalMints,
   };
@@ -2299,9 +2363,13 @@ async function exactActiveTokenListingHistoryPage(
               cl.close_txid,
               cl.payload,
               cl.updated_at,
+              seal_tx.status AS seal_tx_status,
               cd.ticker,
               cd.registry_address
             FROM proof_indexer.credit_listings cl
+            LEFT JOIN proof_indexer.transactions seal_tx
+              ON seal_tx.network = cl.network
+             AND seal_tx.txid = cl.seal_txid
             LEFT JOIN proof_indexer.credit_definitions cd
               ON cd.network = cl.network
              AND cd.token_id = cl.token_id
@@ -2377,9 +2445,7 @@ async function exactActiveTokenListingHistoryPage(
         saleTicketValueSats: Number(row.sale_ticket_value_sats ?? 0),
         saleTicketVout: row.sale_ticket_vout,
         sealAt: dateIso(payload.sealAt ?? payload.sealedAt ?? row.updated_at),
-        sealConfirmed:
-          payload.sealConfirmed === true ||
-          (validTxid(sealTxid) && status === "sealing"),
+        sealConfirmed: tokenListingSealConfirmedFromTransaction(row, sealTxid),
         sealTxid,
         sellerAddress: row.seller_address ?? payload.sellerAddress,
         status,
@@ -6645,9 +6711,7 @@ function tokenListingFromCreditListingRow(row, network) {
     saleTicketVout:
       row?.sale_ticket_vout ?? payload.saleTicketVout ?? saleAuthorization.saleTicketVout,
     sealAt: dateIso(payload.sealAt ?? payload.sealedAt ?? row?.updated_at),
-    sealConfirmed:
-      payload.sealConfirmed === true ||
-      (validTxid(sealTxid) && ["sealing", "sold"].includes(status)),
+    sealConfirmed: tokenListingSealConfirmedFromTransaction(row, sealTxid),
     sealTxid,
     sellerAddress: row?.seller_address ?? payload.sellerAddress,
     status,
@@ -6677,9 +6741,13 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         cl.close_txid,
         cl.payload,
         cl.updated_at,
+        seal_tx.status AS seal_tx_status,
         cd.ticker,
         cd.registry_address
       FROM proof_indexer.credit_listings cl
+      LEFT JOIN proof_indexer.transactions seal_tx
+        ON seal_tx.network = cl.network
+       AND seal_tx.txid = cl.seal_txid
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = cl.network
        AND cd.token_id = cl.token_id
@@ -8013,9 +8081,13 @@ export async function proofIndexWalletTokenOverlayPayload(
         cl.close_txid,
         cl.payload,
         cl.updated_at,
+        seal_tx.status AS seal_tx_status,
         cd.ticker,
         cd.registry_address
       FROM proof_indexer.credit_listings cl
+      LEFT JOIN proof_indexer.transactions seal_tx
+        ON seal_tx.network = cl.network
+       AND seal_tx.txid = cl.seal_txid
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = cl.network
        AND cd.token_id = cl.token_id
@@ -8197,9 +8269,7 @@ export async function proofIndexWalletTokenOverlayPayload(
         payload.timestamp ??
         payload.createdAt ??
         row.updated_at,
-      sealConfirmed:
-        payload.sealConfirmed === true ||
-        (validTxid(sealTxid) && status === "sealing" && row.status !== "pending"),
+      sealConfirmed: tokenListingSealConfirmedFromTransaction(row, sealTxid),
       sealTxid,
       sellerAddress: row.seller_address ?? payload.sellerAddress ?? "",
       status: row.status ?? payload.status,

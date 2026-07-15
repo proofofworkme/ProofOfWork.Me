@@ -723,9 +723,76 @@ expectAll("mempool discovery is bounded and unresolved pending state is retried"
   /bitcoinRpc\("getrawmempool", \[true\]\)/,
   /MEMPOOL_SCAN_MAX_TXIDS/,
   /MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS/,
-  /preparedProtocolItemsForTx\(hydrated, messages\)/,
+  /preparedProtocolItemsForTx\([\s\S]*hydrated,[\s\S]*messages/,
   /unresolved \+= 1/,
 ]);
+expectAll("mempool priority recovery rotates independently and preserves invalid pending observations", proofIndexerBackfill, [
+  /priorityCursor: normalizedMempoolScanCursor\(value\?\.priorityCursor\)/,
+  /mempoolEntriesAfterCursor\([\s\S]*state\?\.priorityCursor/,
+  /candidate\.lane === "priority"[\s\S]*priorityCursor =[\s\S]*mempoolScanCursorForEntry/,
+  /function pendingTransactionObservationItem\([\s\S]*items\.some\(\(item\) => item\?\.valid !== false\)[\s\S]*status: "pending"/,
+  /if \(pendingObservation\) \{[\s\S]*upsertTransaction\([\s\S]*"pending"/,
+]);
+expectAll("ordered credit verifier classifies supply-saturated pending mints", server, [
+  /acceptedMints[\s\S]*confirmedSupply[\s\S]*pendingSupply/,
+  /confirmedSupply \+ pendingSupply \+ parsed\.amount > maxSupply/,
+  /mint exceeds max supply:[\s\S]*confirmed[\s\S]*pending[\s\S]*requested/,
+]);
+const pendingWorkSupplyCapVerifierSource = sourceSliceBetween(
+  server,
+  /function pendingWorkMintFromHydratedTransaction/,
+  /async function tokenVerifierDeterministicInvalidReason/,
+);
+expectAll("proof-index mint stats expose a complete bounded pending witness set", proofIndexReader, [
+  /const TOKEN_PENDING_MINT_WITNESS_LIMIT = 32/,
+  /const pendingCandidatesByTxid = new Map\(\)/,
+  /pendingCandidateCount: pendingCandidateRows\.length/,
+  /pendingCandidates: pendingCandidateRows\.slice/,
+  /pendingCandidatesComplete:[\s\S]*TOKEN_PENDING_MINT_WITNESS_LIMIT/,
+  /pendingCandidateSupply/,
+  /targetMintStats/,
+]);
+expectAll("pending WORK supply-cap fast path fails closed on exact live truth", pendingWorkSupplyCapVerifierSource, [
+  /network !== "livenet"[\s\S]*options\.requireConfirmed === true[\s\S]*tokenScope !== WORK_TOKEN_ID/,
+  /messages\.length !== 1/,
+  /parsed\.amount !== WORK_TOKEN_MINT_AMOUNT/,
+  /WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS[\s\S]*!== WORK_TOKEN_MINT_PRICE_SATS/,
+  /fetchTransactionFromBitcoinRpc[\s\S]*requireCanonicalPrevouts: true[\s\S]*getmempoolentry/,
+  /inputAddresses\(vin\)\[0\]/,
+  /transactionHasCompleteCanonicalPrevouts\(tx\)/,
+  /isValidBitcoinAddress\(actorAddress, network\)/,
+  /proofIndexExactlyCoversCoreTip/,
+  /targetConfirmedMints !== 0[\s\S]*targetPendingMints !== 0/,
+  /pendingCandidatesComplete !== true/,
+  /pendingCandidateCount !== pendingMints/,
+  /pendingCandidateSupply !== pendingSupply/,
+  /candidate\.txid\.localeCompare\(normalizedTargetTxid\) >= 0/,
+  /witnessMint\?\.amount === candidate\.amount/,
+  /validatedWitnessSupply !== witnessProof\.witnessSupply/,
+  /finalSupply\.confirmedSupply !== supply\.confirmedSupply/,
+  /finalWitnessProof\.witnesses\.some/,
+  /finalMempoolMembership\.some\(\(present\) => present !== true\)/,
+  /proof-indexer-pending-work-supply-cap-verifier/,
+]);
+expect(
+  "pending WORK supply-cap fast path never trusts aggregate pending supply",
+  !/supply\.acceptedSupply/u.test(pendingWorkSupplyCapVerifierSource) &&
+    !/supply\.confirmedSupply \+ supply\.pendingSupply/u.test(
+      pendingWorkSupplyCapVerifierSource,
+    ),
+);
+expect(
+  "WORK pending cap ordering matches canonical txid replay before display time",
+  /function sortWorkMintsForPendingCap[\s\S]*String\(left\.txid[\s\S]*localeCompare\(String\(right\.txid[\s\S]*Date\.parse\(left\.createdAt\)/u.test(
+    server,
+  ),
+);
+expect(
+  "pending WORK supply-cap fast path verifies mint membership twice",
+  (pendingWorkSupplyCapVerifierSource.match(
+    /proofIndexTokenMintStatsPayload\(/gu,
+  ) ?? []).length === 2,
+);
 expectAll("pending ordered-verifier work has a small deterministic delay budget", proofIndexerBackfill + canonicalRecoverySource, [
   /const MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS = Math\.min\([\s\S]*5/,
   /const PENDING_VERIFIER_TIMEOUT_MS = Math\.min\([\s\S]*5_000[\s\S]*Math\.max\([\s\S]*1_000/,

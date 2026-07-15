@@ -233,7 +233,11 @@ The worker script keeps the indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through
 `/api/v1/tx/:txid/status`, marking disappeared txids as `dropped`, and running
 the parity checker on a slower cadence than block catch-up. Continuous worker
-cycles use
+cycles require two authoritative Bitcoin Core absence proofs separated by at
+least five minutes before a pending row can become dropped. The confirmation
+window is measured from the first consecutive absence; faster checks preserve
+that epoch, while any proven pending or confirmed observation resets it.
+Continuous worker cycles use
 `POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan,mempool-scan` as the hot path.
 The confirmed block scanner always runs first. The bounded mempool scanner then
 gives best-effort pending visibility without being allowed to delay confirmed
@@ -905,11 +909,12 @@ The canonical livenet ledger payload:
 - Keeps live and frozen network value separate. Live network value is the active site value and WORK floor source. Frozen network value is the immutable confirmation-time audit stamp for WORK movement and fixed event components.
 - Applies credit movement value only to canonical WORK. Other credits remain proof-flow only: confirmed proof payments, registry/mutation fees, sale payments, and marketplace flow can count, but their listing floors do not reprice network value.
 - Counts cumulative WORK miner fees once per confirmed transaction id from complete full-node input value minus output value. This is historical Bitcoin blockspace/security expenditure, not platform revenue, retained reserves, or spendable backing.
-- Values a valid recipient-matched same-transaction WORK attachment from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. That same persisted H-1 oracle fixes both INCB issuance and the attachment's frozen WORK movement value; the normal sequential WORK replay floor must not replace it. Confirmation fixes the resulting INCB balance and supply while the underlying WORK movement stays single-counted in global Growth/WORK value. Current and post-bond network value change only live WORK revaluation and the live INCB floor; they never reprice issuance.
+- Values a valid recipient-matched same-transaction WORK attachment from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. Multiple Inception bonds in one block share that raw H-1 summary identity, but each bond keeps its own transaction id and block index in the bound issuance checkpoint. That same persisted H-1 oracle fixes both INCB issuance and the attachment's frozen WORK movement value; the normal sequential WORK replay floor must not replace it. Confirmation fixes the resulting INCB balance and supply while the underlying WORK movement stays single-counted in global Growth/WORK value. Current and post-bond network value change only live WORK revaluation and the live INCB floor; they never reprice issuance.
 - Persists a compact confirmed-WORK-transfer valuation projection with each exact canonical summary. Public WORK token and transfer-history reads may overlay only rows already present in the indexed result, and only when projection snapshot id, height, and block hash match the eligible database summary and the current Bitcoin Core tip; otherwise they fail closed to the unprojected row rather than publish stale values.
 - Rejects or avoids replacing a useful cached ledger with a worse confirmed-history payload when guarded counts regress.
 - May serve a useful cached ledger for fast first paint only when summary projections also correct active sale-ticket listings against current node spend state; deep refresh continues in the background and must converge on confirmed chain truth.
 - Replays WORK mint summaries from canonical mint events and treats pending WORK mints as availability pressure only. Pending mints can reduce available mint slots in the UI, but they do not change confirmed supply, holders, floor, or network value.
+- Orders pending WORK mint candidates by lowercase txid. A fast supply-cap rejection is allowed only from exact-tip confirmed supply plus a complete, Bitcoin Core-current prefix of earlier candidates; otherwise the verifier falls back instead of guessing.
 - Promotes pending WORK and credit listings into confirmed state through the shared credit payload, deduping by listing txid and sale-ticket outpoint so confirmation does not leave duplicate pending rows behind.
 - Preserves sale-ticket seal metadata when WORK or credit listings promote from pending to confirmed state. Confirmed seal regressions are rejected so a refreshed payload cannot make a sealed listing look unsealed.
 - Checks pending WORK and credit txids for liveness on fresh reads and prunes dropped pending transfers, listings, seals, delistings, and buys from pending overlays without changing confirmed history.

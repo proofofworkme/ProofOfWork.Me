@@ -70,6 +70,7 @@ const HISTORY_AUDIT_MAX_PAGES = 10;
 const AUDIT_REQUEST_TIMEOUT_MS = Number(
   process.env.AUDIT_REQUEST_TIMEOUT_MS ?? 45_000,
 );
+const CROSS_LEDGER_AUDIT_MAX_ATTEMPTS = 3;
 const MIN_INFINITY_BOND_FLOW_SATS = 47_234_999;
 const GROWTH_VALUE_MULTIPLE = 5;
 const failures = [];
@@ -209,6 +210,121 @@ function checkNames(payload) {
   return new Set((payload?.checks ?? []).map((check) => check?.name));
 }
 
+function auditSnapshotSentinel(payload) {
+  const snapshotId = String(payload?.snapshotId ?? "").trim();
+  const indexedThroughBlock = numberValue(
+    payload?.indexedThroughBlock ?? payload?.metrics?.indexedThroughBlock,
+  );
+  if (!snapshotId || indexedThroughBlock <= 0) {
+    throw new Error(
+      "audit snapshot sentinel is missing snapshotId or indexedThroughBlock",
+    );
+  }
+  return { indexedThroughBlock, snapshotId };
+}
+
+function snapshotSentinelsMatch(left, right) {
+  return (
+    left.snapshotId === right.snapshotId &&
+    left.indexedThroughBlock === right.indexedThroughBlock
+  );
+}
+
+function payloadMatchesAuditSentinel(payload, sentinel, requireSnapshot = true) {
+  const indexedThroughBlock = numberValue(
+    payload?.indexedThroughBlock ?? payload?.provenance?.indexedThroughBlock,
+  );
+  const snapshotId = String(
+    payload?.snapshotId ?? payload?.provenance?.snapshotId ?? "",
+  ).trim();
+  return (
+    indexedThroughBlock === sentinel.indexedThroughBlock &&
+    (!requireSnapshot || snapshotId === sentinel.snapshotId)
+  );
+}
+
+async function readStableCrossLedgerBatch() {
+  for (
+    let attempt = 1;
+    attempt <= CROSS_LEDGER_AUDIT_MAX_ATTEMPTS;
+    attempt += 1
+  ) {
+    const workFloorBefore = await readJson("/api/v1/work-floor?fresh=1");
+    const before = auditSnapshotSentinel(workFloorBefore);
+    const [
+      consistency,
+      health,
+      marketplaceSummary,
+      infinitySummary,
+      powbTokenState,
+      inceptionSummary,
+      incbTokenState,
+      growthSummary,
+      btcUsdPrice,
+    ] = await readJsonPaths([
+      "/api/v1/consistency",
+      "/health",
+      "/api/v1/marketplace-summary?fresh=1",
+      "/api/v1/infinity-summary?fresh=1",
+      `/api/v1/token?asset=${POWB_TOKEN_ID}&fresh=1`,
+      "/api/v1/inception-summary?fresh=1",
+      `/api/v1/token?asset=${INCB_TOKEN_ID}&fresh=1`,
+      "/api/v1/growth-summary?fresh=1",
+      "/api/v1/prices/btc-usd?fresh=1",
+    ]);
+    const workFloorAfter = await readJson("/api/v1/work-floor?fresh=1");
+    const after = auditSnapshotSentinel(workFloorAfter);
+
+    if (snapshotSentinelsMatch(before, after)) {
+      const summaryPayloads = [
+        consistency,
+        marketplaceSummary,
+        infinitySummary,
+        inceptionSummary,
+        growthSummary,
+      ];
+      const tokenPayloads = [powbTokenState, incbTokenState];
+      if (
+        !summaryPayloads.every((payload) =>
+          payloadMatchesAuditSentinel(payload, after)
+        ) ||
+        !tokenPayloads.every((payload) =>
+          payloadMatchesAuditSentinel(payload, after, false)
+        )
+      ) {
+        throw new Error(
+          "cross-ledger payloads diverged inside one stable canonical snapshot",
+        );
+      }
+      return {
+        btcUsdPrice,
+        consistency,
+        growthSummary,
+        health,
+        incbTokenState,
+        inceptionSummary,
+        infinitySummary,
+        marketplaceSummary,
+        powbTokenState,
+        workFloor: workFloorAfter,
+      };
+    }
+
+    if (attempt < CROSS_LEDGER_AUDIT_MAX_ATTEMPTS) {
+      console.warn(
+        `Cross-ledger snapshot changed during audit attempt ${attempt}; retrying the whole batch`,
+      );
+      continue;
+    }
+
+    throw new Error(
+      `cross-ledger snapshot changed during all ${CROSS_LEDGER_AUDIT_MAX_ATTEMPTS} audit attempts`,
+    );
+  }
+
+  throw new Error("cross-ledger audit attempts exhausted");
+}
+
 function isGullishBuyerTokenSale(item) {
   return (
     item.kind === "token-sale" &&
@@ -218,7 +334,7 @@ function isGullishBuyerTokenSale(item) {
   );
 }
 
-const [
+const {
   consistency,
   health,
   workFloor,
@@ -229,6 +345,9 @@ const [
   incbTokenState,
   growthSummary,
   btcUsdPrice,
+} = await readStableCrossLedgerBatch();
+
+const [
   txLog,
   workTransferLog,
   otcWorkTransferLog,
@@ -250,16 +369,6 @@ const [
   reportedPowbTokenState,
 ] =
   await readJsonPaths([
-    "/api/v1/consistency",
-    "/health",
-    "/api/v1/work-floor",
-    "/api/v1/marketplace-summary",
-    "/api/v1/infinity-summary",
-    `/api/v1/token?asset=${POWB_TOKEN_ID}`,
-    "/api/v1/inception-summary",
-    `/api/v1/token?asset=${INCB_TOKEN_ID}`,
-    "/api/v1/growth-summary",
-    "/api/v1/prices/btc-usd?fresh=1",
     `/api/v1/log-history?q=${GULLISH_TXID}`,
     `/api/v1/log-history?q=${WORK_TRANSFER_REGRESSION_TXID}`,
     `/api/v1/log-history?q=${OTC_WORK_TRANSFER_REGRESSION_TXID}`,
@@ -278,7 +387,7 @@ const [
     `/api/v1/tx/${REPORTED_POWB_LISTING_TXID}/status`,
     `/api/v1/token-history?asset=${POWB_TOKEN_ID}&kind=market-log&q=${REPORTED_POWB_LISTING_TXID}&fresh=1`,
     `/api/v1/token-history?asset=${POWB_TOKEN_ID}&kind=listings&q=${REPORTED_POWB_LISTING_TXID}&fresh=1`,
-    `/api/v1/token?asset=${POWB_TOKEN_ID}`,
+    `/api/v1/token?asset=${POWB_TOKEN_ID}&fresh=1`,
   ]);
 
 const buyerLogItems = items(txLog);

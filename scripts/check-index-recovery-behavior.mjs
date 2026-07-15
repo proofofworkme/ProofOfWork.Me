@@ -95,6 +95,56 @@ function check(name, run) {
   tests.push({ name, run });
 }
 
+check("listing seal confirmation follows the seal transaction status", () => {
+  const sealTxid = "4".repeat(64);
+  const tokenListingSealConfirmedFromTransaction = isolatedFunction(
+    READER_PATH,
+    "tokenListingSealConfirmedFromTransaction",
+    {
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      validTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
+    },
+  );
+
+  assert.equal(
+    tokenListingSealConfirmedFromTransaction(
+      { seal_tx_status: "pending" },
+      sealTxid,
+    ),
+    false,
+  );
+  assert.equal(
+    tokenListingSealConfirmedFromTransaction(
+      { seal_tx_status: "confirmed" },
+      sealTxid,
+    ),
+    true,
+  );
+  assert.equal(
+    tokenListingSealConfirmedFromTransaction({}, sealTxid),
+    false,
+  );
+  assert.equal(
+    tokenListingSealConfirmedFromTransaction(
+      { seal_tx_status: "confirmed" },
+      "not-a-txid",
+    ),
+    false,
+  );
+
+  const readerSource = fileSource(READER_PATH);
+  assert.equal(
+    (readerSource.match(/seal_tx\.status AS seal_tx_status/gu) ?? []).length,
+    3,
+  );
+  assert.equal(
+    (readerSource.match(
+      /sealConfirmed: tokenListingSealConfirmedFromTransaction\(row, sealTxid\)/gu,
+    ) ?? []).length,
+    3,
+  );
+});
+
 check("a current market lifecycle overlay owns sold and active state", () => {
   const listingId =
     "e95c6299b1fdd132b192ea040bcb8683140632b81dbde82946c5b754a8f87dbc";
@@ -5056,6 +5106,58 @@ check("the index worker retries a failed block cycle before going unhealthy", as
   assert.equal(attempts, 2);
 });
 
+check("pending drops enforce a five-minute floor and exact Core proof", () => {
+  const confirmationMs = isolatedFunction(
+    WORKER_PATH,
+    "pendingDropConfirmationMs",
+  );
+  for (const value of [undefined, "", 0, 1, -1, "invalid", Infinity]) {
+    assert.equal(confirmationMs(value), 5 * 60_000);
+  }
+  assert.equal(confirmationMs(5 * 60_000), 5 * 60_000);
+  assert.equal(confirmationMs(10 * 60_000), 10 * 60_000);
+
+  const exactEvidence = isolatedFunction(
+    WORKER_PATH,
+    "authoritativeDroppedStatusEvidence",
+  );
+  const sources = [
+    "bitcoin-core:getrawtransaction",
+    "bitcoin-core:getmempoolentry",
+    "bitcoin-core:getblockchaininfo",
+    "bitcoin-core:getindexinfo:txindex",
+  ];
+  const evidence = {
+    absenceProven: true,
+    contract: "proof-of-work-tx-status-v2",
+    reason:
+      "absent-from-synced-unpruned-mainnet-bitcoin-core-txindex-and-mempool",
+    sources,
+  };
+  assert.equal(exactEvidence(evidence), true);
+  assert.equal(exactEvidence({ ...evidence, sources: [...sources].reverse() }), true);
+  assert.equal(exactEvidence({ ...evidence, absenceProven: false }), false);
+  assert.equal(exactEvidence({ ...evidence, contract: "proof-of-work-tx-status-v1" }), false);
+  assert.equal(exactEvidence({ ...evidence, reason: `${evidence.reason}-other` }), false);
+  for (let index = 0; index < sources.length; index += 1) {
+    assert.equal(
+      exactEvidence({
+        ...evidence,
+        sources: sources.filter((_source, sourceIndex) => sourceIndex !== index),
+      }),
+      false,
+    );
+  }
+  assert.equal(
+    exactEvidence({ ...evidence, sources: [...sources, "bitcoin-core:extra"] }),
+    false,
+  );
+  assert.equal(
+    exactEvidence({ ...evidence, sources: [sources[0], sources[0], sources[2], sources[3]] }),
+    false,
+  );
+});
+
 check("pending status cleanup is concurrent but capped", async () => {
   let activeReads = 0;
   let maxActiveReads = 0;
@@ -5106,12 +5208,17 @@ check("worker status transitions are proven, race-safe, and projection-safe", as
   const now = Date.now();
   const observedAt = new Date(now).toISOString();
   const mempoolFirstSeenAt = new Date(now - 60_000).toISOString();
+  const authoritativeDroppedStatusEvidence = isolatedFunction(
+    WORKER_PATH,
+    "authoritativeDroppedStatusEvidence",
+  );
   const statusUpdate = isolatedFunction(
     WORKER_PATH,
     "updateTransactionStatus",
     {
       NETWORK: "livenet",
-      PENDING_DROP_CONFIRMATION_MS: 1_000,
+      PENDING_DROP_CONFIRMATION_MS: 5 * 60_000,
+      authoritativeDroppedStatusEvidence,
     },
   );
   const pendingEnvelope = {
@@ -5212,7 +5319,8 @@ check("worker status transitions are proven, race-safe, and projection-safe", as
   );
   assert.equal(confirmedOutcome.applied, false);
   assert.equal(confirmedOutcome.reason, "canonical-block-scan-required");
-  assert.equal(confirmedQueries.length, 1);
+  assert.equal(confirmedQueries.length, 2);
+  assert.match(confirmedQueries[1], /statusObservation/iu);
 
   let invalidQueries = 0;
   await rejection(
@@ -5260,8 +5368,14 @@ check("worker status transitions are proven, race-safe, and projection-safe", as
     contract: "proof-of-work-tx-status-v2",
     network: "livenet",
     observedAt,
-    reason: "absent-from-healthy-bitcoin-core-chain-and-mempool",
-    sources: ["bitcoin-core:getrawtransaction"],
+    reason:
+      "absent-from-synced-unpruned-mainnet-bitcoin-core-txindex-and-mempool",
+    sources: [
+      "bitcoin-core:getrawtransaction",
+      "bitcoin-core:getmempoolentry",
+      "bitcoin-core:getblockchaininfo",
+      "bitcoin-core:getindexinfo:txindex",
+    ],
     status: "dropped",
     txid,
   };
@@ -5296,7 +5410,18 @@ check("worker status transitions are proven, race-safe, and projection-safe", as
                 raw_tx: {
                   statusObservation: {
                     absenceCount: 1,
+                    absenceProven: true,
+                    absenceStartedAt: new Date(now - 5 * 60_000).toISOString(),
+                    contract: "proof-of-work-tx-status-v2",
                     observedAt: new Date(now - 60_000).toISOString(),
+                    reason:
+                      "absent-from-synced-unpruned-mainnet-bitcoin-core-txindex-and-mempool",
+                    sources: [
+                      "bitcoin-core:getrawtransaction",
+                      "bitcoin-core:getmempoolentry",
+                      "bitcoin-core:getblockchaininfo",
+                      "bitcoin-core:getindexinfo:txindex",
+                    ],
                     status: "dropped",
                   },
                 },
@@ -5335,6 +5460,267 @@ check("worker status transitions are proven, race-safe, and projection-safe", as
     "saleTxid",
   ]) {
     assert.match(lifecycleRestore, new RegExp(`- '${staleKey}'`, "u"));
+  }
+});
+
+check("rapid authoritative absences preserve one confirmation epoch", async () => {
+  const txid = "8".repeat(64);
+  const confirmationMs = 5 * 60_000;
+  const baseMs = Date.now() - 15 * 60_000;
+  const authoritativeDroppedStatusEvidence = isolatedFunction(
+    WORKER_PATH,
+    "authoritativeDroppedStatusEvidence",
+  );
+  const statusUpdate = isolatedFunction(
+    WORKER_PATH,
+    "updateTransactionStatus",
+    {
+      NETWORK: "livenet",
+      PENDING_DROP_CONFIRMATION_MS: confirmationMs,
+      authoritativeDroppedStatusEvidence,
+    },
+  );
+  const absenceEnvelopeAt = (observedAtMs) => ({
+    absenceProven: true,
+    confirmed: false,
+    contract: "proof-of-work-tx-status-v2",
+    network: "livenet",
+    observedAt: new Date(observedAtMs).toISOString(),
+    reason:
+      "absent-from-synced-unpruned-mainnet-bitcoin-core-txindex-and-mempool",
+    sources: [
+      "bitcoin-core:getrawtransaction",
+      "bitcoin-core:getmempoolentry",
+      "bitcoin-core:getblockchaininfo",
+      "bitcoin-core:getindexinfo:txindex",
+    ],
+    status: "dropped",
+    txid,
+  });
+  const pendingEnvelopeAt = (observedAtMs) => ({
+    confirmed: false,
+    contract: "proof-of-work-tx-status-v2",
+    mempoolFirstSeenAt: new Date(baseMs - 60_000).toISOString(),
+    mempoolSeen: true,
+    network: "livenet",
+    observedAt: new Date(observedAtMs).toISOString(),
+    sources: ["bitcoin-core:getmempoolentry"],
+    status: "pending",
+    txid,
+  });
+  const confirmedEnvelopeAt = (observedAtMs) => ({
+    blockHash: "7".repeat(64),
+    blockHeight: 123,
+    blockTime: new Date(observedAtMs - 60_000).toISOString(),
+    canonical: true,
+    confirmed: true,
+    contract: "proof-of-work-tx-status-v2",
+    network: "livenet",
+    observedAt: new Date(observedAtMs).toISOString(),
+    sources: ["bitcoin-core:getblock"],
+    status: "confirmed",
+    txid,
+  });
+  const makeClient = () => {
+    const state = { raw_tx: {}, status: "pending" };
+    const statements = [];
+    return {
+      state,
+      statements,
+      async query(sql, params) {
+        statements.push({ params, sql });
+        if (/SELECT status, raw_tx/iu.test(sql)) {
+          return {
+            rows: [
+              {
+                raw_tx: JSON.parse(JSON.stringify(state.raw_tx)),
+                status: state.status,
+              },
+            ],
+          };
+        }
+        if (/UPDATE proof_indexer\.transactions/iu.test(sql)) {
+          const observationIndex = /first_seen_at/iu.test(sql) ? 3 : 2;
+          if (typeof params?.[observationIndex] === "string") {
+            state.raw_tx.statusObservation = JSON.parse(
+              params[observationIndex],
+            );
+          }
+          if (/SET\s+status = 'dropped'/iu.test(sql)) {
+            state.status = "dropped";
+          }
+        }
+        return { rowCount: 1, rows: [] };
+      },
+    };
+  };
+
+  const rapid = makeClient();
+  for (const [offsetMs, expectedCount] of [
+    [0, 1],
+    [60_000, 2],
+    [confirmationMs - 1, 3],
+  ]) {
+    const outcome = await statusUpdate(
+      rapid,
+      txid,
+      "dropped",
+      absenceEnvelopeAt(baseMs + offsetMs),
+    );
+    assert.equal(outcome.applied, false);
+    assert.equal(outcome.reason, "repeat-absence-required");
+    assert.equal(
+      rapid.state.raw_tx.statusObservation.absenceCount,
+      expectedCount,
+    );
+    assert.equal(
+      rapid.state.raw_tx.statusObservation.absenceStartedAt,
+      new Date(baseMs).toISOString(),
+    );
+  }
+  const matured = await statusUpdate(
+    rapid,
+    txid,
+    "dropped",
+    absenceEnvelopeAt(baseMs + confirmationMs),
+  );
+  assert.equal(matured.applied, true);
+  assert.equal(rapid.state.status, "dropped");
+  assert.equal(rapid.state.raw_tx.statusObservation.absenceCount, 4);
+  assert.equal(
+    rapid.state.raw_tx.statusObservation.absenceStartedAt,
+    new Date(baseMs).toISOString(),
+  );
+  assert.equal(rapid.state.raw_tx.statusObservation.absenceProven, true);
+  for (const table of ["events", "mail_items", "file_attachments"]) {
+    const transition = rapid.statements.find(({ sql }) =>
+      new RegExp(`UPDATE proof_indexer\\.${table}`, "iu").test(sql),
+    );
+    assert.match(transition.sql, /'dropped', true/iu);
+  }
+
+  const pendingReset = makeClient();
+  await statusUpdate(
+    pendingReset,
+    txid,
+    "dropped",
+    absenceEnvelopeAt(baseMs),
+  );
+  await statusUpdate(
+    pendingReset,
+    txid,
+    "pending",
+    pendingEnvelopeAt(baseMs + 60_000),
+  );
+  assert.equal(pendingReset.state.raw_tx.statusObservation.status, "pending");
+  assert.equal(pendingReset.state.raw_tx.statusObservation.absenceCount, 0);
+  const afterPending = await statusUpdate(
+    pendingReset,
+    txid,
+    "dropped",
+    absenceEnvelopeAt(baseMs + confirmationMs + 60_000),
+  );
+  assert.equal(afterPending.applied, false);
+  assert.equal(
+    pendingReset.state.raw_tx.statusObservation.absenceStartedAt,
+    new Date(baseMs + confirmationMs + 60_000).toISOString(),
+  );
+
+  const confirmedReset = makeClient();
+  await statusUpdate(
+    confirmedReset,
+    txid,
+    "dropped",
+    absenceEnvelopeAt(baseMs),
+  );
+  const confirmed = await statusUpdate(
+    confirmedReset,
+    txid,
+    "confirmed",
+    confirmedEnvelopeAt(baseMs + 60_000),
+  );
+  assert.equal(confirmed.applied, false);
+  assert.equal(confirmed.reason, "canonical-block-scan-required");
+  assert.equal(
+    confirmedReset.state.raw_tx.statusObservation.status,
+    "confirmed",
+  );
+  const afterConfirmed = await statusUpdate(
+    confirmedReset,
+    txid,
+    "dropped",
+    absenceEnvelopeAt(baseMs + confirmationMs + 60_000),
+  );
+  assert.equal(afterConfirmed.applied, false);
+  assert.equal(
+    confirmedReset.state.raw_tx.statusObservation.absenceStartedAt,
+    new Date(baseMs + confirmationMs + 60_000).toISOString(),
+  );
+
+  const validPrior = {
+    ...absenceEnvelopeAt(baseMs),
+    absenceCount: 2,
+    absenceStartedAt: new Date(baseMs).toISOString(),
+  };
+  const malformedPriors = [
+    {
+      absenceCount: 2,
+      absenceStartedAt: new Date(baseMs).toISOString(),
+      observedAt: new Date(baseMs).toISOString(),
+      status: "dropped",
+    },
+    { ...validPrior, absenceProven: false },
+    { ...validPrior, contract: "proof-of-work-tx-status-v1" },
+    { ...validPrior, reason: `${validPrior.reason}-other` },
+    { ...validPrior, sources: validPrior.sources.slice(0, -1) },
+    { ...validPrior, absenceStartedAt: undefined },
+  ];
+  const afterInvalidPriorAt = baseMs + confirmationMs + 60_000;
+  for (const prior of malformedPriors) {
+    const client = makeClient();
+    client.state.raw_tx.statusObservation = prior;
+    const outcome = await statusUpdate(
+      client,
+      txid,
+      "dropped",
+      absenceEnvelopeAt(afterInvalidPriorAt),
+    );
+    assert.equal(outcome.applied, false);
+    assert.equal(outcome.reason, "repeat-absence-required");
+    assert.equal(client.state.status, "pending");
+    assert.equal(client.state.raw_tx.statusObservation.absenceCount, 1);
+    assert.equal(
+      client.state.raw_tx.statusObservation.absenceStartedAt,
+      new Date(afterInvalidPriorAt).toISOString(),
+    );
+  }
+
+  const exactSources = absenceEnvelopeAt(baseMs).sources;
+  const unprovenEnvelopes = [
+    { ...absenceEnvelopeAt(baseMs), absenceProven: false },
+    { ...absenceEnvelopeAt(baseMs), reason: "generic-core-absence" },
+    { ...absenceEnvelopeAt(baseMs), sources: exactSources.slice(0, -1) },
+    {
+      ...absenceEnvelopeAt(baseMs),
+      sources: [...exactSources, "bitcoin-core:extra"],
+    },
+  ];
+  for (const envelope of unprovenEnvelopes) {
+    let ambiguousQueries = 0;
+    await rejection(
+      statusUpdate(
+        {
+          async query() {
+            ambiguousQueries += 1;
+          },
+        },
+        txid,
+        "dropped",
+        envelope,
+      ),
+      (error) => /Unproven dropped status/iu.test(error.message),
+    );
+    assert.equal(ambiguousQueries, 0);
   }
 });
 
@@ -5470,6 +5856,7 @@ check("legacy mempool scan state round-trips without inventing a cursor", async 
     },
   });
   assert.equal(legacy.cursor, null);
+  assert.equal(legacy.priorityCursor, null);
   assert.deepEqual(Array.from(legacy.processedTxids), [txid]);
 
   let storedPayload = null;
@@ -5485,8 +5872,10 @@ check("legacy mempool scan state round-trips without inventing a cursor", async 
     legacy.key,
     Array.from(legacy.processedTxids),
     legacy.cursor,
+    legacy.priorityCursor,
   );
   assert.equal(storedPayload.cursor, null);
+  assert.equal(storedPayload.priorityCursor, null);
   assert.deepEqual(storedPayload.processedTxids, [txid]);
   assert.ok(Number.isFinite(Date.parse(storedPayload.scannedAt)));
 
@@ -5496,7 +5885,111 @@ check("legacy mempool scan state round-trips without inventing a cursor", async 
     },
   });
   assert.equal(reloaded.cursor, null);
+  assert.equal(reloaded.priorityCursor, null);
   assert.deepEqual(Array.from(reloaded.processedTxids), [txid]);
+});
+
+check("mempool priority cursor rotates unresolved rows and persists independently", async () => {
+  const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
+  const normalizedMempoolScanCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "normalizedMempoolScanCursor",
+    { isHexTxid },
+  );
+  const mempoolEntriesAfterCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "mempoolEntriesAfterCursor",
+    { normalizedMempoolScanCursor },
+  );
+  const plannedMempoolScanCandidates = isolatedFunction(
+    BACKFILL_PATH,
+    "plannedMempoolScanCandidates",
+    { isHexTxid, mempoolEntriesAfterCursor },
+  );
+  const mempoolScanState = isolatedFunction(
+    BACKFILL_PATH,
+    "mempoolScanState",
+    { NETWORK: "livenet", normalizedMempoolScanCursor },
+  );
+  const storeMempoolScanState = isolatedFunction(
+    BACKFILL_PATH,
+    "storeMempoolScanState",
+    { normalizedMempoolScanCursor },
+  );
+  const txid = (index) => index.toString(16).padStart(64, "0");
+  const priorityTxids = Array.from(
+    { length: 6 },
+    (_value, index) => txid(index + 1),
+  );
+  const routineTxid = txid(100);
+  const entries = [...priorityTxids, routineTxid].map((entryTxid, index) => [
+    entryTxid,
+    { time: 1_000 - index },
+  ]);
+  const processedTxids = new Set(priorityTxids);
+  const first = plannedMempoolScanCandidates(
+    entries,
+    { cursor: null, priorityCursor: null, processedTxids },
+    priorityTxids,
+    { candidateLimit: 5, seenLimit: 100 },
+  );
+  assert.equal(first[0].lane, "cursor");
+  assert.equal(first[0].entry[0], routineTxid);
+  assert.deepEqual(
+    Array.from(
+      first.filter((candidate) => candidate.lane === "priority"),
+      (candidate) => candidate.entry[0],
+    ),
+    priorityTxids.slice(0, 4),
+  );
+
+  const cursor = normalizedMempoolScanCursor({
+    time: first[0].entry[1].time,
+    txid: first[0].entry[0],
+  });
+  const lastPriority = first.filter(
+    (candidate) => candidate.lane === "priority",
+  ).at(-1).entry;
+  const priorityCursor = normalizedMempoolScanCursor({
+    time: lastPriority[1].time,
+    txid: lastPriority[0],
+  });
+  let storedPayload = null;
+  const client = {
+    async query(_sql, params) {
+      if (params?.length === 2) {
+        storedPayload = JSON.parse(params[1]);
+        return { rows: [] };
+      }
+      return { rows: [{ value: storedPayload }] };
+    },
+  };
+  await storeMempoolScanState(
+    client,
+    "mempoolScan:livenet",
+    [...priorityTxids, routineTxid],
+    cursor,
+    priorityCursor,
+  );
+  const reloaded = await mempoolScanState(client);
+  assert.equal(reloaded.cursor.txid, cursor.txid);
+  assert.equal(reloaded.cursor.time, cursor.time);
+  assert.equal(reloaded.priorityCursor.txid, priorityCursor.txid);
+  assert.equal(reloaded.priorityCursor.time, priorityCursor.time);
+
+  const second = plannedMempoolScanCandidates(
+    entries,
+    reloaded,
+    priorityTxids,
+    { candidateLimit: 5, seenLimit: 100 },
+  );
+  assert.deepEqual(
+    Array.from(
+      second.filter((candidate) => candidate.lane === "priority"),
+      (candidate) => candidate.entry[0],
+    ),
+    [priorityTxids[4], priorityTxids[5], priorityTxids[0], priorityTxids[1]],
+  );
 });
 
 check("fresh mempool candidate reads bypass the process transaction cache", async () => {
@@ -5666,6 +6159,10 @@ check("Core-present dropped protocol transactions revive through verifier and up
     "transactionHasConfirmedBlockEvidence",
     { isHexTxid },
   );
+  const pendingTransactionObservationItem = isolatedFunction(
+    BACKFILL_PATH,
+    "pendingTransactionObservationItem",
+  );
   const upsertTransaction = isolatedFunction(
     BACKFILL_PATH,
     "upsertTransaction",
@@ -5759,9 +6256,11 @@ check("Core-present dropped protocol transactions revive through verifier and up
       mempoolScanState: async () => ({
         cursor: null,
         key: "mempoolScan:livenet",
+        priorityCursor: null,
         processedTxids: new Set([target]),
       }),
       plannedMempoolScanCandidates,
+      pendingTransactionObservationItem,
       preparedProtocolItemsForTx: async () => {
         verifierCalls += 1;
         return [{
@@ -5779,11 +6278,18 @@ check("Core-present dropped protocol transactions revive through verifier and up
       protocolMessagesFromTx: () => [
         { prefix: "pwid1:", text: "pwid1:r2:cmV2aXZlZA:owner:owner" },
       ],
-      storeMempoolScanState: async (_client, key, processedTxids, cursor) => {
-        storedState = { cursor, key, processedTxids };
+      storeMempoolScanState: async (
+        _client,
+        key,
+        processedTxids,
+        cursor,
+        priorityCursor,
+      ) => {
+        storedState = { cursor, key, priorityCursor, processedTxids };
       },
       transactionHasConfirmedBlockEvidence,
       transactionWithInputPrevouts: async (tx) => tx,
+      upsertTransaction,
       persistPreparedProtocolItems: async (_client, prepared) => {
         const item = prepared[0].item;
         await upsertEvent(client, "registry-records", item);
@@ -5806,6 +6312,8 @@ check("Core-present dropped protocol transactions revive through verifier and up
   assert.equal(result.unresolved, 0);
   assert.deepEqual(Array.from(storedState.processedTxids), [target]);
   assert.equal(storedState.cursor, null);
+  assert.equal(storedState.priorityCursor.time, 1_720_980_000);
+  assert.equal(storedState.priorityCursor.txid, target);
 
   const transactionUpsert = statements.find(({ sql }) =>
     /INSERT INTO proof_indexer\.transactions/iu.test(sql),
@@ -5875,6 +6383,152 @@ check("Core-present dropped protocol transactions revive through verifier and up
   assert.equal(initialRace.indexed, 0);
   assert.equal(verifierCalls, initialVerifierCalls);
   assert.equal(statements.length, initialStatementCount);
+});
+
+check("supply-capped mempool mints restore pending tx state without a valid event", async () => {
+  const target = "f".repeat(64);
+  const pendingTransaction = { txid: target, vin: [], vout: [] };
+  const pendingTransactionObservationItem = isolatedFunction(
+    BACKFILL_PATH,
+    "pendingTransactionObservationItem",
+  );
+  const upsertTransaction = isolatedFunction(
+    BACKFILL_PATH,
+    "upsertTransaction",
+    {
+      NETWORK: "livenet",
+      itemTime: (item) => item.createdAt,
+      numberOrNull: (value) =>
+        Number.isFinite(Number(value)) ? Number(value) : null,
+    },
+  );
+  const trace = [];
+  const statements = [];
+  let persistedPrepared = null;
+  let storedState = null;
+  let freshReads = 0;
+  const client = {
+    async query(sql, params) {
+      const text = String(sql).trim();
+      trace.push(text === "BEGIN" || text === "COMMIT" ? text : "sql");
+      statements.push({ params, sql: text });
+      return { rowCount: 1, rows: [] };
+    },
+  };
+  const backfillMempoolScanSource = isolatedFunction(
+    BACKFILL_PATH,
+    "backfillMempoolScanSource",
+    {
+      BITCOIN_RPC_URL: "http://127.0.0.1:8332",
+      MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 5,
+      MEMPOOL_SCAN_MAX_TXIDS: 500,
+      MEMPOOL_SCAN_SEEN_LIMIT: 10_000,
+      bitcoinRpc: async () => ({ [target]: { time: 1_720_990_000 } }),
+      freshRawTransactionFromCore: async () => {
+        freshReads += 1;
+        trace.push("fresh");
+        return pendingTransaction;
+      },
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      knownMempoolRecoveryTxids: async () => [target],
+      mempoolScanCursorForEntry: ([txid, metadata]) => ({
+        time: metadata.time,
+        txid,
+      }),
+      mempoolScanState: async () => ({
+        cursor: null,
+        key: "mempoolScan:livenet",
+        priorityCursor: null,
+        processedTxids: new Set([target]),
+      }),
+      pendingTransactionObservationItem,
+      persistPreparedProtocolItems: async (_client, prepared) => {
+        trace.push(`persist:${prepared.length}`);
+        persistedPrepared = prepared;
+        return { indexed: 0, skipped: 0 };
+      },
+      plannedMempoolScanCandidates: (entries) => [{
+        entry: entries[0],
+        lane: "priority",
+      }],
+      preparedProtocolItemsForTx: async () => {
+        trace.push("verifier");
+        return [{
+          item: {
+            confirmed: false,
+            createdAt: "2026-07-15T01:20:00.000Z",
+            kind: "token-event-invalid",
+            reason: "WORK mint exceeds max supply.",
+            txid: target,
+            valid: false,
+          },
+          sourceLabel: "token-invalid-events",
+        }];
+      },
+      protocolMessagesFromTx: () => [{
+        prefix: "pwt1:",
+        text: `pwt1:mint:${"a".repeat(64)}:1000`,
+      }],
+      storeMempoolScanState: async (
+        _client,
+        key,
+        processedTxids,
+        cursor,
+        priorityCursor,
+      ) => {
+        trace.push("store");
+        storedState = { cursor, key, priorityCursor, processedTxids };
+      },
+      transactionHasConfirmedBlockEvidence: () => false,
+      transactionWithInputPrevouts: async (tx) => tx,
+      upsertTransaction: async (...args) => {
+        trace.push("upsert");
+        return upsertTransaction(...args);
+      },
+    },
+  );
+
+  const result = await backfillMempoolScanSource(client, {
+    label: "mempool-scan",
+  });
+  assert.equal(freshReads, 3);
+  assert.equal(result.indexed, 0);
+  assert.equal(result.priorityScanned, 1);
+  assert.equal(result.unresolved, 0);
+  assert.deepEqual(persistedPrepared, []);
+  assert.deepEqual(Array.from(storedState.processedTxids), [target]);
+  assert.equal(storedState.priorityCursor.txid, target);
+  assert.equal(storedState.priorityCursor.time, 1_720_990_000);
+  assert.deepEqual(trace, [
+    "fresh",
+    "verifier",
+    "fresh",
+    "BEGIN",
+    "upsert",
+    "sql",
+    "persist:0",
+    "fresh",
+    "COMMIT",
+    "store",
+  ]);
+  const transactionWrite = statements.find(({ sql }) =>
+    /INSERT INTO proof_indexer\.transactions/iu.test(sql),
+  );
+  assert.ok(transactionWrite);
+  assert.equal(transactionWrite.params[1], target);
+  assert.equal(transactionWrite.params[2], "pending");
+  assert.equal(transactionWrite.params[5], "mempool-scan");
+  const observed = JSON.parse(transactionWrite.params[6]).item;
+  assert.equal(observed.status, "pending");
+  assert.equal(observed.confirmed, false);
+  assert.equal(observed.dropped, false);
+  assert.equal(observed.valid, false);
+  assert.equal(
+    statements.some(({ sql }) =>
+      /INSERT INTO proof_indexer\.events/iu.test(sql)
+    ),
+    false,
+  );
 });
 
 check("same-height pending membership versions the canonical Log snapshot", async () => {
@@ -7692,6 +8346,163 @@ check("canonical confirmed events reject stale non-confirmed upserts", () => {
   );
 });
 
+check("event payload status is normalized from the authoritative relational state", () => {
+  const itemStatus = isolatedFunction(BACKFILL_PATH, "itemStatus");
+  const normalizedEventItem = isolatedFunction(
+    BACKFILL_PATH,
+    "normalizedEventItem",
+    {
+      bondTagForKind: (kind) => kind === "inception-bond"
+        ? {
+            kind: "inception-bond",
+            label: "Inception Bond",
+            memo: "inception bond",
+          }
+        : null,
+      itemTime: (item) => item.createdAt,
+      normalizedBondTags: (tags) => tags ?? [],
+      normalizedBondTitle: (item, status) =>
+        item.title ?? `Inception Bond ${status}`,
+      normalizedText: (value) => String(value ?? "").trim(),
+    },
+  );
+  const stableEventKey = isolatedFunction(BACKFILL_PATH, "stableEventKey", {
+    createHash,
+  });
+  const txid = "a".repeat(64);
+  const base = {
+    confirmed: true,
+    createdAt: "2026-07-14T23:20:00.000Z",
+    dropped: true,
+    kind: "inception-bond",
+    status: "pending",
+    txid,
+  };
+  const cases = [
+    ["pending", true, true, false, false],
+    ["confirmed", false, true, true, false],
+    ["dropped", true, false, false, true],
+    ["orphaned", true, true, false, false],
+  ];
+  const eventKeys = [];
+  for (const [status, incomingConfirmed, incomingDropped, confirmed, dropped]
+    of cases) {
+    const incoming = {
+      ...base,
+      confirmed: incomingConfirmed,
+      dropped: incomingDropped,
+      status,
+    };
+    const authoritativeStatus = itemStatus(incoming);
+    const normalized = normalizedEventItem(
+      incoming,
+      "inception-bond",
+      authoritativeStatus,
+    );
+    assert.equal(normalized.status, status);
+    assert.equal(normalized.confirmed, confirmed);
+    assert.equal(normalized.dropped, dropped);
+    assert.equal(incoming.confirmed, incomingConfirmed);
+    assert.equal(incoming.dropped, incomingDropped);
+    eventKeys.push(stableEventKey({
+      item: normalized,
+      kind: "inception-bond",
+      protocol: "pwm1",
+      sourceLabel: "address-mail",
+      txid,
+    }));
+  }
+  assert.deepEqual(
+    eventKeys,
+    Array(cases.length).fill(`pwm1:inception-bond:${txid}`),
+  );
+});
+
+check("confirmed event replay repairs stale pending payload status", async () => {
+  const itemStatus = isolatedFunction(BACKFILL_PATH, "itemStatus");
+  const normalizedEventItem = isolatedFunction(
+    BACKFILL_PATH,
+    "normalizedEventItem",
+    {
+      bondTagForKind: () => null,
+      itemTime: (item) => item.createdAt,
+    },
+  );
+  const stableEventKey = isolatedFunction(BACKFILL_PATH, "stableEventKey", {
+    createHash,
+  });
+  const txid = "b".repeat(64);
+  const eventWrites = [];
+  const projected = [];
+  let storedPayload = {
+    confirmed: true,
+    dropped: true,
+    kind: "inception-bond",
+    status: "pending",
+    txid,
+  };
+  const client = {
+    async query(sql, params) {
+      const text = String(sql);
+      if (/INSERT INTO proof_indexer\.events/iu.test(text)) {
+        const incoming = JSON.parse(params[14]);
+        storedPayload = { ...storedPayload, ...incoming };
+        eventWrites.push({ params, sql: text });
+        return {
+          rows: [{
+            event_id: "canonical-event",
+            payload: storedPayload,
+            status: params[5],
+          }],
+        };
+      }
+      return { rowCount: 1, rows: [] };
+    },
+  };
+  const upsertEvent = isolatedFunction(BACKFILL_PATH, "upsertEvent", {
+    NETWORK: "livenet",
+    amountSats: () => 0,
+    dataBytes: () => 0,
+    eventKind: (item) => item.kind,
+    itemStatus,
+    itemTime: (item) => item.createdAt,
+    itemTxid: (item) => item.txid,
+    normalizedEventItem,
+    numberOrNull: (value) => Number.isFinite(Number(value))
+      ? Number(value)
+      : null,
+    participantsForItem: () => [],
+    protocolForItem: () => "pwm1",
+    refsForItem: () => [],
+    stableEventKey,
+    stableEventKeyKind: (_item, kind) => kind,
+    upsertProjection: async (_client, _sourceLabel, item, status) => {
+      projected.push({ item, status });
+    },
+    upsertTransaction: async () => {},
+  });
+
+  await upsertEvent(client, "address-mail", {
+    blockHeight: 958_076,
+    confirmed: true,
+    createdAt: "2026-07-14T23:25:00.000Z",
+    kind: "inception-bond",
+    txid,
+  });
+
+  assert.equal(eventWrites.length, 1);
+  assert.equal(eventWrites[0].params[1], `pwm1:inception-bond:${txid}`);
+  assert.equal(eventWrites[0].params[5], "confirmed");
+  assert.equal(storedPayload.status, "confirmed");
+  assert.equal(storedPayload.confirmed, true);
+  assert.equal(storedPayload.dropped, false);
+  assert.equal(projected.length, 1);
+  assert.equal(projected[0].status, "confirmed");
+  assert.equal(projected[0].item.status, "confirmed");
+  assert.equal(projected[0].item.confirmed, true);
+  assert.equal(projected[0].item.dropped, false);
+});
+
 check("synthetic bond definitions are not indexed as Bitcoin transactions", () => {
   const powbTokenId =
     "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
@@ -9369,6 +10180,175 @@ check("canonical bond mint replay unlocks only later INCB mutations", () => {
   );
 });
 
+check("same-block Inception checkpoints share one H-1 source but bind per bond", async () => {
+  const blockHash = "a".repeat(64);
+  const previousBlockHash = "b".repeat(64);
+  const snapshot = { snapshotId: "shared-h-minus-one" };
+  const bonds = [11, 22, 33].map((blockIndex, index) => ({
+    blockHash,
+    blockHeight: 958_087,
+    blockIndex,
+    confirmed: true,
+    kind: "inception-bond",
+    txid: String(index + 1).repeat(64),
+  }));
+  const cache = new Map();
+  let sourceLoads = 0;
+  let summaryReads = 0;
+  const canonicalInceptionIssuanceOptions = isolatedFunction(
+    API_PATH,
+    "canonicalInceptionIssuanceOptions",
+    {
+      cachedInternalVerifierState: async (key, loader) => {
+        if (!cache.has(key)) {
+          sourceLoads += 1;
+          cache.set(key, Promise.resolve().then(loader));
+        }
+        return cache.get(key);
+      },
+      canonicalInceptionPreviousBlockHash: async () => previousBlockHash,
+      canonicalInceptionValueSnapshotCheckpoint: (value, bond) => ({
+        blockHash: bond.blockHash,
+        blockHeight: bond.blockHeight,
+        blockIndex: bond.blockIndex,
+        valueSnapshotBlockHash: previousBlockHash,
+        valueSnapshotId: value.snapshotId,
+      }),
+      inceptionValueSnapshotUnavailableError: () =>
+        new Error("unexpected unavailable H-1 snapshot"),
+      isInceptionBondActivityItem: (item) =>
+        item?.kind === "inception-bond",
+      proofIndexCanonicalSummaryLedgerPayload: async () => {
+        summaryReads += 1;
+        return snapshot;
+      },
+    },
+  );
+
+  const options = await canonicalInceptionIssuanceOptions(
+    "livenet",
+    bonds,
+    {
+      previousBlockHashByBlockHash: new Map([[blockHash, previousBlockHash]]),
+    },
+  );
+  const checkpoints = bonds.map((bond) => options.preBondCheckpoint(bond));
+
+  assert.equal(sourceLoads, 1);
+  assert.equal(summaryReads, 1);
+  assert.deepEqual(
+    checkpoints.map((checkpoint) => checkpoint.blockIndex),
+    bonds.map((bond) => bond.blockIndex),
+  );
+  assert.ok(
+    checkpoints.every(
+      (checkpoint) =>
+        checkpoint.valueSnapshotBlockHash === previousBlockHash &&
+        checkpoint.valueSnapshotId === snapshot.snapshotId,
+    ),
+  );
+});
+
+check("published Inception checkpoints expand all legacy bonds in one replay pass", () => {
+  const tokenId = "c".repeat(64);
+  const issuanceModel = "canonical-pre-bond-live-network-value-v2";
+  const bonds = [1, 2, 3].map((blockIndex) => ({
+    blockHeight: 958_087,
+    blockIndex,
+    confirmed: true,
+    kind: "inception-bond",
+    txid: String(blockIndex).repeat(64),
+  }));
+  const seedMints = bonds.map((bond) => ({
+    amount: 546,
+    blockHeight: bond.blockHeight,
+    blockIndex: bond.blockIndex,
+    confirmed: true,
+    minterAddress: `recipient-${bond.blockIndex}`,
+    tokenId,
+    txid: bond.txid,
+  }));
+  let replayCalls = 0;
+  const expandedSets = [];
+  const replay = isolatedFunction(
+    API_PATH,
+    "tokenStateFromTransactionsWithCanonicalInceptionIssuance",
+    {
+      INCB_TOKEN_ID: tokenId,
+      INCEPTION_ISSUANCE_ACCOUNTING_MODEL: issuanceModel,
+      WORK_TOKEN_ID: "work",
+      dedupeActivityItems: (items) => items,
+      inceptionMintsWithLiveIssuance: (mints, _activity, _ledger, options) => {
+        const eligible = options.legacyBondTxids ?? new Set();
+        expandedSets.push([...eligible]);
+        return mints.map((mint) =>
+          mint.issuanceAccountingModel === issuanceModel ||
+          !eligible.has(mint.txid)
+            ? mint
+            : { ...mint, amount: 1_000, issuanceAccountingModel: issuanceModel },
+        );
+      },
+      inceptionSeedMintReplaySignature: (mints) =>
+        JSON.stringify(
+          mints.map((mint) => [
+            mint.txid,
+            mint.amount,
+            mint.issuanceAccountingModel ?? "",
+          ]),
+        ),
+      isInceptionBondActivityItem: (item) =>
+        item?.kind === "inception-bond",
+      isTokenActivityItem: () => false,
+      normalizeTokenScope: () => "",
+      numericValue: (value) => Number(value) || 0,
+      tokenActivityItemsFromState: () => [],
+      tokenStateFromTransactions: (
+        _indexTxs,
+        _registryTxsByAddress,
+        _indexAddress,
+        _network,
+        _tokenScope,
+        seedTokens,
+        mints,
+      ) => {
+        replayCalls += 1;
+        return {
+          closedListings: [],
+          holders: [],
+          invalidEvents: [],
+          listings: [],
+          mints,
+          sales: [],
+          tokens: seedTokens,
+          transfers: [],
+        };
+      },
+    },
+  );
+
+  const state = replay(
+    [],
+    new Map(),
+    "index",
+    "livenet",
+    "",
+    [{ tokenId }],
+    seedMints,
+    bonds,
+    { activity: [], workTokenState: { transfers: [] } },
+    { preBondCheckpoint: () => ({ snapshotId: "published" }) },
+  );
+
+  assert.equal(replayCalls, 2);
+  assert.deepEqual(new Set(expandedSets[0]), new Set(bonds.map((bond) => bond.txid)));
+  assert.equal(expandedSets[1].length, 0);
+  assert.ok(
+    state.mints.every(
+      (mint) => mint.issuanceAccountingModel === issuanceModel,
+    ),
+  );
+});
+
 check("credit mint persistence requires a prior confirmed definition", async () => {
   const tokenId = "d".repeat(64);
   const canonicalBondMintProjection = () => false;
@@ -9921,6 +10901,7 @@ check("confirmed INCB metadata is fully bound to its recipient and block", () =>
 check("multi-recipient bond mints survive reader identity and stats", async () => {
   const tokenId = "a".repeat(64);
   const txid = "b".repeat(64);
+  const pendingTxid = "c".repeat(64);
   const tokenMintEventQueryParts = isolatedFunction(
     READER_PATH,
     "tokenMintEventQueryParts",
@@ -9980,6 +10961,23 @@ check("multi-recipient bond mints survive reader identity and stats", async () =
       token_id: tokenId,
       txid,
     },
+    {
+      block_height: null,
+      block_time: null,
+      effective_status: "pending",
+      event_id: 3,
+      mint_ordinal: 0,
+      mint_recipient_address: "addrC",
+      payload: {
+        amount: "546",
+        minterAddress: "addrC",
+        ticker: "POWB",
+        tokenId,
+        txid: pendingTxid,
+      },
+      token_id: tokenId,
+      txid: pendingTxid,
+    },
   ];
   let parsedRows = 0;
   const proofIndexTokenMintStatsPayload = isolatedFunction(
@@ -9987,8 +10985,13 @@ check("multi-recipient bond mints survive reader identity and stats", async () =
     "proofIndexTokenMintStatsPayload",
     {
       TOKEN_STATE_EVENT_READ_LIMIT: 100_000,
+      TOKEN_PENDING_MINT_WITNESS_LIMIT: 32,
       newestDateIso: (values) =>
         values.filter(Boolean).sort().at(-1) ?? undefined,
+      normalizedTxid: (value) =>
+        /^[0-9a-f]{64}$/u.test(String(value ?? "").toLowerCase())
+          ? String(value).toLowerCase()
+          : "",
       objectRecord: (value) => value ?? {},
       proofIndexPool: () => ({}),
       proofIndexTokenMintRows: async () => rows,
@@ -10004,18 +11007,40 @@ check("multi-recipient bond mints survive reader identity and stats", async () =
       tokenScopeKey: (value) => String(value ?? "").toLowerCase(),
     },
   );
-  const stats = await proofIndexTokenMintStatsPayload("livenet", tokenId);
-  assert.equal(parsedRows, 2);
+  const stats = await proofIndexTokenMintStatsPayload(
+    "livenet",
+    tokenId,
+    { targetTxid: txid },
+  );
+  assert.equal(parsedRows, 3);
   assert.equal(stats.confirmedMints, 2);
   assert.equal(stats.confirmedSupply, 1092);
-  assert.equal(stats.totalMints, 2);
+  assert.equal(stats.pendingMints, 1);
+  assert.equal(stats.pendingSupply, 546);
+  assert.equal(stats.totalMints, 3);
+  assert.equal(stats.pendingCandidateCount, 1);
+  assert.equal(stats.pendingCandidateSupply, 546);
+  assert.equal(stats.pendingCandidatesComplete, true);
+  assert.equal(stats.pendingWitnessLimit, 32);
+  assert.equal(stats.pendingCandidates.length, 1);
+  assert.equal(stats.pendingCandidates[0].amount, 546);
+  assert.equal(stats.pendingCandidates[0].txid, pendingTxid);
+  assert.equal(stats.targetMintStats.confirmedMints, 2);
+  assert.equal(stats.targetMintStats.pendingMints, 0);
+  assert.equal(stats.targetMintStats.totalMints, 2);
+  assert.equal(stats.targetMintStats.txid, txid);
 
   const rejectingStats = isolatedFunction(
     READER_PATH,
     "proofIndexTokenMintStatsPayload",
     {
       TOKEN_STATE_EVENT_READ_LIMIT: 100_000,
+      TOKEN_PENDING_MINT_WITNESS_LIMIT: 32,
       newestDateIso: () => undefined,
+      normalizedTxid: (value) =>
+        /^[0-9a-f]{64}$/u.test(String(value ?? "").toLowerCase())
+          ? String(value).toLowerCase()
+          : "",
       objectRecord: (value) => value ?? {},
       proofIndexPool: () => ({}),
       proofIndexTokenMintRows: async () => rows,
@@ -12109,6 +13134,7 @@ check("confirmed unscoped token verifier caches by target txid", async () => {
         };
       },
       normalizeTokenScope: (scope) => String(scope).toLowerCase(),
+      pendingWorkMintSupplyCapVerifierPayload: async () => null,
       pruneInternalVerifierStateCache: () => {},
       tokenPayload: async () => ({
         indexedThroughBlock: 100,
@@ -12156,6 +13182,626 @@ check("confirmed unscoped token verifier caches by target txid", async () => {
   assert.ok(cacheKeys.includes("token:livenet:all"));
 });
 
+check("WORK pending cap follows canonical txid order instead of mempool time", () => {
+  const sortWorkMintsForPendingCap = isolatedFunction(
+    API_PATH,
+    "sortWorkMintsForPendingCap",
+  );
+  const workMintRowsWithinPendingCap = isolatedFunction(
+    API_PATH,
+    "workMintRowsWithinPendingCap",
+    {
+      WORK_TOKEN_MAX_SUPPLY: 21_000_000,
+      sortWorkMintsForPendingCap,
+    },
+  );
+  const earlierTxid = "1".repeat(64);
+  const laterTxid = "2".repeat(64);
+  const pending = [
+    {
+      amount: 1_000,
+      confirmed: false,
+      createdAt: "2026-07-15T01:00:00.000Z",
+      txid: laterTxid,
+    },
+    {
+      amount: 1_000,
+      confirmed: false,
+      createdAt: "2026-07-15T02:00:00.000Z",
+      txid: earlierTxid,
+    },
+  ];
+  assert.deepEqual(
+    Array.from(sortWorkMintsForPendingCap(pending), (mint) => mint.txid),
+    [earlierTxid, laterTxid],
+  );
+  const capped = workMintRowsWithinPendingCap([
+    {
+      amount: 20_999_000,
+      confirmed: true,
+      createdAt: "2026-07-14T00:00:00.000Z",
+      txid: "0".repeat(64),
+    },
+    ...pending,
+  ]);
+  assert.deepEqual(
+    Array.from(
+      capped.filter((mint) => !mint.confirmed),
+      (mint) => mint.txid,
+    ),
+    [earlierTxid],
+  );
+});
+
+check("pending WORK supply-cap fast path is exact and bypasses broad replay", async () => {
+  const txid = "6".repeat(64);
+  const earlierWitnessTxid = "5".repeat(64);
+  const laterWitnessTxid = "7".repeat(64);
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const registryAddress = "work-registry";
+  const blockHash = "a".repeat(64);
+  const tipHeight = 958_079;
+  const mintMessage = `pwt1:mint:${workTokenId}:1000`;
+  const actorAddress = "actor-address";
+  const pendingWorkMintFromHydratedTransaction = isolatedFunction(
+    API_PATH,
+    "pendingWorkMintFromHydratedTransaction",
+    {
+      TOKEN_PROTOCOL_PREFIX: "pwt1:",
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS: registryAddress,
+      WORK_TOKEN_ID: workTokenId,
+      WORK_TOKEN_MINT_AMOUNT: 1_000,
+      WORK_TOKEN_MINT_PRICE_SATS: 1_000,
+      decodedProtocolMessages: (vout) =>
+        vout.flatMap((output) => output.message ? [output.message] : []),
+      inputAddresses: (vin) =>
+        vin.flatMap((input) => input?.prevout?.scriptpubkey_address
+          ? [input.prevout.scriptpubkey_address]
+          : []),
+      isValidBitcoinAddress: (address, network) =>
+        network === "livenet" && address === actorAddress,
+      parseTokenPayload: (message) => {
+        const [prefix, kind, tokenId, amount] = String(message).split(":");
+        const parsedAmount = Number(amount);
+        return prefix === "pwt1" &&
+            ["mint", "send"].includes(kind) &&
+            /^[0-9a-f]{64}$/u.test(tokenId) &&
+            Number.isSafeInteger(parsedAmount)
+          ? { amount: parsedAmount, kind, tokenId }
+          : null;
+      },
+      tokenPaymentAmountBeforeProtocol: (vout, address) =>
+        vout.reduce(
+          (total, output) =>
+            output.address === address
+              ? total + Number(output.valueSats ?? 0)
+              : total,
+          0,
+        ),
+      transactionConfirmed: (transaction) =>
+        transaction?.status?.confirmed === true,
+      transactionHasCompleteCanonicalPrevouts: (transaction) =>
+        (Array.isArray(transaction?.vin) ? transaction.vin : []).every(
+          (input) =>
+            input?.prevout &&
+            Number.isSafeInteger(Number(input.prevout.value)) &&
+            typeof input.prevout.scriptpubkey === "string",
+        ),
+      transactionTxid: (transaction) =>
+        String(transaction?.txid ?? "").toLowerCase(),
+    },
+  );
+  const exactCoreTipFromBlockchainInfo = isolatedFunction(
+    API_PATH,
+    "exactCoreTipFromBlockchainInfo",
+  );
+  const proofIndexExactlyCoversCoreTip = isolatedFunction(
+    API_PATH,
+    "proofIndexExactlyCoversCoreTip",
+  );
+  const coreMempoolEntryPresent = isolatedFunction(
+    API_PATH,
+    "coreMempoolEntryPresent",
+  );
+  const exactPendingWorkMintStats = isolatedFunction(
+    API_PATH,
+    "exactPendingWorkMintStats",
+    {
+      PENDING_WORK_MINT_WITNESS_LIMIT: 32,
+      WORK_TOKEN_ID: workTokenId,
+      WORK_TOKEN_MAX_SUPPLY: 21_000_000,
+      WORK_TOKEN_MINT_AMOUNT: 1_000,
+    },
+  );
+  const pendingWorkMintWitnessProof = isolatedFunction(
+    API_PATH,
+    "pendingWorkMintWitnessProof",
+    {
+      WORK_TOKEN_MAX_SUPPLY: 21_000_000,
+      WORK_TOKEN_MINT_AMOUNT: 1_000,
+    },
+  );
+  const hydratedTransaction = (
+    message = mintMessage,
+    paidSats = 1_000,
+    responseTxid = txid,
+    inputAddress = actorAddress,
+  ) => ({
+    _powCanonicalRpcHydration: true,
+    status: { confirmed: false },
+    txid: responseTxid,
+    vin: [{
+      prevout: {
+        scriptpubkey: "0014",
+        scriptpubkey_address: inputAddress,
+        value: 2_000,
+      },
+    }],
+    vout: [
+      { address: registryAddress, valueSats: paidSats },
+      { message },
+    ],
+  });
+  assert.equal(
+    pendingWorkMintFromHydratedTransaction(
+      hydratedTransaction(`pwt1:send:${workTokenId}:1000`),
+      "livenet",
+      txid,
+    ),
+    null,
+  );
+  assert.equal(
+    pendingWorkMintFromHydratedTransaction(
+      hydratedTransaction(mintMessage, 1_001),
+      "livenet",
+      txid,
+    ),
+    null,
+  );
+  assert.equal(
+    pendingWorkMintFromHydratedTransaction(
+      { ...hydratedTransaction(), vin: [] },
+      "livenet",
+      txid,
+    ),
+    null,
+  );
+  assert.equal(
+    pendingWorkMintFromHydratedTransaction(
+      hydratedTransaction(mintMessage, 1_000, txid, "not-an-address"),
+      "livenet",
+      txid,
+    ),
+    null,
+  );
+
+  const canonical = {
+    fault: null,
+    rebuild: { active: false, status: "complete" },
+  };
+  const status = (height = tipHeight) => ({
+    indexedAt: "2026-07-15T01:30:00.000Z",
+    indexedThroughBlock: height,
+    network: "livenet",
+    scan: {
+      blockHash,
+      complete: true,
+      tipHeight: height,
+    },
+    source: "proof-indexer-block-scan",
+  });
+  const baseMintStats = () => ({
+    confirmedMints: 20_999,
+    confirmedSupply: 20_999_000,
+    indexedAt: "2026-07-15T01:30:00.000Z",
+    network: "livenet",
+    pendingCandidateCount: 1,
+    pendingCandidates: [{ amount: 1_000, txid: earlierWitnessTxid }],
+    pendingCandidatesComplete: true,
+    pendingCandidateSupply: 1_000,
+    pendingMints: 1,
+    pendingSupply: 1_000,
+    pendingWitnessLimit: 32,
+    source: "proof-indexer-token-mint-events",
+    targetMintStats: {
+      confirmedMints: 0,
+      pendingMints: 0,
+      totalMints: 0,
+      txid,
+    },
+    tokenId: workTokenId,
+    totalMints: 21_000,
+  });
+
+  let protocolMessage = mintMessage;
+  let statusHeight = tipHeight;
+  let statsMode = "stable";
+  let mintStatsReads = 0;
+  let candidateTxid = earlierWitnessTxid;
+  let staleWitness = false;
+  let witnessDropsOnFinalCheck = false;
+  let canonicalHydrationRequests = 0;
+  const mempoolReads = new Map();
+  const fetchTransactionFromBitcoinRpc = async (
+    requestedTxid,
+    network,
+    options,
+  ) => {
+    assert.equal(network, "livenet");
+    assert.equal(options?.requireCanonicalPrevouts, true);
+    canonicalHydrationRequests += 1;
+    const normalizedRequestedTxid = String(requestedTxid ?? "").toLowerCase();
+    if (normalizedRequestedTxid === candidateTxid && staleWitness) {
+      return null;
+    }
+    return hydratedTransaction(
+      normalizedRequestedTxid === txid ? protocolMessage : mintMessage,
+      1_000,
+      normalizedRequestedTxid,
+    );
+  };
+  const bitcoinRpc = async (method, params) => {
+    const requestedTxid = String(params?.[0] ?? "").toLowerCase();
+    if (method === "getmempoolentry") {
+      const reads = Number(mempoolReads.get(requestedTxid) ?? 0) + 1;
+      mempoolReads.set(requestedTxid, reads);
+      if (
+        (requestedTxid === candidateTxid && staleWitness) ||
+        (requestedTxid === candidateTxid &&
+          witnessDropsOnFinalCheck &&
+          reads >= 2)
+      ) {
+        return { error: { code: -5 }, ok: false };
+      }
+      return { ok: true, result: { time: 1_720_999_000 } };
+    }
+    if (method === "getblockchaininfo") {
+      return {
+        ok: true,
+        result: {
+          bestblockhash: blockHash,
+          blocks: tipHeight,
+          headers: tipHeight,
+        },
+      };
+    }
+    return null;
+  };
+  const proofIndexTokenMintStatsPayload = async () => {
+    mintStatsReads += 1;
+    const stats = baseMintStats();
+    stats.pendingCandidates[0].txid = candidateTxid;
+    if (
+      statsMode === "existing-target" ||
+      (statsMode === "target-on-final-read" && mintStatsReads === 2)
+    ) {
+      stats.targetMintStats.pendingMints = 1;
+      stats.targetMintStats.totalMints = 1;
+    }
+    if (statsMode === "incomplete") {
+      stats.pendingCandidateCount = 33;
+      stats.pendingCandidates = Array.from({ length: 32 }, (_value, index) => ({
+        amount: 1_000,
+        txid: index.toString(16).padStart(64, "0"),
+      }));
+      stats.pendingCandidatesComplete = false;
+      stats.pendingCandidateSupply = 33_000;
+      stats.pendingMints = 33;
+      stats.pendingSupply = 33_000;
+      stats.totalMints = stats.confirmedMints + stats.pendingMints;
+    }
+    if (statsMode === "witness-missing-final" && mintStatsReads === 2) {
+      stats.pendingCandidateCount = 0;
+      stats.pendingCandidates = [];
+      stats.pendingCandidateSupply = 0;
+      stats.pendingMints = 0;
+      stats.pendingSupply = 0;
+      stats.totalMints = stats.confirmedMints;
+    }
+    if (statsMode === "witness-reordered-final") {
+      stats.pendingCandidateCount = 2;
+      stats.pendingCandidates = [
+        { amount: 1_000, txid: "4".repeat(64) },
+        { amount: 1_000, txid: earlierWitnessTxid },
+      ];
+      if (mintStatsReads === 2) {
+        stats.pendingCandidates.reverse();
+      }
+      stats.pendingCandidateSupply = 2_000;
+      stats.pendingMints = 2;
+      stats.pendingSupply = 2_000;
+      stats.totalMints = stats.confirmedMints + stats.pendingMints;
+    }
+    return stats;
+  };
+  const pendingWorkMintSupplyCapVerifierPayload = isolatedFunction(
+    API_PATH,
+    "pendingWorkMintSupplyCapVerifierPayload",
+    {
+      WORK_TOKEN_ID: workTokenId,
+      WORK_TOKEN_MAX_SUPPLY: 21_000_000,
+      WORK_TOKEN_TICKER: "WORK",
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS: registryAddress,
+      bitcoinRpc,
+      coreMempoolEntryPresent,
+      exactCoreTipFromBlockchainInfo,
+      exactPendingWorkMintStats,
+      fetchTransactionFromBitcoinRpc,
+      mapWithConcurrency: async (items, _concurrency, mapper) =>
+        Promise.all(items.map(mapper)),
+      pendingWorkMintFromHydratedTransaction,
+      pendingWorkMintWitnessProof,
+      proofIndexCanonicalStateMetaPayload: async () => canonical,
+      proofIndexExactlyCoversCoreTip,
+      proofIndexOperationalStatusPayload: async () => status(statusHeight),
+      proofIndexTokenMintStatsPayload,
+    },
+  );
+
+  let broadWorkLoads = 0;
+  const tokenVerifierPayload = isolatedFunction(
+    API_PATH,
+    "tokenVerifierPayload",
+    {
+      WORK_TOKEN_ID: workTokenId,
+      normalizeTokenScope: (scope) => String(scope).trim().toLowerCase(),
+      pendingWorkMintSupplyCapVerifierPayload,
+      workTokenPayload: async () => {
+        broadWorkLoads += 1;
+        return {};
+      },
+    },
+  );
+  const fastPayload = await tokenVerifierPayload(
+    "livenet",
+    workTokenId,
+    txid,
+  );
+  assert.equal(broadWorkLoads, 0);
+  assert.equal(canonicalHydrationRequests, 2);
+  assert.equal(mintStatsReads, 2);
+  assert.equal(mempoolReads.get(earlierWitnessTxid), 2);
+  assert.equal(mempoolReads.get(txid), 2);
+  assert.equal(fastPayload.provisional, true);
+  assert.equal(fastPayload.classification, "supply-cap");
+  assert.equal(
+    fastPayload.source,
+    "proof-indexer-pending-work-supply-cap-verifier",
+  );
+  assert.equal(fastPayload.items.length, 1);
+  assert.equal(fastPayload.items[0].confirmed, false);
+  assert.equal(fastPayload.items[0].valid, false);
+  assert.equal(fastPayload.items[0].provisionalReason, "supply-cap");
+  assert.deepEqual(Array.from(fastPayload.supplyCapWitnessTxids), [
+    earlierWitnessTxid,
+  ]);
+
+  statsMode = "existing-target";
+  mintStatsReads = 0;
+  mempoolReads.clear();
+  assert.equal(
+    await pendingWorkMintSupplyCapVerifierPayload(
+      "livenet",
+      workTokenId,
+      txid,
+    ),
+    null,
+  );
+
+  statsMode = "stable";
+  statusHeight = tipHeight - 1;
+  mintStatsReads = 0;
+  mempoolReads.clear();
+  assert.equal(
+    await pendingWorkMintSupplyCapVerifierPayload(
+      "livenet",
+      workTokenId,
+      txid,
+    ),
+    null,
+  );
+
+  statusHeight = tipHeight;
+  protocolMessage = `pwt1:send:${workTokenId}:1000`;
+  mintStatsReads = 0;
+  mempoolReads.clear();
+  assert.equal(
+    await pendingWorkMintSupplyCapVerifierPayload(
+      "livenet",
+      workTokenId,
+      txid,
+    ),
+    null,
+  );
+  assert.equal(mintStatsReads, 0);
+
+  protocolMessage = mintMessage;
+  statsMode = "target-on-final-read";
+  mintStatsReads = 0;
+  mempoolReads.clear();
+  assert.equal(
+    await pendingWorkMintSupplyCapVerifierPayload(
+      "livenet",
+      workTokenId,
+      txid,
+    ),
+    null,
+  );
+  assert.equal(mintStatsReads, 2);
+
+  statsMode = "stable";
+  candidateTxid = earlierWitnessTxid;
+  staleWitness = true;
+  mintStatsReads = 0;
+  mempoolReads.clear();
+  assert.equal(
+    await pendingWorkMintSupplyCapVerifierPayload(
+      "livenet",
+      workTokenId,
+      txid,
+    ),
+    null,
+  );
+
+  staleWitness = false;
+  candidateTxid = laterWitnessTxid;
+  mintStatsReads = 0;
+  mempoolReads.clear();
+  assert.equal(
+    await pendingWorkMintSupplyCapVerifierPayload(
+      "livenet",
+      workTokenId,
+      txid,
+    ),
+    null,
+  );
+  assert.equal(mempoolReads.has(laterWitnessTxid), false);
+
+  candidateTxid = earlierWitnessTxid;
+  witnessDropsOnFinalCheck = true;
+  mintStatsReads = 0;
+  mempoolReads.clear();
+  assert.equal(
+    await pendingWorkMintSupplyCapVerifierPayload(
+      "livenet",
+      workTokenId,
+      txid,
+    ),
+    null,
+  );
+  assert.equal(mempoolReads.get(earlierWitnessTxid), 2);
+
+  witnessDropsOnFinalCheck = false;
+  statsMode = "incomplete";
+  mintStatsReads = 0;
+  mempoolReads.clear();
+  assert.equal(
+    await pendingWorkMintSupplyCapVerifierPayload(
+      "livenet",
+      workTokenId,
+      txid,
+    ),
+    null,
+  );
+  assert.equal(mempoolReads.has(earlierWitnessTxid), false);
+
+  statsMode = "witness-missing-final";
+  mintStatsReads = 0;
+  mempoolReads.clear();
+  assert.equal(
+    await pendingWorkMintSupplyCapVerifierPayload(
+      "livenet",
+      workTokenId,
+      txid,
+    ),
+    null,
+  );
+  assert.equal(mintStatsReads, 2);
+
+  statsMode = "witness-reordered-final";
+  mintStatsReads = 0;
+  mempoolReads.clear();
+  assert.equal(
+    await pendingWorkMintSupplyCapVerifierPayload(
+      "livenet",
+      workTokenId,
+      txid,
+    ),
+    null,
+  );
+  assert.equal(mintStatsReads, 2);
+});
+
+check("pending token verifier classifies a mint beyond ordered supply as invalid", async () => {
+  const txid = "6".repeat(64);
+  const tokenId = "d".repeat(64);
+  const registryAddress = "work-registry";
+  const transaction = { txid, vout: [{ value: 1_000 }] };
+  const state = {
+    indexedAt: "2026-07-15T01:10:00.000Z",
+    indexedThroughBlock: 958_079,
+    mints: [
+      {
+        amount: 20_999_000,
+        confirmed: true,
+        tokenId,
+        txid: "1".repeat(64),
+      },
+      {
+        amount: 1_000,
+        confirmed: false,
+        tokenId,
+        txid: "2".repeat(64),
+      },
+    ],
+    tokens: [{
+      maxSupply: 21_000_000,
+      mintPriceSats: 1_000,
+      registryAddress,
+      ticker: "WORK",
+      tokenId,
+    }],
+  };
+  const tokenVerifierDeterministicInvalidReason = isolatedFunction(
+    API_PATH,
+    "tokenVerifierDeterministicInvalidReason",
+    {
+      TOKEN_CREATION_PRICE_SATS: 546,
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      TOKEN_PROTOCOL_PREFIX: "pwt1:",
+      decodedProtocolMessages: () => [`pwt1:mint:${tokenId}:1000`],
+      fetchTransactionFromBitcoinRpc: async () => transaction,
+      numericValue: (value) => Number(value) || 0,
+      parseTokenPayload: () => ({ amount: 1_000, kind: "mint", tokenId }),
+      tokenIndexAddressForNetwork: () => "token-index",
+      tokenListingForVerifier: () => null,
+      tokenPaymentAmountBeforeProtocol: () => 1_000,
+      transactionBlockHeight: () => 0,
+      transactionConfirmed: () => false,
+      transactionTxid: (tx) => tx.txid,
+    },
+  );
+  const expectedReason =
+    "WORK mint exceeds max supply: 20,999,000 confirmed + 1,000 pending + 1,000 requested > 21,000,000 max.";
+  assert.equal(
+    await tokenVerifierDeterministicInvalidReason(
+      "livenet",
+      state,
+      txid,
+      false,
+    ),
+    expectedReason,
+  );
+
+  const tokenVerifierPayload = isolatedFunction(
+    API_PATH,
+    "tokenVerifierPayload",
+    {
+      INTERNAL_VERIFIER_STATE_CACHE: new Map(),
+      WORK_TOKEN_ID: tokenId,
+      cachedInternalVerifierState: async (_key, loader) => loader(),
+      completeTokenVerifierState: async () => state,
+      decodedProtocolMessages: () => [],
+      normalizeTokenScope: () => tokenId,
+      pendingWorkMintSupplyCapVerifierPayload: async () => null,
+      pruneInternalVerifierStateCache: () => {},
+      tokenPayload: async () => state,
+      tokenVerifierDeterministicInvalidReason,
+      tokenVerifierItemsFromState: () => [],
+      verifierBalanceSnapshot: () => null,
+      workTokenPayload: async () => state,
+    },
+  );
+  const payload = await tokenVerifierPayload("livenet", tokenId, txid);
+  assert.equal(payload.source, "full-ordered-credit-verifier");
+  assert.equal(payload.items.length, 1);
+  assert.equal(payload.items[0].kind, "token-event-invalid");
+  assert.equal(payload.items[0].valid, false);
+  assert.equal(payload.items[0].confirmed, false);
+  assert.equal(payload.items[0].reason, expectedReason);
+});
+
 check("a stale token verifier absence remains unresolved", async () => {
   const txid = "7".repeat(64);
   const blockHash = "a".repeat(64);
@@ -12176,6 +13822,7 @@ check("a stale token verifier absence remains unresolved", async () => {
       }),
       completeTokenVerifierState: async () => ({ coverageHeight: 101 }),
       normalizeTokenScope: (scope) => String(scope).toLowerCase(),
+      pendingWorkMintSupplyCapVerifierPayload: async () => null,
       pruneInternalVerifierStateCache: () => {},
       tokenPayload: async () => ({}),
       tokenVerifierDeterministicInvalidReason: async () => "",
@@ -12294,6 +13941,7 @@ check("confirmed verifiers ignore a same-txid copy from the wrong block", async 
       completeTokenVerifierState: async () => tokenState,
       decodedProtocolMessages,
       normalizeTokenScope: (scope) => String(scope).toLowerCase(),
+      pendingWorkMintSupplyCapVerifierPayload: async () => null,
       pruneInternalVerifierStateCache: () => {},
       tokenVerifierDeterministicInvalidReason,
       tokenVerifierItemsFromState: () => [],

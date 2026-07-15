@@ -64,11 +64,8 @@ const BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT = String(
 ).trim();
 const PENDING_STATUS_LIMIT = Number(process.env.POW_INDEX_PENDING_STATUS_LIMIT ?? 100);
 const PENDING_MIN_AGE_MS = Number(process.env.POW_INDEX_PENDING_MIN_AGE_MS ?? 300_000);
-const PENDING_DROP_CONFIRMATION_MS = Math.max(
-  0,
-  Number(
-    process.env.POW_INDEX_PENDING_DROP_CONFIRMATION_MS ?? 5 * 60_000,
-  ) || 0,
+const PENDING_DROP_CONFIRMATION_MS = pendingDropConfirmationMs(
+  process.env.POW_INDEX_PENDING_DROP_CONFIRMATION_MS,
 );
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
 const STATUS_REQUEST_TIMEOUT_MS = Number(
@@ -301,6 +298,34 @@ function lastSuccessFromMeta(value) {
 
 let lastParityAtMs = 0;
 
+function pendingDropConfirmationMs(value) {
+  const configured = Number(value);
+  return Math.max(
+    5 * 60_000,
+    Number.isFinite(configured) ? configured : 5 * 60_000,
+  );
+}
+
+function authoritativeDroppedStatusEvidence(payload) {
+  const requiredSources = [
+    "bitcoin-core:getrawtransaction",
+    "bitcoin-core:getmempoolentry",
+    "bitcoin-core:getblockchaininfo",
+    "bitcoin-core:getindexinfo:txindex",
+  ];
+  const sources = Array.isArray(payload?.sources)
+    ? payload.sources.map((source) => String(source))
+    : [];
+  return (
+    payload?.absenceProven === true &&
+    payload?.contract === "proof-of-work-tx-status-v2" &&
+    payload?.reason ===
+      "absent-from-synced-unpruned-mainnet-bitcoin-core-txindex-and-mempool" &&
+    sources.length === requiredSources.length &&
+    requiredSources.every((source) => sources.includes(source))
+  );
+}
+
 async function updateTransactionStatus(client, txid, status, payload) {
   const normalizedTxid = String(txid ?? "").trim().toLowerCase();
   const normalizedStatus = String(status ?? "").trim().toLowerCase();
@@ -356,9 +381,7 @@ async function updateTransactionStatus(client, txid, status, payload) {
     transitionTimeMs = mempoolTimeMs;
   } else if (
     payload?.confirmed !== false ||
-    payload?.absenceProven !== true ||
-    !String(payload?.reason ?? "").trim() ||
-    !coreObserved
+    !authoritativeDroppedStatusEvidence(payload)
   ) {
     throw new Error(`Unproven dropped status for ${normalizedTxid}.`);
   }
@@ -377,18 +400,32 @@ async function updateTransactionStatus(client, txid, status, payload) {
     return { applied: false, reason: "status-race" };
   }
 
-  if (normalizedStatus === "confirmed") {
-    return { applied: false, reason: "canonical-block-scan-required" };
-  }
-
   const evidence = {
     absenceCount: 0,
+    absenceProven:
+      normalizedStatus === "dropped" ? payload.absenceProven : undefined,
     contract: payload.contract,
     observedAt: payload.observedAt,
     reason: payload.reason ?? undefined,
     sources: sourceList,
     status: normalizedStatus,
   };
+  if (normalizedStatus === "confirmed") {
+    await client.query(
+      `
+        UPDATE proof_indexer.transactions
+        SET
+          raw_tx =
+            (COALESCE(raw_tx, '{}'::jsonb) - 'statusObservation')
+            || jsonb_build_object('statusObservation', $3::jsonb),
+          updated_at = now()
+        WHERE network = $1 AND txid = $2 AND status = 'pending'
+      `,
+      [NETWORK, normalizedTxid, JSON.stringify(evidence)],
+    );
+    return { applied: false, reason: "canonical-block-scan-required" };
+  }
+
   if (normalizedStatus === "pending") {
     const updated = await client.query(
       `
@@ -466,6 +503,7 @@ async function updateTransactionStatus(client, txid, status, payload) {
                   to_timestamp($3::double precision / 1000)
                 )
               END,
+              'dropped', false,
               'status', 'pending'
             ),
           updated_at = now()
@@ -491,6 +529,7 @@ async function updateTransactionStatus(client, txid, status, payload) {
               '_powBlockIndex'
             ]
             OR payload->'confirmed' IS DISTINCT FROM 'false'::jsonb
+            OR payload->'dropped' IS DISTINCT FROM 'false'::jsonb
             OR payload->>'status' IS DISTINCT FROM 'pending'
             OR payload->'createdAt' IS DISTINCT FROM to_jsonb(
               CASE
@@ -561,6 +600,7 @@ async function updateTransactionStatus(client, txid, status, payload) {
                   to_timestamp($3::double precision / 1000)
                 )
               END,
+              'dropped', false,
               'status', 'pending'
             )
         WHERE network = $1 AND txid = $2 AND status = 'pending'
@@ -610,6 +650,7 @@ async function updateTransactionStatus(client, txid, status, payload) {
                   to_timestamp($3::double precision / 1000)
                 )
               END,
+              'dropped', false,
               'status', 'pending'
             )
         WHERE network = $1 AND txid = $2 AND status = 'pending'
@@ -626,13 +667,26 @@ async function updateTransactionStatus(client, txid, status, payload) {
       : null;
   const priorObservedAtMs = Date.parse(priorObservation?.observedAt ?? "");
   const priorAbsenceCount = Number(priorObservation?.absenceCount ?? 0);
-  const repeatedAbsence =
+  const priorAbsenceStartedAtMs = Date.parse(
+    priorObservation?.absenceStartedAt ?? "",
+  );
+  const consecutiveAbsence =
     priorObservation?.status === "dropped" &&
+    authoritativeDroppedStatusEvidence(priorObservation) &&
     Number.isSafeInteger(priorAbsenceCount) &&
     priorAbsenceCount > 0 &&
     Number.isFinite(priorObservedAtMs) &&
-    observedAtMs >= priorObservedAtMs + PENDING_DROP_CONFIRMATION_MS;
-  evidence.absenceCount = repeatedAbsence ? priorAbsenceCount + 1 : 1;
+    Number.isFinite(priorAbsenceStartedAtMs) &&
+    priorAbsenceStartedAtMs <= priorObservedAtMs &&
+    observedAtMs >= priorObservedAtMs;
+  const absenceStartedAtMs = consecutiveAbsence
+    ? priorAbsenceStartedAtMs
+    : observedAtMs;
+  evidence.absenceCount = consecutiveAbsence ? priorAbsenceCount + 1 : 1;
+  evidence.absenceStartedAt = new Date(absenceStartedAtMs).toISOString();
+  const repeatedAbsence =
+    consecutiveAbsence &&
+    observedAtMs >= absenceStartedAtMs + PENDING_DROP_CONFIRMATION_MS;
 
   if (!repeatedAbsence) {
     await client.query(
@@ -695,7 +749,11 @@ async function updateTransactionStatus(client, txid, status, payload) {
             - '_powBlockHash'
             - '_powBlockIndex'
           )
-          || jsonb_build_object('confirmed', false, 'status', 'dropped'),
+          || jsonb_build_object(
+            'confirmed', false,
+            'dropped', true,
+            'status', 'dropped'
+          ),
         updated_at = now()
       WHERE network = $1 AND txid = $2 AND status = 'pending'
     `,
@@ -708,7 +766,11 @@ async function updateTransactionStatus(client, txid, status, payload) {
         status = 'dropped',
         message =
           (message - 'blockHash' - 'blockHeight' - 'blockTime' - 'height')
-          || jsonb_build_object('confirmed', false, 'status', 'dropped')
+          || jsonb_build_object(
+            'confirmed', false,
+            'dropped', true,
+            'status', 'dropped'
+          )
       WHERE network = $1 AND txid = $2 AND status = 'pending'
     `,
     [NETWORK, normalizedTxid],
@@ -720,7 +782,11 @@ async function updateTransactionStatus(client, txid, status, payload) {
         status = 'dropped',
         metadata =
           (metadata - 'blockHash' - 'blockHeight' - 'blockTime' - 'height')
-          || jsonb_build_object('confirmed', false, 'status', 'dropped')
+          || jsonb_build_object(
+            'confirmed', false,
+            'dropped', true,
+            'status', 'dropped'
+          )
       WHERE network = $1 AND txid = $2 AND status = 'pending'
     `,
     [NETWORK, normalizedTxid],
