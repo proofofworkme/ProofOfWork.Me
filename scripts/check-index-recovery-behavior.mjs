@@ -13998,10 +13998,25 @@ check("canonical consistency reads the exact eligible summary snapshot", async (
     },
   ];
   let queryText = "";
+  const safeBlockHeight = (value) =>
+    Number.isSafeInteger(Number(value)) && Number(value) > 0
+      ? Number(value)
+      : 0;
+  const canonicalSummaryLedgerRowBinding = isolatedFunction(
+    READER_PATH,
+    "canonicalSummaryLedgerRowBinding",
+    { safeBlockHeight },
+  );
+  const canonicalSummaryLedgerValueBindingsAgree = isolatedFunction(
+    READER_PATH,
+    "canonicalSummaryLedgerValueBindingsAgree",
+  );
   const readCanonicalSummary = isolatedFunction(
     READER_PATH,
     "proofIndexCanonicalSummaryLedgerPayload",
     {
+      canonicalSummaryLedgerRowBinding,
+      canonicalSummaryLedgerValueBindingsAgree,
       dateIso: (value) => new Date(value).toISOString(),
       proofIndexPool: () => ({
         async query(sql, params) {
@@ -14071,10 +14086,7 @@ check("canonical consistency reads the exact eligible summary snapshot", async (
           };
         },
       }),
-      safeBlockHeight: (value) =>
-        Number.isSafeInteger(Number(value)) && Number(value) > 0
-          ? Number(value)
-          : 0,
+      safeBlockHeight,
     },
   );
   const result = await readCanonicalSummary("livenet");
@@ -14089,38 +14101,63 @@ check("canonical consistency reads the exact eligible summary snapshot", async (
   assert.equal(result.workFloor.networkValueSats, 8_171_663_094);
 });
 
-check("Inception H-1 oracle accepts only one exact green hash-bound summary", async () => {
-  const snapshotId = "b8e77cd30cbed6855977c514";
+check("Inception H-1 oracle accepts agreeing versioned exact green summaries", async () => {
+  const oldSnapshotId = "b8e77cd30cbed6855977c514";
+  const newestSnapshotId = "f5c90f056a79e3a84211d5c7";
   const height = 957_949;
   const blockHash =
     "00000000000000000001bda6bfa328f15edf597bfc364e02da42ea92a518a15e";
-  const canonicalSummaryHash =
+  const oldCanonicalSummaryHash =
     "4f00b3494afb46ef88990948784a0ba8f2a22856615a39e15c3131f0ec979bdc";
+  const newestCanonicalSummaryHash =
+    "7a388fc63d694c493b95a8699f526e3f32bb338be3be22d2e02a973a616d3dca";
   const workNetworkValueSats = 8_193_547_095.322113;
+  const accountingModel = "canonical-unique-tx-input-output-v1";
   let rows = [];
   let queryText = "";
   let queryParams = [];
+  let queryCount = 0;
+  const safeBlockHeight = (value) =>
+    Number.isSafeInteger(Number(value)) && Number(value) > 0
+      ? Number(value)
+      : 0;
+  const canonicalSummaryLedgerRowBinding = isolatedFunction(
+    READER_PATH,
+    "canonicalSummaryLedgerRowBinding",
+    { safeBlockHeight },
+  );
+  const canonicalSummaryLedgerValueBindingsAgree = isolatedFunction(
+    READER_PATH,
+    "canonicalSummaryLedgerValueBindingsAgree",
+  );
   const readCanonicalSummary = isolatedFunction(
     READER_PATH,
     "proofIndexCanonicalSummaryLedgerPayload",
     {
+      canonicalSummaryLedgerRowBinding,
+      canonicalSummaryLedgerValueBindingsAgree,
       dateIso: (value) => new Date(value).toISOString(),
       proofIndexPool: () => ({
         async query(sql, params) {
+          queryCount += 1;
           queryText = String(sql);
           queryParams = Array.from(params);
           return { rows };
         },
       }),
-      safeBlockHeight: (value) =>
-        Number.isSafeInteger(Number(value)) && Number(value) > 0
-          ? Number(value)
-          : 0,
+      safeBlockHeight,
     },
   );
-  const exactRow = () => ({
+  const exactRow = ({
+    canonicalSummaryHash = oldCanonicalSummaryHash,
+    generatedAt = "2026-07-14T03:03:04.765Z",
+    matchingSnapshotCount = 1,
+    snapshotId = oldSnapshotId,
+    valueSats = workNetworkValueSats,
+    valueAccountingModel = accountingModel,
+  } = {}) => ({
     consistency: { ok: true, status: "green" },
-    generated_at: "2026-07-14T03:03:04.765Z",
+    generated_at: generatedAt,
     growth_floor_height: height,
     growth_height: height,
     growth_snapshot_id: snapshotId,
@@ -14134,6 +14171,7 @@ check("Inception H-1 oracle accepts only one exact green hash-bound summary", as
     marketplace_floor_height: height,
     marketplace_height: height,
     marketplace_snapshot_id: snapshotId,
+    matching_snapshot_count: matchingSnapshotCount,
     metrics: { indexedThroughBlock: height },
     payload_indexed_through_block_hash: blockHash,
     payload_snapshot_id: snapshotId,
@@ -14147,17 +14185,20 @@ check("Inception H-1 oracle accepts only one exact green hash-bound summary", as
     token_height: height,
     token_snapshot_id: snapshotId,
     totals: {
-      growthActualValueSats: workNetworkValueSats,
-      growthWorkFloorValueSats: workNetworkValueSats,
-      workActualValueSats: workNetworkValueSats,
-      workNetworkValueSats,
+      growthActualValueSats: valueSats,
+      growthWorkFloorValueSats: valueSats,
+      workActualValueSats: valueSats,
+      workNetworkValueSats: valueSats,
     },
     work_floor: {
-      actualValue: { totalSats: workNetworkValueSats },
+      actualValue: {
+        creditMinerFeeAccountingModel: valueAccountingModel,
+        totalSats: valueSats,
+      },
       indexedThroughBlock: height,
       indexedThroughBlockHash: blockHash,
-      liveNetworkValueSats: workNetworkValueSats,
-      networkValueSats: workNetworkValueSats,
+      liveNetworkValueSats: valueSats,
+      networkValueSats: valueSats,
       snapshotId,
     },
     work_floor_block_hash: blockHash,
@@ -14168,12 +14209,36 @@ check("Inception H-1 oracle accepts only one exact green hash-bound summary", as
     work_summary_snapshot_id: snapshotId,
   });
 
-  rows = [exactRow()];
+  const newestRow = exactRow({
+    canonicalSummaryHash: newestCanonicalSummaryHash,
+    generatedAt: "2026-07-14T03:04:30.000Z",
+    matchingSnapshotCount: 2,
+    snapshotId: newestSnapshotId,
+  });
+  const oldRow = exactRow({ matchingSnapshotCount: 2 });
+  rows = [newestRow, oldRow];
+  const preservedRows = structuredClone(rows);
   const exact = await readCanonicalSummary("livenet", height, blockHash);
+  assert.equal(queryCount, 1);
   assert.deepEqual(queryParams, ["livenet", height, blockHash]);
   assert.match(queryText, /consistency->>'status'.*= 'green'/u);
-  assert.equal(exact.snapshotId, snapshotId);
-  assert.equal(exact.canonicalSummaryHash, canonicalSummaryHash);
+  assert.match(
+    queryText,
+    /count\(\*\) OVER \(\) AS matching_snapshot_count/u,
+  );
+  assert.match(
+    queryText,
+    /ORDER BY\s+indexed_through_block DESC NULLS LAST,\s+generated_at DESC,\s+snapshot_id DESC/u,
+  );
+  assert.match(
+    queryText,
+    /LIMIT CASE WHEN \$2::integer = 0 THEN 1 ELSE 128 END/u,
+  );
+  assert.doesNotMatch(queryText, /\b(?:INSERT|UPDATE|DELETE)\b/u);
+  assert.deepEqual(rows, preservedRows);
+  assert.equal(exact.snapshotId, newestSnapshotId);
+  assert.equal(exact.generatedAt, "2026-07-14T03:04:30.000Z");
+  assert.equal(exact.canonicalSummaryHash, newestCanonicalSummaryHash);
   assert.equal(exact.workNetworkValueSats, workNetworkValueSats);
 
   const historicalWorkValueSnapshotHasFiniteNetworkValue = isolatedFunction(
@@ -14202,13 +14267,12 @@ check("Inception H-1 oracle accepts only one exact green hash-bound summary", as
     blockIndex: 382,
   };
   const bound = canonicalInceptionValueSnapshotCheckpoint(exact, bond);
-  assert.equal(bound.valueSnapshotId, snapshotId);
+  assert.equal(bound.valueSnapshotId, newestSnapshotId);
   assert.equal(bound.valueSnapshotBlockHash, blockHash);
   assert.equal(bound.workNetworkValueSats, workNetworkValueSats);
   assert.equal(
     exact.workFloor.actualValue.creditMinerFeeAccountingModel,
-    undefined,
-    "an immutable green H-1 row predating current-tip miner-fee coverage remains a valid value oracle",
+    accountingModel,
   );
   assert.equal(
     canonicalInceptionValueSnapshotCheckpoint(
@@ -14244,7 +14308,7 @@ check("Inception H-1 oracle accepts only one exact green hash-bound summary", as
       ...exactRow(),
       source_hashes: {
         blockScan: "f".repeat(64),
-        canonicalSummary: canonicalSummaryHash,
+        canonicalSummary: oldCanonicalSummaryHash,
       },
     },
   ];
@@ -14262,10 +14326,71 @@ check("Inception H-1 oracle accepts only one exact green hash-bound summary", as
     await readCanonicalSummary("livenet", height, blockHash),
     null,
   );
-  rows = [exactRow(), exactRow()];
+
+  const versionedRows = (older) => [
+    { ...newestRow, matching_snapshot_count: 2 },
+    { ...older, matching_snapshot_count: 2 },
+  ];
+  rows = versionedRows(exactRow({ valueSats: workNetworkValueSats + 1 }));
   assert.equal(
     await readCanonicalSummary("livenet", height, blockHash),
     null,
+    "same-height versions with divergent proof values must fail closed",
+  );
+  rows = versionedRows(exactRow({
+    valueAccountingModel: "divergent-fee-accounting-model",
+  }));
+  assert.equal(
+    await readCanonicalSummary("livenet", height, blockHash),
+    null,
+    "same-height versions with divergent accounting semantics must fail closed",
+  );
+  rows = versionedRows({
+    ...exactRow(),
+    work_floor_block_hash: "f".repeat(64),
+  });
+  assert.equal(
+    await readCanonicalSummary("livenet", height, blockHash),
+    null,
+    "every version must preserve the exact checkpoint-hash binding",
+  );
+  rows = versionedRows({
+    ...exactRow(),
+    growth_height: height - 1,
+  });
+  assert.equal(
+    await readCanonicalSummary("livenet", height, blockHash),
+    null,
+    "every version must preserve complete H-1 summary coverage",
+  );
+  rows = versionedRows({
+    ...exactRow(),
+    payload_snapshot_id: "mismatched-row-identity",
+  });
+  assert.equal(
+    await readCanonicalSummary("livenet", height, blockHash),
+    null,
+    "every version must preserve its complete snapshot identity",
+  );
+
+  rows = [exactRow({ matchingSnapshotCount: 2 })];
+  assert.equal(
+    await readCanonicalSummary("livenet", height, blockHash),
+    null,
+    "a truncated exact-checkpoint result must not select a partial version set",
+  );
+  rows = Array.from({ length: 128 }, (_value, index) =>
+    exactRow({
+      canonicalSummaryHash: (index + 1).toString(16).padStart(64, "0"),
+      generatedAt: new Date(Date.UTC(2026, 6, 14, 4, 0, index)).toISOString(),
+      matchingSnapshotCount: 129,
+      snapshotId: `capped-version-${String(index).padStart(3, "0")}`,
+    })
+  );
+  assert.equal(
+    await readCanonicalSummary("livenet", height, blockHash),
+    null,
+    "more than 128 exact versions must fail closed instead of trusting the cap",
   );
 });
 

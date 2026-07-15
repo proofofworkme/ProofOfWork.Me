@@ -10916,6 +10916,194 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
   };
 }
 
+function canonicalSummaryLedgerRowBinding(
+  snapshot,
+  requestedHeight = 0,
+  requestedHash = "",
+) {
+  if (
+    !snapshot ||
+    snapshot.consistency?.ok !== true ||
+    snapshot.consistency?.status !== "green" ||
+    String(snapshot.payload_snapshot_id ?? "") !==
+      String(snapshot.snapshot_id ?? "")
+  ) {
+    return null;
+  }
+
+  const indexedThroughBlock = safeBlockHeight(snapshot.indexed_through_block);
+  const summarySnapshotIds = [
+    snapshot.growth_snapshot_id,
+    snapshot.inception_snapshot_id,
+    snapshot.infinity_snapshot_id,
+    snapshot.log_snapshot_id,
+    snapshot.marketplace_snapshot_id,
+    snapshot.token_snapshot_id,
+    snapshot.work_floor_snapshot_id,
+    snapshot.work_summary_snapshot_id,
+  ].map((value) => String(value ?? ""));
+  const summaryCoverageHeights = [
+    snapshot.growth_height,
+    snapshot.growth_floor_height,
+    snapshot.inception_height,
+    snapshot.infinity_height,
+    snapshot.log_height,
+    snapshot.marketplace_height,
+    snapshot.marketplace_floor_height,
+    snapshot.token_height,
+    snapshot.work_floor_height,
+    snapshot.work_summary_height,
+    snapshot.work_summary_floor_height,
+  ].map(safeBlockHeight);
+  if (
+    !indexedThroughBlock ||
+    (requestedHeight > 0 && indexedThroughBlock !== requestedHeight) ||
+    summarySnapshotIds.some(
+      (value) => value !== String(snapshot.snapshot_id ?? ""),
+    ) ||
+    summaryCoverageHeights.some((height) => height !== indexedThroughBlock)
+  ) {
+    return null;
+  }
+
+  const indexedThroughBlockHash = String(
+    snapshot.source_hashes?.blockScan ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const boundCheckpointHashes = [
+    indexedThroughBlockHash,
+    snapshot.payload_indexed_through_block_hash,
+    snapshot.summary_refresh_block_hash,
+    snapshot.work_floor_block_hash,
+  ].map((value) => String(value ?? "").trim().toLowerCase());
+  const canonicalSummaryHash = String(
+    snapshot.source_hashes?.canonicalSummary ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  if (
+    snapshot.summary_refresh_mode !== "canonical-summary-refresh" ||
+    !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash) ||
+    !/^[0-9a-f]{64}$/u.test(canonicalSummaryHash) ||
+    boundCheckpointHashes.some((hash) => hash !== indexedThroughBlockHash) ||
+    (requestedHash && indexedThroughBlockHash !== requestedHash)
+  ) {
+    return null;
+  }
+
+  const totals =
+    snapshot.totals &&
+    typeof snapshot.totals === "object" &&
+    !Array.isArray(snapshot.totals)
+      ? snapshot.totals
+      : {};
+  const workFloor =
+    snapshot.work_floor &&
+    typeof snapshot.work_floor === "object" &&
+    !Array.isArray(snapshot.work_floor)
+      ? snapshot.work_floor
+      : null;
+  const actualValue =
+    workFloor?.actualValue &&
+    typeof workFloor.actualValue === "object" &&
+    !Array.isArray(workFloor.actualValue)
+      ? workFloor.actualValue
+      : {};
+  const workNetworkValueSats = Number(totals.workNetworkValueSats);
+  const workActualValueSats = Number(totals.workActualValueSats);
+  const growthActualValueSats = Number(totals.growthActualValueSats);
+  const growthWorkFloorValueSats = Number(
+    totals.growthWorkFloorValueSats,
+  );
+  const actualTotalSats = Number(actualValue.totalSats);
+  const liveNetworkValueSats = Number(
+    workFloor?.liveNetworkValueSats ??
+      actualValue.liveNetworkValueSats ??
+      actualValue.liveTotalSats ??
+      actualTotalSats,
+  );
+  const declaredNetworkValueSats = Number(
+    workFloor?.networkValueSats ?? liveNetworkValueSats,
+  );
+  const optionalFiniteNumber = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  };
+  const frozenNetworkValueSats = optionalFiniteNumber(
+    workFloor?.frozenNetworkValueSats ??
+      actualValue.frozenNetworkValueSats ??
+      actualValue.frozenTotalSats,
+  );
+  const requiredValues = [
+    workNetworkValueSats,
+    workActualValueSats,
+    growthActualValueSats,
+    growthWorkFloorValueSats,
+    actualTotalSats,
+    liveNetworkValueSats,
+    declaredNetworkValueSats,
+  ];
+  if (
+    !workFloor ||
+    !requiredValues.every((value) => Number.isFinite(value) && value > 0) ||
+    [
+      workActualValueSats,
+      actualTotalSats,
+      liveNetworkValueSats,
+      declaredNetworkValueSats,
+    ].some((value) => Math.abs(workNetworkValueSats - value) > 0.01) ||
+    (frozenNetworkValueSats !== null && frozenNetworkValueSats <= 0)
+  ) {
+    return null;
+  }
+
+  return {
+    actualTotalSats,
+    canonicalSummaryHash,
+    creditMinerFeeAccountingModel: String(
+      actualValue.creditMinerFeeAccountingModel ?? "",
+    ),
+    declaredNetworkValueSats,
+    frozenNetworkValueSats,
+    growthActualValueSats,
+    growthWorkFloorValueSats,
+    indexedThroughBlock,
+    indexedThroughBlockHash,
+    liveNetworkValueSats,
+    workActualValueSats,
+    workFloor,
+    workNetworkValueSats,
+  };
+}
+
+function canonicalSummaryLedgerValueBindingsAgree(left, right) {
+  const numericKeys = [
+    "actualTotalSats",
+    "declaredNetworkValueSats",
+    "frozenNetworkValueSats",
+    "growthActualValueSats",
+    "growthWorkFloorValueSats",
+    "indexedThroughBlock",
+    "liveNetworkValueSats",
+    "workActualValueSats",
+    "workNetworkValueSats",
+  ];
+  return Boolean(
+    left &&
+      right &&
+      left.indexedThroughBlockHash === right.indexedThroughBlockHash &&
+      left.creditMinerFeeAccountingModel ===
+        right.creditMinerFeeAccountingModel &&
+      numericKeys.every((key) => {
+        if (left[key] === null || right[key] === null) {
+          return left[key] === right[key];
+        }
+        return Math.abs(Number(left[key]) - Number(right[key])) <= 0.01;
+      }),
+  );
+}
+
 export async function proofIndexCanonicalSummaryLedgerPayload(
   network,
   requiredIndexedThroughBlock = 0,
@@ -10942,6 +11130,7 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
   const result = await pool.query(
     `
       SELECT
+        count(*) OVER () AS matching_snapshot_count,
         snapshot_id,
         generated_at,
         indexed_through_block,
@@ -11010,144 +11199,67 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
           WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
             AND COALESCE(check_item->>'ok', 'false') = 'true'
         )
-      ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
-      LIMIT 2
+      ORDER BY
+        indexed_through_block DESC NULLS LAST,
+        generated_at DESC,
+        snapshot_id DESC
+      LIMIT CASE WHEN $2::integer = 0 THEN 1 ELSE 128 END
     `,
     [network, requestedHeight, requestedHash],
   );
   const snapshot = result.rows[0];
+  const matchingSnapshotCount = Number(
+    snapshot?.matching_snapshot_count ?? result.rows.length,
+  );
   if (
     !snapshot ||
-    (exactCheckpointRequested && result.rows.length !== 1) ||
-    snapshot.consistency?.ok !== true ||
-    snapshot.consistency?.status !== "green" ||
-    String(snapshot.payload_snapshot_id ?? "") !==
-      String(snapshot.snapshot_id ?? "")
+    (exactCheckpointRequested &&
+      (!Number.isSafeInteger(matchingSnapshotCount) ||
+        matchingSnapshotCount !== result.rows.length))
   ) {
     return null;
   }
 
-  const indexedThroughBlock = safeBlockHeight(snapshot.indexed_through_block);
-  const summarySnapshotIds = [
-    snapshot.growth_snapshot_id,
-    snapshot.inception_snapshot_id,
-    snapshot.infinity_snapshot_id,
-    snapshot.log_snapshot_id,
-    snapshot.marketplace_snapshot_id,
-    snapshot.token_snapshot_id,
-    snapshot.work_floor_snapshot_id,
-    snapshot.work_summary_snapshot_id,
-  ].map((value) => String(value ?? ""));
-  const summaryCoverageHeights = [
-    snapshot.growth_height,
-    snapshot.growth_floor_height,
-    snapshot.inception_height,
-    snapshot.infinity_height,
-    snapshot.log_height,
-    snapshot.marketplace_height,
-    snapshot.marketplace_floor_height,
-    snapshot.token_height,
-    snapshot.work_floor_height,
-    snapshot.work_summary_height,
-    snapshot.work_summary_floor_height,
-  ].map(safeBlockHeight);
-  if (
-    !indexedThroughBlock ||
-    (exactCheckpointRequested && indexedThroughBlock !== requestedHeight) ||
-    summarySnapshotIds.some(
-      (value) => value !== String(snapshot.snapshot_id ?? ""),
-    ) ||
-    summaryCoverageHeights.some((height) => height !== indexedThroughBlock)
-  ) {
-    return null;
-  }
-
-  const indexedThroughBlockHash = String(
-    snapshot.source_hashes?.blockScan ?? "",
-  )
-    .trim()
-    .toLowerCase();
-  const boundCheckpointHashes = [
-    indexedThroughBlockHash,
-    snapshot.payload_indexed_through_block_hash,
-    snapshot.summary_refresh_block_hash,
-    snapshot.work_floor_block_hash,
-  ].map((value) => String(value ?? "").trim().toLowerCase());
-  const canonicalSummaryHash = String(
-    snapshot.source_hashes?.canonicalSummary ?? "",
-  )
-    .trim()
-    .toLowerCase();
-  if (
-    snapshot.summary_refresh_mode !== "canonical-summary-refresh" ||
-    !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash) ||
-    !/^[0-9a-f]{64}$/u.test(canonicalSummaryHash) ||
-    boundCheckpointHashes.some((hash) => hash !== indexedThroughBlockHash) ||
-    (exactCheckpointRequested && indexedThroughBlockHash !== requestedHash)
-  ) {
-    return null;
-  }
-
-  const totals =
-    snapshot.totals &&
-    typeof snapshot.totals === "object" &&
-    !Array.isArray(snapshot.totals)
-      ? snapshot.totals
-      : {};
-  const workNetworkValueSats = Number(totals.workNetworkValueSats);
-  const workActualValueSats = Number(totals.workActualValueSats);
-  const growthActualValueSats = Number(totals.growthActualValueSats);
-  const growthWorkFloorValueSats = Number(
-    totals.growthWorkFloorValueSats,
+  const bindings = result.rows.map((row) =>
+    canonicalSummaryLedgerRowBinding(
+      row,
+      exactCheckpointRequested ? requestedHeight : 0,
+      exactCheckpointRequested ? requestedHash : "",
+    ),
   );
-  const workFloor =
-    snapshot.work_floor &&
-    typeof snapshot.work_floor === "object" &&
-    !Array.isArray(snapshot.work_floor)
-      ? snapshot.work_floor
-      : null;
-  const publishedWorkNetworkValueSats = Number(
-    workFloor?.liveNetworkValueSats ??
-      workFloor?.actualValue?.liveNetworkValueSats ??
-      workFloor?.actualValue?.liveTotalSats ??
-      workFloor?.actualValue?.totalSats,
-  );
+  const binding = bindings[0];
   if (
-    !workFloor ||
-    ![
-      workNetworkValueSats,
-      workActualValueSats,
-      growthActualValueSats,
-      growthWorkFloorValueSats,
-      publishedWorkNetworkValueSats,
-    ].every((value) => Number.isFinite(value) && value > 0)
-    || Math.abs(workNetworkValueSats - publishedWorkNetworkValueSats) > 0.01
-    || Math.abs(workActualValueSats - publishedWorkNetworkValueSats) > 0.01
+    !binding ||
+    (exactCheckpointRequested &&
+      bindings.some(
+        (candidate) =>
+          !canonicalSummaryLedgerValueBindingsAgree(binding, candidate),
+      ))
   ) {
     return null;
   }
 
   return {
-    canonicalSummaryHash,
+    canonicalSummaryHash: binding.canonicalSummaryHash,
     consistency: snapshot.consistency,
     generatedAt: dateIso(snapshot.generated_at),
     growthSummary: {
-      actualValue: { totalSats: growthActualValueSats },
+      actualValue: { totalSats: binding.growthActualValueSats },
       workFloor: {
-        actualValue: { totalSats: growthWorkFloorValueSats },
-        networkValueSats: growthWorkFloorValueSats,
+        actualValue: { totalSats: binding.growthWorkFloorValueSats },
+        networkValueSats: binding.growthWorkFloorValueSats,
       },
     },
-    indexedThroughBlock,
-    indexedThroughBlockHash,
+    indexedThroughBlock: binding.indexedThroughBlock,
+    indexedThroughBlockHash: binding.indexedThroughBlockHash,
     metrics: snapshot.metrics ?? {},
     network,
     snapshotId: snapshot.snapshot_id,
     source: "proof-indexer-canonical-summary-ledger",
     sourceHashes: snapshot.source_hashes ?? {},
     valuationModel: "canonical-summary-refresh",
-    workFloor,
-    workNetworkValueSats: publishedWorkNetworkValueSats,
+    workFloor: binding.workFloor,
+    workNetworkValueSats: binding.liveNetworkValueSats,
   };
 }
 
