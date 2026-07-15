@@ -730,8 +730,7 @@ function tokenClosedListingFromEventPayload(payload) {
     registryAddress,
     saleAuthorization: objectRecord(payload?.saleAuthorization),
     sealAt: dateIso(payload?.sealAt),
-    sealConfirmed:
-      payload?.sealConfirmed === true || validTxid(payload?.sealTxid),
+    sealConfirmed: payload?.sealConfirmed === true,
     sealDataBytes: rowNumber(payload, "sealDataBytes"),
     sealMinerFeeSats: rowNumber(payload, "sealMinerFeeSats"),
     sealTxid: String(payload?.sealTxid ?? "").trim().toLowerCase(),

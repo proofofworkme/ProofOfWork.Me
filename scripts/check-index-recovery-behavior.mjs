@@ -15472,6 +15472,22 @@ check("closed listing projections retain seal metadata and close chronology", ()
   assert.equal(closed.sealTxid, sealTxid);
   assert.equal(closed.sealConfirmed, true);
   assert.equal(closed.saleAuthorization.anchorTxid, listingId);
+
+  const pendingSeal = tokenClosedListingFromEventPayload({
+    closedAt: "2026-07-09T06:27:33.000Z",
+    confirmed: false,
+    createdAt: "2026-07-09T06:27:33.000Z",
+    listingId,
+    saleAuthorization: { anchorTxid: listingId },
+    sealAt: "2026-07-06T10:09:02.000Z",
+    sealConfirmed: false,
+    sealTxid,
+    tokenId: "work",
+    txid: closeTxid,
+  });
+
+  assert.equal(pendingSeal.sealTxid, sealTxid);
+  assert.equal(pendingSeal.sealConfirmed, false);
 });
 
 check("seal-close summary recovery requires a proven unspent anchor", async () => {
