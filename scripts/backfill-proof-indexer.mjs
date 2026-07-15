@@ -111,6 +111,14 @@ const REPAIR_ID_TXIDS = [
       .filter((value) => /^[0-9a-f]{64}$/u.test(value)),
   ),
 ];
+const REPAIR_CANONICAL_TXIDS = [
+  ...new Set(
+    String(process.env.POW_INDEX_REPAIR_CANONICAL_TXIDS ?? "")
+      .split(/[,\s]+/u)
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  ),
+];
 const REPAIR_INCB_ISSUANCE_TXIDS = [
   ...new Set(
     String(process.env.POW_INDEX_REPAIR_INCB_ISSUANCE_TXIDS ?? "")
@@ -255,6 +263,9 @@ const PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY = process.argv.includes(
   "--prepare-canonical-pwt-range-replay",
 );
 const REPAIR_ID_TXIDS_ONLY = process.argv.includes("--repair-id-txids");
+const REPAIR_CANONICAL_TXIDS_ONLY = process.argv.includes(
+  "--repair-canonical-txids",
+);
 const REPAIR_INCB_ISSUANCE_ONLY = process.argv.includes(
   "--repair-incb-issuance",
 );
@@ -284,6 +295,7 @@ function assertCanonicalRebuildConfiguration() {
     HYDRATE_TRANSACTION_DETAILS_ONLY &&
     (PREPARE_CANONICAL_REBUILD_ONLY ||
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
+      REPAIR_CANONICAL_TXIDS_ONLY ||
       REPAIR_ID_TXIDS_ONLY ||
       REPAIR_INCB_ISSUANCE_ONLY ||
       REPAIR_WORK_PARTICIPANTS_ONLY ||
@@ -333,9 +345,41 @@ function assertCanonicalRebuildConfiguration() {
     throw new Error("Canonical full rebuild and PWT range replay are exclusive.");
   }
   if (
+    REPAIR_CANONICAL_TXIDS_ONLY &&
+    (PREPARE_CANONICAL_REBUILD_ONLY ||
+      PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
+      REPAIR_ID_TXIDS_ONLY ||
+      REPAIR_INCB_ISSUANCE_ONLY ||
+      REPAIR_WORK_PARTICIPANTS_ONLY ||
+      RUSH_BOOTSTRAP_ONLY ||
+      CANONICAL_REBUILD)
+  ) {
+    throw new Error(
+      "Canonical transaction-row repair is exclusive with rebuild and other repair modes.",
+    );
+  }
+  if (
+    REPAIR_CANONICAL_TXIDS_ONLY &&
+    (REPAIR_CANONICAL_TXIDS.length === 0 ||
+      REPAIR_CANONICAL_TXIDS.some((txid) => !isHexTxid(txid)))
+  ) {
+    throw new Error(
+      "--repair-canonical-txids requires POW_INDEX_REPAIR_CANONICAL_TXIDS containing only complete transaction ids",
+    );
+  }
+  if (REPAIR_CANONICAL_TXIDS_ONLY && !BITCOIN_RPC_URL) {
+    throw new Error(
+      "--repair-canonical-txids requires BITCOIN_RPC_URL for first-party canonical verification",
+    );
+  }
+  if (REPAIR_CANONICAL_TXIDS_ONLY) {
+    return;
+  }
+  if (
     REPAIR_ID_TXIDS_ONLY &&
     (PREPARE_CANONICAL_REBUILD_ONLY ||
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
+      REPAIR_CANONICAL_TXIDS_ONLY ||
       REPAIR_INCB_ISSUANCE_ONLY)
   ) {
     throw new Error("Canonical ID repair and replay preparation are exclusive.");
@@ -349,6 +393,7 @@ function assertCanonicalRebuildConfiguration() {
     REPAIR_INCB_ISSUANCE_ONLY &&
     (PREPARE_CANONICAL_REBUILD_ONLY ||
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
+      REPAIR_CANONICAL_TXIDS_ONLY ||
       REPAIR_ID_TXIDS_ONLY ||
       REPAIR_WORK_PARTICIPANTS_ONLY ||
       CANONICAL_REBUILD)
@@ -930,6 +975,45 @@ async function rawTransactionFromCore(txid) {
     }
   }
   return RAW_TRANSACTION_CACHE.get(normalizedTxid);
+}
+
+async function freshRawTransactionFromCore(txid) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!isHexTxid(normalizedTxid) || !BITCOIN_RPC_URL) {
+    return null;
+  }
+  try {
+    const transaction = await bitcoinRpc("getrawtransaction", [
+      normalizedTxid,
+      true,
+    ]);
+    if (
+      String(transaction?.txid ?? "").trim().toLowerCase() !== normalizedTxid
+    ) {
+      throw new Error("Bitcoin Core returned a mismatched transaction id.");
+    }
+    return transaction;
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        error: error?.message ?? String(error),
+        phase: "fresh-mempool-transaction-hydration",
+        txid: normalizedTxid,
+      }),
+    );
+    return null;
+  }
+}
+
+function transactionHasConfirmedBlockEvidence(transaction) {
+  const observedBlockHash = String(
+    transaction?.blockhash ?? transaction?.blockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  return (
+    Number(transaction?.confirmations) > 0 || isHexTxid(observedBlockHash)
+  );
 }
 
 async function boundedMapWithConcurrency(items, concurrency, mapper) {
@@ -8224,17 +8308,192 @@ async function mempoolScanState(client) {
     `SELECT value FROM proof_indexer.meta WHERE key = $1`,
     [key],
   );
+  const value = result.rows[0]?.value;
   return {
+    cursor: normalizedMempoolScanCursor(value?.cursor),
     key,
     processedTxids: new Set(
-      Array.isArray(result.rows[0]?.value?.processedTxids)
-        ? result.rows[0].value.processedTxids
+      Array.isArray(value?.processedTxids)
+        ? value.processedTxids
         : [],
     ),
   };
 }
 
-async function storeMempoolScanState(client, key, processedTxids) {
+function normalizedMempoolScanCursor(value) {
+  const txid = String(value?.txid ?? "").trim().toLowerCase();
+  const time = Number(value?.time);
+  if (!isHexTxid(txid) || !Number.isFinite(time) || time < 0) {
+    return null;
+  }
+  return { time, txid };
+}
+
+function mempoolScanCursorForEntry(entry) {
+  const [txid, metadata] = Array.isArray(entry) ? entry : [];
+  return normalizedMempoolScanCursor({
+    time: metadata?.time,
+    txid,
+  });
+}
+
+function mempoolEntriesAfterCursor(entries, cursor) {
+  const normalizedCursor = normalizedMempoolScanCursor(cursor);
+  if (!normalizedCursor || entries.length === 0) {
+    return entries;
+  }
+  const exactIndex = entries.findIndex(
+    ([txid]) => String(txid).trim().toLowerCase() === normalizedCursor.txid,
+  );
+  let startIndex = exactIndex >= 0
+    ? exactIndex + 1
+    : entries.findIndex(([txid, metadata]) => {
+        const time = Number(metadata?.time);
+        return (
+          time < normalizedCursor.time ||
+          (time === normalizedCursor.time &&
+            String(txid).localeCompare(normalizedCursor.txid) > 0)
+        );
+      });
+  if (startIndex < 0 || startIndex >= entries.length) {
+    startIndex = 0;
+  }
+  return [
+    ...entries.slice(startIndex),
+    ...entries.slice(0, startIndex),
+  ];
+}
+
+function plannedMempoolScanCandidates(
+  entries,
+  state,
+  priorityTxids,
+  { candidateLimit, seenLimit },
+) {
+  const limit = Number.isFinite(candidateLimit)
+    ? Math.max(0, Math.floor(candidateLimit))
+    : 500;
+  if (limit === 0 || entries.length === 0) {
+    return [];
+  }
+  const retainedHeadSize = Number.isFinite(seenLimit)
+    ? Math.max(0, Math.floor(seenLimit))
+    : 10_000;
+  const processedTxids = typeof state?.processedTxids?.has === "function"
+    ? state.processedTxids
+    : new Set();
+  const selected = new Set();
+  const candidates = [];
+  const urgentLimit = Math.max(0, limit - 1);
+  const addCandidate = (entry, lane) => {
+    const txid = String(entry?.[0] ?? "").trim().toLowerCase();
+    if (!isHexTxid(txid) || selected.has(txid) || candidates.length >= limit) {
+      return false;
+    }
+    selected.add(txid);
+    candidates.push({ entry, lane });
+    return true;
+  };
+
+  // Known rows that are stale or missing their event projection are
+  // high-signal. Revalidate them first even when an old scanner checkpoint
+  // says the txid was already seen.
+  const prioritySet = new Set(
+    (Array.isArray(priorityTxids) ? priorityTxids : [])
+      .map((txid) => String(txid ?? "").trim().toLowerCase())
+      .filter(isHexTxid),
+  );
+  for (const entry of mempoolEntriesAfterCursor(entries, state?.cursor)) {
+    if (candidates.length >= urgentLimit) {
+      break;
+    }
+    const txid = String(entry[0]).trim().toLowerCase();
+    if (prioritySet.has(txid)) {
+      addCandidate(entry, "priority");
+    }
+  }
+
+  // Preserve low-latency discovery for new arrivals, but restrict this lane
+  // to the retained head window so it cannot repeatedly consume the old tail.
+  const headBudget = Math.min(
+    100,
+    Math.floor(limit / 5),
+    urgentLimit - candidates.length,
+  );
+  let headAdded = 0;
+  for (const entry of entries.slice(0, retainedHeadSize)) {
+    if (headAdded >= headBudget) {
+      break;
+    }
+    const txid = String(entry[0]).trim().toLowerCase();
+    if (processedTxids.has(txid) || selected.has(txid)) {
+      continue;
+    }
+    if (addCandidate(entry, "head")) {
+      headAdded += 1;
+    }
+    if (candidates.length >= urgentLimit) {
+      break;
+    }
+  }
+
+  // The persisted cursor is independent of the bounded processed set. It
+  // guarantees that a mempool larger than the seen limit is still swept in a
+  // finite number of cycles, and its time/txid fallback survives removal of
+  // the exact cursor transaction between cycles.
+  for (const entry of mempoolEntriesAfterCursor(entries, state?.cursor)) {
+    const txid = String(entry[0]).trim().toLowerCase();
+    if (processedTxids.has(txid) || selected.has(txid)) {
+      continue;
+    }
+    addCandidate(entry, "cursor");
+    if (candidates.length >= limit) {
+      break;
+    }
+  }
+  const firstCursorIndex = candidates.findIndex(
+    (candidate) => candidate.lane === "cursor",
+  );
+  if (firstCursorIndex > 0) {
+    const [firstCursor] = candidates.splice(firstCursorIndex, 1);
+    candidates.unshift(firstCursor);
+  }
+  return candidates;
+}
+
+async function knownMempoolRecoveryTxids(client, mempool) {
+  const result = await client.query(
+    `
+      SELECT t.txid
+      FROM proof_indexer.transactions t
+      WHERE t.network = $1
+        AND (
+          t.status IN ('dropped', 'orphaned')
+          OR (
+            t.status = 'pending'
+            AND NOT EXISTS (
+              SELECT 1
+              FROM proof_indexer.events e
+              WHERE e.network = t.network
+                AND e.txid = t.txid
+            )
+          )
+        )
+      ORDER BY t.last_seen_at ASC, t.txid ASC
+    `,
+    [NETWORK],
+  );
+  return result.rows
+    .map((row) => String(row?.txid ?? "").trim().toLowerCase())
+    .filter((txid) => isHexTxid(txid) && Boolean(mempool?.[txid]));
+}
+
+async function storeMempoolScanState(
+  client,
+  key,
+  processedTxids,
+  cursor,
+) {
   await client.query(
     `
       INSERT INTO proof_indexer.meta (key, value, updated_at)
@@ -8245,6 +8504,7 @@ async function storeMempoolScanState(client, key, processedTxids) {
     [
       key,
       JSON.stringify({
+        cursor: normalizedMempoolScanCursor(cursor),
         processedTxids,
         scannedAt: new Date().toISOString(),
       }),
@@ -8290,24 +8550,53 @@ async function backfillMempoolScanSource(client, source) {
   const candidateLimit = Number.isFinite(MEMPOOL_SCAN_MAX_TXIDS)
     ? Math.max(0, Math.floor(MEMPOOL_SCAN_MAX_TXIDS))
     : 500;
-  const candidates = entries
-    .filter(([txid]) => !state.processedTxids.has(txid))
-    .slice(0, candidateLimit);
+  const seenLimit = Number.isFinite(MEMPOOL_SCAN_SEEN_LIMIT)
+    ? Math.max(100, Math.floor(MEMPOOL_SCAN_SEEN_LIMIT))
+    : 10_000;
+  const priorityTxids = await knownMempoolRecoveryTxids(client, mempool);
+  const candidates = plannedMempoolScanCandidates(
+    entries,
+    state,
+    priorityTxids,
+    { candidateLimit, seenLimit },
+  );
   const processed = new Set(
     [...state.processedTxids].filter((txid) => mempool?.[txid]),
   );
+  let cursor = state.cursor;
+  let canonicalDeferred = 0;
+  let cursorScanned = 0;
+  let headScanned = 0;
   let indexed = 0;
+  let priorityScanned = 0;
   let protocolTxids = 0;
   let scanned = 0;
   let unresolved = 0;
 
-  for (const [txid] of candidates) {
+  for (const candidate of candidates) {
     if (protocolTxids >= Math.max(1, MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS)) {
       break;
     }
+    const [txid] = candidate.entry;
     scanned += 1;
-    const tx = await rawTransactionFromCore(txid);
+    if (candidate.lane === "cursor") {
+      cursorScanned += 1;
+    } else if (candidate.lane === "head") {
+      headScanned += 1;
+    } else if (candidate.lane === "priority") {
+      priorityScanned += 1;
+    }
+    const tx = await freshRawTransactionFromCore(txid);
     if (!tx) {
+      continue;
+    }
+    if (candidate.lane === "cursor") {
+      cursor = mempoolScanCursorForEntry(candidate.entry) ?? cursor;
+    }
+    if (transactionHasConfirmedBlockEvidence(tx)) {
+      // The transaction confirmed after the mempool snapshot. Only the
+      // canonical block scanner may persist confirmed state and block proof.
+      canonicalDeferred += 1;
       continue;
     }
     const messages = protocolMessagesFromTx(tx);
@@ -8316,17 +8605,44 @@ async function backfillMempoolScanSource(client, source) {
       continue;
     }
     protocolTxids += 1;
+    let transactionOpen = false;
     try {
       const hydrated = await transactionWithInputPrevouts(tx);
       const prepared = (await preparedProtocolItemsForTx(hydrated, messages))
         .filter((entry) => (entry.item ?? entry)?.valid !== false);
+      const beforeWrite = await freshRawTransactionFromCore(txid);
+      if (!beforeWrite) {
+        throw new Error(
+          `Fresh mempool status is unavailable before writing ${txid}.`,
+        );
+      }
+      if (transactionHasConfirmedBlockEvidence(beforeWrite)) {
+        canonicalDeferred += 1;
+        continue;
+      }
       await client.query("BEGIN");
+      transactionOpen = true;
       const result = await persistPreparedProtocolItems(client, prepared);
+      const beforeCommit = await freshRawTransactionFromCore(txid);
+      if (!beforeCommit) {
+        throw new Error(
+          `Fresh mempool status is unavailable before committing ${txid}.`,
+        );
+      }
+      if (transactionHasConfirmedBlockEvidence(beforeCommit)) {
+        await client.query("ROLLBACK");
+        transactionOpen = false;
+        canonicalDeferred += 1;
+        continue;
+      }
       await client.query("COMMIT");
+      transactionOpen = false;
       indexed += result.indexed;
       processed.add(txid);
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => {});
+      if (transactionOpen) {
+        await client.query("ROLLBACK").catch(() => {});
+      }
       unresolved += 1;
       console.error(
         JSON.stringify({
@@ -8338,17 +8654,20 @@ async function backfillMempoolScanSource(client, source) {
     }
   }
 
-  const seenLimit = Number.isFinite(MEMPOOL_SCAN_SEEN_LIMIT)
-    ? Math.max(100, Math.floor(MEMPOOL_SCAN_SEEN_LIMIT))
-    : 10_000;
   const nextProcessed = entries
     .map(([txid]) => txid)
     .filter((txid) => processed.has(txid))
     .slice(0, seenLimit);
-  await storeMempoolScanState(client, state.key, nextProcessed);
+  await storeMempoolScanState(client, state.key, nextProcessed, cursor);
   return {
+    canonicalDeferred,
+    cursor,
+    cursorScanned,
+    headScanned,
     indexed,
     mempoolSize: entries.length,
+    priorityCandidates: priorityTxids.length,
+    priorityScanned,
     protocolTxids,
     scanned,
     source: source.label,
@@ -10076,6 +10395,373 @@ async function repairCanonicalIncbIssuance(client) {
   }
 }
 
+async function canonicalTransactionRepairTarget(txid) {
+  const raw = await bitcoinRpc("getrawtransaction", [txid, true]);
+  const blockHash = String(raw?.blockhash ?? "").trim().toLowerCase();
+  if (
+    String(raw?.txid ?? "").trim().toLowerCase() !== txid ||
+    Number(raw?.confirmations) <= 0 ||
+    !isHexTxid(blockHash)
+  ) {
+    throw new Error(
+      `Canonical transaction-row repair target ${txid} is not confirmed in Bitcoin Core.`,
+    );
+  }
+
+  const block = await bitcoinRpc("getblock", [blockHash, 2]);
+  const height = Number(block?.height);
+  if (!Number.isSafeInteger(height) || height < 0) {
+    throw new Error(
+      `Canonical transaction-row repair target ${txid} has no exact block height.`,
+    );
+  }
+  assertCanonicalBlockEnvelope(block, height, blockHash);
+  const canonicalBlockHash = String(
+    await bitcoinRpc("getblockhash", [height]),
+  )
+    .trim()
+    .toLowerCase();
+  if (canonicalBlockHash !== blockHash) {
+    throw new Error(
+      `Canonical transaction-row repair target ${txid} is not in the canonical block at height ${height}.`,
+    );
+  }
+
+  const matchingIndexes = block.tx.flatMap((candidate, index) =>
+    String(candidate?.txid ?? "").trim().toLowerCase() === txid ? [index] : [],
+  );
+  if (matchingIndexes.length !== 1) {
+    throw new Error(
+      `Canonical transaction-row repair target ${txid} does not have one exact block membership.`,
+    );
+  }
+  const blockIndex = matchingIndexes[0];
+  const blockTransaction = block.tx[blockIndex];
+  const rawHash = String(raw?.hash ?? "").trim().toLowerCase();
+  const memberHash = String(blockTransaction?.hash ?? "").trim().toLowerCase();
+  if (
+    (rawHash && memberHash && rawHash !== memberHash) ||
+    (raw?.hex && blockTransaction?.hex && raw.hex !== blockTransaction.hex)
+  ) {
+    throw new Error(
+      `Canonical transaction-row repair target ${txid} differs from its exact block member.`,
+    );
+  }
+
+  const hydrated = await transactionWithInputPrevouts({
+    ...blockTransaction,
+    _powBlockHash: blockHash,
+    _powBlockIndex: blockIndex,
+    _powPreviousBlockHash: String(block?.previousblockhash ?? "")
+      .trim()
+      .toLowerCase(),
+    blocktime: block?.time,
+    height,
+  });
+  assertHydratedProtocolTransaction(hydrated);
+  return {
+    block,
+    blockHash,
+    blockIndex,
+    details: canonicalTransactionDetailRows(hydrated),
+    height,
+    hydrated,
+    txid,
+  };
+}
+
+function canonicalTransactionRepairDetailsFingerprint(details) {
+  const nullableText = (value) =>
+    value === undefined || value === null ? null : String(value);
+  const normalized = {
+    inputs: (Array.isArray(details?.inputs) ? details.inputs : [])
+      .map((row) => ({
+        address: nullableText(row?.address),
+        prev_txid: nullableText(row?.prev_txid),
+        prev_vout: nullableText(row?.prev_vout),
+        script_sig: nullableText(row?.script_sig),
+        sequence: nullableText(row?.sequence),
+        value_sats: nullableText(row?.value_sats),
+        vin: Number(row?.vin),
+        witness: Array.isArray(row?.witness) ? row.witness.map(String) : [],
+      }))
+      .sort((left, right) => left.vin - right.vin),
+    opReturns: (Array.isArray(details?.opReturns) ? details.opReturns : [])
+      .map((row) => ({
+        data_bytes: Number(row?.data_bytes),
+        output_index: Number(row?.output_index),
+        payload_hex: nullableText(row?.payload_hex),
+        payload_text: nullableText(row?.payload_text),
+        protocol: nullableText(row?.protocol),
+        vout: Number(row?.vout),
+      }))
+      .sort(
+        (left, right) =>
+          left.vout - right.vout || left.output_index - right.output_index,
+      ),
+    outputs: (Array.isArray(details?.outputs) ? details.outputs : [])
+      .map((row) => ({
+        address: nullableText(row?.address),
+        scriptpubkey: nullableText(row?.scriptpubkey),
+        scriptpubkey_asm: nullableText(row?.scriptpubkey_asm),
+        scriptpubkey_type: nullableText(row?.scriptpubkey_type),
+        value_sats: nullableText(row?.value_sats),
+        vout: Number(row?.vout),
+      }))
+      .sort((left, right) => left.vout - right.vout),
+  };
+  return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+}
+
+async function storedCanonicalTransactionRepairDetails(client, txid) {
+  const inputs = await client.query(
+    `
+      SELECT
+        vin, prev_txid, prev_vout, address, value_sats, sequence,
+        script_sig, witness
+      FROM proof_indexer.tx_inputs
+      WHERE network = $1 AND txid = $2
+      ORDER BY vin
+    `,
+    [NETWORK, txid],
+  );
+  const outputs = await client.query(
+    `
+      SELECT
+        vout, value_sats, address, scriptpubkey, scriptpubkey_asm,
+        scriptpubkey_type
+      FROM proof_indexer.tx_outputs
+      WHERE network = $1 AND txid = $2
+      ORDER BY vout
+    `,
+    [NETWORK, txid],
+  );
+  const opReturns = await client.query(
+    `
+      SELECT
+        vout, output_index, protocol, payload_text, payload_hex, data_bytes
+      FROM proof_indexer.op_returns
+      WHERE network = $1 AND txid = $2
+      ORDER BY vout, output_index
+    `,
+    [NETWORK, txid],
+  );
+  return {
+    inputs: inputs.rows,
+    opReturns: opReturns.rows,
+    outputs: outputs.rows,
+  };
+}
+
+async function canonicalTransactionRepairEventState(client, txids) {
+  const result = await client.query(
+    `
+      SELECT event_id, to_jsonb(event_row) AS snapshot
+      FROM proof_indexer.events AS event_row
+      WHERE network = $1 AND txid = ANY($2::text[])
+      ORDER BY event_id
+      FOR SHARE
+    `,
+    [NETWORK, txids],
+  );
+  return {
+    count: result.rows.length,
+    fingerprint: createHash("sha256")
+      .update(JSON.stringify(result.rows))
+      .digest("hex"),
+  };
+}
+
+async function assertCanonicalTransactionRepairStillCurrent(target) {
+  const currentBlockHash = String(
+    await bitcoinRpc("getblockhash", [target.height]),
+  )
+    .trim()
+    .toLowerCase();
+  if (currentBlockHash !== target.blockHash) {
+    throw new Error(
+      `Canonical transaction-row repair target ${target.txid} changed block before commit.`,
+    );
+  }
+  const [block, raw] = await Promise.all([
+    bitcoinRpc("getblock", [currentBlockHash, 1]),
+    bitcoinRpc("getrawtransaction", [target.txid, true]),
+  ]);
+  const txids = (Array.isArray(block?.tx) ? block.tx : []).map((candidate) =>
+    String(candidate?.txid ?? candidate ?? "").trim().toLowerCase(),
+  );
+  if (
+    String(block?.hash ?? "").trim().toLowerCase() !== target.blockHash ||
+    Number(block?.height) !== target.height ||
+    Number(block?.nTx) !== txids.length ||
+    txids.filter((txid) => txid === target.txid).length !== 1 ||
+    txids[target.blockIndex] !== target.txid ||
+    String(raw?.txid ?? "").trim().toLowerCase() !== target.txid ||
+    String(raw?.blockhash ?? "").trim().toLowerCase() !== target.blockHash ||
+    Number(raw?.confirmations) <= 0
+  ) {
+    throw new Error(
+      `Canonical transaction-row repair target ${target.txid} changed exact chain position before commit.`,
+    );
+  }
+}
+
+async function repairCanonicalTransactions(client) {
+  const targets = [];
+  for (const txid of REPAIR_CANONICAL_TXIDS) {
+    targets.push(await canonicalTransactionRepairTarget(txid));
+  }
+  targets.sort(
+    (left, right) =>
+      left.height - right.height ||
+      left.blockIndex - right.blockIndex ||
+      left.txid.localeCompare(right.txid),
+  );
+  const txids = targets.map((target) => target.txid);
+
+  await client.query("BEGIN");
+  try {
+    const stored = await client.query(
+      `
+        SELECT txid, status
+        FROM proof_indexer.transactions
+        WHERE network = $1 AND txid = ANY($2::text[])
+        FOR UPDATE
+      `,
+      [NETWORK, txids],
+    );
+    const previousStatusByTxid = new Map(
+      stored.rows.map((row) => [String(row?.txid ?? "").toLowerCase(), row?.status]),
+    );
+    if (
+      stored.rows.length !== targets.length ||
+      targets.some((target) => !previousStatusByTxid.has(target.txid))
+    ) {
+      throw new Error(
+        `Canonical transaction-row repair requires all ${targets.length} target rows to already exist.`,
+      );
+    }
+    if (
+      targets.some(
+        (target) => previousStatusByTxid.get(target.txid) !== "confirmed",
+      )
+    ) {
+      throw new Error(
+        "Canonical transaction-row repair requires every target row to already be confirmed.",
+      );
+    }
+    const eventStateBefore = await canonicalTransactionRepairEventState(
+      client,
+      txids,
+    );
+
+    for (const target of targets) {
+      await persistCanonicalBlock(
+        client,
+        target.block,
+        target.height,
+        target.blockHash,
+      );
+      await persistCanonicalRawTransaction(client, target.hydrated, {
+        blockHash: target.blockHash,
+        blockTime: target.block?.time,
+        height: target.height,
+      });
+
+      const verified = await client.query(
+        `
+          SELECT
+            transaction_row.status,
+            transaction_row.block_hash,
+            transaction_row.block_height,
+            transaction_row.source,
+            transaction_row.raw_tx,
+            canonical_block.canonical AS block_canonical,
+            (
+              SELECT count(*)
+              FROM proof_indexer.blocks AS competing_block
+              WHERE competing_block.network = transaction_row.network
+                AND competing_block.height = transaction_row.block_height
+                AND competing_block.canonical = true
+            ) AS canonical_block_count
+          FROM proof_indexer.transactions AS transaction_row
+          JOIN proof_indexer.blocks AS canonical_block
+            ON canonical_block.network = transaction_row.network
+           AND canonical_block.block_hash = transaction_row.block_hash
+           AND canonical_block.height = transaction_row.block_height
+          WHERE transaction_row.network = $1 AND transaction_row.txid = $2
+          FOR UPDATE OF transaction_row
+        `,
+        [NETWORK, target.txid],
+      );
+      const row = verified.rows[0];
+      const rawTx = row?.raw_tx;
+      const storedDetails = await storedCanonicalTransactionRepairDetails(
+        client,
+        target.txid,
+      );
+      if (
+        verified.rows.length !== 1 ||
+        row?.status !== "confirmed" ||
+        String(row?.block_hash ?? "").trim().toLowerCase() !== target.blockHash ||
+        Number(row?.block_height) !== target.height ||
+        row?.source !== "canonical-block-scan" ||
+        row?.block_canonical !== true ||
+        Number(row?.canonical_block_count) !== 1 ||
+        String(rawTx?.txid ?? "").trim().toLowerCase() !== target.txid ||
+        Number(rawTx?._powBlockIndex) !== target.blockIndex ||
+        String(rawTx?._powBlockHash ?? "").trim().toLowerCase() !==
+          target.blockHash ||
+        String(rawTx?.canonicalBlockScan?.blockHash ?? "")
+          .trim()
+          .toLowerCase() !== target.blockHash ||
+        Number(rawTx?.canonicalBlockScan?.height) !== target.height ||
+        rawTx?.canonicalBlockScan?.network !== NETWORK ||
+        canonicalTransactionRepairDetailsFingerprint(storedDetails) !==
+          canonicalTransactionRepairDetailsFingerprint(target.details)
+      ) {
+        throw new Error(
+          `Canonical transaction-row repair verification failed for ${target.txid}.`,
+        );
+      }
+    }
+
+    const eventStateAfter = await canonicalTransactionRepairEventState(
+      client,
+      txids,
+    );
+    if (
+      eventStateAfter.count !== eventStateBefore.count ||
+      eventStateAfter.fingerprint !== eventStateBefore.fingerprint
+    ) {
+      throw new Error(
+        "Canonical transaction-row repair changed an event row and was rolled back.",
+      );
+    }
+    // Make the final full-node canonicality proof the last operation before
+    // commit so a reorg cannot land between that proof and other verification.
+    for (const target of targets) {
+      await assertCanonicalTransactionRepairStillCurrent(target);
+    }
+    await client.query("COMMIT");
+    return {
+      eventRowsPreserved: eventStateAfter.count,
+      repaired: targets.length,
+      source: "repair-canonical-transactions",
+      targets: targets.map((target) => ({
+        blockHash: target.blockHash,
+        blockHeight: target.height,
+        blockIndex: target.blockIndex,
+        previousStatus: previousStatusByTxid.get(target.txid),
+        txid: target.txid,
+      })),
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
 async function canonicalIdRepairTarget(txid) {
   const raw = await rawTransactionFromCore(txid);
   const blockHash = String(raw?.blockhash ?? "").trim().toLowerCase();
@@ -10291,6 +10977,8 @@ if (DRY_RUN) {
         maxPages: MAX_PAGES,
         network: NETWORK,
         pageLimit: PAGE_LIMIT,
+        repairCanonicalTxids: REPAIR_CANONICAL_TXIDS,
+        repairCanonicalTxidsOnly: REPAIR_CANONICAL_TXIDS_ONLY,
         repairMintMinters: REPAIR_MINT_MINTERS,
         rushBootstrap: {
           batchSize: RUSH_BOOTSTRAP_BATCH_SIZE,
@@ -10398,6 +11086,21 @@ try {
             ok: true,
             resumed: prepared?.resumed === true,
             state: prepared?.value ?? null,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (REPAIR_CANONICAL_TXIDS_ONLY) {
+      const repair = await repairCanonicalTransactions(client);
+      console.log(
+        JSON.stringify(
+          {
+            apiBase: API_BASE,
+            canonicalTransactionRepair: true,
+            network: NETWORK,
+            ok: true,
+            repair,
           },
           null,
           2,

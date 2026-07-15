@@ -5368,6 +5368,515 @@ check("rebroadcast pending transactions clear every prior drop observation", asy
   assert.match(statement, /- 'statusObservation'/u);
 });
 
+check("mempool scan cursor crosses the processed-txid retention boundary", () => {
+  const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
+  const normalizedMempoolScanCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "normalizedMempoolScanCursor",
+    { isHexTxid },
+  );
+  const mempoolEntriesAfterCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "mempoolEntriesAfterCursor",
+    { normalizedMempoolScanCursor },
+  );
+  const plannedMempoolScanCandidates = isolatedFunction(
+    BACKFILL_PATH,
+    "plannedMempoolScanCandidates",
+    { isHexTxid, mempoolEntriesAfterCursor },
+  );
+  const txid = (index) => index.toString(16).padStart(64, "0");
+  const entries = Array.from({ length: 10_005 }, (_value, index) => [
+    txid(index),
+    { time: 20_000 - index },
+  ]);
+  const processedTxids = new Set(
+    entries.slice(0, 10_000).map(([entryTxid]) => entryTxid),
+  );
+  const candidates = plannedMempoolScanCandidates(
+    entries,
+    { cursor: null, processedTxids },
+    [],
+    { candidateLimit: 5, seenLimit: 10_000 },
+  );
+  assert.deepEqual(
+    Array.from(candidates, (candidate) => candidate.entry[0]),
+    entries.slice(10_000).map(([entryTxid]) => entryTxid),
+  );
+  assert.ok(candidates.every((candidate) => candidate.lane === "cursor"));
+});
+
+check("mempool scan cursor wraps and survives anchor eviction", () => {
+  const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
+  const normalizedMempoolScanCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "normalizedMempoolScanCursor",
+    { isHexTxid },
+  );
+  const mempoolEntriesAfterCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "mempoolEntriesAfterCursor",
+    { normalizedMempoolScanCursor },
+  );
+  const a = "a".repeat(64);
+  const b = "b".repeat(64);
+  const c = "c".repeat(64);
+  const d = "d".repeat(64);
+  const e = "e".repeat(64);
+  const entries = [
+    [a, { time: 5 }],
+    [b, { time: 4 }],
+    [c, { time: 3 }],
+    [e, { time: 1 }],
+  ];
+  assert.deepEqual(
+    Array.from(
+      mempoolEntriesAfterCursor(entries, { time: 2, txid: d }),
+      ([txid]) => txid,
+    ),
+    [e, a, b, c],
+  );
+  assert.deepEqual(
+    Array.from(
+      mempoolEntriesAfterCursor(entries, { time: 1, txid: e }),
+      ([txid]) => txid,
+    ),
+    [a, b, c, e],
+  );
+});
+
+check("legacy mempool scan state round-trips without inventing a cursor", async () => {
+  const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
+  const normalizedMempoolScanCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "normalizedMempoolScanCursor",
+    { isHexTxid },
+  );
+  const mempoolScanState = isolatedFunction(
+    BACKFILL_PATH,
+    "mempoolScanState",
+    { NETWORK: "livenet", normalizedMempoolScanCursor },
+  );
+  const storeMempoolScanState = isolatedFunction(
+    BACKFILL_PATH,
+    "storeMempoolScanState",
+    { normalizedMempoolScanCursor },
+  );
+  const txid = "1".repeat(64);
+  const legacy = await mempoolScanState({
+    async query(_sql, params) {
+      assert.deepEqual(Array.from(params), ["mempoolScan:livenet"]);
+      return { rows: [{ value: { processedTxids: [txid] } }] };
+    },
+  });
+  assert.equal(legacy.cursor, null);
+  assert.deepEqual(Array.from(legacy.processedTxids), [txid]);
+
+  let storedPayload = null;
+  await storeMempoolScanState(
+    {
+      async query(sql, params) {
+        assert.match(String(sql), /INSERT INTO proof_indexer\.meta/u);
+        assert.equal(params[0], "mempoolScan:livenet");
+        storedPayload = JSON.parse(params[1]);
+        return { rows: [] };
+      },
+    },
+    legacy.key,
+    Array.from(legacy.processedTxids),
+    legacy.cursor,
+  );
+  assert.equal(storedPayload.cursor, null);
+  assert.deepEqual(storedPayload.processedTxids, [txid]);
+  assert.ok(Number.isFinite(Date.parse(storedPayload.scannedAt)));
+
+  const reloaded = await mempoolScanState({
+    async query() {
+      return { rows: [{ value: storedPayload }] };
+    },
+  });
+  assert.equal(reloaded.cursor, null);
+  assert.deepEqual(Array.from(reloaded.processedTxids), [txid]);
+});
+
+check("fresh mempool candidate reads bypass the process transaction cache", async () => {
+  const txid = "2".repeat(64);
+  const calls = [];
+  const freshRawTransactionFromCore = isolatedFunction(
+    BACKFILL_PATH,
+    "freshRawTransactionFromCore",
+    {
+      BITCOIN_RPC_URL: "http://127.0.0.1:8332",
+      bitcoinRpc: async (method, params) => {
+        calls.push([method, params]);
+        return { txid, vin: [], vout: [] };
+      },
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+    },
+  );
+  assert.equal((await freshRawTransactionFromCore(txid)).txid, txid);
+  assert.equal((await freshRawTransactionFromCore(txid)).txid, txid);
+  assert.deepEqual(
+    Array.from(calls, ([method, params]) => [method, Array.from(params)]),
+    [
+      ["getrawtransaction", [txid, true]],
+      ["getrawtransaction", [txid, true]],
+    ],
+  );
+});
+
+check("saturated recovery lanes reserve finite cursor progress without duplicates", () => {
+  const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
+  const normalizedMempoolScanCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "normalizedMempoolScanCursor",
+    { isHexTxid },
+  );
+  const mempoolEntriesAfterCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "mempoolEntriesAfterCursor",
+    { normalizedMempoolScanCursor },
+  );
+  const plannedMempoolScanCandidates = isolatedFunction(
+    BACKFILL_PATH,
+    "plannedMempoolScanCandidates",
+    { isHexTxid, mempoolEntriesAfterCursor },
+  );
+  const txid = (index) => index.toString(16).padStart(64, "0");
+  const priorityTxids = Array.from({ length: 6 }, (_value, index) => txid(index + 1));
+  const routineTxids = Array.from({ length: 4 }, (_value, index) => txid(index + 100));
+  const entries = [...priorityTxids, ...routineTxids].map((entryTxid, index) => [
+    entryTxid,
+    { time: 1_000 - index },
+  ]);
+  const processedTxids = new Set(priorityTxids);
+  let cursor = null;
+  const cursorOrder = [];
+
+  for (let cycle = 0; cycle < routineTxids.length; cycle += 1) {
+    const candidates = plannedMempoolScanCandidates(
+      entries,
+      { cursor, processedTxids },
+      [...priorityTxids, priorityTxids[0]],
+      { candidateLimit: 5, seenLimit: 100 },
+    );
+    const candidateTxids = Array.from(
+      candidates,
+      (candidate) => candidate.entry[0],
+    );
+    assert.equal(candidates.length, 5);
+    assert.equal(new Set(candidateTxids).size, candidates.length);
+    assert.equal(candidates[0].lane, "cursor");
+    assert.equal(
+      candidates.filter((candidate) => candidate.lane === "priority").length,
+      4,
+    );
+    cursor = normalizedMempoolScanCursor({
+      time: candidates[0].entry[1].time,
+      txid: candidates[0].entry[0],
+    });
+    cursorOrder.push(cursor.txid);
+    processedTxids.add(cursor.txid);
+  }
+  assert.deepEqual(cursorOrder, routineTxids);
+});
+
+check("mempool scan prioritizes Core-present rows with missing events", async () => {
+  const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
+  const normalizedMempoolScanCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "normalizedMempoolScanCursor",
+    { isHexTxid },
+  );
+  const mempoolEntriesAfterCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "mempoolEntriesAfterCursor",
+    { normalizedMempoolScanCursor },
+  );
+  const plannedMempoolScanCandidates = isolatedFunction(
+    BACKFILL_PATH,
+    "plannedMempoolScanCandidates",
+    { isHexTxid, mempoolEntriesAfterCursor },
+  );
+  const knownMempoolRecoveryTxids = isolatedFunction(
+    BACKFILL_PATH,
+    "knownMempoolRecoveryTxids",
+    { isHexTxid, NETWORK: "livenet" },
+  );
+  const target = "a".repeat(64);
+  const absent = "b".repeat(64);
+  let recoverySql = "";
+  const priorityTxids = await knownMempoolRecoveryTxids(
+    {
+      async query(sql) {
+        recoverySql = String(sql);
+        return { rows: [{ txid: target }, { txid: absent }] };
+      },
+    },
+    { [target]: { time: 1 } },
+  );
+  assert.deepEqual(Array.from(priorityTxids), [target]);
+  assert.match(recoverySql, /status IN \('dropped', 'orphaned'\)/u);
+  assert.match(recoverySql, /status = 'pending'[\s\S]*NOT EXISTS/u);
+
+  const routine = "c".repeat(64);
+  const candidates = plannedMempoolScanCandidates(
+    [
+      [routine, { time: 2 }],
+      [target, { time: 1 }],
+    ],
+    { cursor: null, processedTxids: new Set([target]) },
+    priorityTxids,
+    { candidateLimit: 2, seenLimit: 100 },
+  );
+  assert.equal(candidates[0].entry[0], routine);
+  assert.equal(candidates[0].lane, "cursor");
+  assert.equal(candidates[1].entry[0], target);
+  assert.equal(candidates[1].lane, "priority");
+  assert.equal(
+    candidates.filter((candidate) => candidate.entry[0] === target).length,
+    1,
+  );
+});
+
+check("Core-present dropped protocol transactions revive through verifier and upsert", async () => {
+  const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
+  const normalizedMempoolScanCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "normalizedMempoolScanCursor",
+    { isHexTxid },
+  );
+  const mempoolScanCursorForEntry = isolatedFunction(
+    BACKFILL_PATH,
+    "mempoolScanCursorForEntry",
+    { normalizedMempoolScanCursor },
+  );
+  const mempoolEntriesAfterCursor = isolatedFunction(
+    BACKFILL_PATH,
+    "mempoolEntriesAfterCursor",
+    { normalizedMempoolScanCursor },
+  );
+  const plannedMempoolScanCandidates = isolatedFunction(
+    BACKFILL_PATH,
+    "plannedMempoolScanCandidates",
+    { isHexTxid, mempoolEntriesAfterCursor },
+  );
+  const transactionHasConfirmedBlockEvidence = isolatedFunction(
+    BACKFILL_PATH,
+    "transactionHasConfirmedBlockEvidence",
+    { isHexTxid },
+  );
+  const upsertTransaction = isolatedFunction(
+    BACKFILL_PATH,
+    "upsertTransaction",
+    {
+      NETWORK: "livenet",
+      itemTime: (item) => item.createdAt,
+      numberOrNull: (value) =>
+        Number.isFinite(Number(value)) ? Number(value) : null,
+    },
+  );
+  const target = "d".repeat(64);
+  const firstSeenAt = "2026-07-14T18:00:00.000Z";
+  let projectionCalls = 0;
+  const upsertEvent = isolatedFunction(
+    BACKFILL_PATH,
+    "upsertEvent",
+    {
+      NETWORK: "livenet",
+      amountSats: () => 0,
+      dataBytes: () => 0,
+      eventKind: (item) => item.kind,
+      itemStatus: (item) => item.status ?? (
+        item.confirmed === false ? "pending" : "confirmed"
+      ),
+      itemTime: (item) => item.createdAt,
+      itemTxid: (item) => item.txid,
+      normalizedEventItem: (item) => item,
+      numberOrNull: (value) => (
+        Number.isFinite(Number(value)) ? Number(value) : null
+      ),
+      participantsForItem: () => [],
+      protocolForItem: () => "pwid1",
+      refsForItem: () => [],
+      stableEventKey: ({ kind, txid }) => `${kind}:${txid}`,
+      stableEventKeyKind: (_item, kind) => kind,
+      upsertProjection: async () => {
+        projectionCalls += 1;
+      },
+      upsertTransaction,
+    },
+  );
+  let verifierCalls = 0;
+  let storedState = null;
+  const pendingTransaction = { txid: target, vin: [], vout: [] };
+  const confirmedTransaction = {
+    ...pendingTransaction,
+    blockhash: "e".repeat(64),
+    confirmations: 1,
+  };
+  let freshTransactions = [];
+  let freshReadCount = 0;
+  const statements = [];
+  const client = {
+    async query(sql, params) {
+      const text = String(sql);
+      statements.push({ params, sql: text });
+      if (/INSERT INTO proof_indexer\.events/iu.test(text)) {
+        return {
+          rowCount: 1,
+          rows: [{
+            event_id: "revived-event",
+            payload: JSON.parse(params[14]),
+            status: params[5],
+          }],
+        };
+      }
+      return { rowCount: 1, rows: [] };
+    },
+  };
+  const backfillMempoolScanSource = isolatedFunction(
+    BACKFILL_PATH,
+    "backfillMempoolScanSource",
+    {
+      BITCOIN_RPC_URL: "http://127.0.0.1:8332",
+      MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 5,
+      MEMPOOL_SCAN_MAX_TXIDS: 500,
+      MEMPOOL_SCAN_SEEN_LIMIT: 10_000,
+      bitcoinRpc: async () => ({ [target]: { time: 1_720_980_000 } }),
+      freshRawTransactionFromCore: async (txid) => {
+        assert.equal(txid, target);
+        freshReadCount += 1;
+        assert.ok(
+          freshTransactions.length > 0,
+          "Every persistence boundary must consume an explicit fresh Core read",
+        );
+        return freshTransactions.shift();
+      },
+      isHexTxid,
+      knownMempoolRecoveryTxids: async () => [target],
+      mempoolScanCursorForEntry,
+      mempoolScanState: async () => ({
+        cursor: null,
+        key: "mempoolScan:livenet",
+        processedTxids: new Set([target]),
+      }),
+      plannedMempoolScanCandidates,
+      preparedProtocolItemsForTx: async () => {
+        verifierCalls += 1;
+        return [{
+          item: {
+            confirmed: false,
+            createdAt: firstSeenAt,
+            id: "revived",
+            kind: "id-register",
+            txid: target,
+            valid: true,
+          },
+          sourceLabel: "registry-records",
+        }];
+      },
+      protocolMessagesFromTx: () => [
+        { prefix: "pwid1:", text: "pwid1:r2:cmV2aXZlZA:owner:owner" },
+      ],
+      storeMempoolScanState: async (_client, key, processedTxids, cursor) => {
+        storedState = { cursor, key, processedTxids };
+      },
+      transactionHasConfirmedBlockEvidence,
+      transactionWithInputPrevouts: async (tx) => tx,
+      persistPreparedProtocolItems: async (_client, prepared) => {
+        const item = prepared[0].item;
+        await upsertEvent(client, "registry-records", item);
+        return { indexed: 1, skipped: 0 };
+      },
+    },
+  );
+  freshTransactions = [
+    pendingTransaction,
+    pendingTransaction,
+    pendingTransaction,
+  ];
+  const result = await backfillMempoolScanSource(client, {
+    label: "mempool-scan",
+  });
+  assert.equal(verifierCalls, 1);
+  assert.equal(freshReadCount, 3);
+  assert.equal(result.indexed, 1);
+  assert.equal(result.priorityScanned, 1);
+  assert.equal(result.unresolved, 0);
+  assert.deepEqual(Array.from(storedState.processedTxids), [target]);
+  assert.equal(storedState.cursor, null);
+
+  const transactionUpsert = statements.find(({ sql }) =>
+    /INSERT INTO proof_indexer\.transactions/iu.test(sql),
+  );
+  assert.equal(transactionUpsert.params[2], "pending");
+  assert.match(transactionUpsert.sql, /ELSE EXCLUDED\.status/u);
+  assert.match(transactionUpsert.sql, /dropped_at = CASE[\s\S]*THEN NULL/u);
+  assert.match(transactionUpsert.sql, /dropped_reason = CASE[\s\S]*THEN NULL/u);
+  assert.match(transactionUpsert.sql, /replaced_by_txid = CASE[\s\S]*THEN NULL/u);
+  assert.match(transactionUpsert.sql, /- 'statusObservation'/u);
+  const eventUpsert = statements.find(({ sql }) =>
+    /INSERT INTO proof_indexer\.events/iu.test(sql),
+  );
+  assert.equal(eventUpsert.params[2], target);
+  assert.equal(eventUpsert.params[4], "id-register");
+  assert.equal(eventUpsert.params[5], "pending");
+  assert.match(
+    eventUpsert.sql,
+    /ON CONFLICT \(network, event_key\)[\s\S]*status = EXCLUDED\.status/u,
+  );
+  assert.equal(projectionCalls, 1);
+
+  const beforeWriteStatementCount = statements.length;
+  freshTransactions = [pendingTransaction, confirmedTransaction];
+  const beforeWriteVerifierCalls = verifierCalls;
+  const beforeWriteRace = await backfillMempoolScanSource(client, {
+    label: "mempool-scan",
+  });
+  assert.equal(beforeWriteRace.canonicalDeferred, 1);
+  assert.equal(beforeWriteRace.indexed, 0);
+  assert.equal(beforeWriteRace.unresolved, 0);
+  assert.equal(verifierCalls, beforeWriteVerifierCalls + 1);
+  assert.equal(statements.length, beforeWriteStatementCount);
+
+  const beforeCommitStatementCount = statements.length;
+  freshTransactions = [
+    pendingTransaction,
+    pendingTransaction,
+    confirmedTransaction,
+  ];
+  const beforeCommitVerifierCalls = verifierCalls;
+  const beforeCommitRace = await backfillMempoolScanSource(client, {
+    label: "mempool-scan",
+  });
+  assert.equal(beforeCommitRace.canonicalDeferred, 1);
+  assert.equal(beforeCommitRace.indexed, 0);
+  assert.equal(beforeCommitRace.unresolved, 0);
+  assert.equal(verifierCalls, beforeCommitVerifierCalls + 1);
+  const rolledBackStatements = statements.slice(beforeCommitStatementCount);
+  assert.equal(rolledBackStatements[0].sql, "BEGIN");
+  assert.ok(rolledBackStatements.some(({ sql }) =>
+    /INSERT INTO proof_indexer\.events/iu.test(sql)
+  ));
+  assert.equal(rolledBackStatements.at(-1).sql, "ROLLBACK");
+  assert.equal(
+    rolledBackStatements.some(({ sql }) => sql === "COMMIT"),
+    false,
+  );
+
+  const initialStatementCount = statements.length;
+  freshTransactions = [confirmedTransaction];
+  const initialVerifierCalls = verifierCalls;
+  const initialRace = await backfillMempoolScanSource(client, {
+    label: "mempool-scan",
+  });
+  assert.equal(initialRace.canonicalDeferred, 1);
+  assert.equal(initialRace.indexed, 0);
+  assert.equal(verifierCalls, initialVerifierCalls);
+  assert.equal(statements.length, initialStatementCount);
+});
+
 check("same-height pending membership versions the canonical Log snapshot", async () => {
   const readerKinds = /const PUBLIC_LOG_EVENT_KINDS = new Set\(\[([\s\S]*?)\]\);/u.exec(
     fileSource(READER_PATH),
@@ -9607,6 +10116,7 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
       NETWORK: "livenet",
       PREPARE_CANONICAL_REBUILD_ONLY: true,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
+      REPAIR_CANONICAL_TXIDS_ONLY: false,
       REPAIR_INCB_ISSUANCE_ONLY: false,
       REPAIR_ID_TXIDS: [],
       REPAIR_ID_TXIDS_ONLY: false,
@@ -9624,6 +10134,7 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
       NETWORK: "livenet",
       PREPARE_CANONICAL_REBUILD_ONLY: true,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
+      REPAIR_CANONICAL_TXIDS_ONLY: false,
       REPAIR_INCB_ISSUANCE_ONLY: false,
       REPAIR_ID_TXIDS: [],
       REPAIR_ID_TXIDS_ONLY: false,
@@ -9640,6 +10151,7 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
       HYDRATE_TRANSACTION_DETAILS_ONLY: true,
       PREPARE_CANONICAL_REBUILD_ONLY: false,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
+      REPAIR_CANONICAL_TXIDS_ONLY: false,
       REPAIR_INCB_ISSUANCE_ONLY: false,
       REPAIR_ID_TXIDS_ONLY: false,
       REPAIR_WORK_PARTICIPANTS_ONLY: false,
@@ -9660,6 +10172,7 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
       HYDRATE_TRANSACTION_DETAILS_ONLY: true,
       PREPARE_CANONICAL_REBUILD_ONLY: false,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
+      REPAIR_CANONICAL_TXIDS_ONLY: false,
       REPAIR_INCB_ISSUANCE_ONLY: false,
       REPAIR_ID_TXIDS_ONLY: false,
       REPAIR_WORK_PARTICIPANTS_ONLY: false,
@@ -9986,6 +10499,321 @@ check("canonical transaction detail rows preserve full-node input and output tru
       }),
     /mismatched index/u,
   );
+});
+
+check("canonical transaction-row repair proves exact Core membership and index", async () => {
+  const txid = "2".repeat(64);
+  const blockHash = "3".repeat(64);
+  const previousBlockHash = "4".repeat(64);
+  const calls = [];
+  let hydrated = false;
+  const canonicalTransactionRepairTarget = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalTransactionRepairTarget",
+    {
+      assertCanonicalBlockEnvelope: () => {},
+      assertHydratedProtocolTransaction: (tx) => {
+        hydrated = true;
+        assert.equal(tx._powBlockIndex, 1);
+        assert.equal(tx._powBlockHash, blockHash);
+      },
+      bitcoinRpc: async (method, params) => {
+        calls.push([method, params]);
+        if (method === "getrawtransaction") {
+          return {
+            blockhash: blockHash,
+            confirmations: 10,
+            hash: txid,
+            hex: "deadbeef",
+            txid,
+          };
+        }
+        if (method === "getblock") {
+          return {
+            hash: blockHash,
+            height: 123,
+            nTx: 2,
+            previousblockhash: previousBlockHash,
+            time: 1_700_000_000,
+            tx: [
+              { hash: "1".repeat(64), txid: "1".repeat(64) },
+              { hash: txid, hex: "deadbeef", txid, vin: [{}], vout: [{}] },
+            ],
+          };
+        }
+        if (method === "getblockhash") return blockHash;
+        throw new Error(`unexpected RPC ${method}`);
+      },
+      canonicalTransactionDetailRows: (tx) => ({
+        inputs: [{ vin: tx._powBlockIndex }],
+        opReturns: [],
+        outputs: [],
+      }),
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      transactionWithInputPrevouts: async (tx) => ({ ...tx, hydrated: true }),
+    },
+  );
+  const target = await canonicalTransactionRepairTarget(txid);
+  assert.equal(hydrated, true);
+  assert.equal(target.blockHash, blockHash);
+  assert.equal(target.height, 123);
+  assert.equal(target.blockIndex, 1);
+  assert.equal(target.hydrated._powPreviousBlockHash, previousBlockHash);
+  assert.deepEqual(
+    Array.from(calls, ([method]) => method),
+    ["getrawtransaction", "getblock", "getblockhash"],
+  );
+});
+
+check("canonical transaction-row repair rejects a non-canonical block", async () => {
+  const txid = "5".repeat(64);
+  const blockHash = "6".repeat(64);
+  const canonicalTransactionRepairTarget = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalTransactionRepairTarget",
+    {
+      assertCanonicalBlockEnvelope: () => {},
+      assertHydratedProtocolTransaction: () => {},
+      bitcoinRpc: async (method) => {
+        if (method === "getrawtransaction") {
+          return { blockhash: blockHash, confirmations: 1, txid };
+        }
+        if (method === "getblock") {
+          return {
+            hash: blockHash,
+            height: 456,
+            nTx: 1,
+            tx: [{ txid, vin: [{}], vout: [{}] }],
+          };
+        }
+        if (method === "getblockhash") return "7".repeat(64);
+        throw new Error(`unexpected RPC ${method}`);
+      },
+      canonicalTransactionDetailRows: () => ({
+        inputs: [],
+        opReturns: [],
+        outputs: [],
+      }),
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      transactionWithInputPrevouts: async (tx) => tx,
+    },
+  );
+  await rejection(
+    canonicalTransactionRepairTarget(txid),
+    (error) => /not in the canonical block/u.test(error.message),
+    "A stale block membership must fail closed",
+  );
+});
+
+check("canonical transaction-row repair rejects non-confirmed locked rows before persistence", async () => {
+  const txid = "8".repeat(64);
+  const target = {
+    block: { time: 1_700_000_000 },
+    blockHash: "9".repeat(64),
+    blockIndex: 0,
+    details: { inputs: [], opReturns: [], outputs: [] },
+    height: 789,
+    hydrated: { txid },
+    txid,
+  };
+  let lockedStatus = "pending";
+  let persistenceCalls = 0;
+  let eventStateReads = 0;
+  let finalCoreProofs = 0;
+  let statements = [];
+  const repairCanonicalTransactions = isolatedFunction(
+    BACKFILL_PATH,
+    "repairCanonicalTransactions",
+    {
+      NETWORK: "livenet",
+      REPAIR_CANONICAL_TXIDS: [txid],
+      assertCanonicalTransactionRepairStillCurrent: async () => {
+        finalCoreProofs += 1;
+      },
+      canonicalTransactionRepairDetailsFingerprint: () => "exact",
+      canonicalTransactionRepairEventState: async () => {
+        eventStateReads += 1;
+        return { count: 0, fingerprint: "empty" };
+      },
+      canonicalTransactionRepairTarget: async () => target,
+      persistCanonicalBlock: async () => {
+        persistenceCalls += 1;
+      },
+      persistCanonicalRawTransaction: async () => {
+        persistenceCalls += 1;
+      },
+      storedCanonicalTransactionRepairDetails: async () => target.details,
+    },
+  );
+  const client = {
+    async query(sql) {
+      const text = String(sql).trim();
+      statements.push(text);
+      if (/SELECT txid, status/u.test(text)) {
+        return { rows: [{ status: lockedStatus, txid }] };
+      }
+      return { rows: [] };
+    },
+  };
+
+  for (const status of ["pending", "dropped", "orphaned"]) {
+    lockedStatus = status;
+    statements = [];
+    await rejection(
+      repairCanonicalTransactions(client),
+      (error) => /requires every target row to already be confirmed/u.test(
+        error.message,
+      ),
+      `${status} transaction rows must fail closed`,
+    );
+    assert.equal(statements[0], "BEGIN");
+    assert.match(statements[1], /SELECT txid, status/u);
+    assert.equal(statements.at(-1), "ROLLBACK");
+    assert.equal(statements.includes("COMMIT"), false);
+    assert.equal(persistenceCalls, 0);
+    assert.equal(eventStateReads, 0);
+    assert.equal(finalCoreProofs, 0);
+  }
+});
+
+check("canonical transaction-row repair is atomic and preserves event rows", async () => {
+  const txid = "8".repeat(64);
+  const blockHash = "9".repeat(64);
+  const details = { inputs: [], opReturns: [], outputs: [] };
+  const target = {
+    block: { time: 1_700_000_000 },
+    blockHash,
+    blockIndex: 4,
+    details,
+    height: 789,
+    hydrated: {
+      _powBlockHash: blockHash,
+      _powBlockIndex: 4,
+      canonicalBlockScan: {
+        blockHash,
+        height: 789,
+        network: "livenet",
+      },
+      txid,
+    },
+    txid,
+  };
+  const events = [];
+  let eventReads = 0;
+  const client = {
+    async query(sql) {
+      const text = String(sql).trim();
+      events.push(text);
+      if (/SELECT txid, status/u.test(text)) {
+        return { rows: [{ status: "confirmed", txid }] };
+      }
+      if (/transaction_row\.status/u.test(text)) {
+        return {
+          rows: [{
+            block_canonical: true,
+            block_hash: blockHash,
+            block_height: 789,
+            canonical_block_count: "1",
+            raw_tx: target.hydrated,
+            source: "canonical-block-scan",
+            status: "confirmed",
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+  const repairCanonicalTransactions = isolatedFunction(
+    BACKFILL_PATH,
+    "repairCanonicalTransactions",
+    {
+      NETWORK: "livenet",
+      REPAIR_CANONICAL_TXIDS: [txid],
+      assertCanonicalTransactionRepairStillCurrent: async () => {
+        events.push("core-final");
+      },
+      canonicalTransactionRepairDetailsFingerprint: () => "exact",
+      canonicalTransactionRepairEventState: async () => {
+        eventReads += 1;
+        return { count: 2, fingerprint: "unchanged" };
+      },
+      canonicalTransactionRepairTarget: async () => target,
+      persistCanonicalBlock: async () => {
+        events.push("persist-block");
+      },
+      persistCanonicalRawTransaction: async () => {
+        events.push("persist-raw-and-details");
+      },
+      storedCanonicalTransactionRepairDetails: async () => details,
+    },
+  );
+  const result = await repairCanonicalTransactions(client);
+  assert.equal(result.repaired, 1);
+  assert.equal(result.eventRowsPreserved, 2);
+  assert.equal(eventReads, 2);
+  assert.ok(events.includes("persist-block"));
+  assert.ok(events.includes("persist-raw-and-details"));
+  assert.ok(events.includes("core-final"));
+  assert.equal(events.at(-1), "COMMIT");
+  const source = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "repairCanonicalTransactions",
+  );
+  assert.doesNotMatch(
+    source,
+    /(?:INSERT INTO|UPDATE|DELETE FROM) proof_indexer\.events/u,
+  );
+
+  const rollbackEvents = [];
+  const rollbackClient = {
+    async query(sql) {
+      const text = String(sql).trim();
+      rollbackEvents.push(text);
+      if (/SELECT txid, status/u.test(text)) {
+        return { rows: [{ status: "confirmed", txid }] };
+      }
+      if (/transaction_row\.status/u.test(text)) {
+        return {
+          rows: [{
+            block_canonical: true,
+            block_hash: blockHash,
+            block_height: 789,
+            canonical_block_count: "1",
+            raw_tx: target.hydrated,
+            source: "canonical-block-scan",
+            status: "confirmed",
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+  const reorgingRepair = isolatedFunction(
+    BACKFILL_PATH,
+    "repairCanonicalTransactions",
+    {
+      NETWORK: "livenet",
+      REPAIR_CANONICAL_TXIDS: [txid],
+      assertCanonicalTransactionRepairStillCurrent: async () => {
+        throw new Error("reorg before commit");
+      },
+      canonicalTransactionRepairDetailsFingerprint: () => "exact",
+      canonicalTransactionRepairEventState: async () => ({
+        count: 2,
+        fingerprint: "unchanged",
+      }),
+      canonicalTransactionRepairTarget: async () => target,
+      persistCanonicalBlock: async () => {},
+      persistCanonicalRawTransaction: async () => {},
+      storedCanonicalTransactionRepairDetails: async () => details,
+    },
+  );
+  await rejection(
+    reorgingRepair(rollbackClient),
+    (error) => /reorg before commit/u.test(error.message),
+  );
+  assert.equal(rollbackEvents.at(-1), "ROLLBACK");
+  assert.equal(rollbackEvents.includes("COMMIT"), false);
 });
 
 check("canonical raw tx replaces legacy wrappers without entering event payloads", async () => {
