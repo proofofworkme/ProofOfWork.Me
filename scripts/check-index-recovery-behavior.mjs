@@ -6094,7 +6094,11 @@ check("mempool scan prioritizes Core-present rows with missing events", async ()
   const knownMempoolRecoveryTxids = isolatedFunction(
     BACKFILL_PATH,
     "knownMempoolRecoveryTxids",
-    { isHexTxid, NETWORK: "livenet" },
+    {
+      isHexTxid,
+      NETWORK: "livenet",
+      WORK_TOKEN_ID: "work-token-id",
+    },
   );
   const target = "a".repeat(64);
   const absent = "b".repeat(64);
@@ -6111,6 +6115,10 @@ check("mempool scan prioritizes Core-present rows with missing events", async ()
   assert.deepEqual(Array.from(priorityTxids), [target]);
   assert.match(recoverySql, /status IN \('dropped', 'orphaned'\)/u);
   assert.match(recoverySql, /status = 'pending'[\s\S]*NOT EXISTS/u);
+  assert.match(
+    recoverySql,
+    /e\.kind = 'token-mint'[\s\S]*e\.kind = 'token-event-invalid'[\s\S]*provisionalReason/u,
+  );
 
   const routine = "c".repeat(64);
   const candidates = plannedMempoolScanCandidates(
@@ -6205,6 +6213,7 @@ check("Core-present dropped protocol transactions revive through verifier and up
     },
   );
   let verifierCalls = 0;
+  let databaseCanonical = false;
   let storedState = null;
   const pendingTransaction = { txid: target, vin: [], vout: [] };
   const confirmedTransaction = {
@@ -6260,7 +6269,19 @@ check("Core-present dropped protocol transactions revive through verifier and up
         processedTxids: new Set([target]),
       }),
       plannedMempoolScanCandidates,
-      pendingTransactionObservationItem,
+      pendingTransactionWriteItem: (prepared, txid) => ({
+        ...(prepared[0]?.item ?? {}),
+        confirmed: false,
+        dropped: false,
+        status: "pending",
+        txid,
+      }),
+      lockedCanonicalTransactionForMempool: async () => databaseCanonical,
+      reconcilePendingWorkMintDecision: async () => ({
+        deleted: 0,
+        persistInvalid: false,
+        reconciled: false,
+      }),
       preparedProtocolItemsForTx: async () => {
         verifierCalls += 1;
         return [{
@@ -6383,14 +6404,44 @@ check("Core-present dropped protocol transactions revive through verifier and up
   assert.equal(initialRace.indexed, 0);
   assert.equal(verifierCalls, initialVerifierCalls);
   assert.equal(statements.length, initialStatementCount);
+
+  const databaseRaceStatementCount = statements.length;
+  databaseCanonical = true;
+  freshTransactions = [pendingTransaction, pendingTransaction];
+  const databaseRace = await backfillMempoolScanSource(client, {
+    label: "mempool-scan",
+  });
+  assert.equal(databaseRace.canonicalDeferred, 1);
+  assert.equal(databaseRace.indexed, 0);
+  assert.equal(databaseRace.unresolved, 0);
+  const databaseRaceStatements = statements.slice(databaseRaceStatementCount);
+  assert.equal(databaseRaceStatements[0].sql, "BEGIN");
+  assert.ok(databaseRaceStatements.some(({ sql }) =>
+    /INSERT INTO proof_indexer\.transactions/iu.test(sql)
+  ));
+  assert.equal(databaseRaceStatements.at(-1).sql, "ROLLBACK");
+  assert.equal(
+    databaseRaceStatements.some(({ sql }) =>
+      /INSERT INTO proof_indexer\.events/iu.test(sql)
+    ),
+    false,
+  );
+  databaseCanonical = false;
 });
 
-check("supply-capped mempool mints restore pending tx state without a valid event", async () => {
+check("supply-capped mempool mints replace stale valid rows with a pending invalid audit", async () => {
   const target = "f".repeat(64);
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
   const pendingTransaction = { txid: target, vin: [], vout: [] };
   const pendingTransactionObservationItem = isolatedFunction(
     BACKFILL_PATH,
     "pendingTransactionObservationItem",
+  );
+  const pendingTransactionWriteItem = isolatedFunction(
+    BACKFILL_PATH,
+    "pendingTransactionWriteItem",
+    { pendingTransactionObservationItem },
   );
   const upsertTransaction = isolatedFunction(
     BACKFILL_PATH,
@@ -6400,6 +6451,20 @@ check("supply-capped mempool mints restore pending tx state without a valid even
       itemTime: (item) => item.createdAt,
       numberOrNull: (value) =>
         Number.isFinite(Number(value)) ? Number(value) : null,
+    },
+  );
+  const pendingWorkMintDecision = isolatedFunction(
+    BACKFILL_PATH,
+    "pendingWorkMintDecision",
+    { WORK_TOKEN_ID: workTokenId },
+  );
+  const reconcilePendingWorkMintDecision = isolatedFunction(
+    BACKFILL_PATH,
+    "reconcilePendingWorkMintDecision",
+    {
+      NETWORK: "livenet",
+      WORK_TOKEN_ID: workTokenId,
+      pendingWorkMintDecision,
     },
   );
   const trace = [];
@@ -6412,6 +6477,18 @@ check("supply-capped mempool mints restore pending tx state without a valid even
       const text = String(sql).trim();
       trace.push(text === "BEGIN" || text === "COMMIT" ? text : "sql");
       statements.push({ params, sql: text });
+      if (/WITH canonical_guard AS/iu.test(text)) {
+        return {
+          rowCount: 1,
+          rows: [{ canonical_confirmed: false, deleted: 1 }],
+        };
+      }
+      if (/FOR UPDATE/iu.test(text)) {
+        return {
+          rowCount: 1,
+          rows: [{ canonical_confirmed: false, status: "pending" }],
+        };
+      }
       return { rowCount: 1, rows: [] };
     },
   };
@@ -6423,6 +6500,7 @@ check("supply-capped mempool mints restore pending tx state without a valid even
       MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 5,
       MEMPOOL_SCAN_MAX_TXIDS: 500,
       MEMPOOL_SCAN_SEEN_LIMIT: 10_000,
+      WORK_TOKEN_ID: workTokenId,
       bitcoinRpc: async () => ({ [target]: { time: 1_720_990_000 } }),
       freshRawTransactionFromCore: async () => {
         freshReads += 1;
@@ -6442,6 +6520,13 @@ check("supply-capped mempool mints restore pending tx state without a valid even
         processedTxids: new Set([target]),
       }),
       pendingTransactionObservationItem,
+      pendingTransactionWriteItem,
+      lockedCanonicalTransactionForMempool: isolatedFunction(
+        BACKFILL_PATH,
+        "lockedCanonicalTransactionForMempool",
+        { NETWORK: "livenet" },
+      ),
+      reconcilePendingWorkMintDecision,
       persistPreparedProtocolItems: async (_client, prepared) => {
         trace.push(`persist:${prepared.length}`);
         persistedPrepared = prepared;
@@ -6458,7 +6543,10 @@ check("supply-capped mempool mints restore pending tx state without a valid even
             confirmed: false,
             createdAt: "2026-07-15T01:20:00.000Z",
             kind: "token-event-invalid",
+            provisionalReason: "supply-cap",
             reason: "WORK mint exceeds max supply.",
+            status: "pending",
+            tokenId: workTokenId,
             txid: target,
             valid: false,
           },
@@ -6495,7 +6583,9 @@ check("supply-capped mempool mints restore pending tx state without a valid even
   assert.equal(result.indexed, 0);
   assert.equal(result.priorityScanned, 1);
   assert.equal(result.unresolved, 0);
-  assert.deepEqual(persistedPrepared, []);
+  assert.equal(persistedPrepared.length, 1);
+  assert.equal(persistedPrepared[0].item.kind, "token-event-invalid");
+  assert.equal(persistedPrepared[0].item.valid, false);
   assert.deepEqual(Array.from(storedState.processedTxids), [target]);
   assert.equal(storedState.priorityCursor.txid, target);
   assert.equal(storedState.priorityCursor.time, 1_720_990_000);
@@ -6506,7 +6596,9 @@ check("supply-capped mempool mints restore pending tx state without a valid even
     "BEGIN",
     "upsert",
     "sql",
-    "persist:0",
+    "sql",
+    "sql",
+    "persist:1",
     "fresh",
     "COMMIT",
     "store",
@@ -6523,12 +6615,85 @@ check("supply-capped mempool mints restore pending tx state without a valid even
   assert.equal(observed.confirmed, false);
   assert.equal(observed.dropped, false);
   assert.equal(observed.valid, false);
-  assert.equal(
-    statements.some(({ sql }) =>
-      /INSERT INTO proof_indexer\.events/iu.test(sql)
-    ),
-    false,
+  const reconciliation = statements.find(({ sql }) =>
+    /WITH canonical_guard AS/iu.test(sql),
   );
+  assert.ok(reconciliation);
+  assert.match(
+    reconciliation.sql,
+    /e\.status IN \('pending', 'dropped', 'orphaned'\)/u,
+  );
+  assert.match(reconciliation.sql, /e\.kind = \$3/u);
+  assert.equal(reconciliation.params[1], target);
+  assert.equal(reconciliation.params[2], "token-mint");
+  assert.equal(reconciliation.params[3], workTokenId);
+});
+
+check("canonical WORK mint decisions remove only volatile mint audit rows", async () => {
+  const txid = "e".repeat(64);
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const queries = [];
+  const removeVolatileWorkMintDecisionEvents = isolatedFunction(
+    BACKFILL_PATH,
+    "removeVolatileWorkMintDecisionEvents",
+    {
+      NETWORK: "livenet",
+      WORK_TOKEN_ID: workTokenId,
+    },
+  );
+  const client = {
+    async query(sql, params) {
+      queries.push({ params, sql: String(sql) });
+      return { rowCount: 2, rows: [] };
+    },
+  };
+  assert.equal(
+    await removeVolatileWorkMintDecisionEvents(
+      client,
+      [{
+        item: {
+          confirmed: true,
+          kind: "token-mint",
+          tokenId: workTokenId,
+          txid,
+        },
+      }],
+      txid,
+    ),
+    2,
+  );
+  assert.equal(queries.length, 1);
+  assert.deepEqual(Array.from(queries[0].params), [
+    "livenet",
+    txid,
+    workTokenId,
+  ]);
+  assert.match(
+    queries[0].sql,
+    /e\.status IN \('pending', 'dropped', 'orphaned'\)/u,
+  );
+  assert.match(
+    queries[0].sql,
+    /e\.kind IN \('token-mint', 'token-event-invalid'\)/u,
+  );
+  assert.doesNotMatch(queries[0].sql, /e\.status = 'confirmed'/u);
+  assert.equal(
+    await removeVolatileWorkMintDecisionEvents(
+      client,
+      [{
+        item: {
+          confirmed: true,
+          kind: "token-transfer",
+          tokenId: workTokenId,
+          txid,
+        },
+      }],
+      txid,
+    ),
+    0,
+  );
+  assert.equal(queries.length, 1);
 });
 
 check("same-height pending membership versions the canonical Log snapshot", async () => {
@@ -9164,6 +9329,9 @@ check("block verification completes before the atomic block transaction", async 
       persistCanonicalRawTransaction: async () => {
         events.push("raw");
       },
+      removeVolatileWorkMintDecisionEvents: async () => {
+        events.push("cleanup");
+      },
       preparedProtocolItemsForTx: async () => {
         events.push("verify");
         return [{ item: { txid }, sourceLabel: "id-records" }];
@@ -9190,6 +9358,7 @@ check("block verification completes before the atomic block transaction", async 
     "BEGIN",
     "block",
     "raw",
+    "cleanup",
     "persist",
     "balances",
     "checkpoint",
@@ -9233,6 +9402,7 @@ check("a verifier error cannot begin or advance a block checkpoint", async () =>
       assertCanonicalBlockEnvelope: () => {},
       assertHydratedProtocolTransaction: () => {},
       persistPreparedProtocolItems: async () => ({ indexed: 1, skipped: 0 }),
+      removeVolatileWorkMintDecisionEvents: async () => 0,
       preparedProtocolItemsForTx: async () => {
         throw new Error("canonical verifier is stale");
       },
@@ -9307,6 +9477,7 @@ check("the protocol tx target defers a later block but never splits one", async 
         },
         persistCanonicalRawTransaction: async () => {},
         persistPreparedProtocolItems: async () => ({ indexed: 0, skipped: 0 }),
+        removeVolatileWorkMintDecisionEvents: async () => 0,
         preparedProtocolItemsForTx: async () => {
           verified += 1;
           return [];
@@ -13478,6 +13649,30 @@ check("pending WORK supply-cap fast path is exact and bypasses broad replay", as
     ) {
       stats.targetMintStats.pendingMints = 1;
       stats.targetMintStats.totalMints = 1;
+      stats.pendingCandidates.push({ amount: 1_000, txid });
+      stats.pendingCandidates.sort((left, right) =>
+        left.txid.localeCompare(right.txid),
+      );
+      stats.pendingCandidateCount = 2;
+      stats.pendingCandidateSupply = 2_000;
+      stats.pendingMints = 2;
+      stats.pendingSupply = 2_000;
+      stats.totalMints = stats.confirmedMints + stats.pendingMints;
+    }
+    if (statsMode === "target-count-without-candidate") {
+      stats.targetMintStats.pendingMints = 1;
+      stats.targetMintStats.totalMints = 1;
+    }
+    if (statsMode === "target-candidate-without-count") {
+      stats.pendingCandidates.push({ amount: 1_000, txid });
+      stats.pendingCandidates.sort((left, right) =>
+        left.txid.localeCompare(right.txid),
+      );
+      stats.pendingCandidateCount = 2;
+      stats.pendingCandidateSupply = 2_000;
+      stats.pendingMints = 2;
+      stats.pendingSupply = 2_000;
+      stats.totalMints = stats.confirmedMints + stats.pendingMints;
     }
     if (statsMode === "incomplete") {
       stats.pendingCandidateCount = 33;
@@ -13580,14 +13775,34 @@ check("pending WORK supply-cap fast path is exact and bypasses broad replay", as
   statsMode = "existing-target";
   mintStatsReads = 0;
   mempoolReads.clear();
-  assert.equal(
+  const existingTargetPayload =
     await pendingWorkMintSupplyCapVerifierPayload(
       "livenet",
       workTokenId,
       txid,
-    ),
-    null,
+    );
+  assert.equal(existingTargetPayload?.classification, "supply-cap");
+  assert.deepEqual(
+    Array.from(existingTargetPayload?.supplyCapWitnessTxids ?? []),
+    [earlierWitnessTxid],
   );
+
+  for (const inconsistentMode of [
+    "target-count-without-candidate",
+    "target-candidate-without-count",
+  ]) {
+    statsMode = inconsistentMode;
+    mintStatsReads = 0;
+    mempoolReads.clear();
+    assert.equal(
+      await pendingWorkMintSupplyCapVerifierPayload(
+        "livenet",
+        workTokenId,
+        txid,
+      ),
+      null,
+    );
+  }
 
   statsMode = "stable";
   statusHeight = tipHeight - 1;

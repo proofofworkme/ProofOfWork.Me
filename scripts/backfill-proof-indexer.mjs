@@ -8200,6 +8200,11 @@ async function backfillBlockScanSource(client, source) {
           blockTime: block?.time,
           height,
         });
+        await removeVolatileWorkMintDecisionEvents(
+          client,
+          prepared.items,
+          prepared.txid,
+        );
         const result = await persistPreparedProtocolItems(client, prepared.items);
         blockIndexed += result.indexed;
         blockSkipped += result.skipped;
@@ -8481,17 +8486,36 @@ async function knownMempoolRecoveryTxids(client, mempool) {
           t.status IN ('dropped', 'orphaned')
           OR (
             t.status = 'pending'
-            AND NOT EXISTS (
-              SELECT 1
-              FROM proof_indexer.events e
-              WHERE e.network = t.network
-                AND e.txid = t.txid
+            AND (
+              NOT EXISTS (
+                SELECT 1
+                FROM proof_indexer.events e
+                WHERE e.network = t.network
+                  AND e.txid = t.txid
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM proof_indexer.events e
+                WHERE e.network = t.network
+                  AND e.txid = t.txid
+                  AND e.protocol = 'pwt1'
+                  AND e.status = 'pending'
+                  AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
+                  AND (
+                    (e.kind = 'token-mint' AND e.valid = true)
+                    OR (
+                      e.kind = 'token-event-invalid'
+                      AND e.valid = false
+                      AND e.payload->>'provisionalReason' = 'supply-cap'
+                    )
+                  )
+              )
             )
           )
         )
       ORDER BY t.last_seen_at ASC, t.txid ASC
     `,
-    [NETWORK],
+    [NETWORK, WORK_TOKEN_ID],
   );
   return result.rows
     .map((row) => String(row?.txid ?? "").trim().toLowerCase())
@@ -8537,6 +8561,178 @@ function pendingTransactionObservationItem(preparedItems, txid) {
     status: "pending",
     txid,
   };
+}
+
+function pendingTransactionWriteItem(preparedItems, txid) {
+  const invalidObservation = pendingTransactionObservationItem(
+    preparedItems,
+    txid,
+  );
+  if (invalidObservation) {
+    return invalidObservation;
+  }
+  const item = (Array.isArray(preparedItems) ? preparedItems : [])
+    .map((entry) => entry?.item ?? entry)
+    .find(Boolean);
+  return item
+    ? {
+        ...item,
+        confirmed: false,
+        dropped: false,
+        status: "pending",
+        txid,
+      }
+    : null;
+}
+
+async function lockedCanonicalTransactionForMempool(client, txid) {
+  const result = await client.query(
+    `
+      SELECT
+        t.status,
+        (
+          t.status = 'confirmed'
+          AND t.raw_tx ? 'canonicalBlockScan'
+          AND EXISTS (
+            SELECT 1
+            FROM proof_indexer.blocks b
+            WHERE b.network = t.network
+              AND b.block_hash = t.block_hash
+              AND b.height = t.block_height
+              AND b.canonical = true
+          )
+        ) AS canonical_confirmed
+      FROM proof_indexer.transactions t
+      WHERE t.network = $1
+        AND t.txid = $2
+      FOR UPDATE
+    `,
+    [NETWORK, txid],
+  );
+  return result.rows[0]?.canonical_confirmed === true;
+}
+
+function pendingWorkMintDecision(preparedItems) {
+  const items = (Array.isArray(preparedItems) ? preparedItems : [])
+    .map((entry) => entry?.item ?? entry)
+    .filter(Boolean);
+  const validMints = items.filter(
+    (item) =>
+      item?.kind === "token-mint" &&
+      item?.valid !== false &&
+      item?.confirmed === false &&
+      String(item?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID,
+  );
+  const supplyCapInvalids = items.filter(
+    (item) =>
+      item?.kind === "token-event-invalid" &&
+      item?.valid === false &&
+      item?.confirmed === false &&
+      String(item?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID &&
+      (item?.provisionalReason === "supply-cap" ||
+        String(item?.reason ?? "").startsWith(
+          "WORK mint exceeds max supply:",
+        )),
+  );
+  if (validMints.length > 0 && supplyCapInvalids.length > 0) {
+    throw new Error(
+      "Pending WORK mint verifier returned conflicting valid and supply-cap decisions.",
+    );
+  }
+  if (validMints.length > 0) {
+    return { kind: "valid", persistInvalid: false };
+  }
+  if (supplyCapInvalids.length > 0) {
+    return { kind: "supply-cap-invalid", persistInvalid: true };
+  }
+  return null;
+}
+
+async function reconcilePendingWorkMintDecision(
+  client,
+  preparedItems,
+  txid,
+) {
+  const decision = pendingWorkMintDecision(preparedItems);
+  if (!decision) {
+    return { deleted: 0, persistInvalid: false, reconciled: false };
+  }
+  const obsoleteKind =
+    decision.kind === "valid" ? "token-event-invalid" : "token-mint";
+  const result = await client.query(
+    `
+      WITH canonical_guard AS (
+        SELECT 1
+        FROM proof_indexer.transactions canonical_transaction
+        JOIN proof_indexer.blocks canonical_block
+          ON canonical_block.network = canonical_transaction.network
+         AND canonical_block.block_hash = canonical_transaction.block_hash
+         AND canonical_block.height = canonical_transaction.block_height
+         AND canonical_block.canonical = true
+        WHERE canonical_transaction.network = $1
+          AND canonical_transaction.txid = $2
+          AND canonical_transaction.status = 'confirmed'
+          AND canonical_transaction.raw_tx ? 'canonicalBlockScan'
+        LIMIT 1
+      ), deleted AS (
+        DELETE FROM proof_indexer.events e
+        WHERE e.network = $1
+          AND e.txid = $2
+          AND e.protocol = 'pwt1'
+          AND e.status IN ('pending', 'dropped', 'orphaned')
+          AND e.kind = $3
+          AND lower(COALESCE(e.payload->>'tokenId', '')) = $4
+          AND NOT EXISTS (SELECT 1 FROM canonical_guard)
+        RETURNING e.event_id
+      )
+      SELECT
+        EXISTS (SELECT 1 FROM canonical_guard) AS canonical_confirmed,
+        count(*)::integer AS deleted
+      FROM deleted
+    `,
+    [NETWORK, txid, obsoleteKind, WORK_TOKEN_ID],
+  );
+  if (result.rows[0]?.canonical_confirmed === true) {
+    throw new Error(
+      `Canonical confirmed transaction ${txid} cannot be reconciled from the mempool.`,
+    );
+  }
+  return {
+    deleted: Number(result.rows[0]?.deleted ?? 0),
+    persistInvalid: decision.persistInvalid,
+    reconciled: true,
+  };
+}
+
+async function removeVolatileWorkMintDecisionEvents(
+  client,
+  preparedItems,
+  txid,
+) {
+  const items = (Array.isArray(preparedItems) ? preparedItems : [])
+    .map((entry) => entry?.item ?? entry)
+    .filter(Boolean);
+  const hasCanonicalWorkMintDecision = items.some(
+    (item) =>
+      String(item?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID &&
+      ["token-mint", "token-event-invalid"].includes(item?.kind),
+  );
+  if (!hasCanonicalWorkMintDecision) {
+    return 0;
+  }
+  const result = await client.query(
+    `
+      DELETE FROM proof_indexer.events e
+      WHERE e.network = $1
+        AND e.txid = $2
+        AND e.protocol = 'pwt1'
+        AND e.status IN ('pending', 'dropped', 'orphaned')
+        AND e.kind IN ('token-mint', 'token-event-invalid')
+        AND lower(COALESCE(e.payload->>'tokenId', '')) = $3
+    `,
+    [NETWORK, txid, WORK_TOKEN_ID],
+  );
+  return Number(result.rowCount ?? 0);
 }
 
 async function backfillMempoolScanSource(client, source) {
@@ -8642,10 +8838,7 @@ async function backfillMempoolScanSource(client, source) {
         hydrated,
         messages,
       );
-      const prepared = verifiedPrepared.filter(
-        (entry) => (entry.item ?? entry)?.valid !== false,
-      );
-      const pendingObservation = pendingTransactionObservationItem(
+      const transactionObservation = pendingTransactionWriteItem(
         verifiedPrepared,
         txid,
       );
@@ -8661,15 +8854,57 @@ async function backfillMempoolScanSource(client, source) {
       }
       await client.query("BEGIN");
       transactionOpen = true;
-      if (pendingObservation) {
+      if (transactionObservation) {
+        // The upsert takes the transaction-row lock in the same order as the
+        // canonical block scanner. Re-read under that lock before replacing
+        // any volatile event decision so confirmation cannot race this write.
         await upsertTransaction(
           client,
-          pendingObservation,
+          transactionObservation,
           txid,
           "pending",
           source.label,
         );
+        if (await lockedCanonicalTransactionForMempool(client, txid)) {
+          await client.query("ROLLBACK");
+          transactionOpen = false;
+          canonicalDeferred += 1;
+          continue;
+        }
       }
+      const pendingWorkReconciliation =
+        await reconcilePendingWorkMintDecision(
+          client,
+          verifiedPrepared,
+          txid,
+        );
+      const prepared = verifiedPrepared.flatMap((entry) => {
+        const item = entry?.item ?? entry;
+        if (item?.valid !== false) {
+          return [entry];
+        }
+        const supplyCapInvalid =
+          pendingWorkReconciliation.persistInvalid &&
+          item?.kind === "token-event-invalid" &&
+          String(item?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID &&
+          (item?.provisionalReason === "supply-cap" ||
+            String(item?.reason ?? "").startsWith(
+              "WORK mint exceeds max supply:",
+            ));
+        if (!supplyCapInvalid) {
+          return [];
+        }
+        const normalizedItem = {
+          ...item,
+          confirmed: false,
+          provisional: true,
+          provisionalReason: "supply-cap",
+          status: "pending",
+        };
+        return [
+          entry?.item ? { ...entry, item: normalizedItem } : normalizedItem,
+        ];
+      });
       const result = await persistPreparedProtocolItems(client, prepared);
       const beforeCommit = await freshRawTransactionFromCore(txid);
       if (!beforeCommit) {

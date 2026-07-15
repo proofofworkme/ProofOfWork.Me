@@ -397,7 +397,12 @@ expect(
       pendingWorkSupplyCapVerifier,
     ) &&
     /proofIndexExactlyCoversCoreTip/u.test(pendingWorkSupplyCapVerifier) &&
-    /targetPendingMints !== 0/u.test(pendingWorkSupplyCapVerifier) &&
+    /!\[0, 1\]\.includes\(targetPendingMints\)/u.test(
+      pendingWorkSupplyCapVerifier,
+    ) &&
+    /candidate\.txid !== normalizedTxid/u.test(
+      pendingWorkSupplyCapVerifier,
+    ) &&
     /pendingCandidatesComplete !== true/u.test(pendingWorkSupplyCapVerifier) &&
     /candidate\.txid\.localeCompare\(normalizedTargetTxid\) >= 0/u.test(
       pendingWorkSupplyCapVerifier,
@@ -412,6 +417,9 @@ expect(
       pendingWorkSupplyCapVerifier,
     ) &&
     /finalWitnessProof\.witnesses\.some/u.test(
+      pendingWorkSupplyCapVerifier,
+    ) &&
+    /finalSupply\.targetPendingMints !== supply\.targetPendingMints/u.test(
       pendingWorkSupplyCapVerifier,
     ) &&
     !/supply\.acceptedSupply/u.test(pendingWorkSupplyCapVerifier) &&

@@ -37357,7 +37357,7 @@ function exactPendingWorkMintStats(stats, txid) {
     String(target?.txid ?? "").trim().toLowerCase() !== normalizedTxid ||
     targetTotalMints !== targetConfirmedMints + targetPendingMints ||
     targetConfirmedMints !== 0 ||
-    targetPendingMints !== 0
+    ![0, 1].includes(targetPendingMints)
   ) {
     return null;
   }
@@ -37386,15 +37386,36 @@ function exactPendingWorkMintStats(stats, txid) {
   }
   if (
     candidateSupply !== pendingCandidateSupply ||
+    (targetPendingMints === 1 &&
+      !seenCandidateTxids.has(normalizedTxid)) ||
+    (targetPendingMints === 0 &&
+      seenCandidateTxids.has(normalizedTxid)) ||
     confirmedSupply < 0 ||
     confirmedSupply > WORK_TOKEN_MAX_SUPPLY
   ) {
     return null;
   }
+  const targetPendingSupply =
+    targetPendingMints * WORK_TOKEN_MINT_AMOUNT;
+  const adjustedPendingSupply = pendingSupply - targetPendingSupply;
+  const adjustedCandidates = exactCandidates.filter(
+    (candidate) => candidate.txid !== normalizedTxid,
+  );
+  if (
+    !Number.isSafeInteger(adjustedPendingSupply) ||
+    adjustedPendingSupply < 0 ||
+    adjustedCandidates.reduce(
+      (total, candidate) => total + candidate.amount,
+      0,
+    ) !== adjustedPendingSupply
+  ) {
+    return null;
+  }
   return {
     confirmedSupply,
-    pendingCandidates: exactCandidates,
-    pendingSupply,
+    pendingCandidates: adjustedCandidates,
+    pendingSupply: adjustedPendingSupply,
+    targetPendingMints,
   };
 }
 
@@ -37563,6 +37584,7 @@ async function pendingWorkMintSupplyCapVerifierPayload(
     !proofIndexExactlyCoversCoreTip(finalStatus, finalCanonical, finalTip) ||
     !finalSupply ||
     finalSupply.confirmedSupply !== supply.confirmedSupply ||
+    finalSupply.targetPendingMints !== supply.targetPendingMints ||
     !finalWitnessProof ||
     finalWitnessProof.witnessSupply !== validatedWitnessSupply ||
     finalWitnessProof.witnesses.length !== validatedWitnesses.length ||
