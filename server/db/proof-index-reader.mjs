@@ -5367,7 +5367,8 @@ async function latestProofIndexScanMetadata(pool, network) {
             WHEN NULLIF(
               COALESCE(
                 NULLIF(payload->>'indexedThroughBlockHash', ''),
-                NULLIF(payload->>'blockHash', '')
+                NULLIF(payload->>'blockHash', ''),
+                NULLIF(source_hashes->>'blockScan', '')
               ),
               ''
             ) IS NOT NULL THEN 0
@@ -5375,40 +5376,6 @@ async function latestProofIndexScanMetadata(pool, network) {
           END,
           indexed_through_block DESC NULLS LAST,
           generated_at DESC
-        LIMIT 1
-      ),
-      latest_summary AS (
-        SELECT
-          snapshot_id,
-          generated_at,
-          payload->'summaryPayloads' AS summary_payloads,
-          payload->>'summaryPayloadsIndexedAt' AS summary_indexed_at
-        FROM proof_indexer.ledger_snapshots
-        WHERE network = $1
-          AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
-          AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
-          AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
-          AND source_hashes ? 'canonicalSummary'
-          AND jsonb_typeof(payload->'summaryPayloads') = 'object'
-          AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
-          AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
-          AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
-          AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
-          AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
-          AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
-          AND EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
-            WHERE check_item->>'name' = 'token-components-cover-confirmed-activity'
-              AND COALESCE(check_item->>'ok', 'false') = 'true'
-          )
-          AND EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
-            WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
-              AND COALESCE(check_item->>'ok', 'false') = 'true'
-          )
-        ORDER BY generated_at DESC
         LIMIT 1
       ),
       confirmed_ids AS (
@@ -5458,10 +5425,6 @@ async function latestProofIndexScanMetadata(pool, network) {
         latest_scan.metrics,
         latest_scan.consistency,
         latest_scan.payload,
-        latest_summary.snapshot_id AS summary_snapshot_id,
-        latest_summary.generated_at AS summary_generated_at,
-        latest_summary.summary_payloads,
-        latest_summary.summary_indexed_at,
         confirmed_ids.confirmed_id_count,
         confirmed_ids.confirmed_id_max_block,
         confirmed_transfers.confirmed_transfer_count,
@@ -5474,7 +5437,6 @@ async function latestProofIndexScanMetadata(pool, network) {
       CROSS JOIN confirmed_transfers
       CROSS JOIN confirmed_events
       LEFT JOIN latest_scan ON true
-      LEFT JOIN latest_summary ON true
       LEFT JOIN worker_meta ON true
     `,
     [network],
@@ -5493,7 +5455,7 @@ async function latestProofIndexOperationalMetadata(pool, network) {
           COALESCE(
             NULLIF(payload->>'indexedThroughBlockHash', ''),
             NULLIF(payload->>'blockHash', ''),
-            NULLIF(source_hashes->>'blockHash', '')
+            NULLIF(source_hashes->>'blockScan', '')
           ) AS scan_block_hash,
           payload->'complete' AS scan_payload_complete,
           metrics->'complete' AS scan_metrics_complete,
@@ -5512,7 +5474,7 @@ async function latestProofIndexOperationalMetadata(pool, network) {
               COALESCE(
                 NULLIF(payload->>'indexedThroughBlockHash', ''),
                 NULLIF(payload->>'blockHash', ''),
-                NULLIF(source_hashes->>'blockHash', '')
+                NULLIF(source_hashes->>'blockScan', '')
               ),
               ''
             ) IS NOT NULL THEN 0
@@ -11197,10 +11159,27 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
     return null;
   }
 
+  const checkpointProjection = exactCheckpointRequested
+    ? "count(*) OVER ()"
+    : "1::bigint";
+  const checkpointFilter = exactCheckpointRequested
+    ? `
+        AND indexed_through_block = $2
+        AND lower(COALESCE(source_hashes->>'blockScan', '')) = $3
+        AND lower(COALESCE(payload->>'indexedThroughBlockHash', '')) = $3
+        AND lower(COALESCE(payload->'summaryRefresh'->>'indexedThroughBlockHash', '')) = $3
+        AND lower(COALESCE(payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlockHash', '')) = $3
+      `
+    : "";
+  const checkpointLimit = exactCheckpointRequested ? 128 : 1;
+  const checkpointParams = exactCheckpointRequested
+    ? [network, requestedHeight, requestedHash]
+    : [network];
+
   const result = await pool.query(
     `
       SELECT
-        count(*) OVER () AS matching_snapshot_count,
+        ${checkpointProjection} AS matching_snapshot_count,
         snapshot_id,
         generated_at,
         indexed_through_block,
@@ -11239,16 +11218,8 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
         AND COALESCE(consistency->>'status', payload->>'status', '') = 'green'
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
         AND source_hashes ? 'canonicalSummary'
-        AND ($2::integer = 0 OR indexed_through_block = $2)
-        AND (
-          $3::text = ''
-          OR (
-            lower(COALESCE(source_hashes->>'blockScan', '')) = $3
-            AND lower(COALESCE(payload->>'indexedThroughBlockHash', '')) = $3
-            AND lower(COALESCE(payload->'summaryRefresh'->>'indexedThroughBlockHash', '')) = $3
-            AND lower(COALESCE(payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlockHash', '')) = $3
-          )
-        )
+        AND payload ? 'summaryPayloads'
+        ${checkpointFilter}
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
@@ -11273,9 +11244,9 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
         indexed_through_block DESC NULLS LAST,
         generated_at DESC,
         snapshot_id DESC
-      LIMIT CASE WHEN $2::integer = 0 THEN 1 ELSE 128 END
+      LIMIT ${checkpointLimit}
     `,
-    [network, requestedHeight, requestedHash],
+    checkpointParams,
   );
   const snapshot = result.rows[0];
   const matchingSnapshotCount = Number(

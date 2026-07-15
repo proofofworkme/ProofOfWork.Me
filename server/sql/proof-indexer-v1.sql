@@ -361,4 +361,43 @@ CREATE INDEX IF NOT EXISTS ledger_snapshots_summary_latest_idx
   )
   WHERE payload ? 'summaryPayloads';
 
+CREATE INDEX IF NOT EXISTS ledger_snapshots_scan_health_idx
+  ON proof_indexer.ledger_snapshots (
+    network,
+    (
+      CASE
+        WHEN NULLIF(
+          COALESCE(
+            NULLIF(payload->>'indexedThroughBlockHash', ''),
+            NULLIF(payload->>'blockHash', ''),
+            NULLIF(source_hashes->>'blockScan', '')
+          ),
+          ''
+        ) IS NOT NULL THEN 0
+        ELSE 1
+      END
+    ),
+    indexed_through_block DESC NULLS LAST,
+    generated_at DESC
+  );
+
+CREATE INDEX IF NOT EXISTS ledger_snapshots_canonical_payload_latest_idx
+  ON proof_indexer.ledger_snapshots (
+    network,
+    (
+      CASE
+        WHEN payload->>'snapshotId' = snapshot_id
+          AND payload ? 'activityPayload'
+          AND payload ? 'registryHistoryPayloads'
+          AND payload ? 'summaryPayloads'
+          AND payload ? 'tokenHistoryPayloads'
+          AND payload ? 'tokenStatePayloads'
+        THEN 0
+        ELSE 1
+      END
+    ),
+    generated_at DESC
+  )
+  WHERE payload ? 'snapshotId';
+
 COMMIT;

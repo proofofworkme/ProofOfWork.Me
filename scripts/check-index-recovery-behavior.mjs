@@ -6127,6 +6127,7 @@ check("mempool scan prioritizes Core-present rows with missing events", async ()
             event_count: 0,
             inspection_version: 1,
             invalid_decisions: 0,
+            protocol_resolved_invalid: false,
             recovery_needed: false,
             resolved_invalid: false,
             status: "pending",
@@ -6149,7 +6150,7 @@ check("mempool scan prioritizes Core-present rows with missing events", async ()
   );
   assert.match(
     recoverySql,
-    /pendingWorkMintInspectionVersion[\s\S]*AS inspection_version[\s\S]*pendingWorkMintAttemptCount[\s\S]*AS attempted_mints[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*AS recovery_needed[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*AS resolved_invalid/u,
+    /pendingWorkMintInspectionVersion[\s\S]*AS inspection_version[\s\S]*pendingWorkMintAttemptCount[\s\S]*AS attempted_mints[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*AS recovery_needed[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*AS resolved_invalid[\s\S]*pendingProtocolResolvedInvalid[\s\S]*AS protocol_resolved_invalid/u,
   );
   assert.deepEqual(Array.from(recoveryParams), [
     "livenet",
@@ -6164,6 +6165,7 @@ check("mempool scan prioritizes Core-present rows with missing events", async ()
       eventCount = 1,
       inspectionVersion = 1,
       invalidDecisions = 0,
+      protocolResolvedInvalid = false,
       recoveryNeeded = false,
       resolvedInvalid = false,
       status = "pending",
@@ -6175,6 +6177,7 @@ check("mempool scan prioritizes Core-present rows with missing events", async ()
     event_count: eventCount,
     inspection_version: inspectionVersion,
     invalid_decisions: invalidDecisions,
+    protocol_resolved_invalid: protocolResolvedInvalid,
     recovery_needed: recoveryNeeded,
     resolved_invalid: resolvedInvalid,
     status,
@@ -6224,6 +6227,7 @@ check("mempool scan prioritizes Core-present rows with missing events", async ()
   const revived = "4".repeat(64);
   const multi = "5".repeat(64);
   const permanentInvalid = "6".repeat(64);
+  const terminalProtocolInvalid = "f".repeat(64);
   assert.deepEqual(
     new Set(
       mempoolRecoveryTxidsFromRows(
@@ -6236,12 +6240,18 @@ check("mempool scan prioritizes Core-present rows with missing events", async ()
           }),
           row(multi, { attemptedMints: 2, validDecisions: 1 }),
           row(permanentInvalid, { attemptedMints: 0 }),
+          row(terminalProtocolInvalid, {
+            attemptedMints: 0,
+            eventCount: 0,
+            protocolResolvedInvalid: true,
+          }),
         ],
         {
           [missing]: {},
           [multi]: {},
           [permanentInvalid]: {},
           [revived]: {},
+          [terminalProtocolInvalid]: {},
         },
       ),
     ),
@@ -6421,10 +6431,11 @@ check("pending WORK inspection survives a persisted sibling envelope", async () 
     1,
     true,
     false,
+    true,
   );
   assert.match(
     inspectionWrite.sql,
-    /pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid/u,
+    /pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*pendingProtocolResolvedInvalid/u,
   );
   assert.match(inspectionWrite.sql, /t\.status = 'pending'/u);
   assert.match(inspectionWrite.sql, /canonicalBlockScan/u);
@@ -6434,6 +6445,7 @@ check("pending WORK inspection survives a persisted sibling envelope", async () 
     1,
     true,
     false,
+    true,
   ]);
   let preinspectionWrite = null;
   assert.equal(
@@ -7447,6 +7459,11 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
         left?.hash === right?.hash &&
         left?.count === right?.count &&
         left?.pending === right?.pending,
+      pruneLedgerSnapshots: async () => ({
+        canonicalSummaries: 0,
+        scanOrDerived: 0,
+        total: 0,
+      }),
       readJson: async (url, options) => {
         assert.equal(url.pathname, "/api/v1/internal/canonical-summary");
         assert.equal(options.retries, 0);
@@ -7552,6 +7569,45 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   assert.equal(currentResult.reason, "already-current");
   assert.equal(currentResult.snapshotId, "full-101-current-models");
   assert.equal(inserted.length, 1);
+});
+
+check("ledger snapshot retention preserves pinned issuance oracles", async () => {
+  let queryText = "";
+  let queryParams = [];
+  const pruneLedgerSnapshots = isolatedFunction(
+    BACKFILL_PATH,
+    "pruneLedgerSnapshots",
+    {
+      LEDGER_CANONICAL_SUMMARY_RETENTION: 4_096,
+      LEDGER_SCAN_SNAPSHOT_RETENTION: 20_000,
+      NETWORK: "livenet",
+    },
+  );
+  const result = await pruneLedgerSnapshots(
+    {
+      async query(sql, params) {
+        queryText = String(sql);
+        queryParams = Array.from(params);
+        return {
+          rows: [
+            { canonical_summary: true, snapshot_id: "old-summary" },
+            { canonical_summary: false, snapshot_id: "old-scan" },
+          ],
+        };
+      },
+    },
+    { canonicalSummaryLimit: 4_096, scanSnapshotLimit: 20_000 },
+  );
+  assert.deepEqual(queryParams, ["livenet", 4_096, 20_000]);
+  assert.match(queryText, /row_number\(\) OVER/u);
+  assert.match(queryText, /payload->>'issuanceValueSnapshotId'/u);
+  assert.match(queryText, /NOT EXISTS/u);
+  assert.match(queryText, /DELETE FROM proof_indexer\.ledger_snapshots/u);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    canonicalSummaries: 1,
+    scanOrDerived: 1,
+    total: 2,
+  });
 });
 
 check("canonical summary publication allows cumulative INCB dust across independently floored mints", () => {
@@ -13722,6 +13778,7 @@ check("confirmed unscoped token verifier caches by target txid", async () => {
         };
       },
       normalizeTokenScope: (scope) => String(scope).toLowerCase(),
+      pendingCoreWorkMarketplaceVerifierContext: async () => null,
       pendingWorkMintSupplyCapVerifierPayload: async () => null,
       pruneInternalVerifierStateCache: () => {},
       tokenPayload: async () => ({
@@ -13768,6 +13825,235 @@ check("confirmed unscoped token verifier caches by target txid", async () => {
     ),
   );
   assert.ok(cacheKeys.includes("token:livenet:all"));
+});
+
+check("pending Core WORK marketplace context resolves confirmed listing parents", async () => {
+  const workTokenId = "d".repeat(64);
+  const targetTxid = "a".repeat(64);
+  const listingId = "b".repeat(64);
+  const target = {
+    _powCanonicalRpcHydration: true,
+    complete: true,
+    confirmed: false,
+    txid: targetTxid,
+    vout: [{ message: `delist:${listingId}` }],
+  };
+  const listing = {
+    _powCanonicalRpcHydration: true,
+    complete: true,
+    confirmed: true,
+    txid: listingId,
+    vout: [{ message: "list-work" }],
+  };
+  const cached = [];
+  let mempoolReads = 0;
+  const pendingCoreWorkMarketplaceVerifierContext = isolatedFunction(
+    API_PATH,
+    "pendingCoreWorkMarketplaceVerifierContext",
+    {
+      TOKEN_PROTOCOL_PREFIX: "pwt1:",
+      WORK_TOKEN_ID: workTokenId,
+      bitcoinRpc: async (method, params) => {
+        assert.equal(method, "getmempoolentry");
+        assert.equal(params[0], targetTxid);
+        mempoolReads += 1;
+        return { ok: true, result: { time: 1_700_000_000 } };
+      },
+      cachePendingTokenTransaction: (...args) => {
+        cached.push(args);
+        return true;
+      },
+      coreMempoolEntryPresent: (response) =>
+        response?.ok === true && Boolean(response.result),
+      decodedProtocolMessages: (vout) =>
+        vout.map((output) => output.message),
+      dedupeTransactions: (transactions) => transactions,
+      fetchTransactionFromBitcoinRpc: async (txid, _network, options) => {
+        assert.equal(options.requireCanonicalPrevouts, true);
+        return txid === targetTxid ? target : txid === listingId ? listing : null;
+      },
+      parseTokenPayload: (message) => {
+        if (message === `delist:${listingId}`) {
+          return { kind: "delist", listingId };
+        }
+        if (message === "list-work") {
+          return {
+            kind: "list",
+            saleAuthorization: { tokenId: workTokenId },
+          };
+        }
+        return null;
+      },
+      transactionConfirmed: (tx) => tx?.confirmed === true,
+      transactionHasCompleteCanonicalPrevouts: (tx) => tx?.complete === true,
+      transactionTxid: (tx) => String(tx?.txid ?? "").toLowerCase(),
+    },
+  );
+
+  const context = await pendingCoreWorkMarketplaceVerifierContext(
+    "livenet",
+    targetTxid,
+  );
+  assert.equal(context.scope, workTokenId);
+  assert.equal(context.targetTransaction.txid, targetTxid);
+  assert.deepEqual(
+    Array.from(context.supportingTransactions, (tx) => tx.txid),
+    [listingId],
+  );
+  assert.equal(mempoolReads, 2);
+  assert.equal(cached.length, 1);
+  assert.equal(cached[0][0].txid, targetTxid);
+  assert.equal(cached[0][2], "core-pending-token-verifier");
+});
+
+check("pending Core WORK marketplace context fails closed on a liveness race", async () => {
+  const workTokenId = "d".repeat(64);
+  const targetTxid = "a".repeat(64);
+  const target = {
+    _powCanonicalRpcHydration: true,
+    complete: true,
+    confirmed: false,
+    txid: targetTxid,
+    vout: [{ message: "list-work" }],
+  };
+  let mempoolReads = 0;
+  let cached = false;
+  const pendingCoreWorkMarketplaceVerifierContext = isolatedFunction(
+    API_PATH,
+    "pendingCoreWorkMarketplaceVerifierContext",
+    {
+      TOKEN_PROTOCOL_PREFIX: "pwt1:",
+      WORK_TOKEN_ID: workTokenId,
+      bitcoinRpc: async () => {
+        mempoolReads += 1;
+        return mempoolReads === 1
+          ? { ok: true, result: { time: 1_700_000_000 } }
+          : { ok: false, error: { code: -5 } };
+      },
+      cachePendingTokenTransaction: () => {
+        cached = true;
+      },
+      coreMempoolEntryPresent: (response) =>
+        response?.ok === true && Boolean(response.result),
+      decodedProtocolMessages: (vout) =>
+        vout.map((output) => output.message),
+      dedupeTransactions: (transactions) => transactions,
+      fetchTransactionFromBitcoinRpc: async () => target,
+      parseTokenPayload: () => ({
+        kind: "list",
+        saleAuthorization: { tokenId: workTokenId },
+      }),
+      transactionConfirmed: (tx) => tx?.confirmed === true,
+      transactionHasCompleteCanonicalPrevouts: (tx) => tx?.complete === true,
+      transactionTxid: (tx) => String(tx?.txid ?? "").toLowerCase(),
+    },
+  );
+
+  assert.equal(
+    await pendingCoreWorkMarketplaceVerifierContext("livenet", targetTxid),
+    null,
+  );
+  assert.equal(mempoolReads, 2);
+  assert.equal(cached, false);
+});
+
+check("pending unscoped WORK marketplace verification uses a per-tx Core replay", async () => {
+  const txid = "a".repeat(64);
+  const tokenId = "d".repeat(64);
+  const cacheKeys = [];
+  let broadLoads = 0;
+  const targetTransaction = { confirmed: false, txid };
+  const tokenVerifierPayload = isolatedFunction(
+    API_PATH,
+    "tokenVerifierPayload",
+    {
+      INTERNAL_VERIFIER_STATE_CACHE: new Map(),
+      WORK_TOKEN_ID: tokenId,
+      cachedInternalVerifierState: async (key, loader) => {
+        cacheKeys.push(key);
+        return loader();
+      },
+      normalizeTokenScope: (scope) => String(scope).toLowerCase(),
+      pendingCoreWorkMarketplaceVerifierContext: async () => ({
+        scope: tokenId,
+        supportingTransactions: [{ confirmed: true, txid: "b".repeat(64) }],
+        targetTransaction,
+      }),
+      pendingWorkMintSupplyCapVerifierPayload: async () => null,
+      tokenPayload: async () => {
+        broadLoads += 1;
+        return {};
+      },
+      tokenVerifierDeterministicInvalidReason: async () => "",
+      tokenVerifierItemsFromState: (state) =>
+        state.replayed
+          ? [{
+              confirmed: false,
+              kind: "token-listing-closed",
+              tokenId,
+              txid,
+              valid: true,
+            }]
+          : [],
+      verifierBalanceSnapshot: () => null,
+      workTokenPayload: async () => ({ source: "work-base" }),
+      workTokenStateWithDeltaTransactions: (state, transactions) => ({
+        ...state,
+        replayed: transactions.at(-1) === targetTransaction,
+      }),
+    },
+  );
+
+  const payload = await tokenVerifierPayload("livenet", "all", txid);
+  assert.equal(payload.items.length, 1);
+  assert.equal(payload.items[0].confirmed, false);
+  assert.equal(payload.items[0].kind, "token-listing-closed");
+  assert.equal(broadLoads, 0);
+  assert.ok(cacheKeys.includes(`token:livenet:${tokenId}`));
+  assert.ok(
+    cacheKeys.includes(`token-pending-core:livenet:${tokenId}:${txid}`),
+  );
+});
+
+check("a pending marketplace mutation against a confirmed close is invalid", async () => {
+  const txid = "a".repeat(64);
+  const listingId = "b".repeat(64);
+  const registryAddress = "work-registry";
+  const transaction = { confirmed: false, txid, vout: [{}] };
+  const tokenVerifierDeterministicInvalidReason = isolatedFunction(
+    API_PATH,
+    "tokenVerifierDeterministicInvalidReason",
+    {
+      TOKEN_CREATION_PRICE_SATS: 546,
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      TOKEN_PROTOCOL_PREFIX: "pwt1:",
+      decodedProtocolMessages: () => [`pwt1:seal5:${listingId}:fixture`],
+      numericValue: (value) => Number(value) || 0,
+      parseTokenPayload: () => ({ kind: "seal", listingId }),
+      tokenIndexAddressForNetwork: () => "token-index",
+      tokenPaymentAmountBeforeProtocol: () => 546,
+      transactionBlockHeight: () => 0,
+      transactionConfirmed: (tx) => tx?.confirmed === true,
+      transactionTxid: (tx) => String(tx?.txid ?? "").toLowerCase(),
+    },
+  );
+  assert.equal(
+    await tokenVerifierDeterministicInvalidReason(
+      "livenet",
+      {
+        closedListings: [{
+          closedConfirmed: true,
+          listingId,
+          registryAddress,
+        }],
+        listings: [],
+      },
+      txid,
+      false,
+      { transaction },
+    ),
+    "Referenced ProofOfWork credit listing is already closed.",
+  );
 });
 
 check("WORK pending cap follows canonical txid order instead of mempool time", () => {
@@ -14416,6 +14702,7 @@ check("pending token verifier classifies a mint beyond ordered supply as invalid
       completeTokenVerifierState: async () => state,
       decodedProtocolMessages: () => [],
       normalizeTokenScope: () => tokenId,
+      pendingCoreWorkMarketplaceVerifierContext: async () => null,
       pendingWorkMintSupplyCapVerifierPayload: async () => null,
       pruneInternalVerifierStateCache: () => {},
       tokenPayload: async () => state,
@@ -16307,7 +16594,7 @@ check("canonical consistency reads the exact eligible summary snapshot", async (
       proofIndexPool: () => ({
         async query(sql, params) {
           queryText = String(sql);
-          assert.deepEqual(Array.from(params), ["livenet", 0, ""]);
+          assert.deepEqual(Array.from(params), ["livenet"]);
           return {
             rows: [
               {
@@ -16380,6 +16667,9 @@ check("canonical consistency reads the exact eligible summary snapshot", async (
     queryText,
     /canonical-activity-count-matches-public-log/u,
   );
+  assert.match(queryText, /1::bigint AS matching_snapshot_count/u);
+  assert.match(queryText, /LIMIT 1/u);
+  assert.doesNotMatch(queryText, /count\(\*\) OVER \(\)/u);
   assert.equal(result.snapshotId, snapshotId);
   assert.equal(result.metrics.activityItems, 23591);
   assert.equal(result.metrics.confirmedComputerActions, 23585);
@@ -16518,7 +16808,7 @@ check("Inception H-1 oracle accepts agreeing versioned exact green summaries", a
   );
   assert.match(
     queryText,
-    /LIMIT CASE WHEN \$2::integer = 0 THEN 1 ELSE 128 END/u,
+    /LIMIT 128/u,
   );
   assert.doesNotMatch(queryText, /\b(?:INSERT|UPDATE|DELETE)\b/u);
   assert.deepEqual(rows, preservedRows);

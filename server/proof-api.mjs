@@ -37230,6 +37230,127 @@ function tokenListingForVerifier(state, listingId) {
   );
 }
 
+async function pendingCoreWorkMarketplaceVerifierContext(
+  network,
+  txid,
+) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (network !== "livenet" || !/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    return null;
+  }
+
+  const [targetTransaction, initialMempoolResponse] = await Promise.all([
+    fetchTransactionFromBitcoinRpc(normalizedTxid, network, {
+      requireCanonicalPrevouts: true,
+    }),
+    bitcoinRpc("getmempoolentry", [normalizedTxid]),
+  ]);
+  if (
+    targetTransaction?._powCanonicalRpcHydration !== true ||
+    transactionTxid(targetTransaction) !== normalizedTxid ||
+    transactionConfirmed(targetTransaction) ||
+    !transactionHasCompleteCanonicalPrevouts(targetTransaction) ||
+    !coreMempoolEntryPresent(initialMempoolResponse)
+  ) {
+    return null;
+  }
+
+  const targetMessages = decodedProtocolMessages(
+    targetTransaction.vout ?? [],
+    TOKEN_PROTOCOL_PREFIX,
+  );
+  const parsedMessages = targetMessages.map((message) =>
+    parseTokenPayload(message, network),
+  );
+  const marketplaceKinds = new Set(["buy", "delist", "list", "seal"]);
+  if (
+    parsedMessages.length === 0 ||
+    parsedMessages.some(
+      (parsed) => !parsed || !marketplaceKinds.has(parsed.kind),
+    )
+  ) {
+    return null;
+  }
+
+  const tokenIds = new Set();
+  const listingIds = new Set();
+  const addTokenId = (value) => {
+    const tokenId = String(value ?? "").trim().toLowerCase();
+    if (/^[0-9a-f]{64}$/u.test(tokenId)) {
+      tokenIds.add(tokenId);
+    }
+  };
+  for (const parsed of parsedMessages) {
+    if (parsed.kind === "list" || parsed.kind === "seal") {
+      addTokenId(parsed.saleAuthorization?.tokenId);
+    }
+    if (["buy", "delist", "seal"].includes(parsed.kind)) {
+      const listingId = String(parsed.listingId ?? "").trim().toLowerCase();
+      if (!/^[0-9a-f]{64}$/u.test(listingId)) {
+        return null;
+      }
+      listingIds.add(listingId);
+    }
+  }
+
+  const supportingTransactions = [];
+  for (const listingId of listingIds) {
+    const listingTransaction = await fetchTransactionFromBitcoinRpc(
+      listingId,
+      network,
+      { requireCanonicalPrevouts: true },
+    );
+    if (
+      listingTransaction?._powCanonicalRpcHydration !== true ||
+      transactionTxid(listingTransaction) !== listingId ||
+      !transactionConfirmed(listingTransaction) ||
+      !transactionHasCompleteCanonicalPrevouts(listingTransaction)
+    ) {
+      return null;
+    }
+    const listingTokenIds = new Set(
+      decodedProtocolMessages(
+        listingTransaction.vout ?? [],
+        TOKEN_PROTOCOL_PREFIX,
+      ).flatMap((message) => {
+        const parsed = parseTokenPayload(message, network);
+        const tokenId = String(parsed?.saleAuthorization?.tokenId ?? "")
+          .trim()
+          .toLowerCase();
+        return parsed?.kind === "list" && /^[0-9a-f]{64}$/u.test(tokenId)
+          ? [tokenId]
+          : [];
+      }),
+    );
+    if (listingTokenIds.size !== 1) {
+      return null;
+    }
+    addTokenId([...listingTokenIds][0]);
+    supportingTransactions.push(listingTransaction);
+  }
+
+  if (tokenIds.size !== 1 || !tokenIds.has(WORK_TOKEN_ID)) {
+    return null;
+  }
+  const finalMempoolResponse = await bitcoinRpc("getmempoolentry", [
+    normalizedTxid,
+  ]);
+  if (!coreMempoolEntryPresent(finalMempoolResponse)) {
+    return null;
+  }
+
+  cachePendingTokenTransaction(
+    targetTransaction,
+    network,
+    "core-pending-token-verifier",
+  );
+  return {
+    scope: WORK_TOKEN_ID,
+    supportingTransactions: dedupeTransactions(supportingTransactions),
+    targetTransaction,
+  };
+}
+
 function pendingWorkMintFromHydratedTransaction(tx, network, txid) {
   const normalizedTxid = String(txid ?? "").trim().toLowerCase();
   const vin = Array.isArray(tx?.vin) ? tx.vin : [];
@@ -37642,7 +37763,9 @@ async function tokenVerifierDeterministicInvalidReason(
   state,
   txid,
   requireConfirmed,
+  options = {},
 ) {
+  const providedTransaction = options?.transaction;
   const tx = requireConfirmed
     ? state?.canonicalCoverage === true
       ? (Array.isArray(state.transactions) ? state.transactions : []).find(
@@ -37652,7 +37775,11 @@ async function tokenVerifierDeterministicInvalidReason(
               Number(state?.coverageHeight ?? 0),
         )
       : null
-    : await fetchTransactionFromBitcoinRpc(txid, network).catch(() => null);
+    : providedTransaction &&
+        transactionTxid(providedTransaction) === txid &&
+        !transactionConfirmed(providedTransaction)
+      ? providedTransaction
+      : await fetchTransactionFromBitcoinRpc(txid, network).catch(() => null);
   if (!tx || (requireConfirmed && !transactionConfirmed(tx))) {
     return "";
   }
@@ -37694,7 +37821,27 @@ async function tokenVerifierDeterministicInvalidReason(
     } else if (parsed.kind === "list") {
       registryAddress = parsed.saleAuthorization?.registryAddress ?? "";
     } else {
-      const listing = tokenListingForVerifier(state, parsed.listingId);
+      const normalizedListingId = String(parsed.listingId ?? "")
+        .trim()
+        .toLowerCase();
+      const listing = (Array.isArray(state?.listings) ? state.listings : [])
+        .find(
+          (candidate) =>
+            String(candidate?.listingId ?? "").trim().toLowerCase() ===
+            normalizedListingId,
+        );
+      const confirmedClosedListing = (Array.isArray(state?.closedListings)
+        ? state.closedListings
+        : []
+      ).find(
+        (candidate) =>
+          candidate?.closedConfirmed === true &&
+          String(candidate?.listingId ?? "").trim().toLowerCase() ===
+            normalizedListingId,
+      );
+      if (!listing && confirmedClosedListing) {
+        return "Referenced ProofOfWork credit listing is already closed.";
+      }
       if (!listing?.registryAddress) {
         return "";
       }
@@ -37788,10 +37935,27 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
   if (provisionalSupplyCapPayload) {
     return provisionalSupplyCapPayload;
   }
+  const pendingCoreContext = requireConfirmed
+    ? null
+    : await pendingCoreWorkMarketplaceVerifierContext(
+        network,
+        normalizedTxid,
+      ).catch((error) => {
+        console.error(
+          `Pending Core WORK marketplace verifier deferred for ${normalizedTxid}: ${errorSummary(error)}`,
+        );
+        return null;
+      });
+  const usePendingCoreWorkState =
+    !requireConfirmed &&
+    pendingCoreContext?.scope === WORK_TOKEN_ID &&
+    (!scope || scope === WORK_TOKEN_ID);
   const confirmedStateScope = scope || `tx:${normalizedTxid}`;
   const stateKey = requireConfirmed
     ? `token-complete:${network}:${confirmedStateScope}:h${requiredBlockHeight}:${requiredPreviousBlockHash}:${requiredBlockHash}`
-    : `token:${network}:${scope || "all"}`;
+    : usePendingCoreWorkState
+      ? `token-pending-core:${network}:${WORK_TOKEN_ID}:${normalizedTxid}`
+      : `token:${network}:${scope || "all"}`;
   if (requireConfirmed) {
     pruneInternalVerifierStateCache(requiredBlockHeight);
   }
@@ -37805,9 +37969,23 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
           requiredBlockHash,
           requiredPreviousBlockHash,
         )
-      : scope === WORK_TOKEN_ID
-        ? workTokenPayload(network, null)
-        : tokenPayload(network, scope);
+      : usePendingCoreWorkState
+        ? cachedInternalVerifierState(
+            `token:${network}:${WORK_TOKEN_ID}`,
+            () => workTokenPayload(network, null),
+          ).then((baseWorkState) =>
+            workTokenStateWithDeltaTransactions(
+              baseWorkState,
+              [
+                ...pendingCoreContext.supportingTransactions,
+                pendingCoreContext.targetTransaction,
+              ],
+              network,
+            ),
+          )
+        : scope === WORK_TOKEN_ID
+          ? workTokenPayload(network, null)
+          : tokenPayload(network, scope);
   let state = await cachedInternalVerifierState(stateKey, stateLoader);
   if (
     requireConfirmed &&
@@ -37855,6 +38033,7 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
       state,
       normalizedTxid,
       requireConfirmed,
+      { transaction: pendingCoreContext?.targetTransaction },
     );
     if (invalidReason) {
       items.push({

@@ -87,6 +87,13 @@ off, and disables broad ledger snapshots. After confirmed catch-up it publishes
 one authenticated canonical-summary bundle built from the completed relational
 read models at the exact hashed Core tip. Broad source, token, registry, and
 ledger snapshot refreshes are explicit supervised jobs, not 30-second work.
+Canonical-summary publication also bounds the snapshot table: it keeps the
+newest 4,096 canonical-summary versions and 20,000 scan/derived checkpoints by
+default, while preserving every snapshot referenced by an Inception issuance
+oracle. Operators can raise the two caps with
+`POW_INDEX_LEDGER_CANONICAL_SUMMARY_RETENTION` and
+`POW_INDEX_LEDGER_SCAN_SNAPSHOT_RETENTION`; do not lower them below the built-in
+safety floors or delete referenced H-1 valuation snapshots.
 For every hydrated protocol transaction, canonical replay also upserts
 full-node `tx_inputs`, `tx_outputs`, safely decoded `op_returns`, and canonical
 spend links. These normalized rows accelerate exact transaction/outpoint audits
@@ -615,6 +622,10 @@ PostgreSQL recovery uses two independent layers. Bind
 `pg_compresswal@16-main.timer`. Install `postgresql-backup.conf` as a cluster
 configuration fragment and reload PostgreSQL so a failed physical-WAL receiver
 can retain at most 16 GB in PostgreSQL's live `pg_wal` on the root filesystem.
+Apply `deploy/proof-indexer-db-role-limits.sql` as PostgreSQL superuser and
+restart the API and worker pools. It caps each `proof_indexer` backend at 1 GB
+of temporary files and logs any temporary file of at least 256 MB, preventing a
+single accidental sort from exhausting root while keeping large-spill evidence.
 That setting does not cap the received WAL archive on `/data`; successful base
 backups, `pg_archivecleanup`, backup-age checks, and `/data` free-space checks
 remain mandatory. Install `pg-basebackup-timer-override.conf` as
@@ -917,7 +928,7 @@ The canonical livenet ledger payload:
 - May serve a useful cached ledger for fast first paint only when summary projections also correct active sale-ticket listings against current node spend state; deep refresh continues in the background and must converge on confirmed chain truth.
 - Replays WORK mint summaries from canonical mint events and treats pending WORK mints as availability pressure only. Pending mints can reduce available mint slots in the UI, but they do not change confirmed supply, holders, floor, or network value.
 - Orders pending WORK mint candidates by lowercase txid. A fast supply-cap rejection is allowed only from exact-tip confirmed supply plus a complete, Bitcoin Core-current prefix of earlier candidates; otherwise the verifier falls back instead of guessing.
-- Revalidates only Core-current accepted/provisional supply-capped pending WORK decisions that disagree with exact confirmed supply plus lowercase-txid candidate order. Core-absent database rows never consume a pending slot. Every pending protocol transaction carries a versioned WORK-inspection marker, so a persisted PWM envelope cannot hide a deferred WORK companion and every legacy row receives one bounded inspection pass. Existing rows record exact raw WORK-message count and a recovery-pending marker before the broad verifier runs; a one-time 30-second verifier window must succeed before that marker clears. Deferred and multi-mint transactions form conservative ordering barriers: the rotating recovery lane rechecks that transaction and every later WORK decision because neither a missing decision nor raw message count proves how many mints its registry payment can fund. Ordinary verified single-mint rows stop consuming verifier work. A resolved permanent-invalid mint removes any older volatile valid/supply-cap decision only when the raw transaction contains an actual WORK mint attempt, then records a terminal transaction marker without publishing a provisional invalid event. The mempool writer locks the transaction row before atomically replacing the complete volatile WORK mint/audit set, while the canonical block scanner removes only volatile WORK mint/audit rows before storing confirmed truth. Confirmed block-backed rows are never rewritten by the mempool path.
+- Revalidates only Core-current accepted/provisional supply-capped pending WORK decisions that disagree with exact confirmed supply plus lowercase-txid candidate order. Core-absent database rows never consume a pending slot. Every pending protocol transaction carries a versioned WORK-inspection marker, so a persisted PWM envelope cannot hide a deferred WORK companion and every legacy row receives one bounded inspection pass. Existing rows record exact raw WORK-message count and a recovery-pending marker before the broad verifier runs; a one-time 30-second verifier window must succeed before that marker clears. Deferred and multi-mint transactions form conservative ordering barriers: the rotating recovery lane rechecks that transaction and every later WORK decision because neither a missing decision nor raw message count proves how many mints its registry payment can fund. Ordinary verified single-mint rows stop consuming verifier work. A resolved permanent-invalid mint removes any older volatile valid/supply-cap decision only when the raw transaction contains an actual WORK mint attempt, then records a terminal transaction marker without publishing a provisional invalid event. A Core-current pending protocol transaction likewise receives a separate terminal-invalid marker only after the verifier returns a nonempty, entirely invalid result; unresolved verifier failures remain unmarked and retry. The mempool writer locks the transaction row before atomically replacing the complete volatile WORK mint/audit set, while the canonical block scanner removes only volatile WORK mint/audit rows before storing confirmed truth. Confirmed block-backed rows are never rewritten by the mempool path.
 - Promotes pending WORK and credit listings into confirmed state through the shared credit payload, deduping by listing txid and sale-ticket outpoint so confirmation does not leave duplicate pending rows behind.
 - Preserves sale-ticket seal metadata when WORK or credit listings promote from pending to confirmed state. Confirmed seal regressions are rejected so a refreshed payload cannot make a sealed listing look unsealed.
 - Checks pending WORK and credit txids for liveness on fresh reads and prunes dropped pending transfers, listings, seals, delistings, and buys from pending overlays without changing confirmed history.

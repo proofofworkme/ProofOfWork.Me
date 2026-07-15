@@ -9,9 +9,17 @@ const proofIndexerWorkerService = readFileSync(
   "deploy/proofofwork-indexer-worker.service",
   "utf8",
 );
+const proofIndexerSchema = readFileSync(
+  "server/sql/proof-indexer-v1.sql",
+  "utf8",
+);
 const app = readFileSync("src/App.tsx", "utf8");
 const routeRegistry = readFileSync("src/app/routeRegistry.ts", "utf8");
 const proofIndexDeploy = readFileSync("deploy/proofofwork-api-proof-index.conf", "utf8");
+const proofIndexDbRoleLimits = readFileSync(
+  "deploy/proof-indexer-db-role-limits.sql",
+  "utf8",
+);
 const packageJson = readFileSync("package.json", "utf8");
 const failures = [];
 
@@ -276,12 +284,17 @@ const internalVerifierRoutesSource = sourceSliceBetween(
 const operationalScanMetadataSource = sourceSliceBetween(
   proofIndexReader,
   /async function latestProofIndexScanMetadata\(/,
-  /export async function proofIndexOperationalStatusPayload\(/,
+  /async function latestProofIndexOperationalMetadata\(/,
 );
 const operationalHealthMetadataSource = sourceSliceBetween(
   proofIndexReader,
   /async function latestProofIndexOperationalMetadata\(/,
   /export async function proofIndexOperationalStatusPayload\(/,
+);
+const canonicalSummaryLedgerPayloadSource = sourceSliceBetween(
+  proofIndexReader,
+  /export async function proofIndexCanonicalSummaryLedgerPayload\(/,
+  /export async function proofIndexSnapshotPayload\(/,
 );
 const addressIndexHealthSource = sourceSliceBetween(
   server,
@@ -467,6 +480,17 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /confirmed_events AS \([\s\S]*confirmed_event_max_block/,
   /readModelsOk &&[\s\S]*summarySnapshotOk/,
 ]);
+expectAll("ledger snapshot retention is bounded and preserves issuance oracles", proofIndexerBackfill, [
+  /POW_INDEX_LEDGER_CANONICAL_SUMMARY_RETENTION[\s\S]*4_096/,
+  /POW_INDEX_LEDGER_SCAN_SNAPSHOT_RETENTION[\s\S]*20_000/,
+  /async function pruneLedgerSnapshots\([\s\S]*row_number\(\) OVER[\s\S]*source_hashes \? 'canonicalSummary'[\s\S]*DELETE FROM proof_indexer\.ledger_snapshots/,
+  /payload->>'issuanceValueSnapshotId'[\s\S]*NOT EXISTS/,
+  /const snapshotRetention = await pruneLedgerSnapshots\(client\)/,
+]);
+expectAll("the production database role has finite temp-file safeguards", proofIndexDbRoleLimits, [
+  /ALTER ROLE proof_indexer IN DATABASE proof_indexer[\s\S]*SET temp_file_limit = '1GB'/,
+  /ALTER ROLE proof_indexer IN DATABASE proof_indexer[\s\S]*SET log_temp_files = '256MB'/,
+]);
 expectAll("canonical read gate timeouts recover without a pinned public outage", server, [
   /const CANONICAL_PUBLIC_READ_GATE_TIMEOUT_MS = Math\.min\([\s\S]*15_000/,
   /const CANONICAL_PUBLIC_READ_GATE_TIMEOUT_TTL_MS = Math\.min\(/,
@@ -488,6 +512,15 @@ expectAll("ordered credit verifier distinguishes deterministic invalidity from u
   /tokenVerifierDeterministicInvalidReason\(/,
   /if \(invalidReason\) \{[\s\S]*valid: false/,
   /if \(items\.length === 0\) \{[\s\S]*error\.statusCode = 503[\s\S]*code: "TOKEN_VERIFIER_UNRESOLVED"/,
+]);
+expectAll("pending WORK marketplace verification replays only Core-current exact evidence", server, [
+  /async function pendingCoreWorkMarketplaceVerifierContext\([\s\S]*requireCanonicalPrevouts: true/,
+  /bitcoinRpc\("getmempoolentry", \[normalizedTxid\]\)[\s\S]*coreMempoolEntryPresent\(initialMempoolResponse\)/,
+  /marketplaceKinds = new Set\(\["buy", "delist", "list", "seal"\]\)/,
+  /tokenIds\.size !== 1 \|\| !tokenIds\.has\(WORK_TOKEN_ID\)/,
+  /coreMempoolEntryPresent\(finalMempoolResponse\)[\s\S]*cachePendingTokenTransaction\(/,
+  /token-pending-core:[\s\S]*workTokenStateWithDeltaTransactions\(/,
+  /confirmedClosedListing[\s\S]*Referenced ProofOfWork credit listing is already closed/,
 ]);
 expect(
   "credit verifier must not turn a current node tip into a negative state verdict",
@@ -531,11 +564,11 @@ expectAll("confirmed block scan bootstraps explicitly and checkpoints canonical 
   /const firstHeight = latestIndexedHeight \+ 1/,
 ]);
 expectAll("operational health prefers hashed replay checkpoints over newer legacy rows", operationalScanMetadataSource, [
-  /ORDER BY[\s\S]*CASE[\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*payload->>'blockHash'[\s\S]*IS NOT NULL THEN 0[\s\S]*ELSE 1[\s\S]*indexed_through_block DESC NULLS LAST/,
+  /ORDER BY[\s\S]*CASE[\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*payload->>'blockHash'[\s\S]*source_hashes->>'blockScan'[\s\S]*IS NOT NULL THEN 0[\s\S]*ELSE 1[\s\S]*indexed_through_block DESC NULLS LAST/,
 ]);
 expectAll("operational health uses compact indexed snapshot projections", operationalHealthMetadataSource, [
-  /source_hashes \? 'blockScan'[\s\S]*ORDER BY[\s\S]*CASE[\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*payload->>'blockHash'[\s\S]*source_hashes->>'blockHash'[\s\S]*IS NOT NULL THEN 0[\s\S]*ELSE 1[\s\S]*indexed_through_block DESC NULLS LAST[\s\S]*generated_at DESC/,
-  /COALESCE\([\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*payload->>'blockHash'[\s\S]*source_hashes->>'blockHash'[\s\S]*AS scan_block_hash/,
+  /source_hashes \? 'blockScan'[\s\S]*ORDER BY[\s\S]*CASE[\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*payload->>'blockHash'[\s\S]*source_hashes->>'blockScan'[\s\S]*IS NOT NULL THEN 0[\s\S]*ELSE 1[\s\S]*indexed_through_block DESC NULLS LAST[\s\S]*generated_at DESC/,
+  /COALESCE\([\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*payload->>'blockHash'[\s\S]*source_hashes->>'blockScan'[\s\S]*AS scan_block_hash/,
   /payload \? 'summaryPayloads'/,
   /ORDER BY[\s\S]*indexed_through_block DESC NULLS LAST[\s\S]*generated_at DESC[\s\S]*LIMIT 1/,
   /jsonb_build_object\([\s\S]*AS summary_coverage/,
@@ -559,6 +592,20 @@ expect(
     operationalHealthMetadataSource,
   ),
 );
+expectAll("snapshot health reads have order-matching spill guards", proofIndexerSchema, [
+  /CREATE INDEX IF NOT EXISTS ledger_snapshots_scan_health_idx[\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*payload->>'blockHash'[\s\S]*source_hashes->>'blockScan'[\s\S]*indexed_through_block DESC NULLS LAST,[\s\S]*generated_at DESC/,
+  /CREATE INDEX IF NOT EXISTS ledger_snapshots_canonical_payload_latest_idx[\s\S]*payload->>'snapshotId' = snapshot_id[\s\S]*payload \? 'activityPayload'[\s\S]*payload \? 'registryHistoryPayloads'[\s\S]*payload \? 'summaryPayloads'[\s\S]*payload \? 'tokenHistoryPayloads'[\s\S]*payload \? 'tokenStatePayloads'[\s\S]*generated_at DESC[\s\S]*WHERE payload \? 'snapshotId'/,
+]);
+expect(
+  "canonical scan metadata does not hydrate an unused summary snapshot",
+  !/latest_summary|summary_payloads|summary_snapshot_id/u.test(
+    operationalScanMetadataSource,
+  ),
+);
+expectAll("canonical summary ledger reads imply their indexed payload class", canonicalSummaryLedgerPayloadSource, [
+  /source_hashes \? 'canonicalSummary'[\s\S]*payload \? 'summaryPayloads'/,
+  /ORDER BY[\s\S]*indexed_through_block DESC NULLS LAST,[\s\S]*generated_at DESC/,
+]);
 expectAll("health probes use bounded Electrum balance checks", addressIndexHealthSource, [
   /blockchain\.scripthash\.get_balance/,
   /ELECTRUM_HEALTH_SCRIPTHASH/,
@@ -735,11 +782,13 @@ expectAll("mempool priority recovery rotates independently and preserves invalid
   /function mempoolRecoveryTxidsFromRows\([\s\S]*Boolean\(mempool\?\.\[row\.txid\]\)[\s\S]*remainingSlots/,
   /const attemptedMints = Math\.max\([\s\S]*row\.attemptedMints[\s\S]*row\.validDecisions[\s\S]*row\.invalidDecisions/,
   /let orderingUncertain = false[\s\S]*if \(row\.recoveryNeeded\) \{[\s\S]*orderingUncertain = true[\s\S]*if \(attemptedMints > 1\) \{[\s\S]*orderingUncertain = true/,
-  /pendingWorkMintInspectionVersion[\s\S]*AS inspection_version[\s\S]*pendingWorkMintAttemptCount[\s\S]*AS attempted_mints[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*AS recovery_needed[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*AS resolved_invalid/,
-  /function storePendingWorkMintInspection\([\s\S]*jsonb_build_object\([\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*canonicalBlockScan/,
+  /pendingWorkMintInspectionVersion[\s\S]*AS inspection_version[\s\S]*pendingWorkMintAttemptCount[\s\S]*AS attempted_mints[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*AS recovery_needed[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*AS resolved_invalid[\s\S]*pendingProtocolResolvedInvalid[\s\S]*AS protocol_resolved_invalid/,
+  /function storePendingWorkMintInspection\([\s\S]*jsonb_build_object\([\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*pendingProtocolResolvedInvalid[\s\S]*canonicalBlockScan/,
   /function storePendingWorkMintAttemptPreinspection\([\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded', true[\s\S]*pendingWorkMintResolvedInvalid', false[\s\S]*canonicalBlockScan[\s\S]*!~ '\^\[1-9\]\[0-9\]\*\$'/,
   /const PENDING_LEGACY_VERIFIER_TIMEOUT_MS = 30_000[\s\S]*async function canonicalRecoveryItemsForTx\(tx, messages, options = \{\}\)[\s\S]*options\?\.pendingVerifierTimeoutMs/,
   /const workMintAttemptCount = pendingWorkMintAttemptCount\(messages\)[\s\S]*storePendingWorkMintAttemptPreinspection\([\s\S]*PENDING_LEGACY_VERIFIER_TIMEOUT_MS[\s\S]*preparedProtocolItemsForTx/,
+  /const protocolResolvedInvalid =[\s\S]*rawVerifiedPrepared\.length > 0[\s\S]*rawVerifiedPrepared\.every\([\s\S]*valid === false[\s\S]*storePendingWorkMintInspection\([\s\S]*protocolResolvedInvalid/,
+  /row\.status === "pending"[\s\S]*row\.eventCount === 0[\s\S]*!row\.protocolResolvedInvalid[\s\S]*!row\.resolvedInvalid/,
   /const resolvedInvalids = items\.filter\([\s\S]*token-event-invalid[\s\S]*Number\.isSafeInteger\(workMintAttemptCount\)[\s\S]*workMintAttemptCount > 0[\s\S]*return \{ kind: "resolved-invalid", persistInvalid: false \}/,
   /function reconcilePendingWorkMintDecision\([\s\S]*WITH canonical_guard AS[\s\S]*e\.status IN \('pending', 'dropped', 'orphaned'\)[\s\S]*e\.kind = 'token-mint'[\s\S]*provisionalReason'[\s\S]*supply-cap/,
   /function lockedCanonicalTransactionForMempool\([\s\S]*FOR UPDATE/,

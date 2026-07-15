@@ -499,6 +499,27 @@ const STORE_LEDGER_SNAPSHOT = (() => {
 const STORE_CANONICAL_SUMMARY_SNAPSHOT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT ?? ""),
 );
+const LEDGER_CANONICAL_SUMMARY_RETENTION = Math.max(
+  512,
+  Math.min(
+    20_000,
+    Math.floor(
+      Number(
+        process.env.POW_INDEX_LEDGER_CANONICAL_SUMMARY_RETENTION ?? 4_096,
+      ) || 4_096,
+    ),
+  ),
+);
+const LEDGER_SCAN_SNAPSHOT_RETENTION = Math.max(
+  5_000,
+  Math.min(
+    100_000,
+    Math.floor(
+      Number(process.env.POW_INDEX_LEDGER_SCAN_SNAPSHOT_RETENTION ?? 20_000) ||
+        20_000,
+    ),
+  ),
+);
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
@@ -7042,6 +7063,80 @@ function canonicalSummaryRefreshCanDefer(error) {
   );
 }
 
+async function pruneLedgerSnapshots(
+  client,
+  {
+    canonicalSummaryLimit = LEDGER_CANONICAL_SUMMARY_RETENTION,
+    scanSnapshotLimit = LEDGER_SCAN_SNAPSHOT_RETENTION,
+  } = {},
+) {
+  const boundedCanonicalSummaryLimit = Math.max(
+    1,
+    Math.floor(Number(canonicalSummaryLimit) || 0),
+  );
+  const boundedScanSnapshotLimit = Math.max(
+    1,
+    Math.floor(Number(scanSnapshotLimit) || 0),
+  );
+  const result = await client.query(
+    `
+      WITH ranked AS MATERIALIZED (
+        SELECT
+          snapshot_id,
+          source_hashes ? 'canonicalSummary' AS canonical_summary,
+          row_number() OVER (
+            PARTITION BY (source_hashes ? 'canonicalSummary')
+            ORDER BY generated_at DESC, snapshot_id DESC
+          ) AS retention_rank
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+      ),
+      referenced AS MATERIALIZED (
+        SELECT DISTINCT payload->>'issuanceValueSnapshotId' AS snapshot_id
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND COALESCE(payload->>'issuanceValueSnapshotId', '') <> ''
+      )
+      DELETE FROM proof_indexer.ledger_snapshots snapshot
+      USING ranked
+      WHERE snapshot.network = $1
+        AND snapshot.snapshot_id = ranked.snapshot_id
+        AND (
+          (
+            ranked.canonical_summary
+            AND ranked.retention_rank > $2::integer
+          )
+          OR (
+            NOT ranked.canonical_summary
+            AND ranked.retention_rank > $3::integer
+          )
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM referenced
+          WHERE referenced.snapshot_id = snapshot.snapshot_id
+        )
+      RETURNING
+        snapshot.snapshot_id,
+        snapshot.source_hashes ? 'canonicalSummary' AS canonical_summary
+    `,
+    [
+      NETWORK,
+      boundedCanonicalSummaryLimit,
+      boundedScanSnapshotLimit,
+    ],
+  );
+  return {
+    canonicalSummaries: result.rows.filter(
+      (row) => row?.canonical_summary === true,
+    ).length,
+    scanOrDerived: result.rows.filter(
+      (row) => row?.canonical_summary !== true,
+    ).length,
+    total: result.rows.length,
+  };
+}
+
 async function storeCanonicalSummarySnapshot(client) {
   const latestCheckpoint = await latestBlockScanCheckpoint(client, {
     useStoredCheckpoint: true,
@@ -7250,11 +7345,13 @@ async function storeCanonicalSummarySnapshot(client) {
       JSON.stringify(snapshotPayload),
     ],
   );
+  const snapshotRetention = await pruneLedgerSnapshots(client);
   return {
     indexedThroughBlock,
     previousCoverage,
     skipped: false,
     snapshotId,
+    snapshotRetention,
   };
 }
 
@@ -8492,6 +8589,7 @@ function mempoolRecoveryTxidsFromRows(rows, mempool) {
       eventCount: Number(row?.event_count ?? 0),
       inspectionVersion: Number(row?.inspection_version ?? 0),
       invalidDecisions: Number(row?.invalid_decisions ?? 0),
+      protocolResolvedInvalid: row?.protocol_resolved_invalid === true,
       recoveryNeeded: row?.recovery_needed === true,
       resolvedInvalid: row?.resolved_invalid === true,
       status: String(row?.status ?? "").trim().toLowerCase(),
@@ -8539,6 +8637,7 @@ function mempoolRecoveryTxidsFromRows(rows, mempool) {
     } else if (
       row.status === "pending" &&
       row.eventCount === 0 &&
+      !row.protocolResolvedInvalid &&
       !row.resolvedInvalid
     ) {
       recoveryTxids.add(row.txid);
@@ -8672,6 +8771,9 @@ async function knownMempoolRecoveryTxids(client, mempool) {
         bool_or(
           t.raw_tx->>'pendingWorkMintResolvedInvalid' = 'true'
         ) AS resolved_invalid,
+        bool_or(
+          t.raw_tx->>'pendingProtocolResolvedInvalid' = 'true'
+        ) AS protocol_resolved_invalid,
         confirmed_work.confirmed_supply
       FROM proof_indexer.transactions t
       CROSS JOIN confirmed_work
@@ -8806,6 +8908,7 @@ async function storePendingWorkMintInspection(
   attemptCount,
   recoveryNeeded,
   resolvedInvalid,
+  protocolResolvedInvalid = false,
 ) {
   const result = await client.query(
     `
@@ -8815,7 +8918,8 @@ async function storePendingWorkMintInspection(
           'pendingWorkMintAttemptCount', $3::integer,
           'pendingWorkMintInspectionVersion', 1,
           'pendingWorkMintRecoveryNeeded', $4::boolean,
-          'pendingWorkMintResolvedInvalid', $5::boolean
+          'pendingWorkMintResolvedInvalid', $5::boolean,
+          'pendingProtocolResolvedInvalid', $6::boolean
         ),
         updated_at = now()
       WHERE t.network = $1
@@ -8824,7 +8928,14 @@ async function storePendingWorkMintInspection(
         AND NOT (COALESCE(t.raw_tx, '{}'::jsonb) ? 'canonicalBlockScan')
       RETURNING t.txid
     `,
-    [NETWORK, txid, attemptCount, recoveryNeeded, resolvedInvalid],
+    [
+      NETWORK,
+      txid,
+      attemptCount,
+      recoveryNeeded,
+      resolvedInvalid,
+      protocolResolvedInvalid,
+    ],
   );
   if (result.rowCount !== 1) {
     throw new Error(
@@ -9173,6 +9284,11 @@ async function backfillMempoolScanSource(client, source) {
       const workMintRecoveryNeeded =
         workMintAttemptCount > 0 &&
         !pendingWorkMintVerifierResolved(rawVerifiedPrepared);
+      const protocolResolvedInvalid =
+        rawVerifiedPrepared.length > 0 &&
+        rawVerifiedPrepared.every(
+          (entry) => (entry?.item ?? entry)?.valid === false,
+        );
       const verifiedPrepared = rawVerifiedPrepared.map((entry) => {
         const item = entry?.item ?? entry;
         const workMintDecision =
@@ -9231,6 +9347,7 @@ async function backfillMempoolScanSource(client, source) {
         workMintAttemptCount,
         workMintRecoveryNeeded,
         workMintResolvedInvalid,
+        protocolResolvedInvalid,
       );
       const pendingWorkReconciliation =
         await reconcilePendingWorkMintDecision(
