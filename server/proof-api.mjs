@@ -37791,6 +37791,9 @@ async function tokenVerifierDeterministicInvalidReason(
   if (parsedMessages.some((parsed) => !parsed)) {
     return "Malformed ProofOfWork credit protocol payload.";
   }
+  const exactBalanceState = requireConfirmed
+    ? state?.canonicalCoverage === true
+    : options?.exactPendingCoreState === true;
   const tokenById = new Map(
     (Array.isArray(state?.tokens) ? state.tokens : []).map((token) => [
       String(token?.tokenId ?? "").toLowerCase(),
@@ -37802,6 +37805,7 @@ async function tokenVerifierDeterministicInvalidReason(
     let registryAddress = "";
     let minimumPayment = TOKEN_MIN_MUTATION_PRICE_SATS;
     let mintedToken = null;
+    let pendingListBalance = null;
     if (parsed.kind === "create") {
       registryAddress = indexAddress;
       minimumPayment = TOKEN_CREATION_PRICE_SATS;
@@ -37819,7 +37823,58 @@ async function tokenVerifierDeterministicInvalidReason(
         mintedToken = token;
       }
     } else if (parsed.kind === "list") {
-      registryAddress = parsed.saleAuthorization?.registryAddress ?? "";
+      const authorization = parsed.saleAuthorization;
+      registryAddress = authorization?.registryAddress ?? "";
+      const actorAddress = inputAddresses(tx.vin ?? [])[0] ?? "";
+      const tokenId = String(authorization?.tokenId ?? "")
+        .trim()
+        .toLowerCase();
+      const amount = Number(authorization?.amount);
+      if (
+        exactBalanceState &&
+        authorization?.sellerAddress === actorAddress &&
+        /^[0-9a-f]{64}$/u.test(tokenId) &&
+        Number.isSafeInteger(amount) &&
+        amount > 0
+      ) {
+        const holder = (Array.isArray(state?.holders) ? state.holders : [])
+          .find(
+            (candidate) =>
+              candidate?.address === actorAddress &&
+              String(candidate?.tokenId ?? "").trim().toLowerCase() === tokenId,
+          );
+        const confirmedBalance = Number(
+          holder?.balance ?? holder?.confirmedBalance ?? 0,
+        );
+        const reservedBalance = (Array.isArray(state?.listings)
+          ? state.listings
+          : []
+        )
+          .filter(
+            (listing) =>
+              listing?.sellerAddress === actorAddress &&
+              String(listing?.tokenId ?? "").trim().toLowerCase() === tokenId &&
+              !tokenListingIsExpired(listing),
+          )
+          .reduce((total, listing) => total + Number(listing?.amount ?? 0), 0);
+        if (
+          Number.isSafeInteger(confirmedBalance) &&
+          confirmedBalance >= 0 &&
+          Number.isSafeInteger(reservedBalance) &&
+          reservedBalance >= 0
+        ) {
+          pendingListBalance = {
+            actorAddress,
+            amount,
+            confirmedBalance,
+            reservedBalance,
+            ticker: String(
+              authorization?.ticker ?? tokenById.get(tokenId)?.ticker ?? "credit",
+            ).trim() || "credit",
+            tokenId,
+          };
+        }
+      }
     } else {
       const normalizedListingId = String(parsed.listingId ?? "")
         .trim()
@@ -37853,6 +37908,16 @@ async function tokenVerifierDeterministicInvalidReason(
         minimumPayment
     ) {
       return "Required ProofOfWork credit registry payment is missing or misplaced.";
+    }
+    if (
+      pendingListBalance &&
+      pendingListBalance.confirmedBalance - pendingListBalance.reservedBalance <
+        pendingListBalance.amount
+    ) {
+      return insufficientTokenBalanceInvalidEvent({
+        ...pendingListBalance,
+        recipientAddress: "",
+      }).reason;
     }
     if (mintedToken && mintedToken.uncapped !== true) {
       const maxSupply = Number(mintedToken.maxSupply);
@@ -38053,7 +38118,10 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
       state,
       normalizedTxid,
       requireConfirmed,
-      { transaction: pendingCoreContext?.targetTransaction },
+      {
+        exactPendingCoreState: usePendingCoreWorkState,
+        transaction: pendingCoreContext?.targetTransaction,
+      },
     );
     if (invalidReason) {
       items.push({

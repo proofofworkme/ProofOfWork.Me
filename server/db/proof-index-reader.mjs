@@ -1775,7 +1775,7 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
     );
   }
 
-  const cte = `
+  const candidateCte = `
     WITH mint_candidates AS (
       SELECT
         e.payload,
@@ -1827,7 +1827,10 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
         ON cd.network = e.network
        AND cd.token_id = lower(e.payload->>'tokenId')
       WHERE ${conditions.join(" AND ")}
-    ),
+    )
+  `;
+  const cte = `
+    ${candidateCte},
     mint_events AS (
       SELECT DISTINCT ON (
         lower(txid),
@@ -1853,7 +1856,7 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
     )
   `;
 
-  return { cte, params };
+  return { candidateCte, cte, params };
 }
 
 function tokenMintSortSql() {
@@ -1867,6 +1870,96 @@ function tokenMintSortSql() {
   `;
 }
 
+function canonicalTokenMintCandidateRows(rows) {
+  const byMintKey = new Map();
+  const integer = (value) => {
+    try {
+      return BigInt(String(value ?? "0"));
+    } catch {
+      return 0n;
+    }
+  };
+  const ordinal = (value) => {
+    const parsed = Number.parseInt(String(value ?? "0"), 10);
+    return Number.isSafeInteger(parsed) ? parsed : 0;
+  };
+  const statusRank = (row) => {
+    const status = String(row?.effective_status ?? row?.status ?? "")
+      .trim()
+      .toLowerCase();
+    return status === "confirmed" ? 0 : status === "pending" ? 1 : 2;
+  };
+  const candidateWins = (candidate, current) => {
+    const candidateStatusRank = statusRank(candidate);
+    const currentStatusRank = statusRank(current);
+    if (candidateStatusRank !== currentStatusRank) {
+      return candidateStatusRank < currentStatusRank;
+    }
+    const candidateHeightRank = candidate?.block_height == null ? 1 : 0;
+    const currentHeightRank = current?.block_height == null ? 1 : 0;
+    if (candidateHeightRank !== currentHeightRank) {
+      return candidateHeightRank < currentHeightRank;
+    }
+    const candidateTime = integer(candidate?.mint_winner_time_us);
+    const currentTime = integer(current?.mint_winner_time_us);
+    if (candidateTime !== currentTime) {
+      return candidateTime > currentTime;
+    }
+    return integer(candidate?.event_id) > integer(current?.event_id);
+  };
+  const comparePublishedRows = (left, right) => {
+    const leftTime = integer(left?.mint_winner_time_us);
+    const rightTime = integer(right?.mint_winner_time_us);
+    if (leftTime !== rightTime) {
+      return leftTime > rightTime ? -1 : 1;
+    }
+    const leftHeight = left?.block_height == null ? null : integer(left.block_height);
+    const rightHeight = right?.block_height == null ? null : integer(right.block_height);
+    if (leftHeight !== rightHeight) {
+      if (leftHeight === null) return 1;
+      if (rightHeight === null) return -1;
+      return leftHeight > rightHeight ? -1 : 1;
+    }
+    const leftTxid = String(left?.txid ?? "").trim().toLowerCase();
+    const rightTxid = String(right?.txid ?? "").trim().toLowerCase();
+    if (leftTxid !== rightTxid) {
+      return leftTxid < rightTxid ? 1 : -1;
+    }
+    const leftOrdinal = ordinal(left?.mint_ordinal);
+    const rightOrdinal = ordinal(right?.mint_ordinal);
+    if (leftOrdinal !== rightOrdinal) {
+      return leftOrdinal < rightOrdinal ? -1 : 1;
+    }
+    const leftRecipient = String(left?.mint_recipient_address ?? "")
+      .trim()
+      .toLowerCase();
+    const rightRecipient = String(right?.mint_recipient_address ?? "")
+      .trim()
+      .toLowerCase();
+    if (leftRecipient !== rightRecipient) {
+      return leftRecipient < rightRecipient ? -1 : 1;
+    }
+    const leftEventId = integer(left?.event_id);
+    const rightEventId = integer(right?.event_id);
+    if (leftEventId === rightEventId) return 0;
+    return leftEventId > rightEventId ? -1 : 1;
+  };
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = JSON.stringify([
+      String(row?.txid ?? "").trim().toLowerCase(),
+      String(row?.token_id ?? "").trim().toLowerCase(),
+      ordinal(row?.mint_ordinal),
+      String(row?.mint_recipient_address ?? "").trim().toLowerCase(),
+    ]);
+    const current = byMintKey.get(key);
+    if (!current || candidateWins(row, current)) {
+      byMintKey.set(key, row);
+    }
+  }
+  return [...byMintKey.values()].sort(comparePublishedRows);
+}
+
 async function proofIndexTokenMintRows(
   pool,
   network,
@@ -1874,7 +1967,7 @@ async function proofIndexTokenMintRows(
   searchParams,
   pagination,
 ) {
-  const { cte, params } = tokenMintEventQueryParts(
+  const { candidateCte, params } = tokenMintEventQueryParts(
     network,
     tokenScope,
     searchParams,
@@ -1882,14 +1975,27 @@ async function proofIndexTokenMintRows(
   );
   const result = await pool.query(
     `
-      ${cte}
-      SELECT *
-      FROM mint_events
-      ORDER BY ${tokenMintSortSql()}
+      ${candidateCte}
+      SELECT
+        *,
+        floor(
+          extract(epoch FROM COALESCE(
+            block_time,
+            event_time,
+            confirmed_at,
+            last_seen_at,
+            created_at
+          )) * 1000000
+        )::bigint AS mint_winner_time_us
+      FROM mint_candidates
     `,
     params,
   );
-  return result.rows;
+  // Full token-state and mint-stat reads consume the complete result. Selecting
+  // and ordering the canonical rows in JavaScript here
+  // avoids carrying the large event payload through two PostgreSQL sorts while
+  // preserving the same winner rules as the paginated history query.
+  return canonicalTokenMintCandidateRows(result.rows);
 }
 
 export async function proofIndexTokenMintStatsPayload(

@@ -145,6 +145,127 @@ check("listing seal confirmation follows the seal transaction status", () => {
   );
 });
 
+check("full token mint reads deduplicate without sorting wide payloads", async () => {
+  const canonicalTokenMintCandidateRows = isolatedFunction(
+    READER_PATH,
+    "canonicalTokenMintCandidateRows",
+  );
+  const common = {
+    mint_ordinal: 0,
+    mint_recipient_address: "bc1Minter",
+    token_id: "A".repeat(64),
+    txid: "B".repeat(64),
+  };
+  const rows = [
+    {
+      ...common,
+      block_height: null,
+      effective_status: "pending",
+      event_id: "1",
+      mint_winner_time_us: "200",
+    },
+    {
+      ...common,
+      block_height: 100,
+      effective_status: "confirmed",
+      event_id: "2",
+      mint_winner_time_us: "100",
+    },
+    {
+      ...common,
+      block_height: null,
+      effective_status: "confirmed",
+      event_id: "3",
+      mint_winner_time_us: "300",
+    },
+    {
+      ...common,
+      block_height: 100,
+      effective_status: "confirmed",
+      event_id: "4",
+      mint_winner_time_us: "200",
+    },
+    {
+      ...common,
+      block_height: 100,
+      effective_status: "confirmed",
+      event_id: "5",
+      mint_winner_time_us: "200",
+    },
+    {
+      ...common,
+      event_id: "6",
+      mint_recipient_address: "bc1Other",
+      mint_winner_time_us: "50",
+    },
+  ];
+  assert.equal(
+    JSON.stringify(
+      canonicalTokenMintCandidateRows(rows)
+        .map((row) => String(row.event_id))
+        .sort(),
+    ),
+    JSON.stringify(["5", "6"]),
+  );
+  const orderedRows = [
+    ["10", "300", 100, "d", 0, "bc1a", "1"],
+    ["20", "200", 101, "d", 0, "bc1a", "2"],
+    ["30", "200", 100, "f", 9, "bc1z", "3"],
+    ["40", "200", 100, "e", 0, "bc1a", "4"],
+    ["41", "200", 100, "e", 0, "bc1a", "5"],
+    ["42", "200", 100, "e", 0, "bc1b", "4"],
+    ["43", "200", 100, "e", 1, "bc1a", "4"],
+    ["50", "200", null, "f", 0, "bc1a", "4"],
+  ].map(([eventId, time, height, txidDigit, mintOrdinal, recipient, tokenDigit]) => ({
+    block_height: height,
+    effective_status: "confirmed",
+    event_id: eventId,
+    mint_ordinal: mintOrdinal,
+    mint_recipient_address: recipient,
+    mint_winner_time_us: time,
+    token_id: tokenDigit.repeat(64),
+    txid: txidDigit.repeat(64),
+  }));
+  assert.equal(
+    JSON.stringify(
+      canonicalTokenMintCandidateRows([...orderedRows].reverse()).map((row) =>
+        String(row.event_id),
+      ),
+    ),
+    JSON.stringify(["10", "20", "30", "41", "40", "42", "43", "50"]),
+  );
+
+  const queries = [];
+  const proofIndexTokenMintRows = isolatedFunction(
+    READER_PATH,
+    "proofIndexTokenMintRows",
+    {
+      canonicalTokenMintCandidateRows,
+      tokenMintEventQueryParts: () => ({
+        candidateCte: "WITH mint_candidates AS (SELECT 1)",
+        params: ["livenet"],
+      }),
+    },
+  );
+  await proofIndexTokenMintRows(
+    {
+      async query(sql, params) {
+        queries.push({ params, sql: String(sql) });
+        return { rows };
+      },
+    },
+    "livenet",
+    common.token_id,
+    new URLSearchParams(),
+    { limit: 100_000, offset: 0 },
+  );
+  assert.equal(queries.length, 1);
+  assert.match(queries[0].sql, /FROM mint_candidates/u);
+  assert.match(queries[0].sql, /mint_winner_time_us/u);
+  assert.doesNotMatch(queries[0].sql, /ORDER BY/u);
+  assert.doesNotMatch(queries[0].sql, /FROM mint_events/u);
+});
+
 check("a current market lifecycle overlay owns sold and active state", () => {
   const listingId =
     "e95c6299b1fdd132b192ea040bcb8683140632b81dbde82946c5b754a8f87dbc";
@@ -14088,6 +14209,87 @@ check("a pending marketplace mutation against a confirmed close is invalid", asy
       { transaction },
     ),
     "Referenced ProofOfWork credit listing is already closed.",
+  );
+});
+
+check("a pending WORK listing above exact spendable balance is invalid", async () => {
+  const txid = "a".repeat(64);
+  const tokenId = "d".repeat(64);
+  const sellerAddress = "bc1seller";
+  const registryAddress = "work-registry";
+  const transaction = {
+    confirmed: false,
+    txid,
+    vin: [{ address: sellerAddress }],
+    vout: [{}],
+  };
+  const tokenVerifierDeterministicInvalidReason = isolatedFunction(
+    API_PATH,
+    "tokenVerifierDeterministicInvalidReason",
+    {
+      TOKEN_CREATION_PRICE_SATS: 546,
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      TOKEN_PROTOCOL_PREFIX: "pwt1:",
+      decodedProtocolMessages: () => ["pwt1:list5:fixture"],
+      inputAddresses: (vin) => vin.map((input) => input.address),
+      insufficientTokenBalanceInvalidEvent: ({
+        amount,
+        confirmedBalance,
+        reservedBalance,
+        ticker,
+      }) => {
+        const spendableBalance = confirmedBalance - reservedBalance;
+        return {
+          reason:
+            `Insufficient spendable ${ticker} balance: ` +
+            `${spendableBalance.toLocaleString("en-US")} available; ` +
+            `${amount.toLocaleString("en-US")} attempted.`,
+        };
+      },
+      numericValue: (value) => Number(value) || 0,
+      parseTokenPayload: () => ({
+        kind: "list",
+        saleAuthorization: {
+          amount: 5_000,
+          registryAddress,
+          sellerAddress,
+          ticker: "WORK",
+          tokenId,
+        },
+      }),
+      tokenIndexAddressForNetwork: () => "token-index",
+      tokenListingIsExpired: () => false,
+      tokenPaymentAmountBeforeProtocol: () => 546,
+      transactionBlockHeight: () => 0,
+      transactionConfirmed: (tx) => tx?.confirmed === true,
+      transactionTxid: (tx) => String(tx?.txid ?? "").toLowerCase(),
+    },
+  );
+  const state = {
+    holders: [{ address: sellerAddress, balance: 3_000, tokenId }],
+    listings: [],
+    tokens: [{ ticker: "WORK", tokenId }],
+  };
+  assert.equal(
+    await tokenVerifierDeterministicInvalidReason(
+      "livenet",
+      state,
+      txid,
+      false,
+      { transaction },
+    ),
+    "",
+    "A non-exact pending balance must remain unresolved.",
+  );
+  assert.equal(
+    await tokenVerifierDeterministicInvalidReason(
+      "livenet",
+      state,
+      txid,
+      false,
+      { exactPendingCoreState: true, transaction },
+    ),
+    "Insufficient spendable WORK balance: 3,000 available; 5,000 attempted.",
   );
 });
 
