@@ -731,13 +731,21 @@ expectAll("mempool priority recovery rotates independently and preserves invalid
   /mempoolEntriesAfterCursor\([\s\S]*state\?\.priorityCursor/,
   /candidate\.lane === "priority"[\s\S]*priorityCursor =[\s\S]*mempoolScanCursorForEntry/,
   /function pendingTransactionObservationItem\([\s\S]*items\.some\(\(item\) => item\?\.valid !== false\)[\s\S]*status: "pending"/,
-  /if \(transactionObservation\) \{[\s\S]*upsertTransaction\([\s\S]*"pending"/,
-  /e\.kind = 'token-mint'[\s\S]*e\.kind = 'token-event-invalid'[\s\S]*provisionalReason/,
-  /function reconcilePendingWorkMintDecision\([\s\S]*WITH canonical_guard AS[\s\S]*e\.status IN \('pending', 'dropped', 'orphaned'\)/,
+  /const transactionObservation = pendingTransactionWriteItem\([\s\S]*\?\? pendingProtocolTransactionObservation\([\s\S]*upsertTransaction\([\s\S]*transactionObservation[\s\S]*"pending"/,
+  /function mempoolRecoveryTxidsFromRows\([\s\S]*Boolean\(mempool\?\.\[row\.txid\]\)[\s\S]*remainingSlots/,
+  /const attemptedMints = Math\.max\([\s\S]*row\.attemptedMints[\s\S]*row\.validDecisions[\s\S]*row\.invalidDecisions/,
+  /let orderingUncertain = false[\s\S]*if \(row\.recoveryNeeded\) \{[\s\S]*orderingUncertain = true[\s\S]*if \(attemptedMints > 1\) \{[\s\S]*orderingUncertain = true/,
+  /pendingWorkMintInspectionVersion[\s\S]*AS inspection_version[\s\S]*pendingWorkMintAttemptCount[\s\S]*AS attempted_mints[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*AS recovery_needed[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*AS resolved_invalid/,
+  /function storePendingWorkMintInspection\([\s\S]*jsonb_build_object\([\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*canonicalBlockScan/,
+  /function storePendingWorkMintAttemptPreinspection\([\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded', true[\s\S]*pendingWorkMintResolvedInvalid', false[\s\S]*canonicalBlockScan[\s\S]*!~ '\^\[1-9\]\[0-9\]\*\$'/,
+  /const PENDING_LEGACY_VERIFIER_TIMEOUT_MS = 30_000[\s\S]*async function canonicalRecoveryItemsForTx\(tx, messages, options = \{\}\)[\s\S]*options\?\.pendingVerifierTimeoutMs/,
+  /const workMintAttemptCount = pendingWorkMintAttemptCount\(messages\)[\s\S]*storePendingWorkMintAttemptPreinspection\([\s\S]*PENDING_LEGACY_VERIFIER_TIMEOUT_MS[\s\S]*preparedProtocolItemsForTx/,
+  /const resolvedInvalids = items\.filter\([\s\S]*token-event-invalid[\s\S]*Number\.isSafeInteger\(workMintAttemptCount\)[\s\S]*workMintAttemptCount > 0[\s\S]*return \{ kind: "resolved-invalid", persistInvalid: false \}/,
+  /function reconcilePendingWorkMintDecision\([\s\S]*WITH canonical_guard AS[\s\S]*e\.status IN \('pending', 'dropped', 'orphaned'\)[\s\S]*e\.kind = 'token-mint'[\s\S]*provisionalReason'[\s\S]*supply-cap/,
   /function lockedCanonicalTransactionForMempool\([\s\S]*FOR UPDATE/,
-  /upsertTransaction\([\s\S]*transactionObservation[\s\S]*lockedCanonicalTransactionForMempool/,
+  /upsertTransaction\([\s\S]*transactionObservation[\s\S]*lockedCanonicalTransactionForMempool[\s\S]*storePendingWorkMintInspection/,
   /pendingWorkReconciliation\.persistInvalid/,
-  /function removeVolatileWorkMintDecisionEvents\([\s\S]*e\.status IN \('pending', 'dropped', 'orphaned'\)[\s\S]*e\.kind IN \('token-mint', 'token-event-invalid'\)/,
+  /function removeVolatileWorkMintDecisionEvents\([\s\S]*e\.status IN \('pending', 'dropped', 'orphaned'\)[\s\S]*e\.kind = 'token-mint'[\s\S]*provisionalReason'[\s\S]*supply-cap/,
   /persistCanonicalRawTransaction\([\s\S]*removeVolatileWorkMintDecisionEvents\([\s\S]*persistPreparedProtocolItems/,
 ]);
 expectAll("ordered credit verifier classifies supply-saturated pending mints", server, [
@@ -802,10 +810,10 @@ expect(
     /proofIndexTokenMintStatsPayload\(/gu,
   ) ?? []).length === 2,
 );
-expectAll("pending ordered-verifier work has a small deterministic delay budget", proofIndexerBackfill + canonicalRecoverySource, [
+expectAll("pending ordered-verifier work has bounded normal and one-time legacy delay budgets", proofIndexerBackfill + canonicalRecoverySource, [
   /const MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS = Math\.min\([\s\S]*5/,
   /const PENDING_VERIFIER_TIMEOUT_MS = Math\.min\([\s\S]*5_000[\s\S]*Math\.max\([\s\S]*1_000/,
-  /Number\(tx\?\.height \?\? 0\) > 0[\s\S]*\? 30_000[\s\S]*: PENDING_VERIFIER_TIMEOUT_MS/,
+  /Number\(tx\?\.height \?\? 0\) > 0[\s\S]*\? 30_000[\s\S]*: Math\.min\([\s\S]*PENDING_LEGACY_VERIFIER_TIMEOUT_MS[\s\S]*options\?\.pendingVerifierTimeoutMs/,
 ]);
 
 expectAll("Log summary preserves full activity stats before compaction", compactActivitySummarySource, [

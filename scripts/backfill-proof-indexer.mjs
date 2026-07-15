@@ -170,6 +170,7 @@ const PENDING_VERIFIER_TIMEOUT_MS = Math.min(
     ),
   ),
 );
+const PENDING_LEGACY_VERIFIER_TIMEOUT_MS = 30_000;
 const MEMPOOL_SCAN_SEEN_LIMIT = Number(
   process.env.POW_INDEX_MEMPOOL_SCAN_SEEN_LIMIT ?? 10_000,
 );
@@ -2428,7 +2429,7 @@ function rawProtocolItemMatchesCanonical(rawItem, canonicalItem, kind) {
   return !canonicalAmount || !rawAmount || canonicalAmount === rawAmount;
 }
 
-async function canonicalRecoveryItemsForTx(tx, messages) {
+async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
   const txid = String(tx?.txid ?? "").trim().toLowerCase();
   const pendingTransaction = Number(tx?.height ?? 0) <= 0;
   const pendingEnvelopeCanStandAlone =
@@ -2468,7 +2469,14 @@ async function canonicalRecoveryItemsForTx(tx, messages) {
           timeoutMs:
             Number(tx?.height ?? 0) > 0
               ? 30_000
-              : PENDING_VERIFIER_TIMEOUT_MS,
+              : Math.min(
+                  PENDING_LEGACY_VERIFIER_TIMEOUT_MS,
+                  Math.max(
+                    PENDING_VERIFIER_TIMEOUT_MS,
+                    Number(options?.pendingVerifierTimeoutMs) ||
+                      PENDING_VERIFIER_TIMEOUT_MS,
+                  ),
+                ),
         },
       );
     } catch (error) {
@@ -2785,8 +2793,8 @@ function preparedProtocolItemsWithCanonicalInceptionAttachments(
   });
 }
 
-async function preparedProtocolItemsForTx(tx, messages) {
-  const recovered = await canonicalRecoveryItemsForTx(tx, messages);
+async function preparedProtocolItemsForTx(tx, messages, options = {}) {
+  const recovered = await canonicalRecoveryItemsForTx(tx, messages, options);
   if (recovered.length > 0) {
     return preparedProtocolItemsWithCanonicalInceptionAttachments(recovered);
   }
@@ -8476,50 +8484,212 @@ function plannedMempoolScanCandidates(
   return candidates;
 }
 
+function mempoolRecoveryTxidsFromRows(rows, mempool) {
+  const currentRows = (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      attemptedMints: Number(row?.attempted_mints ?? 0),
+      confirmedSupply: Number(row?.confirmed_supply),
+      eventCount: Number(row?.event_count ?? 0),
+      inspectionVersion: Number(row?.inspection_version ?? 0),
+      invalidDecisions: Number(row?.invalid_decisions ?? 0),
+      recoveryNeeded: row?.recovery_needed === true,
+      resolvedInvalid: row?.resolved_invalid === true,
+      status: String(row?.status ?? "").trim().toLowerCase(),
+      txid: String(row?.txid ?? "").trim().toLowerCase(),
+      validDecisions: Number(row?.valid_decisions ?? 0),
+    }))
+    .filter((row) => isHexTxid(row.txid) && Boolean(mempool?.[row.txid]));
+  if (currentRows.length === 0) {
+    return [];
+  }
+  const confirmedSupplies = new Set(
+    currentRows.map((row) => row.confirmedSupply),
+  );
+  const confirmedSupply = currentRows[0].confirmedSupply;
+  if (
+    confirmedSupplies.size !== 1 ||
+    !Number.isSafeInteger(confirmedSupply) ||
+    confirmedSupply < 0 ||
+    confirmedSupply > WORK_TOKEN_MAX_SUPPLY ||
+    currentRows.some((row) =>
+      [
+        row.attemptedMints,
+        row.eventCount,
+        row.inspectionVersion,
+        row.invalidDecisions,
+        row.validDecisions,
+      ].some((value) => !Number.isSafeInteger(value) || value < 0),
+    ) ||
+    currentRows.some(
+      (row) =>
+        (row.recoveryNeeded || row.resolvedInvalid) &&
+        row.attemptedMints < 1,
+    ) ||
+    currentRows.some((row) => row.recoveryNeeded && row.resolvedInvalid)
+  ) {
+    throw new Error("Pending WORK mint recovery rows are inexact.");
+  }
+
+  const recoveryTxids = new Set();
+  for (const row of currentRows) {
+    if (row.inspectionVersion < 1) {
+      recoveryTxids.add(row.txid);
+    } else if (["dropped", "orphaned"].includes(row.status)) {
+      recoveryTxids.add(row.txid);
+    } else if (
+      row.status === "pending" &&
+      row.eventCount === 0 &&
+      !row.resolvedInvalid
+    ) {
+      recoveryTxids.add(row.txid);
+    }
+  }
+
+  let remainingSlots = Math.floor(
+    (WORK_TOKEN_MAX_SUPPLY - confirmedSupply) / WORK_TOKEN_MINT_AMOUNT,
+  );
+  const decisions = currentRows
+    .filter(
+      (row) =>
+        row.status === "pending" &&
+        (row.recoveryNeeded ||
+          (
+            row.attemptedMints > 0 &&
+            row.validDecisions + row.invalidDecisions === 0 &&
+            !row.resolvedInvalid
+          ) ||
+          row.validDecisions + row.invalidDecisions > 0),
+    )
+    .sort((left, right) => left.txid.localeCompare(right.txid));
+  let orderingUncertain = false;
+  for (const row of decisions) {
+    if (orderingUncertain) {
+      recoveryTxids.add(row.txid);
+      continue;
+    }
+    if (row.recoveryNeeded) {
+      // A sibling protocol envelope was persisted while the WORK verifier
+      // deferred. Until that WORK decision exists, neither this transaction's
+      // slot use nor any later txid decision is safe to infer.
+      recoveryTxids.add(row.txid);
+      orderingUncertain = true;
+      continue;
+    }
+    const attemptedMints = Math.max(
+      1,
+      row.attemptedMints,
+      row.validDecisions,
+      row.invalidDecisions,
+    );
+    if (attemptedMints > 1) {
+      // Raw message count is deliberately not treated as payable mint count:
+      // one transaction can carry several mint messages while funding fewer
+      // of them, and earlier messages for another token can share the same
+      // registry payment. Reverify this transaction and every later WORK
+      // decision instead of consuming an unproven number of supply slots.
+      recoveryTxids.add(row.txid);
+      orderingUncertain = true;
+      continue;
+    }
+    const expectedValidDecisions = Math.min(
+      attemptedMints,
+      remainingSlots,
+    );
+    remainingSlots -= expectedValidDecisions;
+    const expectedInvalidDecisions = expectedValidDecisions === 0 ? 1 : 0;
+    if (
+      row.validDecisions !== expectedValidDecisions ||
+      row.invalidDecisions !== expectedInvalidDecisions
+    ) {
+      recoveryTxids.add(row.txid);
+    }
+  }
+  return [...recoveryTxids];
+}
+
 async function knownMempoolRecoveryTxids(client, mempool) {
   const result = await client.query(
     `
-      SELECT t.txid
+      WITH confirmed_work AS (
+        SELECT count(*)::bigint * $3::bigint AS confirmed_supply
+        FROM proof_indexer.events e
+        JOIN proof_indexer.transactions confirmed_transaction
+          ON confirmed_transaction.network = e.network
+         AND confirmed_transaction.txid = e.txid
+        WHERE e.network = $1
+          AND confirmed_transaction.status = 'confirmed'
+          AND e.status = 'confirmed'
+          AND e.protocol = 'pwt1'
+          AND e.kind = 'token-mint'
+          AND e.valid = true
+          AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
+      )
+      SELECT
+        t.txid,
+        t.status,
+        count(e.event_id)::integer AS event_count,
+        COALESCE(max(
+          CASE
+            WHEN t.raw_tx->>'pendingWorkMintInspectionVersion' ~ '^[1-9][0-9]*$'
+              THEN (t.raw_tx->>'pendingWorkMintInspectionVersion')::integer
+            ELSE 0
+          END
+        ), 0)::integer AS inspection_version,
+        count(*) FILTER (
+          WHERE e.status = 'pending'
+            AND e.protocol = 'pwt1'
+            AND e.kind = 'token-mint'
+            AND e.valid = true
+            AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
+        )::integer AS valid_decisions,
+        count(*) FILTER (
+          WHERE e.status = 'pending'
+            AND e.protocol = 'pwt1'
+            AND e.kind = 'token-event-invalid'
+            AND e.valid = false
+            AND e.payload->>'provisionalReason' = 'supply-cap'
+            AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
+        )::integer AS invalid_decisions,
+        GREATEST(
+          COALESCE(max(
+            CASE
+              WHEN e.payload->>'pendingWorkMintAttemptCount' ~ '^[1-9][0-9]*$'
+                THEN (e.payload->>'pendingWorkMintAttemptCount')::integer
+              ELSE 0
+            END
+          ), 0),
+          COALESCE(max(
+            CASE
+              WHEN t.raw_tx->>'pendingWorkMintAttemptCount' ~ '^[1-9][0-9]*$'
+                THEN (t.raw_tx->>'pendingWorkMintAttemptCount')::integer
+              ELSE 0
+            END
+          ), 0)
+        )::integer AS attempted_mints,
+        bool_or(
+          t.raw_tx->>'pendingWorkMintRecoveryNeeded' = 'true'
+        ) AS recovery_needed,
+        bool_or(
+          t.raw_tx->>'pendingWorkMintResolvedInvalid' = 'true'
+        ) AS resolved_invalid,
+        confirmed_work.confirmed_supply
       FROM proof_indexer.transactions t
+      CROSS JOIN confirmed_work
+      LEFT JOIN proof_indexer.events e
+        ON e.network = t.network
+       AND e.txid = t.txid
       WHERE t.network = $1
-        AND (
-          t.status IN ('dropped', 'orphaned')
-          OR (
-            t.status = 'pending'
-            AND (
-              NOT EXISTS (
-                SELECT 1
-                FROM proof_indexer.events e
-                WHERE e.network = t.network
-                  AND e.txid = t.txid
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM proof_indexer.events e
-                WHERE e.network = t.network
-                  AND e.txid = t.txid
-                  AND e.protocol = 'pwt1'
-                  AND e.status = 'pending'
-                  AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
-                  AND (
-                    (e.kind = 'token-mint' AND e.valid = true)
-                    OR (
-                      e.kind = 'token-event-invalid'
-                      AND e.valid = false
-                      AND e.payload->>'provisionalReason' = 'supply-cap'
-                    )
-                  )
-              )
-            )
-          )
-        )
+        AND t.status IN ('pending', 'dropped', 'orphaned')
+      GROUP BY
+        t.txid,
+        t.status,
+        t.last_seen_at,
+        confirmed_work.confirmed_supply
       ORDER BY t.last_seen_at ASC, t.txid ASC
     `,
-    [NETWORK, WORK_TOKEN_ID],
+    [NETWORK, WORK_TOKEN_ID, WORK_TOKEN_MINT_AMOUNT],
   );
-  return result.rows
-    .map((row) => String(row?.txid ?? "").trim().toLowerCase())
-    .filter((txid) => isHexTxid(txid) && Boolean(mempool?.[txid]));
+  return mempoolRecoveryTxidsFromRows(result.rows, mempool);
 }
 
 async function storeMempoolScanState(
@@ -8585,6 +8755,118 @@ function pendingTransactionWriteItem(preparedItems, txid) {
     : null;
 }
 
+function pendingWorkMintAttemptCount(messages) {
+  return (Array.isArray(messages) ? messages : []).filter((message) => {
+    if (message?.prefix !== "pwt1:") {
+      return false;
+    }
+    const parts = String(message?.text ?? "").split(":");
+    return (
+      String(parts[1] ?? "").trim().toLowerCase() === "mint" &&
+      String(parts[2] ?? "").trim().toLowerCase() === WORK_TOKEN_ID &&
+      canonicalIntegerText(parts[3], { positive: true }) ===
+        String(WORK_TOKEN_MINT_AMOUNT)
+    );
+  }).length;
+}
+
+function pendingWorkMintVerifierResolved(preparedItems) {
+  return (Array.isArray(preparedItems) ? preparedItems : [])
+    .map((entry) => entry?.item ?? entry)
+    .some(
+      (item) =>
+        ["token-mint", "token-event-invalid"].includes(item?.kind) &&
+        String(item?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID,
+    );
+}
+
+function pendingProtocolTransactionObservation(
+  txid,
+  workMintAttemptCount,
+  workMintRecoveryNeeded,
+  workMintResolvedInvalid,
+) {
+  return {
+    confirmed: false,
+    dropped: false,
+    kind: "pending-protocol-transaction",
+    pendingWorkMintAttemptCount: workMintAttemptCount,
+    pendingWorkMintInspectionVersion: 1,
+    pendingWorkMintRecoveryNeeded: workMintRecoveryNeeded,
+    pendingWorkMintResolvedInvalid: workMintResolvedInvalid,
+    status: "pending",
+    txid,
+    valid: false,
+  };
+}
+
+async function storePendingWorkMintInspection(
+  client,
+  txid,
+  attemptCount,
+  recoveryNeeded,
+  resolvedInvalid,
+) {
+  const result = await client.query(
+    `
+      UPDATE proof_indexer.transactions t
+      SET
+        raw_tx = COALESCE(t.raw_tx, '{}'::jsonb) || jsonb_build_object(
+          'pendingWorkMintAttemptCount', $3::integer,
+          'pendingWorkMintInspectionVersion', 1,
+          'pendingWorkMintRecoveryNeeded', $4::boolean,
+          'pendingWorkMintResolvedInvalid', $5::boolean
+        ),
+        updated_at = now()
+      WHERE t.network = $1
+        AND t.txid = $2
+        AND t.status = 'pending'
+        AND NOT (COALESCE(t.raw_tx, '{}'::jsonb) ? 'canonicalBlockScan')
+      RETURNING t.txid
+    `,
+    [NETWORK, txid, attemptCount, recoveryNeeded, resolvedInvalid],
+  );
+  if (result.rowCount !== 1) {
+    throw new Error(
+      `Pending WORK inspection could not bind transaction ${txid}.`,
+    );
+  }
+}
+
+async function storePendingWorkMintAttemptPreinspection(
+  client,
+  txid,
+  attemptCount,
+) {
+  if (!Number.isSafeInteger(attemptCount) || attemptCount < 1) {
+    return 0;
+  }
+  const result = await client.query(
+    `
+      UPDATE proof_indexer.transactions t
+      SET
+        raw_tx = COALESCE(t.raw_tx, '{}'::jsonb) || jsonb_build_object(
+          'pendingWorkMintAttemptCount', $3::integer,
+          'pendingWorkMintInspectionVersion', 1,
+          'pendingWorkMintRecoveryNeeded', true,
+          'pendingWorkMintResolvedInvalid', false
+        ),
+        updated_at = now()
+      WHERE t.network = $1
+        AND t.txid = $2
+        AND t.status = 'pending'
+        AND NOT (COALESCE(t.raw_tx, '{}'::jsonb) ? 'canonicalBlockScan')
+        AND COALESCE(
+          t.raw_tx->>'pendingWorkMintInspectionVersion',
+          '0'
+        ) !~ '^[1-9][0-9]*$'
+      RETURNING t.txid
+    `,
+    [NETWORK, txid, attemptCount],
+  );
+  return Number(result.rowCount ?? 0);
+}
+
 async function lockedCanonicalTransactionForMempool(client, txid) {
   const result = await client.query(
     `
@@ -8612,7 +8894,7 @@ async function lockedCanonicalTransactionForMempool(client, txid) {
   return result.rows[0]?.canonical_confirmed === true;
 }
 
-function pendingWorkMintDecision(preparedItems) {
+function pendingWorkMintDecision(preparedItems, workMintAttemptCount = 0) {
   const items = (Array.isArray(preparedItems) ? preparedItems : [])
     .map((entry) => entry?.item ?? entry)
     .filter(Boolean);
@@ -8634,6 +8916,13 @@ function pendingWorkMintDecision(preparedItems) {
           "WORK mint exceeds max supply:",
         )),
   );
+  const resolvedInvalids = items.filter(
+    (item) =>
+      item?.kind === "token-event-invalid" &&
+      item?.valid === false &&
+      item?.confirmed === false &&
+      String(item?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID,
+  );
   if (validMints.length > 0 && supplyCapInvalids.length > 0) {
     throw new Error(
       "Pending WORK mint verifier returned conflicting valid and supply-cap decisions.",
@@ -8645,6 +8934,13 @@ function pendingWorkMintDecision(preparedItems) {
   if (supplyCapInvalids.length > 0) {
     return { kind: "supply-cap-invalid", persistInvalid: true };
   }
+  if (
+    Number.isSafeInteger(workMintAttemptCount) &&
+    workMintAttemptCount > 0 &&
+    resolvedInvalids.length > 0
+  ) {
+    return { kind: "resolved-invalid", persistInvalid: false };
+  }
   return null;
 }
 
@@ -8652,13 +8948,15 @@ async function reconcilePendingWorkMintDecision(
   client,
   preparedItems,
   txid,
+  workMintAttemptCount,
 ) {
-  const decision = pendingWorkMintDecision(preparedItems);
+  const decision = pendingWorkMintDecision(
+    preparedItems,
+    workMintAttemptCount,
+  );
   if (!decision) {
     return { deleted: 0, persistInvalid: false, reconciled: false };
   }
-  const obsoleteKind =
-    decision.kind === "valid" ? "token-event-invalid" : "token-mint";
   const result = await client.query(
     `
       WITH canonical_guard AS (
@@ -8680,8 +8978,17 @@ async function reconcilePendingWorkMintDecision(
           AND e.txid = $2
           AND e.protocol = 'pwt1'
           AND e.status IN ('pending', 'dropped', 'orphaned')
-          AND e.kind = $3
-          AND lower(COALESCE(e.payload->>'tokenId', '')) = $4
+          AND (
+            e.kind = 'token-mint'
+            OR (
+              e.kind = 'token-event-invalid'
+              AND (
+                e.payload->>'provisionalReason' = 'supply-cap'
+                OR e.payload->>'reason' LIKE 'WORK mint exceeds max supply:%'
+              )
+            )
+          )
+          AND lower(COALESCE(e.payload->>'tokenId', '')) = $3
           AND NOT EXISTS (SELECT 1 FROM canonical_guard)
         RETURNING e.event_id
       )
@@ -8690,7 +8997,7 @@ async function reconcilePendingWorkMintDecision(
         count(*)::integer AS deleted
       FROM deleted
     `,
-    [NETWORK, txid, obsoleteKind, WORK_TOKEN_ID],
+    [NETWORK, txid, WORK_TOKEN_ID],
   );
   if (result.rows[0]?.canonical_confirmed === true) {
     throw new Error(
@@ -8727,7 +9034,16 @@ async function removeVolatileWorkMintDecisionEvents(
         AND e.txid = $2
         AND e.protocol = 'pwt1'
         AND e.status IN ('pending', 'dropped', 'orphaned')
-        AND e.kind IN ('token-mint', 'token-event-invalid')
+        AND (
+          e.kind = 'token-mint'
+          OR (
+            e.kind = 'token-event-invalid'
+            AND (
+              e.payload->>'provisionalReason' = 'supply-cap'
+              OR e.payload->>'reason' LIKE 'WORK mint exceeds max supply:%'
+            )
+          )
+        )
         AND lower(COALESCE(e.payload->>'tokenId', '')) = $3
     `,
     [NETWORK, txid, WORK_TOKEN_ID],
@@ -8833,14 +9149,53 @@ async function backfillMempoolScanSource(client, source) {
     protocolTxids += 1;
     let transactionOpen = false;
     try {
+      const workMintAttemptCount = pendingWorkMintAttemptCount(messages);
+      const legacyWorkInspection =
+        await storePendingWorkMintAttemptPreinspection(
+          client,
+          txid,
+          workMintAttemptCount,
+        );
       const hydrated = await transactionWithInputPrevouts(tx);
-      const verifiedPrepared = await preparedProtocolItemsForTx(
+      const rawVerifiedPrepared = await preparedProtocolItemsForTx(
         hydrated,
         messages,
+        legacyWorkInspection > 0
+          ? { pendingVerifierTimeoutMs: PENDING_LEGACY_VERIFIER_TIMEOUT_MS }
+          : undefined,
       );
+      const workMintResolvedInvalid =
+        workMintAttemptCount > 0 &&
+        pendingWorkMintDecision(
+          rawVerifiedPrepared,
+          workMintAttemptCount,
+        )?.kind === "resolved-invalid";
+      const workMintRecoveryNeeded =
+        workMintAttemptCount > 0 &&
+        !pendingWorkMintVerifierResolved(rawVerifiedPrepared);
+      const verifiedPrepared = rawVerifiedPrepared.map((entry) => {
+        const item = entry?.item ?? entry;
+        const workMintDecision =
+          workMintAttemptCount > 0 &&
+          ["token-mint", "token-event-invalid"].includes(item?.kind) &&
+          String(item?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID;
+        if (!workMintDecision) {
+          return entry;
+        }
+        const annotatedItem = {
+          ...item,
+          pendingWorkMintAttemptCount: workMintAttemptCount,
+        };
+        return entry?.item ? { ...entry, item: annotatedItem } : annotatedItem;
+      });
       const transactionObservation = pendingTransactionWriteItem(
         verifiedPrepared,
         txid,
+      ) ?? pendingProtocolTransactionObservation(
+        txid,
+        workMintAttemptCount,
+        workMintRecoveryNeeded,
+        workMintResolvedInvalid,
       );
       const beforeWrite = await freshRawTransactionFromCore(txid);
       if (!beforeWrite) {
@@ -8854,29 +9209,35 @@ async function backfillMempoolScanSource(client, source) {
       }
       await client.query("BEGIN");
       transactionOpen = true;
-      if (transactionObservation) {
-        // The upsert takes the transaction-row lock in the same order as the
-        // canonical block scanner. Re-read under that lock before replacing
-        // any volatile event decision so confirmation cannot race this write.
-        await upsertTransaction(
-          client,
-          transactionObservation,
-          txid,
-          "pending",
-          source.label,
-        );
-        if (await lockedCanonicalTransactionForMempool(client, txid)) {
-          await client.query("ROLLBACK");
-          transactionOpen = false;
-          canonicalDeferred += 1;
-          continue;
-        }
+      // The upsert takes the transaction-row lock in the same order as the
+      // canonical block scanner. Re-read under that lock before replacing
+      // any volatile event decision so confirmation cannot race this write.
+      await upsertTransaction(
+        client,
+        transactionObservation,
+        txid,
+        "pending",
+        source.label,
+      );
+      if (await lockedCanonicalTransactionForMempool(client, txid)) {
+        await client.query("ROLLBACK");
+        transactionOpen = false;
+        canonicalDeferred += 1;
+        continue;
       }
+      await storePendingWorkMintInspection(
+        client,
+        txid,
+        workMintAttemptCount,
+        workMintRecoveryNeeded,
+        workMintResolvedInvalid,
+      );
       const pendingWorkReconciliation =
         await reconcilePendingWorkMintDecision(
           client,
           verifiedPrepared,
           txid,
+          workMintAttemptCount,
         );
       const prepared = verifiedPrepared.flatMap((entry) => {
         const item = entry?.item ?? entry;

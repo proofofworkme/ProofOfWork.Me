@@ -6091,33 +6091,244 @@ check("mempool scan prioritizes Core-present rows with missing events", async ()
     "plannedMempoolScanCandidates",
     { isHexTxid, mempoolEntriesAfterCursor },
   );
+  const mempoolRecoveryTxidsFromRows = isolatedFunction(
+    BACKFILL_PATH,
+    "mempoolRecoveryTxidsFromRows",
+    {
+      isHexTxid,
+      WORK_TOKEN_MAX_SUPPLY: 21_000_000,
+      WORK_TOKEN_MINT_AMOUNT: 1_000,
+    },
+  );
   const knownMempoolRecoveryTxids = isolatedFunction(
     BACKFILL_PATH,
     "knownMempoolRecoveryTxids",
     {
       isHexTxid,
+      mempoolRecoveryTxidsFromRows,
       NETWORK: "livenet",
       WORK_TOKEN_ID: "work-token-id",
+      WORK_TOKEN_MINT_AMOUNT: 1_000,
     },
   );
   const target = "a".repeat(64);
   const absent = "b".repeat(64);
   let recoverySql = "";
+  let recoveryParams = null;
   const priorityTxids = await knownMempoolRecoveryTxids(
     {
-      async query(sql) {
+      async query(sql, params) {
         recoverySql = String(sql);
-        return { rows: [{ txid: target }, { txid: absent }] };
+        recoveryParams = params;
+        return {
+          rows: [target, absent].map((txid) => ({
+            attempted_mints: 0,
+            confirmed_supply: 20_999_000,
+            event_count: 0,
+            inspection_version: 1,
+            invalid_decisions: 0,
+            recovery_needed: false,
+            resolved_invalid: false,
+            status: "pending",
+            txid,
+            valid_decisions: 0,
+          })),
+        };
       },
     },
     { [target]: { time: 1 } },
   );
   assert.deepEqual(Array.from(priorityTxids), [target]);
-  assert.match(recoverySql, /status IN \('dropped', 'orphaned'\)/u);
-  assert.match(recoverySql, /status = 'pending'[\s\S]*NOT EXISTS/u);
   assert.match(
     recoverySql,
-    /e\.kind = 'token-mint'[\s\S]*e\.kind = 'token-event-invalid'[\s\S]*provisionalReason/u,
+    /t\.status IN \('pending', 'dropped', 'orphaned'\)/u,
+  );
+  assert.match(
+    recoverySql,
+    /count\(e\.event_id\)::integer AS event_count/u,
+  );
+  assert.match(
+    recoverySql,
+    /pendingWorkMintInspectionVersion[\s\S]*AS inspection_version[\s\S]*pendingWorkMintAttemptCount[\s\S]*AS attempted_mints[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*AS recovery_needed[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*AS resolved_invalid/u,
+  );
+  assert.deepEqual(Array.from(recoveryParams), [
+    "livenet",
+    "work-token-id",
+    1_000,
+  ]);
+
+  const row = (
+    txid,
+    {
+      attemptedMints = 1,
+      eventCount = 1,
+      inspectionVersion = 1,
+      invalidDecisions = 0,
+      recoveryNeeded = false,
+      resolvedInvalid = false,
+      status = "pending",
+      validDecisions = 0,
+    } = {},
+  ) => ({
+    attempted_mints: attemptedMints,
+    confirmed_supply: 20_999_000,
+    event_count: eventCount,
+    inspection_version: inspectionVersion,
+    invalid_decisions: invalidDecisions,
+    recovery_needed: recoveryNeeded,
+    resolved_invalid: resolvedInvalid,
+    status,
+    txid,
+    valid_decisions: validDecisions,
+  });
+  const lower = "1".repeat(64);
+  const higher = "2".repeat(64);
+  assert.deepEqual(
+    Array.from(
+      mempoolRecoveryTxidsFromRows(
+        [
+          row(lower, { validDecisions: 1 }),
+          row(higher, { invalidDecisions: 1 }),
+        ],
+        { [higher]: {} },
+      ),
+    ),
+    [higher],
+    "A Core-absent lower txid must not consume the available slot.",
+  );
+  assert.deepEqual(
+    Array.from(
+      mempoolRecoveryTxidsFromRows(
+        [
+          row(lower, { validDecisions: 1 }),
+          row(higher, { invalidDecisions: 1 }),
+        ],
+        { [lower]: {}, [higher]: {} },
+      ),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    new Set(
+      mempoolRecoveryTxidsFromRows(
+        [
+          row(lower, { invalidDecisions: 1 }),
+          row(higher, { validDecisions: 1 }),
+        ],
+        { [lower]: {}, [higher]: {} },
+      ),
+    ),
+    new Set([lower, higher]),
+  );
+  const missing = "3".repeat(64);
+  const revived = "4".repeat(64);
+  const multi = "5".repeat(64);
+  const permanentInvalid = "6".repeat(64);
+  assert.deepEqual(
+    new Set(
+      mempoolRecoveryTxidsFromRows(
+        [
+          row(missing, { attemptedMints: 0, eventCount: 0 }),
+          row(revived, {
+            attemptedMints: 0,
+            eventCount: 1,
+            status: "dropped",
+          }),
+          row(multi, { attemptedMints: 2, validDecisions: 1 }),
+          row(permanentInvalid, { attemptedMints: 0 }),
+        ],
+        {
+          [missing]: {},
+          [multi]: {},
+          [permanentInvalid]: {},
+          [revived]: {},
+        },
+      ),
+    ),
+    new Set([missing, revived, multi]),
+  );
+  const lowerMulti = row(lower, {
+    attemptedMints: 2,
+    validDecisions: 1,
+  });
+  const laterInvalid = row(higher, { invalidDecisions: 1 });
+  lowerMulti.confirmed_supply = 20_998_000;
+  laterInvalid.confirmed_supply = 20_998_000;
+  assert.deepEqual(
+    new Set(
+      mempoolRecoveryTxidsFromRows(
+        [lowerMulti, laterInvalid],
+        { [lower]: {}, [higher]: {} },
+      ),
+    ),
+    new Set([lower, higher]),
+    "A multi-mint row must not hide a later decision by consuming unproven slots.",
+  );
+  const partial = "7".repeat(64);
+  const afterPartial = "8".repeat(64);
+  assert.deepEqual(
+    new Set(
+      mempoolRecoveryTxidsFromRows(
+        [
+          row(partial, {
+            attemptedMints: 1,
+            eventCount: 1,
+            recoveryNeeded: true,
+          }),
+          row(afterPartial, { invalidDecisions: 1 }),
+        ],
+        { [partial]: {}, [afterPartial]: {} },
+      ),
+    ),
+    new Set([partial, afterPartial]),
+    "A persisted sibling event must not hide a deferred WORK decision or later ordering.",
+  );
+  const legacy = "9".repeat(64);
+  const inspectedNonWork = "a".repeat(63) + "b";
+  assert.deepEqual(
+    Array.from(
+      mempoolRecoveryTxidsFromRows(
+        [
+          row(legacy, {
+            attemptedMints: 0,
+            inspectionVersion: 0,
+          }),
+          row(inspectedNonWork, { attemptedMints: 0 }),
+        ],
+        { [legacy]: {}, [inspectedNonWork]: {} },
+      ),
+    ),
+    [legacy],
+    "Legacy pending rows must receive one versioned protocol inspection.",
+  );
+  assert.deepEqual(
+    Array.from(
+      mempoolRecoveryTxidsFromRows(
+        [row(legacy, {
+          attemptedMints: 0,
+          inspectionVersion: 0,
+          validDecisions: 1,
+        })],
+        { [legacy]: {} },
+      ),
+    ),
+    [legacy],
+    "An unversioned decision must be inspected once for hidden multi-mint attempts.",
+  );
+  const resolvedInvalid = "d".repeat(64);
+  assert.deepEqual(
+    Array.from(
+      mempoolRecoveryTxidsFromRows(
+        [row(resolvedInvalid, {
+          attemptedMints: 1,
+          eventCount: 0,
+          resolvedInvalid: true,
+        })],
+        { [resolvedInvalid]: {} },
+      ),
+    ),
+    [],
+    "A versioned permanent-invalid decision must not churn after delete-only reconciliation.",
   );
 
   const routine = "c".repeat(64);
@@ -6138,6 +6349,119 @@ check("mempool scan prioritizes Core-present rows with missing events", async ()
     candidates.filter((candidate) => candidate.entry[0] === target).length,
     1,
   );
+});
+
+check("pending WORK inspection survives a persisted sibling envelope", async () => {
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const txid = "b".repeat(64);
+  const pendingWorkMintVerifierResolved = isolatedFunction(
+    BACKFILL_PATH,
+    "pendingWorkMintVerifierResolved",
+    { WORK_TOKEN_ID: workTokenId },
+  );
+  const pendingProtocolTransactionObservation = isolatedFunction(
+    BACKFILL_PATH,
+    "pendingProtocolTransactionObservation",
+  );
+  const storePendingWorkMintInspection = isolatedFunction(
+    BACKFILL_PATH,
+    "storePendingWorkMintInspection",
+    { NETWORK: "livenet" },
+  );
+  const storePendingWorkMintAttemptPreinspection = isolatedFunction(
+    BACKFILL_PATH,
+    "storePendingWorkMintAttemptPreinspection",
+    { NETWORK: "livenet" },
+  );
+  const siblingEnvelope = [{
+    item: {
+      kind: "mail-envelope",
+      protocol: "pwm1",
+      txid,
+      valid: true,
+    },
+  }];
+  assert.equal(pendingWorkMintVerifierResolved(siblingEnvelope), false);
+  assert.equal(
+    pendingWorkMintVerifierResolved([
+      ...siblingEnvelope,
+      {
+        item: {
+          kind: "token-mint",
+          tokenId: workTokenId,
+          txid,
+          valid: true,
+        },
+      },
+    ]),
+    true,
+  );
+  const observation = pendingProtocolTransactionObservation(
+    txid,
+    1,
+    true,
+    false,
+  );
+  assert.equal(observation.pendingWorkMintAttemptCount, 1);
+  assert.equal(observation.pendingWorkMintInspectionVersion, 1);
+  assert.equal(observation.pendingWorkMintRecoveryNeeded, true);
+  assert.equal(observation.pendingWorkMintResolvedInvalid, false);
+  assert.equal(observation.status, "pending");
+
+  let inspectionWrite = null;
+  await storePendingWorkMintInspection(
+    {
+      async query(sql, params) {
+        inspectionWrite = { params, sql: String(sql) };
+        return { rowCount: 1, rows: [{ txid }] };
+      },
+    },
+    txid,
+    1,
+    true,
+    false,
+  );
+  assert.match(
+    inspectionWrite.sql,
+    /pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid/u,
+  );
+  assert.match(inspectionWrite.sql, /t\.status = 'pending'/u);
+  assert.match(inspectionWrite.sql, /canonicalBlockScan/u);
+  assert.deepEqual(Array.from(inspectionWrite.params), [
+    "livenet",
+    txid,
+    1,
+    true,
+    false,
+  ]);
+  let preinspectionWrite = null;
+  assert.equal(
+    await storePendingWorkMintAttemptPreinspection(
+      {
+        async query(sql, params) {
+          preinspectionWrite = { params, sql: String(sql) };
+          return { rowCount: 1, rows: [{ txid }] };
+        },
+      },
+      txid,
+      2,
+    ),
+    1,
+  );
+  assert.match(
+    preinspectionWrite.sql,
+    /pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded'[\s\S]*true[\s\S]*pendingWorkMintResolvedInvalid'[\s\S]*false/u,
+  );
+  assert.match(
+    preinspectionWrite.sql,
+    /pendingWorkMintInspectionVersion'[\s\S]*!~ '\^\[1-9\]\[0-9\]\*\$'/u,
+  );
+  assert.deepEqual(Array.from(preinspectionWrite.params), [
+    "livenet",
+    txid,
+    2,
+  ]);
 });
 
 check("Core-present dropped protocol transactions revive through verifier and upsert", async () => {
@@ -6249,6 +6573,7 @@ check("Core-present dropped protocol transactions revive through verifier and up
       MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 5,
       MEMPOOL_SCAN_MAX_TXIDS: 500,
       MEMPOOL_SCAN_SEEN_LIMIT: 10_000,
+      PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
       bitcoinRpc: async () => ({ [target]: { time: 1_720_980_000 } }),
       freshRawTransactionFromCore: async (txid) => {
         assert.equal(txid, target);
@@ -6269,6 +6594,14 @@ check("Core-present dropped protocol transactions revive through verifier and up
         processedTxids: new Set([target]),
       }),
       plannedMempoolScanCandidates,
+      pendingProtocolTransactionObservation: () => ({
+        confirmed: false,
+        status: "pending",
+        txid: target,
+      }),
+      pendingWorkMintDecision: () => null,
+      pendingWorkMintAttemptCount: () => 0,
+      pendingWorkMintVerifierResolved: () => true,
       pendingTransactionWriteItem: (prepared, txid) => ({
         ...(prepared[0]?.item ?? {}),
         confirmed: false,
@@ -6282,6 +6615,8 @@ check("Core-present dropped protocol transactions revive through verifier and up
         persistInvalid: false,
         reconciled: false,
       }),
+      storePendingWorkMintAttemptPreinspection: async () => 0,
+      storePendingWorkMintInspection: async () => {},
       preparedProtocolItemsForTx: async () => {
         verifierCalls += 1;
         return [{
@@ -6500,6 +6835,7 @@ check("supply-capped mempool mints replace stale valid rows with a pending inval
       MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 5,
       MEMPOOL_SCAN_MAX_TXIDS: 500,
       MEMPOOL_SCAN_SEEN_LIMIT: 10_000,
+      PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
       WORK_TOKEN_ID: workTokenId,
       bitcoinRpc: async () => ({ [target]: { time: 1_720_990_000 } }),
       freshRawTransactionFromCore: async () => {
@@ -6521,12 +6857,22 @@ check("supply-capped mempool mints replace stale valid rows with a pending inval
       }),
       pendingTransactionObservationItem,
       pendingTransactionWriteItem,
+      pendingProtocolTransactionObservation: () => ({
+        confirmed: false,
+        status: "pending",
+        txid: target,
+      }),
+      pendingWorkMintDecision,
+      pendingWorkMintAttemptCount: () => 1,
+      pendingWorkMintVerifierResolved: () => true,
       lockedCanonicalTransactionForMempool: isolatedFunction(
         BACKFILL_PATH,
         "lockedCanonicalTransactionForMempool",
         { NETWORK: "livenet" },
       ),
       reconcilePendingWorkMintDecision,
+      storePendingWorkMintAttemptPreinspection: async () => 1,
+      storePendingWorkMintInspection: async () => {},
       persistPreparedProtocolItems: async (_client, prepared) => {
         trace.push(`persist:${prepared.length}`);
         persistedPrepared = prepared;
@@ -6623,10 +6969,81 @@ check("supply-capped mempool mints replace stale valid rows with a pending inval
     reconciliation.sql,
     /e\.status IN \('pending', 'dropped', 'orphaned'\)/u,
   );
-  assert.match(reconciliation.sql, /e\.kind = \$3/u);
+  assert.match(
+    reconciliation.sql,
+    /e\.kind = 'token-mint'[\s\S]*e\.kind = 'token-event-invalid'[\s\S]*provisionalReason'[\s\S]*supply-cap/u,
+  );
   assert.equal(reconciliation.params[1], target);
-  assert.equal(reconciliation.params[2], "token-mint");
-  assert.equal(reconciliation.params[3], workTokenId);
+  assert.equal(reconciliation.params[2], workTokenId);
+});
+
+check("resolved permanent-invalid WORK rechecks delete stale volatile decisions", async () => {
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const txid = "c".repeat(64);
+  const pendingWorkMintDecision = isolatedFunction(
+    BACKFILL_PATH,
+    "pendingWorkMintDecision",
+    { WORK_TOKEN_ID: workTokenId },
+  );
+  const reconcilePendingWorkMintDecision = isolatedFunction(
+    BACKFILL_PATH,
+    "reconcilePendingWorkMintDecision",
+    {
+      NETWORK: "livenet",
+      WORK_TOKEN_ID: workTokenId,
+      pendingWorkMintDecision,
+    },
+  );
+  const prepared = [{
+    item: {
+      confirmed: false,
+      kind: "token-event-invalid",
+      reason: "WORK mint payment is incomplete.",
+      status: "pending",
+      tokenId: workTokenId,
+      txid,
+      valid: false,
+    },
+  }];
+  assert.equal(
+    pendingWorkMintDecision([{
+      item: {
+        ...prepared[0].item,
+        reason: "WORK transfer sender balance is insufficient.",
+      },
+    }], 0),
+    null,
+    "An invalid WORK non-mint must never enter mint reconciliation.",
+  );
+  const decision = pendingWorkMintDecision(prepared, 1);
+  assert.equal(decision.kind, "resolved-invalid");
+  assert.equal(decision.persistInvalid, false);
+  let deleteWrite = null;
+  const result = await reconcilePendingWorkMintDecision(
+    {
+      async query(sql, params) {
+        deleteWrite = { params, sql: String(sql) };
+        return {
+          rowCount: 1,
+          rows: [{ canonical_confirmed: false, deleted: 1 }],
+        };
+      },
+    },
+    prepared,
+    txid,
+    1,
+  );
+  assert.equal(result.deleted, 1);
+  assert.equal(result.persistInvalid, false);
+  assert.equal(result.reconciled, true);
+  assert.match(deleteWrite.sql, /e\.kind = 'token-mint'/u);
+  assert.match(deleteWrite.sql, /provisionalReason'[\s\S]*supply-cap/u);
+  assert.deepEqual(Array.from(deleteWrite.params), [
+    "livenet",
+    txid,
+    workTokenId,
+  ]);
 });
 
 check("canonical WORK mint decisions remove only volatile mint audit rows", async () => {
@@ -6675,7 +7092,7 @@ check("canonical WORK mint decisions remove only volatile mint audit rows", asyn
   );
   assert.match(
     queries[0].sql,
-    /e\.kind IN \('token-mint', 'token-event-invalid'\)/u,
+    /e\.kind = 'token-mint'[\s\S]*e\.kind = 'token-event-invalid'[\s\S]*provisionalReason'[\s\S]*supply-cap/u,
   );
   assert.doesNotMatch(queries[0].sql, /e\.status = 'confirmed'/u);
   assert.equal(
@@ -14237,6 +14654,7 @@ check("canonical buy recovery counts price and one registry close only", async (
     "canonicalRecoveryItemsForTx",
     {
       NETWORK: "livenet",
+      PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
       PENDING_VERIFIER_TIMEOUT_MS: 5_000,
       canonicalKindForSourceLabel: isolatedFunction(
         BACKFILL_PATH,
@@ -14348,11 +14766,13 @@ check("canonical buy recovery counts price and one registry close only", async (
 check("pending PWM envelopes survive unresolved staged verifier companions", async () => {
   const txid = "9".repeat(64);
   const tokenId = "8".repeat(64);
+  let pendingVerifierTimeoutMs = 0;
   const canonicalRecoveryItemsForTx = isolatedFunction(
     BACKFILL_PATH,
     "canonicalRecoveryItemsForTx",
     {
       NETWORK: "livenet",
+      PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
       PENDING_VERIFIER_TIMEOUT_MS: 5_000,
       canonicalKindForSourceLabel: isolatedFunction(
         BACKFILL_PATH,
@@ -14390,7 +14810,8 @@ check("pending PWM envelopes survive unresolved staged verifier companions", asy
           txid,
         },
       ],
-      readJson: async () => {
+      readJson: async (_url, options) => {
+        pendingVerifierTimeoutMs = Number(options?.timeoutMs ?? 0);
         const error = new Error("ordered verifier unresolved");
         error.name = "AbortError";
         throw error;
@@ -14417,7 +14838,9 @@ check("pending PWM envelopes survive unresolved staged verifier companions", asy
   const pending = await canonicalRecoveryItemsForTx(
     { height: 0, txid },
     messages,
+    { pendingVerifierTimeoutMs: 30_000 },
   );
+  assert.equal(pendingVerifierTimeoutMs, 30_000);
   assert.equal(
     JSON.stringify(pending.map(({ item }) => item.kind)),
     JSON.stringify(["inception-bond"]),

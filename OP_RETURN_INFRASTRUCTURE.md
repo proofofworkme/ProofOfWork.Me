@@ -242,10 +242,12 @@ Continuous worker cycles use
 The confirmed block scanner always runs first. The bounded mempool scanner then
 gives best-effort pending visibility without being allowed to delay confirmed
 catch-up: each cycle verifies at most five protocol-bearing mempool txids, and
-each pending ordered-verifier request is capped at five seconds. Production
+routine pending ordered-verifier requests are capped at five seconds. The
+versioned legacy WORK inspection described below gets one 30-second attempt;
+if it does not finish, its recovery-pending marker remains set. Production
 pins those bounds with `POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5` and
 `POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=5000`; the backfill script also clamps
-either override to those maximums. The block scanner uses local Bitcoin Core
+the routine overrides to those maximums. The block scanner uses local Bitcoin Core
 RPC verbosity 2 to scan blocks after the database's
 indexed height for ProofOfWork OP_RETURN prefixes, then writes discovered txids
 through the normal projection writer. It hydrates and verifies input prevouts
@@ -915,7 +917,7 @@ The canonical livenet ledger payload:
 - May serve a useful cached ledger for fast first paint only when summary projections also correct active sale-ticket listings against current node spend state; deep refresh continues in the background and must converge on confirmed chain truth.
 - Replays WORK mint summaries from canonical mint events and treats pending WORK mints as availability pressure only. Pending mints can reduce available mint slots in the UI, but they do not change confirmed supply, holders, floor, or network value.
 - Orders pending WORK mint candidates by lowercase txid. A fast supply-cap rejection is allowed only from exact-tip confirmed supply plus a complete, Bitcoin Core-current prefix of earlier candidates; otherwise the verifier falls back instead of guessing.
-- Revalidates both accepted and provisional supply-capped pending WORK mints through a rotating priority lane. The mempool writer locks the transaction row before atomically replacing an obsolete pending mint decision, while the canonical block scanner removes only volatile WORK mint/audit rows before storing confirmed truth. Confirmed block-backed rows are never rewritten by the mempool path.
+- Revalidates only Core-current accepted/provisional supply-capped pending WORK decisions that disagree with exact confirmed supply plus lowercase-txid candidate order. Core-absent database rows never consume a pending slot. Every pending protocol transaction carries a versioned WORK-inspection marker, so a persisted PWM envelope cannot hide a deferred WORK companion and every legacy row receives one bounded inspection pass. Existing rows record exact raw WORK-message count and a recovery-pending marker before the broad verifier runs; a one-time 30-second verifier window must succeed before that marker clears. Deferred and multi-mint transactions form conservative ordering barriers: the rotating recovery lane rechecks that transaction and every later WORK decision because neither a missing decision nor raw message count proves how many mints its registry payment can fund. Ordinary verified single-mint rows stop consuming verifier work. A resolved permanent-invalid mint removes any older volatile valid/supply-cap decision only when the raw transaction contains an actual WORK mint attempt, then records a terminal transaction marker without publishing a provisional invalid event. The mempool writer locks the transaction row before atomically replacing the complete volatile WORK mint/audit set, while the canonical block scanner removes only volatile WORK mint/audit rows before storing confirmed truth. Confirmed block-backed rows are never rewritten by the mempool path.
 - Promotes pending WORK and credit listings into confirmed state through the shared credit payload, deduping by listing txid and sale-ticket outpoint so confirmation does not leave duplicate pending rows behind.
 - Preserves sale-ticket seal metadata when WORK or credit listings promote from pending to confirmed state. Confirmed seal regressions are rejected so a refreshed payload cannot make a sealed listing look unsealed.
 - Checks pending WORK and credit txids for liveness on fresh reads and prunes dropped pending transfers, listings, seals, delistings, and buys from pending overlays without changing confirmed history.
