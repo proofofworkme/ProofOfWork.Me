@@ -5144,12 +5144,46 @@ check("worker status transitions are proven, race-safe, and projection-safe", as
   );
   assert.equal(pendingOutcome.applied, true);
   assert.equal(pendingQueries.length, 5);
+  assert.match(
+    pendingQueries[1].sql,
+    /UPDATE proof_indexer\.transactions/iu,
+  );
+  assert.doesNotMatch(pendingQueries[1].sql, /\bevent_time\b/iu);
   assert.match(pendingQueries[1].sql, /block_hash = NULL/iu);
+  assert.match(pendingQueries[2].sql, /UPDATE proof_indexer\.events/iu);
+  assert.match(pendingQueries[2].sql, /\bpayload\b/iu);
+  assert.doesNotMatch(pendingQueries[2].sql, /\bmessage\b|\bmetadata\b/iu);
+  assert.match(pendingQueries[3].sql, /UPDATE proof_indexer\.mail_items/iu);
+  assert.match(pendingQueries[3].sql, /\bmessage\b/iu);
+  assert.doesNotMatch(pendingQueries[3].sql, /\bpayload\b|\bmetadata\b/iu);
+  assert.match(
+    pendingQueries[4].sql,
+    /UPDATE proof_indexer\.file_attachments/iu,
+  );
+  assert.match(pendingQueries[4].sql, /\bmetadata\b/iu);
+  assert.doesNotMatch(pendingQueries[4].sql, /\bpayload\b|\bmessage\b/iu);
   assert.match(pendingQueries[2].sql, /status = 'pending'/iu);
   assert.match(
     pendingQueries[2].sql,
     /ELSE LEAST\([\s\S]*event_time[\s\S]*to_timestamp/iu,
   );
+  for (const queryIndex of [2, 3, 4]) {
+    assert.match(pendingQueries[queryIndex].sql, /- 'createdAt'/u);
+    assert.match(pendingQueries[queryIndex].sql, /- 'timestamp'/u);
+    assert.match(
+      pendingQueries[queryIndex].sql,
+      /'createdAt',[\s\S]*to_timestamp/iu,
+    );
+    assert.match(
+      pendingQueries[queryIndex].sql,
+      /'timestamp',[\s\S]*to_timestamp/iu,
+    );
+  }
+  assert.match(
+    pendingQueries[2].sql,
+    /IS DISTINCT FROM[\s\S]*to_timestamp/iu,
+  );
+  assert.match(pendingQueries[2].sql, /payload \?\| ARRAY/iu);
   assert.match(pendingQueries[2].sql, /WHERE[\s\S]*status = 'pending'/iu);
 
   const confirmedQueries = [];

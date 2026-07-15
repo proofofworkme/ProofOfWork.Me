@@ -444,6 +444,7 @@ async function updateTransactionStatus(client, txid, status, payload) {
               - '_powBlockHash'
               - '_powBlockIndex'
               - 'createdAt'
+              - 'timestamp'
             )
             || jsonb_build_object(
               'confirmed', false,
@@ -456,10 +457,64 @@ async function updateTransactionStatus(client, txid, status, payload) {
                   to_timestamp($3::double precision / 1000)
                 )
               END,
+              'timestamp', CASE
+                WHEN event_time IS NULL
+                  OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+                THEN to_timestamp($3::double precision / 1000)
+                ELSE LEAST(
+                  event_time,
+                  to_timestamp($3::double precision / 1000)
+                )
+              END,
               'status', 'pending'
             ),
           updated_at = now()
         WHERE network = $1 AND txid = $2 AND status = 'pending'
+          AND (
+            block_height IS NOT NULL
+            OR block_time IS NOT NULL
+            OR event_time IS DISTINCT FROM CASE
+              WHEN event_time IS NULL
+                OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+              THEN to_timestamp($3::double precision / 1000)
+              ELSE LEAST(
+                event_time,
+                to_timestamp($3::double precision / 1000)
+              )
+            END
+            OR payload ?| ARRAY[
+              'blockHash',
+              'blockHeight',
+              'blockTime',
+              'height',
+              '_powBlockHash',
+              '_powBlockIndex'
+            ]
+            OR payload->'confirmed' IS DISTINCT FROM 'false'::jsonb
+            OR payload->>'status' IS DISTINCT FROM 'pending'
+            OR payload->'createdAt' IS DISTINCT FROM to_jsonb(
+              CASE
+                WHEN event_time IS NULL
+                  OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+                THEN to_timestamp($3::double precision / 1000)
+                ELSE LEAST(
+                  event_time,
+                  to_timestamp($3::double precision / 1000)
+                )
+              END
+            )
+            OR payload->'timestamp' IS DISTINCT FROM to_jsonb(
+              CASE
+                WHEN event_time IS NULL
+                  OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+                THEN to_timestamp($3::double precision / 1000)
+                ELSE LEAST(
+                  event_time,
+                  to_timestamp($3::double precision / 1000)
+                )
+              END
+            )
+          )
       `,
       [NETWORK, normalizedTxid, transitionTimeMs],
     );
@@ -477,8 +532,37 @@ async function updateTransactionStatus(client, txid, status, payload) {
             )
           END,
           message =
-            (message - 'blockHash' - 'blockHeight' - 'blockTime' - 'height')
-            || jsonb_build_object('confirmed', false, 'status', 'pending')
+            (
+              message
+              - 'blockHash'
+              - 'blockHeight'
+              - 'blockTime'
+              - 'height'
+              - 'createdAt'
+              - 'timestamp'
+            )
+            || jsonb_build_object(
+              'confirmed', false,
+              'createdAt', CASE
+                WHEN event_time IS NULL
+                  OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+                THEN to_timestamp($3::double precision / 1000)
+                ELSE LEAST(
+                  event_time,
+                  to_timestamp($3::double precision / 1000)
+                )
+              END,
+              'timestamp', CASE
+                WHEN event_time IS NULL
+                  OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+                THEN to_timestamp($3::double precision / 1000)
+                ELSE LEAST(
+                  event_time,
+                  to_timestamp($3::double precision / 1000)
+                )
+              END,
+              'status', 'pending'
+            )
         WHERE network = $1 AND txid = $2 AND status = 'pending'
       `,
       [NETWORK, normalizedTxid, transitionTimeMs],
@@ -497,8 +581,37 @@ async function updateTransactionStatus(client, txid, status, payload) {
             )
           END,
           metadata =
-            (metadata - 'blockHash' - 'blockHeight' - 'blockTime' - 'height')
-            || jsonb_build_object('confirmed', false, 'status', 'pending')
+            (
+              metadata
+              - 'blockHash'
+              - 'blockHeight'
+              - 'blockTime'
+              - 'height'
+              - 'createdAt'
+              - 'timestamp'
+            )
+            || jsonb_build_object(
+              'confirmed', false,
+              'createdAt', CASE
+                WHEN event_time IS NULL
+                  OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+                THEN to_timestamp($3::double precision / 1000)
+                ELSE LEAST(
+                  event_time,
+                  to_timestamp($3::double precision / 1000)
+                )
+              END,
+              'timestamp', CASE
+                WHEN event_time IS NULL
+                  OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
+                THEN to_timestamp($3::double precision / 1000)
+                ELSE LEAST(
+                  event_time,
+                  to_timestamp($3::double precision / 1000)
+                )
+              END,
+              'status', 'pending'
+            )
         WHERE network = $1 AND txid = $2 AND status = 'pending'
       `,
       [NETWORK, normalizedTxid, transitionTimeMs],
