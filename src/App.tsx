@@ -33117,6 +33117,60 @@ function workFloorAxisPriceLabel(value: number, unit: WorkFloorChartUnit) {
   })} proofs`;
 }
 
+const WORK_FLOOR_LOG_SCALE_RATIO = 100;
+
+function workFloorChartAxisPriceLabel(
+  value: number,
+  unit: WorkFloorChartUnit,
+) {
+  if (!Number.isFinite(value) || value < 1_000) {
+    return workFloorAxisPriceLabel(value, unit);
+  }
+
+  const compactValue = growthCompactNumber(value, 1);
+  return unit === "usd" ? `$${compactValue}` : `${compactValue} proofs`;
+}
+
+function workFloorChartScale(values: number[], fallbackRange: number) {
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const rawRange = rawMax - rawMin;
+  const useLogarithmicScale =
+    rawMin > 0 && rawMax / rawMin >= WORK_FLOOR_LOG_SCALE_RATIO;
+
+  if (useLogarithmicScale) {
+    const encodedRawMin = Math.log10(rawMin);
+    const encodedRawMax = Math.log10(rawMax);
+    const encodedRange = Math.max(0.000001, encodedRawMax - encodedRawMin);
+    const encodedPadding = encodedRange * 0.08;
+
+    return {
+      domainMax: encodedRawMax + encodedPadding,
+      domainMin: encodedRawMin - encodedPadding,
+      encode: (value: number) => Math.log10(value),
+      mode: "logarithmic" as const,
+      ticks: [
+        rawMin,
+        10 ** ((encodedRawMin + encodedRawMax) / 2),
+        rawMax,
+      ],
+    };
+  }
+
+  const yRange = rawRange > 0 ? rawRange : fallbackRange;
+  const yPadding = yRange * 0.22;
+  const domainMin = Math.max(0, rawMin - yPadding);
+  const domainMax = Math.max(rawMax + yPadding, domainMin + fallbackRange);
+
+  return {
+    domainMax,
+    domainMin,
+    encode: (value: number) => value,
+    mode: "linear" as const,
+    ticks: [domainMin, (domainMin + domainMax) / 2, domainMax],
+  };
+}
+
 function workFloorPointTimeMs(point: WorkFloorPoint) {
   return GROWTH_MODEL_START_MS + point.years * MS_PER_MODEL_YEAR;
 }
@@ -33178,7 +33232,7 @@ function WorkFloorChart({
 
   const width = 920;
   const height = 260;
-  const padLeft = 92;
+  const padLeft = 112;
   const padRight = 24;
   const padTop = 28;
   const padBottom = 52;
@@ -33189,28 +33243,31 @@ function WorkFloorChart({
   const pointValue = (point: WorkFloorPoint) =>
     workFloorChartValue(point, btcUsd, unit);
   const pointValues = visiblePoints.map(pointValue);
-  const rawYMin = Math.min(...pointValues);
   const rawYMax = Math.max(...pointValues);
-  const rawYRange = rawYMax - rawYMin;
   const fallbackYRange =
     unit === "usd"
       ? Math.max(0.000001, Math.abs(rawYMax) * 0.02)
       : Math.max(0.01, Math.abs(rawYMax) * 0.02);
-  const yRange = rawYRange > 0 ? rawYRange : fallbackYRange;
-  const yPadding = yRange * 0.22;
-  const yMin = Math.max(0, rawYMin - yPadding);
-  const yMax = Math.max(rawYMax + yPadding, yMin + fallbackYRange);
+  const yScale = workFloorChartScale(pointValues, fallbackYRange);
   const xRange = Math.max(0.000001, maxYear - minYear);
   const xFor = (years: number) =>
     padLeft + ((years - minYear) / xRange) * plotWidth;
   const yFor = (value: number) =>
     padTop +
-    (1 - Math.max(0, Math.min(1, (value - yMin) / (yMax - yMin)))) *
+    (1 -
+      Math.max(
+        0,
+        Math.min(
+          1,
+          (yScale.encode(value) - yScale.domainMin) /
+            (yScale.domainMax - yScale.domainMin),
+        ),
+      )) *
       plotHeight;
   const firstPoint = visiblePoints[0];
   const middlePoint = visiblePoints[Math.floor((visiblePoints.length - 1) / 2)];
   const latestPoint = visiblePoints[visiblePoints.length - 1];
-  const yTicks = [yMin, (yMin + yMax) / 2, yMax];
+  const yTicks = yScale.ticks;
   const middleTickHasRoom =
     middlePoint !== firstPoint &&
     middlePoint !== latestPoint &&
@@ -33229,7 +33286,9 @@ function WorkFloorChart({
       viewBox={`0 0 ${width} ${height}`}
       aria-label={`Confirmed WORK floor history in ${
         unit === "usd" ? "USD" : "proofs"
-      } per WORK`}
+      } per WORK${
+        yScale.mode === "logarithmic" ? " on a logarithmic scale" : ""
+      }`}
     >
       <rect
         className="growth-chart-bg"
@@ -33245,7 +33304,7 @@ function WorkFloorChart({
         y="18"
         textAnchor="start"
       >
-        Price / WORK
+        Price / WORK{yScale.mode === "logarithmic" ? " (log scale)" : ""}
       </text>
       {yTicks.map((tick) => (
         <g key={`floor-y-${tick}`}>
@@ -33262,7 +33321,7 @@ function WorkFloorChart({
             y={yFor(tick) + 4}
             textAnchor="end"
           >
-            {workFloorAxisPriceLabel(tick, unit)}
+            {workFloorChartAxisPriceLabel(tick, unit)}
           </text>
         </g>
       ))}

@@ -988,6 +988,35 @@ expect(
       refreshWorkFloorBlock,
     ),
 );
+const workFloorChartBlock =
+  app.match(
+    /const WORK_FLOOR_LOG_SCALE_RATIO[\s\S]*?const INFINITY_BOND_CHART_OPTIONS/u,
+  )?.[0] ?? "";
+expect(
+  "WORK floor chart switches to a disclosed logarithmic scale for extreme confirmed ranges",
+  /WORK_FLOOR_LOG_SCALE_RATIO = 100/.test(workFloorChartBlock) &&
+    /rawMin > 0 && rawMax \/ rawMin >= WORK_FLOOR_LOG_SCALE_RATIO/.test(
+      workFloorChartBlock,
+    ) &&
+    /Math\.log10\(rawMin\)/.test(workFloorChartBlock) &&
+    /mode: "logarithmic"/.test(workFloorChartBlock) &&
+    /on a logarithmic scale/.test(workFloorChartBlock) &&
+    /Price \/ WORK[\s\S]*\(log scale\)/.test(workFloorChartBlock),
+);
+expect(
+  "WORK floor chart preserves a safe linear fallback",
+  /mode: "linear"/.test(workFloorChartBlock) &&
+    /ticks: \[domainMin, \(domainMin \+ domainMax\) \/ 2, domainMax\]/.test(
+      workFloorChartBlock,
+    ),
+);
+expect(
+  "WORK floor chart keeps high-value ticks inside a wider compact-label gutter",
+  /const padLeft = 112/.test(workFloorChartBlock) &&
+    /growthCompactNumber\(value, 1\)/.test(workFloorChartBlock) &&
+    /workFloorChartAxisPriceLabel\(tick, unit\)/.test(workFloorChartBlock) &&
+    !/workFloorAxisPriceLabel\(tick, unit\)/.test(workFloorChartBlock),
+);
 expect(
   "livenet WORK and Growth normalizers preserve and require canonical miner-fee proof",
   /creditMinerFeeAccountingModel:\s*[\s\S]*payload\.creditMinerFeeAccountingModel/.test(
