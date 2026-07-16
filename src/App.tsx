@@ -552,6 +552,9 @@ type PowIdExactStateItem = {
 type PowTokenDefinition = {
   confirmed: boolean;
   confirmedMints?: number;
+  confirmedOpenListings?: number;
+  confirmedSales?: number;
+  confirmedSalesVolumeSats?: number;
   confirmedSupply?: number;
   createdAt: string;
   creatorAddress: string;
@@ -567,6 +570,9 @@ type PowTokenDefinition = {
   network: BitcoinNetwork;
   openListings?: number;
   pendingMints?: number;
+  pendingOpenListings?: number;
+  pendingSales?: number;
+  pendingSalesVolumeSats?: number;
   pendingSupply?: number;
   registryAddress: string;
   ticker: string;
@@ -786,18 +792,46 @@ type PowTokenHolder = {
 
 type PowTokenState = {
   closedListings: PowTokenClosedListing[];
+  collectionHasMore?: Partial<Record<PowTokenCollectionKey, boolean>>;
   creationSats: number;
   confirmedSupply: number;
+  hasMore?: boolean;
   holders: PowTokenHolder[];
   invalidEvents: PowTokenInvalidEvent[];
   listings: PowTokenListing[];
   mints: PowTokenMint[];
   pendingSupply: number;
   sales: PowTokenSale[];
+  stats?: PowTokenSummaryStats;
   summaryOnly?: boolean;
+  totalCounts?: Partial<Record<PowTokenCollectionKey, number | null>>;
   transfers: PowTokenTransfer[];
   tokens: PowTokenDefinition[];
 };
+
+type PowTokenCollectionKey =
+  | "closedListings"
+  | "holders"
+  | "listings"
+  | "mints"
+  | "sales"
+  | "tokens"
+  | "transfers";
+
+type PowTokenSummaryStats = {
+  [key: string]: unknown;
+  confirmedSales?: number;
+  confirmedSalesVolumeSats?: number;
+  pendingSales?: number;
+  pendingSalesVolumeSats?: number;
+  sales?: number;
+  salesVolumeSats?: number;
+};
+
+type PowTokenSummaryMetadata = Pick<
+  PowTokenState,
+  "collectionHasMore" | "hasMore" | "stats" | "totalCounts"
+>;
 
 type AccountTokenLane = "all" | "work" | "powb" | "incb";
 
@@ -7025,6 +7059,22 @@ function emptyTokenState(): PowTokenState {
   };
 }
 
+function tokenSummaryMetadata(
+  state: Pick<
+    PowTokenState,
+    "collectionHasMore" | "hasMore" | "stats" | "totalCounts"
+  >,
+): PowTokenSummaryMetadata {
+  return {
+    collectionHasMore: state.collectionHasMore
+      ? { ...state.collectionHasMore }
+      : undefined,
+    hasMore: state.hasMore === true,
+    stats: state.stats ? { ...state.stats } : undefined,
+    totalCounts: state.totalCounts ? { ...state.totalCounts } : undefined,
+  };
+}
+
 function tokenTransactionTime(tx: Record<string, unknown>) {
   const status = tx.status as Record<string, unknown> | undefined;
   for (const value of [status?.block_time, status?.mempool_time]) {
@@ -7764,6 +7814,7 @@ function activeTokenListingsExcludingClosed(
 
 function sanitizedTokenState(state: PowTokenState): PowTokenState {
   const summaryOnly = Boolean(state.summaryOnly);
+  const summaryMetadata = tokenSummaryMetadata(state);
   const tokens = state.tokens.filter((token) =>
     tokenCreationIsAllowed({
       creatorAddress: token.creatorAddress,
@@ -7823,6 +7874,7 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
       },
     ];
     return {
+      ...summaryMetadata,
       closedListings,
       creationSats: scopedTokens[0].creationFeeSats,
       confirmedSupply,
@@ -7839,6 +7891,7 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
   }
 
   return {
+    ...summaryMetadata,
     closedListings,
     creationSats: tokens.reduce(
       (total, token) => total + token.creationFeeSats,
@@ -10053,10 +10106,76 @@ function compactMarketplaceStatValue(value: number) {
   return safeValue;
 }
 
+function optionalMarketplaceMetric(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return undefined;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function optionalMarketplaceCount(value: unknown) {
+  const number = optionalMarketplaceMetric(value);
+  return number === undefined ? undefined : Math.floor(number);
+}
+
+function marketplaceStatsWithAuthoritativeSummary(
+  previewStats: PowIdMarketplaceStats,
+  authoritative:
+    | {
+        confirmedSales?: unknown;
+        confirmedVolumeSats?: unknown;
+        pendingSales?: unknown;
+        pendingVolumeSats?: unknown;
+      }
+    | undefined,
+): PowIdMarketplaceStats {
+  const confirmedSales =
+    optionalMarketplaceCount(authoritative?.confirmedSales) ??
+    previewStats.confirmedSales;
+  const confirmedVolumeSats =
+    optionalMarketplaceCount(authoritative?.confirmedVolumeSats) ??
+    previewStats.confirmedVolumeSats;
+  const pendingSales =
+    optionalMarketplaceCount(authoritative?.pendingSales) ??
+    previewStats.pendingSales;
+  const pendingVolumeSats =
+    optionalMarketplaceCount(authoritative?.pendingVolumeSats) ??
+    previewStats.pendingVolumeSats;
+
+  return {
+    confirmedSales,
+    confirmedVolumeSats,
+    pendingSales,
+    pendingVolumeSats,
+    totalSales: confirmedSales + pendingSales,
+    totalVolumeSats: confirmedVolumeSats + pendingVolumeSats,
+  };
+}
+
+function tokenHasConfirmedMarketplaceSales(token: PowTokenDefinition) {
+  return (
+    (optionalMarketplaceCount(token.confirmedSales) ?? 0) > 0 ||
+    (optionalMarketplaceCount(token.confirmedSalesVolumeSats) ?? 0) > 0 ||
+    (optionalMarketplaceMetric(token.lastSalePricePerToken) ?? 0) > 0
+  );
+}
+
+function summedTokenMarketplaceCount(
+  tokens: PowTokenDefinition[],
+  key: "confirmedOpenListings" | "pendingOpenListings",
+) {
+  const counts = tokens.map((token) => optionalMarketplaceCount(token[key]));
+  return counts.length > 0 && counts.every((count) => count !== undefined)
+    ? counts.reduce((total, count) => total + (count ?? 0), 0)
+    : undefined;
+}
+
 function tokenMarketplaceSummaryStats({
   listings,
   network,
   sales,
+  summary,
   token,
   tokenScope = "",
   tokens,
@@ -10064,6 +10183,7 @@ function tokenMarketplaceSummaryStats({
   listings: PowTokenListing[];
   network: BitcoinNetwork;
   sales: PowTokenSale[];
+  summary?: PowTokenSummaryMetadata;
   token?: PowTokenDefinition & {
     confirmedSupply?: number;
     holderCount?: number;
@@ -10078,23 +10198,96 @@ function tokenMarketplaceSummaryStats({
         candidate.network === network && tokenScopeMatchesToken(candidate, tokenScope),
     );
   const scopedTokenId = scopedToken?.tokenId ?? "";
-  const networkTokens = tokens.filter(
-    (token) =>
-      token.network === network &&
-      (!scopedTokenId || token.tokenId === scopedTokenId),
+  const allNetworkTokens = tokens.filter((token) => token.network === network);
+  const networkTokens = allNetworkTokens.filter(
+    (token) => !scopedTokenId || token.tokenId === scopedTokenId,
   );
   const networkListings = listings.filter(
     (listing) =>
       listing.network === network &&
       (!scopedTokenId || listing.tokenId === scopedTokenId),
   );
-  const marketStats = marketplaceStatsFromSales(
+  const previewMarketStats = marketplaceStatsFromSales(
     sales.filter(
       (sale) =>
         sale.network === network &&
         (!scopedTokenId || sale.tokenId === scopedTokenId),
     ),
   );
+  const summaryStats = summary?.stats;
+  const summaryAppliesToNetwork =
+    allNetworkTokens.length > 0 && allNetworkTokens.length === tokens.length;
+  const confirmedSaleTokenIds = allNetworkTokens
+    .filter(tokenHasConfirmedMarketplaceSales)
+    .map((token) => token.tokenId);
+  const scopedTokenOwnsAllConfirmedSales =
+    Boolean(scopedTokenId) &&
+    confirmedSaleTokenIds.length === 1 &&
+    confirmedSaleTokenIds[0] === scopedTokenId;
+  const topLevelPendingSales = optionalMarketplaceCount(
+    summaryStats?.pendingSales,
+  );
+  const scopedPendingSummaryIsSafe =
+    allNetworkTokens.length === 1 || topLevelPendingSales === 0;
+  const authoritativeMarketStats = scopedToken
+    ? {
+        confirmedSales:
+          optionalMarketplaceCount(scopedToken.confirmedSales) ??
+          (scopedTokenOwnsAllConfirmedSales
+            ? optionalMarketplaceCount(summaryStats?.confirmedSales)
+            : undefined),
+        confirmedVolumeSats:
+          optionalMarketplaceCount(scopedToken.confirmedSalesVolumeSats) ??
+          (scopedTokenOwnsAllConfirmedSales
+            ? optionalMarketplaceCount(summaryStats?.confirmedSalesVolumeSats)
+            : undefined),
+        pendingSales:
+          optionalMarketplaceCount(scopedToken.pendingSales) ??
+          (scopedPendingSummaryIsSafe ? topLevelPendingSales : undefined),
+        pendingVolumeSats:
+          optionalMarketplaceCount(scopedToken.pendingSalesVolumeSats) ??
+          (scopedPendingSummaryIsSafe
+            ? optionalMarketplaceCount(summaryStats?.pendingSalesVolumeSats)
+            : undefined),
+      }
+    : summaryAppliesToNetwork
+      ? {
+          confirmedSales: summaryStats?.confirmedSales,
+          confirmedVolumeSats: summaryStats?.confirmedSalesVolumeSats,
+          pendingSales: summaryStats?.pendingSales,
+          pendingVolumeSats: summaryStats?.pendingSalesVolumeSats,
+        }
+      : undefined;
+  const marketStats = marketplaceStatsWithAuthoritativeSummary(
+    previewMarketStats,
+    authoritativeMarketStats,
+  );
+  const previewConfirmedListings = networkListings.filter(
+    (listing) => listing.confirmed,
+  ).length;
+  const previewPendingListings =
+    networkListings.length - previewConfirmedListings;
+  const totalOpenListings = scopedToken
+    ? optionalMarketplaceCount(scopedToken.openListings)
+    : summaryAppliesToNetwork
+      ? optionalMarketplaceCount(summary?.totalCounts?.listings)
+      : undefined;
+  const networkConfirmedListings = scopedToken
+    ? undefined
+    : summedTokenMarketplaceCount(networkTokens, "confirmedOpenListings");
+  const networkPendingListings = scopedToken
+    ? undefined
+    : summedTokenMarketplaceCount(networkTokens, "pendingOpenListings");
+  const confirmedListings =
+    optionalMarketplaceCount(scopedToken?.confirmedOpenListings) ??
+    networkConfirmedListings ??
+    previewConfirmedListings;
+  const pendingListings =
+    optionalMarketplaceCount(scopedToken?.pendingOpenListings) ??
+    networkPendingListings ??
+    (totalOpenListings === undefined
+      ? previewPendingListings
+      : Math.max(previewPendingListings, totalOpenListings - confirmedListings));
 
   if (scopedToken) {
     return {
@@ -10109,16 +10302,20 @@ function tokenMarketplaceSummaryStats({
           value: Math.max(0, Math.floor(scopedToken.holderCount ?? 0)),
         },
         {
-          label: "Active Listings",
-          value: networkListings.length,
+          label: "Confirmed Listings",
+          value: confirmedListings,
         },
         {
-          label: "Credit Sales",
-          value: marketStats.totalSales,
+          label: "Pending Listings",
+          value: pendingListings,
+        },
+        {
+          label: "Confirmed Sales",
+          value: marketStats.confirmedSales,
         },
         {
           label: "Volume proofs",
-          value: compactMarketplaceStatValue(marketStats.totalVolumeSats),
+          value: compactMarketplaceStatValue(marketStats.confirmedVolumeSats),
         },
         {
           label: "Pending Sales",
@@ -10133,19 +10330,26 @@ function tokenMarketplaceSummaryStats({
     items: [
       {
         label: "Total Credits",
-        value: networkTokens.length,
+        value:
+          (summaryAppliesToNetwork
+            ? optionalMarketplaceCount(summary?.totalCounts?.tokens)
+            : undefined) ?? networkTokens.length,
       },
       {
-        label: "Active Listings",
-        value: networkListings.length,
+        label: "Confirmed Listings",
+        value: confirmedListings,
       },
       {
-        label: "Credit Sales",
-        value: marketStats.totalSales,
+        label: "Pending Listings",
+        value: pendingListings,
+      },
+      {
+        label: "Confirmed Sales",
+        value: marketStats.confirmedSales,
       },
       {
         label: "Volume proofs",
-        value: compactMarketplaceStatValue(marketStats.totalVolumeSats),
+        value: compactMarketplaceStatValue(marketStats.confirmedVolumeSats),
       },
       {
         label: "Pending Credits",
@@ -11550,12 +11754,17 @@ function normalizeTokenApiState(
     closedListings: Array.isArray(payload?.closedListings)
       ? payload.closedListings
       : [],
+    collectionHasMore:
+      payload?.collectionHasMore && typeof payload.collectionHasMore === "object"
+        ? { ...payload.collectionHasMore }
+        : undefined,
     creationSats: Number.isSafeInteger(payload?.creationSats)
       ? Number(payload?.creationSats)
       : 0,
     confirmedSupply: Number.isSafeInteger(Number(payload?.confirmedSupply))
       ? Number(payload?.confirmedSupply)
       : 0,
+    hasMore: payload?.hasMore === true,
     holders: Array.isArray(payload?.holders)
       ? payload.holders.map(normalizeTokenHolderRecord)
       : [],
@@ -11581,7 +11790,15 @@ function normalizeTokenApiState(
     sales: Array.isArray(payload?.sales)
       ? payload.sales.map(normalizeTokenAmountRecord)
       : [],
+    stats:
+      payload?.stats && typeof payload.stats === "object"
+        ? { ...payload.stats }
+        : undefined,
     summaryOnly: Boolean(payload?.summaryOnly),
+    totalCounts:
+      payload?.totalCounts && typeof payload.totalCounts === "object"
+        ? { ...payload.totalCounts }
+        : undefined,
     transfers: Array.isArray(payload?.transfers)
       ? payload.transfers.map(normalizeTokenAmountRecord)
       : [],
@@ -15107,6 +15324,7 @@ export default function App() {
     PowTokenClosedListing[]
   >([]);
   const [tokenSales, setTokenSales] = useState<PowTokenSale[]>([]);
+  const [tokenSummary, setTokenSummary] = useState<PowTokenSummaryMetadata>({});
   const [purchaseReceipt, setPurchaseReceipt] = useState<
     MarketplacePurchaseReceipt | undefined
   >();
@@ -15487,6 +15705,7 @@ export default function App() {
     setTokenListings(state.listings);
     setTokenClosedListings(state.closedListings);
     setTokenSales(state.sales);
+    setTokenSummary(tokenSummaryMetadata(state));
     setTokenCreationSats(state.creationSats);
     setTokenDataLoaded(true);
     setTokenDataLoadedScopeKey(scopeKey);
@@ -15599,6 +15818,7 @@ export default function App() {
     }
 
     acceptedTokenStatesRef.current.set(tokenDataLoadedScopeKey, {
+      ...tokenSummaryMetadata(tokenSummary),
       closedListings: tokenClosedListings,
       creationSats: tokenCreationSats,
       confirmedSupply: tokenStateConfirmedSupplyRank({
@@ -15638,6 +15858,7 @@ export default function App() {
     tokenListings,
     tokenMints,
     tokenSales,
+    tokenSummary,
     tokenTransfers,
   ]);
 
@@ -15659,6 +15880,7 @@ export default function App() {
     setTokenListings([]);
     setTokenClosedListings([]);
     setTokenSales([]);
+    setTokenSummary({});
     setTokenCreationSats(0);
     setTokenDataLoaded(false);
     setTokenDataLoadedScopeKey("");
@@ -19935,6 +20157,7 @@ export default function App() {
       setTokenListings([]);
       setTokenClosedListings([]);
       setTokenSales([]);
+      setTokenSummary({});
       setTokenCreationSats(0);
       setTokenDataLoaded(false);
       setTokenDataLoading(false);
@@ -25230,6 +25453,7 @@ export default function App() {
           )}
           tokenMints={tokenMints.filter((mint) => mint.network === "livenet")}
           tokenSales={tokenSales.filter((sale) => sale.network === "livenet")}
+          tokenSummary={tokenSummary}
           tokens={orderedTokenDefinitions.filter(
             (token) => token.network === "livenet",
           )}
@@ -26162,6 +26386,7 @@ export default function App() {
             tokenListings={tokenListings}
             tokenMints={tokenMints}
             tokenSales={tokenSales}
+            tokenSummary={tokenSummary}
             tokens={orderedTokenDefinitions}
             tokenTransfers={tokenTransfers}
             tokenMarketHistoryRefreshNonce={tokenMarketHistoryRefreshNonce}
@@ -38895,6 +39120,7 @@ function MarketplaceApp({
   tokenListings,
   tokenMints,
   tokenSales,
+  tokenSummary,
   tokens,
   tokenTransfers,
   tokenMarketHistoryRefreshNonce,
@@ -38950,6 +39176,7 @@ function MarketplaceApp({
   tokenListings: PowTokenListing[];
   tokenMints: PowTokenMint[];
   tokenSales: PowTokenSale[];
+  tokenSummary: PowTokenSummaryMetadata;
   tokens: PowTokenDefinition[];
   tokenTransfers: PowTokenTransfer[];
   tokenMarketHistoryRefreshNonce: number;
@@ -38997,6 +39224,7 @@ function MarketplaceApp({
     listings: tokenListings,
     network: "livenet",
     sales: tokenSales,
+    summary: tokenSummary,
     token: selectedTokenMarket,
     tokenScope: selectedTokenMarketId,
     tokens,
@@ -39311,6 +39539,7 @@ function MarketplaceWorkspace({
   tokenListings,
   tokenMints,
   tokenSales,
+  tokenSummary,
   tokens,
   tokenTransfers,
   tokenMarketHistoryRefreshNonce,
@@ -39363,6 +39592,7 @@ function MarketplaceWorkspace({
   tokenListings: PowTokenListing[];
   tokenMints: PowTokenMint[];
   tokenSales: PowTokenSale[];
+  tokenSummary: PowTokenSummaryMetadata;
   tokens: PowTokenDefinition[];
   tokenTransfers: PowTokenTransfer[];
   tokenMarketHistoryRefreshNonce: number;
@@ -39423,6 +39653,7 @@ function MarketplaceWorkspace({
     listings: tokenListings,
     network,
     sales: tokenSales,
+    summary: tokenSummary,
     token: selectedTokenMarket,
     tokenScope: selectedTokenMarketId,
     tokens,

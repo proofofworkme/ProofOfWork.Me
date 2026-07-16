@@ -1391,7 +1391,9 @@ expectAll("closed token listings preserve and repair canonical seal metadata", p
   /async function repairConfirmedListingSealMetadata\([\s\S]*kind = 'token-listing-sealed'[\s\S]*UPDATE proof_indexer\.credit_listings[\s\S]*'sealConfirmed', true[\s\S]*'sealTxid', seals\.seal_txid/,
   /results\.push\(await repairConfirmedListingSealMetadata\(client\)\)/,
   /function tokenClosedListingFromEventPayload\(payload\)[\s\S]*payload\?\.closedAt[\s\S]*saleAuthorization: objectRecord\(payload\?\.saleAuthorization\)[\s\S]*sealConfirmed:[\s\S]*sealTxid:/,
-  /const closedListings = uniqueTokenItems\([\s\S]*marketEvents\.closedListings[\s\S]*listingProjection\.closedListings[\s\S]*mergeTokenListingRecord/,
+  /const sales = uniqueTokenItems\([\s\S]*marketEvents\.sales[\s\S]*listingProjection\.sales[\s\S]*mergeCanonicalTokenSaleRecord/,
+  /const closedListings = uniqueTokenItems\([\s\S]*marketEvents\.closedListings[\s\S]*listingProjection\.closedListings[\s\S]*mergeCanonicalTokenClosedListingRecord/,
+  /function mergeCanonicalTokenClosedListingRecord\([\s\S]*closedAt: current\.closedAt \?\? incoming\.closedAt[\s\S]*createdAt: current\.createdAt \?\? incoming\.createdAt/,
 ]);
 expectAll("unpinned ID history reads current records and event projections", proofIndexReader, [
   /async function currentRegistryEventHistoryPage\(/,

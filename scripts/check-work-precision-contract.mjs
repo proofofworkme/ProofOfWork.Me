@@ -22,12 +22,22 @@ import {
 } from "../server/work-units.mjs";
 
 const repoRoot = new URL("../", import.meta.url);
-const [backfill, reader, worker, workerUnit, workAmountSource] =
-  await Promise.all([
+const [
+  backfill,
+  ledgerAudit,
+  reader,
+  worker,
+  workerUnit,
+  workAmountSource,
+] = await Promise.all([
   readFile(new URL("scripts/backfill-proof-indexer.mjs", repoRoot), "utf8"),
+  readFile(new URL("scripts/audit-ledger-consistency.mjs", repoRoot), "utf8"),
   readFile(new URL("server/db/proof-index-reader.mjs", repoRoot), "utf8"),
   readFile(new URL("scripts/run-proof-indexer-worker.mjs", repoRoot), "utf8"),
-  readFile(new URL("deploy/proofofwork-indexer-worker.service", repoRoot), "utf8"),
+  readFile(
+    new URL("deploy/proofofwork-indexer-worker.service", repoRoot),
+    "utf8",
+  ),
   readFile(new URL("src/workAmount.ts", repoRoot), "utf8"),
   ]);
 const workAmountModule = await import(
@@ -180,10 +190,21 @@ assert.match(
 assert.match(worker, /POW_INDEX_REQUIRE_WORK_ATOMS/u);
 assert.match(worker, /assertWorkAtomicProjectionReady/u);
 assert.match(workerUnit, /Environment=POW_INDEX_REQUIRE_WORK_ATOMS=1/u);
+assert.match(
+  ledgerAudit,
+  /function workAmountMatches[\s\S]*typeof record\?\.amount === "string"[\s\S]*typeof record\?\.amountAtoms === "string"/u,
+);
+assert.match(ledgerAudit, /workAmountMatches\(item, "101000"\)/u);
+assert.match(ledgerAudit, /workAmountMatches\(item, "10000"\)/u);
+assert.match(ledgerAudit, /workAmountMatches\(item, "20000"\)/u);
+assert.doesNotMatch(
+  ledgerAudit,
+  /item\.amount === (?:101_000|10_000|20_000)/u,
+);
 
 console.log(
   JSON.stringify({
-    checks: 69,
+    checks: 74,
     model: WORK_ATOMIC_PROJECTION_MODEL,
     ok: true,
     tokenId: WORK_TOKEN_ID,

@@ -1,3 +1,5 @@
+import { parseWorkAmountToAtoms } from "../server/work-units.mjs";
+
 const DEFAULT_API_BASE = "https://work.proofofwork.me";
 const NETWORK = process.env.NETWORK ?? "livenet";
 const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
@@ -137,6 +139,23 @@ function numberValue(value) {
 
 function numbersAgree(left, right) {
   return Math.abs(numberValue(left) - numberValue(right)) <= 0.000001;
+}
+
+function workAmountMatches(record, expectedAmount) {
+  try {
+    const expectedAtoms = parseWorkAmountToAtoms(String(expectedAmount), {
+      allowZero: true,
+    });
+    return (
+      typeof record?.amount === "string" &&
+      parseWorkAmountToAtoms(record.amount, { allowZero: true }) ===
+        expectedAtoms &&
+      typeof record?.amountAtoms === "string" &&
+      record.amountAtoms === expectedAtoms
+    );
+  } catch {
+    return false;
+  }
 }
 
 function scaledNumbersAgree(left, right, minimumTolerance = 0.01) {
@@ -941,7 +960,7 @@ expect(
     (item) =>
       item.txid === WORK_TRANSFER_REGRESSION_TXID &&
       item.confirmed === true &&
-      item.amount === 101_000 &&
+      workAmountMatches(item, "101000") &&
       item.recipientAddress === WORK_TRANSFER_REGRESSION_RECIPIENT,
   ),
 );
@@ -962,7 +981,7 @@ expect(
     (item) =>
       item.txid === OTC_WORK_TRANSFER_REGRESSION_TXID &&
       item.confirmed === true &&
-      item.amount === 10_000 &&
+      workAmountMatches(item, "10000") &&
       item.recipientAddress === OTC_WORK_TRANSFER_REGRESSION_RECIPIENT,
   ),
 );
@@ -972,7 +991,7 @@ expect(
     (item) =>
       item.txid === OTC_WORK_TRANSFER_REGRESSION_TXID &&
       item.confirmed === true &&
-      item.amount === 10_000 &&
+      workAmountMatches(item, "10000") &&
       item.recipientAddress === OTC_WORK_TRANSFER_REGRESSION_RECIPIENT,
   ),
 );
@@ -1018,7 +1037,7 @@ expect(
     (item) =>
       item.listingId === WORK_DELIST_REGRESSION_LISTING_TXID &&
       item.closedTxid === WORK_DELIST_REGRESSION_TXID &&
-      item.amount === 20_000 &&
+      workAmountMatches(item, "20000") &&
       item.priceSats === 151_600 &&
       item.sellerAddress === WORK_DELIST_REGRESSION_SELLER,
   ),
