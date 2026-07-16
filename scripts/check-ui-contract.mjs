@@ -262,6 +262,14 @@ expect(
 );
 
 const app = contents.get("src/App.tsx");
+const listTokenSource = app.slice(
+  app.indexOf("async function listToken"),
+  app.indexOf("async function sealTokenListing"),
+);
+const canListTokenSource = app.slice(
+  app.indexOf("const canListToken"),
+  app.indexOf("const selectedTokenSupplyState"),
+);
 const proofApiClient = contents.get("src/shared/api/proofApiClient.ts");
 const routeRegistry = contents.get("src/app/routeRegistry.ts");
 expect(
@@ -461,6 +469,27 @@ expect(
     ) &&
     /Registry and miner fees are final once broadcast[\s\S]*not automatically refunded/.test(
       app,
+    ),
+);
+expect(
+  "credit listings use canonical holder spendability on every route before PSBT creation",
+  /fetchFreshWalletTokenPreflightState\(\s*address,\s*token\.tokenId/.test(
+    listTokenSource,
+  ) &&
+    /tokenSpendabilityForWallet\(\s*address,\s*token,\s*freshState,\s*tokenListings,\s*tokenClosedListings,\s*tokenTransfers,\s*tokenSales/.test(
+      listTokenSource,
+    ) &&
+    /spendability\.spendableBalance\.toLocaleString\(\)[\s\S]*available;[\s\S]*attempted\. No transaction was created\./.test(
+      listTokenSource,
+    ) &&
+    /activeTokenListingAnchorOutpointsForAddress\(\s*spendability\.activeListings/.test(
+      listTokenSource,
+    ) &&
+    !/walletSpendableTokenBalance/.test(listTokenSource) &&
+    !/walletSpendableTokenBalance/.test(canListTokenSource) &&
+    !/max=\{Math\.max\(1, listSpendableBalance\)\}/.test(app) &&
+    !/fetchTokenState|tokenWalletBalancesFor|walletMode|activeFolder/.test(
+      listTokenSource,
     ),
 );
 expect(

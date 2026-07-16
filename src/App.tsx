@@ -16603,7 +16603,6 @@ export default function App() {
       address &&
         walletTransferToken &&
         normalizedTokenListAmount >= 1 &&
-        normalizedTokenListAmount <= walletSpendableTokenBalance &&
         normalizedTokenListPriceSats >= 1 &&
         (!tokenListBuyerAddress.trim() ||
           isValidBitcoinAddress(tokenListBuyerAddress.trim(), "livenet")),
@@ -23209,7 +23208,6 @@ export default function App() {
     if (
       !Number.isSafeInteger(amount) ||
       amount < 1 ||
-      amount > walletSpendableTokenBalance ||
       !Number.isSafeInteger(priceSats) ||
       priceSats < 1 ||
       (buyerAddress && !isValidBitcoinAddress(buyerAddress, "livenet"))
@@ -23231,42 +23229,38 @@ export default function App() {
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
 
-      const latestState = await fetchTokenState(
-        "livenet",
-        true,
-        "",
-        false,
-        [address],
-        walletMode || activeFolder === "wallet",
-      );
-      const acceptedState = applyTokenState(latestState, {
-        scopeKey: tokenStateScopeKey({
-          address,
-          network: "livenet",
-          tokenScope: "",
-          walletScoped: walletMode || activeFolder === "wallet",
-        }),
+      setStatus({
+        tone: "idle",
+        text: `Checking spendable ${token.ticker}...`,
       });
-      const latestToken =
-        acceptedState.tokens.find((item) => item.tokenId === token.tokenId) ??
-        token;
-      const latestBalance =
-        tokenWalletBalancesFor(
-          address,
-          acceptedState.tokens,
-          acceptedState.mints,
-          acceptedState.transfers,
-          acceptedState.sales,
-        ).find((item) => item.token.tokenId === latestToken.tokenId)
-          ?.confirmedBalance ?? 0;
-      const latestReserved = tokenReservedBalanceFor(
-        acceptedState.listings,
-        latestToken.tokenId,
+      const freshState = await fetchFreshWalletTokenPreflightState(
         address,
+        token.tokenId,
+        (attempt, totalAttempts) => {
+          setStatus({
+            tone: "idle",
+            text: `Rechecking spendable ${token.ticker} (${attempt}/${totalAttempts})...`,
+          });
+        },
       );
-      if (amount > Math.max(0, latestBalance - latestReserved)) {
-        throw new Error("Listing amount exceeds your current spendable balance.");
+      const spendability = tokenSpendabilityForWallet(
+        address,
+        token,
+        freshState,
+        tokenListings,
+        tokenClosedListings,
+        tokenTransfers,
+        tokenSales,
+      );
+      if (amount > spendability.spendableBalance) {
+        setStatus({
+          tone: "bad",
+          text: `${spendability.spendableBalance.toLocaleString()} ${token.ticker} available; ${amount.toLocaleString()} attempted. No transaction was created.`,
+        });
+        return;
       }
+      await assertActiveWalletAddress(window.unisat, address);
+      const latestToken = token;
 
       const sellerPublicKey =
         (await window.unisat.getPublicKey?.())?.trim().toLowerCase() ?? "";
@@ -23307,7 +23301,7 @@ export default function App() {
 
       const paymentPsbt = await buildPaymentPsbt({
         excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
-          latestState.listings,
+          spendability.activeListings,
           address,
           { network: "livenet" },
         ),
@@ -23340,6 +23334,7 @@ export default function App() {
         return;
       }
 
+      await assertActiveWalletAddress(window.unisat, address);
       const txid = await signAndBroadcastPsbt({
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
@@ -29096,7 +29091,6 @@ function TokenWalletWorkspace({
                 Amount
                 <input
                   min={1}
-                  max={Math.max(1, listSpendableBalance)}
                   onChange={(event) => setListAmount(Number(event.target.value))}
                   type="number"
                   value={listAmount}
