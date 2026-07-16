@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { parseWorkAmountToAtoms } from "../server/work-units.mjs";
+
 const API_BASE = (
   process.env.POW_API_BASE ||
   process.env.VITE_POW_API_BASE ||
@@ -153,6 +155,33 @@ function numericValue(value) {
 
 function numbersAgree(left, right, tolerance = 0.01) {
   return Math.abs(numericValue(left) - numericValue(right)) <= tolerance;
+}
+
+function workAmountMatches(record, expectedAmount) {
+  try {
+    const expectedAtoms = parseWorkAmountToAtoms(expectedAmount, {
+      allowZero: true,
+    });
+    const amountAtoms = record?.amountAtoms;
+    const hasAmountAtoms =
+      amountAtoms !== undefined && amountAtoms !== null && amountAtoms !== "";
+    if (typeof record?.amount === "number") {
+      return (
+        !hasAmountAtoms &&
+        Number.isSafeInteger(record.amount) &&
+        parseWorkAmountToAtoms(record.amount, { allowZero: true }) ===
+          expectedAtoms
+      );
+    }
+    return (
+      typeof record?.amount === "string" &&
+      record.amount === expectedAmount &&
+      typeof amountAtoms === "string" &&
+      amountAtoms === expectedAtoms
+    );
+  } catch {
+    return false;
+  }
 }
 
 function elapsedMs(startedAt) {
@@ -501,7 +530,7 @@ async function runFastMarketplaceRegressionGate() {
           CARBONZ_DELAYED_TRANSFER_TX && item?.confirmed === true,
     );
     assert(
-      carbonzDelayedTransfer?.amount === 20000 &&
+      workAmountMatches(carbonzDelayedTransfer, "20000") &&
         carbonzDelayedTransfer?.senderAddress ===
           CARBONZ_DELAYED_TRANSFER_SENDER &&
         carbonzDelayedTransfer?.recipientAddress ===
@@ -684,7 +713,7 @@ const reportedBuySale = (reportedBuySaleHistory.items ?? []).find(
 assert(reportedBuySale, `${REPORTED_BUY_TX} is missing from WORK sales history`);
 assert(
   reportedBuySale?.confirmed === true &&
-    reportedBuySale?.amount === 60 &&
+    workAmountMatches(reportedBuySale, "60") &&
     reportedBuySale?.priceSats === 9932 &&
     reportedBuySale?.buyerAddress === REPORTED_BUY_BUYER &&
     reportedBuySale?.sellerAddress === REPORTED_BUY_SELLER,
@@ -770,7 +799,7 @@ const reportedStaleSale = (reportedStaleSaleHistory.items ?? []).find(
 );
 assert(
   reportedStaleSale?.confirmed === true &&
-    reportedStaleSale?.amount === 20000 &&
+    workAmountMatches(reportedStaleSale, "20000") &&
     reportedStaleSale?.priceSats === 128000 &&
     reportedStaleSale?.buyerAddress === REPORTED_STALE_SALE_BUYER &&
     reportedStaleSale?.sellerAddress === REPORTED_STALE_SALE_SELLER,
@@ -852,7 +881,7 @@ const recentWaitingForSealItem = listingById(
 );
 assert(
   recentWaitingForSealItem?.confirmed === true &&
-    recentWaitingForSealItem?.amount === 130 &&
+    workAmountMatches(recentWaitingForSealItem, "130") &&
     recentWaitingForSealItem?.priceSats === 81325 &&
     recentWaitingForSealItem?.sellerAddress ===
       CARBONZ_TAPROOT_LISTING_ADDRESS,
@@ -1159,7 +1188,7 @@ const carbonzDelayedTransfer = (carbonzDelayedTransferHistory.items ?? []).find(
     item?.confirmed === true,
 );
 assert(
-  carbonzDelayedTransfer?.amount === 20000 &&
+  workAmountMatches(carbonzDelayedTransfer, "20000") &&
     carbonzDelayedTransfer?.senderAddress === CARBONZ_DELAYED_TRANSFER_SENDER &&
     carbonzDelayedTransfer?.recipientAddress ===
       CARBONZ_DELAYED_TRANSFER_RECIPIENT,

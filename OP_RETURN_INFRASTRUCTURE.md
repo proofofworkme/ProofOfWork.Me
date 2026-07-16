@@ -665,6 +665,171 @@ required for independent disaster recovery.
 
 Database credentials live in
 `/etc/proofofwork-api/proof-indexer-db.env`, never inside the live Git checkout.
+
+### WORK atomic-unit cutover
+
+WORK alone uses eight decimal places. One WORK equals `100000000` atoms. Once
+the definition metadata is marked `work-atoms-v1`, the existing numeric
+definition, balance, pending-delta, and listing columns store WORK atoms; the
+same columns for every other credit retain their existing whole-credit units.
+Public projections expose canonical human decimal strings together with exact
+integer `maxSupplyAtoms`, `mintAmountAtoms`, `balanceAtoms`, `pendingDeltaAtoms`,
+and `amountAtoms` strings. Conservation, reservations, pending spendability,
+and canonical replay must use the atom strings or integers, never binary
+floating-point arithmetic.
+
+Every derived ledger or canonical-summary snapshot published after the cutover
+must carry the positive top-level marker
+`workAmountStorageModel: "work-atoms-v1"`. Unmarked snapshots referenced by an
+INCB `issuanceValueSnapshotId` remain byte-for-byte immutable H-1 oracle
+evidence. Explicit pinned H-1 verification may read those rows, but every
+unpinned/current snapshot selector excludes them. Unmarked, unreferenced
+derived snapshots are stale pre-cutover read models and the migration deletes
+them.
+
+The migration is intentionally dual-read and single-write:
+
+- Legacy `pwt1:send` events and signed `pwt-sale-v1` authorizations remain
+  immutable whole-WORK history and are converted only in the derived
+  projection.
+- New WORK transfers write `pwt1:send2` atom amounts. New WORK sale tickets use
+  `pwt-sale-v2` and sign `amountAtoms`; V2 is invalid for every other credit.
+- Raw OP_RETURN bytes and the nested signed authorization object are never
+  rewritten. The event projection may add top-level exact atom fields.
+- The migration is scoped to the canonical WORK token id. POWB, INCB, and all
+  other credit definitions, balances, listings, events, and signed terms are
+  outside its write set.
+
+Run the cutover only from the approved exact release with the database
+environment loaded. First take and verify a current PostgreSQL backup, then run
+the read-only preflight:
+
+```bash
+NETWORK=livenet npm run indexer:audit-work-atoms
+```
+
+The command returns JSON shaped like:
+
+```json
+{
+  "audit": {
+    "atomic": false,
+    "legacy": true,
+    "definition": {
+      "decimals": null,
+      "maxSupply": "...",
+      "mintAmount": "...",
+      "model": "",
+      "unitScale": ""
+    },
+    "balances": {
+      "rows": 0,
+      "holders": 0,
+      "negative_balances": 0,
+      "confirmed_supply": "...",
+      "pending_delta": "..."
+    },
+    "listings": {
+      "rows": 0,
+      "invalid_amounts": 0,
+      "statuses": {}
+    },
+    "events": {
+      "amount_events": 0,
+      "atom_events": 0,
+      "invalid_atom_events": 0,
+      "invalid_legacy_events": 0,
+      "mismatched_atom_events": 0
+    },
+    "reservations": {
+      "oversubscribed_sellers": 0
+    },
+    "snapshots": {
+      "marked": 0,
+      "unmarked_derived": 0,
+      "unmarked_derived_referenced": 0,
+      "unmarked_non_oracle_derived": 0
+    }
+  },
+  "network": "livenet",
+  "ok": true,
+  "workAtomicProjectionAudit": true
+}
+```
+
+The zero values above show field shape only; compare the real row/event counts
+to the fresh production audit and deployment record. Preflight must report the
+exact legacy definition, no negative balance, no malformed amount, and no
+oversubscribed seller. Then:
+
+1. Stop `proofofwork-api-wg.socket` first, then
+   `proofofwork-api-wg.service`, `proofofwork-indexer-worker`, and
+   `proofofwork-api` so no request can socket-activate the public proxy and no
+   writer or reader can observe mixed units. Keep the socket and proxy stopped
+   through the entire staged bootstrap.
+2. Stage the exact release and run `npm run check:work-precision` plus
+   `npm run check:index-recovery-behavior`.
+3. With the services still stopped and the production database environment
+   loaded, run:
+
+   ```bash
+   NETWORK=livenet POW_INDEX_WORK_ATOMIC_MIGRATION_APPLY=1 \
+     npm run indexer:migrate-work-atoms
+   ```
+
+4. Require `ok: true`, `workAtomicProjectionMigration: true`,
+   `migration.after.atomic: true`, `migration.after.legacy: false`, exact
+   definition values `2100000000000000` max atoms and `100000000000` mint
+   atoms, and `oversubscribed_sellers: 0`. Do not accept aggregate conservation
+   alone: every address's confirmed balance and pending delta must equal its
+   pre-cutover value times `100000000`; every listing amount must scale under
+   the same `listing_id` while its status, parties, price, ticket/seal/close
+   state, and nested signed authorization remain unchanged; and every
+   amount-bearing WORK event, including invalid audit attempts, must have exact
+   `amountAtoms = amount * 100000000` while canonical validity counters remain
+   unchanged. The returned
+   `invalidatedSnapshotIds` and `cacheInvalidationRequired` fields are part of
+   the deployment record.
+5. While the API is stopped, remove only derived response-cache files from the
+   configured production cache directory (`/data/proofofwork-api-cache`) and
+   the optional legacy checkout cache. The transaction deletes every unmarked,
+   unreferenced derived database snapshot while preserving each referenced
+   INCB H-1 oracle row byte-for-byte.
+6. Keep the public API service and its WireGuard socket proxy stopped. Start
+   the candidate API on an alternate, non-proxied loopback port, point a
+   supervised `npm run indexer:worker -- --once` at that port with
+   `POW_API_BASE`, and publish one fresh exact-tip marked canonical summary.
+   Port `8081` is not private on production because the systemd socket proxy
+   exposes it to Caddy.
+7. Run:
+
+   ```bash
+   NETWORK=livenet npm run indexer:verify-work-atoms-post-bootstrap
+   ```
+
+   The strict post-bootstrap verifier must prove the atomic ledger and
+   reservations again, resolve every immutable INCB H-1 oracle fingerprint,
+   find zero unmarked non-oracle derived snapshots, and find a marked green
+   canonical summary at the latest full-node block-scan tip.
+8. Verify the staged `/health`, fresh `/api/v1/consistency`,
+   `/api/v1/ledger-consistency`, the canonical WORK token payload, wallet
+   spendability, Marketplace listings, WORK, Growth, Inception, and Log at one
+   exact Core tip. Only then stop the staging API, start the public API and
+   continuous worker, and reopen public traffic.
+
+The migration uses a serializable transaction, an advisory lock, table locks,
+canonical WORK balance replay, and post-write conservation gates. Any failed
+gate rolls back the entire database change. The continuous worker also fails
+closed by default until the exact atomic definition marker exists.
+`POW_INDEX_REQUIRE_WORK_ATOMS=0` is a supervised emergency bypass only, not a
+normal deployment setting. Restoring the verified pre-cutover database and old
+release is an exact rollback only before any `send2` or `pwt-sale-v2`
+transaction is broadcast. Once a V2 transaction exists, even pending, the old
+release cannot represent or replay it. At that boundary, keep public writes
+stopped, preserve the affected chain/mempool txids, and fix forward with a
+V2-capable atomic release; never reopen the old release and never attempt an
+in-place divide-by-scale rollback.
+
 Production application releases must be staged from one exact commit, install
 dependencies before the swap, preserve one rollback outside the live path, and
 leave `/opt/proofofwork-api` as a clean checkout at the recorded commit. Managed
@@ -705,7 +870,8 @@ still surface pending counts so mempool pressure remains visible without
 blocking a healthy confirmed ledger.
 
 Production regression gates after the July 2026 index recovery are
-`npm run check:index-recovery-behavior`, `npm run check:live-data`,
+`npm run check:work-precision`, `npm run check:index-recovery-behavior`,
+`npm run check:live-data`,
 `npm run check:work-participant-regression`, `npm run audit:ledger`,
 `npm run audit:computer-events`, `npm run indexer:parity`,
 `npm run check:mail-regressions`, and both marketplace regression modes. A healthy
@@ -1002,9 +1168,9 @@ The credit endpoint:
 - Reconstructs mints from `pwt1:mint:<token-create-txid>:<amount>` transactions found on each credit's own registry address.
 - Requires mint payments to the credit registry before OP_RETURN at the owner-set mint price, with a 546-proof minimum for credit mint settings.
 - Credits confirmed mint balances to the first input address.
-- Reconstructs transfers from `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` transactions found on the credit registry address.
+- Reconstructs immutable legacy transfers from `pwt1:send:<token-create-txid>:<whole-amount>:<recipient-address>` and atomic WORK transfers from `pwt1:send2:<canonical-work-token-id>:<amount-atoms>:<recipient-address>` transactions found on the credit registry address.
 - Requires transfer payments of 546 proofs to the credit registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visibility only.
-- Approved mainnet message senders may attach canonical WORK to mail by combining normal mail recipient payments, `pwm1:` mail payloads, the WORK registry mutation payment, and one or more `pwt1:send` payloads in the same signed transaction. The output order keeps mail recipient parsing before the first `pwm1:` output and WORK transfer parsing after the registry payment before the first `pwt1:` output.
+- Approved mainnet message senders may attach canonical WORK to mail by combining normal mail recipient payments, `pwm1:` mail payloads, the WORK registry mutation payment, and one or more atomic `pwt1:send2` payloads in the same signed transaction. The output order keeps mail recipient parsing before the first `pwm1:` output and WORK transfer parsing after the registry payment before the first `pwt1:` output.
 - Reconstructs credit listings from `pwt1:list5:<sale-ticket-json-base64url>`, credit seals from `pwt1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>`, delistings from `pwt1:delist5:<listing-txid>`, and buyer-funded purchases from `pwt1:buy5:<listing-txid>:<buyer-address>`.
 - Credit listings reserve the seller's spendable balance, create a 546-proof seller-controlled sale-ticket output, and require the standard 546-proof credit registry mutation payment before OP_RETURN. Buys must spend the seller ticket, pay the seller the listed price plus ticket value, and pay the credit registry mutation fee.
 - Active credit listings are filtered by sale-ticket outspend state. When Bitcoin Core RPC is configured, `gettxout` is the fast spend-state oracle and address-history scans are recovery context. If the ticket output is spent, the listing is closed even when a cached snapshot is otherwise stale; if the spend is a valid `buy5`, the event also appears as a credit sale.
@@ -1142,7 +1308,18 @@ Credits:
 pwt1:create:<ticker>:<max-supply>:<mint-amount>:<mint-price-proofs>:<token-registry-address>
 pwt1:mint:<token-create-txid>:<amount>
 pwt1:send:<token-create-txid>:<amount>:<recipient-address>
+pwt1:send2:<canonical-work-token-id>:<amount-atoms>:<recipient-address>
 ```
+
+`pwt1:send` is the immutable legacy whole-credit transfer form. New canonical
+WORK transfers use `send2`; `amount-atoms` is a positive canonical integer,
+one WORK equals `100000000` atoms, and no exponent, sign, comma, leading-zero
+alias, or value beyond eight decimal places is accepted. `send2` is WORK-only.
+Historical signed `pwt-sale-v1` authorizations likewise remain whole-credit
+records. New WORK listings use `pwt-sale-v2` with an exact `amountAtoms`
+string; non-WORK listings remain V1. The surrounding
+`list5`/`seal5`/`buy5`/`delist5` messages and sale-ticket UTXO contract are
+unchanged.
 
 Mainnet credit creation index:
 

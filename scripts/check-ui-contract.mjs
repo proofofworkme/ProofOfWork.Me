@@ -266,6 +266,10 @@ const listTokenSource = app.slice(
   app.indexOf("async function listToken"),
   app.indexOf("async function sealTokenListing"),
 );
+const buyTokenListingSource = app.slice(
+  app.indexOf("async function buyTokenListing"),
+  app.indexOf("async function runRushChainedMint"),
+);
 const canListTokenSource = app.slice(
   app.indexOf("const canListToken"),
   app.indexOf("const selectedTokenSupplyState"),
@@ -335,11 +339,11 @@ expect(
     app,
   ) &&
     /const messageWorkAttachmentAllowed = canAttachWorkToMessages\(/.test(app) &&
-    /const inceptionWorkHolderEligible =[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*workAttachmentPreviewSpendability\?\.confirmedBalance \?\? 0\) > 0/.test(
+    /const inceptionWorkHolderEligible =[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*workAtomsFromIntegerString\([\s\S]*workAttachmentPreviewSpendability\?\.confirmedBalanceAtoms[\s\S]*\?\? 0n\) > 0n/.test(
       app,
     ) &&
     /const bondWorkAttachmentAllowed = canAttachWorkToBond\(/.test(app) &&
-    /const bondWorkAttachmentBalanceOk =[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*bondWorkAmountValue <= workAttachmentSpendableBalance/.test(
+    /const bondWorkAttachmentBalanceOk =[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*bondWorkAmountAtoms <= workAttachmentSpendableAtoms/.test(
       app,
     ) &&
     /Inception Bonds instead expose WORK attachment to every connected mainnet address whose authoritative wallet-scoped state proves a positive confirmed WORK balance/.test(
@@ -354,7 +358,7 @@ expect(
     /const workAttachmentPreviewSpendability = useMemo[\s\S]*tokenSpendabilityForWallet\([\s\S]*tokenListings[\s\S]*tokenClosedListings[\s\S]*tokenTransfers[\s\S]*tokenSales/.test(
       app,
     ) &&
-    /const workAttachmentVisible =[\s\S]*workAttachmentSpendableBalance > 0/.test(
+    /const workAttachmentVisible =[\s\S]*workAttachmentSpendableAtoms > 0n/.test(
       app,
     ),
 );
@@ -412,10 +416,10 @@ expect(
     /const walletTransferToken = bondWorkspaceActive[\s\S]*\? activeBondTokenDefinition/.test(
       app,
     ) &&
-    /const walletTransferBalance =[\s\S]*walletOperationBalances\.find[\s\S]*const walletPendingTokenBalance =[\s\S]*walletOperationBalances\.find/.test(
+    /const walletTransferBalanceRow = walletOperationBalances\.find[\s\S]*const walletTransferBalance =[\s\S]*walletTransferBalanceRow\?\.confirmedBalance[\s\S]*const walletPendingTokenBalance =[\s\S]*walletTransferBalanceRow\?\.pendingOutgoing/.test(
       app,
     ) &&
-    /Math\.floor\(tokenTransferAmount\) <= walletSpendableTokenBalance/.test(
+    /isWorkToken\(walletTransferToken\)[\s\S]*tokenTransferInput\.amountAtoms[\s\S]*walletSpendableTokenAtoms[\s\S]*tokenTransferInput\.amount <= walletSpendableTokenBalance/.test(
       app,
     ) &&
     /if \(walletTransferBalances\.length === 0\)[\s\S]*walletTransferBalances\.some[\s\S]*setTokenTransferTokenId\(walletTransferBalances\[0\]\.token\.tokenId\)/.test(
@@ -437,7 +441,7 @@ expect(
     /function mergeTokenTransfersForSpendability\([\s\S]*groupedSources[\s\S]*confirmedSource[\s\S]*pendingSource[\s\S]*merged\.push/.test(
       app,
     ) &&
-    /const pendingDirectTransfers = mergeTokenTransfersForSpendability\([\s\S]*state\.transfers,[\s\S]*localTransfers[\s\S]*transfer\.tokenId === token\.tokenId/.test(
+    /const pendingDirectTransferRows = mergeTokenTransfersForSpendability\([\s\S]*state\.transfers,[\s\S]*localTransfers[\s\S]*transfer\.tokenId === token\.tokenId[\s\S]*const pendingDirectTransferAtoms = work[\s\S]*tokenRecordAmountAtoms/.test(
       app,
     ) &&
     !/const transfersByTxid = new Map/.test(app),
@@ -457,7 +461,7 @@ expect(
     /const bondWorkBalanceError = bondWorkBalanceHasCleanLane[\s\S]*inceptionWorkBalanceRequired[\s\S]*accountTokenLaneStatuses\.work\.error[\s\S]*accountTokenLaneStatuses\.all\.error/.test(
       app,
     ) &&
-    /const bondWorkAttachmentBalanceOk =[\s\S]*bondWorkAttachmentAllowed[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*bondWorkAmountValue <= workAttachmentSpendableBalance/.test(
+    /const bondWorkAttachmentBalanceOk =[\s\S]*bondWorkAttachmentAllowed[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*bondWorkAmountAtoms <= workAttachmentSpendableAtoms/.test(
       app,
     ) &&
     /max=\{[\s\S]*bondWorkBalanceLoaded && !bondWorkBalanceError[\s\S]*: undefined/.test(
@@ -504,23 +508,43 @@ expect(
     /tokenSpendabilityForWallet\(\s*address,\s*token,\s*freshState,\s*tokenListings,\s*tokenClosedListings,\s*tokenTransfers,\s*tokenSales/.test(
       listTokenSource,
     ) &&
-    /spendability\.spendableBalance\.toLocaleString\(\)[\s\S]*available;[\s\S]*attempted\. No transaction was created\./.test(
+    /tokenAmountDisplay\([\s\S]*spendability\.spendableBalance,[\s\S]*spendability\.spendableBalanceAtoms[\s\S]*available;[\s\S]*attempted\. No transaction was created\./.test(
       listTokenSource,
     ) &&
     /activeTokenListingAnchorOutpointsForAddress\(\s*spendability\.activeListings/.test(
       listTokenSource,
     ) &&
     !/walletSpendableTokenBalance/.test(listTokenSource) &&
-    !/walletSpendableTokenBalance/.test(canListTokenSource) &&
+    /isWorkToken\(walletTransferToken\)[\s\S]*tokenListInput\.amountAtoms[\s\S]*walletSpendableTokenAtoms[\s\S]*tokenListInput\.amount <= walletSpendableTokenBalance/.test(
+      canListTokenSource,
+    ) &&
     !/max=\{Math\.max\(1, listSpendableBalance\)\}/.test(app) &&
     !/fetchTokenState|tokenWalletBalancesFor|walletMode|activeFolder/.test(
       listTokenSource,
     ),
 );
 expect(
+  "fractional WORK purchases keep their exact pending seller reservation",
+  /const sale:\s*PowTokenSale\s*=\s*\{[\s\S]*amount:\s*listing\.amount,[\s\S]*amountAtoms:\s*listing\.amountAtoms,[\s\S]*listingId:\s*listing\.listingId/.test(
+    buyTokenListingSource,
+  ) &&
+    /const uncoveredPendingSaleAtoms = work[\s\S]*tokenRecordAmountAtoms\([\s\S]*sale\.amountAtoms/.test(
+      app,
+    ),
+);
+expect(
+  "wallet transfer copy names the atomic WORK protocol without changing bond copy",
+  /copy\?\.transferDescription \?\?[\s\S]*transferToken && isWorkToken\(transferToken\) \? "pwt1:send2" : "pwt1:send"/.test(
+    app,
+  ) &&
+    /transferDescription:\s*`Sends a pwt1:send \$\{bondConfig\.ticker\} event/.test(
+      app,
+    ),
+);
+expect(
   "Infinity and Inception bond composers attach canonical WORK",
-  /const \[bondWorkAmount,\s*setBondWorkAmount\] = useState\(0\)/.test(app) &&
-    /async function createInfinityBond[\s\S]*if \(!bondWorkAttachmentAllowed\)[\s\S]*latestWorkSpendability\.confirmedBalance <= 0[\s\S]*latestWorkSpendability\.spendableBalance/.test(
+  /const \[bondWorkAmount,\s*setBondWorkAmount\] = useState\("0"\)/.test(app) &&
+    /async function createInfinityBond[\s\S]*if \(!bondWorkAttachmentAllowed\)[\s\S]*latestWorkSpendability\.confirmedBalanceAtoms[\s\S]*latestWorkSpendability\.spendableBalanceAtoms/.test(
       app,
     ) &&
     /async function createInfinityBond[\s\S]*postProtocolPayments:[\s\S]*WORK_TOKEN_REGISTRY_ADDRESS[\s\S]*postProtocolPayloads:\s*attachedWorkPayloads/.test(
@@ -923,6 +947,10 @@ const infinityAppBlock =
 expect(
   "Inception issues fixed INCB from the hash-bound H-1 live WORK summary",
   /attachedWorkAmount\?: number/.test(app) &&
+    /attachedWorkAmountAtoms\?: string/.test(app) &&
+    /attachedWorkAmountAtoms:\s*optionalStringValue\("attachedWorkAmountAtoms"\)/.test(
+      app,
+    ) &&
     /attachedWorkIssuanceUnits\?: number/.test(app) &&
     /attachedWorkLiveFloorAtSendSats\?: number/.test(app) &&
     /attachedWorkLiveValueAtSendSats\?: number/.test(app) &&
@@ -954,6 +982,13 @@ expect(
     /bond-transaction-provenance/.test(infinityAppBlock) &&
     /fixed-incb-issuance-plus-market-flow-v1/.test(infinityAppBlock) &&
     /issuanceValuationFixedAtSend === true/.test(infinityAppBlock) &&
+    /workAtomsFromIntegerString\(\s*summary\?\.actualValue\.attachedWorkAmountAtoms,\s*\)/.test(
+      infinityAppBlock,
+    ) &&
+    /attachedWorkAmountAtoms > 0n[\s\S]*attachedWorkAmountDisplay/.test(
+      infinityAppBlock,
+    ) &&
+    !/Math\.floor\(attachedWorkAmount\)/.test(infinityAppBlock) &&
     /inceptionIssuanceAvailable/.test(infinityAppBlock) &&
     /"INCB floor"\s*:\s*"Bond floor"[\s\S]*"Inception network value"\s*:\s*"Network value"[\s\S]*<span>Floor USD<\/span>[\s\S]*<span>Network USD<\/span>/.test(
       infinityAppBlock,

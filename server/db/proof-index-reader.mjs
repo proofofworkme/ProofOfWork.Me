@@ -2,6 +2,19 @@ import {
   createProofIndexPool,
   proofIndexDatabaseConfigured,
 } from "./postgres.mjs";
+import {
+  WORK_ATOMIC_PROJECTION_MODEL,
+  WORK_DECIMALS,
+  WORK_TOKEN_ID,
+  WORK_UNIT_SCALE_TEXT,
+  formatWorkAtoms,
+  isWorkTokenId,
+  normalizeWorkAtoms,
+  parseSignedWorkAmountToAtoms,
+  parseWorkAmountToAtoms,
+  withWorkPrecisionMetadata,
+  workAmountAtomsFromRecord,
+} from "../work-units.mjs";
 
 let proofIndexReadPool = null;
 const INFINITY_BOND_MEMO = "powb";
@@ -27,6 +40,11 @@ const BOND_TAGS = [
 ];
 const ID_REGISTRATION_PRICE_SATS = 1_000;
 const TOKEN_SALE_AUTH_VERSION = "pwt-sale-v1";
+const WORK_TOKEN_TICKER = "WORK";
+const TOKEN_SALE_AUTH_VERSIONS = new Set([
+  TOKEN_SALE_AUTH_VERSION,
+  "pwt-sale-v2",
+]);
 const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
 const TOKEN_LISTING_ANCHOR_VALUE_SATS = 546;
 const TOKEN_LISTING_ANCHOR_VOUT = 2;
@@ -356,7 +374,8 @@ function tokenMarketNumbersFromTags(payload) {
   let ticker = "";
 
   for (const tag of tags) {
-    const amountMatch = /^([\d,]+)\s+([A-Z0-9]{1,16})$/u.exec(tag.trim());
+    const amountMatch =
+      /^([\d,]+(?:\.\d{1,8})?)\s+([A-Z0-9]{1,16})$/u.exec(tag.trim());
     if (amountMatch && !amount) {
       amount = commaNumber(amountMatch[1]);
       ticker = amountMatch[2];
@@ -376,7 +395,8 @@ function tokenTransferAmountFromTags(payload, ticker = "") {
   const tags = Array.isArray(payload?.tags) ? payload.tags.map(String) : [];
   const normalizedTicker = String(ticker || "").trim().toUpperCase();
   for (const tag of tags) {
-    const amountMatch = /^([\d,]+)\s+([A-Z0-9]{1,16})$/u.exec(tag.trim());
+    const amountMatch =
+      /^([\d,]+(?:\.\d{1,8})?)\s+([A-Z0-9]{1,16})$/u.exec(tag.trim());
     if (!amountMatch) {
       continue;
     }
@@ -408,10 +428,15 @@ function tokenRegistryAddressFromPayload(payload, actor, counterparty, fallback 
 
 function tokenSaleFromEventPayload(payload) {
   const tagNumbers = tokenMarketNumbersFromTags(payload);
-  const amount =
-    rowNumber(payload, "amount") ||
-    rowNumber(payload, "tokenAmount") ||
-    tagNumbers.amount;
+  const tokenId = String(payload?.tokenId ?? "").trim().toLowerCase();
+  const workAmount = isWorkTokenId(tokenId)
+    ? workAmountProjection(payload)
+    : null;
+  const amount = workAmount
+    ? workAmount.amount
+    : rowNumber(payload, "amount") ||
+      rowNumber(payload, "tokenAmount") ||
+      tagNumbers.amount;
   const priceSats =
     rowNumber(payload, "priceSats") ||
     rowNumber(payload, "salePriceSats") ||
@@ -429,6 +454,13 @@ function tokenSaleFromEventPayload(payload) {
   );
   return {
     amount,
+    ...(workAmount
+      ? {
+          amountAtoms: workAmount.amountAtoms,
+          decimals: WORK_DECIMALS,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }
+      : {}),
     arbSats: rowNumber(payload, "arbSats"),
     buyerAddress,
     canonicalMinerFeeCovered: payload?.canonicalMinerFeeCovered === true,
@@ -466,7 +498,7 @@ function tokenSaleFromEventPayload(payload) {
     salePaymentSats: rowNumber(payload, "salePaymentSats"),
     sellerAddress,
     ticker,
-    tokenId: String(payload?.tokenId ?? "").trim().toLowerCase(),
+    tokenId,
     txid: String(payload?.txid ?? "").trim().toLowerCase(),
   };
 }
@@ -494,9 +526,23 @@ function tokenListingFromEventPayload(payload) {
   const tokenId = String(payload?.tokenId ?? saleAuthorization.tokenId ?? "")
     .trim()
     .toLowerCase();
+  const workAmount = isWorkTokenId(tokenId)
+    ? workAmountProjection(payload)
+    : null;
   const normalizedTicker = String(ticker || saleAuthorization.ticker || "").trim();
   return {
-    amount: rowNumber(payload, "amount") || rowNumber(saleAuthorization, "amount") || amount,
+    amount: workAmount
+      ? workAmount.amount
+      : rowNumber(payload, "amount") ||
+        rowNumber(saleAuthorization, "amount") ||
+        amount,
+    ...(workAmount
+      ? {
+          amountAtoms: workAmount.amountAtoms,
+          decimals: WORK_DECIMALS,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }
+      : {}),
     canonicalMinerFeeCovered: payload?.canonicalMinerFeeCovered === true,
     canonicalMinerFeeSats: rowNumber(payload, "canonicalMinerFeeSats"),
     confirmed: payload?.confirmed === true,
@@ -553,13 +599,41 @@ function validPublicKeyHex(value) {
 
 function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization) {
   return (
-    authorization?.version === TOKEN_SALE_AUTH_VERSION &&
+    TOKEN_SALE_AUTH_VERSIONS.has(authorization?.version) &&
+    (
+      authorization?.version === TOKEN_SALE_AUTH_VERSION ||
+      (
+        authorization?.version === "pwt-sale-v2" &&
+        isWorkTokenId(authorization?.tokenId) &&
+        String(authorization?.ticker ?? "").trim().toUpperCase() ===
+          WORK_TOKEN_TICKER
+      )
+    ) &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
     authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
     authorization.anchorSigHashType === TOKEN_LISTING_ANCHOR_SIGHASH_TYPE &&
     /^[0-9a-f]+$/u.test(authorization.anchorScriptPubKey ?? "") &&
     validPublicKeyHex(authorization.sellerPublicKey ?? "")
+  );
+}
+
+function compareTokenHolderBalances(left, right) {
+  if (isWorkTokenId(left?.tokenId) && isWorkTokenId(right?.tokenId)) {
+    const leftAtoms = BigInt(String(left?.balanceAtoms ?? "0"));
+    const rightAtoms = BigInt(String(right?.balanceAtoms ?? "0"));
+    if (leftAtoms !== rightAtoms) {
+      return leftAtoms > rightAtoms ? -1 : 1;
+    }
+  } else {
+    const difference =
+      Number(right?.balance ?? 0) - Number(left?.balance ?? 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return String(left?.address ?? "").localeCompare(
+    String(right?.address ?? ""),
   );
 }
 
@@ -652,10 +726,23 @@ function normalizeTokenHistoryListingItem(item) {
     item.sellerAddress ?? saleAuthorization.sellerAddress ?? "",
   ).trim();
   const ticker = String(item.ticker ?? saleAuthorization.ticker ?? "").trim();
+  const workAmount = isWorkTokenId(tokenId)
+    ? workAmountProjection(item)
+    : null;
 
   return {
     ...item,
-    amount: rowNumber(item, "amount") || rowNumber(saleAuthorization, "amount"),
+    amount: workAmount
+      ? workAmount.amount
+      : rowNumber(item, "amount") ||
+        rowNumber(saleAuthorization, "amount"),
+    ...(workAmount
+      ? {
+          amountAtoms: workAmount.amountAtoms,
+          decimals: WORK_DECIMALS,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }
+      : {}),
     priceSats:
       rowNumber(item, "priceSats") || rowNumber(saleAuthorization, "priceSats"),
     registryAddress,
@@ -678,6 +765,10 @@ function normalizeTokenHistoryItemsForKind(items, safeKind) {
 
 function tokenClosedListingFromEventPayload(payload) {
   const { amount, priceSats, ticker } = tokenMarketNumbersFromTags(payload);
+  const tokenId = String(payload?.tokenId ?? "").trim().toLowerCase();
+  const workAmount = isWorkTokenId(tokenId)
+    ? workAmountProjection(payload)
+    : null;
   const sellerAddress = String(payload?.actor ?? payload?.sellerAddress ?? "")
     .trim();
   const registryAddress = tokenRegistryAddressFromPayload(
@@ -693,10 +784,18 @@ function tokenClosedListingFromEventPayload(payload) {
     payload?.closedAt ?? payload?.blockTime ?? payload?.timestamp ?? createdAt,
   );
   return {
-    amount:
-      rowNumber(payload, "amount") ||
-      rowNumber(payload, "tokenAmount") ||
-      amount,
+    amount: workAmount
+      ? workAmount.amount
+      : rowNumber(payload, "amount") ||
+        rowNumber(payload, "tokenAmount") ||
+        amount,
+    ...(workAmount
+      ? {
+          amountAtoms: workAmount.amountAtoms,
+          decimals: WORK_DECIMALS,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }
+      : {}),
     closedAt,
     closedConfirmed: payload?.confirmed === true,
     closedFrozenNetworkValueSats: rowNumber(
@@ -736,12 +835,15 @@ function tokenClosedListingFromEventPayload(payload) {
     sealTxid: String(payload?.sealTxid ?? "").trim().toLowerCase(),
     sellerAddress,
     ticker,
-    tokenId: String(payload?.tokenId ?? "").trim().toLowerCase(),
+    tokenId,
   };
 }
 
 function tokenTransferFromEventPayload(payload, row = {}) {
   const ticker = String(row.ticker ?? payload?.ticker ?? "").trim();
+  const tokenId = String(payload?.tokenId ?? row.token_id ?? "")
+    .trim()
+    .toLowerCase();
   const senderAddress = String(
     payload?.senderAddress ?? payload?.from ?? payload?.actor ?? "",
   ).trim();
@@ -754,16 +856,27 @@ function tokenTransferFromEventPayload(payload, row = {}) {
     recipientAddress,
     row.registry_address,
   );
-  const amount =
-    rowNumber(payload, "amount") ||
-    rowNumber(payload, "tokenAmount") ||
-    tokenTransferAmountFromTags(payload, ticker);
+  const workAmount = isWorkTokenId(tokenId)
+    ? workAmountProjection(payload)
+    : null;
+  const amount = workAmount
+    ? workAmount.amount
+    : rowNumber(payload, "amount") ||
+      rowNumber(payload, "tokenAmount") ||
+      tokenTransferAmountFromTags(payload, ticker);
   return {
     ...canonicalEventIdentityDetails({
       ...payload,
       eventId: payload?.eventId ?? row?.event_id,
     }),
     amount,
+    ...(workAmount
+      ? {
+          amountAtoms: workAmount.amountAtoms,
+          decimals: WORK_DECIMALS,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }
+      : {}),
     blockHash: String(
       row?.block_hash ?? payload?.blockHash ?? payload?._powBlockHash ?? "",
     )
@@ -800,7 +913,7 @@ function tokenTransferFromEventPayload(payload, row = {}) {
     registryAddress,
     senderAddress,
     ticker,
-    tokenId: String(payload?.tokenId ?? row.token_id ?? "").trim().toLowerCase(),
+    tokenId,
     txid: String(payload?.txid ?? row.txid ?? "").trim().toLowerCase(),
   };
 }
@@ -812,6 +925,188 @@ function exactSafeInteger(value, { positive = false } = {}) {
   }
   const number = Number(text);
   return Number.isSafeInteger(number) ? number : null;
+}
+
+function incbExactIssuanceMetadata(payload = {}) {
+  const fieldNames = [
+    "attachedWorkAmountAtoms",
+    "attachedWorkLiveValueAtSendQ8",
+    "issuanceDustQ8",
+    "issuanceNetworkValueQ8",
+    "issuanceValueSnapshotWorkNetworkValueQ8",
+  ];
+  const present = fieldNames.some(
+    (field) =>
+      payload?.[field] !== undefined &&
+      payload?.[field] !== null &&
+      payload?.[field] !== "",
+  );
+  if (!present) {
+    return { complete: false, fault: "", present: false };
+  }
+
+  const canonicalIntegerText = (value, { positive = false } = {}) => {
+    const text = String(value ?? "").trim();
+    if (!/^(?:0|[1-9][0-9]*)$/u.test(text)) {
+      return "";
+    }
+    const integer = BigInt(text);
+    if (positive && integer === 0n) {
+      return "";
+    }
+    return integer.toString();
+  };
+  const decimalValueToQ8 = (value) => {
+    let text = String(value ?? "").trim();
+    if (!/^[+]?[0-9]+(?:\.[0-9]+)?$/u.test(text)) {
+      const number = Number(value);
+      if (!Number.isFinite(number) || number < 0) {
+        return null;
+      }
+      text = number.toFixed(8);
+    }
+    text = text.replace(/^\+/u, "");
+    const [whole = "0", fractional = ""] = text.split(".");
+    if (!/^[0-9]+$/u.test(whole) || !/^[0-9]*$/u.test(fractional)) {
+      return null;
+    }
+    return BigInt(`${whole}${fractional.padEnd(8, "0").slice(0, 8)}`);
+  };
+  const q8ToNumber = (value) => {
+    const q8 = typeof value === "bigint" ? value : BigInt(value);
+    const whole = q8 / 100_000_000n;
+    const fractional = q8 % 100_000_000n;
+    return Number(
+      fractional === 0n
+        ? whole.toString()
+        : `${whole.toString()}.${fractional
+            .toString()
+            .padStart(8, "0")
+            .replace(/0+$/u, "")}`,
+    );
+  };
+  const numbersAgree = (left, right, tolerance = 1e-8) => {
+    const leftNumber = Number(left);
+    const rightNumber = Number(right);
+    return (
+      Number.isFinite(leftNumber) &&
+      Number.isFinite(rightNumber) &&
+      Math.abs(leftNumber - rightNumber) <= tolerance
+    );
+  };
+
+  const exact = {
+    attachedWorkAmountAtoms: canonicalIntegerText(
+      payload?.attachedWorkAmountAtoms,
+      { positive: true },
+    ),
+    attachedWorkLiveValueAtSendQ8: canonicalIntegerText(
+      payload?.attachedWorkLiveValueAtSendQ8,
+    ),
+    issuanceDustQ8: canonicalIntegerText(payload?.issuanceDustQ8),
+    issuanceNetworkValueQ8: canonicalIntegerText(
+      payload?.issuanceNetworkValueQ8,
+      { positive: true },
+    ),
+    issuanceValueSnapshotWorkNetworkValueQ8: canonicalIntegerText(
+      payload?.issuanceValueSnapshotWorkNetworkValueQ8,
+      { positive: true },
+    ),
+  };
+  if (Object.values(exact).some((value) => !value)) {
+    return {
+      ...exact,
+      complete: false,
+      fault:
+        "fractional exact issuance metadata is incomplete or noncanonical",
+      present: true,
+    };
+  }
+
+  const amountText = canonicalIntegerText(payload?.amount, {
+    positive: true,
+  });
+  const directUnitsText = canonicalIntegerText(
+    payload?.directProofIssuanceUnits,
+    { positive: true },
+  );
+  const attachedUnitsText = canonicalIntegerText(
+    payload?.attachedWorkIssuanceUnits,
+  );
+  if (!amountText || !directUnitsText || !attachedUnitsText) {
+    return {
+      ...exact,
+      complete: false,
+      fault: "fractional exact issuance units are missing or noncanonical",
+      present: true,
+    };
+  }
+
+  const valueQ8Scale = 100_000_000n;
+  const workMaxSupplyAtoms = 21_000_000n * 100_000_000n;
+  const attachedWorkAmountAtoms = BigInt(exact.attachedWorkAmountAtoms);
+  const attachedWorkLiveValueAtSendQ8 = BigInt(
+    exact.attachedWorkLiveValueAtSendQ8,
+  );
+  const issuanceDustQ8 = BigInt(exact.issuanceDustQ8);
+  const issuanceNetworkValueQ8 = BigInt(exact.issuanceNetworkValueQ8);
+  const snapshotWorkNetworkValueQ8 = BigInt(
+    exact.issuanceValueSnapshotWorkNetworkValueQ8,
+  );
+  const amount = BigInt(amountText);
+  const directUnits = BigInt(directUnitsText);
+  const attachedUnits = BigInt(attachedUnitsText);
+  const expectedAttachedValueQ8 =
+    (attachedWorkAmountAtoms * snapshotWorkNetworkValueQ8) /
+    workMaxSupplyAtoms;
+  if (
+    attachedWorkLiveValueAtSendQ8 !== expectedAttachedValueQ8 ||
+    issuanceNetworkValueQ8 !==
+      directUnits * valueQ8Scale + attachedWorkLiveValueAtSendQ8 ||
+    amount !== issuanceNetworkValueQ8 / valueQ8Scale ||
+    attachedUnits !== attachedWorkLiveValueAtSendQ8 / valueQ8Scale ||
+    issuanceDustQ8 !== issuanceNetworkValueQ8 % valueQ8Scale
+  ) {
+    return {
+      ...exact,
+      complete: false,
+      fault: "fractional exact issuance metadata does not conserve value",
+      present: true,
+    };
+  }
+
+  const projectedWorkAmountAtoms = decimalValueToQ8(
+    payload?.attachedWorkAmount,
+  );
+  if (
+    projectedWorkAmountAtoms !== attachedWorkAmountAtoms ||
+    !numbersAgree(
+      payload?.attachedWorkLiveValueAtSendSats,
+      q8ToNumber(attachedWorkLiveValueAtSendQ8),
+    ) ||
+    !numbersAgree(payload?.issuanceDustSats, q8ToNumber(issuanceDustQ8)) ||
+    !numbersAgree(
+      payload?.issuanceNetworkValueSats,
+      q8ToNumber(issuanceNetworkValueQ8),
+    ) ||
+    decimalValueToQ8(payload?.issuanceValueSnapshotWorkNetworkValueSats) !==
+      snapshotWorkNetworkValueQ8
+  ) {
+    return {
+      ...exact,
+      complete: false,
+      fault:
+        "fractional exact issuance metadata disagrees with projected values",
+      present: true,
+    };
+  }
+
+  return {
+    ...exact,
+    complete: true,
+    fault: "",
+    present: true,
+  };
 }
 
 function incbIssuanceMetadataFault(payload, row = {}) {
@@ -877,6 +1172,10 @@ function incbIssuanceMetadataFault(payload, row = {}) {
   ) {
     return "issuance units are missing or do not conserve supply";
   }
+  const exactIssuance = incbExactIssuanceMetadata(payload);
+  if (exactIssuance.fault) {
+    return exactIssuance.fault;
+  }
   const issuanceNetworkValueSats = Number(payload?.issuanceNetworkValueSats);
   const issuanceDustSats = Number(payload?.issuanceDustSats);
   const issuanceFloorSats = Number(payload?.issuanceFloorSats);
@@ -917,7 +1216,17 @@ function incbIssuanceMetadataFault(payload, row = {}) {
   ) {
     return "direct issuance does not equal the confirmed proof payment";
   }
-  if (attachedWorkIssuanceUnits > 0) {
+  if (exactIssuance.complete) {
+    const attachedWorkLiveFloorAtSendSats = Number(
+      payload?.attachedWorkLiveFloorAtSendSats,
+    );
+    if (
+      !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
+      attachedWorkLiveFloorAtSendSats <= 0
+    ) {
+      return "attached WORK valuation basis is missing or inconsistent";
+    }
+  } else if (attachedWorkIssuanceUnits > 0) {
     const attachedWorkAmount = exactSafeInteger(payload?.attachedWorkAmount, {
       positive: true,
     });
@@ -1051,6 +1360,12 @@ function assertCanonicalIncbDefinition(token, context) {
 
 function tokenMintFromEventPayload(payload, row = {}) {
   const tagNumbers = tokenMarketNumbersFromTags(payload);
+  const tokenId = String(payload?.tokenId ?? row.token_id ?? "")
+    .trim()
+    .toLowerCase();
+  const workAmount = isWorkTokenId(tokenId)
+    ? workAmountProjection(payload)
+    : null;
   const ticker = String(row.ticker ?? payload?.ticker ?? tagNumbers.ticker ?? "")
     .trim();
   const minterAddress = String(
@@ -1075,21 +1390,41 @@ function tokenMintFromEventPayload(payload, row = {}) {
       `Proof index INCB mint ${String(payload?.txid ?? row?.txid ?? "unknown")} is invalid: ${issuanceFault}.`,
     );
   }
+  const exactIncbIssuance =
+    tokenId === INCB_TOKEN_ID
+      ? incbExactIssuanceMetadata(payload)
+      : { complete: false };
 
   return {
     ...canonicalEventIdentityDetails({
       ...payload,
       eventId: payload?.eventId ?? row?.event_id,
     }),
-    amount:
-      rowNumber(payload, "amount") ||
-      rowNumber(payload, "tokenAmount") ||
-      tagNumbers.amount,
+    amount: workAmount
+      ? workAmount.amount
+      : rowNumber(payload, "amount") ||
+        rowNumber(payload, "tokenAmount") ||
+        tagNumbers.amount,
+    ...(workAmount
+      ? {
+          amountAtoms: workAmount.amountAtoms,
+          decimals: WORK_DECIMALS,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }
+      : {}),
     amountSats: rowNumber(payload, "amountSats"),
     bondRecipientAddress: String(payload?.bondRecipientAddress ?? "").trim(),
     bondRecipientAmountSats: rowNumber(payload, "bondRecipientAmountSats"),
     bondRecipientVout: rowNumber(payload, "bondRecipientVout"),
     attachedWorkAmount: rowNumber(payload, "attachedWorkAmount"),
+    ...(exactIncbIssuance.complete
+      ? {
+          attachedWorkAmountAtoms:
+            exactIncbIssuance.attachedWorkAmountAtoms,
+          attachedWorkLiveValueAtSendQ8:
+            exactIncbIssuance.attachedWorkLiveValueAtSendQ8,
+        }
+      : {}),
     attachedWorkLiveFloorAtSendSats: rowNumber(
       payload,
       "attachedWorkLiveFloorAtSendSats",
@@ -1135,11 +1470,20 @@ function tokenMintFromEventPayload(payload, row = {}) {
     ),
     issuanceAmount: rowNumber(payload, "issuanceAmount"),
     issuanceDustSats: rowNumber(payload, "issuanceDustSats"),
+    ...(exactIncbIssuance.complete
+      ? { issuanceDustQ8: exactIncbIssuance.issuanceDustQ8 }
+      : {}),
     issuanceFloorSats: rowNumber(payload, "issuanceFloorSats"),
     issuanceNetworkValueSats: rowNumber(
       payload,
       "issuanceNetworkValueSats",
     ),
+    ...(exactIncbIssuance.complete
+      ? {
+          issuanceNetworkValueQ8:
+            exactIncbIssuance.issuanceNetworkValueQ8,
+        }
+      : {}),
     issuanceUnitSats: rowNumber(payload, "issuanceUnitSats"),
     issuanceValuationFixedAtSend:
       payload?.issuanceValuationFixedAtSend === true,
@@ -1189,6 +1533,12 @@ function tokenMintFromEventPayload(payload, row = {}) {
       payload,
       "issuanceValueSnapshotWorkNetworkValueSats",
     ),
+    ...(exactIncbIssuance.complete
+      ? {
+          issuanceValueSnapshotWorkNetworkValueQ8:
+            exactIncbIssuance.issuanceValueSnapshotWorkNetworkValueQ8,
+        }
+      : {}),
     minterAddress,
     minerFeeSats: rowNumber(payload, "minerFeeSats"),
     network: payload?.network ?? row.network,
@@ -1204,7 +1554,7 @@ function tokenMintFromEventPayload(payload, row = {}) {
       .toLowerCase(),
     status: effectiveStatus || undefined,
     ticker,
-    tokenId: String(payload?.tokenId ?? row.token_id ?? "").trim().toLowerCase(),
+    tokenId,
     txid: String(payload?.txid ?? row.txid ?? "").trim().toLowerCase(),
     validationMode: String(payload?.validationMode ?? "").trim(),
   };
@@ -2685,6 +3035,68 @@ function rowNumber(row, key) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function workAtomicProjectionMetadata(metadata) {
+  const item = objectRecord(metadata);
+  return (
+    item.amountStorageModel === WORK_ATOMIC_PROJECTION_MODEL &&
+    Number(item.decimals) === WORK_DECIMALS &&
+    String(item.unitScale ?? "") === WORK_UNIT_SCALE_TEXT
+  );
+}
+
+function storedWorkAtoms(value, metadata, { signed = false } = {}) {
+  if (workAtomicProjectionMetadata(metadata)) {
+    return normalizeWorkAtoms(value, {
+      allowNegative: signed,
+      allowZero: true,
+    });
+  }
+  return signed
+    ? parseSignedWorkAmountToAtoms(value)
+    : parseWorkAmountToAtoms(value, { allowZero: true });
+}
+
+function workAmountProjection(
+  record,
+  {
+    metadata = {},
+    storedAmount,
+    storedAmountIsAtoms = false,
+    allowZero = false,
+  } = {},
+) {
+  const amountAtoms =
+    storedAmount !== undefined
+      ? storedAmountIsAtoms || workAtomicProjectionMetadata(metadata)
+        ? normalizeWorkAtoms(storedAmount, { allowZero })
+        : parseWorkAmountToAtoms(storedAmount, { allowZero })
+      : workAmountAtomsFromRecord(record, { allowZero });
+  return {
+    amount: formatWorkAtoms(amountAtoms),
+    amountAtoms,
+    decimals: WORK_DECIMALS,
+    unitScale: WORK_UNIT_SCALE_TEXT,
+  };
+}
+
+function workBalanceProjection(value, metadata, { signed = false } = {}) {
+  const atoms = storedWorkAtoms(value, metadata, { signed });
+  return {
+    atoms,
+    amount: formatWorkAtoms(atoms, { allowNegative: signed }),
+  };
+}
+
+function addAtomicStrings(left, right) {
+  return (BigInt(String(left ?? "0")) + BigInt(String(right ?? "0"))).toString();
+}
+
+function maxAtomicStrings(left, right) {
+  const leftValue = BigInt(String(left ?? "0"));
+  const rightValue = BigInt(String(right ?? "0"));
+  return (leftValue >= rightValue ? leftValue : rightValue).toString();
+}
+
 function canonicalEventIdentityDetails(item = {}) {
   return ["_powEventIndex", "eventKeyVout", "protocolVout", "eventId"]
     .reduce((details, key) => {
@@ -3226,6 +3638,7 @@ async function ledgerSnapshot(pool, network, snapshotId = "") {
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
         AND payload ? 'snapshotId'
+        AND payload->>'workAmountStorageModel' = $2
       ORDER BY
         CASE
           WHEN payload->>'snapshotId' = snapshot_id
@@ -3240,7 +3653,7 @@ async function ledgerSnapshot(pool, network, snapshotId = "") {
         generated_at DESC
       LIMIT 1
     `,
-    [network],
+    [network, WORK_ATOMIC_PROJECTION_MODEL],
   );
   return snapshotResult.rows[0] ?? null;
 }
@@ -3274,10 +3687,11 @@ async function ledgerSnapshotMetadata(pool, network, snapshotId = "") {
         consistency
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
+        AND payload->>'workAmountStorageModel' = $2
       ORDER BY generated_at DESC
       LIMIT 1
     `,
-    [network],
+    [network, WORK_ATOMIC_PROJECTION_MODEL],
   );
   return snapshotResult.rows[0] ?? null;
 }
@@ -3320,10 +3734,11 @@ async function ledgerSnapshotWithPayload(pool, network, snapshotId, payloadKey) 
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
         AND payload ? $2
+        AND payload->>'workAmountStorageModel' = $3
       ORDER BY generated_at DESC
       LIMIT 1
     `,
-    [network, requiredPayloadKey],
+    [network, requiredPayloadKey, WORK_ATOMIC_PROJECTION_MODEL],
   );
   return snapshotResult.rows[0] ?? null;
 }
@@ -3360,6 +3775,7 @@ async function tokenStateSnapshotForScope(pool, network, snapshotId, scope) {
           payload
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1
+          AND payload->>'workAmountStorageModel' = $3
         ORDER BY generated_at DESC
         LIMIT ${LEDGER_SNAPSHOT_RECENT_READ_LIMIT}
       )
@@ -3377,7 +3793,9 @@ async function tokenStateSnapshotForScope(pool, network, snapshotId, scope) {
     `;
   const result = await pool.query(
     selectSql,
-    pinnedSnapshotId ? [network, tokenScope, pinnedSnapshotId] : [network, tokenScope],
+    pinnedSnapshotId
+      ? [network, tokenScope, pinnedSnapshotId]
+      : [network, tokenScope, WORK_ATOMIC_PROJECTION_MODEL],
   );
   return result.rows[0] ?? null;
 }
@@ -3949,7 +4367,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     conditions.push(
       `(e.status IS DISTINCT FROM 'dropped')`,
       `(e.payload ? 'saleAuthorization')`,
-      `(e.payload->'saleAuthorization'->>'version' = 'pwt-sale-v1')`,
+      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2']::text[]))`,
       `(e.payload->'saleAuthorization'->>'anchorType' = 'sale-ticket-v1')`,
     );
     if (txidNeedles.length > 0) {
@@ -4022,6 +4440,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
         COALESCE(cd.token_id, cl_event.token_id) AS token_id,
         cd.ticker,
         cd.registry_address,
+        cd.metadata AS token_metadata,
         cl_event.listing_id AS linked_listing_id,
         cl_event.seller_address AS listing_seller_address,
         cl_event.buyer_address AS listing_buyer_address,
@@ -5675,6 +6094,7 @@ async function latestProofIndexOperationalMetadata(pool, network) {
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1
           AND payload ? 'summaryPayloads'
+          AND payload->>'workAmountStorageModel' = $2
           AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
           AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
           AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
@@ -5774,7 +6194,7 @@ async function latestProofIndexOperationalMetadata(pool, network) {
       LEFT JOIN latest_summary ON true
       LEFT JOIN worker_meta ON true
     `,
-    [network],
+    [network, WORK_ATOMIC_PROJECTION_MODEL],
   );
   return result.rows[0] ?? null;
 }
@@ -6443,11 +6863,32 @@ export async function proofIndexCanonicalTransactionsPayload(
 }
 
 function tokenDefinitionFromRow(row) {
-  const metadata = objectRecord(row?.metadata);
-  const tokenId = String(row?.token_id ?? metadata.tokenId ?? "")
+  const sourceMetadata = objectRecord(row?.metadata);
+  const tokenId = String(row?.token_id ?? sourceMetadata.tokenId ?? "")
     .trim()
     .toLowerCase();
+  const metadata = isWorkTokenId(tokenId)
+    ? workAtomicProjectionMetadata(sourceMetadata)
+      ? withWorkPrecisionMetadata(sourceMetadata)
+      : {
+          ...sourceMetadata,
+          decimals: WORK_DECIMALS,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }
+    : sourceMetadata;
   const ticker = String(row?.ticker ?? metadata.ticker ?? "").trim();
+  const workMaxSupply = isWorkTokenId(tokenId)
+    ? workBalanceProjection(
+        row?.max_supply ?? metadata.maxSupply ?? 0,
+        sourceMetadata,
+      )
+    : null;
+  const workMintAmount = isWorkTokenId(tokenId)
+    ? workBalanceProjection(
+        row?.mint_amount ?? metadata.mintAmount ?? 0,
+        sourceMetadata,
+      )
+    : null;
   return {
     ...metadata,
     blockHeight:
@@ -6466,8 +6907,22 @@ function tokenDefinitionFromRow(row) {
       rowNumber(metadata, "paidSats") ||
       rowNumber(metadata, "amountSats"),
     creatorAddress: row?.creator_address ?? metadata.creatorAddress ?? "",
-    maxSupply: rowNumber(row, "max_supply") || rowNumber(metadata, "maxSupply"),
-    mintAmount: rowNumber(row, "mint_amount") || rowNumber(metadata, "mintAmount"),
+    maxSupply: workMaxSupply
+      ? workMaxSupply.amount
+      : rowNumber(row, "max_supply") || rowNumber(metadata, "maxSupply"),
+    ...(workMaxSupply
+      ? {
+          decimals: WORK_DECIMALS,
+          maxSupplyAtoms: workMaxSupply.atoms,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }
+      : {}),
+    mintAmount: workMintAmount
+      ? workMintAmount.amount
+      : rowNumber(row, "mint_amount") || rowNumber(metadata, "mintAmount"),
+    ...(workMintAmount
+      ? { mintAmountAtoms: workMintAmount.atoms }
+      : {}),
     mintPriceSats:
       rowNumber(row, "mint_price_sats") || rowNumber(metadata, "mintPriceSats"),
     registryAddress: row?.registry_address ?? metadata.registryAddress ?? "",
@@ -6681,7 +7136,8 @@ async function proofIndexTokenHoldersFromTables(pool, network, tokenIds, scope) 
         cb.token_id,
         cb.updated_at,
         cd.ticker,
-        cd.registry_address
+        cd.registry_address,
+        cd.metadata
       FROM proof_indexer.credit_balances cb
       JOIN proof_indexer.credit_definitions cd
         ON cd.network = cb.network
@@ -6698,15 +7154,35 @@ async function proofIndexTokenHoldersFromTables(pool, network, tokenIds, scope) 
     scoped ? [network, tokenIds] : [network],
   );
   return result.rows
-    .map((row) => ({
-      address: row.address,
-      balance: Number(row.confirmed_balance ?? 0),
-      pendingDelta: Number(row.pending_delta ?? 0),
-      registryAddress: row.registry_address ?? "",
-      ticker: row.ticker ?? "",
-      tokenId: String(row.token_id ?? "").trim().toLowerCase(),
-      updatedAt: dateIso(row.updated_at),
-    }))
+    .map((row) => {
+      const tokenId = String(row.token_id ?? "").trim().toLowerCase();
+      const workBalance = isWorkTokenId(tokenId)
+        ? workBalanceProjection(row.confirmed_balance ?? 0, row.metadata)
+        : null;
+      const workPending = isWorkTokenId(tokenId)
+        ? workBalanceProjection(row.pending_delta ?? 0, row.metadata, {
+            signed: true,
+          })
+        : null;
+      return {
+        address: row.address,
+        balance: workBalance?.amount ?? Number(row.confirmed_balance ?? 0),
+        ...(workBalance
+          ? {
+              balanceAtoms: workBalance.atoms,
+              decimals: WORK_DECIMALS,
+              unitScale: WORK_UNIT_SCALE_TEXT,
+            }
+          : {}),
+        pendingDelta:
+          workPending?.amount ?? Number(row.pending_delta ?? 0),
+        ...(workPending ? { pendingDeltaAtoms: workPending.atoms } : {}),
+        registryAddress: row.registry_address ?? "",
+        ticker: row.ticker ?? "",
+        tokenId,
+        updatedAt: dateIso(row.updated_at),
+      };
+    })
     .filter((holder) => holder.address && holder.tokenId && holder.balance > 0);
 }
 
@@ -6722,8 +7198,27 @@ function tokenMetricSummariesFromHolders(holders) {
       holderCount: 0,
       pendingSupply: 0,
     };
-    current.confirmedSupply += Number(holder.balance ?? 0);
-    current.pendingSupply += Number(holder.pendingDelta ?? 0);
+    if (isWorkTokenId(tokenId)) {
+      current.confirmedSupplyAtoms = addAtomicStrings(
+        current.confirmedSupplyAtoms,
+        holder.balanceAtoms ??
+          parseWorkAmountToAtoms(holder.balance ?? 0, { allowZero: true }),
+      );
+      current.pendingSupplyAtoms = addAtomicStrings(
+        current.pendingSupplyAtoms,
+        holder.pendingDeltaAtoms ??
+          parseSignedWorkAmountToAtoms(holder.pendingDelta ?? 0),
+      );
+      current.confirmedSupply = formatWorkAtoms(
+        current.confirmedSupplyAtoms,
+      );
+      current.pendingSupply = formatWorkAtoms(current.pendingSupplyAtoms, {
+        allowNegative: true,
+      });
+    } else {
+      current.confirmedSupply += Number(holder.balance ?? 0);
+      current.pendingSupply += Number(holder.pendingDelta ?? 0);
+    }
     current.holderCount += Number(holder.balance ?? 0) > 0 ? 1 : 0;
     summaries.set(tokenId, current);
   }
@@ -6746,9 +7241,23 @@ function tokenListingFromCreditListingRow(row, network) {
     status,
     sealTxid,
   );
+  const tokenId = String(
+    row?.token_id ?? payload.tokenId ?? saleAuthorization.tokenId ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const workAmount = isWorkTokenId(tokenId)
+    ? workAmountProjection(payload, {
+        metadata: row?.token_metadata,
+        storedAmount: row?.amount,
+      })
+    : null;
   return normalizeTokenHistoryListingItem({
     ...payload,
-    amount: rowNumber(row, "amount") || rowNumber(payload, "amount"),
+    amount: workAmount
+      ? workAmount.amount
+      : rowNumber(row, "amount") || rowNumber(payload, "amount"),
+    ...(workAmount ? { amountAtoms: workAmount.amountAtoms } : {}),
     buyerAddress: row?.buyer_address ?? payload.buyerAddress,
     closeTxid,
     closedAt: dateIso(payload.closedAt ?? payload.closeAt ?? row?.updated_at),
@@ -6788,8 +7297,7 @@ function tokenListingFromCreditListingRow(row, network) {
     sellerAddress: row?.seller_address ?? payload.sellerAddress,
     status,
     ticker: row?.ticker ?? payload.ticker ?? saleAuthorization.ticker,
-    tokenId:
-      row?.token_id ?? payload.tokenId ?? saleAuthorization.tokenId,
+    tokenId,
     txid: listingId,
   });
 }
@@ -6815,7 +7323,8 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         cl.updated_at,
         seal_tx.status AS seal_tx_status,
         cd.ticker,
-        cd.registry_address
+        cd.registry_address,
+        cd.metadata AS token_metadata
       FROM proof_indexer.credit_listings cl
       LEFT JOIN proof_indexer.transactions seal_tx
         ON seal_tx.network = cl.network
@@ -7531,10 +8040,30 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     };
     if (mint.confirmed) {
       current.confirmedMints += 1;
-      current.confirmedSupply += Number(mint.amount ?? 0);
+      if (isWorkTokenId(mint.tokenId)) {
+        current.confirmedSupplyAtoms = addAtomicStrings(
+          current.confirmedSupplyAtoms,
+          mint.amountAtoms ??
+            parseWorkAmountToAtoms(mint.amount ?? 0, { allowZero: true }),
+        );
+        current.confirmedSupply = formatWorkAtoms(
+          current.confirmedSupplyAtoms,
+        );
+      } else {
+        current.confirmedSupply += Number(mint.amount ?? 0);
+      }
     } else {
       current.pendingMints += 1;
-      current.pendingSupply += Number(mint.amount ?? 0);
+      if (isWorkTokenId(mint.tokenId)) {
+        current.pendingSupplyAtoms = addAtomicStrings(
+          current.pendingSupplyAtoms,
+          mint.amountAtoms ??
+            parseWorkAmountToAtoms(mint.amount ?? 0, { allowZero: true }),
+        );
+        current.pendingSupply = formatWorkAtoms(current.pendingSupplyAtoms);
+      } else {
+        current.pendingSupply += Number(mint.amount ?? 0);
+      }
     }
     mintSummaries.set(mint.tokenId, current);
   }
@@ -7542,6 +8071,26 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
   const enrichedTokens = tokens.map((token) => {
     const holderSummary = holderSummaries.get(token.tokenId) ?? {};
     const mintSummary = mintSummaries.get(token.tokenId) ?? {};
+    if (isWorkTokenId(token.tokenId)) {
+      const confirmedSupplyAtoms = maxAtomicStrings(
+        holderSummary.confirmedSupplyAtoms,
+        mintSummary.confirmedSupplyAtoms,
+      );
+      const pendingSupplyAtoms = maxAtomicStrings(
+        holderSummary.pendingSupplyAtoms,
+        mintSummary.pendingSupplyAtoms,
+      );
+      return {
+        ...token,
+        confirmedMints: mintSummary.confirmedMints ?? 0,
+        confirmedSupply: formatWorkAtoms(confirmedSupplyAtoms),
+        confirmedSupplyAtoms,
+        holderCount: holderSummary.holderCount ?? 0,
+        pendingMints: mintSummary.pendingMints ?? 0,
+        pendingSupply: formatWorkAtoms(pendingSupplyAtoms),
+        pendingSupplyAtoms,
+      };
+    }
     return {
       ...token,
       confirmedMints: mintSummary.confirmedMints ?? 0,
@@ -7589,6 +8138,14 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
       .filter((mint) => !mint.confirmed)
       .reduce((total, mint) => total + Number(mint.amount ?? 0), 0),
   );
+  const workScoped =
+    enrichedTokens.length === 1 && isWorkTokenId(enrichedTokens[0]?.tokenId);
+  const confirmedSupplyAtoms = workScoped
+    ? enrichedTokens[0].confirmedSupplyAtoms
+    : "";
+  const pendingSupplyAtoms = workScoped
+    ? enrichedTokens[0].pendingSupplyAtoms
+    : "";
   const creationSats = enrichedTokens.reduce(
     (total, token) => total + Number(token.creationFeeSats ?? 0),
     0,
@@ -7614,7 +8171,16 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     closedListings,
     creationPriceSats: 0,
     creationSats,
-    confirmedSupply: Math.max(confirmedSupply, mintedConfirmedSupply),
+    confirmedSupply: workScoped
+      ? formatWorkAtoms(confirmedSupplyAtoms)
+      : Math.max(confirmedSupply, mintedConfirmedSupply),
+    ...(workScoped
+      ? {
+          confirmedSupplyAtoms,
+          decimals: WORK_DECIMALS,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }
+      : {}),
     holders,
     indexAddress: "",
     indexId: "",
@@ -7626,7 +8192,10 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     minMutationPriceSats: TOKEN_LISTING_ANCHOR_VALUE_SATS,
     mints,
     network,
-    pendingSupply,
+    pendingSupply: workScoped
+      ? formatWorkAtoms(pendingSupplyAtoms)
+      : pendingSupply,
+    ...(workScoped ? { pendingSupplyAtoms } : {}),
     sales,
     source: "proof-indexer-token-state-tables",
     tokens: enrichedTokens,
@@ -7645,7 +8214,12 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
 async function scopedHoldersFromBalances(pool, network, tokenId) {
   const result = await pool.query(
     `
-      SELECT cb.address, cb.confirmed_balance, cb.token_id, cd.ticker
+      SELECT
+        cb.address,
+        cb.confirmed_balance,
+        cb.token_id,
+        cd.ticker,
+        cd.metadata
       FROM proof_indexer.credit_balances cb
       JOIN proof_indexer.credit_definitions cd
         ON cd.network = cb.network
@@ -7657,12 +8231,25 @@ async function scopedHoldersFromBalances(pool, network, tokenId) {
     `,
     [network, tokenId],
   );
-  return result.rows.map((row) => ({
-    address: row.address,
-    balance: Number(row.confirmed_balance),
-    ticker: row.ticker,
-    tokenId: String(row.token_id ?? "").toLowerCase(),
-  }));
+  return result.rows.map((row) => {
+    const normalizedTokenId = String(row.token_id ?? "").toLowerCase();
+    const balance = isWorkTokenId(normalizedTokenId)
+      ? workBalanceProjection(row.confirmed_balance, row.metadata)
+      : null;
+    return {
+      address: row.address,
+      balance: balance?.amount ?? Number(row.confirmed_balance),
+      ...(balance
+        ? {
+            balanceAtoms: balance.atoms,
+            decimals: WORK_DECIMALS,
+            unitScale: WORK_UNIT_SCALE_TEXT,
+          }
+        : {}),
+      ticker: row.ticker,
+      tokenId: normalizedTokenId,
+    };
+  });
 }
 
 async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) {
@@ -7691,6 +8278,36 @@ async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) 
     (total, holder) => total + Number(holder.balance ?? 0),
     0,
   );
+  const workScoped =
+    tokens.length === 1 && isWorkTokenId(tokens[0]?.tokenId);
+  const confirmedSupplyAtoms = workScoped
+    ? holders.reduce(
+        (total, holder) =>
+          addAtomicStrings(
+            total,
+            holder.balanceAtoms ??
+              parseWorkAmountToAtoms(holder.balance ?? 0, {
+                allowZero: true,
+              }),
+          ),
+        "0",
+      )
+    : "";
+  const pendingSupplyAtoms = workScoped
+    ? mints
+        .filter((mint) => !mint?.confirmed)
+        .reduce(
+          (total, mint) =>
+            addAtomicStrings(
+              total,
+              mint.amountAtoms ??
+                parseWorkAmountToAtoms(mint.amount ?? 0, {
+                  allowZero: true,
+                }),
+            ),
+          "0",
+        )
+    : "";
   const creationSats = tokens.reduce(
     (total, token) => total + Number(token?.creationFeeSats ?? 0),
     0,
@@ -7698,15 +8315,27 @@ async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) 
   const payload = {
     ...allPayload,
     closedListings,
-    confirmedSupply,
+    confirmedSupply: workScoped
+      ? formatWorkAtoms(confirmedSupplyAtoms)
+      : confirmedSupply,
+    ...(workScoped
+      ? {
+          confirmedSupplyAtoms,
+          decimals: WORK_DECIMALS,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }
+      : {}),
     creationSats,
     holders,
     invalidEvents,
     listings,
     mints,
-    pendingSupply: mints
-      .filter((mint) => !mint?.confirmed)
-      .reduce((total, mint) => total + Number(mint?.amount ?? 0), 0),
+    pendingSupply: workScoped
+      ? formatWorkAtoms(pendingSupplyAtoms)
+      : mints
+          .filter((mint) => !mint?.confirmed)
+          .reduce((total, mint) => total + Number(mint?.amount ?? 0), 0),
+    ...(workScoped ? { pendingSupplyAtoms } : {}),
     sales,
     tokens,
     transfers,
@@ -7978,7 +8607,8 @@ export async function proofIndexWalletTokenOverlayPayload(
         cb.updated_at,
         cb.token_id,
         cd.ticker,
-        cd.registry_address
+        cd.registry_address,
+        cd.metadata
       FROM proof_indexer.credit_balances cb
       JOIN proof_indexer.credit_definitions cd
         ON cd.network = cb.network
@@ -8170,7 +8800,8 @@ export async function proofIndexWalletTokenOverlayPayload(
         cl.updated_at,
         seal_tx.status AS seal_tx_status,
         cd.ticker,
-        cd.registry_address
+        cd.registry_address,
+        cd.metadata AS token_metadata
       FROM proof_indexer.credit_listings cl
       LEFT JOIN proof_indexer.transactions seal_tx
         ON seal_tx.network = cl.network
@@ -8208,19 +8839,34 @@ export async function proofIndexWalletTokenOverlayPayload(
   }
 
   const holders = holderResult.rows
-    .map((row) => ({
-      address: row.address,
-      balance: Number(row.confirmed_balance ?? 0),
-      pendingDelta: Number(row.pending_delta ?? 0),
-      ticker: row.ticker,
-      tokenId: String(row.token_id ?? "").toLowerCase(),
-    }))
+    .map((row) => {
+      const tokenId = String(row.token_id ?? "").toLowerCase();
+      const balance = isWorkTokenId(tokenId)
+        ? workBalanceProjection(row.confirmed_balance ?? 0, row.metadata)
+        : null;
+      const pending = isWorkTokenId(tokenId)
+        ? workBalanceProjection(row.pending_delta ?? 0, row.metadata, {
+            signed: true,
+          })
+        : null;
+      return {
+        address: row.address,
+        balance: balance?.amount ?? Number(row.confirmed_balance ?? 0),
+        ...(balance
+          ? {
+              balanceAtoms: balance.atoms,
+              decimals: WORK_DECIMALS,
+              unitScale: WORK_UNIT_SCALE_TEXT,
+            }
+          : {}),
+        pendingDelta: pending?.amount ?? Number(row.pending_delta ?? 0),
+        ...(pending ? { pendingDeltaAtoms: pending.atoms } : {}),
+        ticker: row.ticker,
+        tokenId,
+      };
+    })
     .filter((holder) => holder.address && holder.balance >= 0)
-    .sort(
-      (left, right) =>
-        right.balance - left.balance ||
-        left.address.localeCompare(right.address),
-    );
+    .sort(compareTokenHolderBalances);
   const transfers = [];
   const sales = [];
   const listings = [];
@@ -8260,6 +8906,16 @@ export async function proofIndexWalletTokenOverlayPayload(
       const sale = tokenSaleFromEventPayload({
         ...listingPayload,
         ...payload,
+        amountAtoms:
+          payload.amountAtoms ??
+          listingPayload.amountAtoms ??
+          (isWorkTokenId(
+            payload.tokenId ?? listingPayload.tokenId ?? row.token_id,
+          ) &&
+          row.listing_amount !== null &&
+          row.listing_amount !== undefined
+            ? storedWorkAtoms(row.listing_amount ?? 0, row.token_metadata)
+            : undefined),
         amount:
           payload.amount ??
           payload.tokenAmount ??
@@ -8322,9 +8978,27 @@ export async function proofIndexWalletTokenOverlayPayload(
       status,
       sealTxid,
     );
+    const tokenId = String(row.token_id ?? payload.tokenId ?? "")
+      .trim()
+      .toLowerCase();
+    const workAmount = isWorkTokenId(tokenId)
+      ? workAmountProjection(payload, {
+          metadata: row.token_metadata,
+          storedAmount: row.amount,
+        })
+      : null;
     const listing = {
       ...payload,
-      amount: rowNumber(row, "amount") || rowNumber(payload, "amount"),
+      amount: workAmount
+        ? workAmount.amount
+        : rowNumber(row, "amount") || rowNumber(payload, "amount"),
+      ...(workAmount
+        ? {
+            amountAtoms: workAmount.amountAtoms,
+            decimals: WORK_DECIMALS,
+            unitScale: WORK_UNIT_SCALE_TEXT,
+          }
+        : {}),
       buyerAddress: row.buyer_address ?? payload.buyerAddress,
       closeTxid,
       confirmed: row.status !== "pending",
@@ -8361,9 +9035,7 @@ export async function proofIndexWalletTokenOverlayPayload(
       sellerAddress: row.seller_address ?? payload.sellerAddress ?? "",
       status: row.status ?? payload.status,
       ticker: payload.ticker ?? row.ticker ?? saleAuthorization.ticker ?? "",
-      tokenId: String(row.token_id ?? payload.tokenId ?? "")
-        .trim()
-        .toLowerCase(),
+      tokenId,
       txid: String(row.listing_id ?? payload.txid ?? "")
         .trim()
         .toLowerCase(),
@@ -8521,12 +9193,24 @@ async function proofIndexScopedHolderHistoryPayload(
     indexedThroughBlock:
       tokenHistoryEmbeddedIndexedThroughBlock(snapshot, "holders") ||
       undefined,
-    items: rowsResult.rows.map((row) => ({
-      address: row.address,
-      balance: Number(row.confirmed_balance),
-      ticker: token.ticker,
-      tokenId: token.token_id,
-    })),
+    items: rowsResult.rows.map((row) => {
+      const balance = isWorkTokenId(token.token_id)
+        ? workBalanceProjection(row.confirmed_balance, token.metadata)
+        : null;
+      return {
+        address: row.address,
+        balance: balance?.amount ?? Number(row.confirmed_balance),
+        ...(balance
+          ? {
+              balanceAtoms: balance.atoms,
+              decimals: WORK_DECIMALS,
+              unitScale: WORK_UNIT_SCALE_TEXT,
+            }
+          : {}),
+        ticker: token.ticker,
+        tokenId: token.token_id,
+      };
+    }),
     kind: "holders",
     limit: pagination.limit,
     network,
@@ -11316,10 +12000,13 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
         AND lower(COALESCE(payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlockHash', '')) = $3
       `
     : "";
+  const workAmountStorageFilter = exactCheckpointRequested
+    ? ""
+    : "AND payload->>'workAmountStorageModel' = $2";
   const checkpointLimit = exactCheckpointRequested ? 128 : 1;
   const checkpointParams = exactCheckpointRequested
     ? [network, requestedHeight, requestedHash]
-    : [network];
+    : [network, WORK_ATOMIC_PROJECTION_MODEL];
 
   const result = await pool.query(
     `
@@ -11364,6 +12051,7 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
         AND source_hashes ? 'canonicalSummary'
         AND payload ? 'summaryPayloads'
+        ${workAmountStorageFilter}
         ${checkpointFilter}
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
@@ -11465,6 +12153,7 @@ export async function proofIndexSnapshotPayload(network, key) {
         payload
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
+        AND payload->>'workAmountStorageModel' = $3
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
         AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
@@ -11494,7 +12183,7 @@ export async function proofIndexSnapshotPayload(network, key) {
       ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
       LIMIT 1
     `,
-    [network, key],
+    [network, key, WORK_ATOMIC_PROJECTION_MODEL],
   );
   let snapshot = summaryResult.rows[0] ?? null;
   if (!snapshot) {
@@ -11509,6 +12198,7 @@ export async function proofIndexSnapshotPayload(network, key) {
             payload
           FROM proof_indexer.ledger_snapshots
           WHERE network = $1
+            AND payload->>'workAmountStorageModel' = $3
             AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
             AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
             AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
@@ -11548,7 +12238,7 @@ export async function proofIndexSnapshotPayload(network, key) {
         ORDER BY generated_at DESC
         LIMIT 1
       `,
-      [network, key],
+      [network, key, WORK_ATOMIC_PROJECTION_MODEL],
     );
     snapshot = snapshotResult.rows[0] ?? null;
   }

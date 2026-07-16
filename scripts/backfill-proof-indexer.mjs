@@ -5,6 +5,23 @@ import net from "node:net";
 import * as bitcoin from "bitcoinjs-lib";
 
 import { createProofIndexPool } from "../server/db/postgres.mjs";
+import {
+  WORK_ATOMIC_PROJECTION_MODEL,
+  WORK_DECIMALS,
+  WORK_TOKEN_ID,
+  WORK_UNIT_SCALE,
+  WORK_UNIT_SCALE_TEXT,
+  formatWorkAtoms,
+  isWorkTokenId,
+  normalizeWorkAtoms,
+  parseSignedWorkAmountToAtoms,
+  parseWorkAmountToAtoms,
+  q8ToNumber,
+  withWorkPrecisionMetadata,
+  workAmountAtomsFromRecord,
+  workAmountFields,
+  workAtomsValueAtFloorQ8,
+} from "../server/work-units.mjs";
 
 const DEFAULT_API_BASE = "http://127.0.0.1:8081";
 const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
@@ -273,6 +290,14 @@ const REPAIR_INCB_ISSUANCE_ONLY = process.argv.includes(
 const HYDRATE_TRANSACTION_DETAILS_ONLY = process.argv.includes(
   "--hydrate-transaction-details",
 );
+const AUDIT_WORK_ATOMS_ONLY = process.argv.includes("--audit-work-atoms");
+const MIGRATE_WORK_ATOMS_ONLY = process.argv.includes("--migrate-work-atoms");
+const VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY = process.argv.includes(
+  "--verify-work-atoms-post-bootstrap",
+);
+const APPLY_WORK_ATOMIC_MIGRATION = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_WORK_ATOMIC_MIGRATION_APPLY ?? ""),
+);
 const TX_DETAIL_HYDRATION_BATCH_SIZE = Number(
   process.env.POW_INDEX_TX_DETAIL_HYDRATION_BATCH_SIZE ?? 200,
 );
@@ -292,6 +317,42 @@ const TX_DETAIL_HYDRATION_AFTER_TXID = String(
   .toLowerCase();
 
 function assertCanonicalRebuildConfiguration() {
+  const verifyWorkAtomsPostBootstrapOnly =
+    typeof VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY !== "undefined" &&
+    VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY;
+  const exclusiveMaintenanceModes = [
+    HYDRATE_TRANSACTION_DETAILS_ONLY,
+    PREPARE_CANONICAL_REBUILD_ONLY,
+    PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY,
+    REPAIR_CANONICAL_TXIDS_ONLY,
+    REPAIR_ID_TXIDS_ONLY,
+    REPAIR_INCB_ISSUANCE_ONLY,
+    REPAIR_WORK_PARTICIPANTS_ONLY,
+    RUSH_BOOTSTRAP_ONLY,
+    AUDIT_WORK_ATOMS_ONLY,
+    MIGRATE_WORK_ATOMS_ONLY,
+    verifyWorkAtomsPostBootstrapOnly,
+  ].filter(Boolean).length;
+  if (exclusiveMaintenanceModes > 1) {
+    throw new Error(
+      "Indexer audit, migration, rebuild, bootstrap, hydration, and repair modes are mutually exclusive.",
+    );
+  }
+  if (MIGRATE_WORK_ATOMS_ONLY && !APPLY_WORK_ATOMIC_MIGRATION) {
+    throw new Error(
+      "--migrate-work-atoms requires POW_INDEX_WORK_ATOMIC_MIGRATION_APPLY=1.",
+    );
+  }
+  if (
+    (AUDIT_WORK_ATOMS_ONLY ||
+      MIGRATE_WORK_ATOMS_ONLY ||
+      verifyWorkAtomsPostBootstrapOnly) &&
+    (CANONICAL_REBUILD || NETWORK !== "livenet")
+  ) {
+    throw new Error(
+      "WORK atomic projection audit/migration requires NETWORK=livenet and canonical rebuild mode off.",
+    );
+  }
   if (
     HYDRATE_TRANSACTION_DETAILS_ONLY &&
     (PREPARE_CANONICAL_REBUILD_ONLY ||
@@ -300,6 +361,9 @@ function assertCanonicalRebuildConfiguration() {
       REPAIR_ID_TXIDS_ONLY ||
       REPAIR_INCB_ISSUANCE_ONLY ||
       REPAIR_WORK_PARTICIPANTS_ONLY ||
+      AUDIT_WORK_ATOMS_ONLY ||
+      MIGRATE_WORK_ATOMS_ONLY ||
+      verifyWorkAtomsPostBootstrapOnly ||
       CANONICAL_REBUILD)
   ) {
     throw new Error(
@@ -520,10 +584,14 @@ const LEDGER_SCAN_SNAPSHOT_RETENTION = Math.max(
     ),
   ),
 );
-const WORK_TOKEN_ID =
-  "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
 const WORK_TOKEN_MINT_AMOUNT = 1_000;
+const WORK_TOKEN_MAX_SUPPLY_ATOMS = (
+  BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_UNIT_SCALE
+).toString();
+const WORK_TOKEN_MINT_AMOUNT_ATOMS = (
+  BigInt(WORK_TOKEN_MINT_AMOUNT) * WORK_UNIT_SCALE
+).toString();
 const WORK_TOKEN_MINT_PRICE_SATS = 1_000;
 const WORK_TOKEN_REGISTRY_ADDRESS = "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
 const WORK_TOKEN_CREATED_AT = "2026-05-15T02:57:28.000Z";
@@ -664,6 +732,156 @@ const SUMMARY_SNAPSHOT_SOURCES = [
   { key: "workFloor", path: "/api/v1/work-floor" },
   { key: "workSummary", path: "/api/v1/work-summary" },
 ];
+
+function objectValue(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
+}
+
+function workDefinitionStorage(item) {
+  const source = objectValue(item);
+  const maxSupplyAtoms =
+    source.maxSupplyAtoms !== undefined && source.maxSupplyAtoms !== null
+      ? normalizeWorkAtoms(source.maxSupplyAtoms, { allowZero: true })
+      : parseWorkAmountToAtoms(source.maxSupply ?? 0, { allowZero: true });
+  const mintAmountAtoms =
+    source.mintAmountAtoms !== undefined && source.mintAmountAtoms !== null
+      ? normalizeWorkAtoms(source.mintAmountAtoms, { allowZero: true })
+      : parseWorkAmountToAtoms(source.mintAmount ?? 0, { allowZero: true });
+  return {
+    maxSupplyAtoms,
+    metadata: withWorkPrecisionMetadata({
+      ...source,
+      maxSupply: formatWorkAtoms(maxSupplyAtoms),
+      maxSupplyAtoms,
+      mintAmount: formatWorkAtoms(mintAmountAtoms),
+      mintAmountAtoms,
+    }),
+    mintAmountAtoms,
+  };
+}
+
+function legacyWorkDefinitionPayload(item) {
+  const {
+    amountStorageModel: _amountStorageModel,
+    decimals: _decimals,
+    maxSupplyAtoms: _maxSupplyAtoms,
+    mintAmountAtoms: _mintAmountAtoms,
+    unitScale: _unitScale,
+    ...legacy
+  } = objectValue(item);
+  return legacy;
+}
+
+function workProjectionItem(item, options = {}) {
+  const source = objectValue(item);
+  if (!isWorkTokenId(source.tokenId)) {
+    return source;
+  }
+  const saleAuthorization = objectValue(source.saleAuthorization);
+  if (
+    [
+      source.amount,
+      source.tokenAmount,
+      source.amountAtoms,
+      source.tokenAmountAtoms,
+      saleAuthorization.amount,
+      saleAuthorization.amountAtoms,
+    ].every(
+      (value) => value === undefined || value === null || value === "",
+    )
+  ) {
+    return source;
+  }
+  try {
+    return {
+      ...source,
+      ...workAmountFields(source, options),
+    };
+  } catch (error) {
+    if (source.valid === false || options.strict === false) {
+      return source;
+    }
+    throw error;
+  }
+}
+
+function workBalanceAtoms(item, fieldNames, { signed = false } = {}) {
+  const source = objectValue(item);
+  const atomField = fieldNames.find(
+    (field) =>
+      field.endsWith("Atoms") &&
+      source[field] !== undefined &&
+      source[field] !== null &&
+      source[field] !== "",
+  );
+  if (atomField) {
+    return normalizeWorkAtoms(source[atomField], {
+      allowNegative: signed,
+      allowZero: true,
+    });
+  }
+  const amountField = fieldNames.find(
+    (field) =>
+      !field.endsWith("Atoms") &&
+      source[field] !== undefined &&
+      source[field] !== null &&
+      source[field] !== "",
+  );
+  const amount = amountField ? source[amountField] : 0;
+  return signed
+    ? parseSignedWorkAmountToAtoms(amount)
+    : parseWorkAmountToAtoms(amount, { allowZero: true });
+}
+
+const workAtomicProjectionReadyByClient = new WeakMap();
+
+async function workAtomicProjectionReady(client, { refresh = false } = {}) {
+  if (!refresh && workAtomicProjectionReadyByClient.has(client)) {
+    return workAtomicProjectionReadyByClient.get(client);
+  }
+  const result = await client.query(
+    `
+      SELECT max_supply::text, mint_amount::text, metadata
+      FROM proof_indexer.credit_definitions
+      WHERE network = $1 AND token_id = $2
+      LIMIT 1
+    `,
+    [NETWORK, WORK_TOKEN_ID],
+  );
+  const metadata = objectValue(result.rows[0]?.metadata);
+  const ready =
+    String(result.rows[0]?.max_supply ?? "") ===
+      WORK_TOKEN_MAX_SUPPLY_ATOMS &&
+    String(result.rows[0]?.mint_amount ?? "") ===
+      WORK_TOKEN_MINT_AMOUNT_ATOMS &&
+    metadata.amountStorageModel === WORK_ATOMIC_PROJECTION_MODEL &&
+    Number(metadata.decimals) === WORK_DECIMALS &&
+    String(metadata.unitScale ?? "") === WORK_UNIT_SCALE_TEXT;
+  workAtomicProjectionReadyByClient.set(client, ready);
+  return ready;
+}
+
+function legacyWholeWorkAmount(item, fields, { signed = false } = {}) {
+  const source = objectValue(item);
+  const field = fields.find(
+    (name) =>
+      source[name] !== undefined &&
+      source[name] !== null &&
+      source[name] !== "",
+  );
+  const value = String(field ? source[field] : "0").trim();
+  const pattern = signed
+    ? /^-?(?:0|[1-9]\d*)$/u
+    : /^(?:0|[1-9]\d*)$/u;
+  if (!pattern.test(value) || value === "-0") {
+    throw new Error(
+      "Fractional WORK cannot enter a legacy whole-unit projection before the atomic migration.",
+    );
+  }
+  return value;
+}
 
 function endpoint(pathname, params = {}) {
   const url = new URL(`${API_BASE}${pathname}`);
@@ -1579,9 +1797,10 @@ function tokenListingItemFromTicket(tx, message, ticket) {
   if (!isHexTxid(tokenId)) {
     return null;
   }
-  return {
+  return workProjectionItem({
     ...base,
     amount: String(ticket?.amount ?? ticket?.quantity ?? ticket?.units ?? 0),
+    amountAtoms: ticket?.amountAtoms,
     listingId: tx.txid,
     priceSats: String(
       ticket?.priceSats ??
@@ -1597,7 +1816,7 @@ function tokenListingItemFromTicket(tx, message, ticket) {
     sellerAddress:
       ticket?.sellerAddress ?? ticket?.seller ?? base.senderAddress ?? "",
     tokenId,
-  };
+  }, { strict: false });
 }
 
 function protocolItemsFromTx(tx, message) {
@@ -1752,23 +1971,28 @@ function protocolItemsFromTx(tx, message) {
   }
   if (action === "mint") {
     return [
-      {
+      workProjectionItem({
         ...baseProtocolItem(tx, message, "token-mint"),
         amount: parts[3] ?? "0",
         minterAddress: senderAddressFromTx(tx),
         tokenId: String(parts[2] ?? "").toLowerCase(),
-      },
+      }, { strict: false }),
     ];
   }
-  if (action === "send") {
+  if (action === "send" || action === "send2") {
+    const tokenId = String(parts[2] ?? "").toLowerCase();
+    const atomic = action === "send2";
     return [
-      {
+      workProjectionItem({
         ...baseProtocolItem(tx, message, "token-transfer"),
-        amount: parts[3] ?? "0",
+        ...(atomic
+          ? { amountAtoms: parts[3] ?? "" }
+          : { amount: parts[3] ?? "0" }),
         recipientAddress: parts[4] ?? "",
         senderAddress: senderAddressFromTx(tx),
-        tokenId: String(parts[2] ?? "").toLowerCase(),
-      },
+        tokenId,
+        transferVersion: atomic ? "send2" : "send",
+      }, { strict: false }),
     ];
   }
   if (action === "list5") {
@@ -2458,6 +2682,21 @@ function rawProtocolItemMatchesCanonical(rawItem, canonicalItem, kind) {
         rawMinterAddress === canonicalMinterAddress,
     );
   }
+  const tokenId = String(
+    canonicalItem?.tokenId ?? rawItem?.tokenId ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  if (isWorkTokenId(tokenId)) {
+    try {
+      return (
+        workAmountAtomsFromRecord(canonicalItem) ===
+        workAmountAtomsFromRecord(rawItem)
+      );
+    } catch {
+      return !canonicalAmount || !rawAmount || canonicalAmount === rawAmount;
+    }
+  }
   return !canonicalAmount || !rawAmount || canonicalAmount === rawAmount;
 }
 
@@ -2883,6 +3122,13 @@ async function persistPreparedProtocolItems(client, preparedItems) {
 }
 
 async function upsertCanonicalSyntheticCreditDefinition(client, definition) {
+  const atomicReady =
+    isWorkTokenId(definition?.tokenId) &&
+    await workAtomicProjectionReady(client);
+  const workStorage = atomicReady
+    ? workDefinitionStorage(definition)
+    : null;
+  const storedDefinition = workStorage?.metadata ?? definition;
   await client.query(
     `
       INSERT INTO proof_indexer.credit_definitions (
@@ -2913,19 +3159,19 @@ async function upsertCanonicalSyntheticCreditDefinition(client, definition) {
     `,
     [
       NETWORK,
-      definition.tokenId,
-      definition.ticker,
-      definition.creatorAddress ?? "",
-      definition.registryAddress,
-      String(definition.maxSupply),
-      String(definition.mintAmount),
-      String(definition.mintPriceSats),
+      storedDefinition.tokenId,
+      storedDefinition.ticker,
+      storedDefinition.creatorAddress ?? "",
+      storedDefinition.registryAddress,
+      workStorage?.maxSupplyAtoms ?? String(storedDefinition.maxSupply),
+      workStorage?.mintAmountAtoms ?? String(storedDefinition.mintAmount),
+      String(storedDefinition.mintPriceSats),
       JSON.stringify({
-        ...definition,
+        ...storedDefinition,
         canonicalSynthetic: true,
         confirmed: true,
         network: NETWORK,
-        txid: definition.tokenId,
+        txid: storedDefinition.tokenId,
       }),
     ],
   );
@@ -3102,17 +3348,31 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
     scopedReplay ? [NETWORK, requestedTokenIds] : [NETWORK],
   );
   const definitions = new Map(
-    definitionsResult.rows.map((row) => [
-      String(row.token_id ?? "").trim().toLowerCase(),
-      {
+    definitionsResult.rows.map((row) => {
+      const tokenId = String(row.token_id ?? "").trim().toLowerCase();
+      const metadata = objectValue(row.metadata);
+      const atomicProjection =
+        isWorkTokenId(tokenId) &&
+        metadata.amountStorageModel === WORK_ATOMIC_PROJECTION_MODEL &&
+        Number(metadata.decimals) === WORK_DECIMALS &&
+        String(metadata.unitScale ?? "") === WORK_UNIT_SCALE_TEXT;
+      const maxSupply = isWorkTokenId(tokenId) && !atomicProjection
+        ? BigInt(
+            parseWorkAmountToAtoms(row.max_supply, { allowZero: true }),
+          )
+        : nonnegativeInteger(
+            row.max_supply,
+            `credit ${row.token_id} max supply`,
+          );
+      return [
+        tokenId,
+        {
+        atomicProjection,
         canonicalSynthetic: row?.metadata?.canonicalSynthetic === true,
         confirmed: row.confirmed === true,
         createdBlockIndex: Number(row?.metadata?.blockIndex),
         createdHeight: Number(row.created_height),
-        maxSupply: nonnegativeInteger(
-          row.max_supply,
-          `credit ${row.token_id} max supply`,
-        ),
+        maxSupply,
         ticker: String(row.ticker ?? "").trim().toUpperCase(),
         uncapped: row?.metadata?.uncapped === true,
         issuanceAccountingModel: String(
@@ -3121,8 +3381,9 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
         issuanceUnitSats: Number(row?.metadata?.issuanceUnitSats),
         issuanceValuationFixedAtSend:
           row?.metadata?.issuanceValuationFixedAtSend === true,
-      },
-    ]),
+        },
+      ];
+    }),
   );
   if (
     scopedReplay &&
@@ -3184,14 +3445,39 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
     scopedReplay ? [NETWORK, requestedTokenIds] : [NETWORK],
   );
   const existingSupply = new Map(
-    existingResult.rows.map((row) => [
-      String(row.token_id ?? "").trim().toLowerCase(),
-      nonnegativeInteger(
+    existingResult.rows.map((row) => {
+      const tokenId = String(row.token_id ?? "").trim().toLowerCase();
+      const storedSupply = nonnegativeInteger(
         row.confirmed_supply,
         `credit ${row.token_id} stored supply`,
-      ),
-    ]),
+      );
+      return [
+        tokenId,
+        isWorkTokenId(tokenId) &&
+        definitions.get(tokenId)?.atomicProjection !== true
+          ? storedSupply * WORK_UNIT_SCALE
+          : storedSupply,
+      ];
+    }),
   );
+  const pendingDeltas = new Map();
+  if (options.preservePendingDeltas === true) {
+    const pendingResult = await client.query(
+      `
+        SELECT token_id, address, pending_delta
+        FROM proof_indexer.credit_balances
+        WHERE network = $1
+          ${scopedReplay ? "AND token_id = ANY($2::text[])" : ""}
+          AND pending_delta <> 0
+      `,
+      scopedReplay ? [NETWORK, requestedTokenIds] : [NETWORK],
+    );
+    for (const row of pendingResult.rows) {
+      const tokenId = String(row.token_id ?? "").trim().toLowerCase();
+      const pendingDelta = BigInt(String(row.pending_delta ?? "0"));
+      pendingDeltas.set(`${tokenId}:${row.address}`, pendingDelta);
+    }
+  }
   const balancesByToken = new Map();
   const mintedByToken = new Map();
   const balanceMap = (tokenId) => {
@@ -3291,7 +3577,9 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
         }
       }
     }
-    const amount = integerAmount(payload.amount, `${eventLabel} amount`);
+    const amount = isWorkTokenId(tokenId)
+      ? BigInt(workAmountAtomsFromRecord(payload))
+      : integerAmount(payload.amount, `${eventLabel} amount`);
     if (row.kind === "token-mint") {
       const minter = normalizedAddress(
         payload.minterAddress,
@@ -3366,6 +3654,7 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
     [NETWORK, replayedTokenIds],
   );
   let holders = 0;
+  const insertedBalanceKeys = new Set();
   for (const tokenId of replayedTokenIds) {
     const balances = balancesByToken.get(tokenId);
     for (const [address, balance] of [...balances.entries()].sort((left, right) =>
@@ -3384,12 +3673,46 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
             pending_delta,
             updated_at
           )
-          VALUES ($1, $2, $3, $4, 0, now())
+          VALUES ($1, $2, $3, $4, $5, now())
         `,
-        [NETWORK, tokenId, address, balance.toString()],
+        [
+          NETWORK,
+          tokenId,
+          address,
+          balance.toString(),
+          (
+            pendingDeltas.get(`${tokenId}:${address}`) ?? 0n
+          ).toString(),
+        ],
       );
+      insertedBalanceKeys.add(`${tokenId}:${address}`);
       holders += 1;
     }
+  }
+  for (const [key, pendingDelta] of pendingDeltas) {
+    if (pendingDelta === 0n || insertedBalanceKeys.has(key)) {
+      continue;
+    }
+    const separator = key.indexOf(":");
+    const tokenId = key.slice(0, separator);
+    const address = key.slice(separator + 1);
+    if (!replayedTokenIds.includes(tokenId) || !address) {
+      continue;
+    }
+    await client.query(
+      `
+        INSERT INTO proof_indexer.credit_balances (
+          network,
+          token_id,
+          address,
+          confirmed_balance,
+          pending_delta,
+          updated_at
+        )
+        VALUES ($1, $2, $3, 0, $4, now())
+      `,
+      [NETWORK, tokenId, address, pendingDelta.toString()],
+    );
   }
   return {
     correctedSupplyTokenIds: replayedTokenIds.filter((tokenId) =>
@@ -3398,6 +3721,1000 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
     holders,
     tokens: replayedTokenIds.length,
   };
+}
+
+function workAtomicDefinitionReady(row) {
+  const metadata = objectValue(row?.metadata);
+  return (
+    String(row?.max_supply ?? "") === WORK_TOKEN_MAX_SUPPLY_ATOMS &&
+    String(row?.mint_amount ?? "") === WORK_TOKEN_MINT_AMOUNT_ATOMS &&
+    metadata.amountStorageModel === WORK_ATOMIC_PROJECTION_MODEL &&
+    Number(metadata.decimals) === WORK_DECIMALS &&
+    String(metadata.unitScale ?? "") === WORK_UNIT_SCALE_TEXT
+  );
+}
+
+function canonicalJsonText(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJsonText(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalJsonText(value[key])}`,
+      )
+      .join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+async function workAtomicBalanceMigrationRows(client) {
+  const result = await client.query(
+    `
+      SELECT
+        address,
+        confirmed_balance::text,
+        pending_delta::text
+      FROM proof_indexer.credit_balances
+      WHERE network = $1 AND token_id = $2
+      ORDER BY address ASC
+    `,
+    [NETWORK, WORK_TOKEN_ID],
+  );
+  return result.rows.map((row) => ({
+    address: String(row?.address ?? ""),
+    confirmedBalance: String(row?.confirmed_balance ?? ""),
+    pendingDelta: String(row?.pending_delta ?? ""),
+  }));
+}
+
+function assertWorkAtomicBalanceMigration(
+  beforeRows,
+  afterRows,
+  { alreadyAtomic = false } = {},
+) {
+  const before = Array.isArray(beforeRows) ? beforeRows : [];
+  const after = Array.isArray(afterRows) ? afterRows : [];
+  if (before.length !== after.length) {
+    throw new Error("WORK atomic migration changed the balance address set.");
+  }
+  const afterByAddress = new Map(
+    after.map((row) => [String(row?.address ?? ""), row]),
+  );
+  for (const beforeRow of before) {
+    const address = String(beforeRow?.address ?? "");
+    const afterRow = afterByAddress.get(address);
+    if (!address || !afterRow) {
+      throw new Error("WORK atomic migration changed the balance address set.");
+    }
+    const multiplier = alreadyAtomic ? 1n : WORK_UNIT_SCALE;
+    const expectedConfirmed =
+      BigInt(String(beforeRow?.confirmedBalance ?? "0")) * multiplier;
+    const expectedPending =
+      BigInt(String(beforeRow?.pendingDelta ?? "0")) * multiplier;
+    if (
+      BigInt(String(afterRow?.confirmedBalance ?? "0")) !==
+        expectedConfirmed ||
+      BigInt(String(afterRow?.pendingDelta ?? "0")) !== expectedPending
+    ) {
+      throw new Error(
+        `WORK atomic migration changed balance ${address} by something other than the exact unit scale.`,
+      );
+    }
+  }
+}
+
+async function workAtomicListingMigrationRows(client) {
+  const result = await client.query(
+    `
+      SELECT
+        listing_id,
+        status,
+        seller_address,
+        buyer_address,
+        amount::text,
+        price_sats::text,
+        sale_ticket_txid,
+        sale_ticket_vout,
+        sale_ticket_value_sats::text,
+        seal_txid,
+        close_txid,
+        payload
+      FROM proof_indexer.credit_listings
+      WHERE network = $1 AND token_id = $2
+      ORDER BY listing_id ASC
+    `,
+    [NETWORK, WORK_TOKEN_ID],
+  );
+  return result.rows.map((row) => ({
+    amount: String(row?.amount ?? ""),
+    buyerAddress:
+      row?.buyer_address === null || row?.buyer_address === undefined
+        ? null
+        : String(row.buyer_address),
+    closeTxid:
+      row?.close_txid === null || row?.close_txid === undefined
+        ? null
+        : String(row.close_txid),
+    listingId: String(row?.listing_id ?? ""),
+    payload: objectValue(row?.payload),
+    priceSats: String(row?.price_sats ?? ""),
+    saleTicketTxid:
+      row?.sale_ticket_txid === null ||
+      row?.sale_ticket_txid === undefined
+        ? null
+        : String(row.sale_ticket_txid),
+    saleTicketValueSats:
+      row?.sale_ticket_value_sats === null ||
+      row?.sale_ticket_value_sats === undefined
+        ? null
+        : String(row.sale_ticket_value_sats),
+    saleTicketVout:
+      row?.sale_ticket_vout === null ||
+      row?.sale_ticket_vout === undefined
+        ? null
+        : Number(row.sale_ticket_vout),
+    sealTxid:
+      row?.seal_txid === null || row?.seal_txid === undefined
+        ? null
+        : String(row.seal_txid),
+    sellerAddress: String(row?.seller_address ?? ""),
+    status: String(row?.status ?? ""),
+  }));
+}
+
+function assertWorkAtomicListingMigration(
+  beforeRows,
+  afterRows,
+  { alreadyAtomic = false } = {},
+) {
+  const before = Array.isArray(beforeRows) ? beforeRows : [];
+  const after = Array.isArray(afterRows) ? afterRows : [];
+  if (before.length !== after.length) {
+    throw new Error("WORK atomic migration changed the listing identity set.");
+  }
+  const afterById = new Map(
+    after.map((row) => [String(row?.listingId ?? ""), row]),
+  );
+  const immutableFields = [
+    "buyerAddress",
+    "closeTxid",
+    "listingId",
+    "priceSats",
+    "saleTicketTxid",
+    "saleTicketValueSats",
+    "saleTicketVout",
+    "sealTxid",
+    "sellerAddress",
+    "status",
+  ];
+  for (const beforeRow of before) {
+    const listingId = String(beforeRow?.listingId ?? "");
+    const afterRow = afterById.get(listingId);
+    if (
+      !listingId ||
+      !afterRow ||
+      immutableFields.some(
+        (field) =>
+          canonicalJsonText(afterRow?.[field]) !==
+          canonicalJsonText(beforeRow?.[field]),
+      )
+    ) {
+      throw new Error(
+        `WORK atomic migration changed immutable listing ${listingId || "unknown"} state.`,
+      );
+    }
+    const expectedAmount =
+      BigInt(String(beforeRow?.amount ?? "0")) *
+      (alreadyAtomic ? 1n : WORK_UNIT_SCALE);
+    if (BigInt(String(afterRow?.amount ?? "0")) !== expectedAmount) {
+      throw new Error(
+        `WORK atomic migration did not scale listing ${listingId} exactly.`,
+      );
+    }
+    const beforePayload = objectValue(beforeRow?.payload);
+    const expectedPayload = alreadyAtomic
+      ? beforePayload
+      : {
+          ...beforePayload,
+          amount:
+            String(beforePayload.amount ?? "").trim() ||
+            String(beforeRow?.amount ?? "0"),
+          amountAtoms:
+            String(beforePayload.amountAtoms ?? "").trim() ||
+            expectedAmount.toString(),
+          decimals: WORK_DECIMALS,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        };
+    if (
+      canonicalJsonText(afterRow?.payload) !==
+      canonicalJsonText(expectedPayload)
+    ) {
+      throw new Error(
+        `WORK atomic migration changed listing ${listingId} payload outside its exact amount projection.`,
+      );
+    }
+  }
+}
+
+async function workAtomicIssuanceOracleSnapshotState(client) {
+  const result = await client.query(
+    `
+      WITH referenced AS MATERIALIZED (
+        SELECT DISTINCT payload->>'issuanceValueSnapshotId' AS snapshot_id
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND COALESCE(payload->>'issuanceValueSnapshotId', '') <> ''
+      )
+      SELECT
+        referenced.snapshot_id,
+        snapshot.snapshot_id IS NOT NULL AS resolved,
+        CASE
+          WHEN snapshot.snapshot_id IS NULL THEN NULL
+          ELSE to_jsonb(snapshot)::text
+        END AS fingerprint
+      FROM referenced
+      LEFT JOIN proof_indexer.ledger_snapshots snapshot
+        ON snapshot.network = $1
+       AND snapshot.snapshot_id = referenced.snapshot_id
+      ORDER BY referenced.snapshot_id ASC
+    `,
+    [NETWORK],
+  );
+  return result.rows.map((row) => ({
+    fingerprint:
+      row?.fingerprint === null || row?.fingerprint === undefined
+        ? null
+        : String(row.fingerprint),
+    resolved: row?.resolved === true,
+    snapshotId: String(row?.snapshot_id ?? ""),
+  }));
+}
+
+function assertWorkAtomicIssuanceOracleSnapshots(
+  beforeRows,
+  afterRows = beforeRows,
+) {
+  const before = Array.isArray(beforeRows) ? beforeRows : [];
+  const after = Array.isArray(afterRows) ? afterRows : [];
+  if (
+    before.some(
+      (row) =>
+        !row?.snapshotId ||
+        row?.resolved !== true ||
+        !String(row?.fingerprint ?? ""),
+    ) ||
+    after.length !== before.length
+  ) {
+    throw new Error(
+      "WORK atomic migration cannot resolve every INCB H-1 issuance oracle.",
+    );
+  }
+  const afterById = new Map(
+    after.map((row) => [String(row?.snapshotId ?? ""), row]),
+  );
+  for (const beforeRow of before) {
+    const afterRow = afterById.get(beforeRow.snapshotId);
+    if (
+      !afterRow ||
+      afterRow.resolved !== true ||
+      afterRow.fingerprint !== beforeRow.fingerprint
+    ) {
+      throw new Error(
+        `WORK atomic migration changed H-1 issuance oracle ${beforeRow.snapshotId}.`,
+      );
+    }
+  }
+}
+
+function assertWorkAtomicEventMigration(beforeEvents, afterEvents) {
+  const before = objectValue(beforeEvents);
+  const after = objectValue(afterEvents);
+  const invariantCounters = [
+    "amount_events",
+    "confirmed_mints",
+    "confirmed_transfers",
+    "confirmed_sales",
+  ];
+  for (const counter of invariantCounters) {
+    if (Number(after[counter] ?? 0) !== Number(before[counter] ?? 0)) {
+      throw new Error(
+        `WORK atomic migration changed the ${counter} event counter.`,
+      );
+    }
+  }
+}
+
+async function auditWorkAtomicProjection(client, { lock = false } = {}) {
+  const definitionResult = await client.query(
+    `
+      SELECT
+        token_id,
+        max_supply::text,
+        mint_amount::text,
+        metadata
+      FROM proof_indexer.credit_definitions
+      WHERE network = $1 AND token_id = $2
+      ${lock ? "FOR UPDATE" : ""}
+    `,
+    [NETWORK, WORK_TOKEN_ID],
+  );
+  const definition = definitionResult.rows[0];
+  if (!definition) {
+    throw new Error("Canonical WORK definition is missing.");
+  }
+  const atomic = workAtomicDefinitionReady(definition);
+  const legacy =
+    String(definition.max_supply ?? "") === String(WORK_TOKEN_MAX_SUPPLY) &&
+    String(definition.mint_amount ?? "") === String(WORK_TOKEN_MINT_AMOUNT) &&
+    !objectValue(definition.metadata).amountStorageModel;
+  if (!atomic && !legacy) {
+    throw new Error(
+      "WORK definition is neither the exact legacy projection nor work-atoms-v1.",
+    );
+  }
+
+  const [balancesResult, listingsResult, eventsResult, reservationsResult, snapshotsResult] =
+    await Promise.all([
+      client.query(
+        `
+          SELECT
+            count(*)::integer AS rows,
+            count(*) FILTER (WHERE confirmed_balance > 0)::integer AS holders,
+            count(*) FILTER (WHERE confirmed_balance < 0)::integer AS negative_balances,
+            COALESCE(sum(confirmed_balance), 0)::text AS confirmed_supply,
+            COALESCE(sum(pending_delta), 0)::text AS pending_delta,
+            COALESCE(max(confirmed_balance), 0)::text AS max_balance,
+            COALESCE(min(confirmed_balance), 0)::text AS min_balance
+          FROM proof_indexer.credit_balances
+          WHERE network = $1 AND token_id = $2
+        `,
+        [NETWORK, WORK_TOKEN_ID],
+      ),
+      client.query(
+        `
+          SELECT
+            count(*)::integer AS rows,
+            count(*) FILTER (WHERE amount <= 0)::integer AS invalid_amounts,
+            COALESCE(min(amount), 0)::text AS min_amount,
+            COALESCE(max(amount), 0)::text AS max_amount,
+            jsonb_object_agg(status, status_count ORDER BY status) AS statuses
+          FROM (
+            SELECT status, amount, count(*) OVER (PARTITION BY status) AS status_count
+            FROM proof_indexer.credit_listings
+            WHERE network = $1 AND token_id = $2
+          ) listings
+        `,
+        [NETWORK, WORK_TOKEN_ID],
+      ),
+      client.query(
+        `
+          SELECT
+            count(*)::integer AS amount_events,
+            count(*) FILTER (
+              WHERE COALESCE(payload->>'amountAtoms', '') ~ '^(0|[1-9][0-9]*)$'
+            )::integer AS atom_events,
+            count(*) FILTER (
+              WHERE COALESCE(payload->>'amountAtoms', '') <> ''
+                AND COALESCE(payload->>'amountAtoms', '') !~ '^(0|[1-9][0-9]*)$'
+            )::integer AS invalid_atom_events,
+            count(*) FILTER (
+              WHERE COALESCE(payload->>'amountAtoms', '') ~ '^(0|[1-9][0-9]*)$'
+                AND COALESCE(payload->>'amount', '') ~
+                  '^(0|[1-9][0-9]*)(\\.[0-9]{1,8})?$'
+                AND (payload->>'amountAtoms')::numeric <>
+                  ((payload->>'amount')::numeric * $3::numeric)
+            )::integer AS mismatched_atom_events,
+            count(*) FILTER (
+              WHERE COALESCE(payload->>'amountAtoms', '') = ''
+                AND COALESCE(payload->>'amount', '') !~
+                  '^(0|[1-9][0-9]*)(\\.[0-9]{1,8})?$'
+            )::integer AS invalid_legacy_events,
+            count(*) FILTER (
+              WHERE kind = 'token-mint'
+                AND e.valid = true
+                AND COALESCE(t.status, e.status) = 'confirmed'
+            )::integer AS confirmed_mints,
+            count(*) FILTER (
+              WHERE kind = 'token-transfer'
+                AND e.valid = true
+                AND COALESCE(t.status, e.status) = 'confirmed'
+            )::integer AS confirmed_transfers,
+            count(*) FILTER (
+              WHERE kind = 'token-sale'
+                AND e.valid = true
+                AND COALESCE(t.status, e.status) = 'confirmed'
+            )::integer AS confirmed_sales
+          FROM proof_indexer.events e
+          LEFT JOIN proof_indexer.transactions t
+            ON t.network = e.network AND t.txid = e.txid
+          WHERE e.network = $1
+            AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
+            AND (e.payload ? 'amount' OR e.payload ? 'amountAtoms')
+        `,
+        [NETWORK, WORK_TOKEN_ID, WORK_UNIT_SCALE_TEXT],
+      ),
+      client.query(
+        `
+          WITH reserved AS (
+            SELECT seller_address, sum(amount) AS amount
+            FROM proof_indexer.credit_listings
+            WHERE network = $1
+              AND token_id = $2
+              AND status IN ('active', 'pending', 'sealing')
+            GROUP BY seller_address
+          )
+          SELECT count(*)::integer AS oversubscribed_sellers
+          FROM reserved
+          LEFT JOIN proof_indexer.credit_balances balance
+            ON balance.network = $1
+           AND balance.token_id = $2
+           AND balance.address = reserved.seller_address
+          WHERE reserved.amount >
+            GREATEST(0, COALESCE(balance.confirmed_balance, 0) +
+              LEAST(0, COALESCE(balance.pending_delta, 0)))
+        `,
+        [NETWORK, WORK_TOKEN_ID],
+      ),
+      client.query(
+        `
+          WITH referenced AS MATERIALIZED (
+            SELECT DISTINCT payload->>'issuanceValueSnapshotId' AS snapshot_id
+            FROM proof_indexer.events
+            WHERE network = $1
+              AND COALESCE(payload->>'issuanceValueSnapshotId', '') <> ''
+          ),
+          classified AS MATERIALIZED (
+            SELECT
+              snapshot.snapshot_id,
+              (
+                snapshot.source_hashes ? 'canonicalSummary'
+                OR snapshot.payload ? 'activityPayload'
+                OR snapshot.payload ? 'registryHistoryPayloads'
+                OR snapshot.payload ? 'summaryPayloads'
+                OR snapshot.payload ? 'tokenHistoryPayloads'
+                OR snapshot.payload ? 'tokenStatePayloads'
+                OR snapshot.consistency->>'status' =
+                  'summary-snapshot-fallback'
+              ) AS derived,
+              COALESCE(
+                snapshot.payload->>'workAmountStorageModel',
+                ''
+              ) = $2 AS marked,
+              referenced.snapshot_id IS NOT NULL AS issuance_locked
+            FROM proof_indexer.ledger_snapshots snapshot
+            LEFT JOIN referenced
+              ON referenced.snapshot_id = snapshot.snapshot_id
+            WHERE snapshot.network = $1
+          )
+          SELECT
+            count(*)::integer AS total,
+            count(*) FILTER (WHERE derived)::integer AS derived,
+            count(*) FILTER (WHERE marked)::integer AS marked,
+            count(*) FILTER (WHERE issuance_locked)::integer AS issuance_locked,
+            count(*) FILTER (
+              WHERE derived AND NOT marked
+            )::integer AS unmarked_derived,
+            count(*) FILTER (
+              WHERE derived AND NOT marked AND issuance_locked
+            )::integer AS unmarked_derived_referenced,
+            count(*) FILTER (
+              WHERE derived AND NOT marked AND NOT issuance_locked
+            )::integer AS unmarked_non_oracle_derived
+          FROM classified
+        `,
+        [NETWORK, WORK_ATOMIC_PROJECTION_MODEL],
+      ),
+    ]);
+
+  const balances = balancesResult.rows[0] ?? {};
+  const listings = listingsResult.rows[0] ?? {};
+  const events = eventsResult.rows[0] ?? {};
+  const reservations = reservationsResult.rows[0] ?? {};
+  const snapshots = snapshotsResult.rows[0] ?? {};
+  if (
+    Number(balances.negative_balances ?? 0) !== 0 ||
+    Number(listings.invalid_amounts ?? 0) !== 0 ||
+    Number(events.invalid_atom_events ?? 0) !== 0 ||
+    Number(events.invalid_legacy_events ?? 0) !== 0 ||
+    Number(events.mismatched_atom_events ?? 0) !== 0
+  ) {
+    throw new Error(
+      "WORK atomic audit found negative balances or malformed event/listing amounts.",
+    );
+  }
+  if (
+    atomic &&
+    Number(events.atom_events ?? 0) !== Number(events.amount_events ?? 0)
+  ) {
+    throw new Error(
+      "Atomic WORK projection contains amount-bearing events without amountAtoms.",
+    );
+  }
+  if (Number(reservations.oversubscribed_sellers ?? 0) !== 0) {
+    throw new Error(
+      "WORK atomic migration preflight found oversubscribed listing reservations.",
+    );
+  }
+  if (legacy && Number(snapshots.marked ?? 0) !== 0) {
+    throw new Error(
+      "Legacy WORK projection contains a prematurely marked atomic snapshot.",
+    );
+  }
+  return {
+    atomic,
+    balances,
+    definition: {
+      decimals: objectValue(definition.metadata).decimals ?? null,
+      maxSupply: String(definition.max_supply ?? ""),
+      mintAmount: String(definition.mint_amount ?? ""),
+      model: objectValue(definition.metadata).amountStorageModel ?? "",
+      unitScale: String(objectValue(definition.metadata).unitScale ?? ""),
+    },
+    events,
+    legacy,
+    listings,
+    reservations,
+    snapshots,
+  };
+}
+
+async function invalidateWorkAtomicDerivedSnapshots(client) {
+  const result = await client.query(
+    `
+      WITH issuance_locked AS MATERIALIZED (
+        SELECT DISTINCT payload->>'issuanceValueSnapshotId' AS snapshot_id
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND COALESCE(payload->>'issuanceValueSnapshotId', '') <> ''
+      )
+      DELETE FROM proof_indexer.ledger_snapshots snapshot
+      WHERE snapshot.network = $1
+        AND COALESCE(
+          snapshot.payload->>'workAmountStorageModel',
+          ''
+        ) <> $2
+        AND NOT EXISTS (
+          SELECT 1
+          FROM issuance_locked locked
+          WHERE locked.snapshot_id = snapshot.snapshot_id
+        )
+        AND (
+          snapshot.source_hashes ? 'canonicalSummary'
+          OR snapshot.payload ? 'activityPayload'
+          OR snapshot.payload ? 'registryHistoryPayloads'
+          OR snapshot.payload ? 'summaryPayloads'
+          OR snapshot.payload ? 'tokenHistoryPayloads'
+          OR snapshot.payload ? 'tokenStatePayloads'
+          OR snapshot.consistency->>'status' = 'summary-snapshot-fallback'
+        )
+      RETURNING snapshot_id
+    `,
+    [NETWORK, WORK_ATOMIC_PROJECTION_MODEL],
+  );
+  return result.rows.map((row) => String(row.snapshot_id ?? ""));
+}
+
+function assertWorkAtomicSnapshotMigrationState(audit) {
+  const snapshots = objectValue(audit?.snapshots);
+  const unmarkedDerived = Number(snapshots.unmarked_derived ?? 0);
+  const unmarkedReferenced = Number(
+    snapshots.unmarked_derived_referenced ?? 0,
+  );
+  const unmarkedNonOracle = Number(
+    snapshots.unmarked_non_oracle_derived ?? 0,
+  );
+  if (
+    unmarkedNonOracle !== 0 ||
+    unmarkedDerived !== unmarkedReferenced
+  ) {
+    throw new Error(
+      "WORK atomic migration left an unmarked derived snapshot that is not an INCB issuance oracle.",
+    );
+  }
+}
+
+async function markedExactTipWorkAtomicSummary(client) {
+  const result = await client.query(
+    `
+      WITH latest_scan AS MATERIALIZED (
+        SELECT
+          indexed_through_block,
+          lower(COALESCE(
+            NULLIF(payload->>'indexedThroughBlockHash', ''),
+            NULLIF(payload->>'blockHash', ''),
+            NULLIF(source_hashes->>'blockScan', '')
+          )) AS block_hash
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+          AND NOT COALESCE(source_hashes ? 'canonicalSummary', false)
+          AND (
+            COALESCE(source_hashes ? 'blockScan', false)
+            OR payload->>'source' = 'proof-indexer-block-scan'
+          )
+          AND COALESCE(
+            NULLIF(payload->>'indexedThroughBlockHash', ''),
+            NULLIF(payload->>'blockHash', ''),
+            NULLIF(source_hashes->>'blockScan', '')
+          ) IS NOT NULL
+        ORDER BY indexed_through_block DESC, generated_at DESC
+        LIMIT 1
+      )
+      SELECT
+        snapshot.snapshot_id,
+        snapshot.indexed_through_block,
+        latest_scan.block_hash
+      FROM proof_indexer.ledger_snapshots snapshot
+      JOIN latest_scan
+        ON latest_scan.indexed_through_block =
+          snapshot.indexed_through_block
+      WHERE snapshot.network = $1
+        AND snapshot.payload->>'workAmountStorageModel' = $2
+        AND COALESCE(
+          snapshot.consistency->>'ok',
+          snapshot.payload->>'ok',
+          'false'
+        ) = 'true'
+        AND COALESCE(
+          snapshot.consistency->>'status',
+          snapshot.payload->>'status',
+          ''
+        ) = 'green'
+        AND snapshot.source_hashes ? 'canonicalSummary'
+        AND snapshot.payload->'summaryRefresh'->>'mode' =
+          'canonical-summary-refresh'
+        AND snapshot.payload->>'snapshotId' = snapshot.snapshot_id
+        AND lower(COALESCE(
+          snapshot.source_hashes->>'blockScan',
+          ''
+        )) = latest_scan.block_hash
+        AND lower(COALESCE(
+          snapshot.payload->>'indexedThroughBlockHash',
+          ''
+        )) = latest_scan.block_hash
+        AND lower(COALESCE(
+          snapshot.payload->'summaryRefresh'->>'indexedThroughBlockHash',
+          ''
+        )) = latest_scan.block_hash
+        AND lower(COALESCE(
+          snapshot.payload->'summaryPayloads'->'workFloor'
+            ->>'indexedThroughBlockHash',
+          ''
+        )) = latest_scan.block_hash
+        AND jsonb_typeof(
+          snapshot.payload->'summaryPayloads'
+        ) = 'object'
+        AND jsonb_typeof(
+          snapshot.payload->'summaryPayloads'->'growthSummary'
+        ) = 'object'
+        AND jsonb_typeof(
+          snapshot.payload->'summaryPayloads'->'inceptionSummary'
+        ) = 'object'
+        AND jsonb_typeof(
+          snapshot.payload->'summaryPayloads'->'infinitySummary'
+        ) = 'object'
+        AND jsonb_typeof(
+          snapshot.payload->'summaryPayloads'->'logSummary'
+        ) = 'object'
+        AND jsonb_typeof(
+          snapshot.payload->'summaryPayloads'->'marketplaceSummary'
+        ) = 'object'
+        AND jsonb_typeof(
+          snapshot.payload->'summaryPayloads'->'tokenSummary'
+        ) = 'object'
+        AND jsonb_typeof(
+          snapshot.payload->'summaryPayloads'->'workFloor'
+        ) = 'object'
+        AND jsonb_typeof(
+          snapshot.payload->'summaryPayloads'->'workSummary'
+        ) = 'object'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(
+            COALESCE(snapshot.consistency->'checks', '[]'::jsonb)
+          ) AS check_item
+          WHERE check_item->>'name' =
+              'token-components-cover-confirmed-activity'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(
+            COALESCE(snapshot.consistency->'checks', '[]'::jsonb)
+          ) AS check_item
+          WHERE check_item->>'name' =
+              'canonical-activity-count-matches-public-log'
+            AND COALESCE(check_item->>'ok', 'false') = 'true'
+        )
+      ORDER BY snapshot.generated_at DESC, snapshot.snapshot_id DESC
+      LIMIT 1
+    `,
+    [NETWORK, WORK_ATOMIC_PROJECTION_MODEL],
+  );
+  const row = result.rows[0];
+  return row
+    ? {
+        indexedThroughBlock: Number(row.indexed_through_block),
+        indexedThroughBlockHash: String(row.block_hash ?? ""),
+        snapshotId: String(row.snapshot_id ?? ""),
+      }
+    : null;
+}
+
+async function verifyWorkAtomicPostBootstrap(client) {
+  const audit = await auditWorkAtomicProjection(client);
+  if (!audit.atomic) {
+    throw new Error(
+      "WORK atomic post-bootstrap verification requires work-atoms-v1.",
+    );
+  }
+  assertWorkAtomicSnapshotMigrationState(audit);
+  const issuanceOracles =
+    await workAtomicIssuanceOracleSnapshotState(client);
+  assertWorkAtomicIssuanceOracleSnapshots(issuanceOracles);
+  const exactTipSummary = await markedExactTipWorkAtomicSummary(client);
+  if (
+    !exactTipSummary ||
+    !exactTipSummary.snapshotId ||
+    !Number.isSafeInteger(exactTipSummary.indexedThroughBlock) ||
+    exactTipSummary.indexedThroughBlock <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(
+      exactTipSummary.indexedThroughBlockHash,
+    )
+  ) {
+    throw new Error(
+      "WORK atomic post-bootstrap verification requires a marked green exact-tip canonical summary.",
+    );
+  }
+  return {
+    audit,
+    exactTipSummary,
+    issuanceOracleSnapshotIds: issuanceOracles.map(
+      (row) => row.snapshotId,
+    ),
+    issuanceOracleSnapshots: issuanceOracles.length,
+  };
+}
+
+async function migrateWorkAtomicProjection(client) {
+  await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+  try {
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+      ["proof-indexer-work-atoms-v1", NETWORK],
+    );
+    await client.query(
+      `
+        LOCK TABLE
+          proof_indexer.credit_definitions,
+          proof_indexer.credit_balances,
+          proof_indexer.credit_listings,
+          proof_indexer.events,
+          proof_indexer.ledger_snapshots,
+          proof_indexer.transactions
+        IN SHARE ROW EXCLUSIVE MODE
+      `,
+    );
+    const before = await auditWorkAtomicProjection(client, { lock: true });
+    const [
+      beforeBalances,
+      beforeListings,
+      issuanceOraclesBefore,
+    ] = await Promise.all([
+      workAtomicBalanceMigrationRows(client),
+      workAtomicListingMigrationRows(client),
+      workAtomicIssuanceOracleSnapshotState(client),
+    ]);
+    assertWorkAtomicIssuanceOracleSnapshots(issuanceOraclesBefore);
+    if (before.atomic) {
+      const invalidatedSnapshotIds =
+        await invalidateWorkAtomicDerivedSnapshots(client);
+      const after = await auditWorkAtomicProjection(client);
+      const [
+        afterBalances,
+        afterListings,
+        issuanceOraclesAfter,
+      ] = await Promise.all([
+        workAtomicBalanceMigrationRows(client),
+        workAtomicListingMigrationRows(client),
+        workAtomicIssuanceOracleSnapshotState(client),
+      ]);
+      assertWorkAtomicBalanceMigration(beforeBalances, afterBalances, {
+        alreadyAtomic: true,
+      });
+      assertWorkAtomicListingMigration(beforeListings, afterListings, {
+        alreadyAtomic: true,
+      });
+      assertWorkAtomicIssuanceOracleSnapshots(
+        issuanceOraclesBefore,
+        issuanceOraclesAfter,
+      );
+      assertWorkAtomicEventMigration(before.events, after.events);
+      assertWorkAtomicSnapshotMigrationState(after);
+      await client.query("COMMIT");
+      return {
+        alreadyApplied: true,
+        after,
+        before,
+        bootstrapRequired: true,
+        cacheInvalidationRequired: [
+          "restart the staging proof-api after clearing process/disk response caches",
+          "run the worker once and publish a marked exact-tip canonical summary",
+          "run indexer:verify-work-atoms-post-bootstrap before public exposure",
+        ],
+        invalidatedSnapshotIds,
+      };
+    }
+    if (!before.legacy) {
+      throw new Error("WORK atomic migration requires the exact legacy state.");
+    }
+
+    await client.query(
+      `
+        UPDATE proof_indexer.events
+        SET
+          payload = payload || jsonb_build_object(
+            'amountAtoms',
+            CASE
+              WHEN COALESCE(payload->>'amountAtoms', '') <> ''
+                THEN payload->>'amountAtoms'
+              ELSE (
+                ((payload->>'amount')::numeric * $3::numeric)::numeric(78, 0)
+              )::text
+            END,
+            'decimals', $4::integer,
+            'unitScale', $3::text
+          ),
+          updated_at = now()
+        WHERE network = $1
+          AND lower(COALESCE(payload->>'tokenId', '')) = $2
+          AND (payload ? 'amount' OR payload ? 'amountAtoms')
+      `,
+      [NETWORK, WORK_TOKEN_ID, WORK_UNIT_SCALE_TEXT, WORK_DECIMALS],
+    );
+
+    await client.query(
+      `
+        UPDATE proof_indexer.credit_balances
+        SET
+          confirmed_balance = confirmed_balance * $3::numeric,
+          pending_delta = pending_delta * $3::numeric,
+          updated_at = now()
+        WHERE network = $1 AND token_id = $2
+      `,
+      [NETWORK, WORK_TOKEN_ID, WORK_UNIT_SCALE_TEXT],
+    );
+
+    await client.query(
+      `
+        UPDATE proof_indexer.credit_listings
+        SET
+          amount = CASE
+            WHEN COALESCE(payload->>'amountAtoms', '') <> ''
+              THEN (payload->>'amountAtoms')::numeric
+            ELSE amount * $3::numeric
+          END,
+          payload = payload || jsonb_build_object(
+            'amount',
+            COALESCE(NULLIF(payload->>'amount', ''), amount::text),
+            'amountAtoms',
+            CASE
+              WHEN COALESCE(payload->>'amountAtoms', '') <> ''
+                THEN payload->>'amountAtoms'
+              ELSE (amount * $3::numeric)::numeric(78, 0)::text
+            END,
+            'decimals', $4::integer,
+            'unitScale', $3::text
+          ),
+          updated_at = now()
+        WHERE network = $1 AND token_id = $2
+      `,
+      [NETWORK, WORK_TOKEN_ID, WORK_UNIT_SCALE_TEXT, WORK_DECIMALS],
+    );
+
+    await client.query(
+      `
+        UPDATE proof_indexer.credit_definitions
+        SET
+          max_supply = $3::numeric,
+          mint_amount = $4::numeric,
+          metadata = metadata || $5::jsonb
+        WHERE network = $1
+          AND token_id = $2
+          AND max_supply = $6::numeric
+          AND mint_amount = $7::numeric
+      `,
+      [
+        NETWORK,
+        WORK_TOKEN_ID,
+        WORK_TOKEN_MAX_SUPPLY_ATOMS,
+        WORK_TOKEN_MINT_AMOUNT_ATOMS,
+        JSON.stringify(
+          withWorkPrecisionMetadata({
+            maxSupply: String(WORK_TOKEN_MAX_SUPPLY),
+            maxSupplyAtoms: WORK_TOKEN_MAX_SUPPLY_ATOMS,
+            mintAmount: String(WORK_TOKEN_MINT_AMOUNT),
+            mintAmountAtoms: WORK_TOKEN_MINT_AMOUNT_ATOMS,
+          }),
+        ),
+        String(WORK_TOKEN_MAX_SUPPLY),
+        String(WORK_TOKEN_MINT_AMOUNT),
+      ],
+    );
+    workAtomicProjectionReadyByClient.delete(client);
+    if (!(await workAtomicProjectionReady(client, { refresh: true }))) {
+      throw new Error("WORK definition atomic marker did not commit in-transaction.");
+    }
+
+    const replay = await rebuildConfirmedCreditBalancesFromCanonicalEvents(
+      client,
+      {
+        preservePendingDeltas: true,
+        tokenIds: [WORK_TOKEN_ID],
+      },
+    );
+    const invalidatedSnapshotIds =
+      await invalidateWorkAtomicDerivedSnapshots(client);
+    const after = await auditWorkAtomicProjection(client);
+    const [
+      afterBalances,
+      afterListings,
+      issuanceOraclesAfter,
+    ] = await Promise.all([
+      workAtomicBalanceMigrationRows(client),
+      workAtomicListingMigrationRows(client),
+      workAtomicIssuanceOracleSnapshotState(client),
+    ]);
+    assertWorkAtomicBalanceMigration(beforeBalances, afterBalances);
+    assertWorkAtomicListingMigration(beforeListings, afterListings);
+    assertWorkAtomicIssuanceOracleSnapshots(
+      issuanceOraclesBefore,
+      issuanceOraclesAfter,
+    );
+    assertWorkAtomicEventMigration(before.events, after.events);
+    assertWorkAtomicSnapshotMigrationState(after);
+    const expectedSupply = (
+      BigInt(String(before.balances.confirmed_supply ?? "0")) *
+      WORK_UNIT_SCALE
+    ).toString();
+    const expectedPendingDelta = (
+      BigInt(String(before.balances.pending_delta ?? "0")) *
+      WORK_UNIT_SCALE
+    ).toString();
+    if (
+      !after.atomic ||
+      String(after.balances.confirmed_supply ?? "") !== expectedSupply ||
+      String(after.balances.pending_delta ?? "") !== expectedPendingDelta ||
+      Number(after.balances.rows ?? 0) !== Number(before.balances.rows ?? 0) ||
+      Number(after.listings.rows ?? 0) !== Number(before.listings.rows ?? 0) ||
+      Number(after.snapshots?.marked ?? 0) !== 0 ||
+      Number(after.reservations.oversubscribed_sellers ?? 0) !== 0
+    ) {
+      throw new Error(
+        "WORK atomic migration verification failed; transaction will roll back.",
+      );
+    }
+    await client.query("COMMIT");
+    return {
+      after,
+      alreadyApplied: false,
+      before,
+      bootstrapRequired: true,
+      cacheInvalidationRequired: [
+        "restart the staging proof-api after clearing process/disk response caches",
+        "run the worker once and publish a marked exact-tip canonical summary",
+        "run indexer:verify-work-atoms-post-bootstrap before public exposure",
+      ],
+      invalidatedSnapshotIds,
+      replay,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    workAtomicProjectionReadyByClient.delete(client);
+    throw error;
+  }
 }
 
 function snapshotSourceParams(params = {}) {
@@ -3869,9 +5186,11 @@ async function storedLedgerSnapshotPayload(client, snapshotId = "", options = {}
   const params = [NETWORK];
   const snapshotFilter = requestedSnapshotId
     ? "AND snapshot_id = $2"
-    : "";
+    : "AND payload->>'workAmountStorageModel' = $2";
   if (requestedSnapshotId) {
     params.push(requestedSnapshotId);
+  } else {
+    params.push(WORK_ATOMIC_PROJECTION_MODEL);
   }
   const result = await client.query(
     `
@@ -5529,7 +6848,10 @@ async function upsertEvent(client, sourceLabel, item) {
   }
 
   const kind = eventKind(item, sourceLabel);
-  const normalizedItem = normalizedEventItem(item, kind, status);
+  const normalizedItem = workProjectionItem(
+    normalizedEventItem(item, kind, status),
+    { strict: item?.valid !== false },
+  );
   const indexedInput = {
     ...normalizedItem,
     participants: [
@@ -5826,6 +7148,17 @@ async function upsertProjection(client, sourceLabel, item, status) {
   }
 
   if (sourceLabel === "tokens" && item?.tokenId && item?.ticker) {
+    const atomicReady =
+      isWorkTokenId(item.tokenId) &&
+      await workAtomicProjectionReady(client);
+    const workStorage = atomicReady
+      ? workDefinitionStorage(item)
+      : null;
+    const definitionPayload =
+      workStorage?.metadata ??
+      (isWorkTokenId(item.tokenId)
+        ? legacyWorkDefinitionPayload(item)
+        : item);
     await client.query(
       `
         INSERT INTO proof_indexer.credit_definitions (
@@ -5857,22 +7190,53 @@ async function upsertProjection(client, sourceLabel, item, status) {
       `,
       [
         NETWORK,
-        item.tokenId,
-        item.ticker,
-        item.creatorAddress ?? null,
-        item.registryAddress,
-        String(item.maxSupply ?? 0),
-        String(item.mintAmount ?? 0),
-        bigintOrZero(item.mintPriceSats),
-        item.txid ?? item.tokenId,
+        definitionPayload.tokenId,
+        definitionPayload.ticker,
+        definitionPayload.creatorAddress ?? null,
+        definitionPayload.registryAddress,
+        workStorage?.maxSupplyAtoms ?? String(definitionPayload.maxSupply ?? 0),
+        workStorage?.mintAmountAtoms ?? String(definitionPayload.mintAmount ?? 0),
+        bigintOrZero(definitionPayload.mintPriceSats),
+        definitionPayload.txid ?? definitionPayload.tokenId,
         status === "confirmed",
-        numberOrNull(item.blockHeight ?? item.height),
-        JSON.stringify(item),
+        numberOrNull(definitionPayload.blockHeight ?? definitionPayload.height),
+        JSON.stringify(definitionPayload),
       ],
     );
   }
 
   if (sourceLabel === "token-holders" && item?.tokenId && item?.address) {
+    const atomicReady =
+      isWorkTokenId(item.tokenId) &&
+      await workAtomicProjectionReady(client);
+    const workBalance = atomicReady
+      ? workBalanceAtoms(item, [
+          "balanceAtoms",
+          "confirmedBalanceAtoms",
+          "balance",
+          "confirmedBalance",
+        ])
+      : isWorkTokenId(item.tokenId)
+        ? legacyWholeWorkAmount(item, ["balance", "confirmedBalance"])
+        : String(item.balance ?? item.confirmedBalance ?? 0);
+    const workPendingDelta = atomicReady
+      ? workBalanceAtoms(
+          item,
+          [
+            "pendingDeltaAtoms",
+            "pendingBalanceAtoms",
+            "pendingDelta",
+            "pendingBalance",
+          ],
+          { signed: true },
+        )
+      : isWorkTokenId(item.tokenId)
+        ? legacyWholeWorkAmount(
+            item,
+            ["pendingDelta", "pendingBalance"],
+            { signed: true },
+          )
+        : String(item.pendingDelta ?? item.pendingBalance ?? 0);
     await client.query(
       `
         INSERT INTO proof_indexer.credit_balances (
@@ -5894,8 +7258,8 @@ async function upsertProjection(client, sourceLabel, item, status) {
         NETWORK,
         item.tokenId,
         item.address,
-        String(item.balance ?? item.confirmedBalance ?? 0),
-        String(item.pendingDelta ?? item.pendingBalance ?? 0),
+        workBalance,
+        workPendingDelta,
       ],
     );
   }
@@ -5909,7 +7273,14 @@ async function upsertProjection(client, sourceLabel, item, status) {
     projectionKind === "closed-listing";
   if (projectsCreditListing && item?.listingId && item?.tokenId) {
     const projectedStatus = listingStatus(item, sourceLabel);
-    const projectedPayload = creditListingProjectionPayload(item, projectedStatus);
+    const atomicItem = workProjectionItem(item);
+    const atomicReady =
+      isWorkTokenId(atomicItem.tokenId) &&
+      await workAtomicProjectionReady(client);
+    const projectedPayload = creditListingProjectionPayload(
+      atomicItem,
+      projectedStatus,
+    );
     await client.query(
       `
         INSERT INTO proof_indexer.credit_listings (
@@ -5947,18 +7318,35 @@ async function upsertProjection(client, sourceLabel, item, status) {
       `,
       [
         NETWORK,
-        item.listingId,
-        item.tokenId,
+        atomicItem.listingId,
+        atomicItem.tokenId,
         projectedStatus,
-        item.sellerAddress ?? "",
-        item.buyerAddress ?? null,
-        String(item.amount ?? 0),
-        bigintOrZero(item.priceSats),
-        item.saleTicketTxid ?? item.saleAuthorization?.saleTicketTxid ?? null,
-        numberOrNull(item.saleTicketVout ?? item.saleAuthorization?.saleTicketVout),
-        bigintOrZero(item.saleTicketValueSats ?? item.saleAuthorization?.saleTicketValueSats),
-        item.sealTxid ?? null,
-        creditListingCloseTxid(item, projectedStatus, projectionKind, sourceLabel),
+        atomicItem.sellerAddress ?? "",
+        atomicItem.buyerAddress ?? null,
+        atomicReady
+          ? atomicItem.amountAtoms
+          : isWorkTokenId(atomicItem.tokenId)
+            ? legacyWholeWorkAmount(atomicItem, ["amount"])
+            : String(atomicItem.amount ?? 0),
+        bigintOrZero(atomicItem.priceSats),
+        atomicItem.saleTicketTxid ??
+          atomicItem.saleAuthorization?.saleTicketTxid ??
+          null,
+        numberOrNull(
+          atomicItem.saleTicketVout ??
+            atomicItem.saleAuthorization?.saleTicketVout,
+        ),
+        bigintOrZero(
+          atomicItem.saleTicketValueSats ??
+            atomicItem.saleAuthorization?.saleTicketValueSats,
+        ),
+        atomicItem.sealTxid ?? null,
+        creditListingCloseTxid(
+          atomicItem,
+          projectedStatus,
+          projectionKind,
+          sourceLabel,
+        ),
         JSON.stringify(projectedPayload),
       ],
     );
@@ -6430,6 +7818,8 @@ async function fallbackLedgerSnapshotPayload(
 
 async function storeLedgerSnapshot(client, options = {}) {
   const includeDerivedSnapshots = options.includeDerivedSnapshots !== false;
+  const atomicWorkProjectionReady =
+    await workAtomicProjectionReady(client);
   const tokenHistoryPayloads = {};
   const tokenStatePayloads = {};
   let payload = null;
@@ -6529,11 +7919,21 @@ async function storeLedgerSnapshot(client, options = {}) {
     previousPayload && typeof previousPayload === "object" && !Array.isArray(previousPayload)
       ? previousPayload
       : {};
-  const { summaryRefresh: _canonicalSummaryRefresh, ...legacyBasePayload } =
-    basePayload;
+  const {
+    summaryRefresh: _canonicalSummaryRefresh,
+    workAmountStorageModel: _workAmountStorageModel,
+    ...legacyBasePayload
+  } = basePayload;
+  const {
+    workAmountStorageModel: _incomingWorkAmountStorageModel,
+    ...currentLedgerPayload
+  } = objectValue(payload);
   const snapshotPayload = {
     ...legacyBasePayload,
-    ...payload,
+    ...currentLedgerPayload,
+    ...(atomicWorkProjectionReady
+      ? { workAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL }
+      : {}),
     ...(activityPayload
       ? {
           activityIndexedAt:
@@ -6577,6 +7977,13 @@ async function storeLedgerSnapshot(client, options = {}) {
         metrics = EXCLUDED.metrics,
         consistency = EXCLUDED.consistency,
         payload = EXCLUDED.payload
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM proof_indexer.events issuance_event
+        WHERE issuance_event.network = EXCLUDED.network
+          AND issuance_event.payload->>'issuanceValueSnapshotId' =
+            EXCLUDED.snapshot_id
+      )
     `,
     [
       NETWORK,
@@ -6802,13 +8209,69 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
       const creditLiveValueSats = Number(item?.creditLiveValueSats);
       const frozenNetworkValueSats = Number(item?.frozenNetworkValueSats);
       const liveNetworkValueSats = Number(item?.liveNetworkValueSats);
-      const expectedCreditLiveValueSats =
-        creditAmountMoved * workLiveFloorSats;
+      if (
+        ![
+          creditAmountMoved,
+          creditFloorAtConfirmSats,
+          creditLiveFloorSats,
+          creditRevaluationFloorSats,
+          creditValueAtConfirmSats,
+          creditLiveValueSats,
+          frozenNetworkValueSats,
+          liveNetworkValueSats,
+        ].every(Number.isFinite)
+      ) {
+        return false;
+      }
+      let creditAmountAtoms;
+      try {
+        creditAmountAtoms = BigInt(workAmountAtomsFromRecord(item));
+      } catch {
+        return false;
+      }
+      const expectedCreditAmountMoved = Number(
+        formatWorkAtoms(creditAmountAtoms),
+      );
+      const expectedCreditLiveValueQ8 = workAtomsValueAtFloorQ8(
+        creditAmountAtoms,
+        workLiveFloorSats,
+      );
+      if (expectedCreditLiveValueQ8 === null) {
+        return false;
+      }
+      const expectedCreditLiveValueSats = q8ToNumber(
+        expectedCreditLiveValueQ8,
+      );
       const expectedCreditValueAtConfirmSats =
         creditAmountMoved * creditFloorAtConfirmSats;
       const expectedLiveNetworkValueSats =
         expectedCreditLiveValueSats +
         Math.max(0, frozenNetworkValueSats - creditValueAtConfirmSats);
+      const numericTolerance = (...values) =>
+        Math.min(
+          0.5,
+          Math.max(
+            0.01,
+            Number.EPSILON *
+              Math.max(
+                1,
+                ...values.map((value) => Math.abs(Number(value))),
+              ) *
+              8,
+          ),
+        );
+      const confirmValueTolerance = numericTolerance(
+        creditValueAtConfirmSats,
+        expectedCreditValueAtConfirmSats,
+      );
+      const liveValueTolerance = numericTolerance(
+        creditLiveValueSats,
+        expectedCreditLiveValueSats,
+      );
+      const liveNetworkValueTolerance = numericTolerance(
+        liveNetworkValueSats,
+        expectedLiveNetworkValueSats,
+      );
       return (
         item?.confirmed === true &&
         String(item?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID &&
@@ -6817,6 +8280,7 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
         ) &&
         creditAmountMoved > 0 &&
         Number(item?.amount) === creditAmountMoved &&
+        creditAmountMoved === expectedCreditAmountMoved &&
         creditFloorAtConfirmSats > 0 &&
         creditLiveFloorSats > 0 &&
         creditValueAtConfirmSats > 0 &&
@@ -6826,12 +8290,13 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
         frozenNetworkValueSats >= creditValueAtConfirmSats &&
         Math.abs(
           creditValueAtConfirmSats - expectedCreditValueAtConfirmSats,
-        ) <= 0.01 &&
-        Math.abs(creditLiveFloorSats - workLiveFloorSats) <= 1e-9 &&
-        Math.abs(creditRevaluationFloorSats - workLiveFloorSats) <= 1e-9 &&
-        Math.abs(creditLiveValueSats - expectedCreditLiveValueSats) <= 0.01 &&
+        ) <= confirmValueTolerance &&
+        creditLiveFloorSats === workLiveFloorSats &&
+        creditRevaluationFloorSats === workLiveFloorSats &&
+        Math.abs(creditLiveValueSats - expectedCreditLiveValueSats) <=
+          liveValueTolerance &&
         Math.abs(liveNetworkValueSats - expectedLiveNetworkValueSats) <=
-          0.01 &&
+          liveNetworkValueTolerance &&
         confirmationModel.length > 0 &&
         (!inceptionBound ||
           (Number.isSafeInteger(Number(item?.valueSnapshotBlockHeight)) &&
@@ -7106,6 +8571,7 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
       SELECT payload
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
+        AND payload->>'workAmountStorageModel' = $2
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
         AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
@@ -7136,7 +8602,7 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
       ORDER BY generated_at DESC
       LIMIT 1
     `,
-    [NETWORK],
+    [NETWORK, WORK_ATOMIC_PROJECTION_MODEL],
   );
   const payload = result.rows[0]?.payload;
   return eligibleCanonicalSummarySnapshotPayload(payload) ? payload : null;
@@ -7409,15 +8875,32 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     client,
     snapshotId,
   );
+  const atomicWorkProjectionReady =
+    await workAtomicProjectionReady(client);
+  const {
+    workAmountStorageModel: _previousWorkAmountStorageModel,
+    ...previousSnapshotPayload
+  } = objectPayload(previousPayload) ?? {};
+  const {
+    workAmountStorageModel: _sameSnapshotWorkAmountStorageModel,
+    ...sameStoredSnapshotPayload
+  } = objectPayload(sameSnapshotPayload) ?? {};
+  const {
+    workAmountStorageModel: _ledgerWorkAmountStorageModel,
+    ...canonicalLedgerPayload
+  } = objectPayload(ledger) ?? {};
 
   const generatedAt = new Date().toISOString();
   const summaryHash = createHash("sha256")
     .update(JSON.stringify(summaryPayloads))
     .digest("hex");
   const snapshotPayload = {
-    ...(previousPayload ?? {}),
-    ...(sameSnapshotPayload ?? {}),
-    ...ledger,
+    ...previousSnapshotPayload,
+    ...sameStoredSnapshotPayload,
+    ...canonicalLedgerPayload,
+    ...(atomicWorkProjectionReady
+      ? { workAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL }
+      : {}),
     generatedAt,
     indexedThroughBlockHash: latestIndexedThroughBlockHash,
     snapshotId,
@@ -7459,6 +8942,13 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
         metrics = EXCLUDED.metrics,
         consistency = EXCLUDED.consistency,
         payload = EXCLUDED.payload
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM proof_indexer.events issuance_event
+        WHERE issuance_event.network = EXCLUDED.network
+          AND issuance_event.payload->>'issuanceValueSnapshotId' =
+            EXCLUDED.snapshot_id
+      )
     `,
     [
       NETWORK,
@@ -11912,9 +13402,13 @@ if (DRY_RUN) {
     JSON.stringify(
       {
         apiBase: API_BASE,
+        auditWorkAtomsOnly: AUDIT_WORK_ATOMS_ONLY,
         dryRun: true,
         hydrateTransactionDetailsOnly: HYDRATE_TRANSACTION_DETAILS_ONLY,
         maxPages: MAX_PAGES,
+        migrateWorkAtomsOnly: MIGRATE_WORK_ATOMS_ONLY,
+        verifyWorkAtomsPostBootstrapOnly:
+          VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY,
         network: NETWORK,
         pageLimit: PAGE_LIMIT,
         repairCanonicalTxids: REPAIR_CANONICAL_TXIDS,
@@ -11977,6 +13471,48 @@ try {
             hydration,
             network: NETWORK,
             ok: true,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (AUDIT_WORK_ATOMS_ONLY) {
+      const audit = await auditWorkAtomicProjection(client);
+      console.log(
+        JSON.stringify(
+          {
+            audit,
+            network: NETWORK,
+            ok: true,
+            workAtomicProjectionAudit: true,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (MIGRATE_WORK_ATOMS_ONLY) {
+      const migration = await migrateWorkAtomicProjection(client);
+      console.log(
+        JSON.stringify(
+          {
+            migration,
+            network: NETWORK,
+            ok: true,
+            workAtomicProjectionMigration: true,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY) {
+      const verification = await verifyWorkAtomicPostBootstrap(client);
+      console.log(
+        JSON.stringify(
+          {
+            network: NETWORK,
+            ok: true,
+            verification,
+            workAtomicPostBootstrapVerification: true,
           },
           null,
           2,

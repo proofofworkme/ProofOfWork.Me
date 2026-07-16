@@ -3,6 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createProofIndexPool } from "../server/db/postgres.mjs";
+import {
+  WORK_ATOMIC_PROJECTION_MODEL,
+  WORK_DECIMALS,
+  WORK_TOKEN_ID,
+  WORK_UNIT_SCALE_TEXT,
+} from "../server/work-units.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -144,6 +150,43 @@ const MAX_CONSECUTIVE_FAILURES = Math.max(
 );
 const DRY_RUN = process.argv.includes("--dry-run");
 const ONCE = process.argv.includes("--once");
+const REQUIRE_WORK_ATOMIC_PROJECTION = !/^(?:0|false|no)$/iu.test(
+  String(process.env.POW_INDEX_REQUIRE_WORK_ATOMS ?? "1"),
+);
+
+async function assertWorkAtomicProjectionReady(pool) {
+  if (!REQUIRE_WORK_ATOMIC_PROJECTION) {
+    return;
+  }
+  const result = await pool.query(
+    `
+      SELECT max_supply::text, mint_amount::text, metadata
+      FROM proof_indexer.credit_definitions
+      WHERE network = $1 AND token_id = $2
+      LIMIT 1
+    `,
+    [NETWORK, WORK_TOKEN_ID],
+  );
+  const row = result.rows[0];
+  const metadata =
+    row?.metadata &&
+    typeof row.metadata === "object" &&
+    !Array.isArray(row.metadata)
+      ? row.metadata
+      : {};
+  if (
+    !row ||
+    String(row.max_supply ?? "") !== "2100000000000000" ||
+    String(row.mint_amount ?? "") !== "100000000000" ||
+    metadata.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
+    Number(metadata.decimals) !== WORK_DECIMALS ||
+    String(metadata.unitScale ?? "") !== WORK_UNIT_SCALE_TEXT
+  ) {
+    throw new Error(
+      "Proof index worker is paused until the transactional WORK atomic projection migration is complete.",
+    );
+  }
+}
 
 function endpoint(pathname, params = {}) {
   const url = new URL(`${API_BASE}${pathname}`);
@@ -1073,6 +1116,7 @@ async function refreshPendingStatuses(pool) {
 
 async function runCycle(pool, lastSuccess) {
   const startedAt = new Date();
+  await assertWorkAtomicProjectionReady(pool);
   await writeWorkerMeta(pool, {
     apiBase: API_BASE,
     lastSuccess,
@@ -1184,6 +1228,7 @@ if (DRY_RUN) {
         backfillRetries: BACKFILL_RETRIES,
         backfillRetryDelayMs: BACKFILL_RETRY_DELAY_MS,
         parityTimeoutMs: PARITY_CHILD_TIMEOUT_MS,
+        requireWorkAtomicProjection: REQUIRE_WORK_ATOMIC_PROJECTION,
         statusTimeoutMs: STATUS_REQUEST_TIMEOUT_MS,
       },
       null,

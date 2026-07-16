@@ -13,6 +13,23 @@ import * as ecc from "@bitcoinerlab/secp256k1";
 import { verifyBitcoinMessageSignature } from "./bitcoin-message-verifier.mjs";
 import { createElectrumClient } from "./electrum-client.mjs";
 import {
+  WORK_ATOMIC_PROJECTION_MODEL,
+  WORK_DECIMALS,
+  WORK_TOKEN_ID,
+  WORK_UNIT_SCALE,
+  WORK_UNIT_SCALE_TEXT,
+  WORK_VALUE_Q8_SCALE as VALUE_Q8_SCALE,
+  decimalValueToQ8,
+  formatWorkAtoms,
+  isWorkTokenId,
+  parseWorkAmountToAtoms,
+  q8ToCanonicalDecimal,
+  q8ToNumber,
+  withWorkPrecisionMetadata,
+  workAmountAtomsFromRecord,
+  workAtomsValueAtFloorQ8,
+} from "./work-units.mjs";
+import {
   errorResponse,
   jsonResponse,
   optionsResponse,
@@ -559,11 +576,13 @@ const ID_MUTATION_PRICE_SATS = 546;
 const TOKEN_CREATE_ACTION = "create";
 const TOKEN_MINT_ACTION = "mint";
 const TOKEN_SEND_ACTION = "send";
+const TOKEN_SEND_ATOMS_ACTION = "send2";
 const TOKEN_LIST_ACTION = "list5";
 const TOKEN_SEAL_ACTION = "seal5";
 const TOKEN_DELIST_ACTION = "delist5";
 const TOKEN_BUY_ACTION = "buy5";
 const TOKEN_SALE_AUTH_VERSION = "pwt-sale-v1";
+const TOKEN_SALE_AUTH_ATOMS_VERSION = "pwt-sale-v2";
 const TOKEN_CREATION_PRICE_SATS = 546;
 const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
 const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
@@ -579,6 +598,10 @@ const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
 const WORK_TOKEN_MINT_AMOUNT = 1000;
 const WORK_TOKEN_MINT_PRICE_SATS = 1000;
 const WORK_TOKEN_PRICE_SATS_PER_WORK = 1;
+const WORK_TOKEN_MAX_SUPPLY_ATOMS =
+  BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_UNIT_SCALE;
+const WORK_TOKEN_MINT_AMOUNT_ATOMS =
+  BigInt(WORK_TOKEN_MINT_AMOUNT) * WORK_UNIT_SCALE;
 const PENDING_WORK_MINT_WITNESS_LIMIT = 32;
 const CREDIT_MINER_FEE_ACCOUNTING_MODEL =
   "canonical-unique-tx-input-output-v1";
@@ -594,8 +617,6 @@ const INCEPTION_WORK_MOVEMENT_ORACLE_MODEL =
   "canonical-incb-h-minus-one-live-work-v1";
 const WORK_TRANSFER_VALUE_PROJECTION_MODEL =
   "canonical-work-transfer-value-projection-v1";
-const WORK_TOKEN_ID =
-  "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const DEFAULT_WORK_TOKEN_TRANSFER_RECOVERY_TXIDS = [
   "7e9e711564be12330793b3415a032eca42bb742499fbdb8a6b8be6d6f1867354",
   "accaa6797578aadb1c9cced97fad154629324b1a41fc3fc60dabaf8701ab161b",
@@ -1534,7 +1555,7 @@ function tokenPayloadMetrics(payload) {
       confirmedItemCount(payload?.mints),
     ),
     confirmedSupply: Math.max(
-      Number.isFinite(payload?.confirmedSupply)
+      Number.isFinite(Number(payload?.confirmedSupply))
         ? Number(payload.confirmedSupply)
         : 0,
       0,
@@ -1555,21 +1576,39 @@ function tokenPayloadMetrics(payload) {
 }
 
 function canonicalWorkTokenDefinition(network = "livenet") {
-  return {
+  return withWorkPrecisionMetadata({
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
     confirmed: true,
     createdAt: WORK_TOKEN_CREATED_AT,
     creationFeeSats: TOKEN_CREATION_PRICE_SATS,
     creatorAddress: tokenIndexAddressForNetwork(network) ?? "",
     dataBytes: WORK_TOKEN_CREATE_DATA_BYTES,
     maxSupply: WORK_TOKEN_MAX_SUPPLY,
+    maxSupplyAtoms: WORK_TOKEN_MAX_SUPPLY_ATOMS.toString(),
     mintAmount: WORK_TOKEN_MINT_AMOUNT,
+    mintAmountAtoms: WORK_TOKEN_MINT_AMOUNT_ATOMS.toString(),
     mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
     network,
     registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
     ticker: WORK_TOKEN_TICKER,
     tokenId: WORK_TOKEN_ID,
     txid: WORK_TOKEN_ID,
-  };
+  });
+}
+
+function canonicalWorkDefaults() {
+  return withWorkPrecisionMetadata({
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    maxSupply: WORK_TOKEN_MAX_SUPPLY,
+    maxSupplyAtoms: WORK_TOKEN_MAX_SUPPLY_ATOMS.toString(),
+    mintAmount: WORK_TOKEN_MINT_AMOUNT,
+    mintAmountAtoms: WORK_TOKEN_MINT_AMOUNT_ATOMS.toString(),
+    mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+    priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
+    registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    ticker: WORK_TOKEN_TICKER,
+    tokenId: WORK_TOKEN_ID,
+  });
 }
 
 function canonicalPowbTokenDefinition(network = "livenet", registryAddress = "") {
@@ -2277,9 +2316,21 @@ function mergeTokenTransferRecord(current, incoming) {
     return current;
   }
 
+  const tokenId = transferMergeString(current, incoming, "tokenId");
+  const atomicAmount = isWorkTokenId(tokenId)
+    ? workAtomsBigIntFromRecord(incoming) ??
+      workAtomsBigIntFromRecord(current)
+    : null;
   return {
     ...mergeCreditNetworkValueRecord(current, incoming),
-    amount: transferMergeNumber(current, incoming, "amount"),
+    ...(atomicAmount === null
+      ? { amount: transferMergeNumber(current, incoming, "amount") }
+      : tokenLedgerAmountFields(WORK_TOKEN_ID, atomicAmount)),
+    amountVersion: transferMergeString(
+      current,
+      incoming,
+      "amountVersion",
+    ),
     blockHeight: transferMergeNumber(current, incoming, "blockHeight"),
     blockIndex: transferMergeNumber(current, incoming, "blockIndex"),
     confirmed: current.confirmed === true || incoming.confirmed === true,
@@ -2295,7 +2346,7 @@ function mergeTokenTransferRecord(current, incoming) {
     registryAddress: transferMergeString(current, incoming, "registryAddress"),
     senderAddress: transferMergeString(current, incoming, "senderAddress"),
     ticker: transferMergeString(current, incoming, "ticker"),
-    tokenId: transferMergeString(current, incoming, "tokenId"),
+    tokenId,
     txid: transferMergeString(current, incoming, "txid"),
   };
 }
@@ -2322,15 +2373,36 @@ function mergeWalletHolders(baseHolders, overlayHolders) {
     }
   }
   return [...byTokenAndAddress.values()]
-    .filter((holder) => Number(holder?.balance ?? 0) >= 0)
+    .map((holder) => {
+      const tokenId = String(holder?.tokenId ?? "").trim().toLowerCase();
+      const ledgerBalance = isWorkTokenId(tokenId)
+        ? workAtomsBigIntFromRecord({
+            amount: holder?.balance,
+            amountAtoms: holder?.balanceAtoms,
+          }, { allowZero: true })
+        : Number(holder?.balance ?? 0);
+      return { holder, ledgerBalance, tokenId };
+    })
+    .filter(
+      ({ ledgerBalance, tokenId }) =>
+        ledgerBalance !== null &&
+        ledgerBalance >= tokenLedgerZero(tokenId),
+    )
     .sort(
       (left, right) =>
-        Number(right.balance ?? 0) - Number(left.balance ?? 0) ||
-        String(left.tokenId ?? left.ticker ?? "").localeCompare(
-          String(right.tokenId ?? right.ticker ?? ""),
+        (right.ledgerBalance > left.ledgerBalance
+          ? 1
+          : right.ledgerBalance < left.ledgerBalance
+            ? -1
+            : 0) ||
+        String(left.holder?.tokenId ?? left.holder?.ticker ?? "").localeCompare(
+          String(right.holder?.tokenId ?? right.holder?.ticker ?? ""),
         ) ||
-        String(left.address ?? "").localeCompare(String(right.address ?? "")),
-    );
+        String(left.holder?.address ?? "").localeCompare(
+          String(right.holder?.address ?? ""),
+        ),
+    )
+    .map(({ holder }) => holder);
 }
 
 function newerIso(left, right) {
@@ -2509,14 +2581,14 @@ async function tokenPayloadWithIndexedWalletOverlay(
 function transferBalanceDeltaForAddress(transfer, address) {
   const normalized = String(address ?? "").trim().toLowerCase();
   if (!normalized) {
-    return 0;
+    return isWorkTokenId(transfer?.tokenId) ? 0n : 0;
   }
-  const amount = numericValue(transfer?.amount);
-  if (amount <= 0) {
-    return 0;
+  const amount = tokenLedgerAmountFromRecord(transfer?.tokenId, transfer);
+  if (amount === null || amount <= tokenLedgerZero(transfer?.tokenId)) {
+    return isWorkTokenId(transfer?.tokenId) ? 0n : 0;
   }
 
-  let delta = 0;
+  let delta = tokenLedgerZero(transfer?.tokenId);
   if (
     String(transfer?.recipientAddress ?? "").trim().toLowerCase() === normalized
   ) {
@@ -2601,10 +2673,10 @@ async function tokenPayloadWithRecoveredWalletWorkTransfers(
   for (const transfer of relevantRecoveredTransfers) {
     for (const address of addresses) {
       const delta = transferBalanceDeltaForAddress(transfer, address);
-      if (delta !== 0) {
+      if (delta !== 0n) {
         recoveredNetByAddress.set(
           address.toLowerCase(),
-          numericValue(recoveredNetByAddress.get(address.toLowerCase())) + delta,
+          (recoveredNetByAddress.get(address.toLowerCase()) ?? 0n) + delta,
         );
       }
     }
@@ -2613,16 +2685,20 @@ async function tokenPayloadWithRecoveredWalletWorkTransfers(
   for (const address of addresses) {
     const normalized = address.toLowerCase();
     const currentHolder = holdersByAddress.get(normalized);
-    const currentBalance = numericValue(currentHolder?.balance);
-    const recoveredNet = numericValue(recoveredNetByAddress.get(normalized));
-    if (currentBalance > 0 || recoveredNet <= 0) {
+    const currentBalance =
+      workAtomsBigIntFromRecord({
+        amount: currentHolder?.balance,
+        amountAtoms: currentHolder?.balanceAtoms,
+      }, { allowZero: true }) ?? 0n;
+    const recoveredNet = recoveredNetByAddress.get(normalized) ?? 0n;
+    if (currentBalance > 0n || recoveredNet <= 0n) {
       continue;
     }
 
     holdersByAddress.set(normalized, {
       ...(currentHolder ?? {}),
       address,
-      balance: recoveredNet,
+      ...workBalanceFieldsFromAtoms(recoveredNet),
       confirmed: true,
       createdAt:
         currentHolder?.createdAt ??
@@ -2640,12 +2716,26 @@ async function tokenPayloadWithRecoveredWalletWorkTransfers(
     compareTokenHistoryPageItems,
   );
   const holders = [...holdersByAddress.values()]
-    .filter((holder) => numericValue(holder?.balance) > 0)
+    .map((holder) => ({
+      holder,
+      balanceAtoms: workAtomsBigIntFromRecord({
+        amount: holder?.balance,
+        amountAtoms: holder?.balanceAtoms,
+      }),
+    }))
+    .filter(({ balanceAtoms }) => balanceAtoms !== null && balanceAtoms > 0n)
     .sort(
       (left, right) =>
-        numericValue(right.balance) - numericValue(left.balance) ||
-        String(left.address ?? "").localeCompare(String(right.address ?? "")),
-    );
+        (right.balanceAtoms > left.balanceAtoms
+          ? 1
+          : right.balanceAtoms < left.balanceAtoms
+            ? -1
+            : 0) ||
+        String(left.holder?.address ?? "").localeCompare(
+          String(right.holder?.address ?? ""),
+        ),
+    )
+    .map(({ holder }) => holder);
 
   return {
     ...payload,
@@ -2836,8 +2926,11 @@ function tokenMarketLifecycleOverlayFromCreditListings(payload) {
       /^[0-9a-f]{64}$/u.test(saleTxid) ||
       Boolean(item?.buyerAddress)
     ) {
+      const saleAmount = tokenLedgerAmountFromRecord(tokenId, item);
       sales.push({
-        amount: numericValue(item?.amount),
+        ...(saleAmount === null
+          ? { amount: numericValue(item?.amount) }
+          : tokenLedgerAmountFields(tokenId, saleAmount)),
         buyerAddress: item?.buyerAddress ?? "",
         confirmed: item?.closedConfirmed !== false,
         createdAt: closedAt,
@@ -3090,6 +3183,13 @@ async function workTokenListingFromCreditListingItem(item, network, indexedAt) {
     !Array.isArray(item.saleAuthorization)
       ? item.saleAuthorization
       : {};
+  const listedAmount = tokenLedgerAmountFromRecord(WORK_TOKEN_ID, {
+    ...item,
+    saleAuthorization,
+  });
+  if (listedAmount === null) {
+    return null;
+  }
   const listingId = String(item.listingId ?? item.txid ?? "")
     .trim()
     .toLowerCase();
@@ -3126,9 +3226,7 @@ async function workTokenListingFromCreditListingItem(item, network, indexedAt) {
 
   const listing = {
     ...item,
-    amount:
-      numericValue(item.amount) ||
-      numericValue(saleAuthorization.amount),
+    ...tokenLedgerAmountFields(WORK_TOKEN_ID, listedAmount),
     confirmed: item.confirmed === true,
     createdAt: item.createdAt ?? indexedAt ?? new Date().toISOString(),
     listingId,
@@ -3255,6 +3353,10 @@ async function workTokenStateWithIndexedMintStats(state, network) {
   return {
     ...state,
     confirmedSupply: mintStats.confirmedSupply,
+    confirmedSupplyAtoms:
+      mintStats.confirmedSupplyAtoms ??
+      workSupplyAtomsText(mintStats.confirmedSupply),
+    decimals: WORK_DECIMALS,
     indexedAt: newerIso(state.indexedAt, mintStats.indexedAt),
     indexedThroughBlock:
       Math.max(
@@ -3262,6 +3364,9 @@ async function workTokenStateWithIndexedMintStats(state, network) {
         numericValue(mintStats.indexedThroughBlock),
       ) || state.indexedThroughBlock,
     pendingSupply: mintStats.pendingSupply,
+    pendingSupplyAtoms:
+      mintStats.pendingSupplyAtoms ??
+      workSupplyAtomsText(mintStats.pendingSupply),
     source: mergedSourceLabel(state.source, mintStats.source),
     stats: {
       ...(state.stats ?? {}),
@@ -3269,6 +3374,7 @@ async function workTokenStateWithIndexedMintStats(state, network) {
       pendingMints: mintStats.pendingMints,
       totalMints: mintStats.totalMints,
     },
+    unitScale: WORK_UNIT_SCALE_TEXT,
   };
 }
 
@@ -3815,6 +3921,9 @@ const CREDIT_NETWORK_VALUE_FIELD_NAMES = [
 const WORK_TRANSFER_VALUE_PROJECTION_FIELD_NAMES = [
   "_powEventIndex",
   "amount",
+  "amountAtoms",
+  "amountStorageModel",
+  "amountVersion",
   "canonicalMinerFeeCovered",
   "confirmed",
   "creditFloorAtConfirmModel",
@@ -3827,6 +3936,8 @@ const WORK_TRANSFER_VALUE_PROJECTION_FIELD_NAMES = [
   "ticker",
   "tokenId",
   "txid",
+  "decimals",
+  "unitScale",
   "valueSnapshotBlockHash",
   "valueSnapshotBlockHeight",
   "valueSnapshotCanonicalSummaryHash",
@@ -3857,8 +3968,15 @@ function canonicalWorkTransferValueProjectionFromState(
         }
       }
       if (liveFloorSats > 0) {
-        const amount = numericValue(item.amount);
-        const creditLiveValueSats = amount * liveFloorSats;
+        const amountAtoms = workAtomsBigIntFromRecord(item);
+        const creditLiveValueQ8 =
+          amountAtoms === null
+            ? null
+            : workAtomsValueAtFloorQ8(amountAtoms, liveFloorSats);
+        const creditLiveValueSats =
+          creditLiveValueQ8 === null
+            ? numericValue(item.amount) * liveFloorSats
+            : q8ToNumber(creditLiveValueQ8);
         const fixedEventFlowSats = Math.max(
           0,
           numericValue(item.frozenNetworkValueSats) -
@@ -7362,7 +7480,11 @@ function attachedWorkCreditsFromVout(vout, recipients, network) {
 
       return [
         {
-          amount: parsed.amount,
+          ...tokenLedgerAmountFields(
+            WORK_TOKEN_ID,
+            tokenLedgerAmountFromRecord(WORK_TOKEN_ID, parsed),
+          ),
+          amountVersion: parsed.amountVersion ?? "legacy-whole",
           paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
           protocolVout,
           recipientAddress: parsed.recipientAddress,
@@ -7618,6 +7740,160 @@ function normalizeTokenTicker(value) {
     .slice(0, 12);
 }
 
+function canonicalWorkAtomsText(value, { allowZero = false } = {}) {
+  const text = String(value ?? "").trim();
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(text)) {
+    return "";
+  }
+  const atoms = BigInt(text);
+  if ((!allowZero && atoms < 1n) || atoms > WORK_TOKEN_MAX_SUPPLY_ATOMS) {
+    return "";
+  }
+  return atoms.toString();
+}
+
+function canonicalNonNegativeIntegerText(value, { allowZero = true } = {}) {
+  const text = String(value ?? "").trim();
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(text)) {
+    return "";
+  }
+  const integer = BigInt(text);
+  return allowZero || integer > 0n ? integer.toString() : "";
+}
+
+function workAtomsBigIntFromRecord(
+  record,
+  { allowZero = false, storedAmountIsAtoms = false } = {},
+) {
+  try {
+    const text = workAmountAtomsFromRecord(record, {
+      allowZero,
+      storedAmountIsAtoms,
+    });
+    const normalized = canonicalWorkAtomsText(text, { allowZero });
+    return normalized ? BigInt(normalized) : null;
+  } catch {
+    return null;
+  }
+}
+
+function workAmountFieldsFromAtoms(value, { allowZero = false } = {}) {
+  const normalized = canonicalWorkAtomsText(value, { allowZero });
+  if (!normalized) {
+    return {};
+  }
+  return withWorkPrecisionMetadata({
+    amount: formatWorkAtoms(normalized),
+    amountAtoms: normalized,
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+  });
+}
+
+function workBalanceFieldsFromAtoms(value) {
+  const normalized = canonicalWorkAtomsText(value, { allowZero: true });
+  if (!normalized) {
+    return {};
+  }
+  return withWorkPrecisionMetadata({
+    balance: formatWorkAtoms(normalized),
+    balanceAtoms: normalized,
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+  });
+}
+
+function workSupplyAtomsText(value) {
+  try {
+    return parseWorkAmountToAtoms(value, {
+      allowZero: true,
+      maxAtoms: WORK_TOKEN_MAX_SUPPLY_ATOMS,
+    });
+  } catch {
+    return "";
+  }
+}
+
+function tokenLedgerAmountFromRecord(
+  tokenId,
+  record,
+  { allowZero = false, storedAmountIsAtoms = false } = {},
+) {
+  if (isWorkTokenId(tokenId)) {
+    return workAtomsBigIntFromRecord(record, {
+      allowZero,
+      storedAmountIsAtoms,
+    });
+  }
+  const amount = Number(record?.amount ?? record ?? 0);
+  if (
+    !Number.isSafeInteger(amount) ||
+    (!allowZero && amount < 1) ||
+    (allowZero && amount < 0)
+  ) {
+    return null;
+  }
+  return amount;
+}
+
+function tokenLedgerAmountFields(tokenId, amount, { allowZero = false } = {}) {
+  if (isWorkTokenId(tokenId)) {
+    return workAmountFieldsFromAtoms(amount, { allowZero });
+  }
+  return { amount: Number(amount) };
+}
+
+function tokenAmountFieldsFromRecord(record) {
+  const tokenId = String(record?.tokenId ?? "").trim().toLowerCase();
+  const amount = tokenLedgerAmountFromRecord(tokenId, record);
+  return amount === null ? {} : tokenLedgerAmountFields(tokenId, amount);
+}
+
+function tokenLedgerMaxSupply(token) {
+  return isWorkTokenId(token?.tokenId)
+    ? WORK_TOKEN_MAX_SUPPLY_ATOMS
+    : Number(token?.maxSupply ?? 0);
+}
+
+function tokenLedgerMintAmount(token) {
+  return isWorkTokenId(token?.tokenId)
+    ? WORK_TOKEN_MINT_AMOUNT_ATOMS
+    : Number(token?.mintAmount ?? 0);
+}
+
+function tokenLedgerZero(tokenId) {
+  return isWorkTokenId(tokenId) ? 0n : 0;
+}
+
+function tokenLedgerHumanNumber(tokenId, amount) {
+  return isWorkTokenId(tokenId)
+    ? Number(formatWorkAtoms(amount))
+    : Number(amount);
+}
+
+function workAtomsValueAtNetworkQ8(amountAtoms, networkValue) {
+  const atoms =
+    typeof amountAtoms === "bigint" ? amountAtoms : BigInt(amountAtoms);
+  const networkValueQ8 = decimalValueToQ8(networkValue);
+  if (atoms < 0n || networkValueQ8 === null || networkValueQ8 < 0n) {
+    return null;
+  }
+  return (
+    (atoms * networkValueQ8) /
+    (BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_UNIT_SCALE)
+  );
+}
+
+function tokenAmountValueAtFloor(record, floorValue) {
+  if (isWorkTokenId(record?.tokenId)) {
+    const atoms = workAtomsBigIntFromRecord(record);
+    const valueQ8 =
+      atoms === null ? null : workAtomsValueAtFloorQ8(atoms, floorValue);
+    if (valueQ8 !== null) {
+      return q8ToNumber(valueQ8);
+    }
+  }
+  return numericValue(record?.amount) * numericValue(floorValue);
+}
+
 function normalizeTokenCreatorAddress(value) {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -7655,8 +7931,19 @@ function tokenCreationIsAllowed({ creatorAddress, ticker, tokenId }) {
 }
 
 function tokenSaleAuthorizationDraft(authorization = {}) {
+  const version = String(
+    authorization.version ?? TOKEN_SALE_AUTH_VERSION,
+  ).trim();
+  const amountFields =
+    version === TOKEN_SALE_AUTH_ATOMS_VERSION
+      ? {
+          amountAtoms: canonicalWorkAtomsText(authorization.amountAtoms),
+        }
+      : {
+          amount: Math.max(0, Math.floor(Number(authorization.amount ?? 0))),
+        };
   return {
-    amount: Math.max(0, Math.floor(Number(authorization.amount ?? 0))),
+    ...amountFields,
     anchorScriptPubKey: String(authorization.anchorScriptPubKey ?? "").toLowerCase(),
     anchorSigHashType: Math.floor(Number(authorization.anchorSigHashType ?? 0)),
     anchorType: String(authorization.anchorType ?? ""),
@@ -7675,7 +7962,7 @@ function tokenSaleAuthorizationDraft(authorization = {}) {
     sellerPublicKey: String(authorization.sellerPublicKey ?? "").toLowerCase(),
     ticker: normalizeTokenTicker(String(authorization.ticker ?? "")),
     tokenId: String(authorization.tokenId ?? "").toLowerCase(),
-    version: authorization.version ?? TOKEN_SALE_AUTH_VERSION,
+    version,
   };
 }
 
@@ -7688,11 +7975,19 @@ function parseTokenSaleAuthorizationJson(value, network) {
   const draft = tokenSaleAuthorizationDraft(parsed);
   const anchorTxid = String(parsed.anchorTxid ?? "").toLowerCase();
   const anchorSignature = String(parsed.anchorSignature ?? "").toLowerCase();
+  const legacyAmountValid =
+    draft.version === TOKEN_SALE_AUTH_VERSION &&
+    Number.isSafeInteger(draft.amount) &&
+    draft.amount >= 1;
+  const atomicAmountValid =
+    draft.version === TOKEN_SALE_AUTH_ATOMS_VERSION &&
+    draft.tokenId === WORK_TOKEN_ID &&
+    draft.ticker === WORK_TOKEN_TICKER &&
+    Boolean(canonicalWorkAtomsText(draft.amountAtoms));
   if (
-    draft.version !== TOKEN_SALE_AUTH_VERSION ||
+    (!legacyAmountValid && !atomicAmountValid) ||
     !/^[0-9a-f]{64}$/u.test(draft.tokenId) ||
     !/^[A-Z0-9]{1,12}$/u.test(draft.ticker) ||
-    draft.amount < 1 ||
     draft.priceSats < 1 ||
     draft.network !== network ||
     !isValidBitcoinAddress(draft.registryAddress, network) ||
@@ -7716,9 +8011,19 @@ function parseTokenSaleAuthorizationJson(value, network) {
   return { ...draft, anchorSignature, anchorTxid };
 }
 
+function tokenSaleAuthorizationLedgerAmount(authorization) {
+  if (authorization?.version === TOKEN_SALE_AUTH_ATOMS_VERSION) {
+    const amountAtoms = canonicalWorkAtomsText(authorization.amountAtoms);
+    return amountAtoms ? BigInt(amountAtoms) : null;
+  }
+  return tokenLedgerAmountFromRecord(authorization?.tokenId, authorization);
+}
+
 function tokenSaleAuthorizationUsesSaleTicketAnchor(authorization) {
   return (
-    authorization?.version === TOKEN_SALE_AUTH_VERSION &&
+    (authorization?.version === TOKEN_SALE_AUTH_VERSION ||
+      authorization?.version === TOKEN_SALE_AUTH_ATOMS_VERSION) &&
+    tokenSaleAuthorizationLedgerAmount(authorization) !== null &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
     authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
@@ -7731,7 +8036,9 @@ function tokenSaleAuthorizationUsesSaleTicketAnchor(authorization) {
 
 function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization) {
   return (
-    authorization?.version === TOKEN_SALE_AUTH_VERSION &&
+    (authorization?.version === TOKEN_SALE_AUTH_VERSION ||
+      authorization?.version === TOKEN_SALE_AUTH_ATOMS_VERSION) &&
+    tokenSaleAuthorizationLedgerAmount(authorization) !== null &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
     authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
@@ -9067,7 +9374,7 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
     const creditLiveFloorSats = creditRevaluationFloorSats;
     const creditLiveValueSats =
       numericValue(detail?.creditLiveValueSats) ||
-      numericValue(mint.amount) * creditLiveFloorSats;
+      tokenAmountValueAtFloor(mint, creditLiveFloorSats);
     const frozenNetworkValueSats =
       numericValue(detail?.frozenNetworkValueSats) ||
       proofPaymentSats + creditValueAtConfirmSats + attributedMinerFeeSats;
@@ -9077,6 +9384,9 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
     return {
       ...mint,
       creditAmountMoved: numericValue(mint.amount),
+      ...(mint.amountAtoms
+        ? { creditAmountMovedAtoms: mint.amountAtoms }
+        : {}),
       creditFloorAtConfirmSats: numericValue(detail?.creditFloorAtConfirmSats),
       creditLiveFloorSats,
       creditLiveValueSats,
@@ -9114,11 +9424,14 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       const creditLiveFloorSats = creditRevaluationFloorSats;
       const creditLiveValueSats =
         numericValue(detail?.creditLiveValueSats) ||
-        numericValue(transfer.amount) * creditLiveFloorSats;
+        tokenAmountValueAtFloor(transfer, creditLiveFloorSats);
       return {
         ...transfer,
         arbSats: 0,
         creditAmountMoved: numericValue(transfer.amount),
+        ...(transfer.amountAtoms
+          ? { creditAmountMovedAtoms: transfer.amountAtoms }
+          : {}),
         creditFloorAtConfirmSats: numericValue(
           detail?.creditFloorAtConfirmSats,
         ),
@@ -9181,11 +9494,14 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
     const creditLiveFloorSats = creditRevaluationFloorSats;
     const creditLiveValueSats =
       numericValue(detail?.creditLiveValueSats) ||
-      numericValue(sale.amount) * creditLiveFloorSats;
+      tokenAmountValueAtFloor(sale, creditLiveFloorSats);
     return {
       ...sale,
       arbSats: creditValueAtConfirmSats - salePaymentSats,
       creditAmountMoved: numericValue(sale.amount),
+      ...(sale.amountAtoms
+        ? { creditAmountMovedAtoms: sale.amountAtoms }
+        : {}),
       creditFloorAtConfirmSats: numericValue(detail?.creditFloorAtConfirmSats),
       creditLiveFloorSats,
       creditLiveValueSats,
@@ -9433,12 +9749,50 @@ function parseTokenPayload(message, network) {
       !/^[0-9a-f]{64}$/u.test(tokenId) ||
       !Number.isSafeInteger(amount) ||
       amount < 1 ||
+      (tokenId === WORK_TOKEN_ID && amount > WORK_TOKEN_MAX_SUPPLY) ||
       !isValidBitcoinAddress(recipientAddress, network)
     ) {
       return null;
     }
 
-    return { amount, kind: "send", recipientAddress, tokenId };
+    return {
+      amount,
+      ...(tokenId === WORK_TOKEN_ID
+        ? {
+            amountAtoms: parseWorkAmountToAtoms(amount, {
+              maxAtoms: WORK_TOKEN_MAX_SUPPLY_ATOMS,
+            }),
+            amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+            amountVersion: "legacy-whole",
+            decimals: WORK_DECIMALS,
+            unitScale: WORK_UNIT_SCALE_TEXT,
+          }
+        : {}),
+      kind: "send",
+      recipientAddress,
+      tokenId,
+    };
+  }
+
+  if (parts.length === 4 && parts[0] === TOKEN_SEND_ATOMS_ACTION) {
+    const tokenId = String(parts[1] ?? "").toLowerCase();
+    const amountAtoms = canonicalWorkAtomsText(parts[2]);
+    const recipientAddress = String(parts[3] ?? "").trim();
+    if (
+      tokenId !== WORK_TOKEN_ID ||
+      !amountAtoms ||
+      !isValidBitcoinAddress(recipientAddress, network)
+    ) {
+      return null;
+    }
+
+    return {
+      ...workAmountFieldsFromAtoms(amountAtoms),
+      amountVersion: TOKEN_SEND_ATOMS_ACTION,
+      kind: "send",
+      recipientAddress,
+      tokenId,
+    };
   }
 
   if (parts.length === 2 && parts[0] === TOKEN_LIST_ACTION) {
@@ -9801,19 +10155,45 @@ function insufficientTokenBalanceInvalidEvent({
   ticker,
   tokenId,
 }) {
-  const spendableBalance = Math.max(0, confirmedBalance - reservedBalance);
+  const zero = tokenLedgerZero(tokenId);
+  const spendableBalance =
+    confirmedBalance > reservedBalance ? confirmedBalance - reservedBalance : zero;
+  const attemptedFields = tokenLedgerAmountFields(tokenId, amount);
+  const availableFields = isWorkTokenId(tokenId)
+    ? {
+        availableAmount: formatWorkAtoms(spendableBalance),
+        availableAmountAtoms: spendableBalance.toString(),
+        confirmedBalance: formatWorkAtoms(confirmedBalance),
+        confirmedBalanceAtoms: confirmedBalance.toString(),
+        reservedBalance: formatWorkAtoms(reservedBalance),
+        reservedBalanceAtoms: reservedBalance.toString(),
+        spendableBalance: formatWorkAtoms(spendableBalance),
+        spendableBalanceAtoms: spendableBalance.toString(),
+      }
+    : {
+        availableAmount: spendableBalance,
+        confirmedBalance,
+        reservedBalance,
+        spendableBalance,
+      };
+  const attemptedDisplay = isWorkTokenId(tokenId)
+    ? formatWorkAtoms(amount)
+    : Number(amount).toLocaleString("en-US");
+  const spendableDisplay = isWorkTokenId(tokenId)
+    ? formatWorkAtoms(spendableBalance)
+    : Number(spendableBalance).toLocaleString("en-US");
   return {
-    amount,
-    attemptedAmount: amount,
-    availableAmount: spendableBalance,
-    confirmedBalance,
+    ...attemptedFields,
+    attemptedAmount: attemptedFields.amount,
+    ...(attemptedFields.amountAtoms
+      ? { attemptedAmountAtoms: attemptedFields.amountAtoms }
+      : {}),
+    ...availableFields,
     participants: [actorAddress, recipientAddress],
-    reason: `Insufficient spendable ${ticker} balance: ${spendableBalance.toLocaleString("en-US")} available; ${amount.toLocaleString("en-US")} attempted.`,
+    reason: `Insufficient spendable ${ticker} balance: ${spendableDisplay} available; ${attemptedDisplay} attempted.`,
     reasonCode: "insufficient-spendable-balance",
     recipientAddress,
-    reservedBalance,
     senderAddress: actorAddress,
-    spendableBalance,
     ticker,
     tokenId,
   };
@@ -9865,20 +10245,24 @@ function tokenStateFromTransactions(
   let pendingSupply = 0;
   const balanceKeyFor = (tokenId, ownerAddress) => `${tokenId}:${ownerAddress}`;
   const reservedBalanceFor = (tokenId, ownerAddress) => {
-    let reserved = 0;
+    let reserved = tokenLedgerZero(tokenId);
     for (const listing of listings.values()) {
       if (
         listing.tokenId === tokenId &&
         listing.sellerAddress === ownerAddress &&
         !tokenListingIsExpired(listing)
       ) {
-        reserved += listing.amount;
+        const listedAmount = tokenLedgerAmountFromRecord(tokenId, listing);
+        if (listedAmount !== null) {
+          reserved += listedAmount;
+        }
       }
     }
     return reserved;
   };
   const spendableBalanceFor = (tokenId, ownerAddress) =>
-    (balances.get(balanceKeyFor(tokenId, ownerAddress)) ?? 0) -
+    (balances.get(balanceKeyFor(tokenId, ownerAddress)) ??
+      tokenLedgerZero(tokenId)) -
     reservedBalanceFor(tokenId, ownerAddress);
   const closeListing = (listing, event) => {
     if (
@@ -9920,14 +10304,13 @@ function tokenStateFromTransactions(
   const applySeedMint = (mint) => {
     const mintedToken = tokensById.get(String(mint?.tokenId ?? "").toLowerCase());
     const minterAddress = String(mint?.minterAddress ?? "").trim();
-    const amount = Number(mint?.amount ?? 0);
+    const amount = tokenLedgerAmountFromRecord(mintedToken?.tokenId, mint);
     const txid = String(mint?.txid ?? "").toLowerCase();
     if (
       !mintedToken ||
       !/^[0-9a-f]{64}$/u.test(txid) ||
       !isValidBitcoinAddress(minterAddress, network) ||
-      !Number.isSafeInteger(amount) ||
-      amount < 1 ||
+      amount === null ||
       mints.some(
         (item) =>
           item.txid === txid &&
@@ -9940,32 +10323,36 @@ function tokenStateFromTransactions(
 
     const confirmed = mint.confirmed === true;
     const currentSupply = tokenSupply.get(mintedToken.tokenId) ?? {
-      confirmed: 0,
-      pending: 0,
+      confirmed: tokenLedgerZero(mintedToken.tokenId),
+      pending: tokenLedgerZero(mintedToken.tokenId),
     };
     if (
       !mintedToken.uncapped &&
       currentSupply.confirmed + currentSupply.pending + amount >
-        mintedToken.maxSupply
+        tokenLedgerMaxSupply(mintedToken)
     ) {
       return;
     }
 
     if (confirmed) {
       currentSupply.confirmed += amount;
-      confirmedSupply += amount;
+      confirmedSupply += tokenLedgerHumanNumber(mintedToken.tokenId, amount);
       const balanceKey = balanceKeyFor(mintedToken.tokenId, minterAddress);
-      balances.set(balanceKey, (balances.get(balanceKey) ?? 0) + amount);
+      balances.set(
+        balanceKey,
+        (balances.get(balanceKey) ?? tokenLedgerZero(mintedToken.tokenId)) +
+          amount,
+      );
     } else {
       currentSupply.pending += amount;
-      pendingSupply += amount;
+      pendingSupply += tokenLedgerHumanNumber(mintedToken.tokenId, amount);
     }
     tokenSupply.set(mintedToken.tokenId, currentSupply);
 
     mints.push({
       ...canonicalEventIdentityDetails(mint),
       ...canonicalInceptionMintMetadata(mint),
-      amount,
+      ...tokenLedgerAmountFields(mintedToken.tokenId, amount),
       blockHash: String(mint.blockHash ?? "").trim().toLowerCase() || undefined,
       blockHeight: Number.isSafeInteger(Number(mint.blockHeight))
         ? Number(mint.blockHeight)
@@ -10055,45 +10442,57 @@ function tokenStateFromTransactions(
 
         if (parsed.kind === "mint") {
           const mintedToken = tokensById.get(parsed.tokenId);
+          const parsedAmount = tokenLedgerAmountFromRecord(
+            parsed.tokenId,
+            parsed,
+          );
           if (
             !mintedToken ||
+            parsedAmount === null ||
             BOND_TOKEN_IDS.has(parsed.tokenId) ||
             !tokenDefinitionPrecedesTransaction(mintedToken, tx) ||
             mintedToken.registryAddress !== registryAddress ||
-            parsed.amount !== mintedToken.mintAmount ||
+            parsedAmount !== tokenLedgerMintAmount(mintedToken) ||
             remainingRegistrySats < mintedToken.mintPriceSats
           ) {
             continue;
           }
 
           const currentSupply = tokenSupply.get(mintedToken.tokenId) ?? {
-            confirmed: 0,
-            pending: 0,
+            confirmed: tokenLedgerZero(mintedToken.tokenId),
+            pending: tokenLedgerZero(mintedToken.tokenId),
           };
           if (
-            currentSupply.confirmed + currentSupply.pending + parsed.amount >
-            mintedToken.maxSupply
+            currentSupply.confirmed + currentSupply.pending + parsedAmount >
+            tokenLedgerMaxSupply(mintedToken)
           ) {
             continue;
           }
 
           remainingRegistrySats -= mintedToken.mintPriceSats;
           if (confirmed) {
-            currentSupply.confirmed += parsed.amount;
-            confirmedSupply += parsed.amount;
+            currentSupply.confirmed += parsedAmount;
+            confirmedSupply += tokenLedgerHumanNumber(
+              mintedToken.tokenId,
+              parsedAmount,
+            );
             const balanceKey = balanceKeyFor(mintedToken.tokenId, actorAddress);
             balances.set(
               balanceKey,
-              (balances.get(balanceKey) ?? 0) + parsed.amount,
+              (balances.get(balanceKey) ??
+                tokenLedgerZero(mintedToken.tokenId)) + parsedAmount,
             );
           } else {
-            currentSupply.pending += parsed.amount;
-            pendingSupply += parsed.amount;
+            currentSupply.pending += parsedAmount;
+            pendingSupply += tokenLedgerHumanNumber(
+              mintedToken.tokenId,
+              parsedAmount,
+            );
           }
           tokenSupply.set(mintedToken.tokenId, currentSupply);
 
           mints.push({
-            amount: parsed.amount,
+            ...tokenLedgerAmountFields(mintedToken.tokenId, parsedAmount),
             blockHash,
             blockHeight,
             blockIndex,
@@ -10115,8 +10514,13 @@ function tokenStateFromTransactions(
 
         if (parsed.kind === "send") {
           const sentToken = tokensById.get(parsed.tokenId);
+          const parsedAmount = tokenLedgerAmountFromRecord(
+            parsed.tokenId,
+            parsed,
+          );
           if (
             !sentToken ||
+            parsedAmount === null ||
             sentToken.registryAddress !== registryAddress ||
             remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS
           ) {
@@ -10128,7 +10532,9 @@ function tokenStateFromTransactions(
             sentToken.tokenId,
             parsed.recipientAddress,
           );
-          const senderBalance = balances.get(senderBalanceKey) ?? 0;
+          const senderBalance =
+            balances.get(senderBalanceKey) ??
+            tokenLedgerZero(sentToken.tokenId);
           const reservedBalance = reservedBalanceFor(
             sentToken.tokenId,
             actorAddress,
@@ -10137,10 +10543,10 @@ function tokenStateFromTransactions(
             sentToken.tokenId,
             actorAddress,
           );
-          if (confirmed && spendableBalance < parsed.amount) {
+          if (confirmed && spendableBalance < parsedAmount) {
             rejectedTxMessage = insufficientTokenBalanceInvalidEvent({
               actorAddress,
-              amount: parsed.amount,
+              amount: parsedAmount,
               confirmedBalance: senderBalance,
               recipientAddress: parsed.recipientAddress,
               reservedBalance,
@@ -10152,15 +10558,19 @@ function tokenStateFromTransactions(
 
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
           if (confirmed) {
-            balances.set(senderBalanceKey, senderBalance - parsed.amount);
+            balances.set(senderBalanceKey, senderBalance - parsedAmount);
             balances.set(
               recipientBalanceKey,
-              (balances.get(recipientBalanceKey) ?? 0) + parsed.amount,
+              (balances.get(recipientBalanceKey) ??
+                tokenLedgerZero(sentToken.tokenId)) + parsedAmount,
             );
           }
 
           transfers.push({
-            amount: parsed.amount,
+            ...tokenLedgerAmountFields(sentToken.tokenId, parsedAmount),
+            ...(isWorkTokenId(sentToken.tokenId)
+              ? { amountVersion: parsed.amountVersion ?? "legacy-whole" }
+              : {}),
             blockHash,
             blockHeight,
             blockIndex,
@@ -10185,15 +10595,17 @@ function tokenStateFromTransactions(
         if (parsed.kind === "list") {
           const authorization = parsed.saleAuthorization;
           const listedToken = tokensById.get(authorization.tokenId);
+          const listedAmount = tokenSaleAuthorizationLedgerAmount(authorization);
           if (
             !listedToken ||
+            listedAmount === null ||
             listedToken.registryAddress !== registryAddress ||
             authorization.registryAddress !== registryAddress ||
             authorization.ticker !== listedToken.ticker ||
             authorization.sellerAddress !== actorAddress ||
             remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
             spendableBalanceFor(listedToken.tokenId, actorAddress) <
-              authorization.amount ||
+              listedAmount ||
             !tokenListingAnchorIsPresent(vout, authorization) ||
             listings.has(txid)
           ) {
@@ -10202,7 +10614,7 @@ function tokenStateFromTransactions(
 
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
           listings.set(txid, {
-            amount: authorization.amount,
+            ...tokenLedgerAmountFields(listedToken.tokenId, listedAmount),
             blockHash,
             blockHeight,
             blockIndex,
@@ -10285,6 +10697,9 @@ function tokenStateFromTransactions(
 
         if (parsed.kind === "buy") {
           const listing = listings.get(parsed.listingId);
+          const listingAmount = listing
+            ? tokenLedgerAmountFromRecord(listing.tokenId, listing)
+            : null;
           const listingHasValidSaleTicketSpend = listing
             ? tokenSaleAuthorizationUsesSaleTicketAnchor(
                 listing.saleAuthorization,
@@ -10298,6 +10713,7 @@ function tokenStateFromTransactions(
             : "";
           if (
             !listing ||
+            listingAmount === null ||
             !txInputAddresses.includes(parsed.buyerAddress) ||
             remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
             !listingHasValidSaleTicketSpend ||
@@ -10308,7 +10724,8 @@ function tokenStateFromTransactions(
             paymentAmountFromSnapshots(paymentOutputs, listing.sellerAddress) <
               tokenSellerPaymentRequiredSats(listing) ||
             (confirmed &&
-              (balances.get(sellerBalanceKey) ?? 0) < listing.amount)
+              (balances.get(sellerBalanceKey) ??
+                tokenLedgerZero(listing.tokenId)) < listingAmount)
           ) {
             continue;
           }
@@ -10325,16 +10742,19 @@ function tokenStateFromTransactions(
           });
           listings.delete(listing.listingId);
           if (confirmed) {
-            const sellerBalance = balances.get(sellerBalanceKey) ?? 0;
-            balances.set(sellerBalanceKey, sellerBalance - listing.amount);
+            const sellerBalance =
+              balances.get(sellerBalanceKey) ??
+              tokenLedgerZero(listing.tokenId);
+            balances.set(sellerBalanceKey, sellerBalance - listingAmount);
             balances.set(
               buyerBalanceKey,
-              (balances.get(buyerBalanceKey) ?? 0) + listing.amount,
+              (balances.get(buyerBalanceKey) ??
+                tokenLedgerZero(listing.tokenId)) + listingAmount,
             );
           }
 
           sales.push({
-            amount: listing.amount,
+            ...tokenLedgerAmountFields(listing.tokenId, listingAmount),
             blockHash,
             blockHeight,
             blockIndex,
@@ -10395,6 +10815,9 @@ function tokenStateFromTransactions(
     }
   }
 
+  const workSupply = tokenSupply.get(WORK_TOKEN_ID);
+  const onlyWorkToken =
+    tokens.length === 1 && tokens[0]?.tokenId === WORK_TOKEN_ID;
   return {
     closedListings: closedListings.sort(
       (left, right) =>
@@ -10403,18 +10826,41 @@ function tokenStateFromTransactions(
         left.listingId.localeCompare(right.listingId),
     ),
     creationSats,
-    confirmedSupply,
+    confirmedSupply:
+      onlyWorkToken && workSupply
+        ? formatWorkAtoms(workSupply.confirmed)
+        : confirmedSupply,
+    ...(onlyWorkToken && workSupply
+      ? {
+          confirmedSupplyAtoms: workSupply.confirmed.toString(),
+          decimals: WORK_DECIMALS,
+          pendingSupplyAtoms: workSupply.pending.toString(),
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }
+      : {}),
     holders: [...balances.entries()]
       .filter(([, balance]) => balance > 0)
-      .map(([key, balance]) => ({
-        address: String(key).split(":").slice(1).join(":"),
-        balance,
-      }))
+      .map(([key, balance]) => {
+        const [tokenId, ...addressParts] = String(key).split(":");
+        return {
+          address: addressParts.join(":"),
+          ledgerBalance: balance,
+          tokenId,
+          ...(isWorkTokenId(tokenId)
+            ? workBalanceFieldsFromAtoms(balance)
+            : { balance }),
+        };
+      })
       .sort(
         (left, right) =>
-          right.balance - left.balance ||
+          (right.ledgerBalance > left.ledgerBalance
+            ? 1
+            : right.ledgerBalance < left.ledgerBalance
+              ? -1
+              : 0) ||
           left.address.localeCompare(right.address),
-      ),
+      )
+      .map(({ ledgerBalance, ...holder }) => holder),
     invalidEvents: invalidEvents.sort(
       (left, right) =>
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
@@ -10434,7 +10880,10 @@ function tokenStateFromTransactions(
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
         left.txid.localeCompare(right.txid),
     ),
-    pendingSupply,
+    pendingSupply:
+      onlyWorkToken && workSupply
+        ? formatWorkAtoms(workSupply.pending)
+        : pendingSupply,
     sales: sales.sort(
       (left, right) =>
         Number(right.confirmed) - Number(left.confirmed) ||
@@ -10491,7 +10940,11 @@ function workTransfersFromTransactions(txs, network) {
 
       remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
       transfers.push({
-        amount: parsed.amount,
+        ...tokenLedgerAmountFields(
+          WORK_TOKEN_ID,
+          tokenLedgerAmountFromRecord(WORK_TOKEN_ID, parsed),
+        ),
+        amountVersion: parsed.amountVersion ?? "legacy-whole",
         blockHash: transactionBlockHash(tx),
         blockHeight: transactionBlockHeight(tx),
         blockIndex: transactionBlockIndex(tx),
@@ -12677,9 +13130,25 @@ function canonicalInceptionMintMetadata(mint) {
   ) {
     return {};
   }
+  const attachedWorkAmountAtoms = canonicalWorkAtomsText(
+    mint.attachedWorkAmountAtoms,
+    { allowZero: true },
+  );
+  const attachedWorkLiveValueAtSendQ8 = canonicalNonNegativeIntegerText(
+    mint.attachedWorkLiveValueAtSendQ8,
+  );
+  const issuanceDustQ8 = canonicalNonNegativeIntegerText(mint.issuanceDustQ8);
+  const issuanceNetworkValueQ8 = canonicalNonNegativeIntegerText(
+    mint.issuanceNetworkValueQ8,
+  );
+  const issuanceValueSnapshotWorkNetworkValueQ8 =
+    canonicalNonNegativeIntegerText(
+      mint.issuanceValueSnapshotWorkNetworkValueQ8,
+    );
   return {
     amountSats: numericValue(mint.amountSats),
     attachedWorkAmount: numericValue(mint.attachedWorkAmount),
+    ...(attachedWorkAmountAtoms ? { attachedWorkAmountAtoms } : {}),
     attachedWorkIssuanceUnits: numericValue(
       mint.attachedWorkIssuanceUnits,
     ),
@@ -12689,6 +13158,9 @@ function canonicalInceptionMintMetadata(mint) {
     attachedWorkLiveValueAtSendSats: numericValue(
       mint.attachedWorkLiveValueAtSendSats,
     ),
+    ...(attachedWorkLiveValueAtSendQ8
+      ? { attachedWorkLiveValueAtSendQ8 }
+      : {}),
     bondRecipientAddress: String(mint.bondRecipientAddress ?? "").trim(),
     bondRecipientAmountSats: numericValue(mint.bondRecipientAmountSats),
     bondRecipientVout: numericValue(mint.bondRecipientVout),
@@ -12736,9 +13208,14 @@ function canonicalInceptionMintMetadata(mint) {
     issuanceValueSnapshotWorkNetworkValueSats: numericValue(
       mint.issuanceValueSnapshotWorkNetworkValueSats,
     ),
+    ...(issuanceValueSnapshotWorkNetworkValueQ8
+      ? { issuanceValueSnapshotWorkNetworkValueQ8 }
+      : {}),
     issuanceDustSats: numericValue(mint.issuanceDustSats),
+    ...(issuanceDustQ8 ? { issuanceDustQ8 } : {}),
     issuanceFloorSats: numericValue(mint.issuanceFloorSats),
     issuanceNetworkValueSats: numericValue(mint.issuanceNetworkValueSats),
+    ...(issuanceNetworkValueQ8 ? { issuanceNetworkValueQ8 } : {}),
     issuanceUnitSats: numericValue(mint.issuanceUnitSats),
     issuanceValuationFixedAtSend:
       mint.issuanceValuationFixedAtSend === true,
@@ -12764,7 +13241,7 @@ function inceptionAttachmentMatchesForBond(ledger, bond) {
       transfer?.valid !== false &&
       transfer.tokenId === WORK_TOKEN_ID &&
       String(transfer.txid ?? "").trim().toLowerCase() === txid &&
-      numericValue(transfer.amount) > 0,
+      workAtomsBigIntFromRecord(transfer) > 0n,
   );
   const bondRecipients = new Set(
     (Array.isArray(bond?.recipients) ? bond.recipients : [])
@@ -12777,7 +13254,7 @@ function inceptionAttachmentMatchesForBond(ledger, bond) {
   ).filter(
     (credit) =>
       credit?.tokenId === WORK_TOKEN_ID &&
-      numericValue(credit.amount) > 0 &&
+      workAtomsBigIntFromRecord(credit) > 0n &&
       String(credit.recipientAddress ?? "").trim(),
   );
   const available = transfers.map((transfer, index) => ({ index, transfer }));
@@ -12796,10 +13273,14 @@ function inceptionAttachmentMatchesForBond(ledger, bond) {
     }
     const matchIndex = available.findIndex(({ transfer }) => {
       const transferVout = canonicalEventOrdinal(transfer.protocolVout);
+      const transferAtoms = workAtomsBigIntFromRecord(transfer);
+      const creditAtoms = workAtomsBigIntFromRecord(credit);
       return (
         transferVout !== null &&
         transferVout === declaredVout &&
-        numericValue(transfer.amount) === numericValue(credit.amount) &&
+        transferAtoms !== null &&
+        creditAtoms !== null &&
+        transferAtoms === creditAtoms &&
         samePaymentAddress(transfer.recipientAddress, recipientAddress)
       );
     });
@@ -12808,8 +13289,10 @@ function inceptionAttachmentMatchesForBond(ledger, bond) {
       continue;
     }
     const [{ transfer }] = available.splice(matchIndex, 1);
+    const amountAtoms = workAtomsBigIntFromRecord(transfer);
     matches.push({
-      amount: numericValue(transfer.amount),
+      ...workAmountFieldsFromAtoms(amountAtoms),
+      amountVersion: transfer.amountVersion ?? "legacy-whole",
       protocolVout: declaredVout,
       recipientAddress,
       transfer,
@@ -12835,6 +13318,13 @@ function inceptionIssuanceMetadataFromMints(mints) {
       const attachedUnits = Number(mint.attachedWorkIssuanceUnits);
       const attachedFloor = Number(mint.attachedWorkLiveFloorAtSendSats);
       const attachedValue = Number(mint.attachedWorkLiveValueAtSendSats);
+      const attachedAmountAtomsText = canonicalWorkAtomsText(
+        mint.attachedWorkAmountAtoms,
+        { allowZero: true },
+      );
+      const attachedValueQ8Text = canonicalNonNegativeIntegerText(
+        mint.attachedWorkLiveValueAtSendQ8,
+      );
       const checkpointHeight = Number(mint.issuanceCheckpointBlockHeight);
       const checkpointIndex = Number(mint.issuanceCheckpointBlockIndex);
       const checkpointValue = Number(
@@ -12842,6 +13332,12 @@ function inceptionIssuanceMetadataFromMints(mints) {
       );
       const issuanceValue = Number(mint.issuanceNetworkValueSats);
       const dust = Number(mint.issuanceDustSats);
+      const issuanceDustQ8Text = canonicalNonNegativeIntegerText(
+        mint.issuanceDustQ8,
+      );
+      const issuanceValueQ8Text = canonicalNonNegativeIntegerText(
+        mint.issuanceNetworkValueQ8,
+      );
       const issuanceFloor = Number(mint.issuanceFloorSats);
       const valueSnapshotHeight = Number(
         mint.issuanceValueSnapshotBlockHeight,
@@ -12865,6 +13361,10 @@ function inceptionIssuanceMetadataFromMints(mints) {
       const valueSnapshotWorkNetworkValueSats = Number(
         mint.issuanceValueSnapshotWorkNetworkValueSats,
       );
+      const valueSnapshotWorkNetworkValueQ8Text =
+        canonicalNonNegativeIntegerText(
+          mint.issuanceValueSnapshotWorkNetworkValueQ8,
+        );
       const txid = String(mint.txid ?? "").trim().toLowerCase();
       const checkpointHash = String(
         mint.issuanceCheckpointBlockHash ?? "",
@@ -12876,6 +13376,51 @@ function inceptionIssuanceMetadataFromMints(mints) {
       const blockIndex = Number(mint.blockIndex);
       const paidSats = Number(mint.paidSats);
       const proofPaymentSats = Number(mint.proofPaymentSats);
+      const atomicMetadataPresent = [
+        mint.attachedWorkAmountAtoms,
+        mint.attachedWorkLiveValueAtSendQ8,
+        mint.issuanceDustQ8,
+        mint.issuanceNetworkValueQ8,
+        mint.issuanceValueSnapshotWorkNetworkValueQ8,
+      ].some((value) => value !== undefined && value !== null && value !== "");
+      let atomicMetadataValid = false;
+      if (
+        atomicMetadataPresent &&
+        attachedAmountAtomsText &&
+        attachedValueQ8Text &&
+        issuanceDustQ8Text &&
+        issuanceValueQ8Text &&
+        valueSnapshotWorkNetworkValueQ8Text &&
+        Number.isSafeInteger(amount) &&
+        Number.isSafeInteger(direct) &&
+        Number.isSafeInteger(attachedUnits)
+      ) {
+        const attachedAmountAtoms = BigInt(attachedAmountAtomsText);
+        const attachedValueQ8 = BigInt(attachedValueQ8Text);
+        const issuanceDustQ8 = BigInt(issuanceDustQ8Text);
+        const issuanceValueQ8 = BigInt(issuanceValueQ8Text);
+        const snapshotValueQ8 = BigInt(valueSnapshotWorkNetworkValueQ8Text);
+        const recalculatedAttachedQ8 = workAtomsValueAtNetworkQ8(
+          attachedAmountAtoms,
+          q8ToCanonicalDecimal(snapshotValueQ8),
+        );
+        atomicMetadataValid =
+          decimalValueToQ8(checkpointValue) === snapshotValueQ8 &&
+          recalculatedAttachedQ8 === attachedValueQ8 &&
+          issuanceValueQ8 ===
+            BigInt(direct) * VALUE_Q8_SCALE + attachedValueQ8 &&
+          BigInt(amount) === issuanceValueQ8 / VALUE_Q8_SCALE &&
+          BigInt(attachedUnits) === attachedValueQ8 / VALUE_Q8_SCALE &&
+          issuanceDustQ8 === issuanceValueQ8 % VALUE_Q8_SCALE &&
+          numbersAgree(
+            attachedAmount,
+            Number(formatWorkAtoms(attachedAmountAtoms)),
+            1e-8,
+          ) &&
+          numbersAgree(attachedValue, q8ToNumber(attachedValueQ8), 1e-8) &&
+          numbersAgree(issuanceValue, q8ToNumber(issuanceValueQ8), 1e-8) &&
+          numbersAgree(dust, q8ToNumber(issuanceDustQ8), 1e-8);
+      }
       return (
         mint.issuanceAccountingModel === INCEPTION_ISSUANCE_ACCOUNTING_MODEL &&
         mint.issuanceValuationFixedAtSend === true &&
@@ -12931,8 +13476,9 @@ function inceptionIssuanceMetadataFromMints(mints) {
         direct > 0 &&
         paidSats === direct &&
         proofPaymentSats === direct &&
-        Number.isSafeInteger(attachedAmount) &&
-        attachedAmount >= 0 &&
+        (atomicMetadataPresent
+          ? atomicMetadataValid
+          : Number.isSafeInteger(attachedAmount) && attachedAmount >= 0) &&
         Number.isSafeInteger(attachedUnits) &&
         attachedUnits >= 0 &&
         direct + attachedUnits === amount &&
@@ -12945,15 +13491,18 @@ function inceptionIssuanceMetadataFromMints(mints) {
         ) &&
         Number.isFinite(attachedValue) &&
         attachedValue >= 0 &&
-        numbersAgree(attachedValue, attachedAmount * attachedFloor, 0.01) &&
-        Math.floor(attachedValue) === attachedUnits &&
+        (atomicMetadataPresent ||
+          (numbersAgree(attachedValue, attachedAmount * attachedFloor, 0.01) &&
+            Math.floor(attachedValue) === attachedUnits)) &&
         Number.isFinite(issuanceValue) &&
-        numbersAgree(issuanceValue, direct + attachedValue, 0.01) &&
-        Math.floor(issuanceValue) === amount &&
+        (atomicMetadataPresent ||
+          (numbersAgree(issuanceValue, direct + attachedValue, 0.01) &&
+            Math.floor(issuanceValue) === amount)) &&
         Number.isFinite(dust) &&
         dust >= 0 &&
         dust < 1 &&
-        numbersAgree(dust, issuanceValue - amount, 0.01) &&
+        (atomicMetadataPresent ||
+          numbersAgree(dust, issuanceValue - amount, 0.01)) &&
         Number.isFinite(issuanceFloor) &&
         issuanceFloor >= 1 &&
         numbersAgree(issuanceFloor * amount, issuanceValue, 0.01)
@@ -12965,6 +13514,13 @@ function inceptionIssuanceMetadataFromMints(mints) {
   const confirmedIssuanceUnits = sum("confirmedIssuanceUnits");
   const issuanceNetworkValueSats = sum("issuanceNetworkValueSats");
   const attachedWorkAmount = sum("attachedWorkAmount");
+  const attachedWorkAmountAtoms = canonical.reduce((total, mint) => {
+    const atoms = workAtomsBigIntFromRecord({
+      amount: mint.attachedWorkAmount,
+      amountAtoms: mint.attachedWorkAmountAtoms,
+    }, { allowZero: true });
+    return atoms === null ? total : total + atoms;
+  }, 0n);
   const attachedWorkLiveValueAtSendSats = sum(
     "attachedWorkLiveValueAtSendSats",
   );
@@ -12977,6 +13533,7 @@ function inceptionIssuanceMetadataFromMints(mints) {
   )[0];
   return {
     attachedWorkAmount,
+    attachedWorkAmountAtoms: attachedWorkAmountAtoms.toString(),
     attachedWorkIssuanceUnits: sum("attachedWorkIssuanceUnits"),
     attachedWorkLiveFloorAtSendSats:
       attachedWorkAmount > 0
@@ -13635,9 +14192,15 @@ function inceptionMintsWithLiveIssuance(
     const matchedAttachments = attachment.matches.filter(({ recipientAddress }) =>
       samePaymentAddress(recipientAddress, minterAddress),
     );
-    const attachedWorkAmount = matchedAttachments.reduce(
-      (total, match) => total + numericValue(match.amount),
-      0,
+    const attachedWorkAmountAtoms = matchedAttachments.reduce(
+      (total, match) => {
+        const atoms = workAtomsBigIntFromRecord(match);
+        return atoms === null ? total : total + atoms;
+      },
+      0n,
+    );
+    const attachedWorkAmount = Number(
+      formatWorkAtoms(attachedWorkAmountAtoms),
     );
     if (attachedWorkLiveFloorAtSendSats <= 0) {
       return mint;
@@ -13651,19 +14214,60 @@ function inceptionMintsWithLiveIssuance(
     ) {
       return mint;
     }
+    const useAtomicQ8 = matchedAttachments.some((match) => {
+      const atoms = workAtomsBigIntFromRecord(match);
+      return (
+        match.amountVersion === TOKEN_SEND_ATOMS_ACTION ||
+        (atoms !== null && atoms % WORK_UNIT_SCALE !== 0n)
+      );
+    });
+    const attachedWorkLiveValueAtSendQ8 = useAtomicQ8
+      ? workAtomsValueAtNetworkQ8(
+          attachedWorkAmountAtoms,
+          checkpoint.workNetworkValueSats,
+        )
+      : null;
+    if (useAtomicQ8 && attachedWorkLiveValueAtSendQ8 === null) {
+      return mint;
+    }
+    const directProofIssuanceQ8 =
+      BigInt(directProofIssuanceUnits) * VALUE_Q8_SCALE;
+    const issuanceNetworkValueQ8 =
+      attachedWorkLiveValueAtSendQ8 === null
+        ? null
+        : directProofIssuanceQ8 + attachedWorkLiveValueAtSendQ8;
     const attachedWorkLiveValueAtSendSats =
-      attachedWorkAmount * attachedWorkLiveFloorAtSendSats;
+      attachedWorkLiveValueAtSendQ8 === null
+        ? attachedWorkAmount * attachedWorkLiveFloorAtSendSats
+        : q8ToNumber(attachedWorkLiveValueAtSendQ8);
     const issuanceNetworkValueSats =
-      directProofIssuanceUnits + attachedWorkLiveValueAtSendSats;
-    const confirmedIssuanceUnits = Math.floor(issuanceNetworkValueSats);
+      issuanceNetworkValueQ8 === null
+        ? directProofIssuanceUnits + attachedWorkLiveValueAtSendSats
+        : q8ToNumber(issuanceNetworkValueQ8);
+    const confirmedIssuanceUnits =
+      issuanceNetworkValueQ8 === null
+        ? Math.floor(issuanceNetworkValueSats)
+        : Number(issuanceNetworkValueQ8 / VALUE_Q8_SCALE);
     if (!Number.isSafeInteger(confirmedIssuanceUnits) || confirmedIssuanceUnits < 1) {
       return mint;
     }
+    const issuanceDustQ8 =
+      issuanceNetworkValueQ8 === null
+        ? null
+        : issuanceNetworkValueQ8 -
+          BigInt(confirmedIssuanceUnits) * VALUE_Q8_SCALE;
     return {
       ...mint,
       amount: confirmedIssuanceUnits,
       amountSats: 0,
       attachedWorkAmount,
+      ...(useAtomicQ8
+        ? {
+            attachedWorkAmountAtoms: attachedWorkAmountAtoms.toString(),
+            attachedWorkLiveValueAtSendQ8:
+              attachedWorkLiveValueAtSendQ8.toString(),
+          }
+        : {}),
       attachedWorkLiveFloorAtSendSats,
       attachedWorkIssuanceUnits:
         confirmedIssuanceUnits - directProofIssuanceUnits,
@@ -13692,8 +14296,20 @@ function inceptionMintsWithLiveIssuance(
       issuanceValueSnapshotModel: checkpoint.valueSnapshotModel,
       issuanceValueSnapshotWorkNetworkValueSats:
         checkpoint.workNetworkValueSats,
+      ...(useAtomicQ8
+        ? {
+            issuanceDustQ8: issuanceDustQ8.toString(),
+            issuanceNetworkValueQ8: issuanceNetworkValueQ8.toString(),
+            issuanceValueSnapshotWorkNetworkValueQ8:
+              decimalValueToQ8(
+                checkpoint.workNetworkValueSats,
+              ).toString(),
+          }
+        : {}),
       issuanceDustSats:
-        issuanceNetworkValueSats - confirmedIssuanceUnits,
+        issuanceDustQ8 === null
+          ? issuanceNetworkValueSats - confirmedIssuanceUnits
+          : q8ToNumber(issuanceDustQ8),
       issuanceFloorSats:
         issuanceNetworkValueSats / confirmedIssuanceUnits,
       issuanceNetworkValueSats,
@@ -14224,6 +14840,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
   const mints = (state.mints ?? []).map((mint) => ({
     ...canonicalEventIdentityDetails(mint),
     ...canonicalInceptionMintMetadata(mint),
+    ...tokenAmountFieldsFromRecord(mint),
     amountSats:
       mint.tokenId === INCB_TOKEN_ID &&
       mint.issuanceAccountingModel === INCEPTION_ISSUANCE_ACCOUNTING_MODEL
@@ -14265,6 +14882,10 @@ function tokenActivityItemsFromState(state, indexAddress) {
   }));
 
   const transfers = (state.transfers ?? []).map((transfer) => ({
+    ...tokenAmountFieldsFromRecord(transfer),
+    ...(transfer.amountAtoms
+      ? { creditAmountMovedAtoms: transfer.amountAtoms }
+      : {}),
     amountSats: transfer.paidSats,
     actor: transfer.senderAddress,
     blockHash: transfer.blockHash,
@@ -14340,6 +14961,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     const sealConfirmed = tokenListingHasConfirmedSaleTicketSeal(listing);
     const sealPending = tokenListingHasPendingSaleTicketSeal(listing);
     return {
+      ...tokenAmountFieldsFromRecord(listing),
       amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       actor: listing.sellerAddress,
       blockHash: listing.blockHash,
@@ -14406,6 +15028,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     seenSealTxids.add(sealTxid);
     const sealConfirmed = listing.sealConfirmed === true;
     sealedListings.push({
+      ...tokenAmountFieldsFromRecord(listing),
       amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       actor: listing.sellerAddress,
       blockHash: listing.sealBlockHash ?? listing.blockHash,
@@ -14458,6 +15081,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
       typeof listing.closedTxid === "string" ? listing.closedTxid : "";
     const spentBy = closedTxid ? ` by ${shortAddress(closedTxid)}` : "";
     return {
+      ...tokenAmountFieldsFromRecord(listing),
       amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       actor: listing.sellerAddress,
       blockHash: listing.closedBlockHash ?? listing.blockHash,
@@ -14509,6 +15133,8 @@ function tokenActivityItemsFromState(state, indexAddress) {
   });
 
   const sales = (state.sales ?? []).map((sale) => ({
+    ...tokenAmountFieldsFromRecord(sale),
+    ...(sale.amountAtoms ? { creditAmountMovedAtoms: sale.amountAtoms } : {}),
     amountSats: sale.paidSats,
     actor: sale.buyerAddress,
     blockHash: sale.blockHash,
@@ -15241,15 +15867,7 @@ function emptyTokenPayloadSnapshot(network) {
       registries: 0,
       transactions: 0,
     },
-    workDefaults: {
-      maxSupply: WORK_TOKEN_MAX_SUPPLY,
-      mintAmount: WORK_TOKEN_MINT_AMOUNT,
-      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
-      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
-      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-      ticker: WORK_TOKEN_TICKER,
-      tokenId: WORK_TOKEN_ID,
-    },
+    workDefaults: canonicalWorkDefaults(),
   };
 }
 
@@ -15353,15 +15971,7 @@ async function fastCachedTokenPayload(network, tokenScope = "") {
       registries: 0,
       transactions: 0,
     },
-    workDefaults: {
-      maxSupply: WORK_TOKEN_MAX_SUPPLY,
-      mintAmount: WORK_TOKEN_MINT_AMOUNT,
-      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
-      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
-      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-      ticker: WORK_TOKEN_TICKER,
-      tokenId: WORK_TOKEN_ID,
-    },
+    workDefaults: canonicalWorkDefaults(),
   };
 }
 
@@ -16411,11 +17021,12 @@ function mailAttachedCreditsFromRecord(record, network) {
         const tokenId = String(credit?.tokenId ?? "").trim().toLowerCase();
         const ticker = normalizeTokenTicker(String(credit?.ticker ?? ""));
         const recipientAddress = String(credit?.recipientAddress ?? "").trim();
-        const amount = Math.floor(numericValue(credit?.amount));
+        const amountAtoms = workAtomsBigIntFromRecord(credit);
         if (
           tokenId !== WORK_TOKEN_ID ||
           ticker !== WORK_TOKEN_TICKER ||
-          amount < 1 ||
+          amountAtoms === null ||
+          amountAtoms < 1n ||
           !isValidBitcoinAddress(recipientAddress, network)
         ) {
           return [];
@@ -16424,7 +17035,8 @@ function mailAttachedCreditsFromRecord(record, network) {
         return [
           {
             ...canonicalEventIdentityDetails(credit),
-            amount,
+            ...tokenLedgerAmountFields(WORK_TOKEN_ID, amountAtoms),
+            amountVersion: credit.amountVersion,
             paidSats:
               numericValue(credit?.paidSats) > 0
                 ? numericValue(credit?.paidSats)
@@ -16801,15 +17413,7 @@ async function workTokenPayload(network, fallbackPayload = null) {
       registries: 1,
       transactions: registryTxs.length,
     },
-    workDefaults: {
-      maxSupply: WORK_TOKEN_MAX_SUPPLY,
-      mintAmount: WORK_TOKEN_MINT_AMOUNT,
-      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
-      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
-      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-      ticker: WORK_TOKEN_TICKER,
-      tokenId: WORK_TOKEN_ID,
-    },
+    workDefaults: canonicalWorkDefaults(),
   };
 }
 
@@ -17064,15 +17668,7 @@ async function bondTokenPayload(network, registryState = null, config) {
       registries: 1,
       transactions: registryTxs.length,
     },
-    workDefaults: {
-      maxSupply: WORK_TOKEN_MAX_SUPPLY,
-      mintAmount: WORK_TOKEN_MINT_AMOUNT,
-      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
-      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
-      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-      ticker: WORK_TOKEN_TICKER,
-      tokenId: WORK_TOKEN_ID,
-    },
+    workDefaults: canonicalWorkDefaults(),
   };
 }
 
@@ -17089,15 +17685,7 @@ async function tokenPayload(network, tokenScope = "") {
       indexTxid: TOKEN_INDEX_TXID,
       minMutationPriceSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       network,
-      workDefaults: {
-        maxSupply: WORK_TOKEN_MAX_SUPPLY,
-        mintAmount: WORK_TOKEN_MINT_AMOUNT,
-        mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
-        priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
-        registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-        ticker: WORK_TOKEN_TICKER,
-        tokenId: WORK_TOKEN_ID,
-      },
+      workDefaults: canonicalWorkDefaults(),
     };
   }
 
@@ -17208,15 +17796,7 @@ async function tokenPayload(network, tokenScope = "") {
         indexTxs.length +
         registryEntries.reduce((total, [, txs]) => total + txs.length, 0),
     },
-    workDefaults: {
-      maxSupply: WORK_TOKEN_MAX_SUPPLY,
-      mintAmount: WORK_TOKEN_MINT_AMOUNT,
-      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
-      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
-      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-      ticker: WORK_TOKEN_TICKER,
-      tokenId: WORK_TOKEN_ID,
-    },
+    workDefaults: canonicalWorkDefaults(),
   };
 }
 
@@ -17322,7 +17902,13 @@ function tokenAggregateSummaries(payload) {
     ]),
   );
   const addBalance = (tokenId, address, amount) => {
-    if (!tokenId || !address || !Number.isFinite(amount) || amount === 0) {
+    if (
+      !tokenId ||
+      !address ||
+      amount === null ||
+      (typeof amount === "number" && !Number.isFinite(amount)) ||
+      amount === tokenLedgerZero(tokenId)
+    ) {
       return;
     }
 
@@ -17331,7 +17917,10 @@ function tokenAggregateSummaries(payload) {
       return;
     }
 
-    current.balances.set(address, (current.balances.get(address) ?? 0) + amount);
+    current.balances.set(
+      address,
+      (current.balances.get(address) ?? tokenLedgerZero(tokenId)) + amount,
+    );
   };
 
   for (const mint of Array.isArray(payload.mints) ? payload.mints : []) {
@@ -17339,14 +17928,19 @@ function tokenAggregateSummaries(payload) {
     if (!current) {
       continue;
     }
+    const amount = tokenLedgerAmountFromRecord(mint.tokenId, mint);
+    if (amount === null) {
+      continue;
+    }
+    const displayAmount = tokenLedgerHumanNumber(mint.tokenId, amount);
 
     if (mint.confirmed) {
       current.confirmedMints += 1;
-      current.confirmedSupply += mint.amount;
-      addBalance(mint.tokenId, mint.minterAddress, mint.amount);
+      current.confirmedSupply += displayAmount;
+      addBalance(mint.tokenId, mint.minterAddress, amount);
     } else {
       current.pendingMints += 1;
-      current.pendingSupply += mint.amount;
+      current.pendingSupply += displayAmount;
     }
   }
 
@@ -17360,9 +17954,13 @@ function tokenAggregateSummaries(payload) {
     if (!transfer.confirmed) {
       continue;
     }
+    const amount = tokenLedgerAmountFromRecord(transfer.tokenId, transfer);
+    if (amount === null) {
+      continue;
+    }
 
-    addBalance(transfer.tokenId, transfer.senderAddress, -transfer.amount);
-    addBalance(transfer.tokenId, transfer.recipientAddress, transfer.amount);
+    addBalance(transfer.tokenId, transfer.senderAddress, -amount);
+    addBalance(transfer.tokenId, transfer.recipientAddress, amount);
   }
 
   for (const sale of Array.isArray(payload.sales) ? payload.sales : []) {
@@ -17370,11 +17968,16 @@ function tokenAggregateSummaries(payload) {
     if (!current || !sale.confirmed) {
       continue;
     }
+    const amount = tokenLedgerAmountFromRecord(sale.tokenId, sale);
+    if (amount === null) {
+      continue;
+    }
+    const displayAmount = tokenLedgerHumanNumber(sale.tokenId, amount);
 
-    addBalance(sale.tokenId, sale.sellerAddress, -sale.amount);
-    addBalance(sale.tokenId, sale.buyerAddress, sale.amount);
-    if (current.lastSalePricePerToken === 0 && sale.amount > 0) {
-      current.lastSalePricePerToken = sale.priceSats / sale.amount;
+    addBalance(sale.tokenId, sale.sellerAddress, -amount);
+    addBalance(sale.tokenId, sale.buyerAddress, amount);
+    if (current.lastSalePricePerToken === 0 && displayAmount > 0) {
+      current.lastSalePricePerToken = sale.priceSats / displayAmount;
     }
   }
 
@@ -17389,7 +17992,10 @@ function tokenAggregateSummaries(payload) {
       continue;
     }
 
-    const ask = listing.amount > 0 ? listing.priceSats / listing.amount : 0;
+    const amount = tokenLedgerAmountFromRecord(listing.tokenId, listing);
+    const displayAmount =
+      amount === null ? 0 : tokenLedgerHumanNumber(listing.tokenId, amount);
+    const ask = displayAmount > 0 ? listing.priceSats / displayAmount : 0;
     if (ask > 0) {
       current.lowestAskPricePerToken =
         current.lowestAskPricePerToken > 0
@@ -17475,28 +18081,43 @@ function scopedTokenPayloadFromState(tokenState, scope) {
     transfers,
   });
   const balances = new Map();
-  const addBalance = (address, amount) => {
-    if (!address || !Number.isFinite(amount) || amount === 0) {
+  const addBalance = (tokenId, address, amount) => {
+    if (
+      !address ||
+      amount === null ||
+      (typeof amount === "number" && !Number.isFinite(amount)) ||
+      amount === tokenLedgerZero(tokenId)
+    ) {
       return;
     }
 
-    balances.set(address, (balances.get(address) ?? 0) + amount);
+    balances.set(
+      address,
+      (balances.get(address) ?? tokenLedgerZero(tokenId)) + amount,
+    );
   };
   for (const mint of mints) {
     if (mint.confirmed) {
-      addBalance(mint.minterAddress, mint.amount);
+      const amount = tokenLedgerAmountFromRecord(mint.tokenId, mint);
+      addBalance(mint.tokenId, mint.minterAddress, amount);
     }
   }
   for (const transfer of transfers) {
     if (transfer.confirmed) {
-      addBalance(transfer.senderAddress, -transfer.amount);
-      addBalance(transfer.recipientAddress, transfer.amount);
+      const amount = tokenLedgerAmountFromRecord(transfer.tokenId, transfer);
+      if (amount !== null) {
+        addBalance(transfer.tokenId, transfer.senderAddress, -amount);
+        addBalance(transfer.tokenId, transfer.recipientAddress, amount);
+      }
     }
   }
   for (const sale of sales) {
     if (sale.confirmed) {
-      addBalance(sale.sellerAddress, -sale.amount);
-      addBalance(sale.buyerAddress, sale.amount);
+      const amount = tokenLedgerAmountFromRecord(sale.tokenId, sale);
+      if (amount !== null) {
+        addBalance(sale.tokenId, sale.sellerAddress, -amount);
+        addBalance(sale.tokenId, sale.buyerAddress, amount);
+      }
     }
   }
 
@@ -17504,24 +18125,58 @@ function scopedTokenPayloadFromState(tokenState, scope) {
     const summary = summaries.get(token.tokenId);
     return total + Math.max(
       summary?.confirmedSupply ?? 0,
-      Number.isFinite(token.confirmedSupply) ? Number(token.confirmedSupply) : 0,
+      Number.isFinite(Number(token.confirmedSupply))
+        ? Number(token.confirmedSupply)
+        : 0,
     );
   }, 0);
   const pendingSupply = tokens.reduce((total, token) => {
     const summary = summaries.get(token.tokenId);
     return total + Math.max(
       summary?.pendingSupply ?? 0,
-      Number.isFinite(token.pendingSupply) ? Number(token.pendingSupply) : 0,
+      Number.isFinite(Number(token.pendingSupply))
+        ? Number(token.pendingSupply)
+        : 0,
     );
   }, 0);
+  const confirmedSupplyAtoms = isWorkTokenId(
+    tokens.length === 1 ? tokens[0]?.tokenId : "",
+  )
+    ? mints
+        .filter((mint) => mint.confirmed)
+        .reduce((total, mint) => {
+          const amount = workAtomsBigIntFromRecord(mint);
+          return amount === null ? total : total + amount;
+        }, 0n)
+    : null;
+  const pendingSupplyAtoms = confirmedSupplyAtoms === null
+    ? null
+    : mints
+        .filter((mint) => !mint.confirmed)
+        .reduce((total, mint) => {
+          const amount = workAtomsBigIntFromRecord(mint);
+          return amount === null ? total : total + amount;
+        }, 0n);
+  const scopedTokenId = tokens.length === 1 ? tokens[0].tokenId : "";
   const holders = [...balances.entries()]
     .filter(([, balance]) => balance > 0)
-    .map(([address, balance]) => ({ address, balance }))
+    .map(([address, balance]) => ({
+      address,
+      ledgerBalance: balance,
+      ...(isWorkTokenId(scopedTokenId)
+        ? workBalanceFieldsFromAtoms(balance)
+        : { balance }),
+    }))
     .sort(
       (left, right) =>
-        right.balance - left.balance ||
+        (right.ledgerBalance > left.ledgerBalance
+          ? 1
+          : right.ledgerBalance < left.ledgerBalance
+            ? -1
+            : 0) ||
         left.address.localeCompare(right.address),
-    );
+    )
+    .map(({ ledgerBalance, ...holder }) => holder);
 
   const creationSats = tokens.reduce(
     (total, token) => total + (Number(token.creationFeeSats) || 0),
@@ -17533,6 +18188,14 @@ function scopedTokenPayloadFromState(tokenState, scope) {
     closedListings,
     creationSats,
     confirmedSupply,
+    ...(confirmedSupplyAtoms === null
+      ? {}
+      : {
+          confirmedSupplyAtoms: confirmedSupplyAtoms.toString(),
+          decimals: WORK_DECIMALS,
+          pendingSupplyAtoms: pendingSupplyAtoms.toString(),
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }),
     holders,
     invalidEvents,
     listings,
@@ -17646,15 +18309,7 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) 
       registries: 0,
       transactions: 0,
     },
-    workDefaults: {
-      maxSupply: WORK_TOKEN_MAX_SUPPLY,
-      mintAmount: WORK_TOKEN_MINT_AMOUNT,
-      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
-      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
-      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-      ticker: WORK_TOKEN_TICKER,
-      tokenId: WORK_TOKEN_ID,
-    },
+    workDefaults: canonicalWorkDefaults(),
   }, network);
 }
 
@@ -17805,10 +18460,10 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
     scope && rawTokens.length === 1 && tokenMatchesScope(rawTokens[0], scope)
       ? rawTokens[0].tokenId
       : "";
-  const scopedConfirmedSupply = Number.isFinite(payload.confirmedSupply)
+  const scopedConfirmedSupply = Number.isFinite(Number(payload.confirmedSupply))
     ? Math.max(0, Number(payload.confirmedSupply))
     : undefined;
-  const scopedPendingSupply = Number.isFinite(payload.pendingSupply)
+  const scopedPendingSupply = Number.isFinite(Number(payload.pendingSupply))
     ? Math.max(0, Number(payload.pendingSupply))
     : undefined;
   const tokens = rawTokens.map((token) => {
@@ -18474,7 +19129,10 @@ function confirmedWorkSaleFromClosedListingTransaction(tx, listing, network) {
 
     remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
     return {
-      amount: listing.amount,
+      ...tokenLedgerAmountFields(
+        listing.tokenId,
+        tokenLedgerAmountFromRecord(listing.tokenId, listing),
+      ),
       buyerAddress: parsed.buyerAddress,
       confirmed: true,
       createdAt,
@@ -18546,29 +19204,48 @@ function workTokenStateWithRecoveredSales(state, recoveredSales) {
   );
   const holders = new Map(
     (Array.isArray(state.holders) ? state.holders : [])
-      .filter((holder) => holder?.address && Number(holder.balance) > 0)
-      .map((holder) => [holder.address, Number(holder.balance)]),
+      .map((holder) => [
+        holder?.address,
+        workAtomsBigIntFromRecord({
+          amount: holder?.balance,
+          amountAtoms: holder?.balanceAtoms,
+        }),
+      ])
+      .filter(([address, balance]) => address && balance !== null && balance > 0n),
   );
 
   for (const sale of newSales) {
+    const saleAmount = tokenLedgerAmountFromRecord(WORK_TOKEN_ID, sale);
+    if (saleAmount === null) {
+      continue;
+    }
     holders.set(
       sale.sellerAddress,
-      (holders.get(sale.sellerAddress) ?? 0) - sale.amount,
+      (holders.get(sale.sellerAddress) ?? 0n) - saleAmount,
     );
     holders.set(
       sale.buyerAddress,
-      (holders.get(sale.buyerAddress) ?? 0) + sale.amount,
+      (holders.get(sale.buyerAddress) ?? 0n) + saleAmount,
     );
   }
 
   const nextHolders = [...holders.entries()]
     .filter(([, balance]) => balance > 0)
-    .map(([address, balance]) => ({ address, balance }))
+    .map(([address, balance]) => ({
+      address,
+      ledgerBalance: balance,
+      ...workBalanceFieldsFromAtoms(balance),
+    }))
     .sort(
       (left, right) =>
-        right.balance - left.balance ||
+        (right.ledgerBalance > left.ledgerBalance
+          ? 1
+          : right.ledgerBalance < left.ledgerBalance
+            ? -1
+            : 0) ||
         left.address.localeCompare(right.address),
-    );
+    )
+    .map(({ ledgerBalance, ...holder }) => holder);
 
   const nextSales = [...(Array.isArray(state.sales) ? state.sales : []), ...newSales]
     .sort(
@@ -19290,8 +19967,12 @@ function workTokenStateWithMintSupplyCounters(state) {
   return {
     ...state,
     confirmedSupply: totals.confirmedSupply,
+    confirmedSupplyAtoms: workSupplyAtomsText(totals.confirmedSupply),
+    decimals: WORK_DECIMALS,
     mints: sortWorkMintsForDisplay(cappedMints),
     pendingSupply: totals.pendingSupply,
+    pendingSupplyAtoms: workSupplyAtomsText(totals.pendingSupply),
+    unitScale: WORK_UNIT_SCALE_TEXT,
     stats: {
       ...stats,
       confirmedMints: totals.confirmedMints,
@@ -19368,8 +20049,14 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
 
   const holderBalances = new Map(
     (Array.isArray(state?.holders) ? state.holders : [])
-      .filter((holder) => holder?.address && Number.isFinite(Number(holder.balance)))
-      .map((holder) => [holder.address, Number(holder.balance)]),
+      .map((holder) => [
+        holder?.address,
+        workAtomsBigIntFromRecord({
+          amount: holder?.balance,
+          amountAtoms: holder?.balanceAtoms,
+        }),
+      ])
+      .filter(([address, balance]) => address && balance !== null),
   );
   const listings = new Map();
   for (const listing of stateListings) {
@@ -19396,20 +20083,23 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     Number(state?.pendingSupply ?? 0) !== pendingSupply;
 
   const reservedBalanceFor = (ownerAddress) => {
-    let reserved = 0;
+    let reserved = 0n;
     for (const listing of listings.values()) {
       if (
         listing.tokenId === WORK_TOKEN_ID &&
         listing.sellerAddress === ownerAddress &&
         !tokenListingIsExpired(listing)
       ) {
-        reserved += Number(listing.amount || 0);
+        const listedAmount = tokenLedgerAmountFromRecord(WORK_TOKEN_ID, listing);
+        if (listedAmount !== null) {
+          reserved += listedAmount;
+        }
       }
     }
     return reserved;
   };
   const spendableBalanceFor = (ownerAddress) =>
-    (holderBalances.get(ownerAddress) ?? 0) - reservedBalanceFor(ownerAddress);
+    (holderBalances.get(ownerAddress) ?? 0n) - reservedBalanceFor(ownerAddress);
   const closeListing = (listing, event) => {
     if (
       closedListings.some(
@@ -19477,12 +20167,17 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         parsed.tokenId ?? parsed.saleAuthorization?.tokenId ?? parsedTxTokenId;
 
       if (parsed.kind === "mint") {
+        const mintAmountAtoms = tokenLedgerAmountFromRecord(
+          WORK_TOKEN_ID,
+          parsed,
+        );
         const projectedSupply = confirmed
           ? confirmedSupply + parsed.amount
           : confirmedSupply + pendingSupply + parsed.amount;
         if (
           parsed.tokenId !== WORK_TOKEN_ID ||
           parsed.amount !== WORK_TOKEN_MINT_AMOUNT ||
+          mintAmountAtoms !== WORK_TOKEN_MINT_AMOUNT_ATOMS ||
           !hasActorAddress ||
           remainingRegistrySats < WORK_TOKEN_MINT_PRICE_SATS ||
           projectedSupply > WORK_TOKEN_MAX_SUPPLY
@@ -19495,13 +20190,13 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
           confirmedSupply += parsed.amount;
           holderBalances.set(
             actorAddress,
-            (holderBalances.get(actorAddress) ?? 0) + parsed.amount,
+            (holderBalances.get(actorAddress) ?? 0n) + mintAmountAtoms,
           );
         } else {
           pendingSupply += parsed.amount;
         }
         mints.push({
-          amount: parsed.amount,
+          ...tokenLedgerAmountFields(WORK_TOKEN_ID, mintAmountAtoms),
           confirmed,
           createdAt,
           dataBytes: proofProtocolDataBytesForVout(vout),
@@ -19519,20 +20214,25 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
       }
 
       if (parsed.kind === "send") {
-        const confirmedBalance = holderBalances.get(actorAddress) ?? 0;
+        const parsedAmount = tokenLedgerAmountFromRecord(
+          WORK_TOKEN_ID,
+          parsed,
+        );
+        const confirmedBalance = holderBalances.get(actorAddress) ?? 0n;
         const spendableBalance = spendableBalanceFor(actorAddress);
         if (
           parsed.tokenId !== WORK_TOKEN_ID ||
+          parsedAmount === null ||
           !hasActorAddress ||
           remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS
         ) {
           continue;
         }
-        if (confirmed && spendableBalance < parsed.amount) {
+        if (confirmed && spendableBalance < parsedAmount) {
           const reservedBalance = reservedBalanceFor(actorAddress);
           rejectedTxMessage = insufficientTokenBalanceInvalidEvent({
             actorAddress,
-            amount: parsed.amount,
+            amount: parsedAmount,
             confirmedBalance,
             recipientAddress: parsed.recipientAddress,
             reservedBalance,
@@ -19546,15 +20246,16 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         if (confirmed) {
           holderBalances.set(
             actorAddress,
-            (holderBalances.get(actorAddress) ?? 0) - parsed.amount,
+            (holderBalances.get(actorAddress) ?? 0n) - parsedAmount,
           );
           holderBalances.set(
             parsed.recipientAddress,
-            (holderBalances.get(parsed.recipientAddress) ?? 0) + parsed.amount,
+            (holderBalances.get(parsed.recipientAddress) ?? 0n) + parsedAmount,
           );
         }
         transfers.push({
-          amount: parsed.amount,
+          ...tokenLedgerAmountFields(WORK_TOKEN_ID, parsedAmount),
+          amountVersion: parsed.amountVersion ?? "legacy-whole",
           confirmed,
           createdAt,
           dataBytes: proofProtocolDataBytesForVout(vout),
@@ -19574,14 +20275,16 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
 
       if (parsed.kind === "list") {
         const authorization = parsed.saleAuthorization;
+        const listedAmount = tokenSaleAuthorizationLedgerAmount(authorization);
         if (
           authorization.tokenId !== WORK_TOKEN_ID ||
+          listedAmount === null ||
           authorization.registryAddress !== WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS ||
           authorization.ticker !== WORK_TOKEN_TICKER ||
           !hasActorAddress ||
           authorization.sellerAddress !== actorAddress ||
           remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
-          spendableBalanceFor(actorAddress) < authorization.amount ||
+          spendableBalanceFor(actorAddress) < listedAmount ||
           !tokenListingAnchorIsPresent(vout, authorization) ||
           listings.has(txid)
         ) {
@@ -19590,7 +20293,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
 
         remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
         listings.set(txid, {
-          amount: authorization.amount,
+          ...tokenLedgerAmountFields(WORK_TOKEN_ID, listedAmount),
           confirmed,
           createdAt,
           dataBytes: proofProtocolDataBytesForVout(vout),
@@ -19661,6 +20364,9 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
 
       if (parsed.kind === "buy") {
         const listing = listings.get(parsed.listingId);
+        const listingAmount = listing
+          ? tokenLedgerAmountFromRecord(WORK_TOKEN_ID, listing)
+          : null;
         const listingHasValidSaleTicketSpend = listing
           ? tokenSaleAuthorizationUsesSaleTicketAnchor(
               listing.saleAuthorization,
@@ -19668,6 +20374,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
           : false;
         if (
           !listing ||
+          listingAmount === null ||
           !txInputAddresses.includes(parsed.buyerAddress) ||
           remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
           !listingHasValidSaleTicketSpend ||
@@ -19678,7 +20385,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
           paymentAmountFromSnapshots(paymentOutputs, listing.sellerAddress) <
             tokenSellerPaymentRequiredSats(listing) ||
           (confirmed &&
-            (holderBalances.get(listing.sellerAddress) ?? 0) < listing.amount)
+            (holderBalances.get(listing.sellerAddress) ?? 0n) < listingAmount)
         ) {
           continue;
         }
@@ -19689,15 +20396,15 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         if (confirmed) {
           holderBalances.set(
             listing.sellerAddress,
-            (holderBalances.get(listing.sellerAddress) ?? 0) - listing.amount,
+            (holderBalances.get(listing.sellerAddress) ?? 0n) - listingAmount,
           );
           holderBalances.set(
             parsed.buyerAddress,
-            (holderBalances.get(parsed.buyerAddress) ?? 0) + listing.amount,
+            (holderBalances.get(parsed.buyerAddress) ?? 0n) + listingAmount,
           );
         }
         sales.push({
-          amount: listing.amount,
+          ...tokenLedgerAmountFields(WORK_TOKEN_ID, listingAmount),
           buyerAddress: parsed.buyerAddress,
           confirmed,
           createdAt,
@@ -19766,12 +20473,21 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
 
   const holders = [...holderBalances.entries()]
     .filter(([, balance]) => balance > 0)
-    .map(([address, balance]) => ({ address, balance }))
+    .map(([address, balance]) => ({
+      address,
+      ledgerBalance: balance,
+      ...workBalanceFieldsFromAtoms(balance),
+    }))
     .sort(
       (left, right) =>
-        right.balance - left.balance ||
+        (right.ledgerBalance > left.ledgerBalance
+          ? 1
+          : right.ledgerBalance < left.ledgerBalance
+            ? -1
+            : 0) ||
         left.address.localeCompare(right.address),
-    );
+    )
+    .map(({ ledgerBalance, ...holder }) => holder);
   const activeListings = [...listings.values()].sort(
     (left, right) =>
       Number(right.confirmed) - Number(left.confirmed) ||
@@ -19797,6 +20513,10 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     ...state,
     closedListings: sortClosedTokenListings(closedListings),
     confirmedSupply: mintSupplyTotals.confirmedSupply,
+    confirmedSupplyAtoms: workSupplyAtomsText(
+      mintSupplyTotals.confirmedSupply,
+    ),
+    decimals: WORK_DECIMALS,
     holders,
     indexedAt: new Date().toISOString(),
     invalidEvents: invalidEvents.sort(
@@ -19807,6 +20527,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     listings: activeListings,
     mints: sortedMints,
     pendingSupply: mintSupplyTotals.pendingSupply,
+    pendingSupplyAtoms: workSupplyAtomsText(mintSupplyTotals.pendingSupply),
     sales: sortedSales,
     stats: {
       ...(state.stats ?? {}),
@@ -19826,6 +20547,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
       ).length,
     },
     transfers: sortedTransfers,
+    unitScale: WORK_UNIT_SCALE_TEXT,
   };
 }
 
@@ -20005,8 +20727,12 @@ function workTokenStateWithRecoveredListingsFromTransactions(state, txs, network
       }
 
       remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+      const listedAmount = tokenSaleAuthorizationLedgerAmount(authorization);
+      if (listedAmount === null) {
+        continue;
+      }
       activeListings.set(txid, {
-        amount: authorization.amount,
+        ...tokenLedgerAmountFields(WORK_TOKEN_ID, listedAmount),
         confirmed: true,
         createdAt,
         dataBytes: proofProtocolDataBytesForVout(vout),
@@ -20576,13 +21302,23 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
 
   const holders = new Map(
     (Array.isArray(state.holders) ? state.holders : [])
-      .filter((holder) => holder?.address && Number(holder.balance) > 0)
-      .map((holder) => [holder.address, Number(holder.balance)]),
+      .map((holder) => [
+        holder?.address,
+        workAtomsBigIntFromRecord({
+          amount: holder?.balance,
+          amountAtoms: holder?.balanceAtoms,
+        }),
+      ])
+      .filter(([address, balance]) => address && balance !== null && balance > 0n),
   );
   for (const mint of newMints) {
+    const mintAmount = tokenLedgerAmountFromRecord(WORK_TOKEN_ID, mint);
+    if (mintAmount === null) {
+      continue;
+    }
     holders.set(
       mint.minterAddress,
-      (holders.get(mint.minterAddress) ?? 0) + mint.amount,
+      (holders.get(mint.minterAddress) ?? 0n) + mintAmount,
     );
   }
 
@@ -20593,22 +21329,37 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
   const nextState = {
     ...state,
     confirmedSupply: mintSupplyTotals.confirmedSupply,
+    confirmedSupplyAtoms: workSupplyAtomsText(
+      mintSupplyTotals.confirmedSupply,
+    ),
+    decimals: WORK_DECIMALS,
     holders: [...holders.entries()]
-      .map(([address, balance]) => ({ address, balance }))
+      .map(([address, balance]) => ({
+        address,
+        ledgerBalance: balance,
+        ...workBalanceFieldsFromAtoms(balance),
+      }))
       .sort(
         (left, right) =>
-          right.balance - left.balance ||
+          (right.ledgerBalance > left.ledgerBalance
+            ? 1
+            : right.ledgerBalance < left.ledgerBalance
+              ? -1
+              : 0) ||
           left.address.localeCompare(right.address),
-      ),
+      )
+      .map(({ ledgerBalance, ...holder }) => holder),
     indexedAt: new Date().toISOString(),
     mints: mergedMints,
     pendingSupply: mintSupplyTotals.pendingSupply,
+    pendingSupplyAtoms: workSupplyAtomsText(mintSupplyTotals.pendingSupply),
     stats: {
       ...(state.stats ?? {}),
       confirmedMints: mintSupplyTotals.confirmedMints,
       holders: holders.size,
       pendingMints: mintSupplyTotals.pendingMints,
     },
+    unitScale: WORK_UNIT_SCALE_TEXT,
   };
   cacheLiveWorkTokenState(network, nextState);
   syncWorkTokenLiveSeenTxids(network, nextState);
@@ -21821,15 +22572,7 @@ async function tokenSummaryPayload(
         registries: 0,
         transactions: 0,
       },
-      workDefaults: {
-        maxSupply: WORK_TOKEN_MAX_SUPPLY,
-        mintAmount: WORK_TOKEN_MINT_AMOUNT,
-        mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
-        priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
-        registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-        ticker: WORK_TOKEN_TICKER,
-        tokenId: WORK_TOKEN_ID,
-      },
+      workDefaults: canonicalWorkDefaults(),
     };
   }
 
@@ -22364,10 +23107,14 @@ function workActiveListingsFromTransactions(txs, network, recoveryAddresses = []
       }
 
       remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+      const listedAmount = tokenSaleAuthorizationLedgerAmount(authorization);
+      if (listedAmount === null) {
+        continue;
+      }
       listingsById.set(
         txid,
         mergeTokenListingRecord(listingsById.get(txid), {
-          amount: authorization.amount,
+          ...tokenLedgerAmountFields(WORK_TOKEN_ID, listedAmount),
           confirmed: true,
           createdAt,
           dataBytes: proofProtocolDataBytesForVout(vout),
@@ -25898,6 +26645,9 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     actualValue: {
       attachedWorkActions: attachedWork.attachedWorkActions,
       attachedWorkAmount: attachedWork.attachedWorkAmount,
+      ...(issuance?.attachedWorkAmountAtoms !== undefined
+        ? { attachedWorkAmountAtoms: issuance.attachedWorkAmountAtoms }
+        : {}),
       attachedWorkIssuanceUnits:
         issuance?.attachedWorkIssuanceUnits ?? 0,
       attachedWorkLiveFloorAtSendSats:
@@ -26851,7 +27601,7 @@ function creditAmountFromActivityItem(item, ticker = "") {
     return 0;
   }
   const pattern = new RegExp(
-    `([0-9][0-9,]*)\\s+${normalizedTicker.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}`,
+    `([0-9][0-9,]*(?:\\.[0-9]{1,8})?)\\s+${normalizedTicker.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}`,
     "iu",
   );
   const values = [
@@ -26930,12 +27680,24 @@ async function completeTokenMarketOverlayItems(network, scope, kind) {
 
 function tokenTransferFromIndexedActivityItem(item, token, network) {
   const amount = creditAmountFromActivityItem(item, token.ticker);
-  if (amount <= 0 || item?.confirmed === false) {
+  const amountAtoms = isWorkTokenId(token?.tokenId)
+    ? workAtomsBigIntFromRecord({
+        amount,
+        amountAtoms: item?.amountAtoms ?? item?.tokenAmountAtoms,
+      })
+    : null;
+  if (
+    (isWorkTokenId(token?.tokenId) ? amountAtoms === null : amount <= 0) ||
+    item?.confirmed === false
+  ) {
     return null;
   }
   return {
     ...canonicalEventIdentityDetails(item),
-    amount,
+    ...(isWorkTokenId(token?.tokenId)
+      ? tokenLedgerAmountFields(WORK_TOKEN_ID, amountAtoms)
+      : { amount }),
+    ...(item?.amountVersion ? { amountVersion: item.amountVersion } : {}),
     arbSats: numericValue(item.arbSats),
     blockHash: String(item.blockHash ?? "").trim().toLowerCase(),
     blockHeight: numericValue(item.blockHeight),
@@ -27146,10 +27908,15 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
         .trim()
         .toLowerCase();
       const amount = creditAmountFromActivityItem(item, token.ticker);
+      const ledgerAmount = tokenLedgerAmountFromRecord(token.tokenId, {
+        amount,
+        amountAtoms: item?.amountAtoms ?? item?.tokenAmountAtoms,
+        saleAuthorization: item?.saleAuthorization,
+      });
       const priceSats = creditSalePriceFromActivityItem(item);
       if (
         !listingId ||
-        amount <= 0 ||
+        ledgerAmount === null ||
         priceSats <= 0 ||
         item.confirmed === false
       ) {
@@ -27168,7 +27935,7 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
         "";
       const current = listingTermsById.get(listingId);
       const listing = {
-        amount,
+        ...tokenLedgerAmountFields(token.tokenId, ledgerAmount),
         blockHeight: numericValue(item.blockHeight),
         confirmed: true,
         createdAt: item.createdAt,
@@ -27261,7 +28028,10 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
     }
     const paidSats = numericValue(item.paidSats ?? item.amountSats);
     indexedSales.push({
-      amount: listing.amount,
+      ...tokenLedgerAmountFields(
+        listing.tokenId,
+        tokenLedgerAmountFromRecord(listing.tokenId, listing),
+      ),
       blockHeight: numericValue(item.blockHeight),
       buyerAddress: indexedActivityValue(
         item,
@@ -27290,7 +28060,10 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
       txid,
     });
     indexedClosedListings.push({
-      amount: listing.amount,
+      ...tokenLedgerAmountFields(
+        listing.tokenId,
+        tokenLedgerAmountFromRecord(listing.tokenId, listing),
+      ),
       closedAt: item.createdAt,
       closedConfirmed: true,
       closedTxid: txid,
@@ -27348,6 +28121,15 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
   const confirmedSupply = mints
     .filter((mint) => mint.confirmed)
     .reduce((total, mint) => total + numericValue(mint.amount), 0);
+  const confirmedSupplyAtoms =
+    scopedTokens.length === 1 && isWorkTokenId(scopedTokens[0]?.tokenId)
+      ? mints
+          .filter((mint) => mint.confirmed)
+          .reduce((total, mint) => {
+            const amount = workAtomsBigIntFromRecord(mint);
+            return amount === null ? total : total + amount;
+          }, 0n)
+      : null;
   const creationSats = scopedTokens.reduce(
     (total, token) => total + numericValue(token.creationFeeSats),
     0,
@@ -27356,6 +28138,14 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
     ...emptyTokenPayloadSnapshot(network),
     closedListings: scopedClosedListings,
     confirmedSupply,
+    ...(confirmedSupplyAtoms === null
+      ? {}
+      : {
+          confirmedSupplyAtoms: confirmedSupplyAtoms.toString(),
+          decimals: WORK_DECIMALS,
+          pendingSupplyAtoms: "0",
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        }),
     creationSats,
     holders: [],
     indexedAt: activityState.indexedAt ?? new Date().toISOString(),
@@ -27465,43 +28255,108 @@ function tokenTablePayloadHasConservedBalances(payload) {
     }
     tokenIds.add(tokenId);
   }
+  const ledgerAmount = (tokenId, record, field) => {
+    if (isWorkTokenId(tokenId)) {
+      const amountAtomsField = `${field}Atoms`;
+      try {
+        return BigInt(
+          workAmountAtomsFromRecord(
+            {
+              amount: record?.[field],
+              amountAtoms: record?.[amountAtomsField],
+            },
+            { allowZero: true },
+          ),
+        );
+      } catch {
+        return null;
+      }
+    }
+    const amount = Number(record?.[field]);
+    return Number.isSafeInteger(amount) && amount >= 0 ? amount : null;
+  };
+  const ledgerAmountIsDeclared = (record, field) =>
+    [record?.[field], record?.[`${field}Atoms`]].some(
+      (value) => value !== undefined && value !== null && value !== "",
+    );
+  const ledgerZero = (tokenId) => (isWorkTokenId(tokenId) ? 0n : 0);
   const mintedByToken = new Map();
   for (const mint of mints) {
     if (mint?.confirmed !== true) {
       continue;
     }
     const tokenId = String(mint?.tokenId ?? "").trim().toLowerCase();
-    const amount = Number(mint?.amount);
-    if (!tokenId || !Number.isSafeInteger(amount) || amount <= 0) {
+    const amount = ledgerAmount(tokenId, mint, "amount");
+    if (
+      !tokenId ||
+      amount === null ||
+      amount <= ledgerZero(tokenId)
+    ) {
       return false;
     }
     if (!tokenIds.has(tokenId)) {
       return false;
     }
-    mintedByToken.set(tokenId, (mintedByToken.get(tokenId) ?? 0) + amount);
+    mintedByToken.set(
+      tokenId,
+      (mintedByToken.get(tokenId) ?? ledgerZero(tokenId)) + amount,
+    );
   }
   const heldByToken = new Map();
   for (const holder of holders) {
     const tokenId = String(holder?.tokenId ?? "").trim().toLowerCase();
-    const balance = Number(holder?.balance);
-    if (!tokenId || !Number.isSafeInteger(balance) || balance <= 0) {
+    const balance = ledgerAmount(tokenId, holder, "balance");
+    if (
+      !tokenId ||
+      balance === null ||
+      balance <= ledgerZero(tokenId)
+    ) {
       return false;
     }
     if (!tokenIds.has(tokenId)) {
       return false;
     }
-    heldByToken.set(tokenId, (heldByToken.get(tokenId) ?? 0) + balance);
+    heldByToken.set(
+      tokenId,
+      (heldByToken.get(tokenId) ?? ledgerZero(tokenId)) + balance,
+    );
   }
   const conserved = tokens.every((token) => {
     const tokenId = String(token?.tokenId ?? "").trim().toLowerCase();
-    const minted = mintedByToken.get(tokenId) ?? 0;
-    const held = heldByToken.get(tokenId) ?? 0;
-    const declaredSupply = Number(token?.confirmedSupply);
+    const minted = mintedByToken.get(tokenId) ?? ledgerZero(tokenId);
+    const held = heldByToken.get(tokenId) ?? ledgerZero(tokenId);
+    const declaredSupply = ledgerAmount(tokenId, token, "confirmedSupply");
     return (
       minted === held &&
-      (!Number.isFinite(declaredSupply) || declaredSupply === minted)
+      (!ledgerAmountIsDeclared(token, "confirmedSupply")
+        ? true
+        : declaredSupply !== null && declaredSupply === minted)
     );
   });
+  if (!conserved) {
+    return false;
+  }
+
+  const workTokens = tokens.filter((token) => isWorkTokenId(token?.tokenId));
+  if (workTokens.length > 0) {
+    if (tokens.length !== 1) {
+      // Per-token conservation above is exact. A mixed token table has no
+      // coherent cross-token atomic unit in which to validate one grand total.
+      return true;
+    }
+    const workTokenId = String(workTokens[0].tokenId).trim().toLowerCase();
+    const payloadSupply = ledgerAmount(
+      workTokenId,
+      payload,
+      "confirmedSupply",
+    );
+    return (
+      !ledgerAmountIsDeclared(payload, "confirmedSupply") ||
+      (payloadSupply !== null &&
+        payloadSupply === (mintedByToken.get(workTokenId) ?? 0n))
+    );
+  }
+
   const mintedSupply = [...mintedByToken.values()].reduce(
     (total, amount) => total + amount,
     0,
@@ -27512,7 +28367,6 @@ function tokenTablePayloadHasConservedBalances(payload) {
   );
   const payloadSupply = Number(payload?.confirmedSupply);
   return (
-    conserved &&
     mintedSupply === heldSupply &&
     (!Number.isFinite(payloadSupply) || payloadSupply === mintedSupply)
   );
@@ -30977,15 +31831,7 @@ async function standaloneBondSummaryPayload(network, fresh = false, config) {
       registries: registryAddress ? 1 : 0,
       transactions: activity.length,
     },
-    workDefaults: {
-      maxSupply: WORK_TOKEN_MAX_SUPPLY,
-      mintAmount: WORK_TOKEN_MINT_AMOUNT,
-      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
-      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
-      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-      ticker: WORK_TOKEN_TICKER,
-      tokenId: WORK_TOKEN_ID,
-    },
+    workDefaults: canonicalWorkDefaults(),
   };
   const btcUsdQuote =
     network === "livenet"
@@ -32880,11 +33726,13 @@ function canonicalInceptionWorkMovementOracleByIdentity(
   const transfersByTxid = new Map();
   for (const transfer of Array.isArray(tokenTransfers) ? tokenTransfers : []) {
     const txid = String(transfer?.txid ?? "").trim().toLowerCase();
+    const amountAtoms = workAtomsBigIntFromRecord(transfer);
     if (
       !transfer?.confirmed ||
       String(transfer?.tokenId ?? "").trim().toLowerCase() !== WORK_TOKEN_ID ||
       !/^[0-9a-f]{64}$/u.test(txid) ||
-      numericValue(transfer?.amount) <= 0
+      amountAtoms === null ||
+      amountAtoms <= 0n
     ) {
       continue;
     }
@@ -32909,8 +33757,8 @@ function canonicalInceptionWorkMovementOracleByIdentity(
       !issuance.complete ||
       issuance.canonicalMints !== 1 ||
       issuance.confirmedMints !== 1 ||
-      !Number.isSafeInteger(issuance.attachedWorkAmount) ||
-      issuance.attachedWorkAmount <= 0
+      !canonicalWorkAtomsText(issuance.attachedWorkAmountAtoms) ||
+      BigInt(issuance.attachedWorkAmountAtoms) <= 0n
     ) {
       continue;
     }
@@ -32929,24 +33777,38 @@ function canonicalInceptionWorkMovementOracleByIdentity(
         String(transfer?.blockHash ?? "").trim().toLowerCase() ===
           checkpointHash,
     );
-    const attachedWorkAmount = candidates.reduce(
-      (total, transfer) => total + numericValue(transfer?.amount),
-      0,
+    const attachedWorkAmountAtoms = candidates.reduce(
+      (total, transfer) => {
+        const atoms = workAtomsBigIntFromRecord(transfer);
+        return atoms === null ? total : total + atoms;
+      },
+      0n,
     );
     const workNetworkValueSats = Number(
       issuance.issuanceValueSnapshotWorkNetworkValueSats,
     );
     const workFloorSats = workNetworkValueSats / WORK_TOKEN_MAX_SUPPLY;
+    const expectedAttachedValueQ8 = workAtomsValueAtNetworkQ8(
+      attachedWorkAmountAtoms,
+      workNetworkValueSats,
+    );
+    const expectedAttachedValueSats =
+      expectedAttachedValueQ8 === null
+        ? 0
+        : q8ToNumber(expectedAttachedValueQ8);
     if (
       candidates.length === 0 ||
-      attachedWorkAmount !== issuance.attachedWorkAmount ||
+      attachedWorkAmountAtoms.toString() !==
+        issuance.attachedWorkAmountAtoms ||
       !Number.isFinite(workNetworkValueSats) ||
       workNetworkValueSats <= 0 ||
       !Number.isFinite(workFloorSats) ||
       workFloorSats <= 0 ||
       !numbersAgree(
         issuance.attachedWorkLiveValueAtSendSats,
-        attachedWorkAmount * workFloorSats,
+        mint.attachedWorkLiveValueAtSendQ8
+          ? expectedAttachedValueSats
+          : Number(formatWorkAtoms(attachedWorkAmountAtoms)) * workFloorSats,
         0.01,
       )
     ) {
@@ -33077,7 +33939,13 @@ function creditNetworkValueMetrics({
     const token = tokensById.get(String(item?.tokenId ?? "").toLowerCase());
     const txid = String(item?.txid ?? "").toLowerCase();
     const createdMs = creditValueEventMs(item);
-    const amount = numericValue(item?.amount);
+    const amountAtoms = isWorkTokenId(item?.tokenId)
+      ? workAtomsBigIntFromRecord(item)
+      : null;
+    const amount =
+      amountAtoms === null
+        ? numericValue(item?.amount)
+        : Number(formatWorkAtoms(amountAtoms));
     if (
       !token ||
       !item?.confirmed ||
@@ -33090,6 +33958,7 @@ function creditNetworkValueMetrics({
 
     movementEvents.push({
       amount,
+      ...(amountAtoms === null ? {} : { amountAtoms: amountAtoms.toString() }),
       createdMs,
       kind,
       movementIdentity: creditMovementIdentity(item, kind),
@@ -33190,8 +34059,18 @@ function creditNetworkValueMetrics({
     const creditFloorAtConfirmSats =
       inceptionWorkMovementOracle?.workFloorSats ??
       (maxSupply > 0 ? networkValueBeforeEvent / maxSupply : 0);
+    const atomicCreditValueAtConfirmQ8 =
+      event.amountAtoms && isWorkTokenId(event.token?.tokenId)
+        ? workAtomsValueAtNetworkQ8(
+            event.amountAtoms,
+            inceptionWorkMovementOracle?.workNetworkValueSats ??
+              networkValueBeforeEvent,
+          )
+        : null;
     const creditValueAtConfirmSats =
-      event.amount * creditFloorAtConfirmSats;
+      atomicCreditValueAtConfirmQ8 === null
+        ? event.amount * creditFloorAtConfirmSats
+        : q8ToNumber(atomicCreditValueAtConfirmQ8);
     const activity = activityByTxid.get(event.txid);
     const canonicalTransactionMinerFeeSats = creditReplayTransactionMinerFeeSats(
       event,
@@ -33246,6 +34125,7 @@ function creditNetworkValueMetrics({
     cumulativeFrozenCreditValueSats += frozenNetworkValueSats;
     eventDetails.push({
       amount: event.amount,
+      ...(event.amountAtoms ? { amountAtoms: event.amountAtoms } : {}),
       arbSats:
         event.kind === "sale" ? creditValueAtConfirmSats - salePaymentSats : 0,
       creditFloorAtConfirmSats,
@@ -33301,7 +34181,17 @@ function creditNetworkValueMetrics({
     const creditRevaluationFloorSats = numericValue(
       revaluationFloorByTokenId[event.tokenId],
     );
-    const creditLiveValueSats = event.amount * creditRevaluationFloorSats;
+    const atomicCreditLiveValueQ8 =
+      event.amountAtoms && isWorkTokenId(event.tokenId)
+        ? workAtomsValueAtNetworkQ8(
+            event.amountAtoms,
+            frozenNetworkValueWithCreditSats,
+          )
+        : null;
+    const creditLiveValueSats =
+      atomicCreditLiveValueQ8 === null
+        ? event.amount * creditRevaluationFloorSats
+        : q8ToNumber(atomicCreditLiveValueQ8);
     creditMovementLiveValueSats += creditLiveValueSats;
     event.creditRevaluationFloorSats = creditRevaluationFloorSats;
     event.creditLiveFloorSats = creditRevaluationFloorSats;
@@ -33981,7 +34871,13 @@ function growthActualLiveTotalSatsAtProvider(
     const token = tokensById.get(String(item?.tokenId ?? "").toLowerCase());
     const txid = String(item?.txid ?? "").toLowerCase();
     const createdMs = creditValueEventMs(item);
-    const amount = numericValue(item?.amount);
+    const amountAtoms = isWorkTokenId(item?.tokenId)
+      ? workAtomsBigIntFromRecord(item)
+      : null;
+    const amount =
+      amountAtoms === null
+        ? numericValue(item?.amount)
+        : Number(formatWorkAtoms(amountAtoms));
     if (
       !token ||
       !item?.confirmed ||
@@ -33993,6 +34889,7 @@ function growthActualLiveTotalSatsAtProvider(
     }
     movementEvents.push({
       amount,
+      ...(amountAtoms === null ? {} : { amountAtoms: amountAtoms.toString() }),
       createdMs,
       kind,
       order: 1,
@@ -34076,8 +34973,18 @@ function growthActualLiveTotalSatsAtProvider(
       const creditFloorAtConfirmSats =
         inceptionWorkMovementOracle?.workFloorSats ??
         (maxSupply > 0 ? networkValueBeforeEvent / maxSupply : 0);
+      const atomicCreditValueAtConfirmQ8 =
+        event.amountAtoms && isWorkTokenId(event.token?.tokenId)
+          ? workAtomsValueAtNetworkQ8(
+              event.amountAtoms,
+              inceptionWorkMovementOracle?.workNetworkValueSats ??
+                networkValueBeforeEvent,
+            )
+          : null;
       const creditValueAtConfirmSats =
-        event.amount * creditFloorAtConfirmSats;
+        atomicCreditValueAtConfirmQ8 === null
+          ? event.amount * creditFloorAtConfirmSats
+          : q8ToNumber(atomicCreditValueAtConfirmQ8);
       const activity = activityByTxid.get(event.txid);
       const transactionMinerFeeSats = creditReplayTransactionMinerFeeSats(
         event,
@@ -37422,10 +38329,21 @@ function verifierBalanceSnapshot(state, tokenId) {
   const holders = (Array.isArray(state?.holders) ? state.holders : []).flatMap(
     (holder) => {
       const address = String(holder?.address ?? "").trim();
+      if (!isValidBitcoinAddress(address, "livenet")) {
+        return [];
+      }
+      if (isWorkTokenId(normalizedTokenId)) {
+        const balanceAtoms = workAtomsBigIntFromRecord({
+          amount: holder?.balance ?? holder?.confirmedBalance,
+          amountAtoms:
+            holder?.balanceAtoms ?? holder?.confirmedBalanceAtoms,
+        });
+        return balanceAtoms === null || balanceAtoms < 1n
+          ? []
+          : [{ address, ...workBalanceFieldsFromAtoms(balanceAtoms) }];
+      }
       const balance = Number(holder?.balance ?? holder?.confirmedBalance ?? 0);
-      return isValidBitcoinAddress(address, "livenet") &&
-        Number.isSafeInteger(balance) &&
-        balance > 0
+      return Number.isSafeInteger(balance) && balance > 0
         ? [{ address, balance }]
         : [];
     },
@@ -38047,13 +38965,12 @@ async function tokenVerifierDeterministicInvalidReason(
       const tokenId = String(authorization?.tokenId ?? "")
         .trim()
         .toLowerCase();
-      const amount = Number(authorization?.amount);
+      const amount = tokenSaleAuthorizationLedgerAmount(authorization);
       if (
         exactBalanceState &&
         authorization?.sellerAddress === actorAddress &&
         /^[0-9a-f]{64}$/u.test(tokenId) &&
-        Number.isSafeInteger(amount) &&
-        amount > 0
+        amount !== null
       ) {
         const holder = (Array.isArray(state?.holders) ? state.holders : [])
           .find(
@@ -38061,9 +38978,13 @@ async function tokenVerifierDeterministicInvalidReason(
               candidate?.address === actorAddress &&
               String(candidate?.tokenId ?? "").trim().toLowerCase() === tokenId,
           );
-        const confirmedBalance = Number(
-          holder?.balance ?? holder?.confirmedBalance ?? 0,
-        );
+        const confirmedBalance = isWorkTokenId(tokenId)
+          ? workAtomsBigIntFromRecord({
+              amount: holder?.balance ?? holder?.confirmedBalance,
+              amountAtoms:
+                holder?.balanceAtoms ?? holder?.confirmedBalanceAtoms,
+            }, { allowZero: true }) ?? 0n
+          : Number(holder?.balance ?? holder?.confirmedBalance ?? 0);
         const reservedBalance = (Array.isArray(state?.listings)
           ? state.listings
           : []
@@ -38074,12 +38995,16 @@ async function tokenVerifierDeterministicInvalidReason(
               String(listing?.tokenId ?? "").trim().toLowerCase() === tokenId &&
               !tokenListingIsExpired(listing),
           )
-          .reduce((total, listing) => total + Number(listing?.amount ?? 0), 0);
+          .reduce((total, listing) => {
+            const listedAmount = tokenLedgerAmountFromRecord(tokenId, listing);
+            return listedAmount === null ? total : total + listedAmount;
+          }, tokenLedgerZero(tokenId));
         if (
-          Number.isSafeInteger(confirmedBalance) &&
-          confirmedBalance >= 0 &&
-          Number.isSafeInteger(reservedBalance) &&
-          reservedBalance >= 0
+          (isWorkTokenId(tokenId) ||
+            (Number.isSafeInteger(confirmedBalance) &&
+              Number.isSafeInteger(reservedBalance))) &&
+          confirmedBalance >= tokenLedgerZero(tokenId) &&
+          reservedBalance >= tokenLedgerZero(tokenId)
         ) {
           pendingListBalance = {
             actorAddress,

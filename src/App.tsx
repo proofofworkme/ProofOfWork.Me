@@ -122,6 +122,19 @@ import {
   type RushState,
 } from "./features/rush/rushProtocol";
 import {
+  canonicalWorkDecimal,
+  formatWorkAmount,
+  positiveWorkAtoms,
+  WORK_DECIMALS,
+  workAtomsFromDecimal,
+  workAtomsFromIntegerString,
+  workAtomsFromRecord,
+  workDecimalFromAtoms,
+  workNumberFromAtoms,
+  workSignedAtomsFromIntegerString,
+  WORK_UNIT_SCALE_STRING,
+} from "./workAmount";
+import {
   AppHeader,
   type AppHeaderAccountStat,
 } from "./shared/components/AppHeader";
@@ -306,6 +319,7 @@ type MailRecipient = {
 
 type MailAttachedCredit = {
   amount: number;
+  amountAtoms?: string;
   paidSats?: number;
   recipientAddress: string;
   registryAddress?: string;
@@ -319,7 +333,7 @@ type DraftMessage = {
   recipient: string;
   ccRecipient?: string;
   amountSats: number;
-  workAmount?: number;
+  workAmount?: string | number;
   feeRate: number;
   subject?: string;
   memo: string;
@@ -543,6 +557,7 @@ type PowTokenDefinition = {
   creatorAddress: string;
   creationFeeSats: number;
   dataBytes?: number;
+  decimals?: number;
   holderCount?: number;
   lastSalePricePerToken?: number;
   lowestAskPricePerToken?: number;
@@ -558,10 +573,12 @@ type PowTokenDefinition = {
   tokenId: string;
   transferCount?: number;
   txid: string;
+  unitScale?: string;
 };
 
 type PowTokenMint = {
   amount: number;
+  amountAtoms?: string;
   attributedMinerFeeSats?: number;
   confirmed: boolean;
   creditAmountMoved?: number;
@@ -585,6 +602,7 @@ type PowTokenMint = {
 
 type PowTokenTransfer = {
   amount: number;
+  amountAtoms?: string;
   arbSats?: number;
   attributedMinerFeeSats?: number;
   confirmed: boolean;
@@ -636,6 +654,7 @@ type PowTokenInvalidEvent = {
 
 type PowTokenSaleAuthorizationDraft = {
   amount: number;
+  amountAtoms?: string;
   anchorScriptPubKey: string;
   anchorSigHashType: number;
   anchorType: string;
@@ -661,6 +680,7 @@ type PowTokenSaleAuthorization = PowTokenSaleAuthorizationDraft & {
 
 type PowTokenListing = {
   amount: number;
+  amountAtoms?: string;
   confirmed: boolean;
   createdAt: string;
   dataBytes?: number;
@@ -707,6 +727,7 @@ type PendingTokenListingSeal = {
 
 type PowTokenSale = {
   amount: number;
+  amountAtoms?: string;
   arbSats?: number;
   attributedMinerFeeSats?: number;
   buyerAddress: string;
@@ -756,7 +777,9 @@ type TokenMarketPricePoint = {
 type PowTokenHolder = {
   address: string;
   balance: number;
+  balanceAtoms?: string;
   pendingDelta?: number;
+  pendingDeltaAtoms?: string;
   ticker?: string;
   tokenId?: string;
 };
@@ -819,8 +842,11 @@ type PowTokenSupplyState = Pick<
 
 type PowTokenWalletBalance = {
   confirmedBalance: number;
+  confirmedBalanceAtoms?: string;
   pendingIncoming: number;
+  pendingIncomingAtoms?: string;
   pendingOutgoing: number;
+  pendingOutgoingAtoms?: string;
   token: PowTokenDefinition;
 };
 
@@ -1341,11 +1367,13 @@ const TOKEN_PROTOCOL_PREFIX = "pwt1:";
 const TOKEN_CREATE_ACTION = "create";
 const TOKEN_MINT_ACTION = "mint";
 const TOKEN_SEND_ACTION = "send";
+const TOKEN_SEND_ATOMS_ACTION = "send2";
 const TOKEN_LIST_ACTION = "list5";
 const TOKEN_SEAL_ACTION = "seal5";
 const TOKEN_DELIST_ACTION = "delist5";
 const TOKEN_BUY_ACTION = "buy5";
 const TOKEN_SALE_AUTH_VERSION = "pwt-sale-v1";
+const TOKEN_SALE_AUTH_VERSION_ATOMS = "pwt-sale-v2";
 const TOKEN_CREATION_PRICE_SATS = 546;
 const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
 const TOKEN_LISTING_ANCHOR_TYPE = ID_LISTING_TICKET_ANCHOR_TYPE;
@@ -1371,6 +1399,8 @@ const WORK_TOKEN_TICKER = "WORK";
 const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
 const WORK_TOKEN_MINT_AMOUNT = 1000;
 const WORK_TOKEN_MINT_PRICE_SATS = 1000;
+const WORK_TOKEN_DECIMALS = WORK_DECIMALS;
+const WORK_TOKEN_UNIT_SCALE = WORK_UNIT_SCALE_STRING;
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const CREDIT_MINER_FEE_ACCOUNTING_MODEL =
@@ -1457,6 +1487,7 @@ const WORK_TOKEN_DEFINITION: PowTokenDefinition = {
   creationFeeSats: TOKEN_CREATION_PRICE_SATS,
   creatorAddress: TOKEN_INDEX_ADDRESSES.livenet ?? "",
   dataBytes: 70,
+  decimals: WORK_TOKEN_DECIMALS,
   maxSupply: WORK_TOKEN_MAX_SUPPLY,
   mintAmount: WORK_TOKEN_MINT_AMOUNT,
   mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
@@ -1465,6 +1496,7 @@ const WORK_TOKEN_DEFINITION: PowTokenDefinition = {
   ticker: WORK_TOKEN_TICKER,
   tokenId: WORK_TOKEN_ID,
   txid: WORK_TOKEN_ID,
+  unitScale: WORK_TOKEN_UNIT_SCALE,
 };
 const WORK_ATTACHMENT_ALLOWED_SENDERS = new Set(
   [
@@ -1723,6 +1755,7 @@ type MarketplaceSummaryApiResponse = {
 type InfinityActualValue = {
   attachedWorkActions?: number;
   attachedWorkAmount?: number;
+  attachedWorkAmountAtoms?: string;
   attachedWorkFrozenValueSats?: number;
   attachedWorkIssuanceUnits?: number;
   attachedWorkLiveFloorAtSendSats?: number;
@@ -3619,14 +3652,21 @@ function mailPreview(message: { attachment?: MailAttachment; memo: string }) {
     : "";
 }
 
-function attachedCreditTotal(credits: MailAttachedCredit[] | undefined) {
+function attachedCreditTotalAtoms(credits: MailAttachedCredit[] | undefined) {
   return (credits ?? [])
     .filter(
       (credit) =>
         credit.tokenId === WORK_TOKEN_ID &&
         normalizeTokenTicker(credit.ticker) === WORK_TOKEN_TICKER,
     )
-    .reduce((total, credit) => total + Math.max(0, Math.floor(credit.amount)), 0);
+    .reduce((total, credit) => {
+      const atoms = workRecordAtoms(credit.amount, credit.amountAtoms);
+      return atoms === null ? total : total + atoms;
+    }, 0n);
+}
+
+function attachedCreditTotal(credits: MailAttachedCredit[] | undefined) {
+  return workNumberFromAtoms(attachedCreditTotalAtoms(credits));
 }
 
 function attachedCreditLabel(credits: MailAttachedCredit[] | undefined) {
@@ -3634,10 +3674,10 @@ function attachedCreditLabel(credits: MailAttachedCredit[] | undefined) {
     (credit) =>
       credit.tokenId === WORK_TOKEN_ID &&
       normalizeTokenTicker(credit.ticker) === WORK_TOKEN_TICKER &&
-      Math.floor(credit.amount) > 0,
+      (workRecordAtoms(credit.amount, credit.amountAtoms) ?? 0n) > 0n,
   );
-  const total = attachedCreditTotal(workCredits);
-  if (total <= 0) {
+  const totalAtoms = attachedCreditTotalAtoms(workCredits);
+  if (totalAtoms <= 0n) {
     return "";
   }
 
@@ -3646,7 +3686,7 @@ function attachedCreditLabel(credits: MailAttachedCredit[] | undefined) {
   ).size;
   const recipientText =
     recipientCount > 1 ? ` · ${recipientCount} recipients` : "";
-  return `${total.toLocaleString()} WORK${recipientText}`;
+  return `${formatWorkAmount(totalAtoms)} WORK${recipientText}`;
 }
 
 function attachedCreditDraftAmount(credits: MailAttachedCredit[] | undefined) {
@@ -3654,16 +3694,23 @@ function attachedCreditDraftAmount(credits: MailAttachedCredit[] | undefined) {
     (credit) =>
       credit.tokenId === WORK_TOKEN_ID &&
       normalizeTokenTicker(credit.ticker) === WORK_TOKEN_TICKER &&
-      Math.floor(credit.amount) > 0,
+      (workRecordAtoms(credit.amount, credit.amountAtoms) ?? 0n) > 0n,
   );
   if (workCredits.length === 0) {
-    return 0;
+    return "0";
   }
 
-  const firstAmount = Math.floor(workCredits[0].amount);
-  return workCredits.every((credit) => Math.floor(credit.amount) === firstAmount)
-    ? firstAmount
-    : 0;
+  const firstAmountAtoms = workRecordAtoms(
+    workCredits[0].amount,
+    workCredits[0].amountAtoms,
+  );
+  return firstAmountAtoms !== null &&
+    workCredits.every(
+      (credit) =>
+        workRecordAtoms(credit.amount, credit.amountAtoms) === firstAmountAtoms,
+    )
+    ? workDecimalFromAtoms(firstAmountAtoms)
+    : "0";
 }
 
 function attachmentHref(attachment: MailAttachment) {
@@ -5370,11 +5417,12 @@ function storedAttachedCredits(
     const tokenId = String(credit.tokenId ?? "").trim().toLowerCase();
     const ticker = normalizeTokenTicker(String(credit.ticker ?? ""));
     const recipientAddress = String(credit.recipientAddress ?? "").trim();
-    const amount = Math.floor(Number(credit.amount ?? 0));
+    const amountAtoms = workRecordAtoms(credit.amount, credit.amountAtoms);
     if (
       tokenId !== WORK_TOKEN_ID ||
       ticker !== WORK_TOKEN_TICKER ||
-      amount < 1 ||
+      amountAtoms === null ||
+      amountAtoms < 1n ||
       !isValidBitcoinAddress(recipientAddress, network)
     ) {
       return [];
@@ -5384,7 +5432,8 @@ function storedAttachedCredits(
     const registryAddress = String(credit.registryAddress ?? "").trim();
     return [
       {
-        amount,
+        amount: workNumberFromAtoms(amountAtoms),
+        amountAtoms: amountAtoms.toString(),
         paidSats: paidSats > 0 ? paidSats : undefined,
         recipientAddress,
         registryAddress: isValidBitcoinAddress(registryAddress, network)
@@ -5416,12 +5465,7 @@ function loadDraft(
       typeof draft.feeRate === "number" && Number.isFinite(draft.feeRate)
         ? draft.feeRate
         : DEFAULT_FEE_RATE;
-    const workAmount =
-      typeof draft.workAmount === "number" &&
-      Number.isFinite(draft.workAmount) &&
-      draft.workAmount > 0
-        ? Math.floor(draft.workAmount)
-        : 0;
+    const workAmount = canonicalWorkDecimal(draft.workAmount) || "0";
     const parentTxid =
       typeof draft.parentTxid === "string" &&
       /^[0-9a-fA-F]{64}$/.test(draft.parentTxid)
@@ -5474,7 +5518,7 @@ function isDraftContentful(draft: DraftMessage) {
     draft.attachment ||
     draft.parentTxid ||
     draft.amountSats !== DEFAULT_AMOUNT_SATS ||
-    (draft.workAmount ?? 0) > 0 ||
+    (positiveWorkAtoms(draft.workAmount) ?? 0n) > 0n ||
     draft.feeRate !== DEFAULT_FEE_RATE,
   );
 }
@@ -5839,6 +5883,7 @@ function attachedWorkCreditsFromVout(
       return [
         {
           amount: parsed.amount,
+          amountAtoms: parsed.amountAtoms,
           paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
           recipientAddress: parsed.recipientAddress,
           registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
@@ -6190,6 +6235,89 @@ function isBondTokenDefinition(token: Pick<PowTokenDefinition, "ticker" | "token
   return isPowbTokenDefinition(token) || isIncbTokenDefinition(token);
 }
 
+function isWorkToken(
+  token:
+    | Pick<PowTokenDefinition, "ticker" | "tokenId">
+    | Pick<PowTokenListing, "ticker" | "tokenId">
+    | Pick<PowTokenTransfer, "ticker" | "tokenId">
+    | Pick<PowTokenSale, "ticker" | "tokenId">
+    | { ticker?: string; tokenId?: string },
+) {
+  return (
+    String(token.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID ||
+    normalizeTokenTicker(String(token.ticker ?? "")) === WORK_TOKEN_TICKER
+  );
+}
+
+function workRecordAtoms(amount: unknown, amountAtoms?: unknown) {
+  return workAtomsFromRecord(amountAtoms, amount);
+}
+
+function tokenRecordAmountAtoms(
+  token: { ticker?: string; tokenId?: string },
+  amount: unknown,
+  amountAtoms?: unknown,
+) {
+  if (isWorkToken(token)) {
+    return workRecordAtoms(amount, amountAtoms);
+  }
+  const numericAmount = Number(amount);
+  return Number.isSafeInteger(numericAmount) && numericAmount >= 0
+    ? BigInt(numericAmount)
+    : null;
+}
+
+function tokenAmountDisplay(
+  token: { ticker?: string; tokenId?: string },
+  amount: unknown,
+  amountAtoms?: unknown,
+) {
+  if (isWorkToken(token)) {
+    const atoms = workRecordAtoms(amount, amountAtoms);
+    return atoms === null ? "0" : formatWorkAmount(atoms);
+  }
+  const numericAmount = Math.max(0, Math.floor(Number(amount) || 0));
+  return numericAmount.toLocaleString();
+}
+
+function tokenAmountInput(
+  token: { ticker?: string; tokenId?: string },
+  value: string | number,
+) {
+  if (isWorkToken(token)) {
+    const amountAtoms = positiveWorkAtoms(value);
+    return amountAtoms === null
+      ? null
+      : {
+          amount: workNumberFromAtoms(amountAtoms),
+          amountAtoms: amountAtoms.toString(),
+          display: formatWorkAmount(amountAtoms),
+        };
+  }
+
+  const amount = Number(value);
+  return Number.isSafeInteger(amount) && amount > 0
+    ? { amount, amountAtoms: undefined, display: amount.toLocaleString() }
+    : null;
+}
+
+function tokenWalletBalanceHasConfirmed(balance: PowTokenWalletBalance) {
+  const amount = tokenRecordAmountAtoms(
+    balance.token,
+    balance.confirmedBalance,
+    balance.confirmedBalanceAtoms,
+  );
+  return amount !== null && amount > 0n;
+}
+
+function tokenWalletBalanceDisplay(balance: PowTokenWalletBalance) {
+  return tokenAmountDisplay(
+    balance.token,
+    balance.confirmedBalance,
+    balance.confirmedBalanceAtoms,
+  );
+}
+
 function bondUiConfigForTokenId(tokenId: string) {
   const normalized = String(tokenId ?? "").trim().toLowerCase();
   return BOND_UI_CONFIGS.find((config) => config.tokenId === normalized);
@@ -6222,19 +6350,33 @@ function buildTokenMintPayload(tokenId: string, amount: number) {
   return [
     `${TOKEN_PROTOCOL_PREFIX}${TOKEN_MINT_ACTION}`,
     tokenId.trim().toLowerCase(),
-    Math.floor(amount),
+    Math.floor(Number(amount)),
   ].join(":");
 }
 
 function buildTokenSendPayload(
   tokenId: string,
-  amount: number,
+  amount: string | number,
   recipientAddress: string,
 ) {
+  const normalizedTokenId = tokenId.trim().toLowerCase();
+  if (normalizedTokenId === WORK_TOKEN_ID) {
+    const amountAtoms = positiveWorkAtoms(amount);
+    if (amountAtoms === null) {
+      throw new Error("Enter a WORK amount with up to 8 decimal places.");
+    }
+    return [
+      `${TOKEN_PROTOCOL_PREFIX}${TOKEN_SEND_ATOMS_ACTION}`,
+      normalizedTokenId,
+      amountAtoms.toString(),
+      recipientAddress.trim(),
+    ].join(":");
+  }
+
   return [
     `${TOKEN_PROTOCOL_PREFIX}${TOKEN_SEND_ACTION}`,
-    tokenId.trim().toLowerCase(),
-    Math.floor(amount),
+    normalizedTokenId,
+    Math.floor(Number(amount)),
     recipientAddress.trim(),
   ].join(":");
 }
@@ -6242,8 +6384,20 @@ function buildTokenSendPayload(
 function tokenSaleAuthorizationDraft(
   authorization: Partial<PowTokenSaleAuthorization>,
 ): PowTokenSaleAuthorizationDraft {
+  const version = authorization.version ?? TOKEN_SALE_AUTH_VERSION;
+  const amountAtoms =
+    version === TOKEN_SALE_AUTH_VERSION_ATOMS
+      ? workAtomsFromIntegerString(authorization.amountAtoms)
+      : null;
   return {
-    amount: Math.max(0, Math.floor(Number(authorization.amount ?? 0))),
+    amount:
+      amountAtoms === null
+        ? Math.max(0, Math.floor(Number(authorization.amount ?? 0)))
+        : workNumberFromAtoms(amountAtoms),
+    amountAtoms:
+      version === TOKEN_SALE_AUTH_VERSION_ATOMS && amountAtoms !== null
+        ? amountAtoms.toString()
+        : undefined,
     anchorScriptPubKey: String(authorization.anchorScriptPubKey ?? "").toLowerCase(),
     anchorSigHashType: Math.floor(Number(authorization.anchorSigHashType ?? 0)),
     anchorType: String(authorization.anchorType ?? ""),
@@ -6262,7 +6416,29 @@ function tokenSaleAuthorizationDraft(
     sellerPublicKey: String(authorization.sellerPublicKey ?? "").toLowerCase(),
     ticker: normalizeTokenTicker(String(authorization.ticker ?? "")),
     tokenId: String(authorization.tokenId ?? "").toLowerCase(),
-    version: authorization.version ?? TOKEN_SALE_AUTH_VERSION,
+    version,
+  };
+}
+
+function tokenSaleAuthorizationWireDraft(
+  authorization: Partial<PowTokenSaleAuthorization>,
+) {
+  const draft = tokenSaleAuthorizationDraft(authorization);
+  if (draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS) {
+    const { amount: _amount, ...wire } = draft;
+    return wire;
+  }
+  const { amountAtoms: _amountAtoms, ...wire } = draft;
+  return wire;
+}
+
+function tokenSaleAuthorizationWire(
+  authorization: PowTokenSaleAuthorization,
+) {
+  return {
+    ...tokenSaleAuthorizationWireDraft(authorization),
+    anchorSignature: authorization.anchorSignature,
+    anchorTxid: authorization.anchorTxid,
   };
 }
 
@@ -6279,14 +6455,26 @@ function parseTokenSaleAuthorizationJson(
   const anchorTxid = String(parsed.anchorTxid ?? "").toLowerCase();
   const anchorSignature = String(parsed.anchorSignature ?? "").toLowerCase();
 
-  if (draft.version !== TOKEN_SALE_AUTH_VERSION) {
+  if (
+    draft.version !== TOKEN_SALE_AUTH_VERSION &&
+    draft.version !== TOKEN_SALE_AUTH_VERSION_ATOMS
+  ) {
     throw new Error("Credit sale authorization version is not supported.");
   }
 
+  const workAmountAtoms =
+    draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS
+      ? workAtomsFromIntegerString(draft.amountAtoms)
+      : null;
   if (
     !/^[0-9a-f]{64}$/u.test(draft.tokenId) ||
     !/^[A-Z0-9]{1,12}$/u.test(draft.ticker) ||
-    draft.amount < 1 ||
+    (draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS
+      ? draft.tokenId !== WORK_TOKEN_ID ||
+        draft.ticker !== WORK_TOKEN_TICKER ||
+        workAmountAtoms === null ||
+        workAmountAtoms < 1n
+      : draft.amount < 1) ||
     draft.priceSats < 1 ||
     draft.network !== targetNetwork ||
     !isValidBitcoinAddress(draft.registryAddress, targetNetwork) ||
@@ -6323,7 +6511,8 @@ function tokenSaleAuthorizationUsesSaleTicketAnchor(
   sellerPublicKey: string;
 } {
   return (
-    authorization.version === TOKEN_SALE_AUTH_VERSION &&
+    (authorization.version === TOKEN_SALE_AUTH_VERSION ||
+      authorization.version === TOKEN_SALE_AUTH_VERSION_ATOMS) &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
     authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
@@ -6338,7 +6527,8 @@ function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(
   authorization: PowTokenSaleAuthorization,
 ) {
   return (
-    authorization.version === TOKEN_SALE_AUTH_VERSION &&
+    (authorization.version === TOKEN_SALE_AUTH_VERSION ||
+      authorization.version === TOKEN_SALE_AUTH_VERSION_ATOMS) &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
     authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
@@ -6370,13 +6560,31 @@ function normalizeTokenListingRecord<
   if (!/^[0-9a-f]{64}$/u.test(listingId)) {
     return undefined;
   }
+  const tokenId = String(listing.tokenId || saleAuthorization.tokenId || "")
+    .trim()
+    .toLowerCase();
+  const ticker = normalizeTokenTicker(
+    String(listing.ticker || saleAuthorization.ticker || ""),
+  );
+  const workAmountAtoms =
+    tokenId === WORK_TOKEN_ID || ticker === WORK_TOKEN_TICKER
+      ? workRecordAtoms(
+          listing.amount || saleAuthorization.amount || 0,
+          listing.amountAtoms || saleAuthorization.amountAtoms,
+        )
+      : null;
 
   return {
     ...listing,
-    amount: Math.max(
-      0,
-      Math.floor(Number(listing.amount || saleAuthorization.amount || 0)),
-    ),
+    amount:
+      workAmountAtoms === null
+        ? Math.max(
+            0,
+            Math.floor(Number(listing.amount || saleAuthorization.amount || 0)),
+          )
+        : workNumberFromAtoms(workAmountAtoms),
+    amountAtoms:
+      workAmountAtoms === null ? undefined : workAmountAtoms.toString(),
     listingId,
     priceSats: Math.max(
       0,
@@ -6389,12 +6597,8 @@ function normalizeTokenListingRecord<
     sellerAddress: String(
       listing.sellerAddress || saleAuthorization.sellerAddress || "",
     ).trim(),
-    ticker: normalizeTokenTicker(
-      String(listing.ticker || saleAuthorization.ticker || ""),
-    ),
-    tokenId: String(listing.tokenId || saleAuthorization.tokenId || "")
-      .trim()
-      .toLowerCase(),
+    ticker,
+    tokenId,
   } as T;
 }
 
@@ -6467,14 +6671,14 @@ function tokenSaleAuthorizationTermsMatch(
 ) {
   return (
     JSON.stringify(
-      tokenSaleAuthorizationDraft({
+      tokenSaleAuthorizationWireDraft({
         ...left,
         anchorSignature: "",
         anchorTxid: "",
       }),
     ) ===
     JSON.stringify(
-      tokenSaleAuthorizationDraft({
+      tokenSaleAuthorizationWireDraft({
         ...right,
         anchorSignature: "",
         anchorTxid: "",
@@ -6484,7 +6688,7 @@ function tokenSaleAuthorizationTermsMatch(
 }
 
 function buildTokenListingPayload(authorization: PowTokenSaleAuthorization) {
-  return `${TOKEN_PROTOCOL_PREFIX}${TOKEN_LIST_ACTION}:${encodeTextBase64Url(JSON.stringify(authorization))}`;
+  return `${TOKEN_PROTOCOL_PREFIX}${TOKEN_LIST_ACTION}:${encodeTextBase64Url(JSON.stringify(tokenSaleAuthorizationWire(authorization)))}`;
 }
 
 function buildTokenSaleSealPayload(
@@ -6495,7 +6699,7 @@ function buildTokenSaleSealPayload(
     throw new Error("Credit sale-ticket seal signature is invalid.");
   }
 
-  return `${TOKEN_PROTOCOL_PREFIX}${TOKEN_SEAL_ACTION}:${listingId}:${encodeTextBase64Url(JSON.stringify(authorization))}`;
+  return `${TOKEN_PROTOCOL_PREFIX}${TOKEN_SEAL_ACTION}:${listingId}:${encodeTextBase64Url(JSON.stringify(tokenSaleAuthorizationWire(authorization)))}`;
 }
 
 function buildTokenDelistingPayload(listingId: string) {
@@ -6719,6 +6923,28 @@ function parseTokenPayload(message: string, network: BitcoinNetwork) {
     return { amount, kind: "send" as const, recipientAddress, tokenId };
   }
 
+  if (parts.length === 4 && parts[0] === TOKEN_SEND_ATOMS_ACTION) {
+    const tokenId = String(parts[1] ?? "").toLowerCase();
+    const amountAtoms = workAtomsFromIntegerString(parts[2]);
+    const recipientAddress = String(parts[3] ?? "").trim();
+    if (
+      tokenId !== WORK_TOKEN_ID ||
+      amountAtoms === null ||
+      amountAtoms < 1n ||
+      !isValidBitcoinAddress(recipientAddress, network)
+    ) {
+      return null;
+    }
+
+    return {
+      amount: workNumberFromAtoms(amountAtoms),
+      amountAtoms: amountAtoms.toString(),
+      kind: "send" as const,
+      recipientAddress,
+      tokenId,
+    };
+  }
+
   if (parts.length === 2 && parts[0] === TOKEN_LIST_ACTION) {
     try {
       return {
@@ -6916,7 +7142,7 @@ function tokenStateFromTransactions(
   );
   const tokensById = new Map(tokens.map((token) => [token.tokenId, token]));
   const tokenSupply = new Map<string, { confirmed: number; pending: number }>();
-  const balances = new Map<string, number>();
+  const balances = new Map<string, bigint>();
   const listings = new Map<string, PowTokenListing>();
   const closedListings: PowTokenClosedListing[] = [];
   const mints: PowTokenMint[] = [];
@@ -6926,22 +7152,35 @@ function tokenStateFromTransactions(
   let pendingSupply = 0;
   const tokenBalanceKey = (tokenId: string, ownerAddress: string) =>
     `${tokenId}:${ownerAddress}`;
-  const tokenReservedBalance = (tokenId: string, ownerAddress: string) => {
-    let reserved = 0;
+  const tokenReservedBalanceAtoms = (
+    tokenId: string,
+    ownerAddress: string,
+  ) => {
+    let reserved = 0n;
     for (const listing of listings.values()) {
       if (
         listing.tokenId === tokenId &&
         listing.sellerAddress === ownerAddress &&
         !tokenListingIsExpired(listing)
       ) {
-        reserved += listing.amount;
+        const amountAtoms = tokenRecordAmountAtoms(
+          listing,
+          listing.amount,
+          listing.amountAtoms,
+        );
+        if (amountAtoms !== null) {
+          reserved += amountAtoms;
+        }
       }
     }
     return reserved;
   };
-  const tokenSpendableBalance = (tokenId: string, ownerAddress: string) =>
-    (balances.get(tokenBalanceKey(tokenId, ownerAddress)) ?? 0) -
-    tokenReservedBalance(tokenId, ownerAddress);
+  const tokenSpendableBalanceAtoms = (
+    tokenId: string,
+    ownerAddress: string,
+  ) =>
+    (balances.get(tokenBalanceKey(tokenId, ownerAddress)) ?? 0n) -
+    tokenReservedBalanceAtoms(tokenId, ownerAddress);
   const closeTokenListing = (
     listing: PowTokenListing,
     event: { confirmed: boolean; createdAt: string; txid: string },
@@ -7035,7 +7274,17 @@ function tokenStateFromTransactions(
             currentSupply.confirmed += parsed.amount;
             confirmedSupply += parsed.amount;
             const balanceKey = tokenBalanceKey(mintedToken.tokenId, actorAddress);
-            balances.set(balanceKey, (balances.get(balanceKey) ?? 0) + parsed.amount);
+            const amountAtoms = tokenRecordAmountAtoms(
+              mintedToken,
+              parsed.amount,
+            );
+            if (amountAtoms === null) {
+              continue;
+            }
+            balances.set(
+              balanceKey,
+              (balances.get(balanceKey) ?? 0n) + amountAtoms,
+            );
           } else {
             currentSupply.pending += parsed.amount;
             pendingSupply += parsed.amount;
@@ -7044,6 +7293,9 @@ function tokenStateFromTransactions(
 
           mints.push({
             amount: parsed.amount,
+            amountAtoms: isWorkToken(mintedToken)
+              ? workRecordAtoms(parsed.amount)?.toString()
+              : undefined,
             confirmed,
             createdAt,
             minterAddress: actorAddress,
@@ -7069,25 +7321,36 @@ function tokenStateFromTransactions(
 
           const senderBalanceKey = `${sentToken.tokenId}:${actorAddress}`;
           const recipientBalanceKey = `${sentToken.tokenId}:${parsed.recipientAddress}`;
-          const senderBalance = balances.get(senderBalanceKey) ?? 0;
+          const amountAtoms = tokenRecordAmountAtoms(
+            sentToken,
+            parsed.amount,
+            parsed.amountAtoms,
+          );
+          const senderBalance = balances.get(senderBalanceKey) ?? 0n;
           if (
+            amountAtoms === null ||
+            amountAtoms <= 0n ||
             confirmed &&
-            tokenSpendableBalance(sentToken.tokenId, actorAddress) < parsed.amount
+              tokenSpendableBalanceAtoms(sentToken.tokenId, actorAddress) <
+                amountAtoms
           ) {
             continue;
           }
 
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
           if (confirmed) {
-            balances.set(senderBalanceKey, senderBalance - parsed.amount);
+            balances.set(senderBalanceKey, senderBalance - amountAtoms);
             balances.set(
               recipientBalanceKey,
-              (balances.get(recipientBalanceKey) ?? 0) + parsed.amount,
+              (balances.get(recipientBalanceKey) ?? 0n) + amountAtoms,
             );
           }
 
           transfers.push({
             amount: parsed.amount,
+            amountAtoms: isWorkToken(sentToken)
+              ? amountAtoms.toString()
+              : undefined,
             confirmed,
             createdAt,
             network: targetNetwork,
@@ -7105,15 +7368,24 @@ function tokenStateFromTransactions(
         if (parsed.kind === "list") {
           const authorization = parsed.saleAuthorization;
           const listedToken = tokensById.get(authorization.tokenId);
+          const amountAtoms = listedToken
+            ? tokenRecordAmountAtoms(
+                listedToken,
+                authorization.amount,
+                authorization.amountAtoms,
+              )
+            : null;
           if (
             !listedToken ||
+            amountAtoms === null ||
+            amountAtoms <= 0n ||
             listedToken.registryAddress !== registryAddress ||
             authorization.registryAddress !== registryAddress ||
             authorization.ticker !== listedToken.ticker ||
             authorization.sellerAddress !== actorAddress ||
             remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
-            tokenSpendableBalance(listedToken.tokenId, actorAddress) <
-              authorization.amount ||
+            tokenSpendableBalanceAtoms(listedToken.tokenId, actorAddress) <
+              amountAtoms ||
             !tokenListingAnchorIsPresent(vout, authorization) ||
             listings.has(txid)
           ) {
@@ -7123,6 +7395,9 @@ function tokenStateFromTransactions(
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
           listings.set(txid, {
             amount: authorization.amount,
+            amountAtoms: isWorkToken(listedToken)
+              ? amountAtoms.toString()
+              : undefined,
             confirmed,
             createdAt,
             dataBytes: proofProtocolDataBytesForVout(vout),
@@ -7197,8 +7472,17 @@ function tokenStateFromTransactions(
           const buyerBalanceKey = listing
             ? tokenBalanceKey(listing.tokenId, parsed.buyerAddress)
             : "";
+          const listingAmountAtoms = listing
+            ? tokenRecordAmountAtoms(
+                listing,
+                listing.amount,
+                listing.amountAtoms,
+              )
+            : null;
           if (
             !listing ||
+            listingAmountAtoms === null ||
+            listingAmountAtoms <= 0n ||
             !txInputAddresses.includes(parsed.buyerAddress) ||
             remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
             !listingHasValidSaleTicketSpend ||
@@ -7209,7 +7493,7 @@ function tokenStateFromTransactions(
             paymentAmountFromSnapshots(paymentOutputs, listing.sellerAddress) <
               tokenSellerPaymentRequiredSats(listing) ||
             (confirmed &&
-              (balances.get(sellerBalanceKey) ?? 0) < listing.amount)
+              (balances.get(sellerBalanceKey) ?? 0n) < listingAmountAtoms)
           ) {
             continue;
           }
@@ -7218,16 +7502,20 @@ function tokenStateFromTransactions(
           closeTokenListing(listing, { confirmed, createdAt, txid });
           listings.delete(listing.listingId);
           if (confirmed) {
-            const sellerBalance = balances.get(sellerBalanceKey) ?? 0;
-            balances.set(sellerBalanceKey, sellerBalance - listing.amount);
+            const sellerBalance = balances.get(sellerBalanceKey) ?? 0n;
+            balances.set(
+              sellerBalanceKey,
+              sellerBalance - listingAmountAtoms,
+            );
             balances.set(
               buyerBalanceKey,
-              (balances.get(buyerBalanceKey) ?? 0) + listing.amount,
+              (balances.get(buyerBalanceKey) ?? 0n) + listingAmountAtoms,
             );
           }
 
           sales.push({
             amount: listing.amount,
+            amountAtoms: listing.amountAtoms,
             buyerAddress: parsed.buyerAddress,
             confirmed,
             createdAt,
@@ -7260,8 +7548,20 @@ function tokenStateFromTransactions(
     creationSats,
     confirmedSupply,
     holders: [...balances.entries()]
-      .filter(([, balance]) => balance > 0)
-      .map(([key, balance]) => ({ address: key.split(":").slice(1).join(":"), balance }))
+      .filter(([, balance]) => balance > 0n)
+      .map(([key, balance]) => {
+        const separator = key.indexOf(":");
+        const tokenId = separator >= 0 ? key.slice(0, separator) : "";
+        const token = tokensById.get(tokenId);
+        const work = Boolean(token && isWorkToken(token));
+        return {
+          address: separator >= 0 ? key.slice(separator + 1) : key,
+          balance: work ? workNumberFromAtoms(balance) : Number(balance),
+          balanceAtoms: work ? balance.toString() : undefined,
+          ticker: token?.ticker,
+          tokenId,
+        };
+      })
       .sort(
         (left, right) =>
           right.balance - left.balance ||
@@ -7305,7 +7605,7 @@ function tokenLedgerFor(
   transfers: PowTokenTransfer[] = [],
   sales: PowTokenSale[] = [],
 ) {
-  const balances = new Map<string, number>();
+  const balances = new Map<string, bigint>();
   let confirmedSupply = 0;
   let pendingSupply = 0;
   const tokenMints = token
@@ -7315,10 +7615,17 @@ function tokenLedgerFor(
   tokenMints.forEach((mint) => {
     if (mint.confirmed) {
       confirmedSupply += mint.amount;
-      balances.set(
-        mint.minterAddress,
-        (balances.get(mint.minterAddress) ?? 0) + mint.amount,
+      const amountAtoms = tokenRecordAmountAtoms(
+        mint,
+        mint.amount,
+        mint.amountAtoms,
       );
+      if (amountAtoms !== null) {
+        balances.set(
+          mint.minterAddress,
+          (balances.get(mint.minterAddress) ?? 0n) + amountAtoms,
+        );
+      }
     } else {
       pendingSupply += mint.amount;
     }
@@ -7331,14 +7638,21 @@ function tokenLedgerFor(
         return;
       }
 
-      balances.set(
-        transfer.senderAddress,
-        (balances.get(transfer.senderAddress) ?? 0) - transfer.amount,
+      const amountAtoms = tokenRecordAmountAtoms(
+        transfer,
+        transfer.amount,
+        transfer.amountAtoms,
       );
-      balances.set(
-        transfer.recipientAddress,
-        (balances.get(transfer.recipientAddress) ?? 0) + transfer.amount,
-      );
+      if (amountAtoms !== null) {
+        balances.set(
+          transfer.senderAddress,
+          (balances.get(transfer.senderAddress) ?? 0n) - amountAtoms,
+        );
+        balances.set(
+          transfer.recipientAddress,
+          (balances.get(transfer.recipientAddress) ?? 0n) + amountAtoms,
+        );
+      }
     });
 
   sales
@@ -7348,14 +7662,21 @@ function tokenLedgerFor(
         return;
       }
 
-      balances.set(
-        sale.sellerAddress,
-        (balances.get(sale.sellerAddress) ?? 0) - sale.amount,
+      const amountAtoms = tokenRecordAmountAtoms(
+        sale,
+        sale.amount,
+        sale.amountAtoms,
       );
-      balances.set(
-        sale.buyerAddress,
-        (balances.get(sale.buyerAddress) ?? 0) + sale.amount,
-      );
+      if (amountAtoms !== null) {
+        balances.set(
+          sale.sellerAddress,
+          (balances.get(sale.sellerAddress) ?? 0n) - amountAtoms,
+        );
+        balances.set(
+          sale.buyerAddress,
+          (balances.get(sale.buyerAddress) ?? 0n) + amountAtoms,
+        );
+      }
     });
 
   const summaryConfirmedSupply =
@@ -7370,8 +7691,18 @@ function tokenLedgerFor(
   return {
     confirmedSupply: Math.max(confirmedSupply, summaryConfirmedSupply),
     holders: [...balances.entries()]
-      .filter(([, balance]) => balance > 0)
-      .map(([holderAddress, balance]) => ({ address: holderAddress, balance }))
+      .filter(([, balance]) => balance > 0n)
+      .map(([holderAddress, balance]) => ({
+        address: holderAddress,
+        balance:
+          token && isWorkToken(token)
+            ? workNumberFromAtoms(balance)
+            : Number(balance),
+        balanceAtoms:
+          token && isWorkToken(token) ? balance.toString() : undefined,
+        ticker: token?.ticker,
+        tokenId: token?.tokenId,
+      }))
       .sort(
         (left, right) =>
           right.balance - left.balance ||
@@ -7565,6 +7896,119 @@ function tokenWalletBalancesFor(
       // issuance ledger. Never turn that partial history into a wallet total.
       const canReplayConfirmedBalance =
         !hasHolderBaseline && hasConfirmedReplayBase;
+      if (isWorkToken(token)) {
+        let confirmedBalanceAtoms =
+          holderBaseline &&
+          workRecordAtoms(holderBaseline.balance, holderBaseline.balanceAtoms);
+        if (confirmedBalanceAtoms === null || confirmedBalanceAtoms === undefined) {
+          confirmedBalanceAtoms = 0n;
+        }
+        let pendingIncomingAtoms = 0n;
+        let pendingOutgoingAtoms = 0n;
+
+        for (const mint of mints) {
+          if (
+            mint.tokenId !== token.tokenId ||
+            String(mint.minterAddress ?? "").trim().toLowerCase() !==
+              normalizedWalletAddress
+          ) {
+            continue;
+          }
+          const amountAtoms = workRecordAtoms(mint.amount, mint.amountAtoms);
+          if (amountAtoms === null) {
+            continue;
+          }
+          if (mint.confirmed) {
+            if (canReplayConfirmedBalance) {
+              confirmedBalanceAtoms += amountAtoms;
+            }
+          } else {
+            pendingIncomingAtoms += amountAtoms;
+          }
+        }
+
+        for (const transfer of transfers) {
+          if (transfer.tokenId !== token.tokenId) {
+            continue;
+          }
+          const amountAtoms = workRecordAtoms(
+            transfer.amount,
+            transfer.amountAtoms,
+          );
+          if (amountAtoms === null) {
+            continue;
+          }
+          const sender =
+            String(transfer.senderAddress ?? "").trim().toLowerCase() ===
+            normalizedWalletAddress;
+          const recipient =
+            String(transfer.recipientAddress ?? "").trim().toLowerCase() ===
+            normalizedWalletAddress;
+          if (transfer.confirmed) {
+            if (canReplayConfirmedBalance) {
+              if (sender) {
+                confirmedBalanceAtoms -= amountAtoms;
+              }
+              if (recipient) {
+                confirmedBalanceAtoms += amountAtoms;
+              }
+            }
+          } else {
+            if (sender) {
+              pendingOutgoingAtoms += amountAtoms;
+            }
+            if (recipient) {
+              pendingIncomingAtoms += amountAtoms;
+            }
+          }
+        }
+
+        for (const sale of sales) {
+          if (sale.tokenId !== token.tokenId) {
+            continue;
+          }
+          const amountAtoms = workRecordAtoms(sale.amount, sale.amountAtoms);
+          if (amountAtoms === null) {
+            continue;
+          }
+          const seller =
+            String(sale.sellerAddress ?? "").trim().toLowerCase() ===
+            normalizedWalletAddress;
+          const buyer =
+            String(sale.buyerAddress ?? "").trim().toLowerCase() ===
+            normalizedWalletAddress;
+          if (sale.confirmed) {
+            if (canReplayConfirmedBalance) {
+              if (seller) {
+                confirmedBalanceAtoms -= amountAtoms;
+              }
+              if (buyer) {
+                confirmedBalanceAtoms += amountAtoms;
+              }
+            }
+          } else {
+            if (seller) {
+              pendingOutgoingAtoms += amountAtoms;
+            }
+            if (buyer) {
+              pendingIncomingAtoms += amountAtoms;
+            }
+          }
+        }
+
+        if (confirmedBalanceAtoms < 0n) {
+          confirmedBalanceAtoms = 0n;
+        }
+        return {
+          confirmedBalance: workNumberFromAtoms(confirmedBalanceAtoms),
+          confirmedBalanceAtoms: confirmedBalanceAtoms.toString(),
+          pendingIncoming: workNumberFromAtoms(pendingIncomingAtoms),
+          pendingIncomingAtoms: pendingIncomingAtoms.toString(),
+          pendingOutgoing: workNumberFromAtoms(pendingOutgoingAtoms),
+          pendingOutgoingAtoms: pendingOutgoingAtoms.toString(),
+          token,
+        };
+      }
       let confirmedBalance = hasHolderBaseline
         ? Math.max(0, holderBaselineBalance)
         : 0;
@@ -7842,6 +8286,32 @@ function tokenReservedBalanceFor(
   );
 }
 
+function tokenReservedBalanceAtomsFor(
+  listings: PowTokenListing[],
+  tokenId: string,
+  ownerAddress: string,
+) {
+  if (!tokenId || !ownerAddress) {
+    return 0n;
+  }
+  return listings.reduce((total, listing) => {
+    if (
+      listing.tokenId !== tokenId ||
+      listing.sellerAddress !== ownerAddress ||
+      !tokenListingHasSpendableSaleTicketAnchor(listing) ||
+      tokenListingIsExpired(listing)
+    ) {
+      return total;
+    }
+    const amountAtoms = tokenRecordAmountAtoms(
+      listing,
+      listing.amount,
+      listing.amountAtoms,
+    );
+    return amountAtoms === null ? total : total + amountAtoms;
+  }, 0n);
+}
+
 function tokenTransferSpendabilityKey(transfer: PowTokenTransfer) {
   const txid = String(transfer.txid ?? "").trim().toLowerCase();
   const tokenId = String(transfer.tokenId ?? "").trim().toLowerCase();
@@ -7851,9 +8321,13 @@ function tokenTransferSpendabilityKey(transfer: PowTokenTransfer) {
   const recipientAddress = String(transfer.recipientAddress ?? "")
     .trim()
     .toLowerCase();
-  const amount = Number(transfer.amount);
-  return txid && tokenId && Number.isSafeInteger(amount) && amount > 0
-    ? `${txid}:${tokenId}:${senderAddress}:${recipientAddress}:${amount}`
+  const amountAtoms = tokenRecordAmountAtoms(
+    transfer,
+    transfer.amount,
+    transfer.amountAtoms,
+  );
+  return txid && tokenId && amountAtoms !== null && amountAtoms > 0n
+    ? `${txid}:${tokenId}:${senderAddress}:${recipientAddress}:${amountAtoms}`
     : "";
 }
 
@@ -7913,10 +8387,20 @@ function tokenSpendabilityForWallet(
         normalizedWalletAddress &&
       tokenHolderMatchesDefinition(item, token, [token]),
   );
-  const confirmedBalance = Number(holder?.balance);
+  const work = isWorkToken(token);
+  const confirmedBalanceAtoms = work
+    ? workRecordAtoms(holder?.balance, holder?.balanceAtoms)
+    : null;
+  const confirmedBalance = work
+    ? confirmedBalanceAtoms === null
+      ? Number.NaN
+      : workNumberFromAtoms(confirmedBalanceAtoms)
+    : Number(holder?.balance);
   if (
     !holder ||
-    !Number.isSafeInteger(confirmedBalance) ||
+    (work
+      ? confirmedBalanceAtoms === null
+      : !Number.isSafeInteger(confirmedBalance)) ||
     confirmedBalance < 0
   ) {
     throw new Error(
@@ -7958,6 +8442,13 @@ function tokenSpendabilityForWallet(
     token.tokenId,
     walletAddress,
   );
+  const reservedBalanceAtoms = work
+    ? tokenReservedBalanceAtomsFor(
+        activeListings,
+        token.tokenId,
+        walletAddress,
+      )
+    : null;
   const activeListingIds = new Set(
     activeListings
       .filter(
@@ -7968,7 +8459,7 @@ function tokenSpendabilityForWallet(
       .map((listing) => listing.listingId),
   );
 
-  const pendingDirectTransfers = mergeTokenTransfersForSpendability(
+  const pendingDirectTransferRows = mergeTokenTransfersForSpendability(
     state.transfers,
     localTransfers,
   )
@@ -7977,8 +8468,21 @@ function tokenSpendabilityForWallet(
         transfer.tokenId === token.tokenId &&
         !transfer.confirmed &&
         transfer.senderAddress.trim().toLowerCase() === normalizedWalletAddress,
-    )
-    .reduce((total, transfer) => total + transfer.amount, 0);
+    );
+  const pendingDirectTransfers = pendingDirectTransferRows.reduce(
+    (total, transfer) => total + transfer.amount,
+    0,
+  );
+  const pendingDirectTransferAtoms = work
+    ? pendingDirectTransferRows.reduce((total, transfer) => {
+        const amountAtoms = tokenRecordAmountAtoms(
+          transfer,
+          transfer.amount,
+          transfer.amountAtoms,
+        );
+        return amountAtoms === null ? total : total + amountAtoms;
+      }, 0n)
+    : null;
 
   const salesByKey = new Map<string, PowTokenSale>();
   for (const sale of [...state.sales, ...localSales]) {
@@ -7991,25 +8495,62 @@ function tokenSpendabilityForWallet(
       salesByKey.set(key, sale);
     }
   }
-  const uncoveredPendingSales = [...salesByKey.values()]
-    .filter(
+  const uncoveredPendingSaleRows = [...salesByKey.values()].filter(
       (sale) =>
         !sale.confirmed &&
         sale.sellerAddress.trim().toLowerCase() === normalizedWalletAddress &&
         !activeListingIds.has(sale.listingId),
-    )
-    .reduce((total, sale) => total + sale.amount, 0);
+    );
+  const uncoveredPendingSales = uncoveredPendingSaleRows.reduce(
+    (total, sale) => total + sale.amount,
+    0,
+  );
+  const uncoveredPendingSaleAtoms = work
+    ? uncoveredPendingSaleRows.reduce((total, sale) => {
+        const amountAtoms = tokenRecordAmountAtoms(
+          sale,
+          sale.amount,
+          sale.amountAtoms,
+        );
+        return amountAtoms === null ? total : total + amountAtoms;
+      }, 0n)
+    : null;
   const pendingOutgoing = pendingDirectTransfers + uncoveredPendingSales;
+  const pendingOutgoingAtoms =
+    work &&
+    pendingDirectTransferAtoms !== null &&
+    uncoveredPendingSaleAtoms !== null
+      ? pendingDirectTransferAtoms + uncoveredPendingSaleAtoms
+      : null;
+  const spendableBalanceAtoms =
+    work &&
+    confirmedBalanceAtoms !== null &&
+    reservedBalanceAtoms !== null &&
+    pendingOutgoingAtoms !== null
+      ? [
+          confirmedBalanceAtoms -
+            reservedBalanceAtoms -
+            pendingOutgoingAtoms,
+          0n,
+        ].reduce((maximum, value) => (value > maximum ? value : maximum))
+      : null;
 
   return {
     activeListings,
     confirmedBalance,
+    confirmedBalanceAtoms: confirmedBalanceAtoms?.toString(),
     pendingOutgoing,
+    pendingOutgoingAtoms: pendingOutgoingAtoms?.toString(),
     reservedBalance,
-    spendableBalance: Math.max(
-      0,
-      confirmedBalance - reservedBalance - pendingOutgoing,
-    ),
+    reservedBalanceAtoms: reservedBalanceAtoms?.toString(),
+    spendableBalance:
+      spendableBalanceAtoms === null
+        ? Math.max(
+            0,
+            confirmedBalance - reservedBalance - pendingOutgoing,
+          )
+        : workNumberFromAtoms(spendableBalanceAtoms),
+    spendableBalanceAtoms: spendableBalanceAtoms?.toString(),
   };
 }
 
@@ -10920,9 +11461,91 @@ function normalizeRegistryApiState(
   };
 }
 
+function normalizeTokenDefinitionRecord(
+  token: PowTokenDefinition,
+): PowTokenDefinition {
+  const tokenId = String(token?.tokenId ?? "").trim().toLowerCase();
+  const ticker = normalizeTokenTicker(String(token?.ticker ?? ""));
+  const work = tokenId === WORK_TOKEN_ID || ticker === WORK_TOKEN_TICKER;
+  return {
+    ...token,
+    confirmedSupply: Number.isFinite(Number(token.confirmedSupply))
+      ? Math.max(0, Number(token.confirmedSupply))
+      : undefined,
+    decimals: work ? WORK_TOKEN_DECIMALS : 0,
+    maxSupply: Math.max(0, Number(token.maxSupply) || 0),
+    mintAmount: Math.max(0, Number(token.mintAmount) || 0),
+    pendingSupply: Number.isFinite(Number(token.pendingSupply))
+      ? Math.max(0, Number(token.pendingSupply))
+      : undefined,
+    ticker,
+    tokenId,
+    unitScale: work ? WORK_TOKEN_UNIT_SCALE : "1",
+  };
+}
+
+function normalizeTokenAmountRecord<
+  T extends PowTokenMint | PowTokenTransfer | PowTokenSale,
+>(record: T): T {
+  if (!isWorkToken(record)) {
+    return {
+      ...record,
+      amount: Math.max(0, Math.floor(Number(record.amount) || 0)),
+      amountAtoms: undefined,
+    };
+  }
+
+  const amountAtoms = workRecordAtoms(record.amount, record.amountAtoms);
+  return {
+    ...record,
+    amount: amountAtoms === null ? 0 : workNumberFromAtoms(amountAtoms),
+    amountAtoms: amountAtoms === null ? undefined : amountAtoms.toString(),
+    ticker: WORK_TOKEN_TICKER,
+    tokenId: WORK_TOKEN_ID,
+  };
+}
+
+function normalizeTokenHolderRecord(holder: PowTokenHolder): PowTokenHolder {
+  const tokenId = String(holder?.tokenId ?? "").trim().toLowerCase();
+  const ticker = normalizeTokenTicker(String(holder?.ticker ?? ""));
+  if (tokenId !== WORK_TOKEN_ID && ticker !== WORK_TOKEN_TICKER) {
+    return {
+      ...holder,
+      balance: Math.max(0, Number(holder.balance) || 0),
+      pendingDelta: Number.isFinite(Number(holder.pendingDelta))
+        ? Number(holder.pendingDelta)
+        : undefined,
+    };
+  }
+
+  const balanceAtoms = workRecordAtoms(holder.balance, holder.balanceAtoms);
+  const legacyPendingDelta = Number(holder.pendingDelta);
+  const pendingDeltaAtoms =
+    workSignedAtomsFromIntegerString(holder.pendingDeltaAtoms) ??
+    (Number.isSafeInteger(legacyPendingDelta)
+      ? BigInt(legacyPendingDelta) * BigInt(WORK_TOKEN_UNIT_SCALE)
+      : null);
+  return {
+    ...holder,
+    balance: balanceAtoms === null ? 0 : workNumberFromAtoms(balanceAtoms),
+    balanceAtoms: balanceAtoms === null ? undefined : balanceAtoms.toString(),
+    pendingDelta:
+      pendingDeltaAtoms === null
+        ? Number(holder.pendingDelta) || 0
+        : workNumberFromAtoms(pendingDeltaAtoms),
+    pendingDeltaAtoms:
+      pendingDeltaAtoms === null ? undefined : pendingDeltaAtoms.toString(),
+    ticker: WORK_TOKEN_TICKER,
+    tokenId: WORK_TOKEN_ID,
+  };
+}
+
 function normalizeTokenApiState(
   payload: PowTokenApiResponse | undefined,
 ): PowTokenState {
+  const tokens = Array.isArray(payload?.tokens)
+    ? payload.tokens.map(normalizeTokenDefinitionRecord)
+    : [];
   return sanitizedTokenState({
     closedListings: Array.isArray(payload?.closedListings)
       ? payload.closedListings
@@ -10930,10 +11553,12 @@ function normalizeTokenApiState(
     creationSats: Number.isSafeInteger(payload?.creationSats)
       ? Number(payload?.creationSats)
       : 0,
-    confirmedSupply: Number.isSafeInteger(payload?.confirmedSupply)
+    confirmedSupply: Number.isSafeInteger(Number(payload?.confirmedSupply))
       ? Number(payload?.confirmedSupply)
       : 0,
-    holders: Array.isArray(payload?.holders) ? payload.holders : [],
+    holders: Array.isArray(payload?.holders)
+      ? payload.holders.map(normalizeTokenHolderRecord)
+      : [],
     invalidEvents: Array.isArray(payload?.invalidEvents)
       ? payload.invalidEvents.map((event) => ({
           ...event,
@@ -10947,14 +11572,20 @@ function normalizeTokenApiState(
         }))
       : [],
     listings: Array.isArray(payload?.listings) ? payload.listings : [],
-    mints: Array.isArray(payload?.mints) ? payload.mints : [],
-    pendingSupply: Number.isSafeInteger(payload?.pendingSupply)
+    mints: Array.isArray(payload?.mints)
+      ? payload.mints.map(normalizeTokenAmountRecord)
+      : [],
+    pendingSupply: Number.isSafeInteger(Number(payload?.pendingSupply))
       ? Number(payload?.pendingSupply)
       : 0,
-    sales: Array.isArray(payload?.sales) ? payload.sales : [],
+    sales: Array.isArray(payload?.sales)
+      ? payload.sales.map(normalizeTokenAmountRecord)
+      : [],
     summaryOnly: Boolean(payload?.summaryOnly),
-    transfers: Array.isArray(payload?.transfers) ? payload.transfers : [],
-    tokens: Array.isArray(payload?.tokens) ? payload.tokens : [],
+    transfers: Array.isArray(payload?.transfers)
+      ? payload.transfers.map(normalizeTokenAmountRecord)
+      : [],
+    tokens,
   });
 }
 
@@ -11056,13 +11687,21 @@ async function fetchFreshWalletTokenPreflightState(
       }
       return {
         closedListings: Array.isArray(payload.closedListings)
-          ? payload.closedListings
+          ? normalizeTokenListingRecords(payload.closedListings)
           : [],
-        holders: Array.isArray(payload.holders) ? payload.holders : [],
-        listings: Array.isArray(payload.listings) ? payload.listings : [],
-        sales: Array.isArray(payload.sales) ? payload.sales : [],
+        holders: Array.isArray(payload.holders)
+          ? payload.holders.map(normalizeTokenHolderRecord)
+          : [],
+        listings: Array.isArray(payload.listings)
+          ? normalizeTokenListingRecords(payload.listings)
+          : [],
+        sales: Array.isArray(payload.sales)
+          ? payload.sales.map(normalizeTokenAmountRecord)
+          : [],
         source,
-        transfers: Array.isArray(payload.transfers) ? payload.transfers : [],
+        transfers: Array.isArray(payload.transfers)
+          ? payload.transfers.map(normalizeTokenAmountRecord)
+          : [],
         walletScoped: true,
       };
     } catch (error) {
@@ -11335,10 +11974,23 @@ async function fetchTokenHistoryPage<T>(
     targetNetwork,
   );
   const rawItems = Array.isArray(payload.items) ? payload.items : [];
-  const items =
-    kind === "listings"
-      ? (normalizeTokenListingRecords(rawItems as PowTokenListing[]) as T[])
-      : rawItems;
+  const items = (
+    kind === "listings" || kind === "closedListings"
+      ? normalizeTokenListingRecords(
+          rawItems as Array<PowTokenListing | PowTokenClosedListing>,
+        )
+      : kind === "transfers" || kind === "sales" || kind === "mints"
+        ? (
+            rawItems as Array<PowTokenTransfer | PowTokenSale | PowTokenMint>
+          ).map(normalizeTokenAmountRecord)
+        : kind === "holders"
+          ? (rawItems as PowTokenHolder[]).map(normalizeTokenHolderRecord)
+          : kind === "tokens"
+            ? (rawItems as PowTokenDefinition[]).map(
+                normalizeTokenDefinitionRecord,
+              )
+            : rawItems
+  ) as T[];
   return {
     ...payload,
     items,
@@ -12012,6 +12664,7 @@ function normalizeInfinityActualValue(
   return {
     attachedWorkActions: optionalNumberValue("attachedWorkActions"),
     attachedWorkAmount: optionalNumberValue("attachedWorkAmount"),
+    attachedWorkAmountAtoms: optionalStringValue("attachedWorkAmountAtoms"),
     attachedWorkFrozenValueSats: optionalNumberValue(
       "attachedWorkFrozenValueSats",
     ),
@@ -13568,7 +14221,10 @@ function listingAnchorDetails(
   network: BitcoinNetwork,
 ) {
   const tokenAuthorization = (listing as PowTokenListing).saleAuthorization;
-  if (tokenAuthorization?.version === TOKEN_SALE_AUTH_VERSION) {
+  if (
+    tokenAuthorization?.version === TOKEN_SALE_AUTH_VERSION ||
+    tokenAuthorization?.version === TOKEN_SALE_AUTH_VERSION_ATOMS
+  ) {
     if (!tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(tokenAuthorization)) {
       throw new Error(
         "This credit listing does not use a spendable sale-ticket anchor.",
@@ -14404,7 +15060,7 @@ export default function App() {
   const [recipient, setRecipient] = useState("");
   const [ccRecipient, setCcRecipient] = useState("");
   const [amountSats, setAmountSats] = useState(DEFAULT_AMOUNT_SATS);
-  const [messageWorkAmount, setMessageWorkAmount] = useState(0);
+  const [messageWorkAmount, setMessageWorkAmount] = useState("0");
   const [feeRate, setFeeRate] = useState(DEFAULT_FEE_RATE);
   const [subject, setSubject] = useState("");
   const [memo, setMemo] = useState(DEFAULT_MEMO);
@@ -14492,10 +15148,12 @@ export default function App() {
     useState("");
   const [tokenTransferTokenId, setTokenTransferTokenId] = useState("");
   const [tokenTransferAmount, setTokenTransferAmount] = useState(
-    WORK_TOKEN_MINT_AMOUNT,
+    String(WORK_TOKEN_MINT_AMOUNT),
   );
   const [tokenTransferRecipient, setTokenTransferRecipient] = useState("");
-  const [tokenListAmount, setTokenListAmount] = useState(WORK_TOKEN_MINT_AMOUNT);
+  const [tokenListAmount, setTokenListAmount] = useState(
+    String(WORK_TOKEN_MINT_AMOUNT),
+  );
   const [tokenListBuyerAddress, setTokenListBuyerAddress] = useState("");
   const [tokenListPriceSats, setTokenListPriceSats] = useState(1000);
   const [tokenBtcUsd, setTokenBtcUsd] = useState(0);
@@ -14509,7 +15167,7 @@ export default function App() {
     InfinitySummarySnapshot | undefined
   >();
   const [infinityBondAmount, setInfinityBondAmount] = useState(1000);
-  const [bondWorkAmount, setBondWorkAmount] = useState(0);
+  const [bondWorkAmount, setBondWorkAmount] = useState("0");
   const [infinityBondRecipient, setInfinityBondRecipient] = useState("");
   const [workFloorLoading, setWorkFloorLoading] = useState(false);
   const [workFloorUsingLastGood, setWorkFloorUsingLastGood] = useState(false);
@@ -15247,10 +15905,8 @@ export default function App() {
   const totalResolvedRecipients =
     recipientResolution.recipients.length +
     ccRecipientResolution.recipients.length;
-  const messageWorkAmountValue =
-    Number.isFinite(messageWorkAmount) && messageWorkAmount > 0
-      ? Math.floor(messageWorkAmount)
-      : 0;
+  const messageWorkAmountAtoms = positiveWorkAtoms(messageWorkAmount) ?? 0n;
+  const messageWorkAmountValue = workNumberFromAtoms(messageWorkAmountAtoms);
   const accountWorkTokenLaneClean =
     accountTokenLaneStatuses.work.loaded &&
     !accountTokenLaneStatuses.work.error;
@@ -15296,6 +15952,10 @@ export default function App() {
   ]);
   const workAttachmentSpendableBalance =
     workAttachmentPreviewSpendability?.spendableBalance ?? 0;
+  const workAttachmentSpendableAtoms =
+    workAtomsFromIntegerString(
+      workAttachmentPreviewSpendability?.spendableBalanceAtoms,
+    ) ?? 0n;
   const inceptionWorkBalanceRequired =
     activeBondConfig.folder === "inception";
   const bondWorkBalanceHasCleanLane = inceptionWorkBalanceRequired
@@ -15323,7 +15983,7 @@ export default function App() {
   );
   const workAttachmentVisible =
     messageWorkAttachmentAllowed &&
-    (workAttachmentSpendableBalance > 0 || messageWorkAmountValue > 0);
+    (workAttachmentSpendableAtoms > 0n || messageWorkAmountAtoms > 0n);
   const messageWorkRecipientAddresses = useMemo(() => {
     const addresses: string[] = [];
     const addRecipient = (recipientItem: RecipientResolution) => {
@@ -15346,28 +16006,31 @@ export default function App() {
   }, [ccRecipientResolution, network, recipientResolution]);
   const workAttachmentPayloads = useMemo(
     () =>
-      messageWorkAmountValue > 0 && messageWorkAttachmentAllowed
+      messageWorkAmountAtoms > 0n && messageWorkAttachmentAllowed
         ? messageWorkRecipientAddresses.map((recipientAddress) =>
             buildTokenSendPayload(
               WORK_TOKEN_ID,
-              messageWorkAmountValue,
+              workDecimalFromAtoms(messageWorkAmountAtoms),
               recipientAddress,
             ),
           )
         : [],
     [
-      messageWorkAmountValue,
+      messageWorkAmountAtoms,
       messageWorkRecipientAddresses,
       messageWorkAttachmentAllowed,
     ],
   );
-  const workAttachmentTotalAmount =
-    messageWorkAmountValue * workAttachmentPayloads.length;
+  const workAttachmentTotalAtoms =
+    messageWorkAmountAtoms * BigInt(workAttachmentPayloads.length);
+  const workAttachmentTotalAmount = workNumberFromAtoms(
+    workAttachmentTotalAtoms,
+  );
   const workAttachmentBalanceOk =
-    messageWorkAmountValue <= 0 ||
+    messageWorkAmountAtoms <= 0n ||
     (messageWorkAttachmentAllowed &&
       workAttachmentPayloads.length > 0 &&
-      workAttachmentTotalAmount <= workAttachmentSpendableBalance);
+      workAttachmentTotalAtoms <= workAttachmentSpendableAtoms);
   const composeDataCarrierBytes = useMemo(
     () =>
       dataCarrierBytesForPayloads([
@@ -16065,15 +16728,15 @@ export default function App() {
       buildProtocolPayloads(activeBondConfig.subject, activeBondConfig.memo),
     [activeBondConfig.memo, activeBondConfig.subject],
   );
-  const bondWorkAmountValue =
-    Number.isFinite(bondWorkAmount) && bondWorkAmount > 0
-      ? Math.floor(bondWorkAmount)
-      : 0;
+  const bondWorkAmountAtoms = positiveWorkAtoms(bondWorkAmount) ?? 0n;
+  const bondWorkAmountValue = workNumberFromAtoms(bondWorkAmountAtoms);
   const inceptionWorkHolderEligible =
     bondWorkBalanceHasCleanLane &&
     bondWorkBalanceLoaded &&
     !bondWorkBalanceError &&
-    (workAttachmentPreviewSpendability?.confirmedBalance ?? 0) > 0;
+    (workAtomsFromIntegerString(
+      workAttachmentPreviewSpendability?.confirmedBalanceAtoms,
+    ) ?? 0n) > 0n;
   const bondWorkAttachmentAllowed = canAttachWorkToBond(
     activeBondConfig,
     address,
@@ -16082,32 +16745,32 @@ export default function App() {
   );
   const bondWorkAttachmentPayloads = useMemo(
     () =>
-      bondWorkAmountValue > 0 &&
+      bondWorkAmountAtoms > 0n &&
       bondWorkAttachmentAllowed &&
       infinityBondResolution.paymentAddress &&
       isValidBitcoinAddress(infinityBondResolution.paymentAddress, "livenet")
         ? [
             buildTokenSendPayload(
               WORK_TOKEN_ID,
-              bondWorkAmountValue,
+              workDecimalFromAtoms(bondWorkAmountAtoms),
               infinityBondResolution.paymentAddress,
             ),
           ]
         : [],
     [
-      bondWorkAmountValue,
+      bondWorkAmountAtoms,
       bondWorkAttachmentAllowed,
       infinityBondResolution.paymentAddress,
     ],
   );
   const bondWorkAttachmentBalanceOk =
-    bondWorkAmountValue <= 0 ||
+    bondWorkAmountAtoms <= 0n ||
     (bondWorkAttachmentAllowed &&
       bondWorkBalanceHasCleanLane &&
       bondWorkBalanceLoaded &&
       !bondWorkBalanceError &&
       bondWorkAttachmentPayloads.length === 1 &&
-      bondWorkAmountValue <= workAttachmentSpendableBalance);
+      bondWorkAmountAtoms <= workAttachmentSpendableAtoms);
   const bondWorkAttachmentVisible = bondWorkAttachmentAllowed;
   const infinityBondBytes = useMemo(
     () =>
@@ -16149,23 +16812,52 @@ export default function App() {
       (!address && !walletMode && activeFolder !== "wallet"
         ? workTokenDefinition ?? WORK_TOKEN_DEFINITION
         : undefined);
+  const walletTransferBalanceRow = walletOperationBalances.find(
+    (item) => item.token.tokenId === walletTransferToken?.tokenId,
+  );
   const walletTransferBalance =
-    walletOperationBalances.find(
-      (item) => item.token.tokenId === walletTransferToken?.tokenId,
-    )?.confirmedBalance ?? 0;
+    walletTransferBalanceRow?.confirmedBalance ?? 0;
   const walletPendingTokenBalance =
-    walletOperationBalances.find(
-      (item) => item.token.tokenId === walletTransferToken?.tokenId,
-    )?.pendingOutgoing ?? 0;
+    walletTransferBalanceRow?.pendingOutgoing ?? 0;
   const walletReservedTokenBalance = walletTransferToken
     ? tokenReservedBalanceFor(tokenListings, walletTransferToken.tokenId, address)
     : 0;
-  const walletSpendableTokenBalance = Math.max(
-    0,
-    walletTransferBalance -
-      walletReservedTokenBalance -
-      walletPendingTokenBalance,
+  const walletTransferIsWork = Boolean(
+    walletTransferToken && isWorkToken(walletTransferToken),
   );
+  const walletTransferBalanceAtoms = walletTransferIsWork
+    ? workAtomsFromIntegerString(
+        walletTransferBalanceRow?.confirmedBalanceAtoms,
+      ) ?? 0n
+    : 0n;
+  const walletPendingTokenAtoms = walletTransferIsWork
+    ? workAtomsFromIntegerString(walletTransferBalanceRow?.pendingOutgoingAtoms) ??
+      0n
+    : 0n;
+  const walletReservedTokenAtoms =
+    walletTransferIsWork && walletTransferToken
+      ? tokenReservedBalanceAtomsFor(
+          tokenListings,
+          walletTransferToken.tokenId,
+          address,
+        )
+      : 0n;
+  const walletSpendableTokenAtoms = walletTransferIsWork
+    ? [
+        walletTransferBalanceAtoms -
+          walletReservedTokenAtoms -
+          walletPendingTokenAtoms,
+        0n,
+      ].reduce((maximum, value) => (value > maximum ? value : maximum))
+    : 0n;
+  const walletSpendableTokenBalance = walletTransferIsWork
+    ? workNumberFromAtoms(walletSpendableTokenAtoms)
+    : Math.max(
+        0,
+        walletTransferBalance -
+          walletReservedTokenBalance -
+          walletPendingTokenBalance,
+      );
   const connectedAccountStats = useMemo<AppHeaderAccountStat[]>(() => {
     if (!address) {
       return [];
@@ -16204,11 +16896,12 @@ export default function App() {
     );
     const accountCreditBalances = accountWalletBalances.filter(
       (balance) =>
-        balance.confirmedBalance > 0 && !isBondTokenDefinition(balance.token),
+        tokenWalletBalanceHasConfirmed(balance) &&
+        !isBondTokenDefinition(balance.token),
     );
     const routeCreditBalances = tokenWalletBalances.filter(
       (balance) =>
-        balance.confirmedBalance > 0 &&
+        tokenWalletBalanceHasConfirmed(balance) &&
         !isBondTokenDefinition(balance.token) &&
         !accountTokenLaneHasCleanAuthority(
           balance.token,
@@ -16221,14 +16914,15 @@ export default function App() {
     );
     const accountBondBalances = accountWalletBalances.filter(
       (balance) =>
-        balance.confirmedBalance > 0 && isBondTokenDefinition(balance.token),
+        tokenWalletBalanceHasConfirmed(balance) &&
+        isBondTokenDefinition(balance.token),
     );
     const routeBondBalances = mergeTokenWalletBalancesByToken(
       powbWalletBalances,
       incbWalletBalances,
     ).filter(
       (balance) =>
-        balance.confirmedBalance > 0 &&
+        tokenWalletBalanceHasConfirmed(balance) &&
         !accountTokenLaneHasCleanAuthority(
           balance.token,
           accountTokenLaneStatuses,
@@ -16382,7 +17076,7 @@ export default function App() {
         .slice(0, 4)
         .map(
           (balance) =>
-            `${balance.confirmedBalance.toLocaleString()} ${balance.token.ticker}`,
+            `${tokenWalletBalanceDisplay(balance)} ${balance.token.ticker}`,
         )
         .join(" · ");
       const hiddenCreditCount = Math.max(0, confirmedCreditBalances.length - 4);
@@ -16393,7 +17087,7 @@ export default function App() {
         label: "credit balance",
         value:
           confirmedCreditBalances.length === 1
-            ? `${confirmedCreditBalances[0].confirmedBalance.toLocaleString()} ${confirmedCreditBalances[0].token.ticker}`
+            ? `${tokenWalletBalanceDisplay(confirmedCreditBalances[0])} ${confirmedCreditBalances[0].token.ticker}`
             : `${confirmedCreditBalances.length.toLocaleString()} credits`,
       });
     }
@@ -16403,7 +17097,7 @@ export default function App() {
       stats.push({
         detail: `Confirmed ${config?.displayName ?? "bond"} credit balance.`,
         label: `${balance.token.ticker.toLowerCase()} balance`,
-        value: `${balance.confirmedBalance.toLocaleString()} ${balance.token.ticker}`,
+        value: `${tokenWalletBalanceDisplay(balance)} ${balance.token.ticker}`,
       });
     }
 
@@ -16561,17 +17255,29 @@ export default function App() {
       tokenMintPayload ? dataCarrierBytesForPayload(tokenMintPayload) : 0,
     [tokenMintPayload],
   );
-  const tokenTransferPayload = useMemo(
-    () =>
-      walletTransferToken && tokenTransferRecipient.trim()
-        ? buildTokenSendPayload(
-            walletTransferToken.tokenId,
-            tokenTransferAmount,
-            tokenTransferRecipient.trim(),
-          )
-        : "",
-    [tokenTransferAmount, tokenTransferRecipient, walletTransferToken],
-  );
+  const tokenTransferInput = walletTransferToken
+    ? tokenAmountInput(walletTransferToken, tokenTransferAmount)
+    : null;
+  const tokenTransferPayload = useMemo(() => {
+    if (
+      !walletTransferToken ||
+      !tokenTransferRecipient.trim() ||
+      !tokenTransferInput
+    ) {
+      return "";
+    }
+    return buildTokenSendPayload(
+      walletTransferToken.tokenId,
+      isWorkToken(walletTransferToken)
+        ? workDecimalFromAtoms(tokenTransferInput.amountAtoms ?? "0")
+        : tokenTransferInput.amount,
+      tokenTransferRecipient.trim(),
+    );
+  }, [
+    tokenTransferInput,
+    tokenTransferRecipient,
+    walletTransferToken,
+  ]);
   const tokenTransferBytes = useMemo(
     () =>
       tokenTransferPayload
@@ -16579,9 +17285,10 @@ export default function App() {
         : 0,
     [tokenTransferPayload],
   );
-  const normalizedTokenListAmount = Number.isFinite(tokenListAmount)
-    ? Math.floor(tokenListAmount)
-    : 0;
+  const tokenListInput = walletTransferToken
+    ? tokenAmountInput(walletTransferToken, tokenListAmount)
+    : null;
+  const normalizedTokenListAmount = tokenListInput?.amount ?? 0;
   const normalizedTokenListPriceSats = Number.isFinite(tokenListPriceSats)
     ? Math.floor(tokenListPriceSats)
     : 0;
@@ -16589,7 +17296,11 @@ export default function App() {
     Boolean(
       address &&
         walletTransferToken &&
-        normalizedTokenListAmount >= 1 &&
+        tokenListInput &&
+        (isWorkToken(walletTransferToken)
+          ? (workAtomsFromIntegerString(tokenListInput.amountAtoms) ?? 0n) <=
+            walletSpendableTokenAtoms
+          : tokenListInput.amount <= walletSpendableTokenBalance) &&
         normalizedTokenListPriceSats >= 1 &&
         (!tokenListBuyerAddress.trim() ||
           isValidBitcoinAddress(tokenListBuyerAddress.trim(), "livenet")),
@@ -16643,9 +17354,11 @@ export default function App() {
       walletTransferToken.registryAddress &&
       tokenTransferPayload &&
       isValidBitcoinAddress(tokenTransferRecipient.trim(), "livenet") &&
-      Number.isSafeInteger(Math.floor(tokenTransferAmount)) &&
-      Math.floor(tokenTransferAmount) >= 1 &&
-      Math.floor(tokenTransferAmount) <= walletSpendableTokenBalance,
+      tokenTransferInput &&
+      (isWorkToken(walletTransferToken)
+        ? (workAtomsFromIntegerString(tokenTransferInput.amountAtoms) ?? 0n) <=
+          walletSpendableTokenAtoms
+        : tokenTransferInput.amount <= walletSpendableTokenBalance),
     ) &&
     tokenTransferBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
@@ -17214,7 +17927,7 @@ export default function App() {
       recipient,
       subject,
       updatedAt: new Date().toISOString(),
-      workAmount: messageWorkAmountValue,
+      workAmount: workDecimalFromAtoms(messageWorkAmountAtoms),
     };
 
     if (!isDraftContentful(draft)) {
@@ -17231,7 +17944,7 @@ export default function App() {
     composeOpen,
     feeRate,
     memo,
-    messageWorkAmountValue,
+    messageWorkAmountAtoms,
     network,
     recipient,
     replyParentTxid,
@@ -17240,10 +17953,10 @@ export default function App() {
 
   useEffect(() => {
     if (!messageWorkAttachmentAllowed) {
-      setMessageWorkAmount(0);
+      setMessageWorkAmount("0");
     }
     if (!bondWorkAttachmentAllowed) {
-      setBondWorkAmount(0);
+      setBondWorkAmount("0");
     }
   }, [bondWorkAttachmentAllowed, messageWorkAttachmentAllowed]);
 
@@ -18012,7 +18725,7 @@ export default function App() {
     setRecipient(draft.recipient);
     setCcRecipient(draft.ccRecipient ?? "");
     setAmountSats(draft.amountSats);
-    setMessageWorkAmount(draft.workAmount ?? 0);
+    setMessageWorkAmount(canonicalWorkDecimal(draft.workAmount) || "0");
     setFeeRate(draft.feeRate);
     setSubject(draft.subject ?? "");
     setMemo(draft.memo);
@@ -18431,7 +19144,7 @@ export default function App() {
     setRecipient("");
     setCcRecipient("");
     setAmountSats(DEFAULT_AMOUNT_SATS);
-    setMessageWorkAmount(0);
+    setMessageWorkAmount("0");
     setFeeRate(DEFAULT_FEE_RATE);
     setSubject("");
     setMemo(DEFAULT_MEMO);
@@ -18450,7 +19163,7 @@ export default function App() {
     setRecipient("");
     setCcRecipient("");
     setAmountSats(DEFAULT_AMOUNT_SATS);
-    setMessageWorkAmount(0);
+    setMessageWorkAmount("0");
     setFeeRate(DEFAULT_FEE_RATE);
     setSubject("");
     setMemo(DEFAULT_MEMO);
@@ -18573,7 +19286,7 @@ export default function App() {
     setRecipient(contactTarget(contact));
     setCcRecipient("");
     setAmountSats(DEFAULT_AMOUNT_SATS);
-    setMessageWorkAmount(0);
+    setMessageWorkAmount("0");
     setFeeRate(DEFAULT_FEE_RATE);
     setSubject("");
     setMemo(DEFAULT_MEMO);
@@ -19774,7 +20487,7 @@ export default function App() {
     setRecipient(recipientAddress === "Unknown" ? "" : recipientAddress);
     setCcRecipient("");
     setAmountSats(messageReplyAmount(message));
-    setMessageWorkAmount(0);
+    setMessageWorkAmount("0");
     setSubject(`Re: ${subject}`);
     setMemo("");
     setAttachment(undefined);
@@ -19812,7 +20525,7 @@ export default function App() {
     setRecipient([...targets.values()].join(", "));
     setCcRecipient("");
     setAmountSats(messageReplyAmount(message));
-    setMessageWorkAmount(0);
+    setMessageWorkAmount("0");
     setSubject(`Re: ${subject}`);
     setMemo("");
     setAttachment(undefined);
@@ -19831,7 +20544,7 @@ export default function App() {
     setCcRecipient("");
     setSubject("");
     setMemo(DEFAULT_MEMO);
-    setMessageWorkAmount(0);
+    setMessageWorkAmount("0");
     setAttachment(undefined);
     setReplyParentTxid(undefined);
   }
@@ -21880,24 +22593,17 @@ export default function App() {
         });
       const mailRecipients = [...toRecipients, ...ccRecipients];
       const workAttachmentAmount = messageWorkAmountValue;
+      const workAttachmentAtoms = messageWorkAmountAtoms;
       let paymentExcludeOutpoints = reservedOutpoints;
       let attachedWorkCredits: MailAttachedCredit[] = [];
       let attachedWorkPayloads: string[] = [];
       let pendingWorkTransfers: PowTokenTransfer[] = [];
 
-      if (workAttachmentAmount > 0) {
+      if (workAttachmentAtoms > 0n) {
         if (!canAttachWorkToMessages(address, network)) {
           setStatus({
             tone: "bad",
             text: "WORK message attachments are enabled only for approved mainnet senders.",
-          });
-          return;
-        }
-
-        if (!Number.isSafeInteger(workAttachmentAmount)) {
-          setStatus({
-            tone: "bad",
-            text: "Attach a whole-number WORK amount.",
           });
           return;
         }
@@ -21912,7 +22618,7 @@ export default function App() {
             });
           },
         );
-        const latestSpendableWork = tokenSpendabilityForWallet(
+        const latestSpendability = tokenSpendabilityForWallet(
           address,
           WORK_TOKEN_DEFINITION,
           latestWorkState,
@@ -21920,18 +22626,23 @@ export default function App() {
           tokenClosedListings,
           tokenTransfers,
           tokenSales,
-        ).spendableBalance;
-        const totalWorkToAttach = workAttachmentAmount * mailRecipients.length;
-        if (totalWorkToAttach > latestSpendableWork) {
+        );
+        const latestSpendableWorkAtoms =
+          workAtomsFromIntegerString(latestSpendability.spendableBalanceAtoms) ??
+          0n;
+        const totalWorkToAttachAtoms =
+          workAttachmentAtoms * BigInt(mailRecipients.length);
+        if (totalWorkToAttachAtoms > latestSpendableWorkAtoms) {
           setStatus({
             tone: "bad",
-            text: `Attach up to ${latestSpendableWork.toLocaleString()} spendable WORK.`,
+            text: `Attach up to ${formatWorkAmount(latestSpendableWorkAtoms)} spendable WORK.`,
           });
           return;
         }
 
         attachedWorkCredits = mailRecipients.map((mailRecipient) => ({
           amount: workAttachmentAmount,
+          amountAtoms: workAttachmentAtoms.toString(),
           paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
           recipientAddress: mailRecipient.address,
           registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
@@ -21941,7 +22652,7 @@ export default function App() {
         attachedWorkPayloads = attachedWorkCredits.map((credit) =>
           buildTokenSendPayload(
             credit.tokenId,
-            credit.amount,
+            workDecimalFromAtoms(credit.amountAtoms ?? "0"),
             credit.recipientAddress,
           ),
         );
@@ -21968,12 +22679,13 @@ export default function App() {
         ];
         pendingWorkTransfers = attachedWorkCredits.map((credit) => ({
           amount: credit.amount,
+          amountAtoms: credit.amountAtoms,
           confirmed: false,
           createdAt: new Date().toISOString(),
           dataBytes: dataCarrierBytesForPayload(
             buildTokenSendPayload(
               credit.tokenId,
-              credit.amount,
+              workDecimalFromAtoms(credit.amountAtoms ?? "0"),
               credit.recipientAddress,
             ),
           ),
@@ -22092,16 +22804,11 @@ export default function App() {
       if (finalizedPendingWorkTransfers.length > 0) {
         setTokenTransfers((current) => {
           const existingKeys = new Set(
-            current.map(
-              (transfer) =>
-                `${transfer.txid}:${transfer.tokenId}:${transfer.recipientAddress}:${transfer.amount}`,
-            ),
+            current.map(tokenTransferSpendabilityKey).filter(Boolean),
           );
           const additions = finalizedPendingWorkTransfers.filter(
             (transfer) =>
-              !existingKeys.has(
-                `${transfer.txid}:${transfer.tokenId}:${transfer.recipientAddress}:${transfer.amount}`,
-              ),
+              !existingKeys.has(tokenTransferSpendabilityKey(transfer)),
           );
           return additions.length > 0 ? [...additions, ...current] : current;
         });
@@ -22121,7 +22828,7 @@ export default function App() {
       setComposeOpen(false);
       setAttachment(undefined);
       setCcRecipient("");
-      setMessageWorkAmount(0);
+      setMessageWorkAmount("0");
       setSubject("");
       setReplyParentTxid(undefined);
       setSelectedKey(`sent-${network}-${txid}`);
@@ -22237,8 +22944,9 @@ export default function App() {
       let attachedWorkCredits: MailAttachedCredit[] = [];
       let attachedWorkPayloads: string[] = [];
       const workAmountToAttach = bondWorkAmountValue;
+      const workAtomsToAttach = bondWorkAmountAtoms;
 
-      if (workAmountToAttach > 0) {
+      if (workAtomsToAttach > 0n) {
         if (!bondWorkAttachmentAllowed) {
           setStatus({
             tone: "bad",
@@ -22247,11 +22955,6 @@ export default function App() {
                 ? "A current confirmed WORK balance is required to attach WORK to an Inception Bond."
                 : "WORK bond attachments are enabled only for approved mainnet senders.",
           });
-          return;
-        }
-
-        if (!Number.isSafeInteger(workAmountToAttach)) {
-          setStatus({ tone: "bad", text: "Attach a whole-number WORK amount." });
           return;
         }
 
@@ -22276,7 +22979,9 @@ export default function App() {
         );
         if (
           activeBondConfig.folder === "inception" &&
-          latestWorkSpendability.confirmedBalance <= 0
+          (workAtomsFromIntegerString(
+            latestWorkSpendability.confirmedBalanceAtoms,
+          ) ?? 0n) <= 0n
         ) {
           setStatus({
             tone: "bad",
@@ -22284,11 +22989,14 @@ export default function App() {
           });
           return;
         }
-        const latestSpendableWork = latestWorkSpendability.spendableBalance;
-        if (workAmountToAttach > latestSpendableWork) {
+        const latestSpendableWorkAtoms =
+          workAtomsFromIntegerString(
+            latestWorkSpendability.spendableBalanceAtoms,
+          ) ?? 0n;
+        if (workAtomsToAttach > latestSpendableWorkAtoms) {
           setStatus({
             tone: "bad",
-            text: `Attach up to ${latestSpendableWork.toLocaleString()} spendable WORK.`,
+            text: `Attach up to ${formatWorkAmount(latestSpendableWorkAtoms)} spendable WORK.`,
           });
           return;
         }
@@ -22296,6 +23004,7 @@ export default function App() {
         attachedWorkCredits = [
           {
             amount: workAmountToAttach,
+            amountAtoms: workAtomsToAttach.toString(),
             paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
             recipientAddress: resolvedRecipient.paymentAddress,
             registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
@@ -22306,7 +23015,7 @@ export default function App() {
         attachedWorkPayloads = [
           buildTokenSendPayload(
             WORK_TOKEN_ID,
-            workAmountToAttach,
+            workDecimalFromAtoms(workAtomsToAttach),
             resolvedRecipient.paymentAddress,
           ),
         ];
@@ -22446,6 +23155,7 @@ export default function App() {
         attachedWorkCredits.length > 0
           ? {
               amount: attachedWorkCredits[0].amount,
+              amountAtoms: attachedWorkCredits[0].amountAtoms,
               confirmed: false,
               createdAt,
               dataBytes: dataCarrierBytesForPayload(attachedWorkPayloads[0]),
@@ -22494,10 +23204,10 @@ export default function App() {
         );
       }
       setInfinityBondRecipient("");
-      setBondWorkAmount(0);
+      setBondWorkAmount("0");
       setStatus({
         tone: "good",
-        text: `${infinityBondAmountValue.toLocaleString()} proof ${activeBondConfig.displayName}${pendingWorkTransfer ? ` with ${pendingWorkTransfer.amount.toLocaleString()} WORK` : ""} broadcast: ${shortAddress(txid)}.`,
+        text: `${infinityBondAmountValue.toLocaleString()} proof ${activeBondConfig.displayName}${pendingWorkTransfer ? ` with ${tokenAmountDisplay(pendingWorkTransfer, pendingWorkTransfer.amount, pendingWorkTransfer.amountAtoms)} WORK` : ""} broadcast: ${shortAddress(txid)}.`,
       });
       if (pendingWorkTransfer) {
         void refreshToken(true);
@@ -23036,7 +23746,6 @@ export default function App() {
   async function transferToken(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const token = walletTransferToken;
-    const amount = Math.floor(tokenTransferAmount);
     const recipientAddress = tokenTransferRecipient.trim();
 
     if (!window.unisat) {
@@ -23056,10 +23765,10 @@ export default function App() {
       setStatus({ tone: "bad", text: "Select a mainnet credit first." });
       return;
     }
+    const parsedAmount = tokenAmountInput(token, tokenTransferAmount);
 
     if (
-      !Number.isSafeInteger(amount) ||
-      amount < 1 ||
+      !parsedAmount ||
       !isValidBitcoinAddress(recipientAddress, "livenet")
     ) {
       setStatus({
@@ -23069,7 +23778,13 @@ export default function App() {
       return;
     }
 
-    const payload = buildTokenSendPayload(token.tokenId, amount, recipientAddress);
+    const payload = buildTokenSendPayload(
+      token.tokenId,
+      isWorkToken(token)
+        ? workDecimalFromAtoms(parsedAmount.amountAtoms ?? "0")
+        : parsedAmount.amount,
+      recipientAddress,
+    );
     if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
       setStatus({
         tone: "bad",
@@ -23082,7 +23797,7 @@ export default function App() {
     setBusy(true);
     setStatus({
       tone: "idle",
-      text: `Transferring ${amount.toLocaleString()} ${token.ticker}...`,
+      text: `Transferring ${parsedAmount.display} ${token.ticker}...`,
     });
 
     try {
@@ -23111,10 +23826,24 @@ export default function App() {
         tokenTransfers,
         tokenSales,
       );
-      if (amount > spendability.spendableBalance) {
+      const spendableWorkAtoms = workAtomsFromIntegerString(
+        spendability.spendableBalanceAtoms,
+      );
+      if (
+        isWorkToken(token)
+          ? workAtomsFromIntegerString(parsedAmount.amountAtoms) === null ||
+            spendableWorkAtoms === null ||
+            workAtomsFromIntegerString(parsedAmount.amountAtoms)! >
+              spendableWorkAtoms
+          : parsedAmount.amount > spendability.spendableBalance
+      ) {
         setStatus({
           tone: "bad",
-          text: `${spendability.spendableBalance.toLocaleString()} ${token.ticker} available; ${amount.toLocaleString()} attempted. No transaction was created.`,
+          text: `${tokenAmountDisplay(
+            token,
+            spendability.spendableBalance,
+            spendability.spendableBalanceAtoms,
+          )} ${token.ticker} available; ${parsedAmount.display} attempted. No transaction was created.`,
         });
         return;
       }
@@ -23153,7 +23882,8 @@ export default function App() {
         wallet: window.unisat,
       });
       const transfer: PowTokenTransfer = {
-        amount,
+        amount: parsedAmount.amount,
+        amountAtoms: parsedAmount.amountAtoms,
         confirmed: false,
         createdAt: new Date().toISOString(),
         dataBytes: dataCarrierBytesForPayload(payload),
@@ -23192,7 +23922,6 @@ export default function App() {
   async function listToken(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const token = walletTransferToken;
-    const amount = Math.floor(tokenListAmount);
     const priceSats = Math.floor(tokenListPriceSats);
     const buyerAddress = tokenListBuyerAddress.trim();
 
@@ -23208,10 +23937,10 @@ export default function App() {
       setStatus({ tone: "bad", text: "Select a mainnet credit first." });
       return;
     }
+    const parsedAmount = tokenAmountInput(token, tokenListAmount);
 
     if (
-      !Number.isSafeInteger(amount) ||
-      amount < 1 ||
+      !parsedAmount ||
       !Number.isSafeInteger(priceSats) ||
       priceSats < 1 ||
       (buyerAddress && !isValidBitcoinAddress(buyerAddress, "livenet"))
@@ -23227,7 +23956,7 @@ export default function App() {
     setBusy(true);
     setStatus({
       tone: "idle",
-      text: `Listing ${amount.toLocaleString()} ${token.ticker}...`,
+      text: `Listing ${parsedAmount.display} ${token.ticker}...`,
     });
 
     try {
@@ -23256,10 +23985,24 @@ export default function App() {
         tokenTransfers,
         tokenSales,
       );
-      if (amount > spendability.spendableBalance) {
+      const spendableWorkAtoms = workAtomsFromIntegerString(
+        spendability.spendableBalanceAtoms,
+      );
+      if (
+        isWorkToken(token)
+          ? workAtomsFromIntegerString(parsedAmount.amountAtoms) === null ||
+            spendableWorkAtoms === null ||
+            workAtomsFromIntegerString(parsedAmount.amountAtoms)! >
+              spendableWorkAtoms
+          : parsedAmount.amount > spendability.spendableBalance
+      ) {
         setStatus({
           tone: "bad",
-          text: `${spendability.spendableBalance.toLocaleString()} ${token.ticker} available; ${amount.toLocaleString()} attempted. No transaction was created.`,
+          text: `${tokenAmountDisplay(
+            token,
+            spendability.spendableBalance,
+            spendability.spendableBalanceAtoms,
+          )} ${token.ticker} available; ${parsedAmount.display} attempted. No transaction was created.`,
         });
         return;
       }
@@ -23274,7 +24017,8 @@ export default function App() {
 
       const saleAuthorization: PowTokenSaleAuthorization = {
         ...tokenSaleAuthorizationDraft({
-          amount,
+          amount: parsedAmount.amount,
+          amountAtoms: parsedAmount.amountAtoms,
           anchorScriptPubKey: bytesToHex(
             scriptForAddress(address, "livenet", "Sale-ticket address"),
           ),
@@ -23293,7 +24037,9 @@ export default function App() {
           sellerPublicKey,
           ticker: latestToken.ticker,
           tokenId: latestToken.tokenId,
-          version: TOKEN_SALE_AUTH_VERSION,
+          version: isWorkToken(latestToken)
+            ? TOKEN_SALE_AUTH_VERSION_ATOMS
+            : TOKEN_SALE_AUTH_VERSION,
         }),
         anchorSignature: "",
         anchorTxid: "",
@@ -23346,7 +24092,8 @@ export default function App() {
         wallet: window.unisat,
       });
       const listing: PowTokenListing = {
-        amount,
+        amount: parsedAmount.amount,
+        amountAtoms: parsedAmount.amountAtoms,
         confirmed: false,
         createdAt: new Date().toISOString(),
         dataBytes: dataCarrierBytesForPayload(payload),
@@ -23640,7 +24387,11 @@ export default function App() {
     setBusy(true);
     setStatus({
       tone: "idle",
-      text: `Buying ${listing.amount.toLocaleString()} ${listing.ticker}...`,
+      text: `Buying ${tokenAmountDisplay(
+        listing,
+        listing.amount,
+        listing.amountAtoms,
+      )} ${listing.ticker}...`,
     });
 
     try {
@@ -23692,6 +24443,7 @@ export default function App() {
       });
       const sale: PowTokenSale = {
         amount: listing.amount,
+        amountAtoms: listing.amountAtoms,
         buyerAddress: address,
         confirmed: false,
         createdAt: new Date().toISOString(),
@@ -23733,7 +24485,11 @@ export default function App() {
         text: `${listing.ticker} purchase broadcast: ${shortAddress(txid)}.`,
       });
       setPurchaseReceipt({
-        amountLabel: `${listing.amount.toLocaleString()} ${listing.ticker}`,
+        amountLabel: `${tokenAmountDisplay(
+          listing,
+          listing.amount,
+          listing.amountAtoms,
+        )} ${listing.ticker}`,
         assetLabel: listing.ticker,
         buyerAddress: address,
         kind: "token",
@@ -24583,6 +25339,7 @@ export default function App() {
         bondWorkBalanceLoaded={bondWorkBalanceLoaded}
         bondWorkBalanceLoading={bondWorkBalanceLoading}
         bondWorkSpendableBalance={workAttachmentSpendableBalance}
+        bondWorkSpendableAtoms={workAttachmentSpendableAtoms.toString()}
         btcUsd={tokenBtcUsd}
         busy={busy}
         buyListing={buyTokenListing}
@@ -25566,6 +26323,7 @@ export default function App() {
             bondWorkBalanceLoaded={bondWorkBalanceLoaded}
             bondWorkBalanceLoading={bondWorkBalanceLoading}
             bondWorkSpendableBalance={workAttachmentSpendableBalance}
+            bondWorkSpendableAtoms={workAttachmentSpendableAtoms.toString()}
             btcUsd={tokenBtcUsd}
             busy={busy}
             buyListing={buyTokenListing}
@@ -25826,9 +26584,9 @@ export default function App() {
                   setWorkAmount={setMessageWorkAmount}
                   subject={subject}
                   submit={sendOpReturn}
-                  workAmount={messageWorkAmountValue}
-                  workAttachmentTotal={workAttachmentTotalAmount}
-                  workSpendableBalance={workAttachmentSpendableBalance}
+                  workAmount={messageWorkAmount}
+                  workAttachmentTotalAtoms={workAttachmentTotalAtoms.toString()}
+                  workSpendableAtoms={workAttachmentSpendableAtoms.toString()}
                   workVisible={workAttachmentVisible}
                 />
               ) : activeFolder === "drafts" ? (
@@ -25879,9 +26637,9 @@ export default function App() {
                   setWorkAmount={setMessageWorkAmount}
                   subject={subject}
                   submit={sendOpReturn}
-                  workAmount={messageWorkAmountValue}
-                  workAttachmentTotal={workAttachmentTotalAmount}
-                  workSpendableBalance={workAttachmentSpendableBalance}
+                  workAmount={messageWorkAmount}
+                  workAttachmentTotalAtoms={workAttachmentTotalAtoms.toString()}
+                  workSpendableAtoms={workAttachmentSpendableAtoms.toString()}
                   workVisible={workAttachmentVisible}
                 />
               ) : selectedMessage ? (
@@ -27629,7 +28387,7 @@ type TokenWalletAppProps = {
   feeRate: number;
   hasUnisat: boolean;
   invalidEvents: PowTokenInvalidEvent[];
-  listAmount: number;
+  listAmount: string;
   listBuyerAddress: string;
   listPriceSats: number;
   listing: boolean;
@@ -27641,17 +28399,17 @@ type TokenWalletAppProps = {
   sealListing: (listing: PowTokenListing) => void;
   selectedTokenId: string;
   setFeeRate: (value: number) => void;
-  setListAmount: (value: number) => void;
+  setListAmount: (value: string) => void;
   setListBuyerAddress: (value: string) => void;
   setListPriceSats: (value: number) => void;
   setSelectedTokenId: (value: string) => void;
-  setTransferAmount: (value: number) => void;
+  setTransferAmount: (value: string) => void;
   setTransferRecipient: (value: string) => void;
   status: { tone: StatusTone; text: string };
   submitList: (event: FormEvent<HTMLFormElement>) => void;
   submitTransfer: (event: FormEvent<HTMLFormElement>) => void;
   tokenSales: PowTokenSale[];
-  transferAmount: number;
+  transferAmount: string;
   transferBalance: number;
   transferBytes: number;
   transferRecipient: string;
@@ -27671,12 +28429,13 @@ type InfinityAppProps = {
   bondConfig: BondUiConfig;
   bondRecipient: string;
   bondRecipientResolution: RecipientResolution;
-  bondWorkAmount: number;
+  bondWorkAmount: string;
   bondWorkAttachmentVisible: boolean;
   bondWorkBalanceError: string;
   bondWorkBalanceLoaded: boolean;
   bondWorkBalanceLoading: boolean;
   bondWorkSpendableBalance: number;
+  bondWorkSpendableAtoms: string;
   btcUsd: number;
   busy: boolean;
   buyListing: (listing: PowTokenListing) => void;
@@ -27690,7 +28449,7 @@ type InfinityAppProps = {
   embedded?: boolean;
   feeRate: number;
   hasUnisat: boolean;
-  listAmount: number;
+  listAmount: string;
   listBuyerAddress: string;
   listPriceSats: number;
   listing: boolean;
@@ -27704,13 +28463,13 @@ type InfinityAppProps = {
   selectedTokenId: string;
   setBondAmount: (value: number) => void;
   setBondRecipient: (value: string) => void;
-  setBondWorkAmount: (value: number) => void;
+  setBondWorkAmount: (value: string) => void;
   setFeeRate: (value: number) => void;
-  setListAmount: (value: number) => void;
+  setListAmount: (value: string) => void;
   setListBuyerAddress: (value: string) => void;
   setListPriceSats: (value: number) => void;
   setSelectedTokenId: (value: string) => void;
-  setTransferAmount: (value: number) => void;
+  setTransferAmount: (value: string) => void;
   setTransferRecipient: (value: string) => void;
   status: { tone: StatusTone; text: string };
   submitBond: (event: FormEvent<HTMLFormElement>) => void;
@@ -27719,7 +28478,7 @@ type InfinityAppProps = {
   summary?: InfinitySummarySnapshot;
   tokens: PowTokenDefinition[];
   transfers: PowTokenTransfer[];
-  transferAmount: number;
+  transferAmount: string;
   transferBalance: number;
   transferBytes: number;
   transferRecipient: string;
@@ -27742,6 +28501,7 @@ function InfinityApp({
   bondWorkBalanceLoaded,
   bondWorkBalanceLoading,
   bondWorkSpendableBalance,
+  bondWorkSpendableAtoms,
   btcUsd,
   busy,
   buyListing,
@@ -27812,6 +28572,13 @@ function InfinityApp({
     summary?.networkValueSats ??
     0;
   const attachedWorkAmount = summary?.actualValue.attachedWorkAmount ?? 0;
+  const attachedWorkAmountAtoms =
+    workAtomsFromIntegerString(
+      summary?.actualValue.attachedWorkAmountAtoms,
+    ) ?? workAtomsFromDecimal(attachedWorkAmount) ?? 0n;
+  const attachedWorkAmountDisplay = formatWorkAmount(
+    attachedWorkAmountAtoms,
+  );
   const attachedWorkActions = summary?.actualValue.attachedWorkActions ?? 0;
   const attachedWorkIssuanceUnits =
     summary?.actualValue.attachedWorkIssuanceUnits ?? 0;
@@ -27959,8 +28726,8 @@ function InfinityApp({
                   <span>Attached WORK issuance</span>
                   <strong>
                     {Math.floor(attachedWorkIssuanceUnits).toLocaleString()} {bondConfig.ticker}
-                    {attachedWorkAmount > 0
-                      ? ` · ${Math.floor(attachedWorkAmount).toLocaleString()} WORK`
+                    {attachedWorkAmountAtoms > 0n
+                      ? ` · ${attachedWorkAmountDisplay} WORK`
                       : ""}
                   </strong>
                 </div>
@@ -28169,21 +28936,29 @@ function InfinityApp({
                   Attach WORK
                   <input
                     aria-describedby="bond-work-balance-note"
+                    inputMode="decimal"
                     max={
                       bondWorkBalanceLoaded && !bondWorkBalanceError
-                        ? Math.floor(bondWorkSpendableBalance)
+                        ? workDecimalFromAtoms(
+                            workAtomsFromIntegerString(
+                              bondWorkSpendableAtoms,
+                            ) ?? 0n,
+                          )
                         : undefined
                     }
                     min={0}
-                    onChange={(event) =>
-                      setBondWorkAmount(Number(event.target.value))
-                    }
+                    onChange={(event) => setBondWorkAmount(event.target.value)}
+                    step="0.00000001"
                     type="number"
                     value={bondWorkAmount}
                   />
                   <span className="field-note" id="bond-work-balance-note">
                     {bondWorkBalanceLoaded
-                      ? `${Math.floor(bondWorkSpendableBalance).toLocaleString()} spendable WORK${bondWorkBalanceError ? " from the last verified balance" : ""}.`
+                      ? `${tokenAmountDisplay(
+                          { ticker: WORK_TOKEN_TICKER, tokenId: WORK_TOKEN_ID },
+                          bondWorkSpendableBalance,
+                          bondWorkSpendableAtoms,
+                        )} spendable WORK${bondWorkBalanceError ? " from the last verified balance" : ""}.`
                       : bondWorkBalanceLoading
                         ? "Loading the confirmed WORK balance."
                         : bondWorkBalanceError
@@ -28213,10 +28988,15 @@ function InfinityApp({
                 <span>Payload</span>
                 <strong>{bondBytes.toLocaleString()} bytes</strong>
               </div>
-              {bondWorkAmount > 0 ? (
+              {(positiveWorkAtoms(bondWorkAmount) ?? 0n) > 0n ? (
                 <div>
                   <span>WORK attached</span>
-                  <strong>{Math.floor(bondWorkAmount).toLocaleString()} WORK</strong>
+                  <strong>
+                    {formatWorkAmount(
+                      positiveWorkAtoms(bondWorkAmount) ?? 0n,
+                    )}{" "}
+                    WORK
+                  </strong>
                 </div>
               ) : null}
             </div>
@@ -28490,7 +29270,7 @@ const DEFAULT_TOKEN_WALLET_WORKSPACE_COPY: Required<TokenWalletWorkspaceCopy> = 
   ownedLabel: "Credits owned",
   transferButton: "Transfer credit",
   transferDescription:
-    "Sends a `pwt1:send` event and pays the selected credit registry.",
+    "Sends a ProofOfWork credit transfer event and pays the selected credit registry.",
   transferProgressButton: "Transferring",
   transferSelectLabel: "Credit",
   walletEyebrow: "Credit wallet",
@@ -28498,6 +29278,7 @@ const DEFAULT_TOKEN_WALLET_WORKSPACE_COPY: Required<TokenWalletWorkspaceCopy> = 
 
 type TokenWalletMovement = {
   amount: number;
+  amountAtoms?: string;
   auditMinerFeeSats?: number;
   auditRegistryPaymentSats?: number;
   auditTotalCostSats?: number;
@@ -28512,6 +29293,7 @@ type TokenWalletMovement = {
   reason?: string;
   rejected?: boolean;
   ticker: string;
+  tokenId?: string;
   txid: string;
   type: "closed-listing" | "invalid" | "listing" | "sale" | "seal" | "transfer";
 };
@@ -28598,6 +29380,9 @@ function TokenWalletWorkspace({
   invalidEvents?: PowTokenInvalidEvent[];
 }) {
   const walletCopy = { ...DEFAULT_TOKEN_WALLET_WORKSPACE_COPY, ...copy };
+  const transferDescription =
+    copy?.transferDescription ??
+    `Sends a \`${transferToken && isWorkToken(transferToken) ? "pwt1:send2" : "pwt1:send"}\` event and pays the selected credit registry.`;
   const [walletListingPageIndex, setWalletListingPageIndex] = useState(0);
   const [walletTransferPageIndex, setWalletTransferPageIndex] = useState(0);
   const [walletListingSortMode, setWalletListingSortMode] =
@@ -28641,15 +29426,17 @@ function TokenWalletWorkspace({
   const walletMovements: TokenWalletMovement[] = [
     ...walletTransfers.map((transfer) => ({
       amount: transfer.amount,
+      amountAtoms: transfer.amountAtoms,
       confirmed: transfer.confirmed,
       frozenNetworkValueSats: transfer.frozenNetworkValueSats,
       liveNetworkValueSats: transfer.liveNetworkValueSats,
       createdAt: transfer.createdAt,
-      key: `transfer:${transfer.txid}`,
+      key: `transfer:${tokenTransferSpendabilityKey(transfer)}`,
       label: transfer.senderAddress === address ? "Sent" : "Received",
       network: transfer.network,
       priceSats: 0,
       ticker: transfer.ticker,
+      tokenId: transfer.tokenId,
       txid: transfer.txid,
       type: "transfer" as const,
     })),
@@ -28680,6 +29467,7 @@ function TokenWalletWorkspace({
     })),
     ...walletListingEvents.map((item) => ({
       amount: item.amount,
+      amountAtoms: item.amountAtoms,
       confirmed: item.confirmed,
       createdAt: item.createdAt,
       frozenNetworkValueSats: item.frozenNetworkValueSats,
@@ -28689,6 +29477,7 @@ function TokenWalletWorkspace({
       network: item.network,
       priceSats: item.priceSats,
       ticker: item.ticker,
+      tokenId: item.tokenId,
       txid: item.listingId,
       type: "listing" as const,
     })),
@@ -28697,6 +29486,7 @@ function TokenWalletWorkspace({
         ? [
             {
               amount: item.amount,
+              amountAtoms: item.amountAtoms,
               confirmed: Boolean(item.sealConfirmed),
               createdAt: item.sealAt ?? item.createdAt,
               frozenNetworkValueSats: item.sealFrozenNetworkValueSats,
@@ -28706,6 +29496,7 @@ function TokenWalletWorkspace({
               network: item.network,
               priceSats: item.priceSats,
               ticker: item.ticker,
+              tokenId: item.tokenId,
               txid: item.sealTxid,
               type: "seal" as const,
             },
@@ -28714,6 +29505,7 @@ function TokenWalletWorkspace({
     ),
     ...walletClosedListingEvents.map((item) => ({
       amount: item.amount,
+      amountAtoms: item.amountAtoms,
       confirmed: Boolean(item.closedConfirmed ?? item.confirmed),
       createdAt: item.closedAt ?? item.createdAt,
       frozenNetworkValueSats: item.closedFrozenNetworkValueSats,
@@ -28723,6 +29515,7 @@ function TokenWalletWorkspace({
       network: item.network,
       priceSats: item.priceSats,
       ticker: item.ticker,
+      tokenId: item.tokenId,
       txid: item.closedTxid || item.listingId,
       type: "closed-listing" as const,
     })),
@@ -28734,6 +29527,7 @@ function TokenWalletWorkspace({
           )
           .map((sale) => ({
             amount: sale.amount,
+            amountAtoms: sale.amountAtoms,
             confirmed: sale.confirmed,
             createdAt: sale.createdAt,
             frozenNetworkValueSats: sale.frozenNetworkValueSats,
@@ -28743,6 +29537,7 @@ function TokenWalletWorkspace({
             network: sale.network,
             priceSats: sale.priceSats,
             ticker: sale.ticker,
+            tokenId: sale.tokenId,
             txid: sale.txid,
             type: "sale" as const,
           }))
@@ -28787,8 +29582,38 @@ function TokenWalletWorkspace({
     (balance) => balance.confirmedBalance > 0,
   ).length;
   const selectedListToken = transferToken;
-  const normalizedListAmount =
-    Number.isFinite(listAmount) && listAmount > 0 ? listAmount : 0;
+  const selectedWalletBalance = selectedListToken
+    ? balances.find(
+        (balance) => balance.token.tokenId === selectedListToken.tokenId,
+      )
+    : undefined;
+  const transferBalanceAtoms =
+    selectedListToken && isWorkToken(selectedListToken)
+      ? selectedWalletBalance?.confirmedBalanceAtoms
+      : undefined;
+  const listSpendableBalanceAtoms =
+    selectedListToken && isWorkToken(selectedListToken)
+      ? [
+          (workAtomsFromIntegerString(
+            selectedWalletBalance?.confirmedBalanceAtoms,
+          ) ?? 0n) -
+            (workAtomsFromIntegerString(
+              selectedWalletBalance?.pendingOutgoingAtoms,
+            ) ?? 0n) -
+            tokenReservedBalanceAtomsFor(
+              listings,
+              selectedListToken.tokenId,
+              address,
+            ),
+          0n,
+        ]
+          .reduce((maximum, value) => (value > maximum ? value : maximum))
+          .toString()
+      : undefined;
+  const parsedListAmount = selectedListToken
+    ? tokenAmountInput(selectedListToken, listAmount)
+    : null;
+  const normalizedListAmount = parsedListAmount?.amount ?? 0;
   const normalizedListPriceSats =
     Number.isFinite(listPriceSats) && listPriceSats > 0 ? listPriceSats : 0;
   const listUnitPriceSats =
@@ -28974,15 +29799,27 @@ function TokenWalletWorkspace({
                   </span>
                   <span>
                     <strong>
-                      {balance.confirmedBalance.toLocaleString()}{" "}
+                      {tokenAmountDisplay(
+                        balance.token,
+                        balance.confirmedBalance,
+                        balance.confirmedBalanceAtoms,
+                      )}{" "}
                       {balance.token.ticker}
                     </strong>
                     <small>
                       {balance.pendingIncoming
-                        ? `+${balance.pendingIncoming.toLocaleString()} pending in`
+                        ? `+${tokenAmountDisplay(
+                            balance.token,
+                            balance.pendingIncoming,
+                            balance.pendingIncomingAtoms,
+                          )} pending in`
                         : "confirmed"}
                       {balance.pendingOutgoing
-                        ? ` · -${balance.pendingOutgoing.toLocaleString()} pending out`
+                        ? ` · -${tokenAmountDisplay(
+                            balance.token,
+                            balance.pendingOutgoing,
+                            balance.pendingOutgoingAtoms,
+                          )} pending out`
                         : ""}
                     </small>
                   </span>
@@ -29005,7 +29842,7 @@ function TokenWalletWorkspace({
             </div>
             <div>
               <h2>Transfer</h2>
-              <p>{walletCopy.transferDescription}</p>
+              <p>{transferDescription}</p>
             </div>
           </div>
           <form className="id-form" onSubmit={submitTransfer}>
@@ -29019,7 +29856,11 @@ function TokenWalletWorkspace({
                   balances.map((balance) => (
                     <option key={balance.token.tokenId} value={balance.token.tokenId}>
                       {balance.token.ticker} ·{" "}
-                      {balance.confirmedBalance.toLocaleString()} confirmed
+                      {tokenAmountDisplay(
+                        balance.token,
+                        balance.confirmedBalance,
+                        balance.confirmedBalanceAtoms,
+                      )} confirmed
                     </option>
                   ))
                 ) : (
@@ -29031,8 +29872,22 @@ function TokenWalletWorkspace({
               <label>
                 Amount
                 <input
-                  min={1}
-                  onChange={(event) => setTransferAmount(Number(event.target.value))}
+                  inputMode={
+                    transferToken && isWorkToken(transferToken)
+                      ? "decimal"
+                      : "numeric"
+                  }
+                  min={
+                    transferToken && isWorkToken(transferToken)
+                      ? "0.00000001"
+                      : "1"
+                  }
+                  onChange={(event) => setTransferAmount(event.target.value)}
+                  step={
+                    transferToken && isWorkToken(transferToken)
+                      ? "0.00000001"
+                      : "1"
+                  }
                   type="number"
                   value={transferAmount}
                 />
@@ -29050,7 +29905,11 @@ function TokenWalletWorkspace({
               <div>
                 <span>Available</span>
                 <strong>
-                  {transferBalance.toLocaleString()}{" "}
+                  {tokenAmountDisplay(
+                    transferToken ?? {},
+                    transferBalance,
+                    transferBalanceAtoms,
+                  )}{" "}
                   {transferToken?.ticker ?? "TOKEN"}
                 </strong>
               </div>
@@ -29096,8 +29955,22 @@ function TokenWalletWorkspace({
               <label>
                 Amount
                 <input
-                  min={1}
-                  onChange={(event) => setListAmount(Number(event.target.value))}
+                  inputMode={
+                    selectedListToken && isWorkToken(selectedListToken)
+                      ? "decimal"
+                      : "numeric"
+                  }
+                  min={
+                    selectedListToken && isWorkToken(selectedListToken)
+                      ? "0.00000001"
+                      : "1"
+                  }
+                  onChange={(event) => setListAmount(event.target.value)}
+                  step={
+                    selectedListToken && isWorkToken(selectedListToken)
+                      ? "0.00000001"
+                      : "1"
+                  }
                   type="number"
                   value={listAmount}
                 />
@@ -29164,7 +30037,11 @@ function TokenWalletWorkspace({
               <div>
                 <span>Spendable</span>
                 <strong>
-                  {listSpendableBalance.toLocaleString()}{" "}
+                  {tokenAmountDisplay(
+                    transferToken ?? {},
+                    listSpendableBalance,
+                    listSpendableBalanceAtoms,
+                  )}{" "}
                   {transferToken?.ticker ?? "TOKEN"}
                 </strong>
               </div>
@@ -29216,7 +30093,12 @@ function TokenWalletWorkspace({
                     <article className="token-list-item" key={item.listingId}>
                       <span>
                         <strong>
-                          {item.amount.toLocaleString()} {item.ticker}
+                          {tokenAmountDisplay(
+                            item,
+                            item.amount,
+                            item.amountAtoms,
+                          )}{" "}
+                          {item.ticker}
                         </strong>
                         <small>
                           {!item.confirmed
@@ -29313,7 +30195,12 @@ function TokenWalletWorkspace({
                 >
                   <span>
                     <strong>
-                      {movement.amount.toLocaleString()} {movement.ticker}
+                      {tokenAmountDisplay(
+                        movement,
+                        movement.amount,
+                        movement.amountAtoms,
+                      )}{" "}
+                      {movement.ticker}
                     </strong>
                     <small>
                       {movement.label} ·{" "}
@@ -29742,10 +30629,29 @@ function TokenWorkspace({
   const selectedWalletBalance = walletBalances.find(
     (balance) => balance.token.tokenId === selectedToken?.tokenId,
   );
+  const selectedHolder = holders.find(
+    (holder) =>
+      holder.address === address &&
+      (!selectedToken ||
+        tokenHolderMatchesDefinition(holder, selectedToken, tokens)),
+  );
   const holderBalance =
     selectedWalletBalance?.confirmedBalance ??
-    holders.find((holder) => holder.address === address)?.balance ??
+    selectedHolder?.balance ??
     0;
+  const holderBalanceAtoms =
+    selectedToken && isWorkToken(selectedToken)
+      ? (
+          workAtomsFromIntegerString(
+            selectedWalletBalance?.confirmedBalanceAtoms,
+          ) ??
+          workRecordAtoms(
+            selectedHolder?.balance,
+            selectedHolder?.balanceAtoms,
+          ) ??
+          0n
+        ).toString()
+      : undefined;
   const selectedMatchingHolders = holders.filter((holder) =>
     tokenHolderMatchesSearch(holder, holderQuery),
   );
@@ -30027,10 +30933,29 @@ function TokenWorkspace({
   const detailWalletBalance = walletBalances.find(
     (balance) => balance.token.tokenId === detailToken?.tokenId,
   );
+  const detailHolder = detailHolders.find(
+    (holder) =>
+      holder.address === address &&
+      (!detailToken ||
+        tokenHolderMatchesDefinition(holder, detailToken, tokens)),
+  );
   const detailHolderBalance =
     detailWalletBalance?.confirmedBalance ??
-    detailHolders.find((holder) => holder.address === address)?.balance ??
+    detailHolder?.balance ??
     0;
+  const detailHolderBalanceAtoms =
+    detailToken && isWorkToken(detailToken)
+      ? (
+          workAtomsFromIntegerString(
+            detailWalletBalance?.confirmedBalanceAtoms,
+          ) ??
+          workRecordAtoms(
+            detailHolder?.balance,
+            detailHolder?.balanceAtoms,
+          ) ??
+          0n
+        ).toString()
+      : undefined;
   const detailConfirmedMintCount = Math.max(
     detailMints.filter((mint) => mint.confirmed).length,
     Number(detailToken?.confirmedMints) || 0,
@@ -30072,22 +30997,36 @@ function TokenWorkspace({
     ? Math.max(...detailConfirmedMarketChartPoints.map((point) => point.priceSats))
     : 0;
   const detailLowestAskSats = detailMarketListings.reduce((lowest, listing) => {
-    if (!listing.confirmed || listing.amount <= 0) {
+    const unit = tokenListingUnitPriceSats(listing);
+    if (!listing.confirmed || unit <= 0) {
       return lowest;
     }
 
-    const unit = listing.priceSats / listing.amount;
     return lowest > 0 ? Math.min(lowest, unit) : unit;
   }, 0);
   const detailLastSale = detailMarketSales
-    .filter((sale) => sale.confirmed && sale.amount > 0)
+    .filter(
+      (sale) =>
+        sale.confirmed &&
+        tokenUnitPriceSats(
+          sale,
+          sale.amount,
+          sale.amountAtoms,
+          sale.priceSats,
+        ) > 0,
+    )
     .sort(
       (left, right) =>
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
         right.txid.localeCompare(left.txid),
     )[0];
   const detailLastSaleSats = detailLastSale
-    ? detailLastSale.priceSats / detailLastSale.amount
+    ? tokenUnitPriceSats(
+        detailLastSale,
+        detailLastSale.amount,
+        detailLastSale.amountAtoms,
+        detailLastSale.priceSats,
+      )
     : 0;
   const selectedProgress = tokenProgressPercent(
     confirmedSupply,
@@ -30575,7 +31514,12 @@ function TokenWorkspace({
           <article className="id-record" key={holder.address}>
             <div>
               <strong>
-                {holder.balance.toLocaleString()} {token.ticker}
+                {tokenAmountDisplay(
+                  token,
+                  holder.balance,
+                  holder.balanceAtoms,
+                )}{" "}
+                {token.ticker}
               </strong>
               <code>{holder.address}</code>
             </div>
@@ -30623,7 +31567,12 @@ function TokenWorkspace({
             <div className="activity-row-main">
               <div>
                 <h4>
-                  {mint.amount.toLocaleString()} {mint.ticker}
+                  {tokenAmountDisplay(
+                    mint,
+                    mint.amount,
+                    mint.amountAtoms,
+                  )}{" "}
+                  {mint.ticker}
                 </h4>
                 <strong>{shortAddress(mint.minterAddress)}</strong>
                 <p>
@@ -31228,7 +32177,7 @@ function TokenWorkspace({
                     estimate. Paid to{" "}
                     {shortAddress(detailToken.registryAddress)}.
                     {address
-                      ? ` Your confirmed balance is ${detailHolderBalance.toLocaleString()} ${detailToken.ticker}.`
+                      ? ` Your confirmed balance is ${tokenAmountDisplay(detailToken, detailHolderBalance, detailHolderBalanceAtoms)} ${detailToken.ticker}.`
                       : ""}
                   </p>
                   <div className="token-payment-lane">
@@ -31671,7 +32620,14 @@ function TokenWorkspace({
               {selectedToken
                 ? shortAddress(selectedToken.registryAddress)
                 : "the credit registry"}{" "}
-              on each mint. Your confirmed balance is {holderBalance.toLocaleString()}{" "}
+              on each mint. Your confirmed balance is{" "}
+              {selectedToken
+                ? tokenAmountDisplay(
+                    selectedToken,
+                    holderBalance,
+                    holderBalanceAtoms,
+                  )
+                : "0"}{" "}
               {selectedToken?.ticker ?? ""}.
             </p>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
@@ -32890,7 +33846,7 @@ function growthRealEventItems(
     setEvent({
       amountLabel: `${mint.paidSats.toLocaleString()} mint proofs`,
       createdAt: mint.createdAt,
-      detail: `${mint.amount.toLocaleString()} ${mint.ticker} minted by ${shortAddress(mint.minterAddress)}.`,
+      detail: `${tokenAmountDisplay(mint, mint.amount, mint.amountAtoms)} ${mint.ticker} minted by ${shortAddress(mint.minterAddress)}.`,
       key: mint.txid,
       kind: "Credit",
       network: mint.network,
@@ -32907,8 +33863,8 @@ function growthRealEventItems(
     setEvent({
       amountLabel: `${transfer.paidSats.toLocaleString()} registry proofs`,
       createdAt: transfer.createdAt,
-      detail: `${transfer.amount.toLocaleString()} ${transfer.ticker} moved from ${shortAddress(transfer.senderAddress)} to ${shortAddress(transfer.recipientAddress)}.`,
-      key: transfer.txid,
+      detail: `${tokenAmountDisplay(transfer, transfer.amount, transfer.amountAtoms)} ${transfer.ticker} moved from ${shortAddress(transfer.senderAddress)} to ${shortAddress(transfer.recipientAddress)}.`,
+      key: tokenTransferSpendabilityKey(transfer) || transfer.txid,
       kind: "Wallet",
       network: transfer.network,
       title: "Wallet transfer",
@@ -32924,7 +33880,7 @@ function growthRealEventItems(
     setEvent({
       amountLabel: `${sale.priceSats.toLocaleString()} sale proofs`,
       createdAt: sale.createdAt,
-      detail: `${sale.amount.toLocaleString()} ${sale.ticker} bought by ${shortAddress(sale.buyerAddress)} from ${shortAddress(sale.sellerAddress)}.`,
+      detail: `${tokenAmountDisplay(sale, sale.amount, sale.amountAtoms)} ${sale.ticker} bought by ${shortAddress(sale.buyerAddress)} from ${shortAddress(sale.sellerAddress)}.`,
       key: sale.txid,
       kind: "Marketplace",
       network: sale.network,
@@ -33690,7 +34646,13 @@ function tokenMarketPricePointsFor(
   }
 
   for (const sale of sales) {
-    if (!sale.confirmed || sale.amount <= 0 || sale.priceSats <= 0) {
+    const unitSats = tokenUnitPriceSats(
+      sale,
+      sale.amount,
+      sale.amountAtoms,
+      sale.priceSats,
+    );
+    if (!sale.confirmed || unitSats <= 0) {
       continue;
     }
 
@@ -33699,12 +34661,13 @@ function tokenMarketPricePointsFor(
       createdAt: sale.createdAt,
       kind: "sale",
       label: shortAddress(sale.txid),
-      priceSats: sale.priceSats / sale.amount,
+      priceSats: unitSats,
     });
   }
 
   for (const listing of listings) {
-    if (!listing.confirmed || listing.amount <= 0 || listing.priceSats <= 0) {
+    const unitSats = tokenListingUnitPriceSats(listing);
+    if (!listing.confirmed || unitSats <= 0) {
       continue;
     }
 
@@ -33713,7 +34676,7 @@ function tokenMarketPricePointsFor(
       createdAt: listing.createdAt,
       kind: "ask",
       label: shortAddress(listing.listingId),
-      priceSats: listing.priceSats / listing.amount,
+      priceSats: unitSats,
     });
   }
 
@@ -35024,6 +35987,7 @@ type TokenMarketplaceRow = PowTokenDefinition & {
   progress: number;
   transferCount: number;
   walletBalance: number;
+  walletBalanceAtoms?: string;
 };
 
 type MarketplaceSortMode =
@@ -35178,8 +36142,73 @@ function tokenMarketArbSats(token: TokenMarketplaceRow, workFloorSats: number) {
   return reference !== null && ask !== null ? reference - ask : null;
 }
 
+function tokenUnitPriceSats(
+  token: { ticker?: string; tokenId?: string },
+  amount: unknown,
+  amountAtoms: unknown,
+  priceSats: number,
+) {
+  const parsedAmountAtoms = tokenRecordAmountAtoms(
+    token,
+    amount,
+    amountAtoms,
+  );
+  if (
+    parsedAmountAtoms === null ||
+    parsedAmountAtoms <= 0n ||
+    !Number.isSafeInteger(priceSats) ||
+    priceSats < 0
+  ) {
+    return 0;
+  }
+  const unitScale = isWorkToken(token)
+    ? Number(WORK_TOKEN_UNIT_SCALE)
+    : 1;
+  return (priceSats * unitScale) / Number(parsedAmountAtoms);
+}
+
 function tokenListingUnitPriceSats(listing: PowTokenListing) {
-  return listing.amount > 0 ? listing.priceSats / listing.amount : 0;
+  return tokenUnitPriceSats(
+    listing,
+    listing.amount,
+    listing.amountAtoms,
+    listing.priceSats,
+  );
+}
+
+function compareTokenListingUnitPrice(
+  left: PowTokenListing,
+  right: PowTokenListing,
+) {
+  const leftAmountAtoms = tokenRecordAmountAtoms(
+    left,
+    left.amount,
+    left.amountAtoms,
+  );
+  const rightAmountAtoms = tokenRecordAmountAtoms(
+    right,
+    right.amount,
+    right.amountAtoms,
+  );
+  if (
+    leftAmountAtoms === null ||
+    rightAmountAtoms === null ||
+    leftAmountAtoms <= 0n ||
+    rightAmountAtoms <= 0n ||
+    !Number.isSafeInteger(left.priceSats) ||
+    !Number.isSafeInteger(right.priceSats)
+  ) {
+    return 0;
+  }
+  const leftNumerator =
+    BigInt(left.priceSats) *
+    (isWorkToken(left) ? BigInt(WORK_TOKEN_UNIT_SCALE) : 1n);
+  const rightNumerator =
+    BigInt(right.priceSats) *
+    (isWorkToken(right) ? BigInt(WORK_TOKEN_UNIT_SCALE) : 1n);
+  const leftCross = leftNumerator * rightAmountAtoms;
+  const rightCross = rightNumerator * leftAmountAtoms;
+  return leftCross < rightCross ? -1 : leftCross > rightCross ? 1 : 0;
 }
 
 function tokenListingReferencePriceSats(
@@ -35242,11 +36271,9 @@ function sortTokenListings(
       );
 
     if (sortMode === "price-desc" || sortMode === "price-asc") {
-      return compareOptionalMetric(
-        tokenListingUnitPriceSats(left) || null,
-        tokenListingUnitPriceSats(right) || null,
-        sortMode === "price-desc",
-        fallback,
+      const comparison = compareTokenListingUnitPrice(left, right);
+      return (
+        (sortMode === "price-desc" ? -comparison : comparison) || fallback()
       );
     }
 
@@ -35426,7 +36453,7 @@ function tokenMarketplaceRowsFor({
   const stats = new Map<
     string,
     {
-      balances: Map<string, number>;
+      balances: Map<string, bigint>;
       confirmedMints: number;
       confirmedSupply: number;
       lastSalePricePerToken: number;
@@ -35467,10 +36494,17 @@ function tokenMarketplaceRowsFor({
     if (mint.confirmed) {
       current.confirmedMints += 1;
       current.confirmedSupply += mint.amount;
-      current.balances.set(
-        mint.minterAddress,
-        (current.balances.get(mint.minterAddress) ?? 0) + mint.amount,
+      const amountAtoms = tokenRecordAmountAtoms(
+        mint,
+        mint.amount,
+        mint.amountAtoms,
       );
+      if (amountAtoms !== null) {
+        current.balances.set(
+          mint.minterAddress,
+          (current.balances.get(mint.minterAddress) ?? 0n) + amountAtoms,
+        );
+      }
     } else {
       current.pendingMints += 1;
       current.pendingSupply += mint.amount;
@@ -35492,14 +36526,21 @@ function tokenMarketplaceRowsFor({
       continue;
     }
 
-    current.balances.set(
-      transfer.senderAddress,
-      (current.balances.get(transfer.senderAddress) ?? 0) - transfer.amount,
+    const amountAtoms = tokenRecordAmountAtoms(
+      transfer,
+      transfer.amount,
+      transfer.amountAtoms,
     );
-    current.balances.set(
-      transfer.recipientAddress,
-      (current.balances.get(transfer.recipientAddress) ?? 0) + transfer.amount,
-    );
+    if (amountAtoms !== null) {
+      current.balances.set(
+        transfer.senderAddress,
+        (current.balances.get(transfer.senderAddress) ?? 0n) - amountAtoms,
+      );
+      current.balances.set(
+        transfer.recipientAddress,
+        (current.balances.get(transfer.recipientAddress) ?? 0n) + amountAtoms,
+      );
+    }
   }
 
   for (const sale of sales) {
@@ -35513,17 +36554,30 @@ function tokenMarketplaceRowsFor({
     }
 
     if (sale.confirmed) {
-      current.balances.set(
-        sale.sellerAddress,
-        (current.balances.get(sale.sellerAddress) ?? 0) - sale.amount,
+      const amountAtoms = tokenRecordAmountAtoms(
+        sale,
+        sale.amount,
+        sale.amountAtoms,
       );
-      current.balances.set(
-        sale.buyerAddress,
-        (current.balances.get(sale.buyerAddress) ?? 0) + sale.amount,
-      );
-      if (current.lastSalePricePerToken === 0) {
+      if (amountAtoms !== null) {
+        current.balances.set(
+          sale.sellerAddress,
+          (current.balances.get(sale.sellerAddress) ?? 0n) - amountAtoms,
+        );
+        current.balances.set(
+          sale.buyerAddress,
+          (current.balances.get(sale.buyerAddress) ?? 0n) + amountAtoms,
+        );
+      }
+      if (
+        current.lastSalePricePerToken === 0 &&
+        amountAtoms !== null &&
+        amountAtoms > 0n
+      ) {
         current.lastSalePricePerToken =
-          sale.amount > 0 ? sale.priceSats / sale.amount : 0;
+          (sale.priceSats *
+            (isWorkToken(sale) ? Number(WORK_TOKEN_UNIT_SCALE) : 1)) /
+          Number(amountAtoms);
       }
     }
   }
@@ -35543,8 +36597,7 @@ function tokenMarketplaceRowsFor({
       continue;
     }
 
-    const ask =
-      listing.amount > 0 ? listing.priceSats / listing.amount : 0;
+    const ask = tokenListingUnitPriceSats(listing);
     if (ask <= 0) {
       continue;
     }
@@ -35558,7 +36611,7 @@ function tokenMarketplaceRowsFor({
   return networkTokens
     .map((token) => {
       const current = stats.get(token.tokenId);
-      const balances = current?.balances ?? new Map<string, number>();
+      const balances = current?.balances ?? new Map<string, bigint>();
       const confirmedMints = Math.max(
         current?.confirmedMints ?? 0,
         Number.isFinite(token.confirmedMints) ? Number(token.confirmedMints) : 0,
@@ -35570,7 +36623,7 @@ function tokenMarketplaceRowsFor({
           : 0,
       );
       const holderCount = Math.max(
-        [...balances.values()].filter((balance) => balance > 0).length,
+        [...balances.values()].filter((balance) => balance > 0n).length,
         Number.isFinite(token.holderCount) ? Number(token.holderCount) : 0,
       );
       const lastSalePricePerToken = Math.max(
@@ -35597,6 +36650,11 @@ function tokenMarketplaceRowsFor({
         current?.transferCount ?? 0,
         Number.isFinite(token.transferCount) ? Number(token.transferCount) : 0,
       );
+      const walletBalanceAtoms = address
+        ? [balances.get(address) ?? 0n, 0n].reduce((maximum, value) =>
+            value > maximum ? value : maximum,
+          )
+        : 0n;
 
       return {
         ...token,
@@ -35615,7 +36673,12 @@ function tokenMarketplaceRowsFor({
           token.maxSupply,
         ),
         transferCount,
-        walletBalance: address ? Math.max(0, balances.get(address) ?? 0) : 0,
+        walletBalance: isWorkToken(token)
+          ? workNumberFromAtoms(walletBalanceAtoms)
+          : Number(walletBalanceAtoms),
+        walletBalanceAtoms: isWorkToken(token)
+          ? walletBalanceAtoms.toString()
+          : undefined,
       };
     })
     .sort(
@@ -35917,7 +36980,12 @@ function InfinityBondMarketPanel({
                 >
                   <div>
                     <strong>
-                      {listing.amount.toLocaleString()} {bondConfig.ticker}
+                      {tokenAmountDisplay(
+                        listing,
+                        listing.amount,
+                        listing.amountAtoms,
+                      )}{" "}
+                      {bondConfig.ticker}
                     </strong>
                     <span>
                       {!hasSeal
@@ -35930,7 +36998,13 @@ function InfinityBondMarketPanel({
                   <dl>
                     <div>
                       <dt>Amount</dt>
-                      <dd>{listing.amount.toLocaleString()}</dd>
+                      <dd>
+                        {tokenAmountDisplay(
+                          listing,
+                          listing.amount,
+                          listing.amountAtoms,
+                        )}
+                      </dd>
                     </div>
                     <div>
                       <dt>Price</dt>
@@ -36109,10 +37183,12 @@ function InfinityBondMarketPanel({
               }
 
               if (item.kind === "sale") {
-                const unitSats =
-                  item.sale.amount > 0
-                    ? item.sale.priceSats / item.sale.amount
-                    : 0;
+                const unitSats = tokenUnitPriceSats(
+                  item.sale,
+                  item.sale.amount,
+                  item.sale.amountAtoms,
+                  item.sale.priceSats,
+                );
                 return (
                   <article
                     className="id-record token-market-row"
@@ -36120,7 +37196,12 @@ function InfinityBondMarketPanel({
                   >
                     <div>
                       <strong>
-                        {item.sale.amount.toLocaleString()} {bondConfig.ticker}
+                        {tokenAmountDisplay(
+                          item.sale,
+                          item.sale.amount,
+                          item.sale.amountAtoms,
+                        )}{" "}
+                        {bondConfig.ticker}
                       </strong>
                       <span>
                         {item.sale.confirmed ? "Confirmed sale" : "Pending sale"}
@@ -36198,7 +37279,12 @@ function InfinityBondMarketPanel({
                 >
                   <div>
                     <strong>
-                      {item.listing.amount.toLocaleString()} {bondConfig.ticker}
+                      {tokenAmountDisplay(
+                        item.listing,
+                        item.listing.amount,
+                        item.listing.amountAtoms,
+                      )}{" "}
+                      {bondConfig.ticker}
                     </strong>
                     <span>
                       {!item.listing.confirmed
@@ -37097,7 +38183,7 @@ function TokenMarketplacePanel({
                     Registry {shortAddress(token.registryAddress)} ·{" "}
                     {token.pendingMints.toLocaleString()} pending mints
                     {address
-                      ? ` · Your balance ${token.walletBalance.toLocaleString()} ${token.ticker}`
+                      ? ` · Your balance ${tokenAmountDisplay(token, token.walletBalance, token.walletBalanceAtoms)} ${token.ticker}`
                       : ""}
                   </p>
                   <div className="id-record-actions">
@@ -37236,7 +38322,13 @@ function TokenMarketplacePanel({
                   >
                     <span>
                       <strong>
-                        Your {listing.amount.toLocaleString()} {listing.ticker}
+                        Your{" "}
+                        {tokenAmountDisplay(
+                          listing,
+                          listing.amount,
+                          listing.amountAtoms,
+                        )}{" "}
+                        {listing.ticker}
                       </strong>
                       <small>
                         {sealStatus} · {listing.priceSats.toLocaleString()} proofs ·{" "}
@@ -37263,7 +38355,7 @@ function TokenMarketplacePanel({
                 const sealPending =
                   tokenListingHasPendingSaleTicketSeal(listing);
                 const listingUnitSats =
-                  listing.amount > 0 ? listing.priceSats / listing.amount : 0;
+                  tokenListingUnitPriceSats(listing);
                 const listingToken = rows.find(
                   (token) => token.tokenId === listing.tokenId,
                 );
@@ -37333,7 +38425,13 @@ function TokenMarketplacePanel({
                     <dl>
                       <div>
                         <dt>Amount</dt>
-                        <dd>{listing.amount.toLocaleString()}</dd>
+                        <dd>
+                          {tokenAmountDisplay(
+                            listing,
+                            listing.amount,
+                            listing.amountAtoms,
+                          )}
+                        </dd>
                       </div>
                       <div>
                         <dt>Price</dt>
@@ -37441,10 +38539,7 @@ function TokenMarketplacePanel({
               {tokenMarketLogPage.items.map((item) => {
                 if (item.kind === "closed-listing") {
                   const closedListing = item.closedListing;
-                  const unitSats =
-                    closedListing.amount > 0
-                      ? closedListing.priceSats / closedListing.amount
-                      : 0;
+                  const unitSats = tokenListingUnitPriceSats(closedListing);
                   const closedTxid =
                     closedListing.closedTxid || closedListing.listingId;
                   const closedAt =
@@ -37456,7 +38551,11 @@ function TokenMarketplacePanel({
                     >
                       <div>
                         <strong>
-                          {closedListing.amount.toLocaleString()}{" "}
+                          {tokenAmountDisplay(
+                            closedListing,
+                            closedListing.amount,
+                            closedListing.amountAtoms,
+                          )}{" "}
                           {closedListing.ticker}
                         </strong>
                         <span>
@@ -37533,10 +38632,12 @@ function TokenMarketplacePanel({
                 }
 
                 if (item.kind === "sale") {
-                  const unitSats =
-                    item.sale.amount > 0
-                      ? item.sale.priceSats / item.sale.amount
-                      : 0;
+                  const unitSats = tokenUnitPriceSats(
+                    item.sale,
+                    item.sale.amount,
+                    item.sale.amountAtoms,
+                    item.sale.priceSats,
+                  );
                   return (
                     <article
                       className="id-record token-market-row"
@@ -37544,7 +38645,11 @@ function TokenMarketplacePanel({
                     >
                       <div>
                         <strong>
-                          {item.sale.amount.toLocaleString()}{" "}
+                          {tokenAmountDisplay(
+                            item.sale,
+                            item.sale.amount,
+                            item.sale.amountAtoms,
+                          )}{" "}
                           {item.sale.ticker}
                         </strong>
                         <span>
@@ -37620,10 +38725,7 @@ function TokenMarketplacePanel({
                   tokenListingHasConfirmedSaleTicketSeal(item.listing);
                 const sealPending =
                   tokenListingHasPendingSaleTicketSeal(item.listing);
-                const unitSats =
-                  item.listing.amount > 0
-                    ? item.listing.priceSats / item.listing.amount
-                    : 0;
+                const unitSats = tokenListingUnitPriceSats(item.listing);
                 const buyerLock =
                   item.listing.saleAuthorization.buyerAddress || "";
                 return (
@@ -37633,7 +38735,11 @@ function TokenMarketplacePanel({
                   >
                     <div>
                       <strong>
-                        {item.listing.amount.toLocaleString()}{" "}
+                        {tokenAmountDisplay(
+                          item.listing,
+                          item.listing.amount,
+                          item.listing.amountAtoms,
+                        )}{" "}
                         {item.listing.ticker}
                       </strong>
                       <span>
@@ -40209,8 +41315,11 @@ function DraftList({
           </div>
           <div className="message-meta">
             <span>{draft.amountSats.toLocaleString()} proofs</span>
-            {(draft.workAmount ?? 0) > 0 ? (
-              <span>{Math.floor(draft.workAmount ?? 0).toLocaleString()} WORK each</span>
+            {(positiveWorkAtoms(draft.workAmount) ?? 0n) > 0n ? (
+              <span>
+                {formatWorkAmount(positiveWorkAtoms(draft.workAmount) ?? 0n)}{" "}
+                WORK each
+              </span>
             ) : null}
             {draft.attachment ? <span>Attachment</span> : null}
             {draft.parentTxid ? <span>Reply</span> : null}
@@ -41010,8 +42119,8 @@ function ComposePane({
   subject,
   submit,
   workAmount,
-  workAttachmentTotal,
-  workSpendableBalance,
+  workAttachmentTotalAtoms,
+  workSpendableAtoms,
   workVisible,
   setWorkAmount,
 }: {
@@ -41043,12 +42152,12 @@ function ComposePane({
   setParentTxid: (value: string | undefined) => void;
   setRecipient: (value: string) => void;
   setSubject: (value: string) => void;
-  setWorkAmount: (value: number) => void;
+  setWorkAmount: (value: string) => void;
   subject: string;
   submit: (event: FormEvent<HTMLFormElement>) => void;
-  workAmount: number;
-  workAttachmentTotal: number;
-  workSpendableBalance: number;
+  workAmount: string;
+  workAttachmentTotalAtoms: string;
+  workSpendableAtoms: string;
   workVisible: boolean;
 }) {
   const recipientTokens = splitRecipientInputs(recipient);
@@ -41219,17 +42328,23 @@ function ComposePane({
           <label>
             WORK each
             <input
-              min={0}
-              onChange={(event) => setWorkAmount(Number(event.target.value))}
-              step={1}
+              inputMode="decimal"
+              min="0"
+              onChange={(event) => setWorkAmount(event.target.value)}
+              step="0.00000001"
               type="number"
               value={workAmount}
             />
           </label>
           <div className="field-note good">
-            Spendable WORK: {workSpendableBalance.toLocaleString()}
-            {workAttachmentTotal > 0
-              ? ` · Total: ${workAttachmentTotal.toLocaleString()}`
+            Spendable WORK:{" "}
+            {formatWorkAmount(
+              workAtomsFromIntegerString(workSpendableAtoms) ?? 0n,
+            )}
+            {(workAtomsFromIntegerString(workAttachmentTotalAtoms) ?? 0n) > 0n
+              ? ` · Total: ${formatWorkAmount(
+                  workAtomsFromIntegerString(workAttachmentTotalAtoms) ?? 0n,
+                )}`
               : ""}
           </div>
         </div>
