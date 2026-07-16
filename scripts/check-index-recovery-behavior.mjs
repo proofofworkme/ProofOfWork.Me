@@ -4987,6 +4987,99 @@ check("empty bond summaries cannot cross bond-family identity", () => {
     true,
     "a current-model proof-only bond remains arithmetically valid",
   );
+
+  const productionPrecisionActual = {
+    attachedWorkActions: 24,
+    attachedWorkAmount: 79_488_720,
+    attachedWorkFrozenValueSats: 9_957_991_138_328.822,
+    attachedWorkIssuanceUnits: 9_957_991_138_317,
+    attachedWorkLiveFloorAtSendSats: 125_275.52511008886,
+    attachedWorkLiveValueAtSendSats: 9_957_991_138_328.822,
+    attachedWorkLiveValueSats: 187_743_462_092_488.4,
+    attachedWorkUnmatchedActions: 0,
+    attachedWorkUnvaluedActions: 0,
+    attachmentAccountingModel: inceptionIssuanceModel,
+    baseNetworkValueSats: 14_104,
+    bondMarketplaceMutationFeeSats: 0,
+    bondMintFlowSats: 14_104,
+    bondSaleVolumeSats: 0,
+    bondTransferFeeSats: 0,
+    confirmedIssuanceUnits: 9_957_991_152_421,
+    directProofIssuanceUnits: 14_104,
+    frozenFloorSats: 1.0000000000011873,
+    frozenNetworkValueSats: 9_957_991_152_432.822,
+    issuanceAccountingModel: inceptionIssuanceModel,
+    issuanceCheckpointBlockHash:
+      "0000000000000000000157976425b0a5e3d6d0ee8358611e957486873f862f85",
+    issuanceCheckpointBlockHeight: 958_197,
+    issuanceCheckpointBlockIndex: 2_014,
+    issuanceCheckpointMode: "bond-transaction-provenance",
+    issuanceDustSats: 11.822265625,
+    issuanceFloorSats: 1.0000000000011873,
+    issuanceNetworkValueSats: 9_957_991_152_432.822,
+    issuanceUnitSats: 1,
+    issuanceValuationFixedAtSend: true,
+    issuanceValueSnapshotBlockHash:
+      "000000000000000000009c6cae5edf2187ec681b47969ac79d07f1f713fea460",
+    issuanceValueSnapshotBlockHeight: 958_196,
+    issuanceValueSnapshotCanonicalSummaryHash:
+      "2d76510da97e2703c76896eaa774e8fdf8e0cd040d49f0d2443e871b675ae475",
+    issuanceValueSnapshotGeneratedAt: "2026-07-15T20:40:11.158Z",
+    issuanceValueSnapshotId: "e59bf41d4ced5cb965cb0cb6",
+    issuanceValueSnapshotMode: "canonical-summary-refresh",
+    issuanceValueSnapshotModel: inceptionValueSnapshotModel,
+    issuanceValueSnapshotWorkNetworkValueSats: 16_941_906_432_781.268,
+    liveFloorSats: 18.853547792211884,
+    liveNetworkValueSats: 187_743_462_106_592.4,
+    networkValueSats: 187_743_462_106_592.4,
+  };
+  const productionPrecisionSummary = {
+    ...empty,
+    actualValue: productionPrecisionActual,
+    chartPoints: [
+      {
+        confirmedSupply: 9_957_991_152_421,
+        floorSats: productionPrecisionActual.liveFloorSats,
+        networkValueSats: productionPrecisionActual.liveNetworkValueSats,
+      },
+    ],
+    networkValueSats: productionPrecisionActual.liveNetworkValueSats,
+    stats: {
+      confirmedBondActions: 25,
+      confirmedSupply: 9_957_991_152_421,
+    },
+  };
+  assert.equal(
+    productionPrecisionActual.liveFloorSats *
+      productionPrecisionSummary.stats.confirmedSupply -
+      productionPrecisionActual.liveNetworkValueSats,
+    0.03125,
+    "the production fixture must preserve the one-ULP multiplication gap",
+  );
+  assert.equal(
+    bondSummaryPayloadHasKnownMainnetValue(
+      productionPrecisionSummary,
+      config,
+    ),
+    true,
+    "one binary64 ULP cannot invalidate an otherwise exact INCB summary",
+  );
+  assert.equal(
+    bondSummaryPayloadHasKnownMainnetValue(
+      {
+        ...productionPrecisionSummary,
+        actualValue: {
+          ...productionPrecisionActual,
+          liveFloorSats:
+            productionPrecisionActual.liveFloorSats +
+            1 / productionPrecisionSummary.stats.confirmedSupply,
+        },
+      },
+      config,
+    ),
+    false,
+    "the scale-aware floor check must still reject a one-proof discrepancy",
+  );
   assert.equal(
     bondSummaryPayloadHasKnownMainnetValue(
       {

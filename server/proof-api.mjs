@@ -22918,6 +22918,23 @@ function bondSummaryPayloadHasKnownMainnetValue(
     numericValue(summary.networkValueSats),
     numericValue(summary.actualValue?.networkValueSats),
   );
+  const floorTimesSupplyAgrees = (floorSats, supply, totalSats) => {
+    const projectedTotalSats = numericValue(floorSats) * numericValue(supply);
+    const expectedTotalSats = numericValue(totalSats);
+    const floatingPointTolerance =
+      Number.EPSILON *
+      Math.max(
+        Math.abs(projectedTotalSats),
+        Math.abs(expectedTotalSats),
+        1,
+      ) *
+      2;
+    return numbersAgree(
+      projectedTotalSats,
+      expectedTotalSats,
+      Math.max(0.01, floatingPointTolerance),
+    );
+  };
   if (
     options.allowEmptyHistory === true &&
     confirmedSupply === 0 &&
@@ -23065,11 +23082,10 @@ function bondSummaryPayloadHasKnownMainnetValue(
         issuanceNetworkValueSats - confirmedIssuanceUnits,
         0.01,
       ) &&
-      numbersAgree(
-        numericValue(summary.actualValue?.issuanceFloorSats) *
-          confirmedIssuanceUnits,
+      floorTimesSupplyAgrees(
+        summary.actualValue?.issuanceFloorSats,
+        confirmedIssuanceUnits,
         issuanceNetworkValueSats,
-        0.01,
       ) &&
       numbersAgree(baseNetworkValueSats, bondMintFlowSats +
         bondSaleVolumeSats + bondTransferFeeSats +
@@ -23090,15 +23106,15 @@ function bondSummaryPayloadHasKnownMainnetValue(
         0.01,
       ) &&
       numbersAgree(networkValueSats, liveNetworkValueSats, 0.01) &&
-      numbersAgree(
-        numericValue(summary.actualValue?.frozenFloorSats) * confirmedSupply,
+      floorTimesSupplyAgrees(
+        summary.actualValue?.frozenFloorSats,
+        confirmedSupply,
         frozenNetworkValueSats,
-        0.01,
       ) &&
-      numbersAgree(
-        numericValue(summary.actualValue?.liveFloorSats) * confirmedSupply,
+      floorTimesSupplyAgrees(
+        summary.actualValue?.liveFloorSats,
+        confirmedSupply,
         liveNetworkValueSats,
-        0.01,
       ) &&
       (attachedWorkActions > 0
         ? attachedWorkAmount > 0 &&
