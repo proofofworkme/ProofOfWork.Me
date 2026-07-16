@@ -32,6 +32,112 @@ const WORK_TOKEN_MINT_AMOUNT_ATOMS = 100_000_000_000n;
 const TOKEN_SEND_ATOMS_ACTION = "send2";
 const TOKEN_SALE_AUTH_ATOMS_VERSION = "pwt-sale-v2";
 const VALUE_Q8_SCALE = 100_000_000n;
+const ID_MARKETPLACE_MUTATION_KINDS = new Set([
+  "id-list",
+  "id-seal",
+  "id-delist",
+  "id-buy",
+]);
+const TOKEN_MARKETPLACE_MUTATION_KINDS = new Set([
+  "token-listing",
+  "token-listing-sealed",
+  "token-listing-closed",
+]);
+const MARKETPLACE_MUTATION_KINDS = new Set([
+  ...ID_MARKETPLACE_MUTATION_KINDS,
+  ...TOKEN_MARKETPLACE_MUTATION_KINDS,
+]);
+const numericValue = (value, fallback = 0) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+const dateIso = (value, fallback = new Date(0)) => {
+  const date = value instanceof Date ? value : new Date(value ?? fallback);
+  return Number.isNaN(date.getTime())
+    ? fallback.toISOString()
+    : date.toISOString();
+};
+const normalizedText = (value) => String(value ?? "").trim();
+const normalizedTxid = (value) => {
+  const txid = normalizedText(value).toLowerCase();
+  return /^[0-9a-f]{64}$/u.test(txid) ? txid : "";
+};
+const rowNumber = (row, key) => {
+  const number = Number(row?.[key]);
+  return Number.isFinite(number) ? number : 0;
+};
+const validTxid = (value) => Boolean(normalizedTxid(value));
+const marketplaceMutationPaymentSats = (item) => {
+  for (const value of [
+    item?.marketplaceMutationFeeSats,
+    item?.amountSats,
+    item?.totalSats,
+  ]) {
+    const sats = numericValue(value);
+    if (sats > 0) {
+      return sats;
+    }
+  }
+  return 0;
+};
+const marketplaceMutationPaymentIdentity = (item) => {
+  const kind = String(item?.kind ?? "");
+  if (!MARKETPLACE_MUTATION_KINDS.has(kind)) {
+    return "";
+  }
+  const txid = String(item?.txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(txid)) {
+    return "";
+  }
+  const family = ID_MARKETPLACE_MUTATION_KINDS.has(kind) ? "id" : "token";
+  const registryAddress = String(
+    item?.registryAddress ??
+      item?.saleAuthorization?.registryAddress ??
+      (family === "token" ? item?.counterparty : "") ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  return `${family}:${txid}:${registryAddress}`;
+};
+const uniqueMarketplaceMutationActivity = (
+  activity,
+  kinds = MARKETPLACE_MUTATION_KINDS,
+) => {
+  const unique = [];
+  const indexByPayment = new Map();
+  for (const item of Array.isArray(activity) ? activity : []) {
+    if (!kinds.has(item?.kind)) {
+      continue;
+    }
+    const identity = marketplaceMutationPaymentIdentity(item);
+    if (!identity) {
+      unique.push(item);
+      continue;
+    }
+    const currentIndex = indexByPayment.get(identity);
+    if (currentIndex === undefined) {
+      indexByPayment.set(identity, unique.length);
+      unique.push(item);
+      continue;
+    }
+    if (
+      marketplaceMutationPaymentSats(item) >
+      marketplaceMutationPaymentSats(unique[currentIndex])
+    ) {
+      unique[currentIndex] = item;
+    }
+  }
+  return unique;
+};
+const marketplaceMutationPaymentFlowSats = (
+  activity,
+  kinds = MARKETPLACE_MUTATION_KINDS,
+) =>
+  uniqueMarketplaceMutationActivity(activity, kinds).reduce(
+    (total, item) => total + marketplaceMutationPaymentSats(item),
+    0,
+  );
 
 const objectValue = (value) =>
   value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -313,18 +419,29 @@ function isolatedFunction(path, name, globals = {}) {
     TOKEN_SEND_ATOMS_ACTION,
     TOKEN_SALE_AUTH_ATOMS_VERSION,
     VALUE_Q8_SCALE,
+    ID_MARKETPLACE_MUTATION_KINDS,
+    MARKETPLACE_MUTATION_KINDS,
+    TOKEN_MARKETPLACE_MUTATION_KINDS,
     canonicalNonNegativeIntegerText,
     canonicalWorkAtomsText,
     compareTokenHolderBalances,
+    dateIso,
     decimalValueToQ8,
     formatWorkAtoms,
     isWorkTokenId,
+    marketplaceMutationPaymentFlowSats,
+    marketplaceMutationPaymentIdentity,
+    marketplaceMutationPaymentSats,
     normalizeWorkAtoms,
+    normalizedText,
+    normalizedTxid,
+    numericValue,
     objectValue,
     parseSignedWorkAmountToAtoms,
     parseWorkAmountToAtoms,
     q8ToCanonicalDecimal,
     q8ToNumber,
+    rowNumber,
     tokenLedgerAmountFields,
     tokenLedgerAmountFromRecord,
     tokenLedgerHumanNumber,
@@ -343,6 +460,8 @@ function isolatedFunction(path, name, globals = {}) {
     workAmountFieldsFromAtoms,
     workProjectionItem,
     withWorkPrecisionMetadata,
+    uniqueMarketplaceMutationActivity,
+    validTxid,
     ...globals,
   });
   const definition = topLevelFunctionSource(path, name);
@@ -6002,6 +6121,72 @@ check("empty bond summaries cannot cross bond-family identity", () => {
     true,
     "a production-scale fixed INCB summary must remain valid",
   );
+  const currentMagnitudeActual = {
+    ...productionPrecisionActual,
+    attachedWorkActions: 29,
+    attachedWorkAmount: 79_488_720,
+    attachedWorkFrozenValueSats: 108_304_295_445_983.2,
+    attachedWorkIssuanceUnits: 108_304_295_445_969,
+    attachedWorkLiveFloorAtSendSats:
+      108_304_295_445_983.2 / 79_488_720,
+    attachedWorkLiveValueAtSendSats: 108_304_295_445_983.2,
+    attachedWorkLiveValueSats: 108_304_295_445_983.2,
+    baseNetworkValueSats: 16_834,
+    bondMintFlowSats: 16_834,
+    confirmedIssuanceUnits: 108_304_295_462_803,
+    directProofIssuanceUnits: 16_834,
+    floorSats: 1.0000000000001312,
+    frozenFloorSats: 1.0000000000001312,
+    frozenNetworkValueSats: 108_304_295_462_817.2,
+    issuanceDustSats: 14.203125,
+    issuanceFloorSats: 1.0000000000001312,
+    issuanceNetworkValueSats: 108_304_295_462_817.2,
+    liveFloorSats: 1.0000000000001312,
+    liveNetworkValueSats: 108_304_295_462_817.2,
+    networkValueSats: 108_304_295_462_817.2,
+  };
+  const currentMagnitudeSummary = {
+    ...productionPrecisionSummary,
+    actualValue: currentMagnitudeActual,
+    chartPoints: [
+      {
+        confirmedSupply: currentMagnitudeActual.confirmedIssuanceUnits,
+        floorSats: currentMagnitudeActual.liveFloorSats,
+        networkValueSats: currentMagnitudeActual.liveNetworkValueSats,
+      },
+    ],
+    networkValueSats: currentMagnitudeActual.networkValueSats,
+    stats: {
+      confirmedBondActions: 30,
+      confirmedSupply: currentMagnitudeActual.confirmedIssuanceUnits,
+    },
+  };
+  assert.equal(
+    currentMagnitudeActual.issuanceFloorSats *
+      currentMagnitudeActual.confirmedIssuanceUnits -
+      currentMagnitudeActual.issuanceNetworkValueSats,
+    0.015625,
+  );
+  assert.equal(
+    bondSummaryPayloadHasKnownMainnetValue(currentMagnitudeSummary, config),
+    true,
+    "the public reader accepts sub-proof arithmetic noise at the current INCB scale",
+  );
+  assert.equal(
+    bondSummaryPayloadHasKnownMainnetValue(
+      {
+        ...currentMagnitudeSummary,
+        actualValue: {
+          ...currentMagnitudeActual,
+          liveNetworkValueSats:
+            currentMagnitudeActual.liveNetworkValueSats + 1,
+        },
+      },
+      config,
+    ),
+    false,
+    "the public reader still rejects a one-proof current-scale discrepancy",
+  );
   assert.equal(
     bondSummaryPayloadHasKnownMainnetValue(
       {
@@ -9442,6 +9627,57 @@ check("canonical summary publication allows cumulative INCB dust across independ
     canonicalSummaryAccountingModelsCurrent(summaryPayloads(1)),
     false,
     "cumulative dust must remain below the number of confirmed mints",
+  );
+  const productionMagnitudeIssuance = {
+    ...actualValue,
+    attachedWorkIssuanceUnits: 108_304_295_445_969,
+    attachedWorkLiveValueAtSendSats: 108_304_295_445_983.2,
+    confirmedIssuanceUnits: 108_304_295_462_803,
+    directProofIssuanceUnits: 16_834,
+    floorSats: 1.0000000000001312,
+    frozenFloorSats: 1.0000000000001312,
+    frozenNetworkValueSats: 108_304_295_462_817.2,
+    issuanceDustSats: 14.203125,
+    issuanceFloorSats: 1.0000000000001312,
+    issuanceNetworkValueSats: 108_304_295_462_817.2,
+    liveFloorSats: 1.0000000000001312,
+    liveNetworkValueSats: 108_304_295_462_817.2,
+    networkValueSats: 108_304_295_462_817.2,
+  };
+  const productionMagnitudeSummary = summaryPayloads(30);
+  productionMagnitudeSummary.inceptionSummary = {
+    actualValue: productionMagnitudeIssuance,
+    networkValueSats: productionMagnitudeIssuance.networkValueSats,
+    stats: {
+      confirmedSupply: productionMagnitudeIssuance.confirmedIssuanceUnits,
+    },
+    token: { stats: { confirmedMints: 30 } },
+  };
+  assert.equal(
+    productionMagnitudeIssuance.issuanceFloorSats *
+      productionMagnitudeIssuance.confirmedIssuanceUnits -
+      productionMagnitudeIssuance.issuanceNetworkValueSats,
+    0.015625,
+  );
+  assert.equal(
+    canonicalSummaryAccountingModelsCurrent(productionMagnitudeSummary),
+    true,
+    "production-scale INCB issuance accepts only sub-proof floating-point noise",
+  );
+  assert.equal(
+    canonicalSummaryAccountingModelsCurrent({
+      ...productionMagnitudeSummary,
+      inceptionSummary: {
+        ...productionMagnitudeSummary.inceptionSummary,
+        actualValue: {
+          ...productionMagnitudeIssuance,
+          issuanceNetworkValueSats:
+            productionMagnitudeIssuance.issuanceNetworkValueSats + 1,
+        },
+      },
+    }),
+    false,
+    "production-scale INCB issuance still rejects a one-proof discrepancy",
   );
 
   const exactTipLiveFloorSats = 683.8074244507424;
@@ -17989,6 +18225,142 @@ check("closed listing projections retain seal metadata and close chronology", ()
   assert.equal(pendingSeal.sealConfirmed, false);
 });
 
+check("terminal credit listings preserve canonical sale chronology across maintenance rewrites", () => {
+  const listingId = "a".repeat(64);
+  const closeTxid = "c".repeat(64);
+  const listingCreatedAt = "2026-06-21T11:50:32.000Z";
+  const canonicalSaleAt = "2026-06-30T10:49:21.000Z";
+  const migrationUpdatedAt = "2026-07-16T18:56:08.145Z";
+  const dateIso = (value) =>
+    value ? new Date(value).toISOString() : undefined;
+  const tokenListingFromCreditListingRow = isolatedFunction(
+    READER_PATH,
+    "tokenListingFromCreditListingRow",
+    {
+      dateIso,
+      normalizeTokenHistoryListingItem: (item) => item,
+      objectRecord: (value) => value ?? {},
+      rowNumber: (value, key) => Number(value?.[key] ?? 0),
+      tokenListingEffectiveCloseTxid: (row) =>
+        String(row?.close_txid ?? ""),
+      tokenListingEffectiveSaleTicketTxid: (_row, _payload, _authorization, id) =>
+        id,
+      tokenListingSealConfirmedFromTransaction: () => true,
+      validTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
+    },
+  );
+  const sold = tokenListingFromCreditListingRow(
+    {
+      close_event_time: canonicalSaleAt,
+      close_txid: closeTxid,
+      listing_id: listingId,
+      payload: {
+        createdAt: listingCreatedAt,
+        saleAuthorization: {},
+      },
+      status: "sold",
+      token_id: "fixture-token",
+      updated_at: migrationUpdatedAt,
+    },
+    "livenet",
+  );
+  assert.equal(sold.closedAt, canonicalSaleAt);
+  assert.equal(sold.createdAt, listingCreatedAt);
+  assert.notEqual(sold.closedAt, migrationUpdatedAt);
+
+  const transactionTimed = tokenListingFromCreditListingRow(
+    {
+      close_transaction_block_time: canonicalSaleAt,
+      close_txid: closeTxid,
+      listing_id: listingId,
+      payload: { saleAuthorization: {} },
+      status: "sold",
+      token_id: "fixture-token",
+      updated_at: migrationUpdatedAt,
+    },
+    "livenet",
+  );
+  assert.equal(transactionTimed.closedAt, canonicalSaleAt);
+  assert.equal(transactionTimed.createdAt, undefined);
+
+  const active = tokenListingFromCreditListingRow(
+    {
+      listing_id: listingId,
+      payload: { saleAuthorization: {} },
+      seal_txid: "b".repeat(64),
+      status: "sealing",
+      token_id: "fixture-token",
+      updated_at: migrationUpdatedAt,
+    },
+    "livenet",
+  );
+  assert.equal(active.createdAt, migrationUpdatedAt);
+  assert.equal(active.sealAt, migrationUpdatedAt);
+
+  const mergeCanonicalTokenSaleRecord = isolatedFunction(
+    READER_PATH,
+    "mergeCanonicalTokenSaleRecord",
+  );
+  const mergeCanonicalTokenClosedListingRecord = isolatedFunction(
+    READER_PATH,
+    "mergeCanonicalTokenClosedListingRecord",
+    {
+      mergeTokenListingRecord: (current, incoming) => ({
+        ...current,
+        ...incoming,
+      }),
+    },
+  );
+  const uniqueTokenItems = isolatedFunction(READER_PATH, "uniqueTokenItems", {
+    compareTokenItemsByTime: () => 0,
+  });
+  const [sale] = uniqueTokenItems(
+    [
+      {
+        createdAt: canonicalSaleAt,
+        priceSats: 1_000,
+        txid: closeTxid,
+      },
+      {
+        createdAt: migrationUpdatedAt,
+        priceSats: 1_000,
+        txid: closeTxid,
+      },
+    ],
+    (item) => item.txid,
+    mergeCanonicalTokenSaleRecord,
+  );
+  assert.equal(sale.createdAt, canonicalSaleAt);
+
+  const [closed] = uniqueTokenItems(
+    [
+      {
+        closedAt: canonicalSaleAt,
+        closedTxid: closeTxid,
+        createdAt: canonicalSaleAt,
+        listingId,
+      },
+      {
+        closedAt: migrationUpdatedAt,
+        closedTxid: closeTxid,
+        createdAt: migrationUpdatedAt,
+        listingId,
+      },
+    ],
+    (item) => `${item.listingId}:${item.closedTxid}`,
+    mergeCanonicalTokenClosedListingRecord,
+  );
+  assert.equal(closed.closedAt, canonicalSaleAt);
+  assert.equal(closed.createdAt, canonicalSaleAt);
+
+  const listingRead = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenListingsFromTables",
+  );
+  assert.match(listingRead, /LEFT JOIN LATERAL[\s\S]*close_event_row\.event_time/u);
+  assert.match(listingRead, /close_tx\.status = 'confirmed'/u);
+});
+
 check("seal-close summary recovery requires a proven unspent anchor", async () => {
   const listingId = "a".repeat(64);
   const sealTxid = "b".repeat(64);
@@ -20068,7 +20440,11 @@ check("recompacting summary-only payloads never turns truncated arrays into tota
   );
   const tokenSummary = {
     closedListings: [{ listingId: "closed" }],
-    collectionHasMore: { closedListings: true },
+    collectionHasMore: {
+      closedListings: true,
+      listings: true,
+      sales: true,
+    },
     holders: [{ address: "holder", balance: 1 }],
     listings: [{ listingId: "open" }],
     mints: [{ confirmed: true }],
@@ -20099,6 +20475,12 @@ check("recompacting summary-only payloads never turns truncated arrays into tota
   assert.equal(twice.totalCounts.transfers, 34);
   assert.equal(twice.totalCount, 999);
   assert.equal(twice.collectionHasMore.closedListings, true);
+  assert.equal(twice.tokens[0].confirmedSales, undefined);
+  assert.equal(twice.tokens[0].confirmedSalesVolumeSats, undefined);
+  assert.equal(twice.tokens[0].pendingSales, undefined);
+  assert.equal(twice.tokens[0].pendingSalesVolumeSats, undefined);
+  assert.equal(twice.tokens[0].confirmedOpenListings, undefined);
+  assert.equal(twice.tokens[0].pendingOpenListings, undefined);
 
   const registryOnce = compactRegistrySummaryPayload({
     activity: [{ txid: "one" }],
@@ -20115,6 +20497,116 @@ check("recompacting summary-only payloads never turns truncated arrays into tota
   assert.equal(registryTwice.totalCounts.pendingEvents, 8);
   assert.equal(registryTwice.totalCounts.sales, null);
   assert.equal(registryTwice.collectionHasMore.listings, true);
+});
+
+check("compact token definitions preserve per-token market totals beyond previews", () => {
+  const tokenId = "a".repeat(64);
+  const tokenListingHasConfirmedSaleTicketSeal = (listing) =>
+    listing?.sealConfirmed === true;
+  const tokenAggregateSummaries = isolatedFunction(
+    API_PATH,
+    "tokenAggregateSummaries",
+    { tokenListingHasConfirmedSaleTicketSeal },
+  );
+  const tokenSummaryMetricValue = isolatedFunction(
+    API_PATH,
+    "tokenSummaryMetricValue",
+  );
+  const compactTokenSummaryPayload = isolatedFunction(
+    API_PATH,
+    "compactTokenSummaryPayload",
+    {
+      SUMMARY_MARKET_LIMIT: 40,
+      mergedTokenSummaryMetric: (
+        token,
+        summary,
+        key,
+        preserveExisting,
+      ) => {
+        const existing = tokenSummaryMetricValue(token?.[key]);
+        if (preserveExisting && existing !== undefined) {
+          return existing;
+        }
+        return tokenSummaryMetricValue(summary?.[key]) ?? existing;
+      },
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+      recentByCreatedAt: (items, limit) =>
+        (Array.isArray(items) ? items : []).slice(0, limit),
+      recentClosedTokenListings: (items, limit) =>
+        (Array.isArray(items) ? items : []).slice(0, limit),
+      tokenAggregateSummaries,
+      tokenListingHasConfirmedSaleTicketSeal,
+      tokenMatchesScope: () => false,
+      tokenPayloadWithScopedHolderIdentity: (payload) => payload,
+      tokenSummaryListings: (items, limit) =>
+        (Array.isArray(items) ? items : []).slice(0, limit),
+      tokenSummaryMetricValue,
+    },
+  );
+  const payload = {
+    closedListings: [],
+    holders: [],
+    listings: [
+      {
+        amount: 3,
+        confirmed: true,
+        listingId: "1".repeat(64),
+        priceSats: 300,
+        tokenId,
+      },
+      {
+        amount: 4,
+        confirmed: false,
+        listingId: "2".repeat(64),
+        priceSats: 400,
+        tokenId,
+      },
+    ],
+    mints: [],
+    sales: [
+      {
+        amount: 10,
+        buyerAddress: "buyer",
+        confirmed: true,
+        priceSats: 100,
+        sellerAddress: "seller",
+        tokenId,
+      },
+      {
+        amount: 5,
+        buyerAddress: "pending-buyer",
+        confirmed: false,
+        priceSats: 250,
+        sellerAddress: "seller",
+        tokenId,
+      },
+    ],
+    stats: {},
+    tokens: [{ confirmed: true, ticker: "TEST", tokenId }],
+    transfers: [],
+  };
+  const aggregated = tokenAggregateSummaries(payload).get(tokenId);
+  assert.equal(aggregated.confirmedSales, 1);
+  assert.equal(aggregated.confirmedSalesVolumeSats, 100);
+  assert.equal(aggregated.pendingSales, 1);
+  assert.equal(aggregated.pendingSalesVolumeSats, 250);
+  assert.equal(aggregated.confirmedOpenListings, 1);
+  assert.equal(aggregated.pendingOpenListings, 1);
+
+  const once = compactTokenSummaryPayload(payload);
+  const twice = compactTokenSummaryPayload(once);
+  for (const compact of [once, twice]) {
+    const token = compact.tokens[0];
+    assert.equal(token.confirmedSales, 1);
+    assert.equal(token.confirmedSalesVolumeSats, 100);
+    assert.equal(token.pendingSales, 1);
+    assert.equal(token.pendingSalesVolumeSats, 250);
+    assert.equal(token.confirmedOpenListings, 1);
+    assert.equal(token.pendingOpenListings, 1);
+    assert.equal(compact.stats.confirmedSalesVolumeSats, 100);
+    assert.equal(compact.stats.pendingSalesVolumeSats, 250);
+  }
 });
 
 check("summary provenance rejects missing and mismatched required component IDs", async () => {
@@ -20437,6 +20929,272 @@ check("both consistency routes require an eligible summary snapshot", () => {
   );
   assert.equal(applies("/api/v1/consistency"), true);
   assert.equal(applies("/api/v1/ledger-consistency"), true);
+});
+
+check("marketplace mutation accounting counts one registry payment per transaction", () => {
+  const numericValue = (value, fallback = 0) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  };
+  const activityAmountSats = isolatedFunction(
+    API_PATH,
+    "activityAmountSats",
+  );
+  const ID_MARKETPLACE_MUTATION_KINDS = new Set([
+    "id-list",
+    "id-seal",
+    "id-delist",
+    "id-buy",
+  ]);
+  const TOKEN_MARKETPLACE_MUTATION_KINDS = new Set([
+    "token-listing",
+    "token-listing-sealed",
+    "token-listing-closed",
+  ]);
+  const MARKETPLACE_MUTATION_KINDS = new Set([
+    ...ID_MARKETPLACE_MUTATION_KINDS,
+    ...TOKEN_MARKETPLACE_MUTATION_KINDS,
+  ]);
+  const marketplaceMutationPaymentSats = isolatedFunction(
+    API_PATH,
+    "marketplaceMutationPaymentSats",
+    { numericValue },
+  );
+  const marketplaceMutationPaymentIdentity = isolatedFunction(
+    API_PATH,
+    "marketplaceMutationPaymentIdentity",
+    {
+      ID_MARKETPLACE_MUTATION_KINDS,
+      MARKETPLACE_MUTATION_KINDS,
+    },
+  );
+  const uniqueMarketplaceMutationActivity = isolatedFunction(
+    API_PATH,
+    "uniqueMarketplaceMutationActivity",
+    {
+      MARKETPLACE_MUTATION_KINDS,
+      marketplaceMutationPaymentIdentity,
+      marketplaceMutationPaymentSats,
+    },
+  );
+  const marketplaceMutationPaymentFlowSats = isolatedFunction(
+    API_PATH,
+    "marketplaceMutationPaymentFlowSats",
+    {
+      MARKETPLACE_MUTATION_KINDS,
+      marketplaceMutationPaymentSats,
+      uniqueMarketplaceMutationActivity,
+    },
+  );
+  const confirmedActivityFlowSats = isolatedFunction(
+    API_PATH,
+    "confirmedActivityFlowSats",
+    {
+      MARKETPLACE_MUTATION_KINDS,
+      activityAmountSats,
+      marketplaceMutationPaymentFlowSats,
+    },
+  );
+  const duplicateTxid =
+    "a18c2972590631e0a53bf47a2b1a737c39142136994faf2fd04247f7c1628749";
+  const registryAddress = "1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn";
+  const seal = {
+    amountSats: 546,
+    confirmed: true,
+    kind: "token-listing-sealed",
+    marketplaceMutationFeeSats: 546,
+    registryAddress,
+    txid: duplicateTxid,
+  };
+  const close = {
+    ...seal,
+    kind: "token-listing-closed",
+  };
+  const closeWithoutRegistry = {
+    ...close,
+    registryAddress: "",
+  };
+  const listing = {
+    ...seal,
+    kind: "token-listing",
+    txid: "b".repeat(64),
+  };
+  const sellerSale = {
+    amountSats: 3_374_237,
+    confirmed: true,
+    kind: "token-sale",
+    priceSats: 3_373_145,
+    txid: "c".repeat(64),
+  };
+  const activity = [seal, close, listing, sellerSale];
+
+  assert.equal(
+    marketplaceMutationPaymentIdentity(seal),
+    marketplaceMutationPaymentIdentity(close),
+  );
+  assert.equal(
+    uniqueMarketplaceMutationActivity(
+      activity,
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    ).length,
+    2,
+  );
+  assert.equal(
+    uniqueMarketplaceMutationActivity(
+      [seal, closeWithoutRegistry],
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    ).length,
+    1,
+    "a blank duplicate projection inherits the sole registry for its transaction",
+  );
+  assert.equal(
+    uniqueMarketplaceMutationActivity(
+      [
+        { ...seal, registryAddress: "" },
+        closeWithoutRegistry,
+      ],
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    ).length,
+    2,
+    "ambiguous blank payment identities fail separate instead of collapsing",
+  );
+  assert.equal(
+    marketplaceMutationPaymentFlowSats(
+      activity,
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    ),
+    1_092,
+  );
+  assert.equal(
+    confirmedActivityFlowSats(
+      activity,
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    ),
+    1_092,
+    "seller paidSats must not replace priceSats or enter mutation fees",
+  );
+});
+
+check("grouped proof-index deltas use one verified marketplace payment per transaction", () => {
+  const normalizeDeltaRows = isolatedFunction(
+    READER_PATH,
+    "proofIndexConfirmedValueEventDeltaFromRows",
+  );
+  const growthDeltaForProofIndexEvents = isolatedFunction(
+    API_PATH,
+    "growthDeltaForProofIndexEvents",
+    {
+      GROWTH_MODEL_INPUTS: { valueMultiple: 5 },
+      INCEPTION_BOND_KIND: "inception-bond",
+      INFINITY_BOND_KIND: "infinity-bond",
+    },
+  );
+  const duplicateTxid =
+    "a18c2972590631e0a53bf47a2b1a737c39142136994faf2fd04247f7c1628749";
+  const registryAddress = "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
+  const baseRow = {
+    event_count: 1,
+    expected_min_sats: "546",
+    generated_at: "2026-07-16T16:00:00.000Z",
+    indexed_through_block: 958_313,
+    kind: "token-listing",
+    marketplace_payment: true,
+    max_event_block: 950_667,
+    max_event_time: "2026-05-23T12:07:29.000Z",
+    txid: duplicateTxid,
+  };
+  const payload = normalizeDeltaRows(
+    [
+      {
+        ...baseRow,
+        payment_verified: true,
+        registry_address: registryAddress,
+        total_sats: "546",
+      },
+      {
+        ...baseRow,
+        payment_verified: false,
+        registry_address: "",
+        total_sats: "0",
+      },
+    ],
+    "livenet",
+  );
+
+  assert.ok(payload);
+  assert.equal(payload.totalCount, 2);
+  assert.equal(payload.totalSats, 546);
+  assert.equal(payload.events.length, 1);
+  assert.deepEqual(
+    {
+      count: payload.events[0].count,
+      fee: payload.events[0].marketplaceMutationFeeSats,
+      kind: payload.events[0].kind,
+      registryAddress: payload.events[0].registryAddress,
+      totalSats: payload.events[0].totalSats,
+      txid: payload.events[0].txid,
+      verified: payload.events[0].marketplacePaymentVerified,
+    },
+    {
+      count: 2,
+      fee: 546,
+      kind: "token-listing",
+      registryAddress,
+      totalSats: 546,
+      txid: duplicateTxid,
+      verified: true,
+    },
+  );
+
+  const delta = growthDeltaForProofIndexEvents(payload.events);
+  assert.equal(delta.tokenMarketplaceFeeSats, 546);
+  assert.equal(delta.marketplaceMutationFeeSats, 546);
+  assert.equal(delta.marketplaceFlowSats, 546);
+  assert.equal(delta.marketplaceSats, 2_730);
+  assert.equal(delta.totalSats, 2_730);
+
+  assert.equal(
+    normalizeDeltaRows(
+      [
+        {
+          ...baseRow,
+          payment_verified: false,
+          registry_address: "",
+          total_sats: "0",
+        },
+      ],
+      "livenet",
+    ),
+    null,
+    "a marketplace delta without a registry payment must fail closed",
+  );
+  assert.equal(
+    normalizeDeltaRows(
+      [
+        {
+          ...baseRow,
+          payment_verified: true,
+          registry_address: registryAddress,
+          total_sats: "546",
+        },
+        {
+          ...baseRow,
+          payment_verified: true,
+          registry_address: "1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn",
+          total_sats: "546",
+        },
+        {
+          ...baseRow,
+          payment_verified: false,
+          registry_address: "",
+          total_sats: "0",
+        },
+      ],
+      "livenet",
+    ),
+    null,
+    "a blank registry cannot inherit an ambiguous marketplace payment",
+  );
 });
 
 check("WORK replay counts one canonical miner fee without collapsing same-tx movements", () => {

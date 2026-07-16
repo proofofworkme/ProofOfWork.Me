@@ -8313,6 +8313,21 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
     attachedWorkLiveValueAtSendSats - attachedWorkIssuanceUnits;
   const issuanceAggregateDustSats =
     issuanceNetworkValueSats - confirmedIssuanceUnits;
+  const issuanceArithmeticTolerance = Math.min(
+    0.5,
+    Math.max(
+      0.01,
+      Number.EPSILON *
+        Math.max(
+          1,
+          Math.abs(issuanceNetworkValueSats),
+          Math.abs(
+            issuanceFloorSats * confirmedIssuanceUnits,
+          ),
+        ) *
+        8,
+    ),
+  );
   const inceptionIssuanceCurrent =
     inceptionActual?.attachmentAccountingModel ===
       INCB_ISSUANCE_ACCOUNTING_MODEL &&
@@ -8369,22 +8384,22 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
       issuanceNetworkValueSats -
         (directProofIssuanceUnits +
           attachedWorkLiveValueAtSendSats),
-    ) <= 0.01 &&
+    ) <= issuanceArithmeticTolerance &&
     Number.isFinite(issuanceDustSats) &&
     issuanceDustSats >= 0 &&
     issuanceDustSats < confirmedInceptionMints &&
     Math.abs(
       issuanceDustSats - issuanceAggregateDustSats,
-    ) <= 0.01 &&
+    ) <= issuanceArithmeticTolerance &&
     Math.abs(
       issuanceDustSats - attachedWorkIssuanceDustSats,
-    ) <= 0.01 &&
+    ) <= issuanceArithmeticTolerance &&
     Number.isFinite(issuanceFloorSats) &&
     issuanceFloorSats >= 1 &&
     Math.abs(
       issuanceFloorSats * confirmedIssuanceUnits -
         issuanceNetworkValueSats,
-    ) <= 0.01;
+    ) <= issuanceArithmeticTolerance;
   const expectedInceptionNetworkValueSats =
     issuanceNetworkValueSats +
     inceptionBondSaleVolumeSats +

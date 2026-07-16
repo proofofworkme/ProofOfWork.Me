@@ -14705,7 +14705,10 @@ function infinityBondChartPointsFromEvents({
         txid: String(transfer.txid ?? ""),
         valueSats: numericValue(transfer.paidSats),
       })),
-    ...(Array.isArray(marketplaceMutations) ? marketplaceMutations : [])
+    ...uniqueMarketplaceMutationActivity(
+      marketplaceMutations,
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    )
       .filter((item) => item?.confirmed && item.tokenId === config.tokenId)
       .map((item) => ({
         amount: 0,
@@ -14716,7 +14719,7 @@ function infinityBondChartPointsFromEvents({
         eventOrdinal: canonicalTokenReplayOrdinal(item),
         order: 2,
         txid: String(item.txid ?? ""),
-        valueSats: activityAmountSats(item),
+        valueSats: marketplaceMutationPaymentSats(item),
       })),
     ...(Array.isArray(sales) ? sales : [])
       .filter((sale) => sale?.confirmed && sale.tokenId === config.tokenId)
@@ -17890,12 +17893,18 @@ function tokenAggregateSummaries(payload) {
       {
         balances: new Map(),
         confirmedMints: 0,
+        confirmedOpenListings: 0,
+        confirmedSales: 0,
+        confirmedSalesVolumeSats: 0,
         confirmedSupply: 0,
         holderCount: 0,
         lastSalePricePerToken: 0,
         lowestAskPricePerToken: 0,
         openListings: 0,
         pendingMints: 0,
+        pendingOpenListings: 0,
+        pendingSales: 0,
+        pendingSalesVolumeSats: 0,
         pendingSupply: 0,
         transferCount: 0,
       },
@@ -17965,7 +17974,15 @@ function tokenAggregateSummaries(payload) {
 
   for (const sale of Array.isArray(payload.sales) ? payload.sales : []) {
     const current = summaries.get(sale.tokenId);
-    if (!current || !sale.confirmed) {
+    if (!current) {
+      continue;
+    }
+    if (sale.confirmed) {
+      current.confirmedSales += 1;
+      current.confirmedSalesVolumeSats += numericValue(sale.priceSats);
+    } else {
+      current.pendingSales += 1;
+      current.pendingSalesVolumeSats += numericValue(sale.priceSats);
       continue;
     }
     const amount = tokenLedgerAmountFromRecord(sale.tokenId, sale);
@@ -17988,6 +18005,11 @@ function tokenAggregateSummaries(payload) {
     }
 
     current.openListings += 1;
+    if (listing.confirmed) {
+      current.confirmedOpenListings += 1;
+    } else {
+      current.pendingOpenListings += 1;
+    }
     if (!tokenListingHasConfirmedSaleTicketSeal(listing)) {
       continue;
     }
@@ -18428,6 +18450,39 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
     const number = Number(value);
     return Number.isFinite(number) && number >= 0 ? number : undefined;
   };
+  const summaryCollectionIsTruncated = (key, visible) => {
+    if (!preserveExistingTokenMetrics) {
+      return false;
+    }
+    const total = explicitCount(payload.totalCounts?.[key]);
+    return (
+      payload.collectionHasMore?.[key] === true ||
+      (total !== undefined && total > visible)
+    );
+  };
+  const salesSummaryIsTruncated = summaryCollectionIsTruncated(
+    "sales",
+    sales.length,
+  );
+  const listingsSummaryIsTruncated = summaryCollectionIsTruncated(
+    "listings",
+    listings.length,
+  );
+  const mergedTokenMarketMetric = (
+    token,
+    summary,
+    key,
+    truncated,
+  ) => {
+    const tokenValue = tokenSummaryMetricValue(token?.[key]);
+    if (preserveExistingTokenMetrics && tokenValue !== undefined) {
+      return tokenValue;
+    }
+    if (preserveExistingTokenMetrics && truncated) {
+      return undefined;
+    }
+    return tokenSummaryMetricValue(summary?.[key]) ?? tokenValue;
+  };
   const authoritativeStat = (key, computed) => {
     const existing = explicitCount(stats[key]);
     return preserveExistingTokenMetrics && existing !== undefined
@@ -18476,6 +18531,24 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
         "confirmedMints",
         preserveExistingTokenMetrics,
       ),
+      confirmedOpenListings: mergedTokenMarketMetric(
+        token,
+        summary,
+        "confirmedOpenListings",
+        listingsSummaryIsTruncated,
+      ),
+      confirmedSales: mergedTokenMarketMetric(
+        token,
+        summary,
+        "confirmedSales",
+        salesSummaryIsTruncated,
+      ),
+      confirmedSalesVolumeSats: mergedTokenMarketMetric(
+        token,
+        summary,
+        "confirmedSalesVolumeSats",
+        salesSummaryIsTruncated,
+      ),
       confirmedSupply: mergedTokenSummaryMetric(
         token,
         summary,
@@ -18511,6 +18584,24 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
         summary,
         "pendingMints",
         preserveExistingTokenMetrics,
+      ),
+      pendingOpenListings: mergedTokenMarketMetric(
+        token,
+        summary,
+        "pendingOpenListings",
+        listingsSummaryIsTruncated,
+      ),
+      pendingSales: mergedTokenMarketMetric(
+        token,
+        summary,
+        "pendingSales",
+        salesSummaryIsTruncated,
+      ),
+      pendingSalesVolumeSats: mergedTokenMarketMetric(
+        token,
+        summary,
+        "pendingSalesVolumeSats",
+        salesSummaryIsTruncated,
       ),
       pendingSupply: mergedTokenSummaryMetric(
         token,
@@ -18679,6 +18770,12 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
       pendingSales: authoritativeStat(
         "pendingSales",
         sales.filter((sale) => !sale?.confirmed).length,
+      ),
+      pendingSalesVolumeSats: authoritativeStat(
+        "pendingSalesVolumeSats",
+        sales
+          .filter((sale) => !sale?.confirmed)
+          .reduce((total, sale) => total + numericValue(sale.priceSats), 0),
       ),
       pendingTransfers: authoritativeStat(
         "pendingTransfers",
@@ -23661,21 +23758,26 @@ function bondSummaryPayloadHasKnownMainnetValue(
     numericValue(summary.networkValueSats),
     numericValue(summary.actualValue?.networkValueSats),
   );
+  const subProofArithmeticTolerance = (...values) =>
+    Math.min(
+      0.5,
+      Math.max(
+        0.01,
+        Number.EPSILON *
+          Math.max(
+            1,
+            ...values.map((value) => Math.abs(numericValue(value))),
+          ) *
+          8,
+      ),
+    );
   const floorTimesSupplyAgrees = (floorSats, supply, totalSats) => {
     const projectedTotalSats = numericValue(floorSats) * numericValue(supply);
     const expectedTotalSats = numericValue(totalSats);
-    const floatingPointTolerance =
-      Number.EPSILON *
-      Math.max(
-        Math.abs(projectedTotalSats),
-        Math.abs(expectedTotalSats),
-        1,
-      ) *
-      2;
     return numbersAgree(
       projectedTotalSats,
       expectedTotalSats,
-      Math.max(0.01, floatingPointTolerance),
+      subProofArithmeticTolerance(projectedTotalSats, expectedTotalSats),
     );
   };
   if (
@@ -23829,12 +23931,18 @@ function bondSummaryPayloadHasKnownMainnetValue(
       numbersAgree(
         issuanceNetworkValueSats,
         directProofIssuanceUnits + attachedWorkLiveValueAtSendSats,
-        0.01,
+        subProofArithmeticTolerance(
+          issuanceNetworkValueSats,
+          directProofIssuanceUnits + attachedWorkLiveValueAtSendSats,
+        ),
       ) &&
       numbersAgree(
         numericValue(summary.actualValue?.issuanceDustSats),
         issuanceNetworkValueSats - confirmedIssuanceUnits,
-        0.01,
+        subProofArithmeticTolerance(
+          summary.actualValue?.issuanceDustSats,
+          issuanceNetworkValueSats - confirmedIssuanceUnits,
+        ),
       ) &&
       floorTimesSupplyAgrees(
         summary.actualValue?.issuanceFloorSats,
@@ -23843,33 +23951,56 @@ function bondSummaryPayloadHasKnownMainnetValue(
       ) &&
       numbersAgree(baseNetworkValueSats, bondMintFlowSats +
         bondSaleVolumeSats + bondTransferFeeSats +
-        bondMarketplaceMutationFeeSats, 0.01) &&
+        bondMarketplaceMutationFeeSats, subProofArithmeticTolerance(
+          baseNetworkValueSats,
+          bondMintFlowSats + bondSaleVolumeSats + bondTransferFeeSats +
+            bondMarketplaceMutationFeeSats,
+        )) &&
       numbersAgree(
         frozenNetworkValueSats,
         baseNetworkValueSats + attachedWorkLiveValueAtSendSats,
-        0.01,
+        subProofArithmeticTolerance(
+          frozenNetworkValueSats,
+          baseNetworkValueSats + attachedWorkLiveValueAtSendSats,
+        ),
       ) &&
       numbersAgree(
         attachedWorkFrozenValueSats,
         attachedWorkLiveValueAtSendSats,
-        0.01,
+        subProofArithmeticTolerance(
+          attachedWorkFrozenValueSats,
+          attachedWorkLiveValueAtSendSats,
+        ),
       ) &&
       numbersAgree(
         attachedWorkLiveValueSats,
         attachedWorkLiveValueAtSendSats,
-        0.01,
+        subProofArithmeticTolerance(
+          attachedWorkLiveValueSats,
+          attachedWorkLiveValueAtSendSats,
+        ),
       ) &&
       numbersAgree(
         frozenNetworkValueSats,
         inceptionFixedNetworkValueSats,
-        0.01,
+        subProofArithmeticTolerance(
+          frozenNetworkValueSats,
+          inceptionFixedNetworkValueSats,
+        ),
       ) &&
       numbersAgree(
         liveNetworkValueSats,
         inceptionFixedNetworkValueSats,
-        0.01,
+        subProofArithmeticTolerance(
+          liveNetworkValueSats,
+          inceptionFixedNetworkValueSats,
+        ),
       ) &&
-      numbersAgree(networkValueSats, liveNetworkValueSats, 0.01) &&
+      numbersAgree(
+        networkValueSats,
+        liveNetworkValueSats,
+        subProofArithmeticTolerance(networkValueSats, liveNetworkValueSats),
+      ) &&
       floorTimesSupplyAgrees(
         summary.actualValue?.frozenFloorSats,
         confirmedSupply,
@@ -23886,7 +24017,10 @@ function bondSummaryPayloadHasKnownMainnetValue(
           numbersAgree(
             attachedWorkLiveValueAtSendSats,
             attachedWorkAmount * attachedWorkLiveFloorAtSendSats,
-            0.01,
+            subProofArithmeticTolerance(
+              attachedWorkLiveValueAtSendSats,
+              attachedWorkAmount * attachedWorkLiveFloorAtSendSats,
+            ),
           ) &&
           attachedWorkFrozenValueSats > 0 &&
           attachedWorkLiveValueSats > 0 &&
@@ -24315,10 +24449,24 @@ function growthDeltaForProofIndexEvents(events) {
     delta[satsKey] += sats * GROWTH_MODEL_INPUTS.valueMultiple;
     delta.totalSats += sats * GROWTH_MODEL_INPUTS.valueMultiple;
   };
+  const countedMarketplaceMutationEvents = new Set(
+    uniqueMarketplaceMutationActivity(
+      events,
+      MARKETPLACE_MUTATION_KINDS,
+    ),
+  );
 
   for (const event of Array.isArray(events) ? events : []) {
     const kind = String(event?.kind ?? "");
-    const sats = numericValue(event?.totalSats);
+    if (
+      MARKETPLACE_MUTATION_KINDS.has(kind) &&
+      !countedMarketplaceMutationEvents.has(event)
+    ) {
+      continue;
+    }
+    const sats = MARKETPLACE_MUTATION_KINDS.has(kind)
+      ? marketplaceMutationPaymentSats(event)
+      : numericValue(event?.totalSats);
     if (sats <= 0) {
       continue;
     }
@@ -25855,13 +26003,11 @@ function ledgerSnapshotChecks({
         transfer?.confirmed && transfer.tokenId === INCB_TOKEN_ID,
     )
     .reduce((total, transfer) => total + numericValue(transfer.paidSats), 0);
-  const inceptionMarketplaceMutationFeeSats = confirmedActivity
-    .filter(
-      (item) =>
-        item?.tokenId === INCB_TOKEN_ID &&
-        TOKEN_MARKETPLACE_MUTATION_KINDS.has(item.kind),
-    )
-    .reduce((total, item) => total + activityAmountSats(item), 0);
+  const inceptionMarketplaceMutationFeeSats =
+    marketplaceMutationPaymentFlowSats(
+      confirmedActivity.filter((item) => item?.tokenId === INCB_TOKEN_ID),
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    );
   const inceptionFixedNetworkValueSats =
     inceptionIssuance.issuanceNetworkValueSats +
     inceptionSaleVolumeSats +
@@ -26580,13 +26726,14 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     (total, transfer) => total + numericValue(transfer.paidSats),
     0,
   );
-  const confirmedMarketplaceMutations = confirmedActivity.filter(
-    (item) =>
-      item?.tokenId === config.tokenId &&
-      TOKEN_MARKETPLACE_MUTATION_KINDS.has(item.kind),
+  const confirmedMarketplaceMutations = uniqueMarketplaceMutationActivity(
+    confirmedActivity.filter((item) => item?.tokenId === config.tokenId),
+    TOKEN_MARKETPLACE_MUTATION_KINDS,
   );
-  const bondMarketplaceMutationFeeSats = confirmedMarketplaceMutations
-    .reduce((total, item) => total + activityAmountSats(item), 0);
+  const bondMarketplaceMutationFeeSats = marketplaceMutationPaymentFlowSats(
+    confirmedMarketplaceMutations,
+    TOKEN_MARKETPLACE_MUTATION_KINDS,
+  );
   const baseNetworkValueSats =
     bondMintFlowSats +
     bondSaleVolumeSats +
@@ -33253,6 +33400,106 @@ function activityAmountSats(item) {
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
 
+function marketplaceMutationPaymentSats(item) {
+  for (const value of [
+    item?.marketplaceMutationFeeSats,
+    item?.amountSats,
+    item?.totalSats,
+  ]) {
+    const sats = numericValue(value);
+    if (sats > 0) {
+      return sats;
+    }
+  }
+  return 0;
+}
+
+function marketplaceMutationPaymentIdentity(item) {
+  const kind = String(item?.kind ?? "");
+  if (!MARKETPLACE_MUTATION_KINDS.has(kind)) {
+    return "";
+  }
+  const txid = String(item?.txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(txid)) {
+    return "";
+  }
+  const family = ID_MARKETPLACE_MUTATION_KINDS.has(kind) ? "id" : "token";
+  const registryAddress = String(
+    item?.registryAddress ??
+      item?.saleAuthorization?.registryAddress ??
+      (family === "token" ? item?.counterparty : "") ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  return `${family}:${txid}:${registryAddress}`;
+}
+
+function uniqueMarketplaceMutationActivity(
+  activity,
+  kinds = MARKETPLACE_MUTATION_KINDS,
+) {
+  const selected = (Array.isArray(activity) ? activity : []).filter((item) =>
+    kinds.has(item?.kind),
+  );
+  const registriesByPayment = new Map();
+  for (const item of selected) {
+    const identity = marketplaceMutationPaymentIdentity(item);
+    const separator = identity.lastIndexOf(":");
+    if (separator <= 0 || separator === identity.length - 1) {
+      continue;
+    }
+    const payment = identity.slice(0, separator);
+    const registryAddress = identity.slice(separator + 1);
+    const registries = registriesByPayment.get(payment) ?? new Set();
+    registries.add(registryAddress);
+    registriesByPayment.set(payment, registries);
+  }
+
+  const unique = [];
+  const indexByPayment = new Map();
+  for (const item of selected) {
+    let identity = marketplaceMutationPaymentIdentity(item);
+    const separator = identity.lastIndexOf(":");
+    if (separator > 0 && separator === identity.length - 1) {
+      const payment = identity.slice(0, separator);
+      const registries = registriesByPayment.get(payment);
+      if (registries?.size === 1) {
+        identity = `${payment}:${[...registries][0]}`;
+      } else {
+        identity = "";
+      }
+    }
+    if (!identity) {
+      unique.push(item);
+      continue;
+    }
+    const currentIndex = indexByPayment.get(identity);
+    if (currentIndex === undefined) {
+      indexByPayment.set(identity, unique.length);
+      unique.push(item);
+      continue;
+    }
+    if (
+      marketplaceMutationPaymentSats(item) >
+      marketplaceMutationPaymentSats(unique[currentIndex])
+    ) {
+      unique[currentIndex] = item;
+    }
+  }
+  return unique;
+}
+
+function marketplaceMutationPaymentFlowSats(
+  activity,
+  kinds = MARKETPLACE_MUTATION_KINDS,
+) {
+  return uniqueMarketplaceMutationActivity(activity, kinds).reduce(
+    (total, item) => total + marketplaceMutationPaymentSats(item),
+    0,
+  );
+}
+
 function activityKindHasDedicatedGrowthBucket(item) {
   if (isBrowserActivityItem(item) || isBondActivityItem(item)) {
     return true;
@@ -33298,9 +33545,14 @@ function unbucketedConfirmedComputerLogFlowSats(confirmedActivity) {
 }
 
 function confirmedActivityFlowSats(confirmedActivity, kinds) {
-  return confirmedActivity
-    .filter((item) => kinds.has(item.kind))
+  const selected = confirmedActivity.filter((item) => kinds.has(item.kind));
+  const nonMarketplaceFlowSats = selected
+    .filter((item) => !MARKETPLACE_MUTATION_KINDS.has(item.kind))
     .reduce((total, item) => total + activityAmountSats(item), 0);
+  return (
+    nonMarketplaceFlowSats +
+    marketplaceMutationPaymentFlowSats(selected, kinds)
+  );
 }
 
 function tokenCanUseCreditNetworkFloor(token) {
@@ -34553,6 +34805,12 @@ function growthActualBaseNetworkValueEvents(
   tokenSales = [],
 ) {
   const events = [];
+  const countedMarketplaceMutationActivity = new Set(
+    uniqueMarketplaceMutationActivity(
+      idActivity,
+      MARKETPLACE_MUTATION_KINDS,
+    ),
+  );
   const addEvent = (source, field, value) => {
     const createdMs = Date.parse(source?.createdAt ?? "");
     if (!Number.isFinite(createdMs)) {
@@ -34593,10 +34851,24 @@ function growthActualBaseNetworkValueEvents(
       addEvent(item, "browserFlowSats", sats);
     } else if (item.kind === "file" && !isBrowserActivityItem(item)) {
       addEvent(item, "driveFlowSats", sats);
-    } else if (ID_MARKETPLACE_MUTATION_KINDS.has(item.kind)) {
-      addEvent(item, "idMarketplaceFeeSats", sats);
-    } else if (TOKEN_MARKETPLACE_MUTATION_KINDS.has(item.kind)) {
-      addEvent(item, "tokenMarketplaceFeeSats", sats);
+    } else if (
+      ID_MARKETPLACE_MUTATION_KINDS.has(item.kind) &&
+      countedMarketplaceMutationActivity.has(item)
+    ) {
+      addEvent(
+        item,
+        "idMarketplaceFeeSats",
+        marketplaceMutationPaymentSats(item),
+      );
+    } else if (
+      TOKEN_MARKETPLACE_MUTATION_KINDS.has(item.kind) &&
+      countedMarketplaceMutationActivity.has(item)
+    ) {
+      addEvent(
+        item,
+        "tokenMarketplaceFeeSats",
+        marketplaceMutationPaymentSats(item),
+      );
     } else if (!activityKindHasDedicatedGrowthBucket(item)) {
       addEvent(item, "computerEventFlowSats", sats);
     }

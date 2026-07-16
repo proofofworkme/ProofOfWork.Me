@@ -1216,6 +1216,82 @@ expect(
     /Loading credit sale tickets/.test(app) &&
     /Loading credit market history/.test(app),
 );
+const normalizeTokenApiStateBlock =
+  app.match(
+    /function normalizeTokenApiState[\s\S]*?function isAuthoritativeWalletTokenPayload/,
+  )?.[0] ?? "";
+const tokenMarketplaceSummaryStatsBlock =
+  app.match(
+    /function tokenMarketplaceSummaryStats[\s\S]*?function TokenMarketplaceStatsGrid/,
+  )?.[0] ?? "";
+expect(
+  "Marketplace preserves authoritative token summary metadata",
+  /type PowTokenState = \{[\s\S]*collectionHasMore\?[\s\S]*stats\?: PowTokenSummaryStats[\s\S]*totalCounts\?/.test(
+    app,
+  ) &&
+    /payload\?\.collectionHasMore/.test(normalizeTokenApiStateBlock) &&
+    /payload\?\.stats/.test(normalizeTokenApiStateBlock) &&
+    /payload\?\.totalCounts/.test(normalizeTokenApiStateBlock) &&
+    /setTokenSummary\(tokenSummaryMetadata\(state\)\)/.test(app),
+);
+expect(
+  "Marketplace aggregate cards use authoritative totals instead of compact previews",
+  /function marketplaceStatsWithAuthoritativeSummary[\s\S]*authoritative\?\.confirmedSales[\s\S]*previewStats\.confirmedSales/.test(
+    app,
+  ) &&
+    /function optionalMarketplaceMetric\(value: unknown\)[\s\S]*value === null[\s\S]*value === undefined[\s\S]*value === ""[\s\S]*return undefined/.test(
+      app,
+    ) &&
+    /summary:\s*tokenSummary/.test(app) &&
+    /scopedToken\.confirmedSales/.test(tokenMarketplaceSummaryStatsBlock) &&
+    /summaryStats\?\.confirmedSalesVolumeSats/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /label: "Confirmed Sales"[\s\S]*marketStats\.confirmedSales/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /label: "Volume proofs"[\s\S]*marketStats\.confirmedVolumeSats/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    !/marketStats\.totalVolumeSats/.test(tokenMarketplaceSummaryStatsBlock),
+);
+expect(
+  "Marketplace separates confirmed and pending listing totals",
+  /confirmedOpenListings\?: number/.test(app) &&
+    /pendingOpenListings\?: number/.test(app) &&
+    /scopedToken\?\.confirmedOpenListings/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /scopedToken\?\.pendingOpenListings/.test(tokenMarketplaceSummaryStatsBlock) &&
+    /function summedTokenMarketplaceCount[\s\S]*counts\.every\(\(count\) => count !== undefined\)/.test(
+      app,
+    ) &&
+    /summedTokenMarketplaceCount\(networkTokens, "confirmedOpenListings"\)/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /summedTokenMarketplaceCount\(networkTokens, "pendingOpenListings"\)/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /networkConfirmedListings \?\?[\s\S]*previewConfirmedListings/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /networkPendingListings \?\?[\s\S]*totalOpenListings/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /totalOpenListings - confirmedListings/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /label: "Confirmed Listings"/.test(tokenMarketplaceSummaryStatsBlock) &&
+    /label: "Pending Listings"/.test(tokenMarketplaceSummaryStatsBlock) &&
+    !/label: "Active Listings"/.test(tokenMarketplaceSummaryStatsBlock),
+);
+expect(
+  "Marketplace token cache tracks the current summary metadata",
+  /acceptedTokenStatesRef\.current\.set\(tokenDataLoadedScopeKey,\s*\{[\s\S]*tokenSummaryMetadata\(tokenSummary\)/.test(
+    app,
+  ) &&
+    /tokenSales,[\s\S]*tokenSummary,[\s\S]*tokenTransfers,[\s\S]*\]\);/.test(app),
+);
 expect("stale browser network tab CSS removed", !/browser-network-tabs/.test(css));
 
 if (failures.length) {

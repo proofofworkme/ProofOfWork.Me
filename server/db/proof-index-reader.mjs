@@ -39,6 +39,9 @@ const BOND_TAGS = [
   },
 ];
 const ID_REGISTRATION_PRICE_SATS = 1_000;
+const ID_REGISTRY_ADDRESSES = {
+  livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
+};
 const TOKEN_SALE_AUTH_VERSION = "pwt-sale-v1";
 const WORK_TOKEN_TICKER = "WORK";
 const TOKEN_SALE_AUTH_VERSIONS = new Set([
@@ -1916,6 +1919,35 @@ function mergeTokenListingRecord(current, incoming) {
   return tokenListingCloseRank(current) > tokenListingCloseRank(incoming)
     ? tokenListingWithCloseFrom(merged, current)
     : tokenListingWithCloseFrom(merged, incoming);
+}
+
+function mergeCanonicalTokenSaleRecord(current, incoming) {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming) {
+    return current;
+  }
+  return {
+    ...incoming,
+    ...current,
+    createdAt: current.createdAt ?? incoming.createdAt,
+  };
+}
+
+function mergeCanonicalTokenClosedListingRecord(current, incoming) {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming) {
+    return current;
+  }
+  const merged = mergeTokenListingRecord(current, incoming);
+  return {
+    ...merged,
+    closedAt: current.closedAt ?? incoming.closedAt,
+    createdAt: current.createdAt ?? incoming.createdAt,
+  };
 }
 
 function mergeTokenHistoryMarketItem(current, incoming, safeKind) {
@@ -7229,6 +7261,7 @@ function tokenListingFromCreditListingRow(row, network) {
   const payload = objectRecord(row?.payload);
   const saleAuthorization = objectRecord(payload.saleAuthorization);
   const status = String(row?.status ?? payload.status ?? "").trim().toLowerCase();
+  const terminal = ["sold", "delisted"].includes(status);
   const listingId = String(row?.listing_id ?? payload.listingId ?? "")
     .trim()
     .toLowerCase();
@@ -7252,6 +7285,13 @@ function tokenListingFromCreditListingRow(row, network) {
         storedAmount: row?.amount,
       })
     : null;
+  const canonicalCloseAt = dateIso(
+    row?.close_event_time ??
+      row?.close_event_block_time ??
+      row?.close_transaction_block_time ??
+      payload.closedAt ??
+      payload.closeAt,
+  );
   return normalizeTokenHistoryListingItem({
     ...payload,
     amount: workAmount
@@ -7260,7 +7300,9 @@ function tokenListingFromCreditListingRow(row, network) {
     ...(workAmount ? { amountAtoms: workAmount.amountAtoms } : {}),
     buyerAddress: row?.buyer_address ?? payload.buyerAddress,
     closeTxid,
-    closedAt: dateIso(payload.closedAt ?? payload.closeAt ?? row?.updated_at),
+    closedAt: terminal
+      ? canonicalCloseAt
+      : dateIso(payload.closedAt ?? payload.closeAt ?? row?.updated_at),
     closedConfirmed: ["sold", "delisted"].includes(status) && validTxid(closeTxid),
     closedTxid: closeTxid,
     confirmed: status !== "pending",
@@ -7268,7 +7310,7 @@ function tokenListingFromCreditListingRow(row, network) {
       payload.createdAt ??
         payload.blockTime ??
         payload.timestamp ??
-        row?.updated_at,
+        (terminal ? undefined : row?.updated_at),
     ),
     listingId,
     network,
@@ -7321,6 +7363,12 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         cl.close_txid,
         cl.payload,
         cl.updated_at,
+        close_event.event_time AS close_event_time,
+        close_event.block_time AS close_event_block_time,
+        CASE
+          WHEN close_tx.status = 'confirmed' THEN close_tx.block_time
+          ELSE NULL
+        END AS close_transaction_block_time,
         seal_tx.status AS seal_tx_status,
         cd.ticker,
         cd.registry_address,
@@ -7329,6 +7377,37 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
       LEFT JOIN proof_indexer.transactions seal_tx
         ON seal_tx.network = cl.network
        AND seal_tx.txid = cl.seal_txid
+      LEFT JOIN LATERAL (
+        SELECT
+          close_event_row.event_time,
+          close_event_row.block_time
+        FROM proof_indexer.events close_event_row
+        WHERE close_event_row.network = cl.network
+          AND close_event_row.valid = true
+          AND close_event_row.status = 'confirmed'
+          AND close_event_row.kind =
+            ANY(ARRAY['token-sale','token-listing-closed']::text[])
+          AND close_event_row.txid = COALESCE(
+            NULLIF(lower(cl.close_txid), ''),
+            NULLIF(lower(cl.payload->>'closeTxid'), '')
+          )
+          AND lower(close_event_row.payload->>'listingId') =
+            lower(cl.listing_id)
+        ORDER BY
+          CASE WHEN close_event_row.kind = 'token-sale' THEN 0 ELSE 1 END,
+          COALESCE(
+            close_event_row.event_time,
+            close_event_row.block_time
+          ) DESC,
+          close_event_row.event_id DESC
+        LIMIT 1
+      ) close_event ON true
+      LEFT JOIN proof_indexer.transactions close_tx
+        ON close_tx.network = cl.network
+       AND close_tx.txid = COALESCE(
+         NULLIF(lower(cl.close_txid), ''),
+         NULLIF(lower(cl.payload->>'closeTxid'), '')
+       )
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = cl.network
        AND cd.token_id = cl.token_id
@@ -8107,15 +8186,19 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     };
   });
 
+  // Canonical event rows are deliberately first. The table projection may
+  // carry richer lifecycle state, but its maintenance timestamp is not market
+  // chronology and must never replace the confirmed event time.
   const sales = uniqueTokenItems(
     [...marketEvents.sales, ...listingProjection.sales],
     (sale) => `${sale.network ?? network}:${sale.txid}`,
+    mergeCanonicalTokenSaleRecord,
   );
   const closedListings = uniqueTokenItems(
     [...marketEvents.closedListings, ...listingProjection.closedListings],
     (listing) =>
       `${listing.network ?? network}:${listing.listingId}:${listing.closedTxid ?? listing.txid}`,
-    mergeTokenListingRecord,
+    mergeCanonicalTokenClosedListingRecord,
   );
   const listings = tokenListingsWithoutClosedEvents(
     uniqueTokenItems(
@@ -12384,6 +12467,159 @@ export async function proofIndexValueSummaryPayload(network) {
   };
 }
 
+function proofIndexConfirmedValueEventDeltaFromRows(rows, network) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const marketplaceFamily = (kind) => {
+    const normalizedKind = normalizedText(kind);
+    if (["id-list", "id-seal", "id-delist", "id-buy"].includes(normalizedKind)) {
+      return "id-list";
+    }
+    if (
+      [
+        "token-listing",
+        "token-listing-sealed",
+        "token-listing-closed",
+      ].includes(normalizedKind)
+    ) {
+      return "token-listing";
+    }
+    return "";
+  };
+  const registryCandidatesByPayment = new Map();
+  for (const row of sourceRows) {
+    if (row?.marketplace_payment !== true) {
+      continue;
+    }
+    const family = marketplaceFamily(row.kind);
+    const txid = normalizedText(row.txid).toLowerCase();
+    const registryAddress = normalizedText(row.registry_address);
+    if (!family || !txid || !registryAddress) {
+      continue;
+    }
+    const paymentKey = `${family}:${txid}`;
+    const candidates =
+      registryCandidatesByPayment.get(paymentKey) ?? new Map();
+    candidates.set(registryAddress, registryAddress);
+    registryCandidatesByPayment.set(paymentKey, candidates);
+  }
+
+  const normalizedRows = [];
+  const marketplaceRowByPayment = new Map();
+  for (const row of sourceRows) {
+    if (row?.marketplace_payment !== true) {
+      normalizedRows.push(row);
+      continue;
+    }
+    const family = marketplaceFamily(row.kind);
+    const txid = normalizedText(row.txid).toLowerCase();
+    const paymentKey = `${family}:${txid}`;
+    const registryCandidates =
+      registryCandidatesByPayment.get(paymentKey) ?? new Map();
+    const explicitRegistryAddress = normalizedText(row.registry_address);
+    const registryAddress =
+      explicitRegistryAddress ||
+      (registryCandidates.size === 1
+        ? [...registryCandidates.values()][0]
+        : "");
+    const identity = `${paymentKey}:${registryAddress}`;
+    const current = marketplaceRowByPayment.get(identity);
+    if (!current) {
+      const normalizedRow = {
+        ...row,
+        event_count: rowNumber(row, "event_count"),
+        expected_min_sats: rowNumber(row, "expected_min_sats"),
+        kind: family || normalizedText(row.kind),
+        registry_address: registryAddress,
+        total_sats: rowNumber(row, "total_sats"),
+      };
+      marketplaceRowByPayment.set(identity, normalizedRow);
+      normalizedRows.push(normalizedRow);
+      continue;
+    }
+
+    current.event_count += rowNumber(row, "event_count");
+    current.expected_min_sats = Math.max(
+      rowNumber(current, "expected_min_sats"),
+      rowNumber(row, "expected_min_sats"),
+    );
+    current.indexed_through_block = Math.max(
+      rowNumber(current, "indexed_through_block"),
+      rowNumber(row, "indexed_through_block"),
+    );
+    current.max_event_block = Math.max(
+      rowNumber(current, "max_event_block"),
+      rowNumber(row, "max_event_block"),
+    );
+    current.payment_verified =
+      current.payment_verified === true || row?.payment_verified === true;
+    current.total_sats = Math.max(
+      rowNumber(current, "total_sats"),
+      rowNumber(row, "total_sats"),
+    );
+    if (
+      Date.parse(row?.max_event_time ?? "") >
+      Date.parse(current.max_event_time ?? "")
+    ) {
+      current.max_event_time = row.max_event_time;
+    }
+  }
+
+  const marketplaceRows = normalizedRows.filter(
+    (row) => row?.marketplace_payment === true,
+  );
+  if (
+    marketplaceRows.some(
+      (row) =>
+        row?.payment_verified !== true ||
+        !marketplaceFamily(row?.kind) ||
+        !validTxid(row?.txid) ||
+        !normalizedText(row?.registry_address) ||
+        rowNumber(row, "total_sats") <
+          rowNumber(row, "expected_min_sats"),
+    )
+  ) {
+    return null;
+  }
+
+  const events = normalizedRows
+    .filter((row) => row.kind)
+    .map((row) => ({
+      count: Number(row.event_count ?? 0),
+      indexedAt: dateIso(row.max_event_time ?? row.generated_at),
+      indexedThroughBlock: Number(row.indexed_through_block) || 0,
+      kind: String(row.kind ?? ""),
+      ...(row?.marketplace_payment === true
+        ? {
+            marketplaceMutationFeeSats: Number(row.total_sats ?? 0),
+            marketplacePaymentVerified: true,
+            registryAddress: normalizedText(row.registry_address),
+            txid: normalizedTxid(row.txid),
+          }
+        : {}),
+      maxEventBlock: Number(row.max_event_block) || 0,
+      totalSats: Number(row.total_sats ?? 0),
+    }));
+  const latestScanBlock = Math.max(
+    0,
+    ...normalizedRows.map((row) => Number(row.indexed_through_block) || 0),
+  );
+  return {
+    events,
+    indexedAt: dateIso(
+      normalizedRows[0]?.generated_at ?? normalizedRows[0]?.max_event_time,
+    ),
+    indexedThroughBlock: Math.max(
+      latestScanBlock,
+      ...events.map((event) => event.indexedThroughBlock),
+    ),
+    maxEventBlock: Math.max(0, ...events.map((event) => event.maxEventBlock)),
+    network,
+    source: "proof-indexer-value-event-delta",
+    totalCount: events.reduce((total, event) => total + event.count, 0),
+    totalSats: events.reduce((total, event) => total + event.totalSats, 0),
+  };
+}
+
 export async function proofIndexConfirmedValueEventsAfterBlock(
   network,
   blockHeight,
@@ -12394,6 +12630,7 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
   }
 
   const minBlock = Number(blockHeight) || 0;
+  const idRegistryAddress = ID_REGISTRY_ADDRESSES[network] ?? "";
   const result = await pool.query(
     `
       WITH latest_scan AS (
@@ -12410,64 +12647,150 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
         ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
         LIMIT 1
       ),
-      value_events AS (
+      filtered_events AS (
+        SELECT
+          e.kind,
+          e.txid,
+          e.amount_sats,
+          e.block_height,
+          e.event_time,
+          CASE
+            WHEN e.kind IN ('id-list','id-seal','id-delist','id-buy')
+              THEN $3::text
+            WHEN e.kind IN (
+              'token-listing',
+              'token-listing-sealed',
+              'token-listing-closed'
+            )
+              THEN COALESCE(
+                NULLIF(e.payload->>'registryAddress', ''),
+                cd.registry_address,
+                ''
+              )
+            ELSE ''
+          END AS registry_address
+        FROM proof_indexer.events e
+        LEFT JOIN proof_indexer.credit_definitions cd
+          ON cd.network = e.network
+         AND lower(cd.token_id) = lower(e.payload->>'tokenId')
+        WHERE e.network = $1
+          AND e.status = 'confirmed'
+          AND e.valid IS DISTINCT FROM false
+          AND e.block_height > $2
+      ),
+      grouped_value_events AS (
         SELECT
           kind,
+          NULL::text AS txid,
+          NULL::text AS registry_address,
           COALESCE(sum(amount_sats), 0)::text AS total_sats,
+          0::bigint AS expected_min_sats,
+          count(*)::int AS event_count,
+          max(block_height)::int AS max_event_block,
+          max(event_time) AS max_event_time,
+          false AS marketplace_payment,
+          true AS payment_verified
+        FROM filtered_events
+        WHERE kind NOT IN (
+          'id-list',
+          'id-seal',
+          'id-delist',
+          'id-buy',
+          'token-listing',
+          'token-listing-sealed',
+          'token-listing-closed'
+        )
+        GROUP BY kind
+      ),
+      marketplace_payment_keys AS (
+        SELECT
+          CASE
+            WHEN kind IN ('id-list','id-seal','id-delist','id-buy')
+              THEN 'id-list'
+            ELSE 'token-listing'
+          END AS kind,
+          txid,
+          registry_address,
+          max(amount_sats)::bigint AS expected_min_sats,
           count(*)::int AS event_count,
           max(block_height)::int AS max_event_block,
           max(event_time) AS max_event_time
-        FROM proof_indexer.events
-        WHERE network = $1
-          AND status = 'confirmed'
-          AND valid IS DISTINCT FROM false
-          AND block_height > $2
-        GROUP BY kind
+        FROM filtered_events
+        WHERE kind IN (
+          'id-list',
+          'id-seal',
+          'id-delist',
+          'id-buy',
+          'token-listing',
+          'token-listing-sealed',
+          'token-listing-closed'
+        )
+        GROUP BY
+          CASE
+            WHEN kind IN ('id-list','id-seal','id-delist','id-buy')
+              THEN 'id-list'
+            ELSE 'token-listing'
+          END,
+          txid,
+          registry_address
+      ),
+      marketplace_value_events AS (
+        SELECT
+          payment.kind,
+          payment.txid,
+          payment.registry_address,
+          COALESCE(sum(output.value_sats), 0)::text AS total_sats,
+          payment.expected_min_sats,
+          payment.event_count,
+          payment.max_event_block,
+          payment.max_event_time,
+          true AS marketplace_payment,
+          (
+            payment.registry_address <> ''
+            AND COALESCE(sum(output.value_sats), 0) >=
+              payment.expected_min_sats
+          ) AS payment_verified
+        FROM marketplace_payment_keys payment
+        LEFT JOIN proof_indexer.tx_outputs output
+          ON output.network = $1
+         AND output.txid = payment.txid
+         AND lower(COALESCE(output.address, '')) =
+           lower(payment.registry_address)
+        GROUP BY
+          payment.kind,
+          payment.txid,
+          payment.registry_address,
+          payment.expected_min_sats,
+          payment.event_count,
+          payment.max_event_block,
+          payment.max_event_time
+      ),
+      value_events AS (
+        SELECT * FROM grouped_value_events
+        UNION ALL
+        SELECT * FROM marketplace_value_events
       )
       SELECT
         value_events.kind,
+        value_events.txid,
+        value_events.registry_address,
         value_events.total_sats,
+        value_events.expected_min_sats,
         value_events.event_count,
         value_events.max_event_block,
         value_events.max_event_time,
+        value_events.marketplace_payment,
+        value_events.payment_verified,
         latest_scan.indexed_through_block,
         latest_scan.generated_at
       FROM latest_scan
       LEFT JOIN value_events ON true
       ORDER BY value_events.max_event_block, value_events.kind
     `,
-    [network, minBlock],
+    [network, minBlock, idRegistryAddress],
   );
 
-  const events = result.rows
-    .filter((row) => row.kind)
-    .map((row) => ({
-      count: Number(row.event_count ?? 0),
-      indexedAt: dateIso(row.max_event_time ?? row.generated_at),
-      indexedThroughBlock: Number(row.indexed_through_block) || 0,
-      kind: String(row.kind ?? ""),
-      maxEventBlock: Number(row.max_event_block) || 0,
-      totalSats: Number(row.total_sats ?? 0),
-    }));
-  const latestScanBlock = Math.max(
-    0,
-    ...result.rows.map((row) => Number(row.indexed_through_block) || 0),
-  );
-  return {
-    events,
-    indexedAt: dateIso(
-      result.rows[0]?.generated_at ?? result.rows[0]?.max_event_time,
-    ),
-    indexedThroughBlock: Math.max(
-      latestScanBlock,
-      ...events.map((event) => event.indexedThroughBlock),
-    ),
-    maxEventBlock: Math.max(0, ...events.map((event) => event.maxEventBlock)),
-    network,
-    source: "proof-indexer-value-event-delta",
-    totalCount: events.reduce((total, event) => total + event.count, 0),
-    totalSats: events.reduce((total, event) => total + event.totalSats, 0),
-  };
+  return proofIndexConfirmedValueEventDeltaFromRows(result.rows, network);
 }
 
 export async function proofIndexCreditListingsPayload(

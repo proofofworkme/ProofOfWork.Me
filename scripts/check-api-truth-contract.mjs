@@ -155,6 +155,44 @@ expect(
     ),
 );
 expect(
+  "compact credit definitions expose authoritative per-token market totals",
+  [
+    "confirmedSales",
+    "confirmedSalesVolumeSats",
+    "pendingSales",
+    "pendingSalesVolumeSats",
+    "confirmedOpenListings",
+    "pendingOpenListings",
+  ].every((field) =>
+    compaction.includes(`${field}: mergedTokenMarketMetric(`),
+  ) &&
+    /summaryCollectionIsTruncated/u.test(compaction) &&
+    /preserveExistingTokenMetrics && truncated[\s\S]*return undefined/u.test(
+      compaction,
+    ),
+);
+expect(
+  "marketplace mutation accounting follows unique transaction registry payments",
+  /function marketplaceMutationPaymentIdentity/u.test(server) &&
+    /function uniqueMarketplaceMutationActivity/u.test(server) &&
+    /function marketplaceMutationPaymentFlowSats/u.test(server) &&
+    /marketplaceMutationPaymentFlowSats\(selected, kinds\)/u.test(server),
+);
+expect(
+  "proof-index value deltas verify and consolidate marketplace registry payments",
+  /function proofIndexConfirmedValueEventDeltaFromRows/u.test(reader) &&
+    /registryCandidatesByPayment/u.test(reader) &&
+    /marketplace_payment_keys/u.test(reader) &&
+    /proof_indexer\.tx_outputs/u.test(reader) &&
+    /payment_verified/u.test(reader),
+);
+expect(
+  "deep ledger audit requires atomic WORK amount strings",
+  /function workAmountMatches[\s\S]*amountAtoms/u.test(ledgerAudit) &&
+    /workAmountMatches\(item, "101000"\)/u.test(ledgerAudit) &&
+    !/item\.amount === 101_000/u.test(ledgerAudit),
+);
+expect(
   "stable canonical reads use a canonical checkpoint while readiness remains exact-tip",
   /const available =/u.test(publicGate) &&
     /const ready =/u.test(publicGate) &&
