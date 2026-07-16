@@ -1523,6 +1523,7 @@ expectAll("consistency endpoint guards the public invariant", server, [
   /"token-definitions-cover-confirmed-mints"/,
   /"token-components-cover-confirmed-activity"/,
   /"inception-live-issuance-matches-incb-supply"/,
+  /"inception-fixed-value-reconciles"/,
   /"infinity-bond-flow-matches-powb-supply"/,
   /"work-floor-actual-total"/,
   /"growth-actual-total"/,
@@ -1647,6 +1648,7 @@ expectAll("Infinity and Inception recipient-credit markets are wired", server + 
 expectAll("Inception issuance is fixed from the exact green H-1 WORK snapshot", server, [
   /"canonical-pre-bond-live-network-value-v2"/,
   /"canonical-summary-h-minus-one-v1"/,
+  /"fixed-incb-issuance-plus-market-flow-v1"/,
   /function canonicalInceptionValueSnapshotCheckpoint\(/,
   /async function canonicalInceptionIssuanceOptions\(/,
   /function inceptionIssuanceCheckpoint\(/,
@@ -1662,6 +1664,7 @@ expectAll("Inception issuance is fixed from the exact green H-1 WORK snapshot", 
   /attachedWorkLiveFloorAtSendSats/,
   /attachedWorkLiveValueAtSendSats/,
   /issuanceValuationFixedAtSend:\s*true/,
+  /networkValueAccountingModel/,
 ]);
 expectAll(
   "INCB index repair is exact, transactional, scoped, and pre-bond pinned",

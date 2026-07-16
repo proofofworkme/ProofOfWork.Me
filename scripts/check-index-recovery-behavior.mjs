@@ -1173,6 +1173,10 @@ check("WORK mint progress stays below 100 until max supply confirms", () => {
 check("token send preflight retries transient canonical reads only", async () => {
   let attempts = 0;
   const retryNotices = [];
+  const isAuthoritativeWalletTokenPayload = isolatedTypeScriptFunction(
+    APP_PATH,
+    "isAuthoritativeWalletTokenPayload",
+  );
   const fetchFreshWalletTokenPreflightState = isolatedTypeScriptFunction(
     APP_PATH,
     "fetchFreshWalletTokenPreflightState",
@@ -1200,6 +1204,7 @@ check("token send preflight retries transient canonical reads only", async () =>
           walletScoped: true,
         };
       },
+      isAuthoritativeWalletTokenPayload,
       isTransientProofApiReadError: (error) =>
         error instanceof Error && error.message === "canonical gate",
     },
@@ -1228,6 +1233,7 @@ check("token send preflight retries transient canonical reads only", async () =>
         source: "stale-token-cache",
         walletScoped: true,
       }),
+      isAuthoritativeWalletTokenPayload,
       isTransientProofApiReadError: () => false,
     },
   );
@@ -3165,6 +3171,11 @@ check("stored canonical summaries require component and public Log count checks"
     name: "inception-live-issuance-matches-incb-supply",
     ok: true,
   });
+  assert.equal(eligibleCanonicalSummarySnapshotPayload(payload), false);
+  payload.checks.push({
+    name: "inception-fixed-value-reconciles",
+    ok: true,
+  });
   assert.equal(eligibleCanonicalSummarySnapshotPayload(payload), true);
 
   const snapshotReadSource = topLevelFunctionSource(
@@ -3180,6 +3191,33 @@ check("stored canonical summaries require component and public Log count checks"
     /canonical-activity-count-matches-public-log/u,
   );
   assert.match(snapshotReadSource, /check_item->>'ok'[\s\S]*'true'/u);
+});
+
+check("ledger consistency requires fixed Inception issuance plus market flow", () => {
+  const snapshotChecksSource = topLevelFunctionSource(
+    API_PATH,
+    "ledgerSnapshotChecks",
+  );
+  const currentLedgerSource = topLevelFunctionSource(
+    API_PATH,
+    "ledgerPayloadHasCurrentChecks",
+  );
+  assert.match(
+    snapshotChecksSource,
+    /"inception-fixed-value-reconciles"/u,
+  );
+  assert.match(
+    snapshotChecksSource,
+    /inceptionIssuance\.issuanceNetworkValueSats\s*\+\s*inceptionSaleVolumeSats\s*\+\s*inceptionTransferFeeSats\s*\+\s*inceptionMarketplaceMutationFeeSats/u,
+  );
+  assert.match(
+    snapshotChecksSource,
+    /INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL/u,
+  );
+  assert.match(
+    currentLedgerSource,
+    /checkNames\.has\("inception-fixed-value-reconciles"\)/u,
+  );
 });
 
 check("bond value uses confirmed payments instead of synthetic mint payment fields", () => {
@@ -3283,10 +3321,12 @@ check("bond value uses confirmed payments instead of synthetic mint payment fiel
   );
 });
 
-check("Inception joins an exact same-transaction WORK attachment into frozen and live value", () => {
+check("Inception fixes attachment value at issuance and adds only later INCB market flow", () => {
   const INCB_TOKEN_ID = "incb";
   const INCEPTION_ISSUANCE_ACCOUNTING_MODEL =
     "canonical-pre-bond-live-network-value-v2";
+  const INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL =
+    "fixed-incb-issuance-plus-market-flow-v1";
   const INCEPTION_VALUE_SNAPSHOT_MODEL =
     "canonical-summary-h-minus-one-v1";
   const WORK_TOKEN_ID = "work";
@@ -3369,6 +3409,7 @@ check("Inception joins an exact same-transaction WORK attachment into frozen and
     {
       INCB_TOKEN_ID,
       INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
+      INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL,
       INCEPTION_ATTACHMENT_ACCOUNTING_MODEL:
         INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
       TOKEN_MARKETPLACE_MUTATION_KINDS: new Set([
@@ -3474,9 +3515,40 @@ check("Inception joins an exact same-transaction WORK attachment into frozen and
     };
   };
   const canonicalMint = inceptionMint();
+  const transfer = {
+    blockHash: "1".repeat(64),
+    blockHeight: blockHeight + 1,
+    blockIndex: 1,
+    confirmed: true,
+    createdAt: "2026-07-13T03:16:00.000Z",
+    paidSats: 11,
+    tokenId: INCB_TOKEN_ID,
+    txid: "1".repeat(64),
+  };
+  const mutation = {
+    amountSats: 7,
+    blockHash: "2".repeat(64),
+    blockHeight: blockHeight + 2,
+    blockIndex: 1,
+    confirmed: true,
+    createdAt: "2026-07-13T03:17:00.000Z",
+    kind: "token-listing",
+    tokenId: INCB_TOKEN_ID,
+    txid: "2".repeat(64),
+  };
+  const sale = {
+    blockHash: "3".repeat(64),
+    blockHeight: blockHeight + 3,
+    blockIndex: 1,
+    confirmed: true,
+    createdAt: "2026-07-13T03:18:00.000Z",
+    priceSats: 50,
+    tokenId: INCB_TOKEN_ID,
+    txid: "3".repeat(64),
+  };
   const summary = bondSummaryPayloadFromLedger(
     {
-      activity: [bond],
+      activity: [bond, mutation],
       generatedAt: "2026-07-13T03:15:00.000Z",
       network: "livenet",
       tokenState: {
@@ -3485,7 +3557,7 @@ check("Inception joins an exact same-transaction WORK attachment into frozen and
         listings: [],
         mints: [canonicalMint],
         pendingSupply: 0,
-        sales: [],
+        sales: [sale],
         source: "fixture",
         tokens: [
           {
@@ -3493,7 +3565,7 @@ check("Inception joins an exact same-transaction WORK attachment into frozen and
             tokenId: INCB_TOKEN_ID,
           },
         ],
-        transfers: [],
+        transfers: [transfer],
       },
       workFloor: { liveFloorSats: 3 },
       workTokenState: {
@@ -3551,8 +3623,8 @@ check("Inception joins an exact same-transaction WORK attachment into frozen and
   assert.equal(summary.actualValue.attachedWorkActions, 1);
   assert.equal(summary.actualValue.attachedWorkAmount, 100);
   assert.equal(summary.actualValue.attachedWorkFrozenValueSats, 200);
-  assert.equal(summary.actualValue.attachedWorkLiveValueSats, 300);
-  assert.equal(summary.actualValue.baseNetworkValueSats, 546);
+  assert.equal(summary.actualValue.attachedWorkLiveValueSats, 200);
+  assert.equal(summary.actualValue.baseNetworkValueSats, 614);
   assert.equal(
     summary.actualValue.attachmentAccountingModel,
     INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
@@ -3561,22 +3633,28 @@ check("Inception joins an exact same-transaction WORK attachment into frozen and
     summary.actualValue.issuanceAccountingModel,
     INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
   );
+  assert.equal(
+    summary.actualValue.networkValueAccountingModel,
+    INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL,
+  );
   assert.equal(summary.actualValue.confirmedIssuanceUnits, 746);
   assert.equal(summary.actualValue.directProofIssuanceUnits, 546);
   assert.equal(summary.actualValue.attachedWorkIssuanceUnits, 200);
   assert.equal(summary.actualValue.issuanceNetworkValueSats, 746);
   assert.equal(summary.actualValue.issuanceFloorSats, 1);
-  assert.equal(summary.actualValue.frozenNetworkValueSats, 746);
-  assert.equal(summary.actualValue.liveNetworkValueSats, 846);
-  assert.equal(summary.frozenNetworkValueSats, 746);
-  assert.equal(summary.liveNetworkValueSats, 846);
-  assert.equal(summary.networkValueSats, 846);
-  assert.equal(summary.frozenFloorSats, 1);
-  assert.ok(Math.abs(summary.liveFloorSats - 846 / 746) < 1e-12);
-  assert.equal(summary.chartPoints.length, 1);
+  assert.equal(summary.actualValue.frozenNetworkValueSats, 814);
+  assert.equal(summary.actualValue.liveNetworkValueSats, 814);
+  assert.equal(summary.frozenNetworkValueSats, 814);
+  assert.equal(summary.liveNetworkValueSats, 814);
+  assert.equal(summary.networkValueSats, 814);
+  assert.ok(Math.abs(summary.frozenFloorSats - 814 / 746) < 1e-12);
+  assert.ok(Math.abs(summary.liveFloorSats - 814 / 746) < 1e-12);
+  assert.equal(summary.chartPoints.length, 4);
   assert.equal(summary.chartPoints[0].networkValueSats, 746);
   assert.equal(summary.chartPoints[0].confirmedSupply, 746);
   assert.equal(summary.chartPoints[0].floorSats, 1);
+  assert.equal(summary.chartPoints.at(-1).networkValueSats, 814);
+  assert.equal(summary.chartPoints.at(-1).confirmedSupply, 746);
 
   const partial = bondAttachedWorkValueDetails(
     {
@@ -3669,7 +3747,7 @@ check("Inception joins an exact same-transaction WORK attachment into frozen and
   assert.equal(duplicateAttachments.attachedWorkActions, 2);
   assert.equal(duplicateAttachments.attachedWorkAmount, 200);
   assert.equal(duplicateAttachments.attachedWorkFrozenValueSats, 400);
-  assert.equal(duplicateAttachments.attachedWorkLiveValueSats, 600);
+  assert.equal(duplicateAttachments.attachedWorkLiveValueSats, 400);
   assert.equal(duplicateAttachments.attachedWorkUnmatchedActions, 0);
   assert.equal(duplicateAttachments.attachedWorkUnvaluedActions, 0);
 
@@ -4842,6 +4920,8 @@ check("livenet Inception issuance uses the published H-1 snapshot and excludes i
 check("empty bond summaries cannot cross bond-family identity", () => {
   const inceptionIssuanceModel =
     "canonical-pre-bond-live-network-value-v2";
+  const inceptionNetworkValueModel =
+    "fixed-incb-issuance-plus-market-flow-v1";
   const inceptionValueSnapshotModel =
     "canonical-summary-h-minus-one-v1";
   const bondSummaryPayloadHasKnownMainnetValue = isolatedFunction(
@@ -4851,6 +4931,8 @@ check("empty bond summaries cannot cross bond-family identity", () => {
       INCB_TOKEN_ID: "incb",
       INCEPTION_ATTACHMENT_ACCOUNTING_MODEL: inceptionIssuanceModel,
       INCEPTION_ISSUANCE_ACCOUNTING_MODEL: inceptionIssuanceModel,
+      INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL:
+        inceptionNetworkValueModel,
       INCEPTION_VALUE_SNAPSHOT_MODEL: inceptionValueSnapshotModel,
       finitePositiveNumber: (value) =>
         Number.isFinite(Number(value)) && Number(value) > 0,
@@ -4871,7 +4953,11 @@ check("empty bond summaries cannot cross bond-family identity", () => {
     tokenId: "incb",
   };
   const empty = {
-    actualValue: { bondMintFlowSats: 0, networkValueSats: 0 },
+    actualValue: {
+      bondMintFlowSats: 0,
+      networkValueAccountingModel: inceptionNetworkValueModel,
+      networkValueSats: 0,
+    },
     chartPoints: [],
     networkValueSats: 0,
     registryAddress: "1registry",
@@ -4885,6 +4971,21 @@ check("empty bond summaries cannot cross bond-family identity", () => {
       allowEmptyHistory: true,
     }),
     true,
+  );
+  assert.equal(
+    bondSummaryPayloadHasKnownMainnetValue(
+      {
+        ...empty,
+        actualValue: {
+          ...empty.actualValue,
+          networkValueAccountingModel: undefined,
+        },
+      },
+      config,
+      { allowEmptyHistory: true },
+    ),
+    false,
+    "an empty legacy summary must not survive a network-value model change",
   );
   assert.equal(
     bondSummaryPayloadHasKnownMainnetValue(
@@ -4980,6 +5081,7 @@ check("empty bond summaries cannot cross bond-family identity", () => {
           issuanceValuationFixedAtSend: true,
           liveFloorSats: 1,
           liveNetworkValueSats: 546,
+          networkValueAccountingModel: inceptionNetworkValueModel,
         },
       },
       config,
@@ -4995,7 +5097,7 @@ check("empty bond summaries cannot cross bond-family identity", () => {
     attachedWorkIssuanceUnits: 9_957_991_138_317,
     attachedWorkLiveFloorAtSendSats: 125_275.52511008886,
     attachedWorkLiveValueAtSendSats: 9_957_991_138_328.822,
-    attachedWorkLiveValueSats: 187_743_462_092_488.4,
+    attachedWorkLiveValueSats: 9_957_991_138_328.822,
     attachedWorkUnmatchedActions: 0,
     attachedWorkUnvaluedActions: 0,
     attachmentAccountingModel: inceptionIssuanceModel,
@@ -5029,9 +5131,10 @@ check("empty bond summaries cannot cross bond-family identity", () => {
     issuanceValueSnapshotMode: "canonical-summary-refresh",
     issuanceValueSnapshotModel: inceptionValueSnapshotModel,
     issuanceValueSnapshotWorkNetworkValueSats: 16_941_906_432_781.268,
-    liveFloorSats: 18.853547792211884,
-    liveNetworkValueSats: 187_743_462_106_592.4,
-    networkValueSats: 187_743_462_106_592.4,
+    liveFloorSats: 1.0000000000011873,
+    liveNetworkValueSats: 9_957_991_152_432.822,
+    networkValueAccountingModel: inceptionNetworkValueModel,
+    networkValueSats: 9_957_991_152_432.822,
   };
   const productionPrecisionSummary = {
     ...empty,
@@ -5051,10 +5154,9 @@ check("empty bond summaries cannot cross bond-family identity", () => {
   };
   assert.equal(
     productionPrecisionActual.liveFloorSats *
-      productionPrecisionSummary.stats.confirmedSupply -
-      productionPrecisionActual.liveNetworkValueSats,
-    0.03125,
-    "the production fixture must preserve the one-ULP multiplication gap",
+      productionPrecisionSummary.stats.confirmedSupply,
+    productionPrecisionActual.liveNetworkValueSats,
+    "the fixed production-scale floor must reconcile to issuance value",
   );
   assert.equal(
     bondSummaryPayloadHasKnownMainnetValue(
@@ -5062,7 +5164,7 @@ check("empty bond summaries cannot cross bond-family identity", () => {
       config,
     ),
     true,
-    "one binary64 ULP cannot invalidate an otherwise exact INCB summary",
+    "a production-scale fixed INCB summary must remain valid",
   );
   assert.equal(
     bondSummaryPayloadHasKnownMainnetValue(
@@ -5089,7 +5191,7 @@ check("empty bond summaries cannot cross bond-family identity", () => {
           attachedWorkActions: 1,
           attachedWorkAmount: 100,
           attachedWorkFrozenValueSats: 200,
-          attachedWorkLiveValueSats: 300,
+          attachedWorkLiveValueSats: 200,
           attachedWorkUnmatchedActions: 1,
           attachedWorkUnvaluedActions: 0,
           attachmentAccountingModel: inceptionIssuanceModel,
@@ -5120,14 +5222,15 @@ check("empty bond summaries cannot cross bond-family identity", () => {
           issuanceDustSats: 0,
           issuanceFloorSats: 1,
           issuanceNetworkValueSats: 746,
-          liveFloorSats: 846 / 746,
-          liveNetworkValueSats: 846,
-          networkValueSats: 846,
+          liveFloorSats: 1,
+          liveNetworkValueSats: 746,
+          networkValueAccountingModel: inceptionNetworkValueModel,
+          networkValueSats: 746,
         },
         chartPoints: [
           { confirmedSupply: 746, floorSats: 1, networkValueSats: 746 },
         ],
-        networkValueSats: 846,
+        networkValueSats: 746,
         stats: { confirmedBondActions: 1, confirmedSupply: 746 },
       },
       config,
@@ -7577,6 +7680,8 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     {
       INCB_ISSUANCE_ACCOUNTING_MODEL:
         "canonical-pre-bond-live-network-value-v2",
+      INCB_NETWORK_VALUE_ACCOUNTING_MODEL:
+        "fixed-incb-issuance-plus-market-flow-v1",
       INCB_VALUE_SNAPSHOT_MODEL:
         "canonical-summary-h-minus-one-v1",
       WORK_TOKEN_ID:
@@ -7594,8 +7699,14 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     attachedWorkLiveValueAtSendSats: 200,
     attachmentAccountingModel:
       "canonical-pre-bond-live-network-value-v2",
+    bondMarketplaceMutationFeeSats: 0,
+    bondSaleVolumeSats: 0,
+    bondTransferFeeSats: 0,
     confirmedIssuanceUnits: 746,
     directProofIssuanceUnits: 546,
+    floorSats: 1,
+    frozenFloorSats: 1,
+    frozenNetworkValueSats: 746,
     issuanceAccountingModel:
       "canonical-pre-bond-live-network-value-v2",
     issuanceCheckpointBlockHeight: 957_950,
@@ -7611,12 +7722,19 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     issuanceValueSnapshotMode: "canonical-summary-refresh",
     issuanceValueSnapshotModel: "canonical-summary-h-minus-one-v1",
     issuanceValueSnapshotWorkNetworkValueSats: 42_000_000,
+    liveFloorSats: 1,
+    liveNetworkValueSats: 746,
+    networkValueAccountingModel:
+      "fixed-incb-issuance-plus-market-flow-v1",
+    networkValueSats: 746,
   };
   assert.equal(canonicalSummaryAccountingModelsCurrent({}), false);
   assert.equal(
     canonicalSummaryAccountingModelsCurrent({
       inceptionSummary: {
         actualValue: currentInceptionActual,
+        networkValueSats: 746,
+        stats: { confirmedSupply: 746 },
         token: { stats: { confirmedMints: 1 } },
       },
       workSummary: {
@@ -7676,6 +7794,8 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     }
     if (key === "inceptionSummary") {
       payload.actualValue = currentInceptionActual;
+      payload.networkValueSats = 746;
+      payload.stats = { confirmedSupply: 746 };
       payload.token = { stats: { confirmedMints: 1 } };
     }
     if (key === "workSummary") {
@@ -7805,6 +7925,10 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   };
   currentSummaryPayloads.inceptionSummary.actualValue =
     currentInceptionActual;
+  currentSummaryPayloads.inceptionSummary.networkValueSats = 746;
+  currentSummaryPayloads.inceptionSummary.stats = {
+    confirmedSupply: 746,
+  };
   currentSummaryPayloads.inceptionSummary.token = {
     stats: { confirmedMints: 1 },
   };
@@ -7879,6 +8003,8 @@ check("canonical summary publication allows cumulative INCB dust across independ
     {
       INCB_ISSUANCE_ACCOUNTING_MODEL:
         "canonical-pre-bond-live-network-value-v2",
+      INCB_NETWORK_VALUE_ACCOUNTING_MODEL:
+        "fixed-incb-issuance-plus-market-flow-v1",
       INCB_VALUE_SNAPSHOT_MODEL:
         "canonical-summary-h-minus-one-v1",
       WORK_TOKEN_ID:
@@ -7903,8 +8029,14 @@ check("canonical summary publication allows cumulative INCB dust across independ
     attachedWorkLiveValueAtSendSats: 3_132_313_923.5410833,
     attachmentAccountingModel:
       "canonical-pre-bond-live-network-value-v2",
+    bondMarketplaceMutationFeeSats: 0,
+    bondSaleVolumeSats: 0,
+    bondTransferFeeSats: 0,
     confirmedIssuanceUnits: 3_132_315_014,
     directProofIssuanceUnits: 1_092,
+    floorSats: 3_132_315_015.5410833 / 3_132_315_014,
+    frozenFloorSats: 3_132_315_015.5410833 / 3_132_315_014,
+    frozenNetworkValueSats: 3_132_315_015.5410833,
     issuanceAccountingModel:
       "canonical-pre-bond-live-network-value-v2",
     issuanceCheckpointBlockHeight: 958_007,
@@ -7920,6 +8052,11 @@ check("canonical summary publication allows cumulative INCB dust across independ
     issuanceValueSnapshotMode: "canonical-summary-refresh",
     issuanceValueSnapshotModel: "canonical-summary-h-minus-one-v1",
     issuanceValueSnapshotWorkNetworkValueSats: 9_857_361_066.004198,
+    liveFloorSats: 3_132_315_015.5410833 / 3_132_315_014,
+    liveNetworkValueSats: 3_132_315_015.5410833,
+    networkValueAccountingModel:
+      "fixed-incb-issuance-plus-market-flow-v1",
+    networkValueSats: 3_132_315_015.5410833,
   };
   const firstExactIssuance = 1_421_799_461.6275952;
   const secondExactIssuance = 1_710_515_553.9134884;
@@ -7936,6 +8073,8 @@ check("canonical summary publication allows cumulative INCB dust across independ
   const summaryPayloads = (confirmedMints) => ({
     inceptionSummary: {
       actualValue,
+      networkValueSats: actualValue.networkValueSats,
+      stats: { confirmedSupply: actualValue.confirmedIssuanceUnits },
       token: { stats: { confirmedMints } },
     },
     workFloor: {

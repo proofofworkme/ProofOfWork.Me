@@ -586,6 +586,8 @@ const INCEPTION_ISSUANCE_ACCOUNTING_MODEL =
   "canonical-pre-bond-live-network-value-v2";
 const INCEPTION_VALUE_SNAPSHOT_MODEL =
   "canonical-summary-h-minus-one-v1";
+const INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL =
+  "fixed-incb-issuance-plus-market-flow-v1";
 const INCEPTION_ATTACHMENT_ACCOUNTING_MODEL =
   INCEPTION_ISSUANCE_ACCOUNTING_MODEL;
 const INCEPTION_WORK_MOVEMENT_ORACLE_MODEL =
@@ -13961,11 +13963,6 @@ function bondAttachedWorkValueDetails(
   if (config.tokenId !== INCB_TOKEN_ID) {
     return empty;
   }
-  const liveWorkFloorSats = numericValue(
-    ledger?.workFloor?.liveFloorSats ??
-      ledger?.workFloor?.actualValue?.liveFloorSats ??
-      ledger?.workFloor?.floorSats,
-  );
   const incbTokenState = ledgerTokenStateForScope(ledger, INCB_TOKEN_ID);
   const confirmedMints = (Array.isArray(incbTokenState?.mints)
     ? incbTokenState.mints
@@ -13999,8 +13996,7 @@ function bondAttachedWorkValueDetails(
     if (
       !issuance.complete ||
       issuance.confirmedMints === 0 ||
-      attachment.matches.length !== attachment.declaredActions ||
-      (attachment.matches.length > 0 && liveWorkFloorSats <= 0)
+      attachment.matches.length !== attachment.declaredActions
     ) {
       attachedWorkUnvaluedActions += Math.max(
         1,
@@ -14013,7 +14009,7 @@ function bondAttachedWorkValueDetails(
       0,
     );
     const frozenValueSats = issuance.attachedWorkLiveValueAtSendSats;
-    const liveValueSats = bondAttachedAmount * liveWorkFloorSats;
+    const liveValueSats = frozenValueSats;
     attachedWorkActions += attachment.matches.length;
     attachedWorkAmount += bondAttachedAmount;
     attachedWorkFrozenValueSats += frozenValueSats;
@@ -22945,6 +22941,9 @@ function bondSummaryPayloadHasKnownMainnetValue(
     return (
       summary.tokenId === config.tokenId &&
       summary.ticker === config.ticker &&
+      (config.tokenId !== INCB_TOKEN_ID ||
+        summary.actualValue?.networkValueAccountingModel ===
+          INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL) &&
       Array.isArray(summary.chartPoints)
     );
   }
@@ -22954,6 +22953,8 @@ function bondSummaryPayloadHasKnownMainnetValue(
       INCEPTION_ATTACHMENT_ACCOUNTING_MODEL &&
       summary.actualValue?.issuanceAccountingModel ===
         INCEPTION_ISSUANCE_ACCOUNTING_MODEL &&
+      summary.actualValue?.networkValueAccountingModel ===
+        INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL &&
       [
         "attachedWorkActions",
         "attachedWorkAmount",
@@ -23064,6 +23065,12 @@ function bondSummaryPayloadHasKnownMainnetValue(
   const issuanceNetworkValueSats = numericValue(
     summary.actualValue?.issuanceNetworkValueSats,
   );
+  const inceptionMarketFlowSats =
+    bondSaleVolumeSats +
+    bondTransferFeeSats +
+    bondMarketplaceMutationFeeSats;
+  const inceptionFixedNetworkValueSats =
+    issuanceNetworkValueSats + inceptionMarketFlowSats;
   const inceptionAttachmentValuesAgree =
     config.tokenId !== INCB_TOKEN_ID ||
     (numericValue(summary.actualValue?.attachedWorkUnmatchedActions) === 0 &&
@@ -23101,8 +23108,18 @@ function bondSummaryPayloadHasKnownMainnetValue(
         0.01,
       ) &&
       numbersAgree(
+        attachedWorkLiveValueSats,
+        attachedWorkLiveValueAtSendSats,
+        0.01,
+      ) &&
+      numbersAgree(
+        frozenNetworkValueSats,
+        inceptionFixedNetworkValueSats,
+        0.01,
+      ) &&
+      numbersAgree(
         liveNetworkValueSats,
-        baseNetworkValueSats + attachedWorkLiveValueSats,
+        inceptionFixedNetworkValueSats,
         0.01,
       ) &&
       numbersAgree(networkValueSats, liveNetworkValueSats, 0.01) &&
@@ -23457,6 +23474,7 @@ function ledgerPayloadHasCurrentChecks(payload) {
     checkNames.has("seeded-inception-bonds-logged") &&
     checkNames.has("seeded-infinity-bonds-logged") &&
     checkNames.has("inception-live-issuance-matches-incb-supply") &&
+    checkNames.has("inception-fixed-value-reconciles") &&
     checkNames.has("infinity-bond-flow-matches-powb-supply") &&
     checkNames.has("ledger-covers-node-tip")
   );
@@ -25081,6 +25099,70 @@ function ledgerSnapshotChecks({
       issuanceNetworkValueSats: inceptionIssuance.issuanceNetworkValueSats,
     },
   );
+  const inceptionSaleVolumeSats = (incbTokenState?.sales ?? [])
+    .filter((sale) => sale?.confirmed && sale.tokenId === INCB_TOKEN_ID)
+    .reduce((total, sale) => total + numericValue(sale.priceSats), 0);
+  const inceptionTransferFeeSats = (incbTokenState?.transfers ?? [])
+    .filter(
+      (transfer) =>
+        transfer?.confirmed && transfer.tokenId === INCB_TOKEN_ID,
+    )
+    .reduce((total, transfer) => total + numericValue(transfer.paidSats), 0);
+  const inceptionMarketplaceMutationFeeSats = confirmedActivity
+    .filter(
+      (item) =>
+        item?.tokenId === INCB_TOKEN_ID &&
+        TOKEN_MARKETPLACE_MUTATION_KINDS.has(item.kind),
+    )
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+  const inceptionFixedNetworkValueSats =
+    inceptionIssuance.issuanceNetworkValueSats +
+    inceptionSaleVolumeSats +
+    inceptionTransferFeeSats +
+    inceptionMarketplaceMutationFeeSats;
+  const inceptionFixedFloorSats =
+    incbConfirmedSupply > 0
+      ? inceptionFixedNetworkValueSats / incbConfirmedSupply
+      : 0;
+  const inceptionFixedValueTolerance =
+    Number.EPSILON *
+    Math.max(
+      Math.abs(inceptionFixedFloorSats * incbConfirmedSupply),
+      Math.abs(inceptionFixedNetworkValueSats),
+      1,
+    ) *
+    2;
+  addCheck(
+    "inception-fixed-value-reconciles",
+    network !== "livenet" ||
+      (inceptionIssuance.complete &&
+        numbersAgree(
+          inceptionIssuance.confirmedIssuanceUnits,
+          incbConfirmedSupply,
+          0.01,
+        ) &&
+        (incbConfirmedSupply === 0
+          ? inceptionFixedNetworkValueSats === 0
+          : inceptionFixedNetworkValueSats > 0 &&
+            numbersAgree(
+              inceptionFixedFloorSats * incbConfirmedSupply,
+              inceptionFixedNetworkValueSats,
+              Math.max(0.01, inceptionFixedValueTolerance),
+            ))),
+    {
+      confirmedSupply: incbConfirmedSupply,
+      fixedFloorSats: inceptionFixedFloorSats,
+      fixedNetworkValueSats: inceptionFixedNetworkValueSats,
+      issuanceNetworkValueSats:
+        inceptionIssuance.issuanceNetworkValueSats,
+      marketplaceMutationFeeSats:
+        inceptionMarketplaceMutationFeeSats,
+      networkValueAccountingModel:
+        INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL,
+      saleVolumeSats: inceptionSaleVolumeSats,
+      transferFeeSats: inceptionTransferFeeSats,
+    },
+  );
   const powbTokenState = scopedTokenPayloadFromState(tokenState, POWB_TOKEN_ID);
   const powbConfirmedSupply = numericValue(powbTokenState?.confirmedSupply);
   const infinityBondFlowSats = confirmedActivity
@@ -25772,10 +25854,20 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     config.tokenId === INCB_TOKEN_ID
       ? inceptionIssuanceMetadataFromMints(tokenState?.mints)
       : null;
+  const bondMarketFlowSats =
+    bondSaleVolumeSats +
+    bondTransferFeeSats +
+    bondMarketplaceMutationFeeSats;
+  const inceptionFixedNetworkValueSats =
+    numericValue(issuance?.issuanceNetworkValueSats) + bondMarketFlowSats;
   const frozenNetworkValueSats =
-    baseNetworkValueSats + attachedWork.attachedWorkFrozenValueSats;
+    config.tokenId === INCB_TOKEN_ID
+      ? inceptionFixedNetworkValueSats
+      : baseNetworkValueSats + attachedWork.attachedWorkFrozenValueSats;
   const liveNetworkValueSats =
-    baseNetworkValueSats + attachedWork.attachedWorkLiveValueSats;
+    config.tokenId === INCB_TOKEN_ID
+      ? inceptionFixedNetworkValueSats
+      : baseNetworkValueSats + attachedWork.attachedWorkLiveValueSats;
   const networkValueSats = liveNetworkValueSats;
   const confirmedSupply = numericValue(tokenState?.confirmedSupply);
   const frozenFloorSats =
@@ -25879,6 +25971,10 @@ function bondSummaryPayloadFromLedger(ledger, config) {
         issuance?.issuanceNetworkValueSats ?? 0,
       liveFloorSats,
       liveNetworkValueSats,
+      networkValueAccountingModel:
+        config.tokenId === INCB_TOKEN_ID
+          ? INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL
+          : undefined,
       networkValueSats,
       networkUsd,
       totalSats: networkValueSats,

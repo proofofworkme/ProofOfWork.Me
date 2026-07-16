@@ -1757,6 +1757,7 @@ type InfinityActualValue = {
   issuanceValueSnapshotWorkNetworkValueSats?: number;
   liveFloorSats?: number;
   liveNetworkValueSats?: number;
+  networkValueAccountingModel?: string;
   networkValueSats: number;
   networkUsd: number;
   totalSats: number;
@@ -12081,6 +12082,9 @@ function normalizeInfinityActualValue(
     ),
     liveFloorSats: optionalNumberValue("liveFloorSats"),
     liveNetworkValueSats: optionalNumberValue("liveNetworkValueSats"),
+    networkValueAccountingModel: optionalStringValue(
+      "networkValueAccountingModel",
+    ),
     networkValueSats: numberValue("networkValueSats"),
     networkUsd: numberValue("networkUsd"),
     totalSats: numberValue("totalSats"),
@@ -27800,14 +27804,10 @@ function InfinityApp({
     tokens.find((token) => token.tokenId === bondConfig.tokenId)?.pendingSupply ??
     0;
   const floorSats =
-    (inceptionAccounting ? summary?.actualValue.liveFloorSats : undefined) ??
     summary?.actualValue.floorSats ??
     summary?.floorSats ??
     0;
   const networkValueSats =
-    (inceptionAccounting
-      ? summary?.actualValue.liveNetworkValueSats
-      : undefined) ??
     summary?.actualValue.networkValueSats ??
     summary?.networkValueSats ??
     0;
@@ -27858,6 +27858,8 @@ function InfinityApp({
         "canonical-summary-refresh" &&
       summary.actualValue.issuanceValueSnapshotModel ===
         "canonical-summary-h-minus-one-v1" &&
+      summary.actualValue.networkValueAccountingModel ===
+        "fixed-incb-issuance-plus-market-flow-v1" &&
       summary.actualValue.confirmedIssuanceUnits !== undefined &&
       summary.actualValue.issuanceNetworkValueSats !== undefined &&
       issuanceCheckpointBlockHeight !== undefined &&
@@ -27920,28 +27922,28 @@ function InfinityApp({
               <strong>{pendingSupply.toLocaleString()} {bondConfig.ticker}</strong>
             </div>
             <div>
-              <span>{inceptionAccounting ? "Live INCB floor" : "Bond floor"}</span>
+              <span>{inceptionAccounting ? "INCB floor" : "Bond floor"}</span>
               <strong>{tokenSatsPerUnit(floorSats)} proofs / {bondConfig.ticker}</strong>
             </div>
             <div>
-              <span>{inceptionAccounting ? "Live Inception value" : "Network value"}</span>
+              <span>{inceptionAccounting ? "Inception network value" : "Network value"}</span>
               <strong>{Math.round(networkValueSats).toLocaleString()} proofs</strong>
             </div>
             <div>
-              <span>{inceptionAccounting ? "Live floor USD" : "Floor USD"}</span>
+              <span>Floor USD</span>
               <strong>{tokenUsd(floorUsd)}</strong>
             </div>
             <div>
-              <span>{inceptionAccounting ? "Live network USD" : "Network USD"}</span>
+              <span>Network USD</span>
               <strong>{tokenUsd(networkUsd)}</strong>
             </div>
           </div>
           {inceptionIssuanceAvailable ? (
             <div>
               <p className="field-note">
-                <strong>INCB issuance</strong> · Each bond is fixed from its last
-                confirmed green live WORK summary at H-1, hash-bound to the
-                exact block before that bond.
+                <strong>Fixed INCB issuance</strong> · Each bond is valued once
+                from its last confirmed green live WORK summary at H-1,
+                hash-bound to the exact block before that bond.
               </p>
               <div
                 aria-label="INCB issuance breakdown"
@@ -27969,7 +27971,7 @@ function InfinityApp({
                   </strong>
                 </div>
                 <div>
-                  <span>Exact cumulative issuance value</span>
+                  <span>Fixed cumulative issuance value</span>
                   <strong>
                     {issuanceNetworkValueSats.toLocaleString(undefined, {
                       maximumFractionDigits: 6,
@@ -28017,8 +28019,7 @@ function InfinityApp({
                 Each send-time valuation uses the last confirmed green canonical
                 live WORK summary at that bond's H-1. Every transaction in that
                 bond block is excluded. Confirmation fixes the resulting INCB
-                balance and supply; current or post-bond network value changes only
-                the live INCB floor
+                balance, supply, and attached WORK value
                 {attachedWorkActions > 0
                   ? `; ${Math.floor(attachedWorkActions).toLocaleString()} confirmed WORK attachment${Math.floor(attachedWorkActions) === 1 ? "" : "s"} contributed to issuance`
                   : ""}
@@ -28026,6 +28027,11 @@ function InfinityApp({
                   ? "; sub-proof dust stays in network value and is not issued"
                   : ""}
                 .
+              </p>
+              <p className="field-note">
+                INCB network value equals fixed cumulative issuance value plus
+                confirmed INCB sale volume, transfer fees, and marketplace
+                mutation fees. Later WORK value changes do not reprice INCB.
               </p>
               <p className="field-note">
                 Latest snapshot {issuanceValueSnapshotId} · value block {issuanceValueSnapshotBlockHash.slice(0, 12)}…
@@ -28049,7 +28055,7 @@ function InfinityApp({
               <h2>{bondConfig.displayName} Chart</h2>
               <span>
                 {inceptionAccounting
-                  ? `Confirmed live-value issuance, ${bondConfig.ticker} supply, network value, sales, transfers, and mutation fees.`
+                  ? `Fixed send-time issuance value, ${bondConfig.ticker} supply, sales, transfers, and mutation fees.`
                   : `Confirmed bond proofs, ${bondConfig.ticker} supply, sales, transfers, and mutation fees.`}
               </span>
             </div>
@@ -28076,9 +28082,7 @@ function InfinityApp({
               </strong>
             </div>
             <div>
-              <span>
-                {inceptionAccounting ? "Latest historical floor" : "Latest floor"}
-              </span>
+              <span>Latest floor</span>
               <strong>
                 {tokenSatsPerUnit(
                   infinityLatestChartPoint?.floorSats ?? floorSats,
@@ -28222,8 +28226,10 @@ function InfinityApp({
                 confirmed green canonical live WORK summary at H-1, bound to the
                 exact previous block hash. Every transaction in the bond block is
                 excluded. Confirmation fixes 1 INCB per whole proof of direct and
-                attached WORK value. Current and post-bond network value can change
-                only the live INCB floor; it cannot reprice issued supply.
+                attached WORK value. Later WORK value changes do not reprice INCB;
+                beyond new confirmed bonds, only confirmed INCB sales, transfer
+                fees, and marketplace mutation fees can change its network value
+                and floor.
               </p>
             ) : null}
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />

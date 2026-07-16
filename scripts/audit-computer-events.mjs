@@ -386,6 +386,7 @@ try {
         ledgerChecks.has("seeded-mail-events-logged") &&
         ledgerChecks.has("seeded-inception-bonds-logged") &&
         ledgerChecks.has("inception-live-issuance-matches-incb-supply") &&
+        ledgerChecks.has("inception-fixed-value-reconciles") &&
         ledgerChecks.has("seeded-infinity-bonds-logged"),
       { checks: [...ledgerChecks].sort() },
     ),

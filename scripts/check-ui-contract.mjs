@@ -944,6 +944,7 @@ expect(
     /issuanceValueSnapshotModel\?: string/.test(app) &&
     /issuanceValueSnapshotWorkNetworkValueSats\?: number/.test(app) &&
     /liveNetworkValueSats\?: number/.test(app) &&
+    /networkValueAccountingModel\?: string/.test(app) &&
     /inceptionAccounting = bondConfig\.folder === "inception"/.test(
       infinityAppBlock,
     ) &&
@@ -951,35 +952,45 @@ expect(
     /canonical-summary-h-minus-one-v1/.test(infinityAppBlock) &&
     /canonical-summary-refresh/.test(infinityAppBlock) &&
     /bond-transaction-provenance/.test(infinityAppBlock) &&
+    /fixed-incb-issuance-plus-market-flow-v1/.test(infinityAppBlock) &&
     /issuanceValuationFixedAtSend === true/.test(infinityAppBlock) &&
     /inceptionIssuanceAvailable/.test(infinityAppBlock) &&
-    /"Live INCB floor"\s*:\s*"Bond floor"[\s\S]*"Live Inception value"\s*:\s*"Network value"[\s\S]*"Live floor USD"\s*:\s*"Floor USD"[\s\S]*"Live network USD"\s*:\s*"Network USD"/.test(
+    /"INCB floor"\s*:\s*"Bond floor"[\s\S]*"Inception network value"\s*:\s*"Network value"[\s\S]*<span>Floor USD<\/span>[\s\S]*<span>Network USD<\/span>/.test(
       infinityAppBlock,
     ) &&
     /"Fixed issued supply"\s*:\s*"Confirmed supply"/.test(
       infinityAppBlock,
     ) &&
+    /const floorSats =\s*summary\?\.actualValue\.floorSats/.test(
+      infinityAppBlock,
+    ) &&
+    /const networkValueSats =\s*summary\?\.actualValue\.networkValueSats/.test(
+      infinityAppBlock,
+    ) &&
     /Direct proof issuance/.test(infinityAppBlock) &&
     /Attached WORK issuance/.test(infinityAppBlock) &&
     /Total issued/.test(infinityAppBlock) &&
-    /Exact cumulative issuance value/.test(infinityAppBlock) &&
+    /Fixed cumulative issuance value/.test(infinityAppBlock) &&
     /Weighted H-1 WORK floor/.test(infinityAppBlock) &&
     /Latest H-1 WORK network value/.test(infinityAppBlock) &&
     /Latest value snapshot block/.test(infinityAppBlock) &&
     /Latest bond block provenance/.test(infinityAppBlock) &&
-    /Each bond is fixed from its last[\s\S]*confirmed green live WORK summary at H-1/.test(
+    /Each bond is valued once[\s\S]*confirmed green live WORK summary at H-1/.test(
       infinityAppBlock,
     ) &&
     /Every transaction in that[\s\S]*bond block is excluded/.test(
       infinityAppBlock,
     ) &&
-    /current or post-bond network value changes only[\s\S]*the live INCB floor/.test(
+    /INCB network value equals fixed cumulative issuance value plus[\s\S]*confirmed INCB sale volume, transfer fees, and marketplace[\s\S]*mutation fees/.test(
       infinityAppBlock,
     ) &&
-    /"Latest historical floor"\s*:\s*"Latest floor"/.test(
+    /Later WORK value changes do not reprice INCB/.test(
       infinityAppBlock,
     ) &&
     /exact previous block hash/.test(infinityAppBlock) &&
+    !/Latest historical floor|Live INCB floor|Live Inception value|Live network USD/.test(
+      infinityAppBlock,
+    ) &&
     !/issuanceCheckpointWorkNetworkValueSats|send-time pre-transaction checkpoint|Attached WORK at confirmation|Frozen network value|Frozen INCB floor/.test(
       infinityAppBlock,
     ),

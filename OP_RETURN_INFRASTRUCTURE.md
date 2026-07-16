@@ -227,12 +227,14 @@ sent. Each confirmed Inception bond issues one INCB per whole proof in its
 direct payment plus attached WORK value measured by the send-time oracle: the
 last confirmed green canonical live WORK summary at H-1, hash-bound to the exact
 previous block. Every transaction in the bond block is excluded. Confirmation
-fixes the resulting INCB balance and supply. Self-sends are the self-recipient
-case and land in both Inbox and Sent.
+fixes the resulting INCB balance, supply, and attached WORK proof value.
+Self-sends are the self-recipient case and land in both Inbox and Sent.
 Any attached credit is parsed separately as canonical WORK movement. The valid
 recipient-matched same-transaction WORK attachment contributes to INCB issuance
-without creating a second global WORK movement/value event. Current and
-post-bond value change only the live INCB floor; they never reprice issuance.
+without creating a second global WORK movement/value event. Inception network
+value equals fixed cumulative issuance value plus confirmed INCB sale volume,
+transfer fees, and marketplace mutation fees. Current or later WORK value never
+reprices INCB.
 INCB uses
 `inception@proofofwork.me` and reserved credit id
 `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`.
@@ -939,7 +941,7 @@ The canonical livenet ledger payload:
 - Keeps live and frozen network value separate. Live network value is the active site value and WORK floor source. Frozen network value is the immutable confirmation-time audit stamp for WORK movement and fixed event components.
 - Applies credit movement value only to canonical WORK. Other credits remain proof-flow only: confirmed proof payments, registry/mutation fees, sale payments, and marketplace flow can count, but their listing floors do not reprice network value.
 - Counts cumulative WORK miner fees once per confirmed transaction id from complete full-node input value minus output value. This is historical Bitcoin blockspace/security expenditure, not platform revenue, retained reserves, or spendable backing.
-- Values a valid recipient-matched same-transaction WORK attachment from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. Multiple Inception bonds in one block share that raw H-1 summary identity, but each bond keeps its own transaction id and block index in the bound issuance checkpoint. That same persisted H-1 oracle fixes both INCB issuance and the attachment's frozen WORK movement value; the normal sequential WORK replay floor must not replace it. Confirmation fixes the resulting INCB balance and supply while the underlying WORK movement stays single-counted in global Growth/WORK value. Current and post-bond network value change only live WORK revaluation and the live INCB floor; they never reprice issuance.
+- Values a valid recipient-matched same-transaction WORK attachment from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. Multiple Inception bonds in one block share that raw H-1 summary identity, but each bond keeps its own transaction id and block index in the bound issuance checkpoint. That same persisted H-1 oracle fixes both INCB issuance and the attachment's frozen WORK movement value; the normal sequential WORK replay floor must not replace it. Confirmation fixes the resulting INCB balance, supply, and attached WORK proof value while the underlying WORK movement stays single-counted in global Growth/WORK value. Inception network value is fixed cumulative issuance value plus confirmed INCB sale volume, transfer fees, and marketplace mutation fees. Current or later WORK value never reprices INCB.
 - Persists a compact confirmed-WORK-transfer valuation projection with each exact canonical summary. Public WORK token and transfer-history reads may overlay only rows already present in the indexed result, and only when projection snapshot id, height, and block hash match the eligible database summary and the current Bitcoin Core tip; otherwise they fail closed to the unprojected row rather than publish stale values.
 - Rejects or avoids replacing a useful cached ledger with a worse confirmed-history payload when guarded counts regress.
 - May serve a useful cached ledger for fast first paint only when summary projections also correct active sale-ticket listings against current node spend state; deep refresh continues in the background and must converge on confirmed chain truth.
@@ -1193,7 +1195,7 @@ After changing the API or production build, verify:
 - `computer.proofofwork.me/?folder=infinity` renders the embedded Infinity Bond / POWB workspace, including the Infinity Bond chart and POWB sale-ticket market, without falling back to credit-market labels.
 - `inception.proofofwork.me` loads `/api/v1/inception-summary`, prepares a `pwm1:m:incb` bond message to a recipient, and shows INCB balances/listings from the same sale-ticket ledger as credits. Wallet signing and broadcast remain local/user-authorized.
 - `computer.proofofwork.me/?folder=inception` renders the embedded Inception Bond / INCB workspace with Inception-specific chart, balance, and sale-ticket labels.
-- A confirmed `incb` transaction appears as `inception-bond` and issues only INCB to its payment recipient from direct bond proofs plus attached WORK valued from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. Confirmation fixes the resulting balance and supply. Any attached canonical WORK remains a separate single-counted movement lane. Current and post-bond network value change only the live INCB floor, and the synthetic issuance contributes zero additional proof value.
+- A confirmed `incb` transaction appears as `inception-bond` and issues only INCB to its payment recipient from direct bond proofs plus attached WORK valued from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. Confirmation fixes the resulting balance, supply, and attached WORK proof value. Any attached canonical WORK remains a separate single-counted movement lane. Inception network value equals fixed cumulative issuance value plus confirmed INCB sale volume, transfer fees, and marketplace mutation fees; current or later WORK value never reprices INCB, and the synthetic issuance creates no second global WORK/Growth value.
 - Log can load global ProofOfWork Computer events and search an address, confirmed ProofOfWork ID, or txid.
 - Known confirmed ledger regression txids are searchable in Log, including `411ff4ac6aeeb638abdc387b37734c384481bcce7dd01e28b827d02dc4968891` and `b4b17f84853ce5c9f6dbad7fe3cce0d61ac4cb92d92f7ea6d9d8c38256631f34`.
 - `npm run indexer:parity` passes against production and reports canonical/database snapshot parity plus populated participants/refs.

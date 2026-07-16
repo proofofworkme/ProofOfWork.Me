@@ -14,6 +14,8 @@ const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
 const INCB_TOKEN_ID =
   "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+const INCB_NETWORK_VALUE_ACCOUNTING_MODEL =
+  "fixed-incb-issuance-plus-market-flow-v1";
 const MAX_LEDGER_TIP_LAG_BLOCKS = Number(
   process.env.MAX_LEDGER_TIP_LAG_BLOCKS ?? 6,
 );
@@ -135,6 +137,18 @@ function numberValue(value) {
 
 function numbersAgree(left, right) {
   return Math.abs(numberValue(left) - numberValue(right)) <= 0.000001;
+}
+
+function scaledNumbersAgree(left, right, minimumTolerance = 0.01) {
+  const leftNumber = numberValue(left);
+  const rightNumber = numberValue(right);
+  const tolerance = Math.max(
+    minimumTolerance,
+    Number.EPSILON *
+      Math.max(Math.abs(leftNumber), Math.abs(rightNumber), 1) *
+      2,
+  );
+  return Math.abs(leftNumber - rightNumber) <= tolerance;
 }
 
 function usdNumbersAgree(left, right) {
@@ -418,7 +432,8 @@ expect(
   consistencyChecks.has("seeded-mail-events-logged") &&
     consistencyChecks.has("seeded-infinity-bonds-logged") &&
     consistencyChecks.has("seeded-inception-bonds-logged") &&
-    consistencyChecks.has("inception-live-issuance-matches-incb-supply"),
+    consistencyChecks.has("inception-live-issuance-matches-incb-supply") &&
+    consistencyChecks.has("inception-fixed-value-reconciles"),
 );
 expect(
   "consistency guards ledger node-tip coverage",
@@ -651,6 +666,52 @@ expect(
       numberValue(inceptionActual.directProofIssuanceUnits) +
         numberValue(inceptionActual.attachedWorkLiveValueAtSendSats),
       0.01,
+    ),
+);
+const expectedInceptionNetworkValueSats =
+  numberValue(inceptionActual.issuanceNetworkValueSats) +
+  numberValue(inceptionActual.bondSaleVolumeSats) +
+  numberValue(inceptionActual.bondTransferFeeSats) +
+  numberValue(inceptionActual.bondMarketplaceMutationFeeSats);
+const expectedInceptionFloorSats =
+  numberValue(inceptionSummary.stats?.confirmedSupply) > 0
+    ? expectedInceptionNetworkValueSats /
+      numberValue(inceptionSummary.stats?.confirmedSupply)
+    : 0;
+expect(
+  "Inception network value is fixed issuance plus genuine INCB market flow",
+  inceptionActual.networkValueAccountingModel ===
+      INCB_NETWORK_VALUE_ACCOUNTING_MODEL &&
+    scaledNumbersAgree(
+      inceptionActual.networkValueSats,
+      expectedInceptionNetworkValueSats,
+    ) &&
+    scaledNumbersAgree(
+      inceptionActual.liveNetworkValueSats,
+      expectedInceptionNetworkValueSats,
+    ) &&
+    scaledNumbersAgree(
+      inceptionActual.frozenNetworkValueSats,
+      expectedInceptionNetworkValueSats,
+    ) &&
+    scaledNumbersAgree(
+      inceptionSummary.networkValueSats,
+      expectedInceptionNetworkValueSats,
+    ) &&
+    scaledNumbersAgree(
+      inceptionActual.floorSats,
+      expectedInceptionFloorSats,
+      1e-12,
+    ) &&
+    scaledNumbersAgree(
+      inceptionActual.liveFloorSats,
+      expectedInceptionFloorSats,
+      1e-12,
+    ) &&
+    scaledNumbersAgree(
+      inceptionActual.frozenFloorSats,
+      expectedInceptionFloorSats,
+      1e-12,
     ),
 );
 expect(

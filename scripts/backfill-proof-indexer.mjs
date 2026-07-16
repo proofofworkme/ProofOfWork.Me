@@ -540,6 +540,8 @@ const INCB_TOKEN_CREATED_AT = "2026-07-10T00:00:00.000Z";
 const INCB_ISSUANCE_ACCOUNTING_MODEL =
   "canonical-pre-bond-live-network-value-v2";
 const INCB_VALUE_SNAPSHOT_MODEL = "canonical-summary-h-minus-one-v1";
+const INCB_NETWORK_VALUE_ACCOUNTING_MODEL =
+  "fixed-incb-issuance-plus-market-flow-v1";
 const WORK_TRANSFER_VALUE_PROJECTION_MODEL =
   "canonical-work-transfer-value-projection-v1";
 const CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS = new Map([
@@ -6691,6 +6693,30 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
   const issuanceNetworkValueSats = Number(
     inceptionActual?.issuanceNetworkValueSats,
   );
+  const inceptionNetworkValueSats = Number(
+    inceptionActual?.networkValueSats,
+  );
+  const inceptionLiveNetworkValueSats = Number(
+    inceptionActual?.liveNetworkValueSats,
+  );
+  const inceptionFrozenNetworkValueSats = Number(
+    inceptionActual?.frozenNetworkValueSats,
+  );
+  const inceptionFloorSats = Number(inceptionActual?.floorSats);
+  const inceptionLiveFloorSats = Number(inceptionActual?.liveFloorSats);
+  const inceptionFrozenFloorSats = Number(inceptionActual?.frozenFloorSats);
+  const inceptionConfirmedSupply = Number(
+    summaryPayloads?.inceptionSummary?.stats?.confirmedSupply,
+  );
+  const inceptionBondSaleVolumeSats = Number(
+    inceptionActual?.bondSaleVolumeSats,
+  );
+  const inceptionBondTransferFeeSats = Number(
+    inceptionActual?.bondTransferFeeSats,
+  );
+  const inceptionBondMarketplaceMutationFeeSats = Number(
+    inceptionActual?.bondMarketplaceMutationFeeSats,
+  );
   const issuanceDustSats = Number(inceptionActual?.issuanceDustSats);
   const issuanceFloorSats = Number(inceptionActual?.issuanceFloorSats);
   const issuanceCheckpointBlockHeight = Number(
@@ -6894,6 +6920,60 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
       issuanceFloorSats * confirmedIssuanceUnits -
         issuanceNetworkValueSats,
     ) <= 0.01;
+  const expectedInceptionNetworkValueSats =
+    issuanceNetworkValueSats +
+    inceptionBondSaleVolumeSats +
+    inceptionBondTransferFeeSats +
+    inceptionBondMarketplaceMutationFeeSats;
+  const inceptionNetworkValueTolerance = Math.max(
+    0.01,
+    Number.EPSILON *
+      Math.max(
+        Math.abs(expectedInceptionNetworkValueSats),
+        Math.abs(inceptionNetworkValueSats),
+        1,
+      ) *
+      2,
+  );
+  const expectedInceptionFloorSats =
+    inceptionConfirmedSupply > 0
+      ? inceptionNetworkValueSats / inceptionConfirmedSupply
+      : 0;
+  const inceptionFloorTolerance = Math.max(
+    1e-12,
+    Number.EPSILON *
+      Math.max(Math.abs(expectedInceptionFloorSats), 1) *
+      2,
+  );
+  const inceptionNetworkValueCurrent =
+    inceptionActual?.networkValueAccountingModel ===
+      INCB_NETWORK_VALUE_ACCOUNTING_MODEL &&
+    Number.isFinite(inceptionConfirmedSupply) &&
+    inceptionConfirmedSupply === confirmedIssuanceUnits &&
+    [
+      inceptionBondSaleVolumeSats,
+      inceptionBondTransferFeeSats,
+      inceptionBondMarketplaceMutationFeeSats,
+    ].every((value) => Number.isFinite(value) && value >= 0) &&
+    Number.isFinite(inceptionNetworkValueSats) &&
+    Math.abs(
+      inceptionNetworkValueSats - expectedInceptionNetworkValueSats,
+    ) <= inceptionNetworkValueTolerance &&
+    Number.isFinite(inceptionLiveNetworkValueSats) &&
+    Math.abs(inceptionLiveNetworkValueSats - inceptionNetworkValueSats) <=
+      inceptionNetworkValueTolerance &&
+    Number.isFinite(inceptionFrozenNetworkValueSats) &&
+    Math.abs(inceptionFrozenNetworkValueSats - inceptionNetworkValueSats) <=
+      inceptionNetworkValueTolerance &&
+    Number(
+      summaryPayloads?.inceptionSummary?.networkValueSats,
+    ) === inceptionNetworkValueSats &&
+    [inceptionFloorSats, inceptionLiveFloorSats, inceptionFrozenFloorSats].every(
+      (value) =>
+        Number.isFinite(value) &&
+        Math.abs(value - expectedInceptionFloorSats) <=
+          inceptionFloorTolerance,
+    );
   return (
     String(
       summaryPayloads?.workFloor?.actualValue
@@ -6901,6 +6981,7 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
     ) === "canonical-unique-tx-input-output-v1" &&
     workTransferProjectionCurrent &&
     inceptionIssuanceCurrent &&
+    inceptionNetworkValueCurrent &&
     coverage?.complete === true &&
     coverage?.source ===
       "proof-indexer-normalized-input-output-totals" &&
@@ -6930,6 +7011,9 @@ function eligibleCanonicalSummarySnapshotPayload(payload) {
   ).find(
     (check) => check?.name === "inception-live-issuance-matches-incb-supply",
   );
+  const inceptionFixedValueCheck = (
+    Array.isArray(item?.checks) ? item.checks : []
+  ).find((check) => check?.name === "inception-fixed-value-reconciles");
   return Boolean(
     item &&
       item.ok === true &&
@@ -6937,6 +7021,7 @@ function eligibleCanonicalSummarySnapshotPayload(payload) {
       tokenComponentCheck?.ok === true &&
       publicLogCountCheck?.ok === true &&
       inceptionIssuanceCheck?.ok === true &&
+      inceptionFixedValueCheck?.ok === true &&
       item.summaryRefresh?.mode === "canonical-summary-refresh" &&
       /^[0-9a-f]{64}$/u.test(
         String(item.indexedThroughBlockHash ?? "").toLowerCase(),
