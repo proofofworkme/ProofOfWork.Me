@@ -291,7 +291,7 @@ expect(
     /fetchTokenState\(\s*network,\s*false,\s*"",\s*true,\s*\[address\],\s*true\s*\)/.test(
       app,
     ) &&
-    /fetchTokenState\(\s*network,\s*false,\s*WORK_TOKEN_ID,\s*false,\s*\[address\],\s*true,?\s*\)/.test(
+    /fetchTokenState\(\s*network,\s*true,\s*WORK_TOKEN_ID,\s*false,\s*\[address\],\s*true,\s*true,?\s*\)/.test(
       app,
     ) &&
     /fetchTokenState\(\s*network,\s*false,\s*POWB_TOKEN_ID,\s*true,\s*\[address\],\s*true,?\s*\)/.test(
@@ -330,14 +330,28 @@ expect(
     /\.map\(\(senderAddress\) => senderAddress\.toLowerCase\(\)\)/.test(app),
 );
 expect(
-  "WORK attachment controls fall back to already-loaded route balances",
-  /function bestKnownTokenWalletBalance[\s\S]*right\.confirmedBalance - left\.confirmedBalance/.test(
+  "Inception WORK attachments use verified holders while Mail and Infinity remain allowlisted",
+  /function canAttachWorkToBond[\s\S]*bondConfig\.folder === "inception"[\s\S]*targetNetwork === "livenet"[\s\S]*Boolean\(senderAddress\.trim\(\)\)[\s\S]*confirmedWorkHolder[\s\S]*return canAttachWorkToMessages\(senderAddress, targetNetwork\)/.test(
     app,
   ) &&
-    /const composeAccountWorkWalletBalance = useMemo[\s\S]*const scopedAccountBalances = tokenWalletBalancesFor[\s\S]*const routeBalances = tokenWalletBalancesFor[\s\S]*bestKnownTokenWalletBalance/.test(
+    /const messageWorkAttachmentAllowed = canAttachWorkToMessages\(/.test(app) &&
+    /const inceptionWorkHolderEligible =[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*workAttachmentPreviewSpendability\?\.confirmedBalance \?\? 0\) > 0/.test(
       app,
     ) &&
-    /const accountWorkListings = accountWorkTokenLaneClean[\s\S]*accountWorkTokenState\.listings[\s\S]*accountAllTokenLaneClean[\s\S]*accountTokenState\.listings/.test(
+    /const bondWorkAttachmentAllowed = canAttachWorkToBond\(/.test(app) &&
+    /const bondWorkAttachmentBalanceOk =[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*bondWorkAmountValue <= workAttachmentSpendableBalance/.test(
+      app,
+    ) &&
+    /Inception Bonds instead expose WORK attachment to every connected mainnet address whose authoritative wallet-scoped state proves a positive confirmed WORK balance/.test(
+      contents.get("README.md"),
+    ),
+);
+expect(
+  "WORK attachment previews reuse canonical wallet spendability",
+  /const accountWorkSpendabilityState = accountWorkTokenLaneClean[\s\S]*accountWorkTokenState[\s\S]*accountAllTokenLaneClean[\s\S]*accountTokenState/.test(
+    app,
+  ) &&
+    /const workAttachmentPreviewSpendability = useMemo[\s\S]*tokenSpendabilityForWallet\([\s\S]*tokenListings[\s\S]*tokenClosedListings[\s\S]*tokenTransfers[\s\S]*tokenSales/.test(
       app,
     ) &&
     /const workAttachmentVisible =[\s\S]*workAttachmentSpendableBalance > 0/.test(
@@ -345,13 +359,15 @@ expect(
     ),
 );
 expect(
-  "clean zero WORK lanes cannot fall through to stale route balances",
-  /if \(accountWorkTokenLaneClean\) \{\s*return scopedAccountBalance;\s*\}[\s\S]*if \(accountAllTokenLaneClean\) \{\s*return globalAccountBalance;\s*\}[\s\S]*return bestKnownTokenWalletBalance/.test(
+  "WORK attachment previews fail closed without a clean wallet lane",
+  /const accountWorkSpendabilityState = accountWorkTokenLaneClean[\s\S]*accountAllTokenLaneClean[\s\S]*: undefined/.test(
     app,
   ) &&
-    !/accountWorkTokenLaneClean && scopedAccountBalance/.test(app) &&
-    !/accountAllTokenLaneClean && globalAccountBalance/.test(app) &&
-    /composeAccountWorkWalletBalance\?\.confirmedBalance \?\? 0/.test(app),
+    /if \(!address \|\| !accountWorkSpendabilityState\) \{\s*return undefined;\s*\}/.test(
+      app,
+    ) &&
+    /catch \{\s*return undefined;\s*\}/.test(app) &&
+    /workAttachmentPreviewSpendability\?\.spendableBalance \?\? 0/.test(app),
 );
 expect(
   "clean scoped account lanes suppress stale zero WORK and bond balances",
@@ -427,18 +443,21 @@ expect(
     !/const transfersByTxid = new Map/.test(app),
 );
 expect(
-  "approved bond WORK attachment stays visible while balance verification is pending",
-  /const bondWorkAttachmentVisible = workAttachmentAllowed;/.test(app) &&
-    /const bondWorkBalanceHasCleanLane =[\s\S]*accountWorkTokenLaneClean \|\| accountAllTokenLaneClean/.test(
+  "bond WORK attachment visibility follows the route-specific eligibility gate",
+  /const bondWorkAttachmentVisible = bondWorkAttachmentAllowed;/.test(app) &&
+    /const inceptionWorkBalanceRequired =[\s\S]*activeBondConfig\.folder === "inception"/.test(
       app,
     ) &&
-    /const bondWorkBalanceLoaded =[\s\S]*accountTokenLaneStatuses\.work\.loaded \|\|[\s\S]*accountTokenLaneStatuses\.all\.loaded/.test(
+    /const bondWorkBalanceHasCleanLane = inceptionWorkBalanceRequired[\s\S]*\? accountWorkTokenLaneClean[\s\S]*accountWorkTokenLaneClean \|\| accountAllTokenLaneClean/.test(
       app,
     ) &&
-    /const bondWorkBalanceError = bondWorkBalanceHasCleanLane[\s\S]*\? ""[\s\S]*accountTokenLaneStatuses\.work\.error \|\|[\s\S]*accountTokenLaneStatuses\.all\.error/.test(
+    /const bondWorkBalanceLoaded = inceptionWorkBalanceRequired[\s\S]*accountTokenLaneStatuses\.work\.loaded[\s\S]*accountTokenLaneStatuses\.all\.loaded/.test(
       app,
     ) &&
-    /const bondWorkAttachmentBalanceOk =[\s\S]*!bondWorkBalanceLoaded[\s\S]*Boolean\(bondWorkBalanceError\)/.test(
+    /const bondWorkBalanceError = bondWorkBalanceHasCleanLane[\s\S]*inceptionWorkBalanceRequired[\s\S]*accountTokenLaneStatuses\.work\.error[\s\S]*accountTokenLaneStatuses\.all\.error/.test(
+      app,
+    ) &&
+    /const bondWorkAttachmentBalanceOk =[\s\S]*bondWorkAttachmentAllowed[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*bondWorkAmountValue <= workAttachmentSpendableBalance/.test(
       app,
     ) &&
     /max=\{[\s\S]*bondWorkBalanceLoaded && !bondWorkBalanceError[\s\S]*: undefined/.test(
@@ -453,7 +472,13 @@ expect(
   /const TOKEN_SPENDABLE_RECHECK_DELAYS_MS = \[0, 2_000, 5_000, 10_000\]/.test(
     app,
   ) &&
-    /async function fetchFreshWalletTokenPreflightState[\s\S]*authoritativeWallet !== true[\s\S]*proof-indexer-wallet-token-overlay[\s\S]*isTransientProofApiReadError[\s\S]*No transaction was created/.test(
+    /function isAuthoritativeWalletTokenPayload[\s\S]*authoritativeWallet === true[\s\S]*walletScoped === true[\s\S]*proof-indexer-wallet-token-overlay/.test(
+      app,
+    ) &&
+    /async function fetchTokenState[\s\S]*requireAuthoritativeWallet[\s\S]*!isAuthoritativeWalletTokenPayload\(payload\)/.test(
+      app,
+    ) &&
+    /async function fetchFreshWalletTokenPreflightState[\s\S]*!isAuthoritativeWalletTokenPayload\(payload\)[\s\S]*isTransientProofApiReadError[\s\S]*No transaction was created/.test(
       app,
     ) &&
     (app.match(/await fetchFreshWalletWorkState\(/gu)?.length ?? 0) === 2 &&
@@ -495,7 +520,7 @@ expect(
 expect(
   "Infinity and Inception bond composers attach canonical WORK",
   /const \[bondWorkAmount,\s*setBondWorkAmount\] = useState\(0\)/.test(app) &&
-    /async function createInfinityBond[\s\S]*canAttachWorkToMessages\(address,\s*"livenet"\)/.test(
+    /async function createInfinityBond[\s\S]*if \(!bondWorkAttachmentAllowed\)[\s\S]*latestWorkSpendability\.confirmedBalance <= 0[\s\S]*latestWorkSpendability\.spendableBalance/.test(
       app,
     ) &&
     /async function createInfinityBond[\s\S]*postProtocolPayments:[\s\S]*WORK_TOKEN_REGISTRY_ADDRESS[\s\S]*postProtocolPayloads:\s*attachedWorkPayloads/.test(

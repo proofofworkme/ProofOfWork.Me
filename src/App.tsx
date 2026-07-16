@@ -5795,6 +5795,23 @@ function canAttachWorkToMessages(senderAddress: string, targetNetwork: BitcoinNe
   );
 }
 
+function canAttachWorkToBond(
+  bondConfig: BondUiConfig,
+  senderAddress: string,
+  targetNetwork: BitcoinNetwork,
+  confirmedWorkHolder: boolean,
+) {
+  if (bondConfig.folder === "inception") {
+    return (
+      targetNetwork === "livenet" &&
+      Boolean(senderAddress.trim()) &&
+      confirmedWorkHolder
+    );
+  }
+
+  return canAttachWorkToMessages(senderAddress, targetNetwork);
+}
+
 function attachedWorkCreditsFromVout(
   vout: Array<Record<string, unknown>>,
   recipients: MailRecipient[],
@@ -7801,28 +7818,6 @@ function accountTokenLaneHasCleanAuthority(
   }
   const lane = accountTokenLaneForDefinition(token);
   return Boolean(lane && statuses[lane].loaded && !statuses[lane].error);
-}
-
-function bestKnownTokenWalletBalance(
-  tokenId: string,
-  ticker: string,
-  ...groups: PowTokenWalletBalance[][]
-) {
-  const normalizedTokenId = String(tokenId ?? "").trim().toLowerCase();
-  const normalizedTicker = normalizeTokenTicker(ticker);
-  return groups
-    .flat()
-    .filter(
-      (balance) =>
-        String(balance.token.tokenId ?? "").trim().toLowerCase() ===
-          normalizedTokenId ||
-        normalizeTokenTicker(balance.token.ticker) === normalizedTicker,
-    )
-    .sort(
-      (left, right) =>
-        right.confirmedBalance - left.confirmedBalance ||
-        right.pendingIncoming - left.pendingIncoming,
-    )[0];
 }
 
 function tokenReservedBalanceFor(
@@ -10962,6 +10957,17 @@ function normalizeTokenApiState(
   });
 }
 
+function isAuthoritativeWalletTokenPayload(
+  payload: PowTokenApiResponse | undefined,
+) {
+  const source = String(payload?.source ?? "");
+  return (
+    payload?.authoritativeWallet === true &&
+    payload?.walletScoped === true &&
+    source.includes("proof-indexer-wallet-token-overlay")
+  );
+}
+
 async function fetchTokenState(
   targetNetwork: BitcoinNetwork,
   fresh = false,
@@ -10969,6 +10975,7 @@ async function fetchTokenState(
   summary = false,
   addressHints: string[] = [],
   walletScoped = false,
+  requireAuthoritativeWallet = false,
 ): Promise<PowTokenState> {
   const indexAddress = tokenIndexAddressForNetwork(targetNetwork);
   if (!indexAddress) {
@@ -11000,6 +11007,14 @@ async function fetchTokenState(
       : "/api/v1/token",
     targetNetwork,
   );
+  if (
+    requireAuthoritativeWallet &&
+    !isAuthoritativeWalletTokenPayload(payload)
+  ) {
+    throw new Error(
+      "The ProofOfWork index could not verify this wallet balance.",
+    );
+  }
   return normalizeTokenApiState(payload);
 }
 
@@ -11033,11 +11048,7 @@ async function fetchFreshWalletTokenPreflightState(
         "livenet",
       );
       const source = String(payload?.source ?? "");
-      if (
-        payload?.authoritativeWallet !== true ||
-        payload?.walletScoped !== true ||
-        !source.includes("proof-indexer-wallet-token-overlay")
-      ) {
+      if (!isAuthoritativeWalletTokenPayload(payload)) {
         throw new Error(
           "The ProofOfWork index could not verify this wallet balance. No transaction was created.",
         );
@@ -15248,106 +15259,66 @@ export default function App() {
   const accountIncbTokenLaneClean =
     accountTokenLaneStatuses.incb.loaded &&
     !accountTokenLaneStatuses.incb.error;
-  const composeAccountWorkWalletBalance = useMemo(() => {
-    const globalAccountBalances = tokenWalletBalancesFor(
-      address,
-      accountTokenState.tokens,
-      accountTokenState.mints,
-      accountTokenState.transfers,
-      accountTokenState.sales,
-      accountTokenState.holders,
-    );
-    const scopedAccountBalances = tokenWalletBalancesFor(
-      address,
-      accountWorkTokenState.tokens,
-      accountWorkTokenState.mints,
-      accountWorkTokenState.transfers,
-      accountWorkTokenState.sales,
-      accountWorkTokenState.holders,
-    );
-    const routeWorkTokens = tokenDefinitions.filter(
-      (token) =>
-        token.tokenId === WORK_TOKEN_ID ||
-        normalizeTokenTicker(token.ticker) === WORK_TOKEN_TICKER,
-    );
-    const routeBalances = tokenWalletBalancesFor(
-      address,
-      routeWorkTokens.length > 0 ? routeWorkTokens : [WORK_TOKEN_DEFINITION],
-      tokenMints,
-      tokenTransfers,
-      tokenSales,
-      tokenHolders,
-    );
-    const scopedAccountBalance = bestKnownTokenWalletBalance(
-      WORK_TOKEN_ID,
-      WORK_TOKEN_TICKER,
-      scopedAccountBalances,
-    );
-    const globalAccountBalance = bestKnownTokenWalletBalance(
-      WORK_TOKEN_ID,
-      WORK_TOKEN_TICKER,
-      globalAccountBalances,
-    );
-    if (accountWorkTokenLaneClean) {
-      return scopedAccountBalance;
+  const accountWorkSpendabilityState = accountWorkTokenLaneClean
+    ? accountWorkTokenState
+    : accountAllTokenLaneClean
+      ? accountTokenState
+      : undefined;
+  const workAttachmentPreviewSpendability = useMemo(() => {
+    if (!address || !accountWorkSpendabilityState) {
+      return undefined;
     }
-    if (accountAllTokenLaneClean) {
-      return globalAccountBalance;
+
+    try {
+      return tokenSpendabilityForWallet(
+        address,
+        WORK_TOKEN_DEFINITION,
+        accountWorkSpendabilityState,
+        tokenListings,
+        tokenClosedListings,
+        tokenTransfers,
+        tokenSales,
+      );
+    } catch {
+      return undefined;
     }
-    return bestKnownTokenWalletBalance(
-      WORK_TOKEN_ID,
-      WORK_TOKEN_TICKER,
-      scopedAccountBalances,
-      globalAccountBalances,
-      routeBalances,
-    );
   }, [
-    accountAllTokenLaneClean,
-    accountTokenState,
-    accountWorkTokenLaneClean,
-    accountWorkTokenState,
+    accountWorkSpendabilityState,
     address,
-    tokenDefinitions,
-    tokenHolders,
-    tokenMints,
+    tokenClosedListings,
+    tokenListings,
     tokenSales,
     tokenTransfers,
   ]);
-  const accountWorkListings = accountWorkTokenLaneClean
-    ? accountWorkTokenState.listings
-    : accountAllTokenLaneClean
-      ? accountTokenState.listings
-      : accountWorkTokenState.listings.length > 0
-        ? accountWorkTokenState.listings
-        : accountTokenState.listings.length > 0
-          ? accountTokenState.listings
-          : tokenListings;
-  const accountWorkReservedBalance = tokenReservedBalanceFor(
-    accountWorkListings,
-    WORK_TOKEN_ID,
-    address,
-  );
-  const workAttachmentSpendableBalance = Math.max(
-    0,
-    (composeAccountWorkWalletBalance?.confirmedBalance ?? 0) -
-      accountWorkReservedBalance,
-  );
-  const bondWorkBalanceHasCleanLane =
-    accountWorkTokenLaneClean || accountAllTokenLaneClean;
-  const bondWorkBalanceLoaded =
-    accountTokenLaneStatuses.work.loaded ||
-    accountTokenLaneStatuses.all.loaded;
+  const workAttachmentSpendableBalance =
+    workAttachmentPreviewSpendability?.spendableBalance ?? 0;
+  const inceptionWorkBalanceRequired =
+    activeBondConfig.folder === "inception";
+  const bondWorkBalanceHasCleanLane = inceptionWorkBalanceRequired
+    ? accountWorkTokenLaneClean
+    : accountWorkTokenLaneClean || accountAllTokenLaneClean;
+  const bondWorkBalanceLoaded = inceptionWorkBalanceRequired
+    ? accountTokenLaneStatuses.work.loaded
+    : accountTokenLaneStatuses.work.loaded ||
+      accountTokenLaneStatuses.all.loaded;
   const bondWorkBalanceLoading =
     !bondWorkBalanceHasCleanLane &&
-    (accountTokenLaneStatuses.work.loading ||
-      accountTokenLaneStatuses.all.loading);
+    (inceptionWorkBalanceRequired
+      ? accountTokenLaneStatuses.work.loading
+      : accountTokenLaneStatuses.work.loading ||
+        accountTokenLaneStatuses.all.loading);
   const bondWorkBalanceError = bondWorkBalanceHasCleanLane
     ? ""
-    : accountTokenLaneStatuses.work.error ||
-      accountTokenLaneStatuses.all.error;
-  const workAttachmentAllowed = canAttachWorkToMessages(address, network);
+    : inceptionWorkBalanceRequired
+      ? accountTokenLaneStatuses.work.error
+      : accountTokenLaneStatuses.work.error ||
+        accountTokenLaneStatuses.all.error;
+  const messageWorkAttachmentAllowed = canAttachWorkToMessages(
+    address,
+    network,
+  );
   const workAttachmentVisible =
-    workAttachmentAllowed &&
+    messageWorkAttachmentAllowed &&
     (workAttachmentSpendableBalance > 0 || messageWorkAmountValue > 0);
   const messageWorkRecipientAddresses = useMemo(() => {
     const addresses: string[] = [];
@@ -15371,7 +15342,7 @@ export default function App() {
   }, [ccRecipientResolution, network, recipientResolution]);
   const workAttachmentPayloads = useMemo(
     () =>
-      messageWorkAmountValue > 0 && workAttachmentAllowed
+      messageWorkAmountValue > 0 && messageWorkAttachmentAllowed
         ? messageWorkRecipientAddresses.map((recipientAddress) =>
             buildTokenSendPayload(
               WORK_TOKEN_ID,
@@ -15383,14 +15354,14 @@ export default function App() {
     [
       messageWorkAmountValue,
       messageWorkRecipientAddresses,
-      workAttachmentAllowed,
+      messageWorkAttachmentAllowed,
     ],
   );
   const workAttachmentTotalAmount =
     messageWorkAmountValue * workAttachmentPayloads.length;
   const workAttachmentBalanceOk =
     messageWorkAmountValue <= 0 ||
-    (workAttachmentAllowed &&
+    (messageWorkAttachmentAllowed &&
       workAttachmentPayloads.length > 0 &&
       workAttachmentTotalAmount <= workAttachmentSpendableBalance);
   const composeDataCarrierBytes = useMemo(
@@ -16094,10 +16065,21 @@ export default function App() {
     Number.isFinite(bondWorkAmount) && bondWorkAmount > 0
       ? Math.floor(bondWorkAmount)
       : 0;
+  const inceptionWorkHolderEligible =
+    bondWorkBalanceHasCleanLane &&
+    bondWorkBalanceLoaded &&
+    !bondWorkBalanceError &&
+    (workAttachmentPreviewSpendability?.confirmedBalance ?? 0) > 0;
+  const bondWorkAttachmentAllowed = canAttachWorkToBond(
+    activeBondConfig,
+    address,
+    network,
+    inceptionWorkHolderEligible,
+  );
   const bondWorkAttachmentPayloads = useMemo(
     () =>
       bondWorkAmountValue > 0 &&
-      workAttachmentAllowed &&
+      bondWorkAttachmentAllowed &&
       infinityBondResolution.paymentAddress &&
       isValidBitcoinAddress(infinityBondResolution.paymentAddress, "livenet")
         ? [
@@ -16110,18 +16092,19 @@ export default function App() {
         : [],
     [
       bondWorkAmountValue,
+      bondWorkAttachmentAllowed,
       infinityBondResolution.paymentAddress,
-      workAttachmentAllowed,
     ],
   );
   const bondWorkAttachmentBalanceOk =
     bondWorkAmountValue <= 0 ||
-    (workAttachmentAllowed &&
+    (bondWorkAttachmentAllowed &&
+      bondWorkBalanceHasCleanLane &&
+      bondWorkBalanceLoaded &&
+      !bondWorkBalanceError &&
       bondWorkAttachmentPayloads.length === 1 &&
-      (!bondWorkBalanceLoaded ||
-        Boolean(bondWorkBalanceError) ||
-        bondWorkAmountValue <= workAttachmentSpendableBalance));
-  const bondWorkAttachmentVisible = workAttachmentAllowed;
+      bondWorkAmountValue <= workAttachmentSpendableBalance);
+  const bondWorkAttachmentVisible = bondWorkAttachmentAllowed;
   const infinityBondBytes = useMemo(
     () =>
       dataCarrierBytesForPayloads([
@@ -17027,10 +17010,11 @@ export default function App() {
         () =>
           fetchTokenState(
             network,
-            false,
+            true,
             WORK_TOKEN_ID,
             false,
             [address],
+            true,
             true,
           ),
         setAccountWorkTokenState,
@@ -17251,11 +17235,13 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (!canAttachWorkToMessages(address, network)) {
+    if (!messageWorkAttachmentAllowed) {
       setMessageWorkAmount(0);
+    }
+    if (!bondWorkAttachmentAllowed) {
       setBondWorkAmount(0);
     }
-  }, [address, network]);
+  }, [bondWorkAttachmentAllowed, messageWorkAttachmentAllowed]);
 
   useEffect(() => {
     if (
@@ -22249,10 +22235,13 @@ export default function App() {
       const workAmountToAttach = bondWorkAmountValue;
 
       if (workAmountToAttach > 0) {
-        if (!canAttachWorkToMessages(address, "livenet")) {
+        if (!bondWorkAttachmentAllowed) {
           setStatus({
             tone: "bad",
-            text: "WORK bond attachments are enabled only for approved mainnet senders.",
+            text:
+              activeBondConfig.folder === "inception"
+                ? "A current confirmed WORK balance is required to attach WORK to an Inception Bond."
+                : "WORK bond attachments are enabled only for approved mainnet senders.",
           });
           return;
         }
@@ -22272,7 +22261,7 @@ export default function App() {
             });
           },
         );
-        const latestSpendableWork = tokenSpendabilityForWallet(
+        const latestWorkSpendability = tokenSpendabilityForWallet(
           address,
           WORK_TOKEN_DEFINITION,
           latestWorkState,
@@ -22280,7 +22269,18 @@ export default function App() {
           tokenClosedListings,
           tokenTransfers,
           tokenSales,
-        ).spendableBalance;
+        );
+        if (
+          activeBondConfig.folder === "inception" &&
+          latestWorkSpendability.confirmedBalance <= 0
+        ) {
+          setStatus({
+            tone: "bad",
+            text: "A confirmed WORK balance is required to attach WORK to an Inception Bond.",
+          });
+          return;
+        }
+        const latestSpendableWork = latestWorkSpendability.spendableBalance;
         if (workAmountToAttach > latestSpendableWork) {
           setStatus({
             tone: "bad",
