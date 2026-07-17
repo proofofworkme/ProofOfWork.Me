@@ -13651,6 +13651,45 @@ function inceptionMintHasCanonicalBondBinding(mint, bond) {
   );
 }
 
+function inceptionInvalidMintDispositionMatchesBond(event, bond) {
+  const txid = String(bond?.txid ?? "").trim().toLowerCase();
+  return Boolean(
+    /^[0-9a-f]{64}$/u.test(txid) &&
+      event?.confirmed === true &&
+      event?.valid === false &&
+      String(event?.kind ?? "").trim().toLowerCase() ===
+        "token-event-invalid" &&
+      String(event?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID &&
+      String(event?.attemptedKind ?? "").trim().toLowerCase() ===
+        "token-mint" &&
+      String(event?.sourceKind ?? "").trim().toLowerCase() ===
+        INCEPTION_BOND_CONFIG.kind &&
+      String(event?.txid ?? "").trim().toLowerCase() === txid &&
+      String(event?.sourceBondTxid ?? "").trim().toLowerCase() === txid,
+  );
+}
+
+function inceptionBondHasExplicitlyRejectedMint(bond, tokenState) {
+  const txid = String(bond?.txid ?? "").trim().toLowerCase();
+  const hasProjectedMint = (Array.isArray(tokenState?.mints)
+    ? tokenState.mints
+    : []
+  ).some(
+    (mint) =>
+      String(mint?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID &&
+      String(mint?.txid ?? "").trim().toLowerCase() === txid,
+  );
+  if (hasProjectedMint) {
+    // Canonical and malformed projections both remain summary input. Existing
+    // issuance reconciliation accepts the former and fails closed on the latter.
+    return false;
+  }
+  return (Array.isArray(tokenState?.invalidEvents)
+    ? tokenState.invalidEvents
+    : []
+  ).some((event) => inceptionInvalidMintDispositionMatchesBond(event, bond));
+}
+
 function canonicalItemPrecedesBondTransaction(item, bond) {
   if (!item?.confirmed) {
     return false;
@@ -26718,7 +26757,10 @@ function bondSummaryPayloadFromLedger(ledger, config) {
   const activity = Array.isArray(ledger?.activity) ? ledger.activity : [];
   const confirmedActivity = activity.filter((item) => item?.confirmed);
   const confirmedBondActions = confirmedActivity.filter(
-    (item) => isBondActivityItem(item, config),
+    (item) =>
+      isBondActivityItem(item, config) &&
+      (config.tokenId !== INCB_TOKEN_ID ||
+        !inceptionBondHasExplicitlyRejectedMint(item, tokenState)),
   );
   const confirmedTransfers = (tokenState?.transfers ?? []).filter(
     (transfer) => transfer?.confirmed && transfer.tokenId === config.tokenId,

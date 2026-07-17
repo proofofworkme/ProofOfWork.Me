@@ -4203,6 +4203,22 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
         String(left).toLowerCase() === String(right).toLowerCase(),
     },
   );
+  const inceptionInvalidMintDispositionMatchesBond = isolatedFunction(
+    API_PATH,
+    "inceptionInvalidMintDispositionMatchesBond",
+    {
+      INCB_TOKEN_ID,
+      INCEPTION_BOND_CONFIG: { kind: "inception-bond" },
+    },
+  );
+  const inceptionBondHasExplicitlyRejectedMint = isolatedFunction(
+    API_PATH,
+    "inceptionBondHasExplicitlyRejectedMint",
+    {
+      INCB_TOKEN_ID,
+      inceptionInvalidMintDispositionMatchesBond,
+    },
+  );
   const bondAttachedWorkValueDetails = isolatedFunction(
     API_PATH,
     "bondAttachedWorkValueDetails",
@@ -4253,6 +4269,7 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       btcUsdResponseMetadata: () => ({ btcUsd: 0 }),
       compactTokenSummaryPayload: (state) => state,
       infinityBondChartPointsFromEvents,
+      inceptionBondHasExplicitlyRejectedMint,
       inceptionIssuanceMetadataFromMints,
       isBondActivityItem,
       ledgerTokenStateForScope,
@@ -4376,14 +4393,14 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
     tokenId: INCB_TOKEN_ID,
     txid: "3".repeat(64),
   };
-  const summary = bondSummaryPayloadFromLedger(
-    {
+  const canonicalLedger = {
       activity: [bond, mutation],
       generatedAt: "2026-07-13T03:15:00.000Z",
       network: "livenet",
       tokenState: {
         confirmedSupply: 746,
         holders: [{ address: recipientAddress, balance: 746 }],
+        invalidEvents: [],
         listings: [],
         mints: [canonicalMint],
         pendingSupply: 0,
@@ -4446,9 +4463,8 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
           },
         ],
       },
-    },
-    config,
-  );
+    };
+  const summary = bondSummaryPayloadFromLedger(canonicalLedger, config);
 
   assert.equal(summary.actualValue.attachedWorkActions, 1);
   assert.equal(summary.actualValue.attachedWorkAmount, 100);
@@ -4485,6 +4501,132 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
   assert.equal(summary.chartPoints[0].floorSats, 1);
   assert.equal(summary.chartPoints.at(-1).networkValueSats, 814);
   assert.equal(summary.chartPoints.at(-1).confirmedSupply, 746);
+
+  const failedBondTxid =
+    "c9c9f4e382f598aa39b3be57adc8fe1defeb80e5216387d3af6b0948da232aff";
+  const failedBondAttempt = {
+    ...bond,
+    amountSats: 1_000,
+    attachedCredits: [
+      {
+        amount: 100_000,
+        protocolVout: 4,
+        recipientAddress,
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    blockHash:
+      "00000000000000000001db52a4485f7d1a1784b7ba6c5b93db1b20449ac2628b",
+    blockHeight: 958_383,
+    blockIndex: 2_421,
+    createdAt: "2026-07-13T03:18:30.000Z",
+    txid: failedBondTxid,
+  };
+  const rejectedInceptionMint = {
+    attemptedKind: "token-mint",
+    confirmed: true,
+    kind: "token-event-invalid",
+    reasonCode: "reserved-bond-credit-namespace",
+    sourceBondTxid: failedBondTxid,
+    sourceKind: "inception-bond",
+    tokenId: INCB_TOKEN_ID,
+    txid: failedBondTxid,
+    valid: false,
+  };
+  const failedAttemptLedger = {
+    ...canonicalLedger,
+    activity: [...canonicalLedger.activity, failedBondAttempt],
+    tokenState: {
+      ...canonicalLedger.tokenState,
+      invalidEvents: [rejectedInceptionMint],
+    },
+  };
+  const summaryWithFailedAttempt = bondSummaryPayloadFromLedger(
+    failedAttemptLedger,
+    config,
+  );
+  assert.equal(summaryWithFailedAttempt.stats.confirmedBondActions, 1);
+  assert.equal(summaryWithFailedAttempt.actualValue.bondMintFlowSats, 546);
+  assert.equal(summaryWithFailedAttempt.actualValue.baseNetworkValueSats, 614);
+  assert.equal(
+    summaryWithFailedAttempt.actualValue.attachedWorkActions,
+    summary.actualValue.attachedWorkActions,
+  );
+  assert.equal(
+    summaryWithFailedAttempt.actualValue.attachedWorkAmount,
+    summary.actualValue.attachedWorkAmount,
+  );
+  assert.equal(
+    summaryWithFailedAttempt.actualValue.attachedWorkFrozenValueSats,
+    summary.actualValue.attachedWorkFrozenValueSats,
+  );
+  assert.equal(
+    summaryWithFailedAttempt.actualValue.attachedWorkLiveValueSats,
+    summary.actualValue.attachedWorkLiveValueSats,
+  );
+  assert.equal(
+    summaryWithFailedAttempt.actualValue.attachedWorkUnmatchedActions,
+    summary.actualValue.attachedWorkUnmatchedActions,
+  );
+  assert.equal(
+    summaryWithFailedAttempt.actualValue.attachedWorkUnvaluedActions,
+    0,
+  );
+  assert.equal(
+    summaryWithFailedAttempt.stats.confirmedSupply,
+    summary.stats.confirmedSupply,
+  );
+  assert.equal(summaryWithFailedAttempt.floorSats, summary.floorSats);
+  assert.equal(summaryWithFailedAttempt.networkValueSats, 814);
+  assert.deepEqual(summaryWithFailedAttempt.chartPoints, summary.chartPoints);
+  assert.ok(
+    failedAttemptLedger.activity.includes(failedBondAttempt) &&
+      failedAttemptLedger.tokenState.invalidEvents.includes(
+        rejectedInceptionMint,
+      ),
+    "summary filtering leaves Log and invalid-history source rows intact",
+  );
+
+  const unexplainedAttemptSummary = bondSummaryPayloadFromLedger(
+    {
+      ...failedAttemptLedger,
+      tokenState: {
+        ...failedAttemptLedger.tokenState,
+        invalidEvents: [],
+      },
+    },
+    config,
+  );
+  assert.equal(unexplainedAttemptSummary.stats.confirmedBondActions, 2);
+  assert.equal(
+    unexplainedAttemptSummary.actualValue.attachedWorkUnvaluedActions,
+    1,
+    "an unexplained missing mint remains fail-closed summary input",
+  );
+
+  const malformedMintSummary = bondSummaryPayloadFromLedger(
+    {
+      ...failedAttemptLedger,
+      tokenState: {
+        ...failedAttemptLedger.tokenState,
+        mints: [
+          ...failedAttemptLedger.tokenState.mints,
+          {
+            confirmed: true,
+            tokenId: INCB_TOKEN_ID,
+            txid: failedBondTxid,
+          },
+        ],
+      },
+    },
+    config,
+  );
+  assert.equal(malformedMintSummary.stats.confirmedBondActions, 2);
+  assert.equal(
+    malformedMintSummary.actualValue.attachedWorkUnvaluedActions,
+    1,
+    "a malformed mint projection must fail closed even beside an invalid event",
+  );
 
   const atomTxid = "4".repeat(64);
   const atomBlockHash = "5".repeat(64);
