@@ -3817,14 +3817,60 @@ function tokenHistoryPageItemCreatedAt(item) {
   return item?.closedAt ?? item?.createdAt;
 }
 
+function tokenHistoryPageItemIsMarketLogItem(item) {
+  return (
+    item?.kind === "sale" ||
+    item?.kind === "closed-listing" ||
+    item?.kind === "listing"
+  );
+}
+
+function tokenHistoryPageItemConfirmed(item) {
+  if (item?.kind === "sale") {
+    return item.sale?.confirmed === true;
+  }
+  if (item?.kind === "closed-listing") {
+    return item.closedListing?.closedConfirmed === true;
+  }
+  return item?.kind === "listing" && item.listing?.confirmed === true;
+}
+
+function tokenHistoryPageItemKindRank(item) {
+  if (item?.kind === "sale") {
+    return 0;
+  }
+  if (item?.kind === "closed-listing") {
+    return 1;
+  }
+  return item?.kind === "listing" ? 2 : 3;
+}
+
+function tokenHistoryPageItemTxid(item) {
+  return String(
+    item?.txid ?? item?.closedTxid ?? item?.listingId ?? "",
+  );
+}
+
 function compareTokenHistoryPageItems(left, right) {
   const leftTime = Date.parse(tokenHistoryPageItemCreatedAt(left) ?? "");
   const rightTime = Date.parse(tokenHistoryPageItemCreatedAt(right) ?? "");
+  const marketLogPair =
+    tokenHistoryPageItemIsMarketLogItem(left) &&
+    tokenHistoryPageItemIsMarketLogItem(right);
   return (
     (Number.isFinite(rightTime) ? rightTime : 0) -
       (Number.isFinite(leftTime) ? leftTime : 0) ||
-    String(right?.txid ?? right?.closedTxid ?? right?.listingId ?? "")
-      .localeCompare(String(left?.txid ?? left?.closedTxid ?? left?.listingId ?? ""))
+    (marketLogPair
+      ? Number(tokenHistoryPageItemConfirmed(right)) -
+        Number(tokenHistoryPageItemConfirmed(left))
+      : 0) ||
+    tokenHistoryPageItemTxid(right).localeCompare(
+      tokenHistoryPageItemTxid(left),
+    ) ||
+    (marketLogPair
+      ? tokenHistoryPageItemKindRank(left) -
+        tokenHistoryPageItemKindRank(right)
+      : 0)
   );
 }
 
@@ -9210,49 +9256,8 @@ function sortClosedTokenListings(listings) {
   );
 }
 
-function tokenMarketLogItemConfirmed(item) {
-  if (item?.kind === "closed-listing") {
-    return Boolean(item.closedListing?.closedConfirmed);
-  }
-  if (item?.kind === "sale") {
-    return Boolean(item.sale?.confirmed);
-  }
-  return Boolean(item?.listing?.confirmed);
-}
-
-function tokenMarketLogItemCreatedAt(item) {
-  if (item?.kind === "closed-listing") {
-    return String(
-      item.closedListing?.closedAt ?? item.closedListing?.createdAt ?? "",
-    );
-  }
-  if (item?.kind === "sale") {
-    return String(item.sale?.createdAt ?? "");
-  }
-  return String(item?.listing?.createdAt ?? "");
-}
-
-function tokenMarketLogItemTxid(item) {
-  if (item?.kind === "closed-listing") {
-    return String(
-      item.closedListing?.closedTxid ?? item.closedListing?.listingId ?? "",
-    );
-  }
-  if (item?.kind === "sale") {
-    return String(item.sale?.txid ?? "");
-  }
-  return String(item?.listing?.listingId ?? "");
-}
-
 function sortTokenMarketLogItems(items) {
-  return [...items].sort(
-    (left, right) =>
-      Date.parse(tokenMarketLogItemCreatedAt(right)) -
-        Date.parse(tokenMarketLogItemCreatedAt(left)) ||
-      Number(tokenMarketLogItemConfirmed(right)) -
-        Number(tokenMarketLogItemConfirmed(left)) ||
-      tokenMarketLogItemTxid(left).localeCompare(tokenMarketLogItemTxid(right)),
-  );
+  return [...items].sort(compareTokenHistoryPageItems);
 }
 
 function tokenMarketLogItemsFromState(state) {
