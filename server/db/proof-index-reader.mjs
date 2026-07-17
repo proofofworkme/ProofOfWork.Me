@@ -566,6 +566,7 @@ function tokenListingFromEventPayload(payload) {
       priceSats,
     registryAddress,
     saleAuthorization,
+    sealDataBytes: rowNumber(payload, "sealDataBytes"),
     sealFrozenNetworkValueSats: rowNumber(payload, "sealFrozenNetworkValueSats"),
     sealAt: dateIso(payload?.sealAt),
     sealConfirmed:
@@ -574,9 +575,10 @@ function tokenListingFromEventPayload(payload) {
         : undefined,
     sealLiveNetworkValueSats: rowNumber(payload, "sealLiveNetworkValueSats"),
     sealMinerFeeCanonical:
-      payload?.canonicalMinerFeeCovered === true &&
-      String(payload?.kind ?? "").trim().toLowerCase() ===
-        "token-listing-sealed",
+      payload?.sealMinerFeeCanonical === true ||
+      (payload?.canonicalMinerFeeCovered === true &&
+        String(payload?.kind ?? "").trim().toLowerCase() ===
+          "token-listing-sealed"),
     sealMinerFeeSource:
       payload?.canonicalMinerFeeCovered === true &&
       String(payload?.kind ?? "").trim().toLowerCase() ===
@@ -1697,6 +1699,100 @@ function tokenHistoryMarketEventKinds(safeKind) {
   return [];
 }
 
+function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
+  const listingKinds =
+    "ARRAY['token-listings','token-listing','token-listing-sealed']::text[]";
+  const listingId = `lower(COALESCE(
+    NULLIF(e.payload->>'listingId', ''),
+    NULLIF(cl_event.listing_id, ''),
+    e.txid
+  ))`;
+  const canonicalKey =
+    safeKind === "listings"
+      ? `'listing:' || ${listingId}`
+      : safeKind === "sales"
+        ? `'sale:' || lower(e.txid)`
+        : safeKind === "closedListings"
+          ? `'closed:' || ${listingId} || ':' || lower(e.txid)`
+          : `CASE
+              WHEN e.kind = ANY(${listingKinds})
+                THEN 'listing:' || ${listingId}
+              WHEN e.kind = 'token-sale'
+                THEN 'sale:' || lower(e.txid)
+              WHEN e.kind = 'token-listing-closed'
+                THEN 'closed:' || ${listingId} || ':' || lower(e.txid)
+              ELSE e.kind || ':' || e.event_id::text
+            END`;
+  const itemTxid = `CASE
+    WHEN e.kind = ANY(${listingKinds}) THEN ${listingId}
+    ELSE lower(e.txid)
+  END`;
+  const itemKindRank = `CASE
+    WHEN e.kind = 'token-sale' THEN 0
+    WHEN e.kind = 'token-listing-closed' THEN 1
+    WHEN e.kind = ANY(${listingKinds}) THEN 2
+    ELSE 3
+  END`;
+  const projectionRank = `CASE
+    WHEN e.kind = ANY(ARRAY['token-listings','token-listing']::text[]) THEN 0
+    WHEN e.kind = 'token-listing-sealed' THEN 1
+    WHEN e.kind = 'token-listing-closed' THEN 1
+    WHEN e.kind = 'token-sale' THEN 2
+    ELSE 3
+  END`;
+
+  return `
+    WITH ranked_market_events AS (
+      SELECT
+        e.payload,
+        e.protocol,
+        e.kind,
+        e.status,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        e.block_height,
+        e.txid,
+        e.event_id,
+        COALESCE(cd.token_id, cl_event.token_id) AS token_id,
+        cd.ticker,
+        cd.registry_address,
+        cd.metadata AS token_metadata,
+        cl_event.listing_id AS linked_listing_id,
+        cl_event.seller_address AS listing_seller_address,
+        cl_event.buyer_address AS listing_buyer_address,
+        cl_event.amount AS listing_amount,
+        cl_event.price_sats AS listing_price_sats,
+        cl_event.payload AS listing_payload,
+        (e.status = 'confirmed') AS history_item_confirmed,
+        ${itemTxid} AS history_item_txid,
+        ${itemKindRank} AS history_item_kind_rank,
+        ROW_NUMBER() OVER (
+          PARTITION BY ${canonicalKey}
+          ORDER BY
+            ${projectionRank} ASC,
+            COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+            (e.status = 'confirmed') DESC,
+            e.txid DESC,
+            e.event_id DESC
+        ) AS canonical_history_rank
+      FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.credit_listings cl_event
+        ON cl_event.network = e.network
+       AND cl_event.listing_id = lower(e.payload->>'listingId')
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = e.network
+       AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
+      WHERE ${whereClause}
+    ),
+    canonical_market_events AS (
+      SELECT *
+      FROM ranked_market_events
+      WHERE canonical_history_rank = 1
+    )
+  `;
+}
+
 function tokenHistoryPageWithScanCoverage(page, coverage) {
   // A scan checkpoint is operational evidence only. It cannot change the
   // generation height or source label of an older embedded history page.
@@ -1772,14 +1868,57 @@ function tokenHistoryItemCreatedAt(item) {
   return item?.closedAt ?? item?.createdAt;
 }
 
+function tokenHistoryItemIsMarketLogItem(item) {
+  return (
+    item?.kind === "sale" ||
+    item?.kind === "closed-listing" ||
+    item?.kind === "listing"
+  );
+}
+
+function tokenHistoryItemConfirmed(item) {
+  if (item?.kind === "sale") {
+    return item.sale?.confirmed === true;
+  }
+  if (item?.kind === "closed-listing") {
+    return item.closedListing?.closedConfirmed === true;
+  }
+  return item?.kind === "listing" && item.listing?.confirmed === true;
+}
+
+function tokenHistoryItemKindRank(item) {
+  if (item?.kind === "sale") {
+    return 0;
+  }
+  if (item?.kind === "closed-listing") {
+    return 1;
+  }
+  return item?.kind === "listing" ? 2 : 3;
+}
+
+function tokenHistoryItemTxid(item) {
+  return String(
+    item?.txid ?? item?.closedTxid ?? item?.listingId ?? "",
+  );
+}
+
 function compareTokenHistoryMarketItems(left, right) {
   const leftTime = Date.parse(tokenHistoryItemCreatedAt(left) ?? "");
   const rightTime = Date.parse(tokenHistoryItemCreatedAt(right) ?? "");
+  const marketLogPair =
+    tokenHistoryItemIsMarketLogItem(left) &&
+    tokenHistoryItemIsMarketLogItem(right);
   return (
     (Number.isFinite(rightTime) ? rightTime : 0) -
       (Number.isFinite(leftTime) ? leftTime : 0) ||
-    String(right?.txid ?? right?.closedTxid ?? right?.listingId ?? "")
-      .localeCompare(String(left?.txid ?? left?.closedTxid ?? left?.listingId ?? ""))
+    (marketLogPair
+      ? Number(tokenHistoryItemConfirmed(right)) -
+        Number(tokenHistoryItemConfirmed(left))
+      : 0) ||
+    tokenHistoryItemTxid(right).localeCompare(tokenHistoryItemTxid(left)) ||
+    (marketLogPair
+      ? tokenHistoryItemKindRank(left) - tokenHistoryItemKindRank(right)
+      : 0)
   );
 }
 
@@ -2687,6 +2826,7 @@ async function filterClosedTokenListingHistoryPage(pool, page, network) {
         AND (
           (
             e.kind = ANY($2::text[])
+            AND e.status IN ('confirmed', 'pending')
             AND lower(e.payload->>'listingId') = ANY($3::text[])
           )
           OR (
@@ -2815,9 +2955,18 @@ async function exactActiveTokenListingHistoryPage(
             FROM candidate_events candidate
             JOIN proof_indexer.events terminal_event
               ON terminal_event.event_id = candidate.event_id
-            WHERE terminal_event.valid = false
-              OR terminal_event.status IN ('dropped', 'orphaned')
-              OR terminal_event.kind IN ('token-listing-closed', 'token-sale')
+            WHERE (
+              terminal_event.txid = ANY($2::text[])
+              AND (
+                terminal_event.valid = false
+                OR terminal_event.status IN ('dropped', 'orphaned')
+              )
+            )
+            OR (
+              terminal_event.valid = true
+              AND terminal_event.status IN ('confirmed', 'pending')
+              AND terminal_event.kind IN ('token-listing-closed', 'token-sale')
+            )
           )
         ) AS terminal
       `,
@@ -2876,6 +3025,7 @@ async function exactActiveTokenListingHistoryPage(
             FROM proof_indexer.events e
             WHERE e.network = $1
               AND e.valid = true
+              AND e.status IN ('confirmed', 'pending')
               AND e.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
               AND lower(e.payload->>'listingId') = ANY($2::text[])
           `,
@@ -4321,6 +4471,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   const conditions = [
     "e.network = $1",
     "e.valid = true",
+    "e.status IN ('confirmed', 'pending')",
     "e.kind = ANY($2::text[])",
   ];
   const params = [network, eventKinds];
@@ -4413,6 +4564,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
           FROM proof_indexer.events close_event
           WHERE close_event.network = e.network
             AND close_event.valid = true
+            AND close_event.status IN ('confirmed', 'pending')
             AND close_event.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
             AND lower(close_event.payload->>'listingId') = lower(e.payload->>'listingId')
         )`,
@@ -4424,6 +4576,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
           FROM proof_indexer.events close_event
           WHERE close_event.network = e.network
             AND close_event.valid = true
+            AND close_event.status IN ('confirmed', 'pending')
             AND close_event.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
             AND lower(close_event.payload->>'listingId') = lower(e.payload->>'listingId')
         )`,
@@ -4432,71 +4585,50 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   }
 
   const whereClause = conditions.join(" AND ");
-  const countResult = await pool.query(
-    `
-      SELECT count(*) AS total_count, max(e.block_height) AS indexed_through_block
-      FROM proof_indexer.events e
-      LEFT JOIN proof_indexer.credit_listings cl_event
-        ON cl_event.network = e.network
-       AND cl_event.listing_id = lower(e.payload->>'listingId')
-      LEFT JOIN proof_indexer.credit_definitions cd
-        ON cd.network = e.network
-       AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
-      WHERE ${whereClause}
-    `,
-    params,
+  const canonicalMarketEventsSql = tokenHistoryCanonicalMarketEventsSql(
+    safeKind,
+    whereClause,
   );
-  const totalCount = rowNumber(countResult.rows[0], "total_count");
-  const indexedThroughBlock =
-    rowNumber(countResult.rows[0], "indexed_through_block") || undefined;
-  if (totalCount === 0) {
-    return null;
-  }
-
   const rowParams = [...params, pagination.limit, pagination.offset];
   const limitParam = rowParams.length - 1;
   const offsetParam = rowParams.length;
   const rowsResult = await pool.query(
     `
+      ${canonicalMarketEventsSql},
+      canonical_market_metadata AS (
+        SELECT
+          count(*) AS total_count,
+          max(block_height) AS indexed_through_block
+        FROM canonical_market_events
+      )
       SELECT
-        e.payload,
-        e.protocol,
-        e.kind,
-        e.status,
-        e.event_time,
-        e.block_time,
-        e.created_at,
-        e.block_height,
-        e.txid,
-        e.event_id,
-        COALESCE(cd.token_id, cl_event.token_id) AS token_id,
-        cd.ticker,
-        cd.registry_address,
-        cd.metadata AS token_metadata,
-        cl_event.listing_id AS linked_listing_id,
-        cl_event.seller_address AS listing_seller_address,
-        cl_event.buyer_address AS listing_buyer_address,
-        cl_event.amount AS listing_amount,
-        cl_event.price_sats AS listing_price_sats,
-        cl_event.payload AS listing_payload
-      FROM proof_indexer.events e
-      LEFT JOIN proof_indexer.credit_listings cl_event
-        ON cl_event.network = e.network
-       AND cl_event.listing_id = lower(e.payload->>'listingId')
-      LEFT JOIN proof_indexer.credit_definitions cd
-        ON cd.network = e.network
-       AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
-      WHERE ${whereClause}
-      ORDER BY
-        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
-        e.txid DESC,
-        e.event_id DESC
-      LIMIT $${limitParam}
-      OFFSET $${offsetParam}
+        page.*,
+        metadata.total_count AS history_total_count,
+        metadata.indexed_through_block AS history_indexed_through_block
+      FROM canonical_market_metadata metadata
+      LEFT JOIN LATERAL (
+        SELECT *
+        FROM canonical_market_events
+        ORDER BY
+          COALESCE(event_time, block_time, created_at) DESC,
+          history_item_confirmed DESC,
+          history_item_txid DESC,
+          history_item_kind_rank ASC,
+          event_id DESC
+        LIMIT $${limitParam}
+        OFFSET $${offsetParam}
+      ) page ON true
     `,
     rowParams,
   );
+  const totalCount = rowNumber(rowsResult.rows[0], "history_total_count");
+  const indexedThroughBlock =
+    rowNumber(rowsResult.rows[0], "history_indexed_through_block") || undefined;
+  if (totalCount === 0) {
+    return null;
+  }
   const items = rowsResult.rows
+    .filter((row) => row.kind)
     .map((row) =>
       tokenHistoryItemFromMarketEventPayload(
         tokenMarketEventRowPayload(row, network),
@@ -4566,6 +4698,7 @@ export async function proofIndexTokenListingCloseOutspendPayload(
       FROM proof_indexer.events e
       WHERE e.network = $1
         AND e.valid = true
+        AND e.status IN ('confirmed', 'pending')
         AND e.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
         AND lower(e.payload->>'listingId') = $2
       ORDER BY
@@ -5034,6 +5167,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
   const conditions = [
     "e.network = $1",
     "e.valid = true",
+    "e.status IN ('confirmed', 'pending')",
     "e.kind = ANY($2::text[])",
   ];
   const params = [
@@ -8759,6 +8893,7 @@ export async function proofIndexWalletTokenOverlayPayload(
         FROM proof_indexer.events close_event
         WHERE close_event.network = e.network
           AND close_event.valid = true
+          AND close_event.status IN ('confirmed', 'pending')
           AND close_event.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
           AND lower(close_event.payload->>'listingId') = lower(e.payload->>'listingId')
       )
@@ -11075,12 +11210,55 @@ function eventRowPayload(row, network) {
   };
 }
 
+function tokenMarketListingSealPatch(payload, listingPayload) {
+  const kind = normalizedLowerText(payload?.kind);
+  if (
+    !["token-listings", "token-listing", "token-listing-sealed"].includes(
+      kind,
+    ) ||
+    !validTxid(listingPayload?.sealTxid)
+  ) {
+    return {};
+  }
+
+  const saleAuthorization = objectRecord(listingPayload.saleAuthorization);
+  return {
+    ...(Object.keys(saleAuthorization).length > 0 ? { saleAuthorization } : {}),
+    sealAt: listingPayload.sealAt ?? payload?.sealAt,
+    sealConfirmed:
+      typeof listingPayload.sealConfirmed === "boolean"
+        ? listingPayload.sealConfirmed
+        : payload?.sealConfirmed,
+    sealDataBytes:
+      listingPayload.sealDataBytes ??
+      listingPayload.dataBytes ??
+      payload?.sealDataBytes,
+    sealFrozenNetworkValueSats:
+      listingPayload.sealFrozenNetworkValueSats ??
+      payload?.sealFrozenNetworkValueSats,
+    sealLiveNetworkValueSats:
+      listingPayload.sealLiveNetworkValueSats ??
+      payload?.sealLiveNetworkValueSats,
+    sealMinerFeeCanonical:
+      listingPayload.sealMinerFeeCanonical === true ||
+      payload?.sealMinerFeeCanonical === true,
+    sealMinerFeeSats:
+      listingPayload.sealMinerFeeSats ?? payload?.sealMinerFeeSats,
+    sealMinerFeeSource:
+      listingPayload.sealMinerFeeSource ?? payload?.sealMinerFeeSource,
+    sealTxid: String(listingPayload.sealTxid).trim().toLowerCase(),
+    status: listingPayload.status ?? payload?.status,
+  };
+}
+
 function tokenMarketEventRowPayload(row, network) {
   const payload = eventRowPayload(row, network);
   const listingPayload = objectRecord(row?.listing_payload);
+  const sealPatch = tokenMarketListingSealPatch(payload, listingPayload);
   const merged = {
     ...listingPayload,
     ...payload,
+    ...sealPatch,
     amount:
       payload.amount ??
       payload.tokenAmount ??
@@ -12869,6 +13047,7 @@ export async function proofIndexCreditListingsPayload(
         FROM proof_indexer.events e
         WHERE e.network = $1
           AND e.valid = true
+          AND e.status IN ('confirmed', 'pending')
           AND e.kind = ANY(ARRAY['token-sale','token-listing-closed']::text[])
           AND lower(e.payload->>'listingId') = ANY($2::text[])
         ORDER BY

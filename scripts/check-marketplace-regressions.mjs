@@ -75,6 +75,12 @@ const REPORTED_JULY_PURCHASE_TX =
   "66e601cdc087d55b9d97421acd45dcdc73a441870d333ce0ba0095f9f5fbdaaf";
 const REPORTED_JULY_PURCHASE_LISTING_TX =
   "e95c6299b1fdd132b192ea040bcb8683140632b81dbde82946c5b754a8f87dbc";
+const REPORTED_DROPPED_CLOSE_TX =
+  "36a298da7f67a24b0c19d75ea354f61466b347da65d2226b151af50c60d15c67";
+const REPORTED_DROPPED_CLOSE_LISTING_TX =
+  "351f6305ae5d193469e7966553e749ea0b31debd758503a5381cba844dfd240c";
+const REPORTED_DROPPED_CLOSE_SELLER =
+  "bc1pl8vmv8y4k37jvw77cn7y8tckeawrm5u2n50qrjvglgrp04hczvtq5jyum0";
 const CARBONZ_POWB_TRANSFER_TX =
   "18c7dba7ebe06727e2f37bf0d4885a2aadbf42aff56743936e8e076e2c691100";
 const REPORTED_WAITING_FOR_SEAL_LISTING_TX =
@@ -332,6 +338,32 @@ async function assertReportedJulyPurchaseLifecycle() {
     txids(marketLog.items).has(REPORTED_JULY_PURCHASE_TX),
     `${REPORTED_JULY_PURCHASE_TX} is missing from Credit Sales & Listings Log`,
   );
+  const lifecycleSignature = (page) =>
+    (page.items ?? [])
+      .filter(
+        (item) =>
+          String(item?.txid ?? "").toLowerCase() ===
+          REPORTED_JULY_PURCHASE_TX,
+      )
+      .map((item) => `${item.kind}:${item.txid}:${item.createdAt}`);
+  const expectedLifecycle = [
+    `sale:${REPORTED_JULY_PURCHASE_TX}:2026-07-12T01:52:42.000Z`,
+    `closed-listing:${REPORTED_JULY_PURCHASE_TX}:2026-07-12T01:52:42.000Z`,
+  ];
+  assert(
+    JSON.stringify(lifecycleSignature(marketLog)) ===
+      JSON.stringify(expectedLifecycle),
+    `${REPORTED_JULY_PURCHASE_TX} market lifecycle order is unstable`,
+  );
+  const repeatedMarketLog = await tokenHistory("market-log", {
+    fresh: 1,
+    q: REPORTED_JULY_PURCHASE_TX,
+  });
+  assert(
+    JSON.stringify(lifecycleSignature(repeatedMarketLog)) ===
+      JSON.stringify(expectedLifecycle),
+    `${REPORTED_JULY_PURCHASE_TX} market lifecycle changed between reads`,
+  );
 
   const closedListings = await tokenHistory("closed-listings", {
     fresh: 1,
@@ -356,6 +388,89 @@ async function assertReportedJulyPurchaseLifecycle() {
   assert(
     !txids(activeListings.items).has(REPORTED_JULY_PURCHASE_LISTING_TX),
     `${REPORTED_JULY_PURCHASE_LISTING_TX} is still active after ${REPORTED_JULY_PURCHASE_TX}`,
+  );
+}
+
+async function assertDroppedCloseCannotHideActiveListing() {
+  const status = await getJson(
+    `/api/v1/tx/${REPORTED_DROPPED_CLOSE_TX}/status`,
+    { network: "livenet" },
+  );
+  assert(
+    status?.status === "dropped" && status?.absenceProven === true,
+    `${REPORTED_DROPPED_CLOSE_TX} is not full-node proven dropped`,
+  );
+
+  const marketLog = await tokenHistory("market-log", {
+    fresh: 1,
+    q: REPORTED_DROPPED_CLOSE_TX,
+  });
+  assert(
+    !txids(marketLog.items).has(REPORTED_DROPPED_CLOSE_TX),
+    `${REPORTED_DROPPED_CLOSE_TX} leaked into WORK market-log history`,
+  );
+
+  const closedListings = await tokenHistory("closed-listings", {
+    fresh: 1,
+    q: REPORTED_DROPPED_CLOSE_TX,
+  });
+  assert(
+    !txids(closedListings.items).has(REPORTED_DROPPED_CLOSE_TX),
+    `${REPORTED_DROPPED_CLOSE_TX} leaked into WORK closed-listing history`,
+  );
+
+  const activeListings = await tokenHistory("listings", {
+    fresh: 1,
+    q: REPORTED_DROPPED_CLOSE_LISTING_TX,
+  });
+  const restoredListing = listingById(
+    activeListings.items,
+    REPORTED_DROPPED_CLOSE_LISTING_TX,
+  );
+  assert(
+    restoredListing?.confirmed === true,
+    `${REPORTED_DROPPED_CLOSE_LISTING_TX} was hidden by dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
+  );
+
+  const walletToken = await getJson("/api/v1/token", {
+    network: "livenet",
+    asset: WORK_TOKEN_ID,
+    address: REPORTED_DROPPED_CLOSE_SELLER,
+    wallet: 1,
+    fresh: 1,
+  });
+  assert(
+    listingById(walletToken.listings, REPORTED_DROPPED_CLOSE_LISTING_TX)
+      ?.confirmed === true,
+    `${REPORTED_DROPPED_CLOSE_LISTING_TX} is missing from its seller wallet after dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
+  );
+  assert(
+    !(walletToken.closedListings ?? []).some(
+      (item) =>
+        String(item?.closedTxid ?? item?.txid ?? "").toLowerCase() ===
+        REPORTED_DROPPED_CLOSE_TX,
+    ),
+    `${REPORTED_DROPPED_CLOSE_TX} leaked into seller wallet closed listings`,
+  );
+
+  const marketplaceSummary = await getJson("/api/v1/marketplace-summary", {
+    network: "livenet",
+    fresh: 1,
+  });
+  assert(
+    listingById(
+      marketplaceSummary.token?.listings,
+      REPORTED_DROPPED_CLOSE_LISTING_TX,
+    )?.confirmed === true,
+    `${REPORTED_DROPPED_CLOSE_LISTING_TX} is missing from Marketplace summary after dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
+  );
+  assert(
+    !(marketplaceSummary.token?.closedListings ?? []).some(
+      (item) =>
+        String(item?.closedTxid ?? item?.txid ?? "").toLowerCase() ===
+        REPORTED_DROPPED_CLOSE_TX,
+    ),
+    `${REPORTED_DROPPED_CLOSE_TX} leaked into Marketplace summary closed listings`,
   );
 }
 
@@ -461,6 +576,7 @@ async function runFastMarketplaceRegressionGate() {
       `${REPORTED_DELIST_TX} is not returned as a confirmed closed listing`,
     );
 
+    await assertDroppedCloseCannotHideActiveListing();
     await assertReportedJulyPurchaseLifecycle();
   });
 
@@ -657,6 +773,7 @@ assert(
   !txids(reportedActiveListing.items).has(REPORTED_LISTING_TX),
   `${REPORTED_LISTING_TX} is still returned as an active listing`,
 );
+await assertDroppedCloseCannotHideActiveListing();
 
 const closedByDelist = await tokenHistory("closed-listings", { q: DELIST_TX });
 assert(

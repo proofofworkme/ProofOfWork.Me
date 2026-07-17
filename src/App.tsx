@@ -12196,6 +12196,10 @@ async function fetchTokenHistoryPage<T>(
       ? normalizeTokenListingRecords(
           rawItems as Array<PowTokenListing | PowTokenClosedListing>,
         )
+      : kind === "market-log"
+        ? (rawItems as TokenMarketLogItem[])
+            .map(normalizeTokenMarketLogItem)
+            .filter((item): item is TokenMarketLogItem => Boolean(item))
       : kind === "transfers" || kind === "sales" || kind === "mints"
         ? (
             rawItems as Array<PowTokenTransfer | PowTokenSale | PowTokenMint>
@@ -36254,6 +36258,69 @@ type TokenMarketLogItem =
       txid: string;
     };
 
+type RemoteTokenMarketLogPage = {
+  page: PowPaginatedApiResponse<TokenMarketLogItem>;
+  viewKey: string;
+};
+
+function tokenMarketLogRemotePageForView(
+  remotePage: RemoteTokenMarketLogPage | undefined,
+  viewKey: string,
+) {
+  return remotePage?.viewKey === viewKey ? remotePage.page : undefined;
+}
+
+function normalizeTokenMarketLogItem(
+  item: TokenMarketLogItem,
+): TokenMarketLogItem | null {
+  if (item?.kind === "listing") {
+    const listing = normalizeTokenListingRecord(item.listing);
+    return listing
+      ? {
+          ...item,
+          createdAt: listing.createdAt || item.createdAt,
+          listing,
+          txid: listing.listingId || item.txid,
+        }
+      : null;
+  }
+
+  if (item?.kind === "closed-listing") {
+    const closedListing = normalizeTokenListingRecord(item.closedListing);
+    return closedListing
+      ? {
+          ...item,
+          closedListing,
+          createdAt:
+            closedListing.closedAt ||
+            closedListing.createdAt ||
+            item.createdAt,
+          txid:
+            closedListing.closedTxid ||
+            closedListing.listingId ||
+            item.txid,
+        }
+      : null;
+  }
+
+  if (item?.kind === "sale") {
+    if (!item.sale || typeof item.sale !== "object") {
+      return null;
+    }
+    const sale = normalizeTokenAmountRecord(item.sale);
+    return sale.txid
+      ? {
+          ...item,
+          createdAt: sale.createdAt || item.createdAt,
+          sale,
+          txid: sale.txid,
+        }
+      : null;
+  }
+
+  return null;
+}
+
 const MARKETPLACE_SORT_OPTIONS: Array<{
   label: string;
   value: MarketplaceSortMode;
@@ -36519,13 +36586,41 @@ function tokenMarketLogItemConfirmed(item: TokenMarketLogItem) {
   return item.kind === "sale" ? item.sale.confirmed : item.listing.confirmed;
 }
 
-function sortTokenMarketLogItems(items: TokenMarketLogItem[]) {
-  return [...items].sort(
-    (left, right) =>
-      compareCreatedAtDesc(left, right) ||
-      Number(tokenMarketLogItemConfirmed(right)) -
-        Number(tokenMarketLogItemConfirmed(left)),
+function tokenMarketLogItemKindRank(item: TokenMarketLogItem) {
+  if (item.kind === "sale") {
+    return 0;
+  }
+  return item.kind === "closed-listing" ? 1 : 2;
+}
+
+function compareTokenMarketLogItems(
+  left: TokenMarketLogItem,
+  right: TokenMarketLogItem,
+) {
+  const leftTime = Date.parse(left.createdAt);
+  const rightTime = Date.parse(right.createdAt);
+  return (
+    (Number.isFinite(rightTime) ? rightTime : 0) -
+      (Number.isFinite(leftTime) ? leftTime : 0) ||
+    Number(tokenMarketLogItemConfirmed(right)) -
+      Number(tokenMarketLogItemConfirmed(left)) ||
+    right.txid.localeCompare(left.txid) ||
+    tokenMarketLogItemKindRank(left) - tokenMarketLogItemKindRank(right)
   );
+}
+
+function sortTokenMarketLogItems(items: TokenMarketLogItem[]) {
+  return [...items].sort(compareTokenMarketLogItems);
+}
+
+function tokenMarketListingStatusLabel(listing: PowTokenListing) {
+  if (tokenListingHasConfirmedSaleTicketSeal(listing)) {
+    return "Sealed listing";
+  }
+  if (tokenListingHasPendingSaleTicketSeal(listing)) {
+    return "Seal pending";
+  }
+  return listing.confirmed ? "Waiting for seal" : "Pending listing";
 }
 
 function sortIdMarketplaceListings(
@@ -37494,7 +37589,6 @@ function InfinityBondMarketPanel({
               const sealConfirmed = tokenListingHasConfirmedSaleTicketSeal(
                 item.listing,
               );
-              const sealPending = tokenListingHasPendingSaleTicketSeal(item.listing);
               const unitSats = tokenListingUnitPriceSats(item.listing);
               const buyerLock = item.listing.saleAuthorization.buyerAddress || "";
               return (
@@ -37511,15 +37605,7 @@ function InfinityBondMarketPanel({
                       )}{" "}
                       {bondConfig.ticker}
                     </strong>
-                    <span>
-                      {!item.listing.confirmed
-                        ? "Pending listing"
-                        : sealConfirmed
-                          ? "Sealed listing"
-                          : sealPending
-                            ? "Seal pending"
-                            : "Waiting for seal"}
-                    </span>
+                    <span>{tokenMarketListingStatusLabel(item.listing)}</span>
                   </div>
                   <dl>
                     <div>
@@ -37681,13 +37767,8 @@ function TokenMarketplacePanel({
   const [tokenListingPageIndex, setTokenListingPageIndex] = useState(0);
   const [tokenMarketLogPageIndex, setTokenMarketLogPageIndex] = useState(0);
   const [tokenListingSearchQuery, setTokenListingSearchQuery] = useState("");
-  const [remoteTokenMarketLogPage, setRemoteTokenMarketLogPage] = useState<
-    | {
-        key: string;
-        page: PowPaginatedApiResponse<TokenMarketLogItem>;
-      }
-    | undefined
-  >();
+  const [remoteTokenMarketLogPage, setRemoteTokenMarketLogPage] =
+    useState<RemoteTokenMarketLogPage>();
   const [tokenMarketLogPageLoading, setTokenMarketLogPageLoading] =
     useState(false);
   const [tokenDirectorySortMode, setTokenDirectorySortMode] =
@@ -37845,17 +37926,21 @@ function TokenMarketplacePanel({
       ].join(":"),
     )
     .join("|");
-  const tokenMarketLogKey = [
+  const tokenMarketLogViewKey = [
     network,
     selectedMarketToken?.tokenId ?? "",
     tokenMarketLogPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
+  ].join(":");
+  const tokenMarketLogRequestKey = [
+    tokenMarketLogViewKey,
     tokenMarketLogDataVersion,
     tokenMarketHistoryRefreshNonce,
   ].join(":");
   useEffect(() => {
     if (network !== "livenet") {
       setRemoteTokenMarketLogPage(undefined);
+      setTokenMarketLogPageLoading(false);
       return;
     }
 
@@ -37869,12 +37954,20 @@ function TokenMarketplacePanel({
     })
       .then((page) => {
         if (!cancelled) {
-          setRemoteTokenMarketLogPage({ key: tokenMarketLogKey, page });
+          setRemoteTokenMarketLogPage({
+            page: {
+              ...page,
+              items: sortTokenMarketLogItems(page.items ?? []),
+            },
+            viewKey: tokenMarketLogViewKey,
+          });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setRemoteTokenMarketLogPage(undefined);
+          setRemoteTokenMarketLogPage((current) =>
+            current?.viewKey === tokenMarketLogViewKey ? current : undefined,
+          );
         }
       })
       .finally(() => {
@@ -37888,10 +37981,8 @@ function TokenMarketplacePanel({
     };
   }, [
     network,
-    selectedMarketToken?.tokenId,
-    tokenMarketLogKey,
-    tokenMarketLogPageIndex,
-    tokenMarketHistoryRefreshNonce,
+    tokenMarketLogRequestKey,
+    tokenMarketLogViewKey,
   ]);
   const visibleRows = selectedMarketToken ? [selectedMarketToken] : rows;
   const sortedVisibleRows = sortTokenDirectoryRows(
@@ -37913,10 +38004,13 @@ function TokenMarketplacePanel({
     tokenMarketLogPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
-  const activeRemoteTokenMarketLogPage =
-    remoteTokenMarketLogPage?.key === tokenMarketLogKey
+  const remoteTokenMarketLogPageForView = tokenMarketLogRemotePageForView(
+    remoteTokenMarketLogPage,
+    tokenMarketLogViewKey,
+  );
+  const activeRemoteTokenMarketLogPage = remoteTokenMarketLogPageForView
       ? historyPageToPagedItems(
-          remoteTokenMarketLogPage.page,
+          remoteTokenMarketLogPageForView,
           tokenMarketLogPageIndex,
           TOKEN_LIST_PREVIEW_COUNT,
         )
@@ -38943,13 +39037,8 @@ function TokenMarketplacePanel({
                   );
                 }
 
-                const hasSeal = tokenSaleAuthorizationUsesSaleTicketAnchor(
-                  item.listing.saleAuthorization,
-                );
                 const sealConfirmed =
                   tokenListingHasConfirmedSaleTicketSeal(item.listing);
-                const sealPending =
-                  tokenListingHasPendingSaleTicketSeal(item.listing);
                 const unitSats = tokenListingUnitPriceSats(item.listing);
                 const buyerLock =
                   item.listing.saleAuthorization.buyerAddress || "";
@@ -38967,15 +39056,7 @@ function TokenMarketplacePanel({
                         )}{" "}
                         {item.listing.ticker}
                       </strong>
-                      <span>
-                        {!item.listing.confirmed
-                          ? "Pending listing"
-                          : sealConfirmed
-                            ? "Sealed listing"
-                            : sealPending
-                              ? "Seal pending"
-                            : "Waiting for seal"}
-                      </span>
+                      <span>{tokenMarketListingStatusLabel(item.listing)}</span>
                     </div>
                     <dl>
                       <div>

@@ -18173,6 +18173,452 @@ check("sealed credit listings keep the original sale-ticket anchor", () => {
   assert.equal(anchor.vout, 2);
 });
 
+check("credit market logs keep one deterministic order across UI and index sources", () => {
+  const uiConfirmed = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenMarketLogItemConfirmed",
+  );
+  const uiKindRank = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenMarketLogItemKindRank",
+  );
+  const uiCompare = isolatedTypeScriptFunction(
+    APP_PATH,
+    "compareTokenMarketLogItems",
+    {
+      tokenMarketLogItemConfirmed: uiConfirmed,
+      tokenMarketLogItemKindRank: uiKindRank,
+    },
+  );
+
+  const apiCreatedAt = isolatedFunction(
+    API_PATH,
+    "tokenHistoryPageItemCreatedAt",
+  );
+  const apiIsMarketLogItem = isolatedFunction(
+    API_PATH,
+    "tokenHistoryPageItemIsMarketLogItem",
+  );
+  const apiConfirmed = isolatedFunction(
+    API_PATH,
+    "tokenHistoryPageItemConfirmed",
+  );
+  const apiKindRank = isolatedFunction(
+    API_PATH,
+    "tokenHistoryPageItemKindRank",
+  );
+  const apiTxid = isolatedFunction(API_PATH, "tokenHistoryPageItemTxid");
+  const apiCompare = isolatedFunction(
+    API_PATH,
+    "compareTokenHistoryPageItems",
+    {
+      tokenHistoryPageItemConfirmed: apiConfirmed,
+      tokenHistoryPageItemCreatedAt: apiCreatedAt,
+      tokenHistoryPageItemIsMarketLogItem: apiIsMarketLogItem,
+      tokenHistoryPageItemKindRank: apiKindRank,
+      tokenHistoryPageItemTxid: apiTxid,
+    },
+  );
+
+  const readerCreatedAt = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryItemCreatedAt",
+  );
+  const readerIsMarketLogItem = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryItemIsMarketLogItem",
+  );
+  const readerConfirmed = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryItemConfirmed",
+  );
+  const readerKindRank = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryItemKindRank",
+  );
+  const readerTxid = isolatedFunction(READER_PATH, "tokenHistoryItemTxid");
+  const readerCompare = isolatedFunction(
+    READER_PATH,
+    "compareTokenHistoryMarketItems",
+    {
+      tokenHistoryItemConfirmed: readerConfirmed,
+      tokenHistoryItemCreatedAt: readerCreatedAt,
+      tokenHistoryItemIsMarketLogItem: readerIsMarketLogItem,
+      tokenHistoryItemKindRank: readerKindRank,
+      tokenHistoryItemTxid: readerTxid,
+    },
+  );
+
+  const sameTime = "2026-07-15T09:20:03.000Z";
+  const newerTime = "2026-07-15T09:20:04.000Z";
+  const lifecycleTxid = "a".repeat(64);
+  const confirmedListingTxid = "c".repeat(64);
+  const pendingListingTxid = "f".repeat(64);
+  const newerListingTxid = "0".repeat(64);
+  const items = [
+    {
+      createdAt: sameTime,
+      kind: "closed-listing",
+      closedListing: {
+        closedAt: sameTime,
+        closedConfirmed: true,
+        closedTxid: lifecycleTxid,
+        listingId: "1".repeat(64),
+      },
+      txid: lifecycleTxid,
+    },
+    {
+      createdAt: sameTime,
+      kind: "sale",
+      sale: { confirmed: true, createdAt: sameTime, txid: lifecycleTxid },
+      txid: lifecycleTxid,
+    },
+    {
+      createdAt: sameTime,
+      kind: "listing",
+      listing: {
+        confirmed: true,
+        createdAt: sameTime,
+        listingId: confirmedListingTxid,
+      },
+      txid: confirmedListingTxid,
+    },
+    {
+      createdAt: sameTime,
+      kind: "listing",
+      listing: {
+        confirmed: false,
+        createdAt: sameTime,
+        listingId: pendingListingTxid,
+      },
+      txid: pendingListingTxid,
+    },
+    {
+      createdAt: newerTime,
+      kind: "listing",
+      listing: {
+        confirmed: false,
+        createdAt: newerTime,
+        listingId: newerListingTxid,
+      },
+      txid: newerListingTxid,
+    },
+  ];
+  const expected = [
+    `listing:${newerListingTxid}`,
+    `listing:${confirmedListingTxid}`,
+    `sale:${lifecycleTxid}`,
+    `closed-listing:${lifecycleTxid}`,
+    `listing:${pendingListingTxid}`,
+  ];
+  const signatures = (records, compare) =>
+    records
+      .slice()
+      .sort(compare)
+      .map((item) => `${item.kind}:${item.txid}`);
+  const permutations = (records) => {
+    if (records.length <= 1) {
+      return [records];
+    }
+    return records.flatMap((record, index) =>
+      permutations(records.filter((_item, itemIndex) => itemIndex !== index)).map(
+        (tail) => [record, ...tail],
+      ),
+    );
+  };
+
+  for (const permutation of permutations(items)) {
+    assert.deepEqual(signatures(permutation, uiCompare), expected);
+    assert.deepEqual(signatures(permutation, apiCompare), expected);
+    assert.deepEqual(signatures(permutation, readerCompare), expected);
+  }
+});
+
+check("credit market log SQL canonicalizes listing lifecycles before pagination", () => {
+  const canonicalSql = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryCanonicalMarketEventsSql",
+  );
+  const sql = canonicalSql("market-log", "e.network = $1");
+  const overlaySource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenMarketHistoryOverlayPayload",
+  );
+
+  assert.match(
+    sql,
+    /ROW_NUMBER\(\) OVER \([\s\S]*PARTITION BY[\s\S]*'listing:'[\s\S]*listingId[\s\S]*canonical_history_rank/iu,
+  );
+  assert.match(
+    sql,
+    /WHEN e\.kind = ANY\(ARRAY\['token-listings','token-listing'\]::text\[\]\) THEN 0[\s\S]*WHEN e\.kind = 'token-listing-sealed' THEN 1/iu,
+  );
+  assert.match(
+    sql,
+    /canonical_market_events AS \([\s\S]*WHERE canonical_history_rank = 1/iu,
+  );
+  assert.match(
+    overlaySource,
+    /canonical_market_metadata AS \([\s\S]*count\(\*\) AS total_count[\s\S]*FROM canonical_market_events/iu,
+  );
+  assert.match(
+    overlaySource,
+    /FROM canonical_market_metadata metadata[\s\S]*LEFT JOIN LATERAL \([\s\S]*FROM canonical_market_events[\s\S]*history_item_confirmed DESC[\s\S]*history_item_txid DESC[\s\S]*history_item_kind_rank ASC[\s\S]*LIMIT \$\$\{limitParam\}[\s\S]*OFFSET \$\$\{offsetParam\}/iu,
+  );
+  assert.doesNotMatch(
+    overlaySource,
+    /await pool\.query\([\s\S]*await pool\.query/iu,
+  );
+});
+
+check("dropped market events cannot re-enter history or close active listings", () => {
+  const overlaySource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenMarketHistoryOverlayPayload",
+  );
+  const exactActiveListingSource = topLevelFunctionSource(
+    READER_PATH,
+    "exactActiveTokenListingHistoryPage",
+  );
+  const creditListingsSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexCreditListingsPayload",
+  );
+  const filterClosedListingSource = topLevelFunctionSource(
+    READER_PATH,
+    "filterClosedTokenListingHistoryPage",
+  );
+  const marketSummarySource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenMarketSummaryOverlayPayload",
+  );
+  const walletOverlaySource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWalletTokenOverlayPayload",
+  );
+  const closeOutspendSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenListingCloseOutspendPayload",
+  );
+
+  assert.match(
+    overlaySource,
+    /const conditions = \[[\s\S]*e\.valid = true[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*e\.kind = ANY/iu,
+  );
+  assert.equal(
+    (overlaySource.match(/close_event\.status IN \('confirmed', 'pending'\)/gu) ?? [])
+      .length,
+    2,
+  );
+  assert.match(
+    closeOutspendSource,
+    /e\.valid = true[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*token-listing-closed/iu,
+  );
+  assert.match(
+    filterClosedListingSource,
+    /e\.kind = ANY\(\$2::text\[\]\)[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*listingId/iu,
+  );
+  assert.match(
+    exactActiveListingSource,
+    /e\.valid = true[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*e\.kind = ANY\(ARRAY\['token-listing-closed','token-sale'\]/iu,
+  );
+  assert.match(
+    exactActiveListingSource,
+    /terminal_event\.txid = ANY\(\$2::text\[\]\)[\s\S]*terminal_event\.status IN \('dropped', 'orphaned'\)[\s\S]*terminal_event\.valid = true[\s\S]*terminal_event\.status IN \('confirmed', 'pending'\)[\s\S]*terminal_event\.kind IN \('token-listing-closed', 'token-sale'\)/iu,
+  );
+  assert.match(
+    marketSummarySource,
+    /const conditions = \[[\s\S]*e\.valid = true[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*e\.kind = ANY/iu,
+  );
+  assert.match(
+    creditListingsSource,
+    /e\.valid = true[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*e\.kind = ANY\(ARRAY\['token-sale','token-listing-closed'\]/iu,
+  );
+  assert.match(
+    walletOverlaySource,
+    /close_event\.valid = true[\s\S]*close_event\.status IN \('confirmed', 'pending'\)[\s\S]*close_event\.kind = ANY\(ARRAY\['token-listing-closed','token-sale'\]/iu,
+  );
+});
+
+check("canonical market listings retain original time with current seal metadata", () => {
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const objectRecord = (value) =>
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const validTxid = (value) =>
+    /^[0-9a-f]{64}$/u.test(String(value ?? "").trim().toLowerCase());
+  const sealPatch = isolatedFunction(
+    READER_PATH,
+    "tokenMarketListingSealPatch",
+    { normalizedLowerText, objectRecord, validTxid },
+  );
+  const tokenMarketEventRowPayload = isolatedFunction(
+    READER_PATH,
+    "tokenMarketEventRowPayload",
+    {
+      eventRowPayload: (row) => row.payload,
+      normalizeEventPayload: (value) => value,
+      objectRecord,
+      tokenMarketListingSealPatch: sealPatch,
+    },
+  );
+  const tokenListingFromEventPayload = isolatedFunction(
+    READER_PATH,
+    "tokenListingFromEventPayload",
+    {
+      dateIso: (value) => value ? new Date(value).toISOString() : undefined,
+      isWorkTokenId: () => false,
+      rowNumber: (value, key) => Number(value?.[key] ?? 0),
+      tokenMarketNumbersFromTags: () => ({ amount: 0, priceSats: 0, ticker: "" }),
+      tokenRegistryAddressFromPayload: () => "bc1registry",
+      workAmountProjection: () => null,
+    },
+  );
+  const tokenHistoryItemFromMarketEventPayload = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryItemFromMarketEventPayload",
+    {
+      activeTokenListingHistoryItem: () => true,
+      tokenListingFromEventPayload,
+    },
+  );
+
+  const listingId = "a".repeat(64);
+  const sealTxid = "b".repeat(64);
+  const originalAt = "2026-07-09T15:54:41.000Z";
+  const sealAt = "2026-07-09T17:14:17.000Z";
+  const saleAuthorization = {
+    anchorTxid: listingId,
+    anchorType: "sale-ticket-v1",
+    signature: "signed-current-authorization",
+  };
+  const payload = tokenMarketEventRowPayload(
+    {
+      listing_payload: {
+        dataBytes: 321,
+        saleAuthorization,
+        sealAt,
+        sealConfirmed: true,
+        sealMinerFeeCanonical: true,
+        sealMinerFeeSats: 777,
+        sealTxid,
+        status: "sealing",
+      },
+      payload: {
+        confirmed: true,
+        createdAt: originalAt,
+        kind: "token-listing",
+        listingId,
+        registryAddress: "bc1registry",
+        saleAuthorization: {},
+        sellerAddress: "bc1seller",
+        ticker: "TEST",
+        tokenId: "c".repeat(64),
+        txid: listingId,
+      },
+    },
+    "livenet",
+  );
+  const item = tokenHistoryItemFromMarketEventPayload(payload, "market-log");
+
+  assert.equal(item.kind, "listing");
+  assert.equal(item.createdAt, originalAt);
+  assert.equal(item.listing.createdAt, originalAt);
+  assert.equal(item.listing.sealAt, sealAt);
+  assert.equal(item.listing.sealTxid, sealTxid);
+  assert.equal(item.listing.sealConfirmed, true);
+  assert.equal(item.listing.sealDataBytes, 321);
+  assert.equal(item.listing.sealMinerFeeCanonical, true);
+  assert.equal(item.listing.sealMinerFeeSats, 777);
+  assert.equal(item.listing.status, "sealing");
+  assert.deepEqual(item.listing.saleAuthorization, saleAuthorization);
+});
+
+check("credit market log refreshes retain canonical pages and normalize nested rows", () => {
+  const remotePageForView = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenMarketLogRemotePageForView",
+  );
+  const page = { items: [{ kind: "sale", txid: "a".repeat(64) }] };
+  const remote = { page, viewKey: "livenet:work:0:6" };
+  assert.equal(remotePageForView(remote, "livenet:work:0:6"), page);
+  assert.equal(remotePageForView(remote, "livenet:other:0:6"), undefined);
+  assert.equal(remotePageForView(remote, "livenet:work:1:6"), undefined);
+
+  const normalizeTokenMarketLogItem = isolatedTypeScriptFunction(
+    APP_PATH,
+    "normalizeTokenMarketLogItem",
+    {
+      normalizeTokenAmountRecord: (record) => ({ ...record, normalized: true }),
+      normalizeTokenListingRecord: (record) =>
+        record?.listingId ? { ...record, normalized: true } : null,
+    },
+  );
+  const listingId = "b".repeat(64);
+  const closedTxid = "c".repeat(64);
+  const listing = normalizeTokenMarketLogItem({
+    createdAt: "old",
+    kind: "listing",
+    listing: { createdAt: "new", listingId },
+    txid: "old",
+  });
+  assert.equal(listing.createdAt, "new");
+  assert.equal(listing.listing.normalized, true);
+  assert.equal(listing.txid, listingId);
+  const closed = normalizeTokenMarketLogItem({
+    closedListing: {
+      closedAt: "closed",
+      closedTxid,
+      createdAt: "listed",
+      listingId,
+    },
+    createdAt: "old",
+    kind: "closed-listing",
+    txid: "old",
+  });
+  assert.equal(closed.createdAt, "closed");
+  assert.equal(closed.closedListing.normalized, true);
+  assert.equal(closed.txid, closedTxid);
+  const sale = normalizeTokenMarketLogItem({
+    createdAt: "old",
+    kind: "sale",
+    sale: { createdAt: "sale", txid: closedTxid },
+    txid: "old",
+  });
+  assert.equal(sale.createdAt, "sale");
+  assert.equal(sale.sale.normalized, true);
+  assert.equal(sale.txid, closedTxid);
+  assert.equal(
+    normalizeTokenMarketLogItem({ kind: "sale", sale: null }),
+    null,
+  );
+
+  const statusLabel = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenMarketListingStatusLabel",
+    {
+      tokenListingHasConfirmedSaleTicketSeal: (record) =>
+        record.hasSeal === true && record.sealConfirmed === true,
+      tokenListingHasPendingSaleTicketSeal: (record) =>
+        record.hasSeal === true && record.sealConfirmed !== true,
+    },
+  );
+  assert.equal(statusLabel({ confirmed: false, hasSeal: false }), "Pending listing");
+  assert.equal(
+    statusLabel({ confirmed: false, hasSeal: true, sealConfirmed: false }),
+    "Seal pending",
+  );
+  assert.equal(
+    statusLabel({ confirmed: true, hasSeal: true, sealConfirmed: false }),
+    "Seal pending",
+  );
+  assert.equal(
+    statusLabel({ confirmed: true, hasSeal: true, sealConfirmed: true }),
+    "Sealed listing",
+  );
+  assert.equal(statusLabel({ confirmed: true, hasSeal: false }), "Waiting for seal");
+});
+
 check("closed listing projections retain seal metadata and close chronology", () => {
   const listingId = "a".repeat(64);
   const sealTxid = "b".repeat(64);

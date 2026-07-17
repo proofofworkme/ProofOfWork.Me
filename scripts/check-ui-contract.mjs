@@ -1235,6 +1235,34 @@ expect(
     /setTokenSummary\(tokenSummaryMetadata\(state\)\)/.test(app),
 );
 expect(
+  "Marketplace credit history keeps one canonical page during refresh",
+  /const tokenMarketLogViewKey = \[[\s\S]*TOKEN_LIST_PREVIEW_COUNT,[\s\S]*\]\.join\(":"\)/.test(
+    app,
+  ) &&
+    /const tokenMarketLogRequestKey = \[[\s\S]*tokenMarketLogViewKey,[\s\S]*tokenMarketLogDataVersion,[\s\S]*tokenMarketHistoryRefreshNonce,[\s\S]*\]\.join\(":"\)/.test(
+      app,
+    ) &&
+    /items: sortTokenMarketLogItems\(page\.items \?\? \[\]\)/.test(app) &&
+    /current\?\.viewKey === tokenMarketLogViewKey \? current : undefined/.test(
+      app,
+    ) &&
+    /tokenMarketLogRemotePageForView\([\s\S]*remoteTokenMarketLogPage,[\s\S]*tokenMarketLogViewKey/.test(
+      app,
+    ) &&
+    !/remoteTokenMarketLogPage\?\.key === tokenMarketLogKey/.test(app),
+);
+expect(
+  "Marketplace credit history normalizes and labels pending seals consistently",
+  /kind === "market-log"[\s\S]*\.map\(normalizeTokenMarketLogItem\)/.test(
+    app,
+  ) &&
+    /function tokenMarketListingStatusLabel[\s\S]*tokenListingHasConfirmedSaleTicketSeal[\s\S]*tokenListingHasPendingSaleTicketSeal[\s\S]*return listing\.confirmed \? "Waiting for seal" : "Pending listing"/.test(
+      app,
+    ) &&
+    (app.match(/tokenMarketListingStatusLabel\(item\.listing\)/g)?.length ??
+      0) === 2,
+);
+expect(
   "Marketplace aggregate cards use authoritative totals instead of compact previews",
   /function marketplaceStatsWithAuthoritativeSummary[\s\S]*authoritative\?\.confirmedSales[\s\S]*previewStats\.confirmedSales/.test(
     app,
