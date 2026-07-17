@@ -18369,6 +18369,172 @@ check("credit market log SQL canonicalizes listing lifecycles before pagination"
     overlaySource,
     /await pool\.query\([\s\S]*await pool\.query/iu,
   );
+  assert.match(overlaySource, /await ledgerSnapshotMetadata\(/u);
+  assert.doesNotMatch(overlaySource, /await ledgerSnapshot\(/u);
+});
+
+check("exact dropped market misses are terminal without loading broad history", async () => {
+  const txid = "d".repeat(64);
+  const pagination = {
+    limit: 20,
+    offset: 0,
+    page: 0,
+    query: txid,
+    snapshotId: "",
+  };
+  const snapshot = {
+    generated_at: "2026-07-16T12:00:00.000Z",
+    indexed_through_block: 958_363,
+    snapshot_id: "current",
+  };
+  let disposition = "terminal-nonmarket";
+  let needles = [txid];
+  const sqlReads = [];
+  const proofIndexTokenMarketHistoryOverlayPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexTokenMarketHistoryOverlayPayload",
+    {
+      compareTokenHistoryMarketItems: () => 0,
+      historyCursor: (_snapshotId, offset) => String(offset),
+      historyPaginationFromSearch: () => pagination,
+      ledgerSnapshotMetadata: async () => snapshot,
+      proofIndexPool: () => ({
+        async query(sql, params) {
+          sqlReads.push({ params: Array.from(params), sql: String(sql) });
+          return {
+            rows: [
+              {
+                history_indexed_through_block: null,
+                history_query_disposition: disposition,
+                history_total_count: 0,
+              },
+            ],
+          };
+        },
+      }),
+      tokenHistoryCanonicalMarketEventsSql: () => `
+        WITH canonical_market_events AS (
+          SELECT NULL::integer AS block_height WHERE false
+        )
+      `,
+      tokenHistoryFilterNeedles: () => needles,
+      tokenHistoryItemFromMarketEventPayload: () => null,
+      tokenHistoryMarketEventKinds: () => [
+        "token-listing",
+        "token-sale",
+        "token-listing-closed",
+      ],
+      tokenHistorySafeKind: () => "market-log",
+      tokenMarketEventRowPayload: (row) => row,
+      tokenScopeKey: (value) => String(value ?? "").toLowerCase(),
+    },
+  );
+
+  const terminalPage = await proofIndexTokenMarketHistoryOverlayPayload(
+    "livenet",
+    "work",
+    "market-log",
+    new URLSearchParams({ q: txid }),
+    { pagination },
+  );
+  assert.equal(terminalPage.totalCount, 0);
+  assert.deepEqual(terminalPage.items, []);
+  assert.equal(terminalPage.queryDisposition, "terminal-nonmarket");
+  assert.equal(terminalPage.indexedThroughBlock, undefined);
+  assert.equal(sqlReads.length, 1);
+  assert.match(sqlReads[0].sql, /count\(\*\) = cardinality\(\$\d+::text\[\]\)/u);
+  assert.match(
+    sqlReads[0].sql,
+    /bool_and\([\s\S]*terminal_tx\.status IN \('dropped', 'orphaned'\)/u,
+  );
+  assert.match(
+    sqlReads[0].sql,
+    /metadata\.query_disposition AS history_query_disposition/u,
+  );
+  assert.ok(
+    sqlReads[0].params.some(
+      (value) => Array.isArray(value) && value.length === 1 && value[0] === txid,
+    ),
+  );
+
+  disposition = null;
+  sqlReads.length = 0;
+  assert.equal(
+    await proofIndexTokenMarketHistoryOverlayPayload(
+      "livenet",
+      "work",
+      "market-log",
+      new URLSearchParams({ q: txid }),
+      { pagination },
+    ),
+    null,
+  );
+  assert.equal(sqlReads.length, 1);
+
+  disposition = null;
+  needles = [txid, "seller-name"];
+  sqlReads.length = 0;
+  assert.equal(
+    await proofIndexTokenMarketHistoryOverlayPayload(
+      "livenet",
+      "work",
+      "market-log",
+      new URLSearchParams({ q: txid }),
+      { pagination },
+    ),
+    null,
+  );
+  assert.doesNotMatch(sqlReads[0].sql, /bool_and\(/u);
+
+  let embeddedSnapshotReads = 0;
+  const proofIndexTokenHistoryPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexTokenHistoryPayload",
+    {
+      ledgerSnapshotMetadata: async () => snapshot,
+      ledgerSnapshotWithPayload: async () => {
+        embeddedSnapshotReads += 1;
+        throw new Error("broad embedded history must not load");
+      },
+      proofIndexPool: () => ({}),
+      proofIndexTokenHistoryReadEligibility: () => ({
+        eligible: true,
+        kind: "market-log",
+        pagination,
+        scope: "work",
+      }),
+      proofIndexTokenMarketHistoryOverlayPayload: async () => terminalPage,
+      tokenHistoryFilterNeedles: () => [txid],
+      tokenHistoryMarketEventKinds: () => ["token-sale"],
+      tokenHistoryPageWithScanCoverage: (page) => page,
+    },
+  );
+  const exactPage = await proofIndexTokenHistoryPayload(
+    "livenet",
+    "work",
+    "market-log",
+    new URLSearchParams({ q: txid }),
+  );
+  assert.equal(exactPage.queryDisposition, "terminal-nonmarket");
+  assert.equal(embeddedSnapshotReads, 0);
+
+  const apiSource = topLevelFunctionSource(API_PATH, "tokenHistoryPayload");
+  assert.equal(
+    (apiSource.match(/queryDisposition === "terminal-nonmarket"/gu) ?? [])
+      .length,
+    2,
+  );
+  assert.ok(
+    apiSource.indexOf("proofIndexTokenMarketHistoryOverlayPayload") <
+      apiSource.indexOf("confirmedTransactionsForTxids"),
+  );
+  assert.match(
+    topLevelFunctionSource(
+      API_PATH,
+      "tokenHistoryPageWithCanonicalCreditValueOverlay",
+    ),
+    /queryDisposition === "terminal-nonmarket"[\s\S]*totalCount[\s\S]*items[\s\S]*return page/iu,
+  );
 });
 
 check("dropped market events cannot re-enter history or close active listings", () => {

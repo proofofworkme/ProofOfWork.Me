@@ -4467,7 +4467,8 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     options.pagination ?? historyPaginationFromSearch(searchParams);
   const scope = tokenScopeKey(tokenScope);
   const snapshot =
-    options.snapshot ?? (await ledgerSnapshot(pool, network, pagination.snapshotId));
+    options.snapshot ??
+    (await ledgerSnapshotMetadata(pool, network, pagination.snapshotId));
   const conditions = [
     "e.network = $1",
     "e.valid = true",
@@ -4494,10 +4495,17 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
 
   const needles = tokenHistoryFilterNeedles(searchParams, pagination);
   const txidNeedles = needles.map(normalizedTxid).filter(Boolean);
+  const pureExactTxidQuery =
+    txidNeedles.length > 0 &&
+    needles.every((value) => Boolean(normalizedTxid(value)));
+  let exactQueryTxidsParam = "";
   if (txidNeedles.length > 0) {
     const uniqueTxidNeedles = [...new Set(txidNeedles)];
     params.push(uniqueTxidNeedles);
     const param = `$${params.length}`;
+    if (pureExactTxidQuery) {
+      exactQueryTxidsParam = param;
+    }
     const payloadClauses = [];
     for (const txidNeedle of uniqueTxidNeedles) {
       for (const key of [
@@ -4589,6 +4597,22 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     safeKind,
     whereClause,
   );
+  const exactQueryDispositionSql = exactQueryTxidsParam
+    ? `CASE
+        WHEN (
+          SELECT
+            count(*) = cardinality(${exactQueryTxidsParam}::text[])
+            AND bool_and(
+              terminal_tx.status IN ('dropped', 'orphaned')
+            )
+          FROM proof_indexer.transactions terminal_tx
+          WHERE terminal_tx.network = $1
+            AND terminal_tx.txid = ANY(${exactQueryTxidsParam}::text[])
+        )
+        THEN 'terminal-nonmarket'::text
+        ELSE NULL::text
+      END`
+    : "NULL::text";
   const rowParams = [...params, pagination.limit, pagination.offset];
   const limitParam = rowParams.length - 1;
   const offsetParam = rowParams.length;
@@ -4598,13 +4622,15 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
       canonical_market_metadata AS (
         SELECT
           count(*) AS total_count,
-          max(block_height) AS indexed_through_block
+          max(block_height) AS indexed_through_block,
+          ${exactQueryDispositionSql} AS query_disposition
         FROM canonical_market_events
       )
       SELECT
         page.*,
         metadata.total_count AS history_total_count,
-        metadata.indexed_through_block AS history_indexed_through_block
+        metadata.indexed_through_block AS history_indexed_through_block,
+        metadata.query_disposition AS history_query_disposition
       FROM canonical_market_metadata metadata
       LEFT JOIN LATERAL (
         SELECT *
@@ -4624,7 +4650,13 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   const totalCount = rowNumber(rowsResult.rows[0], "history_total_count");
   const indexedThroughBlock =
     rowNumber(rowsResult.rows[0], "history_indexed_through_block") || undefined;
-  if (totalCount === 0) {
+  const queryDisposition =
+    totalCount === 0
+      ? String(
+          rowsResult.rows[0]?.history_query_disposition ?? "",
+        ).trim()
+      : "";
+  if (totalCount === 0 && queryDisposition !== "terminal-nonmarket") {
     return null;
   }
   const items = rowsResult.rows
@@ -4667,14 +4699,17 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     totalCount,
   };
   if (snapshotId) {
-    return {
+    const snapshotPage = {
       ...page,
       consistency: snapshot?.consistency ?? undefined,
       ledgerGeneratedAt: dateIso(snapshot?.generated_at),
       snapshotId,
     };
+    return queryDisposition
+      ? { ...snapshotPage, queryDisposition }
+      : snapshotPage;
   }
-  return page;
+  return queryDisposition ? { ...page, queryDisposition } : page;
 }
 
 export async function proofIndexTokenListingCloseOutspendPayload(

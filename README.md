@@ -723,7 +723,8 @@ then return the same txid-backed record the canonical ledger would expose.
 This keeps direct bug reports and public verification fast without inventing a
 second truth source.
 `check:marketplace-regressions` enforces a 10-second ceiling for terminal listing
-lookup, invalid-only Log lookup, and unknown exact Log misses.
+and market-history lookups, invalid-only Log lookup, and unknown exact Log
+misses.
 `indexer:parity` remains the full canonical/database comparison gate, but it is
 heavy enough that production worker loops should not run it automatically when
 that would compete with block catch-up or public API requests. Run it manually

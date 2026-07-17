@@ -401,22 +401,50 @@ async function assertDroppedCloseCannotHideActiveListing() {
     `${REPORTED_DROPPED_CLOSE_TX} is not full-node proven dropped`,
   );
 
-  const marketLog = await tokenHistory("market-log", {
-    fresh: 1,
-    q: REPORTED_DROPPED_CLOSE_TX,
-  });
+  const { elapsedMs: marketLogMs, json: marketLog } = await timedGetJson(
+    "/api/v1/token-history",
+    {
+      network: "livenet",
+      asset: WORK_TOKEN_ID,
+      kind: "market-log",
+      limit: 20,
+      fresh: 1,
+      q: REPORTED_DROPPED_CLOSE_TX,
+    },
+  );
+  assert(
+    marketLogMs <= EXACT_HISTORY_MAX_MS,
+    `terminal WORK market-log lookup took ${marketLogMs}ms, expected <= ${EXACT_HISTORY_MAX_MS}ms`,
+  );
   assert(
     !txids(marketLog.items).has(REPORTED_DROPPED_CLOSE_TX),
     `${REPORTED_DROPPED_CLOSE_TX} leaked into WORK market-log history`,
   );
+  assert(
+    marketLog.queryDisposition === "terminal-nonmarket",
+    `${REPORTED_DROPPED_CLOSE_TX} market-log miss lacks terminal disposition`,
+  );
 
-  const closedListings = await tokenHistory("closed-listings", {
-    fresh: 1,
-    q: REPORTED_DROPPED_CLOSE_TX,
-  });
+  const { elapsedMs: closedListingsMs, json: closedListings } =
+    await timedGetJson("/api/v1/token-history", {
+      network: "livenet",
+      asset: WORK_TOKEN_ID,
+      kind: "closed-listings",
+      limit: 20,
+      fresh: 1,
+      q: REPORTED_DROPPED_CLOSE_TX,
+    });
+  assert(
+    closedListingsMs <= EXACT_HISTORY_MAX_MS,
+    `terminal WORK closed-listing lookup took ${closedListingsMs}ms, expected <= ${EXACT_HISTORY_MAX_MS}ms`,
+  );
   assert(
     !txids(closedListings.items).has(REPORTED_DROPPED_CLOSE_TX),
     `${REPORTED_DROPPED_CLOSE_TX} leaked into WORK closed-listing history`,
+  );
+  assert(
+    closedListings.queryDisposition === "terminal-nonmarket",
+    `${REPORTED_DROPPED_CLOSE_TX} closed-listing miss lacks terminal disposition`,
   );
 
   const activeListings = await tokenHistory("listings", {
