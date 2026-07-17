@@ -4305,6 +4305,13 @@ async function tokenHistoryPageWithCanonicalCreditValueOverlay(
   kind,
   searchParams,
 ) {
+  if (
+    page?.queryDisposition === "terminal-nonmarket" &&
+    Number(page.totalCount ?? 0) === 0 &&
+    (page.items ?? []).length === 0
+  ) {
+    return page;
+  }
   const scope = normalizeTokenScope(tokenScope);
   const safeKind = normalizedTokenHistoryKind(kind);
   const exactWorkTransferProjectionRequired =
@@ -32709,6 +32716,38 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     workMarketHistoryKind &&
     recoveryAddresses.length > 0;
   const recoveryBondConfig = bondConfigForTokenId(scope);
+  if (workMarketHistoryKind && queriedWorkHistory && network === "livenet") {
+    const indexedMarketPage = await payloadWithFallbackAfterMs(
+      proofIndexTokenMarketHistoryOverlayPayload(
+        network,
+        scope,
+        safeKind,
+        searchParams,
+        { pagination },
+      ).catch((error) => {
+        console.error(
+          `Proof index fast WORK market history read failed: ${errorSummary(error)}`,
+        );
+        return null;
+      }),
+      null,
+      SUMMARY_WORK_LISTING_RECOVERY_WAIT_MS,
+    );
+    if (
+      indexedMarketPage &&
+      (Number(indexedMarketPage.totalCount ?? 0) > 0 ||
+        (indexedMarketPage.items ?? []).length > 0 ||
+        indexedMarketPage.queryDisposition === "terminal-nonmarket")
+    ) {
+      return tokenHistoryPageWithCanonicalCreditValueOverlay(
+        indexedMarketPage,
+        network,
+        scope,
+        safeKind,
+        searchParams,
+      );
+    }
+  }
   if (
     workMarketHistoryKind &&
     recoveryBondConfig &&
@@ -32939,37 +32978,6 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       });
     }
   }
-  if (workMarketHistoryKind && queriedWorkHistory && network === "livenet") {
-    const indexedMarketPage = await payloadWithFallbackAfterMs(
-      proofIndexTokenMarketHistoryOverlayPayload(
-        network,
-        scope,
-        safeKind,
-        searchParams,
-        { pagination },
-      ).catch((error) => {
-        console.error(
-          `Proof index fast WORK market history read failed: ${errorSummary(error)}`,
-        );
-        return null;
-      }),
-      null,
-      SUMMARY_WORK_LISTING_RECOVERY_WAIT_MS,
-    );
-    if (
-      indexedMarketPage &&
-      (Number(indexedMarketPage.totalCount ?? 0) > 0 ||
-        (indexedMarketPage.items ?? []).length > 0)
-    ) {
-      return tokenHistoryPageWithCanonicalCreditValueOverlay(
-        indexedMarketPage,
-        network,
-        scope,
-        safeKind,
-        searchParams,
-      );
-    }
-  }
   if (
     safeKind === "listings" &&
     queriedWorkHistory &&
@@ -33015,7 +33023,8 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     if (
       indexedHistoryPage &&
       (Number(indexedHistoryPage.totalCount ?? 0) > 0 ||
-        (indexedHistoryPage.items ?? []).length > 0)
+        (indexedHistoryPage.items ?? []).length > 0 ||
+        indexedHistoryPage.queryDisposition === "terminal-nonmarket")
     ) {
       return tokenHistoryPageWithCanonicalCreditValueOverlay(
         indexedHistoryPage,
