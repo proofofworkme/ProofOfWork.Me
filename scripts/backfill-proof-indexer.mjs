@@ -682,6 +682,16 @@ const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
 const INCEPTION_BOND_MEMO = "incb";
 const INCEPTION_BOND_KIND = "inception-bond";
+const WORK_TOKEN_TICKER = "WORK";
+const MAIL_WORK_ATTACHMENT_KINDS = new Set([
+  "attachment",
+  "browser",
+  "file",
+  INCEPTION_BOND_KIND,
+  INFINITY_BOND_KIND,
+  "mail",
+  "reply",
+]);
 const BOND_TAGS = [
   {
     createdAt: POWB_TOKEN_CREATED_AT,
@@ -3144,18 +3154,17 @@ function sameCanonicalPaymentAddress(left, right) {
   );
 }
 
-function preparedProtocolItemsWithCanonicalInceptionAttachments(
+function preparedProtocolItemsWithCanonicalMailAttachments(
   preparedItems,
 ) {
   const prepared = Array.isArray(preparedItems) ? preparedItems : [];
   const canonicalWorkTransfersByTxid = new Map();
-  const canonicalWorkTransferVouts = new Set();
   const ambiguousWorkTransferTxids = new Set();
 
   for (const entry of prepared) {
     const item = entry?.item ?? entry;
     const txid = String(item?.txid ?? "").trim().toLowerCase();
-    const amount = canonicalIntegerText(item?.amount, { positive: true });
+    const amountAtoms = canonicalWorkAtomsText(item?.amountAtoms);
     const protocolVout = Number(item?.protocolVout);
     const recipientAddress = String(item?.recipientAddress ?? "").trim();
     if (
@@ -3164,26 +3173,21 @@ function preparedProtocolItemsWithCanonicalInceptionAttachments(
       item?.valid === false ||
       String(item?.tokenId ?? "").trim().toLowerCase() !== WORK_TOKEN_ID ||
       !isHexTxid(txid) ||
-      !amount ||
+      !amountAtoms ||
       !Number.isSafeInteger(protocolVout) ||
       protocolVout < 0 ||
       !recipientAddress
     ) {
       continue;
     }
-    const transferKey = `${txid}:${protocolVout}`;
-    if (canonicalWorkTransferVouts.has(transferKey)) {
-      ambiguousWorkTransferTxids.add(txid);
-      continue;
-    }
-    canonicalWorkTransferVouts.add(transferKey);
     const transfers = canonicalWorkTransfersByTxid.get(txid) ?? [];
-    transfers.push({
+    const transfer = withWorkPrecisionMetadata({
       ...(Number.isSafeInteger(Number(item?._powEventIndex)) &&
       Number(item._powEventIndex) >= 0
         ? { _powEventIndex: Number(item._powEventIndex) }
         : {}),
-      amount,
+      amount: formatWorkAtoms(amountAtoms),
+      amountAtoms,
       paidSats: item?.paidSats,
       protocolVout,
       recipientAddress,
@@ -3191,16 +3195,37 @@ function preparedProtocolItemsWithCanonicalInceptionAttachments(
       ticker: item?.ticker ?? WORK_TOKEN_TICKER,
       tokenId: WORK_TOKEN_ID,
     });
+    const existing = transfers.find(
+      (candidate) => Number(candidate?.protocolVout) === protocolVout,
+    );
+    if (existing) {
+      if (
+        existing.amountAtoms !== transfer.amountAtoms ||
+        !sameCanonicalPaymentAddress(
+          existing.recipientAddress,
+          transfer.recipientAddress,
+        )
+      ) {
+        ambiguousWorkTransferTxids.add(txid);
+      }
+      continue;
+    }
+    transfers.push(transfer);
     canonicalWorkTransfersByTxid.set(txid, transfers);
   }
 
   return prepared.map((entry) => {
     const item = entry?.item ?? entry;
     if (
-      item?.kind !== INCEPTION_BOND_KIND ||
-      item?.confirmed !== true
+      !MAIL_WORK_ATTACHMENT_KINDS.has(String(item?.kind ?? "").toLowerCase())
     ) {
       return entry;
+    }
+    if (item?.confirmed !== true) {
+      const { attachedCredits: _untrustedAttachedCredits, ...pendingItem } = item;
+      return entry?.item
+        ? { ...entry, item: pendingItem }
+        : pendingItem;
     }
     const txid = String(item?.txid ?? "").trim().toLowerCase();
     const recipients = Array.isArray(item?.recipients) ? item.recipients : [];
@@ -3234,9 +3259,9 @@ function preparedProtocolItemsWithCanonicalInceptionAttachments(
 async function preparedProtocolItemsForTx(tx, messages, options = {}) {
   const recovered = await canonicalRecoveryItemsForTx(tx, messages, options);
   if (recovered.length > 0) {
-    return preparedProtocolItemsWithCanonicalInceptionAttachments(recovered);
+    return preparedProtocolItemsWithCanonicalMailAttachments(recovered);
   }
-  return preparedProtocolItemsWithCanonicalInceptionAttachments(
+  return preparedProtocolItemsWithCanonicalMailAttachments(
     disambiguateDuplicateProtocolItems(
       rawProtocolItemsForTx(tx, messages),
     ).map((item) => {

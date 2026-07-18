@@ -1751,7 +1751,10 @@ code {
   border-bottom: 1px solid var(--border);
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-areas:
+    "heading refresh"
+    "signal sort";
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   min-width: 0;
   padding: 12px;
 }
@@ -1759,7 +1762,36 @@ code {
 .list-toolbar > div:first-child {
   display: grid;
   gap: 4px;
+  grid-area: heading;
   min-width: 0;
+}
+
+.list-toolbar > button {
+  grid-area: refresh;
+  justify-self: end;
+}
+
+.list-toolbar > .mail-signal-control {
+  grid-area: signal;
+}
+
+.list-toolbar > .sort-control {
+  grid-area: sort;
+}
+
+.list-toolbar > :is(.mail-signal-control, .sort-control) {
+  align-items: stretch;
+  display: grid;
+  gap: 4px;
+}
+
+.list-toolbar .mail-signal-toggle button {
+  flex: 1;
+}
+
+.list-toolbar .sort-control select {
+  min-width: 0;
+  width: 100%;
 }
 
 .sort-control {
@@ -1772,6 +1804,48 @@ code {
   font-weight: 760;
   gap: 7px;
   text-transform: none;
+}
+
+.mail-signal-control {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  font-weight: 760;
+  gap: 7px;
+}
+
+.mail-signal-toggle {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+}
+
+.mail-signal-toggle button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 780;
+  min-height: 28px;
+  padding: 4px 9px;
+}
+
+.mail-signal-toggle button[aria-pressed="true"] {
+  background: var(--text);
+  box-shadow: 0 3px 9px rgba(17, 24, 39, 0.16);
+  color: var(--surface);
+}
+
+:root[data-theme="dark"] .mail-signal-toggle button[aria-pressed="true"] {
+  background: #edf2f7;
+  color: #111827;
 }
 
 select {
@@ -2264,7 +2338,7 @@ select {
   border-bottom: 1px solid var(--border);
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   min-width: 0;
   padding: 14px 16px;
 }
@@ -6312,9 +6386,30 @@ pre {
     grid-template-columns: 1fr;
   }
 
+  .list-toolbar {
+    grid-template-areas:
+      "heading"
+      "signal"
+      "sort"
+      "refresh";
+  }
+
+  .list-toolbar > button {
+    justify-self: stretch;
+  }
+
   .sort-control {
     align-items: stretch;
     display: grid;
+  }
+
+  .mail-signal-control {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .mail-signal-toggle button {
+    flex: 1;
   }
 
   .compose-grid,

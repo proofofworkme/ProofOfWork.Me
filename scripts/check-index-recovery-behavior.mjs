@@ -1858,6 +1858,24 @@ check("token spendability deducts reservations and pending sends once", () => {
   assert.equal(identicalRecipientResult.pendingOutgoing, 2_000);
   assert.equal(identicalRecipientResult.spendableBalance, 8_000);
 
+  const mixedPendingResult = tokenSpendabilityForWallet(
+    "sender",
+    token,
+    {
+      closedListings: [],
+      holders: [{ address: "sender", balance: 10_000, tokenId: token.tokenId }],
+      listings: [],
+      sales: [],
+      transfers: [pendingTransfer, { ...pendingTransfer, recipientAddress: "sender" }],
+    },
+    [],
+    [],
+    [],
+    [],
+  );
+  assert.equal(mixedPendingResult.pendingOutgoing, 1_000);
+  assert.equal(mixedPendingResult.spendableBalance, 9_000);
+
   const pendingCloseResult = tokenSpendabilityForWallet(
     "sender",
     token,
@@ -13664,6 +13682,463 @@ check("canonical mail recipients become indexed participants", () => {
   );
 });
 
+check("address-mail exposes exact canonical WORK siblings and fails closed on ambiguity", () => {
+  const workTokenId = "4".repeat(64);
+  const sameMailPaymentAddress = isolatedFunction(
+    READER_PATH,
+    "sameMailPaymentAddress",
+    {
+      normalizedAddress: (value) => String(value ?? "").trim(),
+    },
+  );
+  const canonicalMailAttachedCreditsFromRow = isolatedFunction(
+    READER_PATH,
+    "canonicalMailAttachedCreditsFromRow",
+    {
+      WORK_TOKEN_ID: workTokenId,
+      WORK_TOKEN_MAX_SUPPLY_ATOMS: "2100000000000000",
+      WORK_TOKEN_TICKER: "WORK",
+      canonicalEventIdentityDetails: (item) =>
+        Number.isSafeInteger(Number(item?.eventId))
+          ? { eventId: Number(item.eventId) }
+          : {},
+      formatWorkAtoms: (value) => {
+        const atoms = String(value).padStart(9, "0");
+        const whole = atoms.slice(0, -8) || "0";
+        const fraction = atoms.slice(-8).replace(/0+$/u, "");
+        return fraction ? `${whole}.${fraction}` : whole;
+      },
+      normalizeWorkAtoms: (value) => {
+        const text = String(value ?? "").trim();
+        if (!/^[1-9]\d*$/u.test(text)) {
+          throw new Error("invalid atoms");
+        }
+        return text;
+      },
+      normalizedAddress: (value) => String(value ?? "").trim(),
+      objectRecord: (value) => value ?? {},
+      positiveNumber: (value) => Number(value) || 0,
+      sameMailPaymentAddress,
+      withWorkPrecisionMetadata: (value) => ({
+        ...value,
+        amountStorageModel: "work-atoms-v1",
+        decimals: 8,
+        unitScale: "100000000",
+      }),
+    },
+  );
+  const target = "bc1qtarget";
+  const other = "bc1qother";
+  const baseRow = {
+    attached_credit_events: [
+      {
+        amount: "stale-float-must-not-win",
+        amountAtoms: "123456789",
+        eventId: 12,
+        protocolVout: 3,
+        recipientAddress: target.toUpperCase(),
+        ticker: "WORK",
+        tokenId: workTokenId,
+      },
+      {
+        amountAtoms: "2099999999999999",
+        eventId: 13,
+        protocolVout: 4,
+        recipientAddress: other,
+        tokenId: workTokenId,
+      },
+      {
+        amount: "999",
+        protocolVout: 5,
+        recipientAddress: target,
+        tokenId: workTokenId,
+      },
+      {
+        amountAtoms: "100000000",
+        protocolVout: 6,
+        recipientAddress: target,
+        tokenId: "5".repeat(64),
+      },
+    ],
+    status: "confirmed",
+  };
+  const credits = canonicalMailAttachedCreditsFromRow(baseRow, [target, other]);
+  assert.equal(credits.length, 2);
+  assert.equal(credits[0].amount, "1.23456789");
+  assert.equal(credits[0].amountAtoms, "123456789");
+  assert.equal(credits[1].amountAtoms, "2099999999999999");
+  assert.equal(
+    canonicalMailAttachedCreditsFromRow(
+      { ...baseRow, status: "pending" },
+      [target, other],
+    ).length,
+    0,
+  );
+  assert.equal(
+    canonicalMailAttachedCreditsFromRow(
+      {
+        ...baseRow,
+        attached_credit_events: [
+          baseRow.attached_credit_events[0],
+          {
+            ...baseRow.attached_credit_events[0],
+            amountAtoms: "123456790",
+          },
+        ],
+      },
+      [target],
+    ).length,
+    0,
+    "conflicting canonical rows for one protocol output must fail closed",
+  );
+
+  const mailRecipientRowsFromSource = isolatedFunction(
+    READER_PATH,
+    "mailRecipientRowsFromSource",
+    {
+      normalizedAddress: (value) => String(value ?? "").trim(),
+      positiveNumber: (value) => Number(value) || 0,
+    },
+  );
+  const exactMailRecipientRows = isolatedFunction(
+    READER_PATH,
+    "exactMailRecipientRows",
+    {
+      mailRecipientRowsFromSource,
+      normalizedAddress: (value) => String(value ?? "").trim(),
+      normalizedAddressKey: (value) => String(value ?? "").trim().toLowerCase(),
+      positiveNumber: (value) => Number(value) || 0,
+      recipientRows: () => [],
+    },
+  );
+  assert.equal(
+    JSON.stringify(exactMailRecipientRows(
+      {
+        recipients: [
+          { address: target, amountSats: 111, vout: 0 },
+          { address: other, amountSats: 222, vout: 1 },
+        ],
+      },
+      {},
+      [target, other],
+      333,
+    ).map(({ address, amountSats }) => ({ address, amountSats }))),
+    JSON.stringify([
+      { address: target, amountSats: 111 },
+      { address: other, amountSats: 222 },
+    ]),
+  );
+  assert.equal(
+    exactMailRecipientRows(
+      { recipients: [{ address: target, amountSats: 999 }] },
+      {
+        recipients: [
+          { address: target, amountSats: 111, vout: 0 },
+          { address: other, amountSats: 222, vout: 1 },
+        ],
+      },
+      [target, other],
+      333,
+    ).length,
+    2,
+    "a no-vout projection must not duplicate an exact raw recipient output",
+  );
+  assert.equal(
+    exactMailRecipientRows(
+      { recipients: [{ address: target, amountSats: 111 }] },
+      { recipients: [{ address: target, amountSats: 999 }] },
+      [target],
+      999,
+    )[0].amountSats,
+    111,
+    "canonical no-vout recipients must beat stale raw metadata",
+  );
+
+  const addressMailSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexAddressMailPayload",
+  );
+  assert.match(
+    addressMailSource,
+    /candidate_mail_transactions[\s\S]*canonical_work_attachments[\s\S]*JOIN candidate_mail_transactions/u,
+  );
+  assert.match(
+    addressMailSource,
+    /transfer_event\.block_height = transfer_transaction\.block_height[\s\S]*transfer_block\.canonical = true/u,
+  );
+  assert.match(
+    addressMailSource,
+    /lower\(COALESCE\(transfer_event\.payload->>'blockHash', ''\)\)[\s\S]*transfer_transaction\.block_hash/u,
+  );
+  assert.doesNotMatch(addressMailSource, /fallbackRecipientAddresses/u);
+});
+
+check("raw mail WORK parsing accepts recipient-matched send and send2 only", () => {
+  const workTokenId = "4".repeat(64);
+  const registryAddress = "1workregistry";
+  const target = "bc1qtarget";
+  const other = "bc1qother";
+  const attachedWorkCreditsFromVout = isolatedFunction(
+    API_PATH,
+    "attachedWorkCreditsFromVout",
+    {
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      TOKEN_PROTOCOL_PREFIX: "pwt1:",
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS: registryAddress,
+      WORK_TOKEN_ID: workTokenId,
+      WORK_TOKEN_TICKER: "WORK",
+      decodedProtocolMessages: (outputs) =>
+        outputs.map((output) => output?.message).filter(Boolean),
+      parseTokenPayload: (message) => {
+        const parts = String(message).split(":");
+        if (
+          parts[0] !== "pwt1" ||
+          !["send", "send2"].includes(parts[1]) ||
+          parts.length !== 5
+        ) {
+          return null;
+        }
+        const amountAtoms =
+          parts[1] === "send2"
+            ? parts[3]
+            : `${parts[3]}00000000`;
+        return /^[1-9]\d*$/u.test(amountAtoms)
+          ? {
+              amountAtoms,
+              amountVersion: parts[1],
+              kind: "send",
+              recipientAddress: parts[4],
+              tokenId: parts[2],
+            }
+          : null;
+      },
+      samePaymentAddress: (left, right) =>
+        String(left).toLowerCase() === String(right).toLowerCase(),
+      tokenLedgerAmountFields: (_tokenId, amountAtoms) => ({
+        amount: String(amountAtoms),
+        amountAtoms: String(amountAtoms),
+      }),
+      tokenLedgerAmountFromRecord: (_tokenId, record) => record.amountAtoms,
+      tokenPaymentAmountBeforeProtocol: (outputs, address) =>
+        outputs.reduce(
+          (total, output) =>
+            output?.address === address
+              ? total + Number(output?.value ?? 0)
+              : total,
+          0,
+        ),
+    },
+  );
+  const recipients = [
+    { address: target },
+    { address: other },
+  ];
+  const credits = attachedWorkCreditsFromVout(
+    [
+      { address: registryAddress, value: 1_092 },
+      { message: `pwt1:send:${workTokenId}:7:${target}` },
+      { message: `pwt1:send2:${workTokenId}:2099999999999999:${other}` },
+      { message: `pwt1:send2:${workTokenId}:1:bc1qnotrecipient` },
+    ],
+    recipients,
+    "livenet",
+  );
+  assert.equal(credits.length, 2);
+  assert.equal(credits[0].amountAtoms, "700000000");
+  assert.equal(credits[1].amountAtoms, "2099999999999999");
+  assert.equal(
+    attachedWorkCreditsFromVout(
+      [
+        { address: registryAddress, value: 545 },
+        { message: `pwt1:send2:${workTokenId}:1:${target}` },
+      ],
+      recipients,
+      "livenet",
+    ).length,
+    0,
+  );
+});
+
+check("pending mail attachment repair is bounded, recipient-scoped, and fail-open", async () => {
+  const txid = "6".repeat(64);
+  const target = "bc1qtarget";
+  const pendingCredit = {
+    amount: "0.00000001",
+    amountAtoms: "1",
+    recipientAddress: target,
+    ticker: "WORK",
+    tokenId: "4".repeat(64),
+  };
+  const mailMessageNeedsPendingWorkRepair = isolatedFunction(
+    API_PATH,
+    "mailMessageNeedsPendingWorkRepair",
+  );
+  const repairPendingMailWorkAttachments = isolatedFunction(
+    API_PATH,
+    "repairPendingMailWorkAttachments",
+    {
+      MAIL_PENDING_WORK_REPAIR_MAX_TXS: 1,
+      MAIL_PENDING_WORK_REPAIR_WAIT_MS: 25,
+      errorSummary: (error) => String(error?.message ?? error),
+      fetchPendingMailTransactionFromFirstParty: async (requestedTxid) => ({
+        confirmed: false,
+        txid: requestedTxid,
+      }),
+      inboxMessagesFromTransactions: (_txs, address) => [
+        {
+          attachedCredits: [
+            { ...pendingCredit, recipientAddress: address },
+          ],
+          txid,
+        },
+      ],
+      mailMessageNeedsPendingWorkRepair,
+      mergedSourceLabel: (left, right) => `${left}+${right}`,
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      sentMessagesFromTransactions: () => [
+        { attachedCredits: [pendingCredit], txid },
+      ],
+      transactionConfirmed: (tx) => tx.confirmed === true,
+      transactionTxid: (tx) => tx.txid,
+    },
+  );
+  const repaired = await repairPendingMailWorkAttachments(
+    {
+      inboxMessages: [{ confirmed: false, txid }],
+      sentMessages: [{ status: "pending", txid }],
+      source: "proof-indexer-mail",
+      stats: {},
+    },
+    target,
+    "livenet",
+  );
+  assert.equal(repaired.inboxMessages[0].attachedCredits[0].amountAtoms, "1");
+  assert.equal(repaired.sentMessages[0].attachedCredits[0].amountAtoms, "1");
+  assert.equal(repaired.stats.repairedPendingWorkAttachments, 2);
+  assert.match(repaired.source, /pending-work-attachment-repair/u);
+
+  const confirmedRepair = isolatedFunction(
+    API_PATH,
+    "repairPendingMailWorkAttachments",
+    {
+      MAIL_PENDING_WORK_REPAIR_MAX_TXS: 1,
+      MAIL_PENDING_WORK_REPAIR_WAIT_MS: 25,
+      errorSummary: (error) => String(error?.message ?? error),
+      fetchPendingMailTransactionFromFirstParty: async (requestedTxid) => ({
+        confirmed: true,
+        txid: requestedTxid,
+      }),
+      inboxMessagesFromTransactions: () => [],
+      mailMessageNeedsPendingWorkRepair,
+      mergedSourceLabel: (left, right) => `${left}+${right}`,
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      sentMessagesFromTransactions: () => [],
+      transactionConfirmed: (tx) => tx.confirmed === true,
+      transactionTxid: (tx) => tx.txid,
+    },
+  );
+  const unchanged = await confirmedRepair(
+    {
+      inboxMessages: [{ confirmed: false, txid }],
+      sentMessages: [],
+      source: "proof-indexer-mail",
+    },
+    target,
+    "livenet",
+  );
+  assert.equal(unchanged.inboxMessages[0].attachedCredits, undefined);
+
+  const reconcileMailPayloadStatuses = isolatedFunction(
+    API_PATH,
+    "reconcileMailPayloadStatuses",
+    {
+      mailStats: () => ({}),
+      txStatusPayload: async () => ({
+        indexedAt: "2026-07-18T00:00:02.000Z",
+        status: "confirmed",
+      }),
+    },
+  );
+  const raced = await reconcileMailPayloadStatuses(
+    {
+      inboxMessages: [
+        { attachedCredits: [pendingCredit], confirmed: false, txid },
+      ],
+      sentMessages: [
+        { attachedCredits: [pendingCredit], status: "pending", txid },
+      ],
+    },
+    "livenet",
+  );
+  assert.equal(raced.inboxMessages[0].confirmed, true);
+  assert.equal(raced.inboxMessages[0].attachedCredits, undefined);
+  assert.equal(raced.sentMessages[0].status, "confirmed");
+  assert.equal(raced.sentMessages[0].attachedCredits, undefined);
+});
+
+check("mail merges preserve canonical attachments without promoting raw confirmed claims", () => {
+  const mergeMailMessageLists = isolatedFunction(
+    API_PATH,
+    "mergeMailMessageLists",
+    {
+      mailMessageRichness: (message) =>
+        [
+          message?.memo,
+          ...(Array.isArray(message?.attachedCredits)
+            ? message.attachedCredits
+            : []),
+        ].filter(Boolean).length,
+    },
+  );
+  const txid = "7".repeat(64);
+  const rawClaim = [{ amountAtoms: "999", tokenId: "4".repeat(64) }];
+  const [failClosed] = mergeMailMessageLists(
+    [{ confirmed: true, createdAt: "2026-07-18T00:00:00.000Z", txid }],
+    [
+      {
+        attachedCredits: rawClaim,
+        confirmed: true,
+        createdAt: "2026-07-18T00:00:01.000Z",
+        memo: "raw richer row",
+        txid,
+      },
+    ],
+  );
+  assert.equal(failClosed.attachedCredits, undefined);
+
+  const canonicalCredits = [{ amountAtoms: "1", tokenId: "4".repeat(64) }];
+  const [preserved] = mergeMailMessageLists(
+    [
+      {
+        attachedCredits: canonicalCredits,
+        confirmed: true,
+        createdAt: "2026-07-18T00:00:00.000Z",
+        txid,
+      },
+    ],
+    [
+      {
+        confirmed: false,
+        createdAt: "2026-07-18T00:00:01.000Z",
+        memo: "pending richer row",
+        txid,
+      },
+    ],
+  );
+  assert.equal(preserved.attachedCredits[0].amountAtoms, "1");
+  assert.equal(preserved.confirmed, true);
+
+  const eventOverlaySource = topLevelFunctionSource(
+    API_PATH,
+    "mailPayloadWithIndexedEventOverlay",
+  );
+  assert.match(
+    eventOverlaySource,
+    /eventItems[\s\S]*\.map\(\(item\) => \(\{ \.\.\.item, attachedCredits: undefined \}\)\)/u,
+    "confirmed event overlays must not promote embedded WORK claims",
+  );
+});
+
 check("wallet mail projection recognizes canonical senderAddress as sent activity", () => {
   const sender = "bc1psender";
   const recipient = "bc1precipient";
@@ -13672,7 +14147,10 @@ check("wallet mail projection recognizes canonical senderAddress as sent activit
     "addressMailRowPayloads",
     {
       canonicalEventPayload: (value) => value ?? {},
+      canonicalMailAttachedCreditsFromRow: () => [],
       dateIso: (value) => new Date(value).toISOString(),
+      exactMailRecipientRows: (_payload, _raw, addresses, amountSats) =>
+        addresses.map((address) => ({ address, amountSats, display: address })),
       knownMailAddress: (value) => String(value ?? "").trim(),
       mailMemoFromEvent: (_row, payload) => String(payload?.memo ?? ""),
       mailParticipantRecordsFromRow: () => [
@@ -13691,6 +14169,8 @@ check("wallet mail projection recognizes canonical senderAddress as sent activit
         addresses.map((address) => ({ address, amountSats, display: address })),
       recipientSummary: (recipients) => recipients[0]?.display ?? "Unknown",
       rawTransactionItemPayload: () => ({}),
+      sameMailPaymentAddress: (left, right) =>
+        String(left ?? "").toLowerCase() === String(right ?? "").toLowerCase(),
     },
   );
 
@@ -15191,30 +15671,48 @@ check("canonical INCB mint recovery binds the verifier minter", () => {
   );
 });
 
-check("canonical indexer binds exact verified WORK transfers to Inception bonds", () => {
+check("canonical indexer binds exact verified WORK transfers to every PWM mail kind", () => {
   const workTokenId = "4".repeat(64);
   const txid = "d".repeat(64);
   const recipientAddress = "bc1qinceptionrecipient";
-  const canonicalIntegerText = isolatedFunction(
-    BACKFILL_PATH,
-    "canonicalIntegerText",
-  );
   const sameCanonicalPaymentAddress = isolatedFunction(
     BACKFILL_PATH,
     "sameCanonicalPaymentAddress",
   );
   const bindAttachments = isolatedFunction(
     BACKFILL_PATH,
-    "preparedProtocolItemsWithCanonicalInceptionAttachments",
+    "preparedProtocolItemsWithCanonicalMailAttachments",
     {
-      INCEPTION_BOND_KIND: "inception-bond",
+      MAIL_WORK_ATTACHMENT_KINDS: new Set([
+        "attachment",
+        "browser",
+        "file",
+        "inception-bond",
+        "infinity-bond",
+        "mail",
+        "reply",
+      ]),
       Map,
-      Set,
       WORK_TOKEN_ID: workTokenId,
       WORK_TOKEN_TICKER: "WORK",
-      canonicalIntegerText,
+      canonicalWorkAtomsText: (value) =>
+        /^(?:[1-9]\d*)$/u.test(String(value ?? ""))
+          ? String(value)
+          : "",
+      formatWorkAtoms: (value) => {
+        const atoms = String(value).padStart(9, "0");
+        const whole = atoms.slice(0, -8) || "0";
+        const fraction = atoms.slice(-8).replace(/0+$/u, "");
+        return fraction ? `${whole}.${fraction}` : whole;
+      },
       isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
       sameCanonicalPaymentAddress,
+      withWorkPrecisionMetadata: (value) => ({
+        ...value,
+        amountStorageModel: "work-atoms-v1",
+        decimals: 8,
+        unitScale: "100000000",
+      }),
     },
   );
   const prepared = [
@@ -15231,7 +15729,8 @@ check("canonical indexer binds exact verified WORK transfers to Inception bonds"
     {
       item: {
         _powEventIndex: 2,
-        amount: "3644060",
+        amount: "20999999.99999999",
+        amountAtoms: "2099999999999999",
         confirmed: true,
         kind: "token-transfer",
         protocolVout: 3,
@@ -15246,6 +15745,7 @@ check("canonical indexer binds exact verified WORK transfers to Inception bonds"
     {
       item: {
         amount: "25",
+        amountAtoms: "2500000000",
         confirmed: true,
         kind: "token-transfer",
         protocolVout: 4,
@@ -15259,6 +15759,7 @@ check("canonical indexer binds exact verified WORK transfers to Inception bonds"
     {
       item: {
         amount: "100",
+        amountAtoms: "10000000000",
         confirmed: true,
         kind: "token-transfer",
         protocolVout: 5,
@@ -15271,21 +15772,37 @@ check("canonical indexer binds exact verified WORK transfers to Inception bonds"
     },
   ];
 
-  const bound = bindAttachments(prepared);
-  assert.equal(bound[0].sourceLabel, "log");
-  assert.equal(bound[0].item.attachedCredits.length, 1);
-  assert.equal(bound[0].item.attachedCredits[0]._powEventIndex, 2);
-  assert.equal(bound[0].item.attachedCredits[0].amount, "3644060");
-  assert.equal(bound[0].item.attachedCredits[0].protocolVout, 3);
-  assert.equal(
-    bound[0].item.attachedCredits[0].recipientAddress,
-    recipientAddress.toUpperCase(),
-  );
-  assert.equal(bound[0].item.attachedCredits[0].ticker, "WORK");
-  assert.equal(bound[0].item.attachedCredits[0].tokenId, workTokenId);
-  assert.equal(bound[1], prepared[1]);
-  assert.equal(bound[2], prepared[2]);
-  assert.equal(bound[3], prepared[3]);
+  for (const kind of [
+    "attachment",
+    "browser",
+    "file",
+    "inception-bond",
+    "infinity-bond",
+    "mail",
+    "reply",
+  ]) {
+    const [boundMail] = bindAttachments([
+      { ...prepared[0], item: { ...prepared[0].item, kind } },
+      prepared[1],
+      prepared[2],
+      prepared[3],
+    ]);
+    assert.equal(boundMail.sourceLabel, "log");
+    assert.equal(boundMail.item.attachedCredits.length, 1);
+    assert.equal(boundMail.item.attachedCredits[0]._powEventIndex, 2);
+    assert.equal(boundMail.item.attachedCredits[0].amount, "20999999.99999999");
+    assert.equal(
+      boundMail.item.attachedCredits[0].amountAtoms,
+      "2099999999999999",
+    );
+    assert.equal(boundMail.item.attachedCredits[0].protocolVout, 3);
+    assert.equal(
+      boundMail.item.attachedCredits[0].recipientAddress,
+      recipientAddress.toUpperCase(),
+    );
+    assert.equal(boundMail.item.attachedCredits[0].ticker, "WORK");
+    assert.equal(boundMail.item.attachedCredits[0].tokenId, workTokenId);
+  }
 
   const withoutCanonicalTransfer = bindAttachments([
     prepared[0],
@@ -15302,6 +15819,7 @@ check("canonical indexer binds exact verified WORK transfers to Inception bonds"
         ...prepared[1].item,
         _powEventIndex: 3,
         amount: "1",
+        amountAtoms: "100000000",
       },
     },
   ]);
@@ -15309,6 +15827,22 @@ check("canonical indexer binds exact verified WORK transfers to Inception bonds"
     duplicateCanonicalVout[0].item.attachedCredits,
     undefined,
     "duplicate canonical WORK rows for one protocol vout must fail closed",
+  );
+
+  const pending = bindAttachments([
+    {
+      item: {
+        ...prepared[0].item,
+        confirmed: false,
+        kind: "mail",
+      },
+    },
+    { ...prepared[1], item: { ...prepared[1].item, confirmed: false } },
+  ]);
+  assert.equal(
+    pending[0].item.attachedCredits,
+    undefined,
+    "pending indexed rows must not trust projected attachedCredits",
   );
 });
 

@@ -290,6 +290,7 @@ type SortMode =
   | "largest"
   | "filetype"
   | "sender";
+type MailSignalMode = "proofs" | "work";
 type FileFilter = "all" | "image" | "pdf" | "document" | "other";
 type BroadcastStatus = "pending" | "confirmed" | "dropped" | "unknown";
 type BroadcastSource = "mempool" | "node" | "slipstream" | "wallet";
@@ -1373,6 +1374,7 @@ const LOG_LIVE_REFRESH_MS = 15_000;
 const BACKGROUND_FRESH_REFRESH_DELAY_MS = 1_000;
 const BTC_USD_BROWSER_CACHE_TTL_MS = 60_000;
 const TOKEN_LOCAL_PENDING_LISTING_TTL_MS = 30 * 60_000;
+const TOKEN_LOCAL_PENDING_TRANSFER_TTL_MS = 30 * 60_000;
 const TX_OUTSPEND_FETCH_TIMEOUT_MS = 12_000;
 const WALLET_UTXO_FETCH_TIMEOUT_MS = 45_000;
 const WALLET_UTXO_FETCH_RETRY_DELAYS_MS = [0, 1000];
@@ -2777,6 +2779,32 @@ function preferSentMessage(candidate: SentMessage, current: SentMessage) {
   return Date.parse(candidate.createdAt) > Date.parse(current.createdAt);
 }
 
+function mergeSentAttachedCredits(
+  preferred: SentMessage,
+  fallback: SentMessage,
+) {
+  if (sentDeliveryStatus(preferred) === "confirmed") {
+    return preferred.attachedCredits;
+  }
+
+  const merged = new Map<string, MailAttachedCredit>();
+  for (const credit of [
+    ...(fallback.attachedCredits ?? []),
+    ...(preferred.attachedCredits ?? []),
+  ]) {
+    const atoms = workRecordAtoms(credit.amount, credit.amountAtoms);
+    const key = [
+      String(credit.tokenId ?? "").trim().toLowerCase(),
+      normalizeTokenTicker(credit.ticker),
+      credit.recipientAddress.trim().toLowerCase(),
+      atoms?.toString() ?? "",
+    ].join(":");
+    merged.set(key, credit);
+  }
+
+  return merged.size > 0 ? [...merged.values()] : undefined;
+}
+
 function mergeSentRecord(
   preferred: SentMessage,
   fallback: SentMessage,
@@ -2784,6 +2812,7 @@ function mergeSentRecord(
   return {
     ...fallback,
     ...preferred,
+    attachedCredits: mergeSentAttachedCredits(preferred, fallback),
     attachment: preferred.attachment ?? fallback.attachment,
     confirmedAt: preferred.confirmedAt ?? fallback.confirmedAt,
     droppedAt: preferred.droppedAt ?? fallback.droppedAt,
@@ -2818,6 +2847,32 @@ function mergeSentMessages(messages: SentMessage[]) {
   }
 
   return [...merged.values()];
+}
+
+function mergeSentMessageSources(
+  localMessages: SentMessage[],
+  canonicalMessages: SentMessage[],
+) {
+  const merged = mergeSentMessages([...localMessages, ...canonicalMessages]);
+  const confirmedCanonical = new Map(
+    mergeSentMessages(canonicalMessages)
+      .filter((message) => sentDeliveryStatus(message) === "confirmed")
+      .map((message) => [sentMessageKey(message), message]),
+  );
+
+  return merged.map((message) => {
+    const canonical = confirmedCanonical.get(sentMessageKey(message));
+    if (canonical) {
+      return { ...message, attachedCredits: canonical.attachedCredits };
+    }
+    if (
+      message.network === "livenet" &&
+      sentDeliveryStatus(message) === "confirmed"
+    ) {
+      return { ...message, attachedCredits: undefined };
+    }
+    return message;
+  });
 }
 
 function ownedPowIds(records: PowIdRecord[], ownerOrReceiverAddress: string) {
@@ -3752,6 +3807,52 @@ function attachedCreditDraftAmount(credits: MailAttachedCredit[] | undefined) {
     )
     ? workDecimalFromAtoms(firstAmountAtoms)
     : "0";
+}
+
+function mailAttachedWorkCredits(message: MailMessage) {
+  const workCredits = (message.attachedCredits ?? []).filter(
+    (credit) =>
+      String(credit.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID &&
+      normalizeTokenTicker(credit.ticker) === WORK_TOKEN_TICKER &&
+      (workRecordAtoms(credit.amount, credit.amountAtoms) ?? 0n) > 0n,
+  );
+
+  if (message.folder === "sent") {
+    return workCredits;
+  }
+
+  return workCredits.filter((credit) =>
+    samePaymentAddress(credit.recipientAddress, message.to),
+  );
+}
+
+function mailWorkSignalAtoms(message: MailMessage) {
+  return mailAttachedWorkCredits(message).reduce((total, credit) => {
+    const atoms = workRecordAtoms(credit.amount, credit.amountAtoms);
+    return atoms === null ? total : total + atoms;
+  }, 0n);
+}
+
+function mailWorkSignalLabel(message: MailMessage) {
+  const credits = mailAttachedWorkCredits(message);
+  const totalAtoms = credits.reduce((total, credit) => {
+    const atoms = workRecordAtoms(credit.amount, credit.amountAtoms);
+    return atoms === null ? total : total + atoms;
+  }, 0n);
+  if (totalAtoms <= 0n) {
+    return "";
+  }
+
+  if (message.folder !== "sent") {
+    return `${formatWorkAmount(totalAtoms)} WORK`;
+  }
+
+  const recipientCount = new Set(
+    credits.map((credit) => credit.recipientAddress).filter(Boolean),
+  ).size;
+  return `${formatWorkAmount(totalAtoms)} WORK${
+    recipientCount > 1 ? ` · ${recipientCount} recipients` : ""
+  }`;
 }
 
 function attachmentHref(attachment: MailAttachment) {
@@ -4773,7 +4874,11 @@ function parseProtocolMemo(memo: string): ProtocolMessage | null {
   return memo.startsWith(PROTOCOL_PREFIX) ? { memo, replyTo: "" } : null;
 }
 
-function sortMessages(messages: MailMessage[], sortMode: SortMode) {
+function sortMessages(
+  messages: MailMessage[],
+  sortMode: SortMode,
+  signalMode: MailSignalMode = "proofs",
+) {
   const sorted = [...messages];
   const threadActivity = new Map<string, number>();
 
@@ -4788,18 +4893,33 @@ function sortMessages(messages: MailMessage[], sortMode: SortMode) {
 
   sorted.sort((left, right) => {
     if (sortMode === "value") {
+      if (signalMode === "work") {
+        const leftWorkAtoms = mailWorkSignalAtoms(left);
+        const rightWorkAtoms = mailWorkSignalAtoms(right);
+        if (leftWorkAtoms !== rightWorkAtoms) {
+          return leftWorkAtoms > rightWorkAtoms ? -1 : 1;
+        }
+      }
+
       return (
         right.amountSats - left.amountSats ||
-        Date.parse(right.createdAt) - Date.parse(left.createdAt)
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid)
       );
     }
 
     if (sortMode === "newest") {
-      return Date.parse(right.createdAt) - Date.parse(left.createdAt);
+      return (
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid)
+      );
     }
 
     if (sortMode === "oldest") {
-      return Date.parse(left.createdAt) - Date.parse(right.createdAt);
+      return (
+        Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
+        left.txid.localeCompare(right.txid)
+      );
     }
 
     if (sortMode === "thread") {
@@ -4812,14 +4932,17 @@ function sortMessages(messages: MailMessage[], sortMode: SortMode) {
 
       const byThread = rootTxid(left).localeCompare(rootTxid(right));
       return (
-        byThread || Date.parse(left.createdAt) - Date.parse(right.createdAt)
+        byThread ||
+        Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
+        left.txid.localeCompare(right.txid)
       );
     }
 
     if (sortMode === "largest") {
       return (
         (right.attachment?.size ?? 0) - (left.attachment?.size ?? 0) ||
-        Date.parse(right.createdAt) - Date.parse(left.createdAt)
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid)
       );
     }
 
@@ -4831,20 +4954,23 @@ function sortMessages(messages: MailMessage[], sortMode: SortMode) {
         byType ||
         (left.attachment?.name ?? "").localeCompare(
           right.attachment?.name ?? "",
-        )
+        ) ||
+        left.txid.localeCompare(right.txid)
       );
     }
 
     if (sortMode === "sender") {
       return (
         peerAddress(left).localeCompare(peerAddress(right)) ||
-        Date.parse(right.createdAt) - Date.parse(left.createdAt)
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid)
       );
     }
 
     return (
       right.amountSats - left.amountSats ||
-      Date.parse(right.createdAt) - Date.parse(left.createdAt)
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      left.txid.localeCompare(right.txid)
     );
   });
 
@@ -8428,6 +8554,27 @@ function mergeTokenTransfersForSpendability(
   return merged;
 }
 
+function tokenTransferShouldSurviveRefresh(transfer: PowTokenTransfer) {
+  if (transfer.confirmed !== false) {
+    return false;
+  }
+  const createdAtMs = Date.parse(transfer.createdAt);
+  return (
+    Number.isFinite(createdAtMs) &&
+    Date.now() - createdAtMs <= TOKEN_LOCAL_PENDING_TRANSFER_TTL_MS
+  );
+}
+
+function tokenTransfersWithPreservedLocalPending(
+  current: PowTokenTransfer[],
+  incoming: PowTokenTransfer[],
+) {
+  return mergeTokenTransfersForSpendability(
+    incoming,
+    current.filter(tokenTransferShouldSurviveRefresh),
+  );
+}
+
 function tokenSpendabilityForWallet(
   walletAddress: string,
   token: PowTokenDefinition,
@@ -8527,7 +8674,9 @@ function tokenSpendabilityForWallet(
       (transfer) =>
         transfer.tokenId === token.tokenId &&
         !transfer.confirmed &&
-        transfer.senderAddress.trim().toLowerCase() === normalizedWalletAddress,
+        transfer.senderAddress.trim().toLowerCase() === normalizedWalletAddress &&
+        transfer.recipientAddress.trim().toLowerCase() !==
+          normalizedWalletAddress,
     );
   const pendingDirectTransfers = pendingDirectTransferRows.reduce(
     (total, transfer) => total + transfer.amount,
@@ -15554,6 +15703,8 @@ export default function App() {
   });
   const [activeCustomFolderId, setActiveCustomFolderId] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("value");
+  const [mailSignalMode, setMailSignalMode] =
+    useState<MailSignalMode>("proofs");
   const [fileFilter, setFileFilter] = useState<FileFilter>("all");
   const [selectedKey, setSelectedKey] = useState("");
   const [composeOpen, setComposeOpen] = useState(true);
@@ -15840,7 +15991,11 @@ export default function App() {
           applyPendingTokenListingSeals(state.listings),
           state.closedListings,
         );
-    const accepted = { ...state, listings };
+    const transfers = tokenTransfersWithPreservedLocalPending(
+      scopeKey === activeTokenStateScopeRef.current ? tokenTransfers : [],
+      state.transfers,
+    );
+    const accepted = { ...state, listings, transfers };
     acceptedTokenStatesRef.current.set(scopeKey, accepted);
     if (scopeKey === activeTokenStateScopeRef.current) {
       setTokenListings(accepted.listings);
@@ -16039,16 +16194,16 @@ export default function App() {
   const sentForAccount = useMemo(
     () =>
       address
-        ? mergeSentMessages([
-            ...allSent.filter(
+        ? mergeSentMessageSources(
+            allSent.filter(
               (message) =>
                 message.from === address && message.network === network,
             ),
-            ...chainSent.filter(
+            chainSent.filter(
               (message) =>
                 message.from === address && message.network === network,
             ),
-          ])
+          )
         : [],
     [address, allSent, chainSent, network],
   );
@@ -16134,7 +16289,11 @@ export default function App() {
     () =>
       fileSurfaceMessages(
         allMail.filter(
-          (message) => message.folder !== "inbox" || message.confirmed,
+          (message) =>
+            message.folder === "inbox"
+              ? message.confirmed
+              : message.folder === "sent" &&
+                sentDeliveryStatus(message) === "confirmed",
         ),
       ),
     [allMail],
@@ -16174,6 +16333,7 @@ export default function App() {
                         ? customFolderMail
                         : [],
         sortMode,
+        mailSignalMode,
       ),
     [
       activeFolder,
@@ -16185,6 +16345,7 @@ export default function App() {
       incomingMail,
       outboxMail,
       sentMail,
+      mailSignalMode,
       sortMode,
     ],
   );
@@ -27010,7 +27171,12 @@ export default function App() {
                 : undefined
             }
             setFileFilter={setFileFilter}
+            setSignalMode={(signalMode) => {
+              setMailSignalMode(signalMode);
+              setSortMode("value");
+            }}
             setSortMode={setSortMode}
+            signalMode={mailSignalMode}
             sortMode={sortMode}
             onOpenInbox={() => openFolder("inbox")}
             onOpenMessage={openSourceMessage}
@@ -27037,6 +27203,15 @@ export default function App() {
                   </span>
                 </div>
                 {activeFolder === "drafts" ? null : (
+                  <MailSignalToggle
+                    signalMode={mailSignalMode}
+                    setSignalMode={(signalMode) => {
+                      setMailSignalMode(signalMode);
+                      setSortMode("value");
+                    }}
+                  />
+                )}
+                {activeFolder === "drafts" ? null : (
                   <label className="sort-control">
                     Sort
                     <select
@@ -27045,7 +27220,11 @@ export default function App() {
                         setSortMode(event.target.value as SortMode)
                       }
                     >
-                      <option value="value">Highest proofs</option>
+                      <option value="value">
+                        {mailSignalMode === "work"
+                          ? "Highest WORK"
+                          : "Highest proofs"}
+                      </option>
                       <option value="newest">Newest</option>
                       <option value="oldest">Oldest</option>
                       <option value="thread">Thread</option>
@@ -41940,8 +42119,8 @@ function MessageList({
             <div className="message-preview">{mailPreview(message)}</div>
             <div className="message-meta">
               <span>{message.amountSats.toLocaleString()} proofs</span>
-              {attachedCreditLabel(message.attachedCredits) ? (
-                <span>{attachedCreditLabel(message.attachedCredits)}</span>
+              {mailWorkSignalLabel(message) ? (
+                <span>{mailWorkSignalLabel(message)}</span>
               ) : null}
               {message.folder === "sent" ? (
                 <span>{deliveryLabel(sentDeliveryStatus(message))}</span>
@@ -41955,6 +42134,40 @@ function MessageList({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function MailSignalToggle({
+  setSignalMode,
+  signalMode,
+}: {
+  setSignalMode: (value: MailSignalMode) => void;
+  signalMode: MailSignalMode;
+}) {
+  return (
+    <div className="mail-signal-control">
+      <span>Signal</span>
+      <div
+        aria-label="Mail ranking signal"
+        className="mail-signal-toggle"
+        role="group"
+      >
+        <button
+          aria-pressed={signalMode === "proofs"}
+          onClick={() => setSignalMode("proofs")}
+          type="button"
+        >
+          Proofs
+        </button>
+        <button
+          aria-pressed={signalMode === "work"}
+          onClick={() => setSignalMode("work")}
+          type="button"
+        >
+          WORK
+        </button>
+      </div>
     </div>
   );
 }
@@ -42248,7 +42461,9 @@ function FilesWorkspace({
   refreshing,
   selectedMessage,
   setFileFilter,
+  setSignalMode,
   setSortMode,
+  signalMode,
   sortMode,
   onOpenInbox,
   onOpenMessage,
@@ -42264,7 +42479,9 @@ function FilesWorkspace({
   refreshing: boolean;
   selectedMessage?: MailMessage & { attachment: MailAttachment };
   setFileFilter: (value: FileFilter) => void;
+  setSignalMode: (value: MailSignalMode) => void;
   setSortMode: (value: SortMode) => void;
+  signalMode: MailSignalMode;
   sortMode: SortMode;
   onOpenInbox: () => void;
   onOpenMessage: (message: MailMessage) => void;
@@ -42284,7 +42501,9 @@ function FilesWorkspace({
           fileCount={0}
           refreshing={refreshing}
           setFileFilter={setFileFilter}
+          setSignalMode={setSignalMode}
           setSortMode={setSortMode}
+          signalMode={signalMode}
           sortMode={sortMode}
           onRefresh={onRefresh}
         />
@@ -42324,7 +42543,9 @@ function FilesWorkspace({
         fileCount={fileMessages.length}
         refreshing={refreshing}
         setFileFilter={setFileFilter}
+        setSignalMode={setSignalMode}
         setSortMode={setSortMode}
+        signalMode={signalMode}
         sortMode={sortMode}
         onRefresh={onRefresh}
       />
@@ -42338,6 +42559,7 @@ function FilesWorkspace({
               key={mailKey(message)}
               message={message}
               onSelect={onSelect}
+              showWorkSignal
             />
           ))}
         </div>
@@ -42346,6 +42568,7 @@ function FilesWorkspace({
           activeNetwork={activeNetwork}
           message={selectedFile}
           onOpenMessage={onOpenMessage}
+          showWorkSignal
         />
       </div>
     </section>
@@ -42359,7 +42582,9 @@ function FilesToolbar({
   fileCount,
   refreshing,
   setFileFilter,
+  setSignalMode,
   setSortMode,
+  signalMode,
   sortMode,
   onRefresh,
 }: {
@@ -42369,7 +42594,9 @@ function FilesToolbar({
   fileCount: number;
   refreshing: boolean;
   setFileFilter: (value: FileFilter) => void;
+  setSignalMode: (value: MailSignalMode) => void;
   setSortMode: (value: SortMode) => void;
+  signalMode: MailSignalMode;
   sortMode: SortMode;
   onRefresh: () => void;
 }) {
@@ -42395,13 +42622,19 @@ function FilesToolbar({
           <option value="other">Other</option>
         </select>
       </label>
+      <MailSignalToggle
+        setSignalMode={setSignalMode}
+        signalMode={signalMode}
+      />
       <label className="sort-control">
         Sort
         <select
           value={sortMode}
           onChange={(event) => setSortMode(event.target.value as SortMode)}
         >
-          <option value="value">Highest proofs</option>
+          <option value="value">
+            {signalMode === "work" ? "Highest WORK" : "Highest proofs"}
+          </option>
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
           <option value="largest">Largest</option>
@@ -42430,11 +42663,13 @@ function FileTile({
   activeNetwork,
   message,
   onSelect,
+  showWorkSignal = false,
 }: {
   active: boolean;
   activeNetwork: BitcoinNetwork;
   message: MailMessage & { attachment: MailAttachment };
   onSelect: (message: MailMessage) => void;
+  showWorkSignal?: boolean;
 }) {
   const attachment = message.attachment;
   const explorerNetwork = explorerNetworkFor(message.network, activeNetwork);
@@ -42454,6 +42689,9 @@ function FileTile({
       </span>
       <div className="file-tile-meta">
         <span>{message.amountSats.toLocaleString()} proofs</span>
+        {showWorkSignal && mailWorkSignalLabel(message) ? (
+          <span>{mailWorkSignalLabel(message)}</span>
+        ) : null}
         <span>{networkLabel(explorerNetwork)}</span>
       </div>
     </button>
@@ -42604,10 +42842,12 @@ function FileInspector({
   activeNetwork,
   message,
   onOpenMessage,
+  showWorkSignal = false,
 }: {
   activeNetwork: BitcoinNetwork;
   message?: MailMessage & { attachment: MailAttachment };
   onOpenMessage?: (message: MailMessage) => void;
+  showWorkSignal?: boolean;
 }) {
   if (!message) {
     return (
@@ -42692,6 +42932,12 @@ function FileInspector({
           <dt>Value</dt>
           <dd>{message.amountSats.toLocaleString()} proofs</dd>
         </div>
+        {showWorkSignal && mailWorkSignalLabel(message) ? (
+          <div>
+            <dt>WORK</dt>
+            <dd>{mailWorkSignalLabel(message)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Date</dt>
           <dd>{formatDate(message.createdAt)}</dd>
@@ -43358,10 +43604,10 @@ function Reader({
           <dt>Value</dt>
           <dd>{message.amountSats.toLocaleString()} proofs</dd>
         </div>
-        {attachedCreditLabel(message.attachedCredits) ? (
+        {mailWorkSignalLabel(message) ? (
           <div>
             <dt>WORK</dt>
-            <dd>{attachedCreditLabel(message.attachedCredits)}</dd>
+            <dd>{mailWorkSignalLabel(message)}</dd>
           </div>
         ) : null}
         <div>
@@ -43412,8 +43658,8 @@ function Reader({
                 <span>
                   {formatDate(threadMessage.createdAt)} ·{" "}
                   {threadMessage.amountSats.toLocaleString()} proofs
-                  {attachedCreditLabel(threadMessage.attachedCredits)
-                    ? ` · ${attachedCreditLabel(threadMessage.attachedCredits)}`
+                  {mailWorkSignalLabel(threadMessage)
+                    ? ` · ${mailWorkSignalLabel(threadMessage)}`
                     : ""}
                 </span>
               </div>

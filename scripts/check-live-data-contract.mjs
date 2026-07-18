@@ -1052,7 +1052,9 @@ expectAll("server WORK transfer txid history recovers without full ledger rebuil
   /const TOKEN_ADDRESS_TRANSFER_RECOVERY_MAX_PAGES = Number\(/,
   /const TOKEN_ADDRESS_TRANSFER_RECOVERY_WAIT_MS = Number\(/,
   /function workTransfersFromTransactions\(txs,\s*network\)[\s\S]*parsed\?\.kind !== "send"[\s\S]*WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS/,
-  /async function recoveredWorkTransfersForAddresses\(addresses,\s*network\)[\s\S]*WORK_TOKEN_TRANSFER_RECOVERY_TXIDS[\s\S]*fetchAddressTransactionsViaMempoolPagination\([\s\S]*TOKEN_ADDRESS_TRANSFER_RECOVERY_WAIT_MS[\s\S]*workTransfersFromTransactions/,
+  /async function recoveredWorkTransfersForAddresses\(\s*addresses,\s*network,\s*options = \{\},?\s*\)/,
+  /const maxPages = Number\.isSafeInteger\(Number\(options\.maxPages\)\)[\s\S]{0,300}TOKEN_ADDRESS_TRANSFER_RECOVERY_MAX_PAGES/,
+  /fetchAddressTransactionsViaMempoolPagination\(\s*address,\s*network,\s*maxPages/,
   /scope === WORK_TOKEN_ID &&[\s\S]*recoveryTxids\.length > 0[\s\S]*safeKind === "transfers"[\s\S]*first-party-work-transfer-txid-recovery/,
   /scope === WORK_TOKEN_ID &&[\s\S]*recoveryAddresses\.length > 0[\s\S]*safeKind === "transfers"[\s\S]*first-party-work-transfer-address-recovery/,
 ]);
@@ -1166,7 +1168,7 @@ expectAll("proof index address mail recovers sender-only file rows", proofIndexR
   /knownMailAddress\(payload\.actor\)[\s\S]*knownMailAddress\(payload\.senderAddress\)[\s\S]*knownMailAddress\(rawPayload\.senderAddress\)[\s\S]*knownMailAddress\(row\.sender_address\)/,
   /m\.sender_address/,
   /t\.raw_tx AS transaction_raw_tx/,
-  /WITH candidate_events AS \([\s\S]*proof_indexer\.event_participants ep[\s\S]*ep\.address = ANY\(\$2::text\[\]\)[\s\S]*UNION[\s\S]*proof_indexer\.mail_items m[\s\S]*m\.sender_address = ANY\(\$2::text\[\]\)[\s\S]*JOIN candidate_events ce/,
+  /WITH candidate_events AS \([\s\S]*proof_indexer\.event_participants ep[\s\S]*ep\.address = ANY\(\$2::text\[\]\)[\s\S]*UNION[\s\S]*proof_indexer\.mail_items m[\s\S]*m\.sender_address = ANY\(\$2::text\[\]\)[\s\S]*JOIN candidate_mail_events ce/,
 ]);
 expect("pending mempool bases must not hardcode public explorer data sources", !/explorerBase|explorerReadBases|mempool\.space/i.test(pendingMempoolBasesSource));
 expectAll("transaction hex PSBT reads stay first-party", txHexPayloadSource, [
@@ -1450,7 +1452,7 @@ expectAll("DB mail reads use indexed address matching and self-send folders", pr
   /WHEN 'confirmed' = ANY\(ARRAY\[e\.status,\s*m\.status,\s*t\.status\]\) THEN 'confirmed'/,
   /const targetIsRecipient =[\s\S]*\["recipient",\s*"receiver",\s*"counterparty"\]/,
   /if \(actorKey && actorKey === targetKey\)[\s\S]*folder: "sent"/,
-  /deliveryStatus !== "dropped"[\s\S]*\(!actorKey \|\| actorKey !== targetKey \|\| targetIsRecipient\)[\s\S]*folder: "inbox"/,
+  /deliveryStatus !== "dropped"[\s\S]*targetIsRecipient[\s\S]*folder: "inbox"/,
 ]);
 expectAll("local self-send broadcasts appear in Incoming immediately", app, [
   /function samePaymentAddress\(left:\s*string,\s*right:\s*string\)/,

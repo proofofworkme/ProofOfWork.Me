@@ -44,6 +44,9 @@ const ID_REGISTRY_ADDRESSES = {
 };
 const TOKEN_SALE_AUTH_VERSION = "pwt-sale-v1";
 const WORK_TOKEN_TICKER = "WORK";
+const WORK_TOKEN_MAX_SUPPLY_ATOMS = (
+  21_000_000n * BigInt(WORK_UNIT_SCALE_TEXT)
+).toString();
 const TOKEN_SALE_AUTH_VERSIONS = new Set([
   TOKEN_SALE_AUTH_VERSION,
   "pwt-sale-v2",
@@ -11726,15 +11729,65 @@ function mailParticipantsFromRow(row, payload, rawPayload = {}) {
 }
 
 function recipientRows(addresses, totalAmountSats) {
-  const amount =
-    addresses.length > 1 && totalAmountSats % addresses.length === 0
-      ? totalAmountSats / addresses.length
-      : totalAmountSats;
+  const amount = addresses.length === 1 ? totalAmountSats : 0;
   return addresses.map((address) => ({
     address,
     amountSats: amount,
     display: address,
   }));
+}
+
+function mailRecipientRowsFromSource(source) {
+  return (Array.isArray(source?.recipients) ? source.recipients : [])
+    .map((recipient) => {
+      if (typeof recipient === "string") {
+        return {
+          address: normalizedAddress(recipient),
+          amountSats: 0,
+          display: normalizedAddress(recipient),
+        };
+      }
+      const address = normalizedAddress(
+        recipient?.address ?? recipient?.display,
+      );
+      const amountSats = positiveNumber(recipient?.amountSats);
+      return {
+        address,
+        amountSats,
+        display: normalizedAddress(recipient?.display ?? address) || address,
+        ...(Number.isSafeInteger(Number(recipient?.vout)) &&
+        Number(recipient.vout) >= 0
+          ? { vout: Number(recipient.vout) }
+          : {}),
+      };
+    })
+    .filter((recipient) => recipient.address);
+}
+
+function exactMailRecipientRows(payload, rawPayload, fallbackAddresses, totalAmountSats) {
+  const payloadRows = mailRecipientRowsFromSource(payload);
+  const rawRows = mailRecipientRowsFromSource(rawPayload);
+  const payloadExactRows = payloadRows.filter((row) => row.vout !== undefined);
+  const rawExactRows = rawRows.filter((row) => row.vout !== undefined);
+  const rows =
+    payloadExactRows.length > 0
+      ? payloadExactRows
+      : rawExactRows.length > 0
+        ? rawExactRows
+        : payloadRows.length > 0
+          ? payloadRows
+          : rawRows;
+  const byAddressAndVout = new Map();
+  for (const row of rows) {
+    const key = `${normalizedAddressKey(row.address)}:${row.vout ?? ""}`;
+    if (!byAddressAndVout.has(key)) {
+      byAddressAndVout.set(key, row);
+    }
+  }
+  if (byAddressAndVout.size > 0) {
+    return [...byAddressAndVout.values()];
+  }
+  return recipientRows(fallbackAddresses, totalAmountSats);
 }
 
 function recipientSummary(recipients) {
@@ -11745,6 +11798,102 @@ function recipientSummary(recipients) {
   return recipients.length === 1
     ? first.display
     : `${first.display} +${recipients.length - 1}`;
+}
+
+function sameMailPaymentAddress(left, right) {
+  const leftAddress = normalizedAddress(left);
+  const rightAddress = normalizedAddress(right);
+  if (!leftAddress || !rightAddress) {
+    return false;
+  }
+  if (leftAddress === rightAddress) {
+    return true;
+  }
+  const leftLower = leftAddress.toLowerCase();
+  const rightLower = rightAddress.toLowerCase();
+  return (
+    /^(?:bc1|tb1|bcrt1)/u.test(leftLower) &&
+    /^(?:bc1|tb1|bcrt1)/u.test(rightLower) &&
+    leftLower === rightLower
+  );
+}
+
+function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
+  if (String(row?.status ?? "").trim().toLowerCase() !== "confirmed") {
+    return [];
+  }
+  const recipients = (Array.isArray(recipientAddresses)
+    ? recipientAddresses
+    : [])
+    .map((value) => normalizedAddress(value))
+    .filter(Boolean);
+  if (recipients.length === 0) {
+    return [];
+  }
+
+  const byProtocolVout = new Map();
+  for (const rawCredit of Array.isArray(row?.attached_credit_events)
+    ? row.attached_credit_events
+    : []) {
+    const credit = objectRecord(rawCredit);
+    const tokenId = String(credit.tokenId ?? "").trim().toLowerCase();
+    const ticker = String(credit.ticker ?? "").trim().toUpperCase();
+    const recipientAddress = normalizedAddress(credit.recipientAddress);
+    const protocolVout = Number(credit.protocolVout);
+    let amountAtoms = "";
+    try {
+      amountAtoms = normalizeWorkAtoms(credit.amountAtoms);
+    } catch {
+      continue;
+    }
+    if (
+      tokenId !== WORK_TOKEN_ID ||
+      (ticker && ticker !== WORK_TOKEN_TICKER) ||
+      amountAtoms !== String(credit.amountAtoms ?? "").trim() ||
+      BigInt(amountAtoms) > BigInt(WORK_TOKEN_MAX_SUPPLY_ATOMS) ||
+      !recipientAddress ||
+      !Number.isSafeInteger(protocolVout) ||
+      protocolVout < 0 ||
+      !recipients.some((recipient) =>
+        sameMailPaymentAddress(recipient, recipientAddress),
+      )
+    ) {
+      continue;
+    }
+
+    const normalized = withWorkPrecisionMetadata({
+      ...canonicalEventIdentityDetails(credit),
+      amount: formatWorkAtoms(amountAtoms),
+      amountAtoms,
+      amountVersion: credit.amountVersion,
+      paidSats: positiveNumber(credit.paidSats),
+      protocolVout,
+      recipientAddress,
+      registryAddress: credit.registryAddress,
+      ticker: WORK_TOKEN_TICKER,
+      tokenId: WORK_TOKEN_ID,
+    });
+    const existing = byProtocolVout.get(protocolVout);
+    if (existing) {
+      if (
+        existing.amountAtoms !== normalized.amountAtoms ||
+        !sameMailPaymentAddress(
+          existing.recipientAddress,
+          normalized.recipientAddress,
+        )
+      ) {
+        return [];
+      }
+      continue;
+    }
+    byProtocolVout.set(protocolVout, normalized);
+  }
+
+  return [...byProtocolVout.values()].sort(
+    (left, right) =>
+      left.protocolVout - right.protocolVout ||
+      left.recipientAddress.localeCompare(right.recipientAddress),
+  );
 }
 
 function addressMailRowPayloads(row, address, network) {
@@ -11763,19 +11912,12 @@ function addressMailRowPayloads(row, address, network) {
     knownMailAddress(row.sender_address);
   const actorKey = normalizedAddressKey(actor);
   const participantRecords = mailParticipantRecordsFromRow(row, payload, rawPayload);
-  const participants = mailParticipantsFromRow(row, payload, rawPayload);
   const roleRecipientAddresses = participantRecords
     .filter((participant) =>
       ["recipient", "receiver", "counterparty"].includes(participant.role),
     )
     .map((participant) => participant.address);
-  const fallbackRecipientAddresses = participants.filter(
-    (participant) => normalizedAddressKey(participant) !== actorKey,
-  );
-  const recipientAddresses =
-    roleRecipientAddresses.length > 0
-      ? [...new Set(roleRecipientAddresses)]
-      : fallbackRecipientAddresses;
+  const recipientAddresses = [...new Set(roleRecipientAddresses)];
   const targetIsRecipient =
     recipientAddresses.some(
       (participant) => normalizedAddressKey(participant) === targetKey,
@@ -11788,7 +11930,19 @@ function addressMailRowPayloads(row, address, network) {
   const totalAmountSats = positiveNumber(
     payload.amountSats ?? row.amount_sats,
   );
-  const recipients = recipientRows(recipientAddresses, totalAmountSats);
+  const recipients = exactMailRecipientRows(
+    payload,
+    rawPayload,
+    recipientAddresses,
+    totalAmountSats,
+  );
+  const attachedCredits = canonicalMailAttachedCreditsFromRow(
+    row,
+    recipientAddresses,
+  );
+  const targetAttachedCredits = attachedCredits.filter((credit) =>
+    sameMailPaymentAddress(credit.recipientAddress, targetAddress),
+  );
   const createdAt = dateIso(row.event_time ?? row.block_time ?? row.created_at);
   const confirmed = row.status === "confirmed";
   const deliveryStatus = row.status === "orphaned" ? "dropped" : row.status;
@@ -11808,6 +11962,8 @@ function addressMailRowPayloads(row, address, network) {
       folder: "sent",
       message: {
         amountSats: totalAmountSats,
+        attachedCredits:
+          attachedCredits.length > 0 ? attachedCredits : undefined,
         attachment: Object.keys(attachment).length > 0 ? attachment : undefined,
         confirmedAt: confirmed ? createdAt : undefined,
         createdAt,
@@ -11830,17 +11986,31 @@ function addressMailRowPayloads(row, address, network) {
 
   if (
     deliveryStatus !== "dropped" &&
-    (!actorKey || actorKey !== targetKey || targetIsRecipient)
+    targetIsRecipient
   ) {
     const targetRecipient =
       recipients.find(
         (recipient) => normalizedAddressKey(recipient.address) === targetKey,
       ) ?? recipients[0];
+    const targetRecipientAmountSats = recipients
+      .filter(
+        (recipient) => normalizedAddressKey(recipient.address) === targetKey,
+      )
+      .reduce(
+        (total, recipient) => total + positiveNumber(recipient.amountSats),
+        0,
+      );
     items.push({
       folder: "inbox",
       message: {
         amountSats:
-          positiveNumber(targetRecipient?.amountSats) || totalAmountSats,
+          targetRecipientAmountSats ||
+          positiveNumber(targetRecipient?.amountSats) ||
+          (recipients.length === 1 ? totalAmountSats : 0),
+        attachedCredits:
+          targetAttachedCredits.length > 0
+            ? targetAttachedCredits
+            : undefined,
         attachment: Object.keys(attachment).length > 0 ? attachment : undefined,
         confirmed,
         createdAt,
@@ -11873,6 +12043,9 @@ function mailMessageProjectionRank(message) {
     message?.confirmed === true || message?.status === "confirmed" ? 1 : 0;
   const protocol = bondTagForKind(message?.protocolKind) ? 2 : 0;
   const content = [
+    ...(Array.isArray(message?.attachedCredits)
+      ? message.attachedCredits
+      : []),
     message?.attachment,
     message?.memo,
     message?.subject,
@@ -11896,9 +12069,22 @@ function mergeMailProjectionMessage(current, incoming) {
       ? incoming
       : current;
   const secondary = primary === incoming ? current : incoming;
+  const currentConfirmed =
+    current?.confirmed === true || current?.status === "confirmed";
+  const incomingConfirmed =
+    incoming?.confirmed === true || incoming?.status === "confirmed";
+  const attachedCredits =
+    currentConfirmed && incomingConfirmed
+      ? current.attachedCredits
+      : currentConfirmed !== incomingConfirmed
+        ? (currentConfirmed
+            ? current.attachedCredits
+            : incoming.attachedCredits)
+        : primary.attachedCredits ?? secondary.attachedCredits;
   return {
     ...secondary,
     ...primary,
+    attachedCredits,
     attachment: primary.attachment ?? secondary.attachment,
     confirmedAt: primary.confirmedAt ?? secondary.confirmedAt,
     createdAt: primary.createdAt ?? secondary.createdAt,
@@ -11982,6 +12168,64 @@ export async function proofIndexAddressMailPayload(network, address) {
               )) = ANY($2::text[])
             )
           )
+      ),
+      candidate_mail_events AS (
+        SELECT e.event_id, e.network, e.txid
+        FROM proof_indexer.events e
+        JOIN candidate_events candidate
+          ON candidate.event_id = e.event_id
+        WHERE e.network = $1
+          AND e.valid = true
+          AND e.kind = ANY($3::text[])
+          AND e.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+        ORDER BY
+          COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+          e.txid DESC,
+          e.event_id DESC
+        LIMIT 1000
+      ),
+      candidate_mail_transactions AS (
+        SELECT DISTINCT network, txid
+        FROM candidate_mail_events
+      ),
+      canonical_work_attachments AS (
+        SELECT
+          transfer_event.network,
+          transfer_event.txid,
+          jsonb_agg(
+            transfer_event.payload || jsonb_build_object(
+              'eventId', transfer_event.event_id
+            )
+            ORDER BY
+              CASE
+                WHEN COALESCE(transfer_event.payload->>'protocolVout', '') ~ '^[0-9]+$'
+                  THEN (transfer_event.payload->>'protocolVout')::numeric
+                ELSE 999999999
+              END,
+              transfer_event.event_id
+          ) AS attached_credit_events
+        FROM proof_indexer.events transfer_event
+        JOIN candidate_mail_transactions candidate_mail
+          ON candidate_mail.network = transfer_event.network
+         AND candidate_mail.txid = transfer_event.txid
+        JOIN proof_indexer.transactions transfer_transaction
+          ON transfer_transaction.network = transfer_event.network
+         AND transfer_transaction.txid = transfer_event.txid
+         AND transfer_transaction.status = 'confirmed'
+         AND transfer_event.block_height = transfer_transaction.block_height
+        JOIN proof_indexer.blocks transfer_block
+          ON transfer_block.network = transfer_transaction.network
+         AND transfer_block.block_hash = transfer_transaction.block_hash
+         AND transfer_block.height = transfer_transaction.block_height
+         AND transfer_block.canonical = true
+        WHERE transfer_event.network = $1
+          AND transfer_event.kind = 'token-transfer'
+          AND transfer_event.status = 'confirmed'
+          AND transfer_event.valid = true
+          AND lower(COALESCE(transfer_event.payload->>'tokenId', '')) = $4
+          AND lower(COALESCE(transfer_event.payload->>'blockHash', '')) =
+            transfer_transaction.block_hash
+        GROUP BY transfer_event.network, transfer_event.txid
       )
       SELECT
         e.payload,
@@ -12004,6 +12248,10 @@ export async function proofIndexAddressMailPayload(network, address) {
         m.body_text,
         m.amount_sats,
         COALESCE(
+          canonical_work_attachments.attached_credit_events,
+          '[]'::jsonb
+        ) AS attached_credit_events,
+        COALESCE(
           jsonb_agg(
             jsonb_build_object(
               'address', ep.address,
@@ -12023,7 +12271,10 @@ export async function proofIndexAddressMailPayload(network, address) {
        AND t.txid = e.txid
       LEFT JOIN proof_indexer.event_participants ep
         ON ep.event_id = e.event_id
-      JOIN candidate_events ce
+      LEFT JOIN canonical_work_attachments
+        ON canonical_work_attachments.network = e.network
+       AND canonical_work_attachments.txid = e.txid
+      JOIN candidate_mail_events ce
         ON ce.event_id = e.event_id
       WHERE e.network = $1
         AND e.valid = true
@@ -12045,14 +12296,15 @@ export async function proofIndexAddressMailPayload(network, address) {
         m.sender_address,
         m.parent_txid,
         m.body_text,
-        m.amount_sats
+        m.amount_sats,
+        canonical_work_attachments.attached_credit_events
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC
       LIMIT 1000
     `,
-    [network, addressCandidates, ADDRESS_MAIL_EVENT_KINDS],
+    [network, addressCandidates, ADDRESS_MAIL_EVENT_KINDS, WORK_TOKEN_ID],
   );
 
   const transactionOverlayResult = await pool.query(
@@ -12088,6 +12340,7 @@ export async function proofIndexAddressMailPayload(network, address) {
             THEN (t.raw_tx->'item'->>'amountSats')::bigint
           ELSE NULL
         END AS amount_sats,
+        '[]'::jsonb AS attached_credit_events,
         '[]'::jsonb AS participants
       FROM proof_indexer.transactions t
       WHERE t.network = $1

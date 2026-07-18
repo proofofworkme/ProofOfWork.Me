@@ -388,12 +388,23 @@ Useful controls:
 
 Useful sorting:
 
-- Highest proofs.
+- Highest signal, with a visible `Proofs | WORK` switch across Inbox,
+  Incoming, Sent, Outbox, Favorites, Archive, custom folders, and the
+  Computer Files workspace.
+- Proof signal ranks the direct proofs carried by each mail transaction.
+- WORK signal ranks exact 8-decimal WORK atoms, not a live proof-price
+  conversion. Inbound mail counts only canonical WORK addressed to that
+  mailbox; outbound mail totals canonical WORK sent to all recipients.
+- WORK ties fall back to proofs, then newest mail, then txid so refreshes keep
+  a deterministic order. Mail without canonical WORK has a zero WORK signal.
 - Newest.
 - Oldest.
 - Thread.
 - Favorites first, if needed later.
 - Largest attachment and file type for Files.
+
+The standalone public Desktop remains proof-ranked. The WORK signal switch is
+mailbox state for the connected Computer, not a new public file-ranking rule.
 
 ## Sync Considerations
 

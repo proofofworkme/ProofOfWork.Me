@@ -139,6 +139,12 @@ const MAIL_INDEXED_RECENT_TX_PAGES = Number(
 const MAIL_BODY_REPAIR_MAX_TXS = Number(
   process.env.MAIL_BODY_REPAIR_MAX_TXS ?? 12,
 );
+const MAIL_PENDING_WORK_REPAIR_MAX_TXS = Number(
+  process.env.MAIL_PENDING_WORK_REPAIR_MAX_TXS ?? 12,
+);
+const MAIL_PENDING_WORK_REPAIR_WAIT_MS = Number(
+  process.env.MAIL_PENDING_WORK_REPAIR_WAIT_MS ?? 1_500,
+);
 const MAIL_INDEXED_EVENT_OVERLAY_LIMIT = Number(
   process.env.MAIL_INDEXED_EVENT_OVERLAY_LIMIT ?? 100,
 );
@@ -2622,6 +2628,7 @@ async function tokenPayloadWithRecoveredWalletWorkTransfers(
   const recoveredTransfers = await recoveredWorkTransfersForAddresses(
     addresses,
     network,
+    { maxPages: 1 },
   ).catch((error) => {
     console.error(
       `Recovered WORK wallet transfer overlay failed: ${errorSummary(error)}`,
@@ -5883,6 +5890,22 @@ async function fetchTransactionWithSourceFallback(txid, network) {
   }
 
   throw primaryError ?? new Error(`Transaction lookup failed for ${txid}.`);
+}
+
+async function fetchPendingMailTransactionFromFirstParty(txid, network) {
+  const rpcTx = await fetchTransactionFromBitcoinRpc(txid, network).catch(
+    () => null,
+  );
+  if (rpcTx) {
+    return rpcTx;
+  }
+  const electrumTx = await fetchTransactionFromElectrum(txid, network).catch(
+    () => null,
+  );
+  if (electrumTx) {
+    return electrumTx;
+  }
+  return fetchTransactionFromBase(mempoolBase(network), txid);
 }
 
 function coreScriptTypeToMempoolType(type) {
@@ -11008,7 +11031,11 @@ function workTransfersFromTransactions(txs, network) {
   );
 }
 
-async function recoveredWorkTransfersForAddresses(addresses, network) {
+async function recoveredWorkTransfersForAddresses(
+  addresses,
+  network,
+  options = {},
+) {
   const safeAddresses = [
     ...new Set(
       (Array.isArray(addresses) ? addresses : [])
@@ -11033,8 +11060,11 @@ async function recoveredWorkTransfersForAddresses(addresses, network) {
           return [];
         })
       : [];
+  const maxPages = Number.isSafeInteger(Number(options.maxPages))
+    ? Math.max(0, Number(options.maxPages))
+    : TOKEN_ADDRESS_TRANSFER_RECOVERY_MAX_PAGES;
   const txGroups =
-    TOKEN_ADDRESS_TRANSFER_RECOVERY_MAX_PAGES > 0
+    maxPages > 0
       ? await payloadWithFallbackAfterMs(
           Promise.all(
             safeAddresses.map((address) =>
@@ -11042,7 +11072,7 @@ async function recoveredWorkTransfersForAddresses(addresses, network) {
                 fetchAddressTransactionsViaMempoolPagination(
                   address,
                   network,
-                  TOKEN_ADDRESS_TRANSFER_RECOVERY_MAX_PAGES,
+                  maxPages,
                 ),
                 [],
                 Math.min(
@@ -17297,7 +17327,12 @@ function inboxMessagesFromTransactions(txs, address, network) {
     const protocolMessage = extractProtocolMemo(vout);
     const amount = receivedPaymentAmount(vout, address);
     const recipients = protocolPaymentOutputs(vout);
-    const attachedCredits = attachedWorkCreditsFromVout(vout, recipients, network);
+    const confirmed = transactionConfirmed(tx);
+    const attachedCredits = confirmed
+      ? []
+      : attachedWorkCreditsFromVout(vout, recipients, network).filter(
+          (credit) => samePaymentAddress(credit.recipientAddress, address),
+        );
 
     if (!protocolMessage || amount <= 0) {
       return [];
@@ -17310,7 +17345,7 @@ function inboxMessagesFromTransactions(txs, address, network) {
       attachedCredits:
         attachedCredits.length > 0 ? attachedCredits : undefined,
       attachment: protocolMessage.attachment,
-      confirmed: transactionConfirmed(tx),
+      confirmed,
       createdAt: new Date(blockTime).toISOString(),
       from: sender,
       memo: protocolMessage.memo,
@@ -17396,20 +17431,26 @@ function inboxMessagesFromActivityItems(items, address, network) {
     }
     const actor = String(item?.actor ?? item?.senderAddress ?? "").trim();
     const recipients = mailRecipientsFromActivityItem(item);
-    const attachedCredits = mailAttachedCreditsFromRecord(item, network);
-    const targetRecipient = recipients.find(
+    const attachedCredits = mailAttachedCreditsFromRecord(item, network).filter(
+      (credit) => samePaymentAddress(credit.recipientAddress, address),
+    );
+    const targetRecipients = recipients.filter(
       (recipient) => mailAddressKey(recipient.address) === targetKey,
     );
-    if (!targetRecipient) {
+    if (targetRecipients.length === 0) {
       return [];
     }
+    const targetAmountSats = targetRecipients.reduce(
+      (total, recipient) => total + numericValue(recipient.amountSats),
+      0,
+    );
     const createdAt =
       item?.createdAt ?? item?.confirmedAt ?? new Date().toISOString();
     return [
       {
         amountSats:
-          numericValue(targetRecipient.amountSats) ||
-          numericValue(item?.amountSats),
+          targetAmountSats ||
+          (recipients.length === 1 ? numericValue(item?.amountSats) : 0),
         attachment: item?.attachment,
         attachedCredits:
           attachedCredits.length > 0 ? attachedCredits : undefined,
@@ -17441,13 +17482,15 @@ function sentMessagesFromTransactions(txs, address, network) {
     const protocolMessage = extractProtocolMemo(vout);
     const recipients = protocolPaymentOutputs(vout);
     const payment = recipients[0];
-    const attachedCredits = attachedWorkCreditsFromVout(vout, recipients, network);
+    const confirmed = transactionConfirmed(tx);
+    const attachedCredits = confirmed
+      ? []
+      : attachedWorkCreditsFromVout(vout, recipients, network);
     const txid = transactionTxid(tx);
     if (!protocolMessage || !payment || !txid) {
       return [];
     }
 
-    const confirmed = transactionConfirmed(tx);
     const blockTime = tokenTransactionTime(tx);
     const createdAt = new Date(blockTime).toISOString();
 
@@ -23255,9 +23298,21 @@ async function walletScopedTokenPayload(
     { requireCurrent },
   );
   if (addressScopedPayload) {
-    return requireCurrent
-      ? { ...addressScopedPayload, authoritativeWallet: true }
+    const recoveredPayload = scope === WORK_TOKEN_ID
+      ? await payloadWithFallbackAfterMs(
+          tokenPayloadWithRecoveredWalletWorkTransfers(
+            addressScopedPayload,
+            network,
+            scope,
+            recoveryAddresses,
+          ),
+          addressScopedPayload,
+          WALLET_SCOPED_RECOVERY_WAIT_MS,
+        )
       : addressScopedPayload;
+    return requireCurrent
+      ? { ...recoveredPayload, authoritativeWallet: true }
+      : recoveredPayload;
   }
   if (requireCurrent) {
     const unavailable = freshDataUnavailableError(
@@ -36905,9 +36960,43 @@ function mergeMailMessageLists(indexedMessages, scannedMessages) {
     }
 
     const current = merged.get(message.txid);
-    if (!current || mailMessageRichness(message) >= mailMessageRichness(current)) {
+    if (!current) {
       merged.set(message.txid, message);
+      continue;
     }
+    const messageConfirmed =
+      message?.confirmed === true || message?.status === "confirmed";
+    const currentConfirmed =
+      current?.confirmed === true || current?.status === "confirmed";
+    const messagePreferred =
+      messageConfirmed !== currentConfirmed
+        ? messageConfirmed
+        : mailMessageRichness(message) >= mailMessageRichness(current);
+    const primary = messagePreferred ? message : current;
+    const secondary = messagePreferred ? current : message;
+    const attachedCredits =
+      currentConfirmed && messageConfirmed
+        ? current.attachedCredits
+        : currentConfirmed !== messageConfirmed
+          ? (currentConfirmed
+              ? current.attachedCredits
+              : message.attachedCredits)
+          : primary.attachedCredits ?? secondary.attachedCredits;
+    merged.set(message.txid, {
+      ...secondary,
+      ...primary,
+      attachedCredits,
+      attachment: primary.attachment ?? secondary.attachment,
+      confirmedAt: primary.confirmedAt ?? secondary.confirmedAt,
+      createdAt: primary.createdAt ?? secondary.createdAt,
+      lastCheckedAt: primary.lastCheckedAt ?? secondary.lastCheckedAt,
+      memo: primary.memo || secondary.memo,
+      parentTxid: primary.parentTxid ?? secondary.parentTxid,
+      recipients: primary.recipients ?? secondary.recipients,
+      replyTo: primary.replyTo || secondary.replyTo,
+      subject: primary.subject ?? secondary.subject,
+      to: primary.to || secondary.to,
+    });
   }
 
   return [...merged.values()].sort(
@@ -37003,6 +37092,126 @@ function mergeRepairedMailMessage(message, recovered) {
     ...(recovered.from && recovered.from !== "Unknown"
       ? { from: recovered.from }
       : {}),
+  };
+}
+
+function mailMessageNeedsPendingWorkRepair(message, folder) {
+  const txid = String(message?.txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(txid)) {
+    return false;
+  }
+  const pending =
+    folder === "inbox"
+      ? message?.confirmed !== true
+      : String(message?.status ?? "pending").trim().toLowerCase() === "pending";
+  return (
+    pending &&
+    (!Array.isArray(message?.attachedCredits) ||
+      message.attachedCredits.length === 0)
+  );
+}
+
+async function repairPendingMailWorkAttachments(payload, address, network) {
+  if (!payload || network !== "livenet") {
+    return payload;
+  }
+  const inboxMessages = Array.isArray(payload.inboxMessages)
+    ? payload.inboxMessages
+    : [];
+  const sentMessages = Array.isArray(payload.sentMessages)
+    ? payload.sentMessages
+    : [];
+  const repairTxids = [
+    ...new Set([
+      ...inboxMessages
+        .filter((message) =>
+          mailMessageNeedsPendingWorkRepair(message, "inbox"),
+        )
+        .map((message) => String(message.txid).trim().toLowerCase()),
+      ...sentMessages
+        .filter((message) =>
+          mailMessageNeedsPendingWorkRepair(message, "sent"),
+        )
+        .map((message) => String(message.txid).trim().toLowerCase()),
+    ]),
+  ].slice(
+    0,
+    Math.max(0, Math.floor(MAIL_PENDING_WORK_REPAIR_MAX_TXS)),
+  );
+  if (repairTxids.length === 0) {
+    return payload;
+  }
+
+  const recoveredByTxid = new Map();
+  const settled = await Promise.allSettled(
+    repairTxids.map(async (txid) => {
+      const tx = await payloadWithFallbackAfterMs(
+        fetchPendingMailTransactionFromFirstParty(txid, network),
+        null,
+        Math.max(100, Math.floor(MAIL_PENDING_WORK_REPAIR_WAIT_MS)),
+      );
+      if (
+        !tx ||
+        transactionTxid(tx) !== txid ||
+        transactionConfirmed(tx)
+      ) {
+        return;
+      }
+      recoveredByTxid.set(txid, {
+        inbox: inboxMessagesFromTransactions([tx], address, network),
+        sent: sentMessagesFromTransactions([tx], address, network),
+      });
+    }),
+  );
+  for (const result of settled) {
+    if (result.status === "rejected") {
+      console.error(
+        `Pending mail WORK attachment repair failed: ${errorSummary(result.reason)}`,
+      );
+    }
+  }
+
+  let repairedPendingWorkAttachments = 0;
+  const repairList = (messages, folder) =>
+    messages.map((message) => {
+      if (!mailMessageNeedsPendingWorkRepair(message, folder)) {
+        return message;
+      }
+      const txid = String(message.txid).trim().toLowerCase();
+      const recovered = recoveredByTxid.get(txid)?.[folder]?.find(
+        (candidate) =>
+          String(candidate?.txid ?? "").trim().toLowerCase() === txid &&
+          Array.isArray(candidate?.attachedCredits) &&
+          candidate.attachedCredits.length > 0,
+      );
+      if (!recovered) {
+        return message;
+      }
+      repairedPendingWorkAttachments += 1;
+      return {
+        ...message,
+        attachedCredits: recovered.attachedCredits,
+      };
+    });
+
+  const repairedInbox = repairList(inboxMessages, "inbox");
+  const repairedSent = repairList(sentMessages, "sent");
+  if (repairedPendingWorkAttachments === 0) {
+    return payload;
+  }
+  return {
+    ...payload,
+    inboxMessages: repairedInbox,
+    indexedAt: new Date().toISOString(),
+    sentMessages: repairedSent,
+    source: mergedSourceLabel(
+      payload.source,
+      "first-party-pending-work-attachment-repair",
+    ),
+    stats: {
+      ...(payload.stats ?? {}),
+      repairedPendingWorkAttachments,
+    },
   };
 }
 
@@ -37137,13 +37346,18 @@ async function recentNodeMailPayload(address, network, options = {}) {
   const maxPages = options.maxPages ?? MAIL_INDEXED_RECENT_TX_PAGES;
   const txs = await recentAddressMailTransactions(address, network, maxPages);
   const activityItems = mailActivityItemsFromTransactions(txs, network);
+  const mailboxActivityItems = activityItems.map((item) =>
+    item?.confirmed === true
+      ? { ...item, attachedCredits: undefined }
+      : item,
+  );
   const inboxMessages = mergeMailMessageLists(
     inboxMessagesFromTransactions(txs, address, network),
-    inboxMessagesFromActivityItems(activityItems, address, network),
+    inboxMessagesFromActivityItems(mailboxActivityItems, address, network),
   );
   const sentMessages = mergeMailMessageLists(
     sentMessagesFromTransactions(txs, address, network),
-    sentMessagesFromActivityItems(activityItems, address, network),
+    sentMessagesFromActivityItems(mailboxActivityItems, address, network),
   );
   return {
     address,
@@ -37252,7 +37466,8 @@ async function mailPayloadWithIndexedEventOverlay(payload, address, network) {
     return null;
   });
   const eventItems = (Array.isArray(eventPage?.items) ? eventPage.items : [])
-    .filter((item) => isMailRecoveryHistoryKind(item?.kind));
+    .filter((item) => isMailRecoveryHistoryKind(item?.kind))
+    .map((item) => ({ ...item, attachedCredits: undefined }));
   if (eventItems.length === 0) {
     return payload;
   }
@@ -37271,7 +37486,10 @@ async function mailPayloadWithIndexedEventOverlay(payload, address, network) {
   );
   const hydratedItems = hydratedResults.flatMap((result) => {
     if (result.status === "fulfilled") {
-      return result.value;
+      return result.value.map((item) => ({
+        ...item,
+        attachedCredits: undefined,
+      }));
     }
     console.error(
       `Proof index mail event hydration failed: ${errorSummary(result.reason)}`,
@@ -37358,6 +37576,7 @@ async function reconcileMailPayloadStatuses(payload, network) {
       return [
         {
           ...message,
+          attachedCredits: undefined,
           confirmed: true,
           confirmedAt: message.confirmedAt ?? status.indexedAt,
         },
@@ -37378,6 +37597,7 @@ async function reconcileMailPayloadStatuses(payload, network) {
     if (status?.status === "confirmed" && message.status !== "confirmed") {
       return {
         ...message,
+        attachedCredits: undefined,
         confirmedAt: message.confirmedAt ?? status.indexedAt,
         lastCheckedAt: status.indexedAt,
         status: "confirmed",
@@ -37491,7 +37711,15 @@ async function mailPayload(address, network, options = {}) {
           address,
           network,
         );
-        return reconcileMailPayloadStatuses(eventOverlayPayload, network);
+        const reconciled = await reconcileMailPayloadStatuses(
+          eventOverlayPayload,
+          network,
+        );
+        return repairPendingMailWorkAttachments(
+          reconciled,
+          address,
+          network,
+        );
       })(),
       indexedPayload,
       MAIL_INDEXED_ENRICH_WAIT_MS,
@@ -37510,8 +37738,18 @@ async function mailPayload(address, network, options = {}) {
           address,
           network,
         );
-        return reconcileMailPayloadStatuses(
-          await repairMailPayloadBodies(overlayPayload, address, network),
+        const repairedBodies = await repairMailPayloadBodies(
+          overlayPayload,
+          address,
+          network,
+        );
+        const reconciled = await reconcileMailPayloadStatuses(
+          repairedBodies,
+          network,
+        );
+        return repairPendingMailWorkAttachments(
+          reconciled,
+          address,
           network,
         );
       })(),

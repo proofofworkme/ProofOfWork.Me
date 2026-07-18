@@ -530,6 +530,22 @@ expect(
     !/const transfersByTxid = new Map/.test(app),
 );
 expect(
+  "pending transfer reservations survive refresh and self sends remain net zero",
+  /const TOKEN_LOCAL_PENDING_TRANSFER_TTL_MS = 30 \* 60_000/.test(app) &&
+    /function tokenTransferShouldSurviveRefresh[\s\S]*transfer\.confirmed !== false[\s\S]*TOKEN_LOCAL_PENDING_TRANSFER_TTL_MS/.test(
+      app,
+    ) &&
+    /function tokenTransfersWithPreservedLocalPending[\s\S]*mergeTokenTransfersForSpendability\([\s\S]*incoming,[\s\S]*current\.filter\(tokenTransferShouldSurviveRefresh\)/.test(
+      app,
+    ) &&
+    /const transfers = tokenTransfersWithPreservedLocalPending\([\s\S]*tokenTransfers[\s\S]*state\.transfers[\s\S]*const accepted = \{ \.\.\.state, listings, transfers \}/.test(
+      app,
+    ) &&
+    /transfer\.senderAddress[\s\S]*normalizedWalletAddress &&[\s\S]*transfer\.recipientAddress[\s\S]*!==[\s\S]*normalizedWalletAddress/.test(
+      app,
+    ),
+);
+expect(
   "bond WORK attachment visibility follows the route-specific eligibility gate",
   /const bondWorkAttachmentVisible = bondWorkAttachmentAllowed;/.test(app) &&
     /const inceptionWorkBalanceRequired =[\s\S]*activeBondConfig\.folder === "inception"/.test(
@@ -646,7 +662,118 @@ expect(
     ) &&
     /postProtocolPayments:[\s\S]*WORK_TOKEN_REGISTRY_ADDRESS[\s\S]*postProtocolPayloads:\s*attachedWorkPayloads/.test(
       app,
+  ),
+);
+const mailWorkSignalBlock =
+  app.match(
+    /function mailAttachedWorkCredits[\s\S]*?function attachmentHref/,
+  )?.[0] ?? "";
+const mailSortBlock =
+  app.match(/function sortMessages[\s\S]*?async function getWalletNetwork/)?.[0] ??
+  "";
+const computerMailBlock =
+  app.match(/const activeMessages = useMemo[\s\S]*?const selectedMessage/)?.[0] ??
+  "";
+const filesWorkspaceBlock =
+  app.match(/function FilesWorkspace[\s\S]*?function FilePreview/)?.[0] ?? "";
+const computerFilesSourceBlock =
+  app.match(/const allFileMessages[\s\S]*?const desktopFileMessages/)?.[0] ??
+  "";
+const desktopWorkspaceMailSortBlock =
+  app.match(/function DesktopWorkspace[\s\S]*?function FilesWorkspace/)?.[0] ??
+  "";
+expect(
+  "mail WORK signal accepts only canonical WORK and exact atoms",
+  /credit\.tokenId[\s\S]*WORK_TOKEN_ID/.test(mailWorkSignalBlock) &&
+    /normalizeTokenTicker\(credit\.ticker\) === WORK_TOKEN_TICKER/.test(
+      mailWorkSignalBlock,
+    ) &&
+    /workRecordAtoms\(credit\.amount, credit\.amountAtoms\)/.test(
+      mailWorkSignalBlock,
+    ) &&
+    /reduce\([\s\S]*total \+ atoms[\s\S]*0n/.test(mailWorkSignalBlock),
+);
+expect(
+  "mail WORK signal is direction-aware",
+  /message\.folder === "sent"[\s\S]*return workCredits/.test(
+    mailWorkSignalBlock,
+  ) &&
+    /samePaymentAddress\(credit\.recipientAddress, message\.to\)/.test(
+      mailWorkSignalBlock,
+    ) &&
+    /message\.folder !== "sent"[\s\S]*formatWorkAmount\(totalAtoms\)/.test(
+      mailWorkSignalBlock,
     ),
+);
+expect(
+  "mail highest signal sorting is exact and deterministic",
+  /signalMode: MailSignalMode = "proofs"/.test(mailSortBlock) &&
+    /signalMode === "work"[\s\S]*mailWorkSignalAtoms\(left\)[\s\S]*mailWorkSignalAtoms\(right\)/.test(
+      mailSortBlock,
+    ) &&
+    /leftWorkAtoms > rightWorkAtoms \? -1 : 1/.test(mailSortBlock) &&
+    /right\.amountSats - left\.amountSats[\s\S]*Date\.parse\(right\.createdAt\) - Date\.parse\(left\.createdAt\)[\s\S]*left\.txid\.localeCompare\(right\.txid\)/.test(
+      mailSortBlock,
+    ),
+);
+expect(
+  "Proofs and WORK signals cover every Computer mail collection",
+  [
+    'activeFolder === "inbox"',
+    'activeFolder === "incoming"',
+    'activeFolder === "sent"',
+    'activeFolder === "outbox"',
+    'activeFolder === "favorites"',
+    'activeFolder === "archive"',
+    'activeFolder === "files"',
+    'activeFolder === "custom"',
+  ].every((folderBranch) => computerMailBlock.includes(folderBranch)) &&
+    /sortMode,[\s\S]*mailSignalMode/.test(computerMailBlock),
+);
+expect(
+  "mail signal controls select highest-value mode",
+  /function MailSignalToggle/.test(app) &&
+    /aria-label="Mail ranking signal"/.test(app) &&
+    /setMailSignalMode\(signalMode\);[\s\S]*setSortMode\("value"\)/.test(app) &&
+    /Highest WORK/.test(app) &&
+    /Highest proofs/.test(app),
+);
+expect(
+  "Computer Files exposes WORK signal without changing public Desktop sorting",
+  /<MailSignalToggle[\s\S]*signalMode=\{signalMode\}/.test(
+    filesWorkspaceBlock,
+  ) &&
+    /showWorkSignal/.test(filesWorkspaceBlock) &&
+    !/<MailSignalToggle/.test(desktopWorkspaceMailSortBlock) &&
+    /sortMessages\([\s\S]*sortMode,[\s\S]*\)/.test(
+      desktopWorkspaceMailSortBlock,
+    ) &&
+    !/sortMessages\([\s\S]*sortMode,[\s\S]*signalMode/.test(
+      desktopWorkspaceMailSortBlock,
+    ),
+);
+expect(
+  "Computer Files remains confirmed-only for received and sent mail",
+  /message\.folder === "inbox"[\s\S]*message\.confirmed[\s\S]*sentDeliveryStatus\(message\) === "confirmed"/.test(
+    computerFilesSourceBlock,
+  ),
+);
+expect(
+  "mail merge and presentation preserve WORK attachments",
+  /function mergeSentAttachedCredits[\s\S]*sentDeliveryStatus\(preferred\) === "confirmed"[\s\S]*return preferred\.attachedCredits;[\s\S]*new Map<string, MailAttachedCredit>[\s\S]*fallback\.attachedCredits[\s\S]*preferred\.attachedCredits/.test(
+    app,
+  ) &&
+    /function mergeSentRecord[\s\S]*mergeSentAttachedCredits\(preferred, fallback\)/.test(
+      app,
+    ) &&
+    /function mergeSentMessageSources[\s\S]*confirmedCanonical[\s\S]*attachedCredits: canonical\.attachedCredits/.test(
+      app,
+    ) &&
+    /message\.network === "livenet"[\s\S]*sentDeliveryStatus\(message\) === "confirmed"[\s\S]*attachedCredits: undefined/.test(
+      app,
+    ) &&
+    (app.match(/mailWorkSignalLabel\(message\)/g)?.length ?? 0) >= 5 &&
+    /mailWorkSignalLabel\(threadMessage\)/.test(app),
 );
 const idMarketplaceCardBlock =
   app.match(/function IdMarketplaceCard[\s\S]*?function PendingIdEventList/)?.[0] ??
