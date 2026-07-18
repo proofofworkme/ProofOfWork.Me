@@ -3459,6 +3459,92 @@ check("public Log counts only valid confirmed or pending actions", async () => {
   assert.match(logHistorySource, /"e\.kind = ANY\(\$2::text\[\]\)"/u);
 });
 
+check("canonical Log membership is event-bounded and snapshot fenced", async () => {
+  const txid = "9".repeat(64);
+  const snapshotTime = "2026-07-14T12:00:00.000Z";
+  const reads = [];
+  const proofIndexCanonicalActivityPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexCanonicalActivityPayload",
+    {
+      indexedThroughBlockFromItems: () => 100,
+      ledgerSnapshotMetadata: async () => ({
+        generated_at: snapshotTime,
+        indexed_through_block: 105,
+        snapshot_id: "snapshot-105",
+      }),
+      latestProofIndexScanMetadata: async () => null,
+      newestDateIso: () => snapshotTime,
+      normalizeHistoryEventRows: (rows) =>
+        rows.map((row) => ({
+          canonicalMinerFeeCovered:
+            row.canonical_miner_fee_covered === true,
+          confirmed: row.status === "confirmed",
+          eventId: Number(row.event_id),
+          kind: "token-transfer",
+          network: "livenet",
+          txid: row.txid,
+        })),
+      normalizedTxid: (value) => String(value ?? "").trim().toLowerCase(),
+      PUBLIC_LOG_EVENT_KINDS: new Set(["token-transfer"]),
+      proofIndexPool: () => ({
+        async query(sql, params) {
+          reads.push({ params, sql: String(sql) });
+          return {
+            rows: [{
+              canonical_miner_fee_covered: true,
+              canonical_miner_fee_sats: 846,
+              event_id: 42,
+              status: "confirmed",
+              txid,
+            }],
+          };
+        },
+      }),
+      rowNumber: (row, key) => Number(row?.[key]) || 0,
+    },
+  );
+
+  const membership = await proofIndexCanonicalActivityPayload("livenet", {
+    eventIds: [42, 42],
+    snapshotId: "snapshot-105",
+  });
+  assert.equal(membership.membershipRestricted, true);
+  assert.deepEqual(Array.from(membership.membershipEventIds), [42]);
+  assert.equal(membership.activity[0].eventId, 42);
+  assert.equal(membership.canonicalMinerFeeCoverage.complete, true);
+  assert.equal(reads.length, 1);
+  assert.equal(reads[0].params[0], "livenet");
+  assert.deepEqual(Array.from(reads[0].params[1]), ["token-transfer"]);
+  assert.equal(reads[0].params[2], 105);
+  assert.equal(reads[0].params[3], snapshotTime);
+  assert.deepEqual(Array.from(reads[0].params[4]), [42]);
+  assert.match(
+    reads[0].sql,
+    /e\.event_id = ANY\(\$5::bigint\[\]\)/u,
+  );
+  assert.match(
+    reads[0].sql,
+    /e\.updated_at <= \$4::timestamptz/u,
+  );
+  assert.match(
+    reads[0].sql,
+    /transaction_row\.updated_at <= \$4::timestamptz/u,
+  );
+  assert.match(
+    reads[0].sql,
+    /canonical_block\.indexed_at <= \$4::timestamptz/u,
+  );
+  assert.equal(
+    await proofIndexCanonicalActivityPayload("livenet", {
+      eventIds: [],
+      snapshotId: "snapshot-105",
+    }),
+    null,
+  );
+  assert.equal(reads.length, 1);
+});
+
 check("canonical miner-fee coverage fails closed on partial normalized rows", async () => {
   const txid = "c".repeat(64);
   let activitySql = "";
@@ -4219,6 +4305,15 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       inceptionInvalidMintDispositionMatchesBond,
     },
   );
+  const inceptionVerifierBondActivity = isolatedFunction(
+    API_PATH,
+    "inceptionVerifierBondActivity",
+    {
+      inceptionBondHasExplicitlyRejectedMint,
+      isInceptionBondActivityItem: (item) =>
+        item?.kind === "inception-bond",
+    },
+  );
   const bondAttachedWorkValueDetails = isolatedFunction(
     API_PATH,
     "bondAttachedWorkValueDetails",
@@ -4502,27 +4597,29 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
   assert.equal(summary.chartPoints.at(-1).networkValueSats, 814);
   assert.equal(summary.chartPoints.at(-1).confirmedSupply, 746);
 
-  const failedBondTxid =
-    "c9c9f4e382f598aa39b3be57adc8fe1defeb80e5216387d3af6b0948da232aff";
-  const failedBondAttempt = {
+  const rejectedBondTxids = [
+    "c9c9f4e382f598aa39b3be57adc8fe1defeb80e5216387d3af6b0948da232aff",
+    "45b226453dde5b4d61a6a036af299d11ebfdeb65054bf26438ebc6ebebbf00c3",
+    "e08080c1d86f0770dd6ebbabd98a9e066dc6043b548af7ecb7912fbbdfad4d50",
+  ];
+  const failedBondAttempts = rejectedBondTxids.map((failedBondTxid, index) => ({
     ...bond,
     amountSats: 1_000,
     attachedCredits: [
       {
-        amount: 100_000,
+        amount: 100_000 + index,
         protocolVout: 4,
         recipientAddress,
         tokenId: WORK_TOKEN_ID,
       },
     ],
-    blockHash:
-      "00000000000000000001db52a4485f7d1a1784b7ba6c5b93db1b20449ac2628b",
-    blockHeight: 958_383,
-    blockIndex: 2_421,
-    createdAt: "2026-07-13T03:18:30.000Z",
+    blockHash: String(index + 6).repeat(64),
+    blockHeight: 958_383 + index,
+    blockIndex: 2_421 + index,
+    createdAt: `2026-07-13T03:${18 + index}:30.000Z`,
     txid: failedBondTxid,
-  };
-  const rejectedInceptionMint = {
+  }));
+  const rejectedInceptionMints = rejectedBondTxids.map((failedBondTxid) => ({
     attemptedKind: "token-mint",
     confirmed: true,
     kind: "token-event-invalid",
@@ -4532,15 +4629,27 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
     tokenId: INCB_TOKEN_ID,
     txid: failedBondTxid,
     valid: false,
-  };
+  }));
   const failedAttemptLedger = {
     ...canonicalLedger,
-    activity: [...canonicalLedger.activity, failedBondAttempt],
+    activity: [...canonicalLedger.activity, ...failedBondAttempts],
     tokenState: {
       ...canonicalLedger.tokenState,
-      invalidEvents: [rejectedInceptionMint],
+      invalidEvents: rejectedInceptionMints,
     },
   };
+  const verifierBondActivity = inceptionVerifierBondActivity(
+    failedAttemptLedger.activity,
+    failedAttemptLedger.tokenState,
+  );
+  assert.ok(verifierBondActivity.includes(bond));
+  assert.ok(verifierBondActivity.includes(mutation));
+  assert.ok(
+    failedBondAttempts.every(
+      (attempt) => !verifierBondActivity.includes(attempt),
+    ),
+    "the ordered verifier must not resurrect explicitly rejected historical bonds",
+  );
   const summaryWithFailedAttempt = bondSummaryPayloadFromLedger(
     failedAttemptLedger,
     config,
@@ -4580,9 +4689,11 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
   assert.equal(summaryWithFailedAttempt.networkValueSats, 814);
   assert.deepEqual(summaryWithFailedAttempt.chartPoints, summary.chartPoints);
   assert.ok(
-    failedAttemptLedger.activity.includes(failedBondAttempt) &&
-      failedAttemptLedger.tokenState.invalidEvents.includes(
-        rejectedInceptionMint,
+    failedBondAttempts.every((attempt) =>
+      failedAttemptLedger.activity.includes(attempt),
+    ) &&
+      rejectedInceptionMints.every((event) =>
+        failedAttemptLedger.tokenState.invalidEvents.includes(event),
       ),
     "summary filtering leaves Log and invalid-history source rows intact",
   );
@@ -4597,10 +4708,10 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
     },
     config,
   );
-  assert.equal(unexplainedAttemptSummary.stats.confirmedBondActions, 2);
+  assert.equal(unexplainedAttemptSummary.stats.confirmedBondActions, 4);
   assert.equal(
     unexplainedAttemptSummary.actualValue.attachedWorkUnvaluedActions,
-    1,
+    3,
     "an unexplained missing mint remains fail-closed summary input",
   );
 
@@ -4614,7 +4725,7 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
           {
             confirmed: true,
             tokenId: INCB_TOKEN_ID,
-            txid: failedBondTxid,
+            txid: rejectedBondTxids[0],
           },
         ],
       },
@@ -4650,6 +4761,93 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
     sourceBondTxid: atomTxid,
     txid: atomTxid,
   };
+  const productionTxid =
+    "e1ecc4b4be95a6771801d516380eb20a0f8e3c0b2fb1045599a57d5a68fa1698";
+  const productionBlockHash =
+    "000000000000000000021fb7871138c76c262471fe3b178e8829d62cbf167ae8";
+  const productionSnapshotNetworkValueQ8 = "61429267056874120000000";
+  const productionAttachedValueQ8 = "11665710334419713836190";
+  const productionIssuanceValueQ8 = "11665710334474313836190";
+  const productionIssuanceUnits = 116_657_103_344_743;
+  const productionIssuanceValue = q8ToNumber(
+    productionIssuanceValueQ8,
+  );
+  const productionMint = {
+    ...inceptionMint({
+      attachedWorkAmount: 3_988_000,
+      attachedWorkLiveValueAtSendSats: q8ToNumber(
+        productionAttachedValueQ8,
+      ),
+    }),
+    amount: productionIssuanceUnits,
+    attachedWorkAmount: 3_988_000,
+    attachedWorkAmountAtoms: "398800000000000",
+    attachedWorkIssuanceUnits: 116_657_103_344_197,
+    attachedWorkLiveFloorAtSendSats:
+      614_292_670_568_741.2 / WORK_TOKEN_MAX_SUPPLY,
+    attachedWorkLiveValueAtSendQ8: productionAttachedValueQ8,
+    attachedWorkLiveValueAtSendSats: q8ToNumber(
+      productionAttachedValueQ8,
+    ),
+    blockHash: productionBlockHash,
+    blockHeight: 958_432,
+    blockIndex: 1_653,
+    confirmedIssuanceUnits: productionIssuanceUnits,
+    issuanceAmount: productionIssuanceUnits,
+    issuanceCheckpointBlockHash: productionBlockHash,
+    issuanceCheckpointBlockHeight: 958_432,
+    issuanceCheckpointBlockIndex: 1_653,
+    issuanceDustQ8: "13836190",
+    issuanceDustSats: 0.1383619,
+    issuanceFloorSats:
+      productionIssuanceValue / productionIssuanceUnits,
+    issuanceNetworkValueQ8: productionIssuanceValueQ8,
+    issuanceNetworkValueSats: productionIssuanceValue,
+    issuanceValueSnapshotBlockHash:
+      "0000000000000000000108134886191cca47cb3db5df607c7c5aa9a02e957b3f",
+    issuanceValueSnapshotBlockHeight: 958_431,
+    issuanceValueSnapshotCanonicalSummaryHash:
+      "5b44677748e3a68e1ea376f8a2226277d9a53907279aff8ac4d2ba56524c6cfb",
+    issuanceValueSnapshotGeneratedAt: "2026-07-17T21:12:25.822Z",
+    issuanceValueSnapshotId: "ff4bf2984490c79d326866e3",
+    issuanceValueSnapshotWorkNetworkValueQ8:
+      productionSnapshotNetworkValueQ8,
+    issuanceValueSnapshotWorkNetworkValueSats:
+      614_292_670_568_741.2,
+    sourceBondTxid: productionTxid,
+    txid: productionTxid,
+  };
+  assert.ok(
+    Math.abs(
+      productionMint.issuanceFloorSats * productionIssuanceUnits -
+        productionIssuanceValue,
+    ) > 0.01,
+    "the production-scale fixture must reproduce the unsafe float recomposition drift",
+  );
+  const productionIssuance = inceptionIssuanceMetadataFromMints([
+    productionMint,
+  ]);
+  assert.equal(productionIssuance.complete, true);
+  assert.equal(productionIssuance.canonicalMints, 1);
+  assert.equal(
+    productionIssuance.confirmedIssuanceUnits,
+    productionIssuanceUnits,
+  );
+  assert.equal(
+    108_304_295_462_803 + productionIssuance.confirmedIssuanceUnits,
+    224_961_398_807_546,
+    "the valid production bond advances supply without the three rejected attempts",
+  );
+  assert.equal(
+    233_298_041_090_722 -
+      [
+        2_925_137_643_008,
+        3_363_908_289_591,
+        2_047_596_350_577,
+      ].reduce((total, amount) => total + amount, 0),
+    224_961_398_807_546,
+    "the three explicit invalid dispositions account for the resurrected verifier supply",
+  );
   const oneAtomBond = {
     ...bond,
     attachedCredits: [
@@ -6566,7 +6764,7 @@ check("a timed-out worker child is terminated and reported failed", async () => 
   child.kill = (signal) => {
     kills.push(signal);
     if (signal === "SIGTERM") {
-      queueMicrotask(() => child.emit("exit", null, signal));
+      queueMicrotask(() => child.emit("close", null, signal));
     }
     return true;
   };
@@ -6575,6 +6773,9 @@ check("a timed-out worker child is terminated and reported failed", async () => 
     "runScript",
     {
       BACKFILL_CHILD_TIMEOUT_MS: 100,
+      CHILD_LINE_BUFFER_CHARS: 16_384,
+      CHILD_STOP_GRACE_MS: 5_000,
+      canonicalWorkerFailureFromLine: () => null,
       clearTimeout: (timer) => cancelledTimers.add(timer),
       path: { join: (...parts) => parts.join("/") },
       process: { env: {}, execPath: "node" },
@@ -6599,6 +6800,7 @@ check("the index worker retries a failed block cycle before going unhealthy", as
       BACKFILL_CHILD_TIMEOUT_MS: 1_000,
       BACKFILL_RETRIES: 2,
       BACKFILL_RETRY_DELAY_MS: 1,
+      canonicalWorkerFailureFromError: () => null,
       console: { error() {} },
       runScript: async () => {
         attempts += 1;
@@ -6610,6 +6812,7 @@ check("the index worker retries a failed block cycle before going unhealthy", as
         queueMicrotask(callback);
         return 1;
       },
+      workerSleep: async () => {},
     },
   );
   await runBackfillWithRetries({});
@@ -8725,7 +8928,7 @@ check("same-height pending membership versions the canonical Log snapshot", asyn
   const runCycleSource = topLevelFunctionSource(WORKER_PATH, "runCycle");
   assert.match(
     runCycleSource,
-    /const pendingStatus = await refreshPendingStatuses\(pool\);[\s\S]*await runBackfillWithRetries\(backfillEnv\);/u,
+    /await runBackfillWithRetries\(backfillEnv, runtime\);[\s\S]*const pendingStatus = await refreshPendingStatuses\(pool\);/u,
   );
 });
 
@@ -11028,6 +11231,10 @@ check("exact Log txid reads use indexed refs and trust an exact empty page", asy
         async query(sql, params) {
           queryReads.push({ params, sql });
           if (sql.includes("invalid_event_count")) {
+            assert.match(
+              sql,
+              /candidate\.status = 'pending'[\s\S]*terminal_tx\.status <> 'confirmed'/u,
+            );
             return {
               rows: [{
                 block_height: 955618,
@@ -11055,9 +11262,35 @@ check("exact Log txid reads use indexed refs and trust an exact empty page", asy
   assert.equal(result.queryDisposition, "confirmed-invalid-nonpublic");
   assert.match(queryReads[0].sql, /WITH matched_events AS/u);
   assert.match(queryReads[0].sql, /proof_indexer\.event_refs/u);
+  assert.match(
+    queryReads[0].sql,
+    /e\.updated_at <= \$4::timestamptz[\s\S]*e\.block_height <= \$3/u,
+  );
   assert.doesNotMatch(queryReads[0].sql, /payload @>/u);
-  assert.equal(queryReads[0].params[2], txid);
+  assert.equal(queryReads[0].params[2], 957913);
+  assert.equal(queryReads[0].params[3], "2026-07-13T00:00:00.000Z");
+  assert.equal(queryReads[0].params[4], txid);
   assert.match(queryReads[1].sql, /public_event_count/u);
+  assert.match(
+    queryReads[1].sql,
+    /candidate\.block_height = terminal_tx\.block_height/u,
+  );
+  assert.match(
+    queryReads[1].sql,
+    /candidate\.status = 'pending'[\s\S]*terminal_tx\.status <> 'confirmed'/u,
+  );
+  assert.match(
+    queryReads[1].sql,
+    /terminal_tx\.updated_at <= \$5::timestamptz/u,
+  );
+  assert.match(
+    queryReads[1].sql,
+    /canonical_block\.canonical = true[\s\S]*canonical_block\.indexed_at <= \$5/u,
+  );
+  assert.deepEqual(Array.from(queryReads[1].params.slice(3)), [
+    957913,
+    "2026-07-13T00:00:00.000Z",
+  ]);
   const nonpublicFilter = await proofIndexLogHistoryPayload(
     "livenet",
     "token-event-invalid",
@@ -11074,6 +11307,165 @@ check("exact Log txid reads use indexed refs and trust an exact empty page", asy
     topLevelFunctionSource(API_PATH, "handleRequest"),
     /exactLogHistoryMissPayload/u,
   );
+});
+
+check("stable exact Log authenticates only its bounded event membership", async () => {
+  const txid = "6".repeat(64);
+  const item = {
+    confirmed: true,
+    eventId: 42,
+    kind: "token-transfer",
+    network: "livenet",
+    txid,
+  };
+  let page = {
+    indexedThroughBlock: 105,
+    items: [item],
+    snapshotId: "snapshot-105",
+    totalCount: 1,
+  };
+  const membershipReads = [];
+  let membershipRestricted = true;
+  const definitivePinnedLogQueryDisposition = isolatedFunction(
+    API_PATH,
+    "definitivePinnedLogQueryDisposition",
+  );
+  for (const disposition of [
+    "confirmed-invalid-nonpublic",
+    "confirmed-nonpublic",
+    "nonpublic-kind-filter",
+    "terminal-nonpublic",
+  ]) {
+    assert.equal(
+      definitivePinnedLogQueryDisposition(disposition),
+      true,
+      `${disposition} must be a definitive authenticated empty Log result`,
+    );
+  }
+  const stableProofIndexLogHistoryPayload = isolatedFunction(
+    API_PATH,
+    "stableProofIndexLogHistoryPayload",
+    {
+      activityKey: (candidate) =>
+        [
+          candidate?.kind,
+          candidate?.network,
+          candidate?.txid,
+          candidate?.listingId ?? "",
+          candidate?.id ?? "",
+        ].join(":"),
+      definitivePinnedLogQueryDisposition,
+      freshDataUnavailableError: (message) => {
+        const error = new Error(message);
+        error.statusCode = 503;
+        return error;
+      },
+      payloadIndexedThroughBlockHash: (payload) =>
+        payload?.indexedThroughBlockHash ?? "",
+      payloadSnapshotId: (payload) => payload?.snapshotId ?? "",
+      proofIndexCanonicalActivityPayload: async (_network, options) => {
+        membershipReads.push(options);
+        return {
+          activity: [item],
+          canonicalMinerFeeCoverage: {
+            complete: true,
+            confirmedEvents: 1,
+            confirmedTransactions: 1,
+            coveredConfirmedEvents: 1,
+            coveredConfirmedTransactions: 1,
+            missingConfirmedEvents: 0,
+            missingConfirmedTransactions: 0,
+            missingConfirmedTxids: [],
+            source: "proof-indexer-normalized-input-output-totals",
+          },
+          indexedThroughBlock: 105,
+          membershipEventIds: [42],
+          membershipRestricted,
+          snapshotId: "snapshot-105",
+        };
+      },
+      proofIndexLogHistoryPayload: async () => page,
+      proofIndexLogHistoryReadEligibility: () => ({
+        pagination: { query: txid, snapshotId: "" },
+      }),
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock) || 0,
+      stableCanonicalLogSummaryPayload: async () => ({
+        indexedThroughBlock: 105,
+        indexedThroughBlockHash: "a".repeat(64),
+        snapshotId: "snapshot-105",
+        stats: { total: 10 },
+        totalCount: 10,
+      }),
+      verifiedCanonicalMinerFeeCoverage: (coverage) =>
+        coverage?.complete === true ? coverage : null,
+      verifyStableLogCheckpointAfterRead: async () => ({ exact: true }),
+    },
+  );
+
+  const result = await stableProofIndexLogHistoryPayload(
+    "livenet",
+    "",
+    new URLSearchParams({ q: txid }),
+  );
+  assert.equal(result.items[0].eventId, 42);
+  assert.equal(membershipReads.length, 1);
+  assert.equal(membershipReads[0].snapshotId, "snapshot-105");
+  assert.deepEqual(Array.from(membershipReads[0].eventIds), [42]);
+
+  membershipRestricted = false;
+  const outsideError = await rejection(
+    stableProofIndexLogHistoryPayload(
+      "livenet",
+      "",
+      new URLSearchParams({ q: txid }),
+    ),
+    (candidate) =>
+      candidate?.details?.code ===
+        "CANONICAL_LOG_EXACT_QUERY_OUTSIDE_SNAPSHOT",
+  );
+  assert.equal(outsideError.statusCode, 503);
+
+  page = {
+    ...page,
+    items: [],
+    queryDisposition: "confirmed-invalid-nonpublic",
+    totalCount: 0,
+  };
+  const readsBeforeEmpty = membershipReads.length;
+  const empty = await stableProofIndexLogHistoryPayload(
+    "livenet",
+    "",
+    new URLSearchParams({ q: txid }),
+  );
+  assert.equal(empty.queryDisposition, "confirmed-invalid-nonpublic");
+  assert.equal(membershipReads.length, readsBeforeEmpty);
+
+  for (const disposition of [
+    "nonpublic-kind-filter",
+    "terminal-nonpublic",
+  ]) {
+    page = { ...page, queryDisposition: disposition };
+    const definitiveEmpty = await stableProofIndexLogHistoryPayload(
+      "livenet",
+      "",
+      new URLSearchParams({ q: txid }),
+    );
+    assert.equal(definitiveEmpty.queryDisposition, disposition);
+    assert.equal(membershipReads.length, readsBeforeEmpty);
+  }
+
+  page = { ...page, queryDisposition: undefined };
+  const missingError = await rejection(
+    stableProofIndexLogHistoryPayload(
+      "livenet",
+      "",
+      new URLSearchParams({ q: txid }),
+    ),
+    (candidate) =>
+      candidate?.details?.code === "CANONICAL_LOG_EXACT_QUERY_NOT_IN_SNAPSHOT",
+  );
+  assert.equal(missingError.statusCode, 503);
 });
 
 check("ambiguous exact Log misses fail fast instead of scanning all history", async () => {
@@ -12492,6 +12884,14 @@ check("pending ID checks fall back to supported Electrum history", async () => {
   );
 });
 
+const acceptCanonicalProtocolTransactionContent = () => {};
+const canonicalVerificationFailureRecord = (error, { height, txid }) => ({
+  error: error?.message ?? String(error),
+  height,
+  phase: "block-scan-verification",
+  txid,
+});
+
 check("block verification completes before the atomic block transaction", async () => {
   const events = [];
   const txid = "4".repeat(64);
@@ -12524,8 +12924,12 @@ check("block verification completes before the atomic block transaction", async 
         throw new Error(`unexpected RPC method ${method}`);
       },
       latestBlockScanCheckpoint: async () => ({ blockHash: "h100", height: 100 }),
+      assertCanonicalProtocolTransactionContent:
+        acceptCanonicalProtocolTransactionContent,
       assertCanonicalBlockEnvelope: () => {},
       assertHydratedProtocolTransaction: () => {},
+      canonicalBlockScanVerificationFailureRecord:
+        canonicalVerificationFailureRecord,
       persistPreparedProtocolItems: async () => {
         events.push("persist");
         return { indexed: 1, skipped: 0 };
@@ -12608,6 +13012,8 @@ check("consecutive Inception blocks publish each exact H-1 checkpoint before ver
       CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
       NETWORK: "livenet",
       STORE_CANONICAL_SUMMARY_SNAPSHOT: true,
+      assertCanonicalProtocolTransactionContent:
+        acceptCanonicalProtocolTransactionContent,
       assertCanonicalBlockEnvelope: () => {},
       assertHydratedProtocolTransaction: () => {},
       bitcoinRpc: async (method, params = []) => {
@@ -12629,6 +13035,8 @@ check("consecutive Inception blocks publish each exact H-1 checkpoint before ver
         throw new Error(`unexpected RPC method ${method}`);
       },
       canonicalRebuildCheckpointValue,
+      canonicalBlockScanVerificationFailureRecord:
+        canonicalVerificationFailureRecord,
       latestBlockScanCheckpoint: async () => ({
         blockHash: hashes[100],
         height: 100,
@@ -12730,6 +13138,8 @@ check("an invalid Inception H-1 barrier cannot begin the next block", async () =
       CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
       NETWORK: "livenet",
       STORE_CANONICAL_SUMMARY_SNAPSHOT: true,
+      assertCanonicalProtocolTransactionContent:
+        acceptCanonicalProtocolTransactionContent,
       assertCanonicalBlockEnvelope: () => {},
       bitcoinRpc: async (method, params = []) => {
         if (method === "getblockcount") return 101;
@@ -12752,6 +13162,8 @@ check("an invalid Inception H-1 barrier cannot begin the next block", async () =
         blockHash: checkpointHash,
         height: 100,
       }),
+      canonicalBlockScanVerificationFailureRecord:
+        canonicalVerificationFailureRecord,
       proofIndexerMetaValue: async () => null,
       protocolMessagesContainInceptionBond: () => true,
       protocolMessagesFromTx: () => [
@@ -12817,8 +13229,12 @@ check("a verifier error cannot begin or advance a block checkpoint", async () =>
         throw new Error(`unexpected RPC method ${method}`);
       },
       latestBlockScanCheckpoint: async () => ({ blockHash: "h100", height: 100 }),
+      assertCanonicalProtocolTransactionContent:
+        acceptCanonicalProtocolTransactionContent,
       assertCanonicalBlockEnvelope: () => {},
       assertHydratedProtocolTransaction: () => {},
+      canonicalBlockScanVerificationFailureRecord:
+        canonicalVerificationFailureRecord,
       persistPreparedProtocolItems: async () => ({ indexed: 1, skipped: 0 }),
       removeVolatileWorkMintDecisionEvents: async () => 0,
       preparedProtocolItemsForTx: async () => {
@@ -12877,6 +13293,8 @@ check("the protocol tx target defers a later block but never splits one", async 
         CANONICAL_REBUILD: false,
         CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
         NETWORK: "livenet",
+        assertCanonicalProtocolTransactionContent:
+          acceptCanonicalProtocolTransactionContent,
         assertCanonicalBlockEnvelope: () => {},
         assertHydratedProtocolTransaction: () => {},
         bitcoinRpc: async (method, params = []) => {
@@ -12889,6 +13307,8 @@ check("the protocol tx target defers a later block but never splits one", async 
           throw new Error(`unexpected RPC method ${method}`);
         },
         canonicalRebuildCheckpointValue: () => null,
+        canonicalBlockScanVerificationFailureRecord:
+          canonicalVerificationFailureRecord,
         latestBlockScanCheckpoint: async () => ({ blockHash: "h100", height: 100 }),
         persistCanonicalBlock: async (_client, _block, height) => {
           persistedBlocks.push(height);
@@ -13374,6 +13794,169 @@ check("reserved bond credits reject generic create and mint supply", () => {
   );
 });
 
+check("atomic WORK send2 attachments dispatch both Inception verifier scopes", () => {
+  const txid = "a".repeat(64);
+  const workTokenId = "b".repeat(64);
+  const incbTokenId = "c".repeat(64);
+  const tokenScopesForProtocolMessage = isolatedFunction(
+    BACKFILL_PATH,
+    "tokenScopesForProtocolMessage",
+    {
+      decodeBase64UrlJson: () => null,
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
+    },
+  );
+  const recoveryEndpointSpecs = isolatedFunction(
+    BACKFILL_PATH,
+    "recoveryEndpointSpecs",
+    {
+      INCB_TOKEN_ID: incbTokenId,
+      INCEPTION_BOND_MEMO: "incb",
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
+      tokenScopesForProtocolMessage,
+    },
+  );
+  const messages = [
+    { prefix: "pwm1:", text: "pwm1:m:incb" },
+    {
+      prefix: "pwt1:",
+      text: `pwt1:send2:${workTokenId}:398800000000000:holder`,
+    },
+  ];
+  const specs = messages.flatMap((message) =>
+    recoveryEndpointSpecs(txid, message),
+  );
+  assert.deepEqual(
+    specs.map((spec) => spec.params.asset),
+    [incbTokenId, workTokenId],
+  );
+  assert.equal(
+    JSON.stringify(tokenScopesForProtocolMessage(txid, messages[1].text)),
+    JSON.stringify([workTokenId]),
+  );
+});
+
+check("backfill persistence accepts exact-Q8 INCB issuance above float precision", () => {
+  const txid =
+    "e1ecc4b4be95a6771801d516380eb20a0f8e3c0b2fb1045599a57d5a68fa1698";
+  const tokenId =
+    "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+  const blockHash =
+    "000000000000000000021fb7871138c76c262471fe3b178e8829d62cbf167ae8";
+  const incbIssuanceMetadataInvalidReason = isolatedFunction(
+    BACKFILL_PATH,
+    "incbIssuanceMetadataInvalidReason",
+    {
+      INCB_ISSUANCE_ACCOUNTING_MODEL:
+        "canonical-pre-bond-live-network-value-v2",
+      INCB_VALUE_SNAPSHOT_MODEL: "canonical-summary-h-minus-one-v1",
+      VALUE_Q8_SCALE,
+      WORK_TOKEN_MAX_SUPPLY: 21_000_000,
+      WORK_UNIT_SCALE,
+      canonicalIntegerText: (value, { positive = false } = {}) => {
+        const text = String(value ?? "").trim();
+        return (positive ? /^[1-9]\d*$/u : /^\d+$/u).test(text) ? text : "";
+      },
+      canonicalWorkAtomsText,
+      decimalValueToQ8,
+      formatWorkAtoms,
+      q8ToNumber,
+    },
+  );
+  const canonicalIncbIssuanceMintProjection = (item) =>
+    String(item?.tokenId ?? "").trim().toLowerCase() === tokenId &&
+    !incbIssuanceMetadataInvalidReason(item);
+  const canonicalBondMintProjection = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalBondMintProjection",
+    {
+      BOND_TAGS: [{ ticker: "INCB", tokenId }],
+      canonicalIncbIssuanceMintProjection,
+    },
+  );
+  const reservedBondCreditViolationReason = isolatedFunction(
+    BACKFILL_PATH,
+    "reservedBondCreditViolationReason",
+    {
+      BOND_TOKEN_IDS: new Set([tokenId]),
+      BOND_TOKEN_TICKERS: new Set(["INCB"]),
+      canonicalBondMintProjection,
+    },
+  );
+  const mint = {
+    amount: "116657103344743",
+    amountSats: 0,
+    attachedWorkAmount: 3_988_000,
+    attachedWorkAmountAtoms: "398800000000000",
+    attachedWorkIssuanceUnits: "116657103344197",
+    attachedWorkLiveFloorAtSendSats: 29_252_031.931844823,
+    attachedWorkLiveValueAtSendQ8: "11665710334419713836190",
+    attachedWorkLiveValueAtSendSats: 116_657_103_344_197.14,
+    blockHash,
+    blockHeight: 958432,
+    blockIndex: 1653,
+    bondRecipientAddress: "1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT",
+    bondRecipientAmountSats: "546",
+    bondRecipientVout: 0,
+    confirmed: true,
+    confirmedIssuanceUnits: "116657103344743",
+    directProofIssuanceUnits: "546",
+    issuanceAccountingModel: "canonical-pre-bond-live-network-value-v2",
+    issuanceAmount: "116657103344743",
+    issuanceCheckpointBlockHash: blockHash,
+    issuanceCheckpointBlockHeight: 958432,
+    issuanceCheckpointBlockIndex: 1653,
+    issuanceCheckpointMode: "bond-transaction-provenance",
+    issuanceDustQ8: "13836190",
+    issuanceDustSats: 0.1383619,
+    issuanceFloorSats: 1.000000000000001,
+    issuanceNetworkValueQ8: "11665710334474313836190",
+    issuanceNetworkValueSats: 116_657_103_344_743.14,
+    issuanceUnitSats: 1,
+    issuanceValuationFixedAtSend: true,
+    issuanceValueSnapshotBlockHash:
+      "0000000000000000000108134886191cca47cb3db5df607c7c5aa9a02e957b3f",
+    issuanceValueSnapshotBlockHeight: 958431,
+    issuanceValueSnapshotCanonicalSummaryHash:
+      "5b44677748e3a68e1ea376f8a2226277d9a53907279aff8ac4d2ba56524c6cfb",
+    issuanceValueSnapshotGeneratedAt: "2026-07-17T21:12:25.822Z",
+    issuanceValueSnapshotId: "ff4bf2984490c79d326866e3",
+    issuanceValueSnapshotMode: "canonical-summary-refresh",
+    issuanceValueSnapshotModel: "canonical-summary-h-minus-one-v1",
+    issuanceValueSnapshotWorkNetworkValueQ8: "61429267056874120000000",
+    issuanceValueSnapshotWorkNetworkValueSats: 614_292_670_568_741.2,
+    kind: "token-mint",
+    minterAddress: "1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT",
+    paidSats: 546,
+    proofPaymentSats: 546,
+    protocol: "pwt1",
+    sourceBondTxid: txid,
+    ticker: "INCB",
+    tokenId,
+    txid,
+    validationMode: "canonical-incb-bond-projection",
+  };
+
+  assert.equal(incbIssuanceMetadataInvalidReason(mint), "");
+  assert.equal(canonicalBondMintProjection(mint), true);
+  assert.equal(reservedBondCreditViolationReason(mint), "");
+  assert.match(
+    incbIssuanceMetadataInvalidReason({
+      ...mint,
+      issuanceNetworkValueQ8: "11665710334474313836191",
+    }),
+    /does not conserve value/u,
+  );
+  const {
+    issuanceDustQ8: _missingIssuanceDustQ8,
+    ...incompleteAtomicMint
+  } = mint;
+  assert.match(
+    incbIssuanceMetadataInvalidReason(incompleteAtomicMint),
+    /incomplete or noncanonical/u,
+  );
+});
+
 check("ordered credit verifier seeds both bond families without generic minting", () => {
   const workTokenId = "1".repeat(64);
   const powbTokenId = "2".repeat(64);
@@ -13464,6 +14047,17 @@ check("ordered credit verifier seeds both bond families without generic minting"
     confirmedVerifierSource,
     /bondMintsFromActivity\([\s\S]*registryAddress,[\s\S]*network,[\s\S]*config/u,
   );
+  assert.match(
+    topLevelFunctionSource(
+      API_PATH,
+      "loadCanonicalVerifierContextFromCheckpoint",
+    ),
+    /priorInvalidEvents:[\s\S]*prior\?\.invalidEvents/u,
+  );
+  assert.match(
+    confirmedVerifierSource,
+    /inceptionVerifierBondActivity\([\s\S]*context\.priorInvalidEvents[\s\S]*bondMintsFromActivity\([\s\S]*verifierBondActivity[\s\S]*canonicalInceptionIssuanceOptions\(network, verifierBondActivity/u,
+  );
 });
 
 check("canonical bond mint replay unlocks only later INCB mutations", () => {
@@ -13546,7 +14140,7 @@ check("canonical bond mint replay unlocks only later INCB mutations", () => {
       tokenListingIsExpired: () => false,
       tokenMatchesScope: (token, scope) =>
         !scope || token.tokenId === scope || token.ticker.toLowerCase() === scope,
-      tokenPaymentAmountBeforeProtocol: () => 546,
+      tokenPaymentAmountBeforeProtocol: (outputs) => outputs.length * 546,
       tokenReplayEntriesForRegistry,
       tokenSaleAuthorizationTermsMatch: () => true,
       tokenSaleAuthorizationUsesSaleTicketAnchor: () => true,
@@ -13572,6 +14166,18 @@ check("canonical bond mint replay unlocks only later INCB mutations", () => {
     },
     vin: [{ address: actor, spends: options.spends ?? [] }],
     vout: message ? [{ message }] : [],
+  });
+  const transactionMessages = (id, blockIndex, actor, messages) => ({
+    txid: txid(id),
+    status: {
+      block_hash: blockHash,
+      block_height: 100,
+      block_index: blockIndex,
+      block_time: 2_000 - blockIndex,
+      confirmed: true,
+    },
+    vin: [{ address: actor, spends: [] }],
+    vout: messages.map((message) => ({ message })),
   });
   const send = (amount, recipientAddress) => ({
     amount,
@@ -13605,6 +14211,10 @@ check("canonical bond mint replay unlocks only later INCB mutations", () => {
     transaction(7, 6, carol, send(100, erin)),
     transaction(8, 7, carol, null),
     transaction(9, 8, carol, send(100, erin)),
+    transactionMessages(10, 9, carol, [
+      send(100, erin),
+      send(1_000, bob),
+    ]),
   ];
   const seedMints = [
     {
@@ -13658,12 +14268,18 @@ check("canonical bond mint replay unlocks only later INCB mutations", () => {
   );
 
   assert.equal(state.confirmedSupply, 2_200);
-  assert.equal(state.transfers.length, 2, "only post-bond sends are valid");
+  assert.equal(state.transfers.length, 3, "only post-bond sends are valid");
   assert.equal(state.sales.length, 1, "post-bond list and sale must settle");
-  assert.equal(state.invalidEvents.length, 3);
+  assert.equal(state.invalidEvents.length, 4);
+  const partialTxRejection = state.invalidEvents.find(
+    (event) => event.txid === txid(10),
+  );
+  assert.equal(partialTxRejection.reasonCode, "insufficient-spendable-balance");
+  assert.equal(partialTxRejection.protocolVout, 1);
+  assert.equal(partialTxRejection.amount, 1_000);
   assert.deepEqual(
     Object.fromEntries(state.holders.map((holder) => [holder.address, holder.balance])),
-    { alice: 100, bob: 600, buyer: 300, carol: 400, dave: 700, erin: 100 },
+    { alice: 100, bob: 600, buyer: 300, carol: 300, dave: 700, erin: 200 },
   );
   assert.equal(
     state.holders.reduce((total, holder) => total + holder.balance, 0),
@@ -13689,6 +14305,7 @@ check("canonical bond mint replay unlocks only later INCB mutations", () => {
       INCB_TOKEN_ID: tokenId,
       INCEPTION_ISSUANCE_ACCOUNTING_MODEL: issuanceModel,
       WORK_TOKEN_ID: "work",
+      currentBlockRejectedInceptionAttachmentDispositions: () => [],
       dedupeActivityItems: (items) => items,
       emptyTokenState: () => ({ tokens: [] }),
       inceptionMintsWithLiveIssuance: (mints, activity, ledger, options) => {
@@ -13714,6 +14331,7 @@ check("canonical bond mint replay unlocks only later INCB mutations", () => {
       scopedTokenPayloadFromState: (state) => state,
       tokenActivityItemsFromState: () => [],
       tokenStateFromTransactions,
+      tokenStateWithInceptionInvalidDispositions: (state) => state,
       tokenStateWithScopedTokenOverride: (_base, scoped) => scoped,
     },
   );
@@ -13866,6 +14484,7 @@ check("published Inception checkpoints expand all legacy bonds in one replay pas
       INCB_TOKEN_ID: tokenId,
       INCEPTION_ISSUANCE_ACCOUNTING_MODEL: issuanceModel,
       WORK_TOKEN_ID: "work",
+      currentBlockRejectedInceptionAttachmentDispositions: () => [],
       dedupeActivityItems: (items) => items,
       inceptionMintsWithLiveIssuance: (mints, _activity, _ledger, options) => {
         const eligible = options.legacyBondTxids ?? new Set();
@@ -13912,6 +14531,7 @@ check("published Inception checkpoints expand all legacy bonds in one replay pas
           transfers: [],
         };
       },
+      tokenStateWithInceptionInvalidDispositions: (state) => state,
     },
   );
 
@@ -13936,6 +14556,310 @@ check("published Inception checkpoints expand all legacy bonds in one replay pas
       (mint) => mint.issuanceAccountingModel === issuanceModel,
     ),
   );
+});
+
+check("a malformed current Inception attachment cannot poison later replay", () => {
+  const tokenId = "c".repeat(64);
+  const workTokenId = "d".repeat(64);
+  const invalidTxid = "1".repeat(64);
+  const validTxid = "2".repeat(64);
+  const laterTransferTxid = "3".repeat(64);
+  const nextBlockTxid = "4".repeat(64);
+  const issuanceModel = "canonical-pre-bond-live-network-value-v2";
+  const currentBlockHeight = 958_500;
+  const blockHash = "a".repeat(64);
+  const bond = (txid, blockIndex, blockHeight = currentBlockHeight) => ({
+    attachedCredits: [
+      {
+        amount: 10,
+        protocolVout: 1,
+        recipientAddress: `holder-${txid[0]}`,
+        tokenId: workTokenId,
+      },
+    ],
+    blockHash,
+    blockHeight,
+    blockIndex,
+    confirmed: true,
+    kind: "inception-bond",
+    network: "livenet",
+    txid,
+  });
+  const invalidBond = bond(invalidTxid, 1);
+  const validBond = bond(validTxid, 2);
+  const nextBlockBond = bond(nextBlockTxid, 1, currentBlockHeight + 1);
+  const seedMint = (txid, blockIndex, blockHeight = currentBlockHeight) => ({
+    amount: 546,
+    blockHash,
+    blockHeight,
+    blockIndex,
+    confirmed: true,
+    minterAddress: `holder-${txid[0]}`,
+    network: "livenet",
+    sourceKind: "inception-bond",
+    tokenId,
+    txid,
+  });
+  const invalidWorkEvent = {
+    amount: 10,
+    attemptedAmount: 10,
+    blockHash,
+    blockHeight: currentBlockHeight,
+    blockIndex: 1,
+    confirmed: true,
+    kind: "send",
+    protocolVout: 1,
+    reasonCode: "insufficient-spendable-balance",
+    recipientAddress: undefined,
+    tokenId: workTokenId,
+    txid: invalidTxid,
+  };
+  invalidWorkEvent.recipientAddress =
+    invalidBond.attachedCredits[0].recipientAddress;
+  const inceptionAttachmentMatchesForBond = (_ledger, candidate) =>
+    candidate.txid === invalidTxid
+      ? { declaredActions: 1, matches: [], unmatchedActions: 1 }
+      : { declaredActions: 1, matches: [{}], unmatchedActions: 0 };
+  const currentBlockRejectedInceptionAttachmentDispositions = isolatedFunction(
+    API_PATH,
+    "currentBlockRejectedInceptionAttachmentDispositions",
+    {
+      INCB_TOKEN_ID: tokenId,
+      INCEPTION_BOND_CONFIG: { kind: "inception-bond" },
+      INCEPTION_ISSUANCE_ACCOUNTING_MODEL: issuanceModel,
+      WORK_TOKEN_ID: workTokenId,
+      canonicalEventOrdinal: (value) =>
+        Number.isSafeInteger(Number(value)) ? Number(value) : null,
+      inceptionAttachmentMatchesForBond,
+      isInceptionBondActivityItem: (item) => item?.kind === "inception-bond",
+      ledgerTokenStateForScope: (ledger) => ledger?.workTokenState ?? {},
+      numericValue: (value) => Number(value) || 0,
+      samePaymentAddress: (left, right) => left === right,
+      workAtomsBigIntFromRecord: (record) => {
+        const amount = Number(record?.amountAtoms ?? record?.amount);
+        return Number.isFinite(amount) && amount > 0
+          ? BigInt(Math.round(amount * 100_000_000))
+          : null;
+      },
+    },
+  );
+  const tokenStateWithInceptionInvalidDispositions = isolatedFunction(
+    API_PATH,
+    "tokenStateWithInceptionInvalidDispositions",
+    { INCB_TOKEN_ID: tokenId },
+  );
+  const inceptionSeedMintReplaySignature = (mints) =>
+    JSON.stringify(
+      mints.map((mint) => [
+        mint.txid,
+        mint.amount,
+        mint.issuanceAccountingModel ?? "",
+      ]),
+    );
+  const strictReplay = isolatedFunction(
+    API_PATH,
+    "tokenStateFromTransactionsWithCanonicalInceptionIssuance",
+    {
+      INCB_TOKEN_ID: tokenId,
+      INCEPTION_ISSUANCE_ACCOUNTING_MODEL: issuanceModel,
+      WORK_TOKEN_ID: workTokenId,
+      currentBlockRejectedInceptionAttachmentDispositions,
+      dedupeActivityItems: (items) => items,
+      inceptionMintsWithLiveIssuance: (mints, _activity, _ledger, options) =>
+        mints.map((mint) =>
+          options.legacyBondTxids?.has(mint.txid)
+            ? { ...mint, amount: 1_000, issuanceAccountingModel: issuanceModel }
+            : mint,
+        ),
+      inceptionSeedMintReplaySignature,
+      isInceptionBondActivityItem: (item) => item?.kind === "inception-bond",
+      isTokenActivityItem: () => false,
+      normalizeTokenScope: () => "",
+      numericValue: (value) => Number(value) || 0,
+      tokenActivityItemsFromState: () => [],
+      tokenStateFromTransactions: (
+        _indexTxs,
+        _registryTxsByAddress,
+        _indexAddress,
+        _network,
+        _tokenScope,
+        seedTokens,
+        mints,
+      ) => ({
+        confirmedSupply: mints.reduce(
+          (total, mint) => total + Number(mint.amount ?? 0),
+          0,
+        ),
+        holders: [],
+        invalidEvents: [],
+        mints,
+        tokens: seedTokens,
+        transfers: mints.some((mint) => mint.txid === validTxid)
+          ? [{ confirmed: true, txid: laterTransferTxid }]
+          : [],
+      }),
+      tokenStateWithInceptionInvalidDispositions,
+    },
+  );
+  const state = strictReplay(
+    [],
+    new Map(),
+    "index",
+    "livenet",
+    "",
+    [{ tokenId }],
+    [seedMint(invalidTxid, 1), seedMint(validTxid, 2)],
+    [invalidBond, validBond],
+    {
+      activity: [],
+      workTokenState: {
+        invalidEvents: [invalidWorkEvent],
+        transfers: [],
+      },
+    },
+    {
+      allowCurrentBlockInvalidAttachmentDisposition: true,
+      currentBlockHash: blockHash,
+      currentBlockHeight,
+      preBondCheckpoint: () => ({ snapshotId: "h-minus-one" }),
+    },
+  );
+
+  assert.equal(state.mints.length, 1);
+  assert.equal(state.mints[0].txid, validTxid);
+  assert.equal(state.mints[0].issuanceAccountingModel, issuanceModel);
+  assert.equal(state.transfers[0].txid, laterTransferTxid);
+  assert.equal(state.invalidEvents.length, 1);
+  assert.equal(state.invalidEvents[0].txid, invalidTxid);
+  assert.equal(
+    state.invalidEvents[0].reasonCode,
+    "invalid-inception-work-attachment",
+  );
+
+  const inceptionInvalidOnlyVerifierStateResolved = isolatedFunction(
+    API_PATH,
+    "inceptionInvalidOnlyVerifierStateResolved",
+    {
+      INCB_TOKEN_ID: tokenId,
+      INCEPTION_BOND_CONFIG: { kind: "inception-bond" },
+      numericValue: (value) => Number(value) || 0,
+    },
+  );
+  const invalidOnlyState = {
+    confirmedSupply: 0,
+    invalidEvents: [state.invalidEvents[0]],
+  };
+  const emptyIssuance = { complete: true, confirmedMints: 0 };
+  assert.equal(
+    inceptionInvalidOnlyVerifierStateResolved(
+      invalidOnlyState,
+      emptyIssuance,
+      invalidTxid,
+      { blockHash },
+      currentBlockHeight,
+    ),
+    true,
+  );
+  assert.equal(
+    inceptionInvalidOnlyVerifierStateResolved(
+      invalidOnlyState,
+      emptyIssuance,
+      validTxid,
+      { blockHash },
+      currentBlockHeight,
+    ),
+    false,
+    "an invalid sibling cannot authorize another target's zero-supply state",
+  );
+  assert.equal(
+    inceptionInvalidOnlyVerifierStateResolved(
+      invalidOnlyState,
+      emptyIssuance,
+      invalidTxid,
+      { blockHash: "f".repeat(64) },
+      currentBlockHeight,
+    ),
+    false,
+    "an invalid disposition from another block cannot authorize zero supply",
+  );
+
+  const dispositionOptions = {
+    allowCurrentBlockInvalidAttachmentDisposition: true,
+    currentBlockHash: blockHash,
+    currentBlockHeight,
+  };
+  assert.equal(
+    currentBlockRejectedInceptionAttachmentDispositions(
+      [seedMint(invalidTxid, 1)],
+      [invalidBond],
+      { workTokenState: { invalidEvents: [], transfers: [] } },
+      dispositionOptions,
+    ).length,
+    0,
+    "an unmatched attachment without an explicit WORK replay rejection must fail closed",
+  );
+  assert.equal(
+    currentBlockRejectedInceptionAttachmentDispositions(
+      [{ ...seedMint(invalidTxid, 1), blockHash: "f".repeat(64) }],
+      [invalidBond],
+      {
+        workTokenState: {
+          invalidEvents: [invalidWorkEvent],
+          transfers: [],
+        },
+      },
+      dispositionOptions,
+    ).length,
+    0,
+    "a seed mint outside the exact current block must not become a durable invalid disposition",
+  );
+  assert.equal(
+    currentBlockRejectedInceptionAttachmentDispositions(
+      [{ ...seedMint(invalidTxid, 1), blockIndex: 2 }],
+      [invalidBond],
+      {
+        workTokenState: {
+          invalidEvents: [invalidWorkEvent],
+          transfers: [],
+        },
+      },
+      dispositionOptions,
+    ).length,
+    0,
+    "misaligned bond and seed provenance must fail closed",
+  );
+
+  const inceptionInvalidMintDispositionMatchesBond = isolatedFunction(
+    API_PATH,
+    "inceptionInvalidMintDispositionMatchesBond",
+    {
+      INCB_TOKEN_ID: tokenId,
+      INCEPTION_BOND_CONFIG: { kind: "inception-bond" },
+    },
+  );
+  const inceptionBondHasExplicitlyRejectedMint = isolatedFunction(
+    API_PATH,
+    "inceptionBondHasExplicitlyRejectedMint",
+    {
+      INCB_TOKEN_ID: tokenId,
+      inceptionInvalidMintDispositionMatchesBond,
+    },
+  );
+  const inceptionVerifierBondActivity = isolatedFunction(
+    API_PATH,
+    "inceptionVerifierBondActivity",
+    {
+      inceptionBondHasExplicitlyRejectedMint,
+      isInceptionBondActivityItem: (item) => item?.kind === "inception-bond",
+    },
+  );
+  const nextBlockActivity = inceptionVerifierBondActivity(
+    [invalidBond, validBond, nextBlockBond],
+    state,
+  );
+  assert.equal(nextBlockActivity.some((item) => item.txid === invalidTxid), false);
+  assert.equal(nextBlockActivity.some((item) => item.txid === validTxid), true);
+  assert.equal(nextBlockActivity.some((item) => item.txid === nextBlockTxid), true);
 });
 
 check("credit mint persistence requires a prior confirmed definition", async () => {
@@ -14545,6 +15469,66 @@ check("confirmed INCB metadata is fully bound to its recipient and block", () =>
     /disagrees with projected values/u,
   );
 
+  const productionTxid =
+    "e1ecc4b4be95a6771801d516380eb20a0f8e3c0b2fb1045599a57d5a68fa1698";
+  const productionBlockHash =
+    "000000000000000000021fb7871138c76c262471fe3b178e8829d62cbf167ae8";
+  const productionPayload = {
+    ...payload,
+    amount: "116657103344743",
+    attachedWorkAmount: 3_988_000,
+    attachedWorkAmountAtoms: "398800000000000",
+    attachedWorkIssuanceUnits: "116657103344197",
+    attachedWorkLiveFloorAtSendSats: 29_252_031.931844823,
+    attachedWorkLiveValueAtSendQ8: "11665710334419713836190",
+    attachedWorkLiveValueAtSendSats: 116_657_103_344_197.14,
+    blockHash: productionBlockHash,
+    blockHeight: 958_432,
+    blockIndex: 1_653,
+    confirmedIssuanceUnits: "116657103344743",
+    issuanceAmount: "116657103344743",
+    issuanceCheckpointBlockHash: productionBlockHash,
+    issuanceCheckpointBlockHeight: 958_432,
+    issuanceCheckpointBlockIndex: 1_653,
+    issuanceDustQ8: "13836190",
+    issuanceDustSats: 0.1383619,
+    issuanceFloorSats: 1.000000000000001,
+    issuanceNetworkValueQ8: "11665710334474313836190",
+    issuanceNetworkValueSats: 116_657_103_344_743.14,
+    issuanceValueSnapshotBlockHash:
+      "0000000000000000000108134886191cca47cb3db5df607c7c5aa9a02e957b3f",
+    issuanceValueSnapshotBlockHeight: 958_431,
+    issuanceValueSnapshotCanonicalSummaryHash:
+      "5b44677748e3a68e1ea376f8a2226277d9a53907279aff8ac4d2ba56524c6cfb",
+    issuanceValueSnapshotGeneratedAt: "2026-07-17T21:12:25.822Z",
+    issuanceValueSnapshotId: "ff4bf2984490c79d326866e3",
+    issuanceValueSnapshotWorkNetworkValueQ8:
+      "61429267056874120000000",
+    issuanceValueSnapshotWorkNetworkValueSats: 614_292_670_568_741.2,
+    sourceBondTxid: productionTxid,
+    txid: productionTxid,
+  };
+  const productionRow = {
+    ...row,
+    block_hash: productionBlockHash,
+    block_height: 958_432,
+    block_index: 1_653,
+    txid: productionTxid,
+  };
+  assert.ok(
+    Math.abs(
+      productionPayload.issuanceDustSats -
+        (productionPayload.issuanceNetworkValueSats -
+          Number(productionPayload.amount)),
+    ) > 1e-6,
+    "the production reader fixture must reproduce float dust subtraction drift",
+  );
+  assert.equal(
+    incbIssuanceMetadataFault(productionPayload, productionRow),
+    "",
+    "exact Q8 metadata must remain authoritative when float subtraction loses production-scale dust",
+  );
+
   const tokenMintFromEventPayload = isolatedFunction(
     READER_PATH,
     "tokenMintFromEventPayload",
@@ -14581,6 +15565,15 @@ check("confirmed INCB metadata is fully bound to its recipient and block", () =>
       issuanceNetworkValueQ8: "54600000001",
       issuanceValueSnapshotWorkNetworkValueQ8: "2100000000000000",
     },
+  );
+  const productionMint = tokenMintFromEventPayload(
+    productionPayload,
+    productionRow,
+  );
+  assert.equal(
+    productionMint.issuanceNetworkValueQ8,
+    "11665710334474313836190",
+    "the current-table reader must preserve production-scale exact issuance metadata",
   );
   const legacyMint = tokenMintFromEventPayload(payload, row);
   assert.equal(legacyMint.attachedWorkAmount, 3_644_060);
@@ -16445,6 +17438,178 @@ check("POWB bond mints rebuild holder supply before dependent transfers", async 
     bob: "400",
     carol: "100",
   });
+});
+
+check("canonical verifier admits only chain-bound rejected INCB bond mints", () => {
+  const incbTokenId =
+    "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+  const inceptionBondKind = "inception-bond";
+  const queryParts = isolatedFunction(
+    READER_PATH,
+    "canonicalVerifierIncbInvalidEventQueryParts",
+    {
+      INCB_TOKEN_ID: incbTokenId,
+      INCEPTION_BOND_KIND: inceptionBondKind,
+    },
+  );
+  const query = queryParts("livenet", 958_383, 958_429);
+  assert.deepEqual(Array.from(query.params), [
+    "livenet",
+    incbTokenId,
+    inceptionBondKind,
+    958_383,
+    958_429,
+  ]);
+  assert.match(query.fromSql, /e\.valid = false/u);
+  assert.match(query.fromSql, /e\.block_height = t\.block_height/u);
+  assert.match(
+    query.fromSql,
+    /JOIN proof_indexer\.blocks b[\s\S]*b\.canonical = true/u,
+  );
+  assert.match(
+    query.fromSql,
+    /payload->>'blockHash'[\s\S]*= lower\(t\.block_hash\)/u,
+  );
+  assert.match(query.fromSql, /payload->>'sourceKind'[\s\S]*= \$3/u);
+  assert.match(
+    query.fromSql,
+    /payload->>'sourceBondTxid'[\s\S]*= lower\(e\.txid\)/u,
+  );
+  assert.match(
+    query.fromSql,
+    /NOT EXISTS[\s\S]*valid_mint\.valid = true[\s\S]*valid_mint\.payload->>'tokenId'[\s\S]*= \$2/u,
+  );
+
+  const dispositionFromRow = isolatedFunction(
+    READER_PATH,
+    "canonicalVerifierIncbInvalidDispositionFromRow",
+    {
+      INCB_TOKEN_ID: incbTokenId,
+      INCEPTION_BOND_KIND: inceptionBondKind,
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value) ? value : {},
+      tokenInvalidEventFromRow: (row) => ({
+        ...row.payload,
+        confirmed: row.effective_status === "confirmed",
+        txid: String(row.payload?.txid ?? row.txid).toLowerCase(),
+        valid: false,
+      }),
+    },
+  );
+  const rejectedBonds = [
+    {
+      blockHash:
+        "00000000000000000001db52a4485f7d1a1784b7ba6c5b93db1b20449ac2628b",
+      blockHeight: 958_383,
+      txid: "c9c9f4e382f598aa39b3be57adc8fe1defeb80e5216387d3af6b0948da232aff",
+    },
+    {
+      blockHash:
+        "000000000000000000022e062fe6236b71722b7ade5079d5c45e73a5561252e1",
+      blockHeight: 958_429,
+      txid: "45b226453dde5b4d61a6a036af299d11ebfdeb65054bf26438ebc6ebebbf00c3",
+    },
+    {
+      blockHash:
+        "000000000000000000022e062fe6236b71722b7ade5079d5c45e73a5561252e1",
+      blockHeight: 958_429,
+      txid: "e08080c1d86f0770dd6ebbabd98a9e066dc6043b548af7ecb7912fbbdfad4d50",
+    },
+  ];
+  const rowForBond = ({ blockHash, blockHeight, txid }) => ({
+    block_hash: blockHash,
+    block_height: blockHeight,
+    effective_status: "confirmed",
+    kind: "token-event-invalid",
+    payload: {
+      attemptedKind: "token-mint",
+      blockHash,
+      blockHeight,
+      kind: "token-event-invalid",
+      sourceBondTxid: txid,
+      sourceKind: inceptionBondKind,
+      tokenId: incbTokenId,
+      txid,
+    },
+    protocol: "pwt1",
+    status: "confirmed",
+    transaction_block_height: blockHeight,
+    txid,
+    valid: false,
+  });
+  const firstRow = rowForBond(rejectedBonds[0]);
+  for (const bond of rejectedBonds) {
+    const row = rowForBond(bond);
+    const event = dispositionFromRow(
+      row,
+      new Map([[bond.blockHeight, bond.blockHash]]),
+    );
+    assert.equal(event?.txid, bond.txid);
+    assert.equal(event?.sourceBondTxid, bond.txid);
+  }
+
+  const canonicalBlocks = new Map([
+    [rejectedBonds[0].blockHeight, rejectedBonds[0].blockHash],
+  ]);
+  assert.equal(
+    dispositionFromRow({ ...firstRow, valid: true }, canonicalBlocks),
+    null,
+  );
+  assert.equal(
+    dispositionFromRow(
+      { ...firstRow, block_height: firstRow.block_height + 1 },
+      canonicalBlocks,
+    ),
+    null,
+  );
+  assert.equal(
+    dispositionFromRow(
+      firstRow,
+      new Map([[firstRow.block_height, "f".repeat(64)]]),
+    ),
+    null,
+  );
+  assert.equal(
+    dispositionFromRow(
+      {
+        ...firstRow,
+        payload: { ...firstRow.payload, sourceKind: "infinity-bond" },
+      },
+      canonicalBlocks,
+    ),
+    null,
+  );
+  assert.equal(
+    dispositionFromRow(
+      {
+        ...firstRow,
+        payload: { ...firstRow.payload, sourceBondTxid: "f".repeat(64) },
+      },
+      canonicalBlocks,
+    ),
+    null,
+  );
+  assert.equal(
+    dispositionFromRow(
+      { ...firstRow, valid_incb_mint_overlap: true },
+      canonicalBlocks,
+    ),
+    null,
+  );
+
+  const canonicalPayloadSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexCanonicalTransactionsPayload",
+  );
+  assert.match(
+    canonicalPayloadSource,
+    /canonicalVerifierIncbInvalidEventQueryParts/u,
+  );
+  assert.doesNotMatch(
+    canonicalPayloadSource,
+    /const invalidEventQuery = tokenInvalidEventQueryParts/u,
+  );
 });
 
 check("canonical Core raw transactions normalize dependent replay inputs", () => {
@@ -21048,6 +22213,11 @@ check("public consistency fails closed without an eligible database snapshot", a
     API_PATH,
     "ledgerConsistencyPayload",
     {
+      activitySummaryPayload: async () => ({
+        indexedThroughBlock: 100,
+        indexedThroughBlockHash: "a".repeat(64),
+        snapshotId: "stable-summary",
+      }),
       ENABLE_REQUEST_LEDGER_RECOVERY: false,
       SUMMARY_PROOF_INDEX_READ_WAIT_MS: 100,
       errorSummary: (error) => String(error?.message ?? error),
@@ -21059,8 +22229,14 @@ check("public consistency fails closed without an eligible database snapshot", a
       ledgerPayloadCoversTip: async () => true,
       ledgerPayloadHasCurrentChecks: (payload) =>
         payload?.eligible === true,
+      payloadIndexedThroughBlockHash: (payload) =>
+        payload?.indexedThroughBlockHash ?? "",
+      payloadSnapshotId: (payload) => payload?.snapshotId ?? "",
       payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock ?? 0),
       proofIndexCanonicalSummaryLedgerPayload: async () => indexedLedger,
+      summaryPayloadWithCanonicalProvenance: async (payload) => payload,
       summaryCanonicalLedgerPayload: async () => {
         legacyReads += 1;
         return null;
@@ -21082,6 +22258,7 @@ check("consistency recovery remains available only when explicitly enabled", asy
     API_PATH,
     "ledgerConsistencyPayload",
     {
+      activitySummaryPayload: async () => ({}),
       ENABLE_REQUEST_LEDGER_RECOVERY: true,
       SUMMARY_PROOF_INDEX_READ_WAIT_MS: 100,
       errorSummary: (error) => String(error?.message ?? error),
@@ -21093,6 +22270,9 @@ check("consistency recovery remains available only when explicitly enabled", asy
       ledgerPayloadHasCurrentChecks: () => false,
       payloadWithFallbackAfterMs: async (promise) => promise,
       proofIndexCanonicalSummaryLedgerPayload: async () => null,
+      summaryPayloadWithCanonicalProvenance: async () => {
+        throw new Error("No stable canonical summary is available.");
+      },
       summaryCanonicalLedgerPayload: async () => ({
         snapshotId: "recovered-ledger",
       }),

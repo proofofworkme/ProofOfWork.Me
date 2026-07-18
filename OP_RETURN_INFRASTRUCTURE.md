@@ -215,7 +215,15 @@ the row as sealed unless a later real buy, delist, or other non-seal spend
 closes it. Fresh marketplace and summary reads must return one coherent snapshot
 at the exact hash-verified Core tip; if that cannot be proved inside the request
 budget they return 503. Stable reads may serve a coherent hash-verified last-good
-snapshot with explicit indexed height, tip, lag, and snapshot provenance. `event-history`
+snapshot with explicit indexed height, tip, lag, and snapshot provenance.
+Stable Log, Log-history, and consistency reads pin their relational rows to that
+same snapshot id, height, and hash and recheck Core after the read; stale
+cursors, out-of-snapshot rows, and unproved exact txid misses fail closed. Exact
+txid Log membership is bounded to the returned relational event ids and their
+snapshot-fenced canonical transaction/block rows; it never authenticates a page
+by scanning the entire activity ledger.
+Fresh reads and every signing/broadcast admission path remain exact-tip-only.
+`event-history`
 serves DB-backed protocol/event search for indexed registry, credit,
 marketplace, mail/file, seeded, and broader Computer events; `address-mail`
 serves connected-wallet mailbox reads from the indexed mail projection,
@@ -242,6 +250,17 @@ Generic `pwt1:create` and `pwt1:mint` events are invalid for both reserved bond
 families. Their synthetic supply can be issued only by the matching canonical
 bond projection. All other generic mints require the confirmed credit definition
 to precede the mint in canonical block and transaction order.
+INCB validation treats the persisted Q8 integer issuance fields as the
+authoritative arithmetic contract; large floating-point display fields cannot
+reject an otherwise exact mint. The canonical H-1 transaction context also
+carries confirmed invalid mint dispositions from its same hashed checkpoint,
+so replay cannot resurrect a historically rejected bond attempt.
+Insufficient-balance WORK actions are recorded per protocol output even when a
+sibling action succeeds. A malformed current-block Inception attachment is
+converted to a durable invalid mint only when its rejected WORK action, amount,
+recipient, protocol output, bond/seed position, txid, height, and block hash all
+match. Missing oracle data, verifier dependencies, and malformed persisted v2
+issuance remain unavailable/fail-closed rather than being relabeled invalid.
 The `log` flag is reserved for an explicit full activity snapshot refresh.
 Volatile broad activity and mempool reads still use the node/API path so explicit
 refreshes converge on current chain and mempool truth.
@@ -579,9 +598,27 @@ public video.
 The worker requires the real production cluster unit
 `postgresql@16-main.service`, checks `pg_isready` before startup, records
 `starting`, `running`, `idle`, and `failed` state in `worker:lastRun`, and keeps
-the last successful cycle visible across an in-progress or failed cycle. Three
-consecutive cycle failures make the process exit so systemd and health expose a
-real fault instead of an immortal stale worker. The block/mempool child has a
+the last successful cycle visible across an in-progress or failed cycle. The
+confirmed scanner runs before pending-status cleanup; if confirmed catch-up
+fails, that cycle does not refresh the best-effort pending overlay. A structured
+`block-scan-verification` failure is containable only when it carries the
+trusted `CanonicalTransactionContentInvariantError` class and
+`POW_CANONICAL_TX_CONTENT_INVARIANT` code and the worker can prove an
+authoritative hashed block-scan checkpoint before the failing height. RPC,
+verifier HTTP, database, abort, and timeout errors are never reclassified as
+deterministic transaction content.
+Repeated identical failures without checkpoint progress are persisted inside
+the single network-bound `worker:lastRun.noProgress` record. Retries back off
+from `POW_INDEX_WORKER_ERROR_INTERVAL_MS` to
+`POW_INDEX_WORKER_MAX_ERROR_INTERVAL_MS`, and an alert-ready diagnostic is
+emitted at `POW_INDEX_WORKER_NO_PROGRESS_ALERT_INTERVAL_MS`. `/health` remains
+not-ready and exposes the checkpoint, failing height, txid, repeat count, and
+next retry while `/health/live` can continue to report separately verified
+node/read-model availability. Any real checkpoint advance resets the circuit.
+Generic, unstructured failures are not contained: three consecutive failed
+cycles still make the process exit so systemd exposes and recovers the fault.
+SIGTERM/SIGINT stops the active child and cancels retries before shutdown. The
+block/mempool child has a
 240-second wall-clock watchdog, followed by `SIGTERM` and a five-second
 `SIGKILL` grace period, so a wedged child cannot freeze the confirmed loop.
 Each hot-loop child has a hard 250-block cap and a block-boundary target of 250

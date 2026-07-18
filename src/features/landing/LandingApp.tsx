@@ -79,6 +79,7 @@ export function LandingApp({
   registryLoaded = true,
   registryLoading = false,
   registryRecords,
+  registryWarning = "",
   onRefresh,
 }: {
   registryAddress: string;
@@ -87,6 +88,7 @@ export function LandingApp({
   registryLoaded?: boolean;
   registryLoading?: boolean;
   registryRecords: LandingRegistryRecord[];
+  registryWarning?: string;
   onRefresh: () => void;
 }) {
   const confirmedRecords = registryRecords.filter((record) => record.confirmed);
@@ -100,6 +102,11 @@ export function LandingApp({
       />
       <AppStatusRow
         persistent
+        secondaryStatus={
+          registryWarning
+            ? { tone: "idle", text: registryWarning }
+            : undefined
+        }
         status={
           registryLoading
             ? {
@@ -112,10 +119,10 @@ export function LandingApp({
               ? { tone: "bad", text: registryError }
               : registryLoaded
                 ? {
-                    tone: "good",
+                    tone: registryFresh ? "good" : "idle",
                     text: registryFresh
                       ? "Full-node ProofOfWork ID registry summary verified."
-                      : "Indexed ProofOfWork ID registry summary loaded.",
+                      : "Verified last-good ProofOfWork ID registry summary loaded. This view is not current until an exact-tip refresh succeeds.",
                   }
                 : {
                     tone: "idle",

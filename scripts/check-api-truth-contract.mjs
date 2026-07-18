@@ -83,6 +83,14 @@ const verifier = sliceBetween(
   /async function completeTokenVerifierState/,
   /async function completeIdVerifierStateBundle/,
 );
+const currentBlockInceptionDisposition = sliceBetween(
+  /function currentBlockRejectedInceptionAttachmentDispositions/,
+  /function tokenStateWithInceptionInvalidDispositions/,
+);
+const invalidOnlyInceptionResolution = sliceBetween(
+  /function inceptionInvalidOnlyVerifierStateResolved/,
+  /function canonicalItemPrecedesBondTransaction/,
+);
 const pendingWorkSupplyCapVerifier = sliceBetween(
   /function pendingWorkMintFromHydratedTransaction/,
   /async function tokenVerifierDeterministicInvalidReason/,
@@ -251,13 +259,44 @@ expect(
   (server.match(/freshRead && !exactLogQueryTxid/gu) ?? []).length >= 2 &&
     (server.match(/\? await freshProofIndexLogHistoryPayload/gu) ?? [])
       .length >= 2 &&
-    /logHistoryEligibility\.eligible \|\|[\s\S]*freshRead && !exactLogQueryTxid/u.test(
+    /network === "livenet" \|\|[\s\S]*logHistoryEligibility\.eligible \|\|[\s\S]*freshRead && !exactLogQueryTxid/u.test(
       server,
     ) &&
     /verifiedFreshLogCheckpointAfterRead\([\s\S]*"log-history"/u.test(
       server,
     ) &&
     /CANONICAL_LOG_HISTORY_TIP_CHANGED/u.test(server),
+);
+expect(
+  "stable Log and consistency reads expose only one hash-bound last-good snapshot",
+  /async function stableProofIndexLogPayload[\s\S]*stableCanonicalLogSummaryPayload\(network, "Log"\)[\s\S]*proofIndexCanonicalActivityPayload\(network, \{[\s\S]*snapshotId: summarySnapshotId/u.test(
+    server,
+  ) &&
+    /async function stableProofIndexLogHistoryPayload[\s\S]*boundSearchParams\.set\("snapshot", summarySnapshotId\)[\s\S]*proofIndexLogHistoryPayload/u.test(
+      server,
+    ) &&
+    /async function stableProofIndexLogHistoryPayload[\s\S]*proofIndexCanonicalActivityPayload\(network, \{[\s\S]*eventIds: pageEventIds,[\s\S]*snapshotId: summarySnapshotId/u.test(
+      server,
+    ) &&
+    /canonicalPage\?\.membershipRestricted !== true/u.test(server) &&
+    /e\.event_id = ANY\(\$\{eventIdsParam\}::bigint\[\]\)/u.test(reader) &&
+    /transaction_row\.updated_at <= \$\{snapshotTimeParam\}::timestamptz/u.test(
+      reader,
+    ) &&
+    /terminal_tx\.updated_at <= \$5::timestamptz/u.test(reader) &&
+    /candidate\.block_height = terminal_tx\.block_height/u.test(reader) &&
+    /candidate\.status = 'pending'[\s\S]*terminal_tx\.status <> 'confirmed'/u.test(
+      reader,
+    ) &&
+    /CANONICAL_LOG_EXACT_QUERY_OUTSIDE_SNAPSHOT/u.test(server) &&
+    /CANONICAL_LOG_EXACT_QUERY_NOT_IN_SNAPSHOT/u.test(server) &&
+    /async function ledgerConsistencyPayload[\s\S]*if \(!fresh\)[\s\S]*activitySummaryPayload\(network, false\)[\s\S]*proofIndexCanonicalSummaryLedgerPayload\([\s\S]*summaryHeight,[\s\S]*summaryHash/u.test(
+      server,
+    ) &&
+    /verifyStableLogCheckpointAfterRead\([\s\S]*summary,[\s\S]*network,[\s\S]*"ledger-consistency"/u.test(
+      server,
+    ) &&
+    /surface: "ledger-consistency"/u.test(server),
 );
 expect(
   "Core and Electrum pending reads preserve Bitcoin Core mempool admission time",
@@ -341,7 +380,7 @@ expect(
     ) &&
     /publicLogRelational: finalPublicLogFingerprint\.hash/u.test(backfill) &&
     /publicLogFingerprint: finalPublicLogFingerprint/u.test(backfill) &&
-    /const pendingStatus = await refreshPendingStatuses\(pool\);[\s\S]*await runBackfillWithRetries\(backfillEnv\);/u.test(
+    /await runBackfillWithRetries\(backfillEnv, runtime\);[\s\S]*const pendingStatus = await refreshPendingStatuses\(pool\);/u.test(
       worker,
     ),
 );
@@ -422,6 +461,20 @@ expect(
   "the ordered verifier seeds every configured bond family",
   /for \(const config of BOND_TOKEN_CONFIGS\)/u.test(verifier) &&
     /bondMintsFromActivity/u.test(verifier),
+);
+expect(
+  "current-block Inception rejection requires exact bond provenance and an explicit WORK replay rejection",
+  /currentBlockHash/u.test(currentBlockInceptionDisposition) &&
+    /sourceKind/u.test(currentBlockInceptionDisposition) &&
+    /bondBlockIndex !== seedBlockIndex/u.test(currentBlockInceptionDisposition) &&
+    /insufficient-spendable-balance/u.test(currentBlockInceptionDisposition) &&
+    /attemptedAtoms/u.test(currentBlockInceptionDisposition),
+);
+expect(
+  "zero-mint Inception verification is bound to the exact target and canonical block",
+  /normalizedTargetTxid[\s\S]*sourceBondTxid[\s\S]*verifierBlockHash/u.test(
+    invalidOnlyInceptionResolution,
+  ) && /inceptionInvalidOnlyVerifierStateResolved/u.test(verifier),
 );
 expect(
   "pending WORK supply-cap classification is Core-current and exact-tip indexed",

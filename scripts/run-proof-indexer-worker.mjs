@@ -23,6 +23,19 @@ const INTERVAL_MS = Number(process.env.POW_INDEX_WORKER_INTERVAL_MS ?? 300_000);
 const ERROR_INTERVAL_MS = Number(
   process.env.POW_INDEX_WORKER_ERROR_INTERVAL_MS ?? 60_000,
 );
+const MAX_ERROR_INTERVAL_MS = Math.max(
+  ERROR_INTERVAL_MS,
+  Number(process.env.POW_INDEX_WORKER_MAX_ERROR_INTERVAL_MS ?? 15 * 60_000) ||
+    15 * 60_000,
+);
+const NO_PROGRESS_ALERT_INTERVAL_MS = Math.max(
+  60_000,
+  Number(
+    process.env.POW_INDEX_WORKER_NO_PROGRESS_ALERT_INTERVAL_MS ??
+      15 * 60_000,
+  ) ||
+    15 * 60_000,
+);
 const BACKFILL_MAX_PAGES = Number(
   process.env.POW_INDEX_WORKER_BACKFILL_MAX_PAGES ??
     process.env.POW_INDEX_BACKFILL_MAX_PAGES ??
@@ -153,6 +166,74 @@ const ONCE = process.argv.includes("--once");
 const REQUIRE_WORK_ATOMIC_PROJECTION = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_REQUIRE_WORK_ATOMS ?? "1"),
 );
+const CHILD_LINE_BUFFER_CHARS = 16_384;
+const CHILD_ERROR_MAX_CHARS = 4_096;
+const CHILD_STOP_GRACE_MS = 5_000;
+export const CANONICAL_TX_CONTENT_FAILURE_CODE =
+  "POW_CANONICAL_TX_CONTENT_INVARIANT";
+export const CANONICAL_TX_CONTENT_FAILURE_CLASS =
+  "CanonicalTransactionContentInvariantError";
+
+function workerStoppingError() {
+  const error = new Error("Proof index worker is stopping");
+  error.code = "POW_INDEX_WORKER_STOPPING";
+  return error;
+}
+
+export function createWorkerRuntime(network = NETWORK) {
+  return {
+    activeChild: null,
+    childStopTimer: null,
+    network: String(network ?? ""),
+    noProgress: null,
+    stopping: false,
+    wakeSleep: null,
+  };
+}
+
+export function requestWorkerStop(runtime) {
+  if (!runtime || runtime.stopping) {
+    return;
+  }
+  runtime.stopping = true;
+  runtime.wakeSleep?.();
+  const child = runtime.activeChild;
+  if (!child || child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  child.kill("SIGTERM");
+  clearTimeout(runtime.childStopTimer);
+  runtime.childStopTimer = setTimeout(() => {
+    if (runtime.activeChild === child) {
+      child.kill("SIGKILL");
+    }
+  }, CHILD_STOP_GRACE_MS);
+  runtime.childStopTimer.unref?.();
+}
+
+function workerSleep(runtime, delayMs) {
+  if (runtime?.stopping) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      if (runtime?.wakeSleep === wake) {
+        runtime.wakeSleep = null;
+      }
+      resolve();
+    }, Math.max(0, Number(delayMs) || 0));
+    const wake = () => {
+      clearTimeout(timeout);
+      if (runtime?.wakeSleep === wake) {
+        runtime.wakeSleep = null;
+      }
+      resolve();
+    };
+    if (runtime) {
+      runtime.wakeSleep = wake;
+    }
+  });
+}
 
 async function assertWorkAtomicProjectionReady(pool) {
   if (!REQUIRE_WORK_ATOMIC_PROJECTION) {
@@ -213,70 +294,420 @@ async function readJson(url, timeoutMs = REQUEST_TIMEOUT_MS) {
   }
 }
 
-function runScript(
+function finitePositiveInteger(value, fallback) {
+  const parsed = Math.trunc(Number(value));
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function cappedChildError(value) {
+  const text = String(value ?? "Canonical transaction verification failed");
+  return text.length <= CHILD_ERROR_MAX_CHARS
+    ? text
+    : `${text.slice(0, CHILD_ERROR_MAX_CHARS - 1)}…`;
+}
+
+function normalizedCheckpoint(value) {
+  const rawHeight = value?.checkpointHeight ?? value?.indexedThroughBlock;
+  const height =
+    rawHeight === undefined || rawHeight === null || rawHeight === ""
+      ? null
+      : Math.trunc(Number(rawHeight));
+  const hash = String(
+    value?.checkpointHash ?? value?.indexedThroughBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  return {
+    checkpointHash: /^[0-9a-f]{64}$/u.test(hash) ? hash : null,
+    checkpointHeight:
+      Number.isSafeInteger(height) && height >= 0 ? height : null,
+  };
+}
+
+function trustedCanonicalWorkerFailureIdentity(value) {
+  return (
+    value?.failureCode === CANONICAL_TX_CONTENT_FAILURE_CODE &&
+    value?.failureClass === CANONICAL_TX_CONTENT_FAILURE_CLASS
+  );
+}
+
+export function canonicalWorkerFailureFromLine(line) {
+  const candidate = String(line ?? "").trim();
+  if (
+    candidate.length > CHILD_LINE_BUFFER_CHARS ||
+    !candidate.startsWith("{") ||
+    !candidate.endsWith("}")
+  ) {
+    return null;
+  }
+  let value;
+  try {
+    value = JSON.parse(candidate);
+  } catch {
+    return null;
+  }
+  const failingBlockHeight = Math.trunc(Number(value?.height));
+  const txid = String(value?.txid ?? "").trim().toLowerCase();
+  if (
+    !trustedCanonicalWorkerFailureIdentity(value) ||
+    value?.phase !== "block-scan-verification" ||
+    !Number.isSafeInteger(failingBlockHeight) ||
+    failingBlockHeight <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(txid)
+  ) {
+    return null;
+  }
+  return {
+    deterministic: true,
+    error: cappedChildError(value?.error),
+    failureClass: CANONICAL_TX_CONTENT_FAILURE_CLASS,
+    failureCode: CANONICAL_TX_CONTENT_FAILURE_CODE,
+    failingBlockHeight,
+    phase: "block-scan-verification",
+    txid,
+  };
+}
+
+export function canonicalWorkerFailureFromError(error) {
+  const failure = error?.workerFailure;
+  if (!failure || typeof failure !== "object") {
+    return null;
+  }
+  return canonicalWorkerFailureFromLine(JSON.stringify({
+    error: failure.error,
+    failureClass: failure.failureClass,
+    failureCode: failure.failureCode,
+    height: failure.failingBlockHeight ?? failure.height,
+    phase: failure.phase,
+    txid: failure.txid,
+  }));
+}
+
+function failureFingerprint(failure) {
+  return [
+    String(failure?.failureCode ?? ""),
+    String(failure?.failureClass ?? ""),
+    String(failure?.phase ?? ""),
+    `h${Math.trunc(Number(failure?.failingBlockHeight ?? 0))}`,
+    String(failure?.txid ?? "").trim().toLowerCase(),
+  ].join(":");
+}
+
+function exponentialRetryDelayMs(
+  repeatCount,
+  baseDelayMs = ERROR_INTERVAL_MS,
+  maxDelayMs = MAX_ERROR_INTERVAL_MS,
+) {
+  const base = finitePositiveInteger(baseDelayMs, 1_000);
+  const maximum = Math.max(base, finitePositiveInteger(maxDelayMs, base));
+  const exponent = Math.min(20, Math.max(0, repeatCount - 1));
+  return Math.min(maximum, base * 2 ** exponent);
+}
+
+export function nextWorkerNoProgressState(
+  previous,
+  {
+    failure,
+    progress,
+    nowMs = Date.now(),
+    threshold = MAX_CONSECUTIVE_FAILURES,
+    baseDelayMs = ERROR_INTERVAL_MS,
+    maxDelayMs = MAX_ERROR_INTERVAL_MS,
+    alertIntervalMs = NO_PROGRESS_ALERT_INTERVAL_MS,
+    network = NETWORK,
+  } = {},
+) {
+  if (
+    failure?.deterministic !== true ||
+    !trustedCanonicalWorkerFailureIdentity(failure)
+  ) {
+    throw new Error(
+      "A trusted deterministic canonical worker failure is required",
+    );
+  }
+  const checkpoint = normalizedCheckpoint(progress);
+  const fingerprint = failureFingerprint(failure);
+  const previousCheckpoint = normalizedCheckpoint(previous);
+  const sameFailureWithoutProgress =
+    previous?.fingerprint === fingerprint &&
+    previousCheckpoint.checkpointHeight === checkpoint.checkpointHeight &&
+    previousCheckpoint.checkpointHash === checkpoint.checkpointHash;
+  const repeatCount = sameFailureWithoutProgress
+    ? finitePositiveInteger(previous?.repeatCount, 1) + 1
+    : 1;
+  const activationThreshold = finitePositiveInteger(threshold, 3);
+  const active = repeatCount >= activationThreshold;
+  const now = new Date(nowMs).toISOString();
+  const retryDelayMs = exponentialRetryDelayMs(
+    repeatCount,
+    baseDelayMs,
+    maxDelayMs,
+  );
+  const previousLastAlertMs = Date.parse(String(previous?.lastAlertAt ?? ""));
+  const alertInterval = finitePositiveInteger(alertIntervalMs, 15 * 60_000);
+  const alertReady =
+    active &&
+    (!sameFailureWithoutProgress ||
+      previous?.active !== true ||
+      !Number.isFinite(previousLastAlertMs) ||
+      nowMs - previousLastAlertMs >= alertInterval);
+  return {
+    action: "retry",
+    active,
+    alertReady,
+    checkpointHash: checkpoint.checkpointHash,
+    checkpointHeight: checkpoint.checkpointHeight,
+    error: String(failure.error ?? "Canonical transaction verification failed"),
+    failureClass: CANONICAL_TX_CONTENT_FAILURE_CLASS,
+    failureCode: CANONICAL_TX_CONTENT_FAILURE_CODE,
+    failingBlockHeight: failure.failingBlockHeight,
+    fingerprint,
+    firstFailedAt: sameFailureWithoutProgress
+      ? previous.firstFailedAt
+      : now,
+    lastAlertAt: sameFailureWithoutProgress
+      ? previous.lastAlertAt ?? null
+      : null,
+    lastFailedAt: now,
+    network: String(network ?? ""),
+    nextRetryAt: new Date(nowMs + retryDelayMs).toISOString(),
+    phase: failure.phase,
+    reason: "deterministic-canonical-checkpoint-no-progress",
+    repeatCount,
+    retryDelayMs,
+    threshold: activationThreshold,
+    txid: failure.txid,
+  };
+}
+
+export function markWorkerNoProgressAlerted(state, nowMs = Date.now()) {
+  return {
+    ...state,
+    alertReady: false,
+    lastAlertAt: new Date(nowMs).toISOString(),
+  };
+}
+
+export function resetWorkerNoProgressState(
+  previous,
+  progress,
+  nowMs = Date.now(),
+  reason = "canonical-progress-resumed",
+  network = NETWORK,
+) {
+  const checkpoint = normalizedCheckpoint(progress);
+  return {
+    action: "normal",
+    active: false,
+    alertReady: false,
+    checkpointHash: checkpoint.checkpointHash,
+    checkpointHeight: checkpoint.checkpointHeight,
+    clearedFingerprint: previous?.fingerprint ?? null,
+    network: String(network ?? ""),
+    reason,
+    repeatCount: 0,
+    resetAt: new Date(nowMs).toISOString(),
+  };
+}
+
+export function workerNoProgressFromMeta(value, network = NETWORK) {
+  const expectedNetwork = String(network ?? "");
+  const state = value?.noProgress;
+  if (
+    !value ||
+    typeof value !== "object" ||
+    String(value.network ?? "") !== expectedNetwork ||
+    !state ||
+    typeof state !== "object" ||
+    String(state.network ?? "") !== expectedNetwork ||
+    !Number.isSafeInteger(Number(state.repeatCount)) ||
+    Number(state.repeatCount) < 0
+  ) {
+    return null;
+  }
+  if (
+    Number(state.repeatCount) > 0 &&
+    !trustedCanonicalWorkerFailureIdentity(state)
+  ) {
+    return null;
+  }
+  if (
+    state.active === true &&
+    (!/^[0-9a-f]{64}$/u.test(String(state.checkpointHash ?? "")) ||
+      !Number.isSafeInteger(Number(state.checkpointHeight)) ||
+      Number(state.checkpointHeight) < 0 ||
+      !/^[0-9a-f]{64}$/u.test(String(state.txid ?? "")) ||
+      !Number.isSafeInteger(Number(state.failingBlockHeight)) ||
+      Number(state.failingBlockHeight) <= Number(state.checkpointHeight))
+  ) {
+    return null;
+  }
+  return state;
+}
+
+export function shouldEscalateWorkerFailure(
+  canonicalFailure,
+  consecutiveFailures,
+  threshold = MAX_CONSECUTIVE_FAILURES,
+) {
+  return (
+    !canonicalFailure &&
+    Number(consecutiveFailures) >= finitePositiveInteger(threshold, 3)
+  );
+}
+
+export function containableCanonicalFailure(failure, progress) {
+  const checkpoint = normalizedCheckpoint(progress);
+  return failure?.deterministic === true &&
+    trustedCanonicalWorkerFailureIdentity(failure) &&
+    Number.isSafeInteger(checkpoint.checkpointHeight) &&
+    checkpoint.checkpointHeight >= 0 &&
+    checkpoint.checkpointHeight < Number(failure.failingBlockHeight) &&
+    /^[0-9a-f]{64}$/u.test(String(checkpoint.checkpointHash ?? ""))
+    ? failure
+    : null;
+}
+
+export async function runCanonicalBeforePending(runCanonical, runPending) {
+  await runCanonical();
+  return runPending();
+}
+
+export function runScript(
   scriptName,
   args = [],
   envOverrides = {},
-  { timeoutMs = BACKFILL_CHILD_TIMEOUT_MS } = {},
+  { runtime = null, timeoutMs = BACKFILL_CHILD_TIMEOUT_MS } = {},
 ) {
+  if (runtime?.stopping) {
+    return Promise.reject(workerStoppingError());
+  }
   return new Promise((resolve, reject) => {
     let timedOut = false;
     let forceKillTimer;
+    let timeout;
+    let settled = false;
+    let observedCanonicalFailure = null;
+    const lineBuffers = new Map();
     const child = spawn(
       process.execPath,
       [path.join(repoRoot, "scripts", scriptName), ...args],
       {
         cwd: repoRoot,
         env: { ...process.env, ...envOverrides },
-        stdio: "inherit",
+        stdio: ["inherit", "pipe", "pipe"],
       },
     );
-    const timeout = setTimeout(() => {
+    if (runtime) {
+      runtime.activeChild = child;
+    }
+    const finish = (callback, value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      clearTimeout(forceKillTimer);
+      if (runtime?.activeChild === child) {
+        runtime.activeChild = null;
+      }
+      clearTimeout(runtime?.childStopTimer);
+      if (runtime) {
+        runtime.childStopTimer = null;
+      }
+      callback(value);
+    };
+    const observeOutput = (stream, destination, label) => {
+      if (!stream) {
+        return;
+      }
+      lineBuffers.set(label, "");
+      stream.on("data", (chunk) => {
+        if (!destination.write(chunk)) {
+          stream.pause();
+          destination.once("drain", () => stream.resume());
+        }
+        const combined = `${lineBuffers.get(label) ?? ""}${chunk.toString("utf8")}`;
+        const lines = combined.split(/\r?\n/u);
+        lineBuffers.set(
+          label,
+          lines.pop()?.slice(-CHILD_LINE_BUFFER_CHARS) ?? "",
+        );
+        for (const line of lines) {
+          const failure = canonicalWorkerFailureFromLine(line);
+          if (failure) {
+            observedCanonicalFailure = failure;
+          }
+        }
+      });
+    };
+    observeOutput(child.stdout, process.stdout, "stdout");
+    observeOutput(child.stderr, process.stderr, "stderr");
+    timeout = setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
-      forceKillTimer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+      forceKillTimer = setTimeout(
+        () => child.kill("SIGKILL"),
+        CHILD_STOP_GRACE_MS,
+      );
       forceKillTimer.unref?.();
     }, Math.max(1, Number(timeoutMs) || BACKFILL_CHILD_TIMEOUT_MS));
     timeout.unref?.();
     child.on("error", (error) => {
-      clearTimeout(timeout);
-      clearTimeout(forceKillTimer);
-      reject(error);
+      finish(reject, runtime?.stopping ? workerStoppingError() : error);
     });
-    child.on("exit", (code, signal) => {
-      clearTimeout(timeout);
-      clearTimeout(forceKillTimer);
+    child.on("close", (code, signal) => {
+      for (const bufferedLine of lineBuffers.values()) {
+        const failure = canonicalWorkerFailureFromLine(bufferedLine);
+        if (failure) {
+          observedCanonicalFailure = failure;
+        }
+      }
+      if (runtime?.stopping) {
+        finish(reject, workerStoppingError());
+        return;
+      }
       if (timedOut) {
-        reject(
-          new Error(
-            `${scriptName} exceeded its ${timeoutMs}ms wall-clock budget`,
-          ),
+        const error = new Error(
+          `${scriptName} exceeded its ${timeoutMs}ms wall-clock budget`,
         );
+        error.workerFailure = observedCanonicalFailure;
+        finish(reject, error);
         return;
       }
       if (code === 0) {
-        resolve();
+        finish(resolve);
         return;
       }
-      reject(
-        new Error(
-          `${scriptName} exited with ${signal ? `signal ${signal}` : `code ${code}`}`,
-        ),
+      const error = new Error(
+        `${scriptName} exited with ${signal ? `signal ${signal}` : `code ${code}`}`,
       );
+      error.workerFailure = observedCanonicalFailure;
+      finish(reject, error);
     });
   });
 }
 
-async function runBackfillWithRetries(backfillEnv) {
+async function runBackfillWithRetries(backfillEnv, runtime) {
   let lastError;
   for (let attempt = 0; attempt <= BACKFILL_RETRIES; attempt += 1) {
+    if (runtime?.stopping) {
+      throw workerStoppingError();
+    }
     try {
       await runScript("backfill-proof-indexer.mjs", [], backfillEnv, {
+        runtime,
         timeoutMs: BACKFILL_CHILD_TIMEOUT_MS,
       });
       return;
     } catch (error) {
       lastError = error;
+      if (canonicalWorkerFailureFromError(error)) {
+        break;
+      }
+      if (runtime?.stopping || error?.code === "POW_INDEX_WORKER_STOPPING") {
+        throw workerStoppingError();
+      }
       if (attempt >= BACKFILL_RETRIES) {
         break;
       }
@@ -293,22 +724,37 @@ async function runBackfillWithRetries(backfillEnv) {
           retrying: true,
         }),
       );
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await workerSleep(runtime, delayMs);
     }
   }
   throw lastError;
 }
 
 async function writeWorkerMeta(pool, value) {
-  await pool.query(
-    `
-      INSERT INTO proof_indexer.meta (key, value, updated_at)
-      VALUES ('worker:lastRun', $1::jsonb, now())
-      ON CONFLICT (key)
-      DO UPDATE SET value = EXCLUDED.value, updated_at = now()
-    `,
-    [JSON.stringify(value)],
-  );
+  if (String(value?.network ?? "") !== NETWORK) {
+    throw new Error("Refusing to persist cross-network worker metadata");
+  }
+  try {
+    await pool.query(
+      `
+        INSERT INTO proof_indexer.meta (key, value, updated_at)
+        VALUES ('worker:lastRun', $1::jsonb, now())
+        ON CONFLICT (key)
+        DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+      `,
+      [JSON.stringify(value)],
+    );
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        error: cappedChildError(error?.message ?? error),
+        network: NETWORK,
+        phase: "worker-meta-write",
+        state: value?.state ?? null,
+      }),
+    );
+    throw error;
+  }
 }
 
 async function readWorkerMeta(pool) {
@@ -322,6 +768,36 @@ async function readWorkerMeta(pool) {
   );
   const value = result.rows[0]?.value;
   return value && typeof value === "object" ? value : null;
+}
+
+export const AUTHORITATIVE_WORKER_CHECKPOINT_SQL = `
+  SELECT
+    indexed_through_block,
+    lower(payload->>'indexedThroughBlockHash') AS checkpoint_hash
+  FROM proof_indexer.ledger_snapshots
+  WHERE network = $1
+    AND indexed_through_block IS NOT NULL
+    AND NOT (source_hashes ? 'canonicalSummary')
+    AND source_hashes ? 'blockScan'
+    AND payload->>'source' = 'proof-indexer-block-scan'
+    AND consistency->>'status' IN ('block-scan-current', 'block-scan-partial')
+    AND payload->>'indexedThroughBlockHash' ~* '^[0-9a-f]{64}$'
+    AND source_hashes->>'blockScan' ~* '^[0-9a-f]{64}$'
+    AND lower(source_hashes->>'blockScan') =
+      lower(payload->>'indexedThroughBlockHash')
+  ORDER BY indexed_through_block DESC, generated_at DESC
+  LIMIT 1
+`;
+
+async function readCanonicalWorkerProgress(pool, network = NETWORK) {
+  const result = await pool.query(
+    AUTHORITATIVE_WORKER_CHECKPOINT_SQL,
+    [network],
+  );
+  return normalizedCheckpoint({
+    checkpointHash: result.rows[0]?.checkpoint_hash,
+    checkpointHeight: result.rows[0]?.indexed_through_block,
+  });
 }
 
 function lastSuccessFromMeta(value) {
@@ -1114,14 +1590,16 @@ async function refreshPendingStatuses(pool) {
   return summary;
 }
 
-async function runCycle(pool, lastSuccess) {
+async function runCycle(pool, lastSuccess, runtime) {
   const startedAt = new Date();
+  const noProgress = runtime.noProgress;
   await assertWorkAtomicProjectionReady(pool);
   await writeWorkerMeta(pool, {
     apiBase: API_BASE,
     lastSuccess,
     lastSuccessAt: lastSuccess?.finishedAt ?? null,
     network: NETWORK,
+    noProgress,
     ok: Boolean(lastSuccess),
     startedAt: startedAt.toISOString(),
     state: "running",
@@ -1143,11 +1621,39 @@ async function runCycle(pool, lastSuccess) {
     POW_INDEX_DB_APP_NAME: "proof-indexer-worker-backfill",
   };
 
+  await runBackfillWithRetries(backfillEnv, runtime);
+  const canonicalProgress = await readCanonicalWorkerProgress(
+    pool,
+    runtime.network,
+  );
+  const clearedNoProgress = resetWorkerNoProgressState(
+    noProgress,
+    canonicalProgress,
+    Date.now(),
+    "canonical-scan-success",
+    runtime.network,
+  );
+  runtime.noProgress = clearedNoProgress;
+  await writeWorkerMeta(pool, {
+    apiBase: API_BASE,
+    canonicalProgress,
+    consecutiveFailures: 0,
+    lastSuccess,
+    lastSuccessAt: lastSuccess?.finishedAt ?? null,
+    network: runtime.network,
+    noProgress: clearedNoProgress,
+    ok: Boolean(lastSuccess),
+    startedAt: startedAt.toISOString(),
+    state: "canonical-scan-complete",
+  });
+  if (runtime.stopping) {
+    throw workerStoppingError();
+  }
   const pendingStatus = await refreshPendingStatuses(pool);
-  await runBackfillWithRetries(backfillEnv);
 
   const nowMs = Date.now();
   const runParityNow =
+    !runtime.stopping &&
     RUN_PARITY &&
     (ONCE ||
       lastParityAtMs === 0 ||
@@ -1160,10 +1666,14 @@ async function runCycle(pool, lastSuccess) {
         POW_API_BASE: API_BASE,
         POW_INDEX_DB_APP_NAME: "proof-indexer-worker-parity",
       }, {
+        runtime,
         timeoutMs: PARITY_CHILD_TIMEOUT_MS,
       });
       lastParityAtMs = Date.now();
     } catch (error) {
+      if (runtime.stopping || error?.code === "POW_INDEX_WORKER_STOPPING") {
+        throw workerStoppingError();
+      }
       console.error(`Worker parity check failed: ${error?.message ?? error}`);
     }
   }
@@ -1180,13 +1690,15 @@ async function runCycle(pool, lastSuccess) {
     backfillLimit: BACKFILL_LIMIT,
     backfillMaxPages: BACKFILL_MAX_PAGES,
     backfillSources: BACKFILL_SOURCES,
+    canonicalProgress,
     consecutiveFailures: 0,
     durationMs: currentSuccess.durationMs,
     finishedAt: currentSuccess.finishedAt,
     holders: INCLUDE_HOLDERS,
     lastSuccess: currentSuccess,
     lastSuccessAt: currentSuccess.finishedAt,
-    network: NETWORK,
+    network: runtime.network,
+    noProgress: clearedNoProgress,
     ok: true,
     parity: runParityNow,
     parityEnabled: RUN_PARITY,
@@ -1197,109 +1709,212 @@ async function runCycle(pool, lastSuccess) {
   };
   await writeWorkerMeta(pool, value);
   console.log(JSON.stringify({ phase: "worker-cycle", ...value }));
-  return currentSuccess;
+  return {
+    canonicalProgress,
+    lastSuccess: currentSuccess,
+    noProgress: clearedNoProgress,
+  };
 }
 
-if (DRY_RUN) {
-  console.log(
-    JSON.stringify(
-      {
-        apiBase: API_BASE,
-        backfillLimit: BACKFILL_LIMIT,
-        backfillMaxPages: BACKFILL_MAX_PAGES,
-        backfillSources: BACKFILL_SOURCES,
-        backfillStoreLedgerSnapshot: BACKFILL_STORE_LEDGER_SNAPSHOT,
-        backfillStoreCanonicalSummarySnapshot:
-          BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT,
-        dryRun: true,
-        intervalMs: INTERVAL_MS,
-        holders: INCLUDE_HOLDERS,
-        maxConsecutiveFailures: MAX_CONSECUTIVE_FAILURES,
-        network: NETWORK,
-        once: ONCE,
-        parity: RUN_PARITY,
-        parityIntervalMs: PARITY_INTERVAL_MS,
-        pendingDropConfirmationMs: PENDING_DROP_CONFIRMATION_MS,
-        pendingMinAgeMs: PENDING_MIN_AGE_MS,
-        pendingStatusBudgetMs: PENDING_STATUS_BUDGET_MS,
-        pendingStatusConcurrency: PENDING_STATUS_CONCURRENCY,
-        pendingStatusLimit: PENDING_STATUS_LIMIT,
-        backfillTimeoutMs: BACKFILL_CHILD_TIMEOUT_MS,
-        backfillRetries: BACKFILL_RETRIES,
-        backfillRetryDelayMs: BACKFILL_RETRY_DELAY_MS,
-        parityTimeoutMs: PARITY_CHILD_TIMEOUT_MS,
-        requireWorkAtomicProjection: REQUIRE_WORK_ATOMIC_PROJECTION,
-        statusTimeoutMs: STATUS_REQUEST_TIMEOUT_MS,
-      },
-      null,
-      2,
-    ),
-  );
-  process.exit(0);
-}
-
-const pool = createProofIndexPool({
-  env: {
-    ...process.env,
-    POW_INDEX_DB_APP_NAME:
-      process.env.POW_INDEX_DB_APP_NAME ?? "proof-indexer-worker",
-  },
-});
-
-let stopping = false;
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => {
-    stopping = true;
-  });
-}
-
-try {
-  const previousMeta = await readWorkerMeta(pool).catch(() => null);
-  let lastSuccess = lastSuccessFromMeta(previousMeta);
-  let consecutiveFailures = 0;
-  await writeWorkerMeta(pool, {
-    apiBase: API_BASE,
-    lastSuccess,
-    lastSuccessAt: lastSuccess?.finishedAt ?? null,
-    network: NETWORK,
-    ok: Boolean(lastSuccess),
-    startedAt: new Date().toISOString(),
-    state: "starting",
-  });
-  while (!stopping) {
-    try {
-      lastSuccess = await runCycle(pool, lastSuccess);
-      consecutiveFailures = 0;
-      if (ONCE || stopping) {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS));
-    } catch (error) {
-      consecutiveFailures += 1;
-      const value = {
-        apiBase: API_BASE,
-        consecutiveFailures,
-        error: error?.message ?? String(error),
-        failedAt: new Date().toISOString(),
-        lastSuccess,
-        lastSuccessAt: lastSuccess?.finishedAt ?? null,
-        maxConsecutiveFailures: MAX_CONSECUTIVE_FAILURES,
-        network: NETWORK,
-        ok: false,
-        state: "failed",
-      };
-      console.error(JSON.stringify({ phase: "worker-cycle", ...value }));
-      await writeWorkerMeta(pool, value).catch(() => {});
-      if (
-        ONCE ||
-        stopping ||
-        consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
-      ) {
-        throw error;
-      }
-      await new Promise((resolve) => setTimeout(resolve, ERROR_INTERVAL_MS));
-    }
+export async function runWorkerMain() {
+  if (DRY_RUN) {
+    console.log(
+      JSON.stringify(
+        {
+          apiBase: API_BASE,
+          backfillLimit: BACKFILL_LIMIT,
+          backfillMaxPages: BACKFILL_MAX_PAGES,
+          backfillSources: BACKFILL_SOURCES,
+          backfillStoreLedgerSnapshot: BACKFILL_STORE_LEDGER_SNAPSHOT,
+          backfillStoreCanonicalSummarySnapshot:
+            BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT,
+          backfillTimeoutMs: BACKFILL_CHILD_TIMEOUT_MS,
+          backfillRetries: BACKFILL_RETRIES,
+          backfillRetryDelayMs: BACKFILL_RETRY_DELAY_MS,
+          dryRun: true,
+          errorIntervalMs: ERROR_INTERVAL_MS,
+          holders: INCLUDE_HOLDERS,
+          intervalMs: INTERVAL_MS,
+          maxConsecutiveFailures: MAX_CONSECUTIVE_FAILURES,
+          maxErrorIntervalMs: MAX_ERROR_INTERVAL_MS,
+          network: NETWORK,
+          noProgressAlertIntervalMs: NO_PROGRESS_ALERT_INTERVAL_MS,
+          noProgressPolicy: "fail-closed-contained-retry",
+          once: ONCE,
+          parity: RUN_PARITY,
+          parityIntervalMs: PARITY_INTERVAL_MS,
+          parityTimeoutMs: PARITY_CHILD_TIMEOUT_MS,
+          pendingAfterCanonicalScan: true,
+          pendingDropConfirmationMs: PENDING_DROP_CONFIRMATION_MS,
+          pendingMinAgeMs: PENDING_MIN_AGE_MS,
+          pendingStatusBudgetMs: PENDING_STATUS_BUDGET_MS,
+          pendingStatusConcurrency: PENDING_STATUS_CONCURRENCY,
+          pendingStatusLimit: PENDING_STATUS_LIMIT,
+          requireWorkAtomicProjection: REQUIRE_WORK_ATOMIC_PROJECTION,
+          statusTimeoutMs: STATUS_REQUEST_TIMEOUT_MS,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
   }
-} finally {
-  await pool.end();
+
+  const pool = createProofIndexPool({
+    env: {
+      ...process.env,
+      POW_INDEX_DB_APP_NAME:
+      process.env.POW_INDEX_DB_APP_NAME ?? "proof-indexer-worker",
+    },
+  });
+  const runtime = createWorkerRuntime(NETWORK);
+  const onSignal = () => requestWorkerStop(runtime);
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.on(signal, onSignal);
+  }
+
+  try {
+    const previousMeta = await readWorkerMeta(pool).catch(() => null);
+    runtime.noProgress = workerNoProgressFromMeta(previousMeta, runtime.network);
+    let lastSuccess = lastSuccessFromMeta(previousMeta);
+    let consecutiveFailures = Math.max(
+      0,
+      Math.trunc(Number(runtime.noProgress?.repeatCount ?? 0)) || 0,
+    );
+    await writeWorkerMeta(pool, {
+      apiBase: API_BASE,
+      lastSuccess,
+      lastSuccessAt: lastSuccess?.finishedAt ?? null,
+      network: runtime.network,
+      noProgress: runtime.noProgress,
+      ok: Boolean(lastSuccess),
+      startedAt: new Date().toISOString(),
+      state: "starting",
+    });
+    while (!runtime.stopping) {
+      try {
+        const cycle = await runCycle(pool, lastSuccess, runtime);
+        lastSuccess = cycle.lastSuccess;
+        runtime.noProgress = cycle.noProgress;
+        consecutiveFailures = 0;
+        if (ONCE || runtime.stopping) {
+          break;
+        }
+        await workerSleep(runtime, INTERVAL_MS);
+      } catch (error) {
+        if (
+          runtime.stopping ||
+          error?.code === "POW_INDEX_WORKER_STOPPING"
+        ) {
+          break;
+        }
+        consecutiveFailures += 1;
+        const nowMs = Date.now();
+        const canonicalFailure = canonicalWorkerFailureFromError(error);
+        const canonicalProgress = await readCanonicalWorkerProgress(
+          pool,
+          runtime.network,
+        ).catch((checkpointError) => {
+          console.error(
+            JSON.stringify({
+              error: cappedChildError(
+                checkpointError?.message ?? checkpointError,
+              ),
+              network: runtime.network,
+              phase: "worker-checkpoint-read",
+            }),
+          );
+          return normalizedCheckpoint(null);
+        });
+        const containedCanonicalFailure = containableCanonicalFailure(
+          canonicalFailure,
+          canonicalProgress,
+        );
+        let retryDelayMs = exponentialRetryDelayMs(consecutiveFailures);
+        let alertEmitted = false;
+        if (containedCanonicalFailure) {
+          runtime.noProgress = nextWorkerNoProgressState(runtime.noProgress, {
+            failure: containedCanonicalFailure,
+            network: runtime.network,
+            progress: canonicalProgress,
+            nowMs,
+          });
+          retryDelayMs = runtime.noProgress.retryDelayMs;
+          if (runtime.noProgress.alertReady) {
+            alertEmitted = true;
+            console.error(
+              JSON.stringify({
+                ...runtime.noProgress,
+                alert: "proof-index-worker-no-progress",
+                alertReady: true,
+                canonicalPhase: runtime.noProgress.phase,
+                phase: "worker-containment-alert",
+              }),
+            );
+            runtime.noProgress = markWorkerNoProgressAlerted(
+              runtime.noProgress,
+              nowMs,
+            );
+          }
+        }
+        const escalating = shouldEscalateWorkerFailure(
+          containedCanonicalFailure,
+          consecutiveFailures,
+        );
+        const retrying = !ONCE && !runtime.stopping && !escalating;
+        const failedAt = new Date(nowMs).toISOString();
+        const value = {
+          alertEmitted,
+          apiBase: API_BASE,
+          canonicalFailure,
+          containmentEligible: Boolean(containedCanonicalFailure),
+          canonicalProgress,
+          consecutiveFailures,
+          error: cappedChildError(error?.message ?? error),
+          failedAt,
+          lastSuccess,
+          lastSuccessAt: lastSuccess?.finishedAt ?? null,
+          maxConsecutiveFailures: MAX_CONSECUTIVE_FAILURES,
+          network: runtime.network,
+          nextRetryAt: retrying
+            ? new Date(nowMs + retryDelayMs).toISOString()
+            : null,
+          noProgress: runtime.noProgress,
+          ok: false,
+          retryDelayMs,
+          retrying,
+          state: containedCanonicalFailure && runtime.noProgress?.active
+            ? "contained-no-progress"
+            : escalating
+              ? "failed-escalating"
+              : "failed-retrying",
+        };
+        console.error(JSON.stringify({ phase: "worker-cycle", ...value }));
+        await writeWorkerMeta(pool, value);
+        if (ONCE) {
+          throw error;
+        }
+        if (
+          !containedCanonicalFailure &&
+          consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
+        ) {
+          throw error;
+        }
+        await workerSleep(runtime, retryDelayMs);
+      }
+    }
+  } finally {
+    requestWorkerStop(runtime);
+    for (const signal of ["SIGINT", "SIGTERM"]) {
+      process.off(signal, onSignal);
+    }
+    await pool.end();
+  }
+}
+
+const invokedDirectly =
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+if (invokedDirectly) {
+  await runWorkerMain();
 }

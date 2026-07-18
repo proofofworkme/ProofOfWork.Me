@@ -10441,6 +10441,7 @@ function tokenStateFromTransactions(
       let parsedTxKind = "";
       let parsedTxTokenId = "";
       let rejectedTxMessage = null;
+      const rejectedTxMessages = [];
 
       for (const { message, protocolVout } of messageEntries) {
         const parsed = parseTokenPayload(message, network);
@@ -10556,15 +10557,20 @@ function tokenStateFromTransactions(
             actorAddress,
           );
           if (confirmed && spendableBalance < parsedAmount) {
-            rejectedTxMessage = insufficientTokenBalanceInvalidEvent({
-              actorAddress,
-              amount: parsedAmount,
-              confirmedBalance: senderBalance,
-              recipientAddress: parsed.recipientAddress,
-              reservedBalance,
-              ticker: sentToken.ticker,
-              tokenId: sentToken.tokenId,
-            });
+            rejectedTxMessage = {
+              ...insufficientTokenBalanceInvalidEvent({
+                actorAddress,
+                amount: parsedAmount,
+                confirmedBalance: senderBalance,
+                recipientAddress: parsed.recipientAddress,
+                reservedBalance,
+                ticker: sentToken.ticker,
+                tokenId: sentToken.tokenId,
+              }),
+              kind: parsed.kind,
+              protocolVout,
+            };
+            rejectedTxMessages.push(rejectedTxMessage);
             continue;
           }
 
@@ -10799,10 +10805,28 @@ function tokenStateFromTransactions(
         minerFeeSats,
         txid,
       });
+      for (const rejectedMessage of rejectedTxMessages) {
+        invalidEvents.push({
+          ...rejectedMessage,
+          amount: rejectedMessage.amount ?? 0,
+          auditMinerFeeSats: minerFeeSats,
+          auditRegistryPaymentSats: originalRegistrySats,
+          auditTotalCostSats: minerFeeSats + originalRegistrySats,
+          blockHash,
+          blockHeight,
+          blockIndex,
+          confirmed,
+          createdAt,
+          network,
+          registryAddress,
+          txid,
+        });
+      }
       if (
         confirmed &&
         parsedTxMessage &&
         !acceptedTxMessage &&
+        rejectedTxMessages.length === 0 &&
         originalRegistrySats >= TOKEN_MIN_MUTATION_PRICE_SATS
       ) {
         invalidEvents.push({
@@ -13517,7 +13541,8 @@ function inceptionIssuanceMetadataFromMints(mints) {
           numbersAgree(dust, issuanceValue - amount, 0.01)) &&
         Number.isFinite(issuanceFloor) &&
         issuanceFloor >= 1 &&
-        numbersAgree(issuanceFloor * amount, issuanceValue, 0.01)
+        (atomicMetadataPresent ||
+          numbersAgree(issuanceFloor * amount, issuanceValue, 0.01))
       );
     },
   );
@@ -13688,6 +13713,230 @@ function inceptionBondHasExplicitlyRejectedMint(bond, tokenState) {
     ? tokenState.invalidEvents
     : []
   ).some((event) => inceptionInvalidMintDispositionMatchesBond(event, bond));
+}
+
+function inceptionVerifierBondActivity(activity, tokenState) {
+  return (Array.isArray(activity) ? activity : []).filter(
+    (item) =>
+      !isInceptionBondActivityItem(item) ||
+      !inceptionBondHasExplicitlyRejectedMint(item, tokenState),
+  );
+}
+
+function currentBlockRejectedInceptionAttachmentDispositions(
+  seedMints,
+  activity,
+  ledger,
+  options = {},
+) {
+  if (options.allowCurrentBlockInvalidAttachmentDisposition !== true) {
+    return [];
+  }
+  const currentBlockHeight = Number(options.currentBlockHeight);
+  const currentBlockHash = String(options.currentBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    !Number.isSafeInteger(currentBlockHeight) ||
+    currentBlockHeight < 1 ||
+    !/^[0-9a-f]{64}$/u.test(currentBlockHash)
+  ) {
+    return [];
+  }
+  const legacyMintsByTxid = new Map(
+    (Array.isArray(seedMints) ? seedMints : [])
+      .filter(
+        (mint) =>
+          mint?.confirmed === true &&
+          mint?.tokenId === INCB_TOKEN_ID &&
+          String(mint?.sourceKind ?? "").trim().toLowerCase() ===
+            INCEPTION_BOND_CONFIG.kind &&
+          Number(mint?.blockHeight) === currentBlockHeight &&
+          String(mint?.blockHash ?? "").trim().toLowerCase() ===
+            currentBlockHash &&
+          mint?.issuanceAccountingModel !==
+            INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
+      )
+      .map((mint) => [String(mint?.txid ?? "").trim().toLowerCase(), mint]),
+  );
+  if (legacyMintsByTxid.size === 0) {
+    return [];
+  }
+
+  return (Array.isArray(activity) ? activity : []).flatMap((bond) => {
+    const txid = String(bond?.txid ?? "").trim().toLowerCase();
+    const seedMint = legacyMintsByTxid.get(txid);
+    const bondBlockHash = String(bond?.blockHash ?? "")
+      .trim()
+      .toLowerCase();
+    const bondBlockHeight = Number(bond?.blockHeight);
+    const seedBlockHeight = Number(seedMint?.blockHeight);
+    const bondBlockIndex = Number(bond?.blockIndex);
+    const seedBlockIndex = Number(seedMint?.blockIndex);
+    if (
+      !seedMint ||
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      bond?.confirmed !== true ||
+      !isInceptionBondActivityItem(bond) ||
+      bondBlockHash !== currentBlockHash ||
+      String(seedMint?.blockHash ?? "").trim().toLowerCase() !==
+        currentBlockHash ||
+      !Number.isSafeInteger(bondBlockHeight) ||
+      !Number.isSafeInteger(seedBlockHeight) ||
+      bondBlockHeight !== currentBlockHeight ||
+      seedBlockHeight !== currentBlockHeight ||
+      !Number.isSafeInteger(bondBlockIndex) ||
+      !Number.isSafeInteger(seedBlockIndex) ||
+      bondBlockIndex < 0 ||
+      seedBlockIndex < 0 ||
+      bondBlockIndex !== seedBlockIndex
+    ) {
+      return [];
+    }
+    const attachment = inceptionAttachmentMatchesForBond(ledger, bond);
+    if (attachment.declaredActions < 1 || attachment.unmatchedActions < 1) {
+      return [];
+    }
+    const invalidWorkEvents = Array.isArray(
+      ledgerTokenStateForScope(ledger, WORK_TOKEN_ID)?.invalidEvents,
+    )
+      ? ledgerTokenStateForScope(ledger, WORK_TOKEN_ID).invalidEvents
+      : [];
+    const hasBoundInsufficientBalanceDisposition = invalidWorkEvents.some(
+      (event) => {
+        const attemptedAtoms = workAtomsBigIntFromRecord({
+          amount: event?.attemptedAmount ?? event?.amount,
+          amountAtoms: event?.attemptedAmountAtoms ?? event?.amountAtoms,
+        });
+        return (
+          event?.confirmed === true &&
+          String(event?.kind ?? "").trim().toLowerCase() === "send" &&
+          String(event?.reasonCode ?? "").trim().toLowerCase() ===
+            "insufficient-spendable-balance" &&
+          String(event?.tokenId ?? "").trim().toLowerCase() ===
+            WORK_TOKEN_ID &&
+          String(event?.txid ?? "").trim().toLowerCase() === txid &&
+          String(event?.blockHash ?? "").trim().toLowerCase() ===
+            currentBlockHash &&
+          Number(event?.blockHeight) === currentBlockHeight &&
+          Number(event?.blockIndex) === bondBlockIndex &&
+          attemptedAtoms !== null &&
+          (Array.isArray(bond?.attachedCredits)
+            ? bond.attachedCredits
+            : []
+          ).some((credit) => {
+            const creditAtoms = workAtomsBigIntFromRecord(credit);
+            const creditVout = canonicalEventOrdinal(credit?.protocolVout);
+            const eventVout = canonicalEventOrdinal(event?.protocolVout);
+            return (
+              credit?.tokenId === WORK_TOKEN_ID &&
+              creditAtoms !== null &&
+              creditAtoms === attemptedAtoms &&
+              creditVout !== null &&
+              eventVout !== null &&
+              creditVout === eventVout &&
+              samePaymentAddress(
+                credit?.recipientAddress,
+                event?.recipientAddress,
+              )
+            );
+          })
+        );
+      },
+    );
+    if (!hasBoundInsufficientBalanceDisposition) {
+      return [];
+    }
+    return [{
+      attemptedKind: "token-mint",
+      blockHash: currentBlockHash,
+      blockHeight: currentBlockHeight,
+      blockIndex: bondBlockIndex,
+      confirmed: true,
+      kind: "token-event-invalid",
+      minterAddress: String(seedMint?.minterAddress ?? "").trim(),
+      network: String(bond?.network ?? seedMint?.network ?? "").trim(),
+      reason:
+        "The Inception bond's declared WORK attachment did not resolve to a valid canonical WORK transfer.",
+      reasonCode: "invalid-inception-work-attachment",
+      sourceBondTxid: txid,
+      sourceKind: INCEPTION_BOND_CONFIG.kind,
+      ticker: "INCB",
+      tokenId: INCB_TOKEN_ID,
+      txid,
+      valid: false,
+    }];
+  });
+}
+
+function tokenStateWithInceptionInvalidDispositions(state, dispositions) {
+  const invalidDispositions = Array.isArray(dispositions) ? dispositions : [];
+  if (invalidDispositions.length === 0) {
+    return state;
+  }
+  const dispositionTxids = new Set(
+    invalidDispositions.map((item) =>
+      String(item?.txid ?? "").trim().toLowerCase(),
+    ),
+  );
+  return {
+    ...state,
+    invalidEvents: [
+      ...(Array.isArray(state?.invalidEvents) ? state.invalidEvents : []).filter(
+        (item) =>
+          !(
+            String(item?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID &&
+            dispositionTxids.has(
+              String(item?.txid ?? "").trim().toLowerCase(),
+            )
+          ),
+      ),
+      ...invalidDispositions,
+    ],
+  };
+}
+
+function inceptionInvalidOnlyVerifierStateResolved(
+  state,
+  issuance,
+  targetTxid,
+  context,
+  requiredBlockHeight,
+) {
+  const normalizedTargetTxid = String(targetTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const verifierBlockHash = String(context?.blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  return Boolean(
+    issuance?.complete === true &&
+      issuance?.confirmedMints === 0 &&
+      numericValue(state?.confirmedSupply) === 0 &&
+      /^[0-9a-f]{64}$/u.test(normalizedTargetTxid) &&
+      /^[0-9a-f]{64}$/u.test(verifierBlockHash) &&
+      (Array.isArray(state?.invalidEvents) ? state.invalidEvents : []).some(
+        (event) =>
+          event?.confirmed === true &&
+          event?.valid === false &&
+          String(event?.kind ?? "").trim().toLowerCase() ===
+            "token-event-invalid" &&
+          String(event?.attemptedKind ?? "").trim().toLowerCase() ===
+            "token-mint" &&
+          event?.reasonCode === "invalid-inception-work-attachment" &&
+          String(event?.tokenId ?? "").trim().toLowerCase() ===
+            INCB_TOKEN_ID &&
+          String(event?.sourceKind ?? "").trim().toLowerCase() ===
+            INCEPTION_BOND_CONFIG.kind &&
+          String(event?.txid ?? "").trim().toLowerCase() ===
+            normalizedTargetTxid &&
+          String(event?.sourceBondTxid ?? "").trim().toLowerCase() ===
+            normalizedTargetTxid &&
+          Number(event?.blockHeight) === Number(requiredBlockHeight) &&
+          String(event?.blockHash ?? "").trim().toLowerCase() ===
+            verifierBlockHash,
+      ),
+  );
 }
 
 function canonicalItemPrecedesBondTransaction(item, bond) {
@@ -14406,6 +14655,7 @@ function tokenStateFromTransactionsWithCanonicalInceptionIssuance(
   options = {},
 ) {
   let replayMints = Array.isArray(seedMints) ? seedMints : [];
+  const invalidAttachmentDispositions = new Map();
   const confirmedBondCount = (Array.isArray(bondActivity) ? bondActivity : [])
     .filter((item) => item?.confirmed && isInceptionBondActivityItem(item))
     .length;
@@ -14435,6 +14685,39 @@ function tokenStateFromTransactionsWithCanonicalInceptionIssuance(
       ...(Array.isArray(ledger?.activity) ? ledger.activity : bondActivity)
         .filter((item) => !isTokenActivityItem(item)),
     ]);
+    const issuanceLedger = {
+      ...ledger,
+      activity: historicalActivity,
+      tokenState: combinedTokenState,
+      workTokenState:
+        ledger?.workTokenState ??
+        scopedTokenPayloadFromState(combinedTokenState, WORK_TOKEN_ID),
+    };
+    const rejectedAttachments =
+      currentBlockRejectedInceptionAttachmentDispositions(
+        replayMints,
+        bondActivity,
+        issuanceLedger,
+        options,
+      );
+    if (rejectedAttachments.length > 0) {
+      for (const disposition of rejectedAttachments) {
+        invalidAttachmentDispositions.set(disposition.txid, disposition);
+      }
+      const rejectedTxids = new Set(
+        rejectedAttachments.map((disposition) => disposition.txid),
+      );
+      replayMints = replayMints.filter(
+        (mint) =>
+          !(
+            mint?.tokenId === INCB_TOKEN_ID &&
+            rejectedTxids.has(
+              String(mint?.txid ?? "").trim().toLowerCase(),
+            )
+          ),
+      );
+      continue;
+    }
     const legacyBonds = (Array.isArray(bondActivity) ? bondActivity : [])
       .filter(
         (bond) =>
@@ -14469,14 +14752,7 @@ function tokenStateFromTransactionsWithCanonicalInceptionIssuance(
     const nextMints = inceptionMintsWithLiveIssuance(
       replayMints,
       bondActivity,
-      {
-        ...ledger,
-        activity: historicalActivity,
-        tokenState: combinedTokenState,
-        workTokenState:
-          ledger?.workTokenState ??
-          scopedTokenPayloadFromState(combinedTokenState, WORK_TOKEN_ID),
-      },
+      issuanceLedger,
       {
         ...options,
         ...(legacyBondTxids.size > 0
@@ -14490,20 +14766,26 @@ function tokenStateFromTransactionsWithCanonicalInceptionIssuance(
       inceptionSeedMintReplaySignature(nextMints) ===
       inceptionSeedMintReplaySignature(replayMints)
     ) {
-      return state;
+      return tokenStateWithInceptionInvalidDispositions(
+        state,
+        [...invalidAttachmentDispositions.values()],
+      );
     }
     replayMints = nextMints;
   }
 
   // The last expansion still receives a strict replay from zero.
-  return tokenStateFromTransactions(
-    indexTxs,
-    registryTxsByAddress,
-    indexAddress,
-    network,
-    tokenScope,
-    seedTokens,
-    replayMints,
+  return tokenStateWithInceptionInvalidDispositions(
+    tokenStateFromTransactions(
+      indexTxs,
+      registryTxsByAddress,
+      indexAddress,
+      network,
+      tokenScope,
+      seedTokens,
+      replayMints,
+    ),
+    [...invalidAttachmentDispositions.values()],
   );
 }
 
@@ -27161,6 +27443,74 @@ async function ledgerConsistencyPayloadWithCurrentSummaries(
 
 async function ledgerConsistencyPayload(network, fresh = false) {
   if (network === "livenet") {
+    if (!fresh) {
+      try {
+        const summary = await summaryPayloadWithCanonicalProvenance(
+          await activitySummaryPayload(network, false),
+          network,
+          false,
+          "log-summary",
+        );
+        const summaryHeight = proofIndexPayloadIndexedThroughBlock(summary);
+        const summaryHash = payloadIndexedThroughBlockHash(summary);
+        const summarySnapshotId = payloadSnapshotId(summary);
+        const indexedLedger = await payloadWithFallbackAfterMs(
+          proofIndexCanonicalSummaryLedgerPayload(
+            network,
+            summaryHeight,
+            summaryHash,
+          ),
+          null,
+          SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+        ).catch((error) => {
+          console.error(
+            `Proof index pinned consistency read failed: ${errorSummary(error)}`,
+          );
+          return null;
+        });
+        if (
+          !indexedLedger ||
+          proofIndexPayloadIndexedThroughBlock(indexedLedger) !== summaryHeight ||
+          payloadIndexedThroughBlockHash(indexedLedger) !== summaryHash ||
+          payloadSnapshotId(indexedLedger) !== summarySnapshotId
+        ) {
+          const error = freshDataUnavailableError(
+            "Stable consistency cannot bind to the authenticated canonical summary snapshot.",
+          );
+          error.details = {
+            code: "CANONICAL_CONSISTENCY_SNAPSHOT_MISMATCH",
+            indexedLedgerHeight:
+              proofIndexPayloadIndexedThroughBlock(indexedLedger) || null,
+            indexedLedgerSnapshotId: payloadSnapshotId(indexedLedger) || null,
+            summaryHeight: summaryHeight || null,
+            summarySnapshotId: summarySnapshotId || null,
+          };
+          throw error;
+        }
+        await verifyStableLogCheckpointAfterRead(
+          summary,
+          network,
+          "ledger-consistency",
+        );
+        const payload = ledgerConsistencyPayloadFromLedger(indexedLedger);
+        return {
+          ...payload,
+          indexedThroughBlockHash: summaryHash,
+          provenance: {
+            ...(summary.provenance ?? {}),
+            surface: "ledger-consistency",
+          },
+        };
+      } catch (error) {
+        if (!ENABLE_REQUEST_LEDGER_RECOVERY) {
+          throw error;
+        }
+        console.error(
+          `Stable pinned consistency read failed; using explicitly enabled recovery: ${errorSummary(error)}`,
+        );
+      }
+    }
+
     const indexedLedger = await payloadWithFallbackAfterMs(
       proofIndexCanonicalSummaryLedgerPayload(network),
       null,
@@ -29885,13 +30235,7 @@ async function activityPayloadWithLiveWorkTokenOverlay(ledger, fresh = false) {
 
 async function mergedLogActivityPayload(network, fresh = false) {
   if (network === "livenet" && !fresh) {
-    const indexedActivity = await indexedActivityStateForCanonicalLedger(
-      network,
-      { requireCanonicalMinerFeeCoverage: false },
-    );
-    if (indexedActivity) {
-      return indexedActivity;
-    }
+    return stableProofIndexLogPayload(network);
   }
 
   const ledger = await summaryCanonicalLedgerPayload(network, fresh);
@@ -29915,6 +30259,331 @@ async function mergedLogActivityPayload(network, fresh = false) {
     (await activityPayloadWithLiveWorkTokenOverlay(canonicalLedger, fresh)) ??
     canonicalLedger.activityPayload
   );
+}
+
+function definitivePinnedLogQueryDisposition(value) {
+  return new Set([
+    "confirmed-invalid-nonpublic",
+    "confirmed-nonpublic",
+    "nonpublic-kind-filter",
+    "terminal-nonpublic",
+  ]).has(String(value ?? ""));
+}
+
+async function stableCanonicalLogSummaryPayload(network, surface) {
+  const summary = await summaryPayloadWithCanonicalProvenance(
+    await activitySummaryPayload(network, false),
+    network,
+    false,
+    "log-summary",
+  );
+  if (!payloadSnapshotId(summary)) {
+    const error = freshDataUnavailableError(
+      `Stable ${surface} has no authenticated canonical Log snapshot.`,
+    );
+    error.details = {
+      code: "CANONICAL_LOG_SNAPSHOT_UNAVAILABLE",
+      surface,
+    };
+    throw error;
+  }
+  return summary;
+}
+
+async function verifyStableLogCheckpointAfterRead(summary, network, surface) {
+  const checkpoint = await verifiedSummaryPayloadCheckpoint(
+    summary,
+    network,
+    false,
+    surface,
+  );
+  if (
+    checkpoint.indexedThroughBlock !==
+      proofIndexPayloadIndexedThroughBlock(summary) ||
+    checkpoint.indexedThroughBlockHash !==
+      payloadIndexedThroughBlockHash(summary)
+  ) {
+    const error = freshDataUnavailableError(
+      `Stable ${surface} changed while its pinned snapshot was being read.`,
+    );
+    error.details = {
+      code: "CANONICAL_LOG_STABLE_CHECKPOINT_CHANGED",
+      indexedThroughBlock: proofIndexPayloadIndexedThroughBlock(summary) || null,
+      indexedThroughBlockHash: payloadIndexedThroughBlockHash(summary) || null,
+      snapshotId: payloadSnapshotId(summary) || null,
+      surface,
+    };
+    throw error;
+  }
+  return checkpoint;
+}
+
+async function stableProofIndexLogPayload(network) {
+  const summary = await stableCanonicalLogSummaryPayload(network, "Log");
+  const summarySnapshotId = payloadSnapshotId(summary);
+  const summaryHeight = proofIndexPayloadIndexedThroughBlock(summary);
+  const summaryTotal = Number(
+    summary.totalCount ?? summary.stats?.total ?? summary.activity?.length ?? 0,
+  );
+  const summaryPending = Number(summary.stats?.pending ?? -1);
+  const page = await proofIndexCanonicalActivityPayload(network, {
+    snapshotId: summarySnapshotId,
+  });
+  const activity = Array.isArray(page?.activity) ? page.activity : [];
+  const pageHeight = proofIndexPayloadIndexedThroughBlock(page);
+  const pageSnapshotId = payloadSnapshotId(page);
+  const pageTotal = Number(
+    page?.totalCount ?? page?.stats?.total ?? activity.length,
+  );
+  const pageSnapshotTotal = Number(page?.snapshotTotalCount ?? -1);
+  const pagePending = activity.filter((item) => !item?.confirmed).length;
+  const canonicalMinerFeeCoverage = verifiedCanonicalMinerFeeCoverage(
+    page?.canonicalMinerFeeCoverage ?? page?.stats?.canonicalMinerFeeCoverage,
+  );
+  const summaryLatestEventBlock = Number(summary.stats?.latestEventBlock ?? 0);
+  const pageLatestEventBlock = Number(page?.latestEventBlock ?? 0);
+  if (
+    !page ||
+    summaryHeight <= 0 ||
+    summaryTotal < 0 ||
+    pageHeight !== summaryHeight ||
+    pageSnapshotId !== summarySnapshotId ||
+    pageTotal !== summaryTotal ||
+    pageSnapshotTotal !== summaryTotal ||
+    activity.length !== summaryTotal ||
+    (summaryPending >= 0 && pagePending !== summaryPending) ||
+    !canonicalMinerFeeCoverage ||
+    (summaryLatestEventBlock > 0 &&
+      pageLatestEventBlock !== summaryLatestEventBlock)
+  ) {
+    const error = freshDataUnavailableError(
+      "Stable relational Log does not match its authenticated canonical summary snapshot.",
+    );
+    error.details = {
+      code: "CANONICAL_LOG_STABLE_MISMATCH",
+      pageHeight: pageHeight || null,
+      pageLatestEventBlock: pageLatestEventBlock || null,
+      pagePending,
+      pageSnapshotId: pageSnapshotId || null,
+      pageSnapshotTotal,
+      pageTotal,
+      summaryHeight,
+      summaryLatestEventBlock: summaryLatestEventBlock || null,
+      summaryPending,
+      summarySnapshotId,
+      summaryTotal,
+    };
+    throw error;
+  }
+
+  await verifyStableLogCheckpointAfterRead(summary, network, "log");
+
+  return {
+    activity,
+    canonicalMinerFeeCoverage,
+    consistency: summary.consistency,
+    hasMore: false,
+    indexedAt: summary.indexedAt ?? page.indexedAt,
+    indexedThroughBlock: summaryHeight,
+    indexedThroughBlockHash: payloadIndexedThroughBlockHash(summary),
+    ledgerGeneratedAt: summary.ledgerGeneratedAt ?? page.ledgerGeneratedAt,
+    network,
+    provenance: {
+      ...(summary.provenance ?? {}),
+      surface: "log",
+    },
+    snapshotId: summarySnapshotId,
+    source: page.source,
+    stats: {
+      ...activityStatsFromItems(activity, {
+        ...(summary.stats ?? {}),
+        canonicalMinerFeeCoverage,
+      }),
+      indexedThroughBlock: summaryHeight,
+      latestEventBlock: pageLatestEventBlock || undefined,
+    },
+    summaryOnly: false,
+    totalCount: summaryTotal,
+  };
+}
+
+async function stableProofIndexLogHistoryPayload(
+  network,
+  kind,
+  searchParams,
+) {
+  const requestedKind = String(kind ?? "").trim().toLowerCase();
+  const eligibility = proofIndexLogHistoryReadEligibility(
+    requestedKind,
+    searchParams,
+  );
+  const summary = await stableCanonicalLogSummaryPayload(
+    network,
+    "Log history",
+  );
+  const summarySnapshotId = payloadSnapshotId(summary);
+  const summaryHeight = proofIndexPayloadIndexedThroughBlock(summary);
+  const summaryTotal = Number(
+    summary.totalCount ?? summary.stats?.total ?? summary.activity?.length ?? 0,
+  );
+  const requestedSnapshotId = String(
+    eligibility.pagination.snapshotId ?? "",
+  ).trim();
+  if (requestedSnapshotId && requestedSnapshotId !== summarySnapshotId) {
+    const error = freshDataUnavailableError(
+      "Stable Log history cursor does not match the authenticated last-good snapshot.",
+    );
+    error.details = {
+      code: "CANONICAL_LOG_HISTORY_STABLE_SNAPSHOT_MISMATCH",
+      requestedSnapshotId,
+      summarySnapshotId,
+    };
+    throw error;
+  }
+
+  const boundSearchParams = new URLSearchParams(searchParams ?? undefined);
+  boundSearchParams.set("snapshot", summarySnapshotId);
+  const page = await proofIndexLogHistoryPayload(
+    network,
+    requestedKind,
+    boundSearchParams,
+  );
+  if (!page) {
+    throw freshDataUnavailableError(
+      "Stable Log history is unavailable for the authenticated last-good snapshot.",
+    );
+  }
+
+  const pageHeight = proofIndexPayloadIndexedThroughBlock(page);
+  const pageSnapshotId = payloadSnapshotId(page);
+  const exactQueryTxid = /^[0-9a-f]{64}$/u.test(
+    eligibility.pagination.query,
+  )
+    ? eligibility.pagination.query
+    : "";
+  if (
+    pageSnapshotId !== summarySnapshotId ||
+    (!exactQueryTxid && pageHeight !== summaryHeight) ||
+    (exactQueryTxid && (pageHeight <= 0 || pageHeight > summaryHeight)) ||
+    (!requestedKind &&
+      !eligibility.pagination.query &&
+      Number(page.totalCount ?? -1) !== summaryTotal)
+  ) {
+    const error = freshDataUnavailableError(
+      "Stable Log history page does not match its authenticated canonical summary snapshot.",
+    );
+    error.details = {
+      code: "CANONICAL_LOG_HISTORY_STABLE_MISMATCH",
+      pageHeight: pageHeight || null,
+      pageSnapshotId: pageSnapshotId || null,
+      pageTotal: Number(page.totalCount ?? -1),
+      summaryHeight,
+      summarySnapshotId,
+      summaryTotal,
+    };
+    throw error;
+  }
+
+  if (exactQueryTxid) {
+    const pageItems = Array.isArray(page.items) ? page.items : [];
+    if (pageItems.length > 0) {
+      const pageEventIds = [
+        ...new Set(pageItems.map((item) => Number(item?.eventId))),
+      ];
+      const validPageEventIds =
+        pageEventIds.length === pageItems.length &&
+        pageEventIds.every(
+          (eventId) => Number.isSafeInteger(eventId) && eventId > 0,
+        );
+      const canonicalPage = validPageEventIds
+        ? await proofIndexCanonicalActivityPayload(network, {
+            eventIds: pageEventIds,
+            snapshotId: summarySnapshotId,
+          })
+        : null;
+      const canonicalItems = Array.isArray(canonicalPage?.activity)
+        ? canonicalPage.activity
+        : [];
+      const canonicalItemsByEventId = new Map(
+        canonicalItems.map((item) => [Number(item?.eventId), item]),
+      );
+      const membershipEventIds = Array.isArray(
+        canonicalPage?.membershipEventIds,
+      )
+        ? canonicalPage.membershipEventIds.map(Number)
+        : [];
+      const confirmedPageItems = pageItems.filter(
+        (item) => item?.confirmed === true,
+      );
+      const confirmedCoverage = confirmedPageItems.length > 0
+        ? verifiedCanonicalMinerFeeCoverage(
+            canonicalPage?.canonicalMinerFeeCoverage ??
+              canonicalPage?.stats?.canonicalMinerFeeCoverage,
+          )
+        : true;
+      if (
+        !validPageEventIds ||
+        canonicalPage?.membershipRestricted !== true ||
+        proofIndexPayloadIndexedThroughBlock(canonicalPage) !== summaryHeight ||
+        payloadSnapshotId(canonicalPage) !== summarySnapshotId ||
+        membershipEventIds.length !== pageEventIds.length ||
+        pageEventIds.some(
+          (eventId) => !membershipEventIds.includes(eventId),
+        ) ||
+        canonicalItems.length !== pageItems.length ||
+        pageItems.some((item) => {
+          const canonicalItem = canonicalItemsByEventId.get(
+            Number(item?.eventId),
+          );
+          return (
+            !canonicalItem ||
+            activityKey(canonicalItem) !== activityKey(item)
+          );
+        }) ||
+        !confirmedCoverage
+      ) {
+        const error = freshDataUnavailableError(
+          "Exact Log query returned data outside its authenticated last-good snapshot.",
+        );
+        error.details = {
+          code: "CANONICAL_LOG_EXACT_QUERY_OUTSIDE_SNAPSHOT",
+          query: exactQueryTxid,
+          snapshotId: summarySnapshotId,
+        };
+        throw error;
+      }
+    }
+    if (
+      pageItems.length === 0 &&
+      !definitivePinnedLogQueryDisposition(page.queryDisposition)
+    ) {
+      const error = freshDataUnavailableError(
+        "Exact Log query is not present in the authenticated last-good snapshot.",
+      );
+      error.details = {
+        code: "CANONICAL_LOG_EXACT_QUERY_NOT_IN_SNAPSHOT",
+        query: exactQueryTxid,
+        snapshotId: summarySnapshotId,
+      };
+      throw error;
+    }
+  }
+
+  await verifyStableLogCheckpointAfterRead(summary, network, "log-history");
+
+  return {
+    ...page,
+    consistency: summary.consistency,
+    indexedAt: summary.indexedAt ?? page.indexedAt,
+    indexedThroughBlock: summaryHeight,
+    indexedThroughBlockHash: payloadIndexedThroughBlockHash(summary),
+    ledgerGeneratedAt: summary.ledgerGeneratedAt ?? page.ledgerGeneratedAt,
+    provenance: {
+      ...(summary.provenance ?? {}),
+      surface: "log-history",
+    },
+    snapshotId: summarySnapshotId,
+  };
 }
 
 async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
@@ -38016,6 +38685,9 @@ async function loadCanonicalVerifierContextFromCheckpoint(
     coverageHeight: requiredBlockHeight,
     indexedThroughBlock: requiredBlockHeight,
     previousBlockHash: checkpointHash,
+    priorInvalidEvents: Array.isArray(prior?.invalidEvents)
+      ? prior.invalidEvents
+      : [],
     transactions,
   };
 }
@@ -38402,6 +39074,13 @@ async function completeTokenVerifierState(
     context.transactions,
     network,
   );
+  let verifierBondActivity = bondActivity;
+  if (scope === INCB_TOKEN_ID) {
+    verifierBondActivity = inceptionVerifierBondActivity(
+      bondActivity,
+      { invalidEvents: context.priorInvalidEvents },
+    );
+  }
   const bondSeedTokens = [];
   const bondSeedMints = [];
   for (const config of BOND_TOKEN_CONFIGS) {
@@ -38420,7 +39099,7 @@ async function completeTokenVerifierState(
     );
     bondSeedMints.push(
       ...bondMintsFromActivity(
-        bondActivity,
+        verifierBondActivity,
         registryAddress,
         network,
         config,
@@ -38459,7 +39138,7 @@ async function completeTokenVerifierState(
   ];
   const inceptionIssuanceOptions =
     scope === INCB_TOKEN_ID
-      ? await canonicalInceptionIssuanceOptions(network, bondActivity, {
+      ? await canonicalInceptionIssuanceOptions(network, verifierBondActivity, {
           previousBlockHashByBlockHash: new Map([
             [
               String(context.blockHash ?? "").trim().toLowerCase(),
@@ -38472,23 +39151,36 @@ async function completeTokenVerifierState(
     scope === INCB_TOKEN_ID
       ? tokenStateFromTransactionsWithCanonicalInceptionIssuance(
           ...verifierReplayArguments,
-          bondActivity,
+          verifierBondActivity,
           {
             activity: [
-              ...bondActivity,
+              ...verifierBondActivity,
               ...(Array.isArray(idState?.activity) ? idState.activity : []),
             ],
             registryState: idState,
           },
-          inceptionIssuanceOptions,
+          {
+            ...inceptionIssuanceOptions,
+            allowCurrentBlockInvalidAttachmentDisposition: true,
+            currentBlockHash: context.blockHash,
+            currentBlockHeight: requiredBlockHeight,
+          },
         )
       : tokenStateFromTransactions(...verifierReplayArguments);
   if (scope === INCB_TOKEN_ID) {
     state = scopedTokenPayloadFromState(state, INCB_TOKEN_ID);
     const issuance = inceptionIssuanceMetadataFromMints(state.mints);
+    const resolvedInvalidOnlyState =
+      inceptionInvalidOnlyVerifierStateResolved(
+        state,
+        issuance,
+        targetTxid,
+        context,
+        requiredBlockHeight,
+      );
     if (
       !issuance.complete ||
-      issuance.confirmedMints === 0 ||
+      (issuance.confirmedMints === 0 && !resolvedInvalidOnlyState) ||
       !numbersAgree(
         issuance.confirmedIssuanceUnits,
         numericValue(state.confirmedSupply),
@@ -40420,7 +41112,17 @@ async function loadHealthPayload() {
     : null;
   const workerFresh =
     workerAgeMs !== null && workerAgeMs <= PROOF_INDEX_HEALTH_MAX_AGE_MS;
-  const workerOk = database?.worker?.ok === true;
+  const workerNoProgress =
+    database?.worker?.noProgress &&
+    typeof database.worker.noProgress === "object" &&
+    !Array.isArray(database.worker.noProgress) &&
+    database.worker.network === "livenet" &&
+    database.worker.noProgress.network === "livenet"
+      ? database.worker.noProgress
+      : null;
+  const workerContainmentActive = workerNoProgress?.active === true;
+  const workerOk =
+    database?.worker?.ok === true && !workerContainmentActive;
   const canonicalFault = canonical?.fault ?? {};
   const canonicalRebuild = canonical?.rebuild ?? {};
   const canonicalStateOk =
@@ -40520,6 +41222,34 @@ async function loadHealthPayload() {
       },
       worker: {
         ageMs: workerAgeMs,
+        containment: {
+          active: workerContainmentActive,
+          checkpointHash: String(workerNoProgress?.checkpointHash ?? ""),
+          checkpointHeight:
+            workerNoProgress?.checkpointHeight !== null &&
+            workerNoProgress?.checkpointHeight !== undefined &&
+            Number.isSafeInteger(Number(workerNoProgress.checkpointHeight))
+            ? Number(workerNoProgress.checkpointHeight)
+            : null,
+          failingBlockHeight:
+            workerNoProgress?.failingBlockHeight !== null &&
+            workerNoProgress?.failingBlockHeight !== undefined &&
+            Number.isSafeInteger(Number(workerNoProgress.failingBlockHeight))
+            ? Number(workerNoProgress.failingBlockHeight)
+            : null,
+          fingerprint: String(workerNoProgress?.fingerprint ?? ""),
+          network: String(workerNoProgress?.network ?? ""),
+          nextRetryAt: workerNoProgress
+            ? String(
+                database?.worker?.nextRetryAt ??
+                  workerNoProgress?.nextRetryAt ??
+                  "",
+              ) || null
+            : null,
+          reason: String(workerNoProgress?.reason ?? ""),
+          repeatCount: Number(workerNoProgress?.repeatCount ?? 0),
+          txid: String(workerNoProgress?.txid ?? ""),
+        },
         consecutiveFailures: Number(
           database?.worker?.consecutiveFailures ?? 0,
         ),
@@ -41237,7 +41967,13 @@ async function handleRequest(request, response) {
           ? logHistoryEligibility.pagination.query
           : "";
         const indexedPayload =
-          freshRead && !exactLogQueryTxid
+          network === "livenet" && !freshRead
+            ? await stableProofIndexLogHistoryPayload(
+                network,
+                historyKind,
+                url.searchParams,
+              )
+            : freshRead && !exactLogQueryTxid
             ? await freshProofIndexLogHistoryPayload(
                 network,
                 historyKind,
@@ -41339,11 +42075,18 @@ async function handleRequest(request, response) {
         : "";
       if (
         proofIndexReadFeatureEnabled("log-history,activity-history,log") &&
-        (logHistoryEligibility.eligible ||
+        (network === "livenet" ||
+          logHistoryEligibility.eligible ||
           (freshRead && !exactLogQueryTxid))
       ) {
         const indexedPayload =
-          freshRead && !exactLogQueryTxid
+          network === "livenet" && !freshRead
+            ? await stableProofIndexLogHistoryPayload(
+                network,
+                historyKind,
+                url.searchParams,
+              )
+            : freshRead && !exactLogQueryTxid
             ? await freshProofIndexLogHistoryPayload(
                 network,
                 historyKind,

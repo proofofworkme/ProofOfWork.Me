@@ -151,10 +151,17 @@ import {
 } from "./shared/bitcoin/networks";
 import { registryAddressForNetwork } from "./shared/protocol/idRegistry";
 import { MAX_DATA_CARRIER_BYTES } from "./shared/bitcoin/protocolLimits";
+import { activityHistoryCacheKey } from "./shared/activity/logHistoryCache";
 import {
+  clearProofApiReadWarning,
+  currentProofApiReadWarning,
   fetchProofApiJson,
   isTransientProofApiReadError,
+  proofApiLastGoodReadStatus,
   proofApiUrl,
+  setProofApiReadWarning,
+  type ProofApiLastGoodStatusOptions,
+  type ProofApiReadWarningStore,
 } from "./shared/api/proofApiClient";
 import {
   base64FromBase64Url,
@@ -12849,16 +12856,29 @@ async function fetchMarketplaceSummary(
     "livenet",
   );
 
+  if (
+    !payload.registry ||
+    typeof payload.registry !== "object" ||
+    Array.isArray(payload.registry) ||
+    !payload.token ||
+    typeof payload.token !== "object" ||
+    Array.isArray(payload.token) ||
+    !payload.workFloor ||
+    typeof payload.workFloor !== "object" ||
+    Array.isArray(payload.workFloor) ||
+    typeof payload.indexedAt !== "string" ||
+    !payload.indexedAt.trim()
+  ) {
+    throw new Error(
+      "Marketplace summary did not include one coherent registry, credit, and WORK-floor snapshot.",
+    );
+  }
+
   return {
-    indexedAt:
-      typeof payload.indexedAt === "string"
-        ? payload.indexedAt
-        : new Date().toISOString(),
+    indexedAt: payload.indexedAt,
     registry: normalizeRegistryApiState(payload.registry),
     token: normalizeTokenApiState(payload.token),
-    workFloor: payload.workFloor
-      ? normalizeWorkFloorQuote(payload.workFloor)
-      : undefined,
+    workFloor: normalizeWorkFloorQuote(payload.workFloor),
   };
 }
 
@@ -15668,17 +15688,85 @@ export default function App() {
   const walletSyncGenerationRef = useRef(0);
   const acceptedWorkFloorQuoteRef = useRef<WorkFloorQuote | undefined>();
   const acceptedGrowthSummaryRef = useRef<GrowthSummarySnapshot | undefined>();
+  const acceptedMarketplaceSnapshotRef =
+    useRef<MarketplaceSummarySnapshot | undefined>();
   const acceptedBondSummariesRef = useRef(
     new Map<string, InfinitySummarySnapshot>(),
   );
   const acceptedActivityStatsRef = useRef<PowActivityStats | undefined>();
+  const proofApiReadWarningsRef = useRef<ProofApiReadWarningStore>(new Map());
+  const proofApiReadAttemptRef = useRef(0);
+  const [, setProofApiReadWarningRevision] = useState(0);
+  const verifiedRegistryReadRef = useRef(false);
+  const verifiedActivityReadRef = useRef(false);
   const tokenMintAssistantActiveRef = useRef(false);
   const tokenMintAssistantTimerRef = useRef<number | undefined>(undefined);
   const rushMintActiveRef = useRef(false);
   const activityHistoryPageRef =
     useRef<PowPaginatedApiResponse<PowActivityItem> | undefined>(undefined);
+  const activityHistoryPagesRef = useRef(
+    new Map<string, PowPaginatedApiResponse<PowActivityItem>>(),
+  );
   const activityProfileRef = useRef<DesktopProfile | undefined>(undefined);
   const backupInputRef = useRef<HTMLInputElement>(null);
+
+  function showLastGoodReadWarning(
+    workspaceKey: string,
+    source: string,
+    attempt: number,
+    error: unknown,
+    options: ProofApiLastGoodStatusOptions,
+  ) {
+    const text = proofApiLastGoodReadStatus(error, options);
+    if (!text) {
+      return false;
+    }
+
+    const changed = setProofApiReadWarning(proofApiReadWarningsRef.current, workspaceKey, {
+      attempt,
+      source,
+      text,
+    });
+    if (changed) {
+      setProofApiReadWarningRevision((current) => current + 1);
+    }
+    return changed;
+  }
+
+  function nextProofApiReadAttempt() {
+    proofApiReadAttemptRef.current += 1;
+    return proofApiReadAttemptRef.current;
+  }
+
+  function clearLastGoodReadWarning(
+    workspaceKey: string,
+    source: string,
+    successfulAttempt: number,
+  ) {
+    if (
+      clearProofApiReadWarning(
+        proofApiReadWarningsRef.current,
+        workspaceKey,
+        source,
+        successfulAttempt,
+      )
+    ) {
+      setProofApiReadWarningRevision((current) => current + 1);
+    }
+  }
+
+  function acceptActivityHistoryPage(
+    cacheKey: string,
+    page: PowPaginatedApiResponse<PowActivityItem>,
+  ) {
+    activityHistoryPagesRef.current.set(cacheKey, page);
+    activityHistoryPageRef.current = page;
+    setActivityHistoryPage(page);
+    setIdActivity((current) =>
+      mergeActivityItems(current, Array.isArray(page.items) ? page.items : []),
+    );
+    return page;
+  }
 
   function applyRegistryState(
     state: PowRegistryState,
@@ -16607,7 +16695,8 @@ export default function App() {
       activeFolder === "token" ||
       activeFolder === "wallet" ||
       activeFolder === "work");
-  const tokenLedgerLoading = tokenDataLoading || tokenDataPriming;
+  const tokenLedgerLoading =
+    tokenDataPriming || (tokenDataLoading && !activeTokenStateLoaded);
   const marketplaceDataPriming =
     network === "livenet" &&
     !marketplaceDataLoaded &&
@@ -19709,6 +19798,8 @@ export default function App() {
 
   async function loadLogHead(silent = true, fresh = false) {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const readSource = "log-head";
+    const readAttempt = nextProofApiReadAttempt();
     if (network !== "livenet") {
       return undefined;
     }
@@ -19724,6 +19815,14 @@ export default function App() {
     try {
       const payload = await fetchGlobalActivityPayload(network, fresh, true);
       const { activity, stats } = applyActivityPayload(payload);
+      verifiedActivityReadRef.current = true;
+      if (fresh) {
+        clearLastGoodReadWarning(
+          requestWorkspaceKey,
+          readSource,
+          readAttempt,
+        );
+      }
       if (!silent) {
         const total = stats.total ?? activity.length;
         setStatusForWorkspace(requestWorkspaceKey, {
@@ -19733,7 +19832,16 @@ export default function App() {
       }
       return payload;
     } catch (error) {
-      if (!silent) {
+      const retainedLastGood =
+        fresh &&
+        verifiedActivityReadRef.current &&
+        isTransientProofApiReadError(error) &&
+        showLastGoodReadWarning(requestWorkspaceKey, readSource, readAttempt, error, {
+          indexedThroughBlock:
+            acceptedActivityStatsRef.current?.indexedThroughBlock,
+          label: "ProofOfWork log",
+        });
+      if (!silent && !retainedLastGood) {
         setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
           text: errorMessage(error, "Computer log load failed."),
@@ -19754,6 +19862,15 @@ export default function App() {
     options: { snapshotId?: string } = {},
   ) {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const readSource = "log-history";
+    const readAttempt = nextProofApiReadAttempt();
+    const cacheKey = activityHistoryCacheKey({
+      kind: "history",
+      pageIndex,
+      pageSize: ACTIVITY_FEED_PAGE_SIZE,
+      query,
+      snapshotId: options.snapshotId,
+    });
     if (network !== "livenet") {
       return undefined;
     }
@@ -19769,14 +19886,29 @@ export default function App() {
         query,
         snapshotId: options.snapshotId,
       });
-      activityHistoryPageRef.current = page;
-      setActivityHistoryPage(page);
-      setIdActivity((current) =>
-        mergeActivityItems(current, Array.isArray(page.items) ? page.items : []),
+      clearLastGoodReadWarning(
+        requestWorkspaceKey,
+        readSource,
+        readAttempt,
       );
-      return page;
+      return acceptActivityHistoryPage(cacheKey, page);
     } catch (error) {
-      if (!silent) {
+      const cachedPage = activityHistoryPagesRef.current.get(cacheKey);
+      const retainedLastGood =
+        Boolean(cachedPage) &&
+        isTransientProofApiReadError(error) &&
+        showLastGoodReadWarning(requestWorkspaceKey, readSource, readAttempt, error, {
+          indexedAt: cachedPage?.indexedAt,
+          indexedThroughBlock:
+            cachedPage?.indexedThroughBlock,
+          label: "ProofOfWork log history",
+          snapshotId: cachedPage?.snapshotId,
+        });
+      if (retainedLastGood && cachedPage) {
+        return acceptActivityHistoryPage(cacheKey, cachedPage);
+      }
+      if (!silent && !retainedLastGood) {
+        setActivityHistoryPage(undefined);
         setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
           text: errorMessage(error, "Computer log history failed."),
@@ -19798,9 +19930,14 @@ export default function App() {
 
   async function loadActivityTarget(target = activityQuery) {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const readSource = "log-search";
+    const readAttempt = nextProofApiReadAttempt();
     const requestIsActive = () =>
       activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
     const query = target.trim();
+    let cacheKey = "";
+    let cachedSearchProfile: DesktopProfile | undefined;
+    let cachedSearchQuery = query;
     if (!query) {
       setActivityProfile(undefined);
       setActivityMail([]);
@@ -19822,6 +19959,13 @@ export default function App() {
     try {
       if (txidOnly) {
         const normalizedTxid = query.toLowerCase();
+        cachedSearchQuery = normalizedTxid;
+        cacheKey = activityHistoryCacheKey({
+          kind: "search",
+          pageIndex: 0,
+          pageSize: ACTIVITY_FEED_PAGE_SIZE,
+          query: normalizedTxid,
+        });
         const page = await fetchGlobalActivityHistoryPage(network, {
           pageIndex: 0,
           pageSize: ACTIVITY_FEED_PAGE_SIZE,
@@ -19830,11 +19974,12 @@ export default function App() {
         if (!requestIsActive()) {
           return;
         }
-        activityHistoryPageRef.current = page;
-        setActivityHistoryPage(page);
-        setIdActivity((current) =>
-          mergeActivityItems(current, Array.isArray(page.items) ? page.items : []),
+        clearLastGoodReadWarning(
+          requestWorkspaceKey,
+          readSource,
+          readAttempt,
         );
+        acceptActivityHistoryPage(cacheKey, page);
         setActivityQuery(normalizedTxid);
         setActivityProfile(undefined);
         setActivityMail([]);
@@ -19875,20 +20020,15 @@ export default function App() {
         return;
       }
 
-      const page = await fetchGlobalActivityHistoryPage(network, {
+      cacheKey = activityHistoryCacheKey({
+        kind: "search",
         pageIndex: 0,
         pageSize: ACTIVITY_FEED_PAGE_SIZE,
-        query: resolved.paymentAddress,
+        query: resolved.isId
+          ? `${normalizePowId(query)}@proofofwork.me`
+          : resolved.paymentAddress,
       });
-      if (!requestIsActive()) {
-        return;
-      }
-      activityHistoryPageRef.current = page;
-      setActivityHistoryPage(page);
-      setIdActivity((current) =>
-        mergeActivityItems(current, Array.isArray(page.items) ? page.items : []),
-      );
-      const profile: DesktopProfile = {
+      cachedSearchProfile = {
         address: resolved.paymentAddress,
         label: resolved.isId
           ? resolved.displayRecipient
@@ -19898,6 +20038,21 @@ export default function App() {
         query,
         resolvedId: resolved.id,
       };
+      const page = await fetchGlobalActivityHistoryPage(network, {
+        pageIndex: 0,
+        pageSize: ACTIVITY_FEED_PAGE_SIZE,
+        query: resolved.paymentAddress,
+      });
+      if (!requestIsActive()) {
+        return;
+      }
+      clearLastGoodReadWarning(
+        requestWorkspaceKey,
+        readSource,
+        readAttempt,
+      );
+      acceptActivityHistoryPage(cacheKey, page);
+      const profile = cachedSearchProfile;
 
       setActivityQuery(query);
       setActivityProfile(profile);
@@ -19908,10 +20063,42 @@ export default function App() {
         text: `${profile.label} log loaded. ${total.toLocaleString()} matching action${total === 1 ? "" : "s"}.`,
       });
     } catch (error) {
-      setStatusForWorkspace(requestWorkspaceKey, {
-        tone: "bad",
-        text: errorMessage(error, "Log search failed."),
-      });
+      const cachedPage = cacheKey
+        ? activityHistoryPagesRef.current.get(cacheKey)
+        : undefined;
+      const retainedLastGood =
+        Boolean(cachedPage) &&
+        isTransientProofApiReadError(error) &&
+        showLastGoodReadWarning(
+          requestWorkspaceKey,
+          readSource,
+          readAttempt,
+          error,
+          {
+            indexedAt: cachedPage?.indexedAt,
+            indexedThroughBlock: cachedPage?.indexedThroughBlock,
+            label: "ProofOfWork log search",
+            snapshotId: cachedPage?.snapshotId,
+          },
+        );
+      if (retainedLastGood && cachedPage) {
+        acceptActivityHistoryPage(cacheKey, cachedPage);
+        setActivityQuery(cachedSearchQuery);
+        setActivityProfile(cachedSearchProfile);
+        setActivityMail([]);
+        setStatusForWorkspace(requestWorkspaceKey, {
+          tone: "idle",
+          text: "Log search retained its matching verified cached results.",
+        });
+      } else {
+        setActivityHistoryPage(undefined);
+        setActivityProfile(undefined);
+        setActivityMail([]);
+        setStatusForWorkspace(requestWorkspaceKey, {
+          tone: "bad",
+          text: errorMessage(error, "Log search failed."),
+        });
+      }
     } finally {
       setActivityLoading(false);
     }
@@ -19975,6 +20162,8 @@ export default function App() {
     }
 
     const refreshPromise = (async () => {
+      const readSource = "marketplace";
+      const readAttempt = nextProofApiReadAttempt();
       setMarketplaceDataLoading(true);
       if (!silent) {
         setBusyForWorkspace(requestWorkspaceKey, true);
@@ -19991,7 +20180,8 @@ export default function App() {
           fetchMarketplaceSummary(fresh),
           fetchBtcUsdPrice(fresh).catch(() => undefined),
         ]);
-        applyRegistryState(snapshot.registry);
+        const acceptedRegistryState =
+          applyRegistryState(snapshot.registry) ?? snapshot.registry;
         const acceptedTokenState = applyTokenState(snapshot.token, {
           scopeKey: tokenStateScopeKey({
             network: "livenet",
@@ -20007,6 +20197,20 @@ export default function App() {
         const acceptedWorkFloor = snapshot.workFloor
           ? applyWorkFloorQuote(snapshot.workFloor)
           : undefined;
+        const acceptedSnapshot = {
+          ...snapshot,
+          registry: acceptedRegistryState,
+          token: acceptedTokenState,
+          workFloor: acceptedWorkFloor,
+        };
+        acceptedMarketplaceSnapshotRef.current = snapshot;
+        if (fresh) {
+          clearLastGoodReadWarning(
+            requestWorkspaceKey,
+            readSource,
+            readAttempt,
+          );
+        }
         if (!silent) {
           const floorText = acceptedWorkFloor
             ? ` WORK floor ${Math.round(workFloorQuoteLiveValue(acceptedWorkFloor)).toLocaleString()} proofs.`
@@ -20016,13 +20220,18 @@ export default function App() {
             text: `Marketplace loaded. ${acceptedTokenState.tokens.length.toLocaleString()} credit${acceptedTokenState.tokens.length === 1 ? "" : "s"}, ${acceptedTokenState.listings.length.toLocaleString()} listing${acceptedTokenState.listings.length === 1 ? "" : "s"}.${floorText}`,
           });
         }
-        return {
-          ...snapshot,
-          token: acceptedTokenState,
-          workFloor: acceptedWorkFloor,
-        };
+        return acceptedSnapshot;
       } catch (error) {
-        if (!silent) {
+        const lastGoodSnapshot = acceptedMarketplaceSnapshotRef.current;
+        const retainedLastGood =
+          fresh &&
+          Boolean(lastGoodSnapshot) &&
+          isTransientProofApiReadError(error) &&
+          showLastGoodReadWarning(requestWorkspaceKey, readSource, readAttempt, error, {
+            indexedAt: lastGoodSnapshot?.indexedAt,
+            label: "ProofOfWork marketplace",
+          });
+        if (!silent && !retainedLastGood) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
             text: errorMessage(error, "Marketplace summary refresh failed."),
@@ -20084,6 +20293,8 @@ export default function App() {
     }
 
     const refreshPromise = (async () => {
+      const readSource = `bond:${config.tokenId}`;
+      const readAttempt = nextProofApiReadAttempt();
       if (!silent) {
         setBusyForWorkspace(requestWorkspaceKey, true);
         setStatusForWorkspace(requestWorkspaceKey, {
@@ -20117,6 +20328,13 @@ export default function App() {
         if (btcUsdQuote) {
           setTokenBtcUsd(btcUsdQuote);
         }
+        if (fresh) {
+          clearLastGoodReadWarning(
+            requestWorkspaceKey,
+            readSource,
+            readAttempt,
+          );
+        }
         if (!silent) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "good",
@@ -20125,7 +20343,18 @@ export default function App() {
         }
         return { ...acceptedSnapshot, token: acceptedTokenState };
       } catch (error) {
-        if (!silent) {
+        const lastGoodSnapshot = acceptedBondSummariesRef.current.get(
+          config.tokenId,
+        );
+        const retainedLastGood =
+          fresh &&
+          Boolean(lastGoodSnapshot) &&
+          isTransientProofApiReadError(error) &&
+          showLastGoodReadWarning(requestWorkspaceKey, readSource, readAttempt, error, {
+            indexedAt: lastGoodSnapshot?.indexedAt,
+            label: config.displayName,
+          });
+        if (!silent && !retainedLastGood) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
             text: errorMessage(error, `${config.displayName} refresh failed.`),
@@ -20151,6 +20380,7 @@ export default function App() {
     silent = false,
     fresh = false,
   ): Promise<PowTokenState | undefined> {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     const requestFolder = activeFolder;
     if (!tokenIndexAddress) {
       setTokenDefinitions([]);
@@ -20226,17 +20456,17 @@ export default function App() {
           return refreshToken(silent, fresh);
         }
         if (!silent && requestStillActive()) {
-          setStatus(
-            state
-              ? {
-                  tone: "good",
-                  text: tokenLoadStatusText(state),
-                }
-              : {
-                  tone: "bad",
-                  text: "Credit scan failed.",
-                },
-          );
+          if (state) {
+            setStatus({
+              tone: "good",
+              text: tokenLoadStatusText(state),
+            });
+          } else if (!acceptedTokenStatesRef.current.get(scopeKey)) {
+            setStatus({
+              tone: "bad",
+              text: "Credit scan failed.",
+            });
+          }
         }
         return state;
       } finally {
@@ -20250,6 +20480,8 @@ export default function App() {
     }
 
     const refreshPromise = (async () => {
+      const readSource = `token:${scopeKey}`;
+      const readAttempt = nextProofApiReadAttempt();
       if (requestStillActive()) {
         setTokenDataLoading(true);
         setTokenDataError("");
@@ -20303,6 +20535,13 @@ export default function App() {
             })
             .catch(() => undefined);
         }
+        if (fresh) {
+          clearLastGoodReadWarning(
+            requestWorkspaceKey,
+            readSource,
+            readAttempt,
+          );
+        }
         if (!silent && requestStillActive()) {
           setStatus({
             tone: "good",
@@ -20312,10 +20551,23 @@ export default function App() {
         return acceptedState;
       } catch (error) {
         const message = errorMessage(error, "Credit scan failed.");
-        if (requestStillActive()) {
+        const lastGoodState = acceptedTokenStatesRef.current.get(scopeKey);
+        const retainedLastGood =
+          fresh &&
+          Boolean(lastGoodState) &&
+          isTransientProofApiReadError(error);
+        if (requestStillActive() && retainedLastGood && lastGoodState) {
+          renderTokenState(lastGoodState, scopeKey);
+          showLastGoodReadWarning(requestWorkspaceKey, readSource, readAttempt, error, {
+            label: workSummaryRead ? "WORK" : "ProofOfWork credit",
+          });
+        } else if (
+          requestStillActive() &&
+          (!lastGoodState || !silent)
+        ) {
           setTokenDataError(message);
         }
-        if (!silent && requestStillActive()) {
+        if (!silent && requestStillActive() && !retainedLastGood) {
           setStatus({
             tone: "bad",
             text: message,
@@ -20445,6 +20697,8 @@ export default function App() {
     }
 
     const refreshPromise = (async () => {
+      const readSource = "work-floor";
+      const readAttempt = nextProofApiReadAttempt();
       const showLoading = !silent;
       if (showLoading && requestIsActive()) {
         setWorkFloorLoading(true);
@@ -20466,6 +20720,13 @@ export default function App() {
         const retainedEarlierQuote = acceptedQuote !== apiQuote;
         if (fresh) {
           setWorkFloorUsingLastGood(retainedEarlierQuote);
+          if (!retainedEarlierQuote) {
+            clearLastGoodReadWarning(
+              requestWorkspaceKey,
+              readSource,
+              readAttempt,
+            );
+          }
         }
         if (!silent) {
           setStatusForWorkspace(requestWorkspaceKey, {
@@ -20481,10 +20742,22 @@ export default function App() {
         if (fresh && lastGoodQuote) {
           setWorkFloorUsingLastGood(true);
           if (requestIsActive()) {
-            setStatusForWorkspace(requestWorkspaceKey, {
-              tone: "idle",
-              text: workFloorLastGoodStatusText(lastGoodQuote),
-            });
+            const warningShown =
+              isTransientProofApiReadError(error) &&
+              showLastGoodReadWarning(requestWorkspaceKey, readSource, readAttempt, error, {
+                indexedAt: lastGoodQuote.indexedAt,
+                indexedThroughBlock: Number(
+                  lastGoodQuote.stats?.indexedThroughBlock,
+                ),
+                label: "WORK",
+                snapshotId: lastGoodQuote.snapshotId,
+              });
+            if (!warningShown && !silent) {
+              setStatusForWorkspace(requestWorkspaceKey, {
+                tone: "idle",
+                text: workFloorLastGoodStatusText(lastGoodQuote),
+              });
+            }
           }
         } else if (!silent) {
           setStatusForWorkspace(requestWorkspaceKey, {
@@ -20605,10 +20878,10 @@ export default function App() {
               : "";
           setStatusForWorkspace(
             requestWorkspaceKey,
-            workSurface && usedIndexedFallback && floorQuote
+            usedIndexedFallback
               ? {
                   tone: "idle",
-                  text: workFloorLastGoodStatusText(floorQuote),
+                  text: `${label} refresh retained verified indexed state while the exact-tip read was unavailable.`,
                 }
               : {
                   tone: "good",
@@ -20655,6 +20928,8 @@ export default function App() {
         text: "Refreshing Growth metrics...",
       });
     }
+    const readSource = "growth";
+    const readAttempt = nextProofApiReadAttempt();
 
     try {
       const [summaryPayload, btcUsdQuote] = await Promise.all([
@@ -20681,6 +20956,13 @@ export default function App() {
       if (snapshot.workFloor) {
         applyWorkFloorQuote(snapshot.workFloor);
       }
+      if (fresh) {
+        clearLastGoodReadWarning(
+          requestWorkspaceKey,
+          readSource,
+          readAttempt,
+        );
+      }
       if (!silent) {
         const snapshotDate = formatDate(acceptedSnapshot.indexedAt);
         const quoteDate = acceptedSnapshot.btcUsdIndexedAt
@@ -20692,7 +20974,17 @@ export default function App() {
         });
       }
     } catch (error) {
-      if (!silent) {
+      const lastGoodSnapshot = acceptedGrowthSummaryRef.current;
+      const retainedLastGood =
+        fresh &&
+        Boolean(lastGoodSnapshot) &&
+        isTransientProofApiReadError(error) &&
+        showLastGoodReadWarning(requestWorkspaceKey, readSource, readAttempt, error, {
+          indexedAt: lastGoodSnapshot?.indexedAt,
+          label: "ProofOfWork Growth",
+          snapshotId: lastGoodSnapshot?.snapshotId,
+        });
+      if (!silent && !retainedLastGood) {
         setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
           text: errorMessage(error, "Growth metrics refresh failed."),
@@ -21157,7 +21449,7 @@ export default function App() {
               tone: "good",
               text: `ID registry loaded. ${confirmed} confirmed, ${pending} pending, ${state.pendingEvents.length} in flight.`,
             });
-          } else {
+          } else if (!verifiedRegistryReadRef.current) {
             setStatusForWorkspace(requestWorkspaceKey, {
               tone: "bad",
               text: "ID registry scan failed.",
@@ -21173,6 +21465,8 @@ export default function App() {
     }
 
     const refreshPromise = (async () => {
+      const readSource = "registry";
+      const readAttempt = nextProofApiReadAttempt();
       if (!silent) {
         setBusyForWorkspace(requestWorkspaceKey, true);
       }
@@ -21209,6 +21503,14 @@ export default function App() {
           }
         }
         const acceptedState = applyRegistryState(state, activity) ?? state;
+        verifiedRegistryReadRef.current = true;
+        if (fresh) {
+          clearLastGoodReadWarning(
+            requestWorkspaceKey,
+            readSource,
+            readAttempt,
+          );
+        }
         setContacts((current) => {
           const nextContacts = refreshRegistryContactsFromRecords(
             current,
@@ -21238,7 +21540,14 @@ export default function App() {
         }
         return acceptedState;
       } catch (error) {
-        if (!silent) {
+        const retainedLastGood =
+          fresh &&
+          verifiedRegistryReadRef.current &&
+          isTransientProofApiReadError(error) &&
+          showLastGoodReadWarning(requestWorkspaceKey, readSource, readAttempt, error, {
+            label: "ProofOfWork ID registry",
+          });
+        if (!silent && !retainedLastGood) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
             text: errorMessage(error, "ID registry scan failed."),
@@ -25364,6 +25673,16 @@ export default function App() {
     }
   }
 
+  const degradedReadStatus = (() => {
+    const warning = currentProofApiReadWarning(
+      proofApiReadWarningsRef.current,
+      activeWorkspaceStatusKey,
+    );
+    return warning
+      ? ({ tone: "idle", text: warning.text } satisfies WorkspaceStatus)
+      : undefined;
+  })();
+
   if (idLaunchMode) {
     return (
       <IdLaunchApp
@@ -25373,6 +25692,7 @@ export default function App() {
         canRegister={canRegisterId}
         connectWallet={connectWallet}
         disconnectWallet={disconnectWallet}
+        degradedReadStatus={degradedReadStatus}
         feeRate={feeRate}
         hasUnisat={hasUnisat}
         idName={idName}
@@ -25410,6 +25730,7 @@ export default function App() {
           connectWallet={connectWallet}
           delistListing={delistIdListing}
           disconnectWallet={disconnectWallet}
+          degradedReadStatus={degradedReadStatus}
           feeRate={feeRate}
           hasUnisat={hasUnisat}
           idPurchaseBytes={idPurchaseBytes}
@@ -25507,6 +25828,7 @@ export default function App() {
         connectWallet={connectWallet}
         delistListing={delistTokenListing}
         disconnectWallet={disconnectWallet}
+        degradedReadStatus={degradedReadStatus}
         feeRate={feeRate}
         hasUnisat={hasUnisat}
         invalidEvents={accountWalletInvalidEvents}
@@ -25577,6 +25899,7 @@ export default function App() {
         closedListings={activeBondClosedListings}
         connectWallet={connectWallet}
         delistListing={delistTokenListing}
+        degradedReadStatus={degradedReadStatus}
         disconnectWallet={disconnectWallet}
         feeRate={feeRate}
         hasUnisat={hasUnisat}
@@ -25645,6 +25968,7 @@ export default function App() {
         detailMints={tokenDetailLedger.mints}
         detailPendingSupply={tokenDetailLedger.pendingSupply}
         detailToken={tokenDetailToken}
+        degradedReadStatus={degradedReadStatus}
         disconnectWallet={disconnectWallet}
         feeRate={feeRate}
         btcUsd={tokenBtcUsd}
@@ -25781,6 +26105,7 @@ export default function App() {
         activeNetwork={network}
         activityHistoryPage={activityHistoryPage}
         activityStats={activityStats}
+        degradedReadStatus={degradedReadStatus}
         busy={activityLoading || busy}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
         onNetworkChange={chooseNetwork}
@@ -25820,6 +26145,7 @@ export default function App() {
         activeNetwork={network}
         btcUsd={tokenBtcUsd}
         busy={busy}
+        degradedReadStatus={degradedReadStatus}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
         registryListings={idListings.filter(
           (listing) => listing.network === "livenet",
@@ -25938,7 +26264,11 @@ export default function App() {
         title="ProofOfWork.Me"
       />
 
-      <AppStatusRow persistent status={status} />
+      <AppStatusRow
+        persistent
+        secondaryStatus={degradedReadStatus}
+        status={status}
+      />
 
       <section className={layoutClassName}>
         <aside className={sidebarExpanded ? "sidebar is-expanded" : "sidebar"}>
@@ -28158,6 +28488,7 @@ function ActivityApp({
   activityHistoryPage,
   activityStats,
   busy,
+  degradedReadStatus,
   idActivity,
   profile,
   query,
@@ -28175,6 +28506,7 @@ function ActivityApp({
   activityHistoryPage?: PowPaginatedApiResponse<PowActivityItem>;
   activityStats?: PowActivityStats;
   busy: boolean;
+  degradedReadStatus?: WorkspaceStatus;
   idActivity: PowActivityItem[];
   profile?: DesktopProfile;
   query: string;
@@ -28198,7 +28530,12 @@ function ActivityApp({
         title="ProofOfWork Log"
       />
 
-      <AppStatusRow className="desktop-route-status" persistent status={status} />
+      <AppStatusRow
+        className="desktop-route-status"
+        persistent
+        secondaryStatus={degradedReadStatus}
+        status={status}
+      />
 
       <ActivityWorkspace
         activeNetwork={activeNetwork}
@@ -28613,6 +28950,7 @@ type TokenWalletAppProps = {
   connectWallet: () => Promise<void>;
   delistListing: (listing: PowTokenListing) => void;
   disconnectWallet: () => void;
+  degradedReadStatus?: WorkspaceStatus;
   feeRate: number;
   hasUnisat: boolean;
   invalidEvents: PowTokenInvalidEvent[];
@@ -28675,6 +29013,7 @@ type InfinityAppProps = {
   connectWallet: () => Promise<void>;
   delistListing: (listing: PowTokenListing) => void;
   disconnectWallet: () => void;
+  degradedReadStatus?: WorkspaceStatus;
   embedded?: boolean;
   feeRate: number;
   hasUnisat: boolean;
@@ -28741,6 +29080,7 @@ function InfinityApp({
   connectWallet,
   delistListing,
   disconnectWallet,
+  degradedReadStatus,
   embedded = false,
   feeRate,
   hasUnisat,
@@ -29346,7 +29686,12 @@ function InfinityApp({
         title={bondConfig.pluralName}
       />
 
-      <AppStatusRow className="desktop-route-status" persistent status={status} />
+      <AppStatusRow
+        className="desktop-route-status"
+        persistent
+        secondaryStatus={degradedReadStatus}
+        status={status}
+      />
 
       {workspace}
 
@@ -29367,6 +29712,7 @@ function TokenWalletApp({
   connectWallet,
   delistListing,
   disconnectWallet,
+  degradedReadStatus,
   feeRate,
   hasUnisat,
   invalidEvents,
@@ -29419,7 +29765,12 @@ function TokenWalletApp({
         title="Wallet"
       />
 
-      <AppStatusRow className="desktop-route-status" persistent status={status} />
+      <AppStatusRow
+        className="desktop-route-status"
+        persistent
+        secondaryStatus={degradedReadStatus}
+        status={status}
+      />
 
       <TokenWalletWorkspace
         address={address}
@@ -30506,6 +30857,7 @@ type TokenAppProps = {
   detailPendingSupply: number;
   detailToken: PowTokenDefinition | undefined;
   disconnectWallet: () => void;
+  degradedReadStatus?: WorkspaceStatus;
   feeRate: number;
   btcUsd: number;
   hasUnisat: boolean;
@@ -30570,6 +30922,7 @@ function TokenApp({
   busy,
   connectWallet,
   disconnectWallet,
+  degradedReadStatus,
   hasUnisat,
   network,
   onNetworkChange,
@@ -30597,7 +30950,11 @@ function TokenApp({
         title={workTokenOnly ? "WORK" : "Credits"}
       />
 
-      <AppStatusRow persistent status={status} />
+      <AppStatusRow
+        persistent
+        secondaryStatus={degradedReadStatus}
+        status={status}
+      />
 
       <TokenWorkspace
         address={address}
@@ -35134,6 +35491,7 @@ function GrowthApp({
   activeNetwork,
   btcUsd,
   busy,
+  degradedReadStatus,
   growthSummary,
   idActivity,
   registryListings,
@@ -35152,6 +35510,7 @@ function GrowthApp({
   activeNetwork: BitcoinNetwork;
   btcUsd: number;
   busy: boolean;
+  degradedReadStatus?: WorkspaceStatus;
   growthSummary?: GrowthSummarySnapshot;
   idActivity: PowActivityItem[];
   registryListings: PowIdListing[];
@@ -35177,7 +35536,12 @@ function GrowthApp({
         title="ProofOfWork Growth"
       />
 
-      <AppStatusRow className="desktop-route-status" persistent status={status} />
+      <AppStatusRow
+        className="desktop-route-status"
+        persistent
+        secondaryStatus={degradedReadStatus}
+        status={status}
+      />
 
       <GrowthWorkspace
         btcUsd={btcUsd}
@@ -35867,6 +36231,7 @@ function IdLaunchApp({
   canRegister,
   connectWallet,
   disconnectWallet,
+  degradedReadStatus,
   feeRate,
   hasUnisat,
   idName,
@@ -35890,6 +36255,7 @@ function IdLaunchApp({
   canRegister: boolean;
   connectWallet: () => void;
   disconnectWallet: () => void;
+  degradedReadStatus?: WorkspaceStatus;
   feeRate: number;
   hasUnisat: boolean;
   idName: string;
@@ -35965,7 +36331,11 @@ function IdLaunchApp({
         title="ProofOfWork IDs"
       />
 
-      <AppStatusRow persistent status={status} />
+      <AppStatusRow
+        persistent
+        secondaryStatus={degradedReadStatus}
+        status={status}
+      />
 
       <section className="id-launch-main">
         <div className="id-launch-hero">
@@ -39168,6 +39538,7 @@ function MarketplaceApp({
   connectWallet,
   delistListing,
   disconnectWallet,
+  degradedReadStatus,
   feeRate,
   hasUnisat,
   idPurchaseBytes,
@@ -39222,6 +39593,7 @@ function MarketplaceApp({
   connectWallet: () => void;
   delistListing: (listing: PowIdListing) => void;
   disconnectWallet: () => void;
+  degradedReadStatus?: WorkspaceStatus;
   feeRate: number;
   hasUnisat: boolean;
   idPurchaseBytes: number;
@@ -39351,7 +39723,11 @@ function MarketplaceApp({
         title="ProofOfWork Marketplace"
       />
 
-      <AppStatusRow persistent status={scopedStatus} />
+      <AppStatusRow
+        persistent
+        secondaryStatus={degradedReadStatus}
+        status={scopedStatus}
+      />
 
       <section className="id-launch-main">
         <div className="id-launch-hero">
