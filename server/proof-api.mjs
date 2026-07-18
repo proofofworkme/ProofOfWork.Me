@@ -22020,9 +22020,9 @@ function tokenMintHistoryItemKey(item) {
 
 function tokenTransferHistoryItemKey(item) {
   const identity = [
-    item?._powEventIndex,
-    item?.eventKeyVout,
     item?.protocolVout,
+    item?.eventKeyVout,
+    item?._powEventIndex,
     item?.eventId,
   ]
     .filter((value) => value !== undefined && value !== null && value !== "")
