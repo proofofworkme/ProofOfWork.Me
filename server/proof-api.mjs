@@ -10987,7 +10987,12 @@ function workTransfersFromTransactions(txs, network) {
 
     const confirmed = transactionConfirmed(tx);
     const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
-    for (const message of decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX)) {
+    const messageEntries = vout.flatMap((output, protocolVout) =>
+      decodedProtocolMessages([output], TOKEN_PROTOCOL_PREFIX).map(
+        (message) => ({ message, protocolVout }),
+      ),
+    );
+    for (const { message, protocolVout } of messageEntries) {
       const parsed = parseTokenPayload(message, network);
       if (
         parsed?.kind !== "send" ||
@@ -11013,6 +11018,7 @@ function workTransfersFromTransactions(txs, network) {
         minerFeeSats,
         network,
         paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+        protocolVout,
         recipientAddress: parsed.recipientAddress,
         registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
         senderAddress: actorAddress,

@@ -1051,7 +1051,7 @@ expectAll("server WORK transfer txid history recovers without full ledger rebuil
   /const WORK_TOKEN_TRANSFER_RECOVERY_TXIDS = new Set\(/,
   /const TOKEN_ADDRESS_TRANSFER_RECOVERY_MAX_PAGES = Number\(/,
   /const TOKEN_ADDRESS_TRANSFER_RECOVERY_WAIT_MS = Number\(/,
-  /function workTransfersFromTransactions\(txs,\s*network\)[\s\S]*parsed\?\.kind !== "send"[\s\S]*WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS/,
+  /function workTransfersFromTransactions\(txs,\s*network\)[\s\S]*messageEntries[\s\S]*protocolVout[\s\S]*parsed\?\.kind !== "send"[\s\S]*WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS/,
   /async function recoveredWorkTransfersForAddresses\(\s*addresses,\s*network,\s*options = \{\},?\s*\)/,
   /const maxPages = Number\.isSafeInteger\(Number\(options\.maxPages\)\)[\s\S]{0,300}TOKEN_ADDRESS_TRANSFER_RECOVERY_MAX_PAGES/,
   /fetchAddressTransactionsViaMempoolPagination\(\s*address,\s*network,\s*maxPages/,
