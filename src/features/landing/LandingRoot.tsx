@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchProofApiJson } from "../../shared/api/proofApiClient";
+import {
+  fetchProofApiJson,
+  isTransientProofApiReadError,
+  proofApiLastGoodReadStatus,
+} from "../../shared/api/proofApiClient";
 import { registryAddressForNetwork } from "../../shared/protocol/idRegistry";
 import { LandingApp } from "./LandingApp";
 
@@ -8,6 +12,7 @@ type LandingRegistryRecord = {
 };
 
 type RegistrySummaryResponse = {
+  indexedAt?: string;
   records?: unknown;
 };
 
@@ -41,8 +46,12 @@ export default function LandingRoot() {
   const [registryLoading, setRegistryLoading] = useState(false);
   const [registryFresh, setRegistryFresh] = useState(false);
   const [registryError, setRegistryError] = useState("");
+  const [registryWarning, setRegistryWarning] = useState("");
   const requestGenerationRef = useRef(0);
   const requestControllerRef = useRef<AbortController>();
+  const lastGoodRegistryRef = useRef<{ indexedAt?: string; loaded: boolean }>({
+    loaded: false,
+  });
 
   const refreshRegistry = useCallback(async (fresh = false) => {
     const generation = ++requestGenerationRef.current;
@@ -64,9 +73,28 @@ export default function LandingRoot() {
       setRegistryRecords(registryRecordsFromSummary(payload));
       setRegistryLoaded(true);
       setRegistryFresh(fresh);
+      setRegistryWarning("");
+      lastGoodRegistryRef.current = {
+        indexedAt:
+          typeof payload.indexedAt === "string" ? payload.indexedAt : undefined,
+        loaded: true,
+      };
       return true;
     } catch (error) {
       if (generation !== requestGenerationRef.current || controller.signal.aborted) {
+        return false;
+      }
+      if (
+        fresh &&
+        lastGoodRegistryRef.current.loaded &&
+        isTransientProofApiReadError(error)
+      ) {
+        setRegistryWarning(
+          proofApiLastGoodReadStatus(error, {
+            indexedAt: lastGoodRegistryRef.current.indexedAt,
+            label: "ProofOfWork ID registry",
+          }),
+        );
         return false;
       }
       setRegistryError(
@@ -105,6 +133,7 @@ export default function LandingRoot() {
       registryLoaded={registryLoaded}
       registryLoading={registryLoading}
       registryRecords={registryRecords}
+      registryWarning={registryWarning}
       onRefresh={() => void refreshRegistry(true)}
     />
   );

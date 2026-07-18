@@ -18,6 +18,8 @@
     "check:message-signatures": "node scripts/check-bitcoin-message-signatures.mjs",
     "check:live-data": "node scripts/check-live-data-contract.mjs",
     "check:index-recovery-behavior": "node scripts/check-index-recovery-behavior.mjs",
+    "check:client-read-containment": "node scripts/check-client-read-containment.mjs",
+    "check:worker-containment": "node scripts/check-worker-containment.mjs",
     "check:send-prep-regressions": "node scripts/check-send-prep-regressions.mjs",
     "check:credit-mint-regressions": "node scripts/check-credit-mint-regressions.mjs",
     "check:marketplace-regressions": "node scripts/check-marketplace-regressions.mjs",

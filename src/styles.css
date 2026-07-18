@@ -1458,6 +1458,20 @@ code {
   width: 100%;
 }
 
+.app-status-stack {
+  display: grid;
+  height: auto;
+}
+
+.app-status-stack > .status {
+  width: 100%;
+}
+
+.app-status-degraded {
+  background: color-mix(in srgb, var(--surface-soft) 92%, var(--accent) 8%);
+  border-bottom: 1px solid var(--border);
+}
+
 .app-header-stack + .app-status-row {
   position: sticky;
   top: var(--topbar-height);
@@ -1934,7 +1948,7 @@ select {
 }
 
 .desktop-public-app.has-route-status {
-  grid-template-rows: auto var(--status-row-height) minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
 .desktop-public-app.has-route-status .app-header-stack + .desktop-route-status {

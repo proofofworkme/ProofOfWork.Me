@@ -1190,25 +1190,30 @@ function incbIssuanceMetadataFault(payload, row = {}) {
   if (
     !Number.isFinite(issuanceNetworkValueSats) ||
     issuanceNetworkValueSats <= 0 ||
-    Math.floor(issuanceNetworkValueSats) !== amount ||
+    (!exactIssuance.complete &&
+      Math.floor(issuanceNetworkValueSats) !== amount) ||
     !Number.isFinite(issuanceDustSats) ||
     issuanceDustSats < 0 ||
     issuanceDustSats >= 1 ||
-    Math.abs(
-      issuanceDustSats - (issuanceNetworkValueSats - amount),
-    ) > 1e-6 ||
+    (!exactIssuance.complete &&
+      Math.abs(
+        issuanceDustSats - (issuanceNetworkValueSats - amount),
+      ) > 1e-6) ||
     !Number.isFinite(issuanceFloorSats) ||
     issuanceFloorSats < 1 ||
-    Math.abs(issuanceFloorSats - issuanceNetworkValueSats / amount) > 1e-9 ||
+    (!exactIssuance.complete &&
+      Math.abs(issuanceFloorSats - issuanceNetworkValueSats / amount) >
+        1e-9) ||
     !Number.isFinite(attachedWorkLiveValueAtSendSats) ||
     attachedWorkLiveValueAtSendSats < 0 ||
-    Math.floor(attachedWorkLiveValueAtSendSats) !==
-      attachedWorkIssuanceUnits ||
-    Math.abs(
-      issuanceNetworkValueSats -
-        (directProofIssuanceUnits +
-          attachedWorkLiveValueAtSendSats),
-    ) > 1e-6
+    (!exactIssuance.complete &&
+      (Math.floor(attachedWorkLiveValueAtSendSats) !==
+        attachedWorkIssuanceUnits ||
+        Math.abs(
+          issuanceNetworkValueSats -
+            (directProofIssuanceUnits +
+              attachedWorkLiveValueAtSendSats),
+        ) > 1e-6))
   ) {
     return "issuance value, dust, or one-proof unit floor is inconsistent";
   }
@@ -4833,7 +4838,6 @@ export async function proofIndexLogHistoryPayload(
   }
 
   if (exactQueryTxid) {
-    const whereClause = conditions.join(" AND ");
     const snapshot = await ledgerSnapshotMetadata(
       pool,
       network,
@@ -4842,6 +4846,31 @@ export async function proofIndexLogHistoryPayload(
     if (!snapshot) {
       return null;
     }
+    const snapshotHeight = rowNumber(snapshot, "indexed_through_block");
+    const snapshotGeneratedAt = snapshot.generated_at ?? null;
+    if (
+      snapshotHeight <= 0 ||
+      !Number.isFinite(Date.parse(snapshotGeneratedAt))
+    ) {
+      return null;
+    }
+    const snapshotHeightParam = addParam(snapshotHeight);
+    const snapshotTimeParam = addParam(snapshotGeneratedAt);
+    conditions.push(`
+      e.updated_at <= ${snapshotTimeParam}::timestamptz
+      AND (
+        (
+          e.status = 'confirmed'
+          AND e.block_height > 0
+          AND e.block_height <= ${snapshotHeightParam}
+        )
+        OR (
+          e.status = 'pending'
+          AND e.created_at <= ${snapshotTimeParam}::timestamptz
+        )
+      )
+    `);
+    const whereClause = conditions.join(" AND ");
     const rowLimit = Math.max(
       pagination.limit,
       pagination.limit + pagination.offset,
@@ -4909,17 +4938,69 @@ export async function proofIndexLogHistoryPayload(
                 AND candidate.kind = ANY($3::text[])
             )::integer AS public_event_count
           FROM proof_indexer.transactions terminal_tx
+          LEFT JOIN proof_indexer.blocks canonical_block
+            ON canonical_block.network = terminal_tx.network
+           AND canonical_block.block_hash = terminal_tx.block_hash
+           AND canonical_block.height = terminal_tx.block_height
+           AND canonical_block.canonical = true
+           AND canonical_block.indexed_at <= $5::timestamptz
           LEFT JOIN proof_indexer.events candidate
             ON candidate.network = terminal_tx.network
            AND candidate.txid = terminal_tx.txid
+           AND candidate.updated_at <= $5::timestamptz
+           AND (
+             (
+               candidate.status = 'confirmed'
+               AND candidate.block_height = terminal_tx.block_height
+               AND candidate.block_height > 0
+               AND candidate.block_height <= $4
+             )
+             OR (
+               candidate.status = 'pending'
+               AND terminal_tx.status <> 'confirmed'
+               AND candidate.created_at <= $5::timestamptz
+             )
+           )
           WHERE terminal_tx.network = $1
             AND terminal_tx.txid = $2
+            AND terminal_tx.updated_at <= $5::timestamptz
+            AND (
+              (
+                terminal_tx.status IN ('dropped', 'orphaned')
+                AND terminal_tx.first_seen_at <= $5::timestamptz
+              )
+              OR (
+                terminal_tx.status = 'confirmed'
+                AND terminal_tx.block_height > 0
+                AND terminal_tx.block_height <= $4
+                AND canonical_block.block_hash = terminal_tx.block_hash
+                AND jsonb_typeof(terminal_tx.raw_tx) = 'object'
+                AND jsonb_typeof(
+                  terminal_tx.raw_tx->'canonicalBlockScan'
+                ) = 'object'
+                AND terminal_tx.raw_tx->'canonicalBlockScan'->>'network' =
+                  terminal_tx.network
+                AND terminal_tx.raw_tx->'canonicalBlockScan'->>'height' =
+                  terminal_tx.block_height::text
+                AND lower(
+                  terminal_tx.raw_tx->'canonicalBlockScan'->>'blockHash'
+                ) = lower(terminal_tx.block_hash)
+                AND lower(COALESCE(terminal_tx.raw_tx->>'txid', '')) =
+                  terminal_tx.txid
+              )
+            )
           GROUP BY
             terminal_tx.status,
             terminal_tx.block_height,
             terminal_tx.raw_tx
         `,
-        [network, exactQueryTxid, [...PUBLIC_LOG_EVENT_KINDS]],
+        [
+          network,
+          exactQueryTxid,
+          [...PUBLIC_LOG_EVENT_KINDS],
+          snapshotHeight,
+          snapshotGeneratedAt,
+        ],
       );
       const disposition = dispositionResult.rows[0];
       const eventCount = rowNumber(disposition, "event_count");
@@ -6826,6 +6907,113 @@ function canonicalTransactionFault(network, code, message, details = {}) {
   };
 }
 
+function canonicalVerifierIncbInvalidEventQueryParts(
+  network,
+  fromHeight,
+  indexedThroughBlock,
+) {
+  return {
+    fromSql: `
+      FROM proof_indexer.events e
+      JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
+      JOIN proof_indexer.blocks b
+        ON b.network = t.network
+       AND b.height = t.block_height
+       AND b.block_hash = t.block_hash
+       AND b.canonical = true
+      LEFT JOIN proof_indexer.credit_listings cl_invalid
+        ON cl_invalid.network = e.network
+       AND cl_invalid.listing_id = lower(e.payload->>'listingId')
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = e.network
+       AND cd.token_id = COALESCE(
+         lower(e.payload->>'tokenId'),
+         cl_invalid.token_id
+       )
+      WHERE e.network = $1
+        AND e.protocol = 'pwt1'
+        AND e.kind = 'token-event-invalid'
+        AND e.status = 'confirmed'
+        AND e.valid = false
+        AND t.status = 'confirmed'
+        AND e.block_height = t.block_height
+        AND t.block_height BETWEEN $4 AND $5
+        AND lower(COALESCE(e.payload->>'kind', '')) = 'token-event-invalid'
+        AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
+        AND lower(COALESCE(e.payload->>'attemptedKind', '')) = 'token-mint'
+        AND lower(COALESCE(e.payload->>'sourceKind', '')) = $3
+        AND lower(COALESCE(e.payload->>'txid', '')) = lower(e.txid)
+        AND lower(COALESCE(e.payload->>'sourceBondTxid', '')) = lower(e.txid)
+        AND COALESCE(e.payload->>'blockHeight', '') ~ '^[0-9]+$'
+        AND (e.payload->>'blockHeight')::integer = t.block_height
+        AND lower(COALESCE(e.payload->>'blockHash', '')) = lower(t.block_hash)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM proof_indexer.events valid_mint
+          WHERE valid_mint.network = e.network
+            AND valid_mint.txid = e.txid
+            AND valid_mint.protocol = 'pwt1'
+            AND valid_mint.kind = 'token-mint'
+            AND valid_mint.status = 'confirmed'
+            AND valid_mint.valid = true
+            AND valid_mint.block_height = t.block_height
+            AND lower(COALESCE(valid_mint.payload->>'tokenId', '')) = $2
+        )
+    `,
+    params: [
+      network,
+      INCB_TOKEN_ID,
+      INCEPTION_BOND_KIND,
+      fromHeight,
+      indexedThroughBlock,
+    ],
+  };
+}
+
+function canonicalVerifierIncbInvalidDispositionFromRow(row, canonicalBlocks) {
+  const payload = objectRecord(row?.payload);
+  const txid = normalizedLowerText(row?.txid);
+  const eventBlockHeight = Number(row?.block_height);
+  const transactionBlockHeight = Number(row?.transaction_block_height);
+  const payloadBlockHeight = Number(payload.blockHeight);
+  const blockHash = normalizedLowerText(row?.block_hash);
+  const canonicalBlockHash = normalizedLowerText(
+    typeof canonicalBlocks?.get === "function"
+      ? canonicalBlocks.get(transactionBlockHeight)
+      : "",
+  );
+  if (
+    row?.valid !== false ||
+    normalizedLowerText(row?.protocol) !== "pwt1" ||
+    normalizedLowerText(row?.kind) !== "token-event-invalid" ||
+    normalizedLowerText(row?.status) !== "confirmed" ||
+    normalizedLowerText(row?.effective_status) !== "confirmed" ||
+    !/^[0-9a-f]{64}$/u.test(txid) ||
+    !Number.isSafeInteger(eventBlockHeight) ||
+    eventBlockHeight <= 0 ||
+    eventBlockHeight !== transactionBlockHeight ||
+    payloadBlockHeight !== transactionBlockHeight ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    canonicalBlockHash !== blockHash ||
+    normalizedLowerText(payload.kind) !== "token-event-invalid" ||
+    normalizedLowerText(payload.tokenId) !== INCB_TOKEN_ID ||
+    normalizedLowerText(payload.attemptedKind) !== "token-mint" ||
+    normalizedLowerText(payload.sourceKind) !== INCEPTION_BOND_KIND ||
+    normalizedLowerText(payload.txid) !== txid ||
+    normalizedLowerText(payload.sourceBondTxid) !== txid ||
+    normalizedLowerText(payload.blockHash) !== blockHash ||
+    row?.valid_incb_mint_overlap === true
+  ) {
+    return null;
+  }
+  const event = tokenInvalidEventFromRow(row);
+  return event.txid === txid && event.confirmed && event.valid === false
+    ? event
+    : null;
+}
+
 export async function proofIndexCanonicalTransactionsPayload(
   network,
   indexedThroughBlock,
@@ -6936,6 +7124,7 @@ export async function proofIndexCanonicalTransactionsPayload(
       checkpointHash: "",
       fault,
       indexedThroughBlock: 0,
+      invalidEvents: [],
       rebuild,
       transactions: [],
     };
@@ -6945,6 +7134,7 @@ export async function proofIndexCanonicalTransactionsPayload(
       checkpointHash,
       fault,
       indexedThroughBlock: actualHeight,
+      invalidEvents: [],
       rebuild,
       transactions: [],
     };
@@ -7005,8 +7195,14 @@ export async function proofIndexCanonicalTransactionsPayload(
     ]),
   );
 
-  const transactionsResult = await pool.query(
-    `
+  const invalidEventQuery = canonicalVerifierIncbInvalidEventQueryParts(
+    network,
+    fromHeight,
+    actualHeight,
+  );
+  const [transactionsResult, invalidEventsResult] = await Promise.all([
+    pool.query(
+      `
       SELECT
         txid,
         block_hash,
@@ -7030,9 +7226,23 @@ export async function proofIndexCanonicalTransactionsPayload(
         END ASC,
         txid ASC
     `,
-    [network, fromHeight, actualHeight],
-  );
+      [network, fromHeight, actualHeight],
+    ),
+    pool.query(
+      `
+        SELECT
+          ${tokenInvalidEventSelectSql()}
+        ${invalidEventQuery.fromSql}
+        ORDER BY
+          t.block_height ASC,
+          e.txid ASC,
+          e.event_id ASC
+      `,
+      invalidEventQuery.params,
+    ),
+  ]);
   const transactions = [];
+  const invalidEvents = [];
   const positions = new Set();
   try {
     for (const row of transactionsResult.rows) {
@@ -7047,6 +7257,18 @@ export async function proofIndexCanonicalTransactionsPayload(
       positions.add(position);
       transactions.push(transaction);
     }
+    for (const row of invalidEventsResult.rows) {
+      const event = canonicalVerifierIncbInvalidDispositionFromRow(
+        row,
+        canonicalBlocks,
+      );
+      if (!event) {
+        throw new Error(
+          `Invalid-event disposition ${row.txid} is not canonically bound to a rejected INCB bond mint.`,
+        );
+      }
+      invalidEvents.push(event);
+    }
   } catch (error) {
     fault = fault ?? canonicalTransactionFault(
       network,
@@ -7058,6 +7280,7 @@ export async function proofIndexCanonicalTransactionsPayload(
     checkpointHash,
     fault,
     indexedThroughBlock: actualHeight,
+    invalidEvents: fault?.active ? [] : invalidEvents,
     rebuild,
     transactions: fault?.active ? [] : transactions,
   };
@@ -10630,6 +10853,22 @@ export async function proofIndexCanonicalActivityPayload(
   ) {
     return null;
   }
+  const membershipRestricted = Object.hasOwn(options, "eventIds");
+  const requestedEventIds = membershipRestricted
+    ? [...new Set(
+        (Array.isArray(options.eventIds) ? options.eventIds : []).map(Number),
+      )]
+    : [];
+  if (
+    membershipRestricted &&
+    (requestedEventIds.length < 1 ||
+      requestedEventIds.length > 500 ||
+      requestedEventIds.some(
+        (eventId) => !Number.isSafeInteger(eventId) || eventId < 1,
+      ))
+  ) {
+    return null;
+  }
   const boundSnapshot = requestedSnapshotId
     ? await ledgerSnapshotMetadata(pool, network, requestedSnapshotId)
     : null;
@@ -10644,30 +10883,45 @@ export async function proofIndexCanonicalActivityPayload(
   ) {
     return null;
   }
+  const queryParams = [network, [...PUBLIC_LOG_EVENT_KINDS]];
+  const addQueryParam = (value) => {
+    queryParams.push(value);
+    return `$${queryParams.length}`;
+  };
+  const snapshotHeightParam = requestedSnapshotId
+    ? addQueryParam(snapshotHeight)
+    : "";
+  const snapshotTimeParam = requestedSnapshotId
+    ? addQueryParam(snapshotGeneratedAt)
+    : "";
+  const eventIdsParam = membershipRestricted
+    ? addQueryParam(requestedEventIds)
+    : "";
   const snapshotWhere = requestedSnapshotId
     ? `
-          AND e.updated_at <= $4::timestamptz
+          AND e.updated_at <= ${snapshotTimeParam}::timestamptz
           AND (
             (
               e.status = 'confirmed'
               AND e.block_height > 0
-              AND e.block_height <= $3
+              AND e.block_height <= ${snapshotHeightParam}
             )
             OR (
               e.status = 'pending'
-              AND e.created_at <= $4::timestamptz
+              AND e.created_at <= ${snapshotTimeParam}::timestamptz
             )
           )
       `
     : "";
-  const queryParams = requestedSnapshotId
-    ? [
-        network,
-        [...PUBLIC_LOG_EVENT_KINDS],
-        snapshotHeight,
-        snapshotGeneratedAt,
-      ]
-    : [network, [...PUBLIC_LOG_EVENT_KINDS]];
+  const membershipWhere = membershipRestricted
+    ? `AND e.event_id = ANY(${eventIdsParam}::bigint[])`
+    : "";
+  const transactionSnapshotWhere = requestedSnapshotId
+    ? `AND transaction_row.updated_at <= ${snapshotTimeParam}::timestamptz`
+    : "";
+  const blockSnapshotWhere = requestedSnapshotId
+    ? `AND canonical_block.indexed_at <= ${snapshotTimeParam}::timestamptz`
+    : "";
 
   const result = await pool.query(
     `
@@ -10690,6 +10944,7 @@ export async function proofIndexCanonicalActivityPayload(
           AND e.status IN ('confirmed', 'pending')
           AND e.kind = ANY($2::text[])
           ${snapshotWhere}
+          ${membershipWhere}
       ),
       selected_txids AS (
         SELECT DISTINCT network, txid
@@ -10887,11 +11142,13 @@ export async function proofIndexCanonicalActivityPayload(
       LEFT JOIN proof_indexer.transactions transaction_row
         ON transaction_row.network = e.network
        AND transaction_row.txid = e.txid
+       ${transactionSnapshotWhere}
       LEFT JOIN proof_indexer.blocks canonical_block
         ON canonical_block.network = transaction_row.network
        AND canonical_block.block_hash = transaction_row.block_hash
        AND canonical_block.height = transaction_row.block_height
        AND canonical_block.canonical = true
+       ${blockSnapshotWhere}
       LEFT JOIN input_totals
         ON input_totals.network = e.network
        AND input_totals.txid = e.txid
@@ -10975,6 +11232,12 @@ export async function proofIndexCanonicalActivityPayload(
       ? dateIso(snapshot.generated_at)
       : indexedAt,
     network,
+    ...(membershipRestricted
+      ? {
+          membershipEventIds: requestedEventIds,
+          membershipRestricted: true,
+        }
+      : {}),
     snapshotId: snapshot?.snapshot_id ?? undefined,
     snapshotTotalCount: requestedSnapshotId ? items.length : undefined,
     source: "proof-indexer-events",
@@ -11198,7 +11461,9 @@ function eventRowPayload(row, network) {
     ...payload,
     ...canonicalEventIdentityDetails({
       ...payload,
-      eventId: payload?.eventId ?? row?.event_id,
+      // Membership checks must bind the relational row identity. Never let a
+      // payload field shadow the database event id used by the bounded query.
+      eventId: row?.event_id ?? payload?.eventId,
     }),
     ...canonicalMinerFeePatch,
     ...(invalidTokenEvent

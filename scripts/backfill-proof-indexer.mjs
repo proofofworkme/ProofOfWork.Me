@@ -11,6 +11,8 @@ import {
   WORK_TOKEN_ID,
   WORK_UNIT_SCALE,
   WORK_UNIT_SCALE_TEXT,
+  WORK_VALUE_Q8_SCALE as VALUE_Q8_SCALE,
+  decimalValueToQ8,
   formatWorkAtoms,
   isWorkTokenId,
   normalizeWorkAtoms,
@@ -24,6 +26,19 @@ import {
 } from "../server/work-units.mjs";
 
 const DEFAULT_API_BASE = "http://127.0.0.1:8081";
+const CANONICAL_TX_CONTENT_FAILURE_CODE =
+  "POW_CANONICAL_TX_CONTENT_INVARIANT";
+const CANONICAL_TX_CONTENT_FAILURE_CLASS =
+  "CanonicalTransactionContentInvariantError";
+
+class CanonicalTransactionContentInvariantError extends Error {
+  constructor(message) {
+    super(message);
+    this.code = CANONICAL_TX_CONTENT_FAILURE_CODE;
+    this.name = CANONICAL_TX_CONTENT_FAILURE_CLASS;
+  }
+}
+
 const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
   /\/+$/u,
   "",
@@ -1382,6 +1397,32 @@ async function transactionWithInputPrevouts(tx) {
   return { ...tx, vin: hydratedVin };
 }
 
+function assertCanonicalProtocolTransactionContent(tx) {
+  const txid = String(tx?.txid ?? "").trim().toLowerCase();
+  const inputs = Array.isArray(tx?.vin) ? tx.vin : null;
+  if (!isHexTxid(txid) || !inputs || inputs.length === 0) {
+    throw new CanonicalTransactionContentInvariantError(
+      `Canonical protocol transaction ${txid || "unknown"} has an invalid transaction envelope`,
+    );
+  }
+  for (const [index, input] of inputs.entries()) {
+    if (input?.coinbase) {
+      continue;
+    }
+    const previousTxid = String(input?.txid ?? "").trim().toLowerCase();
+    const previousVout = Number(input?.vout);
+    if (
+      !isHexTxid(previousTxid) ||
+      !Number.isSafeInteger(previousVout) ||
+      previousVout < 0
+    ) {
+      throw new CanonicalTransactionContentInvariantError(
+        `Canonical protocol transaction ${txid} input ${index} has an invalid outpoint`,
+      );
+    }
+  }
+}
+
 function assertHydratedProtocolTransaction(tx) {
   for (const [index, input] of (tx?.vin ?? []).entries()) {
     if (input?.coinbase) {
@@ -1407,6 +1448,33 @@ function assertHydratedProtocolTransaction(tx) {
       );
     }
   }
+}
+
+function canonicalBlockScanVerificationFailureRecord(
+  error,
+  { height, txid },
+) {
+  const trustedDeterministicFailure =
+    error instanceof CanonicalTransactionContentInvariantError &&
+    error?.code === CANONICAL_TX_CONTENT_FAILURE_CODE &&
+    error?.name === CANONICAL_TX_CONTENT_FAILURE_CLASS;
+  const statusCode = Number(error?.statusCode);
+  return {
+    error: error?.message ?? String(error),
+    errorName: String(error?.name ?? "Error"),
+    ...(trustedDeterministicFailure
+      ? {
+          failureClass: CANONICAL_TX_CONTENT_FAILURE_CLASS,
+          failureCode: CANONICAL_TX_CONTENT_FAILURE_CODE,
+        }
+      : {}),
+    height,
+    phase: "block-scan-verification",
+    ...(Number.isSafeInteger(statusCode) && statusCode > 0
+      ? { statusCode }
+      : {}),
+    txid,
+  };
 }
 
 function assertCanonicalBlockEnvelope(block, height, blockHash) {
@@ -2124,7 +2192,7 @@ function tokenScopesForProtocolMessage(txid, text) {
   if (action === "create" && isHexTxid(txid)) {
     scopes.add(txid);
   }
-  if (["mint", "send"].includes(action) && isHexTxid(parts[2])) {
+  if (["mint", "send", "send2"].includes(action) && isHexTxid(parts[2])) {
     scopes.add(parts[2].toLowerCase());
   }
   if (action === "list5") {
@@ -2153,7 +2221,7 @@ function tokenRecoveryKindsForProtocolMessage(text) {
   if (action === "mint") {
     return [{ kind: "mints", label: "token-mints" }];
   }
-  if (action === "send") {
+  if (action === "send" || action === "send2") {
     return [{ kind: "transfers", label: "token-transfers" }];
   }
   if (action === "list5" || action === "seal5") {
@@ -2205,9 +2273,16 @@ function recoveryEndpointSpecs(txid, message) {
   if (message.prefix === "pwt1:") {
     const action = String(message.text ?? "").split(":")[1]?.toLowerCase() ?? "";
     if (
-      !["create", "mint", "send", "list5", "seal5", "delist5", "buy5"].includes(
-        action,
-      )
+      ![
+        "create",
+        "mint",
+        "send",
+        "send2",
+        "list5",
+        "seal5",
+        "delist5",
+        "buy5",
+      ].includes(action)
     ) {
       return [];
     }
@@ -2237,6 +2312,19 @@ function canonicalIntegerText(value, { positive = false } = {}) {
     return "";
   }
   return text;
+}
+
+function canonicalWorkAtomsText(value, { allowZero = false } = {}) {
+  const text = String(value ?? "").trim();
+  try {
+    const normalized = normalizeWorkAtoms(text, { allowZero });
+    return normalized === text &&
+      BigInt(normalized) <= BigInt(WORK_TOKEN_MAX_SUPPLY_ATOMS)
+      ? normalized
+      : "";
+  } catch {
+    return "";
+  }
 }
 
 function incbIssuanceMetadataInvalidReason(item) {
@@ -2302,6 +2390,63 @@ function incbIssuanceMetadataInvalidReason(item) {
   ) {
     return "INCB issuance exceeds exact JavaScript integer range";
   }
+  const atomicMetadataPresent = [
+    item?.attachedWorkAmountAtoms,
+    item?.attachedWorkLiveValueAtSendQ8,
+    item?.issuanceDustQ8,
+    item?.issuanceNetworkValueQ8,
+    item?.issuanceValueSnapshotWorkNetworkValueQ8,
+  ].some((value) => value !== undefined && value !== null && value !== "");
+  let attachedWorkAmountAtoms = null;
+  let attachedWorkLiveValueAtSendQ8 = null;
+  let issuanceDustQ8 = null;
+  let issuanceNetworkValueQ8 = null;
+  let snapshotWorkNetworkValueQ8 = null;
+  if (atomicMetadataPresent) {
+    const attachedWorkAmountAtomsText = canonicalWorkAtomsText(
+      item?.attachedWorkAmountAtoms,
+      { allowZero: true },
+    );
+    const attachedWorkLiveValueAtSendQ8Text = canonicalIntegerText(
+      item?.attachedWorkLiveValueAtSendQ8,
+    );
+    const issuanceDustQ8Text = canonicalIntegerText(item?.issuanceDustQ8);
+    const issuanceNetworkValueQ8Text = canonicalIntegerText(
+      item?.issuanceNetworkValueQ8,
+    );
+    const snapshotWorkNetworkValueQ8Text = canonicalIntegerText(
+      item?.issuanceValueSnapshotWorkNetworkValueQ8,
+    );
+    if (
+      !attachedWorkAmountAtomsText ||
+      !attachedWorkLiveValueAtSendQ8Text ||
+      !issuanceDustQ8Text ||
+      !issuanceNetworkValueQ8Text ||
+      !snapshotWorkNetworkValueQ8Text
+    ) {
+      return "INCB exact atomic issuance metadata is incomplete or noncanonical";
+    }
+    attachedWorkAmountAtoms = BigInt(attachedWorkAmountAtomsText);
+    attachedWorkLiveValueAtSendQ8 = BigInt(
+      attachedWorkLiveValueAtSendQ8Text,
+    );
+    issuanceDustQ8 = BigInt(issuanceDustQ8Text);
+    issuanceNetworkValueQ8 = BigInt(issuanceNetworkValueQ8Text);
+    snapshotWorkNetworkValueQ8 = BigInt(snapshotWorkNetworkValueQ8Text);
+    const expectedAttachedWorkValueQ8 =
+      (attachedWorkAmountAtoms * snapshotWorkNetworkValueQ8) /
+      (BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_UNIT_SCALE);
+    if (
+      expectedAttachedWorkValueQ8 !== attachedWorkLiveValueAtSendQ8 ||
+      issuanceNetworkValueQ8 !==
+        direct * VALUE_Q8_SCALE + attachedWorkLiveValueAtSendQ8 ||
+      amount !== issuanceNetworkValueQ8 / VALUE_Q8_SCALE ||
+      attached !== attachedWorkLiveValueAtSendQ8 / VALUE_Q8_SCALE ||
+      issuanceDustQ8 !== issuanceNetworkValueQ8 % VALUE_Q8_SCALE
+    ) {
+      return "INCB exact atomic issuance metadata does not conserve value";
+    }
+  }
   const issuanceNetworkValueSats = Number(item?.issuanceNetworkValueSats);
   const issuanceDustSats = Number(item?.issuanceDustSats);
   const issuanceFloorSats = Number(item?.issuanceFloorSats);
@@ -2311,24 +2456,36 @@ function incbIssuanceMetadataInvalidReason(item) {
   if (
     !Number.isFinite(issuanceNetworkValueSats) ||
     issuanceNetworkValueSats <= 0 ||
-    Math.floor(issuanceNetworkValueSats) !== safeAmount ||
+    (!atomicMetadataPresent &&
+      Math.floor(issuanceNetworkValueSats) !== safeAmount) ||
     !Number.isFinite(issuanceDustSats) ||
     issuanceDustSats < 0 ||
     issuanceDustSats >= 1 ||
-    Math.abs(
-      issuanceDustSats - (issuanceNetworkValueSats - safeAmount),
-    ) > 1e-6 ||
+    (atomicMetadataPresent
+      ? Math.abs(issuanceDustSats - q8ToNumber(issuanceDustQ8)) > 1e-8
+      : Math.abs(
+          issuanceDustSats - (issuanceNetworkValueSats - safeAmount),
+        ) > 1e-6) ||
     !Number.isFinite(issuanceFloorSats) ||
     issuanceFloorSats <= 0 ||
-    Math.abs(issuanceFloorSats - issuanceNetworkValueSats / safeAmount) >
-      1e-9 ||
+    (!atomicMetadataPresent &&
+      Math.abs(issuanceFloorSats - issuanceNetworkValueSats / safeAmount) >
+        1e-9) ||
     !Number.isFinite(attachedWorkLiveValueAtSendSats) ||
     attachedWorkLiveValueAtSendSats < 0 ||
-    Math.abs(
-      issuanceNetworkValueSats -
-        (safeDirect + attachedWorkLiveValueAtSendSats),
-    ) > 1e-6 ||
-    Math.floor(attachedWorkLiveValueAtSendSats) !== safeAttached
+    (atomicMetadataPresent
+      ? Math.abs(
+          issuanceNetworkValueSats - q8ToNumber(issuanceNetworkValueQ8),
+        ) > 1e-8 ||
+        Math.abs(
+          attachedWorkLiveValueAtSendSats -
+            q8ToNumber(attachedWorkLiveValueAtSendQ8),
+        ) > 1e-8
+      : Math.abs(
+          issuanceNetworkValueSats -
+            (safeDirect + attachedWorkLiveValueAtSendSats),
+        ) > 1e-6 ||
+        Math.floor(attachedWorkLiveValueAtSendSats) !== safeAttached)
   ) {
     return "INCB issuance value, dust, or one-proof unit floor is inconsistent";
   }
@@ -2348,14 +2505,21 @@ function incbIssuanceMetadataInvalidReason(item) {
       item?.attachedWorkLiveFloorAtSendSats,
     );
     if (
-      !Number.isSafeInteger(attachedWorkAmount) ||
+      (atomicMetadataPresent
+        ? !Number.isFinite(attachedWorkAmount) ||
+          Math.abs(
+            attachedWorkAmount -
+              Number(formatWorkAtoms(attachedWorkAmountAtoms)),
+          ) > 1e-8
+        : !Number.isSafeInteger(attachedWorkAmount)) ||
       attachedWorkAmount <= 0 ||
       !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
       attachedWorkLiveFloorAtSendSats <= 0 ||
-      Math.abs(
-        attachedWorkLiveValueAtSendSats -
-          attachedWorkAmount * attachedWorkLiveFloorAtSendSats,
-      ) > 1e-5
+      (!atomicMetadataPresent &&
+        Math.abs(
+          attachedWorkLiveValueAtSendSats -
+            attachedWorkAmount * attachedWorkLiveFloorAtSendSats,
+        ) > 1e-5)
     ) {
       return "INCB attached WORK issuance basis is missing or inconsistent";
     }
@@ -2388,6 +2552,9 @@ function incbIssuanceMetadataInvalidReason(item) {
     checkpointIndex < 0 ||
     !Number.isFinite(checkpointWorkNetworkValueSats) ||
     checkpointWorkNetworkValueSats <= 0 ||
+    (atomicMetadataPresent &&
+      decimalValueToQ8(checkpointWorkNetworkValueSats) !==
+        snapshotWorkNetworkValueQ8) ||
     !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
     attachedWorkLiveFloorAtSendSats <= 0 ||
     Math.abs(
@@ -9907,6 +10074,7 @@ async function backfillBlockScanSource(client, source) {
       for (const { blockIndex, messages, tx } of protocolCandidates) {
         currentTxid = String(tx.txid ?? "");
         protocolTxids += 1;
+        assertCanonicalProtocolTransactionContent(tx);
         const hydratedTx = await transactionWithInputPrevouts({
           ...tx,
           _powBlockIndex: blockIndex,
@@ -9929,12 +10097,10 @@ async function backfillBlockScanSource(client, source) {
       scanError = error;
       stopReason = "protocol-verification-failed";
       console.error(
-        JSON.stringify({
-          error: error?.message ?? String(error),
+        JSON.stringify(canonicalBlockScanVerificationFailureRecord(error, {
           height,
-          phase: "block-scan-verification",
           txid: currentTxid,
-        }),
+        })),
       );
       break scanBlocks;
     }

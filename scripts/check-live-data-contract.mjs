@@ -392,7 +392,7 @@ expectAll("live index worker confirms blocks before best-effort mempool visibili
   /const DEFAULT_WORKER_BACKFILL_SOURCES = "block-scan,mempool-scan"/,
   /const BACKFILL_RETRIES = Math\.min\(/,
   /async function runBackfillWithRetries\([\s\S]*await runScript\("backfill-proof-indexer\.mjs"[\s\S]*phase: "worker-backfill-retry"/,
-  /await runBackfillWithRetries\(backfillEnv\)/,
+  /await runBackfillWithRetries\(backfillEnv, runtime\)/,
   /POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT:[\s\S]*BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT/,
   /POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT: BACKFILL_STORE_LEDGER_SNAPSHOT/,
   /const MAX_CONSECUTIVE_FAILURES = Math\.max\([\s\S]*3/,
@@ -645,6 +645,10 @@ expectAll("health Electrum probes share one deadline and fail without a second s
 expectAll("health calls bind Electrum to the sampled Core checkpoint", server, [
   /loadHealthPayload\(\)[\s\S]*boundedHealthElectrumPayload\([\s\S]*addressIndex,[\s\S]*tipHeight,[\s\S]*sampledBestBlockHash/,
 ]);
+expectAll("health exposes canonical worker containment diagnostics", healthPayloadSource, [
+  /const workerNoProgress =[\s\S]*database\.worker\.network === "livenet"[\s\S]*database\.worker\.noProgress\.network === "livenet"/,
+  /containment: \{[\s\S]*active: workerContainmentActive[\s\S]*failingBlockHeight:[\s\S]*nextRetryAt:[\s\S]*txid:/,
+]);
 expectAll("concurrent and adjacent health requests share one dependency sweep", healthPayloadSource, [
   /let healthPayloadCache = null/,
   /!healthPayloadCache\.settled \|\| healthPayloadCache\.expiresAt > now/,
@@ -762,6 +766,10 @@ expectAll("reader exposes exact canonical raw chain state", canonicalTransaction
   /FROM proof_indexer\.blocks[\s\S]*height = \$2[\s\S]*canonical = true/,
   /WITH RECURSIVE canonical_chain/,
   /raw_tx->'canonicalBlockScan'/,
+  /canonicalVerifierIncbInvalidEventQueryParts\(/,
+  /t\.block_height BETWEEN \$4 AND \$5/,
+  /Invalid-event disposition[\s\S]*is not canonically bound to a rejected INCB bond mint/,
+  /invalidEvents: fault\?\.active \? \[\] : invalidEvents/,
   /canonicalCoreValueSats/,
   /scriptpubkey_type: canonicalCoreScriptType/,
   /Duplicate canonical transaction position/,
@@ -922,7 +930,7 @@ expectAll("WORK Growth Log and token views use the same ledger", server, [
   /async function canonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)/,
   /async function summaryCanonicalLedgerPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*currentLedgerPayloadOrNull\([\s\S]*"canonical ledger fallback"[\s\S]*refreshCanonicalLedgerPayloadInBackground\(network,\s*true\)/,
   /async function activityPayloadWithLiveWorkTokenOverlay\(ledger,\s*fresh\s*=\s*false\)[\s\S]*liveWorkTokenStateWithFallbackAfterMs\([\s\S]*tokenActivityItemsFromState\(/,
-  /async function mergedLogActivityPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*activityPayloadWithLiveWorkTokenOverlay\(ledger,\s*fresh\)[\s\S]*Current Log ledger is unavailable/,
+  /async function mergedLogActivityPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*network === "livenet" && !fresh[\s\S]*stableProofIndexLogPayload\(network\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*activityPayloadWithLiveWorkTokenOverlay\(ledger,\s*fresh\)/,
   /async function proofIndexWorkFloorPayload\(network\)[\s\S]*canonical ledger required[\s\S]*return null/,
   /async function cachedWorkFloorPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*existingCurrentCanonicalLedgerPayloadWithinMs\([\s\S]*"work-floor canonical ledger"[\s\S]*Current WORK floor ledger is unavailable[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*Fresh WORK floor ledger is unavailable/,
   /async function growthSummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*workFloorWithSummaryMarketOverlay\([\s\S]*growthSummaryWithCanonicalWorkFloor\([\s\S]*Current Growth summary ledger is unavailable/,
@@ -1018,6 +1026,25 @@ expectAll("server canonical summaries require hash-bound database snapshots", se
   /async function storedCanonicalTokenSummaryPayload\([\s\S]*proofIndexSnapshotPayload\([\s\S]*payloadIndexedThroughBlockHash/,
   /async function tokenSummaryPayload\([\s\S]*storedCanonicalTokenSummaryPayload\([\s\S]*Fresh hash-bound credit summary is still catching up/,
   /async function activitySummaryPayload\([\s\S]*"logSummary"[\s\S]*payloadIndexedThroughBlockHash\(storedSummary\)/,
+]);
+
+expectAll("stable Log reads stay pinned to one authenticated last-good snapshot", server, [
+  /async function stableCanonicalLogSummaryPayload[\s\S]*summaryPayloadWithCanonicalProvenance\([\s\S]*activitySummaryPayload\(network,\s*false\)[\s\S]*"log-summary"/,
+  /async function stableProofIndexLogPayload[\s\S]*proofIndexCanonicalActivityPayload\(network,\s*\{[\s\S]*snapshotId:\s*summarySnapshotId/,
+  /async function stableProofIndexLogPayload[\s\S]*pageSnapshotTotal !== summaryTotal[\s\S]*verifyStableLogCheckpointAfterRead\(summary,\s*network,\s*"log"\)/,
+  /async function stableProofIndexLogHistoryPayload[\s\S]*boundSearchParams\.set\("snapshot",\s*summarySnapshotId\)[\s\S]*proofIndexLogHistoryPayload\(/,
+  /CANONICAL_LOG_HISTORY_STABLE_SNAPSHOT_MISMATCH/,
+  /CANONICAL_LOG_EXACT_QUERY_OUTSIDE_SNAPSHOT/,
+  /CANONICAL_LOG_EXACT_QUERY_NOT_IN_SNAPSHOT/,
+  /provenance:\s*\{[\s\S]*summary\.provenance[\s\S]*surface:\s*"log-history"/,
+]);
+
+expectAll("stable consistency uses the same authenticated last-good summary", server, [
+  /async function ledgerConsistencyPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*if \(!fresh\)[\s\S]*activitySummaryPayload\(network,\s*false\)[\s\S]*summaryPayloadWithCanonicalProvenance/,
+  /proofIndexCanonicalSummaryLedgerPayload\([\s\S]*summaryHeight,[\s\S]*summaryHash/,
+  /verifyStableLogCheckpointAfterRead\([\s\S]*summary,[\s\S]*network,[\s\S]*"ledger-consistency"/,
+  /CANONICAL_CONSISTENCY_SNAPSHOT_MISMATCH/,
+  /surface:\s*"ledger-consistency"/,
 ]);
 
 expectAll("server WORK transfer txid history recovers without full ledger rebuild", server, [

@@ -13,7 +13,9 @@ const files = [
   "src/features/landing/LandingRoot.tsx",
   "src/main.tsx",
   "src/features/rush/RushApp.tsx",
+  "src/shared/activity/logHistoryCache.ts",
   "src/shared/api/proofApiClient.ts",
+  "src/shared/api/proofApiReadState.ts",
   "src/shared/components/AppHeader.tsx",
   "src/shared/components/AppStatusRow.tsx",
   "src/shared/components/BrowserNetworkTabs.tsx",
@@ -219,6 +221,18 @@ expect(
     ),
 );
 expect(
+  "landing retains verified registry data when its background exact-tip refresh is degraded",
+  /lastGoodRegistryRef/.test(landingRoot) &&
+    /fresh\s*&&[\s\S]*lastGoodRegistryRef\.current\.loaded[\s\S]*isTransientProofApiReadError\(error\)[\s\S]*proofApiLastGoodReadStatus/.test(
+      landingRoot,
+    ) &&
+    /registryWarning=\{registryWarning\}/.test(landingRoot) &&
+    /registryWarning[\s\S]*tone: "idle"/.test(landingApp) &&
+    /Verified last-good ProofOfWork ID registry summary loaded\. This view is not current/.test(
+      landingApp,
+    ),
+);
+expect(
   "landing and Computer share one canonical ID registry address helper",
   /registryAddressForNetwork/.test(landingRoot) &&
     /registryAddressForNetwork/.test(contents.get("src/shared/protocol/idRegistry.ts")) &&
@@ -275,16 +289,85 @@ const canListTokenSource = app.slice(
   app.indexOf("const selectedTokenSupplyState"),
 );
 const proofApiClient = contents.get("src/shared/api/proofApiClient.ts");
+const proofApiReadState = contents.get("src/shared/api/proofApiReadState.ts");
+const logHistoryCache = contents.get("src/shared/activity/logHistoryCache.ts");
 const routeRegistry = contents.get("src/app/routeRegistry.ts");
 expect(
   "Proof API errors preserve canonical error codes without raw JSON UI",
-  /class ProofApiRequestError/.test(proofApiClient) &&
+  /class ProofApiRequestError/.test(proofApiReadState) &&
     /JSON\.parse\(responseText\)/.test(proofApiClient) &&
-    /isTransientProofApiReadError/.test(proofApiClient) &&
-    /CANONICAL_INDEX_UNAVAILABLE/.test(proofApiClient) &&
+    /isTransientProofApiReadError/.test(proofApiReadState) &&
+    /CANONICAL_INDEX_UNAVAILABLE/.test(proofApiReadState) &&
     /throw proofApiResponseError\(responseText, response\.status\)/.test(
       proofApiClient,
     ),
+);
+expect(
+  "canonical catch-up responses retain provenance and are transient read failures",
+  /readonly details: Record<string, unknown>/.test(proofApiReadState) &&
+    /details: details \?\? \{\}/.test(proofApiClient) &&
+    /CANONICAL_INDEX_CATCHING_UP/.test(proofApiReadState) &&
+    /error\.status === 503/.test(proofApiReadState) &&
+    /function proofApiLastGoodReadStatus/.test(proofApiReadState) &&
+    /explicitlyUnavailable/.test(proofApiReadState) &&
+    /summarySnapshot/.test(proofApiReadState) &&
+    /lagBlocks/.test(proofApiReadState) &&
+    /Showing verified last-good/.test(proofApiReadState) &&
+    /This view is not current/.test(proofApiReadState) &&
+    /Exact-tip actions remain unavailable/.test(proofApiReadState),
+);
+expect(
+  "read warnings are independent from action status and clear by source and attempt",
+  /proofApiReadWarningsRef/.test(app) &&
+    /setProofApiReadWarningRevision/.test(app) &&
+    /function showLastGoodReadWarning[\s\S]*setProofApiReadWarning/.test(app) &&
+    !/function showLastGoodReadWarning[\s\S]*setStatusForWorkspace/.test(
+      app.slice(
+        app.indexOf("function showLastGoodReadWarning"),
+        app.indexOf("function nextProofApiReadAttempt"),
+      ),
+    ) &&
+    /clearProofApiReadWarning[\s\S]*source[\s\S]*successfulAttempt/.test(
+      proofApiReadState,
+    ) &&
+    /secondaryStatus=\{degradedReadStatus\}/.test(app) &&
+    /tokenDataPriming \|\| \(tokenDataLoading && !activeTokenStateLoaded\)/.test(
+      app,
+    ),
+);
+expect(
+  "read surfaces retain only matching coherent last-good state without weakening exact-tip writes",
+    /acceptedTokenStatesRef\.current\.get\(scopeKey\)[\s\S]*renderTokenState\(lastGoodState, scopeKey\)[\s\S]*showLastGoodReadWarning/.test(
+      app,
+    ) &&
+    /acceptedMarketplaceSnapshotRef/.test(app) &&
+    /async function fetchMarketplaceSummary[\s\S]*one coherent registry, credit, and WORK-floor snapshot/.test(
+      app,
+    ) &&
+    /async function refreshMarketplaceSummary[\s\S]*acceptedMarketplaceSnapshotRef\.current = snapshot[\s\S]*lastGoodSnapshot = acceptedMarketplaceSnapshotRef\.current[\s\S]*showLastGoodReadWarning/.test(
+      app,
+    ) &&
+    /async function refreshInfinity[\s\S]*lastGoodSnapshot[\s\S]*showLastGoodReadWarning/.test(
+      app,
+    ) &&
+    /async function refreshGrowth[\s\S]*lastGoodSnapshot[\s\S]*showLastGoodReadWarning/.test(
+      app,
+    ) &&
+    /async function fetchFreshWalletTokenPreflightState[\s\S]*fresh: "1"[\s\S]*No transaction was created/.test(
+      app,
+    ),
+);
+expect(
+  "Log last-good pages are isolated by query kind page cursor and snapshot",
+  /identity\.kind/.test(logHistoryCache) &&
+    /normalizedActivityHistoryCacheQuery\(identity\.query\)/.test(
+      logHistoryCache,
+    ) &&
+    /identity\.pageIndex/.test(logHistoryCache) &&
+    /identity\.cursor/.test(logHistoryCache) &&
+    /identity\.snapshotId/.test(logHistoryCache) &&
+    /activityHistoryPagesRef\.current\.get\(cacheKey\)/.test(app) &&
+    /setActivityHistoryPage\(undefined\)/.test(app),
 );
 expect(
   "connected account strip refreshes wallet-scoped token balances",

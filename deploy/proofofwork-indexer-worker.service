@@ -48,6 +48,9 @@ Environment=POW_INDEX_FETCH_RETRIES=8
 Environment=POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS=900000
 Environment=POW_INDEX_WORKER_PARITY_TIMEOUT_MS=120000
 Environment=POW_INDEX_WORKER_MAX_CONSECUTIVE_FAILURES=3
+Environment=POW_INDEX_WORKER_ERROR_INTERVAL_MS=60000
+Environment=POW_INDEX_WORKER_MAX_ERROR_INTERVAL_MS=900000
+Environment=POW_INDEX_WORKER_NO_PROGRESS_ALERT_INTERVAL_MS=900000
 ExecStartPre=/usr/bin/pg_isready --quiet --host=127.0.0.1 --port=5432 --dbname=proof_indexer
 ExecStart=/opt/node-v24.18.0-linux-x64/bin/node /opt/proofofwork-api/scripts/run-proof-indexer-worker.mjs --loop
 Restart=on-failure

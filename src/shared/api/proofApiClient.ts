@@ -1,28 +1,24 @@
 import { BitcoinNetwork } from "../bitcoin/networks";
+import { ProofApiRequestError } from "./proofApiReadState";
+
+export {
+  clearProofApiReadWarning,
+  currentProofApiReadWarning,
+  isTransientProofApiReadError,
+  ProofApiRequestError,
+  proofApiLastGoodReadStatus,
+  setProofApiReadWarning,
+} from "./proofApiReadState";
+export type {
+  ProofApiErrorOptions,
+  ProofApiLastGoodStatusOptions,
+  ProofApiReadWarning,
+  ProofApiReadWarningStore,
+} from "./proofApiReadState";
 
 export const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "")
   .trim()
   .replace(/\/+$/u, "");
-
-type ProofApiErrorOptions = {
-  code?: string;
-  status: number;
-  timedOut?: boolean;
-};
-
-export class ProofApiRequestError extends Error {
-  readonly code: string;
-  readonly status: number;
-  readonly timedOut: boolean;
-
-  constructor(message: string, options: ProofApiErrorOptions) {
-    super(message);
-    this.name = "ProofApiRequestError";
-    this.code = options.code ?? "";
-    this.status = options.status;
-    this.timedOut = options.timedOut === true;
-  }
-}
 
 function objectValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -49,26 +45,10 @@ function proofApiResponseError(responseText: string, status: number) {
     `ProofOfWork API returned ${status}.`;
   return new ProofApiRequestError(message, {
     code: stringValue(details?.code) || stringValue(payload?.code),
+    details: details ?? {},
     status,
     timedOut: details?.timedOut === true || payload?.timedOut === true,
   });
-}
-
-export function isTransientProofApiReadError(error: unknown) {
-  if (error instanceof ProofApiRequestError) {
-    return (
-      error.code === "CANONICAL_INDEX_UNAVAILABLE" ||
-      error.code === "CANONICAL_SUMMARY_UNAVAILABLE" ||
-      error.status === 502 ||
-      error.status === 504
-    );
-  }
-
-  return (
-    error instanceof Error &&
-    (/Failed to fetch/iu.test(error.message) ||
-      /ProofOfWork API refresh took too long/iu.test(error.message))
-  );
 }
 
 export function proofApiUrl(path: string, network: BitcoinNetwork) {
