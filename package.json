@@ -27,6 +27,8 @@
     "check:mail-regressions": "node scripts/check-mail-regressions.mjs",
     "check:work-participant-regression": "node scripts/check-work-participant-regression.mjs",
     "check:work-precision": "node scripts/check-work-precision-contract.mjs",
+    "check:bond-exact-arithmetic": "node scripts/check-bond-exact-arithmetic.mjs",
+    "check:incb-range-replay-witness": "node scripts/check-incb-range-replay-witness.mjs",
     "db:schema": "node scripts/apply-proof-indexer-schema.mjs",
     "indexer:backfill": "node scripts/backfill-proof-indexer.mjs",
     "indexer:prepare-pwt-range-replay": "node scripts/backfill-proof-indexer.mjs --prepare-canonical-pwt-range-replay",

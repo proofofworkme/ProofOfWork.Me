@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 import ts from "typescript";
 
 import {
@@ -29,6 +30,7 @@ const [
   worker,
   workerUnit,
   workAmountSource,
+  appSource,
 ] = await Promise.all([
   readFile(new URL("scripts/backfill-proof-indexer.mjs", repoRoot), "utf8"),
   readFile(new URL("scripts/audit-ledger-consistency.mjs", repoRoot), "utf8"),
@@ -39,7 +41,8 @@ const [
     "utf8",
   ),
   readFile(new URL("src/workAmount.ts", repoRoot), "utf8"),
-  ]);
+  readFile(new URL("src/App.tsx", repoRoot), "utf8"),
+]);
 const workAmountModule = await import(
   `data:text/javascript;base64,${Buffer.from(
     ts.transpileModule(workAmountSource, {
@@ -49,6 +52,188 @@ const workAmountModule = await import(
       },
     }).outputText,
   ).toString("base64")}`
+);
+
+function topLevelFunctionSource(source, name) {
+  const startPattern = new RegExp(
+    `^(?:export\\s+)?(?:async\\s+)?function\\s+${name}(?:<[^>]+>)?\\s*\\(`,
+    "mu",
+  );
+  const startMatch = startPattern.exec(source);
+  if (!startMatch) {
+    throw new Error(`Could not find ${name}.`);
+  }
+  const rest = source.slice(startMatch.index + startMatch[0].length);
+  const nextMatch = /\n(?:export\s+)?(?:async\s+)?function\s+[A-Za-z_$][\w$]*\s*\(/mu.exec(
+    rest,
+  );
+  const end = nextMatch
+    ? startMatch.index + startMatch[0].length + nextMatch.index
+    : source.length;
+  return source.slice(startMatch.index, end).trim().replace(/^export\s+/u, "");
+}
+
+function isolatedTypeScriptFunction(source, name, globals = {}) {
+  const context = vm.createContext({ console, ...globals });
+  const definition = topLevelFunctionSource(source, name);
+  const transpiled = ts.transpileModule(definition, {
+    compilerOptions: {
+      module: ts.ModuleKind.None,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  new vm.Script(`${transpiled}\nthis.__checkedFunction = ${name};`).runInContext(
+    context,
+  );
+  return context.__checkedFunction;
+}
+
+const frontendExactIntegerBigInt = (value) => {
+  if (typeof value === "bigint") {
+    return value >= 0n ? value : null;
+  }
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value >= 0 ? BigInt(value) : null;
+  }
+  const text = typeof value === "string" ? value.trim() : "";
+  return /^(?:0|[1-9]\d*)$/u.test(text) ? BigInt(text) : null;
+};
+const frontendCompareExactIntegers = (left, right) => {
+  const leftExact = frontendExactIntegerBigInt(left);
+  const rightExact = frontendExactIntegerBigInt(right);
+  if (leftExact === null || rightExact === null) {
+    return 0;
+  }
+  return leftExact < rightExact ? -1 : leftExact > rightExact ? 1 : 0;
+};
+const frontendExactDecimalText = (value) => {
+  const text = typeof value === "number" ? String(value) : String(value ?? "").trim();
+  return /^(?:0|[1-9]\d*)(?:\.\d+)?$/u.test(text) ? text : "";
+};
+const frontendIsWorkToken = (token) =>
+  String(token?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID ||
+  String(token?.ticker ?? "").trim().toUpperCase() === "WORK";
+const frontendIsBondTokenDefinition = (token) =>
+  ["POWB", "INCB"].includes(
+    String(token?.ticker ?? "").trim().toUpperCase(),
+  );
+const frontendWorkRecordAtoms = (amount, amountAtoms) =>
+  workAmountModule.workAtomsFromRecord(amountAtoms, amount);
+const frontendTokenRecordAmountAtoms = (token, amount, amountAtoms) =>
+  frontendIsWorkToken(token)
+    ? frontendWorkRecordAtoms(amount, amountAtoms)
+    : frontendExactIntegerBigInt(amount);
+const tokenWalletBalanceAmountUnits = isolatedTypeScriptFunction(
+  appSource,
+  "tokenWalletBalanceAmountUnits",
+  { tokenRecordAmountAtoms: frontendTokenRecordAmountAtoms },
+);
+const tokenWalletBalanceHasAmount = isolatedTypeScriptFunction(
+  appSource,
+  "tokenWalletBalanceHasAmount",
+  { tokenWalletBalanceAmountUnits },
+);
+const compareTokenWalletBalanceAmounts = isolatedTypeScriptFunction(
+  appSource,
+  "compareTokenWalletBalanceAmounts",
+  { tokenWalletBalanceAmountUnits },
+);
+const tokenWalletBalanceHasConfirmed = isolatedTypeScriptFunction(
+  appSource,
+  "tokenWalletBalanceHasConfirmed",
+  { tokenWalletBalanceHasAmount },
+);
+const tokenHolderMatchesDefinition = isolatedTypeScriptFunction(
+  appSource,
+  "tokenHolderMatchesDefinition",
+  {
+    normalizeTokenTicker: (ticker) => String(ticker ?? "").toUpperCase(),
+  },
+);
+const tokenHolderBalanceUnits = isolatedTypeScriptFunction(
+  appSource,
+  "tokenHolderBalanceUnits",
+  { tokenRecordAmountAtoms: frontendTokenRecordAmountAtoms },
+);
+const compareTokenHolderBalances = isolatedTypeScriptFunction(
+  appSource,
+  "compareTokenHolderBalances",
+  { tokenHolderBalanceUnits },
+);
+const tokenWalletBalancesFor = isolatedTypeScriptFunction(
+  appSource,
+  "tokenWalletBalancesFor",
+  {
+    compareTokenWalletBalanceAmounts,
+    exactIntegerBigInt: frontendExactIntegerBigInt,
+    isBondTokenDefinition: frontendIsBondTokenDefinition,
+    isWorkToken: frontendIsWorkToken,
+    tokenRecordAmountAtoms: frontendTokenRecordAmountAtoms,
+    tokenHolderMatchesDefinition,
+    tokenWalletBalanceHasAmount,
+    workNumberFromAtoms: (atoms) => Number(atoms) / 100_000_000,
+    workRecordAtoms: frontendWorkRecordAtoms,
+  },
+);
+const bondDecimalQ8 = isolatedTypeScriptFunction(
+  appSource,
+  "bondDecimalQ8",
+  {
+    exactDecimalText: frontendExactDecimalText,
+    exactIntegerBigInt: frontendExactIntegerBigInt,
+  },
+);
+const infinitySummaryRegresses = isolatedTypeScriptFunction(
+  appSource,
+  "infinitySummaryRegresses",
+  {
+    bondDecimalQ8,
+    compareExactIntegers: frontendCompareExactIntegers,
+    tokenStateRegresses: () => false,
+  },
+);
+const highestExactWorkQ8 = isolatedTypeScriptFunction(
+  appSource,
+  "highestExactWorkQ8",
+  { exactIntegerBigInt: frontendExactIntegerBigInt },
+);
+const workFloorQuoteLiveValueQ8 = isolatedTypeScriptFunction(
+  appSource,
+  "workFloorQuoteLiveValueQ8",
+  { highestExactWorkQ8 },
+);
+const workFloorQuoteFrozenValueQ8 = isolatedTypeScriptFunction(
+  appSource,
+  "workFloorQuoteFrozenValueQ8",
+  { highestExactWorkQ8 },
+);
+const workFloorQuoteRegresses = isolatedTypeScriptFunction(
+  appSource,
+  "workFloorQuoteRegresses",
+  {
+    workFloorQuoteFrozenValue: () => 0,
+    workFloorQuoteFrozenValueQ8,
+    workFloorQuoteLiveValue: () => 0,
+    workFloorQuoteLiveValueQ8,
+  },
+);
+const exactWorkQ8AliasMatches = isolatedTypeScriptFunction(
+  appSource,
+  "exactWorkQ8AliasMatches",
+  {
+    bondDecimalQ8,
+    exactIntegerBigInt: frontendExactIntegerBigInt,
+  },
+);
+const growthActualValueHasCanonicalWorkQ8 = isolatedTypeScriptFunction(
+  appSource,
+  "growthActualValueHasCanonicalWorkQ8",
+  {
+    WORK_NETWORK_VALUE_ACCOUNTING_MODEL:
+      "canonical-exact-work-network-q8-v1",
+    exactIntegerBigInt: frontendExactIntegerBigInt,
+    exactWorkQ8AliasMatches,
+  },
 );
 
 assert.equal(WORK_DECIMALS, 8);
@@ -72,6 +257,249 @@ assert.equal(
 assert.equal(normalizeWorkAtoms("123456789"), "123456789");
 assert.equal(isCanonicalWorkAtoms("123456789"), true);
 assert.equal(isCanonicalWorkAtoms("0123456789"), false);
+
+const walletAddress = "1WorkAtomicWallet111111111111111111";
+const workToken = {
+  ticker: "WORK",
+  tokenId: WORK_TOKEN_ID,
+};
+const oneAtomBalances = tokenWalletBalancesFor(
+  walletAddress,
+  [workToken],
+  [],
+  [],
+  [],
+  [
+    {
+      address: walletAddress,
+      balance: 0.00000001,
+      balanceAtoms: "1",
+      ticker: "WORK",
+      tokenId: WORK_TOKEN_ID,
+    },
+  ],
+);
+assert.equal(oneAtomBalances.length, 1);
+assert.equal(oneAtomBalances[0].confirmedBalanceAtoms, "1");
+assert.equal(tokenWalletBalanceHasConfirmed(oneAtomBalances[0]), true);
+assert.equal(oneAtomBalances.filter(tokenWalletBalanceHasConfirmed).length, 1);
+
+const oneAtomBaselineWithConfirmedHistory = tokenWalletBalancesFor(
+  walletAddress,
+  [workToken],
+  [
+    {
+      amount: 1,
+      amountAtoms: "100000000",
+      confirmed: true,
+      minterAddress: walletAddress,
+      tokenId: WORK_TOKEN_ID,
+    },
+  ],
+  [],
+  [],
+  [
+    {
+      address: walletAddress,
+      balance: 0.00000001,
+      balanceAtoms: "1",
+      ticker: "WORK",
+      tokenId: WORK_TOKEN_ID,
+    },
+  ],
+);
+assert.equal(oneAtomBaselineWithConfirmedHistory.length, 1);
+assert.equal(
+  oneAtomBaselineWithConfirmedHistory[0].confirmedBalanceAtoms,
+  "1",
+  "an exact holder baseline must prevent confirmed history double-counting",
+);
+
+const pendingAtomBalances = tokenWalletBalancesFor(
+  walletAddress,
+  [workToken],
+  [],
+  [
+    {
+      amount: 0.00000001,
+      amountAtoms: "1",
+      confirmed: false,
+      recipientAddress: walletAddress,
+      senderAddress: "1PendingWorkSender11111111111111111",
+      tokenId: WORK_TOKEN_ID,
+    },
+  ],
+  [],
+  [],
+);
+assert.equal(pendingAtomBalances.length, 1);
+assert.equal(pendingAtomBalances[0].pendingIncomingAtoms, "1");
+assert.equal(
+  tokenWalletBalanceHasAmount(pendingAtomBalances[0], "pendingIncoming"),
+  true,
+);
+
+const fractionalWalletBalances = [
+  {
+    confirmedBalance: 0.00000001,
+    confirmedBalanceAtoms: "1",
+    pendingIncoming: 0,
+    pendingIncomingAtoms: "0",
+    pendingOutgoing: 0,
+    pendingOutgoingAtoms: "0",
+    token: workToken,
+  },
+  {
+    confirmedBalance: 0.00000002,
+    confirmedBalanceAtoms: "2",
+    pendingIncoming: 0,
+    pendingIncomingAtoms: "0",
+    pendingOutgoing: 0,
+    pendingOutgoingAtoms: "0",
+    token: workToken,
+  },
+].sort((left, right) =>
+  compareTokenWalletBalanceAmounts(right, left, "confirmedBalance"),
+);
+assert.equal(fractionalWalletBalances[0].confirmedBalanceAtoms, "2");
+
+const fractionalHolders = [
+  {
+    address: "1LowWorkHolder111111111111111111111",
+    balance: 0.00000001,
+    balanceAtoms: "1",
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+  },
+  {
+    address: "1HighWorkHolder11111111111111111111",
+    balance: 0.00000002,
+    balanceAtoms: "2",
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+  },
+].sort((left, right) => compareTokenHolderBalances(right, left));
+assert.equal(fractionalHolders[0].balanceAtoms, "2");
+const exactBondNetworkValueQ8 = 900_719_925_474_099_312_345_678n;
+const bondSummary = (networkValueQ8) => ({
+  networkValueQ8: networkValueQ8.toString(),
+  networkValueSats: "9007199254740993.12345678",
+  stats: {
+    confirmedBondActions: 1,
+    confirmedSupply: "9007199254740993",
+  },
+  token: {},
+});
+assert.equal(
+  infinitySummaryRegresses(
+    bondSummary(exactBondNetworkValueQ8 - 1n),
+    bondSummary(exactBondNetworkValueQ8),
+  ),
+  true,
+  "a one-Q8 bond network regression above Number precision must be rejected",
+);
+assert.equal(
+  infinitySummaryRegresses(
+    bondSummary(exactBondNetworkValueQ8),
+    bondSummary(exactBondNetworkValueQ8),
+  ),
+  false,
+);
+const exactWorkNetworkValueQ8 = 900_719_925_474_099_312_345_679n;
+const workFloorSummary = (networkValueQ8, frozenValueQ8 = networkValueQ8) => ({
+  actualValue: {
+    frozenNetworkValueQ8: frozenValueQ8.toString(),
+    frozenTotalQ8: frozenValueQ8.toString(),
+    liveNetworkValueQ8: networkValueQ8.toString(),
+    liveTotalQ8: networkValueQ8.toString(),
+    networkValueQ8: networkValueQ8.toString(),
+    totalQ8: networkValueQ8.toString(),
+  },
+  chartPoints: [{}, {}, {}],
+  frozenNetworkValueQ8: frozenValueQ8.toString(),
+  liveNetworkValueQ8: networkValueQ8.toString(),
+  networkValueQ8: networkValueQ8.toString(),
+  totalQ8: networkValueQ8.toString(),
+});
+assert.equal(
+  workFloorQuoteRegresses(
+    workFloorSummary(exactWorkNetworkValueQ8 - 1n, exactWorkNetworkValueQ8),
+    workFloorSummary(exactWorkNetworkValueQ8),
+  ),
+  true,
+  "a one-Q8 WORK network regression above Number precision must be rejected",
+);
+assert.equal(
+  workFloorQuoteRegresses(
+    workFloorSummary(exactWorkNetworkValueQ8 + 1n),
+    workFloorSummary(exactWorkNetworkValueQ8),
+  ),
+  false,
+  "a one-Q8 WORK network advance above Number precision must be accepted",
+);
+
+const decimalFromQ8 = (value) => {
+  const whole = value / 100_000_000n;
+  const fraction = (value % 100_000_000n).toString().padStart(8, "0");
+  return `${whole}.${fraction}`;
+};
+const exactWorkActualValue = (() => {
+  const baseQ8 = exactWorkNetworkValueQ8 - 300_000_000n;
+  const frozenQ8 = exactWorkNetworkValueQ8 - 100_000_000n;
+  const floorQ8 = 42_949_672_955n;
+  const frozenFloorQ8 = floorQ8 - 1n;
+  return {
+    baseNetworkValueQ8: baseQ8.toString(),
+    baseNetworkValueSatsExact: decimalFromQ8(baseQ8),
+    baseTotalQ8: baseQ8.toString(),
+    baseTotalSatsExact: decimalFromQ8(baseQ8),
+    floorQ8: floorQ8.toString(),
+    floorSatsExact: decimalFromQ8(floorQ8),
+    frozenFloorQ8: frozenFloorQ8.toString(),
+    frozenFloorSatsExact: decimalFromQ8(frozenFloorQ8),
+    frozenNetworkValueQ8: frozenQ8.toString(),
+    frozenNetworkValueSatsExact: decimalFromQ8(frozenQ8),
+    frozenTotalQ8: frozenQ8.toString(),
+    frozenTotalSatsExact: decimalFromQ8(frozenQ8),
+    liveFloorQ8: floorQ8.toString(),
+    liveFloorSatsExact: decimalFromQ8(floorQ8),
+    liveNetworkValueQ8: exactWorkNetworkValueQ8.toString(),
+    liveNetworkValueSatsExact: decimalFromQ8(exactWorkNetworkValueQ8),
+    liveTotalQ8: exactWorkNetworkValueQ8.toString(),
+    liveTotalSatsExact: decimalFromQ8(exactWorkNetworkValueQ8),
+    networkValueQ8: exactWorkNetworkValueQ8.toString(),
+    networkValueSatsExact: decimalFromQ8(exactWorkNetworkValueQ8),
+    totalQ8: exactWorkNetworkValueQ8.toString(),
+    totalSatsExact: decimalFromQ8(exactWorkNetworkValueQ8),
+    workNetworkValueAccountingModel:
+      "canonical-exact-work-network-q8-v1",
+  };
+})();
+assert.equal(growthActualValueHasCanonicalWorkQ8(exactWorkActualValue), true);
+assert.equal(
+  growthActualValueHasCanonicalWorkQ8({
+    ...exactWorkActualValue,
+    totalSatsExact: decimalFromQ8(exactWorkNetworkValueQ8 - 1n),
+  }),
+  false,
+  "a one-Q8 exact decimal alias mismatch must fail closed",
+);
+assert.equal(
+  growthActualValueHasCanonicalWorkQ8({
+    ...exactWorkActualValue,
+    workNetworkValueAccountingModel: "legacy-number-model",
+  }),
+  false,
+  "the WORK exact-Q8 model marker is mandatory",
+);
+assert.match(
+  topLevelFunctionSource(appSource, "tokenWalletBalancesFor"),
+  /tokenWalletBalanceHasAmount\(item, "confirmedBalance"\)[\s\S]*compareTokenWalletBalanceAmounts/u,
+);
+assert.match(
+  appSource,
+  /confirmedTokenCount = balances\.filter\(\s*tokenWalletBalanceHasConfirmed/u,
+);
 assert.equal(workAmountModule.workAtomsFromRecord("01", "1"), null);
 assert.equal(
   workAmountModule.workAtomsFromRecord("", "1"),
@@ -204,7 +632,7 @@ assert.doesNotMatch(
 
 console.log(
   JSON.stringify({
-    checks: 74,
+    checks: 94,
     model: WORK_ATOMIC_PROJECTION_MODEL,
     ok: true,
     tokenId: WORK_TOKEN_ID,

@@ -272,13 +272,17 @@ CREATE TABLE IF NOT EXISTS proof_indexer.credit_definitions (
   ticker text NOT NULL,
   creator_address text,
   registry_address text NOT NULL,
-  max_supply numeric(78, 0) NOT NULL,
-  mint_amount numeric(78, 0) NOT NULL,
+  max_supply numeric NOT NULL,
+  mint_amount numeric NOT NULL,
   mint_price_sats bigint NOT NULL,
   create_txid text NOT NULL,
   confirmed boolean NOT NULL DEFAULT false,
   created_height integer,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CONSTRAINT credit_definitions_max_supply_integer
+    CHECK (max_supply::text ~ '^(0|[1-9][0-9]*)$'),
+  CONSTRAINT credit_definitions_mint_amount_integer
+    CHECK (mint_amount::text ~ '^[1-9][0-9]*$'),
   PRIMARY KEY (network, token_id)
 );
 
@@ -292,9 +296,13 @@ CREATE TABLE IF NOT EXISTS proof_indexer.credit_balances (
   network text NOT NULL,
   token_id text NOT NULL,
   address text NOT NULL,
-  confirmed_balance numeric(78, 0) NOT NULL DEFAULT 0,
-  pending_delta numeric(78, 0) NOT NULL DEFAULT 0,
+  confirmed_balance numeric NOT NULL DEFAULT 0,
+  pending_delta numeric NOT NULL DEFAULT 0,
   updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT credit_balances_confirmed_balance_integer
+    CHECK (confirmed_balance::text ~ '^(0|[1-9][0-9]*)$'),
+  CONSTRAINT credit_balances_pending_delta_integer
+    CHECK (pending_delta::text ~ '^-?(0|[1-9][0-9]*)$'),
   PRIMARY KEY (network, token_id, address),
   FOREIGN KEY (network, token_id)
     REFERENCES proof_indexer.credit_definitions (network, token_id)
@@ -313,7 +321,7 @@ CREATE TABLE IF NOT EXISTS proof_indexer.credit_listings (
   ),
   seller_address text NOT NULL,
   buyer_address text,
-  amount numeric(78, 0) NOT NULL,
+  amount numeric NOT NULL,
   price_sats bigint NOT NULL,
   sale_ticket_txid text,
   sale_ticket_vout integer,
@@ -322,6 +330,8 @@ CREATE TABLE IF NOT EXISTS proof_indexer.credit_listings (
   close_txid text,
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT credit_listings_amount_integer
+    CHECK (amount::text ~ '^[1-9][0-9]*$'),
   PRIMARY KEY (network, listing_id),
   FOREIGN KEY (network, token_id)
     REFERENCES proof_indexer.credit_definitions (network, token_id)
@@ -337,6 +347,155 @@ CREATE INDEX IF NOT EXISTS credit_listings_seller_idx
 CREATE INDEX IF NOT EXISTS credit_listings_ticket_idx
   ON proof_indexer.credit_listings (network, sale_ticket_txid, sale_ticket_vout)
   WHERE sale_ticket_txid IS NOT NULL;
+
+-- Existing databases predate unbounded synthetic bond issuance and used a
+-- numeric(78, 0) typmod for every durable credit unit. Drop only that typmod;
+-- unconstrained numeric remains exact and the checks below preserve the
+-- integer/non-negative semantics that the application requires. Each block is
+-- catalog-gated so repeated schema application does not reacquire a rewrite
+-- lock after the migration has completed.
+DO $proof_indexer_credit_definition_units$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_attribute
+    WHERE attrelid = 'proof_indexer.credit_definitions'::regclass
+      AND attname IN ('max_supply', 'mint_amount')
+      AND NOT attisdropped
+      AND atttypid = 'numeric'::regtype
+      AND atttypmod <> -1
+  ) THEN
+    ALTER TABLE proof_indexer.credit_definitions
+      ALTER COLUMN max_supply TYPE numeric USING max_supply::numeric,
+      ALTER COLUMN mint_amount TYPE numeric USING mint_amount::numeric;
+  END IF;
+END;
+$proof_indexer_credit_definition_units$;
+
+DO $proof_indexer_credit_balance_units$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_attribute
+    WHERE attrelid = 'proof_indexer.credit_balances'::regclass
+      AND attname IN ('confirmed_balance', 'pending_delta')
+      AND NOT attisdropped
+      AND atttypid = 'numeric'::regtype
+      AND atttypmod <> -1
+  ) THEN
+    ALTER TABLE proof_indexer.credit_balances
+      ALTER COLUMN confirmed_balance TYPE numeric
+        USING confirmed_balance::numeric,
+      ALTER COLUMN pending_delta TYPE numeric USING pending_delta::numeric;
+  END IF;
+END;
+$proof_indexer_credit_balance_units$;
+
+DO $proof_indexer_credit_listing_units$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_attribute
+    WHERE attrelid = 'proof_indexer.credit_listings'::regclass
+      AND attname = 'amount'
+      AND NOT attisdropped
+      AND atttypid = 'numeric'::regtype
+      AND atttypmod <> -1
+  ) THEN
+    ALTER TABLE proof_indexer.credit_listings
+      ALTER COLUMN amount TYPE numeric USING amount::numeric;
+  END IF;
+END;
+$proof_indexer_credit_listing_units$;
+
+DO $proof_indexer_credit_unit_constraints$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.credit_definitions'::regclass
+      AND conname = 'credit_definitions_max_supply_integer'
+  ) THEN
+    ALTER TABLE proof_indexer.credit_definitions
+      ADD CONSTRAINT credit_definitions_max_supply_integer
+      CHECK (max_supply::text ~ '^(0|[1-9][0-9]*)$') NOT VALID;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.credit_definitions'::regclass
+      AND conname = 'credit_definitions_mint_amount_integer'
+  ) THEN
+    ALTER TABLE proof_indexer.credit_definitions
+      ADD CONSTRAINT credit_definitions_mint_amount_integer
+      CHECK (mint_amount::text ~ '^[1-9][0-9]*$') NOT VALID;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.credit_balances'::regclass
+      AND conname = 'credit_balances_confirmed_balance_integer'
+  ) THEN
+    ALTER TABLE proof_indexer.credit_balances
+      ADD CONSTRAINT credit_balances_confirmed_balance_integer
+      CHECK (confirmed_balance::text ~ '^(0|[1-9][0-9]*)$') NOT VALID;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.credit_balances'::regclass
+      AND conname = 'credit_balances_pending_delta_integer'
+  ) THEN
+    ALTER TABLE proof_indexer.credit_balances
+      ADD CONSTRAINT credit_balances_pending_delta_integer
+      CHECK (pending_delta::text ~ '^-?(0|[1-9][0-9]*)$') NOT VALID;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.credit_listings'::regclass
+      AND conname = 'credit_listings_amount_integer'
+  ) THEN
+    ALTER TABLE proof_indexer.credit_listings
+      ADD CONSTRAINT credit_listings_amount_integer
+      CHECK (amount::text ~ '^[1-9][0-9]*$') NOT VALID;
+  END IF;
+END;
+$proof_indexer_credit_unit_constraints$;
+
+ALTER TABLE proof_indexer.credit_definitions
+  VALIDATE CONSTRAINT credit_definitions_max_supply_integer,
+  VALIDATE CONSTRAINT credit_definitions_mint_amount_integer;
+
+ALTER TABLE proof_indexer.credit_balances
+  VALIDATE CONSTRAINT credit_balances_confirmed_balance_integer,
+  VALIDATE CONSTRAINT credit_balances_pending_delta_integer;
+
+ALTER TABLE proof_indexer.credit_listings
+  VALIDATE CONSTRAINT credit_listings_amount_integer;
+
+-- Synthetic bond definitions are uncapped by protocol. `max_supply` remains
+-- NOT NULL for the shared definition schema, so zero is the neutral storage
+-- marker; the public/API contract is the explicit uncapped metadata below.
+UPDATE proof_indexer.credit_definitions
+SET
+  max_supply = 0,
+  metadata = (metadata - 'maxSupplyStorage') || jsonb_build_object(
+    'maxSupply', NULL,
+    'maxSupplyModel', 'uncapped',
+    'uncapped', true
+  )
+WHERE (
+    (
+      token_id = 'a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562'
+        AND upper(ticker) = 'POWB'
+    ) OR (
+      token_id = '3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d'
+        AND upper(ticker) = 'INCB'
+    )
+  )
+  AND (
+    max_supply <> 0
+    OR metadata ? 'maxSupplyStorage'
+    OR metadata->'maxSupply' IS DISTINCT FROM 'null'::jsonb
+    OR metadata->>'maxSupplyModel' IS DISTINCT FROM 'uncapped'
+    OR metadata->>'uncapped' IS DISTINCT FROM 'true'
+  );
 
 CREATE TABLE IF NOT EXISTS proof_indexer.ledger_snapshots (
   network text NOT NULL,

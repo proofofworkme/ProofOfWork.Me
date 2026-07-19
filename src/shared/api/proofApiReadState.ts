@@ -85,16 +85,18 @@ export function proofApiLastGoodReadStatus(
 
   const details = error instanceof ProofApiRequestError ? error.details : {};
   const summarySnapshot = objectValue(details.summarySnapshot);
-  const indexedThroughBlock =
-    safeNonNegativeInteger(details.indexedThroughBlock) ??
+  const summaryIndexedThroughBlock =
     safeNonNegativeInteger(summarySnapshot?.indexedThroughBlock) ??
     safeNonNegativeInteger(options.indexedThroughBlock);
+  const scanIndexedThroughBlock =
+    safeNonNegativeInteger(details.indexedThroughBlock) ??
+    safeNonNegativeInteger(details.scanCheckpointHeight);
   const tipHeight = safeNonNegativeInteger(details.tipHeight);
   const explicitLagBlocks = safeNonNegativeInteger(details.lagBlocks);
   const lagBlocks =
     explicitLagBlocks ??
-    (indexedThroughBlock !== undefined && tipHeight !== undefined
-      ? Math.max(0, tipHeight - indexedThroughBlock)
+    (scanIndexedThroughBlock !== undefined && tipHeight !== undefined
+      ? Math.max(0, tipHeight - scanIndexedThroughBlock)
       : undefined);
   const snapshotId =
     stringValue(summarySnapshot?.snapshotId) || stringValue(options.snapshotId);
@@ -102,8 +104,10 @@ export function proofApiLastGoodReadStatus(
     stringValue(summarySnapshot?.indexedAt) || stringValue(options.indexedAt);
   const references: string[] = [];
 
-  if (indexedThroughBlock !== undefined) {
-    references.push(`block ${indexedThroughBlock.toLocaleString()}`);
+  if (summaryIndexedThroughBlock !== undefined) {
+    references.push(
+      `summary block ${summaryIndexedThroughBlock.toLocaleString()}`,
+    );
   }
   if (snapshotId) {
     references.push(`snapshot ${snapshotId}`);
@@ -122,18 +126,39 @@ export function proofApiLastGoodReadStatus(
   const explicitlyUnavailable =
     code === "CANONICAL_INDEX_UNAVAILABLE" ||
     code === "CANONICAL_SUMMARY_UNAVAILABLE";
+  const explicitlyAtTip =
+    lagBlocks === 0 ||
+    (scanIndexedThroughBlock !== undefined &&
+      tipHeight !== undefined &&
+      scanIndexedThroughBlock === tipHeight);
   const isCatchingUp =
     !explicitlyUnavailable &&
+    !explicitlyAtTip &&
     (code === "CANONICAL_INDEX_CATCHING_UP" ||
-      (explicitLagBlocks !== undefined && explicitLagBlocks > 0));
+      (lagBlocks !== undefined && lagBlocks > 0));
   const lagText =
     isCatchingUp && lagBlocks !== undefined && lagBlocks > 0
       ? `, ${lagBlocks.toLocaleString()} block${lagBlocks === 1 ? "" : "s"} behind the full-node tip${tipHeight !== undefined ? ` at ${tipHeight.toLocaleString()}` : ""}`
       : "";
   const referenceText =
     references.length > 0 ? ` ${references.join(", ")}` : " indexed data";
+  const scanReference =
+    scanIndexedThroughBlock !== undefined
+      ? ` Current canonical scan checkpoint is block ${scanIndexedThroughBlock.toLocaleString()}${
+          tipHeight !== undefined
+            ? scanIndexedThroughBlock === tipHeight
+              ? ` at the full-node tip ${tipHeight.toLocaleString()}`
+              : `; the full-node tip is ${tipHeight.toLocaleString()}`
+            : ""
+        }.`
+      : "";
+  const availabilityText = isCatchingUp
+    ? `exact-tip refresh is catching up${lagText}`
+    : code === "CANONICAL_SUMMARY_UNAVAILABLE" || explicitlyAtTip
+      ? "exact-tip summary publication is temporarily unavailable"
+      : "exact-tip refresh is temporarily unavailable";
 
-  return `${label} exact-tip refresh ${isCatchingUp ? "is catching up" : "is temporarily unavailable"}${lagText}. Showing verified last-good${referenceText}. This view is not current. Exact-tip actions remain unavailable.`;
+  return `${label} ${availabilityText}. Showing verified last-good${referenceText}.${scanReference} This view is not current. Exact-tip actions remain unavailable.`;
 }
 
 export function setProofApiReadWarning(
