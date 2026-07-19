@@ -1,4 +1,8 @@
 import { parseWorkAmountToAtoms } from "../server/work-units.mjs";
+import {
+  exactBondLedgerState,
+  exactCreditFrozenValueState,
+} from "./ledger-audit-exact.mjs";
 
 const DEFAULT_API_BASE = "https://work.proofofwork.me";
 const NETWORK = process.env.NETWORK ?? "livenet";
@@ -156,18 +160,6 @@ function workAmountMatches(record, expectedAmount) {
   } catch {
     return false;
   }
-}
-
-function scaledNumbersAgree(left, right, minimumTolerance = 0.01) {
-  const leftNumber = numberValue(left);
-  const rightNumber = numberValue(right);
-  const tolerance = Math.max(
-    minimumTolerance,
-    Number.EPSILON *
-      Math.max(Math.abs(leftNumber), Math.abs(rightNumber), 1) *
-      2,
-  );
-  return Math.abs(leftNumber - rightNumber) <= tolerance;
 }
 
 function usdNumbersAgree(left, right) {
@@ -526,6 +518,12 @@ const incbHolders = Array.isArray(incbTokenState.holders)
   : numberValue(incbTokenState.stats?.holders);
 const infinitySummaryBtcUsd = numberValue(infinitySummary.btcUsd);
 const inceptionSummaryBtcUsd = numberValue(inceptionSummary.btcUsd);
+const exactBondState = exactBondLedgerState({
+  incbTokenState,
+  inceptionSummary,
+  infinitySummary,
+  powbTokenState,
+});
 expect("WORK exposes live BTC/USD metadata", liveBtcUsd > 0);
 expect(
   "WORK BTC/USD metadata matches price endpoint",
@@ -580,15 +578,16 @@ expect(
   ),
 );
 expect(
-  "Infinity summary confirmed supply matches POWB token state",
-  numbersAgree(
-    infinitySummary.stats?.confirmedSupply,
-    powbTokenState.confirmedSupply,
-  ),
+  "POWB exposes exact current supply fields",
+  exactBondState.powb.exactFieldsPresent,
 );
 expect(
-  "Infinity summary pending supply matches POWB token state",
-  numbersAgree(infinitySummary.stats?.pendingSupply, powbTokenState.pendingSupply),
+  "Infinity summary confirmed supply matches POWB token state exactly",
+  exactBondState.powb.confirmedMatches,
+);
+expect(
+  "Infinity summary pending supply matches POWB token state exactly",
+  exactBondState.powb.pendingMatches,
 );
 expect(
   "Infinity summary confirmed bond count matches POWB mints",
@@ -610,15 +609,16 @@ expect(
   ),
 );
 expect(
-  "Inception summary confirmed supply matches INCB token state",
-  numbersAgree(
-    inceptionSummary.stats?.confirmedSupply,
-    incbTokenState.confirmedSupply,
-  ),
+  "INCB exposes exact current-v2 fields",
+  exactBondState.incb.currentV2,
 );
 expect(
-  "Inception summary pending supply matches INCB token state",
-  numbersAgree(inceptionSummary.stats?.pendingSupply, incbTokenState.pendingSupply),
+  "Inception summary confirmed supply matches INCB token state exactly",
+  exactBondState.incb.supply.confirmedMatches,
+);
+expect(
+  "Inception summary pending supply matches INCB token state exactly",
+  exactBondState.incb.supply.pendingMatches,
 );
 expect(
   "Inception summary confirmed bond count matches INCB mints",
@@ -665,73 +665,18 @@ expect(
       ),
     ) &&
     String(inceptionActual.issuanceValueSnapshotId ?? "").trim().length > 0 &&
-    numberValue(
-      inceptionActual.issuanceValueSnapshotWorkNetworkValueSats,
-    ) > 0,
+    exactBondState.incb.currentV2,
 );
 expect(
-  "Inception synthetic issuance reconciles to INCB supply",
-  numbersAgree(
-    inceptionActual.confirmedIssuanceUnits,
-    incbTokenState.confirmedSupply,
-  ) &&
-    numbersAgree(
-      numberValue(inceptionActual.directProofIssuanceUnits) +
-        numberValue(inceptionActual.attachedWorkIssuanceUnits),
-      inceptionActual.confirmedIssuanceUnits,
-    ) &&
-    numbersAgree(
-      inceptionActual.issuanceNetworkValueSats,
-      numberValue(inceptionActual.directProofIssuanceUnits) +
-        numberValue(inceptionActual.attachedWorkLiveValueAtSendSats),
-      0.01,
-    ),
+  "Inception synthetic issuance reconciles to INCB supply exactly",
+  exactBondState.incb.issuanceConserves,
 );
-const expectedInceptionNetworkValueSats =
-  numberValue(inceptionActual.issuanceNetworkValueSats) +
-  numberValue(inceptionActual.bondSaleVolumeSats) +
-  numberValue(inceptionActual.bondTransferFeeSats) +
-  numberValue(inceptionActual.bondMarketplaceMutationFeeSats);
-const expectedInceptionFloorSats =
-  numberValue(inceptionSummary.stats?.confirmedSupply) > 0
-    ? expectedInceptionNetworkValueSats /
-      numberValue(inceptionSummary.stats?.confirmedSupply)
-    : 0;
 expect(
-  "Inception network value is fixed issuance plus genuine INCB market flow",
+  "Inception network value is exact fixed issuance plus genuine INCB market flow",
   inceptionActual.networkValueAccountingModel ===
       INCB_NETWORK_VALUE_ACCOUNTING_MODEL &&
-    scaledNumbersAgree(
-      inceptionActual.networkValueSats,
-      expectedInceptionNetworkValueSats,
-    ) &&
-    scaledNumbersAgree(
-      inceptionActual.liveNetworkValueSats,
-      expectedInceptionNetworkValueSats,
-    ) &&
-    scaledNumbersAgree(
-      inceptionActual.frozenNetworkValueSats,
-      expectedInceptionNetworkValueSats,
-    ) &&
-    scaledNumbersAgree(
-      inceptionSummary.networkValueSats,
-      expectedInceptionNetworkValueSats,
-    ) &&
-    scaledNumbersAgree(
-      inceptionActual.floorSats,
-      expectedInceptionFloorSats,
-      1e-12,
-    ) &&
-    scaledNumbersAgree(
-      inceptionActual.liveFloorSats,
-      expectedInceptionFloorSats,
-      1e-12,
-    ) &&
-    scaledNumbersAgree(
-      inceptionActual.frozenFloorSats,
-      expectedInceptionFloorSats,
-      1e-12,
-    ),
+    exactBondState.incb.marketValueConserves &&
+    exactBondState.incb.floorConserves,
 );
 expect(
   "Inception total USD uses live BTC/USD",
@@ -779,6 +724,7 @@ expect(
     ),
 );
 const actualValue = workFloor.actualValue ?? {};
+const exactCreditFrozenValue = exactCreditFrozenValueState(actualValue);
 const marketplaceFeeSats = numberValue(actualValue.marketplaceFeeSats);
 const marketplaceMutationFeeSats = numberValue(
   actualValue.marketplaceMutationFeeSats,
@@ -844,15 +790,18 @@ expect(
 );
 expect(
   "credit frozen value includes event components",
-  numbersAgree(
-    creditEventFrozenValueSats,
-    creditMovementFrozenValueSats +
-      creditProofPaymentFlowSats +
-      creditRegistryMutationFlowSats +
-      creditMarketplaceMutationFlowSats +
-      creditSalePaymentFlowSats +
-      creditMinerFeeFlowSats,
-  ),
+  exactCreditFrozenValue.exactFieldsPresent
+    ? exactCreditFrozenValue.componentsAgree
+    : exactCreditFrozenValue.q8FieldsAbsent &&
+        numbersAgree(
+          creditEventFrozenValueSats,
+          creditMovementFrozenValueSats +
+            creditProofPaymentFlowSats +
+            creditRegistryMutationFlowSats +
+            creditMarketplaceMutationFlowSats +
+            creditSalePaymentFlowSats +
+            creditMinerFeeFlowSats,
+        ),
 );
 expect(
   "credit live value is the active network value",

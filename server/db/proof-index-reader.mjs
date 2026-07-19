@@ -3,6 +3,16 @@ import {
   proofIndexDatabaseConfigured,
 } from "./postgres.mjs";
 import {
+  BOND_VALUE_Q8_SCALE,
+  addIntegerTexts,
+  canonicalIntegerText,
+  decimalTextFromQ8,
+  integerBigInt,
+  maxIntegerTexts,
+  q8TextFromDecimal,
+  safeIntegerNumber,
+} from "../bond-units.mjs";
+import {
   WORK_ATOMIC_PROJECTION_MODEL,
   WORK_DECIMALS,
   WORK_TOKEN_ID,
@@ -15,6 +25,17 @@ import {
   withWorkPrecisionMetadata,
   workAmountAtomsFromRecord,
 } from "../work-units.mjs";
+import {
+  INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
+  INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE,
+  INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+  canonicalIncbReplaySha256,
+  incbRangeReplayWitnessMetaKey,
+  incbReplayRawSnapshotFingerprint,
+  incbReplaySnapshotFingerprint,
+  normalizeIncbReplaySnapshotDescriptor,
+  verifyIncbRangeReplayWitnessManifest,
+} from "../incb-range-replay-witness.mjs";
 
 let proofIndexReadPool = null;
 const INFINITY_BOND_MEMO = "powb";
@@ -26,6 +47,11 @@ const INCB_TOKEN_ID =
 const INCB_ISSUANCE_ACCOUNTING_MODEL =
   "canonical-pre-bond-live-network-value-v2";
 const INCB_VALUE_SNAPSHOT_MODEL = "canonical-summary-h-minus-one-v1";
+const WORK_NETWORK_VALUE_ACCOUNTING_MODEL =
+  "canonical-exact-work-network-q8-v1";
+const POWB_TOKEN_ID =
+  "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
+const BOND_TOKEN_IDS = new Set([POWB_TOKEN_ID, INCB_TOKEN_ID]);
 const BOND_TAGS = [
   {
     kind: INFINITY_BOND_KIND,
@@ -440,6 +466,10 @@ function tokenSaleFromEventPayload(payload) {
     : null;
   const amount = workAmount
     ? workAmount.amount
+    : isBondTokenId(tokenId)
+      ? exactBondUnits(payload?.amount ?? payload?.tokenAmount, {
+          positive: true,
+        })
     : rowNumber(payload, "amount") ||
       rowNumber(payload, "tokenAmount") ||
       tagNumbers.amount;
@@ -479,7 +509,11 @@ function tokenSaleFromEventPayload(payload) {
         ? String(payload?.minerFeeSource ?? "").trim()
         : String(payload?.closedMinerFeeSource ?? "").trim(),
     confirmed: payload?.confirmed === true,
-    creditAmountMoved: rowNumber(payload, "creditAmountMoved"),
+    creditAmountMoved: isBondTokenId(tokenId)
+      ? exactBondUnits(payload?.creditAmountMoved ?? amount, {
+          positive: true,
+        })
+      : rowNumber(payload, "creditAmountMoved"),
     creditFloorAtConfirmSats: rowNumber(payload, "creditFloorAtConfirmSats"),
     creditLiveFloorSats: rowNumber(payload, "creditLiveFloorSats"),
     creditLiveValueSats: rowNumber(payload, "creditLiveValueSats"),
@@ -539,6 +573,11 @@ function tokenListingFromEventPayload(payload) {
   return {
     amount: workAmount
       ? workAmount.amount
+      : isBondTokenId(tokenId)
+        ? exactBondUnits(
+            payload?.amount ?? saleAuthorization?.amount,
+            { positive: true },
+          )
       : rowNumber(payload, "amount") ||
         rowNumber(saleAuthorization, "amount") ||
         amount,
@@ -632,6 +671,12 @@ function compareTokenHolderBalances(left, right) {
     const rightAtoms = BigInt(String(right?.balanceAtoms ?? "0"));
     if (leftAtoms !== rightAtoms) {
       return leftAtoms > rightAtoms ? -1 : 1;
+    }
+  } else if (isBondTokenId(left?.tokenId) && isBondTokenId(right?.tokenId)) {
+    const leftUnits = integerBigInt(left?.balance) ?? 0n;
+    const rightUnits = integerBigInt(right?.balance) ?? 0n;
+    if (leftUnits !== rightUnits) {
+      return leftUnits > rightUnits ? -1 : 1;
     }
   } else {
     const difference =
@@ -742,6 +787,10 @@ function normalizeTokenHistoryListingItem(item) {
     ...item,
     amount: workAmount
       ? workAmount.amount
+      : isBondTokenId(tokenId)
+        ? exactBondUnits(item?.amount ?? saleAuthorization?.amount, {
+            positive: true,
+          })
       : rowNumber(item, "amount") ||
         rowNumber(saleAuthorization, "amount"),
     ...(workAmount
@@ -794,6 +843,10 @@ function tokenClosedListingFromEventPayload(payload) {
   return {
     amount: workAmount
       ? workAmount.amount
+      : isBondTokenId(tokenId)
+        ? exactBondUnits(payload?.amount ?? payload?.tokenAmount, {
+            positive: true,
+          })
       : rowNumber(payload, "amount") ||
         rowNumber(payload, "tokenAmount") ||
         amount,
@@ -869,6 +922,10 @@ function tokenTransferFromEventPayload(payload, row = {}) {
     : null;
   const amount = workAmount
     ? workAmount.amount
+    : isBondTokenId(tokenId)
+      ? exactBondUnits(payload?.amount ?? payload?.tokenAmount, {
+          positive: true,
+        })
     : rowNumber(payload, "amount") ||
       rowNumber(payload, "tokenAmount") ||
       tokenTransferAmountFromTags(payload, ticker);
@@ -906,7 +963,11 @@ function tokenTransferFromEventPayload(payload, row = {}) {
     ),
     dataBytes: rowNumber(payload, "dataBytes"),
     arbSats: rowNumber(payload, "arbSats"),
-    creditAmountMoved: rowNumber(payload, "creditAmountMoved"),
+    creditAmountMoved: isBondTokenId(tokenId)
+      ? exactBondUnits(payload?.creditAmountMoved ?? amount, {
+          positive: true,
+        })
+      : rowNumber(payload, "creditAmountMoved"),
     creditFloorAtConfirmSats: rowNumber(payload, "creditFloorAtConfirmSats"),
     creditLiveFloorSats: rowNumber(payload, "creditLiveFloorSats"),
     creditLiveValueSats: rowNumber(payload, "creditLiveValueSats"),
@@ -927,12 +988,20 @@ function tokenTransferFromEventPayload(payload, row = {}) {
 }
 
 function exactSafeInteger(value, { positive = false } = {}) {
-  const text = String(value ?? "").trim();
-  if (!(positive ? /^[1-9]\d*$/u : /^\d+$/u).test(text)) {
-    return null;
-  }
-  const number = Number(text);
-  return Number.isSafeInteger(number) ? number : null;
+  return safeIntegerNumber(
+    canonicalIntegerText(value, { allowZero: !positive }),
+  );
+}
+
+function isBondTokenId(tokenId) {
+  return BOND_TOKEN_IDS.has(String(tokenId ?? "").trim().toLowerCase());
+}
+
+function exactBondUnits(value, { positive = false, signed = false } = {}) {
+  return canonicalIntegerText(value, {
+    allowNegative: signed,
+    allowZero: !positive,
+  });
 }
 
 function incbExactIssuanceMetadata(payload = {}) {
@@ -953,60 +1022,10 @@ function incbExactIssuanceMetadata(payload = {}) {
     return { complete: false, fault: "", present: false };
   }
 
-  const canonicalIntegerText = (value, { positive = false } = {}) => {
-    const text = String(value ?? "").trim();
-    if (!/^(?:0|[1-9][0-9]*)$/u.test(text)) {
-      return "";
-    }
-    const integer = BigInt(text);
-    if (positive && integer === 0n) {
-      return "";
-    }
-    return integer.toString();
-  };
-  const decimalValueToQ8 = (value) => {
-    let text = String(value ?? "").trim();
-    if (!/^[+]?[0-9]+(?:\.[0-9]+)?$/u.test(text)) {
-      const number = Number(value);
-      if (!Number.isFinite(number) || number < 0) {
-        return null;
-      }
-      text = number.toFixed(8);
-    }
-    text = text.replace(/^\+/u, "");
-    const [whole = "0", fractional = ""] = text.split(".");
-    if (!/^[0-9]+$/u.test(whole) || !/^[0-9]*$/u.test(fractional)) {
-      return null;
-    }
-    return BigInt(`${whole}${fractional.padEnd(8, "0").slice(0, 8)}`);
-  };
-  const q8ToNumber = (value) => {
-    const q8 = typeof value === "bigint" ? value : BigInt(value);
-    const whole = q8 / 100_000_000n;
-    const fractional = q8 % 100_000_000n;
-    return Number(
-      fractional === 0n
-        ? whole.toString()
-        : `${whole.toString()}.${fractional
-            .toString()
-            .padStart(8, "0")
-            .replace(/0+$/u, "")}`,
-    );
-  };
-  const numbersAgree = (left, right, tolerance = 1e-8) => {
-    const leftNumber = Number(left);
-    const rightNumber = Number(right);
-    return (
-      Number.isFinite(leftNumber) &&
-      Number.isFinite(rightNumber) &&
-      Math.abs(leftNumber - rightNumber) <= tolerance
-    );
-  };
-
   const exact = {
     attachedWorkAmountAtoms: canonicalIntegerText(
       payload?.attachedWorkAmountAtoms,
-      { positive: true },
+      { allowZero: true },
     ),
     attachedWorkLiveValueAtSendQ8: canonicalIntegerText(
       payload?.attachedWorkLiveValueAtSendQ8,
@@ -1014,11 +1033,11 @@ function incbExactIssuanceMetadata(payload = {}) {
     issuanceDustQ8: canonicalIntegerText(payload?.issuanceDustQ8),
     issuanceNetworkValueQ8: canonicalIntegerText(
       payload?.issuanceNetworkValueQ8,
-      { positive: true },
+      { allowZero: false },
     ),
     issuanceValueSnapshotWorkNetworkValueQ8: canonicalIntegerText(
       payload?.issuanceValueSnapshotWorkNetworkValueQ8,
-      { positive: true },
+      { allowZero: false },
     ),
   };
   if (Object.values(exact).some((value) => !value)) {
@@ -1031,26 +1050,21 @@ function incbExactIssuanceMetadata(payload = {}) {
     };
   }
 
-  const amountText = canonicalIntegerText(payload?.amount, {
-    positive: true,
-  });
   const directUnitsText = canonicalIntegerText(
-    payload?.directProofIssuanceUnits,
-    { positive: true },
+    payload?.directProofIssuanceUnits ??
+      payload?.proofPaymentSats ??
+      payload?.bondRecipientAmountSats,
+    { allowZero: false },
   );
-  const attachedUnitsText = canonicalIntegerText(
-    payload?.attachedWorkIssuanceUnits,
-  );
-  if (!amountText || !directUnitsText || !attachedUnitsText) {
+  if (!directUnitsText) {
     return {
       ...exact,
       complete: false,
-      fault: "fractional exact issuance units are missing or noncanonical",
+      fault: "direct proof issuance units are missing or noncanonical",
       present: true,
     };
   }
 
-  const valueQ8Scale = 100_000_000n;
   const workMaxSupplyAtoms = 21_000_000n * 100_000_000n;
   const attachedWorkAmountAtoms = BigInt(exact.attachedWorkAmountAtoms);
   const attachedWorkLiveValueAtSendQ8 = BigInt(
@@ -1061,58 +1075,70 @@ function incbExactIssuanceMetadata(payload = {}) {
   const snapshotWorkNetworkValueQ8 = BigInt(
     exact.issuanceValueSnapshotWorkNetworkValueQ8,
   );
-  const amount = BigInt(amountText);
   const directUnits = BigInt(directUnitsText);
-  const attachedUnits = BigInt(attachedUnitsText);
+  const amount = issuanceNetworkValueQ8 / BOND_VALUE_Q8_SCALE;
+  const attachedUnits =
+    attachedWorkLiveValueAtSendQ8 / BOND_VALUE_Q8_SCALE;
   const expectedAttachedValueQ8 =
     (attachedWorkAmountAtoms * snapshotWorkNetworkValueQ8) /
     workMaxSupplyAtoms;
+  let declaredAttachedWorkAmountAtoms = "";
+  try {
+    declaredAttachedWorkAmountAtoms = parseWorkAmountToAtoms(
+      payload?.attachedWorkAmount,
+      { allowZero: true },
+    );
+  } catch {
+    declaredAttachedWorkAmountAtoms = "";
+  }
   if (
+    declaredAttachedWorkAmountAtoms !== attachedWorkAmountAtoms.toString() ||
     attachedWorkLiveValueAtSendQ8 !== expectedAttachedValueQ8 ||
     issuanceNetworkValueQ8 !==
-      directUnits * valueQ8Scale + attachedWorkLiveValueAtSendQ8 ||
-    amount !== issuanceNetworkValueQ8 / valueQ8Scale ||
-    attachedUnits !== attachedWorkLiveValueAtSendQ8 / valueQ8Scale ||
-    issuanceDustQ8 !== issuanceNetworkValueQ8 % valueQ8Scale
-  ) {
-    return {
-      ...exact,
-      complete: false,
-      fault: "fractional exact issuance metadata does not conserve value",
-      present: true,
-    };
-  }
-
-  const projectedWorkAmountAtoms = decimalValueToQ8(
-    payload?.attachedWorkAmount,
-  );
-  if (
-    projectedWorkAmountAtoms !== attachedWorkAmountAtoms ||
-    !numbersAgree(
-      payload?.attachedWorkLiveValueAtSendSats,
-      q8ToNumber(attachedWorkLiveValueAtSendQ8),
-    ) ||
-    !numbersAgree(payload?.issuanceDustSats, q8ToNumber(issuanceDustQ8)) ||
-    !numbersAgree(
-      payload?.issuanceNetworkValueSats,
-      q8ToNumber(issuanceNetworkValueQ8),
-    ) ||
-    decimalValueToQ8(payload?.issuanceValueSnapshotWorkNetworkValueSats) !==
-      snapshotWorkNetworkValueQ8
+      directUnits * BOND_VALUE_Q8_SCALE + attachedWorkLiveValueAtSendQ8 ||
+    issuanceDustQ8 !== issuanceNetworkValueQ8 % BOND_VALUE_Q8_SCALE
   ) {
     return {
       ...exact,
       complete: false,
       fault:
-        "fractional exact issuance metadata disagrees with projected values",
+        declaredAttachedWorkAmountAtoms !== attachedWorkAmountAtoms.toString()
+          ? "fractional exact issuance metadata disagrees with projected values"
+          : "fractional exact issuance metadata does not conserve value",
       present: true,
     };
   }
 
+  const declaredUnitFields = [
+    ["amount", amount],
+    ["issuanceAmount", amount],
+    ["confirmedIssuanceUnits", amount],
+    ["attachedWorkIssuanceUnits", attachedUnits],
+  ];
+  for (const [field, expected] of declaredUnitFields) {
+    const declared = canonicalIntegerText(payload?.[field]);
+    // Legacy JSON numbers above 2^53 are already lossy compatibility fields.
+    // Exact Q8 metadata is authoritative and reconstructs the canonical unit
+    // value. Canonical string or safe-number declarations still have to agree.
+    if (declared && BigInt(declared) !== expected) {
+      return {
+        ...exact,
+        complete: false,
+        fault: `exact issuance metadata disagrees with ${field}`,
+        present: true,
+      };
+    }
+  }
+
   return {
     ...exact,
+    amount: amount.toString(),
+    attachedWorkIssuanceUnits: attachedUnits.toString(),
     complete: true,
+    confirmedIssuanceUnits: amount.toString(),
+    directProofIssuanceUnits: directUnits.toString(),
     fault: "",
+    issuanceAmount: amount.toString(),
     present: true,
   };
 }
@@ -1155,68 +1181,85 @@ function incbIssuanceMetadataFault(payload, row = {}) {
   ) {
     return "canonical Inception Bond recipient is missing";
   }
-  const amount = exactSafeInteger(payload?.amount, { positive: true });
-  const issuanceAmount = exactSafeInteger(payload?.issuanceAmount, {
-    positive: true,
+  const exactIssuance = incbExactIssuanceMetadata(payload);
+  if (exactIssuance.fault) {
+    return exactIssuance.fault;
+  }
+  const amountText = exactIssuance.complete
+    ? exactIssuance.amount
+    : exactBondUnits(payload?.amount, { positive: true });
+  const issuanceAmountText = exactIssuance.complete
+    ? exactIssuance.issuanceAmount
+    : exactBondUnits(payload?.issuanceAmount, { positive: true });
+  const confirmedIssuanceUnitsText = exactIssuance.complete
+    ? exactIssuance.confirmedIssuanceUnits
+    : exactBondUnits(payload?.confirmedIssuanceUnits, { positive: true });
+  const directProofIssuanceUnitsText = exactIssuance.complete
+    ? exactIssuance.directProofIssuanceUnits
+    : exactBondUnits(payload?.directProofIssuanceUnits);
+  const attachedWorkIssuanceUnitsText = exactIssuance.complete
+    ? exactIssuance.attachedWorkIssuanceUnits
+    : exactBondUnits(payload?.attachedWorkIssuanceUnits);
+  const amount = integerBigInt(amountText, { allowZero: false });
+  const issuanceAmount = integerBigInt(issuanceAmountText, {
+    allowZero: false,
   });
-  const confirmedIssuanceUnits = exactSafeInteger(
-    payload?.confirmedIssuanceUnits,
-    { positive: true },
+  const confirmedIssuanceUnits = integerBigInt(confirmedIssuanceUnitsText, {
+    allowZero: false,
+  });
+  const directProofIssuanceUnits = integerBigInt(
+    directProofIssuanceUnitsText,
   );
-  const directProofIssuanceUnits = exactSafeInteger(
-    payload?.directProofIssuanceUnits,
-  );
-  const attachedWorkIssuanceUnits = exactSafeInteger(
-    payload?.attachedWorkIssuanceUnits,
+  const attachedWorkIssuanceUnits = integerBigInt(
+    attachedWorkIssuanceUnitsText,
   );
   if (
     amount === null ||
     issuanceAmount !== amount ||
     confirmedIssuanceUnits !== amount ||
     directProofIssuanceUnits === null ||
-    directProofIssuanceUnits <= 0 ||
+    directProofIssuanceUnits <= 0n ||
     attachedWorkIssuanceUnits === null ||
     directProofIssuanceUnits + attachedWorkIssuanceUnits !== amount
   ) {
     return "issuance units are missing or do not conserve supply";
   }
-  const exactIssuance = incbExactIssuanceMetadata(payload);
-  if (exactIssuance.fault) {
-    return exactIssuance.fault;
-  }
-  const issuanceNetworkValueSats = Number(payload?.issuanceNetworkValueSats);
-  const issuanceDustSats = Number(payload?.issuanceDustSats);
-  const issuanceFloorSats = Number(payload?.issuanceFloorSats);
-  const attachedWorkLiveValueAtSendSats = Number(
-    payload?.attachedWorkLiveValueAtSendSats,
-  );
+  const issuanceNetworkValueSats = exactIssuance.complete
+    ? null
+    : Number(payload?.issuanceNetworkValueSats);
+  const issuanceDustSats = exactIssuance.complete
+    ? null
+    : Number(payload?.issuanceDustSats);
+  const issuanceFloorSats = exactIssuance.complete
+    ? null
+    : Number(payload?.issuanceFloorSats);
+  const attachedWorkLiveValueAtSendSats = exactIssuance.complete
+    ? null
+    : Number(payload?.attachedWorkLiveValueAtSendSats);
   if (
-    !Number.isFinite(issuanceNetworkValueSats) ||
-    issuanceNetworkValueSats <= 0 ||
-    (!exactIssuance.complete &&
-      Math.floor(issuanceNetworkValueSats) !== amount) ||
-    !Number.isFinite(issuanceDustSats) ||
-    issuanceDustSats < 0 ||
-    issuanceDustSats >= 1 ||
-    (!exactIssuance.complete &&
+    !exactIssuance.complete &&
+    (!Number.isFinite(issuanceNetworkValueSats) ||
+      issuanceNetworkValueSats <= 0 ||
+      BigInt(Math.floor(issuanceNetworkValueSats)) !== amount ||
+      !Number.isFinite(issuanceDustSats) ||
+      issuanceDustSats < 0 ||
+      issuanceDustSats >= 1 ||
       Math.abs(
-        issuanceDustSats - (issuanceNetworkValueSats - amount),
-      ) > 1e-6) ||
-    !Number.isFinite(issuanceFloorSats) ||
-    issuanceFloorSats < 1 ||
-    (!exactIssuance.complete &&
-      Math.abs(issuanceFloorSats - issuanceNetworkValueSats / amount) >
-        1e-9) ||
-    !Number.isFinite(attachedWorkLiveValueAtSendSats) ||
-    attachedWorkLiveValueAtSendSats < 0 ||
-    (!exactIssuance.complete &&
-      (Math.floor(attachedWorkLiveValueAtSendSats) !==
+        issuanceDustSats - (issuanceNetworkValueSats - Number(amount)),
+      ) > 1e-6 ||
+      !Number.isFinite(issuanceFloorSats) ||
+      issuanceFloorSats < 1 ||
+      Math.abs(issuanceFloorSats - issuanceNetworkValueSats / Number(amount)) >
+        1e-9 ||
+      !Number.isFinite(attachedWorkLiveValueAtSendSats) ||
+      attachedWorkLiveValueAtSendSats < 0 ||
+      BigInt(Math.floor(attachedWorkLiveValueAtSendSats)) !==
         attachedWorkIssuanceUnits ||
-        Math.abs(
-          issuanceNetworkValueSats -
-            (directProofIssuanceUnits +
-              attachedWorkLiveValueAtSendSats),
-        ) > 1e-6))
+      Math.abs(
+        issuanceNetworkValueSats -
+          (Number(directProofIssuanceUnits) +
+            attachedWorkLiveValueAtSendSats),
+      ) > 1e-6)
   ) {
     return "issuance value, dust, or one-proof unit floor is inconsistent";
   }
@@ -1224,22 +1267,18 @@ function incbIssuanceMetadataFault(payload, row = {}) {
     payload?.proofPaymentSats ?? payload?.paidSats,
   );
   if (
-    directProofPayment !== directProofIssuanceUnits ||
-    bondRecipientAmount !== directProofIssuanceUnits
+    BigInt(directProofPayment ?? -1) !== directProofIssuanceUnits ||
+    BigInt(bondRecipientAmount ?? -1) !== directProofIssuanceUnits
   ) {
     return "direct issuance does not equal the confirmed proof payment";
   }
   if (exactIssuance.complete) {
-    const attachedWorkLiveFloorAtSendSats = Number(
-      payload?.attachedWorkLiveFloorAtSendSats,
-    );
     if (
-      !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
-      attachedWorkLiveFloorAtSendSats <= 0
+      BigInt(exactIssuance.issuanceValueSnapshotWorkNetworkValueQ8) <= 0n
     ) {
       return "attached WORK valuation basis is missing or inconsistent";
     }
-  } else if (attachedWorkIssuanceUnits > 0) {
+  } else if (attachedWorkIssuanceUnits > 0n) {
     const attachedWorkAmount = exactSafeInteger(payload?.attachedWorkAmount, {
       positive: true,
     });
@@ -1273,25 +1312,27 @@ function incbIssuanceMetadataFault(payload, row = {}) {
   const checkpointIndex = exactSafeInteger(
     payload?.issuanceCheckpointBlockIndex,
   );
-  const checkpointWorkNetworkValueSats = Number(
-    payload?.issuanceValueSnapshotWorkNetworkValueSats,
-  );
-  const attachedWorkLiveFloorAtSendSats = Number(
-    payload?.attachedWorkLiveFloorAtSendSats,
-  );
+  const checkpointWorkNetworkValueSats = exactIssuance.complete
+    ? null
+    : Number(payload?.issuanceValueSnapshotWorkNetworkValueSats);
+  const attachedWorkLiveFloorAtSendSats = exactIssuance.complete
+    ? null
+    : Number(payload?.attachedWorkLiveFloorAtSendSats);
   if (
     checkpointMode !== "bond-transaction-provenance" ||
     checkpointHeight === null ||
     !/^[0-9a-f]{64}$/u.test(checkpointHash) ||
     checkpointIndex === null ||
-    !Number.isFinite(checkpointWorkNetworkValueSats) ||
-    checkpointWorkNetworkValueSats <= 0 ||
-    !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
-    attachedWorkLiveFloorAtSendSats <= 0 ||
-    Math.abs(
-      attachedWorkLiveFloorAtSendSats -
-        checkpointWorkNetworkValueSats / 21_000_000,
-    ) > 1e-9
+    (exactIssuance.complete
+      ? BigInt(exactIssuance.issuanceValueSnapshotWorkNetworkValueQ8) <= 0n
+      : !Number.isFinite(checkpointWorkNetworkValueSats) ||
+        checkpointWorkNetworkValueSats <= 0 ||
+        !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
+        attachedWorkLiveFloorAtSendSats <= 0 ||
+        Math.abs(
+          attachedWorkLiveFloorAtSendSats -
+            checkpointWorkNetworkValueSats / 21_000_000,
+        ) > 1e-9)
   ) {
     return "pre-bond valuation checkpoint is missing or inconsistent";
   }
@@ -1371,7 +1412,54 @@ function assertCanonicalIncbDefinition(token, context) {
   }
 }
 
+function canonicalLegacyDecimalValue(payload, field) {
+  const value = payload?.[field];
+  if (typeof value === "string") {
+    const text = value.trim();
+    const q8 = q8TextFromDecimal(text);
+    if (q8) {
+      return decimalTextFromQ8(q8);
+    }
+    const exactDecimal = /^(0|[1-9][0-9]*)(?:\.([0-9]+))?$/u.exec(text);
+    if (!exactDecimal) {
+      throw new Error(`Invalid exact legacy decimal alias for ${field}.`);
+    }
+    const fraction = (exactDecimal[2] ?? "").replace(/0+$/u, "");
+    return `${exactDecimal[1]}${fraction ? `.${fraction}` : ""}`;
+  }
+  return rowNumber(payload, field);
+}
+
 function tokenMintFromEventPayload(payload, row = {}) {
+  // node-postgres decodes JSONB numbers as binary JavaScript Numbers. Legacy
+  // INCB rows predate explicit Q8 fields, so preserve the exact decimal text
+  // selected alongside the JSONB payload before validating or aggregating it.
+  // Exact Q8 metadata on current rows remains authoritative.
+  const legacyDecimalColumns = [
+    [
+      "attachedWorkLiveFloorAtSendSats",
+      "attached_work_live_floor_at_send_sats_text",
+    ],
+    [
+      "attachedWorkLiveValueAtSendSats",
+      "attached_work_live_value_at_send_sats_text",
+    ],
+    ["issuanceDustSats", "issuance_dust_sats_text"],
+    ["issuanceFloorSats", "issuance_floor_sats_text"],
+    ["issuanceNetworkValueSats", "issuance_network_value_sats_text"],
+    [
+      "issuanceValueSnapshotWorkNetworkValueSats",
+      "issuance_value_snapshot_work_network_value_sats_text",
+    ],
+  ];
+  const exactLegacyPayload = { ...payload };
+  for (const [payloadField, rowField] of legacyDecimalColumns) {
+    const exactDecimal = String(row?.[rowField] ?? "").trim();
+    if (exactDecimal) {
+      exactLegacyPayload[payloadField] = exactDecimal;
+    }
+  }
+  payload = exactLegacyPayload;
   const tagNumbers = tokenMarketNumbersFromTags(payload);
   const tokenId = String(payload?.tokenId ?? row.token_id ?? "")
     .trim()
@@ -1407,6 +1495,13 @@ function tokenMintFromEventPayload(payload, row = {}) {
     tokenId === INCB_TOKEN_ID
       ? incbExactIssuanceMetadata(payload)
       : { complete: false };
+  const bondAmount = isBondTokenId(tokenId)
+    ? tokenId === INCB_TOKEN_ID && exactIncbIssuance.complete
+      ? exactIncbIssuance.amount
+      : exactBondUnits(payload?.amount ?? payload?.tokenAmount, {
+          positive: true,
+        })
+    : "";
 
   return {
     ...canonicalEventIdentityDetails({
@@ -1415,7 +1510,8 @@ function tokenMintFromEventPayload(payload, row = {}) {
     }),
     amount: workAmount
       ? workAmount.amount
-      : rowNumber(payload, "amount") ||
+      : bondAmount ||
+        rowNumber(payload, "amount") ||
         rowNumber(payload, "tokenAmount") ||
         tagNumbers.amount,
     ...(workAmount
@@ -1438,18 +1534,36 @@ function tokenMintFromEventPayload(payload, row = {}) {
             exactIncbIssuance.attachedWorkLiveValueAtSendQ8,
         }
       : {}),
-    attachedWorkLiveFloorAtSendSats: rowNumber(
-      payload,
-      "attachedWorkLiveFloorAtSendSats",
-    ),
-    attachedWorkIssuanceUnits: rowNumber(
-      payload,
-      "attachedWorkIssuanceUnits",
-    ),
-    attachedWorkLiveValueAtSendSats: rowNumber(
-      payload,
-      "attachedWorkLiveValueAtSendSats",
-    ),
+    attachedWorkLiveFloorAtSendSats: exactIncbIssuance.complete
+      ? decimalTextFromQ8(
+          (
+            BigInt(
+              exactIncbIssuance.issuanceValueSnapshotWorkNetworkValueQ8,
+            ) / 21_000_000n
+          ).toString(),
+        )
+      : canonicalLegacyDecimalValue(
+          payload,
+          "attachedWorkLiveFloorAtSendSats",
+        ),
+    ...(exactIncbIssuance.complete
+      ? {
+          attachedWorkLiveFloorAtSendQ8: (
+            BigInt(
+              exactIncbIssuance.issuanceValueSnapshotWorkNetworkValueQ8,
+            ) / 21_000_000n
+          ).toString(),
+        }
+      : {}),
+    attachedWorkIssuanceUnits: exactIncbIssuance.complete
+      ? exactIncbIssuance.attachedWorkIssuanceUnits
+      : rowNumber(payload, "attachedWorkIssuanceUnits"),
+    attachedWorkLiveValueAtSendSats: exactIncbIssuance.complete
+      ? decimalTextFromQ8(exactIncbIssuance.attachedWorkLiveValueAtSendQ8)
+      : canonicalLegacyDecimalValue(
+          payload,
+          "attachedWorkLiveValueAtSendSats",
+        ),
     blockHash: String(
       row?.block_hash ?? payload?.blockHash ?? payload?._powBlockHash ?? "",
     )
@@ -1473,24 +1587,43 @@ function tokenMintFromEventPayload(payload, row = {}) {
         row.created_at,
     ),
     dataBytes: rowNumber(payload, "dataBytes") || rowNumber(row, "data_bytes"),
-    confirmedIssuanceUnits: rowNumber(payload, "confirmedIssuanceUnits"),
-    directProofIssuanceUnits: rowNumber(
-      payload,
-      "directProofIssuanceUnits",
-    ),
+    confirmedIssuanceUnits: exactIncbIssuance.complete
+      ? exactIncbIssuance.confirmedIssuanceUnits
+      : rowNumber(payload, "confirmedIssuanceUnits"),
+    directProofIssuanceUnits: exactIncbIssuance.complete
+      ? exactIncbIssuance.directProofIssuanceUnits
+      : rowNumber(payload, "directProofIssuanceUnits"),
     issuanceAccountingModel: String(
       payload?.issuanceAccountingModel ?? "",
     ),
-    issuanceAmount: rowNumber(payload, "issuanceAmount"),
-    issuanceDustSats: rowNumber(payload, "issuanceDustSats"),
+    issuanceAmount: exactIncbIssuance.complete
+      ? exactIncbIssuance.issuanceAmount
+      : rowNumber(payload, "issuanceAmount"),
+    issuanceDustSats: exactIncbIssuance.complete
+      ? decimalTextFromQ8(exactIncbIssuance.issuanceDustQ8)
+      : canonicalLegacyDecimalValue(payload, "issuanceDustSats"),
     ...(exactIncbIssuance.complete
       ? { issuanceDustQ8: exactIncbIssuance.issuanceDustQ8 }
       : {}),
-    issuanceFloorSats: rowNumber(payload, "issuanceFloorSats"),
-    issuanceNetworkValueSats: rowNumber(
-      payload,
-      "issuanceNetworkValueSats",
-    ),
+    issuanceFloorSats: exactIncbIssuance.complete
+      ? decimalTextFromQ8(
+          (
+            BigInt(exactIncbIssuance.issuanceNetworkValueQ8) /
+            BigInt(exactIncbIssuance.confirmedIssuanceUnits)
+          ).toString(),
+        )
+      : canonicalLegacyDecimalValue(payload, "issuanceFloorSats"),
+    ...(exactIncbIssuance.complete
+      ? {
+          issuanceFloorQ8: (
+            BigInt(exactIncbIssuance.issuanceNetworkValueQ8) /
+            BigInt(exactIncbIssuance.confirmedIssuanceUnits)
+          ).toString(),
+        }
+      : {}),
+    issuanceNetworkValueSats: exactIncbIssuance.complete
+      ? decimalTextFromQ8(exactIncbIssuance.issuanceNetworkValueQ8)
+      : canonicalLegacyDecimalValue(payload, "issuanceNetworkValueSats"),
     ...(exactIncbIssuance.complete
       ? {
           issuanceNetworkValueQ8:
@@ -1542,10 +1675,14 @@ function tokenMintFromEventPayload(payload, row = {}) {
     issuanceValueSnapshotModel: String(
       payload?.issuanceValueSnapshotModel ?? "",
     ).trim(),
-    issuanceValueSnapshotWorkNetworkValueSats: rowNumber(
-      payload,
-      "issuanceValueSnapshotWorkNetworkValueSats",
-    ),
+    issuanceValueSnapshotWorkNetworkValueSats: exactIncbIssuance.complete
+      ? decimalTextFromQ8(
+          exactIncbIssuance.issuanceValueSnapshotWorkNetworkValueQ8,
+        )
+      : canonicalLegacyDecimalValue(
+          payload,
+          "issuanceValueSnapshotWorkNetworkValueSats",
+        ),
     ...(exactIncbIssuance.complete
       ? {
           issuanceValueSnapshotWorkNetworkValueQ8:
@@ -1565,6 +1702,7 @@ function tokenMintFromEventPayload(payload, row = {}) {
     sourceBondTxid: String(payload?.sourceBondTxid ?? "")
       .trim()
       .toLowerCase(),
+    sourceKind: String(payload?.sourceKind ?? "").trim().toLowerCase(),
     status: effectiveStatus || undefined,
     ticker,
     tokenId,
@@ -2336,6 +2474,18 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
         COALESCE(cd.token_id, lower(e.payload->>'tokenId')) AS token_id,
         cd.ticker,
         cd.registry_address,
+        NULLIF(e.payload->>'attachedWorkLiveFloorAtSendSats', '')
+          AS attached_work_live_floor_at_send_sats_text,
+        NULLIF(e.payload->>'attachedWorkLiveValueAtSendSats', '')
+          AS attached_work_live_value_at_send_sats_text,
+        NULLIF(e.payload->>'issuanceDustSats', '')
+          AS issuance_dust_sats_text,
+        NULLIF(e.payload->>'issuanceFloorSats', '')
+          AS issuance_floor_sats_text,
+        NULLIF(e.payload->>'issuanceNetworkValueSats', '')
+          AS issuance_network_value_sats_text,
+        NULLIF(e.payload->>'issuanceValueSnapshotWorkNetworkValueSats', '')
+          AS issuance_value_snapshot_work_network_value_sats_text,
         CASE
           WHEN e.payload->>'eventKeyVout' ~ '^[0-9]{1,9}$'
             THEN (e.payload->>'eventKeyVout')::integer
@@ -2559,16 +2709,24 @@ export async function proofIndexTokenMintStatsPayload(
     return null;
   }
 
+  const exactWholeUnits = isBondTokenId(scope);
   let confirmedMints = 0;
-  let confirmedSupply = 0;
+  let confirmedSupply = exactWholeUnits ? 0n : 0;
   let pendingMints = 0;
-  let pendingSupply = 0;
+  let pendingSupply = exactWholeUnits ? 0n : 0;
   let targetConfirmedMints = 0;
   let targetPendingMints = 0;
   const pendingCandidatesByTxid = new Map();
   for (const mint of mints) {
-    const amount = Number(mint.amount);
-    if (!Number.isSafeInteger(amount) || amount < 0) {
+    const amount = exactWholeUnits
+      ? integerBigInt(mint.amount)
+      : Number(mint.amount);
+    if (
+      amount === null ||
+      (typeof amount === "number" &&
+        (!Number.isSafeInteger(amount) || amount < 0)) ||
+      (typeof amount === "bigint" && amount < 0n)
+    ) {
       throw new Error(
         `Proof index mint statistics contain an inexact amount for ${mint.txid || "an unknown transaction"}.`,
       );
@@ -2579,7 +2737,10 @@ export async function proofIndexTokenMintStatsPayload(
       if (targetTxid && normalizedTxid(mint.txid) === targetTxid) {
         targetConfirmedMints += 1;
       }
-      if (!Number.isSafeInteger(confirmedSupply)) {
+      if (
+        typeof confirmedSupply === "number" &&
+        !Number.isSafeInteger(confirmedSupply)
+      ) {
         throw new Error("Proof index confirmed mint supply is inexact.");
       }
     } else {
@@ -2590,8 +2751,12 @@ export async function proofIndexTokenMintStatsPayload(
         throw new Error("Proof index pending mint statistics contain an invalid txid.");
       }
       const existingCandidate = pendingCandidatesByTxid.get(mintTxid);
-      const candidateAmount = Number(existingCandidate?.amount ?? 0) + amount;
-      if (!Number.isSafeInteger(candidateAmount)) {
+      const candidateAmount =
+        (existingCandidate?.amount ?? (exactWholeUnits ? 0n : 0)) + amount;
+      if (
+        typeof candidateAmount === "number" &&
+        !Number.isSafeInteger(candidateAmount)
+      ) {
         throw new Error("Proof index pending mint candidate supply is inexact.");
       }
       pendingCandidatesByTxid.set(mintTxid, {
@@ -2601,7 +2766,10 @@ export async function proofIndexTokenMintStatsPayload(
       if (targetTxid && mintTxid === targetTxid) {
         targetPendingMints += 1;
       }
-      if (!Number.isSafeInteger(pendingSupply)) {
+      if (
+        typeof pendingSupply === "number" &&
+        !Number.isSafeInteger(pendingSupply)
+      ) {
         throw new Error("Proof index pending mint supply is inexact.");
       }
     }
@@ -2616,14 +2784,19 @@ export async function proofIndexTokenMintStatsPayload(
   );
   const pendingCandidateSupply = pendingCandidateRows.reduce(
     (total, candidate) => total + candidate.amount,
-    0,
+    exactWholeUnits ? 0n : 0,
   );
-  if (!Number.isSafeInteger(pendingCandidateSupply)) {
+  if (
+    typeof pendingCandidateSupply === "number" &&
+    !Number.isSafeInteger(pendingCandidateSupply)
+  ) {
     throw new Error("Proof index pending mint witness supply is inexact.");
   }
   return {
     confirmedMints,
-    confirmedSupply,
+    confirmedSupply: exactWholeUnits
+      ? confirmedSupply.toString()
+      : confirmedSupply,
     indexedAt: newestDateIso(
       rows.flatMap((row) => [
         row.block_time,
@@ -2636,15 +2809,21 @@ export async function proofIndexTokenMintStatsPayload(
     indexedThroughBlock: indexedThroughBlock || undefined,
     network,
     pendingCandidateCount: pendingCandidateRows.length,
-    pendingCandidates: pendingCandidateRows.slice(
-      0,
-      TOKEN_PENDING_MINT_WITNESS_LIMIT,
-    ),
+    pendingCandidates: pendingCandidateRows
+      .slice(0, TOKEN_PENDING_MINT_WITNESS_LIMIT)
+      .map((candidate) => ({
+        ...candidate,
+        amount: exactWholeUnits
+          ? candidate.amount.toString()
+          : candidate.amount,
+      })),
     pendingCandidatesComplete:
       pendingCandidateRows.length <= TOKEN_PENDING_MINT_WITNESS_LIMIT,
-    pendingCandidateSupply,
+    pendingCandidateSupply: exactWholeUnits
+      ? pendingCandidateSupply.toString()
+      : pendingCandidateSupply,
     pendingMints,
-    pendingSupply,
+    pendingSupply: exactWholeUnits ? pendingSupply.toString() : pendingSupply,
     pendingWitnessLimit: TOKEN_PENDING_MINT_WITNESS_LIMIT,
     source: "proof-indexer-token-mint-events",
     ...(targetTxid
@@ -2742,6 +2921,21 @@ async function exactTokenMintHistoryPage(
   return page;
 }
 
+export function exactBondTokenIdForMintOverlay(scope, payload, mints) {
+  const scopedTokens = (Array.isArray(payload?.tokens) ? payload.tokens : [])
+    .filter((token) => tokenMatchesScope(token, scope));
+  const scopedBondTokenId =
+    scopedTokens.length === 1 && isBondTokenId(scopedTokens[0]?.tokenId)
+      ? scopedTokens[0].tokenId
+      : "";
+  return scopedBondTokenId &&
+    Array.isArray(mints) &&
+    mints.length > 0 &&
+    mints.every((mint) => mint?.tokenId === scopedBondTokenId)
+    ? scopedBondTokenId
+    : "";
+}
+
 async function tokenStateWithMintEventOverlay(pool, network, scope, payload, snapshot) {
   if (!payload || !scope || scope === "all") {
     return payload;
@@ -2757,21 +2951,46 @@ async function tokenStateWithMintEventOverlay(pool, network, scope, payload, sna
   );
   const mints = rows
     .map((row) => tokenMintFromEventPayload(objectRecord(row.payload), row))
-    .filter((item) => item.txid && item.tokenId && item.amount > 0);
+    .filter((item) => {
+      if (!item.txid || !item.tokenId) return false;
+      if (!isBondTokenId(item.tokenId)) return Number(item.amount) > 0;
+      const amount = exactBondUnits(item.amount, { positive: true });
+      return Boolean(amount) && BigInt(amount) > 0n;
+    });
   if (mints.length === 0) {
     return payload;
   }
 
   const confirmedMints = mints.filter((mint) => mint.confirmed);
   const pendingMints = mints.filter((mint) => !mint.confirmed);
-  const confirmedSupply = confirmedMints.reduce(
-    (total, mint) => total + Number(mint.amount ?? 0),
-    0,
+  const scopedBondTokenId = exactBondTokenIdForMintOverlay(
+    scope,
+    payload,
+    mints,
   );
-  const pendingSupply = pendingMints.reduce(
-    (total, mint) => total + Number(mint.amount ?? 0),
-    0,
-  );
+  const bondScoped = Boolean(scopedBondTokenId);
+  const confirmedSupply = bondScoped
+    ? confirmedMints
+        .reduce(
+          (total, mint) => total + BigInt(exactBondUnits(mint.amount)),
+          0n,
+        )
+        .toString()
+    : confirmedMints.reduce(
+        (total, mint) => total + Number(mint.amount ?? 0),
+        0,
+      );
+  const pendingSupply = bondScoped
+    ? pendingMints
+        .reduce(
+          (total, mint) => total + BigInt(exactBondUnits(mint.amount)),
+          0n,
+        )
+        .toString()
+    : pendingMints.reduce(
+        (total, mint) => total + Number(mint.amount ?? 0),
+        0,
+      );
   const tokens = (Array.isArray(payload.tokens) ? payload.tokens : []).map((token) => {
     if (!tokenMatchesScope(token, scope)) {
       return token;
@@ -7017,6 +7236,867 @@ function canonicalVerifierIncbInvalidDispositionFromRow(row, canonicalBlocks) {
     : null;
 }
 
+const PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL =
+  "proof-indexer-pwt-range-replay-verifier-binding-v1";
+
+function canonicalIncbReplayReaderBinding(rebuild, network) {
+  const source = objectRecord(rebuild);
+  const binding = objectRecord(source.verifierBinding);
+  const bindingId = normalizedLowerText(binding.bindingId);
+  const rangeReplayFromHeight = Number(binding.rangeReplayFromHeight);
+  const witnessCount = Number(binding.witnessCount);
+  const witnessPreserveCount = Number(binding.witnessPreserveCount);
+  const witnessedThroughBlock = Number(binding.witnessedThroughBlock);
+  const witnessSetHash = normalizedLowerText(binding.witnessSetHash);
+  const witnessedThroughBlockHash = normalizedLowerText(
+    binding.witnessedThroughBlockHash,
+  );
+  const expectedMetaKey = /^[0-9a-f]{64}$/u.test(bindingId)
+    ? incbRangeReplayWitnessMetaKey(network, bindingId)
+    : "";
+  if (
+    source.mode !== "pwt-range-replay" ||
+    source.network !== network ||
+    source.status !== "active" ||
+    source.active !== true ||
+    source.complete !== false ||
+    source.completedAt != null ||
+    source.incbRangeReplayVerification != null ||
+    binding.model !== PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL ||
+    binding.network !== network ||
+    !/^[0-9a-f]{64}$/u.test(bindingId) ||
+    !Number.isFinite(Date.parse(String(binding.createdAt ?? ""))) ||
+    !Number.isSafeInteger(rangeReplayFromHeight) ||
+    rangeReplayFromHeight <= 1 ||
+    Number(source.rangeReplayFromHeight) !== rangeReplayFromHeight ||
+    binding.witnessModel !== INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL ||
+    !/^[0-9a-f]{64}$/u.test(witnessSetHash) ||
+    !Number.isSafeInteger(witnessCount) ||
+    witnessCount < 0 ||
+    !Number.isSafeInteger(witnessPreserveCount) ||
+    witnessPreserveCount < 0 ||
+    witnessPreserveCount > witnessCount ||
+    !Number.isSafeInteger(witnessedThroughBlock) ||
+    witnessedThroughBlock < rangeReplayFromHeight - 1 ||
+    !/^[0-9a-f]{64}$/u.test(witnessedThroughBlockHash) ||
+    String(binding.witnessSetMetaKey ?? "") !== expectedMetaKey
+  ) {
+    return null;
+  }
+  return {
+    bindingId,
+    createdAt: String(binding.createdAt),
+    model: PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL,
+    network,
+    rangeReplayFromHeight,
+    witnessCount,
+    witnessModel: INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+    witnessPreserveCount,
+    witnessSetHash,
+    witnessSetMetaKey: expectedMetaKey,
+    witnessedThroughBlock,
+    witnessedThroughBlockHash,
+  };
+}
+
+async function canonicalIncbReplayManifestRow(client, metaKey) {
+  const result = await client.query(
+    `SELECT value FROM proof_indexer.meta WHERE key = $1 LIMIT 1`,
+    [metaKey],
+  );
+  return result.rows[0]?.value ?? null;
+}
+
+async function canonicalIncbReplaySnapshotRows(client, network, snapshotIds) {
+  if (!Array.isArray(snapshotIds) || snapshotIds.length === 0) {
+    return [];
+  }
+  const result = await client.query(
+    `
+      SELECT
+        snapshot_id,
+        indexed_through_block,
+        generated_at,
+        source_hashes->>'blockScan' AS source_block_hash,
+        source_hashes->>'canonicalSummary' AS canonical_summary_hash,
+        consistency->>'ok' AS consistency_ok,
+        COALESCE(consistency->>'status', payload->>'status', '') AS consistency_status,
+        payload->>'snapshotId' AS payload_snapshot_id,
+        payload->>'indexedThroughBlockHash' AS payload_block_hash,
+        payload->'summaryRefresh'->>'mode' AS summary_refresh_mode,
+        payload->'summaryRefresh'->>'indexedThroughBlockHash' AS summary_refresh_block_hash,
+        payload->'summaryPayloads'->'workFloor'->>'snapshotId' AS work_floor_snapshot_id,
+        payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlock' AS work_floor_height,
+        payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlockHash' AS work_floor_block_hash,
+        payload->'totals'->>'workNetworkValueAccountingModel' AS totals_work_network_value_model,
+        payload->'totals'->>'workNetworkValueQ8' AS totals_work_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel' AS work_floor_network_value_model,
+        payload->'summaryPayloads'->'workFloor'->>'networkValueQ8' AS work_floor_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->>'liveNetworkValueQ8' AS work_floor_live_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' AS work_actual_network_value_model,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'networkValueQ8' AS work_actual_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveNetworkValueQ8' AS work_actual_live_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'totalQ8' AS work_actual_total_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveTotalQ8' AS work_actual_live_total_q8,
+        COALESCE(
+          NULLIF(payload #>> '{summaryPayloads,workFloor,liveNetworkValueSats}', ''),
+          NULLIF(payload #>> '{summaryPayloads,workFloor,actualValue,liveNetworkValueSats}', ''),
+          NULLIF(payload #>> '{summaryPayloads,workFloor,actualValue,liveTotalSats}', ''),
+          NULLIF(payload #>> '{summaryPayloads,workFloor,actualValue,totalSats}', '')
+        ) AS work_network_value_sats_text,
+        CASE
+          WHEN payload #> '{summaryPayloads,workFloor,liveNetworkValueSats}' IS NOT NULL
+            THEN jsonb_typeof(payload #> '{summaryPayloads,workFloor,liveNetworkValueSats}')
+          WHEN payload #> '{summaryPayloads,workFloor,actualValue,liveNetworkValueSats}' IS NOT NULL
+            THEN jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,liveNetworkValueSats}')
+          WHEN payload #> '{summaryPayloads,workFloor,actualValue,liveTotalSats}' IS NOT NULL
+            THEN jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,liveTotalSats}')
+          WHEN payload #> '{summaryPayloads,workFloor,actualValue,totalSats}' IS NOT NULL
+            THEN jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,totalSats}')
+          ELSE NULL
+        END AS work_network_value_sats_type,
+        payload::text AS raw_payload_json,
+        source_hashes::text AS raw_source_hashes_json,
+        consistency::text AS raw_consistency_json,
+        metrics::text AS raw_metrics_json
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
+        AND snapshot_id = ANY($2::text[])
+      ORDER BY snapshot_id ASC
+    `,
+    [network, snapshotIds],
+  );
+  return result.rows;
+}
+
+function canonicalIncbReplaySnapshotDescriptorFromReaderRow(row, entry) {
+  const snapshot = objectRecord(entry?.snapshot);
+  const rawSnapshotFingerprint = incbReplayRawSnapshotFingerprint({
+    consistencyJson: String(row?.raw_consistency_json ?? ""),
+    generatedAt: new Date(row?.generated_at).toISOString(),
+    indexedThroughBlock: Number(row?.indexed_through_block),
+    metricsJson: String(row?.raw_metrics_json ?? ""),
+    payloadJson: String(row?.raw_payload_json ?? ""),
+    snapshotId: String(row?.snapshot_id ?? ""),
+    sourceHashesJson: String(row?.raw_source_hashes_json ?? ""),
+  });
+  const mode = String(snapshot.workNetworkValueMode ?? "");
+  const expectedQ8 = canonicalIntegerText(snapshot.workNetworkValueQ8, {
+    allowZero: false,
+  });
+  const models = [
+    String(row?.totals_work_network_value_model ?? ""),
+    String(row?.work_floor_network_value_model ?? ""),
+    String(row?.work_actual_network_value_model ?? ""),
+  ];
+  const aliases = [
+    row?.totals_work_network_value_q8,
+    row?.work_floor_network_value_q8,
+    row?.work_floor_live_network_value_q8,
+    row?.work_actual_network_value_q8,
+    row?.work_actual_live_network_value_q8,
+    row?.work_actual_total_q8,
+    row?.work_actual_live_total_q8,
+  ];
+  if (mode === WORK_NETWORK_VALUE_ACCOUNTING_MODEL) {
+    const normalizedAliases = aliases.map((value) =>
+      canonicalIntegerText(value, { allowZero: false })
+    );
+    if (
+      models.some((value) => value !== WORK_NETWORK_VALUE_ACCOUNTING_MODEL) ||
+      normalizedAliases.some((value) => value !== expectedQ8)
+    ) {
+      throw new Error("Current INCB replay snapshot Q8 aliases diverged.");
+    }
+  } else if (mode === "locked-bound-legacy-work-value-v1") {
+    const legacyQ8 =
+      models.every((value) => !value) &&
+      row?.work_network_value_sats_type === "string" &&
+      typeof row?.work_network_value_sats_text === "string"
+        ? q8TextFromDecimal(row.work_network_value_sats_text.trim())
+        : "";
+    if (!legacyQ8 || legacyQ8 !== expectedQ8) {
+      throw new Error("Legacy INCB replay snapshot decimal is not exact.");
+    }
+  } else if (
+    mode === INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE
+  ) {
+    if (models.some(Boolean)) {
+      throw new Error(
+        "A marked current snapshot cannot use the legacy exact-mint exception.",
+      );
+    }
+    const mintQ8 = canonicalIntegerText(
+      entry?.mintPayload?.issuanceValueSnapshotWorkNetworkValueQ8,
+      { allowZero: false },
+    );
+    if (!mintQ8 || mintQ8 !== expectedQ8) {
+      throw new Error(
+        "The legacy green snapshot is not bound to the mint's exact Q8.",
+      );
+    }
+  } else {
+    throw new Error("Unknown INCB replay snapshot accounting witness mode.");
+  }
+  return normalizeIncbReplaySnapshotDescriptor({
+    canonicalSummaryHash: normalizedLowerText(row?.canonical_summary_hash),
+    consistencyOk: String(row?.consistency_ok ?? "") === "true",
+    consistencyStatus: String(row?.consistency_status ?? ""),
+    generatedAt: new Date(row?.generated_at).toISOString(),
+    indexedThroughBlock: Number(row?.indexed_through_block),
+    payloadBlockHash: normalizedLowerText(row?.payload_block_hash),
+    payloadSnapshotId: String(row?.payload_snapshot_id ?? ""),
+    rawSnapshotFingerprint,
+    snapshotId: String(row?.snapshot_id ?? ""),
+    sourceBlockHash: normalizedLowerText(row?.source_block_hash),
+    summaryRefreshBlockHash: normalizedLowerText(
+      row?.summary_refresh_block_hash,
+    ),
+    summaryRefreshMode: String(row?.summary_refresh_mode ?? ""),
+    workFloorBlockHash: normalizedLowerText(row?.work_floor_block_hash),
+    workFloorHeight: Number(row?.work_floor_height),
+    workFloorSnapshotId: String(row?.work_floor_snapshot_id ?? ""),
+    workNetworkValueMode: mode,
+    workNetworkValueQ8: expectedQ8,
+  });
+}
+
+function canonicalIncbReplayMintMatchesManifest(entry) {
+  const mint = objectRecord(entry?.mintPayload);
+  const bond = objectRecord(entry?.bond);
+  const snapshot = objectRecord(entry?.snapshot);
+  return Boolean(
+    !incbIssuanceMetadataFault(mint, { status: "confirmed" }) &&
+      normalizedLowerText(mint.txid) === bond.txid &&
+      normalizedLowerText(mint.sourceBondTxid) === bond.txid &&
+      String(mint.minterAddress ?? "").trim() === bond.bondRecipientAddress &&
+      String(mint.bondRecipientAddress ?? "").trim() ===
+        bond.bondRecipientAddress &&
+      Number(mint.bondRecipientVout) === bond.bondRecipientVout &&
+      canonicalIntegerText(mint.bondRecipientAmountSats, {
+        allowZero: false,
+      }) === bond.bondRecipientAmountSats &&
+      canonicalIntegerText(mint.directProofIssuanceUnits, {
+        allowZero: false,
+      }) === bond.bondRecipientAmountSats &&
+      canonicalIntegerText(mint.attachedWorkAmountAtoms) ===
+        bond.attachedWorkAmountAtoms &&
+      Number(mint.blockHeight ?? mint.height) === bond.blockHeight &&
+      Number(mint.blockIndex ?? mint._powBlockIndex) === bond.blockIndex &&
+      normalizedLowerText(mint.blockHash ?? mint._powBlockHash) ===
+        bond.blockHash &&
+      Number(mint.issuanceValueSnapshotBlockHeight) ===
+        bond.blockHeight - 1 &&
+      normalizedLowerText(mint.issuanceValueSnapshotBlockHash) ===
+        bond.previousBlockHash &&
+      String(mint.issuanceValueSnapshotId ?? "") === snapshot.snapshotId &&
+      normalizedLowerText(mint.issuanceValueSnapshotCanonicalSummaryHash) ===
+        snapshot.canonicalSummaryHash &&
+      new Date(mint.issuanceValueSnapshotGeneratedAt).toISOString() ===
+        snapshot.generatedAt &&
+      canonicalIntegerText(
+        mint.issuanceValueSnapshotWorkNetworkValueQ8,
+        { allowZero: false },
+      ) === snapshot.workNetworkValueQ8
+  );
+}
+
+function verifyCanonicalIncbReplayPreservedRows(manifest, rows) {
+  const preserved = manifest.entries.filter(
+    (entry) => entry.disposition === "preserve",
+  );
+  const rowsById = new Map(
+    rows.map((row) => [String(row?.snapshot_id ?? ""), row]),
+  );
+  if (
+    new Set(preserved.map((entry) => entry.snapshot.snapshotId)).size !==
+    rowsById.size
+  ) {
+    throw new Error(
+      "The immutable INCB replay snapshot set is missing or ambiguous.",
+    );
+  }
+  for (const entry of preserved) {
+    const descriptor = canonicalIncbReplaySnapshotDescriptorFromReaderRow(
+      rowsById.get(entry.snapshot.snapshotId),
+      entry,
+    );
+    if (
+      !canonicalIncbReplayMintMatchesManifest(entry) ||
+      canonicalIncbReplaySha256(descriptor) !==
+        canonicalIncbReplaySha256(entry.snapshot) ||
+      incbReplaySnapshotFingerprint(descriptor) !==
+        entry.snapshotFingerprint ||
+      descriptor.rawSnapshotFingerprint !==
+        entry.snapshot.rawSnapshotFingerprint
+    ) {
+      throw new Error(
+        `Immutable INCB replay witness ${entry.bond.txid}:${entry.bond.bondRecipientVout} changed.`,
+      );
+    }
+  }
+  return preserved;
+}
+
+function canonicalIncbReplayRawMessages(rawTx) {
+  const messages = [];
+  for (const [voutIndex, output] of (Array.isArray(rawTx?.vout)
+    ? rawTx.vout
+    : []).entries()) {
+    const script = objectRecord(output?.scriptPubKey);
+    const asm = String(script.asm ?? output?.scriptpubkey_asm ?? "").trim();
+    if (!asm.startsWith("OP_RETURN")) continue;
+    const chunks = asm
+      .split(/\s+/u)
+      .slice(1)
+      .filter((part) => /^(?:[0-9a-f]{2})+$/iu.test(part))
+      .map((part) => Buffer.from(part, "hex"));
+    if (chunks.length > 0) {
+      messages.push({
+        text: Buffer.concat(chunks).toString("utf8"),
+        voutIndex,
+      });
+    }
+  }
+  return messages;
+}
+
+function canonicalIncbReplayRawWorkAtoms(rawTx, recipientAddress) {
+  let total = 0n;
+  for (const message of canonicalIncbReplayRawMessages(rawTx)) {
+    const parts = String(message.text ?? "").split(":");
+    if (
+      parts[0] !== "pwt1" ||
+      normalizedLowerText(parts[2]) !== WORK_TOKEN_ID ||
+      String(parts[4] ?? "").trim() !== recipientAddress
+    ) {
+      continue;
+    }
+    const amount = canonicalIntegerText(parts[3], { allowZero: false });
+    if (!amount || !["send", "send2"].includes(parts[1])) {
+      throw new Error("Malformed WORK attachment in bound INCB raw transaction.");
+    }
+    total += parts[1] === "send2"
+      ? BigInt(amount)
+      : BigInt(amount) * BigInt(WORK_UNIT_SCALE_TEXT);
+  }
+  return total.toString();
+}
+
+async function canonicalIncbReplayBondRows(client, network, manifest) {
+  if (manifest.entries.length === 0) return [];
+  const result = await client.query(
+    `
+      SELECT
+        t.txid,
+        t.block_height,
+        lower(t.block_hash) AS block_hash,
+        CASE
+          WHEN t.raw_tx->>'_powBlockIndex' ~ '^[0-9]+$'
+            THEN (t.raw_tx->>'_powBlockIndex')::integer
+          ELSE NULL
+        END AS block_index,
+        lower(block.previous_block_hash) AS previous_block_hash,
+        t.raw_tx
+      FROM proof_indexer.transactions t
+      JOIN proof_indexer.blocks block
+        ON block.network = t.network
+       AND block.height = t.block_height
+       AND block.block_hash = t.block_hash
+       AND block.canonical = true
+      WHERE t.network = $1
+        AND t.status = 'confirmed'
+        AND t.txid = ANY($2::text[])
+    `,
+    [
+      network,
+      [...new Set(manifest.entries.map((entry) => entry.bond.txid))],
+    ],
+  );
+  return result.rows;
+}
+
+function verifyCanonicalIncbReplayBondRows(manifest, rows) {
+  const rowsByTxid = new Map(
+    rows.map((row) => [normalizedLowerText(row.txid), row]),
+  );
+  for (const entry of manifest.entries) {
+    const row = rowsByTxid.get(entry.bond.txid);
+    const rawTx = objectRecord(row?.raw_tx);
+    const rawOutputs = Array.isArray(rawTx.vout) ? rawTx.vout : [];
+    const messages = canonicalIncbReplayRawMessages(rawTx);
+    const memos = messages.filter(
+      (message) => message.text === "pwm1:m:incb",
+    );
+    const committedOutputsMatch = entry.bond.bondRecipientOutputs.every(
+      (committed) => {
+        const output = objectRecord(rawOutputs[committed.vout]);
+        const script = objectRecord(output.scriptPubKey);
+        return (
+          String(
+            script.address ??
+              (Array.isArray(script.addresses) ? script.addresses[0] : "") ??
+              "",
+          ).trim() === entry.bond.bondRecipientAddress &&
+          canonicalCoreValueSats(
+            output.value,
+            `INCB witness output ${committed.vout}`,
+          ) === Number(committed.amountSats) &&
+          Number(committed.vout) < Number(memos[0]?.voutIndex)
+        );
+      },
+    );
+    if (
+      !row ||
+      Number(row.block_height) !== entry.bond.blockHeight ||
+      normalizedLowerText(row.block_hash) !== entry.bond.blockHash ||
+      Number(row.block_index) !== entry.bond.blockIndex ||
+      normalizedLowerText(row.previous_block_hash) !==
+        entry.bond.previousBlockHash ||
+      memos.length !== 1 ||
+      !committedOutputsMatch ||
+      canonicalIncbReplayRawWorkAtoms(
+        rawTx,
+        entry.bond.bondRecipientAddress,
+      ) !== entry.bond.attachedWorkAmountAtoms
+    ) {
+      throw new Error(
+        `INCB replay bond ${entry.bond.txid}:${entry.bond.bondRecipientVout} changed canonical position, memo, outputs, or WORK attachment.`,
+      );
+    }
+  }
+}
+
+function canonicalIncbReplayWitnessFaultPayload({
+  checkpointHash = "",
+  code,
+  error,
+  network,
+  rangeReplayFromHeight = 0,
+  rebuild = null,
+  requestedHeight,
+}) {
+  return {
+    checkpointHash,
+    dispositions: [],
+    fault: canonicalTransactionFault(
+      network,
+      code,
+      error?.message ?? String(error),
+    ),
+    indexedThroughBlock: requestedHeight,
+    invalidDispositionTxids: [],
+    mints: [],
+    network,
+    rangeReplayFromHeight,
+    rebuild,
+    source: INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
+    witnessCount: 0,
+    witnessPreserveCount: 0,
+    witnessSetHash: "",
+    witnessedThroughBlock: 0,
+    witnessedThroughBlockHash: "",
+  };
+}
+
+export async function proofIndexCanonicalInceptionMintWitnessesPayload(
+  network,
+  indexedThroughBlock,
+) {
+  const pool = proofIndexPool();
+  const requestedHeight = Number(indexedThroughBlock);
+  if (
+    !pool ||
+    network !== "livenet" ||
+    !Number.isSafeInteger(requestedHeight) ||
+    requestedHeight <= 0
+  ) {
+    return null;
+  }
+
+  const client = await pool.connect();
+  let checkpointHash = "";
+  let rebuild = null;
+  let rangeReplayFromHeight = 0;
+  let transactionOpen = false;
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    transactionOpen = true;
+    const stateMeta = await canonicalStateMetaFromPool(client, network);
+    rebuild = objectRecord(stateMeta.rebuild);
+    const replayBinding = canonicalIncbReplayReaderBinding(rebuild, network);
+    rangeReplayFromHeight = Number(rebuild.rangeReplayFromHeight);
+    const fromHeight = Number(rebuild.fromHeight);
+    const upperHeight = Math.min(
+      requestedHeight,
+      rangeReplayFromHeight - 1,
+    );
+    if (
+      !replayBinding ||
+      !Number.isSafeInteger(fromHeight) ||
+      fromHeight <= 0 ||
+      upperHeight <= 0
+    ) {
+      const error = new Error(
+        "Canonical INCB witnesses require an active immutable bound PWT range replay.",
+      );
+      error.code = "INCB_BOUND_WITNESS_REPLAY_INACTIVE";
+      throw error;
+    }
+    const manifest = verifyIncbRangeReplayWitnessManifest(
+      await canonicalIncbReplayManifestRow(
+        client,
+        replayBinding.witnessSetMetaKey,
+      ),
+      {
+        bindingId: replayBinding.bindingId,
+        count: replayBinding.witnessCount,
+        hash: replayBinding.witnessSetHash,
+        metaKey: replayBinding.witnessSetMetaKey,
+        network,
+        preserveCount: replayBinding.witnessPreserveCount,
+        rangeReplayFromHeight,
+        throughHash: replayBinding.witnessedThroughBlockHash,
+        throughHeight: replayBinding.witnessedThroughBlock,
+      },
+    );
+
+    const checkpointResult = await client.query(
+    `
+      SELECT height, block_hash
+      FROM proof_indexer.blocks
+      WHERE network = $1
+        AND height = $2
+        AND canonical = true
+      LIMIT 1
+    `,
+    [network, requestedHeight],
+  );
+    const checkpoint = checkpointResult.rows[0];
+    checkpointHash = normalizedLowerText(checkpoint?.block_hash);
+    if (
+      Number(checkpoint?.height) !== requestedHeight ||
+      !/^[0-9a-f]{64}$/u.test(checkpointHash) ||
+      stateMeta.fault?.active === true ||
+      requestedHeight > Number(rebuild.indexedThroughBlock)
+    ) {
+      const error = new Error(
+        "The canonical bound INCB witness checkpoint is unavailable.",
+      );
+      error.code = "INCB_BOUND_WITNESS_CHECKPOINT_UNAVAILABLE";
+      throw error;
+    }
+
+    const invalidEventQuery = canonicalVerifierIncbInvalidEventQueryParts(
+      network,
+      fromHeight,
+      upperHeight,
+    );
+    const mintResult = await client.query(
+      `
+        SELECT
+          e.payload,
+          e.protocol,
+          e.kind,
+          e.status,
+          COALESCE(t.status, e.status) AS effective_status,
+          e.event_time,
+          COALESCE(e.block_time, t.block_time) AS block_time,
+          e.created_at,
+          e.block_height,
+          t.block_height AS transaction_block_height,
+          t.block_hash,
+          CASE
+            WHEN t.raw_tx->>'_powBlockIndex' ~ '^[0-9]+$'
+              THEN (t.raw_tx->>'_powBlockIndex')::integer
+            ELSE NULL
+          END AS block_index,
+          e.txid,
+          e.event_id,
+          e.amount_sats,
+          e.data_bytes,
+          e.network,
+          t.confirmed_at,
+          t.last_seen_at,
+          t.updated_at AS tx_updated_at,
+          COALESCE(cd.token_id, lower(e.payload->>'tokenId')) AS token_id,
+          cd.ticker,
+          cd.registry_address,
+          NULLIF(e.payload->>'attachedWorkLiveFloorAtSendSats', '')
+            AS attached_work_live_floor_at_send_sats_text,
+          NULLIF(e.payload->>'attachedWorkLiveValueAtSendSats', '')
+            AS attached_work_live_value_at_send_sats_text,
+          NULLIF(e.payload->>'issuanceDustSats', '')
+            AS issuance_dust_sats_text,
+          NULLIF(e.payload->>'issuanceFloorSats', '')
+            AS issuance_floor_sats_text,
+          NULLIF(e.payload->>'issuanceNetworkValueSats', '')
+            AS issuance_network_value_sats_text,
+          NULLIF(e.payload->>'issuanceValueSnapshotWorkNetworkValueSats', '')
+            AS issuance_value_snapshot_work_network_value_sats_text,
+          CASE
+            WHEN e.payload->>'eventKeyVout' ~ '^[0-9]{1,9}$'
+              THEN (e.payload->>'eventKeyVout')::integer
+            ELSE 0
+          END AS mint_ordinal,
+          COALESCE(
+            NULLIF(btrim(e.payload->>'minterAddress'), ''),
+            NULLIF(btrim(e.payload->>'actor'), ''),
+            NULLIF(btrim(e.payload->>'senderAddress'), ''),
+            ''
+          ) AS mint_recipient_address
+        FROM proof_indexer.events e
+        JOIN proof_indexer.transactions t
+          ON t.network = e.network
+         AND t.txid = e.txid
+         AND t.status = 'confirmed'
+         AND t.block_height = e.block_height
+        JOIN proof_indexer.blocks current_block
+          ON current_block.network = t.network
+         AND current_block.height = t.block_height
+         AND current_block.block_hash = t.block_hash
+         AND current_block.canonical = true
+        JOIN proof_indexer.blocks previous_block
+          ON previous_block.network = t.network
+         AND previous_block.height = t.block_height - 1
+         AND previous_block.block_hash =
+           lower(e.payload->>'issuanceValueSnapshotBlockHash')
+         AND previous_block.block_hash = current_block.previous_block_hash
+         AND previous_block.canonical = true
+        LEFT JOIN proof_indexer.credit_definitions cd
+          ON cd.network = e.network
+         AND cd.token_id = lower(e.payload->>'tokenId')
+        WHERE e.network = $1
+          AND e.protocol = 'pwt1'
+          AND e.kind = 'token-mint'
+          AND e.status = 'confirmed'
+          AND e.valid = true
+          AND lower(e.payload->>'tokenId') = $2
+          AND e.block_height BETWEEN $3 AND $4
+        ORDER BY
+          e.block_height ASC,
+          block_index ASC NULLS LAST,
+          e.txid ASC,
+          e.event_id ASC
+      `,
+      [network, INCB_TOKEN_ID, fromHeight, upperHeight],
+    );
+    const invalidResult = await client.query(
+      `
+        SELECT
+          ${tokenInvalidEventSelectSql()}
+        ${invalidEventQuery.fromSql}
+        ORDER BY
+          t.block_height ASC,
+          e.txid ASC,
+          e.event_id ASC
+      `,
+      invalidEventQuery.params,
+    );
+
+    const confirmedStateMeta = await canonicalStateMetaFromPool(client, network);
+    const confirmedRebuild = objectRecord(confirmedStateMeta.rebuild);
+    const confirmedBinding = canonicalIncbReplayReaderBinding(
+      confirmedRebuild,
+      network,
+    );
+    const confirmedManifest = confirmedBinding
+      ? verifyIncbRangeReplayWitnessManifest(
+          await canonicalIncbReplayManifestRow(
+            client,
+            confirmedBinding.witnessSetMetaKey,
+          ),
+          {
+            bindingId: confirmedBinding.bindingId,
+            count: confirmedBinding.witnessCount,
+            hash: confirmedBinding.witnessSetHash,
+            metaKey: confirmedBinding.witnessSetMetaKey,
+            network,
+            preserveCount: confirmedBinding.witnessPreserveCount,
+            rangeReplayFromHeight,
+            throughHash: confirmedBinding.witnessedThroughBlockHash,
+            throughHeight: confirmedBinding.witnessedThroughBlock,
+          },
+        )
+      : null;
+    if (
+      confirmedStateMeta.fault?.active === true ||
+      !confirmedBinding ||
+      canonicalIncbReplaySha256(confirmedBinding) !==
+        canonicalIncbReplaySha256(replayBinding) ||
+      canonicalIncbReplaySha256(confirmedManifest) !==
+        canonicalIncbReplaySha256(manifest)
+    ) {
+      throw new Error(
+        "The canonical replay binding or immutable witness set changed while INCB witnesses were read.",
+      );
+    }
+    const invalidBlocks = new Map(
+      invalidResult.rows.map((row) => [
+        Number(row.transaction_block_height),
+        normalizedLowerText(row.block_hash),
+      ]),
+    );
+    const invalidDispositions = invalidResult.rows.map((row) => {
+      const disposition = canonicalVerifierIncbInvalidDispositionFromRow(
+        row,
+        invalidBlocks,
+      );
+      if (!disposition) {
+        throw new Error(
+          `Canonical invalid INCB disposition ${row.txid || "unknown"} is malformed.`,
+        );
+      }
+      return disposition;
+    });
+    const invalidDispositionTxids = invalidDispositions.map((event) =>
+      normalizedLowerText(event.txid),
+    );
+    const invalidTxids = new Set(invalidDispositionTxids);
+    const identities = new Set();
+    const legacyMints = mintResult.rows.map((row) => {
+      const mint = tokenMintFromEventPayload(objectRecord(row.payload), row);
+      const identity = JSON.stringify([
+        normalizedLowerText(mint.txid),
+        String(mint.minterAddress ?? "").trim(),
+        Number(mint.bondRecipientVout),
+      ]);
+      if (
+        mint.confirmed !== true ||
+        normalizedLowerText(mint.tokenId) !== INCB_TOKEN_ID ||
+        normalizedLowerText(mint.sourceKind) !== INCEPTION_BOND_KIND ||
+        mint.issuanceAccountingModel !== INCB_ISSUANCE_ACCOUNTING_MODEL ||
+        invalidTxids.has(normalizedLowerText(mint.txid)) ||
+        identities.has(identity)
+      ) {
+        throw new Error(
+          `Canonical INCB witness ${mint.txid || "unknown"} is ambiguous, invalid, or overlaps a rejected disposition.`,
+        );
+      }
+      identities.add(identity);
+      return mint;
+    });
+    const preservedSnapshotIds = [...new Set(
+      manifest.entries
+        .filter((entry) => entry.disposition === "preserve")
+        .map((entry) => entry.snapshot.snapshotId),
+    )].sort();
+    const preservedSnapshotRows = await canonicalIncbReplaySnapshotRows(
+      client,
+      network,
+      preservedSnapshotIds,
+    );
+    const preservedEntries = verifyCanonicalIncbReplayPreservedRows(
+      manifest,
+      preservedSnapshotRows,
+    );
+    verifyCanonicalIncbReplayBondRows(
+      manifest,
+      await canonicalIncbReplayBondRows(client, network, manifest),
+    );
+    const repeatedSnapshotRows = await canonicalIncbReplaySnapshotRows(
+      client,
+      network,
+      preservedSnapshotIds,
+    );
+    verifyCanonicalIncbReplayPreservedRows(
+      confirmedManifest,
+      repeatedSnapshotRows,
+    );
+    await client.query("COMMIT");
+    transactionOpen = false;
+
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    transactionOpen = true;
+    const finalStateMeta = await canonicalStateMetaFromPool(client, network);
+    const finalRebuild = objectRecord(finalStateMeta.rebuild);
+    const finalBinding = canonicalIncbReplayReaderBinding(
+      finalRebuild,
+      network,
+    );
+    const finalManifest = finalBinding
+      ? verifyIncbRangeReplayWitnessManifest(
+          await canonicalIncbReplayManifestRow(
+            client,
+            finalBinding.witnessSetMetaKey,
+          ),
+          {
+            bindingId: finalBinding.bindingId,
+            count: finalBinding.witnessCount,
+            hash: finalBinding.witnessSetHash,
+            metaKey: finalBinding.witnessSetMetaKey,
+            network,
+            preserveCount: finalBinding.witnessPreserveCount,
+            rangeReplayFromHeight,
+            throughHash: finalBinding.witnessedThroughBlockHash,
+            throughHeight: finalBinding.witnessedThroughBlock,
+          },
+        )
+      : null;
+    const finalSnapshotRows = await canonicalIncbReplaySnapshotRows(
+      client,
+      network,
+      preservedSnapshotIds,
+    );
+    if (
+      finalStateMeta.fault?.active === true ||
+      !finalBinding ||
+      canonicalIncbReplaySha256(finalBinding) !==
+        canonicalIncbReplaySha256(replayBinding) ||
+      canonicalIncbReplaySha256(finalManifest) !==
+        canonicalIncbReplaySha256(manifest)
+    ) {
+      throw new Error(
+        "The canonical replay binding changed after the repeatable-read witness snapshot.",
+      );
+    }
+    verifyCanonicalIncbReplayPreservedRows(finalManifest, finalSnapshotRows);
+    verifyCanonicalIncbReplayBondRows(
+      finalManifest,
+      await canonicalIncbReplayBondRows(client, network, finalManifest),
+    );
+    await client.query("COMMIT");
+    transactionOpen = false;
+    const mints = [
+      ...legacyMints,
+      ...preservedEntries.map((entry) => entry.mintPayload),
+    ];
+    return {
+      checkpointHash,
+      dispositions: manifest.entries,
+      fault: null,
+      indexedThroughBlock: requestedHeight,
+      invalidDispositionTxids,
+      mints,
+      network,
+      rangeReplayFromHeight,
+      rebuild: finalRebuild,
+      source: INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
+      witnessCount: manifest.count,
+      witnessPreserveCount: manifest.preserveCount,
+      witnessSetHash: manifest.commitment.hash,
+      witnessedThroughBlock: manifest.throughHeight,
+      witnessedThroughBlockHash: manifest.throughHash,
+    };
+  } catch (error) {
+    if (transactionOpen) {
+      await client.query("ROLLBACK").catch(() => {});
+      transactionOpen = false;
+    }
+    return canonicalIncbReplayWitnessFaultPayload({
+      checkpointHash,
+      code: error?.code ?? "INCB_BOUND_WITNESS_INVALID",
+      error,
+      network,
+      rangeReplayFromHeight,
+      rebuild,
+      requestedHeight,
+    });
+  } finally {
+    client.release();
+  }
+}
+
 export async function proofIndexCanonicalTransactionsPayload(
   network,
   indexedThroughBlock,
@@ -7316,6 +8396,12 @@ function tokenDefinitionFromRow(row) {
         sourceMetadata,
       )
     : null;
+  const bondToken = isBondTokenId(tokenId);
+  const bondMintAmount = bondToken
+    ? canonicalIntegerText(row?.mint_amount ?? metadata.mintAmount ?? 1, {
+        allowZero: false,
+      }) || "1"
+    : "";
   return {
     ...metadata,
     blockHeight:
@@ -7334,9 +8420,14 @@ function tokenDefinitionFromRow(row) {
       rowNumber(metadata, "paidSats") ||
       rowNumber(metadata, "amountSats"),
     creatorAddress: row?.creator_address ?? metadata.creatorAddress ?? "",
-    maxSupply: workMaxSupply
-      ? workMaxSupply.amount
-      : rowNumber(row, "max_supply") || rowNumber(metadata, "maxSupply"),
+    maxSupply: bondToken
+      ? null
+      : workMaxSupply
+        ? workMaxSupply.amount
+        : rowNumber(row, "max_supply") || rowNumber(metadata, "maxSupply"),
+    ...(bondToken
+      ? { maxSupplyModel: "uncapped", uncapped: true }
+      : {}),
     ...(workMaxSupply
       ? {
           decimals: WORK_DECIMALS,
@@ -7344,9 +8435,11 @@ function tokenDefinitionFromRow(row) {
           unitScale: WORK_UNIT_SCALE_TEXT,
         }
       : {}),
-    mintAmount: workMintAmount
-      ? workMintAmount.amount
-      : rowNumber(row, "mint_amount") || rowNumber(metadata, "mintAmount"),
+    mintAmount: bondToken
+      ? bondMintAmount
+      : workMintAmount
+        ? workMintAmount.amount
+        : rowNumber(row, "mint_amount") || rowNumber(metadata, "mintAmount"),
     ...(workMintAmount
       ? { mintAmountAtoms: workMintAmount.atoms }
       : {}),
@@ -7591,9 +8684,17 @@ async function proofIndexTokenHoldersFromTables(pool, network, tokenIds, scope) 
             signed: true,
           })
         : null;
+      const bondBalance = isBondTokenId(tokenId)
+        ? exactBondUnits(row.confirmed_balance, { positive: true })
+        : "";
+      const bondPending = isBondTokenId(tokenId)
+        ? exactBondUnits(row.pending_delta, { signed: true })
+        : "";
       return {
         address: row.address,
-        balance: workBalance?.amount ?? Number(row.confirmed_balance ?? 0),
+        balance: workBalance
+          ? workBalance.amount
+          : bondBalance || Number(row.confirmed_balance ?? 0),
         ...(workBalance
           ? {
               balanceAtoms: workBalance.atoms,
@@ -7601,8 +8702,9 @@ async function proofIndexTokenHoldersFromTables(pool, network, tokenIds, scope) 
               unitScale: WORK_UNIT_SCALE_TEXT,
             }
           : {}),
-        pendingDelta:
-          workPending?.amount ?? Number(row.pending_delta ?? 0),
+        pendingDelta: workPending
+          ? workPending.amount
+          : bondPending || Number(row.pending_delta ?? 0),
         ...(workPending ? { pendingDeltaAtoms: workPending.atoms } : {}),
         registryAddress: row.registry_address ?? "",
         ticker: row.ticker ?? "",
@@ -7610,7 +8712,17 @@ async function proofIndexTokenHoldersFromTables(pool, network, tokenIds, scope) 
         updatedAt: dateIso(row.updated_at),
       };
     })
-    .filter((holder) => holder.address && holder.tokenId && holder.balance > 0);
+    .filter((holder) => {
+      const balance = isBondTokenId(holder.tokenId)
+        ? integerBigInt(holder.balance)
+        : Number(holder.balance);
+      return (
+        holder.address &&
+        holder.tokenId &&
+        balance !== null &&
+        balance > (typeof balance === "bigint" ? 0n : 0)
+      );
+    });
 }
 
 function tokenMetricSummariesFromHolders(holders) {
@@ -7642,11 +8754,26 @@ function tokenMetricSummariesFromHolders(holders) {
       current.pendingSupply = formatWorkAtoms(current.pendingSupplyAtoms, {
         allowNegative: true,
       });
+    } else if (isBondTokenId(tokenId)) {
+      current.confirmedSupply = addIntegerTexts(
+        current.confirmedSupply,
+        holder.balance,
+      );
+      current.pendingSupply = addIntegerTexts(
+        current.pendingSupply,
+        holder.pendingDelta,
+      );
     } else {
       current.confirmedSupply += Number(holder.balance ?? 0);
       current.pendingSupply += Number(holder.pendingDelta ?? 0);
     }
-    current.holderCount += Number(holder.balance ?? 0) > 0 ? 1 : 0;
+    current.holderCount += isBondTokenId(tokenId)
+      ? integerBigInt(holder.balance) > 0n
+        ? 1
+        : 0
+      : Number(holder.balance ?? 0) > 0
+        ? 1
+        : 0;
     summaries.set(tokenId, current);
   }
   return summaries;
@@ -7691,6 +8818,8 @@ function tokenListingFromCreditListingRow(row, network) {
     ...payload,
     amount: workAmount
       ? workAmount.amount
+      : isBondTokenId(tokenId)
+        ? exactBondUnits(row?.amount ?? payload?.amount, { positive: true })
       : rowNumber(row, "amount") || rowNumber(payload, "amount"),
     ...(workAmount ? { amountAtoms: workAmount.amountAtoms } : {}),
     buyerAddress: row?.buyer_address ?? payload.buyerAddress,
@@ -8060,11 +9189,15 @@ function tokenInvalidEventFromRow(row) {
     addressForRoles("registry"),
   );
   const auditCosts = tokenInvalidAuditCosts(payload, row, registryAddress);
+  const tokenId = String(payload.tokenId ?? row?.token_id ?? "")
+    .trim()
+    .toLowerCase();
 
   return {
     ...payload,
-    amount:
-      rowNumber(payload, "amount") || rowNumber(payload, "tokenAmount"),
+    amount: isBondTokenId(tokenId)
+      ? exactBondUnits(payload?.amount ?? payload?.tokenAmount)
+      : rowNumber(payload, "amount") || rowNumber(payload, "tokenAmount"),
     amountSats: 0,
     ...auditCosts,
     blockHash: String(row?.block_hash ?? payload.blockHash ?? "")
@@ -8104,9 +9237,7 @@ function tokenInvalidEventFromRow(row) {
     senderAddress,
     status: effectiveStatus,
     ticker: String(row?.ticker ?? payload.ticker ?? "").trim(),
-    tokenId: String(payload.tokenId ?? row?.token_id ?? "")
-      .trim()
-      .toLowerCase(),
+    tokenId,
     txid: String(payload.txid ?? row?.txid ?? "").trim().toLowerCase(),
     valid: false,
     validationErrors,
@@ -8424,22 +9555,22 @@ function assertCanonicalIncbCurrentProjection(tokens, mints, holders, context) {
         `${context} contains invalid confirmed INCB issuance: ${issuanceFault}.`,
       );
     }
-    const amount = exactSafeInteger(mint?.amount, { positive: true });
-    if (amount === null || !Number.isSafeInteger(total + amount)) {
+    const amount = integerBigInt(mint?.amount, { allowZero: false });
+    if (amount === null) {
       throw new Error(`${context} contains an inexact INCB mint amount.`);
     }
     return total + amount;
-  }, 0);
+  }, 0n);
   const confirmedBalanceSupply = incbHolders.reduce((total, holder) => {
-    const balance = exactSafeInteger(holder?.balance, { positive: true });
-    if (balance === null || !Number.isSafeInteger(total + balance)) {
+    const balance = integerBigInt(holder?.balance, { allowZero: false });
+    if (balance === null) {
       throw new Error(`${context} contains an inexact INCB holder balance.`);
     }
     return total + balance;
-  }, 0);
+  }, 0n);
   if (
     confirmedMints.length === 0 ||
-    confirmedMintSupply <= 0 ||
+    confirmedMintSupply <= 0n ||
     confirmedMintSupply !== confirmedBalanceSupply
   ) {
     throw new Error(
@@ -8495,7 +9626,12 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
         row,
       ),
     )
-    .filter((item) => item.txid && item.tokenId && item.amount > 0)
+    .filter((item) => {
+      if (!item.txid || !item.tokenId) return false;
+      if (!isBondTokenId(item.tokenId)) return Number(item.amount) > 0;
+      const amount = exactBondUnits(item.amount, { positive: true });
+      return Boolean(amount) && BigInt(amount) > 0n;
+    })
     .sort(compareTokenItemsByTime);
   assertCanonicalIncbCurrentProjection(
     tokens,
@@ -8523,6 +9659,11 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
         current.confirmedSupply = formatWorkAtoms(
           current.confirmedSupplyAtoms,
         );
+      } else if (isBondTokenId(mint.tokenId)) {
+        current.confirmedSupply = addIntegerTexts(
+          current.confirmedSupply,
+          mint.amount,
+        );
       } else {
         current.confirmedSupply += Number(mint.amount ?? 0);
       }
@@ -8535,6 +9676,11 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
             parseWorkAmountToAtoms(mint.amount ?? 0, { allowZero: true }),
         );
         current.pendingSupply = formatWorkAtoms(current.pendingSupplyAtoms);
+      } else if (isBondTokenId(mint.tokenId)) {
+        current.pendingSupply = addIntegerTexts(
+          current.pendingSupply,
+          mint.amount,
+        );
       } else {
         current.pendingSupply += Number(mint.amount ?? 0);
       }
@@ -8563,6 +9709,22 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
         pendingMints: mintSummary.pendingMints ?? 0,
         pendingSupply: formatWorkAtoms(pendingSupplyAtoms),
         pendingSupplyAtoms,
+      };
+    }
+    if (isBondTokenId(token.tokenId)) {
+      return {
+        ...token,
+        confirmedMints: mintSummary.confirmedMints ?? 0,
+        confirmedSupply: maxIntegerTexts(
+          holderSummary.confirmedSupply ?? "0",
+          mintSummary.confirmedSupply ?? "0",
+        ),
+        holderCount: holderSummary.holderCount ?? 0,
+        pendingMints: mintSummary.pendingMints ?? 0,
+        pendingSupply: maxIntegerTexts(
+          holderSummary.pendingSupply ?? "0",
+          mintSummary.pendingSupply ?? "0",
+        ),
       };
     }
     return {
@@ -8602,22 +9764,58 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     ),
     closedListings,
   );
-  const confirmedSupply = holders.reduce(
-    (total, holder) => total + Number(holder.balance ?? 0),
-    0,
-  );
-  const mintedConfirmedSupply = enrichedTokens.reduce(
-    (total, token) => total + Number(token.confirmedSupply ?? 0),
-    0,
-  );
-  const pendingSupply = Math.max(
-    holders.reduce((total, holder) => total + Number(holder.pendingDelta ?? 0), 0),
-    mints
-      .filter((mint) => !mint.confirmed)
-      .reduce((total, mint) => total + Number(mint.amount ?? 0), 0),
-  );
   const workScoped =
     enrichedTokens.length === 1 && isWorkTokenId(enrichedTokens[0]?.tokenId);
+  const bondScoped =
+    enrichedTokens.length === 1 && isBondTokenId(enrichedTokens[0]?.tokenId);
+  const genericScoped =
+    enrichedTokens.length === 1 && !workScoped && !bondScoped;
+  const confirmedSupply = bondScoped
+    ? holders.reduce(
+        (total, holder) => addIntegerTexts(total, holder.balance),
+        "0",
+      )
+    : genericScoped
+      ? holders.reduce(
+          (total, holder) => total + Number(holder.balance ?? 0),
+          0,
+        )
+      : null;
+  const mintedConfirmedSupply = bondScoped
+    ? enrichedTokens.reduce(
+        (total, token) => addIntegerTexts(total, token.confirmedSupply),
+        "0",
+      )
+    : genericScoped
+      ? enrichedTokens.reduce(
+          (total, token) => total + Number(token.confirmedSupply ?? 0),
+          0,
+        )
+      : null;
+  const pendingSupply = bondScoped
+    ? maxIntegerTexts(
+        holders.reduce(
+          (total, holder) => addIntegerTexts(total, holder.pendingDelta),
+          "0",
+        ),
+        mints
+          .filter((mint) => !mint.confirmed)
+          .reduce(
+            (total, mint) => addIntegerTexts(total, mint.amount),
+            "0",
+          ),
+      )
+    : genericScoped
+      ? Math.max(
+          holders.reduce(
+            (total, holder) => total + Number(holder.pendingDelta ?? 0),
+            0,
+          ),
+          mints
+            .filter((mint) => !mint.confirmed)
+            .reduce((total, mint) => total + Number(mint.amount ?? 0), 0),
+        )
+      : null;
   const confirmedSupplyAtoms = workScoped
     ? enrichedTokens[0].confirmedSupplyAtoms
     : "";
@@ -8651,7 +9849,11 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     creationSats,
     confirmedSupply: workScoped
       ? formatWorkAtoms(confirmedSupplyAtoms)
-      : Math.max(confirmedSupply, mintedConfirmedSupply),
+      : bondScoped
+        ? maxIntegerTexts(confirmedSupply, mintedConfirmedSupply)
+        : genericScoped
+          ? Math.max(confirmedSupply, mintedConfirmedSupply)
+          : null,
     ...(workScoped
       ? {
           confirmedSupplyAtoms,
@@ -8714,9 +9916,14 @@ async function scopedHoldersFromBalances(pool, network, tokenId) {
     const balance = isWorkTokenId(normalizedTokenId)
       ? workBalanceProjection(row.confirmed_balance, row.metadata)
       : null;
+    const bondBalance = isBondTokenId(normalizedTokenId)
+      ? exactBondUnits(row.confirmed_balance, { positive: true })
+      : "";
     return {
       address: row.address,
-      balance: balance?.amount ?? Number(row.confirmed_balance),
+      balance: balance
+        ? balance.amount
+        : bondBalance || Number(row.confirmed_balance),
       ...(balance
         ? {
             balanceAtoms: balance.atoms,
@@ -8752,12 +9959,22 @@ async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) 
     tokenIds.size === 1
       ? await scopedHoldersFromBalances(pool, network, [...tokenIds][0])
       : [];
-  const confirmedSupply = holders.reduce(
-    (total, holder) => total + Number(holder.balance ?? 0),
-    0,
-  );
   const workScoped =
     tokens.length === 1 && isWorkTokenId(tokens[0]?.tokenId);
+  const bondScoped =
+    tokens.length === 1 && isBondTokenId(tokens[0]?.tokenId);
+  const genericScoped = tokens.length === 1 && !workScoped && !bondScoped;
+  const confirmedSupply = bondScoped
+    ? holders.reduce(
+        (total, holder) => addIntegerTexts(total, holder.balance),
+        "0",
+      )
+    : genericScoped
+      ? holders.reduce(
+          (total, holder) => total + Number(holder.balance ?? 0),
+          0,
+        )
+      : null;
   const confirmedSupplyAtoms = workScoped
     ? holders.reduce(
         (total, holder) =>
@@ -8810,9 +10027,18 @@ async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) 
     mints,
     pendingSupply: workScoped
       ? formatWorkAtoms(pendingSupplyAtoms)
-      : mints
-          .filter((mint) => !mint?.confirmed)
-          .reduce((total, mint) => total + Number(mint?.amount ?? 0), 0),
+      : bondScoped
+        ? mints
+            .filter((mint) => !mint?.confirmed)
+            .reduce(
+              (total, mint) => addIntegerTexts(total, mint?.amount),
+              "0",
+            )
+        : genericScoped
+          ? mints
+              .filter((mint) => !mint?.confirmed)
+              .reduce((total, mint) => total + Number(mint?.amount ?? 0), 0)
+          : null,
     ...(workScoped ? { pendingSupplyAtoms } : {}),
     sales,
     tokens,
@@ -9328,9 +10554,17 @@ export async function proofIndexWalletTokenOverlayPayload(
             signed: true,
           })
         : null;
+      const bondBalance = isBondTokenId(tokenId)
+        ? exactBondUnits(row.confirmed_balance)
+        : "";
+      const bondPending = isBondTokenId(tokenId)
+        ? exactBondUnits(row.pending_delta, { signed: true })
+        : "";
       return {
         address: row.address,
-        balance: balance?.amount ?? Number(row.confirmed_balance ?? 0),
+        balance: balance
+          ? balance.amount
+          : bondBalance || Number(row.confirmed_balance ?? 0),
         ...(balance
           ? {
               balanceAtoms: balance.atoms,
@@ -9338,13 +10572,24 @@ export async function proofIndexWalletTokenOverlayPayload(
               unitScale: WORK_UNIT_SCALE_TEXT,
             }
           : {}),
-        pendingDelta: pending?.amount ?? Number(row.pending_delta ?? 0),
+        pendingDelta: pending
+          ? pending.amount
+          : bondPending || Number(row.pending_delta ?? 0),
         ...(pending ? { pendingDeltaAtoms: pending.atoms } : {}),
         ticker: row.ticker,
         tokenId,
       };
     })
-    .filter((holder) => holder.address && holder.balance >= 0)
+    .filter((holder) => {
+      const balance = isBondTokenId(holder.tokenId)
+        ? integerBigInt(holder.balance)
+        : Number(holder.balance);
+      return (
+        holder.address &&
+        balance !== null &&
+        balance >= (typeof balance === "bigint" ? 0n : 0)
+      );
+    })
     .sort(compareTokenHolderBalances);
   const transfers = [];
   const sales = [];
@@ -9470,6 +10715,10 @@ export async function proofIndexWalletTokenOverlayPayload(
       ...payload,
       amount: workAmount
         ? workAmount.amount
+        : isBondTokenId(tokenId)
+          ? exactBondUnits(row?.amount ?? payload?.amount, {
+              positive: true,
+            })
         : rowNumber(row, "amount") || rowNumber(payload, "amount"),
       ...(workAmount
         ? {
@@ -9676,9 +10925,14 @@ async function proofIndexScopedHolderHistoryPayload(
       const balance = isWorkTokenId(token.token_id)
         ? workBalanceProjection(row.confirmed_balance, token.metadata)
         : null;
+      const bondBalance = isBondTokenId(token.token_id)
+        ? exactBondUnits(row.confirmed_balance, { positive: true })
+        : "";
       return {
         address: row.address,
-        balance: balance?.amount ?? Number(row.confirmed_balance),
+        balance: balance
+          ? balance.amount
+          : bondBalance || Number(row.confirmed_balance),
         ...(balance
           ? {
               balanceAtoms: balance.atoms,
@@ -12591,6 +13845,13 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
   };
 }
 
+function canonicalSnapshotQ8Text(value, { positive = false } = {}) {
+  if (typeof value !== "string" && typeof value !== "bigint") {
+    return "";
+  }
+  return canonicalIntegerText(value, { allowZero: !positive });
+}
+
 function canonicalSummaryLedgerRowBinding(
   snapshot,
   requestedHeight = 0,
@@ -12667,12 +13928,6 @@ function canonicalSummaryLedgerRowBinding(
     return null;
   }
 
-  const totals =
-    snapshot.totals &&
-    typeof snapshot.totals === "object" &&
-    !Array.isArray(snapshot.totals)
-      ? snapshot.totals
-      : {};
   const workFloor =
     snapshot.work_floor &&
     typeof snapshot.work_floor === "object" &&
@@ -12685,84 +13940,90 @@ function canonicalSummaryLedgerRowBinding(
     !Array.isArray(workFloor.actualValue)
       ? workFloor.actualValue
       : {};
-  const workNetworkValueSats = Number(totals.workNetworkValueSats);
-  const workActualValueSats = Number(totals.workActualValueSats);
-  const growthActualValueSats = Number(totals.growthActualValueSats);
-  const growthWorkFloorValueSats = Number(
-    totals.growthWorkFloorValueSats,
-  );
-  const actualTotalSats = Number(actualValue.totalSats);
-  const liveNetworkValueSats = Number(
-    workFloor?.liveNetworkValueSats ??
-      actualValue.liveNetworkValueSats ??
-      actualValue.liveTotalSats ??
-      actualTotalSats,
-  );
-  const declaredNetworkValueSats = Number(
-    workFloor?.networkValueSats ?? liveNetworkValueSats,
-  );
-  const optionalFiniteNumber = (value) => {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : null;
-  };
-  const frozenNetworkValueSats = optionalFiniteNumber(
-    workFloor?.frozenNetworkValueSats ??
-      actualValue.frozenNetworkValueSats ??
-      actualValue.frozenTotalSats,
-  );
-  const requiredValues = [
-    workNetworkValueSats,
-    workActualValueSats,
-    growthActualValueSats,
-    growthWorkFloorValueSats,
-    actualTotalSats,
-    liveNetworkValueSats,
-    declaredNetworkValueSats,
-  ];
+  const q8Aliases = [
+    snapshot.totals_work_network_value_q8,
+    snapshot.totals_work_actual_value_q8,
+    snapshot.totals_growth_actual_value_q8,
+    snapshot.totals_growth_work_floor_value_q8,
+    snapshot.work_floor_network_value_q8,
+    snapshot.work_floor_live_network_value_q8,
+    snapshot.work_actual_network_value_q8,
+    snapshot.work_actual_live_network_value_q8,
+    snapshot.work_actual_total_q8,
+    snapshot.work_actual_live_total_q8,
+  ].map((value) => canonicalSnapshotQ8Text(value, { positive: true }));
+  const workNetworkValueQ8 = q8Aliases[0] ?? "";
   if (
     !workFloor ||
-    !requiredValues.every((value) => Number.isFinite(value) && value > 0) ||
-    [
-      workActualValueSats,
-      actualTotalSats,
-      liveNetworkValueSats,
-      declaredNetworkValueSats,
-    ].some((value) => Math.abs(workNetworkValueSats - value) > 0.01) ||
-    (frozenNetworkValueSats !== null && frozenNetworkValueSats <= 0)
+    !workNetworkValueQ8 ||
+    q8Aliases.some(
+      (value) => !value || value !== workNetworkValueQ8,
+    ) ||
+    snapshot.totals_work_network_value_model !==
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL ||
+    snapshot.work_floor_network_value_model !==
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL ||
+    snapshot.work_actual_network_value_model !==
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL ||
+    workFloor.workNetworkValueAccountingModel !==
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL ||
+    actualValue.workNetworkValueAccountingModel !==
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL
   ) {
     return null;
   }
+  const workNetworkValueSats = decimalTextFromQ8(workNetworkValueQ8);
+  const frozenNetworkValueQ8Aliases = [
+    snapshot.work_floor_frozen_network_value_q8,
+    snapshot.work_actual_frozen_network_value_q8,
+    snapshot.work_actual_frozen_total_q8,
+  ]
+    .filter((value) => value !== undefined && value !== null && value !== "")
+    .map((value) => canonicalSnapshotQ8Text(value, { positive: true }));
+  const frozenNetworkValueQ8 = frozenNetworkValueQ8Aliases[0] ?? "";
+  if (
+    frozenNetworkValueQ8Aliases.some(
+      (value) => !value || value !== frozenNetworkValueQ8,
+    )
+  ) {
+    return null;
+  }
+  const frozenNetworkValueSats = frozenNetworkValueQ8
+    ? decimalTextFromQ8(frozenNetworkValueQ8)
+    : null;
 
   return {
-    actualTotalSats,
+    actualTotalSats: workNetworkValueSats,
     canonicalSummaryHash,
     creditMinerFeeAccountingModel: String(
       actualValue.creditMinerFeeAccountingModel ?? "",
     ),
-    declaredNetworkValueSats,
+    declaredNetworkValueSats: workNetworkValueSats,
+    frozenNetworkValueQ8: frozenNetworkValueQ8 || null,
     frozenNetworkValueSats,
-    growthActualValueSats,
-    growthWorkFloorValueSats,
+    growthActualValueQ8: workNetworkValueQ8,
+    growthActualValueSats: workNetworkValueSats,
+    growthWorkFloorValueQ8: workNetworkValueQ8,
+    growthWorkFloorValueSats: workNetworkValueSats,
     indexedThroughBlock,
     indexedThroughBlockHash,
-    liveNetworkValueSats,
-    workActualValueSats,
+    liveNetworkValueSats: workNetworkValueSats,
+    workActualValueQ8: workNetworkValueQ8,
+    workActualValueSats: workNetworkValueSats,
     workFloor,
+    workNetworkValueAccountingModel: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+    workNetworkValueQ8,
     workNetworkValueSats,
   };
 }
 
 function canonicalSummaryLedgerValueBindingsAgree(left, right) {
-  const numericKeys = [
-    "actualTotalSats",
-    "declaredNetworkValueSats",
-    "frozenNetworkValueSats",
-    "growthActualValueSats",
-    "growthWorkFloorValueSats",
-    "indexedThroughBlock",
-    "liveNetworkValueSats",
-    "workActualValueSats",
-    "workNetworkValueSats",
+  const exactKeys = [
+    "frozenNetworkValueQ8",
+    "growthActualValueQ8",
+    "growthWorkFloorValueQ8",
+    "workActualValueQ8",
+    "workNetworkValueQ8",
   ];
   return Boolean(
     left &&
@@ -12770,12 +14031,10 @@ function canonicalSummaryLedgerValueBindingsAgree(left, right) {
       left.indexedThroughBlockHash === right.indexedThroughBlockHash &&
       left.creditMinerFeeAccountingModel ===
         right.creditMinerFeeAccountingModel &&
-      numericKeys.every((key) => {
-        if (left[key] === null || right[key] === null) {
-          return left[key] === right[key];
-        }
-        return Math.abs(Number(left[key]) - Number(right[key])) <= 0.01;
-      }),
+      left.workNetworkValueAccountingModel ===
+        right.workNetworkValueAccountingModel &&
+      left.indexedThroughBlock === right.indexedThroughBlock &&
+      exactKeys.every((key) => left[key] === right[key]),
   );
 }
 
@@ -12817,7 +14076,9 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
   const workAmountStorageFilter = exactCheckpointRequested
     ? ""
     : "AND payload->>'workAmountStorageModel' = $2";
-  const checkpointLimit = exactCheckpointRequested ? 128 : 1;
+  // Exact H-1 reads must prove agreement across the complete eligible row
+  // set. A numeric cap could hide a disagreeing older row behind the limit.
+  const checkpointLimit = exactCheckpointRequested ? "" : "LIMIT 1";
   const checkpointParams = exactCheckpointRequested
     ? [network, requestedHeight, requestedHash]
     : [network, WORK_ATOMIC_PROJECTION_MODEL];
@@ -12855,6 +14116,22 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
         payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlock' AS work_floor_height,
         payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlockHash' AS work_floor_block_hash,
         payload->'summaryPayloads'->'workFloor' AS work_floor,
+        payload->'totals'->>'workNetworkValueAccountingModel' AS totals_work_network_value_model,
+        payload->'totals'->>'workNetworkValueQ8' AS totals_work_network_value_q8,
+        payload->'totals'->>'workActualValueQ8' AS totals_work_actual_value_q8,
+        payload->'totals'->>'growthActualValueQ8' AS totals_growth_actual_value_q8,
+        payload->'totals'->>'growthWorkFloorValueQ8' AS totals_growth_work_floor_value_q8,
+        payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel' AS work_floor_network_value_model,
+        payload->'summaryPayloads'->'workFloor'->>'networkValueQ8' AS work_floor_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->>'liveNetworkValueQ8' AS work_floor_live_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->>'frozenNetworkValueQ8' AS work_floor_frozen_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' AS work_actual_network_value_model,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'networkValueQ8' AS work_actual_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveNetworkValueQ8' AS work_actual_live_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'frozenNetworkValueQ8' AS work_actual_frozen_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'totalQ8' AS work_actual_total_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveTotalQ8' AS work_actual_live_total_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'frozenTotalQ8' AS work_actual_frozen_total_q8,
         payload->'summaryPayloads'->'workSummary'->>'indexedThroughBlock' AS work_summary_height,
         payload->'summaryPayloads'->'workSummary'->'floor'->>'indexedThroughBlock' AS work_summary_floor_height,
         payload->'totals' AS totals
@@ -12863,6 +14140,16 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
         AND COALESCE(consistency->>'status', payload->>'status', '') = 'green'
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+        AND payload->'totals'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+        AND payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+        AND payload->'totals'->>'workNetworkValueQ8' ~ '^[1-9][0-9]*$'
+        AND payload->'summaryPayloads'->'workFloor'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+        AND payload->'summaryPayloads'->'workFloor'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'totalQ8' = payload->'totals'->>'workNetworkValueQ8'
+        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveTotalQ8' = payload->'totals'->>'workNetworkValueQ8'
         AND source_hashes ? 'canonicalSummary'
         AND payload ? 'summaryPayloads'
         ${workAmountStorageFilter}
@@ -12891,7 +14178,7 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
         indexed_through_block DESC NULLS LAST,
         generated_at DESC,
         snapshot_id DESC
-      LIMIT ${checkpointLimit}
+      ${checkpointLimit}
     `,
     checkpointParams,
   );
@@ -12932,10 +14219,23 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
     consistency: snapshot.consistency,
     generatedAt: dateIso(snapshot.generated_at),
     growthSummary: {
-      actualValue: { totalSats: binding.growthActualValueSats },
+      actualValue: {
+        totalQ8: binding.growthActualValueQ8,
+        totalSats: binding.growthActualValueSats,
+        workNetworkValueAccountingModel:
+          binding.workNetworkValueAccountingModel,
+      },
       workFloor: {
-        actualValue: { totalSats: binding.growthWorkFloorValueSats },
+        actualValue: {
+          totalQ8: binding.growthWorkFloorValueQ8,
+          totalSats: binding.growthWorkFloorValueSats,
+          workNetworkValueAccountingModel:
+            binding.workNetworkValueAccountingModel,
+        },
+        networkValueQ8: binding.growthWorkFloorValueQ8,
         networkValueSats: binding.growthWorkFloorValueSats,
+        workNetworkValueAccountingModel:
+          binding.workNetworkValueAccountingModel,
       },
     },
     indexedThroughBlock: binding.indexedThroughBlock,
@@ -12947,7 +14247,10 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
     sourceHashes: snapshot.source_hashes ?? {},
     valuationModel: "canonical-summary-refresh",
     workFloor: binding.workFloor,
+    workNetworkValueAccountingModel:
+      binding.workNetworkValueAccountingModel,
     workNetworkValueSats: binding.liveNetworkValueSats,
+    workNetworkValueQ8: binding.workNetworkValueQ8,
   };
 }
 
@@ -12971,6 +14274,16 @@ export async function proofIndexSnapshotPayload(network, key) {
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
         AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+        AND payload->'totals'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+        AND payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+        AND payload->'totals'->>'workNetworkValueQ8' ~ '^[1-9][0-9]*$'
+        AND payload->'summaryPayloads'->'workFloor'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+        AND payload->'summaryPayloads'->'workFloor'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'totalQ8' = payload->'totals'->>'workNetworkValueQ8'
+        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveTotalQ8' = payload->'totals'->>'workNetworkValueQ8'
         AND source_hashes ? 'canonicalSummary'
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
@@ -13016,6 +14329,16 @@ export async function proofIndexSnapshotPayload(network, key) {
             AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
             AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
             AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+            AND payload->'totals'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+            AND payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+            AND payload->'totals'->>'workNetworkValueQ8' ~ '^[1-9][0-9]*$'
+            AND payload->'summaryPayloads'->'workFloor'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+            AND payload->'summaryPayloads'->'workFloor'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'totalQ8' = payload->'totals'->>'workNetworkValueQ8'
+            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveTotalQ8' = payload->'totals'->>'workNetworkValueQ8'
             AND source_hashes ? 'canonicalSummary'
             AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
             AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'

@@ -1,10 +1,26 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import net from "node:net";
 
 import * as bitcoin from "bitcoinjs-lib";
 
+import {
+  decimalTextFromQ8,
+  q8TextFromDecimal,
+} from "../server/bond-units.mjs";
 import { createProofIndexPool } from "../server/db/postgres.mjs";
+import {
+  INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE,
+  INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+  buildIncbRangeReplayWitnessManifest,
+  canonicalIncbReplaySha256,
+  incbRangeReplayWitnessBindingFields,
+  incbRangeReplayWitnessMetaKey,
+  incbReplayRawSnapshotFingerprint,
+  incbReplaySnapshotFingerprint,
+  normalizeIncbReplaySnapshotDescriptor,
+  verifyIncbRangeReplayWitnessManifest,
+} from "../server/incb-range-replay-witness.mjs";
 import {
   WORK_ATOMIC_PROJECTION_MODEL,
   WORK_DECIMALS,
@@ -18,7 +34,6 @@ import {
   normalizeWorkAtoms,
   parseSignedWorkAmountToAtoms,
   parseWorkAmountToAtoms,
-  q8ToNumber,
   withWorkPrecisionMetadata,
   workAmountAtomsFromRecord,
   workAmountFields,
@@ -26,6 +41,8 @@ import {
 } from "../server/work-units.mjs";
 
 const DEFAULT_API_BASE = "http://127.0.0.1:8081";
+const CONFIGURED_API_BASE = String(process.env.POW_API_BASE ?? "").trim();
+const API_BASE_EXPLICIT = CONFIGURED_API_BASE.length > 0;
 const CANONICAL_TX_CONTENT_FAILURE_CODE =
   "POW_CANONICAL_TX_CONTENT_INVARIANT";
 const CANONICAL_TX_CONTENT_FAILURE_CLASS =
@@ -39,10 +56,15 @@ class CanonicalTransactionContentInvariantError extends Error {
   }
 }
 
-const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
+const API_BASE = String(CONFIGURED_API_BASE || DEFAULT_API_BASE).replace(
   /\/+$/u,
   "",
 );
+const PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL =
+  "proof-indexer-pwt-range-replay-verifier-binding-v1";
+const WORK_NETWORK_VALUE_ACCOUNTING_MODEL =
+  "canonical-exact-work-network-q8-v1";
+let ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING = null;
 const NETWORK = process.env.NETWORK ?? "livenet";
 const PUBLIC_LOG_EVENT_KINDS = new Set([
   "attachment",
@@ -177,6 +199,7 @@ const PREVOUT_HYDRATION_CONCURRENCY = Math.min(
 const BLOCK_SCAN_FROM_HEIGHT = Number(
   process.env.POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT ?? 0,
 );
+const CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT = 958_383;
 const CANONICAL_REBUILD = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_CANONICAL_REBUILD ?? ""),
 );
@@ -330,6 +353,23 @@ const TX_DETAIL_HYDRATION_AFTER_TXID = String(
 )
   .trim()
   .toLowerCase();
+
+function explicitLoopbackApiBaseConfigured() {
+  if (!API_BASE_EXPLICIT) {
+    return false;
+  }
+  try {
+    const url = new URL(API_BASE);
+    return (
+      url.protocol === "http:" &&
+      ["127.0.0.1", "::1", "[::1]", "localhost"].includes(
+        url.hostname.toLowerCase(),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
 
 function assertCanonicalRebuildConfiguration() {
   const verifyWorkAtomsPostBootstrapOnly =
@@ -499,11 +539,13 @@ function assertCanonicalRebuildConfiguration() {
     if (
       CANONICAL_REBUILD ||
       NETWORK !== "livenet" ||
+      !explicitLoopbackApiBaseConfigured() ||
       !Number.isSafeInteger(BLOCK_SCAN_FROM_HEIGHT) ||
-      BLOCK_SCAN_FROM_HEIGHT <= 0
+      BLOCK_SCAN_FROM_HEIGHT !==
+        CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT
     ) {
       throw new Error(
-        "--prepare-canonical-pwt-range-replay requires NETWORK=livenet, canonical rebuild mode off, and an explicit positive POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT",
+        `--prepare-canonical-pwt-range-replay requires NETWORK=livenet, canonical rebuild mode off, an explicit loopback POW_API_BASE, and POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT=${CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT}`,
       );
     }
     return;
@@ -578,6 +620,7 @@ const STORE_LEDGER_SNAPSHOT = (() => {
 const STORE_CANONICAL_SUMMARY_SNAPSHOT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT ?? ""),
 );
+
 const LEDGER_CANONICAL_SUMMARY_RETENTION = Math.max(
   512,
   Math.min(
@@ -612,12 +655,15 @@ const WORK_TOKEN_REGISTRY_ADDRESS = "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
 const WORK_TOKEN_CREATED_AT = "2026-05-15T02:57:28.000Z";
 const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
-const POWB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
+// The shared definition schema keeps max_supply NOT NULL. Bond credits are
+// uncapped by protocol, so zero is a neutral storage marker, never an economic
+// maximum. The uncapped metadata is authoritative and readers expose
+// maxSupply: null.
+const BOND_UNCAPPED_MAX_SUPPLY_STORAGE = "0";
 const POWB_REGISTRY_ID = "infinity";
 const POWB_TOKEN_CREATED_AT = "2026-06-23T00:00:00.000Z";
 const INCB_TOKEN_ID =
   "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
-const INCB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
 const INCB_REGISTRY_ID = "inception";
 const INCB_TOKEN_CREATED_AT = "2026-07-10T00:00:00.000Z";
 const INCB_ISSUANCE_ACCOUNTING_MODEL =
@@ -666,6 +712,78 @@ const CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS = new Map([
     },
   ],
 ]);
+// Immutable Bitcoin Core facts for the supervised July 2026 INCB range
+// replay. These are transaction facts only. Valid exact V2 issuance is held
+// byte-for-byte by the immutable witness manifest; only explicit rederive
+// dispositions consume the canonical H-1 WORK summary rebuilt by the replay.
+const LEGACY_PWT_RANGE_REPLAY_FROM_HEIGHT = 950_200;
+const LEGACY_PWT_CANONICAL_FROM_HEIGHT = 948_000;
+const LEGACY_PWT_CANONICAL_BOOTSTRAP_HEIGHT = 947_999;
+const LEGACY_PWT_CANONICAL_BOOTSTRAP_HASH =
+  "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986";
+const CANONICAL_INCB_PWT_RANGE_REPLAY_TARGETS = Object.freeze([
+  Object.freeze({
+    blockHash:
+      "00000000000000000001db52a4485f7d1a1784b7ba6c5b93db1b20449ac2628b",
+    blockHeight: 958_383,
+    blockIndex: 2_421,
+    blockTime: 1_784_276_401,
+    bondMemoVout: 2,
+    bondRecipientAddress:
+      "bc1pxhs9y9ryqnhm05lyv794f6upzk0mtu2zct5w2hgc2vm3d58pvcqspptre0",
+    bondRecipientAmountSats: 1_000,
+    bondRecipientVout: 0,
+    txid: "c9c9f4e382f598aa39b3be57adc8fe1defeb80e5216387d3af6b0948da232aff",
+    workAmountAtoms: "10000000000000",
+    workProtocolVout: 4,
+    workRegistryPaymentVout: 3,
+  }),
+  Object.freeze({
+    blockHash:
+      "000000000000000000022e062fe6236b71722b7ade5079d5c45e73a5561252e1",
+    blockHeight: 958_429,
+    blockIndex: 1_476,
+    blockTime: 1_784_301_574,
+    bondMemoVout: 2,
+    bondRecipientAddress: "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+    bondRecipientAmountSats: 1_000,
+    bondRecipientVout: 0,
+    txid: "e08080c1d86f0770dd6ebbabd98a9e066dc6043b548af7ecb7912fbbdfad4d50",
+    workAmountAtoms: "7000000000000",
+    workProtocolVout: 4,
+    workRegistryPaymentVout: 3,
+  }),
+  Object.freeze({
+    blockHash:
+      "000000000000000000022e062fe6236b71722b7ade5079d5c45e73a5561252e1",
+    blockHeight: 958_429,
+    blockIndex: 1_483,
+    blockTime: 1_784_301_574,
+    bondMemoVout: 2,
+    bondRecipientAddress: "1Pg9E4EHHMxQ6WgEWEVzbWhaKf3UdZKXD9",
+    bondRecipientAmountSats: 1_000,
+    bondRecipientVout: 0,
+    txid: "45b226453dde5b4d61a6a036af299d11ebfdeb65054bf26438ebc6ebebbf00c3",
+    workAmountAtoms: "11500000000000",
+    workProtocolVout: 4,
+    workRegistryPaymentVout: 3,
+  }),
+  Object.freeze({
+    blockHash:
+      "0000000000000000000124119a72f9994a7e3a5a724a9826cb178ed2646639f6",
+    blockHeight: 958_590,
+    blockIndex: 1_945,
+    blockTime: 1_784_395_736,
+    bondMemoVout: 1,
+    bondRecipientAddress: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+    bondRecipientAmountSats: 546,
+    bondRecipientVout: 0,
+    txid: "62f1a62fdf984c3c50b067cfed806023ad61d4fabd62087ecdd891554f5b51d6",
+    workAmountAtoms: "357446000000000",
+    workProtocolVout: 3,
+    workRegistryPaymentVout: 2,
+  }),
+]);
 const GROWTH_VALUE_MULTIPLE = 5;
 const ID_MARKETPLACE_MUTATION_KINDS = new Set([
   "id-list",
@@ -701,7 +819,7 @@ const BOND_TAGS = [
     registryId: POWB_REGISTRY_ID,
     ticker: "POWB",
     tokenId: POWB_TOKEN_ID,
-    tokenMaxSupply: POWB_TOKEN_MAX_SUPPLY,
+    tokenMaxSupplyStorage: BOND_UNCAPPED_MAX_SUPPLY_STORAGE,
   },
   {
     createdAt: INCB_TOKEN_CREATED_AT,
@@ -712,7 +830,7 @@ const BOND_TAGS = [
     registryId: INCB_REGISTRY_ID,
     ticker: "INCB",
     tokenId: INCB_TOKEN_ID,
-    tokenMaxSupply: INCB_TOKEN_MAX_SUPPLY,
+    tokenMaxSupplyStorage: BOND_UNCAPPED_MAX_SUPPLY_STORAGE,
   },
 ];
 const BOND_TOKEN_IDS = new Set(BOND_TAGS.map((tag) => tag.tokenId));
@@ -758,10 +876,542 @@ const SUMMARY_SNAPSHOT_SOURCES = [
   { key: "workSummary", path: "/api/v1/work-summary" },
 ];
 
+async function canonicalPwtRangeReplayRuntime(client) {
+  const rebuild = await proofIndexerMetaValue(
+    client,
+    CANONICAL_REBUILD_META_KEY,
+  );
+  if (
+    PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY &&
+    legacyCompletedPwtRangeReplayCanBeReprepared(
+      rebuild,
+      BLOCK_SCAN_FROM_HEIGHT,
+    )
+  ) {
+    return {
+      active: false,
+      preparing: true,
+      rebuild,
+      state: "legacy-complete",
+    };
+  }
+  const state = assertCanonicalPwtRangeReplayState(rebuild);
+  if (state !== "active") {
+    return { active: false, rebuild, state };
+  }
+  await assertCanonicalWorkAtomicSource(
+    client,
+    "Active PWT range replay",
+  );
+  if (PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY) {
+    return { active: true, preparing: true, rebuild, state };
+  }
+  const incompatibleMode =
+    HYDRATE_TRANSACTION_DETAILS_ONLY ||
+    AUDIT_WORK_ATOMS_ONLY ||
+    MIGRATE_WORK_ATOMS_ONLY ||
+    VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY ||
+    RUSH_BOOTSTRAP_ONLY ||
+    PREPARE_CANONICAL_REBUILD_ONLY ||
+    REPAIR_CANONICAL_TXIDS_ONLY ||
+    REPAIR_ID_TXIDS_ONLY ||
+    REPAIR_INCB_ISSUANCE_ONLY ||
+    REPAIR_WORK_PARTICIPANTS_ONLY ||
+    DB_SUMMARY_REPAIR ||
+    CANONICAL_REBUILD;
+  const blockScanOnly =
+    SOURCES.length === 1 &&
+    SOURCES[0]?.blockScan === true &&
+    SOURCES[0]?.label === "block-scan";
+  if (
+    incompatibleMode ||
+    !blockScanOnly ||
+    STORE_LEDGER_SNAPSHOT ||
+    STORE_CANONICAL_SUMMARY_SNAPSHOT
+  ) {
+    throw new Error(
+      "Active PWT range replay requires an ordinary block-scan-only pass with POW_INDEX_BACKFILL_SOURCES=block-scan and ledger/general canonical-summary storage disabled.",
+    );
+  }
+  const verifierBinding = activatePwtRangeReplayVerifierBinding(rebuild);
+  return {
+    active: true,
+    preparing: false,
+    rebuild,
+    state,
+    verifierBinding,
+  };
+}
+
 function objectValue(value) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value
     : {};
+}
+
+function legacyCompletedPwtRangeReplayCanBeReprepared(
+  rebuild,
+  requestedRangeReplayFromHeight,
+) {
+  const source = objectValue(rebuild);
+  const fromHeight = Number(source.fromHeight);
+  const bootstrapHeight = Number(source.bootstrapHeight);
+  const rangeReplayFromHeight = Number(source.rangeReplayFromHeight);
+  const indexedThroughBlock = Number(source.indexedThroughBlock);
+  const requestedFromHeight = Number(requestedRangeReplayFromHeight);
+  const validHash = (value) =>
+    /^[0-9a-f]{64}$/u.test(String(value ?? "").trim().toLowerCase());
+  const validDate = (value) => {
+    const text = String(value ?? "").trim();
+    return text.length > 0 && Number.isFinite(Date.parse(text));
+  };
+  const startedAtMs = Date.parse(String(source.startedAt ?? "").trim());
+  const rangeReplayStartedAtMs = Date.parse(
+    String(source.rangeReplayStartedAt ?? "").trim(),
+  );
+  const completedAtMs = Date.parse(String(source.completedAt ?? "").trim());
+
+  // This is deliberately narrower than the ordinary replay-state parser.
+  // It recognizes only the inactive, internally consistent completion tuple
+  // written before verifier bindings and exact completion certificates existed.
+  // The shape may be superseded only by the explicit supervised prepare mode;
+  // public/runtime readers continue to reject it as uncertified.
+  return (
+    source.mode === "pwt-range-replay" &&
+    source.network === NETWORK &&
+    source.status === "complete" &&
+    source.active === false &&
+    source.complete === true &&
+    source.fault == null &&
+    source.verifierBinding == null &&
+    source.incbRangeReplayVerification == null &&
+    source.transactionNormalization === "canonical-raw-tx-only" &&
+    validDate(source.startedAt) &&
+    validDate(source.rangeReplayStartedAt) &&
+    validDate(source.completedAt) &&
+    startedAtMs <= rangeReplayStartedAtMs &&
+    rangeReplayStartedAtMs <= completedAtMs &&
+    Number.isSafeInteger(fromHeight) &&
+    fromHeight === LEGACY_PWT_CANONICAL_FROM_HEIGHT &&
+    Number.isSafeInteger(bootstrapHeight) &&
+    bootstrapHeight === LEGACY_PWT_CANONICAL_BOOTSTRAP_HEIGHT &&
+    bootstrapHeight === fromHeight - 1 &&
+    String(source.bootstrapHash ?? "").trim().toLowerCase() ===
+      LEGACY_PWT_CANONICAL_BOOTSTRAP_HASH &&
+    Number.isSafeInteger(rangeReplayFromHeight) &&
+    rangeReplayFromHeight === LEGACY_PWT_RANGE_REPLAY_FROM_HEIGHT &&
+    Number.isSafeInteger(requestedFromHeight) &&
+    requestedFromHeight === CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT &&
+    Number.isSafeInteger(indexedThroughBlock) &&
+    indexedThroughBlock >= requestedFromHeight - 1 &&
+    validHash(source.indexedThroughBlockHash)
+  );
+}
+
+function canonicalPwtRangeReplayVerificationIsValid(rebuild) {
+  const source = objectValue(rebuild);
+  const verification = objectValue(source.incbRangeReplayVerification);
+  const verifierBinding = objectValue(source.verifierBinding);
+  const rangeReplayFromHeight = Number(source.rangeReplayFromHeight);
+  const bindingRangeReplayFromHeight = Number(
+    verifierBinding.rangeReplayFromHeight,
+  );
+  const bindingId = String(verifierBinding.bindingId ?? "")
+    .trim()
+    .toLowerCase();
+  const bindingCreatedAt = String(verifierBinding.createdAt ?? "").trim();
+  const expectedWitnessMetaKey = /^[0-9a-f]{64}$/u.test(bindingId)
+    ? incbRangeReplayWitnessMetaKey(NETWORK, bindingId)
+    : "";
+  const witnessSetHash = String(verifierBinding.witnessSetHash ?? "")
+    .trim()
+    .toLowerCase();
+  const witnessedThroughBlock = Number(
+    verifierBinding.witnessedThroughBlock,
+  );
+  const witnessedThroughBlockHash = String(
+    verifierBinding.witnessedThroughBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const witnessCount = Number(verifierBinding.witnessCount);
+  const witnessPreserveCount = Number(
+    verifierBinding.witnessPreserveCount,
+  );
+  const consumedPreserveCount = Number(
+    verification.consumedPreserveCount,
+  );
+  const preservedWitnesses = Array.isArray(verification.preservedWitnesses)
+    ? verification.preservedWitnesses
+    : [];
+  const rederivedWitnessCount = Number(
+    verification.rederivedWitnessCount,
+  );
+  const rederivedWitnesses = Array.isArray(verification.rederivedWitnesses)
+    ? verification.rederivedWitnesses
+    : [];
+  const coreFacts = Array.isArray(verification.coreFacts)
+    ? verification.coreFacts
+    : [];
+  const targets = Array.isArray(verification.targets)
+    ? verification.targets
+    : [];
+  if (
+    source.network !== NETWORK ||
+    !Number.isSafeInteger(rangeReplayFromHeight) ||
+    rangeReplayFromHeight <= 0 ||
+    verifierBinding.model !== PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL ||
+    verifierBinding.network !== NETWORK ||
+    !/^[0-9a-f]{64}$/u.test(bindingId) ||
+    !Number.isFinite(Date.parse(bindingCreatedAt)) ||
+    !Number.isSafeInteger(bindingRangeReplayFromHeight) ||
+    bindingRangeReplayFromHeight !== rangeReplayFromHeight ||
+    verifierBinding.witnessModel !==
+      INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL ||
+    String(verifierBinding.witnessSetMetaKey ?? "") !==
+      expectedWitnessMetaKey ||
+    !/^[0-9a-f]{64}$/u.test(witnessSetHash) ||
+    !Number.isSafeInteger(witnessCount) ||
+    witnessCount < 0 ||
+    !Number.isSafeInteger(witnessPreserveCount) ||
+    witnessPreserveCount < 0 ||
+    witnessPreserveCount > witnessCount ||
+    !Number.isSafeInteger(witnessedThroughBlock) ||
+    witnessedThroughBlock < rangeReplayFromHeight - 1 ||
+    !/^[0-9a-f]{64}$/u.test(witnessedThroughBlockHash) ||
+    verification.verified !== true ||
+    verification.accountingModel !== INCB_ISSUANCE_ACCOUNTING_MODEL ||
+    Number(verification.rangeReplayFromHeight) !== rangeReplayFromHeight ||
+    String(verification.witnessSetHash ?? "").trim().toLowerCase() !==
+      witnessSetHash ||
+    Number(verification.witnessCount) !== witnessCount ||
+    Number(verification.witnessPreserveCount) !== witnessPreserveCount ||
+    !Number.isSafeInteger(consumedPreserveCount) ||
+    consumedPreserveCount !== witnessPreserveCount ||
+    preservedWitnesses.length !== witnessPreserveCount ||
+    !Number.isSafeInteger(rederivedWitnessCount) ||
+    rederivedWitnessCount !== witnessCount - witnessPreserveCount ||
+    rederivedWitnesses.length !== rederivedWitnessCount ||
+    Number(verification.witnessedThroughBlock) !== witnessedThroughBlock ||
+    String(verification.witnessedThroughBlockHash ?? "")
+      .trim()
+      .toLowerCase() !== witnessedThroughBlockHash ||
+    coreFacts.length === 0 ||
+    coreFacts.length !== targets.length
+  ) {
+    return false;
+  }
+
+  const rederivedIdentities = new Set();
+  let previousRederivedIdentity = "";
+  for (const witness of rederivedWitnesses) {
+    const txid = String(witness?.txid ?? "").trim().toLowerCase();
+    const vout = Number(witness?.bondRecipientVout);
+    const identity = `${txid}:${vout}`;
+    const disposition = String(witness?.disposition ?? "");
+    const mintShapeValid =
+      disposition === "mint" &&
+      /^[0-9a-f]{64}$/u.test(
+        String(witness?.mintPayloadHash ?? "").trim().toLowerCase(),
+      ) &&
+      String(witness?.snapshotId ?? "").trim().length > 0 &&
+      /^[0-9a-f]{64}$/u.test(
+        String(witness?.snapshotFingerprint ?? "")
+          .trim()
+          .toLowerCase(),
+      ) &&
+      witness?.invalidPayloadHash == null;
+    const invalidShapeValid =
+      disposition === "invalid" &&
+      /^[0-9a-f]{64}$/u.test(
+        String(witness?.invalidPayloadHash ?? "").trim().toLowerCase(),
+      ) &&
+      witness?.mintPayloadHash == null &&
+      witness?.snapshotId == null &&
+      witness?.snapshotFingerprint == null;
+    if (
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !Number.isSafeInteger(vout) ||
+      vout < 0 ||
+      String(witness?.identity ?? "") !== identity ||
+      (!mintShapeValid && !invalidShapeValid) ||
+      rederivedIdentities.has(identity) ||
+      (previousRederivedIdentity &&
+        identity.localeCompare(previousRederivedIdentity) <= 0)
+    ) {
+      return false;
+    }
+    rederivedIdentities.add(identity);
+    previousRederivedIdentity = identity;
+  }
+
+  const preservedIdentities = new Set();
+  let previousPreservedIdentity = "";
+  for (const witness of preservedWitnesses) {
+    const txid = String(witness?.txid ?? "").trim().toLowerCase();
+    const vout = Number(witness?.bondRecipientVout);
+    const identity = `${txid}:${vout}`;
+    if (
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !Number.isSafeInteger(vout) ||
+      vout < 0 ||
+      String(witness?.identity ?? "") !== identity ||
+      !/^[0-9a-f]{64}$/u.test(
+        String(witness?.mintPayloadHash ?? "").trim().toLowerCase(),
+      ) ||
+      !String(witness?.snapshotId ?? "").trim() ||
+      !/^[0-9a-f]{64}$/u.test(
+        String(witness?.snapshotFingerprint ?? "")
+          .trim()
+          .toLowerCase(),
+      ) ||
+      preservedIdentities.has(identity) ||
+      (previousPreservedIdentity &&
+        identity.localeCompare(previousPreservedIdentity) <= 0)
+    ) {
+      return false;
+    }
+    preservedIdentities.add(identity);
+    previousPreservedIdentity = identity;
+  }
+  if ([...rederivedIdentities].some((identity) =>
+    preservedIdentities.has(identity)
+  )) {
+    return false;
+  }
+
+  const positiveIntegerText = (value) => {
+    const text = String(value ?? "").trim();
+    return /^[1-9][0-9]*$/u.test(text) ? BigInt(text).toString() : "";
+  };
+  const coreByTxid = new Map();
+  for (const item of coreFacts) {
+    const txid = String(item?.txid ?? "").trim().toLowerCase();
+    const blockHash = String(item?.blockHash ?? "").trim().toLowerCase();
+    const blockHeight = Number(item?.blockHeight);
+    const blockIndex = Number(item?.blockIndex);
+    const workAmountAtoms = positiveIntegerText(item?.workAmountAtoms);
+    if (
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !/^[0-9a-f]{64}$/u.test(blockHash) ||
+      !Number.isSafeInteger(blockHeight) ||
+      blockHeight < rangeReplayFromHeight ||
+      !Number.isSafeInteger(blockIndex) ||
+      blockIndex < 0 ||
+      !workAmountAtoms ||
+      coreByTxid.has(txid)
+    ) {
+      return false;
+    }
+    coreByTxid.set(txid, {
+      blockHash,
+      blockHeight,
+      blockIndex,
+      workAmountAtoms,
+    });
+  }
+
+  const targetTxids = new Set();
+  for (const item of targets) {
+    const txid = String(item?.txid ?? "").trim().toLowerCase();
+    const workAmountAtoms = positiveIntegerText(item?.workAmountAtoms);
+    const confirmedIssuanceUnits = positiveIntegerText(
+      item?.confirmedIssuanceUnits,
+    );
+    const issuanceNetworkValueQ8 = positiveIntegerText(
+      item?.issuanceNetworkValueQ8,
+    );
+    if (
+      !coreByTxid.has(txid) ||
+      targetTxids.has(txid) ||
+      !workAmountAtoms ||
+      coreByTxid.get(txid).workAmountAtoms !== workAmountAtoms ||
+      !confirmedIssuanceUnits ||
+      !issuanceNetworkValueQ8 ||
+      BigInt(issuanceNetworkValueQ8) / VALUE_Q8_SCALE !==
+        BigInt(confirmedIssuanceUnits)
+    ) {
+      return false;
+    }
+    targetTxids.add(txid);
+  }
+  const expectedTargets = canonicalIncbPwtRangeReplayTargets(
+    rangeReplayFromHeight,
+  );
+  if (
+    rangeReplayFromHeight !== CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT ||
+    expectedTargets.length === 0 ||
+    targetTxids.size !== coreByTxid.size ||
+    targetTxids.size !== expectedTargets.length
+  ) {
+    return false;
+  }
+  return expectedTargets.every((expected) => {
+    const core = coreByTxid.get(expected.txid);
+    return (
+      targetTxids.has(expected.txid) &&
+      core?.blockHash === expected.blockHash &&
+      core?.blockHeight === expected.blockHeight &&
+      core?.blockIndex === expected.blockIndex &&
+      core?.workAmountAtoms === expected.workAmountAtoms
+    );
+  });
+}
+
+function canonicalPwtRangeReplayState(rebuild) {
+  const source = objectValue(rebuild);
+  if (source.mode !== "pwt-range-replay") {
+    return null;
+  }
+  const commonStateIsValid =
+    source.network === NETWORK &&
+    Number.isSafeInteger(Number(source.rangeReplayFromHeight)) &&
+    Number(source.rangeReplayFromHeight) > 0;
+  if (
+    commonStateIsValid &&
+    source.status === "active" &&
+    source.active === true &&
+    source.complete === false &&
+    source.completedAt == null &&
+    source.incbRangeReplayVerification == null
+  ) {
+    return "active";
+  }
+  if (
+    commonStateIsValid &&
+    source.status === "complete" &&
+    source.active === false &&
+    source.complete === true &&
+    String(source.completedAt ?? "").trim().length > 0 &&
+    Number.isFinite(Date.parse(String(source.completedAt).trim())) &&
+    canonicalPwtRangeReplayVerificationIsValid(source)
+  ) {
+    return "complete";
+  }
+  return "invalid";
+}
+
+function assertCanonicalPwtRangeReplayState(rebuild) {
+  const state = canonicalPwtRangeReplayState(rebuild);
+  if (state === "invalid") {
+    throw new Error(
+      "PWT range replay metadata is malformed; refusing to disable its database binding or exact H-1 barriers.",
+    );
+  }
+  return state;
+}
+
+function canonicalPwtRangeReplayVerifierBinding(rebuild) {
+  const source = objectValue(rebuild);
+  const replayState = assertCanonicalPwtRangeReplayState(source);
+  if (!replayState) {
+    return null;
+  }
+  const binding = objectValue(source.verifierBinding);
+  const bindingId = String(binding.bindingId ?? "").trim().toLowerCase();
+  const createdAt = String(binding.createdAt ?? "").trim();
+  const rangeReplayFromHeight = Number(binding.rangeReplayFromHeight);
+  const witnessCount = Number(binding.witnessCount);
+  const witnessPreserveCount = Number(binding.witnessPreserveCount);
+  const witnessedThroughBlock = Number(binding.witnessedThroughBlock);
+  const witnessSetHash = String(binding.witnessSetHash ?? "")
+    .trim()
+    .toLowerCase();
+  const witnessedThroughBlockHash = String(
+    binding.witnessedThroughBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const expectedWitnessMetaKey = /^[0-9a-f]{64}$/u.test(bindingId)
+    ? incbRangeReplayWitnessMetaKey(NETWORK, bindingId)
+    : "";
+  if (
+    binding.model !== PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL ||
+    binding.network !== NETWORK ||
+    !/^[0-9a-f]{64}$/u.test(bindingId) ||
+    !Number.isSafeInteger(rangeReplayFromHeight) ||
+    rangeReplayFromHeight <= 0 ||
+    rangeReplayFromHeight !== Number(source.rangeReplayFromHeight) ||
+    !Number.isFinite(Date.parse(createdAt)) ||
+    binding.witnessModel !== INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL ||
+    !/^[0-9a-f]{64}$/u.test(witnessSetHash) ||
+    !Number.isSafeInteger(witnessCount) ||
+    witnessCount < 0 ||
+    !Number.isSafeInteger(witnessPreserveCount) ||
+    witnessPreserveCount < 0 ||
+    witnessPreserveCount > witnessCount ||
+    !Number.isSafeInteger(witnessedThroughBlock) ||
+    witnessedThroughBlock < rangeReplayFromHeight - 1 ||
+    !/^[0-9a-f]{64}$/u.test(witnessedThroughBlockHash) ||
+    String(binding.witnessSetMetaKey ?? "") !== expectedWitnessMetaKey
+  ) {
+    return null;
+  }
+  return {
+    bindingId,
+    createdAt,
+    model: PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL,
+    network: NETWORK,
+    rangeReplayFromHeight,
+    witnessCount,
+    witnessModel: INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+    witnessPreserveCount,
+    witnessSetHash,
+    witnessSetMetaKey: expectedWitnessMetaKey,
+    witnessedThroughBlock,
+    witnessedThroughBlockHash,
+  };
+}
+
+function activePwtRangeReplay(rebuild) {
+  return assertCanonicalPwtRangeReplayState(rebuild) === "active";
+}
+
+function newPwtRangeReplayVerifierBinding(rangeReplayFromHeight, createdAt) {
+  return {
+    bindingId: randomBytes(32).toString("hex"),
+    createdAt,
+    model: PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL,
+    network: NETWORK,
+    rangeReplayFromHeight,
+  };
+}
+
+function activatePwtRangeReplayVerifierBinding(rebuild) {
+  if (!activePwtRangeReplay(rebuild)) {
+    ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING = null;
+    return null;
+  }
+  if (!explicitLoopbackApiBaseConfigured()) {
+    throw new Error(
+      "Active PWT range replay requires an explicit loopback POW_API_BASE; the default API address is not replay-safe.",
+    );
+  }
+  const binding = canonicalPwtRangeReplayVerifierBinding(rebuild);
+  if (!binding) {
+    throw new Error(
+      "Active PWT range replay is missing its canonical verifier database binding.",
+    );
+  }
+  ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING = binding;
+  return binding;
+}
+
+function assertInternalReplayVerifierResponseBinding(payload, url) {
+  const expected = ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING;
+  if (!expected || !String(url?.pathname ?? "").startsWith("/api/v1/internal/")) {
+    return payload;
+  }
+  const actual = objectValue(payload?.replayVerifierBinding);
+  if (
+    canonicalIncbReplaySha256(actual) !==
+      canonicalIncbReplaySha256(expected)
+  ) {
+    throw new Error(
+      `Internal replay verifier ${String(url?.pathname ?? "request")} is connected to the wrong ProofOfWork database.`,
+    );
+  }
+  return payload;
 }
 
 function workDefinitionStorage(item) {
@@ -888,6 +1538,15 @@ async function workAtomicProjectionReady(client, { refresh = false } = {}) {
   return ready;
 }
 
+async function assertCanonicalWorkAtomicProjection(client, context) {
+  if (await workAtomicProjectionReady(client, { refresh: true })) {
+    return true;
+  }
+  throw new Error(
+    `${context} requires the exact canonical WORK work-atoms-v1 definition.`,
+  );
+}
+
 function legacyWholeWorkAmount(item, fields, { signed = false } = {}) {
   const source = objectValue(item);
   const field = fields.find(
@@ -916,6 +1575,15 @@ function endpoint(pathname, params = {}) {
     if (value !== undefined && value !== "") {
       url.searchParams.set(key, String(value));
     }
+  }
+  if (
+    ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING &&
+    url.pathname.startsWith("/api/v1/internal/")
+  ) {
+    url.searchParams.set(
+      "replayBindingId",
+      ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING.bindingId,
+    );
   }
   return url;
 }
@@ -1089,19 +1757,20 @@ async function readJson(url, options = {}) {
         loopbackApi &&
         url.protocol === "http:"
       ) {
-        return await readCanonicalSummaryJsonViaLoopbackHttp(url, {
+        const payload = await readCanonicalSummaryJsonViaLoopbackHttp(url, {
           allowNotFound: options.allowNotFound,
           headers,
           maxBytes: CANONICAL_SUMMARY_RESPONSE_MAX_BYTES,
           signal: controller.signal,
         });
+        return assertInternalReplayVerifierResponseBinding(payload, url);
       }
       const response = await fetch(url, {
         headers,
         signal: controller.signal,
       });
       if (response.status === 404 && options.allowNotFound === true) {
-        return { items: [] };
+        return assertInternalReplayVerifierResponseBinding({ items: [] }, url);
       }
       if (!response.ok) {
         const responseText = await response.text().catch(() => "");
@@ -1112,7 +1781,8 @@ async function readJson(url, options = {}) {
         requestError.responseText = responseText;
         throw requestError;
       }
-      return await response.json();
+      const payload = await response.json();
+      return assertInternalReplayVerifierResponseBinding(payload, url);
     } catch (error) {
       lastError = error;
       if (attempt >= retries) {
@@ -2337,6 +3007,41 @@ function canonicalWorkAtomsText(value, { allowZero = false } = {}) {
   }
 }
 
+function canonicalIncbIssuanceQ8Projection({
+  attachedWorkAmountAtoms,
+  directProofIssuanceUnits,
+  workNetworkValueQ8,
+}) {
+  const atomsText = canonicalWorkAtomsText(attachedWorkAmountAtoms, {
+    allowZero: true,
+  });
+  const directText = canonicalIntegerText(directProofIssuanceUnits, {
+    positive: true,
+  });
+  const workNetworkValueQ8Text = canonicalIntegerText(workNetworkValueQ8, {
+    positive: true,
+  });
+  if (!atomsText || !directText || !workNetworkValueQ8Text) {
+    throw new Error("Canonical INCB Q8 issuance inputs are noncanonical.");
+  }
+  const atoms = BigInt(atomsText);
+  const direct = BigInt(directText);
+  const workNetworkValue = BigInt(workNetworkValueQ8Text);
+  const attachedValueQ8 =
+    (atoms * workNetworkValue) /
+    (BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_UNIT_SCALE);
+  const issuanceValueQ8 = direct * VALUE_Q8_SCALE + attachedValueQ8;
+  return {
+    attachedWorkIssuanceUnits: (
+      attachedValueQ8 / VALUE_Q8_SCALE
+    ).toString(),
+    attachedWorkLiveValueAtSendQ8: attachedValueQ8.toString(),
+    confirmedIssuanceUnits: (issuanceValueQ8 / VALUE_Q8_SCALE).toString(),
+    issuanceDustQ8: (issuanceValueQ8 % VALUE_Q8_SCALE).toString(),
+    issuanceNetworkValueQ8: issuanceValueQ8.toString(),
+  };
+}
+
 function incbIssuanceMetadataInvalidReason(item) {
   if (
     String(item?.issuanceAccountingModel ?? "") !==
@@ -2390,16 +3095,6 @@ function incbIssuanceMetadataInvalidReason(item) {
   if (direct <= 0n || direct + attached !== amount) {
     return "INCB direct and attached issuance units do not conserve supply";
   }
-  const safeAmount = Number(amount);
-  const safeDirect = Number(direct);
-  const safeAttached = Number(attached);
-  if (
-    !Number.isSafeInteger(safeAmount) ||
-    !Number.isSafeInteger(safeDirect) ||
-    !Number.isSafeInteger(safeAttached)
-  ) {
-    return "INCB issuance exceeds exact JavaScript integer range";
-  }
   const atomicMetadataPresent = [
     item?.attachedWorkAmountAtoms,
     item?.attachedWorkLiveValueAtSendQ8,
@@ -2443,97 +3138,102 @@ function incbIssuanceMetadataInvalidReason(item) {
     issuanceDustQ8 = BigInt(issuanceDustQ8Text);
     issuanceNetworkValueQ8 = BigInt(issuanceNetworkValueQ8Text);
     snapshotWorkNetworkValueQ8 = BigInt(snapshotWorkNetworkValueQ8Text);
-    const expectedAttachedWorkValueQ8 =
-      (attachedWorkAmountAtoms * snapshotWorkNetworkValueQ8) /
-      (BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_UNIT_SCALE);
+    const expected = canonicalIncbIssuanceQ8Projection({
+      attachedWorkAmountAtoms: attachedWorkAmountAtomsText,
+      directProofIssuanceUnits: directText,
+      workNetworkValueQ8: snapshotWorkNetworkValueQ8Text,
+    });
     if (
-      expectedAttachedWorkValueQ8 !== attachedWorkLiveValueAtSendQ8 ||
-      issuanceNetworkValueQ8 !==
-        direct * VALUE_Q8_SCALE + attachedWorkLiveValueAtSendQ8 ||
-      amount !== issuanceNetworkValueQ8 / VALUE_Q8_SCALE ||
-      attached !== attachedWorkLiveValueAtSendQ8 / VALUE_Q8_SCALE ||
-      issuanceDustQ8 !== issuanceNetworkValueQ8 % VALUE_Q8_SCALE
+      expected.attachedWorkLiveValueAtSendQ8 !==
+        attachedWorkLiveValueAtSendQ8.toString() ||
+      expected.issuanceNetworkValueQ8 !== issuanceNetworkValueQ8.toString() ||
+      expected.confirmedIssuanceUnits !== amount.toString() ||
+      expected.attachedWorkIssuanceUnits !== attached.toString() ||
+      expected.issuanceDustQ8 !== issuanceDustQ8.toString()
     ) {
       return "INCB exact atomic issuance metadata does not conserve value";
     }
   }
-  const issuanceNetworkValueSats = Number(item?.issuanceNetworkValueSats);
-  const issuanceDustSats = Number(item?.issuanceDustSats);
-  const issuanceFloorSats = Number(item?.issuanceFloorSats);
-  const attachedWorkLiveValueAtSendSats = Number(
-    item?.attachedWorkLiveValueAtSendSats,
-  );
+  const safeAmount = atomicMetadataPresent ? null : Number(amount);
+  const safeDirect = atomicMetadataPresent ? null : Number(direct);
+  const safeAttached = atomicMetadataPresent ? null : Number(attached);
   if (
-    !Number.isFinite(issuanceNetworkValueSats) ||
-    issuanceNetworkValueSats <= 0 ||
-    (!atomicMetadataPresent &&
-      Math.floor(issuanceNetworkValueSats) !== safeAmount) ||
-    !Number.isFinite(issuanceDustSats) ||
-    issuanceDustSats < 0 ||
-    issuanceDustSats >= 1 ||
-    (atomicMetadataPresent
-      ? Math.abs(issuanceDustSats - q8ToNumber(issuanceDustQ8)) > 1e-8
-      : Math.abs(
-          issuanceDustSats - (issuanceNetworkValueSats - safeAmount),
-        ) > 1e-6) ||
-    !Number.isFinite(issuanceFloorSats) ||
-    issuanceFloorSats <= 0 ||
-    (!atomicMetadataPresent &&
+    !atomicMetadataPresent &&
+    (!Number.isSafeInteger(safeAmount) ||
+      !Number.isSafeInteger(safeDirect) ||
+      !Number.isSafeInteger(safeAttached))
+  ) {
+    return "Legacy INCB issuance exceeds exact JavaScript integer range without Q8 metadata";
+  }
+  const issuanceNetworkValueSats = atomicMetadataPresent
+    ? null
+    : Number(item?.issuanceNetworkValueSats);
+  const issuanceDustSats = atomicMetadataPresent
+    ? null
+    : Number(item?.issuanceDustSats);
+  const issuanceFloorSats = atomicMetadataPresent
+    ? null
+    : Number(item?.issuanceFloorSats);
+  const attachedWorkLiveValueAtSendSats = atomicMetadataPresent
+    ? null
+    : Number(item?.attachedWorkLiveValueAtSendSats);
+  if (
+    !atomicMetadataPresent &&
+    (!Number.isFinite(issuanceNetworkValueSats) ||
+      issuanceNetworkValueSats <= 0 ||
+      Math.floor(issuanceNetworkValueSats) !== safeAmount ||
+      !Number.isFinite(issuanceDustSats) ||
+      issuanceDustSats < 0 ||
+      issuanceDustSats >= 1 ||
+      Math.abs(
+        issuanceDustSats - (issuanceNetworkValueSats - safeAmount),
+      ) > 1e-6 ||
+      !Number.isFinite(issuanceFloorSats) ||
+      issuanceFloorSats <= 0 ||
       Math.abs(issuanceFloorSats - issuanceNetworkValueSats / safeAmount) >
-        1e-9) ||
-    !Number.isFinite(attachedWorkLiveValueAtSendSats) ||
-    attachedWorkLiveValueAtSendSats < 0 ||
-    (atomicMetadataPresent
-      ? Math.abs(
-          issuanceNetworkValueSats - q8ToNumber(issuanceNetworkValueQ8),
-        ) > 1e-8 ||
-        Math.abs(
-          attachedWorkLiveValueAtSendSats -
-            q8ToNumber(attachedWorkLiveValueAtSendQ8),
-        ) > 1e-8
-      : Math.abs(
-          issuanceNetworkValueSats -
-            (safeDirect + attachedWorkLiveValueAtSendSats),
-        ) > 1e-6 ||
-        Math.floor(attachedWorkLiveValueAtSendSats) !== safeAttached)
+        1e-9 ||
+      !Number.isFinite(attachedWorkLiveValueAtSendSats) ||
+      attachedWorkLiveValueAtSendSats < 0 ||
+      Math.abs(
+        issuanceNetworkValueSats -
+          (safeDirect + attachedWorkLiveValueAtSendSats),
+      ) > 1e-6 ||
+      Math.floor(attachedWorkLiveValueAtSendSats) !== safeAttached)
   ) {
     return "INCB issuance value, dust, or one-proof unit floor is inconsistent";
   }
-  const directPayment = Number(
+  const directPaymentText = canonicalIntegerText(
     item?.proofPaymentSats ?? item?.paidSats,
+    { positive: true },
   );
   if (
-    !Number.isSafeInteger(directPayment) ||
-    directPayment !== safeDirect ||
+    !directPaymentText ||
+    directPaymentText !== directText ||
     BigInt(bondRecipientAmountText) !== direct
   ) {
     return "INCB direct proof issuance is not bound to the confirmed payment";
   }
-  if (safeAttached > 0) {
+  if (!atomicMetadataPresent && attached > 0n) {
     const attachedWorkAmount = Number(item?.attachedWorkAmount);
     const attachedWorkLiveFloorAtSendSats = Number(
       item?.attachedWorkLiveFloorAtSendSats,
     );
     if (
-      (atomicMetadataPresent
-        ? !Number.isFinite(attachedWorkAmount) ||
-          Math.abs(
-            attachedWorkAmount -
-              Number(formatWorkAtoms(attachedWorkAmountAtoms)),
-          ) > 1e-8
-        : !Number.isSafeInteger(attachedWorkAmount)) ||
+      !Number.isSafeInteger(attachedWorkAmount) ||
       attachedWorkAmount <= 0 ||
       !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
       attachedWorkLiveFloorAtSendSats <= 0 ||
-      (!atomicMetadataPresent &&
-        Math.abs(
-          attachedWorkLiveValueAtSendSats -
-            attachedWorkAmount * attachedWorkLiveFloorAtSendSats,
-        ) > 1e-5)
+      Math.abs(
+        attachedWorkLiveValueAtSendSats -
+          attachedWorkAmount * attachedWorkLiveFloorAtSendSats,
+      ) > 1e-5
     ) {
       return "INCB attached WORK issuance basis is missing or inconsistent";
     }
-  } else if (attachedWorkLiveValueAtSendSats !== 0) {
+  } else if (
+    !atomicMetadataPresent &&
+    attachedWorkLiveValueAtSendSats !== 0
+  ) {
     return "INCB proof-only issuance carries unexpected attached WORK value";
   }
   const checkpointMode = String(item?.issuanceCheckpointMode ?? "");
@@ -2542,12 +3242,20 @@ function incbIssuanceMetadataInvalidReason(item) {
     .trim()
     .toLowerCase();
   const checkpointIndex = Number(item?.issuanceCheckpointBlockIndex);
-  const checkpointWorkNetworkValueSats = Number(
-    item?.issuanceValueSnapshotWorkNetworkValueSats,
+  const checkpointWorkNetworkValueSats = atomicMetadataPresent
+    ? null
+    : Number(item?.issuanceValueSnapshotWorkNetworkValueSats);
+  const attachedWorkLiveFloorAtSendSats = atomicMetadataPresent
+    ? null
+    : Number(item?.attachedWorkLiveFloorAtSendSats);
+  const attachedWorkLiveFloorAtSendQ8Text = canonicalIntegerText(
+    item?.attachedWorkLiveFloorAtSendQ8,
   );
-  const attachedWorkLiveFloorAtSendSats = Number(
-    item?.attachedWorkLiveFloorAtSendSats,
-  );
+  const exactCheckpointFloorMatches =
+    atomicMetadataPresent && attachedWorkLiveFloorAtSendQ8Text
+      ? BigInt(attachedWorkLiveFloorAtSendQ8Text) ===
+        snapshotWorkNetworkValueQ8 / BigInt(WORK_TOKEN_MAX_SUPPLY)
+      : false;
   const eventHeight = Number(item?.blockHeight ?? item?.height);
   const eventHash = String(item?.blockHash ?? item?._powBlockHash ?? "")
     .trim()
@@ -2560,17 +3268,16 @@ function incbIssuanceMetadataInvalidReason(item) {
     !/^[0-9a-f]{64}$/u.test(checkpointHash) ||
     !Number.isSafeInteger(checkpointIndex) ||
     checkpointIndex < 0 ||
-    !Number.isFinite(checkpointWorkNetworkValueSats) ||
-    checkpointWorkNetworkValueSats <= 0 ||
-    (atomicMetadataPresent &&
-      decimalValueToQ8(checkpointWorkNetworkValueSats) !==
-        snapshotWorkNetworkValueQ8) ||
-    !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
-    attachedWorkLiveFloorAtSendSats <= 0 ||
-    Math.abs(
-      attachedWorkLiveFloorAtSendSats -
-        checkpointWorkNetworkValueSats / WORK_TOKEN_MAX_SUPPLY,
-    ) > 1e-9 ||
+    (atomicMetadataPresent
+      ? !exactCheckpointFloorMatches
+      : !Number.isFinite(checkpointWorkNetworkValueSats) ||
+        checkpointWorkNetworkValueSats <= 0 ||
+        !Number.isFinite(attachedWorkLiveFloorAtSendSats) ||
+        attachedWorkLiveFloorAtSendSats <= 0 ||
+        Math.abs(
+          attachedWorkLiveFloorAtSendSats -
+            checkpointWorkNetworkValueSats / WORK_TOKEN_MAX_SUPPLY,
+        ) > 1e-9) ||
     eventHeight !== checkpointHeight ||
     eventHash !== checkpointHash ||
     eventIndex !== checkpointIndex
@@ -2615,14 +3322,14 @@ function canonicalIncbIssuanceMintProjection(item) {
   );
 }
 
-function canonicalBondMintProjection(item) {
+function canonicalBondMintProjectionStructure(item) {
   const tokenId = String(item?.tokenId ?? "").trim().toLowerCase();
   const bondTag = BOND_TAGS.find((candidate) => candidate.tokenId === tokenId);
   const txid = String(item?.txid ?? "").trim().toLowerCase();
   const sourceBondTxid = String(item?.sourceBondTxid ?? "")
     .trim()
     .toLowerCase();
-  const canonicalStructure = Boolean(
+  return Boolean(
     bondTag &&
       String(item?.kind ?? "").toLowerCase() === "token-mint" &&
       String(item?.protocol ?? "").toLowerCase() === "pwt1" &&
@@ -2636,14 +3343,32 @@ function canonicalBondMintProjection(item) {
       /^[1-9]\d*$/u.test(String(item?.amount ?? "").trim()) &&
       Number(item?.amountSats ?? 0) === 0,
   );
+}
+
+function canonicalBondMintProjection(item) {
+  const tokenId = String(item?.tokenId ?? "").trim().toLowerCase();
+  const bondTag = BOND_TAGS.find((candidate) => candidate.tokenId === tokenId);
   return (
-    canonicalStructure &&
+    canonicalBondMintProjectionStructure(item) &&
     (bondTag.ticker !== "INCB" || canonicalIncbIssuanceMintProjection(item))
   );
 }
 
+function canonicalBondMintProjectionInvalidReason(item) {
+  if (!canonicalBondMintProjectionStructure(item)) {
+    return "";
+  }
+  return String(item?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID
+    ? incbIssuanceMetadataInvalidReason(item)
+    : "";
+}
+
 function reservedBondCreditViolationReason(item) {
-  if (item?.valid === false || canonicalBondMintProjection(item)) {
+  // A first-party, transaction-bound bond projection with malformed metadata
+  // is not a generic namespace violation. It is rejected below with its exact
+  // canonical-projection fault so the UI can never mislabel a real bond as an
+  // attempted generic pwt1 mint.
+  if (item?.valid === false || canonicalBondMintProjectionStructure(item)) {
     return "";
   }
   const kind = String(item?.kind ?? "").trim().toLowerCase();
@@ -2733,6 +3458,14 @@ async function tokenMintDefinitionOrderInvalidReason(client, item) {
 }
 
 async function protocolIntegrityItemForPersistence(client, item) {
+  const projectionReason = canonicalBondMintProjectionInvalidReason(item);
+  if (projectionReason) {
+    return tokenProtocolIntegrityInvalidItem(
+      item,
+      `Canonical INCB bond projection rejected: ${projectionReason}.`,
+      "canonical-incb-bond-projection-invalid",
+    );
+  }
   const reservedReason = reservedBondCreditViolationReason(item);
   if (reservedReason) {
     return tokenProtocolIntegrityInvalidItem(
@@ -2847,7 +3580,8 @@ function rawProtocolItemMatchesCanonical(rawItem, canonicalItem, kind) {
     String(rawItem?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID &&
     String(canonicalItem?.tokenId ?? "").trim().toLowerCase() ===
       INCB_TOKEN_ID &&
-    canonicalIncbIssuanceMintProjection(canonicalItem)
+    canonicalBondMintProjectionStructure(rawItem) &&
+    canonicalBondMintProjectionStructure(canonicalItem)
   ) {
     const rawMinterAddress = String(rawItem?.minterAddress ?? "").trim();
     const canonicalMinterAddress = String(
@@ -2978,7 +3712,8 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
           item: {
             ...item,
             canonicalVerifier: spec.path,
-            validationMode: "canonical-first-party-state",
+            validationMode:
+              item?.validationMode ?? "canonical-first-party-state",
           },
           sourceLabel: spec.label,
         });
@@ -3025,7 +3760,9 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
     if (String(normalizedKind).startsWith("token-")) {
       if (
         normalizedKind === "token-mint" &&
-        canonicalIncbIssuanceMintProjection(canonicalItem)
+        String(canonicalItem?.tokenId ?? "").trim().toLowerCase() ===
+          INCB_TOKEN_ID &&
+        canonicalBondMintProjectionStructure(canonicalItem)
       ) {
         // The INCB units are a synthetic projection over the bond's fixed
         // pre-bond live network value. The underlying PWM/PWT events
@@ -3076,7 +3813,9 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
     };
     if (
       normalizedKind === "token-mint" &&
-      canonicalIncbIssuanceMintProjection(normalizedItem)
+      String(normalizedItem?.tokenId ?? "").trim().toLowerCase() ===
+        INCB_TOKEN_ID &&
+      canonicalBondMintProjectionStructure(normalizedItem)
     ) {
       normalizedItem.amountSats = 0;
       normalizedItem.protocol = "pwt1";
@@ -3118,6 +3857,21 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
       return;
     }
     if (String(rawItem?.validationMode ?? "").endsWith("-bond-projection")) {
+      if (
+        rawItem?.confirmed === true &&
+        String(rawItem?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID
+      ) {
+        const invalidItem = tokenProtocolIntegrityInvalidItem(
+          rawItem,
+          "Canonical INCB bond projection rejected: the canonical first-party verifier omitted the issuance projection.",
+          "canonical-incb-bond-projection-missing",
+        );
+        normalizedRecovered.push({
+          item: invalidItem,
+          sourceLabel: sourceLabelForProtocolItem(invalidItem),
+        });
+        return;
+      }
       normalizedRecovered.push({
         item: rawItem,
         sourceLabel: sourceLabelForProtocolItem(rawItem),
@@ -3313,14 +4067,44 @@ async function persistPreparedProtocolItems(client, preparedItems) {
   return { indexed, skipped };
 }
 
-async function upsertCanonicalSyntheticCreditDefinition(client, definition) {
+async function upsertCanonicalSyntheticCreditDefinition(
+  client,
+  definition,
+  options = {},
+) {
+  const requireAtomicWork =
+    isWorkTokenId(definition?.tokenId) &&
+    options.requireAtomicWork === true;
   const atomicReady =
     isWorkTokenId(definition?.tokenId) &&
-    await workAtomicProjectionReady(client);
+    (requireAtomicWork || await workAtomicProjectionReady(client));
   const workStorage = atomicReady
     ? workDefinitionStorage(definition)
     : null;
   const storedDefinition = workStorage?.metadata ?? definition;
+  const maxSupplyStorage = workStorage?.maxSupplyAtoms ??
+    String(
+      storedDefinition.maxSupplyStorage ?? storedDefinition.maxSupply ?? "",
+    ).trim();
+  const uncappedSyntheticBond =
+    BOND_TOKEN_IDS.has(
+      String(storedDefinition.tokenId ?? "").trim().toLowerCase(),
+    ) &&
+    storedDefinition.maxSupplyModel === "uncapped" &&
+    storedDefinition.uncapped === true;
+  if (
+    (uncappedSyntheticBond &&
+      maxSupplyStorage !== BOND_UNCAPPED_MAX_SUPPLY_STORAGE) ||
+    (!uncappedSyntheticBond && !/^[1-9]\d*$/u.test(maxSupplyStorage))
+  ) {
+    throw new Error(
+      `Canonical ${storedDefinition.ticker || storedDefinition.tokenId} definition is missing exact max-supply storage.`,
+    );
+  }
+  const {
+    maxSupplyStorage: _maxSupplyStorage,
+    ...storedDefinitionMetadata
+  } = storedDefinition;
   await client.query(
     `
       INSERT INTO proof_indexer.credit_definitions (
@@ -3355,11 +4139,11 @@ async function upsertCanonicalSyntheticCreditDefinition(client, definition) {
       storedDefinition.ticker,
       storedDefinition.creatorAddress ?? "",
       storedDefinition.registryAddress,
-      workStorage?.maxSupplyAtoms ?? String(storedDefinition.maxSupply),
+      maxSupplyStorage,
       workStorage?.mintAmountAtoms ?? String(storedDefinition.mintAmount),
       String(storedDefinition.mintPriceSats),
       JSON.stringify({
-        ...storedDefinition,
+        ...storedDefinitionMetadata,
         canonicalSynthetic: true,
         confirmed: true,
         network: NETWORK,
@@ -3381,7 +4165,18 @@ async function seedCanonicalWorkDefinition(client) {
     registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
     ticker: "WORK",
     tokenId: WORK_TOKEN_ID,
+  }, {
+    requireAtomicWork: true,
   });
+  // Range preparation clears the definition table before reseeding it, so the
+  // old row cannot be used to infer the storage model. Refresh from the row we
+  // just wrote and fail the transaction before any atom-denominated balance is
+  // replayed if the exact definition did not persist. Full rebuild uses the
+  // same deterministic seed and cannot fall back to legacy whole-WORK units.
+  await assertCanonicalWorkAtomicProjection(
+    client,
+    "Canonical rebuild seed",
+  );
 }
 
 async function seedCanonicalPowbDefinition(client, options = {}) {
@@ -3446,7 +4241,9 @@ async function seedCanonicalBondDefinition(client, bondTag, options = {}) {
           issuanceUnitSats: 1,
         }
       : {}),
-    maxSupply: bondTag.tokenMaxSupply,
+    maxSupply: null,
+    maxSupplyModel: "uncapped",
+    maxSupplyStorage: bondTag.tokenMaxSupplyStorage,
     mintAmount: 1,
     mintPriceSats: 1,
     registryAddress,
@@ -4139,6 +4936,19 @@ async function workAtomicIssuanceOracleSnapshotState(client) {
         FROM proof_indexer.events
         WHERE network = $1
           AND COALESCE(payload->>'issuanceValueSnapshotId', '') <> ''
+        UNION
+        SELECT DISTINCT entry->'snapshot'->>'snapshotId' AS snapshot_id
+        FROM proof_indexer.meta rebuild
+        JOIN proof_indexer.meta witness
+          ON witness.key = rebuild.value->'verifierBinding'->>'witnessSetMetaKey'
+        CROSS JOIN LATERAL jsonb_array_elements(
+          COALESCE(witness.value->'entries', '[]'::jsonb)
+        ) entry
+        WHERE rebuild.key = $2
+          AND rebuild.value->>'network' = $1
+          AND witness.value->>'network' = $1
+          AND witness.value->>'model' = $3
+          AND entry->>'disposition' = 'preserve'
       )
       SELECT
         referenced.snapshot_id,
@@ -4153,7 +4963,11 @@ async function workAtomicIssuanceOracleSnapshotState(client) {
        AND snapshot.snapshot_id = referenced.snapshot_id
       ORDER BY referenced.snapshot_id ASC
     `,
-    [NETWORK],
+    [
+      NETWORK,
+      CANONICAL_REBUILD_META_KEY,
+      INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+    ],
   );
   return result.rows.map((row) => ({
     fingerprint:
@@ -4248,9 +5062,11 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
     );
   }
 
-  const [balancesResult, listingsResult, eventsResult, reservationsResult, snapshotsResult] =
-    await Promise.all([
-      client.query(
+  // node-postgres 9 deprecates overlapping queries on one transaction-bound
+  // client. Keep every audit read on this exact transaction snapshot, but
+  // issue them serially so prepare/replay cannot depend on queued client work.
+  const atomicAuditQueries = [
+    () => client.query(
         `
           SELECT
             count(*)::integer AS rows,
@@ -4265,7 +5081,7 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
         `,
         [NETWORK, WORK_TOKEN_ID],
       ),
-      client.query(
+    () => client.query(
         `
           SELECT
             count(*)::integer AS rows,
@@ -4281,7 +5097,7 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
         `,
         [NETWORK, WORK_TOKEN_ID],
       ),
-      client.query(
+    () => client.query(
         `
           SELECT
             count(*)::integer AS amount_events,
@@ -4328,7 +5144,7 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
         `,
         [NETWORK, WORK_TOKEN_ID, WORK_UNIT_SCALE_TEXT],
       ),
-      client.query(
+    () => client.query(
         `
           WITH reserved AS (
             SELECT seller_address, sum(amount) AS amount
@@ -4350,13 +5166,26 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
         `,
         [NETWORK, WORK_TOKEN_ID],
       ),
-      client.query(
+    () => client.query(
         `
           WITH referenced AS MATERIALIZED (
             SELECT DISTINCT payload->>'issuanceValueSnapshotId' AS snapshot_id
             FROM proof_indexer.events
             WHERE network = $1
               AND COALESCE(payload->>'issuanceValueSnapshotId', '') <> ''
+            UNION
+            SELECT DISTINCT entry->'snapshot'->>'snapshotId' AS snapshot_id
+            FROM proof_indexer.meta rebuild
+            JOIN proof_indexer.meta witness
+              ON witness.key = rebuild.value->'verifierBinding'->>'witnessSetMetaKey'
+            CROSS JOIN LATERAL jsonb_array_elements(
+              COALESCE(witness.value->'entries', '[]'::jsonb)
+            ) entry
+            WHERE rebuild.key = $3
+              AND rebuild.value->>'network' = $1
+              AND witness.value->>'network' = $1
+              AND witness.value->>'model' = $4
+              AND entry->>'disposition' = 'preserve'
           ),
           classified AS MATERIALIZED (
             SELECT
@@ -4397,9 +5226,25 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
             )::integer AS unmarked_non_oracle_derived
           FROM classified
         `,
-        [NETWORK, WORK_ATOMIC_PROJECTION_MODEL],
+        [
+          NETWORK,
+          WORK_ATOMIC_PROJECTION_MODEL,
+          CANONICAL_REBUILD_META_KEY,
+          INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+        ],
       ),
-    ]);
+  ];
+  const atomicAuditResults = [];
+  for (const query of atomicAuditQueries) {
+    atomicAuditResults.push(await query());
+  }
+  const [
+    balancesResult,
+    listingsResult,
+    eventsResult,
+    reservationsResult,
+    snapshotsResult,
+  ] = atomicAuditResults;
 
   const balances = balancesResult.rows[0] ?? {};
   const listings = listingsResult.rows[0] ?? {};
@@ -4453,6 +5298,87 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
   };
 }
 
+async function canonicalWorkAtomicConservation(client) {
+  const result = await client.query(
+    `
+      WITH mint_state AS MATERIALIZED (
+        SELECT
+          count(*)::integer AS mint_events,
+          count(*) FILTER (
+            WHERE COALESCE(e.payload->>'amountAtoms', '') !~ '^[1-9][0-9]*$'
+          )::integer AS invalid_mint_amounts,
+          COALESCE(sum(
+            CASE
+              WHEN COALESCE(e.payload->>'amountAtoms', '') ~ '^[1-9][0-9]*$'
+                THEN (e.payload->>'amountAtoms')::numeric
+              ELSE 0
+            END
+          ), 0)::text AS minted_supply
+        FROM proof_indexer.events e
+        LEFT JOIN proof_indexer.transactions t
+          ON t.network = e.network
+         AND t.txid = e.txid
+        WHERE e.network = $1
+          AND e.protocol = 'pwt1'
+          AND e.kind = 'token-mint'
+          AND e.valid = true
+          AND COALESCE(t.status, e.status) = 'confirmed'
+          AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
+      ),
+      balance_state AS MATERIALIZED (
+        SELECT
+          count(*) FILTER (WHERE confirmed_balance < 0)::integer AS negative_balances,
+          COALESCE(sum(confirmed_balance), 0)::text AS balance_supply
+        FROM proof_indexer.credit_balances
+        WHERE network = $1 AND token_id = $2
+      )
+      SELECT
+        mint_state.mint_events,
+        mint_state.invalid_mint_amounts,
+        mint_state.minted_supply,
+        balance_state.negative_balances,
+        balance_state.balance_supply
+      FROM mint_state
+      CROSS JOIN balance_state
+    `,
+    [NETWORK, WORK_TOKEN_ID],
+  );
+  const row = result.rows[0] ?? {};
+  const mintedSupply = String(row.minted_supply ?? "");
+  const balanceSupply = String(row.balance_supply ?? "");
+  if (
+    !/^\d+$/u.test(mintedSupply) ||
+    !/^\d+$/u.test(balanceSupply) ||
+    Number(row.mint_events ?? 0) <= 0 ||
+    Number(row.invalid_mint_amounts ?? 0) !== 0 ||
+    Number(row.negative_balances ?? 0) !== 0 ||
+    BigInt(mintedSupply) !== BigInt(balanceSupply)
+  ) {
+    throw new Error(
+      `Canonical WORK atomic conservation failed: mints ${mintedSupply || "invalid"}, balances ${balanceSupply || "invalid"}.`,
+    );
+  }
+  return {
+    balanceSupply,
+    mintedSupply,
+    mintEvents: Number(row.mint_events),
+  };
+}
+
+async function assertCanonicalWorkAtomicSource(client, context) {
+  await assertCanonicalWorkAtomicProjection(client, context);
+  const audit = await auditWorkAtomicProjection(client);
+  if (!audit.atomic || audit.legacy) {
+    throw new Error(
+      `${context} requires a fully atomic WORK source projection.`,
+    );
+  }
+  return {
+    audit,
+    conservation: await canonicalWorkAtomicConservation(client),
+  };
+}
+
 async function invalidateWorkAtomicDerivedSnapshots(client) {
   const result = await client.query(
     `
@@ -4461,6 +5387,19 @@ async function invalidateWorkAtomicDerivedSnapshots(client) {
         FROM proof_indexer.events
         WHERE network = $1
           AND COALESCE(payload->>'issuanceValueSnapshotId', '') <> ''
+        UNION
+        SELECT DISTINCT entry->'snapshot'->>'snapshotId' AS snapshot_id
+        FROM proof_indexer.meta rebuild
+        JOIN proof_indexer.meta witness
+          ON witness.key = rebuild.value->'verifierBinding'->>'witnessSetMetaKey'
+        CROSS JOIN LATERAL jsonb_array_elements(
+          COALESCE(witness.value->'entries', '[]'::jsonb)
+        ) entry
+        WHERE rebuild.key = $3
+          AND rebuild.value->>'network' = $1
+          AND witness.value->>'network' = $1
+          AND witness.value->>'model' = $4
+          AND entry->>'disposition' = 'preserve'
       )
       DELETE FROM proof_indexer.ledger_snapshots snapshot
       WHERE snapshot.network = $1
@@ -4484,7 +5423,12 @@ async function invalidateWorkAtomicDerivedSnapshots(client) {
         )
       RETURNING snapshot_id
     `,
-    [NETWORK, WORK_ATOMIC_PROJECTION_MODEL],
+    [
+      NETWORK,
+      WORK_ATOMIC_PROJECTION_MODEL,
+      CANONICAL_REBUILD_META_KEY,
+      INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+    ],
   );
   return result.rows.map((row) => String(row.snapshot_id ?? ""));
 }
@@ -4557,6 +5501,34 @@ async function markedExactTipWorkAtomicSummary(client) {
         AND snapshot.source_hashes ? 'canonicalSummary'
         AND snapshot.payload->'summaryRefresh'->>'mode' =
           'canonical-summary-refresh'
+        AND snapshot.payload->'totals'->>'workNetworkValueAccountingModel' =
+          'canonical-exact-work-network-q8-v1'
+        AND snapshot.payload->'summaryPayloads'->'workFloor'
+          ->>'workNetworkValueAccountingModel' =
+          'canonical-exact-work-network-q8-v1'
+        AND snapshot.payload->'summaryPayloads'->'workFloor'
+          ->'actualValue'->>'workNetworkValueAccountingModel' =
+          'canonical-exact-work-network-q8-v1'
+        AND snapshot.payload->'totals'->>'workNetworkValueQ8' ~
+          '^[1-9][0-9]*$'
+        AND snapshot.payload->'summaryPayloads'->'workFloor'
+          ->>'networkValueQ8' =
+          snapshot.payload->'totals'->>'workNetworkValueQ8'
+        AND snapshot.payload->'summaryPayloads'->'workFloor'
+          ->>'liveNetworkValueQ8' =
+          snapshot.payload->'totals'->>'workNetworkValueQ8'
+        AND snapshot.payload->'summaryPayloads'->'workFloor'
+          ->'actualValue'->>'networkValueQ8' =
+          snapshot.payload->'totals'->>'workNetworkValueQ8'
+        AND snapshot.payload->'summaryPayloads'->'workFloor'
+          ->'actualValue'->>'liveNetworkValueQ8' =
+          snapshot.payload->'totals'->>'workNetworkValueQ8'
+        AND snapshot.payload->'summaryPayloads'->'workFloor'
+          ->'actualValue'->>'totalQ8' =
+          snapshot.payload->'totals'->>'workNetworkValueQ8'
+        AND snapshot.payload->'summaryPayloads'->'workFloor'
+          ->'actualValue'->>'liveTotalQ8' =
+          snapshot.payload->'totals'->>'workNetworkValueQ8'
         AND snapshot.payload->>'snapshotId' = snapshot.snapshot_id
         AND lower(COALESCE(
           snapshot.source_hashes->>'blockScan',
@@ -4753,7 +5725,7 @@ async function migrateWorkAtomicProjection(client) {
               WHEN COALESCE(payload->>'amountAtoms', '') <> ''
                 THEN payload->>'amountAtoms'
               ELSE (
-                ((payload->>'amount')::numeric * $3::numeric)::numeric(78, 0)
+                trunc((payload->>'amount')::numeric * $3::numeric)
               )::text
             END,
             'decimals', $4::integer,
@@ -4795,7 +5767,7 @@ async function migrateWorkAtomicProjection(client) {
             CASE
               WHEN COALESCE(payload->>'amountAtoms', '') <> ''
                 THEN payload->>'amountAtoms'
-              ELSE (amount * $3::numeric)::numeric(78, 0)::text
+              ELSE trunc(amount * $3::numeric)::text
             END,
             'decimals', $4::integer,
             'unitScale', $3::text
@@ -7677,37 +8649,111 @@ function creditListingProjectionPayload(item, projectedStatus) {
   return payload;
 }
 
-function summaryNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
+function canonicalNonNegativeQ8Text(value, { positive = false } = {}) {
+  if (typeof value !== "string" && typeof value !== "bigint") {
+    return "";
+  }
+  const text = String(value ?? "").trim();
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(text)) {
+    return "";
+  }
+  if (positive && text === "0") {
+    return "";
+  }
+  return BigInt(text).toString();
+}
+
+function exactWorkNetworkValueSummaryBinding(summaryPayloads = {}) {
+  const workFloor = objectPayload(
+    summaryPayloads.workFloor ??
+      summaryPayloads.workSummary?.floor ??
+      summaryPayloads.marketplaceSummary?.workFloor,
+  );
+  const actualValue = objectPayload(workFloor?.actualValue);
+  if (
+    !workFloor ||
+    !actualValue ||
+    workFloor.workNetworkValueAccountingModel !==
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL ||
+    actualValue.workNetworkValueAccountingModel !==
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL
+  ) {
+    return null;
+  }
+
+  // Every current alias is required. An absent alias is not permission to
+  // rebuild Q8 from a compatibility Number; canonical snapshots fail closed.
+  const aliases = [
+    workFloor.networkValueQ8,
+    workFloor.liveNetworkValueQ8,
+    actualValue.networkValueQ8,
+    actualValue.liveNetworkValueQ8,
+    actualValue.totalQ8,
+    actualValue.liveTotalQ8,
+  ].map((value) => canonicalNonNegativeQ8Text(value, { positive: true }));
+  if (aliases.some((value) => !value)) {
+    return null;
+  }
+  const [workNetworkValueQ8] = aliases;
+  if (aliases.some((value) => value !== workNetworkValueQ8)) {
+    return null;
+  }
+
+  return {
+    workNetworkValueAccountingModel: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+    workNetworkValueQ8,
+    workNetworkValueSats: decimalTextFromQ8(workNetworkValueQ8),
+  };
 }
 
 function summarySnapshotTotals(summaryPayloads = {}) {
-  const workFloor =
-    summaryPayloads.workFloor ??
-    summaryPayloads.workSummary?.floor ??
-    summaryPayloads.marketplaceSummary?.workFloor ??
-    null;
-  const growthSummary = summaryPayloads.growthSummary ?? null;
-  const workNetworkValueSats = summaryNumber(
-    workFloor?.networkValueSats ??
-      workFloor?.actualValue?.networkValueSats ??
-      workFloor?.actualValue?.totalSats,
-  );
-  const growthActualValueSats = summaryNumber(
-    growthSummary?.actualValue?.totalSats ??
-      growthSummary?.networkValueSats,
-  );
-  const growthWorkFloorValueSats = summaryNumber(
-    growthSummary?.workFloor?.networkValueSats ??
-      growthSummary?.workFloor?.actualValue?.totalSats,
-  );
+  const binding = exactWorkNetworkValueSummaryBinding(summaryPayloads);
+  if (!binding) {
+    throw new Error(
+      "Canonical summary totals require stored exact WORK network Q8 aliases and the current accounting model.",
+    );
+  }
+  const {
+    workNetworkValueAccountingModel,
+    workNetworkValueQ8,
+    workNetworkValueSats,
+  } = binding;
   return {
-    growthActualValueSats,
-    growthWorkFloorValueSats,
+    growthActualValueQ8: workNetworkValueQ8,
+    growthActualValueSats: workNetworkValueSats,
+    growthWorkFloorValueQ8: workNetworkValueQ8,
+    growthWorkFloorValueSats: workNetworkValueSats,
+    workActualValueQ8: workNetworkValueQ8,
     workActualValueSats: workNetworkValueSats,
+    workNetworkValueAccountingModel,
+    workNetworkValueQ8,
     workNetworkValueSats,
   };
+}
+
+function exactSummarySnapshotTotalsCurrent(payload) {
+  const binding = exactWorkNetworkValueSummaryBinding(
+    payload?.summaryPayloads,
+  );
+  const totals = objectPayload(payload?.totals);
+  if (
+    !binding ||
+    !totals ||
+    totals.workNetworkValueAccountingModel !==
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL
+  ) {
+    return false;
+  }
+  return [
+    totals.workNetworkValueQ8,
+    totals.workActualValueQ8,
+    totals.growthActualValueQ8,
+    totals.growthWorkFloorValueQ8,
+  ].every(
+    (value) =>
+      canonicalNonNegativeQ8Text(value, { positive: true }) ===
+      binding.workNetworkValueQ8,
+  );
 }
 
 function objectPayload(value) {
@@ -7989,6 +9035,9 @@ async function fallbackLedgerSnapshotPayload(
     ...(previousPayload?.metrics ?? {}),
     indexedThroughBlock,
   };
+  const totals = exactWorkNetworkValueSummaryBinding(summaryPayloads)
+    ? summarySnapshotTotals(summaryPayloads)
+    : {};
   return {
     checks: previousPayload?.checks ?? [],
     generatedAt,
@@ -8003,7 +9052,7 @@ async function fallbackLedgerSnapshotPayload(
       summarySnapshotFallback: summaryHash,
     },
     status: "summary-snapshot-fallback",
-    totals: summarySnapshotTotals(summaryPayloads),
+    totals,
     warning: `Ledger consistency refresh failed: ${error?.message ?? String(error)}`,
   };
 }
@@ -8176,6 +9225,22 @@ async function storeLedgerSnapshot(client, options = {}) {
           AND issuance_event.payload->>'issuanceValueSnapshotId' =
             EXCLUDED.snapshot_id
       )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM proof_indexer.meta rebuild
+          JOIN proof_indexer.meta witness
+            ON witness.key =
+              rebuild.value->'verifierBinding'->>'witnessSetMetaKey'
+          CROSS JOIN LATERAL jsonb_array_elements(
+            COALESCE(witness.value->'entries', '[]'::jsonb)
+          ) entry
+          WHERE rebuild.key = $9
+            AND rebuild.value->>'network' = EXCLUDED.network
+            AND witness.value->>'network' = EXCLUDED.network
+            AND witness.value->>'model' = $10
+            AND entry->>'disposition' = 'preserve'
+            AND entry->'snapshot'->>'snapshotId' = EXCLUDED.snapshot_id
+        )
     `,
     [
       NETWORK,
@@ -8191,6 +9256,8 @@ async function storeLedgerSnapshot(client, options = {}) {
         status: payload.status,
       }),
       JSON.stringify(snapshotPayload),
+      CANONICAL_REBUILD_META_KEY,
+      INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
     ],
   );
   return snapshotPayload;
@@ -8261,6 +9328,73 @@ function canonicalSummaryCoverage(summaryPayloads = {}) {
 }
 
 function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
+  const q8Scale = 100_000_000n;
+  const exactWorkNetworkValue =
+    exactWorkNetworkValueSummaryBinding(summaryPayloads);
+  const hasValue = (object, field) =>
+    object &&
+    Object.prototype.hasOwnProperty.call(object, field) &&
+    object[field] !== undefined &&
+    object[field] !== null &&
+    object[field] !== "";
+  const exactInteger = (
+    value,
+    { allowZero = true, positive = false } = {},
+  ) => {
+    if (typeof value === "bigint") {
+      if ((positive && value <= 0n) || (!allowZero && value === 0n)) {
+        return null;
+      }
+      return value < 0n ? null : value;
+    }
+    if (typeof value === "number") {
+      if (
+        !Number.isSafeInteger(value) ||
+        value < 0 ||
+        (positive && value <= 0) ||
+        (!allowZero && value === 0)
+      ) {
+        return null;
+      }
+      return BigInt(value);
+    }
+    const text = String(value ?? "").trim();
+    if (!/^(?:0|[1-9][0-9]*)$/u.test(text)) {
+      return null;
+    }
+    const integer = BigInt(text);
+    if ((positive && integer <= 0n) || (!allowZero && integer === 0n)) {
+      return null;
+    }
+    return integer;
+  };
+  const decimalQ8 = (value) => {
+    if (typeof value === "number") {
+      if (!Number.isFinite(value) || value < 0) return null;
+      value = value.toFixed(8).replace(/\.?0+$/u, "");
+    }
+    const text = String(value ?? "").trim();
+    const match = /^(0|[1-9][0-9]*)(?:\.([0-9]{1,8}))?$/u.exec(text);
+    if (!match) return null;
+    return (
+      BigInt(match[1]) * q8Scale +
+      BigInt((match[2] ?? "").padEnd(8, "0") || "0")
+    );
+  };
+  const exactQ8 = (object, q8Field, decimalField) => {
+    if (hasValue(object, q8Field)) {
+      return exactInteger(object[q8Field]);
+    }
+    return decimalQ8(object?.[decimalField]);
+  };
+  const exactQ8AliasesAgree = (object, q8Field, decimalField) => {
+    if (!hasValue(object, q8Field) || !hasValue(object, decimalField)) {
+      return true;
+    }
+    const q8 = exactInteger(object[q8Field]);
+    const decimal = decimalQ8(object[decimalField]);
+    return q8 !== null && decimal !== null && q8 === decimal;
+  };
   const coverage =
     summaryPayloads?.workFloor?.actualValue?.creditMinerFeeCoverage;
   const inceptionActualCandidate =
@@ -8277,55 +9411,11 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
   const coveredConfirmedTransactions = Number(
     coverage?.coveredConfirmedTransactions,
   );
-  const confirmedIssuanceUnits = Number(
-    inceptionActual?.confirmedIssuanceUnits,
-  );
-  const directProofIssuanceUnits = Number(
-    inceptionActual?.directProofIssuanceUnits,
-  );
-  const attachedWorkIssuanceUnits = Number(
-    inceptionActual?.attachedWorkIssuanceUnits,
-  );
-  const attachedWorkLiveValueAtSendSats = Number(
-    inceptionActual?.attachedWorkLiveValueAtSendSats,
-  );
-  const issuanceNetworkValueSats = Number(
-    inceptionActual?.issuanceNetworkValueSats,
-  );
-  const inceptionNetworkValueSats = Number(
-    inceptionActual?.networkValueSats,
-  );
-  const inceptionLiveNetworkValueSats = Number(
-    inceptionActual?.liveNetworkValueSats,
-  );
-  const inceptionFrozenNetworkValueSats = Number(
-    inceptionActual?.frozenNetworkValueSats,
-  );
-  const inceptionFloorSats = Number(inceptionActual?.floorSats);
-  const inceptionLiveFloorSats = Number(inceptionActual?.liveFloorSats);
-  const inceptionFrozenFloorSats = Number(inceptionActual?.frozenFloorSats);
-  const inceptionConfirmedSupply = Number(
-    summaryPayloads?.inceptionSummary?.stats?.confirmedSupply,
-  );
-  const inceptionBondSaleVolumeSats = Number(
-    inceptionActual?.bondSaleVolumeSats,
-  );
-  const inceptionBondTransferFeeSats = Number(
-    inceptionActual?.bondTransferFeeSats,
-  );
-  const inceptionBondMarketplaceMutationFeeSats = Number(
-    inceptionActual?.bondMarketplaceMutationFeeSats,
-  );
-  const issuanceDustSats = Number(inceptionActual?.issuanceDustSats);
-  const issuanceFloorSats = Number(inceptionActual?.issuanceFloorSats);
   const issuanceCheckpointBlockHeight = Number(
     inceptionActual?.issuanceCheckpointBlockHeight,
   );
   const issuanceValueSnapshotBlockHeight = Number(
     inceptionActual?.issuanceValueSnapshotBlockHeight,
-  );
-  const issuanceValueSnapshotWorkNetworkValueSats = Number(
-    inceptionActual?.issuanceValueSnapshotWorkNetworkValueSats,
   );
   const confirmedInceptionMints = Number(
     summaryPayloads?.inceptionSummary?.token?.stats?.confirmedMints,
@@ -8424,45 +9514,87 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
       const expectedCreditAmountMoved = Number(
         formatWorkAtoms(creditAmountAtoms),
       );
-      const expectedCreditLiveValueQ8 = workAtomsValueAtFloorQ8(
-        creditAmountAtoms,
-        workLiveFloorSats,
+      const creditFloorAtConfirmQ8 = exactInteger(
+        item?.creditFloorAtConfirmQ8,
+        { positive: true },
       );
-      if (expectedCreditLiveValueQ8 === null) {
-        return false;
-      }
-      const expectedCreditLiveValueSats = q8ToNumber(
-        expectedCreditLiveValueQ8,
+      const creditLiveFloorQ8 = exactInteger(item?.creditLiveFloorQ8, {
+        positive: true,
+      });
+      const creditRevaluationFloorQ8 = exactInteger(
+        item?.creditRevaluationFloorQ8,
+        { positive: true },
       );
-      const expectedCreditValueAtConfirmSats =
-        creditAmountMoved * creditFloorAtConfirmSats;
-      const expectedLiveNetworkValueSats =
-        expectedCreditLiveValueSats +
-        Math.max(0, frozenNetworkValueSats - creditValueAtConfirmSats);
-      const numericTolerance = (...values) =>
-        Math.min(
-          0.5,
-          Math.max(
-            0.01,
-            Number.EPSILON *
-              Math.max(
-                1,
-                ...values.map((value) => Math.abs(Number(value))),
-              ) *
-              8,
-          ),
+      const creditValueAtConfirmQ8 = exactInteger(
+        item?.creditValueAtConfirmQ8,
+        { positive: true },
+      );
+      const creditLiveValueQ8 = exactInteger(item?.creditLiveValueQ8, {
+        positive: true,
+      });
+      const frozenNetworkValueQ8 = exactInteger(
+        item?.frozenNetworkValueQ8,
+        { positive: true },
+      );
+      const liveNetworkValueQ8 = exactInteger(item?.liveNetworkValueQ8, {
+        positive: true,
+      });
+      const networkValueBeforeEventQ8 = exactInteger(
+        item?.networkValueBeforeEventQ8,
+        { positive: true },
+      );
+      const liveNetworkValueBeforeEventQ8 = inceptionBound
+        ? exactInteger(item?.liveNetworkValueBeforeEventQ8, {
+            positive: true,
+          })
+        : networkValueBeforeEventQ8;
+      const fixedEventFlowSats = exactInteger(item?.fixedEventFlowSats);
+      const projectionDecimalQ8 = (value) => {
+        const text = String(value ?? "").trim();
+        const match = /^(0|[1-9][0-9]*)(?:\.([0-9]+))?$/u.exec(text);
+        if (!match) return null;
+        return (
+          BigInt(match[1]) * q8Scale +
+          BigInt((match[2] ?? "").padEnd(8, "0").slice(0, 8) || "0")
         );
-      const confirmValueTolerance = numericTolerance(
-        creditValueAtConfirmSats,
-        expectedCreditValueAtConfirmSats,
+      };
+      const currentLiveFloorQ8 = projectionDecimalQ8(
+        summaryPayloads?.workSummary?.floor?.liveFloorSats ??
+          summaryPayloads?.workSummary?.floor?.floorSats,
       );
-      const liveValueTolerance = numericTolerance(
-        creditLiveValueSats,
-        expectedCreditLiveValueSats,
-      );
-      const liveNetworkValueTolerance = numericTolerance(
-        liveNetworkValueSats,
-        expectedLiveNetworkValueSats,
+      const expectedCreditFloorAtConfirmQ8 =
+        liveNetworkValueBeforeEventQ8 === null
+          ? null
+          : liveNetworkValueBeforeEventQ8 /
+            BigInt(WORK_TOKEN_MAX_SUPPLY);
+      const expectedCreditValueAtConfirmQ8 =
+        liveNetworkValueBeforeEventQ8 === null
+          ? null
+          : (creditAmountAtoms * liveNetworkValueBeforeEventQ8) /
+            (BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_UNIT_SCALE);
+      const expectedCreditLiveValueQ8 =
+        creditLiveFloorQ8 === null
+          ? null
+          : (creditAmountAtoms * creditLiveFloorQ8) / WORK_UNIT_SCALE;
+      const fixedEventFlowQ8 =
+        fixedEventFlowSats === null
+          ? null
+          : fixedEventFlowSats * q8Scale;
+      const aliasesCurrent = [
+        ["creditFloorAtConfirmQ8", "creditFloorAtConfirmSats"],
+        ["creditLiveFloorQ8", "creditLiveFloorSats"],
+        ["creditLiveValueQ8", "creditLiveValueSats"],
+        ["creditRevaluationFloorQ8", "creditRevaluationFloorSats"],
+        ["creditValueAtConfirmQ8", "creditValueAtConfirmSats"],
+        ["frozenNetworkValueQ8", "frozenNetworkValueSats"],
+        ["liveNetworkValueQ8", "liveNetworkValueSats"],
+        ["networkValueBeforeEventQ8", "networkValueBeforeEventSats"],
+        [
+          "liveNetworkValueBeforeEventQ8",
+          "liveNetworkValueBeforeEventSats",
+        ],
+      ].every(([q8Field, decimalField]) =>
+        exactQ8AliasesAgree(item, q8Field, decimalField),
       );
       return (
         item?.confirmed === true &&
@@ -8473,22 +9605,21 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
         creditAmountMoved > 0 &&
         Number(item?.amount) === creditAmountMoved &&
         creditAmountMoved === expectedCreditAmountMoved &&
-        creditFloorAtConfirmSats > 0 &&
-        creditLiveFloorSats > 0 &&
-        creditValueAtConfirmSats > 0 &&
-        creditLiveValueSats > 0 &&
-        frozenNetworkValueSats > 0 &&
-        liveNetworkValueSats > 0 &&
-        frozenNetworkValueSats >= creditValueAtConfirmSats &&
-        Math.abs(
-          creditValueAtConfirmSats - expectedCreditValueAtConfirmSats,
-        ) <= confirmValueTolerance &&
-        creditLiveFloorSats === workLiveFloorSats &&
-        creditRevaluationFloorSats === workLiveFloorSats &&
-        Math.abs(creditLiveValueSats - expectedCreditLiveValueSats) <=
-          liveValueTolerance &&
-        Math.abs(liveNetworkValueSats - expectedLiveNetworkValueSats) <=
-          liveNetworkValueTolerance &&
+        networkValueBeforeEventQ8 !== null &&
+        expectedCreditFloorAtConfirmQ8 !== null &&
+        creditFloorAtConfirmQ8 === expectedCreditFloorAtConfirmQ8 &&
+        currentLiveFloorQ8 !== null &&
+        creditLiveFloorQ8 === currentLiveFloorQ8 &&
+        creditRevaluationFloorQ8 === currentLiveFloorQ8 &&
+        expectedCreditValueAtConfirmQ8 !== null &&
+        creditValueAtConfirmQ8 === expectedCreditValueAtConfirmQ8 &&
+        expectedCreditLiveValueQ8 !== null &&
+        creditLiveValueQ8 === expectedCreditLiveValueQ8 &&
+        fixedEventFlowQ8 !== null &&
+        frozenNetworkValueQ8 ===
+          creditValueAtConfirmQ8 + fixedEventFlowQ8 &&
+        liveNetworkValueQ8 === creditLiveValueQ8 + fixedEventFlowQ8 &&
+        aliasesCurrent &&
         confirmationModel.length > 0 &&
         (!inceptionBound ||
           (Number.isSafeInteger(Number(item?.valueSnapshotBlockHeight)) &&
@@ -8498,28 +9629,139 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
                 .trim()
                 .toLowerCase(),
             ) &&
+            /^[0-9a-f]{64}$/u.test(
+              String(item?.valueSnapshotCanonicalSummaryHash ?? "")
+                .trim()
+                .toLowerCase(),
+            ) &&
+            Number.isFinite(
+              Date.parse(String(item?.valueSnapshotGeneratedAt ?? "")),
+            ) &&
             String(item?.valueSnapshotId ?? "").trim().length > 0))
       );
     });
-  const attachedWorkIssuanceDustSats =
-    attachedWorkLiveValueAtSendSats - attachedWorkIssuanceUnits;
-  const issuanceAggregateDustSats =
-    issuanceNetworkValueSats - confirmedIssuanceUnits;
-  const issuanceArithmeticTolerance = Math.min(
-    0.5,
-    Math.max(
-      0.01,
-      Number.EPSILON *
-        Math.max(
-          1,
-          Math.abs(issuanceNetworkValueSats),
-          Math.abs(
-            issuanceFloorSats * confirmedIssuanceUnits,
-          ),
-        ) *
-        8,
-    ),
+  const confirmedIssuanceUnits = exactInteger(
+    inceptionActual?.confirmedIssuanceUnits,
+    { positive: true },
   );
+  const directProofIssuanceUnits = exactInteger(
+    inceptionActual?.directProofIssuanceUnits,
+    { positive: true },
+  );
+  const attachedWorkIssuanceUnits = exactInteger(
+    inceptionActual?.attachedWorkIssuanceUnits,
+  );
+  const attachedWorkLiveValueAtSendQ8 = exactQ8(
+    inceptionActual,
+    "attachedWorkLiveValueAtSendQ8",
+    "attachedWorkLiveValueAtSendSats",
+  );
+  const issuanceNetworkValueQ8 = exactQ8(
+    inceptionActual,
+    "issuanceNetworkValueQ8",
+    "issuanceNetworkValueSats",
+  );
+  const issuanceDustQ8 = exactQ8(
+    inceptionActual,
+    "issuanceDustQ8",
+    "issuanceDustSats",
+  );
+  const issuanceFloorQ8 = exactQ8(
+    inceptionActual,
+    "issuanceFloorQ8",
+    "issuanceFloorSats",
+  );
+  const issuanceValueSnapshotWorkNetworkValueQ8 = exactQ8(
+    inceptionActual,
+    "issuanceValueSnapshotWorkNetworkValueQ8",
+    "issuanceValueSnapshotWorkNetworkValueSats",
+  );
+  const inceptionConfirmedSupply = exactInteger(
+    summaryPayloads?.inceptionSummary?.stats?.confirmedSupply,
+    { positive: true },
+  );
+  const inceptionBondSaleVolumeSats = exactInteger(
+    inceptionActual?.bondSaleVolumeSats,
+  );
+  const inceptionBondTransferFeeSats = exactInteger(
+    inceptionActual?.bondTransferFeeSats,
+  );
+  const inceptionBondMarketplaceMutationFeeSats = exactInteger(
+    inceptionActual?.bondMarketplaceMutationFeeSats,
+  );
+  const inceptionNetworkValueQ8 = exactQ8(
+    inceptionActual,
+    "networkValueQ8",
+    "networkValueSats",
+  );
+  const inceptionLiveNetworkValueQ8 = exactQ8(
+    inceptionActual,
+    "liveNetworkValueQ8",
+    "liveNetworkValueSats",
+  );
+  const inceptionFrozenNetworkValueQ8 = exactQ8(
+    inceptionActual,
+    "frozenNetworkValueQ8",
+    "frozenNetworkValueSats",
+  );
+  const inceptionFloorQ8 = exactQ8(
+    inceptionActual,
+    "floorQ8",
+    "floorSats",
+  );
+  const inceptionLiveFloorQ8 = exactQ8(
+    inceptionActual,
+    "liveFloorQ8",
+    "liveFloorSats",
+  );
+  const inceptionFrozenFloorQ8 = exactQ8(
+    inceptionActual,
+    "frozenFloorQ8",
+    "frozenFloorSats",
+  );
+  const topLevelInceptionNetworkValueQ8 = exactQ8(
+    summaryPayloads?.inceptionSummary,
+    "networkValueQ8",
+    "networkValueSats",
+  );
+  const confirmedInceptionMintsBigInt = Number.isSafeInteger(
+    confirmedInceptionMints,
+  )
+    ? BigInt(confirmedInceptionMints)
+    : null;
+  const exactInceptionAliasesCurrent = [
+    ["attachedWorkLiveValueAtSendQ8", "attachedWorkLiveValueAtSendSats"],
+    ["issuanceNetworkValueQ8", "issuanceNetworkValueSats"],
+    ["issuanceDustQ8", "issuanceDustSats"],
+    ["issuanceFloorQ8", "issuanceFloorSats"],
+    [
+      "issuanceValueSnapshotWorkNetworkValueQ8",
+      "issuanceValueSnapshotWorkNetworkValueSats",
+    ],
+    ["networkValueQ8", "networkValueSats"],
+    ["liveNetworkValueQ8", "liveNetworkValueSats"],
+    ["frozenNetworkValueQ8", "frozenNetworkValueSats"],
+    ["floorQ8", "floorSats"],
+    ["liveFloorQ8", "liveFloorSats"],
+    ["frozenFloorQ8", "frozenFloorSats"],
+  ].every(([q8Field, decimalField]) =>
+    exactQ8AliasesAgree(inceptionActual, q8Field, decimalField),
+  ) &&
+    exactQ8AliasesAgree(
+      summaryPayloads?.inceptionSummary,
+      "networkValueQ8",
+      "networkValueSats",
+    );
+  const attachedWorkIssuanceDustQ8 =
+    attachedWorkLiveValueAtSendQ8 !== null &&
+    attachedWorkIssuanceUnits !== null
+      ? attachedWorkLiveValueAtSendQ8 -
+        attachedWorkIssuanceUnits * q8Scale
+      : null;
+  const issuanceAggregateDustQ8 =
+    issuanceNetworkValueQ8 !== null && confirmedIssuanceUnits !== null
+      ? issuanceNetworkValueQ8 - confirmedIssuanceUnits * q8Scale
+      : null;
   const inceptionIssuanceCurrent =
     inceptionActual?.attachmentAccountingModel ===
       INCB_ISSUANCE_ACCOUNTING_MODEL &&
@@ -8553,100 +9795,77 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
         String(inceptionActual?.issuanceValueSnapshotGeneratedAt ?? ""),
       ),
     ) &&
-    Number.isFinite(issuanceValueSnapshotWorkNetworkValueSats) &&
-    issuanceValueSnapshotWorkNetworkValueSats > 0 &&
+    issuanceValueSnapshotWorkNetworkValueQ8 !== null &&
+    issuanceValueSnapshotWorkNetworkValueQ8 > 0n &&
     Number.isSafeInteger(confirmedInceptionMints) &&
     confirmedInceptionMints > 0 &&
-    Number.isSafeInteger(confirmedIssuanceUnits) &&
-    confirmedIssuanceUnits > 0 &&
-    Number.isSafeInteger(directProofIssuanceUnits) &&
-    directProofIssuanceUnits > 0 &&
-    Number.isSafeInteger(attachedWorkIssuanceUnits) &&
-    attachedWorkIssuanceUnits >= 0 &&
+    confirmedInceptionMintsBigInt !== null &&
+    confirmedIssuanceUnits !== null &&
+    confirmedIssuanceUnits > 0n &&
+    directProofIssuanceUnits !== null &&
+    directProofIssuanceUnits > 0n &&
+    attachedWorkIssuanceUnits !== null &&
+    attachedWorkIssuanceUnits >= 0n &&
     directProofIssuanceUnits + attachedWorkIssuanceUnits ===
       confirmedIssuanceUnits &&
-    Number.isFinite(attachedWorkLiveValueAtSendSats) &&
-    attachedWorkLiveValueAtSendSats >= 0 &&
-    attachedWorkIssuanceDustSats >= 0 &&
-    attachedWorkIssuanceDustSats < confirmedInceptionMints &&
-    Number.isFinite(issuanceNetworkValueSats) &&
-    issuanceAggregateDustSats >= 0 &&
-    issuanceAggregateDustSats < confirmedInceptionMints &&
-    Math.abs(
-      issuanceNetworkValueSats -
-        (directProofIssuanceUnits +
-          attachedWorkLiveValueAtSendSats),
-    ) <= issuanceArithmeticTolerance &&
-    Number.isFinite(issuanceDustSats) &&
-    issuanceDustSats >= 0 &&
-    issuanceDustSats < confirmedInceptionMints &&
-    Math.abs(
-      issuanceDustSats - issuanceAggregateDustSats,
-    ) <= issuanceArithmeticTolerance &&
-    Math.abs(
-      issuanceDustSats - attachedWorkIssuanceDustSats,
-    ) <= issuanceArithmeticTolerance &&
-    Number.isFinite(issuanceFloorSats) &&
-    issuanceFloorSats >= 1 &&
-    Math.abs(
-      issuanceFloorSats * confirmedIssuanceUnits -
-        issuanceNetworkValueSats,
-    ) <= issuanceArithmeticTolerance;
-  const expectedInceptionNetworkValueSats =
-    issuanceNetworkValueSats +
-    inceptionBondSaleVolumeSats +
-    inceptionBondTransferFeeSats +
-    inceptionBondMarketplaceMutationFeeSats;
-  const inceptionNetworkValueTolerance = Math.max(
-    0.01,
-    Number.EPSILON *
-      Math.max(
-        Math.abs(expectedInceptionNetworkValueSats),
-        Math.abs(inceptionNetworkValueSats),
-        1,
-      ) *
-      2,
-  );
-  const expectedInceptionFloorSats =
-    inceptionConfirmedSupply > 0
-      ? inceptionNetworkValueSats / inceptionConfirmedSupply
-      : 0;
-  const inceptionFloorTolerance = Math.max(
-    1e-12,
-    Number.EPSILON *
-      Math.max(Math.abs(expectedInceptionFloorSats), 1) *
-      2,
-  );
+    attachedWorkLiveValueAtSendQ8 !== null &&
+    attachedWorkLiveValueAtSendQ8 >= 0n &&
+    attachedWorkIssuanceDustQ8 !== null &&
+    attachedWorkIssuanceDustQ8 >= 0n &&
+    attachedWorkIssuanceDustQ8 < confirmedInceptionMintsBigInt * q8Scale &&
+    issuanceNetworkValueQ8 !== null &&
+    issuanceNetworkValueQ8 ===
+      directProofIssuanceUnits * q8Scale +
+        attachedWorkLiveValueAtSendQ8 &&
+    issuanceAggregateDustQ8 !== null &&
+    issuanceAggregateDustQ8 >= 0n &&
+    issuanceAggregateDustQ8 < confirmedInceptionMintsBigInt * q8Scale &&
+    issuanceDustQ8 !== null &&
+    issuanceDustQ8 === issuanceAggregateDustQ8 &&
+    issuanceDustQ8 === attachedWorkIssuanceDustQ8 &&
+    issuanceFloorQ8 !== null &&
+    issuanceFloorQ8 >= q8Scale &&
+    issuanceFloorQ8 ===
+      issuanceNetworkValueQ8 / confirmedIssuanceUnits &&
+    exactInceptionAliasesCurrent;
+  const expectedInceptionNetworkValueQ8 =
+    issuanceNetworkValueQ8 !== null &&
+    inceptionBondSaleVolumeSats !== null &&
+    inceptionBondTransferFeeSats !== null &&
+    inceptionBondMarketplaceMutationFeeSats !== null
+      ? issuanceNetworkValueQ8 +
+        (inceptionBondSaleVolumeSats +
+          inceptionBondTransferFeeSats +
+          inceptionBondMarketplaceMutationFeeSats) *
+          q8Scale
+      : null;
+  const expectedInceptionFloorQ8 =
+    inceptionNetworkValueQ8 !== null &&
+    inceptionConfirmedSupply !== null &&
+    inceptionConfirmedSupply > 0n
+      ? inceptionNetworkValueQ8 / inceptionConfirmedSupply
+      : null;
   const inceptionNetworkValueCurrent =
     inceptionActual?.networkValueAccountingModel ===
       INCB_NETWORK_VALUE_ACCOUNTING_MODEL &&
-    Number.isFinite(inceptionConfirmedSupply) &&
+    inceptionConfirmedSupply !== null &&
     inceptionConfirmedSupply === confirmedIssuanceUnits &&
     [
       inceptionBondSaleVolumeSats,
       inceptionBondTransferFeeSats,
       inceptionBondMarketplaceMutationFeeSats,
-    ].every((value) => Number.isFinite(value) && value >= 0) &&
-    Number.isFinite(inceptionNetworkValueSats) &&
-    Math.abs(
-      inceptionNetworkValueSats - expectedInceptionNetworkValueSats,
-    ) <= inceptionNetworkValueTolerance &&
-    Number.isFinite(inceptionLiveNetworkValueSats) &&
-    Math.abs(inceptionLiveNetworkValueSats - inceptionNetworkValueSats) <=
-      inceptionNetworkValueTolerance &&
-    Number.isFinite(inceptionFrozenNetworkValueSats) &&
-    Math.abs(inceptionFrozenNetworkValueSats - inceptionNetworkValueSats) <=
-      inceptionNetworkValueTolerance &&
-    Number(
-      summaryPayloads?.inceptionSummary?.networkValueSats,
-    ) === inceptionNetworkValueSats &&
-    [inceptionFloorSats, inceptionLiveFloorSats, inceptionFrozenFloorSats].every(
-      (value) =>
-        Number.isFinite(value) &&
-        Math.abs(value - expectedInceptionFloorSats) <=
-          inceptionFloorTolerance,
-    );
+    ].every((value) => value !== null && value >= 0n) &&
+    expectedInceptionNetworkValueQ8 !== null &&
+    inceptionNetworkValueQ8 === expectedInceptionNetworkValueQ8 &&
+    inceptionLiveNetworkValueQ8 === inceptionNetworkValueQ8 &&
+    inceptionFrozenNetworkValueQ8 === inceptionNetworkValueQ8 &&
+    topLevelInceptionNetworkValueQ8 === inceptionNetworkValueQ8 &&
+    expectedInceptionFloorQ8 !== null &&
+    inceptionFloorQ8 === expectedInceptionFloorQ8 &&
+    inceptionLiveFloorQ8 === expectedInceptionFloorQ8 &&
+    inceptionFrozenFloorQ8 === expectedInceptionFloorQ8;
   return (
+    exactWorkNetworkValue !== null &&
     String(
       summaryPayloads?.workFloor?.actualValue
         ?.creditMinerFeeAccountingModel ?? "",
@@ -8702,7 +9921,8 @@ function eligibleCanonicalSummarySnapshotPayload(payload) {
         String(item.indexedThroughBlockHash ?? "").toLowerCase() &&
       /^[0-9a-f]{64}$/u.test(String(item.sourceHashes?.canonicalSummary ?? "")) &&
       canonicalSummaryCoverage(item.summaryPayloads) > 0 &&
-      canonicalSummaryAccountingModelsCurrent(item.summaryPayloads),
+      canonicalSummaryAccountingModelsCurrent(item.summaryPayloads) &&
+      exactSummarySnapshotTotalsCurrent(item),
   );
 }
 
@@ -8782,6 +10002,9 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
         AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+        AND payload->'totals'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+        AND payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
         AND payload->>'indexedThroughBlockHash' ~ '^[0-9a-fA-F]{64}$'
         AND payload->'summaryRefresh'->>'indexedThroughBlockHash' = payload->>'indexedThroughBlockHash'
         AND source_hashes ? 'canonicalSummary'
@@ -8863,6 +10086,19 @@ async function pruneLedgerSnapshots(
         FROM proof_indexer.events
         WHERE network = $1
           AND COALESCE(payload->>'issuanceValueSnapshotId', '') <> ''
+        UNION
+        SELECT DISTINCT entry->'snapshot'->>'snapshotId' AS snapshot_id
+        FROM proof_indexer.meta rebuild
+        JOIN proof_indexer.meta witness
+          ON witness.key = rebuild.value->'verifierBinding'->>'witnessSetMetaKey'
+        CROSS JOIN LATERAL jsonb_array_elements(
+          COALESCE(witness.value->'entries', '[]'::jsonb)
+        ) entry
+        WHERE rebuild.key = $4
+          AND rebuild.value->>'network' = $1
+          AND witness.value->>'network' = $1
+          AND witness.value->>'model' = $5
+          AND entry->>'disposition' = 'preserve'
       )
       DELETE FROM proof_indexer.ledger_snapshots snapshot
       USING ranked
@@ -8891,6 +10127,8 @@ async function pruneLedgerSnapshots(
       NETWORK,
       boundedCanonicalSummaryLimit,
       boundedScanSnapshotLimit,
+      CANONICAL_REBUILD_META_KEY,
+      INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
     ],
   );
   return {
@@ -9156,6 +10394,22 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
           AND issuance_event.payload->>'issuanceValueSnapshotId' =
             EXCLUDED.snapshot_id
       )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM proof_indexer.meta rebuild
+          JOIN proof_indexer.meta witness
+            ON witness.key =
+              rebuild.value->'verifierBinding'->>'witnessSetMetaKey'
+          CROSS JOIN LATERAL jsonb_array_elements(
+            COALESCE(witness.value->'entries', '[]'::jsonb)
+          ) entry
+          WHERE rebuild.key = $9
+            AND rebuild.value->>'network' = EXCLUDED.network
+            AND witness.value->>'network' = EXCLUDED.network
+            AND witness.value->>'model' = $10
+            AND entry->>'disposition' = 'preserve'
+            AND entry->'snapshot'->>'snapshotId' = EXCLUDED.snapshot_id
+        )
     `,
     [
       NETWORK,
@@ -9171,6 +10425,8 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
         status: ledger.status,
       }),
       JSON.stringify(snapshotPayload),
+      CANONICAL_REBUILD_META_KEY,
+      INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
     ],
   );
   const snapshotRetention = await pruneLedgerSnapshots(client);
@@ -9243,6 +10499,1515 @@ async function storeProofIndexerMeta(client, key, value) {
   );
 }
 
+async function migrateUnboundedCreditUnitStorage(client) {
+  const expectedColumns = [
+    ["credit_definitions", "max_supply"],
+    ["credit_definitions", "mint_amount"],
+    ["credit_balances", "confirmed_balance"],
+    ["credit_balances", "pending_delta"],
+    ["credit_listings", "amount"],
+  ];
+  const expectedColumnKeys = new Set(
+    expectedColumns.map(([tableName, columnName]) =>
+      `${tableName}.${columnName}`
+    ),
+  );
+  const inspectColumns = async () => {
+    const result = await client.query(
+      `
+        SELECT
+          c.relname AS table_name,
+          a.attname AS column_name,
+          a.atttypmod,
+          format_type(a.atttypid, a.atttypmod) AS formatted_type
+        FROM pg_attribute a
+        JOIN pg_class c ON c.oid = a.attrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'proof_indexer'
+          AND c.relname = ANY($1::text[])
+          AND a.attname = ANY($2::text[])
+          AND NOT a.attisdropped
+      `,
+      [
+        ["credit_definitions", "credit_balances", "credit_listings"],
+        [
+          "max_supply",
+          "mint_amount",
+          "confirmed_balance",
+          "pending_delta",
+          "amount",
+        ],
+      ],
+    );
+    const rows = result.rows.filter((row) =>
+      expectedColumnKeys.has(`${row.table_name}.${row.column_name}`)
+    );
+    const rowByKey = new Map(
+      rows.map((row) => [`${row.table_name}.${row.column_name}`, row]),
+    );
+    const missing = [...expectedColumnKeys].filter((key) => !rowByKey.has(key));
+    const wrongType = rows.filter(
+      (row) => !/^numeric(?:\(|$)/u.test(String(row.formatted_type ?? "")),
+    );
+    if (missing.length > 0 || wrongType.length > 0) {
+      throw new Error(
+        `Credit-unit storage migration found an unexpected schema: missing=${missing.join(",") || "none"} wrongType=${wrongType
+          .map((row) => `${row.table_name}.${row.column_name}:${row.formatted_type}`)
+          .join(",") || "none"}`,
+      );
+    }
+    return rows;
+  };
+
+  const before = await inspectColumns();
+  const constrainedKeys = before
+    .filter((row) => Number(row.atttypmod) !== -1)
+    .map((row) => `${row.table_name}.${row.column_name}`)
+    .sort();
+  if (
+    constrainedKeys.some((key) => key.startsWith("credit_definitions."))
+  ) {
+    await client.query(
+      `
+        ALTER TABLE proof_indexer.credit_definitions
+          ALTER COLUMN max_supply TYPE numeric USING max_supply::numeric,
+          ALTER COLUMN mint_amount TYPE numeric USING mint_amount::numeric
+      `,
+    );
+  }
+  if (constrainedKeys.some((key) => key.startsWith("credit_balances."))) {
+    await client.query(
+      `
+        ALTER TABLE proof_indexer.credit_balances
+          ALTER COLUMN confirmed_balance TYPE numeric
+            USING confirmed_balance::numeric,
+          ALTER COLUMN pending_delta TYPE numeric USING pending_delta::numeric
+      `,
+    );
+  }
+  if (constrainedKeys.includes("credit_listings.amount")) {
+    await client.query(
+      `
+        ALTER TABLE proof_indexer.credit_listings
+          ALTER COLUMN amount TYPE numeric USING amount::numeric
+      `,
+    );
+  }
+
+  const constraintSpecs = [
+    {
+      name: "credit_definitions_max_supply_integer",
+      table: "credit_definitions",
+      expression: "max_supply::text ~ '^(0|[1-9][0-9]*)$'",
+    },
+    {
+      name: "credit_definitions_mint_amount_integer",
+      table: "credit_definitions",
+      expression: "mint_amount::text ~ '^[1-9][0-9]*$'",
+    },
+    {
+      name: "credit_balances_confirmed_balance_integer",
+      table: "credit_balances",
+      expression: "confirmed_balance::text ~ '^(0|[1-9][0-9]*)$'",
+    },
+    {
+      name: "credit_balances_pending_delta_integer",
+      table: "credit_balances",
+      expression: "pending_delta::text ~ '^-?(0|[1-9][0-9]*)$'",
+    },
+    {
+      name: "credit_listings_amount_integer",
+      table: "credit_listings",
+      expression: "amount::text ~ '^[1-9][0-9]*$'",
+    },
+  ];
+  const existingConstraints = await client.query(
+    `
+      SELECT c.relname AS table_name, p.conname, p.convalidated
+      FROM pg_constraint p
+      JOIN pg_class c ON c.oid = p.conrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'proof_indexer'
+        AND p.conname = ANY($1::text[])
+    `,
+    [constraintSpecs.map((spec) => spec.name)],
+  );
+  const existingConstraintNames = new Set(
+    existingConstraints.rows.map((row) => String(row.conname ?? "")),
+  );
+  const addedConstraints = [];
+  for (const spec of constraintSpecs) {
+    if (!existingConstraintNames.has(spec.name)) {
+      await client.query(
+        `ALTER TABLE proof_indexer.${spec.table} ADD CONSTRAINT ${spec.name} CHECK (${spec.expression}) NOT VALID`,
+      );
+      addedConstraints.push(spec.name);
+    }
+    await client.query(
+      `ALTER TABLE proof_indexer.${spec.table} VALIDATE CONSTRAINT ${spec.name}`,
+    );
+  }
+
+  const normalizedBonds = await client.query(
+    `
+      UPDATE proof_indexer.credit_definitions
+      SET
+        max_supply = 0,
+        metadata = (metadata - 'maxSupplyStorage') || jsonb_build_object(
+          'maxSupply', NULL,
+          'maxSupplyModel', 'uncapped',
+          'uncapped', true
+        )
+      WHERE network = $1
+        AND (
+          (token_id = $2 AND upper(ticker) = 'POWB')
+          OR (token_id = $3 AND upper(ticker) = 'INCB')
+        )
+        AND (
+          max_supply <> 0
+          OR metadata ? 'maxSupplyStorage'
+          OR metadata->'maxSupply' IS DISTINCT FROM 'null'::jsonb
+          OR metadata->>'maxSupplyModel' IS DISTINCT FROM 'uncapped'
+          OR metadata->>'uncapped' IS DISTINCT FROM 'true'
+        )
+    `,
+    [NETWORK, POWB_TOKEN_ID, INCB_TOKEN_ID],
+  );
+  const after = await inspectColumns();
+  const remainingConstrained = after.filter(
+    (row) => Number(row.atttypmod) !== -1,
+  );
+  if (remainingConstrained.length > 0) {
+    throw new Error(
+      `Credit-unit storage migration left constrained columns: ${remainingConstrained
+        .map((row) => `${row.table_name}.${row.column_name}`)
+        .join(",")}`,
+    );
+  }
+  const verifiedConstraints = await client.query(
+    `
+      SELECT p.conname, p.convalidated
+      FROM pg_constraint p
+      JOIN pg_class c ON c.oid = p.conrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'proof_indexer'
+        AND p.conname = ANY($1::text[])
+    `,
+    [constraintSpecs.map((spec) => spec.name)],
+  );
+  const validatedNames = new Set(
+    verifiedConstraints.rows
+      .filter((row) => row.convalidated === true)
+      .map((row) => String(row.conname ?? "")),
+  );
+  const unvalidated = constraintSpecs
+    .map((spec) => spec.name)
+    .filter((name) => !validatedNames.has(name));
+  if (unvalidated.length > 0) {
+    throw new Error(
+      `Credit-unit storage migration did not validate: ${unvalidated.join(",")}`,
+    );
+  }
+  const bondDefinitions = await client.query(
+    `
+      SELECT token_id, max_supply::text AS max_supply, metadata
+      FROM proof_indexer.credit_definitions
+      WHERE network = $1 AND token_id = ANY($2::text[])
+    `,
+    [NETWORK, [POWB_TOKEN_ID, INCB_TOKEN_ID]],
+  );
+  for (const row of bondDefinitions.rows) {
+    if (
+      String(row.max_supply ?? "") !== BOND_UNCAPPED_MAX_SUPPLY_STORAGE ||
+      row?.metadata?.maxSupply !== null ||
+      row?.metadata?.maxSupplyModel !== "uncapped" ||
+      row?.metadata?.uncapped !== true
+    ) {
+      throw new Error(
+        `Synthetic bond ${row.token_id} did not migrate to the uncapped storage contract.`,
+      );
+    }
+  }
+  return {
+    addedConstraints: addedConstraints.sort(),
+    alteredColumns: constrainedKeys,
+    normalizedBondDefinitions: Number(normalizedBonds.rowCount ?? 0),
+    storageModel: "unconstrained-integer-numeric-v1",
+  };
+}
+
+function canonicalIncbPwtRangeReplayTargets(fromHeight) {
+  const normalizedHeight = Number(fromHeight);
+  if (
+    !Number.isSafeInteger(normalizedHeight) ||
+    normalizedHeight > CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT
+  ) {
+    return [];
+  }
+  return CANONICAL_INCB_PWT_RANGE_REPLAY_TARGETS.filter(
+    (target) => target.blockHeight >= normalizedHeight,
+  );
+}
+
+async function verifyCanonicalIncbPwtRangeReplayCoreFacts(targets) {
+  const verified = [];
+  const blockByHash = new Map();
+  for (const target of Array.isArray(targets) ? targets : []) {
+    const canonicalHash = String(
+      await bitcoinRpc("getblockhash", [target.blockHeight]),
+    )
+      .trim()
+      .toLowerCase();
+    if (canonicalHash !== target.blockHash) {
+      throw new Error(
+        `Pinned INCB replay block ${target.blockHeight} changed from ${target.blockHash} to ${canonicalHash || "unknown"}.`,
+      );
+    }
+    let block = blockByHash.get(target.blockHash);
+    if (!block) {
+      block = await bitcoinRpc("getblock", [target.blockHash, 2]);
+      assertCanonicalBlockEnvelope(block, target.blockHeight, target.blockHash);
+      blockByHash.set(target.blockHash, block);
+    }
+    if (
+      Number(block?.time) !== target.blockTime ||
+      String(block?.tx?.[target.blockIndex]?.txid ?? "")
+        .trim()
+        .toLowerCase() !== target.txid
+    ) {
+      throw new Error(
+        `Pinned INCB replay transaction ${target.txid} changed exact Core block position.`,
+      );
+    }
+    const hydrated = await transactionWithInputPrevouts({
+      ...block.tx[target.blockIndex],
+      _powBlockHash: target.blockHash,
+      _powBlockIndex: target.blockIndex,
+      _powPreviousBlockHash: String(block?.previousblockhash ?? "")
+        .trim()
+        .toLowerCase(),
+      blocktime: block.time,
+      height: target.blockHeight,
+    });
+    assertHydratedProtocolTransaction(hydrated);
+    const messages = protocolMessagesFromTx(hydrated);
+    const expectedWorkPayload = [
+      "pwt1",
+      "send2",
+      WORK_TOKEN_ID,
+      target.workAmountAtoms,
+      target.bondRecipientAddress,
+    ].join(":");
+    const memoMessages = messages.filter(
+      (message) =>
+        message?.text === `pwm1:m:${INCEPTION_BOND_MEMO}` &&
+        Number(message?.voutIndex) === target.bondMemoVout,
+    );
+    const workMessages = messages.filter(
+      (message) =>
+        message?.text === expectedWorkPayload &&
+        Number(message?.voutIndex) === target.workProtocolVout,
+    );
+    const bondOutput = hydrated.vout?.[target.bondRecipientVout];
+    const registryOutput = hydrated.vout?.[target.workRegistryPaymentVout];
+    if (
+      memoMessages.length !== 1 ||
+      workMessages.length !== 1 ||
+      addressFromVout(bondOutput) !== target.bondRecipientAddress ||
+      satsFromVoutValue(bondOutput?.value) !==
+        BigInt(target.bondRecipientAmountSats) ||
+      addressFromVout(registryOutput) !== WORK_TOKEN_REGISTRY_ADDRESS ||
+      satsFromVoutValue(registryOutput?.value) !== 546n ||
+      senderAddressFromTx(hydrated) !== target.bondRecipientAddress
+    ) {
+      throw new Error(
+        `Pinned INCB replay transaction ${target.txid} changed immutable bond or WORK attachment facts.`,
+      );
+    }
+    verified.push({
+      blockHash: target.blockHash,
+      blockHeight: target.blockHeight,
+      blockIndex: target.blockIndex,
+      txid: target.txid,
+      workAmountAtoms: target.workAmountAtoms,
+    });
+  }
+  return verified;
+}
+
+function canonicalIncbReplayAttachedWorkAtoms(rawTx, recipientAddress) {
+  const canonicalRecipient = String(recipientAddress ?? "").trim();
+  let total = 0n;
+  for (const message of protocolMessagesFromTx(objectValue(rawTx))) {
+    const parts = String(message?.text ?? "").split(":");
+    if (
+      parts[0] !== "pwt1" ||
+      String(parts[2] ?? "").trim().toLowerCase() !== WORK_TOKEN_ID ||
+      String(parts[4] ?? "").trim() !== canonicalRecipient
+    ) {
+      continue;
+    }
+    if (parts[1] === "send2") {
+      const atoms = canonicalWorkAtomsText(parts[3]);
+      if (!atoms) {
+        throw new Error(
+          `Canonical INCB bond attachment for ${canonicalRecipient} has malformed WORK atoms.`,
+        );
+      }
+      total += BigInt(atoms);
+      continue;
+    }
+    if (parts[1] === "send") {
+      const units = canonicalIntegerText(parts[3], { positive: true });
+      if (!units) {
+        throw new Error(
+          `Canonical INCB bond attachment for ${canonicalRecipient} has malformed legacy WORK units.`,
+        );
+      }
+      total += BigInt(units) * WORK_UNIT_SCALE;
+    }
+  }
+  return total.toString();
+}
+
+function canonicalIncbReplayRawSnapshotMaterial(row) {
+  return {
+    consistencyJson: String(row?.raw_consistency_json ?? ""),
+    generatedAt: new Date(row?.generated_at).toISOString(),
+    indexedThroughBlock: Number(row?.indexed_through_block),
+    metricsJson: String(row?.raw_metrics_json ?? ""),
+    payloadJson: String(row?.raw_payload_json ?? ""),
+    snapshotId: String(row?.snapshot_id ?? ""),
+    sourceHashesJson: String(row?.raw_source_hashes_json ?? ""),
+  };
+}
+
+function canonicalIncbReplaySnapshotDescriptorFromRow(row, binding = null) {
+  const storedWorkNetworkValue =
+    lockedCanonicalIncbSnapshotWorkNetworkValueQ8(row);
+  const exactMintQ8 = canonicalNonNegativeQ8Text(
+    binding?.workNetworkValueQ8,
+    { positive: true },
+  );
+  const hasAccountingMarker = [
+    row?.totals_work_network_value_model,
+    row?.work_floor_network_value_model,
+    row?.work_actual_network_value_model,
+  ].some((value) => String(value ?? "").trim().length > 0);
+  const canBindLegacySnapshotToExactMint = Boolean(
+    binding?.workNetworkValueWitnessMode ===
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL &&
+      exactMintQ8 &&
+      !hasAccountingMarker,
+  );
+  const workNetworkValue =
+    storedWorkNetworkValue?.valueQ8 === exactMintQ8
+      ? storedWorkNetworkValue
+      : canBindLegacySnapshotToExactMint
+        ? {
+            mode: INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE,
+            valueQ8: exactMintQ8,
+          }
+        : storedWorkNetworkValue;
+  return normalizeIncbReplaySnapshotDescriptor({
+    canonicalSummaryHash: String(
+      row?.canonical_summary_hash ?? "",
+    ).trim().toLowerCase(),
+    consistencyOk: String(row?.consistency_ok ?? "") === "true",
+    consistencyStatus: String(row?.consistency_status ?? ""),
+    generatedAt: new Date(row?.generated_at).toISOString(),
+    indexedThroughBlock: Number(row?.indexed_through_block),
+    payloadBlockHash: String(row?.payload_block_hash ?? "")
+      .trim().toLowerCase(),
+    payloadSnapshotId: String(row?.payload_snapshot_id ?? ""),
+    rawSnapshotFingerprint: incbReplayRawSnapshotFingerprint(
+      canonicalIncbReplayRawSnapshotMaterial(row),
+    ),
+    snapshotId: String(row?.snapshot_id ?? ""),
+    sourceBlockHash: String(row?.source_block_hash ?? "")
+      .trim().toLowerCase(),
+    summaryRefreshBlockHash: String(
+      row?.summary_refresh_block_hash ?? "",
+    ).trim().toLowerCase(),
+    summaryRefreshMode: String(row?.summary_refresh_mode ?? ""),
+    workFloorBlockHash: String(row?.work_floor_block_hash ?? "")
+      .trim().toLowerCase(),
+    workFloorHeight: Number(row?.work_floor_height),
+    workFloorSnapshotId: String(row?.work_floor_snapshot_id ?? ""),
+    workNetworkValueMode: workNetworkValue?.mode ?? "",
+    workNetworkValueQ8: workNetworkValue?.valueQ8 ?? "",
+  });
+}
+
+function canonicalIncbReplayMintIsExact(
+  mint,
+  { bond },
+) {
+  const attachedWorkAmountAtoms = String(
+    bond?.attachedWorkAmountAtoms ?? "",
+  );
+  const exactFields = {
+    attachedWorkAmountAtoms: canonicalWorkAtomsText(
+      mint?.attachedWorkAmountAtoms,
+      { allowZero: true },
+    ),
+    attachedWorkLiveFloorAtSendQ8: canonicalIntegerText(
+      mint?.attachedWorkLiveFloorAtSendQ8,
+      { positive: true },
+    ),
+    attachedWorkLiveValueAtSendQ8: canonicalIntegerText(
+      mint?.attachedWorkLiveValueAtSendQ8,
+    ),
+    issuanceDustQ8: canonicalIntegerText(mint?.issuanceDustQ8),
+    issuanceNetworkValueQ8: canonicalIntegerText(
+      mint?.issuanceNetworkValueQ8,
+      { positive: true },
+    ),
+    issuanceValueSnapshotWorkNetworkValueQ8: canonicalIntegerText(
+      mint?.issuanceValueSnapshotWorkNetworkValueQ8,
+      { positive: true },
+    ),
+  };
+  return Boolean(
+    canonicalIncbIssuanceMintProjection(mint) &&
+      Object.values(exactFields).every(Boolean) &&
+      exactFields.attachedWorkAmountAtoms === attachedWorkAmountAtoms &&
+      String(mint?.txid ?? "").trim().toLowerCase() === bond.txid &&
+      String(mint?.sourceBondTxid ?? "").trim().toLowerCase() === bond.txid &&
+      String(mint?.minterAddress ?? "").trim() ===
+        bond.bondRecipientAddress &&
+      String(mint?.bondRecipientAddress ?? "").trim() ===
+        bond.bondRecipientAddress &&
+      canonicalIntegerText(mint?.bondRecipientAmountSats, {
+        positive: true,
+      }) === bond.bondRecipientAmountSats &&
+      canonicalIntegerText(mint?.directProofIssuanceUnits, {
+        positive: true,
+      }) === bond.bondRecipientAmountSats &&
+      canonicalIntegerText(mint?.proofPaymentSats ?? mint?.paidSats, {
+        positive: true,
+      }) === bond.bondRecipientAmountSats &&
+      Number(mint?.bondRecipientVout) === bond.bondRecipientVout &&
+      Number(mint?.blockHeight ?? mint?.height) === bond.blockHeight &&
+      Number(mint?.blockIndex ?? mint?._powBlockIndex) === bond.blockIndex &&
+      String(mint?.blockHash ?? mint?._powBlockHash ?? "")
+        .trim()
+        .toLowerCase() === bond.blockHash &&
+      Number(mint?.issuanceValueSnapshotBlockHeight) ===
+        bond.blockHeight - 1 &&
+      String(mint?.issuanceValueSnapshotBlockHash ?? "")
+        .trim()
+        .toLowerCase() === bond.previousBlockHash
+  );
+}
+
+function canonicalIncbReplayRejectedSibling(row) {
+  const payload = objectValue(row?.payload);
+  const tokenId = String(payload?.tokenId ?? "").trim().toLowerCase();
+  const sourceKind = String(payload?.sourceKind ?? "").trim().toLowerCase();
+  const attemptedKind = String(payload?.attemptedKind ?? "")
+    .trim()
+    .toLowerCase();
+  return Boolean(
+    row?.valid === false &&
+      String(row?.status ?? "") === "confirmed" &&
+      ((String(row?.kind ?? "") === "token-mint" &&
+        tokenId === INCB_TOKEN_ID) ||
+        (String(row?.kind ?? "") === "token-event-invalid" &&
+          (tokenId === INCB_TOKEN_ID ||
+            (sourceKind === INCEPTION_BOND_KIND &&
+              attemptedKind === "token-mint"))))
+  );
+}
+
+function canonicalIncbReplayRejectedSiblingForBond(row, bond) {
+  if (!canonicalIncbReplayRejectedSibling(row)) {
+    return false;
+  }
+  const payload = objectValue(row?.payload);
+  const recipientAddress = String(
+    payload?.bondRecipientAddress ?? payload?.minterAddress ?? "",
+  ).trim();
+  const recipientVout = canonicalIntegerText(payload?.bondRecipientVout);
+  if (!recipientAddress && !recipientVout) {
+    return true;
+  }
+  return (
+    (!recipientAddress || recipientAddress === bond.bondRecipientAddress) &&
+    (!recipientVout || Number(recipientVout) === bond.bondRecipientVout)
+  );
+}
+
+async function verifyCanonicalIncbReplayManifestCoreEntries(entries) {
+  const blockByHash = new Map();
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const bond = objectValue(entry?.bond);
+    const canonicalHash = String(
+      await bitcoinRpc("getblockhash", [Number(bond.blockHeight)]),
+    ).trim().toLowerCase();
+    if (canonicalHash !== bond.blockHash) {
+      throw new Error(
+        `INCB witness bond ${bond.txid || "unknown"} is no longer on its canonical Core block.`,
+      );
+    }
+    let block = blockByHash.get(canonicalHash);
+    if (!block) {
+      block = await bitcoinRpc("getblock", [canonicalHash, 2]);
+      assertCanonicalBlockEnvelope(
+        block,
+        Number(bond.blockHeight),
+        canonicalHash,
+      );
+      blockByHash.set(canonicalHash, block);
+    }
+    const transaction = block?.tx?.[Number(bond.blockIndex)];
+    const recipientOutputs = Array.isArray(bond.bondRecipientOutputs)
+      ? bond.bondRecipientOutputs
+      : [];
+    const committedRecipientAmount = recipientOutputs.reduce(
+      (total, committed) => {
+        const output = transaction?.vout?.[Number(committed.vout)];
+        if (
+          addressFromVout(output) !== bond.bondRecipientAddress ||
+          satsFromVoutValue(output?.value) !== BigInt(committed.amountSats)
+        ) {
+          return -1n;
+        }
+        return total < 0n ? total : total + BigInt(committed.amountSats);
+      },
+      0n,
+    );
+    const inceptionMemos = protocolMessagesFromTx(objectValue(transaction))
+      .filter((message) => message?.text === `pwm1:m:${INCEPTION_BOND_MEMO}`);
+    if (
+      String(block?.previousblockhash ?? "").trim().toLowerCase() !==
+        bond.previousBlockHash ||
+      String(transaction?.txid ?? "").trim().toLowerCase() !== bond.txid ||
+      recipientOutputs.length === 0 ||
+      committedRecipientAmount !== BigInt(bond.bondRecipientAmountSats) ||
+      inceptionMemos.length !== 1 ||
+      recipientOutputs.some(
+        (committed) =>
+          Number(committed.vout) >= Number(inceptionMemos[0]?.voutIndex),
+      ) ||
+      canonicalIncbReplayAttachedWorkAtoms(
+        transaction,
+        bond.bondRecipientAddress,
+      ) !== bond.attachedWorkAmountAtoms
+    ) {
+      throw new Error(
+        `INCB witness bond ${bond.txid || "unknown"} changed Core position, predecessor, memo, recipient amount, or WORK attachment.`,
+      );
+    }
+  }
+}
+
+async function captureCanonicalIncbRangeReplayWitnessManifest(
+  client,
+  {
+    bindingId,
+    createdAt,
+    rangeReplayFromHeight,
+    throughHash,
+    throughHeight,
+  },
+) {
+  const bondResult = await client.query(
+    `
+      SELECT
+        e.event_id,
+        e.txid,
+        e.payload,
+        t.raw_tx,
+        t.block_height,
+        lower(t.block_hash) AS block_hash,
+        CASE
+          WHEN t.raw_tx->>'_powBlockIndex' ~ '^[0-9]+$'
+            THEN (t.raw_tx->>'_powBlockIndex')::integer
+          ELSE NULL
+        END AS block_index,
+        lower(block.previous_block_hash) AS previous_block_hash
+      FROM proof_indexer.events e
+      JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
+       AND t.status = 'confirmed'
+       AND t.block_height = e.block_height
+      JOIN proof_indexer.blocks block
+        ON block.network = t.network
+       AND block.height = t.block_height
+       AND block.block_hash = t.block_hash
+       AND block.canonical = true
+      WHERE e.network = $1
+        AND e.protocol = 'pwm1'
+        AND e.kind = $2
+        AND e.status = 'confirmed'
+        AND e.valid = true
+        AND t.block_height BETWEEN $3 AND $4
+      ORDER BY t.block_height, block_index, e.txid, e.event_id
+    `,
+    [
+      NETWORK,
+      INCEPTION_BOND_KIND,
+      rangeReplayFromHeight,
+      throughHeight,
+    ],
+  );
+  const rawMemoCandidateResult = await client.query(
+    `
+      SELECT DISTINCT t.txid, t.raw_tx
+      FROM proof_indexer.transactions t
+      JOIN proof_indexer.blocks block
+        ON block.network = t.network
+       AND block.height = t.block_height
+       AND block.block_hash = t.block_hash
+       AND block.canonical = true
+      WHERE t.network = $1
+        AND t.status = 'confirmed'
+        AND t.block_height BETWEEN $3 AND $4
+        AND jsonb_typeof(t.raw_tx->'vout') = 'array'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(t.raw_tx->'vout') output
+          WHERE lower(COALESCE(output #>> '{scriptPubKey,asm}', ''))
+            LIKE ('%' || $2 || '%')
+        )
+      ORDER BY t.txid
+    `,
+    [
+      NETWORK,
+      Buffer.from(`pwm1:m:${INCEPTION_BOND_MEMO}`, "utf8")
+        .toString("hex"),
+      rangeReplayFromHeight,
+      throughHeight,
+    ],
+  );
+  const rawMemoTxids = new Set(
+    rawMemoCandidateResult.rows
+      .filter((row) =>
+        protocolMessagesFromTx(objectValue(row?.raw_tx)).some(
+          (message) => message?.text === `pwm1:m:${INCEPTION_BOND_MEMO}`,
+        )
+      )
+      .map((row) => String(row?.txid ?? "").trim().toLowerCase()),
+  );
+  const bondEventTxids = new Set(
+    bondResult.rows.map((row) =>
+      String(row?.txid ?? "").trim().toLowerCase()
+    ),
+  );
+  const missingBondEventTxids = [...rawMemoTxids]
+    .filter((txid) => !bondEventTxids.has(txid));
+  const bondEventsWithoutRawMemo = [...bondEventTxids]
+    .filter((txid) => !rawMemoTxids.has(txid));
+  if (missingBondEventTxids.length > 0) {
+    throw new Error(
+      `Canonical INCB replay witness capture found Core memo transactions without canonical bond events: ${missingBondEventTxids.join(",")}.`,
+    );
+  }
+  if (bondEventsWithoutRawMemo.length > 0) {
+    throw new Error(
+      `Canonical INCB replay witness capture found bond events without exact canonical raw transaction memos: ${bondEventsWithoutRawMemo.join(",")}.`,
+    );
+  }
+  const txids = [...new Set(
+    bondResult.rows.map((row) => String(row?.txid ?? "").trim().toLowerCase()),
+  )];
+  const siblingResult = txids.length > 0
+    ? await client.query(
+        `
+          SELECT txid, event_id, protocol, kind, status, valid, payload
+          FROM proof_indexer.events
+          WHERE network = $1
+            AND txid = ANY($2::text[])
+          ORDER BY txid, event_id
+        `,
+        [NETWORK, txids],
+      )
+    : { rows: [] };
+  const siblingsByTxid = new Map();
+  for (const row of siblingResult.rows) {
+    const txid = String(row?.txid ?? "").trim().toLowerCase();
+    const siblings = siblingsByTxid.get(txid) ?? [];
+    siblings.push(row);
+    siblingsByTxid.set(txid, siblings);
+  }
+
+  const candidates = [];
+  for (const row of bondResult.rows) {
+    const payload = objectValue(row?.payload);
+    const txid = String(row?.txid ?? "").trim().toLowerCase();
+    const blockHeight = Number(row?.block_height);
+    const blockIndex = Number(row?.block_index);
+    const blockHash = String(row?.block_hash ?? "").trim().toLowerCase();
+    const previousBlockHash = String(row?.previous_block_hash ?? "")
+      .trim()
+      .toLowerCase();
+    const recipients = Array.isArray(payload?.recipients)
+      ? payload.recipients
+      : [];
+    if (
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !Number.isSafeInteger(blockHeight) ||
+      !Number.isSafeInteger(blockIndex) ||
+      blockIndex < 0 ||
+      !/^[0-9a-f]{64}$/u.test(blockHash) ||
+      !/^[0-9a-f]{64}$/u.test(previousBlockHash) ||
+      recipients.length === 0
+    ) {
+      throw new Error(
+        `Canonical INCB bond ${txid || "unknown"} cannot be represented in the replay witness set.`,
+      );
+    }
+    const recipientGroups = new Map();
+    for (const recipient of recipients) {
+      const bondRecipientAddress = String(recipient?.address ?? "").trim();
+      const bondRecipientVout = Number(recipient?.vout);
+      const bondRecipientAmountSats = canonicalIntegerText(
+        recipient?.amountSats,
+        { positive: true },
+      );
+      if (
+        !bondRecipientAddress ||
+        !bondRecipientAmountSats ||
+        !Number.isSafeInteger(bondRecipientVout) ||
+        bondRecipientVout < 0
+      ) {
+        throw new Error(
+          `Canonical INCB bond ${txid} has an invalid recipient identity.`,
+        );
+      }
+      const group = recipientGroups.get(bondRecipientAddress) ?? {
+        address: bondRecipientAddress,
+        amountSats: 0n,
+        outputs: [],
+      };
+      group.amountSats += BigInt(bondRecipientAmountSats);
+      group.outputs.push({
+        amountSats: bondRecipientAmountSats,
+        vout: bondRecipientVout,
+      });
+      recipientGroups.set(bondRecipientAddress, group);
+    }
+    for (const group of recipientGroups.values()) {
+      group.outputs.sort((left, right) => left.vout - right.vout);
+      const bondRecipientAddress = group.address;
+      const bondRecipientAmountSats = group.amountSats.toString();
+      const bondRecipientVout = group.outputs[0].vout;
+      const attachedWorkAmountAtoms =
+        canonicalIncbReplayAttachedWorkAtoms(
+          row.raw_tx,
+          bondRecipientAddress,
+        );
+      candidates.push({
+        bond: {
+          attachedWorkAmountAtoms,
+          blockHash,
+          blockHeight,
+          blockIndex,
+          bondRecipientAddress,
+          bondRecipientAmountSats,
+          bondRecipientOutputs: group.outputs,
+          bondRecipientVout,
+          previousBlockHash,
+          txid,
+        },
+        siblings: siblingsByTxid.get(txid) ?? [],
+      });
+    }
+  }
+
+  const candidateSnapshotIds = [...new Set(
+    candidates.flatMap(({ bond, siblings }) =>
+      siblings
+        .filter((row) => {
+          const mint = objectValue(row?.payload);
+          return (
+            row?.valid === true &&
+            row?.status === "confirmed" &&
+            row?.protocol === "pwt1" &&
+            row?.kind === "token-mint" &&
+            String(mint?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID &&
+            Number(mint?.bondRecipientVout) === bond.bondRecipientVout &&
+            String(mint?.bondRecipientAddress ?? "").trim() ===
+              bond.bondRecipientAddress
+          );
+        })
+        .map((row) => String(row?.payload?.issuanceValueSnapshotId ?? "").trim())
+        .filter(Boolean)
+    ),
+  )].sort();
+  const snapshotRows = await lockedCanonicalIncbValueSnapshots(
+    client,
+    candidateSnapshotIds,
+  );
+  const snapshotsById = new Map(
+    snapshotRows.map((row) => [String(row?.snapshot_id ?? ""), row]),
+  );
+
+  const entries = [];
+  for (const candidate of candidates) {
+    const { bond, siblings } = candidate;
+    const rejectedSibling = siblings.some((row) =>
+      canonicalIncbReplayRejectedSiblingForBond(row, bond)
+    );
+    const matchingMints = siblings.filter((row) => {
+      const mint = objectValue(row?.payload);
+      return (
+        row?.valid === true &&
+        row?.status === "confirmed" &&
+        row?.protocol === "pwt1" &&
+        row?.kind === "token-mint" &&
+        String(mint?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID &&
+        Number(mint?.bondRecipientVout) === bond.bondRecipientVout &&
+        String(mint?.bondRecipientAddress ?? "").trim() ===
+          bond.bondRecipientAddress
+      );
+    });
+    let reason = rejectedSibling
+      ? "rederive-rejected-sibling"
+      : matchingMints.length !== 1
+        ? "rederive-missing-or-ambiguous-v2-mint"
+        : "rederive-malformed-v2-mint";
+    let preserved = null;
+    if (matchingMints.length === 1) {
+      const mintPayload = objectValue(matchingMints[0].payload);
+      if (canonicalIncbReplayMintIsExact(mintPayload, candidate)) {
+        try {
+          const binding = canonicalIncbValueSnapshotBinding(mintPayload);
+          const snapshotRow = snapshotsById.get(binding.snapshotId);
+          const snapshot = canonicalIncbReplaySnapshotDescriptorFromRow(
+            snapshotRow,
+            binding,
+          );
+          if (
+            binding.mode !== "canonical-summary-refresh" ||
+            binding.model !== INCB_VALUE_SNAPSHOT_MODEL ||
+            snapshot.snapshotId !== binding.snapshotId ||
+            snapshot.indexedThroughBlock !== binding.blockHeight ||
+            snapshot.sourceBlockHash !== binding.blockHash ||
+            snapshot.canonicalSummaryHash !== binding.canonicalSummaryHash ||
+            snapshot.generatedAt !== binding.generatedAt ||
+            snapshot.workNetworkValueQ8 !== binding.workNetworkValueQ8
+          ) {
+            throw new Error("locked H-1 snapshot does not match mint binding");
+          }
+          preserved = {
+            mintPayload,
+            mintPayloadHash: canonicalIncbReplaySha256(mintPayload),
+            snapshot,
+            snapshotFingerprint: incbReplaySnapshotFingerprint(snapshot),
+          };
+          reason =
+            snapshot.workNetworkValueMode ===
+              INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE
+              ? "preserve-valid-exact-v2-with-raw-bound-legacy-green-snapshot"
+              : "preserve-valid-exact-v2";
+        } catch {
+          reason = "rederive-unresolved-h-minus-one-snapshot";
+        }
+      }
+    }
+    entries.push(
+      preserved
+        ? {
+            bond,
+            disposition: "preserve",
+            reason,
+            ...preserved,
+          }
+        : { bond, disposition: "rederive", reason },
+    );
+  }
+
+  const dispositionsByTxid = new Map();
+  for (const entry of entries) {
+    const group = dispositionsByTxid.get(entry.bond.txid) ?? [];
+    group.push(entry);
+    dispositionsByTxid.set(entry.bond.txid, group);
+  }
+  const groupedEntries = entries.map((entry) => {
+    const group = dispositionsByTxid.get(entry.bond.txid) ?? [];
+    const preserveCheckpointIdentities = new Set(
+      group
+        .filter((candidate) => candidate.disposition === "preserve")
+        .map((candidate) => canonicalIncbReplaySha256({
+          canonicalSummaryHash:
+            candidate.snapshot.canonicalSummaryHash,
+          generatedAt: candidate.snapshot.generatedAt,
+          indexedThroughBlock: candidate.snapshot.indexedThroughBlock,
+          snapshotId: candidate.snapshot.snapshotId,
+          sourceBlockHash: candidate.snapshot.sourceBlockHash,
+          workNetworkValueQ8: candidate.snapshot.workNetworkValueQ8,
+        })),
+    );
+    if (
+      group.length > 1 &&
+      (group.some((candidate) => candidate.disposition !== "preserve") ||
+        preserveCheckpointIdentities.size !== 1)
+    ) {
+      return {
+        bond: entry.bond,
+        disposition: "rederive",
+        reason: "rederive-whole-multi-recipient-bond",
+      };
+    }
+    return entry;
+  });
+
+  const manifest = buildIncbRangeReplayWitnessManifest({
+    bindingId,
+    createdAt,
+    entries: groupedEntries,
+    network: NETWORK,
+    rangeReplayFromHeight,
+    throughHash,
+    throughHeight,
+  });
+  await verifyCanonicalIncbReplayManifestCoreEntries(manifest.entries);
+  return manifest;
+}
+
+async function assertCanonicalIncbRangeReplayWitnessManifestUnchanged(
+  client,
+  manifest,
+  metaKey,
+) {
+  const expected = verifyIncbRangeReplayWitnessManifest(manifest, {
+    bindingId: manifest.bindingId,
+    count: manifest.count,
+    hash: manifest.commitment.hash,
+    metaKey,
+    network: NETWORK,
+    preserveCount: manifest.preserveCount,
+    rangeReplayFromHeight: manifest.rangeReplayFromHeight,
+    throughHash: manifest.throughHash,
+    throughHeight: manifest.throughHeight,
+  });
+  const stored = await proofIndexerMetaValue(client, metaKey);
+  const verifiedStored = verifyIncbRangeReplayWitnessManifest(stored, {
+    bindingId: expected.bindingId,
+    count: expected.count,
+    hash: expected.commitment.hash,
+    metaKey,
+    network: expected.network,
+    preserveCount: expected.preserveCount,
+    rangeReplayFromHeight: expected.rangeReplayFromHeight,
+    throughHash: expected.throughHash,
+    throughHeight: expected.throughHeight,
+  });
+  const preserved = verifiedStored.entries.filter(
+    (entry) => entry.disposition === "preserve",
+  );
+  const snapshotRows = await lockedCanonicalIncbValueSnapshots(
+    client,
+    [...new Set(preserved.map((entry) => entry.snapshot.snapshotId))].sort(),
+  );
+  const snapshotsById = new Map(
+    snapshotRows.map((row) => [String(row?.snapshot_id ?? ""), row]),
+  );
+  for (const entry of preserved) {
+    const row = snapshotsById.get(entry.snapshot.snapshotId);
+    const descriptor = canonicalIncbReplaySnapshotDescriptorFromRow(row, {
+      workNetworkValueQ8: entry.snapshot.workNetworkValueQ8,
+      workNetworkValueWitnessMode:
+        entry.snapshot.workNetworkValueMode ===
+        INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE
+          ? WORK_NETWORK_VALUE_ACCOUNTING_MODEL
+          : entry.snapshot.workNetworkValueMode,
+    });
+    if (
+      incbReplaySnapshotFingerprint(descriptor) !==
+        entry.snapshotFingerprint ||
+      canonicalIncbReplaySha256(entry.mintPayload) !== entry.mintPayloadHash
+    ) {
+      throw new Error(
+        `Preserved INCB replay witness ${entry.bond.txid}:${entry.bond.bondRecipientVout} changed before commit.`,
+      );
+    }
+  }
+  await verifyCanonicalIncbReplayManifestCoreEntries(verifiedStored.entries);
+  return verifiedStored;
+}
+
+async function canonicalIncbRangeReplayCompletionWitnesses(client, rebuild) {
+  const binding = canonicalPwtRangeReplayVerifierBinding(rebuild);
+  if (!binding) {
+    throw new Error(
+      "Canonical INCB replay completion has no valid immutable witness binding.",
+    );
+  }
+  const manifest = verifyIncbRangeReplayWitnessManifest(
+    await proofIndexerMetaValue(client, binding.witnessSetMetaKey),
+    {
+      bindingId: binding.bindingId,
+      count: binding.witnessCount,
+      hash: binding.witnessSetHash,
+      metaKey: binding.witnessSetMetaKey,
+      network: NETWORK,
+      preserveCount: binding.witnessPreserveCount,
+      rangeReplayFromHeight: binding.rangeReplayFromHeight,
+      throughHash: binding.witnessedThroughBlockHash,
+      throughHeight: binding.witnessedThroughBlock,
+    },
+  );
+  await verifyCanonicalIncbReplayManifestCoreEntries(manifest.entries);
+  const txids = [...new Set(
+    manifest.entries.map((entry) => entry.bond.txid),
+  )].sort();
+  const result = txids.length > 0
+    ? await client.query(
+        `
+          SELECT
+            e.txid,
+            e.protocol,
+            e.kind,
+            e.status,
+            e.valid,
+            e.payload,
+            t.status AS transaction_status,
+            t.block_height AS transaction_block_height,
+            lower(t.block_hash) AS transaction_block_hash
+          FROM proof_indexer.events e
+          JOIN proof_indexer.transactions t
+            ON t.network = e.network
+           AND t.txid = e.txid
+          JOIN proof_indexer.blocks block
+            ON block.network = t.network
+           AND block.height = t.block_height
+           AND block.block_hash = t.block_hash
+           AND block.canonical = true
+          WHERE e.network = $1
+            AND e.txid = ANY($2::text[])
+          ORDER BY e.txid, e.event_id
+        `,
+        [NETWORK, txids],
+      )
+    : { rows: [] };
+  const rowsByTxid = new Map();
+  for (const row of result.rows) {
+    const txid = String(row?.txid ?? "").trim().toLowerCase();
+    const rows = rowsByTxid.get(txid) ?? [];
+    rows.push(row);
+    rowsByTxid.set(txid, rows);
+  }
+  const preservedWitnesses = [];
+  const rederivedWitnesses = [];
+  const finalMintWitnesses = [];
+  for (const entry of manifest.entries) {
+    const { bond } = entry;
+    const rows = rowsByTxid.get(bond.txid) ?? [];
+    if (
+      rows.length === 0 ||
+      rows.some(
+        (row) =>
+          row?.transaction_status !== "confirmed" ||
+          Number(row?.transaction_block_height) !== bond.blockHeight ||
+          String(row?.transaction_block_hash ?? "")
+            .trim()
+            .toLowerCase() !== bond.blockHash,
+      )
+    ) {
+      throw new Error(
+        `INCB replay witness ${bond.txid}:${bond.bondRecipientVout} has no canonical final transaction projection.`,
+      );
+    }
+    const matchingBonds = rows.filter((row) => {
+      if (
+        row?.protocol !== "pwm1" ||
+        row?.kind !== INCEPTION_BOND_KIND ||
+        row?.valid !== true ||
+        row?.status !== "confirmed"
+      ) {
+        return false;
+      }
+      const recipients = (Array.isArray(row?.payload?.recipients)
+        ? row.payload.recipients
+        : []
+      )
+        .filter(
+          (recipient) =>
+            String(recipient?.address ?? "").trim() ===
+              bond.bondRecipientAddress,
+        )
+        .map((recipient) => ({
+          amountSats: canonicalIntegerText(recipient?.amountSats, {
+            positive: true,
+          }),
+          vout: Number(recipient?.vout),
+        }))
+        .sort((left, right) => left.vout - right.vout);
+      return (
+        recipients.length === bond.bondRecipientOutputs.length &&
+        recipients.every(
+          (recipient, index) =>
+            recipient.amountSats ===
+              bond.bondRecipientOutputs[index].amountSats &&
+            recipient.vout === bond.bondRecipientOutputs[index].vout,
+        )
+      );
+    });
+    if (matchingBonds.length !== 1) {
+      throw new Error(
+        `INCB replay witness ${bond.txid}:${bond.bondRecipientVout} lost its exact bond recipient projection.`,
+      );
+    }
+    const matchingMints = rows.filter((row) => {
+      const mint = objectValue(row?.payload);
+      return (
+        row?.protocol === "pwt1" &&
+        row?.kind === "token-mint" &&
+        row?.valid === true &&
+        row?.status === "confirmed" &&
+        String(mint?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID &&
+        String(mint?.bondRecipientAddress ?? "").trim() ===
+          bond.bondRecipientAddress &&
+        Number(mint?.bondRecipientVout) === bond.bondRecipientVout
+      );
+    });
+    const rejectedRows = rows.filter(canonicalIncbReplayRejectedSibling);
+    const rejected = rejectedRows.length > 0;
+    if (entry.disposition === "preserve") {
+      if (
+        rejected ||
+        matchingMints.length !== 1 ||
+        !canonicalIncbReplayMintIsExact(
+          objectValue(matchingMints[0].payload),
+          { bond },
+        ) ||
+        canonicalIncbReplaySha256(matchingMints[0].payload) !==
+          entry.mintPayloadHash
+      ) {
+        throw new Error(
+          `Preserved INCB replay witness ${bond.txid}:${bond.bondRecipientVout} was not consumed byte-for-byte.`,
+        );
+      }
+      const finalBinding = canonicalIncbValueSnapshotBinding(
+        matchingMints[0].payload,
+      );
+      if (
+        finalBinding.snapshotId !== entry.snapshot.snapshotId ||
+        finalBinding.blockHeight !== entry.snapshot.indexedThroughBlock ||
+        finalBinding.blockHash !== entry.snapshot.sourceBlockHash ||
+        finalBinding.canonicalSummaryHash !==
+          entry.snapshot.canonicalSummaryHash ||
+        finalBinding.generatedAt !== entry.snapshot.generatedAt ||
+        finalBinding.workNetworkValueQ8 !==
+          entry.snapshot.workNetworkValueQ8
+      ) {
+        throw new Error(
+          `Preserved INCB replay witness ${bond.txid}:${bond.bondRecipientVout} changed its locked H-1 snapshot binding.`,
+        );
+      }
+      preservedWitnesses.push({
+        bondRecipientVout: bond.bondRecipientVout,
+        identity: `${bond.txid}:${bond.bondRecipientVout}`,
+        mintPayloadHash: entry.mintPayloadHash,
+        snapshotFingerprint: entry.snapshotFingerprint,
+        snapshotId: entry.snapshot.snapshotId,
+        txid: bond.txid,
+      });
+      finalMintWitnesses.push({
+        binding: finalBinding,
+        entry,
+        mintPayload: matchingMints[0].payload,
+        preserved: true,
+      });
+    } else {
+      const validRederivedMint =
+        matchingMints.length === 1 &&
+        !rejected &&
+        canonicalIncbReplayMintIsExact(
+          objectValue(matchingMints[0].payload),
+          { bond },
+        );
+      const validRejectedDisposition =
+        matchingMints.length === 0 && rejectedRows.length === 1;
+      if (!validRederivedMint && !validRejectedDisposition) {
+        throw new Error(
+          `Rederived INCB replay witness ${bond.txid}:${bond.bondRecipientVout} has no unambiguous canonical final disposition.`,
+        );
+      }
+      if (validRederivedMint) {
+        finalMintWitnesses.push({
+          binding: canonicalIncbValueSnapshotBinding(
+            matchingMints[0].payload,
+          ),
+          entry,
+          mintPayload: matchingMints[0].payload,
+          preserved: false,
+        });
+      } else {
+        rederivedWitnesses.push({
+          bondRecipientVout: bond.bondRecipientVout,
+          disposition: "invalid",
+          identity: `${bond.txid}:${bond.bondRecipientVout}`,
+          invalidPayloadHash: canonicalIncbReplaySha256(
+            rejectedRows[0].payload,
+          ),
+          txid: bond.txid,
+        });
+      }
+    }
+  }
+  const finalSnapshotIds = [...new Set(
+    finalMintWitnesses.map((witness) => witness.binding.snapshotId),
+  )].sort();
+  const finalSnapshotRows = await lockedCanonicalIncbValueSnapshots(
+    client,
+    finalSnapshotIds,
+  );
+  const finalSnapshotRowsById = new Map(
+    finalSnapshotRows.map((row) => [String(row?.snapshot_id ?? ""), row]),
+  );
+  if (finalSnapshotRowsById.size !== finalSnapshotIds.length) {
+    throw new Error(
+      "Canonical INCB replay completion cannot resolve every final H-1 snapshot.",
+    );
+  }
+  for (const witness of finalMintWitnesses) {
+    const { binding: finalBinding, entry, mintPayload, preserved } = witness;
+    const snapshot = canonicalIncbReplaySnapshotDescriptorFromRow(
+      finalSnapshotRowsById.get(finalBinding.snapshotId),
+      finalBinding,
+    );
+    if (
+      finalBinding.mode !== "canonical-summary-refresh" ||
+      finalBinding.model !== INCB_VALUE_SNAPSHOT_MODEL ||
+      snapshot.snapshotId !== finalBinding.snapshotId ||
+      snapshot.indexedThroughBlock !== finalBinding.blockHeight ||
+      snapshot.sourceBlockHash !== finalBinding.blockHash ||
+      snapshot.canonicalSummaryHash !== finalBinding.canonicalSummaryHash ||
+      snapshot.generatedAt !== finalBinding.generatedAt ||
+      snapshot.workNetworkValueQ8 !== finalBinding.workNetworkValueQ8
+    ) {
+      throw new Error(
+        `Canonical INCB replay completion H-1 snapshot ${finalBinding.snapshotId} is not bound to its exact final mint.`,
+      );
+    }
+    const snapshotFingerprint = incbReplaySnapshotFingerprint(snapshot);
+    if (preserved) {
+      if (
+        snapshotFingerprint !== entry.snapshotFingerprint ||
+        canonicalIncbReplaySha256(snapshot) !==
+          canonicalIncbReplaySha256(entry.snapshot)
+      ) {
+        throw new Error(
+          `Preserved INCB replay witness ${entry.bond.txid}:${entry.bond.bondRecipientVout} changed its raw H-1 snapshot row during replay.`,
+        );
+      }
+      continue;
+    }
+    if (snapshot.workNetworkValueMode !== WORK_NETWORK_VALUE_ACCOUNTING_MODEL) {
+      throw new Error(
+        `Rederived INCB replay witness ${entry.bond.txid}:${entry.bond.bondRecipientVout} did not use a forced exact green H-1 snapshot.`,
+      );
+    }
+    rederivedWitnesses.push({
+      bondRecipientVout: entry.bond.bondRecipientVout,
+      disposition: "mint",
+      identity: `${entry.bond.txid}:${entry.bond.bondRecipientVout}`,
+      mintPayloadHash: canonicalIncbReplaySha256(mintPayload),
+      snapshotFingerprint,
+      snapshotId: snapshot.snapshotId,
+      txid: entry.bond.txid,
+    });
+  }
+  preservedWitnesses.sort((left, right) =>
+    left.identity.localeCompare(right.identity)
+  );
+  rederivedWitnesses.sort((left, right) =>
+    left.identity.localeCompare(right.identity)
+  );
+  if (preservedWitnesses.length !== manifest.preserveCount) {
+    throw new Error(
+      "Canonical INCB replay completion did not consume every preserved witness.",
+    );
+  }
+  if (rederivedWitnesses.length !== manifest.rederiveCount) {
+    throw new Error(
+      "Canonical INCB replay completion did not consume every rederive disposition.",
+    );
+  }
+  return {
+    binding,
+    manifest,
+    preservedWitnesses,
+    rederivedWitnesses,
+  };
+}
+
+async function verifyCanonicalIncbPwtRangeReplayProjection(client, rebuild) {
+  const rangeReplayFromHeight = Number(rebuild?.rangeReplayFromHeight ?? 0);
+  const targets = canonicalIncbPwtRangeReplayTargets(rangeReplayFromHeight);
+  if (rebuild?.mode !== "pwt-range-replay" || targets.length === 0) {
+    return null;
+  }
+  const coreFacts =
+    await verifyCanonicalIncbPwtRangeReplayCoreFacts(targets);
+  const targetByTxid = new Map(targets.map((target) => [target.txid, target]));
+  const result = await client.query(
+    `
+      SELECT
+        e.txid,
+        e.protocol,
+        e.kind,
+        e.status,
+        e.valid,
+        e.payload,
+        t.status AS transaction_status,
+        t.block_hash AS transaction_block_hash,
+        t.block_height AS transaction_block_height
+      FROM proof_indexer.events e
+      JOIN proof_indexer.transactions t
+        ON t.network = e.network
+       AND t.txid = e.txid
+      WHERE e.network = $1
+        AND e.txid = ANY($2::text[])
+      ORDER BY e.txid, e.event_id
+    `,
+    [NETWORK, targets.map((target) => target.txid)],
+  );
+  const rowsByTxid = new Map();
+  for (const row of result.rows) {
+    const txid = String(row?.txid ?? "").trim().toLowerCase();
+    const rows = rowsByTxid.get(txid) ?? [];
+    rows.push(row);
+    rowsByTxid.set(txid, rows);
+  }
+  const verified = [];
+  for (const [txid, target] of targetByTxid) {
+    const rows = rowsByTxid.get(txid) ?? [];
+    if (
+      rows.length === 0 ||
+      rows.some(
+        (row) =>
+          row?.transaction_status !== "confirmed" ||
+          Number(row?.transaction_block_height) !== target.blockHeight ||
+          String(row?.transaction_block_hash ?? "").trim().toLowerCase() !==
+            target.blockHash ||
+          row?.status !== "confirmed" ||
+          row?.valid !== true ||
+          String(row?.kind ?? "").toLowerCase().endsWith("-invalid"),
+      )
+    ) {
+      throw new Error(
+        `Canonical INCB range replay left an invalid alias or noncanonical sibling for ${txid}.`,
+      );
+    }
+    const bonds = rows.filter(
+      (row) => row.protocol === "pwm1" && row.kind === INCEPTION_BOND_KIND,
+    );
+    const transfers = rows.filter(
+      (row) =>
+        row.protocol === "pwt1" &&
+        row.kind === "token-transfer" &&
+        String(row?.payload?.tokenId ?? "").trim().toLowerCase() ===
+          WORK_TOKEN_ID,
+    );
+    const mints = rows.filter(
+      (row) =>
+        row.protocol === "pwt1" &&
+        row.kind === "token-mint" &&
+        String(row?.payload?.tokenId ?? "").trim().toLowerCase() ===
+          INCB_TOKEN_ID,
+    );
+    if (bonds.length !== 1 || transfers.length !== 1 || mints.length !== 1) {
+      throw new Error(
+        `Canonical INCB range replay expected one bond, WORK transfer, and INCB mint for ${txid}.`,
+      );
+    }
+    const bond = objectValue(bonds[0].payload);
+    const transfer = objectValue(transfers[0].payload);
+    const mint = objectValue(mints[0].payload);
+    const attachedCredits = Array.isArray(bond?.attachedCredits)
+      ? bond.attachedCredits
+      : [];
+    if (
+      String(transfer?.amountAtoms ?? "") !== target.workAmountAtoms ||
+      String(transfer?.transferVersion ?? "") !== "send2" ||
+      Number(transfer?.protocolVout) !== target.workProtocolVout ||
+      String(transfer?.senderAddress ?? "").trim() !==
+        target.bondRecipientAddress ||
+      String(transfer?.recipientAddress ?? "").trim() !==
+        target.bondRecipientAddress ||
+      attachedCredits.length !== 1 ||
+      String(attachedCredits[0]?.tokenId ?? "").trim().toLowerCase() !==
+        WORK_TOKEN_ID ||
+      String(attachedCredits[0]?.amountAtoms ?? "") !==
+        target.workAmountAtoms ||
+      Number(attachedCredits[0]?.protocolVout) !== target.workProtocolVout ||
+      String(attachedCredits[0]?.recipientAddress ?? "").trim() !==
+        target.bondRecipientAddress
+    ) {
+      throw new Error(
+        `Canonical INCB range replay did not bind the exact WORK send2 attachment for ${txid}.`,
+      );
+    }
+    const expected = canonicalIncbIssuanceQ8Projection({
+      attachedWorkAmountAtoms: target.workAmountAtoms,
+      directProofIssuanceUnits: String(target.bondRecipientAmountSats),
+      workNetworkValueQ8: mint.issuanceValueSnapshotWorkNetworkValueQ8,
+    });
+    if (
+      !canonicalBondMintProjection(mint) ||
+      incbIssuanceMetadataInvalidReason(mint) ||
+      String(mint?.sourceBondTxid ?? "").trim().toLowerCase() !== txid ||
+      String(mint?.minterAddress ?? "").trim() !==
+        target.bondRecipientAddress ||
+      String(mint?.bondRecipientAddress ?? "").trim() !==
+        target.bondRecipientAddress ||
+      Number(mint?.bondRecipientVout) !== target.bondRecipientVout ||
+      String(mint?.bondRecipientAmountSats ?? "") !==
+        String(target.bondRecipientAmountSats) ||
+      Number(mint?.issuanceValueSnapshotBlockHeight) !==
+        target.blockHeight - 1 ||
+      String(mint?.attachedWorkLiveValueAtSendQ8 ?? "") !==
+        expected.attachedWorkLiveValueAtSendQ8 ||
+      String(mint?.attachedWorkIssuanceUnits ?? "") !==
+        expected.attachedWorkIssuanceUnits ||
+      String(mint?.issuanceNetworkValueQ8 ?? "") !==
+        expected.issuanceNetworkValueQ8 ||
+      String(mint?.issuanceDustQ8 ?? "") !== expected.issuanceDustQ8 ||
+      String(mint?.amount ?? "") !== expected.confirmedIssuanceUnits ||
+      String(mint?.issuanceAmount ?? "") !==
+        expected.confirmedIssuanceUnits ||
+      String(mint?.confirmedIssuanceUnits ?? "") !==
+        expected.confirmedIssuanceUnits
+    ) {
+      throw new Error(
+        `Canonical INCB range replay failed the exact H-1 Q8 issuance formula for ${txid}.`,
+      );
+    }
+    verified.push({
+      confirmedIssuanceUnits: expected.confirmedIssuanceUnits,
+      issuanceNetworkValueQ8: expected.issuanceNetworkValueQ8,
+      txid,
+      workAmountAtoms: target.workAmountAtoms,
+    });
+  }
+  const witnessCompletion =
+    await canonicalIncbRangeReplayCompletionWitnesses(client, rebuild);
+  return {
+    accountingModel: INCB_ISSUANCE_ACCOUNTING_MODEL,
+    consumedPreserveCount:
+      witnessCompletion.preservedWitnesses.length,
+    coreFacts,
+    preservedWitnesses: witnessCompletion.preservedWitnesses,
+    rangeReplayFromHeight,
+    rederivedWitnessCount:
+      witnessCompletion.rederivedWitnesses.length,
+    rederivedWitnesses: witnessCompletion.rederivedWitnesses,
+    targets: verified,
+    verified: true,
+    witnessCount: witnessCompletion.manifest.count,
+    witnessPreserveCount: witnessCompletion.manifest.preserveCount,
+    witnessSetHash: witnessCompletion.manifest.commitment.hash,
+    witnessedThroughBlock: witnessCompletion.manifest.throughHeight,
+    witnessedThroughBlockHash: witnessCompletion.manifest.throughHash,
+  };
+}
+
 async function prepareCanonicalRebuild(client) {
   if (!CANONICAL_REBUILD) {
     return null;
@@ -9257,6 +12022,10 @@ async function prepareCanonicalRebuild(client) {
     (existing?.status === "active" ||
       (existing?.status === "complete" && !PREPARE_CANONICAL_REBUILD_ONLY))
   ) {
+    await assertCanonicalWorkAtomicProjection(
+      client,
+      "Resumed canonical rebuild",
+    );
     return { resumed: true, value: existing };
   }
 
@@ -9288,8 +12057,12 @@ async function prepareCanonicalRebuild(client) {
     updatedAt: startedAt,
   };
 
+  let creditUnitStorageMigration = null;
   await client.query("BEGIN");
   try {
+    await client.query("SET LOCAL lock_timeout = '10s'");
+    creditUnitStorageMigration =
+      await migrateUnboundedCreditUnitStorage(client);
     await client.query(
       `
         DELETE FROM proof_indexer.events
@@ -9375,7 +12148,7 @@ async function prepareCanonicalRebuild(client) {
     await client.query("ROLLBACK");
     throw error;
   }
-  return { resumed: false, value };
+  return { creditUnitStorageMigration, resumed: false, value };
 }
 
 async function prepareCanonicalPwtRangeReplay(client) {
@@ -9395,18 +12168,56 @@ async function prepareCanonicalPwtRangeReplay(client) {
       "PWT range replay cannot bypass an active canonical fault; use full reorg recovery.",
     );
   }
+  const legacyCompletedReplay =
+    legacyCompletedPwtRangeReplayCanBeReprepared(
+      existing,
+      BLOCK_SCAN_FROM_HEIGHT,
+    );
+  const existingReplayState =
+    legacyCompletedReplay
+      ? "legacy-complete"
+      : assertCanonicalPwtRangeReplayState(existing);
   if (
-    existing?.network === NETWORK &&
-    existing?.mode === "pwt-range-replay" &&
-    Number(existing?.rangeReplayFromHeight) === BLOCK_SCAN_FROM_HEIGHT &&
-    existing?.status === "active"
+    existingReplayState === "active" &&
+    Number(existing?.rangeReplayFromHeight) !== BLOCK_SCAN_FROM_HEIGHT
   ) {
+    throw new Error(
+      "An active PWT range replay cannot be replaced with a different replay boundary.",
+    );
+  }
+  if (existingReplayState === "active") {
+    if (!canonicalPwtRangeReplayVerifierBinding(existing)) {
+      throw new Error(
+        "Existing PWT range replay metadata is missing its canonical verifier database binding.",
+      );
+    }
+    await assertCanonicalWorkAtomicSource(
+      client,
+      "Resumed PWT range replay",
+    );
     return { resumed: true, value: existing };
+  }
+  if (existingReplayState === "complete") {
+    throw new Error(
+      "A certified PWT range replay is permanent and cannot be replaced by replay preparation.",
+    );
+  }
+  if (
+    existingReplayState === null &&
+    String(existing?.mode ?? "").trim().length > 0
+  ) {
+    throw new Error(
+      "PWT range replay preparation cannot replace metadata from an unknown rebuild mode.",
+    );
   }
 
   const canonicalFromHeight = Number(existing?.fromHeight ?? 0);
   const canonicalBootstrapHeight = Number(existing?.bootstrapHeight ?? 0);
   const canonicalBootstrapHash = String(existing?.bootstrapHash ?? "")
+    .trim()
+    .toLowerCase();
+  const canonicalIndexedHeight = Number(existing?.indexedThroughBlock ?? 0);
+  const canonicalIndexedHash = String(existing?.indexedThroughBlockHash ?? "")
     .trim()
     .toLowerCase();
   if (
@@ -9417,7 +12228,10 @@ async function prepareCanonicalPwtRangeReplay(client) {
     canonicalFromHeight > BLOCK_SCAN_FROM_HEIGHT ||
     !Number.isSafeInteger(canonicalBootstrapHeight) ||
     canonicalBootstrapHeight !== canonicalFromHeight - 1 ||
-    !isHexTxid(canonicalBootstrapHash)
+    !isHexTxid(canonicalBootstrapHash) ||
+    !Number.isSafeInteger(canonicalIndexedHeight) ||
+    canonicalIndexedHeight < canonicalBootstrapHeight ||
+    !isHexTxid(canonicalIndexedHash)
   ) {
     throw new Error(
       "PWT range replay requires the original hashed canonical rebuild metadata.",
@@ -9442,10 +12256,38 @@ async function prepareCanonicalPwtRangeReplay(client) {
   ) {
     throw new Error("Bitcoin Core tip is below the requested PWT replay range.");
   }
+  const predecessorBootstrapCoreHash = String(
+    await bitcoinRpc("getblockhash", [canonicalBootstrapHeight]),
+  )
+    .trim()
+    .toLowerCase();
+  const predecessorIndexedCoreHash = String(
+    await bitcoinRpc("getblockhash", [canonicalIndexedHeight]),
+  )
+    .trim()
+    .toLowerCase();
+  if (
+    predecessorBootstrapCoreHash !== canonicalBootstrapHash ||
+    predecessorIndexedCoreHash !== canonicalIndexedHash ||
+    tipHeight < canonicalIndexedHeight ||
+    BLOCK_SCAN_FROM_HEIGHT > canonicalIndexedHeight + 1
+  ) {
+    throw new Error(
+      "Stored PWT replay predecessor lineage is not an exact ancestor of the current Bitcoin Core tip.",
+    );
+  }
 
   const startedAt = new Date().toISOString();
-  const { completedAt: _completedAt, ...existingBase } = existing;
-  const value = {
+  let verifierBinding = newPwtRangeReplayVerifierBinding(
+    BLOCK_SCAN_FROM_HEIGHT,
+    startedAt,
+  );
+  const {
+    completedAt: _completedAt,
+    incbRangeReplayVerification: _incbRangeReplayVerification,
+    ...existingBase
+  } = existing;
+  let value = {
     ...existingBase,
     active: true,
     bootstrapHash: canonicalBootstrapHash,
@@ -9461,10 +12303,83 @@ async function prepareCanonicalPwtRangeReplay(client) {
     status: "active",
     transactionNormalization: "canonical-raw-tx-only",
     updatedAt: startedAt,
+    verifierBinding,
   };
 
-  await client.query("BEGIN");
+  const incidentTargets = canonicalIncbPwtRangeReplayTargets(
+    BLOCK_SCAN_FROM_HEIGHT,
+  );
+  const existingPredecessorFingerprint = canonicalIncbReplaySha256(existing);
+  let creditUnitStorageMigration = null;
+  let replayWitnessManifest = null;
+  let replayWitnessMetaKey = "";
+  await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
   try {
+    await client.query("SET LOCAL lock_timeout = '10s'");
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+      ["proof-indexer-pwt-range-replay", NETWORK],
+    );
+    creditUnitStorageMigration =
+      await migrateUnboundedCreditUnitStorage(client);
+    await client.query(
+      `
+        LOCK TABLE
+          proof_indexer.blocks,
+          proof_indexer.credit_balances,
+          proof_indexer.credit_definitions,
+          proof_indexer.credit_listings,
+          proof_indexer.events,
+          proof_indexer.ledger_snapshots,
+          proof_indexer.meta,
+          proof_indexer.transactions
+        IN SHARE ROW EXCLUSIVE MODE
+      `,
+    );
+    const lockedExisting = await proofIndexerMetaValue(
+      client,
+      CANONICAL_REBUILD_META_KEY,
+    );
+    if (
+      !lockedExisting ||
+      canonicalIncbReplaySha256(lockedExisting) !==
+        existingPredecessorFingerprint
+    ) {
+      throw new Error(
+        "PWT range replay predecessor metadata changed before the stopped-writer lock was acquired.",
+      );
+    }
+    await assertCanonicalWorkAtomicSource(
+      client,
+      "PWT range replay source projection",
+    );
+    const coreFactsBefore =
+      await verifyCanonicalIncbPwtRangeReplayCoreFacts(incidentTargets);
+    replayWitnessManifest =
+      await captureCanonicalIncbRangeReplayWitnessManifest(client, {
+        bindingId: verifierBinding.bindingId,
+        createdAt: startedAt,
+        rangeReplayFromHeight: BLOCK_SCAN_FROM_HEIGHT,
+        throughHash: canonicalIndexedHash,
+        throughHeight: canonicalIndexedHeight,
+      });
+    replayWitnessMetaKey = incbRangeReplayWitnessMetaKey(
+      NETWORK,
+      verifierBinding.bindingId,
+    );
+    verifierBinding = {
+      ...verifierBinding,
+      ...incbRangeReplayWitnessBindingFields(
+        replayWitnessManifest,
+        replayWitnessMetaKey,
+      ),
+    };
+    value = { ...value, verifierBinding };
+    await storeProofIndexerMeta(
+      client,
+      replayWitnessMetaKey,
+      replayWitnessManifest,
+    );
     const firstMarketplaceEvent = await client.query(
       `
         SELECT min(COALESCE(e.block_height, t.block_height)) AS first_height
@@ -9492,15 +12407,10 @@ async function prepareCanonicalPwtRangeReplay(client) {
     const firstMarketplaceHeight = Number(
       firstMarketplaceEvent.rows[0]?.first_height ?? 0,
     );
-    if (
-      Number.isSafeInteger(firstMarketplaceHeight) &&
-      firstMarketplaceHeight > 0 &&
-      firstMarketplaceHeight < BLOCK_SCAN_FROM_HEIGHT
-    ) {
-      throw new Error(
-        `PWT range replay must begin at or before the first canonical marketplace event at block ${firstMarketplaceHeight}`,
-      );
-    }
+    // A later replay boundary is safe only because every retained pre-range
+    // definition/listing is projected below and every retained credit event is
+    // replayed into balances before commit. Never preserve the old derived
+    // tables themselves.
     const preRangeFalseClose = await client.query(
       `
         SELECT min(COALESCE(e.block_height, t.block_height)) AS first_false_height
@@ -9653,6 +12563,10 @@ async function prepareCanonicalPwtRangeReplay(client) {
     for (const row of baseDefinitions.rows) {
       await upsertProjection(client, "tokens", row.payload, row.status);
     }
+    await assertCanonicalWorkAtomicProjection(
+      client,
+      "PWT range replay retained definitions",
+    );
     for (const row of baseMarketplace.rows) {
       await upsertProjection(
         client,
@@ -9661,9 +12575,22 @@ async function prepareCanonicalPwtRangeReplay(client) {
         row.status,
       );
     }
+    const baseCreditReplay =
+      await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
+    const baseWorkAtomicSource = await assertCanonicalWorkAtomicSource(
+      client,
+      "PWT range replay retained state",
+    );
+    const preservedWitnessSnapshotIds = replayWitnessManifest.entries
+      .filter((entry) => entry.disposition === "preserve")
+      .map((entry) => entry.snapshot.snapshotId);
     await client.query(
-      `DELETE FROM proof_indexer.ledger_snapshots WHERE network = $1`,
-      [NETWORK],
+      `
+        DELETE FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+          AND NOT (snapshot_id = ANY($2::text[]))
+      `,
+      [NETWORK, preservedWitnessSnapshotIds],
     );
     await client.query(`DELETE FROM proof_indexer.meta WHERE key = $1`, [
       CANONICAL_FAULT_META_KEY,
@@ -9684,10 +12611,65 @@ async function prepareCanonicalPwtRangeReplay(client) {
       stopReason: "canonical-pwt-range-replay-bootstrap",
       tipHeight,
     });
+    const coreFactsAfter =
+      await verifyCanonicalIncbPwtRangeReplayCoreFacts(incidentTargets);
+    if (JSON.stringify(coreFactsAfter) !== JSON.stringify(coreFactsBefore)) {
+      throw new Error(
+        "Pinned INCB replay Core facts changed during transactional preparation.",
+      );
+    }
+    await assertCanonicalWorkAtomicProjection(
+      client,
+      "PWT range replay pre-commit projection",
+    );
+    const predecessorCoreHashBeforeCommit = String(
+      await bitcoinRpc("getblockhash", [canonicalIndexedHeight]),
+    ).trim().toLowerCase();
+    if (predecessorCoreHashBeforeCommit !== canonicalIndexedHash) {
+      throw new Error(
+        "PWT range replay predecessor checkpoint changed before commit.",
+      );
+    }
+    replayWitnessManifest =
+      await assertCanonicalIncbRangeReplayWitnessManifestUnchanged(
+        client,
+        replayWitnessManifest,
+        replayWitnessMetaKey,
+      );
+    const lockedReplayValue = await proofIndexerMetaValue(
+      client,
+      CANONICAL_REBUILD_META_KEY,
+    );
+    if (
+      !lockedReplayValue ||
+      canonicalIncbReplaySha256(lockedReplayValue) !==
+        canonicalIncbReplaySha256(value)
+    ) {
+      throw new Error(
+        "PWT range replay verifier binding changed before commit.",
+      );
+    }
     await client.query("COMMIT");
     return {
+      baseCreditReplay,
+      baseWorkAtomicSource,
       baseDefinitions: baseDefinitions.rows.length,
       baseMarketplaceEvents: baseMarketplace.rows.length,
+      creditUnitStorageMigration,
+      firstMarketplaceHeight:
+        Number.isSafeInteger(firstMarketplaceHeight) &&
+        firstMarketplaceHeight > 0
+          ? firstMarketplaceHeight
+          : null,
+      pinnedIncbTargets: coreFactsAfter,
+      replayWitnessManifest: {
+        count: replayWitnessManifest.count,
+        hash: replayWitnessManifest.commitment.hash,
+        preserveCount: replayWitnessManifest.preserveCount,
+        rederiveCount: replayWitnessManifest.rederiveCount,
+        throughHash: replayWitnessManifest.throughHash,
+        throughHeight: replayWitnessManifest.throughHeight,
+      },
       resumed: false,
       value,
     };
@@ -9730,6 +12712,23 @@ function canonicalRebuildCheckpointValue(
 ) {
   if (!rebuild || typeof rebuild !== "object") {
     return null;
+  }
+  // A completed PWT range replay is a permanent recovery certificate, not an
+  // ordinary scan batch. Later canonical blocks must advance the checkpoint
+  // covered by that certificate without reopening the replay or replacing its
+  // immutable completion evidence. The strict replay-state readers in this
+  // worker and proof-api intentionally reject an active tuple that still
+  // carries a completion certificate.
+  if (
+    rebuild.mode === "pwt-range-replay" &&
+    canonicalPwtRangeReplayState(rebuild) === "complete"
+  ) {
+    return {
+      ...rebuild,
+      indexedThroughBlock: height,
+      indexedThroughBlockHash: blockHash,
+      updatedAt: new Date().toISOString(),
+    };
   }
   const { completedAt: _previousCompletedAt, ...baseRebuild } = rebuild;
   const updatedAt = new Date().toISOString();
@@ -9893,6 +12892,8 @@ async function backfillBlockScanSource(client, source) {
     : null;
   const storedRebuild = canonicalRebuildState?.value ??
     (await proofIndexerMetaValue(client, CANONICAL_REBUILD_META_KEY));
+  const storedPwtRangeReplayState =
+    assertCanonicalPwtRangeReplayState(storedRebuild);
   const storedFault = await proofIndexerMetaValue(
     client,
     CANONICAL_FAULT_META_KEY,
@@ -9907,6 +12908,8 @@ async function backfillBlockScanSource(client, source) {
     ["active", "complete"].includes(storedRebuild?.status)
       ? storedRebuild
       : null;
+  const completedPwtRangeReplay = storedPwtRangeReplayState === "complete";
+  activatePwtRangeReplayVerifierBinding(canonicalRebuild);
   const checkpoint = await latestBlockScanCheckpoint(client, {
     useStoredCheckpoint: CANONICAL_REBUILD,
   });
@@ -9947,7 +12950,7 @@ async function backfillBlockScanSource(client, source) {
   }
   if (!Number.isSafeInteger(tipHeight) || tipHeight <= latestIndexedHeight) {
     if (canonicalRebuild?.status === "active") {
-      const completedRebuild = canonicalRebuildCheckpointValue(
+      const completedRebuildBase = canonicalRebuildCheckpointValue(
         canonicalRebuild,
         {
           blockHash: indexedThroughBlockHash,
@@ -9959,6 +12962,20 @@ async function backfillBlockScanSource(client, source) {
       try {
         await seedCanonicalBondDefinitions(client, { required: true });
         await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
+        const incbRangeReplayVerification =
+          await verifyCanonicalIncbPwtRangeReplayProjection(
+            client,
+            // The completion verifier must consume the still-active replay
+            // binding. A provisional complete tuple is intentionally invalid
+            // until the returned certificate is attached below.
+            canonicalRebuild,
+          );
+        const completedRebuild = incbRangeReplayVerification
+          ? {
+              ...completedRebuildBase,
+              incbRangeReplayVerification,
+            }
+          : completedRebuildBase;
         await storeProofIndexerMeta(
           client,
           CANONICAL_REBUILD_META_KEY,
@@ -10058,8 +13075,9 @@ async function backfillBlockScanSource(client, source) {
       return messages.length > 0 ? [{ blockIndex, messages, tx }] : [];
     });
     if (
-      typeof STORE_CANONICAL_SUMMARY_SNAPSHOT !== "undefined" &&
-      STORE_CANONICAL_SUMMARY_SNAPSHOT &&
+      ((typeof STORE_CANONICAL_SUMMARY_SNAPSHOT !== "undefined" &&
+        STORE_CANONICAL_SUMMARY_SNAPSHOT) ||
+        activePwtRangeReplay(canonicalRebuild)) &&
       protocolCandidates.some(({ messages }) =>
         protocolMessagesContainInceptionBond(messages)
       )
@@ -10068,6 +13086,14 @@ async function backfillBlockScanSource(client, source) {
         blockHash: String(block?.previousblockhash ?? "").trim().toLowerCase(),
         height: height - 1,
       };
+      await client.query("BEGIN");
+      try {
+        await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
       const barrier = await storeCanonicalSummarySnapshot(client, {
         requiredCheckpoint,
       });
@@ -10180,17 +13206,34 @@ async function backfillBlockScanSource(client, source) {
         complete: nextComplete,
         height,
       });
-      if (nextComplete) {
+      let completedIncbRangeReplayVerification = null;
+      if (nextComplete && !completedPwtRangeReplay) {
         if (canonicalRebuild) {
           await seedCanonicalBondDefinitions(client, { required: true });
         }
         await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
+        completedIncbRangeReplayVerification =
+          await verifyCanonicalIncbPwtRangeReplayProjection(
+            client,
+            // Keep the active replay binding authoritative while producing the
+            // certificate. `nextRebuild` becomes a valid complete tuple only
+            // after that certificate is attached below.
+            canonicalRebuild,
+          );
       }
-      if (nextRebuild) {
+      const verifiedNextRebuild =
+        nextRebuild && completedIncbRangeReplayVerification
+          ? {
+              ...nextRebuild,
+              incbRangeReplayVerification:
+                completedIncbRangeReplayVerification,
+            }
+          : nextRebuild;
+      if (verifiedNextRebuild) {
         await storeProofIndexerMeta(
           client,
           CANONICAL_REBUILD_META_KEY,
-          nextRebuild,
+          verifiedNextRebuild,
         );
       }
       await storeBlockScanSnapshot(client, {
@@ -10199,7 +13242,7 @@ async function backfillBlockScanSource(client, source) {
         indexedThroughBlock: height,
         indexedThroughBlockHash: nextIndexedThroughBlockHash,
         protocolTxids,
-        rebuild: nextRebuild,
+        rebuild: verifiedNextRebuild,
         scannedBlocks,
         skipped: skipped + blockSkipped,
         stopReason: nextStopReason,
@@ -10210,7 +13253,7 @@ async function backfillBlockScanSource(client, source) {
       skipped += blockSkipped;
       indexedThroughBlock = height;
       indexedThroughBlockHash = nextIndexedThroughBlockHash;
-      canonicalRebuild = nextRebuild;
+      canonicalRebuild = verifiedNextRebuild;
     } catch (error) {
       await client.query("ROLLBACK");
       skipped += 1;
@@ -12284,6 +15327,24 @@ function canonicalIncbValueSnapshotBinding(item) {
       `Canonical INCB value snapshot binding is invalid: ${invalidReason}.`,
     );
   }
+  const exactWorkNetworkValueQ8 = canonicalNonNegativeQ8Text(
+    item.issuanceValueSnapshotWorkNetworkValueQ8,
+    { positive: true },
+  );
+  const legacyStoredDecimalQ8 =
+    !exactWorkNetworkValueQ8 &&
+    typeof item.issuanceValueSnapshotWorkNetworkValueSats === "string"
+      ? q8TextFromDecimal(
+          item.issuanceValueSnapshotWorkNetworkValueSats.trim(),
+        )
+      : "";
+  const workNetworkValueQ8 =
+    exactWorkNetworkValueQ8 || legacyStoredDecimalQ8;
+  if (!workNetworkValueQ8) {
+    throw new Error(
+      "Canonical INCB value snapshot binding has no stored exact WORK Q8 witness.",
+    );
+  }
   return {
     blockHash: String(item.issuanceValueSnapshotBlockHash).toLowerCase(),
     blockHeight: Number(item.issuanceValueSnapshotBlockHeight),
@@ -12294,9 +15355,10 @@ function canonicalIncbValueSnapshotBinding(item) {
     mode: String(item.issuanceValueSnapshotMode),
     model: String(item.issuanceValueSnapshotModel),
     snapshotId: String(item.issuanceValueSnapshotId).trim(),
-    workNetworkValueSats: Number(
-      item.issuanceValueSnapshotWorkNetworkValueSats,
-    ),
+    workNetworkValueWitnessMode: exactWorkNetworkValueQ8
+      ? WORK_NETWORK_VALUE_ACCOUNTING_MODEL
+      : "locked-bound-legacy-work-value-v1",
+    workNetworkValueQ8,
   };
 }
 
@@ -12341,12 +15403,37 @@ async function lockedCanonicalIncbValueSnapshots(client, snapshotIds) {
         payload->'summaryPayloads'->'workFloor'->>'snapshotId' AS work_floor_snapshot_id,
         payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlock' AS work_floor_height,
         payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlockHash' AS work_floor_block_hash,
+        payload->'totals'->>'workNetworkValueAccountingModel' AS totals_work_network_value_model,
+        payload->'totals'->>'workNetworkValueQ8' AS totals_work_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel' AS work_floor_network_value_model,
+        payload->'summaryPayloads'->'workFloor'->>'networkValueQ8' AS work_floor_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->>'liveNetworkValueQ8' AS work_floor_live_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' AS work_actual_network_value_model,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'networkValueQ8' AS work_actual_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveNetworkValueQ8' AS work_actual_live_network_value_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'totalQ8' AS work_actual_total_q8,
+        payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveTotalQ8' AS work_actual_live_total_q8,
         COALESCE(
           NULLIF(payload #>> '{summaryPayloads,workFloor,liveNetworkValueSats}', ''),
           NULLIF(payload #>> '{summaryPayloads,workFloor,actualValue,liveNetworkValueSats}', ''),
           NULLIF(payload #>> '{summaryPayloads,workFloor,actualValue,liveTotalSats}', ''),
           NULLIF(payload #>> '{summaryPayloads,workFloor,actualValue,totalSats}', '')
-        ) AS work_network_value_sats_text
+        ) AS work_network_value_sats_text,
+        CASE
+          WHEN payload #> '{summaryPayloads,workFloor,liveNetworkValueSats}' IS NOT NULL
+            THEN jsonb_typeof(payload #> '{summaryPayloads,workFloor,liveNetworkValueSats}')
+          WHEN payload #> '{summaryPayloads,workFloor,actualValue,liveNetworkValueSats}' IS NOT NULL
+            THEN jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,liveNetworkValueSats}')
+          WHEN payload #> '{summaryPayloads,workFloor,actualValue,liveTotalSats}' IS NOT NULL
+            THEN jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,liveTotalSats}')
+          WHEN payload #> '{summaryPayloads,workFloor,actualValue,totalSats}' IS NOT NULL
+            THEN jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,totalSats}')
+          ELSE NULL
+        END AS work_network_value_sats_type,
+        payload::text AS raw_payload_json,
+        source_hashes::text AS raw_source_hashes_json,
+        consistency::text AS raw_consistency_json,
+        metrics::text AS raw_metrics_json
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
         AND snapshot_id = ANY($2::text[])
@@ -12358,7 +15445,71 @@ async function lockedCanonicalIncbValueSnapshots(client, snapshotIds) {
   return result.rows;
 }
 
+function lockedCanonicalIncbSnapshotWorkNetworkValueQ8(row) {
+  const floorModel = String(row?.work_floor_network_value_model ?? "");
+  const actualModel = String(row?.work_actual_network_value_model ?? "");
+  const totalsModel = String(row?.totals_work_network_value_model ?? "");
+  const currentModel =
+    floorModel === WORK_NETWORK_VALUE_ACCOUNTING_MODEL &&
+    actualModel === WORK_NETWORK_VALUE_ACCOUNTING_MODEL &&
+    (!totalsModel || totalsModel === WORK_NETWORK_VALUE_ACCOUNTING_MODEL);
+  if (
+    !currentModel &&
+    [floorModel, actualModel, totalsModel].some(Boolean)
+  ) {
+    return null;
+  }
+
+  const rawAliases = [
+    row?.totals_work_network_value_q8,
+    row?.work_floor_network_value_q8,
+    row?.work_floor_live_network_value_q8,
+    row?.work_actual_network_value_q8,
+    row?.work_actual_live_network_value_q8,
+    row?.work_actual_total_q8,
+    row?.work_actual_live_total_q8,
+  ];
+  const presentAliases = rawAliases
+    .filter((value) => value !== undefined && value !== null && value !== "")
+    .map((value) => canonicalNonNegativeQ8Text(value, { positive: true }));
+  if (
+    presentAliases.some((value) => !value) ||
+    (currentModel && presentAliases.length !== rawAliases.length)
+  ) {
+    return null;
+  }
+  const exactQ8 = presentAliases[0] ?? "";
+  if (exactQ8 && presentAliases.some((value) => value !== exactQ8)) {
+    return null;
+  }
+  if (currentModel) {
+    return exactQ8
+      ? { mode: WORK_NETWORK_VALUE_ACCOUNTING_MODEL, valueQ8: exactQ8 }
+      : null;
+  }
+
+  // Locked pre-marker rows are immutable issuance witnesses. Their exception
+  // is snapshot-id bound and read under a table lock. Interpret the stored
+  // JSON decimal text directly, never a JavaScript Number, and require it to
+  // agree with any transitional stored Q8 alias plus the mint's exact Q8.
+  const legacyDecimalQ8 =
+    row?.work_network_value_sats_type === "string" &&
+    typeof row?.work_network_value_sats_text === "string"
+      ? q8TextFromDecimal(row.work_network_value_sats_text.trim())
+      : "";
+  const valueQ8 = exactQ8 || legacyDecimalQ8;
+  if (
+    !valueQ8 ||
+    (exactQ8 && legacyDecimalQ8 && exactQ8 !== legacyDecimalQ8)
+  ) {
+    return null;
+  }
+  return { mode: "locked-bound-legacy-work-value-v1", valueQ8 };
+}
+
 function canonicalIncbValueSnapshotFingerprint(row) {
+  const workNetworkValue =
+    lockedCanonicalIncbSnapshotWorkNetworkValueQ8(row);
   return JSON.stringify({
     canonicalSummaryHash: String(row?.canonical_summary_hash ?? "").toLowerCase(),
     consistencyOk: String(row?.consistency_ok ?? ""),
@@ -12376,9 +15527,8 @@ function canonicalIncbValueSnapshotFingerprint(row) {
     workFloorBlockHash: String(row?.work_floor_block_hash ?? "").toLowerCase(),
     workFloorHeight: Number(row?.work_floor_height),
     workFloorSnapshotId: String(row?.work_floor_snapshot_id ?? ""),
-    workNetworkValueSatsText: String(
-      row?.work_network_value_sats_text ?? "",
-    ),
+    workNetworkValueMode: workNetworkValue?.mode ?? "invalid",
+    workNetworkValueQ8: workNetworkValue?.valueQ8 ?? "",
   });
 }
 
@@ -12393,6 +15543,8 @@ function verifiedCanonicalIncbValueSnapshotFingerprints(rows, bindings) {
     const snapshotId = String(row?.snapshot_id ?? "");
     const binding = bindings.get(snapshotId);
     const generatedAt = new Date(row?.generated_at).toISOString();
+    const workNetworkValue =
+      lockedCanonicalIncbSnapshotWorkNetworkValueQ8(row);
     const blockHashes = [
       row?.source_block_hash,
       row?.payload_block_hash,
@@ -12414,11 +15566,8 @@ function verifiedCanonicalIncbValueSnapshotFingerprints(rows, bindings) {
       generatedAt !== binding.generatedAt ||
       binding.mode !== "canonical-summary-refresh" ||
       binding.model !== INCB_VALUE_SNAPSHOT_MODEL ||
-      !Number.isFinite(Number(row?.work_network_value_sats_text)) ||
-      Math.abs(
-        Number(row.work_network_value_sats_text) -
-          binding.workNetworkValueSats,
-      ) > 0.01
+      !workNetworkValue ||
+      workNetworkValue.valueQ8 !== binding.workNetworkValueQ8
     ) {
       throw new Error(
         `INCB issuance repair value snapshot ${snapshotId || "unknown"} does not match its mint provenance.`,
@@ -12901,12 +16050,37 @@ async function repairCanonicalIncbIssuance(client) {
     // checkpoints are canonical resume anchors and must survive the repair.
     const invalidated = await client.query(
       `
-        DELETE FROM proof_indexer.ledger_snapshots
-        WHERE network = $1
+        WITH manifest_locked AS MATERIALIZED (
+          SELECT DISTINCT entry->'snapshot'->>'snapshotId' AS snapshot_id
+          FROM proof_indexer.meta rebuild
+          JOIN proof_indexer.meta witness
+            ON witness.key =
+              rebuild.value->'verifierBinding'->>'witnessSetMetaKey'
+          CROSS JOIN LATERAL jsonb_array_elements(
+            COALESCE(witness.value->'entries', '[]'::jsonb)
+          ) entry
+          WHERE rebuild.key = $3
+            AND rebuild.value->>'network' = $1
+            AND witness.value->>'network' = $1
+            AND witness.value->>'model' = $4
+            AND entry->>'disposition' = 'preserve'
+        )
+        DELETE FROM proof_indexer.ledger_snapshots snapshot
+        WHERE snapshot.network = $1
           AND NOT (${canonicalBlockScanSnapshotPredicate})
-          AND NOT (snapshot_id = ANY($2::text[]))
+          AND NOT (snapshot.snapshot_id = ANY($2::text[]))
+          AND NOT EXISTS (
+            SELECT 1
+            FROM manifest_locked locked
+            WHERE locked.snapshot_id = snapshot.snapshot_id
+          )
       `,
-      [NETWORK, valueSnapshotIds],
+      [
+        NETWORK,
+        valueSnapshotIds,
+        CANONICAL_REBUILD_META_KEY,
+        INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+      ],
     );
     const preservedAfter = await client.query(
       `
@@ -13666,6 +16840,8 @@ const pool = createProofIndexPool({
 try {
   const client = await pool.connect();
   try {
+    const pwtRangeReplayRuntime =
+      await canonicalPwtRangeReplayRuntime(client);
     if (HYDRATE_TRANSACTION_DETAILS_ONLY) {
       const hydration = await hydrateHistoricalCanonicalTransactionDetails(
         client,
@@ -13753,6 +16929,8 @@ try {
             state: prepared?.value ?? null,
             baseDefinitions: prepared?.baseDefinitions ?? null,
             baseMarketplaceEvents: prepared?.baseMarketplaceEvents ?? null,
+            creditUnitStorageMigration:
+              prepared?.creditUnitStorageMigration ?? null,
           },
           null,
           2,
@@ -13768,6 +16946,8 @@ try {
             ok: true,
             resumed: prepared?.resumed === true,
             state: prepared?.value ?? null,
+            creditUnitStorageMigration:
+              prepared?.creditUnitStorageMigration ?? null,
           },
           null,
           2,
@@ -13828,6 +17008,23 @@ try {
             ok: true,
             snapshotId: snapshot.snapshotId,
             totals: summarySnapshotTotals(snapshot.summaryPayloads),
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (pwtRangeReplayRuntime.active) {
+      const result = await backfillSource(client, SOURCES[0]);
+      console.log(
+        JSON.stringify(
+          {
+            activePwtRangeReplay: true,
+            apiBase: API_BASE,
+            network: NETWORK,
+            ok: true,
+            result,
+            verifierBinding:
+              pwtRangeReplayRuntime.verifierBinding ?? null,
           },
           null,
           2,

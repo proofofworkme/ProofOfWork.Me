@@ -13,6 +13,18 @@ import * as ecc from "@bitcoinerlab/secp256k1";
 import { verifyBitcoinMessageSignature } from "./bitcoin-message-verifier.mjs";
 import { createElectrumClient } from "./electrum-client.mjs";
 import {
+  BOND_VALUE_Q8_SCALE,
+  addIntegerTexts,
+  canonicalIntegerText,
+  decimalTextFromQ8,
+  floorQ8PerUnit,
+  integerBigInt,
+  maxIntegerTexts,
+  q8TextFromDecimal,
+  q8TextFromIntegerUnits,
+  safeIntegerNumber,
+} from "./bond-units.mjs";
+import {
   WORK_ATOMIC_PROJECTION_MODEL,
   WORK_DECIMALS,
   WORK_TOKEN_ID,
@@ -36,10 +48,20 @@ import {
   writeJsonBody,
 } from "./http/responses.mjs";
 import {
+  INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
+  INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+  canonicalIncbReplaySha256,
+  incbRangeReplayWitnessMetaKey,
+  incbReplayBondIdentity,
+  incbReplaySnapshotFingerprint,
+  normalizeIncbReplaySnapshotDescriptor,
+} from "./incb-range-replay-witness.mjs";
+import {
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
   proofIndexAddressMailPayload,
   proofIndexCanonicalActivityPayload,
+  proofIndexCanonicalInceptionMintWitnessesPayload,
   proofIndexCanonicalSummaryLedgerPayload,
   proofIndexCanonicalStateMetaPayload,
   proofIndexCanonicalTransactionsPayload,
@@ -615,6 +637,43 @@ const INCEPTION_ISSUANCE_ACCOUNTING_MODEL =
   "canonical-pre-bond-live-network-value-v2";
 const INCEPTION_VALUE_SNAPSHOT_MODEL =
   "canonical-summary-h-minus-one-v1";
+const PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL =
+  "proof-indexer-pwt-range-replay-verifier-binding-v1";
+const CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT = 958_383;
+const CANONICAL_INCB_PWT_RANGE_REPLAY_TARGETS = Object.freeze([
+  Object.freeze({
+    blockHash:
+      "00000000000000000001db52a4485f7d1a1784b7ba6c5b93db1b20449ac2628b",
+    blockHeight: 958_383,
+    blockIndex: 2_421,
+    txid: "c9c9f4e382f598aa39b3be57adc8fe1defeb80e5216387d3af6b0948da232aff",
+    workAmountAtoms: "10000000000000",
+  }),
+  Object.freeze({
+    blockHash:
+      "000000000000000000022e062fe6236b71722b7ade5079d5c45e73a5561252e1",
+    blockHeight: 958_429,
+    blockIndex: 1_476,
+    txid: "e08080c1d86f0770dd6ebbabd98a9e066dc6043b548af7ecb7912fbbdfad4d50",
+    workAmountAtoms: "7000000000000",
+  }),
+  Object.freeze({
+    blockHash:
+      "000000000000000000022e062fe6236b71722b7ade5079d5c45e73a5561252e1",
+    blockHeight: 958_429,
+    blockIndex: 1_483,
+    txid: "45b226453dde5b4d61a6a036af299d11ebfdeb65054bf26438ebc6ebebbf00c3",
+    workAmountAtoms: "11500000000000",
+  }),
+  Object.freeze({
+    blockHash:
+      "0000000000000000000124119a72f9994a7e3a5a724a9826cb178ed2646639f6",
+    blockHeight: 958_590,
+    blockIndex: 1_945,
+    txid: "62f1a62fdf984c3c50b067cfed806023ad61d4fabd62087ecdd891554f5b51d6",
+    workAmountAtoms: "357446000000000",
+  }),
+]);
 const INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL =
   "fixed-incb-issuance-plus-market-flow-v1";
 const INCEPTION_ATTACHMENT_ACCOUNTING_MODEL =
@@ -650,7 +709,7 @@ const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
 const POWB_REGISTRY_ID = "infinity@proofofwork.me";
 const POWB_TOKEN_CREATED_AT = "2026-06-23T00:00:00.000Z";
-const POWB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
+const POWB_TOKEN_MAX_SUPPLY = null;
 const POWB_TOKEN_MINT_AMOUNT = 1;
 const POWB_TOKEN_MINT_PRICE_SATS = 1;
 const INCB_TOKEN_TICKER = "INCB";
@@ -658,7 +717,7 @@ const INCB_TOKEN_ID =
   "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
 const INCB_REGISTRY_ID = "inception@proofofwork.me";
 const INCB_TOKEN_CREATED_AT = "2026-07-10T00:00:00.000Z";
-const INCB_TOKEN_MAX_SUPPLY = Number.MAX_SAFE_INTEGER;
+const INCB_TOKEN_MAX_SUPPLY = null;
 const INCB_TOKEN_MINT_AMOUNT = 1;
 const INCB_TOKEN_MINT_PRICE_SATS = 1;
 const INFINITY_BOND_CONFIG = {
@@ -719,6 +778,11 @@ const GROWTH_MODEL_INPUTS = {
   idDensitySatsPerN2: 268.68933906745133,
   valueMultiple: 5,
 };
+const GROWTH_ID_DENSITY_NUMERATOR = 26_868_933_906_745_133n;
+const GROWTH_ID_DENSITY_DENOMINATOR = 100_000_000_000_000n;
+const GROWTH_VALUE_MULTIPLE = 5n;
+const WORK_NETWORK_VALUE_ACCOUNTING_MODEL =
+  "canonical-exact-work-network-q8-v1";
 const ID_MARKETPLACE_MUTATION_KINDS = new Set([
   "id-list",
   "id-seal",
@@ -1548,6 +1612,12 @@ function tokenPayloadMetrics(payload) {
     payload.tokens.length > 0 &&
     confirmedTokenItems > 0 &&
     confirmedTokenItems < confirmedTokenStats;
+  const scopedBondTokenId =
+    Array.isArray(payload?.tokens) &&
+    payload.tokens.length === 1 &&
+    isBondTokenId(payload.tokens[0]?.tokenId)
+      ? payload.tokens[0].tokenId
+      : "";
   return {
     confirmedClosedListings: Array.isArray(payload?.closedListings)
       ? payload.closedListings.filter((listing) => listing?.closedConfirmed).length
@@ -1560,12 +1630,15 @@ function tokenPayloadMetrics(payload) {
       safeStatNumber(payload, "confirmedMints"),
       confirmedItemCount(payload?.mints),
     ),
-    confirmedSupply: Math.max(
-      Number.isFinite(Number(payload?.confirmedSupply))
-        ? Number(payload.confirmedSupply)
-        : 0,
-      0,
-    ),
+    confirmedSupply: scopedBondTokenId
+      ? canonicalIntegerText(payload?.confirmedSupply, { allowZero: true }) ||
+        "0"
+      : Math.max(
+          Number.isFinite(Number(payload?.confirmedSupply))
+            ? Number(payload.confirmedSupply)
+            : 0,
+          0,
+        ),
     confirmedTokens: Math.max(
       scopedTokenMetrics ? confirmedTokenItems : confirmedTokenStats,
       confirmedItemCount(payload?.tokens),
@@ -1644,7 +1717,8 @@ function canonicalBondTokenDefinition(
     creationFeeSats: 0,
     creatorAddress: registryAddress,
     dataBytes: 0,
-    maxSupply: config.tokenMaxSupply,
+    maxSupply: null,
+    maxSupplyModel: "uncapped",
     mintAmount: config.tokenMintAmount,
     mintPriceSats: config.tokenMintPriceSats,
     network,
@@ -1715,13 +1789,28 @@ function tokenPayloadLooksWorse(nextPayload, previousPayload) {
 
   const next = tokenPayloadMetrics(nextPayload);
   const previous = tokenPayloadMetrics(previousPayload);
-  const hasPreviousHistory = Object.values(previous).some((value) => value > 0);
+  const metricIsPositive = (key, value) =>
+    key === "confirmedSupply" &&
+    canonicalIntegerText(value, { allowZero: true })
+      ? BigInt(value) > 0n
+      : Number(value) > 0;
+  const metricRegressed = (key, nextValue, previousValue) =>
+    key === "confirmedSupply" &&
+    canonicalIntegerText(nextValue, { allowZero: true }) &&
+    canonicalIntegerText(previousValue, { allowZero: true })
+      ? BigInt(nextValue) < BigInt(previousValue)
+      : Number(nextValue) < Number(previousValue);
+  const hasPreviousHistory = Object.entries(previous).some(([key, value]) =>
+    metricIsPositive(key, value),
+  );
   if (!hasPreviousHistory) {
     return false;
   }
 
   return (
-    Object.keys(previous).some((key) => next[key] < previous[key]) ||
+    Object.keys(previous).some((key) =>
+      metricRegressed(key, next[key], previous[key]),
+    ) ||
     tokenPayloadHasConfirmedSealRegression(nextPayload, previousPayload)
   );
 }
@@ -2386,8 +2475,22 @@ function mergeWalletHolders(baseHolders, overlayHolders) {
             amount: holder?.balance,
             amountAtoms: holder?.balanceAtoms,
           }, { allowZero: true })
-        : Number(holder?.balance ?? 0);
-      return { holder, ledgerBalance, tokenId };
+        : tokenLedgerAmountFromRecord(
+            tokenId,
+            { amount: holder?.balance },
+            { allowZero: true },
+          );
+      return {
+        holder:
+          ledgerBalance !== null && isBondTokenId(tokenId)
+            ? {
+                ...holder,
+                ...tokenLedgerBalanceFields(tokenId, ledgerBalance),
+              }
+            : holder,
+        ledgerBalance,
+        tokenId,
+      };
     })
     .filter(
       ({ ledgerBalance, tokenId }) =>
@@ -3496,6 +3599,34 @@ function workFloorWithIndexedMarketSummaryOverlay(workFloor, overlay, tokenState
       : previousFrozenTotalSats +
         (marketplaceSaleVolumeSats - previousMarketplaceSaleVolumeSats) *
           GROWTH_MODEL_INPUTS.valueMultiple;
+  const previousTotalQ8 = BigInt(
+    canonicalNonNegativeIntegerText(previousActual.totalQ8) ||
+      q8TextFromDecimal(previousTotalSats) ||
+      "0",
+  );
+  const previousFrozenTotalQ8 = BigInt(
+    canonicalNonNegativeIntegerText(previousActual.frozenTotalQ8) ||
+      q8TextFromDecimal(previousFrozenTotalSats) ||
+      "0",
+  );
+  const previousMarketplaceValueQ8 =
+    proofFlowBigInt(previousMarketplaceSats) * VALUE_Q8_SCALE;
+  const marketplaceValueQ8 =
+    proofFlowBigInt(marketplaceFlowSats) *
+    GROWTH_VALUE_MULTIPLE *
+    VALUE_Q8_SCALE;
+  const marketplaceDeltaQ8 =
+    previousMarketplaceSats > 0
+      ? marketplaceValueQ8 - previousMarketplaceValueQ8
+      : proofFlowBigInt(
+          marketplaceSaleVolumeSats - previousMarketplaceSaleVolumeSats,
+        ) *
+        GROWTH_VALUE_MULTIPLE *
+        VALUE_Q8_SCALE;
+  const totalQ8 = previousTotalQ8 + marketplaceDeltaQ8;
+  const frozenTotalQ8 = previousFrozenTotalQ8 + marketplaceDeltaQ8;
+  const floorQ8 = totalQ8 / BigInt(WORK_TOKEN_MAX_SUPPLY);
+  const frozenFloorQ8 = frozenTotalQ8 / BigInt(WORK_TOKEN_MAX_SUPPLY);
   const btcUsd = numericValue(workFloor.btcUsd);
   const totalUsd =
     btcUsd > 0
@@ -3527,30 +3658,66 @@ function workFloorWithIndexedMarketSummaryOverlay(workFloor, overlay, tokenState
   return {
     ...workFloor,
     chartPoints,
-    floorSats,
-    frozenFloorSats,
-    frozenNetworkValueSats: frozenTotalSats,
+    workNetworkValueAccountingModel: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+    floorSats: q8ToCanonicalDecimal(floorQ8),
+    floorSatsApproximate: floorSats,
+    floorQ8: floorQ8.toString(),
+    frozenFloorSats: q8ToCanonicalDecimal(frozenFloorQ8),
+    frozenFloorSatsApproximate: frozenFloorSats,
+    frozenFloorQ8: frozenFloorQ8.toString(),
+    frozenNetworkValueSats: q8ToCanonicalDecimal(frozenTotalQ8),
+    frozenNetworkValueSatsApproximate: frozenTotalSats,
+    frozenNetworkValueQ8: frozenTotalQ8.toString(),
+    frozenTotalSats: q8ToCanonicalDecimal(frozenTotalQ8),
+    frozenTotalQ8: frozenTotalQ8.toString(),
     indexedAt: newerIso(workFloor.indexedAt, overlay.indexedAt),
-    liveFloorSats: floorSats,
-    liveNetworkValueSats: totalSats,
-    networkValueSats: totalSats,
+    liveFloorSats: q8ToCanonicalDecimal(floorQ8),
+    liveFloorSatsApproximate: floorSats,
+    liveFloorQ8: floorQ8.toString(),
+    liveNetworkValueSats: q8ToCanonicalDecimal(totalQ8),
+    liveNetworkValueSatsApproximate: totalSats,
+    liveNetworkValueQ8: totalQ8.toString(),
+    liveTotalSats: q8ToCanonicalDecimal(totalQ8),
+    liveTotalQ8: totalQ8.toString(),
+    networkValueSats: q8ToCanonicalDecimal(totalQ8),
+    networkValueSatsApproximate: totalSats,
+    networkValueQ8: totalQ8.toString(),
+    totalSats: q8ToCanonicalDecimal(totalQ8),
+    totalQ8: totalQ8.toString(),
     actualValue: {
       ...previousActual,
-      floorSats,
-      frozenFloorSats,
-      frozenNetworkValueSats: frozenTotalSats,
-      frozenTotalSats,
-      liveFloorSats: floorSats,
-      liveNetworkValueSats: totalSats,
-      liveTotalSats: totalSats,
+      workNetworkValueAccountingModel: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+      floorSats: q8ToCanonicalDecimal(floorQ8),
+      floorSatsApproximate: floorSats,
+      floorQ8: floorQ8.toString(),
+      frozenFloorSats: q8ToCanonicalDecimal(frozenFloorQ8),
+      frozenFloorSatsApproximate: frozenFloorSats,
+      frozenFloorQ8: frozenFloorQ8.toString(),
+      frozenNetworkValueSats: q8ToCanonicalDecimal(frozenTotalQ8),
+      frozenNetworkValueSatsApproximate: frozenTotalSats,
+      frozenNetworkValueQ8: frozenTotalQ8.toString(),
+      frozenTotalSats: q8ToCanonicalDecimal(frozenTotalQ8),
+      frozenTotalQ8: frozenTotalQ8.toString(),
+      liveFloorSats: q8ToCanonicalDecimal(floorQ8),
+      liveFloorSatsApproximate: floorSats,
+      liveFloorQ8: floorQ8.toString(),
+      liveNetworkValueSats: q8ToCanonicalDecimal(totalQ8),
+      liveNetworkValueSatsApproximate: totalSats,
+      liveNetworkValueQ8: totalQ8.toString(),
+      liveTotalSats: q8ToCanonicalDecimal(totalQ8),
+      liveTotalQ8: totalQ8.toString(),
       marketplaceFlowSats,
       marketplaceSaleVolumeSats,
       marketplaceSats,
       marketplaceVolumeSats: marketplaceSaleVolumeSats,
-      networkValueSats: totalSats,
+      networkValueSats: q8ToCanonicalDecimal(totalQ8),
+      networkValueSatsApproximate: totalSats,
+      networkValueQ8: totalQ8.toString(),
       tokenSaleFlowSats: nextTokenSaleVolumeSats,
       tokenSaleVolumeSats: nextTokenSaleVolumeSats,
-      totalSats,
+      totalSats: q8ToCanonicalDecimal(totalQ8),
+      totalSatsApproximate: totalSats,
+      totalQ8: totalQ8.toString(),
       totalUsd,
     },
     stats: {
@@ -3969,6 +4136,15 @@ const CREDIT_NETWORK_VALUE_FIELD_NAMES = [
   "registryMutationFeeSats",
   "salePaymentSats",
   "transactionMinerFeeSats",
+  "creditFloorAtConfirmQ8",
+  "creditLiveFloorQ8",
+  "creditLiveValueQ8",
+  "creditRevaluationFloorQ8",
+  "creditValueAtConfirmQ8",
+  "frozenNetworkValueQ8",
+  "liveNetworkValueBeforeEventQ8",
+  "liveNetworkValueQ8",
+  "networkValueBeforeEventQ8",
 ];
 
 const WORK_TRANSFER_VALUE_PROJECTION_FIELD_NAMES = [
@@ -4004,6 +4180,7 @@ function canonicalWorkTransferValueProjectionFromState(
   currentLiveFloorSats = 0,
 ) {
   const liveFloorSats = numericValue(currentLiveFloorSats);
+  const liveFloorQ8 = decimalValueToQ8(currentLiveFloorSats);
   const items = (Array.isArray(state?.transfers) ? state.transfers : [])
     .filter(
       (item) =>
@@ -4020,26 +4197,100 @@ function canonicalWorkTransferValueProjectionFromState(
           projected[field] = item[field];
         }
       }
-      if (liveFloorSats > 0) {
+      const canonicalQ8 = (q8Field, decimalField) => {
+        if (
+          Object.prototype.hasOwnProperty.call(item, q8Field) &&
+          item[q8Field] !== undefined &&
+          item[q8Field] !== null &&
+          item[q8Field] !== ""
+        ) {
+          return canonicalNonNegativeIntegerText(item[q8Field]);
+        }
+        return decimalValueToQ8(item?.[decimalField])?.toString() || "";
+      };
+      const setCanonicalQ8Alias = (q8Field, decimalField, q8Text) => {
+        if (!q8Text) return;
+        projected[q8Field] = q8Text;
+        projected[decimalField] = q8ToCanonicalDecimal(q8Text);
+      };
+      const creditFloorAtConfirmQ8 = canonicalQ8(
+        "creditFloorAtConfirmQ8",
+        "creditFloorAtConfirmSats",
+      );
+      const creditValueAtConfirmQ8 = canonicalQ8(
+        "creditValueAtConfirmQ8",
+        "creditValueAtConfirmSats",
+      );
+      const networkValueBeforeEventQ8 = canonicalQ8(
+        "networkValueBeforeEventQ8",
+        "networkValueBeforeEventSats",
+      );
+      const liveNetworkValueBeforeEventQ8 = canonicalQ8(
+        "liveNetworkValueBeforeEventQ8",
+        "liveNetworkValueBeforeEventSats",
+      );
+      setCanonicalQ8Alias(
+        "creditFloorAtConfirmQ8",
+        "creditFloorAtConfirmSats",
+        creditFloorAtConfirmQ8,
+      );
+      setCanonicalQ8Alias(
+        "creditValueAtConfirmQ8",
+        "creditValueAtConfirmSats",
+        creditValueAtConfirmQ8,
+      );
+      setCanonicalQ8Alias(
+        "networkValueBeforeEventQ8",
+        "networkValueBeforeEventSats",
+        networkValueBeforeEventQ8,
+      );
+      setCanonicalQ8Alias(
+        "liveNetworkValueBeforeEventQ8",
+        "liveNetworkValueBeforeEventSats",
+        liveNetworkValueBeforeEventQ8,
+      );
+      const fixedEventFlowSats = Number(item?.fixedEventFlowSats);
+      const fixedEventFlowQ8 =
+        Number.isSafeInteger(fixedEventFlowSats) && fixedEventFlowSats >= 0
+          ? BigInt(fixedEventFlowSats) * VALUE_Q8_SCALE
+          : null;
+      if (fixedEventFlowQ8 !== null && creditValueAtConfirmQ8) {
+        const frozenNetworkValueQ8 =
+          BigInt(creditValueAtConfirmQ8) + fixedEventFlowQ8;
+        projected.frozenNetworkValueQ8 = frozenNetworkValueQ8.toString();
+        projected.frozenNetworkValueSats =
+          q8ToCanonicalDecimal(frozenNetworkValueQ8);
+      }
+      if (liveFloorSats > 0 && liveFloorQ8 !== null && liveFloorQ8 > 0n) {
         const amountAtoms = workAtomsBigIntFromRecord(item);
         const creditLiveValueQ8 =
           amountAtoms === null
             ? null
-            : workAtomsValueAtFloorQ8(amountAtoms, liveFloorSats);
+            : (amountAtoms * liveFloorQ8) / WORK_UNIT_SCALE;
         const creditLiveValueSats =
           creditLiveValueQ8 === null
             ? numericValue(item.amount) * liveFloorSats
-            : q8ToNumber(creditLiveValueQ8);
-        const fixedEventFlowSats = Math.max(
-          0,
-          numericValue(item.frozenNetworkValueSats) -
-            numericValue(item.creditValueAtConfirmSats),
-        );
-        projected.creditLiveFloorSats = liveFloorSats;
+            : q8ToCanonicalDecimal(creditLiveValueQ8);
+        projected.creditLiveFloorSats = q8ToCanonicalDecimal(liveFloorQ8);
+        projected.creditLiveFloorQ8 = liveFloorQ8.toString();
         projected.creditLiveValueSats = creditLiveValueSats;
-        projected.creditRevaluationFloorSats = liveFloorSats;
-        projected.liveNetworkValueSats =
-          creditLiveValueSats + fixedEventFlowSats;
+        if (creditLiveValueQ8 !== null) {
+          projected.creditLiveValueQ8 = creditLiveValueQ8.toString();
+        }
+        projected.creditRevaluationFloorSats =
+          q8ToCanonicalDecimal(liveFloorQ8);
+        projected.creditRevaluationFloorQ8 = liveFloorQ8.toString();
+        if (
+          creditLiveValueQ8 !== null &&
+          fixedEventFlowQ8 !== null &&
+          fixedEventFlowQ8 >= 0n
+        ) {
+          const liveNetworkValueQ8 =
+            creditLiveValueQ8 + fixedEventFlowQ8;
+          projected.liveNetworkValueSats =
+            q8ToCanonicalDecimal(liveNetworkValueQ8);
+          projected.liveNetworkValueQ8 = liveNetworkValueQ8.toString();
+        }
       }
       return projected;
     });
@@ -7837,6 +8088,26 @@ function canonicalNonNegativeIntegerText(value, { allowZero = true } = {}) {
   return allowZero || integer > 0n ? integer.toString() : "";
 }
 
+function proofFlowBigInt(value) {
+  try {
+    return integerBigInt(value, { allowZero: true }) ?? 0n;
+  } catch {
+    return 0n;
+  }
+}
+
+function isBondTokenId(tokenId) {
+  return BOND_TOKEN_IDS.has(String(tokenId ?? "").trim().toLowerCase());
+}
+
+function bondUnitsBigInt(value, { allowZero = false } = {}) {
+  try {
+    return integerBigInt(value, { allowZero });
+  } catch {
+    return null;
+  }
+}
+
 function workAtomsBigIntFromRecord(
   record,
   { allowZero = false, storedAmountIsAtoms = false } = {},
@@ -7899,6 +8170,9 @@ function tokenLedgerAmountFromRecord(
       storedAmountIsAtoms,
     });
   }
+  if (isBondTokenId(tokenId)) {
+    return bondUnitsBigInt(record?.amount ?? record ?? 0, { allowZero });
+  }
   const amount = Number(record?.amount ?? record ?? 0);
   if (
     !Number.isSafeInteger(amount) ||
@@ -7914,6 +8188,10 @@ function tokenLedgerAmountFields(tokenId, amount, { allowZero = false } = {}) {
   if (isWorkTokenId(tokenId)) {
     return workAmountFieldsFromAtoms(amount, { allowZero });
   }
+  if (isBondTokenId(tokenId)) {
+    const normalized = canonicalIntegerText(amount, { allowZero });
+    return normalized ? { amount: normalized } : {};
+  }
   return { amount: Number(amount) };
 }
 
@@ -7924,31 +8202,66 @@ function tokenAmountFieldsFromRecord(record) {
 }
 
 function tokenLedgerMaxSupply(token) {
+  if (isBondTokenId(token?.tokenId)) {
+    return null;
+  }
   return isWorkTokenId(token?.tokenId)
     ? WORK_TOKEN_MAX_SUPPLY_ATOMS
     : Number(token?.maxSupply ?? 0);
 }
 
 function tokenLedgerMintAmount(token) {
+  if (isBondTokenId(token?.tokenId)) {
+    return bondUnitsBigInt(token?.mintAmount ?? 0);
+  }
   return isWorkTokenId(token?.tokenId)
     ? WORK_TOKEN_MINT_AMOUNT_ATOMS
     : Number(token?.mintAmount ?? 0);
 }
 
 function tokenLedgerZero(tokenId) {
-  return isWorkTokenId(tokenId) ? 0n : 0;
+  return isWorkTokenId(tokenId) || isBondTokenId(tokenId) ? 0n : 0;
 }
 
-function tokenLedgerHumanNumber(tokenId, amount) {
+function tokenLedgerApproximateNumber(tokenId, amount) {
   return isWorkTokenId(tokenId)
     ? Number(formatWorkAtoms(amount))
     : Number(amount);
 }
 
-function workAtomsValueAtNetworkQ8(amountAtoms, networkValue) {
+function tokenLedgerSupplyValue(tokenId, amount) {
+  if (isWorkTokenId(tokenId)) {
+    return formatWorkAtoms(amount);
+  }
+  if (isBondTokenId(tokenId)) {
+    return canonicalIntegerText(amount, { allowZero: true });
+  }
+  return Number(amount);
+}
+
+function tokenLedgerBalanceFields(tokenId, balance) {
+  if (isWorkTokenId(tokenId)) {
+    return workBalanceFieldsFromAtoms(balance);
+  }
+  if (isBondTokenId(tokenId)) {
+    return {
+      balance: canonicalIntegerText(balance, { allowZero: true }),
+    };
+  }
+  return { balance: Number(balance) };
+}
+
+function workAtomsValueAtNetworkQ8(
+  amountAtoms,
+  networkValue,
+  exactNetworkValueQ8 = "",
+) {
   const atoms =
     typeof amountAtoms === "bigint" ? amountAtoms : BigInt(amountAtoms);
-  const networkValueQ8 = decimalValueToQ8(networkValue);
+  const exactQ8Text = canonicalNonNegativeIntegerText(exactNetworkValueQ8);
+  const networkValueQ8 = exactQ8Text
+    ? BigInt(exactQ8Text)
+    : decimalValueToQ8(networkValue);
   if (atoms < 0n || networkValueQ8 === null || networkValueQ8 < 0n) {
     return null;
   }
@@ -8010,13 +8323,19 @@ function tokenSaleAuthorizationDraft(authorization = {}) {
   const version = String(
     authorization.version ?? TOKEN_SALE_AUTH_VERSION,
   ).trim();
+  const tokenId = String(authorization.tokenId ?? "").trim().toLowerCase();
+  const ticker = normalizeTokenTicker(String(authorization.ticker ?? ""));
+  const bond = isBondTokenId(tokenId);
   const amountFields =
     version === TOKEN_SALE_AUTH_ATOMS_VERSION
       ? {
           amountAtoms: canonicalWorkAtomsText(authorization.amountAtoms),
         }
       : {
-          amount: Math.max(0, Math.floor(Number(authorization.amount ?? 0))),
+          amount: bond
+            ? canonicalIntegerText(authorization.amount, { allowZero: true }) ||
+              "0"
+            : Math.max(0, Math.floor(Number(authorization.amount ?? 0))),
         };
   return {
     ...amountFields,
@@ -8036,8 +8355,8 @@ function tokenSaleAuthorizationDraft(authorization = {}) {
     registryAddress: String(authorization.registryAddress ?? "").trim(),
     sellerAddress: String(authorization.sellerAddress ?? "").trim(),
     sellerPublicKey: String(authorization.sellerPublicKey ?? "").toLowerCase(),
-    ticker: normalizeTokenTicker(String(authorization.ticker ?? "")),
-    tokenId: String(authorization.tokenId ?? "").toLowerCase(),
+    ticker,
+    tokenId,
     version,
   };
 }
@@ -8051,10 +8370,14 @@ function parseTokenSaleAuthorizationJson(value, network) {
   const draft = tokenSaleAuthorizationDraft(parsed);
   const anchorTxid = String(parsed.anchorTxid ?? "").toLowerCase();
   const anchorSignature = String(parsed.anchorSignature ?? "").toLowerCase();
+  const bondAmount = isBondTokenId(draft.tokenId)
+    ? canonicalIntegerText(draft.amount, { allowZero: false })
+    : "";
   const legacyAmountValid =
     draft.version === TOKEN_SALE_AUTH_VERSION &&
-    Number.isSafeInteger(draft.amount) &&
-    draft.amount >= 1;
+    (isBondTokenId(draft.tokenId)
+      ? Boolean(bondAmount)
+      : Number.isSafeInteger(draft.amount) && draft.amount >= 1);
   const atomicAmountValid =
     draft.version === TOKEN_SALE_AUTH_ATOMS_VERSION &&
     draft.tokenId === WORK_TOKEN_ID &&
@@ -9452,6 +9775,12 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       const creditValueAtConfirmSats = numericValue(
         detail?.creditValueAtConfirmSats,
       );
+      const creditValueAtConfirmQ8 = canonicalNonNegativeIntegerText(
+        detail?.creditValueAtConfirmQ8,
+      );
+      const creditFloorAtConfirmQ8 = canonicalNonNegativeIntegerText(
+        detail?.creditFloorAtConfirmQ8,
+      );
       const creditRevaluationFloorSats =
         numericValue(detail?.creditRevaluationFloorSats) ||
         numericValue(detail?.creditLiveFloorSats) ||
@@ -9460,6 +9789,49 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       const creditLiveValueSats =
         numericValue(detail?.creditLiveValueSats) ||
         tokenAmountValueAtFloor(transfer, creditLiveFloorSats);
+      const creditLiveFloorQ8 = canonicalNonNegativeIntegerText(
+        detail?.creditLiveFloorQ8,
+      );
+      const creditRevaluationFloorQ8 = canonicalNonNegativeIntegerText(
+        detail?.creditRevaluationFloorQ8,
+      );
+      const creditLiveValueQ8 = canonicalNonNegativeIntegerText(
+        detail?.creditLiveValueQ8,
+      );
+      const frozenNetworkValueQ8 = canonicalNonNegativeIntegerText(
+        detail?.frozenNetworkValueQ8,
+      );
+      const liveNetworkValueQ8 = canonicalNonNegativeIntegerText(
+        detail?.liveNetworkValueQ8,
+      );
+      const networkValueBeforeEventQ8 = canonicalNonNegativeIntegerText(
+        detail?.networkValueBeforeEventQ8,
+      );
+      const liveNetworkValueBeforeEventQ8 =
+        canonicalNonNegativeIntegerText(
+          detail?.liveNetworkValueBeforeEventQ8,
+        );
+      const fixedEventFlowSats = Number.isSafeInteger(
+        Number(detail?.fixedEventFlowSats),
+      )
+        ? Number(detail.fixedEventFlowSats)
+        : registryMutationFeeSats + attributedMinerFeeSats;
+      const exactCreditValueAtConfirmSats = creditValueAtConfirmQ8
+        ? q8ToCanonicalDecimal(creditValueAtConfirmQ8)
+        : creditValueAtConfirmSats;
+      const exactCreditLiveValueSats = creditLiveValueQ8
+        ? q8ToCanonicalDecimal(creditLiveValueQ8)
+        : creditLiveValueSats;
+      const exactFrozenNetworkValueSats = frozenNetworkValueQ8
+        ? q8ToCanonicalDecimal(frozenNetworkValueQ8)
+        : creditValueAtConfirmSats +
+          registryMutationFeeSats +
+          attributedMinerFeeSats;
+      const exactLiveNetworkValueSats = liveNetworkValueQ8
+        ? q8ToCanonicalDecimal(liveNetworkValueQ8)
+        : creditLiveValueSats +
+          registryMutationFeeSats +
+          attributedMinerFeeSats;
       return {
         ...transfer,
         arbSats: 0,
@@ -9467,24 +9839,44 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
         ...(transfer.amountAtoms
           ? { creditAmountMovedAtoms: transfer.amountAtoms }
           : {}),
-        creditFloorAtConfirmSats: numericValue(
-          detail?.creditFloorAtConfirmSats,
-        ),
+        creditFloorAtConfirmSats: creditFloorAtConfirmQ8
+          ? q8ToCanonicalDecimal(creditFloorAtConfirmQ8)
+          : numericValue(detail?.creditFloorAtConfirmSats),
+        ...(creditFloorAtConfirmQ8 ? { creditFloorAtConfirmQ8 } : {}),
         creditFloorAtConfirmModel: String(
           detail?.creditFloorAtConfirmModel ?? "",
         ),
-        creditLiveFloorSats,
-        creditLiveValueSats,
-        creditRevaluationFloorSats,
-        creditValueAtConfirmSats,
-        frozenNetworkValueSats:
-          creditValueAtConfirmSats +
-          registryMutationFeeSats +
-          attributedMinerFeeSats,
-        liveNetworkValueSats:
-          creditLiveValueSats +
-          registryMutationFeeSats +
-          attributedMinerFeeSats,
+        creditLiveFloorSats: creditLiveFloorQ8
+          ? q8ToCanonicalDecimal(creditLiveFloorQ8)
+          : creditLiveFloorSats,
+        ...(creditLiveFloorQ8 ? { creditLiveFloorQ8 } : {}),
+        creditLiveValueSats: exactCreditLiveValueSats,
+        ...(creditLiveValueQ8 ? { creditLiveValueQ8 } : {}),
+        creditRevaluationFloorSats: creditRevaluationFloorQ8
+          ? q8ToCanonicalDecimal(creditRevaluationFloorQ8)
+          : creditRevaluationFloorSats,
+        ...(creditRevaluationFloorQ8
+          ? { creditRevaluationFloorQ8 }
+          : {}),
+        creditValueAtConfirmSats: exactCreditValueAtConfirmSats,
+        ...(creditValueAtConfirmQ8 ? { creditValueAtConfirmQ8 } : {}),
+        frozenNetworkValueSats: exactFrozenNetworkValueSats,
+        ...(frozenNetworkValueQ8 ? { frozenNetworkValueQ8 } : {}),
+        fixedEventFlowSats,
+        liveNetworkValueBeforeEventSats: liveNetworkValueBeforeEventQ8
+          ? q8ToCanonicalDecimal(liveNetworkValueBeforeEventQ8)
+          : numericValue(detail?.liveNetworkValueBeforeEventSats),
+        ...(liveNetworkValueBeforeEventQ8
+          ? { liveNetworkValueBeforeEventQ8 }
+          : {}),
+        liveNetworkValueSats: exactLiveNetworkValueSats,
+        ...(liveNetworkValueQ8 ? { liveNetworkValueQ8 } : {}),
+        networkValueBeforeEventSats: networkValueBeforeEventQ8
+          ? q8ToCanonicalDecimal(networkValueBeforeEventQ8)
+          : numericValue(detail?.networkValueBeforeEventSats),
+        ...(networkValueBeforeEventQ8
+          ? { networkValueBeforeEventQ8 }
+          : {}),
         attributedMinerFeeSats,
         minerFeeSats,
         registryMutationFeeSats,
@@ -9617,6 +10009,16 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       creditEventFrozenValueSats: numericValue(
         creditValue?.creditEventFrozenValueSats,
       ),
+      ...(canonicalIntegerText(creditValue?.creditEventFrozenValueQ8, {
+        allowZero: true,
+      })
+        ? {
+            creditEventFrozenValueQ8: canonicalIntegerText(
+              creditValue.creditEventFrozenValueQ8,
+              { allowZero: true },
+            ),
+          }
+        : {}),
       creditEventLiveValueSats: numericValue(
         creditValue?.creditEventLiveValueSats,
       ),
@@ -9627,6 +10029,16 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       creditMovementFrozenValueSats: numericValue(
         creditValue?.creditMovementFrozenValueSats,
       ),
+      ...(canonicalIntegerText(creditValue?.creditMovementFrozenValueQ8, {
+        allowZero: true,
+      })
+        ? {
+            creditMovementFrozenValueQ8: canonicalIntegerText(
+              creditValue.creditMovementFrozenValueQ8,
+              { allowZero: true },
+            ),
+          }
+        : {}),
       creditMovementLiveValueSats: numericValue(
         creditValue?.creditMovementLiveValueSats,
       ),
@@ -9778,12 +10190,17 @@ function parseTokenPayload(message, network) {
 
   if (parts.length === 4 && parts[0] === TOKEN_SEND_ACTION) {
     const tokenId = String(parts[1] ?? "").toLowerCase();
-    const amount = Number(parts[2]);
+    const bond = isBondTokenId(tokenId);
+    const exactAmount = bond
+      ? canonicalIntegerText(parts[2], { allowZero: false })
+      : "";
+    const amount = bond ? exactAmount : Number(parts[2]);
     const recipientAddress = String(parts[3] ?? "").trim();
     if (
       !/^[0-9a-f]{64}$/u.test(tokenId) ||
-      !Number.isSafeInteger(amount) ||
-      amount < 1 ||
+      (bond
+        ? !exactAmount
+        : !Number.isSafeInteger(amount) || amount < 1) ||
       (tokenId === WORK_TOKEN_ID && amount > WORK_TOKEN_MAX_SUPPLY) ||
       !isValidBitcoinAddress(recipientAddress, network)
     ) {
@@ -10205,7 +10622,14 @@ function insufficientTokenBalanceInvalidEvent({
         spendableBalance: formatWorkAtoms(spendableBalance),
         spendableBalanceAtoms: spendableBalance.toString(),
       }
-    : {
+    : isBondTokenId(tokenId)
+      ? {
+          availableAmount: spendableBalance.toString(),
+          confirmedBalance: confirmedBalance.toString(),
+          reservedBalance: reservedBalance.toString(),
+          spendableBalance: spendableBalance.toString(),
+        }
+      : {
         availableAmount: spendableBalance,
         confirmedBalance,
         reservedBalance,
@@ -10213,10 +10637,14 @@ function insufficientTokenBalanceInvalidEvent({
       };
   const attemptedDisplay = isWorkTokenId(tokenId)
     ? formatWorkAtoms(amount)
-    : Number(amount).toLocaleString("en-US");
+    : isBondTokenId(tokenId)
+      ? amount.toLocaleString("en-US")
+      : Number(amount).toLocaleString("en-US");
   const spendableDisplay = isWorkTokenId(tokenId)
     ? formatWorkAtoms(spendableBalance)
-    : Number(spendableBalance).toLocaleString("en-US");
+    : isBondTokenId(tokenId)
+      ? spendableBalance.toLocaleString("en-US")
+      : Number(spendableBalance).toLocaleString("en-US");
   return {
     ...attemptedFields,
     attemptedAmount: attemptedFields.amount,
@@ -10278,6 +10706,10 @@ function tokenStateFromTransactions(
   const transfers = [];
   let confirmedSupply = 0;
   let pendingSupply = 0;
+  const trackApproximateTopLevelSupply =
+    tokens.length === 1 &&
+    !isWorkTokenId(tokens[0]?.tokenId) &&
+    !isBondTokenId(tokens[0]?.tokenId);
   const balanceKeyFor = (tokenId, ownerAddress) => `${tokenId}:${ownerAddress}`;
   const reservedBalanceFor = (tokenId, ownerAddress) => {
     let reserved = tokenLedgerZero(tokenId);
@@ -10371,7 +10803,12 @@ function tokenStateFromTransactions(
 
     if (confirmed) {
       currentSupply.confirmed += amount;
-      confirmedSupply += tokenLedgerHumanNumber(mintedToken.tokenId, amount);
+      if (trackApproximateTopLevelSupply) {
+        confirmedSupply += tokenLedgerApproximateNumber(
+          mintedToken.tokenId,
+          amount,
+        );
+      }
       const balanceKey = balanceKeyFor(mintedToken.tokenId, minterAddress);
       balances.set(
         balanceKey,
@@ -10380,7 +10817,12 @@ function tokenStateFromTransactions(
       );
     } else {
       currentSupply.pending += amount;
-      pendingSupply += tokenLedgerHumanNumber(mintedToken.tokenId, amount);
+      if (trackApproximateTopLevelSupply) {
+        pendingSupply += tokenLedgerApproximateNumber(
+          mintedToken.tokenId,
+          amount,
+        );
+      }
     }
     tokenSupply.set(mintedToken.tokenId, currentSupply);
 
@@ -10508,10 +10950,12 @@ function tokenStateFromTransactions(
           remainingRegistrySats -= mintedToken.mintPriceSats;
           if (confirmed) {
             currentSupply.confirmed += parsedAmount;
-            confirmedSupply += tokenLedgerHumanNumber(
-              mintedToken.tokenId,
-              parsedAmount,
-            );
+            if (trackApproximateTopLevelSupply) {
+              confirmedSupply += tokenLedgerApproximateNumber(
+                mintedToken.tokenId,
+                parsedAmount,
+              );
+            }
             const balanceKey = balanceKeyFor(mintedToken.tokenId, actorAddress);
             balances.set(
               balanceKey,
@@ -10520,10 +10964,12 @@ function tokenStateFromTransactions(
             );
           } else {
             currentSupply.pending += parsedAmount;
-            pendingSupply += tokenLedgerHumanNumber(
-              mintedToken.tokenId,
-              parsedAmount,
-            );
+            if (trackApproximateTopLevelSupply) {
+              pendingSupply += tokenLedgerApproximateNumber(
+                mintedToken.tokenId,
+                parsedAmount,
+              );
+            }
           }
           tokenSupply.set(mintedToken.tokenId, currentSupply);
 
@@ -10877,6 +11323,13 @@ function tokenStateFromTransactions(
   const workSupply = tokenSupply.get(WORK_TOKEN_ID);
   const onlyWorkToken =
     tokens.length === 1 && tokens[0]?.tokenId === WORK_TOKEN_ID;
+  const onlyBondTokenId =
+    tokens.length === 1 && isBondTokenId(tokens[0]?.tokenId)
+      ? tokens[0].tokenId
+      : "";
+  const onlyBondSupply = onlyBondTokenId
+    ? tokenSupply.get(onlyBondTokenId)
+    : null;
   return {
     closedListings: closedListings.sort(
       (left, right) =>
@@ -10888,7 +11341,14 @@ function tokenStateFromTransactions(
     confirmedSupply:
       onlyWorkToken && workSupply
         ? formatWorkAtoms(workSupply.confirmed)
-        : confirmedSupply,
+        : onlyBondSupply
+          ? tokenLedgerSupplyValue(
+              onlyBondTokenId,
+              onlyBondSupply.confirmed,
+            )
+        : tokens.length === 1
+          ? confirmedSupply
+          : null,
     ...(onlyWorkToken && workSupply
       ? {
           confirmedSupplyAtoms: workSupply.confirmed.toString(),
@@ -10905,9 +11365,7 @@ function tokenStateFromTransactions(
           address: addressParts.join(":"),
           ledgerBalance: balance,
           tokenId,
-          ...(isWorkTokenId(tokenId)
-            ? workBalanceFieldsFromAtoms(balance)
-            : { balance }),
+          ...tokenLedgerBalanceFields(tokenId, balance),
         };
       })
       .sort(
@@ -10942,7 +11400,11 @@ function tokenStateFromTransactions(
     pendingSupply:
       onlyWorkToken && workSupply
         ? formatWorkAtoms(workSupply.pending)
-        : pendingSupply,
+        : onlyBondSupply
+          ? tokenLedgerSupplyValue(onlyBondTokenId, onlyBondSupply.pending)
+        : tokens.length === 1
+          ? pendingSupply
+          : null,
     sales: sales.sort(
       (left, right) =>
         Number(right.confirmed) - Number(left.confirmed) ||
@@ -13217,29 +13679,58 @@ function canonicalInceptionMintMetadata(mint) {
     canonicalNonNegativeIntegerText(
       mint.issuanceValueSnapshotWorkNetworkValueQ8,
     );
+  const exactUnits = (value, { allowZero = true } = {}) => {
+    try {
+      return canonicalIntegerText(value, { allowZero });
+    } catch {
+      return "";
+    }
+  };
+  const attachedWorkIssuanceUnits = exactUnits(
+    mint.attachedWorkIssuanceUnits,
+  );
+  const confirmedIssuanceUnits = exactUnits(mint.confirmedIssuanceUnits);
+  const directProofIssuanceUnits = exactUnits(
+    mint.directProofIssuanceUnits,
+  );
+  const issuanceAmount = exactUnits(mint.issuanceAmount);
+  const issuanceFloorQ8 =
+    issuanceNetworkValueQ8 && confirmedIssuanceUnits
+      ? floorQ8PerUnit(issuanceNetworkValueQ8, confirmedIssuanceUnits)
+      : "";
+  const attachedWorkLiveFloorAtSendQ8 =
+    issuanceValueSnapshotWorkNetworkValueQ8
+      ? floorQ8PerUnit(
+          issuanceValueSnapshotWorkNetworkValueQ8,
+          String(WORK_TOKEN_MAX_SUPPLY),
+        )
+      : "";
   return {
     amountSats: numericValue(mint.amountSats),
-    attachedWorkAmount: numericValue(mint.attachedWorkAmount),
+    attachedWorkAmount: attachedWorkAmountAtoms
+      ? formatWorkAtoms(attachedWorkAmountAtoms)
+      : mint.attachedWorkAmount,
     ...(attachedWorkAmountAtoms ? { attachedWorkAmountAtoms } : {}),
-    attachedWorkIssuanceUnits: numericValue(
-      mint.attachedWorkIssuanceUnits,
-    ),
-    attachedWorkLiveFloorAtSendSats: numericValue(
-      mint.attachedWorkLiveFloorAtSendSats,
-    ),
-    attachedWorkLiveValueAtSendSats: numericValue(
-      mint.attachedWorkLiveValueAtSendSats,
-    ),
+    ...(attachedWorkIssuanceUnits ? { attachedWorkIssuanceUnits } : {}),
+    attachedWorkLiveFloorAtSendSats: attachedWorkLiveFloorAtSendQ8
+      ? decimalTextFromQ8(attachedWorkLiveFloorAtSendQ8)
+      : mint.attachedWorkLiveFloorAtSendSats,
+    ...(attachedWorkLiveFloorAtSendQ8
+      ? { attachedWorkLiveFloorAtSendQ8 }
+      : {}),
+    attachedWorkLiveValueAtSendSats: attachedWorkLiveValueAtSendQ8
+      ? decimalTextFromQ8(attachedWorkLiveValueAtSendQ8)
+      : mint.attachedWorkLiveValueAtSendSats,
     ...(attachedWorkLiveValueAtSendQ8
       ? { attachedWorkLiveValueAtSendQ8 }
       : {}),
     bondRecipientAddress: String(mint.bondRecipientAddress ?? "").trim(),
     bondRecipientAmountSats: numericValue(mint.bondRecipientAmountSats),
     bondRecipientVout: numericValue(mint.bondRecipientVout),
-    confirmedIssuanceUnits: numericValue(mint.confirmedIssuanceUnits),
-    directProofIssuanceUnits: numericValue(mint.directProofIssuanceUnits),
+    ...(confirmedIssuanceUnits ? { confirmedIssuanceUnits } : {}),
+    ...(directProofIssuanceUnits ? { directProofIssuanceUnits } : {}),
     issuanceAccountingModel: mint.issuanceAccountingModel,
-    issuanceAmount: numericValue(mint.issuanceAmount),
+    ...(issuanceAmount ? { issuanceAmount } : {}),
     issuanceCheckpointBlockHash: String(
       mint.issuanceCheckpointBlockHash ?? "",
     )
@@ -13277,16 +13768,24 @@ function canonicalInceptionMintMetadata(mint) {
     issuanceValueSnapshotModel: String(
       mint.issuanceValueSnapshotModel ?? "",
     ).trim(),
-    issuanceValueSnapshotWorkNetworkValueSats: numericValue(
-      mint.issuanceValueSnapshotWorkNetworkValueSats,
-    ),
+    issuanceValueSnapshotWorkNetworkValueSats:
+      issuanceValueSnapshotWorkNetworkValueQ8
+        ? decimalTextFromQ8(issuanceValueSnapshotWorkNetworkValueQ8)
+        : mint.issuanceValueSnapshotWorkNetworkValueSats,
     ...(issuanceValueSnapshotWorkNetworkValueQ8
       ? { issuanceValueSnapshotWorkNetworkValueQ8 }
       : {}),
-    issuanceDustSats: numericValue(mint.issuanceDustSats),
+    issuanceDustSats: issuanceDustQ8
+      ? decimalTextFromQ8(issuanceDustQ8)
+      : mint.issuanceDustSats,
     ...(issuanceDustQ8 ? { issuanceDustQ8 } : {}),
-    issuanceFloorSats: numericValue(mint.issuanceFloorSats),
-    issuanceNetworkValueSats: numericValue(mint.issuanceNetworkValueSats),
+    issuanceFloorSats: issuanceFloorQ8
+      ? decimalTextFromQ8(issuanceFloorQ8)
+      : mint.issuanceFloorSats,
+    ...(issuanceFloorQ8 ? { issuanceFloorQ8 } : {}),
+    issuanceNetworkValueSats: issuanceNetworkValueQ8
+      ? decimalTextFromQ8(issuanceNetworkValueQ8)
+      : mint.issuanceNetworkValueSats,
     ...(issuanceNetworkValueQ8 ? { issuanceNetworkValueQ8 } : {}),
     issuanceUnitSats: numericValue(mint.issuanceUnitSats),
     issuanceValuationFixedAtSend:
@@ -13382,21 +13881,157 @@ function inceptionIssuanceMetadataFromMints(mints) {
   const confirmed = (Array.isArray(mints) ? mints : []).filter(
     (mint) => mint?.confirmed && mint.tokenId === INCB_TOKEN_ID,
   );
+  const exactIssuanceForMint = (mint) => {
+    const directText = canonicalIntegerText(
+      mint?.directProofIssuanceUnits,
+      { allowZero: false },
+    );
+    const attachedWorkAmountAtoms = workAtomsBigIntFromRecord(
+      {
+        amount: mint?.attachedWorkAmount,
+        amountAtoms: mint?.attachedWorkAmountAtoms,
+      },
+      { allowZero: true },
+    );
+    if (!directText || attachedWorkAmountAtoms === null) {
+      return null;
+    }
+
+    const exactQ8Fields = [
+      "attachedWorkLiveValueAtSendQ8",
+      "issuanceDustQ8",
+      "issuanceNetworkValueQ8",
+      "issuanceValueSnapshotWorkNetworkValueQ8",
+    ];
+    const exactQ8Presence = exactQ8Fields.map(
+      (field) =>
+        mint?.[field] !== undefined &&
+        mint?.[field] !== null &&
+        mint?.[field] !== "",
+    );
+    const exactQ8Present = exactQ8Presence.some(Boolean);
+    if (exactQ8Present && !exactQ8Presence.every(Boolean)) {
+      return null;
+    }
+
+    const legacySnapshotWorkNetworkValue =
+      typeof mint?.issuanceValueSnapshotWorkNetworkValueSats === "string"
+        ? mint.issuanceValueSnapshotWorkNetworkValueSats.trim()
+        : "";
+    const snapshotWorkNetworkValueQ8Text = exactQ8Present
+      ? canonicalNonNegativeIntegerText(
+          mint?.issuanceValueSnapshotWorkNetworkValueQ8,
+          { allowZero: false },
+        )
+      : legacySnapshotWorkNetworkValue
+        ? q8TextFromDecimal(legacySnapshotWorkNetworkValue)
+        : null;
+    if (!snapshotWorkNetworkValueQ8Text) {
+      return null;
+    }
+    const snapshotWorkNetworkValueQ8 = BigInt(
+      snapshotWorkNetworkValueQ8Text,
+    );
+    const recalculatedAttachedWorkValueQ8 = workAtomsValueAtNetworkQ8(
+      attachedWorkAmountAtoms,
+      decimalTextFromQ8(snapshotWorkNetworkValueQ8),
+      snapshotWorkNetworkValueQ8Text,
+    );
+    if (recalculatedAttachedWorkValueQ8 === null) {
+      return null;
+    }
+
+    let attachedWorkLiveValueAtSendQ8 = recalculatedAttachedWorkValueQ8;
+    let issuanceNetworkValueQ8 =
+      BigInt(directText) * VALUE_Q8_SCALE +
+      attachedWorkLiveValueAtSendQ8;
+    let issuanceDustQ8 = issuanceNetworkValueQ8 % VALUE_Q8_SCALE;
+    if (exactQ8Present) {
+      const attachedText = canonicalNonNegativeIntegerText(
+        mint?.attachedWorkLiveValueAtSendQ8,
+      );
+      const issuanceText = canonicalNonNegativeIntegerText(
+        mint?.issuanceNetworkValueQ8,
+      );
+      const dustText = canonicalNonNegativeIntegerText(
+        mint?.issuanceDustQ8,
+      );
+      if (!attachedText || !issuanceText || !dustText) {
+        return null;
+      }
+      attachedWorkLiveValueAtSendQ8 = BigInt(attachedText);
+      issuanceNetworkValueQ8 = BigInt(issuanceText);
+      issuanceDustQ8 = BigInt(dustText);
+      if (
+        attachedWorkLiveValueAtSendQ8 !==
+          recalculatedAttachedWorkValueQ8 ||
+        issuanceNetworkValueQ8 !==
+          BigInt(directText) * VALUE_Q8_SCALE +
+            attachedWorkLiveValueAtSendQ8 ||
+        issuanceDustQ8 !== issuanceNetworkValueQ8 % VALUE_Q8_SCALE
+      ) {
+        return null;
+      }
+    }
+
+    const confirmedIssuanceUnits =
+      issuanceNetworkValueQ8 / VALUE_Q8_SCALE;
+    const attachedWorkIssuanceUnits =
+      attachedWorkLiveValueAtSendQ8 / VALUE_Q8_SCALE;
+    const fixedUnitFieldsMatch =
+      canonicalIntegerText(mint?.amount, { allowZero: false }) ===
+        confirmedIssuanceUnits.toString() &&
+      canonicalIntegerText(mint?.issuanceAmount, { allowZero: false }) ===
+        confirmedIssuanceUnits.toString() &&
+      canonicalIntegerText(mint?.confirmedIssuanceUnits, {
+        allowZero: false,
+      }) === confirmedIssuanceUnits.toString() &&
+      canonicalIntegerText(mint?.attachedWorkIssuanceUnits, {
+        allowZero: true,
+      }) === attachedWorkIssuanceUnits.toString();
+    if (!fixedUnitFieldsMatch) {
+      return null;
+    }
+
+    return {
+      attachedWorkAmountAtoms,
+      attachedWorkIssuanceUnits,
+      attachedWorkLiveValueAtSendQ8,
+      confirmedIssuanceUnits,
+      directProofIssuanceUnits: BigInt(directText),
+      exactQ8Present,
+      issuanceDustQ8,
+      issuanceNetworkValueQ8,
+      snapshotWorkNetworkValueQ8,
+    };
+  };
   const canonical = confirmed.filter(
     (mint) => {
-      const amount = Number(mint.amount);
-      const direct = Number(mint.directProofIssuanceUnits);
-      const attachedAmount = Number(mint.attachedWorkAmount);
-      const attachedUnits = Number(mint.attachedWorkIssuanceUnits);
-      const attachedFloor = Number(mint.attachedWorkLiveFloorAtSendSats);
-      const attachedValue = Number(mint.attachedWorkLiveValueAtSendSats);
-      const attachedAmountAtomsText = canonicalWorkAtomsText(
-        mint.attachedWorkAmountAtoms,
+      const exactIssuance = exactIssuanceForMint(mint);
+      const amountText = canonicalIntegerText(mint.amount, {
+        allowZero: false,
+      });
+      const issuanceAmountText = canonicalIntegerText(mint.issuanceAmount, {
+        allowZero: false,
+      });
+      const confirmedIssuanceUnitsText = canonicalIntegerText(
+        mint.confirmedIssuanceUnits,
+        { allowZero: false },
+      );
+      const directText = canonicalIntegerText(
+        mint.directProofIssuanceUnits,
+        { allowZero: false },
+      );
+      const attachedUnitsText = canonicalIntegerText(
+        mint.attachedWorkIssuanceUnits,
         { allowZero: true },
       );
-      const attachedValueQ8Text = canonicalNonNegativeIntegerText(
-        mint.attachedWorkLiveValueAtSendQ8,
-      );
+      const amount = Number(amountText);
+      const direct = Number(directText);
+      const attachedAmount = Number(mint.attachedWorkAmount);
+      const attachedUnits = Number(attachedUnitsText);
+      const attachedFloor = Number(mint.attachedWorkLiveFloorAtSendSats);
+      const attachedValue = Number(mint.attachedWorkLiveValueAtSendSats);
       const checkpointHeight = Number(mint.issuanceCheckpointBlockHeight);
       const checkpointIndex = Number(mint.issuanceCheckpointBlockIndex);
       const checkpointValue = Number(
@@ -13404,12 +14039,6 @@ function inceptionIssuanceMetadataFromMints(mints) {
       );
       const issuanceValue = Number(mint.issuanceNetworkValueSats);
       const dust = Number(mint.issuanceDustSats);
-      const issuanceDustQ8Text = canonicalNonNegativeIntegerText(
-        mint.issuanceDustQ8,
-      );
-      const issuanceValueQ8Text = canonicalNonNegativeIntegerText(
-        mint.issuanceNetworkValueQ8,
-      );
       const issuanceFloor = Number(mint.issuanceFloorSats);
       const valueSnapshotHeight = Number(
         mint.issuanceValueSnapshotBlockHeight,
@@ -13433,10 +14062,6 @@ function inceptionIssuanceMetadataFromMints(mints) {
       const valueSnapshotWorkNetworkValueSats = Number(
         mint.issuanceValueSnapshotWorkNetworkValueSats,
       );
-      const valueSnapshotWorkNetworkValueQ8Text =
-        canonicalNonNegativeIntegerText(
-          mint.issuanceValueSnapshotWorkNetworkValueQ8,
-        );
       const txid = String(mint.txid ?? "").trim().toLowerCase();
       const checkpointHash = String(
         mint.issuanceCheckpointBlockHash ?? "",
@@ -13449,51 +14074,15 @@ function inceptionIssuanceMetadataFromMints(mints) {
       const paidSats = Number(mint.paidSats);
       const proofPaymentSats = Number(mint.proofPaymentSats);
       const atomicMetadataPresent = [
-        mint.attachedWorkAmountAtoms,
         mint.attachedWorkLiveValueAtSendQ8,
         mint.issuanceDustQ8,
         mint.issuanceNetworkValueQ8,
         mint.issuanceValueSnapshotWorkNetworkValueQ8,
       ].some((value) => value !== undefined && value !== null && value !== "");
-      let atomicMetadataValid = false;
-      if (
-        atomicMetadataPresent &&
-        attachedAmountAtomsText &&
-        attachedValueQ8Text &&
-        issuanceDustQ8Text &&
-        issuanceValueQ8Text &&
-        valueSnapshotWorkNetworkValueQ8Text &&
-        Number.isSafeInteger(amount) &&
-        Number.isSafeInteger(direct) &&
-        Number.isSafeInteger(attachedUnits)
-      ) {
-        const attachedAmountAtoms = BigInt(attachedAmountAtomsText);
-        const attachedValueQ8 = BigInt(attachedValueQ8Text);
-        const issuanceDustQ8 = BigInt(issuanceDustQ8Text);
-        const issuanceValueQ8 = BigInt(issuanceValueQ8Text);
-        const snapshotValueQ8 = BigInt(valueSnapshotWorkNetworkValueQ8Text);
-        const recalculatedAttachedQ8 = workAtomsValueAtNetworkQ8(
-          attachedAmountAtoms,
-          q8ToCanonicalDecimal(snapshotValueQ8),
-        );
-        atomicMetadataValid =
-          decimalValueToQ8(checkpointValue) === snapshotValueQ8 &&
-          recalculatedAttachedQ8 === attachedValueQ8 &&
-          issuanceValueQ8 ===
-            BigInt(direct) * VALUE_Q8_SCALE + attachedValueQ8 &&
-          BigInt(amount) === issuanceValueQ8 / VALUE_Q8_SCALE &&
-          BigInt(attachedUnits) === attachedValueQ8 / VALUE_Q8_SCALE &&
-          issuanceDustQ8 === issuanceValueQ8 % VALUE_Q8_SCALE &&
-          numbersAgree(
-            attachedAmount,
-            Number(formatWorkAtoms(attachedAmountAtoms)),
-            1e-8,
-          ) &&
-          numbersAgree(attachedValue, q8ToNumber(attachedValueQ8), 1e-8) &&
-          numbersAgree(issuanceValue, q8ToNumber(issuanceValueQ8), 1e-8) &&
-          numbersAgree(dust, q8ToNumber(issuanceDustQ8), 1e-8);
-      }
+      const atomicMetadataValid =
+        atomicMetadataPresent && exactIssuance?.exactQ8Present === true;
       return (
+        exactIssuance !== null &&
         mint.issuanceAccountingModel === INCEPTION_ISSUANCE_ACCOUNTING_MODEL &&
         mint.issuanceValuationFixedAtSend === true &&
         Number(mint.issuanceUnitSats) === 1 &&
@@ -13503,7 +14092,7 @@ function inceptionIssuanceMetadataFromMints(mints) {
           mint.bondRecipientAddress,
           mint.minterAddress,
         ) &&
-        Number(mint.bondRecipientAmountSats) === direct &&
+        Number(mint.bondRecipientAmountSats) === Number(directText) &&
         Number.isSafeInteger(Number(mint.bondRecipientVout)) &&
         Number(mint.bondRecipientVout) >= 0 &&
         /^[0-9a-f]{64}$/u.test(txid) &&
@@ -13532,71 +14121,78 @@ function inceptionIssuanceMetadataFromMints(mints) {
         ) &&
         valueSnapshotId.length > 0 &&
         Number.isFinite(Date.parse(valueSnapshotGeneratedAt)) &&
-        Number.isFinite(valueSnapshotWorkNetworkValueSats) &&
-        numbersAgree(
-          valueSnapshotWorkNetworkValueSats,
-          checkpointValue,
-          0.01,
-        ) &&
-        Number.isFinite(checkpointValue) &&
-        checkpointValue > 0 &&
-        Number.isSafeInteger(amount) &&
-        amount > 0 &&
-        amount === Number(mint.issuanceAmount) &&
-        amount === Number(mint.confirmedIssuanceUnits) &&
+        (atomicMetadataPresent ||
+          (Number.isFinite(valueSnapshotWorkNetworkValueSats) &&
+            numbersAgree(
+              valueSnapshotWorkNetworkValueSats,
+              checkpointValue,
+              0.01,
+            ) &&
+            Number.isFinite(checkpointValue) &&
+            checkpointValue > 0)) &&
+        Boolean(amountText) &&
+        (atomicMetadataPresent || Number.isSafeInteger(amount)) &&
+        amountText === issuanceAmountText &&
+        amountText === confirmedIssuanceUnitsText &&
+        Boolean(directText) &&
         Number.isSafeInteger(direct) &&
         direct > 0 &&
-        paidSats === direct &&
-        proofPaymentSats === direct &&
+        paidSats === Number(directText) &&
+        proofPaymentSats === Number(directText) &&
         (atomicMetadataPresent
           ? atomicMetadataValid
           : Number.isSafeInteger(attachedAmount) && attachedAmount >= 0) &&
-        Number.isSafeInteger(attachedUnits) &&
-        attachedUnits >= 0 &&
-        direct + attachedUnits === amount &&
-        Number.isFinite(attachedFloor) &&
-        attachedFloor > 0 &&
-        numbersAgree(
-          attachedFloor,
-          checkpointValue / WORK_TOKEN_MAX_SUPPLY,
-          1e-9,
-        ) &&
-        Number.isFinite(attachedValue) &&
-        attachedValue >= 0 &&
+        Boolean(attachedUnitsText) &&
         (atomicMetadataPresent ||
-          (numbersAgree(attachedValue, attachedAmount * attachedFloor, 0.01) &&
-            Math.floor(attachedValue) === attachedUnits)) &&
-        Number.isFinite(issuanceValue) &&
-        (atomicMetadataPresent ||
-          (numbersAgree(issuanceValue, direct + attachedValue, 0.01) &&
-            Math.floor(issuanceValue) === amount)) &&
-        Number.isFinite(dust) &&
-        dust >= 0 &&
-        dust < 1 &&
-        (atomicMetadataPresent ||
-          numbersAgree(dust, issuanceValue - amount, 0.01)) &&
-        Number.isFinite(issuanceFloor) &&
-        issuanceFloor >= 1 &&
-        (atomicMetadataPresent ||
-          numbersAgree(issuanceFloor * amount, issuanceValue, 0.01))
+          (Number.isSafeInteger(attachedUnits) &&
+            attachedUnits >= 0 &&
+            direct + attachedUnits === amount &&
+            Number.isFinite(attachedFloor) &&
+            attachedFloor > 0 &&
+            numbersAgree(
+              attachedFloor,
+              checkpointValue / WORK_TOKEN_MAX_SUPPLY,
+              1e-9,
+            ) &&
+            Number.isFinite(attachedValue) &&
+            attachedValue >= 0 &&
+            numbersAgree(
+              attachedValue,
+              attachedAmount * attachedFloor,
+              0.01,
+            ) &&
+            Math.floor(attachedValue) === attachedUnits &&
+            Number.isFinite(issuanceValue) &&
+            numbersAgree(issuanceValue, direct + attachedValue, 0.01) &&
+            Math.floor(issuanceValue) === amount &&
+            Number.isFinite(dust) &&
+            dust >= 0 &&
+            dust < 1 &&
+            numbersAgree(dust, issuanceValue - amount, 0.01) &&
+            Number.isFinite(issuanceFloor) &&
+            issuanceFloor >= 1 &&
+            numbersAgree(issuanceFloor * amount, issuanceValue, 0.01)))
       );
     },
   );
-  const sum = (field) =>
-    canonical.reduce((total, mint) => total + numericValue(mint?.[field]), 0);
-  const confirmedIssuanceUnits = sum("confirmedIssuanceUnits");
-  const issuanceNetworkValueSats = sum("issuanceNetworkValueSats");
-  const attachedWorkAmount = sum("attachedWorkAmount");
-  const attachedWorkAmountAtoms = canonical.reduce((total, mint) => {
-    const atoms = workAtomsBigIntFromRecord({
-      amount: mint.attachedWorkAmount,
-      amountAtoms: mint.attachedWorkAmountAtoms,
-    }, { allowZero: true });
-    return atoms === null ? total : total + atoms;
-  }, 0n);
-  const attachedWorkLiveValueAtSendSats = sum(
-    "attachedWorkLiveValueAtSendSats",
-  );
+  const exactRows = canonical.map(exactIssuanceForMint);
+  let exactQ8AggregationComplete = exactRows.every(Boolean);
+  const sumExact = (field) =>
+    exactRows.reduce(
+      (total, row) => total + (row?.[field] ?? 0n),
+      0n,
+    );
+  const confirmedIssuanceUnits = sumExact(
+    "confirmedIssuanceUnits",
+  ).toString();
+  const issuanceNetworkValueQ8 = sumExact(
+    "issuanceNetworkValueQ8",
+  ).toString();
+  const attachedWorkAmountAtoms = sumExact("attachedWorkAmountAtoms");
+  const attachedWorkAmount = formatWorkAtoms(attachedWorkAmountAtoms);
+  const attachedWorkLiveValueAtSendQ8 = sumExact(
+    "attachedWorkLiveValueAtSendQ8",
+  ).toString();
   const latestCheckpoint = [...canonical].sort(
     (left, right) =>
       numericValue(right.issuanceCheckpointBlockHeight) -
@@ -13604,20 +14200,69 @@ function inceptionIssuanceMetadataFromMints(mints) {
       numericValue(right.issuanceCheckpointBlockIndex) -
         numericValue(left.issuanceCheckpointBlockIndex),
   )[0];
+  // Rows created before exact bond Q8 metadata was introduced preserve their
+  // H-1 oracle as a canonical decimal in the legacy `...Sats` field. Keep
+  // that immutable provenance usable during a range replay without converting
+  // it through binary Number first. New rows always win through their explicit
+  // Q8 field; the decimal fallback exists only for the historical projection.
+  const latestCheckpointExactQ8Present =
+    latestCheckpoint?.issuanceValueSnapshotWorkNetworkValueQ8 !== undefined &&
+    latestCheckpoint?.issuanceValueSnapshotWorkNetworkValueQ8 !== null &&
+    latestCheckpoint?.issuanceValueSnapshotWorkNetworkValueQ8 !== "";
+  const latestCheckpointLegacyWorkNetworkValue =
+    typeof latestCheckpoint?.issuanceValueSnapshotWorkNetworkValueSats ===
+    "string"
+      ? latestCheckpoint.issuanceValueSnapshotWorkNetworkValueSats.trim()
+      : "";
+  const latestCheckpointWorkNetworkValueQ8 = latestCheckpointExactQ8Present
+    ? canonicalNonNegativeIntegerText(
+        latestCheckpoint?.issuanceValueSnapshotWorkNetworkValueQ8,
+      )
+    : latestCheckpointLegacyWorkNetworkValue
+      ? q8TextFromDecimal(latestCheckpointLegacyWorkNetworkValue)
+      : null;
+  if (canonical.length > 0 && !latestCheckpointWorkNetworkValueQ8) {
+    exactQ8AggregationComplete = false;
+  }
+  const issuanceDustQ8 = (
+    BigInt(issuanceNetworkValueQ8) -
+    BigInt(confirmedIssuanceUnits) * BOND_VALUE_Q8_SCALE
+  ).toString();
+  const issuanceFloorQ8 = floorQ8PerUnit(
+    issuanceNetworkValueQ8,
+    confirmedIssuanceUnits,
+  );
+  const attachedWorkLiveFloorAtSendQ8 =
+    attachedWorkAmountAtoms > 0n
+      ? (
+          (BigInt(attachedWorkLiveValueAtSendQ8) * WORK_UNIT_SCALE) /
+          attachedWorkAmountAtoms
+        ).toString()
+      : canonicalNonNegativeIntegerText(
+          latestCheckpoint?.attachedWorkLiveFloorAtSendQ8,
+        );
   return {
     attachedWorkAmount,
     attachedWorkAmountAtoms: attachedWorkAmountAtoms.toString(),
-    attachedWorkIssuanceUnits: sum("attachedWorkIssuanceUnits"),
-    attachedWorkLiveFloorAtSendSats:
-      attachedWorkAmount > 0
-        ? attachedWorkLiveValueAtSendSats / attachedWorkAmount
-        : numericValue(latestCheckpoint?.attachedWorkLiveFloorAtSendSats),
-    attachedWorkLiveValueAtSendSats,
+    attachedWorkIssuanceUnits: sumExact(
+      "attachedWorkIssuanceUnits",
+    ).toString(),
+    attachedWorkLiveFloorAtSendSats: decimalTextFromQ8(
+      attachedWorkLiveFloorAtSendQ8,
+    ),
+    attachedWorkLiveFloorAtSendQ8,
+    attachedWorkLiveValueAtSendSats: decimalTextFromQ8(
+      attachedWorkLiveValueAtSendQ8,
+    ),
+    attachedWorkLiveValueAtSendQ8,
     canonicalMints: canonical.length,
-    complete: canonical.length === confirmed.length,
+    complete:
+      canonical.length === confirmed.length && exactQ8AggregationComplete,
     confirmedIssuanceUnits,
     confirmedMints: confirmed.length,
-    directProofIssuanceUnits: sum("directProofIssuanceUnits"),
+    directProofIssuanceUnits: sumExact(
+      "directProofIssuanceUnits",
+    ).toString(),
     issuanceAccountingModel: INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
     issuanceUnitSats: 1,
     issuanceValuationFixedAtSend: true,
@@ -13652,18 +14297,19 @@ function inceptionIssuanceMetadataFromMints(mints) {
     issuanceValueSnapshotModel: String(
       latestCheckpoint?.issuanceValueSnapshotModel ?? "",
     ),
-    issuanceValueSnapshotWorkNetworkValueSats: numericValue(
-      latestCheckpoint?.issuanceValueSnapshotWorkNetworkValueSats,
+    issuanceValueSnapshotWorkNetworkValueSats: decimalTextFromQ8(
+      latestCheckpointWorkNetworkValueQ8 || "0",
     ),
-    issuanceDustSats: Math.max(
-      0,
-      issuanceNetworkValueSats - confirmedIssuanceUnits,
+    issuanceValueSnapshotWorkNetworkValueQ8:
+      latestCheckpointWorkNetworkValueQ8,
+    issuanceDustSats: decimalTextFromQ8(issuanceDustQ8),
+    issuanceDustQ8,
+    issuanceFloorSats: decimalTextFromQ8(issuanceFloorQ8),
+    issuanceFloorQ8,
+    issuanceNetworkValueSats: decimalTextFromQ8(
+      issuanceNetworkValueQ8,
     ),
-    issuanceFloorSats:
-      confirmedIssuanceUnits > 0
-        ? issuanceNetworkValueSats / confirmedIssuanceUnits
-        : 0,
-    issuanceNetworkValueSats,
+    issuanceNetworkValueQ8,
   };
 }
 
@@ -13948,7 +14594,8 @@ function inceptionInvalidOnlyVerifierStateResolved(
   return Boolean(
     issuance?.complete === true &&
       issuance?.confirmedMints === 0 &&
-      numericValue(state?.confirmedSupply) === 0 &&
+      (canonicalIntegerText(state?.confirmedSupply, { allowZero: true }) ||
+        "0") === "0" &&
       /^[0-9a-f]{64}$/u.test(normalizedTargetTxid) &&
       /^[0-9a-f]{64}$/u.test(verifierBlockHash) &&
       (Array.isArray(state?.invalidEvents) ? state.invalidEvents : []).some(
@@ -14030,13 +14677,33 @@ function canonicalItemPrecedesBondTransaction(item, bond) {
 }
 
 function inceptionPreBondLiveNetworkValueSats(ledger, bond) {
+  const q8 = inceptionPreBondLiveNetworkValueQ8(ledger, bond);
+  return q8 ? q8ToCanonicalDecimal(q8) : "0";
+}
+
+function inceptionPreBondLiveNetworkValueQ8(ledger, bond) {
+  const bondHeight = Number(bond?.blockHeight);
+  const positionedBond =
+    bond?.confirmed === true &&
+    bond?.network === "livenet" &&
+    Number.isSafeInteger(bondHeight) &&
+    bondHeight > 1;
   const before = (items) =>
-    (Array.isArray(items) ? items : []).filter((item) =>
-      canonicalItemPrecedesBondTransaction(item, bond),
-    );
+    (Array.isArray(items) ? items : []).filter((item) => {
+      if (!positionedBond) {
+        return canonicalItemPrecedesBondTransaction(item, bond);
+      }
+      const itemHeight = Number(item?.blockHeight);
+      return (
+        item?.confirmed === true &&
+        Number.isSafeInteger(itemHeight) &&
+        itemHeight > 0 &&
+        itemHeight < bondHeight
+      );
+    });
   const tokenState = ledger?.tokenState ?? {};
   const registryState = ledger?.registryState ?? {};
-  const provider = growthActualLiveTotalSatsAtProvider(
+  const actualValue = growthActualNetworkValue(
     before(registryState.records),
     before(ledger?.activity),
     before(registryState.sales),
@@ -14044,8 +14711,10 @@ function inceptionPreBondLiveNetworkValueSats(ledger, bond) {
     before(tokenState.mints),
     before(tokenState.transfers),
     before(tokenState.sales),
+    Number.MAX_SAFE_INTEGER,
   );
-  return numericValue(provider(Number.MAX_SAFE_INTEGER));
+  return canonicalNonNegativeIntegerText(actualValue?.liveNetworkValueQ8) ||
+    "0";
 }
 
 function historicalWorkValueSnapshotHasFiniteNetworkValue(
@@ -14067,14 +14736,26 @@ function historicalWorkValueSnapshotHasFiniteNetworkValue(
     actualTotalSats;
   const declaredNetworkValueSats =
     workFloor.networkValueSats ?? liveNetworkValueSats;
-  return (
-    finitePositiveNumber(expectedNetworkValueSats) &&
-    finitePositiveNumber(actualTotalSats) &&
-    finitePositiveNumber(liveNetworkValueSats) &&
-    finitePositiveNumber(declaredNetworkValueSats) &&
-    numbersAgree(expectedNetworkValueSats, actualTotalSats, 0.01) &&
-    numbersAgree(expectedNetworkValueSats, liveNetworkValueSats, 0.01) &&
-    numbersAgree(expectedNetworkValueSats, declaredNetworkValueSats, 0.01)
+  const expectedQ8 = q8TextFromDecimal(expectedNetworkValueSats);
+  const actualTotalQ8 =
+    canonicalNonNegativeIntegerText(workFloor.actualValue?.totalQ8) ||
+    q8TextFromDecimal(actualTotalSats);
+  const liveNetworkValueQ8 =
+    canonicalNonNegativeIntegerText(
+      workFloor.liveNetworkValueQ8 ??
+        workFloor.actualValue?.liveNetworkValueQ8 ??
+        workFloor.actualValue?.liveTotalQ8,
+    ) || q8TextFromDecimal(liveNetworkValueSats);
+  const declaredNetworkValueQ8 =
+    canonicalNonNegativeIntegerText(
+      workFloor.networkValueQ8 ?? workFloor.actualValue?.networkValueQ8,
+    ) || q8TextFromDecimal(declaredNetworkValueSats);
+  return Boolean(
+    expectedQ8 &&
+      BigInt(expectedQ8) > 0n &&
+      actualTotalQ8 === expectedQ8 &&
+      liveNetworkValueQ8 === expectedQ8 &&
+      declaredNetworkValueQ8 === expectedQ8,
   );
 }
 
@@ -14099,13 +14780,18 @@ function canonicalInceptionValueSnapshotCheckpoint(snapshot, bond) {
   const valueSnapshotId = String(snapshot?.snapshotId ?? "").trim();
   const valueSnapshotMode = String(snapshot?.valuationModel ?? "").trim();
   const workFloor = snapshot?.workFloor;
-  const workNetworkValueSats = Number(
-    snapshot?.workNetworkValueSats ??
-      workFloor?.liveNetworkValueSats ??
-      workFloor?.actualValue?.liveNetworkValueSats ??
-      workFloor?.actualValue?.liveTotalSats ??
-      workFloor?.actualValue?.totalSats,
-  );
+  const workNetworkValueQ8 =
+    canonicalNonNegativeIntegerText(snapshot?.workNetworkValueQ8, {
+      allowZero: false,
+    });
+  const workNetworkValueSats =
+    typeof snapshot?.workNetworkValueSats === "string"
+      ? snapshot.workNetworkValueSats
+      : "";
+  const exactWorkFloorState = exactWorkFloorNetworkQ8State(workFloor);
+  const expectedWorkNetworkValueSats = workNetworkValueQ8
+    ? q8ToCanonicalDecimal(BigInt(workNetworkValueQ8))
+    : "";
   const generatedAtMs = Date.parse(valueSnapshotGeneratedAt);
   if (
     !/^[0-9a-f]{64}$/u.test(bondBlockHash) ||
@@ -14118,15 +14804,17 @@ function canonicalInceptionValueSnapshotCheckpoint(snapshot, bond) {
     snapshot?.consistency?.ok !== true ||
     snapshot?.consistency?.status !== "green" ||
     valueSnapshotMode !== "canonical-summary-refresh" ||
+    snapshot?.workNetworkValueAccountingModel !==
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL ||
     valueSnapshotBlockHeight !== bondBlockHeight - 1 ||
     !/^[0-9a-f]{64}$/u.test(valueSnapshotBlockHash) ||
     !/^[0-9a-f]{64}$/u.test(valueSnapshotCanonicalSummaryHash) ||
     !valueSnapshotId ||
     !Number.isFinite(generatedAtMs) ||
-    !historicalWorkValueSnapshotHasFiniteNetworkValue(
-      workFloor,
-      workNetworkValueSats,
-    )
+    !workNetworkValueQ8 ||
+    workNetworkValueSats !== expectedWorkNetworkValueSats ||
+    !exactWorkFloorState ||
+    exactWorkFloorState.live !== BigInt(workNetworkValueQ8)
   ) {
     return null;
   }
@@ -14142,6 +14830,7 @@ function canonicalInceptionValueSnapshotCheckpoint(snapshot, bond) {
     valueSnapshotMode,
     valueSnapshotModel: INCEPTION_VALUE_SNAPSHOT_MODEL,
     workNetworkValueSats,
+    workNetworkValueQ8,
   };
 }
 
@@ -14197,8 +14886,703 @@ async function canonicalInceptionPreviousBlockHash(
   return Number(header?.height) === blockHeight &&
     canonicalHash === blockHash &&
     /^[0-9a-f]{64}$/u.test(previousBlockHash)
-    ? previousBlockHash
+      ? previousBlockHash
+      : "";
+}
+
+function canonicalPwtReplayVerifierBindingDescriptor(value, network) {
+  const binding =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
+  const bindingId = String(binding.bindingId ?? "").trim().toLowerCase();
+  const createdAt = String(binding.createdAt ?? "").trim();
+  const rangeReplayFromHeight = Number(binding.rangeReplayFromHeight);
+  const witnessModel = String(binding.witnessModel ?? "").trim();
+  const witnessSetHash = String(binding.witnessSetHash ?? "")
+    .trim()
+    .toLowerCase();
+  const witnessSetMetaKey = String(binding.witnessSetMetaKey ?? "").trim();
+  const witnessCount = Number(binding.witnessCount);
+  const witnessPreserveCount = Number(binding.witnessPreserveCount);
+  const witnessedThroughBlock = Number(binding.witnessedThroughBlock);
+  const witnessedThroughBlockHash = String(
+    binding.witnessedThroughBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  let expectedWitnessSetMetaKey = "";
+  try {
+    expectedWitnessSetMetaKey = incbRangeReplayWitnessMetaKey(
+      network,
+      bindingId,
+    );
+  } catch {
+    expectedWitnessSetMetaKey = "";
+  }
+  if (
+    binding.model !== PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL ||
+    binding.network !== network ||
+    !/^[0-9a-f]{64}$/u.test(bindingId) ||
+    !Number.isFinite(Date.parse(createdAt)) ||
+    !Number.isSafeInteger(rangeReplayFromHeight) ||
+    rangeReplayFromHeight !==
+      CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT ||
+    witnessModel !== INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL ||
+    !/^[0-9a-f]{64}$/u.test(witnessSetHash) ||
+    !expectedWitnessSetMetaKey ||
+    witnessSetMetaKey !== expectedWitnessSetMetaKey ||
+    !Number.isSafeInteger(witnessCount) ||
+    witnessCount < 0 ||
+    !Number.isSafeInteger(witnessPreserveCount) ||
+    witnessPreserveCount < 0 ||
+    witnessPreserveCount > witnessCount ||
+    !Number.isSafeInteger(witnessedThroughBlock) ||
+    witnessedThroughBlock < rangeReplayFromHeight - 1 ||
+    !/^[0-9a-f]{64}$/u.test(witnessedThroughBlockHash)
+  ) {
+    return null;
+  }
+  return {
+    bindingId,
+    createdAt,
+    model: PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL,
+    network,
+    rangeReplayFromHeight,
+    witnessCount,
+    witnessModel,
+    witnessPreserveCount,
+    witnessSetHash,
+    witnessSetMetaKey,
+    witnessedThroughBlock,
+    witnessedThroughBlockHash,
+  };
+}
+
+function canonicalPwtReplayVerifierBindingsEqual(left, right) {
+  const fields = [
+    "bindingId",
+    "createdAt",
+    "model",
+    "network",
+    "rangeReplayFromHeight",
+    "witnessCount",
+    "witnessModel",
+    "witnessPreserveCount",
+    "witnessSetHash",
+    "witnessSetMetaKey",
+    "witnessedThroughBlock",
+    "witnessedThroughBlockHash",
+  ];
+  return Boolean(
+    left && right && fields.every((field) => left[field] === right[field]),
+  );
+}
+
+function canonicalPwtReplayVerifierBindingCacheKey(value, network) {
+  const binding = canonicalPwtReplayVerifierBindingDescriptor(value, network);
+  return binding
+    ? `:replay:${binding.bindingId}:from${binding.rangeReplayFromHeight}:at${Date.parse(binding.createdAt)}` +
+      `:witness:${binding.witnessModel}:${binding.witnessSetHash}` +
+      `:${binding.witnessCount}:${binding.witnessPreserveCount}` +
+      `:through${binding.witnessedThroughBlock}:${binding.witnessedThroughBlockHash}`
     : "";
+}
+
+function canonicalStoredInceptionWitnessSet(
+  bond,
+  witnesses,
+  previousBlockHash,
+) {
+  const txid = String(bond?.txid ?? "").trim().toLowerCase();
+  const bondBlockHash = String(bond?.blockHash ?? "").trim().toLowerCase();
+  const bondBlockHeight = Number(bond?.blockHeight);
+  const bondBlockIndex = Number(bond?.blockIndex);
+  const expectedMints = bondRecipientMintsFromActivityItem(
+    bond,
+    "livenet",
+    INCEPTION_BOND_CONFIG,
+  );
+  const candidates = (Array.isArray(witnesses) ? witnesses : []).filter(
+    (mint) => String(mint?.txid ?? "").trim().toLowerCase() === txid,
+  );
+  if (
+    !/^[0-9a-f]{64}$/u.test(txid) ||
+    !/^[0-9a-f]{64}$/u.test(bondBlockHash) ||
+    !/^[0-9a-f]{64}$/u.test(previousBlockHash) ||
+    !Number.isSafeInteger(bondBlockHeight) ||
+    bondBlockHeight <= 1 ||
+    !Number.isSafeInteger(bondBlockIndex) ||
+    bondBlockIndex < 0 ||
+    expectedMints.length === 0 ||
+    candidates.length !== expectedMints.length
+  ) {
+    return null;
+  }
+
+  const remaining = [...candidates];
+  const orderedMints = [];
+  for (const expected of expectedMints) {
+    const expectedVout = canonicalEventOrdinal(expected.bondRecipientVout);
+    const matches = remaining
+      .map((mint, index) => ({ index, mint }))
+      .filter(
+        ({ mint }) =>
+          samePaymentAddress(mint?.minterAddress, expected.minterAddress) &&
+          canonicalEventOrdinal(mint?.bondRecipientVout) === expectedVout,
+      );
+    if (expectedVout === null || matches.length !== 1) {
+      return null;
+    }
+    const [{ index, mint }] = matches;
+    remaining.splice(index, 1);
+    if (
+      mint?.confirmed !== true ||
+      mint?.network !== "livenet" ||
+      mint?.tokenId !== INCB_TOKEN_ID ||
+      String(mint?.sourceKind ?? "").trim().toLowerCase() !==
+        INCEPTION_BOND_CONFIG.kind ||
+      String(mint?.validationMode ?? "") !==
+        "canonical-incb-bond-projection" ||
+      Number(mint?.directProofIssuanceUnits) !== Number(expected.paidSats) ||
+      !inceptionMintHasCanonicalBondBinding(mint, bond)
+    ) {
+      return null;
+    }
+    orderedMints.push(mint);
+  }
+  if (remaining.length !== 0) {
+    return null;
+  }
+
+  const first = orderedMints[0];
+  const firstLegacyWorkNetworkValue =
+    typeof first?.issuanceValueSnapshotWorkNetworkValueSats === "string"
+      ? first.issuanceValueSnapshotWorkNetworkValueSats.trim()
+      : "";
+  const workNetworkValueQ8 =
+    canonicalNonNegativeIntegerText(
+      first?.issuanceValueSnapshotWorkNetworkValueQ8,
+      { allowZero: false },
+    ) ||
+    (firstLegacyWorkNetworkValue
+      ? q8TextFromDecimal(firstLegacyWorkNetworkValue)
+      : null);
+  const checkpoint = {
+    blockHash: bondBlockHash,
+    blockHeight: bondBlockHeight,
+    blockIndex: bondBlockIndex,
+    valueSnapshotBlockHash: String(
+      first?.issuanceValueSnapshotBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase(),
+    valueSnapshotBlockHeight: Number(
+      first?.issuanceValueSnapshotBlockHeight,
+    ),
+    valueSnapshotCanonicalSummaryHash: String(
+      first?.issuanceValueSnapshotCanonicalSummaryHash ?? "",
+    )
+      .trim()
+      .toLowerCase(),
+    valueSnapshotGeneratedAt: String(
+      first?.issuanceValueSnapshotGeneratedAt ?? "",
+    ).trim(),
+    valueSnapshotId: String(first?.issuanceValueSnapshotId ?? "").trim(),
+    valueSnapshotMode: String(
+      first?.issuanceValueSnapshotMode ?? "",
+    ).trim(),
+    valueSnapshotModel: String(
+      first?.issuanceValueSnapshotModel ?? "",
+    ).trim(),
+    workNetworkValueQ8,
+    workNetworkValueSats: workNetworkValueQ8
+      ? decimalTextFromQ8(workNetworkValueQ8)
+      : "",
+  };
+  const checkpointIdentity = JSON.stringify(checkpoint);
+  if (
+    checkpoint.valueSnapshotBlockHeight !== bondBlockHeight - 1 ||
+    checkpoint.valueSnapshotBlockHash !== previousBlockHash ||
+    !/^[0-9a-f]{64}$/u.test(
+      checkpoint.valueSnapshotCanonicalSummaryHash,
+    ) ||
+    !checkpoint.valueSnapshotId ||
+    !Number.isFinite(Date.parse(checkpoint.valueSnapshotGeneratedAt)) ||
+    checkpoint.valueSnapshotMode !== "canonical-summary-refresh" ||
+    checkpoint.valueSnapshotModel !== INCEPTION_VALUE_SNAPSHOT_MODEL ||
+    !workNetworkValueQ8 ||
+    BigInt(workNetworkValueQ8) <= 0n ||
+    orderedMints.some((mint) => {
+      const legacyWorkNetworkValue =
+        typeof mint?.issuanceValueSnapshotWorkNetworkValueSats === "string"
+          ? mint.issuanceValueSnapshotWorkNetworkValueSats.trim()
+          : "";
+      const mintWorkNetworkValueQ8 =
+        canonicalNonNegativeIntegerText(
+          mint?.issuanceValueSnapshotWorkNetworkValueQ8,
+          { allowZero: false },
+        ) ||
+        (legacyWorkNetworkValue
+          ? q8TextFromDecimal(legacyWorkNetworkValue)
+          : null);
+      return (
+        !inceptionIssuanceMetadataFromMints([mint]).complete ||
+        JSON.stringify({
+          blockHash: String(mint?.issuanceCheckpointBlockHash ?? "")
+            .trim()
+            .toLowerCase(),
+          blockHeight: Number(mint?.issuanceCheckpointBlockHeight),
+          blockIndex: Number(mint?.issuanceCheckpointBlockIndex),
+          valueSnapshotBlockHash: String(
+            mint?.issuanceValueSnapshotBlockHash ?? "",
+          )
+            .trim()
+            .toLowerCase(),
+          valueSnapshotBlockHeight: Number(
+            mint?.issuanceValueSnapshotBlockHeight,
+          ),
+          valueSnapshotCanonicalSummaryHash: String(
+            mint?.issuanceValueSnapshotCanonicalSummaryHash ?? "",
+          )
+            .trim()
+            .toLowerCase(),
+          valueSnapshotGeneratedAt: String(
+            mint?.issuanceValueSnapshotGeneratedAt ?? "",
+          ).trim(),
+          valueSnapshotId: String(
+            mint?.issuanceValueSnapshotId ?? "",
+          ).trim(),
+          valueSnapshotMode: String(
+            mint?.issuanceValueSnapshotMode ?? "",
+          ).trim(),
+          valueSnapshotModel: String(
+            mint?.issuanceValueSnapshotModel ?? "",
+          ).trim(),
+          workNetworkValueQ8: mintWorkNetworkValueQ8,
+          workNetworkValueSats: mintWorkNetworkValueQ8
+            ? decimalTextFromQ8(mintWorkNetworkValueQ8)
+            : "",
+        }) !== checkpointIdentity
+      );
+    })
+  ) {
+    return null;
+  }
+  return { checkpoint, mints: orderedMints };
+}
+
+function canonicalBoundInceptionWitnessDisposition(entry, replayBinding) {
+  const source =
+    entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {};
+  const bond =
+    source.bond &&
+    typeof source.bond === "object" &&
+    !Array.isArray(source.bond)
+      ? source.bond
+      : {};
+  const bondRecipientOutputs = Array.isArray(bond.bondRecipientOutputs)
+    ? bond.bondRecipientOutputs
+        .map((output) => ({
+          amountSats: canonicalNonNegativeIntegerText(output?.amountSats, {
+            allowZero: false,
+          }),
+          vout: Number(output?.vout),
+        }))
+        .sort((left, right) => left.vout - right.vout)
+    : [];
+  const normalizedBond = {
+    attachedWorkAmountAtoms: canonicalNonNegativeIntegerText(
+      bond.attachedWorkAmountAtoms,
+    ),
+    blockHash: String(bond.blockHash ?? "").trim().toLowerCase(),
+    blockHeight: Number(bond.blockHeight),
+    blockIndex: Number(bond.blockIndex),
+    bondRecipientAddress: String(bond.bondRecipientAddress ?? "").trim(),
+    bondRecipientAmountSats: canonicalNonNegativeIntegerText(
+      bond.bondRecipientAmountSats,
+      { allowZero: false },
+    ),
+    bondRecipientOutputs,
+    bondRecipientVout: Number(bond.bondRecipientVout),
+    previousBlockHash: String(bond.previousBlockHash ?? "")
+      .trim()
+      .toLowerCase(),
+    txid: String(bond.txid ?? "").trim().toLowerCase(),
+  };
+  let identity = "";
+  try {
+    identity = incbReplayBondIdentity(normalizedBond);
+  } catch {
+    return null;
+  }
+  const disposition = String(source.disposition ?? "").trim().toLowerCase();
+  const reason = String(source.reason ?? "").trim();
+  if (
+    !identity ||
+    !reason ||
+    normalizedBond.blockHeight < replayBinding.rangeReplayFromHeight ||
+    normalizedBond.blockHeight > replayBinding.witnessedThroughBlock ||
+    !["preserve", "rederive"].includes(disposition)
+  ) {
+    return null;
+  }
+  if (disposition === "rederive") {
+    return source.mintPayload == null &&
+      source.mintPayloadHash == null &&
+      source.snapshot == null &&
+      source.snapshotFingerprint == null
+      ? {
+          bond: normalizedBond,
+          disposition,
+          identity,
+          reason,
+        }
+      : null;
+  }
+
+  const mintPayload =
+    source.mintPayload &&
+    typeof source.mintPayload === "object" &&
+    !Array.isArray(source.mintPayload)
+      ? source.mintPayload
+      : null;
+  const mintPayloadHash = String(source.mintPayloadHash ?? "")
+    .trim()
+    .toLowerCase();
+  const snapshotFingerprint = String(source.snapshotFingerprint ?? "")
+    .trim()
+    .toLowerCase();
+  let snapshot = null;
+  try {
+    snapshot = normalizeIncbReplaySnapshotDescriptor(source.snapshot);
+    if (
+      !mintPayload ||
+      !/^[0-9a-f]{64}$/u.test(mintPayloadHash) ||
+      canonicalIncbReplaySha256(mintPayload) !== mintPayloadHash ||
+      !/^[0-9a-f]{64}$/u.test(snapshotFingerprint) ||
+      incbReplaySnapshotFingerprint(snapshot) !== snapshotFingerprint
+    ) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  return {
+    bond: normalizedBond,
+    disposition,
+    identity,
+    mintPayload,
+    mintPayloadHash,
+    reason,
+    snapshot,
+    snapshotFingerprint,
+  };
+}
+
+function canonicalInceptionBondRecipientOutputs(bond, recipientAddress) {
+  const outputs = [];
+  const recipients = Array.isArray(bond?.recipients) ? bond.recipients : [];
+  for (let index = 0; index < recipients.length; index += 1) {
+    const recipient = recipients[index];
+    if (!samePaymentAddress(recipient?.address, recipientAddress)) {
+      continue;
+    }
+    const amountSats = canonicalNonNegativeIntegerText(
+      recipient?.amountSats,
+      { allowZero: false },
+    );
+    const vout =
+      canonicalEventOrdinal(recipient?.vout ?? recipient?.protocolVout) ??
+      index;
+    if (!amountSats || !Number.isSafeInteger(vout) || vout < 0) {
+      return null;
+    }
+    outputs.push({ amountSats, vout });
+  }
+  outputs.sort((left, right) => left.vout - right.vout);
+  return outputs.length > 0 &&
+    new Set(outputs.map((output) => output.vout)).size === outputs.length
+    ? outputs
+    : null;
+}
+
+function canonicalBoundInceptionWitnessEnvelope(
+  payload,
+  replayBinding,
+  network,
+  indexedThroughBlock,
+  checkpointHash,
+) {
+  const source =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? payload
+      : {};
+  const dispositions = Array.isArray(source.dispositions)
+    ? source.dispositions.map((entry) =>
+        canonicalBoundInceptionWitnessDisposition(entry, replayBinding),
+      )
+    : [];
+  const identities = new Set(
+    dispositions.filter(Boolean).map((entry) => entry.identity),
+  );
+  const preserves = dispositions.filter(
+    (entry) => entry?.disposition === "preserve",
+  );
+  const mints = Array.isArray(source.mints) ? source.mints : [];
+  const preservedMintsAreExact = preserves.every((entry) => {
+    const matches = mints.filter(
+      (mint) =>
+        String(mint?.txid ?? "").trim().toLowerCase() === entry.bond.txid &&
+        canonicalEventOrdinal(mint?.bondRecipientVout) ===
+          entry.bond.bondRecipientVout &&
+        samePaymentAddress(
+          mint?.minterAddress,
+          entry.bond.bondRecipientAddress,
+        ),
+    );
+    try {
+      return (
+        matches.length === 1 &&
+        canonicalIncbReplaySha256(matches[0]) === entry.mintPayloadHash
+      );
+    } catch {
+      return false;
+    }
+  });
+  if (
+    source.source !== INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE ||
+    source.network !== network ||
+    source.fault?.active === true ||
+    Number(source.indexedThroughBlock) !== indexedThroughBlock ||
+    Number(source.rangeReplayFromHeight) !==
+      replayBinding.rangeReplayFromHeight ||
+    String(source.checkpointHash ?? "").trim().toLowerCase() !==
+      String(checkpointHash ?? "").trim().toLowerCase() ||
+    String(source.witnessSetHash ?? "").trim().toLowerCase() !==
+      replayBinding.witnessSetHash ||
+    Number(source.witnessCount) !== replayBinding.witnessCount ||
+    Number(source.witnessPreserveCount) !==
+      replayBinding.witnessPreserveCount ||
+    Number(source.witnessedThroughBlock) !==
+      replayBinding.witnessedThroughBlock ||
+    String(source.witnessedThroughBlockHash ?? "")
+      .trim()
+      .toLowerCase() !== replayBinding.witnessedThroughBlockHash ||
+    dispositions.length !== replayBinding.witnessCount ||
+    dispositions.some((entry) => !entry) ||
+    identities.size !== dispositions.length ||
+    preserves.length !== replayBinding.witnessPreserveCount ||
+    !preservedMintsAreExact
+  ) {
+    return null;
+  }
+  return { dispositions, mints };
+}
+
+function inceptionBondDeclaredWorkAtomsForRecipient(bond, recipientAddress) {
+  let total = 0n;
+  for (const attachment of Array.isArray(bond?.attachedCredits)
+    ? bond.attachedCredits
+    : []) {
+    if (
+      String(attachment?.tokenId ?? "").trim().toLowerCase() !==
+        WORK_TOKEN_ID ||
+      !samePaymentAddress(attachment?.recipientAddress, recipientAddress)
+    ) {
+      continue;
+    }
+    const atoms = workAtomsBigIntFromRecord(attachment, { allowZero: true });
+    if (atoms === null) {
+      return null;
+    }
+    total += atoms;
+  }
+  return total;
+}
+
+function canonicalBoundInceptionWitnessSet(
+  bond,
+  dispositions,
+  previousBlockHash,
+) {
+  const txid = String(bond?.txid ?? "").trim().toLowerCase();
+  const blockHash = String(bond?.blockHash ?? "").trim().toLowerCase();
+  const blockHeight = Number(bond?.blockHeight);
+  const blockIndex = Number(bond?.blockIndex);
+  const expectedMints = bondRecipientMintsFromActivityItem(
+    bond,
+    "livenet",
+    INCEPTION_BOND_CONFIG,
+  );
+  const candidates = (Array.isArray(dispositions) ? dispositions : []).filter(
+    (entry) => entry?.bond?.txid === txid,
+  );
+  if (
+    !/^[0-9a-f]{64}$/u.test(txid) ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !/^[0-9a-f]{64}$/u.test(previousBlockHash) ||
+    !Number.isSafeInteger(blockHeight) ||
+    blockHeight <= 1 ||
+    !Number.isSafeInteger(blockIndex) ||
+    blockIndex < 0 ||
+    expectedMints.length === 0 ||
+    candidates.length !== expectedMints.length
+  ) {
+    return null;
+  }
+
+  const remaining = [...candidates];
+  const orderedEntries = [];
+  for (const expected of expectedMints) {
+    const expectedVout = canonicalEventOrdinal(expected.bondRecipientVout);
+    const matches = remaining
+      .map((entry, index) => ({ entry, index }))
+      .filter(
+        ({ entry }) =>
+          samePaymentAddress(
+            entry?.bond?.bondRecipientAddress,
+            expected.minterAddress,
+          ) && entry?.bond?.bondRecipientVout === expectedVout,
+      );
+    if (expectedVout === null || matches.length !== 1) {
+      return null;
+    }
+    const [{ entry, index }] = matches;
+    remaining.splice(index, 1);
+    const declaredAtoms = inceptionBondDeclaredWorkAtomsForRecipient(
+      bond,
+      expected.minterAddress,
+    );
+    const expectedRecipientOutputs =
+      canonicalInceptionBondRecipientOutputs(
+        bond,
+        expected.minterAddress,
+      );
+    if (
+      entry.bond.blockHash !== blockHash ||
+      entry.bond.blockHeight !== blockHeight ||
+      entry.bond.blockIndex !== blockIndex ||
+      entry.bond.previousBlockHash !== previousBlockHash ||
+      entry.bond.bondRecipientAmountSats !==
+        canonicalNonNegativeIntegerText(expected.paidSats, {
+          allowZero: false,
+        }) ||
+      !expectedRecipientOutputs ||
+      JSON.stringify(entry.bond.bondRecipientOutputs) !==
+        JSON.stringify(expectedRecipientOutputs) ||
+      declaredAtoms === null ||
+      entry.bond.attachedWorkAmountAtoms !== declaredAtoms.toString()
+    ) {
+      return null;
+    }
+    orderedEntries.push(entry);
+  }
+  if (remaining.length !== 0) {
+    return null;
+  }
+  const dispositionsForBond = new Set(
+    orderedEntries.map((entry) => entry.disposition),
+  );
+  if (dispositionsForBond.size !== 1) {
+    return null;
+  }
+  if (dispositionsForBond.has("rederive")) {
+    return { disposition: "rederive", entries: orderedEntries };
+  }
+
+  const orderedMints = [];
+  let checkpoint = null;
+  let checkpointIdentity = "";
+  for (const entry of orderedEntries) {
+    const mint = entry.mintPayload;
+    const snapshot = entry.snapshot;
+    const workNetworkValueQ8 = canonicalNonNegativeIntegerText(
+      mint?.issuanceValueSnapshotWorkNetworkValueQ8,
+      { allowZero: false },
+    );
+    const attachedWorkAmountAtoms = canonicalNonNegativeIntegerText(
+      mint?.attachedWorkAmountAtoms,
+    );
+    const candidateCheckpoint = {
+      blockHash,
+      blockHeight,
+      blockIndex,
+      valueSnapshotBlockHash: snapshot.sourceBlockHash,
+      valueSnapshotBlockHeight: snapshot.indexedThroughBlock,
+      valueSnapshotCanonicalSummaryHash: snapshot.canonicalSummaryHash,
+      valueSnapshotGeneratedAt: snapshot.generatedAt,
+      valueSnapshotId: snapshot.snapshotId,
+      valueSnapshotMode: snapshot.summaryRefreshMode,
+      valueSnapshotModel: INCEPTION_VALUE_SNAPSHOT_MODEL,
+      workNetworkValueQ8,
+      workNetworkValueSats: workNetworkValueQ8
+        ? q8ToCanonicalDecimal(BigInt(workNetworkValueQ8))
+        : "",
+    };
+    const candidateIdentity = JSON.stringify(candidateCheckpoint);
+    if (
+      mint?.confirmed !== true ||
+      mint?.network !== "livenet" ||
+      mint?.tokenId !== INCB_TOKEN_ID ||
+      String(mint?.sourceKind ?? "").trim().toLowerCase() !==
+        INCEPTION_BOND_CONFIG.kind ||
+      mint?.issuanceAccountingModel !==
+        INCEPTION_ISSUANCE_ACCOUNTING_MODEL ||
+      String(mint?.validationMode ?? "") !==
+        "canonical-incb-bond-projection" ||
+      canonicalEventOrdinal(mint?.bondRecipientVout) !==
+        entry.bond.bondRecipientVout ||
+      !samePaymentAddress(
+        mint?.minterAddress,
+        entry.bond.bondRecipientAddress,
+      ) ||
+      attachedWorkAmountAtoms !== entry.bond.attachedWorkAmountAtoms ||
+      Number(mint?.directProofIssuanceUnits) !==
+        Number(
+          expectedMints.find(
+            (expected) =>
+              canonicalEventOrdinal(expected.bondRecipientVout) ===
+              entry.bond.bondRecipientVout,
+          )?.paidSats,
+        ) ||
+      !inceptionMintHasCanonicalBondBinding(mint, bond) ||
+      !inceptionIssuanceMetadataFromMints([mint]).complete ||
+      snapshot.indexedThroughBlock !== blockHeight - 1 ||
+      snapshot.sourceBlockHash !== previousBlockHash ||
+      String(mint?.issuanceValueSnapshotId ?? "").trim() !==
+        snapshot.snapshotId ||
+      Number(mint?.issuanceValueSnapshotBlockHeight) !==
+        snapshot.indexedThroughBlock ||
+      String(mint?.issuanceValueSnapshotBlockHash ?? "")
+        .trim()
+        .toLowerCase() !== snapshot.sourceBlockHash ||
+      String(mint?.issuanceValueSnapshotCanonicalSummaryHash ?? "")
+        .trim()
+        .toLowerCase() !== snapshot.canonicalSummaryHash ||
+      String(mint?.issuanceValueSnapshotGeneratedAt ?? "").trim() !==
+        snapshot.generatedAt ||
+      String(mint?.issuanceValueSnapshotMode ?? "").trim() !==
+        snapshot.summaryRefreshMode ||
+      String(mint?.issuanceValueSnapshotModel ?? "").trim() !==
+        INCEPTION_VALUE_SNAPSHOT_MODEL ||
+      workNetworkValueQ8 !== snapshot.workNetworkValueQ8 ||
+      (checkpointIdentity && checkpointIdentity !== candidateIdentity)
+    ) {
+      return null;
+    }
+    checkpoint = candidateCheckpoint;
+    checkpointIdentity = candidateIdentity;
+    orderedMints.push(mint);
+  }
+  return checkpoint
+    ? {
+        checkpoint,
+        disposition: "preserve",
+        entries: orderedEntries,
+        mints: orderedMints,
+      }
+    : null;
 }
 
 async function canonicalInceptionIssuanceOptions(
@@ -14227,13 +15611,85 @@ async function canonicalInceptionIssuanceOptions(
     options.previousBlockHashByBlockHash instanceof Map
       ? options.previousBlockHashByBlockHash
       : new Map();
+  const replayBinding = canonicalPwtReplayVerifierBindingDescriptor(
+    options.replayVerifierBinding,
+    network,
+  );
+  const replayBindingCacheKey =
+    canonicalPwtReplayVerifierBindingCacheKey(replayBinding, network);
+  const preRangeWitnesses = replayBinding
+    ? Array.isArray(options.preRangeMintWitnesses)
+      ? options.preRangeMintWitnesses
+      : []
+    : [];
+  const boundWitnessDispositions = replayBinding
+    ? Array.isArray(options.boundWitnessDispositions)
+      ? options.boundWitnessDispositions
+      : []
+    : [];
+  const storedWitnessSetsByTxid = new Map();
   const checkpoints = await Promise.all(
     [...bondsByTxid.entries()].map(async ([txid, bond]) => {
       const bondBlockHash = String(bond?.blockHash ?? "")
         .trim()
         .toLowerCase();
+      const bondBlockHeight = Number(bond?.blockHeight);
+      if (
+        replayBinding &&
+        Number.isSafeInteger(bondBlockHeight) &&
+        bondBlockHeight < replayBinding.rangeReplayFromHeight
+      ) {
+        const previousBlockHash =
+          await canonicalInceptionPreviousBlockHash(
+            network,
+            bond,
+            knownPreviousBlockHashes,
+          );
+        const witnessSet = canonicalStoredInceptionWitnessSet(
+          bond,
+          preRangeWitnesses,
+          previousBlockHash,
+        );
+        if (!witnessSet) {
+          throw inceptionValueSnapshotUnavailableError(bond, {
+            expectedPreviousBlockHash: previousBlockHash || null,
+            reason: "stored-pre-range-witness-invalid",
+          });
+        }
+        storedWitnessSetsByTxid.set(txid, witnessSet);
+        return [txid, witnessSet.checkpoint];
+      }
+      if (
+        replayBinding &&
+        Number.isSafeInteger(bondBlockHeight) &&
+        bondBlockHeight >= replayBinding.rangeReplayFromHeight &&
+        bondBlockHeight <= replayBinding.witnessedThroughBlock
+      ) {
+        const previousBlockHash =
+          await canonicalInceptionPreviousBlockHash(
+            network,
+            bond,
+            knownPreviousBlockHashes,
+          );
+        const witnessSet = canonicalBoundInceptionWitnessSet(
+          bond,
+          boundWitnessDispositions,
+          previousBlockHash,
+        );
+        if (!witnessSet) {
+          throw inceptionValueSnapshotUnavailableError(bond, {
+            expectedPreviousBlockHash: previousBlockHash || null,
+            reason: "stored-bound-witness-invalid",
+            witnessSetHash: replayBinding.witnessSetHash,
+          });
+        }
+        if (witnessSet.disposition === "preserve") {
+          storedWitnessSetsByTxid.set(txid, witnessSet);
+          return [txid, witnessSet.checkpoint];
+        }
+      }
       const checkpointSource = await cachedInternalVerifierState(
-        `incb-value-snapshot-source:${network}:h${Number(bond?.blockHeight)}:${bondBlockHash}`,
+        `incb-value-snapshot-source:${network}:h${Number(bond?.blockHeight)}:${bondBlockHash}${replayBindingCacheKey}`,
         async () => {
           const previousBlockHash = await canonicalInceptionPreviousBlockHash(
             network,
@@ -14276,6 +15732,25 @@ async function canonicalInceptionIssuanceOptions(
       checkpointsByTxid.get(
         String(bond?.txid ?? "").trim().toLowerCase(),
       ) ?? null,
+    preRangeStoredMint: (mint, bond) => {
+      const txid = String(bond?.txid ?? mint?.txid ?? "")
+        .trim()
+        .toLowerCase();
+      const witnessSet = storedWitnessSetsByTxid.get(txid);
+      if (!witnessSet) {
+        return null;
+      }
+      const recipientVout = canonicalEventOrdinal(mint?.bondRecipientVout);
+      const matches = witnessSet.mints.filter(
+        (candidate) =>
+          samePaymentAddress(candidate?.minterAddress, mint?.minterAddress) &&
+          canonicalEventOrdinal(candidate?.bondRecipientVout) ===
+            recipientVout,
+      );
+      return recipientVout !== null && matches.length === 1
+        ? matches[0]
+        : null;
+    },
   };
 }
 
@@ -14355,13 +15830,21 @@ function inceptionIssuanceCheckpoint(
   ) {
     return null;
   }
-  const workNetworkValueSats = numericValue(
-    override?.workNetworkValueSats ??
-      inceptionPreBondLiveNetworkValueSats(ledger, bond),
-  );
-  if (workNetworkValueSats <= 0) {
+  const overrideLegacyWorkNetworkValue =
+    typeof override?.workNetworkValueSats === "string"
+      ? override.workNetworkValueSats.trim()
+      : "";
+  const workNetworkValueQ8 =
+    canonicalNonNegativeIntegerText(override?.workNetworkValueQ8) ||
+    (overrideLegacyWorkNetworkValue
+      ? q8TextFromDecimal(overrideLegacyWorkNetworkValue)
+      : override
+        ? null
+        : inceptionPreBondLiveNetworkValueQ8(ledger, bond));
+  if (!workNetworkValueQ8 || BigInt(workNetworkValueQ8) <= 0n) {
     return null;
   }
+  const workNetworkValueSats = decimalTextFromQ8(workNetworkValueQ8);
   return {
     blockHash: checkpoint.blockHash,
     blockHeight: checkpoint.blockHeight,
@@ -14395,6 +15878,7 @@ function inceptionIssuanceCheckpoint(
         }
       : {}),
     workNetworkValueSats,
+    workNetworkValueQ8,
   };
 }
 
@@ -14418,7 +15902,8 @@ function inceptionMintsWithLiveIssuance(
     ]),
   );
 
-  return mints.map((mint) => {
+  return mints.map((seedMint) => {
+    let mint = seedMint;
     if (!mint?.confirmed || mint.tokenId !== INCB_TOKEN_ID) {
       return mint;
     }
@@ -14427,12 +15912,48 @@ function inceptionMintsWithLiveIssuance(
     if (!bond) {
       return mint;
     }
+    const storedPreRangeMint =
+      typeof options.preRangeStoredMint === "function"
+        ? options.preRangeStoredMint(mint, bond, ledger)
+        : null;
+    if (storedPreRangeMint) {
+      mint = storedPreRangeMint;
+    }
     // Persisted v2 issuance is an immutable historical fact. A valid bound
     // mint is returned by identity; an invalid v2 mint is left invalid so the
     // canonical gates fail closed instead of silently repricing it.
     if (mint.issuanceAccountingModel === INCEPTION_ISSUANCE_ACCOUNTING_MODEL) {
       if (!inceptionMintHasCanonicalBondBinding(mint, bond)) {
         return mint;
+      }
+      if (storedPreRangeMint) {
+        const attachment = inceptionAttachmentMatchesForBond(ledger, bond);
+        const attachedWorkAmountAtoms = attachment.matches
+          .filter(({ recipientAddress }) =>
+            samePaymentAddress(recipientAddress, mint.minterAddress),
+          )
+          .reduce((total, match) => {
+            const atoms = workAtomsBigIntFromRecord(match);
+            return atoms === null ? total : total + atoms;
+          }, 0n);
+        const storedAttachedWorkAmountAtoms = workAtomsBigIntFromRecord(
+          {
+            amount: mint.attachedWorkAmount,
+            amountAtoms: mint.attachedWorkAmountAtoms,
+          },
+          { allowZero: true },
+        );
+        if (
+          attachment.unmatchedActions > 0 ||
+          storedAttachedWorkAmountAtoms === null ||
+          attachedWorkAmountAtoms !== storedAttachedWorkAmountAtoms
+        ) {
+          return {
+            ...mint,
+            issuanceValueSnapshotModel: "",
+            validationMode: "canonical-incb-pre-range-witness-mismatch",
+          };
+        }
       }
       const publishedCheckpoint =
         typeof options.preBondCheckpoint === "function"
@@ -14442,6 +15963,28 @@ function inceptionMintsWithLiveIssuance(
         bond?.network === "livenet" ||
         mint?.network === "livenet" ||
         ledger?.network === "livenet";
+      const mintLegacySnapshotWorkNetworkValue =
+        typeof mint?.issuanceValueSnapshotWorkNetworkValueSats === "string"
+          ? mint.issuanceValueSnapshotWorkNetworkValueSats.trim()
+          : "";
+      const mintSnapshotWorkNetworkValueQ8 =
+        canonicalNonNegativeIntegerText(
+          mint?.issuanceValueSnapshotWorkNetworkValueQ8,
+        ) ||
+        (mintLegacySnapshotWorkNetworkValue
+          ? q8TextFromDecimal(mintLegacySnapshotWorkNetworkValue)
+          : null);
+      const checkpointLegacyWorkNetworkValue =
+        typeof publishedCheckpoint?.workNetworkValueSats === "string"
+          ? publishedCheckpoint.workNetworkValueSats.trim()
+          : "";
+      const checkpointWorkNetworkValueQ8 =
+        canonicalNonNegativeIntegerText(
+          publishedCheckpoint?.workNetworkValueQ8,
+        ) ||
+        (checkpointLegacyWorkNetworkValue
+          ? q8TextFromDecimal(checkpointLegacyWorkNetworkValue)
+          : null);
       if (
         (requiresPublishedValueSnapshot && !publishedCheckpoint) ||
         (publishedCheckpoint &&
@@ -14469,11 +16012,8 @@ function inceptionMintsWithLiveIssuance(
               String(publishedCheckpoint.valueSnapshotModel ?? "") ||
             String(mint.issuanceValueSnapshotGeneratedAt ?? "") !==
               String(publishedCheckpoint.valueSnapshotGeneratedAt ?? "") ||
-            !numbersAgree(
-              mint.issuanceValueSnapshotWorkNetworkValueSats,
-              publishedCheckpoint.workNetworkValueSats,
-              0.01,
-            )))
+            mintSnapshotWorkNetworkValueQ8 !==
+              checkpointWorkNetworkValueQ8))
       ) {
         return {
           ...mint,
@@ -14503,8 +16043,11 @@ function inceptionMintsWithLiveIssuance(
     if (!checkpoint) {
       return mint;
     }
-    const attachedWorkLiveFloorAtSendSats =
-      checkpoint.workNetworkValueSats / WORK_TOKEN_MAX_SUPPLY;
+    const snapshotWorkNetworkValueQ8 = BigInt(
+      checkpoint.workNetworkValueQ8,
+    );
+    const attachedWorkLiveFloorAtSendQ8 =
+      snapshotWorkNetworkValueQ8 / BigInt(WORK_TOKEN_MAX_SUPPLY);
     const minterAddress = String(mint.minterAddress ?? "").trim();
     const bondRecipients = (Array.isArray(bond?.recipients)
       ? bond.recipients
@@ -14535,10 +16078,8 @@ function inceptionMintsWithLiveIssuance(
       },
       0n,
     );
-    const attachedWorkAmount = Number(
-      formatWorkAtoms(attachedWorkAmountAtoms),
-    );
-    if (attachedWorkLiveFloorAtSendSats <= 0) {
+    const attachedWorkAmount = formatWorkAtoms(attachedWorkAmountAtoms);
+    if (attachedWorkLiveFloorAtSendQ8 <= 0n) {
       return mint;
     }
     const directProofIssuanceUnits = numericValue(
@@ -14550,71 +16091,52 @@ function inceptionMintsWithLiveIssuance(
     ) {
       return mint;
     }
-    const useAtomicQ8 = matchedAttachments.some((match) => {
-      const atoms = workAtomsBigIntFromRecord(match);
-      return (
-        match.amountVersion === TOKEN_SEND_ATOMS_ACTION ||
-        (atoms !== null && atoms % WORK_UNIT_SCALE !== 0n)
-      );
-    });
-    const attachedWorkLiveValueAtSendQ8 = useAtomicQ8
-      ? workAtomsValueAtNetworkQ8(
-          attachedWorkAmountAtoms,
-          checkpoint.workNetworkValueSats,
-        )
-      : null;
-    if (useAtomicQ8 && attachedWorkLiveValueAtSendQ8 === null) {
+    const attachedWorkLiveValueAtSendQ8 = workAtomsValueAtNetworkQ8(
+      attachedWorkAmountAtoms,
+      checkpoint.workNetworkValueSats,
+      checkpoint.workNetworkValueQ8,
+    );
+    if (attachedWorkLiveValueAtSendQ8 === null) {
       return mint;
     }
     const directProofIssuanceQ8 =
       BigInt(directProofIssuanceUnits) * VALUE_Q8_SCALE;
     const issuanceNetworkValueQ8 =
-      attachedWorkLiveValueAtSendQ8 === null
-        ? null
-        : directProofIssuanceQ8 + attachedWorkLiveValueAtSendQ8;
-    const attachedWorkLiveValueAtSendSats =
-      attachedWorkLiveValueAtSendQ8 === null
-        ? attachedWorkAmount * attachedWorkLiveFloorAtSendSats
-        : q8ToNumber(attachedWorkLiveValueAtSendQ8);
-    const issuanceNetworkValueSats =
-      issuanceNetworkValueQ8 === null
-        ? directProofIssuanceUnits + attachedWorkLiveValueAtSendSats
-        : q8ToNumber(issuanceNetworkValueQ8);
+      directProofIssuanceQ8 + attachedWorkLiveValueAtSendQ8;
     const confirmedIssuanceUnits =
-      issuanceNetworkValueQ8 === null
-        ? Math.floor(issuanceNetworkValueSats)
-        : Number(issuanceNetworkValueQ8 / VALUE_Q8_SCALE);
-    if (!Number.isSafeInteger(confirmedIssuanceUnits) || confirmedIssuanceUnits < 1) {
+      issuanceNetworkValueQ8 / VALUE_Q8_SCALE;
+    if (confirmedIssuanceUnits < 1n) {
       return mint;
     }
     const issuanceDustQ8 =
-      issuanceNetworkValueQ8 === null
-        ? null
-        : issuanceNetworkValueQ8 -
-          BigInt(confirmedIssuanceUnits) * VALUE_Q8_SCALE;
+      issuanceNetworkValueQ8 - confirmedIssuanceUnits * VALUE_Q8_SCALE;
+    const attachedWorkIssuanceUnits =
+      attachedWorkLiveValueAtSendQ8 / VALUE_Q8_SCALE;
+    const confirmedIssuanceUnitsText = confirmedIssuanceUnits.toString();
     return {
       ...mint,
-      amount: confirmedIssuanceUnits,
+      amount: confirmedIssuanceUnitsText,
       amountSats: 0,
       attachedWorkAmount,
-      ...(useAtomicQ8
-        ? {
-            attachedWorkAmountAtoms: attachedWorkAmountAtoms.toString(),
-            attachedWorkLiveValueAtSendQ8:
-              attachedWorkLiveValueAtSendQ8.toString(),
-          }
-        : {}),
-      attachedWorkLiveFloorAtSendSats,
-      attachedWorkIssuanceUnits:
-        confirmedIssuanceUnits - directProofIssuanceUnits,
-      attachedWorkLiveValueAtSendSats,
+      attachedWorkAmountAtoms: attachedWorkAmountAtoms.toString(),
+      attachedWorkLiveFloorAtSendSats: decimalTextFromQ8(
+        attachedWorkLiveFloorAtSendQ8,
+      ),
+      attachedWorkLiveFloorAtSendQ8:
+        attachedWorkLiveFloorAtSendQ8.toString(),
+      attachedWorkIssuanceUnits: attachedWorkIssuanceUnits.toString(),
+      attachedWorkLiveValueAtSendSats: decimalTextFromQ8(
+        attachedWorkLiveValueAtSendQ8,
+      ),
+      attachedWorkLiveValueAtSendQ8:
+        attachedWorkLiveValueAtSendQ8.toString(),
       bondRecipientAddress: minterAddress,
       bondRecipientAmountSats: directProofIssuanceUnits,
       bondRecipientVout,
-      confirmedIssuanceUnits,
-      directProofIssuanceUnits,
+      confirmedIssuanceUnits: confirmedIssuanceUnitsText,
+      directProofIssuanceUnits: String(directProofIssuanceUnits),
       issuanceAccountingModel: INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
-      issuanceAmount: confirmedIssuanceUnits,
+      issuanceAmount: confirmedIssuanceUnitsText,
       issuanceCheckpointBlockHash: checkpoint.blockHash,
       issuanceCheckpointBlockHeight: checkpoint.blockHeight,
       issuanceCheckpointBlockIndex: checkpoint.blockIndex,
@@ -14632,23 +16154,20 @@ function inceptionMintsWithLiveIssuance(
       issuanceValueSnapshotModel: checkpoint.valueSnapshotModel,
       issuanceValueSnapshotWorkNetworkValueSats:
         checkpoint.workNetworkValueSats,
-      ...(useAtomicQ8
-        ? {
-            issuanceDustQ8: issuanceDustQ8.toString(),
-            issuanceNetworkValueQ8: issuanceNetworkValueQ8.toString(),
-            issuanceValueSnapshotWorkNetworkValueQ8:
-              decimalValueToQ8(
-                checkpoint.workNetworkValueSats,
-              ).toString(),
-          }
-        : {}),
-      issuanceDustSats:
-        issuanceDustQ8 === null
-          ? issuanceNetworkValueSats - confirmedIssuanceUnits
-          : q8ToNumber(issuanceDustQ8),
-      issuanceFloorSats:
-        issuanceNetworkValueSats / confirmedIssuanceUnits,
-      issuanceNetworkValueSats,
+      issuanceDustQ8: issuanceDustQ8.toString(),
+      issuanceNetworkValueQ8: issuanceNetworkValueQ8.toString(),
+      issuanceValueSnapshotWorkNetworkValueQ8:
+        checkpoint.workNetworkValueQ8,
+      issuanceDustSats: decimalTextFromQ8(issuanceDustQ8),
+      issuanceFloorSats: decimalTextFromQ8(
+        issuanceNetworkValueQ8 / confirmedIssuanceUnits,
+      ),
+      issuanceFloorQ8: (
+        issuanceNetworkValueQ8 / confirmedIssuanceUnits
+      ).toString(),
+      issuanceNetworkValueSats: decimalTextFromQ8(
+        issuanceNetworkValueQ8,
+      ),
       issuanceUnitSats: 1,
       issuanceValuationFixedAtSend: true,
       blockHash: checkpoint.blockHash,
@@ -14848,7 +16367,10 @@ function tokenStateWithCanonicalInceptionIssuance(
     ...tokenState,
     confirmedSupply: adjustedMints
       .filter((mint) => mint?.confirmed)
-      .reduce((total, mint) => total + numericValue(mint.amount), 0),
+      .reduce(
+        (total, mint) => addIntegerTexts(total, mint.amount ?? "0"),
+        "0",
+      ),
     mints: adjustedMints,
   });
   const scoped = scopedTokenPayloadFromState(next, INCB_TOKEN_ID);
@@ -14936,14 +16458,19 @@ function bondAttachedWorkValueDetails(
 ) {
   const empty = {
     attachedWorkActions: 0,
-    attachedWorkAmount: 0,
+    attachedWorkAmount: "0",
+    attachedWorkAmountAtoms: "0",
     attachedWorkFrozenValueByTxid: new Map(),
-    attachedWorkFrozenValueSats: 0,
-    attachedWorkLiveValueSats: 0,
+    attachedWorkFrozenValueQ8ByTxid: new Map(),
+    attachedWorkFrozenValueSats: "0",
+    attachedWorkFrozenValueQ8: "0",
+    attachedWorkLiveValueSats: "0",
+    attachedWorkLiveValueQ8: "0",
     attachedWorkUnmatchedActions: 0,
     attachedWorkUnvaluedActions: 0,
     bondIssuanceByTxid: new Map(),
     bondIssuanceNetworkValueByTxid: new Map(),
+    bondIssuanceNetworkValueQ8ByTxid: new Map(),
   };
   if (config.tokenId !== INCB_TOKEN_ID) {
     return empty;
@@ -14961,14 +16488,16 @@ function bondAttachedWorkValueDetails(
     mintsByTxid.set(txid, current);
   }
   let attachedWorkActions = 0;
-  let attachedWorkAmount = 0;
-  let attachedWorkFrozenValueSats = 0;
-  let attachedWorkLiveValueSats = 0;
+  let attachedWorkAmountAtoms = 0n;
+  let attachedWorkFrozenValueQ8 = 0n;
+  let attachedWorkLiveValueQ8 = 0n;
   let attachedWorkUnmatchedActions = 0;
   let attachedWorkUnvaluedActions = 0;
   const attachedWorkFrozenValueByTxid = new Map();
+  const attachedWorkFrozenValueQ8ByTxid = new Map();
   const bondIssuanceByTxid = new Map();
   const bondIssuanceNetworkValueByTxid = new Map();
+  const bondIssuanceNetworkValueQ8ByTxid = new Map();
 
   for (const bond of Array.isArray(confirmedBondActions)
     ? confirmedBondActions
@@ -14989,34 +16518,54 @@ function bondAttachedWorkValueDetails(
       );
       continue;
     }
-    const bondAttachedAmount = attachment.matches.reduce(
-      (total, match) => total + numericValue(match.amount),
-      0,
+    const bondAttachedAmountAtoms = attachment.matches.reduce(
+      (total, match) => {
+        const atoms = workAtomsBigIntFromRecord(match, { allowZero: true });
+        return atoms === null ? total : total + atoms;
+      },
+      0n,
     );
-    const frozenValueSats = issuance.attachedWorkLiveValueAtSendSats;
-    const liveValueSats = frozenValueSats;
+    const frozenValueQ8 = BigInt(
+      issuance.attachedWorkLiveValueAtSendQ8 ?? "0",
+    );
+    const liveValueQ8 = frozenValueQ8;
     attachedWorkActions += attachment.matches.length;
-    attachedWorkAmount += bondAttachedAmount;
-    attachedWorkFrozenValueSats += frozenValueSats;
-    attachedWorkLiveValueSats += liveValueSats;
-    attachedWorkFrozenValueByTxid.set(txid, frozenValueSats);
+    attachedWorkAmountAtoms += bondAttachedAmountAtoms;
+    attachedWorkFrozenValueQ8 += frozenValueQ8;
+    attachedWorkLiveValueQ8 += liveValueQ8;
+    attachedWorkFrozenValueByTxid.set(
+      txid,
+      decimalTextFromQ8(frozenValueQ8),
+    );
+    attachedWorkFrozenValueQ8ByTxid.set(txid, frozenValueQ8.toString());
     bondIssuanceByTxid.set(txid, issuance.confirmedIssuanceUnits);
     bondIssuanceNetworkValueByTxid.set(
       txid,
       issuance.issuanceNetworkValueSats,
     );
+    bondIssuanceNetworkValueQ8ByTxid.set(
+      txid,
+      issuance.issuanceNetworkValueQ8,
+    );
   }
 
   return {
     attachedWorkActions,
-    attachedWorkAmount,
+    attachedWorkAmount: formatWorkAtoms(attachedWorkAmountAtoms),
+    attachedWorkAmountAtoms: attachedWorkAmountAtoms.toString(),
     attachedWorkFrozenValueByTxid,
-    attachedWorkFrozenValueSats,
-    attachedWorkLiveValueSats,
+    attachedWorkFrozenValueQ8ByTxid,
+    attachedWorkFrozenValueSats: decimalTextFromQ8(
+      attachedWorkFrozenValueQ8,
+    ),
+    attachedWorkFrozenValueQ8: attachedWorkFrozenValueQ8.toString(),
+    attachedWorkLiveValueSats: decimalTextFromQ8(attachedWorkLiveValueQ8),
+    attachedWorkLiveValueQ8: attachedWorkLiveValueQ8.toString(),
     attachedWorkUnmatchedActions,
     attachedWorkUnvaluedActions,
     bondIssuanceByTxid,
     bondIssuanceNetworkValueByTxid,
+    bondIssuanceNetworkValueQ8ByTxid,
   };
 }
 
@@ -15038,16 +16587,41 @@ function infinityBondChartPointsFromEvents({
     options.bondValueByTxid instanceof Map
       ? options.bondValueByTxid
       : new Map();
+  const bondFrozenValueQ8ByTxid =
+    options.bondFrozenValueQ8ByTxid instanceof Map
+      ? options.bondFrozenValueQ8ByTxid
+      : new Map();
+  const bondValueQ8ByTxid =
+    options.bondValueQ8ByTxid instanceof Map
+      ? options.bondValueQ8ByTxid
+      : new Map();
   const events = [
     ...(Array.isArray(bonds) ? bonds : [])
       .filter((item) => item?.confirmed && isBondActivityItem(item, config))
       .map((item) => {
         const txid = String(item.txid ?? "");
         const normalizedTxid = txid.trim().toLowerCase();
+        const amount =
+          bondUnitsBigInt(bondSupplyByTxid.get(normalizedTxid)) ??
+          bondUnitsBigInt(activityAmountSats(item)) ??
+          0n;
+        const mappedValueQ8 = canonicalNonNegativeIntegerText(
+          bondValueQ8ByTxid.get(normalizedTxid),
+        );
+        const compatibilityValueQ8 = q8TextFromDecimal(
+          bondValueByTxid.get(normalizedTxid),
+        );
+        const attachedValueQ8 =
+          canonicalNonNegativeIntegerText(
+            bondFrozenValueQ8ByTxid.get(normalizedTxid),
+          ) ||
+          q8TextFromDecimal(bondFrozenValueByTxid.get(normalizedTxid)) ||
+          "0";
+        const directValueQ8 = q8TextFromIntegerUnits(
+          activityAmountSats(item),
+        );
         return {
-          amount:
-            numericValue(bondSupplyByTxid.get(normalizedTxid)) ||
-            activityAmountSats(item),
+          amount,
           blockHash: item.blockHash,
           blockHeight: item.blockHeight,
           blockIndex: item.blockIndex,
@@ -15055,16 +16629,17 @@ function infinityBondChartPointsFromEvents({
           eventOrdinal: canonicalTokenReplayOrdinal(item),
           order: 0,
           txid,
-          valueSats:
-            numericValue(bondValueByTxid.get(normalizedTxid)) ||
-            activityAmountSats(item) +
-              numericValue(bondFrozenValueByTxid.get(normalizedTxid)),
+          valueQ8:
+            bondUnitsBigInt(mappedValueQ8 || compatibilityValueQ8, {
+              allowZero: true,
+            }) ??
+            BigInt(directValueQ8 || "0") + BigInt(attachedValueQ8),
         };
       }),
     ...(Array.isArray(transfers) ? transfers : [])
       .filter((transfer) => transfer?.confirmed && transfer.tokenId === config.tokenId)
       .map((transfer) => ({
-        amount: 0,
+        amount: 0n,
         blockHash: transfer.blockHash,
         blockHeight: transfer.blockHeight,
         blockIndex: transfer.blockIndex,
@@ -15072,7 +16647,7 @@ function infinityBondChartPointsFromEvents({
         eventOrdinal: canonicalTokenReplayOrdinal(transfer),
         order: 1,
         txid: String(transfer.txid ?? ""),
-        valueSats: numericValue(transfer.paidSats),
+        valueQ8: BigInt(q8TextFromIntegerUnits(transfer.paidSats) || "0"),
       })),
     ...uniqueMarketplaceMutationActivity(
       marketplaceMutations,
@@ -15080,7 +16655,7 @@ function infinityBondChartPointsFromEvents({
     )
       .filter((item) => item?.confirmed && item.tokenId === config.tokenId)
       .map((item) => ({
-        amount: 0,
+        amount: 0n,
         blockHash: item.blockHash,
         blockHeight: item.blockHeight,
         blockIndex: item.blockIndex,
@@ -15088,12 +16663,14 @@ function infinityBondChartPointsFromEvents({
         eventOrdinal: canonicalTokenReplayOrdinal(item),
         order: 2,
         txid: String(item.txid ?? ""),
-        valueSats: marketplaceMutationPaymentSats(item),
+        valueQ8: BigInt(
+          q8TextFromIntegerUnits(marketplaceMutationPaymentSats(item)) || "0",
+        ),
       })),
     ...(Array.isArray(sales) ? sales : [])
       .filter((sale) => sale?.confirmed && sale.tokenId === config.tokenId)
       .map((sale) => ({
-        amount: 0,
+        amount: 0n,
         blockHash: sale.blockHash,
         blockHeight: sale.blockHeight,
         blockIndex: sale.blockIndex,
@@ -15101,13 +16678,13 @@ function infinityBondChartPointsFromEvents({
         eventOrdinal: canonicalTokenReplayOrdinal(sale),
         order: 3,
         txid: String(sale.txid ?? ""),
-        valueSats: numericValue(sale.priceSats),
+        valueQ8: BigInt(q8TextFromIntegerUnits(sale.priceSats) || "0"),
       })),
   ]
     .filter(
       (event) =>
         event.txid &&
-        (event.amount > 0 || event.valueSats > 0) &&
+        (event.amount > 0n || event.valueQ8 > 0n) &&
         Number.isFinite(Date.parse(event.createdAt)),
     )
     .sort((left, right) => {
@@ -15134,23 +16711,27 @@ function infinityBondChartPointsFromEvents({
     });
 
   let bondActions = 0;
-  let confirmedSupply = 0;
-  let networkValueSats = 0;
+  let confirmedSupply = 0n;
+  let networkValueQ8 = 0n;
   const points = [];
 
   for (const event of events) {
     bondActions += 1;
     confirmedSupply += event.amount;
-    networkValueSats += event.valueSats;
+    networkValueQ8 += event.valueQ8;
+    const floorQ8 =
+      confirmedSupply > 0n ? networkValueQ8 / confirmedSupply : 0n;
     points.push({
       bondActions,
       blockHash: event.blockHash,
       blockHeight: event.blockHeight,
       blockIndex: event.blockIndex,
-      confirmedSupply,
+      confirmedSupply: confirmedSupply.toString(),
       createdAt: event.createdAt,
-      floorSats: confirmedSupply > 0 ? networkValueSats / confirmedSupply : 0,
-      networkValueSats,
+      floorQ8: floorQ8.toString(),
+      floorSats: decimalTextFromQ8(floorQ8),
+      networkValueQ8: networkValueQ8.toString(),
+      networkValueSats: decimalTextFromQ8(networkValueQ8),
       txid: event.txid,
     });
   }
@@ -15270,7 +16851,12 @@ function tokenActivityItemsFromState(state, indexAddress) {
     description: `${transfer.amount.toLocaleString()} ${transfer.ticker} transferred from ${shortAddress(transfer.senderAddress)} to ${shortAddress(transfer.recipientAddress)}.`,
     detail: `Credit ${shortAddress(transfer.tokenId)}`,
     arbSats: numericValue(transfer.arbSats),
-    creditAmountMoved: numericValue(transfer.creditAmountMoved ?? transfer.amount),
+    creditAmountMoved: isBondTokenId(transfer.tokenId)
+      ? canonicalIntegerText(
+          transfer.creditAmountMoved ?? transfer.amount,
+          { allowZero: true },
+        )
+      : numericValue(transfer.creditAmountMoved ?? transfer.amount),
     creditFloorAtConfirmSats: numericValue(transfer.creditFloorAtConfirmSats),
     creditFloorAtConfirmModel: String(
       transfer.creditFloorAtConfirmModel ?? "",
@@ -15519,7 +17105,11 @@ function tokenActivityItemsFromState(state, indexAddress) {
     description: `${sale.amount.toLocaleString()} ${sale.ticker} bought by ${shortAddress(sale.buyerAddress)} from ${shortAddress(sale.sellerAddress)} for ${sale.priceSats.toLocaleString()} proofs.`,
     detail: `Listing ${shortAddress(sale.listingId)}`,
     arbSats: numericValue(sale.arbSats),
-    creditAmountMoved: numericValue(sale.creditAmountMoved ?? sale.amount),
+    creditAmountMoved: isBondTokenId(sale.tokenId)
+      ? canonicalIntegerText(sale.creditAmountMoved ?? sale.amount, {
+          allowZero: true,
+        })
+      : numericValue(sale.creditAmountMoved ?? sale.amount),
     creditFloorAtConfirmSats: numericValue(sale.creditFloorAtConfirmSats),
     creditLiveFloorSats: numericValue(sale.creditLiveFloorSats),
     creditLiveValueSats: numericValue(sale.creditLiveValueSats),
@@ -18270,15 +19860,15 @@ function recentClosedTokenListings(items, limit = SUMMARY_MARKET_LIMIT) {
 function tokenAggregateSummaries(payload) {
   const tokens = Array.isArray(payload.tokens) ? payload.tokens : [];
   const summaries = new Map(
-    tokens.map((token) => [
-      token.tokenId,
-      {
+    tokens.map((token) => {
+      const supplyZero = tokenLedgerZero(token.tokenId);
+      return [token.tokenId, {
         balances: new Map(),
         confirmedMints: 0,
         confirmedOpenListings: 0,
         confirmedSales: 0,
         confirmedSalesVolumeSats: 0,
-        confirmedSupply: 0,
+        confirmedSupply: supplyZero,
         holderCount: 0,
         lastSalePricePerToken: 0,
         lowestAskPricePerToken: 0,
@@ -18287,10 +19877,10 @@ function tokenAggregateSummaries(payload) {
         pendingOpenListings: 0,
         pendingSales: 0,
         pendingSalesVolumeSats: 0,
-        pendingSupply: 0,
+        pendingSupply: supplyZero,
         transferCount: 0,
-      },
-    ]),
+      }];
+    }),
   );
   const addBalance = (tokenId, address, amount) => {
     if (
@@ -18323,15 +19913,13 @@ function tokenAggregateSummaries(payload) {
     if (amount === null) {
       continue;
     }
-    const displayAmount = tokenLedgerHumanNumber(mint.tokenId, amount);
-
     if (mint.confirmed) {
       current.confirmedMints += 1;
-      current.confirmedSupply += displayAmount;
+      current.confirmedSupply += amount;
       addBalance(mint.tokenId, mint.minterAddress, amount);
     } else {
       current.pendingMints += 1;
-      current.pendingSupply += displayAmount;
+      current.pendingSupply += amount;
     }
   }
 
@@ -18371,7 +19959,7 @@ function tokenAggregateSummaries(payload) {
     if (amount === null) {
       continue;
     }
-    const displayAmount = tokenLedgerHumanNumber(sale.tokenId, amount);
+    const displayAmount = tokenLedgerApproximateNumber(sale.tokenId, amount);
 
     addBalance(sale.tokenId, sale.sellerAddress, -amount);
     addBalance(sale.tokenId, sale.buyerAddress, amount);
@@ -18398,7 +19986,7 @@ function tokenAggregateSummaries(payload) {
 
     const amount = tokenLedgerAmountFromRecord(listing.tokenId, listing);
     const displayAmount =
-      amount === null ? 0 : tokenLedgerHumanNumber(listing.tokenId, amount);
+      amount === null ? 0 : tokenLedgerApproximateNumber(listing.tokenId, amount);
     const ask = displayAmount > 0 ? listing.priceSats / displayAmount : 0;
     if (ask > 0) {
       current.lowestAskPricePerToken =
@@ -18408,10 +19996,18 @@ function tokenAggregateSummaries(payload) {
     }
   }
 
-  for (const summary of summaries.values()) {
+  for (const [tokenId, summary] of summaries) {
     summary.holderCount = [...summary.balances.values()].filter(
       (balance) => balance > 0,
     ).length;
+    summary.confirmedSupply = tokenLedgerSupplyValue(
+      tokenId,
+      summary.confirmedSupply,
+    );
+    summary.pendingSupply = tokenLedgerSupplyValue(
+      tokenId,
+      summary.pendingSupply,
+    );
     delete summary.balances;
   }
 
@@ -18423,13 +20019,36 @@ function tokenSummaryMetricValue(value) {
   return Number.isFinite(number) && number >= 0 ? number : undefined;
 }
 
+function tokenSummarySupplyMetricValue(tokenId, value) {
+  if (!isBondTokenId(tokenId)) {
+    return tokenSummaryMetricValue(value);
+  }
+  try {
+    return canonicalIntegerText(value, { allowZero: true }) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function mergedTokenSummaryMetric(token, summary, key, preserveExisting) {
-  const tokenValue = tokenSummaryMetricValue(token?.[key]);
+  const isSupply = key === "confirmedSupply" || key === "pendingSupply";
+  const metric = isSupply ? tokenSummarySupplyMetricValue : (_, value) =>
+    tokenSummaryMetricValue(value);
+  const tokenValue = metric(token?.tokenId, token?.[key]);
   if (preserveExisting && tokenValue !== undefined) {
     return tokenValue;
   }
 
-  const summaryValue = tokenSummaryMetricValue(summary?.[key]);
+  const summaryValue = metric(token?.tokenId, summary?.[key]);
+  if (isSupply && isBondTokenId(token?.tokenId)) {
+    if (summaryValue === undefined) {
+      return tokenValue;
+    }
+    if (tokenValue === undefined) {
+      return summaryValue;
+    }
+    return maxIntegerTexts(summaryValue, tokenValue);
+  }
   return summaryValue ?? tokenValue;
 }
 
@@ -18525,24 +20144,35 @@ function scopedTokenPayloadFromState(tokenState, scope) {
     }
   }
 
-  const confirmedSupply = tokens.reduce((total, token) => {
-    const summary = summaries.get(token.tokenId);
-    return total + Math.max(
-      summary?.confirmedSupply ?? 0,
-      Number.isFinite(Number(token.confirmedSupply))
-        ? Number(token.confirmedSupply)
-        : 0,
-    );
-  }, 0);
-  const pendingSupply = tokens.reduce((total, token) => {
-    const summary = summaries.get(token.tokenId);
-    return total + Math.max(
-      summary?.pendingSupply ?? 0,
-      Number.isFinite(Number(token.pendingSupply))
-        ? Number(token.pendingSupply)
-        : 0,
-    );
-  }, 0);
+  const scopedTokenId = tokens.length === 1 ? tokens[0].tokenId : "";
+  const aggregateSupply = (key) => {
+    // Supply units belong to a specific credit definition. Adding WORK,
+    // generic credits, and synthetic bonds together is dimensionally invalid,
+    // and coercing a large bond balance to Number is inexact. Mixed scopes
+    // therefore expose exact per-token totals only.
+    if (tokens.length !== 1) {
+      return null;
+    }
+    if (isBondTokenId(scopedTokenId)) {
+      return tokens.reduce((total, token) => {
+        const summary = summaries.get(token.tokenId);
+        const summaryValue =
+          tokenSummarySupplyMetricValue(token.tokenId, summary?.[key]) || "0";
+        const tokenValue =
+          tokenSummarySupplyMetricValue(token.tokenId, token?.[key]) || "0";
+        return addIntegerTexts(total, maxIntegerTexts(summaryValue, tokenValue));
+      }, "0");
+    }
+    return tokens.reduce((total, token) => {
+      const summary = summaries.get(token.tokenId);
+      return total + Math.max(
+        summary?.[key] ?? 0,
+        Number.isFinite(Number(token?.[key])) ? Number(token[key]) : 0,
+      );
+    }, 0);
+  };
+  const confirmedSupply = aggregateSupply("confirmedSupply");
+  const pendingSupply = aggregateSupply("pendingSupply");
   const confirmedSupplyAtoms = isWorkTokenId(
     tokens.length === 1 ? tokens[0]?.tokenId : "",
   )
@@ -18561,15 +20191,12 @@ function scopedTokenPayloadFromState(tokenState, scope) {
           const amount = workAtomsBigIntFromRecord(mint);
           return amount === null ? total : total + amount;
         }, 0n);
-  const scopedTokenId = tokens.length === 1 ? tokens[0].tokenId : "";
   const holders = [...balances.entries()]
     .filter(([, balance]) => balance > 0)
     .map(([address, balance]) => ({
       address,
       ledgerBalance: balance,
-      ...(isWorkTokenId(scopedTokenId)
-        ? workBalanceFieldsFromAtoms(balance)
-        : { balance }),
+      ...tokenLedgerBalanceFields(scopedTokenId, balance),
     }))
     .sort(
       (left, right) =>
@@ -18897,12 +20524,16 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
     scope && rawTokens.length === 1 && tokenMatchesScope(rawTokens[0], scope)
       ? rawTokens[0].tokenId
       : "";
-  const scopedConfirmedSupply = Number.isFinite(Number(payload.confirmedSupply))
-    ? Math.max(0, Number(payload.confirmedSupply))
-    : undefined;
-  const scopedPendingSupply = Number.isFinite(Number(payload.pendingSupply))
-    ? Math.max(0, Number(payload.pendingSupply))
-    : undefined;
+  const scopedConfirmedSupply = isBondTokenId(scopedTokenId)
+    ? tokenSummarySupplyMetricValue(scopedTokenId, payload.confirmedSupply)
+    : Number.isFinite(Number(payload.confirmedSupply))
+      ? Math.max(0, Number(payload.confirmedSupply))
+      : undefined;
+  const scopedPendingSupply = isBondTokenId(scopedTokenId)
+    ? tokenSummarySupplyMetricValue(scopedTokenId, payload.pendingSupply)
+    : Number.isFinite(Number(payload.pendingSupply))
+      ? Math.max(0, Number(payload.pendingSupply))
+      : undefined;
   const tokens = rawTokens.map((token) => {
     const summary = tokenSummaries.get(token.tokenId) ?? {};
     const next = {
@@ -19000,22 +20631,32 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
     };
     if (scopedTokenId && token.tokenId === scopedTokenId) {
       if (scopedConfirmedSupply !== undefined) {
-        const nextConfirmedSupply = tokenSummaryMetricValue(
+        const nextConfirmedSupply = tokenSummarySupplyMetricValue(
+          token.tokenId,
           next.confirmedSupply,
         );
-        next.confirmedSupply =
-          preserveExistingTokenMetrics &&
-          nextConfirmedSupply !== undefined &&
-          nextConfirmedSupply > scopedConfirmedSupply
+        next.confirmedSupply = isBondTokenId(token.tokenId)
+          ? preserveExistingTokenMetrics && nextConfirmedSupply !== undefined
+            ? maxIntegerTexts(nextConfirmedSupply, scopedConfirmedSupply)
+            : scopedConfirmedSupply
+          : preserveExistingTokenMetrics &&
+              nextConfirmedSupply !== undefined &&
+              nextConfirmedSupply > scopedConfirmedSupply
             ? nextConfirmedSupply
             : scopedConfirmedSupply;
       }
       if (scopedPendingSupply !== undefined) {
-        const nextPendingSupply = tokenSummaryMetricValue(next.pendingSupply);
-        next.pendingSupply =
-          preserveExistingTokenMetrics &&
-          nextPendingSupply !== undefined &&
-          nextPendingSupply > scopedPendingSupply
+        const nextPendingSupply = tokenSummarySupplyMetricValue(
+          token.tokenId,
+          next.pendingSupply,
+        );
+        next.pendingSupply = isBondTokenId(token.tokenId)
+          ? preserveExistingTokenMetrics && nextPendingSupply !== undefined
+            ? maxIntegerTexts(nextPendingSupply, scopedPendingSupply)
+            : scopedPendingSupply
+          : preserveExistingTokenMetrics &&
+              nextPendingSupply !== undefined &&
+              nextPendingSupply > scopedPendingSupply
             ? nextPendingSupply
             : scopedPendingSupply;
       }
@@ -19263,9 +20904,24 @@ function tokenStateWithPendingStats(state) {
   const transfers = Array.isArray(state?.transfers) ? state.transfers : [];
   const sales = Array.isArray(state?.sales) ? state.sales : [];
   const holders = Array.isArray(state?.holders) ? state.holders : [];
-  const pendingSupply = mints
-    .filter((mint) => !mint.confirmed)
-    .reduce((total, mint) => total + Number(mint.amount || 0), 0);
+  const scopedBondTokenId =
+    tokens.length === 1 && isBondTokenId(tokens[0]?.tokenId)
+      ? tokens[0].tokenId
+      : "";
+  const pendingSupply = scopedBondTokenId
+    ? mints
+        .filter(
+          (mint) =>
+            !mint.confirmed && mint.tokenId === scopedBondTokenId,
+        )
+        .reduce((total, mint) => {
+          const amount = tokenLedgerAmountFromRecord(scopedBondTokenId, mint);
+          return amount === null ? total : total + amount;
+        }, 0n)
+        .toString()
+    : mints
+        .filter((mint) => !mint.confirmed)
+        .reduce((total, mint) => total + Number(mint.amount || 0), 0);
   const confirmedSales = sales.filter((sale) => sale.confirmed);
 
   return {
@@ -21903,6 +23559,10 @@ function tokenPayloadFreshnessRank(payload) {
   const stats = payload?.stats && typeof payload.stats === "object"
     ? payload.stats
     : {};
+  const bondTokenId =
+    tokens.length === 1 && isBondTokenId(tokens[0]?.tokenId)
+      ? tokens[0].tokenId
+      : "";
   const indexedAtMs = Date.parse(
     String(
       payload?.indexedAt ??
@@ -21916,7 +23576,11 @@ function tokenPayloadFreshnessRank(payload) {
       numericValue(stats.confirmedMints),
       mints.filter((mint) => mint?.confirmed).length,
     ),
-    confirmedSupply: numericValue(payload?.confirmedSupply),
+    bondTokenId,
+    confirmedSupply: bondTokenId
+      ? canonicalIntegerText(payload?.confirmedSupply, { allowZero: true }) ||
+        "0"
+      : numericValue(payload?.confirmedSupply),
     confirmedTokens: Math.max(
       numericValue(stats.confirmedTokens),
       tokens.filter((token) => token?.confirmed).length,
@@ -21925,11 +23589,42 @@ function tokenPayloadFreshnessRank(payload) {
     indexedAtMs: Number.isFinite(indexedAtMs) ? indexedAtMs : 0,
     listings: listings.length,
     mints: mints.length,
-    pendingSupply: numericValue(payload?.pendingSupply),
+    pendingSupply: bondTokenId
+      ? canonicalIntegerText(payload?.pendingSupply, { allowZero: true }) || "0"
+      : numericValue(payload?.pendingSupply),
     sales: sales.length,
     tokens: tokens.length,
     transfers: transfers.length,
   };
+}
+
+function tokenFreshnessSupplyCompare(leftRank, rightRank, field) {
+  if (
+    leftRank?.bondTokenId &&
+    leftRank.bondTokenId === rightRank?.bondTokenId
+  ) {
+    const left = integerBigInt(leftRank[field], { allowZero: true }) ?? 0n;
+    const right = integerBigInt(rightRank[field], { allowZero: true }) ?? 0n;
+    return left > right ? 1 : left < right ? -1 : 0;
+  }
+  return numericValue(leftRank?.[field]) - numericValue(rightRank?.[field]);
+}
+
+function maxTokenPayloadSupply(...payloads) {
+  const scopedBondTokenIds = payloads
+    .map((payload) => tokenPayloadFreshnessRank(payload).bondTokenId)
+    .filter(Boolean);
+  if (
+    scopedBondTokenIds.length === payloads.length &&
+    new Set(scopedBondTokenIds).size === 1
+  ) {
+    return payloads.reduce(
+      (maximum, payload) =>
+        maxIntegerTexts(maximum, payload?.confirmedSupply ?? "0"),
+      "0",
+    );
+  }
+  return Math.max(...payloads.map((payload) => numericValue(payload?.confirmedSupply)));
 }
 
 function tokenPayloadShouldReplaceForFreshness(candidate, current) {
@@ -21952,7 +23647,11 @@ function tokenPayloadShouldReplaceForFreshness(candidate, current) {
   const nonRegressing =
     candidateRank.confirmedTokens >= currentRank.confirmedTokens &&
     candidateRank.confirmedMints >= currentRank.confirmedMints &&
-    candidateRank.confirmedSupply >= currentRank.confirmedSupply;
+    tokenFreshnessSupplyCompare(
+      candidateRank,
+      currentRank,
+      "confirmedSupply",
+    ) >= 0;
   if (!nonRegressing) {
     return false;
   }
@@ -21964,7 +23663,7 @@ function tokenPayloadShouldReplaceForFreshness(candidate, current) {
     candidateRank.listings > currentRank.listings ||
     candidateRank.sales > currentRank.sales ||
     candidateRank.holders > currentRank.holders ||
-    candidateRank.pendingSupply > currentRank.pendingSupply
+    tokenFreshnessSupplyCompare(candidateRank, currentRank, "pendingSupply") > 0
   );
 }
 
@@ -21988,10 +23687,18 @@ function tokenPayloadRegressesCanonical(candidate, canonical) {
   const candidateRank = tokenPayloadFreshnessRank(candidate);
   const canonicalRank = tokenPayloadFreshnessRank(canonical);
   return (
-    candidateRank.confirmedSupply < canonicalRank.confirmedSupply ||
+    tokenFreshnessSupplyCompare(
+      candidateRank,
+      canonicalRank,
+      "confirmedSupply",
+    ) < 0 ||
     candidateRank.confirmedMints < canonicalRank.confirmedMints ||
     candidateRank.confirmedTokens < canonicalRank.confirmedTokens ||
-    (canonicalRank.confirmedSupply > 0 &&
+    (tokenFreshnessSupplyCompare(
+      canonicalRank,
+      { ...canonicalRank, confirmedSupply: canonicalRank.bondTokenId ? "0" : 0 },
+      "confirmedSupply",
+    ) > 0 &&
       canonicalRank.holders > 0 &&
       candidateRank.holders === 0)
   );
@@ -22008,7 +23715,9 @@ function tokenMintHistoryItemKey(item) {
     .map((value) => Number(value))
     .find((value) => Number.isSafeInteger(value) && value >= 0);
   const fallback = [
-    numericValue(item?.amount),
+    isBondTokenId(item?.tokenId)
+      ? canonicalIntegerText(item?.amount, { allowZero: true })
+      : numericValue(item?.amount),
     String(item?.minterAddress ?? "").trim().toLowerCase(),
   ].join(":");
   return [
@@ -22029,7 +23738,9 @@ function tokenTransferHistoryItemKey(item) {
     .map((value) => Number(value))
     .find((value) => Number.isSafeInteger(value) && value >= 0);
   const fallback = [
-    numericValue(item?.amount),
+    isBondTokenId(item?.tokenId)
+      ? canonicalIntegerText(item?.amount, { allowZero: true })
+      : numericValue(item?.amount),
     String(item?.senderAddress ?? "").trim().toLowerCase(),
     String(item?.recipientAddress ?? "").trim().toLowerCase(),
   ].join(":");
@@ -22062,7 +23773,11 @@ function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
   const candidateRank = tokenPayloadFreshnessRank(payload);
   const canonicalRank = tokenPayloadFreshnessRank(canonicalPayload);
   const confirmedSupplyRegressed =
-    candidateRank.confirmedSupply < canonicalRank.confirmedSupply;
+    tokenFreshnessSupplyCompare(
+      candidateRank,
+      canonicalRank,
+      "confirmedSupply",
+    ) < 0;
   const confirmedMintsRegressed =
     candidateRank.confirmedMints < canonicalRank.confirmedMints;
   const confirmedTokensRegressed =
@@ -22122,19 +23837,23 @@ function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
 
   const next = {
     ...payload,
-    confirmedSupply: Math.max(
-      numericValue(payload?.confirmedSupply),
-      numericValue(canonicalPayload?.confirmedSupply),
-    ),
+    confirmedSupply: maxTokenPayloadSupply(payload, canonicalPayload),
     indexedAt: newerIso(canonicalPayload?.indexedAt, payload?.indexedAt),
     indexedThroughBlock: Math.max(
       numericValue(canonicalPayload?.indexedThroughBlock),
       numericValue(payload?.indexedThroughBlock),
     ),
-    pendingSupply: Math.max(
-      numericValue(payload?.pendingSupply),
-      numericValue(canonicalPayload?.pendingSupply),
-    ),
+    pendingSupply:
+      candidateRank.bondTokenId &&
+      candidateRank.bondTokenId === canonicalRank.bondTokenId
+        ? maxIntegerTexts(
+            payload?.pendingSupply ?? "0",
+            canonicalPayload?.pendingSupply ?? "0",
+          )
+        : Math.max(
+            numericValue(payload?.pendingSupply),
+            numericValue(canonicalPayload?.pendingSupply),
+          ),
     source: mergedSourceLabel(canonicalPayload?.source, payload?.source),
     stats: {
       ...(payload?.stats ?? {}),
@@ -22260,10 +23979,10 @@ function mergeTokenPayloadWithCanonicalFloor(canonicalPayload, payload, scope) {
 
   return tokenStateWithPendingStats({
     ...merged,
-    confirmedSupply: Math.max(
-      numericValue(merged?.confirmedSupply),
-      numericValue(canonicalPayload?.confirmedSupply),
-      numericValue(payload?.confirmedSupply),
+    confirmedSupply: maxTokenPayloadSupply(
+      merged,
+      canonicalPayload,
+      payload,
     ),
     indexedAt: newerIso(canonicalPayload?.indexedAt, payload?.indexedAt),
     indexedThroughBlock: Math.max(
@@ -24111,6 +25830,181 @@ function inceptionSummaryPayloadHasKnownMainnetValue(summary) {
   );
 }
 
+function exactBondSummaryPayloadIsCanonical(summary, config, options = {}) {
+  const units = (value, allowZero = true) =>
+    integerBigInt(value, { allowZero });
+  const q8 = (value, allowZero = true) =>
+    integerBigInt(value, { allowZero });
+  const statSupply = units(summary?.stats?.confirmedSupply);
+  const tokenSupply = units(summary?.token?.confirmedSupply);
+  if (statSupply === null && tokenSupply === null) {
+    return false;
+  }
+  const confirmedSupply =
+    statSupply !== null && tokenSupply !== null
+      ? statSupply > tokenSupply
+        ? statSupply
+        : tokenSupply
+      : (statSupply ?? tokenSupply);
+  const confirmedBondActions = Number(
+    summary?.stats?.confirmedBondActions ??
+      summary?.token?.stats?.confirmedMints ??
+      0,
+  );
+  const mintFlow = units(summary?.actualValue?.bondMintFlowSats) ?? 0n;
+  const saleFlow = units(summary?.actualValue?.bondSaleVolumeSats) ?? 0n;
+  const transferFlow = units(summary?.actualValue?.bondTransferFeeSats) ?? 0n;
+  const mutationFlow =
+    units(summary?.actualValue?.bondMarketplaceMutationFeeSats) ?? 0n;
+  const baseNetworkValueQ8 = q8(
+    summary?.actualValue?.baseNetworkValueQ8,
+  );
+  const frozenNetworkValueQ8 = q8(
+    summary?.actualValue?.frozenNetworkValueQ8 ?? summary?.frozenNetworkValueQ8,
+  );
+  const liveNetworkValueQ8 = q8(
+    summary?.actualValue?.liveNetworkValueQ8 ?? summary?.liveNetworkValueQ8,
+  );
+  const networkValueQ8 = q8(
+    summary?.actualValue?.networkValueQ8 ?? summary?.networkValueQ8,
+  );
+  const frozenFloorQ8 = q8(
+    summary?.actualValue?.frozenFloorQ8 ?? summary?.frozenFloorQ8,
+  );
+  const liveFloorQ8 = q8(
+    summary?.actualValue?.liveFloorQ8 ?? summary?.liveFloorQ8,
+  );
+  const chartPoints = Array.isArray(summary?.chartPoints)
+    ? summary.chartPoints
+    : [];
+  const empty =
+    confirmedSupply === 0n &&
+    confirmedBondActions === 0 &&
+    mintFlow === 0n &&
+    networkValueQ8 === 0n;
+  if (options.allowEmptyHistory === true && empty) {
+    return chartPoints.length === 0;
+  }
+  if (
+    !Number.isSafeInteger(confirmedBondActions) ||
+    confirmedBondActions < 1 ||
+    confirmedSupply <= 0n ||
+    mintFlow <= 0n ||
+    baseNetworkValueQ8 === null ||
+    frozenNetworkValueQ8 === null ||
+    liveNetworkValueQ8 === null ||
+    networkValueQ8 === null ||
+    frozenFloorQ8 === null ||
+    liveFloorQ8 === null ||
+    chartPoints.length === 0
+  ) {
+    return false;
+  }
+  const expectedBaseQ8 =
+    (mintFlow + saleFlow + transferFlow + mutationFlow) *
+    BOND_VALUE_Q8_SCALE;
+  if (
+    baseNetworkValueQ8 !== expectedBaseQ8 ||
+    networkValueQ8 !== liveNetworkValueQ8 ||
+    frozenFloorQ8 !== frozenNetworkValueQ8 / confirmedSupply ||
+    liveFloorQ8 !== liveNetworkValueQ8 / confirmedSupply
+  ) {
+    return false;
+  }
+  const finalPoint = chartPoints.at(-1);
+  if (
+    units(finalPoint?.confirmedSupply) !== confirmedSupply ||
+    q8(finalPoint?.networkValueQ8) !== networkValueQ8 ||
+    q8(finalPoint?.floorQ8) !== liveFloorQ8
+  ) {
+    return false;
+  }
+  if (config.tokenId !== INCB_TOKEN_ID) {
+    return (
+      frozenNetworkValueQ8 === expectedBaseQ8 &&
+      liveNetworkValueQ8 === expectedBaseQ8
+    );
+  }
+
+  const actual = summary.actualValue ?? {};
+  const confirmedIssuanceUnits = units(actual.confirmedIssuanceUnits);
+  const directProofIssuanceUnits = units(actual.directProofIssuanceUnits);
+  const attachedWorkIssuanceUnits = units(actual.attachedWorkIssuanceUnits);
+  const issuanceNetworkValueQ8 = q8(actual.issuanceNetworkValueQ8);
+  const issuanceDustQ8 = q8(actual.issuanceDustQ8);
+  const issuanceFloorQ8 = q8(actual.issuanceFloorQ8);
+  const attachedAtSendQ8 = q8(actual.attachedWorkLiveValueAtSendQ8);
+  const attachedFrozenQ8 = q8(actual.attachedWorkFrozenValueQ8);
+  const attachedLiveQ8 = q8(actual.attachedWorkLiveValueQ8);
+  const attachedWorkActions = Number(actual.attachedWorkActions ?? 0);
+  const attachedWorkAmountAtoms = units(actual.attachedWorkAmountAtoms);
+  const unmatched = Number(actual.attachedWorkUnmatchedActions ?? 0);
+  const unvalued = Number(actual.attachedWorkUnvaluedActions ?? 0);
+  const marketFlowQ8 =
+    (saleFlow + transferFlow + mutationFlow) * BOND_VALUE_Q8_SCALE;
+  if (
+    confirmedIssuanceUnits === null ||
+    directProofIssuanceUnits === null ||
+    attachedWorkIssuanceUnits === null ||
+    issuanceNetworkValueQ8 === null ||
+    issuanceDustQ8 === null ||
+    issuanceFloorQ8 === null ||
+    attachedAtSendQ8 === null ||
+    attachedFrozenQ8 === null ||
+    attachedLiveQ8 === null ||
+    confirmedIssuanceUnits !== confirmedSupply ||
+    directProofIssuanceUnits !== mintFlow ||
+    directProofIssuanceUnits + attachedWorkIssuanceUnits !== confirmedSupply ||
+    issuanceNetworkValueQ8 !==
+      directProofIssuanceUnits * BOND_VALUE_Q8_SCALE + attachedAtSendQ8 ||
+    issuanceDustQ8 !==
+      issuanceNetworkValueQ8 -
+        confirmedIssuanceUnits * BOND_VALUE_Q8_SCALE ||
+    issuanceFloorQ8 !== issuanceNetworkValueQ8 / confirmedIssuanceUnits ||
+    attachedFrozenQ8 !== attachedAtSendQ8 ||
+    attachedLiveQ8 !== attachedAtSendQ8 ||
+    frozenNetworkValueQ8 !== issuanceNetworkValueQ8 + marketFlowQ8 ||
+    liveNetworkValueQ8 !== issuanceNetworkValueQ8 + marketFlowQ8 ||
+    unmatched !== 0 ||
+    unvalued !== 0 ||
+    actual.attachmentAccountingModel !== INCEPTION_ATTACHMENT_ACCOUNTING_MODEL ||
+    actual.issuanceAccountingModel !== INCEPTION_ISSUANCE_ACCOUNTING_MODEL ||
+    actual.networkValueAccountingModel !==
+      INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL ||
+    actual.issuanceValuationFixedAtSend !== true ||
+    Number(actual.issuanceUnitSats) !== 1
+  ) {
+    return false;
+  }
+  if (attachedWorkActions > 0) {
+    if (attachedWorkAmountAtoms === null || attachedWorkAmountAtoms <= 0n) {
+      return false;
+    }
+  } else if (
+    attachedWorkAmountAtoms !== 0n ||
+    attachedAtSendQ8 !== 0n ||
+    attachedWorkIssuanceUnits !== 0n
+  ) {
+    return false;
+  }
+  return (
+    actual.issuanceCheckpointMode === "bond-transaction-provenance" &&
+    actual.issuanceValueSnapshotModel === INCEPTION_VALUE_SNAPSHOT_MODEL &&
+    actual.issuanceValueSnapshotMode === "canonical-summary-refresh" &&
+    Number(actual.issuanceValueSnapshotBlockHeight) ===
+      Number(actual.issuanceCheckpointBlockHeight) - 1 &&
+    String(actual.issuanceValueSnapshotId ?? "").trim().length > 0 &&
+    Number.isFinite(
+      Date.parse(String(actual.issuanceValueSnapshotGeneratedAt ?? "")),
+    ) &&
+    [
+      actual.issuanceValueSnapshotBlockHash,
+      actual.issuanceValueSnapshotCanonicalSummaryHash,
+      actual.issuanceCheckpointBlockHash,
+    ].every((hash) => /^[0-9a-f]{64}$/u.test(String(hash ?? "").toLowerCase()))
+  );
+}
+
 function bondSummaryPayloadHasKnownMainnetValue(
   summary,
   config,
@@ -24127,6 +26021,10 @@ function bondSummaryPayloadHasKnownMainnetValue(
     !isValidBitcoinAddress(summary.registryAddress, "livenet")
   ) {
     return false;
+  }
+
+  if (isBondTokenId(config.tokenId)) {
+    return exactBondSummaryPayloadIsCanonical(summary, config, options);
   }
 
   const token = summary.token;
@@ -24513,6 +26411,22 @@ function tokenPayloadHasKnownMainnetHistory(payload, scope = "") {
     numericValue(payload?.confirmedSupply),
     tokens.reduce((total, token) => total + numericValue(token.confirmedSupply), 0),
   );
+  const exactBondSupply = BOND_TOKEN_IDS.has(tokenScope)
+    ? maxIntegerTexts(
+        canonicalIntegerText(payload?.confirmedSupply, { allowZero: true }) ||
+          "0",
+        tokens.reduce(
+          (total, token) =>
+            addIntegerTexts(
+              total,
+              canonicalIntegerText(token?.confirmedSupply, {
+                allowZero: true,
+              }) || "0",
+            ),
+          "0",
+        ),
+      )
+    : "0";
 
   if (!tokenScope) {
     return confirmedTokens > 0 || tokens.length > 0;
@@ -24543,7 +26457,7 @@ function tokenPayloadHasKnownMainnetHistory(payload, scope = "") {
       );
     return (
       hasCanonicalEmptyDefinition ||
-      confirmedSupply > 0 ||
+      BigInt(exactBondSupply) > 0n ||
       confirmedMints > 0 ||
       holders.length > 0 ||
       transfers.length > 0 ||
@@ -24576,7 +26490,8 @@ function rejectEmptyBondTokenPayload(network, payload, config, label) {
   if (
     config.tokenId === INCB_TOKEN_ID &&
     hasSyntheticDefinition &&
-    numericValue(payload?.confirmedSupply) === 0
+    (canonicalIntegerText(payload?.confirmedSupply, { allowZero: true }) ||
+      "0") === "0"
   ) {
     return false;
   }
@@ -24912,33 +26827,208 @@ function growthDeltaForProofIndexEvents(events) {
   return delta;
 }
 
-function actualValueWithProofIndexDelta(actualValue, delta) {
+function exactWorkNetworkQ8State(actualValue) {
+  const actual =
+    actualValue && typeof actualValue === "object" && !Array.isArray(actualValue)
+      ? actualValue
+      : {};
+  if (
+    actual.workNetworkValueAccountingModel !==
+    WORK_NETWORK_VALUE_ACCOUNTING_MODEL
+  ) {
+    return null;
+  }
+  const q8 = (field) => {
+    const text = canonicalNonNegativeIntegerText(actual[field]);
+    return text ? BigInt(text) : null;
+  };
+  const base = q8("baseNetworkValueQ8");
+  const baseTotal = q8("baseTotalQ8");
+  const frozen = q8("frozenNetworkValueQ8");
+  const frozenTotal = q8("frozenTotalQ8");
+  const live = q8("liveNetworkValueQ8");
+  const liveTotal = q8("liveTotalQ8");
+  const network = q8("networkValueQ8");
+  const total = q8("totalQ8");
+  const floor = q8("floorQ8");
+  const frozenFloor = q8("frozenFloorQ8");
+  const liveFloor = q8("liveFloorQ8");
+  if (
+    base === null ||
+    baseTotal !== base ||
+    frozen === null ||
+    frozenTotal !== frozen ||
+    live === null ||
+    liveTotal !== live ||
+    network !== live ||
+    total !== live ||
+    floor === null ||
+    liveFloor !== floor ||
+    frozenFloor === null ||
+    floor !== live / BigInt(WORK_TOKEN_MAX_SUPPLY) ||
+    frozenFloor !== frozen / BigInt(WORK_TOKEN_MAX_SUPPLY)
+  ) {
+    return null;
+  }
+  const aliases = [
+    ["baseNetworkValueSats", base],
+    ["baseTotalSats", base],
+    ["floorSats", floor],
+    ["frozenFloorSats", frozenFloor],
+    ["frozenNetworkValueSats", frozen],
+    ["frozenTotalSats", frozen],
+    ["liveFloorSats", floor],
+    ["liveNetworkValueSats", live],
+    ["liveTotalSats", live],
+    ["networkValueSats", live],
+    ["totalSats", live],
+  ];
+  if (
+    aliases.some(
+      ([field, value]) =>
+        typeof actual[field] !== "string" ||
+        actual[field] !== q8ToCanonicalDecimal(value),
+    )
+  ) {
+    return null;
+  }
+  return { base, frozen, live };
+}
+
+function actualValueWithExactWorkNetworkQ8(actualValue, state) {
   const actual = { ...(actualValue ?? {}) };
-  const deltaTotalSats = numericValue(delta.totalSats);
-  const previousTotalSats = numericValue(actual.totalSats);
-  const previousLiveTotalSats = numericValue(
-    actual.liveTotalSats ?? actual.liveNetworkValueSats ?? previousTotalSats,
-  );
+  const base = state.base;
+  const frozen = state.frozen;
+  const live = state.live;
+  const floor = live / BigInt(WORK_TOKEN_MAX_SUPPLY);
+  const frozenFloor = frozen / BigInt(WORK_TOKEN_MAX_SUPPLY);
+  return {
+    ...actual,
+    workNetworkValueAccountingModel: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+    baseNetworkValueQ8: base.toString(),
+    baseNetworkValueSats: q8ToCanonicalDecimal(base),
+    baseNetworkValueSatsApproximate: q8ToNumber(base),
+    baseTotalQ8: base.toString(),
+    baseTotalSats: q8ToCanonicalDecimal(base),
+    baseTotalSatsApproximate: q8ToNumber(base),
+    floorQ8: floor.toString(),
+    floorSats: q8ToCanonicalDecimal(floor),
+    floorSatsApproximate: q8ToNumber(floor),
+    frozenFloorQ8: frozenFloor.toString(),
+    frozenFloorSats: q8ToCanonicalDecimal(frozenFloor),
+    frozenFloorSatsApproximate: q8ToNumber(frozenFloor),
+    frozenNetworkValueQ8: frozen.toString(),
+    frozenNetworkValueSats: q8ToCanonicalDecimal(frozen),
+    frozenNetworkValueSatsApproximate: q8ToNumber(frozen),
+    frozenTotalQ8: frozen.toString(),
+    frozenTotalSats: q8ToCanonicalDecimal(frozen),
+    frozenTotalSatsApproximate: q8ToNumber(frozen),
+    liveFloorQ8: floor.toString(),
+    liveFloorSats: q8ToCanonicalDecimal(floor),
+    liveFloorSatsApproximate: q8ToNumber(floor),
+    liveNetworkValueQ8: live.toString(),
+    liveNetworkValueSats: q8ToCanonicalDecimal(live),
+    liveNetworkValueSatsApproximate: q8ToNumber(live),
+    liveTotalQ8: live.toString(),
+    liveTotalSats: q8ToCanonicalDecimal(live),
+    liveTotalSatsApproximate: q8ToNumber(live),
+    networkValueQ8: live.toString(),
+    networkValueSats: q8ToCanonicalDecimal(live),
+    networkValueSatsApproximate: q8ToNumber(live),
+    totalQ8: live.toString(),
+    totalSats: q8ToCanonicalDecimal(live),
+    totalSatsApproximate: q8ToNumber(live),
+  };
+}
+
+function exactWorkFloorNetworkQ8State(workFloor) {
+  const floor =
+    workFloor && typeof workFloor === "object" && !Array.isArray(workFloor)
+      ? workFloor
+      : {};
+  const state = exactWorkNetworkQ8State(floor.actualValue);
+  if (
+    !state ||
+    floor.workNetworkValueAccountingModel !==
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL
+  ) {
+    return null;
+  }
+  const expected = {
+    baseNetworkValueQ8: state.base,
+    baseTotalQ8: state.base,
+    floorQ8: state.live / BigInt(WORK_TOKEN_MAX_SUPPLY),
+    frozenFloorQ8: state.frozen / BigInt(WORK_TOKEN_MAX_SUPPLY),
+    frozenNetworkValueQ8: state.frozen,
+    frozenTotalQ8: state.frozen,
+    liveFloorQ8: state.live / BigInt(WORK_TOKEN_MAX_SUPPLY),
+    liveNetworkValueQ8: state.live,
+    liveTotalQ8: state.live,
+    networkValueQ8: state.live,
+    totalQ8: state.live,
+  };
+  for (const [field, value] of Object.entries(expected)) {
+    const text = canonicalNonNegativeIntegerText(floor[field]);
+    if (!text || BigInt(text) !== value) {
+      return null;
+    }
+  }
+  const aliases = [
+    ["baseNetworkValueSats", state.base],
+    ["baseTotalSats", state.base],
+    ["floorSats", expected.floorQ8],
+    ["frozenFloorSats", expected.frozenFloorQ8],
+    ["frozenNetworkValueSats", state.frozen],
+    ["frozenTotalSats", state.frozen],
+    ["liveFloorSats", expected.liveFloorQ8],
+    ["liveNetworkValueSats", state.live],
+    ["liveTotalSats", state.live],
+    ["networkValueSats", state.live],
+    ["totalSats", state.live],
+  ];
+  return aliases.every(
+    ([field, value]) =>
+      typeof floor[field] === "string" &&
+      floor[field] === q8ToCanonicalDecimal(value),
+  )
+    ? state
+    : null;
+}
+
+function workFloorWithExactWorkNetworkQ8(workFloor, actualValue) {
+  const state = exactWorkNetworkQ8State(actualValue);
+  if (!state) {
+    return null;
+  }
+  const exactActual = actualValueWithExactWorkNetworkQ8(actualValue, state);
+  const exactTop = actualValueWithExactWorkNetworkQ8(workFloor, state);
+  return {
+    ...exactTop,
+    actualValue: exactActual,
+  };
+}
+
+function actualValueWithProofIndexDelta(actualValue, delta) {
+  const exact = exactWorkNetworkQ8State(actualValue);
+  const deltaTotalSats = integerBigInt(delta?.totalSats, {
+    allowZero: false,
+  });
+  if (!exact || deltaTotalSats === null) {
+    return null;
+  }
+  const actual = { ...(actualValue ?? {}) };
   for (const [key, value] of Object.entries(delta)) {
     if (key === "totalSats" || value === 0) {
       continue;
     }
     actual[key] = numericValue(actual[key]) + value;
   }
-  actual.totalSats = previousTotalSats + deltaTotalSats;
-  actual.networkValueSats = actual.totalSats;
-  actual.liveTotalSats = previousLiveTotalSats + deltaTotalSats;
-  actual.liveNetworkValueSats = actual.liveTotalSats;
-  actual.liveFloorSats = actual.liveTotalSats / WORK_TOKEN_MAX_SUPPLY;
-  const previousFrozenTotal = numericValue(
-    actual.frozenTotalSats ?? actual.frozenNetworkValueSats,
-  );
-  if (previousFrozenTotal > 0) {
-    actual.frozenTotalSats = previousFrozenTotal + deltaTotalSats;
-    actual.frozenNetworkValueSats = actual.frozenTotalSats;
-    actual.frozenFloorSats = actual.frozenTotalSats / WORK_TOKEN_MAX_SUPPLY;
-  }
-  return actual;
+  const deltaQ8 = deltaTotalSats * VALUE_Q8_SCALE;
+  return actualValueWithExactWorkNetworkQ8(actual, {
+    base: exact.base + deltaQ8,
+    frozen: exact.frozen + deltaQ8,
+    live: exact.live + deltaQ8,
+  });
 }
 
 function workFloorWithProofIndexEventDelta(workFloor, deltaPayload) {
@@ -24971,21 +27061,16 @@ function workFloorWithProofIndexEventDelta(workFloor, deltaPayload) {
   if (numericValue(delta.totalSats) <= 0) {
     return coveredWorkFloor;
   }
+  if (!exactWorkFloorNetworkQ8State(workFloor)) {
+    return workFloor;
+  }
   const actualValue = actualValueWithProofIndexDelta(
     workFloor.actualValue,
     delta,
   );
-  return {
-    ...coveredWorkFloor,
-    actualValue,
-    floorSats: actualValue.totalSats / WORK_TOKEN_MAX_SUPPLY,
-    frozenFloorSats:
-      numericValue(actualValue.frozenTotalSats) / WORK_TOKEN_MAX_SUPPLY,
-    frozenNetworkValueSats: numericValue(actualValue.frozenTotalSats),
-    liveFloorSats: actualValue.totalSats / WORK_TOKEN_MAX_SUPPLY,
-    liveNetworkValueSats: actualValue.totalSats,
-    networkValueSats: actualValue.totalSats,
-  };
+  return actualValue
+    ? workFloorWithExactWorkNetworkQ8(coveredWorkFloor, actualValue) ?? workFloor
+    : workFloor;
 }
 
 function growthSummaryWithProofIndexEventDelta(growthSummary, deltaPayload) {
@@ -25024,12 +27109,17 @@ function growthSummaryWithProofIndexEventDelta(growthSummary, deltaPayload) {
     growthSummary.actualValue,
     delta,
   );
+  if (!actualValue) {
+    return growthSummary;
+  }
+  const state = exactWorkNetworkQ8State(actualValue);
+  if (!state) {
+    return growthSummary;
+  }
   const nextGrowthSummary = {
-    ...coveredGrowthSummary,
+    ...actualValueWithExactWorkNetworkQ8(coveredGrowthSummary, state),
     actualValue,
-    frozenNetworkValueSats: numericValue(actualValue.frozenTotalSats),
-    liveNetworkValueSats: actualValue.totalSats,
-    networkValueSats: actualValue.totalSats,
+    workFloor: coveredWorkFloor,
   };
   return coveredWorkFloor
     ? growthSummaryWithCanonicalWorkFloor(nextGrowthSummary, coveredWorkFloor)
@@ -26283,6 +28373,46 @@ function canonicalActivityCountCoverage(metrics, sourceHashes) {
   };
 }
 
+function exactCreditFrozenValueComponentsAgree(actualValue) {
+  const source = actualValue && typeof actualValue === "object"
+    ? actualValue
+    : {};
+  const eventValueQ8Absent = source.creditEventFrozenValueQ8 == null;
+  const movementValueQ8Absent = source.creditMovementFrozenValueQ8 == null;
+  if (eventValueQ8Absent && movementValueQ8Absent) {
+    return null;
+  }
+  if (eventValueQ8Absent || movementValueQ8Absent) {
+    return false;
+  }
+  const eventValueQ8 = canonicalIntegerText(
+    source.creditEventFrozenValueQ8,
+    { allowZero: true },
+  );
+  const movementValueQ8 = canonicalIntegerText(
+    source.creditMovementFrozenValueQ8,
+    { allowZero: true },
+  );
+  const flowFields = [
+    "creditProofPaymentFlowSats",
+    "creditRegistryMutationFlowSats",
+    "creditMarketplaceMutationFlowSats",
+    "creditSalePaymentFlowSats",
+    "creditMinerFeeFlowSats",
+  ];
+  const flows = flowFields.map((field) =>
+    canonicalIntegerText(source[field], { allowZero: true }),
+  );
+  if (!eventValueQ8 || !movementValueQ8 || flows.some((value) => !value)) {
+    return false;
+  }
+  const fixedFlowQ8 = flows.reduce(
+    (total, value) => total + BigInt(value) * VALUE_Q8_SCALE,
+    0n,
+  );
+  return BigInt(eventValueQ8) === BigInt(movementValueQ8) + fixedFlowQ8;
+}
+
 function ledgerSnapshotChecks({
   activity,
   growthSummary,
@@ -26366,7 +28496,9 @@ function ledgerSnapshotChecks({
   );
   const confirmedActivity = (activity ?? []).filter((item) => item?.confirmed);
   const incbTokenState = scopedTokenPayloadFromState(tokenState, INCB_TOKEN_ID);
-  const incbConfirmedSupply = numericValue(incbTokenState?.confirmedSupply);
+  const incbConfirmedSupply =
+    canonicalIntegerText(incbTokenState?.confirmedSupply, { allowZero: true }) ||
+    "0";
   const inceptionIssuance = inceptionIssuanceMetadataFromMints(
     incbTokenState?.mints,
   );
@@ -26374,11 +28506,7 @@ function ledgerSnapshotChecks({
     "inception-live-issuance-matches-incb-supply",
     network !== "livenet" ||
       (inceptionIssuance.complete &&
-        numbersAgree(
-          inceptionIssuance.confirmedIssuanceUnits,
-          incbConfirmedSupply,
-          0.01,
-        )),
+        inceptionIssuance.confirmedIssuanceUnits === incbConfirmedSupply),
     {
       canonicalMints: inceptionIssuance.canonicalMints,
       confirmedIssuanceUnits: inceptionIssuance.confirmedIssuanceUnits,
@@ -26388,80 +28516,95 @@ function ledgerSnapshotChecks({
       issuanceNetworkValueSats: inceptionIssuance.issuanceNetworkValueSats,
     },
   );
-  const inceptionSaleVolumeSats = (incbTokenState?.sales ?? [])
+  const sumExactSats = (items, field) =>
+    items.reduce((total, item) => {
+      const value = integerBigInt(item?.[field], { allowZero: true });
+      return value === null ? total : total + value;
+    }, 0n);
+  const inceptionSaleVolume = sumExactSats(
+    (incbTokenState?.sales ?? [])
     .filter((sale) => sale?.confirmed && sale.tokenId === INCB_TOKEN_ID)
-    .reduce((total, sale) => total + numericValue(sale.priceSats), 0);
-  const inceptionTransferFeeSats = (incbTokenState?.transfers ?? [])
+    ,
+    "priceSats",
+  );
+  const inceptionTransferFee = sumExactSats(
+    (incbTokenState?.transfers ?? [])
     .filter(
       (transfer) =>
         transfer?.confirmed && transfer.tokenId === INCB_TOKEN_ID,
+    ),
+    "paidSats",
+  );
+  const inceptionMarketplaceMutationFee = confirmedActivity
+    .filter(
+      (item) =>
+        item?.tokenId === INCB_TOKEN_ID &&
+        TOKEN_MARKETPLACE_MUTATION_KINDS.has(item?.kind),
     )
-    .reduce((total, transfer) => total + numericValue(transfer.paidSats), 0);
-  const inceptionMarketplaceMutationFeeSats =
-    marketplaceMutationPaymentFlowSats(
-      confirmedActivity.filter((item) => item?.tokenId === INCB_TOKEN_ID),
-      TOKEN_MARKETPLACE_MUTATION_KINDS,
-    );
-  const inceptionFixedNetworkValueSats =
-    inceptionIssuance.issuanceNetworkValueSats +
-    inceptionSaleVolumeSats +
-    inceptionTransferFeeSats +
-    inceptionMarketplaceMutationFeeSats;
-  const inceptionFixedFloorSats =
-    incbConfirmedSupply > 0
-      ? inceptionFixedNetworkValueSats / incbConfirmedSupply
-      : 0;
-  const inceptionFixedValueTolerance =
-    Number.EPSILON *
-    Math.max(
-      Math.abs(inceptionFixedFloorSats * incbConfirmedSupply),
-      Math.abs(inceptionFixedNetworkValueSats),
-      1,
-    ) *
-    2;
+    .reduce((total, item) => {
+      const value = integerBigInt(marketplaceMutationPaymentSats(item), {
+        allowZero: true,
+      });
+      return value === null ? total : total + value;
+    }, 0n);
+  const inceptionIssuanceNetworkValueQ8 =
+    integerBigInt(inceptionIssuance.issuanceNetworkValueQ8, {
+      allowZero: true,
+    }) ?? 0n;
+  const inceptionFixedNetworkValueQ8 =
+    inceptionIssuanceNetworkValueQ8 +
+    (inceptionSaleVolume +
+      inceptionTransferFee +
+      inceptionMarketplaceMutationFee) *
+      BOND_VALUE_Q8_SCALE;
+  const incbConfirmedSupplyUnits = BigInt(incbConfirmedSupply);
+  const inceptionFixedFloorQ8 =
+    incbConfirmedSupplyUnits > 0n
+      ? inceptionFixedNetworkValueQ8 / incbConfirmedSupplyUnits
+      : 0n;
   addCheck(
     "inception-fixed-value-reconciles",
     network !== "livenet" ||
       (inceptionIssuance.complete &&
-        numbersAgree(
-          inceptionIssuance.confirmedIssuanceUnits,
-          incbConfirmedSupply,
-          0.01,
-        ) &&
-        (incbConfirmedSupply === 0
-          ? inceptionFixedNetworkValueSats === 0
-          : inceptionFixedNetworkValueSats > 0 &&
-            numbersAgree(
-              inceptionFixedFloorSats * incbConfirmedSupply,
-              inceptionFixedNetworkValueSats,
-              Math.max(0.01, inceptionFixedValueTolerance),
-            ))),
+        inceptionIssuance.confirmedIssuanceUnits === incbConfirmedSupply &&
+        (incbConfirmedSupplyUnits === 0n
+          ? inceptionFixedNetworkValueQ8 === 0n
+          : inceptionFixedNetworkValueQ8 > 0n &&
+            inceptionFixedFloorQ8 ===
+              inceptionFixedNetworkValueQ8 / incbConfirmedSupplyUnits)),
     {
       confirmedSupply: incbConfirmedSupply,
-      fixedFloorSats: inceptionFixedFloorSats,
-      fixedNetworkValueSats: inceptionFixedNetworkValueSats,
+      fixedFloorQ8: inceptionFixedFloorQ8.toString(),
+      fixedFloorSats: decimalTextFromQ8(inceptionFixedFloorQ8),
+      fixedNetworkValueQ8: inceptionFixedNetworkValueQ8.toString(),
+      fixedNetworkValueSats: decimalTextFromQ8(inceptionFixedNetworkValueQ8),
       issuanceNetworkValueSats:
         inceptionIssuance.issuanceNetworkValueSats,
       marketplaceMutationFeeSats:
-        inceptionMarketplaceMutationFeeSats,
+        inceptionMarketplaceMutationFee.toString(),
       networkValueAccountingModel:
         INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL,
-      saleVolumeSats: inceptionSaleVolumeSats,
-      transferFeeSats: inceptionTransferFeeSats,
+      saleVolumeSats: inceptionSaleVolume.toString(),
+      transferFeeSats: inceptionTransferFee.toString(),
     },
   );
   const powbTokenState = scopedTokenPayloadFromState(tokenState, POWB_TOKEN_ID);
-  const powbConfirmedSupply = numericValue(powbTokenState?.confirmedSupply);
-  const infinityBondFlowSats = confirmedActivity
+  const powbConfirmedSupply =
+    canonicalIntegerText(powbTokenState?.confirmedSupply, { allowZero: true }) ||
+    "0";
+  const infinityBondFlow = confirmedActivity
     .filter(isInfinityBondActivityItem)
-    .reduce((total, item) => total + activityAmountSats(item), 0);
+    .reduce(
+      (total, item) => total + BigInt(activityAmountSats(item)),
+      0n,
+    );
   addCheck(
     "infinity-bond-flow-matches-powb-supply",
     network !== "livenet" ||
-      (powbConfirmedSupply > 0 &&
-        numbersAgree(infinityBondFlowSats, powbConfirmedSupply, 0.01)),
+      (BigInt(powbConfirmedSupply) > 0n &&
+        infinityBondFlow === BigInt(powbConfirmedSupply)),
     {
-      infinityBondFlowSats,
+      infinityBondFlowSats: infinityBondFlow.toString(),
       powbConfirmedSupply,
     },
   );
@@ -26525,6 +28668,8 @@ function ledgerSnapshotChecks({
     workFloor?.actualValue?.creditLiveNetworkValueSats ??
       creditEventLiveValueSats,
   );
+  const exactCreditFrozenComponents =
+    exactCreditFrozenValueComponentsAgree(workFloor?.actualValue);
   addCheck(
     "network-values-finite",
     network !== "livenet" ||
@@ -26581,24 +28726,29 @@ function ledgerSnapshotChecks({
   );
   addCheck(
     "credit-frozen-value-includes-event-components",
-    numbersAgree(
-      creditEventFrozenValueSats,
-      creditMovementFrozenValueSats +
-        creditProofPaymentFlowSats +
-        creditRegistryMutationFlowSats +
-        creditMarketplaceMutationFlowSats +
-        creditSalePaymentFlowSats +
-        creditMinerFeeFlowSats,
-      // Frozen credit value contains fractional WORK-floor products summed in
-      // a different order from its components. Keep this local tolerance far
-      // below one proof while avoiding a floating-point false negative.
-      0.01,
-    ),
+    exactCreditFrozenComponents === true ||
+      (exactCreditFrozenComponents === null &&
+        numbersAgree(
+          creditEventFrozenValueSats,
+          creditMovementFrozenValueSats +
+            creditProofPaymentFlowSats +
+            creditRegistryMutationFlowSats +
+            creditMarketplaceMutationFlowSats +
+            creditSalePaymentFlowSats +
+            creditMinerFeeFlowSats,
+          // Historical snapshots predate exact aggregate Q8 fields. Keep the
+          // old sub-proof fallback only for those stored payloads.
+          0.01,
+        )),
     {
       creditMinerFeeFlowSats,
       creditEventFrozenValueSats,
+      creditEventFrozenValueQ8:
+        workFloor?.actualValue?.creditEventFrozenValueQ8,
       creditMarketplaceMutationFlowSats,
       creditMovementFrozenValueSats,
+      creditMovementFrozenValueQ8:
+        workFloor?.actualValue?.creditMovementFrozenValueQ8,
       creditProofPaymentFlowSats,
       creditRegistryMutationFlowSats,
       creditSalePaymentFlowSats,
@@ -27111,31 +29261,36 @@ function bondSummaryPayloadFromLedger(ledger, config) {
   const confirmedSales = (tokenState?.sales ?? []).filter(
     (sale) => sale?.confirmed && sale.tokenId === config.tokenId,
   );
-  const bondMintFlowSats = confirmedBondActions.reduce(
-    (total, item) => total + activityAmountSats(item),
-    0,
+  const sumIntegerValues = (items, valueFromItem) =>
+    items.reduce((total, item) => {
+      const value = integerBigInt(valueFromItem(item), { allowZero: true });
+      return value === null ? total : total + value;
+    }, 0n);
+  const bondMintFlow = sumIntegerValues(
+    confirmedBondActions,
+    activityAmountSats,
   );
-  const bondSaleVolumeSats = confirmedSales.reduce(
-    (total, sale) => total + numericValue(sale.priceSats),
-    0,
+  const bondSaleVolume = sumIntegerValues(
+    confirmedSales,
+    (sale) => sale.priceSats,
   );
-  const bondTransferFeeSats = confirmedTransfers.reduce(
-    (total, transfer) => total + numericValue(transfer.paidSats),
-    0,
+  const bondTransferFee = sumIntegerValues(
+    confirmedTransfers,
+    (transfer) => transfer.paidSats,
   );
   const confirmedMarketplaceMutations = uniqueMarketplaceMutationActivity(
     confirmedActivity.filter((item) => item?.tokenId === config.tokenId),
     TOKEN_MARKETPLACE_MUTATION_KINDS,
   );
-  const bondMarketplaceMutationFeeSats = marketplaceMutationPaymentFlowSats(
+  const bondMarketplaceMutationFee = sumIntegerValues(
     confirmedMarketplaceMutations,
-    TOKEN_MARKETPLACE_MUTATION_KINDS,
+    marketplaceMutationPaymentSats,
   );
-  const baseNetworkValueSats =
-    bondMintFlowSats +
-    bondSaleVolumeSats +
-    bondTransferFeeSats +
-    bondMarketplaceMutationFeeSats;
+  const baseNetworkValue =
+    bondMintFlow +
+    bondSaleVolume +
+    bondTransferFee +
+    bondMarketplaceMutationFee;
   const attachedWork = bondAttachedWorkValueDetails(
     ledger,
     confirmedBondActions,
@@ -27145,33 +29300,68 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     config.tokenId === INCB_TOKEN_ID
       ? inceptionIssuanceMetadataFromMints(tokenState?.mints)
       : null;
-  const bondMarketFlowSats =
-    bondSaleVolumeSats +
-    bondTransferFeeSats +
-    bondMarketplaceMutationFeeSats;
-  const inceptionFixedNetworkValueSats =
-    numericValue(issuance?.issuanceNetworkValueSats) + bondMarketFlowSats;
-  const frozenNetworkValueSats =
+  const bondMarketFlow =
+    bondSaleVolume + bondTransferFee + bondMarketplaceMutationFee;
+  const baseNetworkValueQ8 = baseNetworkValue * BOND_VALUE_Q8_SCALE;
+  const marketFlowQ8 = bondMarketFlow * BOND_VALUE_Q8_SCALE;
+  const issuanceNetworkValueQ8 = integerBigInt(
+    issuance?.issuanceNetworkValueQ8 ?? "0",
+    { allowZero: true },
+  ) ?? 0n;
+  const inceptionFixedNetworkValueQ8 = issuanceNetworkValueQ8 + marketFlowQ8;
+  const attachedWorkFrozenValueQ8 = integerBigInt(
+    attachedWork.attachedWorkFrozenValueQ8 ?? "0",
+    { allowZero: true },
+  ) ?? 0n;
+  const attachedWorkLiveValueQ8 = integerBigInt(
+    attachedWork.attachedWorkLiveValueQ8 ?? "0",
+    { allowZero: true },
+  ) ?? 0n;
+  const frozenNetworkValueQ8 =
     config.tokenId === INCB_TOKEN_ID
-      ? inceptionFixedNetworkValueSats
-      : baseNetworkValueSats + attachedWork.attachedWorkFrozenValueSats;
-  const liveNetworkValueSats =
+      ? inceptionFixedNetworkValueQ8
+      : baseNetworkValueQ8 + attachedWorkFrozenValueQ8;
+  const liveNetworkValueQ8 =
     config.tokenId === INCB_TOKEN_ID
-      ? inceptionFixedNetworkValueSats
-      : baseNetworkValueSats + attachedWork.attachedWorkLiveValueSats;
-  const networkValueSats = liveNetworkValueSats;
-  const confirmedSupply = numericValue(tokenState?.confirmedSupply);
-  const frozenFloorSats =
-    confirmedSupply > 0 ? frozenNetworkValueSats / confirmedSupply : 0;
-  const liveFloorSats =
-    confirmedSupply > 0 ? liveNetworkValueSats / confirmedSupply : 0;
-  const floorSats = liveFloorSats;
+      ? inceptionFixedNetworkValueQ8
+      : baseNetworkValueQ8 + attachedWorkLiveValueQ8;
+  const networkValueQ8 = liveNetworkValueQ8;
+  const confirmedSupply =
+    canonicalIntegerText(tokenState?.confirmedSupply, { allowZero: true }) ||
+    "0";
+  const pendingSupply =
+    canonicalIntegerText(tokenState?.pendingSupply, { allowZero: true }) ||
+    "0";
+  const confirmedSupplyUnits = BigInt(confirmedSupply);
+  const frozenFloorQ8 =
+    confirmedSupplyUnits > 0n
+      ? frozenNetworkValueQ8 / confirmedSupplyUnits
+      : 0n;
+  const liveFloorQ8 =
+    confirmedSupplyUnits > 0n
+      ? liveNetworkValueQ8 / confirmedSupplyUnits
+      : 0n;
+  const floorQ8 = liveFloorQ8;
+  const bondMintFlowSats = bondMintFlow.toString();
+  const bondSaleVolumeSats = bondSaleVolume.toString();
+  const bondTransferFeeSats = bondTransferFee.toString();
+  const bondMarketplaceMutationFeeSats =
+    bondMarketplaceMutationFee.toString();
+  const baseNetworkValueSats = decimalTextFromQ8(baseNetworkValueQ8);
+  const frozenNetworkValueSats = decimalTextFromQ8(frozenNetworkValueQ8);
+  const liveNetworkValueSats = decimalTextFromQ8(liveNetworkValueQ8);
+  const networkValueSats = decimalTextFromQ8(networkValueQ8);
+  const frozenFloorSats = decimalTextFromQ8(frozenFloorQ8);
+  const liveFloorSats = decimalTextFromQ8(liveFloorQ8);
+  const floorSats = decimalTextFromQ8(floorQ8);
   const btcUsdMetadata = btcUsdResponseMetadata(ledger?.btcUsdQuote);
   const floorUsd =
-    btcUsdMetadata.btcUsd > 0 ? satsToUsdAtBtcUsd(floorSats, btcUsdMetadata.btcUsd) : 0;
+    btcUsdMetadata.btcUsd > 0
+      ? satsToUsdAtBtcUsd(Number(floorSats), btcUsdMetadata.btcUsd)
+      : 0;
   const networkUsd =
     btcUsdMetadata.btcUsd > 0
-      ? satsToUsdAtBtcUsd(networkValueSats, btcUsdMetadata.btcUsd)
+      ? satsToUsdAtBtcUsd(Number(networkValueSats), btcUsdMetadata.btcUsd)
       : 0;
   const chartPoints = infinityBondChartPointsFromEvents({
     bonds: confirmedBondActions,
@@ -27180,8 +29370,12 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     transfers: confirmedTransfers,
   }, config, {
     bondFrozenValueByTxid: attachedWork.attachedWorkFrozenValueByTxid,
+    bondFrozenValueQ8ByTxid:
+      attachedWork.attachedWorkFrozenValueQ8ByTxid,
     bondSupplyByTxid: attachedWork.bondIssuanceByTxid,
     bondValueByTxid: attachedWork.bondIssuanceNetworkValueByTxid,
+    bondValueQ8ByTxid:
+      attachedWork.bondIssuanceNetworkValueQ8ByTxid,
   });
 
   return {
@@ -27189,22 +29383,29 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     actualValue: {
       attachedWorkActions: attachedWork.attachedWorkActions,
       attachedWorkAmount: attachedWork.attachedWorkAmount,
-      ...(issuance?.attachedWorkAmountAtoms !== undefined
-        ? { attachedWorkAmountAtoms: issuance.attachedWorkAmountAtoms }
+      ...(attachedWork?.attachedWorkAmountAtoms !== undefined
+        ? { attachedWorkAmountAtoms: attachedWork.attachedWorkAmountAtoms }
         : {}),
       attachedWorkIssuanceUnits:
         issuance?.attachedWorkIssuanceUnits ?? 0,
       attachedWorkLiveFloorAtSendSats:
         issuance?.attachedWorkLiveFloorAtSendSats ?? 0,
+      attachedWorkLiveFloorAtSendQ8:
+        issuance?.attachedWorkLiveFloorAtSendQ8 ?? "0",
       attachedWorkLiveValueAtSendSats:
         issuance?.attachedWorkLiveValueAtSendSats ?? 0,
+      attachedWorkLiveValueAtSendQ8:
+        issuance?.attachedWorkLiveValueAtSendQ8 ?? "0",
       attachmentAccountingModel:
         config.tokenId === INCB_TOKEN_ID
           ? INCEPTION_ATTACHMENT_ACCOUNTING_MODEL
           : undefined,
       attachedWorkFrozenValueSats:
         attachedWork.attachedWorkFrozenValueSats,
+      attachedWorkFrozenValueQ8:
+        attachedWork.attachedWorkFrozenValueQ8,
       attachedWorkLiveValueSats: attachedWork.attachedWorkLiveValueSats,
+      attachedWorkLiveValueQ8: attachedWork.attachedWorkLiveValueQ8,
       attachedWorkUnmatchedActions:
         attachedWork.attachedWorkUnmatchedActions,
       attachedWorkUnvaluedActions:
@@ -27214,13 +29415,17 @@ function bondSummaryPayloadFromLedger(ledger, config) {
       bondSaleVolumeSats,
       bondTransferFeeSats,
       baseNetworkValueSats,
+      baseNetworkValueQ8: baseNetworkValueQ8.toString(),
       confirmedIssuanceUnits: issuance?.confirmedIssuanceUnits ?? 0,
       directProofIssuanceUnits:
         issuance?.directProofIssuanceUnits ?? 0,
       floorSats,
+      floorQ8: floorQ8.toString(),
       floorUsd,
       frozenFloorSats,
+      frozenFloorQ8: frozenFloorQ8.toString(),
       frozenNetworkValueSats,
+      frozenNetworkValueQ8: frozenNetworkValueQ8.toString(),
       issuanceAccountingModel:
         config.tokenId === INCB_TOKEN_ID
           ? INCEPTION_ISSUANCE_ACCOUNTING_MODEL
@@ -27259,26 +29464,38 @@ function bondSummaryPayloadFromLedger(ledger, config) {
           : undefined,
       issuanceValueSnapshotWorkNetworkValueSats:
         issuance?.issuanceValueSnapshotWorkNetworkValueSats ?? 0,
+      issuanceValueSnapshotWorkNetworkValueQ8:
+        issuance?.issuanceValueSnapshotWorkNetworkValueQ8 ?? "0",
       issuanceDustSats: issuance?.issuanceDustSats ?? 0,
+      issuanceDustQ8: issuance?.issuanceDustQ8 ?? "0",
       issuanceFloorSats: issuance?.issuanceFloorSats ?? 0,
+      issuanceFloorQ8: issuance?.issuanceFloorQ8 ?? "0",
       issuanceNetworkValueSats:
         issuance?.issuanceNetworkValueSats ?? 0,
+      issuanceNetworkValueQ8:
+        issuance?.issuanceNetworkValueQ8 ?? "0",
       liveFloorSats,
+      liveFloorQ8: liveFloorQ8.toString(),
       liveNetworkValueSats,
+      liveNetworkValueQ8: liveNetworkValueQ8.toString(),
       networkValueAccountingModel:
         config.tokenId === INCB_TOKEN_ID
           ? INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL
           : undefined,
       networkValueSats,
+      networkValueQ8: networkValueQ8.toString(),
       networkUsd,
       totalSats: networkValueSats,
       totalUsd: networkUsd,
     },
     chartPoints,
     floorSats,
+    floorQ8: floorQ8.toString(),
     floorUsd,
     frozenFloorSats,
+    frozenFloorQ8: frozenFloorQ8.toString(),
     frozenNetworkValueSats,
+    frozenNetworkValueQ8: frozenNetworkValueQ8.toString(),
     indexedAt: ledger.generatedAt,
     indexedThroughBlock:
       ledger.indexedThroughBlock ??
@@ -27286,8 +29503,11 @@ function bondSummaryPayloadFromLedger(ledger, config) {
       tokenState?.indexedThroughBlock,
     network: ledger.network,
     liveFloorSats,
+    liveFloorQ8: liveFloorQ8.toString(),
     liveNetworkValueSats,
+    liveNetworkValueQ8: liveNetworkValueQ8.toString(),
     networkValueSats,
+    networkValueQ8: networkValueQ8.toString(),
     registryAddress: tokenState?.tokens?.[0]?.registryAddress ?? "",
     registryId: config.registryId,
     source: tokenState?.source,
@@ -27304,7 +29524,7 @@ function bondSummaryPayloadFromLedger(ledger, config) {
       pendingBondActions: (tokenState?.mints ?? []).filter(
         (mint) => !mint.confirmed && mint.tokenId === config.tokenId,
       ).length,
-      pendingSupply: numericValue(tokenState?.pendingSupply),
+      pendingSupply,
     },
     ticker: config.ticker,
     token,
@@ -28292,23 +30512,20 @@ async function completeTokenMarketOverlayItems(network, scope, kind) {
 
 function tokenTransferFromIndexedActivityItem(item, token, network) {
   const amount = creditAmountFromActivityItem(item, token.ticker);
-  const amountAtoms = isWorkTokenId(token?.tokenId)
-    ? workAtomsBigIntFromRecord({
-        amount,
-        amountAtoms: item?.amountAtoms ?? item?.tokenAmountAtoms,
-      })
-    : null;
+  const ledgerAmount = tokenLedgerAmountFromRecord(token?.tokenId, {
+    amount:
+      item?.amount ?? item?.tokenAmount ?? item?.creditAmountMoved ?? amount,
+    amountAtoms: item?.amountAtoms ?? item?.tokenAmountAtoms,
+  });
   if (
-    (isWorkTokenId(token?.tokenId) ? amountAtoms === null : amount <= 0) ||
+    ledgerAmount === null ||
     item?.confirmed === false
   ) {
     return null;
   }
   return {
     ...canonicalEventIdentityDetails(item),
-    ...(isWorkTokenId(token?.tokenId)
-      ? tokenLedgerAmountFields(WORK_TOKEN_ID, amountAtoms)
-      : { amount }),
+    ...tokenLedgerAmountFields(token.tokenId, ledgerAmount),
     ...(item?.amountVersion ? { amountVersion: item.amountVersion } : {}),
     arbSats: numericValue(item.arbSats),
     blockHash: String(item.blockHash ?? "").trim().toLowerCase(),
@@ -28426,40 +30643,25 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
       continue;
     }
     if (item.kind === "token-mint") {
-      const amount = creditAmountFromActivityItem(item, token.ticker);
-      if (amount <= 0 || item.confirmed === false) {
+      const fallbackAmount = creditAmountFromActivityItem(item, token.ticker);
+      const amount = tokenLedgerAmountFromRecord(token.tokenId, {
+        amount:
+          item?.amount ??
+          item?.tokenAmount ??
+          item?.confirmedIssuanceUnits ??
+          fallbackAmount,
+        amountAtoms: item?.amountAtoms ?? item?.tokenAmountAtoms,
+      });
+      if (amount === null || item.confirmed === false) {
         continue;
       }
       mints.push({
         ...canonicalEventIdentityDetails(item),
-        amount,
+        ...tokenLedgerAmountFields(token.tokenId, amount),
         ...(item.issuanceAccountingModel ===
         INCEPTION_ISSUANCE_ACCOUNTING_MODEL
           ? {
               ...canonicalInceptionMintMetadata(item),
-              attachedWorkAmount: numericValue(item.attachedWorkAmount),
-              attachedWorkLiveFloorAtSendSats: numericValue(
-                item.attachedWorkLiveFloorAtSendSats,
-              ),
-              attachedWorkIssuanceUnits: numericValue(
-                item.attachedWorkIssuanceUnits,
-              ),
-              attachedWorkLiveValueAtSendSats: numericValue(
-                item.attachedWorkLiveValueAtSendSats,
-              ),
-              confirmedIssuanceUnits: numericValue(
-                item.confirmedIssuanceUnits,
-              ),
-              directProofIssuanceUnits: numericValue(
-                item.directProofIssuanceUnits,
-              ),
-              issuanceAccountingModel: item.issuanceAccountingModel,
-              issuanceAmount: numericValue(item.issuanceAmount),
-              issuanceDustSats: numericValue(item.issuanceDustSats),
-              issuanceFloorSats: numericValue(item.issuanceFloorSats),
-              issuanceNetworkValueSats: numericValue(
-                item.issuanceNetworkValueSats,
-              ),
               issuanceCheckpointBlockHash: String(
                 item.issuanceCheckpointBlockHash ?? "",
               )
@@ -28519,9 +30721,13 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
       const listingId = String(item?.listingId ?? item?.txid ?? "")
         .trim()
         .toLowerCase();
-      const amount = creditAmountFromActivityItem(item, token.ticker);
+      const fallbackAmount = creditAmountFromActivityItem(item, token.ticker);
       const ledgerAmount = tokenLedgerAmountFromRecord(token.tokenId, {
-        amount,
+        amount:
+          item?.amount ??
+          item?.tokenAmount ??
+          item?.creditAmountMoved ??
+          fallbackAmount,
         amountAtoms: item?.amountAtoms ?? item?.tokenAmountAtoms,
         saleAuthorization: item?.saleAuthorization,
       });
@@ -28730,9 +30936,24 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
     tokenClosedListingItemKey,
     mergeTokenListingRecord,
   );
-  const confirmedSupply = mints
-    .filter((mint) => mint.confirmed)
-    .reduce((total, mint) => total + numericValue(mint.amount), 0);
+  const exactBondScopeId =
+    scopedTokens.length === 1 && isBondTokenId(scopedTokens[0]?.tokenId)
+      ? scopedTokens[0].tokenId
+      : "";
+  const confirmedSupply = exactBondScopeId
+    ? mints
+        .filter(
+          (mint) =>
+            mint.confirmed && mint.tokenId === exactBondScopeId,
+        )
+        .reduce((total, mint) => {
+          const amount = tokenLedgerAmountFromRecord(exactBondScopeId, mint);
+          return amount === null ? total : total + amount;
+        }, 0n)
+        .toString()
+    : mints
+        .filter((mint) => mint.confirmed)
+        .reduce((total, mint) => total + numericValue(mint.amount), 0);
   const confirmedSupplyAtoms =
     scopedTokens.length === 1 && isWorkTokenId(scopedTokens[0]?.tokenId)
       ? mints
@@ -28767,7 +30988,7 @@ async function tokenValueStateFromIndexedActivity(network, activityState, scope 
       indexedThroughBlockFromItems(activityState.activity),
     listings: scopedListings,
     mints,
-    pendingSupply: 0,
+    pendingSupply: exactBondScopeId ? "0" : 0,
     sales: scopedSales,
     source: mergedSourceLabel(
       activityState.source,
@@ -28884,6 +31105,9 @@ function tokenTablePayloadHasConservedBalances(payload) {
         return null;
       }
     }
+    if (isBondTokenId(tokenId)) {
+      return integerBigInt(record?.[field], { allowZero: true });
+    }
     const amount = Number(record?.[field]);
     return Number.isSafeInteger(amount) && amount >= 0 ? amount : null;
   };
@@ -28891,7 +31115,8 @@ function tokenTablePayloadHasConservedBalances(payload) {
     [record?.[field], record?.[`${field}Atoms`]].some(
       (value) => value !== undefined && value !== null && value !== "",
     );
-  const ledgerZero = (tokenId) => (isWorkTokenId(tokenId) ? 0n : 0);
+  const ledgerZero = (tokenId) =>
+    isWorkTokenId(tokenId) || isBondTokenId(tokenId) ? 0n : 0;
   const mintedByToken = new Map();
   for (const mint of mints) {
     if (mint?.confirmed !== true) {
@@ -28966,6 +31191,26 @@ function tokenTablePayloadHasConservedBalances(payload) {
       !ledgerAmountIsDeclared(payload, "confirmedSupply") ||
       (payloadSupply !== null &&
         payloadSupply === (mintedByToken.get(workTokenId) ?? 0n))
+    );
+  }
+
+  const bondTokens = tokens.filter((token) => isBondTokenId(token?.tokenId));
+  if (bondTokens.length > 0) {
+    if (tokens.length !== 1) {
+      // Cross-token totals have no shared unit. Per-token mint/holder/supply
+      // conservation above remains exact for each synthetic bond credit.
+      return true;
+    }
+    const bondTokenId = String(bondTokens[0].tokenId).trim().toLowerCase();
+    const payloadSupply = ledgerAmount(
+      bondTokenId,
+      payload,
+      "confirmedSupply",
+    );
+    return (
+      !ledgerAmountIsDeclared(payload, "confirmedSupply") ||
+      (payloadSupply !== null &&
+        payloadSupply === (mintedByToken.get(bondTokenId) ?? 0n))
     );
   }
 
@@ -29218,15 +31463,16 @@ async function buildIndexedCanonicalLedgerPayload(
   const indexedInceptionIssuance = inceptionIssuanceMetadataFromMints(
     indexedInceptionState.mints,
   );
+  const indexedInceptionSupply =
+    canonicalIntegerText(indexedInceptionState.confirmedSupply, {
+      allowZero: true,
+    }) || "0";
   if (
-    (numericValue(indexedInceptionState.confirmedSupply) > 0 ||
+    (BigInt(indexedInceptionSupply) > 0n ||
       indexedInceptionIssuance.confirmedMints > 0) &&
     (!indexedInceptionIssuance.complete ||
-      !numbersAgree(
-        indexedInceptionIssuance.confirmedIssuanceUnits,
-        numericValue(indexedInceptionState.confirmedSupply),
-        0.01,
-      ))
+      indexedInceptionIssuance.confirmedIssuanceUnits !==
+        indexedInceptionSupply)
   ) {
     throw freshDataUnavailableError(
       `Rejected ${label}: indexed INCB is not a fully bound v2 replay.`,
@@ -29516,17 +31762,11 @@ async function exactCanonicalSummaryCheckpoint(network, options = {}) {
     rebuild?.network === network &&
     rebuildHeight === indexedThroughBlock &&
     rebuildHash === storedHash;
+  const rebuildTrustState = canonicalRebuildTrustState(rebuild, network);
   const rebuildStateValid = checkpointRequested
     ? rebuildCheckpointMatches &&
-      ((rebuild?.active === true &&
-        rebuild?.complete === false &&
-        rebuild?.status === "active") ||
-        (rebuild?.active === false &&
-          rebuild?.complete === true &&
-          rebuild?.status === "complete"))
-    : rebuild?.active === false &&
-      rebuild?.complete === true &&
-      rebuild?.status === "complete";
+      ["active", "complete"].includes(rebuildTrustState)
+    : rebuildTrustState === "complete";
   const readModelsOk =
     Number(status?.readModels?.confirmedIds?.count) > 0 &&
     Number(status?.readModels?.confirmedTransfers?.count) > 0;
@@ -30327,6 +32567,7 @@ function definitivePinnedLogQueryDisposition(value) {
     "confirmed-invalid-nonpublic",
     "confirmed-nonpublic",
     "nonpublic-kind-filter",
+    "not-indexed-proof-event",
     "terminal-nonpublic",
   ]).has(String(value ?? ""));
 }
@@ -30504,7 +32745,7 @@ async function stableProofIndexLogHistoryPayload(
 
   const boundSearchParams = new URLSearchParams(searchParams ?? undefined);
   boundSearchParams.set("snapshot", summarySnapshotId);
-  const page = await proofIndexLogHistoryPayload(
+  let page = await proofIndexLogHistoryPayload(
     network,
     requestedKind,
     boundSearchParams,
@@ -30617,6 +32858,17 @@ async function stableProofIndexLogHistoryPayload(
     if (
       pageItems.length === 0 &&
       !definitivePinnedLogQueryDisposition(page.queryDisposition)
+    ) {
+      page = await exactLogHistoryMissPayload(
+        page,
+        network,
+        exactQueryTxid,
+      );
+    }
+    if (
+      !page ||
+      (pageItems.length === 0 &&
+        !definitivePinnedLogQueryDisposition(page.queryDisposition))
     ) {
       const error = freshDataUnavailableError(
         "Exact Log query is not present in the authenticated last-good snapshot.",
@@ -31141,45 +33393,16 @@ function growthSummaryWithCanonicalWorkFloor(growthSummary, workFloor) {
   if (!growthSummary || !workFloor) {
     return growthSummary;
   }
-
-  const totalSats = numericValue(
-    workFloor.actualValue?.totalSats ?? workFloor.networkValueSats,
-  );
-  if (!finitePositiveNumber(totalSats)) {
-    return {
-      ...growthSummary,
-      workFloor,
-    };
+  const state = exactWorkFloorNetworkQ8State(workFloor);
+  if (!state || state.live <= 0n) {
+    return growthSummary;
   }
-  const actualValue = { ...(growthSummary.actualValue ?? {}) };
-  const liveSats = numericValue(
-    workFloor.actualValue?.liveTotalSats ??
-      workFloor.actualValue?.liveNetworkValueSats ??
-      workFloor.liveNetworkValueSats,
-    totalSats,
+  const actualValue = actualValueWithExactWorkNetworkQ8(
+    growthSummary.actualValue,
+    state,
   );
-  const frozenSource =
-    workFloor.actualValue?.frozenTotalSats ??
-    workFloor.actualValue?.frozenNetworkValueSats ??
-    workFloor.frozenNetworkValueSats;
-  const frozenSats = Number(frozenSource);
-  actualValue.networkValueSats = totalSats;
-  actualValue.totalSats = totalSats;
-  actualValue.liveNetworkValueSats = liveSats;
-  actualValue.liveTotalSats = liveSats;
-  if (Number.isFinite(frozenSats)) {
-    actualValue.frozenFloorSats = frozenSats / WORK_TOKEN_MAX_SUPPLY;
-    actualValue.frozenNetworkValueSats = frozenSats;
-    actualValue.frozenTotalSats = frozenSats;
-  }
-
   return {
-    ...growthSummary,
-    frozenNetworkValueSats: Number.isFinite(frozenSats)
-      ? frozenSats
-      : growthSummary.frozenNetworkValueSats,
-    liveNetworkValueSats: liveSats,
-    networkValueSats: totalSats,
+    ...actualValueWithExactWorkNetworkQ8(growthSummary, state),
     actualValue,
     workFloor,
   };
@@ -32591,7 +34814,11 @@ async function proofIndexBondSummaryPayload(
   }
   if (
     config.tokenId === INCB_TOKEN_ID &&
-    numericValue(bondTokenState.confirmedSupply) > 0 &&
+    BigInt(
+      canonicalIntegerText(bondTokenState.confirmedSupply, {
+        allowZero: true,
+      }) || "0",
+    ) > 0n &&
     !canonicalLedger?.workTokenState
   ) {
     console.error(
@@ -32601,23 +34828,18 @@ async function proofIndexBondSummaryPayload(
   }
   const indexedBondFlowSats = (bondActivityState.activity ?? [])
     .filter((item) => item?.confirmed && isBondActivityItem(item, config))
-    .reduce((total, item) => total + activityAmountSats(item), 0);
+    .reduce((total, item) => total + BigInt(activityAmountSats(item)), 0n);
   const inceptionIssuance = inceptionIssuanceMetadataFromMints(
     bondTokenState.mints,
   );
+  const exactBondSupply =
+    canonicalIntegerText(bondTokenState.confirmedSupply, { allowZero: true }) ||
+    "0";
   if (
     config.tokenId === INCB_TOKEN_ID
       ? !inceptionIssuance.complete ||
-        !numbersAgree(
-          inceptionIssuance.confirmedIssuanceUnits,
-          numericValue(bondTokenState.confirmedSupply),
-          0.01,
-        )
-      : !numbersAgree(
-          indexedBondFlowSats,
-          numericValue(bondTokenState.confirmedSupply),
-          0.01,
-        )
+        inceptionIssuance.confirmedIssuanceUnits !== exactBondSupply
+      : indexedBondFlowSats !== BigInt(exactBondSupply)
   ) {
     console.error(
       `Rejected ${config.displayName} summary: canonical issuance does not match ${config.ticker} supply.`,
@@ -32841,11 +35063,19 @@ async function bondSummaryPayload(network, fresh = false, config) {
       ledger,
     );
     const ledgerSummary = ledger?.[config.summaryKey];
+    const indexedSupply = integerBigInt(indexed?.stats?.confirmedSupply, {
+      allowZero: true,
+    });
+    const ledgerSupply = integerBigInt(
+      ledgerSummary?.stats?.confirmedSupply,
+      { allowZero: true },
+    );
     if (
       indexed &&
       (!ledgerSummary?.registryAddress ||
-        (numericValue(indexed.stats?.confirmedSupply) >=
-          numericValue(ledgerSummary.stats?.confirmedSupply) &&
+        (indexedSupply !== null &&
+          ledgerSupply !== null &&
+          indexedSupply >= ledgerSupply &&
           numericValue(indexed.stats?.confirmedBondActions) >=
             numericValue(ledgerSummary.stats?.confirmedBondActions) &&
           numericValue(indexed.stats?.holders) >=
@@ -33238,18 +35468,35 @@ async function exactLogHistoryMissPayload(indexedPayload, network, txid) {
     return null;
   }
 
-  const status = await payloadWithFallbackAfterMs(
+  const unavailableDisposition = {
+    resolved: false,
+    status: null,
+  };
+  const disposition = await payloadWithFallbackAfterMs(
     proofIndexTxStatusPayload(normalizedTxid, network, {
       includeUnconfirmed: true,
-    }).catch((error) => {
-      console.error(
-        `Exact Log transaction disposition failed for ${normalizedTxid}: ${errorSummary(error)}`,
-      );
-      return null;
-    }),
-    null,
+    })
+      .then((status) => ({ resolved: true, status }))
+      .catch((error) => {
+        console.error(
+          `Exact Log transaction disposition failed for ${normalizedTxid}: ${errorSummary(error)}`,
+        );
+        return unavailableDisposition;
+      }),
+    unavailableDisposition,
     SUMMARY_PROOF_INDEX_READ_WAIT_MS,
   );
+  if (disposition?.resolved !== true) {
+    const unavailable = freshDataUnavailableError(
+      "The canonical Log transaction disposition is unavailable.",
+    );
+    unavailable.details = {
+      code: "CANONICAL_LOG_TX_DISPOSITION_UNAVAILABLE",
+      txid: normalizedTxid,
+    };
+    throw unavailable;
+  }
+  const status = disposition.status;
   if (!status) {
     return {
       ...indexedPayload,
@@ -34186,6 +36433,11 @@ function activityAmountSats(item) {
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
 
+function activityAmountSatsBigInt(item) {
+  const amount = proofFlowBigInt(item?.amountSats);
+  return amount > 0n ? amount : 0n;
+}
+
 function marketplaceMutationPaymentSats(item) {
   for (const value of [
     item?.marketplaceMutationFeeSats,
@@ -34198,6 +36450,20 @@ function marketplaceMutationPaymentSats(item) {
     }
   }
   return 0;
+}
+
+function marketplaceMutationPaymentSatsBigInt(item) {
+  for (const value of [
+    item?.marketplaceMutationFeeSats,
+    item?.amountSats,
+    item?.totalSats,
+  ]) {
+    const sats = proofFlowBigInt(value);
+    if (sats > 0n) {
+      return sats;
+    }
+  }
+  return 0n;
 }
 
 function marketplaceMutationPaymentIdentity(item) {
@@ -34267,8 +36533,8 @@ function uniqueMarketplaceMutationActivity(
       continue;
     }
     if (
-      marketplaceMutationPaymentSats(item) >
-      marketplaceMutationPaymentSats(unique[currentIndex])
+      marketplaceMutationPaymentSatsBigInt(item) >
+      marketplaceMutationPaymentSatsBigInt(unique[currentIndex])
     ) {
       unique[currentIndex] = item;
     }
@@ -34626,7 +36892,7 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
     lastTargetIndex = blockIndex;
   };
 
-  return (source, createdMs) => {
+  const lookupQ8 = (source, createdMs) => {
     incrementDiagnostic("lookups");
     const blockHeight = Number(source?.blockHeight);
     const blockIndex = Number(source?.blockIndex);
@@ -34639,7 +36905,11 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
       blockIndex >= 0;
     if (!positionedLivenet) {
       incrementDiagnostic("timestampLookups");
-      return numericValue(timestampProvider(createdMs - 1));
+      const timestampQ8 =
+        typeof timestampProvider?.q8At === "function"
+          ? timestampProvider.q8At(createdMs - 1)
+          : decimalValueToQ8(timestampProvider(createdMs - 1));
+      return timestampQ8 ?? 0n;
     }
 
     prepareCanonicalPrefix(blockHeight, blockIndex);
@@ -34672,8 +36942,12 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
     }
     incrementDiagnostic("sameTxAdjustments", sameTxAdjustments);
     incrementDiagnostic("prefixLookups");
-    return numericValue(growthActualBaseStateTotalSats(state));
+    return growthActualBaseStateTotalQ8(state);
   };
+  const provider = (source, createdMs) =>
+    q8ToNumber(lookupQ8(source, createdMs));
+  provider.q8At = lookupQ8;
+  return provider;
 }
 
 function canonicalReplayTimeline(events) {
@@ -34822,33 +37096,46 @@ function canonicalInceptionWorkMovementOracleByIdentity(
       },
       0n,
     );
-    const workNetworkValueSats = Number(
-      issuance.issuanceValueSnapshotWorkNetworkValueSats,
-    );
-    const workFloorSats = workNetworkValueSats / WORK_TOKEN_MAX_SUPPLY;
+    const workNetworkValueQ8 =
+      canonicalNonNegativeIntegerText(
+        issuance.issuanceValueSnapshotWorkNetworkValueQ8,
+      );
+    const workNetworkValueSats = workNetworkValueQ8
+      ? decimalTextFromQ8(workNetworkValueQ8)
+      : "";
+    const workFloorQ8 = workNetworkValueQ8
+      ? floorQ8PerUnit(
+          workNetworkValueQ8,
+          String(WORK_TOKEN_MAX_SUPPLY),
+        )
+      : "";
+    const workFloorSats = workFloorQ8
+      ? decimalTextFromQ8(workFloorQ8)
+      : "";
     const expectedAttachedValueQ8 = workAtomsValueAtNetworkQ8(
       attachedWorkAmountAtoms,
       workNetworkValueSats,
+      workNetworkValueQ8,
     );
-    const expectedAttachedValueSats =
-      expectedAttachedValueQ8 === null
-        ? 0
-        : q8ToNumber(expectedAttachedValueQ8);
+    const storedAttachedValueQ8 = canonicalNonNegativeIntegerText(
+      issuance.attachedWorkLiveValueAtSendQ8,
+    );
     if (
       candidates.length === 0 ||
       attachedWorkAmountAtoms.toString() !==
         issuance.attachedWorkAmountAtoms ||
-      !Number.isFinite(workNetworkValueSats) ||
-      workNetworkValueSats <= 0 ||
-      !Number.isFinite(workFloorSats) ||
-      workFloorSats <= 0 ||
-      !numbersAgree(
-        issuance.attachedWorkLiveValueAtSendSats,
-        mint.attachedWorkLiveValueAtSendQ8
-          ? expectedAttachedValueSats
-          : Number(formatWorkAtoms(attachedWorkAmountAtoms)) * workFloorSats,
-        0.01,
-      )
+      !workNetworkValueQ8 ||
+      BigInt(workNetworkValueQ8) <= 0n ||
+      !workFloorQ8 ||
+      BigInt(workFloorQ8) <= 0n ||
+      expectedAttachedValueQ8 === null ||
+      (storedAttachedValueQ8
+        ? BigInt(storedAttachedValueQ8) !== expectedAttachedValueQ8
+        : !numbersAgree(
+            issuance.attachedWorkLiveValueAtSendSats,
+            q8ToNumber(expectedAttachedValueQ8),
+            0.01,
+          ))
     ) {
       continue;
     }
@@ -34872,7 +37159,9 @@ function canonicalInceptionWorkMovementOracleByIdentity(
         issuance.issuanceValueSnapshotGeneratedAt ?? "",
       ).trim(),
       valueSnapshotId: String(issuance.issuanceValueSnapshotId ?? "").trim(),
+      workFloorQ8,
       workFloorSats,
+      workNetworkValueQ8,
       workNetworkValueSats,
     };
     for (const transfer of candidates) {
@@ -34893,6 +37182,9 @@ function canonicalInceptionWorkMovementOracleByIdentity(
 
 function creditNetworkValueMetrics({
   baseValueAt,
+  baseValueBeforeEvent = null,
+  baseValueBeforeEventQ8 = null,
+  baseValueQ8At = null,
   canonicalMinerFeeCoverage = null,
   confirmedActivity = [],
   cutoffMs = Date.now(),
@@ -34902,6 +37194,27 @@ function creditNetworkValueMetrics({
   tokenSales = [],
   tokenTransfers = [],
 }) {
+  const exactBaseValueQ8At =
+    typeof baseValueQ8At === "function"
+      ? baseValueQ8At
+      : typeof baseValueAt?.q8At === "function"
+        ? baseValueAt.q8At
+        : (atMs) => decimalValueToQ8(baseValueAt(atMs)) ?? 0n;
+  const numericBaseValueBeforeEvent =
+    typeof baseValueBeforeEvent === "function"
+      ? baseValueBeforeEvent
+      : typeof baseValueAt?.beforeCanonicalItem === "function"
+        ? baseValueAt.beforeCanonicalItem
+        : (_source, createdMs) => baseValueAt(createdMs - 1);
+  const exactBaseValueBeforeEventQ8 =
+    typeof baseValueBeforeEventQ8 === "function"
+      ? baseValueBeforeEventQ8
+      : typeof baseValueAt?.q8BeforeCanonicalItem === "function"
+        ? baseValueAt.q8BeforeCanonicalItem
+        : (source, createdMs) =>
+            decimalValueToQ8(
+              numericBaseValueBeforeEvent(source, createdMs),
+            ) ?? 0n;
   const verifiedMinerFeeCoverage = verifiedCanonicalMinerFeeCoverage(
     canonicalMinerFeeCoverage,
   );
@@ -34927,19 +37240,29 @@ function creditNetworkValueMetrics({
     return {
       ...minerFeeAccounting(),
       creditEventFrozenValueSats: 0,
+      creditEventFrozenValueQ8: "0",
       creditEventLiveValueSats: 0,
+      creditEventLiveValueQ8: "0",
       creditMinerFeeFlowSats: 0,
       creditMarketplaceMutationFlowSats: 0,
       creditMovementFrozenValueSats: 0,
+      creditMovementFrozenValueQ8: "0",
       creditMovementLiveValueSats: 0,
+      creditMovementLiveValueQ8: "0",
       creditNetworkValueSats: 0,
+      creditNetworkValueQ8: "0",
       creditFrozenNetworkValueSats: 0,
+      creditFrozenNetworkValueQ8: "0",
       creditLiveNetworkValueSats: 0,
+      creditLiveNetworkValueQ8: "0",
       creditProofPaymentFlowSats: 0,
       creditRegistryMutationFlowSats: 0,
       creditSalePaymentFlowSats: 0,
       events: [],
       liveFloorByTokenId: {},
+      liveFloorQ8ByTokenId: {},
+      frozenNetworkValueWithCreditQ8: exactBaseValueQ8At(cutoffMs).toString(),
+      liveNetworkValueWithCreditQ8: exactBaseValueQ8At(cutoffMs).toString(),
     };
   }
 
@@ -34980,16 +37303,19 @@ function creditNetworkValueMetrics({
     const amountAtoms = isWorkTokenId(item?.tokenId)
       ? workAtomsBigIntFromRecord(item)
       : null;
+    const amountUnits = isWorkTokenId(item?.tokenId)
+      ? null
+      : integerBigInt(item?.amount, { allowZero: false });
     const amount =
       amountAtoms === null
-        ? numericValue(item?.amount)
+        ? Number(amountUnits ?? 0n)
         : Number(formatWorkAtoms(amountAtoms));
     if (
       !token ||
       !item?.confirmed ||
       !/^[0-9a-f]{64}$/u.test(txid) ||
       createdMs > cutoffMs ||
-      amount <= 0
+      (amountAtoms === null ? amountUnits === null : amountAtoms <= 0n)
     ) {
       return;
     }
@@ -34997,6 +37323,7 @@ function creditNetworkValueMetrics({
     movementEvents.push({
       amount,
       ...(amountAtoms === null ? {} : { amountAtoms: amountAtoms.toString() }),
+      ...(amountUnits === null ? {} : { amountUnits: amountUnits.toString() }),
       createdMs,
       kind,
       movementIdentity: creditMovementIdentity(item, kind),
@@ -35043,13 +37370,18 @@ function creditNetworkValueMetrics({
 
     const proofPaymentSats =
       kind === "token-create"
-        ? numericValue(item?.proofPaymentSats ?? item?.amountSats)
-        : 0;
+        ? proofFlowBigInt(
+            item?.proofPaymentSats ?? item?.amountSats,
+          ).toString()
+        : "0";
     const marketplaceMutationFeeSats =
       TOKEN_MARKETPLACE_MUTATION_KINDS.has(kind)
-        ? numericValue(item?.marketplaceMutationFeeSats ?? item?.amountSats) ||
-          TOKEN_MIN_MUTATION_PRICE_SATS
-        : 0;
+        ? (
+            proofFlowBigInt(
+              item?.marketplaceMutationFeeSats ?? item?.amountSats,
+            ) || BigInt(TOKEN_MIN_MUTATION_PRICE_SATS)
+          ).toString()
+        : "0";
     const minerFeeSats = numericValue(item?.minerFeeSats);
     mutationEvents.push({
       amount: 0,
@@ -35071,15 +37403,44 @@ function creditNetworkValueMetrics({
     addMutationEvent(item);
   }
 
+  const tokenMaxSupplyUnits = (token) => {
+    if (isWorkTokenId(token?.tokenId)) {
+      return BigInt(WORK_TOKEN_MAX_SUPPLY);
+    }
+    return integerBigInt(token?.maxSupply, { allowZero: false });
+  };
+  const movementValueAtNetworkQ8 = (event, networkValueQ8) => {
+    const totalQ8 =
+      typeof networkValueQ8 === "bigint"
+        ? networkValueQ8
+        : proofFlowBigInt(networkValueQ8);
+    const supply = tokenMaxSupplyUnits(event.token);
+    if (supply === null || supply <= 0n || totalQ8 < 0n) {
+      return null;
+    }
+    if (event.amountAtoms) {
+      return (
+        (BigInt(event.amountAtoms) * totalQ8) /
+        (supply * WORK_UNIT_SCALE)
+      );
+    }
+    if (event.amountUnits) {
+      return (BigInt(event.amountUnits) * totalQ8) / supply;
+    }
+    return event.amount === 0 ? 0n : null;
+  };
+  const proofFlow = (value) => proofFlowBigInt(value);
   let creditMovementFrozenValueSats = 0;
   let creditEventFrozenValueSats = 0;
+  let creditMovementFrozenValueQ8 = 0n;
+  let creditEventFrozenValueQ8 = 0n;
   let creditMinerFeeFlowSats = 0;
   let creditMarketplaceMutationFlowSats = 0;
   let creditProofPaymentFlowSats = 0;
   let creditRegistryMutationFlowSats = 0;
   let creditSalePaymentFlowSats = 0;
   const eventDetails = [];
-  let cumulativeFrozenCreditValueSats = 0;
+  let cumulativeFrozenCreditValueQ8 = 0n;
   const countedMinerFeeTxids = new Set();
   const replayEvents = [
     ...movementEvents,
@@ -35087,28 +37448,34 @@ function creditNetworkValueMetrics({
   ].sort(compareCreditValueReplayEvents);
 
   for (const event of replayEvents) {
-    const baseBefore = numericValue(baseValueAt(event.createdMs - 1));
-    const networkValueBeforeEvent = baseBefore + cumulativeFrozenCreditValueSats;
-    const maxSupply = numericValue(event.token.maxSupply);
+    const baseBeforeQ8 = exactBaseValueBeforeEventQ8(
+      event.source,
+      event.createdMs,
+    );
+    const networkValueBeforeEventQ8 =
+      baseBeforeQ8 + cumulativeFrozenCreditValueQ8;
+    const maxSupply = tokenMaxSupplyUnits(event.token);
     const inceptionWorkMovementOracle =
       event.kind === "transfer"
         ? inceptionWorkMovementOracleByIdentity.get(event.movementIdentity)
         : null;
-    const creditFloorAtConfirmSats =
-      inceptionWorkMovementOracle?.workFloorSats ??
-      (maxSupply > 0 ? networkValueBeforeEvent / maxSupply : 0);
-    const atomicCreditValueAtConfirmQ8 =
-      event.amountAtoms && isWorkTokenId(event.token?.tokenId)
-        ? workAtomsValueAtNetworkQ8(
-            event.amountAtoms,
-            inceptionWorkMovementOracle?.workNetworkValueSats ??
-              networkValueBeforeEvent,
-          )
-        : null;
-    const creditValueAtConfirmSats =
-      atomicCreditValueAtConfirmQ8 === null
-        ? event.amount * creditFloorAtConfirmSats
-        : q8ToNumber(atomicCreditValueAtConfirmQ8);
+    const oracleNetworkValueQ8 = canonicalNonNegativeIntegerText(
+      inceptionWorkMovementOracle?.workNetworkValueQ8,
+    );
+    const liveNetworkValueBeforeEventQ8 = oracleNetworkValueQ8
+      ? BigInt(oracleNetworkValueQ8)
+      : networkValueBeforeEventQ8;
+    const oracleFloorQ8 = canonicalNonNegativeIntegerText(
+      inceptionWorkMovementOracle?.workFloorQ8,
+    );
+    const creditFloorAtConfirmQ8 = oracleFloorQ8
+      ? BigInt(oracleFloorQ8)
+      : maxSupply && maxSupply > 0n
+        ? liveNetworkValueBeforeEventQ8 / maxSupply
+        : 0n;
+    const creditValueAtConfirmQ8 =
+      movementValueAtNetworkQ8(event, liveNetworkValueBeforeEventQ8) ?? 0n;
+    const creditValueAtConfirmSats = q8ToNumber(creditValueAtConfirmQ8);
     const activity = activityByTxid.get(event.txid);
     const canonicalTransactionMinerFeeSats = creditReplayTransactionMinerFeeSats(
       event,
@@ -35121,37 +37488,45 @@ function creditNetworkValueMetrics({
     ) {
       canonicalReplayFeesComplete = false;
     }
-    const transactionMinerFeeSats = numericValue(
-      canonicalTransactionMinerFeeSats,
-    );
-    const minerFeeSats = countedMinerFeeTxids.has(event.txid)
-      ? 0
-      : transactionMinerFeeSats;
+    const transactionMinerFee = proofFlow(canonicalTransactionMinerFeeSats);
+    const minerFee = countedMinerFeeTxids.has(event.txid)
+      ? 0n
+      : transactionMinerFee;
     countedMinerFeeTxids.add(event.txid);
-    const proofPaymentSats =
+    const proofPayment =
       event.kind === "mint"
-        ? numericValue(event.source?.paidSats)
-        : numericValue(event.proofPaymentSats);
-    const registryMutationFeeSats =
+        ? proofFlow(event.source?.paidSats)
+        : proofFlow(event.proofPaymentSats);
+    const registryMutationFee =
       event.kind === "transfer"
-        ? numericValue(event.source?.paidSats)
-        : numericValue(event.registryMutationFeeSats);
-    const marketplaceMutationFeeSats =
+        ? proofFlow(event.source?.paidSats)
+        : proofFlow(event.registryMutationFeeSats);
+    const marketplaceMutationFee =
       event.kind === "sale"
-        ? numericValue(event.source?.marketplaceMutationFeeSats) ||
-          TOKEN_MIN_MUTATION_PRICE_SATS
-        : numericValue(event.marketplaceMutationFeeSats);
-    const salePaymentSats =
-      event.kind === "sale" ? numericValue(event.source?.priceSats) : 0;
-    const fixedEventFlowSats =
-      proofPaymentSats +
-      registryMutationFeeSats +
-      marketplaceMutationFeeSats +
-      salePaymentSats +
-      minerFeeSats;
-    const frozenNetworkValueSats =
-      creditValueAtConfirmSats +
-      fixedEventFlowSats;
+        ? proofFlow(event.source?.marketplaceMutationFeeSats) ||
+          BigInt(TOKEN_MIN_MUTATION_PRICE_SATS)
+        : proofFlow(event.marketplaceMutationFeeSats);
+    const salePayment =
+      event.kind === "sale" ? proofFlow(event.source?.priceSats) : 0n;
+    const fixedEventFlow =
+      proofPayment +
+      registryMutationFee +
+      marketplaceMutationFee +
+      salePayment +
+      minerFee;
+    const fixedEventFlowQ8 = fixedEventFlow * VALUE_Q8_SCALE;
+    const frozenNetworkValueQ8 =
+      creditValueAtConfirmQ8 + fixedEventFlowQ8;
+    const frozenNetworkValueSats = q8ToNumber(frozenNetworkValueQ8);
+    const transactionMinerFeeSats = Number(transactionMinerFee);
+    const minerFeeSats = Number(minerFee);
+    const proofPaymentSats = Number(proofPayment);
+    const registryMutationFeeSats = Number(registryMutationFee);
+    const marketplaceMutationFeeSats = Number(marketplaceMutationFee);
+    const salePaymentSats = Number(salePayment);
+    const fixedEventFlowSats = Number(fixedEventFlow);
+    creditMovementFrozenValueQ8 += creditValueAtConfirmQ8;
+    creditEventFrozenValueQ8 += frozenNetworkValueQ8;
 
     creditMovementFrozenValueSats += creditValueAtConfirmSats;
     creditEventFrozenValueSats += frozenNetworkValueSats;
@@ -35160,26 +37535,35 @@ function creditNetworkValueMetrics({
     creditProofPaymentFlowSats += proofPaymentSats;
     creditRegistryMutationFlowSats += registryMutationFeeSats;
     creditSalePaymentFlowSats += salePaymentSats;
-    cumulativeFrozenCreditValueSats += frozenNetworkValueSats;
+    cumulativeFrozenCreditValueQ8 += frozenNetworkValueQ8;
     eventDetails.push({
       amount: event.amount,
       ...(event.amountAtoms ? { amountAtoms: event.amountAtoms } : {}),
+      ...(event.amountUnits ? { amountUnits: event.amountUnits } : {}),
       arbSats:
         event.kind === "sale" ? creditValueAtConfirmSats - salePaymentSats : 0,
-      creditFloorAtConfirmSats,
+      creditFloorAtConfirmSats:
+        q8ToCanonicalDecimal(creditFloorAtConfirmQ8),
+      creditFloorAtConfirmQ8: creditFloorAtConfirmQ8.toString(),
       creditFloorAtConfirmModel:
         inceptionWorkMovementOracle?.model ?? "canonical-frozen-credit-replay-v1",
-      creditValueAtConfirmSats,
+      creditValueAtConfirmSats: q8ToCanonicalDecimal(creditValueAtConfirmQ8),
+      creditValueAtConfirmQ8: creditValueAtConfirmQ8.toString(),
       fixedEventFlowSats,
-      frozenNetworkValueSats,
+      fixedEventFlowQ8: fixedEventFlowQ8.toString(),
+      frozenNetworkValueSats: q8ToCanonicalDecimal(frozenNetworkValueQ8),
+      frozenNetworkValueQ8: frozenNetworkValueQ8.toString(),
       kind: event.kind,
       liveNetworkValueBeforeEventSats:
-        inceptionWorkMovementOracle?.workNetworkValueSats ??
-        networkValueBeforeEvent,
+        q8ToCanonicalDecimal(liveNetworkValueBeforeEventQ8),
+      liveNetworkValueBeforeEventQ8:
+        liveNetworkValueBeforeEventQ8.toString(),
       marketplaceMutationFeeSats,
       minerFeeSats,
       movementIdentity: event.movementIdentity,
-      networkValueBeforeEventSats: networkValueBeforeEvent,
+      networkValueBeforeEventSats:
+        q8ToCanonicalDecimal(networkValueBeforeEventQ8),
+      networkValueBeforeEventQ8: networkValueBeforeEventQ8.toString(),
       proofPaymentSats,
       registryMutationFeeSats,
       salePaymentSats,
@@ -35204,67 +37588,96 @@ function creditNetworkValueMetrics({
     });
   }
 
-  const baseNow = numericValue(baseValueAt(cutoffMs));
-  const frozenNetworkValueWithCreditSats =
-    baseNow + creditEventFrozenValueSats;
+  creditMovementFrozenValueSats = q8ToNumber(
+    creditMovementFrozenValueQ8,
+  );
+  creditEventFrozenValueSats = q8ToNumber(creditEventFrozenValueQ8);
+  const baseNowQ8 = exactBaseValueQ8At(cutoffMs);
+  const frozenNetworkValueWithCreditQ8 =
+    baseNowQ8 + creditEventFrozenValueQ8;
+  const frozenNetworkValueWithCreditSats = q8ToNumber(
+    frozenNetworkValueWithCreditQ8,
+  );
   const revaluationFloorByTokenId = {};
+  const liveFloorQ8ByTokenId = {};
   for (const token of tokensById.values()) {
-    const maxSupply = numericValue(token.maxSupply);
-    revaluationFloorByTokenId[token.tokenId] =
-      maxSupply > 0 ? frozenNetworkValueWithCreditSats / maxSupply : 0;
+    const maxSupply = tokenMaxSupplyUnits(token);
+    const floorQ8 =
+      maxSupply && maxSupply > 0n
+        ? frozenNetworkValueWithCreditQ8 / maxSupply
+        : 0n;
+    liveFloorQ8ByTokenId[token.tokenId] = floorQ8.toString();
+    revaluationFloorByTokenId[token.tokenId] = q8ToNumber(floorQ8);
   }
   let creditMovementLiveValueSats = 0;
   let creditEventLiveValueSats = 0;
+  let creditMovementLiveValueQ8 = 0n;
+  let creditEventLiveValueQ8 = 0n;
   for (const event of eventDetails) {
-    const creditRevaluationFloorSats = numericValue(
-      revaluationFloorByTokenId[event.tokenId],
+    const creditRevaluationFloorQ8 = BigInt(
+      liveFloorQ8ByTokenId[event.tokenId] ?? "0",
     );
-    const atomicCreditLiveValueQ8 =
-      event.amountAtoms && isWorkTokenId(event.tokenId)
-        ? workAtomsValueAtNetworkQ8(
-            event.amountAtoms,
-            frozenNetworkValueWithCreditSats,
-          )
-        : null;
-    const creditLiveValueSats =
-      atomicCreditLiveValueQ8 === null
-        ? event.amount * creditRevaluationFloorSats
-        : q8ToNumber(atomicCreditLiveValueQ8);
+    const creditRevaluationFloorSats = q8ToNumber(
+      creditRevaluationFloorQ8,
+    );
+    const creditLiveValueQ8 =
+      movementValueAtNetworkQ8(
+        { ...event, token: tokensById.get(event.tokenId) },
+        frozenNetworkValueWithCreditQ8,
+      ) ?? 0n;
+    const creditLiveValueSats = q8ToNumber(creditLiveValueQ8);
     creditMovementLiveValueSats += creditLiveValueSats;
+    creditMovementLiveValueQ8 += creditLiveValueQ8;
     event.creditRevaluationFloorSats = creditRevaluationFloorSats;
     event.creditLiveFloorSats = creditRevaluationFloorSats;
-    event.creditLiveValueSats = creditLiveValueSats;
-    event.liveNetworkValueSats =
-      creditLiveValueSats +
-      event.proofPaymentSats +
-      event.registryMutationFeeSats +
-      event.marketplaceMutationFeeSats +
-      event.salePaymentSats +
-      event.minerFeeSats;
-    creditEventLiveValueSats += event.liveNetworkValueSats;
+    event.creditLiveValueSats = q8ToCanonicalDecimal(creditLiveValueQ8);
+    event.creditLiveFloorQ8 = creditRevaluationFloorQ8.toString();
+    event.creditRevaluationFloorQ8 = creditRevaluationFloorQ8.toString();
+    event.creditLiveValueQ8 = creditLiveValueQ8.toString();
+    const liveNetworkValueQ8 =
+      creditLiveValueQ8 + BigInt(event.fixedEventFlowQ8 ?? "0");
+    event.liveNetworkValueSats = q8ToCanonicalDecimal(liveNetworkValueQ8);
+    event.liveNetworkValueQ8 = liveNetworkValueQ8.toString();
+    creditEventLiveValueQ8 += liveNetworkValueQ8;
+    creditEventLiveValueSats += q8ToNumber(liveNetworkValueQ8);
   }
-  const liveNetworkValueWithCreditSats =
-    baseNow + creditEventLiveValueSats;
+  const liveNetworkValueWithCreditQ8 = baseNowQ8 + creditEventLiveValueQ8;
+  creditMovementLiveValueSats = q8ToNumber(creditMovementLiveValueQ8);
+  creditEventLiveValueSats = q8ToNumber(creditEventLiveValueQ8);
+  const liveNetworkValueWithCreditSats = q8ToNumber(
+    liveNetworkValueWithCreditQ8,
+  );
 
   return {
     ...minerFeeAccounting(),
     creditEventFrozenValueSats,
+    creditEventFrozenValueQ8: creditEventFrozenValueQ8.toString(),
     creditEventLiveValueSats,
+    creditEventLiveValueQ8: creditEventLiveValueQ8.toString(),
     creditFrozenNetworkValueSats: creditEventFrozenValueSats,
+    creditFrozenNetworkValueQ8: creditEventFrozenValueQ8.toString(),
     creditMinerFeeFlowSats,
     creditMarketplaceMutationFlowSats,
     creditMovementFrozenValueSats,
+    creditMovementFrozenValueQ8: creditMovementFrozenValueQ8.toString(),
     creditMovementLiveValueSats,
+    creditMovementLiveValueQ8: creditMovementLiveValueQ8.toString(),
     creditLiveNetworkValueSats: creditEventLiveValueSats,
+    creditLiveNetworkValueQ8: creditEventLiveValueQ8.toString(),
     creditNetworkValueSats: creditEventLiveValueSats,
+    creditNetworkValueQ8: creditEventLiveValueQ8.toString(),
     creditProofPaymentFlowSats,
     creditRegistryMutationFlowSats,
     creditSalePaymentFlowSats,
     events: includeEvents ? eventDetails : [],
     frozenNetworkValueWithCreditSats,
+    frozenNetworkValueWithCreditQ8:
+      frozenNetworkValueWithCreditQ8.toString(),
     liveFloorByTokenId: revaluationFloorByTokenId,
+    liveFloorQ8ByTokenId,
     revaluationFloorByTokenId,
     liveNetworkValueWithCreditSats,
+    liveNetworkValueWithCreditQ8: liveNetworkValueWithCreditQ8.toString(),
   };
 }
 
@@ -35365,119 +37778,95 @@ function growthActualBaseNetworkValue(
   tokenSales = [],
   cutoffMs = Date.now(),
 ) {
-  const confirmedRecords = records.filter(
-    (record) => record.confirmed && Date.parse(record.createdAt) <= cutoffMs,
+  const state = emptyGrowthActualBaseState();
+  for (const event of growthActualBaseNetworkValueEvents(
+    records,
+    idActivity,
+    sales,
+    tokenDefinitions,
+    tokenMints,
+    tokenTransfers,
+    tokenSales,
+  )) {
+    if (event.createdMs <= cutoffMs) {
+      growthActualBaseStateApplyContribution(state, event.contribution);
+    }
+  }
+
+  const numberFromInteger = (value) => Number(value);
+  const valueQ8 = (value) =>
+    value * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE;
+  const powids = numberFromInteger(state.powids);
+  const browserFlowSats = numberFromInteger(state.browserFlowSats);
+  const computerEventFlowSats = numberFromInteger(state.computerEventFlowSats);
+  const driveFlowSats = numberFromInteger(state.driveFlowSats);
+  const idMarketplaceFeeSats = numberFromInteger(state.idMarketplaceFeeSats);
+  const idMarketplaceVolumeSats = numberFromInteger(
+    state.idMarketplaceVolumeSats,
   );
-  const confirmedActivity = idActivity.filter(
-    (item) => item.confirmed && Date.parse(item.createdAt) <= cutoffMs,
+  const inceptionBondFlowSats = numberFromInteger(
+    state.inceptionBondFlowSats,
   );
-  const confirmedSales = publicMarketplaceSales(sales).filter(
-    (sale) => sale.confirmed && Date.parse(sale.createdAt) <= cutoffMs,
+  const infinityBondFlowSats = numberFromInteger(
+    state.infinityBondFlowSats,
   );
-  const confirmedTokens = tokenDefinitions.filter(
-    (token) => token.confirmed && Date.parse(token.createdAt) <= cutoffMs,
+  const mailFlowSats = numberFromInteger(state.mailFlowSats);
+  const tokenCreationFlowSats = numberFromInteger(
+    state.tokenCreationFlowSats,
   );
-  const confirmedTokenMints = tokenMints.filter(
-    (mint) => mint.confirmed && Date.parse(mint.createdAt) <= cutoffMs,
+  const tokenMarketplaceFeeSats = numberFromInteger(
+    state.tokenMarketplaceFeeSats,
   );
-  const confirmedValueTokenMints = confirmedTokenMints.filter(
-    (mint) => !BOND_TOKEN_IDS.has(mint.tokenId),
-  );
-  const confirmedTokenTransfers = tokenTransfers.filter(
-    (transfer) =>
-      transfer.confirmed && Date.parse(transfer.createdAt) <= cutoffMs,
-  );
-  const confirmedTokenSales = tokenSales.filter(
-    (sale) => sale.confirmed && Date.parse(sale.createdAt) <= cutoffMs,
-  );
-  const powids = confirmedRecords.length;
-  const mailFlowSats = confirmedActivity
-    .filter(
-      (item) =>
-        (item.kind === "mail" || item.kind === "reply") &&
-        !isBondActivityItem(item) &&
-        !isBrowserActivityItem(item),
-    )
-    .reduce((total, item) => total + activityAmountSats(item), 0);
-  const inceptionBondFlowSats = confirmedActivity
-    .filter(isInceptionBondActivityItem)
-    .reduce((total, item) => total + activityAmountSats(item), 0);
-  const infinityBondFlowSats = confirmedActivity
-    .filter(isInfinityBondActivityItem)
-    .reduce((total, item) => total + activityAmountSats(item), 0);
-  const browserFlowSats = confirmedActivity
-    .filter(isBrowserActivityItem)
-    .reduce((total, item) => total + activityAmountSats(item), 0);
-  const driveFlowSats = confirmedActivity
-    .filter((item) => item.kind === "file" && !isBrowserActivityItem(item))
-    .reduce((total, item) => total + activityAmountSats(item), 0);
-  const idMarketplaceVolumeSats = confirmedSales.reduce(
-    (total, sale) => total + numericValue(sale.priceSats),
-    0,
-  );
-  const tokenSaleVolumeSats = confirmedTokenSales.reduce(
-    (total, sale) => total + numericValue(sale.priceSats),
-    0,
-  );
+  const tokenMintFlowSats = numberFromInteger(state.tokenMintFlowSats);
+  const tokenSaleVolumeSats = numberFromInteger(state.tokenSaleVolumeSats);
   const tokenSaleFlowSats = tokenSaleVolumeSats;
+  const tokenTransferFlowSats = numberFromInteger(
+    state.tokenTransferFlowSats,
+  );
+  const walletFlowSats = tokenTransferFlowSats;
   const marketplaceSaleVolumeSats =
     idMarketplaceVolumeSats + tokenSaleVolumeSats;
   const marketplaceVolumeSats = marketplaceSaleVolumeSats;
-  const idMarketplaceFeeSats = confirmedActivityFlowSats(
-    confirmedActivity,
-    ID_MARKETPLACE_MUTATION_KINDS,
-  );
-  const tokenMarketplaceFeeSats = confirmedActivityFlowSats(
-    confirmedActivity,
-    TOKEN_MARKETPLACE_MUTATION_KINDS,
-  );
   const marketplaceFeeSats =
     idMarketplaceFeeSats + tokenMarketplaceFeeSats;
   const marketplaceMutationFeeSats = marketplaceFeeSats;
   const marketplaceFlowSats =
     marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
-  const tokenCreationFlowSats = confirmedTokens.reduce(
-    (total, token) => total + numericValue(token.creationFeeSats),
-    0,
+
+  const idValueQ8 =
+    (state.powids *
+      state.powids *
+      GROWTH_ID_DENSITY_NUMERATOR *
+      VALUE_Q8_SCALE) /
+    GROWTH_ID_DENSITY_DENOMINATOR;
+  const browserValueQ8 = valueQ8(state.browserFlowSats);
+  const computerEventValueQ8 = valueQ8(state.computerEventFlowSats);
+  const driveValueQ8 = valueQ8(state.driveFlowSats);
+  const inceptionBondValueQ8 = valueQ8(state.inceptionBondFlowSats);
+  const infinityBondValueQ8 = valueQ8(state.infinityBondFlowSats);
+  const mailValueQ8 = valueQ8(state.mailFlowSats);
+  const marketplaceValueQ8 = valueQ8(
+    state.idMarketplaceVolumeSats +
+      state.tokenSaleVolumeSats +
+      state.idMarketplaceFeeSats +
+      state.tokenMarketplaceFeeSats,
   );
-  const tokenMintFlowSats = confirmedValueTokenMints.reduce(
-    (total, mint) => total + numericValue(mint.paidSats),
-    0,
+  const tokenValueQ8 = valueQ8(
+    state.tokenCreationFlowSats + state.tokenMintFlowSats,
   );
-  const tokenTransferFlowSats = confirmedTokenTransfers.reduce(
-    (total, transfer) => total + numericValue(transfer.paidSats),
-    0,
-  );
-  const walletFlowSats = tokenTransferFlowSats;
-  const computerEventFlowSats =
-    unbucketedConfirmedComputerLogFlowSats(confirmedActivity);
-  const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
-  const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const inceptionBondSats =
-    inceptionBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const infinityBondSats =
-    infinityBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const marketplaceSats =
-    marketplaceFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const tokenSats =
-    (tokenCreationFlowSats + tokenMintFlowSats) *
-    GROWTH_MODEL_INPUTS.valueMultiple;
-  const walletSats = walletFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const computerEventSats =
-    computerEventFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const totalSats =
-    idSats +
-    mailSats +
-    inceptionBondSats +
-    infinityBondSats +
-    driveSats +
-    marketplaceSats +
-    browserSats +
-    tokenSats +
-    walletSats +
-    computerEventSats;
+  const walletValueQ8 = valueQ8(state.tokenTransferFlowSats);
+  const totalQ8 = growthActualBaseStateTotalQ8(state);
+  const idSats = q8ToNumber(idValueQ8);
+  const mailSats = q8ToNumber(mailValueQ8);
+  const inceptionBondSats = q8ToNumber(inceptionBondValueQ8);
+  const infinityBondSats = q8ToNumber(infinityBondValueQ8);
+  const driveSats = q8ToNumber(driveValueQ8);
+  const marketplaceSats = q8ToNumber(marketplaceValueQ8);
+  const browserSats = q8ToNumber(browserValueQ8);
+  const tokenSats = q8ToNumber(tokenValueQ8);
+  const walletSats = q8ToNumber(walletValueQ8);
+  const computerEventSats = q8ToNumber(computerEventValueQ8);
+  const totalSats = q8ToNumber(totalQ8);
   const years = Math.max(
     0,
     (Math.min(cutoffMs, Date.now()) - GROWTH_MODEL_START_MS) /
@@ -35485,6 +37874,10 @@ function growthActualBaseNetworkValue(
   );
 
   return {
+    baseNetworkValueQ8: totalQ8.toString(),
+    baseNetworkValueSatsExact: q8ToCanonicalDecimal(totalQ8),
+    baseTotalQ8: totalQ8.toString(),
+    baseTotalSatsExact: q8ToCanonicalDecimal(totalQ8),
     browserFlowSats,
     browserSats,
     computerEventFlowSats,
@@ -35517,26 +37910,27 @@ function growthActualBaseNetworkValue(
     walletFlowSats,
     walletSats,
     totalSats,
+    totalSatsExact: q8ToCanonicalDecimal(totalQ8),
     totalUsd: growthSatsToUsdAtYears(totalSats, years),
   };
 }
 
 function emptyGrowthActualBaseState() {
   return {
-    browserFlowSats: 0,
-    computerEventFlowSats: 0,
-    driveFlowSats: 0,
-    idMarketplaceFeeSats: 0,
-    idMarketplaceVolumeSats: 0,
-    inceptionBondFlowSats: 0,
-    infinityBondFlowSats: 0,
-    mailFlowSats: 0,
-    powids: 0,
-    tokenCreationFlowSats: 0,
-    tokenMarketplaceFeeSats: 0,
-    tokenMintFlowSats: 0,
-    tokenSaleVolumeSats: 0,
-    tokenTransferFlowSats: 0,
+    browserFlowSats: 0n,
+    computerEventFlowSats: 0n,
+    driveFlowSats: 0n,
+    idMarketplaceFeeSats: 0n,
+    idMarketplaceVolumeSats: 0n,
+    inceptionBondFlowSats: 0n,
+    infinityBondFlowSats: 0n,
+    mailFlowSats: 0n,
+    powids: 0n,
+    tokenCreationFlowSats: 0n,
+    tokenMarketplaceFeeSats: 0n,
+    tokenMintFlowSats: 0n,
+    tokenSaleVolumeSats: 0n,
+    tokenTransferFlowSats: 0n,
   };
 }
 
@@ -35547,19 +37941,21 @@ function growthActualBaseStateApplyContribution(
 ) {
   const field = String(contribution?.field ?? "");
   if (Object.hasOwn(state, field)) {
-    state[field] += numericValue(contribution?.value) * multiplier;
+    state[field] +=
+      proofFlowBigInt(contribution?.value) * BigInt(multiplier);
   }
   return state;
 }
 
 function growthActualBaseStateAdd(state, addition, multiplier = 1) {
   for (const field of Object.keys(state)) {
-    state[field] += numericValue(addition?.[field]) * multiplier;
+    state[field] +=
+      proofFlowBigInt(addition?.[field]) * BigInt(multiplier);
   }
   return state;
 }
 
-function growthActualBaseStateTotalSats(state) {
+function growthActualBaseStateTotalQ8(state) {
   const marketplaceSaleVolumeSats =
     state.idMarketplaceVolumeSats + state.tokenSaleVolumeSats;
   const marketplaceMutationFeeSats =
@@ -35567,18 +37963,27 @@ function growthActualBaseStateTotalSats(state) {
   const marketplaceFlowSats =
     marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
   return (
-    state.powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2 +
-    state.mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-    state.inceptionBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-    state.infinityBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-    state.driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-    marketplaceFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-    state.browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
+    (state.powids *
+      state.powids *
+      GROWTH_ID_DENSITY_NUMERATOR *
+      VALUE_Q8_SCALE) /
+      GROWTH_ID_DENSITY_DENOMINATOR +
+    state.mailFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    state.inceptionBondFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    state.infinityBondFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    state.driveFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    marketplaceFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    state.browserFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
     (state.tokenCreationFlowSats + state.tokenMintFlowSats) *
-      GROWTH_MODEL_INPUTS.valueMultiple +
-    state.tokenTransferFlowSats * GROWTH_MODEL_INPUTS.valueMultiple +
-    state.computerEventFlowSats * GROWTH_MODEL_INPUTS.valueMultiple
+      GROWTH_VALUE_MULTIPLE *
+      VALUE_Q8_SCALE +
+    state.tokenTransferFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    state.computerEventFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE
   );
+}
+
+function growthActualBaseStateTotalSats(state) {
+  return q8ToNumber(growthActualBaseStateTotalQ8(state));
 }
 
 function growthActualBaseNetworkValueEvents(
@@ -35606,7 +38011,7 @@ function growthActualBaseNetworkValueEvents(
       blockHash: String(source?.blockHash ?? "").trim().toLowerCase(),
       blockHeight: Number(source?.blockHeight),
       blockIndex: Number(source?.blockIndex),
-      contribution: { field, value: numericValue(value) },
+      contribution: { field, value: proofFlowBigInt(value) },
       createdMs,
       source,
       txid: String(source?.txid ?? "").trim().toLowerCase(),
@@ -35622,7 +38027,7 @@ function growthActualBaseNetworkValueEvents(
     if (!item?.confirmed) {
       continue;
     }
-    const sats = activityAmountSats(item);
+    const sats = activityAmountSatsBigInt(item);
     if (
       (item.kind === "mail" || item.kind === "reply") &&
       !isBondActivityItem(item) &&
@@ -35644,7 +38049,7 @@ function growthActualBaseNetworkValueEvents(
       addEvent(
         item,
         "idMarketplaceFeeSats",
-        marketplaceMutationPaymentSats(item),
+        marketplaceMutationPaymentSatsBigInt(item),
       );
     } else if (
       TOKEN_MARKETPLACE_MUTATION_KINDS.has(item.kind) &&
@@ -35653,7 +38058,7 @@ function growthActualBaseNetworkValueEvents(
       addEvent(
         item,
         "tokenMarketplaceFeeSats",
-        marketplaceMutationPaymentSats(item),
+        marketplaceMutationPaymentSatsBigInt(item),
       );
     } else if (!activityKindHasDedicatedGrowthBucket(item)) {
       addEvent(item, "computerEventFlowSats", sats);
@@ -35717,10 +38122,10 @@ function growthActualBaseNetworkValueAtProvider(
     state = emptyGrowthActualBaseState();
   };
 
-  return (atMs) => {
+  const lookupQ8 = (atMs) => {
     const targetMs = Number(atMs);
     if (!Number.isFinite(targetMs)) {
-      return 0;
+      return 0n;
     }
     if (targetMs < cursorMs) {
       reset();
@@ -35733,8 +38138,34 @@ function growthActualBaseNetworkValueAtProvider(
       cursor += 1;
     }
     cursorMs = targetMs;
-    return growthActualBaseStateTotalSats(state);
+    return growthActualBaseStateTotalQ8(state);
   };
+  const provider = (atMs) => q8ToNumber(lookupQ8(atMs));
+  provider.q8At = lookupQ8;
+  let canonicalBeforeProvider = null;
+  const beforeCanonicalItemProvider = () => {
+    if (!canonicalBeforeProvider) {
+      canonicalBeforeProvider =
+        growthActualBaseNetworkValueBeforeCanonicalItemProvider(
+          {
+            idActivity,
+            records,
+            sales,
+            tokenDefinitions,
+            tokenMints,
+            tokenSales,
+            tokenTransfers,
+          },
+          provider,
+        );
+    }
+    return canonicalBeforeProvider;
+  };
+  provider.beforeCanonicalItem = (source, createdMs) =>
+    beforeCanonicalItemProvider()(source, createdMs);
+  provider.q8BeforeCanonicalItem = (source, createdMs) =>
+    beforeCanonicalItemProvider().q8At(source, createdMs);
+  return provider;
 }
 
 function growthActualNetworkValue(
@@ -35758,16 +38189,18 @@ function growthActualNetworkValue(
     tokenSales,
     cutoffMs,
   );
+  const baseValueAt = growthActualBaseNetworkValueAtProvider(
+    records,
+    idActivity,
+    sales,
+    tokenDefinitions,
+    tokenMints,
+    tokenTransfers,
+    tokenSales,
+  );
   const creditValue = creditNetworkValueMetrics({
-    baseValueAt: growthActualBaseNetworkValueAtProvider(
-      records,
-      idActivity,
-      sales,
-      tokenDefinitions,
-      tokenMints,
-      tokenTransfers,
-      tokenSales,
-    ),
+    baseValueAt,
+    baseValueQ8At: baseValueAt.q8At,
     canonicalMinerFeeCoverage: options.canonicalMinerFeeCoverage,
     confirmedActivity: idActivity,
     cutoffMs,
@@ -35776,10 +38209,13 @@ function growthActualNetworkValue(
     tokenSales,
     tokenTransfers,
   });
-  const frozenTotalSats =
-    baseValue.totalSats + creditValue.creditEventFrozenValueSats;
-  const liveTotalSats =
-    baseValue.totalSats + creditValue.creditEventLiveValueSats;
+  const baseTotalQ8 = BigInt(baseValue.baseTotalQ8 ?? "0");
+  const frozenTotalQ8 =
+    baseTotalQ8 + BigInt(creditValue.creditEventFrozenValueQ8 ?? "0");
+  const liveTotalQ8 =
+    baseTotalQ8 + BigInt(creditValue.creditEventLiveValueQ8 ?? "0");
+  const frozenTotalSats = q8ToNumber(frozenTotalQ8);
+  const liveTotalSats = q8ToNumber(liveTotalQ8);
   const totalSats = liveTotalSats;
   const years = Math.max(
     0,
@@ -35789,6 +38225,7 @@ function growthActualNetworkValue(
 
   return {
     ...baseValue,
+    workNetworkValueAccountingModel: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
     ...(creditValue.creditMinerFeeAccountingModel
       ? {
           creditMinerFeeAccountingModel:
@@ -35798,24 +38235,65 @@ function growthActualNetworkValue(
       : {}),
     creditMinerFeeFlowSats: creditValue.creditMinerFeeFlowSats,
     creditEventFrozenValueSats: creditValue.creditEventFrozenValueSats,
+    ...(creditValue.creditEventFrozenValueQ8
+      ? { creditEventFrozenValueQ8: creditValue.creditEventFrozenValueQ8 }
+      : {}),
     creditEventLiveValueSats: creditValue.creditEventLiveValueSats,
+    creditEventLiveValueQ8: creditValue.creditEventLiveValueQ8,
     creditMarketplaceMutationFlowSats:
       creditValue.creditMarketplaceMutationFlowSats,
     creditMovementFrozenValueSats:
       creditValue.creditMovementFrozenValueSats,
+    ...(creditValue.creditMovementFrozenValueQ8
+      ? {
+          creditMovementFrozenValueQ8:
+            creditValue.creditMovementFrozenValueQ8,
+        }
+      : {}),
     creditMovementLiveValueSats: creditValue.creditMovementLiveValueSats,
+    creditMovementLiveValueQ8: creditValue.creditMovementLiveValueQ8,
     creditNetworkValueSats: creditValue.creditNetworkValueSats,
+    creditNetworkValueQ8: creditValue.creditNetworkValueQ8,
     creditFrozenNetworkValueSats: creditValue.creditFrozenNetworkValueSats,
+    creditFrozenNetworkValueQ8: creditValue.creditFrozenNetworkValueQ8,
     creditLiveNetworkValueSats: creditValue.creditLiveNetworkValueSats,
+    creditLiveNetworkValueQ8: creditValue.creditLiveNetworkValueQ8,
     creditProofPaymentFlowSats: creditValue.creditProofPaymentFlowSats,
     creditRegistryMutationFlowSats:
       creditValue.creditRegistryMutationFlowSats,
     creditSalePaymentFlowSats: creditValue.creditSalePaymentFlowSats,
-    frozenNetworkValueSats: frozenTotalSats,
-    frozenTotalSats,
-    liveNetworkValueSats: liveTotalSats,
-    liveTotalSats,
-    totalSats,
+    baseNetworkValueQ8: baseTotalQ8.toString(),
+    baseNetworkValueSats: q8ToCanonicalDecimal(baseTotalQ8),
+    baseNetworkValueSatsApproximate: q8ToNumber(baseTotalQ8),
+    baseNetworkValueSatsExact: q8ToCanonicalDecimal(baseTotalQ8),
+    baseTotalQ8: baseTotalQ8.toString(),
+    baseTotalSats: q8ToCanonicalDecimal(baseTotalQ8),
+    baseTotalSatsApproximate: q8ToNumber(baseTotalQ8),
+    baseTotalSatsExact: q8ToCanonicalDecimal(baseTotalQ8),
+    frozenNetworkValueQ8: frozenTotalQ8.toString(),
+    frozenNetworkValueSats: q8ToCanonicalDecimal(frozenTotalQ8),
+    frozenNetworkValueSatsApproximate: frozenTotalSats,
+    frozenNetworkValueSatsExact: q8ToCanonicalDecimal(frozenTotalQ8),
+    frozenTotalQ8: frozenTotalQ8.toString(),
+    frozenTotalSats: q8ToCanonicalDecimal(frozenTotalQ8),
+    frozenTotalSatsApproximate: frozenTotalSats,
+    frozenTotalSatsExact: q8ToCanonicalDecimal(frozenTotalQ8),
+    liveNetworkValueQ8: liveTotalQ8.toString(),
+    liveNetworkValueSats: q8ToCanonicalDecimal(liveTotalQ8),
+    liveNetworkValueSatsApproximate: liveTotalSats,
+    liveNetworkValueSatsExact: q8ToCanonicalDecimal(liveTotalQ8),
+    liveTotalQ8: liveTotalQ8.toString(),
+    liveTotalSats: q8ToCanonicalDecimal(liveTotalQ8),
+    liveTotalSatsApproximate: liveTotalSats,
+    liveTotalSatsExact: q8ToCanonicalDecimal(liveTotalQ8),
+    networkValueQ8: liveTotalQ8.toString(),
+    networkValueSats: q8ToCanonicalDecimal(liveTotalQ8),
+    networkValueSatsApproximate: liveTotalSats,
+    networkValueSatsExact: q8ToCanonicalDecimal(liveTotalQ8),
+    totalQ8: liveTotalQ8.toString(),
+    totalSats: q8ToCanonicalDecimal(liveTotalQ8),
+    totalSatsApproximate: totalSats,
+    totalSatsExact: q8ToCanonicalDecimal(liveTotalQ8),
     totalUsd: growthSatsToUsdAtYears(totalSats, years),
   };
 }
@@ -36037,6 +38515,7 @@ function growthActualLiveTotalSatsAtProvider(
               event.amountAtoms,
               inceptionWorkMovementOracle?.workNetworkValueSats ??
                 networkValueBeforeEvent,
+              inceptionWorkMovementOracle?.workNetworkValueQ8 ?? "",
             )
           : null;
       const creditValueAtConfirmSats =
@@ -36073,13 +38552,19 @@ function growthActualLiveTotalSatsAtProvider(
         marketplaceMutationFeeSats +
         salePaymentSats +
         minerFeeSats;
+      const frozenNetworkValueQ8 = atomicCreditValueAtConfirmQ8 === null
+        ? null
+        : atomicCreditValueAtConfirmQ8 +
+          BigInt(fixedEventFlowSats) * VALUE_Q8_SCALE;
+      const frozenNetworkValueSats = frozenNetworkValueQ8 === null
+        ? creditValueAtConfirmSats + fixedEventFlowSats
+        : q8ToNumber(frozenNetworkValueQ8);
       cumulativeFrozenCreditValueSats +=
-        creditValueAtConfirmSats + fixedEventFlowSats;
+        frozenNetworkValueSats;
       return {
         createdMs: event.createdMs,
         fixedEventFlowSats,
-        frozenNetworkValueSats:
-          creditValueAtConfirmSats + fixedEventFlowSats,
+        frozenNetworkValueSats,
         movementLiveFactor: maxSupply > 0 ? event.amount / maxSupply : 0,
       };
     });
@@ -36470,6 +38955,11 @@ function growthRealEventItems(
 function emptyWorkFloorPayload(network) {
   return {
     actualValue: {
+      workNetworkValueAccountingModel: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+      baseNetworkValueQ8: "0",
+      baseNetworkValueSats: "0",
+      baseTotalQ8: "0",
+      baseTotalSats: "0",
       browserFlowSats: 0,
       browserSats: 0,
       computerEventFlowSats: 0,
@@ -36499,27 +38989,52 @@ function emptyWorkFloorPayload(network) {
       tokenSaleVolumeSats: 0,
       tokenTransferFlowSats: 0,
       tokenSats: 0,
-      totalSats: 0,
+      totalSats: "0",
       totalUsd: 0,
       walletFlowSats: 0,
       walletSats: 0,
-      frozenFloorSats: 0,
-      frozenNetworkValueSats: 0,
-      frozenTotalSats: 0,
-      liveFloorSats: 0,
-      liveNetworkValueSats: 0,
-      liveTotalSats: 0,
-      networkValueSats: 0,
+      frozenFloorSats: "0",
+      frozenFloorQ8: "0",
+      frozenNetworkValueSats: "0",
+      frozenNetworkValueQ8: "0",
+      frozenTotalSats: "0",
+      frozenTotalQ8: "0",
+      liveFloorSats: "0",
+      liveFloorQ8: "0",
+      liveNetworkValueSats: "0",
+      liveNetworkValueQ8: "0",
+      liveTotalSats: "0",
+      liveTotalQ8: "0",
+      networkValueSats: "0",
+      networkValueQ8: "0",
+      floorQ8: "0",
+      totalQ8: "0",
     },
     chartPoints: [],
-    floorSats: 0,
-    frozenFloorSats: 0,
-    frozenNetworkValueSats: 0,
+    baseNetworkValueQ8: "0",
+    baseNetworkValueSats: "0",
+    baseTotalQ8: "0",
+    floorSats: "0",
+    floorQ8: "0",
+    frozenFloorSats: "0",
+    frozenFloorQ8: "0",
+    frozenNetworkValueSats: "0",
+    frozenNetworkValueQ8: "0",
+    frozenTotalQ8: "0",
+    frozenTotalSats: "0",
     indexedAt: new Date().toISOString(),
-    liveFloorSats: 0,
-    liveNetworkValueSats: 0,
+    liveFloorSats: "0",
+    liveFloorQ8: "0",
+    liveNetworkValueSats: "0",
+    liveNetworkValueQ8: "0",
     network,
-    networkValueSats: 0,
+    liveTotalQ8: "0",
+    liveTotalSats: "0",
+    networkValueSats: "0",
+    networkValueQ8: "0",
+    totalQ8: "0",
+    totalSats: "0",
+    workNetworkValueAccountingModel: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
     powids: 0,
     source: mempoolBase(network),
     tokenFlowSats: 0,
@@ -36652,22 +39167,23 @@ function workFloorPayloadFromState(
         computerActivity?.stats?.canonicalMinerFeeCoverage,
     },
   );
-  const globalWorkMintFlowSats = (valueTokenState.mints ?? [])
+  const globalWorkMintFlow = (valueTokenState.mints ?? [])
     .filter((mint) => mint.confirmed && mint.tokenId === WORK_TOKEN_ID)
-    .reduce((total, mint) => total + numericValue(mint.paidSats), 0);
-  const scopedWorkMintFlowSats = (workTokenState.mints ?? [])
+    .reduce((total, mint) => total + proofFlowBigInt(mint.paidSats), 0n);
+  const scopedWorkMintFlow = (workTokenState.mints ?? [])
     .filter((mint) => mint.confirmed)
-    .reduce((total, mint) => total + numericValue(mint.paidSats), 0);
+    .reduce((total, mint) => total + proofFlowBigInt(mint.paidSats), 0n);
   const globalWorkMintCount = (valueTokenState.mints ?? []).filter(
     (mint) => mint.confirmed && mint.tokenId === WORK_TOKEN_ID,
   ).length;
   const scopedWorkMintCount = (workTokenState.mints ?? []).filter(
     (mint) => mint.confirmed,
   ).length;
-  const missingWorkMintFlowSats = Math.max(
-    0,
-    scopedWorkMintFlowSats - globalWorkMintFlowSats,
-  );
+  const missingWorkMintFlow =
+    scopedWorkMintFlow > globalWorkMintFlow
+      ? scopedWorkMintFlow - globalWorkMintFlow
+      : 0n;
+  const missingWorkMintFlowSats = Number(missingWorkMintFlow);
   const missingWorkMintCount = Math.max(
     0,
     scopedWorkMintCount - globalWorkMintCount,
@@ -36677,15 +39193,29 @@ function workFloorPayloadFromState(
   const correctedTokenSats =
     (actualValue.tokenCreationFlowSats + correctedTokenMintFlowSats) *
     GROWTH_MODEL_INPUTS.valueMultiple;
-  const correctedNetworkValueSats =
-    actualValue.totalSats +
-    missingWorkMintFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const correctedFrozenNetworkValueSats =
-    numericValue(
-      actualValue.frozenTotalSats ??
-        actualValue.frozenNetworkValueSats ??
-        actualValue.totalSats,
-    ) + missingWorkMintFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const missingWorkMintValueQ8 =
+    missingWorkMintFlow * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE;
+  const correctedBaseNetworkValueQ8 =
+    BigInt(actualValue.baseNetworkValueQ8 ?? "0") +
+    missingWorkMintValueQ8;
+  const correctedNetworkValueQ8 =
+    BigInt(actualValue.liveNetworkValueQ8 ?? actualValue.totalQ8 ?? "0") +
+    missingWorkMintValueQ8;
+  const correctedFrozenNetworkValueQ8 =
+    BigInt(
+      actualValue.frozenNetworkValueQ8 ??
+        actualValue.frozenTotalQ8 ??
+        actualValue.totalQ8 ??
+        "0",
+    ) + missingWorkMintValueQ8;
+  const correctedFloorQ8 =
+    correctedNetworkValueQ8 / BigInt(WORK_TOKEN_MAX_SUPPLY);
+  const correctedFrozenFloorQ8 =
+    correctedFrozenNetworkValueQ8 / BigInt(WORK_TOKEN_MAX_SUPPLY);
+  const correctedNetworkValueSats = q8ToNumber(correctedNetworkValueQ8);
+  const correctedFrozenNetworkValueSats = q8ToNumber(
+    correctedFrozenNetworkValueQ8,
+  );
   const modelTotalUsd = growthSatsToUsdAtYears(
     correctedNetworkValueSats,
     growthElapsedYears(),
@@ -36697,18 +39227,60 @@ function workFloorPayloadFromState(
       : modelTotalUsd;
   const correctedActualValue = {
     ...actualValue,
+    workNetworkValueAccountingModel: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
     modelTotalUsd,
     tokenMintFlowSats: correctedTokenMintFlowSats,
     tokenSats: correctedTokenSats,
-    floorSats: correctedNetworkValueSats / WORK_TOKEN_MAX_SUPPLY,
-    frozenFloorSats: correctedFrozenNetworkValueSats / WORK_TOKEN_MAX_SUPPLY,
-    frozenNetworkValueSats: correctedFrozenNetworkValueSats,
-    frozenTotalSats: correctedFrozenNetworkValueSats,
-    liveFloorSats: correctedNetworkValueSats / WORK_TOKEN_MAX_SUPPLY,
-    liveNetworkValueSats: correctedNetworkValueSats,
-    liveTotalSats: correctedNetworkValueSats,
-    networkValueSats: correctedNetworkValueSats,
-    totalSats: correctedNetworkValueSats,
+    baseNetworkValueQ8: correctedBaseNetworkValueQ8.toString(),
+    baseNetworkValueSats:
+      q8ToCanonicalDecimal(correctedBaseNetworkValueQ8),
+    baseNetworkValueSatsApproximate:
+      q8ToNumber(correctedBaseNetworkValueQ8),
+    baseNetworkValueSatsExact:
+      q8ToCanonicalDecimal(correctedBaseNetworkValueQ8),
+    baseTotalQ8: correctedBaseNetworkValueQ8.toString(),
+    baseTotalSats: q8ToCanonicalDecimal(correctedBaseNetworkValueQ8),
+    baseTotalSatsApproximate: q8ToNumber(correctedBaseNetworkValueQ8),
+    baseTotalSatsExact: q8ToCanonicalDecimal(correctedBaseNetworkValueQ8),
+    floorSats: q8ToCanonicalDecimal(correctedFloorQ8),
+    floorSatsApproximate: q8ToNumber(correctedFloorQ8),
+    floorSatsExact: q8ToCanonicalDecimal(correctedFloorQ8),
+    floorQ8: correctedFloorQ8.toString(),
+    frozenFloorSats: q8ToCanonicalDecimal(correctedFrozenFloorQ8),
+    frozenFloorSatsApproximate: q8ToNumber(correctedFrozenFloorQ8),
+    frozenFloorSatsExact: q8ToCanonicalDecimal(correctedFrozenFloorQ8),
+    frozenFloorQ8: correctedFrozenFloorQ8.toString(),
+    frozenNetworkValueQ8: correctedFrozenNetworkValueQ8.toString(),
+    frozenNetworkValueSats:
+      q8ToCanonicalDecimal(correctedFrozenNetworkValueQ8),
+    frozenNetworkValueSatsApproximate: correctedFrozenNetworkValueSats,
+    frozenNetworkValueSatsExact:
+      q8ToCanonicalDecimal(correctedFrozenNetworkValueQ8),
+    frozenTotalQ8: correctedFrozenNetworkValueQ8.toString(),
+    frozenTotalSats: q8ToCanonicalDecimal(correctedFrozenNetworkValueQ8),
+    frozenTotalSatsApproximate: correctedFrozenNetworkValueSats,
+    frozenTotalSatsExact:
+      q8ToCanonicalDecimal(correctedFrozenNetworkValueQ8),
+    liveFloorSats: q8ToCanonicalDecimal(correctedFloorQ8),
+    liveFloorSatsApproximate: q8ToNumber(correctedFloorQ8),
+    liveFloorSatsExact: q8ToCanonicalDecimal(correctedFloorQ8),
+    liveFloorQ8: correctedFloorQ8.toString(),
+    liveNetworkValueQ8: correctedNetworkValueQ8.toString(),
+    liveNetworkValueSats: q8ToCanonicalDecimal(correctedNetworkValueQ8),
+    liveNetworkValueSatsApproximate: correctedNetworkValueSats,
+    liveNetworkValueSatsExact: q8ToCanonicalDecimal(correctedNetworkValueQ8),
+    liveTotalQ8: correctedNetworkValueQ8.toString(),
+    liveTotalSats: q8ToCanonicalDecimal(correctedNetworkValueQ8),
+    liveTotalSatsApproximate: correctedNetworkValueSats,
+    liveTotalSatsExact: q8ToCanonicalDecimal(correctedNetworkValueQ8),
+    networkValueQ8: correctedNetworkValueQ8.toString(),
+    networkValueSats: q8ToCanonicalDecimal(correctedNetworkValueQ8),
+    networkValueSatsApproximate: correctedNetworkValueSats,
+    networkValueSatsExact: q8ToCanonicalDecimal(correctedNetworkValueQ8),
+    totalQ8: correctedNetworkValueQ8.toString(),
+    totalSats: q8ToCanonicalDecimal(correctedNetworkValueQ8),
+    totalSatsApproximate: correctedNetworkValueSats,
+    totalSatsExact: q8ToCanonicalDecimal(correctedNetworkValueQ8),
     totalUsd: liveTotalUsd,
   };
   const workToken = (valueTokenState.tokens ?? []).find(
@@ -36756,18 +39328,58 @@ function workFloorPayloadFromState(
     actualValue: correctedActualValue,
     ...btcUsdMetadata,
     chartPoints,
-    floorSats: correctedNetworkValueSats / WORK_TOKEN_MAX_SUPPLY,
-    frozenFloorSats: correctedFrozenNetworkValueSats / WORK_TOKEN_MAX_SUPPLY,
-    frozenNetworkValueSats: correctedFrozenNetworkValueSats,
+    workNetworkValueAccountingModel: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+    baseNetworkValueQ8: correctedBaseNetworkValueQ8.toString(),
+    baseNetworkValueSats:
+      q8ToCanonicalDecimal(correctedBaseNetworkValueQ8),
+    baseNetworkValueSatsApproximate:
+      q8ToNumber(correctedBaseNetworkValueQ8),
+    baseNetworkValueSatsExact:
+      q8ToCanonicalDecimal(correctedBaseNetworkValueQ8),
+    baseTotalQ8: correctedBaseNetworkValueQ8.toString(),
+    baseTotalSats: q8ToCanonicalDecimal(correctedBaseNetworkValueQ8),
+    baseTotalSatsApproximate: q8ToNumber(correctedBaseNetworkValueQ8),
+    floorSats: q8ToCanonicalDecimal(correctedFloorQ8),
+    floorSatsApproximate: q8ToNumber(correctedFloorQ8),
+    floorSatsExact: q8ToCanonicalDecimal(correctedFloorQ8),
+    floorQ8: correctedFloorQ8.toString(),
+    frozenFloorSats: q8ToCanonicalDecimal(correctedFrozenFloorQ8),
+    frozenFloorSatsApproximate: q8ToNumber(correctedFrozenFloorQ8),
+    frozenFloorSatsExact: q8ToCanonicalDecimal(correctedFrozenFloorQ8),
+    frozenFloorQ8: correctedFrozenFloorQ8.toString(),
+    frozenNetworkValueQ8: correctedFrozenNetworkValueQ8.toString(),
+    frozenNetworkValueSats:
+      q8ToCanonicalDecimal(correctedFrozenNetworkValueQ8),
+    frozenNetworkValueSatsApproximate: correctedFrozenNetworkValueSats,
+    frozenNetworkValueSatsExact:
+      q8ToCanonicalDecimal(correctedFrozenNetworkValueQ8),
+    frozenTotalQ8: correctedFrozenNetworkValueQ8.toString(),
+    frozenTotalSats: q8ToCanonicalDecimal(correctedFrozenNetworkValueQ8),
+    frozenTotalSatsApproximate: correctedFrozenNetworkValueSats,
     indexedAt: new Date().toISOString(),
-    liveFloorSats: correctedNetworkValueSats / WORK_TOKEN_MAX_SUPPLY,
-    liveNetworkValueSats: correctedNetworkValueSats,
+    liveFloorSats: q8ToCanonicalDecimal(correctedFloorQ8),
+    liveFloorSatsApproximate: q8ToNumber(correctedFloorQ8),
+    liveFloorSatsExact: q8ToCanonicalDecimal(correctedFloorQ8),
+    liveFloorQ8: correctedFloorQ8.toString(),
+    liveNetworkValueQ8: correctedNetworkValueQ8.toString(),
+    liveNetworkValueSats: q8ToCanonicalDecimal(correctedNetworkValueQ8),
+    liveNetworkValueSatsApproximate: correctedNetworkValueSats,
+    liveNetworkValueSatsExact: q8ToCanonicalDecimal(correctedNetworkValueQ8),
+    liveTotalQ8: correctedNetworkValueQ8.toString(),
+    liveTotalSats: q8ToCanonicalDecimal(correctedNetworkValueQ8),
+    liveTotalSatsApproximate: correctedNetworkValueSats,
     network,
-    networkValueSats: correctedNetworkValueSats,
+    networkValueQ8: correctedNetworkValueQ8.toString(),
+    networkValueSats: q8ToCanonicalDecimal(correctedNetworkValueQ8),
+    networkValueSatsApproximate: correctedNetworkValueSats,
+    networkValueSatsExact: q8ToCanonicalDecimal(correctedNetworkValueQ8),
     powids: actualValue.powids,
     source: mempoolBase(network),
     tokenFlowSats:
       actualValue.tokenCreationFlowSats + correctedTokenMintFlowSats,
+    totalQ8: correctedNetworkValueQ8.toString(),
+    totalSats: q8ToCanonicalDecimal(correctedNetworkValueQ8),
+    totalSatsApproximate: correctedNetworkValueSats,
     stats: {
       confirmedTokenMints: (valueTokenState.mints ?? []).filter(
         (mint) => mint.confirmed,
@@ -38879,6 +41491,7 @@ async function loadCanonicalVerifierContextFromCheckpoint(
   requiredBlockHeight,
   expectedBlockHash,
   expectedPreviousBlockHash,
+  replayVerifierBinding = null,
 ) {
   const priorHeight = Number(requiredBlockHeight) - 1;
   if (!Number.isSafeInteger(priorHeight) || priorHeight < 1) {
@@ -38888,6 +41501,39 @@ async function loadCanonicalVerifierContextFromCheckpoint(
     network,
     priorHeight,
   );
+  const replayBinding = canonicalPwtReplayVerifierBindingDescriptor(
+    replayVerifierBinding,
+    network,
+  );
+  if (replayVerifierBinding && !replayBinding) {
+    throw internalReplayVerifierBindingError(
+      "The canonical verifier received an invalid authenticated range-replay binding.",
+      { priorHeight, requiredBlockHeight },
+    );
+  }
+  if (replayBinding) {
+    const priorReplayState = canonicalInternalPwtRangeReplayState(
+      prior?.rebuild,
+      network,
+    );
+    const priorBinding = canonicalInternalReplayVerifierBinding(
+      prior?.rebuild,
+      network,
+    );
+    if (
+      priorReplayState !== "active" ||
+      !canonicalPwtReplayVerifierBindingsEqual(priorBinding, replayBinding)
+    ) {
+      throw internalReplayVerifierBindingError(
+        "The canonical verifier context does not match the authenticated range-replay database binding.",
+        {
+          bindingId: replayBinding.bindingId,
+          priorHeight,
+          requiredBlockHeight,
+        },
+      );
+    }
+  }
   const checkpointHash = String(prior?.checkpointHash ?? "")
     .trim()
     .toLowerCase();
@@ -38941,6 +41587,7 @@ async function canonicalVerifierContextFromCheckpoint(
   requiredBlockHeight,
   expectedBlockHash,
   expectedPreviousBlockHash,
+  replayVerifierBinding = null,
 ) {
   const height = Number(requiredBlockHeight);
   if (!Number.isSafeInteger(height) || height <= 0) {
@@ -38958,15 +41605,28 @@ async function canonicalVerifierContextFromCheckpoint(
       "Canonical verifier requires exact current and previous block hashes.",
     );
   }
+  const replayBinding = canonicalPwtReplayVerifierBindingDescriptor(
+    replayVerifierBinding,
+    network,
+  );
+  if (replayVerifierBinding && !replayBinding) {
+    throw internalReplayVerifierBindingError(
+      "The canonical verifier received an invalid authenticated range-replay binding.",
+      { requiredBlockHeight: height },
+    );
+  }
+  const replayBindingCacheKey =
+    canonicalPwtReplayVerifierBindingCacheKey(replayBinding, network);
   pruneInternalVerifierStateCache(height);
   return cachedInternalVerifierState(
-    `canonical-context:${network}:h${height}:${previousBlockHash}:${blockHash}`,
+    `canonical-context:${network}:h${height}:${previousBlockHash}:${blockHash}${replayBindingCacheKey}`,
     () =>
       loadCanonicalVerifierContextFromCheckpoint(
         network,
         height,
         blockHash,
         previousBlockHash,
+        replayBinding,
       ),
   );
 }
@@ -39247,15 +41907,22 @@ async function completeTokenVerifierState(
   targetTxid = "",
   expectedBlockHash = "",
   expectedPreviousBlockHash = "",
+  options = {},
 ) {
   const requestedScope = String(tokenScope ?? "").trim().toLowerCase() === "all"
     ? ""
     : normalizeTokenScope(tokenScope);
+  const replayVerifierBinding =
+    canonicalPwtReplayVerifierBindingDescriptor(
+      options.replayVerifierBinding,
+      network,
+    );
   const context = await canonicalVerifierContextFromCheckpoint(
     network,
     requiredBlockHeight,
     expectedBlockHash,
     expectedPreviousBlockHash,
+    replayVerifierBinding,
   );
   const scopeResolution = requestedScope
     ? { scope: requestedScope, status: "resolved" }
@@ -39285,6 +41952,53 @@ async function completeTokenVerifierState(
       scopeResolution,
       source: "canonical-block-scan-db-core-verifier",
     };
+  }
+  let preRangeMintWitnesses = [];
+  let boundWitnessDispositions = [];
+  if (scope === INCB_TOKEN_ID && replayVerifierBinding) {
+    const priorHeight = requiredBlockHeight - 1;
+    const witnessPayload =
+      await proofIndexCanonicalInceptionMintWitnessesPayload(
+        network,
+        priorHeight,
+      );
+    const witnessReplayState = canonicalInternalPwtRangeReplayState(
+      witnessPayload?.rebuild,
+      network,
+    );
+    const witnessBinding = canonicalInternalReplayVerifierBinding(
+      witnessPayload?.rebuild,
+      network,
+    );
+    const witnessEnvelope = canonicalBoundInceptionWitnessEnvelope(
+      witnessPayload,
+      replayVerifierBinding,
+      network,
+      priorHeight,
+      context.previousBlockHash,
+    );
+    if (
+      witnessReplayState !== "active" ||
+      !canonicalPwtReplayVerifierBindingsEqual(
+        witnessBinding,
+        replayVerifierBinding,
+      ) ||
+      !witnessEnvelope
+    ) {
+      const error = new Error(
+        "The active range replay cannot prove its immutable bound Inception witnesses.",
+      );
+      error.statusCode = 503;
+      error.details = {
+        code: "INCEPTION_BOUND_WITNESS_UNAVAILABLE",
+        priorHeight,
+        requiredBlockHeight,
+        txid: String(targetTxid ?? "").trim().toLowerCase(),
+      };
+      throw error;
+    }
+    preRangeMintWitnesses = witnessEnvelope.mints;
+    boundWitnessDispositions = witnessEnvelope.dispositions;
   }
   const indexAddress = tokenIndexAddressForNetwork(network);
   if (scope === WORK_TOKEN_ID) {
@@ -39383,12 +42097,15 @@ async function completeTokenVerifierState(
   const inceptionIssuanceOptions =
     scope === INCB_TOKEN_ID
       ? await canonicalInceptionIssuanceOptions(network, verifierBondActivity, {
+          boundWitnessDispositions,
+          preRangeMintWitnesses,
           previousBlockHashByBlockHash: new Map([
             [
               String(context.blockHash ?? "").trim().toLowerCase(),
               String(context.previousBlockHash ?? "").trim().toLowerCase(),
             ],
           ]),
+          replayVerifierBinding,
         })
       : {};
   let state =
@@ -39419,17 +42136,15 @@ async function completeTokenVerifierState(
         state,
         issuance,
         targetTxid,
-        context,
-        requiredBlockHeight,
-      );
+      context,
+      requiredBlockHeight,
+    );
+    const exactVerifierSupply =
+      canonicalIntegerText(state.confirmedSupply, { allowZero: true }) || "0";
     if (
       !issuance.complete ||
       (issuance.confirmedMints === 0 && !resolvedInvalidOnlyState) ||
-      !numbersAgree(
-        issuance.confirmedIssuanceUnits,
-        numericValue(state.confirmedSupply),
-        0.01,
-      )
+      issuance.confirmedIssuanceUnits !== exactVerifierSupply
     ) {
       const error = new Error(
         "The canonical Inception issuance verifier could not prove live-value issuance.",
@@ -39437,11 +42152,9 @@ async function completeTokenVerifierState(
       error.statusCode = 503;
       error.details = {
         code: "INCEPTION_LIVE_ISSUANCE_UNAVAILABLE",
-        confirmedIssuanceUnits: numericValue(
-          issuance.confirmedIssuanceUnits,
-        ),
+        confirmedIssuanceUnits: issuance.confirmedIssuanceUnits,
         confirmedMints: numericValue(issuance.confirmedMints),
-        confirmedSupply: numericValue(state.confirmedSupply),
+        confirmedSupply: exactVerifierSupply,
         issuanceComplete: issuance.complete === true,
         mintCount: Array.isArray(state.mints) ? state.mints.length : 0,
         requiredBlockHeight,
@@ -39501,8 +42214,17 @@ function tokenVerifierItemsFromState(state, txid) {
     if (!item || typeof item !== "object") {
       return;
     }
+    const canonicalBondMintWithoutProtocol =
+      kind === "token-mint" &&
+      !String(item?.protocol ?? "").trim() &&
+      /^canonical-(?:powb|incb)-bond-projection$/u.test(
+        String(item?.validationMode ?? "").trim(),
+      ) &&
+      String(item?.sourceBondTxid ?? "").trim().toLowerCase() ===
+        normalizedTxid;
     items.push({
       ...item,
+      ...(canonicalBondMintWithoutProtocol ? { protocol: "pwt1" } : {}),
       blockHeight: item?.[blockHeightField] ?? item?.blockHeight,
       confirmed: item?.[confirmationField] === true,
       kind,
@@ -39605,6 +42327,17 @@ function verifierBalanceSnapshot(state, tokenId) {
         return balanceAtoms === null || balanceAtoms < 1n
           ? []
           : [{ address, ...workBalanceFieldsFromAtoms(balanceAtoms) }];
+      }
+      if (isBondTokenId(normalizedTokenId)) {
+        const balance = bondUnitsBigInt(
+          holder?.balance ?? holder?.confirmedBalance ?? 0,
+        );
+        return balance === null || balance < 1n
+          ? []
+          : [{
+              address,
+              ...tokenLedgerBalanceFields(normalizedTokenId, balance),
+            }];
       }
       const balance = Number(holder?.balance ?? holder?.confirmedBalance ?? 0);
       return Number.isSafeInteger(balance) && balance > 0
@@ -39816,6 +42549,7 @@ function proofIndexExactlyCoversCoreTip(status, canonical, tip) {
   const scanHash = String(status?.scan?.blockHash ?? "").trim().toLowerCase();
   const fault = canonical?.fault;
   const rebuild = canonical?.rebuild;
+  const rebuildTrustState = canonicalRebuildTrustState(rebuild, "livenet");
   return (
     status?.network === "livenet" &&
     status?.source === "proof-indexer-block-scan" &&
@@ -39824,10 +42558,7 @@ function proofIndexExactlyCoversCoreTip(status, canonical, tip) {
     Number(status?.scan?.tipHeight) === tip?.height &&
     scanHash === tip?.blockHash &&
     (fault == null || fault?.active === false) &&
-    rebuild &&
-    typeof rebuild === "object" &&
-    rebuild.active === false &&
-    rebuild.status === "complete"
+    rebuildTrustState === "complete"
   );
 }
 
@@ -40248,7 +42979,12 @@ async function tokenVerifierDeterministicInvalidReason(
               amountAtoms:
                 holder?.balanceAtoms ?? holder?.confirmedBalanceAtoms,
             }, { allowZero: true }) ?? 0n
-          : Number(holder?.balance ?? holder?.confirmedBalance ?? 0);
+          : isBondTokenId(tokenId)
+            ? bondUnitsBigInt(
+                holder?.balance ?? holder?.confirmedBalance ?? 0,
+                { allowZero: true },
+              ) ?? 0n
+            : Number(holder?.balance ?? holder?.confirmedBalance ?? 0);
         const reservedBalance = (Array.isArray(state?.listings)
           ? state.listings
           : []
@@ -40265,6 +43001,7 @@ async function tokenVerifierDeterministicInvalidReason(
           }, tokenLedgerZero(tokenId));
         if (
           (isWorkTokenId(tokenId) ||
+            isBondTokenId(tokenId) ||
             (Number.isSafeInteger(confirmedBalance) &&
               Number.isSafeInteger(reservedBalance))) &&
           confirmedBalance >= tokenLedgerZero(tokenId) &&
@@ -40377,6 +43114,12 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
   const requiredPreviousBlockHash = String(options.previousBlockHash ?? "")
     .trim()
     .toLowerCase();
+  const replayVerifierBinding = requireConfirmed
+    ? canonicalPwtReplayVerifierBindingDescriptor(
+        options.replayVerifierBinding,
+        network,
+      )
+    : null;
   if (
     requireConfirmed &&
     (!Number.isSafeInteger(requiredBlockHeight) ||
@@ -40423,8 +43166,13 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
     pendingCoreContext?.scope === WORK_TOKEN_ID &&
     (!scope || scope === WORK_TOKEN_ID);
   const confirmedStateScope = scope || `tx:${normalizedTxid}`;
+  const replayBindingCacheKey =
+    canonicalPwtReplayVerifierBindingCacheKey(
+      replayVerifierBinding,
+      network,
+    );
   const stateKey = requireConfirmed
-    ? `token-complete:${network}:${confirmedStateScope}:h${requiredBlockHeight}:${requiredPreviousBlockHash}:${requiredBlockHash}`
+    ? `token-complete:${network}:${confirmedStateScope}:h${requiredBlockHeight}:${requiredPreviousBlockHash}:${requiredBlockHash}${replayBindingCacheKey}`
     : usePendingCoreWorkState
       ? `token-pending-core:${network}:${WORK_TOKEN_ID}:${normalizedTxid}`
       : `token:${network}:${scope || "all"}`;
@@ -40440,6 +43188,7 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
           normalizedTxid,
           requiredBlockHash,
           requiredPreviousBlockHash,
+          { replayVerifierBinding },
         )
       : usePendingCoreWorkState
         ? cachedInternalVerifierState(
@@ -40886,6 +43635,402 @@ async function idVerifierPayload(network, txid, options = {}) {
       : "full-ordered-id-verifier",
     txid: normalizedTxid,
   };
+}
+
+function canonicalPwtRangeReplayVerificationIsValid(rebuild, network) {
+  const source =
+    rebuild && typeof rebuild === "object" && !Array.isArray(rebuild)
+      ? rebuild
+      : {};
+  const verification =
+    source.incbRangeReplayVerification &&
+    typeof source.incbRangeReplayVerification === "object" &&
+    !Array.isArray(source.incbRangeReplayVerification)
+      ? source.incbRangeReplayVerification
+      : {};
+  const verifierBinding = canonicalPwtReplayVerifierBindingDescriptor(
+    source.verifierBinding,
+    network,
+  );
+  const rangeReplayFromHeight = Number(source.rangeReplayFromHeight);
+  const coreFacts = Array.isArray(verification.coreFacts)
+    ? verification.coreFacts
+    : [];
+  const targets = Array.isArray(verification.targets)
+    ? verification.targets
+    : [];
+  const preservedWitnesses = Array.isArray(verification.preservedWitnesses)
+    ? verification.preservedWitnesses
+    : [];
+  const rederivedWitnesses = Array.isArray(verification.rederivedWitnesses)
+    ? verification.rederivedWitnesses
+    : [];
+  const expectedRederivedWitnessCount = verifierBinding
+    ? verifierBinding.witnessCount - verifierBinding.witnessPreserveCount
+    : -1;
+  if (
+    source.network !== network ||
+    !Number.isSafeInteger(rangeReplayFromHeight) ||
+    rangeReplayFromHeight <= 0 ||
+    !verifierBinding ||
+    verifierBinding.rangeReplayFromHeight !== rangeReplayFromHeight ||
+    verification.verified !== true ||
+    verification.accountingModel !== INCEPTION_ISSUANCE_ACCOUNTING_MODEL ||
+    Number(verification.rangeReplayFromHeight) !== rangeReplayFromHeight ||
+    String(verification.witnessSetHash ?? "").trim().toLowerCase() !==
+      verifierBinding.witnessSetHash ||
+    Number(verification.witnessCount) !== verifierBinding.witnessCount ||
+    Number(verification.witnessPreserveCount) !==
+      verifierBinding.witnessPreserveCount ||
+    Number(verification.consumedPreserveCount) !==
+      verifierBinding.witnessPreserveCount ||
+    Number(verification.rederivedWitnessCount) !==
+      expectedRederivedWitnessCount ||
+    Number(verification.witnessedThroughBlock) !==
+      verifierBinding.witnessedThroughBlock ||
+    String(verification.witnessedThroughBlockHash ?? "")
+      .trim()
+      .toLowerCase() !== verifierBinding.witnessedThroughBlockHash ||
+    preservedWitnesses.length !== verifierBinding.witnessPreserveCount ||
+    preservedWitnesses.length !==
+      Number(verification.consumedPreserveCount) ||
+    rederivedWitnesses.length !== expectedRederivedWitnessCount ||
+    coreFacts.length === 0 ||
+    coreFacts.length !== targets.length
+  ) {
+    return false;
+  }
+
+  const preservedIdentities = new Set();
+  let priorPreservedIdentity = "";
+  for (const item of preservedWitnesses) {
+    const txid = String(item?.txid ?? "").trim().toLowerCase();
+    const bondRecipientVout = Number(item?.bondRecipientVout);
+    const identity = String(item?.identity ?? "").trim().toLowerCase();
+    const expectedIdentity = `${txid}:${bondRecipientVout}`;
+    const mintPayloadHash = String(item?.mintPayloadHash ?? "")
+      .trim()
+      .toLowerCase();
+    const snapshotId = String(item?.snapshotId ?? "").trim();
+    const snapshotFingerprint = String(item?.snapshotFingerprint ?? "")
+      .trim()
+      .toLowerCase();
+    if (
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !Number.isSafeInteger(bondRecipientVout) ||
+      bondRecipientVout < 0 ||
+      identity !== expectedIdentity ||
+      preservedIdentities.has(identity) ||
+      (priorPreservedIdentity &&
+        identity.localeCompare(priorPreservedIdentity) <= 0) ||
+      !/^[0-9a-f]{64}$/u.test(mintPayloadHash) ||
+      !snapshotId ||
+      !/^[0-9a-f]{64}$/u.test(snapshotFingerprint)
+    ) {
+      return false;
+    }
+    preservedIdentities.add(identity);
+    priorPreservedIdentity = identity;
+  }
+
+  const witnessedIdentities = new Set(preservedIdentities);
+  let priorRederivedIdentity = "";
+  for (const item of rederivedWitnesses) {
+    const txid = String(item?.txid ?? "").trim().toLowerCase();
+    const bondRecipientVout = Number(item?.bondRecipientVout);
+    const identity = String(item?.identity ?? "").trim().toLowerCase();
+    const expectedIdentity = `${txid}:${bondRecipientVout}`;
+    const disposition = String(item?.disposition ?? "").trim().toLowerCase();
+    const mintPayloadHash = String(item?.mintPayloadHash ?? "")
+      .trim()
+      .toLowerCase();
+    const snapshotId = String(item?.snapshotId ?? "").trim();
+    const snapshotFingerprint = String(item?.snapshotFingerprint ?? "")
+      .trim()
+      .toLowerCase();
+    const invalidPayloadHash = String(item?.invalidPayloadHash ?? "")
+      .trim()
+      .toLowerCase();
+    const mintDispositionIsValid =
+      disposition === "mint" &&
+      /^[0-9a-f]{64}$/u.test(mintPayloadHash) &&
+      Boolean(snapshotId) &&
+      /^[0-9a-f]{64}$/u.test(snapshotFingerprint) &&
+      !invalidPayloadHash;
+    const invalidDispositionIsValid =
+      disposition === "invalid" &&
+      /^[0-9a-f]{64}$/u.test(invalidPayloadHash) &&
+      !mintPayloadHash &&
+      !snapshotId &&
+      !snapshotFingerprint;
+    if (
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !Number.isSafeInteger(bondRecipientVout) ||
+      bondRecipientVout < 0 ||
+      identity !== expectedIdentity ||
+      witnessedIdentities.has(identity) ||
+      (priorRederivedIdentity &&
+        identity.localeCompare(priorRederivedIdentity) <= 0) ||
+      (!mintDispositionIsValid && !invalidDispositionIsValid)
+    ) {
+      return false;
+    }
+    witnessedIdentities.add(identity);
+    priorRederivedIdentity = identity;
+  }
+  if (witnessedIdentities.size !== verifierBinding.witnessCount) {
+    return false;
+  }
+
+  const positiveIntegerText = (value) => {
+    const text = String(value ?? "").trim();
+    return /^[1-9][0-9]*$/u.test(text) ? BigInt(text).toString() : "";
+  };
+  const coreByTxid = new Map();
+  for (const item of coreFacts) {
+    const txid = String(item?.txid ?? "").trim().toLowerCase();
+    const blockHash = String(item?.blockHash ?? "").trim().toLowerCase();
+    const blockHeight = Number(item?.blockHeight);
+    const blockIndex = Number(item?.blockIndex);
+    const workAmountAtoms = positiveIntegerText(item?.workAmountAtoms);
+    if (
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !/^[0-9a-f]{64}$/u.test(blockHash) ||
+      !Number.isSafeInteger(blockHeight) ||
+      blockHeight < rangeReplayFromHeight ||
+      !Number.isSafeInteger(blockIndex) ||
+      blockIndex < 0 ||
+      !workAmountAtoms ||
+      coreByTxid.has(txid)
+    ) {
+      return false;
+    }
+    coreByTxid.set(txid, {
+      blockHash,
+      blockHeight,
+      blockIndex,
+      workAmountAtoms,
+    });
+  }
+
+  const targetTxids = new Set();
+  for (const item of targets) {
+    const txid = String(item?.txid ?? "").trim().toLowerCase();
+    const workAmountAtoms = positiveIntegerText(item?.workAmountAtoms);
+    const confirmedIssuanceUnits = positiveIntegerText(
+      item?.confirmedIssuanceUnits,
+    );
+    const issuanceNetworkValueQ8 = positiveIntegerText(
+      item?.issuanceNetworkValueQ8,
+    );
+    if (
+      !coreByTxid.has(txid) ||
+      targetTxids.has(txid) ||
+      !workAmountAtoms ||
+      coreByTxid.get(txid).workAmountAtoms !== workAmountAtoms ||
+      !confirmedIssuanceUnits ||
+      !issuanceNetworkValueQ8 ||
+      BigInt(issuanceNetworkValueQ8) / BOND_VALUE_Q8_SCALE !==
+        BigInt(confirmedIssuanceUnits)
+    ) {
+      return false;
+    }
+    targetTxids.add(txid);
+  }
+  if (
+    rangeReplayFromHeight !== CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT ||
+    targetTxids.size !== coreByTxid.size ||
+    targetTxids.size !== CANONICAL_INCB_PWT_RANGE_REPLAY_TARGETS.length
+  ) {
+    return false;
+  }
+  return CANONICAL_INCB_PWT_RANGE_REPLAY_TARGETS.every((expected) => {
+    const core = coreByTxid.get(expected.txid);
+    return (
+      targetTxids.has(expected.txid) &&
+      core?.blockHash === expected.blockHash &&
+      core?.blockHeight === expected.blockHeight &&
+      core?.blockIndex === expected.blockIndex &&
+      core?.workAmountAtoms === expected.workAmountAtoms
+    );
+  });
+}
+
+function canonicalInternalPwtRangeReplayState(rebuild, network) {
+  const source =
+    rebuild && typeof rebuild === "object" && !Array.isArray(rebuild)
+      ? rebuild
+      : {};
+  if (source.mode !== "pwt-range-replay") {
+    return null;
+  }
+  const commonStateIsValid =
+    source.network === network &&
+    Number.isSafeInteger(Number(source.rangeReplayFromHeight)) &&
+    Number(source.rangeReplayFromHeight) > 0;
+  if (
+    commonStateIsValid &&
+    source.status === "active" &&
+    source.active === true &&
+    source.complete === false &&
+    source.completedAt == null &&
+    source.incbRangeReplayVerification == null &&
+    canonicalPwtReplayVerifierBindingDescriptor(
+      source.verifierBinding,
+      network,
+    )
+  ) {
+    return "active";
+  }
+  if (
+    commonStateIsValid &&
+    source.status === "complete" &&
+    source.active === false &&
+    source.complete === true &&
+    String(source.completedAt ?? "").trim().length > 0 &&
+    Number.isFinite(Date.parse(String(source.completedAt).trim())) &&
+    canonicalPwtRangeReplayVerificationIsValid(source, network)
+  ) {
+    return "complete";
+  }
+  return "invalid";
+}
+
+function canonicalRebuildTrustState(rebuild, network) {
+  const source =
+    rebuild && typeof rebuild === "object" && !Array.isArray(rebuild)
+      ? rebuild
+      : {};
+  const rangeReplayState = canonicalInternalPwtRangeReplayState(
+    source,
+    network,
+  );
+  if (rangeReplayState !== null) {
+    return rangeReplayState;
+  }
+  if (
+    source.network === network &&
+    source.status === "active" &&
+    source.active === true &&
+    source.complete === false
+  ) {
+    return "active";
+  }
+  if (
+    source.network === network &&
+    source.status === "complete" &&
+    source.active === false &&
+    source.complete === true
+  ) {
+    return "complete";
+  }
+  return "invalid";
+}
+
+function canonicalInternalReplayVerifierBinding(rebuild, network) {
+  const source =
+    rebuild && typeof rebuild === "object" && !Array.isArray(rebuild)
+      ? rebuild
+      : {};
+  const replayState = canonicalInternalPwtRangeReplayState(source, network);
+  if (!replayState || replayState === "invalid") {
+    return null;
+  }
+  const candidate =
+    source.verifierBinding &&
+    typeof source.verifierBinding === "object" &&
+    !Array.isArray(source.verifierBinding)
+      ? source.verifierBinding
+      : {};
+  const binding = canonicalPwtReplayVerifierBindingDescriptor(
+    candidate,
+    network,
+  );
+  if (
+    !binding ||
+    binding.rangeReplayFromHeight !== Number(source.rangeReplayFromHeight)
+  ) {
+    return null;
+  }
+  return binding;
+}
+
+function internalReplayVerifierBindingError(message, details = {}) {
+  const error = new Error(message);
+  error.statusCode = 503;
+  error.details = {
+    code: "PWT_RANGE_REPLAY_DATABASE_BINDING_MISMATCH",
+    ...details,
+  };
+  return error;
+}
+
+async function internalReplayVerifierBinding(network, requestedBindingId = "") {
+  const requested = String(requestedBindingId ?? "").trim().toLowerCase();
+  const canonical = await proofIndexCanonicalStateMetaPayload(network);
+  const rebuild = canonical?.rebuild ?? null;
+  const replayState = canonicalInternalPwtRangeReplayState(rebuild, network);
+  if (replayState === "invalid") {
+    throw internalReplayVerifierBindingError(
+      "PWT range replay metadata is malformed; internal verifier access is disabled.",
+    );
+  }
+  const binding = canonicalInternalReplayVerifierBinding(rebuild, network);
+  const replayActive = replayState === "active";
+  if (requested) {
+    if (!/^[0-9a-f]{64}$/u.test(requested) || !binding) {
+      throw internalReplayVerifierBindingError(
+        "The internal verifier is not connected to the requested replay database.",
+        { requestedBindingId: requested || null },
+      );
+    }
+    const expectedBytes = Buffer.from(binding.bindingId, "hex");
+    const requestedBytes = Buffer.from(requested, "hex");
+    if (
+      expectedBytes.length !== requestedBytes.length ||
+      !timingSafeEqual(expectedBytes, requestedBytes)
+    ) {
+      throw internalReplayVerifierBindingError(
+        "The internal verifier is connected to a different replay database.",
+        { requestedBindingId: requested },
+      );
+    }
+    return binding;
+  }
+  if (replayActive) {
+    throw internalReplayVerifierBindingError(
+      "Active PWT range replay requires its database binding on every internal verifier request.",
+      { requiredBindingId: binding?.bindingId ?? null },
+    );
+  }
+  return null;
+}
+
+async function internalReplayBoundPayload(
+  network,
+  requestedBindingId,
+  payload,
+  initialBinding,
+) {
+  const confirmedBinding = await internalReplayVerifierBinding(
+    network,
+    requestedBindingId,
+  );
+  const bindingChanged =
+    Boolean(initialBinding) !== Boolean(confirmedBinding) ||
+    (initialBinding &&
+      !canonicalPwtReplayVerifierBindingsEqual(
+        initialBinding,
+        confirmedBinding,
+      ));
+  if (bindingChanged) {
+    throw internalReplayVerifierBindingError(
+      "The replay database binding changed while the internal verifier response was being built.",
+    );
+  }
+  return confirmedBinding
+    ? { ...payload, replayVerifierBinding: confirmedBinding }
+    : payload;
 }
 
 function internalVerifierRequestAllowed(request) {
@@ -41369,12 +44514,15 @@ async function loadHealthPayload() {
     database?.worker?.ok === true && !workerContainmentActive;
   const canonicalFault = canonical?.fault ?? {};
   const canonicalRebuild = canonical?.rebuild ?? {};
+  const rebuildTrustState = canonicalRebuildTrustState(
+    canonicalRebuild,
+    "livenet",
+  );
   const canonicalStateOk =
     Boolean(canonical) &&
     Boolean(canonical?.rebuild) &&
     canonicalFault?.active !== true &&
-    canonicalRebuild?.active !== true &&
-    canonicalRebuild.status === "complete";
+    rebuildTrustState === "complete";
   const electrumAtTip =
     electrum.configured !== true ||
     (Number.isSafeInteger(tipHeight) && electrum.headerHeight === tipHeight);
@@ -41658,6 +44806,7 @@ async function loadCanonicalPublicReadGate(network) {
     .toLowerCase();
   const rebuild = canonical?.rebuild ?? {};
   const fault = canonical?.fault ?? {};
+  const rebuildTrustState = canonicalRebuildTrustState(rebuild, network);
   const workerLastSuccessMs = Date.parse(status?.worker?.lastSuccessAt ?? "");
   const workerFresh =
     Number.isFinite(workerLastSuccessMs) &&
@@ -41678,8 +44827,7 @@ async function loadCanonicalPublicReadGate(network) {
     canonicalHash === storedHash &&
     fault?.active !== true &&
     Boolean(canonical?.rebuild) &&
-    rebuild?.active !== true &&
-    rebuild.status === "complete" &&
+    rebuildTrustState === "complete" &&
     readModelsOk;
   const ready =
     available &&
@@ -41897,22 +45045,34 @@ async function handleRequest(request, response) {
         errorResponse(response, 404, "Not found.");
         return;
       }
+      const requestedReplayBindingId =
+        url.searchParams.get("replayBindingId") ?? "";
+      const replayVerifierBinding = await internalReplayVerifierBinding(
+        network,
+        requestedReplayBindingId,
+      );
       jsonResponse(
         response,
         200,
-        await tokenVerifierPayload(
+        await internalReplayBoundPayload(
           network,
-          url.searchParams.get("asset") ?? "",
-          url.searchParams.get("txid") ?? "",
-          {
-            blockHash: url.searchParams.get("blockHash") ?? "",
-            blockHeight: Number(url.searchParams.get("blockHeight") ?? 0),
-            previousBlockHash:
-              url.searchParams.get("previousBlockHash") ?? "",
-            requireConfirmed: /^(?:1|true|yes)$/iu.test(
-              String(url.searchParams.get("confirmed") ?? ""),
-            ),
-          },
+          requestedReplayBindingId,
+          await tokenVerifierPayload(
+            network,
+            url.searchParams.get("asset") ?? "",
+            url.searchParams.get("txid") ?? "",
+            {
+              blockHash: url.searchParams.get("blockHash") ?? "",
+              blockHeight: Number(url.searchParams.get("blockHeight") ?? 0),
+              previousBlockHash:
+                url.searchParams.get("previousBlockHash") ?? "",
+              requireConfirmed: /^(?:1|true|yes)$/iu.test(
+                String(url.searchParams.get("confirmed") ?? ""),
+              ),
+              replayVerifierBinding,
+            },
+          ),
+          replayVerifierBinding,
         ),
         "no-store",
       );
@@ -41924,15 +45084,26 @@ async function handleRequest(request, response) {
         errorResponse(response, 404, "Not found.");
         return;
       }
+      const requestedReplayBindingId =
+        url.searchParams.get("replayBindingId") ?? "";
+      const replayVerifierBinding = await internalReplayVerifierBinding(
+        network,
+        requestedReplayBindingId,
+      );
       jsonResponse(
         response,
         200,
-        await internalCanonicalSummaryPayload(network, {
-          checkpointHash: url.searchParams.get("checkpointHash") ?? "",
-          checkpointHeight: Number(
-            url.searchParams.get("checkpointHeight") ?? 0,
-          ),
-        }),
+        await internalReplayBoundPayload(
+          network,
+          requestedReplayBindingId,
+          await internalCanonicalSummaryPayload(network, {
+            checkpointHash: url.searchParams.get("checkpointHash") ?? "",
+            checkpointHeight: Number(
+              url.searchParams.get("checkpointHeight") ?? 0,
+            ),
+          }),
+          replayVerifierBinding,
+        ),
         "no-store",
       );
       return;
@@ -41943,21 +45114,32 @@ async function handleRequest(request, response) {
         errorResponse(response, 404, "Not found.");
         return;
       }
+      const requestedReplayBindingId =
+        url.searchParams.get("replayBindingId") ?? "";
+      const replayVerifierBinding = await internalReplayVerifierBinding(
+        network,
+        requestedReplayBindingId,
+      );
       jsonResponse(
         response,
         200,
-        await idVerifierPayload(
+        await internalReplayBoundPayload(
           network,
-          url.searchParams.get("txid") ?? "",
-          {
-            blockHash: url.searchParams.get("blockHash") ?? "",
-            blockHeight: Number(url.searchParams.get("blockHeight") ?? 0),
-            previousBlockHash:
-              url.searchParams.get("previousBlockHash") ?? "",
-            requireConfirmed: /^(?:1|true|yes)$/iu.test(
-              String(url.searchParams.get("confirmed") ?? ""),
-            ),
-          },
+          requestedReplayBindingId,
+          await idVerifierPayload(
+            network,
+            url.searchParams.get("txid") ?? "",
+            {
+              blockHash: url.searchParams.get("blockHash") ?? "",
+              blockHeight: Number(url.searchParams.get("blockHeight") ?? 0),
+              previousBlockHash:
+                url.searchParams.get("previousBlockHash") ?? "",
+              requireConfirmed: /^(?:1|true|yes)$/iu.test(
+                String(url.searchParams.get("confirmed") ?? ""),
+              ),
+            },
+          ),
+          replayVerifierBinding,
         ),
         "no-store",
       );
@@ -42237,12 +45419,9 @@ async function handleRequest(request, response) {
           const indexedTotal = Number(
             indexedPayload.totalCount ?? indexedPayload.items?.length ?? 0,
           );
-          const definitiveEmpty = new Set([
-            "confirmed-invalid-nonpublic",
-            "confirmed-nonpublic",
-            "nonpublic-kind-filter",
-            "terminal-nonpublic",
-          ]).has(indexedPayload.queryDisposition);
+          const definitiveEmpty = definitivePinnedLogQueryDisposition(
+            indexedPayload.queryDisposition,
+          );
           const responsePayload =
             exactLogQueryTxid && indexedTotal === 0 && !definitiveEmpty
               ? await exactLogHistoryMissPayload(
@@ -42350,12 +45529,9 @@ async function handleRequest(request, response) {
           const indexedTotal = Number(
             indexedPayload.totalCount ?? indexedPayload.items?.length ?? 0,
           );
-          const definitiveEmpty = new Set([
-            "confirmed-invalid-nonpublic",
-            "confirmed-nonpublic",
-            "nonpublic-kind-filter",
-            "terminal-nonpublic",
-          ]).has(indexedPayload.queryDisposition);
+          const definitiveEmpty = definitivePinnedLogQueryDisposition(
+            indexedPayload.queryDisposition,
+          );
           const responsePayload =
             exactLogQueryTxid && indexedTotal === 0 && !definitiveEmpty
               ? await exactLogHistoryMissPayload(

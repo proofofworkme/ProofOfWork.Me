@@ -250,6 +250,17 @@ Generic `pwt1:create` and `pwt1:mint` events are invalid for both reserved bond
 families. Their synthetic supply can be issued only by the matching canonical
 bond projection. All other generic mints require the confirmed credit definition
 to precede the mint in canonical block and transaction order.
+POWB and INCB are uncapped synthetic credits. Public token definitions expose
+`maxSupply: null`, `maxSupplyModel: "uncapped"`, and `uncapped: true`; the
+unconstrained `numeric NOT NULL` definition column uses zero only as a neutral
+storage marker required by the shared non-null schema. No cap check, API
+response, chart, or wallet calculation may treat it as an economic maximum.
+Bond amounts, balances, per-token supply, and listing quantities use
+unconstrained PostgreSQL `numeric` with integer/finite database checks, then
+canonical integer strings/`BigInt` in the backend. This removes the former
+78-digit typmod ceiling without admitting fractional or infinite credit units.
+Fractional proof value uses Q8 integer strings; decimal proof fields are display
+mirrors, not arithmetic authority.
 INCB validation treats the persisted Q8 integer issuance fields as the
 authoritative arithmetic contract; large floating-point display fields cannot
 reject an otherwise exact mint. The canonical H-1 transaction context also
@@ -346,8 +357,11 @@ order:
    `npm run indexer:backfill -- --prepare-canonical-rebuild`. Preparation is
    one database transaction: it clears only the derived canonical
    `pwid1`/`pwt1`/`pwm1` projections, invalidates ledger snapshots, seeds the
-   synthetic WORK definition, and stores the hash of block `947999` as the
-   bootstrap checkpoint. Do not reopen public reads if preparation fails.
+   synthetic WORK definition directly in exact `work-atoms-v1` storage, and
+   stores the hash of block `947999` as the bootstrap checkpoint. Preparation
+   and every resumed rebuild re-read and verify that stored atomic definition;
+   an empty-table cache or legacy whole-WORK seed cannot authorize replay. Do
+   not reopen public reads if preparation fails.
 4. While the API is still stopped, remove complete and temporary JSON cache
    files from both `/data/proofofwork-api-cache` and the legacy
    `/opt/proofofwork-api/.pow-api-cache`. These files are derived state; keeping
@@ -408,25 +422,113 @@ If a verifier bug of that kind is discovered after an otherwise clean replay,
 repair a database clone with the bounded PWT range workflow rather than
 rewinding only the checkpoint or layering corrected event keys over stale ones:
 
-1. Stop the clone API/worker and prove the first affected marketplace height
-   from relational events plus Core prevouts. Choose a replay height at or
-   before the first marketplace event that could have been misclassified.
+1. Stop the clone API/worker and prove the first affected PWT height from
+   relational events plus Core transaction/block truth. Choose a replay height
+   at or before the first transaction that could have been misclassified.
 2. Keep the original canonical rebuild lineage (`fromHeight`, bootstrap height,
-   and bootstrap hash). Set only
-   `POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT=<range-start>` and run
+   and bootstrap hash). For the July 2026 pinned INCB incident, set only
+   `POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT=958383`, set
+   `POW_API_BASE` to an explicit non-public loopback port reserved for the clone,
+   and run
    `npm run indexer:prepare-pwt-range-replay` with canonical rebuild mode off.
-   Preparation aborts if an earlier marketplace event or false seal-anchor close
-   exists. In one transaction it deletes every event for affected PWT txids
-   (including generic sibling aliases), resets credit definitions/listings/
-   balances from the preserved pre-range events, clears snapshots, and stores
-   the exact `<range-start - 1>` checkpoint.
+   This incident preparation command rejects every other boundary. Stop the
+   clone API and clear only that clone's private API cache before preparation;
+   restart it after preparation so its replay binding and canonical-state
+   caches are born from the newly active tuple. The private clone API must use
+   the full production proof-index read posture from
+   `deploy/proofofwork-api-proof-index.conf`, including `token-state`; a
+   verifier-only/minimal `POW_INDEX_READS` setting cannot build the exact
+   conserved token table required by an Inception H-1 barrier. Before the first
+   block-scan pass, prove the candidate PID's database identity and enabled
+   read set, then make one authenticated, binding-echoed internal canonical
+   summary request for `<range-start - 1>`. Require the exact stored block hash,
+   green ledger consistency, and exact WORK Q8. A missing feature, wrong
+   database, stale binding, or failed H-1 probe is a pre-scan abort; do not
+   advance the checkpoint or work around it with a weaker read posture.
+   Ordinary workers and public/API readers continue to reject an uncertified
+   legacy replay completion. The preparation command alone may supersede the
+   exact known pre-binding predecessor: canonical range `948000`, bootstrap
+   `947999` at
+   `000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986`,
+   and prior PWT range `950200`, with no fault, binding, or completion
+   certificate. Before any transaction or delete, the command asks Bitcoin
+   Core to re-prove both the original bootstrap hash and the legacy stored-tip
+   hash and requires that stored tip to cover the new boundary. A malformed,
+   active, off-chain, or already-certified replay cannot use this compatibility
+   lane; a certified completion is permanent.
+   Before deleting any projection, preparation enumerates every exact
+   `pwm1:m:incb` transaction in the bounded canonical range and cross-checks
+   that set against the canonical bond events. It asks Core to bind each entry
+   to its block position and predecessor, the exact pre-memo recipient output
+   set, direct proofs, memo, and attached WORK atoms. The resulting immutable
+   witness manifest gives every recipient one disposition: preserve an already
+   valid exact-Q8 V2 mint together with its complete green H-1 snapshot row, or
+   rederive an absent/ambiguous/malformed projection. A multi-recipient bond is
+   rederived as one unit if any recipient cannot be preserved. The manifest is
+   canonical-JSON hashed, stored under a binding-specific metadata key, and its
+   hash, counts, range tip, and range-tip hash become part of the replay
+   verifier binding. Missing memo coverage, a changed Core fact, an incomplete
+   snapshot row, or a mismatched manifest aborts before deletion.
+   A boundary after marketplace genesis is allowed only because preparation
+   runs at `SERIALIZABLE` isolation under advisory/table locks, deletes every
+   protocol sibling for affected PWT txids, then reconstructs definitions,
+   listing lifecycle, and confirmed balances from retained pre-range events.
+   In that same stopped-writer transaction, preparation migrates definition
+   max/mint units, confirmed/pending balances, and listing amounts from the
+   legacy `numeric(78,0)` typmod to integer-checked unconstrained `numeric`.
+   It normalizes existing POWB/INCB definition storage to zero plus explicit
+   uncapped metadata. The catalog-gated migration is idempotent and must report
+   no remaining constrained credit-unit column before any replay row is
+   deleted. Before the first destructive delete, preparation requires an
+   already-atomic WORK source, verifies every amount-bearing WORK event, and
+   proves exact confirmed mint-atom supply equals the sum of confirmed holder
+   atoms. A legacy definition or a hybrid definition/balance projection aborts
+   the transaction. After clearing derived credit tables, WORK is seeded
+   directly with atomic max/mint storage and `work-atoms-v1` metadata; that row
+   is re-read after seeding, after retained definitions are projected, after
+   retained balances are conserved, and once more before commit.
+   It aborts if a false seal-anchor close already exists before the boundary.
+   Incident-pinned Core facts are checked before and after the transaction.
+   Preparation clears derived snapshots except the manifest-committed H-1 rows,
+   which are protected from replay deletion, retention pruning, atomic-WORK
+   invalidation, and same-id summary replacement. It stores the exact
+   `<range-start - 1>` checkpoint and never preserves old derived balances or
+   listing tables. It also stores a fresh 256-bit verifier binding in that clone
+   database and removes any prior replay completion timestamp or verification
+   proof before marking the new range active. The clone API must read the same
+   binding and witness manifest from its own
+   `canonical:rebuild` metadata, require it on every internal verifier/summary
+   request, re-read it after building the payload, and echo the unchanged
+   binding in the response. A production or stale-clone API at the
+   same Core height cannot satisfy that database binding.
 3. Remove the range-start variable immediately. Run supervised
-   `block-scan`-only passes with ledger and canonical-summary storage disabled
-   until the hashed checkpoint reaches Core tip. Do not use the normal worker
-   publisher while the replay is partial; a non-tip summary is expected to fail.
+   `block-scan`-only passes with ledger and general canonical-summary storage
+   disabled until the hashed checkpoint reaches Core tip, while retaining the
+   same explicit clone `POW_API_BASE`. While replay metadata is active, the
+   backfill process rejects every other source, repair/maintenance mode, and
+   general ledger/summary publisher in code; malformed active/complete replay
+   flags also fail closed. General summary publication remains off,
+   but active range replay forcibly builds and stores an exact hash-bound H-1
+   canonical summary immediately before every block containing an Inception
+   Bond. That mandatory barrier supplies the historical oracle for any rederive
+   disposition and cannot be disabled by the storage flag; manifest-preserved
+   bonds continue to consume their byte-committed original H-1 row and exact
+   mint payload. Do not use the
+   normal worker publisher while the replay is partial; a non-tip public summary
+   is expected to fail.
 4. Run one normal worker cycle at tip to rebuild conserved balances and publish
-   the exact canonical summary. Require lifecycle, marketplace, ledger, wallet,
-   and parity gates before considering the repaired clone promotable.
+   the exact canonical summary. Completion must consume every manifest entry
+   exactly once. Preserved entries must retain the committed mint payload hash,
+   snapshot identity, canonical-summary hash, generated time, exact Q8 value,
+   and raw row fingerprint. Rederived entries must end as either one canonical
+   exact-Q8 mint bound to the forced green H-1 row or one unambiguous canonical
+   invalid disposition. No rejected sibling alias may remain. The completion
+   certificate repeats the witness hash, counts, range tip, and per-entry
+   results; once certified, the replay cannot be prepared again. The pinned
+   incident targets additionally require one valid bond, one exact WORK
+   `send2`, and one exact INCB mint per target, unchanged Core positions, and
+   the exact dynamic H-1 Q8 formula. Require lifecycle, marketplace, ledger,
+   wallet, and parity gates before considering the repaired clone promotable.
 
 Stored block hashes detect a reorganization; they do not provide automatic
 projection rollback. If the stored checkpoint hash no longer matches Bitcoin
@@ -907,8 +1009,9 @@ still surface pending counts so mempool pressure remains visible without
 blocking a healthy confirmed ledger.
 
 Production regression gates after the July 2026 index recovery are
-`npm run check:work-precision`, `npm run check:index-recovery-behavior`,
-`npm run check:live-data`,
+`npm run check:work-precision`, `npm run check:bond-exact-arithmetic`,
+`npm run check:incb-range-replay-witness`,
+`npm run check:index-recovery-behavior`, `npm run check:live-data`,
 `npm run check:work-participant-regression`, `npm run audit:ledger`,
 `npm run audit:computer-events`, `npm run indexer:parity`,
 `npm run check:mail-regressions`, and both marketplace regression modes. A healthy

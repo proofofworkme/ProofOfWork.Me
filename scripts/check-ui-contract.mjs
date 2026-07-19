@@ -7,6 +7,7 @@ const files = [
   "OP_RETURN_INFRASTRUCTURE.md",
   "PROOFOFWORK_GENERAL_DECK.md",
   "src/App.tsx",
+  "src/exactAmount.ts",
   "src/app/appLinks.ts",
   "src/app/routeRegistry.ts",
   "src/features/landing/LandingApp.tsx",
@@ -276,6 +277,7 @@ expect(
 );
 
 const app = contents.get("src/App.tsx");
+const exactAmount = contents.get("src/exactAmount.ts");
 const listTokenSource = app.slice(
   app.indexOf("async function listToken"),
   app.indexOf("async function sealTokenListing"),
@@ -315,6 +317,63 @@ expect(
     /Showing verified last-good/.test(proofApiReadState) &&
     /This view is not current/.test(proofApiReadState) &&
     /Exact-tip actions remain unavailable/.test(proofApiReadState),
+);
+expect(
+  "bond quantities remain exact above JavaScript safe-integer range",
+  /export function exactIntegerBigInt/.test(exactAmount) &&
+    /BigInt\(text\)/.test(exactAmount) &&
+    /export function formatExactInteger/.test(exactAmount) &&
+    /export function formatExactQ8/.test(exactAmount) &&
+    /confirmedSupply\?: ExactIntegerValue/.test(app) &&
+    /amount: ExactIntegerValue/.test(app) &&
+    /compareExactIntegers\(right\.confirmedSupply, left\.confirmedSupply\)/.test(
+      app,
+    ) &&
+    /bondProofAmountDisplay\([\s\S]*floorQ8/.test(app),
+);
+expect(
+  "bond supply regression guards compare exact bigint ranks",
+  /function tokenDefinitionConfirmedSupply[\s\S]*exactIntegerBigInt\(token\.confirmedSupply\) \?\? 0n/.test(
+    app,
+  ) &&
+    /function tokenStateConfirmedSupplyRank[\s\S]*reduce<bigint>[\s\S]*exactIntegerBigInt\(mint\.amount\)[\s\S]*0n/.test(
+      app,
+    ) &&
+    /currentSupply > 0n && nextSupply < currentSupply/.test(app) &&
+    !/function tokenDefinitionConfirmedSupply[\s\S]{0,160}finiteNonNegativeNumber/.test(
+      app,
+    ),
+);
+expect(
+  "rejected bond movements retain their exact protocol amount",
+  /walletInvalidEvents\.map\(\(event\) => \(\{[\s\S]*?amount: event\.amount,/.test(
+    app,
+  ) &&
+    !/walletInvalidEvents\.map\(\(event\) => \(\{[\s\S]{0,180}Number\(event\.amount\)/.test(
+      app,
+    ),
+);
+expect(
+  "bond wallet pending labels treat exact zero as zero",
+  /tokenWalletBalanceHasAmount\(\s*balance,\s*"pendingIncoming",?\s*\)[\s\S]*pending in/.test(
+    app,
+  ) &&
+    /tokenWalletBalanceHasAmount\(\s*balance,\s*"pendingOutgoing",?\s*\)[\s\S]*pending out/.test(
+      app,
+    ),
+);
+expect(
+  "bond supply charts preserve exact domains until coordinate conversion",
+  /function infinityBondChartNumericValue[\s\S]*Exclude<InfinityBondChartMetric, "supply">/.test(
+    app,
+  ) &&
+    /const exactSupplyByPoint = new Map[\s\S]*exactIntegerBigInt\(point\.confirmedSupply\)/.test(
+      app,
+    ) &&
+    /const observedRange = rawYMax - rawYMin[\s\S]*exactBondChartPadding\(domainRange\)[\s\S]*exactBondChartRatio\(value, yMin, yMax\)/.test(
+      app,
+    ) &&
+    !/exactIntegerNumber\(point\.confirmedSupply\)/.test(app),
 );
 expect(
   "read warnings are independent from action status and clear by source and attempt",
@@ -454,7 +513,9 @@ expect(
       app,
     ) &&
     /catch \{\s*return undefined;\s*\}/.test(app) &&
-    /workAttachmentPreviewSpendability\?\.spendableBalance \?\? 0/.test(app),
+    /workAtomsFromIntegerString\([\s\S]*workAttachmentPreviewSpendability\?\.spendableBalanceAtoms[\s\S]*workNumberFromAtoms\(workAttachmentSpendableAtoms\)/.test(
+      app,
+    ),
 );
 expect(
   "clean scoped account lanes suppress stale zero WORK and bond balances",
@@ -502,7 +563,7 @@ expect(
     /const walletTransferBalanceRow = walletOperationBalances\.find[\s\S]*const walletTransferBalance =[\s\S]*walletTransferBalanceRow\?\.confirmedBalance[\s\S]*const walletPendingTokenBalance =[\s\S]*walletTransferBalanceRow\?\.pendingOutgoing/.test(
       app,
     ) &&
-    /isWorkToken\(walletTransferToken\)[\s\S]*tokenTransferInput\.amountAtoms[\s\S]*walletSpendableTokenAtoms[\s\S]*tokenTransferInput\.amount <= walletSpendableTokenBalance/.test(
+    /tokenRecordAmountAtoms\([\s\S]*walletTransferToken,[\s\S]*tokenTransferInput\.amount,[\s\S]*tokenTransferInput\.amountAtoms[\s\S]*walletSpendableTokenAtoms/.test(
       app,
     ) &&
     /if \(walletTransferBalances\.length === 0\)[\s\S]*walletTransferBalances\.some[\s\S]*setTokenTransferTokenId\(walletTransferBalances\[0\]\.token\.tokenId\)/.test(
@@ -524,7 +585,7 @@ expect(
     /function mergeTokenTransfersForSpendability\([\s\S]*groupedSources[\s\S]*confirmedSource[\s\S]*pendingSource[\s\S]*merged\.push/.test(
       app,
     ) &&
-    /const pendingDirectTransferRows = mergeTokenTransfersForSpendability\([\s\S]*state\.transfers,[\s\S]*localTransfers[\s\S]*transfer\.tokenId === token\.tokenId[\s\S]*const pendingDirectTransferAtoms = work[\s\S]*tokenRecordAmountAtoms/.test(
+    /const pendingDirectTransferRows = mergeTokenTransfersForSpendability\([\s\S]*state\.transfers,[\s\S]*localTransfers[\s\S]*transfer\.tokenId === token\.tokenId[\s\S]*const pendingDirectTransferAtoms = exactUnits[\s\S]*tokenRecordAmountAtoms/.test(
       app,
     ) &&
     !/const transfersByTxid = new Map/.test(app),
@@ -592,7 +653,7 @@ expect(
   /async function transferToken[\s\S]*fetchFreshWalletTokenPreflightState\([\s\S]*tokenSpendabilityForWallet\([\s\S]*No transaction was created\.[\s\S]*buildPaymentPsbt\(/.test(
     app,
   ) &&
-    /function tokenSpendabilityForWallet[\s\S]*confirmedBalance - reservedBalance - pendingOutgoing/.test(
+    /function tokenSpendabilityForWallet[\s\S]*confirmedBalanceAtoms -[\s\S]*reservedBalanceAtoms -[\s\S]*pendingOutgoingAtoms/.test(
       app,
     ) &&
     /Registry and miner fees are final once broadcast[\s\S]*not automatically refunded/.test(
@@ -614,7 +675,10 @@ expect(
       listTokenSource,
     ) &&
     !/walletSpendableTokenBalance/.test(listTokenSource) &&
-    /isWorkToken\(walletTransferToken\)[\s\S]*tokenListInput\.amountAtoms[\s\S]*walletSpendableTokenAtoms[\s\S]*tokenListInput\.amount <= walletSpendableTokenBalance/.test(
+    /const normalizedTokenListAmountUnits =[\s\S]*tokenRecordAmountAtoms\([\s\S]*tokenListInput\.amount/.test(
+      app,
+    ) &&
+    /normalizedTokenListAmountUnits !== null[\s\S]*normalizedTokenListAmountUnits <= walletSpendableTokenAtoms/.test(
       canListTokenSource,
     ) &&
     !/max=\{Math\.max\(1, listSpendableBalance\)\}/.test(app) &&
@@ -627,7 +691,7 @@ expect(
   /const sale:\s*PowTokenSale\s*=\s*\{[\s\S]*amount:\s*listing\.amount,[\s\S]*amountAtoms:\s*listing\.amountAtoms,[\s\S]*listingId:\s*listing\.listingId/.test(
     buyTokenListingSource,
   ) &&
-    /const uncoveredPendingSaleAtoms = work[\s\S]*tokenRecordAmountAtoms\([\s\S]*sale\.amountAtoms/.test(
+    /const uncoveredPendingSaleAtoms = exactUnits[\s\S]*tokenRecordAmountAtoms\([\s\S]*sale\.amountAtoms/.test(
       app,
     ),
 );
@@ -1161,17 +1225,19 @@ expect(
     /attachedWorkAmountAtoms:\s*optionalStringValue\("attachedWorkAmountAtoms"\)/.test(
       app,
     ) &&
-    /attachedWorkIssuanceUnits\?: number/.test(app) &&
-    /attachedWorkLiveFloorAtSendSats\?: number/.test(app) &&
-    /attachedWorkLiveValueAtSendSats\?: number/.test(app) &&
-    /confirmedIssuanceUnits\?: number/.test(app) &&
-    /directProofIssuanceUnits\?: number/.test(app) &&
+    /attachedWorkIssuanceUnits\?: ExactIntegerValue/.test(app) &&
+    /attachedWorkLiveFloorAtSendSats\?: ExactDecimalValue/.test(app) &&
+    /attachedWorkLiveValueAtSendSats\?: ExactDecimalValue/.test(app) &&
+    /attachedWorkLiveValueAtSendQ8\?: string/.test(app) &&
+    /confirmedIssuanceUnits\?: ExactIntegerValue/.test(app) &&
+    /directProofIssuanceUnits\?: ExactIntegerValue/.test(app) &&
     /issuanceAccountingModel\?: string/.test(app) &&
     /issuanceCheckpointBlockHash\?: string/.test(app) &&
     /issuanceCheckpointBlockHeight\?: number/.test(app) &&
     /issuanceCheckpointBlockIndex\?: number/.test(app) &&
     /issuanceCheckpointMode\?: string/.test(app) &&
-    /issuanceNetworkValueSats\?: number/.test(app) &&
+    /issuanceNetworkValueSats\?: ExactDecimalValue/.test(app) &&
+    /issuanceNetworkValueQ8\?: string/.test(app) &&
     /issuanceValuationFixedAtSend\?: boolean/.test(app) &&
     /issuanceValueSnapshotBlockHash\?: string/.test(app) &&
     /issuanceValueSnapshotBlockHeight\?: number/.test(app) &&
@@ -1180,8 +1246,10 @@ expect(
     /issuanceValueSnapshotId\?: string/.test(app) &&
     /issuanceValueSnapshotMode\?: string/.test(app) &&
     /issuanceValueSnapshotModel\?: string/.test(app) &&
-    /issuanceValueSnapshotWorkNetworkValueSats\?: number/.test(app) &&
-    /liveNetworkValueSats\?: number/.test(app) &&
+    /issuanceValueSnapshotWorkNetworkValueSats\?: ExactDecimalValue/.test(app) &&
+    /issuanceValueSnapshotWorkNetworkValueQ8\?: string/.test(app) &&
+    /liveNetworkValueSats\?: ExactDecimalValue/.test(app) &&
+    /liveNetworkValueQ8\?: string/.test(app) &&
     /networkValueAccountingModel\?: string/.test(app) &&
     /inceptionAccounting = bondConfig\.folder === "inception"/.test(
       infinityAppBlock,
@@ -1304,8 +1372,12 @@ expect(
     app,
   ) &&
     /creditMinerFeeCoverage/.test(app) &&
-    /WORK floor lacks complete canonical Bitcoin miner-fee coverage/.test(app) &&
-    /Growth summary lacks complete canonical Bitcoin miner-fee coverage/.test(app),
+    /WORK floor lacks complete canonical miner-fee and exact-Q8 accounting/.test(
+      app,
+    ) &&
+    /Growth summary lacks complete canonical miner-fee and exact-Q8 accounting/.test(
+      app,
+    ),
 );
 expect(
   "Growth financial display has no local livenet accounting fallback",
@@ -1355,7 +1427,7 @@ expect(
   "Computer WORK workspace shows loading state before ledger data arrives",
   /ledgerLoading/.test(app) &&
     /Loading \{detailToken\?\.ticker \?\? "credit"\} ledger/.test(app) &&
-    /tokenLedgerLoading && workTokenLedger\.confirmedSupply === 0[\s\S]*\?\s*"\.\.\."/.test(
+    /tokenLedgerLoading &&[\s\S]*compareExactIntegers\(workTokenLedger\.confirmedSupply, 0\) === 0[\s\S]*\?\s*"\.\.\."/.test(
       app,
     ),
 );
@@ -1369,20 +1441,21 @@ expect(
     /Loading current WORK summary from the ProofOfWork index/.test(app),
 );
 expect(
-  "WORK labels last-good snapshots while the exact-tip index catches up",
+  "WORK renders structured floor fallback provenance independently of token fallback",
   /function workFloorLastGoodReference[\s\S]*indexedThroughBlock[\s\S]*snapshotId/.test(
     app,
   ) &&
-    /function workFloorLastGoodStatusText[\s\S]*WORK index catching up[\s\S]*Showing last-good[\s\S]*Pending mints, bonds, and transfers do not affect the confirmed WORK floor/.test(
+    /function workFloorLastGoodStatusText[\s\S]*WORK exact-tip refresh did not produce a newer verified summary[\s\S]*Showing verified last-good[\s\S]*Pending mints, bonds, and transfers do not affect the confirmed WORK floor/.test(
       app,
     ) &&
-    /catch \(error\)[\s\S]*fresh && lastGoodQuote[\s\S]*setWorkFloorUsingLastGood\(true\)[\s\S]*workFloorLastGoodStatusText\(lastGoodQuote\)/.test(
+    /catch \(error\)[\s\S]*fresh && lastGoodQuote[\s\S]*proofApiLastGoodReadStatus\([\s\S]*setWorkFloorLastGoodStatus\([\s\S]*structuredStatus \|\| workFloorLastGoodStatusText\(lastGoodQuote\)/.test(
       refreshWorkFloorBlock,
     ) &&
-    /includeWorkFloor && !floorQuote && fresh[\s\S]*refreshWorkFloor\(true, false\)[\s\S]*usedIndexedFallback/.test(
+    /let tokenUsedIndexedFallback = false;[\s\S]*let floorUsedIndexedFallback = false;[\s\S]*const usedIndexedFallback =[\s\S]*tokenUsedIndexedFallback \|\| floorUsedIndexedFallback/.test(
       app,
     ) &&
-    /workFloorUsingLastGood \? \([\s\S]*WORK index catching up[\s\S]*workFloorLastGoodReference\(workFloorQuote\)[\s\S]*Pending mints, bonds, and transfers do not affect the[\s\S]*confirmed/.test(
+    !/setWorkFloorUsingLastGood/.test(app) &&
+    /workFloorLastGoodStatus \? \([\s\S]*<strong>\{workFloorLastGoodStatus\}<\/strong>/.test(
       app,
     ) &&
     /pending mints, bonds, and transfers wait for confirmation[\s\S]*do not affect the floor/.test(
@@ -1412,6 +1485,57 @@ expect(
   /function tokenProgressLabel[\s\S]*if \(progress >= 100\)[\s\S]*Math\.floor\(progress \* 1000\) \/ 1000/.test(
     app,
   ),
+);
+expect(
+  "reserved bond credits cannot enter generic create or mint flows",
+  /const creditFactoryTokenDefinitions = useMemo\([\s\S]*orderedTokenDefinitions\.filter\(\(token\) => !isBondTokenDefinition\(token\)\)/.test(
+    app,
+  ) &&
+    /function buildTokenCreatePayload[\s\S]*tokenTickerReservationError\(ticker\)[\s\S]*No credit creation transaction was created/.test(
+      app,
+    ) &&
+    /function buildTokenMintPayload[\s\S]*assertGenericTokenMintTarget[\s\S]*No mint transaction was created/.test(
+      app,
+    ) &&
+    /async function runTokenChainedMint[\s\S]*assertGenericTokenMintTarget\(token\)/.test(
+      app,
+    ) &&
+    /async function mintToken[\s\S]*mintTarget && isBondTokenDefinition\(mintTarget\)[\s\S]*No mint transaction was created/.test(
+      app,
+    ) &&
+    /async function prepareTokenMintUtxos[\s\S]*isBondTokenDefinition\(selectedToken\)[\s\S]*No mint preparation transaction was created/.test(
+      app,
+    ) &&
+    !/POWB_TOKEN_MAX_SUPPLY|INCB_TOKEN_MAX_SUPPLY/.test(app),
+);
+expect(
+  "bond definitions preserve uncapped API semantics without generic mint progress",
+  /maxSupply: number \| null;[\s\S]*maxSupplyModel\?: string;[\s\S]*uncapped\?: boolean;/.test(
+    app,
+  ) &&
+    /function normalizeTokenDefinitionRecord[\s\S]*const uncapped =[\s\S]*maxSupply: uncapped \? null[\s\S]*maxSupplyModel: uncapped \? "uncapped"[\s\S]*uncapped,/.test(
+      app,
+    ) &&
+    /function tokenMaxSupplyLabel[\s\S]*\? "Uncapped"/.test(app) &&
+    /!tokenDefinitionIsUncapped\(token\) \? \([\s\S]*token\.ticker} mint progress/.test(
+      app,
+    ) &&
+    /!detailUncapped \? \([\s\S]*className="token-progress-block"/.test(app),
+);
+expect(
+  "mixed credit scopes preserve null aggregate supply and use per-credit totals",
+  /confirmedSupply\?: ExactIntegerValue \| null;[\s\S]*pendingSupply\?: ExactIntegerValue \| null;/.test(
+    app,
+  ) &&
+    /payload\?\.confirmedSupply === null[\s\S]*\? null[\s\S]*payload\?\.pendingSupply === null[\s\S]*\? null/.test(
+      app,
+    ) &&
+    /const mixedTokenScope = tokens\.length > 1;[\s\S]*confirmedSupply: mixedTokenScope[\s\S]*\? null[\s\S]*pendingSupply: mixedTokenScope[\s\S]*\? null/.test(
+      app,
+    ) &&
+    /const cachedSingleTokenLedger =[\s\S]*tokenLedgerFor\([\s\S]*confirmedSupply:[\s\S]*tokenDefinitions\.length > 1[\s\S]*\? null[\s\S]*cachedSingleTokenLedger\?\.confirmedSupply/.test(
+      app,
+    ),
 );
 expect(
   "WORK connected-wallet sync stays on the global compact summary",

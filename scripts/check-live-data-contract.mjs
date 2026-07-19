@@ -505,7 +505,7 @@ expectAll("stateful block discoveries require the first-party ordered verifier",
   /path: "\/api\/v1\/internal\/token-verifier"/,
   /payload = await readJson\([\s\S]*confirmed:[\s\S]*fresh: "1"[\s\S]*retries: 0/,
   /recovered\.length === 0[\s\S]*throw new Error\(`Canonical verifier did not resolve protocol transaction/,
-  /validationMode: "canonical-first-party-state"/,
+  /validationMode:[\s\S]*canonical-first-party-state/,
 ]);
 expectAll("ordered credit verifier distinguishes deterministic invalidity from unresolved state", tokenVerifierPayloadSource, [
   /tokenVerifierItemsFromState\(state, normalizedTxid\)/,
@@ -549,7 +549,8 @@ expectAll("confirmed verifier context is shared per block without eviction by to
   /key\.startsWith\("canonical-context:"\)/,
   /entry\?\.settled && !key\.startsWith\("canonical-context:"\)/,
   /async function loadCanonicalVerifierContextFromCheckpoint\(/,
-  /`canonical-context:\$\{network\}:h\$\{height\}:\$\{previousBlockHash\}:\$\{blockHash\}`/,
+  /canonicalPwtReplayVerifierBindingCacheKey\(replayBinding, network\)/,
+  /`canonical-context:\$\{network\}:h\$\{height\}:\$\{previousBlockHash\}:\$\{blockHash\}\$\{replayBindingCacheKey\}`/,
   /cachedInternalVerifierState\([\s\S]*loadCanonicalVerifierContextFromCheckpoint\([\s\S]*network,[\s\S]*height,[\s\S]*blockHash,[\s\S]*previousBlockHash/,
 ]);
 expectAll("confirmed block scan bootstraps explicitly and checkpoints canonical hashes", blockScanCheckpointSource + blockScanSource, [
@@ -821,7 +822,7 @@ expectAll("proof-index mint stats expose a complete bounded pending witness set"
   /const TOKEN_PENDING_MINT_WITNESS_LIMIT = 32/,
   /const pendingCandidatesByTxid = new Map\(\)/,
   /pendingCandidateCount: pendingCandidateRows\.length/,
-  /pendingCandidates: pendingCandidateRows\.slice/,
+  /pendingCandidates:\s*pendingCandidateRows[\s\S]*\.slice\(0, TOKEN_PENDING_MINT_WITNESS_LIMIT\)[\s\S]*amount: exactWholeUnits/,
   /pendingCandidatesComplete:[\s\S]*TOKEN_PENDING_MINT_WITNESS_LIMIT/,
   /pendingCandidateSupply/,
   /targetMintStats/,
@@ -982,8 +983,8 @@ expectAll("frontend scoped credit mint supply ignores global summary totals", ap
   /function scopedTopLevelSupplyValue\([\s\S]*supply > maxSupply[\s\S]*return undefined/,
   /const tokenRowConfirmedSupply = tokenSupplyValue\([\s\S]*"confirmedSupply"/,
   /const scopedTopLevelConfirmedSupply = summaryOnly[\s\S]*scopedTopLevelSupplyValue\(state\.confirmedSupply,\s*tokens\[0\]\)/,
-  /confirmedSupply: scopedConfirmedSupply \?\?[\s\S]*scopedTopLevelConfirmedSupply \?\?[\s\S]*topLevelConfirmedSupply \?\?/,
-  /pendingSupply: scopedPendingSupply \?\?[\s\S]*scopedTopLevelPendingSupply \?\?[\s\S]*topLevelPendingSupply \?\?/,
+  /confirmedSupply:\s*mixedTokenScope[\s\S]*\?\s*null[\s\S]*:\s*scopedConfirmedSupply \?\?[\s\S]*scopedTopLevelConfirmedSupply \?\?[\s\S]*topLevelConfirmedSupply \?\?/,
+  /pendingSupply:\s*mixedTokenScope[\s\S]*\?\s*null[\s\S]*:\s*scopedPendingSupply \?\?[\s\S]*scopedTopLevelPendingSupply \?\?[\s\S]*topLevelPendingSupply \?\?/,
 ]);
 
 expectAll("server scoped credit fresh reads use direct scoped refresh before ledger", server, [
@@ -1652,7 +1653,7 @@ expectAll("Infinity and Inception recipient-credit markets are wired", server + 
   /function infinityBondChartPointsFromEvents\(/,
   /const chartPoints = infinityBondChartPointsFromEvents\([\s\S]*config/,
   /const confirmedBondActions = confirmedActivity\.filter\([\s\S]*isBondActivityItem\(item,\s*config\)/,
-  /const bondMintFlowSats = confirmedBondActions\.reduce\([\s\S]*activityAmountSats\(item\)/,
+  /const bondMintFlow = sumIntegerValues\([\s\S]*confirmedBondActions,[\s\S]*activityAmountSats[\s\S]*const bondMintFlowSats = bondMintFlow\.toString\(\)/,
   /async function bondSummaryFromCanonicalLedger\([\s\S]*bondSummaryPayloadFromLedger\(\{[\s\S]*btcUsdQuote,[\s\S]*\},\s*config\)/,
   /async function bondSummaryPayload\(network,\s*fresh\s*=\s*false,\s*config\)[\s\S]*summaryCanonicalLedgerPayload\(network,\s*fresh\)[\s\S]*bondSummaryFromCanonicalLedger\(\s*ledger,\s*network,\s*fresh,\s*config,?\s*\)[\s\S]*config\.displayName/,
   /item\.recipients[\s\S]*recipient\.amountSats[\s\S]*recipient\.address/,
@@ -1693,7 +1694,7 @@ expectAll("Inception issuance is fixed from the exact green H-1 WORK snapshot", 
   /issuanceValueSnapshotBlockHash/,
   /issuanceValueSnapshotCanonicalSummaryHash/,
   /issuanceValueSnapshotWorkNetworkValueSats/,
-  /attachedWorkAmountAtoms:\s*issuance\.attachedWorkAmountAtoms/,
+  /attachedWorkAmountAtoms:\s*attachedWorkAmountAtoms\.toString\(\)/,
   /attachedWorkLiveFloorAtSendSats/,
   /attachedWorkLiveValueAtSendSats/,
   /issuanceValuationFixedAtSend:\s*true/,
