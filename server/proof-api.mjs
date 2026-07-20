@@ -41521,7 +41521,7 @@ async function loadCanonicalVerifierContextFromCheckpoint(
       network,
     );
     if (
-      priorReplayState !== "active" ||
+      !["active", "complete"].includes(priorReplayState) ||
       !canonicalPwtReplayVerifierBindingsEqual(priorBinding, replayBinding)
     ) {
       throw internalReplayVerifierBindingError(
@@ -41978,7 +41978,7 @@ async function completeTokenVerifierState(
       context.previousBlockHash,
     );
     if (
-      witnessReplayState !== "active" ||
+      !["active", "complete"].includes(witnessReplayState) ||
       !canonicalPwtReplayVerifierBindingsEqual(
         witnessBinding,
         replayVerifierBinding,
@@ -41986,7 +41986,7 @@ async function completeTokenVerifierState(
       !witnessEnvelope
     ) {
       const error = new Error(
-        "The active range replay cannot prove its immutable bound Inception witnesses.",
+        "The canonical range replay cannot prove its immutable bound Inception witnesses.",
       );
       error.statusCode = 503;
       error.details = {
@@ -43977,6 +43977,7 @@ async function internalReplayVerifierBinding(network, requestedBindingId = "") {
   }
   const binding = canonicalInternalReplayVerifierBinding(rebuild, network);
   const replayActive = replayState === "active";
+  const replayComplete = replayState === "complete";
   if (requested) {
     if (!/^[0-9a-f]{64}$/u.test(requested) || !binding) {
       throw internalReplayVerifierBindingError(
@@ -44003,7 +44004,7 @@ async function internalReplayVerifierBinding(network, requestedBindingId = "") {
       { requiredBindingId: binding?.bindingId ?? null },
     );
   }
-  return null;
+  return replayComplete ? binding : null;
 }
 
 async function internalReplayBoundPayload(

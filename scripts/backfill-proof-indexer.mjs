@@ -1378,19 +1378,20 @@ function newPwtRangeReplayVerifierBinding(rangeReplayFromHeight, createdAt) {
 }
 
 function activatePwtRangeReplayVerifierBinding(rebuild) {
-  if (!activePwtRangeReplay(rebuild)) {
+  const replayState = assertCanonicalPwtRangeReplayState(rebuild);
+  if (!["active", "complete"].includes(replayState)) {
     ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING = null;
     return null;
   }
   if (!explicitLoopbackApiBaseConfigured()) {
     throw new Error(
-      "Active PWT range replay requires an explicit loopback POW_API_BASE; the default API address is not replay-safe.",
+      "PWT range replay verification requires an explicit loopback POW_API_BASE; the default API address is not replay-safe.",
     );
   }
   const binding = canonicalPwtRangeReplayVerifierBinding(rebuild);
   if (!binding) {
     throw new Error(
-      "Active PWT range replay is missing its canonical verifier database binding.",
+      "PWT range replay is missing its canonical verifier database binding.",
     );
   }
   ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING = binding;

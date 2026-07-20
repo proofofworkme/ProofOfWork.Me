@@ -529,6 +529,10 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    `send2`, and one exact INCB mint per target, unchanged Core positions, and
    the exact dynamic H-1 Q8 formula. Require lifecycle, marketplace, ledger,
    wallet, and parity gates before considering the repaired clone promotable.
+   Later ordinary block scans must continue authenticating internal verifier
+   reads with that completed replay's immutable database binding and witness
+   manifest. Dropping the binding after certification forces historical H-1
+   rederivation, can deadlock the first later Inception block, and is forbidden.
 
 Stored block hashes detect a reorganization; they do not provide automatic
 projection rollback. If the stored checkpoint hash no longer matches Bitcoin

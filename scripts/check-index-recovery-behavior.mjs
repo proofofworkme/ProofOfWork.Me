@@ -16294,7 +16294,36 @@ check("backfill rejects an internal response not echoed by its replay database",
   );
 });
 
-check("active range replay cannot use the implicit or an unbound API", () => {
+check("completed replay automatically authenticates ordinary internal verifier reads", async () => {
+  const binding = replayVerifierBindingFixture({
+    bindingId: "f".repeat(64),
+    createdAt: "2026-07-18T20:00:00.000Z",
+    rangeReplayFromHeight: 958383,
+  });
+  const internalReplayVerifierBinding = isolatedFunction(
+    API_PATH,
+    "internalReplayVerifierBinding",
+    {
+      Buffer,
+      canonicalInternalPwtRangeReplayState: () => "complete",
+      canonicalInternalReplayVerifierBinding: () => binding,
+      internalReplayVerifierBindingError: isolatedFunction(
+        API_PATH,
+        "internalReplayVerifierBindingError",
+      ),
+      proofIndexCanonicalStateMetaPayload: async () => ({
+        rebuild: { status: "complete" },
+      }),
+      timingSafeEqual,
+    },
+  );
+  assert.deepEqual(
+    await internalReplayVerifierBinding("livenet", ""),
+    binding,
+  );
+});
+
+check("active and completed range replay cannot use an implicit or unbound API", () => {
   const binding = {
     bindingId: "e".repeat(64),
     createdAt: "2026-07-18T20:00:00.000Z",
@@ -16313,7 +16342,7 @@ check("active range replay cannot use the implicit or an unbound API", () => {
     "activatePwtRangeReplayVerifierBinding",
     {
       ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING: null,
-      activePwtRangeReplay: () => true,
+      assertCanonicalPwtRangeReplayState: () => "active",
       canonicalPwtRangeReplayVerifierBinding: () => binding,
       explicitLoopbackApiBaseConfigured: () => false,
     },
@@ -16328,7 +16357,7 @@ check("active range replay cannot use the implicit or an unbound API", () => {
     "activatePwtRangeReplayVerifierBinding",
     {
       ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING: null,
-      activePwtRangeReplay: () => true,
+      assertCanonicalPwtRangeReplayState: () => "active",
       canonicalPwtRangeReplayVerifierBinding: () => null,
       explicitLoopbackApiBaseConfigured: () => true,
     },
@@ -16343,12 +16372,33 @@ check("active range replay cannot use the implicit or an unbound API", () => {
     "activatePwtRangeReplayVerifierBinding",
     {
       ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING: null,
-      activePwtRangeReplay: () => true,
+      assertCanonicalPwtRangeReplayState: () => "active",
       canonicalPwtRangeReplayVerifierBinding: () => binding,
       explicitLoopbackApiBaseConfigured: () => true,
     },
   );
   assert.deepEqual(activateBoundReplay(rebuild), binding);
+
+  const activateCompletedReplay = isolatedFunction(
+    BACKFILL_PATH,
+    "activatePwtRangeReplayVerifierBinding",
+    {
+      ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING: null,
+      assertCanonicalPwtRangeReplayState: () => "complete",
+      canonicalPwtRangeReplayVerifierBinding: () => binding,
+      explicitLoopbackApiBaseConfigured: () => true,
+    },
+  );
+  assert.deepEqual(
+    activateCompletedReplay({
+      ...rebuild,
+      active: false,
+      complete: true,
+      status: "complete",
+    }),
+    binding,
+    "ordinary catch-up must keep using the completed replay's immutable witness binding",
+  );
 });
 
 check("active range replay is fail-closed to one block-scan source", async () => {
