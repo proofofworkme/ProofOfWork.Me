@@ -13208,19 +13208,21 @@ async function backfillBlockScanSource(client, source) {
         height,
       });
       let completedIncbRangeReplayVerification = null;
-      if (nextComplete && !completedPwtRangeReplay) {
+      if (nextComplete) {
         if (canonicalRebuild) {
           await seedCanonicalBondDefinitions(client, { required: true });
         }
         await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
-        completedIncbRangeReplayVerification =
-          await verifyCanonicalIncbPwtRangeReplayProjection(
-            client,
-            // Keep the active replay binding authoritative while producing the
-            // certificate. `nextRebuild` becomes a valid complete tuple only
-            // after that certificate is attached below.
-            canonicalRebuild,
-          );
+        if (!completedPwtRangeReplay) {
+          completedIncbRangeReplayVerification =
+            await verifyCanonicalIncbPwtRangeReplayProjection(
+              client,
+              // Keep the active replay binding authoritative while producing the
+              // certificate. `nextRebuild` becomes a valid complete tuple only
+              // after that certificate is attached below.
+              canonicalRebuild,
+            );
+        }
       }
       const verifiedNextRebuild =
         nextRebuild && completedIncbRangeReplayVerification

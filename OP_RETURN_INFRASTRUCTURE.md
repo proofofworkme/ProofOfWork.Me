@@ -536,6 +536,13 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    forces historical H-1 rederivation, can deadlock the first later Inception
    block, and is forbidden.
 
+   Every block catch-up that reaches the exact node tip must rebuild confirmed
+   credit balances from canonical events before publishing summaries, including
+   ordinary catch-up after a completed PWT/INCB replay. The completion
+   certificate is not regenerated, but newly confirmed large bond mints must be
+   reflected in `credit_balances` before conservation gates can publish the new
+   snapshot.
+
 Stored block hashes detect a reorganization; they do not provide automatic
 projection rollback. If the stored checkpoint hash no longer matches Bitcoin
 Core, the worker must stop and health must remain red. Operators must then:

@@ -22269,7 +22269,7 @@ check("completed PWT replay certificates stay complete during later catch-up", (
   }
 });
 
-check("ordinary catch-up never reopens a completed PWT replay", async () => {
+check("ordinary catch-up refreshes balances without reopening a completed PWT replay", async () => {
   const hashes = {
     110: "a".repeat(64),
     111: "b".repeat(64),
@@ -22390,8 +22390,8 @@ check("ordinary catch-up never reopens a completed PWT replay", async () => {
     [111, 112],
   );
   assert.equal(storedMeta.length, 2);
-  assert.equal(balanceRebuilds, 0);
-  assert.equal(definitionSeeds, 0);
+  assert.equal(balanceRebuilds, 1);
+  assert.equal(definitionSeeds, 1);
   assert.equal(certificateReplacements, 0);
   for (const [index, state] of storedMeta.entries()) {
     assert.equal(replayState(state), "complete");
