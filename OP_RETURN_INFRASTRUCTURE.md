@@ -543,6 +543,13 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    reflected in `credit_balances` before conservation gates can publish the new
    snapshot.
 
+   If a worker reached tip with canonical events committed but balance
+   publication failed before this invariant was available, stop the worker and
+   run `node scripts/backfill-proof-indexer.mjs --rebuild-credit-balances` with
+   the production service environment. The command replays every confirmed
+   credit ledger in one transaction and is safe to retry; restart the worker to
+   publish the exact-tip summaries afterward.
+
 Stored block hashes detect a reorganization; they do not provide automatic
 projection rollback. If the stored checkpoint hash no longer matches Bitcoin
 Core, the worker must stop and health must remain red. Operators must then:
