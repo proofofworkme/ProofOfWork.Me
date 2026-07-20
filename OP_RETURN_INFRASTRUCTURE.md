@@ -531,8 +531,10 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    wallet, and parity gates before considering the repaired clone promotable.
    Later ordinary block scans must continue authenticating internal verifier
    reads with that completed replay's immutable database binding and witness
-   manifest. Dropping the binding after certification forces historical H-1
-   rederivation, can deadlock the first later Inception block, and is forbidden.
+   manifest. Both the API and database witness reader must validate and accept
+   the completed certificate shape. Dropping the binding after certification
+   forces historical H-1 rederivation, can deadlock the first later Inception
+   block, and is forbidden.
 
 Stored block hashes detect a reorganization; they do not provide automatic
 projection rollback. If the stored checkpoint hash no longer matches Bitcoin

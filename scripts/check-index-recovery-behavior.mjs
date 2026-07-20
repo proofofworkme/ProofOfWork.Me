@@ -16323,6 +16323,73 @@ check("completed replay automatically authenticates ordinary internal verifier r
   );
 });
 
+check("completed replay remains readable through the immutable witness certificate", () => {
+  const binding = replayVerifierBindingFixture({
+    bindingId: "9".repeat(64),
+    createdAt: "2026-07-18T20:00:00.000Z",
+    rangeReplayFromHeight: 958383,
+  });
+  const canonicalIncbReplayReaderBinding = isolatedFunction(
+    READER_PATH,
+    "canonicalIncbReplayReaderBinding",
+    {
+      INCB_ISSUANCE_ACCOUNTING_MODEL:
+        "canonical-pre-bond-live-network-value-v2",
+      INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL:
+        "canonical-incb-range-replay-witness-set-v1",
+      PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL:
+        "proof-indexer-pwt-range-replay-verifier-binding-v1",
+      incbRangeReplayWitnessMetaKey,
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+    },
+  );
+  const rebuild = {
+    active: false,
+    complete: true,
+    completedAt: "2026-07-19T15:37:02.603Z",
+    incbRangeReplayVerification: {
+      accountingModel: "canonical-pre-bond-live-network-value-v2",
+      consumedPreserveCount: binding.witnessPreserveCount,
+      rangeReplayFromHeight: binding.rangeReplayFromHeight,
+      rederivedWitnessCount:
+        binding.witnessCount - binding.witnessPreserveCount,
+      verified: true,
+      witnessCount: binding.witnessCount,
+      witnessPreserveCount: binding.witnessPreserveCount,
+      witnessSetHash: binding.witnessSetHash,
+      witnessedThroughBlock: binding.witnessedThroughBlock,
+      witnessedThroughBlockHash: binding.witnessedThroughBlockHash,
+    },
+    mode: "pwt-range-replay",
+    network: "livenet",
+    rangeReplayFromHeight: binding.rangeReplayFromHeight,
+    status: "complete",
+    verifierBinding: binding,
+  };
+  assert.equal(
+    JSON.stringify(canonicalIncbReplayReaderBinding(rebuild, "livenet")),
+    JSON.stringify(binding),
+  );
+  assert.equal(
+    canonicalIncbReplayReaderBinding(
+      {
+        ...rebuild,
+        incbRangeReplayVerification: {
+          ...rebuild.incbRangeReplayVerification,
+          witnessSetHash: "6".repeat(64),
+        },
+      },
+      "livenet",
+    ),
+    null,
+    "a completed reader must reject a certificate that does not bind the immutable manifest",
+  );
+});
+
 check("active and completed range replay cannot use an implicit or unbound API", () => {
   const binding = {
     bindingId: "e".repeat(64),
