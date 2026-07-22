@@ -6,7 +6,20 @@ const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
 const INCB_TOKEN_ID =
   "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
-const VIEWPORT_WIDTHS = [768, 860, 861, 1024, 1180, 1181, 1440, 1920];
+const VIEWPORT_WIDTHS = [
+  768,
+  860,
+  861,
+  1024,
+  1100,
+  1101,
+  1180,
+  1181,
+  1440,
+  1799,
+  1800,
+  1920,
+];
 const VIEWPORT_HEIGHT = 900;
 const NOW = "2026-07-22T12:00:00.000Z";
 const HASH = "1".repeat(64);
@@ -313,10 +326,158 @@ async function assertElementContainsItsLayout(locator, label) {
   ).toBeLessThanOrEqual(dimensions.clientWidth + 1);
 }
 
-async function assertWorkMetricGeometry(page, label) {
+async function assertFragmentOnOneRenderedLine(locator, fragment, label) {
+  const result = await locator.evaluate((element, needle) => {
+    const content = element.textContent ?? "";
+    const startIndex = content.indexOf(needle);
+    if (startIndex < 0) {
+      return { found: false, lineCount: 0 };
+    }
+
+    const endIndex = startIndex + needle.length;
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let cursor = 0;
+    let startNode;
+    let startOffset = 0;
+    let endNode;
+    let endOffset = 0;
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const length = node.textContent?.length ?? 0;
+      const next = cursor + length;
+      if (!startNode && startIndex >= cursor && startIndex <= next) {
+        startNode = node;
+        startOffset = startIndex - cursor;
+      }
+      if (!endNode && endIndex >= cursor && endIndex <= next) {
+        endNode = node;
+        endOffset = endIndex - cursor;
+      }
+      cursor = next;
+    }
+
+    if (!startNode || !endNode) {
+      return { found: false, lineCount: 0 };
+    }
+
+    const range = document.createRange();
+    range.setStart(startNode, startOffset);
+    range.setEnd(endNode, endOffset);
+    const lineTops = [];
+    for (const rect of range.getClientRects()) {
+      if (rect.width < 0.5 || rect.height < 0.5) {
+        continue;
+      }
+      if (!lineTops.some((top) => Math.abs(top - rect.top) <= 1)) {
+        lineTops.push(rect.top);
+      }
+    }
+
+    return {
+      clientWidth: element.clientWidth,
+      found: true,
+      lineCount: lineTops.length,
+      scrollWidth: element.scrollWidth,
+    };
+  }, fragment);
+
+  expect(result.found, `${label} exact fragment was not rendered`).toBe(true);
+  expect(
+    result.lineCount,
+    `${label} numeric value split across lines: ${JSON.stringify(result)}`,
+  ).toBe(1);
+  expect(
+    result.scrollWidth,
+    `${label} overflows horizontally`,
+  ).toBeLessThanOrEqual(result.clientWidth + 1);
+}
+
+async function assertComputerWorkExactMetrics(page, label) {
   const stats = page.locator(
-    ".marketplace-work-floor-card .token-floor-stats",
+    '.work-floor-metrics-card [aria-label="Live WORK floor"]',
   );
+  await expect(
+    stats,
+    `${label} exact WORK floor metrics did not render`,
+  ).toBeVisible();
+
+  const checks = [
+    ["Floor", "93,779,776,551.76099574"],
+    ["Live network value", "1,969,375,307,586,980,910.7416532"],
+    ["Frozen network value", "1,969,375,307,586,980,910.7416532"],
+    ["Frozen floor", "93,779,776,551.76099574"],
+  ];
+  for (const [metricLabel, exactText] of checks) {
+    const value = stats
+      .getByText(metricLabel, { exact: true })
+      .locator("xpath=..")
+      .locator("strong");
+    await expect(value, `${label} ${metricLabel} missing`).toHaveCount(1);
+    await expect(value).toContainText(exactText);
+    await assertFragmentOnOneRenderedLine(
+      value,
+      exactText,
+      `${label} ${metricLabel}`,
+    );
+  }
+}
+
+async function assertTopbarGeometry(page, label, width) {
+  const topbar = page.locator(".topbar");
+  const brand = topbar.locator(".brand");
+  const nav = topbar.locator(".domain-nav");
+  const actions = topbar.locator(".topbar-actions");
+  await expect(topbar, `${label} topbar did not render`).toBeVisible();
+  await expect(brand, `${label} brand did not render`).toBeVisible();
+  await expect(nav, `${label} app navigation did not render`).toBeVisible();
+  await expect(actions, `${label} header actions did not render`).toBeVisible();
+
+  const [brandBox, navBox, actionsBox] = await Promise.all([
+    brand.boundingBox(),
+    nav.boundingBox(),
+    actions.boundingBox(),
+  ]);
+  expect(brandBox, `${label} brand has no geometry`).not.toBeNull();
+  expect(navBox, `${label} app navigation has no geometry`).not.toBeNull();
+  expect(actionsBox, `${label} header actions have no geometry`).not.toBeNull();
+  expect(
+    brandBox.x + brandBox.width,
+    `${label} brand overlaps app navigation`,
+  ).toBeLessThanOrEqual(navBox.x + 1);
+  expect(
+    navBox.x + navBox.width,
+    `${label} app navigation overlaps header actions`,
+  ).toBeLessThanOrEqual(actionsBox.x + 1);
+  expect(
+    actionsBox.x + actionsBox.width,
+    `${label} header actions escape the viewport`,
+  ).toBeLessThanOrEqual(width + 1);
+
+  const links = nav.locator(".domain-nav-links");
+  const menu = nav.locator(".app-menu-trigger");
+  if (width <= 1799) {
+    await expect(menu, `${label} compact app menu is missing`).toBeVisible();
+    await expect(
+      links,
+      `${label} clipped desktop links are still active`,
+    ).toBeHidden();
+  } else {
+    await expect(menu, `${label} compact app menu did not close`).toBeHidden();
+    await expect(links, `${label} desktop app links are missing`).toBeVisible();
+    await assertElementContainsItsLayout(links, `${label} desktop app links`);
+  }
+}
+
+async function assertWorkMetricGeometry(
+  page,
+  label,
+  {
+    minimumCardWidth = 0,
+    selector = ".marketplace-work-floor-card .token-floor-stats",
+  } = {},
+) {
+  const stats = page.locator(selector);
   await expect(stats, `${label} WORK metrics did not render`).toBeVisible();
   await assertElementContainsItsLayout(stats, `${label} WORK metrics`);
 
@@ -343,6 +504,27 @@ async function assertWorkMetricGeometry(page, label) {
       valueBox.x + valueBox.width,
       `${label} metric value ${index + 1} escapes its card`,
     ).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);
+    if (minimumCardWidth > 0) {
+      expect(
+        cardBox.width,
+        `${label} metric card ${index + 1} is too narrow for exact values`,
+      ).toBeGreaterThanOrEqual(minimumCardWidth);
+    }
+    const wrapping = await value.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        overflowWrap: style.overflowWrap,
+        wordBreak: style.wordBreak,
+      };
+    });
+    expect(
+      wrapping.overflowWrap,
+      `${label} metric value ${index + 1} permits arbitrary digit breaks`,
+    ).toBe("normal");
+    expect(
+      wrapping.wordBreak,
+      `${label} metric value ${index + 1} permits broken words`,
+    ).toBe("normal");
     await assertElementContainsItsLayout(
       card,
       `${label} metric card ${index + 1}`,
@@ -354,7 +536,8 @@ async function assertWorkMetricGeometry(page, label) {
   }
 }
 
-async function assertComputerWorkspace(page, label) {
+async function assertComputerWorkspace(page, label, width) {
+  await assertTopbarGeometry(page, label, width);
   const layout = page.locator(".mail-layout");
   await expect(layout, `${label} Computer shell did not render`).toBeVisible();
   const workspace = layout.locator(":scope > :not(.sidebar)");
@@ -387,6 +570,7 @@ async function openFixtureRoute(page, href, label) {
 
 async function assertMarketplaceGeometry(page, mode, width) {
   const label = `Marketplace WORK ${mode} at ${width}px`;
+  await assertTopbarGeometry(page, label, width);
   const tabs = page.locator(".work-marketplace-version-tabs");
   await expect(tabs, `${label} version controls did not render`).toBeVisible();
 
@@ -483,7 +667,24 @@ for (const route of COMPUTER_ROUTES) {
         await assertComputerWorkspace(
           page,
           `Computer ${route.folder} at ${width}px`,
+          width,
         );
+        if (route.folder === "work") {
+          await assertWorkMetricGeometry(
+            page,
+            `Computer WORK floor at ${width}px`,
+            {
+              minimumCardWidth: 280,
+              selector: ".work-floor-metrics-card .token-floor-stats",
+            },
+          );
+          if (width === 1024) {
+            await assertComputerWorkExactMetrics(
+              page,
+              "Computer WORK floor at 1024px",
+            );
+          }
+        }
       });
     }
   });

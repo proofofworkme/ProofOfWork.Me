@@ -3340,17 +3340,28 @@ select {
 }
 
 .marketplace-work-floor-card .token-floor-stats,
+.work-floor-metrics-card .token-floor-stats,
 .mail-layout.is-marketplace-workspace
   .marketplace-workspace
   .marketplace-work-floor-card
+  .token-floor-stats,
+.mail-layout.is-token-workspace
+  .token-workspace-compact
+  .work-floor-metrics-card
   .token-floor-stats {
   grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
 }
 
 .marketplace-work-floor-card .token-floor-stats strong,
+.work-floor-metrics-card .token-floor-stats strong,
 .mail-layout.is-marketplace-workspace
   .marketplace-workspace
   .marketplace-work-floor-card
+  .token-floor-stats
+  strong,
+.mail-layout.is-token-workspace
+  .token-workspace-compact
+  .work-floor-metrics-card
   .token-floor-stats
   strong {
   font-size: clamp(0.88rem, 1.05vw, 1.08rem);
@@ -6541,6 +6552,16 @@ pre {
   .reader,
   .onboarding-pane {
     padding: 18px;
+  }
+}
+
+@media (max-width: 1799px) {
+  .domain-nav-links {
+    display: none;
+  }
+
+  .app-menu-trigger {
+    display: inline-flex;
   }
 }
 
