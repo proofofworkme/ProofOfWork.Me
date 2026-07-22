@@ -40019,6 +40019,7 @@ function TokenMarketplacePanel({
   const [workMarketplaceVersion, setWorkMarketplaceVersion] = useState<
     "v2" | "v1-relic"
   >("v2");
+  const [workRelicPageIndex, setWorkRelicPageIndex] = useState(0);
   const selectedMarketToken = rows.find(
     (token) =>
       token.tokenId === activeSelectedTokenMarketId ||
@@ -40316,6 +40317,18 @@ function TokenMarketplacePanel({
         selectedMarketToken.ticker === WORK_TOKEN_TICKER),
   );
   const workRelicRows = workMarketV1RelicRows(marketClosedListings);
+  const workRelicPage = pagedItems(
+    workRelicRows,
+    workRelicPageIndex,
+    DATA_PAGE_SIZE,
+  );
+  useEffect(() => {
+    setWorkRelicPageIndex(0);
+  }, [
+    selectedMarketToken?.tokenId,
+    workMarketplaceVersion,
+    workRelicRows.length,
+  ]);
   const workFloorChartPoints = workFloorQuote?.chartPoints ?? [];
   const workFloorMinSats =
     workFloorChartPoints.length > 0
@@ -40859,7 +40872,10 @@ function TokenMarketplacePanel({
         </section>
 
         {selectedMarketTokenIsWork ? (
-          <div className="marketplace-tabs" aria-label="WORK marketplace version">
+          <div
+            className="marketplace-tabs work-marketplace-version-tabs"
+            aria-label="WORK marketplace version"
+          >
             <button
               aria-pressed={workMarketplaceVersion === "v2"}
               onClick={() => setWorkMarketplaceVersion("v2")}
@@ -40897,7 +40913,7 @@ function TokenMarketplacePanel({
             </div>
             {workRelicRows.length ? (
               <div className="token-market-grid">
-                {workRelicRows.map(({ listing, refund }) => {
+                {workRelicPage.items.map(({ listing, refund }) => {
                   const sellerAddress =
                     listing?.sellerAddress || refund.sellerAddress;
                   return (
@@ -41005,6 +41021,11 @@ function TokenMarketplacePanel({
                 snapshot.
               </p>
             )}
+            <PaginationControls
+              label="Marketplace V1 relic"
+              onPageChange={setWorkRelicPageIndex}
+              page={workRelicPage}
+            />
           </section>
         ) : (
         <section className="id-card token-market-card">
