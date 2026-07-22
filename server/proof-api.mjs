@@ -42,11 +42,14 @@ import {
   workAtomsValueAtFloorQ8,
 } from "./work-units.mjs";
 import {
+  applyWorkMarketV2CutoverToTokenState,
+  WORK_MARKET_V2_ACTIVATION_HEIGHT,
   WORK_MARKET_V2_AUTH_VERSION,
   WORK_MARKET_V2_DECLARATION_TXID,
   WORK_MARKET_V2_ORACLE_MODEL,
+  validateGovernedWorkMarketAction,
   validateWorkMarketV2Authorization,
-  workMarketV2ActivationFromDeclaration,
+  workMarketV2ActivationForReplay,
 } from "./work-market-v2.mjs";
 import {
   errorResponse,
@@ -506,6 +509,13 @@ const BLOCK_TXID_FETCH_CONCURRENCY = Number(
 const MAX_TRANSACTION_CACHE_SIZE = Number(
   process.env.MAX_TRANSACTION_CACHE_SIZE ?? 100_000,
 );
+const WORK_MARKET_V2_ORACLE_CACHE_MAX_ENTRIES = Math.max(
+  1_000,
+  Math.floor(
+    Number(process.env.WORK_MARKET_V2_ORACLE_CACHE_MAX_ENTRIES ?? 50_000) ||
+      50_000,
+  ),
+);
 const PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS = Number(
   process.env.PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS ?? 24 * 60 * 60_000,
 );
@@ -887,6 +897,7 @@ const WORK_TOKEN_PARTICIPANT_RECOVERY_CACHE = new Map();
 const WORK_TOKEN_EXPLICIT_CLOSE_RECOVERY_CACHE = new Map();
 const WORK_TOKEN_SEAL_RECOVERY_CACHE = new Map();
 const TOKEN_MARKET_OUTSPEND_CACHE = new Map();
+const WORK_MARKET_V2_ORACLE_CACHE = new Map();
 const BROADCAST_CLIENT_ATTEMPTS = new Map();
 let broadcastActiveRequests = 0;
 let broadcastGlobalAttempts = [];
@@ -2096,7 +2107,7 @@ function tokenPayloadScopedToAddresses(payload, addresses, tokenScope = "") {
       ((payload.tokens ?? []).length === 1 && holders.length > 0),
   );
 
-  return {
+  return applyWorkMarketV2CutoverToTokenState({
     ...payload,
     closedListings,
     holders,
@@ -2111,7 +2122,7 @@ function tokenPayloadScopedToAddresses(payload, addresses, tokenScope = "") {
     tokens,
     transfers,
     walletScoped: true,
-  };
+  });
 }
 
 function walletTokenItemIds(payload) {
@@ -2965,7 +2976,7 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
     return listingId && !closedListingIds.has(listingId);
   });
   const stats = confirmedTokenSalesStats(sales);
-  return {
+  return applyWorkMarketV2CutoverToTokenState({
     ...payload,
     closedListings,
     indexedAt: newerIso(payload.indexedAt, overlay.indexedAt),
@@ -2985,7 +2996,7 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
         stats.confirmedSalesVolumeSats,
       ),
     },
-  };
+  });
 }
 
 function tokenMarketLifecycleOverlayFromCreditListings(payload) {
@@ -3065,7 +3076,7 @@ function tokenMarketLifecycleOverlayFromCreditListings(payload) {
     }
   }
 
-  return {
+  return applyWorkMarketV2CutoverToTokenState({
     closedListings,
     indexedAt: payload.indexedAt,
     indexedThroughBlock: payload.indexedThroughBlock,
@@ -3076,7 +3087,7 @@ function tokenMarketLifecycleOverlayFromCreditListings(payload) {
       complete: true,
       totalCount: numericValue(payload.stats?.totalCount ?? payload.totalCount),
     },
-  };
+  });
 }
 
 function tokenSummaryListingIdsMissingFromMarketLifecycle(payload, lifecycle) {
@@ -3281,13 +3292,13 @@ async function indexedWorkActiveListingStateForSummary(network) {
     return null;
   }
 
-  return {
+  return applyWorkMarketV2CutoverToTokenState({
     ...emptyTokenPayloadSnapshot(network),
     indexedAt: page.indexedAt,
     indexedThroughBlock: page.indexedThroughBlock,
     listings,
     source: page.source ?? "proof-indexer-token-market-history",
-  };
+  });
 }
 
 async function workTokenListingFromCreditListingItem(item, network, indexedAt) {
@@ -3335,12 +3346,15 @@ async function workTokenListingFromCreditListingItem(item, network, indexedAt) {
     return null;
   }
 
-  const sealConfirmed =
-    item.sealConfirmed === true ||
-    ((status === "sealing" || isSealCloseProjection) &&
-      item.confirmed === true &&
-      /^[0-9a-f]{64}$/u.test(sealTxid) &&
-      tokenSaleAuthorizationUsesSaleTicketAnchor(saleAuthorization));
+  const workMarketV2Listing =
+    saleAuthorization.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION;
+  const sealConfirmed = workMarketV2Listing
+    ? item.sealConfirmed === true
+    : item.sealConfirmed === true ||
+      ((status === "sealing" || isSealCloseProjection) &&
+        item.confirmed === true &&
+        /^[0-9a-f]{64}$/u.test(sealTxid) &&
+        tokenSaleAuthorizationUsesSaleTicketAnchor(saleAuthorization));
 
   const listing = {
     ...item,
@@ -3423,12 +3437,13 @@ async function indexedWorkCreditListingStateForSummary(network) {
     return null;
   }
 
-  return {
+  return applyWorkMarketV2CutoverToTokenState({
     ...emptyTokenPayloadSnapshot(network),
     indexedAt: payload.indexedAt,
+    indexedThroughBlock: payload.indexedThroughBlock,
     listings,
     source: "proof-indexer-credit-listings-summary",
-  };
+  });
 }
 
 async function workTokenStateForSummaryRead(network, fresh) {
@@ -3540,11 +3555,12 @@ async function workTokenStateWithSummaryListingTruth(
   mergeSourceState(indexedListingState, true);
   mergeSourceState(indexedCreditListingState, true);
 
-  return payloadWithFallbackAfterMs(
+  const spendableState = await payloadWithFallbackAfterMs(
     tokenPayloadWithSpendableActiveListings(mergedState, network),
     mergedState,
     SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS,
   );
+  return applyWorkMarketV2CutoverToTokenState(spendableState);
 }
 
 function workFloorWithIndexedMarketSummaryOverlay(workFloor, overlay, tokenState) {
@@ -3787,6 +3803,14 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
   if (!payload || network !== "livenet") {
     return payload;
   }
+  const cutoverToken = canonicalWorkMarketV2TokenSummary(
+    payload.token,
+    network,
+  );
+  if (!cutoverToken) {
+    return null;
+  }
+  payload = { ...payload, token: cutoverToken };
 
   // A persisted ledger snapshot is immutable. A newer lifecycle overlay may
   // be useful to build the next canonical snapshot, but merging it into an
@@ -9414,6 +9438,8 @@ async function reconcileCachedTokenListingSeal(listing, network) {
   const sealTxid = String(listing?.sealTxid ?? "").trim().toLowerCase();
   if (
     listing?.sealConfirmed !== false ||
+    listing?.saleAuthorization?.version ===
+      TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION ||
     !/^[0-9a-f]{64}$/u.test(sealTxid) ||
     !tokenSaleAuthorizationUsesSaleTicketAnchor(listing?.saleAuthorization)
   ) {
@@ -10769,14 +10795,17 @@ function tokenStateFromTransactions(
         transactionTxid(tx) === WORK_MARKET_V2_DECLARATION_TXID &&
         transactionConfirmed(tx),
     );
-  const workMarketV2Activation = declarationTransaction
-    ? workMarketV2ActivationFromDeclaration({
-        blockHash: transactionBlockHash(declarationTransaction),
-        blockHeight: transactionBlockHeight(declarationTransaction),
-        confirmed: true,
-        txid: transactionTxid(declarationTransaction),
-      })
-    : null;
+  const workMarketV2Activation = workMarketV2ActivationForReplay(
+    network,
+    declarationTransaction
+      ? {
+          blockHash: transactionBlockHash(declarationTransaction),
+          blockHeight: transactionBlockHeight(declarationTransaction),
+          confirmed: true,
+          txid: transactionTxid(declarationTransaction),
+        }
+      : null,
+  );
   const workMarketV2ValidationFor = (authorization, tx) => {
     const actionHeight = transactionBlockHeight(tx);
     if (
@@ -10788,17 +10817,14 @@ function tokenStateFromTransactions(
     ) {
       return { valid: true };
     }
-    const isTarget =
-      transactionTxid(tx) === String(options.workMarketV2TargetTxid ?? "");
-    const target = isTarget ? options.workMarketV2TargetOracle : null;
-    if (isTarget && !target) {
-      return {
-        reasonCode: "work-market-v2-canonical-oracle-unavailable",
-        valid: false,
-      };
-    }
-    return validateWorkMarketV2Authorization(authorization, {
+    const txid = transactionTxid(tx);
+    const target =
+      options.workMarketV2OraclesByTxid instanceof Map
+        ? options.workMarketV2OraclesByTxid.get(txid)
+        : null;
+    return validateGovernedWorkMarketAction(authorization, {
       actionBlockHeight: actionHeight,
+      activationHeight: workMarketV2Activation.activationHeight,
       ...(target
         ? {
             expectedNetworkValueQ8: target.networkValueQ8,
@@ -10807,17 +10833,14 @@ function tokenStateFromTransactions(
         : {}),
     });
   };
-  let workMarketV2CutoverApplied = false;
   const deactivateLegacyWorkListingsAtCutover = () => {
-    if (!workMarketV2Activation || workMarketV2CutoverApplied) {
+    if (!workMarketV2Activation) {
       return;
     }
 
-    workMarketV2CutoverApplied = true;
     for (const [listingId, listing] of [...listings.entries()]) {
       if (
         listing.tokenId !== WORK_TOKEN_ID ||
-        listing.confirmed !== true ||
         listing.saleAuthorization?.version ===
           TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
       ) {
@@ -10825,13 +10848,42 @@ function tokenStateFromTransactions(
       }
 
       listings.delete(listingId);
-      closedListings.push({
-        ...listing,
-        disabledAtBlockHeight: workMarketV2Activation.activationHeight,
-        disabledByTxid: WORK_MARKET_V2_DECLARATION_TXID,
-        disabledReason: "work-market-v2-cutover",
-        relic: true,
-      });
+      const version = String(listing.saleAuthorization?.version ?? "");
+      const listingHeight = Number(listing.blockHeight);
+      const refundableLegacy =
+        listing.confirmed === true &&
+        Number.isSafeInteger(listingHeight) &&
+        listingHeight <= WORK_MARKET_V2_DECLARATION_HEIGHT &&
+        [TOKEN_SALE_AUTH_VERSION, TOKEN_SALE_AUTH_ATOMS_VERSION].includes(
+          version,
+        );
+      if (refundableLegacy) {
+        closedListings.push({
+          ...listing,
+          disabledAtBlockHeight: workMarketV2Activation.activationHeight,
+          disabledByTxid: WORK_MARKET_V2_DECLARATION_TXID,
+          disabledReason: "work-market-v2-cutover",
+          originalStatus: listing.status ?? "active",
+          refundEligible: true,
+          relic: true,
+          status: "disabled",
+        });
+        continue;
+      }
+      if (!invalidEvents.some((event) => event?.txid === listingId)) {
+        invalidEvents.push({
+          ...listing,
+          amount: listing.amount ?? 0,
+          attemptedKind: "list",
+          kind: "list",
+          reason: "work-market-v2-version-required",
+          reasonCode: "work-market-v2-version-required",
+          refundEligible: false,
+          relic: false,
+          txid: listingId,
+          valid: false,
+        });
+      }
     }
   };
   let confirmedSupply = 0;
@@ -11289,13 +11341,17 @@ function tokenStateFromTransactions(
             !tokenSaleAuthorizationUsesSaleTicketAnchor(authorization) ||
             !pricingValidation.valid
           ) {
-            if (listing?.tokenId === WORK_TOKEN_ID && !pricingValidation.valid) {
+            if (
+              authorization?.tokenId === WORK_TOKEN_ID &&
+              !pricingValidation.valid
+            ) {
               rejectedTxMessages.push({
                 ...tokenLedgerAmountFields(
                   WORK_TOKEN_ID,
                   tokenLedgerAmountFromRecord(WORK_TOKEN_ID, listing) ?? 0n,
                 ),
                 kind: parsed.kind,
+                listingId: parsed.listingId,
                 protocolVout,
                 reason: pricingValidation.reasonCode,
                 reasonCode: pricingValidation.reasonCode,
@@ -11457,6 +11513,9 @@ function tokenStateFromTransactions(
               TOKEN_MIN_MUTATION_PRICE_SATS,
             priceSats: listing.priceSats,
             registryAddress,
+            ...(parsed.saleAuthorization
+              ? { saleAuthorization: parsed.saleAuthorization }
+              : {}),
             sellerAddress: listing.sellerAddress,
             ticker: listing.ticker,
             tokenId: listing.tokenId,
@@ -21429,6 +21488,9 @@ function prioritizedWorkSaleRecoveryCandidates(state, candidates) {
 }
 
 function confirmedWorkSaleFromClosedListingTransaction(tx, listing, network) {
+  if (network === "livenet") {
+    return null;
+  }
   const txid = transactionTxid(tx);
   if (!txid || !transactionConfirmed(tx)) {
     return null;
@@ -21509,6 +21571,9 @@ function confirmedWorkSaleFromClosedListingTransaction(tx, listing, network) {
 }
 
 async function recoverWorkSalesFromClosedListings(state, network) {
+  if (network === "livenet") {
+    return [];
+  }
   const candidates = prioritizedWorkSaleRecoveryCandidates(
     state,
     workTokenClosedListingsMissingSales(state, network),
@@ -21655,6 +21720,9 @@ function workTokenStateWithRecoveredSales(state, recoveredSales) {
 }
 
 async function workTokenStateWithRecoveredListingCloseSales(state, network) {
+  if (network === "livenet") {
+    return state;
+  }
   const recoveredSales = await recoverWorkSalesFromClosedListings(state, network);
   return recoveredSales.length > 0
     ? workTokenStateWithRecoveredSales(state, recoveredSales)
@@ -21831,6 +21899,9 @@ function workTokenStateWithRecoveredListingClosesFromTransactions(
   txs,
   network,
 ) {
+  if (network === "livenet") {
+    return state;
+  }
   const listings = new Map();
   for (const listing of Array.isArray(state?.listings) ? state.listings : []) {
     if (listing?.listingId) {
@@ -22336,7 +22407,27 @@ function workTokenStateWithMintSupplyCounters(state) {
   };
 }
 
+function workTokenDeltaTransactionsWithoutUnverifiedMarketMutations(
+  txs,
+  network,
+) {
+  const source = Array.isArray(txs) ? txs : [];
+  if (network !== "livenet") {
+    return source;
+  }
+  return source.filter(
+    (tx) =>
+      ![...workTokenNonMintActionKindsFromTransaction(tx, network)].some(
+        (kind) => ["list", "seal", "delist", "buy"].includes(kind),
+      ),
+  );
+}
+
 function workTokenStateWithDeltaTransactions(state, txs, network) {
+  txs = workTokenDeltaTransactionsWithoutUnverifiedMarketMutations(txs, network);
+  if (txs.length === 0) {
+    return state;
+  }
   const incomingConfirmedTxids = new Set(
     (Array.isArray(txs) ? txs : [])
       .filter(transactionConfirmed)
@@ -22931,6 +23022,9 @@ function workTokenListingsNeedingSealRecovery(state) {
 }
 
 function workTokenStateWithRecoveredListingSeals(state, txs, network) {
+  if (network === "livenet") {
+    return state;
+  }
   const candidates = workTokenListingsNeedingSealRecovery(state);
   if (candidates.size === 0) {
     return state;
@@ -23023,6 +23117,9 @@ function workTokenStateWithRecoveredListingSeals(state, txs, network) {
 }
 
 function workTokenStateWithRecoveredListingsFromTransactions(state, txs, network) {
+  if (network === "livenet") {
+    return state;
+  }
   const activeListings = new Map();
   const knownListingIds = new Set();
   for (const listing of Array.isArray(state?.listings) ? state.listings : []) {
@@ -23750,11 +23847,43 @@ function liveWorkReadWaitMs(options = {}) {
     : WORK_TOKEN_LIVE_WAIT_MS;
 }
 
+function canonicalWorkMarketV2TokenSummary(payload, network) {
+  if (network !== "livenet") {
+    return payload;
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
+  if (!Number.isSafeInteger(indexedThroughBlock) || indexedThroughBlock < 1) {
+    return null;
+  }
+  if (indexedThroughBlock < WORK_MARKET_V2_ACTIVATION_HEIGHT) {
+    return payload;
+  }
+  if (
+    payload.workMarketV2Activation?.activationHeight !==
+      WORK_MARKET_V2_ACTIVATION_HEIGHT ||
+    payload.workMarketV2Activation?.declarationHeight !==
+      WORK_MARKET_V2_DECLARATION_HEIGHT ||
+    payload.workMarketV2Activation?.declarationTxid !==
+      WORK_MARKET_V2_DECLARATION_TXID
+  ) {
+    return null;
+  }
+  // The activation marker is written only after the full canonical state has
+  // been cut over. Summary payloads intentionally carry a bounded listing
+  // preview, so transforming them again would replace exact aggregate counts
+  // with the preview count.
+  return payload;
+}
+
 async function tokenPayloadReadResult(payload, network, fresh, options = {}) {
+  const cutoverPayload = applyWorkMarketV2CutoverToTokenState(payload);
   const listingReconciledPayload =
     options.reconcileListingStatus === false
-      ? payload
-      : await tokenStateWithReconciledListingSeals(payload, network);
+      ? cutoverPayload
+      : await tokenStateWithReconciledListingSeals(cutoverPayload, network);
   const reconciledPayload = fresh
     ? await tokenStateWithLivePendingTransactionCheck(
         listingReconciledPayload,
@@ -23764,9 +23893,10 @@ async function tokenPayloadReadResult(payload, network, fresh, options = {}) {
         listingReconciledPayload,
         network,
       );
-  return options.reconcileSpendable === false
+  const spendablePayload = options.reconcileSpendable === false
     ? reconciledPayload
     : await tokenPayloadWithSpendableListings(reconciledPayload, network);
+  return applyWorkMarketV2CutoverToTokenState(spendablePayload);
 }
 
 function tokenPayloadFreshnessRank(payload) {
@@ -24197,7 +24327,7 @@ function mergeTokenPayloadWithCanonicalFloor(canonicalPayload, payload, scope) {
     }
   }
 
-  return tokenStateWithPendingStats({
+  return applyWorkMarketV2CutoverToTokenState(tokenStateWithPendingStats({
     ...merged,
     confirmedSupply: maxTokenPayloadSupply(
       merged,
@@ -24210,7 +24340,7 @@ function mergeTokenPayloadWithCanonicalFloor(canonicalPayload, payload, scope) {
       numericValue(payload?.indexedThroughBlock),
     ),
     source: mergedSourceLabel(canonicalPayload?.source, payload?.source),
-  });
+  }));
 }
 
 function tokenStateWithAuthoritativeCurrentListings(tokenState, currentState) {
@@ -24261,11 +24391,11 @@ function tokenStateWithAuthoritativeCurrentListings(tokenState, currentState) {
     mergeTokenListingRecord,
   );
 
-  return tokenStateWithPendingStats({
+  return applyWorkMarketV2CutoverToTokenState(tokenStateWithPendingStats({
     ...tokenState,
     closedListings,
     listings: [...unscopedListings, ...authoritativeListings],
-  });
+  }));
 }
 
 async function tokenPayloadWithCanonicalLedgerFloor(
@@ -24907,7 +25037,11 @@ async function storedCanonicalTokenSummaryPayload(network, tokenScope = "") {
         return null;
       },
     );
-    const payload = scope ? stored?.token : stored;
+    const rawPayload = scope ? stored?.token : stored;
+    const payload =
+      !scope || scope === WORK_TOKEN_ID
+        ? canonicalWorkMarketV2TokenSummary(rawPayload, network)
+        : rawPayload;
     if (
       payload &&
       typeof payload === "object" &&
@@ -25494,6 +25628,13 @@ async function indexedWorkActiveListingTxids(network, addresses, limit = 200) {
 }
 
 function workActiveListingsFromTransactions(txs, network, recoveryAddresses = []) {
+  // A first-party transaction/outspend recovery cannot independently prove a
+  // pwt-sale-v3 action's canonical H-1 oracle. After the livenet cutover it
+  // therefore fails closed instead of reviving a legacy listing or accepting
+  // a self-attested V3 oracle. Canonical indexed reads remain authoritative.
+  if (network === "livenet") {
+    return [];
+  }
   const addressKeys = new Set(
     (Array.isArray(recoveryAddresses) ? recoveryAddresses : [])
       .map((address) => String(address ?? "").trim().toLowerCase())
@@ -33747,15 +33888,20 @@ async function fastLivenetWorkSummaryPayload(network) {
       "workSummary",
       "work-summary",
     );
-    if (indexedPayload) {
+    const indexedToken = canonicalWorkMarketV2TokenSummary(
+      indexedPayload?.token,
+      network,
+    );
+    if (indexedPayload && indexedToken) {
       return workSummaryWithCurrentBtcUsd(
         {
           ...indexedPayload,
+          token: indexedToken,
           floor: await workFloorWithSummaryMarketOverlay(
             indexedPayload.floor,
             network,
             false,
-            indexedPayload.token,
+            indexedToken,
           ),
         },
         network,
@@ -33823,15 +33969,20 @@ async function workSummaryPayload(network, fresh = false) {
         "workSummary",
         "work-summary",
       );
-    if (exactIndexedPayload) {
+    const exactIndexedToken = canonicalWorkMarketV2TokenSummary(
+      exactIndexedPayload?.token,
+      network,
+    );
+    if (exactIndexedPayload && exactIndexedToken) {
       return workSummaryWithCurrentBtcUsd(
         {
           ...exactIndexedPayload,
+          token: exactIndexedToken,
           floor: await workFloorWithSummaryMarketOverlay(
             exactIndexedPayload.floor,
             network,
             fresh,
-            exactIndexedPayload.token,
+            exactIndexedToken,
           ),
         },
         network,
@@ -34008,15 +34159,20 @@ async function workSummaryPayload(network, fresh = false) {
       "workSummary",
       "work-summary",
     );
-    if (indexedPayload) {
+    const indexedToken = canonicalWorkMarketV2TokenSummary(
+      indexedPayload?.token,
+      network,
+    );
+    if (indexedPayload && indexedToken) {
       return workSummaryWithCurrentBtcUsd(
         {
           ...indexedPayload,
+          token: indexedToken,
           floor: await workFloorWithSummaryMarketOverlay(
             indexedPayload.floor,
             network,
             fresh,
-            indexedPayload.token,
+            indexedToken,
           ),
         },
         network,
@@ -42120,6 +42276,146 @@ async function confirmedTokenVerifierScopeFromContext(
   };
 }
 
+function workMarketV2ActionTransactions(transactions, network) {
+  const actions = new Map();
+  for (const tx of Array.isArray(transactions) ? transactions : []) {
+    const txid = transactionTxid(tx);
+    const blockHeight = transactionBlockHeight(tx);
+    if (
+      !transactionConfirmed(tx) ||
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !Number.isSafeInteger(blockHeight) ||
+      blockHeight < WORK_MARKET_V2_ACTIVATION_HEIGHT
+    ) {
+      continue;
+    }
+    const governed = decodedProtocolMessages(
+      Array.isArray(tx.vout) ? tx.vout : [],
+      TOKEN_PROTOCOL_PREFIX,
+    )
+      .map((message) => parseTokenPayload(message, network))
+      .find(
+        (parsed) =>
+          ["list", "seal", "buy"].includes(parsed?.kind) &&
+          parsed?.saleAuthorization?.tokenId === WORK_TOKEN_ID &&
+          parsed.saleAuthorization.version ===
+            TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION,
+      );
+    if (governed) {
+      actions.set(txid, {
+        blockHash: transactionBlockHash(tx),
+        blockHeight,
+        txid,
+      });
+    }
+  }
+  return [...actions.values()];
+}
+
+async function canonicalWorkMarketV2OraclesForTransactions(
+  transactions,
+  network,
+  { currentBlockHeight, currentPreviousBlockHash } = {},
+) {
+  const actions = workMarketV2ActionTransactions(transactions, network);
+  if (actions.length === 0) {
+    return new Map();
+  }
+  const currentHeight = Number(currentBlockHeight);
+  const currentPriorHash = String(currentPreviousBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const oraclesByHeight = new Map();
+  const uncachedActions = [];
+  for (const action of actions) {
+    const actionBlockHash = String(action.blockHash ?? "").toLowerCase();
+    const cacheKey = /^[0-9a-f]{64}$/u.test(actionBlockHash)
+      ? `${network}:${action.blockHeight}:${actionBlockHash}`
+      : "";
+    const cached = cacheKey ? WORK_MARKET_V2_ORACLE_CACHE.get(cacheKey) : null;
+    if (cached?.blockHeight === action.blockHeight - 1) {
+      oraclesByHeight.set(cached.blockHeight, cached);
+      continue;
+    }
+    uncachedActions.push(action);
+  }
+  const priorHeights = [
+    ...new Set(uncachedActions.map((action) => action.blockHeight - 1)),
+  ];
+  const hashesByHeight = new Map();
+  await Promise.all(
+    priorHeights.map(async (priorHeight) => {
+      if (
+        priorHeight === currentHeight - 1 &&
+        /^[0-9a-f]{64}$/u.test(currentPriorHash)
+      ) {
+        hashesByHeight.set(priorHeight, currentPriorHash);
+        return;
+      }
+      const response = await bitcoinRpc("getblockhash", [priorHeight]);
+      const blockHash = String(response?.ok ? response.result : "")
+        .trim()
+        .toLowerCase();
+      if (/^[0-9a-f]{64}$/u.test(blockHash)) {
+        hashesByHeight.set(priorHeight, blockHash);
+      }
+    }),
+  );
+  await Promise.all(
+    priorHeights.map(async (priorHeight) => {
+      const blockHash = hashesByHeight.get(priorHeight);
+      if (!blockHash) {
+        return;
+      }
+      const snapshot = await proofIndexCanonicalSummaryLedgerPayload(
+        network,
+        priorHeight,
+        blockHash,
+      );
+      const networkValueQ8 = canonicalNonNegativeIntegerText(
+        snapshot?.workNetworkValueQ8 ??
+          snapshot?.workFloor?.liveNetworkValueQ8 ??
+          snapshot?.workFloor?.actualValue?.liveNetworkValueQ8 ??
+          snapshot?.workFloor?.networkValueQ8,
+        { allowZero: false },
+      );
+      if (networkValueQ8) {
+        oraclesByHeight.set(priorHeight, {
+          blockHash,
+          blockHeight: priorHeight,
+          networkValueQ8,
+          snapshotId: String(snapshot?.snapshotId ?? "").trim(),
+        });
+      }
+    }),
+  );
+  for (const action of actions) {
+    const oracle = oraclesByHeight.get(action.blockHeight - 1);
+    const actionBlockHash = String(action.blockHash ?? "").toLowerCase();
+    if (!oracle || !/^[0-9a-f]{64}$/u.test(actionBlockHash)) {
+      continue;
+    }
+    const cacheKey = `${network}:${action.blockHeight}:${actionBlockHash}`;
+    if (!WORK_MARKET_V2_ORACLE_CACHE.has(cacheKey)) {
+      while (
+        WORK_MARKET_V2_ORACLE_CACHE.size >=
+        WORK_MARKET_V2_ORACLE_CACHE_MAX_ENTRIES
+      ) {
+        WORK_MARKET_V2_ORACLE_CACHE.delete(
+          WORK_MARKET_V2_ORACLE_CACHE.keys().next().value,
+        );
+      }
+      WORK_MARKET_V2_ORACLE_CACHE.set(cacheKey, oracle);
+    }
+  }
+  return new Map(
+    actions.flatMap((action) => {
+      const oracle = oraclesByHeight.get(action.blockHeight - 1);
+      return oracle ? [[action.txid, oracle]] : [];
+    }),
+  );
+}
+
 async function completeTokenVerifierState(
   network,
   tokenScope,
@@ -42223,35 +42519,15 @@ async function completeTokenVerifierState(
   const indexAddress = tokenIndexAddressForNetwork(network);
   if (scope === WORK_TOKEN_ID) {
     const workToken = canonicalWorkTokenDefinition(network);
-    const targetTransaction = context.transactions.find(
-      (tx) => transactionTxid(tx) === String(targetTxid ?? "").toLowerCase(),
-    );
-    let workMarketV2TargetOracle = null;
-    if (
-      targetTransaction &&
-      Number(requiredBlockHeight) > 1 &&
-      /^[0-9a-f]{64}$/u.test(String(context.previousBlockHash ?? ""))
-    ) {
-      const snapshot = await proofIndexCanonicalSummaryLedgerPayload(
+    const workMarketV2OraclesByTxid =
+      await canonicalWorkMarketV2OraclesForTransactions(
+        context.transactions,
         network,
-        Number(requiredBlockHeight) - 1,
-        context.previousBlockHash,
+        {
+          currentBlockHeight: requiredBlockHeight,
+          currentPreviousBlockHash: context.previousBlockHash,
+        },
       );
-      const networkValueQ8 = canonicalNonNegativeIntegerText(
-        snapshot?.workNetworkValueQ8 ??
-          snapshot?.workFloor?.liveNetworkValueQ8 ??
-          snapshot?.workFloor?.actualValue?.liveNetworkValueQ8 ??
-          snapshot?.workFloor?.networkValueQ8,
-        { allowZero: false },
-      );
-      if (networkValueQ8) {
-        workMarketV2TargetOracle = {
-          blockHash: context.previousBlockHash,
-          blockHeight: Number(requiredBlockHeight) - 1,
-          networkValueQ8,
-        };
-      }
-    }
     return {
       ...tokenStateFromTransactions(
         [],
@@ -42262,8 +42538,7 @@ async function completeTokenVerifierState(
         [workToken],
         [],
         {
-          workMarketV2TargetOracle,
-          workMarketV2TargetTxid: targetTxid,
+          workMarketV2OraclesByTxid,
         },
       ),
       ...context,
@@ -42554,7 +42829,19 @@ function tokenVerifierItemsFromState(state, txid) {
       ? state.invalidEvents
       : []) {
       if (String(invalidEvent?.txid ?? "").toLowerCase() === normalizedTxid) {
-        add(invalidEvent, "token-event-invalid", false);
+        const attemptedKind = String(
+          invalidEvent?.attemptedKind ?? invalidEvent?.kind ?? "",
+        )
+          .trim()
+          .toLowerCase();
+        add(
+          {
+            ...invalidEvent,
+            ...(attemptedKind ? { attemptedKind } : {}),
+          },
+          "token-event-invalid",
+          false,
+        );
       }
     }
   }

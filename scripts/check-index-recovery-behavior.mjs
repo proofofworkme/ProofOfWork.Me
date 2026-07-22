@@ -33,6 +33,14 @@ import {
   workAmountFields,
 } from "../server/work-units.mjs";
 import {
+  WORK_MARKET_V2_ACTIVATION_HEIGHT,
+  WORK_MARKET_V2_AUTH_VERSION,
+  WORK_MARKET_V2_DECLARATION_TXID,
+  WORK_MARKET_V2_ORACLE_MODEL,
+  validateGovernedWorkMarketAction,
+  workMarketV2ActivationForReplay,
+} from "../server/work-market-v2.mjs";
+import {
   INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
   INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
   buildIncbRangeReplayWitnessManifest,
@@ -999,14 +1007,17 @@ function check(name, run) {
   tests.push({ name, run });
 }
 
-check("listing seal confirmation follows the seal transaction status", () => {
+check("WORK V3 seal confirmation requires its canonical valid event", () => {
   const sealTxid = "4".repeat(64);
+  const workTokenId = "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
   const tokenListingSealConfirmedFromTransaction = isolatedFunction(
     READER_PATH,
     "tokenListingSealConfirmedFromTransaction",
     {
       normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
       validTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_TOKEN_ID: workTokenId,
     },
   );
 
@@ -1020,6 +1031,27 @@ check("listing seal confirmation follows the seal transaction status", () => {
   assert.equal(
     tokenListingSealConfirmedFromTransaction(
       { seal_tx_status: "confirmed" },
+      sealTxid,
+    ),
+    true,
+  );
+  const workMarketV3Row = {
+    payload: {
+      saleAuthorization: {
+        tokenId: workTokenId,
+        version: "pwt-sale-v3",
+      },
+    },
+    seal_tx_status: "confirmed",
+    token_id: workTokenId,
+  };
+  assert.equal(
+    tokenListingSealConfirmedFromTransaction(workMarketV3Row, sealTxid),
+    false,
+  );
+  assert.equal(
+    tokenListingSealConfirmedFromTransaction(
+      { ...workMarketV3Row, seal_event_status: "confirmed" },
       sealTxid,
     ),
     true,
@@ -1039,13 +1071,449 @@ check("listing seal confirmation follows the seal transaction status", () => {
   const readerSource = fileSource(READER_PATH);
   assert.equal(
     (readerSource.match(/seal_tx\.status AS seal_tx_status/gu) ?? []).length,
-    3,
+    4,
+  );
+  assert.equal(
+    (readerSource.match(/canonical_seal_event\.seal_event_status/gu) ?? [])
+      .length >= 4,
+    true,
   );
   assert.equal(
     (readerSource.match(
       /sealConfirmed: tokenListingSealConfirmedFromTransaction\(row, sealTxid\)/gu,
     ) ?? []).length,
-    3,
+    4,
+  );
+});
+
+check("WORK V3 projections accept only confirmed action components", async () => {
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const objectValue = (value) =>
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const identity = isolatedFunction(
+    BACKFILL_PATH,
+    "workMarketV2ProjectionIdentity",
+    {
+      normalizedLowerText,
+      objectValue,
+    },
+  );
+  const canMutate = isolatedFunction(
+    BACKFILL_PATH,
+    "workMarketV2ProjectionCanMutate",
+    {
+      eventKind: (item) => item.kind,
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
+      NETWORK: "livenet",
+      normalizedLowerText,
+      workMarketV2ProjectionIdentity: identity,
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_TOKEN_ID: workTokenId,
+    },
+  );
+  const base = {
+    confirmed: true,
+    listingId: "1".repeat(64),
+    saleAuthorization: {
+      tokenId: workTokenId,
+      version: "pwt-sale-v3",
+    },
+    tokenId: workTokenId,
+  };
+  const noParentRead = {
+    async query() {
+      throw new Error("explicit V3 projection unexpectedly queried its parent");
+    },
+  };
+
+  assert.equal(
+    await canMutate(
+      noParentRead,
+      base,
+      "pending",
+      "token-listing",
+      "token-listings",
+    ),
+    false,
+  );
+  assert.equal(
+    await canMutate(
+      noParentRead,
+      base,
+      "confirmed",
+      "token-listing",
+      "token-listings",
+    ),
+    true,
+  );
+  assert.equal(
+    await canMutate(
+      noParentRead,
+      { ...base, sealConfirmed: false, sealTxid: "2".repeat(64) },
+      "confirmed",
+      "token-listing-sealed",
+      "token-listings",
+    ),
+    false,
+  );
+  assert.equal(
+    await canMutate(
+      noParentRead,
+      { ...base, sealConfirmed: true, sealTxid: "2".repeat(64) },
+      "confirmed",
+      "token-listing-sealed",
+      "token-listings",
+    ),
+    true,
+  );
+  assert.equal(
+    await canMutate(
+      noParentRead,
+      { ...base, closedConfirmed: false },
+      "confirmed",
+      "token-sale",
+      "token-sales",
+    ),
+    false,
+  );
+  assert.equal(
+    await canMutate(
+      noParentRead,
+      { ...base, closedConfirmed: true },
+      "confirmed",
+      "token-sale",
+      "token-sales",
+    ),
+    true,
+  );
+  assert.equal(
+    await canMutate(
+      noParentRead,
+      {
+        ...base,
+        saleAuthorization: { tokenId: "3".repeat(64), version: "pwt-sale-v3" },
+        tokenId: "3".repeat(64),
+      },
+      "pending",
+      "token-listing",
+      "token-listings",
+    ),
+    true,
+  );
+  const companion = {
+    closedConfirmed: false,
+    confirmed: false,
+    listingId: base.listingId,
+    tokenId: workTokenId,
+  };
+  const parentReads = [];
+  const v3ParentClient = {
+    async query(sql, params) {
+      parentReads.push({ params: [...params], sql: String(sql) });
+      return { rows: [{ authorization_version: "pwt-sale-v3" }] };
+    },
+  };
+  assert.equal(
+    await canMutate(
+      v3ParentClient,
+      companion,
+      "pending",
+      "token-listing-closed",
+      "token-closed-listings",
+    ),
+    false,
+  );
+  assert.equal(parentReads.length, 1);
+  assert.deepEqual(parentReads[0].params, [
+    "livenet",
+    base.listingId,
+    workTokenId,
+  ]);
+  assert.match(parentReads[0].sql, /FROM proof_indexer\.credit_listings/u);
+
+  const projectionWrites = [];
+  const upsertProjection = isolatedFunction(
+    BACKFILL_PATH,
+    "upsertProjection",
+    {
+      bondTagForKind: () => null,
+      eventKind: (item) => item.kind ?? "token-listing-closed",
+      workMarketV2ProjectionCanMutate: canMutate,
+    },
+  );
+  await upsertProjection(
+    {
+      async query(sql, params) {
+        const text = String(sql);
+        if (/SELECT lower\(COALESCE/iu.test(text)) {
+          return { rows: [{ authorization_version: "pwt-sale-v3" }] };
+        }
+        projectionWrites.push({ params, sql: text });
+        return { rows: [] };
+      },
+    },
+    "token-closed-listings",
+    companion,
+    "pending",
+  );
+  assert.equal(projectionWrites.length, 0);
+});
+
+check("WORK V3 aggregate rows cannot rewrite action-bound events", async () => {
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const objectValue = (value) =>
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value ?? ""));
+  const identity = isolatedFunction(
+    BACKFILL_PATH,
+    "workMarketV2ProjectionIdentity",
+    { normalizedLowerText, objectValue },
+  );
+  const actionBound = isolatedFunction(
+    BACKFILL_PATH,
+    "workMarketV2EventIsActionBound",
+    {
+      isHexTxid,
+      normalizedLowerText,
+      workMarketV2ProjectionIdentity: identity,
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_TOKEN_ID: workTokenId,
+    },
+  );
+  const listingId = "4".repeat(64);
+  const sealTxid = "5".repeat(64);
+  const authorization = { tokenId: workTokenId, version: "pwt-sale-v3" };
+  const aggregate = {
+    listingId,
+    saleAuthorization: authorization,
+    sealConfirmed: false,
+    sealTxid,
+    tokenId: workTokenId,
+    txid: listingId,
+  };
+  assert.equal(actionBound(aggregate, "token-listing", listingId), false);
+  assert.equal(
+    actionBound(
+      { ...aggregate, sealTxid: undefined },
+      "token-listing",
+      listingId,
+    ),
+    true,
+  );
+  assert.equal(
+    actionBound(
+      { ...aggregate, sealTxid: undefined, txid: sealTxid },
+      "token-listing",
+      sealTxid,
+    ),
+    false,
+  );
+  assert.equal(
+    actionBound(
+      { ...aggregate, kind: "token-listing-sealed", txid: sealTxid },
+      "token-listing-sealed",
+      sealTxid,
+    ),
+    true,
+  );
+  assert.equal(
+    actionBound(
+      { ...aggregate, kind: "token-listing-sealed", txid: "6".repeat(64) },
+      "token-listing-sealed",
+      "6".repeat(64),
+    ),
+    false,
+  );
+  const saleTxid = "a".repeat(64);
+  assert.equal(
+    actionBound(
+      { ...aggregate, kind: "token-sale", saleTxid, txid: saleTxid },
+      "token-sale",
+      saleTxid,
+    ),
+    true,
+  );
+  assert.equal(
+    actionBound(
+      { ...aggregate, kind: "token-sale", saleTxid, txid: "b".repeat(64) },
+      "token-sale",
+      "b".repeat(64),
+    ),
+    false,
+  );
+  assert.equal(
+    actionBound(
+      { ...aggregate, kind: "buy", saleTxid, txid: saleTxid },
+      "buy",
+      saleTxid,
+    ),
+    true,
+  );
+  assert.equal(
+    actionBound(
+      { ...aggregate, kind: "buy", saleTxid, txid: "b".repeat(64) },
+      "buy",
+      "b".repeat(64),
+    ),
+    false,
+  );
+  assert.equal(
+    actionBound(
+      { ...aggregate, kind: undefined, saleTxid, txid: saleTxid },
+      "token-sales",
+      saleTxid,
+    ),
+    true,
+  );
+  assert.equal(
+    actionBound(
+      { ...aggregate, kind: undefined, saleTxid, txid: "b".repeat(64) },
+      "token-sales",
+      "b".repeat(64),
+    ),
+    false,
+  );
+  const closeTxid = "c".repeat(64);
+  assert.equal(
+    actionBound(
+      {
+        ...aggregate,
+        closedTxid: closeTxid,
+        kind: "token-listing-closed",
+        txid: closeTxid,
+      },
+      "token-listing-closed",
+      closeTxid,
+    ),
+    true,
+  );
+  assert.equal(
+    actionBound(
+      {
+        ...aggregate,
+        closedTxid: closeTxid,
+        kind: "token-listing-closed",
+        txid: "d".repeat(64),
+      },
+      "token-listing-closed",
+      "d".repeat(64),
+    ),
+    false,
+  );
+  assert.equal(
+    actionBound(
+      {
+        ...aggregate,
+        closedTxid: closeTxid,
+        kind: undefined,
+        txid: closeTxid,
+      },
+      "token-closed-listings",
+      closeTxid,
+    ),
+    true,
+  );
+  assert.equal(
+    actionBound(
+      {
+        ...aggregate,
+        closedTxid: closeTxid,
+        kind: undefined,
+        txid: "d".repeat(64),
+      },
+      "token-closed-listings",
+      "d".repeat(64),
+    ),
+    false,
+  );
+
+  let databaseCalls = 0;
+  const upsertEvent = isolatedFunction(BACKFILL_PATH, "upsertEvent", {
+    eventKind: () => "token-listing",
+    itemStatus: () => "confirmed",
+    itemTxid: (item) => item.txid,
+    workMarketV2EventIsActionBound: actionBound,
+  });
+  const result = await upsertEvent(
+    {
+      async query() {
+        databaseCalls += 1;
+        throw new Error("aggregate row reached persistence");
+      },
+    },
+    "token-listings",
+    aggregate,
+  );
+  assert.equal(result.aggregateSkipped, true);
+  assert.equal(result.skipped, true);
+  assert.equal(databaseCalls, 0);
+});
+
+check("canonical WORK V3 decisions remove volatile marketplace events", async () => {
+  const queries = [];
+  const removeVolatile = isolatedFunction(
+    BACKFILL_PATH,
+    "removeVolatileWorkMarketV2DecisionEvents",
+    {
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      NETWORK: "livenet",
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_TOKEN_ID:
+        "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+    },
+  );
+  const txid = "7".repeat(64);
+  const tokenVerifierItemsFromState = isolatedFunction(
+    API_PATH,
+    "tokenVerifierItemsFromState",
+  );
+  const [canonicalInvalid] = tokenVerifierItemsFromState(
+    {
+      canonicalCoverage: true,
+      invalidEvents: [{
+        confirmed: true,
+        kind: "seal",
+        tokenId:
+          "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+        txid,
+      }],
+    },
+    txid,
+  );
+  assert.equal(canonicalInvalid.kind, "token-event-invalid");
+  assert.equal(canonicalInvalid.attemptedKind, "seal");
+  const client = {
+    async query(sql, params) {
+      queries.push({ params, sql: String(sql) });
+      return { rowCount: 1, rows: [] };
+    },
+  };
+  assert.equal(
+    await removeVolatile(
+      client,
+      [canonicalInvalid],
+      txid,
+    ),
+    1,
+  );
+  assert.equal(queries.length, 1);
+  assert.deepEqual([...queries[0].params], [
+    "livenet",
+    txid,
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+    "pwt-sale-v3",
+  ]);
+  assert.match(queries[0].sql, /status IN \('pending', 'dropped', 'orphaned'\)/u);
+  assert.match(queries[0].sql, /saleAuthorization'->>'version'/u);
+  assert.match(
+    queries[0].sql,
+    /FROM proof_indexer\.credit_listings parent_listing/u,
   );
 });
 
@@ -1225,6 +1693,7 @@ check("a current market lifecycle overlay owns sold and active state", () => {
     API_PATH,
     "tokenStateWithIndexedMarketSummaryOverlay",
     {
+      applyWorkMarketV2CutoverToTokenState: (state) => state,
       confirmedTokenSalesStats: (sales) => ({
         confirmedSales: sales.filter((sale) => sale.confirmed).length,
         confirmedSalesVolumeSats: sales.reduce(
@@ -1252,6 +1721,7 @@ check("a current market lifecycle overlay owns sold and active state", () => {
     API_PATH,
     "tokenMarketLifecycleOverlayFromCreditListings",
     {
+      applyWorkMarketV2CutoverToTokenState: (state) => state,
       normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
       numericValue: (value) => Number(value) || 0,
     },
@@ -1343,6 +1813,7 @@ check("marketplace fast fallback fails closed without lifecycle coverage", async
     API_PATH,
     "marketplaceSummaryPayloadWithIndexedMarketOverlay",
     {
+      canonicalWorkMarketV2TokenSummary: (payload) => payload,
       compactTokenSummaryPayload: (payload) => payload,
       indexedTokenMarketSummaryOverlay: async () => null,
       marketplaceSummaryWithCurrentBtcUsd: (payload) => payload,
@@ -1359,6 +1830,209 @@ check("marketplace fast fallback fails closed without lifecycle coverage", async
       { fast: true },
     ),
     null,
+  );
+});
+
+check("WORK V2 stored summaries require the exact cutover marker", () => {
+  const canonicalSummary = isolatedFunction(
+    API_PATH,
+    "canonicalWorkMarketV2TokenSummary",
+    {
+      WORK_MARKET_V2_ACTIVATION_HEIGHT: 959_062,
+      WORK_MARKET_V2_DECLARATION_HEIGHT: 959_061,
+      WORK_MARKET_V2_DECLARATION_TXID:
+        "4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f",
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock),
+    },
+  );
+  const preactivation = { indexedThroughBlock: 959_061 };
+  assert.equal(canonicalSummary(preactivation, "livenet"), preactivation);
+  const exact = {
+    indexedThroughBlock: 959_062,
+    workMarketV2Activation: {
+      activationHeight: 959_062,
+      declarationHeight: 959_061,
+      declarationTxid:
+        "4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f",
+    },
+  };
+  assert.equal(canonicalSummary(exact, "livenet"), exact);
+  assert.equal(
+    canonicalSummary(
+      {
+        ...exact,
+        workMarketV2Activation: {
+          ...exact.workMarketV2Activation,
+          declarationHeight: 959_060,
+        },
+      },
+      "livenet",
+    ),
+    null,
+  );
+  assert.equal(
+    canonicalSummary({ indexedThroughBlock: 959_062 }, "livenet"),
+    null,
+  );
+});
+
+check("livenet raw WORK marketplace recovery fails closed", async () => {
+  const state = { marker: "canonical" };
+  const transaction = { txid: "aa".repeat(32) };
+  const functions = [
+    "workTokenStateWithRecoveredListingClosesFromTransactions",
+    "workTokenStateWithRecoveredListingSeals",
+    "workTokenStateWithRecoveredListingsFromTransactions",
+  ].map((name) => isolatedFunction(API_PATH, name));
+  for (const recover of functions) {
+    assert.equal(recover(state, [transaction], "livenet"), state);
+  }
+  const recoverSale = isolatedFunction(
+    API_PATH,
+    "confirmedWorkSaleFromClosedListingTransaction",
+  );
+  assert.equal(recoverSale(transaction, {}, "livenet"), null);
+  const recoverSales = isolatedFunction(
+    API_PATH,
+    "recoverWorkSalesFromClosedListings",
+  );
+  assert.equal((await recoverSales(state, "livenet")).length, 0);
+  const recoverCloseSales = isolatedFunction(
+    API_PATH,
+    "workTokenStateWithRecoveredListingCloseSales",
+  );
+  assert.equal(await recoverCloseSales(state, "livenet"), state);
+  const safeDeltas = isolatedFunction(
+    API_PATH,
+    "workTokenDeltaTransactionsWithoutUnverifiedMarketMutations",
+    {
+      workTokenNonMintActionKindsFromTransaction: (tx) =>
+        new Set(tx.kinds ?? []),
+    },
+  );
+  const sendTx = { kinds: ["send"], txid: "bb".repeat(32) };
+  const maliciousMarketTx = { kinds: ["list"], txid: "cc".repeat(32) };
+  const filtered = safeDeltas(
+    [sendTx, maliciousMarketTx],
+    "livenet",
+  );
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0], sendTx);
+  const delta = isolatedFunction(API_PATH, "workTokenStateWithDeltaTransactions", {
+    workTokenDeltaTransactionsWithoutUnverifiedMarketMutations: () => [],
+  });
+  assert.equal(delta(state, [transaction], "livenet"), state);
+});
+
+check("livenet WORK replay enforces V2 without declaration hydration", () => {
+  const registryAddress = "registry";
+  const sellerAddress = "seller";
+  const actionTxid = "ab".repeat(32);
+  const transaction = {
+    status: {
+      block_hash: "cd".repeat(32),
+      block_height: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      block_index: 1,
+      block_time: 1_753_000_000,
+      confirmed: true,
+    },
+    txid: actionTxid,
+    vin: [{ address: sellerAddress }],
+    vout: [
+      {
+        message: {
+          kind: "list",
+          saleAuthorization: {
+            amountAtoms: "100000000",
+            minimumPriceSats: "1",
+            oracleBlockHash: "ef".repeat(32),
+            oracleBlockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT - 1,
+            oracleModel: WORK_MARKET_V2_ORACLE_MODEL,
+            oracleNetworkValueQ8: "2100000000000000",
+            priceSats: 1,
+            registryAddress,
+            sellerAddress,
+            ticker: "WORK",
+            tokenId: WORK_TOKEN_ID,
+            version: WORK_MARKET_V2_AUTH_VERSION,
+          },
+        },
+      },
+    ],
+  };
+  const transactionTxid = (tx) => tx.txid;
+  const transactionConfirmed = (tx) => tx.status.confirmed === true;
+  const transactionBlockHeight = (tx) => tx.status.block_height;
+  const transactionBlockIndex = (tx) => tx.status.block_index;
+  const tokenStateFromTransactions = isolatedFunction(
+    API_PATH,
+    "tokenStateFromTransactions",
+    {
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      TOKEN_PROTOCOL_PREFIX: "pwt1:",
+      WORK_MARKET_V2_DECLARATION_TXID,
+      WORK_TOKEN_TICKER: "WORK",
+      canonicalEventIdentityDetails: () => ({}),
+      canonicalInceptionMintMetadata: () => ({}),
+      decodedProtocolMessages: (outputs) =>
+        outputs.flatMap((output) => output?.message ? [output.message] : []),
+      inputAddresses: (vin) => vin.map((input) => input.address),
+      isValidBitcoinAddress: (address) => Boolean(address),
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+      parseTokenPayload: (message) => message,
+      paymentOutputsBeforeTokenProtocol: () => [],
+      proofProtocolDataBytesForVout: () => 0,
+      spentOutpoints: () => [],
+      tokenDefinitionsFromTransactions: () => ({ tokens: [] }),
+      tokenListingAnchorIsPresent: () => true,
+      tokenMatchesScope: (token, scope) =>
+        !scope || token.tokenId === scope || token.ticker.toLowerCase() === scope,
+      tokenPaymentAmountBeforeProtocol: () => 546,
+      tokenReplayEntriesForRegistry: (transactions) =>
+        transactions.map((tx) => ({ kind: "transaction", tx })),
+      tokenTransactionTime: (tx) => tx.status.block_time * 1_000,
+      transactionBlockHash: (tx) => tx.status.block_hash,
+      transactionBlockHeight,
+      transactionBlockIndex,
+      transactionConfirmed,
+      transactionMinerFeeSats: () => 10,
+      transactionTxid,
+      validateGovernedWorkMarketAction,
+      workMarketV2ActivationForReplay,
+    },
+  );
+  const state = tokenStateFromTransactions(
+    [],
+    // The action is present, but the pinned declaration transaction is
+    // deliberately absent from this opportunistically hydrated replay.
+    new Map([[registryAddress, [transaction]]]),
+    "index",
+    "livenet",
+    WORK_TOKEN_ID,
+    [
+      {
+        creationFeeSats: 0,
+        maxSupply: 21_000_000,
+        mintAmount: 1_000,
+        mintPriceSats: 1_000,
+        registryAddress,
+        ticker: "WORK",
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    [],
+  );
+  assert.equal(state.listings.length, 0);
+  assert.equal(state.invalidEvents.length, 1);
+  assert.equal(
+    state.invalidEvents[0].reasonCode,
+    "work-market-v2-canonical-oracle-unavailable",
+  );
+  assert.equal(
+    state.workMarketV2Activation.activationHeight,
+    WORK_MARKET_V2_ACTIVATION_HEIGHT,
   );
 });
 
@@ -1458,6 +2132,8 @@ check("unscoped credit lifecycle reads query every token", async () => {
     {
       boundedInteger: (value, fallback, min, max) =>
         Math.min(max, Math.max(min, Number(value ?? fallback))),
+      canonicalTokenListingSealEventJoinSql: () => "",
+      canonicalWorkMarketV3ListingProjectionSql: () => "TRUE",
       dateIso: (value) => new Date(value).toISOString(),
       latestProofIndexScanMetadata: async () => ({
         generated_at: "2026-07-12T14:28:54.000Z",
@@ -3057,6 +3733,7 @@ check("wallet token scope preserves holder definitions and indexed invalids", as
     API_PATH,
     "tokenPayloadScopedToAddresses",
     {
+      applyWorkMarketV2CutoverToTokenState: (state) => state,
       historyItemsMatchingAddresses,
       normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
     },
@@ -3334,7 +4011,10 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
     "proofIndexWalletTokenOverlayPayload",
     {
       activeTokenListingHistoryItem: () => false,
+      applyWorkMarketV2CutoverToTokenState: (state) => state,
       assertCanonicalIncbDefinition: () => {},
+      canonicalTokenListingSealEventJoinSql: () => "",
+      canonicalWorkMarketV3ListingProjectionSql: () => "TRUE",
       canonicalEventPayload: (payload) => payload ?? {},
       compareTokenItemsByTime: () => 0,
       dateIso,
@@ -3960,7 +4640,8 @@ check("confirmed invalid credit events remain visible without becoming valid", a
 check("unpinned mint and market history use current relational pages", async () => {
   const scan = {
     generated_at: "2026-07-11T12:00:00.000Z",
-    indexed_through_block: 957_619,
+    indexed_through_block: 959_062,
+    payload: { indexedThroughBlockHash: "ab".repeat(32) },
   };
   const currentRelationalHistoryPageWithScanCoverage = isolatedFunction(
     READER_PATH,
@@ -3988,6 +4669,7 @@ check("unpinned mint and market history use current relational pages", async () 
   let embeddedSnapshotReads = 0;
   let mintReads = 0;
   let marketReads = 0;
+  const marketKinds = [];
   const proofIndexTokenHistoryPayload = isolatedFunction(
     READER_PATH,
     "proofIndexTokenHistoryPayload",
@@ -4035,8 +4717,17 @@ check("unpinned mint and market history use current relational pages", async () 
         options,
       ) => {
         marketReads += 1;
+        marketKinds.push(_kind);
+        assert.equal(options.authoritativeEmpty, true);
         assert.equal(options.snapshot.snapshot_id, "");
-        return marketPage;
+        assert.equal(options.snapshot.indexed_through_block, 959_062);
+        assert.equal(
+          options.snapshot.indexed_through_block_hash,
+          "ab".repeat(32),
+        );
+        return _kind === "listings"
+          ? { ...marketPage, items: [], kind: "listings", totalCount: 0 }
+          : marketPage;
       },
       tokenHistoryFilterNeedles: () => [],
       tokenHistoryMarketEventKinds: (kind) =>
@@ -4056,16 +4747,28 @@ check("unpinned mint and market history use current relational pages", async () 
     "market-log",
     new URLSearchParams({ limit: "10" }),
   );
+  const listingsResult = await proofIndexTokenHistoryPayload(
+    "livenet",
+    "work",
+    "listings",
+    new URLSearchParams({ limit: "10" }),
+  );
 
   assert.equal(mintReads, 1);
-  assert.equal(marketReads, 1);
+  assert.equal(marketReads, 2);
+  assert.deepEqual(marketKinds, ["market-log", "listings"]);
   assert.equal(embeddedSnapshotReads, 0);
   assert.equal(mintResult.source, "proof-indexer-token-mint-events");
   assert.equal(marketResult.source, "proof-indexer-token-events");
-  assert.equal(mintResult.indexedThroughBlock, 957_619);
-  assert.equal(marketResult.indexedThroughBlock, 957_619);
+  assert.equal(listingsResult.source, "proof-indexer-token-events");
+  assert.equal(listingsResult.totalCount, 0);
+  assert.deepEqual(listingsResult.items, []);
+  assert.equal(mintResult.indexedThroughBlock, 959_062);
+  assert.equal(marketResult.indexedThroughBlock, 959_062);
+  assert.equal(listingsResult.indexedThroughBlock, 959_062);
   assert.equal(mintResult.indexedAt, scan.generated_at);
   assert.equal(marketResult.indexedAt, scan.generated_at);
+  assert.equal(listingsResult.indexedAt, scan.generated_at);
 });
 
 check("invalid listing attempts inherit their canonical credit scope", () => {
@@ -9218,6 +9921,7 @@ check("Core-present dropped protocol transactions revive through verifier and up
         projectionCalls += 1;
       },
       upsertTransaction,
+      workMarketV2EventIsActionBound: () => true,
     },
   );
   let verifierCalls = 0;
@@ -10287,6 +10991,9 @@ check("ledger snapshot retention preserves pinned issuance oracles", async () =>
       LEDGER_CANONICAL_SUMMARY_RETENTION: 4_096,
       LEDGER_SCAN_SNAPSHOT_RETENTION: 20_000,
       NETWORK: "livenet",
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_TOKEN_ID:
+        "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
     },
   );
   const result = await pruneLedgerSnapshots(
@@ -10310,9 +11017,17 @@ check("ledger snapshot retention preserves pinned issuance oracles", async () =>
     20_000,
     "canonical:rebuild",
     INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+    "pwt-sale-v3",
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
   ]);
   assert.match(queryText, /row_number\(\) OVER/u);
   assert.match(queryText, /payload->>'issuanceValueSnapshotId'/u);
+  assert.match(queryText, /proof_indexer\.events action_event/u);
+  assert.match(queryText, /proof_indexer\.transactions action_transaction/u);
+  assert.match(queryText, /proof_indexer\.blocks action_block/u);
+  assert.match(queryText, /saleAuthorization'->>'oracleBlockHeight'/u);
+  assert.match(queryText, /saleAuthorization'->>'oracleBlockHash'/u);
+  assert.match(queryText, /source_hashes \? 'canonicalSummary'/u);
   assert.match(queryText, /NOT EXISTS/u);
   assert.match(queryText, /DELETE FROM proof_indexer\.ledger_snapshots/u);
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
@@ -12503,7 +13218,8 @@ check("exact stored bond snapshots serve stable and fresh reads before recovery"
 });
 
 check("exact listing misses bypass chain recovery only with terminal database proof", async () => {
-  const txid = "6".repeat(64);
+  const txid =
+    "df317cbbfdc603a390ee0f8b027ba8f0d08ef2200ce914b0b3e7dd46ce0982ce";
   let terminal = true;
   const sqlReads = [];
   const pool = {
@@ -12520,6 +13236,8 @@ check("exact listing misses bypass chain recovery only with terminal database pr
     "exactActiveTokenListingHistoryPage",
     {
       activeTokenListingHistoryItem: () => true,
+      canonicalTokenListingSealEventJoinSql: () => "",
+      canonicalWorkMarketV3ListingProjectionSql: () => "TRUE",
       compareTokenHistoryMarketItems: () => 0,
       dateIso: (value) => value ?? "2026-07-13T00:00:00.000Z",
       normalizedTxid: (value) =>
@@ -12534,6 +13252,9 @@ check("exact listing misses bypass chain recovery only with terminal database pr
         totalCount: options.items.length,
       }),
       tokenScopeKey: (value) => String(value ?? "").toLowerCase(),
+      WORK_MARKET_V2_ACTIVATION_HEIGHT: 959062,
+      WORK_TOKEN_ID:
+        "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
     },
   );
   const pagination = { limit: 20, offset: 0, query: txid };
@@ -12557,6 +13278,22 @@ check("exact listing misses bypass chain recovery only with terminal database pr
   assert.match(sqlReads[0], /cl\.seal_txid = ANY/u);
   assert.match(sqlReads[0], /cl\.close_txid = ANY/u);
   assert.match(sqlReads[1], /terminal_tx\.status IN \('dropped', 'orphaned'\)/u);
+
+  sqlReads.length = 0;
+  const cutoverPage = await exactActiveTokenListingHistoryPage(
+    pool,
+    "livenet",
+    "work",
+    new URLSearchParams({ q: txid }),
+    pagination,
+    { ...snapshot, indexed_through_block: 959062 },
+  );
+  assert.equal(cutoverPage.totalCount, 0);
+  assert.equal(cutoverPage.source, "proof-indexer-credit-listings-terminal");
+  assert.match(sqlReads[0], /= 'pwt-sale-v3'/u);
+  assert.doesNotMatch(sqlReads[0], /pwt-sale-v1','pwt-sale-v2/u);
+  assert.match(sqlReads[1], /cutover_listing/u);
+  assert.match(sqlReads[1], /pwt-sale-v1','pwt-sale-v2/u);
 
   terminal = false;
   sqlReads.length = 0;
@@ -13347,6 +14084,7 @@ check("confirmed event replay repairs stale pending payload status", async () =>
       projected.push({ item, status });
     },
     upsertTransaction: async () => {},
+    workMarketV2EventIsActionBound: () => true,
   });
 
   await upsertEvent(client, "address-mail", {
@@ -13596,6 +14334,7 @@ check("exact token tables own the current active listing set", () => {
     API_PATH,
     "tokenStateWithAuthoritativeCurrentListings",
     {
+      applyWorkMarketV2CutoverToTokenState: (state) => state,
       mergeTokenListingRecord: (current, incoming) => ({
         ...(current ?? {}),
         ...(incoming ?? {}),
@@ -14380,6 +15119,9 @@ check("block verification completes before the atomic block transaction", async 
       removeVolatileWorkMintDecisionEvents: async () => {
         events.push("cleanup");
       },
+      removeVolatileWorkMarketV2DecisionEvents: async () => {
+        events.push("market-cleanup");
+      },
       preparedProtocolItemsForTx: async () => {
         events.push("verify");
         return [{ item: { txid }, sourceLabel: "id-records" }];
@@ -14408,6 +15150,7 @@ check("block verification completes before the atomic block transaction", async 
     "block",
     "raw",
     "cleanup",
+    "market-cleanup",
     "persist",
     "balances",
     "checkpoint",
@@ -14536,6 +15279,7 @@ check("active range replay regenerates deleted exact H-1 checkpoints before veri
         events.push(`balances:${rebuildState.indexedThroughBlock}`);
       },
       removeVolatileWorkMintDecisionEvents: async () => {},
+      removeVolatileWorkMarketV2DecisionEvents: async () => {},
       seedCanonicalBondDefinitions: async () => {},
       verifyCanonicalIncbPwtRangeReplayProjection: async (
         _client,
@@ -17261,6 +18005,7 @@ check("a verifier error cannot begin or advance a block checkpoint", async () =>
         canonicalVerificationFailureRecord,
       persistPreparedProtocolItems: async () => ({ indexed: 1, skipped: 0 }),
       removeVolatileWorkMintDecisionEvents: async () => 0,
+      removeVolatileWorkMarketV2DecisionEvents: async () => 0,
       preparedProtocolItemsForTx: async () => {
         throw new Error("canonical verifier is stale");
       },
@@ -17341,6 +18086,7 @@ check("the protocol tx target defers a later block but never splits one", async 
         persistCanonicalRawTransaction: async () => {},
         persistPreparedProtocolItems: async () => ({ indexed: 0, skipped: 0 }),
         removeVolatileWorkMintDecisionEvents: async () => 0,
+        removeVolatileWorkMarketV2DecisionEvents: async () => 0,
         preparedProtocolItemsForTx: async () => {
           verified += 1;
           return [];
@@ -18856,6 +19602,7 @@ check("canonical bond mint replay unlocks only later INCB mutations", () => {
       transactionMinerFeeSats: () => 10,
       transactionTxid,
       WORK_MARKET_V2_DECLARATION_TXID: "a".repeat(64),
+      workMarketV2ActivationForReplay: () => null,
       workMarketV2ActivationFromDeclaration: () => null,
       validateWorkMarketV2Authorization: () => ({ valid: true }),
     },
@@ -26112,6 +26859,11 @@ check("credit market log SQL canonicalizes listing lifecycles before pagination"
   const canonicalSql = isolatedFunction(
     READER_PATH,
     "tokenHistoryCanonicalMarketEventsSql",
+    {
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_TOKEN_ID:
+        "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+    },
   );
   const sql = canonicalSql("market-log", "e.network = $1");
   const overlaySource = topLevelFunctionSource(
@@ -26163,6 +26915,7 @@ check("exact dropped market misses are terminal without loading broad history", 
   };
   let disposition = "terminal-nonmarket";
   let needles = [txid];
+  let safeKind = "market-log";
   const sqlReads = [];
   const proofIndexTokenMarketHistoryOverlayPayload = isolatedFunction(
     READER_PATH,
@@ -26186,9 +26939,10 @@ check("exact dropped market misses are terminal without loading broad history", 
           };
         },
       }),
-      tokenHistoryCanonicalMarketEventsSql: () => `
+      tokenHistoryCanonicalMarketEventsSql: (_kind, whereClause) => `
         WITH canonical_market_events AS (
-          SELECT NULL::integer AS block_height WHERE false
+          SELECT NULL::integer AS block_height
+          WHERE false /* ${whereClause} */
         )
       `,
       tokenHistoryFilterNeedles: () => needles,
@@ -26198,9 +26952,11 @@ check("exact dropped market misses are terminal without loading broad history", 
         "token-sale",
         "token-listing-closed",
       ],
-      tokenHistorySafeKind: () => "market-log",
+      tokenHistorySafeKind: () => safeKind,
       tokenMarketEventRowPayload: (row) => row,
       tokenScopeKey: (value) => String(value ?? "").toLowerCase(),
+      WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      WORK_TOKEN_ID,
     },
   );
 
@@ -26258,6 +27014,32 @@ check("exact dropped market misses are terminal without loading broad history", 
     ),
     null,
   );
+  assert.doesNotMatch(sqlReads[0].sql, /bool_and\(/u);
+
+  // A current relational listing set is authoritative even when it is empty;
+  // it must never fall back to a stale embedded pre-cutover V1 payload.
+  safeKind = "listings";
+  needles = [];
+  sqlReads.length = 0;
+  const authoritativeEmptyListings =
+    await proofIndexTokenMarketHistoryOverlayPayload(
+      "livenet",
+      "work",
+      "listings",
+      new URLSearchParams(),
+      {
+        authoritativeEmpty: true,
+        pagination: { ...pagination, query: "" },
+        snapshot: {
+          generated_at: snapshot.generated_at,
+          indexed_through_block: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+          snapshot_id: "",
+        },
+      },
+    );
+  assert.equal(authoritativeEmptyListings.totalCount, 0);
+  assert.deepEqual(authoritativeEmptyListings.items, []);
+  assert.match(sqlReads[0].sql, /= 'pwt-sale-v3'/u);
   assert.doesNotMatch(sqlReads[0].sql, /bool_and\(/u);
 
   let embeddedSnapshotReads = 0;
@@ -26390,7 +27172,23 @@ check("canonical market listings retain original time with current seal metadata
   const sealPatch = isolatedFunction(
     READER_PATH,
     "tokenMarketListingSealPatch",
-    { normalizedLowerText, objectRecord, validTxid },
+    {
+      normalizedLowerText,
+      objectRecord,
+      validTxid,
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_TOKEN_ID: "work-token",
+    },
+  );
+  const canonicalProjectionPayload = isolatedFunction(
+    READER_PATH,
+    "tokenMarketCanonicalListingProjectionPayload",
+    {
+      normalizedLowerText,
+      objectRecord,
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_TOKEN_ID: "work-token",
+    },
   );
   const tokenMarketEventRowPayload = isolatedFunction(
     READER_PATH,
@@ -26398,8 +27196,12 @@ check("canonical market listings retain original time with current seal metadata
     {
       eventRowPayload: (row) => row.payload,
       normalizeEventPayload: (value) => value,
+      normalizedLowerText,
       objectRecord,
+      tokenMarketCanonicalListingProjectionPayload:
+        canonicalProjectionPayload,
       tokenMarketListingSealPatch: sealPatch,
+      validTxid,
     },
   );
   const tokenListingFromEventPayload = isolatedFunction(
@@ -26472,6 +27274,98 @@ check("canonical market listings retain original time with current seal metadata
   assert.equal(item.listing.sealMinerFeeSats, 777);
   assert.equal(item.listing.status, "sealing");
   assert.deepEqual(item.listing.saleAuthorization, saleAuthorization);
+});
+
+check("WORK V3 market history ignores an unproven listing-table seal", () => {
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const objectRecord = (value) =>
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const validTxid = (value) =>
+    /^[0-9a-f]{64}$/u.test(String(value ?? "").trim().toLowerCase());
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const projectionPayload = isolatedFunction(
+    READER_PATH,
+    "tokenMarketCanonicalListingProjectionPayload",
+    {
+      normalizedLowerText,
+      objectRecord,
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_TOKEN_ID: workTokenId,
+    },
+  );
+  const sealPatch = isolatedFunction(
+    READER_PATH,
+    "tokenMarketListingSealPatch",
+    {
+      normalizedLowerText,
+      objectRecord,
+      validTxid,
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_TOKEN_ID: workTokenId,
+    },
+  );
+  const marketPayload = isolatedFunction(
+    READER_PATH,
+    "tokenMarketEventRowPayload",
+    {
+      eventRowPayload: (row) => row.payload,
+      normalizeEventPayload: (value) => value,
+      normalizedLowerText,
+      objectRecord,
+      tokenMarketCanonicalListingProjectionPayload: projectionPayload,
+      tokenMarketListingSealPatch: sealPatch,
+      validTxid,
+    },
+  );
+  const listingId = "8".repeat(64);
+  const sealTxid = "9".repeat(64);
+  const baseAuthorization = {
+    tokenId: workTokenId,
+    version: "pwt-sale-v3",
+  };
+  const staleAuthorization = {
+    ...baseAuthorization,
+    oracleBlockHeight: 123,
+  };
+  const row = {
+    listing_payload: {
+      saleAuthorization: staleAuthorization,
+      sealConfirmed: true,
+      sealTxid,
+      status: "sealing",
+      tokenId: workTokenId,
+    },
+    payload: {
+      kind: "token-listing",
+      listingId,
+      saleAuthorization: baseAuthorization,
+      tokenId: workTokenId,
+      txid: listingId,
+    },
+  };
+  const unproven = marketPayload(row, "livenet");
+  assert.equal(unproven.sealTxid, undefined);
+  assert.equal(unproven.sealConfirmed, undefined);
+  assert.deepEqual(unproven.saleAuthorization, baseAuthorization);
+
+  const canonical = marketPayload(
+    {
+      ...row,
+      seal_event_payload: {
+        saleAuthorization: staleAuthorization,
+        sealAt: "2026-07-22T00:00:00.000Z",
+      },
+      seal_event_status: "confirmed",
+      seal_event_txid: sealTxid,
+    },
+    "livenet",
+  );
+  assert.equal(canonical.sealTxid, sealTxid);
+  assert.equal(canonical.sealConfirmed, true);
+  assert.equal(canonical.status, "sealing");
+  assert.deepEqual(canonical.saleAuthorization, staleAuthorization);
 });
 
 check("credit market log refreshes retain canonical pages and normalize nested rows", () => {
@@ -26758,6 +27652,7 @@ check("seal-close summary recovery requires a proven unspent anchor", async () =
       WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS: "bc1registry",
       WORK_TOKEN_ID: "work-token",
       WORK_TOKEN_TICKER: "WORK",
+      TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION: "pwt-sale-v3",
       errorSummary: (error) => error?.message ?? String(error),
       normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
       numericValue: (value) => Number(value) || 0,
@@ -26812,6 +27707,23 @@ check("seal-close summary recovery requires a proven unspent anchor", async () =
   assert.equal(recovered.closeTxid, undefined);
   assert.equal(recovered.closedTxid, undefined);
 
+  const unprovenWorkMarketV3Seal = await workTokenListingFromCreditListingItem(
+    {
+      ...projectedClose,
+      closeTxid: undefined,
+      closedConfirmed: undefined,
+      saleAuthorization: {
+        ...projectedClose.saleAuthorization,
+        version: "pwt-sale-v3",
+      },
+      sealConfirmed: false,
+      status: "sealing",
+    },
+    "livenet",
+    "2026-07-11T00:00:00.000Z",
+  );
+  assert.equal(unprovenWorkMarketV3Seal.sealConfirmed, false);
+
   outspend = null;
   assert.equal(
     await workTokenListingFromCreditListingItem(
@@ -26821,6 +27733,47 @@ check("seal-close summary recovery requires a proven unspent anchor", async () =
     ),
     null,
   );
+});
+
+check("raw transaction reconciliation cannot promote a WORK V3 seal", async () => {
+  let confirmationChecks = 0;
+  const reconcileCachedTokenListingSeal = isolatedFunction(
+    API_PATH,
+    "reconcileCachedTokenListingSeal",
+    {
+      TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION: "pwt-sale-v3",
+      tokenMarketTxIsConfirmed: async () => {
+        confirmationChecks += 1;
+        return true;
+      },
+      tokenSaleAuthorizationUsesSaleTicketAnchor: () => true,
+    },
+  );
+  const sealTxid = "e".repeat(64);
+  const workMarketV3 = {
+    saleAuthorization: { version: "pwt-sale-v3" },
+    sealConfirmed: false,
+    sealTxid,
+  };
+  assert.equal(
+    await reconcileCachedTokenListingSeal(workMarketV3, "livenet"),
+    workMarketV3,
+  );
+  assert.equal(confirmationChecks, 0);
+
+  const legacy = {
+    saleAuthorization: { version: "pwt-sale-v2" },
+    sealConfirmed: false,
+    sealTxid,
+  };
+  const reconciledLegacy = await reconcileCachedTokenListingSeal(
+    legacy,
+    "livenet",
+  );
+  assert.equal(reconciledLegacy.sealConfirmed, true);
+  assert.equal(reconciledLegacy.sealTxid, sealTxid);
+  assert.equal(reconciledLegacy.saleAuthorization.version, "pwt-sale-v2");
+  assert.equal(confirmationChecks, 1);
 });
 
 check("canonical listing actions use their action time", () => {

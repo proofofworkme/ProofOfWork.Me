@@ -134,6 +134,11 @@ Because the confirmation block cannot be known in advance, a V2 action is
 next-block-bound. If a transaction misses the block immediately following its
 committed oracle block, it becomes stale and is canonically invalid even if it
 later confirms. The wallet must rebuild and re-sign against the new exact tip.
+For a purchase, base-layer settlement is not conditional on this application
+validation: the seller payment and sale-ticket spend can still confirm while a
+stale WORK transfer is rejected. Buyer clients must warn about this risk and
+recheck the exact oracle tip immediately before signing. The hard floor does
+not create a standing buyer or guarantee liquidity.
 
 After activation:
 
@@ -149,6 +154,23 @@ After activation:
 - non-WORK credits, POWB, and INCB retain their existing marketplace versions;
 - pending transactions are visibility only and never establish an oracle or
   canonical market state.
+
+The relational WORK V2 market projection is confirmed-only. A V3 list, seal,
+sale, or close may update `credit_listings` only from its own valid confirmed
+action event. Aggregate lifecycle rows cannot rewrite a different action's
+event. Every table-backed V3 read independently requires the original listing
+event, transaction, and canonical block; a sealed row additionally requires
+its valid confirmed seal event, and a terminal row requires its valid
+confirmed sale or close event. When a canonical block resolves a pending V3
+action, the indexer removes the volatile pending event before storing the one
+confirmed valid or invalid decision.
+
+The production cutover migration runs with marketplace writers stopped and
+locks the derived listing table. It fails closed if any preexisting V3 WORK
+projection lacks its matching canonical list, seal, or close evidence, then
+invalidates only the two pinned post-activation V2 events. The migration is
+idempotent; an unsupported projection requires a supervised canonical rebuild
+instead of being silently preserved or deleted.
 
 The cutover refund audit is recorded in
 `WORK_MARKET_V1_REFUNDS_959061.json`. Eligibility is limited to confirmed
