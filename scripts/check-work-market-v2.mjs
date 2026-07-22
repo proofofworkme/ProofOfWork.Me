@@ -650,6 +650,20 @@ assert.match(
   apiSource,
   /payload\.workMarketV2Activation\?\.declarationHeight !==[\s\S]*WORK_MARKET_V2_DECLARATION_HEIGHT/u,
 );
+const workMarketImportEnd = apiSource.indexOf(
+  '} from "./work-market-v2.mjs";',
+);
+const workMarketImportStart = apiSource.lastIndexOf(
+  "import {",
+  workMarketImportEnd,
+);
+assert.ok(
+  workMarketImportStart >= 0 && workMarketImportEnd > workMarketImportStart,
+);
+assert.match(
+  apiSource.slice(workMarketImportStart, workMarketImportEnd),
+  /\bWORK_MARKET_V2_DECLARATION_HEIGHT\b/u,
+);
 assert.match(apiSource, /deactivateLegacyWorkListingsAtCutover/u);
 assert.match(
   apiSource,
