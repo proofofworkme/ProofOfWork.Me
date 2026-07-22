@@ -5178,6 +5178,183 @@ check("canonical activity counts exactly match the public Log", () => {
   );
 });
 
+check("WORK V2 relics remain paid history without synthetic closes", () => {
+  const tokenActivityItemsFromState = isolatedFunction(
+    API_PATH,
+    "tokenActivityItemsFromState",
+    {
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      activityStatusTag: (confirmed) =>
+        confirmed ? "Confirmed" : "Pending",
+      networkLabel: (network) => String(network ?? ""),
+      shortAddress: (value) => String(value ?? "").slice(0, 12),
+      tokenAmountFieldsFromRecord: (item) => ({ amount: item?.amount ?? 0 }),
+      tokenListingHasConfirmedSaleTicketSeal: (listing) =>
+        listing?.sealConfirmed === true,
+      tokenListingHasPendingSaleTicketSeal: () => false,
+    },
+  );
+  const report = JSON.parse(
+    readFileSync(
+      new URL("../WORK_MARKET_V1_REFUNDS_959061.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const relics = report.listings.map((listing, index) => ({
+    amount: 1,
+    confirmed: true,
+    createdAt: new Date(Date.UTC(2026, 6, 1, 0, index)).toISOString(),
+    listingId: listing.listingId,
+    network: "livenet",
+    priceSats: 1_000,
+    registryAddress: "bc1registry",
+    relic: true,
+    saleAuthorization: {},
+    sealAt: listing.sealed
+      ? new Date(Date.UTC(2026, 6, 2, 0, index)).toISOString()
+      : undefined,
+    sealConfirmed: listing.sealed === true,
+    sealTxid: listing.sealTxid ?? "",
+    sellerAddress: listing.sellerAddress,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+  }));
+  const activity = tokenActivityItemsFromState({
+    closedListings: relics,
+    listings: [],
+    mints: [],
+    sales: [],
+    tokens: [],
+    transfers: [],
+  });
+  assert.equal(report.totals.listingCount, 94);
+  assert.equal(report.totals.sealedListingCount, 59);
+  assert.equal(
+    activity.filter((item) => item.kind === "token-listing").length,
+    94,
+  );
+  assert.equal(
+    activity.filter((item) => item.kind === "token-listing-sealed").length,
+    59,
+  );
+  assert.equal(
+    activity.filter((item) => item.kind === "token-listing-closed").length,
+    0,
+  );
+  assert.equal(activity.filter((item) => item.confirmed !== true).length, 0);
+  assert.equal(
+    marketplaceMutationPaymentFlowSats(
+      activity,
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    ),
+    (94 + 59) * 546,
+  );
+
+  const activityKey = isolatedFunction(API_PATH, "activityKey");
+  const activityItemRichness = isolatedFunction(
+    API_PATH,
+    "activityItemRichness",
+  );
+  const compareActivityItems = isolatedFunction(
+    API_PATH,
+    "compareActivityItems",
+  );
+  const dedupeActivityItems = isolatedFunction(API_PATH, "dedupeActivityItems", {
+    activityItemRichness,
+    activityKey,
+    compareActivityItems,
+  });
+  const deduped = dedupeActivityItems([...activity, ...activity]);
+  assert.equal(deduped.length, 94 + 59);
+  const canonicalActivityCountCoverage = isolatedFunction(
+    API_PATH,
+    "canonicalActivityCountCoverage",
+  );
+  assert.equal(
+    canonicalActivityCountCoverage(
+      {
+        activityItems: deduped.length,
+        confirmedComputerActions: deduped.length,
+      },
+      {
+        activity: {
+          confirmed: 94 + 59,
+          count: 94 + 59,
+        },
+      },
+    ).ok,
+    true,
+  );
+
+  const genuineCloseTxid = "f".repeat(64);
+  const unsealedRelic = relics.find(
+    (listing) => listing.sealConfirmed !== true,
+  );
+  assert.ok(unsealedRelic);
+  const genuineClose = tokenActivityItemsFromState({
+    closedListings: [
+      {
+        ...unsealedRelic,
+        closedConfirmed: true,
+        closedTxid: genuineCloseTxid,
+        relic: false,
+      },
+    ],
+    listings: [],
+    mints: [],
+    sales: [],
+    tokens: [],
+    transfers: [],
+  });
+  assert.equal(genuineClose.length, 1);
+  assert.equal(genuineClose[0].kind, "token-listing-closed");
+  assert.equal(genuineClose[0].confirmed, true);
+  assert.equal(genuineClose[0].txid, genuineCloseTxid);
+
+  const tokenStateLogExpectations = isolatedFunction(
+    API_PATH,
+    "tokenStateLogExpectations",
+  );
+  const expectations = tokenStateLogExpectations({
+    closedListings: [
+      relics[0],
+      {
+        ...unsealedRelic,
+        closedConfirmed: true,
+        closedTxid: genuineCloseTxid,
+        relic: false,
+      },
+    ],
+    listings: [],
+    mints: [],
+    sales: [],
+    tokens: [],
+    transfers: [],
+  });
+  assert.equal(
+    expectations.filter(
+      (item) =>
+        item.kind === "token-listing" && item.txid === relics[0].listingId,
+    ).length,
+    1,
+  );
+  assert.equal(
+    expectations.filter(
+      (item) =>
+        item.kind === "token-listing-closed" &&
+        item.listingId === relics[0].listingId,
+    ).length,
+    0,
+  );
+  assert.equal(
+    expectations.filter(
+      (item) =>
+        item.kind === "token-listing-closed" && item.txid === genuineCloseTxid,
+    ).length,
+    1,
+  );
+});
+
 check("synthetic WORK, POWB, and INCB definitions are not public Log actions", () => {
   const tokenStateLogExpectations = isolatedFunction(
     API_PATH,

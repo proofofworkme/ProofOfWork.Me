@@ -17194,7 +17194,12 @@ function tokenActivityItemsFromState(state, indexAddress) {
     txid: transfer.txid,
   }));
 
-  const listings = (state.listings ?? []).map((listing) => {
+  const listings = [
+    ...(state.listings ?? []),
+    ...(state.closedListings ?? []).filter(
+      (listing) => listing?.relic === true,
+    ),
+  ].map((listing) => {
     const sealConfirmed = tokenListingHasConfirmedSaleTicketSeal(listing);
     const sealPending = tokenListingHasPendingSaleTicketSeal(listing);
     return {
@@ -17313,7 +17318,9 @@ function tokenActivityItemsFromState(state, indexAddress) {
     });
   }
 
-  const closedListings = (state.closedListings ?? []).map((listing) => {
+  const closedListings = (state.closedListings ?? [])
+    .filter((listing) => listing?.relic !== true)
+    .map((listing) => {
     const closedTxid =
       typeof listing.closedTxid === "string" ? listing.closedTxid : "";
     const spentBy = closedTxid ? ` by ${shortAddress(closedTxid)}` : "";
@@ -28586,7 +28593,12 @@ function tokenStateLogExpectations(tokenState) {
     });
   }
 
-  for (const listing of tokenState?.listings ?? []) {
+  for (const listing of [
+    ...(tokenState?.listings ?? []),
+    ...(tokenState?.closedListings ?? []).filter(
+      (item) => item?.relic === true,
+    ),
+  ]) {
     if (listing?.confirmed) {
       add({
         kind: "token-listing",
@@ -28628,7 +28640,9 @@ function tokenStateLogExpectations(tokenState) {
     });
   }
 
-  for (const listing of tokenState?.closedListings ?? []) {
+  for (const listing of (tokenState?.closedListings ?? []).filter(
+    (item) => item?.relic !== true,
+  )) {
     const closedTxid = listing?.closedTxid || listing?.listingId;
     if (!listing?.closedConfirmed || !closedTxid) {
       continue;
