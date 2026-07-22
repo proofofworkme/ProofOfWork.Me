@@ -34077,7 +34077,9 @@ function TokenWorkspace({
             </div>
 
             {detailShowsWorkFloor ? (
-              <section className="id-launch-card token-floor-card">
+              <section
+                className="id-launch-card token-floor-card work-floor-metrics-card"
+              >
                 <div className="id-card-head">
                   <div className="empty-icon" aria-hidden="true">
                     <TrendingUp size={24} />
