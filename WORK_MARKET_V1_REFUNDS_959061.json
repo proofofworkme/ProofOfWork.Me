@@ -1,0 +1,1659 @@
+{
+  "activation": {
+    "activationHeight": 959062,
+    "cutoverHeight": 959061,
+    "declarationTxid": "4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f"
+  },
+  "policy": {
+    "eligibility": "Confirmed active WORK pwt-sale-v1/v2 listings at cutover height 959061",
+    "excluded": "Pending, invalid, sold, delisted, or otherwise closed before cutover",
+    "refundFormula": "listing miner fee + confirmed seal miner fee + 546-proof confirmed seal payment",
+    "saleTicketOutput": "The 546-proof sale-ticket output remains seller-controlled and is not a refund expense"
+  },
+  "source": {
+    "indexedAt": "2026-07-22T01:08:20.100Z",
+    "indexedThroughBlock": 959085
+  },
+  "totals": {
+    "listingCount": 94,
+    "listingMinerFeeSats": 160580,
+    "refundSats": 295660,
+    "sealMinerFeeSats": 102866,
+    "sealPaymentSats": 32214,
+    "sealedListingCount": 59,
+    "sellerCount": 37
+  },
+  "sellers": [
+    {
+      "listingCount": 2,
+      "listingIds": [
+        "6e262c206779016de8e7eda60eeb2470799f2134c2915205971a173379dc5c61",
+        "91015b3f2a2a8a381f17a4be4534c2d74230e4fa4ab9204c44c12b4a14392fa6"
+      ],
+      "listingMinerFeeSats": 2047,
+      "refundSats": 5739,
+      "sealMinerFeeSats": 2600,
+      "sealPaymentSats": 1092,
+      "sealedListingCount": 2,
+      "sellerAddress": "15eBH5vPH48BwXR6aTy29XJjivKuBcAc9D"
+    },
+    {
+      "listingCount": 2,
+      "listingIds": [
+        "38d2de55d800bace12ecbec4fc80884694598ab63da592d036a8cfe0260606a7",
+        "7eca73ab9db59cbd587e069ecf61d7aed82c81824d934af6ba5c7b88bc20462c"
+      ],
+      "listingMinerFeeSats": 2274,
+      "refundSats": 5966,
+      "sealMinerFeeSats": 2600,
+      "sealPaymentSats": 1092,
+      "sealedListingCount": 2,
+      "sellerAddress": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3"
+    },
+    {
+      "listingCount": 12,
+      "listingIds": [
+        "02a7247ad19f93063d034d5e289af93b7b8bd0d94b94371757e2c4740bc97b67",
+        "2862a5d8d66b4ee2ec5675cfebe1dbf9b5fcd74f825880f1c881a68c2a22ab8f",
+        "3ad915a84541dd1bbf0662353da07b52fd9f7cdc9aa2c2bceb9e44dab477f5a6",
+        "3e4597c1dbccf6f29eeff5d62f605a66624ac97b559549c8d6697bfd83cf52d1",
+        "7c71cf4cc6dc47efe7375c9c49e530ac558c405b34e62c44bc126ebc105e47e9",
+        "991cb20376b72005546d236e07b816f56e05a62f604f36b69a4c4e0211d7500d",
+        "9d4f951c4d041b6dfaab2ef4c8d035a20efb8c7deeaa93e83210271e76e6a722",
+        "ac876dc29c80944591c83d43f4aca4449fd261a363d0c29a325c1fcd3fbf220d",
+        "cf5c0c7aec5e321cabf6c0cfc5e1247ec942a0c275e7cec9f0c4de611d4dc06b",
+        "d13f708cb7d574eb8bdb846cc6e541063d441ec975a7ed52928bbe10a17c4ead",
+        "d976f2abdfd60eca041cb7a64450f0c9de06761978cd28b5d2fcae1605457148",
+        "f02005366ce6b4022c0763d64038a703d0fb562ff290e1ecd9da0887e706d7d8"
+      ],
+      "listingMinerFeeSats": 15659,
+      "refundSats": 40351,
+      "sealMinerFeeSats": 18140,
+      "sealPaymentSats": 6552,
+      "sealedListingCount": 12,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+    },
+    {
+      "listingCount": 2,
+      "listingIds": [
+        "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa",
+        "7f41658356632323b0659c935f83c2a5dcc42aefce08e8ed6d769722325d1fe9"
+      ],
+      "listingMinerFeeSats": 2840,
+      "refundSats": 2840,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x"
+    },
+    {
+      "listingCount": 5,
+      "listingIds": [
+        "11fbe60bf90ffd2b5fbc71d9edf11b3ec5b19699f0594dda512b22a92b1691b1",
+        "915cf299ba3d422ba30b5a12f1972112ed3ec1bc43209192ecaca3380dae8531",
+        "b00973d09ae61c02ed57dba1a15eece60ceb67b9386628f12158934f51c24dca",
+        "badc3501fff4800691b25301a1949e2fa8844ef27a8dac488ca78454d51f2f9f",
+        "cd55a39ea298f04173d9067c7a09b76ae654271482965e67dc558e266b3de538"
+      ],
+      "listingMinerFeeSats": 17052,
+      "refundSats": 28249,
+      "sealMinerFeeSats": 10105,
+      "sealPaymentSats": 1092,
+      "sealedListingCount": 2,
+      "sellerAddress": "1CQud1ZkoR4NSRJ2Lw31KssCpR4zSYMLJL"
+    },
+    {
+      "listingCount": 12,
+      "listingIds": [
+        "04178b6c1d17164e71714d22805eecbd29e57acc89bba3298a75eee6d644e77f",
+        "29e611a2ac5c442e25fefbb34ce75c786a6e7a1d9cf4aa7461a3c11bae6d7ec6",
+        "3056bcb540f7406653d98bcd0b0b43135fef596b1c2f17fdc6d077d76ba701e9",
+        "39a270c232c27877b158464e2f752569d7609d704a93e5a8668df29b9145c1b7",
+        "5e264b891b052edd95190b1515f4f609be1284bd51ead93a7fb4dd4805c31ddc",
+        "63a7f1b9f537c2a059cbb52944996bc2df10e88edfdade3798da567af8f94518",
+        "71cb9355cfdbe7c1c6547dc443d302165aa52141b070a88fa67c5175ea530caa",
+        "823be2f31b1ed02144b15cb027b42759ecf60115eba282b765e721b1e3ae97a7",
+        "abf6afddf1ab1becd385c1e1f6c573760aaae932abc70b9cbf67529833152a15",
+        "b4cb35b7939be0b28570a69477fd04fd5fdf3cd6d8fd2b726c28bfaab1263aaa",
+        "d7fe42285c4edd02592608cbd887ad7a8a2b78e085de05296e352fcc1e2166a9",
+        "e5ddefd60d9c3dc7433e68bb8450a21e0fc88232e999ff61762e9e30bed73eb3"
+      ],
+      "listingMinerFeeSats": 16118,
+      "refundSats": 40983,
+      "sealMinerFeeSats": 18313,
+      "sealPaymentSats": 6552,
+      "sealedListingCount": 12,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW"
+    },
+    {
+      "listingCount": 11,
+      "listingIds": [
+        "7aa7dd2e2ab275aceae4eed58f158dee52df5938c6f4b30dbeba051c2958eb82",
+        "7cf007d381e9fba8ef53a1fa09ada544edea97a42481004866d0cea3e311c676",
+        "8bcca101de9f03d624bfc3436a3769def70b9a2bcaf40d47c9338cb6b3c59e8e",
+        "99dc0a2e08dbe56ed04bdee570cdb9ef4d287f74dfe3cf19c794ba661881057f",
+        "a5476c0c6a8df67569935c3cca152a3ef979d95469ce8fe8c8187f359c48a6c7",
+        "c645a07949b0665340989a323a1c127cb4db62c5d556dc91a718ddd8abba7f20",
+        "d252071c9f1d69c9c850411e4a2274489ac3ddba99a41b642251bdd4daed43ce",
+        "d4763803c8c245342fd130d4c51d5f834a68988ea272c54a9d0028d9fb2772df",
+        "d7e85056795fb2cb2871f8a80cbad0f50a1a4926f470eddfd5665ea0ab35bc97",
+        "e1697c58526f42c11762a6d871eabf125623875de15949081786e0e2ec2aacca",
+        "f65bb4a442345b329aec33c050b1027a10d24572cf1d4f2aecb2d2f7e098d8c7"
+      ],
+      "listingMinerFeeSats": 15909,
+      "refundSats": 39344,
+      "sealMinerFeeSats": 17429,
+      "sealPaymentSats": 6006,
+      "sealedListingCount": 11,
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "82afd60ba9c853ea8eaca71fce836d47beb4edb9be1a557c5913b574388d5084"
+      ],
+      "listingMinerFeeSats": 1235,
+      "refundSats": 3297,
+      "sealMinerFeeSats": 1516,
+      "sealPaymentSats": 546,
+      "sealedListingCount": 1,
+      "sellerAddress": "bc1p3yaleuat8cdugnx20m0zkum90vpwnuqgshkd8j4xqrwn6amqan4shdh33v"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "57cbd4ff41b17051b6d499554ed537ac7b43a10302fe282773c0f4121df25101"
+      ],
+      "listingMinerFeeSats": 6075,
+      "refundSats": 6075,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1p6hspuauux3v955sfhscg96029tmpnlldcwv9jnvg8yl83lm8pfjs7klllt"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "2f61af937cf55859e53c1a72ec887de7a34b0e6f1c81912de1d78d0ad48eeb71"
+      ],
+      "listingMinerFeeSats": 608,
+      "refundSats": 608,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1p76suwz8qdcezafshfd6x6nwt8hreemwhcnvp6ny2f2pext4sjd6sz7x52t"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "43c4744352f962af3395de607e115e8d98196e46973b7e444785ed48e5cff876"
+      ],
+      "listingMinerFeeSats": 1216,
+      "refundSats": 1216,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1p7sqcj0jr33w0tkc4wwyctmj9javy3emrwnt7n49m8sms6vqr4dqspe0xkf"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "c2890ff36db1db137491eb694a526758d7f9400679b4dad611526d410be391f7"
+      ],
+      "listingMinerFeeSats": 1214,
+      "refundSats": 1214,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1p7tq8qy3z57t82tuvveq34fqpy4qakamtltk7hhv6pe04qencvy4q2qry63"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "f3c241f6caed741167e86fb5d25d96cdbaa4453ec93247e6f5bc8cee7233eb31"
+      ],
+      "listingMinerFeeSats": 1218,
+      "refundSats": 3262,
+      "sealMinerFeeSats": 1498,
+      "sealPaymentSats": 546,
+      "sealedListingCount": 1,
+      "sellerAddress": "bc1p9veu0wlm5akkk0kcy0dg8uhq5se77yw0dp9v2g50chx0jzx9qn4sncmv49"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "f371ee499b94f929069fb4677446006b1bb67d6793724f2b8d6effb26499c090"
+      ],
+      "listingMinerFeeSats": 1214,
+      "refundSats": 3828,
+      "sealMinerFeeSats": 2068,
+      "sealPaymentSats": 546,
+      "sealedListingCount": 1,
+      "sellerAddress": "bc1parjksvz4hetpmqwtka9wuzl9skhq8y3weusenf8e3qrguqhypweqtpmz2g"
+    },
+    {
+      "listingCount": 2,
+      "listingIds": [
+        "2fd034d84c9742fa123102e4e570b8b64983adda84f5a2555b433f3b8dda8d33",
+        "d9ebbed6cf79275d91ca0caf8770ef783681cce917b69a63a9cf8af45f485a10"
+      ],
+      "listingMinerFeeSats": 2469,
+      "refundSats": 2469,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1pczmmh4garm864hj95qye8929a4sa7f5g4fhx2pzw776d3y48m2vszg8ryt"
+    },
+    {
+      "listingCount": 2,
+      "listingIds": [
+        "1d274b9af63277a47caa76d9886d530175da4b5aa2fd8110f8288163e1dc29bd",
+        "317e6e461c9ee8b5b949204d0cf9942e2b85bbe0e6abaa8648971c7f16036f3f"
+      ],
+      "listingMinerFeeSats": 1825,
+      "refundSats": 1825,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1pd7vjyhn3qkkdq9ky4hvkjlsmsl6c2ekvpmavtsgpee5kuvj3qcwq9qmau8"
+    },
+    {
+      "listingCount": 8,
+      "listingIds": [
+        "050645df307b31a86e46f3cfd9acf38858e78ac1141029bfe14c4f94320faf1d",
+        "251854fe33ab986ed85e76b2402464318d0b4a731200512211699ada09007ae0",
+        "2dfca612de90e0a4a22a2dedad99800ae698a0a609c78a1516493a57cfc9a669",
+        "33c03b0d970d0976ffbaae3e05bebda6f4290a91eab3fadfb5b74dca19af9d70",
+        "3f9e953980bedc418afd9692b70ea9f757379466b041b5fd5fde4c78b0a3feaf",
+        "456fe7f930162a7f45ca7948fea7f63469f13e6e5a4349e3c4814201918a5a2e",
+        "8f027b3d1c48705a347d1534d0969978e799d6efbbe3e1b6940a37e09bd9045d",
+        "dee7eb510fd7f85704fce929330de98963e55911a0581a2c490349e7e094bff3"
+      ],
+      "listingMinerFeeSats": 16159,
+      "refundSats": 18203,
+      "sealMinerFeeSats": 1498,
+      "sealPaymentSats": 546,
+      "sealedListingCount": 1,
+      "sellerAddress": "bc1pdgthhaxqvp3ds3enk3z62xe5m434p884fmu00e9gl924spquu5qqxd3lft"
+    },
+    {
+      "listingCount": 2,
+      "listingIds": [
+        "94b5c24c1c278556e83e8030dd5bf6950d61379494711d0bdc8536081186a05a",
+        "a8dfcffaddcc7c43ef4346fed63abb970bdb0c2737aee1788c5ede8e122836eb"
+      ],
+      "listingMinerFeeSats": 1599,
+      "refundSats": 3201,
+      "sealMinerFeeSats": 1056,
+      "sealPaymentSats": 546,
+      "sealedListingCount": 1,
+      "sellerAddress": "bc1pdk2hhp84250v049rk4gensem46wqynmhj02tk7yykcadma557avs63qxz4"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "53a9835681494fdb9371005f5234e9b69eabb4e8f278868c952af6a36800edd0"
+      ],
+      "listingMinerFeeSats": 2436,
+      "refundSats": 4480,
+      "sealMinerFeeSats": 1498,
+      "sealPaymentSats": 546,
+      "sealedListingCount": 1,
+      "sellerAddress": "bc1pe9jeck7304m3k2gjsykwsmxfm3f5h2m8dk7xxkchdvz0l3pl6txqxms5y7"
+    },
+    {
+      "listingCount": 3,
+      "listingIds": [
+        "352ada51aeb127c0858f7471990a490cf5652e5d29eab50c12295dd218d780f1",
+        "8d5683146862e68db108e083d0c901070d3ce02e17017a8a4dd87d7d60dfd934",
+        "e2b3df1ad012e143ac002be28ba36a1076acd18191eee4c35d2d51f5109dd689"
+      ],
+      "listingMinerFeeSats": 3816,
+      "refundSats": 8068,
+      "sealMinerFeeSats": 3160,
+      "sealPaymentSats": 1092,
+      "sealedListingCount": 2,
+      "sellerAddress": "bc1ph0ht3rfvunfd6p852qyrz30q7tx0q5ln4atwmzur44jmw4x36krqefdz3w"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "23582dc74c1b52afa59f6d6a73fea384fb48305e68942d303ea79b7ac4bff56e"
+      ],
+      "listingMinerFeeSats": 1236,
+      "refundSats": 1236,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1pj9nzxgjt8d46e3qva2lwy2jg7yx37dly7z6legt94xhkpvnsa3sqgyg7t4"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "ea31811fdb3156ffd97c1bc01ad0d381407f11b3fe75ddbedcbf75aa7d7bd945"
+      ],
+      "listingMinerFeeSats": 2184,
+      "refundSats": 4914,
+      "sealMinerFeeSats": 2184,
+      "sealPaymentSats": 546,
+      "sealedListingCount": 1,
+      "sellerAddress": "bc1pjtevet50mnhggdhktcdru06qclfxksr3m9xhma7c6dhhr44xr8ysf29zzt"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "21ff8857180270ca33ca44f1d6d8ac6a4bb5ca7b7af0e1599c9ad9756cfe5d12"
+      ],
+      "listingMinerFeeSats": 1215,
+      "refundSats": 1215,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1pke8ckc6gk230u04zxy9us5yyr2v6e8v7y4w9lqzwkkhvt0y6afksaqtve7"
+    },
+    {
+      "listingCount": 2,
+      "listingIds": [
+        "24d810f7dd3a986ca973c0456d34e63998aa4f82d1bf23e3b5968682e0bd99b9",
+        "351f6305ae5d193469e7966553e749ea0b31debd758503a5381cba844dfd240c"
+      ],
+      "listingMinerFeeSats": 1905,
+      "refundSats": 1905,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1pl8vmv8y4k37jvw77cn7y8tckeawrm5u2n50qrjvglgrp04hczvtq5jyum0"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "02529c1578296cb0dbda9fd1961ced0fbffd0936b00dcadeb4a258392bb09f6e"
+      ],
+      "listingMinerFeeSats": 1216,
+      "refundSats": 1216,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1pmv6krrs323ke6kuz74h3jk6pjxjp70cjf6zywplh78fv79jp36usd7h8ja"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "05aabb84013cbf817562b964cf67a9e3ebda65e6dc3cd8945f0c9705f21c9691"
+      ],
+      "listingMinerFeeSats": 1215,
+      "refundSats": 1215,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1pqat4da4cnv2d5rhuvjp5zagjf6w0mu5hl88lpfrgwvxyzzar58rshe9ept"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "24ee8f8eeb0b3661863032ff424487c79f4f6599ffd1bbdbb65a547930fe6eb7"
+      ],
+      "listingMinerFeeSats": 1234,
+      "refundSats": 1234,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1pw4nvzjm2els4v8q8s5dds5w5mhj83zxm2rw4smy5pu2fel4j4gyqv2ufl9"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "9eae2c360909b2238e2e0f7194575be51c2c8418086847da305c6f3444e2b65f"
+      ],
+      "listingMinerFeeSats": 908,
+      "refundSats": 2287,
+      "sealMinerFeeSats": 833,
+      "sealPaymentSats": 546,
+      "sealedListingCount": 1,
+      "sellerAddress": "bc1pxhs9y9ryqnhm05lyv794f6upzk0mtu2zct5w2hgc2vm3d58pvcqspptre0"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "dfee6642ad3d9252155f1e027230a9d8aba63d4c6f86f68b585e6c5e6d1ff44c"
+      ],
+      "listingMinerFeeSats": 2436,
+      "refundSats": 4480,
+      "sealMinerFeeSats": 1498,
+      "sealPaymentSats": 546,
+      "sealedListingCount": 1,
+      "sellerAddress": "bc1pxjkggvkqaxsrmpyujk66l423scydndfytv7zgkeddgyh3lcngckqyxn2u9"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "5099463369b14de18a55f9caa27ee14f000a2832e9932f1f96800d288eb73c55"
+      ],
+      "listingMinerFeeSats": 1134,
+      "refundSats": 1134,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1q4nh5wjz795fs87hvkp79sl4z3dceehladg8c4q"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "b61ce1b07ec2857e95a92990cc8a7933e39bacf53a0ae3c9ec2e2f7e760adf5c"
+      ],
+      "listingMinerFeeSats": 1318,
+      "refundSats": 1318,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1q7lvsdf0lpgmvn0c8emj9zvjm0sycn4lu3qrry0"
+    },
+    {
+      "listingCount": 5,
+      "listingIds": [
+        "471e3c672f2de295f2b316be4d4d4f618d78640a9aed0d7eca0231578e029e25",
+        "787d4034af972476dfe471ed19b3c5fcca001087f10bddf682b9e4d91e071e3b",
+        "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9",
+        "b69890bcf98358b6d439dbefb8b16c071d02446791bd1913788bdf58fbc7ca32",
+        "cc15066d4d3902d4dd5864088f75addffc068879e2d1eedfa4f147609574dd92"
+      ],
+      "listingMinerFeeSats": 17800,
+      "refundSats": 30746,
+      "sealMinerFeeSats": 11308,
+      "sealPaymentSats": 1638,
+      "sealedListingCount": 3,
+      "sellerAddress": "bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "babfd00f86f47ed5596c08ea231a4495ec2b0f8cd885bbcd2c6905b8acde55cf"
+      ],
+      "listingMinerFeeSats": 6552,
+      "refundSats": 6552,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1qcy4t56a7n7magsv8ptqp82d9glv2ekxwf60985"
+    },
+    {
+      "listingCount": 2,
+      "listingIds": [
+        "bbfdcd9de6be9471196087b1d3aeec0269b51b14cb4cf39d78365a5dd5145be6",
+        "edd4bcbd09dcd8db17c24a47b54aa4a49c528b04e1c77ceefc3779bde612f32c"
+      ],
+      "listingMinerFeeSats": 3816,
+      "refundSats": 8454,
+      "sealMinerFeeSats": 3546,
+      "sealPaymentSats": 1092,
+      "sealedListingCount": 2,
+      "sellerAddress": "bc1qggw7p5xtcv33uduhttphz24apx35u384ld9twk"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "582a23f8647cc4bf6d222335706fcf915c7520ffb6d2a8bd6b8b0b39f8a715a1"
+      ],
+      "listingMinerFeeSats": 1134,
+      "refundSats": 1134,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealedListingCount": 0,
+      "sellerAddress": "bc1qjtt3uwk03gwekq9u8e35nh23vemvsvwk9v2qnm"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "cecc4b071520e4ab1cf3d1aac3c9b84895b9fdde9e1302e9b85f2432a27f5c47"
+      ],
+      "listingMinerFeeSats": 1134,
+      "refundSats": 2224,
+      "sealMinerFeeSats": 544,
+      "sealPaymentSats": 546,
+      "sealedListingCount": 1,
+      "sellerAddress": "bc1qpe072sur60mql35vtqgfu27dus9d0u70wl4xc5"
+    },
+    {
+      "listingCount": 1,
+      "listingIds": [
+        "0a8066e165028c7949aea863a2836c1ca14ec959651872cd42722752854571cd"
+      ],
+      "listingMinerFeeSats": 1160,
+      "refundSats": 3178,
+      "sealMinerFeeSats": 1472,
+      "sealPaymentSats": 546,
+      "sealedListingCount": 1,
+      "sellerAddress": "bc1qwlqpce8pj5ml63xkecq0ypjd6r7652urtpeuuy"
+    }
+  ],
+  "listings": [
+    {
+      "listingBlockHeight": 956785,
+      "listingId": "6e262c206779016de8e7eda60eeb2470799f2134c2915205971a173379dc5c61",
+      "listingMinerFeeSats": 1138,
+      "refundSats": 3128,
+      "sealMinerFeeSats": 1444,
+      "sealPaymentSats": 546,
+      "sealTxid": "cfc5e791ed6f3c27f57044c4eda81f17b311ee4884a3f9917e81164c370eed73",
+      "sealed": true,
+      "sellerAddress": "15eBH5vPH48BwXR6aTy29XJjivKuBcAc9D",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 956894,
+      "listingId": "91015b3f2a2a8a381f17a4be4534c2d74230e4fa4ab9204c44c12b4a14392fa6",
+      "listingMinerFeeSats": 909,
+      "refundSats": 2611,
+      "sealMinerFeeSats": 1156,
+      "sealPaymentSats": 546,
+      "sealTxid": "2fcb35f6fbfc7c5e6be240636aa9d7e496f01ba7e41c7d566d4397d908188d1a",
+      "sealed": true,
+      "sellerAddress": "15eBH5vPH48BwXR6aTy29XJjivKuBcAc9D",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 956894,
+      "listingId": "38d2de55d800bace12ecbec4fc80884694598ab63da592d036a8cfe0260606a7",
+      "listingMinerFeeSats": 1136,
+      "refundSats": 2835,
+      "sealMinerFeeSats": 1153,
+      "sealPaymentSats": 546,
+      "sealTxid": "701641caa6417777bc234d0f285385ae57631213cc558996133a01a2957bdab5",
+      "sealed": true,
+      "sellerAddress": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 956784,
+      "listingId": "7eca73ab9db59cbd587e069ecf61d7aed82c81824d934af6ba5c7b88bc20462c",
+      "listingMinerFeeSats": 1138,
+      "refundSats": 3131,
+      "sealMinerFeeSats": 1447,
+      "sealPaymentSats": 546,
+      "sealTxid": "313612e878de8a4920e9d0eb5fe5682a0e808b7191b7b77cc674d997c5b33bf6",
+      "sealed": true,
+      "sellerAddress": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 954750,
+      "listingId": "02a7247ad19f93063d034d5e289af93b7b8bd0d94b94371757e2c4740bc97b67",
+      "listingMinerFeeSats": 1701,
+      "refundSats": 3690,
+      "sealMinerFeeSats": 1443,
+      "sealPaymentSats": 546,
+      "sealTxid": "cfc9968a403fdeb9e60a6e2ed4104cda3b05c8b08fc94602bbe1b597c015fff7",
+      "sealed": true,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955690,
+      "listingId": "2862a5d8d66b4ee2ec5675cfebe1dbf9b5fcd74f825880f1c881a68c2a22ab8f",
+      "listingMinerFeeSats": 910,
+      "refundSats": 2468,
+      "sealMinerFeeSats": 1012,
+      "sealPaymentSats": 546,
+      "sealTxid": "8d1a3cefa57caa1e79610953aa3560c1c03ca87744de8413e35687970286ef8a",
+      "sealed": true,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955552,
+      "listingId": "3ad915a84541dd1bbf0662353da07b52fd9f7cdc9aa2c2bceb9e44dab477f5a6",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 3123,
+      "sealMinerFeeSats": 1443,
+      "sealPaymentSats": 546,
+      "sealTxid": "2b86f4140def67f15439187d7d66c5e9cd08567c2a14efb5e204261498a19ea2",
+      "sealed": true,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955580,
+      "listingId": "3e4597c1dbccf6f29eeff5d62f605a66624ac97b559549c8d6697bfd83cf52d1",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 3120,
+      "sealMinerFeeSats": 1440,
+      "sealPaymentSats": 546,
+      "sealTxid": "ae6fd187ebf2caed215a7888200efe083ee5391a3e7e978a89ca70998587abc7",
+      "sealed": true,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955532,
+      "listingId": "7c71cf4cc6dc47efe7375c9c49e530ac558c405b34e62c44bc126ebc105e47e9",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 3120,
+      "sealMinerFeeSats": 1440,
+      "sealPaymentSats": 546,
+      "sealTxid": "c2387c8d452a9c67b1173d6d1b9fcef330603ae89eea5a4001da5e96ea016814",
+      "sealed": true,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955574,
+      "listingId": "991cb20376b72005546d236e07b816f56e05a62f604f36b69a4c4e0211d7500d",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 3123,
+      "sealMinerFeeSats": 1443,
+      "sealPaymentSats": 546,
+      "sealTxid": "11fc97ec3e36c8fcd9aa47039b0fbfa6ef7aa681862deca6e040429f01da7fe7",
+      "sealed": true,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955468,
+      "listingId": "9d4f951c4d041b6dfaab2ef4c8d035a20efb8c7deeaa93e83210271e76e6a722",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 3840,
+      "sealMinerFeeSats": 2160,
+      "sealPaymentSats": 546,
+      "sealTxid": "3979a8fc913e3f0933e385c307f98579f4b4984db4993f728248d8bca646c80f",
+      "sealed": true,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955445,
+      "listingId": "ac876dc29c80944591c83d43f4aca4449fd261a363d0c29a325c1fcd3fbf220d",
+      "listingMinerFeeSats": 1475,
+      "refundSats": 3606,
+      "sealMinerFeeSats": 1585,
+      "sealPaymentSats": 546,
+      "sealTxid": "ec0e984f0697f92af4f9232747038d114525ec3d17db2f3eae1e1183a029983a",
+      "sealed": true,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955191,
+      "listingId": "cf5c0c7aec5e321cabf6c0cfc5e1247ec942a0c275e7cec9f0c4de611d4dc06b",
+      "listingMinerFeeSats": 794,
+      "refundSats": 2780,
+      "sealMinerFeeSats": 1440,
+      "sealPaymentSats": 546,
+      "sealTxid": "d8300abedf20fc487cfdd5406fa4fb2c6673dde66d0b398709de3f2840f8ece0",
+      "sealed": true,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 954717,
+      "listingId": "d13f708cb7d574eb8bdb846cc6e541063d441ec975a7ed52928bbe10a17c4ead",
+      "listingMinerFeeSats": 1701,
+      "refundSats": 3690,
+      "sealMinerFeeSats": 1443,
+      "sealPaymentSats": 546,
+      "sealTxid": "730193ee68bb123e3340fa535c576b970915307477c4f6549f0eacc240ef01ea",
+      "sealed": true,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 953423,
+      "listingId": "d976f2abdfd60eca041cb7a64450f0c9de06761978cd28b5d2fcae1605457148",
+      "listingMinerFeeSats": 2274,
+      "refundSats": 4239,
+      "sealMinerFeeSats": 1419,
+      "sealPaymentSats": 546,
+      "sealTxid": "0cdd580f47ffb1e53d2667121f10f99784e7750a60403787bf09fac512fb0b3d",
+      "sealed": true,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955443,
+      "listingId": "f02005366ce6b4022c0763d64038a703d0fb562ff290e1ecd9da0887e706d7d8",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 3552,
+      "sealMinerFeeSats": 1872,
+      "sealPaymentSats": 546,
+      "sealTxid": "9fa53f4050009f978323ea15ec6081a0d8815517530e48635378b2080f433e5e",
+      "sealed": true,
+      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 953598,
+      "listingId": "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa",
+      "listingMinerFeeSats": 1136,
+      "refundSats": 1136,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 953539,
+      "listingId": "7f41658356632323b0659c935f83c2a5dcc42aefce08e8ed6d769722325d1fe9",
+      "listingMinerFeeSats": 1704,
+      "refundSats": 1704,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 956833,
+      "listingId": "11fbe60bf90ffd2b5fbc71d9edf11b3ec5b19699f0594dda512b22a92b1691b1",
+      "listingMinerFeeSats": 2272,
+      "refundSats": 2272,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "1CQud1ZkoR4NSRJ2Lw31KssCpR4zSYMLJL",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 956648,
+      "listingId": "915cf299ba3d422ba30b5a12f1972112ed3ec1bc43209192ecaca3380dae8531",
+      "listingMinerFeeSats": 2274,
+      "refundSats": 10035,
+      "sealMinerFeeSats": 7215,
+      "sealPaymentSats": 546,
+      "sealTxid": "96c3b518cbf67f1b1f3229786ea153057c66e7b560e786b0e1f4d826da6b834a",
+      "sealed": true,
+      "sellerAddress": "1CQud1ZkoR4NSRJ2Lw31KssCpR4zSYMLJL",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 956655,
+      "listingId": "b00973d09ae61c02ed57dba1a15eece60ceb67b9386628f12158934f51c24dca",
+      "listingMinerFeeSats": 4548,
+      "refundSats": 7984,
+      "sealMinerFeeSats": 2890,
+      "sealPaymentSats": 546,
+      "sealTxid": "c6c8668a25ea32be2d2cc05041105a4a994c69e74becb8c507d395e831a1c98c",
+      "sealed": true,
+      "sellerAddress": "1CQud1ZkoR4NSRJ2Lw31KssCpR4zSYMLJL",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 956671,
+      "listingId": "badc3501fff4800691b25301a1949e2fa8844ef27a8dac488ca78454d51f2f9f",
+      "listingMinerFeeSats": 4544,
+      "refundSats": 4544,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "1CQud1ZkoR4NSRJ2Lw31KssCpR4zSYMLJL",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 956660,
+      "listingId": "cd55a39ea298f04173d9067c7a09b76ae654271482965e67dc558e266b3de538",
+      "listingMinerFeeSats": 3414,
+      "refundSats": 3414,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "1CQud1ZkoR4NSRJ2Lw31KssCpR4zSYMLJL",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955515,
+      "listingId": "04178b6c1d17164e71714d22805eecbd29e57acc89bba3298a75eee6d644e77f",
+      "listingMinerFeeSats": 1361,
+      "refundSats": 3347,
+      "sealMinerFeeSats": 1440,
+      "sealPaymentSats": 546,
+      "sealTxid": "375b76bfed7211c1507bcfb49adf2c9288dca1d269d239f17672643934243982",
+      "sealed": true,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955006,
+      "listingId": "29e611a2ac5c442e25fefbb34ce75c786a6e7a1d9cf4aa7461a3c11bae6d7ec6",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 3123,
+      "sealMinerFeeSats": 1443,
+      "sealPaymentSats": 546,
+      "sealTxid": "c95ce06f8ce2d4d9ec353fc48b8deb1c3ff1607bd5bc627e097d1f97cde63d5e",
+      "sealed": true,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955446,
+      "listingId": "3056bcb540f7406653d98bcd0b0b43135fef596b1c2f17fdc6d077d76ba701e9",
+      "listingMinerFeeSats": 1588,
+      "refundSats": 3574,
+      "sealMinerFeeSats": 1440,
+      "sealPaymentSats": 546,
+      "sealTxid": "f4b3563292c1f506db072a41046fed9b21a0d7f27c3d92ed838b05612905e81e",
+      "sealed": true,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 953499,
+      "listingId": "39a270c232c27877b158464e2f752569d7609d704a93e5a8668df29b9145c1b7",
+      "listingMinerFeeSats": 1706,
+      "refundSats": 3697,
+      "sealMinerFeeSats": 1445,
+      "sealPaymentSats": 546,
+      "sealTxid": "6352fc0be554f599677b77775dcc089ed5d7f2d50ea3ff4db43246bd6cd71273",
+      "sealed": true,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 954750,
+      "listingId": "5e264b891b052edd95190b1515f4f609be1284bd51ead93a7fb4dd4805c31ddc",
+      "listingMinerFeeSats": 1361,
+      "refundSats": 3347,
+      "sealMinerFeeSats": 1440,
+      "sealPaymentSats": 546,
+      "sealTxid": "2fc74b2d019fbc2d2e5c0cf9f707cba57404f9411af1e03b90ecdb9dcfbe8ca8",
+      "sealed": true,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955444,
+      "listingId": "63a7f1b9f537c2a059cbb52944996bc2df10e88edfdade3798da567af8f94518",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 3120,
+      "sealMinerFeeSats": 1440,
+      "sealPaymentSats": 546,
+      "sealTxid": "cbea6e3f778f919e084db66948b53521a177d67c6a14937c2d086f976992d37e",
+      "sealed": true,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955197,
+      "listingId": "71cb9355cfdbe7c1c6547dc443d302165aa52141b070a88fa67c5175ea530caa",
+      "listingMinerFeeSats": 1361,
+      "refundSats": 3347,
+      "sealMinerFeeSats": 1440,
+      "sealPaymentSats": 546,
+      "sealTxid": "b515bc0bc37402a20baf3be071d07b4778fa384296686557c2f6ad5572aa7389",
+      "sealed": true,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955580,
+      "listingId": "823be2f31b1ed02144b15cb027b42759ecf60115eba282b765e721b1e3ae97a7",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 3123,
+      "sealMinerFeeSats": 1443,
+      "sealPaymentSats": 546,
+      "sealTxid": "27ee5978af51efdd6fe6cc9088fbdadaaf1c8f42341bbefc3cc1d05f1ca421ff",
+      "sealed": true,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955531,
+      "listingId": "abf6afddf1ab1becd385c1e1f6c573760aaae932abc70b9cbf67529833152a15",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 3845,
+      "sealMinerFeeSats": 2165,
+      "sealPaymentSats": 546,
+      "sealTxid": "445a1e276de874be6129f91b020bad3c2da7af164d818efd23c688cd297bf3b1",
+      "sealed": true,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955766,
+      "listingId": "b4cb35b7939be0b28570a69477fd04fd5fdf3cd6d8fd2b726c28bfaab1263aaa",
+      "listingMinerFeeSats": 796,
+      "refundSats": 2785,
+      "sealMinerFeeSats": 1443,
+      "sealPaymentSats": 546,
+      "sealTxid": "7cc5299a0717e3ec3eb58cc65d2a39c819502df819951faec0b74caeb41da7b3",
+      "sealed": true,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955443,
+      "listingId": "d7fe42285c4edd02592608cbd887ad7a8a2b78e085de05296e352fcc1e2166a9",
+      "listingMinerFeeSats": 2272,
+      "refundSats": 4836,
+      "sealMinerFeeSats": 2018,
+      "sealPaymentSats": 546,
+      "sealTxid": "ae6a955eee928fc7fd619bf4228e689eb03524c7eadb9449bfe54cb78c372e17",
+      "sealed": true,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955690,
+      "listingId": "e5ddefd60d9c3dc7433e68bb8450a21e0fc88232e999ff61762e9e30bed73eb3",
+      "listingMinerFeeSats": 1137,
+      "refundSats": 2839,
+      "sealMinerFeeSats": 1156,
+      "sealPaymentSats": 546,
+      "sealTxid": "7dbcd0a8fd565b69ca477b08b406c5a7d6ee44b51c2cc9a79d385f53cbce1918",
+      "sealed": true,
+      "sellerAddress": "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 954913,
+      "listingId": "7aa7dd2e2ab275aceae4eed58f158dee52df5938c6f4b30dbeba051c2958eb82",
+      "listingMinerFeeSats": 1579,
+      "refundSats": 3619,
+      "sealMinerFeeSats": 1494,
+      "sealPaymentSats": 546,
+      "sealTxid": "4a093e97be086b2a146cb8518456a64a05977281e856f936d6adce378786395c",
+      "sealed": true,
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955658,
+      "listingId": "7cf007d381e9fba8ef53a1fa09ada544edea97a42481004866d0cea3e311c676",
+      "listingMinerFeeSats": 973,
+      "refundSats": 2567,
+      "sealMinerFeeSats": 1048,
+      "sealPaymentSats": 546,
+      "sealTxid": "6ee4c594ab98df311d22f50266f70c30932215e47ee265a038f66d0b6d78a755",
+      "sealed": true,
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 954814,
+      "listingId": "8bcca101de9f03d624bfc3436a3769def70b9a2bcaf40d47c9338cb6b3c59e8e",
+      "listingMinerFeeSats": 1214,
+      "refundSats": 4241,
+      "sealMinerFeeSats": 2481,
+      "sealPaymentSats": 546,
+      "sealTxid": "0d853a7e11a00c12108b77d2a086941949d97369bce072d8f8a5e4074dc05b00",
+      "sealed": true,
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955531,
+      "listingId": "99dc0a2e08dbe56ed04bdee570cdb9ef4d287f74dfe3cf19c794ba661881057f",
+      "listingMinerFeeSats": 2428,
+      "refundSats": 4468,
+      "sealMinerFeeSats": 1494,
+      "sealPaymentSats": 546,
+      "sealTxid": "c2cb26fce69acb0cc4a277ce733e4adb616d2629d7ff378e76f4019a7e10f3cd",
+      "sealed": true,
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955446,
+      "listingId": "a5476c0c6a8df67569935c3cca152a3ef979d95469ce8fe8c8187f359c48a6c7",
+      "listingMinerFeeSats": 1944,
+      "refundSats": 3986,
+      "sealMinerFeeSats": 1496,
+      "sealPaymentSats": 546,
+      "sealTxid": "af073d249dfabf77ece0679566a13baa35836cc6a8f33b1ab6b0203415c9ec3c",
+      "sealed": true,
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955449,
+      "listingId": "c645a07949b0665340989a323a1c127cb4db62c5d556dc91a718ddd8abba7f20",
+      "listingMinerFeeSats": 1214,
+      "refundSats": 3254,
+      "sealMinerFeeSats": 1494,
+      "sealPaymentSats": 546,
+      "sealTxid": "999acb902bfd30d69b5f40dc37ef0ae521b5064b64cbb2eb06a380a1875f15b7",
+      "sealed": true,
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955004,
+      "listingId": "d252071c9f1d69c9c850411e4a2274489ac3ddba99a41b642251bdd4daed43ce",
+      "listingMinerFeeSats": 1214,
+      "refundSats": 3404,
+      "sealMinerFeeSats": 1644,
+      "sealPaymentSats": 546,
+      "sealTxid": "f52ecb0b206940c768caeab3a52052abccd12af82758bec477604cd4ec0d7556",
+      "sealed": true,
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955580,
+      "listingId": "d4763803c8c245342fd130d4c51d5f834a68988ea272c54a9d0028d9fb2772df",
+      "listingMinerFeeSats": 1214,
+      "refundSats": 3254,
+      "sealMinerFeeSats": 1494,
+      "sealPaymentSats": 546,
+      "sealTxid": "4da5df861063ae104b7a79899ea4346f06edcc96c9d12552fea3bc3148a5f5ca",
+      "sealed": true,
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955618,
+      "listingId": "d7e85056795fb2cb2871f8a80cbad0f50a1a4926f470eddfd5665ea0ab35bc97",
+      "listingMinerFeeSats": 1457,
+      "refundSats": 3497,
+      "sealMinerFeeSats": 1494,
+      "sealPaymentSats": 546,
+      "sealTxid": "5bbaef396c7ba890f10ba56c34976663495ed09ea96e31f4c3f4f6098e2c4d68",
+      "sealed": true,
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955443,
+      "listingId": "e1697c58526f42c11762a6d871eabf125623875de15949081786e0e2ec2aacca",
+      "listingMinerFeeSats": 1215,
+      "refundSats": 3557,
+      "sealMinerFeeSats": 1796,
+      "sealPaymentSats": 546,
+      "sealTxid": "80016fcf6013af00dd1a12022e34b623685b0cba8b7bbc7568dc3f8f4e0fe164",
+      "sealed": true,
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955448,
+      "listingId": "f65bb4a442345b329aec33c050b1027a10d24572cf1d4f2aecb2d2f7e098d8c7",
+      "listingMinerFeeSats": 1457,
+      "refundSats": 3497,
+      "sealMinerFeeSats": 1494,
+      "sealPaymentSats": 546,
+      "sealTxid": "73ba4d91dd02738df3f61d719e2a82a64daadaa18bae73edcc85741400b8055d",
+      "sealed": true,
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 958988,
+      "listingId": "82afd60ba9c853ea8eaca71fce836d47beb4edb9be1a557c5913b574388d5084",
+      "listingMinerFeeSats": 1235,
+      "refundSats": 3297,
+      "sealMinerFeeSats": 1516,
+      "sealPaymentSats": 546,
+      "sealTxid": "9663b6162dd95c4c1655ccdcb3c93a90377a64a0fb2b2474cfa56726fb2226b3",
+      "sealed": true,
+      "sellerAddress": "bc1p3yaleuat8cdugnx20m0zkum90vpwnuqgshkd8j4xqrwn6amqan4shdh33v",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 955961,
+      "listingId": "57cbd4ff41b17051b6d499554ed537ac7b43a10302fe282773c0f4121df25101",
+      "listingMinerFeeSats": 6075,
+      "refundSats": 6075,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1p6hspuauux3v955sfhscg96029tmpnlldcwv9jnvg8yl83lm8pfjs7klllt",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 951651,
+      "listingId": "2f61af937cf55859e53c1a72ec887de7a34b0e6f1c81912de1d78d0ad48eeb71",
+      "listingMinerFeeSats": 608,
+      "refundSats": 608,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1p76suwz8qdcezafshfd6x6nwt8hreemwhcnvp6ny2f2pext4sjd6sz7x52t",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 953587,
+      "listingId": "43c4744352f962af3395de607e115e8d98196e46973b7e444785ed48e5cff876",
+      "listingMinerFeeSats": 1216,
+      "refundSats": 1216,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1p7sqcj0jr33w0tkc4wwyctmj9javy3emrwnt7n49m8sms6vqr4dqspe0xkf",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 951545,
+      "listingId": "c2890ff36db1db137491eb694a526758d7f9400679b4dad611526d410be391f7",
+      "listingMinerFeeSats": 1214,
+      "refundSats": 1214,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1p7tq8qy3z57t82tuvveq34fqpy4qakamtltk7hhv6pe04qencvy4q2qry63",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 956759,
+      "listingId": "f3c241f6caed741167e86fb5d25d96cdbaa4453ec93247e6f5bc8cee7233eb31",
+      "listingMinerFeeSats": 1218,
+      "refundSats": 3262,
+      "sealMinerFeeSats": 1498,
+      "sealPaymentSats": 546,
+      "sealTxid": "19b33b750b74fe2dcb3816e71484c85e2e6d863ca61eaed845486508908f47e1",
+      "sealed": true,
+      "sellerAddress": "bc1p9veu0wlm5akkk0kcy0dg8uhq5se77yw0dp9v2g50chx0jzx9qn4sncmv49",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955443,
+      "listingId": "f371ee499b94f929069fb4677446006b1bb67d6793724f2b8d6effb26499c090",
+      "listingMinerFeeSats": 1214,
+      "refundSats": 3828,
+      "sealMinerFeeSats": 2068,
+      "sealPaymentSats": 546,
+      "sealTxid": "d6c78c4ffad8e9b17324b19f5baee023e91cce63e8e05fd4677280023b022c12",
+      "sealed": true,
+      "sellerAddress": "bc1parjksvz4hetpmqwtka9wuzl9skhq8y3weusenf8e3qrguqhypweqtpmz2g",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 959049,
+      "listingId": "2fd034d84c9742fa123102e4e570b8b64983adda84f5a2555b433f3b8dda8d33",
+      "listingMinerFeeSats": 1234,
+      "refundSats": 1234,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pczmmh4garm864hj95qye8929a4sa7f5g4fhx2pzw776d3y48m2vszg8ryt",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 959049,
+      "listingId": "d9ebbed6cf79275d91ca0caf8770ef783681cce917b69a63a9cf8af45f485a10",
+      "listingMinerFeeSats": 1235,
+      "refundSats": 1235,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pczmmh4garm864hj95qye8929a4sa7f5g4fhx2pzw776d3y48m2vszg8ryt",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 951518,
+      "listingId": "1d274b9af63277a47caa76d9886d530175da4b5aa2fd8110f8288163e1dc29bd",
+      "listingMinerFeeSats": 1216,
+      "refundSats": 1216,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pd7vjyhn3qkkdq9ky4hvkjlsmsl6c2ekvpmavtsgpee5kuvj3qcwq9qmau8",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 951518,
+      "listingId": "317e6e461c9ee8b5b949204d0cf9942e2b85bbe0e6abaa8648971c7f16036f3f",
+      "listingMinerFeeSats": 609,
+      "refundSats": 609,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pd7vjyhn3qkkdq9ky4hvkjlsmsl6c2ekvpmavtsgpee5kuvj3qcwq9qmau8",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 959034,
+      "listingId": "050645df307b31a86e46f3cfd9acf38858e78ac1141029bfe14c4f94320faf1d",
+      "listingMinerFeeSats": 2470,
+      "refundSats": 2470,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pdgthhaxqvp3ds3enk3z62xe5m434p884fmu00e9gl924spquu5qqxd3lft",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 959024,
+      "listingId": "251854fe33ab986ed85e76b2402464318d0b4a731200512211699ada09007ae0",
+      "listingMinerFeeSats": 2470,
+      "refundSats": 2470,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pdgthhaxqvp3ds3enk3z62xe5m434p884fmu00e9gl924spquu5qqxd3lft",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 959024,
+      "listingId": "2dfca612de90e0a4a22a2dedad99800ae698a0a609c78a1516493a57cfc9a669",
+      "listingMinerFeeSats": 731,
+      "refundSats": 2775,
+      "sealMinerFeeSats": 1498,
+      "sealPaymentSats": 546,
+      "sealTxid": "42bbc3bb6cebd515cd32804137019fbb7721f73b3530afd2c87110a8efbeee7a",
+      "sealed": true,
+      "sellerAddress": "bc1pdgthhaxqvp3ds3enk3z62xe5m434p884fmu00e9gl924spquu5qqxd3lft",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 959024,
+      "listingId": "33c03b0d970d0976ffbaae3e05bebda6f4290a91eab3fadfb5b74dca19af9d70",
+      "listingMinerFeeSats": 2470,
+      "refundSats": 2470,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pdgthhaxqvp3ds3enk3z62xe5m434p884fmu00e9gl924spquu5qqxd3lft",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 959024,
+      "listingId": "3f9e953980bedc418afd9692b70ea9f757379466b041b5fd5fde4c78b0a3feaf",
+      "listingMinerFeeSats": 2470,
+      "refundSats": 2470,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pdgthhaxqvp3ds3enk3z62xe5m434p884fmu00e9gl924spquu5qqxd3lft",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 951676,
+      "listingId": "456fe7f930162a7f45ca7948fea7f63469f13e6e5a4349e3c4814201918a5a2e",
+      "listingMinerFeeSats": 608,
+      "refundSats": 608,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pdgthhaxqvp3ds3enk3z62xe5m434p884fmu00e9gl924spquu5qqxd3lft",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 959024,
+      "listingId": "8f027b3d1c48705a347d1534d0969978e799d6efbbe3e1b6940a37e09bd9045d",
+      "listingMinerFeeSats": 2470,
+      "refundSats": 2470,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pdgthhaxqvp3ds3enk3z62xe5m434p884fmu00e9gl924spquu5qqxd3lft",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 959024,
+      "listingId": "dee7eb510fd7f85704fce929330de98963e55911a0581a2c490349e7e094bff3",
+      "listingMinerFeeSats": 2470,
+      "refundSats": 2470,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pdgthhaxqvp3ds3enk3z62xe5m434p884fmu00e9gl924spquu5qqxd3lft",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 958977,
+      "listingId": "94b5c24c1c278556e83e8030dd5bf6950d61379494711d0bdc8536081186a05a",
+      "listingMinerFeeSats": 859,
+      "refundSats": 2461,
+      "sealMinerFeeSats": 1056,
+      "sealPaymentSats": 546,
+      "sealTxid": "5d2f9cd13111e4d893dfd643fbd7ee77e2bff55fd4064bc9def9fcc17f891ef8",
+      "sealed": true,
+      "sellerAddress": "bc1pdk2hhp84250v049rk4gensem46wqynmhj02tk7yykcadma557avs63qxz4",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 958997,
+      "listingId": "a8dfcffaddcc7c43ef4346fed63abb970bdb0c2737aee1788c5ede8e122836eb",
+      "listingMinerFeeSats": 740,
+      "refundSats": 740,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pdk2hhp84250v049rk4gensem46wqynmhj02tk7yykcadma557avs63qxz4",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 956593,
+      "listingId": "53a9835681494fdb9371005f5234e9b69eabb4e8f278868c952af6a36800edd0",
+      "listingMinerFeeSats": 2436,
+      "refundSats": 4480,
+      "sealMinerFeeSats": 1498,
+      "sealPaymentSats": 546,
+      "sealTxid": "9ea100cff0da879d7dec93b0891a4d1b3bb9bca61232ada93c3f17f339b7e32b",
+      "sealed": true,
+      "sellerAddress": "bc1pe9jeck7304m3k2gjsykwsmxfm3f5h2m8dk7xxkchdvz0l3pl6txqxms5y7",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 952882,
+      "listingId": "352ada51aeb127c0858f7471990a490cf5652e5d29eab50c12295dd218d780f1",
+      "listingMinerFeeSats": 1299,
+      "refundSats": 3425,
+      "sealMinerFeeSats": 1580,
+      "sealPaymentSats": 546,
+      "sealTxid": "222f5040267c4b0b3aa375b6627859a217d993b770518ebe65da42774dbd2224",
+      "sealed": true,
+      "sellerAddress": "bc1ph0ht3rfvunfd6p852qyrz30q7tx0q5ln4atwmzur44jmw4x36krqefdz3w",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 956923,
+      "listingId": "8d5683146862e68db108e083d0c901070d3ce02e17017a8a4dd87d7d60dfd934",
+      "listingMinerFeeSats": 1218,
+      "refundSats": 1218,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1ph0ht3rfvunfd6p852qyrz30q7tx0q5ln4atwmzur44jmw4x36krqefdz3w",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 952882,
+      "listingId": "e2b3df1ad012e143ac002be28ba36a1076acd18191eee4c35d2d51f5109dd689",
+      "listingMinerFeeSats": 1299,
+      "refundSats": 3425,
+      "sealMinerFeeSats": 1580,
+      "sealPaymentSats": 546,
+      "sealTxid": "b9b30cc6c2d476bb88f10f6db596a462d1f10295bdfb1c57199d8333d03c46c6",
+      "sealed": true,
+      "sellerAddress": "bc1ph0ht3rfvunfd6p852qyrz30q7tx0q5ln4atwmzur44jmw4x36krqefdz3w",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 958432,
+      "listingId": "23582dc74c1b52afa59f6d6a73fea384fb48305e68942d303ea79b7ac4bff56e",
+      "listingMinerFeeSats": 1236,
+      "refundSats": 1236,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pj9nzxgjt8d46e3qva2lwy2jg7yx37dly7z6legt94xhkpvnsa3sqgyg7t4",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 953475,
+      "listingId": "ea31811fdb3156ffd97c1bc01ad0d381407f11b3fe75ddbedcbf75aa7d7bd945",
+      "listingMinerFeeSats": 2184,
+      "refundSats": 4914,
+      "sealMinerFeeSats": 2184,
+      "sealPaymentSats": 546,
+      "sealTxid": "d5d1a1ca294533aea4cfa81c9e14ca2aea192b73b3294e8c5846aefd72d6f08e",
+      "sealed": true,
+      "sellerAddress": "bc1pjtevet50mnhggdhktcdru06qclfxksr3m9xhma7c6dhhr44xr8ysf29zzt",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 953597,
+      "listingId": "21ff8857180270ca33ca44f1d6d8ac6a4bb5ca7b7af0e1599c9ad9756cfe5d12",
+      "listingMinerFeeSats": 1215,
+      "refundSats": 1215,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pke8ckc6gk230u04zxy9us5yyr2v6e8v7y4w9lqzwkkhvt0y6afksaqtve7",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 952859,
+      "listingId": "24d810f7dd3a986ca973c0456d34e63998aa4f82d1bf23e3b5968682e0bd99b9",
+      "listingMinerFeeSats": 689,
+      "refundSats": 689,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pl8vmv8y4k37jvw77cn7y8tckeawrm5u2n50qrjvglgrp04hczvtq5jyum0",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 953577,
+      "listingId": "351f6305ae5d193469e7966553e749ea0b31debd758503a5381cba844dfd240c",
+      "listingMinerFeeSats": 1216,
+      "refundSats": 1216,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pl8vmv8y4k37jvw77cn7y8tckeawrm5u2n50qrjvglgrp04hczvtq5jyum0",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 956022,
+      "listingId": "02529c1578296cb0dbda9fd1961ced0fbffd0936b00dcadeb4a258392bb09f6e",
+      "listingMinerFeeSats": 1216,
+      "refundSats": 1216,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pmv6krrs323ke6kuz74h3jk6pjxjp70cjf6zywplh78fv79jp36usd7h8ja",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 952960,
+      "listingId": "05aabb84013cbf817562b964cf67a9e3ebda65e6dc3cd8945f0c9705f21c9691",
+      "listingMinerFeeSats": 1215,
+      "refundSats": 1215,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pqat4da4cnv2d5rhuvjp5zagjf6w0mu5hl88lpfrgwvxyzzar58rshe9ept",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 959049,
+      "listingId": "24ee8f8eeb0b3661863032ff424487c79f4f6599ffd1bbdbb65a547930fe6eb7",
+      "listingMinerFeeSats": 1234,
+      "refundSats": 1234,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1pw4nvzjm2els4v8q8s5dds5w5mhj83zxm2rw4smy5pu2fel4j4gyqv2ufl9",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 959011,
+      "listingId": "9eae2c360909b2238e2e0f7194575be51c2c8418086847da305c6f3444e2b65f",
+      "listingMinerFeeSats": 908,
+      "refundSats": 2287,
+      "sealMinerFeeSats": 833,
+      "sealPaymentSats": 546,
+      "sealTxid": "f6abb19b7eb5ef5888f198729ee7a2440ad392c07c89be2c85b21a499ab8217d",
+      "sealed": true,
+      "sellerAddress": "bc1pxhs9y9ryqnhm05lyv794f6upzk0mtu2zct5w2hgc2vm3d58pvcqspptre0",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 956715,
+      "listingId": "dfee6642ad3d9252155f1e027230a9d8aba63d4c6f86f68b585e6c5e6d1ff44c",
+      "listingMinerFeeSats": 2436,
+      "refundSats": 4480,
+      "sealMinerFeeSats": 1498,
+      "sealPaymentSats": 546,
+      "sealTxid": "75f8b56509788557c455a76dc9d424684d8c8c61c9cb9b50b5ba04d22f5c1fc8",
+      "sealed": true,
+      "sellerAddress": "bc1pxjkggvkqaxsrmpyujk66l423scydndfytv7zgkeddgyh3lcngckqyxn2u9",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955968,
+      "listingId": "5099463369b14de18a55f9caa27ee14f000a2832e9932f1f96800d288eb73c55",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 1134,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1q4nh5wjz795fs87hvkp79sl4z3dceehladg8c4q",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 959043,
+      "listingId": "b61ce1b07ec2857e95a92990cc8a7933e39bacf53a0ae3c9ec2e2f7e760adf5c",
+      "listingMinerFeeSats": 1318,
+      "refundSats": 1318,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1q7lvsdf0lpgmvn0c8emj9zvjm0sycn4lu3qrry0",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 956431,
+      "listingId": "471e3c672f2de295f2b316be4d4d4f618d78640a9aed0d7eca0231578e029e25",
+      "listingMinerFeeSats": 3396,
+      "refundSats": 6830,
+      "sealMinerFeeSats": 2888,
+      "sealPaymentSats": 546,
+      "sealTxid": "e0edc641378996148777d19d7b05d51d176af652008769d8c2b5398119c87e0b",
+      "sealed": true,
+      "sellerAddress": "bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 955804,
+      "listingId": "787d4034af972476dfe471ed19b3c5fcca001087f10bddf682b9e4d91e071e3b",
+      "listingMinerFeeSats": 3396,
+      "refundSats": 8265,
+      "sealMinerFeeSats": 4323,
+      "sealPaymentSats": 546,
+      "sealTxid": "506904f7214ca3f1e43e70565ad8fc3173a8170ee8f363d267da0efbff873edd",
+      "sealed": true,
+      "sellerAddress": "bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 958351,
+      "listingId": "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9",
+      "listingMinerFeeSats": 3862,
+      "refundSats": 3862,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 956835,
+      "listingId": "b69890bcf98358b6d439dbefb8b16c071d02446791bd1913788bdf58fbc7ca32",
+      "listingMinerFeeSats": 3238,
+      "refundSats": 7881,
+      "sealMinerFeeSats": 4097,
+      "sealPaymentSats": 546,
+      "sealTxid": "db506ee965a3d5bee72a706dcd6a6de06d46234c49e9843d1d5bb3763497ad9e",
+      "sealed": true,
+      "sellerAddress": "bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 958349,
+      "listingId": "cc15066d4d3902d4dd5864088f75addffc068879e2d1eedfa4f147609574dd92",
+      "listingMinerFeeSats": 3908,
+      "refundSats": 3908,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 957107,
+      "listingId": "babfd00f86f47ed5596c08ea231a4495ec2b0f8cd885bbcd2c6905b8acde55cf",
+      "listingMinerFeeSats": 6552,
+      "refundSats": 6552,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1qcy4t56a7n7magsv8ptqp82d9glv2ekxwf60985",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 959001,
+      "listingId": "bbfdcd9de6be9471196087b1d3aeec0269b51b14cb4cf39d78365a5dd5145be6",
+      "listingMinerFeeSats": 1908,
+      "refundSats": 4228,
+      "sealMinerFeeSats": 1774,
+      "sealPaymentSats": 546,
+      "sealTxid": "d259b89a5fd8e43e16d4efe6e9830e82e3f9d89205706304c8c4d3b42087a128",
+      "sealed": true,
+      "sellerAddress": "bc1qggw7p5xtcv33uduhttphz24apx35u384ld9twk",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 959002,
+      "listingId": "edd4bcbd09dcd8db17c24a47b54aa4a49c528b04e1c77ceefc3779bde612f32c",
+      "listingMinerFeeSats": 1908,
+      "refundSats": 4226,
+      "sealMinerFeeSats": 1772,
+      "sealPaymentSats": 546,
+      "sealTxid": "51440e5e49c84d9b97a7075a2bfebdf8d6e017e37e881870af9fee507e99ce6d",
+      "sealed": true,
+      "sellerAddress": "bc1qggw7p5xtcv33uduhttphz24apx35u384ld9twk",
+      "version": "pwt-sale-v2"
+    },
+    {
+      "listingBlockHeight": 954717,
+      "listingId": "582a23f8647cc4bf6d222335706fcf915c7520ffb6d2a8bd6b8b0b39f8a715a1",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 1134,
+      "sealMinerFeeSats": 0,
+      "sealPaymentSats": 0,
+      "sealTxid": "",
+      "sealed": false,
+      "sellerAddress": "bc1qjtt3uwk03gwekq9u8e35nh23vemvsvwk9v2qnm",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 956423,
+      "listingId": "cecc4b071520e4ab1cf3d1aac3c9b84895b9fdde9e1302e9b85f2432a27f5c47",
+      "listingMinerFeeSats": 1134,
+      "refundSats": 2224,
+      "sealMinerFeeSats": 544,
+      "sealPaymentSats": 546,
+      "sealTxid": "bb1beba0a04bf20de1755d5307e907d4331ee64874704b9e84dd82e1d64f99f2",
+      "sealed": true,
+      "sellerAddress": "bc1qpe072sur60mql35vtqgfu27dus9d0u70wl4xc5",
+      "version": "pwt-sale-v1"
+    },
+    {
+      "listingBlockHeight": 958582,
+      "listingId": "0a8066e165028c7949aea863a2836c1ca14ec959651872cd42722752854571cd",
+      "listingMinerFeeSats": 1160,
+      "refundSats": 3178,
+      "sealMinerFeeSats": 1472,
+      "sealPaymentSats": 546,
+      "sealTxid": "798577990868f3d1efe23df318fb8e5afc5d5e81b4f402325af4dc2f22c25c90",
+      "sealed": true,
+      "sellerAddress": "bc1qwlqpce8pj5ml63xkecq0ypjd6r7652urtpeuuy",
+      "version": "pwt-sale-v2"
+    }
+  ]
+}

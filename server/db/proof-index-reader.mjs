@@ -76,6 +76,7 @@ const WORK_TOKEN_MAX_SUPPLY_ATOMS = (
 const TOKEN_SALE_AUTH_VERSIONS = new Set([
   TOKEN_SALE_AUTH_VERSION,
   "pwt-sale-v2",
+  "pwt-sale-v3",
 ]);
 const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
 const TOKEN_LISTING_ANCHOR_VALUE_SATS = 546;
@@ -650,7 +651,8 @@ function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization) {
     (
       authorization?.version === TOKEN_SALE_AUTH_VERSION ||
       (
-        authorization?.version === "pwt-sale-v2" &&
+        (authorization?.version === "pwt-sale-v2" ||
+          authorization?.version === "pwt-sale-v3") &&
         isWorkTokenId(authorization?.tokenId) &&
         String(authorization?.ticker ?? "").trim().toUpperCase() ===
           WORK_TOKEN_TICKER
@@ -4785,7 +4787,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     conditions.push(
       `(e.status IS DISTINCT FROM 'dropped')`,
       `(e.payload ? 'saleAuthorization')`,
-      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2']::text[]))`,
+      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2','pwt-sale-v3']::text[]))`,
       `(e.payload->'saleAuthorization'->>'anchorType' = 'sale-ticket-v1')`,
     );
     if (txidNeedles.length > 0) {

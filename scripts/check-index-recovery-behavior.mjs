@@ -2667,6 +2667,8 @@ check("WORK atomic sends and sale authorizations preserve one atom", () => {
     TOKEN_LISTING_ANCHOR_VALUE_SATS: 546,
     TOKEN_LISTING_ANCHOR_VOUT: 1,
     TOKEN_SALE_AUTH_VERSION: "pwt-sale-v1",
+    TOKEN_SALE_AUTH_ATOMS_VERSION: "pwt-sale-v2",
+    TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION: "pwt-sale-v3",
   };
   const tokenSaleAuthorizationDraft = isolatedFunction(
     API_PATH,
@@ -2685,6 +2687,7 @@ check("WORK atomic sends and sale authorizations preserve one atom", () => {
       isValidBitcoinAddress: () => true,
       normalizeTokenTicker: (value) => String(value).trim().toUpperCase(),
       tokenSaleAuthorizationDraft,
+      validateWorkMarketV2Authorization: () => ({ valid: true }),
       validPublicKeyHex: () => true,
       validSignatureHex: () => true,
     },
@@ -2772,7 +2775,10 @@ check("WORK atomic sends and sale authorizations preserve one atom", () => {
   const tokenSaleAuthorizationTermsMatch = isolatedFunction(
     API_PATH,
     "tokenSaleAuthorizationTermsMatch",
-    { tokenSaleAuthorizationDraft },
+    {
+      TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION: "pwt-sale-v3",
+      tokenSaleAuthorizationDraft,
+    },
   );
   assert.equal(
     tokenSaleAuthorizationTermsMatch(
@@ -18849,6 +18855,9 @@ check("canonical bond mint replay unlocks only later INCB mutations", () => {
       transactionConfirmed,
       transactionMinerFeeSats: () => 10,
       transactionTxid,
+      WORK_MARKET_V2_DECLARATION_TXID: "a".repeat(64),
+      workMarketV2ActivationFromDeclaration: () => null,
+      validateWorkMarketV2Authorization: () => ({ valid: true }),
     },
   );
   const transaction = (id, blockIndex, actor, message, options = {}) => ({

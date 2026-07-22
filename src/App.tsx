@@ -695,6 +695,11 @@ type PowTokenSaleAuthorizationDraft = {
   expiresAt: string;
   network: BitcoinNetwork;
   nonce: string;
+  minimumPriceSats?: string;
+  oracleBlockHash?: string;
+  oracleBlockHeight?: number;
+  oracleModel?: string;
+  oracleNetworkValueQ8?: string;
   priceSats: number;
   registryAddress: string;
   sellerAddress: string;
@@ -744,6 +749,10 @@ type PowTokenClosedListing = PowTokenListing & {
   closedMinerFeeSats?: number;
   closedTxid?: string;
   closedVin?: number;
+  disabledAtBlockHeight?: number;
+  disabledByTxid?: string;
+  disabledReason?: string;
+  relic?: boolean;
 };
 
 type PendingTokenListingSeal = {
@@ -1434,6 +1443,10 @@ const TOKEN_DELIST_ACTION = "delist5";
 const TOKEN_BUY_ACTION = "buy5";
 const TOKEN_SALE_AUTH_VERSION = "pwt-sale-v1";
 const TOKEN_SALE_AUTH_VERSION_ATOMS = "pwt-sale-v2";
+const TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION = "pwt-sale-v3";
+const WORK_MARKET_V2_ORACLE_MODEL = "canonical-work-market-h-minus-one-v1";
+const WORK_MARKET_V2_DECLARATION_TXID =
+  "4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f";
 const TOKEN_CREATION_PRICE_SATS = 546;
 const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
 const TOKEN_LISTING_ANCHOR_TYPE = ID_LISTING_TICKET_ANCHOR_TYPE;
@@ -1708,6 +1721,8 @@ type WorkFloorQuote = {
   btcUsdIndexedAt?: string;
   chartPoints: WorkFloorPoint[];
   indexedAt: string;
+  indexedThroughBlock?: number;
+  indexedThroughBlockHash?: string;
   ledgerGeneratedAt?: string;
   floorSats?: number;
   floorQ8?: string;
@@ -1754,6 +1769,8 @@ type WorkFloorApiResponse = {
   btcUsdIndexedAt?: string;
   chartPoints?: Array<Partial<WorkFloorPoint>>;
   indexedAt?: string;
+  indexedThroughBlock?: number;
+  indexedThroughBlockHash?: string;
   ledgerGeneratedAt?: string;
   floorSats?: ExactDecimalValue;
   floorQ8?: string;
@@ -6685,6 +6702,53 @@ function tokenWalletBalanceHasConfirmed(balance: PowTokenWalletBalance) {
   return tokenWalletBalanceHasAmount(balance, "confirmedBalance");
 }
 
+function workMarketV2MinimumPriceSats(
+  amountAtomsValue: unknown,
+  networkValueQ8Value: unknown,
+) {
+  const amountAtoms = exactIntegerBigInt(amountAtomsValue);
+  const networkValueQ8 = exactIntegerBigInt(networkValueQ8Value);
+  if (amountAtoms === null || amountAtoms < 1n || networkValueQ8 === null || networkValueQ8 < 1n) {
+    return null;
+  }
+  const denominator =
+    BigInt(WORK_TOKEN_MAX_SUPPLY) * 100_000_000n * 100_000_000n;
+  return (amountAtoms * networkValueQ8 + denominator - 1n) / denominator;
+}
+
+function workMarketV2OracleFields(
+  quote: WorkFloorQuote,
+  amountAtoms: string,
+) {
+  const blockHeight = Number(quote.indexedThroughBlock);
+  const blockHash = String(quote.indexedThroughBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const networkValueQ8 = workFloorQuoteLiveValueQ8(quote);
+  const minimumPriceSats = workMarketV2MinimumPriceSats(
+    amountAtoms,
+    networkValueQ8,
+  );
+  if (
+    !Number.isSafeInteger(blockHeight) ||
+    blockHeight < 1 ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    networkValueQ8 === null ||
+    minimumPriceSats === null
+  ) {
+    throw new Error(
+      "The exact-tip WORK pricing oracle is unavailable. No marketplace transaction was created.",
+    );
+  }
+  return {
+    minimumPriceSats: minimumPriceSats.toString(),
+    oracleBlockHash: blockHash,
+    oracleBlockHeight: blockHeight,
+    oracleModel: WORK_MARKET_V2_ORACLE_MODEL,
+    oracleNetworkValueQ8: networkValueQ8.toString(),
+  };
+}
+
 function tokenWalletBalanceDisplay(balance: PowTokenWalletBalance) {
   return tokenAmountDisplay(
     balance.token,
@@ -6798,7 +6862,8 @@ function tokenSaleAuthorizationDraft(
     ticker === POWB_TOKEN_TICKER ||
     ticker === INCB_TOKEN_TICKER;
   const amountAtoms =
-    version === TOKEN_SALE_AUTH_VERSION_ATOMS
+    (version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
+      version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION)
       ? workAtomsFromIntegerString(authorization.amountAtoms)
       : null;
   return {
@@ -6809,7 +6874,9 @@ function tokenSaleAuthorizationDraft(
           : Math.max(0, Math.floor(Number(authorization.amount ?? 0)))
         : workNumberFromAtoms(amountAtoms),
     amountAtoms:
-      version === TOKEN_SALE_AUTH_VERSION_ATOMS && amountAtoms !== null
+      (version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
+        version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION) &&
+      amountAtoms !== null
         ? amountAtoms.toString()
         : undefined,
     anchorScriptPubKey: String(authorization.anchorScriptPubKey ?? "").toLowerCase(),
@@ -6824,6 +6891,21 @@ function tokenSaleAuthorizationDraft(
     expiresAt: String(authorization.expiresAt ?? "").trim(),
     network: (authorization.network ?? "livenet") as BitcoinNetwork,
     nonce: String(authorization.nonce ?? "").trim(),
+    ...(version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
+      ? {
+          minimumPriceSats: String(
+            authorization.minimumPriceSats ?? "",
+          ).trim(),
+          oracleBlockHash: String(authorization.oracleBlockHash ?? "")
+            .trim()
+            .toLowerCase(),
+          oracleBlockHeight: Number(authorization.oracleBlockHeight),
+          oracleModel: String(authorization.oracleModel ?? "").trim(),
+          oracleNetworkValueQ8: String(
+            authorization.oracleNetworkValueQ8 ?? "",
+          ).trim(),
+        }
+      : {}),
     priceSats: Math.max(0, Math.floor(Number(authorization.priceSats ?? 0))),
     registryAddress: String(authorization.registryAddress ?? "").trim(),
     sellerAddress: String(authorization.sellerAddress ?? "").trim(),
@@ -6838,7 +6920,10 @@ function tokenSaleAuthorizationWireDraft(
   authorization: Partial<PowTokenSaleAuthorization>,
 ) {
   const draft = tokenSaleAuthorizationDraft(authorization);
-  if (draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS) {
+  if (
+    draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
+    draft.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
+  ) {
     const { amount: _amount, ...wire } = draft;
     return wire;
   }
@@ -6871,19 +6956,22 @@ function parseTokenSaleAuthorizationJson(
 
   if (
     draft.version !== TOKEN_SALE_AUTH_VERSION &&
-    draft.version !== TOKEN_SALE_AUTH_VERSION_ATOMS
+    draft.version !== TOKEN_SALE_AUTH_VERSION_ATOMS &&
+    draft.version !== TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
   ) {
     throw new Error("Credit sale authorization version is not supported.");
   }
 
   const workAmountAtoms =
-    draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS
+    (draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
+      draft.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION)
       ? workAtomsFromIntegerString(draft.amountAtoms)
       : null;
   if (
     !/^[0-9a-f]{64}$/u.test(draft.tokenId) ||
     !/^[A-Z0-9]{1,12}$/u.test(draft.ticker) ||
-    (draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS
+    ((draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
+      draft.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION)
       ? draft.tokenId !== WORK_TOKEN_ID ||
         draft.ticker !== WORK_TOKEN_TICKER ||
         workAmountAtoms === null ||
@@ -6910,6 +6998,24 @@ function parseTokenSaleAuthorizationJson(
     throw new Error("Credit sale authorization is invalid.");
   }
 
+  if (draft.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION) {
+    const calculatedMinimum = workMarketV2MinimumPriceSats(
+      draft.amountAtoms,
+      draft.oracleNetworkValueQ8,
+    );
+    if (
+      draft.oracleModel !== WORK_MARKET_V2_ORACLE_MODEL ||
+      !Number.isSafeInteger(draft.oracleBlockHeight) ||
+      Number(draft.oracleBlockHeight) < 1 ||
+      !/^[0-9a-f]{64}$/u.test(String(draft.oracleBlockHash ?? "")) ||
+      calculatedMinimum === null ||
+      String(calculatedMinimum) !== draft.minimumPriceSats ||
+      BigInt(draft.priceSats) < calculatedMinimum
+    ) {
+      throw new Error("WORK Marketplace V2 pricing authorization is invalid.");
+    }
+  }
+
   return {
     ...draft,
     anchorSignature,
@@ -6926,7 +7032,8 @@ function tokenSaleAuthorizationUsesSaleTicketAnchor(
 } {
   return (
     (authorization.version === TOKEN_SALE_AUTH_VERSION ||
-      authorization.version === TOKEN_SALE_AUTH_VERSION_ATOMS) &&
+      authorization.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
+      authorization.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION) &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
     authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
@@ -6942,7 +7049,8 @@ function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(
 ) {
   return (
     (authorization.version === TOKEN_SALE_AUTH_VERSION ||
-      authorization.version === TOKEN_SALE_AUTH_VERSION_ATOMS) &&
+      authorization.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
+      authorization.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION) &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
     authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
@@ -7092,21 +7200,23 @@ function tokenSaleAuthorizationTermsMatch(
   left: PowTokenSaleAuthorization,
   right: PowTokenSaleAuthorization,
 ) {
+  const comparable = (authorization: PowTokenSaleAuthorization) => {
+    const draft = tokenSaleAuthorizationWireDraft({
+      ...authorization,
+      anchorSignature: "",
+      anchorTxid: "",
+    });
+    if (draft.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION) {
+      delete draft.minimumPriceSats;
+      delete draft.oracleBlockHash;
+      delete draft.oracleBlockHeight;
+      delete draft.oracleModel;
+      delete draft.oracleNetworkValueQ8;
+    }
+    return draft;
+  };
   return (
-    JSON.stringify(
-      tokenSaleAuthorizationWireDraft({
-        ...left,
-        anchorSignature: "",
-        anchorTxid: "",
-      }),
-    ) ===
-    JSON.stringify(
-      tokenSaleAuthorizationWireDraft({
-        ...right,
-        anchorSignature: "",
-        anchorTxid: "",
-      }),
-    )
+    JSON.stringify(comparable(left)) === JSON.stringify(comparable(right))
   );
 }
 
@@ -7129,8 +7239,23 @@ function buildTokenDelistingPayload(listingId: string) {
   return `${TOKEN_PROTOCOL_PREFIX}${TOKEN_DELIST_ACTION}:${listingId}`;
 }
 
-function buildTokenBuyPayload(listingId: string, buyerAddress: string) {
-  return `${TOKEN_PROTOCOL_PREFIX}${TOKEN_BUY_ACTION}:${listingId}:${buyerAddress.trim()}`;
+function buildTokenBuyPayload(
+  listingId: string,
+  buyerAddress: string,
+  authorization?: PowTokenSaleAuthorization,
+) {
+  return [
+    `${TOKEN_PROTOCOL_PREFIX}${TOKEN_BUY_ACTION}`,
+    listingId,
+    buyerAddress.trim(),
+    ...(authorization
+      ? [
+          encodeTextBase64Url(
+            JSON.stringify(tokenSaleAuthorizationWire(authorization)),
+          ),
+        ]
+      : []),
+  ].join(":");
 }
 
 function tokenListingAnchorOutpoint(listing: PowTokenListing) {
@@ -7416,7 +7541,7 @@ function parseTokenPayload(message: string, network: BitcoinNetwork) {
   }
 
   if (
-    parts.length === 3 &&
+    (parts.length === 3 || parts.length === 4) &&
     parts[0] === TOKEN_BUY_ACTION &&
     /^[0-9a-fA-F]{64}$/u.test(parts[1])
   ) {
@@ -7425,11 +7550,23 @@ function parseTokenPayload(message: string, network: BitcoinNetwork) {
       return null;
     }
 
-    return {
-      buyerAddress,
-      kind: "buy" as const,
-      listingId: parts[1].toLowerCase(),
-    };
+    try {
+      return {
+        buyerAddress,
+        kind: "buy" as const,
+        listingId: parts[1].toLowerCase(),
+        ...(parts.length === 4
+          ? {
+              saleAuthorization: parseTokenSaleAuthorizationJson(
+                decodeTextBase64Url(parts[3]),
+                network,
+              ),
+            }
+          : {}),
+      };
+    } catch {
+      return null;
+    }
   }
 
   return null;
@@ -8263,12 +8400,39 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
   const invalidEvents = (state.invalidEvents ?? []).filter((event) =>
     allowedTokenIds.has(event.tokenId),
   );
-  const closedListings = normalizeTokenListingRecords(
+  const indexedClosedListings = normalizeTokenListingRecords(
     state.closedListings ?? [],
   ).filter((listing) => allowedTokenIds.has(listing.tokenId));
+  const normalizedListings = normalizeTokenListingRecords(
+    state.listings ?? [],
+  ).filter((listing) => allowedTokenIds.has(listing.tokenId));
+  const legacyWorkListings = normalizedListings.filter(
+    (listing) =>
+      listing.network === "livenet" &&
+      listing.tokenId === WORK_TOKEN_ID &&
+      listing.saleAuthorization.version !==
+        TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION,
+  );
+  const closedListings = normalizeTokenListingRecords([
+    ...indexedClosedListings,
+    ...legacyWorkListings
+      .filter((listing) => listing.confirmed)
+      .map((listing) => ({
+        ...listing,
+        disabledAtBlockHeight: 959062,
+        disabledByTxid: WORK_MARKET_V2_DECLARATION_TXID,
+        disabledReason: "work-market-v2-cutover",
+        relic: true,
+      })),
+  ]).filter(
+    (listing, index, all) =>
+      all.findIndex(
+        (candidate) => tokenListingStateKey(candidate) === tokenListingStateKey(listing),
+      ) === index,
+  );
   const listings = activeTokenListingsExcludingClosed(
-    normalizeTokenListingRecords(state.listings ?? []).filter((listing) =>
-      allowedTokenIds.has(listing.tokenId),
+    normalizedListings.filter(
+      (listing) => !legacyWorkListings.includes(listing),
     ),
     closedListings,
   );
@@ -13344,6 +13508,16 @@ function normalizeWorkFloorQuote(
       typeof payload.indexedAt === "string"
         ? payload.indexedAt
         : new Date().toISOString(),
+    indexedThroughBlock:
+      Number.isSafeInteger(Number(payload.indexedThroughBlock)) &&
+      Number(payload.indexedThroughBlock) > 0
+        ? Number(payload.indexedThroughBlock)
+        : undefined,
+    indexedThroughBlockHash:
+      typeof payload.indexedThroughBlockHash === "string" &&
+      /^[0-9a-f]{64}$/u.test(payload.indexedThroughBlockHash.toLowerCase())
+        ? payload.indexedThroughBlockHash.toLowerCase()
+        : undefined,
     ledgerGeneratedAt:
       typeof payload.ledgerGeneratedAt === "string"
         ? payload.ledgerGeneratedAt
@@ -13788,6 +13962,24 @@ async function fetchWorkFloorQuote(
     targetNetwork,
   );
   return normalizeWorkFloorQuote(payload, targetNetwork);
+}
+
+async function assertWorkMarketV2DeclarationConfirmed() {
+  const status = await fetchProofApiJson<{
+    blockHash?: string;
+    blockHeight?: number;
+    confirmed?: boolean;
+    status?: string;
+  }>(
+    `/api/v1/tx/${WORK_MARKET_V2_DECLARATION_TXID}/status`,
+    "livenet",
+  );
+  if (status.confirmed !== true || status.status !== "confirmed") {
+    throw new Error(
+      "WORK Marketplace V2 activates only after its on-chain declaration confirms.",
+    );
+  }
+  return status;
 }
 
 async function fetchWorkSummary(
@@ -25722,6 +25914,29 @@ export default function App() {
         throw new Error("UniSat did not return a valid seller public key.");
       }
 
+      let workPricingFields: Partial<PowTokenSaleAuthorizationDraft> = {};
+      if (isWorkToken(latestToken)) {
+        await assertWorkMarketV2DeclarationConfirmed();
+        const freshFloor = await fetchWorkFloorQuote("livenet", true);
+        if (!freshFloor || !parsedAmount.amountAtoms) {
+          throw new Error(
+            "The exact-tip WORK pricing oracle is unavailable. No listing was created.",
+          );
+        }
+        applyWorkFloorQuote(freshFloor);
+        workPricingFields = workMarketV2OracleFields(
+          freshFloor,
+          parsedAmount.amountAtoms,
+        );
+        if (
+          BigInt(priceSats) < BigInt(workPricingFields.minimumPriceSats ?? "0")
+        ) {
+          throw new Error(
+            `WORK listings require at least ${workPricingFields.minimumPriceSats} proofs at the current network value.`,
+          );
+        }
+      }
+
       const saleAuthorization: PowTokenSaleAuthorization = {
         ...tokenSaleAuthorizationDraft({
           amount: parsedAmount.amount,
@@ -25745,8 +25960,9 @@ export default function App() {
           ticker: latestToken.ticker,
           tokenId: latestToken.tokenId,
           version: isWorkToken(latestToken)
-            ? TOKEN_SALE_AUTH_VERSION_ATOMS
+            ? TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
             : TOKEN_SALE_AUTH_VERSION,
+          ...workPricingFields,
         }),
         anchorSignature: "",
         anchorTxid: "",
@@ -25863,6 +26079,30 @@ export default function App() {
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
 
+      let workPricingFields: Partial<PowTokenSaleAuthorizationDraft> = {};
+      if (isWorkToken(listing)) {
+        await assertWorkMarketV2DeclarationConfirmed();
+        const freshFloor = await fetchWorkFloorQuote("livenet", true);
+        if (!freshFloor || !listing.amountAtoms) {
+          throw new Error(
+            "The exact-tip WORK pricing oracle is unavailable. No seal was created.",
+          );
+        }
+        applyWorkFloorQuote(freshFloor);
+        workPricingFields = workMarketV2OracleFields(
+          freshFloor,
+          listing.amountAtoms,
+        );
+        if (
+          BigInt(listing.priceSats) <
+          BigInt(workPricingFields.minimumPriceSats ?? "0")
+        ) {
+          throw new Error(
+            "This WORK listing is below the current network value and cannot be sealed. Relist it at the current floor.",
+          );
+        }
+      }
+
       const anchorSignature = await signTokenSaleTicketAuthorization({
         listing,
         network: "livenet",
@@ -25870,6 +26110,7 @@ export default function App() {
       });
       const sealedAuthorization: PowTokenSaleAuthorization = {
         ...listing.saleAuthorization,
+        ...workPricingFields,
         anchorSignature,
         anchorTxid: listing.listingId,
       };
@@ -26104,7 +26345,38 @@ export default function App() {
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
 
-      const payload = buildTokenBuyPayload(listing.listingId, address);
+      let purchaseAuthorization: PowTokenSaleAuthorization | undefined;
+      if (isWorkToken(listing)) {
+        await assertWorkMarketV2DeclarationConfirmed();
+        const freshFloor = await fetchWorkFloorQuote("livenet", true);
+        if (!freshFloor || !listing.amountAtoms) {
+          throw new Error(
+            "The exact-tip WORK pricing oracle is unavailable. No purchase was created.",
+          );
+        }
+        applyWorkFloorQuote(freshFloor);
+        const workPricingFields = workMarketV2OracleFields(
+          freshFloor,
+          listing.amountAtoms,
+        );
+        if (
+          BigInt(listing.priceSats) <
+          BigInt(workPricingFields.minimumPriceSats ?? "0")
+        ) {
+          throw new Error(
+            "This WORK listing is below the current network value and is no longer executable.",
+          );
+        }
+        purchaseAuthorization = {
+          ...listing.saleAuthorization,
+          ...workPricingFields,
+        };
+      }
+      const payload = buildTokenBuyPayload(
+        listing.listingId,
+        address,
+        purchaseAuthorization,
+      );
       const paymentPsbt = await buildAnchoredMarketplacePsbt({
         anchorSpendMode: "preSigned",
         excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
@@ -39660,6 +39932,9 @@ function TokenMarketplacePanel({
     useState<MarketplaceSortMode>("arb-desc");
   const [tokenListingBookFilter, setTokenListingBookFilter] =
     useState<MarketplaceListingBookFilter>("all");
+  const [workMarketplaceVersion, setWorkMarketplaceVersion] = useState<
+    "v2" | "v1-relic"
+  >("v2");
   const selectedMarketToken = rows.find(
     (token) =>
       token.tokenId === activeSelectedTokenMarketId ||
@@ -39955,6 +40230,11 @@ function TokenMarketplacePanel({
     selectedMarketToken &&
       (selectedMarketToken.tokenId === WORK_TOKEN_ID ||
         selectedMarketToken.ticker === WORK_TOKEN_TICKER),
+  );
+  const workRelicListings = marketClosedListings.filter(
+    (listing) =>
+      listing.relic === true &&
+      listing.disabledReason === "work-market-v2-cutover",
   );
   const workFloorChartPoints = workFloorQuote?.chartPoints ?? [];
   const workFloorMinSats =
@@ -40498,6 +40778,107 @@ function TokenMarketplacePanel({
           />
         </section>
 
+        {selectedMarketTokenIsWork ? (
+          <div className="marketplace-tabs" aria-label="WORK marketplace version">
+            <button
+              aria-pressed={workMarketplaceVersion === "v2"}
+              onClick={() => setWorkMarketplaceVersion("v2")}
+              type="button"
+            >
+              <span>Marketplace V2</span>
+              <strong>{marketListings.length.toLocaleString()}</strong>
+            </button>
+            <button
+              aria-pressed={workMarketplaceVersion === "v1-relic"}
+              onClick={() => setWorkMarketplaceVersion("v1-relic")}
+              type="button"
+            >
+              <span>V1 Relic</span>
+              <strong>{workRelicListings.length.toLocaleString()}</strong>
+            </button>
+          </div>
+        ) : null}
+
+        {selectedMarketTokenIsWork && workMarketplaceVersion === "v1-relic" ? (
+          <section className="id-card token-market-card">
+            <div className="id-card-head">
+              <div className="empty-icon" aria-hidden="true">
+                <FileText size={24} />
+              </div>
+              <div>
+                <h3>Marketplace V1 Relic</h3>
+                <p>
+                  These WORK listings were disabled at activation height
+                  959062. They are immutable history and cannot be sealed or
+                  purchased. Sellers may create new Marketplace V2 listings at
+                  the hash-bound network-value floor.
+                </p>
+              </div>
+            </div>
+            {workRelicListings.length ? (
+              <div className="token-market-grid">
+                {workRelicListings.map((listing) => (
+                  <article
+                    className="id-record token-market-row"
+                    key={`work-v1-relic-${listing.listingId}`}
+                  >
+                    <div>
+                      <strong>
+                        {tokenAmountDisplay(
+                          listing,
+                          listing.amount,
+                          listing.amountAtoms,
+                        )}{" "}
+                        WORK
+                      </strong>
+                      <span>Disabled V1 listing</span>
+                    </div>
+                    <dl>
+                      <div>
+                        <dt>Former price</dt>
+                        <dd>{listing.priceSats.toLocaleString()} proofs</dd>
+                      </div>
+                      <div>
+                        <dt>Seller</dt>
+                        <dd>{shortAddress(listing.sellerAddress)}</dd>
+                      </div>
+                      <div>
+                        <dt>Listed</dt>
+                        <dd>{formatDate(listing.createdAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Disabled</dt>
+                        <dd>Block {listing.disabledAtBlockHeight ?? 959062}</dd>
+                      </div>
+                    </dl>
+                    <p className="field-note">
+                      Read only. The original sale-ticket output remains under
+                      the seller's wallet control.
+                    </p>
+                    <div className="id-record-actions">
+                      <a
+                        className="secondary small"
+                        href={explorerTxUrl(listing.listingId, listing.network)}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <span className="button-content">
+                          <ArrowUpRight size={15} />
+                          <span>Listing TX</span>
+                        </span>
+                      </a>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="field-note">
+                No disabled Marketplace V1 listings are present in this
+                snapshot.
+              </p>
+            )}
+          </section>
+        ) : (
         <section className="id-card token-market-card">
           <div className="id-card-head">
             <div className="empty-icon" aria-hidden="true">
@@ -40754,6 +41135,7 @@ function TokenMarketplacePanel({
             page={tokenListingPage}
           />
         </section>
+        )}
 
         <section className="id-card token-market-card">
           <div className="id-card-head">

@@ -7,6 +7,7 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
+    "check:work-market-v2": "node scripts/check-work-market-v2.mjs",
     "dev": "vite --host 0.0.0.0",
     "dev:prod-api": "vite --host 0.0.0.0 --mode prod-api",
     "build": "tsc && vite build",
