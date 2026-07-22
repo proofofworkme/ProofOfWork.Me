@@ -3308,6 +3308,14 @@ select {
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
 }
 
+.work-marketplace-version-tabs {
+  align-self: start;
+  grid-column: 1 / -1;
+  margin: 0;
+  max-width: none;
+  padding: 0;
+}
+
 .token-market-card {
   min-height: 0;
 }
@@ -3329,6 +3337,25 @@ select {
 
 .token-market-stats {
   margin-top: 0;
+}
+
+.marketplace-work-floor-card .token-floor-stats,
+.mail-layout.is-marketplace-workspace
+  .marketplace-workspace
+  .marketplace-work-floor-card
+  .token-floor-stats {
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+}
+
+.marketplace-work-floor-card .token-floor-stats strong,
+.mail-layout.is-marketplace-workspace
+  .marketplace-workspace
+  .marketplace-work-floor-card
+  .token-floor-stats
+  strong {
+  font-size: clamp(0.88rem, 1.05vw, 1.08rem);
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .token-list-price-reference {
@@ -6311,6 +6338,14 @@ pre {
   .mail-layout.is-marketplace-workspace,
   .mail-layout.is-browser-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .mail-layout.is-token-workspace
+    > :is(.workspace, .token-workspace, .id-launch-main),
+  .mail-layout.is-marketplace-workspace
+    > :is(.workspace, .ids-workspace, .marketplace-workspace),
+  .mail-layout.is-browser-workspace > .browser-computer-workspace {
+    grid-column: 1 / -1;
   }
 
   .mail-layout.is-onboarding .reader-pane {
