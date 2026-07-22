@@ -619,6 +619,13 @@ function tokenListingFromEventPayload(payload) {
     sealDataBytes: rowNumber(payload, "sealDataBytes"),
     sealFrozenNetworkValueSats: rowNumber(payload, "sealFrozenNetworkValueSats"),
     sealAt: dateIso(payload?.sealAt),
+    sealBlockHash: String(payload?.sealBlockHash ?? "").trim().toLowerCase(),
+    sealBlockHeight: rowNumber(payload, "sealBlockHeight") || undefined,
+    sealBlockIndex:
+      Number.isSafeInteger(Number(payload?.sealBlockIndex)) &&
+      Number(payload.sealBlockIndex) >= 0
+        ? Number(payload.sealBlockIndex)
+        : undefined,
     sealConfirmed:
       typeof payload?.sealConfirmed === "boolean"
         ? payload.sealConfirmed
@@ -2272,6 +2279,9 @@ function tokenListingWithSealFrom(listing, sealSource) {
     ...listing,
     saleAuthorization: sealSource.saleAuthorization ?? listing.saleAuthorization,
     sealAt: sealSource.sealAt ?? listing.sealAt,
+    sealBlockHash: sealSource.sealBlockHash ?? listing.sealBlockHash,
+    sealBlockHeight: sealSource.sealBlockHeight ?? listing.sealBlockHeight,
+    sealBlockIndex: sealSource.sealBlockIndex ?? listing.sealBlockIndex,
     sealConfirmed: sealSource.sealConfirmed === true,
     sealDataBytes: sealSource.sealDataBytes ?? listing.sealDataBytes,
     sealFrozenNetworkValueSats:
@@ -2385,6 +2395,62 @@ function mergeTokenListingRecord(current, incoming) {
   return tokenListingCloseRank(current) > tokenListingCloseRank(incoming)
     ? tokenListingWithCloseFrom(merged, current)
     : tokenListingWithCloseFrom(merged, incoming);
+}
+
+function walletTokenListingsWithLegacySealEvents(listings, legacySealEvents) {
+  const mergedListings = uniqueTokenItems(
+    listings,
+    tokenListingId,
+    mergeTokenListingRecord,
+  );
+  const listingsById = new Map(
+    mergedListings.map((listing) => [tokenListingId(listing), listing]),
+  );
+
+  for (const sealEvent of Array.isArray(legacySealEvents)
+    ? legacySealEvents
+    : []) {
+    const listingId = tokenListingId(sealEvent);
+    const listing = listingsById.get(listingId);
+    const listingVersion = normalizedLowerText(
+      listing?.saleAuthorization?.version,
+    );
+    const version = normalizedLowerText(
+      sealEvent?.saleAuthorization?.version,
+    );
+    const listingSeller = normalizedText(listing?.sellerAddress);
+    const sealSeller = normalizedText(sealEvent?.sellerAddress);
+    const sealMinerFeeSats = Number(sealEvent?.sealMinerFeeSats);
+    if (
+      !listing ||
+      listing?.confirmed !== true ||
+      !isWorkTokenId(listing?.tokenId) ||
+      ![TOKEN_SALE_AUTH_VERSION, "pwt-sale-v2"].includes(listingVersion) ||
+      !isWorkTokenId(sealEvent?.tokenId) ||
+      ![TOKEN_SALE_AUTH_VERSION, "pwt-sale-v2"].includes(version) ||
+      listingVersion !== version ||
+      !listingSeller ||
+      listingSeller !== sealSeller ||
+      sealEvent?.confirmed !== true ||
+      sealEvent?.sealConfirmed !== true ||
+      sealEvent?.sealMinerFeeCanonical !== true ||
+      !Number.isSafeInteger(sealMinerFeeSats) ||
+      sealMinerFeeSats < 0 ||
+      !validTxid(sealEvent?.sealTxid)
+    ) {
+      continue;
+    }
+
+    const sealSource = preferredTokenListingSealSource(listing, sealEvent);
+    if (sealSource) {
+      listingsById.set(
+        listingId,
+        tokenListingWithSealFrom(listing, sealSource),
+      );
+    }
+  }
+
+  return [...listingsById.values()].sort(compareTokenItemsByTime);
 }
 
 function mergeCanonicalTokenSaleRecord(current, incoming) {
@@ -10845,6 +10911,167 @@ export async function proofIndexWalletTokenOverlayPayload(
     listingParamsWithLimit,
   );
 
+  const legacySealParams = [
+    network,
+    addressNeedles,
+    WORK_MARKET_V2_ACTIVATION_HEIGHT,
+  ];
+  const legacySealScopeCondition = scoped
+    ? (() => {
+        legacySealParams.push(scope);
+        const scopeParam = `$${legacySealParams.length}`;
+        return `AND (
+          ${scopeParam} = '${WORK_TOKEN_ID}'
+          OR lower(${scopeParam}) = '${WORK_TOKEN_TICKER.toLowerCase()}'
+        )`;
+      })()
+    : "";
+  legacySealParams.push(walletAuthoritativeRowLimit + 1);
+  const legacySealLimitParam = `$${legacySealParams.length}`;
+  const legacySealResult =
+    normalizedLowerText(network) === "livenet"
+      ? await pool.query(
+          `
+      /* wallet_legacy_work_listing_seals */
+      SELECT latest_legacy_seal.*
+      FROM (
+        SELECT DISTINCT ON (lower(e.payload->>'listingId'))
+          e.event_id,
+          e.payload,
+          e.protocol,
+          e.kind,
+          e.status,
+          e.event_time,
+          canonical_seal_tx.block_time AS block_time,
+          e.created_at,
+          canonical_seal_tx.block_height AS block_height,
+          canonical_seal_tx.block_hash AS block_hash,
+          CASE
+            WHEN canonical_seal_tx.raw_tx->'canonicalBlockScan'->>'blockIndex' ~
+              '^[0-9]+$'
+              THEN (
+                canonical_seal_tx.raw_tx->'canonicalBlockScan'->>'blockIndex'
+              )::integer
+            WHEN e.payload->>'sealBlockIndex' ~ '^[0-9]+$'
+              THEN (e.payload->>'sealBlockIndex')::integer
+            WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+              THEN (e.payload->>'blockIndex')::integer
+            WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
+              THEN (e.payload->>'_powBlockIndex')::integer
+            ELSE NULL
+          END AS block_index,
+          (
+            canonical_input_totals.input_value_sats -
+            canonical_output_totals.output_value_sats
+          )::bigint AS canonical_miner_fee_sats,
+          true AS canonical_miner_fee_covered,
+          e.txid,
+          e.network
+        FROM proof_indexer.events e
+        JOIN proof_indexer.transactions canonical_seal_tx
+          ON canonical_seal_tx.network = e.network
+         AND canonical_seal_tx.txid = e.txid
+         AND canonical_seal_tx.status = 'confirmed'
+        JOIN proof_indexer.blocks canonical_seal_block
+          ON canonical_seal_block.network = canonical_seal_tx.network
+         AND canonical_seal_block.block_hash = canonical_seal_tx.block_hash
+         AND canonical_seal_block.height = canonical_seal_tx.block_height
+         AND canonical_seal_block.canonical = true
+        JOIN LATERAL (
+          SELECT
+            COUNT(*)::integer AS input_count,
+            COUNT(canonical_input.value_sats)::integer AS valued_input_count,
+            SUM(canonical_input.value_sats)::numeric AS input_value_sats
+          FROM proof_indexer.tx_inputs canonical_input
+          WHERE canonical_input.network = canonical_seal_tx.network
+            AND canonical_input.txid = canonical_seal_tx.txid
+        ) canonical_input_totals ON true
+        JOIN LATERAL (
+          SELECT
+            COUNT(*)::integer AS output_count,
+            COUNT(canonical_output.value_sats)::integer AS valued_output_count,
+            SUM(canonical_output.value_sats)::numeric AS output_value_sats
+          FROM proof_indexer.tx_outputs canonical_output
+          WHERE canonical_output.network = canonical_seal_tx.network
+            AND canonical_output.txid = canonical_seal_tx.txid
+        ) canonical_output_totals ON true
+        WHERE e.network = $1
+          AND e.valid = true
+          AND e.status = 'confirmed'
+          AND e.protocol = 'pwt1'
+          AND e.kind = 'token-listing-sealed'
+          AND canonical_seal_tx.block_height < $3
+          AND jsonb_typeof(canonical_seal_tx.raw_tx) = 'object'
+          AND jsonb_typeof(
+            canonical_seal_tx.raw_tx->'canonicalBlockScan'
+          ) = 'object'
+          AND canonical_seal_tx.raw_tx->'canonicalBlockScan'->>'network' =
+            canonical_seal_tx.network
+          AND canonical_seal_tx.raw_tx->'canonicalBlockScan'->>'height' =
+            canonical_seal_tx.block_height::text
+          AND lower(
+            canonical_seal_tx.raw_tx->'canonicalBlockScan'->>'blockHash'
+          ) = lower(canonical_seal_tx.block_hash)
+          AND lower(COALESCE(canonical_seal_tx.raw_tx->>'txid', '')) = e.txid
+          AND jsonb_typeof(canonical_seal_tx.raw_tx->'vin') = 'array'
+          AND jsonb_typeof(canonical_seal_tx.raw_tx->'vout') = 'array'
+          AND canonical_input_totals.input_count > 0
+          AND canonical_input_totals.valued_input_count =
+            canonical_input_totals.input_count
+          AND canonical_input_totals.input_count =
+            jsonb_array_length(canonical_seal_tx.raw_tx->'vin')
+          AND canonical_output_totals.output_count > 0
+          AND canonical_output_totals.valued_output_count =
+            canonical_output_totals.output_count
+          AND canonical_output_totals.output_count =
+            jsonb_array_length(canonical_seal_tx.raw_tx->'vout')
+          AND canonical_input_totals.input_value_sats >=
+            canonical_output_totals.output_value_sats
+          AND lower(COALESCE(
+            e.payload->>'tokenId',
+            e.payload->'saleAuthorization'->>'tokenId',
+            ''
+          )) = '${WORK_TOKEN_ID}'
+          AND lower(COALESCE(
+            e.payload->'saleAuthorization'->>'version',
+            ''
+          )) = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2']::text[])
+          AND lower(COALESCE(e.payload->>'listingId', '')) ~ '^[0-9a-f]{64}$'
+          AND (
+            e.payload->>'sellerAddress' = ANY($2::text[])
+            OR e.payload->>'actor' = ANY($2::text[])
+            OR e.payload->'saleAuthorization'->>'sellerAddress' = ANY($2::text[])
+          )
+          ${legacySealScopeCondition}
+        ORDER BY
+          lower(e.payload->>'listingId'),
+          canonical_seal_tx.block_height DESC,
+          CASE
+            WHEN canonical_seal_tx.raw_tx->'canonicalBlockScan'->>'blockIndex' ~
+              '^[0-9]+$'
+              THEN (
+                canonical_seal_tx.raw_tx->'canonicalBlockScan'->>'blockIndex'
+              )::integer
+            WHEN e.payload->>'sealBlockIndex' ~ '^[0-9]+$'
+              THEN (e.payload->>'sealBlockIndex')::integer
+            WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+              THEN (e.payload->>'blockIndex')::integer
+            WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
+              THEN (e.payload->>'_powBlockIndex')::integer
+            ELSE -1
+          END DESC,
+          e.event_id DESC
+      ) latest_legacy_seal
+      ORDER BY
+        latest_legacy_seal.block_height DESC,
+        latest_legacy_seal.block_index DESC NULLS LAST,
+        latest_legacy_seal.event_id DESC
+      LIMIT ${legacySealLimitParam}
+          `,
+          legacySealParams,
+        )
+      : { rows: [] };
+
   if (
     walletProjectionExceedsLimit(
       eventResult.rows,
@@ -10864,6 +11091,16 @@ export async function proofIndexWalletTokenOverlayPayload(
   ) {
     throw new Error(
       `Wallet token overlay exceeds the ${walletAuthoritativeRowLimit}-active-listing authoritative limit.`,
+    );
+  }
+  if (
+    walletProjectionExceedsLimit(
+      legacySealResult.rows,
+      walletAuthoritativeRowLimit,
+    )
+  ) {
+    throw new Error(
+      `Wallet token overlay exceeds the ${walletAuthoritativeRowLimit}-legacy-seal authoritative limit.`,
     );
   }
 
@@ -10918,6 +11155,7 @@ export async function proofIndexWalletTokenOverlayPayload(
   const transfers = [];
   const sales = [];
   const listings = [];
+  const legacySealEvents = [];
   const closedListings = [];
   const invalidEvents = invalidResult.rows
     .map(tokenInvalidEventFromRow)
@@ -11110,11 +11348,39 @@ export async function proofIndexWalletTokenOverlayPayload(
     }
   }
 
+  for (const row of legacySealResult.rows) {
+    const payload = eventRowPayload(row, network);
+    const sealEvent = tokenHistoryItemFromMarketEventPayload(
+      {
+        ...payload,
+        sealAt: payload.createdAt,
+        sealBlockHash: payload.blockHash,
+        sealBlockHeight: payload.blockHeight,
+        sealBlockIndex: payload.blockIndex,
+        sealConfirmed: true,
+        sealTxid: payload.txid,
+      },
+      "listings",
+    );
+    if (sealEvent) {
+      legacySealEvents.push({
+        ...sealEvent,
+        sealBlockHash: payload.blockHash,
+        sealBlockHeight: payload.blockHeight,
+        sealBlockIndex: payload.blockIndex,
+      });
+    }
+  }
+
+  const mergedListings = walletTokenListingsWithLegacySealEvents(
+    listings,
+    legacySealEvents,
+  );
   const tokenBearingItems = [
     ...holders,
     ...transfers,
     ...sales,
-    ...listings,
+    ...mergedListings,
     ...closedListings,
   ];
   const [tokens, checkpoint] = await Promise.all([
@@ -11148,6 +11414,9 @@ export async function proofIndexWalletTokenOverlayPayload(
       (row) => row.event_time ?? row.block_time ?? row.created_at,
     ),
     ...listingResult.rows.map((row) => row.updated_at),
+    ...legacySealResult.rows.map(
+      (row) => row.event_time ?? row.block_time ?? row.created_at,
+    ),
     ...invalidEvents.map((event) => event.createdAt),
   ]
     .map((value) => Date.parse(value))
@@ -11162,7 +11431,7 @@ export async function proofIndexWalletTokenOverlayPayload(
     indexedThroughBlockHash: checkpoint?.indexedThroughBlockHash,
     invalidEvents,
     closedListings: closedListings.sort(compareTokenItemsByTime),
-    listings: listings.sort(compareTokenItemsByTime),
+    listings: mergedListings,
     network,
     sales: sales.sort(compareTokenItemsByTime),
     snapshotId: checkpoint?.snapshotId,

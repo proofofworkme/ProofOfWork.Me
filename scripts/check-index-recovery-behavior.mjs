@@ -33,6 +33,7 @@ import {
   workAmountFields,
 } from "../server/work-units.mjs";
 import {
+  applyWorkMarketV2CutoverToTokenState,
   WORK_MARKET_V2_ACTIVATION_HEIGHT,
   WORK_MARKET_V2_AUTH_VERSION,
   WORK_MARKET_V2_DECLARATION_TXID,
@@ -3850,6 +3851,202 @@ check("wallet token scope preserves holder definitions and indexed invalids", as
   assert.equal(merged.snapshotId, "wallet-overlay-checkpoint");
 });
 
+check("wallet legacy seal recovery enriches only its confirmed V1/V2 base listing", () => {
+  const compareTokenItemsByTime = (left, right) =>
+    Date.parse(right?.createdAt ?? "") - Date.parse(left?.createdAt ?? "");
+  const tokenListingId = isolatedFunction(READER_PATH, "tokenListingId");
+  const tokenListingSealRank = isolatedFunction(
+    READER_PATH,
+    "tokenListingSealRank",
+  );
+  const tokenListingWithSealFrom = isolatedFunction(
+    READER_PATH,
+    "tokenListingWithSealFrom",
+    { tokenListingSealRank },
+  );
+  const tokenListingSealTimeMs = isolatedFunction(
+    READER_PATH,
+    "tokenListingSealTimeMs",
+  );
+  const preferredTokenListingSealSource = isolatedFunction(
+    READER_PATH,
+    "preferredTokenListingSealSource",
+    { tokenListingSealRank, tokenListingSealTimeMs },
+  );
+  const tokenListingCloseRank = isolatedFunction(
+    READER_PATH,
+    "tokenListingCloseRank",
+  );
+  const tokenListingWithCloseFrom = isolatedFunction(
+    READER_PATH,
+    "tokenListingWithCloseFrom",
+    { tokenListingCloseRank },
+  );
+  const mergeTokenListingRecord = isolatedFunction(
+    READER_PATH,
+    "mergeTokenListingRecord",
+    {
+      preferredTokenListingSealSource,
+      tokenListingCloseRank,
+      tokenListingWithCloseFrom,
+      tokenListingWithSealFrom,
+    },
+  );
+  const uniqueTokenItems = isolatedFunction(READER_PATH, "uniqueTokenItems", {
+    compareTokenItemsByTime,
+  });
+  const walletTokenListingsWithLegacySealEvents = isolatedFunction(
+    READER_PATH,
+    "walletTokenListingsWithLegacySealEvents",
+    {
+      TOKEN_SALE_AUTH_VERSION: "pwt-sale-v1",
+      compareTokenItemsByTime,
+      mergeTokenListingRecord,
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      preferredTokenListingSealSource,
+      tokenListingId,
+      tokenListingWithSealFrom,
+      uniqueTokenItems,
+    },
+  );
+
+  const listingId =
+    "f371ee499b94f929069fb4677446006b1bb67d6793724f2b8d6effb26499c090";
+  const baseListing = {
+    amount: "130",
+    amountAtoms: "13000000000",
+    blockHeight: 955_318,
+    confirmed: true,
+    createdAt: "2026-06-25T10:33:08.000Z",
+    listingId,
+    minerFeeSats: 1_214,
+    priceSats: 81_325,
+    saleAuthorization: { version: "pwt-sale-v1" },
+    sellerAddress:
+      "bc1parjksvz4hetpmqwtka9wuzl9skhq8y3weusenf8e3qrguqhypweqtpmz2g",
+    status: "active",
+    tokenId: WORK_TOKEN_ID,
+  };
+  const sealEvent = (overrides = {}) => ({
+    confirmed: true,
+    createdAt: "2026-06-26T05:00:46.000Z",
+    listingId,
+    saleAuthorization: { version: "pwt-sale-v1" },
+    sealAt: "2026-06-26T05:00:46.000Z",
+    sealBlockHash:
+      "00000000000000000001d7d46bdd24fafa78c3fbec972e17d7983f1f4b1dfb65",
+    sealBlockHeight: 955_443,
+    sealBlockIndex: 140,
+    sealConfirmed: true,
+    sealMinerFeeCanonical: true,
+    sealMinerFeeSats: 2_068,
+    sealTxid:
+      "d6c78c4ffad8e9b17324b19f5baee023e91cce63e8e05fd4677280023b022c12",
+    sellerAddress: baseListing.sellerAddress,
+    tokenId: WORK_TOKEN_ID,
+    ...overrides,
+  });
+
+  const recovered = walletTokenListingsWithLegacySealEvents(
+    [baseListing],
+    [
+      sealEvent({
+        sealAt: "2026-06-25T20:47:18.000Z",
+        sealMinerFeeSats: 1_932,
+        sealTxid:
+          "2f2675eeb02b52f44656396892c890727cbc2d5e69644479379d5a0e79a4e9fc",
+      }),
+      sealEvent(),
+      sealEvent({ confirmed: false, sealTxid: "a".repeat(64) }),
+      sealEvent({
+        sealAt: "2026-06-27T05:00:46.000Z",
+        sealMinerFeeCanonical: false,
+        sealTxid: "9".repeat(64),
+      }),
+      sealEvent({
+        sealAt: "2026-06-28T05:00:46.000Z",
+        sealTxid: "8".repeat(64),
+        sellerAddress: "1DifferentSeller",
+      }),
+      sealEvent({
+        saleAuthorization: { version: WORK_MARKET_V2_AUTH_VERSION },
+        sealTxid: "b".repeat(64),
+      }),
+      sealEvent({ listingId: "c".repeat(64), sealTxid: "d".repeat(64) }),
+    ],
+  );
+
+  assert.equal(recovered.length, 1);
+  assert.equal(recovered[0].listingId, listingId);
+  assert.equal(recovered[0].createdAt, baseListing.createdAt);
+  assert.equal(recovered[0].blockHeight, baseListing.blockHeight);
+  assert.equal(recovered[0].amountAtoms, baseListing.amountAtoms);
+  assert.equal(recovered[0].priceSats, baseListing.priceSats);
+  assert.equal(recovered[0].minerFeeSats, baseListing.minerFeeSats);
+  assert.equal(
+    recovered[0].sealTxid,
+    "d6c78c4ffad8e9b17324b19f5baee023e91cce63e8e05fd4677280023b022c12",
+  );
+  assert.equal(recovered[0].sealAt, "2026-06-26T05:00:46.000Z");
+  assert.equal(recovered[0].sealConfirmed, true);
+  assert.equal(recovered[0].sealMinerFeeCanonical, true);
+  assert.equal(recovered[0].sealMinerFeeSats, 2_068);
+  assert.equal(
+    recovered[0].sealBlockHash,
+    "00000000000000000001d7d46bdd24fafa78c3fbec972e17d7983f1f4b1dfb65",
+  );
+  assert.equal(recovered[0].sealBlockHeight, 955_443);
+  assert.equal(recovered[0].sealBlockIndex, 140);
+
+  const [newerSealWins] = walletTokenListingsWithLegacySealEvents(
+    [{
+      ...baseListing,
+      sealAt: "2026-06-25T20:47:18.000Z",
+      sealConfirmed: true,
+      sealMinerFeeCanonical: true,
+      sealMinerFeeSats: 1_932,
+      sealTxid: "2f2675eeb02b52f44656396892c890727cbc2d5e69644479379d5a0e79a4e9fc",
+    }],
+    [sealEvent()],
+  );
+  assert.equal(newerSealWins.sealTxid, recovered[0].sealTxid);
+  assert.equal(newerSealWins.sealMinerFeeSats, 2_068);
+
+  const v3Base = {
+    ...baseListing,
+    listingId: "7".repeat(64),
+    saleAuthorization: { version: WORK_MARKET_V2_AUTH_VERSION },
+  };
+  const [v3Unchanged] = walletTokenListingsWithLegacySealEvents(
+    [v3Base],
+    [sealEvent({ listingId: v3Base.listingId })],
+  );
+  assert.equal(v3Unchanged.listingId, v3Base.listingId);
+  assert.equal(v3Unchanged.sealTxid, undefined);
+
+  const cutover = applyWorkMarketV2CutoverToTokenState({
+    closedListings: [],
+    indexedThroughBlock: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+    invalidEvents: [],
+    listings: recovered,
+    network: "livenet",
+  });
+  assert.deepEqual(cutover.listings, []);
+  assert.equal(cutover.closedListings.length, 1);
+  assert.equal(cutover.closedListings[0].listingId, listingId);
+  assert.equal(cutover.closedListings[0].createdAt, baseListing.createdAt);
+  assert.equal(cutover.closedListings[0].blockHeight, baseListing.blockHeight);
+  assert.equal(cutover.closedListings[0].sealTxid, recovered[0].sealTxid);
+  assert.equal(cutover.closedListings[0].sealConfirmed, true);
+  assert.equal(cutover.closedListings[0].sealAt, recovered[0].sealAt);
+  assert.equal(cutover.closedListings[0].sealMinerFeeCanonical, true);
+  assert.equal(cutover.closedListings[0].sealMinerFeeSats, 2_068);
+  assert.equal(cutover.closedListings[0].sealBlockHeight, 955_443);
+  assert.equal(cutover.closedListings[0].relic, true);
+  assert.equal(cutover.closedListings[0].refundEligible, true);
+  assert.equal(cutover.closedListings[0].status, "disabled");
+});
+
 check("wallet index overlay binds every WORK and bond holder to a canonical definition", async () => {
   const address = "1WalletDefinitionInvariant";
   const workTokenId =
@@ -3948,6 +4145,7 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
     },
   ];
   let definitionQuery = null;
+  let legacySealQuery = null;
   let checkpointQueries = 0;
   const pool = {
     async query(sql, params) {
@@ -3969,6 +4167,10 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
         return { rows: [] };
       }
       if (text.includes("e.kind IN")) {
+        return { rows: [] };
+      }
+      if (text.includes("wallet_legacy_work_listing_seals")) {
+        legacySealQuery = { params, text };
         return { rows: [] };
       }
       if (text.includes("FROM proof_indexer.credit_listings cl")) {
@@ -4019,6 +4221,7 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
       compareTokenItemsByTime: () => 0,
       dateIso,
       normalizeEventPayload: (payload) => payload,
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
       objectRecord,
       proofIndexPool: () => pool,
       proofIndexWalletTokenDefinitions,
@@ -4040,6 +4243,9 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
       tokenTransferFromEventPayload: () => ({}),
       validTxid: () => false,
       walletProjectionExceedsLimit: () => false,
+      walletTokenListingsWithLegacySealEvents: (items) => items,
+      WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      WORK_TOKEN_TICKER: "WORK",
     },
   );
 
@@ -4076,6 +4282,33 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
   assert.equal(overlay.indexedThroughBlock, 957_926);
   assert.equal(overlay.indexedThroughBlockHash, blockHash);
   assert.equal(checkpointQueries, 2);
+  assert.ok(legacySealQuery);
+  assert.match(
+    legacySealQuery.text,
+    /canonical_seal_tx\.status = 'confirmed'/u,
+  );
+  assert.match(legacySealQuery.text, /canonical_seal_block\.canonical = true/u);
+  assert.match(legacySealQuery.text, /e\.status = 'confirmed'/u);
+  assert.match(legacySealQuery.text, /e\.protocol = 'pwt1'/u);
+  assert.match(
+    legacySealQuery.text,
+    /canonical_seal_tx\.block_height < \$3/u,
+  );
+  assert.match(
+    legacySealQuery.text,
+    /ANY\(ARRAY\['pwt-sale-v1','pwt-sale-v2'\]::text\[\]\)/u,
+  );
+  assert.match(
+    legacySealQuery.text,
+    /canonical_input_totals\.input_value_sats[\s\S]*canonical_output_totals\.output_value_sats/u,
+  );
+  assert.match(
+    legacySealQuery.text,
+    /canonical_seal_tx\.raw_tx->'canonicalBlockScan'->>'blockIndex'/u,
+  );
+  assert.doesNotMatch(legacySealQuery.text, /pwt-sale-v3/u);
+  assert.equal(legacySealQuery.params[2], WORK_MARKET_V2_ACTIVATION_HEIGHT);
+  assert.equal(legacySealQuery.params.at(-1), 501);
   const zeroBalanceScopedDefinitions = await proofIndexWalletTokenDefinitions(
     pool,
     "livenet",
