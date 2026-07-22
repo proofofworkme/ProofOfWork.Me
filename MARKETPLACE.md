@@ -87,6 +87,77 @@ Wallet and Marketplace both use this model. Wallet is the connected-address
 ownership/action surface; Marketplace is the public discovery and purchase
 surface.
 
+## WORK Pricing Protocol V2
+
+Canonical WORK marketplace pricing is governed by declaration transaction
+`4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f`.
+The declaration activates only after confirmation. Its declaration block is
+`D`; the first governed block is `D + 1`, ensuring the first valid H-1 oracle
+already includes the declaration.
+
+The confirmed livenet activation is pinned as follows:
+
+```text
+declarationHeight = 959061
+declarationBlockHash = 000000000000000000022645eee1e171b271a92e6527728e85441efc88fa04a5
+activationHeight = 959062
+```
+
+The sale-ticket lifecycle remains `list5` / `seal5` / `buy5` / `delist5`.
+New governed WORK listings use authorization version `pwt-sale-v3`. Each list,
+seal, and buy commits to:
+
+```text
+oracleModel = canonical-work-market-h-minus-one-v1
+oracleBlockHeight = H - 1
+oracleBlockHash = hash(H - 1)
+oracleNetworkValueQ8 = exact live WORK network value at H - 1
+amountAtoms = exact WORK atoms offered
+minimumPriceSats = ceil(
+  amountAtoms * oracleNetworkValueQ8
+  / (21,000,000 * 100,000,000 * 100,000,000)
+)
+```
+
+`priceSats` is the total seller price and must be at least
+`minimumPriceSats`. Integer ceiling is mandatory: no fractional proof is
+rounded down. The canonical verifier independently loads the last green
+hash-bound ledger summary at H-1 and compares the committed height, hash,
+exact Q8 value, amount, computed minimum, and seller payment.
+
+The `pwt-sale-v3` listing and seal authorizations carry these fields directly.
+A governed WORK `buy5` adds a fourth base64url segment containing the refreshed
+V3 authorization. Oracle fields may refresh between list and seal/buy; all
+economic terms and sale-ticket terms must remain identical.
+
+Because the confirmation block cannot be known in advance, a V2 action is
+next-block-bound. If a transaction misses the block immediately following its
+committed oracle block, it becomes stale and is canonically invalid even if it
+later confirms. The wallet must rebuild and re-sign against the new exact tip.
+
+After activation:
+
+- legacy `pwt-sale-v1` and `pwt-sale-v2` WORK list/seal/buy actions cannot
+  mutate canonical state;
+- missing, stale, mismatched, below-floor, or unverifiable V3 actions fail
+  closed and appear only as invalid audit events;
+- old listings remain historical records but cannot execute under V2 unless
+  replaced with current V3 terms;
+- confirmed active V1/V2 listings at height 959061 move to the read-only V1
+  Relic projection at activation, stop reserving WORK balance, and expose no
+  seal or buy action; their sale-ticket outputs remain seller-controlled;
+- non-WORK credits, POWB, and INCB retain their existing marketplace versions;
+- pending transactions are visibility only and never establish an oracle or
+  canonical market state.
+
+The cutover refund audit is recorded in
+`WORK_MARKET_V1_REFUNDS_959061.json`. Eligibility is limited to confirmed
+active legacy WORK listings at height 959061. Each eligible listing receives
+its listing miner fee; each eligible confirmed seal additionally receives its
+seal miner fee and its 546-proof seal registry payment. Pending, invalid,
+already sold, delisted, or otherwise closed listings are excluded. The
+seller-controlled 546-proof sale-ticket output is not a refund expense.
+
 ## Current Infinity Bond / POWB Model
 
 Infinity Bonds are `pwm1:m:powb` message actions. A confirmed bond payment mints

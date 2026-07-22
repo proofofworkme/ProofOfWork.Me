@@ -333,6 +333,9 @@ const MIGRATE_WORK_ATOMS_ONLY = process.argv.includes("--migrate-work-atoms");
 const VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY = process.argv.includes(
   "--verify-work-atoms-post-bootstrap",
 );
+const REBUILD_CREDIT_BALANCES_ONLY = process.argv.includes(
+  "--rebuild-credit-balances",
+);
 const APPLY_WORK_ATOMIC_MIGRATION = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_WORK_ATOMIC_MIGRATION_APPLY ?? ""),
 );
@@ -1378,19 +1381,20 @@ function newPwtRangeReplayVerifierBinding(rangeReplayFromHeight, createdAt) {
 }
 
 function activatePwtRangeReplayVerifierBinding(rebuild) {
-  if (!activePwtRangeReplay(rebuild)) {
+  const replayState = assertCanonicalPwtRangeReplayState(rebuild);
+  if (!["active", "complete"].includes(replayState)) {
     ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING = null;
     return null;
   }
   if (!explicitLoopbackApiBaseConfigured()) {
     throw new Error(
-      "Active PWT range replay requires an explicit loopback POW_API_BASE; the default API address is not replay-safe.",
+      "PWT range replay verification requires an explicit loopback POW_API_BASE; the default API address is not replay-safe.",
     );
   }
   const binding = canonicalPwtRangeReplayVerifierBinding(rebuild);
   if (!binding) {
     throw new Error(
-      "Active PWT range replay is missing its canonical verifier database binding.",
+      "PWT range replay is missing its canonical verifier database binding.",
     );
   }
   ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING = binding;
@@ -13207,19 +13211,21 @@ async function backfillBlockScanSource(client, source) {
         height,
       });
       let completedIncbRangeReplayVerification = null;
-      if (nextComplete && !completedPwtRangeReplay) {
+      if (nextComplete) {
         if (canonicalRebuild) {
           await seedCanonicalBondDefinitions(client, { required: true });
         }
         await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
-        completedIncbRangeReplayVerification =
-          await verifyCanonicalIncbPwtRangeReplayProjection(
-            client,
-            // Keep the active replay binding authoritative while producing the
-            // certificate. `nextRebuild` becomes a valid complete tuple only
-            // after that certificate is attached below.
-            canonicalRebuild,
-          );
+        if (!completedPwtRangeReplay) {
+          completedIncbRangeReplayVerification =
+            await verifyCanonicalIncbPwtRangeReplayProjection(
+              client,
+              // Keep the active replay binding authoritative while producing the
+              // certificate. `nextRebuild` becomes a valid complete tuple only
+              // after that certificate is attached below.
+              canonicalRebuild,
+            );
+        }
       }
       const verifiedNextRebuild =
         nextRebuild && completedIncbRangeReplayVerification
@@ -16807,6 +16813,7 @@ if (DRY_RUN) {
         repairWorkParticipants: REPAIR_WORK_PARTICIPANTS,
         repairWorkParticipantsOnly: REPAIR_WORK_PARTICIPANTS_ONLY,
         repairWorkParticipantsTxids: REPAIR_WORK_PARTICIPANTS_TXIDS,
+        rebuildCreditBalancesOnly: REBUILD_CREDIT_BALANCES_ONLY,
         scopedHolders: INCLUDE_SCOPED_HOLDERS,
         prepareCanonicalRebuildOnly: PREPARE_CANONICAL_REBUILD_ONLY,
         prepareCanonicalPwtRangeReplayOnly:
@@ -16900,6 +16907,29 @@ try {
           2,
         ),
       );
+    } else if (REBUILD_CREDIT_BALANCES_ONLY) {
+      await client.query("BEGIN");
+      try {
+        await seedCanonicalBondDefinitions(client, { required: true });
+        const replay =
+          await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
+        await client.query("COMMIT");
+        console.log(
+          JSON.stringify(
+            {
+              canonicalCreditBalanceReplay: true,
+              network: NETWORK,
+              ok: true,
+              replay,
+            },
+            null,
+            2,
+          ),
+        );
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
     } else if (RUSH_BOOTSTRAP_ONLY) {
       const rushBootstrap = await ensureCanonicalRushBootstrap(client);
       console.log(

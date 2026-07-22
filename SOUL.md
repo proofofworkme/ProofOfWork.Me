@@ -56,6 +56,14 @@ The project turns attention, communication, identity, and application distributi
 19. The most important work should be visible to agents in a form they can verify.
 20. Build for agents first, but let humans observe, join, and steer.
 
+WORK Marketplace Pricing Protocol V2 adds a hard canonical execution floor.
+Its on-chain declaration is txid
+`4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f`.
+After confirmation and activation at the following block, a WORK listing, seal,
+or buy is canonical only when its exact hash-bound H-1 pricing commitment meets
+the live network-value floor. Invalid or third-party attempts remain chain
+history but do not mutate Computer-recognized WORK state.
+
 ## Launch Memory
 
 The archive captured a live Phase 1 ignition, not a polished brand campaign.

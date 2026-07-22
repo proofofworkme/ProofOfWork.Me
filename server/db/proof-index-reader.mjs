@@ -76,6 +76,7 @@ const WORK_TOKEN_MAX_SUPPLY_ATOMS = (
 const TOKEN_SALE_AUTH_VERSIONS = new Set([
   TOKEN_SALE_AUTH_VERSION,
   "pwt-sale-v2",
+  "pwt-sale-v3",
 ]);
 const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
 const TOKEN_LISTING_ANCHOR_VALUE_SATS = 546;
@@ -650,7 +651,8 @@ function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization) {
     (
       authorization?.version === TOKEN_SALE_AUTH_VERSION ||
       (
-        authorization?.version === "pwt-sale-v2" &&
+        (authorization?.version === "pwt-sale-v2" ||
+          authorization?.version === "pwt-sale-v3") &&
         isWorkTokenId(authorization?.tokenId) &&
         String(authorization?.ticker ?? "").trim().toUpperCase() ===
           WORK_TOKEN_TICKER
@@ -4785,7 +4787,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     conditions.push(
       `(e.status IS DISTINCT FROM 'dropped')`,
       `(e.payload ? 'saleAuthorization')`,
-      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2']::text[]))`,
+      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2','pwt-sale-v3']::text[]))`,
       `(e.payload->'saleAuthorization'->>'anchorType' = 'sale-ticket-v1')`,
     );
     if (txidNeedles.length > 0) {
@@ -7242,6 +7244,7 @@ const PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL =
 function canonicalIncbReplayReaderBinding(rebuild, network) {
   const source = objectRecord(rebuild);
   const binding = objectRecord(source.verifierBinding);
+  const verification = objectRecord(source.incbRangeReplayVerification);
   const bindingId = normalizedLowerText(binding.bindingId);
   const rangeReplayFromHeight = Number(binding.rangeReplayFromHeight);
   const witnessCount = Number(binding.witnessCount);
@@ -7254,14 +7257,33 @@ function canonicalIncbReplayReaderBinding(rebuild, network) {
   const expectedMetaKey = /^[0-9a-f]{64}$/u.test(bindingId)
     ? incbRangeReplayWitnessMetaKey(network, bindingId)
     : "";
+  const activeReplay =
+    source.status === "active" &&
+    source.active === true &&
+    source.complete === false &&
+    source.completedAt == null &&
+    source.incbRangeReplayVerification == null;
+  const completedReplay =
+    source.status === "complete" &&
+    source.active === false &&
+    source.complete === true &&
+    Number.isFinite(Date.parse(String(source.completedAt ?? ""))) &&
+    verification.verified === true &&
+    verification.accountingModel === INCB_ISSUANCE_ACCOUNTING_MODEL &&
+    Number(verification.rangeReplayFromHeight) === rangeReplayFromHeight &&
+    normalizedLowerText(verification.witnessSetHash) === witnessSetHash &&
+    Number(verification.witnessCount) === witnessCount &&
+    Number(verification.witnessPreserveCount) === witnessPreserveCount &&
+    Number(verification.consumedPreserveCount) === witnessPreserveCount &&
+    Number(verification.rederivedWitnessCount) ===
+      witnessCount - witnessPreserveCount &&
+    Number(verification.witnessedThroughBlock) === witnessedThroughBlock &&
+    normalizedLowerText(verification.witnessedThroughBlockHash) ===
+      witnessedThroughBlockHash;
   if (
     source.mode !== "pwt-range-replay" ||
     source.network !== network ||
-    source.status !== "active" ||
-    source.active !== true ||
-    source.complete !== false ||
-    source.completedAt != null ||
-    source.incbRangeReplayVerification != null ||
+    (!activeReplay && !completedReplay) ||
     binding.model !== PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL ||
     binding.network !== network ||
     !/^[0-9a-f]{64}$/u.test(bindingId) ||

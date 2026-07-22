@@ -529,6 +529,26 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    `send2`, and one exact INCB mint per target, unchanged Core positions, and
    the exact dynamic H-1 Q8 formula. Require lifecycle, marketplace, ledger,
    wallet, and parity gates before considering the repaired clone promotable.
+   Later ordinary block scans must continue authenticating internal verifier
+   reads with that completed replay's immutable database binding and witness
+   manifest. Both the API and database witness reader must validate and accept
+   the completed certificate shape. Dropping the binding after certification
+   forces historical H-1 rederivation, can deadlock the first later Inception
+   block, and is forbidden.
+
+   Every block catch-up that reaches the exact node tip must rebuild confirmed
+   credit balances from canonical events before publishing summaries, including
+   ordinary catch-up after a completed PWT/INCB replay. The completion
+   certificate is not regenerated, but newly confirmed large bond mints must be
+   reflected in `credit_balances` before conservation gates can publish the new
+   snapshot.
+
+   If a worker reached tip with canonical events committed but balance
+   publication failed before this invariant was available, stop the worker and
+   run `node scripts/backfill-proof-indexer.mjs --rebuild-credit-balances` with
+   the production service environment. The command replays every confirmed
+   credit ledger in one transaction and is safe to retry; restart the worker to
+   publish the exact-tip summaries afterward.
 
 Stored block hashes detect a reorganization; they do not provide automatic
 projection rollback. If the stored checkpoint hash no longer matches Bitcoin
@@ -1326,6 +1346,7 @@ The credit endpoint:
 - WORK is reserved for canonical credit id `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`. Official indexers and creation UI reject any non-canonical credit create whose ticker contains `WORK`, and exclude blocked scam creator address `bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl`.
 - WORK settings are 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, and the `work@proofofwork.me` registry address. WORK launches at exactly 1 proof per WORK. The create form can reuse the same economic template for non-reserved tickers only.
 - WORK's permanent price floor is derived from live confirmed ProofOfWork Computer network value, not from pending mempool visibility: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`. The inverse `21,000,000 / live_network_value_sats` is the WORK-per-proof ratio.
+- WORK Marketplace Pricing Protocol V2 is declaration-tx anchored at `4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f` and activates at declaration height plus one. Confirmed governed WORK list/seal/buy validation must load the exact green canonical summary at H-1, require the authorization's `oracleBlockHeight`, `oracleBlockHash`, and `oracleNetworkValueQ8` to match it, recompute the integer-ceiling minimum total seller price from `amountAtoms`, and fail closed on any unavailable or mismatched dependency. A missed next-block commitment is stale; confirmation does not rescue it.
 - WORK value accounting exposes both live and frozen values. Live network value reprices confirmed WORK movement at the current live floor and is the site-facing value. Frozen network value records the confirmation-time value of each WORK movement plus fixed event components such as proof payments, registry mutation fees, marketplace mutation fees, sale payments, and miner fees where available.
 - WORK is the only credit whose amount moved adds credit movement network value. Non-WORK credits remain confirmed proof-flow records and must not derive value from manipulable illiquid floors.
 - Credit mint-out is confirmed-only at the protocol/indexing layer: a credit is canonically minted out only when confirmed supply reaches max supply. UI mint controls also pause when confirmed plus pending mints fill the remaining supply, because pending records can consume the last valid mint slots if they confirm.

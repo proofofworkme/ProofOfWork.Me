@@ -2667,6 +2667,8 @@ check("WORK atomic sends and sale authorizations preserve one atom", () => {
     TOKEN_LISTING_ANCHOR_VALUE_SATS: 546,
     TOKEN_LISTING_ANCHOR_VOUT: 1,
     TOKEN_SALE_AUTH_VERSION: "pwt-sale-v1",
+    TOKEN_SALE_AUTH_ATOMS_VERSION: "pwt-sale-v2",
+    TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION: "pwt-sale-v3",
   };
   const tokenSaleAuthorizationDraft = isolatedFunction(
     API_PATH,
@@ -2685,6 +2687,7 @@ check("WORK atomic sends and sale authorizations preserve one atom", () => {
       isValidBitcoinAddress: () => true,
       normalizeTokenTicker: (value) => String(value).trim().toUpperCase(),
       tokenSaleAuthorizationDraft,
+      validateWorkMarketV2Authorization: () => ({ valid: true }),
       validPublicKeyHex: () => true,
       validSignatureHex: () => true,
     },
@@ -2772,7 +2775,10 @@ check("WORK atomic sends and sale authorizations preserve one atom", () => {
   const tokenSaleAuthorizationTermsMatch = isolatedFunction(
     API_PATH,
     "tokenSaleAuthorizationTermsMatch",
-    { tokenSaleAuthorizationDraft },
+    {
+      TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION: "pwt-sale-v3",
+      tokenSaleAuthorizationDraft,
+    },
   );
   assert.equal(
     tokenSaleAuthorizationTermsMatch(
@@ -16294,7 +16300,103 @@ check("backfill rejects an internal response not echoed by its replay database",
   );
 });
 
-check("active range replay cannot use the implicit or an unbound API", () => {
+check("completed replay automatically authenticates ordinary internal verifier reads", async () => {
+  const binding = replayVerifierBindingFixture({
+    bindingId: "f".repeat(64),
+    createdAt: "2026-07-18T20:00:00.000Z",
+    rangeReplayFromHeight: 958383,
+  });
+  const internalReplayVerifierBinding = isolatedFunction(
+    API_PATH,
+    "internalReplayVerifierBinding",
+    {
+      Buffer,
+      canonicalInternalPwtRangeReplayState: () => "complete",
+      canonicalInternalReplayVerifierBinding: () => binding,
+      internalReplayVerifierBindingError: isolatedFunction(
+        API_PATH,
+        "internalReplayVerifierBindingError",
+      ),
+      proofIndexCanonicalStateMetaPayload: async () => ({
+        rebuild: { status: "complete" },
+      }),
+      timingSafeEqual,
+    },
+  );
+  assert.deepEqual(
+    await internalReplayVerifierBinding("livenet", ""),
+    binding,
+  );
+});
+
+check("completed replay remains readable through the immutable witness certificate", () => {
+  const binding = replayVerifierBindingFixture({
+    bindingId: "9".repeat(64),
+    createdAt: "2026-07-18T20:00:00.000Z",
+    rangeReplayFromHeight: 958383,
+  });
+  const canonicalIncbReplayReaderBinding = isolatedFunction(
+    READER_PATH,
+    "canonicalIncbReplayReaderBinding",
+    {
+      INCB_ISSUANCE_ACCOUNTING_MODEL:
+        "canonical-pre-bond-live-network-value-v2",
+      INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL:
+        "canonical-incb-range-replay-witness-set-v1",
+      PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL:
+        "proof-indexer-pwt-range-replay-verifier-binding-v1",
+      incbRangeReplayWitnessMetaKey,
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+    },
+  );
+  const rebuild = {
+    active: false,
+    complete: true,
+    completedAt: "2026-07-19T15:37:02.603Z",
+    incbRangeReplayVerification: {
+      accountingModel: "canonical-pre-bond-live-network-value-v2",
+      consumedPreserveCount: binding.witnessPreserveCount,
+      rangeReplayFromHeight: binding.rangeReplayFromHeight,
+      rederivedWitnessCount:
+        binding.witnessCount - binding.witnessPreserveCount,
+      verified: true,
+      witnessCount: binding.witnessCount,
+      witnessPreserveCount: binding.witnessPreserveCount,
+      witnessSetHash: binding.witnessSetHash,
+      witnessedThroughBlock: binding.witnessedThroughBlock,
+      witnessedThroughBlockHash: binding.witnessedThroughBlockHash,
+    },
+    mode: "pwt-range-replay",
+    network: "livenet",
+    rangeReplayFromHeight: binding.rangeReplayFromHeight,
+    status: "complete",
+    verifierBinding: binding,
+  };
+  assert.equal(
+    JSON.stringify(canonicalIncbReplayReaderBinding(rebuild, "livenet")),
+    JSON.stringify(binding),
+  );
+  assert.equal(
+    canonicalIncbReplayReaderBinding(
+      {
+        ...rebuild,
+        incbRangeReplayVerification: {
+          ...rebuild.incbRangeReplayVerification,
+          witnessSetHash: "6".repeat(64),
+        },
+      },
+      "livenet",
+    ),
+    null,
+    "a completed reader must reject a certificate that does not bind the immutable manifest",
+  );
+});
+
+check("active and completed range replay cannot use an implicit or unbound API", () => {
   const binding = {
     bindingId: "e".repeat(64),
     createdAt: "2026-07-18T20:00:00.000Z",
@@ -16313,7 +16415,7 @@ check("active range replay cannot use the implicit or an unbound API", () => {
     "activatePwtRangeReplayVerifierBinding",
     {
       ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING: null,
-      activePwtRangeReplay: () => true,
+      assertCanonicalPwtRangeReplayState: () => "active",
       canonicalPwtRangeReplayVerifierBinding: () => binding,
       explicitLoopbackApiBaseConfigured: () => false,
     },
@@ -16328,7 +16430,7 @@ check("active range replay cannot use the implicit or an unbound API", () => {
     "activatePwtRangeReplayVerifierBinding",
     {
       ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING: null,
-      activePwtRangeReplay: () => true,
+      assertCanonicalPwtRangeReplayState: () => "active",
       canonicalPwtRangeReplayVerifierBinding: () => null,
       explicitLoopbackApiBaseConfigured: () => true,
     },
@@ -16343,12 +16445,33 @@ check("active range replay cannot use the implicit or an unbound API", () => {
     "activatePwtRangeReplayVerifierBinding",
     {
       ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING: null,
-      activePwtRangeReplay: () => true,
+      assertCanonicalPwtRangeReplayState: () => "active",
       canonicalPwtRangeReplayVerifierBinding: () => binding,
       explicitLoopbackApiBaseConfigured: () => true,
     },
   );
   assert.deepEqual(activateBoundReplay(rebuild), binding);
+
+  const activateCompletedReplay = isolatedFunction(
+    BACKFILL_PATH,
+    "activatePwtRangeReplayVerifierBinding",
+    {
+      ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING: null,
+      assertCanonicalPwtRangeReplayState: () => "complete",
+      canonicalPwtRangeReplayVerifierBinding: () => binding,
+      explicitLoopbackApiBaseConfigured: () => true,
+    },
+  );
+  assert.deepEqual(
+    activateCompletedReplay({
+      ...rebuild,
+      active: false,
+      complete: true,
+      status: "complete",
+    }),
+    binding,
+    "ordinary catch-up must keep using the completed replay's immutable witness binding",
+  );
 });
 
 check("active range replay is fail-closed to one block-scan source", async () => {
@@ -18732,6 +18855,9 @@ check("canonical bond mint replay unlocks only later INCB mutations", () => {
       transactionConfirmed,
       transactionMinerFeeSats: () => 10,
       transactionTxid,
+      WORK_MARKET_V2_DECLARATION_TXID: "a".repeat(64),
+      workMarketV2ActivationFromDeclaration: () => null,
+      validateWorkMarketV2Authorization: () => ({ valid: true }),
     },
   );
   const transaction = (id, blockIndex, actor, message, options = {}) => ({
@@ -22152,7 +22278,7 @@ check("completed PWT replay certificates stay complete during later catch-up", (
   }
 });
 
-check("ordinary catch-up never reopens a completed PWT replay", async () => {
+check("ordinary catch-up refreshes balances without reopening a completed PWT replay", async () => {
   const hashes = {
     110: "a".repeat(64),
     111: "b".repeat(64),
@@ -22273,8 +22399,8 @@ check("ordinary catch-up never reopens a completed PWT replay", async () => {
     [111, 112],
   );
   assert.equal(storedMeta.length, 2);
-  assert.equal(balanceRebuilds, 0);
-  assert.equal(definitionSeeds, 0);
+  assert.equal(balanceRebuilds, 1);
+  assert.equal(definitionSeeds, 1);
   assert.equal(certificateReplacements, 0);
   for (const [index, state] of storedMeta.entries()) {
     assert.equal(replayState(state), "complete");
