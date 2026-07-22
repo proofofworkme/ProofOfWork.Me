@@ -147,6 +147,7 @@ import {
   formatExactQ8,
   type ExactIntegerValue,
 } from "./exactAmount";
+import workMarketV1RefundSnapshot from "../WORK_MARKET_V1_REFUNDS_959061.json";
 import {
   AppHeader,
   type AppHeaderAccountStat,
@@ -753,6 +754,24 @@ type PowTokenClosedListing = PowTokenListing & {
   disabledByTxid?: string;
   disabledReason?: string;
   relic?: boolean;
+};
+
+type WorkMarketV1RefundListing = {
+  listingBlockHeight: number;
+  listingId: string;
+  listingMinerFeeSats: number;
+  refundSats: number;
+  sealMinerFeeSats: number;
+  sealPaymentSats: number;
+  sealTxid: string;
+  sealed: boolean;
+  sellerAddress: string;
+  version: string;
+};
+
+type WorkMarketV1RelicRow = {
+  listing?: PowTokenClosedListing;
+  refund: WorkMarketV1RefundListing;
 };
 
 type PendingTokenListingSeal = {
@@ -8366,6 +8385,34 @@ function tokenListingStateKey(
   return `${listing.network}:${listing.listingId}`;
 }
 
+function workMarketV1RelicRows(
+  serverListings: PowTokenClosedListing[],
+  snapshotListings: readonly WorkMarketV1RefundListing[] =
+    workMarketV1RefundSnapshot.listings,
+): WorkMarketV1RelicRow[] {
+  const serverListingById = new Map<string, PowTokenClosedListing>();
+  serverListings.forEach((listing) => {
+    const listingId = listing.listingId.toLowerCase();
+    const current = serverListingById.get(listingId);
+    if (!current || listing.relic === true || current.relic !== true) {
+      serverListingById.set(listingId, listing);
+    }
+  });
+
+  const snapshotById = new Map<string, WorkMarketV1RefundListing>();
+  snapshotListings.forEach((refund) => {
+    const listingId = refund.listingId.toLowerCase();
+    if (!snapshotById.has(listingId)) {
+      snapshotById.set(listingId, { ...refund, listingId });
+    }
+  });
+
+  return [...snapshotById.values()].map((refund) => ({
+    listing: serverListingById.get(refund.listingId),
+    refund,
+  }));
+}
+
 function activeTokenListingsExcludingClosed(
   listings: PowTokenListing[],
   closedListings: PowTokenClosedListing[],
@@ -15696,7 +15743,8 @@ function listingAnchorDetails(
   const tokenAuthorization = (listing as PowTokenListing).saleAuthorization;
   if (
     tokenAuthorization?.version === TOKEN_SALE_AUTH_VERSION ||
-    tokenAuthorization?.version === TOKEN_SALE_AUTH_VERSION_ATOMS
+    tokenAuthorization?.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
+    tokenAuthorization?.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
   ) {
     if (!tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(tokenAuthorization)) {
       throw new Error(
@@ -26410,6 +26458,42 @@ export default function App() {
       ) {
         setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
         return;
+      }
+
+      if (purchaseAuthorization) {
+        const acceptedSettlementRisk = window.confirm(
+          "WORK Marketplace V2 purchases are next-block bound. If this transaction does not confirm in the next block, the seller payment and sale-ticket spend can still confirm while the WORK transfer is rejected. Continue?",
+        );
+        if (!acceptedSettlementRisk) {
+          setStatus({
+            tone: "idle",
+            text: "WORK purchase canceled before signing.",
+          });
+          return;
+        }
+
+        const preBroadcastFloor = await fetchWorkFloorQuote("livenet", true);
+        if (!preBroadcastFloor || !listing.amountAtoms) {
+          throw new Error(
+            "The exact-tip WORK pricing oracle became unavailable before signing. No transaction was broadcast.",
+          );
+        }
+        const preBroadcastPricingFields = workMarketV2OracleFields(
+          preBroadcastFloor,
+          listing.amountAtoms,
+        );
+        if (
+          preBroadcastPricingFields.oracleBlockHeight !==
+            purchaseAuthorization.oracleBlockHeight ||
+          preBroadcastPricingFields.oracleBlockHash !==
+            purchaseAuthorization.oracleBlockHash ||
+          preBroadcastPricingFields.oracleNetworkValueQ8 !==
+            purchaseAuthorization.oracleNetworkValueQ8
+        ) {
+          throw new Error(
+            "The WORK pricing tip advanced before signing. Retry the purchase against the new exact tip. No transaction was broadcast.",
+          );
+        }
       }
 
       const txid = await signAndBroadcastPsbt({
@@ -40231,11 +40315,7 @@ function TokenMarketplacePanel({
       (selectedMarketToken.tokenId === WORK_TOKEN_ID ||
         selectedMarketToken.ticker === WORK_TOKEN_TICKER),
   );
-  const workRelicListings = marketClosedListings.filter(
-    (listing) =>
-      listing.relic === true &&
-      listing.disabledReason === "work-market-v2-cutover",
-  );
+  const workRelicRows = workMarketV1RelicRows(marketClosedListings);
   const workFloorChartPoints = workFloorQuote?.chartPoints ?? [];
   const workFloorMinSats =
     workFloorChartPoints.length > 0
@@ -40277,8 +40357,8 @@ function TokenMarketplacePanel({
               <div>
                 <h3>WORK Market Price</h3>
                 <p>
-                  WORK uses the network floor as its reference price. Listings
-                  can clear above or below it.
+                  WORK uses the network value as a hard on-chain floor.
+                  Listings cannot be created, sealed, or bought below it.
                 </p>
               </div>
             </div>
@@ -40794,7 +40874,7 @@ function TokenMarketplacePanel({
               type="button"
             >
               <span>V1 Relic</span>
-              <strong>{workRelicListings.length.toLocaleString()}</strong>
+              <strong>{workRelicRows.length.toLocaleString()}</strong>
             </button>
           </div>
         ) : null}
@@ -40815,61 +40895,109 @@ function TokenMarketplacePanel({
                 </p>
               </div>
             </div>
-            {workRelicListings.length ? (
+            {workRelicRows.length ? (
               <div className="token-market-grid">
-                {workRelicListings.map((listing) => (
-                  <article
-                    className="id-record token-market-row"
-                    key={`work-v1-relic-${listing.listingId}`}
-                  >
-                    <div>
-                      <strong>
-                        {tokenAmountDisplay(
-                          listing,
-                          listing.amount,
-                          listing.amountAtoms,
-                        )}{" "}
-                        WORK
-                      </strong>
-                      <span>Disabled V1 listing</span>
-                    </div>
-                    <dl>
+                {workRelicRows.map(({ listing, refund }) => {
+                  const sellerAddress =
+                    listing?.sellerAddress || refund.sellerAddress;
+                  return (
+                    <article
+                      className="id-record token-market-row"
+                      key={`work-v1-relic-${refund.listingId}`}
+                    >
                       <div>
-                        <dt>Former price</dt>
-                        <dd>{listing.priceSats.toLocaleString()} proofs</dd>
-                      </div>
-                      <div>
-                        <dt>Seller</dt>
-                        <dd>{shortAddress(listing.sellerAddress)}</dd>
-                      </div>
-                      <div>
-                        <dt>Listed</dt>
-                        <dd>{formatDate(listing.createdAt)}</dd>
-                      </div>
-                      <div>
-                        <dt>Disabled</dt>
-                        <dd>Block {listing.disabledAtBlockHeight ?? 959062}</dd>
-                      </div>
-                    </dl>
-                    <p className="field-note">
-                      Read only. The original sale-ticket output remains under
-                      the seller's wallet control.
-                    </p>
-                    <div className="id-record-actions">
-                      <a
-                        className="secondary small"
-                        href={explorerTxUrl(listing.listingId, listing.network)}
-                        rel="noreferrer"
-                        target="_blank"
-                      >
-                        <span className="button-content">
-                          <ArrowUpRight size={15} />
-                          <span>Listing TX</span>
+                        <strong>
+                          {listing
+                            ? `${tokenAmountDisplay(
+                                listing,
+                                listing.amount,
+                                listing.amountAtoms,
+                              )} WORK`
+                            : `Listing ${shortAddress(refund.listingId)}`}
+                        </strong>
+                        <span>
+                          Disabled {refund.sealed ? "sealed " : ""}V1 listing
                         </span>
-                      </a>
-                    </div>
-                  </article>
-                ))}
+                      </div>
+                      <dl>
+                        {listing ? (
+                          <div>
+                            <dt>Former price</dt>
+                            <dd>{listing.priceSats.toLocaleString()} proofs</dd>
+                          </div>
+                        ) : null}
+                        <div>
+                          <dt>Seller</dt>
+                          <dd>{shortAddress(sellerAddress)}</dd>
+                        </div>
+                        <div>
+                          <dt>Listing</dt>
+                          <dd>
+                            <a
+                              href={explorerTxUrl(refund.listingId, "livenet")}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              {shortAddress(refund.listingId)}
+                            </a>
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Protocol</dt>
+                          <dd>{refund.version}</dd>
+                        </div>
+                        <div>
+                          <dt>Listed</dt>
+                          <dd>
+                            {listing?.createdAt
+                              ? formatDate(listing.createdAt)
+                              : `Block ${refund.listingBlockHeight}`}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Sealed at cutover</dt>
+                          <dd>
+                            {refund.sealed ? "Yes" : "No"}
+                            {refund.sealTxid ? (
+                              <>
+                                {" · "}
+                                <a
+                                  href={explorerTxUrl(
+                                    refund.sealTxid,
+                                    "livenet",
+                                  )}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                >
+                                  Seal TX
+                                </a>
+                              </>
+                            ) : null}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Refund</dt>
+                          <dd>{refund.refundSats.toLocaleString()} proofs</dd>
+                        </div>
+                        <div>
+                          <dt>Disabled</dt>
+                          <dd>
+                            Block {listing?.disabledAtBlockHeight ?? 959062}
+                          </dd>
+                        </div>
+                      </dl>
+                      <p className="field-note">
+                        Refund: {refund.listingMinerFeeSats.toLocaleString()} listing
+                        miner fee
+                        {refund.sealed
+                          ? ` + ${refund.sealMinerFeeSats.toLocaleString()} seal miner fee + ${refund.sealPaymentSats.toLocaleString()} seal payment`
+                          : ""}
+                        . Read only. The original sale-ticket output remains under
+                        the seller's wallet control.
+                      </p>
+                    </article>
+                  );
+                })}
               </div>
             ) : (
               <p className="field-note">

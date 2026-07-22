@@ -1077,6 +1077,43 @@ const buildPaymentPsbtBlock =
   app.match(/async function buildPaymentPsbt[\s\S]*?async function signSellerAnchorAuthorization/)?.[0] ?? "";
 const buildAnchoredMarketplacePsbtBlock =
   app.match(/async function buildAnchoredMarketplacePsbt[\s\S]*?async function broadcastRawTransactionViaProofApi/)?.[0] ?? "";
+const listingAnchorDetailsBlock =
+  app.match(/function listingAnchorDetails[\s\S]*?async function assertListingAnchorUnspent/)?.[0] ?? "";
+const assertListingAnchorUnspentBlock =
+  app.match(/async function assertListingAnchorUnspent[\s\S]*?async function buildAnchoredMarketplacePsbt/)?.[0] ?? "";
+const signTokenSaleTicketAuthorizationBlock =
+  app.match(/async function signTokenSaleTicketAuthorization[\s\S]*?function encodeCompactSize/)?.[0] ?? "";
+expect(
+  "WORK Marketplace V2 sale-ticket anchors are accepted by seal and buy construction",
+  /TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION/.test(listingAnchorDetailsBlock) &&
+    /listingAnchorDetails\(listing, network\)/.test(
+      assertListingAnchorUnspentBlock,
+    ) &&
+    /assertListingAnchorUnspent\(listing, network\)/.test(
+      signTokenSaleTicketAuthorizationBlock,
+    ) &&
+    /assertListingAnchorUnspent\(listing, network\)/.test(
+      buildAnchoredMarketplacePsbtBlock,
+    ),
+);
+expect(
+  "WORK Marketplace V2 purchases warn about next-block settlement and recheck the exact tip before signing",
+  /WORK Marketplace V2 purchases are next-block bound/.test(
+    buyTokenListingSource,
+  ) &&
+    /seller payment and sale-ticket spend can still confirm while the WORK transfer is rejected/.test(
+      buyTokenListingSource,
+    ) &&
+    /const preBroadcastFloor = await fetchWorkFloorQuote\("livenet", true\)/.test(
+      buyTokenListingSource,
+    ) &&
+    /preBroadcastPricingFields\.oracleBlockHash !==[\s\S]*purchaseAuthorization\.oracleBlockHash/.test(
+      buyTokenListingSource,
+    ) &&
+    /WORK pricing tip advanced before signing/.test(buyTokenListingSource) &&
+    buyTokenListingSource.indexOf("const preBroadcastFloor") <
+      buyTokenListingSource.indexOf("signAndBroadcastPsbt"),
+);
 expect(
   "all ProofOfWork sale-ticket anchors are freshly excluded from funding selection",
   /async function fetchFreshWalletTokenListingsForAnchors[\s\S]*fresh: "1"[\s\S]*wallet: "1"[\s\S]*authoritativeWallet !== true[\s\S]*walletScoped !== true[\s\S]*Array\.isArray\(payload\.listings\)/.test(

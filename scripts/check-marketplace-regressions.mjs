@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
 import { parseWorkAmountToAtoms } from "../server/work-units.mjs";
 
 const API_BASE = (
@@ -21,6 +22,25 @@ const EXACT_HISTORY_MAX_MS = 10_000;
 
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const WORK_MARKET_V2_ACTIVATION_HEIGHT = 959_062;
+const WORK_MARKET_V2_DECLARATION_TXID =
+  "4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f";
+const WORK_MARKET_V2_REASON_CODE = "work-market-v2-version-required";
+const WORK_MARKET_V2_LATE_SEAL_LISTING_TX =
+  "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9";
+const WORK_MARKET_V2_LATE_SEAL_TX =
+  "5575f61bb7f42ef26bf56b1575a8ae43fec54c43a5d3b71057bc8fd4839a1af1";
+const WORK_MARKET_V2_POST_ACTIVATION_LISTING_TX =
+  "df317cbbfdc603a390ee0f8b027ba8f0d08ef2200ce914b0b3e7dd46ce0982ce";
+const WORK_MARKET_V1_REFUND_SNAPSHOT = JSON.parse(
+  fs.readFileSync(
+    new URL("../WORK_MARKET_V1_REFUNDS_959061.json", import.meta.url),
+    "utf8",
+  ),
+);
+const WORK_MARKET_V1_RELIC_IDS = new Set(
+  WORK_MARKET_V1_REFUND_SNAPSHOT.listings.map((listing) => listing.listingId),
+);
 const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
 const SELLER = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
@@ -451,13 +471,22 @@ async function assertDroppedCloseCannotHideActiveListing() {
     fresh: 1,
     q: REPORTED_DROPPED_CLOSE_LISTING_TX,
   });
-  const restoredListing = listingById(
-    activeListings.items,
+  assert(
+    !listingById(activeListings.items, REPORTED_DROPPED_CLOSE_LISTING_TX),
+    `${REPORTED_DROPPED_CLOSE_LISTING_TX} remained active after the Marketplace V2 cutover`,
+  );
+  const relicToken = await getJson("/api/v1/token", {
+    network: "livenet",
+    asset: WORK_TOKEN_ID,
+    fresh: 1,
+  });
+  const relicListing = listingById(
+    relicToken.closedListings,
     REPORTED_DROPPED_CLOSE_LISTING_TX,
   );
   assert(
-    restoredListing?.confirmed === true,
-    `${REPORTED_DROPPED_CLOSE_LISTING_TX} was hidden by dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
+    relicListing?.relic === true && relicListing?.refundEligible === true,
+    `${REPORTED_DROPPED_CLOSE_LISTING_TX} is not preserved as a refundable V1 relic after dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
   );
 
   const walletToken = await getJson("/api/v1/token", {
@@ -468,9 +497,8 @@ async function assertDroppedCloseCannotHideActiveListing() {
     fresh: 1,
   });
   assert(
-    listingById(walletToken.listings, REPORTED_DROPPED_CLOSE_LISTING_TX)
-      ?.confirmed === true,
-    `${REPORTED_DROPPED_CLOSE_LISTING_TX} is missing from its seller wallet after dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
+    !listingById(walletToken.listings, REPORTED_DROPPED_CLOSE_LISTING_TX),
+    `${REPORTED_DROPPED_CLOSE_LISTING_TX} remained active in its seller wallet after the Marketplace V2 cutover`,
   );
   assert(
     !(walletToken.closedListings ?? []).some(
@@ -486,11 +514,11 @@ async function assertDroppedCloseCannotHideActiveListing() {
     fresh: 1,
   });
   assert(
-    listingById(
+    !listingById(
       marketplaceSummary.token?.listings,
       REPORTED_DROPPED_CLOSE_LISTING_TX,
-    )?.confirmed === true,
-    `${REPORTED_DROPPED_CLOSE_LISTING_TX} is missing from Marketplace summary after dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
+    ),
+    `${REPORTED_DROPPED_CLOSE_LISTING_TX} remained active in Marketplace summary after the V2 cutover`,
   );
   assert(
     !(marketplaceSummary.token?.closedListings ?? []).some(
@@ -541,6 +569,149 @@ function listingById(items, listingId) {
   );
 }
 
+function workListingAuthorizationVersion(listing) {
+  return String(
+    listing?.saleAuthorization?.version ?? listing?.version ?? "",
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function isLegacyWorkListing(listing) {
+  return (
+    String(
+      listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
+    )
+      .trim()
+      .toLowerCase() === WORK_TOKEN_ID &&
+    ["pwt-sale-v1", "pwt-sale-v2"].includes(
+      workListingAuthorizationVersion(listing),
+    )
+  );
+}
+
+function assertNoActiveNonV3WorkListings(payload, label) {
+  const activeNonV3 = (payload?.listings ?? []).filter(
+    (listing) =>
+      String(
+        listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
+      )
+        .trim()
+        .toLowerCase() === WORK_TOKEN_ID &&
+      workListingAuthorizationVersion(listing) !== "pwt-sale-v3",
+  );
+  assert(
+    activeNonV3.length === 0,
+    `${label} returned ${activeNonV3.length} active non-V3 WORK listings`,
+  );
+}
+
+function assertExactWorkV1Relics(payload, label) {
+  const relics = (payload?.closedListings ?? []).filter(
+    (listing) =>
+      listing?.relic === true &&
+      isLegacyWorkListing(listing),
+  );
+  const actualIds = new Set(
+    relics.map((listing) => String(listing?.listingId ?? "").toLowerCase()),
+  );
+  assert(
+    relics.length === 94 && actualIds.size === 94,
+    `${label} returned ${relics.length} WORK V1 relic/refund rows across ${actualIds.size} unique listings, expected 94`,
+  );
+  assert(
+    actualIds.size === WORK_MARKET_V1_RELIC_IDS.size &&
+      [...WORK_MARKET_V1_RELIC_IDS].every((listingId) =>
+        actualIds.has(listingId),
+      ),
+    `${label} WORK V1 relic membership does not match the pinned refund snapshot`,
+  );
+  assert(
+    relics.every((listing) => listing?.refundEligible === true),
+    `${label} returned a pinned WORK V1 relic that is not refund eligible`,
+  );
+  assert(
+    !actualIds.has(WORK_MARKET_V2_POST_ACTIVATION_LISTING_TX),
+    `${label} incorrectly included the post-activation invalid listing in the V1 relic set`,
+  );
+  assert(
+    relics.every(
+      (listing) =>
+        listing?.status === "disabled" &&
+        Number(listing?.disabledAtBlockHeight) ===
+          WORK_MARKET_V2_ACTIVATION_HEIGHT &&
+        String(listing?.disabledByTxid ?? "").toLowerCase() ===
+          WORK_MARKET_V2_DECLARATION_TXID,
+    ),
+    `${label} returned a WORK V1 relic without the canonical cutover metadata`,
+  );
+  const lateSealRelic = listingById(
+    relics,
+    WORK_MARKET_V2_LATE_SEAL_LISTING_TX,
+  );
+  assert(
+    lateSealRelic?.sealConfirmed !== true &&
+      !String(lateSealRelic?.sealTxid ?? "").trim(),
+    `${label} applied the post-activation seal to its pre-activation relic`,
+  );
+}
+
+async function assertWorkMarketV2InvalidAttempt({
+  blockHeight,
+  listingId,
+  txid,
+}) {
+  const history = await tokenHistory("invalid-events", {
+    fresh: 1,
+    q: txid,
+  });
+  const invalid = (history.items ?? []).find(
+    (item) => String(item?.txid ?? "").toLowerCase() === txid,
+  );
+  assert(
+    invalid?.confirmed === true &&
+      invalid?.valid === false &&
+      Number(invalid?.blockHeight) === blockHeight &&
+      String(invalid?.listingId ?? invalid?.txid ?? "").toLowerCase() ===
+        listingId &&
+      String(invalid?.reasonCode ?? invalid?.reason ?? "") ===
+        WORK_MARKET_V2_REASON_CODE &&
+      invalid?.refundEligible === false,
+    `${txid} is missing or incomplete in WORK Marketplace V2 invalid-event history`,
+  );
+
+  const publicLog = await getJson("/api/v1/log-history", {
+    network: "livenet",
+    q: txid,
+    limit: 5,
+  });
+  assert(
+    !txids(publicLog.items).has(txid),
+    `${txid} leaked into the valid-action public Log`,
+  );
+}
+
+async function assertWorkMarketV2CutoverContract({ fresh = true } = {}) {
+  const token = await getJson("/api/v1/token", {
+    network: "livenet",
+    asset: WORK_TOKEN_ID,
+    ...(fresh ? { fresh: 1 } : {}),
+  });
+  assertNoActiveNonV3WorkListings(token, "/api/v1/token?asset=WORK");
+  assertExactWorkV1Relics(token, "/api/v1/token?asset=WORK");
+  await assertWorkMarketV2InvalidAttempt({
+    blockHeight: 959_091,
+    listingId: WORK_MARKET_V2_LATE_SEAL_LISTING_TX,
+    txid: WORK_MARKET_V2_LATE_SEAL_TX,
+  });
+  await assertWorkMarketV2InvalidAttempt({
+    blockHeight: 959_093,
+    listingId: WORK_MARKET_V2_POST_ACTIVATION_LISTING_TX,
+    txid: WORK_MARKET_V2_POST_ACTIVATION_LISTING_TX,
+  });
+  return token;
+}
+
 function holderByAddress(items, address) {
   const needle = String(address ?? "").toLowerCase();
   return (items ?? []).find(
@@ -563,6 +734,10 @@ async function runFastMarketplaceRegressionGate() {
         carbonzIdPayload.record?.confirmed === true,
       "/api/v1/ids/carbonz did not return the confirmed Carbonz ID record",
     );
+  });
+
+  await step("WORK Marketplace V2 cutover contract", async () => {
+    await assertWorkMarketV2CutoverContract();
   });
 
   await step("active and closed WORK listing truth", async () => {
@@ -608,7 +783,7 @@ async function runFastMarketplaceRegressionGate() {
     await assertReportedJulyPurchaseLifecycle();
   });
 
-  await step("seller wallet active and unsealed listing state", async () => {
+  await step("seller wallet excludes legacy WORK inventory", async () => {
     const walletToken = await getJson("/api/v1/token", {
       network: "livenet",
       asset: WORK_TOKEN_ID,
@@ -629,18 +804,20 @@ async function runFastMarketplaceRegressionGate() {
       ),
       `${REPORTED_LISTING_TX} is still returned as active in wallet-scoped token payload`,
     );
+    assertNoActiveNonV3WorkListings(
+      walletToken,
+      "seller wallet-scoped token payload",
+    );
     for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
       const item = listingById(walletToken.listings, txid);
       assert(
-        item?.confirmed === true &&
-          item?.sellerAddress === SELLER &&
-          !item?.sealTxid,
-        `${txid} is missing as an active unsealed seller listing in wallet-scoped token payload`,
+        !item,
+        `${txid} remained active in the seller wallet after the Marketplace V2 cutover`,
       );
     }
   });
 
-  await step("confirmed sealed listing metadata stays visible", async () => {
+  await step("legacy sealed WORK inventory is disabled", async () => {
     const carbonzTaprootWalletToken = await getJson("/api/v1/token", {
       network: "livenet",
       asset: WORK_TOKEN_ID,
@@ -648,16 +825,16 @@ async function runFastMarketplaceRegressionGate() {
       wallet: 1,
       fresh: 1,
     });
-    const recentWaitingForSealItem = listingById(
-      carbonzTaprootWalletToken.listings,
-      REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
+    assertNoActiveNonV3WorkListings(
+      carbonzTaprootWalletToken,
+      "Carbonz wallet-scoped token payload",
     );
     assert(
-      recentWaitingForSealItem?.confirmed === true &&
-        tokenListingHasConfirmedSeal(recentWaitingForSealItem) &&
-        String(recentWaitingForSealItem.sealTxid ?? "").toLowerCase() ===
-          REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX,
-      `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is missing its confirmed seal metadata`,
+      !listingById(
+        carbonzTaprootWalletToken.listings,
+        REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
+      ),
+      `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} remained active after the Marketplace V2 cutover`,
     );
   });
 
@@ -752,19 +929,21 @@ async function runFastMarketplaceRegressionGate() {
       ),
       `${REPORTED_JULY_PURCHASE_LISTING_TX} is still returned as active in marketplace summary after ${REPORTED_JULY_PURCHASE_TX}`,
     );
+    assertNoActiveNonV3WorkListings(
+      marketplaceSummary.token,
+      "Marketplace summary",
+    );
     for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
       const item = listingById(marketplaceSummary.token?.listings, txid);
       assert(
-        item?.confirmed === true &&
-          item?.sellerAddress === SELLER &&
-          !item?.sealTxid,
-        `${txid} is missing as an active unsealed seller listing in marketplace summary`,
+        !item,
+        `${txid} remained active in Marketplace summary after the V2 cutover`,
       );
     }
   });
 
   console.log(
-    `Marketplace fast regression checks passed for ${API_BASE}: ID lookup, listing lifecycle, wallet scopes, sealed/unsealed book state, and targeted WORK transfers.`,
+    `Marketplace fast regression checks passed for ${API_BASE}: ID lookup, V2 cutover/relic state, listing lifecycle, wallet scopes, and targeted WORK transfers.`,
   );
 }
 
@@ -788,6 +967,8 @@ assert(
     carbonzIdPayload.record?.confirmed === true,
   "/api/v1/ids/carbonz did not return the confirmed Carbonz ID record",
 );
+
+const workCutoverToken = await assertWorkMarketV2CutoverContract();
 
 const activeListing = await tokenHistory("listings", { q: LISTING_TX });
 assert(
@@ -1016,42 +1197,29 @@ assert(
   latestClosedItem?.closedConfirmed === true,
   `${REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX} is not returned as a confirmed closed listing`,
 );
-const reportedRecentWaitingForSealListing = await tokenHistory("listings", {
-  fresh: 1,
-  q: REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
-});
 const recentWaitingForSealItem = listingById(
-  reportedRecentWaitingForSealListing.items,
+  workCutoverToken.closedListings,
   REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
 );
 assert(
-  recentWaitingForSealItem?.confirmed === true &&
+  recentWaitingForSealItem?.relic === true &&
+    recentWaitingForSealItem?.refundEligible === true &&
+    tokenListingHasConfirmedSeal(recentWaitingForSealItem) &&
+    String(recentWaitingForSealItem?.sealTxid ?? "").toLowerCase() ===
+      REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX &&
     workAmountMatches(recentWaitingForSealItem, "130") &&
     recentWaitingForSealItem?.priceSats === 81325 &&
     recentWaitingForSealItem?.sellerAddress ===
       CARBONZ_TAPROOT_LISTING_ADDRESS,
-  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is not returned as a confirmed listing event`,
+  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is not returned as a refundable V1 relic`,
 );
-const carbonzTaprootListingHistory = await tokenHistory("listings", {
-  address: CARBONZ_TAPROOT_LISTING_ADDRESS,
-});
-for (const txid of [REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX]) {
-  const item = listingById(carbonzTaprootListingHistory.items, txid);
-  assert(
-    item?.confirmed === true,
-    `${txid} is missing from cached Carbonz address-scoped listings`,
-  );
-}
-const reportedSealableListing = await tokenHistory("listings", {
-  q: REPORTED_CONFIRMED_SEALABLE_LISTING_TX,
-});
 const sealableItem = listingById(
-  reportedSealableListing.items,
+  workCutoverToken.closedListings,
   REPORTED_CONFIRMED_SEALABLE_LISTING_TX,
 );
 assert(
-  sealableItem?.confirmed === true,
-  `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} is not returned as a confirmed active listing`,
+  sealableItem?.relic === true && sealableItem?.refundEligible === true,
+  `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} is not returned as a refundable V1 relic`,
 );
 assert(
   sealableItem?.tokenId === WORK_TOKEN_ID &&
@@ -1100,6 +1268,10 @@ assert(
   ),
   `${REPORTED_LISTING_TX} is still returned as active in wallet-scoped token payload`,
 );
+assertNoActiveNonV3WorkListings(
+  walletToken,
+  "seller wallet-scoped token payload",
+);
 assert(
   (walletToken.closedListings ?? []).some(
     (item) =>
@@ -1121,10 +1293,8 @@ assert(
 for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
   const item = listingById(walletToken.listings, txid);
   assert(
-    item?.confirmed === true &&
-      item?.sellerAddress === SELLER &&
-      !item?.sealTxid,
-    `${txid} is missing as an active unsealed seller listing in wallet-scoped token payload`,
+    !item,
+    `${txid} remained active in the seller wallet after the Marketplace V2 cutover`,
   );
 }
 const walletSaleTxids = txids(walletToken.sales);
@@ -1253,14 +1423,24 @@ const carbonzTaprootWalletToken = await getJson("/api/v1/token", {
   wallet: 1,
   fresh: 1,
 });
+assertNoActiveNonV3WorkListings(
+  carbonzTaprootWalletToken,
+  "Carbonz wallet-scoped token payload",
+);
 for (const txid of [REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX]) {
   const item = listingById(carbonzTaprootWalletToken.listings, txid);
   assert(
-    item?.confirmed === true &&
-      tokenListingHasConfirmedSeal(item) &&
-      String(item.sealTxid ?? "").toLowerCase() ===
+    !item,
+    `${txid} remained active in Carbonz wallet state after the Marketplace V2 cutover`,
+  );
+  const relic = listingById(carbonzTaprootWalletToken.closedListings, txid);
+  assert(
+    relic?.relic === true &&
+      relic?.refundEligible === true &&
+      tokenListingHasConfirmedSeal(relic) &&
+      String(relic?.sealTxid ?? "").toLowerCase() ===
         REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX,
-    `${txid} is missing its confirmed seal in Carbonz wallet-scoped listings`,
+    `${txid} is missing its confirmed pre-cutover seal in Carbonz wallet V1 relics`,
   );
 }
 assert(
@@ -1413,9 +1593,12 @@ for (const txid of WALLET_SUMMARY_DELIST_TXS) {
 }
 assert(
   !(walletSummary.closedListings ?? []).some(
-    (item) => item?.sellerAddress === SELLER && !item?.closedTxid,
+    (item) =>
+      item?.sellerAddress === SELLER &&
+      !item?.closedTxid &&
+      item?.relic !== true,
   ),
-  "wallet-scoped token summary returned an anonymous closed listing",
+  "wallet-scoped token summary returned an anonymous non-relic closed listing",
 );
 
 const { elapsedMs: marketplaceSummaryMs, json: marketplaceSummary } =
@@ -1440,13 +1623,15 @@ assert(
   ),
   `${REPORTED_SPENT_SEAL_LISTING_TX} is still returned as active in marketplace summary after ${REPORTED_SPENT_SEAL_TX} spent its sale-ticket anchor`,
 );
+assertNoActiveNonV3WorkListings(
+  marketplaceSummary.token,
+  "Marketplace summary",
+);
 for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
   const item = listingById(marketplaceSummary.token?.listings, txid);
   assert(
-    item?.confirmed === true &&
-      item?.sellerAddress === SELLER &&
-      !item?.sealTxid,
-    `${txid} is missing as an active unsealed seller listing in marketplace summary`,
+    !item,
+    `${txid} remained active in Marketplace summary after the V2 cutover`,
   );
 }
 const { elapsedMs: marketplaceFreshSummaryMs, json: marketplaceFreshSummary } =
@@ -1469,12 +1654,12 @@ assert(
   `/api/v1/marketplace-summary?fresh=1 is still pinned to stale snapshot ${STALE_MARKETPLACE_SNAPSHOT_AT}`,
 );
 assert(
-  (marketplaceFreshSummary.token?.listings ?? []).some(
+  !(marketplaceFreshSummary.token?.listings ?? []).some(
     (item) =>
       String(item?.listingId ?? "").toLowerCase() ===
-        REPORTED_WAITING_FOR_SEAL_LISTING_TX && item?.confirmed === true,
+      REPORTED_WAITING_FOR_SEAL_LISTING_TX,
   ),
-  `${REPORTED_WAITING_FOR_SEAL_LISTING_TX} is missing from fresh marketplace summary listings`,
+  `${REPORTED_WAITING_FOR_SEAL_LISTING_TX} remained active in fresh Marketplace summary after the V2 cutover`,
 );
 assert(
   !(marketplaceFreshSummary.token?.listings ?? []).some(
@@ -1493,24 +1678,22 @@ assert(
   `${REPORTED_SPENT_SEAL_LISTING_TX} is still returned in fresh marketplace summary after ${REPORTED_SPENT_SEAL_TX} spent its sale-ticket anchor`,
 );
 assert(
-  (marketplaceFreshSummary.token?.listings ?? []).some(
+  !(marketplaceFreshSummary.token?.listings ?? []).some(
     (item) =>
       String(item?.listingId ?? "").toLowerCase() ===
-        REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX &&
-      item?.confirmed === true &&
-      tokenListingHasConfirmedSeal(item) &&
-      String(item.sealTxid ?? "").toLowerCase() ===
-        REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX,
+      REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
   ),
-  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is missing its confirmed seal in fresh marketplace summary listings`,
+  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} remained active in fresh Marketplace summary after the V2 cutover`,
+);
+assertNoActiveNonV3WorkListings(
+  marketplaceFreshSummary.token,
+  "Fresh Marketplace summary",
 );
 for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
   const item = listingById(marketplaceFreshSummary.token?.listings, txid);
   assert(
-    item?.confirmed === true &&
-      item?.sellerAddress === SELLER &&
-      !item?.sealTxid,
-    `${txid} is missing as an active unsealed seller listing in fresh marketplace summary`,
+    !item,
+    `${txid} remained active in fresh Marketplace summary after the V2 cutover`,
   );
 }
 const workToken = await getJson("/api/v1/token", {
@@ -1518,6 +1701,7 @@ const workToken = await getJson("/api/v1/token", {
   asset: WORK_TOKEN_ID,
   fresh: 1,
 });
+assertNoActiveNonV3WorkListings(workToken, "Fresh WORK token payload");
 const [workSummary, workTokenSummary, growthSummary] = await Promise.all([
   getJson("/api/v1/work-summary", {
     network: "livenet",
@@ -1591,11 +1775,10 @@ const confirmedSealedListings = (workToken.listings ?? []).filter(
   tokenListingHasConfirmedSeal,
 );
 const summaryListingsByKey = new Map(
-  (marketplaceSummary.token?.listings ?? []).map((item) => [listingKey(item), item]),
-);
-assert(
-  confirmedSealedListings.length > 0,
-  "full WORK token payload returned no confirmed sealed listings",
+  (marketplaceFreshSummary.token?.listings ?? []).map((item) => [
+    listingKey(item),
+    item,
+  ]),
 );
 for (const listing of confirmedSealedListings) {
   const summaryListing = summaryListingsByKey.get(listingKey(listing));

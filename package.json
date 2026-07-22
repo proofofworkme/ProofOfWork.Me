@@ -8,6 +8,7 @@
   },
   "scripts": {
     "check:work-market-v2": "node scripts/check-work-market-v2.mjs",
+    "migrate:work-market-v2-cutover": "node scripts/migrate-work-market-v2-cutover.mjs",
     "dev": "vite --host 0.0.0.0",
     "dev:prod-api": "vite --host 0.0.0.0 --mode prod-api",
     "build": "tsc && vite build",

@@ -39,6 +39,7 @@ import {
   workAmountFields,
   workAtomsValueAtFloorQ8,
 } from "../server/work-units.mjs";
+import { WORK_MARKET_V2_AUTH_VERSION } from "../server/work-market-v2.mjs";
 
 const DEFAULT_API_BASE = "http://127.0.0.1:8081";
 const CONFIGURED_API_BASE = String(process.env.POW_API_BASE ?? "").trim();
@@ -2786,11 +2787,17 @@ function protocolItemsFromTx(tx, message) {
     ];
   }
   if (action === "buy5") {
+    const saleAuthorization = decodeBase64UrlJson(parts[4]);
     return [
       {
         ...baseProtocolItem(tx, message, "token-sale"),
         buyerAddress: parts[3] ?? "",
         listingId: parts[2] ?? "",
+        ...(saleAuthorization &&
+        typeof saleAuthorization === "object" &&
+        !Array.isArray(saleAuthorization)
+          ? { saleAuthorization }
+          : {}),
         saleTxid: tx.txid,
       },
     ];
@@ -8016,6 +8023,9 @@ async function upsertEvent(client, sourceLabel, item) {
   }
 
   const kind = eventKind(item, sourceLabel);
+  if (!workMarketV2EventIsActionBound(item, kind, txid)) {
+    return { aggregateSkipped: true, skipped: true };
+  }
   const normalizedItem = workProjectionItem(
     normalizedEventItem(item, kind, status),
     { strict: item?.valid !== false },
@@ -8439,7 +8449,18 @@ async function upsertProjection(client, sourceLabel, item, status) {
     projectionKind === "token-sale" ||
     projectionKind === "token-listing-closed" ||
     projectionKind === "closed-listing";
-  if (projectsCreditListing && item?.listingId && item?.tokenId) {
+  if (
+    projectsCreditListing &&
+    item?.listingId &&
+    item?.tokenId &&
+    await workMarketV2ProjectionCanMutate(
+      client,
+      item,
+      status,
+      projectionKind,
+      sourceLabel,
+    )
+  ) {
     const projectedStatus = listingStatus(item, sourceLabel);
     const atomicItem = workProjectionItem(item);
     const atomicReady =
@@ -8571,6 +8592,151 @@ async function upsertProjection(client, sourceLabel, item, status) {
       );
     }
   }
+}
+
+function workMarketV2ProjectionIdentity(item) {
+  const source = objectValue(item);
+  const saleAuthorization = objectValue(
+    source.saleAuthorization ?? source.closedListing?.saleAuthorization,
+  );
+  const tokenId = normalizedLowerText(
+    source.tokenId ?? saleAuthorization.tokenId,
+  );
+  const version = normalizedLowerText(saleAuthorization.version);
+  return { saleAuthorization, source, tokenId, version };
+}
+
+function workMarketV2EventIsActionBound(item, kind, txid) {
+  const { source, tokenId, version } = workMarketV2ProjectionIdentity(item);
+  if (
+    tokenId !== WORK_TOKEN_ID ||
+    version !== WORK_MARKET_V2_AUTH_VERSION
+  ) {
+    return true;
+  }
+  const normalizedTxid = normalizedLowerText(txid);
+  const listingId = normalizedLowerText(source.listingId);
+  const normalizedKind = normalizedLowerText(kind).replace(/-invalid$/u, "");
+  const listingAction = [
+    "list",
+    "listing",
+    "token-listing",
+    "token-listings",
+  ].includes(normalizedKind);
+  if (!listingAction) {
+    const sealAction =
+      normalizedKind === "token-listing-sealed" || normalizedKind === "seal";
+    const saleAction = [
+      "token-sale",
+      "token-sales",
+      "sale",
+      "buy",
+    ].includes(normalizedKind);
+    const closeAction = [
+      "token-listing-closed",
+      "token-closed-listings",
+      "closed-listing",
+      "delist",
+    ].includes(normalizedKind);
+    const exactActionTxid =
+      sealAction
+        ? normalizedLowerText(source.sealTxid)
+        : saleAction
+          ? normalizedLowerText(
+              source.saleTxid ?? source.closedTxid ?? source.closeTxid,
+            )
+          : closeAction
+            ? normalizedLowerText(source.closedTxid ?? source.closeTxid)
+            : "";
+    return !sealAction && !saleAction && !closeAction
+      ? true
+      : isHexTxid(exactActionTxid) && exactActionTxid === normalizedTxid;
+  }
+  if (!isHexTxid(listingId) || listingId !== normalizedTxid) {
+    return false;
+  }
+  const followOnTxids = [
+    source.sealTxid,
+    source.saleTxid,
+    source.closeTxid,
+    source.closedTxid,
+    source.closedListing?.closedTxid,
+  ]
+    .map(normalizedLowerText)
+    .filter(isHexTxid);
+  return followOnTxids.every((actionTxid) => actionTxid === normalizedTxid);
+}
+
+async function workMarketV2ProjectionCanMutate(
+  client,
+  item,
+  status,
+  projectionKind = "",
+  sourceLabel = "",
+) {
+  const identity = workMarketV2ProjectionIdentity(item);
+  const { source, tokenId } = identity;
+  let { version } = identity;
+  if (
+    tokenId === WORK_TOKEN_ID &&
+    version !== WORK_MARKET_V2_AUTH_VERSION &&
+    isHexTxid(source.listingId)
+  ) {
+    const parentResult = await client.query(
+      `
+        SELECT lower(COALESCE(
+          payload->'saleAuthorization'->>'version',
+          ''
+        )) AS authorization_version
+        FROM proof_indexer.credit_listings
+        WHERE network = $1
+          AND listing_id = $2
+          AND lower(token_id) = $3
+        LIMIT 1
+      `,
+      [NETWORK, normalizedLowerText(source.listingId), WORK_TOKEN_ID],
+    );
+    const parentVersion = normalizedLowerText(
+      parentResult.rows[0]?.authorization_version,
+    );
+    if (parentVersion) {
+      version = parentVersion;
+    }
+  }
+  if (
+    tokenId !== WORK_TOKEN_ID ||
+    version !== WORK_MARKET_V2_AUTH_VERSION
+  ) {
+    return true;
+  }
+  if (
+    normalizedLowerText(status) !== "confirmed" ||
+    source.confirmed === false
+  ) {
+    return false;
+  }
+  const kind = normalizedLowerText(
+    projectionKind || eventKind(source, sourceLabel),
+  );
+  const closeProjection =
+    sourceLabel === "token-sales" ||
+    sourceLabel === "token-closed-listings" ||
+    ["token-sale", "token-listing-closed", "closed-listing"].includes(kind);
+  if (closeProjection) {
+    return (
+      source.closedConfirmed !== false &&
+      source.closedListing?.closedConfirmed !== false &&
+      source.closedListing?.confirmed !== false
+    );
+  }
+  const sealProjection =
+    kind === "token-listing-sealed" ||
+    Boolean(source.sealTxid) ||
+    source.sealPending === true;
+  if (sealProjection) {
+    return source.sealConfirmed === true;
+  }
+  return true;
 }
 
 function listingStatus(item, sourceLabel) {
@@ -9244,6 +9410,37 @@ async function storeLedgerSnapshot(client, options = {}) {
             AND witness.value->>'model' = $10
             AND entry->>'disposition' = 'preserve'
             AND entry->'snapshot'->>'snapshotId' = EXCLUDED.snapshot_id
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM proof_indexer.events action_event
+          JOIN proof_indexer.ledger_snapshots oracle_snapshot
+            ON oracle_snapshot.network = EXCLUDED.network
+           AND oracle_snapshot.snapshot_id = EXCLUDED.snapshot_id
+          WHERE action_event.network = EXCLUDED.network
+            AND action_event.status = 'confirmed'
+            AND action_event.valid = true
+            AND action_event.kind IN (
+              'token-listing',
+              'token-listing-sealed',
+              'token-sale'
+            )
+            AND action_event.payload->'saleAuthorization'->>'version' =
+              'pwt-sale-v3'
+            AND lower(action_event.payload->'saleAuthorization'->>'tokenId') =
+              'd4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8'
+            AND action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
+              '^[1-9][0-9]*$'
+            AND oracle_snapshot.indexed_through_block = CASE
+              WHEN action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
+                '^[1-9][0-9]*$'
+              THEN (action_event.payload->'saleAuthorization'->>'oracleBlockHeight')::integer
+              ELSE NULL
+            END
+            AND action_event.payload->'saleAuthorization'->>'oracleBlockHash' ~
+              '^[0-9a-fA-F]{64}$'
+            AND lower(COALESCE(oracle_snapshot.source_hashes->>'blockScan', '')) =
+              lower(action_event.payload->'saleAuthorization'->>'oracleBlockHash')
         )
     `,
     [
@@ -10103,6 +10300,48 @@ async function pruneLedgerSnapshots(
           AND witness.value->>'network' = $1
           AND witness.value->>'model' = $5
           AND entry->>'disposition' = 'preserve'
+        UNION
+        SELECT DISTINCT oracle_snapshot.snapshot_id
+        FROM proof_indexer.events action_event
+        JOIN proof_indexer.transactions action_transaction
+          ON action_transaction.network = action_event.network
+         AND action_transaction.txid = action_event.txid
+         AND action_transaction.status = 'confirmed'
+        JOIN proof_indexer.blocks action_block
+          ON action_block.network = action_transaction.network
+         AND action_block.block_hash = action_transaction.block_hash
+         AND action_block.height = action_transaction.block_height
+         AND action_block.canonical = true
+        JOIN proof_indexer.ledger_snapshots oracle_snapshot
+         ON oracle_snapshot.network = action_event.network
+         AND oracle_snapshot.indexed_through_block =
+           CASE
+             WHEN action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
+               '^[1-9][0-9]*$'
+             THEN (action_event.payload->'saleAuthorization'->>'oracleBlockHeight')::integer
+             ELSE NULL
+           END
+         AND lower(COALESCE(oracle_snapshot.source_hashes->>'blockScan', '')) =
+           lower(action_event.payload->'saleAuthorization'->>'oracleBlockHash')
+         AND lower(COALESCE(oracle_snapshot.payload->>'indexedThroughBlockHash', '')) =
+           lower(action_event.payload->'saleAuthorization'->>'oracleBlockHash')
+         AND oracle_snapshot.source_hashes ? 'canonicalSummary'
+         AND oracle_snapshot.payload->'summaryRefresh'->>'mode' =
+           'canonical-summary-refresh'
+        WHERE action_event.network = $1
+          AND action_event.status = 'confirmed'
+          AND action_event.valid = true
+          AND action_event.kind IN (
+            'token-listing',
+            'token-listing-sealed',
+            'token-sale'
+          )
+          AND action_event.payload->'saleAuthorization'->>'version' = $6
+          AND lower(action_event.payload->'saleAuthorization'->>'tokenId') = $7
+          AND action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
+            '^[1-9][0-9]*$'
+          AND action_event.payload->'saleAuthorization'->>'oracleBlockHash' ~
+            '^[0-9a-fA-F]{64}$'
       )
       DELETE FROM proof_indexer.ledger_snapshots snapshot
       USING ranked
@@ -10133,6 +10372,8 @@ async function pruneLedgerSnapshots(
       boundedScanSnapshotLimit,
       CANONICAL_REBUILD_META_KEY,
       INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+      WORK_MARKET_V2_AUTH_VERSION,
+      WORK_TOKEN_ID,
     ],
   );
   return {
@@ -10413,6 +10654,37 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
             AND witness.value->>'model' = $10
             AND entry->>'disposition' = 'preserve'
             AND entry->'snapshot'->>'snapshotId' = EXCLUDED.snapshot_id
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM proof_indexer.events action_event
+          JOIN proof_indexer.ledger_snapshots oracle_snapshot
+            ON oracle_snapshot.network = EXCLUDED.network
+           AND oracle_snapshot.snapshot_id = EXCLUDED.snapshot_id
+          WHERE action_event.network = EXCLUDED.network
+            AND action_event.status = 'confirmed'
+            AND action_event.valid = true
+            AND action_event.kind IN (
+              'token-listing',
+              'token-listing-sealed',
+              'token-sale'
+            )
+            AND action_event.payload->'saleAuthorization'->>'version' =
+              'pwt-sale-v3'
+            AND lower(action_event.payload->'saleAuthorization'->>'tokenId') =
+              'd4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8'
+            AND action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
+              '^[1-9][0-9]*$'
+            AND oracle_snapshot.indexed_through_block = CASE
+              WHEN action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
+                '^[1-9][0-9]*$'
+              THEN (action_event.payload->'saleAuthorization'->>'oracleBlockHeight')::integer
+              ELSE NULL
+            END
+            AND action_event.payload->'saleAuthorization'->>'oracleBlockHash' ~
+              '^[0-9a-fA-F]{64}$'
+            AND lower(COALESCE(oracle_snapshot.source_hashes->>'blockScan', '')) =
+              lower(action_event.payload->'saleAuthorization'->>'oracleBlockHash')
         )
     `,
     [
@@ -13192,6 +13464,11 @@ async function backfillBlockScanSource(client, source) {
           prepared.items,
           prepared.txid,
         );
+        await removeVolatileWorkMarketV2DecisionEvents(
+          client,
+          prepared.items,
+          prepared.txid,
+        );
         const result = await persistPreparedProtocolItems(client, prepared.items);
         blockIndexed += result.indexed;
         blockSkipped += result.skipped;
@@ -14072,6 +14349,72 @@ async function removeVolatileWorkMintDecisionEvents(
         AND lower(COALESCE(e.payload->>'tokenId', '')) = $3
     `,
     [NETWORK, txid, WORK_TOKEN_ID],
+  );
+  return Number(result.rowCount ?? 0);
+}
+
+async function removeVolatileWorkMarketV2DecisionEvents(
+  client,
+  preparedItems,
+  txid,
+) {
+  const items = (Array.isArray(preparedItems) ? preparedItems : [])
+    .map((entry) => entry?.item ?? entry)
+    .filter(Boolean);
+  const hasCanonicalWorkMarketDecision = items.some((item) => {
+    const tokenId = normalizedLowerText(
+      item?.tokenId ?? item?.saleAuthorization?.tokenId,
+    );
+    const kinds = [item?.kind, item?.attemptedKind]
+      .map((value) => normalizedLowerText(value).replace(/-invalid$/u, ""))
+      .filter(Boolean);
+    return (
+      tokenId === WORK_TOKEN_ID &&
+      kinds.some(
+        (kind) =>
+          kind.includes("token-listing") ||
+          kind.includes("token-sale") ||
+          ["list", "seal", "delist", "buy", "closed-listing"].includes(kind),
+      )
+    );
+  });
+  if (!hasCanonicalWorkMarketDecision) {
+    return 0;
+  }
+  const result = await client.query(
+    `
+      DELETE FROM proof_indexer.events e
+      WHERE e.network = $1
+        AND e.txid = $2
+        AND e.protocol = 'pwt1'
+        AND e.status IN ('pending', 'dropped', 'orphaned')
+        AND (
+          (
+            lower(COALESCE(
+              e.payload->'saleAuthorization'->>'tokenId',
+              e.payload->>'tokenId',
+              ''
+            )) = $3
+            AND lower(COALESCE(
+              e.payload->'saleAuthorization'->>'version',
+              ''
+            )) = $4
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM proof_indexer.credit_listings parent_listing
+            WHERE parent_listing.network = e.network
+              AND parent_listing.listing_id =
+                lower(e.payload->>'listingId')
+              AND lower(parent_listing.token_id) = $3
+              AND lower(COALESCE(
+                parent_listing.payload->'saleAuthorization'->>'version',
+                ''
+              )) = $4
+          )
+        )
+    `,
+    [NETWORK, txid, WORK_TOKEN_ID, WORK_MARKET_V2_AUTH_VERSION],
   );
   return Number(result.rowCount ?? 0);
 }
