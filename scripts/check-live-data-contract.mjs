@@ -1218,9 +1218,24 @@ expectAll("wallet token overlays enforce the holder-to-definition invariant", pr
   /if \(missingTokenIds\.length > 0\) \{[\s\S]*throw new Error\([\s\S]*without canonical definitions/,
 ]);
 expectAll("wallet token overlay definitions cover every returned token-bearing row", indexedWalletTokenOverlaySource, [
-  /const tokenBearingItems = \[[\s\S]*\.\.\.holders,[\s\S]*\.\.\.transfers,[\s\S]*\.\.\.sales,[\s\S]*\.\.\.listings,[\s\S]*\.\.\.closedListings,[\s\S]*\]/,
+  /const tokenBearingItems = \[[\s\S]*\.\.\.holders,[\s\S]*\.\.\.transfers,[\s\S]*\.\.\.sales,[\s\S]*\.\.\.mergedListings,[\s\S]*\.\.\.closedListings,[\s\S]*\]/,
   /proofIndexWalletTokenDefinitions\([\s\S]*scope,[\s\S]*tokenBearingItems\.map\(\(item\) => item\?\.tokenId\)/,
   /return \{[\s\S]*tokens,[\s\S]*transfers:/,
+]);
+expectAll("wallet legacy seal recovery is canonical, pre-cutover, and V3-isolated", indexedWalletTokenOverlaySource, [
+  /wallet_legacy_work_listing_seals/,
+  /normalizedLowerText\(network\) === "livenet"/,
+  /canonical_seal_tx\.status = 'confirmed'/,
+  /canonical_seal_block\.canonical = true/,
+  /e\.status = 'confirmed'/,
+  /e\.protocol = 'pwt1'/,
+  /canonical_seal_tx\.block_height < \$3/,
+  /canonical_input_totals\.input_value_sats[\s\S]*canonical_output_totals\.output_value_sats[\s\S]*canonical_miner_fee_sats/,
+  /true AS canonical_miner_fee_covered/,
+  /ANY\(ARRAY\['pwt-sale-v1','pwt-sale-v2'\]::text\[\]\)/,
+  /const payload = eventRowPayload\(row, network\)/,
+  /sealTxid: payload\.txid/,
+  /walletTokenListingsWithLegacySealEvents\([\s\S]*listings,[\s\S]*legacySealEvents/,
 ]);
 expectAll("scoped zero-balance wallet projections retain their canonical definition", proofIndexReader, [
   /async function proofIndexWalletTokenDefinitions\(/,
@@ -1238,6 +1253,7 @@ expectAll("authoritative wallet projections fail closed before row caps can hide
   /walletAuthoritativeRowLimit \+ 1/,
   /CASE WHEN e\.status = 'pending' THEN 0 ELSE 1 END ASC/,
   /walletProjectionExceedsLimit\([\s\S]*eventResult\.rows[\s\S]*"pending"[\s\S]*throw new Error/,
+  /walletProjectionExceedsLimit\([\s\S]*legacySealResult\.rows[\s\S]*legacy-seal authoritative limit/,
   /walletProjectionExceedsLimit\([\s\S]*listingResult\.rows[\s\S]*throw new Error/,
 ]);
 expect(
