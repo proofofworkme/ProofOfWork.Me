@@ -1259,6 +1259,26 @@ function commitParents(root, commit) {
     .slice(1);
 }
 
+function isMechanicalMergeCommit(root, commit) {
+  const parents = commitParents(root, commit);
+  if (parents.length !== 2) return false;
+
+  const expected = runGit(
+    root,
+    ["merge-tree", "--write-tree", parents[0], parents[1]],
+    { allowFailure: true },
+  );
+  if (expected.status !== 0) return false;
+
+  const expectedTree = expected.stdout.trim().split(/\s+/, 1)[0];
+  if (!/^[0-9a-f]{40,64}$/.test(expectedTree)) return false;
+
+  const actual = runGit(root, ["rev-parse", `${commit}^{tree}`], {
+    allowFailure: true,
+  });
+  return actual.status === 0 && actual.stdout.trim() === expectedTree;
+}
+
 function commitChangedPaths(
   root,
   commit,
@@ -1333,6 +1353,7 @@ function validateCommitRange(
 
   const errors = [];
   let checked = 0;
+  let mechanicalMerges = 0;
 
   for (const commit of commits) {
     checked += 1;
@@ -1343,16 +1364,20 @@ function validateCommitRange(
       findRenames: false,
     });
     const label = `Commit ${commit.slice(0, 12)}`;
-    errors.push(
-      ...validateCommitContract(
-        root,
-        message,
-        changed,
-        deleted,
-        protectedDepartures,
-        label,
-      ),
-    );
+    if (isMechanicalMergeCommit(root, commit)) {
+      mechanicalMerges += 1;
+    } else {
+      errors.push(
+        ...validateCommitContract(
+          root,
+          message,
+          changed,
+          deleted,
+          protectedDepartures,
+          label,
+        ),
+      );
+    }
 
     try {
       const stateErrors = validateRepositoryState(root, "commit", {
@@ -1369,7 +1394,8 @@ function validateCommitRange(
 
   if (errors.length > 0) throw new Error(errors.join("\n"));
   console.log(
-    `Repository hygiene: verified ${checked} commit(s) in range.`,
+    `Repository hygiene: verified ${checked} commit(s) in range` +
+      ` (${mechanicalMerges} mechanical merge(s)).`,
   );
 }
 
