@@ -1,5 +1,5 @@
-Read `SOUL.md` first.
+Follow `AGENTS.md` in full, including its ordered reading, approval, and mandatory commit-hygiene rules.
 
-ProofOfWork.Me agents should use `SOUL.md` as operating memory and voice, then use `README.md`, `PROOFOFWORK_IDS.md`, `OP_RETURN_INFRASTRUCTURE.md`, and `MAIL_ORGANIZATION.md` as protocol/product truth.
+Read `REPOSITORY_HYGIENE.md` before finalizing changes. Do not bypass the repository hooks or hygiene CI without the user's explicit approval.
 
-Protocol docs, source code, and explicit user instructions override `SOUL.md` when they conflict.
+Use `SOUL.md` as operating memory and voice. Protocol docs, source code, and explicit user instructions override it when they conflict.

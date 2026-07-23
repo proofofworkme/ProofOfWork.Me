@@ -1,13 +1,13 @@
 # ProofOfWork.Me General Deck
 
-Generated on 2026-05-13. Product surface updated on 2026-05-22.
+Deck source and product surface updated on 2026-07-23.
 
 Purpose: public-facing narrative deck for the current ProofOfWork Computer.
 
 Positioning:
 
 ```text
-ProofOfWork.Me is the ProofOfWork Computer: local-first, on-chain, agent-readable software for identity, paid communication, files, pages, markets, funding, credits, logs, and growth.
+ProofOfWork.Me is the ProofOfWork Computer: local-first, on-chain, agent-readable software for identity, paid communication, files, pages, markets, credits, wallets, bonds, logs, and growth.
 ```
 
 ## Slide 1: The ProofOfWork Computer
@@ -16,7 +16,7 @@ ProofOfWork.Me
 
 The ProofOfWork Computer.
 
-Identity, mail, files, pages, marketplace actions, credit mints, wallet transfers, logs, and growth signals written to ProofOfWork.
+Identity, mail, files, pages, marketplace actions, credit mints, wallet transfers, bonds, logs, and growth signals written to ProofOfWork.
 
 ## Slide 2: The Internet Rents Identity
 
@@ -102,21 +102,13 @@ It opens through Browser by txid.
 
 ## Slide 9: Marketplace
 
-ProofOfWork IDs are transferable assets.
-
-Credits are transferable market assets too.
+ProofOfWork IDs and credits are transferable market assets.
 
 Current marketplace protocols:
 
 ```text
-pwid1:list5
-pwid1:seal5
-pwid1:buy5
-pwid1:delist5
-pwt1:list5
-pwt1:seal5
-pwt1:buy5
-pwt1:delist5
+pwid1: list5 · seal5 · buy5 · delist5
+pwt1:  list5 · seal5 · buy5 · delist5
 ```
 
 Sellers publish on-chain listings and seal exact sale terms.
@@ -125,12 +117,14 @@ Buyers settle by spending a sale-ticket UTXO, paying the seller, paying the regi
 
 Competing buys conflict at the ProofOfWork UTXO layer.
 
+Current governed WORK list, seal, and buy actions use `pwt-sale-v3` with exact atoms and a hash-bound H-1 pricing commitment.
+
 ## Slide 10: Credits
 
 Credits are mint-first and ProofOfWork-readable.
 
 ```text
-token.proofofwork.me
+credit.proofofwork.me
 work.proofofwork.me
 ```
 
@@ -144,7 +138,29 @@ That is exactly 1 proof per WORK.
 
 Wallet is the connected-address credit surface for balances, transfer logs, credit transfers, owned listings, delistings, and sale history.
 
-## Slide 11: Log And Growth
+## Slide 11: Wallet And Bonds
+
+Wallet keeps connected-address signing local:
+
+```text
+wallet.proofofwork.me
+```
+
+Infinity Bonds issue POWB from confirmed `pwm1:m:powb` actions:
+
+```text
+infinity.proofofwork.me
+```
+
+Inception Bonds issue INCB from direct proofs plus valid same-transaction WORK attachments fixed by the hash-bound H-1 oracle:
+
+```text
+inception.proofofwork.me
+```
+
+Both bond families reuse the confirmed credit sale-ticket market while preserving their own supply and network-value rules.
+
+## Slide 12: Log And Growth
 
 Log is the public ProofOfWork Computer activity feed.
 
@@ -152,7 +168,7 @@ It indexes registrations, receiver updates, transfers, listings, seals, delistin
 
 Growth compares the canonical success-case model against real confirmed network value in proofs and USD.
 
-WORK and Growth share the same confirmed network-value payload and live node-backed BTC/USD benchmark.
+WORK and Growth share the same confirmed network-value payload and live node-backed USD benchmark.
 
 The model adds every new product with consistent inputs:
 
@@ -162,7 +178,7 @@ The model adds every new product with consistent inputs:
 - Fee elasticity.
 - Blockspace accounting.
 
-## Slide 12: Agent-Readable By Design
+## Slide 13: Agent-Readable By Design
 
 Agents need identity, memory, money, and verifiable state.
 
@@ -177,22 +193,17 @@ ProofOfWork.Me gives agents:
 
 Humans sign. Agents verify.
 
-## Slide 13: The Final Network
+## Slide 14: The Final Network
 
 ProofOfWork.Me is a new interface for ProofOfWork.
 
-Mail.
-IDs.
-Files.
-Desktop.
-Browser.
-Marketplace.
-Credits.
-WORK.
-Log.
-Growth.
-Agents.
-Value.
+Mail. IDs. Files. Desktop. Browser.
+
+Marketplace. Credits. Wallet. WORK.
+
+Infinity. Inception. Bonds. Log. Growth.
+
+Agents. Value.
 
 The final network is not a platform.
 

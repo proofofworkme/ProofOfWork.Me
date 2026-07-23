@@ -1,6 +1,6 @@
 # ProofOfWork.Me IDs
 
-Planning notes for the next ProofOfWork.Me phase: human-readable on-chain mail IDs, backed by ProofOfWork OP_RETURN registry events.
+Canonical documentation for the live ProofOfWork.Me human-readable on-chain ID registry, backed by ProofOfWork OP_RETURN events.
 
 ## Developer Warning
 
@@ -10,7 +10,7 @@ Do not change these without an explicit migration plan:
 
 - Mainnet registry address: `bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e`
 - Registration price: `1000` proofs
-- Mutation price: `546` proofs for receiver updates, transfers, on-chain listings, delistings, and buyer-funded marketplace transfers
+- Mutation price: `546` proofs for receiver updates, transfers, on-chain listings, seals, delistings, and buyer-funded marketplace transfers
 - Protocol prefix: `pwid1:`
 - Registration event: `pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>`
 - Receiver update event: `pwid1:u:<id-base64url>:<receive-address>`
@@ -22,7 +22,7 @@ Do not change these without an explicit migration plan:
 - Resolver rule: first confirmed valid registration wins
 - Casing rule: IDs are case-insensitive forever
 - Pending rule: pending IDs are visible but not final, and mail must not route to them
-- Pending mutation rule: pending receiver updates, transfers, listings, delistings, and buyer-funded transfers are visible to touched wallets as in-flight events, but do not alter canonical routing until confirmed
+- Pending mutation rule: pending receiver updates, transfers, listings, seals, delistings, and buyer-funded transfers are visible to touched wallets as in-flight events, but do not alter canonical routing until confirmed
 - Verification rule: X verification actions appear only for IDs owned by or routed to the connected wallet
 
 Implementation anchors in `src/App.tsx`:
@@ -56,7 +56,7 @@ They are not traditional DNS records. They are on-chain mail IDs resolved by the
 - Registry events live in ProofOfWork OP_RETURN outputs.
 - First valid registration wins.
 - Registration requires a 1,000-proof payment to the canonical registry address.
-- Receiver updates, transfers, listings, delistings, and buyer-funded marketplace transfers require a 546-proof mutation payment to the same canonical registry address.
+- Receiver updates, transfers, listings, seals, delistings, and buyer-funded marketplace transfers require a 546-proof mutation payment to the same canonical registry address.
 - Transfers update the current owner/receiver.
 - Marketplace listings publish sale terms on-chain from the current owner's wallet, while buyer-funded transfers execute those terms.
 - Future messages resolve to the current receiver.
@@ -122,7 +122,7 @@ The Desktop subdomain can resolve confirmed IDs for public file browsing, but it
 Confessions is staged/local-only for a Twitter-like 140-character social meta protocol over confirmed ProofOfWork IDs. It must not mutate the canonical `pwid1:` registry for follows, likes, reposts, or replies and must not be added to public production navigation until separately approved.
 The Marketplace subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers. It is tabbed by asset class: the ID tab is live, and the Credit tab uses the same sale-ticket shape for credit `list5`, `seal5`, `delist5`, and `buy5` records.
 The Log subdomain is read-only. It exposes a unified ProofOfWork Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, credit sales, and seeded Computer mail events. Log search is server-backed by the canonical livenet ledger, so address, confirmed ID, txid, participant, and token searches should agree with global Log.
-The Credit subdomain creates and mints mint-first `pwt1:` credits. The `tokens` subdomain redirects to Credit. The Wallet subdomain tracks credit balances and broadcasts `pwt1:send` transfers that pay the credit registry. The WORK subdomain is the dedicated WORK credit dashboard. The Infinity subdomain tracks POWB supply/floor data and creates `pwm1:m:powb` bond messages. The Inception subdomain tracks INCB supply/floor data and creates `pwm1:m:incb` bond messages. Its canonical registry identity is `inception@proofofwork.me`, and its reserved synthetic credit id is `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`. Both bond families reuse the credit sale-ticket lifecycle for transfers and trades, while only canonical WORK can be attached as a separate credit transfer to a bond message.
+The Credit subdomain creates and mints mint-first `pwt1:` credits. The `tokens` subdomain redirects to Credit. The Wallet subdomain tracks credit balances and broadcasts generic-credit `pwt1:send` transfers and canonical WORK `pwt1:send2` atomic transfers that pay the relevant credit registry. The WORK subdomain is the dedicated WORK credit dashboard. The Infinity subdomain tracks POWB supply/floor data and creates `pwm1:m:powb` bond messages. The Inception subdomain tracks INCB supply/floor data and creates `pwm1:m:incb` bond messages. Its canonical registry identity is `inception@proofofwork.me`, and its reserved synthetic credit id is `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`. Both bond families reuse the credit sale-ticket lifecycle for transfers and trades, while only canonical WORK can be attached as a separate `pwt1:send2` credit transfer to a bond message.
 The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace/Credit network-value model with confirmed registry, log, file, marketplace, and credit value metrics in proofs and USD. Growth, WORK, Log, and credit/token history should share one confirmed livenet ledger snapshot after refresh. WORK has a permanent floor derived from live confirmed network value: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`; the inverse `21,000,000 / live_network_value_sats` is the WORK-per-proof ratio. Frozen network value is kept separately as the confirmation-time audit stamp for WORK movement and other event components.
 
 Local preview:

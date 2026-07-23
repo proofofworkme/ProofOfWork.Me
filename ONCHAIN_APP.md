@@ -6,16 +6,16 @@ Notes for anchoring ProofOfWork.Me application releases to ProofOfWork.
 
 The full ProofOfWork.Me app is probably too large to fit directly into a single OP_RETURN.
 
-Current production build size is roughly:
+The local production-build snapshot reviewed on 2026-07-23 is roughly:
 
 ```text
-Dist with public assets: ~8.6 MB
-Compiled JS/CSS assets: ~789 KB
-App JS chunk:         ~349 KB
-Vendor JS chunks:     ~396 KB split across React, wallet, and vendor
-Main CSS bundle:      ~59 KB
-Gzipped JS total:     ~200 KB
-Gzipped CSS bundle:   ~11 KB
+Dist with public assets: ~12.8 MB
+Compiled JS assets:     ~1.03 MB
+App JS chunk:           ~643 KB
+Other JS chunks:        ~383 KB across ProofOfWork, React, routes, icons, and runtime
+Main CSS bundle:        ~105 KB
+Gzipped JS total:       ~271 KB
+Gzipped CSS bundle:     ~17 KB
 ```
 
 That is larger than a practical 100 KB OP_RETURN target.
@@ -39,6 +39,8 @@ token.proofofwork.me        -> permanent redirect to https://credit.proofofwork.
 tokens.proofofwork.me       -> permanent redirect to https://credit.proofofwork.me/
 wallet.proofofwork.me       -> standalone credit wallet, transfer, listing, delisting, and sale-history app
 work.proofofwork.me         -> standalone WORK credit dashboard and mint page
+infinity.proofofwork.me     -> standalone Infinity Bond / POWB market and bond composer
+inception.proofofwork.me    -> standalone Inception Bond / INCB market and bond composer
 log.proofofwork.me          -> public ProofOfWork Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
@@ -54,14 +56,17 @@ http://localhost:5173/?marketplace=1
 http://localhost:5173/?credit=1
 http://localhost:5173/?wallet=1
 http://localhost:5173/?work=1
+http://localhost:5173/?infinity=1
+http://localhost:5173/?inception=1
 http://localhost:5173/?log=1
 http://localhost:5173/?growth=1
 ```
 
 `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`,
 `credit.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`,
-`log.proofofwork.me`, and `growth.proofofwork.me` should remain standalone public surfaces, not hidden tabs
-that require the full Computer mailbox shell.
+`infinity.proofofwork.me`, `inception.proofofwork.me`,
+`log.proofofwork.me`, and `growth.proofofwork.me` should remain standalone
+public surfaces, not hidden tabs that require the full Computer mailbox shell.
 
 Future on-chain app anchoring should verify releases without changing the canonical ID registry address or `pwid1:r2` format.
 

@@ -224,7 +224,7 @@ INCB transfers, listings, seals, delistings, and buys reuse the same `pwt1:`
 sale-ticket lifecycle as POWB and normal credits. The synthetic issuance has
 zero additional proof value, so Growth cannot count issued INCB as a second
 payment lane. A bond transaction may attach canonical WORK through a separate
-`pwt1:send`. When that attachment is valid, confirmed, recipient-matched, and in
+`pwt1:send2`. When that attachment is valid, confirmed, recipient-matched, and in
 the same transaction, its value uses the live WORK floor from that canonical
 H-1 summary.
 

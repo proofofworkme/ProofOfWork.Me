@@ -1,6 +1,6 @@
 # ProofOfWork.Me
 
-ProofOfWork-native mail and ProofOfWork ID registry, written to ProofOfWork OP_RETURN outputs and signed locally with UniSat.
+The ProofOfWork Computer: local-first, agent-readable identity, mail, files, pages, marketplaces, credits, wallet transfers, bonds, logs, and growth records written to ProofOfWork OP_RETURN outputs and signed locally with UniSat.
 
 ## For Agents
 
@@ -88,6 +88,30 @@ An audit should move in this order:
    deploy, and push, provide tweet-ready public copy immediately unless the
    user explicitly says not to.
 
+### Commit Hygiene
+
+Every approved repository update ends with a hygiene pass, whether or not it is
+committed:
+
+```bash
+npm run hygiene:fix
+npm run hygiene:check
+```
+
+The fixer removes only explicitly allowlisted, ignored, rebuildable local
+artifacts. The checker audits required docs, note classification, generated
+artifact drift, broken relative Markdown links, tracked transient files, and
+hook installation. Agents still make the semantic decisions: review `SOUL.md`
+and the canonical docs for impact, inspect tracked notes and files for genuine
+staleness, review `git status` and the final diff, and run the relevant tests.
+Old protocol history, audits, ledgers, refund records, incident evidence, and
+intentional release artifacts are not stale merely because they are old.
+
+The repository hooks run the staged checks before each commit and validate the
+commit trailers described in `REPOSITORY_HYGIENE.md`. CI repeats the same
+policy for pushed commits. Do not use `--no-verify` or bypass the hygiene CI
+without explicit user approval.
+
 Official YouTube:
 
 ```text
@@ -171,7 +195,7 @@ Launch invariants for future developers/agents:
 - Resolves confirmed ProofOfWork IDs as direct transfer targets, so ownership can be sent to an ID's current owner/receiver instead of manually pasting the raw address.
 - Lets ID management receive fields accept confirmed ProofOfWork IDs, resolving them to raw ProofOfWork receive addresses before writing registry events.
 - Lets current ID owners publish on-chain marketplace listings, seal them, delist them, and execute buyer-funded ID transfers. Marketplace is tabbed by asset class: IDs and credit sale-ticket markets are live.
-- Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
+- Shows pending ID receiver updates, direct transfers, listings, seals, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Exposes Credits as a mainnet-only creation and mint surface, a Wallet surface for balances, transfers, listing actions, and sale history, a dedicated WORK credit dashboard, and Infinity Bond / POWB plus Inception Bond / INCB workspaces in the Computer shell. Credit creation pays the built-in index fee to `tokens@proofofwork.me`; mints, transfers, listings, seals, delistings, and buys pay each credit's own registry at the owner-set price or mutation fee.
 - Filters active marketplace listings by sale-ticket outspend state, using Bitcoin Core spend checks when configured, so a spent ticket leaves the active book even if a cached summary snapshot is still warming.
@@ -256,7 +280,7 @@ Current production behavior:
 - Legacy whole-credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` and remain replayable exactly as signed. New WORK transfers use `pwt1:send2:<canonical-work-token-id>:<amount-atoms>:<recipient-address>`, where one WORK is 100,000,000 atoms and the positive canonical integer atom amount supports up to eight decimal places. Other credits continue to use `send`. Both forms require the normal 546-proof registry mutation payment; confirmed transfers debit the first input address and credit the recipient address, while pending transfers are visibility only.
 - Approved message senders can combine the canonical WORK `send2` transfer with ProofOfWork mail in one transaction. Mail recipients remain the normal payment outputs before the first `pwm1:` output. The WORK registry mutation payment is placed after the mail `pwm1:` outputs and before the `pwt1:` transfer outputs so mail delivery and WORK transfer parsing stay separate while sharing one txid.
 - WORK attachments to normal messages and Infinity Bonds remain a V1 allowlisted sender feature for `1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT`, `1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x`, and `1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv`. Inception Bonds instead expose WORK attachment to every connected mainnet address whose authoritative wallet-scoped state proves a positive confirmed WORK balance. The pre-sign check fails closed and subtracts active listing reservations, pending outgoing transfers, and uncovered pending sales; pending incoming WORK does not qualify until confirmation. A holder with no currently spendable WORK can still create a proof-only Inception Bond.
-- The Credit tab inside Marketplace is the shared market surface for credit trades. Credit `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature without spending that output, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the credit registry mutation fee. Historical and non-WORK tickets keep signed `pwt-sale-v1` whole-credit amounts; new fractional WORK tickets use WORK-only `pwt-sale-v2` with an exact `amountAtoms` string. The `list5`/`seal5`/`buy5`/`delist5` envelopes and sale-ticket anchoring do not change.
+- The Credit tab inside Marketplace is the shared market surface for credit trades. Credit `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature without spending that output, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the credit registry mutation fee. Historical non-WORK and whole-credit tickets keep signed `pwt-sale-v1` terms, and historical fractional WORK tickets keep `pwt-sale-v2` `amountAtoms` terms. After WORK Marketplace Pricing Protocol V2 activates, current governed WORK list, seal, and buy actions use `pwt-sale-v3` with exact `amountAtoms` and a hash-bound H-1 pricing commitment. The `list5`/`seal5`/`buy5`/`delist5` envelopes and sale-ticket anchoring do not change.
 - Credit active listings are spend-state aware. A sale-ticket outpoint spend closes the listing; production Core-backed spend checks keep Wallet and Marketplace aligned while summaries warm. If the spend is a valid `pwt1:buy5`, the sale appears in credit sales, credit market logs, Growth, and summary endpoints after refresh.
 - Infinity Bonds use the canonical `pwm1:m:powb` message memo. Each confirmed recipient payment mints the same number of POWB to that recipient address. POWB is a reserved, uncapped synthetic credit backed by confirmed bond proofs and registered through `infinity@proofofwork.me`; `infinity.proofofwork.me` exposes `/api/v1/infinity-summary`, the bond composer, POWB balances, and the POWB sale-ticket market. POWB supply has no maximum and can trend to infinity.
 - POWB floor accounting is confirmed bond network value divided by confirmed POWB supply. Bond network value includes confirmed bond proof payments, POWB seller sale volume, POWB transfer fees, and POWB marketplace mutation fees. POWB sale volume and mutation fees also contribute to the broader ProofOfWork Computer/WORK network floor alongside the rest of confirmed marketplace flow.
@@ -741,6 +765,7 @@ targeted regression gates for normal deploy verification.
 Important implementation points:
 
 - Agent bootstrap: `SOUL.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules/proofofwork-soul.mdc`, and `.github/copilot-instructions.md`.
+- Repository hygiene policy and classification: `REPOSITORY_HYGIENE.md` and `repository-hygiene.json`.
 - ID launch route switch: `isIdLaunchRoute()` in `src/app/routeRegistry.ts`.
 - Root landing route switch: `isLandingRoute()` in `src/app/routeRegistry.ts`.
 - Public Desktop route switch: `isDesktopRoute()` in `src/app/routeRegistry.ts`.
