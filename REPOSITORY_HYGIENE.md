@@ -52,9 +52,13 @@ Before final staging or committing:
    ```
 
 The tracked `pre-commit`, `prepare-commit-msg`, and `commit-msg` hooks enforce
-the mechanical part of this contract, including amended and merge commits. CI
-validates the complete repository state and trailers of every commit in a push
-or pull request. Hooks do not replace semantic judgment.
+the mechanical part of this contract, including amended and authored merge
+commits. CI validates the complete repository state and trailers of every
+authored commit in a push or pull request. A server-created two-parent merge may
+inherit the reviewed commits' attestations only when `git merge-tree` proves
+that its tree is exactly the mechanical result of its parents. A merge that
+adds or resolves content differently must carry its own trailers. Hooks do not
+replace semantic judgment.
 
 ## `SOUL.md`
 

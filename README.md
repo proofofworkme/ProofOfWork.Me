@@ -109,8 +109,9 @@ intentional release artifacts are not stale merely because they are old.
 
 The repository hooks run the staged checks before each commit and validate the
 commit trailers described in `REPOSITORY_HYGIENE.md`. CI repeats the same
-policy for pushed commits. Do not use `--no-verify` or bypass the hygiene CI
-without explicit user approval.
+policy for pushed commits; a provably mechanical server merge may inherit its
+reviewed parent attestations, but a content-altering merge cannot. Do not use
+`--no-verify` or bypass the hygiene CI without explicit user approval.
 
 Official YouTube:
 

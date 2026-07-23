@@ -1111,7 +1111,7 @@ test('range validates the complete state of every intermediate commit', (t) => {
   );
 });
 
-test('range validates merge commits instead of skipping them', (t) => {
+test('range accepts a mechanical merge whose introduced commits are reviewed', (t) => {
   const root = createFixture(t);
   const base = git(root, 'rev-parse', 'HEAD');
   const primaryBranch = git(root, 'rev-parse', '--abbrev-ref', 'HEAD');
@@ -1137,8 +1137,41 @@ test('range validates merge commits instead of skipping them', (t) => {
   );
   const head = git(root, 'rev-parse', 'HEAD');
 
+  expectSuccess(
+    cli(root, 'range', base, head, '--ci', '--require-ancestor'),
+    'a mechanical merge of reviewed parent commits',
+  );
+});
+
+test('range requires trailers when a merge commit changes the mechanical result', (t) => {
+  const root = createFixture(t);
+  const base = git(root, 'rev-parse', 'HEAD');
+  const primaryBranch = git(root, 'rev-parse', '--abbrev-ref', 'HEAD');
+
+  git(root, 'checkout', '-q', '-b', 'feature');
+  write(root, 'src/feature.js', 'export const feature = true;\n');
+  git(root, 'add', 'src/feature.js');
+  commitStagedWithoutHooks(root, 'feature update');
+
+  git(root, 'checkout', '-q', primaryBranch);
+  write(root, 'src/main.js', 'export const main = true;\n');
+  git(root, 'add', 'src/main.js');
+  commitStagedWithoutHooks(root, 'main update');
+  git(root, 'merge', '--no-ff', '--no-commit', '-q', 'feature');
+  write(root, 'src/merge-only.js', 'export const mergeOnly = true;\n');
+  git(root, 'add', 'src/merge-only.js');
+  git(
+    root,
+    'commit',
+    '--no-verify',
+    '-q',
+    '-m',
+    'content-altering merge without attestations',
+  );
+  const head = git(root, 'rev-parse', 'HEAD');
+
   expectFailure(
     cli(root, 'range', base, head, '--ci', '--require-ancestor'),
-    'an unattested merge commit',
+    'a content-altering merge without its own attestations',
   );
 });
