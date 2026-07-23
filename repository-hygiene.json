@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "requiredDocuments": [
+    "SOUL.md",
+    "README.md",
+    "PROOFOFWORK_IDS.md",
+    "MARKETPLACE.md",
+    "OP_RETURN_INFRASTRUCTURE.md",
+    "MAIL_ORGANIZATION.md",
+    "REPOSITORY_HYGIENE.md"
+  ],
+  "agentInstructionFiles": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".cursorrules",
+    ".cursor/rules/proofofwork-soul.mdc",
+    ".github/copilot-instructions.md"
+  ],
+  "noteInventory": {
+    "canonical": [
+      "SOUL.md",
+      "README.md",
+      "PROOFOFWORK_IDS.md",
+      "MARKETPLACE.md",
+      "OP_RETURN_INFRASTRUCTURE.md",
+      "MAIL_ORGANIZATION.md",
+      "REPOSITORY_HYGIENE.md"
+    ],
+    "agent-instructions": [
+      "AGENTS.md",
+      "CLAUDE.md",
+      ".cursorrules",
+      ".cursor/rules/proofofwork-soul.mdc",
+      ".github/copilot-instructions.md"
+    ],
+    "ledger-and-audit-evidence": [
+      "BUG_BOUNTY_LEDGER.md",
+      "ID_REFUNDS.md",
+      "TREASURY_LEDGER.md"
+    ],
+    "staged-or-future-protocol-notes": [
+      "CHAIN_CONTENT.md",
+      "ENCRYPTION.md",
+      "ONCHAIN_APP.md",
+      "RUSH_TOKEN_PROTOCOL.md",
+      "UNWRITER_GITHUB_RESEARCH.md",
+      "chained-mint-templates/README.md",
+      "chained-mint-templates/TX_REVIEW.md"
+    ],
+    "presentation-and-generated-notes": [
+      "PROOFOFWORK_GENERAL_DECK.md",
+      "output/proofofwork-computer-agent-adoption-model.md"
+    ],
+    "support-notes": [
+      "test-api/README.md"
+    ]
+  },
+  "safeCleanupPaths": [
+    "dist",
+    ".vite",
+    ".pow-api-cache",
+    "node_modules/.vite",
+    "node_modules/.vite-temp",
+    "coverage",
+    "playwright-report",
+    "test-results"
+  ],
+  "safeCleanupRootPatterns": [
+    "^npm-debug\\.log.*$",
+    "^dev-server\\..*\\.log$"
+  ],
+  "forbiddenTrackedPrefixes": [
+    "dist/",
+    ".vite/",
+    ".pow-api-cache/",
+    "node_modules/",
+    "coverage/",
+    "playwright-report/",
+    "test-results/",
+    "output/screenshots/",
+    "output/id-map/"
+  ],
+  "forbiddenTrackedBasenames": [
+    ".DS_Store",
+    "Thumbs.db"
+  ],
+  "forbiddenTrackedExtensions": [
+    ".tmp",
+    ".temp",
+    ".bak",
+    ".old",
+    ".orig",
+    ".rej",
+    ".log"
+  ],
+  "protectedTrackedPaths": [
+    "WORK_MARKET_V1_REFUNDS_959061.json",
+    "BUG_BOUNTY_LEDGER.md",
+    "ID_REFUNDS.md",
+    "TREASURY_LEDGER.md"
+  ],
+  "protectedTrackedPrefixes": [
+    "output/",
+    "public/",
+    "deploy/"
+  ],
+  "generatedArtifacts": [
+    {
+      "generator": "scripts/build-general-deck.mjs",
+      "inputs": [
+        "PROOFOFWORK_GENERAL_DECK.md"
+      ],
+      "outputs": [
+        "output/proofofwork-general-deck.pptx",
+        "public/proofofwork-general-deck.pptx"
+      ]
+    },
+    {
+      "generator": "scripts/generate-proofofwork-computer-model.mjs",
+      "outputs": [
+        "output/proofofwork-computer-agent-adoption-model.md",
+        "output/proofofwork-computer-growth-model.json",
+        "output/proofofwork-computer-model-blockspace.svg",
+        "output/proofofwork-computer-model-compounding.svg",
+        "output/proofofwork-computer-model-dollar-growth.svg",
+        "output/proofofwork-computer-model-product-split.svg",
+        "output/proofofwork-computer-model-volatility.svg"
+      ]
+    }
+  ]
+}

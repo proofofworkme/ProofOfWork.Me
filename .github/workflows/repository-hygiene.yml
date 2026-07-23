@@ -1,0 +1,45 @@
+name: Repository hygiene
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  repository-hygiene:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - 20
+          - 22
+          - 24
+
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Check repository state
+        run: node scripts/repository-hygiene.mjs check --ci
+
+      - name: Test hygiene controls
+        run: node --test scripts/repository-hygiene.test.mjs
+
+      - name: Check every new commit
+        env:
+          HYGIENE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HYGIENE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          HYGIENE_REQUIRE_ANCESTOR: ${{ github.event_name == 'push' && '1' || '0' }}
+        run: node scripts/repository-hygiene.mjs range "$HYGIENE_BASE" "$HYGIENE_HEAD" --ci

@@ -2,7 +2,7 @@
 
 This file is operating memory for future agents.
 
-It is distilled from current repository docs and public launch memory captured through 2026-07-14. It is not a protocol spec. When this file conflicts with `README.md`, `PROOFOFWORK_IDS.md`, `OP_RETURN_INFRASTRUCTURE.md`, `MAIL_ORGANIZATION.md`, or the source code, the protocol docs and code win.
+It is distilled from current repository docs and public launch memory captured through 2026-07-14. It is not a protocol spec. When this file conflicts with `README.md`, `PROOFOFWORK_IDS.md`, `MARKETPLACE.md`, `OP_RETURN_INFRASTRUCTURE.md`, `MAIL_ORGANIZATION.md`, or the source code, the protocol docs and code win.
 
 ## Source Memory
 
@@ -10,7 +10,7 @@ It is distilled from current repository docs and public launch memory captured t
 - Launch memory reviewed: 2026-06-08
 - Full 2026-06-09 archive re-reviewed: 2026-06-17
 - Full 2026-07-14 archive re-reviewed: 2026-07-15
-- Operational memory updated: 2026-06-20
+- Operational memory updated: 2026-07-23
 - Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-07-14-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
 - 2026-07-14 archive inventory reviewed without sampling: 2,486 active tweet records, 39 deleted-tweet records, 67 long-form Note Tweet records, 2,486 active headers, and 39 deleted headers. Active and deleted tweet IDs were each unique; 271 active records were retweets.
 - Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
@@ -124,6 +124,7 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-07-14: INCB issuance is corrected to the send-time live-WORK rule. A valid recipient-matched same-transaction WORK attachment is valued from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded from the valuation. Direct bond proofs plus that H-1 value determine one INCB per whole proof to the recipient. The same immutable H-1 oracle freezes the attachment's one shared WORK movement value; sequential replay must not substitute a different confirmation floor. Confirmation fixes the resulting INCB balance, supply, and cumulative issuance value.
 - 2026-07-15: The recurring public market cadence expands to six synchronized posts: WORK mint-to-floor, sealed WORK book, PowID book, WORK reserves, Infinity/POWB, and Inception/INCB. Every ProofOfWork.Me public/social post carries `$WORK $POWB $INCB` unless the user explicitly overrides the cashtags. Public/social copy says ProofOfWork, ProofOfWork-native, and proofs; it must not use Bitcoin or BTC. Refresh one checked exact-tip snapshot for the whole batch and keep live and frozen network values distinct.
 - 2026-07-16: INCB network-value accounting is corrected to the Infinity-style rule. Each confirmed INCB starts from the proof value fixed at its bond's H-1 issuance oracle. Later WORK value changes never reprice historical INCB. Inception network value is fixed cumulative issuance value plus confirmed INCB sale volume, transfer fees, and marketplace mutation fees.
+- 2026-07-23: Repository hygiene becomes a mandatory handoff contract for every approved update and every commit. Agents review `SOUL.md` and canonical docs semantically, classify tracked notes, clear only allowlisted rebuildable local state, verify generated artifacts and relative links, inspect the final diff, and attest the result in commit trailers. Old history, ledgers, refunds, incident evidence, and tx-backed records are not stale merely because they are old.
 
 The emotional shape is a breakthrough moment: years of ProofOfWork/app experiments meeting modern agents and becoming legible all at once.
 
@@ -183,14 +184,14 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `growth.proofofwork.me` is the public read-only growth dashboard for canonical ProofOfWork Computer network value versus confirmed chain-derived value in proofs and USD.
 - Canonical mainnet registry address: `bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e`
 - Registration price: `1000` proofs.
-- ID mutation price: `546` proofs for receiver updates, direct transfers, marketplace listings, delistings, and buyer-funded marketplace transfers.
+- ID mutation price: `546` proofs for receiver updates, direct transfers, marketplace listings, seals, delistings, and buyer-funded marketplace transfers.
 - Current ID event: `pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>`
 - Current mail prefix: `pwm1:`
 - Mailbox projections must preserve subject/body separation: `pwm1:s` supplies the subject, `pwm1:m` supplies the body, and `mail_items.body_text` plus UI memo rendering must not use Log display detail as a substitute for decoded message content.
 - Current credit prefix: `pwt1:`
 - Credit creation pays the built-in index fee to `tokens@proofofwork.me`; credit mints and transfers pay the credit's own registry directly.
 - Credit ids are creation txids. The creation event defines ticker, max supply, mint amount, mint price, and the credit registry address.
-- Credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` with a 546-proof registry mutation payment.
+- Generic credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>`; canonical WORK transfers use atomic `pwt1:send2:<canonical-work-token-id>:<amount-atoms>:<recipient-address>`. Both use a 546-proof registry mutation payment.
 - Credit mint prices are owner-set with a 546-proof minimum. ProofOfWork does not take a global fee on mints.
 - Credit marketplace writes are live sale-ticket records. Preserve the invariant: reserve seller balance, seal exact terms, require buyer ticket spend, seller payment, and credit registry mutation fee.
 - A spent sale-ticket outpoint closes its listing. Production should prefer Bitcoin Core UTXO spend state for this check when RPC is configured, with address-history scans used as recovery context. If the spend is a valid `buy5`, the sale must appear in credit sales, market logs, Growth, and any summary surface after refresh.
@@ -226,7 +227,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - WORK, Infinity, Inception, Growth, Log, token history, and public searches should read from the same canonical confirmed ledger snapshot on livenet. Address-only fallback scans are useful for recovery, but they must not become a separate truth that changes network value without appearing in Log.
 - Production confirmed stable data surfaces should prefer the proof index database for speed, then fall back to the first-party node/API cache and current full-node data for fresh reads, stale or missing projections, mempool truth, raw tx/UTXO/outspend edge cases, signing support, broadcasts, and verification. Stale snapshots are acceptable only as a first paint, not as the final truth after refresh.
 - `pwm1:m:powb` is the canonical Infinity Bond memo. Indexers and database readers must normalize it to `infinity-bond` for Log, Event History, Growth, WORK floor, and searches, while preserving mailbox projection so the same tx appears in Inbox/Sent for touched addresses. POWB mint credit belongs to the bond recipient address, not necessarily the sender.
-- `pwm1:m:incb` is the canonical Inception Bond memo. It must normalize to `inception-bond` and issue only INCB to the confirmed recipient. POWB and INCB definitions/mints are synthetic bond projections, not generic credit creates or extra proof-value events. INCB issuance equals direct bond proofs plus a valid recipient-matched same-transaction WORK attachment valued from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block, rounded down to whole proofs at one INCB per proof. Every transaction in the bond block is excluded from the valuation. Confirmation fixes the resulting INCB balance, supply, and attached WORK proof value. Inception network value equals fixed cumulative issuance value plus confirmed INCB sale volume, transfer fees, and marketplace mutation fees. Current or later WORK value never reprices INCB. The attachment remains its own `pwt1:send` movement lane, and the shared Growth/WORK ledger counts it only once.
+- `pwm1:m:incb` is the canonical Inception Bond memo. It must normalize to `inception-bond` and issue only INCB to the confirmed recipient. POWB and INCB definitions/mints are synthetic bond projections, not generic credit creates or extra proof-value events. INCB issuance equals direct bond proofs plus a valid recipient-matched same-transaction WORK attachment valued from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block, rounded down to whole proofs at one INCB per proof. Every transaction in the bond block is excluded from the valuation. Confirmation fixes the resulting INCB balance, supply, and attached WORK proof value. Inception network value equals fixed cumulative issuance value plus confirmed INCB sale volume, transfer fees, and marketplace mutation fees. Current or later WORK value never reprices INCB. The attachment remains its own atomic `pwt1:send2` movement lane, and the shared Growth/WORK ledger counts it only once.
 - Changes to one Computer surface must not disable or degrade the other app surfaces. Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Inception, Log, Growth, IDs, and Computer are facets of one machine; a fix for one must preserve routing, first-party API reads, and basic search/load behavior for the rest. Production browser surfaces must not fall back to public `mempool.space` data paths for app reads; if the first-party API path is unavailable, fail closed and fix the API/proxy/build instead of silently depending on a public explorer.
 - Fresh summary endpoints must not return stale credit, POWB, or INCB truth. `token-summary`, `token-history`, `work-summary`, `infinity-summary`, `inception-summary`, and `marketplace-summary` refreshes should update the shared credit/bond payload cache so every surface converges on the same chain state; fast cached first paint may only survive if active listing spend state is corrected against node truth.
 - WORK and credit marketplace views must derive active listings, closed listings, sales, wallet owned listings, and mint summaries from the same refreshed credit payload. A surface-specific summary can format the data differently, but it must not carry its own stale listing or mint count after refresh.
@@ -248,7 +249,7 @@ Use:
 - ProofOfWork Computer, ProofOfWork IDs, proofs, agents, source of truth, on-chain, local-first.
 - Launch energy when writing social or founder-facing copy.
 - Calm precision when writing UI, docs, specs, and user guidance.
-- The `$work` cashtag in social copy when talking about the credit, WORK dashboard, mint, floor, or network-value story.
+- The `$WORK` cashtag in social copy when talking about the credit, WORK dashboard, mint, floor, or network-value story.
 - The `$POWB` cashtag in social copy when the post touches Infinity Bonds, confirmed bond proofs, WORK floor from bond-heavy network value, or the combined WORK/PowID market story.
 - The `$INCB` cashtag in social copy when the post touches Inception Bonds, confirmed `incb` actions, or the INCB sale-ticket market.
 - The occasional project-native phrase: `FEW`, `HEHE`, `GGZ`, `COMETH`, `THE PROOFOFWORK COMPUTER LIVES`, `STREAM PROOFS`, `WALK THE WALK`, `SOURCE OF TRUTH`.
@@ -309,6 +310,8 @@ Use the first-party API and confirmed chain data:
 - WORK floor: `https://work.proofofwork.me/api/v1/work-floor?network=livenet&fresh=1`
 - WORK holders and confirmed secondary sales: `https://work.proofofwork.me/api/v1/token-history?network=livenet&asset=d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8&kind=holders&limit=20&fresh=1` and `kind=sales`
 - Marketplace summary and ID order book: `https://marketplace.proofofwork.me/api/v1/marketplace-summary?network=livenet&fresh=1`
+- Infinity/POWB summary: `https://infinity.proofofwork.me/api/v1/infinity-summary?network=livenet&fresh=1`
+- Inception/INCB summary: `https://inception.proofofwork.me/api/v1/inception-summary?network=livenet&fresh=1`
 
 For USD in public posts, use the live BTC/USD-backed fields from the fresh API response: `actualValue.totalUsd`, `btcUsd`, `btcUsdIndexedAt`, and `usdSource`, or recompute from `/api/v1/prices/btc-usd`. Do not use `modelTotalUsd` for current tweet copy; it is the Growth model USD projection retained for comparison. When talking about WORK value, distinguish live network value from frozen network value: live is the current site/floor value, frozen is the confirmation-time audit stamp.
 
@@ -349,6 +352,10 @@ When working on ProofOfWork.Me:
 12. When in doubt, ask: can an agent verify this from the chain?
 13. When building new protocols, make the records legible, parsable, and replayable.
 14. When adding app features, think about how a one-person business or autonomous agent would use them to earn proofs.
+15. End every approved update with `npm run hygiene:fix`, a human-readable review of what it found, and `npm run hygiene:check`, even when no commit is created.
+16. Treat repository hygiene as both mechanical and semantic: automation may remove only the explicit rebuildable allowlist, while agents decide whether `SOUL.md`, protocol docs, tracked notes, or generated artifacts need a meaningful update.
+17. Old is not stale. Preserve replayable protocol history, audits, ledgers, refunds, incident evidence, release records, and tx-backed artifacts; qualify them as historical when needed instead of deleting them.
+18. Before handoff, inspect `git status`, the final diff, and relevant tests. Every commit is a durable agent handoff and must carry the hygiene trailers required by `REPOSITORY_HYGIENE.md`.
 
 ## Future Directions From The Archive
 

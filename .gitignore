@@ -2,6 +2,9 @@ node_modules/
 dist/
 .vite/
 .pow-api-cache/
+coverage/
+playwright-report/
+test-results/
 .env
 .env.local
 npm-debug.log*
@@ -17,3 +20,8 @@ dev-server.*.log
 .~lock*.pptx#
 scripts/create-round13-deck.mjs
 scripts/create-general-deck.mjs
+
+# Canonical public deck source and generated release copies are intentionally tracked.
+!PROOFOFWORK_GENERAL_DECK.md
+!output/proofofwork-general-deck.pptx
+!public/proofofwork-general-deck.pptx

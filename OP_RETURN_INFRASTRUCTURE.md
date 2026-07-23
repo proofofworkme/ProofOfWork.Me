@@ -827,7 +827,9 @@ Database credentials live in
 
 ### WORK atomic-unit cutover
 
-WORK alone uses eight decimal places. One WORK equals `100000000` atoms. Once
+This section preserves the completed atomic-unit migration and its rollback
+boundary as operational history. WORK alone uses eight decimal places. One
+WORK equals `100000000` atoms. Once
 the definition metadata is marked `work-atoms-v1`, the existing numeric
 definition, balance, pending-delta, and listing columns store WORK atoms; the
 same columns for every other credit retain their existing whole-credit units.
@@ -851,8 +853,11 @@ The migration is intentionally dual-read and single-write:
 - Legacy `pwt1:send` events and signed `pwt-sale-v1` authorizations remain
   immutable whole-WORK history and are converted only in the derived
   projection.
-- New WORK transfers write `pwt1:send2` atom amounts. New WORK sale tickets use
-  `pwt-sale-v2` and sign `amountAtoms`; V2 is invalid for every other credit.
+- At the atomic cutover, new WORK transfers began writing `pwt1:send2` atom
+  amounts and new WORK sale tickets began using `pwt-sale-v2` with signed
+  `amountAtoms`; V2 remains invalid for every other credit. After the later
+  WORK Marketplace Pricing Protocol V2 activation, current governed WORK
+  list, seal, and buy actions use `pwt-sale-v3`.
 - Raw OP_RETURN bytes and the nested signed authorization object are never
   rewritten. The event projection may add top-level exact atom fields.
 - The migration is scoped to the canonical WORK token id. POWB, INCB, and all
@@ -981,8 +986,9 @@ canonical WORK balance replay, and post-write conservation gates. Any failed
 gate rolls back the entire database change. The continuous worker also fails
 closed by default until the exact atomic definition marker exists.
 `POW_INDEX_REQUIRE_WORK_ATOMS=0` is a supervised emergency bypass only, not a
-normal deployment setting. Restoring the verified pre-cutover database and old
-release is an exact rollback only before any `send2` or `pwt-sale-v2`
+normal deployment setting. The cutover's rollback rule remains historical
+evidence: restoring the verified pre-cutover database and old release was an
+exact rollback only before any `send2` or `pwt-sale-v2`
 transaction is broadcast. Once a V2 transaction exists, even pending, the old
 release cannot represent or replay it. At that boundary, keep public writes
 stopped, preserve the affected chain/mempool txids, and fix forward with a
@@ -1200,9 +1206,12 @@ VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 RUSH remains staged behind explicit build/query flags and should not be added to public navigation or production domain routing until separately approved for launch.
 
 Local deploy builds can leave generated artifacts such as `dist/`, `.vite/`,
-and `.pow-api-cache/`. Treat them as rebuildable output/cache state: deploy from
-the intended `dist/` bundle, then clear stale local copies before committing
-unless a specific generated artifact is intentionally tracked.
+and `.pow-api-cache/`. Treat them as rebuildable output/cache state. After
+using the intended bundle, run `npm run hygiene:fix`, review the allowlisted
+cleanup report, and run `npm run hygiene:check` before final staging or
+committing. The exact cleanup boundary, protected history/evidence, generated
+artifact policy, and commit trailers live in `REPOSITORY_HYGIENE.md`; do not
+replace that narrow process with a broad ignored-file clean.
 
 ## Endpoints
 
@@ -1472,13 +1481,16 @@ pwt1:send:<token-create-txid>:<amount>:<recipient-address>
 pwt1:send2:<canonical-work-token-id>:<amount-atoms>:<recipient-address>
 ```
 
-`pwt1:send` is the immutable legacy whole-credit transfer form. New canonical
-WORK transfers use `send2`; `amount-atoms` is a positive canonical integer,
+`pwt1:send` remains the current whole-credit transfer form for generic
+non-WORK credits and immutable legacy whole-WORK history. Canonical WORK
+transfers use `send2`; `amount-atoms` is a positive canonical integer,
 one WORK equals `100000000` atoms, and no exponent, sign, comma, leading-zero
 alias, or value beyond eight decimal places is accepted. `send2` is WORK-only.
 Historical signed `pwt-sale-v1` authorizations likewise remain whole-credit
-records. New WORK listings use `pwt-sale-v2` with an exact `amountAtoms`
-string; non-WORK listings remain V1. The surrounding
+records, and historical fractional WORK actions may use `pwt-sale-v2` with an
+exact `amountAtoms` string. Current governed WORK list, seal, and buy actions
+use `pwt-sale-v3` with exact atoms and the required hash-bound H-1 pricing
+commitment; non-WORK listings remain V1. The surrounding
 `list5`/`seal5`/`buy5`/`delist5` messages and sale-ticket UTXO contract are
 unchanged.
 

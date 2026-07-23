@@ -1,14 +1,49 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync, readFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const repoRoot = resolve(new URL("..", import.meta.url).pathname);
+const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const sourcePath = join(repoRoot, "PROOFOFWORK_GENERAL_DECK.md");
 const publicPath = join(repoRoot, "public", "proofofwork-general-deck.pptx");
 const outputPath = join(repoRoot, "output", "proofofwork-general-deck.pptx");
 
 const deckMarkdown = readFileSync(sourcePath, "utf8");
+const updatedMatch = deckMarkdown.match(
+  /^Deck source and product surface updated on (\d{4})-(\d{2})-(\d{2})\.$/mu,
+);
+if (!updatedMatch) {
+  throw new Error(
+    "PROOFOFWORK_GENERAL_DECK.md must declare its deterministic update date.",
+  );
+}
+const deckUpdated = {
+  year: Number(updatedMatch[1]),
+  month: Number(updatedMatch[2]),
+  day: Number(updatedMatch[3]),
+};
+const deckUpdatedDate = `${updatedMatch[1]}-${updatedMatch[2]}-${updatedMatch[3]}`;
+const parsedDeckUpdatedDate = new Date(`${deckUpdatedDate}T00:00:00Z`);
+if (
+  Number.isNaN(parsedDeckUpdatedDate.getTime()) ||
+  parsedDeckUpdatedDate.getUTCFullYear() !== deckUpdated.year ||
+  parsedDeckUpdatedDate.getUTCMonth() + 1 !== deckUpdated.month ||
+  parsedDeckUpdatedDate.getUTCDate() !== deckUpdated.day ||
+  deckUpdated.year < 1980 ||
+  deckUpdated.year > 2107
+) {
+  throw new Error(
+    "General deck update date must be a real ZIP-compatible calendar date.",
+  );
+}
 
 function xml(value) {
   return String(value)
@@ -113,8 +148,13 @@ function slideXml(slide, index) {
   const isTitle = index === 0;
   const titleSize = isTitle ? 5000 : 3800;
   const bodyLines = slide.lines.filter(Boolean);
+  if (bodyLines.length > 13) {
+    throw new Error(
+      `Slide ${index + 1} (${slide.title}) has ${bodyLines.length} body lines; ` +
+        "split or tighten the source instead of truncating generated content.",
+    );
+  }
   const bodyXml = bodyLines
-    .slice(0, 13)
     .map((line) =>
       paragraph(line.replace(/^• /u, ""), {
         bullet: line.startsWith("• "),
@@ -158,6 +198,112 @@ function write(path, content) {
   writeFileSync(path, content);
 }
 
+const crcTable = Array.from({ length: 256 }, (_, value) => {
+  let crc = value;
+  for (let bit = 0; bit < 8; bit += 1) {
+    crc = (crc & 1) !== 0 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+  }
+  return crc >>> 0;
+});
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function archiveFiles(root, relative = "") {
+  const files = [];
+  const directory = join(root, relative);
+  const entries = readdirSync(directory, { withFileTypes: true }).sort(
+    (left, right) =>
+      left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+  );
+  for (const entry of entries) {
+    const child = relative ? `${relative}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...archiveFiles(root, child));
+    } else if (entry.isFile()) {
+      files.push(child);
+    }
+  }
+  return files;
+}
+
+function writeDeterministicStoredZip(destination, root) {
+  const localRecords = [];
+  const centralRecords = [];
+  let localOffset = 0;
+  const dosTime = 0;
+  const dosDate =
+    ((deckUpdated.year - 1980) << 9) |
+    (deckUpdated.month << 5) |
+    deckUpdated.day;
+
+  for (const relative of archiveFiles(root)) {
+    const filename = Buffer.from(relative, "utf8");
+    const data = readFileSync(join(root, relative));
+    const checksum = crc32(data);
+
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0, 6);
+    localHeader.writeUInt16LE(0, 8);
+    localHeader.writeUInt16LE(dosTime, 10);
+    localHeader.writeUInt16LE(dosDate, 12);
+    localHeader.writeUInt32LE(checksum, 14);
+    localHeader.writeUInt32LE(data.length, 18);
+    localHeader.writeUInt32LE(data.length, 22);
+    localHeader.writeUInt16LE(filename.length, 26);
+    localHeader.writeUInt16LE(0, 28);
+
+    const localRecord = Buffer.concat([localHeader, filename, data]);
+    localRecords.push(localRecord);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0, 8);
+    centralHeader.writeUInt16LE(0, 10);
+    centralHeader.writeUInt16LE(dosTime, 12);
+    centralHeader.writeUInt16LE(dosDate, 14);
+    centralHeader.writeUInt32LE(checksum, 16);
+    centralHeader.writeUInt32LE(data.length, 20);
+    centralHeader.writeUInt32LE(data.length, 24);
+    centralHeader.writeUInt16LE(filename.length, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    centralHeader.writeUInt32LE(0, 38);
+    centralHeader.writeUInt32LE(localOffset, 42);
+    centralRecords.push(Buffer.concat([centralHeader, filename]));
+
+    localOffset += localRecord.length;
+  }
+
+  const centralDirectory = Buffer.concat(centralRecords);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(centralRecords.length, 8);
+  end.writeUInt16LE(centralRecords.length, 10);
+  end.writeUInt32LE(centralDirectory.length, 12);
+  end.writeUInt32LE(localOffset, 16);
+  end.writeUInt16LE(0, 20);
+
+  mkdirSync(dirname(destination), { recursive: true });
+  writeFileSync(
+    destination,
+    Buffer.concat([...localRecords, centralDirectory, end]),
+  );
+}
+
 const temp = mkdtempSync(join(tmpdir(), "pow-deck-"));
 try {
   write(
@@ -191,7 +337,7 @@ try {
   <dc:creator>ProofOfWork.Me</dc:creator>
   <cp:lastModifiedBy>ProofOfWork.Me</cp:lastModifiedBy>
   <dcterms:created xsi:type="dcterms:W3CDTF">2026-05-13T00:00:00Z</dcterms:created>
-  <dcterms:modified xsi:type="dcterms:W3CDTF">2026-05-13T00:00:00Z</dcterms:modified>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${deckUpdatedDate}T00:00:00Z</dcterms:modified>
 </cp:coreProperties>`,
   );
 
@@ -229,8 +375,7 @@ try {
     write(join(temp, `ppt/slides/slide${index + 1}.xml`), slideXml(slide, index));
   });
 
-  mkdirSync(dirname(outputPath), { recursive: true });
-  execFileSync("zip", ["-qr", outputPath, "."], { cwd: temp });
+  writeDeterministicStoredZip(outputPath, temp);
   mkdirSync(dirname(publicPath), { recursive: true });
   copyFileSync(outputPath, publicPath);
   console.log(`Wrote ${outputPath}`);

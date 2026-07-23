@@ -7,6 +7,12 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
+    "prepare": "node scripts/install-repository-hooks.mjs --if-unset",
+    "hooks:install": "node scripts/install-repository-hooks.mjs",
+    "hygiene:fix": "node scripts/repository-hygiene.mjs clean",
+    "hygiene:check": "node scripts/repository-hygiene.mjs check",
+    "hygiene:pre-commit": "node scripts/repository-hygiene.mjs pre-commit",
+    "hygiene:test": "node --test scripts/repository-hygiene.test.mjs",
     "check:work-market-v2": "node scripts/check-work-market-v2.mjs",
     "migrate:work-market-v2-cutover": "node scripts/migrate-work-market-v2-cutover.mjs",
     "dev": "vite --host 0.0.0.0",

@@ -7,21 +7,21 @@
 <text x="205" y="564" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="44" font-weight="900" fill="#ffffff">$22.3M</text>
 <text x="205" y="608" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#ede9fe">$22.3 million</text>
 <text x="205" y="648" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#f5f3ff">$14.9M - $33.3M</text>
-<rect x="380" y="454.31490823408296" width="250" height="235.68509176591704" rx="20" fill="#7c3aed" opacity="0.6599999999999999"/>
-<text x="505" y="428.31490823408296" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#334155">12 months</text>
-<text x="505" y="518.314908234083" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="44" font-weight="900" fill="#ffffff">$112M</text>
-<text x="505" y="562.314908234083" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#ede9fe">$112 million</text>
-<text x="505" y="602.314908234083" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#f5f3ff">$63.7M - $198M</text>
-<rect x="680" y="412.27412713956863" width="250" height="277.72587286043137" rx="20" fill="#7c3aed" opacity="0.74"/>
-<text x="805" y="386.27412713956863" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#334155">24 months</text>
-<text x="805" y="476.27412713956863" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="44" font-weight="900" fill="#ffffff">$498M</text>
-<text x="805" y="520.2741271395687" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#ede9fe">$498 million</text>
-<text x="805" y="560.2741271395687" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#f5f3ff">$223M - $1.11B</text>
-<rect x="980" y="326.0994645439567" width="250" height="363.9005354560433" rx="20" fill="#7c3aed" opacity="0.82"/>
-<text x="1105" y="300.0994645439567" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#334155">5 years</text>
-<text x="1105" y="390.0994645439567" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="44" font-weight="900" fill="#ffffff">$10.5B</text>
-<text x="1105" y="434.0994645439567" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#ede9fe">$10.5 billion</text>
-<text x="1105" y="474.0994645439567" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#f5f3ff">$2.96B - $37.4B</text>
+<rect x="380" y="454.31490823416493" width="250" height="235.6850917658351" rx="20" fill="#7c3aed" opacity="0.6599999999999999"/>
+<text x="505" y="428.31490823416493" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#334155">12 months</text>
+<text x="505" y="518.3149082341649" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="44" font-weight="900" fill="#ffffff">$112M</text>
+<text x="505" y="562.3149082341649" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#ede9fe">$112 million</text>
+<text x="505" y="602.3149082341649" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#f5f3ff">$63.7M - $198M</text>
+<rect x="680" y="412.27412713959865" width="250" height="277.72587286040135" rx="20" fill="#7c3aed" opacity="0.74"/>
+<text x="805" y="386.27412713959865" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#334155">24 months</text>
+<text x="805" y="476.27412713959865" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="44" font-weight="900" fill="#ffffff">$498M</text>
+<text x="805" y="520.2741271395987" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#ede9fe">$498 million</text>
+<text x="805" y="560.2741271395987" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#f5f3ff">$223M - $1.11B</text>
+<rect x="980" y="326.0994645438809" width="250" height="363.9005354561191" rx="20" fill="#7c3aed" opacity="0.82"/>
+<text x="1105" y="300.0994645438809" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#334155">5 years</text>
+<text x="1105" y="390.0994645438809" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="44" font-weight="900" fill="#ffffff">$10.5B</text>
+<text x="1105" y="434.0994645438809" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#ede9fe">$10.5 billion</text>
+<text x="1105" y="474.0994645438809" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#f5f3ff">$2.96B - $37.4B</text>
 <rect x="1280" y="180" width="250" height="510" rx="20" fill="#7c3aed" opacity="0.8999999999999999"/>
 <text x="1405" y="154" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#334155">10 years</text>
 <text x="1405" y="244" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="44" font-weight="900" fill="#ffffff">$1.86T</text>

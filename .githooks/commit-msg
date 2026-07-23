@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+repository_root=$(git rev-parse --show-toplevel)
+cd "$repository_root"
+exec node scripts/repository-hygiene.mjs commit-msg "$1"

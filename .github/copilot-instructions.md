@@ -1,7 +1,7 @@
 # Copilot Instructions
 
-Before generating or editing code for ProofOfWork.Me, read `SOUL.md`.
+Follow `AGENTS.md` in full, including its ordered reading, approval, and mandatory commit-hygiene rules.
 
-Use `SOUL.md` as operating memory for the project's thesis, voice, and agent posture. Use `README.md`, `PROOFOFWORK_IDS.md`, `OP_RETURN_INFRASTRUCTURE.md`, and `MAIL_ORGANIZATION.md` as the product, protocol, infrastructure, and mailbox reference.
+Read `REPOSITORY_HYGIENE.md` before finalizing changes. Do not bypass the repository hooks or hygiene CI without the user's explicit approval.
 
-Protocol docs, source code, and explicit user instructions override `SOUL.md` when they conflict.
+Use `SOUL.md` as operating memory for the project's thesis, voice, and agent posture. Protocol docs, source code, and explicit user instructions override it when they conflict.

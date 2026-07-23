@@ -1,5 +1,10 @@
 # RUSH Credit Protocol
 
+> **Staged protocol — not publicly launched.** RUSH remains local/staged behind
+> explicit preview and build flags. This document records the proposed protocol
+> and implementation contract; it is not evidence of a public launch, active
+> production registry, or authorization to add RUSH to production navigation.
+
 RUSH is a ProofOfWork.Me credit page with a fixed 50,000 mint
 schedule and an intentionally simple ProofOfWork OP_RETURN record.
 
