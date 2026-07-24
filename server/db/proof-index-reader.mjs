@@ -42,6 +42,9 @@ import {
   workMarketV4ConfiguredDeclaration,
 } from "../work-market-v2.mjs";
 import {
+  tokenListingTransactionCanProjectActive,
+} from "../token-listing-lifecycle.mjs";
+import {
   INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
   INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE,
   INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
@@ -9777,7 +9780,10 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
       });
       continue;
     }
-    if (["active", "sealing", "pending"].includes(String(row.status))) {
+    if (
+      ["active", "sealing", "pending"].includes(String(row.status)) &&
+      tokenListingTransactionCanProjectActive(row.listing_tx_status)
+    ) {
       if (activeTokenListingHistoryItem(listing)) {
         listings.push(listing);
       }
@@ -11808,7 +11814,10 @@ export async function proofIndexWalletTokenOverlayPayload(
         .trim()
         .toLowerCase(),
     };
-    if (activeTokenListingHistoryItem(listing)) {
+    if (
+      tokenListingTransactionCanProjectActive(row.listing_tx_status) &&
+      activeTokenListingHistoryItem(listing)
+    ) {
       listings.push(listing);
     }
   }

@@ -38,6 +38,10 @@ import {
   workMarketplaceWriteActionIsGoverned,
 } from "../server/work-market-v2.mjs";
 import { WORK_TOKEN_ID } from "../server/work-units.mjs";
+import {
+  tokenListingCanProjectCloseActivity,
+  tokenListingTransactionCanProjectActive,
+} from "../server/token-listing-lifecycle.mjs";
 
 const hash = "11".repeat(32);
 const base = {
@@ -1178,6 +1182,35 @@ assert.equal(sanitizedResurfacedRelic.refundEligible, false);
 assert.equal(
   sanitizedResurfacedRelic.disabledReason,
   "work-market-v1-refund-snapshot-excluded",
+);
+assert.equal(
+  tokenListingCanProjectCloseActivity(snapshotExcludedClosed),
+  false,
+);
+assert.equal(tokenListingTransactionCanProjectActive("confirmed"), true);
+assert.equal(tokenListingTransactionCanProjectActive("pending"), true);
+assert.equal(tokenListingTransactionCanProjectActive("dropped"), false);
+assert.equal(tokenListingTransactionCanProjectActive("orphaned"), false);
+assert.equal(
+  tokenListingCanProjectCloseActivity({
+    closedConfirmed: false,
+    closedTxid: "a3".repeat(32),
+  }),
+  false,
+);
+assert.equal(
+  tokenListingCanProjectCloseActivity({
+    closedConfirmed: true,
+    closedTxid: "",
+  }),
+  false,
+);
+assert.equal(
+  tokenListingCanProjectCloseActivity({
+    closedConfirmed: true,
+    closedTxid: "a3".repeat(32),
+  }),
+  true,
 );
 const recoveredSnapshotListing = legacyCutoverListings.find(
   (listing) =>

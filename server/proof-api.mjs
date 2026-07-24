@@ -72,6 +72,9 @@ import {
   workMarketplaceWriteActionIsGoverned,
 } from "./work-market-v2.mjs";
 import {
+  tokenListingCanProjectCloseActivity,
+} from "./token-listing-lifecycle.mjs";
+import {
   errorResponse,
   jsonResponse,
   optionsResponse,
@@ -18266,7 +18269,11 @@ function tokenActivityItemsFromState(state, indexAddress) {
   }
 
   const closedListings = (state.closedListings ?? [])
-    .filter((listing) => listing?.relic !== true)
+    .filter(
+      (listing) =>
+        listing?.relic !== true &&
+        tokenListingCanProjectCloseActivity(listing),
+    )
     .map((listing) => {
     const closedTxid =
       typeof listing.closedTxid === "string" ? listing.closedTxid : "";
