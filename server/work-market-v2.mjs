@@ -56,15 +56,15 @@ const LEGACY_WORK_MARKET_AUTH_VERSIONS = new Set([
   "pwt-sale-v1",
   "pwt-sale-v2",
 ]);
-const WORK_MARKET_V1_REFUND_LISTING_IDS = new Set(
+const WORK_MARKET_V1_REFUND_LISTINGS_BY_ID = new Map(
   workMarketV1RefundSnapshot.listings.flatMap((listing) => {
     const listingId = String(listing?.listingId ?? "").trim().toLowerCase();
-    return TXID_PATTERN.test(listingId) ? [listingId] : [];
+    return TXID_PATTERN.test(listingId) ? [[listingId, listing]] : [];
   }),
 );
 
 export function workMarketV1RefundSnapshotIncludes(listingId) {
-  return WORK_MARKET_V1_REFUND_LISTING_IDS.has(
+  return WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.has(
     String(listingId ?? "").trim().toLowerCase(),
   );
 }
@@ -707,15 +707,38 @@ export function applyWorkMarketV2CutoverToTokenState(state) {
 
   const listings = [];
   const closedListings = Array.isArray(state.closedListings)
-    ? state.closedListings.map((listing) =>
-        isLegacyWorkMarketListing(listing) &&
-        !workMarketV1RefundSnapshotIncludes(listingId(listing)) &&
-        (listing?.refundEligible === true ||
+    ? state.closedListings.map((listing) => {
+        if (!isLegacyWorkMarketListing(listing)) {
+          return listing;
+        }
+        const id = listingId(listing);
+        const refundSnapshotListing =
+          WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.get(id);
+        if (refundSnapshotListing) {
+          const alreadyCanonicalRelic =
+            listing?.status === "disabled" &&
+            listing?.relic === true &&
+            listing?.refundEligible === true &&
+            listing?.disabledAtBlockHeight ===
+              WORK_MARKET_V2_ACTIVATION_HEIGHT &&
+            listing?.disabledByTxid === WORK_MARKET_V2_DECLARATION_TXID &&
+            listing?.disabledReason === "work-market-v2-cutover" &&
+            (refundSnapshotListing.sealed === true ||
+              (listing?.sealConfirmed !== true &&
+                !String(listing?.sealTxid ?? "").trim()));
+          if (alreadyCanonicalRelic) {
+            return listing;
+          }
+          return cutoverRelicListing(listing, {
+            discardSeal: refundSnapshotListing.sealed !== true,
+          });
+        }
+        return listing?.refundEligible === true ||
           listing?.relic === true ||
-          listing?.disabledReason === "work-market-v2-cutover")
+          listing?.disabledReason === "work-market-v2-cutover"
           ? cutoverSnapshotExcludedListing(listing)
-          : listing,
-      )
+          : listing;
+      })
     : [];
   const invalidEvents = Array.isArray(state.invalidEvents)
     ? [...state.invalidEvents]
