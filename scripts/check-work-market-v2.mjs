@@ -1179,6 +1179,38 @@ assert.equal(
   sanitizedResurfacedRelic.disabledReason,
   "work-market-v1-refund-snapshot-excluded",
 );
+const recoveredSnapshotListing = legacyCutoverListings.find(
+  (listing) =>
+    listing.listingId ===
+    "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa",
+);
+assert.ok(recoveredSnapshotListing);
+const recoveredSnapshotRelic = applyWorkMarketV2CutoverToTokenState({
+  closedListings: [
+    {
+      ...recoveredSnapshotListing,
+      closeTxid: "a4".repeat(32),
+      closedTxid: "a4".repeat(32),
+      refundEligible: undefined,
+      relic: undefined,
+      sealBlockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT + 3,
+      sealConfirmed: true,
+      sealTxid: "b4".repeat(32),
+      status: "closed",
+    },
+  ],
+  indexedThroughBlock: WORK_MARKET_V2_ACTIVATION_HEIGHT + 10,
+  invalidEvents: [],
+  listings: [],
+  network: "livenet",
+}).closedListings[0];
+assert.equal(recoveredSnapshotRelic.status, "disabled");
+assert.equal(recoveredSnapshotRelic.relic, true);
+assert.equal(recoveredSnapshotRelic.refundEligible, true);
+assert.equal(recoveredSnapshotRelic.closeTxid, "a4".repeat(32));
+assert.equal(recoveredSnapshotRelic.closedTxid, "a4".repeat(32));
+assert.equal(recoveredSnapshotRelic.sealConfirmed, false);
+assert.equal(recoveredSnapshotRelic.sealTxid, "");
 assert.deepEqual(
   cutoverState.listings.map((listing) => listing.listingId).sort(),
   [v3Listing.listingId, nonWorkLegacy.listingId].sort(),
