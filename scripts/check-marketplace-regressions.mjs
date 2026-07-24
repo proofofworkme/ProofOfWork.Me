@@ -26,6 +26,10 @@ const WORK_MARKET_V2_ACTIVATION_HEIGHT = 959_062;
 const WORK_MARKET_V2_DECLARATION_TXID =
   "4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f";
 const WORK_MARKET_V2_REASON_CODE = "work-market-v2-version-required";
+const WORK_MARKET_V3_AUTH_VERSION = "pwt-sale-v3";
+const WORK_MARKET_V4_AUTH_VERSION = "pwt-sale-v4";
+const WORK_MARKET_V4_ORACLE_MODEL =
+  "canonical-work-market-confirmation-floor-v1";
 const WORK_MARKET_V2_LATE_SEAL_LISTING_TX =
   "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9";
 const WORK_MARKET_V2_LATE_SEAL_TX =
@@ -590,19 +594,77 @@ function isLegacyWorkListing(listing) {
   );
 }
 
-function assertNoActiveNonV3WorkListings(payload, label) {
-  const activeNonV3 = (payload?.listings ?? []).filter(
+function validWorkMarketV4DeclarationCoordinates(value) {
+  const declarationHeight = Number(value?.declarationHeight);
+  const activationHeight = Number(value?.activationHeight);
+  return (
+    /^[0-9a-f]{64}$/u.test(
+      String(value?.declarationTxid ?? "").trim().toLowerCase(),
+    ) &&
+    /^[0-9a-f]{64}$/u.test(
+      String(value?.declarationBlockHash ?? "").trim().toLowerCase(),
+    ) &&
+    Number.isSafeInteger(declarationHeight) &&
+    declarationHeight > 0 &&
+    activationHeight === declarationHeight + 1
+  );
+}
+
+function expectedActiveWorkMarketVersion(payload, context = payload) {
+  const statusCandidates = [
+    context?.workMarketplaceV4,
+    context?.floor?.workMarketplaceV4,
+    context?.workFloor?.workMarketplaceV4,
+    payload?.workMarketplaceV4,
+  ];
+  if (
+    statusCandidates.some(
+      (status) =>
+        status?.active === true &&
+        status?.declarationConfirmed === true &&
+        status?.authVersion === WORK_MARKET_V4_AUTH_VERSION &&
+        status?.oracleModel === WORK_MARKET_V4_ORACLE_MODEL &&
+        validWorkMarketV4DeclarationCoordinates(status),
+    )
+  ) {
+    return WORK_MARKET_V4_AUTH_VERSION;
+  }
+
+  const activation =
+    payload?.workMarketV4Activation ??
+    context?.workMarketV4Activation ??
+    context?.token?.workMarketV4Activation;
+  const indexedThroughBlock = Number(
+    payload?.indexedThroughBlock ??
+      payload?.stats?.indexedThroughBlock ??
+      context?.indexedThroughBlock ??
+      context?.stats?.indexedThroughBlock,
+  );
+  return validWorkMarketV4DeclarationCoordinates(activation) &&
+    Number.isSafeInteger(indexedThroughBlock) &&
+    indexedThroughBlock >= Number(activation.activationHeight)
+    ? WORK_MARKET_V4_AUTH_VERSION
+    : WORK_MARKET_V3_AUTH_VERSION;
+}
+
+function assertActiveWorkListingsUseCanonicalVersion(
+  payload,
+  label,
+  context = payload,
+) {
+  const expectedVersion = expectedActiveWorkMarketVersion(payload, context);
+  const activeWrongVersion = (payload?.listings ?? []).filter(
     (listing) =>
       String(
         listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
       )
         .trim()
         .toLowerCase() === WORK_TOKEN_ID &&
-      workListingAuthorizationVersion(listing) !== "pwt-sale-v3",
+      workListingAuthorizationVersion(listing) !== expectedVersion,
   );
   assert(
-    activeNonV3.length === 0,
-    `${label} returned ${activeNonV3.length} active non-V3 WORK listings`,
+    activeWrongVersion.length === 0,
+    `${label} returned ${activeWrongVersion.length} active WORK listings that are not ${expectedVersion}`,
   );
 }
 
@@ -697,7 +759,10 @@ async function assertWorkMarketV2CutoverContract({ fresh = true } = {}) {
     asset: WORK_TOKEN_ID,
     ...(fresh ? { fresh: 1 } : {}),
   });
-  assertNoActiveNonV3WorkListings(token, "/api/v1/token?asset=WORK");
+  assertActiveWorkListingsUseCanonicalVersion(
+    token,
+    "/api/v1/token?asset=WORK",
+  );
   assertExactWorkV1Relics(token, "/api/v1/token?asset=WORK");
   await assertWorkMarketV2InvalidAttempt({
     blockHeight: 959_091,
@@ -804,7 +869,7 @@ async function runFastMarketplaceRegressionGate() {
       ),
       `${REPORTED_LISTING_TX} is still returned as active in wallet-scoped token payload`,
     );
-    assertNoActiveNonV3WorkListings(
+    assertActiveWorkListingsUseCanonicalVersion(
       walletToken,
       "seller wallet-scoped token payload",
     );
@@ -825,7 +890,7 @@ async function runFastMarketplaceRegressionGate() {
       wallet: 1,
       fresh: 1,
     });
-    assertNoActiveNonV3WorkListings(
+    assertActiveWorkListingsUseCanonicalVersion(
       carbonzTaprootWalletToken,
       "Carbonz wallet-scoped token payload",
     );
@@ -929,9 +994,10 @@ async function runFastMarketplaceRegressionGate() {
       ),
       `${REPORTED_JULY_PURCHASE_LISTING_TX} is still returned as active in marketplace summary after ${REPORTED_JULY_PURCHASE_TX}`,
     );
-    assertNoActiveNonV3WorkListings(
+    assertActiveWorkListingsUseCanonicalVersion(
       marketplaceSummary.token,
       "Marketplace summary",
+      marketplaceSummary,
     );
     for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
       const item = listingById(marketplaceSummary.token?.listings, txid);
@@ -1268,7 +1334,7 @@ assert(
   ),
   `${REPORTED_LISTING_TX} is still returned as active in wallet-scoped token payload`,
 );
-assertNoActiveNonV3WorkListings(
+assertActiveWorkListingsUseCanonicalVersion(
   walletToken,
   "seller wallet-scoped token payload",
 );
@@ -1423,7 +1489,7 @@ const carbonzTaprootWalletToken = await getJson("/api/v1/token", {
   wallet: 1,
   fresh: 1,
 });
-assertNoActiveNonV3WorkListings(
+assertActiveWorkListingsUseCanonicalVersion(
   carbonzTaprootWalletToken,
   "Carbonz wallet-scoped token payload",
 );
@@ -1623,9 +1689,10 @@ assert(
   ),
   `${REPORTED_SPENT_SEAL_LISTING_TX} is still returned as active in marketplace summary after ${REPORTED_SPENT_SEAL_TX} spent its sale-ticket anchor`,
 );
-assertNoActiveNonV3WorkListings(
+assertActiveWorkListingsUseCanonicalVersion(
   marketplaceSummary.token,
   "Marketplace summary",
+  marketplaceSummary,
 );
 for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
   const item = listingById(marketplaceSummary.token?.listings, txid);
@@ -1685,9 +1752,10 @@ assert(
   ),
   `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} remained active in fresh Marketplace summary after the V2 cutover`,
 );
-assertNoActiveNonV3WorkListings(
+assertActiveWorkListingsUseCanonicalVersion(
   marketplaceFreshSummary.token,
   "Fresh Marketplace summary",
+  marketplaceFreshSummary,
 );
 for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
   const item = listingById(marketplaceFreshSummary.token?.listings, txid);
@@ -1701,7 +1769,10 @@ const workToken = await getJson("/api/v1/token", {
   asset: WORK_TOKEN_ID,
   fresh: 1,
 });
-assertNoActiveNonV3WorkListings(workToken, "Fresh WORK token payload");
+assertActiveWorkListingsUseCanonicalVersion(
+  workToken,
+  "Fresh WORK token payload",
+);
 const [workSummary, workTokenSummary, growthSummary] = await Promise.all([
   getJson("/api/v1/work-summary", {
     network: "livenet",

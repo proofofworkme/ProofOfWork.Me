@@ -39,7 +39,10 @@ import {
   workAmountFields,
   workAtomsValueAtFloorQ8,
 } from "../server/work-units.mjs";
-import { WORK_MARKET_V2_AUTH_VERSION } from "../server/work-market-v2.mjs";
+import {
+  WORK_MARKET_V2_AUTH_VERSION,
+  WORK_MARKET_V4_AUTH_VERSION,
+} from "../server/work-market-v2.mjs";
 
 const DEFAULT_API_BASE = "http://127.0.0.1:8081";
 const CONFIGURED_API_BASE = String(process.env.POW_API_BASE ?? "").trim();
@@ -48,6 +51,10 @@ const CANONICAL_TX_CONTENT_FAILURE_CODE =
   "POW_CANONICAL_TX_CONTENT_INVARIANT";
 const CANONICAL_TX_CONTENT_FAILURE_CLASS =
   "CanonicalTransactionContentInvariantError";
+const WORK_MARKET_GOVERNED_AUTH_VERSIONS = new Set([
+  WORK_MARKET_V2_AUTH_VERSION,
+  WORK_MARKET_V4_AUTH_VERSION,
+]);
 
 class CanonicalTransactionContentInvariantError extends Error {
   constructor(message) {
@@ -7151,6 +7158,218 @@ async function persistCanonicalBlock(client, block, height, blockHash) {
   );
 }
 
+async function persistCanonicalListingOutpointSpendsFromBlock(
+  client,
+  block,
+  { blockHash, height },
+) {
+  const activeAnchors = await client.query(
+    `
+      SELECT
+        lower(
+          COALESCE(NULLIF(cl.sale_ticket_txid, ''), cl.listing_id)
+        ) AS anchor_txid,
+        cl.sale_ticket_vout AS anchor_vout
+      FROM proof_indexer.credit_listings cl
+      WHERE cl.network = $1
+        AND cl.status = ANY(ARRAY['active','sealing']::text[])
+        AND cl.sale_ticket_vout IS NOT NULL
+        AND cl.sale_ticket_vout >= 0
+    `,
+    [NETWORK],
+  );
+  const anchorKeys = new Set(
+    activeAnchors.rows.flatMap((row) => {
+      const txid = String(row?.anchor_txid ?? "").trim().toLowerCase();
+      const vout = Number(row?.anchor_vout);
+      return isHexTxid(txid) && Number.isSafeInteger(vout) && vout >= 0
+        ? [`${txid}:${vout}`]
+        : [];
+    }),
+  );
+  if (anchorKeys.size === 0) {
+    return { inputs: 0, transactions: 0 };
+  }
+
+  const spenders = [];
+  for (const tx of Array.isArray(block?.tx) ? block.tx : []) {
+    const txid = String(tx?.txid ?? "").trim().toLowerCase();
+    if (!isHexTxid(txid)) {
+      continue;
+    }
+    const inputs = (Array.isArray(tx?.vin) ? tx.vin : []).flatMap(
+      (input, vin) => {
+        const prevTxid = String(input?.txid ?? "").trim().toLowerCase();
+        const prevVout = Number(input?.vout);
+        return isHexTxid(prevTxid) &&
+          Number.isSafeInteger(prevVout) &&
+          prevVout >= 0 &&
+          anchorKeys.has(`${prevTxid}:${prevVout}`)
+          ? [{ prev_txid: prevTxid, prev_vout: prevVout, vin }]
+          : [];
+      },
+    );
+    if (inputs.length > 0) {
+      spenders.push({ inputs, tx, txid });
+    }
+  }
+  if (spenders.length === 0) {
+    return { inputs: 0, transactions: 0 };
+  }
+
+  const eventTime =
+    Number.isFinite(Number(block?.time)) && Number(block.time) > 0
+      ? new Date(Number(block.time) * 1000).toISOString()
+      : null;
+  let inputCount = 0;
+  for (const { inputs, tx, txid } of spenders) {
+    await client.query(
+      `
+        INSERT INTO proof_indexer.transactions (
+          network,
+          txid,
+          status,
+          first_seen_at,
+          last_seen_at,
+          confirmed_at,
+          block_hash,
+          block_height,
+          block_time,
+          vsize,
+          weight,
+          version,
+          locktime,
+          source
+        )
+        VALUES (
+          $1,
+          $2,
+          'confirmed',
+          now(),
+          now(),
+          COALESCE($3::timestamptz, now()),
+          $4,
+          $5,
+          $3::timestamptz,
+          $6,
+          $7,
+          $8,
+          $9,
+          'canonical-listing-outpoint-scan'
+        )
+        ON CONFLICT (network, txid)
+        DO UPDATE SET
+          status = 'confirmed',
+          last_seen_at = now(),
+          confirmed_at = COALESCE(
+            EXCLUDED.confirmed_at,
+            proof_indexer.transactions.confirmed_at
+          ),
+          block_hash = EXCLUDED.block_hash,
+          block_height = EXCLUDED.block_height,
+          block_time = EXCLUDED.block_time,
+          vsize = COALESCE(
+            proof_indexer.transactions.vsize,
+            EXCLUDED.vsize
+          ),
+          weight = COALESCE(
+            proof_indexer.transactions.weight,
+            EXCLUDED.weight
+          ),
+          version = COALESCE(
+            proof_indexer.transactions.version,
+            EXCLUDED.version
+          ),
+          locktime = COALESCE(
+            proof_indexer.transactions.locktime,
+            EXCLUDED.locktime
+          ),
+          source = CASE
+            WHEN proof_indexer.transactions.raw_tx IS NOT NULL
+              THEN proof_indexer.transactions.source
+            ELSE EXCLUDED.source
+          END,
+          updated_at = now()
+      `,
+      [
+        NETWORK,
+        txid,
+        eventTime,
+        String(blockHash ?? "").trim().toLowerCase(),
+        height,
+        numberOrNull(tx?.vsize),
+        numberOrNull(tx?.weight),
+        numberOrNull(tx?.version),
+        numberOrNull(tx?.locktime),
+      ],
+    );
+    await client.query(
+      `
+        INSERT INTO proof_indexer.tx_inputs (
+          network,
+          txid,
+          vin,
+          prev_txid,
+          prev_vout
+        )
+        SELECT
+          $1,
+          $2,
+          input_row.vin,
+          input_row.prev_txid,
+          input_row.prev_vout
+        FROM jsonb_to_recordset($3::jsonb) AS input_row (
+          vin integer,
+          prev_txid text,
+          prev_vout integer
+        )
+        ON CONFLICT (network, txid, vin)
+        DO UPDATE SET
+          prev_txid = EXCLUDED.prev_txid,
+          prev_vout = EXCLUDED.prev_vout
+      `,
+      [NETWORK, txid, JSON.stringify(inputs)],
+    );
+    const spendLinkResult = await client.query(
+      `
+        WITH incoming AS (
+          SELECT input_row.vin, input_row.prev_txid, input_row.prev_vout
+          FROM jsonb_to_recordset($3::jsonb) AS input_row (
+            vin integer,
+            prev_txid text,
+            prev_vout integer
+          )
+        )
+        UPDATE proof_indexer.tx_outputs spent_output
+        SET
+          spent_by_txid = $2,
+          spent_by_vin = incoming.vin,
+          spent_at = COALESCE($4::timestamptz, spent_output.spent_at, now())
+        FROM incoming
+        WHERE spent_output.network = $1
+          AND spent_output.txid = incoming.prev_txid
+          AND spent_output.vout = incoming.prev_vout
+          AND (
+            spent_output.spent_by_txid IS NULL
+            OR (
+              lower(spent_output.spent_by_txid) = $2
+              AND spent_output.spent_by_vin IS NOT DISTINCT FROM incoming.vin
+            )
+          )
+        RETURNING spent_output.txid, spent_output.vout
+      `,
+      [NETWORK, txid, JSON.stringify(inputs), eventTime],
+    );
+    if (spendLinkResult.rows.length !== inputs.length) {
+      throw new Error(
+        `Canonical listing spend-link conflict or missing anchor for ${txid}.`,
+      );
+    }
+    inputCount += inputs.length;
+  }
+  return { inputs: inputCount, transactions: spenders.length };
+}
+
 async function persistCanonicalRawTransaction(
   client,
   tx,
@@ -8610,7 +8829,7 @@ function workMarketV2EventIsActionBound(item, kind, txid) {
   const { source, tokenId, version } = workMarketV2ProjectionIdentity(item);
   if (
     tokenId !== WORK_TOKEN_ID ||
-    version !== WORK_MARKET_V2_AUTH_VERSION
+    !WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(version)
   ) {
     return true;
   }
@@ -8679,7 +8898,7 @@ async function workMarketV2ProjectionCanMutate(
   let { version } = identity;
   if (
     tokenId === WORK_TOKEN_ID &&
-    version !== WORK_MARKET_V2_AUTH_VERSION &&
+    !WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(version) &&
     isHexTxid(source.listingId)
   ) {
     const parentResult = await client.query(
@@ -8705,7 +8924,7 @@ async function workMarketV2ProjectionCanMutate(
   }
   if (
     tokenId !== WORK_TOKEN_ID ||
-    version !== WORK_MARKET_V2_AUTH_VERSION
+    !WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(version)
   ) {
     return true;
   }
@@ -9419,28 +9638,65 @@ async function storeLedgerSnapshot(client, options = {}) {
            AND oracle_snapshot.snapshot_id = EXCLUDED.snapshot_id
           WHERE action_event.network = EXCLUDED.network
             AND action_event.status = 'confirmed'
-            AND action_event.valid = true
+            AND (
+              action_event.valid = true
+              OR action_event.payload->'saleAuthorization'->>'version' = $13
+            )
             AND action_event.kind IN (
               'token-listing',
               'token-listing-sealed',
-              'token-sale'
+              'token-sale',
+              'token-event-invalid'
+            )
+            AND (
+              action_event.kind <> 'token-event-invalid'
+              OR lower(COALESCE(
+                action_event.payload->>'attemptedKind',
+                ''
+              )) IN (
+                'list',
+                'seal',
+                'buy',
+                'token-listing',
+                'token-listing-sealed',
+                'token-sale'
+              )
             )
             AND action_event.payload->'saleAuthorization'->>'version' =
-              'pwt-sale-v3'
+              ANY($11::text[])
             AND lower(action_event.payload->'saleAuthorization'->>'tokenId') =
-              'd4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8'
-            AND action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
-              '^[1-9][0-9]*$'
-            AND oracle_snapshot.indexed_through_block = CASE
-              WHEN action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
-                '^[1-9][0-9]*$'
-              THEN (action_event.payload->'saleAuthorization'->>'oracleBlockHeight')::integer
-              ELSE NULL
-            END
-            AND action_event.payload->'saleAuthorization'->>'oracleBlockHash' ~
-              '^[0-9a-fA-F]{64}$'
-            AND lower(COALESCE(oracle_snapshot.source_hashes->>'blockScan', '')) =
-              lower(action_event.payload->'saleAuthorization'->>'oracleBlockHash')
+              $12
+            AND (
+              (
+                action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
+                  '^[1-9][0-9]*$'
+                AND oracle_snapshot.indexed_through_block =
+                  (action_event.payload->'saleAuthorization'->>'oracleBlockHeight')::integer
+                AND action_event.payload->'saleAuthorization'->>'oracleBlockHash' ~
+                  '^[0-9a-fA-F]{64}$'
+                AND lower(COALESCE(
+                  oracle_snapshot.source_hashes->>'blockScan',
+                  ''
+                )) = lower(
+                  action_event.payload->'saleAuthorization'->>'oracleBlockHash'
+                )
+              )
+              OR (
+                action_event.payload->'saleAuthorization'->>'version' = $13
+                AND action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHeight' ~
+                  '^[1-9][0-9]*$'
+                AND oracle_snapshot.indexed_through_block =
+                  (action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHeight')::integer
+                AND action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHash' ~
+                  '^[0-9a-fA-F]{64}$'
+                AND lower(COALESCE(
+                  oracle_snapshot.source_hashes->>'blockScan',
+                  ''
+                )) = lower(
+                  action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHash'
+                )
+              )
+            )
         )
     `,
     [
@@ -9459,6 +9715,9 @@ async function storeLedgerSnapshot(client, options = {}) {
       JSON.stringify(snapshotPayload),
       CANONICAL_REBUILD_META_KEY,
       INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+      [WORK_MARKET_V2_AUTH_VERSION, WORK_MARKET_V4_AUTH_VERSION],
+      WORK_TOKEN_ID,
+      WORK_MARKET_V4_AUTH_VERSION,
     ],
   );
   return snapshotPayload;
@@ -10262,7 +10521,7 @@ async function pruneLedgerSnapshots(
   } = {},
 ) {
   const boundedCanonicalSummaryLimit = Math.max(
-    1,
+    512,
     Math.floor(Number(canonicalSummaryLimit) || 0),
   );
   const boundedScanSnapshotLimit = Math.max(
@@ -10275,10 +10534,17 @@ async function pruneLedgerSnapshots(
         SELECT
           snapshot_id,
           source_hashes ? 'canonicalSummary' AS canonical_summary,
-          row_number() OVER (
-            PARTITION BY (source_hashes ? 'canonicalSummary')
-            ORDER BY generated_at DESC, snapshot_id DESC
-          ) AS retention_rank
+          CASE
+            WHEN source_hashes ? 'canonicalSummary'
+            THEN dense_rank() OVER (
+              PARTITION BY (source_hashes ? 'canonicalSummary')
+              ORDER BY indexed_through_block DESC NULLS LAST
+            )
+            ELSE row_number() OVER (
+              PARTITION BY (source_hashes ? 'canonicalSummary')
+              ORDER BY generated_at DESC, snapshot_id DESC
+            )
+          END AS retention_rank
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1
       ),
@@ -10312,36 +10578,71 @@ async function pruneLedgerSnapshots(
          AND action_block.block_hash = action_transaction.block_hash
          AND action_block.height = action_transaction.block_height
          AND action_block.canonical = true
+        CROSS JOIN LATERAL (
+          VALUES
+            (
+              action_event.payload->'saleAuthorization'->>'oracleBlockHeight',
+              action_event.payload->'saleAuthorization'->>'oracleBlockHash'
+            ),
+            (
+              CASE
+                WHEN action_event.payload->'saleAuthorization'->>'version' = $8
+                THEN action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHeight'
+                ELSE NULL
+              END,
+              CASE
+                WHEN action_event.payload->'saleAuthorization'->>'version' = $8
+                THEN action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHash'
+                ELSE NULL
+              END
+            )
+        ) oracle_reference(block_height, block_hash)
         JOIN proof_indexer.ledger_snapshots oracle_snapshot
          ON oracle_snapshot.network = action_event.network
          AND oracle_snapshot.indexed_through_block =
            CASE
-             WHEN action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
-               '^[1-9][0-9]*$'
-             THEN (action_event.payload->'saleAuthorization'->>'oracleBlockHeight')::integer
+             WHEN oracle_reference.block_height ~ '^[1-9][0-9]*$'
+             THEN oracle_reference.block_height::integer
              ELSE NULL
            END
          AND lower(COALESCE(oracle_snapshot.source_hashes->>'blockScan', '')) =
-           lower(action_event.payload->'saleAuthorization'->>'oracleBlockHash')
+           lower(oracle_reference.block_hash)
          AND lower(COALESCE(oracle_snapshot.payload->>'indexedThroughBlockHash', '')) =
-           lower(action_event.payload->'saleAuthorization'->>'oracleBlockHash')
+           lower(oracle_reference.block_hash)
          AND oracle_snapshot.source_hashes ? 'canonicalSummary'
          AND oracle_snapshot.payload->'summaryRefresh'->>'mode' =
            'canonical-summary-refresh'
         WHERE action_event.network = $1
           AND action_event.status = 'confirmed'
-          AND action_event.valid = true
+          AND (
+            action_event.valid = true
+            OR action_event.payload->'saleAuthorization'->>'version' = $8
+          )
           AND action_event.kind IN (
             'token-listing',
             'token-listing-sealed',
-            'token-sale'
+            'token-sale',
+            'token-event-invalid'
           )
-          AND action_event.payload->'saleAuthorization'->>'version' = $6
+          AND (
+            action_event.kind <> 'token-event-invalid'
+            OR lower(COALESCE(
+              action_event.payload->>'attemptedKind',
+              ''
+            )) IN (
+              'list',
+              'seal',
+              'buy',
+              'token-listing',
+              'token-listing-sealed',
+              'token-sale'
+            )
+          )
+          AND action_event.payload->'saleAuthorization'->>'version' =
+            ANY($6::text[])
           AND lower(action_event.payload->'saleAuthorization'->>'tokenId') = $7
-          AND action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
-            '^[1-9][0-9]*$'
-          AND action_event.payload->'saleAuthorization'->>'oracleBlockHash' ~
-            '^[0-9a-fA-F]{64}$'
+          AND oracle_reference.block_height ~ '^[1-9][0-9]*$'
+          AND oracle_reference.block_hash ~ '^[0-9a-fA-F]{64}$'
       )
       DELETE FROM proof_indexer.ledger_snapshots snapshot
       USING ranked
@@ -10372,8 +10673,9 @@ async function pruneLedgerSnapshots(
       boundedScanSnapshotLimit,
       CANONICAL_REBUILD_META_KEY,
       INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
-      WORK_MARKET_V2_AUTH_VERSION,
+      [WORK_MARKET_V2_AUTH_VERSION, WORK_MARKET_V4_AUTH_VERSION],
       WORK_TOKEN_ID,
+      WORK_MARKET_V4_AUTH_VERSION,
     ],
   );
   return {
@@ -10663,28 +10965,65 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
            AND oracle_snapshot.snapshot_id = EXCLUDED.snapshot_id
           WHERE action_event.network = EXCLUDED.network
             AND action_event.status = 'confirmed'
-            AND action_event.valid = true
+            AND (
+              action_event.valid = true
+              OR action_event.payload->'saleAuthorization'->>'version' = $13
+            )
             AND action_event.kind IN (
               'token-listing',
               'token-listing-sealed',
-              'token-sale'
+              'token-sale',
+              'token-event-invalid'
+            )
+            AND (
+              action_event.kind <> 'token-event-invalid'
+              OR lower(COALESCE(
+                action_event.payload->>'attemptedKind',
+                ''
+              )) IN (
+                'list',
+                'seal',
+                'buy',
+                'token-listing',
+                'token-listing-sealed',
+                'token-sale'
+              )
             )
             AND action_event.payload->'saleAuthorization'->>'version' =
-              'pwt-sale-v3'
+              ANY($11::text[])
             AND lower(action_event.payload->'saleAuthorization'->>'tokenId') =
-              'd4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8'
-            AND action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
-              '^[1-9][0-9]*$'
-            AND oracle_snapshot.indexed_through_block = CASE
-              WHEN action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
-                '^[1-9][0-9]*$'
-              THEN (action_event.payload->'saleAuthorization'->>'oracleBlockHeight')::integer
-              ELSE NULL
-            END
-            AND action_event.payload->'saleAuthorization'->>'oracleBlockHash' ~
-              '^[0-9a-fA-F]{64}$'
-            AND lower(COALESCE(oracle_snapshot.source_hashes->>'blockScan', '')) =
-              lower(action_event.payload->'saleAuthorization'->>'oracleBlockHash')
+              $12
+            AND (
+              (
+                action_event.payload->'saleAuthorization'->>'oracleBlockHeight' ~
+                  '^[1-9][0-9]*$'
+                AND oracle_snapshot.indexed_through_block =
+                  (action_event.payload->'saleAuthorization'->>'oracleBlockHeight')::integer
+                AND action_event.payload->'saleAuthorization'->>'oracleBlockHash' ~
+                  '^[0-9a-fA-F]{64}$'
+                AND lower(COALESCE(
+                  oracle_snapshot.source_hashes->>'blockScan',
+                  ''
+                )) = lower(
+                  action_event.payload->'saleAuthorization'->>'oracleBlockHash'
+                )
+              )
+              OR (
+                action_event.payload->'saleAuthorization'->>'version' = $13
+                AND action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHeight' ~
+                  '^[1-9][0-9]*$'
+                AND oracle_snapshot.indexed_through_block =
+                  (action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHeight')::integer
+                AND action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHash' ~
+                  '^[0-9a-fA-F]{64}$'
+                AND lower(COALESCE(
+                  oracle_snapshot.source_hashes->>'blockScan',
+                  ''
+                )) = lower(
+                  action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHash'
+                )
+              )
+            )
         )
     `,
     [
@@ -10703,6 +11042,9 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       JSON.stringify(snapshotPayload),
       CANONICAL_REBUILD_META_KEY,
       INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+      [WORK_MARKET_V2_AUTH_VERSION, WORK_MARKET_V4_AUTH_VERSION],
+      WORK_TOKEN_ID,
+      WORK_MARKET_V4_AUTH_VERSION,
     ],
   );
   const snapshotRetention = await pruneLedgerSnapshots(client);
@@ -13473,6 +13815,10 @@ async function backfillBlockScanSource(client, source) {
         blockIndexed += result.indexed;
         blockSkipped += result.skipped;
       }
+      await persistCanonicalListingOutpointSpendsFromBlock(client, block, {
+        blockHash,
+        height,
+      });
       const nextIndexedThroughBlockHash = String(blockHash).trim().toLowerCase();
       const nextComplete = height >= tipHeight;
       const nextStopReason = nextComplete
@@ -14398,7 +14744,7 @@ async function removeVolatileWorkMarketV2DecisionEvents(
             AND lower(COALESCE(
               e.payload->'saleAuthorization'->>'version',
               ''
-            )) = $4
+            )) = ANY($4::text[])
           )
           OR EXISTS (
             SELECT 1
@@ -14410,11 +14756,16 @@ async function removeVolatileWorkMarketV2DecisionEvents(
               AND lower(COALESCE(
                 parent_listing.payload->'saleAuthorization'->>'version',
                 ''
-              )) = $4
+              )) = ANY($4::text[])
           )
         )
     `,
-    [NETWORK, txid, WORK_TOKEN_ID, WORK_MARKET_V2_AUTH_VERSION],
+    [
+      NETWORK,
+      txid,
+      WORK_TOKEN_ID,
+      [WORK_MARKET_V2_AUTH_VERSION, WORK_MARKET_V4_AUTH_VERSION],
+    ],
   );
   return Number(result.rowCount ?? 0);
 }

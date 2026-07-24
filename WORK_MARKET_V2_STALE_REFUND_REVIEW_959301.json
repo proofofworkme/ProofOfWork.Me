@@ -1,0 +1,103 @@
+{
+  "status": "review-only-not-paid",
+  "source": {
+    "network": "livenet",
+    "endpoint": "https://computer.proofofwork.me/api/v1/token-history?network=livenet&asset=d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8&kind=invalid-events&limit=500&fresh=1",
+    "source": "proof-indexer-token-invalid-events",
+    "indexedAt": "2026-07-23T19:34:25.000Z",
+    "indexedThroughBlock": 959301,
+    "healthCheckedAt": "2026-07-23T19:36:08.991Z",
+    "healthTipHeight": 959301,
+    "healthLagBlocks": 0
+  },
+  "policy": {
+    "eligibility": "Confirmed WORK marketplace actions rejected only as work-market-v2-oracle-height-stale",
+    "refundFormula": "confirmed registry payment + confirmed miner fee",
+    "saleTicketOutputs": "Unspent self-controlled or seller-controlled sale-ticket outputs remain recoverable by their owners and are excluded from refund expense",
+    "paymentAuthority": "This artifact is an accounting review only and does not authorize signing or payout"
+  },
+  "events": [
+    {
+      "txid": "2a052e2543e1454321e85e451078b74b31f85377150060c91047376c130ef3c3",
+      "attemptedKind": "list",
+      "confirmed": true,
+      "valid": false,
+      "reasonCode": "work-market-v2-oracle-height-stale",
+      "blockHeight": 959168,
+      "blockTime": "2026-07-22T20:04:54.000Z",
+      "sellerAddress": "1PNdpQUScG1SnzyrsuGdErKWtjtrbWM5TV",
+      "amountAtoms": "1500",
+      "inputSats": 30128,
+      "outputSats": 25697,
+      "registryFeeSats": 546,
+      "minerFeeSats": 4431,
+      "refundReviewSats": 4977,
+      "ticket": {
+        "txid": "2a052e2543e1454321e85e451078b74b31f85377150060c91047376c130ef3c3",
+        "vout": 2,
+        "valueSats": 546,
+        "spent": false,
+        "control": "self-controlled",
+        "excludedFromRefund": true
+      }
+    },
+    {
+      "txid": "8d5dd9599d8a372a6f68833cc844a7610120041ba3412baff62a21d74e5c8ad0",
+      "attemptedKind": "seal",
+      "confirmed": true,
+      "valid": false,
+      "reasonCode": "work-market-v2-oracle-height-stale",
+      "blockHeight": 959249,
+      "blockTime": "2026-07-23T11:52:30.000Z",
+      "listingId": "4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1",
+      "sellerAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+      "amountAtoms": "1600",
+      "inputSats": 14712,
+      "outputSats": 11956,
+      "registryFeeSats": 546,
+      "minerFeeSats": 2756,
+      "refundReviewSats": 3302,
+      "ticket": {
+        "txid": "4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1",
+        "vout": 2,
+        "valueSats": 546,
+        "spent": false,
+        "control": "seller-controlled",
+        "excludedFromRefund": true
+      }
+    },
+    {
+      "txid": "1e28a7faddcdfc088b6a1a69622e817f81507bfb347e34bde610143860cc2b85",
+      "attemptedKind": "list",
+      "confirmed": true,
+      "valid": false,
+      "reasonCode": "work-market-v2-oracle-height-stale",
+      "blockHeight": 959256,
+      "blockTime": "2026-07-23T12:37:46.000Z",
+      "sellerAddress": "bc1pdk2hhp84250v049rk4gensem46wqynmhj02tk7yykcadma557avs63qxz4",
+      "amountAtoms": "320",
+      "inputSats": 2333,
+      "outputSats": 1092,
+      "registryFeeSats": 546,
+      "minerFeeSats": 1241,
+      "refundReviewSats": 1787,
+      "ticket": {
+        "txid": "1e28a7faddcdfc088b6a1a69622e817f81507bfb347e34bde610143860cc2b85",
+        "vout": 2,
+        "valueSats": 546,
+        "spent": false,
+        "control": "self-controlled",
+        "excludedFromRefund": true
+      }
+    }
+  ],
+  "totals": {
+    "eventCount": 3,
+    "registryFeeSats": 1638,
+    "minerFeeSats": 8428,
+    "refundReviewSats": 10066,
+    "excludedUnspentTicketSats": 1638
+  },
+  "signingPerformed": false,
+  "payoutPerformed": false
+}

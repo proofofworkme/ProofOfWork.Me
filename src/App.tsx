@@ -147,6 +147,15 @@ import {
   formatExactQ8,
   type ExactIntegerValue,
 } from "./exactAmount";
+import {
+  enrichWalletCuratedUtxoConfirmations,
+  estimateTxVbytes,
+  normalizeWalletUtxos,
+  selectSmallestSingleConfirmedUtxo,
+  selectUtxos,
+  type WalletUtxo as MempoolUtxo,
+  type WalletUtxoSelection as UtxoSelection,
+} from "./walletUtxos";
 import workMarketV1RefundSnapshot from "../WORK_MARKET_V1_REFUNDS_959061.json";
 import {
   AppHeader,
@@ -661,6 +670,8 @@ type PowTokenTransfer = {
 
 type PowTokenInvalidEvent = {
   amount: ExactIntegerValue;
+  amountAtoms?: string;
+  attemptedKind?: string;
   auditMinerFeeSats?: number;
   auditRegistryPaymentSats?: number;
   auditTotalCostSats?: number;
@@ -1269,21 +1280,16 @@ type AttachmentAccumulator = {
   total: number;
 };
 
-type MempoolUtxo = {
-  txid: string;
-  vout: number;
-  value: number;
-  status?: {
-    confirmed?: boolean;
-  };
+type TokenTransferFundingReadiness = {
+  confirmedCandidateCount: number;
+  pendingCandidateCount: number;
+  readyLaneCount: number;
+  requiredPerLaneSats: number;
+  reservedAnchorCount: number;
+  source: "api" | "wallet-curated" | "wallet-generic";
 };
 
-type UtxoSelection = {
-  dustFeeSats: number;
-  selected: MempoolUtxo[];
-  feeSats: number;
-  changeSats: number;
-};
+type UtxoSelectionStrategy = "default" | "smallest-single-confirmed";
 
 type PaymentOutputSpec = {
   address?: string;
@@ -1463,7 +1469,10 @@ const TOKEN_BUY_ACTION = "buy5";
 const TOKEN_SALE_AUTH_VERSION = "pwt-sale-v1";
 const TOKEN_SALE_AUTH_VERSION_ATOMS = "pwt-sale-v2";
 const TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION = "pwt-sale-v3";
+const TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION = "pwt-sale-v4";
 const WORK_MARKET_V2_ORACLE_MODEL = "canonical-work-market-h-minus-one-v1";
+const WORK_MARKET_CONFIRMATION_FLOOR_ORACLE_MODEL =
+  "canonical-work-market-confirmation-floor-v1";
 const WORK_MARKET_V2_DECLARATION_TXID =
   "4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f";
 const TOKEN_CREATION_PRICE_SATS = 546;
@@ -1475,6 +1484,9 @@ const TOKEN_LISTING_ANCHOR_SIGHASH_TYPE = ID_LISTING_ANCHOR_SIGHASH_TYPE;
 const TOKEN_PREPARE_DEFAULT_MINT_COUNT = 40;
 const TOKEN_PREPARE_MAX_MINT_COUNT = 100;
 const TOKEN_PREPARE_DEFAULT_FEE_RESERVE_SATS = 1000;
+const TOKEN_PREPARE_DEFAULT_TRANSFER_COUNT = 20;
+const TOKEN_PREPARE_MAX_TRANSFER_COUNT = 100;
+const TOKEN_PREPARE_DEFAULT_TRANSFER_FEE_RESERVE_SATS = 1000;
 const TOKEN_MINT_ASSISTANT_DEFAULT_COUNT = 5;
 const TOKEN_MINT_ASSISTANT_MAX_COUNT = 100;
 const TOKEN_MINT_ASSISTANT_DEFAULT_DELAY_MS = 1200;
@@ -1597,7 +1609,6 @@ const WORK_ATTACHMENT_ALLOWED_SENDERS = new Set(
     "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv",
   ].map((senderAddress) => senderAddress.toLowerCase()),
 );
-const ESTIMATED_INPUT_VBYTES = 160;
 const ESTIMATED_PAYMENT_OUTPUT_VBYTES = 31;
 const DUST_SATS = 546;
 const DEFAULT_AMOUNT_SATS = 546;
@@ -1767,7 +1778,20 @@ type WorkFloorQuote = {
   totalQ8?: string;
   tokenFlowSats: number;
   usdSource?: string;
+  workMarketplaceV4?: WorkMarketplaceV4Status;
   workNetworkValueAccountingModel?: string;
+};
+
+type WorkMarketplaceV4Status = {
+  active?: boolean;
+  activationHeight?: number;
+  authVersion?: string;
+  declarationBlockHash?: string;
+  declarationConfirmed?: boolean;
+  declarationHeight?: number;
+  declarationTxid?: string;
+  oracleModel?: string;
+  writesEnabled?: boolean;
 };
 
 type WorkFloorPoint = {
@@ -1816,6 +1840,7 @@ type WorkFloorApiResponse = {
   totalQ8?: string;
   tokenFlowSats?: number;
   usdSource?: string;
+  workMarketplaceV4?: WorkMarketplaceV4Status;
   workNetworkValueAccountingModel?: string;
 };
 
@@ -6735,7 +6760,7 @@ function workMarketV2MinimumPriceSats(
   return (amountAtoms * networkValueQ8 + denominator - 1n) / denominator;
 }
 
-function workMarketV2OracleFields(
+function workMarketConfirmationFloorOracleFields(
   quote: WorkFloorQuote,
   amountAtoms: string,
 ) {
@@ -6763,9 +6788,33 @@ function workMarketV2OracleFields(
     minimumPriceSats: minimumPriceSats.toString(),
     oracleBlockHash: blockHash,
     oracleBlockHeight: blockHeight,
-    oracleModel: WORK_MARKET_V2_ORACLE_MODEL,
+    oracleModel: WORK_MARKET_CONFIRMATION_FLOOR_ORACLE_MODEL,
     oracleNetworkValueQ8: networkValueQ8.toString(),
   };
+}
+
+function isWorkMarketSaleAuthorizationVersion(version: unknown) {
+  return (
+    version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION ||
+    version === TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION
+  );
+}
+
+function isWorkMarketConfirmationFloorAuthorization(version: unknown) {
+  return version === TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION;
+}
+
+function workMarketPricingCommitmentMatches(
+  authorization: Partial<PowTokenSaleAuthorizationDraft>,
+  pricingFields: Partial<PowTokenSaleAuthorizationDraft>,
+) {
+  return (
+    pricingFields.oracleBlockHeight === authorization.oracleBlockHeight &&
+    pricingFields.oracleBlockHash === authorization.oracleBlockHash &&
+    pricingFields.oracleNetworkValueQ8 === authorization.oracleNetworkValueQ8 &&
+    pricingFields.minimumPriceSats === authorization.minimumPriceSats &&
+    pricingFields.oracleModel === authorization.oracleModel
+  );
 }
 
 function tokenWalletBalanceDisplay(balance: PowTokenWalletBalance) {
@@ -6882,7 +6931,7 @@ function tokenSaleAuthorizationDraft(
     ticker === INCB_TOKEN_TICKER;
   const amountAtoms =
     (version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-      version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION)
+      isWorkMarketSaleAuthorizationVersion(version))
       ? workAtomsFromIntegerString(authorization.amountAtoms)
       : null;
   return {
@@ -6894,7 +6943,7 @@ function tokenSaleAuthorizationDraft(
         : workNumberFromAtoms(amountAtoms),
     amountAtoms:
       (version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-        version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION) &&
+        isWorkMarketSaleAuthorizationVersion(version)) &&
       amountAtoms !== null
         ? amountAtoms.toString()
         : undefined,
@@ -6910,7 +6959,7 @@ function tokenSaleAuthorizationDraft(
     expiresAt: String(authorization.expiresAt ?? "").trim(),
     network: (authorization.network ?? "livenet") as BitcoinNetwork,
     nonce: String(authorization.nonce ?? "").trim(),
-    ...(version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
+    ...(isWorkMarketSaleAuthorizationVersion(version)
       ? {
           minimumPriceSats: String(
             authorization.minimumPriceSats ?? "",
@@ -6941,7 +6990,7 @@ function tokenSaleAuthorizationWireDraft(
   const draft = tokenSaleAuthorizationDraft(authorization);
   if (
     draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-    draft.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
+    isWorkMarketSaleAuthorizationVersion(draft.version)
   ) {
     const { amount: _amount, ...wire } = draft;
     return wire;
@@ -6976,21 +7025,21 @@ function parseTokenSaleAuthorizationJson(
   if (
     draft.version !== TOKEN_SALE_AUTH_VERSION &&
     draft.version !== TOKEN_SALE_AUTH_VERSION_ATOMS &&
-    draft.version !== TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
+    !isWorkMarketSaleAuthorizationVersion(draft.version)
   ) {
     throw new Error("Credit sale authorization version is not supported.");
   }
 
   const workAmountAtoms =
     (draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-      draft.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION)
+      isWorkMarketSaleAuthorizationVersion(draft.version))
       ? workAtomsFromIntegerString(draft.amountAtoms)
       : null;
   if (
     !/^[0-9a-f]{64}$/u.test(draft.tokenId) ||
     !/^[A-Z0-9]{1,12}$/u.test(draft.ticker) ||
     ((draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-      draft.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION)
+      isWorkMarketSaleAuthorizationVersion(draft.version))
       ? draft.tokenId !== WORK_TOKEN_ID ||
         draft.ticker !== WORK_TOKEN_TICKER ||
         workAmountAtoms === null ||
@@ -7017,13 +7066,17 @@ function parseTokenSaleAuthorizationJson(
     throw new Error("Credit sale authorization is invalid.");
   }
 
-  if (draft.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION) {
+  if (isWorkMarketSaleAuthorizationVersion(draft.version)) {
     const calculatedMinimum = workMarketV2MinimumPriceSats(
       draft.amountAtoms,
       draft.oracleNetworkValueQ8,
     );
+    const expectedOracleModel =
+      draft.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
+        ? WORK_MARKET_V2_ORACLE_MODEL
+        : WORK_MARKET_CONFIRMATION_FLOOR_ORACLE_MODEL;
     if (
-      draft.oracleModel !== WORK_MARKET_V2_ORACLE_MODEL ||
+      draft.oracleModel !== expectedOracleModel ||
       !Number.isSafeInteger(draft.oracleBlockHeight) ||
       Number(draft.oracleBlockHeight) < 1 ||
       !/^[0-9a-f]{64}$/u.test(String(draft.oracleBlockHash ?? "")) ||
@@ -7052,7 +7105,7 @@ function tokenSaleAuthorizationUsesSaleTicketAnchor(
   return (
     (authorization.version === TOKEN_SALE_AUTH_VERSION ||
       authorization.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-      authorization.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION) &&
+      isWorkMarketSaleAuthorizationVersion(authorization.version)) &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
     authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
@@ -7069,7 +7122,7 @@ function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(
   return (
     (authorization.version === TOKEN_SALE_AUTH_VERSION ||
       authorization.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-      authorization.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION) &&
+      isWorkMarketSaleAuthorizationVersion(authorization.version)) &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
     authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
@@ -7225,7 +7278,7 @@ function tokenSaleAuthorizationTermsMatch(
       anchorSignature: "",
       anchorTxid: "",
     });
-    if (draft.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION) {
+    if (isWorkMarketSaleAuthorizationVersion(draft.version)) {
       delete draft.minimumPriceSats;
       delete draft.oracleBlockHash;
       delete draft.oracleBlockHeight;
@@ -8458,7 +8511,9 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
       listing.network === "livenet" &&
       listing.tokenId === WORK_TOKEN_ID &&
       listing.saleAuthorization.version !==
-        TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION,
+        TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION &&
+      listing.saleAuthorization.version !==
+        TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION,
   );
   const closedListings = normalizeTokenListingRecords([
     ...indexedClosedListings,
@@ -12580,24 +12635,36 @@ function normalizeTokenApiState(
       ? payload.holders.map(normalizeTokenHolderRecord)
       : [],
     invalidEvents: Array.isArray(payload?.invalidEvents)
-      ? payload.invalidEvents.map((event) => ({
-          ...event,
-          amount:
-            event?.tokenId === POWB_TOKEN_ID ||
-            event?.tokenId === INCB_TOKEN_ID ||
-            normalizeTokenTicker(String(event?.ticker ?? "")) ===
-              POWB_TOKEN_TICKER ||
-            normalizeTokenTicker(String(event?.ticker ?? "")) ===
-              INCB_TOKEN_TICKER
-              ? exactIntegerText(event?.amount) || 0
-              : Math.max(0, Math.floor(Number(event?.amount) || 0)),
-          confirmed: event?.confirmed === true,
-          kind: "token-event-invalid",
-          reason: String(event?.reason ?? "no-valid-token-event"),
-          tokenId: String(event?.tokenId ?? "").trim().toLowerCase(),
-          txid: String(event?.txid ?? "").trim().toLowerCase(),
-          valid: false,
-        }))
+      ? payload.invalidEvents.map((event) => {
+          const tokenId = String(event?.tokenId ?? "").trim().toLowerCase();
+          const ticker = normalizeTokenTicker(String(event?.ticker ?? ""));
+          const work =
+            tokenId === WORK_TOKEN_ID || ticker === WORK_TOKEN_TICKER;
+          const amountAtoms = work
+            ? workRecordAtoms(event?.amount, event?.amountAtoms)
+            : null;
+          return {
+            ...event,
+            amount:
+              amountAtoms !== null
+                ? workNumberFromAtoms(amountAtoms)
+                : tokenId === POWB_TOKEN_ID ||
+                    tokenId === INCB_TOKEN_ID ||
+                    ticker === POWB_TOKEN_TICKER ||
+                    ticker === INCB_TOKEN_TICKER
+                  ? exactIntegerText(event?.amount) || 0
+                  : Math.max(0, Math.floor(Number(event?.amount) || 0)),
+            amountAtoms:
+              amountAtoms === null ? undefined : amountAtoms.toString(),
+            attemptedKind: String(event?.attemptedKind ?? "").trim(),
+            confirmed: event?.confirmed === true,
+            kind: "token-event-invalid" as const,
+            reason: String(event?.reason ?? "no-valid-token-event"),
+            tokenId,
+            txid: String(event?.txid ?? "").trim().toLowerCase(),
+            valid: false as const,
+          };
+        })
       : [],
     listings: Array.isArray(payload?.listings) ? payload.listings : [],
     mints: Array.isArray(payload?.mints)
@@ -13613,6 +13680,11 @@ function normalizeWorkFloorQuote(
     totalQ8: exactIntegerText(payload.totalQ8) || undefined,
     tokenFlowSats: Number(payload.tokenFlowSats) || 0,
     usdSource: typeof payload.usdSource === "string" ? payload.usdSource : undefined,
+    workMarketplaceV4:
+      payload.workMarketplaceV4 &&
+      typeof payload.workMarketplaceV4 === "object"
+        ? { ...payload.workMarketplaceV4 }
+        : undefined,
     workNetworkValueAccountingModel:
       typeof payload.workNetworkValueAccountingModel === "string"
         ? payload.workNetworkValueAccountingModel
@@ -14011,22 +14083,37 @@ async function fetchWorkFloorQuote(
   return normalizeWorkFloorQuote(payload, targetNetwork);
 }
 
-async function assertWorkMarketV2DeclarationConfirmed() {
-  const status = await fetchProofApiJson<{
-    blockHash?: string;
-    blockHeight?: number;
-    confirmed?: boolean;
-    status?: string;
-  }>(
-    `/api/v1/tx/${WORK_MARKET_V2_DECLARATION_TXID}/status`,
-    "livenet",
+function workMarketplaceV4WritesReady(quote: WorkFloorQuote | undefined) {
+  const status = quote?.workMarketplaceV4;
+  const declarationHeight = Number(status?.declarationHeight);
+  const activationHeight = Number(status?.activationHeight);
+  return Boolean(
+    status?.active === true &&
+      status.writesEnabled === true &&
+      status.declarationConfirmed === true &&
+      status.authVersion === TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION &&
+      status.oracleModel === WORK_MARKET_CONFIRMATION_FLOOR_ORACLE_MODEL &&
+      /^[0-9a-f]{64}$/u.test(
+        String(status.declarationTxid ?? "").trim().toLowerCase(),
+      ) &&
+      /^[0-9a-f]{64}$/u.test(
+        String(status.declarationBlockHash ?? "").trim().toLowerCase(),
+      ) &&
+      Number.isSafeInteger(declarationHeight) &&
+      declarationHeight > 0 &&
+      Number.isSafeInteger(activationHeight) &&
+      activationHeight === declarationHeight + 1,
   );
-  if (status.confirmed !== true || status.status !== "confirmed") {
+}
+
+function assertWorkMarketplaceV4WritesEnabled(
+  quote: WorkFloorQuote | undefined,
+) {
+  if (!workMarketplaceV4WritesReady(quote)) {
     throw new Error(
-      "WORK Marketplace V2 activates only after its on-chain declaration confirms.",
+      "Marketplace upgrade pending declaration. WORK list, seal, and buy actions are temporarily read-only; delisting remains available.",
     );
   }
-  return status;
 }
 
 async function fetchWorkSummary(
@@ -14461,65 +14548,61 @@ async function fetchUtxos(
   ownerAddress: string,
   ownerNetwork: BitcoinNetwork,
 ): Promise<MempoolUtxo[]> {
-  const normalizeUtxos = (rawUtxos: Array<Record<string, unknown>>) =>
-    rawUtxos
-      .flatMap((utxo): MempoolUtxo[] => {
-        const txid =
-          typeof utxo.txid === "string"
-            ? utxo.txid
-            : typeof utxo.txId === "string"
-              ? utxo.txId
-              : typeof utxo.tx_hash === "string"
-                ? utxo.tx_hash
-                : "";
-        const vout = Number(
-          utxo.vout ?? utxo.outputIndex ?? utxo.tx_pos ?? -1,
-        );
-        const value = Number(utxo.value ?? utxo.satoshis ?? utxo.amount ?? 0);
-
-        if (!/^[0-9a-fA-F]{64}$/.test(txid) || vout < 0 || value <= 0) {
-          return [];
-        }
-
-        const rawStatus = utxo.status as MempoolUtxo["status"] | undefined;
-        const confirmations = Number(utxo.confirmations);
-        const confirmed =
-          typeof rawStatus?.confirmed === "boolean"
-            ? rawStatus.confirmed
-            : typeof utxo.confirmed === "boolean"
-              ? utxo.confirmed
-              : Number.isFinite(confirmations)
-                ? confirmations > 0
-                : false;
-        const status = {
-          ...(rawStatus ?? {}),
-          confirmed,
-        };
-        return [{ txid, vout, value, status }];
-      })
-      .sort((left, right) => {
-        const byConfirmation =
-          Number(Boolean(right.status?.confirmed)) -
-          Number(Boolean(left.status?.confirmed));
-        return byConfirmation || right.value - left.value;
-      });
-
   const walletUtxoReader =
     window.unisat?.getBitcoinUtxos ?? window.unisat?.getUtxos;
+  const walletUtxoSource: NonNullable<MempoolUtxo["source"]> =
+    window.unisat?.getBitcoinUtxos
+      ? "wallet-curated"
+      : "wallet-generic";
   if (walletUtxoReader && ownerNetwork === "livenet") {
     try {
       const rawWalletUtxos = await walletUtxoReader.call(window.unisat);
       if (Array.isArray(rawWalletUtxos)) {
-        const walletUtxos = normalizeUtxos(rawWalletUtxos);
+        const walletUtxos = normalizeWalletUtxos(
+          rawWalletUtxos,
+          walletUtxoSource,
+        );
+        if (walletUtxoSource === "wallet-curated") {
+          if (
+            walletUtxos.length === 0 ||
+            walletUtxos.every(
+              (utxo) => typeof utxo.status?.confirmed === "boolean",
+            )
+          ) {
+            return walletUtxos;
+          }
+          const statusEvidence = await fetchAddressApiUtxos(
+            ownerAddress,
+            ownerNetwork,
+          );
+          return enrichWalletCuratedUtxoConfirmations(
+            walletUtxos,
+            statusEvidence,
+          );
+        }
         if (walletUtxos.some((utxo) => utxo.status?.confirmed)) {
           return walletUtxos;
         }
+      } else if (walletUtxoSource === "wallet-curated") {
+        throw new Error("UniSat returned an invalid curated UTXO response.");
       }
-    } catch {
+    } catch (error) {
+      if (walletUtxoSource === "wallet-curated") {
+        throw new Error(
+          `${errorMessage(error, "UniSat could not provide curated UTXOs.")} No raw address outputs were selected.`,
+        );
+      }
       // Fall through to the ProofOfWork API fallback.
     }
   }
 
+  return fetchAddressApiUtxos(ownerAddress, ownerNetwork);
+}
+
+async function fetchAddressApiUtxos(
+  ownerAddress: string,
+  ownerNetwork: BitcoinNetwork,
+): Promise<MempoolUtxo[]> {
   const apiPath = `/api/v1/address/${encodeURIComponent(ownerAddress)}/utxo`;
   const utxoUrls = [proofApiUrl(apiPath, ownerNetwork)];
   let lastError: unknown;
@@ -14552,7 +14635,10 @@ async function fetchUtxos(
           );
         }
         const payload = await response.json();
-        return normalizeUtxos(Array.isArray(payload) ? payload : []);
+        return normalizeWalletUtxos(
+          Array.isArray(payload) ? payload : [],
+          "api",
+        );
       } catch (error) {
         lastError =
           timedOut ||
@@ -14568,6 +14654,44 @@ async function fetchUtxos(
   }
 
   throw new Error(errorMessage(lastError, "Could not load wallet UTXOs."));
+}
+
+async function fetchTokenTransferFundingReadiness(
+  ownerAddress: string,
+  ownerNetwork: BitcoinNetwork,
+  futureFeeReserveSats: number,
+): Promise<TokenTransferFundingReadiness> {
+  const [walletUtxos, reservedListingAnchors] = await Promise.all([
+    fetchUtxos(ownerAddress, ownerNetwork),
+    fetchFreshProofOfWorkListingAnchorOutpoints(ownerAddress, ownerNetwork),
+  ]);
+  const reserved = new Set(
+    reservedListingAnchors.map(
+      (outpoint) => `${outpoint.txid}:${outpoint.vout}`,
+    ),
+  );
+  const candidateUtxos = walletUtxos.filter(
+    (utxo) => !reserved.has(`${utxo.txid}:${utxo.vout}`),
+  );
+  const confirmedCandidates = candidateUtxos.filter(
+    (utxo) => utxo.status?.confirmed,
+  );
+  const requiredPerLaneSats = Math.max(
+    DUST_SATS,
+    TOKEN_MIN_MUTATION_PRICE_SATS +
+      Math.max(0, Math.floor(futureFeeReserveSats)),
+  );
+
+  return {
+    confirmedCandidateCount: confirmedCandidates.length,
+    pendingCandidateCount: candidateUtxos.length - confirmedCandidates.length,
+    readyLaneCount: confirmedCandidates.filter(
+      (utxo) => utxo.value >= requiredPerLaneSats,
+    ).length,
+    requiredPerLaneSats,
+    reservedAnchorCount: walletUtxos.length - candidateUtxos.length,
+    source: walletUtxos[0]?.source ?? "api",
+  };
 }
 
 async function fetchTransactionHex(txid: string, ownerNetwork: BitcoinNetwork) {
@@ -14846,66 +14970,6 @@ function broadcastCheckSummaryText(summary: BroadcastCheckSummary) {
   }`;
 }
 
-function estimateTxVbytes(inputCount: number, outputVbytes: number) {
-  return 10 + inputCount * ESTIMATED_INPUT_VBYTES + outputVbytes;
-}
-
-function selectUtxos(
-  utxos: MempoolUtxo[],
-  amountSats: number,
-  feeRate: number,
-  fixedOutputVbytes: number,
-  changeOutputVbytes: number,
-  baseInputCount = 0,
-): UtxoSelection {
-  const selected: MempoolUtxo[] = [];
-  let selectedValue = 0;
-
-  for (const utxo of utxos) {
-    selected.push(utxo);
-    selectedValue += utxo.value;
-
-    const feeWithChange = Math.ceil(
-      estimateTxVbytes(
-        selected.length + baseInputCount,
-        fixedOutputVbytes + changeOutputVbytes,
-      ) * feeRate,
-    );
-    const changeWithChange = selectedValue - amountSats - feeWithChange;
-    if (changeWithChange >= DUST_SATS) {
-      return {
-        selected,
-        dustFeeSats: 0,
-        feeSats: feeWithChange,
-        changeSats: changeWithChange,
-      };
-    }
-
-    const feeWithoutChange = Math.ceil(
-      estimateTxVbytes(selected.length + baseInputCount, fixedOutputVbytes) *
-        feeRate,
-    );
-    const remainder = selectedValue - amountSats - feeWithoutChange;
-    if (remainder >= 0) {
-      return {
-        selected,
-        dustFeeSats: remainder,
-        feeSats: feeWithoutChange + remainder,
-        changeSats: 0,
-      };
-    }
-  }
-
-  const lastInputCount = Math.max(selected.length, 1) + baseInputCount;
-  const estimatedFee = Math.ceil(
-    estimateTxVbytes(lastInputCount, fixedOutputVbytes + changeOutputVbytes) *
-      feeRate,
-  );
-  throw new Error(
-    `Insufficient funds. Need about ${(amountSats + estimatedFee).toLocaleString()} proofs for amount plus fee.`,
-  );
-}
-
 function isNativeWitnessScript(script: Uint8Array) {
   const version = script[0];
   const pushLength = script[1];
@@ -15168,8 +15232,10 @@ async function buildPaymentPsbt({
   postProtocolPayments,
   postProtocolPayloads = [],
   requireConfirmedUtxos = true,
+  requireWalletUtxos = false,
   protocolPayloads,
   toAddress,
+  utxoSelectionStrategy = "default",
 }: {
   amountSats?: number;
   excludeOutpoints?: PowIdSpentOutpoint[];
@@ -15180,8 +15246,10 @@ async function buildPaymentPsbt({
   postProtocolPayments?: PaymentOutputSpec[];
   postProtocolPayloads?: string[];
   requireConfirmedUtxos?: boolean;
+  requireWalletUtxos?: boolean;
   protocolPayloads: string[];
   toAddress?: string;
+  utxoSelectionStrategy?: UtxoSelectionStrategy;
 }) {
   const selectedNetwork = bitcoinNetwork(network);
   const paymentOutputs =
@@ -15282,6 +15350,16 @@ async function buildPaymentPsbt({
     ? spendableWalletUtxos.filter((utxo) => utxo.status?.confirmed)
     : spendableWalletUtxos;
 
+  if (
+    requireWalletUtxos &&
+    (walletUtxos.length === 0 ||
+      walletUtxos.some((utxo) => utxo.source !== "wallet-curated"))
+  ) {
+    throw new Error(
+      "UniSat did not provide its curated funding UTXOs. Transaction preparation stopped before signing so raw node outputs cannot be selected.",
+    );
+  }
+
   if (walletUtxos.length === 0) {
     throw new Error(
       `No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`,
@@ -15296,13 +15374,23 @@ async function buildPaymentPsbt({
 
   let selection: UtxoSelection;
   try {
-    selection = selectUtxos(
-      utxos,
-      totalAmountSats,
-      feeRate,
-      fixedOutputVbytes,
-      changeOutputVbytes,
-    );
+    selection =
+      (utxoSelectionStrategy === "smallest-single-confirmed"
+        ? selectSmallestSingleConfirmedUtxo(
+            utxos,
+            totalAmountSats,
+            feeRate,
+            fixedOutputVbytes,
+            changeOutputVbytes,
+          )
+        : undefined) ??
+      selectUtxos(
+        utxos,
+        totalAmountSats,
+        feeRate,
+        fixedOutputVbytes,
+        changeOutputVbytes,
+      );
   } catch (error) {
     if (requireConfirmedUtxos && walletUtxos.length > utxos.length) {
       throw new Error(
@@ -15744,7 +15832,7 @@ function listingAnchorDetails(
   if (
     tokenAuthorization?.version === TOKEN_SALE_AUTH_VERSION ||
     tokenAuthorization?.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-    tokenAuthorization?.version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
+    isWorkMarketSaleAuthorizationVersion(tokenAuthorization?.version)
   ) {
     if (!tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(tokenAuthorization)) {
       throw new Error(
@@ -16453,6 +16541,7 @@ async function broadcastSignedRawTransaction(
 }
 
 async function signAndBroadcastPsbtDetailed({
+  beforeBroadcast,
   broadcastStrategy = "mempool",
   inputCount,
   network,
@@ -16461,6 +16550,7 @@ async function signAndBroadcastPsbtDetailed({
   signingAddress,
   wallet,
 }: {
+  beforeBroadcast?: () => Promise<void>;
   broadcastStrategy?: BroadcastStrategy;
   inputCount: number;
   network: BitcoinNetwork;
@@ -16536,6 +16626,7 @@ async function signAndBroadcastPsbtDetailed({
   );
   const rawTx = signedTransaction.toHex();
 
+  await beforeBroadcast?.();
   return broadcastSignedRawTransaction(rawTx, network, broadcastStrategy);
 }
 
@@ -16701,6 +16792,17 @@ export default function App() {
   );
   const [tokenPrepareFeeRate, setTokenPrepareFeeRate] =
     useState(DEFAULT_FEE_RATE);
+  const [tokenPrepareTransferCount, setTokenPrepareTransferCount] = useState(
+    TOKEN_PREPARE_DEFAULT_TRANSFER_COUNT,
+  );
+  const [
+    tokenPrepareTransferFeeReserveSats,
+    setTokenPrepareTransferFeeReserveSats,
+  ] = useState(TOKEN_PREPARE_DEFAULT_TRANSFER_FEE_RESERVE_SATS);
+  const [tokenPrepareTransferFeeRate, setTokenPrepareTransferFeeRate] =
+    useState(DEFAULT_FEE_RATE);
+  const [tokenTransferFundingReadiness, setTokenTransferFundingReadiness] =
+    useState<TokenTransferFundingReadiness | undefined>();
   const [tokenMintAssistantTarget, setTokenMintAssistantTarget] = useState(
     TOKEN_MINT_ASSISTANT_DEFAULT_COUNT,
   );
@@ -16722,8 +16824,42 @@ export default function App() {
   );
   const [rushMinting, setRushMinting] = useState(false);
   const [tokenAction, setTokenAction] = useState<
-    "" | "buy" | "create" | "delist" | "list" | "mint" | "seal" | "split" | "transfer"
+    "" | "buy" | "create" | "delist" | "list" | "mint" | "seal" | "split" | "split-transfer" | "transfer"
   >("");
+  useEffect(() => {
+    let canceled = false;
+    if (!address || network !== "livenet") {
+      setTokenTransferFundingReadiness(undefined);
+      return () => {
+        canceled = true;
+      };
+    }
+
+    void fetchTokenTransferFundingReadiness(
+      address,
+      network,
+      tokenPrepareTransferFeeReserveSats,
+    )
+      .then((readiness) => {
+        if (!canceled) {
+          setTokenTransferFundingReadiness(readiness);
+        }
+      })
+      .catch(() => {
+        if (!canceled) {
+          setTokenTransferFundingReadiness(undefined);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    address,
+    network,
+    tokenMarketHistoryRefreshNonce,
+    tokenPrepareTransferFeeReserveSats,
+  ]);
   const [mailPreferences, setMailPreferences] = useState<MailPreferences>(() =>
     loadMailPreferences(),
   );
@@ -18929,6 +19065,8 @@ export default function App() {
     Boolean(
       address &&
         walletTransferToken &&
+        (!isWorkToken(walletTransferToken) ||
+          workMarketplaceV4WritesReady(workFloorQuote)) &&
         tokenListInput &&
         normalizedTokenListAmountUnits !== null &&
         normalizedTokenListAmountUnits <= walletSpendableTokenAtoms &&
@@ -18958,6 +19096,26 @@ export default function App() {
     Number.isFinite(tokenPrepareFeeRate) && tokenPrepareFeeRate > 0
       ? tokenPrepareFeeRate
       : DEFAULT_FEE_RATE;
+  const tokenPrepareTransferCountValue = Number.isFinite(
+    tokenPrepareTransferCount,
+  )
+    ? Math.floor(tokenPrepareTransferCount)
+    : 0;
+  const tokenPrepareTransferFeeReserveValue = Number.isFinite(
+    tokenPrepareTransferFeeReserveSats,
+  )
+    ? Math.floor(tokenPrepareTransferFeeReserveSats)
+    : 0;
+  const tokenPrepareTransferFeeRateValue =
+    Number.isFinite(tokenPrepareTransferFeeRate) &&
+    tokenPrepareTransferFeeRate > 0
+      ? tokenPrepareTransferFeeRate
+      : DEFAULT_FEE_RATE;
+  const tokenPrepareTransferOutputSats = Math.max(
+    DUST_SATS,
+    TOKEN_MIN_MUTATION_PRICE_SATS +
+      Math.max(0, tokenPrepareTransferFeeReserveValue),
+  );
   const tokenPrepareOutputSats = selectedToken
     ? Math.max(
         DUST_SATS,
@@ -19014,6 +19172,17 @@ export default function App() {
       tokenPrepareFeeReserveValue >= 0 &&
       tokenPrepareFeeRateValue > 0 &&
       tokenPrepareOutputSats >= DUST_SATS,
+    ) && !busy;
+  const canPrepareTokenTransferUtxos =
+    Boolean(
+      address &&
+        network === "livenet" &&
+        tokenPrepareTransferCountValue >= 1 &&
+        tokenPrepareTransferCountValue <= TOKEN_PREPARE_MAX_TRANSFER_COUNT &&
+        tokenPrepareTransferFeeReserveValue >= 0 &&
+        tokenPrepareTransferFeeRateValue > 0 &&
+        tokenPrepareTransferOutputSats >= DUST_SATS &&
+        tokenTransferFundingReadiness?.source === "wallet-curated",
     ) && !busy;
   const canCreateToken =
     Boolean(
@@ -25807,6 +25976,7 @@ export default function App() {
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
         toAddress: token.registryAddress,
+        utxoSelectionStrategy: "smallest-single-confirmed",
       });
       if (
         !confirmDustFeeAbsorption({
@@ -25853,6 +26023,7 @@ export default function App() {
         text: `${token.ticker} transfer broadcast: ${shortAddress(txid)}.`,
       });
       void refreshToken(true);
+      void refreshTokenTransferFundingReadiness().catch(() => undefined);
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -25862,6 +26033,51 @@ export default function App() {
       setTokenAction("");
       setBusy(false);
     }
+  }
+
+  async function assertWorkMarketPricingTipUnchanged({
+    amountAtoms,
+    authorization,
+    actionLabel,
+  }: {
+    amountAtoms: string;
+    authorization: Partial<PowTokenSaleAuthorizationDraft>;
+    actionLabel: string;
+  }) {
+    const preBroadcastFloor = await fetchWorkFloorQuote("livenet", true);
+    assertWorkMarketplaceV4WritesEnabled(preBroadcastFloor);
+    if (!preBroadcastFloor) {
+      throw new Error(
+        `The WORK pricing oracle became unavailable before broadcast. No ${actionLabel} transaction was broadcast.`,
+      );
+    }
+    applyWorkFloorQuote(preBroadcastFloor);
+    const preBroadcastPricingFields =
+      workMarketConfirmationFloorOracleFields(
+        preBroadcastFloor,
+        amountAtoms,
+      );
+    if (
+      !workMarketPricingCommitmentMatches(
+        authorization,
+        preBroadcastPricingFields,
+      )
+    ) {
+      throw new Error(
+        `The WORK pricing tip advanced before broadcast. Retry the ${actionLabel} against the new confirmed tip. The signed transaction was not broadcast.`,
+      );
+    }
+  }
+
+  function confirmWorkMarketConfirmationFloorAction(actionLabel: string) {
+    if (actionLabel === "purchase") {
+      return window.confirm(
+        "WORK purchases use confirmation-floor pricing. If the confirmation-time floor rises above the signed price, the seller payment and sale-ticket spend may still confirm while the WORK transfer is rejected. Registry and miner fees are final once broadcast. Continue?",
+      );
+    }
+    return window.confirm(
+      `WORK ${actionLabel} uses confirmation-floor pricing. The canonical verifier checks the floor from the block immediately before confirmation; this transaction remains valid when its price meets that confirmation floor. Registry and miner fees are final once broadcast. Continue?`,
+    );
   }
 
   async function listToken(event: FormEvent<HTMLFormElement>) {
@@ -25964,15 +26180,15 @@ export default function App() {
 
       let workPricingFields: Partial<PowTokenSaleAuthorizationDraft> = {};
       if (isWorkToken(latestToken)) {
-        await assertWorkMarketV2DeclarationConfirmed();
         const freshFloor = await fetchWorkFloorQuote("livenet", true);
+        assertWorkMarketplaceV4WritesEnabled(freshFloor);
         if (!freshFloor || !parsedAmount.amountAtoms) {
           throw new Error(
             "The exact-tip WORK pricing oracle is unavailable. No listing was created.",
           );
         }
         applyWorkFloorQuote(freshFloor);
-        workPricingFields = workMarketV2OracleFields(
+        workPricingFields = workMarketConfirmationFloorOracleFields(
           freshFloor,
           parsedAmount.amountAtoms,
         );
@@ -26008,7 +26224,7 @@ export default function App() {
           ticker: latestToken.ticker,
           tokenId: latestToken.tokenId,
           version: isWorkToken(latestToken)
-            ? TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
+            ? TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION
             : TOKEN_SALE_AUTH_VERSION,
           ...workPricingFields,
         }),
@@ -26055,8 +26271,28 @@ export default function App() {
         return;
       }
 
+      if (
+        isWorkToken(latestToken) &&
+        !confirmWorkMarketConfirmationFloorAction("listing")
+      ) {
+        setStatus({
+          tone: "idle",
+          text: "WORK listing canceled before signing.",
+        });
+        return;
+      }
+
       await assertActiveWalletAddress(window.unisat, address);
       const txid = await signAndBroadcastPsbt({
+        beforeBroadcast:
+          isWorkToken(latestToken) && parsedAmount.amountAtoms
+            ? () =>
+                assertWorkMarketPricingTipUnchanged({
+                  actionLabel: "listing",
+                  amountAtoms: parsedAmount.amountAtoms!,
+                  authorization: saleAuthorization,
+                })
+            : undefined,
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
@@ -26129,15 +26365,24 @@ export default function App() {
 
       let workPricingFields: Partial<PowTokenSaleAuthorizationDraft> = {};
       if (isWorkToken(listing)) {
-        await assertWorkMarketV2DeclarationConfirmed();
+        if (
+          !isWorkMarketConfirmationFloorAuthorization(
+            listing.saleAuthorization.version,
+          )
+        ) {
+          throw new Error(
+            "This WORK listing uses the retired next-block authorization. Delist it to recover the sale ticket, then relist after the marketplace upgrade activates.",
+          );
+        }
         const freshFloor = await fetchWorkFloorQuote("livenet", true);
+        assertWorkMarketplaceV4WritesEnabled(freshFloor);
         if (!freshFloor || !listing.amountAtoms) {
           throw new Error(
             "The exact-tip WORK pricing oracle is unavailable. No seal was created.",
           );
         }
         applyWorkFloorQuote(freshFloor);
-        workPricingFields = workMarketV2OracleFields(
+        workPricingFields = workMarketConfirmationFloorOracleFields(
           freshFloor,
           listing.amountAtoms,
         );
@@ -26193,7 +26438,28 @@ export default function App() {
         return;
       }
 
+      if (
+        isWorkToken(listing) &&
+        !confirmWorkMarketConfirmationFloorAction("listing seal")
+      ) {
+        setStatus({
+          tone: "idle",
+          text: "WORK listing seal canceled before signing.",
+        });
+        return;
+      }
+
+      await assertActiveWalletAddress(window.unisat, address);
       const txid = await signAndBroadcastPsbt({
+        beforeBroadcast:
+          isWorkToken(listing) && listing.amountAtoms
+            ? () =>
+                assertWorkMarketPricingTipUnchanged({
+                  actionLabel: "listing seal",
+                  amountAtoms: listing.amountAtoms!,
+                  authorization: sealedAuthorization,
+                })
+            : undefined,
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
@@ -26395,15 +26661,24 @@ export default function App() {
 
       let purchaseAuthorization: PowTokenSaleAuthorization | undefined;
       if (isWorkToken(listing)) {
-        await assertWorkMarketV2DeclarationConfirmed();
+        if (
+          !isWorkMarketConfirmationFloorAuthorization(
+            listing.saleAuthorization.version,
+          )
+        ) {
+          throw new Error(
+            "This WORK listing uses the retired next-block authorization and cannot be bought. The seller must delist and relist after the marketplace upgrade activates.",
+          );
+        }
         const freshFloor = await fetchWorkFloorQuote("livenet", true);
+        assertWorkMarketplaceV4WritesEnabled(freshFloor);
         if (!freshFloor || !listing.amountAtoms) {
           throw new Error(
             "The exact-tip WORK pricing oracle is unavailable. No purchase was created.",
           );
         }
         applyWorkFloorQuote(freshFloor);
-        const workPricingFields = workMarketV2OracleFields(
+        const workPricingFields = workMarketConfirmationFloorOracleFields(
           freshFloor,
           listing.amountAtoms,
         );
@@ -26461,42 +26736,26 @@ export default function App() {
       }
 
       if (purchaseAuthorization) {
-        const acceptedSettlementRisk = window.confirm(
-          "WORK Marketplace V2 purchases are next-block bound. If this transaction does not confirm in the next block, the seller payment and sale-ticket spend can still confirm while the WORK transfer is rejected. Continue?",
-        );
-        if (!acceptedSettlementRisk) {
+        if (!confirmWorkMarketConfirmationFloorAction("purchase")) {
           setStatus({
             tone: "idle",
             text: "WORK purchase canceled before signing.",
           });
           return;
         }
-
-        const preBroadcastFloor = await fetchWorkFloorQuote("livenet", true);
-        if (!preBroadcastFloor || !listing.amountAtoms) {
-          throw new Error(
-            "The exact-tip WORK pricing oracle became unavailable before signing. No transaction was broadcast.",
-          );
-        }
-        const preBroadcastPricingFields = workMarketV2OracleFields(
-          preBroadcastFloor,
-          listing.amountAtoms,
-        );
-        if (
-          preBroadcastPricingFields.oracleBlockHeight !==
-            purchaseAuthorization.oracleBlockHeight ||
-          preBroadcastPricingFields.oracleBlockHash !==
-            purchaseAuthorization.oracleBlockHash ||
-          preBroadcastPricingFields.oracleNetworkValueQ8 !==
-            purchaseAuthorization.oracleNetworkValueQ8
-        ) {
-          throw new Error(
-            "The WORK pricing tip advanced before signing. Retry the purchase against the new exact tip. No transaction was broadcast.",
-          );
-        }
       }
 
+      await assertActiveWalletAddress(window.unisat, address);
       const txid = await signAndBroadcastPsbt({
+        beforeBroadcast:
+          purchaseAuthorization && listing.amountAtoms
+            ? () =>
+                assertWorkMarketPricingTipUnchanged({
+                  actionLabel: "purchase",
+                  amountAtoms: listing.amountAtoms!,
+                  authorization: purchaseAuthorization!,
+                })
+            : undefined,
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
@@ -27129,6 +27388,116 @@ export default function App() {
     }, delayMs);
   }
 
+  async function refreshTokenTransferFundingReadiness() {
+    if (!address || network !== "livenet") {
+      setTokenTransferFundingReadiness(undefined);
+      return;
+    }
+    const readiness = await fetchTokenTransferFundingReadiness(
+      address,
+      network,
+      tokenPrepareTransferFeeReserveValue,
+    );
+    setTokenTransferFundingReadiness(readiness);
+  }
+
+  async function prepareTokenTransferUtxos(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!window.unisat?.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "Connect UniSat with signPsbt support first.",
+      });
+      return;
+    }
+    if (!address || network !== "livenet") {
+      setStatus({
+        tone: "bad",
+        text: "Connect a mainnet wallet before preparing transfer UTXOs.",
+      });
+      return;
+    }
+
+    const transferCount = tokenPrepareTransferCountValue;
+    const futureFeeReserveSats = Math.max(
+      0,
+      tokenPrepareTransferFeeReserveValue,
+    );
+    const prepareFeeRate = tokenPrepareTransferFeeRateValue;
+    const outputSats = Math.max(
+      DUST_SATS,
+      TOKEN_MIN_MUTATION_PRICE_SATS + futureFeeReserveSats,
+    );
+    if (
+      !Number.isSafeInteger(transferCount) ||
+      transferCount < 1 ||
+      transferCount > TOKEN_PREPARE_MAX_TRANSFER_COUNT
+    ) {
+      setStatus({
+        tone: "bad",
+        text: `Prepare between 1 and ${TOKEN_PREPARE_MAX_TRANSFER_COUNT} transfer UTXOs at a time.`,
+      });
+      return;
+    }
+
+    setTokenAction("split-transfer");
+    setBusy(true);
+    setStatus({
+      tone: "idle",
+      text: `Preparing ${transferCount.toLocaleString()} confirmed-only transfer lanes...`,
+    });
+
+    try {
+      await ensureWalletNetwork(window.unisat, "livenet", address);
+      const paymentPsbt = await buildPaymentPsbt({
+        feeRate: prepareFeeRate,
+        fromAddress: address,
+        network: "livenet",
+        payments: Array.from({ length: transferCount }, () => ({
+          address,
+          amountSats: outputSats,
+        })),
+        protocolPayloads: [],
+        requireConfirmedUtxos: true,
+        requireWalletUtxos: true,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate: prepareFeeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      await assertActiveWalletAddress(window.unisat, address);
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network: "livenet",
+        psbtHex: paymentPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+      setStatus({
+        tone: "good",
+        text: `${transferCount.toLocaleString()} transfer lanes prepared: ${shortAddress(txid)}. Each output carries ${outputSats.toLocaleString()} proofs for one registry payment plus fee reserve. Wait for confirmation before parallel transfers.`,
+      });
+      await refreshTokenTransferFundingReadiness().catch(() => undefined);
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Transfer UTXO preparation failed."),
+      });
+    } finally {
+      setTokenAction("");
+      setBusy(false);
+    }
+  }
+
   async function prepareTokenMintUtxos(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -27386,6 +27755,7 @@ export default function App() {
         btcUsd={tokenBtcUsd}
         busy={busy}
         canList={canListToken}
+        canPrepareTransferUtxos={canPrepareTokenTransferUtxos}
         canTransfer={canTransferToken}
         closedListings={tokenClosedListings}
         connectWallet={connectWallet}
@@ -27409,12 +27779,33 @@ export default function App() {
             label: "wallet market data",
           })
         }
+        prepareTransferCount={tokenPrepareTransferCount}
+        prepareTransferFeeRate={tokenPrepareTransferFeeRate}
+        prepareTransferFeeReserveSats={tokenPrepareTransferFeeReserveSats}
+        prepareTransferUtxos={prepareTokenTransferUtxos}
+        preparingTransferUtxos={tokenAction === "split-transfer"}
+        refreshTransferFundingReadiness={() =>
+          void refreshTokenTransferFundingReadiness().catch((error) =>
+            setStatus({
+              tone: "bad",
+              text: errorMessage(
+                error,
+                "Transfer funding lanes could not be checked.",
+              ),
+            }),
+          )
+        }
         sealListing={sealTokenListing}
         selectedTokenId={walletTransferToken?.tokenId ?? ""}
         setFeeRate={setFeeRate}
         setListAmount={setTokenListAmount}
         setListBuyerAddress={setTokenListBuyerAddress}
         setListPriceSats={setTokenListPriceSats}
+        setPrepareTransferCount={setTokenPrepareTransferCount}
+        setPrepareTransferFeeRate={setTokenPrepareTransferFeeRate}
+        setPrepareTransferFeeReserveSats={
+          setTokenPrepareTransferFeeReserveSats
+        }
         setSelectedTokenId={setTokenTransferTokenId}
         setTransferAmount={setTokenTransferAmount}
         setTransferRecipient={setTokenTransferRecipient}
@@ -27424,6 +27815,7 @@ export default function App() {
         transferAmount={tokenTransferAmount}
         transferBalance={walletSpendableTokenBalance}
         transferBytes={tokenTransferBytes}
+        transferFundingReadiness={tokenTransferFundingReadiness}
         transferRecipient={tokenTransferRecipient}
         transferToken={walletTransferToken}
         transferring={tokenAction === "transfer"}
@@ -28319,6 +28711,7 @@ export default function App() {
             balances={walletTransferBalances}
             btcUsd={tokenBtcUsd}
             canList={canListToken}
+            canPrepareTransferUtxos={canPrepareTokenTransferUtxos}
             canTransfer={canTransferToken}
             closedListings={tokenClosedListings}
             compact
@@ -28331,12 +28724,35 @@ export default function App() {
             listing={tokenAction === "list"}
             listings={tokenListings}
             listSpendableBalance={walletSpendableTokenBalance}
+            prepareTransferCount={tokenPrepareTransferCount}
+            prepareTransferFeeRate={tokenPrepareTransferFeeRate}
+            prepareTransferFeeReserveSats={
+              tokenPrepareTransferFeeReserveSats
+            }
+            prepareTransferUtxos={prepareTokenTransferUtxos}
+            preparingTransferUtxos={tokenAction === "split-transfer"}
+            refreshTransferFundingReadiness={() =>
+              void refreshTokenTransferFundingReadiness().catch((error) =>
+                setStatus({
+                  tone: "bad",
+                  text: errorMessage(
+                    error,
+                    "Transfer funding lanes could not be checked.",
+                  ),
+                }),
+              )
+            }
             sealListing={sealTokenListing}
             selectedTokenId={walletTransferToken?.tokenId ?? ""}
             setFeeRate={setFeeRate}
             setListAmount={setTokenListAmount}
             setListBuyerAddress={setTokenListBuyerAddress}
             setListPriceSats={setTokenListPriceSats}
+            setPrepareTransferCount={setTokenPrepareTransferCount}
+            setPrepareTransferFeeRate={setTokenPrepareTransferFeeRate}
+            setPrepareTransferFeeReserveSats={
+              setTokenPrepareTransferFeeReserveSats
+            }
             setSelectedTokenId={setTokenTransferTokenId}
             setTransferAmount={setTokenTransferAmount}
             setTransferRecipient={setTokenTransferRecipient}
@@ -28346,6 +28762,7 @@ export default function App() {
             transferAmount={tokenTransferAmount}
             transferBalance={walletSpendableTokenBalance}
             transferBytes={tokenTransferBytes}
+            transferFundingReadiness={tokenTransferFundingReadiness}
             transferRecipient={tokenTransferRecipient}
             transferToken={walletTransferToken}
             transferring={tokenAction === "transfer"}
@@ -30531,6 +30948,7 @@ type TokenWalletAppProps = {
   btcUsd: number;
   busy: boolean;
   canList: boolean;
+  canPrepareTransferUtxos: boolean;
   canTransfer: boolean;
   closedListings: PowTokenClosedListing[];
   connectWallet: () => Promise<void>;
@@ -30549,12 +30967,21 @@ type TokenWalletAppProps = {
   network: BitcoinNetwork;
   onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
+  prepareTransferCount: number;
+  prepareTransferFeeRate: number;
+  prepareTransferFeeReserveSats: number;
+  prepareTransferUtxos: (event: FormEvent<HTMLFormElement>) => void;
+  preparingTransferUtxos: boolean;
+  refreshTransferFundingReadiness: () => void;
   sealListing: (listing: PowTokenListing) => void;
   selectedTokenId: string;
   setFeeRate: (value: number) => void;
   setListAmount: (value: string) => void;
   setListBuyerAddress: (value: string) => void;
   setListPriceSats: (value: number) => void;
+  setPrepareTransferCount: (value: number) => void;
+  setPrepareTransferFeeRate: (value: number) => void;
+  setPrepareTransferFeeReserveSats: (value: number) => void;
   setSelectedTokenId: (value: string) => void;
   setTransferAmount: (value: string) => void;
   setTransferRecipient: (value: string) => void;
@@ -30566,6 +30993,7 @@ type TokenWalletAppProps = {
   transferBalance: ExactIntegerValue;
   transferBytes: number;
   transferRecipient: string;
+  transferFundingReadiness?: TokenTransferFundingReadiness;
   transferToken: PowTokenDefinition | undefined;
   transferring: boolean;
   transfers: PowTokenTransfer[];
@@ -31343,6 +31771,7 @@ function TokenWalletApp({
   btcUsd,
   busy,
   canList,
+  canPrepareTransferUtxos,
   canTransfer,
   closedListings,
   connectWallet,
@@ -31361,12 +31790,21 @@ function TokenWalletApp({
   network,
   onNetworkChange,
   onRefresh,
+  prepareTransferCount,
+  prepareTransferFeeRate,
+  prepareTransferFeeReserveSats,
+  prepareTransferUtxos,
+  preparingTransferUtxos,
+  refreshTransferFundingReadiness,
   sealListing,
   selectedTokenId,
   setFeeRate,
   setListAmount,
   setListBuyerAddress,
   setListPriceSats,
+  setPrepareTransferCount,
+  setPrepareTransferFeeRate,
+  setPrepareTransferFeeReserveSats,
   setSelectedTokenId,
   setTransferAmount,
   setTransferRecipient,
@@ -31377,6 +31815,7 @@ function TokenWalletApp({
   transferAmount,
   transferBalance,
   transferBytes,
+  transferFundingReadiness,
   transferRecipient,
   transferToken,
   transferring,
@@ -31413,6 +31852,7 @@ function TokenWalletApp({
         balances={balances}
         btcUsd={btcUsd}
         canList={canList}
+        canPrepareTransferUtxos={canPrepareTransferUtxos}
         canTransfer={canTransfer}
         closedListings={closedListings}
         compact={false}
@@ -31425,12 +31865,23 @@ function TokenWalletApp({
         listing={listing}
         listings={listings}
         listSpendableBalance={listSpendableBalance}
+        prepareTransferCount={prepareTransferCount}
+        prepareTransferFeeRate={prepareTransferFeeRate}
+        prepareTransferFeeReserveSats={prepareTransferFeeReserveSats}
+        prepareTransferUtxos={prepareTransferUtxos}
+        preparingTransferUtxos={preparingTransferUtxos}
+        refreshTransferFundingReadiness={refreshTransferFundingReadiness}
         sealListing={sealListing}
         selectedTokenId={selectedTokenId}
         setFeeRate={setFeeRate}
         setListAmount={setListAmount}
         setListBuyerAddress={setListBuyerAddress}
         setListPriceSats={setListPriceSats}
+        setPrepareTransferCount={setPrepareTransferCount}
+        setPrepareTransferFeeRate={setPrepareTransferFeeRate}
+        setPrepareTransferFeeReserveSats={
+          setPrepareTransferFeeReserveSats
+        }
         setSelectedTokenId={setSelectedTokenId}
         setTransferAmount={setTransferAmount}
         setTransferRecipient={setTransferRecipient}
@@ -31440,6 +31891,7 @@ function TokenWalletApp({
         transferAmount={transferAmount}
         transferBalance={transferBalance}
         transferBytes={transferBytes}
+        transferFundingReadiness={transferFundingReadiness}
         transferRecipient={transferRecipient}
         transferToken={transferToken}
         transferring={transferring}
@@ -31514,11 +31966,51 @@ type TokenWalletMovement = {
   type: "closed-listing" | "invalid" | "listing" | "sale" | "seal" | "transfer";
 };
 
+function tokenInvalidEventMovementLabel(
+  event: PowTokenInvalidEvent,
+  normalizedWalletAddress: string,
+) {
+  const attemptedKind = String(event.attemptedKind ?? "")
+    .trim()
+    .toLowerCase();
+  if (attemptedKind === "list" || attemptedKind === "token-listing") {
+    return "Attempted listing";
+  }
+  if (
+    attemptedKind === "seal" ||
+    attemptedKind === "token-listing-sealed"
+  ) {
+    return "Attempted seal";
+  }
+  if (
+    attemptedKind === "buy" ||
+    attemptedKind === "sale" ||
+    attemptedKind === "token-sale"
+  ) {
+    return "Attempted purchase";
+  }
+  if (attemptedKind === "mint" || attemptedKind === "token-mint") {
+    return "Attempted mint";
+  }
+  if (
+    attemptedKind === "send" ||
+    attemptedKind === "send2" ||
+    attemptedKind === "token-transfer"
+  ) {
+    return String(event.senderAddress ?? "").trim().toLowerCase() ===
+      normalizedWalletAddress
+      ? "Attempted send"
+      : "Attempted receive";
+  }
+  return "Attempted credit event";
+}
+
 function TokenWalletWorkspace({
   address,
   balances,
   btcUsd,
   canList,
+  canPrepareTransferUtxos = false,
   canTransfer,
   closedListings,
   compact,
@@ -31531,12 +32023,22 @@ function TokenWalletWorkspace({
   listing,
   listings,
   listSpendableBalance,
+  prepareTransferCount = TOKEN_PREPARE_DEFAULT_TRANSFER_COUNT,
+  prepareTransferFeeRate = DEFAULT_FEE_RATE,
+  prepareTransferFeeReserveSats =
+    TOKEN_PREPARE_DEFAULT_TRANSFER_FEE_RESERVE_SATS,
+  prepareTransferUtxos,
+  preparingTransferUtxos = false,
+  refreshTransferFundingReadiness,
   sealListing,
   selectedTokenId,
   setFeeRate,
   setListAmount,
   setListBuyerAddress,
   setListPriceSats,
+  setPrepareTransferCount,
+  setPrepareTransferFeeRate,
+  setPrepareTransferFeeReserveSats,
   setSelectedTokenId,
   setTransferAmount,
   setTransferRecipient,
@@ -31546,6 +32048,7 @@ function TokenWalletWorkspace({
   transferAmount,
   transferBalance,
   transferBytes,
+  transferFundingReadiness,
   transferRecipient,
   transferToken,
   transferring,
@@ -31591,9 +32094,20 @@ function TokenWalletWorkspace({
   | "workFloorLoading"
   | "workFloorQuote"
 > & {
+  canPrepareTransferUtxos?: boolean;
   compact: boolean;
   copy?: TokenWalletWorkspaceCopy;
   invalidEvents?: PowTokenInvalidEvent[];
+  prepareTransferCount?: number;
+  prepareTransferFeeRate?: number;
+  prepareTransferFeeReserveSats?: number;
+  prepareTransferUtxos?: (event: FormEvent<HTMLFormElement>) => void;
+  preparingTransferUtxos?: boolean;
+  refreshTransferFundingReadiness?: () => void;
+  setPrepareTransferCount?: (value: number) => void;
+  setPrepareTransferFeeRate?: (value: number) => void;
+  setPrepareTransferFeeReserveSats?: (value: number) => void;
+  transferFundingReadiness?: TokenTransferFundingReadiness;
 }) {
   const walletCopy = { ...DEFAULT_TOKEN_WALLET_WORKSPACE_COPY, ...copy };
   const transferDescription =
@@ -31658,17 +32172,14 @@ function TokenWalletWorkspace({
     })),
     ...walletInvalidEvents.map((event) => ({
       amount: event.amount,
+      amountAtoms: event.amountAtoms,
       auditMinerFeeSats: event.auditMinerFeeSats,
       auditRegistryPaymentSats: event.auditRegistryPaymentSats,
       auditTotalCostSats: event.auditTotalCostSats,
       confirmed: event.confirmed,
       createdAt: event.createdAt,
       key: `invalid:${event.txid}`,
-      label:
-        String(event.senderAddress ?? "").trim().toLowerCase() ===
-        normalizedWalletAddress
-          ? "Attempted send"
-          : "Attempted receive",
+      label: tokenInvalidEventMovementLabel(event, normalizedWalletAddress),
       network: event.network,
       priceSats: 0,
       reason: event.reason,
@@ -31678,6 +32189,7 @@ function TokenWalletWorkspace({
         balances.find((balance) => balance.token.tokenId === event.tokenId)?.token
           .ticker ||
         "CREDIT",
+      tokenId: event.tokenId,
       txid: event.txid,
       type: "invalid" as const,
     })),
@@ -31727,7 +32239,7 @@ function TokenWalletWorkspace({
       frozenNetworkValueSats: item.closedFrozenNetworkValueSats,
       liveNetworkValueSats: item.closedLiveNetworkValueSats,
       key: `closed-listing:${item.closedTxid || item.listingId}`,
-      label: "Delisted",
+      label: item.relic === true && !item.closedTxid ? "Retired listing" : "Delisted",
       network: item.network,
       priceSats: item.priceSats,
       ticker: item.ticker,
@@ -31771,6 +32283,32 @@ function TokenWalletWorkspace({
           (!selectedTokenId || item.tokenId === selectedTokenId),
       )
     : [];
+  const closedListingIdsWithCloseTransaction = new Set(
+    closedListings
+      .filter((item) => Boolean(item.closedTxid))
+      .map(tokenListingStateKey),
+  );
+  const walletRecoverableV3WorkRelics = normalizedWalletAddress
+    ? closedListings
+        .filter(
+          (item) =>
+            item.relic === true &&
+            item.confirmed === true &&
+            !closedListingIdsWithCloseTransaction.has(
+              tokenListingStateKey(item),
+            ) &&
+            item.sellerAddress.trim().toLowerCase() ===
+              normalizedWalletAddress &&
+            isWorkToken(item) &&
+            item.saleAuthorization.version ===
+              TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION,
+        )
+        .sort(
+          (left, right) =>
+            Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+            left.listingId.localeCompare(right.listingId),
+        )
+    : [];
   const walletTokenById = new Map<string, TokenReferenceSnapshot>(
     balances.map((balance) => [balance.token.tokenId, balance.token]),
   );
@@ -31798,6 +32336,8 @@ function TokenWalletWorkspace({
     tokenWalletBalanceHasConfirmed,
   ).length;
   const selectedListToken = transferToken;
+  const workMarketplaceWritesEnabled =
+    workMarketplaceV4WritesReady(workFloorQuote);
   const selectedWalletBalance = selectedListToken
     ? balances.find(
         (balance) => balance.token.tokenId === selectedListToken.tokenId,
@@ -31961,6 +32501,170 @@ function TokenWalletWorkspace({
     setListPriceSats,
     workSuggestedListPriceSats,
   ]);
+  const normalizedPrepareTransferCount = Math.max(
+    0,
+    Math.floor(prepareTransferCount),
+  );
+  const normalizedPrepareTransferFeeReserveSats = Math.max(
+    0,
+    Math.floor(prepareTransferFeeReserveSats),
+  );
+  const normalizedPrepareTransferFeeRate =
+    Number.isFinite(prepareTransferFeeRate) && prepareTransferFeeRate > 0
+      ? prepareTransferFeeRate
+      : DEFAULT_FEE_RATE;
+  const preparedTransferOutputSats = Math.max(
+    DUST_SATS,
+    TOKEN_MIN_MUTATION_PRICE_SATS +
+      normalizedPrepareTransferFeeReserveSats,
+  );
+  let estimatedTransferSelfOutputVbytes = ESTIMATED_PAYMENT_OUTPUT_VBYTES;
+  if (normalizedWalletAddress) {
+    try {
+      estimatedTransferSelfOutputVbytes = outputVbytesForScript(
+        scriptForAddress(address, "livenet", "Connected wallet"),
+      );
+    } catch {
+      // The connected-address validation path reports malformed addresses.
+    }
+  }
+  const estimatedTransferSplitVbytes =
+    normalizedPrepareTransferCount > 0
+      ? estimateTxVbytes(
+          1,
+          (normalizedPrepareTransferCount + 1) *
+            estimatedTransferSelfOutputVbytes,
+        )
+      : 0;
+  const estimatedTransferSplitFeeSats = Math.ceil(
+    estimatedTransferSplitVbytes * normalizedPrepareTransferFeeRate,
+  );
+  const transferFundingPrep =
+    prepareTransferUtxos &&
+    setPrepareTransferCount &&
+    setPrepareTransferFeeRate &&
+    setPrepareTransferFeeReserveSats ? (
+      <details className="token-utxo-prep">
+        <summary>Transfer funding lanes</summary>
+        <div className="token-utxo-dashboard">
+          <div>
+            <span>Ready now</span>
+            <strong>
+              {transferFundingReadiness
+                ? transferFundingReadiness.readyLaneCount.toLocaleString()
+                : "Check"}
+            </strong>
+            <p>
+              Confirmed outputs with at least{" "}
+              {(
+                transferFundingReadiness?.requiredPerLaneSats ??
+                preparedTransferOutputSats
+              ).toLocaleString()}{" "}
+              proofs.
+            </p>
+          </div>
+          <div>
+            <span>Confirmed candidates</span>
+            <strong>
+              {transferFundingReadiness
+                ? transferFundingReadiness.confirmedCandidateCount.toLocaleString()
+                : "Unknown"}
+            </strong>
+            <p>
+              {transferFundingReadiness?.source === "wallet-curated"
+                ? "UniSat-curated; raw node outputs are not merged."
+                : transferFundingReadiness?.source === "wallet-generic"
+                  ? "Generic wallet outputs are shown only; preparation remains disabled."
+                  : "Node fallback outputs are shown only; preparation remains disabled."}
+            </p>
+          </div>
+          <div>
+            <span>Pending / reserved</span>
+            <strong>
+              {transferFundingReadiness
+                ? `${transferFundingReadiness.pendingCandidateCount.toLocaleString()} / ${transferFundingReadiness.reservedAnchorCount.toLocaleString()}`
+                : "Unknown"}
+            </strong>
+            <p>Pending change waits; sale-ticket anchors stay reserved.</p>
+          </div>
+          <div>
+            <span>Estimated split fee</span>
+            <strong>{estimatedTransferSplitFeeSats.toLocaleString()} proofs</strong>
+            <p>One estimated input, prepared outputs, and change.</p>
+          </div>
+        </div>
+        <form className="id-form" onSubmit={prepareTransferUtxos}>
+          <div className="token-form-grid">
+            <label>
+              Transfer lanes
+              <input
+                max={TOKEN_PREPARE_MAX_TRANSFER_COUNT}
+                min={1}
+                onChange={(event) =>
+                  setPrepareTransferCount(Number(event.target.value))
+                }
+                type="number"
+                value={prepareTransferCount || ""}
+              />
+            </label>
+            <label>
+              Future miner reserve / lane
+              <input
+                min={0}
+                onChange={(event) =>
+                  setPrepareTransferFeeReserveSats(Number(event.target.value))
+                }
+                type="number"
+                value={prepareTransferFeeReserveSats || ""}
+              />
+            </label>
+            <label>
+              Split fee proof/vB
+              <input
+                min={0.01}
+                onChange={(event) =>
+                  setPrepareTransferFeeRate(Number(event.target.value))
+                }
+                step={0.01}
+                type="number"
+                value={prepareTransferFeeRate || ""}
+              />
+            </label>
+          </div>
+          <p className="field-note">
+            Creates self-send outputs only, uses confirmed wallet-curated
+            inputs, and requires local UniSat approval. Wait for confirmation
+            before parallel transfers.
+          </p>
+          <div className="token-assistant-actions">
+            <button
+              className="secondary"
+              disabled={!canPrepareTransferUtxos}
+              type="submit"
+            >
+              <span className="button-content">
+                <Wallet size={16} />
+                <span>
+                  {preparingTransferUtxos
+                    ? "Preparing lanes"
+                    : `Prepare ${normalizedPrepareTransferCount.toLocaleString()} lanes`}
+                </span>
+              </span>
+            </button>
+            <button
+              className="secondary"
+              onClick={() => refreshTransferFundingReadiness?.()}
+              type="button"
+            >
+              <span className="button-content">
+                <RefreshCw size={16} />
+                <span>Check lanes</span>
+              </span>
+            </button>
+          </div>
+        </form>
+      </details>
+    ) : null;
 
   return (
     <section
@@ -32172,6 +32876,7 @@ function TokenWalletWorkspace({
               </span>
             </button>
           </form>
+          {transferFundingPrep}
         </section>
 
         <section className="id-launch-card token-mint-card">
@@ -32184,6 +32889,15 @@ function TokenWalletWorkspace({
               <p>{walletCopy.listingDescription}</p>
             </div>
           </div>
+          {selectedListToken &&
+          isWorkToken(selectedListToken) &&
+          !workMarketplaceWritesEnabled ? (
+            <p className="field-note">
+              Marketplace upgrade pending declaration. WORK listing, sealing,
+              and buying are temporarily read-only; transfers and delisting
+              remain available.
+            </p>
+          ) : null}
           <form className="id-form" onSubmit={submitList}>
             <div className="token-form-grid">
               <label>
@@ -32299,15 +33013,18 @@ function TokenWalletWorkspace({
             </button>
           </form>
 
+          {walletListings.length || walletRecoverableV3WorkRelics.length ? (
+            <div className="listing-fee-control token-listing-fee-control">
+              <div>
+                <strong>Seal / Delist fee rate</strong>
+                <span>{walletCopy.listingFeeDescription}</span>
+              </div>
+              <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+            </div>
+          ) : null}
+
           {walletListings.length ? (
             <>
-              <div className="listing-fee-control token-listing-fee-control">
-                <div>
-                  <strong>Seal / Delist fee rate</strong>
-                  <span>{walletCopy.listingFeeDescription}</span>
-                </div>
-                <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
-              </div>
               <MarketplaceSortControl
                 onChange={setWalletListingSortMode}
                 value={walletListingSortMode}
@@ -32322,6 +33039,12 @@ function TokenWalletWorkspace({
                   const sealPending =
                     tokenListingHasPendingSaleTicketSeal(item);
                   const readyToSeal = item.confirmed && !hasSeal;
+                  const workSealBlocked =
+                    isWorkToken(item) &&
+                    (!workMarketplaceWritesEnabled ||
+                      !isWorkMarketConfirmationFloorAuthorization(
+                        item.saleAuthorization.version,
+                      ));
                   const unitSats = tokenListingUnitPriceSats(item);
                   return (
                     <article className="token-list-item" key={item.listingId}>
@@ -32369,11 +33092,15 @@ function TokenWalletWorkspace({
                         {!hasSeal ? (
                           <button
                             className="secondary small"
-                            disabled={!readyToSeal}
+                            disabled={!readyToSeal || workSealBlocked}
                             onClick={() => sealListing(item)}
                             type="button"
                           >
-                            {item.confirmed ? "Seal" : "Confirming"}
+                            {workSealBlocked
+                              ? "Upgrade pending"
+                              : item.confirmed
+                                ? "Seal"
+                                : "Confirming"}
                           </button>
                         ) : sealPending ? (
                           <button className="secondary small" disabled type="button">
@@ -32398,6 +33125,58 @@ function TokenWalletWorkspace({
                 page={walletListingPage}
               />
             </>
+          ) : null}
+
+          {walletRecoverableV3WorkRelics.length ? (
+            <div className="token-listing-recovery">
+              <p className="field-note">
+                <strong>V3 WORK sale-ticket recovery.</strong> These confirmed
+                sale tickets became read-only relics when V4 activated. They
+                cannot be sealed or bought. The seller can still publish a
+                delist5 transaction to return the seller-controlled ticket
+                output, then relist under V4. Registry and miner fees are final.
+              </p>
+              <div className="token-list compact-token-list">
+                {walletRecoverableV3WorkRelics.map((item) => (
+                  <article
+                    className="token-list-item"
+                    key={`v3-work-relic:${item.listingId}`}
+                  >
+                    <span>
+                      <strong>
+                        {tokenAmountDisplay(
+                          item,
+                          item.amount,
+                          item.amountAtoms,
+                        )}{" "}
+                        {item.ticker}
+                      </strong>
+                      <small>
+                        V3 relic · seal and buy unavailable ·{" "}
+                        {item.priceSats.toLocaleString()} proofs
+                      </small>
+                    </span>
+                    <span className="id-record-actions">
+                      <a
+                        className="secondary small"
+                        href={explorerTxUrl(item.listingId, item.network)}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        View TX
+                      </a>
+                      <button
+                        className="secondary small"
+                        onClick={() => delistListing(item)}
+                        type="button"
+                      >
+                        Recover with delist5
+                      </button>
+                    </span>
+                  </article>
+                ))}
+              </div>
+            </div>
           ) : null}
         </section>
       </div>

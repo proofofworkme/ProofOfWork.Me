@@ -29,6 +29,17 @@ import {
   applyWorkMarketV2CutoverToTokenState,
   WORK_MARKET_V2_AUTH_VERSION,
   WORK_MARKET_V2_ACTIVATION_HEIGHT,
+  WORK_MARKET_V4_AUTH_VERSION,
+  WORK_MARKET_V4_DECLARATION_AUTHORITY,
+  WORK_MARKET_V4_DECLARATION_BLOCK_HASH,
+  WORK_MARKET_V4_DECLARATION_HEIGHT,
+  WORK_MARKET_V4_DECLARATION_MIN_PAYMENT_SATS,
+  WORK_MARKET_V4_DECLARATION_PAYLOAD,
+  WORK_MARKET_V4_DECLARATION_REGISTRY_ADDRESS,
+  WORK_MARKET_V4_DECLARATION_TXID,
+  workMarketV4ActivationReached,
+  workMarketV4ActivationFromDeclaration,
+  workMarketV4ConfiguredDeclaration,
 } from "../work-market-v2.mjs";
 import {
   INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
@@ -81,7 +92,12 @@ const WORK_TOKEN_MAX_SUPPLY_ATOMS = (
 const TOKEN_SALE_AUTH_VERSIONS = new Set([
   TOKEN_SALE_AUTH_VERSION,
   "pwt-sale-v2",
-  "pwt-sale-v3",
+  WORK_MARKET_V2_AUTH_VERSION,
+  WORK_MARKET_V4_AUTH_VERSION,
+]);
+const WORK_MARKET_GOVERNED_AUTH_VERSIONS = new Set([
+  WORK_MARKET_V2_AUTH_VERSION,
+  WORK_MARKET_V4_AUTH_VERSION,
 ]);
 const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
 const TOKEN_LISTING_ANCHOR_VALUE_SATS = 546;
@@ -210,6 +226,208 @@ function plausibleBitcoinEventTime(...values) {
 function safeBlockHeight(value) {
   const height = Number(value);
   return Number.isSafeInteger(height) && height > 0 ? height : 0;
+}
+
+async function verifiedWorkMarketV4Activation(
+  pool,
+  network,
+  indexedThroughBlock = 0,
+) {
+  const configured = workMarketV4ConfiguredDeclaration();
+  const checkpointHeight = safeBlockHeight(indexedThroughBlock);
+  if (
+    !pool ||
+    network !== "livenet" ||
+    (checkpointHeight > 0 &&
+      configured &&
+      !workMarketV4ActivationReached(configured, checkpointHeight))
+  ) {
+    return null;
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        declaration_tx.txid,
+        declaration_tx.block_hash,
+        declaration_tx.block_height,
+        declaration_tx.status,
+        (
+          SELECT declaration_input.address
+          FROM proof_indexer.tx_inputs declaration_input
+          WHERE declaration_input.network = declaration_tx.network
+            AND declaration_input.txid = declaration_tx.txid
+            AND declaration_input.vin = 0
+          LIMIT 1
+        ) AS first_input_address,
+        (
+          SELECT COALESCE(sum(declaration_output.value_sats), 0)
+          FROM proof_indexer.tx_outputs declaration_output
+          WHERE declaration_output.network = declaration_tx.network
+            AND declaration_output.txid = declaration_tx.txid
+            AND declaration_output.address = $5
+            AND declaration_output.vout < (
+              SELECT min(declaration_first_message.vout)
+              FROM proof_indexer.op_returns declaration_first_message
+              WHERE declaration_first_message.network = declaration_tx.network
+                AND declaration_first_message.txid = declaration_tx.txid
+                AND left(
+                  COALESCE(declaration_first_message.payload_text, ''),
+                  7
+                ) = 'pwm1:m:'
+            )
+        ) AS registry_payment_sats,
+        ARRAY(
+          SELECT declaration_message.payload_text
+          FROM proof_indexer.op_returns declaration_message
+          WHERE declaration_message.network = declaration_tx.network
+            AND declaration_message.txid = declaration_tx.txid
+            AND left(COALESCE(declaration_message.payload_text, ''), 7) =
+              'pwm1:m:'
+          ORDER BY
+            declaration_message.vout ASC,
+            declaration_message.output_index ASC
+        ) AS memo_chunks
+      FROM proof_indexer.transactions declaration_tx
+      JOIN proof_indexer.blocks declaration_block
+        ON declaration_block.network = declaration_tx.network
+       AND declaration_block.block_hash = declaration_tx.block_hash
+       AND declaration_block.height = declaration_tx.block_height
+       AND declaration_block.canonical = true
+      WHERE declaration_tx.network = $1
+        AND ($2 = '' OR declaration_tx.txid = $2)
+        AND declaration_tx.status = 'confirmed'
+        AND ($3::integer = 0 OR declaration_tx.block_height = $3)
+        AND ($4 = '' OR declaration_tx.block_hash = $4)
+        AND ($7::integer = 0 OR declaration_tx.block_height <= $7)
+        AND EXISTS (
+          SELECT 1
+          FROM proof_indexer.tx_inputs declaration_authority
+          WHERE declaration_authority.network = declaration_tx.network
+            AND declaration_authority.txid = declaration_tx.txid
+            AND declaration_authority.vin = 0
+            AND declaration_authority.address = $6
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM proof_indexer.tx_outputs declaration_registry_output
+          WHERE declaration_registry_output.network = declaration_tx.network
+            AND declaration_registry_output.txid = declaration_tx.txid
+            AND declaration_registry_output.address = $5
+            AND declaration_registry_output.vout < (
+              SELECT min(declaration_first_message.vout)
+              FROM proof_indexer.op_returns declaration_first_message
+              WHERE declaration_first_message.network = declaration_tx.network
+                AND declaration_first_message.txid = declaration_tx.txid
+                AND left(
+                  COALESCE(declaration_first_message.payload_text, ''),
+                  7
+                ) = 'pwm1:m:'
+            )
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM proof_indexer.op_returns declaration_candidate_message
+          WHERE declaration_candidate_message.network = declaration_tx.network
+            AND declaration_candidate_message.txid = declaration_tx.txid
+            AND left(
+              COALESCE(declaration_candidate_message.payload_text, ''),
+              7
+            ) = 'pwm1:m:'
+        )
+        AND (
+          SELECT
+            'pwm1:m:' ||
+            COALESCE(
+              string_agg(
+                substr(
+                  COALESCE(declaration_exact_message.payload_text, ''),
+                  8
+                ),
+                ''
+                ORDER BY
+                  declaration_exact_message.vout ASC,
+                  declaration_exact_message.output_index ASC
+              ),
+              ''
+            )
+          FROM proof_indexer.op_returns declaration_exact_message
+          WHERE declaration_exact_message.network = declaration_tx.network
+            AND declaration_exact_message.txid = declaration_tx.txid
+            AND left(
+              COALESCE(declaration_exact_message.payload_text, ''),
+              7
+            ) = 'pwm1:m:'
+        ) = $8
+      ORDER BY declaration_tx.block_height ASC, declaration_tx.txid ASC
+      LIMIT 32
+    `,
+    [
+      network,
+      WORK_MARKET_V4_DECLARATION_TXID,
+      WORK_MARKET_V4_DECLARATION_HEIGHT,
+      WORK_MARKET_V4_DECLARATION_BLOCK_HASH,
+      WORK_MARKET_V4_DECLARATION_REGISTRY_ADDRESS,
+      WORK_MARKET_V4_DECLARATION_AUTHORITY,
+      checkpointHeight,
+      WORK_MARKET_V4_DECLARATION_PAYLOAD,
+    ],
+  );
+  for (const row of result.rows) {
+    const memo = (Array.isArray(row.memo_chunks) ? row.memo_chunks : [])
+      .map((chunk) => String(chunk ?? "").slice("pwm1:m:".length))
+      .join("");
+    const activation = workMarketV4ActivationFromDeclaration({
+      blockHash: row.block_hash,
+      blockHeight: row.block_height,
+      confirmed: row.status === "confirmed",
+      firstInputAddress: row.first_input_address,
+      payload: `pwm1:m:${memo}`,
+      registryPaymentSats: Number(row.registry_payment_sats),
+      txid: row.txid,
+    });
+    if (
+      activation &&
+      Number(row.registry_payment_sats) >=
+        WORK_MARKET_V4_DECLARATION_MIN_PAYMENT_SATS &&
+      (checkpointHeight === 0 ||
+        workMarketV4ActivationReached(activation, checkpointHeight))
+    ) {
+      return activation;
+    }
+  }
+  return null;
+}
+
+export async function proofIndexWorkMarketV4Activation(
+  network,
+  indexedThroughBlock = 0,
+) {
+  const pool = proofIndexPool();
+  return pool
+    ? verifiedWorkMarketV4Activation(pool, network, indexedThroughBlock)
+    : null;
+}
+
+async function payloadWithVerifiedWorkMarketV4Activation(
+  pool,
+  network,
+  payload,
+) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload;
+  }
+  const { workMarketV4Activation: ignoredActivation, ...untrustedPayload } =
+    payload;
+  void ignoredActivation;
+  const activation = await verifiedWorkMarketV4Activation(
+    pool,
+    network,
+    untrustedPayload.indexedThroughBlock ??
+      untrustedPayload.stats?.indexedThroughBlock,
+  );
+  return activation
+    ? { ...untrustedPayload, workMarketV4Activation: activation }
+    : untrustedPayload;
 }
 
 function summaryPayloadIndexedThroughBlock(payload, snapshot) {
@@ -666,7 +884,9 @@ function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization) {
       authorization?.version === TOKEN_SALE_AUTH_VERSION ||
       (
         (authorization?.version === "pwt-sale-v2" ||
-          authorization?.version === "pwt-sale-v3") &&
+          WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(
+            authorization?.version,
+          )) &&
         isWorkTokenId(authorization?.tokenId) &&
         String(authorization?.ticker ?? "").trim().toUpperCase() ===
           WORK_TOKEN_TICKER
@@ -741,7 +961,10 @@ function canonicalWorkMarketV3ListingProjectionSql(listingAlias = "cl") {
     OR lower(COALESCE(
       ${alias}.payload->'saleAuthorization'->>'version',
       ''
-    )) <> '${WORK_MARKET_V2_AUTH_VERSION}'
+    )) NOT IN (
+      '${WORK_MARKET_V2_AUTH_VERSION}',
+      '${WORK_MARKET_V4_AUTH_VERSION}'
+    )
     OR (
       EXISTS (
         SELECT 1
@@ -774,7 +997,10 @@ function canonicalWorkMarketV3ListingProjectionSql(listingAlias = "cl") {
           AND lower(COALESCE(
             canonical_listing_event.payload->'saleAuthorization'->>'version',
             ''
-          )) = '${WORK_MARKET_V2_AUTH_VERSION}'
+          )) = lower(COALESCE(
+            ${alias}.payload->'saleAuthorization'->>'version',
+            ''
+          ))
       )
       AND (
         (
@@ -837,7 +1063,10 @@ function canonicalTokenListingSealEventJoinSql(listingAlias = "cl") {
       AND lower(COALESCE(
         canonical_seal_event_row.payload->'saleAuthorization'->>'version',
         ''
-      )) = '${WORK_MARKET_V2_AUTH_VERSION}'
+      )) = lower(COALESCE(
+        ${alias}.payload->'saleAuthorization'->>'version',
+        ''
+      ))
     ORDER BY canonical_seal_event_row.event_id DESC
     LIMIT 1
   ) canonical_seal_event ON true`;
@@ -853,14 +1082,15 @@ function tokenListingSealConfirmedFromTransaction(row, sealTxid) {
     !Array.isArray(row.payload.saleAuthorization)
       ? row.payload.saleAuthorization
       : {};
-  const workMarketV3 =
+  const governedWorkMarket =
     normalizedLowerText(row?.token_id ?? saleAuthorization.tokenId) ===
       WORK_TOKEN_ID &&
-    normalizedLowerText(saleAuthorization.version) ===
-      WORK_MARKET_V2_AUTH_VERSION;
+    WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(
+      normalizedLowerText(saleAuthorization.version),
+    );
   return (
     transactionConfirmed &&
-    (!workMarketV3 ||
+    (!governedWorkMarket ||
       normalizedLowerText(row?.seal_event_status) === "confirmed")
   );
 }
@@ -2110,7 +2340,18 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
           AND lower(COALESCE(
             canonical_seal_event_row.payload->'saleAuthorization'->>'version',
             ''
-          )) = '${WORK_MARKET_V2_AUTH_VERSION}'
+          )) = lower(COALESCE(
+            e.payload->'saleAuthorization'->>'version',
+            cl_event.payload->'saleAuthorization'->>'version',
+            ''
+          ))
+          AND lower(COALESCE(
+            canonical_seal_event_row.payload->'saleAuthorization'->>'version',
+            ''
+          )) IN (
+            '${WORK_MARKET_V2_AUTH_VERSION}',
+            '${WORK_MARKET_V4_AUTH_VERSION}'
+          )
         ORDER BY canonical_seal_event_row.event_id DESC
         LIMIT 1
       ) canonical_seal_event ON true
@@ -3293,22 +3534,51 @@ async function filterClosedTokenListingHistoryPage(pool, page, network) {
 
   const result = await pool.query(
     `
-      SELECT DISTINCT lower(COALESCE(e.payload->>'listingId', e.txid)) AS listing_id
-      FROM proof_indexer.events e
-      WHERE e.network = $1
-        AND e.valid = true
-        AND (
-          (
-            e.kind = ANY($2::text[])
-            AND e.status IN ('confirmed', 'pending')
-            AND lower(e.payload->>'listingId') = ANY($3::text[])
+      SELECT closed_listing.listing_id
+      FROM (
+        SELECT DISTINCT
+          lower(COALESCE(e.payload->>'listingId', e.txid)) AS listing_id
+        FROM proof_indexer.events e
+        WHERE e.network = $1
+          AND e.valid = true
+          AND (
+            (
+              e.kind = ANY($2::text[])
+              AND e.status IN ('confirmed', 'pending')
+              AND lower(e.payload->>'listingId') = ANY($3::text[])
+            )
+            OR (
+              e.kind = 'token-listing'
+              AND e.status = 'dropped'
+              AND lower(
+                COALESCE(e.payload->>'listingId', e.txid)
+              ) = ANY($3::text[])
+            )
           )
-          OR (
-            e.kind = 'token-listing'
-            AND e.status = 'dropped'
-            AND lower(COALESCE(e.payload->>'listingId', e.txid)) = ANY($3::text[])
-          )
-        )
+        UNION
+        SELECT DISTINCT lower(spent_listing.listing_id) AS listing_id
+        FROM proof_indexer.credit_listings spent_listing
+        JOIN proof_indexer.tx_inputs spend_input
+          ON spend_input.network = spent_listing.network
+         AND spend_input.prev_txid = lower(
+           COALESCE(
+             NULLIF(spent_listing.sale_ticket_txid, ''),
+             spent_listing.listing_id
+           )
+         )
+         AND spend_input.prev_vout = spent_listing.sale_ticket_vout
+        JOIN proof_indexer.transactions spend_tx
+          ON spend_tx.network = spend_input.network
+         AND spend_tx.txid = spend_input.txid
+         AND spend_tx.status = 'confirmed'
+        JOIN proof_indexer.blocks spend_block
+          ON spend_block.network = spend_tx.network
+         AND spend_block.block_hash = spend_tx.block_hash
+         AND spend_block.height = spend_tx.block_height
+         AND spend_block.canonical = true
+        WHERE spent_listing.network = $1
+          AND lower(spent_listing.listing_id) = ANY($3::text[])
+      ) closed_listing
     `,
     [network, ["token-listing-closed", "token-sale"], listingIds],
   );
@@ -3356,6 +3626,14 @@ async function exactActiveTokenListingHistoryPage(
   const uniqueTxids = [...new Set(txidNeedles)];
   const params = [network, uniqueTxids];
   const snapshotHeight = rowNumber(snapshot, "indexed_through_block");
+  const workMarketV4Activation = await verifiedWorkMarketV4Activation(
+    pool,
+    network,
+    snapshotHeight,
+  );
+  const currentWorkMarketAuthorizationVersion = workMarketV4Activation
+    ? WORK_MARKET_V4_AUTH_VERSION
+    : WORK_MARKET_V2_AUTH_VERSION;
   const workMarketV2Active =
     network === "livenet" &&
     (snapshotHeight === 0 ||
@@ -3370,21 +3648,41 @@ async function exactActiveTokenListingHistoryPage(
     )`,
     "cl.status = ANY(ARRAY['active','sealing']::text[])",
     canonicalWorkMarketV3ListingProjectionSql("cl"),
+    `NOT EXISTS (
+      SELECT 1
+      FROM proof_indexer.tx_inputs active_spend_input
+      JOIN proof_indexer.transactions active_spend_tx
+        ON active_spend_tx.network = active_spend_input.network
+       AND active_spend_tx.txid = active_spend_input.txid
+       AND active_spend_tx.status = 'confirmed'
+      JOIN proof_indexer.blocks active_spend_block
+        ON active_spend_block.network = active_spend_tx.network
+       AND active_spend_block.block_hash = active_spend_tx.block_hash
+       AND active_spend_block.height = active_spend_tx.block_height
+       AND active_spend_block.canonical = true
+      WHERE active_spend_input.network = cl.network
+        AND active_spend_input.prev_txid = lower(
+          COALESCE(NULLIF(cl.sale_ticket_txid, ''), cl.listing_id)
+        )
+        AND active_spend_input.prev_vout = cl.sale_ticket_vout
+    )`,
   ];
+  let currentWorkMarketAuthorizationVersionParam = "";
   if (scope && scope !== "all") {
     params.push(scope);
     conditions.push("cl.token_id = $3");
   }
   if (workMarketV2Active) {
-    params.push(WORK_TOKEN_ID);
-    const workTokenParam = `$${params.length}`;
+    params.push(WORK_TOKEN_ID, currentWorkMarketAuthorizationVersion);
+    currentWorkMarketAuthorizationVersionParam = `$${params.length}`;
+    const workTokenParam = `$${params.length - 1}`;
     conditions.push(
       `(
         lower(COALESCE(cl.token_id, '')) <> ${workTokenParam}
         OR lower(COALESCE(
           cl.payload->'saleAuthorization'->>'version',
           ''
-        )) = 'pwt-sale-v3'
+        )) = ${currentWorkMarketAuthorizationVersionParam}
       )`,
     );
   }
@@ -3403,6 +3701,33 @@ async function exactActiveTokenListingHistoryPage(
   const totalCount = rowNumber(countResult.rows[0], "total_count");
   let terminalMiss = false;
   if (totalCount === 0) {
+    const terminalParams = [network, uniqueTxids];
+    let workMarketCutoverMissSql = "";
+    if (workMarketV2Active) {
+      terminalParams.push(
+        WORK_TOKEN_ID,
+        currentWorkMarketAuthorizationVersion,
+      );
+      const workTokenParam = `$${terminalParams.length - 1}`;
+      const workMarketAuthorizationVersionParam =
+        `$${terminalParams.length}`;
+      workMarketCutoverMissSql = `OR EXISTS (
+        SELECT 1
+        FROM proof_indexer.credit_listings cutover_listing
+        WHERE cutover_listing.network = $1
+          AND (
+            cutover_listing.listing_id = ANY($2::text[])
+            OR cutover_listing.sale_ticket_txid = ANY($2::text[])
+            OR cutover_listing.seal_txid = ANY($2::text[])
+            OR cutover_listing.close_txid = ANY($2::text[])
+          )
+          AND lower(cutover_listing.token_id) = ${workTokenParam}
+          AND lower(COALESCE(
+            cutover_listing.payload->'saleAuthorization'->>'version',
+            ''
+          )) <> ${workMarketAuthorizationVersionParam}
+      )`;
+    }
     const terminalResult = await pool.query(
       `
         WITH candidate_events AS (
@@ -3443,24 +3768,39 @@ async function exactActiveTokenListingHistoryPage(
                 'orphaned'
               )
           )
-          ${workMarketV2Active
-            ? `OR EXISTS (
-              SELECT 1
-              FROM proof_indexer.credit_listings cutover_listing
-              WHERE cutover_listing.network = $1
-                AND (
-                  cutover_listing.listing_id = ANY($2::text[])
-                  OR cutover_listing.sale_ticket_txid = ANY($2::text[])
-                  OR cutover_listing.seal_txid = ANY($2::text[])
-                  OR cutover_listing.close_txid = ANY($2::text[])
-                )
-                AND lower(cutover_listing.token_id) = '${WORK_TOKEN_ID}'
-                AND lower(COALESCE(
-                  cutover_listing.payload->'saleAuthorization'->>'version',
-                  ''
-                )) = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2']::text[])
-            )`
-            : ""}
+          OR EXISTS (
+            SELECT 1
+            FROM proof_indexer.credit_listings spent_terminal_listing
+            JOIN proof_indexer.tx_inputs terminal_spend_input
+              ON terminal_spend_input.network =
+                spent_terminal_listing.network
+             AND terminal_spend_input.prev_txid = lower(
+               COALESCE(
+                 NULLIF(spent_terminal_listing.sale_ticket_txid, ''),
+                 spent_terminal_listing.listing_id
+               )
+             )
+             AND terminal_spend_input.prev_vout =
+               spent_terminal_listing.sale_ticket_vout
+            JOIN proof_indexer.transactions terminal_spend_tx
+              ON terminal_spend_tx.network = terminal_spend_input.network
+             AND terminal_spend_tx.txid = terminal_spend_input.txid
+             AND terminal_spend_tx.status = 'confirmed'
+            JOIN proof_indexer.blocks terminal_spend_block
+              ON terminal_spend_block.network = terminal_spend_tx.network
+             AND terminal_spend_block.block_hash =
+               terminal_spend_tx.block_hash
+             AND terminal_spend_block.height =
+               terminal_spend_tx.block_height
+             AND terminal_spend_block.canonical = true
+            WHERE spent_terminal_listing.network = $1
+              AND (
+                spent_terminal_listing.listing_id = ANY($2::text[])
+                OR spent_terminal_listing.sale_ticket_txid =
+                  ANY($2::text[])
+              )
+          )
+          ${workMarketCutoverMissSql}
           OR EXISTS (
             SELECT 1
             FROM candidate_events candidate
@@ -3481,7 +3821,7 @@ async function exactActiveTokenListingHistoryPage(
           )
         ) AS terminal
       `,
-      [network, uniqueTxids],
+      terminalParams,
     );
     terminalMiss = terminalResult.rows[0]?.terminal === true;
     if (!terminalMiss) {
@@ -3534,13 +3874,41 @@ async function exactActiveTokenListingHistoryPage(
     totalCount > 0
       ? await pool.query(
           `
-            SELECT DISTINCT lower(e.payload->>'listingId') AS listing_id
-            FROM proof_indexer.events e
-            WHERE e.network = $1
-              AND e.valid = true
-              AND e.status IN ('confirmed', 'pending')
-              AND e.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
-              AND lower(e.payload->>'listingId') = ANY($2::text[])
+            SELECT closed_listing.listing_id
+            FROM (
+              SELECT DISTINCT lower(e.payload->>'listingId') AS listing_id
+              FROM proof_indexer.events e
+              WHERE e.network = $1
+                AND e.valid = true
+                AND e.status IN ('confirmed', 'pending')
+                AND e.kind = ANY(
+                  ARRAY['token-listing-closed','token-sale']::text[]
+                )
+                AND lower(e.payload->>'listingId') = ANY($2::text[])
+              UNION
+              SELECT DISTINCT lower(spent_listing.listing_id) AS listing_id
+              FROM proof_indexer.credit_listings spent_listing
+              JOIN proof_indexer.tx_inputs spend_input
+                ON spend_input.network = spent_listing.network
+               AND spend_input.prev_txid = lower(
+                 COALESCE(
+                   NULLIF(spent_listing.sale_ticket_txid, ''),
+                   spent_listing.listing_id
+                 )
+               )
+               AND spend_input.prev_vout = spent_listing.sale_ticket_vout
+              JOIN proof_indexer.transactions spend_tx
+                ON spend_tx.network = spend_input.network
+               AND spend_tx.txid = spend_input.txid
+               AND spend_tx.status = 'confirmed'
+              JOIN proof_indexer.blocks spend_block
+                ON spend_block.network = spend_tx.network
+               AND spend_block.block_hash = spend_tx.block_hash
+               AND spend_block.height = spend_tx.block_height
+               AND spend_block.canonical = true
+              WHERE spent_listing.network = $1
+                AND lower(spent_listing.listing_id) = ANY($2::text[])
+            ) closed_listing
           `,
           [network, uniqueTxids],
         )
@@ -3608,7 +3976,7 @@ async function exactActiveTokenListingHistoryPage(
     .filter((item) => !closedListingIds.has(tokenListingId(item)))
     .sort(compareTokenHistoryMarketItems);
 
-  return tokenHistoryPageFromItems({
+  const page = tokenHistoryPageFromItems({
     indexedAt: dateIso(
       countResult.rows[0]?.indexed_at ?? snapshot?.generated_at,
     ),
@@ -3623,6 +3991,9 @@ async function exactActiveTokenListingHistoryPage(
       : "proof-indexer-credit-listings-exact",
     snapshot,
   });
+  return workMarketV4Activation
+    ? { ...page, workMarketV4Activation }
+    : page;
 }
 
 export function proofIndexLogHistoryReadEligibility(kind, searchParams) {
@@ -4883,6 +5254,7 @@ function tokenHistoryPageFromSnapshot(
   safeKind,
   searchParams,
   pagination,
+  workMarketV4Activation = null,
 ) {
   if (tokenHistorySnapshotAgeMs(snapshot) > proofIndexTokenHistoryMaxAgeMs()) {
     return null;
@@ -4912,6 +5284,7 @@ function tokenHistoryPageFromSnapshot(
       invalidEvents: [],
       listings: sourceItems,
       network,
+      ...(workMarketV4Activation ? { workMarketV4Activation } : {}),
     });
     sourceItems = Array.isArray(cutoverState?.listings)
       ? cutoverState.listings
@@ -4997,6 +5370,15 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   const snapshot =
     options.snapshot ??
     (await ledgerSnapshotMetadata(pool, network, pagination.snapshotId));
+  const snapshotHeight = rowNumber(snapshot, "indexed_through_block");
+  const workMarketV4Activation = await verifiedWorkMarketV4Activation(
+    pool,
+    network,
+    snapshotHeight,
+  );
+  const currentWorkMarketAuthorizationVersion = workMarketV4Activation
+    ? WORK_MARKET_V4_AUTH_VERSION
+    : WORK_MARKET_V2_AUTH_VERSION;
   const conditions = [
     "e.network = $1",
     "e.valid = true",
@@ -5086,17 +5468,17 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     conditions.push(
       `(e.status IS DISTINCT FROM 'dropped')`,
       `(e.payload ? 'saleAuthorization')`,
-      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2','pwt-sale-v3']::text[]))`,
+      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2','${WORK_MARKET_V2_AUTH_VERSION}','${WORK_MARKET_V4_AUTH_VERSION}']::text[]))`,
       `(e.payload->'saleAuthorization'->>'anchorType' = 'sale-ticket-v1')`,
     );
-    const snapshotHeight = rowNumber(snapshot, "indexed_through_block");
     if (
       network === "livenet" &&
       (snapshotHeight === 0 ||
         snapshotHeight >= WORK_MARKET_V2_ACTIVATION_HEIGHT)
     ) {
-      params.push(WORK_TOKEN_ID);
-      const workTokenParam = `$${params.length}`;
+      params.push(WORK_TOKEN_ID, currentWorkMarketAuthorizationVersion);
+      const workMarketAuthorizationVersionParam = `$${params.length}`;
+      const workTokenParam = `$${params.length - 1}`;
       conditions.push(
         `(
           lower(COALESCE(
@@ -5108,7 +5490,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
           OR lower(COALESCE(
             e.payload->'saleAuthorization'->>'version',
             ''
-          )) = 'pwt-sale-v3'
+          )) = ${workMarketAuthorizationVersionParam}
         )`,
       );
     }
@@ -5252,6 +5634,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     source: "proof-indexer-token-events",
     start,
     totalCount,
+    ...(workMarketV4Activation ? { workMarketV4Activation } : {}),
   };
   if (snapshotId) {
     const snapshotPage = {
@@ -5961,7 +6344,8 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
     "indexed_through_block",
   );
   const scanIndexedThroughBlock = rowNumber(scan, "indexed_through_block");
-  return applyWorkMarketV2CutoverToTokenState({
+  return applyWorkMarketV2CutoverToTokenState(
+    await payloadWithVerifiedWorkMarketV4Activation(pool, network, {
     closedListings: closedListings.filter(Boolean).sort(compareTokenItemsByTime),
     indexedAt: dateIso(scan?.generated_at ?? countResult.rows[0]?.indexed_at),
     indexedThroughBlock: Math.max(
@@ -5977,7 +6361,8 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
       complete: rowsResult.rows.length >= totalCount,
       totalCount,
     },
-  });
+    }),
+  );
 }
 
 async function currentTokenTransferHistoryPage(
@@ -6581,6 +6966,12 @@ export async function proofIndexTokenHistoryPayload(
     }
   }
 
+  const snapshotWorkMarketV4Activation =
+    await verifiedWorkMarketV4Activation(
+      pool,
+      network,
+      rowNumber(snapshot, "indexed_through_block"),
+    );
   const snapshotPage = tokenHistoryPageFromSnapshot(
     snapshot,
     network,
@@ -6588,6 +6979,7 @@ export async function proofIndexTokenHistoryPayload(
     eligibility.kind,
     searchParams,
     eligibility.pagination,
+    snapshotWorkMarketV4Activation,
   );
   const marketOverlayPage = eligibility.pagination.snapshotId
     ? null
@@ -9259,6 +9651,11 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         listing_tx.status AS listing_tx_status,
         close_event.event_time AS close_event_time,
         close_event.block_time AS close_event_block_time,
+        canonical_spend.txid AS canonical_spend_txid,
+        canonical_spend.vin AS canonical_spend_vin,
+        canonical_spend.block_hash AS canonical_spend_block_hash,
+        canonical_spend.block_height AS canonical_spend_block_height,
+        canonical_spend.block_time AS canonical_spend_block_time,
         CASE
           WHEN close_tx.status = 'confirmed' THEN close_tx.block_time
           ELSE NULL
@@ -9307,6 +9704,34 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
          NULLIF(lower(cl.close_txid), ''),
          NULLIF(lower(cl.payload->>'closeTxid'), '')
        )
+      LEFT JOIN LATERAL (
+        SELECT
+          spend_tx.txid,
+          spend_input.vin,
+          spend_tx.block_hash,
+          spend_tx.block_height,
+          spend_tx.block_time
+        FROM proof_indexer.tx_inputs spend_input
+        JOIN proof_indexer.transactions spend_tx
+          ON spend_tx.network = spend_input.network
+         AND spend_tx.txid = spend_input.txid
+         AND spend_tx.status = 'confirmed'
+        JOIN proof_indexer.blocks spend_block
+          ON spend_block.network = spend_tx.network
+         AND spend_block.block_hash = spend_tx.block_hash
+         AND spend_block.height = spend_tx.block_height
+         AND spend_block.canonical = true
+        WHERE spend_input.network = cl.network
+          AND spend_input.prev_txid = lower(
+            COALESCE(NULLIF(cl.sale_ticket_txid, ''), cl.listing_id)
+          )
+          AND spend_input.prev_vout = cl.sale_ticket_vout
+        ORDER BY
+          spend_tx.block_height ASC,
+          spend_tx.txid ASC,
+          spend_input.vin ASC
+        LIMIT 1
+      ) canonical_spend ON true
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = cl.network
        AND cd.token_id = cl.token_id
@@ -9324,6 +9749,32 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
   for (const row of result.rows) {
     const listing = tokenListingFromCreditListingRow(row, network);
     if (!listing?.listingId || !listing?.tokenId) {
+      continue;
+    }
+    if (
+      ["active", "sealing", "pending"].includes(String(row.status)) &&
+      row.listing_tx_status === "confirmed" &&
+      validTxid(row.canonical_spend_txid)
+    ) {
+      closedListings.push({
+        ...listing,
+        closeTxid: String(row.canonical_spend_txid).toLowerCase(),
+        closedAt: dateIso(row.canonical_spend_block_time ?? row.updated_at),
+        closedBlockHash: String(row.canonical_spend_block_hash ?? "")
+          .trim()
+          .toLowerCase(),
+        closedBlockHeight:
+          rowNumber(row, "canonical_spend_block_height") || undefined,
+        closedByCanonicalOutpointSpend: true,
+        closedConfirmed: true,
+        closedTxid: String(row.canonical_spend_txid).toLowerCase(),
+        closedVin:
+          Number.isSafeInteger(Number(row.canonical_spend_vin))
+            ? Number(row.canonical_spend_vin)
+            : undefined,
+        confirmed: true,
+        status: "closed",
+      });
       continue;
     }
     if (["active", "sealing", "pending"].includes(String(row.status))) {
@@ -10257,14 +10708,16 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     tokens: enrichedTokens,
     transfers,
   };
-  return applyWorkMarketV2CutoverToTokenState({
+  return applyWorkMarketV2CutoverToTokenState(
+    await payloadWithVerifiedWorkMarketV4Activation(pool, network, {
     ...payload,
     stats: {
       ...salesStats(sales),
       ...tokenStateStats(payload, enrichedTokens, mints, transfers, invalidEvents),
       indexedThroughBlock: indexedThroughBlock || undefined,
     },
-  });
+    }),
+  );
 }
 
 async function scopedHoldersFromBalances(pool, network, tokenId) {
@@ -10437,8 +10890,14 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
   }
   const currentTablePayload = () =>
     proofIndexTokenPayloadFromCurrentTables(pool, network, eligibility.scope);
-  const cutoverPayload = (payload) =>
-    applyWorkMarketV2CutoverToTokenState(payload);
+  const cutoverPayload = async (payload) =>
+    applyWorkMarketV2CutoverToTokenState(
+      await payloadWithVerifiedWorkMarketV4Activation(
+        pool,
+        network,
+        payload,
+      ),
+    );
 
   // Stable, unscoped token-state reads are live relational projections. The
   // block scanner updates events and balances atomically, while embedded JSON
@@ -10556,8 +11015,14 @@ export async function proofIndexTokenSnapshotPayload(
   if (!eligibility.eligible) {
     return null;
   }
-  const cutoverPayload = (payload) =>
-    applyWorkMarketV2CutoverToTokenState(payload);
+  const cutoverPayload = async (payload) =>
+    applyWorkMarketV2CutoverToTokenState(
+      await payloadWithVerifiedWorkMarketV4Activation(
+        pool,
+        network,
+        payload,
+      ),
+    );
 
   if (eligibility.scope !== "all") {
     const scopedSnapshot = await tokenStateSnapshotForScope(
@@ -11423,7 +11888,8 @@ export async function proofIndexWalletTokenOverlayPayload(
     .filter(Number.isFinite)
     .reduce((max, value) => Math.max(max, value), 0);
 
-  return applyWorkMarketV2CutoverToTokenState({
+  return applyWorkMarketV2CutoverToTokenState(
+    await payloadWithVerifiedWorkMarketV4Activation(pool, network, {
     checkpointComplete: checkpoint?.checkpointComplete,
     holders,
     indexedAt: newestTime ? new Date(newestTime).toISOString() : undefined,
@@ -11440,7 +11906,8 @@ export async function proofIndexWalletTokenOverlayPayload(
     tokenScope: scope,
     tokens,
     transfers: transfers.sort(compareTokenItemsByTime),
-  });
+    }),
+  );
 }
 
 async function proofIndexScopedHolderHistoryPayload(
@@ -13385,7 +13852,8 @@ function tokenMarketCanonicalListingProjectionPayload(payload, listingPayload) {
   const version = normalizedLowerText(
     payloadAuthorization.version ?? listingAuthorization.version,
   );
-  return tokenId === WORK_TOKEN_ID && version === WORK_MARKET_V2_AUTH_VERSION
+  return tokenId === WORK_TOKEN_ID &&
+    WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(version)
     ? {}
     : listingPayload;
 }
@@ -13399,23 +13867,28 @@ function tokenMarketListingSealPatch(
   const kind = normalizedLowerText(payload?.kind);
   const payloadAuthorization = objectRecord(payload?.saleAuthorization);
   const listingAuthorization = objectRecord(listingPayload?.saleAuthorization);
-  const workMarketV3 =
+  const governedWorkMarket =
     normalizedLowerText(
       payload?.tokenId ??
         payloadAuthorization.tokenId ??
         listingPayload?.tokenId ??
         listingAuthorization.tokenId,
     ) === WORK_TOKEN_ID &&
-    normalizedLowerText(
-      payloadAuthorization.version ?? listingAuthorization.version,
-    ) === WORK_MARKET_V2_AUTH_VERSION;
-  const sealSource = workMarketV3 ? canonicalSealPayload : listingPayload;
+    WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(
+      normalizedLowerText(
+        payloadAuthorization.version ?? listingAuthorization.version,
+      ),
+    );
+  const sealSource = governedWorkMarket
+    ? canonicalSealPayload
+    : listingPayload;
   if (
     !["token-listings", "token-listing", "token-listing-sealed"].includes(
       kind,
     ) ||
     !validTxid(sealSource?.sealTxid) ||
-    (workMarketV3 && normalizedLowerText(canonicalSealStatus) !== "confirmed")
+    (governedWorkMarket &&
+      normalizedLowerText(canonicalSealStatus) !== "confirmed")
   ) {
     return {};
   }
@@ -13424,7 +13897,7 @@ function tokenMarketListingSealPatch(
   return {
     ...(Object.keys(saleAuthorization).length > 0 ? { saleAuthorization } : {}),
     sealAt: sealSource.sealAt ?? payload?.sealAt,
-    sealConfirmed: workMarketV3
+    sealConfirmed: governedWorkMarket
       ? true
       : typeof sealSource.sealConfirmed === "boolean"
         ? sealSource.sealConfirmed
@@ -13447,7 +13920,9 @@ function tokenMarketListingSealPatch(
     sealMinerFeeSource:
       sealSource.sealMinerFeeSource ?? payload?.sealMinerFeeSource,
     sealTxid: String(sealSource.sealTxid).trim().toLowerCase(),
-    status: workMarketV3 ? "sealing" : sealSource.status ?? payload?.status,
+    status: governedWorkMarket
+      ? "sealing"
+      : sealSource.status ?? payload?.status,
   };
 }
 
@@ -15531,6 +16006,11 @@ export async function proofIndexCreditListingsPayload(
       [network, scope],
     ),
   ]);
+  const workMarketV4Activation = await verifiedWorkMarketV4Activation(
+    pool,
+    network,
+    rowNumber(scan, "indexed_through_block"),
+  );
   const totalCount = rowNumber(countResult.rows[0], "total_count");
 
   const result = await pool.query(
@@ -15555,7 +16035,12 @@ export async function proofIndexCreditListingsPayload(
         listing_tx.block_time AS listing_block_time,
         listing_tx.status AS listing_tx_status,
         seal_tx.status AS seal_tx_status,
-        canonical_seal_event.seal_event_status
+        canonical_seal_event.seal_event_status,
+        canonical_spend.txid AS canonical_spend_txid,
+        canonical_spend.vin AS canonical_spend_vin,
+        canonical_spend.block_hash AS canonical_spend_block_hash,
+        canonical_spend.block_height AS canonical_spend_block_height,
+        canonical_spend.block_time AS canonical_spend_block_time
       FROM proof_indexer.credit_listings cl
       LEFT JOIN proof_indexer.transactions listing_tx
         ON listing_tx.network = cl.network
@@ -15564,6 +16049,34 @@ export async function proofIndexCreditListingsPayload(
         ON seal_tx.network = cl.network
        AND seal_tx.txid = cl.seal_txid
       ${canonicalTokenListingSealEventJoinSql("cl")}
+      LEFT JOIN LATERAL (
+        SELECT
+          spend_tx.txid,
+          spend_input.vin,
+          spend_tx.block_hash,
+          spend_tx.block_height,
+          spend_tx.block_time
+        FROM proof_indexer.tx_inputs spend_input
+        JOIN proof_indexer.transactions spend_tx
+          ON spend_tx.network = spend_input.network
+         AND spend_tx.txid = spend_input.txid
+         AND spend_tx.status = 'confirmed'
+        JOIN proof_indexer.blocks spend_block
+          ON spend_block.network = spend_tx.network
+         AND spend_block.block_hash = spend_tx.block_hash
+         AND spend_block.height = spend_tx.block_height
+         AND spend_block.canonical = true
+        WHERE spend_input.network = cl.network
+          AND spend_input.prev_txid = lower(
+            COALESCE(NULLIF(cl.sale_ticket_txid, ''), cl.listing_id)
+          )
+          AND spend_input.prev_vout = cl.sale_ticket_vout
+        ORDER BY
+          spend_tx.block_height ASC,
+          spend_tx.txid ASC,
+          spend_input.vin ASC
+        LIMIT 1
+      ) canonical_spend ON true
       WHERE cl.network = $1
         AND ($2 = '' OR lower(cl.token_id) = $2)
         AND ${canonicalWorkMarketV3ListingProjectionSql("cl")}
@@ -15618,6 +16131,7 @@ export async function proofIndexCreditListingsPayload(
   }
   const newestTime = [
     ...result.rows.map((row) => row.updated_at),
+    ...result.rows.map((row) => row.canonical_spend_block_time),
     ...closeEventRows.map(
       (row) => row.event_time ?? row.block_time ?? row.created_at,
     ),
@@ -15648,20 +16162,49 @@ export async function proofIndexCreditListingsPayload(
       const sealTxid = String(row.seal_txid ?? payload.sealTxid ?? "")
         .trim()
         .toLowerCase();
-      const closeTxid = closeRow
+      const eventCloseTxid = closeRow
         ? String(closePayload.txid ?? closePayload.closedTxid ?? "")
             .trim()
             .toLowerCase()
-        : tokenListingEffectiveCloseTxid(row, payload, rowStatus, sealTxid);
-      const closeConfirmed = closeRow
-        ? closePayload.confirmed !== false
-        : payload.closedConfirmed === true;
+        : "";
+      const canonicalSpendTxid = String(row.canonical_spend_txid ?? "")
+        .trim()
+        .toLowerCase();
+      const closedByCanonicalOutpointSpend =
+        activeOrSealingListingStatus(rowStatus) &&
+        normalizedLowerText(row.listing_tx_status) === "confirmed" &&
+        validTxid(canonicalSpendTxid);
+      const matchingCloseEvent =
+        closedByCanonicalOutpointSpend &&
+        validTxid(eventCloseTxid) &&
+        eventCloseTxid === canonicalSpendTxid;
+      const closeTxid = closedByCanonicalOutpointSpend
+        ? canonicalSpendTxid
+        : closeRow
+          ? eventCloseTxid
+          : tokenListingEffectiveCloseTxid(
+              row,
+              payload,
+              rowStatus,
+              sealTxid,
+            );
+      const closeConfirmed = closedByCanonicalOutpointSpend
+        ? true
+        : closeRow
+          ? closePayload.confirmed !== false
+          : payload.closedConfirmed === true;
       const closeIsSale =
-        closePayload.kind === "token-sale" ||
-        Boolean(closePayload.saleTxid) ||
-        Boolean(closePayload.buyerAddress);
-      const status =
-        closeConfirmed && closeTxid
+        (!closedByCanonicalOutpointSpend || matchingCloseEvent) &&
+        (closePayload.kind === "token-sale" ||
+          Boolean(closePayload.saleTxid) ||
+          Boolean(closePayload.buyerAddress));
+      const status = closedByCanonicalOutpointSpend
+        ? matchingCloseEvent
+          ? closeIsSale
+            ? "sold"
+            : "delisted"
+          : "closed"
+        : closeConfirmed && closeTxid
           ? closeIsSale
             ? "sold"
             : "delisted"
@@ -15679,9 +16222,31 @@ export async function proofIndexCreditListingsPayload(
           rowNumber(payload, "blockHeight") ||
           undefined,
         buyerAddress:
-          closePayload.buyerAddress ?? row.buyer_address ?? payload.buyerAddress,
+          (!closedByCanonicalOutpointSpend || matchingCloseEvent
+            ? closePayload.buyerAddress
+            : undefined) ??
+          row.buyer_address ??
+          payload.buyerAddress,
         closeTxid,
-        closedAt: closePayload.createdAt ?? payload.closedAt,
+        closedAt:
+          (closedByCanonicalOutpointSpend
+            ? dateIso(row.canonical_spend_block_time ?? row.updated_at)
+            : closePayload.createdAt) ?? payload.closedAt,
+        ...(closedByCanonicalOutpointSpend
+          ? {
+              closedBlockHash: String(row.canonical_spend_block_hash ?? "")
+                .trim()
+                .toLowerCase(),
+              closedBlockHeight:
+                rowNumber(row, "canonical_spend_block_height") || undefined,
+              closedByCanonicalOutpointSpend: true,
+              closedVin: Number.isSafeInteger(
+                Number(row.canonical_spend_vin),
+              )
+                ? Number(row.canonical_spend_vin)
+                : undefined,
+            }
+          : {}),
         closedConfirmed:
           (Boolean(closeTxid) && closeConfirmed) ||
           payload.closedConfirmed === true,
@@ -15706,7 +16271,11 @@ export async function proofIndexCreditListingsPayload(
         saleTicketValueSats: Number(row.sale_ticket_value_sats ?? 0),
         saleTicketVout: row.sale_ticket_vout,
         saleTxid:
-          closeIsSale && closeTxid ? closeTxid : payload.saleTxid ?? undefined,
+          closedByCanonicalOutpointSpend && !matchingCloseEvent
+            ? undefined
+            : closeIsSale && closeTxid
+              ? closeTxid
+              : payload.saleTxid ?? undefined,
         sealConfirmed: tokenListingSealConfirmedFromTransaction(row, sealTxid),
         sealTxid,
         sellerAddress: row.seller_address,
@@ -15718,6 +16287,7 @@ export async function proofIndexCreditListingsPayload(
     }),
     network,
     source: "proof-indexer-credit-listing-lifecycle",
+    ...(workMarketV4Activation ? { workMarketV4Activation } : {}),
     stats: {
       complete: result.rows.length >= totalCount,
       totalCount,
