@@ -1161,7 +1161,7 @@ const sanitizedResurfacedRelic = applyWorkMarketV2CutoverToTokenState({
   closedListings: [
     {
       ...snapshotExcludedLegacy,
-      disabledReason: "work-market-v2-cutover",
+      disabledReason: "",
       refundEligible: true,
       relic: true,
       status: "disabled",

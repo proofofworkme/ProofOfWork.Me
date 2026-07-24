@@ -709,8 +709,10 @@ export function applyWorkMarketV2CutoverToTokenState(state) {
   const closedListings = Array.isArray(state.closedListings)
     ? state.closedListings.map((listing) =>
         isLegacyWorkMarketListing(listing) &&
-        listing?.disabledReason === "work-market-v2-cutover" &&
-        !workMarketV1RefundSnapshotIncludes(listingId(listing))
+        !workMarketV1RefundSnapshotIncludes(listingId(listing)) &&
+        (listing?.refundEligible === true ||
+          listing?.relic === true ||
+          listing?.disabledReason === "work-market-v2-cutover")
           ? cutoverSnapshotExcludedListing(listing)
           : listing,
       )
