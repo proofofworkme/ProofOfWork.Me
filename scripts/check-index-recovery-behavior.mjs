@@ -47,6 +47,9 @@ import {
   workMarketV4ActivationReached,
 } from "../server/work-market-v2.mjs";
 import {
+  tokenListingCanProjectCloseActivity,
+} from "../server/token-listing-lifecycle.mjs";
+import {
   INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
   INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
   buildIncbRangeReplayWitnessManifest,
@@ -5778,6 +5781,7 @@ check("WORK V2 relics remain paid history without synthetic closes", () => {
       tokenAmountFieldsFromRecord: (item) => ({ amount: item?.amount ?? 0 }),
       tokenListingHasConfirmedSaleTicketSeal: (listing) =>
         listing?.sealConfirmed === true,
+      tokenListingCanProjectCloseActivity,
       tokenListingHasPendingSaleTicketSeal: () => false,
     },
   );
@@ -27945,6 +27949,10 @@ check("dropped market events cannot re-enter history or close active listings", 
     READER_PATH,
     "proofIndexWalletTokenOverlayPayload",
   );
+  const currentTokenListingsSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenListingsFromTables",
+  );
   const closeOutspendSource = topLevelFunctionSource(
     READER_PATH,
     "proofIndexTokenListingCloseOutspendPayload",
@@ -27986,6 +27994,14 @@ check("dropped market events cannot re-enter history or close active listings", 
   assert.match(
     walletOverlaySource,
     /close_event\.valid = true[\s\S]*close_event\.status IN \('confirmed', 'pending'\)[\s\S]*close_event\.kind = ANY\(ARRAY\['token-listing-closed','token-sale'\]/iu,
+  );
+  assert.match(
+    currentTokenListingsSource,
+    /active[\s\S]*sealing[\s\S]*pending[\s\S]*tokenListingTransactionCanProjectActive\(row\.listing_tx_status\)/iu,
+  );
+  assert.match(
+    walletOverlaySource,
+    /tokenListingTransactionCanProjectActive\(row\.listing_tx_status\)[\s\S]*activeTokenListingHistoryItem\(listing\)/iu,
   );
 });
 
