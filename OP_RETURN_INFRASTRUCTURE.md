@@ -825,6 +825,40 @@ required for independent disaster recovery.
 Database credentials live in
 `/etc/proofofwork-api/proof-indexer-db.env`, never inside the live Git checkout.
 
+### WORK marketplace V4 Phase-1 gate
+
+The V4 rollout starts fail-closed. Production keeps
+`WORK_MARKETPLACE_WRITES_ENABLED=0` and leaves the V4 declaration txid, height,
+and block-hash pins unset until the declaration has been signed locally,
+confirmed, and verified against Bitcoin Core. The declaration verifier requires
+the exact memo, the exact first-input authority
+`1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv`, and at least 546 proofs paid to
+`1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV` before the protocol output. Activation is
+the following block. Enabling writes later requires all three exact declaration
+pins plus an explicit `WORK_MARKETPLACE_WRITES_ENABLED=1`; the API exposes
+declaration, activation, and write status to the UI and never infers write
+authority from a pending transaction.
+
+Both first-party broadcast paths reject governed WORK `list5`, `seal5`, and
+`buy5` transactions while the gate is closed. Once opened, they require one
+canonical WORK protocol action, the correct token id, ticker, registry payment
+and output order, the expected actor/listing/sale-ticket shape, a V4
+authorization, a canonical signed quote within the 480-block window, and a
+seller price that still meets the exact current-tip H-1 floor. `delist5`,
+`send2`, and non-WORK marketplace actions are outside this V4 write pause.
+
+Canonical replay discovers the exact confirmed declaration from registry
+history and applies its `D + 1` cutover only when replay coverage reaches the
+activation height, including blocks with no later registry transaction. V3
+listings then project as non-reserving read-only relics; their tickets remain
+recoverable, but seal and buy require a new V4 listing. Oracle evidence is
+keyed by `txid:protocolVout`, because one transaction can carry multiple
+protocol outputs. Read-model retention keeps at least the newest 512 distinct
+canonical-summary heights and preserves every hash-bound quote and
+confirmation-floor snapshot referenced by confirmed V3/V4 valid or invalid
+market events. A snapshot cache or compacted listing row cannot replace that
+evidence.
+
 ### WORK atomic-unit cutover
 
 This section preserves the completed atomic-unit migration and its rollback
@@ -1356,6 +1390,7 @@ The credit endpoint:
 - WORK settings are 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, and the `work@proofofwork.me` registry address. WORK launches at exactly 1 proof per WORK. The create form can reuse the same economic template for non-reserved tickers only.
 - WORK's permanent price floor is derived from live confirmed ProofOfWork Computer network value, not from pending mempool visibility: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`. The inverse `21,000,000 / live_network_value_sats` is the WORK-per-proof ratio.
 - WORK Marketplace Pricing Protocol V2 is declaration-tx anchored at `4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f` and activates at declaration height plus one. Confirmed governed WORK list/seal/buy validation must load the exact green canonical summary at H-1, require the authorization's `oracleBlockHeight`, `oracleBlockHash`, and `oracleNetworkValueQ8` to match it, recompute the integer-ceiling minimum total seller price from `amountAtoms`, and fail closed on any unavailable or mismatched dependency. A missed next-block commitment is stale; confirmation does not rescue it.
+- WORK Marketplace Pricing Protocol V4 is Phase-1 write-gated. Until its exact declaration confirms, activates at `D + 1`, is pinned by txid/height/canonical block hash, and `WORK_MARKETPLACE_WRITES_ENABLED=1` is explicitly set, WORK list/seal/buy broadcasts remain read-only while delisting stays available. After activation, `pwt-sale-v4` accepts a hash-bound quote no more than 480 blocks old only when the signed price also meets the canonical confirmation-block H-1 floor; V3 listings remain inspectable as non-reserving relics and must be recovered/relisted before seal or buy.
 - WORK value accounting exposes both live and frozen values. Live network value reprices confirmed WORK movement at the current live floor and is the site-facing value. Frozen network value records the confirmation-time value of each WORK movement plus fixed event components such as proof payments, registry mutation fees, marketplace mutation fees, sale payments, and miner fees where available.
 - WORK is the only credit whose amount moved adds credit movement network value. Non-WORK credits remain confirmed proof-flow records and must not derive value from manipulable illiquid floors.
 - Credit mint-out is confirmed-only at the protocol/indexing layer: a credit is canonically minted out only when confirmed supply reaches max supply. UI mint controls also pause when confirmed plus pending mints fill the remaining supply, because pending records can consume the last valid mint slots if they confirm.

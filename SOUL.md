@@ -64,6 +64,14 @@ or buy is canonical only when its exact hash-bound H-1 pricing commitment meets
 the live network-value floor. Invalid or third-party attempts remain chain
 history but do not mutate Computer-recognized WORK state.
 
+WORK Marketplace Pricing Protocol V4 removes the next-block liveness trap
+without weakening that floor. It accepts a recent hash-bound quote only when
+the signed price also meets the independent canonical H-1 floor at
+confirmation. The rollout begins fail-closed: list, seal, and buy stay
+read-only until the exact locally signed declaration confirms, activates at
+the following block, is pinned, and writes are explicitly enabled. V3 listings
+become recoverable relics; any confirmed ticket spend still closes its listing.
+
 ## Launch Memory
 
 The archive captured a live Phase 1 ignition, not a polished brand campaign.
@@ -125,6 +133,7 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-07-15: The recurring public market cadence expands to six synchronized posts: WORK mint-to-floor, sealed WORK book, PowID book, WORK reserves, Infinity/POWB, and Inception/INCB. Every ProofOfWork.Me public/social post carries `$WORK $POWB $INCB` unless the user explicitly overrides the cashtags. Public/social copy says ProofOfWork, ProofOfWork-native, and proofs; it must not use Bitcoin or BTC. Refresh one checked exact-tip snapshot for the whole batch and keep live and frozen network values distinct.
 - 2026-07-16: INCB network-value accounting is corrected to the Infinity-style rule. Each confirmed INCB starts from the proof value fixed at its bond's H-1 issuance oracle. Later WORK value changes never reprice historical INCB. Inception network value is fixed cumulative issuance value plus confirmed INCB sale volume, transfer fees, and marketplace mutation fees.
 - 2026-07-23: Repository hygiene becomes a mandatory handoff contract for every approved update and every authored commit. Agents review `SOUL.md` and canonical docs semantically, classify tracked notes, clear only allowlisted rebuildable local state, verify generated artifacts and relative links, inspect the final diff, and attest the result in commit trailers. A server-created merge may inherit reviewed parent attestations only when its tree is the exact mechanical Git merge result. Old history, ledgers, refunds, incident evidence, and tx-backed records are not stale merely because they are old.
+- 2026-07-23: Two community reports harden WORK liveness. Fractional invalid-event records keep their exact atoms and paid-cost audit trail; WORK marketplace V4 uses a recent quote plus the independent confirmation H-1 floor, with V3 sale tickets preserved as recoverable relics. Wallet sends prefer separate confirmed curated funding outputs and expose a local self-send lane-preparation tool, avoiding accidental serialization through one unconfirmed change chain while continuing to reserve marketplace anchors.
 
 The emotional shape is a breakthrough moment: years of ProofOfWork/app experiments meeting modern agents and becoming legible all at once.
 

@@ -110,6 +110,7 @@ const FIXTURE_CONFIG = {
   ],
   protectedTrackedPaths: [
     'WORK_MARKET_V1_REFUNDS_959061.json',
+    'WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json',
     'BUG_BOUNTY_LEDGER.md',
     'ID_REFUNDS.md',
     'TREASURY_LEDGER.md',
@@ -277,6 +278,11 @@ function createFixture(t, { withObsoleteFile = false } = {}) {
   write(root, 'src/app.js', 'export const answer = 42;\n');
   write(root, 'output/state.json', '{"preserve":true}\n');
   write(root, 'WORK_MARKET_V1_REFUNDS_959061.json', '{"preserve":true}\n');
+  write(
+    root,
+    'WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json',
+    '{"preserve":true}\n',
+  );
   for (const relativePath of [
     'scripts/repository-hygiene.mjs',
     'scripts/install-repository-hooks.mjs',
@@ -757,7 +763,7 @@ test('commit-msg requires explicit protected-removal attestation', (t) => {
 
 test('commit-msg protects an exact configured audit snapshot path', (t) => {
   const root = createFixture(t);
-  const protectedPath = 'WORK_MARKET_V1_REFUNDS_959061.json';
+  const protectedPath = 'WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json';
   unlinkSync(join(root, protectedPath));
   git(root, 'add', '-u', '--', protectedPath);
 

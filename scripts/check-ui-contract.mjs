@@ -1,4 +1,6 @@
+import { Buffer } from "node:buffer";
 import { existsSync, readFileSync } from "node:fs";
+import ts from "typescript";
 
 const files = [
   "README.md",
@@ -8,6 +10,7 @@ const files = [
   "PROOFOFWORK_GENERAL_DECK.md",
   "src/App.tsx",
   "src/exactAmount.ts",
+  "src/walletUtxos.ts",
   "src/app/appLinks.ts",
   "src/app/routeRegistry.ts",
   "src/features/landing/LandingApp.tsx",
@@ -29,6 +32,22 @@ const files = [
 
 const read = (path) => readFileSync(path, "utf8");
 const contents = new Map(files.map((path) => [path, read(path)]));
+const walletUtxoRuntimeSource = ts.transpileModule(
+  contents.get("src/walletUtxos.ts"),
+  {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2022,
+      target: ts.ScriptTarget.ES2022,
+    },
+  },
+).outputText;
+const {
+  enrichWalletCuratedUtxoConfirmations,
+  normalizeWalletUtxos,
+  selectSmallestSingleConfirmedUtxo,
+} = await import(
+  `data:text/javascript;base64,${Buffer.from(walletUtxoRuntimeSource).toString("base64")}`
+);
 const failures = [];
 
 function expect(name, condition) {
@@ -278,6 +297,11 @@ expect(
 
 const app = contents.get("src/App.tsx");
 const exactAmount = contents.get("src/exactAmount.ts");
+const walletUtxoPolicy = contents.get("src/walletUtxos.ts");
+const transferTokenSource = app.slice(
+  app.indexOf("async function transferToken"),
+  app.indexOf("async function assertWorkMarketPricingTipUnchanged"),
+);
 const listTokenSource = app.slice(
   app.indexOf("async function listToken"),
   app.indexOf("async function sealTokenListing"),
@@ -1083,9 +1107,15 @@ const assertListingAnchorUnspentBlock =
   app.match(/async function assertListingAnchorUnspent[\s\S]*?async function buildAnchoredMarketplacePsbt/)?.[0] ?? "";
 const signTokenSaleTicketAuthorizationBlock =
   app.match(/async function signTokenSaleTicketAuthorization[\s\S]*?function encodeCompactSize/)?.[0] ?? "";
+const tokenWalletWorkspaceBlock =
+  app.match(/function TokenWalletWorkspace\([\s\S]*?function TokenApp\(/)?.[0] ?? "";
+const walletV3RelicRecoveryBlock =
+  tokenWalletWorkspaceBlock.match(
+    /\{walletRecoverableV3WorkRelics\.length \? \([\s\S]*?\) : null\}/,
+  )?.[0] ?? "";
 expect(
-  "WORK Marketplace V2 sale-ticket anchors are accepted by seal and buy construction",
-  /TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION/.test(listingAnchorDetailsBlock) &&
+  "WORK V3 sale tickets remain displayable and recoverable while V4 owns new seal and buy writes",
+  /isWorkMarketSaleAuthorizationVersion/.test(listingAnchorDetailsBlock) &&
     /listingAnchorDetails\(listing, network\)/.test(
       assertListingAnchorUnspentBlock,
     ) &&
@@ -1094,25 +1124,59 @@ expect(
     ) &&
     /assertListingAnchorUnspent\(listing, network\)/.test(
       buildAnchoredMarketplacePsbtBlock,
+    ) &&
+    /TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION\s*=\s*"pwt-sale-v3"/.test(app) &&
+    /TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION\s*=\s*"pwt-sale-v4"/.test(
+      app,
+    ) &&
+    /async function sealTokenListing[\s\S]*!isWorkMarketConfirmationFloorAuthorization\([\s\S]*retired next-block authorization[\s\S]*Delist it to recover the sale ticket/.test(
+      app,
+    ) &&
+    /async function buyTokenListing[\s\S]*!isWorkMarketConfirmationFloorAuthorization\([\s\S]*retired next-block authorization and cannot be bought/.test(
+      app,
+    ) &&
+    /async function delistTokenListing[\s\S]*buildTokenDelistingPayload\(\s*listing\.listingId\s*\)/.test(
+      app,
     ),
 );
 expect(
-  "WORK Marketplace V2 purchases warn about next-block settlement and recheck the exact tip before signing",
-  /WORK Marketplace V2 purchases are next-block bound/.test(
-    buyTokenListingSource,
+  "Wallet exposes canonical owner-only V3 WORK relic recovery through delist5",
+  /const walletRecoverableV3WorkRelics = normalizedWalletAddress[\s\S]*closedListings[\s\S]*item\.relic === true[\s\S]*item\.confirmed === true[\s\S]*closedListingIdsWithCloseTransaction[\s\S]*item\.sellerAddress\.trim\(\)\.toLowerCase\(\) ===\s*normalizedWalletAddress[\s\S]*isWorkToken\(item\)[\s\S]*item\.saleAuthorization\.version ===\s*TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION/.test(
+    tokenWalletWorkspaceBlock,
   ) &&
-    /seller payment and sale-ticket spend can still confirm while the WORK transfer is rejected/.test(
+    /V3 WORK sale-ticket recovery[\s\S]*cannot be sealed or bought[\s\S]*Recover with delist5/.test(
+      walletV3RelicRecoveryBlock,
+    ) &&
+    /onClick=\{\(\) => delistListing\(item\)\}/.test(
+      walletV3RelicRecoveryBlock,
+    ) &&
+    /label:\s*item\.relic === true && !item\.closedTxid\s*\?\s*"Retired listing"\s*:\s*"Delisted"/.test(
+      tokenWalletWorkspaceBlock,
+    ) &&
+    !/sealListing|buyTokenListing|refund|snapshot/i.test(
+      walletV3RelicRecoveryBlock,
+    ),
+);
+expect(
+  "WORK V4 writes fail closed, recheck after signing before broadcast, and preserve buyer settlement warnings",
+  /function workMarketplaceV4WritesReady[\s\S]*status\?\.active === true[\s\S]*status\.writesEnabled === true[\s\S]*status\.declarationConfirmed === true[\s\S]*status\.authVersion === TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION[\s\S]*status\.oracleModel === WORK_MARKET_CONFIRMATION_FLOOR_ORACLE_MODEL[\s\S]*declarationBlockHash[\s\S]*activationHeight === declarationHeight \+ 1/.test(
+    app,
+  ) &&
+    /Marketplace upgrade pending declaration\. WORK list, seal, and buy actions are temporarily read-only/.test(
+      app,
+    ) &&
+    /WORK purchases use confirmation-floor pricing[\s\S]*confirmation-time floor rises above the signed price[\s\S]*seller payment and sale-ticket spend may still confirm while the WORK transfer is rejected/.test(
+      app,
+    ) &&
+    /assertWorkMarketplaceV4WritesEnabled\(freshFloor\)/.test(
       buyTokenListingSource,
     ) &&
-    /const preBroadcastFloor = await fetchWorkFloorQuote\("livenet", true\)/.test(
+    /beforeBroadcast:[\s\S]*assertWorkMarketPricingTipUnchanged\([\s\S]*authorization:\s*purchaseAuthorization/.test(
       buyTokenListingSource,
     ) &&
-    /preBroadcastPricingFields\.oracleBlockHash !==[\s\S]*purchaseAuthorization\.oracleBlockHash/.test(
-      buyTokenListingSource,
-    ) &&
-    /WORK pricing tip advanced before signing/.test(buyTokenListingSource) &&
-    buyTokenListingSource.indexOf("const preBroadcastFloor") <
-      buyTokenListingSource.indexOf("signAndBroadcastPsbt"),
+    /async function signAndBroadcastPsbtDetailed[\s\S]*const rawTx = signedTransaction\.toHex\(\);[\s\S]*await beforeBroadcast\?\.\(\);[\s\S]*return broadcastSignedRawTransaction/.test(
+      app,
+    ),
 );
 expect(
   "all ProofOfWork sale-ticket anchors are freshly excluded from funding selection",
@@ -1133,6 +1197,186 @@ expect(
     ) &&
     /fetchFreshProofOfWorkListingAnchorOutpoints[\s\S]*mergeListingAnchorOutpoints\(\s*excludeOutpoints \?\? \[\],[\s\S]*reservedListingAnchors,[\s\S]*anchor\.txid/.test(
       buildAnchoredMarketplacePsbtBlock,
+    ),
+);
+expect(
+  "transfer-lane preparation accepts UniSat wallet UTXO shapes but never raw API fallback",
+  /utxo\.value[\s\S]*utxo\.satoshis[\s\S]*utxo\.satoshi[\s\S]*utxo\.amount/.test(
+    walletUtxoPolicy,
+  ) &&
+    /utxo\.height \?\? utxo\.blockHeight \?\? utxo\.block_height/.test(
+      walletUtxoPolicy,
+    ) &&
+    /Number\.isSafeInteger\(blockHeight\) && blockHeight > 0/.test(
+      walletUtxoPolicy,
+    ) &&
+    /window\.unisat\?\.getBitcoinUtxos[\s\S]*\? "wallet-curated"[\s\S]*: "wallet-generic"/.test(
+      app,
+    ) &&
+    /walletUtxoSource === "wallet-curated"[\s\S]*walletUtxos\.length === 0[\s\S]*fetchAddressApiUtxos\([\s\S]*return enrichWalletCuratedUtxoConfirmations\(\s*walletUtxos,\s*statusEvidence/.test(
+      app,
+    ) &&
+    /hasAttachedWalletAssets\(utxo\.inscriptions\)[\s\S]*hasAttachedWalletAssets\(utxo\.atomicals\)/.test(
+      walletUtxoPolicy,
+    ) &&
+    /function enrichWalletCuratedUtxoConfirmations[\s\S]*statusEvidence\.flatMap[\s\S]*`\$\{utxo\.txid\}:\$\{utxo\.vout\}`[\s\S]*utxo\.source !== "wallet-curated"[\s\S]*typeof utxo\.status\?\.confirmed === "boolean"[\s\S]*typeof confirmed !== "boolean"/.test(
+      walletUtxoPolicy,
+    ) &&
+    /async function prepareTokenTransferUtxos[\s\S]*requireConfirmedUtxos: true,[\s\S]*requireWalletUtxos: true/.test(
+      app,
+    ) &&
+    /requireWalletUtxos &&[\s\S]*utxo\.source !== "wallet-curated"[\s\S]*stopped before signing/.test(
+      buildPaymentPsbtBlock,
+    ) &&
+    /Generic wallet outputs are shown only; preparation remains disabled/.test(
+      app,
+    ),
+);
+const officialUnisatUtxoTxid = "ab".repeat(32);
+const officialUnisatUtxoFixture = {
+  addressType: 1,
+  atomicals: [],
+  inscriptions: [],
+  pubkey: `02${"11".repeat(32)}`,
+  satoshis: 1_546,
+  scriptPk: `5120${"22".repeat(32)}`,
+  txid: officialUnisatUtxoTxid,
+  vout: 2,
+};
+const normalizedOfficialUnisatUtxos = normalizeWalletUtxos(
+  [
+    officialUnisatUtxoFixture,
+    {
+      ...officialUnisatUtxoFixture,
+      satoshis: 2_546,
+      vout: 3,
+    },
+  ],
+  "wallet-curated",
+);
+const confirmedOfficialUnisatEvidence = normalizeWalletUtxos(
+  [
+    {
+      confirmed: true,
+      txid: officialUnisatUtxoTxid.toUpperCase(),
+      value: 1_546,
+      vout: 2,
+    },
+    {
+      confirmed: false,
+      txid: officialUnisatUtxoTxid,
+      value: 2_546,
+      vout: 3,
+    },
+  ],
+  "api",
+);
+const enrichedOfficialUnisatUtxos = enrichWalletCuratedUtxoConfirmations(
+  normalizedOfficialUnisatUtxos,
+  confirmedOfficialUnisatEvidence,
+);
+const unresolvedOfficialUnisatUtxos = enrichWalletCuratedUtxoConfirmations(
+  normalizedOfficialUnisatUtxos,
+  [],
+);
+const wrongOutpointOfficialUnisatUtxos =
+  enrichWalletCuratedUtxoConfirmations(normalizedOfficialUnisatUtxos, [
+    {
+      source: "api",
+      status: { confirmed: true },
+      txid: officialUnisatUtxoTxid,
+      value: 1_546,
+      vout: 99,
+    },
+  ]);
+const rejectedAssetBearingUnisatUtxos = normalizeWalletUtxos(
+  [
+    {
+      ...officialUnisatUtxoFixture,
+      inscriptions: [{ inscriptionId: "unsafe-inscription" }],
+    },
+    {
+      ...officialUnisatUtxoFixture,
+      atomicals: [{ atomicalId: "unsafe-atomical" }],
+      vout: 4,
+    },
+  ],
+  "wallet-curated",
+);
+expect(
+  "official UniSat rows stay curated and use exact first-party outpoint evidence",
+  normalizedOfficialUnisatUtxos.length === 2 &&
+    normalizedOfficialUnisatUtxos.every(
+      (utxo) =>
+        utxo.source === "wallet-curated" &&
+        typeof utxo.status?.confirmed !== "boolean",
+    ) &&
+    enrichedOfficialUnisatUtxos.find((utxo) => utxo.vout === 2)?.status
+      ?.confirmed === true &&
+    enrichedOfficialUnisatUtxos.find((utxo) => utxo.vout === 3)?.status
+      ?.confirmed === false &&
+    unresolvedOfficialUnisatUtxos.every(
+      (utxo) =>
+        utxo.source === "wallet-curated" &&
+        utxo.status?.confirmed !== true,
+    ) &&
+    wrongOutpointOfficialUnisatUtxos.every(
+      (utxo) => typeof utxo.status?.confirmed !== "boolean",
+    ) &&
+    rejectedAssetBearingUnisatUtxos.length === 0,
+);
+const smallestConfirmedLane = selectSmallestSingleConfirmedUtxo(
+  [
+    {
+      source: "wallet-curated",
+      status: { confirmed: true },
+      txid: "01".repeat(32),
+      value: 800,
+      vout: 0,
+    },
+    {
+      source: "wallet-curated",
+      status: { confirmed: true },
+      txid: "02".repeat(32),
+      value: 900,
+      vout: 0,
+    },
+    {
+      source: "wallet-curated",
+      status: { confirmed: true },
+      txid: "03".repeat(32),
+      value: 4_000,
+      vout: 0,
+    },
+    {
+      source: "api",
+      status: { confirmed: true },
+      txid: "04".repeat(32),
+      value: 850,
+      vout: 0,
+    },
+  ],
+  546,
+  1,
+  100,
+  43,
+);
+expect(
+  "direct credit transfers prefer one smallest confirmed curated lane and retain normal fallback",
+  /function selectSmallestSingleConfirmedUtxo[\s\S]*utxo\.status\?\.confirmed === true[\s\S]*utxo\.source === "wallet-curated"[\s\S]*left\.value - right\.value[\s\S]*return selectUtxos\(\s*\[candidate\],[\s\S]*return undefined/.test(
+    walletUtxoPolicy,
+  ) &&
+    smallestConfirmedLane?.selected.length === 1 &&
+    smallestConfirmedLane.selected[0].value === 900 &&
+    /utxoSelectionStrategy === "smallest-single-confirmed"[\s\S]*selectSmallestSingleConfirmedUtxo\([\s\S]*\?\?[\s\S]*selectUtxos\(/.test(
+      buildPaymentPsbtBlock,
+    ) &&
+    /activeTokenListingAnchorOutpointsForAddress\([\s\S]*requireConfirmedUtxos: true,[\s\S]*utxoSelectionStrategy: "smallest-single-confirmed"/.test(
+      transferTokenSource,
+    ) &&
+    !/requireWalletUtxos/.test(transferTokenSource) &&
+    /requireWalletUtxos &&[\s\S]*utxo\.source !== "wallet-curated"[\s\S]*raw node outputs cannot be selected/.test(
+      buildPaymentPsbtBlock,
     ),
 );
 const walletSyncBlock =

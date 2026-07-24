@@ -178,7 +178,52 @@ active legacy WORK listings at height 959061. Each eligible listing receives
 its listing miner fee; each eligible confirmed seal additionally receives its
 seal miner fee and its 546-proof seal registry payment. Pending, invalid,
 already sold, delisted, or otherwise closed listings are excluded. The
-seller-controlled 546-proof sale-ticket output is not a refund expense.
+seller-controlled 546-proof sale-ticket output is not a refund expense. The
+94-entry snapshot is the exact eligibility boundary: a historical V1/V2 row
+that later resurfaces through reconciliation remains closed evidence and
+cannot acquire `relic` or `refundEligible` status unless its listing id is in
+that snapshot.
+
+## WORK Pricing Protocol V4 Phase 1
+
+V4 removes V2's next-block liveness hazard without weakening the canonical
+execution floor. Governed WORK list, seal, and buy authorizations use
+`pwt-sale-v4` with oracle model
+`canonical-work-market-confirmation-floor-v1`. Each authorization commits an
+exact hash-bound green canonical quote, including its height, block hash, live
+network value Q8, `amountAtoms`, integer-ceiling `minimumPriceSats`, and total
+`priceSats`.
+
+For an action confirmed at block `H`, the signed quote must be from one of the
+480 blocks immediately before `H`. A quote 480 blocks old is valid; a quote 481
+blocks old is expired. The verifier independently loads both the committed
+quote snapshot and the canonical summary at `H - 1`. The committed quote and
+its minimum must match exactly, and the signed seller price must also meet the
+integer-ceiling floor computed from the canonical live network value at
+`H - 1`. Delayed confirmation therefore remains possible only while the signed
+price still satisfies the confirmation-time floor.
+
+Activation is declaration-gated. The declaration must be a confirmed
+transaction whose first input belongs to
+`1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv`, pays at least 546 proofs to
+`1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV` before the protocol output, and carries
+the exact V4 declaration memo. If its block is `D`, V4 begins at `D + 1`.
+Phase 1 keeps `WORK_MARKETPLACE_WRITES_ENABLED=0`: WORK list, seal, and buy
+broadcasts remain read-only until the declaration is confirmed, its txid,
+height, and canonical block hash are pinned in production, activation is
+reached, and writes are explicitly enabled. Delisting remains available.
+Wallet signing stays local; no server or agent signs the declaration or a
+market action.
+
+V3 history remains immutable. At V4 activation, existing `pwt-sale-v3`
+listings become read-only relics, stop reserving WORK balance, and expose no
+seal or buy action. Their seller-controlled sale tickets may be delisted or
+recovered, after which the WORK can be relisted under V4. A confirmed spend of
+any sale-ticket outpoint still closes or retires that listing as canonical
+outpoint state, even when an attempted buy fails application validation.
+Missing, unavailable, hash-mismatched, inconsistent, expired-quote, or
+below-confirmation-floor actions remain invalid audit history and do not mutate
+canonical WORK balances, sales, Log, Growth, or network value.
 
 ## Current Infinity Bond / POWB Model
 

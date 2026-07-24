@@ -36,7 +36,8 @@
     "ledger-and-audit-evidence": [
       "BUG_BOUNTY_LEDGER.md",
       "ID_REFUNDS.md",
-      "TREASURY_LEDGER.md"
+      "TREASURY_LEDGER.md",
+      "WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",
@@ -95,6 +96,7 @@
   ],
   "protectedTrackedPaths": [
     "WORK_MARKET_V1_REFUNDS_959061.json",
+    "WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json",
     "BUG_BOUNTY_LEDGER.md",
     "ID_REFUNDS.md",
     "TREASURY_LEDGER.md"

@@ -15,11 +15,27 @@ import {
   WORK_MARKET_V2_DECLARATION_HEIGHT,
   WORK_MARKET_V2_DECLARATION_TXID,
   WORK_MARKET_V2_ORACLE_MODEL,
+  WORK_MARKET_V4_AUTH_VERSION,
+  WORK_MARKET_V4_DECLARATION_AUTHORITY,
+  WORK_MARKET_V4_DECLARATION_MEMO,
+  WORK_MARKET_V4_DECLARATION_MIN_PAYMENT_SATS,
+  WORK_MARKET_V4_DECLARATION_PAYLOAD,
+  WORK_MARKET_V4_DECLARATION_REGISTRY_ADDRESS,
+  WORK_MARKET_V4_MAX_QUOTE_AGE_BLOCKS,
+  WORK_MARKET_V4_ORACLE_MODEL,
   validateGovernedWorkMarketAction,
   validateWorkMarketV2Authorization,
+  validateWorkMarketV4Authorization,
   workMarketV2ActivationFromDeclaration,
   workMarketV2ActivationForReplay,
+  workMarketV4ActivationReached,
+  workMarketCachedOracleContext,
   workMarketV2MinimumPriceSats,
+  workMarketOracleActionKey,
+  workMarketOracleCacheKey,
+  workMarketV4QuoteHeightWithinBound,
+  workMarketplaceBroadcastDecision,
+  workMarketplaceWriteActionIsGoverned,
 } from "../server/work-market-v2.mjs";
 import { WORK_TOKEN_ID } from "../server/work-units.mjs";
 
@@ -54,6 +70,609 @@ assert.equal(
   }).reasonCode,
   "work-market-v2-canonical-oracle-unavailable",
 );
+
+const confirmationHash = "22".repeat(32);
+const v4Base = {
+  ...governedBase,
+  oracleBlockHeight: 100,
+  oracleModel: WORK_MARKET_V4_ORACLE_MODEL,
+  priceSats: 2,
+  version: WORK_MARKET_V4_AUTH_VERSION,
+};
+for (const action of ["list5", "seal5", "buy5"]) {
+  const validation = validateWorkMarketV4Authorization(v4Base, {
+    actionBlockHeight: 103,
+    expectedConfirmationNetworkValueQ8: "4200000000000000",
+    expectedConfirmationOracleBlockHash: confirmationHash,
+    expectedQuoteNetworkValueQ8: v4Base.oracleNetworkValueQ8,
+    expectedQuoteOracleBlockHash: hash,
+  });
+  assert.equal(validation.valid, true, `${action} must allow a historical quote`);
+  assert.equal(validation.confirmationOracleBlockHeight, 102);
+  assert.equal(validation.confirmationMinimumPriceSats, "2");
+}
+const belowConfirmationFloor = validateWorkMarketV4Authorization(v4Base, {
+  actionBlockHeight: 103,
+  expectedConfirmationNetworkValueQ8: "4200000000000001",
+  expectedConfirmationOracleBlockHash: confirmationHash,
+  expectedQuoteNetworkValueQ8: v4Base.oracleNetworkValueQ8,
+  expectedQuoteOracleBlockHash: hash,
+});
+assert.equal(
+  belowConfirmationFloor.reasonCode,
+  "work-market-v4-below-confirmation-floor",
+);
+assert.equal(belowConfirmationFloor.confirmationOracleBlockHeight, 102);
+assert.equal(
+  belowConfirmationFloor.confirmationOracleBlockHash,
+  confirmationHash,
+);
+assert.equal(
+  belowConfirmationFloor.confirmationOracleNetworkValueQ8,
+  "4200000000000001",
+);
+assert.equal(
+  validateWorkMarketV4Authorization(v4Base, {
+    actionBlockHeight: 103,
+    expectedConfirmationNetworkValueQ8: "4200000000000000",
+    expectedConfirmationOracleBlockHash: confirmationHash,
+    expectedQuoteNetworkValueQ8: v4Base.oracleNetworkValueQ8,
+    expectedQuoteOracleBlockHash: "33".repeat(32),
+  }).reasonCode,
+  "work-market-v4-oracle-hash-mismatch",
+);
+assert.equal(
+  validateWorkMarketV4Authorization(
+    {
+      ...v4Base,
+      oracleBlockHeight: 1_000,
+    },
+    {
+      actionBlockHeight: 1_000 + WORK_MARKET_V4_MAX_QUOTE_AGE_BLOCKS,
+      expectedConfirmationNetworkValueQ8: "4200000000000000",
+      expectedConfirmationOracleBlockHash: confirmationHash,
+      expectedQuoteNetworkValueQ8: v4Base.oracleNetworkValueQ8,
+      expectedQuoteOracleBlockHash: hash,
+    },
+  ).valid,
+  true,
+);
+assert.equal(
+  validateWorkMarketV4Authorization(
+    {
+      ...v4Base,
+      oracleBlockHeight: 1_000,
+    },
+    {
+      actionBlockHeight: 1_001 + WORK_MARKET_V4_MAX_QUOTE_AGE_BLOCKS,
+      expectedConfirmationNetworkValueQ8: "4200000000000000",
+      expectedConfirmationOracleBlockHash: confirmationHash,
+      expectedQuoteNetworkValueQ8: v4Base.oracleNetworkValueQ8,
+      expectedQuoteOracleBlockHash: hash,
+    },
+  ).reasonCode,
+  "work-market-v4-quote-expired",
+);
+assert.equal(
+  workMarketV4QuoteHeightWithinBound(
+    1_000 + WORK_MARKET_V4_MAX_QUOTE_AGE_BLOCKS,
+    1_000,
+  ),
+  true,
+);
+assert.equal(
+  workMarketV4QuoteHeightWithinBound(
+    1_001 + WORK_MARKET_V4_MAX_QUOTE_AGE_BLOCKS,
+    1_000,
+  ),
+  false,
+);
+const retentionTipHeight = 10_000;
+const duplicateCanonicalSummaryHeights = Array.from(
+  { length: 600 },
+  (_, offset) => retentionTipHeight - offset,
+).flatMap((height) => [height, height, height]);
+const retainedCanonicalSummaryHeights = new Set(
+  [...new Set(duplicateCanonicalSummaryHeights)]
+    .sort((left, right) => right - left)
+    .slice(0, 512),
+);
+assert.equal(
+  retainedCanonicalSummaryHeights.has(
+    retentionTipHeight - WORK_MARKET_V4_MAX_QUOTE_AGE_BLOCKS,
+  ),
+  true,
+  "the 480-block quote boundary must survive 512 distinct-height retention",
+);
+
+const validBroadcastAction = (action) => ({
+  action,
+  authVersion: WORK_MARKET_V4_AUTH_VERSION,
+  canonicalParsed: true,
+  paysWorkRegistry: true,
+  registryAddress: WORK_MARKET_V4_DECLARATION_REGISTRY_ADDRESS,
+  signedShapeValid: true,
+  ticker: "WORK",
+  tokenId: WORK_TOKEN_ID,
+  tokenProtocolMessageCount: 1,
+});
+
+assert.deepEqual(
+  workMarketplaceBroadcastDecision(
+    [{ action: "list5", authVersion: WORK_MARKET_V4_AUTH_VERSION }],
+    { metadata: { writesEnabled: false }, network: "livenet" },
+  ),
+  {
+    allowed: false,
+    code: "WORK_MARKETPLACE_WRITES_PAUSED",
+    statusCode: 503,
+  },
+);
+assert.deepEqual(
+  workMarketplaceBroadcastDecision(
+    [{ action: "seal5", authVersion: WORK_MARKET_V2_AUTH_VERSION }],
+    { metadata: { writesEnabled: true }, network: "livenet" },
+  ),
+  {
+    allowed: false,
+    code: "WORK_MARKETPLACE_V4_REQUIRED",
+    statusCode: 400,
+  },
+);
+assert.equal(
+  workMarketplaceBroadcastDecision(
+    [validBroadcastAction("buy5")],
+    { metadata: { writesEnabled: true }, network: "livenet" },
+  ).allowed,
+  true,
+);
+assert.equal(
+  workMarketplaceBroadcastDecision(
+    [{ action: "send2", authVersion: "" }],
+    { metadata: { writesEnabled: false }, network: "testnet" },
+  ).allowed,
+  true,
+);
+for (const gateway of ["node", "slipstream"]) {
+  for (const action of ["list5", "seal5", "buy5"]) {
+    const forgedTokenAction = {
+      action,
+      tokenId: "ff".repeat(32),
+    };
+    assert.equal(
+      workMarketplaceWriteActionIsGoverned(forgedTokenAction, {
+        paysWorkRegistry: true,
+      }),
+      true,
+      `${gateway} must govern ${action} when it pays the WORK registry even if tokenId is forged`,
+    );
+    assert.equal(
+      workMarketplaceBroadcastDecision(
+        [{
+          action,
+          authVersion: WORK_MARKET_V4_AUTH_VERSION,
+        }],
+        { metadata: { writesEnabled: false }, network: "livenet" },
+      ).code,
+      "WORK_MARKETPLACE_WRITES_PAUSED",
+      `${gateway} must pause the forged-tokenId ${action}`,
+    );
+    assert.equal(
+      workMarketplaceBroadcastDecision(
+        [{
+          action,
+          authVersion: WORK_MARKET_V4_AUTH_VERSION,
+          canonicalParsed: false,
+        }],
+        { metadata: { writesEnabled: true }, network: "livenet" },
+      ).code,
+      "WORK_MARKETPLACE_V4_REQUIRED",
+      `${gateway} must reject raw or malformed claimed-V4 ${action}`,
+    );
+    assert.equal(
+      validateWorkMarketV4Authorization(
+        {
+          ...v4Base,
+          oracleBlockHeight: 1_000,
+        },
+        {
+          actionBlockHeight:
+            1_001 + WORK_MARKET_V4_MAX_QUOTE_AGE_BLOCKS,
+          expectedConfirmationNetworkValueQ8: "4200000000000000",
+          expectedConfirmationOracleBlockHash: confirmationHash,
+          expectedQuoteNetworkValueQ8: v4Base.oracleNetworkValueQ8,
+          expectedQuoteOracleBlockHash: hash,
+        },
+      ).reasonCode,
+      "work-market-v4-quote-expired",
+      `${gateway} must reject a stale V4 quote at admission`,
+    );
+    assert.equal(
+      workMarketplaceWriteActionIsGoverned(forgedTokenAction, {
+        paysWorkRegistry: false,
+      }),
+      false,
+      `${gateway} must not treat a post-protocol WORK payment as admission evidence`,
+    );
+    assert.equal(
+      workMarketplaceBroadcastDecision(
+        [{ ...validBroadcastAction(action), paysWorkRegistry: false }],
+        { metadata: { writesEnabled: true }, network: "livenet" },
+      ).code,
+      "WORK_MARKETPLACE_V4_TRANSACTION_INVALID",
+      `${gateway} must reject ${action} without a pre-protocol WORK registry payment`,
+    );
+    assert.equal(
+      workMarketplaceBroadcastDecision(
+        [
+          {
+            ...validBroadcastAction(action),
+            registryAddress: "1BoatSLRHtKNngkdXEeobR76b53LETtpyT",
+          },
+        ],
+        { metadata: { writesEnabled: true }, network: "livenet" },
+      ).code,
+      "WORK_MARKETPLACE_V4_TRANSACTION_INVALID",
+      `${gateway} must reject ${action} with noncanonical WORK terms`,
+    );
+    assert.equal(
+      workMarketplaceBroadcastDecision(
+        [{ ...validBroadcastAction(action), signedShapeValid: false }],
+        { metadata: { writesEnabled: true }, network: "livenet" },
+      ).code,
+      "WORK_MARKETPLACE_V4_TRANSACTION_INVALID",
+      `${gateway} must reject ${action} with the wrong sale-ticket shape`,
+    );
+    assert.equal(
+      workMarketplaceBroadcastDecision(
+        [{ ...validBroadcastAction(action), tokenProtocolMessageCount: 2 }],
+        { metadata: { writesEnabled: true }, network: "livenet" },
+      ).code,
+      "WORK_MARKETPLACE_V4_TRANSACTION_INVALID",
+      `${gateway} must reject a multi-mutation transaction that could reuse one registry fee`,
+    );
+  }
+}
+assert.equal(
+  workMarketplaceWriteActionIsGoverned(
+    { action: "buy5", tokenId: "ff".repeat(32) },
+    { paysWorkRegistry: false },
+  ),
+  false,
+);
+assert.equal(
+  workMarketplaceWriteActionIsGoverned(
+    { action: "delist5", tokenId: WORK_TOKEN_ID },
+    { paysWorkRegistry: true },
+  ),
+  false,
+);
+
+const sameBlockActionA = {
+  authorization: v4Base,
+  blockHash: confirmationHash,
+  blockHeight: 103,
+  protocolVout: 2,
+  txid: "44".repeat(32),
+};
+const sameBlockActionB = {
+  ...sameBlockActionA,
+  authorization: { ...v4Base, oracleBlockHeight: 101 },
+  protocolVout: 3,
+  txid: "55".repeat(32),
+};
+assert.notEqual(
+  workMarketOracleCacheKey(sameBlockActionA, "livenet"),
+  workMarketOracleCacheKey(sameBlockActionB, "livenet"),
+);
+assert.notEqual(
+  workMarketOracleActionKey(sameBlockActionA.txid, 2),
+  workMarketOracleActionKey(sameBlockActionA.txid, 3),
+);
+const oracleCache = new Map([
+  [
+    workMarketOracleCacheKey(sameBlockActionA, "livenet"),
+    {
+      confirmationOracle: { blockHeight: 102, marker: "confirmation-a" },
+      quoteOracle: { blockHeight: 100, marker: "quote-a" },
+    },
+  ],
+  [
+    workMarketOracleCacheKey(sameBlockActionB, "livenet"),
+    {
+      confirmationOracle: { blockHeight: 102, marker: "confirmation-b" },
+      quoteOracle: { blockHeight: 101, marker: "quote-b" },
+    },
+  ],
+]);
+for (let replay = 0; replay < 2; replay += 1) {
+  assert.equal(
+    workMarketCachedOracleContext(
+      oracleCache,
+      sameBlockActionA,
+      "livenet",
+    )?.quoteOracle?.marker,
+    "quote-a",
+  );
+  assert.equal(
+    workMarketCachedOracleContext(
+      oracleCache,
+      sameBlockActionB,
+      "livenet",
+    )?.quoteOracle?.marker,
+    "quote-b",
+  );
+}
+
+const declarationMemoChunks =
+  WORK_MARKET_V4_DECLARATION_MEMO.match(/[\s\S]{1,240}/gu) ?? [];
+const declarationPayloads = declarationMemoChunks.map(
+  (chunk) => `pwm1:m:${chunk}`,
+);
+assert.equal(
+  declarationPayloads
+    .map((payload) => payload.slice("pwm1:m:".length))
+    .join(""),
+  WORK_MARKET_V4_DECLARATION_MEMO,
+);
+const declarationCarrierScripts = declarationPayloads.map(
+  (payload) =>
+    bitcoin.payments.embed({ data: [Buffer.from(payload, "utf8")] }).output,
+);
+assert.ok(declarationCarrierScripts.every((script) => script.length < 100_000));
+assert.ok(
+  declarationCarrierScripts.reduce(
+    (total, script) => total + script.length,
+    0,
+  ) < 100_000,
+);
+
+const v4TestEnvironment = {
+  WORK_MARKET_V4_DECLARATION_BLOCK_HASH: "66".repeat(32),
+  WORK_MARKET_V4_DECLARATION_HEIGHT: "1000000",
+  WORK_MARKET_V4_DECLARATION_TXID: "77".repeat(32),
+};
+const priorV4Environment = Object.fromEntries(
+  Object.keys(v4TestEnvironment).map((key) => [key, process.env[key]]),
+);
+for (const key of Object.keys(v4TestEnvironment)) {
+  delete process.env[key];
+}
+const discoveryContractUrl = new URL(
+  "../server/work-market-v2.mjs",
+  import.meta.url,
+);
+discoveryContractUrl.searchParams.set(
+  "v4-discovery-regression",
+  `${Date.now()}-${Math.random()}`,
+);
+const discoveryContract = await import(discoveryContractUrl.href);
+const discoveryEvidence = {
+  blockHash: "55".repeat(32),
+  blockHeight: 1_000_000,
+  confirmed: true,
+  firstInputAddress: WORK_MARKET_V4_DECLARATION_AUTHORITY,
+  payload: WORK_MARKET_V4_DECLARATION_PAYLOAD,
+  registryPaymentSats: WORK_MARKET_V4_DECLARATION_MIN_PAYMENT_SATS,
+  txid: "44".repeat(32),
+};
+const discoveredActivation =
+  discoveryContract.workMarketV4ActivationFromDeclaration(
+    discoveryEvidence,
+  );
+assert.deepEqual(discoveredActivation, {
+  activationHeight: 1_000_001,
+  declarationBlockHash: "55".repeat(32),
+  declarationHeight: 1_000_000,
+  declarationTxid: "44".repeat(32),
+});
+const discoveryV3Listing = {
+  blockHeight: 999_999,
+  confirmed: true,
+  listingId: "aa".repeat(32),
+  network: "livenet",
+  saleAuthorization: {
+    tokenId: WORK_TOKEN_ID,
+    version: WORK_MARKET_V2_AUTH_VERSION,
+  },
+  tokenId: WORK_TOKEN_ID,
+  txid: "aa".repeat(32),
+};
+assert.equal(
+  discoveryContract.applyWorkMarketV2CutoverToTokenState({
+    closedListings: [],
+    indexedThroughBlock: 1_000_000,
+    invalidEvents: [],
+    listings: [discoveryV3Listing],
+    network: "livenet",
+    workMarketV4Activation: discoveredActivation,
+  }).listings.length,
+  1,
+  "the declaration block D must remain V3",
+);
+const discoveredDPlusOneState =
+  discoveryContract.applyWorkMarketV2CutoverToTokenState({
+    closedListings: [],
+    indexedThroughBlock: 1_000_001,
+    invalidEvents: [],
+    listings: [discoveryV3Listing],
+    network: "livenet",
+    workMarketV4Activation: discoveredActivation,
+  });
+assert.equal(
+  discoveredDPlusOneState.listings.length,
+  0,
+  "chain-discovered declaration evidence must activate at D+1 before pins exist",
+);
+assert.equal(discoveredDPlusOneState.closedListings[0]?.relic, true);
+assert.equal(
+  discoveredDPlusOneState.closedListings[0]?.disabledAtBlockHeight,
+  1_000_001,
+);
+Object.assign(process.env, v4TestEnvironment);
+try {
+  const configuredContractUrl = new URL(
+    "../server/work-market-v2.mjs",
+    import.meta.url,
+  );
+  configuredContractUrl.searchParams.set(
+    "v4-regression",
+    `${Date.now()}-${Math.random()}`,
+  );
+  const configuredContract = await import(configuredContractUrl.href);
+  const reconstructedDeclarationPayload = `pwm1:m:${declarationPayloads
+    .map((payload) => payload.slice("pwm1:m:".length))
+    .join("")}`;
+  const coreShapedHeight =
+    configuredContract.workMarketV4DeclarationCanonicalHeight({
+      blockHash: v4TestEnvironment.WORK_MARKET_V4_DECLARATION_BLOCK_HASH,
+      canonicalBlockHash:
+        v4TestEnvironment.WORK_MARKET_V4_DECLARATION_BLOCK_HASH,
+    });
+  assert.equal(coreShapedHeight, 1_000_000);
+  assert.equal(
+    configuredContract.workMarketV4DeclarationCanonicalHeight({
+      blockHash: v4TestEnvironment.WORK_MARKET_V4_DECLARATION_BLOCK_HASH,
+      canonicalBlockHash: "88".repeat(32),
+    }),
+    0,
+  );
+  const declarationEvidence = {
+    blockHash: v4TestEnvironment.WORK_MARKET_V4_DECLARATION_BLOCK_HASH,
+    blockHeight: coreShapedHeight,
+    confirmed: true,
+    firstInputAddress: WORK_MARKET_V4_DECLARATION_AUTHORITY,
+    payload: reconstructedDeclarationPayload,
+    registryPaymentSats: WORK_MARKET_V4_DECLARATION_MIN_PAYMENT_SATS,
+    txid: v4TestEnvironment.WORK_MARKET_V4_DECLARATION_TXID,
+  };
+  const verifiedActivation =
+    configuredContract.workMarketV4ActivationFromDeclaration(
+      declarationEvidence,
+    );
+  assert.deepEqual(verifiedActivation, {
+    activationHeight: 1_000_001,
+    declarationBlockHash:
+      v4TestEnvironment.WORK_MARKET_V4_DECLARATION_BLOCK_HASH,
+    declarationHeight: 1_000_000,
+    declarationTxid: v4TestEnvironment.WORK_MARKET_V4_DECLARATION_TXID,
+  });
+  assert.equal(workMarketV4ActivationReached(verifiedActivation, 1_000_000), false);
+  assert.equal(workMarketV4ActivationReached(verifiedActivation, 1_000_001), true);
+  assert.deepEqual(
+    configuredContract.workMarketplaceV4StatusFromEvidence(
+      declarationEvidence,
+      { tipHeight: 1_000_001, writesConfigured: true },
+    ),
+    {
+      active: true,
+      activationHeight: 1_000_001,
+      authVersion: WORK_MARKET_V4_AUTH_VERSION,
+      declarationBlockHash:
+        v4TestEnvironment.WORK_MARKET_V4_DECLARATION_BLOCK_HASH,
+      declarationConfirmed: true,
+      declarationHeight: 1_000_000,
+      declarationTxid: v4TestEnvironment.WORK_MARKET_V4_DECLARATION_TXID,
+      oracleModel: WORK_MARKET_V4_ORACLE_MODEL,
+      writesEnabled: true,
+    },
+  );
+  for (const unavailableOrPoisonedEvidence of [
+    null,
+    { ...declarationEvidence, txid: "88".repeat(32) },
+    { ...declarationEvidence, payload: `${WORK_MARKET_V4_DECLARATION_PAYLOAD}!` },
+    { ...declarationEvidence, firstInputAddress: "external-cache-poison" },
+  ]) {
+    const status = configuredContract.workMarketplaceV4StatusFromEvidence(
+      unavailableOrPoisonedEvidence,
+      { tipHeight: 1_000_001, writesConfigured: true },
+    );
+    assert.equal(status.active, false);
+    assert.equal(status.declarationConfirmed, false);
+    assert.equal(status.writesEnabled, false);
+  }
+  assert.equal(
+    configuredContract.workMarketplaceV4StatusFromEvidence(
+      declarationEvidence,
+      { tipHeight: null, writesConfigured: true },
+    ).writesEnabled,
+    false,
+    "Core tip unavailability must keep writes disabled",
+  );
+  for (const alteredEvidence of [
+    null,
+    { ...declarationEvidence, confirmed: false },
+    { ...declarationEvidence, firstInputAddress: "wrong" },
+    { ...declarationEvidence, payload: `${WORK_MARKET_V4_DECLARATION_PAYLOAD}!` },
+    {
+      ...declarationEvidence,
+      registryPaymentSats: WORK_MARKET_V4_DECLARATION_MIN_PAYMENT_SATS - 1,
+    },
+    { ...declarationEvidence, blockHash: "99".repeat(32) },
+  ]) {
+    assert.equal(
+      configuredContract.workMarketV4ActivationFromDeclaration(
+        alteredEvidence,
+      ),
+      null,
+    );
+  }
+
+  const configuredV3Listing = {
+    blockHeight: 999_999,
+    confirmed: true,
+    listingId: "aa".repeat(32),
+    network: "livenet",
+    saleAuthorization: {
+      tokenId: WORK_TOKEN_ID,
+      version: WORK_MARKET_V2_AUTH_VERSION,
+    },
+    tokenId: WORK_TOKEN_ID,
+    txid: "aa".repeat(32),
+  };
+  const configuredCutoverState = {
+    closedListings: [],
+    indexedThroughBlock: 1_000_001,
+    invalidEvents: [],
+    listings: [configuredV3Listing],
+    network: "livenet",
+  };
+  assert.equal(
+    configuredContract.applyWorkMarketV2CutoverToTokenState(
+      configuredCutoverState,
+    ).listings.length,
+    1,
+    "configured but missing declaration evidence must keep V3 active",
+  );
+  assert.equal(
+    configuredContract.applyWorkMarketV2CutoverToTokenState({
+      ...configuredCutoverState,
+      workMarketV4Activation: {
+        ...verifiedActivation,
+        declarationBlockHash: "bb".repeat(32),
+      },
+    }).listings.length,
+    1,
+    "reorged declaration evidence must keep V3 active",
+  );
+  const verifiedCutover =
+    configuredContract.applyWorkMarketV2CutoverToTokenState({
+      ...configuredCutoverState,
+      workMarketV4Activation: verifiedActivation,
+    });
+  assert.equal(verifiedCutover.listings.length, 0);
+  assert.equal(verifiedCutover.closedListings.length, 1);
+  assert.equal(verifiedCutover.closedListings[0].relic, true);
+  assert.equal(verifiedCutover.closedListings[0].refundEligible, false);
+} finally {
+  for (const [key, value] of Object.entries(priorV4Environment)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
 
 const pristineMigrationRows = WORK_MARKET_V2_CUTOVER_TARGETS.map(
   (target, index) => ({
@@ -397,6 +1016,13 @@ const pendingLegacy = {
   listingId: "cc".repeat(32),
   txid: "cc".repeat(32),
 };
+const snapshotExcludedLegacy = {
+  ...legacyCutoverListings[0],
+  listingId:
+    "551cb9020def00e9ad5735d4b475d563f2099a0fe593be0b93eeb24d685a1a24",
+  txid:
+    "551cb9020def00e9ad5735d4b475d563f2099a0fe593be0b93eeb24d685a1a24",
+};
 const lateSealListingId =
   "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9";
 const lateSealTxid =
@@ -469,6 +1095,7 @@ const cutoverInput = {
   invalidEvents: [],
   listings: [
     ...cutoverLegacyListings,
+    snapshotExcludedLegacy,
     postActivationV1,
     postActivationV2,
     pendingLegacy,
@@ -519,6 +1146,38 @@ assert.ok(
       listing.disabledAtBlockHeight === WORK_MARKET_V2_ACTIVATION_HEIGHT &&
       listing.disabledByTxid === WORK_MARKET_V2_DECLARATION_TXID,
   ),
+);
+const snapshotExcludedClosed = cutoverState.closedListings.find(
+  (listing) => listing.listingId === snapshotExcludedLegacy.listingId,
+);
+assert.equal(snapshotExcludedClosed?.status, "closed");
+assert.equal(snapshotExcludedClosed?.relic, false);
+assert.equal(snapshotExcludedClosed?.refundEligible, false);
+assert.equal(
+  snapshotExcludedClosed?.disabledReason,
+  "work-market-v1-refund-snapshot-excluded",
+);
+const sanitizedResurfacedRelic = applyWorkMarketV2CutoverToTokenState({
+  closedListings: [
+    {
+      ...snapshotExcludedLegacy,
+      disabledReason: "",
+      refundEligible: true,
+      relic: true,
+      status: "disabled",
+    },
+  ],
+  indexedThroughBlock: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+  invalidEvents: [],
+  listings: [],
+  network: "livenet",
+}).closedListings[0];
+assert.equal(sanitizedResurfacedRelic.status, "closed");
+assert.equal(sanitizedResurfacedRelic.relic, false);
+assert.equal(sanitizedResurfacedRelic.refundEligible, false);
+assert.equal(
+  sanitizedResurfacedRelic.disabledReason,
+  "work-market-v1-refund-snapshot-excluded",
 );
 assert.deepEqual(
   cutoverState.listings.map((listing) => listing.listingId).sort(),
@@ -603,9 +1262,12 @@ const testnetState = {
 };
 assert.equal(applyWorkMarketV2CutoverToTokenState(testnetState), testnetState);
 
-for (const source of [appSource, readerSource, contractSource]) {
+for (const source of [appSource, contractSource]) {
   assert.match(source, /pwt-sale-v3/u);
+  assert.match(source, /pwt-sale-v4/u);
 }
+assert.match(readerSource, /WORK_MARKET_V2_AUTH_VERSION/u);
+assert.match(readerSource, /WORK_MARKET_V4_AUTH_VERSION/u);
 assert.match(apiSource, /canonicalWorkMarketV2OraclesForTransactions/u);
 assert.match(
   apiSource,
@@ -613,6 +1275,12 @@ assert.match(
 );
 assert.match(apiSource, /workMarketV2OraclesByTxid instanceof Map/u);
 assert.match(apiSource, /WORK_MARKET_V2_ORACLE_CACHE/u);
+assert.match(apiSource, /workMarketCachedOracleContext/u);
+assert.match(apiSource, /workMarketOracleActionKey\(txid, protocolVout\)/u);
+assert.match(
+  apiSource,
+  /for \(let protocolVout = 0; protocolVout < vout\.length; protocolVout \+= 1\)/u,
+);
 assert.match(
   apiSource,
   /bitcoinRpc\("getblockhash", \[priorHeight\]\)[\s\S]*proofIndexCanonicalSummaryLedgerPayload\([\s\S]*priorHeight,[\s\S]*blockHash/u,
@@ -621,6 +1289,11 @@ assert.doesNotMatch(apiSource, /workMarketV2TargetOracle/u);
 assert.match(
   contractSource,
   /work-market-v2-canonical-oracle-unavailable/u,
+);
+assert.match(contractSource, /work-market-v4-below-confirmation-floor/u);
+assert.match(
+  contractSource,
+  /confirmationOracleBlockHeight: actionHeight - 1/u,
 );
 assert.match(
   apiSource,
@@ -670,24 +1343,15 @@ assert.match(
   /const refundableLegacy =[\s\S]*TOKEN_SALE_AUTH_VERSION, TOKEN_SALE_AUTH_ATOMS_VERSION/u,
 );
 assert.match(apiSource, /work-market-v2-cutover/u);
-assert.match(appSource, /assertWorkMarketV2DeclarationConfirmed/u);
-assert.match(appSource, /This WORK listing is below the current network value/u);
 assert.match(
   appSource,
-  /WORK Marketplace V2 purchases are next-block bound[\s\S]*seller payment and sale-ticket spend can still confirm while the WORK transfer is rejected/u,
+  /function workMarketplaceV4WritesReady[\s\S]*status\?\.active === true[\s\S]*status\.writesEnabled === true[\s\S]*status\.declarationConfirmed === true/u,
 );
 assert.match(
   appSource,
-  /const preBroadcastFloor = await fetchWorkFloorQuote\("livenet", true\)[\s\S]*preBroadcastPricingFields\.oracleBlockHeight !==[\s\S]*purchaseAuthorization\.oracleBlockHeight[\s\S]*WORK pricing tip advanced before signing/u,
+  /function assertWorkMarketplaceV4WritesEnabled/u,
 );
-assert.match(
-  appSource,
-  /function listingAnchorDetails[\s\S]*TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION[\s\S]*tokenSaleAuthorizationUsesSpendableSaleTicketAnchor/u,
-);
-assert.match(
-  appSource,
-  /WORK uses the network value as a hard on-chain floor/u,
-);
+assert.match(appSource, /TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION/u);
 assert.match(appSource, /Marketplace V1 Relic/u);
 assert.match(appSource, /disabledAtBlockHeight: 959062/u);
 assert.match(
@@ -710,7 +1374,6 @@ const relicViewEnd = appSource.indexOf(
 assert.ok(relicViewStart >= 0 && relicViewEnd > relicViewStart);
 const relicViewSource = appSource.slice(relicViewStart, relicViewEnd);
 assert.doesNotMatch(relicViewSource, /buyListing|sealTokenListing|onClick=/u);
-assert.match(readerSource, /'pwt-sale-v3'/u);
 assert.match(
   readerSource,
   /listing_tx\.block_height AS listing_block_height/u,
@@ -721,15 +1384,15 @@ assert.match(
 );
 assert.match(
   readerSource,
-  /function exactActiveTokenListingHistoryPage[\s\S]*WORK_MARKET_V2_ACTIVATION_HEIGHT[\s\S]*pwt-sale-v3/u,
+  /async function verifiedWorkMarketV4Activation[\s\S]*declaration_block\.canonical = true[\s\S]*workMarketV4ActivationFromDeclaration/u,
 );
 assert.match(
   readerSource,
-  /lower\(COALESCE\(cl\.token_id, ''\)\) <> \$\{workTokenParam\}[\s\S]*saleAuthorization'->>'version',[\s\S]*''[\s\S]*\)\) = 'pwt-sale-v3'/u,
+  /function canonicalWorkMarketV3ListingProjectionSql/u,
 );
-assert.ok(
-  [...readerSource.matchAll(/= 'pwt-sale-v3'/gu)].length >= 2,
-  "exact and broad active WORK listing reads must require V3",
+assert.match(
+  readerSource,
+  /payloadWithVerifiedWorkMarketV4Activation/u,
 );
 assert.match(
   readerSource,
@@ -752,6 +1415,22 @@ assert.match(
   /function tokenStateWithIndexedMarketSummaryOverlay[\s\S]*applyWorkMarketV2CutoverToTokenState/u,
 );
 assert.doesNotMatch(apiSource, /workMarketV2CutoverApplied/u);
+assert.match(
+  apiSource,
+  /function workMarketplaceV4Metadata[\s\S]*workMarketV4DeclarationCanonicalHeight[\s\S]*workMarketV4ActivationFromDeclaration/u,
+);
+assert.match(
+  apiSource,
+  /function signedWorkMarketplaceWriteActions[\s\S]*workMarketplaceWriteActionIsGoverned\([\s\S]*\{ paysWorkRegistry \}/u,
+);
+assert.match(
+  apiSource,
+  /async function broadcastSlipstreamPayload[\s\S]*assertWorkMarketplaceBroadcastAllowed/u,
+);
+assert.match(
+  apiSource,
+  /async function broadcastNodePayload[\s\S]*assertWorkMarketplaceBroadcastAllowed/u,
+);
 assert.match(migrationSource, /WORK_MARKET_V2_CUTOVER_APPLY === "1"/u);
 assert.match(
   migrationSource,
@@ -776,6 +1455,22 @@ assert.match(
 assert.match(
   backfillSource,
   /proof_indexer\.events action_event[\s\S]*saleAuthorization'->>'oracleBlockHeight'[\s\S]*saleAuthorization'->>'oracleBlockHash'/u,
+);
+assert.match(
+  backfillSource,
+  /dense_rank\(\) OVER \([\s\S]*ORDER BY indexed_through_block DESC NULLS LAST/u,
+);
+assert.match(
+  backfillSource,
+  /Math\.max\([\s\S]*512,[\s\S]*Math\.floor\(Number\(canonicalSummaryLimit\)/u,
+);
+assert.match(
+  backfillSource,
+  /workMarketPricing'->>'confirmationOracleBlockHeight'[\s\S]*workMarketPricing'->>'confirmationOracleBlockHash'/u,
+);
+assert.match(
+  apiSource,
+  /!workMarketV4QuoteHeightWithinBound\([\s\S]*return \[\];/u,
 );
 assert.ok(
   [
