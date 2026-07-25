@@ -23,6 +23,7 @@
     "check:ui:browser": "playwright test --config playwright.ui.config.mjs",
     "check:hardening": "node scripts/check-hardening-contract.mjs",
     "check:api-truth": "node scripts/check-api-truth-contract.mjs",
+    "check:server-globals": "node scripts/check-server-free-identifiers.mjs",
     "check:electrum-client": "node scripts/check-electrum-client.mjs",
     "check:message-signatures": "node scripts/check-bitcoin-message-signatures.mjs",
     "check:live-data": "node scripts/check-live-data-contract.mjs",

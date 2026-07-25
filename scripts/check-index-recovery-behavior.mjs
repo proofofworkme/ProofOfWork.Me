@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import * as bitcoin from "bitcoinjs-lib";
 import ts from "typescript";
 import {
   BOND_VALUE_Q8_SCALE,
@@ -1019,6 +1020,94 @@ const WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE = new Set([
   "pwt-sale-v3",
   "pwt-sale-v4",
 ]);
+
+check("server parses signed non-WORK outputs without free identifiers", () => {
+  const bytesToHex = isolatedFunction(API_PATH, "bytesToHex", { Buffer });
+  const signedTransactionOutputs = isolatedFunction(
+    API_PATH,
+    "signedTransactionOutputs",
+    {
+      bitcoin,
+      bytesToHex,
+      opReturnAsmFromScriptHex: () => "OP_RETURN",
+    },
+  );
+  const transaction = new bitcoin.Transaction();
+  transaction.addInput(Buffer.alloc(32), 0);
+  transaction.addOutput(
+    bitcoin.script.compile([
+      bitcoin.opcodes.OP_RETURN,
+      Buffer.from("pwm1:m:test", "utf8"),
+    ]),
+    0n,
+  );
+
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(signedTransactionOutputs(transaction.toHex())),
+    ),
+    [
+      {
+        scriptpubkey: "6a0b70776d313a6d3a74657374",
+        scriptpubkey_asm: "OP_RETURN",
+        scriptpubkey_type: "op_return",
+        value: 0,
+      },
+    ],
+  );
+});
+
+check("WORK broadcast admission resolves confirmed input addresses", async () => {
+  const expectedAddress = "1BoatSLRHtKNngkdXEeobR76b53LETtpyT";
+  const previousTxid = "ab".repeat(32);
+  const addressFromVout = isolatedFunction(API_PATH, "addressFromVout");
+  const signedTransactionInputAddresses = isolatedFunction(
+    API_PATH,
+    "signedTransactionInputAddresses",
+    {
+      TX_FETCH_CONCURRENCY: 4,
+      addressFromVout,
+      fetchTransactionFromBitcoinRpc: async (txid, network, options) => {
+        assert.equal(txid, previousTxid);
+        assert.equal(network, "livenet");
+        assert.deepEqual(JSON.parse(JSON.stringify(options)), {
+          bypassCache: true,
+          includePrevouts: false,
+          requireCanonicalPrevouts: true,
+        });
+        return {
+          status: { confirmed: true },
+          vout: [{ scriptpubkey_address: expectedAddress }],
+        };
+      },
+      mapWithConcurrency: async (items, _concurrency, mapper) =>
+        Promise.all(items.map(mapper)),
+      transactionConfirmed: (tx) => tx?.status?.confirmed === true,
+    },
+  );
+
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(
+        await signedTransactionInputAddresses(
+          [{ txid: previousTxid, vout: 0 }],
+          "livenet",
+        ),
+      ),
+    ),
+    [expectedAddress],
+  );
+});
+
+check("mail activity timestamps use canonical ISO fallback", () => {
+  const dateIso = isolatedFunction(API_PATH, "dateIso");
+  const fallback = new Date("2026-07-25T22:30:00.000Z");
+  assert.equal(
+    dateIso("2026-07-25T18:30:00-04:00", fallback),
+    "2026-07-25T22:30:00.000Z",
+  );
+  assert.equal(dateIso("not-a-date", fallback), fallback.toISOString());
+});
 
 check("WORK V3 seal confirmation requires its canonical valid event", () => {
   const sealTxid = "4".repeat(64);
