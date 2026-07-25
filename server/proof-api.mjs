@@ -5653,6 +5653,10 @@ async function withWorkMarketplaceV4Metadata(payload, network) {
   };
 }
 
+function bytesToHex(bytes) {
+  return Buffer.from(bytes).toString("hex");
+}
+
 function signedTransactionOutputs(txHex) {
   const tx = bitcoin.Transaction.fromHex(txHex);
   return tx.outs.map((output) => {
@@ -5775,6 +5779,15 @@ async function canonicalWorkMarketplaceListingAnchor(txid, network) {
     }
   }
   return null;
+}
+
+function addressFromVout(vout) {
+  return String(
+    vout?.scriptPubKey?.address ??
+      vout?.scriptpubkey_address ??
+      vout?.scriptPubKey?.addresses?.[0] ??
+      "",
+  );
 }
 
 async function signedTransactionInputAddresses(inputOutpoints, network) {
@@ -36518,6 +36531,14 @@ async function registryHistoryPayload(network, kind, searchParams, fresh = false
     pagination: historyPaginationFromSearch(searchParams),
     source: payload.source ?? mempoolBase(network),
   });
+}
+
+function dateIso(value, fallback = new Date()) {
+  const date = value instanceof Date ? value : new Date(value ?? fallback);
+  if (Number.isNaN(date.getTime())) {
+    return fallback.toISOString();
+  }
+  return date.toISOString();
 }
 
 function mailActivityItemFromMailMessage(message, address, network) {
