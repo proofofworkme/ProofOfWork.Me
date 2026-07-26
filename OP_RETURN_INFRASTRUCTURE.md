@@ -1016,6 +1016,14 @@ Historical transitions are never tested against unscoped current balance or
 listing tables. Only publication of the current tip may require current
 relational parity.
 
+The required historical H-1 barrier reuses an already eligible exact
+height/hash-bound canonical summary before considering any refresh. Every
+eligible version at that checkpoint must agree on the exact live/frozen WORK
+network Q8 values and accounting models; disagreement fails closed. A later
+pending/public-log fingerprint cannot cause the immutable height-959620
+bootstrap to be recomputed from present relational state. The summary service
+is consulted only when no eligible exact checkpoint exists.
+
 The activation transition also stores the exact replayable H-1 seed under
 `seedSufficientState`, `seedSufficientStateCommitment`,
 `seedGenericTokenState`, `seedIdState`, `seedTokenState`, and

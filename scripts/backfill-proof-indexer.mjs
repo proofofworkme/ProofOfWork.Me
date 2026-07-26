@@ -11936,6 +11936,78 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
   return eligibleCanonicalSummarySnapshotPayload(payload) ? payload : null;
 }
 
+async function storedExactEligibleCanonicalSummarySnapshotPayload(
+  _client,
+  { blockHash, height },
+) {
+  const requestedHeight = Number(height);
+  const requestedHash = String(blockHash ?? "").trim().toLowerCase();
+  if (
+    !Number.isSafeInteger(requestedHeight) ||
+    requestedHeight <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(requestedHash)
+  ) {
+    return null;
+  }
+  const exactSummaryUrl = unpagedEndpoint(
+    "/api/v1/internal/canonical-summary",
+  );
+  exactSummaryUrl.searchParams.set(
+    "checkpointHeight",
+    String(requestedHeight),
+  );
+  exactSummaryUrl.searchParams.set("checkpointHash", requestedHash);
+  exactSummaryUrl.searchParams.set("storedExact", "1");
+  const response = await readJson(exactSummaryUrl, {
+    retries: 0,
+    timeoutMs: CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS,
+  });
+  const exactSnapshotStatus = String(
+    response?.exactSnapshotStatus ?? "",
+  ).trim();
+  const eligibleSnapshotCount = Number(
+    response?.eligibleSnapshotCount,
+  );
+  const exactSnapshot = objectPayload(response?.exactSnapshot);
+  if (
+    exactSnapshotStatus === "missing" &&
+    !exactSnapshot &&
+    eligibleSnapshotCount === 0
+  ) {
+    return null;
+  }
+  if (exactSnapshotStatus !== "found") {
+    throw new Error(
+      `Stored exact canonical summary checkpoint ${requestedHeight}:${requestedHash} failed closed with status ${exactSnapshotStatus || "missing-status"}`,
+    );
+  }
+  const snapshotId = String(exactSnapshot?.snapshotId ?? "").trim();
+  const snapshotVersionCount = Number(
+    exactSnapshot?.snapshotVersionCount,
+  );
+  if (
+    !exactSnapshot ||
+    !snapshotId ||
+    Number(exactSnapshot.indexedThroughBlock) !== requestedHeight ||
+    String(exactSnapshot.indexedThroughBlockHash ?? "")
+      .trim()
+      .toLowerCase() !== requestedHash ||
+    !Number.isSafeInteger(snapshotVersionCount) ||
+    snapshotVersionCount <= 0 ||
+    !Number.isSafeInteger(eligibleSnapshotCount) ||
+    eligibleSnapshotCount !== snapshotVersionCount
+  ) {
+    throw new Error(
+      `Stored exact canonical summary checkpoint ${requestedHeight}:${requestedHash} is not bound to the requested checkpoint`,
+    );
+  }
+  return {
+    count: snapshotVersionCount,
+    payload: exactSnapshot,
+    snapshotId,
+  };
+}
+
 function canonicalSummaryRefreshCanDefer(error) {
   const statusCode = Number(error?.statusCode ?? 0);
   const errorText = [error?.message, error?.responseText]
@@ -12157,6 +12229,23 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       `Canonical summary checkpoint ${latestIndexedHeight}:${latestIndexedThroughBlockHash || "missing"} does not match required checkpoint ${requiredCheckpointHeight}:${requiredCheckpointHash || "missing"}`,
     );
   }
+  const storedExactCheckpoint = checkpointRequired
+    ? await storedExactEligibleCanonicalSummarySnapshotPayload(client, {
+        blockHash: requiredCheckpointHash,
+        height: requiredCheckpointHeight,
+      })
+    : null;
+  if (storedExactCheckpoint) {
+    return {
+      indexedThroughBlock: requiredCheckpointHeight,
+      indexedThroughBlockHash: requiredCheckpointHash,
+      previousCoverage: requiredCheckpointHeight,
+      reason: "already-current-exact-checkpoint",
+      skipped: true,
+      snapshotId: storedExactCheckpoint.snapshotId,
+      snapshotVersionCount: storedExactCheckpoint.count,
+    };
+  }
   const previousPayload = await storedEligibleCanonicalSummarySnapshotPayload(
     client,
   );
@@ -12175,6 +12264,7 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     previousPayload?.summaryRefresh?.publicLogFingerprint,
   );
   if (
+    !checkpointRequired &&
     previousCoverage === latestIndexedHeight &&
     previousIndexedThroughBlockHash === latestIndexedThroughBlockHash &&
     canonicalSummaryAccountingModelsCurrent(previousPayload?.summaryPayloads) &&

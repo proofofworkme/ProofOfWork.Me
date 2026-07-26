@@ -244,6 +244,12 @@ hash
 `0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811`,
 and activates at height `959621`.
 
+Height `959620` is the one immutable legacy H-1 bootstrap. A supervised replay
+reuses its exact eligible height/hash-bound canonical summary; it does not
+recompute that historical value from later pending or public-log state.
+Multiple eligible versions must agree on the exact value bindings or replay
+fails closed.
+
 The declaration memo is output 3. Input zero spends exact authority
 scriptPubKey
 `76a91499b91dd27a616a71c0a1e9db6a86ceb8cff284c588ac`; output 4 pays

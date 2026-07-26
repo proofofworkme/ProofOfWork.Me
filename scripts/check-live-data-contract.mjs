@@ -421,6 +421,17 @@ expectAll("cold canonical-summary rebuilds retain a finite supervised budget", p
   /response\.headers\["content-length"\][\s\S]*receivedBytes > maxBytes[\s\S]*response\.complete !== true/,
   /url\.pathname === "\/api\/v1\/internal\/canonical-summary"[\s\S]*loopbackApi[\s\S]*url\.protocol === "http:"[\s\S]*readCanonicalSummaryJsonViaLoopbackHttp/,
 ]);
+expectAll(
+  "historical canonical-summary barriers delegate to the exact reader and cannot use the generic shortcut",
+  proofIndexerBackfill + server + canonicalSummaryLedgerPayloadSource,
+  [
+    /storedExactEligibleCanonicalSummarySnapshotPayload\([\s\S]*searchParams\.set\("storedExact", "1"\)[\s\S]*readJson\(exactSummaryUrl/,
+    /!checkpointRequired &&[\s\S]*previousCoverage === latestIndexedHeight/,
+    /exactSnapshotStatus === "missing"[\s\S]*eligibleSnapshotCount === 0[\s\S]*exactSnapshotStatus !== "found"[\s\S]*failed closed with status/,
+    /const storedExact =[\s\S]*url\.searchParams\.get\("storedExact"\)[\s\S]*proofIndexCanonicalSummaryLedgerPayload\([\s\S]*checkpointHeight,[\s\S]*checkpointHash,[\s\S]*exactStatus: true[\s\S]*exactSnapshotStatus:/,
+    /exactStatusRequested[\s\S]*exactStatusResult\("invalid-request"\)[\s\S]*exactStatusResult\("missing"\)[\s\S]*"incomplete"[\s\S]*"conflict"[\s\S]*snapshotVersionCount: matchingSnapshotCount/,
+  ],
+);
 expectAll("production worker pins confirmed-first and liveness budgets", proofIndexerWorkerService, [
   /POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan,mempool-scan/,
   /POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_BLOCKS=250/,

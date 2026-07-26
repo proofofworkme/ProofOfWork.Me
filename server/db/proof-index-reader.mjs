@@ -19019,23 +19019,38 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
   network,
   requiredIndexedThroughBlock = 0,
   requiredIndexedThroughBlockHash = "",
+  options = {},
 ) {
-  const pool = proofIndexPool();
-  if (!pool) {
-    return null;
-  }
-
   const requestedHeight = safeBlockHeight(requiredIndexedThroughBlock);
   const requestedHash = String(requiredIndexedThroughBlockHash ?? "")
     .trim()
     .toLowerCase();
   const exactCheckpointRequested =
     requiredIndexedThroughBlock !== 0 || requestedHash.length > 0;
+  const exactStatusRequested =
+    exactCheckpointRequested && options?.exactStatus === true;
+  const exactStatusResult = (
+    status,
+    exactSnapshot = null,
+    eligibleSnapshotCount = 0,
+  ) =>
+    exactStatusRequested
+      ? {
+          eligibleSnapshotCount,
+          exactSnapshot,
+          status,
+        }
+      : exactSnapshot;
   if (
     exactCheckpointRequested &&
     (!requestedHeight || !/^[0-9a-f]{64}$/u.test(requestedHash))
   ) {
-    return null;
+    return exactStatusResult("invalid-request");
+  }
+
+  const pool = proofIndexPool();
+  if (!pool) {
+    return exactStatusResult("unavailable");
   }
 
   const checkpointProjection = exactCheckpointRequested
@@ -19163,13 +19178,21 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
   const matchingSnapshotCount = Number(
     snapshot?.matching_snapshot_count ?? result.rows.length,
   );
+  if (!snapshot) {
+    return exactStatusResult("missing");
+  }
   if (
-    !snapshot ||
-    (exactCheckpointRequested &&
-      (!Number.isSafeInteger(matchingSnapshotCount) ||
-        matchingSnapshotCount !== result.rows.length))
+    exactCheckpointRequested &&
+    (!Number.isSafeInteger(matchingSnapshotCount) ||
+      matchingSnapshotCount !== result.rows.length)
   ) {
-    return null;
+    return exactStatusResult(
+      "incomplete",
+      null,
+      Number.isSafeInteger(matchingSnapshotCount)
+        ? matchingSnapshotCount
+        : result.rows.length,
+    );
   }
 
   const bindings = result.rows.map((row) =>
@@ -19180,18 +19203,24 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
     ),
   );
   const binding = bindings[0];
+  if (!binding || bindings.some((candidate) => !candidate)) {
+    return exactStatusResult(
+      "invalid-candidate",
+      null,
+      matchingSnapshotCount,
+    );
+  }
   if (
-    !binding ||
-    (exactCheckpointRequested &&
-      bindings.some(
-        (candidate) =>
-          !canonicalSummaryLedgerValueBindingsAgree(binding, candidate),
-      ))
+    exactCheckpointRequested &&
+    bindings.some(
+      (candidate) =>
+        !canonicalSummaryLedgerValueBindingsAgree(binding, candidate),
+    )
   ) {
-    return null;
+    return exactStatusResult("conflict", null, matchingSnapshotCount);
   }
 
-  return {
+  const payload = {
     canonicalSummaryHash: binding.canonicalSummaryHash,
     consistency: snapshot.consistency,
     generatedAt: dateIso(snapshot.generated_at),
@@ -19220,6 +19249,9 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
     metrics: snapshot.metrics ?? {},
     network,
     snapshotId: snapshot.snapshot_id,
+    ...(exactCheckpointRequested
+      ? { snapshotVersionCount: matchingSnapshotCount }
+      : {}),
     source: "proof-indexer-canonical-summary-ledger",
     sourceHashes: snapshot.source_hashes ?? {},
     valuationModel: "canonical-summary-refresh",
@@ -19229,6 +19261,7 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
     workNetworkValueSats: binding.liveNetworkValueSats,
     workNetworkValueQ8: binding.workNetworkValueQ8,
   };
+  return exactStatusResult("found", payload, matchingSnapshotCount);
 }
 
 export async function proofIndexSnapshotPayload(network, key) {

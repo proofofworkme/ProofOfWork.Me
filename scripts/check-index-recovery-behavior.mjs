@@ -14123,6 +14123,135 @@ check("canonical summary tip races defer without failing the block worker", () =
   );
 });
 
+check("historical summary barriers reuse one exact immutable checkpoint", async () => {
+  const height = 959_620;
+  const blockHash = "a".repeat(64);
+  let requestedUrl = null;
+  let requestedOptions = null;
+  let exactSnapshotStatus = "found";
+  let eligibleSnapshotCount = 1;
+  let exactSnapshot = {
+    indexedThroughBlockHash: blockHash,
+    indexedThroughBlock: height,
+    snapshotId: "historical-h-minus-one",
+    snapshotVersionCount: 1,
+  };
+  const storedExactEligibleCanonicalSummarySnapshotPayload =
+    isolatedFunction(
+      BACKFILL_PATH,
+      "storedExactEligibleCanonicalSummarySnapshotPayload",
+      {
+        CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS: 600_000,
+        objectPayload: (value) =>
+          value && typeof value === "object" && !Array.isArray(value)
+            ? value
+            : null,
+        readJson: async (url, options) => {
+          requestedUrl = url;
+          requestedOptions = options;
+          return {
+            eligibleSnapshotCount,
+            exactSnapshot,
+            exactSnapshotStatus,
+          };
+        },
+        unpagedEndpoint: (pathname) =>
+          new URL(`http://127.0.0.1:8081${pathname}`),
+      },
+    );
+  const client = {
+    async query() {
+      throw new Error("The backfill must not duplicate the exact reader SQL");
+    },
+  };
+  const exact =
+    await storedExactEligibleCanonicalSummarySnapshotPayload(client, {
+      blockHash,
+      height,
+    });
+  assert.equal(
+    requestedUrl.pathname,
+    "/api/v1/internal/canonical-summary",
+  );
+  assert.equal(requestedUrl.searchParams.get("storedExact"), "1");
+  assert.equal(
+    requestedUrl.searchParams.get("checkpointHeight"),
+    String(height),
+  );
+  assert.equal(requestedUrl.searchParams.get("checkpointHash"), blockHash);
+  assert.equal(requestedOptions.retries, 0);
+  assert.equal(requestedOptions.timeoutMs, 600_000);
+  assert.equal(exact.snapshotId, "historical-h-minus-one");
+  assert.equal(exact.count, 1);
+
+  exactSnapshot = {
+    ...exactSnapshot,
+    snapshotId: "newest-agreeing",
+    snapshotVersionCount: 2,
+  };
+  eligibleSnapshotCount = 2;
+  const agreeing =
+    await storedExactEligibleCanonicalSummarySnapshotPayload(client, {
+      blockHash,
+      height,
+    });
+  assert.equal(agreeing.snapshotId, "newest-agreeing");
+  assert.equal(agreeing.count, 2);
+
+  exactSnapshotStatus = "missing";
+  eligibleSnapshotCount = 0;
+  exactSnapshot = null;
+  assert.equal(
+    await storedExactEligibleCanonicalSummarySnapshotPayload(client, {
+      blockHash,
+      height,
+    }),
+    null,
+  );
+
+  exactSnapshotStatus = "conflict";
+  eligibleSnapshotCount = 2;
+  await rejection(
+    storedExactEligibleCanonicalSummarySnapshotPayload(client, {
+      blockHash,
+      height,
+    }),
+    (error) => /failed closed with status conflict/u.test(error.message),
+    "A conflicting exact checkpoint fell through to historical recomputation",
+  );
+
+  exactSnapshotStatus = "found";
+  eligibleSnapshotCount = 1;
+  exactSnapshot = {
+    indexedThroughBlock: height,
+    indexedThroughBlockHash: "b".repeat(64),
+    snapshotId: "wrong-checkpoint",
+    snapshotVersionCount: 1,
+  };
+  await rejection(
+    storedExactEligibleCanonicalSummarySnapshotPayload(client, {
+      blockHash,
+      height,
+    }),
+    (error) => /not bound to the requested checkpoint/u.test(error.message),
+    "A stored exact response was accepted for another checkpoint",
+  );
+
+  exactSnapshot = {
+    indexedThroughBlock: height,
+    indexedThroughBlockHash: blockHash,
+    snapshotId: "missing-version-count",
+  };
+  await rejection(
+    storedExactEligibleCanonicalSummarySnapshotPayload(client, {
+      blockHash,
+      height,
+    }),
+    (error) => /not bound to the requested checkpoint/u.test(error.message),
+    "A stored exact response without its complete version count was accepted",
+  );
+});
+
 check("canonical summary timeouts fail closed unless an eligible prior snapshot exists", async () => {
   const abortError = () =>
     Object.assign(new Error("The operation was aborted"), {
@@ -14204,15 +14333,16 @@ check("canonical summary timeouts fail closed unless an eligible prior snapshot 
 
 check("an Inception summary barrier is exact and cannot defer", async () => {
   const checkpointHash = "d".repeat(64);
-  const priorHash = "c".repeat(64);
+  let exactStoredCheckpoint = null;
   let requestedUrl = null;
+  let requestCount = 0;
   const storeCanonicalSummarySnapshot = isolatedFunction(
     BACKFILL_PATH,
     "storeCanonicalSummarySnapshot",
     {
       CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS: 600_000,
       canonicalSummaryAccountingModelsCurrent: () => true,
-      canonicalSummaryCoverage: () => 100,
+      canonicalSummaryCoverage: () => 101,
       canonicalSummaryRefreshCanDefer: () => true,
       latestBlockScanCheckpoint: async () => ({
         blockHash: checkpointHash,
@@ -14225,20 +14355,47 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
       publicLogFingerprintsMatch: () => true,
       publicLogRelationalFingerprint: async () => ({ hash: "f".repeat(64) }),
       readJson: async (url) => {
+        requestCount += 1;
         requestedUrl = url;
         throw Object.assign(new Error("summary timed out"), {
           name: "AbortError",
         });
       },
+      storedExactEligibleCanonicalSummarySnapshotPayload: async () =>
+        exactStoredCheckpoint,
       storedEligibleCanonicalSummarySnapshotPayload: async () => ({
-        indexedThroughBlockHash: priorHash,
-        snapshotId: "prior",
+        indexedThroughBlockHash: checkpointHash,
+        snapshotId: "generic-same-tip",
+        summaryRefresh: {
+          publicLogFingerprint: { hash: "f".repeat(64) },
+        },
         summaryPayloads: {},
       }),
       unpagedEndpoint: (pathname) =>
         new URL(`http://127.0.0.1:8081${pathname}`),
     },
   );
+  exactStoredCheckpoint = {
+    count: 1,
+    snapshotId: "historical-exact-checkpoint",
+  };
+  const reused = await storeCanonicalSummarySnapshot(
+    { async query() { return { rows: [] }; } },
+    {
+      requiredCheckpoint: {
+        blockHash: checkpointHash,
+        height: 101,
+      },
+    },
+  );
+  assert.equal(reused.skipped, true);
+  assert.equal(reused.reason, "already-current-exact-checkpoint");
+  assert.equal(reused.snapshotId, "historical-exact-checkpoint");
+  assert.equal(reused.snapshotVersionCount, 1);
+  assert.equal(requestedUrl, null);
+  assert.equal(requestCount, 0);
+
+  exactStoredCheckpoint = null;
   await rejection(
     storeCanonicalSummarySnapshot(
       { async query() { return { rows: [] }; } },
@@ -14252,6 +14409,7 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
     (error) => error?.name === "AbortError",
     "A required H-1 summary silently deferred to an older snapshot",
   );
+  assert.equal(requestCount, 1);
   assert.equal(requestedUrl.searchParams.get("checkpointHeight"), "101");
   assert.equal(
     requestedUrl.searchParams.get("checkpointHash"),
@@ -31642,8 +31800,18 @@ check("Inception H-1 oracle accepts agreeing versioned exact green summaries", a
   assert.equal(exact.snapshotId, newestSnapshotId);
   assert.equal(exact.generatedAt, "2026-07-14T03:04:30.000Z");
   assert.equal(exact.canonicalSummaryHash, newestCanonicalSummaryHash);
+  assert.equal(exact.snapshotVersionCount, 2);
   assert.equal(exact.workNetworkValueSats, workNetworkValueSats);
   assert.equal(exact.workNetworkValueQ8, workNetworkValueQ8);
+  const exactStatus = await readCanonicalSummary(
+    "livenet",
+    height,
+    blockHash,
+    { exactStatus: true },
+  );
+  assert.equal(exactStatus.status, "found");
+  assert.equal(exactStatus.eligibleSnapshotCount, 2);
+  assert.equal(exactStatus.exactSnapshot.snapshotId, newestSnapshotId);
 
   const exactWorkNetworkQ8State = isolatedFunction(
     API_PATH,
@@ -31713,6 +31881,15 @@ check("Inception H-1 oracle accepts agreeing versioned exact green summaries", a
     await readCanonicalSummary("livenet", height, blockHash),
     null,
   );
+  const missingStatus = await readCanonicalSummary(
+    "livenet",
+    height,
+    blockHash,
+    { exactStatus: true },
+  );
+  assert.equal(missingStatus.status, "missing");
+  assert.equal(missingStatus.eligibleSnapshotCount, 0);
+  assert.equal(missingStatus.exactSnapshot, null);
   rows = [
     {
       ...exactRow(),
@@ -31749,6 +31926,15 @@ check("Inception H-1 oracle accepts agreeing versioned exact green summaries", a
     null,
     "same-height versions with divergent proof values must fail closed",
   );
+  const conflictStatus = await readCanonicalSummary(
+    "livenet",
+    height,
+    blockHash,
+    { exactStatus: true },
+  );
+  assert.equal(conflictStatus.status, "conflict");
+  assert.equal(conflictStatus.eligibleSnapshotCount, 2);
+  assert.equal(conflictStatus.exactSnapshot, null);
   rows = versionedRows(exactRow({
     valueAccountingModel: "divergent-fee-accounting-model",
   }));
@@ -31791,6 +31977,15 @@ check("Inception H-1 oracle accepts agreeing versioned exact green summaries", a
     null,
     "a truncated exact-checkpoint result must not select a partial version set",
   );
+  const incompleteStatus = await readCanonicalSummary(
+    "livenet",
+    height,
+    blockHash,
+    { exactStatus: true },
+  );
+  assert.equal(incompleteStatus.status, "incomplete");
+  assert.equal(incompleteStatus.eligibleSnapshotCount, 2);
+  assert.equal(incompleteStatus.exactSnapshot, null);
   rows = Array.from({ length: 129 }, (_value, index) =>
     exactRow({
       canonicalSummaryHash: (index + 1).toString(16).padStart(64, "0"),
@@ -31811,6 +32006,7 @@ check("Inception H-1 oracle accepts agreeing versioned exact green summaries", a
     "full-version-000",
     "129 agreeing exact versions must select the newest full-set witness",
   );
+  assert.equal(allAgreeingVersions.snapshotVersionCount, 129);
   rows = rows.map((row, index) =>
     index === rows.length - 1
       ? exactRow({

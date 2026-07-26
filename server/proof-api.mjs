@@ -51476,24 +51476,61 @@ async function handleRequest(request, response) {
         errorResponse(response, 404, "Not found.");
         return;
       }
+      const storedExact =
+        String(url.searchParams.get("storedExact") ?? "") === "1";
+      const checkpointHeight = Number(
+        url.searchParams.get("checkpointHeight") ?? 0,
+      );
+      const checkpointHash = String(
+        url.searchParams.get("checkpointHash") ?? "",
+      )
+        .trim()
+        .toLowerCase();
+      const exactCheckpointValid =
+        Number.isSafeInteger(checkpointHeight) &&
+        checkpointHeight > 0 &&
+        /^[0-9a-f]{64}$/u.test(checkpointHash);
       const requestedReplayBindingId =
         url.searchParams.get("replayBindingId") ?? "";
       const replayVerifierBinding = await internalReplayVerifierBinding(
         network,
         requestedReplayBindingId,
       );
+      const exactRead = storedExact
+        ? exactCheckpointValid
+          ? await proofIndexCanonicalSummaryLedgerPayload(
+              network,
+              checkpointHeight,
+              checkpointHash,
+              { exactStatus: true },
+            )
+          : {
+              eligibleSnapshotCount: 0,
+              exactSnapshot: null,
+              status: "invalid-request",
+            }
+        : null;
+      const payload = storedExact
+        ? {
+            eligibleSnapshotCount:
+              exactRead?.eligibleSnapshotCount ?? 0,
+            exactSnapshot: exactRead?.exactSnapshot ?? null,
+            exactSnapshotStatus:
+              exactRead?.status ?? "unavailable",
+            network,
+            source: "proof-indexer-exact-canonical-summary-snapshot",
+          }
+        : await internalCanonicalSummaryPayload(network, {
+            checkpointHash,
+            checkpointHeight,
+          });
       jsonResponse(
         response,
         200,
         await internalReplayBoundPayload(
           network,
           requestedReplayBindingId,
-          await internalCanonicalSummaryPayload(network, {
-            checkpointHash: url.searchParams.get("checkpointHash") ?? "",
-            checkpointHeight: Number(
-              url.searchParams.get("checkpointHeight") ?? 0,
-            ),
-          }),
+          payload,
           replayVerifierBinding,
         ),
         "no-store",
