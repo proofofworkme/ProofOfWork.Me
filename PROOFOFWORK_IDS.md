@@ -56,9 +56,9 @@ They are not traditional DNS records. They are on-chain mail IDs resolved by the
 - Registry events live in ProofOfWork OP_RETURN outputs.
 - First valid registration wins.
 - Registration requires a 1,000-proof payment to the canonical registry address.
-- Receiver updates, transfers, listings, seals, delistings, and buyer-funded marketplace transfers require a 546-proof mutation payment to the same canonical registry address.
+- Receiver updates, transfers, listings, seals, delistings, and buyer-funded AMO transfers require a 546-proof mutation payment to the same canonical registry address.
 - Transfers update the current owner/receiver.
-- Marketplace listings publish sale terms on-chain from the current owner's wallet, while buyer-funded transfers execute those terms.
+- AMO listings publish sale terms on-chain from the current owner's wallet, while buyer-funded transfers execute those terms.
 - Future messages resolve to the current receiver.
 - The app resolves IDs by scanning registry history and applying valid events in chain order.
 - All registry mutations use the same canonical registry address and pay the mutation fee.
@@ -92,9 +92,9 @@ Phase 1 launch surface:
 id.proofofwork.me
 ```
 
-The ID subdomain renders a focused mainnet claim flow using the same registry address and `pwid1:r2` protocol. It is intentionally narrower than the full mail app: connect UniSat, check availability, register, view registry stats, view owned IDs, view public registry records, and verify owned/routed IDs on X. Do not put ID transfer, management, or marketplace tools on `id.proofofwork.me`; those belong in the Computer app and the standalone Marketplace app.
-Inside `computer.proofofwork.me`, the IDs workspace is limited to registration, receiver updates, and direct owner transfers. Marketplace is a dedicated sidebar workspace for listing owned confirmed IDs and executing buyer-funded transfers.
-All registry-facing UI surfaces should include search once the registry grows: public registry, owned IDs, pending ID events, active marketplace listings, and registry supply lists should be searchable by ID, full `user@proofofwork.me`, owner/receiver address, txid, network, status, and proofs where relevant.
+The ID subdomain renders a focused mainnet claim flow using the same registry address and `pwid1:r2` protocol. It is intentionally narrower than the full mail app: connect UniSat, check availability, register, view registry stats, view owned IDs, view public registry records, and verify owned/routed IDs on X. Do not put ID transfer, management, or AMO tools on `id.proofofwork.me`; those belong in the Computer app and the standalone AMO app.
+Inside `computer.proofofwork.me`, the IDs workspace is limited to registration, receiver updates, and direct owner transfers. AMO is a dedicated sidebar workspace for listing owned confirmed IDs and executing buyer-funded transfers.
+All registry-facing UI surfaces should include search once the registry grows: public registry, owned IDs, pending ID events, active AMO listings, and registry supply lists should be searchable by ID, full `user@proofofwork.me`, owner/receiver address, txid, network, status, and proofs where relevant.
 
 Production domains:
 
@@ -105,7 +105,8 @@ id.proofofwork.me           focused ID registry app
 computer.proofofwork.me     full mail/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
-marketplace.proofofwork.me  standalone asset marketplace; IDs and credit sale-ticket markets live
+amo.proofofwork.me          canonical Autonomous Money Organization
+marketplace.proofofwork.me  compatibility route to AMO
 credit.proofofwork.me       standalone credit creation and mint app
 token.proofofwork.me        permanent redirect to https://credit.proofofwork.me/
 tokens.proofofwork.me       permanent redirect to https://credit.proofofwork.me/
@@ -120,10 +121,10 @@ growth.proofofwork.me       public growth model dashboard
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
 Confessions is staged/local-only for a Twitter-like 140-character social meta protocol over confirmed ProofOfWork IDs. It must not mutate the canonical `pwid1:` registry for follows, likes, reposts, or replies and must not be added to public production navigation until separately approved.
-The Marketplace subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers. It is tabbed by asset class: the ID tab is live, and the Credit tab uses the same sale-ticket shape for credit `list5`, `seal5`, `delist5`, and `buy5` records.
+The AMO subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers. It is tabbed by asset class: the ID tab is live, and the Credit tab uses the same sale-ticket shape for credit `list5`, `seal5`, `delist5`, and `buy5` records. The former Marketplace hostname resolves to this same surface.
 The Log subdomain is read-only. It exposes a unified ProofOfWork Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, credit sales, and seeded Computer mail events. Log search is server-backed by the canonical livenet ledger, so address, confirmed ID, txid, participant, and token searches should agree with global Log.
 The Credit subdomain creates and mints mint-first `pwt1:` credits. The `tokens` subdomain redirects to Credit. The Wallet subdomain tracks credit balances and broadcasts generic-credit `pwt1:send` transfers and canonical WORK `pwt1:send2` atomic transfers that pay the relevant credit registry. The WORK subdomain is the dedicated WORK credit dashboard. The Infinity subdomain tracks POWB supply/floor data and creates `pwm1:m:powb` bond messages. The Inception subdomain tracks INCB supply/floor data and creates `pwm1:m:incb` bond messages. Its canonical registry identity is `inception@proofofwork.me`, and its reserved synthetic credit id is `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`. Both bond families reuse the credit sale-ticket lifecycle for transfers and trades, while only canonical WORK can be attached as a separate `pwt1:send2` credit transfer to a bond message.
-The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace/Credit network-value model with confirmed registry, log, file, marketplace, and credit value metrics in proofs and USD. Growth, WORK, Log, and credit/token history should share one confirmed livenet ledger snapshot after refresh. WORK has a permanent floor derived from live confirmed network value: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`; the inverse `21,000,000 / live_network_value_sats` is the WORK-per-proof ratio. Frozen network value is kept separately as the confirmation-time audit stamp for WORK movement and other event components.
+The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/AMO/Credit network-value model with confirmed registry, log, file, AMO, and credit value metrics in proofs and USD. Growth, WORK, Log, and credit/token history should share one confirmed livenet ledger snapshot after refresh. WORK has a permanent floor derived from live confirmed network value: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`; the inverse `21,000,000 / live_network_value_sats` is the WORK-per-proof ratio. Frozen network value is kept separately as the confirmation-time audit stamp for WORK movement and other event components.
 
 Local preview:
 
@@ -154,10 +155,10 @@ VITE_INCEPTION_ONLY=1 VITE_POW_API_BASE=https://inception.proofofwork.me npm run
 
 Use that environment variable for the Phase 1 server so the full mail app stays hidden even if someone opens the bare IP address or a non-ID hostname.
 
-Marketplace-only build:
+AMO-only build (retained internal environment name):
 
 ```bash
-VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
+VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://amo.proofofwork.me npm run build
 ```
 
 Credit-only build:
@@ -232,8 +233,11 @@ Rules:
 - Sale terms are public on-chain listing objects. Anyone can execute an open sealed listing by paying the listed price, refunding the ticket, paying the mutation fee, and spending the sale ticket.
 - IDs are case-insensitive forever. `User`, `user`, and `USER` all resolve to `user`.
 - The app normalizes IDs to lowercase for writing, display, lookup, and first-claim comparisons.
+- The confirmed H-1 registry projection is the identity authority for AMO V5 replay. Current normalization uses ECMAScript Unicode Default Case Conversion with the Unicode 17.0 tables, matching the pinned production Node.js runtime. API, indexer, and migration processes fail closed if their runtime reports a different Unicode data version.
+- A runtime upgrade must prove a full-registry normalization replay produces the same normalized IDs and first-claim winners, or ship an explicit protocol migration. It must never silently reinterpret historical Unicode IDs.
 - There is no arbitrary app-level ID length or character whitelist.
 - Fresh registrations encode the ID field as base64url so punctuation and Unicode cannot break the colon-delimited registry format.
+- Fresh AMO V5 base64url text fields use canonical base64url and strict UTF-8 decoding. Invalid byte sequences are invalid records; decoders must not replace malformed bytes with `U+FFFD`.
 - The real size ceiling is the transaction's aggregate OP_RETURN data-carrier script limit of `100,000` bytes.
 - Long IDs naturally cost more in bytes and fees, so the market prices them.
 - Legacy `pwid1:r:<id>:...` registrations can still be read if their fields are parseable.
@@ -339,11 +343,11 @@ Rules to preserve:
 - `u`, `t`, `list5`, `seal5`, `delist5`, and `buy5` require at least `546` proofs to the registry address.
 - `u`, `t`, `list5`, `seal5`, `delist5`, and `buy5` are live registry events.
 - `buy5` is valid only with a matching active sealed sale-ticket listing, a spent sale ticket, and matching seller payment.
-- `buy5` is valid only against current ownership; marketplace UIs should prefer active sealed `list5` listings.
-- Marketplace events should be verifiable from chain history.
+- `buy5` is valid only against current ownership; AMO UIs should prefer active sealed `list5` listings.
+- AMO events should be verifiable from chain history.
 - The resolver should expose both current owner and current receiver.
 
-## Marketplace Readiness
+## AMO Readiness
 
 IDs should behave like transferable assets.
 
@@ -355,7 +359,7 @@ IDs should behave like transferable assets.
 - Bidders can place offers.
 - Owners can accept bids.
 - Owners can delist IDs with `pwid1:delist5`.
-- Marketplaces can verify current ownership from the chain.
+- AMO clients can verify current ownership from the chain.
 - The current receiver determines where new mail is delivered.
 
 ## Node Purpose
@@ -430,7 +434,7 @@ https://id.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
-https://marketplace.proofofwork.me/api/*
+https://amo.proofofwork.me/api/*
 https://credit.proofofwork.me/api/*
 https://wallet.proofofwork.me/api/*
 https://work.proofofwork.me/api/*

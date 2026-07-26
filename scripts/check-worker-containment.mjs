@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import vm from "node:vm";
 
@@ -83,15 +83,10 @@ function emitFixtureFailure(options) {
   const line = JSON.stringify({
     ...fixtureFailureRecord(options),
   });
-  return new Promise((resolve, reject) => {
-    process.stderr.write(`${line}\n`, (error) => {
-      if (error) {
-        reject(error);
-      } else {
-        resolve();
-      }
-    });
-  });
+  // Node 22 can report the asynchronous stream callback before a child pipe
+  // has actually delivered its final chunk. This fixture models a fatal
+  // worker record, so make the process-boundary write synchronous.
+  writeSync(process.stderr.fd, `${line}\n`);
 }
 
 if (fixtureMode === "poison-exit") {

@@ -11,6 +11,14 @@ import { URL } from "node:url";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
 import { verifyBitcoinMessageSignature } from "./bitcoin-message-verifier.mjs";
+import {
+  canonicalRawProtocolRecordSetFromTransaction,
+  canonicalProtocolCandidateFromOutput,
+} from "./canonical-op-return.mjs";
+import {
+  assertCanonicalUnicodeCaseMappingVersion,
+  compareCanonicalUtf8,
+} from "./canonical-order.mjs";
 import { createElectrumClient } from "./electrum-client.mjs";
 import {
   BOND_VALUE_Q8_SCALE,
@@ -72,6 +80,73 @@ import {
   workMarketplaceWriteActionIsGoverned,
 } from "./work-market-v2.mjs";
 import {
+  WORK_AMO_V5_ACTIVATION_HEIGHT,
+  WORK_AMO_V5_ALLOWED_FACE_USD_CENTS,
+  WORK_AMO_V5_AUTH_VERSION,
+  WORK_AMO_V5_BASE_STATE_FIELDS,
+  WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+  WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+  WORK_AMO_V5_DECLARATION_BLOCK_INDEX,
+  WORK_AMO_V5_DECLARATION_HEIGHT,
+  WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
+  WORK_AMO_V5_DECLARATION_PAYLOAD_SHA256,
+  WORK_AMO_V5_DECLARATION_PROTOCOL_VOUT,
+  WORK_AMO_V5_DECLARATION_RECORD_ORDINAL,
+  WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+  WORK_AMO_V5_DECLARATION_TXID,
+  WORK_AMO_V5_DECLARATION_REGISTRY_PAYMENT_VOUT,
+  WORK_AMO_V5_DECLARATION_WORK_PROTOCOL_VOUT,
+  WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS,
+  WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+  WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  WORK_AMO_V5_USD_QUOTE_PREFIX,
+  WORK_AMO_V5_UNIT_MODEL,
+  WORK_AMO_V5_UNIT_USD_ORACLE_MODEL,
+  WORK_AMO_V5_UNIT_WORK_ORACLE_MODEL,
+  WORK_AMO_V5_V1_ACTIVATION_HEIGHT,
+  WORK_AMO_V5_V1_DECLARATION_TXID,
+  assignWorkAmoV5EconomicOutputs,
+  compareWorkAmoUtf8,
+  deriveWorkAmoV5FrozenTerms,
+  parseWorkAmoV5PwmMessages,
+  parseWorkAmoUsdQuoteRecord,
+  selectWorkAmoV5DistinctRegistryPayment,
+  selectWorkAmoUsdQuoteBeforeListing,
+  validateWorkAmoV5DeclarationEvidence,
+  validateWorkAmoV5FrozenTerms,
+  validateWorkAmoV5ReferencedAuthorization,
+  validateWorkAmoV5SealOrBuyTerms,
+  validateWorkAmoV5SufficientState,
+  validateWorkAmoV5StaticAuthorization,
+  workAmoV5CanonicalExpiryMs,
+  workAmoV5ActivationFromEvidence,
+  workAmoV5BroadcastDecision,
+  workAmoV5CanonicalPayloadCommitment,
+  workAmoV5CanonicalStateCommitment,
+  workAmoV5CanonicalTokenStateCommitment,
+  workAmoV5ConsensusEventKind,
+  workAmoV5EventSetCommitment,
+  workAmoV5FrozenTermsMatch,
+  workAmoV5NetworkValueQ8FromSufficientState,
+  workAmoV5StatusFromEvidence,
+  workAmoV5UnitTerms,
+} from "./work-amo-v5.mjs";
+import {
+  WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
+  WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+  normalizeWorkAmoV5RawGenericState,
+  normalizeWorkAmoV5RawIdState,
+  normalizeWorkAmoV5RawWorkState,
+  projectWorkAmoV5RawEvents,
+  replayWorkAmoV5RawBlock,
+  workAmoV5RawGenericStateCommitment,
+  workAmoV5RawIdStateCommitment,
+} from "./work-amo-v5-raw.mjs";
+import {
+  normalizedWorkAmoV5Bip141Witness,
+} from "./work-amo-v5-bip141.mjs";
+import {
   tokenListingCanProjectCloseActivity,
 } from "./token-listing-lifecycle.mjs";
 import {
@@ -95,6 +170,7 @@ import {
   proofIndexAddressMailPayload,
   proofIndexCanonicalActivityPayload,
   proofIndexCanonicalInceptionMintWitnessesPayload,
+  proofIndexCanonicalWorkListingById,
   proofIndexCanonicalSummaryLedgerPayload,
   proofIndexCanonicalStateMetaPayload,
   proofIndexCanonicalTransactionsPayload,
@@ -124,10 +200,18 @@ import {
   proofIndexValueSummaryPayload,
   proofIndexTokenSnapshotPayload,
   proofIndexWalletTokenOverlayPayload,
+  proofIndexWorkAmoBlockTransition,
+  proofIndexWorkAmoGenericTokenStatePreimage,
+  proofIndexWorkAmoRelationalTokenStateEvidence,
+  proofIndexWorkAmoReplayReadiness,
+  proofIndexWorkAmoV5Declaration,
+  proofIndexWorkUsdQuoteByTxid,
+  proofIndexWorkUsdQuoteHead,
 } from "./db/proof-index-reader.mjs";
 
 bitcoin.initEccLib(ecc);
 dns.setDefaultResultOrder("ipv4first");
+assertCanonicalUnicodeCaseMappingVersion();
 
 const HOST = process.env.HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PORT ?? 8081);
@@ -653,13 +737,35 @@ const TOKEN_SALE_AUTH_VERSION = "pwt-sale-v1";
 const TOKEN_SALE_AUTH_ATOMS_VERSION = "pwt-sale-v2";
 const TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION = WORK_MARKET_V2_AUTH_VERSION;
 const TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION = WORK_MARKET_V4_AUTH_VERSION;
+const TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION = WORK_AMO_V5_AUTH_VERSION;
 const TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS = new Set([
   TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION,
   TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION,
 ]);
+const TOKEN_SALE_AUTH_WORK_VERSIONS = new Set([
+  ...TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS,
+  TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+]);
 const WORK_MARKETPLACE_WRITES_CONFIGURED = /^(?:1|true|yes)$/iu.test(
   String(process.env.WORK_MARKETPLACE_WRITES_ENABLED ?? "0"),
 );
+const WORK_AMO_V5_WRITES_CONFIGURED = /^(?:1|true|yes)$/iu.test(
+  String(process.env.WORK_AMO_V5_WRITES_ENABLED ?? "0"),
+);
+const WORK_AMO_V5_DECLARATION_PINS_CONFIGURED =
+  String(process.env.WORK_AMO_V5_DECLARATION_TXID ?? "")
+    .trim()
+    .toLowerCase() === WORK_AMO_V5_DECLARATION_TXID &&
+  Number(process.env.WORK_AMO_V5_DECLARATION_HEIGHT) ===
+    WORK_AMO_V5_DECLARATION_HEIGHT &&
+  String(process.env.WORK_AMO_V5_DECLARATION_BLOCK_HASH ?? "")
+    .trim()
+    .toLowerCase() === WORK_AMO_V5_DECLARATION_BLOCK_HASH &&
+  Number(process.env.WORK_AMO_V5_DECLARATION_BLOCK_INDEX) ===
+    WORK_AMO_V5_DECLARATION_BLOCK_INDEX &&
+  String(process.env.WORK_AMO_V5_DECLARATION_MEMO_SHA256 ?? "")
+    .trim()
+    .toLowerCase() === WORK_AMO_V5_DECLARATION_PAYLOAD_SHA256;
 const TOKEN_CREATION_PRICE_SATS = 546;
 const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
 const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
@@ -2554,11 +2660,13 @@ function mergeWalletHolders(baseHolders, overlayHolders) {
           : right.ledgerBalance < left.ledgerBalance
             ? -1
             : 0) ||
-        String(left.holder?.tokenId ?? left.holder?.ticker ?? "").localeCompare(
-          String(right.holder?.tokenId ?? right.holder?.ticker ?? ""),
+        compareCanonicalUtf8(
+          left.holder?.tokenId ?? left.holder?.ticker,
+          right.holder?.tokenId ?? right.holder?.ticker,
         ) ||
-        String(left.holder?.address ?? "").localeCompare(
-          String(right.holder?.address ?? ""),
+        compareCanonicalUtf8(
+          left.holder?.address,
+          right.holder?.address,
         ),
     )
     .map(({ holder }) => holder);
@@ -2891,8 +2999,9 @@ async function tokenPayloadWithRecoveredWalletWorkTransfers(
           : right.balanceAtoms < left.balanceAtoms
             ? -1
             : 0) ||
-        String(left.holder?.address ?? "").localeCompare(
-          String(right.holder?.address ?? ""),
+        compareCanonicalUtf8(
+          left.holder?.address,
+          right.holder?.address,
         ),
     )
     .map(({ holder }) => holder);
@@ -2917,7 +3026,33 @@ async function tokenPayloadWithRecoveredWalletWorkTransfers(
 }
 
 function tokenSaleItemKey(item) {
-  return String(item?.txid ?? "").trim().toLowerCase();
+  const txid = String(item?.txid ?? "").trim().toLowerCase();
+  const blockHeight =
+    item?.blockHeight !== undefined &&
+    item?.blockHeight !== null &&
+    item?.blockHeight !== "" &&
+    Number.isSafeInteger(Number(item.blockHeight)) &&
+    Number(item.blockHeight) >= 1
+      ? Number(item.blockHeight)
+      : null;
+  if (
+    item?.confirmed === true &&
+    blockHeight !== null &&
+    blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    const position = canonicalTokenReplayPosition(item);
+    return [
+      String(item?.network ?? "").trim().toLowerCase(),
+      String(item?.tokenId ?? "").trim().toLowerCase(),
+      txid,
+      String(item?.listingId ?? "").trim().toLowerCase(),
+      position.blockHeight,
+      position.blockIndex,
+      position.protocolVout,
+      position.recordOrdinal,
+    ].join(":");
+  }
+  return txid;
 }
 
 function tokenListingItemKey(item) {
@@ -3396,7 +3531,7 @@ async function workTokenListingFromCreditListingItem(item, network, indexedAt) {
   }
 
   const governedWorkMarketListing =
-    TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS.has(saleAuthorization.version);
+    TOKEN_SALE_AUTH_WORK_VERSIONS.has(saleAuthorization.version);
   const sealConfirmed = governedWorkMarketListing
     ? item.sealConfirmed === true
     : item.sealConfirmed === true ||
@@ -4025,7 +4160,7 @@ function paginatedHistoryPayload({
 function tokenHistoryPageItemKey(item, kind) {
   if (kind === "market-log") {
     if (item?.kind === "sale") {
-      return `sale:${String(item.sale?.txid ?? item.txid ?? "").toLowerCase()}`;
+      return `sale:${tokenSaleItemKey(item.sale ?? item)}`;
     }
     if (item?.kind === "closed-listing") {
       return `closed:${String(
@@ -4051,7 +4186,7 @@ function tokenHistoryPageItemKey(item, kind) {
     ).toLowerCase()}`;
   }
   if (kind === "sales") {
-    return `sale:${String(item?.txid ?? "").toLowerCase()}`;
+    return `sale:${tokenSaleItemKey(item)}`;
   }
   if (kind === "transfers") {
     return `transfer:${tokenTransferHistoryItemKey(item)}`;
@@ -4122,7 +4257,8 @@ function compareTokenHistoryPageItems(left, right) {
       ? Number(tokenHistoryPageItemConfirmed(right)) -
         Number(tokenHistoryPageItemConfirmed(left))
       : 0) ||
-    tokenHistoryPageItemTxid(right).localeCompare(
+    compareCanonicalUtf8(
+      tokenHistoryPageItemTxid(right),
       tokenHistoryPageItemTxid(left),
     ) ||
     (marketLogPair
@@ -4237,6 +4373,9 @@ const WORK_TRANSFER_VALUE_PROJECTION_FIELD_NAMES = [
   "amountAtoms",
   "amountStorageModel",
   "amountVersion",
+  "blockHash",
+  "blockHeight",
+  "blockIndex",
   "canonicalMinerFeeCovered",
   "confirmed",
   "creditFloorAtConfirmModel",
@@ -4244,6 +4383,7 @@ const WORK_TRANSFER_VALUE_PROJECTION_FIELD_NAMES = [
   "eventKeyVout",
   "minerFeeSource",
   "protocolVout",
+  "recordOrdinal",
   "recipientAddress",
   "senderAddress",
   "ticker",
@@ -5629,15 +5769,361 @@ async function workMarketplaceV4Metadata(network, { force = false } = {}) {
   return payload;
 }
 
+let workAmoV5StatusCache = {
+  expiresAt: 0,
+  network: "",
+  networkValueBeforeQ8: "",
+  payload: null,
+  tipHash: "",
+};
+
+function baseWorkAmoV5Metadata() {
+  const writesConfigured =
+    WORK_AMO_V5_WRITES_CONFIGURED &&
+    WORK_AMO_V5_DECLARATION_PINS_CONFIGURED;
+  return {
+    ...workAmoV5StatusFromEvidence(null, {
+      indexReady: false,
+      quoteHead: null,
+      tipHeight: null,
+      writesConfigured,
+    }),
+    estimates: {},
+    pinsConfigured: WORK_AMO_V5_DECLARATION_PINS_CONFIGURED,
+    quotePublication: workAmoV5QuotePublicationContext(null, {
+      reasonCode: "work-amo-v5-quote-publication-index-not-ready",
+      ready: false,
+    }),
+    writesConfigured,
+  };
+}
+
+function workAmoV5QuotePublicationContext(
+  quoteHead,
+  {
+    reasonCode = "",
+    ready = false,
+  } = {},
+) {
+  const base = {
+    authorityScriptPubKey:
+      WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+    ready: ready === true,
+    reasonCode:
+      ready === true
+        ? ""
+        : reasonCode ||
+          "work-amo-v5-quote-publication-index-not-ready",
+    registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    registryPaymentSats: WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
+    v1DeclarationTxid: WORK_AMO_V5_V1_DECLARATION_TXID,
+  };
+  if (ready !== true) {
+    return base;
+  }
+  let currentSequence = "";
+  let previousQuoteTxid = WORK_AMO_V5_V1_DECLARATION_TXID;
+  if (quoteHead !== null) {
+    const rawSequence =
+      typeof quoteHead?.sequence === "string"
+        ? quoteHead.sequence
+        : "";
+    currentSequence = canonicalNonNegativeIntegerText(rawSequence);
+    previousQuoteTxid =
+      typeof quoteHead?.txid === "string"
+        ? quoteHead.txid.trim().toLowerCase()
+        : "";
+    if (
+      currentSequence !== rawSequence ||
+      currentSequence === "0" ||
+      !/^[0-9a-f]{64}$/u.test(previousQuoteTxid)
+    ) {
+      return {
+        ...base,
+        ready: false,
+        reasonCode: "work-amo-v5-quote-publication-head-invalid",
+      };
+    }
+  }
+  const nextSequence = currentSequence
+    ? (BigInt(currentSequence) + 1n).toString()
+    : "1";
+  return {
+    ...base,
+    nextSequence,
+    previousQuoteTxid,
+    recordPrefix: `pwa1:usd1:${WORK_AMO_V5_V1_DECLARATION_TXID}:${nextSequence}:${previousQuoteTxid}:`,
+  };
+}
+
+function workAmoV5DeclarationEvidenceFromTransaction(
+  declarationTx,
+  blockTransactionIndex,
+  canonical = false,
+) {
+  const vout = Array.isArray(declarationTx?.vout)
+    ? declarationTx.vout
+    : [];
+  const payload =
+    decodedProtocolMessages(
+      [vout[WORK_AMO_V5_DECLARATION_PROTOCOL_VOUT]],
+      PROTOCOL_PREFIX,
+    ).find((message) => message.startsWith(`${PROTOCOL_PREFIX}m:`)) ?? "";
+  const registryOutput =
+    vout[WORK_AMO_V5_DECLARATION_REGISTRY_PAYMENT_VOUT];
+  const governedProtocolOutput =
+    decodedProtocolMessages(
+      [vout[WORK_AMO_V5_DECLARATION_WORK_PROTOCOL_VOUT]],
+      TOKEN_PROTOCOL_PREFIX,
+    ).length === 1
+      ? WORK_AMO_V5_DECLARATION_WORK_PROTOCOL_VOUT
+      : -1;
+  return {
+    blockHash: transactionBlockHash(declarationTx),
+    blockHeight: transactionBlockHeight(declarationTx),
+    blockTransactionIndex,
+    canonical: canonical === true,
+    confirmed: transactionConfirmed(declarationTx),
+    firstInputPrevoutScriptPubKey: String(
+      declarationTx?.vin?.[0]?.prevout?.scriptpubkey ?? "",
+    )
+      .trim()
+      .toLowerCase(),
+    payload,
+    protocolVout: WORK_AMO_V5_DECLARATION_PROTOCOL_VOUT,
+    recordOrdinal: WORK_AMO_V5_DECLARATION_RECORD_ORDINAL,
+    registryAddress: addressFromVout(registryOutput),
+    registryPaymentSats: Number(registryOutput?.value),
+    registryPaymentVout: WORK_AMO_V5_DECLARATION_REGISTRY_PAYMENT_VOUT,
+    txid: transactionTxid(declarationTx),
+    workProtocolVout: governedProtocolOutput,
+  };
+}
+
+function workAmoV5Estimates(quoteHead, networkValueBeforeQ8) {
+  if (
+    !quoteHead ||
+    !canonicalNonNegativeIntegerText(networkValueBeforeQ8, {
+      allowZero: false,
+    })
+  ) {
+    return {};
+  }
+  return Object.fromEntries(
+    WORK_AMO_V5_ALLOWED_FACE_USD_CENTS.flatMap((unitFaceUsdCents) => {
+      const terms = workAmoV5UnitTerms({
+        networkValueBeforeQ8,
+        unitFaceUsdCents,
+        usdPer100mProofsQ8: quoteHead.usdPer100mProofsQ8,
+      });
+      return terms.valid
+        ? [
+            [
+              String(unitFaceUsdCents),
+              {
+                estimateOnly: true,
+                unitAmountAtoms: terms.unitAmountAtoms,
+                unitFaceUsdCents,
+                unitMinimumPriceSats: terms.unitMinimumPriceSats,
+                unitNetworkValueBeforeQ8: String(networkValueBeforeQ8),
+                unitPriceSats: terms.unitPriceSats,
+                unitUsdQuoteTxid: quoteHead.txid,
+              },
+            ],
+          ]
+        : [];
+    }),
+  );
+}
+
+async function workAmoV5Metadata(
+  network,
+  { force = false, summaryPayload = null } = {},
+) {
+  const networkValueBeforeQ8 =
+    canonicalWorkMarketOracleNetworkValueQ8(summaryPayload) ?? "";
+  const base = baseWorkAmoV5Metadata();
+  if (network !== "livenet") {
+    return base;
+  }
+  let evidence = null;
+  let indexReady = false;
+  let quoteHead = null;
+  let tipHeight = null;
+  let tipHash = "";
+  try {
+    const [
+      declarationTx,
+      canonicalHashResponse,
+      tipResponse,
+      tipHashResponse,
+    ] =
+      await Promise.all([
+        fetchTransactionFromBitcoinRpc(
+          WORK_AMO_V5_DECLARATION_TXID,
+          network,
+          {
+            bypassCache: true,
+            requireCanonicalPrevouts: true,
+          },
+        ),
+        bitcoinRpc("getblockhash", [WORK_AMO_V5_DECLARATION_HEIGHT]),
+        bitcoinRpc("getblockcount", []),
+        bitcoinRpc("getbestblockhash", []),
+      ]);
+    const canonicalBlockHash = String(
+      canonicalHashResponse?.ok ? canonicalHashResponse.result : "",
+    )
+      .trim()
+      .toLowerCase();
+    const declarationBlockHash = transactionBlockHash(declarationTx);
+    const blockTxidIndex =
+      declarationBlockHash === WORK_AMO_V5_DECLARATION_BLOCK_HASH
+        ? await fetchCoreBlockTxidIndex(declarationBlockHash)
+        : null;
+    const declarationIndex = blockTxidIndex?.get(
+      WORK_AMO_V5_DECLARATION_TXID,
+    );
+    const candidateEvidence = workAmoV5DeclarationEvidenceFromTransaction(
+      declarationTx,
+      declarationIndex,
+      canonicalBlockHash === WORK_AMO_V5_DECLARATION_BLOCK_HASH &&
+        declarationBlockHash === WORK_AMO_V5_DECLARATION_BLOCK_HASH &&
+        declarationIndex === WORK_AMO_V5_DECLARATION_BLOCK_INDEX,
+    );
+    evidence =
+      canonicalBlockHash === WORK_AMO_V5_DECLARATION_BLOCK_HASH &&
+      validateWorkAmoV5DeclarationEvidence(candidateEvidence).valid
+        ? candidateEvidence
+        : null;
+    const observedTipHeight = Number(
+      tipResponse?.ok ? tipResponse.result : Number.NaN,
+    );
+    tipHeight = Number.isSafeInteger(observedTipHeight)
+      ? observedTipHeight
+      : null;
+    tipHash = String(tipHashResponse?.ok ? tipHashResponse.result : "")
+      .trim()
+      .toLowerCase();
+
+    if (
+      !force &&
+      /^[0-9a-f]{64}$/u.test(tipHash) &&
+      workAmoV5StatusCache.network === network &&
+      workAmoV5StatusCache.networkValueBeforeQ8 === networkValueBeforeQ8 &&
+      workAmoV5StatusCache.tipHash === tipHash &&
+      workAmoV5StatusCache.expiresAt > Date.now() &&
+      workAmoV5StatusCache.payload
+    ) {
+      return workAmoV5StatusCache.payload;
+    }
+
+    if (
+      evidence &&
+      Number.isSafeInteger(tipHeight) &&
+      /^[0-9a-f]{64}$/u.test(tipHash)
+    ) {
+      const [
+        indexedDeclaration,
+        indexedQuoteRead,
+        replayReadiness,
+      ] =
+        await Promise.all([
+          proofIndexWorkAmoV5Declaration(network, tipHeight).catch(
+            () => null,
+          ),
+          proofIndexWorkUsdQuoteHead(network)
+            .then((head) => ({ head, ready: true }))
+            .catch(() => ({ head: null, ready: false })),
+          proofIndexWorkAmoReplayReadiness(network, {
+            throughBlockHash: tipHash,
+            throughHeight: tipHeight,
+          }).catch(() => null),
+        ]);
+      const indexedDeclarationReady =
+        validateWorkAmoV5DeclarationEvidence(indexedDeclaration).valid;
+      indexReady =
+        indexedDeclarationReady &&
+        indexedQuoteRead.ready === true &&
+        replayReadiness?.ready === true &&
+        replayReadiness?.indexReady === true &&
+        replayReadiness?.requestedTipReady === true &&
+        Number(replayReadiness?.requestedThroughHeight) === tipHeight &&
+        Number(replayReadiness?.throughHeight) === tipHeight &&
+        Number(replayReadiness?.canonicalTip) === tipHeight &&
+        String(replayReadiness?.requestedThroughBlockHash ?? "")
+          .trim()
+          .toLowerCase() === tipHash &&
+        String(replayReadiness?.canonicalTipBlockHash ?? "")
+          .trim()
+          .toLowerCase() === tipHash;
+      quoteHead = indexReady ? indexedQuoteRead.head : null;
+    }
+  } catch (error) {
+    console.error(
+      `WORK AMO V5 readiness verification failed: ${errorSummary(error)}`,
+    );
+  }
+
+  const writesConfigured =
+    WORK_AMO_V5_WRITES_CONFIGURED &&
+    WORK_AMO_V5_DECLARATION_PINS_CONFIGURED;
+  const status = workAmoV5StatusFromEvidence(evidence, {
+    indexReady,
+    quoteHead,
+    tipHeight,
+    writesConfigured,
+  });
+  const quoteProjection = status.quoteHead
+    ? {
+        ...status.quoteHead,
+        blockIndex: status.quoteHead.blockTransactionIndex,
+      }
+    : null;
+  const payload = {
+    ...status,
+    estimates:
+      status.quoteReady && networkValueBeforeQ8
+        ? workAmoV5Estimates(quoteProjection, networkValueBeforeQ8)
+        : {},
+    pinsConfigured: WORK_AMO_V5_DECLARATION_PINS_CONFIGURED,
+    quoteHead: quoteProjection,
+    quotePublication: workAmoV5QuotePublicationContext(
+      quoteProjection,
+      {
+        reasonCode:
+          status.active !== true
+            ? "work-amo-v5-quote-publication-activation-not-ready"
+            : "work-amo-v5-quote-publication-index-not-ready",
+        ready: status.active === true && indexReady === true,
+      },
+    ),
+    writesConfigured,
+  };
+  workAmoV5StatusCache = {
+    expiresAt: Date.now() + 15_000,
+    network,
+    networkValueBeforeQ8,
+    payload,
+    tipHash,
+  };
+  return payload;
+}
+
 async function withWorkMarketplaceV4Metadata(payload, network) {
-  const workMarketplaceV4 = await workMarketplaceV4Metadata(network);
+  const [workMarketplaceV4, workAmoV5] = await Promise.all([
+    workMarketplaceV4Metadata(network),
+    workAmoV5Metadata(network, { summaryPayload: payload }),
+  ]);
   return {
     ...payload,
+    workAmoV5,
     workMarketplaceV4,
     ...(payload?.floor && typeof payload.floor === "object"
       ? {
           floor: {
             ...payload.floor,
+            workAmoV5,
             workMarketplaceV4,
           },
         }
@@ -5646,6 +6132,7 @@ async function withWorkMarketplaceV4Metadata(payload, network) {
       ? {
           workFloor: {
             ...payload.workFloor,
+            workAmoV5,
             workMarketplaceV4,
           },
         }
@@ -5710,68 +6197,164 @@ function signedTransactionInputOutpoints(txHex) {
   });
 }
 
-function signedPaymentAmountBeforeTokenProtocol(
-  outputs,
-  address,
-  network,
-  firstTokenProtocolIndex,
-) {
-  if (
-    !Array.isArray(outputs) ||
-    firstTokenProtocolIndex < 0 ||
-    !isValidBitcoinAddress(address, network)
-  ) {
-    return 0;
-  }
-  let scriptpubkey = "";
-  try {
-    scriptpubkey = bytesToHex(
-      bitcoin.address.toOutputScript(address, bitcoinNetwork(network)),
-    );
-  } catch {
-    return 0;
-  }
-  return outputs.reduce(
-    (total, output, index) =>
-      index < firstTokenProtocolIndex && output.scriptpubkey === scriptpubkey
-        ? total + Number(output.value ?? 0)
-        : total,
-    0,
+function signedWorkAmoEconomicOutputs(outputs, network) {
+  return (Array.isArray(outputs) ? outputs : []).flatMap(
+    (output, vout) => {
+      try {
+        const address = bitcoin.address.fromOutputScript(
+          Buffer.from(String(output?.scriptpubkey ?? ""), "hex"),
+          bitcoinNetwork(network),
+        );
+        const amountSats = Number(output?.value);
+        return Number.isSafeInteger(amountSats) && amountSats > 0
+          ? [{ address, amountSats: String(amountSats), vout }]
+          : [];
+      } catch {
+        return [];
+      }
+    },
   );
 }
 
+function signedSinglePaymentAmountBeforeTokenProtocol(
+  economicOutputs,
+  address,
+  firstTokenProtocolIndex,
+  requiredSats,
+  claimedVouts = new Set(),
+) {
+  const assignment = assignWorkAmoV5EconomicOutputs(
+    economicOutputs,
+    [{
+      address,
+      claimAll: false,
+      requireBeforeProtocol: true,
+      requiredSats: String(requiredSats),
+      role: "pwt-seller",
+    }],
+    {
+      claimedVouts,
+      protocolVout: firstTokenProtocolIndex,
+    },
+  );
+  const selected = assignment?.economicOutputs ?? [];
+  return selected.length === 1
+    ? Number(selected[0].outputSats)
+    : 0;
+}
+
 async function canonicalWorkMarketplaceListingAnchor(txid, network) {
-  const listingTx = await fetchTransactionFromBitcoinRpc(txid, network, {
-    bypassCache: true,
-    includePrevouts: false,
-    requireCanonicalPrevouts: true,
-  });
-  if (!listingTx || !transactionConfirmed(listingTx)) {
+  const [listingTx, indexedListing] = await Promise.all([
+    fetchTransactionFromBitcoinRpc(txid, network, {
+      bypassCache: true,
+      includePrevouts: false,
+      requireCanonicalPrevouts: true,
+    }),
+    proofIndexCanonicalWorkListingById(network, txid).catch(() => null),
+  ]);
+  if (
+    !listingTx ||
+    !transactionConfirmed(listingTx) ||
+    indexedListing?.canonical !== true ||
+    indexedListing?.confirmed !== true ||
+    indexedListing?.valid !== true ||
+    indexedListing?.unspent !== true
+  ) {
     return null;
   }
-  for (const message of decodedProtocolMessages(
-    Array.isArray(listingTx.vout) ? listingTx.vout : [],
-    TOKEN_PROTOCOL_PREFIX,
-  )) {
+  const listingTxid = transactionTxid(listingTx);
+  const listingBlockHash = transactionBlockHash(listingTx);
+  const listingBlockHeight = transactionBlockHeight(listingTx);
+  const coreBlockIndex = (
+    listingBlockHash
+      ? await fetchCoreBlockTxidIndex(listingBlockHash).catch(() => null)
+      : null
+  )?.get(listingTxid);
+  const listingOutputs = Array.isArray(listingTx.vout)
+    ? listingTx.vout
+    : [];
+  if (
+    listingTxid !== indexedListing.listingId ||
+    listingBlockHash !== indexedListing.blockHash ||
+    listingBlockHeight !== indexedListing.blockHeight ||
+    coreBlockIndex !== indexedListing.blockIndex
+  ) {
+    return null;
+  }
+  for (
+    let protocolVout = 0;
+    protocolVout < listingOutputs.length;
+    protocolVout += 1
+  ) {
+    const messages = decodedProtocolMessages(
+      [listingOutputs[protocolVout]],
+      TOKEN_PROTOCOL_PREFIX,
+    );
+    if (messages.length !== 1) {
+      continue;
+    }
+    const message = messages[0];
     const parts = message.slice(TOKEN_PROTOCOL_PREFIX.length).split(":");
     if (parts[0] !== TOKEN_LIST_ACTION) {
       continue;
     }
-    const parsedAuthorization =
+    const parsedAuthorizationBase =
       parseTokenPayload(message, network)?.saleAuthorization ?? null;
-    const authorization =
-      parsedAuthorization ?? rawTokenSaleAuthorization(message);
+    const rawAuthorization = rawTokenSaleAuthorization(message);
+    const authorization = parsedAuthorizationBase
+      ? {
+          ...(rawAuthorization ?? {}),
+          ...parsedAuthorizationBase,
+        }
+      : rawAuthorization;
+    const historicalFaceUsdCents = Number(
+      authorization?.unitFaceUsdCents,
+    );
+    const parsedAuthorization =
+      parsedAuthorizationBase?.version ===
+        TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION &&
+      Number.isSafeInteger(historicalFaceUsdCents) &&
+      historicalFaceUsdCents > 0
+        ? {
+            ...authorization,
+            unitFaceUsd: Number(
+              authorization?.unitFaceUsd ??
+                historicalFaceUsdCents / 100,
+            ),
+            unitFaceUsdCents: historicalFaceUsdCents,
+          }
+        : parsedAuthorizationBase;
     const anchorVout = Number(authorization?.anchorVout);
     if (
       String(authorization?.tokenId ?? "").trim().toLowerCase() ===
         WORK_TOKEN_ID &&
       Number.isSafeInteger(anchorVout) &&
-      anchorVout >= 0
+      anchorVout >= 0 &&
+      anchorVout === indexedListing.saleTicketVout &&
+      Number(indexedListing.saleTicketValueSats) ===
+        Number(indexedListing.listingAuthorization?.anchorValueSats) &&
+      tokenListingAnchorIsPresent(
+        listingOutputs,
+        indexedListing.listingAuthorization,
+      ) &&
+      protocolVout === indexedListing.protocolVout &&
+      indexedListing.recordOrdinal === 0 &&
+      tokenSaleAuthorizationTermsMatch(
+        indexedListing.listingAuthorization,
+        parsedAuthorization,
+      )
     ) {
+      const frozenTerms =
+        indexedListing.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION
+          ? indexedListing.listingFrozenTerms
+          : indexedListing.historicalV4ReplayValidated === true
+            ? indexedListing.validatedV1FrozenTerms
+            : null;
       return {
         anchorVout,
-        listingId: transactionTxid(listingTx),
-        saleAuthorization: parsedAuthorization,
+        ...(frozenTerms ? { frozenTerms } : {}),
+        listingId: listingTxid,
+        saleAuthorization: indexedListing.listingAuthorization,
         sellerAddress: String(
           parsedAuthorization?.sellerAddress ?? "",
         ).trim(),
@@ -5827,31 +6410,53 @@ async function signedTransactionInputAddresses(inputOutpoints, network) {
 
 async function signedWorkMarketplaceWriteActions(txHex, network) {
   const outputs = signedTransactionOutputs(txHex);
-  const tokenMessages = decodedProtocolMessages(
-    outputs,
-    TOKEN_PROTOCOL_PREFIX,
+  const economicOutputs = signedWorkAmoEconomicOutputs(outputs, network);
+  const exactProtocolCandidates = outputs.map((output, protocolVout) => ({
+    candidate: canonicalProtocolCandidateFromOutput(output),
+    protocolVout,
+  }));
+  const malformedTokenCandidate = exactProtocolCandidates.find(
+    ({ candidate }) =>
+      candidate?.prefix === TOKEN_PROTOCOL_PREFIX &&
+      candidate.decodeValid !== true,
   );
-  const workRegistryScript = bytesToHex(
-    bitcoin.address.toOutputScript(
-      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
-      bitcoinNetwork(network),
-    ),
+  if (malformedTokenCandidate) {
+    const error = new Error(
+      "WORK AMO broadcast contains a malformed canonical protocol output.",
+    );
+    error.statusCode = 400;
+    error.details = {
+      code: "WORK_AMO_V5_TRANSACTION_INVALID",
+      protocolVout: malformedTokenCandidate.protocolVout,
+      reasonCode: malformedTokenCandidate.candidate.reasonCode,
+    };
+    throw error;
+  }
+  const tokenCandidates = exactProtocolCandidates.filter(
+    ({ candidate }) =>
+      candidate?.prefix === TOKEN_PROTOCOL_PREFIX &&
+      candidate.decodeValid === true,
   );
-  const firstTokenProtocolIndex = outputs.findIndex(
-    (output) =>
-      decodedProtocolMessages([output], TOKEN_PROTOCOL_PREFIX).length > 0,
+  const tokenMessages = tokenCandidates.map(
+    ({ candidate }) => candidate.text,
   );
-  const workRegistryPaymentBeforeProtocol = outputs.reduce(
-    (total, output, index) =>
-      output.scriptpubkey === workRegistryScript &&
-      firstTokenProtocolIndex >= 0 &&
-      index < firstTokenProtocolIndex
-        ? total + output.value
-        : total,
-    0,
+  const firstTokenProtocolIndex =
+    tokenCandidates[0]?.protocolVout ?? -1;
+  const workRegistryPayment = selectWorkAmoV5DistinctRegistryPayment(
+    economicOutputs,
+    {
+      protocolVout: firstTokenProtocolIndex,
+      registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+      requireBeforeProtocol: true,
+      requiredSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+    },
   );
-  const paysWorkRegistry =
-    workRegistryPaymentBeforeProtocol >= TOKEN_MIN_MUTATION_PRICE_SATS;
+  const paysWorkRegistry = Boolean(workRegistryPayment);
+  const claimedWorkRegistryVouts = new Set(
+    workRegistryPayment
+      ? [workRegistryPayment.registryPaymentVout]
+      : [],
+  );
   const inputOutpoints = signedTransactionInputOutpoints(txHex);
   const candidates = [];
   for (const message of tokenMessages) {
@@ -5886,13 +6491,17 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
           input.vout === parsedAuthorization.anchorVout,
       );
     const sellerPaymentSats = parsedAuthorization
-      ? signedPaymentAmountBeforeTokenProtocol(
-          outputs,
+      ? signedSinglePaymentAmountBeforeTokenProtocol(
+          economicOutputs,
           parsedAuthorization.sellerAddress,
-          network,
           firstTokenProtocolIndex,
+          Number(parsedAuthorization.priceSats ?? 0) +
+            Number(parsedAuthorization.anchorValueSats ?? 0),
+          claimedWorkRegistryVouts,
         )
       : 0;
+    const workAmoV5 =
+      parsedAuthorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION;
     const staticShapeValid =
       parsedAuthorization !== null &&
       (action === TOKEN_LIST_ACTION
@@ -5908,9 +6517,10 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
               parsedAuthorization,
             ) &&
             spendsSignedAnchor &&
-            sellerPaymentSats >=
-              parsedAuthorization.priceSats +
-                parsedAuthorization.anchorValueSats);
+            (workAmoV5 ||
+              sellerPaymentSats >=
+                parsedAuthorization.priceSats +
+                  parsedAuthorization.anchorValueSats));
     candidates.push({
       action,
       authVersion: parsedAuthorization
@@ -5925,6 +6535,7 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
       listingId,
       paysWorkRegistry,
       registryAddress: String(authorization?.registryAddress ?? "").trim(),
+      sellerPaymentSats,
       staticShapeValid,
       ticker: String(authorization?.ticker ?? "").trim().toUpperCase(),
       tokenId,
@@ -5993,23 +6604,54 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
     inputOutpoints,
     network,
   );
-  const firstInputAddress = originAddresses[0] ?? "";
+  const firstInputAddress =
+    originAddresses.find((address) => Boolean(address)) ?? "";
   const anchorsByListingId = new Map(
     anchors.map((anchor) => [anchor.listingId, anchor]),
   );
   return scopedCandidates.map((candidate) => {
     const authorization = candidate.saleAuthorization;
     const listingAnchor = anchorsByListingId.get(candidate.listingId);
+    const workAmoV5 =
+      authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION;
+    const referencedHistoricalV4 =
+      workAmoV5 &&
+      candidate.action !== TOKEN_LIST_ACTION &&
+      listingAnchor?.saleAuthorization?.version ===
+        TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION;
+    const frozenPriceSats = Number(
+      listingAnchor?.frozenTerms?.unitPriceSats ?? Number.NaN,
+    );
+    const frozenTermsReady =
+      !workAmoV5 ||
+      candidate.action === TOKEN_LIST_ACTION ||
+      ([
+        TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION,
+        TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+      ].includes(listingAnchor?.saleAuthorization?.version) &&
+        Number.isSafeInteger(frozenPriceSats) &&
+        frozenPriceSats > 0);
     const actorMatches =
       candidate.action === TOKEN_BUY_ACTION
-        ? originAddresses.includes(
+        ? firstInputAddress ===
             String(candidate?.buyerAddress ?? authorization?.buyerAddress ?? "")
-              .trim(),
-          )
+              .trim()
         : firstInputAddress ===
           String(authorization?.sellerAddress ?? "").trim();
+    const authorizationBuyerAddress = String(
+      authorization?.buyerAddress ?? "",
+    ).trim();
+    const buyerLockMatches =
+      candidate.action !== TOKEN_BUY_ACTION ||
+      !authorizationBuyerAddress ||
+      (
+        authorizationBuyerAddress === firstInputAddress &&
+        authorizationBuyerAddress ===
+          String(candidate?.buyerAddress ?? "").trim()
+      );
     const referencedTermsMatch =
       candidate.action === TOKEN_LIST_ACTION ||
+      referencedHistoricalV4 ||
       Boolean(
         listingAnchor?.saleAuthorization &&
           authorization &&
@@ -6018,12 +6660,32 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
             authorization,
           ),
       );
+    const frozenPaymentMatches =
+      candidate.action !== TOKEN_BUY_ACTION ||
+      !workAmoV5 ||
+      signedSinglePaymentAmountBeforeTokenProtocol(
+        economicOutputs,
+        String(authorization?.sellerAddress ?? "").trim(),
+        firstTokenProtocolIndex,
+        frozenPriceSats + Number(authorization?.anchorValueSats ?? 0),
+        claimedWorkRegistryVouts,
+      ) >=
+        frozenPriceSats + Number(authorization?.anchorValueSats ?? 0);
     return {
       ...candidate,
+      ...(listingAnchor?.frozenTerms
+        ? { listingFrozenTerms: listingAnchor.frozenTerms }
+        : {}),
+      ...(listingAnchor?.saleAuthorization
+        ? { listingAuthorization: listingAnchor.saleAuthorization }
+        : {}),
       signedShapeValid:
         candidate.staticShapeValid === true &&
         actorMatches &&
-        referencedTermsMatch,
+        buyerLockMatches &&
+        referencedTermsMatch &&
+        frozenTermsReady &&
+        frozenPaymentMatches,
     };
   });
 }
@@ -6157,43 +6819,42 @@ async function assertWorkMarketplaceBroadcastAllowed(txHex, network) {
   if (actions.length === 0) {
     return;
   }
-  const metadata = await workMarketplaceV4Metadata(network, { force: true });
-  const decision = workMarketplaceBroadcastDecision(actions, {
+  const metadata = await workAmoV5Metadata(network, { force: true });
+  const decision = workAmoV5BroadcastDecision(actions, {
     metadata,
     network,
   });
   if (
     !decision.allowed &&
-    decision.code === "WORK_MARKETPLACE_WRITES_PAUSED"
+    decision.code === "WORK_AMO_V5_WRITES_PAUSED"
   ) {
     const error = new Error(
-      "WORK marketplace list, seal, and buy broadcasts are paused until the V4 declaration is confirmed, activated, and explicitly enabled.",
+      "WORK AMO list, seal, and buy broadcasts are paused until the V5 declaration, canonical replay, USD quote head, and explicit write gate are ready.",
     );
     error.statusCode = decision.statusCode;
     error.details = {
-      code: "WORK_MARKETPLACE_WRITES_PAUSED",
-      workMarketplaceV4: metadata,
+      code: decision.code,
+      reasonCode: decision.reasonCode,
+      workAmoV5: metadata,
     };
     throw error;
   }
   if (!decision.allowed) {
     const invalidTransactionShape =
-      decision.code === "WORK_MARKETPLACE_V4_TRANSACTION_INVALID";
+      decision.code === "WORK_AMO_V5_TRANSACTION_INVALID";
     const error = new Error(
       invalidTransactionShape
-        ? "WORK marketplace V4 broadcasts require canonical WORK terms, a 546-proof WORK registry payment before the protocol output, and the expected sale-ticket transaction shape."
-        : "WORK marketplace list, seal, and buy broadcasts require pwt-sale-v4.",
+        ? "WORK AMO V5 broadcasts require one canonical WORK action, a 546-proof WORK registry payment before the protocol output, and the expected sale-ticket transaction shape."
+        : "WORK AMO list, seal, and buy broadcasts require pwt-sale-v5.",
     );
     error.statusCode = decision.statusCode;
     error.details = {
-      code: invalidTransactionShape
-        ? "WORK_MARKETPLACE_V4_TRANSACTION_INVALID"
-        : "WORK_MARKETPLACE_V4_REQUIRED",
-      workMarketplaceV4: metadata,
+      code: decision.code,
+      reasonCode: decision.reasonCode,
+      workAmoV5: metadata,
     };
     throw error;
   }
-  await assertWorkMarketplaceV4AdmissionOracle(actions, network);
 }
 
 async function broadcastSlipstreamPayload(request, options = {}) {
@@ -6444,6 +7105,37 @@ async function fetchBlockTxidIndex(blockHash, network) {
   }
 
   return BLOCK_TXID_INDEX_CACHE.get(cacheKey);
+}
+
+async function fetchCoreBlockTxidIndex(blockHash) {
+  const normalizedHash = String(blockHash ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedHash)) {
+    return null;
+  }
+  const response = await bitcoinRpc("getblock", [normalizedHash, 1]);
+  const block = response?.ok ? response.result : null;
+  const observedHash = String(block?.hash ?? normalizedHash)
+    .trim()
+    .toLowerCase();
+  const transactions = Array.isArray(block?.tx) ? block.tx : null;
+  if (observedHash !== normalizedHash || !transactions) {
+    return null;
+  }
+  const index = new Map();
+  for (let position = 0; position < transactions.length; position += 1) {
+    const txid = String(
+      typeof transactions[position] === "string"
+        ? transactions[position]
+        : transactions[position]?.txid ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(txid) || index.has(txid)) {
+      return null;
+    }
+    index.set(txid, position);
+  }
+  return index;
 }
 
 async function fetchAddressTransactionsPage(address, network, path) {
@@ -8381,78 +9073,10 @@ function attachmentFromAccumulator(accumulator) {
 }
 
 function extractProtocolMemo(vout) {
-  const decodedMessages = decodedOpReturnMessages(vout);
-  let replyTo = "";
-  let parentTxid;
-  let attachmentAccumulator;
-  let subject = "";
-  const chunks = [];
-
-  for (const decodedMessage of decodedMessages) {
-    if (!decodedMessage.startsWith(PROTOCOL_PREFIX)) {
-      continue;
-    }
-
-    const payload = decodedMessage.slice(PROTOCOL_PREFIX.length);
-    if (payload.startsWith("f:")) {
-      replyTo = payload.slice(2);
-      continue;
-    }
-
-    if (payload.startsWith("s:")) {
-      try {
-        subject = normalizeSubject(decodeTextBase64Url(payload.slice(2)));
-      } catch {
-        // Ignore malformed optional subjects while still allowing body/attachments through.
-      }
-      continue;
-    }
-
-    const reply = payload.match(/^r:([0-9a-fA-F]{64})$/u);
-    if (reply) {
-      parentTxid = reply[1].toLowerCase();
-      continue;
-    }
-
-    if (payload.startsWith("m:")) {
-      chunks.push(payload.slice(2));
-      continue;
-    }
-
-    if (payload.startsWith("a:")) {
-      attachmentAccumulator = parseAttachmentPayload(
-        payload,
-        attachmentAccumulator,
-      );
-    }
-  }
-
-  if (chunks.length === 0 && !subject && !attachmentAccumulator) {
-    return null;
-  }
-
-  const protocolMessage = {
-    memo: chunks.join(""),
-  };
-
-  if (replyTo) {
-    protocolMessage.replyTo = replyTo;
-  }
-
-  if (parentTxid) {
-    protocolMessage.parentTxid = parentTxid;
-  }
-
-  if (subject) {
-    protocolMessage.subject = subject;
-  }
-
-  const attachment = attachmentFromAccumulator(attachmentAccumulator);
-  if (attachment) {
-    protocolMessage.attachment = attachment;
-  }
-
-  return protocolMessage;
+  return parseWorkAmoV5PwmMessages(
+    decodedOpReturnMessages(vout),
+    { maxAttachmentBytes: MAX_ATTACHMENT_BYTES },
+  );
 }
 
 function workMarketV4DeclarationRegistryPaymentSats(vout) {
@@ -9098,9 +9722,12 @@ function tokenSaleAuthorizationDraft(authorization = {}) {
   const tokenId = String(authorization.tokenId ?? "").trim().toLowerCase();
   const ticker = normalizeTokenTicker(String(authorization.ticker ?? ""));
   const bond = isBondTokenId(tokenId);
+  const workAmoV5 = version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION;
   const amountFields =
-    (version === TOKEN_SALE_AUTH_ATOMS_VERSION ||
-      TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS.has(version))
+    workAmoV5
+      ? {}
+      : (version === TOKEN_SALE_AUTH_ATOMS_VERSION ||
+          TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS.has(version))
       ? {
           amountAtoms: canonicalWorkAtomsText(authorization.amountAtoms),
         }
@@ -9124,6 +9751,25 @@ function tokenSaleAuthorizationDraft(authorization = {}) {
     expiresAt: String(authorization.expiresAt ?? "").trim(),
     network: authorization.network ?? "livenet",
     nonce: String(authorization.nonce ?? "").trim(),
+    ...(workAmoV5
+      ? {
+          amountModel: String(authorization.amountModel ?? "").trim(),
+          bondTransitionModel: String(
+            authorization.bondTransitionModel ?? "",
+          ).trim(),
+          stateOrderModel: String(
+            authorization.stateOrderModel ?? "",
+          ).trim(),
+          unitFaceUsdCents: Number(authorization.unitFaceUsdCents),
+          unitModel: String(authorization.unitModel ?? "").trim(),
+          unitUsdOracleModel: String(
+            authorization.unitUsdOracleModel ?? "",
+          ).trim(),
+          unitWorkOracleModel: String(
+            authorization.unitWorkOracleModel ?? "",
+          ).trim(),
+        }
+      : {}),
     ...(TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS.has(version)
       ? {
           minimumPriceSats: String(authorization.minimumPriceSats ?? "").trim(),
@@ -9135,9 +9781,87 @@ function tokenSaleAuthorizationDraft(authorization = {}) {
           oracleNetworkValueQ8: String(
             authorization.oracleNetworkValueQ8 ?? "",
           ).trim(),
+          ...(version === TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION
+            ? {
+                unitAmountAtoms: String(
+                  authorization.unitAmountAtoms ??
+                    authorization.amountAtoms ??
+                    "",
+                ).trim(),
+                unitFaceUsd: Number(
+                  authorization.unitFaceUsd ??
+                    Number(authorization.unitFaceUsdCents) / 100,
+                ),
+                unitFaceUsdCents: Number(
+                  authorization.unitFaceUsdCents,
+                ),
+                unitMinimumPriceSats: String(
+                  authorization.unitMinimumPriceSats ??
+                    authorization.minimumPriceSats ??
+                    "",
+                ).trim(),
+                unitModel: String(
+                  authorization.unitModel ?? "",
+                ).trim(),
+                unitNetworkValueQ8: String(
+                  authorization.unitNetworkValueQ8 ?? "",
+                ).trim(),
+                unitPriceSats: String(
+                  authorization.unitPriceSats ??
+                    authorization.priceSats ??
+                    "",
+                ).trim(),
+                unitUsdOracleModel: String(
+                  authorization.unitUsdOracleModel ?? "",
+                ).trim(),
+                unitUsdPer100mProofsQ8: String(
+                  authorization.unitUsdPer100mProofsQ8 ?? "",
+                ).trim(),
+                unitUsdQuoteBlockHash: String(
+                  authorization.unitUsdQuoteBlockHash ?? "",
+                )
+                  .trim()
+                  .toLowerCase(),
+                unitUsdQuoteBlockHeight: Number(
+                  authorization.unitUsdQuoteBlockHeight,
+                ),
+                unitUsdQuoteBlockIndex: Number(
+                  authorization.unitUsdQuoteBlockIndex,
+                ),
+                unitUsdQuoteSequence: String(
+                  authorization.unitUsdQuoteSequence ?? "",
+                ).trim(),
+                unitUsdQuoteTxid: String(
+                  authorization.unitUsdQuoteTxid ?? "",
+                )
+                  .trim()
+                  .toLowerCase(),
+                unitUsdQuoteVout: Number(
+                  authorization.unitUsdQuoteVout,
+                ),
+                unitValidThroughHeight: Number(
+                  authorization.unitValidThroughHeight,
+                ),
+                unitWorkOracleBlockHash: String(
+                  authorization.unitWorkOracleBlockHash ?? "",
+                )
+                  .trim()
+                  .toLowerCase(),
+                unitWorkOracleBlockHeight: Number(
+                  authorization.unitWorkOracleBlockHeight,
+                ),
+              }
+            : {}),
         }
       : {}),
-    priceSats: Math.max(0, Math.floor(Number(authorization.priceSats ?? 0))),
+    ...(workAmoV5
+      ? {}
+      : {
+          priceSats: Math.max(
+            0,
+            Math.floor(Number(authorization.priceSats ?? 0)),
+          ),
+        }),
     registryAddress: String(authorization.registryAddress ?? "").trim(),
     sellerAddress: String(authorization.sellerAddress ?? "").trim(),
     sellerPublicKey: String(authorization.sellerPublicKey ?? "").toLowerCase(),
@@ -9147,7 +9871,11 @@ function tokenSaleAuthorizationDraft(authorization = {}) {
   };
 }
 
-function parseTokenSaleAuthorizationJson(value, network) {
+function parseTokenSaleAuthorizationJson(
+  value,
+  network,
+  { allowHistoricalWorkAmoReference = false } = {},
+) {
   const parsed = JSON.parse(value);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("Credit sale authorization is not an object.");
@@ -9170,18 +9898,35 @@ function parseTokenSaleAuthorizationJson(value, network) {
     draft.tokenId === WORK_TOKEN_ID &&
     draft.ticker === WORK_TOKEN_TICKER &&
     Boolean(canonicalWorkAtomsText(draft.amountAtoms));
+  const workAmoV5Authorization =
+    draft.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION;
+  const workAmoV5Validation = workAmoV5Authorization
+    ? validateWorkAmoV5StaticAuthorization(draft)
+    : null;
+  const historicalWorkAmoReference =
+    workAmoV5Authorization &&
+    allowHistoricalWorkAmoReference === true &&
+    workAmoV5Validation?.reasonCode === "work-amo-v5-face-unit-invalid" &&
+    Number.isSafeInteger(draft.unitFaceUsdCents) &&
+    draft.unitFaceUsdCents > 0;
   if (
-    (!legacyAmountValid && !atomicAmountValid) ||
+    (!legacyAmountValid &&
+      !atomicAmountValid &&
+      workAmoV5Validation?.valid !== true &&
+      !historicalWorkAmoReference) ||
     !/^[0-9a-f]{64}$/u.test(draft.tokenId) ||
     !/^[A-Z0-9]{1,12}$/u.test(draft.ticker) ||
-    draft.priceSats < 1 ||
+    (!workAmoV5Authorization && draft.priceSats < 1) ||
     draft.network !== network ||
     !isValidBitcoinAddress(draft.registryAddress, network) ||
     !isValidBitcoinAddress(draft.sellerAddress, network) ||
     (draft.buyerAddress && !isValidBitcoinAddress(draft.buyerAddress, network)) ||
     !draft.nonce ||
     draft.nonce.length > 160 ||
-    (draft.expiresAt && Number.isNaN(Date.parse(draft.expiresAt))) ||
+    (draft.expiresAt &&
+      !Number.isSafeInteger(
+        workAmoV5CanonicalExpiryMs(draft.expiresAt),
+      )) ||
     draft.anchorType !== TOKEN_LISTING_ANCHOR_TYPE ||
     draft.anchorVout !== TOKEN_LISTING_ANCHOR_VOUT ||
     draft.anchorValueSats !== TOKEN_LISTING_ANCHOR_VALUE_SATS ||
@@ -9212,6 +9957,17 @@ function parseTokenSaleAuthorizationJson(value, network) {
   ) {
     throw new Error("WORK Marketplace V4 authorization is invalid.");
   }
+  if (
+    workAmoV5Authorization &&
+    workAmoV5Validation?.valid !== true &&
+    !historicalWorkAmoReference
+  ) {
+    throw new Error(
+      `WORK AMO V5 authorization is invalid: ${
+        workAmoV5Validation?.reasonCode ?? "unknown"
+      }.`,
+    );
+  }
 
   return { ...draft, anchorSignature, anchorTxid };
 }
@@ -9231,8 +9987,9 @@ function tokenSaleAuthorizationUsesSaleTicketAnchor(authorization) {
   return (
     (authorization?.version === TOKEN_SALE_AUTH_VERSION ||
       authorization?.version === TOKEN_SALE_AUTH_ATOMS_VERSION ||
-      TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS.has(authorization?.version)) &&
-    tokenSaleAuthorizationLedgerAmount(authorization) !== null &&
+      TOKEN_SALE_AUTH_WORK_VERSIONS.has(authorization?.version)) &&
+    (authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION ||
+      tokenSaleAuthorizationLedgerAmount(authorization) !== null) &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
     authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
@@ -9247,8 +10004,9 @@ function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization) {
   return (
     (authorization?.version === TOKEN_SALE_AUTH_VERSION ||
       authorization?.version === TOKEN_SALE_AUTH_ATOMS_VERSION ||
-      TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS.has(authorization?.version)) &&
-    tokenSaleAuthorizationLedgerAmount(authorization) !== null &&
+      TOKEN_SALE_AUTH_WORK_VERSIONS.has(authorization?.version)) &&
+    (authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION ||
+      tokenSaleAuthorizationLedgerAmount(authorization) !== null) &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
     authorization.anchorValueSats === TOKEN_LISTING_ANCHOR_VALUE_SATS &&
@@ -9342,7 +10100,7 @@ function preferredTokenListingSealSource(left, right) {
     return leftTime > rightTime ? left : right;
   }
 
-  return String(left?.sealTxid ?? "").localeCompare(String(right?.sealTxid ?? "")) >= 0
+  return compareCanonicalUtf8(left?.sealTxid, right?.sealTxid) >= 0
     ? left
     : right;
 }
@@ -9635,7 +10393,7 @@ function tokenStateWithPreservedListingRecords(state, sourceState) {
       (left, right) =>
         Number(right.confirmed) - Number(left.confirmed) ||
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        String(left.listingId ?? "").localeCompare(String(right.listingId ?? "")),
+        compareCanonicalUtf8(left.listingId, right.listingId),
     ),
   };
 }
@@ -10190,7 +10948,7 @@ async function reconcileCachedTokenListingSeal(listing, network) {
   const sealTxid = String(listing?.sealTxid ?? "").trim().toLowerCase();
   if (
     listing?.sealConfirmed !== false ||
-    TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS.has(
+    TOKEN_SALE_AUTH_WORK_VERSIONS.has(
       listing?.saleAuthorization?.version,
     ) ||
     !/^[0-9a-f]{64}$/u.test(sealTxid) ||
@@ -10429,7 +11187,7 @@ function sortClosedTokenListings(listings) {
     (left, right) =>
       Number(right.closedConfirmed) - Number(left.closedConfirmed) ||
       Date.parse(right.closedAt) - Date.parse(left.closedAt) ||
-      left.listingId.localeCompare(right.listingId),
+      compareCanonicalUtf8(left.listingId, right.listingId),
   );
 }
 
@@ -10480,6 +11238,36 @@ function activeTokenListingsFromState(state) {
   );
 }
 
+function creditNetworkValueEventDetailFor(
+  item,
+  kind,
+  eventByMovementIdentity,
+  eventByTxid,
+) {
+  const exactDetail = eventByMovementIdentity.get(
+    creditMovementIdentity(item, kind),
+  );
+  const blockHeight =
+    item?.blockHeight !== undefined &&
+    item?.blockHeight !== null &&
+    item?.blockHeight !== "" &&
+    Number.isSafeInteger(Number(item.blockHeight)) &&
+    Number(item.blockHeight) >= 1
+      ? Number(item.blockHeight)
+      : null;
+  if (
+    item?.confirmed === true &&
+    blockHeight !== null &&
+    blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    return exactDetail;
+  }
+  return (
+    exactDetail ??
+    eventByTxid.get(String(item?.txid ?? "").toLowerCase())
+  );
+}
+
 function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
   if (!state) {
     return state;
@@ -10497,8 +11285,12 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       .filter(([identity]) => identity),
   );
   const eventDetailFor = (item, kind) =>
-    eventByMovementIdentity.get(creditMovementIdentity(item, kind)) ??
-    eventByTxid.get(String(item?.txid ?? "").toLowerCase());
+    creditNetworkValueEventDetailFor(
+      item,
+      kind,
+      eventByMovementIdentity,
+      eventByTxid,
+    );
   const valueTokenIds = new Set(
     (Array.isArray(state.tokens) ? state.tokens : [])
       .filter(tokenCanUseCreditNetworkFloor)
@@ -11097,6 +11889,7 @@ function parseTokenPayload(message, network) {
         saleAuthorization: parseTokenSaleAuthorizationJson(
           decodeTextBase64Url(parts[2]),
           network,
+          { allowHistoricalWorkAmoReference: true },
         ),
       };
     } catch {
@@ -11132,6 +11925,7 @@ function parseTokenPayload(message, network) {
               saleAuthorization: parseTokenSaleAuthorizationJson(
                 decodeTextBase64Url(parts[3]),
                 network,
+                { allowHistoricalWorkAmoReference: true },
               ),
             }
           : {}),
@@ -11202,17 +11996,78 @@ function tokenProtocolSortedTransactions(txs) {
       return Number(rightConfirmed) - Number(leftConfirmed);
     }
 
-    return (
-      (transactionBlockHeight(left) ?? Number.MAX_SAFE_INTEGER) -
-        (transactionBlockHeight(right) ?? Number.MAX_SAFE_INTEGER) ||
-      (transactionBlockIndex(left) ?? Number.MAX_SAFE_INTEGER) -
-        (transactionBlockIndex(right) ?? Number.MAX_SAFE_INTEGER) ||
-      transactionTxid(left).localeCompare(transactionTxid(right))
+    if (leftConfirmed) {
+      const leftHeight = transactionBlockHeight(left);
+      const rightHeight = transactionBlockHeight(right);
+      const leftIndex = transactionBlockIndex(left);
+      const rightIndex = transactionBlockIndex(right);
+      if (
+        !Number.isSafeInteger(leftHeight) ||
+        leftHeight < 1 ||
+        !Number.isSafeInteger(rightHeight) ||
+        rightHeight < 1 ||
+        !Number.isSafeInteger(leftIndex) ||
+        leftIndex < 0 ||
+        !Number.isSafeInteger(rightIndex) ||
+        rightIndex < 0
+      ) {
+        throw new Error(
+          "Confirmed protocol transaction order is incomplete.",
+        );
+      }
+      const difference =
+        leftHeight - rightHeight || leftIndex - rightIndex;
+      if (difference !== 0) {
+        return difference;
+      }
+      const leftTxid = transactionTxid(left);
+      const rightTxid = transactionTxid(right);
+      if (leftTxid && rightTxid && leftTxid !== rightTxid) {
+        throw new Error(
+          "Confirmed protocol transaction position is duplicated.",
+        );
+      }
+      return 0;
+    }
+    return compareCanonicalUtf8(
+      transactionTxid(left),
+      transactionTxid(right),
     );
   });
 }
 
 function canonicalTokenReplayOrdinal(item) {
+  const confirmed = item?.confirmed === true;
+  const blockHeight = Number(item?.blockHeight);
+  if (
+    confirmed &&
+    (
+      !Number.isSafeInteger(blockHeight) ||
+      blockHeight < 1
+    )
+  ) {
+    throw new Error(
+      "Confirmed token replay height is incomplete.",
+    );
+  }
+  if (
+    confirmed &&
+    blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    const recordOrdinal = item?.recordOrdinal;
+    if (
+      recordOrdinal === undefined ||
+      recordOrdinal === null ||
+      recordOrdinal === "" ||
+      !Number.isSafeInteger(Number(recordOrdinal)) ||
+      Number(recordOrdinal) < 0
+    ) {
+      throw new Error(
+        "Canonical AMO V5 token replay ordinal is incomplete.",
+      );
+    }
+    return Number(recordOrdinal);
+  }
   for (const value of [
     item?._powEventIndex,
     item?.eventKeyVout,
@@ -11226,6 +12081,55 @@ function canonicalTokenReplayOrdinal(item) {
     }
   }
   return Number.MAX_SAFE_INTEGER;
+}
+
+function canonicalTokenReplayPosition(item) {
+  const confirmed = item?.confirmed === true;
+  if (!confirmed) {
+    return null;
+  }
+  const blockHeight = Number(item?.blockHeight);
+  if (!Number.isSafeInteger(blockHeight) || blockHeight < 1) {
+    throw new Error(
+      "Confirmed token replay height is incomplete.",
+    );
+  }
+  const exactNonNegativeInteger = (value) =>
+    value !== undefined &&
+    value !== null &&
+    value !== "" &&
+    Number.isSafeInteger(Number(value)) &&
+    Number(value) >= 0
+      ? Number(value)
+      : null;
+  const v5 = blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT;
+  const blockIndex = exactNonNegativeInteger(
+    v5 ? item?.blockIndex : item?.blockIndex ?? item?._powBlockIndex,
+  );
+  const protocolVout = exactNonNegativeInteger(item?.protocolVout);
+  const recordOrdinal = v5
+    ? exactNonNegativeInteger(item?.recordOrdinal)
+    : canonicalTokenReplayOrdinal(item);
+  if (
+    blockIndex === null ||
+    (v5 && protocolVout === null) ||
+    !Number.isSafeInteger(recordOrdinal) ||
+    recordOrdinal < 0
+  ) {
+    throw new Error(
+      v5
+        ? "Canonical AMO V5 token replay position is incomplete."
+        : "Confirmed legacy token replay position is incomplete.",
+    );
+  }
+  return {
+    blockHeight,
+    blockIndex,
+    protocolVout:
+      protocolVout ?? Number.MAX_SAFE_INTEGER,
+    recordOrdinal,
+    v5,
+  };
 }
 
 function tokenReplayEntriesForRegistry(
@@ -11251,18 +12155,16 @@ function tokenReplayEntriesForRegistry(
     if (!token || token.registryAddress !== registryAddress) {
       continue;
     }
+    const position = canonicalTokenReplayPosition(mint);
     entries.push({
-      blockHeight: Number.isSafeInteger(Number(mint?.blockHeight))
-        ? Number(mint.blockHeight)
-        : undefined,
-      blockIndex: Number.isSafeInteger(Number(mint?.blockIndex))
-        ? Number(mint.blockIndex)
-        : undefined,
+      blockHeight: position?.blockHeight,
+      blockIndex: position?.blockIndex,
       confirmed: mint?.confirmed === true,
       createdAt: mint?.createdAt,
       kind: "seed-mint",
       mint,
-      ordinal: canonicalTokenReplayOrdinal(mint),
+      protocolVout: position?.protocolVout,
+      recordOrdinal: position?.recordOrdinal,
       txid: String(mint?.txid ?? "").trim().toLowerCase(),
     });
   }
@@ -11289,16 +12191,29 @@ function tokenReplayEntriesForRegistry(
     if (leftIndex !== rightIndex) {
       return leftIndex - rightIndex;
     }
-    if (left.txid === right.txid && left.kind !== right.kind) {
-      // Synthetic bond credit does not exist until the whole bond
-      // transaction has been processed. A token message in the same
-      // transaction therefore cannot spend its newly issued credit.
-      return left.kind === "transaction" ? -1 : 1;
+    if (left.confirmed && right.confirmed) {
+      const leftProtocolVout =
+        left.kind === "transaction" ? -1 : left.protocolVout;
+      const rightProtocolVout =
+        right.kind === "transaction" ? -1 : right.protocolVout;
+      const leftRecordOrdinal =
+        left.kind === "transaction" ? -1 : left.recordOrdinal;
+      const rightRecordOrdinal =
+        right.kind === "transaction" ? -1 : right.recordOrdinal;
+      const positionDifference =
+        leftProtocolVout - rightProtocolVout ||
+        leftRecordOrdinal - rightRecordOrdinal;
+      if (positionDifference !== 0) {
+        return positionDifference;
+      }
+      if (left.txid !== right.txid || left.kind !== right.kind) {
+        throw new Error(
+          "Confirmed token replay position is duplicated.",
+        );
+      }
+      return 0;
     }
-    if (left.ordinal !== right.ordinal) {
-      return left.ordinal - right.ordinal;
-    }
-    const txidSort = left.txid.localeCompare(right.txid);
+    const txidSort = compareCanonicalUtf8(left.txid, right.txid);
     if (txidSort) {
       return txidSort;
     }
@@ -11307,8 +12222,9 @@ function tokenReplayEntriesForRegistry(
     if (Number.isFinite(timeSort) && timeSort !== 0) {
       return timeSort;
     }
-    return String(left.mint?.minterAddress ?? "").localeCompare(
-      String(right.mint?.minterAddress ?? ""),
+    return compareCanonicalUtf8(
+      left.mint?.minterAddress,
+      right.mint?.minterAddress,
     );
   });
 }
@@ -11330,8 +12246,16 @@ function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
       continue;
     }
 
-    const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
-    if (messages.length === 0) {
+    const messageEntries = vout.flatMap((output, protocolVout) =>
+      decodedProtocolMessages([output], TOKEN_PROTOCOL_PREFIX).map(
+        (message, recordOrdinal) => ({
+          message,
+          protocolVout,
+          recordOrdinal,
+        }),
+      ),
+    );
+    if (messageEntries.length === 0) {
       continue;
     }
 
@@ -11346,7 +12270,7 @@ function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
     const confirmed = transactionConfirmed(tx);
     const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
 
-    for (const message of messages) {
+    for (const { message, protocolVout, recordOrdinal } of messageEntries) {
       const parsed = parseTokenPayload(message, network);
       if (
         !parsed ||
@@ -11378,6 +12302,8 @@ function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
         mintAmount: parsed.mintAmount,
         mintPriceSats: parsed.mintPriceSats,
         network,
+        protocolVout,
+        recordOrdinal,
         registryAddress: parsed.registryAddress,
         ticker: parsed.ticker,
         tokenId: txid,
@@ -11392,7 +12318,7 @@ function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
       (left, right) =>
         Number(right.confirmed) - Number(left.confirmed) ||
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        left.txid.localeCompare(right.txid),
+        compareCanonicalUtf8(left.txid, right.txid),
     ),
   };
 }
@@ -11529,11 +12455,33 @@ function workMarketV4ActivationFromTransactions(transactions) {
       left.activation.declarationHeight -
         right.activation.declarationHeight ||
       left.blockIndex - right.blockIndex ||
-      left.activation.declarationTxid.localeCompare(
+      compareCanonicalUtf8(
+        left.activation.declarationTxid,
         right.activation.declarationTxid,
       ),
   );
   return candidates[0]?.activation ?? null;
+}
+
+function workAmoV5ActivationFromTransactions(transactions) {
+  const declarationTx = (Array.isArray(transactions) ? transactions : []).find(
+    (tx) =>
+      transactionTxid(tx) === WORK_AMO_V5_DECLARATION_TXID &&
+      transactionConfirmed(tx) &&
+      transactionBlockHash(tx) === WORK_AMO_V5_DECLARATION_BLOCK_HASH &&
+      transactionBlockHeight(tx) === WORK_AMO_V5_DECLARATION_HEIGHT &&
+      transactionBlockIndex(tx) === WORK_AMO_V5_DECLARATION_BLOCK_INDEX,
+  );
+  if (!declarationTx) {
+    return null;
+  }
+  return workAmoV5ActivationFromEvidence(
+    workAmoV5DeclarationEvidenceFromTransaction(
+      declarationTx,
+      transactionBlockIndex(declarationTx),
+      true,
+    ),
+  );
 }
 
 function tokenReplayCoverageHeight(registryTxsByAddress, options = {}) {
@@ -11621,7 +12569,18 @@ function tokenStateFromTransactions(
           [...registryTxsByAddress.values()].flat(),
         )
       : null;
-  const workMarketV2ValidationFor = (authorization, tx, protocolVout) => {
+  const workAmoV5Activation =
+    network === "livenet"
+      ? workAmoV5ActivationFromTransactions(
+          [...registryTxsByAddress.values()].flat(),
+        )
+      : null;
+  const workMarketV2ValidationFor = (
+    authorization,
+    tx,
+    protocolVout,
+    actionContext = {},
+  ) => {
     const actionHeight = transactionBlockHeight(tx);
     if (
       authorization?.tokenId !== WORK_TOKEN_ID ||
@@ -11631,6 +12590,37 @@ function tokenStateFromTransactions(
       actionHeight < workMarketV2Activation.activationHeight
     ) {
       return { valid: true };
+    }
+    if (
+      actionHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+    ) {
+      if (authorization?.version !== TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION) {
+        return {
+          reasonCode: "work-amo-v5-version-required",
+          valid: false,
+        };
+      }
+      if (typeof options.workAmoV5ValidationFor === "function") {
+        const validation = options.workAmoV5ValidationFor({
+          ...actionContext,
+          authorization,
+          protocolVout,
+          tx,
+        });
+        if (validation && typeof validation === "object") {
+          return validation;
+        }
+        return {
+          reasonCode: "work-amo-v5-full-position-unresolved",
+          valid: false,
+        };
+      }
+      return {
+        reasonCode: workAmoV5Activation
+          ? "work-amo-v5-index-projection-required"
+          : "work-amo-v5-declaration-unavailable",
+        valid: false,
+      };
     }
     const txid = transactionTxid(tx);
     const target =
@@ -11662,22 +12652,108 @@ function tokenStateFromTransactions(
         : {}),
     });
   };
+  const assertExplicitProtocolRecordPosition = (
+    protocolVout,
+    recordOrdinal,
+  ) => {
+    if (
+      protocolVout === undefined ||
+      protocolVout === null ||
+      protocolVout === "" ||
+      !Number.isSafeInteger(Number(protocolVout)) ||
+      Number(protocolVout) < 0 ||
+      recordOrdinal === undefined ||
+      recordOrdinal === null ||
+      recordOrdinal === "" ||
+      !Number.isSafeInteger(Number(recordOrdinal)) ||
+      Number(recordOrdinal) < 0
+    ) {
+      throw new Error(
+        "Canonical protocol record callback position is incomplete.",
+      );
+    }
+  };
+  const notifyWorkAmoV5RecordOutcome = ({
+    accepted,
+    authorization,
+    listing = null,
+    parsed,
+    pricingValidation,
+    protocolVout,
+    recordOrdinal,
+    tx,
+  }) => {
+    if (
+      authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION &&
+      typeof options.workAmoV5RecordOutcome === "function"
+    ) {
+      assertExplicitProtocolRecordPosition(protocolVout, recordOrdinal);
+      return options.workAmoV5RecordOutcome({
+        accepted: accepted === true,
+        authorization,
+        listing,
+        parsed,
+        pricingValidation,
+        protocolVout,
+        recordOrdinal,
+        tx,
+      });
+    }
+    if (
+      authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION &&
+      typeof options.tokenProtocolRecordOutcome === "function"
+    ) {
+      assertExplicitProtocolRecordPosition(protocolVout, recordOrdinal);
+      return options.tokenProtocolRecordOutcome({
+        accepted: accepted === true,
+        parsed,
+        pricingValidation,
+        protocolVout,
+        recordOrdinal,
+        tx,
+      });
+    }
+    return null;
+  };
+  const notifyTokenProtocolRecordOutcome = ({
+    accepted,
+    parsed,
+    pricingValidation = null,
+    protocolVout,
+    recordOrdinal,
+    tx,
+  }) => {
+    if (typeof options.tokenProtocolRecordOutcome === "function") {
+      assertExplicitProtocolRecordPosition(protocolVout, recordOrdinal);
+      return options.tokenProtocolRecordOutcome({
+        accepted: accepted === true,
+        parsed,
+        pricingValidation,
+        protocolVout,
+        recordOrdinal,
+        tx,
+      });
+    }
+    return null;
+  };
   const deactivateLegacyWorkListingsAtCutover = () => {
     if (!workMarketV2Activation) {
       return;
     }
 
     for (const [listingId, listing] of [...listings.entries()]) {
+      const version = String(listing.saleAuthorization?.version ?? "");
       if (
         listing.tokenId !== WORK_TOKEN_ID ||
-        listing.saleAuthorization?.version ===
-          TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
+        ![
+          TOKEN_SALE_AUTH_VERSION,
+          TOKEN_SALE_AUTH_ATOMS_VERSION,
+        ].includes(version)
       ) {
         continue;
       }
 
       listings.delete(listingId);
-      const version = String(listing.saleAuthorization?.version ?? "");
       const listingHeight = Number(listing.blockHeight);
       const refundableLegacy =
         listing.confirmed === true &&
@@ -11771,6 +12847,69 @@ function tokenStateFromTransactions(
       }
     }
   };
+  const deactivatePreUnitWorkListingsAtAmoV5Cutover = () => {
+    if (network !== "livenet") {
+      return;
+    }
+    for (const [listingId, listing] of [...listings.entries()]) {
+      if (
+        listing.tokenId !== WORK_TOKEN_ID ||
+        listing.saleAuthorization?.version !==
+          TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION
+      ) {
+        continue;
+      }
+      listings.delete(listingId);
+      const listingHeight = Number(listing.blockHeight);
+      if (
+        Number.isSafeInteger(listingHeight) &&
+        listingHeight >= WORK_AMO_V5_V1_ACTIVATION_HEIGHT
+      ) {
+        const invalidEvent = {
+          ...listing,
+          amount: listing.amount ?? 0,
+          attemptedKind: "list",
+          kind: "list",
+          reason: "work-market-v4-version-required",
+          reasonCode: "work-market-v4-version-required",
+          refundEligible: false,
+          relic: false,
+          status: "invalid",
+          txid: listingId,
+          valid: false,
+        };
+        const existingInvalidIndex = invalidEvents.findIndex(
+          (event) => event?.txid === listingId,
+        );
+        if (existingInvalidIndex >= 0) {
+          invalidEvents[existingInvalidIndex] = invalidEvent;
+        } else {
+          invalidEvents.push(invalidEvent);
+        }
+        continue;
+      }
+      const relic = {
+        ...listing,
+        disabledAtBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+        disabledByTxid: WORK_AMO_V5_DECLARATION_TXID,
+        disabledReason: "work-amo-v5-pre-unit-relic",
+        originalStatus: listing.status ?? "active",
+        refundEligible: false,
+        relic: true,
+        status: "disabled",
+      };
+      disabledWorkListings.set(listingId, relic);
+      if (
+        !closedListings.some(
+          (closed) =>
+            closed.listingId === listingId &&
+            closed.disabledReason === "work-amo-v5-pre-unit-relic",
+        )
+      ) {
+        closedListings.push(relic);
+      }
+    }
+  };
   let confirmedSupply = 0;
   let pendingSupply = 0;
   const trackApproximateTopLevelSupply =
@@ -11809,6 +12948,18 @@ function tokenStateFromTransactions(
       return;
     }
 
+    const closedProtocolVout =
+      event.protocolVout === undefined ||
+      event.protocolVout === null ||
+      event.protocolVout === ""
+        ? undefined
+        : Number(event.protocolVout);
+    const closedRecordOrdinal =
+      event.recordOrdinal === undefined ||
+      event.recordOrdinal === null ||
+      event.recordOrdinal === ""
+        ? undefined
+        : Number(event.recordOrdinal);
     closedListings.push({
       ...listing,
       closedAt: event.createdAt,
@@ -11817,11 +12968,25 @@ function tokenStateFromTransactions(
       closedBlockIndex: event.blockIndex,
       closedConfirmed: event.confirmed,
       closedMinerFeeSats: numericValue(event.minerFeeSats),
+      closedProtocolVout:
+        Number.isSafeInteger(closedProtocolVout) && closedProtocolVout >= 0
+        ? closedProtocolVout
+        : undefined,
+      closedRecordOrdinal:
+        Number.isSafeInteger(closedRecordOrdinal) && closedRecordOrdinal >= 0
+        ? closedRecordOrdinal
+        : undefined,
       closedTxid: event.txid,
     });
   };
   const closeListingsSpentByEvent = (spentOutpoints, event) => {
     for (const [listingId, listing] of [...listings.entries()]) {
+      if (
+        listing?.saleAuthorization?.version ===
+        TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION
+      ) {
+        continue;
+      }
       if (!spendsTokenListingAnchor(spentOutpoints, listing)) {
         continue;
       }
@@ -11830,6 +12995,12 @@ function tokenStateFromTransactions(
       closeListing(listing, event);
     }
     for (const [listingId, listing] of [...disabledWorkListings.entries()]) {
+      if (
+        listing?.saleAuthorization?.version ===
+        TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION
+      ) {
+        continue;
+      }
       if (!spendsTokenListingAnchor(spentOutpoints, listing)) {
         continue;
       }
@@ -11837,7 +13008,10 @@ function tokenStateFromTransactions(
       const relicIndex = closedListings.findIndex(
         (closed) =>
           closed.listingId === listingId &&
-          closed.disabledReason === "work-market-v4-cutover" &&
+          [
+            "work-market-v4-cutover",
+            "work-amo-v5-pre-unit-relic",
+          ].includes(closed.disabledReason) &&
           !closed.closedTxid,
       );
       if (relicIndex >= 0) {
@@ -11860,12 +13034,18 @@ function tokenStateFromTransactions(
       !mintedToken ||
       !/^[0-9a-f]{64}$/u.test(txid) ||
       !isValidBitcoinAddress(minterAddress, network) ||
-      amount === null ||
+      amount === null
+    ) {
+      return;
+    }
+    const mintIdentity = tokenMintHistoryItemKey({
+      ...mint,
+      tokenId: mintedToken.tokenId,
+      txid,
+    });
+    if (
       mints.some(
-        (item) =>
-          item.txid === txid &&
-          item.tokenId === mintedToken.tokenId &&
-          item.minterAddress === minterAddress,
+        (item) => tokenMintHistoryItemKey(item) === mintIdentity,
       )
     ) {
       return;
@@ -11964,7 +13144,11 @@ function tokenStateFromTransactions(
 
       const messageEntries = vout.flatMap((output, protocolVout) =>
         decodedProtocolMessages([output], TOKEN_PROTOCOL_PREFIX).map(
-          (message) => ({ message, protocolVout }),
+          (message, recordOrdinal) => ({
+            message,
+            protocolVout,
+            recordOrdinal,
+          }),
         ),
       );
       if (messageEntries.length === 0) {
@@ -12000,22 +13184,60 @@ function tokenStateFromTransactions(
       ) {
         deactivateV3WorkListingsAtV4Cutover();
       }
+      if (
+        confirmed &&
+        Number.isSafeInteger(blockHeight) &&
+        blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+      ) {
+        deactivatePreUnitWorkListingsAtAmoV5Cutover();
+      }
       let acceptedTxMessage = false;
       let parsedTxMessage = false;
       let parsedTxKind = "";
+      let parsedTxProtocolVout;
+      let parsedTxRecordOrdinal;
       let parsedTxTokenId = "";
       let rejectedTxMessage = null;
       const rejectedTxMessages = [];
+      const consensusRejectedListingIds = new Set();
+      const workAmoV5ConsensusRequiredFor = (tokenId) =>
+        network === "livenet" &&
+        confirmed &&
+        Number.isSafeInteger(blockHeight) &&
+        blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT &&
+        String(tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID;
 
-      for (const { message, protocolVout } of messageEntries) {
+      for (const { message, protocolVout, recordOrdinal } of messageEntries) {
         const parsed = parseTokenPayload(message, network);
         if (!parsed) {
           continue;
         }
         parsedTxMessage = true;
         parsedTxKind = parsed.kind ?? parsedTxKind;
+        parsedTxProtocolVout = protocolVout;
+        parsedTxRecordOrdinal = recordOrdinal;
         parsedTxTokenId =
           parsed.tokenId ?? parsed.saleAuthorization?.tokenId ?? parsedTxTokenId;
+        const registryPaymentAvailableForRecord = (requiredSats) => {
+          if (remainingRegistrySats < requiredSats) {
+            return false;
+          }
+          if (
+            typeof options.tokenRegistryPaymentValidationFor !==
+            "function"
+          ) {
+            return true;
+          }
+          const validation =
+            options.tokenRegistryPaymentValidationFor({
+              parsed,
+              protocolVout,
+              recordOrdinal,
+              requiredSats,
+              tx,
+            });
+          return validation?.valid === true;
+        };
 
         if (parsed.kind === "mint") {
           const mintedToken = tokensById.get(parsed.tokenId);
@@ -12030,8 +13252,17 @@ function tokenStateFromTransactions(
             !tokenDefinitionPrecedesTransaction(mintedToken, tx) ||
             mintedToken.registryAddress !== registryAddress ||
             parsedAmount !== tokenLedgerMintAmount(mintedToken) ||
-            remainingRegistrySats < mintedToken.mintPriceSats
+            !registryPaymentAvailableForRecord(
+              mintedToken.mintPriceSats,
+            )
           ) {
+            notifyTokenProtocolRecordOutcome({
+              accepted: false,
+              parsed,
+              protocolVout,
+              recordOrdinal,
+              tx,
+            });
             continue;
           }
 
@@ -12043,9 +13274,46 @@ function tokenStateFromTransactions(
             currentSupply.confirmed + currentSupply.pending + parsedAmount >
             tokenLedgerMaxSupply(mintedToken)
           ) {
+            notifyTokenProtocolRecordOutcome({
+              accepted: false,
+              parsed,
+              protocolVout,
+              recordOrdinal,
+              tx,
+            });
             continue;
           }
 
+          const consensusOutcome = notifyTokenProtocolRecordOutcome({
+            accepted: true,
+            parsed,
+            protocolVout,
+            recordOrdinal,
+            tx,
+          });
+          if (
+            workAmoV5ConsensusRequiredFor(mintedToken.tokenId) &&
+            consensusOutcome?.valid !== true
+          ) {
+            const reasonCode = String(
+              consensusOutcome?.reasonCode ??
+                "work-amo-v5-economic-output-invalid",
+            );
+            rejectedTxMessages.push({
+              ...tokenLedgerAmountFields(
+                mintedToken.tokenId,
+                parsedAmount,
+              ),
+              kind: parsed.kind,
+              protocolVout,
+              recordOrdinal,
+              reason: reasonCode,
+              reasonCode,
+              ticker: mintedToken.ticker,
+              tokenId: mintedToken.tokenId,
+            });
+            continue;
+          }
           remainingRegistrySats -= mintedToken.mintPriceSats;
           if (confirmed) {
             currentSupply.confirmed += parsedAmount;
@@ -12084,6 +13352,8 @@ function tokenStateFromTransactions(
             minerFeeSats,
             network,
             paidSats: mintedToken.mintPriceSats,
+            protocolVout,
+            recordOrdinal,
             registryAddress: mintedToken.registryAddress,
             ticker: mintedToken.ticker,
             tokenId: mintedToken.tokenId,
@@ -12103,8 +13373,17 @@ function tokenStateFromTransactions(
             !sentToken ||
             parsedAmount === null ||
             sentToken.registryAddress !== registryAddress ||
-            remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS
+            !registryPaymentAvailableForRecord(
+              TOKEN_MIN_MUTATION_PRICE_SATS,
+            )
           ) {
+            notifyTokenProtocolRecordOutcome({
+              accepted: false,
+              parsed,
+              protocolVout,
+              recordOrdinal,
+              tx,
+            });
             continue;
           }
 
@@ -12137,11 +13416,46 @@ function tokenStateFromTransactions(
               }),
               kind: parsed.kind,
               protocolVout,
+              recordOrdinal,
             };
             rejectedTxMessages.push(rejectedTxMessage);
+            notifyTokenProtocolRecordOutcome({
+              accepted: false,
+              parsed,
+              protocolVout,
+              recordOrdinal,
+              tx,
+            });
             continue;
           }
 
+          const consensusOutcome = notifyTokenProtocolRecordOutcome({
+            accepted: true,
+            parsed,
+            protocolVout,
+            recordOrdinal,
+            tx,
+          });
+          if (
+            workAmoV5ConsensusRequiredFor(sentToken.tokenId) &&
+            consensusOutcome?.valid !== true
+          ) {
+            const reasonCode = String(
+              consensusOutcome?.reasonCode ??
+                "work-amo-v5-economic-output-invalid",
+            );
+            rejectedTxMessages.push({
+              ...tokenLedgerAmountFields(sentToken.tokenId, parsedAmount),
+              kind: parsed.kind,
+              protocolVout,
+              recordOrdinal,
+              reason: reasonCode,
+              reasonCode,
+              ticker: sentToken.ticker,
+              tokenId: sentToken.tokenId,
+            });
+            continue;
+          }
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
           if (confirmed) {
             balances.set(senderBalanceKey, senderBalance - parsedAmount);
@@ -12167,6 +13481,7 @@ function tokenStateFromTransactions(
             network,
             paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
             protocolVout,
+            recordOrdinal,
             recipientAddress: parsed.recipientAddress,
             registryAddress: sentToken.registryAddress,
             senderAddress: actorAddress,
@@ -12181,12 +13496,29 @@ function tokenStateFromTransactions(
         if (parsed.kind === "list") {
           const authorization = parsed.saleAuthorization;
           const listedToken = tokensById.get(authorization.tokenId);
-          const listedAmount = tokenSaleAuthorizationLedgerAmount(authorization);
           const pricingValidation = workMarketV2ValidationFor(
             authorization,
             tx,
             protocolVout,
+            {
+              actionKind: parsed.kind,
+              actorAddress,
+              recordOrdinal,
+              spendableAmountAtoms:
+                authorization?.tokenId === WORK_TOKEN_ID
+                  ? spendableBalanceFor(WORK_TOKEN_ID, actorAddress)
+                  : null,
+            },
           );
+          const listedAmount =
+            authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION
+              ? (() => {
+                  const amountAtoms = canonicalWorkAtomsText(
+                    pricingValidation?.frozenTerms?.unitAmountAtoms,
+                  );
+                  return amountAtoms ? BigInt(amountAtoms) : null;
+                })()
+              : tokenSaleAuthorizationLedgerAmount(authorization);
           if (
             !listedToken ||
             listedAmount === null ||
@@ -12194,7 +13526,9 @@ function tokenStateFromTransactions(
             authorization.registryAddress !== registryAddress ||
             authorization.ticker !== listedToken.ticker ||
             authorization.sellerAddress !== actorAddress ||
-            remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+            !registryPaymentAvailableForRecord(
+              TOKEN_MIN_MUTATION_PRICE_SATS,
+            ) ||
             spendableBalanceFor(listedToken.tokenId, actorAddress) <
               listedAmount ||
             !tokenListingAnchorIsPresent(vout, authorization) ||
@@ -12206,6 +13540,7 @@ function tokenStateFromTransactions(
                 ...tokenLedgerAmountFields(WORK_TOKEN_ID, listedAmount ?? 0n),
                 kind: parsed.kind,
                 protocolVout,
+                recordOrdinal,
                 reason: pricingValidation.reasonCode,
                 reasonCode: pricingValidation.reasonCode,
                 saleAuthorization: authorization,
@@ -12214,11 +13549,19 @@ function tokenStateFromTransactions(
                 workMarketPricing: pricingValidation,
               });
             }
+            notifyWorkAmoV5RecordOutcome({
+              accepted: false,
+              authorization,
+              parsed,
+              pricingValidation,
+              protocolVout,
+              recordOrdinal,
+              tx,
+            });
             continue;
           }
 
-          remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
-          listings.set(txid, {
+          const acceptedListing = {
             ...tokenLedgerAmountFields(listedToken.tokenId, listedAmount),
             blockHash,
             blockHeight,
@@ -12229,16 +13572,68 @@ function tokenStateFromTransactions(
             listingId: txid,
             minerFeeSats,
             network,
-            priceSats: authorization.priceSats,
+            priceSats:
+              authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION
+                ? pricingValidation.frozenTerms.unitPriceSats
+                : authorization.priceSats,
+            protocolVout,
+            recordOrdinal,
             registryAddress,
             saleAuthorization: authorization,
             sellerAddress: actorAddress,
             ticker: listedToken.ticker,
             tokenId: listedToken.tokenId,
             ...(listedToken.tokenId === WORK_TOKEN_ID
-              ? { workMarketPricing: pricingValidation }
+              ? {
+                  ...(pricingValidation?.frozenTerms
+                    ? { frozenTerms: pricingValidation.frozenTerms }
+                    : {}),
+                  workAmoPricing: pricingValidation,
+                  workMarketPricing: pricingValidation,
+                }
               : {}),
+          };
+          const workAmoOutcome = notifyWorkAmoV5RecordOutcome({
+            accepted: true,
+            authorization,
+            listing: acceptedListing,
+            parsed,
+            pricingValidation,
+            protocolVout,
+            recordOrdinal,
+            tx,
           });
+          if (
+            authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION &&
+            workAmoOutcome?.valid !== true
+          ) {
+            const reasonCode = String(
+              workAmoOutcome?.reasonCode ??
+                "work-amo-v5-economic-output-invalid",
+            );
+            rejectedTxMessages.push({
+              ...tokenLedgerAmountFields(
+                WORK_TOKEN_ID,
+                listedAmount,
+              ),
+              kind: parsed.kind,
+              protocolVout,
+              recordOrdinal,
+              reason: reasonCode,
+              reasonCode,
+              saleAuthorization: authorization,
+              ticker: WORK_TOKEN_TICKER,
+              tokenId: WORK_TOKEN_ID,
+              workMarketPricing: {
+                ...pricingValidation,
+                reasonCode,
+                valid: false,
+              },
+            });
+            continue;
+          }
+          remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+          listings.set(txid, acceptedListing);
           acceptedTxMessage = true;
           continue;
         }
@@ -12250,15 +13645,24 @@ function tokenStateFromTransactions(
             authorization,
             tx,
             protocolVout,
+            {
+              actionKind: parsed.kind,
+              actorAddress,
+              listing,
+              recordOrdinal,
+            },
           );
           if (
             !listing ||
             listing.sellerAddress !== actorAddress ||
-            remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
-            !tokenSaleAuthorizationTermsMatch(
-              listing.saleAuthorization,
-              authorization,
+            !registryPaymentAvailableForRecord(
+              TOKEN_MIN_MUTATION_PRICE_SATS,
             ) ||
+            (pricingValidation?.grandfathered !== true &&
+              !tokenSaleAuthorizationTermsMatch(
+                listing.saleAuthorization,
+                authorization,
+              )) ||
             authorization.anchorTxid !== listing.listingId ||
             !tokenSaleAuthorizationUsesSaleTicketAnchor(authorization) ||
             !pricingValidation.valid
@@ -12275,6 +13679,7 @@ function tokenStateFromTransactions(
                 kind: parsed.kind,
                 listingId: parsed.listingId,
                 protocolVout,
+                recordOrdinal,
                 reason: pricingValidation.reasonCode,
                 reasonCode: pricingValidation.reasonCode,
                 saleAuthorization: authorization,
@@ -12283,13 +13688,31 @@ function tokenStateFromTransactions(
                 workMarketPricing: pricingValidation,
               });
             }
+            notifyWorkAmoV5RecordOutcome({
+              accepted: false,
+              authorization,
+              listing,
+              parsed,
+              pricingValidation,
+              protocolVout,
+              recordOrdinal,
+              tx,
+            });
             continue;
           }
 
-          remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
-          listings.set(listing.listingId, {
+          const acceptedSealedListing = {
             ...listing,
-            saleAuthorization: authorization,
+            saleAuthorization:
+              pricingValidation?.grandfathered === true
+                ? listing.saleAuthorization
+                : authorization,
+            ...(pricingValidation?.grandfathered === true
+              ? {
+                  listingAuthorization: listing.saleAuthorization,
+                  sealAuthorization: authorization,
+                }
+              : {}),
             sealAt: createdAt,
             sealBlockHash: blockHash,
             sealBlockHeight: blockHeight,
@@ -12297,11 +13720,62 @@ function tokenStateFromTransactions(
             sealConfirmed: confirmed,
             sealDataBytes: proofProtocolDataBytesForVout(vout),
             sealMinerFeeSats: minerFeeSats,
+            sealProtocolVout: protocolVout,
+            sealRecordOrdinal: recordOrdinal,
             sealTxid: txid,
             ...(listing.tokenId === WORK_TOKEN_ID
-              ? { workMarketPricing: pricingValidation }
+              ? {
+                  ...(pricingValidation?.frozenTerms
+                    ? { frozenTerms: pricingValidation.frozenTerms }
+                    : {}),
+                  workAmoPricing: pricingValidation,
+                  workMarketPricing: pricingValidation,
+                }
               : {}),
+          };
+          const workAmoOutcome = notifyWorkAmoV5RecordOutcome({
+            accepted: true,
+            authorization,
+            listing: acceptedSealedListing,
+            parsed,
+            pricingValidation,
+            protocolVout,
+            recordOrdinal,
+            tx,
           });
+          if (
+            authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION &&
+            workAmoOutcome?.valid !== true
+          ) {
+            consensusRejectedListingIds.add(listing.listingId);
+            const reasonCode = String(
+              workAmoOutcome?.reasonCode ??
+                "work-amo-v5-economic-output-invalid",
+            );
+            rejectedTxMessages.push({
+              ...tokenLedgerAmountFields(
+                WORK_TOKEN_ID,
+                tokenLedgerAmountFromRecord(WORK_TOKEN_ID, listing) ?? 0n,
+              ),
+              kind: parsed.kind,
+              listingId: parsed.listingId,
+              protocolVout,
+              recordOrdinal,
+              reason: reasonCode,
+              reasonCode,
+              saleAuthorization: authorization,
+              ticker: WORK_TOKEN_TICKER,
+              tokenId: WORK_TOKEN_ID,
+              workMarketPricing: {
+                ...pricingValidation,
+                reasonCode,
+                valid: false,
+              },
+            });
+            continue;
+          }
+          remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+          listings.set(listing.listingId, acceptedSealedListing);
           acceptedTxMessage = true;
           continue;
         }
@@ -12313,18 +13787,66 @@ function tokenStateFromTransactions(
           if (
             !listing ||
             listing.sellerAddress !== actorAddress ||
-            remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+            !registryPaymentAvailableForRecord(
+              TOKEN_MIN_MUTATION_PRICE_SATS,
+            ) ||
             !spendsTokenListingAnchor(eventSpentOutpoints, listing)
           ) {
+            notifyTokenProtocolRecordOutcome({
+              accepted: false,
+              parsed,
+              protocolVout,
+              recordOrdinal,
+              tx,
+            });
             continue;
           }
 
+          const parsedWithTokenId = {
+            ...parsed,
+            tokenId: listing.tokenId,
+          };
+          const consensusOutcome = notifyTokenProtocolRecordOutcome({
+            accepted: true,
+            parsed: parsedWithTokenId,
+            protocolVout,
+            recordOrdinal,
+            tx,
+          });
+          if (
+            workAmoV5ConsensusRequiredFor(listing.tokenId) &&
+            consensusOutcome?.valid !== true
+          ) {
+            consensusRejectedListingIds.add(listing.listingId);
+            const reasonCode = String(
+              consensusOutcome?.reasonCode ??
+                "work-amo-v5-economic-output-invalid",
+            );
+            rejectedTxMessages.push({
+              ...tokenLedgerAmountFields(
+                listing.tokenId,
+                tokenLedgerAmountFromRecord(listing.tokenId, listing) ?? 0n,
+              ),
+              kind: parsed.kind,
+              listingId: parsed.listingId,
+              protocolVout,
+              recordOrdinal,
+              reason: reasonCode,
+              reasonCode,
+              ticker: listing.ticker,
+              tokenId: listing.tokenId,
+            });
+            continue;
+          }
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
           if (disabledListing) {
             const relicIndex = closedListings.findIndex(
               (closed) =>
                 closed.listingId === listing.listingId &&
-                closed.disabledReason === "work-market-v4-cutover" &&
+                [
+                  "work-market-v4-cutover",
+                  "work-amo-v5-pre-unit-relic",
+                ].includes(closed.disabledReason) &&
                 !closed.closedTxid,
             );
             if (relicIndex >= 0) {
@@ -12338,6 +13860,8 @@ function tokenStateFromTransactions(
             confirmed,
             createdAt,
             minerFeeSats,
+            protocolVout,
+            recordOrdinal,
             txid,
           });
           listings.delete(listing.listingId);
@@ -12371,6 +13895,13 @@ function tokenStateFromTransactions(
                 pricingAuthorization,
                 tx,
                 protocolVout,
+                {
+                  actionKind: parsed.kind,
+                  actorAddress,
+                  buyerAddress: parsed.buyerAddress,
+                  listing,
+                  recordOrdinal,
+                },
               )
             : { valid: true };
           if (
@@ -12378,7 +13909,9 @@ function tokenStateFromTransactions(
             listing.relic === true ||
             listingAmount === null ||
             !txInputAddresses.includes(parsed.buyerAddress) ||
-            remainingRegistrySats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+            !registryPaymentAvailableForRecord(
+              TOKEN_MIN_MUTATION_PRICE_SATS,
+            ) ||
             !listingHasValidSaleTicketSpend ||
             (listing.saleAuthorization.buyerAddress &&
               listing.saleAuthorization.buyerAddress !== parsed.buyerAddress) ||
@@ -12395,10 +13928,11 @@ function tokenStateFromTransactions(
               Number.isSafeInteger(blockHeight) &&
               blockHeight >= workMarketV2Activation.activationHeight &&
               (!parsed.saleAuthorization ||
-                !tokenSaleAuthorizationTermsMatch(
-                  listing.saleAuthorization,
-                  parsed.saleAuthorization,
-                ) ||
+                (pricingValidation?.grandfathered !== true &&
+                  !tokenSaleAuthorizationTermsMatch(
+                    listing.saleAuthorization,
+                    parsed.saleAuthorization,
+                  )) ||
                 !pricingValidation.valid))
           ) {
             if (
@@ -12417,6 +13951,7 @@ function tokenStateFromTransactions(
                 ...tokenLedgerAmountFields(WORK_TOKEN_ID, listingAmount ?? 0n),
                 kind: parsed.kind,
                 protocolVout,
+                recordOrdinal,
                 reason: rejectionReason,
                 reasonCode: rejectionReason,
                 saleAuthorization: pricingAuthorization,
@@ -12425,9 +13960,58 @@ function tokenStateFromTransactions(
                 workMarketPricing: pricingValidation,
               });
             }
+            notifyWorkAmoV5RecordOutcome({
+              accepted: false,
+              authorization: pricingAuthorization,
+              listing,
+              parsed,
+              pricingValidation,
+              protocolVout,
+              recordOrdinal,
+              tx,
+            });
             continue;
           }
 
+          const workAmoOutcome = notifyWorkAmoV5RecordOutcome({
+            accepted: true,
+            authorization: pricingAuthorization,
+            listing,
+            parsed,
+            pricingValidation,
+            protocolVout,
+            recordOrdinal,
+            tx,
+          });
+          if (
+            pricingAuthorization?.version ===
+              TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION &&
+            workAmoOutcome?.valid !== true
+          ) {
+            consensusRejectedListingIds.add(listing.listingId);
+            const reasonCode = String(
+              workAmoOutcome?.reasonCode ??
+                "work-amo-v5-economic-output-invalid",
+            );
+            rejectedTxMessages.push({
+              ...tokenLedgerAmountFields(WORK_TOKEN_ID, listingAmount),
+              kind: parsed.kind,
+              listingId: parsed.listingId,
+              protocolVout,
+              recordOrdinal,
+              reason: reasonCode,
+              reasonCode,
+              saleAuthorization: pricingAuthorization,
+              ticker: WORK_TOKEN_TICKER,
+              tokenId: WORK_TOKEN_ID,
+              workMarketPricing: {
+                ...pricingValidation,
+                reasonCode,
+                valid: false,
+              },
+            });
+            continue;
+          }
           remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
           closeListing(listing, {
             blockHash,
@@ -12436,6 +14020,8 @@ function tokenStateFromTransactions(
             confirmed,
             createdAt,
             minerFeeSats,
+            protocolVout,
+            recordOrdinal,
             txid,
           });
           listings.delete(listing.listingId);
@@ -12466,23 +14052,54 @@ function tokenStateFromTransactions(
               tokenSellerPaymentRequiredSats(listing) +
               TOKEN_MIN_MUTATION_PRICE_SATS,
             priceSats: listing.priceSats,
+            protocolVout,
+            recordOrdinal,
             registryAddress,
             ...(parsed.saleAuthorization
               ? { saleAuthorization: parsed.saleAuthorization }
+              : {}),
+            ...(pricingValidation?.grandfathered === true
+              ? {
+                  listingAuthorization: listing.saleAuthorization,
+                  listingFrozenTerms:
+                    pricingValidation.listingFrozenTerms ??
+                    listing.frozenTerms ??
+                    listing.workAmoPricing?.frozenTerms ??
+                    listing.workMarketPricing?.frozenTerms,
+                }
               : {}),
             sellerAddress: listing.sellerAddress,
             ticker: listing.ticker,
             tokenId: listing.tokenId,
             txid,
             ...(listing.tokenId === WORK_TOKEN_ID
-              ? { workMarketPricing: pricingValidation }
+              ? {
+                  ...(pricingValidation?.frozenTerms
+                    ? { frozenTerms: pricingValidation.frozenTerms }
+                    : {}),
+                  workAmoPricing: pricingValidation,
+                  workMarketPricing: pricingValidation,
+                }
               : {}),
           });
           acceptedTxMessage = true;
         }
       }
 
-      closeListingsSpentByEvent(eventSpentOutpoints, {
+      const closeableSpentOutpoints = eventSpentOutpoints.filter(
+        (outpoint) =>
+          ![...consensusRejectedListingIds].some((listingId) => {
+            const listing =
+              listings.get(listingId) ??
+              disabledWorkListings.get(listingId);
+            const anchor = tokenListingAnchorOutpoint(listing);
+            return (
+              anchor?.txid === outpoint.txid &&
+              anchor.vout === outpoint.vout
+            );
+          }),
+      );
+      closeListingsSpentByEvent(closeableSpentOutpoints, {
         blockHash,
         blockHeight,
         blockIndex,
@@ -12528,6 +14145,8 @@ function tokenStateFromTransactions(
           createdAt,
           kind: parsedTxKind || "unknown",
           network,
+          protocolVout: parsedTxProtocolVout,
+          recordOrdinal: parsedTxRecordOrdinal,
           reason: rejectedTxMessage?.reason ?? "no-valid-token-event",
           registryAddress,
           tokenId: parsedTxTokenId,
@@ -12553,6 +14172,12 @@ function tokenStateFromTransactions(
   ) {
     deactivateV3WorkListingsAtV4Cutover();
   }
+  if (
+    network === "livenet" &&
+    highestConfirmedReplayHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    deactivatePreUnitWorkListingsAtAmoV5Cutover();
+  }
 
   const workSupply = tokenSupply.get(WORK_TOKEN_ID);
   const onlyWorkToken =
@@ -12571,13 +14196,16 @@ function tokenStateFromTransactions(
     ...(workMarketV4Activation
       ? { workMarketV4Activation }
       : {}),
+    ...(workAmoV5Activation
+      ? { workAmoV5Activation }
+      : {}),
     closedListings: closedListings.sort(
       (left, right) =>
         Number(right.relic === true) - Number(left.relic === true) ||
         Number(right.closedConfirmed) - Number(left.closedConfirmed) ||
         (Date.parse(right.closedAt) || Date.parse(right.createdAt) || 0) -
           (Date.parse(left.closedAt) || Date.parse(left.createdAt) || 0) ||
-        left.listingId.localeCompare(right.listingId),
+        compareCanonicalUtf8(left.listingId, right.listingId),
     ),
     creationSats,
     confirmedSupply:
@@ -12617,13 +14245,13 @@ function tokenStateFromTransactions(
             : right.ledgerBalance < left.ledgerBalance
               ? -1
               : 0) ||
-          left.address.localeCompare(right.address),
+          compareCanonicalUtf8(left.address, right.address),
       )
       .map(({ ledgerBalance, ...holder }) => holder),
     invalidEvents: invalidEvents.sort(
       (left, right) =>
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        left.txid.localeCompare(right.txid),
+        compareCanonicalUtf8(left.txid, right.txid),
     ),
     listings: [...listings.values()]
       .filter((listing) => !tokenListingIsExpired(listing))
@@ -12631,13 +14259,13 @@ function tokenStateFromTransactions(
         (left, right) =>
           Number(right.confirmed) - Number(left.confirmed) ||
           Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-          left.listingId.localeCompare(right.listingId),
+          compareCanonicalUtf8(left.listingId, right.listingId),
       ),
     mints: mints.sort(
       (left, right) =>
         Number(right.confirmed) - Number(left.confirmed) ||
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        left.txid.localeCompare(right.txid),
+        compareCanonicalUtf8(left.txid, right.txid),
     ),
     pendingSupply:
       onlyWorkToken && workSupply
@@ -12651,13 +14279,13 @@ function tokenStateFromTransactions(
       (left, right) =>
         Number(right.confirmed) - Number(left.confirmed) ||
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        left.txid.localeCompare(right.txid),
+        compareCanonicalUtf8(left.txid, right.txid),
     ),
     transfers: transfers.sort(
       (left, right) =>
         Number(right.confirmed) - Number(left.confirmed) ||
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        left.txid.localeCompare(right.txid),
+        compareCanonicalUtf8(left.txid, right.txid),
     ),
     tokens,
   };
@@ -12693,10 +14321,14 @@ function workTransfersFromTransactions(txs, network) {
     const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
     const messageEntries = vout.flatMap((output, protocolVout) =>
       decodedProtocolMessages([output], TOKEN_PROTOCOL_PREFIX).map(
-        (message) => ({ message, protocolVout }),
+        (message, recordOrdinal) => ({
+          message,
+          protocolVout,
+          recordOrdinal,
+        }),
       ),
     );
-    for (const { message, protocolVout } of messageEntries) {
+    for (const { message, protocolVout, recordOrdinal } of messageEntries) {
       const parsed = parseTokenPayload(message, network);
       if (
         parsed?.kind !== "send" ||
@@ -12723,6 +14355,7 @@ function workTransfersFromTransactions(txs, network) {
         network,
         paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
         protocolVout,
+        recordOrdinal,
         recipientAddress: parsed.recipientAddress,
         registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
         senderAddress: actorAddress,
@@ -12737,7 +14370,7 @@ function workTransfersFromTransactions(txs, network) {
     (left, right) =>
       Number(right.confirmed) - Number(left.confirmed) ||
       Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      left.txid.localeCompare(right.txid),
+      compareCanonicalUtf8(left.txid, right.txid),
   );
 }
 
@@ -12959,7 +14592,7 @@ function rushStateFromTransactions(txs, registryAddress, network) {
       (right.ordinal ?? Number.MAX_SAFE_INTEGER) -
         (left.ordinal ?? Number.MAX_SAFE_INTEGER) ||
       Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      left.txid.localeCompare(right.txid),
+      compareCanonicalUtf8(left.txid, right.txid),
   );
 
   return {
@@ -12986,7 +14619,7 @@ function rushStateFromIndexedMintEvents(
     (left, right) =>
       numericValue(left?.blockHeight) - numericValue(right?.blockHeight) ||
       numericValue(left?.blockIndex) - numericValue(right?.blockIndex) ||
-      String(left?.txid ?? "").localeCompare(String(right?.txid ?? "")),
+      compareCanonicalUtf8(left?.txid, right?.txid),
   );
   const seen = new Set();
   const mints = ordered.map((item, index) => {
@@ -13039,7 +14672,8 @@ function rushStateFromIndexedMintEvents(
   });
   const sortedMints = mints.sort(
     (left, right) =>
-      right.ordinal - left.ordinal || left.txid.localeCompare(right.txid),
+      right.ordinal - left.ordinal ||
+      compareCanonicalUtf8(left.txid, right.txid),
   );
   return {
     indexedAt: indexedAt ?? new Date().toISOString(),
@@ -13420,7 +15054,10 @@ function parseSaleAuthorizationJson(value, network) {
     throw new Error("Sale authorization terms are invalid.");
   }
 
-  if (expiresAt && Number.isNaN(Date.parse(expiresAt))) {
+  if (
+    expiresAt &&
+    !Number.isSafeInteger(workAmoV5CanonicalExpiryMs(expiresAt))
+  ) {
     throw new Error("Sale authorization expiry is invalid.");
   }
 
@@ -13712,8 +15349,15 @@ function saleAuthorizationExpired(authorization, eventCreatedAt) {
   if (!authorization.expiresAt) {
     return false;
   }
-
-  return Date.parse(eventCreatedAt) > Date.parse(authorization.expiresAt);
+  const expiresAtMs = workAmoV5CanonicalExpiryMs(
+    authorization.expiresAt,
+  );
+  const eventCreatedAtMs = Date.parse(eventCreatedAt);
+  return (
+    !Number.isSafeInteger(expiresAtMs) ||
+    !Number.isSafeInteger(eventCreatedAtMs) ||
+    eventCreatedAtMs > expiresAtMs
+  );
 }
 
 function compareRegistryEventOrder(left, right) {
@@ -13741,7 +15385,7 @@ function compareRegistryEventOrder(left, right) {
 
   return (
     Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
-    left.txid.localeCompare(right.txid)
+    compareCanonicalUtf8(left.txid, right.txid)
   );
 }
 
@@ -13784,7 +15428,7 @@ function compareRegistryRecordDisplayOrder(left, right) {
 
   return (
     Date.parse(right?.createdAt ?? "") - Date.parse(left?.createdAt ?? "") ||
-    String(right?.txid ?? "").localeCompare(String(left?.txid ?? ""))
+    compareCanonicalUtf8(right?.txid, left?.txid)
   );
 }
 
@@ -14083,14 +15727,14 @@ function publicMarketplaceSales(sales) {
 function compareMarketplaceSales(left, right) {
   return (
     Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-    right.txid.localeCompare(left.txid)
+    compareCanonicalUtf8(right.txid, left.txid)
   );
 }
 
 function compareActivityItems(left, right) {
   return (
     Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-    right.txid.localeCompare(left.txid)
+    compareCanonicalUtf8(right.txid, left.txid)
   );
 }
 
@@ -14262,6 +15906,54 @@ function compactText(value, maxLength = 140) {
 }
 
 function activityKey(item) {
+  const blockHeight =
+    item?.blockHeight !== undefined &&
+    item?.blockHeight !== null &&
+    item?.blockHeight !== "" &&
+    Number.isSafeInteger(Number(item.blockHeight)) &&
+    Number(item.blockHeight) >= 1
+      ? Number(item.blockHeight)
+      : null;
+  if (
+    item?.confirmed === true &&
+    blockHeight !== null &&
+    blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    const exactPositionInteger = (field) => {
+      const value = item?.[field];
+      return value !== undefined &&
+        value !== null &&
+        value !== "" &&
+        Number.isSafeInteger(Number(value)) &&
+        Number(value) >= 0
+        ? Number(value)
+        : null;
+    };
+    const blockIndex = exactPositionInteger("blockIndex");
+    const protocolVout = exactPositionInteger("protocolVout");
+    const recordOrdinal = exactPositionInteger("recordOrdinal");
+    if (
+      blockIndex === null ||
+      protocolVout === null ||
+      recordOrdinal === null
+    ) {
+      throw new Error(
+        "Canonical post-AMO-V5 activity position is incomplete.",
+      );
+    }
+    return [
+      item?.kind,
+      item?.network,
+      item?.txid,
+      "v5",
+      blockHeight,
+      blockIndex,
+      protocolVout,
+      recordOrdinal,
+      item?.listingId ?? "",
+      item?.id ?? "",
+    ].join(":");
+  }
   if (item?.kind === "token-listing-closed" && item?.txid) {
     return `${item.kind}:${item.network}:${item.txid}`;
   }
@@ -15870,9 +17562,6 @@ function canonicalItemPrecedesBondTransaction(item, bond) {
   }
   const itemTxid = String(item?.txid ?? "").trim().toLowerCase();
   const bondTxid = String(bond?.txid ?? "").trim().toLowerCase();
-  if (itemTxid && itemTxid === bondTxid) {
-    return false;
-  }
   const bondHeight = Number(bond?.blockHeight);
   const itemHeight = Number(item?.blockHeight);
   const bondIndex = Number(bond?.blockIndex);
@@ -15894,7 +17583,10 @@ function canonicalItemPrecedesBondTransaction(item, bond) {
       return false;
     }
     if (itemHeight !== bondHeight) {
-      return itemHeight < bondHeight;
+      return (
+        itemHeight < bondHeight &&
+        !(itemTxid && itemTxid === bondTxid)
+      );
     }
     const bondHash = String(bond?.blockHash ?? "").trim().toLowerCase();
     const itemHash = String(item?.blockHash ?? "").trim().toLowerCase();
@@ -15904,7 +17596,43 @@ function canonicalItemPrecedesBondTransaction(item, bond) {
     ) {
       return false;
     }
-    return itemIndex < bondIndex;
+    if (itemIndex !== bondIndex) {
+      return (
+        itemIndex < bondIndex &&
+        !(itemTxid && itemTxid === bondTxid)
+      );
+    }
+    if (bondHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) {
+      const exactPositionInteger = (source, field) => {
+        const value = source?.[field];
+        return value !== undefined &&
+          value !== null &&
+          value !== "" &&
+          Number.isSafeInteger(Number(value)) &&
+          Number(value) >= 0
+          ? Number(value)
+          : null;
+      };
+      const itemVout = exactPositionInteger(item, "protocolVout");
+      const itemOrdinal = exactPositionInteger(item, "recordOrdinal");
+      const bondVout = exactPositionInteger(bond, "protocolVout");
+      const bondOrdinal = exactPositionInteger(bond, "recordOrdinal");
+      if (
+        itemVout === null ||
+        itemOrdinal === null ||
+        bondVout === null ||
+        bondOrdinal === null
+      ) {
+        throw new Error(
+          "Canonical AMO V5 computer-event position is incomplete.",
+        );
+      }
+      return (
+        itemVout < bondVout ||
+        (itemVout === bondVout && itemOrdinal < bondOrdinal)
+      );
+    }
+    return false;
   }
   if (
     itemHasCanonicalPosition ||
@@ -16046,8 +17774,10 @@ function canonicalInceptionValueSnapshotCheckpoint(snapshot, bond) {
     snapshot?.consistency?.ok !== true ||
     snapshot?.consistency?.status !== "green" ||
     valueSnapshotMode !== "canonical-summary-refresh" ||
-    snapshot?.workNetworkValueAccountingModel !==
-      WORK_NETWORK_VALUE_ACCOUNTING_MODEL ||
+    ![
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+      "canonical-work-amo-v5-network-accumulator-v1",
+    ].includes(snapshot?.workNetworkValueAccountingModel) ||
     valueSnapshotBlockHeight !== bondBlockHeight - 1 ||
     !/^[0-9a-f]{64}$/u.test(valueSnapshotBlockHash) ||
     !/^[0-9a-f]{64}$/u.test(valueSnapshotCanonicalSummaryHash) ||
@@ -17534,7 +19264,7 @@ function tokenStateFromTransactionsWithCanonicalInceptionIssuance(
         (left, right) =>
           numericValue(left.blockHeight) - numericValue(right.blockHeight) ||
           numericValue(left.blockIndex) - numericValue(right.blockIndex) ||
-          String(left.txid ?? "").localeCompare(String(right.txid ?? "")),
+          compareCanonicalUtf8(left.txid, right.txid),
       );
     const publishedCheckpointReplay =
       typeof options.preBondCheckpoint === "function";
@@ -17942,14 +19672,18 @@ function infinityBondChartPointsFromEvents({
           Number(left.blockIndex) - Number(right.blockIndex) ||
           left.order - right.order ||
           left.eventOrdinal - right.eventOrdinal ||
-          left.txid.localeCompare(right.txid)
+          compareCanonicalUtf8(left.txid, right.txid)
         );
       }
       if (leftHasPosition !== rightHasPosition) {
         return leftHasPosition ? -1 : 1;
       }
       const timeSort = Date.parse(left.createdAt) - Date.parse(right.createdAt);
-      return timeSort || left.order - right.order || left.txid.localeCompare(right.txid);
+      return (
+        timeSort ||
+        left.order - right.order ||
+        compareCanonicalUtf8(left.txid, right.txid)
+      );
     });
 
   let bondActions = 0;
@@ -18202,7 +19936,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
         activityStatusTag(listing.confirmed),
         networkLabel(listing.network),
         "Credit",
-        "Marketplace",
+        "AMO",
         sealConfirmed ? "Sealed" : sealPending ? "Seal pending" : "Listing",
         listing.ticker,
         `${listing.amount.toLocaleString()} ${listing.ticker}`,
@@ -18267,7 +20001,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
         activityStatusTag(sealConfirmed),
         networkLabel(listing.network),
         "Credit",
-        "Marketplace",
+        "AMO",
         "Seal",
         listing.ticker,
         `${listing.amount.toLocaleString()} ${listing.ticker}`,
@@ -18328,7 +20062,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
         activityStatusTag(Boolean(listing.closedConfirmed)),
         networkLabel(listing.network),
         "Credit",
-        "Marketplace",
+        "AMO",
         "Closed",
         "Spent ticket",
         listing.ticker,
@@ -18394,7 +20128,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
       activityStatusTag(sale.confirmed),
       networkLabel(sale.network),
       "Credit",
-      "Marketplace",
+      "AMO",
       "Sale",
       sale.ticker,
       `${sale.amount.toLocaleString()} ${sale.ticker}`,
@@ -19504,7 +21238,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     .sort(
       (left, right) =>
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        left.txid.localeCompare(right.txid),
+        compareCanonicalUtf8(left.txid, right.txid),
     );
   const records = new Map();
   const listings = new Map();
@@ -20087,7 +21821,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     .sort(
       (left, right) =>
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        left.txid.localeCompare(right.txid),
+        compareCanonicalUtf8(left.txid, right.txid),
     );
 
   const pendingSales = pendingEvents
@@ -20155,7 +21889,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     listings: [...listings.values()].sort(
       (left, right) =>
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        left.txid.localeCompare(right.txid),
+        compareCanonicalUtf8(left.txid, right.txid),
     ),
     pendingEvents,
     records: accepted.sort(compareRegistryRecordDisplayOrder),
@@ -21044,8 +22778,9 @@ function recentByCreatedAt(items, limit = SUMMARY_ACTIVITY_LIMIT) {
           Number(Boolean(left?.closedConfirmed ?? left?.confirmed)) ||
         Date.parse(String(right?.closedAt ?? right?.createdAt ?? "")) -
           Date.parse(String(left?.closedAt ?? left?.createdAt ?? "")) ||
-        String(left?.closedTxid ?? left?.txid ?? left?.listingId ?? "").localeCompare(
-          String(right?.closedTxid ?? right?.txid ?? right?.listingId ?? ""),
+        compareCanonicalUtf8(
+          left?.closedTxid ?? left?.txid ?? left?.listingId,
+          right?.closedTxid ?? right?.txid ?? right?.listingId,
         ),
     )
     .slice(0, Math.max(0, limit));
@@ -21094,7 +22829,7 @@ function tokenSummaryListings(items, limit = SUMMARY_MARKET_LIMIT) {
         Number(tokenListingHasConfirmedSaleTicketSeal(left)) ||
       Number(Boolean(right?.confirmed)) - Number(Boolean(left?.confirmed)) ||
       tokenSummaryListingActivityMs(right) - tokenSummaryListingActivityMs(left) ||
-      String(left?.listingId ?? "").localeCompare(String(right?.listingId ?? "")),
+      compareCanonicalUtf8(left?.listingId, right?.listingId),
   );
 }
 
@@ -21110,8 +22845,9 @@ function recentClosedTokenListings(items, limit = SUMMARY_MARKET_LIMIT) {
         eventTime(right) - eventTime(left) ||
         Number(Boolean(right?.closedConfirmed)) -
           Number(Boolean(left?.closedConfirmed)) ||
-        String(right?.closedTxid ?? right?.listingId ?? "").localeCompare(
-          String(left?.closedTxid ?? left?.listingId ?? ""),
+        compareCanonicalUtf8(
+          right?.closedTxid ?? right?.listingId,
+          left?.closedTxid ?? left?.listingId,
         ),
     )
     .slice(0, Math.max(0, limit));
@@ -21465,7 +23201,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
           : right.ledgerBalance < left.ledgerBalance
             ? -1
             : 0) ||
-        left.address.localeCompare(right.address),
+        compareCanonicalUtf8(left.address, right.address),
     )
     .map(({ ledgerBalance, ...holder }) => holder);
 
@@ -22456,7 +24192,7 @@ function prioritizedWorkSaleRecoveryCandidates(state, candidates) {
       rightPriority - leftPriority ||
       Date.parse(right?.closedAt ?? right?.createdAt ?? "") -
         Date.parse(left?.closedAt ?? left?.createdAt ?? "") ||
-      String(left?.listingId ?? "").localeCompare(String(right?.listingId ?? ""))
+      compareCanonicalUtf8(left?.listingId, right?.listingId)
     );
   });
 
@@ -22644,7 +24380,7 @@ function workTokenStateWithRecoveredSales(state, recoveredSales) {
           : right.ledgerBalance < left.ledgerBalance
             ? -1
             : 0) ||
-        left.address.localeCompare(right.address),
+        compareCanonicalUtf8(left.address, right.address),
     )
     .map(({ ledgerBalance, ...holder }) => holder);
 
@@ -22653,7 +24389,7 @@ function workTokenStateWithRecoveredSales(state, recoveredSales) {
       (left, right) =>
         Number(right.confirmed) - Number(left.confirmed) ||
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        left.txid.localeCompare(right.txid),
+        compareCanonicalUtf8(left.txid, right.txid),
     );
 
   const nextInvalidEvents = (Array.isArray(state.invalidEvents)
@@ -22667,7 +24403,7 @@ function workTokenStateWithRecoveredSales(state, recoveredSales) {
     .sort(
       (left, right) =>
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        left.txid.localeCompare(right.txid),
+        compareCanonicalUtf8(left.txid, right.txid),
     );
   const salesByTxid = new Map(
     newSales.map((sale) => [String(sale.txid ?? "").toLowerCase(), sale]),
@@ -22975,7 +24711,7 @@ function workTokenStateWithRecoveredListingClosesFromTransactions(
       (left, right) =>
         Number(right.confirmed) - Number(left.confirmed) ||
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        String(left.listingId ?? "").localeCompare(String(right.listingId ?? "")),
+        compareCanonicalUtf8(left.listingId, right.listingId),
     ),
   };
 }
@@ -23317,14 +25053,14 @@ function sortWorkMintsForDisplay(mints) {
     (left, right) =>
       Number(right.confirmed) - Number(left.confirmed) ||
       Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      String(left.txid ?? "").localeCompare(String(right.txid ?? "")),
+      compareCanonicalUtf8(left.txid, right.txid),
   );
 }
 
 function sortWorkMintsForPendingCap(mints) {
   return [...(Array.isArray(mints) ? mints : [])].sort(
     (left, right) =>
-      String(left.txid ?? "").localeCompare(String(right.txid ?? "")) ||
+      compareCanonicalUtf8(left.txid, right.txid) ||
       Date.parse(left.createdAt) - Date.parse(right.createdAt),
   );
 }
@@ -23540,7 +25276,13 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     closedListings.push({
       ...listing,
       closedAt: event.createdAt,
+      closedBlockHash: event.blockHash,
+      closedBlockHeight: event.blockHeight,
+      closedBlockIndex: event.blockIndex,
       closedConfirmed: event.confirmed,
+      closedMinerFeeSats: numericValue(event.minerFeeSats),
+      closedProtocolVout: event.protocolVout,
+      closedRecordOrdinal: event.recordOrdinal,
       closedTxid: event.txid,
     });
     changed = true;
@@ -23560,8 +25302,16 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     const actorAddress = txInputAddresses[0] ?? "";
     const hasActorAddress = isValidBitcoinAddress(actorAddress, network);
 
-    const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
-    if (messages.length === 0) {
+    const messageEntries = vout.flatMap((output, protocolVout) =>
+      decodedProtocolMessages([output], TOKEN_PROTOCOL_PREFIX).map(
+        (message, recordOrdinal) => ({
+          message,
+          protocolVout,
+          recordOrdinal,
+        }),
+      ),
+    );
+    if (messageEntries.length === 0) {
       continue;
     }
 
@@ -23575,21 +25325,26 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     const confirmed = transactionConfirmed(tx);
     const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
     const minerFeeSats = transactionMinerFeeSats(tx);
+    const blockHash = transactionBlockHash(tx);
     const blockHeight = transactionBlockHeight(tx);
     const blockIndex = transactionBlockIndex(tx);
     let acceptedTxMessage = false;
     let parsedTxMessage = false;
     let parsedTxKind = "";
+    let parsedTxProtocolVout;
+    let parsedTxRecordOrdinal;
     let parsedTxTokenId = "";
     let rejectedTxMessage = null;
 
-    for (const message of messages) {
+    for (const { message, protocolVout, recordOrdinal } of messageEntries) {
       const parsed = parseTokenPayload(message, network);
       if (!parsed) {
         continue;
       }
       parsedTxMessage = true;
       parsedTxKind = parsed.kind ?? parsedTxKind;
+      parsedTxProtocolVout = protocolVout;
+      parsedTxRecordOrdinal = recordOrdinal;
       parsedTxTokenId =
         parsed.tokenId ?? parsed.saleAuthorization?.tokenId ?? parsedTxTokenId;
 
@@ -23624,12 +25379,18 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         }
         mints.push({
           ...tokenLedgerAmountFields(WORK_TOKEN_ID, mintAmountAtoms),
+          blockHash,
+          blockHeight,
+          blockIndex,
           confirmed,
           createdAt,
           dataBytes: proofProtocolDataBytesForVout(vout),
           minterAddress: actorAddress,
+          minerFeeSats,
           network,
           paidSats: WORK_TOKEN_MINT_PRICE_SATS,
+          protocolVout,
+          recordOrdinal,
           registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
           ticker: WORK_TOKEN_TICKER,
           tokenId: WORK_TOKEN_ID,
@@ -23666,6 +25427,8 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
             ticker: WORK_TOKEN_TICKER,
             tokenId: WORK_TOKEN_ID,
           });
+          rejectedTxMessage.protocolVout = protocolVout;
+          rejectedTxMessage.recordOrdinal = recordOrdinal;
           continue;
         }
 
@@ -23683,12 +25446,18 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         transfers.push({
           ...tokenLedgerAmountFields(WORK_TOKEN_ID, parsedAmount),
           amountVersion: parsed.amountVersion ?? "legacy-whole",
+          blockHash,
+          blockHeight,
+          blockIndex,
           confirmed,
           createdAt,
           dataBytes: proofProtocolDataBytesForVout(vout),
+          minerFeeSats,
           network,
           paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+          protocolVout,
           recipientAddress: parsed.recipientAddress,
+          recordOrdinal,
           registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
           senderAddress: actorAddress,
           ticker: WORK_TOKEN_TICKER,
@@ -23721,12 +25490,18 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
         listings.set(txid, {
           ...tokenLedgerAmountFields(WORK_TOKEN_ID, listedAmount),
+          blockHash,
+          blockHeight,
+          blockIndex,
           confirmed,
           createdAt,
           dataBytes: proofProtocolDataBytesForVout(vout),
           listingId: txid,
+          minerFeeSats,
           network,
           priceSats: authorization.priceSats,
+          protocolVout,
+          recordOrdinal,
           registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
           saleAuthorization: authorization,
           sellerAddress: actorAddress,
@@ -23761,8 +25536,14 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
           ...listing,
           saleAuthorization: authorization,
           sealAt: createdAt,
+          sealBlockHash: blockHash,
+          sealBlockHeight: blockHeight,
+          sealBlockIndex: blockIndex,
           sealConfirmed: confirmed,
           sealDataBytes: proofProtocolDataBytesForVout(vout),
+          sealMinerFeeSats: minerFeeSats,
+          sealProtocolVout: protocolVout,
+          sealRecordOrdinal: recordOrdinal,
           sealTxid: txid,
         });
         acceptedTxMessage = true;
@@ -23782,7 +25563,17 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         }
 
         remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
-        closeListing(listing, { confirmed, createdAt, txid });
+        closeListing(listing, {
+          blockHash,
+          blockHeight,
+          blockIndex,
+          confirmed,
+          createdAt,
+          minerFeeSats,
+          protocolVout,
+          recordOrdinal,
+          txid,
+        });
         listings.delete(listing.listingId);
         acceptedTxMessage = true;
         changed = true;
@@ -23818,7 +25609,17 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         }
 
         remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
-        closeListing(listing, { confirmed, createdAt, txid });
+        closeListing(listing, {
+          blockHash,
+          blockHeight,
+          blockIndex,
+          confirmed,
+          createdAt,
+          minerFeeSats,
+          protocolVout,
+          recordOrdinal,
+          txid,
+        });
         listings.delete(listing.listingId);
         if (confirmed) {
           holderBalances.set(
@@ -23832,15 +25633,21 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         }
         sales.push({
           ...tokenLedgerAmountFields(WORK_TOKEN_ID, listingAmount),
+          blockHash,
+          blockHeight,
+          blockIndex,
           buyerAddress: parsed.buyerAddress,
           confirmed,
           createdAt,
           listingId: listing.listingId,
+          minerFeeSats,
           network,
           paidSats:
             tokenSellerPaymentRequiredSats(listing) +
             TOKEN_MIN_MUTATION_PRICE_SATS,
           priceSats: listing.priceSats,
+          protocolVout,
+          recordOrdinal,
           registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
           sellerAddress: listing.sellerAddress,
           ticker: WORK_TOKEN_TICKER,
@@ -23871,10 +25678,13 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         auditTotalCostSats: minerFeeSats + originalRegistrySats,
         blockHeight,
         blockIndex,
+        blockHash,
         confirmed,
         createdAt,
         kind: parsedTxKind || "unknown",
         network,
+        protocolVout: parsedTxProtocolVout,
+        recordOrdinal: parsedTxRecordOrdinal,
         reason:
           rejectedTxMessage?.reason ?? "no-valid-work-token-event",
         registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
@@ -23912,14 +25722,14 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
           : right.ledgerBalance < left.ledgerBalance
             ? -1
             : 0) ||
-        left.address.localeCompare(right.address),
+        compareCanonicalUtf8(left.address, right.address),
     )
     .map(({ ledgerBalance, ...holder }) => holder);
   const activeListings = [...listings.values()].sort(
     (left, right) =>
       Number(right.confirmed) - Number(left.confirmed) ||
       Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      left.listingId.localeCompare(right.listingId),
+      compareCanonicalUtf8(left.listingId, right.listingId),
   );
   const sortedMints = sortWorkMintsForDisplay(workMintRowsWithinPendingCap(mints));
   const mintSupplyTotals = workMintSupplyTotals(sortedMints);
@@ -23927,13 +25737,13 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     (left, right) =>
       Number(right.confirmed) - Number(left.confirmed) ||
       Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      left.txid.localeCompare(right.txid),
+      compareCanonicalUtf8(left.txid, right.txid),
   );
   const sortedTransfers = transfers.sort(
     (left, right) =>
       Number(right.confirmed) - Number(left.confirmed) ||
       Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      left.txid.localeCompare(right.txid),
+      compareCanonicalUtf8(left.txid, right.txid),
   );
 
   return {
@@ -23949,7 +25759,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     invalidEvents: invalidEvents.sort(
       (left, right) =>
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        left.txid.localeCompare(right.txid),
+        compareCanonicalUtf8(left.txid, right.txid),
     ),
     listings: activeListings,
     mints: sortedMints,
@@ -24196,7 +26006,7 @@ function workTokenStateWithRecoveredListingsFromTransactions(state, txs, network
       (left, right) =>
         Number(right.confirmed) - Number(left.confirmed) ||
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-        String(left.listingId ?? "").localeCompare(String(right.listingId ?? "")),
+        compareCanonicalUtf8(left.listingId, right.listingId),
     ),
   };
 }
@@ -24779,7 +26589,7 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
             : right.ledgerBalance < left.ledgerBalance
               ? -1
               : 0) ||
-          left.address.localeCompare(right.address),
+          compareCanonicalUtf8(left.address, right.address),
       )
       .map(({ ledgerBalance, ...holder }) => holder),
     indexedAt: new Date().toISOString(),
@@ -25036,6 +26846,30 @@ function tokenPayloadRegressesCanonical(candidate, canonical) {
 }
 
 function tokenMintHistoryItemKey(item) {
+  const blockHeight =
+    item?.blockHeight !== undefined &&
+    item?.blockHeight !== null &&
+    item?.blockHeight !== "" &&
+    Number.isSafeInteger(Number(item.blockHeight)) &&
+    Number(item.blockHeight) >= 1
+      ? Number(item.blockHeight)
+      : null;
+  if (
+    item?.confirmed === true &&
+    blockHeight !== null &&
+    blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    const position = canonicalTokenReplayPosition(item);
+    return [
+      String(item?.tokenId ?? "").trim().toLowerCase(),
+      String(item?.txid ?? "").trim().toLowerCase(),
+      "event",
+      position.blockHeight,
+      position.blockIndex,
+      position.protocolVout,
+      position.recordOrdinal,
+    ].join(":");
+  }
   const identity = [
     item?._powEventIndex,
     item?.eventKeyVout,
@@ -25059,6 +26893,30 @@ function tokenMintHistoryItemKey(item) {
 }
 
 function tokenTransferHistoryItemKey(item) {
+  const blockHeight =
+    item?.blockHeight !== undefined &&
+    item?.blockHeight !== null &&
+    item?.blockHeight !== "" &&
+    Number.isSafeInteger(Number(item.blockHeight)) &&
+    Number(item.blockHeight) >= 1
+      ? Number(item.blockHeight)
+      : null;
+  if (
+    item?.confirmed === true &&
+    blockHeight !== null &&
+    blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    const position = canonicalTokenReplayPosition(item);
+    return [
+      String(item?.tokenId ?? "").trim().toLowerCase(),
+      String(item?.txid ?? "").trim().toLowerCase(),
+      "event",
+      position.blockHeight,
+      position.blockIndex,
+      position.protocolVout,
+      position.recordOrdinal,
+    ].join(":");
+  }
   const identity = [
     item?.protocolVout,
     item?.eventKeyVout,
@@ -27057,9 +28915,23 @@ function numericValue(value, fallback = 0) {
 }
 
 function canonicalEventIdentityDetails(item = {}) {
-  return ["_powEventIndex", "eventKeyVout", "protocolVout", "eventId"]
+  return [
+    "_powEventIndex",
+    "eventKeyVout",
+    "protocolVout",
+    "recordOrdinal",
+    "eventId",
+  ]
     .reduce((details, key) => {
-      const value = Number(item?.[key]);
+      const rawValue = item?.[key];
+      if (
+        rawValue === undefined ||
+        rawValue === null ||
+        rawValue === ""
+      ) {
+        return details;
+      }
+      const value = Number(rawValue);
       if (Number.isSafeInteger(value) && value >= 0) {
         details[key] = value;
       }
@@ -28193,8 +30065,10 @@ function exactWorkNetworkQ8State(actualValue) {
       ? actualValue
       : {};
   if (
-    actual.workNetworkValueAccountingModel !==
-    WORK_NETWORK_VALUE_ACCOUNTING_MODEL
+    ![
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+      "canonical-work-amo-v5-network-accumulator-v1",
+    ].includes(actual.workNetworkValueAccountingModel)
   ) {
     return null;
   }
@@ -28268,36 +30142,47 @@ function actualValueWithExactWorkNetworkQ8(actualValue, state) {
     baseNetworkValueQ8: base.toString(),
     baseNetworkValueSats: q8ToCanonicalDecimal(base),
     baseNetworkValueSatsApproximate: q8ToNumber(base),
+    baseNetworkValueSatsExact: q8ToCanonicalDecimal(base),
     baseTotalQ8: base.toString(),
     baseTotalSats: q8ToCanonicalDecimal(base),
     baseTotalSatsApproximate: q8ToNumber(base),
+    baseTotalSatsExact: q8ToCanonicalDecimal(base),
     floorQ8: floor.toString(),
     floorSats: q8ToCanonicalDecimal(floor),
     floorSatsApproximate: q8ToNumber(floor),
+    floorSatsExact: q8ToCanonicalDecimal(floor),
     frozenFloorQ8: frozenFloor.toString(),
     frozenFloorSats: q8ToCanonicalDecimal(frozenFloor),
     frozenFloorSatsApproximate: q8ToNumber(frozenFloor),
+    frozenFloorSatsExact: q8ToCanonicalDecimal(frozenFloor),
     frozenNetworkValueQ8: frozen.toString(),
     frozenNetworkValueSats: q8ToCanonicalDecimal(frozen),
     frozenNetworkValueSatsApproximate: q8ToNumber(frozen),
+    frozenNetworkValueSatsExact: q8ToCanonicalDecimal(frozen),
     frozenTotalQ8: frozen.toString(),
     frozenTotalSats: q8ToCanonicalDecimal(frozen),
     frozenTotalSatsApproximate: q8ToNumber(frozen),
+    frozenTotalSatsExact: q8ToCanonicalDecimal(frozen),
     liveFloorQ8: floor.toString(),
     liveFloorSats: q8ToCanonicalDecimal(floor),
     liveFloorSatsApproximate: q8ToNumber(floor),
+    liveFloorSatsExact: q8ToCanonicalDecimal(floor),
     liveNetworkValueQ8: live.toString(),
     liveNetworkValueSats: q8ToCanonicalDecimal(live),
     liveNetworkValueSatsApproximate: q8ToNumber(live),
+    liveNetworkValueSatsExact: q8ToCanonicalDecimal(live),
     liveTotalQ8: live.toString(),
     liveTotalSats: q8ToCanonicalDecimal(live),
     liveTotalSatsApproximate: q8ToNumber(live),
+    liveTotalSatsExact: q8ToCanonicalDecimal(live),
     networkValueQ8: live.toString(),
     networkValueSats: q8ToCanonicalDecimal(live),
     networkValueSatsApproximate: q8ToNumber(live),
+    networkValueSatsExact: q8ToCanonicalDecimal(live),
     totalQ8: live.toString(),
     totalSats: q8ToCanonicalDecimal(live),
     totalSatsApproximate: q8ToNumber(live),
+    totalSatsExact: q8ToCanonicalDecimal(live),
   };
 }
 
@@ -28309,8 +30194,10 @@ function exactWorkFloorNetworkQ8State(workFloor) {
   const state = exactWorkNetworkQ8State(floor.actualValue);
   if (
     !state ||
-    floor.workNetworkValueAccountingModel !==
-      WORK_NETWORK_VALUE_ACCOUNTING_MODEL
+    ![
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+      "canonical-work-amo-v5-network-accumulator-v1",
+    ].includes(floor.workNetworkValueAccountingModel)
   ) {
     return null;
   }
@@ -29760,6 +31647,13 @@ function exactCreditFrozenValueComponentsAgree(actualValue) {
     source.creditMovementFrozenValueQ8,
     { allowZero: true },
   );
+  const fixedValueQ8 = canonicalIntegerText(source.creditFixedQ8, {
+    allowZero: true,
+  });
+  if (eventValueQ8 && movementValueQ8 && fixedValueQ8) {
+    return BigInt(eventValueQ8) ===
+      BigInt(movementValueQ8) + BigInt(fixedValueQ8);
+  }
   const flowFields = [
     "creditProofPaymentFlowSats",
     "creditRegistryMutationFlowSats",
@@ -31475,7 +33369,7 @@ function registryStateFromIndexedActivity(network, activityState) {
   const sorted = [...activity].sort(
     (left, right) =>
       Date.parse(left.createdAt ?? "") - Date.parse(right.createdAt ?? "") ||
-      String(left.txid ?? "").localeCompare(String(right.txid ?? "")),
+      compareCanonicalUtf8(left.txid, right.txid),
   );
   const recordsById = new Map();
   const listingsById = new Map();
@@ -31628,8 +33522,8 @@ function registryStateFromIndexedActivity(network, activityState) {
 
   const records = [...recordsById.values()].sort(
     (left, right) =>
-      String(left.id ?? "").localeCompare(String(right.id ?? "")) ||
-      String(left.txid ?? "").localeCompare(String(right.txid ?? "")),
+      compareCanonicalUtf8(left.id, right.id) ||
+      compareCanonicalUtf8(left.txid, right.txid),
   );
   const listings = [...listingsById.values()].sort(compareActivityItems);
   const marketplaceStats = marketplaceStatsFromSales(sales);
@@ -32937,6 +34831,12 @@ async function buildIndexedCanonicalLedgerPayload(
       valuedTokenState,
     );
   }
+  workFloor = await workFloorWithVerifiedWorkAmoV5ClosingState(
+    workFloor,
+    network,
+    exactHeight,
+    exactHash,
+  );
   markTiming("market-overlay");
   const baseMetrics = ledgerMetricsFromState({
     activity,
@@ -32964,14 +34864,22 @@ async function buildIndexedCanonicalLedgerPayload(
         ? Math.max(0, sourceTipHeight - indexedThroughBlock)
         : undefined,
   };
-  const sourceHashes = ledgerSourceHashes({
-    activityState,
-    registryState,
-    rushState,
-    seededMailActivityState,
-    tokenState: valuedTokenState,
-    workTokenState: valuedWorkTokenState,
-  });
+  const sourceHashes = {
+    ...ledgerSourceHashes({
+      activityState,
+      registryState,
+      rushState,
+      seededMailActivityState,
+      tokenState: valuedTokenState,
+      workTokenState: valuedWorkTokenState,
+    }),
+    ...(workFloor.workAmoV5Transition
+      ? {
+          workAmoV5Transition:
+            workFloor.workAmoV5Transition,
+        }
+      : {}),
+  };
   const snapshotId = sha256Hex(
     Buffer.from(
       JSON.stringify({
@@ -34682,12 +36590,22 @@ function workFloorWithBtcUsdQuote(workFloor, quote) {
   const totalSats = numericValue(
     workFloor.actualValue?.totalSats ?? workFloor.networkValueSats,
   );
+  const floorSats = numericValue(
+    workFloor.actualValue?.floorSats ?? workFloor.floorSats,
+  );
+  const totalUsd = satsToUsdAtBtcUsd(totalSats, btcUsdMetadata.btcUsd);
+  const floorUsd = satsToUsdAtBtcUsd(floorSats, btcUsdMetadata.btcUsd);
   return {
     ...workFloor,
     ...btcUsdMetadata,
+    floorUsd,
+    networkUsd: totalUsd,
+    totalUsd,
     actualValue: {
       ...(workFloor.actualValue ?? {}),
-      totalUsd: satsToUsdAtBtcUsd(totalSats, btcUsdMetadata.btcUsd),
+      floorUsd,
+      networkUsd: totalUsd,
+      totalUsd,
     },
   };
 }
@@ -34765,12 +36683,48 @@ function growthSummaryWithCanonicalWorkFloor(growthSummary, workFloor) {
     return growthSummary;
   }
   const actualValue = actualValueWithExactWorkNetworkQ8(
-    growthSummary.actualValue,
+    {
+      ...(growthSummary.actualValue ?? {}),
+      ...(workFloor.actualValue ?? {}),
+    },
+    state,
+  );
+  const canonicalTop = actualValueWithExactWorkNetworkQ8(
+    {
+      ...growthSummary,
+      ...(workFloor.actualValue ?? {}),
+      modelTotalUsd:
+        workFloor.modelTotalUsd ??
+        workFloor.actualValue?.modelTotalUsd ??
+        growthSummary.modelTotalUsd,
+      powids:
+        workFloor.powids ??
+        workFloor.actualValue?.powids ??
+        growthSummary.powids,
+      tokenFlowSats:
+        workFloor.tokenFlowSats ??
+        workFloor.actualValue?.tokenFlowSats ??
+        growthSummary.tokenFlowSats,
+      totalUsd:
+        workFloor.totalUsd ??
+        workFloor.actualValue?.totalUsd ??
+        growthSummary.totalUsd,
+      workAmoV5AccumulatorModel:
+        workFloor.workAmoV5AccumulatorModel,
+      workAmoV5Transition: workFloor.workAmoV5Transition,
+    },
     state,
   );
   return {
-    ...actualValueWithExactWorkNetworkQ8(growthSummary, state),
+    ...canonicalTop,
     actualValue,
+    chartPoints: Array.isArray(workFloor.chartPoints)
+      ? workFloor.chartPoints.map((point) => ({ ...point }))
+      : [],
+    stats: {
+      ...(growthSummary.stats ?? {}),
+      ...(workFloor.stats ?? {}),
+    },
     workFloor,
   };
 }
@@ -34801,12 +36755,16 @@ function growthSummaryWithBtcUsdQuote(growthSummary, quote) {
   }
 
   const totalSats = numericValue(growthSummary.actualValue?.totalSats);
+  const totalUsd = satsToUsdAtBtcUsd(totalSats, btcUsdMetadata.btcUsd);
   return {
     ...growthSummary,
     ...btcUsdMetadata,
+    networkUsd: totalUsd,
+    totalUsd,
     actualValue: {
       ...(growthSummary.actualValue ?? {}),
-      totalUsd: satsToUsdAtBtcUsd(totalSats, btcUsdMetadata.btcUsd),
+      networkUsd: totalUsd,
+      totalUsd,
     },
     workFloor: workFloorWithBtcUsdQuote(growthSummary.workFloor, quote),
   };
@@ -37961,6 +39919,34 @@ function activityKindHasDedicatedGrowthBucket(item) {
 
 function creditMovementIdentity(item, kind) {
   const text = (value) => String(value ?? "").trim().toLowerCase();
+  const blockHeight =
+    item?.blockHeight !== undefined &&
+    item?.blockHeight !== null &&
+    item?.blockHeight !== "" &&
+    Number.isSafeInteger(Number(item.blockHeight)) &&
+    Number(item.blockHeight) >= 1
+      ? Number(item.blockHeight)
+      : null;
+  const canonicalPosition =
+    item?.confirmed === true &&
+      blockHeight !== null &&
+      blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+      ? canonicalTokenReplayPosition(item)
+      : null;
+  const identity = canonicalPosition
+    ? [
+        "event",
+        canonicalPosition.blockHeight,
+        canonicalPosition.blockIndex,
+        canonicalPosition.protocolVout,
+        canonicalPosition.recordOrdinal,
+      ].join(":")
+    : text(
+        item?._powEventIndex ??
+          item?.eventKeyVout ??
+          item?.protocolVout ??
+          item?.eventId,
+      );
   return [
     text(kind),
     text(item?.tokenId),
@@ -37971,13 +39957,35 @@ function creditMovementIdentity(item, kind) {
     ),
     text(item?.recipientAddress ?? item?.sellerAddress),
     text(item?.listingId),
-    text(
-      item?._powEventIndex ??
-        item?.eventKeyVout ??
-        item?.protocolVout ??
-        item?.eventId,
-    ),
+    identity,
   ].join(":");
+}
+
+function creditReplayRecordIdentity(item) {
+  const txid = String(item?.txid ?? "").trim().toLowerCase();
+  const blockHeight =
+    item?.blockHeight !== undefined &&
+    item?.blockHeight !== null &&
+    item?.blockHeight !== "" &&
+    Number.isSafeInteger(Number(item.blockHeight)) &&
+    Number(item.blockHeight) >= 1
+      ? Number(item.blockHeight)
+      : null;
+  if (
+    item?.confirmed === true &&
+    blockHeight !== null &&
+    blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    const position = canonicalTokenReplayPosition(item);
+    return [
+      "v5",
+      position.blockHeight,
+      position.blockIndex,
+      position.protocolVout,
+      position.recordOrdinal,
+    ].join(":");
+  }
+  return txid ? `tx:${txid}` : "";
 }
 
 function unbucketedConfirmedComputerLogFlowSats(confirmedActivity) {
@@ -38008,55 +40016,100 @@ function creditValueEventMs(item) {
   return Number.isFinite(ms) ? ms : Date.now();
 }
 
+function creditValueEventPosition(item) {
+  if (item?.confirmed === true) {
+    return canonicalTokenReplayPosition(item);
+  }
+  const exactNonNegativeInteger = (value, minimum) =>
+    value !== undefined &&
+    value !== null &&
+    value !== "" &&
+    Number.isSafeInteger(Number(value)) &&
+    Number(value) >= minimum
+      ? Number(value)
+      : null;
+  const blockHeight = exactNonNegativeInteger(item?.blockHeight, 1);
+  const blockIndex = exactNonNegativeInteger(item?.blockIndex, 0);
+  const protocolVout = exactNonNegativeInteger(item?.protocolVout, 0);
+  const recordOrdinal = exactNonNegativeInteger(item?.recordOrdinal, 0);
+  return blockHeight !== null &&
+    blockIndex !== null &&
+    protocolVout !== null &&
+    recordOrdinal !== null
+    ? { blockHeight, blockIndex, protocolVout, recordOrdinal }
+    : null;
+}
+
 function creditValueEventHeight(item) {
-  return Number.isSafeInteger(Number(item?.blockHeight))
-    ? Number(item.blockHeight)
-    : Number.MAX_SAFE_INTEGER;
+  return creditValueEventPosition(item)?.blockHeight ??
+    Number.MAX_SAFE_INTEGER;
 }
 
 function creditValueEventIndex(item) {
-  return Number.isSafeInteger(Number(item?.blockIndex))
-    ? Number(item.blockIndex)
-    : Number.MAX_SAFE_INTEGER;
+  return creditValueEventPosition(item)?.blockIndex ??
+    Number.MAX_SAFE_INTEGER;
 }
 
 function compareCreditValueReplayEvents(left, right) {
-  const leftHeight = creditValueEventHeight(left.source);
-  const rightHeight = creditValueEventHeight(right.source);
-  const leftIndex = creditValueEventIndex(left.source);
-  const rightIndex = creditValueEventIndex(right.source);
-  const leftPositioned =
-    leftHeight !== Number.MAX_SAFE_INTEGER &&
-    leftIndex !== Number.MAX_SAFE_INTEGER;
-  const rightPositioned =
-    rightHeight !== Number.MAX_SAFE_INTEGER &&
-    rightIndex !== Number.MAX_SAFE_INTEGER;
-  if (leftPositioned && rightPositioned) {
-    return (
-      leftHeight - rightHeight ||
-      leftIndex - rightIndex ||
-      canonicalTokenReplayOrdinal(left.source) -
-        canonicalTokenReplayOrdinal(right.source) ||
-      left.order - right.order ||
-      String(left.txid ?? "").localeCompare(String(right.txid ?? ""))
-    );
-  }
-  if (leftPositioned !== rightPositioned) {
-    return leftPositioned ? -1 : 1;
-  }
-  const canonicalUnpositioned = (event) =>
-    event?.source?.confirmed === true && event?.source?.network === "livenet";
-  if (canonicalUnpositioned(left) || canonicalUnpositioned(right)) {
+  const leftPosition = creditValueEventPosition(left.source);
+  const rightPosition = creditValueEventPosition(right.source);
+  if (leftPosition && rightPosition) {
+    const positionComparison =
+      leftPosition.blockHeight - rightPosition.blockHeight ||
+      leftPosition.blockIndex - rightPosition.blockIndex ||
+      leftPosition.protocolVout - rightPosition.protocolVout ||
+      leftPosition.recordOrdinal - rightPosition.recordOrdinal;
+    if (positionComparison !== 0) {
+      return positionComparison;
+    }
+    if (
+      leftPosition.blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT ||
+      rightPosition.blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+    ) {
+      return 0;
+    }
     return (
       left.order - right.order ||
-      String(left.txid ?? "").localeCompare(String(right.txid ?? ""))
+      compareCanonicalUtf8(left.txid, right.txid)
     );
+  }
+  if (leftPosition || rightPosition) {
+    return leftPosition ? -1 : 1;
   }
   return (
     left.createdMs - right.createdMs ||
     left.order - right.order ||
-    String(left.txid ?? "").localeCompare(String(right.txid ?? ""))
+    compareCanonicalUtf8(left.txid, right.txid)
   );
+}
+
+function assertUniqueCreditValueReplayPositions(events) {
+  const seen = new Set();
+  for (const event of Array.isArray(events) ? events : []) {
+    if (event?.source?.confirmed !== true) {
+      continue;
+    }
+    const position = creditValueEventPosition(event.source);
+    if (
+      !position ||
+      position.blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT
+    ) {
+      continue;
+    }
+    const key = [
+      position.blockHeight,
+      position.blockIndex,
+      position.protocolVout,
+      position.recordOrdinal,
+    ].join(":");
+    if (seen.has(key)) {
+      throw new Error(
+        "Canonical AMO V5 credit replay position is duplicated.",
+      );
+    }
+    seen.add(key);
+  }
+  return events;
 }
 
 function growthActualBaseNetworkValueBeforeCanonicalItem(
@@ -38140,20 +40193,65 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
     "tokenSales",
   ];
   const canonicalPositionKeys = new Set();
+  const exactPositionInteger = (value, minimum = 0) =>
+    value !== undefined &&
+    value !== null &&
+    value !== "" &&
+    Number.isSafeInteger(Number(value)) &&
+    Number(value) >= minimum
+      ? Number(value)
+      : null;
+  const canonicalValuePosition = (value) => {
+    const source = value?.source ?? value;
+    const blockHeight = exactPositionInteger(
+      value?.blockHeight ?? source?.blockHeight,
+      1,
+    );
+    const blockIndex = exactPositionInteger(
+      value?.blockIndex ?? source?.blockIndex,
+    );
+    if (blockHeight === null || blockIndex === null) {
+      return null;
+    }
+    const v5 = blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT;
+    const protocolVout = exactPositionInteger(
+      value?.protocolVout ?? source?.protocolVout,
+    );
+    const recordOrdinal = exactPositionInteger(
+      value?.recordOrdinal ?? source?.recordOrdinal,
+    );
+    if (v5 && (protocolVout === null || recordOrdinal === null)) {
+      throw new Error(
+        "Canonical AMO V5 network-value event position is incomplete.",
+      );
+    }
+    return {
+      blockHeight,
+      blockIndex,
+      protocolVout:
+        protocolVout ?? Number.MAX_SAFE_INTEGER,
+      recordOrdinal:
+        recordOrdinal ?? Number.MAX_SAFE_INTEGER,
+      v5,
+    };
+  };
+  const compareValuePositions = (left, right) =>
+    left.blockHeight - right.blockHeight ||
+    left.blockIndex - right.blockIndex ||
+    (left.v5 || right.v5
+      ? left.protocolVout - right.protocolVout ||
+        left.recordOrdinal - right.recordOrdinal
+      : 0);
 
   for (const name of collectionNames) {
     for (const item of Array.isArray(collections?.[name])
       ? collections[name]
       : []) {
-      const blockHeight = Number(item?.blockHeight);
-      const blockIndex = Number(item?.blockIndex);
-      if (
-        item?.confirmed !== true ||
-        !Number.isSafeInteger(blockHeight) ||
-        blockHeight <= 0 ||
-        !Number.isSafeInteger(blockIndex) ||
-        blockIndex < 0
-      ) {
+      if (item?.confirmed !== true) {
+        continue;
+      }
+      const position = canonicalValuePosition(item);
+      if (!position) {
         continue;
       }
       if (!Number.isFinite(Date.parse(item?.createdAt ?? ""))) {
@@ -38164,7 +40262,16 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
         continue;
       }
       incrementDiagnostic("canonicalRows");
-      canonicalPositionKeys.add(`${blockHeight}:${blockIndex}`);
+      canonicalPositionKeys.add(
+        position.v5
+          ? [
+              position.blockHeight,
+              position.blockIndex,
+              position.protocolVout,
+              position.recordOrdinal,
+            ].join(":")
+          : `${position.blockHeight}:${position.blockIndex}`,
+      );
     }
   }
 
@@ -38177,11 +40284,7 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
     collections?.tokenTransfers,
     collections?.tokenSales,
   ).filter(
-    (event) =>
-      Number.isSafeInteger(event.blockHeight) &&
-      event.blockHeight > 0 &&
-      Number.isSafeInteger(event.blockIndex) &&
-      event.blockIndex >= 0,
+    (event) => canonicalValuePosition(event) !== null,
   );
   const eventsByHeight = new Map();
   const eventsByTxid = new Map();
@@ -38201,9 +40304,16 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
     .map(([blockHeight, events]) => ({
       blockHeight,
       events: events.sort(
-        (left, right) =>
-          left.blockIndex - right.blockIndex ||
-          left.txid.localeCompare(right.txid),
+        (left, right) => {
+          const comparison = compareValuePositions(
+            canonicalValuePosition(left),
+            canonicalValuePosition(right),
+          );
+          return (
+            comparison ||
+            compareCanonicalUtf8(left.txid, right.txid)
+          );
+        },
       ),
     }))
     .sort((left, right) => left.blockHeight - right.blockHeight);
@@ -38220,6 +40330,8 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
   let activeStateByHash;
   let lastTargetHeight;
   let lastTargetIndex;
+  let lastTargetProtocolVout;
+  let lastTargetRecordOrdinal;
   const resetCanonicalCursor = () => {
     lowerState = emptyGrowthActualBaseState();
     heightCursor = 0;
@@ -38230,6 +40342,8 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
     activeStateByHash = new Map();
     lastTargetHeight = Number.NEGATIVE_INFINITY;
     lastTargetIndex = Number.NEGATIVE_INFINITY;
+    lastTargetProtocolVout = Number.NEGATIVE_INFINITY;
+    lastTargetRecordOrdinal = Number.NEGATIVE_INFINITY;
   };
   resetCanonicalCursor();
   const applyEvent = (state, event, multiplier = 1) =>
@@ -38238,10 +40352,28 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
       event.contribution,
       multiplier,
     );
-  const prepareCanonicalPrefix = (blockHeight, blockIndex) => {
-    if (
+  const prepareCanonicalPrefix = (targetPosition) => {
+    const {
+      blockHeight,
+      blockIndex,
+      protocolVout,
+      recordOrdinal,
+    } = targetPosition;
+    const targetRegresses =
       blockHeight < lastTargetHeight ||
-      (blockHeight === lastTargetHeight && blockIndex < lastTargetIndex)
+      (blockHeight === lastTargetHeight &&
+        (
+          blockIndex < lastTargetIndex ||
+          (blockIndex === lastTargetIndex &&
+            targetPosition.v5 &&
+            (
+              protocolVout < lastTargetProtocolVout ||
+              (protocolVout === lastTargetProtocolVout &&
+                recordOrdinal < lastTargetRecordOrdinal)
+            ))
+        ));
+    if (
+      targetRegresses
     ) {
       incrementDiagnostic("cursorResets");
       resetCanonicalCursor();
@@ -38268,7 +40400,10 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
     while (
       activeGroup &&
       activeCursor < activeGroup.events.length &&
-      activeGroup.events[activeCursor].blockIndex < blockIndex
+      compareValuePositions(
+        canonicalValuePosition(activeGroup.events[activeCursor]),
+        targetPosition,
+      ) < 0
     ) {
       const event = activeGroup.events[activeCursor];
       applyEvent(activeAllHashState, event);
@@ -38280,6 +40415,8 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
     }
     lastTargetHeight = blockHeight;
     lastTargetIndex = blockIndex;
+    lastTargetProtocolVout = protocolVout;
+    lastTargetRecordOrdinal = recordOrdinal;
   };
 
   const lookupQ8 = (source, createdMs) => {
@@ -38302,7 +40439,13 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
       return timestampQ8 ?? 0n;
     }
 
-    prepareCanonicalPrefix(blockHeight, blockIndex);
+    const targetPosition = canonicalValuePosition(source);
+    if (!targetPosition) {
+      throw new Error(
+        "Canonical network-value event position is incomplete.",
+      );
+    }
+    prepareCanonicalPrefix(targetPosition);
     const blockHash = String(source?.blockHash ?? "")
       .trim()
       .toLowerCase();
@@ -38317,17 +40460,19 @@ function growthActualBaseNetworkValueBeforeCanonicalItemProvider(
       growthActualBaseStateAdd(state, activeAllHashState);
     }
 
-    const txid = String(source?.txid ?? "").trim().toLowerCase();
     let sameTxAdjustments = 0;
-    for (const event of txid ? eventsByTxid.get(txid) ?? [] : []) {
-      const included =
-        event.blockHeight < blockHeight ||
-        (event.blockHeight === blockHeight &&
-          event.blockIndex < blockIndex &&
-          (!exactHash || event.blockHash === blockHash));
-      if (included) {
-        applyEvent(state, event, -1);
-        sameTxAdjustments += 1;
+    if (!targetPosition.v5) {
+      const txid = String(source?.txid ?? "").trim().toLowerCase();
+      for (const event of txid ? eventsByTxid.get(txid) ?? [] : []) {
+        const included =
+          event.blockHeight < blockHeight ||
+          (event.blockHeight === blockHeight &&
+            event.blockIndex < blockIndex &&
+            (!exactHash || event.blockHash === blockHash));
+        if (included) {
+          applyEvent(state, event, -1);
+          sameTxAdjustments += 1;
+        }
       }
     }
     incrementDiagnostic("sameTxAdjustments", sameTxAdjustments);
@@ -38656,6 +40801,7 @@ function creditNetworkValueMetrics({
     };
   }
 
+  const activityByRecord = new Map();
   const activityByTxid = new Map();
   const addTokenActivity = (item) => {
     const txid = String(item?.txid ?? "").toLowerCase();
@@ -38667,12 +40813,26 @@ function creditNetworkValueMetrics({
     ) {
       return;
     }
-    const current = activityByTxid.get(txid);
+    const recordIdentity = creditReplayRecordIdentity(item);
+    if (!recordIdentity) {
+      return;
+    }
+    const current = activityByRecord.get(recordIdentity);
     if (
       !current ||
       numericValue(item?.minerFeeSats) > numericValue(current?.minerFeeSats) ||
       numericValue(item?.frozenNetworkValueSats) >
         numericValue(current?.frozenNetworkValueSats)
+    ) {
+      activityByRecord.set(recordIdentity, item);
+    }
+    const currentTxActivity = activityByTxid.get(txid);
+    if (
+      !currentTxActivity ||
+      numericValue(item?.minerFeeSats) >
+        numericValue(currentTxActivity?.minerFeeSats) ||
+      numericValue(item?.frozenNetworkValueSats) >
+        numericValue(currentTxActivity?.frozenNetworkValueSats)
     ) {
       activityByTxid.set(txid, item);
     }
@@ -38685,7 +40845,7 @@ function creditNetworkValueMetrics({
   }
 
   const movementEvents = [];
-  const movementTxids = new Set();
+  const movementRecordIdentities = new Set();
   const addMovementEvent = (item, kind) => {
     const token = tokensById.get(String(item?.tokenId ?? "").toLowerCase());
     const txid = String(item?.txid ?? "").toLowerCase();
@@ -38722,7 +40882,10 @@ function creditNetworkValueMetrics({
       token,
       txid,
     });
-    movementTxids.add(txid);
+    const recordIdentity = creditReplayRecordIdentity(item);
+    if (recordIdentity) {
+      movementRecordIdentities.add(recordIdentity);
+    }
   };
   for (const mint of Array.isArray(tokenMints) ? tokenMints : []) {
     addMovementEvent(mint, "mint");
@@ -38745,7 +40908,7 @@ function creditNetworkValueMetrics({
       !item?.confirmed ||
       !/^[0-9a-f]{64}$/u.test(txid) ||
       createdMs > cutoffMs ||
-      movementTxids.has(txid)
+      movementRecordIdentities.has(creditReplayRecordIdentity(item))
     ) {
       return;
     }
@@ -38789,7 +40952,7 @@ function creditNetworkValueMetrics({
       txid,
     });
   };
-  for (const item of activityByTxid.values()) {
+  for (const item of activityByRecord.values()) {
     addMutationEvent(item);
   }
 
@@ -38832,10 +40995,10 @@ function creditNetworkValueMetrics({
   const eventDetails = [];
   let cumulativeFrozenCreditValueQ8 = 0n;
   const countedMinerFeeTxids = new Set();
-  const replayEvents = [
+  const replayEvents = assertUniqueCreditValueReplayPositions([
     ...movementEvents,
     ...mutationEvents,
-  ].sort(compareCreditValueReplayEvents);
+  ]).sort(compareCreditValueReplayEvents);
 
   for (const event of replayEvents) {
     const baseBeforeQ8 = exactBaseValueBeforeEventQ8(
@@ -38866,7 +41029,14 @@ function creditNetworkValueMetrics({
     const creditValueAtConfirmQ8 =
       movementValueAtNetworkQ8(event, liveNetworkValueBeforeEventQ8) ?? 0n;
     const creditValueAtConfirmSats = q8ToNumber(creditValueAtConfirmQ8);
-    const activity = activityByTxid.get(event.txid);
+    const recordActivity = activityByRecord.get(
+      creditReplayRecordIdentity(event.source),
+    );
+    const transactionActivity = activityByTxid.get(event.txid);
+    const activity =
+      transactionActivity?.canonicalMinerFeeCovered === true
+        ? transactionActivity
+        : recordActivity ?? transactionActivity;
     const canonicalTransactionMinerFeeSats = creditReplayTransactionMinerFeeSats(
       event,
       activity,
@@ -39397,12 +41567,43 @@ function growthActualBaseNetworkValueEvents(
     if (!Number.isFinite(createdMs)) {
       return;
     }
+    const blockHeight = Number(source?.blockHeight);
+    const blockIndex = Number(source?.blockIndex);
+    const exactPositionInteger = (name) => {
+      const candidate = source?.[name];
+      return candidate !== undefined &&
+        candidate !== null &&
+        candidate !== "" &&
+        Number.isSafeInteger(Number(candidate)) &&
+        Number(candidate) >= 0
+        ? Number(candidate)
+        : null;
+    };
+    const protocolVout = exactPositionInteger("protocolVout");
+    const recordOrdinal = exactPositionInteger("recordOrdinal");
+    if (
+      source?.confirmed === true &&
+      Number.isSafeInteger(blockHeight) &&
+      blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT &&
+      (
+        !Number.isSafeInteger(blockIndex) ||
+        blockIndex < 0 ||
+        protocolVout === null ||
+        recordOrdinal === null
+      )
+    ) {
+      throw new Error(
+        "Canonical AMO V5 network-value event position is incomplete.",
+      );
+    }
     events.push({
       blockHash: String(source?.blockHash ?? "").trim().toLowerCase(),
-      blockHeight: Number(source?.blockHeight),
-      blockIndex: Number(source?.blockIndex),
+      blockHeight,
+      blockIndex,
       contribution: { field, value: proofFlowBigInt(value) },
       createdMs,
+      protocolVout,
+      recordOrdinal,
       source,
       txid: String(source?.txid ?? "").trim().toLowerCase(),
     });
@@ -39769,6 +41970,7 @@ function growthActualLiveTotalSatsAtProvider(
       tokenTransfers,
     );
 
+  const activityByRecord = new Map();
   const activityByTxid = new Map();
   for (const item of Array.isArray(idActivity) ? idActivity : []) {
     const txid = String(item?.txid ?? "").toLowerCase();
@@ -39780,19 +41982,33 @@ function growthActualLiveTotalSatsAtProvider(
     ) {
       continue;
     }
-    const current = activityByTxid.get(txid);
+    const recordIdentity = creditReplayRecordIdentity(item);
+    if (!recordIdentity) {
+      continue;
+    }
+    const current = activityByRecord.get(recordIdentity);
     if (
       !current ||
       numericValue(item?.minerFeeSats) > numericValue(current?.minerFeeSats) ||
       numericValue(item?.frozenNetworkValueSats) >
         numericValue(current?.frozenNetworkValueSats)
     ) {
+      activityByRecord.set(recordIdentity, item);
+    }
+    const currentTxActivity = activityByTxid.get(txid);
+    if (
+      !currentTxActivity ||
+      numericValue(item?.minerFeeSats) >
+        numericValue(currentTxActivity?.minerFeeSats) ||
+      numericValue(item?.frozenNetworkValueSats) >
+        numericValue(currentTxActivity?.frozenNetworkValueSats)
+    ) {
       activityByTxid.set(txid, item);
     }
   }
 
   const movementEvents = [];
-  const movementTxids = new Set();
+  const movementRecordIdentities = new Set();
   const addMovementEvent = (item, kind) => {
     const token = tokensById.get(String(item?.tokenId ?? "").toLowerCase());
     const txid = String(item?.txid ?? "").toLowerCase();
@@ -39823,7 +42039,10 @@ function growthActualLiveTotalSatsAtProvider(
       token,
       txid,
     });
-    movementTxids.add(txid);
+    const recordIdentity = creditReplayRecordIdentity(item);
+    if (recordIdentity) {
+      movementRecordIdentities.add(recordIdentity);
+    }
   };
   for (const mint of Array.isArray(tokenMints) ? tokenMints : []) {
     addMovementEvent(mint, "mint");
@@ -39836,7 +42055,7 @@ function growthActualLiveTotalSatsAtProvider(
   }
 
   const mutationEvents = [];
-  for (const item of activityByTxid.values()) {
+  for (const item of activityByRecord.values()) {
     const txid = String(item?.txid ?? "").toLowerCase();
     const kind = String(item?.kind ?? "");
     const token = tokensById.get(String(item?.tokenId ?? "").toLowerCase());
@@ -39844,7 +42063,7 @@ function growthActualLiveTotalSatsAtProvider(
     if (
       !token ||
       !Number.isFinite(createdMs) ||
-      movementTxids.has(txid) ||
+      movementRecordIdentities.has(creditReplayRecordIdentity(item)) ||
       ![
         "token-create",
         "token-listing",
@@ -39881,7 +42100,10 @@ function growthActualLiveTotalSatsAtProvider(
 
   let cumulativeFrozenCreditValueSats = 0;
   const countedMinerFeeTxids = new Set();
-  const replayEvents = [...movementEvents, ...mutationEvents]
+  const replayEvents = assertUniqueCreditValueReplayPositions([
+    ...movementEvents,
+    ...mutationEvents,
+  ])
     .sort(compareCreditValueReplayEvents)
     .map((event) => {
       const baseBefore = numericValue(
@@ -39912,7 +42134,14 @@ function growthActualLiveTotalSatsAtProvider(
         atomicCreditValueAtConfirmQ8 === null
           ? event.amount * creditFloorAtConfirmSats
           : q8ToNumber(atomicCreditValueAtConfirmQ8);
-      const activity = activityByTxid.get(event.txid);
+      const recordActivity = activityByRecord.get(
+        creditReplayRecordIdentity(event.source),
+      );
+      const transactionActivity = activityByTxid.get(event.txid);
+      const activity =
+        transactionActivity?.canonicalMinerFeeCovered === true
+          ? transactionActivity
+          : recordActivity ?? transactionActivity;
       const transactionMinerFeeSats = creditReplayTransactionMinerFeeSats(
         event,
         activity,
@@ -40142,7 +42371,7 @@ function growthActivityKindLabel(kind) {
     kind === "token-listing-closed" ||
     kind === "token-sale"
   ) {
-    return "Marketplace";
+    return "AMO";
   }
 
   if (kind === "file") {
@@ -40262,9 +42491,9 @@ function growthRealEventItems(
       createdAt: sale.createdAt,
       detail: `${sale.id}@proofofwork.me transferred from ${shortAddress(sale.sellerAddress)} to ${shortAddress(sale.buyerAddress)}.`,
       key: sale.txid,
-      kind: "Marketplace",
+      kind: "AMO",
       network: sale.network,
-      title: "Marketplace sale",
+      title: "AMO sale",
       txid: sale.txid,
     });
   }
@@ -40330,9 +42559,9 @@ function growthRealEventItems(
       createdAt: sale.createdAt,
       detail: `${sale.amount.toLocaleString()} ${sale.ticker} bought by ${shortAddress(sale.buyerAddress)} from ${shortAddress(sale.sellerAddress)}.`,
       key: sale.txid,
-      kind: "Marketplace",
+      kind: "AMO",
       network: sale.network,
-      title: "Credit sale",
+      title: "AMO sale",
       txid: sale.txid,
     });
   }
@@ -41010,7 +43239,7 @@ function mergeMailMessageLists(indexedMessages, scannedMessages) {
   return [...merged.values()].sort(
     (left, right) =>
       Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      String(right.txid ?? "").localeCompare(String(left.txid ?? "")),
+      compareCanonicalUtf8(right.txid, left.txid),
   );
 }
 
@@ -41068,7 +43297,7 @@ function compareMailContentRepairPriority(left, right) {
     Number(mailMessageNeedsAttachmentRepair(right)) -
       Number(mailMessageNeedsAttachmentRepair(left)) ||
     mailMessageTimeMs(right) - mailMessageTimeMs(left) ||
-    String(right?.txid ?? "").localeCompare(String(left?.txid ?? ""))
+    compareCanonicalUtf8(right?.txid, left?.txid)
   );
 }
 
@@ -42734,6 +44963,7 @@ function pruneInternalVerifierStateCache(activeBlockHeight = 0) {
     const completeState =
       key.startsWith("token-complete:") ||
       key.startsWith("id-complete:") ||
+      key.startsWith("work-amo-v5-block:") ||
       key.startsWith("canonical-context:");
     if (
       (entry?.settled && entry.expiresAt <= now) ||
@@ -42785,13 +45015,6 @@ async function cachedInternalVerifierState(key, loader) {
   }
 }
 
-function transactionHasCanonicalVerifierProtocol(tx) {
-  const vout = Array.isArray(tx?.vout) ? tx.vout : [];
-  return [PROTOCOL_PREFIX, ID_PROTOCOL_PREFIX, TOKEN_PROTOCOL_PREFIX].some(
-    (prefix) => decodedProtocolMessages(vout, prefix).length > 0,
-  );
-}
-
 async function canonicalVerifierCurrentBlock(
   network,
   requiredBlockHeight,
@@ -42831,19 +45054,32 @@ async function canonicalVerifierCurrentBlock(
       `Canonical verifier block ${requiredBlockHeight} does not extend its stored checkpoint.`,
     );
   }
+  const headerResponse = await bitcoinRpc(
+    "getblockheader",
+    [blockHash, false],
+  );
+  const blockHeaderHex = String(
+    headerResponse?.ok ? headerResponse.result : "",
+  )
+    .trim()
+    .toLowerCase();
+  if (!/^[0-9a-f]{160}$/u.test(blockHeaderHex)) {
+    throw new Error(
+      `Canonical verifier block ${requiredBlockHeight} lacks its exact Core header.`,
+    );
+  }
   const candidates = blockTransactions.flatMap(
     (raw, blockIndex) => {
       const txid = String(raw?.txid ?? "").trim().toLowerCase();
-      const vout = (Array.isArray(raw?.vout) ? raw.vout : []).map(
-        coreVoutToMempoolVout,
-      );
+      const rawRecordSet =
+        canonicalRawProtocolRecordSetFromTransaction(raw);
       return /^[0-9a-f]{64}$/u.test(txid) &&
-        transactionHasCanonicalVerifierProtocol({ vout })
+        rawRecordSet.rawProtocolCandidateCount > 0
         ? [{ blockIndex, txid }]
         : [];
     },
   );
-  const transactions = await mapWithConcurrency(
+  const hydratedCandidates = await mapWithConcurrency(
     candidates,
     Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
     async ({ blockIndex, txid }) => {
@@ -42861,19 +45097,46 @@ async function canonicalVerifierCurrentBlock(
         );
       }
       return {
-        ...tx,
-        _powBlockIndex: blockIndex,
-        status: {
-          ...(tx.status ?? {}),
-          block_hash: blockHash,
-          block_height: requiredBlockHeight,
-          block_time: Number(block?.time) || tx.status?.block_time,
-          confirmed: true,
+        blockIndex,
+        transaction: {
+          ...tx,
+          _powBlockIndex: blockIndex,
+          hex: String(blockTransactions[blockIndex]?.hex ?? "")
+            .trim()
+            .toLowerCase(),
+          status: {
+            ...(tx.status ?? {}),
+            block_hash: blockHash,
+            block_height: requiredBlockHeight,
+            block_index: blockIndex,
+            block_time: Number(block?.time) || tx.status?.block_time,
+            confirmed: true,
+          },
         },
       };
     },
   );
-  return { blockHash, transactions };
+  const hydratedByIndex = new Map(
+    hydratedCandidates.map(({ blockIndex, transaction }) => [
+      blockIndex,
+      transaction,
+    ]),
+  );
+  const canonicalBlockTransactions = blockTransactions.map(
+    (raw, blockIndex) =>
+      hydratedByIndex.get(blockIndex) ?? {
+        ...raw,
+        _powBlockIndex: blockIndex,
+      },
+  );
+  return {
+    blockHash,
+    blockHeaderHex,
+    blockTransactions: canonicalBlockTransactions,
+    transactions: hydratedCandidates.map(
+      ({ transaction }) => transaction,
+    ),
+  };
 }
 
 async function loadCanonicalVerifierContextFromCheckpoint(
@@ -42961,6 +45224,8 @@ async function loadCanonicalVerifierContextFromCheckpoint(
   ]);
   return {
     blockHash: current.blockHash,
+    blockHeaderHex: current.blockHeaderHex,
+    blockTransactions: current.blockTransactions,
     canonicalCoverage: true,
     coverageHeight: requiredBlockHeight,
     indexedThroughBlock: requiredBlockHeight,
@@ -43497,6 +45762,2110 @@ async function canonicalWorkMarketV2OraclesForTransactions(
   );
 }
 
+const WORK_AMO_V5_MOVEMENT_DENOMINATOR =
+  BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_UNIT_SCALE;
+
+function workAmoV5ExactInteger(value, { positive = false } = {}) {
+  const text = canonicalNonNegativeIntegerText(value, {
+    allowZero: !positive,
+  });
+  return text ? BigInt(text) : null;
+}
+
+function workAmoV5JsonNumbersAreExact(value) {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value);
+  }
+  if (Array.isArray(value)) {
+    return value.every(workAmoV5JsonNumbersAreExact);
+  }
+  if (value && typeof value === "object") {
+    return Object.values(value).every(workAmoV5JsonNumbersAreExact);
+  }
+  return true;
+}
+
+function workAmoV5TokenStateCommitmentProjection(tokenState) {
+  const holders = (Array.isArray(tokenState?.holders)
+    ? tokenState.holders
+    : [])
+    .filter(
+      (holder) =>
+        String(holder?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID,
+    )
+    .map((holder) => ({
+      address: String(holder?.address ?? "").trim(),
+      balanceAtoms:
+        canonicalWorkAtomsText(
+          holder?.balanceAtoms ??
+            parseWorkAmountToAtoms(holder?.balance ?? 0),
+          { allowZero: true },
+        ) || "0",
+    }))
+    .sort((left, right) =>
+      compareWorkAmoUtf8(left.address, right.address)
+    );
+  const listings = (Array.isArray(tokenState?.listings)
+    ? tokenState.listings
+    : [])
+    .filter(
+      (listing) =>
+        String(listing?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID,
+    )
+    .map((listing) => ({
+      amountAtoms:
+        canonicalWorkAtomsText(
+          listing?.amountAtoms ??
+            workAmountAtomsFromRecord(listing, {
+              storedAmountIsAtoms: false,
+            }),
+        ) || "",
+      frozenTerms:
+        listing?.frozenTerms ??
+        listing?.workAmoPricing?.frozenTerms ??
+        listing?.workMarketPricing?.frozenTerms ??
+        null,
+      listingId: String(listing?.listingId ?? "").trim().toLowerCase(),
+      priceSats: canonicalNonNegativeIntegerText(listing?.priceSats),
+      saleAuthorization: listing?.saleAuthorization ?? null,
+      sellerAddress: String(listing?.sellerAddress ?? "").trim(),
+    }))
+    .sort((left, right) =>
+      compareWorkAmoUtf8(left.listingId, right.listingId)
+    );
+  return {
+    confirmedSupplyAtoms:
+      canonicalWorkAtomsText(tokenState?.confirmedSupplyAtoms, {
+        allowZero: true,
+      }) || "0",
+    holders,
+    listings,
+  };
+}
+
+async function workAmoV5WorkStateWithCanonicalListingWitnesses(
+  tokenState,
+  network,
+) {
+  const listings = Array.isArray(tokenState?.listings)
+    ? tokenState.listings
+    : [];
+  const referenceIds = [
+    ...new Set(
+      listings.flatMap((listing) => {
+        const version = String(
+          listing?.saleAuthorization?.version ?? "",
+        ).trim();
+        const listingId = String(listing?.listingId ?? "")
+          .trim()
+          .toLowerCase();
+        return (
+          [TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION,
+            TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION].includes(version) &&
+          /^[0-9a-f]{64}$/u.test(listingId)
+        )
+          ? [listingId]
+          : [];
+      }),
+    ),
+  ];
+  const witnesses = new Map(
+    (
+      await mapWithConcurrency(
+        referenceIds,
+        Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
+        async (listingId) => [
+          listingId,
+          await proofIndexCanonicalWorkListingById(
+            network,
+            listingId,
+          ).catch(() => null),
+        ],
+      )
+    ).filter(([, witness]) => witness),
+  );
+  return {
+    ...tokenState,
+    listings: listings.map((listing) => {
+      const witness = witnesses.get(
+        String(listing?.listingId ?? "").trim().toLowerCase(),
+      );
+      if (!witness) {
+        return listing;
+      }
+      return {
+        ...listing,
+        frozenTerms:
+          listing?.frozenTerms ??
+          witness.listingFrozenTerms,
+        listingAuthorization:
+          listing?.listingAuthorization ??
+          witness.listingAuthorization,
+      };
+    }),
+  };
+}
+
+function workAmoV5HistoricalMovements(tokenState, throughHeight) {
+  const movements = [];
+  const identities = new Set();
+  const postActivationPositions = new Set();
+  const add = (item, kind) => {
+    const blockHeight = Number(item?.blockHeight);
+    const txid = String(item?.txid ?? "").trim().toLowerCase();
+    const amountAtoms = workAtomsBigIntFromRecord(item);
+    const blockIndex =
+      item?.blockIndex === undefined ||
+      item?.blockIndex === null ||
+      item?.blockIndex === ""
+        ? Number.NaN
+        : Number(item.blockIndex);
+    const protocolVout =
+      item?.protocolVout === undefined ||
+      item?.protocolVout === null ||
+      item?.protocolVout === ""
+        ? Number.NaN
+        : Number(item.protocolVout);
+    const recordOrdinal =
+      item?.recordOrdinal === undefined ||
+      item?.recordOrdinal === null ||
+      item?.recordOrdinal === ""
+        ? Number.NaN
+        : Number(item.recordOrdinal);
+    if (
+      item?.confirmed !== true ||
+      String(item?.tokenId ?? "").trim().toLowerCase() !== WORK_TOKEN_ID ||
+      !Number.isSafeInteger(blockHeight) ||
+      blockHeight <= 0 ||
+      blockHeight > throughHeight ||
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !Number.isSafeInteger(blockIndex) ||
+      blockIndex < 0 ||
+      !Number.isSafeInteger(protocolVout) ||
+      protocolVout < 0 ||
+      !Number.isSafeInteger(recordOrdinal) ||
+      recordOrdinal < 0 ||
+      amountAtoms === null ||
+      amountAtoms <= 0n
+    ) {
+      return;
+    }
+    const identity = [
+      kind,
+      txid,
+      protocolVout,
+      recordOrdinal,
+    ].join(":");
+    if (blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) {
+      const position = [
+        blockHeight,
+        blockIndex,
+        protocolVout,
+        recordOrdinal,
+      ].join(":");
+      if (postActivationPositions.has(position)) {
+        throw new Error(
+          `Canonical AMO opening state has duplicate position ${position}.`,
+        );
+      }
+      postActivationPositions.add(position);
+    }
+    if (identities.has(identity)) {
+      throw new Error(
+        `Canonical AMO opening state has duplicate movement ${identity}.`,
+      );
+    }
+    identities.add(identity);
+    movements.push({
+      amountAtoms: amountAtoms.toString(),
+      blockHeight,
+      blockIndex,
+      identity,
+      protocolVout,
+      recordOrdinal,
+      txid,
+    });
+  };
+  for (const mint of Array.isArray(tokenState?.mints)
+    ? tokenState.mints
+    : []) {
+    add(mint, "mint");
+  }
+  for (const transfer of Array.isArray(tokenState?.transfers)
+    ? tokenState.transfers
+    : []) {
+    add(transfer, "transfer");
+  }
+  for (const sale of Array.isArray(tokenState?.sales)
+    ? tokenState.sales
+    : []) {
+    add(sale, "sale");
+  }
+  return movements.sort(
+    (left, right) =>
+      left.blockHeight - right.blockHeight ||
+      left.blockIndex - right.blockIndex ||
+      left.protocolVout - right.protocolVout ||
+      left.recordOrdinal - right.recordOrdinal ||
+      compareWorkAmoUtf8(left.identity, right.identity),
+  );
+}
+
+function workAmoV5AccumulatorNetworkValueQ8(state) {
+  const base = Object.fromEntries(
+    WORK_AMO_V5_BASE_STATE_FIELDS.map((field) => [
+      field,
+      BigInt(state?.baseState?.[field] ?? "0"),
+    ]),
+  );
+  const baseNetworkValueQ8 = growthActualBaseStateTotalQ8(base);
+  const creditFixedQ8 = BigInt(state?.creditFixedQ8 ?? "0");
+  const creditMovementFrozenValueQ8 = BigInt(
+    state?.creditMovementFrozenValueQ8 ?? "0",
+  );
+  const frozenNetworkValueQ8 =
+    baseNetworkValueQ8 + creditFixedQ8 + creditMovementFrozenValueQ8;
+  const creditMovementLiveValueQ8 = (
+    Array.isArray(state?.movements) ? state.movements : []
+  ).reduce(
+    (total, movement) =>
+      total +
+      (BigInt(movement.amountAtoms) * frozenNetworkValueQ8) /
+        WORK_AMO_V5_MOVEMENT_DENOMINATOR,
+    0n,
+  );
+  return {
+    baseNetworkValueQ8,
+    creditMovementLiveValueQ8,
+    frozenNetworkValueQ8,
+    networkValueQ8:
+      baseNetworkValueQ8 + creditFixedQ8 + creditMovementLiveValueQ8,
+  };
+}
+
+function workAmoV5AccumulatorWithRecomputedValue(state) {
+  const next = structuredClone(state);
+  next.networkValueQ8 =
+    workAmoV5AccumulatorNetworkValueQ8(next).networkValueQ8.toString();
+  return next;
+}
+
+function workAmoV5ExactValueAliases(prefix, valueQ8) {
+  const exact = q8ToCanonicalDecimal(valueQ8);
+  return {
+    [`${prefix}Q8`]: valueQ8.toString(),
+    [`${prefix}Sats`]: exact,
+    [`${prefix}SatsApproximate`]: q8ToNumber(valueQ8),
+    [`${prefix}SatsExact`]: exact,
+  };
+}
+
+function workAmoV5ClosingSummaryProjection(state, value, workFloor) {
+  const baseState = Object.fromEntries(
+    WORK_AMO_V5_BASE_STATE_FIELDS.map((field) => [
+      field,
+      BigInt(state.baseState[field]),
+    ]),
+  );
+  const supply = BigInt(WORK_TOKEN_MAX_SUPPLY);
+  const creditFixedQ8 = BigInt(state.creditFixedQ8);
+  const creditMovementFrozenValueQ8 = BigInt(
+    state.creditMovementFrozenValueQ8,
+  );
+  const creditEventFrozenValueQ8 =
+    creditFixedQ8 + creditMovementFrozenValueQ8;
+  const creditEventLiveValueQ8 =
+    creditFixedQ8 + value.creditMovementLiveValueQ8;
+  const frozenFloorQ8 = value.frozenNetworkValueQ8 / supply;
+  const liveFloorQ8 = value.networkValueQ8 / supply;
+  const exactAliases = {
+    ...workAmoV5ExactValueAliases(
+      "baseNetworkValue",
+      value.baseNetworkValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases(
+      "baseTotal",
+      value.baseNetworkValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases(
+      "creditEventFrozenValue",
+      creditEventFrozenValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases(
+      "creditEventLiveValue",
+      creditEventLiveValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases("creditFixed", creditFixedQ8),
+    ...workAmoV5ExactValueAliases(
+      "creditFrozenNetworkValue",
+      creditEventFrozenValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases(
+      "creditLiveNetworkValue",
+      creditEventLiveValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases(
+      "creditMovementFrozenValue",
+      creditMovementFrozenValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases(
+      "creditMovementLiveValue",
+      value.creditMovementLiveValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases(
+      "creditNetworkValue",
+      creditEventLiveValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases("floor", liveFloorQ8),
+    ...workAmoV5ExactValueAliases("frozenFloor", frozenFloorQ8),
+    ...workAmoV5ExactValueAliases(
+      "frozenNetworkValue",
+      value.frozenNetworkValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases(
+      "frozenTotal",
+      value.frozenNetworkValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases("liveFloor", liveFloorQ8),
+    ...workAmoV5ExactValueAliases(
+      "liveNetworkValue",
+      value.networkValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases("liveTotal", value.networkValueQ8),
+    ...workAmoV5ExactValueAliases(
+      "networkValue",
+      value.networkValueQ8,
+    ),
+    ...workAmoV5ExactValueAliases("total", value.networkValueQ8),
+    ...workAmoV5ExactValueAliases(
+      "workNetworkValue",
+      value.networkValueQ8,
+    ),
+  };
+  const numberState = Object.fromEntries(
+    Object.entries(baseState).map(([field, fieldValue]) => [
+      field,
+      Number(fieldValue),
+    ]),
+  );
+  const marketplaceFee =
+    baseState.idMarketplaceFeeSats +
+    baseState.tokenMarketplaceFeeSats;
+  const marketplaceSaleVolume =
+    baseState.idMarketplaceVolumeSats +
+    baseState.tokenSaleVolumeSats;
+  const marketplaceFlow = marketplaceFee + marketplaceSaleVolume;
+  const tokenFlow =
+    baseState.tokenCreationFlowSats + baseState.tokenMintFlowSats;
+  const walletFlow = baseState.tokenTransferFlowSats;
+  const scaledQ8 = (flow) =>
+    flow * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE;
+  const componentQ8 = {
+    browserSats: scaledQ8(baseState.browserFlowSats),
+    computerEventSats: scaledQ8(baseState.computerEventFlowSats),
+    driveSats: scaledQ8(baseState.driveFlowSats),
+    idSats:
+      (baseState.powids *
+        baseState.powids *
+        GROWTH_ID_DENSITY_NUMERATOR *
+        VALUE_Q8_SCALE) /
+      GROWTH_ID_DENSITY_DENOMINATOR,
+    inceptionBondSats: scaledQ8(baseState.inceptionBondFlowSats),
+    infinityBondSats: scaledQ8(baseState.infinityBondFlowSats),
+    mailSats: scaledQ8(baseState.mailFlowSats),
+    marketplaceSats: scaledQ8(marketplaceFlow),
+    tokenSats: scaledQ8(tokenFlow),
+    walletSats: scaledQ8(walletFlow),
+  };
+  const componentFields = Object.fromEntries(
+    Object.entries(componentQ8).map(([field, fieldValueQ8]) => [
+      field,
+      q8ToNumber(fieldValueQ8),
+    ]),
+  );
+  const flowFields = {
+    ...numberState,
+    marketplaceFeeSats: Number(marketplaceFee),
+    marketplaceFlowSats: Number(marketplaceFlow),
+    marketplaceMutationFeeSats: Number(marketplaceFee),
+    marketplaceSaleVolumeSats: Number(marketplaceSaleVolume),
+    marketplaceVolumeSats: Number(marketplaceSaleVolume),
+    tokenFlowSats: Number(tokenFlow),
+    tokenSaleFlowSats: Number(baseState.tokenSaleVolumeSats),
+    walletFlowSats: Number(walletFlow),
+  };
+  const networkValueSats = q8ToNumber(value.networkValueQ8);
+  const floorSats = q8ToNumber(liveFloorQ8);
+  const modelTotalUsd = growthSatsToUsdAtYears(
+    networkValueSats,
+    growthElapsedYears(),
+  );
+  const btcUsd = numericValue(workFloor?.btcUsd);
+  const totalUsd =
+    btcUsd > 0
+      ? satsToUsdAtBtcUsd(networkValueSats, btcUsd)
+      : modelTotalUsd;
+  const floorUsd =
+    btcUsd > 0
+      ? satsToUsdAtBtcUsd(floorSats, btcUsd)
+      : modelTotalUsd / Number(supply);
+  return {
+    componentFields,
+    exactAliases,
+    flowFields,
+    floorSats,
+    floorUsd,
+    modelTotalUsd,
+    networkValueSats,
+    totalUsd,
+  };
+}
+
+function exactWorkAmoV5RawTransitionChainCommitment(value) {
+  const model = String(value?.model ?? "").trim();
+  const payloadBytes = Number(value?.payloadBytes);
+  const sha256 = String(value?.sha256 ?? "").trim().toLowerCase();
+  return model === WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL &&
+    Number.isSafeInteger(payloadBytes) &&
+    payloadBytes > 0 &&
+    /^[0-9a-f]{64}$/u.test(sha256)
+    ? { model, payloadBytes, sha256 }
+    : null;
+}
+
+function exactWorkAmoV5RawBlockDescriptorCommitment(value) {
+  const model = String(value?.model ?? "").trim();
+  const payloadBytes = Number(value?.payloadBytes);
+  const sha256 = String(value?.sha256 ?? "").trim().toLowerCase();
+  return model === WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL &&
+    Number.isSafeInteger(payloadBytes) &&
+    payloadBytes > 0 &&
+    /^[0-9a-f]{64}$/u.test(sha256)
+    ? { model, payloadBytes, sha256 }
+    : null;
+}
+
+function workAmoV5RawTransitionChainCommitmentsEqual(left, right) {
+  const normalizedLeft =
+    exactWorkAmoV5RawTransitionChainCommitment(left);
+  const normalizedRight =
+    exactWorkAmoV5RawTransitionChainCommitment(right);
+  return Boolean(
+    normalizedLeft &&
+      normalizedRight &&
+      normalizedLeft.model === normalizedRight.model &&
+      normalizedLeft.payloadBytes === normalizedRight.payloadBytes &&
+      normalizedLeft.sha256 === normalizedRight.sha256,
+  );
+}
+
+async function workFloorWithVerifiedWorkAmoV5ClosingState(
+  workFloor,
+  network,
+  blockHeight,
+  blockHash,
+) {
+  if (
+    network !== "livenet" ||
+    blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    return workFloor;
+  }
+  const transition = await proofIndexWorkAmoBlockTransition(
+    network,
+    blockHeight,
+    blockHash,
+  );
+  const validation = validateWorkAmoV5SufficientState(
+    transition?.payload?.closingSufficientState,
+  );
+  if (
+    !transition ||
+    !validation.valid ||
+    transition.blockHeight !== blockHeight ||
+    transition.blockHash !== blockHash ||
+    validation.state.throughBlockHeight !== blockHeight ||
+    validation.state.throughBlockHash !== blockHash
+  ) {
+    throw freshDataUnavailableError(
+      "The canonical AMO transition closing state is unavailable.",
+    );
+  }
+  const state = validation.state;
+  const commitment = workAmoV5CanonicalStateCommitment(state);
+  const payloadCommitment = transition.payload?.closingStateCommitment;
+  const transitionChainCommitment =
+    exactWorkAmoV5RawTransitionChainCommitment(
+      transition.payload?.transitionChainCommitment,
+    );
+  const blockDescriptorCommitment =
+    exactWorkAmoV5RawBlockDescriptorCommitment(
+      transition.payload?.blockDescriptorCommitment,
+    );
+  const blockTransactionCount = Number(
+    transition.payload?.blockTransactionCount,
+  );
+  const bip141Witness = normalizedWorkAmoV5Bip141Witness(
+    transition.payload?.bip141Witness,
+    blockTransactionCount,
+  );
+  const value = workAmoV5AccumulatorNetworkValueQ8(state);
+  if (
+    transition.payload?.blockDescriptorModel !==
+      WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL ||
+    !blockDescriptorCommitment ||
+    !Number.isSafeInteger(blockTransactionCount) ||
+    blockTransactionCount < 1 ||
+    !bip141Witness ||
+    transition.payload?.transitionChainModel !==
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL ||
+    !transitionChainCommitment ||
+    commitment.sha256 !==
+      String(transition.closing_state_sha256 ?? "").trim().toLowerCase() ||
+    commitment.payloadBytes !==
+      Number(transition.closing_state_payload_bytes) ||
+    commitment.sha256 !==
+      String(payloadCommitment?.sha256 ?? "").trim().toLowerCase() ||
+    commitment.payloadBytes !== Number(payloadCommitment?.payloadBytes) ||
+    value.networkValueQ8.toString() !== state.networkValueQ8 ||
+    state.networkValueQ8 !==
+      String(transition.closing_network_value_q8 ?? "")
+  ) {
+    throw freshDataUnavailableError(
+      "The canonical AMO transition closing commitment diverged.",
+    );
+  }
+  const relationalTokenState =
+    await proofIndexWorkAmoRelationalTokenStateEvidence(
+      network,
+      state.tokenStateCommitment,
+    );
+  if (relationalTokenState?.complete !== true) {
+    throw freshDataUnavailableError(
+      "The canonical AMO transition token state is not relationally complete.",
+    );
+  }
+
+  const projection = workAmoV5ClosingSummaryProjection(
+    state,
+    value,
+    workFloor,
+  );
+  const transitionEvidence = {
+    blockHash,
+    blockHeight,
+    blockDescriptorCommitment,
+    blockDescriptorModel: WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
+    blockTransactionCount,
+    closingStateCommitment: commitment,
+    eventSetCommitment: transition.payload?.eventSetCommitment,
+    model: WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
+    networkValueQ8: value.networkValueQ8.toString(),
+    transitionChainCommitment,
+    transitionChainModel: WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+  };
+  const actualValue = {
+    ...(workFloor?.actualValue ?? {}),
+    ...projection.flowFields,
+    ...projection.componentFields,
+    ...projection.exactAliases,
+    floorUsd: projection.floorUsd,
+    modelTotalUsd: projection.modelTotalUsd,
+    networkUsd: projection.totalUsd,
+    totalUsd: projection.totalUsd,
+    workAmoV5Transition: transitionEvidence,
+    workAmoV5AccumulatorModel:
+      WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+    workNetworkValueAccountingModel:
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+  };
+  const chartPoints = Array.isArray(workFloor?.chartPoints)
+    ? [...workFloor.chartPoints]
+    : [];
+  const finalChartPoint = {
+    ...(chartPoints.at(-1) ?? {}),
+    floorQ8: projection.exactAliases.floorQ8,
+    floorSats: projection.floorSats,
+    label: chartPoints.at(-1)?.label ?? "Real now",
+    networkValueQ8: projection.exactAliases.networkValueQ8,
+    networkValueSats: projection.networkValueSats,
+    years: Number.isFinite(chartPoints.at(-1)?.years)
+      ? chartPoints.at(-1).years
+      : growthElapsedYears(),
+  };
+  if (chartPoints.length > 0) {
+    chartPoints[chartPoints.length - 1] = finalChartPoint;
+  } else {
+    chartPoints.push(finalChartPoint);
+  }
+  const stats = {
+    ...(workFloor?.stats ?? {}),
+    ...projection.flowFields,
+    ...projection.componentFields,
+    frozenNetworkValueSats:
+      projection.exactAliases.frozenNetworkValueSatsApproximate,
+    liveNetworkValueSats:
+      projection.exactAliases.liveNetworkValueSatsApproximate,
+    networkValueSats:
+      projection.exactAliases.networkValueSatsApproximate,
+    totalSats: projection.exactAliases.totalSatsApproximate,
+  };
+  return {
+    ...workFloor,
+    ...projection.exactAliases,
+    actualValue,
+    chartPoints,
+    floorUsd: projection.floorUsd,
+    modelTotalUsd: projection.modelTotalUsd,
+    networkUsd: projection.totalUsd,
+    powids: projection.flowFields.powids,
+    stats,
+    tokenFlowSats: projection.flowFields.tokenFlowSats,
+    totalUsd: projection.totalUsd,
+    workAmoV5Transition: transitionEvidence,
+    workAmoV5AccumulatorModel:
+      WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+    workNetworkValueAccountingModel:
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+  };
+}
+
+function exactCanonicalAmoPositionInteger(value, minimum = 0) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+}
+
+function workAmoV5QuoteHeadCommitmentProjection(quote) {
+  if (quote == null) {
+    return null;
+  }
+  const blockHash = String(quote?.blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const blockHeight = exactCanonicalAmoPositionInteger(
+    quote?.blockHeight,
+    1,
+  );
+  const blockTransactionIndex = exactCanonicalAmoPositionInteger(
+    quote?.blockTransactionIndex ?? quote?.blockIndex,
+  );
+  const protocolVout = exactCanonicalAmoPositionInteger(
+    quote?.protocolVout,
+  );
+  const recordOrdinal = exactCanonicalAmoPositionInteger(
+    quote?.recordOrdinal,
+  );
+  const txid = String(quote?.txid ?? "").trim().toLowerCase();
+  const v1DeclarationTxid = String(
+    quote?.v1DeclarationTxid ?? quote?.declarationTxid ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const previousQuoteTxid = String(quote?.previousQuoteTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const sequence = canonicalNonNegativeIntegerText(quote?.sequence, {
+    allowZero: false,
+  });
+  const usdPer100mProofsQ8 = canonicalNonNegativeIntegerText(
+    quote?.usdPer100mProofsQ8,
+    { allowZero: false },
+  );
+  if (
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    blockHeight === null ||
+    blockHeight < WORK_AMO_V5_V1_ACTIVATION_HEIGHT ||
+    blockTransactionIndex === null ||
+    protocolVout === null ||
+    recordOrdinal !== 0 ||
+    !/^[0-9a-f]{64}$/u.test(txid) ||
+    v1DeclarationTxid !== WORK_AMO_V5_V1_DECLARATION_TXID ||
+    !/^[0-9a-f]{64}$/u.test(previousQuoteTxid) ||
+    !sequence ||
+    !usdPer100mProofsQ8
+  ) {
+    return null;
+  }
+  return {
+    blockHash,
+    blockHeight,
+    blockTransactionIndex,
+    previousQuoteTxid,
+    protocolVout,
+    recordOrdinal,
+    sequence,
+    txid,
+    usdPer100mProofsQ8,
+    v1DeclarationTxid,
+  };
+}
+
+async function workAmoV5OpeningAccumulatorFromPriorTransition(
+  network,
+  priorHeight,
+  priorBlockHash,
+) {
+  const prior = await proofIndexWorkAmoBlockTransition(
+    network,
+    priorHeight,
+    priorBlockHash,
+  );
+  const closingStateSource =
+    prior?.payload?.closingSufficientState;
+  const validation =
+    validateWorkAmoV5SufficientState(closingStateSource);
+  if (
+    !prior ||
+    !validation.valid ||
+    prior.blockHeight !== priorHeight ||
+    prior.blockHash !== priorBlockHash ||
+    validation.state.throughBlockHeight !== priorHeight ||
+    validation.state.throughBlockHash !== priorBlockHash
+  ) {
+    throw new Error(
+      "Canonical AMO prior immutable block transition is unavailable.",
+    );
+  }
+  const commitment =
+    workAmoV5CanonicalStateCommitment(validation.state);
+  const payloadCommitment =
+    prior.payload?.closingStateCommitment;
+  const transitionChainCommitment =
+    exactWorkAmoV5RawTransitionChainCommitment(
+      prior.payload?.transitionChainCommitment,
+    );
+  const blockDescriptorCommitment =
+    exactWorkAmoV5RawBlockDescriptorCommitment(
+      prior.payload?.blockDescriptorCommitment,
+    );
+  const blockTransactionCount = Number(
+    prior.payload?.blockTransactionCount,
+  );
+  const bip141Witness = normalizedWorkAmoV5Bip141Witness(
+    prior.payload?.bip141Witness,
+    blockTransactionCount,
+  );
+  let closingTokenStateCommitment = null;
+  let closingGenericTokenStateCommitment = null;
+  let closingIdStateCommitment = null;
+  try {
+    closingTokenStateCommitment =
+      workAmoV5CanonicalTokenStateCommitment(
+        prior.payload?.closingTokenState,
+      );
+    closingGenericTokenStateCommitment =
+      workAmoV5RawGenericStateCommitment(
+        prior.payload?.closingGenericTokenState,
+      );
+    closingIdStateCommitment =
+      workAmoV5RawIdStateCommitment(
+        prior.payload?.closingIdState,
+      );
+  } catch {
+    closingTokenStateCommitment = null;
+    closingGenericTokenStateCommitment = null;
+    closingIdStateCommitment = null;
+  }
+  if (
+    prior.payload?.blockDescriptorModel !==
+      WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL ||
+    !blockDescriptorCommitment ||
+    !Number.isSafeInteger(blockTransactionCount) ||
+    blockTransactionCount < 1 ||
+    !bip141Witness ||
+    prior.payload?.transitionChainModel !==
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL ||
+    !transitionChainCommitment ||
+    commitment.sha256 !==
+      String(prior?.closing_state_sha256 ?? "").trim().toLowerCase() ||
+    commitment.payloadBytes !==
+      Number(prior?.closing_state_payload_bytes) ||
+    commitment.sha256 !==
+      String(payloadCommitment?.sha256 ?? "").trim().toLowerCase() ||
+    commitment.payloadBytes !==
+      Number(payloadCommitment?.payloadBytes) ||
+    !closingTokenStateCommitment ||
+    closingTokenStateCommitment.sha256 !==
+      validation.state.tokenStateCommitment.sha256 ||
+    closingTokenStateCommitment.payloadBytes !==
+      validation.state.tokenStateCommitment.payloadBytes ||
+    !closingGenericTokenStateCommitment ||
+    closingGenericTokenStateCommitment.sha256 !==
+      validation.state.genericTokenStateCommitment.sha256 ||
+    closingGenericTokenStateCommitment.payloadBytes !==
+      validation.state.genericTokenStateCommitment.payloadBytes ||
+    !closingIdStateCommitment ||
+    closingIdStateCommitment.sha256 !==
+      validation.state.idStateCommitment.sha256 ||
+    closingIdStateCommitment.payloadBytes !==
+      validation.state.idStateCommitment.payloadBytes ||
+    validation.state.networkValueQ8 !==
+      String(prior?.closing_network_value_q8 ?? "")
+  ) {
+    throw new Error(
+      "Canonical AMO prior transition state commitment diverged.",
+    );
+  }
+  const quoteHead = await proofIndexWorkUsdQuoteHead(network, {
+      blockHeight: priorHeight + 1,
+      blockIndex: 0,
+      protocolVout: 0,
+      recordOrdinal: 0,
+    });
+  const storedQuote =
+    workAmoV5QuoteHeadCommitmentProjection(
+      validation.state.quoteHead,
+    );
+  const relationalQuote =
+    workAmoV5QuoteHeadCommitmentProjection(quoteHead);
+  if (
+    (storedQuote === null) !== (relationalQuote === null) ||
+    (storedQuote &&
+      workAmoV5CanonicalPayloadCommitment(storedQuote).sha256 !==
+        workAmoV5CanonicalPayloadCommitment(relationalQuote).sha256)
+  ) {
+    throw new Error(
+      "Canonical AMO prior transition does not match H-1 canonical quote state.",
+    );
+  }
+  return {
+    genericState: prior.payload.closingGenericTokenState,
+    idState: prior.payload.closingIdState,
+    priorTransition: prior,
+    state: validation.state,
+    workProjection:
+      prior.payload.closingWorkProjection ?? null,
+    workState: prior.payload.closingTokenState,
+  };
+}
+
+async function workAmoV5OpeningAccumulatorState(
+  network,
+  priorHeight,
+  priorBlockHash,
+  persistedActivationSeed = null,
+) {
+  if (
+    network !== "livenet" ||
+    !Number.isSafeInteger(priorHeight) ||
+    priorHeight < WORK_AMO_V5_DECLARATION_HEIGHT ||
+    !/^[0-9a-f]{64}$/u.test(String(priorBlockHash ?? "").toLowerCase())
+  ) {
+    throw new Error("Canonical AMO opening checkpoint is invalid.");
+  }
+  if (priorHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) {
+    return workAmoV5OpeningAccumulatorFromPriorTransition(
+      network,
+      priorHeight,
+      priorBlockHash,
+    );
+  }
+  let validatedPersistedActivationSeed = null;
+  if (persistedActivationSeed) {
+    const validation = validateWorkAmoV5SufficientState(
+      persistedActivationSeed.state,
+    );
+    const stateCommitment = validation.valid
+      ? workAmoV5CanonicalStateCommitment(validation.state)
+      : null;
+    const declaredCommitment =
+      persistedActivationSeed.stateCommitment;
+    let genericState;
+    let idState;
+    let workProjection;
+    let workState;
+    let genericStateCommitment;
+    let idStateCommitment;
+    let workProjectionCommitment;
+    let workStateCommitment;
+    try {
+      if (
+        !workAmoV5JsonNumbersAreExact(
+          persistedActivationSeed,
+        )
+      ) {
+        throw new Error("unsafe persisted seed number");
+      }
+      genericState = normalizeWorkAmoV5RawGenericState(
+        persistedActivationSeed.genericState,
+      );
+      idState = normalizeWorkAmoV5RawIdState(
+        persistedActivationSeed.idState,
+      );
+      workProjection = normalizeWorkAmoV5RawWorkState(
+        persistedActivationSeed.workProjection,
+      );
+      workState = normalizeWorkAmoV5RawWorkState(
+        persistedActivationSeed.workState,
+      );
+      genericStateCommitment =
+        workAmoV5RawGenericStateCommitment(genericState);
+      idStateCommitment =
+        workAmoV5RawIdStateCommitment(idState);
+      workProjectionCommitment =
+        workAmoV5CanonicalTokenStateCommitment(workProjection);
+      workStateCommitment =
+        workAmoV5CanonicalTokenStateCommitment(workState);
+    } catch {
+      genericStateCommitment = null;
+      idStateCommitment = null;
+      workProjectionCommitment = null;
+      workStateCommitment = null;
+    }
+    if (
+      !validation.valid ||
+      validation.state.throughBlockHeight !== priorHeight ||
+      validation.state.throughBlockHash !== priorBlockHash ||
+      stateCommitment.sha256 !==
+        String(declaredCommitment?.sha256 ?? "")
+          .trim()
+          .toLowerCase() ||
+      stateCommitment.payloadBytes !==
+        Number(declaredCommitment?.payloadBytes) ||
+      !genericStateCommitment ||
+      genericStateCommitment.sha256 !==
+        validation.state.genericTokenStateCommitment.sha256 ||
+      genericStateCommitment.payloadBytes !==
+        validation.state.genericTokenStateCommitment.payloadBytes ||
+      !idStateCommitment ||
+      idStateCommitment.sha256 !==
+        validation.state.idStateCommitment.sha256 ||
+      idStateCommitment.payloadBytes !==
+        validation.state.idStateCommitment.payloadBytes ||
+      !workStateCommitment ||
+      workStateCommitment.sha256 !==
+        validation.state.tokenStateCommitment.sha256 ||
+      workStateCommitment.payloadBytes !==
+        validation.state.tokenStateCommitment.payloadBytes ||
+      !workProjectionCommitment ||
+      workProjectionCommitment.sha256 !==
+        workStateCommitment.sha256 ||
+      workProjectionCommitment.payloadBytes !==
+        workStateCommitment.payloadBytes
+    ) {
+      throw new Error(
+        "Canonical AMO persisted activation seed is invalid.",
+      );
+    }
+    validatedPersistedActivationSeed = {
+      commitment: stateCommitment,
+      genericStateCommitment,
+      idStateCommitment,
+      state: validation.state,
+      workProjectionCommitment,
+      workStateCommitment,
+    };
+  }
+  const [
+    summary,
+    rawTokenState,
+    rawGenericState,
+    rawIdState,
+    quoteHead,
+    openingStatusBefore,
+  ] =
+    await Promise.all([
+    proofIndexCanonicalSummaryLedgerPayload(
+      network,
+      priorHeight,
+      priorBlockHash,
+    ),
+    proofIndexTokenPayload(
+      network,
+      WORK_TOKEN_ID,
+      new URLSearchParams(),
+    ),
+    proofIndexWorkAmoGenericTokenStatePreimage(network, {
+      blockHash: priorBlockHash,
+      blockHeight: priorHeight,
+    }),
+    proofIndexRegistryPayload(network, {
+      allowIncompleteScan: true,
+      expectedHash: priorBlockHash,
+      expectedHeight: priorHeight,
+      registryAddress: registryAddressForNetwork(network),
+    }),
+    proofIndexWorkUsdQuoteHead(network, {
+      blockHeight: priorHeight + 1,
+      blockIndex: 0,
+      protocolVout: 0,
+      recordOrdinal: 0,
+    }),
+    proofIndexOperationalStatusPayload(network),
+  ]);
+  const openingStatusAfter =
+    await proofIndexOperationalStatusPayload(network);
+  const tokenState =
+    await workAmoV5WorkStateWithCanonicalListingWitnesses(
+      rawTokenState,
+      network,
+    );
+  const actual = summary?.workFloor?.actualValue;
+  if (
+    !summary ||
+    Number(summary.indexedThroughBlock) !== priorHeight ||
+    String(summary.indexedThroughBlockHash ?? "").trim().toLowerCase() !==
+      priorBlockHash ||
+    !actual ||
+    Number(tokenState?.indexedThroughBlock) !== priorHeight ||
+    rawGenericState?.complete !== true ||
+    Number(rawGenericState?.indexedThroughBlock) !== priorHeight ||
+    String(rawGenericState?.indexedThroughBlockHash ?? "")
+      .trim()
+      .toLowerCase() !== priorBlockHash ||
+    !rawIdState ||
+    Number(rawIdState?.indexedThroughBlock) !== priorHeight ||
+    String(rawIdState?.indexedThroughBlockHash ?? "")
+      .trim()
+      .toLowerCase() !== priorBlockHash ||
+    Number(openingStatusBefore?.indexedThroughBlock) !== priorHeight ||
+    String(openingStatusBefore?.scan?.blockHash ?? "")
+      .trim()
+      .toLowerCase() !== priorBlockHash ||
+    Number(openingStatusAfter?.indexedThroughBlock) !== priorHeight ||
+    String(openingStatusAfter?.scan?.blockHash ?? "")
+      .trim()
+      .toLowerCase() !== priorBlockHash
+  ) {
+    throw new Error(
+      "Canonical AMO H-1 summary or token state is unavailable.",
+    );
+  }
+  const baseState = {};
+  for (const field of WORK_AMO_V5_BASE_STATE_FIELDS) {
+    const value = workAmoV5ExactInteger(actual[field]);
+    if (value === null) {
+      throw new Error(
+        `Canonical AMO opening base field ${field} is unavailable.`,
+      );
+    }
+    baseState[field] = value.toString();
+  }
+  const baseNetworkValueQ8 = workAmoV5ExactInteger(
+    actual.baseNetworkValueQ8,
+  );
+  const creditEventFrozenValueQ8 = workAmoV5ExactInteger(
+    actual.creditEventFrozenValueQ8,
+  );
+  const creditMovementFrozenValueQ8 = workAmoV5ExactInteger(
+    actual.creditMovementFrozenValueQ8,
+  );
+  const expectedMovementLiveValueQ8 = workAmoV5ExactInteger(
+    actual.creditMovementLiveValueQ8,
+  );
+  const expectedFrozenNetworkValueQ8 = workAmoV5ExactInteger(
+    actual.frozenNetworkValueQ8,
+  );
+  const expectedNetworkValueQ8 = workAmoV5ExactInteger(
+    actual.networkValueQ8,
+    { positive: true },
+  );
+  if (
+    baseNetworkValueQ8 === null ||
+    creditEventFrozenValueQ8 === null ||
+    creditMovementFrozenValueQ8 === null ||
+    creditEventFrozenValueQ8 < creditMovementFrozenValueQ8 ||
+    expectedMovementLiveValueQ8 === null ||
+    expectedFrozenNetworkValueQ8 === null ||
+    expectedNetworkValueQ8 === null
+  ) {
+    throw new Error("Canonical AMO opening exact Q8 fields are unavailable.");
+  }
+  const baseBigIntState = Object.fromEntries(
+    Object.entries(baseState).map(([field, value]) => [field, BigInt(value)]),
+  );
+  if (
+    growthActualBaseStateTotalQ8(baseBigIntState) !== baseNetworkValueQ8
+  ) {
+    throw new Error("Canonical AMO opening base vector does not match H-1.");
+  }
+  const movements = workAmoV5HistoricalMovements(tokenState, priorHeight).map(
+    ({ amountAtoms, identity }) => ({ amountAtoms, identity }),
+  );
+  const openingGenericState =
+    normalizeWorkAmoV5RawGenericState(
+      rawGenericState,
+    );
+  if (
+    openingGenericState.tokens.length !==
+      rawGenericState.tokens.length ||
+    openingGenericState.holders.length !==
+      rawGenericState.holders.length ||
+    openingGenericState.listings.length !==
+      rawGenericState.listings.length
+  ) {
+    throw new Error(
+      "Canonical AMO activation generic token preimage is inexact.",
+    );
+  }
+  const openingIdState =
+    normalizeWorkAmoV5RawIdState(rawIdState);
+  const openingWorkState =
+    normalizeWorkAmoV5RawWorkState(
+      workAmoV5TokenStateCommitmentProjection(tokenState),
+    );
+  const indexedWorkState =
+    normalizeWorkAmoV5RawWorkState(
+      workAmoV5TokenStateCommitmentProjection(tokenState),
+    );
+  if (
+    workAmoV5CanonicalPayloadCommitment(openingWorkState).sha256 !==
+      workAmoV5CanonicalPayloadCommitment(indexedWorkState).sha256
+  ) {
+    throw new Error(
+      "Canonical AMO activation WORK seed diverges from H-1.",
+    );
+  }
+  const state = workAmoV5AccumulatorWithRecomputedValue({
+    baseState,
+    creditFixedQ8: (
+      creditEventFrozenValueQ8 - creditMovementFrozenValueQ8
+    ).toString(),
+    creditMovementFrozenValueQ8:
+      creditMovementFrozenValueQ8.toString(),
+    model: WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+    movements,
+    network,
+    networkValueQ8: expectedNetworkValueQ8.toString(),
+    quoteHead,
+    throughBlockHash: priorBlockHash,
+    throughBlockHeight: priorHeight,
+    genericTokenStateCommitment:
+      workAmoV5RawGenericStateCommitment(openingGenericState),
+    idStateCommitment:
+      workAmoV5RawIdStateCommitment(openingIdState),
+    tokenStateCommitment: workAmoV5CanonicalTokenStateCommitment(
+      openingWorkState,
+    ),
+  });
+  const evaluated = workAmoV5AccumulatorNetworkValueQ8(state);
+  if (
+    evaluated.baseNetworkValueQ8 !== baseNetworkValueQ8 ||
+    evaluated.creditMovementLiveValueQ8 !==
+      expectedMovementLiveValueQ8 ||
+    evaluated.frozenNetworkValueQ8 !== expectedFrozenNetworkValueQ8 ||
+    evaluated.networkValueQ8 !== expectedNetworkValueQ8 ||
+    !workAmoV5NetworkValueQ8FromSufficientState(state)
+  ) {
+    throw new Error(
+      "Canonical AMO opening sufficient state does not reproduce H-1.",
+    );
+  }
+  const opening = {
+    genericState: openingGenericState,
+    idState: openingIdState,
+    state,
+    summary,
+    tokenState,
+    workProjection:
+      tokenState,
+    workState: openingWorkState,
+  };
+  if (validatedPersistedActivationSeed) {
+    const independentStateCommitment =
+      workAmoV5CanonicalStateCommitment(state);
+    const independentGenericStateCommitment =
+      workAmoV5RawGenericStateCommitment(openingGenericState);
+    const independentIdStateCommitment =
+      workAmoV5RawIdStateCommitment(openingIdState);
+    const independentWorkStateCommitment =
+      workAmoV5CanonicalTokenStateCommitment(openingWorkState);
+    const independentWorkProjectionCommitment =
+      workAmoV5CanonicalTokenStateCommitment(
+        normalizeWorkAmoV5RawWorkState(tokenState),
+      );
+    if (
+      validatedPersistedActivationSeed.commitment.sha256 !==
+        independentStateCommitment.sha256 ||
+      validatedPersistedActivationSeed.commitment.payloadBytes !==
+        independentStateCommitment.payloadBytes ||
+      validatedPersistedActivationSeed.genericStateCommitment.sha256 !==
+        independentGenericStateCommitment.sha256 ||
+      validatedPersistedActivationSeed.genericStateCommitment.payloadBytes !==
+        independentGenericStateCommitment.payloadBytes ||
+      validatedPersistedActivationSeed.idStateCommitment.sha256 !==
+        independentIdStateCommitment.sha256 ||
+      validatedPersistedActivationSeed.idStateCommitment.payloadBytes !==
+        independentIdStateCommitment.payloadBytes ||
+      validatedPersistedActivationSeed.workStateCommitment.sha256 !==
+        independentWorkStateCommitment.sha256 ||
+      validatedPersistedActivationSeed.workStateCommitment.payloadBytes !==
+        independentWorkStateCommitment.payloadBytes ||
+      validatedPersistedActivationSeed.workProjectionCommitment.sha256 !==
+        independentWorkProjectionCommitment.sha256 ||
+      validatedPersistedActivationSeed.workProjectionCommitment.payloadBytes !==
+        independentWorkProjectionCommitment.payloadBytes
+    ) {
+      throw new Error(
+        "Canonical AMO persisted activation seed diverges from independent H-1 evidence.",
+      );
+    }
+    opening.persistedActivationSeedVerified = true;
+  }
+  return opening;
+}
+
+function workAmoV5ProtocolRecordsForCurrentBlock(
+  transactions,
+  blockHeight,
+  blockHash,
+) {
+  const records = [];
+  let rawProtocolCandidateCount = 0;
+  for (const tx of tokenProtocolSortedTransactions(
+    (Array.isArray(transactions) ? transactions : []).filter(
+      (candidate) =>
+        transactionConfirmed(candidate) &&
+        transactionBlockHeight(candidate) === blockHeight &&
+        transactionBlockHash(candidate) === blockHash,
+    ),
+  )) {
+    const txid = transactionTxid(tx);
+    const blockTransactionIndex = transactionBlockIndex(tx);
+    if (
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !Number.isSafeInteger(blockTransactionIndex) ||
+      blockTransactionIndex < 0
+    ) {
+      throw new Error("Canonical AMO Core transaction position is invalid.");
+    }
+    const rawRecordSet =
+      canonicalRawProtocolRecordSetFromTransaction(tx);
+    rawProtocolCandidateCount +=
+      rawRecordSet.rawProtocolCandidateCount;
+    const txRecords = rawRecordSet.records;
+    const minerFeeSatsText = canonicalNonNegativeIntegerText(
+      transactionMinerFeeSats(tx),
+    );
+    if (!minerFeeSatsText) {
+      throw new Error(
+        `Canonical AMO transaction miner fee is unavailable for ${txid}.`,
+      );
+    }
+    for (const record of txRecords) {
+      records.push({
+        ...record,
+        position: {
+          blockHash,
+          blockHeight,
+          blockTransactionIndex,
+          protocolVout: record.protocolVout,
+          recordOrdinal: record.recordOrdinal,
+        },
+        transactionMinerFeeSats: minerFeeSatsText,
+        transactionProtocolRecordCount: txRecords.length,
+        tx,
+        txid,
+      });
+    }
+  }
+  return {
+    rawProtocolCandidateCount,
+    records: records.sort((left, right) =>
+      compareCanonicalProtocolPositionForAmo(left.position, right.position),
+    ),
+  };
+}
+
+function compareCanonicalProtocolPositionForAmo(left, right) {
+  const fields = [
+    "blockHeight",
+    "blockTransactionIndex",
+    "protocolVout",
+    "recordOrdinal",
+  ];
+  for (const [index, field] of fields.entries()) {
+    const minimum = index === 0 ? 1 : 0;
+    const leftValue = exactCanonicalAmoPositionInteger(
+      left?.[field],
+      minimum,
+    );
+    const rightValue = exactCanonicalAmoPositionInteger(
+      right?.[field],
+      minimum,
+    );
+    if (
+      leftValue === null ||
+      rightValue === null
+    ) {
+      throw new Error(
+        "Canonical AMO V5 comparison position is incomplete.",
+      );
+    }
+    const difference = leftValue - rightValue;
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return 0;
+}
+
+function workAmoV5RecordKey(txid, protocolVout, recordOrdinal) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const normalizedProtocolVout =
+    exactCanonicalAmoPositionInteger(protocolVout);
+  const normalizedRecordOrdinal =
+    exactCanonicalAmoPositionInteger(recordOrdinal);
+  if (
+    !/^[0-9a-f]{64}$/u.test(normalizedTxid) ||
+    normalizedProtocolVout === null ||
+    normalizedRecordOrdinal === null
+  ) {
+    throw new Error(
+      "Canonical AMO V5 replay record key is incomplete.",
+    );
+  }
+  return [
+    normalizedTxid,
+    normalizedProtocolVout,
+    normalizedRecordOrdinal,
+  ].join(":");
+}
+
+function workAmoV5RecordPositionKey(record) {
+  return workAmoV5RecordKey(
+    record?.txid,
+    record?.position?.protocolVout ?? record?.protocolVout,
+    record?.position?.recordOrdinal ?? record?.recordOrdinal,
+  );
+}
+
+async function completeWorkAmoV5BlockProjection(
+  context,
+  network,
+  requiredBlockHeight,
+) {
+  if (
+    network !== "livenet" ||
+    requiredBlockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    return null;
+  }
+  const priorHeight = requiredBlockHeight - 1;
+  const blockHash = String(context?.blockHash ?? "").trim().toLowerCase();
+  const previousBlockHash = String(context?.previousBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  let persistedActivationSeed = null;
+  if (requiredBlockHeight === WORK_AMO_V5_ACTIVATION_HEIGHT) {
+    const stored = await proofIndexWorkAmoBlockTransition(
+      network,
+      requiredBlockHeight,
+      blockHash,
+    );
+    if (stored) {
+      if (
+        stored.previousBlockHash !== previousBlockHash ||
+        stored.payload?.previousBlockHash !== previousBlockHash ||
+        stored.payload?.blockHash !== blockHash ||
+        stored.payload?.blockHeight !== requiredBlockHeight ||
+        !stored.payload?.seedGenericTokenState ||
+        !stored.payload?.seedIdState ||
+        !stored.payload?.seedTokenState ||
+        !stored.payload?.seedWorkProjection ||
+        !stored.payload?.seedSufficientState ||
+        !stored.payload?.seedSufficientStateCommitment
+      ) {
+        throw new Error(
+          "Canonical AMO stored activation transition seed is incomplete.",
+        );
+      }
+      persistedActivationSeed = {
+        genericState: stored.payload.seedGenericTokenState,
+        idState: stored.payload.seedIdState,
+        state: stored.payload.seedSufficientState,
+        stateCommitment:
+          stored.payload.seedSufficientStateCommitment,
+        workProjection: stored.payload.seedWorkProjection,
+        workState: stored.payload.seedTokenState,
+      };
+    }
+  }
+  const opening = await workAmoV5OpeningAccumulatorState(
+    network,
+    priorHeight,
+    previousBlockHash,
+    persistedActivationSeed,
+  );
+  const protocolEnvelope = workAmoV5ProtocolRecordsForCurrentBlock(
+    context.transactions,
+    requiredBlockHeight,
+    blockHash,
+  );
+  const replay = replayWorkAmoV5RawBlock({
+    blockHeaderHex: context.blockHeaderHex,
+    blockTransactions: context.blockTransactions,
+    expectedBlockHash: blockHash,
+    expectedBlockHeight: requiredBlockHeight,
+    expectedPreviousBlockHash: previousBlockHash,
+    openingEconomicState: opening.state,
+    openingGenericState: opening.genericState,
+    openingIdState: opening.idState,
+    openingWorkState: opening.workState,
+    records: protocolEnvelope.records,
+  });
+  const bip141Witness = normalizedWorkAmoV5Bip141Witness(
+    replay.bip141Witness,
+    replay.blockTransactionCount,
+  );
+  if (
+    replay.protocolRecordCount !== protocolEnvelope.records.length ||
+    replay.rawProtocolCandidateCount !==
+      protocolEnvelope.rawProtocolCandidateCount ||
+    replay.transitionChainModel !==
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL ||
+    replay.blockDescriptorModel !==
+      WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL ||
+    !exactWorkAmoV5RawBlockDescriptorCommitment(
+      replay.blockDescriptorCommitment,
+    ) ||
+    replay.blockTransactionCount !==
+      context.blockTransactions.length ||
+    !bip141Witness ||
+    !exactWorkAmoV5RawTransitionChainCommitment(
+      replay.transitionChainCommitment,
+    ) ||
+    replay.events.some(
+      (event) =>
+        !exactWorkAmoV5RawTransitionChainCommitment(
+          event?.transitionChainCommitmentAfter,
+        ) ||
+        (Array.isArray(event?.derived)
+          ? event.derived
+          : []
+        ).some(
+          (derived) =>
+            !workAmoV5RawTransitionChainCommitmentsEqual(
+              derived?.parentTransitionChainCommitmentAfter,
+              event?.transitionChainCommitmentAfter,
+            ),
+        ),
+    ) ||
+    replay.feeTransitions.some(
+      (fee) =>
+        !exactWorkAmoV5RawTransitionChainCommitment(
+          fee?.transitionChainCommitmentAfter,
+        ),
+    )
+  ) {
+    throw new Error(
+      "Canonical AMO raw replay candidate or transition-chain accounting diverged.",
+    );
+  }
+  const eventsByKey = new Map(
+    replay.events.map((event) => [
+      workAmoV5RecordKey(
+        event.txid,
+        event.position.protocolVout,
+        event.position.recordOrdinal,
+      ),
+      event,
+    ]),
+  );
+  const rawReplayRecords = replay.records.map((record) => {
+    const event = eventsByKey.get(workAmoV5RecordPositionKey(record));
+    if (!event) {
+      throw new Error(
+        "Canonical AMO raw replay descriptor is missing an outcome.",
+      );
+    }
+    return {
+      derived: event.derived,
+      rawCandidate: true,
+      outcome: {
+        kind: workAmoV5ConsensusEventKind(
+          record.protocol,
+          event.valid,
+        ),
+        reasonCode: event.valid ? "" : event.reasonCode,
+        semanticKind: event.semanticKind,
+        valid: event.valid,
+      },
+      output: event.output,
+      position: record.position,
+      protocol: record.protocol,
+      rawWitness: record.payload,
+      stateDelta: event.stateDelta,
+      transitionChainCommitmentAfter:
+        event.transitionChainCommitmentAfter,
+      transactionMinerFeeSats:
+        record.transactionMinerFeeSats,
+      transactionProtocolRecordCount:
+        record.transactionProtocolRecordCount,
+      txid: record.txid,
+    };
+  });
+  const derivedReplayRecords = rawReplayRecords.flatMap((parent) =>
+    (Array.isArray(parent.derived) ? parent.derived : []).map(
+      (derived) => {
+        const derivedProtocol = [
+          "pwid1",
+          "pwt1",
+        ].includes(derived.protocol)
+          ? derived.protocol
+          : "pwt1";
+        const projection = {
+          ...derived,
+          derived: true,
+          kind: derived.kind,
+          position: derived.projectionPosition,
+          protocol: derivedProtocol,
+          reasonCode: "",
+          txid: parent.txid,
+          valid: true,
+        };
+        return {
+          chargesTransactionFee: false,
+          derived: true,
+          outcome: {
+            kind: workAmoV5ConsensusEventKind(
+              derivedProtocol,
+              true,
+            ),
+            reasonCode: "",
+            semanticKind: derived.kind,
+            valid: true,
+          },
+          output: {
+            projection,
+          },
+          parentPosition: parent.position,
+          position: derived.projectionPosition,
+          protocol: derivedProtocol,
+          rawCandidate: false,
+          rawWitness: {
+            descriptor: derived,
+            model: "canonical-work-amo-v5-derived-child-v1",
+            parentPosition: parent.position,
+            parentProtocol: parent.protocol,
+          },
+          parentTransitionChainCommitmentAfter:
+            derived.parentTransitionChainCommitmentAfter,
+          stateDelta: {
+            baseContributions: [],
+            creditFixedQ8: "0",
+            creditFixedSats: "0",
+            economicOutputs: [],
+          },
+          transactionMinerFeeSats:
+            parent.transactionMinerFeeSats,
+          transactionProtocolRecordCount:
+            parent.transactionProtocolRecordCount,
+          txid: parent.txid,
+        };
+      },
+    ),
+  );
+  const replayRecords = [
+    ...rawReplayRecords,
+    ...derivedReplayRecords,
+  ].sort((left, right) =>
+    compareCanonicalProtocolPositionForAmo(
+      left.position,
+      right.position,
+    ),
+  );
+  const replayDescriptorCommitment =
+    workAmoV5CanonicalPayloadCommitment(replayRecords);
+  const eventSetCommitment = workAmoV5EventSetCommitment(
+    replayRecords.map((record) => ({
+      kind: record.outcome.kind,
+      outcome: record.outcome,
+      payload: record.rawWitness,
+      position: record.position,
+      protocol: record.protocol,
+      reasonCode: record.outcome.reasonCode,
+      stateDelta: record.stateDelta,
+      transactionMinerFeeSats:
+        record.transactionMinerFeeSats,
+      txid: record.txid,
+      valid: record.outcome.valid,
+    })),
+  );
+  const feeByTxid = new Map(
+    replay.feeTransitions.map((trace) => [trace.txid, trace]),
+  );
+  const traces = [];
+  for (let index = 0; index < rawReplayRecords.length; index += 1) {
+    const record = rawReplayRecords[index];
+    traces.push({
+      bondContributionQ8:
+        replay.outcomes.get(
+          workAmoV5RecordPositionKey(record),
+        )?.bondContributionQ8 ?? "0",
+      kind: "protocol-record",
+      networkValueAfterQ8:
+        replay.outcomes.get(
+          workAmoV5RecordPositionKey(record),
+        )?.networkValueAfterQ8,
+      networkValueBeforeQ8:
+        replay.outcomes.get(
+          workAmoV5RecordPositionKey(record),
+        )?.networkValueBeforeQ8,
+      output: record.output,
+      position: record.position,
+      rawWitness: record.rawWitness,
+      reasonCode: record.outcome.reasonCode,
+      stateDelta: record.stateDelta,
+      transitionChainCommitmentAfter:
+        record.transitionChainCommitmentAfter,
+      txid: record.txid,
+      valid: record.outcome.valid,
+    });
+    if (rawReplayRecords[index + 1]?.txid !== record.txid) {
+      const fee = feeByTxid.get(record.txid);
+      if (!fee) {
+        throw new Error(
+          "Canonical AMO raw replay fee trace is missing.",
+        );
+      }
+      traces.push({
+        ...fee,
+        kind: "transaction-fee",
+        reasonCode: fee.valid
+          ? ""
+          : "work-amo-v5-invalid-only-transaction",
+      });
+    }
+  }
+  const closingWorkProjection = projectWorkAmoV5RawEvents(
+    opening.workProjection ?? opening.workState,
+    replay.events,
+    replay.workState,
+  );
+  const openingStateCommitment =
+    workAmoV5CanonicalStateCommitment(opening.state);
+  const transition = {
+    bip141Witness,
+    blockAtomic: true,
+    blockDescriptorCommitment:
+      replay.blockDescriptorCommitment,
+    blockDescriptorModel: replay.blockDescriptorModel,
+    blockHash,
+    blockHeight: requiredBlockHeight,
+    blockTransactionCount: replay.blockTransactionCount,
+    closingGenericTokenState: replay.genericState,
+    closingIdState: replay.idState,
+    closingNetworkValueQ8: replay.economicState.networkValueQ8,
+    closingStateCommitment: replay.stateCommitment,
+    closingSufficientState: replay.economicState,
+    closingTokenState: replay.workState,
+    closingWorkProjection,
+    complete: true,
+    eventCount:
+      replay.protocolRecordCount + replay.derivedEventCount,
+    eventSetCommitment,
+    feeOnce: true,
+    invalidZero: true,
+    model: WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
+    network,
+    openingNetworkValueQ8: opening.state.networkValueQ8,
+    openingStateCommitment,
+    openingSufficientState: opening.state,
+    previousBlockHash,
+    protocolRecordCount: replay.protocolRecordCount,
+    rawProtocolCandidateCount: replay.rawProtocolCandidateCount,
+    replayDescriptorCommitment,
+    replayRecords,
+    ...(requiredBlockHeight === WORK_AMO_V5_ACTIVATION_HEIGHT
+      ? {
+          seedGenericTokenState: opening.genericState,
+          seedIdState: opening.idState,
+          seedSufficientState: opening.state,
+          seedSufficientStateCommitment:
+            openingStateCommitment,
+          seedTokenState: opening.workState,
+          seedWorkProjection: opening.workProjection,
+        }
+      : {}),
+    traces,
+    transitionChainCommitment: replay.transitionChainCommitment,
+    transitionChainModel: replay.transitionChainModel,
+    transactionCount: replay.transactionCount,
+  };
+  return {
+    closingState: replay.economicState,
+    transition,
+    workState: {
+      ...closingWorkProjection,
+      workAmoV5BlockTransition: transition,
+    },
+  };
+}
+
+function cachedWorkAmoV5BlockProjection(
+  context,
+  network,
+  requiredBlockHeight,
+) {
+  const blockHash = String(context?.blockHash ?? "").trim().toLowerCase();
+  const previousBlockHash = String(context?.previousBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  return cachedInternalVerifierState(
+    `work-amo-v5-block:${network}:h${requiredBlockHeight}:${previousBlockHash}:${blockHash}`,
+    () =>
+      completeWorkAmoV5BlockProjection(
+        context,
+        network,
+        requiredBlockHeight,
+      ),
+  );
+}
+
+async function workAmoV5BlockVerifierPayload(
+  network,
+  {
+    blockHash,
+    blockHeight,
+    previousBlockHash,
+  } = {},
+) {
+  const requiredBlockHeight = Number(blockHeight);
+  const requiredBlockHash = String(blockHash ?? "").trim().toLowerCase();
+  const requiredPreviousBlockHash = String(previousBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    network !== "livenet" ||
+    !Number.isSafeInteger(requiredBlockHeight) ||
+    requiredBlockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT ||
+    !/^[0-9a-f]{64}$/u.test(requiredBlockHash) ||
+    !/^[0-9a-f]{64}$/u.test(requiredPreviousBlockHash)
+  ) {
+    const error = new Error(
+      "The AMO V5 block verifier requires livenet, an activated height, and exact current/previous block hashes.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  pruneInternalVerifierStateCache(requiredBlockHeight);
+  const context = await canonicalVerifierContextFromCheckpoint(
+    network,
+    requiredBlockHeight,
+    requiredBlockHash,
+    requiredPreviousBlockHash,
+  );
+  const projection = await cachedWorkAmoV5BlockProjection(
+    context,
+    network,
+    requiredBlockHeight,
+  );
+  if (
+    !projection?.transition ||
+    projection.transition.complete !== true ||
+    projection.transition.blockHash !== requiredBlockHash ||
+    projection.transition.previousBlockHash !== requiredPreviousBlockHash
+  ) {
+    const error = new Error(
+      "The AMO V5 block verifier did not produce a complete atomic transition.",
+    );
+    error.statusCode = 503;
+    error.details = {
+      code: "WORK_AMO_V5_BLOCK_TRANSITION_UNAVAILABLE",
+      requiredBlockHeight,
+    };
+    throw error;
+  }
+  return {
+    ...projection.transition,
+    closingState: projection.closingState,
+    source: "canonical-block-scan-db-core-amo-v5-verifier",
+    workAmoV5BlockTransition: projection.transition,
+  };
+}
+
+function workAmoV5ProjectionEventBase(record) {
+  const position = record?.position ?? {};
+  const exactPositionInteger = (field, minimum) => {
+    const value = position[field];
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const blockHeight = exactPositionInteger("blockHeight", 1);
+  const blockIndex = exactPositionInteger("blockTransactionIndex", 0);
+  const protocolVout = exactPositionInteger("protocolVout", 0);
+  const recordOrdinal = exactPositionInteger("recordOrdinal", 0);
+  if (
+    blockHeight === null ||
+    blockIndex === null ||
+    protocolVout === null ||
+    recordOrdinal === null
+  ) {
+    throw new Error(
+      "Canonical AMO V5 projection record position is incomplete.",
+    );
+  }
+  return {
+    blockHash: position.blockHash,
+    blockHeight,
+    blockIndex,
+    confirmed: true,
+    protocol: record?.protocol,
+    protocolVout,
+    recordOrdinal,
+    txid: String(record?.txid ?? "").trim().toLowerCase(),
+    valid: record?.outcome?.valid === true,
+  };
+}
+
+function workAmoV5GenericVerifierStateFromProjection(
+  projection,
+  scope,
+) {
+  const transition = projection?.transition ?? {};
+  const closing = transition.closingGenericTokenState ?? {};
+  const normalizedScope = String(scope ?? "").trim().toLowerCase();
+  const tokenMatches = (tokenId) =>
+    String(tokenId ?? "").trim().toLowerCase() === normalizedScope;
+  const tokens = (Array.isArray(closing.tokens)
+    ? closing.tokens
+    : []
+  )
+    .filter((token) => tokenMatches(token?.tokenId))
+    .map((token) => ({
+      ...token,
+      confirmed: true,
+      confirmedSupply:
+        token.confirmedSupplyAtoms,
+      txid: token.tokenId,
+    }));
+  const holders = (Array.isArray(closing.holders)
+    ? closing.holders
+    : []
+  )
+    .filter((holder) => tokenMatches(holder?.tokenId))
+    .map((holder) => ({
+      ...holder,
+      balance: holder.balance,
+      confirmedBalance: holder.balance,
+    }));
+  const listings = (Array.isArray(closing.listings)
+    ? closing.listings
+    : []
+  )
+    .filter((listing) => tokenMatches(listing?.tokenId))
+    .map((listing) => ({
+      ...listing,
+      amount: listing.amount,
+      confirmed: true,
+      tokenId: normalizedScope,
+      txid: listing.listingId,
+    }));
+  const state = {
+    closedListings: [],
+    confirmedSupply:
+      tokens[0]?.confirmedSupplyAtoms ?? "0",
+    holders,
+    invalidEvents: [],
+    listings,
+    mints: [],
+    sales: [],
+    tokens,
+    transfers: [],
+  };
+  const listingById = new Map(
+    state.listings.map((listing) => [
+      String(listing.listingId).toLowerCase(),
+      listing,
+    ]),
+  );
+  const tokenIdByListingId = new Map(
+    (Array.isArray(closing.listings) ? closing.listings : []).map(
+      (listing) => [
+        String(listing?.listingId ?? "").trim().toLowerCase(),
+        String(listing?.tokenId ?? "").trim().toLowerCase(),
+      ],
+    ),
+  );
+  for (const record of Array.isArray(transition.replayRecords)
+    ? transition.replayRecords
+    : []) {
+    if (record?.protocol !== "pwt1") {
+      continue;
+    }
+    const event = record?.output?.projection ?? {};
+    const parsed = event?.parsed ?? {};
+    const eventTokenId = String(
+      event?.tokenId ??
+        event?.definition?.tokenId ??
+        event?.listing?.tokenId ??
+        event?.closedListing?.tokenId ??
+        parsed?.tokenId ??
+        parsed?.saleAuthorization?.tokenId ??
+        (parsed?.kind === "create"
+          ? record.txid
+          : tokenIdByListingId.get(
+              String(parsed?.listingId ?? "").trim().toLowerCase(),
+            )) ??
+        "",
+    )
+      .trim()
+      .toLowerCase();
+    if (!tokenMatches(eventTokenId)) {
+      continue;
+    }
+    const base = workAmoV5ProjectionEventBase(record);
+    if (record?.outcome?.valid !== true) {
+      state.invalidEvents.push({
+        ...base,
+        attemptedKind: parsed.kind ?? event.kind,
+        kind: "token-event-invalid",
+        reasonCode: record?.outcome?.reasonCode,
+        tokenId: normalizedScope,
+      });
+      continue;
+    }
+    if (event.kind === "token-create") {
+      const definition = {
+        ...event.definition,
+        ...base,
+        confirmedSupply:
+          event.definition?.confirmedSupplyAtoms ?? "0",
+        tokenId: normalizedScope,
+      };
+      const index = state.tokens.findIndex(
+        (token) => token.tokenId === normalizedScope,
+      );
+      if (index < 0) {
+        state.tokens.push(definition);
+      } else {
+        state.tokens[index] = {
+          ...state.tokens[index],
+          ...definition,
+        };
+      }
+    } else if (event.kind === "token-mint") {
+      state.mints.push({
+        ...base,
+        amount: event.amount,
+        minterAddress: event.recipientAddress,
+        tokenId: normalizedScope,
+      });
+    } else if (event.kind === "token-transfer") {
+      state.transfers.push({
+        ...base,
+        amount: event.amount,
+        recipientAddress: event.recipientAddress,
+        senderAddress: event.senderAddress,
+        tokenId: normalizedScope,
+      });
+    } else if (event.kind === "token-listing") {
+      const listing = {
+        ...event.listing,
+        ...base,
+        amount: event.listing?.amount,
+        tokenId: normalizedScope,
+      };
+      listingById.set(
+        String(listing.listingId ?? "").trim().toLowerCase(),
+        listing,
+      );
+    } else if (event.kind === "token-listing-sealed") {
+      const listingId = String(
+        event.listing?.listingId ?? parsed.listingId ?? "",
+      ).toLowerCase();
+      const listing = listingById.get(listingId);
+      if (listing) {
+        Object.assign(listing, {
+          saleAuthorization:
+            event.listing?.saleAuthorization ??
+            listing.saleAuthorization,
+          sealBlockHeight: base.blockHeight,
+          sealBlockIndex: base.blockIndex,
+          sealConfirmed: true,
+          sealProtocolVout: base.protocolVout,
+          sealRecordOrdinal: base.recordOrdinal,
+          sealTxid: base.txid,
+        });
+      }
+    } else if (event.kind === "token-sale") {
+      state.sales.push({
+        ...event.listing,
+        ...base,
+        buyerAddress: event.buyerAddress,
+        tokenId: normalizedScope,
+      });
+    } else if (event.kind === "token-listing-closed") {
+      state.closedListings.push({
+        ...(event.closedListing ?? event.listing ?? {}),
+        ...base,
+        closedBlockHeight: base.blockHeight,
+        closedBlockIndex: base.blockIndex,
+        closedConfirmed: true,
+        closedProtocolVout: base.protocolVout,
+        closedRecordOrdinal: base.recordOrdinal,
+        closedTxid: base.txid,
+        tokenId: normalizedScope,
+      });
+    }
+  }
+  state.listings = [...listingById.values()];
+  return state;
+}
+
+function workAmoV5IdVerifierStateFromProjection(projection) {
+  const transition = projection?.transition ?? {};
+  const closing = transition.closingIdState ?? {};
+  const state = {
+    activity: [],
+    listings: structuredClone(
+      Array.isArray(closing.listings) ? closing.listings : [],
+    ),
+    records: structuredClone(
+      Array.isArray(closing.records) ? closing.records : [],
+    ),
+    sales: [],
+  };
+  for (const record of Array.isArray(transition.replayRecords)
+    ? transition.replayRecords
+    : []) {
+    if (record?.protocol !== "pwid1") {
+      continue;
+    }
+    const event = record?.output?.projection ?? {};
+    const parsed = event?.parsed ?? {};
+    const base = workAmoV5ProjectionEventBase(record);
+    state.activity.push({
+      ...(event.listing ?? event.closedListing ?? {}),
+      ...event,
+      ...base,
+      id:
+        parsed.id ??
+        event.listing?.id ??
+        event.closedListing?.id,
+      kind:
+        record?.outcome?.valid === true
+          ? event.kind
+          : "id-event-invalid",
+      reason:
+        record?.outcome?.valid === true
+          ? ""
+          : record?.outcome?.reasonCode,
+    });
+    if (
+      record?.outcome?.valid === true &&
+      event.kind === "id-buy"
+    ) {
+      state.sales.push({
+        ...(event.listing ?? {}),
+        ...base,
+        buyerAddress: event.ownerAddress,
+        id: event.listing?.id,
+        ownerAddress: event.ownerAddress,
+        receiveAddress: event.receiveAddress,
+      });
+    }
+  }
+  return state;
+}
+
 async function completeTokenVerifierState(
   network,
   tokenScope,
@@ -43550,6 +47919,27 @@ async function completeTokenVerifierState(
       source: "canonical-block-scan-db-core-verifier",
     };
   }
+  if (requiredBlockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) {
+    const projection = await cachedWorkAmoV5BlockProjection(
+      context,
+      network,
+      requiredBlockHeight,
+    );
+    const state =
+      scope === WORK_TOKEN_ID
+        ? projection.workState
+        : workAmoV5GenericVerifierStateFromProjection(
+            projection,
+            scope,
+          );
+    return {
+      ...state,
+      ...context,
+      scopeResolution,
+      source: "canonical-block-scan-db-core-amo-v5-verifier",
+      workAmoV5BlockTransition: projection.transition,
+    };
+  }
   let preRangeMintWitnesses = [];
   let boundWitnessDispositions = [];
   if (scope === INCB_TOKEN_ID && replayVerifierBinding) {
@@ -43599,6 +47989,19 @@ async function completeTokenVerifierState(
   }
   const indexAddress = tokenIndexAddressForNetwork(network);
   if (scope === WORK_TOKEN_ID) {
+    if (requiredBlockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) {
+      const projection = await cachedWorkAmoV5BlockProjection(
+        context,
+        network,
+        requiredBlockHeight,
+      );
+      return {
+        ...projection.workState,
+        ...context,
+        scopeResolution,
+        source: "canonical-block-scan-db-core-amo-v5-verifier",
+      };
+    }
     const workToken = canonicalWorkTokenDefinition(network);
     const workMarketV2OraclesByTxid =
       await canonicalWorkMarketV2OraclesForTransactions(
@@ -43796,6 +48199,23 @@ async function completeIdVerifierStateBundle(
     expectedBlockHash,
     expectedPreviousBlockHash,
   );
+  if (requiredBlockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) {
+    const projection = await cachedWorkAmoV5BlockProjection(
+      context,
+      network,
+      requiredBlockHeight,
+    );
+    return {
+      blockHash: context.blockHash,
+      canonicalCoverage: true,
+      coverageHeight: context.coverageHeight,
+      previousBlockHash: context.previousBlockHash,
+      registryAddress,
+      state: workAmoV5IdVerifierStateFromProjection(projection),
+      transactions: context.transactions,
+      workAmoV5BlockTransition: projection.transition,
+    };
+  }
   return {
     blockHash: context.blockHash,
     canonicalCoverage: true,
@@ -43811,7 +48231,122 @@ async function completeIdVerifierStateBundle(
   };
 }
 
-function tokenVerifierItemsFromState(state, txid) {
+function exactVerifierPositionInteger(item, field, minimum) {
+  if (
+    !item ||
+    typeof item !== "object" ||
+    Array.isArray(item) ||
+    !Object.prototype.hasOwnProperty.call(item, field)
+  ) {
+    return null;
+  }
+  const value = item[field];
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+}
+
+function canonicalVerifierItemPosition(
+  item,
+  {
+    blockHeightField = "blockHeight",
+    blockIndexField = "blockIndex",
+    confirmationField = "confirmed",
+    protocolVoutField = "protocolVout",
+    recordOrdinalField = "recordOrdinal",
+  } = {},
+  {
+    requireConfirmed = false,
+    requiredBlockHeight = 0,
+  } = {},
+) {
+  const confirmed = item?.[confirmationField] === true;
+  if (!confirmed) {
+    return {
+      blockHeight: item?.[blockHeightField] ?? item?.blockHeight,
+      blockIndex: item?.[blockIndexField] ?? item?.blockIndex,
+      confirmed: false,
+      protocolVout: item?.[protocolVoutField] ?? item?.protocolVout,
+      recordOrdinal: item?.[recordOrdinalField] ?? item?.recordOrdinal,
+    };
+  }
+  const requestedHeight =
+    requireConfirmed &&
+    Number.isSafeInteger(requiredBlockHeight) &&
+    requiredBlockHeight > 0
+      ? requiredBlockHeight
+      : null;
+  const actionHeight = exactVerifierPositionInteger(
+    item,
+    blockHeightField,
+    1,
+  );
+  const genericHeight = exactVerifierPositionInteger(item, "blockHeight", 1);
+  const ruleHeight = requestedHeight ?? actionHeight ?? genericHeight;
+  if (!Number.isSafeInteger(ruleHeight) || ruleHeight < 1) {
+    throw new Error(
+      "Confirmed verifier item block height is incomplete.",
+    );
+  }
+  const requiresExactV5Position =
+    ruleHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT;
+  const positionInteger = (field, fallbackField, minimum) => {
+    const exact = exactVerifierPositionInteger(item, field, minimum);
+    if (exact !== null) {
+      return exact;
+    }
+    return requiresExactV5Position
+      ? null
+      : exactVerifierPositionInteger(item, fallbackField, minimum);
+  };
+  const blockHeight = positionInteger(
+    blockHeightField,
+    "blockHeight",
+    1,
+  );
+  const blockIndex = positionInteger(
+    blockIndexField,
+    "blockIndex",
+    0,
+  );
+  const protocolVout = positionInteger(
+    protocolVoutField,
+    "protocolVout",
+    0,
+  );
+  const explicitRecordOrdinal = positionInteger(
+    recordOrdinalField,
+    "recordOrdinal",
+    0,
+  );
+  const recordOrdinal =
+    explicitRecordOrdinal ??
+    (requiresExactV5Position ? null : 0);
+  if (
+    blockHeight === null ||
+    blockIndex === null ||
+    protocolVout === null ||
+    recordOrdinal === null ||
+    (requestedHeight !== null && blockHeight !== requestedHeight)
+  ) {
+    throw new Error(
+      requiresExactV5Position
+        ? "Canonical AMO V5 verifier item position is incomplete."
+        : "Confirmed verifier item position is incomplete.",
+    );
+  }
+  return {
+    blockHeight,
+    blockIndex,
+    confirmed: true,
+    protocolVout,
+    recordOrdinal,
+  };
+}
+
+function tokenVerifierItemsFromState(state, txid, options = {}) {
   const normalizedTxid = String(txid ?? "").trim().toLowerCase();
   const items = [];
   const add = (
@@ -43820,10 +48355,24 @@ function tokenVerifierItemsFromState(state, txid) {
     valid = true,
     confirmationField = "confirmed",
     blockHeightField = "blockHeight",
+    blockIndexField = "blockIndex",
+    protocolVoutField = "protocolVout",
+    recordOrdinalField = "recordOrdinal",
   ) => {
     if (!item || typeof item !== "object") {
       return;
     }
+    const position = canonicalVerifierItemPosition(
+      item,
+      {
+        blockHeightField,
+        blockIndexField,
+        confirmationField,
+        protocolVoutField,
+        recordOrdinalField,
+      },
+      options,
+    );
     const canonicalBondMintWithoutProtocol =
       kind === "token-mint" &&
       !String(item?.protocol ?? "").trim() &&
@@ -43835,8 +48384,7 @@ function tokenVerifierItemsFromState(state, txid) {
     items.push({
       ...item,
       ...(canonicalBondMintWithoutProtocol ? { protocol: "pwt1" } : {}),
-      blockHeight: item?.[blockHeightField] ?? item?.blockHeight,
-      confirmed: item?.[confirmationField] === true,
+      ...position,
       kind,
       txid: normalizedTxid,
       valid,
@@ -43872,6 +48420,9 @@ function tokenVerifierItemsFromState(state, txid) {
         true,
         "sealConfirmed",
         "sealBlockHeight",
+        "sealBlockIndex",
+        "sealProtocolVout",
+        "sealRecordOrdinal",
       );
     }
   }
@@ -43888,6 +48439,9 @@ function tokenVerifierItemsFromState(state, txid) {
         true,
         "sealConfirmed",
         "sealBlockHeight",
+        "sealBlockIndex",
+        "sealProtocolVout",
+        "sealRecordOrdinal",
       );
     }
     if (String(listing?.closedTxid ?? "").toLowerCase() === normalizedTxid) {
@@ -43897,6 +48451,9 @@ function tokenVerifierItemsFromState(state, txid) {
         true,
         "closedConfirmed",
         "closedBlockHeight",
+        "closedBlockIndex",
+        "closedProtocolVout",
+        "closedRecordOrdinal",
       );
     }
   }
@@ -44246,7 +48803,8 @@ function exactPendingWorkMintStats(stats, txid) {
       !/^[0-9a-f]{64}$/u.test(candidateTxid) ||
       amount !== WORK_TOKEN_MINT_AMOUNT ||
       seenCandidateTxids.has(candidateTxid) ||
-      (previousTxid && previousTxid.localeCompare(candidateTxid) >= 0)
+      (previousTxid &&
+        compareCanonicalUtf8(previousTxid, candidateTxid) >= 0)
     ) {
       return null;
     }
@@ -44310,7 +48868,12 @@ function pendingWorkMintWitnessProof(supply, targetTxid, targetAmount) {
     return { witnessSupply, witnesses };
   }
   for (const candidate of supply.pendingCandidates) {
-    if (candidate.txid.localeCompare(normalizedTargetTxid) >= 0) {
+    if (
+      compareCanonicalUtf8(
+        candidate.txid,
+        normalizedTargetTxid,
+      ) >= 0
+    ) {
       break;
     }
     witnesses.push(candidate);
@@ -44723,6 +49286,54 @@ async function tokenVerifierDeterministicInvalidReason(
   return "";
 }
 
+function canonicalConfirmedInvalidVerifierItems(
+  transactions,
+  txid,
+  requiredBlockHeight,
+  {
+    kind,
+    network,
+    protocol,
+    reason,
+  },
+) {
+  const transaction = (Array.isArray(transactions) ? transactions : []).find(
+    (candidate) =>
+      transactionTxid(candidate) === txid &&
+      transactionBlockHeight(candidate) === requiredBlockHeight,
+  );
+  if (!transaction || !transactionConfirmed(transaction)) {
+    return [];
+  }
+  const blockIndex = transactionBlockIndex(transaction);
+  if (!Number.isSafeInteger(blockIndex) || blockIndex < 0) {
+    return [];
+  }
+  let records;
+  try {
+    records =
+      canonicalRawProtocolRecordSetFromTransaction(transaction).records;
+  } catch {
+    return [];
+  }
+  return records
+    .filter((record) => record?.protocol === protocol)
+    .map((record) => ({
+      blockHash: transactionBlockHash(transaction),
+      blockHeight: requiredBlockHeight,
+      blockIndex,
+      confirmed: true,
+      kind,
+      network,
+      protocol,
+      protocolVout: record.protocolVout,
+      reason,
+      recordOrdinal: record.recordOrdinal,
+      txid,
+      valid: false,
+    }));
+}
+
 async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
   const normalizedTxid = String(txid ?? "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
@@ -44884,7 +49495,11 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
     };
     throw error;
   }
-  const items = tokenVerifierItemsFromState(state, normalizedTxid).filter(
+  const items = tokenVerifierItemsFromState(
+    state,
+    normalizedTxid,
+    { requireConfirmed, requiredBlockHeight },
+  ).filter(
     (item) =>
       !requireConfirmed ||
       (item.confirmed === true &&
@@ -44902,15 +49517,35 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
       },
     );
     if (invalidReason) {
-      items.push({
-        blockHeight: requiredBlockHeight || null,
-        confirmed: requireConfirmed,
-        kind: "token-event-invalid",
-        network,
-        reason: invalidReason,
-        txid: normalizedTxid,
-        valid: false,
-      });
+      const exactConfirmedItems = requireConfirmed
+        ? canonicalConfirmedInvalidVerifierItems(
+            state.transactions,
+            normalizedTxid,
+            requiredBlockHeight,
+            {
+              kind: "token-event-invalid",
+              network,
+              protocol: "pwt1",
+              reason: invalidReason,
+            },
+          )
+        : [];
+      if (exactConfirmedItems.length > 0) {
+        items.push(...exactConfirmedItems);
+      } else if (
+        !requireConfirmed ||
+        requiredBlockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT
+      ) {
+        items.push({
+          blockHeight: requiredBlockHeight || null,
+          confirmed: requireConfirmed,
+          kind: "token-event-invalid",
+          network,
+          reason: invalidReason,
+          txid: normalizedTxid,
+          valid: false,
+        });
+      }
     }
   }
   if (
@@ -44924,15 +49559,30 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
         decodedProtocolMessages(tx?.vout ?? [], TOKEN_PROTOCOL_PREFIX).length > 0,
     )
   ) {
-    items.push({
-      blockHeight: requiredBlockHeight,
-      confirmed: true,
-      kind: "token-event-invalid",
-      network,
-      reason: "no-valid-token-event",
-      txid: normalizedTxid,
-      valid: false,
-    });
+    const exactConfirmedItems = canonicalConfirmedInvalidVerifierItems(
+      state.transactions,
+      normalizedTxid,
+      requiredBlockHeight,
+      {
+        kind: "token-event-invalid",
+        network,
+        protocol: "pwt1",
+        reason: "no-valid-token-event",
+      },
+    );
+    if (exactConfirmedItems.length > 0) {
+      items.push(...exactConfirmedItems);
+    } else if (requiredBlockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT) {
+      items.push({
+        blockHeight: requiredBlockHeight,
+        confirmed: true,
+        kind: "token-event-invalid",
+        network,
+        reason: "no-valid-token-event",
+        txid: normalizedTxid,
+        valid: false,
+      });
+    }
   }
   if (items.length === 0) {
     const error = new Error(
@@ -44979,6 +49629,12 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
   }
   return {
     ...(balanceSnapshot ? { balanceSnapshot } : {}),
+    ...(requireConfirmed && state?.workAmoV5BlockTransition
+      ? {
+          workAmoV5BlockTransition:
+            state.workAmoV5BlockTransition,
+        }
+      : {}),
     ...(requireConfirmed
       ? {
           blockHash: String(state?.blockHash ?? "").trim().toLowerCase(),
@@ -45016,7 +49672,7 @@ async function idVerifierStateBundle(network) {
   };
 }
 
-function idVerifierItemsFromState(state, txid) {
+function idVerifierItemsFromState(state, txid, options = {}) {
   const normalizedTxid = String(txid ?? "").trim().toLowerCase();
   const activity = (Array.isArray(state?.activity) ? state.activity : []).filter(
     (item) =>
@@ -45034,10 +49690,46 @@ function idVerifierItemsFromState(state, txid) {
   );
   return activity.map((item) => {
     const listingId = String(item?.listingId ?? "").toLowerCase();
-    const sale = (Array.isArray(state?.sales) ? state.sales : []).find(
-      (candidate) =>
-        String(candidate?.txid ?? "").toLowerCase() === normalizedTxid,
-    );
+    const itemPosition = canonicalVerifierItemPosition(item, {}, options);
+    const exactV5Item =
+      itemPosition.confirmed === true &&
+      Number(itemPosition.blockHeight) >= WORK_AMO_V5_ACTIVATION_HEIGHT;
+    const sale =
+      String(item?.kind ?? "").trim().toLowerCase() === "id-buy"
+        ? (Array.isArray(state?.sales) ? state.sales : []).find((candidate) => {
+            if (
+              String(candidate?.txid ?? "").toLowerCase() !== normalizedTxid
+            ) {
+              return false;
+            }
+            if (!exactV5Item) {
+              return true;
+            }
+            const candidatePosition = canonicalVerifierItemPosition(
+              candidate,
+              {},
+              options,
+            );
+            const candidateListingId = String(
+              candidate?.listingId ?? "",
+            ).toLowerCase();
+            const candidateId = String(candidate?.id ?? "")
+              .trim()
+              .toLowerCase();
+            const itemId = String(item?.id ?? "").trim().toLowerCase();
+            return (
+              candidatePosition.confirmed === true &&
+              candidatePosition.blockHeight === itemPosition.blockHeight &&
+              candidatePosition.blockIndex === itemPosition.blockIndex &&
+              candidatePosition.protocolVout === itemPosition.protocolVout &&
+              candidatePosition.recordOrdinal === itemPosition.recordOrdinal &&
+              (!listingId ||
+                !candidateListingId ||
+                candidateListingId === listingId) &&
+              (!itemId || !candidateId || candidateId === itemId)
+            );
+          })
+        : undefined;
     const listing = [
       ...(Array.isArray(state?.listings) ? state.listings : []),
       ...(Array.isArray(state?.activity) ? state.activity : []).filter(
@@ -45048,7 +49740,7 @@ function idVerifierItemsFromState(state, txid) {
         String(candidate?.listingId ?? candidate?.txid ?? "").toLowerCase() ===
         listingId,
     );
-    return {
+    const merged = {
       ...(listing ?? {}),
       ...(sale ?? {}),
       ...item,
@@ -45058,6 +49750,10 @@ function idVerifierItemsFromState(state, txid) {
       receiveAddress:
         item?.receiveAddress ?? sale?.receiveAddress ?? sale?.buyerAddress,
       sellerAddress: item?.sellerAddress ?? sale?.sellerAddress,
+    };
+    return {
+      ...merged,
+      ...canonicalVerifierItemPosition(merged, {}, options),
     };
   });
 }
@@ -45181,7 +49877,11 @@ async function idVerifierPayload(network, txid, options = {}) {
     };
     throw error;
   }
-  const items = idVerifierItemsFromState(bundle.state, normalizedTxid).filter(
+  const items = idVerifierItemsFromState(
+    bundle.state,
+    normalizedTxid,
+    { requireConfirmed, requiredBlockHeight },
+  ).filter(
     (item) =>
       !requireConfirmed ||
       (item.confirmed === true &&
@@ -45195,15 +49895,35 @@ async function idVerifierPayload(network, txid, options = {}) {
       requireConfirmed,
     );
     if (invalidReason) {
-      items.push({
-        blockHeight: requiredBlockHeight || null,
-        confirmed: requireConfirmed,
-        kind: "id-event-invalid",
-        network,
-        reason: invalidReason,
-        txid: normalizedTxid,
-        valid: false,
-      });
+      const exactConfirmedItems = requireConfirmed
+        ? canonicalConfirmedInvalidVerifierItems(
+            bundle.transactions,
+            normalizedTxid,
+            requiredBlockHeight,
+            {
+              kind: "id-event-invalid",
+              network,
+              protocol: "pwid1",
+              reason: invalidReason,
+            },
+          )
+        : [];
+      if (exactConfirmedItems.length > 0) {
+        items.push(...exactConfirmedItems);
+      } else if (
+        !requireConfirmed ||
+        requiredBlockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT
+      ) {
+        items.push({
+          blockHeight: requiredBlockHeight || null,
+          confirmed: requireConfirmed,
+          kind: "id-event-invalid",
+          network,
+          reason: invalidReason,
+          txid: normalizedTxid,
+          valid: false,
+        });
+      }
     }
   }
   if (
@@ -45217,15 +49937,30 @@ async function idVerifierPayload(network, txid, options = {}) {
         decodedProtocolMessages(tx?.vout ?? [], ID_PROTOCOL_PREFIX).length > 0,
     )
   ) {
-    items.push({
-      blockHeight: requiredBlockHeight,
-      confirmed: true,
-      kind: "id-event-invalid",
-      network,
-      reason: "no-valid-id-event",
-      txid: normalizedTxid,
-      valid: false,
-    });
+    const exactConfirmedItems = canonicalConfirmedInvalidVerifierItems(
+      bundle.transactions,
+      normalizedTxid,
+      requiredBlockHeight,
+      {
+        kind: "id-event-invalid",
+        network,
+        protocol: "pwid1",
+        reason: "no-valid-id-event",
+      },
+    );
+    if (exactConfirmedItems.length > 0) {
+      items.push(...exactConfirmedItems);
+    } else if (requiredBlockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT) {
+      items.push({
+        blockHeight: requiredBlockHeight,
+        confirmed: true,
+        kind: "id-event-invalid",
+        network,
+        reason: "no-valid-id-event",
+        txid: normalizedTxid,
+        valid: false,
+      });
+    }
   }
   if (items.length === 0) {
     const error = new Error("The ID verifier has not resolved this transaction.");
@@ -45344,7 +50079,10 @@ function canonicalPwtRangeReplayVerificationIsValid(rebuild, network) {
       identity !== expectedIdentity ||
       preservedIdentities.has(identity) ||
       (priorPreservedIdentity &&
-        identity.localeCompare(priorPreservedIdentity) <= 0) ||
+        compareCanonicalUtf8(
+          identity,
+          priorPreservedIdentity,
+        ) <= 0) ||
       !/^[0-9a-f]{64}$/u.test(mintPayloadHash) ||
       !snapshotId ||
       !/^[0-9a-f]{64}$/u.test(snapshotFingerprint)
@@ -45392,7 +50130,10 @@ function canonicalPwtRangeReplayVerificationIsValid(rebuild, network) {
       identity !== expectedIdentity ||
       witnessedIdentities.has(identity) ||
       (priorRederivedIdentity &&
-        identity.localeCompare(priorRederivedIdentity) <= 0) ||
+        compareCanonicalUtf8(
+          identity,
+          priorRederivedIdentity,
+        ) <= 0) ||
       (!mintDispositionIsValid && !invalidDispositionIsValid)
     ) {
       return false;
@@ -46585,6 +51326,34 @@ async function handleRequest(request, response) {
           (admission) =>
             broadcastNodePayload(request, broadcastNetwork, admission),
           { requireCanonical: true },
+        ),
+        "no-store",
+      );
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      url.pathname ===
+        "/api/v1/internal/work-amo-v5-block-verifier"
+    ) {
+      if (!internalVerifierRequestAllowed(request)) {
+        errorResponse(response, 404, "Not found.");
+        return;
+      }
+      const payload = await readJsonRequestBody(request, 64_000, {
+        label: "AMO V5 block verifier body",
+        timeoutMs: 15_000,
+      });
+      const requestedNetwork = String(payload?.network ?? "")
+        .trim()
+        .toLowerCase();
+      jsonResponse(
+        response,
+        200,
+        await workAmoV5BlockVerifierPayload(
+          requestedNetwork,
+          payload,
         ),
         "no-store",
       );

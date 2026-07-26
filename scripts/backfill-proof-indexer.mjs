@@ -8,6 +8,14 @@ import {
   decimalTextFromQ8,
   q8TextFromDecimal,
 } from "../server/bond-units.mjs";
+import {
+  canonicalRawProtocolRecordSetFromTransaction,
+  canonicalProtocolCandidateFromOutput,
+} from "../server/canonical-op-return.mjs";
+import {
+  assertCanonicalUnicodeCaseMappingVersion,
+  compareCanonicalUtf8,
+} from "../server/canonical-order.mjs";
 import { createProofIndexPool } from "../server/db/postgres.mjs";
 import {
   INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE,
@@ -43,6 +51,41 @@ import {
   WORK_MARKET_V2_AUTH_VERSION,
   WORK_MARKET_V4_AUTH_VERSION,
 } from "../server/work-market-v2.mjs";
+import {
+  WORK_AMO_V5_ACTIVATION_HEIGHT,
+  WORK_AMO_V5_AUTH_VERSION,
+  WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY as WORK_AMO_USD_QUOTE_AUTHORITY_SCRIPTPUBKEY,
+  WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
+  WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS as WORK_AMO_USD_QUOTE_REGISTRY_ADDRESS,
+  WORK_AMO_V5_DECLARATION_TXID,
+  WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL,
+  WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  WORK_AMO_V5_V1_ACTIVATION_HEIGHT as WORK_AMO_V1_ACTIVATION_HEIGHT,
+  WORK_AMO_V5_V1_DECLARATION_TXID as WORK_AMO_V1_DECLARATION_TXID,
+  normalizeWorkAmoCanonicalPosition,
+  parseWorkAmoUsdQuoteRecord,
+  validateWorkAmoV5SufficientState,
+  validateWorkAmoV5FrozenTerms,
+  validateWorkAmoV5ReferencedAuthorization,
+  workAmoCanonicalPositionPrecedes,
+  workAmoV5CanonicalPayloadCommitment,
+  workAmoV5CanonicalStateCommitment,
+  workAmoV5CanonicalTokenStateCommitment,
+  workAmoV5ConsensusEventKind,
+  workAmoV5EventSetCommitment,
+} from "../server/work-amo-v5.mjs";
+import {
+  WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
+  WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+  normalizeWorkAmoV5RawWorkState,
+  workAmoV5RawGenericStateCommitment,
+  workAmoV5RawIdStateCommitment,
+} from "../server/work-amo-v5-raw.mjs";
+import {
+  normalizedWorkAmoV5Bip141Witness,
+} from "../server/work-amo-v5-bip141.mjs";
 
 const DEFAULT_API_BASE = "http://127.0.0.1:8081";
 const CONFIGURED_API_BASE = String(process.env.POW_API_BASE ?? "").trim();
@@ -54,7 +97,12 @@ const CANONICAL_TX_CONTENT_FAILURE_CLASS =
 const WORK_MARKET_GOVERNED_AUTH_VERSIONS = new Set([
   WORK_MARKET_V2_AUTH_VERSION,
   WORK_MARKET_V4_AUTH_VERSION,
+  WORK_AMO_V5_AUTH_VERSION,
 ]);
+const WORK_AMO_USD_QUOTE_MIN_PAYMENT_SATS = BigInt(
+  WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
+);
+assertCanonicalUnicodeCaseMappingVersion();
 
 class CanonicalTransactionContentInvariantError extends Error {
   constructor(message) {
@@ -97,6 +145,7 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "token-mint",
   "token-sale",
   "token-transfer",
+  "work-usd-quote",
 ]);
 const PAGE_LIMIT = Number(process.env.POW_INDEX_BACKFILL_LIMIT ?? 200);
 const MAX_PAGES = Number(process.env.POW_INDEX_BACKFILL_MAX_PAGES ?? 2000);
@@ -240,7 +289,7 @@ const MEMPOOL_SCAN_SEEN_LIMIT = Number(
 // Only protocols with a canonical block-scan parser/verifier belong here.
 // pwc1 remains staged. RUSH is indexed as an ordered, full-node-verified
 // stream so canonical summaries never need to replay its complete history.
-const PROTOCOL_PREFIXES = ["pwm1:", "pwid1:", "pwr1:", "pwt1:"];
+const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwr1:", "pwt1:"];
 const RUSH_PROTOCOL_PREFIX = "pwr1:";
 const RUSH_MINT_PAYLOAD = "pwr1:m:rush";
 const RUSH_REGISTRY_ADDRESS = "bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e";
@@ -1148,7 +1197,10 @@ function canonicalPwtRangeReplayVerificationIsValid(rebuild) {
       (!mintShapeValid && !invalidShapeValid) ||
       rederivedIdentities.has(identity) ||
       (previousRederivedIdentity &&
-        identity.localeCompare(previousRederivedIdentity) <= 0)
+        compareCanonicalUtf8(
+          identity,
+          previousRederivedIdentity,
+        ) <= 0)
     ) {
       return false;
     }
@@ -1178,7 +1230,10 @@ function canonicalPwtRangeReplayVerificationIsValid(rebuild) {
       ) ||
       preservedIdentities.has(identity) ||
       (previousPreservedIdentity &&
-        identity.localeCompare(previousPreservedIdentity) <= 0)
+        compareCanonicalUtf8(
+          identity,
+          previousPreservedIdentity,
+        ) <= 0)
     ) {
       return false;
     }
@@ -1760,9 +1815,14 @@ async function readJson(url, options = {}) {
           "POW_INTERNAL_VERIFIER_TOKEN is required for canonical verifier calls",
         );
       }
-      const headers = loopbackApi && INTERNAL_VERIFIER_TOKEN.length >= 32
-        ? { "X-PoW-Internal-Verifier": INTERNAL_VERIFIER_TOKEN }
-        : undefined;
+      const headers = {
+        ...(loopbackApi && INTERNAL_VERIFIER_TOKEN.length >= 32
+          ? { "X-PoW-Internal-Verifier": INTERNAL_VERIFIER_TOKEN }
+          : {}),
+        ...(options.body === undefined
+          ? {}
+          : { "content-type": "application/json" }),
+      };
       if (
         internalVerifier &&
         url.pathname === "/api/v1/internal/canonical-summary" &&
@@ -1778,7 +1838,11 @@ async function readJson(url, options = {}) {
         return assertInternalReplayVerifierResponseBinding(payload, url);
       }
       const response = await fetch(url, {
-        headers,
+        ...(options.body === undefined
+          ? {}
+          : { body: JSON.stringify(options.body) }),
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
+        method: options.method ?? "GET",
         signal: controller.signal,
       });
       if (response.status === 404 && options.allowNotFound === true) {
@@ -2183,35 +2247,21 @@ function assertCanonicalBlockEnvelope(block, height, blockHash) {
   }
 }
 
-function opReturnTextFromVout(vout) {
-  const asm = String(
-    vout?.scriptPubKey?.asm ?? vout?.scriptpubkey_asm ?? "",
-  ).trim();
-  if (!asm.startsWith("OP_RETURN")) {
-    return "";
-  }
-
-  const chunks = [];
-  for (const part of asm.split(/\s+/u).slice(1)) {
-    if (/^(?:[0-9a-f]{2})+$/iu.test(part)) {
-      chunks.push(Buffer.from(part, "hex"));
-    }
-  }
-  if (chunks.length === 0) {
-    return "";
-  }
-  return Buffer.concat(chunks).toString("utf8");
-}
-
 function protocolMessagesFromTx(tx) {
   const messages = [];
   for (const [voutIndex, vout] of (tx?.vout ?? []).entries()) {
-    const text = opReturnTextFromVout(vout);
-    const prefix = PROTOCOL_PREFIXES.find((candidate) =>
-      text.startsWith(candidate),
-    );
-    if (prefix) {
-      messages.push({ prefix, text, voutIndex });
+    const candidate = canonicalProtocolCandidateFromOutput(vout);
+    if (candidate) {
+      messages.push({
+        decodeDetail: candidate.detail,
+        decodeValid: candidate.decodeValid,
+        payloadHex: candidate.payloadHex,
+        prefix: candidate.prefix,
+        reasonCode: candidate.reasonCode,
+        scriptPubKeyHex: candidate.scriptPubKeyHex,
+        text: candidate.text,
+        voutIndex,
+      });
     }
   }
   return messages;
@@ -2237,6 +2287,24 @@ function satsFromVoutValue(value) {
   return BigInt(Math.round(numeric * 100_000_000));
 }
 
+function satsFromVout(vout) {
+  if (
+    vout &&
+    typeof vout === "object" &&
+    (
+      Object.hasOwn(vout, "scriptpubkey") ||
+      Object.hasOwn(vout, "scriptpubkey_address") ||
+      Object.hasOwn(vout, "scriptpubkey_type")
+    )
+  ) {
+    const text = String(vout.value ?? "").trim();
+    return /^(?:0|[1-9][0-9]*)$/u.test(text)
+      ? BigInt(text)
+      : 0n;
+  }
+  return satsFromVoutValue(vout?.value);
+}
+
 function addressFromVout(vout) {
   return String(
     vout?.scriptPubKey?.address ??
@@ -2255,7 +2323,7 @@ function paymentOutputsBeforeProtocol(tx, protocolIndex) {
     )
     .map((vout) => ({
       address: addressFromVout(vout),
-      amountSats: satsFromVoutValue(vout.value),
+      amountSats: satsFromVout(vout),
       vout: Number(vout.n ?? 0),
     }))
     .filter((output) => output.address && output.amountSats > 0n);
@@ -2274,6 +2342,16 @@ function senderAddressFromTx(tx) {
     }
   }
   return "";
+}
+
+function firstInputPrevoutScriptpubkey(tx) {
+  return String(
+    tx?.vin?.[0]?.prevout?.scriptPubKey?.hex ??
+      tx?.vin?.[0]?.prevout?.scriptpubkey ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
 }
 
 function blockEventTime(tx) {
@@ -2324,6 +2402,11 @@ function baseProtocolItem(tx, message, kind) {
   );
   return {
     amountSats: amountSats.toString(),
+    blockHash: String(
+      tx?._powBlockHash ?? tx?.blockhash ?? tx?.status?.block_hash ?? "",
+    )
+      .trim()
+      .toLowerCase(),
     blockHeight: Number(tx?.status?.block_height ?? tx?.height ?? 0) || null,
     blockIndex: Number.isSafeInteger(Number(tx?._powBlockIndex))
       ? Number(tx._powBlockIndex)
@@ -2332,20 +2415,36 @@ function baseProtocolItem(tx, message, kind) {
     confirmed:
       Number(tx?.confirmations ?? 0) > 0 ||
       Number(tx?.status?.block_height ?? tx?.height ?? 0) > 0,
-    dataBytes: Buffer.byteLength(message.text, "utf8"),
+    dataBytes:
+      typeof message?.payloadHex === "string" &&
+      /^(?:[0-9a-f]{2})*$/u.test(message.payloadHex)
+        ? message.payloadHex.length / 2
+        : Buffer.byteLength(message.text, "utf8"),
     kind,
     network: NETWORK,
     payload: message.text,
     protocol: message.prefix.replace(/:$/u, ""),
     protocolVout: Number(message?.voutIndex),
+    recordOrdinal: 0,
     recipients: payments.map((output) => ({
       address: output.address,
       amountSats: output.amountSats.toString(),
       vout: output.vout,
     })),
     senderAddress: senderAddressFromTx(tx),
+    firstInputPrevoutScriptpubkey: firstInputPrevoutScriptpubkey(tx),
     timestamp: blockEventTime(tx),
     txid: tx.txid,
+    workAmoV5RawDecodeReasonCode:
+      String(message?.reasonCode ?? ""),
+    workAmoV5RawDecodeValid: message?.decodeValid !== false,
+    workAmoV5RawScriptWitness: {
+      decodeDetail: String(message?.decodeDetail ?? ""),
+      decodeValid: message?.decodeValid !== false,
+      payloadHex: String(message?.payloadHex ?? ""),
+      reasonCode: String(message?.reasonCode ?? ""),
+      scriptPubKeyHex: String(message?.scriptPubKeyHex ?? ""),
+    },
   };
 }
 
@@ -2369,6 +2468,9 @@ function decodedBase64UrlBytes(value) {
 function aggregatePwmProtocolItem(tx, messages) {
   const pwmMessages = messages.filter((message) => message?.prefix === "pwm1:");
   if (pwmMessages.length === 0) {
+    return null;
+  }
+  if (pwmMessages.some((message) => message?.decodeValid === false)) {
     return null;
   }
 
@@ -2507,7 +2609,7 @@ function canonicalBondMintItemsFromMailItem(item) {
     return [];
   }
   return (Array.isArray(item?.recipients) ? item.recipients : []).flatMap(
-    (recipient) => {
+    (recipient, recipientIndex) => {
       const minterAddress = String(recipient?.address ?? "").trim();
       const amount = String(recipient?.amountSats ?? "").trim();
       if (!minterAddress || !/^[1-9]\d*$/u.test(amount)) {
@@ -2531,6 +2633,8 @@ function canonicalBondMintItemsFromMailItem(item) {
           minterAddress,
           network: item.network,
           protocol: "pwt1",
+          protocolVout: Number(item?.protocolVout),
+          recordOrdinal: recipientIndex + 1,
           sourceBondTxid: item.txid,
           ticker: bondTag.ticker,
           timestamp: item.timestamp,
@@ -2579,7 +2683,116 @@ function tokenListingItemFromTicket(tx, message, ticket) {
   }, { strict: false });
 }
 
+function workUsdQuoteItemFromMessage(tx, message) {
+  const base = baseProtocolItem(tx, message, "work-usd-quote");
+  const parts = String(message?.text ?? "").split(":");
+  const declarationTxid = String(parts[2] ?? "").trim().toLowerCase();
+  const sequence = canonicalIntegerText(parts[3], { positive: true });
+  const previousQuoteTxid = String(parts[4] ?? "").trim().toLowerCase();
+  const usdPer100mProofsQ8 = canonicalIntegerText(parts[5], {
+    positive: true,
+  });
+  const validQuoteRecords = protocolMessagesFromTx(tx).filter((candidate) =>
+    Boolean(parseWorkAmoUsdQuoteRecord(candidate?.text)),
+  );
+  const registryPayments = (Array.isArray(tx?.vout) ? tx.vout : [])
+    .map((output, voutIndex) => ({
+      amountSats: satsFromVout(output),
+      address: addressFromVout(output),
+      vout: Number(output?.n ?? voutIndex),
+    }))
+    .filter(
+      (output) =>
+        output.address === WORK_AMO_USD_QUOTE_REGISTRY_ADDRESS &&
+        output.amountSats >= WORK_AMO_USD_QUOTE_MIN_PAYMENT_SATS &&
+        Number.isSafeInteger(output.vout) &&
+        output.vout >= 0,
+    );
+  registryPayments.sort((left, right) => left.vout - right.vout);
+  const registryPayment = registryPayments[0] ?? null;
+  const registryPaymentSats = registryPayment?.amountSats ?? 0n;
+  const registryPaymentVout = registryPayment?.vout ?? null;
+  const item = {
+    ...base,
+    amountSats: registryPaymentSats.toString(),
+    authorityScriptpubkey: firstInputPrevoutScriptpubkey(tx),
+    declarationTxid,
+    previousQuoteTxid,
+    quoteSequence: sequence,
+    recordCount: validQuoteRecords.length,
+    registryAddress: WORK_AMO_USD_QUOTE_REGISTRY_ADDRESS,
+    registryPaymentSats: registryPaymentSats.toString(),
+    registryPaymentVout,
+    recipients: registryPayment
+      ? [{
+          address: registryPayment.address,
+          amountSats: registryPayment.amountSats.toString(),
+          vout: registryPayment.vout,
+        }]
+      : [],
+    usdPer100mProofsQ8,
+    validationMode: "canonical-amo-chain-usd-quote-v1",
+  };
+  if (
+    parts.length !== 6 ||
+    parts[0] !== "pwa1" ||
+    parts[1] !== "usd1" ||
+    declarationTxid !== WORK_AMO_V1_DECLARATION_TXID ||
+    !sequence ||
+    !isHexTxid(previousQuoteTxid) ||
+    !usdPer100mProofsQ8 ||
+    validQuoteRecords.length !== 1 ||
+    item.authorityScriptpubkey !==
+      WORK_AMO_USD_QUOTE_AUTHORITY_SCRIPTPUBKEY ||
+    registryPaymentSats < WORK_AMO_USD_QUOTE_MIN_PAYMENT_SATS ||
+    (sequence === "1" &&
+      previousQuoteTxid !== WORK_AMO_V1_DECLARATION_TXID) ||
+    (sequence !== "1" &&
+      previousQuoteTxid === WORK_AMO_V1_DECLARATION_TXID)
+  ) {
+    return invalidProtocolItem(
+      item,
+      "Malformed or unauthorized canonical AMO USD quote.",
+    );
+  }
+  if (
+    item.confirmed === true &&
+    (
+      !Number.isSafeInteger(Number(item.blockHeight)) ||
+      Number(item.blockHeight) < WORK_AMO_V1_ACTIVATION_HEIGHT ||
+      !Number.isSafeInteger(Number(item.blockIndex)) ||
+      Number(item.blockIndex) < 0 ||
+      !Number.isSafeInteger(Number(item.protocolVout)) ||
+      Number(item.protocolVout) < 0 ||
+      Number(item.recordOrdinal) !== 0
+    )
+  ) {
+    return invalidProtocolItem(
+      item,
+      "Canonical AMO USD quote position is missing or outside V5 activation.",
+    );
+  }
+  return { ...item, valid: true };
+}
+
 function protocolItemsFromTx(tx, message) {
+  if (message?.decodeValid === false) {
+    const invalidKind = {
+      "pwa1:": "work-usd-quote",
+      "pwid1:": "id-event",
+      "pwr1:": "rush-event",
+      "pwt1:": "token-event",
+    }[message?.prefix] ?? "protocol-event";
+    return [
+      invalidProtocolItem(
+        {
+          ...baseProtocolItem(tx, message, invalidKind),
+          reasonCode: String(message?.reasonCode ?? ""),
+        },
+        String(message?.reasonCode ?? "Malformed canonical OP_RETURN."),
+      ),
+    ];
+  }
   const parts = String(message.text ?? "").split(":");
   const action = String(parts[1] ?? "").toLowerCase();
   if (message.prefix === "pwm1:") {
@@ -2710,6 +2923,10 @@ function protocolItemsFromTx(tx, message) {
     return [{ ...item, valid: true }];
   }
 
+  if (message.prefix === "pwa1:") {
+    return [workUsdQuoteItemFromMessage(tx, message)];
+  }
+
   if (message.prefix !== "pwt1:") {
     return [baseProtocolItem(tx, message, `${message.prefix.replace(/:$/u, "")}-event`)];
   }
@@ -2831,8 +3048,15 @@ function rawProtocolItemsForTx(tx, messages) {
               0,
             ),
             payload: pwmMessages.map((message) => message.text).join("\n"),
+            reasonCode:
+              pwmMessages.find(
+                (message) => message?.decodeValid !== true,
+              )?.reasonCode ?? "",
           },
-          "Malformed or unknown aggregated PWM protocol payload.",
+          pwmMessages.find(
+            (message) => message?.decodeValid !== true,
+          )?.reasonCode ??
+            "Malformed or unknown aggregated PWM protocol payload.",
         )
       : null;
   return [
@@ -2842,7 +3066,7 @@ function rawProtocolItemsForTx(tx, messages) {
     ...(rushMessage ? protocolItemsFromTx(tx, rushMessage) : []),
     ...messages
       .filter((message) =>
-        ["pwid1:", "pwt1:"].includes(message?.prefix),
+        ["pwa1:", "pwid1:", "pwt1:"].includes(message?.prefix),
       )
       .flatMap((message) => protocolItemsFromTx(tx, message)),
   ];
@@ -2850,6 +3074,9 @@ function rawProtocolItemsForTx(tx, messages) {
 
 function sourceLabelForProtocolItem(item) {
   const kind = String(item?.kind ?? "").toLowerCase();
+  if (kind === "work-usd-quote") {
+    return "work-usd-quotes";
+  }
   if (kind.endsWith("-invalid")) {
     return kind.startsWith("token-") ? "token-invalid-events" : "log";
   }
@@ -3475,7 +3702,388 @@ async function tokenMintDefinitionOrderInvalidReason(client, item) {
     : "The credit mint does not appear after its confirmed credit definition.";
 }
 
+function canonicalProtocolPosition(item) {
+  const exactInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const blockHeight = exactInteger(item?.blockHeight ?? item?.height, 1);
+  const blockIndex = exactInteger(
+    item?.blockIndex ?? item?._powBlockIndex,
+    0,
+  );
+  const protocolVout = exactInteger(item?.protocolVout, 0);
+  const rawRecordOrdinal = item?.recordOrdinal;
+  const recordOrdinal =
+    rawRecordOrdinal === undefined ||
+    rawRecordOrdinal === null ||
+    rawRecordOrdinal === ""
+      ? blockHeight !== null &&
+          blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT
+        ? 0
+        : null
+      : exactInteger(rawRecordOrdinal, 0);
+  return blockHeight !== null &&
+    blockIndex !== null &&
+    protocolVout !== null &&
+    recordOrdinal !== null
+    ? { blockHeight, blockIndex, protocolVout, recordOrdinal }
+    : null;
+}
+
+function compareCanonicalProtocolPositions(left, right) {
+  for (const key of [
+    "blockHeight",
+    "blockIndex",
+    "protocolVout",
+    "recordOrdinal",
+  ]) {
+    const difference = Number(left?.[key]) - Number(right?.[key]);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return 0;
+}
+
+async function workUsdQuoteInvalidReason(client, item) {
+  if (
+    String(item?.kind ?? "").toLowerCase() !== "work-usd-quote" ||
+    item?.valid === false
+  ) {
+    return "";
+  }
+  if (item?.confirmed !== true) {
+    return "";
+  }
+  const position = canonicalProtocolPosition(item);
+  const sequence = canonicalIntegerText(item?.quoteSequence, {
+    positive: true,
+  });
+  const previousQuoteTxid = String(item?.previousQuoteTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const txid = String(item?.txid ?? "").trim().toLowerCase();
+  if (
+    !position ||
+    position.blockHeight < WORK_AMO_V1_ACTIVATION_HEIGHT ||
+    !sequence ||
+    !isHexTxid(txid) ||
+    !isHexTxid(previousQuoteTxid)
+  ) {
+    return "Canonical AMO USD quote position or chain fields are incomplete.";
+  }
+  const competing = await client.query(
+    `
+      SELECT
+        txid,
+        block_height,
+        block_index,
+        protocol_vout,
+        record_ordinal
+      FROM proof_indexer.work_usd_quotes
+      WHERE network = $1
+        AND declaration_txid = $2
+        AND sequence = $3::numeric
+        AND status = 'confirmed'
+        AND valid = true
+      ORDER BY
+        block_height,
+        block_index,
+        protocol_vout,
+        record_ordinal
+      LIMIT 1
+    `,
+    [NETWORK, WORK_AMO_V1_DECLARATION_TXID, sequence],
+  );
+  const winner = competing.rows[0];
+  if (winner && String(winner.txid).toLowerCase() !== txid) {
+    const winnerPosition = {
+      blockHeight: Number(winner.block_height),
+      blockIndex: Number(winner.block_index),
+      protocolVout: Number(winner.protocol_vout),
+      recordOrdinal: Number(winner.record_ordinal),
+    };
+    return compareCanonicalProtocolPositions(winnerPosition, position) <= 0
+      ? "A lower canonical-position quote already extends this predecessor."
+      : "AMO quote replay is out of canonical order and must be rebuilt.";
+  }
+  if (sequence === "1") {
+    return previousQuoteTxid === WORK_AMO_V1_DECLARATION_TXID
+      ? ""
+      : "The first AMO USD quote does not reference the V1 declaration.";
+  }
+  const predecessor = await client.query(
+    `
+      SELECT
+        sequence::text AS sequence,
+        block_height,
+        block_index,
+        protocol_vout,
+        record_ordinal
+      FROM proof_indexer.work_usd_quotes
+      WHERE network = $1
+        AND txid = $2
+        AND declaration_txid = $3
+        AND status = 'confirmed'
+        AND valid = true
+      LIMIT 1
+    `,
+    [NETWORK, previousQuoteTxid, WORK_AMO_V1_DECLARATION_TXID],
+  );
+  const prior = predecessor.rows[0];
+  if (
+    !prior ||
+    BigInt(String(prior.sequence ?? "0")) + 1n !== BigInt(sequence)
+  ) {
+    return "The AMO USD quote predecessor or sequence is not canonical.";
+  }
+  const predecessorPosition = {
+    blockHeight: Number(prior.block_height),
+    blockIndex: Number(prior.block_index),
+    protocolVout: Number(prior.protocol_vout),
+    recordOrdinal: Number(prior.record_ordinal),
+  };
+  return compareCanonicalProtocolPositions(predecessorPosition, position) < 0
+    ? ""
+    : "The AMO USD quote does not appear after its predecessor.";
+}
+
+function legacyWorkMarketVersionInvalidReason(item) {
+  if (item?.valid === false || item?.confirmed !== true) {
+    return "";
+  }
+  const source = objectValue(item);
+  const authorization = objectValue(source.saleAuthorization);
+  const version = normalizedLowerText(authorization.version);
+  const tokenId = normalizedLowerText(
+    source.tokenId ?? authorization.tokenId,
+  );
+  const height = Number(source.blockHeight ?? source.height);
+  const kind = normalizedLowerText(
+    source.attemptedKind ?? source.kind,
+  ).replace(/-invalid$/u, "");
+  if (
+    tokenId === WORK_TOKEN_ID &&
+    version === "pwt-sale-v3" &&
+    Number.isSafeInteger(height) &&
+    height >= WORK_AMO_V1_ACTIVATION_HEIGHT &&
+    (
+      kind.includes("token-listing") ||
+      kind.includes("token-sale") ||
+      ["list", "seal", "buy", "delist", "closed-listing"].includes(kind)
+    )
+  ) {
+    return "Post-V1 WORK pwt-sale-v3 actions are invalid audit history.";
+  }
+  return "";
+}
+
+async function workAmoV5ListingProjectionInvalidReason(client, item) {
+  const source = objectValue(item);
+  const authorization = objectValue(source.saleAuthorization);
+  const version = normalizedLowerText(authorization.version);
+  const tokenId = normalizedLowerText(
+    source.tokenId ?? authorization.tokenId,
+  );
+  const kind = normalizedLowerText(
+    source.attemptedKind ?? source.kind,
+  ).replace(/-invalid$/u, "");
+  if (
+    source.valid === false ||
+    source.confirmed !== true ||
+    version !== WORK_AMO_V5_AUTH_VERSION ||
+    kind !== "token-listing"
+  ) {
+    return "";
+  }
+  if (tokenId !== WORK_TOKEN_ID) {
+    return "AMO V5 listing authorization is not bound to the canonical WORK credit.";
+  }
+  if (
+    normalizedLowerText(source.canonicalVerifier) !==
+    "/api/v1/internal/token-verifier"
+  ) {
+    return "AMO V5 frozen terms were not produced by the canonical full-position verifier.";
+  }
+  const listingId = normalizedLowerText(source.listingId ?? source.txid);
+  const listingTxid = normalizedLowerText(source.txid);
+  const listingPosition = normalizeWorkAmoCanonicalPosition({
+    blockHash: source.blockHash ?? source._powBlockHash,
+    blockHeight: source.blockHeight ?? source.height,
+    blockTransactionIndex: source.blockIndex ?? source._powBlockIndex,
+    protocolVout: source.protocolVout,
+    recordOrdinal: source.recordOrdinal,
+  });
+  const terms = workAmoFrozenTermsFromItem(source);
+  if (
+    !isHexTxid(listingId) ||
+    listingId !== listingTxid ||
+    !listingPosition ||
+    !terms
+  ) {
+    return "AMO V5 listing is missing its exact canonical position or verifier-derived frozen terms.";
+  }
+  const amountAtoms = canonicalWorkAtomsText(source.amountAtoms);
+  const priceSats = canonicalIntegerText(source.priceSats, {
+    positive: true,
+  });
+  if (
+    !amountAtoms ||
+    amountAtoms !== terms.unitAmountAtoms ||
+    !priceSats ||
+    priceSats !== terms.unitPriceSats
+  ) {
+    return "AMO V5 listing amount or price does not match its immutable confirmation-derived terms.";
+  }
+
+  const quoteResult = await client.query(
+    `
+      WITH RECURSIVE quote_chain AS (
+        SELECT
+          q.txid,
+          q.declaration_txid,
+          q.sequence,
+          q.previous_quote_txid,
+          q.usd_per_100m_proofs_q8,
+          q.block_hash,
+          q.block_height,
+          q.block_index,
+          q.protocol_vout,
+          q.record_ordinal,
+          0 AS depth
+        FROM proof_indexer.work_usd_quotes q
+        WHERE q.network = $1
+          AND q.txid = $2
+          AND q.declaration_txid = $3
+          AND q.authority_scriptpubkey = $4
+          AND q.record_count = 1
+          AND q.registry_address = $5
+          AND q.registry_payment_sats >= $6::bigint
+          AND q.registry_payment_vout >= 0
+          AND q.status = 'confirmed'
+          AND q.valid = true
+          AND q.record_ordinal = 0
+
+        UNION ALL
+
+        SELECT
+          predecessor.txid,
+          predecessor.declaration_txid,
+          predecessor.sequence,
+          predecessor.previous_quote_txid,
+          predecessor.usd_per_100m_proofs_q8,
+          predecessor.block_hash,
+          predecessor.block_height,
+          predecessor.block_index,
+          predecessor.protocol_vout,
+          predecessor.record_ordinal,
+          child.depth + 1
+        FROM proof_indexer.work_usd_quotes predecessor
+        JOIN quote_chain child
+          ON predecessor.network = $1
+         AND predecessor.txid = child.previous_quote_txid
+         AND predecessor.declaration_txid = $3
+         AND predecessor.sequence = child.sequence - 1
+         AND (
+           predecessor.block_height,
+           predecessor.block_index,
+           predecessor.protocol_vout,
+           predecessor.record_ordinal
+         ) < (
+           child.block_height,
+           child.block_index,
+           child.protocol_vout,
+           child.record_ordinal
+         )
+        WHERE predecessor.authority_scriptpubkey = $4
+          AND predecessor.record_count = 1
+          AND predecessor.registry_address = $5
+          AND predecessor.registry_payment_sats >= $6::bigint
+          AND predecessor.registry_payment_vout >= 0
+          AND predecessor.status = 'confirmed'
+          AND predecessor.valid = true
+          AND predecessor.record_ordinal = 0
+      ),
+      chain_audit AS (
+        SELECT
+          count(*)::numeric AS chain_count,
+          min(sequence) AS minimum_sequence,
+          count(*) FILTER (
+            WHERE sequence = 1
+              AND previous_quote_txid = $3
+          ) AS canonical_root_count
+        FROM quote_chain
+      )
+      SELECT
+        target.txid,
+        target.declaration_txid,
+        target.sequence::text AS sequence,
+        target.previous_quote_txid,
+        target.usd_per_100m_proofs_q8::text AS usd_per_100m_proofs_q8,
+        target.block_hash,
+        target.block_height,
+        target.block_index,
+        target.protocol_vout,
+        target.record_ordinal,
+        (
+          audit.chain_count = target.sequence
+          AND audit.minimum_sequence = 1
+          AND audit.canonical_root_count = 1
+        ) AS canonical_chain
+      FROM quote_chain target
+      CROSS JOIN chain_audit audit
+      WHERE target.depth = 0
+      LIMIT 1
+    `,
+    [
+      NETWORK,
+      terms.unitUsdQuoteTxid,
+      WORK_AMO_V1_DECLARATION_TXID,
+      WORK_AMO_USD_QUOTE_AUTHORITY_SCRIPTPUBKEY,
+      WORK_AMO_USD_QUOTE_REGISTRY_ADDRESS,
+      WORK_AMO_USD_QUOTE_MIN_PAYMENT_SATS.toString(),
+    ],
+  );
+  const row = quoteResult.rows[0];
+  if (!row || row.canonical_chain !== true) {
+    return "AMO V5 listing does not reference a complete canonical USD quote chain.";
+  }
+  const quote = {
+    blockHash: normalizedLowerText(row.block_hash),
+    blockHeight: Number(row.block_height),
+    blockTransactionIndex: Number(row.block_index),
+    canonical: true,
+    confirmed: true,
+    declarationTxid: normalizedLowerText(row.declaration_txid),
+    previousQuoteTxid: normalizedLowerText(row.previous_quote_txid),
+    protocolVout: Number(row.protocol_vout),
+    recordOrdinal: Number(row.record_ordinal),
+    sequence: String(row.sequence),
+    txid: normalizedLowerText(row.txid),
+    usdPer100mProofsQ8: String(row.usd_per_100m_proofs_q8),
+    v1DeclarationTxid: normalizedLowerText(row.declaration_txid),
+  };
+  if (!workAmoCanonicalPositionPrecedes(quote, listingPosition)) {
+    return "AMO V5 listing does not follow its canonical USD quote.";
+  }
+  const validation = validateWorkAmoV5FrozenTerms(terms, {
+    authorization,
+    listingPosition,
+    quote,
+  });
+  return validation.valid
+    ? ""
+    : `AMO V5 frozen listing terms are not canonically bound (${validation.reasonCode}).`;
+}
+
 async function protocolIntegrityItemForPersistence(client, item) {
+  if (item?._workAmoV5ReplayBound === true) {
+    return item;
+  }
   const projectionReason = canonicalBondMintProjectionInvalidReason(item);
   if (projectionReason) {
     return tokenProtocolIntegrityInvalidItem(
@@ -3491,6 +4099,27 @@ async function protocolIntegrityItemForPersistence(client, item) {
       reservedReason,
       "reserved-bond-credit-namespace",
     );
+  }
+  const legacyMarketReason = legacyWorkMarketVersionInvalidReason(item);
+  if (legacyMarketReason) {
+    return tokenProtocolIntegrityInvalidItem(
+      item,
+      legacyMarketReason,
+      "work-market-v4-version-required",
+    );
+  }
+  const amoV5ListingReason =
+    await workAmoV5ListingProjectionInvalidReason(client, item);
+  if (amoV5ListingReason) {
+    return tokenProtocolIntegrityInvalidItem(
+      item,
+      amoV5ListingReason,
+      "work-amo-v5-canonical-derivation-invalid",
+    );
+  }
+  const quoteReason = await workUsdQuoteInvalidReason(client, item);
+  if (quoteReason) {
+    return invalidProtocolItem(item, quoteReason);
   }
   const definitionOrderReason = await tokenMintDefinitionOrderInvalidReason(
     client,
@@ -3860,7 +4489,7 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
     if (usedRawItems.has(index)) {
       return;
     }
-    if (rawItem?.protocol === "pwm1") {
+    if (rawItem?.protocol === "pwm1" || rawItem?.protocol === "pwa1") {
       normalizedRecovered.push({
         item: rawItem,
         sourceLabel: sourceLabelForProtocolItem(rawItem),
@@ -4015,7 +4644,10 @@ function preparedProtocolItemsWithCanonicalMailAttachments(
       .sort(
         (left, right) =>
           left.protocolVout - right.protocolVout ||
-          left.recipientAddress.localeCompare(right.recipientAddress),
+          compareCanonicalUtf8(
+            left.recipientAddress,
+            right.recipientAddress,
+          ),
       );
     const nextItem = {
       ...item,
@@ -4054,7 +4686,102 @@ async function preparedProtocolItemsForTx(tx, messages, options = {}) {
 async function persistPreparedProtocolItems(client, preparedItems) {
   let indexed = 0;
   let skipped = 0;
-  for (const prepared of preparedItems) {
+  const confirmedV5PositionKeys = new Set();
+  const orderedPreparedItems = (Array.isArray(preparedItems)
+    ? preparedItems
+    : []
+  )
+    .map((prepared, inputIndex) => {
+      const item = prepared?.item ?? prepared;
+      const governedProtocol = [
+        "pwm1",
+        "pwa1",
+        "pwid1",
+        "pwr1",
+        "pwt1",
+      ].includes(String(item?.protocol ?? "").trim().toLowerCase());
+      const confirmedGoverned =
+        item?.confirmed === true && governedProtocol;
+      const position = confirmedGoverned
+        ? canonicalProtocolPosition(item)
+        : null;
+      if (confirmedGoverned && !position) {
+        throw new Error(
+          "Canonical confirmed protocol item position is incomplete.",
+        );
+      }
+      if (
+        position &&
+        position.blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+      ) {
+        const key = [
+          position.blockHeight,
+          position.blockIndex,
+          position.protocolVout,
+          position.recordOrdinal,
+        ].join(":");
+        if (confirmedV5PositionKeys.has(key)) {
+          throw new Error(
+            `Canonical AMO V5 protocol position ${key} is duplicated.`,
+          );
+        }
+        confirmedV5PositionKeys.add(key);
+      }
+      return { inputIndex, position, prepared };
+    })
+    .sort((left, right) => {
+      const leftItem = left.prepared?.item ?? left.prepared;
+      const rightItem = right.prepared?.item ?? right.prepared;
+      const orderValue = (value) => {
+        const number = Number(value);
+        return Number.isSafeInteger(number) && number >= 0
+          ? number
+          : Number.MAX_SAFE_INTEGER;
+      };
+      return (
+        orderValue(
+          left.position?.blockHeight ??
+            leftItem?.blockHeight ??
+            leftItem?.height,
+        ) -
+          orderValue(
+            right.position?.blockHeight ??
+              rightItem?.blockHeight ??
+              rightItem?.height,
+          ) ||
+        orderValue(
+          left.position?.blockIndex ??
+            leftItem?.blockIndex ??
+            leftItem?._powBlockIndex,
+        ) -
+          orderValue(
+            right.position?.blockIndex ??
+              rightItem?.blockIndex ??
+              rightItem?._powBlockIndex,
+          ) ||
+        orderValue(
+          left.position?.protocolVout ??
+            leftItem?.protocolVout,
+        ) -
+          orderValue(
+            right.position?.protocolVout ??
+              rightItem?.protocolVout,
+          ) ||
+        orderValue(
+          left.position?.recordOrdinal ??
+            leftItem?.recordOrdinal,
+        ) -
+          orderValue(
+            right.position?.recordOrdinal ??
+              rightItem?.recordOrdinal,
+          ) ||
+        orderValue(leftItem?._powEventIndex) -
+          orderValue(rightItem?._powEventIndex) ||
+        left.inputIndex - right.inputIndex
+      );
+    })
+    .map(({ prepared }) => prepared);
+  for (const prepared of orderedPreparedItems) {
     const originalItem = prepared.item ?? prepared;
     const item = await protocolIntegrityItemForPersistence(
       client,
@@ -4409,16 +5136,22 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
         e.event_key,
         e.txid,
         e.kind,
-        COALESCE(e.block_height, t.block_height) AS canonical_block_height,
+        e.block_height AS canonical_block_height,
+        e.block_index AS canonical_block_index,
+        e.op_return_vout AS canonical_protocol_vout,
+        e.record_ordinal AS canonical_record_ordinal,
         e.payload
       FROM proof_indexer.events e
-      LEFT JOIN proof_indexer.transactions t
+      JOIN proof_indexer.transactions t
         ON t.network = e.network
        AND t.txid = e.txid
+       AND t.status = 'confirmed'
+       AND t.block_height = e.block_height
+       AND t.block_index = e.block_index
       WHERE e.network = $1
         AND e.protocol = 'pwt1'
         AND e.valid = true
-        AND COALESCE(t.status, e.status) = 'confirmed'
+        AND e.status = 'confirmed'
         AND e.kind IN ('token-mint', 'token-transfer', 'token-sale')
         ${
           scopedReplay
@@ -4426,17 +5159,10 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
             : ""
         }
       ORDER BY
-        COALESCE(e.block_height, t.block_height) ASC NULLS LAST,
-        CASE
-          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
-            THEN (e.payload->>'blockIndex')::integer
-          ELSE 2147483647
-        END ASC,
-        CASE
-          WHEN e.payload->>'_powEventIndex' ~ '^[0-9]+$'
-            THEN (e.payload->>'_powEventIndex')::integer
-          ELSE 2147483647
-        END ASC,
+        e.block_height ASC,
+        e.block_index ASC NULLS LAST,
+        e.op_return_vout ASC NULLS LAST,
+        e.record_ordinal ASC NULLS LAST,
         e.event_key ASC
     `,
     scopedReplay ? [NETWORK, requestedTokenIds] : [NETWORK],
@@ -4504,33 +5230,105 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
     balances.set(address, next);
   };
 
-  const orderedEvents = [...eventsResult.rows].sort(
-    (left, right) =>
-      Number(left.canonical_block_height ?? 0) -
-        Number(right.canonical_block_height ?? 0) ||
-      Number(left?.payload?.blockIndex ?? Number.MAX_SAFE_INTEGER) -
-        Number(right?.payload?.blockIndex ?? Number.MAX_SAFE_INTEGER) ||
-      Number(left?.payload?._powEventIndex ?? Number.MAX_SAFE_INTEGER) -
-        Number(right?.payload?._powEventIndex ?? Number.MAX_SAFE_INTEGER) ||
-      String(left.event_key ?? "").localeCompare(String(right.event_key ?? "")),
-  );
-  for (const row of orderedEvents) {
+  const replayPosition = (row) => {
+    const payload = objectValue(row?.payload);
+    const blockHeight = Number(row?.canonical_block_height);
+    if (!Number.isSafeInteger(blockHeight) || blockHeight < 1) {
+      throw new Error(
+        `Canonical credit event ${row?.txid ?? row?.event_key ?? row?.event_id} is missing block order`,
+      );
+    }
+    const exactInteger = (value) =>
+      value !== null &&
+      value !== undefined &&
+      value !== "" &&
+      Number.isSafeInteger(Number(value)) &&
+      Number(value) >= 0
+        ? Number(value)
+        : null;
+    const blockIndex = exactInteger(row?.canonical_block_index);
+    const protocolVout = exactInteger(row?.canonical_protocol_vout);
+    const recordOrdinal = exactInteger(row?.canonical_record_ordinal);
+    if (blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) {
+      if (
+        blockIndex === null ||
+        protocolVout === null ||
+        recordOrdinal === null
+      ) {
+        throw new Error(
+          `Canonical AMO V5 credit event ${row?.txid ?? row?.event_key ?? row?.event_id} is missing its full position`,
+        );
+      }
+      return {
+        blockHeight,
+        blockIndex,
+        protocolVout,
+        recordOrdinal,
+        v5: true,
+      };
+    }
+    const legacyBlockIndex =
+      blockIndex ?? exactInteger(payload.blockIndex);
+    const legacyEventIndex = exactInteger(payload._powEventIndex);
+    if (legacyBlockIndex === null || legacyEventIndex === null) {
+      throw new Error(
+        `Canonical credit event ${row?.txid ?? row?.event_key ?? row?.event_id} is missing legacy block/event order`,
+      );
+    }
+    return {
+      blockHeight,
+      blockIndex: legacyBlockIndex,
+      legacyEventIndex,
+      protocolVout: protocolVout ?? Number.MAX_SAFE_INTEGER,
+      recordOrdinal: recordOrdinal ?? 0,
+      v5: false,
+    };
+  };
+  const orderedEvents = eventsResult.rows.map((row) => ({
+    position: replayPosition(row),
+    row,
+  })).sort((left, right) => {
+    const leftPosition = left.position;
+    const rightPosition = right.position;
+    return (
+      leftPosition.blockHeight - rightPosition.blockHeight ||
+      leftPosition.blockIndex - rightPosition.blockIndex ||
+      (
+        leftPosition.v5 && rightPosition.v5
+          ? leftPosition.protocolVout - rightPosition.protocolVout ||
+            leftPosition.recordOrdinal - rightPosition.recordOrdinal
+          : (leftPosition.legacyEventIndex ?? Number.MAX_SAFE_INTEGER) -
+              (rightPosition.legacyEventIndex ?? Number.MAX_SAFE_INTEGER) ||
+            compareCanonicalUtf8(
+              left.row.event_key,
+              right.row.event_key,
+            )
+      )
+    );
+  });
+  const v5ReplayPositionKeys = new Set();
+  for (const { position } of orderedEvents) {
+    if (!position.v5) {
+      continue;
+    }
+    const key = [
+      position.blockHeight,
+      position.blockIndex,
+      position.protocolVout,
+      position.recordOrdinal,
+    ].join(":");
+    if (v5ReplayPositionKeys.has(key)) {
+      throw new Error(
+        `Canonical AMO V5 credit replay position ${key} is duplicated.`,
+      );
+    }
+    v5ReplayPositionKeys.add(key);
+  }
+  for (const { position, row } of orderedEvents) {
     const payload =
       row?.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
         ? row.payload
         : {};
-    if (
-      !Number.isSafeInteger(Number(row.canonical_block_height)) ||
-      Number(row.canonical_block_height) < 0 ||
-      !Number.isSafeInteger(Number(payload.blockIndex)) ||
-      Number(payload.blockIndex) < 0 ||
-      !Number.isSafeInteger(Number(payload._powEventIndex)) ||
-      Number(payload._powEventIndex) < 0
-    ) {
-      throw new Error(
-        `Canonical credit event ${row.txid ?? row.event_key ?? row.event_id} is missing block/event order`,
-      );
-    }
     const tokenId = String(payload.tokenId ?? "").trim().toLowerCase();
     const eventLabel = `${row.kind}:${row.txid ?? row.event_key ?? row.event_id}`;
     if (!/^[0-9a-f]{64}$/u.test(tokenId) || !definitions.has(tokenId)) {
@@ -4563,7 +5361,7 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
       }
       if (!definition.canonicalSynthetic) {
         const eventHeight = Number(row.canonical_block_height);
-        const eventBlockIndex = Number(payload.blockIndex);
+        const eventBlockIndex = position.blockIndex;
         if (
           !definition.confirmed ||
           !Number.isSafeInteger(eventHeight) ||
@@ -4665,7 +5463,7 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
   for (const tokenId of replayedTokenIds) {
     const balances = balancesByToken.get(tokenId);
     for (const [address, balance] of [...balances.entries()].sort((left, right) =>
-      left[0].localeCompare(right[0]),
+      compareCanonicalUtf8(left[0], right[0]),
     )) {
       if (balance === 0n) {
         continue;
@@ -6205,7 +7003,10 @@ function tokenMarketLogItemsFromState(state) {
         Date.parse(tokenMarketLogItemCreatedAt(left)) ||
       Number(tokenMarketLogItemConfirmed(right)) -
         Number(tokenMarketLogItemConfirmed(left)) ||
-      tokenMarketLogItemTxid(left).localeCompare(tokenMarketLogItemTxid(right)),
+      compareCanonicalUtf8(
+        tokenMarketLogItemTxid(left),
+        tokenMarketLogItemTxid(right),
+      ),
   );
 }
 
@@ -6595,6 +7396,57 @@ function addressMailPayloadEvents(payload, address) {
 }
 
 function stableEventKey({ item, kind, protocol, sourceLabel, txid }) {
+  const exactInteger = (value, minimum) =>
+    value !== undefined &&
+    value !== null &&
+    value !== "" &&
+    Number.isSafeInteger(Number(value)) &&
+    Number(value) >= minimum
+      ? Number(value)
+      : null;
+  const blockHeight = exactInteger(item?.blockHeight, 1);
+  const governedProtocol = [
+    "pwm1",
+    "pwa1",
+    "pwid1",
+    "pwr1",
+    "pwt1",
+  ].includes(String(protocol ?? "").trim().toLowerCase());
+  const confirmed =
+    item?.confirmed === true ||
+    String(item?.status ?? "").trim().toLowerCase() === "confirmed";
+  if (
+    confirmed &&
+    governedProtocol &&
+    blockHeight !== null &&
+    blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    const blockIndex = exactInteger(item?.blockIndex, 0);
+    const protocolVout = exactInteger(item?.protocolVout, 0);
+    const recordOrdinal = exactInteger(item?.recordOrdinal, 0);
+    if (
+      blockIndex === null ||
+      protocolVout === null ||
+      recordOrdinal === null
+    ) {
+      throw new Error(
+        "Canonical AMO V5 stable event-key position is incomplete.",
+      );
+    }
+    return [
+      protocol,
+      kind,
+      txid,
+      "v5",
+      blockHeight,
+      blockIndex,
+      protocolVout,
+      recordOrdinal,
+    ]
+      .map(String)
+      .join(":")
+      .toLowerCase();
+  }
   const parts = [
     protocol,
     kind,
@@ -7192,7 +8044,9 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
   }
 
   const spenders = [];
-  for (const tx of Array.isArray(block?.tx) ? block.tx : []) {
+  for (const [blockIndex, tx] of (
+    Array.isArray(block?.tx) ? block.tx : []
+  ).entries()) {
     const txid = String(tx?.txid ?? "").trim().toLowerCase();
     if (!isHexTxid(txid)) {
       continue;
@@ -7210,7 +8064,7 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
       },
     );
     if (inputs.length > 0) {
-      spenders.push({ inputs, tx, txid });
+      spenders.push({ blockIndex, inputs, tx, txid });
     }
   }
   if (spenders.length === 0) {
@@ -7222,7 +8076,7 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
       ? new Date(Number(block.time) * 1000).toISOString()
       : null;
   let inputCount = 0;
-  for (const { inputs, tx, txid } of spenders) {
+  for (const { blockIndex, inputs, tx, txid } of spenders) {
     await client.query(
       `
         INSERT INTO proof_indexer.transactions (
@@ -7234,6 +8088,7 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
           confirmed_at,
           block_hash,
           block_height,
+          block_index,
           block_time,
           vsize,
           weight,
@@ -7250,11 +8105,12 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
           COALESCE($3::timestamptz, now()),
           $4,
           $5,
-          $3::timestamptz,
           $6,
+          $3::timestamptz,
           $7,
           $8,
           $9,
+          $10,
           'canonical-listing-outpoint-scan'
         )
         ON CONFLICT (network, txid)
@@ -7267,6 +8123,7 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
           ),
           block_hash = EXCLUDED.block_hash,
           block_height = EXCLUDED.block_height,
+          block_index = EXCLUDED.block_index,
           block_time = EXCLUDED.block_time,
           vsize = COALESCE(
             proof_indexer.transactions.vsize,
@@ -7297,6 +8154,7 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
         eventTime,
         String(blockHash ?? "").trim().toLowerCase(),
         height,
+        blockIndex,
         numberOrNull(tx?.vsize),
         numberOrNull(tx?.weight),
         numberOrNull(tx?.version),
@@ -7379,11 +8237,25 @@ async function persistCanonicalRawTransaction(
   if (!isHexTxid(txid)) {
     throw new Error("Canonical block scan produced an invalid transaction id.");
   }
+  const rawBlockIndex = Number(tx?._powBlockIndex);
+  const blockIndex =
+    Number.isSafeInteger(rawBlockIndex) && rawBlockIndex >= 0
+      ? rawBlockIndex
+      : null;
+  if (
+    Number(height) >= WORK_AMO_V5_ACTIVATION_HEIGHT &&
+    blockIndex === null
+  ) {
+    throw new Error(
+      `Canonical block scan transaction ${txid} has no full-node block index.`,
+    );
+  }
   const canonicalRawTx = {
     ...tx,
     canonicalBlockScan: {
       blockHash: String(blockHash ?? "").trim().toLowerCase(),
       height,
+      ...(blockIndex === null ? {} : { blockIndex }),
       network: NETWORK,
     },
   };
@@ -7436,7 +8308,8 @@ async function persistCanonicalRawTransaction(
         version,
         locktime,
         source,
-        raw_tx
+        raw_tx,
+        block_index
       )
       VALUES (
         $1,
@@ -7454,7 +8327,8 @@ async function persistCanonicalRawTransaction(
         $9,
         $10,
         'canonical-block-scan',
-        $11::jsonb
+        $11::jsonb,
+        $12
       )
       ON CONFLICT (network, txid)
       DO UPDATE SET
@@ -7463,6 +8337,7 @@ async function persistCanonicalRawTransaction(
         confirmed_at = COALESCE(EXCLUDED.confirmed_at, proof_indexer.transactions.confirmed_at),
         block_hash = EXCLUDED.block_hash,
         block_height = EXCLUDED.block_height,
+        block_index = EXCLUDED.block_index,
         block_time = EXCLUDED.block_time,
         fee_sats = EXCLUDED.fee_sats,
         vsize = COALESCE(EXCLUDED.vsize, proof_indexer.transactions.vsize),
@@ -7485,6 +8360,7 @@ async function persistCanonicalRawTransaction(
       numberOrNull(tx?.version),
       numberOrNull(tx?.locktime),
       JSON.stringify(canonicalRawTx),
+      blockIndex,
     ],
   );
   await persistCanonicalTransactionDetails(client, tx, {
@@ -7600,7 +8476,11 @@ function canonicalRushHistoryEntries(history, indexedThroughBlock) {
   }
   return [...entriesByTxid]
     .map(([txid, height]) => ({ height, txid }))
-    .sort((left, right) => left.height - right.height || left.txid.localeCompare(right.txid));
+    .sort(
+      (left, right) =>
+        left.height - right.height ||
+        compareCanonicalUtf8(left.txid, right.txid),
+    );
 }
 
 function rushDiscoveryHash(entries) {
@@ -7986,11 +8866,14 @@ async function hydrateHistoricalCanonicalTransactionDetails(client) {
             transaction_row.raw_tx,
             canonical_block.block_hash AS canonical_block_hash,
             canonical_block.canonical AS block_canonical,
-            CASE
-              WHEN transaction_row.raw_tx->>'_powBlockIndex' ~ '^[0-9]+$'
-                THEN (transaction_row.raw_tx->>'_powBlockIndex')::integer
-              ELSE -1
-            END AS block_index
+            COALESCE(
+              transaction_row.block_index,
+              CASE
+                WHEN transaction_row.raw_tx->>'_powBlockIndex' ~ '^[0-9]+$'
+                  THEN (transaction_row.raw_tx->>'_powBlockIndex')::integer
+                ELSE -1
+              END
+            ) AS block_index
           FROM proof_indexer.transactions AS transaction_row
           JOIN proof_indexer.blocks AS canonical_block
             ON canonical_block.network = transaction_row.network
@@ -8135,7 +9018,7 @@ async function hydrateHistoricalCanonicalTransactionDetails(client) {
 
 async function upsertTransaction(client, item, txid, status, sourceLabel) {
   const eventTime = itemTime(item);
-  await client.query(
+  const result = await client.query(
     `
       INSERT INTO proof_indexer.transactions (
         network,
@@ -8145,6 +9028,7 @@ async function upsertTransaction(client, item, txid, status, sourceLabel) {
         last_seen_at,
         confirmed_at,
         block_height,
+        block_index,
         block_time,
         source,
         raw_tx
@@ -8157,9 +9041,10 @@ async function upsertTransaction(client, item, txid, status, sourceLabel) {
         now(),
         CASE WHEN $3 = 'confirmed' THEN COALESCE($4::timestamptz, now()) ELSE NULL END,
         CASE WHEN $3 = 'confirmed' THEN $5::integer ELSE NULL END,
+        CASE WHEN $3 = 'confirmed' THEN $6::integer ELSE NULL END,
         CASE WHEN $3 = 'confirmed' THEN $4::timestamptz ELSE NULL END,
-        $6,
-        $7::jsonb
+        $7,
+        $8::jsonb
       )
       ON CONFLICT (network, txid)
       DO UPDATE SET
@@ -8196,6 +9081,16 @@ async function upsertTransaction(client, item, txid, status, sourceLabel) {
             THEN COALESCE(EXCLUDED.block_height, proof_indexer.transactions.block_height)
           ELSE NULL
         END,
+        block_index = CASE
+          WHEN proof_indexer.transactions.raw_tx ? 'canonicalBlockScan'
+            THEN proof_indexer.transactions.block_index
+          WHEN EXCLUDED.status = 'confirmed'
+            THEN COALESCE(
+              EXCLUDED.block_index,
+              proof_indexer.transactions.block_index
+            )
+          ELSE NULL
+        END,
         block_time = CASE
           WHEN proof_indexer.transactions.raw_tx ? 'canonicalBlockScan'
             THEN proof_indexer.transactions.block_time
@@ -8220,6 +9115,7 @@ async function upsertTransaction(client, item, txid, status, sourceLabel) {
           ELSE COALESCE(proof_indexer.transactions.raw_tx, EXCLUDED.raw_tx)
         END,
         updated_at = now()
+      RETURNING status, block_height, block_index
     `,
     [
       NETWORK,
@@ -8227,10 +9123,19 @@ async function upsertTransaction(client, item, txid, status, sourceLabel) {
       status,
       eventTime,
       numberOrNull(item?.blockHeight ?? item?.height),
+      numberOrNull(item?.blockIndex ?? item?._powBlockIndex),
       sourceLabel,
       JSON.stringify({ indexedFrom: sourceLabel, item }),
     ],
   );
+  const row = result?.rows?.[0];
+  return row
+    ? {
+        blockHeight: Number(row.block_height),
+        blockIndex: Number(row.block_index),
+        confirmed: row.status === "confirmed",
+      }
+    : null;
 }
 
 async function upsertEvent(client, sourceLabel, item) {
@@ -8268,6 +9173,13 @@ async function upsertEvent(client, sourceLabel, item) {
     ],
   };
   const protocol = protocolForItem(item, kind);
+  const governedProtocol = [
+    "pwm1",
+    "pwa1",
+    "pwid1",
+    "pwr1",
+    "pwt1",
+  ].includes(protocol);
   const eventKey = stableEventKey({
     item: indexedInput,
     kind: stableEventKeyKind(item, kind, sourceLabel),
@@ -8277,7 +9189,48 @@ async function upsertEvent(client, sourceLabel, item) {
   });
   const eventTime = itemTime(indexedInput);
 
-  await upsertTransaction(client, indexedInput, txid, status, sourceLabel);
+  const persistedTransaction = await upsertTransaction(
+    client,
+    indexedInput,
+    txid,
+    status,
+    sourceLabel,
+  );
+  const confirmedProtocolPosition =
+    status === "confirmed" && governedProtocol
+      ? canonicalProtocolPosition(indexedInput)
+      : null;
+  const confirmedBlockHeight = Number(
+    persistedTransaction?.blockHeight,
+  );
+  const confirmedBlockIndex = Number(
+    persistedTransaction?.blockIndex,
+  );
+  if (
+    status === "confirmed" &&
+    governedProtocol &&
+    (
+      persistedTransaction?.confirmed !== true ||
+      !Number.isSafeInteger(confirmedBlockHeight) ||
+      confirmedBlockHeight < 1 ||
+      !Number.isSafeInteger(confirmedBlockIndex) ||
+      confirmedBlockIndex < 0 ||
+      !confirmedProtocolPosition ||
+      confirmedProtocolPosition.blockHeight !==
+        confirmedBlockHeight ||
+      confirmedProtocolPosition.blockIndex !== confirmedBlockIndex
+    )
+  ) {
+    throw new Error(
+      confirmedBlockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+        ? "Canonical AMO V5 event position is incomplete."
+        : "Canonical confirmed protocol event position is incomplete.",
+    );
+  }
+  const requiresExactV5Position =
+    status === "confirmed" &&
+    governedProtocol &&
+    confirmedBlockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT;
 
   const result = await client.query(
     `
@@ -8296,7 +9249,10 @@ async function upsertEvent(client, sourceLabel, item) {
         block_time,
         event_time,
         raw_payload,
-        payload
+        payload,
+        op_return_vout,
+        block_index,
+        record_ordinal
       )
       VALUES (
         $1,
@@ -8313,10 +9269,34 @@ async function upsertEvent(client, sourceLabel, item) {
         $12::timestamptz,
         $13::timestamptz,
         $14,
-        $15::jsonb
+        $15::jsonb,
+        $16,
+        $17,
+        $18
       )
       ON CONFLICT (network, event_key)
       DO UPDATE SET
+        op_return_vout = CASE
+          WHEN EXCLUDED.status = 'confirmed'
+            THEN COALESCE(
+              EXCLUDED.op_return_vout,
+              proof_indexer.events.op_return_vout
+            )
+          ELSE NULL
+        END,
+        block_index = CASE
+          WHEN EXCLUDED.status = 'confirmed'
+            THEN COALESCE(
+              EXCLUDED.block_index,
+              proof_indexer.events.block_index
+            )
+          ELSE NULL
+        END,
+        record_ordinal = CASE
+          WHEN EXCLUDED.status = 'confirmed'
+            THEN EXCLUDED.record_ordinal
+          ELSE 0
+        END,
         status = EXCLUDED.status,
         valid = EXCLUDED.valid,
         validation_errors = EXCLUDED.validation_errors,
@@ -8431,6 +9411,21 @@ async function upsertEvent(client, sourceLabel, item) {
       eventTime,
       indexedInput?.payload ? String(indexedInput.payload) : "",
       JSON.stringify({ ...indexedInput, indexedFrom: sourceLabel }),
+      status === "confirmed"
+        ? requiresExactV5Position
+          ? confirmedProtocolPosition.protocolVout
+          : numberOrNull(indexedInput?.protocolVout)
+        : null,
+      status === "confirmed"
+        ? requiresExactV5Position
+          ? confirmedProtocolPosition.blockIndex
+          : numberOrNull(indexedInput?.blockIndex ?? indexedInput?._powBlockIndex)
+        : null,
+      status === "confirmed"
+        ? requiresExactV5Position
+          ? confirmedProtocolPosition.recordOrdinal
+          : numberOrNull(indexedInput?.recordOrdinal ?? 0)
+        : 0,
     ],
   );
   if (result.rows.length === 0) {
@@ -8474,8 +9469,366 @@ async function upsertEvent(client, sourceLabel, item) {
   return { skipped: false };
 }
 
+function workAmoFrozenTermsFromItem(item) {
+  const source = objectValue(item);
+  const authorization = objectValue(source.saleAuthorization);
+  const explicit = objectValue(
+    source.frozenTerms ??
+      source.workAmoFrozenTerms ??
+      authorization.frozenTerms,
+  );
+  const pricing = objectValue(
+    source.workAmoPricing ?? source.workMarketPricing,
+  );
+  const merged = {
+    ...authorization,
+    ...pricing,
+    ...source,
+    ...explicit,
+  };
+  const field = (...names) => {
+    for (const name of names) {
+      if (
+        merged[name] !== undefined &&
+        merged[name] !== null &&
+        merged[name] !== ""
+      ) {
+        return merged[name];
+      }
+    }
+    return undefined;
+  };
+  const terms = {
+    amountModel: field("amountModel"),
+    bondTransitionModel: field("bondTransitionModel"),
+    listingBlockHash: normalizedLowerText(field("listingBlockHash", "blockHash")),
+    listingBlockHeight: field("listingBlockHeight", "blockHeight"),
+    listingBlockIndex: field("listingBlockIndex", "blockIndex"),
+    listingBondContributionQ8: field("listingBondContributionQ8"),
+    listingProtocolVout: field("listingProtocolVout", "protocolVout"),
+    listingRecordOrdinal: field("listingRecordOrdinal", "recordOrdinal"),
+    stateOrderModel: field("stateOrderModel"),
+    unitAmountAtoms: field("unitAmountAtoms", "amountAtoms"),
+    unitFaceUsd: field("unitFaceUsd", "faceUsd"),
+    unitFaceUsdCents: field("unitFaceUsdCents", "faceUsdCents"),
+    unitMinimumPriceSats: field("unitMinimumPriceSats", "minimumPriceSats"),
+    unitModel: field("unitModel"),
+    unitNetworkValueAfterQ8: field("unitNetworkValueAfterQ8"),
+    unitNetworkValueBeforeQ8: field("unitNetworkValueBeforeQ8"),
+    unitPriceSats: field("unitPriceSats", "priceSats"),
+    unitUsdOracleModel: field("unitUsdOracleModel"),
+    unitUsdPer100mProofsQ8: field("unitUsdPer100mProofsQ8"),
+    unitUsdQuoteBlockHash: normalizedLowerText(field("unitUsdQuoteBlockHash")),
+    unitUsdQuoteBlockHeight: field("unitUsdQuoteBlockHeight"),
+    unitUsdQuoteBlockIndex: field("unitUsdQuoteBlockIndex"),
+    unitUsdQuoteSequence: field("unitUsdQuoteSequence"),
+    unitUsdQuoteTxid: normalizedLowerText(field("unitUsdQuoteTxid")),
+    unitUsdQuoteVout: field("unitUsdQuoteVout"),
+    unitWorkOracleModel: field("unitWorkOracleModel"),
+    version: normalizedLowerText(field("version", "authorizationVersion")),
+  };
+  const position = canonicalProtocolPosition(item);
+  const validation = validateWorkAmoV5FrozenTerms(terms, {
+    listingPosition: position
+      ? {
+          blockHash: normalizedLowerText(
+            item?.blockHash ?? item?._powBlockHash,
+          ),
+          blockHeight: position.blockHeight,
+          blockTransactionIndex: position.blockIndex,
+          protocolVout: position.protocolVout,
+          recordOrdinal: position.recordOrdinal,
+        }
+      : null,
+  });
+  return validation.valid ? validation.frozenTerms : null;
+}
+
+async function upsertWorkUsdQuoteProjection(client, item, status) {
+  if (
+    status !== "confirmed" ||
+    item?.confirmed !== true ||
+    item?.valid === false
+  ) {
+    return;
+  }
+  const position = canonicalProtocolPosition(item);
+  const blockHash = normalizedLowerText(item?.blockHash ?? item?._powBlockHash);
+  const sequence = canonicalIntegerText(item?.quoteSequence, {
+    positive: true,
+  });
+  const quoteValue = canonicalIntegerText(item?.usdPer100mProofsQ8, {
+    positive: true,
+  });
+  const recordCount = Number(item?.recordCount);
+  const registryAddress = String(item?.registryAddress ?? "").trim();
+  const registryPaymentSats = canonicalIntegerText(
+    item?.registryPaymentSats,
+    { positive: true },
+  );
+  const registryPaymentVout = Number(item?.registryPaymentVout);
+  if (
+    !position ||
+    position.blockHeight < WORK_AMO_V1_ACTIVATION_HEIGHT ||
+    position.recordOrdinal !== 0 ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !sequence ||
+    !quoteValue ||
+    recordCount !== 1 ||
+    registryAddress !== WORK_AMO_USD_QUOTE_REGISTRY_ADDRESS ||
+    !registryPaymentSats ||
+    BigInt(registryPaymentSats) < WORK_AMO_USD_QUOTE_MIN_PAYMENT_SATS ||
+    !Number.isSafeInteger(registryPaymentVout) ||
+    registryPaymentVout < 0
+  ) {
+    throw new Error("Canonical AMO USD quote projection is incomplete.");
+  }
+  const payload = {
+    ...item,
+    blockHash,
+    blockHeight: position.blockHeight,
+    blockIndex: position.blockIndex,
+    protocolVout: position.protocolVout,
+    quoteSequence: sequence,
+    recordOrdinal: position.recordOrdinal,
+    recordCount,
+    registryAddress,
+    registryPaymentSats,
+    registryPaymentVout,
+    usdPer100mProofsQ8: quoteValue,
+  };
+  const inserted = await client.query(
+    `
+      INSERT INTO proof_indexer.work_usd_quotes (
+        network,
+        txid,
+        declaration_txid,
+        sequence,
+        previous_quote_txid,
+        usd_per_100m_proofs_q8,
+        authority_scriptpubkey,
+        record_count,
+        registry_address,
+        registry_payment_sats,
+        registry_payment_vout,
+        status,
+        valid,
+        validation_errors,
+        block_hash,
+        block_height,
+        block_index,
+        protocol_vout,
+        record_ordinal,
+        raw_payload,
+        payload,
+        updated_at
+      )
+      VALUES (
+        $1, $2, $3, $4::numeric, $5, $6::numeric, $7,
+        $8, $9, $10::bigint, $11,
+        'confirmed', true, '{}'::text[], $12, $13, $14, $15, $16,
+        $17, $18::jsonb, now()
+      )
+      ON CONFLICT (network, txid) DO NOTHING
+      RETURNING txid
+    `,
+    [
+      NETWORK,
+      normalizedLowerText(item.txid),
+      WORK_AMO_V1_DECLARATION_TXID,
+      sequence,
+      normalizedLowerText(item.previousQuoteTxid),
+      quoteValue,
+      WORK_AMO_USD_QUOTE_AUTHORITY_SCRIPTPUBKEY,
+      recordCount,
+      registryAddress,
+      registryPaymentSats,
+      registryPaymentVout,
+      blockHash,
+      position.blockHeight,
+      position.blockIndex,
+      position.protocolVout,
+      position.recordOrdinal,
+      String(item.payload ?? ""),
+      JSON.stringify(payload),
+    ],
+  );
+  if (inserted.rowCount > 0) {
+    return;
+  }
+  const existing = await client.query(
+    `
+      SELECT 1
+      FROM proof_indexer.work_usd_quotes
+      WHERE network = $1
+        AND txid = $2
+        AND declaration_txid = $3
+        AND sequence = $4::numeric
+        AND previous_quote_txid = $5
+        AND usd_per_100m_proofs_q8 = $6::numeric
+        AND authority_scriptpubkey = $7
+        AND record_count = $8
+        AND registry_address = $9
+        AND registry_payment_sats = $10::bigint
+        AND registry_payment_vout = $11
+        AND status = 'confirmed'
+        AND valid = true
+        AND block_hash = $12
+        AND block_height = $13
+        AND block_index = $14
+        AND protocol_vout = $15
+        AND record_ordinal = $16
+        AND payload = $17::jsonb
+      LIMIT 1
+    `,
+    [
+      NETWORK,
+      normalizedLowerText(item.txid),
+      WORK_AMO_V1_DECLARATION_TXID,
+      sequence,
+      normalizedLowerText(item.previousQuoteTxid),
+      quoteValue,
+      WORK_AMO_USD_QUOTE_AUTHORITY_SCRIPTPUBKEY,
+      recordCount,
+      registryAddress,
+      registryPaymentSats,
+      registryPaymentVout,
+      blockHash,
+      position.blockHeight,
+      position.blockIndex,
+      position.protocolVout,
+      position.recordOrdinal,
+      JSON.stringify(payload),
+    ],
+  );
+  if (existing.rowCount !== 1) {
+    throw new Error(
+      `Immutable AMO USD quote projection conflicts for ${item.txid}.`,
+    );
+  }
+}
+
+async function upsertWorkAmoListingTermsProjection(client, item, status) {
+  const version = normalizedLowerText(item?.saleAuthorization?.version);
+  const tokenId = normalizedLowerText(
+    item?.tokenId ?? item?.saleAuthorization?.tokenId,
+  );
+  if (
+    version !== WORK_AMO_V5_AUTH_VERSION ||
+    tokenId !== WORK_TOKEN_ID ||
+    status !== "confirmed" ||
+    item?.confirmed !== true ||
+    item?.valid === false ||
+    !["token-listing", "token-listings"].includes(
+      normalizedLowerText(item?.kind),
+    )
+  ) {
+    return;
+  }
+  const terms = workAmoFrozenTermsFromItem(item);
+  const listingId = normalizedLowerText(item?.listingId ?? item?.txid);
+  const listingTxid = normalizedLowerText(item?.txid);
+  if (!terms || !isHexTxid(listingId) || listingId !== listingTxid) {
+    throw new Error(
+      `Canonical AMO V5 listing ${listingId || listingTxid || "unknown"} has incomplete frozen terms.`,
+    );
+  }
+  const inserted = await client.query(
+    `
+      INSERT INTO proof_indexer.work_amo_listing_terms (
+        network,
+        listing_id,
+        listing_txid,
+        token_id,
+        authorization_version,
+        unit_face_usd_cents,
+        unit_amount_atoms,
+        unit_price_sats,
+        unit_minimum_price_sats,
+        unit_usd_quote_txid,
+        unit_usd_quote_vout,
+        unit_usd_quote_sequence,
+        unit_usd_quote_block_height,
+        unit_usd_quote_block_hash,
+        unit_usd_quote_block_index,
+        unit_usd_per_100m_proofs_q8,
+        unit_network_value_before_q8,
+        listing_block_height,
+        listing_block_hash,
+        listing_block_index,
+        listing_protocol_vout,
+        listing_record_ordinal,
+        listing_bond_contribution_q8,
+        unit_network_value_after_q8,
+        frozen_terms
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7::numeric, $8::bigint, $9::bigint,
+        $10, $11, $12::numeric, $13, $14, $15, $16::numeric,
+        $17::numeric, $18, $19, $20, $21, $22, $23::numeric,
+        $24::numeric, $25::jsonb
+      )
+      ON CONFLICT (network, listing_id) DO NOTHING
+      RETURNING listing_id
+    `,
+    [
+      NETWORK,
+      listingId,
+      listingTxid,
+      WORK_TOKEN_ID,
+      WORK_AMO_V5_AUTH_VERSION,
+      terms.unitFaceUsdCents,
+      String(terms.unitAmountAtoms),
+      String(terms.unitPriceSats),
+      String(terms.unitMinimumPriceSats),
+      terms.unitUsdQuoteTxid,
+      Number(terms.unitUsdQuoteVout),
+      String(terms.unitUsdQuoteSequence),
+      Number(terms.unitUsdQuoteBlockHeight),
+      terms.unitUsdQuoteBlockHash,
+      Number(terms.unitUsdQuoteBlockIndex),
+      String(terms.unitUsdPer100mProofsQ8),
+      String(terms.unitNetworkValueBeforeQ8),
+      Number(terms.listingBlockHeight),
+      terms.listingBlockHash,
+      Number(terms.listingBlockIndex),
+      Number(terms.listingProtocolVout),
+      Number(terms.listingRecordOrdinal),
+      String(terms.listingBondContributionQ8),
+      String(terms.unitNetworkValueAfterQ8),
+      JSON.stringify(terms),
+    ],
+  );
+  if (inserted.rowCount > 0) {
+    return;
+  }
+  const existing = await client.query(
+    `
+      SELECT 1
+      FROM proof_indexer.work_amo_listing_terms
+      WHERE network = $1
+        AND listing_id = $2
+        AND listing_txid = $3
+        AND frozen_terms = $4::jsonb
+      LIMIT 1
+    `,
+    [NETWORK, listingId, listingTxid, JSON.stringify(terms)],
+  );
+  if (existing.rowCount !== 1) {
+    throw new Error(
+      `Immutable AMO V5 listing terms conflict for ${listingId}.`,
+    );
+  }
+}
+
 async function upsertProjection(client, sourceLabel, item, status) {
   const projectionKind = eventKind(item, sourceLabel);
+  if (sourceLabel === "work-usd-quotes" && projectionKind === "work-usd-quote") {
+    await upsertWorkUsdQuoteProjection(client, item, status);
+  }
+  if (typeof upsertWorkAmoListingTermsProjection === "function") {
+    await upsertWorkAmoListingTermsProjection(client, item, status);
+  }
   if (
     projectionKind === "id-register" &&
     item?.id &&
@@ -8721,7 +10074,44 @@ async function upsertProjection(client, sourceLabel, item, status) {
           sale_ticket_value_sats = COALESCE(EXCLUDED.sale_ticket_value_sats, proof_indexer.credit_listings.sale_ticket_value_sats),
           seal_txid = COALESCE(NULLIF(EXCLUDED.seal_txid, ''), proof_indexer.credit_listings.seal_txid),
           close_txid = COALESCE(NULLIF(EXCLUDED.close_txid, ''), proof_indexer.credit_listings.close_txid),
-          payload = proof_indexer.credit_listings.payload || EXCLUDED.payload,
+          payload =
+            (
+              proof_indexer.credit_listings.payload
+              || (
+                EXCLUDED.payload
+                - 'saleAuthorization'
+                - 'listingAuthorization'
+                - 'listingFrozenTerms'
+              )
+            )
+            || jsonb_strip_nulls(jsonb_build_object(
+              'actionAuthorization',
+                EXCLUDED.payload->'saleAuthorization',
+              'listingAuthorization',
+                COALESCE(
+                  proof_indexer.credit_listings.payload
+                    ->'listingAuthorization',
+                  proof_indexer.credit_listings.payload
+                    ->'saleAuthorization',
+                  EXCLUDED.payload->'listingAuthorization',
+                  EXCLUDED.payload->'saleAuthorization'
+                ),
+              'listingFrozenTerms',
+                COALESCE(
+                  proof_indexer.credit_listings.payload
+                    ->'listingFrozenTerms',
+                  EXCLUDED.payload->'listingFrozenTerms'
+                ),
+              'saleAuthorization',
+                COALESCE(
+                  proof_indexer.credit_listings.payload
+                    ->'listingAuthorization',
+                  proof_indexer.credit_listings.payload
+                    ->'saleAuthorization',
+                  EXCLUDED.payload->'listingAuthorization',
+                  EXCLUDED.payload->'saleAuthorization'
+                )
+            )),
           updated_at = now()
       `,
       [
@@ -9026,6 +10416,50 @@ function creditListingCloseTxid(
 
 function creditListingProjectionPayload(item, projectedStatus) {
   const payload = { ...(item ?? {}) };
+  const listingTxid = normalizedLowerText(payload.listingId);
+  const actionTxid = normalizedLowerText(payload.txid);
+  const listingAuthorization = objectValue(payload.saleAuthorization);
+  const listingPosition = canonicalProtocolPosition(payload);
+  const listingBlockHash = normalizedLowerText(
+    payload.blockHash ?? payload._powBlockHash,
+  );
+  if (
+    listingTxid &&
+    listingTxid === actionTxid &&
+    normalizedLowerText(listingAuthorization.version) ===
+      WORK_MARKET_V4_AUTH_VERSION &&
+    listingPosition &&
+    /^[0-9a-f]{64}$/u.test(listingBlockHash)
+  ) {
+    payload.listingAuthorization = listingAuthorization;
+    payload.listingFrozenTerms = {
+      authorizationVersion: WORK_MARKET_V4_AUTH_VERSION,
+      listingBlockHash,
+      listingBlockHeight: listingPosition.blockHeight,
+      listingBlockIndex: listingPosition.blockIndex,
+      listingProtocolVout: listingPosition.protocolVout,
+      listingRecordOrdinal: listingPosition.recordOrdinal,
+      tokenId: normalizedLowerText(
+        payload.tokenId ?? listingAuthorization.tokenId,
+      ),
+      unitAmountAtoms:
+        listingAuthorization.unitAmountAtoms ??
+        listingAuthorization.amountAtoms ??
+        payload.amountAtoms,
+      unitFaceUsd: listingAuthorization.unitFaceUsd,
+      unitFaceUsdCents: listingAuthorization.unitFaceUsdCents,
+      unitMinimumPriceSats:
+        listingAuthorization.unitMinimumPriceSats ??
+        listingAuthorization.minimumPriceSats,
+      unitNetworkValueBeforeQ8:
+        listingAuthorization.unitNetworkValueBeforeQ8 ??
+        listingAuthorization.unitNetworkValueQ8,
+      unitPriceSats:
+        listingAuthorization.unitPriceSats ??
+        listingAuthorization.priceSats ??
+        payload.priceSats,
+    };
+  }
   if (projectedStatus === "sold" || projectedStatus === "delisted") {
     payload.closedConfirmed = true;
   }
@@ -9715,7 +11149,11 @@ async function storeLedgerSnapshot(client, options = {}) {
       JSON.stringify(snapshotPayload),
       CANONICAL_REBUILD_META_KEY,
       INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
-      [WORK_MARKET_V2_AUTH_VERSION, WORK_MARKET_V4_AUTH_VERSION],
+      [
+        WORK_MARKET_V2_AUTH_VERSION,
+        WORK_MARKET_V4_AUTH_VERSION,
+        WORK_AMO_V5_AUTH_VERSION,
+      ],
       WORK_TOKEN_ID,
       WORK_MARKET_V4_AUTH_VERSION,
     ],
@@ -10673,7 +12111,11 @@ async function pruneLedgerSnapshots(
       boundedScanSnapshotLimit,
       CANONICAL_REBUILD_META_KEY,
       INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
-      [WORK_MARKET_V2_AUTH_VERSION, WORK_MARKET_V4_AUTH_VERSION],
+      [
+        WORK_MARKET_V2_AUTH_VERSION,
+        WORK_MARKET_V4_AUTH_VERSION,
+        WORK_AMO_V5_AUTH_VERSION,
+      ],
       WORK_TOKEN_ID,
       WORK_MARKET_V4_AUTH_VERSION,
     ],
@@ -11042,7 +12484,11 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       JSON.stringify(snapshotPayload),
       CANONICAL_REBUILD_META_KEY,
       INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
-      [WORK_MARKET_V2_AUTH_VERSION, WORK_MARKET_V4_AUTH_VERSION],
+      [
+        WORK_MARKET_V2_AUTH_VERSION,
+        WORK_MARKET_V4_AUTH_VERSION,
+        WORK_AMO_V5_AUTH_VERSION,
+      ],
       WORK_TOKEN_ID,
       WORK_MARKET_V4_AUTH_VERSION,
     ],
@@ -12432,10 +13878,10 @@ async function canonicalIncbRangeReplayCompletionWitnesses(client, rebuild) {
     });
   }
   preservedWitnesses.sort((left, right) =>
-    left.identity.localeCompare(right.identity)
+    compareCanonicalUtf8(left.identity, right.identity)
   );
   rederivedWitnesses.sort((left, right) =>
-    left.identity.localeCompare(right.identity)
+    compareCanonicalUtf8(left.identity, right.identity)
   );
   if (preservedWitnesses.length !== manifest.preserveCount) {
     throw new Error(
@@ -12682,12 +14128,24 @@ async function prepareCanonicalRebuild(client) {
     creditUnitStorageMigration =
       await migrateUnboundedCreditUnitStorage(client);
     await client.query(
+      `DELETE FROM proof_indexer.work_amo_block_transitions WHERE network = $1`,
+      [NETWORK],
+    );
+    await client.query(
+      `DELETE FROM proof_indexer.work_amo_listing_terms WHERE network = $1`,
+      [NETWORK],
+    );
+    await client.query(
+      `DELETE FROM proof_indexer.work_usd_quotes WHERE network = $1`,
+      [NETWORK],
+    );
+    await client.query(
       `
         DELETE FROM proof_indexer.events
         WHERE network = $1
           AND protocol = ANY($2::text[])
       `,
-      [NETWORK, ["pwid1", "pwt1", "pwm1", "pwr1"]],
+      [NETWORK, ["pwid1", "pwt1", "pwm1", "pwa1", "pwr1"]],
     );
     await client.query(`DELETE FROM proof_indexer.id_records WHERE network = $1`, [
       NETWORK,
@@ -13144,6 +14602,14 @@ async function prepareCanonicalPwtRangeReplay(client) {
 
     await client.query(
       `
+        DELETE FROM proof_indexer.work_amo_block_transitions
+        WHERE network = $1
+          AND block_height >= $2
+      `,
+      [NETWORK, BLOCK_SCAN_FROM_HEIGHT],
+    );
+    await client.query(
+      `
         WITH replay_txids AS (
           SELECT DISTINCT e.txid
           FROM proof_indexer.events e
@@ -13360,6 +14826,1040 @@ function canonicalRebuildCheckpointValue(
     status: complete ? "complete" : "active",
     updatedAt,
   };
+}
+
+function canonicalWorkAmoTransitionCommitment(value, expectedModel) {
+  const model = String(value?.model ?? "").trim();
+  const payloadBytes = Number(value?.payloadBytes);
+  const sha256 = String(value?.sha256 ?? "").trim().toLowerCase();
+  return model === expectedModel &&
+    Number.isSafeInteger(payloadBytes) &&
+    payloadBytes > 0 &&
+    /^[0-9a-f]{64}$/u.test(sha256)
+    ? { model, payloadBytes, sha256 }
+    : null;
+}
+
+function normalizedWorkAmoV5BlockTransition(
+  value,
+  {
+    blockHash,
+    blockHeight,
+    previousBlockHash,
+  },
+) {
+  const transition =
+    value?.workAmoV5BlockTransition &&
+    typeof value.workAmoV5BlockTransition === "object" &&
+    !Array.isArray(value.workAmoV5BlockTransition)
+      ? value.workAmoV5BlockTransition
+      : value;
+  const normalizedBlockHash = String(blockHash ?? "").trim().toLowerCase();
+  const normalizedPreviousBlockHash = String(previousBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const openingState = validateWorkAmoV5SufficientState(
+    transition?.openingSufficientState,
+  );
+  const closingState = validateWorkAmoV5SufficientState(
+    transition?.closingSufficientState,
+  );
+  const openingCommitment = canonicalWorkAmoTransitionCommitment(
+    transition?.openingStateCommitment,
+    WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  );
+  const closingCommitment = canonicalWorkAmoTransitionCommitment(
+    transition?.closingStateCommitment,
+    WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  );
+  const eventSetCommitment = canonicalWorkAmoTransitionCommitment(
+    transition?.eventSetCommitment,
+    WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL,
+  );
+  const transitionChainCommitment =
+    canonicalWorkAmoTransitionCommitment(
+      transition?.transitionChainCommitment,
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+    );
+  const blockDescriptorCommitment =
+    canonicalWorkAmoTransitionCommitment(
+      transition?.blockDescriptorCommitment,
+      WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+    );
+  const blockTransactionCount = Number(
+    transition?.blockTransactionCount,
+  );
+  const bip141Witness = normalizedWorkAmoV5Bip141Witness(
+    transition?.bip141Witness,
+    blockTransactionCount,
+  );
+  let closingTokenStateCommitment = null;
+  let closingGenericTokenStateCommitment = null;
+  let closingIdStateCommitment = null;
+  try {
+    closingTokenStateCommitment =
+      workAmoV5CanonicalTokenStateCommitment(
+        transition?.closingTokenState,
+      );
+    closingGenericTokenStateCommitment =
+      workAmoV5RawGenericStateCommitment(
+        transition?.closingGenericTokenState,
+      );
+    closingIdStateCommitment =
+      workAmoV5RawIdStateCommitment(
+        transition?.closingIdState,
+      );
+  } catch {
+    closingTokenStateCommitment = null;
+    closingGenericTokenStateCommitment = null;
+    closingIdStateCommitment = null;
+  }
+  const openingNetworkValueQ8 = canonicalIntegerText(
+    transition?.openingNetworkValueQ8,
+    { positive: true },
+  );
+  const closingNetworkValueQ8 = canonicalIntegerText(
+    transition?.closingNetworkValueQ8,
+    { positive: true },
+  );
+  const protocolRecordCount = Number(transition?.protocolRecordCount);
+  const rawProtocolCandidateCount = Number(
+    transition?.rawProtocolCandidateCount,
+  );
+  const transactionCount = Number(transition?.transactionCount);
+  const eventCount = Number(transition?.eventCount);
+  const traces = Array.isArray(transition?.traces)
+    ? transition.traces
+    : null;
+  const replayRecords = Array.isArray(transition?.replayRecords)
+    ? transition.replayRecords
+    : null;
+  const replayDescriptorCommitment =
+    workAmoV5CanonicalPayloadCommitment(replayRecords ?? []);
+  let activationSeedValid = true;
+  if (blockHeight === WORK_AMO_V5_ACTIVATION_HEIGHT) {
+    const seedSufficientState = validateWorkAmoV5SufficientState(
+      transition?.seedSufficientState,
+    );
+    const seedSufficientStateCommitment =
+      canonicalWorkAmoTransitionCommitment(
+        transition?.seedSufficientStateCommitment,
+        WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+      );
+    try {
+      const seedGenericCommitment =
+        workAmoV5RawGenericStateCommitment(
+          transition?.seedGenericTokenState,
+        );
+      const seedIdCommitment =
+        workAmoV5RawIdStateCommitment(
+          transition?.seedIdState,
+        );
+      const seedTokenState =
+        normalizeWorkAmoV5RawWorkState(
+          transition?.seedTokenState,
+        );
+      const seedWorkProjection =
+        normalizeWorkAmoV5RawWorkState(
+          transition?.seedWorkProjection,
+        );
+      const seedTokenCommitment =
+        workAmoV5CanonicalTokenStateCommitment(seedTokenState);
+      const seedWorkProjectionCommitment =
+        workAmoV5CanonicalTokenStateCommitment(
+          seedWorkProjection,
+        );
+      activationSeedValid =
+        seedSufficientState.valid === true &&
+        Boolean(seedSufficientStateCommitment) &&
+        workAmoV5CanonicalStateCommitment(
+          seedSufficientState.state,
+        ).sha256 === seedSufficientStateCommitment?.sha256 &&
+        workAmoV5CanonicalStateCommitment(
+          seedSufficientState.state,
+        ).sha256 === openingCommitment?.sha256 &&
+        seedGenericCommitment.sha256 ===
+          openingState.state.genericTokenStateCommitment.sha256 &&
+        seedIdCommitment.sha256 ===
+          openingState.state.idStateCommitment.sha256 &&
+        seedTokenCommitment.sha256 ===
+          openingState.state.tokenStateCommitment.sha256 &&
+        seedWorkProjectionCommitment.sha256 ===
+          seedTokenCommitment.sha256;
+    } catch {
+      activationSeedValid = false;
+    }
+  }
+  const rawReplayRecords = (replayRecords ?? []).filter(
+    (record) => record?.rawCandidate === true,
+  );
+  const derivedReplayRecords = (replayRecords ?? []).filter(
+    (record) => record?.rawCandidate === false,
+  );
+  const replayPositions = new Set();
+  let replayRecordStructureValid = Boolean(replayRecords);
+  for (const record of replayRecords ?? []) {
+    const positioned = workAmoV5ReplayPositionKey(record);
+    if (!positioned || replayPositions.has(positioned.key)) {
+      replayRecordStructureValid = false;
+      break;
+    }
+    replayPositions.add(positioned.key);
+    if (record.rawCandidate === true) {
+      if (
+        record.derived === true ||
+        !canonicalWorkAmoTransitionCommitment(
+          record.transitionChainCommitmentAfter,
+          WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+        )
+      ) {
+        replayRecordStructureValid = false;
+        break;
+      }
+      continue;
+    }
+    const descriptor = record?.rawWitness?.descriptor;
+    const projectionPosition = workAmoV5ReplayPositionKey(
+      descriptor?.projectionPosition,
+    );
+    const emptyDelta = {
+      baseContributions: [],
+      creditFixedQ8: "0",
+      creditFixedSats: "0",
+      economicOutputs: [],
+    };
+    if (
+      record?.derived !== true ||
+      record?.chargesTransactionFee !== false ||
+      record?.rawWitness?.model !==
+        "canonical-work-amo-v5-derived-child-v1" ||
+      descriptor?.rawCandidate !== false ||
+      descriptor?.economicDelta !== false ||
+      descriptor?.claimsEconomicOutputs !== false ||
+      descriptor?.chargesTransactionFee !== false ||
+      !String(descriptor?.derivedId ?? "").trim() ||
+      !canonicalWorkAmoTransitionCommitment(
+        record.parentTransitionChainCommitmentAfter,
+        WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+      ) ||
+      workAmoV5CanonicalPayloadCommitment(
+        record.parentTransitionChainCommitmentAfter,
+      ).sha256 !==
+        workAmoV5CanonicalPayloadCommitment(
+          descriptor?.parentTransitionChainCommitmentAfter,
+        ).sha256 ||
+      !projectionPosition ||
+      projectionPosition.key !== positioned.key ||
+      workAmoV5CanonicalPayloadCommitment(record?.stateDelta).sha256 !==
+        workAmoV5CanonicalPayloadCommitment(emptyDelta).sha256
+    ) {
+      replayRecordStructureValid = false;
+      break;
+    }
+  }
+  if (
+    transition?.model !== WORK_AMO_V5_BLOCK_SEQUENCER_MODEL ||
+    transition?.blockDescriptorModel !==
+      WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL ||
+    !blockDescriptorCommitment ||
+    !Number.isSafeInteger(blockTransactionCount) ||
+    blockTransactionCount < 1 ||
+    !bip141Witness ||
+    transition?.transitionChainModel !==
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL ||
+    transition?.network !== NETWORK ||
+    Number(transition?.blockHeight) !== blockHeight ||
+    String(transition?.blockHash ?? "").trim().toLowerCase() !==
+      normalizedBlockHash ||
+    String(transition?.previousBlockHash ?? "").trim().toLowerCase() !==
+      normalizedPreviousBlockHash ||
+    transition?.blockAtomic !== true ||
+    transition?.feeOnce !== true ||
+    transition?.invalidZero !== true ||
+    transition?.complete !== true ||
+    !openingState.valid ||
+    !closingState.valid ||
+    !openingCommitment ||
+    !closingCommitment ||
+    !eventSetCommitment ||
+    !transitionChainCommitment ||
+    !activationSeedValid ||
+    !closingTokenStateCommitment ||
+    !closingGenericTokenStateCommitment ||
+    !closingIdStateCommitment ||
+    openingState.state.throughBlockHeight !== blockHeight - 1 ||
+    openingState.state.throughBlockHash !== normalizedPreviousBlockHash ||
+    closingState.state.throughBlockHeight !== blockHeight ||
+    closingState.state.throughBlockHash !== normalizedBlockHash ||
+    openingState.state.networkValueQ8 !== openingNetworkValueQ8 ||
+    closingState.state.networkValueQ8 !== closingNetworkValueQ8 ||
+    workAmoV5CanonicalStateCommitment(openingState.state).sha256 !==
+      openingCommitment.sha256 ||
+    workAmoV5CanonicalStateCommitment(closingState.state).sha256 !==
+      closingCommitment.sha256 ||
+    closingTokenStateCommitment.sha256 !==
+      closingState.state.tokenStateCommitment.sha256 ||
+    closingTokenStateCommitment.payloadBytes !==
+      closingState.state.tokenStateCommitment.payloadBytes ||
+    closingGenericTokenStateCommitment.sha256 !==
+      closingState.state.genericTokenStateCommitment.sha256 ||
+    closingGenericTokenStateCommitment.payloadBytes !==
+      closingState.state.genericTokenStateCommitment.payloadBytes ||
+    closingIdStateCommitment.sha256 !==
+      closingState.state.idStateCommitment.sha256 ||
+    closingIdStateCommitment.payloadBytes !==
+      closingState.state.idStateCommitment.payloadBytes ||
+    !Number.isSafeInteger(protocolRecordCount) ||
+    protocolRecordCount < 0 ||
+    !Number.isSafeInteger(rawProtocolCandidateCount) ||
+    rawProtocolCandidateCount < 0 ||
+    !Number.isSafeInteger(transactionCount) ||
+    transactionCount < 0 ||
+    !Number.isSafeInteger(eventCount) ||
+    eventCount < 0 ||
+    !replayRecordStructureValid ||
+    !traces ||
+    traces.length !== protocolRecordCount + transactionCount ||
+    traces.some(
+      (trace) =>
+        !canonicalWorkAmoTransitionCommitment(
+          trace?.transitionChainCommitmentAfter,
+          WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+        ),
+    ) ||
+    !replayRecords ||
+    rawReplayRecords.length !== protocolRecordCount ||
+    replayRecords.length !== eventCount ||
+    derivedReplayRecords.length !== eventCount - protocolRecordCount ||
+    transition?.replayDescriptorCommitment?.model !==
+      replayDescriptorCommitment.model ||
+    transition?.replayDescriptorCommitment?.sha256 !==
+      replayDescriptorCommitment.sha256 ||
+    Number(transition?.replayDescriptorCommitment?.payloadBytes) !==
+      replayDescriptorCommitment.payloadBytes
+  ) {
+    throw new Error(
+      `Canonical AMO V5 block transition is invalid at ${blockHeight}:${normalizedBlockHash}.`,
+    );
+  }
+  return {
+    bip141Witness,
+    blockAtomic: true,
+    blockDescriptorCommitment,
+    blockDescriptorModel: WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
+    blockHash: normalizedBlockHash,
+    blockHeight,
+    blockTransactionCount,
+    closingCommitment,
+    closingNetworkValueQ8,
+    closingGenericTokenState: transition.closingGenericTokenState,
+    closingIdState: transition.closingIdState,
+    closingState: closingState.state,
+    closingTokenState: transition.closingTokenState,
+    complete: true,
+    eventCount,
+    eventSetCommitment,
+    feeOnce: true,
+    invalidZero: true,
+    model: WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
+    network: NETWORK,
+    openingCommitment,
+    openingNetworkValueQ8,
+    openingState: openingState.state,
+    payload: transition,
+    previousBlockHash: normalizedPreviousBlockHash,
+    protocolRecordCount,
+    rawProtocolCandidateCount,
+    replayDescriptorCommitment,
+    replayRecords,
+    traces,
+    transitionChainCommitment,
+    transitionChainModel: WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+    transactionCount,
+  };
+}
+
+async function verifiedWorkAmoV5BlockTransition({
+  blockHash,
+  blockHeight,
+  previousBlockHash,
+}) {
+  const payload = await readJson(
+    endpoint("/api/v1/internal/work-amo-v5-block-verifier"),
+    {
+      body: {
+        blockHash,
+        blockHeight,
+        network: NETWORK,
+        previousBlockHash,
+      },
+      method: "POST",
+      retries: 0,
+      timeoutMs: 60_000,
+    },
+  );
+  return normalizedWorkAmoV5BlockTransition(payload, {
+    blockHash,
+    blockHeight,
+    previousBlockHash,
+  });
+}
+
+function workAmoEventReasonCode(row) {
+  if (row?.valid === true) {
+    return "";
+  }
+  const reasonCode = String(
+    row?.payload?.reasonCode ??
+      row?.payload?.workAmoV5ReplayOutcome?.reasonCode ??
+      row?.validation_errors?.[0] ??
+      "",
+  ).trim();
+  return reasonCode || "invalid";
+}
+
+function workAmoV5ReplayPositionKey(value) {
+  const position = normalizeWorkAmoCanonicalPosition(
+    value?.position ?? {
+      blockHash: value?.blockHash ?? value?._powBlockHash,
+      blockHeight: value?.blockHeight ?? value?.height,
+      blockTransactionIndex:
+        value?.blockIndex ?? value?._powBlockIndex,
+      protocolVout: value?.protocolVout,
+      recordOrdinal: value?.recordOrdinal,
+    },
+  );
+  return position
+    ? {
+        key: [
+          position.blockHeight,
+          position.blockTransactionIndex,
+          position.protocolVout,
+          position.recordOrdinal,
+        ].join(":"),
+        position,
+      }
+    : null;
+}
+
+function workAmoV5ReplayProjectionFromOutput(output) {
+  const projection =
+    output?.projection &&
+    typeof output.projection === "object" &&
+    !Array.isArray(output.projection)
+      ? output.projection
+      : {};
+  return projection;
+}
+
+function workAmoV5ReplayFrozenTerms(output) {
+  for (const value of [
+    output?.frozenTerms,
+    output?.listingFrozenTerms,
+    output?.projection?.frozenTerms,
+    output?.projection?.listingFrozenTerms,
+  ]) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
+export function bindPreparedTransactionsToWorkAmoV5Replay(
+  preparedTransactions,
+  transition,
+) {
+  const protocols = new Set(["pwa1", "pwid1", "pwm1", "pwr1", "pwt1"]);
+  const replayByPosition = new Map();
+  for (const record of Array.isArray(transition?.replayRecords)
+    ? transition.replayRecords
+    : []) {
+    const position = workAmoV5ReplayPositionKey(record);
+    const txid = normalizedLowerText(record?.txid);
+    const protocol = normalizedLowerText(record?.protocol);
+    if (
+      !position ||
+      !isHexTxid(txid) ||
+      !protocols.has(protocol) ||
+      replayByPosition.has(position.key)
+    ) {
+      throw new Error(
+        `Canonical AMO replay record binding is invalid at ${position?.key ?? "unknown"}.`,
+      );
+    }
+    replayByPosition.set(position.key, {
+      ...record,
+      position: position.position,
+      protocol,
+      txid,
+    });
+  }
+  const preparedPositions = new Set();
+  for (const prepared of Array.isArray(preparedTransactions)
+    ? preparedTransactions
+    : []) {
+    const txid = normalizedLowerText(prepared?.txid);
+    prepared.items = (Array.isArray(prepared?.items)
+      ? prepared.items
+      : []
+    ).map((entry) => {
+      const item = entry?.item ?? entry;
+      const protocol = normalizedLowerText(item?.protocol);
+      if (!protocols.has(protocol)) {
+        return entry;
+      }
+      const position = workAmoV5ReplayPositionKey(item);
+      if (
+        !position ||
+        preparedPositions.has(position.key) ||
+        !isHexTxid(txid) ||
+        normalizedLowerText(item?.txid) !== txid
+      ) {
+        throw new Error(
+          `Canonical AMO prepared-item binding is invalid at ${position?.key ?? "unknown"}.`,
+        );
+      }
+      const replay = replayByPosition.get(position.key);
+      if (
+        !replay ||
+        replay.txid !== txid ||
+        replay.protocol !== protocol
+      ) {
+        throw new Error(
+          `Canonical AMO prepared item has no exact replay outcome at ${position.key}.`,
+        );
+      }
+      const outcome = replay?.outcome;
+      const valid = outcome?.valid === true;
+      const reasonCode = valid
+        ? ""
+        : String(outcome?.reasonCode ?? "invalid").trim() || "invalid";
+      if (
+        String(outcome?.kind ?? "") !==
+        workAmoV5ConsensusEventKind(protocol, valid)
+      ) {
+        throw new Error(
+          `Canonical AMO replay outcome kind diverged at ${position.key}.`,
+        );
+      }
+      const output =
+        replay?.output &&
+        typeof replay.output === "object" &&
+        !Array.isArray(replay.output)
+          ? replay.output
+          : null;
+      const projection = workAmoV5ReplayProjectionFromOutput(output);
+      if (
+        (projection.txid &&
+          normalizedLowerText(projection.txid) !== txid) ||
+        (projection.protocol &&
+          normalizedLowerText(projection.protocol) !== protocol)
+      ) {
+        throw new Error(
+          `Canonical AMO replay projection identity diverged at ${position.key}.`,
+        );
+      }
+      const frozenTerms = workAmoV5ReplayFrozenTerms(output);
+      const existingFrozenTerms = frozenTerms
+        ? workAmoFrozenTermsFromItem(item)
+        : null;
+      if (
+        frozenTerms &&
+        existingFrozenTerms &&
+        workAmoV5CanonicalPayloadCommitment(existingFrozenTerms).sha256 !==
+          workAmoV5CanonicalPayloadCommitment(frozenTerms).sha256
+      ) {
+        throw new Error(
+          `Canonical AMO frozen terms diverged at ${position.key}.`,
+        );
+      }
+      let nextItem = {
+        ...item,
+        ...projection,
+        _workAmoV5ReplayBound: true,
+        blockHash: position.position.blockHash,
+        blockHeight: position.position.blockHeight,
+        blockIndex: position.position.blockTransactionIndex,
+        canonicalVerifier:
+          "/api/v1/internal/work-amo-v5-block-verifier",
+        protocol,
+        protocolVout: position.position.protocolVout,
+        reason: valid ? undefined : reasonCode,
+        reasonCode,
+        recordOrdinal: position.position.recordOrdinal,
+        txid,
+        valid,
+        workAmoV5ReplayOutcome: {
+          kind: outcome.kind,
+          reasonCode,
+          valid,
+        },
+        workAmoV5ReplayOutput: output,
+        workAmoV5ReplayRawWitness: replay.rawWitness,
+        workAmoV5RawCandidate: replay.rawCandidate === true,
+        ...(frozenTerms
+          ? {
+              frozenTerms,
+              workAmoFrozenTerms: frozenTerms,
+            }
+          : {}),
+      };
+      if (valid) {
+        const canonicalKind = String(
+          projection.kind ??
+            nextItem.attemptedKind ??
+            nextItem.kind ??
+            "",
+        ).replace(/-invalid$/u, "");
+        if (!canonicalKind || canonicalKind.endsWith("-invalid")) {
+          throw new Error(
+            `Canonical AMO valid replay lacks a semantic projection at ${position.key}.`,
+          );
+        }
+        nextItem = {
+          ...nextItem,
+          attemptedKind: undefined,
+          kind: canonicalKind,
+        };
+      } else {
+        nextItem = invalidProtocolItem(nextItem, reasonCode);
+        nextItem.reasonCode = reasonCode;
+        nextItem.workAmoV5ReplayOutcome = {
+          kind: outcome.kind,
+          reasonCode,
+          valid: false,
+        };
+        nextItem.workAmoV5ReplayOutput = output;
+        nextItem.workAmoV5ReplayRawWitness = replay.rawWitness;
+        nextItem.workAmoV5RawCandidate =
+          replay.rawCandidate === true;
+        nextItem._workAmoV5ReplayBound = true;
+      }
+      preparedPositions.add(position.key);
+      replayByPosition.delete(position.key);
+      return entry?.item
+        ? {
+            ...entry,
+            item: nextItem,
+            sourceLabel: sourceLabelForProtocolItem(nextItem),
+          }
+        : nextItem;
+    });
+  }
+  if (replayByPosition.size !== 0) {
+    throw new Error(
+      `Canonical AMO replay has ${replayByPosition.size} unbound ordered record(s).`,
+    );
+  }
+  return preparedTransactions;
+}
+
+async function workAmoV5CanonicalBlockEventSet(client, transition) {
+  const result = await client.query(
+    `
+      SELECT
+        event_row.txid,
+        event_row.protocol,
+        event_row.kind,
+        event_row.valid,
+        event_row.validation_errors,
+        event_row.block_height,
+        event_row.block_index,
+        event_row.op_return_vout AS protocol_vout,
+        event_row.record_ordinal,
+        event_row.raw_payload,
+        event_row.payload,
+        event_tx.raw_tx,
+        COALESCE(event_tx.fee_sats, 0)::text AS fee_sats
+      FROM proof_indexer.events event_row
+      JOIN proof_indexer.transactions event_tx
+        ON event_tx.network = event_row.network
+       AND event_tx.txid = event_row.txid
+       AND event_tx.status = 'confirmed'
+       AND event_tx.block_hash = $3
+       AND event_tx.block_height = $2
+       AND event_tx.block_index = event_row.block_index
+      WHERE event_row.network = $1
+        AND event_row.status = 'confirmed'
+        AND event_row.block_height = $2
+        AND event_row.protocol = ANY(
+          ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+        )
+      ORDER BY
+        event_row.block_index,
+        event_row.op_return_vout,
+        event_row.record_ordinal
+    `,
+    [NETWORK, transition.blockHeight, transition.blockHash],
+  );
+  const consumedCandidateKeys = new Set();
+  const syntheticParentKeys = [];
+  const replayRecordsByPosition = new Map();
+  for (const record of transition.replayRecords) {
+    const position = normalizeWorkAmoCanonicalPosition(record?.position);
+    const key = position
+      ? [
+          position.blockHeight,
+          position.blockTransactionIndex,
+          position.protocolVout,
+          position.recordOrdinal,
+        ].join(":")
+      : "";
+    if (!key || replayRecordsByPosition.has(key)) {
+      throw new Error(
+        `Canonical AMO replay descriptor is duplicated at block ${transition.blockHeight}.`,
+      );
+    }
+    replayRecordsByPosition.set(key, record);
+  }
+  const events = result.rows.map((row) => {
+    const txid = String(row.txid ?? "").trim().toLowerCase();
+    const rowPosition = canonicalProtocolPosition({
+      blockHeight: row.block_height,
+      blockIndex: row.block_index,
+      protocolVout: row.protocol_vout,
+      recordOrdinal: row.record_ordinal,
+    });
+    if (
+      !rowPosition ||
+      rowPosition.blockHeight !== transition.blockHeight
+    ) {
+      throw new Error(
+        `Canonical AMO event ${row.txid} has an incomplete stored position.`,
+      );
+    }
+    const protocolVout = rowPosition.protocolVout;
+    const recordOrdinal = rowPosition.recordOrdinal;
+    const rawRecordSet =
+      canonicalRawProtocolRecordSetFromTransaction(row.raw_tx);
+    const rawRecord = rawRecordSet.records.find(
+      (record) =>
+        record.protocolVout === protocolVout &&
+        record.recordOrdinal === 0,
+    );
+    if (!rawRecord) {
+      throw new Error(
+        `Canonical AMO event ${row.txid}:${protocolVout}:${row.record_ordinal} has no raw Core protocol record.`,
+      );
+    }
+    const payload =
+      row?.payload &&
+      typeof row.payload === "object" &&
+      !Array.isArray(row.payload)
+        ? row.payload
+        : {};
+    const positionKey = [
+      rowPosition.blockHeight,
+      rowPosition.blockIndex,
+      protocolVout,
+      recordOrdinal,
+    ].join(":");
+    const replayRecord = replayRecordsByPosition.get(positionKey);
+    const storedRawPayload = String(row.raw_payload ?? "");
+    let canonicalRawPayload = rawRecord.payload;
+    if (replayRecord?.rawCandidate === false) {
+      const descriptor = replayRecord?.rawWitness?.descriptor;
+      const projectionPosition = workAmoV5ReplayPositionKey(
+        descriptor?.projectionPosition,
+      );
+      if (
+        replayRecord?.derived !== true ||
+        replayRecord?.chargesTransactionFee !== false ||
+        replayRecord?.rawWitness?.model !==
+          "canonical-work-amo-v5-derived-child-v1" ||
+        descriptor?.rawCandidate !== false ||
+        descriptor?.economicDelta !== false ||
+        descriptor?.claimsEconomicOutputs !== false ||
+        descriptor?.chargesTransactionFee !== false ||
+        !projectionPosition ||
+        projectionPosition.key !== positionKey ||
+        payload?._workAmoV5ReplayBound !== true ||
+        payload?.workAmoV5RawCandidate !== false ||
+        String(payload?.derivedId ?? "") !==
+          String(descriptor?.derivedId ?? "")
+      ) {
+        throw new Error(
+          `Canonical AMO derived replay descriptor diverged at ${positionKey}.`,
+        );
+      }
+      canonicalRawPayload = replayRecord.rawWitness;
+    } else if (
+      recordOrdinal === 0 &&
+      String(row.protocol ?? "") === "pwm1"
+    ) {
+      const rawRecordParts = rawRecord.rawRecordParts;
+      const expectedRawPayload = rawRecord.message;
+      if (
+        rawRecord.protocol !== "pwm1" ||
+        rawRecordParts.length === 0 ||
+        rawRecordParts[0].protocolVout !== protocolVout ||
+        storedRawPayload !== expectedRawPayload
+      ) {
+        throw new Error(
+          `Canonical AMO PWM aggregate ${txid}:${protocolVout}:0 does not preserve its ordered raw Core parts.`,
+        );
+      }
+      canonicalRawPayload = {
+        model: "canonical-pwm-aggregate-record-v1",
+        rawRecordParts,
+      };
+      for (const part of rawRecordParts) {
+        const key = `${txid}:${part.protocolVout}`;
+        if (consumedCandidateKeys.has(key)) {
+          throw new Error(
+            `Canonical AMO raw protocol candidate ${key} was consumed twice.`,
+          );
+        }
+        consumedCandidateKeys.add(key);
+      }
+    } else if (recordOrdinal === 0) {
+      if (
+        String(row.protocol ?? "") !== rawRecord.protocol ||
+        storedRawPayload !== rawRecord.message
+      ) {
+        throw new Error(
+          `Canonical AMO event ${txid}:${protocolVout}:0 does not preserve its exact raw Core record.`,
+        );
+      }
+      const key = `${txid}:${protocolVout}`;
+      if (consumedCandidateKeys.has(key)) {
+        throw new Error(
+          `Canonical AMO raw protocol candidate ${key} was consumed twice.`,
+        );
+      }
+      consumedCandidateKeys.add(key);
+    }
+    else if (recordOrdinal > 0) {
+      const recipients = paymentOutputsBeforeProtocol(
+        row.raw_tx,
+        protocolVout,
+      );
+      const recipient = recipients[recordOrdinal - 1];
+      const rawRecordParts = rawRecord.rawRecordParts;
+      if (
+        storedRawPayload !== "" ||
+        rawRecord.protocol !== "pwm1" ||
+        rawRecordParts.length === 0 ||
+        rawRecordParts[0].protocolVout !== protocolVout ||
+        String(row.protocol ?? "") !== "pwt1" ||
+        String(row.kind ?? "") !== "token-mint" ||
+        !recipient ||
+        String(payload.sourceBondTxid ?? "").trim().toLowerCase() !==
+          String(row.txid ?? "").trim().toLowerCase() ||
+        String(payload.bondRecipientAddress ?? "") !== recipient.address ||
+        String(payload.bondRecipientAmountSats ?? "") !==
+          recipient.amountSats.toString() ||
+        Number(payload.bondRecipientVout) !== recipient.vout
+      ) {
+        throw new Error(
+          `Canonical AMO synthetic record ${row.txid}:${protocolVout}:${recordOrdinal} is not derivable from its raw PWM record.`,
+        );
+      }
+      canonicalRawPayload = {
+        derivation: {
+          recipientAddress: recipient.address,
+          recipientAmountSats: recipient.amountSats.toString(),
+          recipientIndex: recordOrdinal - 1,
+          recipientVout: recipient.vout,
+          recordOrdinal,
+        },
+        model: "canonical-pwm-synthetic-bond-projection-v1",
+        rawRecordParts,
+      };
+      syntheticParentKeys.push(`${txid}:${protocolVout}`);
+    }
+    const reasonCode = workAmoEventReasonCode(row);
+    const rawCommitment = workAmoV5CanonicalPayloadCommitment(
+      canonicalRawPayload,
+    );
+    const replayRawCommitment = workAmoV5CanonicalPayloadCommitment(
+      replayRecord?.rawWitness,
+    );
+    if (
+      !replayRecord ||
+      String(replayRecord.txid ?? "").trim().toLowerCase() !== txid ||
+      String(replayRecord.protocol ?? "") !== String(row.protocol ?? "") ||
+      String(replayRecord.outcome?.kind ?? "") !==
+        workAmoV5ConsensusEventKind(
+          String(row.protocol ?? ""),
+          row.valid === true,
+        ) ||
+      replayRecord.outcome?.valid !== (row.valid === true) ||
+      String(replayRecord.outcome?.reasonCode ?? "") !== reasonCode ||
+      String(replayRecord.transactionMinerFeeSats ?? "") !==
+        String(row.fee_sats ?? "0") ||
+      rawCommitment.sha256 !== replayRawCommitment.sha256 ||
+      rawCommitment.payloadBytes !== replayRawCommitment.payloadBytes ||
+      !replayRecord.stateDelta ||
+      typeof replayRecord.stateDelta !== "object" ||
+      Array.isArray(replayRecord.stateDelta)
+    ) {
+      throw new Error(
+        `Canonical AMO replay descriptor diverged at ${positionKey}.`,
+      );
+    }
+    replayRecordsByPosition.delete(positionKey);
+    return {
+      feeSats: String(row.fee_sats ?? "0"),
+      kind: workAmoV5ConsensusEventKind(
+        String(row.protocol ?? ""),
+        row.valid === true,
+      ),
+      outcome: replayRecord.outcome,
+      // Commit the immutable protocol record decoded from Core. The event JSON
+      // is an enriched projection and is used only for its verifier outcome.
+      payload: canonicalRawPayload,
+      position: {
+        blockHash: transition.blockHash,
+        blockHeight: Number(row.block_height),
+        blockTransactionIndex: Number(row.block_index),
+        protocolVout,
+        recordOrdinal,
+      },
+      protocol: String(row.protocol ?? ""),
+      reasonCode,
+      stateDelta: replayRecord.stateDelta,
+      txid,
+      valid: row.valid === true,
+    };
+  });
+  for (const parentKey of syntheticParentKeys) {
+    if (!consumedCandidateKeys.has(parentKey)) {
+      throw new Error(
+        `Canonical AMO synthetic projection ${parentKey} has no PWM aggregate parent.`,
+      );
+    }
+  }
+  const rawReplayRecords = transition.replayRecords.filter(
+    (record) => record?.rawCandidate === true,
+  );
+  const candidateTransactionTxids = new Set(
+    rawReplayRecords.map((record) =>
+      String(record?.txid ?? "").trim().toLowerCase()
+    ),
+  );
+  if (
+    candidateTransactionTxids.size !== transition.transactionCount ||
+    rawReplayRecords.length !== transition.protocolRecordCount ||
+    events.length !== transition.eventCount ||
+    replayRecordsByPosition.size !== 0 ||
+    consumedCandidateKeys.size !== transition.rawProtocolCandidateCount
+  ) {
+    throw new Error(
+      `Canonical AMO raw candidate coverage diverged at block ${transition.blockHeight}.`,
+    );
+  }
+  return workAmoV5EventSetCommitment(events);
+}
+
+async function persistWorkAmoV5BlockTransition(client, transition) {
+  const eventSet = await workAmoV5CanonicalBlockEventSet(client, transition);
+  if (
+    eventSet.sha256 !== transition.eventSetCommitment.sha256 ||
+    eventSet.payloadBytes !== transition.eventSetCommitment.payloadBytes ||
+    eventSet.eventCount !== transition.eventCount
+  ) {
+    throw new Error(
+      `Canonical AMO V5 event set diverged at block ${transition.blockHeight}.`,
+    );
+  }
+  const params = [
+    NETWORK,
+    transition.blockHeight,
+    transition.blockHash,
+    transition.previousBlockHash,
+    transition.model,
+    WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+    transition.openingNetworkValueQ8,
+    transition.closingNetworkValueQ8,
+    transition.openingCommitment.sha256,
+    transition.closingCommitment.sha256,
+    transition.openingCommitment.payloadBytes,
+    transition.closingCommitment.payloadBytes,
+    transition.protocolRecordCount,
+    transition.rawProtocolCandidateCount,
+    transition.transactionCount,
+    transition.eventCount,
+    transition.eventSetCommitment.model,
+    transition.eventSetCommitment.sha256,
+    transition.eventSetCommitment.payloadBytes,
+    JSON.stringify(transition.payload),
+  ];
+  await client.query(
+    `
+      INSERT INTO proof_indexer.work_amo_block_transitions (
+        network,
+        block_height,
+        block_hash,
+        previous_block_hash,
+        model,
+        state_commitment_model,
+        opening_network_value_q8,
+        closing_network_value_q8,
+        opening_state_sha256,
+        closing_state_sha256,
+        opening_state_payload_bytes,
+        closing_state_payload_bytes,
+        protocol_record_count,
+        raw_protocol_candidate_count,
+        transaction_count,
+        event_count,
+        event_set_model,
+        event_set_sha256,
+        event_set_payload_bytes,
+        block_atomic,
+        fee_once,
+        invalid_zero,
+        complete,
+        payload
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7::numeric, $8::numeric, $9, $10,
+        $11, $12, $13, $14, $15, $16, $17, $18, $19,
+        true, true, true, true, $20::jsonb
+      )
+      ON CONFLICT DO NOTHING
+    `,
+    params,
+  );
+  const exact = await client.query(
+    `
+      SELECT 1
+      FROM proof_indexer.work_amo_block_transitions
+      WHERE network = $1
+        AND block_height = $2
+        AND block_hash = $3
+        AND previous_block_hash = $4
+        AND model = $5
+        AND state_commitment_model = $6
+        AND opening_network_value_q8 = $7::numeric
+        AND closing_network_value_q8 = $8::numeric
+        AND opening_state_sha256 = $9
+        AND closing_state_sha256 = $10
+        AND opening_state_payload_bytes = $11
+        AND closing_state_payload_bytes = $12
+        AND protocol_record_count = $13
+        AND raw_protocol_candidate_count = $14
+        AND transaction_count = $15
+        AND event_count = $16
+        AND event_set_model = $17
+        AND event_set_sha256 = $18
+        AND event_set_payload_bytes = $19
+        AND block_atomic = true
+        AND fee_once = true
+        AND invalid_zero = true
+        AND complete = true
+        AND payload = $20::jsonb
+      LIMIT 1
+    `,
+    params,
+  );
+  if (exact.rows.length !== 1) {
+    throw new Error(
+      `Canonical AMO V5 transition changed at block ${transition.blockHeight}.`,
+    );
+  }
 }
 
 async function latestBlockScanCheckpoint(client, options = {}) {
@@ -13692,6 +16192,33 @@ async function backfillBlockScanSource(client, source) {
       const messages = protocolMessagesFromTx(tx);
       return messages.length > 0 ? [{ blockIndex, messages, tx }] : [];
     });
+    const workAmoV5ActivationHeight = WORK_AMO_V5_ACTIVATION_HEIGHT;
+    if (height === workAmoV5ActivationHeight) {
+      const requiredCheckpoint = {
+        blockHash: String(block?.previousblockhash ?? "").trim().toLowerCase(),
+        height: workAmoV5ActivationHeight - 1,
+      };
+      await client.query("BEGIN");
+      try {
+        await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+      const barrier = await storeCanonicalSummarySnapshot(client, {
+        requiredCheckpoint,
+      });
+      if (
+        Number(barrier?.indexedThroughBlock) !== requiredCheckpoint.height ||
+        String(barrier?.indexedThroughBlockHash ?? "").trim().toLowerCase() !==
+          requiredCheckpoint.blockHash
+      ) {
+        throw new Error(
+          `Canonical AMO V5 H-1 sufficient-value barrier failed at block ${height}`,
+        );
+      }
+    }
     if (
       ((typeof STORE_CANONICAL_SUMMARY_SNAPSHOT !== "undefined" &&
         STORE_CANONICAL_SUMMARY_SNAPSHOT) ||
@@ -13739,7 +16266,21 @@ async function backfillBlockScanSource(client, source) {
     let blockSkipped = 0;
     let currentTxid = "";
     const preparedTransactions = [];
+    let workAmoV5BlockTransition = null;
     try {
+      if (height >= workAmoV5ActivationHeight) {
+        // Prime the authoritative block-wide projection before any per-tx
+        // verifier read. This makes same-block quote/list ordering depend on
+        // one complete Core block sequence instead of request arrival order.
+        workAmoV5BlockTransition =
+          await verifiedWorkAmoV5BlockTransition({
+            blockHash: String(blockHash ?? "").trim().toLowerCase(),
+            blockHeight: height,
+            previousBlockHash: String(block?.previousblockhash ?? "")
+              .trim()
+              .toLowerCase(),
+          });
+      }
       for (const { blockIndex, messages, tx } of protocolCandidates) {
         currentTxid = String(tx.txid ?? "");
         protocolTxids += 1;
@@ -13760,6 +16301,12 @@ async function backfillBlockScanSource(client, source) {
           rawTx: hydratedTx,
           txid: currentTxid,
         });
+      }
+      if (workAmoV5BlockTransition) {
+        bindPreparedTransactionsToWorkAmoV5Replay(
+          preparedTransactions,
+          workAmoV5BlockTransition,
+        );
       }
     } catch (error) {
       skipped += 1;
@@ -13819,6 +16366,12 @@ async function backfillBlockScanSource(client, source) {
         blockHash,
         height,
       });
+      if (workAmoV5BlockTransition) {
+        await persistWorkAmoV5BlockTransition(
+          client,
+          workAmoV5BlockTransition,
+        );
+      }
       const nextIndexedThroughBlockHash = String(blockHash).trim().toLowerCase();
       const nextComplete = height >= tipHeight;
       const nextStopReason = nextComplete
@@ -13993,7 +16546,7 @@ function mempoolEntriesAfterCursor(entries, cursor) {
         return (
           time < normalizedCursor.time ||
           (time === normalizedCursor.time &&
-            String(txid).localeCompare(normalizedCursor.txid) > 0)
+            compareCanonicalUtf8(txid, normalizedCursor.txid) > 0)
         );
       });
   if (startIndex < 0 || startIndex >= entries.length) {
@@ -14183,7 +16736,9 @@ function mempoolRecoveryTxidsFromRows(rows, mempool) {
           ) ||
           row.validDecisions + row.invalidDecisions > 0),
     )
-    .sort((left, right) => left.txid.localeCompare(right.txid));
+    .sort((left, right) =>
+      compareCanonicalUtf8(left.txid, right.txid)
+    );
   let orderingUncertain = false;
   for (const row of decisions) {
     if (orderingUncertain) {
@@ -14764,7 +17319,11 @@ async function removeVolatileWorkMarketV2DecisionEvents(
       NETWORK,
       txid,
       WORK_TOKEN_ID,
-      [WORK_MARKET_V2_AUTH_VERSION, WORK_MARKET_V4_AUTH_VERSION],
+      [
+        WORK_MARKET_V2_AUTH_VERSION,
+        WORK_MARKET_V4_AUTH_VERSION,
+        WORK_AMO_V5_AUTH_VERSION,
+      ],
     ],
   );
   return Number(result.rowCount ?? 0);
@@ -14803,7 +17362,7 @@ async function backfillMempoolScanSource(client, source) {
     .sort(
       (left, right) =>
         Number(right[1]?.time ?? 0) - Number(left[1]?.time ?? 0) ||
-        left[0].localeCompare(right[0]),
+        compareCanonicalUtf8(left[0], right[0]),
     );
   const candidateLimit = Number.isFinite(MEMPOOL_SCAN_MAX_TXIDS)
     ? Math.max(0, Math.floor(MEMPOOL_SCAN_MAX_TXIDS))
@@ -15565,18 +18124,39 @@ async function repairConfirmedListingSealMetadata(client) {
         SELECT DISTINCT ON (lower(e.payload->>'listingId'))
           lower(e.payload->>'listingId') AS listing_id,
           lower(COALESCE(NULLIF(e.payload->>'sealTxid', ''), e.txid)) AS seal_txid,
+          e.block_height AS seal_block_height,
+          e.block_index AS seal_block_index,
+          e.op_return_vout AS seal_protocol_vout,
+          e.record_ordinal AS seal_record_ordinal,
           e.payload
         FROM proof_indexer.events e
+        JOIN proof_indexer.transactions seal_tx
+          ON seal_tx.network = e.network
+         AND seal_tx.txid = e.txid
+         AND seal_tx.status = 'confirmed'
+         AND seal_tx.block_height = e.block_height
+         AND seal_tx.block_index = e.block_index
+        JOIN proof_indexer.blocks seal_block
+          ON seal_block.network = seal_tx.network
+         AND seal_block.block_hash = seal_tx.block_hash
+         AND seal_block.height = seal_tx.block_height
+         AND seal_block.canonical = true
         WHERE e.network = $1
           AND e.protocol = 'pwt1'
           AND e.kind = 'token-listing-sealed'
           AND e.status = 'confirmed'
           AND e.valid = true
+          AND e.block_height IS NOT NULL
+          AND e.block_index IS NOT NULL
+          AND e.op_return_vout IS NOT NULL
+          AND e.record_ordinal >= 0
           AND e.payload->>'listingId' ~ '^[0-9a-fA-F]{64}$'
         ORDER BY
           lower(e.payload->>'listingId'),
-          e.block_height DESC NULLS LAST,
-          e.event_id DESC
+          e.block_height DESC,
+          e.block_index DESC,
+          e.op_return_vout DESC,
+          e.record_ordinal DESC
       )
       UPDATE proof_indexer.credit_listings cl
       SET
@@ -15608,11 +18188,8 @@ async function repairConfirmedListingSealMetadata(client) {
           jsonb_build_object(
             'saleAuthorization', seals.payload->'saleAuthorization',
             'sealAt', NULLIF(seals.payload->>'sealAt', ''),
-            'sealBlockHeight', CASE
-              WHEN seals.payload->>'sealBlockHeight' ~ '^[0-9]+$'
-                THEN (seals.payload->>'sealBlockHeight')::integer
-              ELSE NULL
-            END,
+            'sealBlockHeight', seals.seal_block_height,
+            'sealBlockIndex', seals.seal_block_index,
             'sealConfirmed', true,
             'sealDataBytes', CASE
               WHEN seals.payload->>'sealDataBytes' ~ '^[0-9]+$'
@@ -15624,6 +18201,8 @@ async function repairConfirmedListingSealMetadata(client) {
                 THEN (seals.payload->>'sealMinerFeeSats')::bigint
               ELSE NULL
             END,
+            'sealProtocolVout', seals.seal_protocol_vout,
+            'sealRecordOrdinal', seals.seal_record_ordinal,
             'sealTxid', seals.seal_txid
           )
         ),
@@ -16290,7 +18869,7 @@ async function repairCanonicalIncbIssuance(client) {
     (left, right) =>
       left.height - right.height ||
       left.blockIndex - right.blockIndex ||
-      left.txid.localeCompare(right.txid),
+      compareCanonicalUtf8(left.txid, right.txid),
   );
   const targetTxids = targets.map((target) => target.txid);
   const targetByTxid = new Map(
@@ -17125,7 +19704,7 @@ async function repairCanonicalTransactions(client) {
     (left, right) =>
       left.height - right.height ||
       left.blockIndex - right.blockIndex ||
-      left.txid.localeCompare(right.txid),
+      compareCanonicalUtf8(left.txid, right.txid),
   );
   const txids = targets.map((target) => target.txid);
 
@@ -17335,7 +19914,7 @@ async function repairCanonicalIdTransactions(client) {
       left.height - right.height ||
       Number(left.hydrated?._powBlockIndex ?? 0) -
         Number(right.hydrated?._powBlockIndex ?? 0) ||
-      left.txid.localeCompare(right.txid),
+      compareCanonicalUtf8(left.txid, right.txid),
   );
   const affectedIds = [
     ...new Set(targets.flatMap((target) => target.ids)),

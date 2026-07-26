@@ -151,10 +151,10 @@ rows only when no activity snapshot exists.
 Non-OK or `summary-snapshot-fallback` rows are diagnostic only. They are never
 eligible for summary reads or health. Once the hashed relational scan reaches
 the exact Core tip, ID, Wallet, Log, mail, registry, and history reads may reopen
-without waiting for the slower summary publisher. WORK, Marketplace, Growth,
+without waiting for the slower summary publisher. WORK, AMO, Growth,
 Infinity, Inception, and work-floor summary routes remain closed until an
 authenticated `canonical-summary-refresh` row contains all eight required
-payloads—Growth, Inception, Infinity, Log, Marketplace, Token, WORK floor, and
+payloads—Growth, Inception, Infinity, Log, AMO, Token, WORK floor, and
 WORK summary—from one snapshot with conservative coverage at that same
 checkpoint.
 
@@ -196,7 +196,7 @@ an exact current proof-index page or paginate the stored hash-bound Token summar
 the full credit ledger. Token history and token state snapshots use a 24-hour
 stable confirmed-data guard by default. `POW_INDEX_READS=token-state` enables default `/api/v1/token`
 reads from stored token-state snapshots for global and scoped credit views,
-including Marketplace active/sealed books and sale-ticket lifecycle arrays.
+including AMO active/sealed books and sale-ticket lifecycle arrays.
 Missing, stale, incomplete, wallet-scoped, or address-scoped state reads fall
 back to the canonical node/API path. `POW_INDEX_SHADOW_READS=token-history`
 compares eligible DB output against canonical Token History without changing the
@@ -315,10 +315,10 @@ listings, token closed-listings, registry pages, and Log pages remain available
 as explicit backfill jobs, but should not run after block-scan in the hot loop
 where stale summary guards can turn them into retry stalls. WORK and
 POWB/Infinity plus INCB/Inception token snapshots, together with WORK, Growth,
-Marketplace, Infinity, and Inception summaries, are first-class snapshot sources. Broad
+AMO, Infinity, and Inception summaries, are first-class snapshot sources. Broad
 mailbox projection sweeps such as `address-mail` can be run as explicit backfill
 jobs, but should not sit in the hot worker loop where slow address history reads
-can stall block catch-up for Log, Growth, WORK, Credit, Marketplace, Infinity,
+can stall block catch-up for Log, Growth, WORK, Credit, AMO, Infinity,
 and Inception. Scoped-holder recrawls stay off by default
 (`POW_INDEX_WORKER_HOLDERS=0`) and should run as explicit full backfill jobs.
 
@@ -583,7 +583,7 @@ conserved token balance/holder tables, and performs a fresh ordered RUSH
 registry read whose complete Electrum history is hydrated and ordered against
 canonical Core blocks. Each mandatory activity, registry, and token projection
 must independently cover the exact checkpoint. It then returns ledger, WORK,
-Growth, Marketplace, Infinity, Inception, and
+Growth, AMO, Infinity, Inception, and
 work-floor payloads bound to one snapshot ID. The
 publisher never derives valuation changes from aggregate DB event deltas.
 Coverage is the conservative minimum of every parent summary and its mandatory
@@ -594,7 +594,7 @@ canonical checkpoint before reporting green.
 When a snapshot route is current from proof-index data but the full shared
 ledger is still catching up, the route can publish the bounded proof-index view
 and leave the ledger refresh in the worker/background path.
-That bounded view is still one app-wide data plane: WORK, Growth, Marketplace,
+That bounded view is still one app-wide data plane: WORK, Growth, AMO,
 Consistency, Wallet, Credit, IDs, Infinity, Inception, Log, and Computer must agree on the
 same confirmed snapshot/verifier contract, and embedded summary objects must not
 mix a live parent total with stale child data.
@@ -825,7 +825,7 @@ required for independent disaster recovery.
 Database credentials live in
 `/etc/proofofwork-api/proof-indexer-db.env`, never inside the live Git checkout.
 
-### WORK marketplace V4 Phase-1 gate
+### Historical WORK marketplace V4 Phase-1 gate
 
 The V4 rollout starts fail-closed. Production keeps
 `WORK_MARKETPLACE_WRITES_ENABLED=0` and leaves the V4 declaration txid, height,
@@ -859,6 +859,258 @@ confirmation-floor snapshot referenced by confirmed V3/V4 valid or invalid
 market events. A snapshot cache or compacted listing row cannot replace that
 evidence.
 
+### Current WORK AMO V5 gate and canonical replay
+
+WORK AMO Unit Protocol V2 is pinned to declaration txid
+`54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36`,
+height `959620`, block transaction index `141`, and canonical block hash
+`0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811`.
+Its exact memo is output 3, the 546-proof WORK registry payment is output 4,
+and the `pwt1` output is output 5. Input zero must spend exact authority
+scriptPubKey
+`76a91499b91dd27a616a71c0a1e9db6a86ceb8cff284c588ac`. Activation is
+height `959621`.
+
+Production pins those facts independently through:
+
+```text
+WORK_AMO_V5_DECLARATION_TXID
+WORK_AMO_V5_DECLARATION_HEIGHT
+WORK_AMO_V5_DECLARATION_BLOCK_HASH
+WORK_AMO_V5_DECLARATION_BLOCK_INDEX
+WORK_AMO_V5_DECLARATION_MEMO_SHA256
+WORK_AMO_V5_WRITES_ENABLED
+```
+
+The V5 gate does not inherit `WORK_MARKETPLACE_WRITES_ENABLED`. It remains
+closed unless the declaration evidence, current canonical block hash, explicit
+positions, bounded replay readiness, current valid USD quote head, and the
+V5-specific write switch all agree. A missing quote or partial block is normal
+fail-closed state, never permission to substitute a web price.
+
+The proof-index schema persists transaction `block_index`, event
+`op_return_vout`, and event `record_ordinal`, and indexes confirmed actions by:
+
+```text
+(network, block_height, block_index, op_return_vout, record_ordinal)
+```
+
+Every V5 `record_ordinal` is explicit, including zero. Missing ordinals fail
+closed in quote, listing, replay-key, ordering, and verifier-projection paths;
+they are never defaulted during V5 validation.
+Confirmed AMO state must not fall back to txid, timestamp, insertion order, or
+event id. The indexer may fetch and decode transactions concurrently, but it
+applies one fully verified block sequentially. For each ordered event it
+computes and validates from state before the event, freezes the result, then
+applies the event's bond. Invalid events mutate nothing. The transaction miner
+fee is applied once after the final protocol record. A block projection is not
+published until its hash, every relevant position, every transition, and its
+resulting checkpoint have been verified.
+
+The raw block evaluator enumerates every Core `pwm1`, `pwa1`, `pwid1`, `pwr1`,
+and `pwt1` candidate before consulting any database projection. It owns one
+claimed-vout set per transaction. A required reuse invalidates the later
+record; PWM claim-all also fails when there is no candidate output or any
+candidate was already claimed. PWA and WORK registry payments select the first
+qualifying single output in vout order and never aggregate. PWID, PWR, and
+non-WORK PWT registry-payment requirements use the shared deterministic
+allocator: claim-all and constrained roles first, then larger requirements,
+with the smallest sufficient single output or a largest-first deterministic
+prefix. The allocator never funds or aggregates PWA, WORK-registry, or seller
+settlement requirements. Seller settlement is the signed single-output
+exception: one seller output must cover price plus the sale-ticket anchor,
+while selected economic attribution and marketplace volume pin seller price
+only. A transaction with
+no valid canonical record has a zero transition and does not contribute its
+miner fee.
+
+Raw replay requires the exact 80-byte Core header and the complete
+`getblock(hash, 2)` transaction array in its original order. Every transaction
+retains exact serialized hex; parsing that hex must reproduce its txid, wtxid,
+input outpoints or coinbase script, output scripts, and output values. The
+array must begin with its sole coinbase. Governed candidate slots are merged
+with independently hydrated prevout script/value evidence, including malformed
+or fatal-UTF-8 candidates that legacy text decoding would miss. Addresses are
+derived from scripts; optional RPC address labels and
+status/hash/height/index/time metadata are ignored as authority. Canonical
+block time comes only from the 80-byte header. The header must reproduce the
+requested block hash and previous hash, and its Merkle root must equal the
+unique ordered transaction ids.
+
+The descriptor additionally binds `bip141Witness` under
+`canonical-work-amo-raw-bip141-witness-v1`. For a witness-bearing block, replay
+recomputes the witness Merkle root from exact wtxids with a zero coinbase leaf,
+requires the exact 32-byte coinbase witness reserved value, and validates the
+highest-index coinbase output matching the BIP141 witness-commitment pattern.
+A legacy block containing neither witness data nor a commitment remains
+admissible. The resulting
+`canonical-work-amo-raw-full-block-descriptor-v1` commitment and full block
+transaction count are persisted in each V2 transition and bound into the
+opening transition-chain head. There is no post-activation partial-block or
+event-feed fallback; missing or divergent witness evidence fails closed.
+The exact closed-shape summary is stored at
+`work_amo_block_transitions.payload.bip141Witness`, and its witness-transaction
+count cannot exceed that row's `blockTransactionCount`. The migration
+bootstrap repeats the final pair as `finalBip141Witness` and
+`finalBlockTransactionCount`. Reader readiness requires the stored tip,
+independent replay, and bootstrap marker to agree, and rejects missing or extra
+fields, coerced values, a noncanonical script, a double-SHA256 mismatch, or an
+impossible count.
+
+The transition counters have disjoint meanings.
+`rawProtocolCandidateCount` is the number of physical decoded Core OP_RETURN
+candidates, so each PWM part counts. `protocolRecordCount` is the number of
+logical raw records after every PWM part in one transaction is collapsed into
+one aggregate record. `eventCount` is the number of persisted replay records:
+logical raw records plus deterministic derived children. The event-set and
+replay-descriptor commitments include both raw and derived records. Protocol
+traces cover logical raw records, fee traces occur once per transaction, and a
+derived record is explicitly `rawCandidate:false`, zero-delta, output-claim
+free, and fee-free.
+
+The published internal block-transition model is
+`canonical-work-amo-full-position-block-sequencer-v2`. Its raw replay uses the
+rolling `canonical-work-amo-raw-transition-chain-sha256-v1` model. The initial
+chain head binds the block envelope and complete opening commitments; every
+logical raw event advances it, the once-per-transaction fee transition
+advances it after that transaction's final raw record, and a mandatory
+block-close step advances it over the closing economic, generic-credit, PowID,
+and WORK commitments. Raw replay descriptors and protocol/fee traces persist
+the applicable per-step head, while the block transition persists the final
+head and exact model. Full opening and closing state commitments remain
+independently recomputed and compared; the rolling chain is additional
+ordering evidence, not a substitute. Schema constraints retain pre-release V1
+sequencer rows as immutable evidence, but readers, migration readiness, and
+publishers accept only V2 with an exact transition-chain model and commitment.
+
+`work_usd_quotes` stores the canonical `pwa1:usd1` sequence, predecessor,
+positive `usdPer100mProofsQ8`, authority/payment evidence, and exact position.
+Quote cardinality counts only records that fully pass the shared
+`pwa1:usd1` parser. One valid quote beside an unrelated `pwa1` record or a
+malformed `pwa1:usd1` record remains the one valid quote; each malformed or
+unrelated record is still preserved as an invalid zero-contribution event.
+Two fully valid quote records in one transaction invalidate the quote. The
+quote consumes the first qualifying single distinct registry payment in vout
+order, never an aggregate, and that output cannot also fund another protocol
+record.
+`work_amo_listing_terms` stores the immutable confirmation-derived terms for
+each valid V5 listing. A seal or buy reads that projection by listing id and
+must reproduce or reference it exactly; current network value and current
+quote are not consulted to reprice the listing.
+
+The declaration/activation gate and quote gate are deliberately different.
+Declaration pins, canonical replay, and the V5 write switch govern the
+protocol. A fresh canonical quote is additionally required to create a new
+listing. It is not required to seal or buy a listing that already confirmed
+with valid frozen terms.
+
+`work_amo_block_transitions` stores every immutable activation-through-tip
+opening and closing sufficient state, event-set commitment, replay descriptor,
+trace, full canonical `closingTokenState` preimage, canonical generic-credit
+projection, and canonical PowID projection. The closing WORK, generic-credit,
+and PowID preimages must reproduce their respective commitments in the closing
+sufficient state. Height 959620 supplies the sole legacy H-1 bootstrap. Every
+block from 959621 onward opens from the preceding canonical raw transition,
+including all three state commitments and the economic accumulator.
+Historical transitions are never tested against unscoped current balance or
+listing tables. Only publication of the current tip may require current
+relational parity.
+
+The activation transition also stores the exact replayable H-1 seed under
+`seedSufficientState`, `seedSufficientStateCommitment`,
+`seedGenericTokenState`, `seedIdState`, `seedTokenState`, and
+`seedWorkProjection`. Their economic, generic-credit, PowID, and WORK
+commitments must equal the transition opening state. A persisted activation
+transition is replay evidence, never its own bootstrap authority. Every
+supervised activation replay first derives the independent, block-hash-pinned
+H-1 economic, generic-credit, PowID, and WORK preimages and then requires any
+stored seed to match those preimages and commitments exactly. If the
+independent H-1 sources are unavailable, replay fails closed; it never
+reconstructs the seed from current-tip tables or legacy bond-activity
+heuristics.
+Generic-credit definition, balance, listing-amount, and listing-price fields in
+that seed are canonical decimal strings. A supervised first bootstrap may use
+the H-1 repeatable-read SQL preimage, where every `numeric`/`bigint` field is
+selected as text. A pinned legacy H-1 JSON snapshot is admissible only when
+every nonbond JSON number is a safe integer bounded by its exact max supply and
+every POWB/INCB amount is already a decimal string; supplies and commitments
+are recomputed. An unsafe number, a current-tip row presented as H-1, or a
+preimage/commitment mismatch aborts replay.
+
+The supervised migration stops writers, takes a database backup, applies the
+idempotent schema, and independently audits V1 history beginning at height
+959306. The exact V5 sufficient-state seed is the end of declaration block
+959620, hash
+`0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811`.
+V5 block-transition replay begins at 959621 and continues without a height
+clamp through the exact Core tip height and hash under lock. It preserves all
+raw rows. Pre-unit V3 listings become non-reserving relics; a V3 action that
+was already invalid at its confirmation stays invalid audit history. Valid
+pre-959621 V4 terms remain frozen and may be referenced by V5 seal/buy; V4
+actions at or after activation are invalid. Failure of any pinned fact,
+position, conservation check, quote chain, listing projection, or end-tip
+parity aborts without enabling writes.
+Dry-run executes the same guarded legacy mutations, exact full-block replay,
+row-count checks, and readiness audit inside the same serializable transaction
+as apply mode, then rolls the transaction back and returns `applied:false`.
+Apply mode follows that identical path and commits only after every check
+passes. Dry-run is therefore a transactional deployment simulation, not an
+audit of the unmodified pre-migration rows.
+The read-only migration preflight may report `replay-required`. Apply mode may
+write only a `complete` marker: an incomplete replay throws inside the
+serializable transaction, rolls back every provisional legacy-row change, and
+writes neither a marker nor a partial derived-snapshot deletion.
+
+Before an activation replay is published, canonical rebuild clears stale
+derived ID, credit, listing, quote, mail, attachment, and AMO transition
+projections while retaining raw chain evidence. Each newly prepared protocol
+item then binds one-to-one to the transition replay record with the same block
+height, transaction index, protocol vout, and ordinal, plus matching txid and
+protocol. Raw replay records occupy their Core-derived ordinal. Deterministic
+children occupy later collision-free projection ordinals and bind their
+`derivedId`, container/materialization position, zero delta, and no-claim/no-fee
+flags. Any string tie-breaker used to canonicalize a committed set compares
+normalized unsigned UTF-8 bytes. Locale-sensitive comparison is forbidden and
+cannot replace the four-integer confirmed position. The replay record
+overwrites validity, exact reason, canonical output,
+and frozen terms before persistence. Every raw or derived replay record and
+every prepared item must be consumed exactly once. Invalid raw outcomes are
+stored as audit rows but emit no derived children and skip every derived
+projection mutation; any mismatch aborts the whole block.
+
+PowID normalization preserves the confirmed H-1 registry identity and uses
+ECMAScript Unicode Default Case Conversion with Unicode 17.0 tables. The
+production Node.js 24.18.0 runtime reports Unicode 17.0. API, indexer, raw
+replay, and migration paths assert that version and fail closed before
+publishing state when it differs. A runtime upgrade requires a full-registry
+normalization replay proving identical normalized IDs and first-claim winners,
+or an explicit protocol migration. Fresh AMO V5 base64url text fields are
+canonical base64url plus strict UTF-8; malformed byte sequences invalidate the
+record and must never be decoded through replacement characters.
+
+A transaction with multiple `pwm1` outputs produces one logical aggregate
+record at the first `pwm1` output, ordinal zero. Its canonical raw witness is
+the ordered list of every participating Core OP_RETURN part, each binding the
+exact `protocolVout`, lowercase even-length `scriptPubKeyHex` beginning with
+`6a`, and decoded text. Synthetic bond-mint projections use later ordinals and
+bind a deterministic derived-child witness plus their parent `derivedId` and
+recipient/output derivation; they never consume the raw parts a second time.
+Ordinary payment outputs may appear between PWM parts. Another governed
+`pwa1`, `pwid1`, `pwr1`, or `pwt1` candidate strictly between the first and
+last PWM part makes the single PWM aggregate invalid and zero-delta with
+reason `work-amo-v5-raw-pwm-envelope-noncontiguous`; those intervening
+governed records still evaluate at their own canonical positions.
+
+INCB attachment state is position-local. PWM applies direct issuance at its
+position. When a recipient-matched WORK `send2` appears later in the same
+transaction, only a canonical-valid send applies the H-1-valued attachment
+top-up at that later position; an invalid send applies zero. State between the
+two positions contains direct issuance only, and later state contains the
+top-up only after acceptance. A valid earlier send is already part of state
+before a later PWM record. The derived INCB companion is bound to the accepted
+parent/send outcome and has no second output claim, miner fee, or economic
+contribution.
+
 ### WORK atomic-unit cutover
 
 This section preserves the completed atomic-unit migration and its rollback
@@ -890,8 +1142,9 @@ The migration is intentionally dual-read and single-write:
 - At the atomic cutover, new WORK transfers began writing `pwt1:send2` atom
   amounts and new WORK sale tickets began using `pwt-sale-v2` with signed
   `amountAtoms`; V2 remains invalid for every other credit. After the later
-  WORK Marketplace Pricing Protocol V2 activation, current governed WORK
-  list, seal, and buy actions use `pwt-sale-v3`.
+  historical WORK Marketplace Pricing Protocol V2 activation, governed WORK
+  list, seal, and buy actions used `pwt-sale-v3`. That remains replayable
+  history; current governed actions use AMO `pwt-sale-v5`.
 - Raw OP_RETURN bytes and the nested signed authorization object are never
   rewritten. The event projection may add top-level exact atom fields.
 - The migration is scoped to the canonical WORK token id. POWB, INCB, and all
@@ -1011,7 +1264,7 @@ oversubscribed seller. Then:
    canonical summary at the latest full-node block-scan tip.
 8. Verify the staged `/health`, fresh `/api/v1/consistency`,
    `/api/v1/ledger-consistency`, the canonical WORK token payload, wallet
-   spendability, Marketplace listings, WORK, Growth, Inception, and Log at one
+   spendability, AMO listings, WORK, Growth, Inception, and Log at one
    exact Core tip. Only then stop the staging API, start the public API and
    continuous worker, and reopen public traffic.
 
@@ -1057,7 +1310,7 @@ current summary row should carry `summaryPayloads`, a current or preserved
 `indexed_through_block` that includes block-scan rows even when a block has no
 new ProofOfWork transactions. Database summary readers should expose the
 row-level consistency object on returned summary payloads and nested
-`floor`/`workFloor` objects so `/api/v1/work-floor`, Growth, Marketplace, and
+`floor`/`workFloor` objects so `/api/v1/work-floor`, Growth, AMO, and
 `/api/v1/consistency` cannot mix current top-level totals with stale embedded
 tip checks.
 
@@ -1091,7 +1344,7 @@ and unclosed sale-ticket projections must be repaired or bypassed when they
 disagree with confirmed chain state.
 
 Production audits should follow the public app dependency order. Verify the
-standalone surfaces first: Home, IDs, Desktop, Browser, Marketplace, Credit,
+standalone surfaces first: Home, IDs, Desktop, Browser, AMO, Credit,
 Wallet, WORK, Infinity, Inception, Log, and Growth. Audit `computer.proofofwork.me` last,
 because it is the integrated shell over the same registry, mail/file, credit,
 marketplace, WORK, Infinity, Inception, Log, and Growth read paths. The final Computer
@@ -1105,7 +1358,7 @@ database-backed surfaces should use the same pattern:
    update the database read model.
 3. Replay protocol projections from the database.
 4. Compare database output with the current canonical ledger payloads for
-   Registry, Log, Credits, WORK, Marketplace, and Growth.
+   Registry, Log, Credits, WORK, AMO, and Growth.
 5. Require `/api/v1/consistency`, `/api/v1/ledger-consistency`, and
    `npm run audit:ledger` to stay green with `missingLogEvents: []`.
 6. Switch endpoints to database reads only after shadow output matches current
@@ -1123,7 +1376,8 @@ id.proofofwork.me           -> ID registry app
 computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
 browser.proofofwork.me      -> public HTML browser by txid
-marketplace.proofofwork.me  -> standalone asset marketplace; IDs and credit sale-ticket markets live
+amo.proofofwork.me          -> canonical Autonomous Money Organization
+marketplace.proofofwork.me  -> URI-preserving compatibility redirect to AMO
 credit.proofofwork.me       -> standalone credit creation and mint app
 token.proofofwork.me        -> permanent redirect to https://credit.proofofwork.me/
 tokens.proofofwork.me       -> permanent redirect to https://credit.proofofwork.me/
@@ -1135,7 +1389,7 @@ log.proofofwork.me          -> public ProofOfWork Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth from any production surface. Social links should include X, YouTube, and GitHub.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth from any production surface. Social links should include X, YouTube, and GitHub.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
@@ -1226,7 +1480,7 @@ VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
 VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
-VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
+VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://amo.proofofwork.me npm run build
 VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://credit.proofofwork.me npm run build
 VITE_WALLET_ONLY=1 VITE_POW_API_BASE=https://wallet.proofofwork.me npm run build
 VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
@@ -1289,8 +1543,8 @@ The registry endpoint:
 - Applies first-confirmed-wins.
 - Keeps pending IDs visible but not routable.
 - Exposes confirmed and pending ID marketplace events, including `list5`, `seal5`, `buy5`, and `delist5`.
-- Exposes marketplace sales data from valid `buy5` buyer-funded ID transfers: sale count and seller-price volume, split between confirmed canonical sales and pending mempool-visible sales. Legacy buy events remain replayable history but are not included in the public marketplace metric.
-- Exposes a Credits marketplace tab over confirmed credit creations, mints, transfers, holders, registries, active sale-ticket listings, and settled credit sales.
+- Exposes AMO sales data from valid `buy5` buyer-funded ID transfers: sale count and seller-price volume, split between confirmed canonical sales and pending mempool-visible sales. Legacy buy events remain replayable history but are not included in the public AMO metric.
+- Exposes a Credits AMO tab over confirmed credit creations, mints, transfers, holders, registries, active sale-ticket listings, and settled credit sales.
 - Exposes registry records, pending events, listings, and registry-specific activity.
 
 The canonical livenet ledger payload:
@@ -1300,7 +1554,7 @@ The canonical livenet ledger payload:
 - Uses complete address history for configured mail-heavy Computer addresses, with paginated mempool/address reads as the faster path for the wider seed set. This prevents confirmed mail, Infinity Bond, or Inception Bond transactions from appearing in direct address search while missing from global Log and network value.
 - Emits one `snapshotId`, source hashes, metrics, and consistency checks so WORK, Growth, Log, and credit/token history can prove they are reading the same confirmed state.
 - Fresh summary reads must reject stale ledger fallbacks. A fresh WORK,
-  Growth, Infinity, Inception, Marketplace, Log, or credit/token response must either
+  Growth, Infinity, Inception, AMO, Log, or credit/token response must either
   build from current canonical/proof-index event data that covers the node tip
   within the configured lag, return a current checked ledger fallback that
   already covers that tip while deeper refresh continues, or fail closed instead
@@ -1322,7 +1576,7 @@ The canonical livenet ledger payload:
 - Current relational token-state reads remove an active listing as soon as a valid pending or confirmed close event exists; dropped close events never suppress the listing. This keeps full token payloads and fresh summary projections on the same mempool lifecycle.
 - Preserves sale-ticket seal metadata when WORK or credit listings promote from pending to confirmed state. Confirmed seal regressions are rejected so a refreshed payload cannot make a sealed listing look unsealed.
 - Checks pending WORK and credit txids for liveness on fresh reads and prunes dropped pending transfers, listings, seals, delistings, and buys from pending overlays without changing confirmed history.
-- Counts marketplace network value from sale volume plus marketplace mutation fees. Marketplace mutation fees remain in marketplace flow and are excluded from generic Computer event flow.
+- Counts AMO network value from sale volume plus market mutation fees. Market mutation fees remain in AMO flow and are excluded from generic Computer event flow.
 
 The consistency endpoints:
 
@@ -1378,19 +1632,19 @@ The credit endpoint:
 - Credit listings reserve the seller's spendable balance, create a 546-proof seller-controlled sale-ticket output, and require the standard 546-proof credit registry mutation payment before OP_RETURN. Buys must spend the seller ticket, pay the seller the listed price plus ticket value, and pay the credit registry mutation fee.
 - Active credit listings are filtered by sale-ticket outspend state. When Bitcoin Core RPC is configured, `gettxout` is the fast spend-state oracle and address-history scans are recovery context. If the ticket output is spent, the listing is closed even when a cached snapshot is otherwise stale; if the spend is a valid `buy5`, the event also appears as a credit sale.
 - Credit listing seals are one-per-active-listing. A valid existing seal blocks duplicate seal attempts, while a newly confirmed listing promotion preserves the original seal and outspend state. Listing books may show pending seal rows as sealing status, but the Sealed tab/count means confirmed and buyable only; pending seals stay in All/Unsealed until confirmation.
-- Marketplace summary compaction must keep all confirmed, unspent, buyable sealed listings even when the recent active-listing preview is capped. Public summary reads should be verified against the full WORK token payload so every confirmed sealed listing in `/api/v1/token` remains present in `/api/v1/marketplace-summary`.
+- AMO summary compaction must keep all confirmed, unspent, buyable sealed listings even when the recent active-listing preview is capped. Public summary reads should be verified against the full WORK token payload so every confirmed sealed listing in `/api/v1/token` remains present in `/api/v1/marketplace-summary`.
 - Credit market history merges active listings, closed listings, and settled sales into a paginated `market-log` view ordered by confirmation status, event time, and txid. It is not sorted by price or arbitrage.
 - Confirmed `pwt1` attempts that fail canonical token validation remain indexed as `token-event-invalid` audit rows with their txid, block position, attempted amount, sender, recipient, and reason. They are visible in address-scoped Wallet, Event History, and invalid-event history, but are excluded from the public canonical Log and its action totals. They never mutate balances, supply, valid transfer history, floor, or network value.
 - Fresh credit-directory and summary reads verify the stored hash-bound canonical checkpoint against Bitcoin Core instead of rebuilding the shared credit ledger in the request. Scoped wallet/history reads may still use bounded canonical recovery; explicit refresh must converge on current node truth and may not leave a spent sale-ticket visible as active.
 - Fresh reads also remove dropped pending credit/WORK transactions from overlay state after liveness checks, so stale pending transfers, listings, seals, delistings, or buys do not survive after they disappear from mempool views.
-- Wallet-owned credit listing views are derived from the same active and closed listing state as Marketplace, so a connected seller can inspect confirmed, pending, delisted, and sold listings without a separate stale wallet-only book.
+- Wallet-owned credit listing views are derived from the same active and closed listing state as AMO, so a connected seller can inspect confirmed, pending, delisted, and sold listings without a separate stale wallet-only book.
 - Credit UI surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per credit and per mint from BTC/USD.
 - `credit.proofofwork.me` is the create/mint surface, `token.proofofwork.me` and `tokens.proofofwork.me` redirect to it, `wallet.proofofwork.me` is the credit wallet for transfers, listings, delistings, and sale history, and `work.proofofwork.me` is the dedicated WORK dashboard.
 - WORK is reserved for canonical credit id `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`. Official indexers and creation UI reject any non-canonical credit create whose ticker contains `WORK`, and exclude blocked scam creator address `bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl`.
 - WORK settings are 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, and the `work@proofofwork.me` registry address. WORK launches at exactly 1 proof per WORK. The create form can reuse the same economic template for non-reserved tickers only.
 - WORK's permanent price floor is derived from live confirmed ProofOfWork Computer network value, not from pending mempool visibility: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`. The inverse `21,000,000 / live_network_value_sats` is the WORK-per-proof ratio.
-- WORK Marketplace Pricing Protocol V2 is declaration-tx anchored at `4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f` and activates at declaration height plus one. Confirmed governed WORK list/seal/buy validation must load the exact green canonical summary at H-1, require the authorization's `oracleBlockHeight`, `oracleBlockHash`, and `oracleNetworkValueQ8` to match it, recompute the integer-ceiling minimum total seller price from `amountAtoms`, and fail closed on any unavailable or mismatched dependency. A missed next-block commitment is stale; confirmation does not rescue it.
-- WORK Marketplace Pricing Protocol V4 is Phase-1 write-gated. Until its exact declaration confirms, activates at `D + 1`, is pinned by txid/height/canonical block hash, and `WORK_MARKETPLACE_WRITES_ENABLED=1` is explicitly set, WORK list/seal/buy broadcasts remain read-only while delisting stays available. After activation, `pwt-sale-v4` accepts a hash-bound quote no more than 480 blocks old only when the signed price also meets the canonical confirmation-block H-1 floor; V3 listings remain inspectable as non-reserving relics and must be recovered/relisted before seal or buy.
+- Historical WORK Marketplace Pricing Protocol V2 is declaration-tx anchored at `4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f` and activated at declaration height plus one. Its confirmed governed WORK list/seal/buy validation loaded the exact green canonical summary at H-1, required the authorization's `oracleBlockHeight`, `oracleBlockHash`, and `oracleNetworkValueQ8` to match it, recomputed the integer-ceiling minimum total seller price from `amountAtoms`, and failed closed on any unavailable or mismatched dependency. A missed next-block commitment was stale; confirmation did not rescue it. This is replay documentation, not the current AMO write protocol.
+- WORK Marketplace Pricing Protocol V4 remains replayable historical design. Current governed WORK list/seal/buy actions use AMO `pwt-sale-v5` after activation height 959621. A listing chooses only `$20`, `$50`, or `$100`; exact WORK atoms and proof price derive at its complete canonical position from the preceding valid `pwa1:usd1` quote and the network value immediately before the listing. Those terms freeze at confirmation. Seal and buy reference them without current-floor repricing. Writes require the independent V5 declaration pins, quote/index/replay readiness, and `WORK_AMO_V5_WRITES_ENABLED=1`.
 - WORK value accounting exposes both live and frozen values. Live network value reprices confirmed WORK movement at the current live floor and is the site-facing value. Frozen network value records the confirmation-time value of each WORK movement plus fixed event components such as proof payments, registry mutation fees, marketplace mutation fees, sale payments, and miner fees where available.
 - WORK is the only credit whose amount moved adds credit movement network value. Non-WORK credits remain confirmed proof-flow records and must not derive value from manipulable illiquid floors.
 - Credit mint-out is confirmed-only at the protocol/indexing layer: a credit is canonically minted out only when confirmed supply reaches max supply. UI mint controls also pause when confirmed plus pending mints fill the remaining supply, because pending records can consume the last valid mint slots if they confirm.
@@ -1521,13 +1775,17 @@ non-WORK credits and immutable legacy whole-WORK history. Canonical WORK
 transfers use `send2`; `amount-atoms` is a positive canonical integer,
 one WORK equals `100000000` atoms, and no exponent, sign, comma, leading-zero
 alias, or value beyond eight decimal places is accepted. `send2` is WORK-only.
-Historical signed `pwt-sale-v1` authorizations likewise remain whole-credit
-records, and historical fractional WORK actions may use `pwt-sale-v2` with an
-exact `amountAtoms` string. Current governed WORK list, seal, and buy actions
-use `pwt-sale-v3` with exact atoms and the required hash-bound H-1 pricing
-commitment; non-WORK listings remain V1. The surrounding
-`list5`/`seal5`/`buy5`/`delist5` messages and sale-ticket UTXO contract are
-unchanged.
+Historical signed `pwt-sale-v1` authorizations remain whole-credit records;
+historical fractional WORK actions may use `pwt-sale-v2`, and the governed V3
+era used `pwt-sale-v3` with exact atoms and its hash-bound H-1 pricing
+commitment. Current governed WORK list, seal, and buy actions use
+`pwt-sale-v5`. A new listing selects only `$20`, `$50`, or `$100`; its complete
+canonical position, preceding valid USD quote, and network value immediately
+before that position derive and freeze the exact WORK atoms and proof price at
+confirmation. Later seal and buy actions reference those immutable terms and
+do not reprice. Non-WORK listings remain V1. The surrounding
+`list5`/`seal5`/`buy5`/`delist5` messages and sale-ticket UTXO contract remain
+compatible.
 
 Mainnet credit creation index:
 
@@ -1573,8 +1831,8 @@ After changing the API or production build, verify:
 - Sent, inbox, incoming, files, outbox, and dropped status all work through the API.
 - Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.
 - Browser can load a txid with HTML in the message body or a verified `text/html` attachment, render it in a sandbox, and reject non-HTML message/attachment data.
-- Standalone Marketplace can list, seal, delist, and buy confirmed IDs through the same registry API.
-- Credit, Wallet, and Marketplace transaction buttons can load UTXOs, previous transaction hex, and listing-anchor outspends through the first-party API before opening UniSat.
+- Standalone AMO can list, seal, delist, and buy confirmed IDs through the same registry API.
+- Credit, Wallet, and AMO transaction buttons can load UTXOs, previous transaction hex, and listing-anchor outspends through the first-party API before opening UniSat.
 - Generic funding selection excludes every active ProofOfWork ID and credit listing anchor owned by the connected wallet, even when that listing belongs to a different app or asset scope.
 - `infinity.proofofwork.me` loads `/api/v1/infinity-summary`, can broadcast a `pwm1:m:powb` bond message to a recipient, and shows POWB balances/listings from the same sale-ticket ledger as credits.
 - `computer.proofofwork.me/?folder=infinity` renders the embedded Infinity Bond / POWB workspace, including the Infinity Bond chart and POWB sale-ticket market, without falling back to credit-market labels.

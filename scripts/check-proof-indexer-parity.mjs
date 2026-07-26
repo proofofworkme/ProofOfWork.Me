@@ -16,6 +16,9 @@ import {
   proofIndexTokenHistoryPayload,
   proofIndexTokenReadEligibility,
   proofIndexTxStatusPayload,
+  proofIndexWorkAmoReplayReadiness,
+  proofIndexWorkAmoV5Declaration,
+  proofIndexWorkUsdQuoteHead,
 } from "../server/db/proof-index-reader.mjs";
 
 const DEFAULT_API_BASE = "http://127.0.0.1:8081";
@@ -28,6 +31,9 @@ const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_0
 const REQUEST_RETRIES = Number(process.env.POW_INDEX_FETCH_RETRIES ?? 4);
 const STRICT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_PARITY_STRICT ?? ""),
+);
+const REQUIRE_WORK_AMO_V5_READY = /^(?:1|true|yes)$/iu.test(
+  String(process.env.WORK_AMO_V5_WRITES_ENABLED ?? ""),
 );
 const CHECK_ACTIVITY_SNAPSHOT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_PARITY_ACTIVITY_SNAPSHOT ?? ""),
@@ -329,6 +335,7 @@ try {
             AND (
               block_hash IS NOT NULL
               OR block_height IS NOT NULL
+              OR block_index IS NOT NULL
               OR block_time IS NOT NULL
               OR confirmed_at IS NOT NULL
             )
@@ -353,6 +360,10 @@ try {
             AND (
               t.status <> 'confirmed'
               OR e.block_height IS DISTINCT FROM t.block_height
+              OR e.block_index IS DISTINCT FROM t.block_index
+              OR e.block_index IS NULL
+              OR e.op_return_vout IS NULL
+              OR e.record_ordinal < 0
               OR e.block_time IS DISTINCT FROM t.block_time
               OR e.event_time IS NULL
               OR e.event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
@@ -363,7 +374,13 @@ try {
           FROM proof_indexer.events
           WHERE network = $1
             AND status IN ('pending', 'dropped', 'orphaned')
-            AND (block_height IS NOT NULL OR block_time IS NOT NULL)
+            AND (
+              block_height IS NOT NULL
+              OR block_index IS NOT NULL
+              OR op_return_vout IS NOT NULL
+              OR record_ordinal <> 0
+              OR block_time IS NOT NULL
+            )
         ) AS nonconfirmed_events_with_block_metadata,
         (
           SELECT count(*)
@@ -388,6 +405,8 @@ try {
         (SELECT count(*) FROM proof_indexer.credit_definitions WHERE network = $1 AND confirmed = true) AS credit_definitions_confirmed,
         (SELECT count(*) FROM proof_indexer.credit_balances WHERE network = $1) AS credit_balances,
         (SELECT count(*) FROM proof_indexer.credit_listings WHERE network = $1) AS credit_listings,
+        (SELECT count(*) FROM proof_indexer.work_usd_quotes WHERE network = $1 AND status = 'confirmed' AND valid = true) AS work_usd_quotes_confirmed,
+        (SELECT count(*) FROM proof_indexer.work_amo_listing_terms WHERE network = $1) AS work_amo_listing_terms,
         (SELECT count(*) FROM proof_indexer.id_records WHERE network = $1) AS id_records,
         (SELECT count(*) FROM proof_indexer.ledger_snapshots WHERE network = $1) AS ledger_snapshots
     `,
@@ -499,6 +518,92 @@ try {
       ? canonicalPendingActivityItems
       : Math.max(0, metricActivityItems - confirmedComputerActions);
   const checks = [];
+  const workAmoRequestedThroughHeight = Math.max(
+    ledgerIndexedThroughBlock,
+    numberValue(latestSnapshot?.indexed_through_block),
+  );
+  const workAmoRequestedThroughBlockHash =
+    numberValue(latestSnapshot?.indexed_through_block) ===
+      workAmoRequestedThroughHeight
+      ? String(
+          latestSnapshot?.payload?.indexedThroughBlockHash ?? "",
+        )
+          .trim()
+          .toLowerCase()
+      : "";
+  const [workAmoDeclaration, workAmoQuoteHead, workAmoReadiness] =
+    await Promise.all([
+      proofIndexWorkAmoV5Declaration(
+        NETWORK,
+        workAmoRequestedThroughHeight,
+      ),
+      proofIndexWorkUsdQuoteHead(NETWORK),
+      proofIndexWorkAmoReplayReadiness(NETWORK, {
+        throughBlockHash: workAmoRequestedThroughBlockHash,
+        throughHeight: workAmoRequestedThroughHeight,
+      }),
+    ]);
+
+  check(
+    checks,
+    "work-amo-v5-declaration-evidence",
+    workAmoDeclaration?.canonical === true &&
+      workAmoDeclaration?.evidenceComplete === true &&
+      workAmoDeclaration?.blockIndex === 141,
+    {
+      declaration: workAmoDeclaration,
+    },
+  );
+  check(
+    checks,
+    "work-amo-v5-canonical-positions",
+    workAmoReadiness?.positionsReady === true,
+    {
+      duplicatePositions: workAmoReadiness?.duplicatePositions ?? null,
+      missingPositions: workAmoReadiness?.missingPositions ?? null,
+      reasons: workAmoReadiness?.reasons ?? [],
+    },
+    REQUIRE_WORK_AMO_V5_READY ? "error" : "warning",
+  );
+  check(
+    checks,
+    "work-amo-v5-migration",
+    workAmoReadiness?.migrationReady === true &&
+      workAmoReadiness?.legacyStateReady === true &&
+      workAmoReadiness?.frozenTermsReady === true,
+    {
+      migration: workAmoReadiness?.migration ?? null,
+      missingFrozenTerms: workAmoReadiness?.missingFrozenTerms ?? null,
+      postActivationV4Active:
+        workAmoReadiness?.postActivationV4Active ?? null,
+      preActivationV4Actions:
+        workAmoReadiness?.preActivationV4Actions ?? null,
+      postV1V3Active: workAmoReadiness?.postV1V3Active ?? null,
+      reasons: workAmoReadiness?.reasons ?? [],
+    },
+    "warning",
+  );
+  check(
+    checks,
+    "work-amo-v5-usd-quote-head",
+    Boolean(workAmoQuoteHead) && workAmoReadiness?.quoteReady === true,
+    {
+      quoteHead: workAmoQuoteHead,
+      reasons: workAmoReadiness?.reasons ?? [],
+    },
+    REQUIRE_WORK_AMO_V5_READY ? "error" : "warning",
+  );
+  check(
+    checks,
+    "work-amo-v5-write-readiness",
+    REQUIRE_WORK_AMO_V5_READY
+      ? workAmoReadiness?.indexReady === true
+      : true,
+    {
+      required: REQUIRE_WORK_AMO_V5_READY,
+      readiness: workAmoReadiness,
+    },
+  );
 
   check(checks, "canonical-ledger-green", ledger.ok === true && ledger.status === "green", {
     ok: ledger.ok,
@@ -1438,8 +1543,14 @@ try {
     latestSnapshotGeneratedAt: latestSnapshot?.generated_at ?? null,
     network: NETWORK,
     ok: failed.length === 0,
+    requireWorkAmoV5Ready: REQUIRE_WORK_AMO_V5_READY,
     snapshotId: ledger.snapshotId ?? null,
     strict: STRICT,
+    workAmoV5: {
+      declaration: workAmoDeclaration,
+      quoteHead: workAmoQuoteHead,
+      readiness: workAmoReadiness,
+    },
   };
 
   console.log(JSON.stringify(output, null, 2));

@@ -156,8 +156,13 @@ browser.proofofwork.me {
 	import common_browser_app
 }
 
-marketplace.proofofwork.me {
+amo.proofofwork.me {
 	import common_marketplace_app
+}
+
+marketplace.proofofwork.me {
+	import common_headers
+	redir https://amo.proofofwork.me{uri} permanent
 }
 
 growth.proofofwork.me {

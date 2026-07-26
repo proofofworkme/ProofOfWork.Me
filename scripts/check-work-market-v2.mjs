@@ -42,8 +42,23 @@ import {
   tokenListingCanProjectCloseActivity,
   tokenListingTransactionCanProjectActive,
 } from "../server/token-listing-lifecycle.mjs";
+import {
+  WORK_AMO_V5_ALLOWED_FACE_USD_CENTS,
+  WORK_AMO_V5_AUTH_VERSION,
+  WORK_AMO_V5_UNIT_MODEL,
+} from "../server/work-amo-v5.mjs";
 
 const hash = "11".repeat(32);
+assert.notEqual(
+  WORK_AMO_V5_AUTH_VERSION,
+  WORK_MARKET_V4_AUTH_VERSION,
+  "AMO V5 must remain a separate authorization from immutable V4 history",
+);
+assert.deepEqual(
+  WORK_AMO_V5_ALLOWED_FACE_USD_CENTS,
+  [2_000, 5_000, 10_000],
+);
+assert.equal(WORK_AMO_V5_UNIT_MODEL, "canonical-work-amo-usd-unit-v2");
 const base = {
   amountAtoms: "100000000",
   minimumPriceSats: "1",
@@ -1410,12 +1425,18 @@ assert.match(
 assert.match(apiSource, /work-market-v2-cutover/u);
 assert.match(
   appSource,
-  /function workMarketplaceV4WritesReady[\s\S]*status\?\.active === true[\s\S]*status\.writesEnabled === true[\s\S]*status\.declarationConfirmed === true/u,
+  /function workAmoV5ProtocolReady[\s\S]*status\?\.active === true[\s\S]*status\.indexReady === true[\s\S]*status\.declarationConfirmed === true/u,
 );
 assert.match(
   appSource,
-  /function assertWorkMarketplaceV4WritesEnabled/u,
+  /function workAmoV5ProtocolWritesReady[\s\S]*protocolWritesEnabled === true/u,
 );
+assert.match(
+  appSource,
+  /function workAmoV5ListingWritesReady[\s\S]*listingWritesEnabled === true[\s\S]*quoteReady === true/u,
+);
+assert.match(appSource, /function assertWorkAmoV5ProtocolEnabled/u);
+assert.match(appSource, /function assertWorkAmoV5ListingEnabled/u);
 assert.match(appSource, /TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION/u);
 assert.match(appSource, /Marketplace V1 Relic/u);
 assert.match(appSource, /disabledAtBlockHeight: 959062/u);

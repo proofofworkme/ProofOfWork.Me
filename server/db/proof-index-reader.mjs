@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { compareCanonicalUtf8 } from "../canonical-order.mjs";
+
 import {
   createProofIndexPool,
   proofIndexDatabaseConfigured,
@@ -37,13 +40,55 @@ import {
   WORK_MARKET_V4_DECLARATION_PAYLOAD,
   WORK_MARKET_V4_DECLARATION_REGISTRY_ADDRESS,
   WORK_MARKET_V4_DECLARATION_TXID,
+  WORK_MARKET_V4_ORACLE_MODEL,
   workMarketV4ActivationReached,
   workMarketV4ActivationFromDeclaration,
   workMarketV4ConfiguredDeclaration,
+  workMarketV2MinimumPriceSats,
 } from "../work-market-v2.mjs";
 import {
   tokenListingTransactionCanProjectActive,
 } from "../token-listing-lifecycle.mjs";
+import {
+  WORK_AMO_V4_UNIT_MODEL,
+  WORK_AMO_V5_ACTIVATION_HEIGHT,
+  WORK_AMO_V5_AUTH_VERSION,
+  WORK_AMO_V4_HISTORICAL_FACE_USD_CENTS,
+  WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY as WORK_AMO_V5_AUTHORITY_SCRIPTPUBKEY,
+  WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+  WORK_AMO_V5_DECLARATION_BLOCK_INDEX,
+  WORK_AMO_V5_DECLARATION_HEIGHT,
+  WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS as WORK_AMO_V5_MIN_REGISTRY_PAYMENT_SATS,
+  WORK_AMO_V5_DECLARATION_PAYLOAD_BYTES as WORK_AMO_V5_DECLARATION_MEMO_BYTES,
+  WORK_AMO_V5_DECLARATION_PAYLOAD_SHA256 as WORK_AMO_V5_DECLARATION_MEMO_SHA256,
+  WORK_AMO_V5_DECLARATION_PROTOCOL_VOUT,
+  WORK_AMO_V5_DECLARATION_RECORD_ORDINAL,
+  WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS as WORK_AMO_V5_REGISTRY_ADDRESS,
+  WORK_AMO_V5_DECLARATION_REGISTRY_PAYMENT_VOUT,
+  WORK_AMO_V5_DECLARATION_TXID,
+  WORK_AMO_V5_DECLARATION_WORK_PROTOCOL_VOUT,
+  WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL,
+  WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS as WORK_AMO_V1_MAX_QUOTE_AGE_BLOCKS,
+  WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  WORK_AMO_V5_UNIT_USD_ORACLE_MODEL as WORK_AMO_UNIT_USD_ORACLE_MODEL,
+  WORK_AMO_V5_V1_ACTIVATION_HEIGHT as WORK_AMO_V1_ACTIVATION_HEIGHT,
+  WORK_AMO_V5_V1_DECLARATION_TXID as WORK_AMO_V1_DECLARATION_TXID,
+  isWorkAmoV5LivenetAddress,
+  parseWorkAmoV5GenericSaleAuthorization,
+  validateWorkAmoV5FrozenTerms,
+  workAmoV5CanonicalTokenStateCommitment,
+} from "../work-amo-v5.mjs";
+import {
+  WORK_AMO_V5_RAW_BIP141_WITNESS_MODEL,
+  WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
+  WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+} from "../work-amo-v5-raw.mjs";
+import {
+  normalizedWorkAmoV5Bip141Witness,
+  workAmoV5Bip141WitnessesEqual,
+} from "../work-amo-v5-bip141.mjs";
 import {
   INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
   INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE,
@@ -97,10 +142,12 @@ const TOKEN_SALE_AUTH_VERSIONS = new Set([
   "pwt-sale-v2",
   WORK_MARKET_V2_AUTH_VERSION,
   WORK_MARKET_V4_AUTH_VERSION,
+  "pwt-sale-v5",
 ]);
 const WORK_MARKET_GOVERNED_AUTH_VERSIONS = new Set([
   WORK_MARKET_V2_AUTH_VERSION,
   WORK_MARKET_V4_AUTH_VERSION,
+  "pwt-sale-v5",
 ]);
 const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
 const TOKEN_LISTING_ANCHOR_VALUE_SATS = 546;
@@ -129,6 +176,7 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "token-mint",
   "token-sale",
   "token-transfer",
+  "work-usd-quote",
 ]);
 const SMALL_EVENT_HISTORY_NORMALIZE_LIMIT = 2_000;
 const LEDGER_SNAPSHOT_RECENT_READ_LIMIT = 25;
@@ -411,6 +459,3232 @@ export async function proofIndexWorkMarketV4Activation(
     : null;
 }
 
+function canonicalAmoPosition(row, prefix = "") {
+  const field = (name) => row?.[`${prefix}${name}`];
+  const presentInteger = (name, minimum) => {
+    const value = field(name);
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const blockHeight = presentInteger("block_height", 1);
+  const blockIndex = presentInteger("block_index", 0);
+  const protocolVout = presentInteger("protocol_vout", 0);
+  const recordOrdinal = presentInteger("record_ordinal", 0);
+  return blockHeight !== null &&
+    blockIndex !== null &&
+    protocolVout !== null &&
+    recordOrdinal !== null
+    ? {
+        blockHeight,
+        blockIndex,
+        blockTransactionIndex: blockIndex,
+        protocolVout,
+        recordOrdinal,
+      }
+    : null;
+}
+
+function normalizedWorkUsdQuoteRow(row) {
+  const position = canonicalAmoPosition(row);
+  const txid = String(row?.txid ?? "").trim().toLowerCase();
+  const declarationTxid = String(row?.declaration_txid ?? "")
+    .trim()
+    .toLowerCase();
+  const previousQuoteTxid = String(row?.previous_quote_txid ?? "")
+    .trim()
+    .toLowerCase();
+  const sequence = String(row?.sequence ?? "").trim();
+  const usdPer100mProofsQ8 = String(
+    row?.usd_per_100m_proofs_q8 ?? "",
+  ).trim();
+  const blockHash = String(row?.block_hash ?? "").trim().toLowerCase();
+  const recordCount = Number(row?.record_count);
+  const registryAddress = String(row?.registry_address ?? "").trim();
+  const registryPaymentSats = Number(row?.registry_payment_sats);
+  const registryPaymentVout = Number(row?.registry_payment_vout);
+  const firstInputPrevoutScriptPubKey = String(
+    row?.authority_scriptpubkey ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const payload = String(row?.raw_payload ?? "");
+  const payloadParts = payload.split(":");
+  if (
+    !position ||
+    position.blockHeight < WORK_AMO_V1_ACTIVATION_HEIGHT ||
+    position.recordOrdinal !== 0 ||
+    !/^[0-9a-f]{64}$/u.test(txid) ||
+    declarationTxid !== WORK_AMO_V1_DECLARATION_TXID ||
+    !/^[0-9a-f]{64}$/u.test(previousQuoteTxid) ||
+    !/^[1-9][0-9]*$/u.test(sequence) ||
+    !/^[1-9][0-9]*$/u.test(usdPer100mProofsQ8) ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    recordCount !== 1 ||
+    registryAddress !== WORK_AMO_V5_REGISTRY_ADDRESS ||
+    !Number.isSafeInteger(registryPaymentSats) ||
+    registryPaymentSats < WORK_AMO_V5_MIN_REGISTRY_PAYMENT_SATS ||
+    !Number.isSafeInteger(registryPaymentVout) ||
+    registryPaymentVout < 0 ||
+    payloadParts.length !== 6 ||
+    payloadParts[0] !== "pwa1" ||
+    payloadParts[1] !== "usd1" ||
+    payloadParts[2] !== declarationTxid ||
+    payloadParts[3] !== sequence ||
+    payloadParts[4] !== previousQuoteTxid ||
+    payloadParts[5] !== usdPer100mProofsQ8 ||
+    row?.status !== "confirmed" ||
+    row?.valid !== true ||
+    firstInputPrevoutScriptPubKey !== WORK_AMO_V5_AUTHORITY_SCRIPTPUBKEY
+  ) {
+    return null;
+  }
+  return {
+    authorityScriptpubkey: WORK_AMO_V5_AUTHORITY_SCRIPTPUBKEY,
+    blockHash,
+    canonical: true,
+    confirmed: true,
+    declarationTxid,
+    firstInputPrevoutScriptPubKey,
+    indexedPayload:
+      row?.payload && typeof row.payload === "object" ? row.payload : {},
+    payload,
+    previousQuoteTxid,
+    recordCount,
+    registryAddress,
+    registryPaymentSats,
+    registryPaymentVout,
+    sequence,
+    status: "confirmed",
+    txid,
+    usdPer100mProofsQ8,
+    valid: true,
+    v1DeclarationTxid: declarationTxid,
+    ...position,
+  };
+}
+
+function normalizedWorkAmoListingTermsRow(row) {
+  const candidateFrozenTerms =
+    row?.frozen_terms &&
+    typeof row.frozen_terms === "object" &&
+    !Array.isArray(row.frozen_terms)
+      ? row.frozen_terms
+      : null;
+  const listingId = String(row?.listing_id ?? "").trim().toLowerCase();
+  const listingTxid = String(row?.listing_txid ?? "").trim().toLowerCase();
+  const quoteTxid = String(row?.unit_usd_quote_txid ?? "")
+    .trim()
+    .toLowerCase();
+  const listingPosition = canonicalAmoPosition(row, "listing_");
+  const quotePosition = {
+    blockHash: String(row?.unit_usd_quote_block_hash ?? "")
+      .trim()
+      .toLowerCase(),
+    blockHeight: Number(row?.unit_usd_quote_block_height),
+    blockIndex: Number(row?.unit_usd_quote_block_index),
+    blockTransactionIndex: Number(row?.unit_usd_quote_block_index),
+    protocolVout: Number(row?.unit_usd_quote_vout),
+    recordOrdinal: 0,
+  };
+  if (
+    !candidateFrozenTerms ||
+    !/^[0-9a-f]{64}$/u.test(listingId) ||
+    listingTxid !== listingId ||
+    !/^[0-9a-f]{64}$/u.test(quoteTxid) ||
+    !listingPosition ||
+    !Number.isSafeInteger(quotePosition.blockHeight) ||
+    quotePosition.blockHeight <= 0 ||
+    !Number.isSafeInteger(quotePosition.blockIndex) ||
+    quotePosition.blockIndex < 0 ||
+    !Number.isSafeInteger(quotePosition.protocolVout) ||
+    quotePosition.protocolVout < 0 ||
+    !/^[0-9a-f]{64}$/u.test(quotePosition.blockHash) ||
+    row?.authorization_version !== WORK_AMO_V5_AUTH_VERSION ||
+    String(row?.token_id ?? "").trim().toLowerCase() !== WORK_TOKEN_ID
+  ) {
+    return null;
+  }
+  const frozenValidation = validateWorkAmoV5FrozenTerms(
+    candidateFrozenTerms,
+    {
+      listingPosition: {
+        blockHash: String(row?.listing_block_hash ?? "")
+          .trim()
+          .toLowerCase(),
+        blockHeight: listingPosition.blockHeight,
+        blockTransactionIndex: listingPosition.blockIndex,
+        protocolVout: listingPosition.protocolVout,
+        recordOrdinal: listingPosition.recordOrdinal,
+      },
+    },
+  );
+  if (!frozenValidation.valid) {
+    return null;
+  }
+  const frozen = frozenValidation.frozenTerms;
+  const exactPositiveInteger = (value) => {
+    const text = String(value ?? "").trim();
+    return /^[1-9][0-9]*$/u.test(text) ? BigInt(text).toString() : "";
+  };
+  if (
+    Number(row?.unit_face_usd_cents) !== frozen.unitFaceUsdCents ||
+    exactPositiveInteger(row?.unit_amount_atoms) !== frozen.unitAmountAtoms ||
+    exactPositiveInteger(row?.unit_price_sats) !== frozen.unitPriceSats ||
+    exactPositiveInteger(row?.unit_minimum_price_sats) !==
+      frozen.unitMinimumPriceSats ||
+    quoteTxid !== frozen.unitUsdQuoteTxid ||
+    Number(row?.unit_usd_quote_vout) !== frozen.unitUsdQuoteVout ||
+    exactPositiveInteger(row?.unit_usd_quote_sequence) !==
+      frozen.unitUsdQuoteSequence ||
+    Number(row?.unit_usd_quote_block_height) !==
+      frozen.unitUsdQuoteBlockHeight ||
+    String(row?.unit_usd_quote_block_hash ?? "").trim().toLowerCase() !==
+      frozen.unitUsdQuoteBlockHash ||
+    Number(row?.unit_usd_quote_block_index) !==
+      frozen.unitUsdQuoteBlockIndex ||
+    exactPositiveInteger(row?.unit_usd_per_100m_proofs_q8) !==
+      frozen.unitUsdPer100mProofsQ8 ||
+    exactPositiveInteger(row?.unit_network_value_before_q8) !==
+      frozen.unitNetworkValueBeforeQ8 ||
+    exactPositiveInteger(row?.listing_bond_contribution_q8) !==
+      frozen.listingBondContributionQ8 ||
+    exactPositiveInteger(row?.unit_network_value_after_q8) !==
+      frozen.unitNetworkValueAfterQ8
+  ) {
+    return null;
+  }
+  return {
+    authorizationVersion: WORK_AMO_V5_AUTH_VERSION,
+    createdAt: dateIso(row?.created_at),
+    frozenTerms: frozen,
+    listingId,
+    listingPosition,
+    listingTxid,
+    quotePosition,
+    tokenId: WORK_TOKEN_ID,
+    unitAmountAtoms: String(row.unit_amount_atoms),
+    unitFaceUsdCents: Number(row.unit_face_usd_cents),
+    unitMinimumPriceSats: String(row.unit_minimum_price_sats),
+    unitPriceSats: String(row.unit_price_sats),
+    unitUsdQuoteTxid: quoteTxid,
+  };
+}
+
+function validatedHistoricalV4ListingWitness({
+  amountAtoms,
+  anchorAddress,
+  anchorScriptPubKey,
+  anchorValueSats,
+  blockHash,
+  canonicalPricingBlockKeys,
+  listingAuthorization,
+  listingId,
+  payload,
+  position,
+  priceSats,
+  saleTicketTxid,
+  saleTicketValueSats,
+  saleTicketVout,
+  sellerAddress,
+  unitQuote,
+}) {
+  const pricing =
+    payload?.workMarketPricing &&
+    typeof payload.workMarketPricing === "object" &&
+    !Array.isArray(payload.workMarketPricing)
+      ? payload.workMarketPricing
+      : null;
+  const integerText = (value, { positive = true } = {}) => {
+    const text = String(value ?? "").trim();
+    if (!/^(?:0|[1-9][0-9]*)$/u.test(text)) {
+      return "";
+    }
+    return positive && text === "0" ? "" : BigInt(text).toString();
+  };
+  const unitAmountAtoms = integerText(
+    listingAuthorization?.unitAmountAtoms ??
+      listingAuthorization?.amountAtoms,
+  );
+  const unitPriceSats = integerText(
+    listingAuthorization?.unitPriceSats ??
+      listingAuthorization?.priceSats,
+  );
+  const unitMinimumPriceSats = integerText(
+    listingAuthorization?.unitMinimumPriceSats ??
+      listingAuthorization?.minimumPriceSats,
+  );
+  const unitNetworkValueBeforeQ8 = integerText(
+    listingAuthorization?.unitNetworkValueBeforeQ8 ??
+      listingAuthorization?.unitNetworkValueQ8,
+  );
+  const unitFaceUsdCents = Number(
+    listingAuthorization?.unitFaceUsdCents,
+  );
+  const unitFaceUsd = Number(listingAuthorization?.unitFaceUsd);
+  const confirmationMinimumPriceSats = integerText(
+    pricing?.confirmationMinimumPriceSats,
+  );
+  const confirmationNetworkValueQ8 = integerText(
+    pricing?.confirmationOracleNetworkValueQ8,
+  );
+  const normalizedSaleTicketTxid = String(
+    saleTicketTxid ?? listingId,
+  )
+    .trim()
+    .toLowerCase();
+  const normalizedSellerAddress = String(sellerAddress ?? "").trim();
+  const authorizationSellerAddress = String(
+    listingAuthorization?.sellerAddress ?? "",
+  ).trim();
+  const normalizedAnchorScriptPubKey = String(anchorScriptPubKey ?? "")
+    .trim()
+    .toLowerCase();
+  const authorizationAnchorScriptPubKey = String(
+    listingAuthorization?.anchorScriptPubKey ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const authorizationQuoteTxid = String(
+    listingAuthorization?.unitUsdQuoteTxid ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const quotePosition = unitQuote
+    ? {
+        blockHeight: Number(unitQuote.blockHeight),
+        blockIndex: Number(
+          unitQuote.blockTransactionIndex ?? unitQuote.blockIndex,
+        ),
+        protocolVout: Number(unitQuote.protocolVout),
+        recordOrdinal: Number(unitQuote.recordOrdinal),
+      }
+    : null;
+  const quotePrecedesListing = Boolean(
+    quotePosition &&
+      [
+        quotePosition.blockHeight,
+        quotePosition.blockIndex,
+        quotePosition.protocolVout,
+        quotePosition.recordOrdinal,
+      ].some((value, index, values) => {
+        const listingValues = [
+          position?.blockHeight,
+          position?.blockIndex,
+          position?.protocolVout,
+          position?.recordOrdinal,
+        ];
+        return (
+          values.slice(0, index).every(
+            (prior, priorIndex) => prior === listingValues[priorIndex],
+          ) && value < listingValues[index]
+        );
+      }),
+  );
+  const unitQuoteValueQ8 = integerText(
+    unitQuote?.usdPer100mProofsQ8,
+  );
+  const targetNumerator =
+    Number.isSafeInteger(unitFaceUsdCents) &&
+    unitFaceUsdCents > 0 &&
+    unitQuoteValueQ8
+      ? BigInt(unitFaceUsdCents) * 100_000_000n * 100_000_000n
+      : null;
+  const targetDenominator =
+    unitQuoteValueQ8 ? 100n * BigInt(unitQuoteValueQ8) : null;
+  const expectedUnitPriceSats =
+    targetNumerator !== null && targetDenominator !== null
+      ? (targetNumerator + targetDenominator - 1n) / targetDenominator
+      : null;
+  const expectedUnitAmountAtoms =
+    targetNumerator !== null &&
+    targetDenominator !== null &&
+    unitNetworkValueBeforeQ8
+      ? (
+          targetNumerator *
+          21_000_000n *
+          100_000_000n *
+          100_000_000n
+        ) / (
+          targetDenominator * BigInt(unitNetworkValueBeforeQ8)
+        )
+      : null;
+  const workValueDenominator =
+    21_000_000n * 100_000_000n * 100_000_000n;
+  const expectedUnitMinimumPriceSats =
+    expectedUnitAmountAtoms !== null && unitNetworkValueBeforeQ8
+      ? (
+          expectedUnitAmountAtoms * BigInt(unitNetworkValueBeforeQ8) +
+          workValueDenominator -
+          1n
+        ) / workValueDenominator
+      : null;
+  const quotedMinimum = workMarketV2MinimumPriceSats(
+    unitAmountAtoms,
+    unitNetworkValueBeforeQ8,
+  );
+  const confirmationMinimum = workMarketV2MinimumPriceSats(
+    unitAmountAtoms,
+    confirmationNetworkValueQ8,
+  );
+  const quoteOracleBlockKey = `${
+    Number(listingAuthorization?.oracleBlockHeight)
+  }:${
+    String(listingAuthorization?.oracleBlockHash ?? "").trim().toLowerCase()
+  }`;
+  const confirmationOracleBlockKey = `${
+    Number(pricing?.confirmationOracleBlockHeight)
+  }:${
+    String(pricing?.confirmationOracleBlockHash ?? "").trim().toLowerCase()
+  }`;
+  if (
+    listingAuthorization?.version !== WORK_MARKET_V4_AUTH_VERSION ||
+    String(listingAuthorization?.tokenId ?? "").trim().toLowerCase() !==
+      WORK_TOKEN_ID ||
+    listingAuthorization?.unitModel !== WORK_AMO_V4_UNIT_MODEL ||
+    listingAuthorization?.unitUsdOracleModel !==
+      WORK_AMO_UNIT_USD_ORACLE_MODEL ||
+    listingAuthorization?.oracleModel !== WORK_MARKET_V4_ORACLE_MODEL ||
+    !position ||
+    position.blockHeight < WORK_AMO_V1_ACTIVATION_HEIGHT ||
+    position.blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    pricing?.valid !== true ||
+    Number(pricing?.confirmationOracleBlockHeight) !==
+      position.blockHeight - 1 ||
+    !/^[0-9a-f]{64}$/u.test(
+      String(pricing?.confirmationOracleBlockHash ?? "")
+        .trim()
+        .toLowerCase(),
+    ) ||
+    String(pricing?.oracleBlockHash ?? "").trim().toLowerCase() !==
+      String(listingAuthorization?.oracleBlockHash ?? "")
+        .trim()
+        .toLowerCase() ||
+    Number(pricing?.oracleBlockHeight) !==
+      Number(listingAuthorization?.oracleBlockHeight) ||
+    integerText(pricing?.oracleNetworkValueQ8) !==
+      unitNetworkValueBeforeQ8 ||
+    integerText(pricing?.minimumPriceSats) !== unitMinimumPriceSats ||
+    !confirmationNetworkValueQ8 ||
+    !unitAmountAtoms ||
+    unitAmountAtoms !== integerText(amountAtoms) ||
+    !unitPriceSats ||
+    unitPriceSats !== integerText(priceSats) ||
+    !unitMinimumPriceSats ||
+    !unitNetworkValueBeforeQ8 ||
+    !confirmationMinimumPriceSats ||
+    quotedMinimum === null ||
+    quotedMinimum.toString() !== unitMinimumPriceSats ||
+    confirmationMinimum === null ||
+    confirmationMinimum.toString() !== confirmationMinimumPriceSats ||
+    expectedUnitAmountAtoms === null ||
+    expectedUnitAmountAtoms.toString() !== unitAmountAtoms ||
+    expectedUnitPriceSats === null ||
+    expectedUnitPriceSats.toString() !== unitPriceSats ||
+    expectedUnitMinimumPriceSats === null ||
+    expectedUnitMinimumPriceSats.toString() !== unitMinimumPriceSats ||
+    BigInt(unitPriceSats) < BigInt(unitMinimumPriceSats) ||
+    BigInt(unitPriceSats) < BigInt(confirmationMinimumPriceSats) ||
+    !WORK_AMO_V4_HISTORICAL_FACE_USD_CENTS.includes(
+      unitFaceUsdCents,
+    ) ||
+    !Number.isSafeInteger(unitFaceUsd) ||
+    unitFaceUsd !== unitFaceUsdCents / 100 ||
+    !normalizedSellerAddress ||
+    authorizationSellerAddress !== normalizedSellerAddress ||
+    String(payload?.sellerAddress ?? authorizationSellerAddress).trim() !==
+      normalizedSellerAddress ||
+    String(payload?.registryAddress ?? listingAuthorization?.registryAddress)
+      .trim() !== String(listingAuthorization?.registryAddress ?? "").trim() ||
+    normalizedSaleTicketTxid !== listingId ||
+    String(listingAuthorization?.anchorTxid ?? "")
+      .trim()
+      .toLowerCase() !== listingId ||
+    Number(listingAuthorization?.anchorVout) !== Number(saleTicketVout) ||
+    Number(listingAuthorization?.anchorValueSats) !==
+      Number(saleTicketValueSats) ||
+    Number(saleTicketVout) !== 2 ||
+    Number(saleTicketValueSats) !== 546 ||
+    Number(anchorValueSats) !== Number(saleTicketValueSats) ||
+    !String(anchorAddress ?? "").trim() ||
+    !/^[0-9a-f]+$/u.test(authorizationAnchorScriptPubKey) ||
+    normalizedAnchorScriptPubKey !== authorizationAnchorScriptPubKey ||
+    listingAuthorization?.anchorType !== "sale-ticket-v1" ||
+    Number(listingAuthorization?.anchorSigHashType) !== 0x83 ||
+    !/^(?:02|03)[0-9a-f]{64}$|^04[0-9a-f]{128}$/u.test(
+      String(listingAuthorization?.sellerPublicKey ?? "")
+        .trim()
+        .toLowerCase(),
+    ) ||
+    !unitQuote ||
+    unitQuote.canonical !== true ||
+    unitQuote.confirmed !== true ||
+    unitQuote.valid !== true ||
+    authorizationQuoteTxid !==
+      String(unitQuote.txid ?? "").trim().toLowerCase() ||
+    Number(listingAuthorization?.unitUsdQuoteVout) !==
+      quotePosition?.protocolVout ||
+    String(listingAuthorization?.unitUsdQuoteSequence ?? "").trim() !==
+      String(unitQuote.sequence ?? "").trim() ||
+    Number(listingAuthorization?.unitUsdQuoteBlockHeight) !==
+      quotePosition?.blockHeight ||
+    String(listingAuthorization?.unitUsdQuoteBlockHash ?? "")
+      .trim()
+      .toLowerCase() !==
+      String(unitQuote.blockHash ?? "").trim().toLowerCase() ||
+    Number(listingAuthorization?.unitUsdQuoteBlockIndex) !==
+      quotePosition?.blockIndex ||
+    integerText(listingAuthorization?.unitUsdPer100mProofsQ8) !==
+      unitQuoteValueQ8 ||
+    quotePosition?.recordOrdinal !== 0 ||
+    !quotePrecedesListing ||
+    position.blockHeight >
+      Number(quotePosition?.blockHeight) +
+        WORK_AMO_V1_MAX_QUOTE_AGE_BLOCKS ||
+    Number(listingAuthorization?.unitValidThroughHeight) !==
+      Number(quotePosition?.blockHeight) +
+        WORK_AMO_V1_MAX_QUOTE_AGE_BLOCKS ||
+    !canonicalPricingBlockKeys ||
+    typeof canonicalPricingBlockKeys.has !== "function" ||
+    !canonicalPricingBlockKeys.has(quoteOracleBlockKey) ||
+    !canonicalPricingBlockKeys.has(confirmationOracleBlockKey)
+  ) {
+    return null;
+  }
+  return {
+    authorizationVersion: WORK_MARKET_V4_AUTH_VERSION,
+    blockHash,
+    blockHeight: position.blockHeight,
+    blockIndex: position.blockIndex,
+    blockTransactionIndex: position.blockIndex,
+    canonical: true,
+    confirmed: true,
+    listingBlockHash: blockHash,
+    listingBlockHeight: position.blockHeight,
+    listingBlockIndex: position.blockIndex,
+    listingProtocolVout: position.protocolVout,
+    listingRecordOrdinal: position.recordOrdinal,
+    protocolVout: position.protocolVout,
+    recordOrdinal: position.recordOrdinal,
+    tokenId: WORK_TOKEN_ID,
+    unitAmountAtoms,
+    unitFaceUsd,
+    unitFaceUsdCents,
+    unitMinimumPriceSats,
+    unitNetworkValueBeforeQ8,
+    unitPriceSats,
+    valid: true,
+  };
+}
+
+export async function proofIndexWorkAmoV5Declaration(
+  network,
+  indexedThroughBlock = 0,
+) {
+  const pool = proofIndexPool();
+  const checkpointHeight = safeBlockHeight(indexedThroughBlock);
+  if (!pool) {
+    return {
+      activationHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      active: false,
+      canonical: false,
+      confirmed: false,
+      configured: true,
+      declarationTxid: WORK_AMO_V5_DECLARATION_TXID,
+      txid: WORK_AMO_V5_DECLARATION_TXID,
+      reasons: ["database-not-configured"],
+    };
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        declaration_tx.txid,
+        declaration_tx.status,
+        declaration_tx.block_hash,
+        declaration_tx.block_height,
+        declaration_tx.block_index,
+        COALESCE(
+          declaration_tx.raw_tx #>> '{vin,0,prevout,scriptPubKey,hex}',
+          declaration_tx.raw_tx #>> '{vin,0,prevout,scriptpubkey}',
+          ''
+        ) AS first_input_scriptpubkey,
+        (
+          SELECT count(*)
+          FROM proof_indexer.tx_inputs declaration_input
+          WHERE declaration_input.network = declaration_tx.network
+            AND declaration_input.txid = declaration_tx.txid
+        )::integer AS input_count,
+        (
+          SELECT min(protocol_output.vout)
+          FROM proof_indexer.op_returns protocol_output
+          WHERE protocol_output.network = declaration_tx.network
+            AND protocol_output.txid = declaration_tx.txid
+            AND protocol_output.protocol = 'pwt1'
+        ) AS work_protocol_vout,
+        (
+          SELECT count(*)
+          FROM proof_indexer.op_returns protocol_output
+          WHERE protocol_output.network = declaration_tx.network
+            AND protocol_output.txid = declaration_tx.txid
+            AND protocol_output.protocol = 'pwt1'
+        )::integer AS work_protocol_count,
+        (
+          SELECT COALESCE(sum(registry_output.value_sats), 0)
+          FROM proof_indexer.tx_outputs registry_output
+          WHERE registry_output.network = declaration_tx.network
+            AND registry_output.txid = declaration_tx.txid
+            AND registry_output.address = $5
+            AND registry_output.vout < (
+              SELECT min(protocol_output.vout)
+              FROM proof_indexer.op_returns protocol_output
+              WHERE protocol_output.network = declaration_tx.network
+                AND protocol_output.txid = declaration_tx.txid
+                AND protocol_output.protocol = 'pwt1'
+            )
+        ) AS registry_payment_sats,
+        (
+          SELECT min(registry_output.vout)
+          FROM proof_indexer.tx_outputs registry_output
+          WHERE registry_output.network = declaration_tx.network
+            AND registry_output.txid = declaration_tx.txid
+            AND registry_output.address = $5
+        ) AS registry_payment_vout,
+        (
+          SELECT count(*)
+          FROM proof_indexer.tx_outputs registry_output
+          WHERE registry_output.network = declaration_tx.network
+            AND registry_output.txid = declaration_tx.txid
+            AND registry_output.address = $5
+        )::integer AS registry_payment_count,
+        COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'output_index', declaration_message.output_index,
+              'payload_text', declaration_message.payload_text,
+              'vout', declaration_message.vout
+            )
+            ORDER BY declaration_message.vout, declaration_message.output_index
+          )
+          FROM proof_indexer.op_returns declaration_message
+          WHERE declaration_message.network = declaration_tx.network
+            AND declaration_message.txid = declaration_tx.txid
+            AND left(
+              COALESCE(declaration_message.payload_text, ''),
+              7
+            ) = 'pwm1:m:'
+        ), '[]'::jsonb) AS memo_rows
+      FROM proof_indexer.transactions declaration_tx
+      JOIN proof_indexer.blocks declaration_block
+        ON declaration_block.network = declaration_tx.network
+       AND declaration_block.block_hash = declaration_tx.block_hash
+       AND declaration_block.height = declaration_tx.block_height
+       AND declaration_block.canonical = true
+      WHERE declaration_tx.network = $1
+        AND declaration_tx.txid = $2
+        AND declaration_tx.block_height = $3
+        AND declaration_tx.block_hash = $4
+        AND declaration_tx.status = 'confirmed'
+      LIMIT 1
+    `,
+    [
+      network,
+      WORK_AMO_V5_DECLARATION_TXID,
+      WORK_AMO_V5_DECLARATION_HEIGHT,
+      WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+      WORK_AMO_V5_REGISTRY_ADDRESS,
+    ],
+  );
+  const row = result.rows[0];
+  const reasons = [];
+  if (!row) {
+    reasons.push("declaration-not-canonical");
+  }
+  const memoRows = Array.isArray(row?.memo_rows) ? row.memo_rows : [];
+  const memo = memoRows.length === 1
+    ? String(memoRows[0]?.payload_text ?? "")
+    : "";
+  const memoHash = memo
+    ? createHash("sha256").update(Buffer.from(memo, "utf8")).digest("hex")
+    : "";
+  const memoBytes = Buffer.byteLength(memo, "utf8");
+  if (row && Number(row.block_index) !== WORK_AMO_V5_DECLARATION_BLOCK_INDEX) {
+    reasons.push("declaration-block-index-mismatch");
+  }
+  if (
+    row &&
+    (
+      memoRows.length !== 1 ||
+      Number(memoRows[0]?.vout) !==
+        WORK_AMO_V5_DECLARATION_PROTOCOL_VOUT ||
+      Number(memoRows[0]?.output_index) !==
+        WORK_AMO_V5_DECLARATION_RECORD_ORDINAL
+    )
+  ) {
+    reasons.push("declaration-protocol-position-mismatch");
+  }
+  if (
+    row &&
+    String(row.first_input_scriptpubkey ?? "").trim().toLowerCase() !==
+      WORK_AMO_V5_AUTHORITY_SCRIPTPUBKEY
+  ) {
+    reasons.push("declaration-authority-script-mismatch");
+  }
+  if (
+    row &&
+    (
+      Number(row.registry_payment_count) !== 1 ||
+      Number(row.registry_payment_sats) !==
+        WORK_AMO_V5_MIN_REGISTRY_PAYMENT_SATS ||
+      Number(row.registry_payment_vout) !==
+        WORK_AMO_V5_DECLARATION_REGISTRY_PAYMENT_VOUT
+    )
+  ) {
+    reasons.push("declaration-registry-payment-missing");
+  }
+  if (
+    row &&
+    (
+      Number(row.work_protocol_count) !== 1 ||
+      Number(row.work_protocol_vout) !==
+        WORK_AMO_V5_DECLARATION_WORK_PROTOCOL_VOUT
+    )
+  ) {
+    reasons.push("declaration-work-protocol-output-mismatch");
+  }
+  if (
+    row &&
+    (
+      memoHash !== WORK_AMO_V5_DECLARATION_MEMO_SHA256 ||
+      memoBytes !== WORK_AMO_V5_DECLARATION_MEMO_BYTES ||
+      memoRows.length !== 1
+    )
+  ) {
+    reasons.push("declaration-memo-mismatch");
+  }
+  const canonical = Boolean(row) && reasons.length === 0;
+  const checkpointReached =
+    checkpointHeight === 0 || checkpointHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT;
+  if (canonical && !checkpointReached) {
+    reasons.push("activation-height-not-reached");
+  }
+  return {
+    activationHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    active: canonical && checkpointReached,
+    blockHash: row?.block_hash ?? WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+    blockHeight: Number(row?.block_height ?? WORK_AMO_V5_DECLARATION_HEIGHT),
+    blockIndex: Number(row?.block_index ?? -1),
+    blockTransactionIndex: Number(row?.block_index ?? -1),
+    canonical,
+    confirmed: row?.status === "confirmed",
+    configured: true,
+    declarationTxid: WORK_AMO_V5_DECLARATION_TXID,
+    evidenceComplete: canonical,
+    firstInputPrevoutScriptPubKey: String(
+      row?.first_input_scriptpubkey ?? "",
+    ).toLowerCase(),
+    firstInputScriptpubkey: String(
+      row?.first_input_scriptpubkey ?? "",
+    ).toLowerCase(),
+    inputCount: Number(row?.input_count ?? 0),
+    memoBytes,
+    memoSha256: memoHash,
+    payloadBytes: memoBytes,
+    payloadSha256: memoHash,
+    protocolOutputVout: Number(row?.work_protocol_vout ?? -1),
+    protocolVout: WORK_AMO_V5_DECLARATION_PROTOCOL_VOUT,
+    recordOrdinal: WORK_AMO_V5_DECLARATION_RECORD_ORDINAL,
+    reasons,
+    registryAddress: WORK_AMO_V5_REGISTRY_ADDRESS,
+    registryPaymentSats: Number(row?.registry_payment_sats ?? 0),
+    registryPaymentVout: Number(row?.registry_payment_vout ?? -1),
+    status: row?.status ?? "missing",
+    txid: WORK_AMO_V5_DECLARATION_TXID,
+    workProtocolVout: Number(row?.work_protocol_vout ?? -1),
+  };
+}
+
+async function readWorkUsdQuote(pool, network, whereSql, params) {
+  const result = await pool.query(
+    `
+      SELECT
+        quote.*
+      FROM proof_indexer.work_usd_quotes quote
+      JOIN proof_indexer.transactions quote_tx
+        ON quote_tx.network = quote.network
+       AND quote_tx.txid = quote.txid
+       AND quote_tx.status = 'confirmed'
+       AND quote_tx.block_hash = quote.block_hash
+       AND quote_tx.block_height = quote.block_height
+       AND quote_tx.block_index = quote.block_index
+      JOIN proof_indexer.blocks quote_block
+        ON quote_block.network = quote_tx.network
+       AND quote_block.block_hash = quote_tx.block_hash
+       AND quote_block.height = quote_tx.block_height
+       AND quote_block.canonical = true
+      WHERE quote.network = $1
+        AND quote.status = 'confirmed'
+        AND quote.valid = true
+        AND ${whereSql}
+      ORDER BY
+        quote.block_height DESC,
+        quote.block_index DESC,
+        quote.protocol_vout DESC,
+        quote.record_ordinal DESC
+      LIMIT 1
+    `,
+    [network, ...params],
+  );
+  return result.rows.length > 0
+    ? normalizedWorkUsdQuoteRow(result.rows[0])
+    : null;
+}
+
+function compareAmoPositions(left, right) {
+  for (const field of [
+    "blockHeight",
+    "blockIndex",
+    "protocolVout",
+    "recordOrdinal",
+  ]) {
+    const difference = Number(left?.[field]) - Number(right?.[field]);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return 0;
+}
+
+async function canonicalWorkUsdQuoteChainRows(pool, network) {
+  const result = await pool.query(
+    `
+      SELECT
+        quote.txid,
+        quote.declaration_txid,
+        quote.sequence::text,
+        quote.previous_quote_txid,
+        quote.block_height,
+        quote.block_index,
+        quote.protocol_vout,
+        quote.record_ordinal
+      FROM proof_indexer.work_usd_quotes quote
+      JOIN proof_indexer.transactions quote_tx
+        ON quote_tx.network = quote.network
+       AND quote_tx.txid = quote.txid
+       AND quote_tx.status = 'confirmed'
+       AND quote_tx.block_hash = quote.block_hash
+       AND quote_tx.block_height = quote.block_height
+       AND quote_tx.block_index = quote.block_index
+      JOIN proof_indexer.blocks quote_block
+        ON quote_block.network = quote_tx.network
+       AND quote_block.block_hash = quote_tx.block_hash
+       AND quote_block.height = quote_tx.block_height
+       AND quote_block.canonical = true
+      WHERE quote.network = $1
+        AND quote.status = 'confirmed'
+        AND quote.valid = true
+      ORDER BY quote.sequence
+    `,
+    [network],
+  );
+  const chain = [];
+  let expectedSequence = 1n;
+  let expectedPreviousQuoteTxid = WORK_AMO_V1_DECLARATION_TXID;
+  for (const row of result.rows) {
+    const position = canonicalAmoPosition(row);
+    const txid = String(row?.txid ?? "").trim().toLowerCase();
+    const sequence = String(row?.sequence ?? "").trim();
+    const previousQuoteTxid = String(row?.previous_quote_txid ?? "")
+      .trim()
+      .toLowerCase();
+    if (
+      !position ||
+      position.blockHeight < WORK_AMO_V1_ACTIVATION_HEIGHT ||
+      position.recordOrdinal !== 0 ||
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      String(row?.declaration_txid ?? "").trim().toLowerCase() !==
+        WORK_AMO_V1_DECLARATION_TXID ||
+      !/^[1-9][0-9]*$/u.test(sequence) ||
+      BigInt(sequence) !== expectedSequence ||
+      previousQuoteTxid !== expectedPreviousQuoteTxid ||
+      (
+        chain.length > 0 &&
+        compareAmoPositions(chain.at(-1).position, position) >= 0
+      )
+    ) {
+      return null;
+    }
+    chain.push({ position, sequence, txid });
+    expectedSequence += 1n;
+    expectedPreviousQuoteTxid = txid;
+  }
+  return chain;
+}
+
+export async function proofIndexWorkUsdQuoteHead(network, atPosition = null) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+  const exactInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const position = atPosition && typeof atPosition === "object"
+    ? {
+        blockHeight: exactInteger(atPosition.blockHeight, 1),
+        blockIndex: exactInteger(atPosition.blockIndex, 0),
+        protocolVout: exactInteger(atPosition.protocolVout, 0),
+        recordOrdinal: exactInteger(atPosition.recordOrdinal, 0),
+      }
+    : null;
+  const completePosition =
+    position &&
+    position.blockHeight !== null &&
+    position.blockIndex !== null &&
+    position.protocolVout !== null &&
+    position.recordOrdinal !== null;
+  if (atPosition && !completePosition) {
+    return null;
+  }
+  const chain = await canonicalWorkUsdQuoteChainRows(pool, network);
+  if (!chain) {
+    return null;
+  }
+  const eligible = completePosition
+    ? chain.filter(
+        (candidate) =>
+          compareAmoPositions(candidate.position, position) < 0,
+      )
+    : chain;
+  const head = eligible.at(-1);
+  return head
+    ? readWorkUsdQuote(pool, network, "quote.txid = $2", [head.txid])
+    : null;
+}
+
+export async function proofIndexWorkUsdQuoteByTxid(network, txid) {
+  const pool = proofIndexPool();
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!pool || !/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    return null;
+  }
+  const chain = await canonicalWorkUsdQuoteChainRows(pool, network);
+  if (!chain?.some((quote) => quote.txid === normalizedTxid)) {
+    return null;
+  }
+  return readWorkUsdQuote(pool, network, "quote.txid = $2", [normalizedTxid]);
+}
+
+export async function proofIndexWorkAmoListingTerms(network, listingId) {
+  const pool = proofIndexPool();
+  const normalizedListingId = String(listingId ?? "").trim().toLowerCase();
+  if (!pool || !/^[0-9a-f]{64}$/u.test(normalizedListingId)) {
+    return null;
+  }
+  const result = await pool.query(
+    `
+      SELECT terms.*
+      FROM proof_indexer.work_amo_listing_terms terms
+      JOIN proof_indexer.transactions listing_tx
+        ON listing_tx.network = terms.network
+       AND listing_tx.txid = terms.listing_txid
+       AND listing_tx.status = 'confirmed'
+       AND listing_tx.block_hash = terms.listing_block_hash
+       AND listing_tx.block_height = terms.listing_block_height
+       AND listing_tx.block_index = terms.listing_block_index
+      JOIN proof_indexer.blocks listing_block
+        ON listing_block.network = listing_tx.network
+       AND listing_block.block_hash = listing_tx.block_hash
+       AND listing_block.height = listing_tx.block_height
+       AND listing_block.canonical = true
+      JOIN proof_indexer.events listing_event
+        ON listing_event.network = terms.network
+       AND listing_event.txid = terms.listing_txid
+       AND listing_event.protocol = 'pwt1'
+       AND listing_event.kind = 'token-listing'
+       AND listing_event.status = 'confirmed'
+       AND listing_event.valid = true
+       AND listing_event.block_height = terms.listing_block_height
+       AND listing_event.block_index = terms.listing_block_index
+       AND listing_event.op_return_vout = terms.listing_protocol_vout
+       AND listing_event.record_ordinal = terms.listing_record_ordinal
+      JOIN proof_indexer.work_usd_quotes quote
+        ON quote.network = terms.network
+       AND quote.txid = terms.unit_usd_quote_txid
+       AND quote.declaration_txid = $3
+       AND quote.sequence = terms.unit_usd_quote_sequence
+       AND quote.usd_per_100m_proofs_q8 =
+         terms.unit_usd_per_100m_proofs_q8
+       AND quote.block_hash = terms.unit_usd_quote_block_hash
+       AND quote.block_height = terms.unit_usd_quote_block_height
+       AND quote.block_index = terms.unit_usd_quote_block_index
+       AND quote.protocol_vout = terms.unit_usd_quote_vout
+       AND quote.record_ordinal = 0
+       AND quote.authority_scriptpubkey = $4
+       AND quote.record_count = 1
+       AND quote.registry_address = $5
+       AND quote.registry_payment_sats >= $6::bigint
+       AND quote.registry_payment_vout >= 0
+       AND quote.status = 'confirmed'
+       AND quote.valid = true
+      JOIN proof_indexer.transactions quote_tx
+        ON quote_tx.network = quote.network
+       AND quote_tx.txid = quote.txid
+       AND quote_tx.status = 'confirmed'
+       AND quote_tx.block_hash = quote.block_hash
+       AND quote_tx.block_height = quote.block_height
+       AND quote_tx.block_index = quote.block_index
+      JOIN proof_indexer.blocks quote_block
+        ON quote_block.network = quote_tx.network
+       AND quote_block.block_hash = quote_tx.block_hash
+       AND quote_block.height = quote_tx.block_height
+       AND quote_block.canonical = true
+      WHERE terms.network = $1
+        AND terms.listing_id = $2
+      LIMIT 2
+    `,
+    [
+      network,
+      normalizedListingId,
+      WORK_AMO_V1_DECLARATION_TXID,
+      WORK_AMO_V5_AUTHORITY_SCRIPTPUBKEY,
+      WORK_AMO_V5_REGISTRY_ADDRESS,
+      WORK_AMO_V5_MIN_REGISTRY_PAYMENT_SATS,
+    ],
+  );
+  const terms = result.rows.length === 1
+    ? normalizedWorkAmoListingTermsRow(result.rows[0])
+    : null;
+  if (!terms) {
+    return null;
+  }
+  const quote = await proofIndexWorkUsdQuoteByTxid(
+    network,
+    terms.unitUsdQuoteTxid,
+  );
+  if (!quote) {
+    return null;
+  }
+  const validation = validateWorkAmoV5FrozenTerms(terms.frozenTerms, {
+    quote,
+  });
+  return validation.valid ? terms : null;
+}
+
+export async function proofIndexCanonicalWorkListingById(
+  network,
+  listingId,
+) {
+  const pool = proofIndexPool();
+  const normalizedListingId = String(listingId ?? "").trim().toLowerCase();
+  if (!pool || !/^[0-9a-f]{64}$/u.test(normalizedListingId)) {
+    return null;
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        listing.listing_id,
+        listing.status AS listing_status,
+        listing.seller_address,
+        listing.amount::text AS amount_atoms,
+        listing.price_sats::text AS price_sats,
+        listing.sale_ticket_txid,
+        listing.sale_ticket_vout,
+        listing.sale_ticket_value_sats::text AS sale_ticket_value_sats,
+        listing_anchor.address AS anchor_address,
+        listing_anchor.scriptpubkey AS anchor_scriptpubkey,
+        listing_anchor.value_sats::text AS anchor_value_sats,
+        listing_event.payload AS listing_event_payload,
+        listing_event.block_height,
+        listing_event.block_index,
+        listing_event.op_return_vout AS protocol_vout,
+        listing_event.record_ordinal,
+        listing_tx.block_hash
+      FROM proof_indexer.credit_listings listing
+      JOIN proof_indexer.transactions listing_tx
+        ON listing_tx.network = listing.network
+       AND listing_tx.txid = listing.listing_id
+       AND listing_tx.status = 'confirmed'
+       AND listing_tx.block_index IS NOT NULL
+      JOIN proof_indexer.blocks listing_block
+        ON listing_block.network = listing_tx.network
+       AND listing_block.block_hash = listing_tx.block_hash
+       AND listing_block.height = listing_tx.block_height
+       AND listing_block.canonical = true
+      JOIN proof_indexer.events listing_event
+        ON listing_event.network = listing.network
+       AND listing_event.txid = listing.listing_id
+       AND listing_event.kind = 'token-listing'
+       AND listing_event.status = 'confirmed'
+       AND listing_event.valid = true
+       AND listing_event.block_height = listing_tx.block_height
+       AND listing_event.block_index = listing_tx.block_index
+       AND listing_event.op_return_vout IS NOT NULL
+       AND listing_event.record_ordinal >= 0
+      JOIN proof_indexer.tx_outputs listing_anchor
+        ON listing_anchor.network = listing.network
+       AND listing_anchor.txid = COALESCE(
+         NULLIF(lower(listing.sale_ticket_txid), ''),
+         listing.listing_id
+       )
+       AND listing_anchor.vout = listing.sale_ticket_vout
+       AND listing_anchor.value_sats = listing.sale_ticket_value_sats
+       AND listing_anchor.spent_by_txid IS NULL
+      WHERE listing.network = $1
+        AND listing.listing_id = $2
+        AND lower(listing.token_id) = $3
+        AND listing.status IN ('active', 'sealing')
+      ORDER BY listing_event.event_id
+      LIMIT 2
+    `,
+    [network, normalizedListingId, WORK_TOKEN_ID],
+  );
+  if (result.rows.length !== 1) {
+    return null;
+  }
+  const row = result.rows[0];
+  const payload =
+    row?.listing_event_payload &&
+    typeof row.listing_event_payload === "object" &&
+    !Array.isArray(row.listing_event_payload)
+      ? row.listing_event_payload
+      : {};
+  const listingAuthorization =
+    payload?.saleAuthorization &&
+    typeof payload.saleAuthorization === "object" &&
+    !Array.isArray(payload.saleAuthorization)
+      ? payload.saleAuthorization
+      : null;
+  const position = canonicalAmoPosition(row);
+  const blockHash = String(row?.block_hash ?? "").trim().toLowerCase();
+  if (
+    !listingAuthorization ||
+    !position ||
+    !/^[0-9a-f]{64}$/u.test(blockHash)
+  ) {
+    return null;
+  }
+  const version = String(listingAuthorization.version ?? "")
+    .trim()
+    .toLowerCase();
+  const v5Terms =
+    version === WORK_AMO_V5_AUTH_VERSION
+      ? await proofIndexWorkAmoListingTerms(network, normalizedListingId)
+      : null;
+  if (version === WORK_AMO_V5_AUTH_VERSION) {
+    const termsPosition = v5Terms?.listingPosition;
+    const frozenBlockHash = String(
+      v5Terms?.frozenTerms?.listingBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    if (
+      !termsPosition ||
+      termsPosition.blockHeight !== position.blockHeight ||
+      termsPosition.blockIndex !== position.blockIndex ||
+      termsPosition.protocolVout !== position.protocolVout ||
+      termsPosition.recordOrdinal !== position.recordOrdinal ||
+      frozenBlockHash !== blockHash
+    ) {
+      return null;
+    }
+  }
+  let unitQuote = null;
+  const canonicalPricingBlockKeys = new Set();
+  if (version === WORK_MARKET_V4_AUTH_VERSION) {
+    unitQuote = await proofIndexWorkUsdQuoteByTxid(
+      network,
+      listingAuthorization.unitUsdQuoteTxid,
+    );
+    const pricing =
+      payload?.workMarketPricing &&
+      typeof payload.workMarketPricing === "object" &&
+      !Array.isArray(payload.workMarketPricing)
+        ? payload.workMarketPricing
+        : {};
+    const quoteOracleHeight = Number(
+      listingAuthorization.oracleBlockHeight,
+    );
+    const quoteOracleHash = String(
+      listingAuthorization.oracleBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    const confirmationOracleHeight = Number(
+      pricing.confirmationOracleBlockHeight,
+    );
+    const confirmationOracleHash = String(
+      pricing.confirmationOracleBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    if (
+      Number.isSafeInteger(quoteOracleHeight) &&
+      quoteOracleHeight > 0 &&
+      /^[0-9a-f]{64}$/u.test(quoteOracleHash) &&
+      Number.isSafeInteger(confirmationOracleHeight) &&
+      confirmationOracleHeight > 0 &&
+      /^[0-9a-f]{64}$/u.test(confirmationOracleHash)
+    ) {
+      const pricingBlocks = await pool.query(
+        `
+          SELECT height, lower(block_hash) AS block_hash
+          FROM proof_indexer.blocks
+          WHERE network = $1
+            AND canonical = true
+            AND (
+              (height = $2 AND lower(block_hash) = $3)
+              OR
+              (height = $4 AND lower(block_hash) = $5)
+            )
+        `,
+        [
+          network,
+          quoteOracleHeight,
+          quoteOracleHash,
+          confirmationOracleHeight,
+          confirmationOracleHash,
+        ],
+      );
+      for (const pricingBlock of pricingBlocks.rows) {
+        canonicalPricingBlockKeys.add(
+          `${Number(pricingBlock.height)}:${String(
+            pricingBlock.block_hash ?? "",
+          ).toLowerCase()}`,
+        );
+      }
+    }
+  }
+  const validatedV1FrozenTerms =
+    version === WORK_MARKET_V4_AUTH_VERSION
+      ? validatedHistoricalV4ListingWitness({
+          amountAtoms: row.amount_atoms,
+          anchorAddress: row.anchor_address,
+          anchorScriptPubKey: row.anchor_scriptpubkey,
+          anchorValueSats: row.anchor_value_sats,
+          blockHash,
+          canonicalPricingBlockKeys,
+          listingAuthorization,
+          listingId: normalizedListingId,
+          payload,
+          position,
+          priceSats: row.price_sats,
+          saleTicketTxid: row.sale_ticket_txid,
+          saleTicketValueSats: row.sale_ticket_value_sats,
+          saleTicketVout: row.sale_ticket_vout,
+          sellerAddress: row.seller_address,
+          unitQuote,
+        })
+      : null;
+  return {
+    amountAtoms: String(row.amount_atoms ?? ""),
+    blockHash,
+    canonical: true,
+    confirmed: true,
+    historicalV4ReplayValidated: Boolean(validatedV1FrozenTerms),
+    listingAuthorization,
+    listingFrozenTerms:
+      version === WORK_AMO_V5_AUTH_VERSION
+        ? v5Terms.frozenTerms
+        : validatedV1FrozenTerms,
+    listingId: normalizedListingId,
+    priceSats: String(row.price_sats ?? ""),
+    saleAuthorization: listingAuthorization,
+    saleTicketTxid: String(
+      row.sale_ticket_txid ?? normalizedListingId,
+    ).toLowerCase(),
+    saleTicketValueSats: String(row.sale_ticket_value_sats ?? ""),
+    saleTicketVout: Number(row.sale_ticket_vout),
+    status: row.listing_status,
+    tokenId: WORK_TOKEN_ID,
+    unspent: true,
+    valid: true,
+    validatedV1FrozenTerms,
+    version,
+    ...position,
+  };
+}
+
+export async function proofIndexWorkAmoCanonicalEvents(
+  network,
+  options = {},
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return {
+      complete: false,
+      items: [],
+      reasons: ["database-not-configured"],
+    };
+  }
+  const fromHeight = Math.max(
+    WORK_AMO_V1_ACTIVATION_HEIGHT,
+    Number.isSafeInteger(Number(options.fromHeight))
+      ? Number(options.fromHeight)
+      : WORK_AMO_V1_ACTIVATION_HEIGHT,
+  );
+  const toHeight =
+    Number.isSafeInteger(Number(options.toHeight)) &&
+    Number(options.toHeight) >= fromHeight
+      ? Number(options.toHeight)
+      : 2_147_483_647;
+  const limit = Math.min(
+    10_000,
+    Math.max(
+      1,
+      Number.isSafeInteger(Number(options.limit)) ? Number(options.limit) : 1000,
+    ),
+  );
+  const exactCursorInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const hasCallerCursor =
+    options.after && typeof options.after === "object";
+  const after = hasCallerCursor
+    ? (() => {
+        const blockHeight = exactCursorInteger(
+          options.after.blockHeight,
+          1,
+        );
+        const blockIndex = exactCursorInteger(options.after.blockIndex, 0);
+        const protocolVout = exactCursorInteger(
+          options.after.protocolVout,
+          0,
+        );
+        const rawRecordOrdinal = options.after.recordOrdinal;
+        const recordOrdinal =
+          rawRecordOrdinal === undefined ||
+          rawRecordOrdinal === null ||
+          rawRecordOrdinal === ""
+            ? blockHeight !== null &&
+                blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT
+              ? 0
+              : null
+            : exactCursorInteger(rawRecordOrdinal, 0);
+        return { blockHeight, blockIndex, protocolVout, recordOrdinal };
+      })()
+    : {
+        blockHeight: fromHeight - 1,
+        blockIndex: -1,
+        protocolVout: -1,
+        recordOrdinal: -1,
+      };
+  if (
+    (hasCallerCursor &&
+      (
+        after.blockHeight === null ||
+        after.blockIndex === null ||
+        after.protocolVout === null ||
+        after.recordOrdinal === null
+      )) ||
+    !Number.isSafeInteger(after.blockHeight) ||
+    !Number.isSafeInteger(after.blockIndex) ||
+    !Number.isSafeInteger(after.protocolVout) ||
+    !Number.isSafeInteger(after.recordOrdinal)
+  ) {
+    return { complete: false, items: [], reasons: ["invalid-cursor"] };
+  }
+  const missing = await pool.query(
+    `
+      SELECT count(*)::integer AS count
+      FROM proof_indexer.events event_row
+      JOIN proof_indexer.transactions event_tx
+        ON event_tx.network = event_row.network
+       AND event_tx.txid = event_row.txid
+      JOIN proof_indexer.blocks event_block
+        ON event_block.network = event_tx.network
+       AND event_block.block_hash = event_tx.block_hash
+       AND event_block.height = event_tx.block_height
+       AND event_block.canonical = true
+      WHERE event_row.network = $1
+        AND event_row.status = 'confirmed'
+        AND event_tx.status = 'confirmed'
+        AND event_row.protocol = ANY(
+          ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+        )
+        AND event_tx.block_height BETWEEN $2 AND $3
+        AND (
+          event_row.block_height IS DISTINCT FROM event_tx.block_height
+          OR event_row.block_index IS NULL
+          OR event_row.op_return_vout IS NULL
+          OR event_row.record_ordinal < 0
+          OR event_tx.block_index IS NULL
+          OR event_tx.block_index IS DISTINCT FROM event_row.block_index
+        )
+    `,
+    [network, fromHeight, toHeight],
+  );
+  if (Number(missing.rows[0]?.count ?? 0) > 0) {
+    return {
+      complete: false,
+      items: [],
+      reasons: ["canonical-position-incomplete"],
+    };
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        event_row.event_id,
+        event_row.event_key,
+        event_row.txid,
+        event_row.protocol,
+        event_row.kind,
+        event_row.status,
+        event_row.valid,
+        event_row.validation_errors,
+        event_row.block_height,
+        event_row.block_index,
+        event_row.op_return_vout AS protocol_vout,
+        event_row.record_ordinal,
+        event_tx.block_hash,
+        event_tx.fee_sats,
+        event_row.payload
+      FROM proof_indexer.events event_row
+      JOIN proof_indexer.transactions event_tx
+        ON event_tx.network = event_row.network
+       AND event_tx.txid = event_row.txid
+       AND event_tx.status = 'confirmed'
+       AND event_tx.block_height = event_row.block_height
+       AND event_tx.block_index = event_row.block_index
+      JOIN proof_indexer.blocks event_block
+        ON event_block.network = event_tx.network
+       AND event_block.block_hash = event_tx.block_hash
+       AND event_block.height = event_tx.block_height
+       AND event_block.canonical = true
+      WHERE event_row.network = $1
+        AND event_row.status = 'confirmed'
+        AND event_row.protocol = ANY(
+          ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+        )
+        AND event_row.block_height BETWEEN $2 AND $3
+        AND (
+          event_row.block_height,
+          event_row.block_index,
+          event_row.op_return_vout,
+          event_row.record_ordinal
+        ) > ($4::integer, $5::integer, $6::integer, $7::integer)
+      ORDER BY
+        event_row.block_height,
+        event_row.block_index,
+        event_row.op_return_vout,
+        event_row.record_ordinal
+      LIMIT $8
+    `,
+    [
+      network,
+      fromHeight,
+      toHeight,
+      after.blockHeight,
+      after.blockIndex,
+      after.protocolVout,
+      after.recordOrdinal,
+      limit,
+    ],
+  );
+  return {
+    complete: result.rows.length < limit,
+    items: result.rows.map((row) => ({
+      blockHash: String(row.block_hash ?? "").toLowerCase(),
+      eventId: String(row.event_id),
+      eventKey: row.event_key,
+      feeSats: String(row.fee_sats ?? "0"),
+      kind: row.kind,
+      payload:
+        row.payload && typeof row.payload === "object" ? row.payload : {},
+      protocol: row.protocol,
+      status: row.status,
+      txid: row.txid,
+      valid: row.valid === true,
+      validationErrors: Array.isArray(row.validation_errors)
+        ? row.validation_errors
+        : [],
+      ...canonicalAmoPosition(row),
+    })),
+    reasons: [],
+  };
+}
+
+export async function proofIndexWorkAmoCanonicalReplayEvents(
+  network,
+  options = {},
+) {
+  const requestedLimit = Number(options.limit);
+  const limit =
+    Number.isSafeInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(10_000, requestedLimit)
+      : 10_000;
+  const items = [];
+  let after =
+    options.after && typeof options.after === "object"
+      ? options.after
+      : undefined;
+  let pageCount = 0;
+  for (;;) {
+    const page = await proofIndexWorkAmoCanonicalEvents(network, {
+      ...options,
+      after,
+      limit,
+    });
+    pageCount += 1;
+    if (page.complete !== true && page.items.length === 0) {
+      return {
+        complete: false,
+        items,
+        pageCount,
+        reasons:
+          Array.isArray(page.reasons) && page.reasons.length > 0
+            ? page.reasons
+            : ["canonical-event-replay-incomplete"],
+      };
+    }
+    items.push(...page.items);
+    if (page.complete === true) {
+      return { complete: true, items, pageCount, reasons: [] };
+    }
+    const last = page.items.at(-1);
+    const nextAfter = canonicalAmoPosition(last);
+    if (!nextAfter || compareAmoPositions(after, nextAfter) >= 0) {
+      return {
+        complete: false,
+        items,
+        pageCount,
+        reasons: ["canonical-event-replay-cursor-stalled"],
+      };
+    }
+    after = nextAfter;
+  }
+}
+
+export async function proofIndexWorkAmoBlockTransition(
+  network,
+  blockHeight,
+  blockHash,
+) {
+  const pool = proofIndexPool();
+  const height = Number(blockHeight);
+  const hash = String(blockHash ?? "").trim().toLowerCase();
+  if (
+    !pool ||
+    !String(network ?? "").trim() ||
+    !Number.isSafeInteger(height) ||
+    height < WORK_AMO_V5_ACTIVATION_HEIGHT ||
+    !/^[0-9a-f]{64}$/u.test(hash)
+  ) {
+    return null;
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        transition.network,
+        transition.block_height,
+        lower(transition.block_hash) AS block_hash,
+        lower(transition.previous_block_hash) AS previous_block_hash,
+        transition.model,
+        transition.state_commitment_model,
+        transition.opening_network_value_q8::text,
+        transition.closing_network_value_q8::text,
+        transition.opening_state_sha256,
+        transition.closing_state_sha256,
+        transition.opening_state_payload_bytes,
+        transition.closing_state_payload_bytes,
+        transition.protocol_record_count,
+        transition.raw_protocol_candidate_count,
+        transition.transaction_count,
+        transition.event_count,
+        transition.event_set_model,
+        transition.event_set_sha256,
+        transition.event_set_payload_bytes,
+        transition.block_atomic,
+        transition.fee_once,
+        transition.invalid_zero,
+        transition.complete,
+        transition.payload
+      FROM proof_indexer.work_amo_block_transitions transition
+      JOIN proof_indexer.blocks transition_block
+        ON transition_block.network = transition.network
+       AND transition_block.height = transition.block_height
+       AND transition_block.block_hash = transition.block_hash
+       AND transition_block.previous_block_hash =
+         transition.previous_block_hash
+       AND transition_block.canonical = true
+      WHERE transition.network = $1
+        AND transition.block_height = $2
+        AND lower(transition.block_hash) = $3
+        AND transition.model = $4
+        AND transition.state_commitment_model = $5
+        AND transition.event_set_model = $6
+        AND transition.payload->>'transitionChainModel' = $7
+        AND transition.payload
+          ->'transitionChainCommitment'->>'model' = $7
+        AND transition.payload
+          ->'transitionChainCommitment'->>'sha256' ~
+            '^[0-9a-f]{64}$'
+        AND transition.payload
+          ->'transitionChainCommitment'->>'payloadBytes' ~
+            '^[1-9][0-9]*$'
+        AND transition.payload->>'blockDescriptorModel' = $8
+        AND transition.payload
+          ->'blockDescriptorCommitment'->>'model' = $9
+        AND transition.payload
+          ->'blockDescriptorCommitment'->>'sha256' ~
+            '^[0-9a-f]{64}$'
+        AND transition.payload
+          ->'blockDescriptorCommitment'->>'payloadBytes' ~
+            '^[1-9][0-9]*$'
+        AND transition.payload->>'blockTransactionCount' ~
+            '^[1-9][0-9]*$'
+        AND transition.payload
+          ->'bip141Witness'->>'model' = $10
+        AND transition.payload
+          ->'bip141Witness'->>'required' IN ('true', 'false')
+        AND transition.payload
+          ->'bip141Witness'->>'witnessTransactionCount' ~
+            '^(?:0|[1-9][0-9]*)$'
+        AND (
+          (
+            transition.payload
+              ->'bip141Witness'->>'required' = 'false'
+            AND transition.payload
+              ->'bip141Witness'->>'witnessTransactionCount' = '0'
+            AND transition.payload
+              ->'bip141Witness'->>'commitmentSha256' = ''
+            AND transition.payload
+              ->'bip141Witness'->>'witnessMerkleRootInternalHex' = ''
+            AND transition.payload
+              ->'bip141Witness'->>'commitmentVout' IS NULL
+            AND NOT (
+              transition.payload->'bip141Witness'
+                ? 'commitmentScriptPubKeyHex'
+            )
+            AND NOT (
+              transition.payload->'bip141Witness'
+                ? 'coinbaseWitnessReservedValueHex'
+            )
+          )
+          OR
+          (
+            transition.payload
+              ->'bip141Witness'->>'required' = 'true'
+            AND transition.payload
+              ->'bip141Witness'->>'witnessTransactionCount' ~
+                '^[1-9][0-9]*$'
+            AND transition.payload
+              ->'bip141Witness'->>'commitmentVout' ~
+                '^(?:0|[1-9][0-9]*)$'
+            AND transition.payload
+              ->'bip141Witness'->>'commitmentSha256' ~
+                '^[0-9a-f]{64}$'
+            AND transition.payload
+              ->'bip141Witness'->>'witnessMerkleRootInternalHex' ~
+                '^[0-9a-f]{64}$'
+            AND transition.payload
+              ->'bip141Witness'->>'coinbaseWitnessReservedValueHex' ~
+                '^[0-9a-f]{64}$'
+            AND transition.payload
+              ->'bip141Witness'->>'commitmentScriptPubKeyHex' ~
+                '^6a24aa21a9ed[0-9a-f]+$'
+            AND length(
+              transition.payload
+                ->'bip141Witness'->>'commitmentScriptPubKeyHex'
+            ) % 2 = 0
+            AND substring(
+              transition.payload
+                ->'bip141Witness'->>'commitmentScriptPubKeyHex'
+              FROM 13 FOR 64
+            ) = transition.payload
+              ->'bip141Witness'->>'commitmentSha256'
+          )
+        )
+        AND transition.block_atomic = true
+        AND transition.fee_once = true
+        AND transition.invalid_zero = true
+        AND transition.complete = true
+      LIMIT 2
+    `,
+    [
+      network,
+      height,
+      hash,
+      WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
+      WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+      WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL,
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+      WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
+      WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      WORK_AMO_V5_RAW_BIP141_WITNESS_MODEL,
+    ],
+  );
+  if (result.rows.length !== 1) {
+    return null;
+  }
+  const row = result.rows[0];
+  const payload =
+    row?.payload &&
+    typeof row.payload === "object" &&
+    !Array.isArray(row.payload)
+      ? row.payload
+      : null;
+  const transitionChainCommitment =
+    payload?.transitionChainCommitment;
+  const transitionChainPayloadBytes = Number(
+    transitionChainCommitment?.payloadBytes,
+  );
+  const transitionChainSha256 = String(
+    transitionChainCommitment?.sha256 ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const blockDescriptorCommitment =
+    payload?.blockDescriptorCommitment;
+  const blockDescriptorPayloadBytes = Number(
+    blockDescriptorCommitment?.payloadBytes,
+  );
+  const blockDescriptorSha256 = String(
+    blockDescriptorCommitment?.sha256 ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const blockTransactionCount = Number(
+    payload?.blockTransactionCount,
+  );
+  const bip141Witness = normalizedWorkAmoV5Bip141Witness(
+    payload?.bip141Witness,
+    blockTransactionCount,
+  );
+  return payload?.transitionChainModel ===
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL &&
+    transitionChainCommitment?.model ===
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL &&
+    Number.isSafeInteger(transitionChainPayloadBytes) &&
+    transitionChainPayloadBytes > 0 &&
+    /^[0-9a-f]{64}$/u.test(transitionChainSha256) &&
+    payload?.blockDescriptorModel ===
+      WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL &&
+    blockDescriptorCommitment?.model ===
+      WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL &&
+    Number.isSafeInteger(blockDescriptorPayloadBytes) &&
+    blockDescriptorPayloadBytes > 0 &&
+    /^[0-9a-f]{64}$/u.test(blockDescriptorSha256) &&
+    Number.isSafeInteger(blockTransactionCount) &&
+    blockTransactionCount > 0 &&
+    Boolean(bip141Witness)
+    ? {
+        ...row,
+        blockHeight: Number(row.block_height),
+        blockHash: String(row.block_hash ?? "").toLowerCase(),
+        previousBlockHash: String(
+          row.previous_block_hash ?? "",
+        ).toLowerCase(),
+        payload,
+      }
+    : null;
+}
+
+export async function proofIndexWorkAmoRelationalTokenStateEvidence(
+  network,
+  expectedTokenStateCommitment = null,
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return { complete: false, reason: "database-not-configured" };
+  }
+  const [balanceResult, listingResult] = await Promise.all([
+    pool.query(
+      `
+        SELECT address, confirmed_balance::text AS balance_atoms
+        FROM proof_indexer.credit_balances
+        WHERE network = $1
+          AND lower(token_id) = $2
+          AND confirmed_balance > 0
+        ORDER BY address
+      `,
+      [network, WORK_TOKEN_ID],
+    ),
+    pool.query(
+      `
+        SELECT
+          listing.listing_id,
+          listing.seller_address,
+          listing.amount::text AS amount_atoms,
+          listing.price_sats::text AS price_sats,
+          COALESCE(
+            listing.payload->'listingAuthorization',
+            listing.payload->'saleAuthorization'
+          ) AS sale_authorization,
+          COALESCE(
+            terms.frozen_terms,
+            listing.payload->'listingFrozenTerms'
+          ) AS frozen_terms
+        FROM proof_indexer.credit_listings listing
+        JOIN proof_indexer.transactions listing_tx
+          ON listing_tx.network = listing.network
+         AND listing_tx.txid = listing.listing_id
+         AND listing_tx.status = 'confirmed'
+        JOIN proof_indexer.blocks listing_block
+          ON listing_block.network = listing_tx.network
+         AND listing_block.block_hash = listing_tx.block_hash
+         AND listing_block.height = listing_tx.block_height
+         AND listing_block.canonical = true
+        LEFT JOIN proof_indexer.work_amo_listing_terms terms
+          ON terms.network = listing.network
+         AND terms.listing_id = listing.listing_id
+        WHERE listing.network = $1
+          AND lower(listing.token_id) = $2
+          AND listing.status IN ('active', 'sealing')
+        ORDER BY listing.listing_id
+      `,
+      [network, WORK_TOKEN_ID],
+    ),
+  ]);
+  const holders = balanceResult.rows.map((row) => ({
+    address: String(row.address ?? ""),
+    balanceAtoms: String(row.balance_atoms ?? ""),
+  }));
+  let confirmedSupplyAtoms;
+  try {
+    confirmedSupplyAtoms = holders
+      .reduce((total, holder) => {
+        if (!/^[1-9][0-9]*$/u.test(holder.balanceAtoms)) {
+          throw new Error("relational-token-state-balance-invalid");
+        }
+        return total + BigInt(holder.balanceAtoms);
+      }, 0n)
+      .toString();
+  } catch (error) {
+    return {
+      complete: false,
+      reason: error?.message ?? "relational-token-state-balance-invalid",
+    };
+  }
+  const listings = listingResult.rows.map((row) => ({
+    amountAtoms: String(row.amount_atoms ?? ""),
+    frozenTerms: row.frozen_terms,
+    listingId: String(row.listing_id ?? "").trim().toLowerCase(),
+    priceSats: String(row.price_sats ?? ""),
+    saleAuthorization: row.sale_authorization,
+    sellerAddress: String(row.seller_address ?? ""),
+  }));
+  let commitment;
+  try {
+    commitment = workAmoV5CanonicalTokenStateCommitment({
+      confirmedSupplyAtoms,
+      holders,
+      listings,
+    });
+  } catch (error) {
+    return {
+      complete: false,
+      reason: error?.message ?? "relational-token-state-invalid",
+    };
+  }
+  const expectedModel = String(expectedTokenStateCommitment?.model ?? "");
+  const expectedSha256 = String(
+    expectedTokenStateCommitment?.sha256 ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const expectedPayloadBytes = Number(
+    expectedTokenStateCommitment?.payloadBytes,
+  );
+  const expectedMatches =
+    expectedTokenStateCommitment === null ||
+    (
+      expectedModel === commitment.model &&
+      expectedSha256 === commitment.sha256 &&
+      expectedPayloadBytes === commitment.payloadBytes
+    );
+  return {
+    commitment,
+    complete: expectedMatches,
+    confirmedSupplyAtoms,
+    holderCount: holders.length,
+    listingCount: listings.length,
+    model: "canonical-work-amo-relational-token-state-audit-v1",
+    ...(expectedMatches
+      ? {}
+      : { reason: "relational-token-state-commitment-mismatch" }),
+  };
+}
+
+export function workAmoV5GenericTokenStatePreimageFromRows({
+  balanceRows,
+  blockHash,
+  blockHeight,
+  definitionRows,
+  listingRows,
+} = {}) {
+  const indexedThroughBlock = Number(blockHeight);
+  const indexedThroughBlockHash = String(blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    !Number.isSafeInteger(indexedThroughBlock) ||
+    indexedThroughBlock < 1 ||
+    !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash)
+  ) {
+    return {
+      complete: false,
+      reason: "generic-token-state-checkpoint-invalid",
+    };
+  }
+  const exactPositiveInteger = (value) => {
+    const text = String(value ?? "");
+    return /^[1-9][0-9]*$/u.test(text) ? text : "";
+  };
+  const definitions = new Map();
+  let reason = "";
+  for (const row of Array.isArray(definitionRows) ? definitionRows : []) {
+    const tokenId = String(row.token_id ?? "").trim().toLowerCase();
+    const ticker = String(row.ticker ?? "").trim().toUpperCase();
+    const registryAddress = String(row.registry_address ?? "").trim();
+    const bond = isBondTokenId(tokenId);
+    const maxSupply = bond
+      ? null
+      : exactPositiveInteger(row.max_supply);
+    const mintAmount = exactPositiveInteger(row.mint_amount);
+    const mintPriceSats = exactPositiveInteger(row.mint_price_sats);
+    if (
+      !/^[0-9a-f]{64}$/u.test(tokenId) ||
+      !/^[A-Z0-9]{1,12}$/u.test(ticker) ||
+      !isWorkAmoV5LivenetAddress(registryAddress) ||
+      (!bond && !maxSupply) ||
+      !mintAmount ||
+      !mintPriceSats ||
+      definitions.has(tokenId)
+    ) {
+      reason = "generic-token-state-definition-invalid";
+      break;
+    }
+    definitions.set(tokenId, {
+      confirmedSupplyAtoms: "0",
+      maxSupply,
+      mintAmount,
+      mintPriceSats,
+      registryAddress,
+      ticker,
+      tokenId,
+    });
+  }
+  const supply = new Map();
+  const holders = [];
+  if (!reason) {
+    for (const row of Array.isArray(balanceRows) ? balanceRows : []) {
+      const tokenId = String(row.token_id ?? "").trim().toLowerCase();
+      const address = String(row.address ?? "").trim();
+      const balance = exactPositiveInteger(row.confirmed_balance);
+      if (
+        !definitions.has(tokenId) ||
+        !isWorkAmoV5LivenetAddress(address) ||
+        !balance
+      ) {
+        reason = "generic-token-state-balance-invalid";
+        break;
+      }
+      holders.push({ address, balance, tokenId });
+      supply.set(
+        tokenId,
+        (supply.get(tokenId) ?? 0n) + BigInt(balance),
+      );
+    }
+  }
+  const listings = [];
+  if (!reason) {
+    for (const row of Array.isArray(listingRows) ? listingRows : []) {
+      const listingId = String(row.listing_id ?? "")
+        .trim()
+        .toLowerCase();
+      const tokenId = String(row.token_id ?? "").trim().toLowerCase();
+      const sellerAddress = String(row.seller_address ?? "").trim();
+      const amount = exactPositiveInteger(row.amount);
+      const priceSats = exactPositiveInteger(row.price_sats);
+      const definition = definitions.get(tokenId);
+      const saleAuthorization =
+        parseWorkAmoV5GenericSaleAuthorization(
+          row.sale_authorization,
+        );
+      if (
+        !/^[0-9a-f]{64}$/u.test(listingId) ||
+        !definition ||
+        !isWorkAmoV5LivenetAddress(sellerAddress) ||
+        !amount ||
+        !priceSats ||
+        !saleAuthorization ||
+        saleAuthorization.tokenId !== tokenId ||
+        String(saleAuthorization.amount) !== amount ||
+        String(saleAuthorization.priceSats) !== priceSats ||
+        saleAuthorization.sellerAddress !== sellerAddress ||
+        saleAuthorization.registryAddress !==
+          definition.registryAddress ||
+        saleAuthorization.ticker !== definition.ticker
+      ) {
+        reason = "generic-token-state-listing-invalid";
+        break;
+      }
+      listings.push({
+        amount,
+        listingId,
+        priceSats,
+        saleAuthorization: row.sale_authorization,
+        sellerAddress,
+        tokenId,
+      });
+    }
+  }
+  const tokens = [...definitions.values()].map((definition) => ({
+    ...definition,
+    confirmedSupplyAtoms:
+      (supply.get(definition.tokenId) ?? 0n).toString(),
+  }));
+  return {
+    complete: !reason,
+    holders: reason ? [] : holders,
+    indexedThroughBlock,
+    indexedThroughBlockHash,
+    listings: reason ? [] : listings,
+    model: "canonical-work-amo-v5-generic-token-state-sql-preimage-v1",
+    ...(reason ? { reason } : {}),
+    tokens: reason ? [] : tokens,
+  };
+}
+
+export async function proofIndexWorkAmoGenericTokenStatePreimage(
+  network,
+  {
+    blockHash,
+    blockHeight,
+  } = {},
+) {
+  const pool = proofIndexPool();
+  const expectedHeight = Number(blockHeight);
+  const expectedHash = String(blockHash ?? "").trim().toLowerCase();
+  if (
+    !pool ||
+    network !== "livenet" ||
+    !Number.isSafeInteger(expectedHeight) ||
+    expectedHeight < 1 ||
+    !/^[0-9a-f]{64}$/u.test(expectedHash)
+  ) {
+    return null;
+  }
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query(
+      "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+    );
+    transactionOpen = true;
+    const checkpointResult = await client.query(
+      `
+        SELECT height, lower(block_hash) AS block_hash
+        FROM proof_indexer.blocks
+        WHERE network = $1
+          AND canonical = true
+        ORDER BY height DESC, block_hash
+        LIMIT 2
+      `,
+      [network],
+    );
+    const checkpoint = checkpointResult.rows[0];
+    const checkpointUnique =
+      !checkpointResult.rows[1] ||
+      Number(checkpointResult.rows[1].height) !== Number(checkpoint?.height);
+    if (
+      !checkpointUnique ||
+      Number(checkpoint?.height) !== expectedHeight ||
+      String(checkpoint?.block_hash ?? "").trim().toLowerCase() !==
+        expectedHash
+    ) {
+      await client.query("COMMIT");
+      transactionOpen = false;
+      return {
+        complete: false,
+        indexedThroughBlock: Number(checkpoint?.height ?? 0),
+        indexedThroughBlockHash: String(
+          checkpoint?.block_hash ?? "",
+        )
+          .trim()
+          .toLowerCase(),
+        reason: "generic-token-state-checkpoint-mismatch",
+      };
+    }
+    const definitionResult = await client.query(
+      `
+        SELECT
+          lower(definition.token_id) AS token_id,
+          upper(definition.ticker) AS ticker,
+          definition.registry_address,
+          definition.max_supply::text AS max_supply,
+          definition.mint_amount::text AS mint_amount,
+          definition.mint_price_sats::text AS mint_price_sats
+        FROM proof_indexer.credit_definitions definition
+        WHERE definition.network = $1
+          AND lower(definition.token_id) <> $2
+          AND definition.confirmed = true
+          AND (
+            definition.metadata->>'canonicalSynthetic' = 'true'
+            OR EXISTS (
+              SELECT 1
+              FROM proof_indexer.transactions definition_transaction
+              JOIN proof_indexer.blocks definition_block
+                ON definition_block.network =
+                  definition_transaction.network
+               AND definition_block.block_hash =
+                  definition_transaction.block_hash
+               AND definition_block.height =
+                  definition_transaction.block_height
+               AND definition_block.canonical = true
+              WHERE definition_transaction.network =
+                  definition.network
+                AND definition_transaction.txid =
+                  definition.create_txid
+                AND definition_transaction.status = 'confirmed'
+            )
+          )
+        ORDER BY lower(definition.token_id)
+      `,
+      [network, WORK_TOKEN_ID],
+    );
+    const balanceResult = await client.query(
+      `
+        SELECT
+          lower(balance.token_id) AS token_id,
+          balance.address,
+          balance.confirmed_balance::text AS confirmed_balance
+        FROM proof_indexer.credit_balances balance
+        WHERE balance.network = $1
+          AND lower(balance.token_id) <> $2
+          AND balance.confirmed_balance > 0
+        ORDER BY
+          lower(balance.token_id),
+          balance.address
+      `,
+      [network, WORK_TOKEN_ID],
+    );
+    const listingResult = await client.query(
+      `
+        SELECT
+          lower(listing.listing_id) AS listing_id,
+          lower(listing.token_id) AS token_id,
+          listing.seller_address,
+          listing.amount::text AS amount,
+          listing.price_sats::text AS price_sats,
+          COALESCE(
+            listing.payload->'listingAuthorization',
+            listing.payload->'saleAuthorization'
+          ) AS sale_authorization
+        FROM proof_indexer.credit_listings listing
+        JOIN proof_indexer.transactions listing_transaction
+          ON listing_transaction.network = listing.network
+         AND listing_transaction.txid = listing.listing_id
+         AND listing_transaction.status = 'confirmed'
+        JOIN proof_indexer.blocks listing_block
+          ON listing_block.network = listing_transaction.network
+         AND listing_block.block_hash =
+           listing_transaction.block_hash
+         AND listing_block.height =
+           listing_transaction.block_height
+         AND listing_block.canonical = true
+        WHERE listing.network = $1
+          AND lower(listing.token_id) <> $2
+          AND listing.status IN ('active', 'sealing')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM proof_indexer.tx_inputs spend_input
+            JOIN proof_indexer.transactions spend_transaction
+              ON spend_transaction.network = spend_input.network
+             AND spend_transaction.txid = spend_input.txid
+             AND spend_transaction.status = 'confirmed'
+            JOIN proof_indexer.blocks spend_block
+              ON spend_block.network = spend_transaction.network
+             AND spend_block.block_hash =
+               spend_transaction.block_hash
+             AND spend_block.height =
+               spend_transaction.block_height
+             AND spend_block.canonical = true
+            WHERE spend_input.network = listing.network
+              AND spend_input.prev_txid = lower(
+                COALESCE(
+                  NULLIF(listing.sale_ticket_txid, ''),
+                  listing.listing_id
+                )
+              )
+              AND spend_input.prev_vout = listing.sale_ticket_vout
+          )
+        ORDER BY lower(listing.listing_id)
+      `,
+      [network, WORK_TOKEN_ID],
+    );
+    const preimage = workAmoV5GenericTokenStatePreimageFromRows({
+      balanceRows: balanceResult.rows,
+      blockHash: expectedHash,
+      blockHeight: expectedHeight,
+      definitionRows: definitionResult.rows,
+      listingRows: listingResult.rows,
+    });
+    await client.query("COMMIT");
+    transactionOpen = false;
+    return preimage;
+  } catch (error) {
+    if (transactionOpen) {
+      await client.query("ROLLBACK").catch(() => {});
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function proofIndexWorkAmoReplayReadiness(
+  network,
+  options = {},
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return {
+      declarationReady: false,
+      indexReady: false,
+      listingReady: false,
+      migrationReady: false,
+      positionsReady: false,
+      quoteReady: false,
+      ready: false,
+      reasons: ["database-not-configured"],
+    };
+  }
+  const tipResult = await pool.query(
+    `
+      SELECT height, lower(block_hash) AS block_hash
+      FROM proof_indexer.blocks
+      WHERE network = $1
+        AND canonical = true
+      ORDER BY height DESC, block_hash
+      LIMIT 2
+    `,
+    [network],
+  );
+  const canonicalTip = Number(tipResult.rows[0]?.height ?? 0);
+  const canonicalTipBlockHash = String(
+    tipResult.rows[0]?.block_hash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const canonicalTipUnique =
+    Number.isSafeInteger(canonicalTip) &&
+    canonicalTip > 0 &&
+    /^[0-9a-f]{64}$/u.test(canonicalTipBlockHash) &&
+    (
+      !tipResult.rows[1] ||
+      Number(tipResult.rows[1].height) !== canonicalTip
+    );
+  const requestedThroughHeight =
+    Number.isSafeInteger(Number(options.throughHeight)) &&
+    Number(options.throughHeight) > 0
+      ? Number(options.throughHeight)
+      : 0;
+  const requestedThroughBlockHash = String(
+    options.throughBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const requestedTipReady =
+    canonicalTipUnique &&
+    requestedThroughHeight === canonicalTip &&
+    requestedThroughBlockHash === canonicalTipBlockHash;
+  const throughHeight = requestedThroughHeight;
+  const declaration = await proofIndexWorkAmoV5Declaration(
+    network,
+    throughHeight,
+  );
+  const [
+    auditResult,
+    migrationResult,
+    quoteHead,
+    replayCheckpointResult,
+  ] = await Promise.all([
+    pool.query(
+      `
+        SELECT
+          count(*) FILTER (
+            WHERE event_row.block_height IS DISTINCT FROM
+                event_tx.block_height
+              OR event_row.block_index IS NULL
+              OR event_row.op_return_vout IS NULL
+              OR event_row.record_ordinal < 0
+              OR event_tx.block_index IS NULL
+              OR event_tx.block_index IS DISTINCT FROM event_row.block_index
+          )::integer AS missing_positions,
+          (
+            SELECT count(*)::integer
+            FROM (
+              SELECT 1
+              FROM proof_indexer.events duplicate_event
+              WHERE duplicate_event.network = $1
+                AND duplicate_event.status = 'confirmed'
+                AND duplicate_event.block_height BETWEEN $5 AND $3
+                AND duplicate_event.block_index IS NOT NULL
+                AND duplicate_event.op_return_vout IS NOT NULL
+              GROUP BY
+                duplicate_event.block_height,
+                duplicate_event.block_index,
+                duplicate_event.op_return_vout,
+                duplicate_event.record_ordinal
+              HAVING count(*) > 1
+            ) duplicate_positions
+          ) AS duplicate_positions,
+          (
+            SELECT count(*)::integer
+            FROM proof_indexer.credit_listings listing
+            LEFT JOIN proof_indexer.transactions listing_tx
+              ON listing_tx.network = listing.network
+             AND listing_tx.txid = listing.listing_id
+            WHERE listing.network = $1
+              AND lower(listing.token_id) = $4
+              AND listing.status IN ('active', 'sealing')
+              AND lower(COALESCE(
+                listing.payload->'saleAuthorization'->>'version',
+                ''
+              )) = 'pwt-sale-v3'
+              AND listing_tx.block_height >= $5
+          ) AS post_v1_v3_active,
+          (
+            SELECT count(*)::integer
+            FROM proof_indexer.credit_listings listing
+            LEFT JOIN proof_indexer.transactions listing_tx
+              ON listing_tx.network = listing.network
+             AND listing_tx.txid = listing.listing_id
+            WHERE listing.network = $1
+              AND lower(listing.token_id) = $4
+              AND listing.status IN ('active', 'sealing')
+              AND lower(COALESCE(
+                listing.payload->'saleAuthorization'->>'version',
+                ''
+              )) = $6
+              AND listing_tx.block_height >= $2
+          ) AS post_activation_v4_active,
+          (
+            SELECT count(*)::integer
+            FROM proof_indexer.events post_v5_v4_event
+            WHERE post_v5_v4_event.network = $1
+              AND post_v5_v4_event.status = 'confirmed'
+              AND post_v5_v4_event.valid = true
+              AND post_v5_v4_event.block_height >= $2
+              AND post_v5_v4_event.kind IN (
+                'token-listing',
+                'token-listing-sealed',
+                'token-sale',
+                'token-listing-closed'
+              )
+              AND lower(COALESCE(
+                post_v5_v4_event.payload
+                  ->'saleAuthorization'->>'tokenId',
+                post_v5_v4_event.payload
+                  ->'listingAuthorization'->>'tokenId',
+                post_v5_v4_event.payload->>'tokenId',
+                ''
+              )) = $4
+              AND lower(COALESCE(
+                post_v5_v4_event.payload
+                  ->'saleAuthorization'->>'version',
+                post_v5_v4_event.payload
+                  ->'listingAuthorization'->>'version',
+                ''
+              )) = $6
+          ) AS post_activation_v4_actions,
+          (
+            SELECT count(*)::integer
+            FROM proof_indexer.events historical_v4_event
+            JOIN proof_indexer.transactions historical_v4_tx
+              ON historical_v4_tx.network = historical_v4_event.network
+             AND historical_v4_tx.txid = historical_v4_event.txid
+             AND historical_v4_tx.status = 'confirmed'
+            JOIN proof_indexer.blocks historical_v4_block
+              ON historical_v4_block.network = historical_v4_tx.network
+             AND historical_v4_block.block_hash =
+               historical_v4_tx.block_hash
+             AND historical_v4_block.height =
+               historical_v4_tx.block_height
+             AND historical_v4_block.canonical = true
+            WHERE historical_v4_event.network = $1
+              AND historical_v4_event.status = 'confirmed'
+              AND historical_v4_event.block_height >= $5
+              AND historical_v4_event.block_height < $2
+              AND lower(COALESCE(
+                historical_v4_event.payload
+                  ->'saleAuthorization'->>'tokenId',
+                historical_v4_event.payload->>'tokenId',
+                ''
+              )) = $4
+              AND lower(COALESCE(
+                historical_v4_event.payload
+                  ->'saleAuthorization'->>'version',
+                ''
+              )) = $6
+              AND (
+                historical_v4_event.kind IN (
+                  'token-listing',
+                  'token-listing-sealed',
+                  'token-sale',
+                  'token-listing-closed'
+                )
+                OR (
+                  historical_v4_event.kind = 'token-event-invalid'
+                  AND lower(COALESCE(
+                    historical_v4_event.payload->>'attemptedKind',
+                    ''
+                  )) IN (
+                    'list',
+                    'seal',
+                    'buy',
+                    'delist',
+                    'token-listing',
+                    'token-listing-sealed',
+                    'token-sale',
+                    'token-listing-closed'
+                  )
+                )
+              )
+          ) AS pre_activation_v4_actions,
+          (
+            SELECT count(*)::integer
+            FROM proof_indexer.events listing_event
+            JOIN proof_indexer.transactions listing_tx
+              ON listing_tx.network = listing_event.network
+             AND listing_tx.txid = listing_event.txid
+             AND listing_tx.status = 'confirmed'
+             AND listing_tx.block_height = listing_event.block_height
+             AND listing_tx.block_index = listing_event.block_index
+            LEFT JOIN proof_indexer.work_amo_listing_terms terms
+              ON terms.network = listing_event.network
+             AND terms.listing_id = listing_event.txid
+             AND terms.listing_txid = listing_event.txid
+             AND terms.listing_block_height = listing_event.block_height
+             AND terms.listing_block_index = listing_event.block_index
+             AND terms.listing_protocol_vout =
+               listing_event.op_return_vout
+             AND terms.listing_record_ordinal =
+               listing_event.record_ordinal
+             AND lower(terms.listing_block_hash) =
+               lower(listing_tx.block_hash)
+            WHERE listing_event.network = $1
+              AND listing_event.status = 'confirmed'
+              AND listing_event.valid = true
+              AND listing_event.kind = 'token-listing'
+              AND lower(COALESCE(
+                listing_event.payload->'saleAuthorization'->>'version',
+                ''
+              )) = $7
+              AND listing_event.block_height BETWEEN $2 AND $3
+              AND terms.listing_id IS NULL
+          ) AS missing_frozen_terms
+        FROM proof_indexer.events event_row
+        JOIN proof_indexer.transactions event_tx
+          ON event_tx.network = event_row.network
+         AND event_tx.txid = event_row.txid
+        JOIN proof_indexer.blocks event_block
+          ON event_block.network = event_tx.network
+         AND event_block.block_hash = event_tx.block_hash
+         AND event_block.height = event_tx.block_height
+         AND event_block.canonical = true
+        WHERE event_row.network = $1
+          AND event_row.status = 'confirmed'
+          AND event_tx.status = 'confirmed'
+          AND event_row.protocol = ANY(
+            ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+          )
+          AND event_tx.block_height BETWEEN $5 AND $3
+      `,
+      [
+        network,
+        WORK_AMO_V5_ACTIVATION_HEIGHT,
+        Math.max(WORK_AMO_V1_ACTIVATION_HEIGHT, throughHeight),
+        WORK_TOKEN_ID,
+        WORK_AMO_V1_ACTIVATION_HEIGHT,
+        WORK_MARKET_V4_AUTH_VERSION,
+        WORK_AMO_V5_AUTH_VERSION,
+      ],
+    ),
+    pool.query(
+      `
+        SELECT value
+        FROM proof_indexer.meta
+        WHERE key = $1
+        LIMIT 1
+      `,
+      [`workAmoV5Migration:${network}`],
+    ),
+    proofIndexWorkUsdQuoteHead(network),
+    pool.query(
+      `
+        SELECT
+          (
+            SELECT value
+            FROM proof_indexer.meta
+            WHERE key = 'canonical:rebuild'
+            LIMIT 1
+          ) AS rebuild,
+          (
+            SELECT jsonb_build_object(
+              'blockHash', lower(seed_block.block_hash),
+              'blockHeight', seed_block.height,
+              'networkValueQ8',
+                seed_snapshot.payload->'totals'->>'workNetworkValueQ8',
+              'snapshotId', seed_snapshot.snapshot_id,
+              'summaryHash',
+                lower(seed_snapshot.source_hashes->>'canonicalSummary')
+            )
+            FROM proof_indexer.blocks seed_block
+            JOIN proof_indexer.ledger_snapshots seed_snapshot
+              ON seed_snapshot.network = seed_block.network
+             AND seed_snapshot.indexed_through_block = seed_block.height
+             AND lower(seed_snapshot.payload->>'indexedThroughBlockHash') =
+               lower(seed_block.block_hash)
+             AND lower(seed_snapshot.source_hashes->>'blockScan') =
+               lower(seed_block.block_hash)
+             AND seed_snapshot.source_hashes ? 'canonicalSummary'
+             AND seed_snapshot.consistency->>'ok' = 'true'
+             AND seed_snapshot.payload->>'ok' = 'true'
+             AND seed_snapshot.payload->>'status' = 'green'
+             AND seed_snapshot.payload->'totals'->>'workNetworkValueQ8' ~
+               '^[1-9][0-9]*$'
+             AND seed_snapshot.source_hashes->>'canonicalSummary' ~
+               '^[0-9a-fA-F]{64}$'
+            WHERE seed_block.network = $1
+              AND seed_block.canonical = true
+              AND seed_block.height = $2
+            ORDER BY seed_snapshot.generated_at DESC
+            LIMIT 1
+          ) AS seed,
+          (
+            SELECT jsonb_build_object(
+              'blockHash', lower(closing_block.block_hash),
+              'blockHeight', closing_block.height,
+              'networkValueQ8',
+                closing_snapshot.payload->'totals'->>'workNetworkValueQ8',
+              'snapshotId', closing_snapshot.snapshot_id,
+              'summaryHash',
+                lower(closing_snapshot.source_hashes->>'canonicalSummary')
+            )
+            FROM proof_indexer.blocks closing_block
+            JOIN proof_indexer.ledger_snapshots closing_snapshot
+              ON closing_snapshot.network = closing_block.network
+             AND closing_snapshot.indexed_through_block =
+               closing_block.height
+             AND lower(
+               closing_snapshot.payload->>'indexedThroughBlockHash'
+             ) = lower(closing_block.block_hash)
+             AND lower(closing_snapshot.source_hashes->>'blockScan') =
+               lower(closing_block.block_hash)
+             AND closing_snapshot.source_hashes ? 'canonicalSummary'
+             AND closing_snapshot.consistency->>'ok' = 'true'
+             AND closing_snapshot.payload->>'ok' = 'true'
+             AND closing_snapshot.payload->>'status' = 'green'
+             AND closing_snapshot.payload->'totals'
+               ->>'workNetworkValueQ8' ~ '^[1-9][0-9]*$'
+             AND closing_snapshot.source_hashes
+               ->>'canonicalSummary' ~ '^[0-9a-fA-F]{64}$'
+            WHERE closing_block.network = $1
+              AND closing_block.canonical = true
+              AND closing_block.height = $3
+              AND lower(closing_block.block_hash) = $4
+            ORDER BY closing_snapshot.generated_at DESC
+            LIMIT 1
+          ) AS closing,
+          EXISTS (
+            SELECT 1
+            FROM proof_indexer.ledger_snapshots scan
+            WHERE scan.network = $1
+              AND scan.indexed_through_block = $3
+              AND NOT COALESCE(
+                scan.source_hashes ? 'canonicalSummary',
+                false
+              )
+              AND (
+                COALESCE(scan.source_hashes ? 'blockScan', false)
+                OR scan.payload->>'source' =
+                  'proof-indexer-block-scan'
+              )
+              AND lower(COALESCE(
+                NULLIF(scan.payload->>'indexedThroughBlockHash', ''),
+                NULLIF(scan.payload->>'blockHash', ''),
+                NULLIF(scan.source_hashes->>'blockScan', '')
+              )) = $4
+              AND scan.payload->>'complete' = 'true'
+          ) AS block_scan_complete,
+          (
+            SELECT jsonb_build_object(
+              'blockCount', count(*),
+              'maximumHeight', max(transition.block_height),
+              'minimumHeight', min(transition.block_height),
+              'allComplete', bool_and(
+                transition.complete
+                AND transition.block_atomic
+                AND transition.fee_once
+                AND transition.invalid_zero
+              ),
+              'allContinuous', bool_and(
+                CASE
+                  WHEN transition.block_height = $5
+                    THEN transition.previous_block_hash = $6
+                  ELSE
+                    transition.previous_block_hash =
+                      transition.prior_block_hash
+                    AND transition.opening_state_sha256 =
+                      transition.prior_closing_state_sha256
+                END
+              )
+            )
+            FROM (
+              SELECT
+                stored_transition.*,
+                lag(stored_transition.block_hash) OVER (
+                  ORDER BY stored_transition.block_height
+                ) AS prior_block_hash,
+                lag(stored_transition.closing_state_sha256) OVER (
+                  ORDER BY stored_transition.block_height
+                ) AS prior_closing_state_sha256
+              FROM proof_indexer.work_amo_block_transitions
+                stored_transition
+              JOIN proof_indexer.blocks transition_block
+                ON transition_block.network = stored_transition.network
+               AND transition_block.block_hash =
+                 stored_transition.block_hash
+               AND transition_block.height =
+                 stored_transition.block_height
+               AND transition_block.previous_block_hash =
+                 stored_transition.previous_block_hash
+               AND transition_block.canonical = true
+              WHERE stored_transition.network = $1
+                AND stored_transition.block_height BETWEEN $5 AND $3
+                AND stored_transition.model = $7
+                AND stored_transition.payload
+                  ->>'transitionChainModel' = $8
+                AND stored_transition.payload
+                  ->'transitionChainCommitment'->>'model' = $8
+                AND stored_transition.payload
+                  ->'transitionChainCommitment'->>'sha256' ~
+                    '^[0-9a-f]{64}$'
+                AND stored_transition.payload
+                  ->'transitionChainCommitment'->>'payloadBytes' ~
+                    '^[1-9][0-9]*$'
+                AND stored_transition.payload
+                  ->>'blockDescriptorModel' = $9
+                AND stored_transition.payload
+                  ->'blockDescriptorCommitment'->>'model' = $10
+                AND stored_transition.payload
+                  ->'blockDescriptorCommitment'->>'sha256' ~
+                    '^[0-9a-f]{64}$'
+                AND stored_transition.payload
+                  ->'blockDescriptorCommitment'->>'payloadBytes' ~
+                    '^[1-9][0-9]*$'
+                AND stored_transition.payload
+                  ->>'blockTransactionCount' ~ '^[1-9][0-9]*$'
+                AND stored_transition.payload
+                  ->'bip141Witness'->>'model' = $11
+                AND (
+                  (
+                    stored_transition.payload
+                      ->'bip141Witness'->>'required' = 'false'
+                    AND stored_transition.payload
+                      ->'bip141Witness'
+                      ->>'witnessTransactionCount' = '0'
+                    AND stored_transition.payload
+                      ->'bip141Witness'->>'commitmentSha256' = ''
+                    AND stored_transition.payload
+                      ->'bip141Witness'
+                      ->>'witnessMerkleRootInternalHex' = ''
+                    AND stored_transition.payload
+                      ->'bip141Witness'->>'commitmentVout' IS NULL
+                    AND NOT (
+                      stored_transition.payload->'bip141Witness'
+                        ? 'commitmentScriptPubKeyHex'
+                    )
+                    AND NOT (
+                      stored_transition.payload->'bip141Witness'
+                        ? 'coinbaseWitnessReservedValueHex'
+                    )
+                  )
+                  OR
+                  (
+                    stored_transition.payload
+                      ->'bip141Witness'->>'required' = 'true'
+                    AND stored_transition.payload
+                      ->'bip141Witness'
+                      ->>'witnessTransactionCount' ~
+                        '^[1-9][0-9]*$'
+                    AND stored_transition.payload
+                      ->'bip141Witness'->>'commitmentVout' ~
+                        '^(?:0|[1-9][0-9]*)$'
+                    AND stored_transition.payload
+                      ->'bip141Witness'->>'commitmentSha256' ~
+                        '^[0-9a-f]{64}$'
+                    AND stored_transition.payload
+                      ->'bip141Witness'
+                      ->>'witnessMerkleRootInternalHex' ~
+                        '^[0-9a-f]{64}$'
+                    AND stored_transition.payload
+                      ->'bip141Witness'
+                      ->>'coinbaseWitnessReservedValueHex' ~
+                        '^[0-9a-f]{64}$'
+                    AND stored_transition.payload
+                      ->'bip141Witness'
+                      ->>'commitmentScriptPubKeyHex' ~
+                        '^6a24aa21a9ed[0-9a-f]+$'
+                    AND length(
+                      stored_transition.payload
+                        ->'bip141Witness'
+                        ->>'commitmentScriptPubKeyHex'
+                    ) % 2 = 0
+                    AND substring(
+                      stored_transition.payload
+                        ->'bip141Witness'
+                        ->>'commitmentScriptPubKeyHex'
+                      FROM 13 FOR 64
+                    ) = stored_transition.payload
+                      ->'bip141Witness'->>'commitmentSha256'
+                  )
+                )
+            ) transition
+          ) AS transitions,
+          (
+            SELECT jsonb_build_object(
+              'blockHash', transition.block_hash,
+              'blockHeight', transition.block_height,
+              'closingNetworkValueQ8',
+                transition.closing_network_value_q8::text,
+              'closingStateSha256', transition.closing_state_sha256,
+              'closingTokenStateCommitment',
+                transition.payload
+                  ->'closingSufficientState'
+                  ->'tokenStateCommitment',
+              'eventSetSha256', transition.event_set_sha256,
+              'blockDescriptorCommitment',
+                transition.payload->'blockDescriptorCommitment',
+              'blockDescriptorModel',
+                transition.payload->>'blockDescriptorModel',
+              'blockTransactionCount',
+                transition.payload->>'blockTransactionCount',
+              'bip141Witness',
+                transition.payload->'bip141Witness',
+              'transitionChainCommitment',
+                transition.payload->'transitionChainCommitment',
+              'transitionChainModel',
+                transition.payload->>'transitionChainModel'
+            )
+            FROM proof_indexer.work_amo_block_transitions transition
+            JOIN proof_indexer.blocks transition_block
+              ON transition_block.network = transition.network
+             AND transition_block.block_hash = transition.block_hash
+             AND transition_block.height = transition.block_height
+             AND transition_block.canonical = true
+            WHERE transition.network = $1
+              AND transition.block_height = $3
+              AND transition.block_hash = $4
+              AND transition.model = $7
+              AND transition.payload->>'transitionChainModel' = $8
+              AND transition.payload
+                ->'transitionChainCommitment'->>'model' = $8
+              AND transition.payload
+                ->'transitionChainCommitment'->>'sha256' ~
+                  '^[0-9a-f]{64}$'
+              AND transition.payload
+                ->'transitionChainCommitment'->>'payloadBytes' ~
+                  '^[1-9][0-9]*$'
+              AND transition.payload->>'blockDescriptorModel' = $9
+              AND transition.payload
+                ->'blockDescriptorCommitment'->>'model' = $10
+              AND transition.payload
+                ->'blockDescriptorCommitment'->>'sha256' ~
+                  '^[0-9a-f]{64}$'
+              AND transition.payload
+                ->'blockDescriptorCommitment'->>'payloadBytes' ~
+                  '^[1-9][0-9]*$'
+              AND transition.payload->>'blockTransactionCount' ~
+                  '^[1-9][0-9]*$'
+              AND transition.payload
+                ->'bip141Witness'->>'model' = $11
+              AND (
+                (
+                  transition.payload
+                    ->'bip141Witness'->>'required' = 'false'
+                  AND transition.payload
+                    ->'bip141Witness'
+                    ->>'witnessTransactionCount' = '0'
+                  AND transition.payload
+                    ->'bip141Witness'->>'commitmentSha256' = ''
+                  AND transition.payload
+                    ->'bip141Witness'
+                    ->>'witnessMerkleRootInternalHex' = ''
+                  AND transition.payload
+                    ->'bip141Witness'->>'commitmentVout' IS NULL
+                  AND NOT (
+                    transition.payload->'bip141Witness'
+                      ? 'commitmentScriptPubKeyHex'
+                  )
+                  AND NOT (
+                    transition.payload->'bip141Witness'
+                      ? 'coinbaseWitnessReservedValueHex'
+                  )
+                )
+                OR
+                (
+                  transition.payload
+                    ->'bip141Witness'->>'required' = 'true'
+                  AND transition.payload
+                    ->'bip141Witness'
+                    ->>'witnessTransactionCount' ~
+                      '^[1-9][0-9]*$'
+                  AND transition.payload
+                    ->'bip141Witness'->>'commitmentVout' ~
+                      '^(?:0|[1-9][0-9]*)$'
+                  AND transition.payload
+                    ->'bip141Witness'->>'commitmentSha256' ~
+                      '^[0-9a-f]{64}$'
+                  AND transition.payload
+                    ->'bip141Witness'
+                    ->>'witnessMerkleRootInternalHex' ~
+                      '^[0-9a-f]{64}$'
+                  AND transition.payload
+                    ->'bip141Witness'
+                    ->>'coinbaseWitnessReservedValueHex' ~
+                      '^[0-9a-f]{64}$'
+                  AND transition.payload
+                    ->'bip141Witness'
+                    ->>'commitmentScriptPubKeyHex' ~
+                      '^6a24aa21a9ed[0-9a-f]+$'
+                  AND length(
+                    transition.payload
+                      ->'bip141Witness'
+                      ->>'commitmentScriptPubKeyHex'
+                  ) % 2 = 0
+                  AND substring(
+                    transition.payload
+                      ->'bip141Witness'
+                      ->>'commitmentScriptPubKeyHex'
+                    FROM 13 FOR 64
+                  ) = transition.payload
+                    ->'bip141Witness'->>'commitmentSha256'
+                )
+              )
+            LIMIT 1
+          ) AS transition_tip
+      `,
+      [
+        network,
+        WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        canonicalTip,
+        canonicalTipBlockHash,
+        WORK_AMO_V5_ACTIVATION_HEIGHT,
+        WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+        WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
+        WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+        WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
+        WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+        WORK_AMO_V5_RAW_BIP141_WITNESS_MODEL,
+      ],
+    ),
+  ]);
+  const audit = auditResult.rows[0] ?? {};
+  const migration =
+    migrationResult.rows[0]?.value &&
+    typeof migrationResult.rows[0].value === "object"
+      ? migrationResult.rows[0].value
+      : {};
+  const replayCheckpoint = replayCheckpointResult.rows[0] ?? {};
+  const rebuild =
+    replayCheckpoint.rebuild &&
+    typeof replayCheckpoint.rebuild === "object" &&
+    !Array.isArray(replayCheckpoint.rebuild)
+      ? replayCheckpoint.rebuild
+      : {};
+  const replayEvidence =
+    migration.replayEvidence &&
+    typeof migration.replayEvidence === "object" &&
+    !Array.isArray(migration.replayEvidence)
+      ? migration.replayEvidence
+      : {};
+  const bootstrapCertificate =
+    migration.bootstrapCertificate &&
+    typeof migration.bootstrapCertificate === "object" &&
+    !Array.isArray(migration.bootstrapCertificate)
+      ? migration.bootstrapCertificate
+      : {
+          blockDescriptorModel:
+            replayEvidence.transitionReplay?.blockDescriptorModel,
+          finalBlockDescriptorCommitment:
+            replayEvidence.transitionReplay
+              ?.finalBlockDescriptorCommitment,
+          finalBlockTransactionCount:
+            replayEvidence.transitionReplay
+              ?.finalBlockTransactionCount,
+          finalBip141Witness:
+            replayEvidence.transitionReplay
+              ?.finalBip141Witness,
+          finalTipCommitment:
+            replayEvidence.transitionReplay?.finalTipCommitment,
+          finalTransitionChainCommitment:
+            replayEvidence.transitionReplay
+              ?.finalTransitionChainCommitment,
+          seedCommitment:
+            replayEvidence.independentSeed?.commitment,
+          throughBlockHash: replayEvidence.throughBlockHash,
+          throughHeight: replayEvidence.throughHeight,
+          transitionSetSha256:
+            replayEvidence.transitionReplay?.transitionSetSha256,
+          transitionChainModel:
+            replayEvidence.transitionReplay?.transitionChainModel,
+        };
+  const markerSeed =
+    replayEvidence.seed &&
+    typeof replayEvidence.seed === "object" &&
+    !Array.isArray(replayEvidence.seed)
+      ? replayEvidence.seed
+      : {};
+  const markerClosing =
+    replayEvidence.closing &&
+    typeof replayEvidence.closing === "object" &&
+    !Array.isArray(replayEvidence.closing)
+      ? replayEvidence.closing
+      : {};
+  const currentSeed =
+    replayCheckpoint.seed &&
+    typeof replayCheckpoint.seed === "object" &&
+    !Array.isArray(replayCheckpoint.seed)
+      ? replayCheckpoint.seed
+      : {};
+  const currentClosing =
+    replayCheckpoint.closing &&
+    typeof replayCheckpoint.closing === "object" &&
+    !Array.isArray(replayCheckpoint.closing)
+      ? replayCheckpoint.closing
+      : {};
+  const currentTransitions =
+    replayCheckpoint.transitions &&
+    typeof replayCheckpoint.transitions === "object" &&
+    !Array.isArray(replayCheckpoint.transitions)
+      ? replayCheckpoint.transitions
+      : {};
+  const currentTransitionTip =
+    replayCheckpoint.transition_tip &&
+    typeof replayCheckpoint.transition_tip === "object" &&
+    !Array.isArray(replayCheckpoint.transition_tip)
+      ? replayCheckpoint.transition_tip
+      : {};
+  const bootstrapHeight = Number(bootstrapCertificate.throughHeight);
+  const bootstrapBlockHash = String(
+    bootstrapCertificate.throughBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const bootstrapTransition =
+    Number.isSafeInteger(bootstrapHeight) &&
+    bootstrapHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT &&
+    bootstrapHeight <= canonicalTip &&
+    /^[0-9a-f]{64}$/u.test(bootstrapBlockHash)
+      ? await proofIndexWorkAmoBlockTransition(
+          network,
+          bootstrapHeight,
+          bootstrapBlockHash,
+        )
+      : null;
+  const relationalTokenState =
+    await proofIndexWorkAmoRelationalTokenStateEvidence(
+      network,
+      currentTransitionTip.closingTokenStateCommitment ?? {},
+    );
+  const markerRelationalTokenState =
+    replayEvidence.relationalTokenState &&
+    typeof replayEvidence.relationalTokenState === "object" &&
+    !Array.isArray(replayEvidence.relationalTokenState)
+      ? replayEvidence.relationalTokenState
+      : {};
+  const markerFinalTipCommitment =
+    bootstrapCertificate.finalTipCommitment &&
+    typeof bootstrapCertificate.finalTipCommitment === "object"
+      ? bootstrapCertificate.finalTipCommitment
+      : {};
+  const markerFinalTransitionChainCommitment =
+    bootstrapCertificate.finalTransitionChainCommitment &&
+    typeof bootstrapCertificate.finalTransitionChainCommitment === "object"
+      ? bootstrapCertificate.finalTransitionChainCommitment
+      : {};
+  const markerFinalBlockDescriptorCommitment =
+    bootstrapCertificate.finalBlockDescriptorCommitment &&
+    typeof bootstrapCertificate.finalBlockDescriptorCommitment === "object"
+      ? bootstrapCertificate.finalBlockDescriptorCommitment
+      : {};
+  const currentTipBlockDescriptorCommitment =
+    currentTransitionTip.blockDescriptorCommitment &&
+    typeof currentTransitionTip.blockDescriptorCommitment === "object"
+      ? currentTransitionTip.blockDescriptorCommitment
+      : {};
+  const currentTipTransitionChainCommitment =
+    currentTransitionTip.transitionChainCommitment &&
+    typeof currentTransitionTip.transitionChainCommitment === "object"
+      ? currentTransitionTip.transitionChainCommitment
+      : {};
+  const markerFinalBip141Witness =
+    normalizedWorkAmoV5Bip141Witness(
+      bootstrapCertificate.finalBip141Witness,
+      Number(bootstrapCertificate.finalBlockTransactionCount),
+    );
+  const replayFinalBip141Witness =
+    normalizedWorkAmoV5Bip141Witness(
+      replayEvidence.transitionReplay?.finalBip141Witness,
+      Number(
+        replayEvidence.transitionReplay?.finalBlockTransactionCount,
+      ),
+    );
+  const bootstrapBip141Witness =
+    normalizedWorkAmoV5Bip141Witness(
+      bootstrapTransition?.payload?.bip141Witness,
+      Number(bootstrapTransition?.payload?.blockTransactionCount),
+    );
+  const currentTipBip141Witness =
+    normalizedWorkAmoV5Bip141Witness(
+      currentTransitionTip.bip141Witness,
+      Number(currentTransitionTip.blockTransactionCount),
+    );
+  const expectedTransitionBlockCount =
+    canonicalTip - WORK_AMO_V5_ACTIVATION_HEIGHT + 1;
+  const reasons = [];
+  const declarationReady = declaration?.active === true;
+  const positionsReady =
+    Number(audit.missing_positions ?? 0) === 0 &&
+    Number(audit.duplicate_positions ?? 0) === 0;
+  const migrationReady =
+    requestedTipReady &&
+    migration.status === "complete" &&
+    migration.model === "canonical-work-amo-v5-migration-v2" &&
+    migration.declarationTxid === WORK_AMO_V5_DECLARATION_TXID &&
+    Number(migration.activationHeight) === WORK_AMO_V5_ACTIVATION_HEIGHT &&
+    Number(migration.replayFromHeight) === WORK_AMO_V5_ACTIVATION_HEIGHT &&
+    replayEvidence.complete === true &&
+    replayEvidence.endTipParity === true &&
+    replayEvidence.blockAtomic === true &&
+    replayEvidence.transitionReplay?.complete === true &&
+    replayEvidence.transitionReplay?.endTipParity === true &&
+    replayEvidence.transitionReplay?.blockAtomic === true &&
+    replayEvidence.transitionReplay?.blockDescriptorModel ===
+      WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL &&
+    bootstrapCertificate.blockDescriptorModel ===
+      WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL &&
+    replayEvidence.transitionReplay?.transitionChainModel ===
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL &&
+    bootstrapCertificate.transitionChainModel ===
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL &&
+    markerRelationalTokenState.complete === true &&
+    relationalTokenState.complete === true &&
+    bootstrapTransition !== null &&
+    Number(replayEvidence.throughHeight) === bootstrapHeight &&
+    String(replayEvidence.throughBlockHash ?? "").trim().toLowerCase() ===
+      bootstrapBlockHash &&
+    Number(markerClosing.blockHeight) === bootstrapHeight &&
+    String(markerClosing.blockHash ?? "").trim().toLowerCase() ===
+      bootstrapBlockHash &&
+    String(bootstrapTransition.closing_state_sha256 ?? "")
+      .trim()
+      .toLowerCase() ===
+      String(markerFinalTipCommitment.sha256 ?? "").trim().toLowerCase() &&
+    Number(bootstrapTransition.closing_state_payload_bytes) ===
+      Number(markerFinalTipCommitment.payloadBytes) &&
+    markerFinalBlockDescriptorCommitment.model ===
+      WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL &&
+    Number.isSafeInteger(
+      Number(markerFinalBlockDescriptorCommitment.payloadBytes),
+    ) &&
+    Number(markerFinalBlockDescriptorCommitment.payloadBytes) > 0 &&
+    /^[0-9a-f]{64}$/u.test(
+      String(markerFinalBlockDescriptorCommitment.sha256 ?? "")
+        .trim()
+        .toLowerCase(),
+    ) &&
+    String(
+      bootstrapTransition.payload?.blockDescriptorCommitment?.sha256 ?? "",
+    )
+      .trim()
+      .toLowerCase() ===
+      String(markerFinalBlockDescriptorCommitment.sha256 ?? "")
+        .trim()
+        .toLowerCase() &&
+    Number(
+      bootstrapTransition.payload?.blockDescriptorCommitment?.payloadBytes,
+    ) === Number(markerFinalBlockDescriptorCommitment.payloadBytes) &&
+    Number(bootstrapTransition.payload?.blockTransactionCount) ===
+      Number(bootstrapCertificate.finalBlockTransactionCount) &&
+    Number(
+      replayEvidence.transitionReplay?.finalBlockTransactionCount,
+    ) === Number(bootstrapCertificate.finalBlockTransactionCount) &&
+    Boolean(markerFinalBip141Witness) &&
+    Boolean(replayFinalBip141Witness) &&
+    Boolean(bootstrapBip141Witness) &&
+    workAmoV5Bip141WitnessesEqual(
+      markerFinalBip141Witness,
+      replayFinalBip141Witness,
+      Number(bootstrapCertificate.finalBlockTransactionCount),
+    ) &&
+    workAmoV5Bip141WitnessesEqual(
+      markerFinalBip141Witness,
+      bootstrapBip141Witness,
+      Number(bootstrapCertificate.finalBlockTransactionCount),
+    ) &&
+    markerFinalTransitionChainCommitment.model ===
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL &&
+    Number.isSafeInteger(
+      Number(markerFinalTransitionChainCommitment.payloadBytes),
+    ) &&
+    Number(markerFinalTransitionChainCommitment.payloadBytes) > 0 &&
+    /^[0-9a-f]{64}$/u.test(
+      String(markerFinalTransitionChainCommitment.sha256 ?? "")
+        .trim()
+        .toLowerCase(),
+    ) &&
+    String(
+      bootstrapTransition.payload?.transitionChainCommitment?.sha256 ?? "",
+    )
+      .trim()
+      .toLowerCase() ===
+      String(markerFinalTransitionChainCommitment.sha256 ?? "")
+        .trim()
+        .toLowerCase() &&
+    Number(
+      bootstrapTransition.payload?.transitionChainCommitment?.payloadBytes,
+    ) === Number(markerFinalTransitionChainCommitment.payloadBytes) &&
+    Number(markerSeed.blockHeight) ===
+      WORK_AMO_V5_ACTIVATION_HEIGHT - 1 &&
+    String(markerSeed.blockHash ?? "").trim().toLowerCase() ===
+      String(currentSeed.blockHash ?? "").trim().toLowerCase() &&
+    String(markerSeed.networkValueQ8 ?? "") ===
+      String(currentSeed.networkValueQ8 ?? "") &&
+    String(markerSeed.summaryHash ?? "").trim().toLowerCase() ===
+      String(currentSeed.summaryHash ?? "").trim().toLowerCase() &&
+    Number(currentClosing.blockHeight) === canonicalTip &&
+    String(currentClosing.blockHash ?? "").trim().toLowerCase() ===
+      canonicalTipBlockHash &&
+    expectedTransitionBlockCount > 0 &&
+    Number(currentTransitions.blockCount) === expectedTransitionBlockCount &&
+    Number(currentTransitions.minimumHeight) ===
+      WORK_AMO_V5_ACTIVATION_HEIGHT &&
+    Number(currentTransitions.maximumHeight) === canonicalTip &&
+    currentTransitions.allComplete === true &&
+    currentTransitions.allContinuous === true &&
+    Number(currentTransitionTip.blockHeight) === canonicalTip &&
+    String(currentTransitionTip.blockHash ?? "").trim().toLowerCase() ===
+      canonicalTipBlockHash &&
+    currentTransitionTip.transitionChainModel ===
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL &&
+    currentTransitionTip.blockDescriptorModel ===
+      WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL &&
+    currentTipBlockDescriptorCommitment.model ===
+      WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL &&
+    Number.isSafeInteger(
+      Number(currentTipBlockDescriptorCommitment.payloadBytes),
+    ) &&
+    Number(currentTipBlockDescriptorCommitment.payloadBytes) > 0 &&
+    /^[0-9a-f]{64}$/u.test(
+      String(currentTipBlockDescriptorCommitment.sha256 ?? "")
+        .trim()
+        .toLowerCase(),
+    ) &&
+    Number.isSafeInteger(
+      Number(currentTransitionTip.blockTransactionCount),
+    ) &&
+    Number(currentTransitionTip.blockTransactionCount) > 0 &&
+    Boolean(currentTipBip141Witness) &&
+    currentTipTransitionChainCommitment.model ===
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL &&
+    Number.isSafeInteger(
+      Number(currentTipTransitionChainCommitment.payloadBytes),
+    ) &&
+    Number(currentTipTransitionChainCommitment.payloadBytes) > 0 &&
+    /^[0-9a-f]{64}$/u.test(
+      String(currentTipTransitionChainCommitment.sha256 ?? "")
+        .trim()
+        .toLowerCase(),
+    ) &&
+    String(currentTransitionTip.closingNetworkValueQ8 ?? "") ===
+      String(currentClosing.networkValueQ8 ?? "") &&
+    /^[0-9a-f]{64}$/u.test(
+      String(currentTransitionTip.closingStateSha256 ?? "")
+        .trim()
+        .toLowerCase(),
+    ) &&
+    replayCheckpoint.block_scan_complete === true &&
+    rebuild.network === network &&
+    rebuild.status === "complete" &&
+    rebuild.complete === true &&
+    rebuild.active === false &&
+    Number(rebuild.indexedThroughBlock) === canonicalTip &&
+    String(rebuild.indexedThroughBlockHash ?? "").trim().toLowerCase() ===
+      canonicalTipBlockHash;
+  const legacyStateReady =
+    Number(audit.post_v1_v3_active ?? 0) === 0 &&
+    Number(audit.post_activation_v4_active ?? 0) === 0 &&
+    Number(audit.post_activation_v4_actions ?? 0) === 0;
+  const frozenTermsReady = Number(audit.missing_frozen_terms ?? 0) === 0;
+  const quoteReady = Boolean(quoteHead);
+  const indexReady =
+    declarationReady &&
+    requestedTipReady &&
+    migrationReady &&
+    positionsReady &&
+    legacyStateReady &&
+    frozenTermsReady;
+  const listingReady = indexReady && quoteReady;
+  if (!declarationReady) reasons.push("declaration-not-ready");
+  if (!requestedTipReady) reasons.push("canonical-tip-not-current");
+  if (!migrationReady) reasons.push("migration-not-complete");
+  if (!positionsReady) reasons.push("canonical-positions-incomplete");
+  if (!legacyStateReady) reasons.push("legacy-market-state-active");
+  if (!frozenTermsReady) reasons.push("frozen-listing-terms-incomplete");
+  return {
+    activationHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    canonicalTip,
+    canonicalTipBlockHash,
+    declaration,
+    declarationReady,
+    duplicatePositions: Number(audit.duplicate_positions ?? 0),
+    frozenTermsReady,
+    indexReady,
+    legacyStateReady,
+    listingReady,
+    migration,
+    migrationReady,
+    missingFrozenTerms: Number(audit.missing_frozen_terms ?? 0),
+    missingPositions: Number(audit.missing_positions ?? 0),
+    positionsReady,
+    preActivationV4Actions: Number(
+      audit.pre_activation_v4_actions ?? 0,
+    ),
+    postActivationV4Active: Number(audit.post_activation_v4_active ?? 0),
+    postActivationV4Actions: Number(
+      audit.post_activation_v4_actions ?? 0,
+    ),
+    postV1V3Active: Number(audit.post_v1_v3_active ?? 0),
+    quoteHead,
+    quoteReady,
+    ready: indexReady,
+    relationalTokenState,
+    reasons,
+    requestedThroughBlockHash,
+    requestedThroughHeight,
+    requestedTipReady,
+    transitionBlockCount: Number(currentTransitions.blockCount ?? 0),
+    transitionTip: currentTransitionTip,
+    listingReasons: quoteReady ? reasons : [...reasons, "usd-quote-head-missing"],
+    throughHeight,
+  };
+}
+
 async function payloadWithVerifiedWorkMarketV4Activation(
   pool,
   network,
@@ -685,7 +3959,109 @@ function tokenRegistryAddressFromPayload(payload, actor, counterparty, fallback 
   );
 }
 
-function tokenSaleFromEventPayload(payload) {
+function canonicalMovementPositionFromEventRow(payload, row = {}) {
+  const exactInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const eventStatus = String(row?.status ?? payload?.status ?? "")
+    .trim()
+    .toLowerCase();
+  const transactionStatus = String(row?.transaction_status ?? "")
+    .trim()
+    .toLowerCase();
+  const effectiveStatus = String(
+    row?.effective_status ?? eventStatus,
+  )
+    .trim()
+    .toLowerCase();
+  const confirmed =
+    effectiveStatus === "confirmed" || payload?.confirmed === true;
+  const relationalHeight = exactInteger(row?.block_height, 1);
+  const payloadHeight = exactInteger(payload?.blockHeight, 1);
+  const transactionBlockHeight = exactInteger(
+    row?.transaction_block_height,
+    1,
+  );
+  const candidateHeight =
+    relationalHeight ?? transactionBlockHeight ?? payloadHeight;
+  const postActivation =
+    confirmed &&
+    candidateHeight !== null &&
+    candidateHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT;
+  if (postActivation) {
+    const blockIndex = exactInteger(row?.block_index, 0);
+    const protocolVout = exactInteger(
+      row?.op_return_vout ?? row?.protocol_vout,
+      0,
+    );
+    const recordOrdinal = exactInteger(row?.record_ordinal, 0);
+    const transactionBlockIndex = exactInteger(
+      row?.transaction_block_index,
+      0,
+    );
+    const blockHash = String(row?.block_hash ?? "").trim().toLowerCase();
+    const canonicalBlockHash = String(
+      row?.canonical_block_hash ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    if (
+      relationalHeight === null ||
+      eventStatus !== "confirmed" ||
+      transactionStatus !== "confirmed" ||
+      blockIndex === null ||
+      protocolVout === null ||
+      recordOrdinal === null ||
+      transactionBlockHeight !== relationalHeight ||
+      transactionBlockIndex !== blockIndex ||
+      !/^[0-9a-f]{64}$/u.test(blockHash) ||
+      canonicalBlockHash !== blockHash
+    ) {
+      throw new Error(
+        "Canonical AMO V5 movement position is incomplete or noncanonical.",
+      );
+    }
+    return {
+      blockHash,
+      blockHeight: relationalHeight,
+      blockIndex,
+      protocolVout,
+      recordOrdinal,
+    };
+  }
+  const blockIndex = exactInteger(
+    row?.block_index ?? payload?.blockIndex ?? payload?._powBlockIndex,
+    0,
+  );
+  const protocolVout = exactInteger(
+    row?.op_return_vout ??
+      row?.protocol_vout ??
+      payload?.protocolVout,
+    0,
+  );
+  const recordOrdinal = exactInteger(
+    row?.record_ordinal ?? payload?.recordOrdinal,
+    0,
+  );
+  const blockHash = String(
+    row?.block_hash ?? payload?.blockHash ?? payload?._powBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  return {
+    ...(blockHash ? { blockHash } : {}),
+    ...(candidateHeight !== null ? { blockHeight: candidateHeight } : {}),
+    ...(blockIndex !== null ? { blockIndex } : {}),
+    ...(protocolVout !== null ? { protocolVout } : {}),
+    ...(recordOrdinal !== null ? { recordOrdinal } : {}),
+  };
+}
+
+function tokenSaleFromEventPayload(payload, row = {}) {
   const tagNumbers = tokenMarketNumbersFromTags(payload);
   const tokenId = String(payload?.tokenId ?? "").trim().toLowerCase();
   const workAmount = isWorkTokenId(tokenId)
@@ -715,7 +4091,9 @@ function tokenSaleFromEventPayload(payload) {
     buyerAddress,
     sellerAddress,
   );
+  const position = canonicalMovementPositionFromEventRow(payload, row);
   return {
+    ...position,
     amount,
     ...(workAmount
       ? {
@@ -924,9 +4302,7 @@ function compareTokenHolderBalances(left, right) {
       return difference;
     }
   }
-  return String(left?.address ?? "").localeCompare(
-    String(right?.address ?? ""),
-  );
+  return compareCanonicalUtf8(left?.address, right?.address);
 }
 
 function activeTokenListingHistoryItem(listing) {
@@ -966,7 +4342,8 @@ function canonicalWorkMarketV3ListingProjectionSql(listingAlias = "cl") {
       ''
     )) NOT IN (
       '${WORK_MARKET_V2_AUTH_VERSION}',
-      '${WORK_MARKET_V4_AUTH_VERSION}'
+      '${WORK_MARKET_V4_AUTH_VERSION}',
+      '${WORK_AMO_V5_AUTH_VERSION}'
     )
     OR (
       EXISTS (
@@ -1046,6 +4423,10 @@ function canonicalTokenListingSealEventJoinSql(listingAlias = "cl") {
       ON canonical_seal_tx.network = canonical_seal_event_row.network
      AND canonical_seal_tx.txid = canonical_seal_event_row.txid
      AND canonical_seal_tx.status = 'confirmed'
+     AND canonical_seal_tx.block_height =
+       canonical_seal_event_row.block_height
+     AND canonical_seal_tx.block_index =
+       canonical_seal_event_row.block_index
     JOIN proof_indexer.blocks canonical_seal_block
       ON canonical_seal_block.network = canonical_seal_tx.network
      AND canonical_seal_block.block_hash = canonical_seal_tx.block_hash
@@ -1070,7 +4451,11 @@ function canonicalTokenListingSealEventJoinSql(listingAlias = "cl") {
         ${alias}.payload->'saleAuthorization'->>'version',
         ''
       ))
-    ORDER BY canonical_seal_event_row.event_id DESC
+    ORDER BY
+      canonical_seal_event_row.block_height DESC,
+      canonical_seal_event_row.block_index DESC,
+      canonical_seal_event_row.op_return_vout DESC,
+      canonical_seal_event_row.record_ordinal DESC
     LIMIT 1
   ) canonical_seal_event ON true`;
 }
@@ -1310,11 +4695,13 @@ function tokenTransferFromEventPayload(payload, row = {}) {
     : rowNumber(payload, "amount") ||
       rowNumber(payload, "tokenAmount") ||
       tokenTransferAmountFromTags(payload, ticker);
+  const position = canonicalMovementPositionFromEventRow(payload, row);
   return {
     ...canonicalEventIdentityDetails({
       ...payload,
       eventId: payload?.eventId ?? row?.event_id,
     }),
+    ...position,
     amount,
     ...(workAmount
       ? {
@@ -1323,20 +4710,6 @@ function tokenTransferFromEventPayload(payload, row = {}) {
           unitScale: WORK_UNIT_SCALE_TEXT,
         }
       : {}),
-    blockHash: String(
-      row?.block_hash ?? payload?.blockHash ?? payload?._powBlockHash ?? "",
-    )
-      .trim()
-      .toLowerCase(),
-    blockHeight:
-      rowNumber(row, "block_height") || rowNumber(payload, "blockHeight"),
-    blockIndex: rowNumber(
-      {
-        value:
-          row?.block_index ?? payload?.blockIndex ?? payload?._powBlockIndex,
-      },
-      "value",
-    ),
     confirmed:
       row.status === "confirmed" || payload?.confirmed === true,
     createdAt: dateIso(
@@ -1883,12 +5256,14 @@ function tokenMintFromEventPayload(payload, row = {}) {
           positive: true,
         })
     : "";
+  const position = canonicalMovementPositionFromEventRow(payload, row);
 
   return {
     ...canonicalEventIdentityDetails({
       ...payload,
       eventId: payload?.eventId ?? row?.event_id,
     }),
+    ...position,
     amount: workAmount
       ? workAmount.amount
       : bondAmount ||
@@ -1945,19 +5320,6 @@ function tokenMintFromEventPayload(payload, row = {}) {
           payload,
           "attachedWorkLiveValueAtSendSats",
         ),
-    blockHash: String(
-      row?.block_hash ?? payload?.blockHash ?? payload?._powBlockHash ?? "",
-    )
-      .trim()
-      .toLowerCase(),
-    blockHeight: rowNumber(row, "block_height") || rowNumber(payload, "blockHeight"),
-    blockIndex: rowNumber(
-      {
-        value:
-          row?.block_index ?? payload?.blockIndex ?? payload?._powBlockIndex,
-      },
-      "value",
-    ),
     confirmed: effectiveStatus === "confirmed" || payload?.confirmed === true,
     createdAt: dateIso(
       payload?.createdAt ??
@@ -2092,7 +5454,7 @@ function tokenMintFromEventPayload(payload, row = {}) {
   };
 }
 
-function tokenHistoryItemFromMarketEventPayload(payload, safeKind) {
+function tokenHistoryItemFromMarketEventPayload(payload, safeKind, row = {}) {
   if (payload?.kind === "token-listing" || payload?.kind === "token-listings") {
     const listing = tokenListingFromEventPayload(payload);
     if (!activeTokenListingHistoryItem(listing)) {
@@ -2132,7 +5494,7 @@ function tokenHistoryItemFromMarketEventPayload(payload, safeKind) {
   }
 
   if (payload?.kind === "token-sale") {
-    const sale = tokenSaleFromEventPayload(payload);
+    const sale = tokenSaleFromEventPayload(payload, row);
     if (!sale.txid || !sale.listingId || !sale.tokenId) {
       return null;
     }
@@ -2199,8 +5561,10 @@ function compareTokenItemsByTime(left, right) {
   return (
     (Number.isFinite(rightTime) ? rightTime : 0) -
       (Number.isFinite(leftTime) ? leftTime : 0) ||
-    String(right?.txid ?? right?.closedTxid ?? right?.listingId ?? "")
-      .localeCompare(String(left?.txid ?? left?.closedTxid ?? left?.listingId ?? ""))
+    compareCanonicalUtf8(
+      right?.txid ?? right?.closedTxid ?? right?.listingId,
+      left?.txid ?? left?.closedTxid ?? left?.listingId,
+    )
   );
 }
 
@@ -2234,18 +5598,28 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
     NULLIF(cl_event.listing_id, ''),
     e.txid
   ))`;
+  const canonicalSaleKey = `CASE
+    WHEN e.status = 'confirmed'
+      AND e.block_height >= ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+      THEN 'sale:' || lower(e.txid) || ':' || ${listingId} || ':' ||
+        e.block_height::text || ':' ||
+        e.block_index::text || ':' ||
+        e.op_return_vout::text || ':' ||
+        e.record_ordinal::text
+    ELSE 'sale:' || lower(e.txid)
+  END`;
   const canonicalKey =
     safeKind === "listings"
       ? `'listing:' || ${listingId}`
       : safeKind === "sales"
-        ? `'sale:' || lower(e.txid)`
+        ? canonicalSaleKey
         : safeKind === "closedListings"
           ? `'closed:' || ${listingId} || ':' || lower(e.txid)`
           : `CASE
               WHEN e.kind = ANY(${listingKinds})
                 THEN 'listing:' || ${listingId}
               WHEN e.kind = 'token-sale'
-                THEN 'sale:' || lower(e.txid)
+                THEN ${canonicalSaleKey}
               WHEN e.kind = 'token-listing-closed'
                 THEN 'closed:' || ${listingId} || ':' || lower(e.txid)
               ELSE e.kind || ':' || e.event_id::text
@@ -2279,6 +5653,14 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
         e.block_time,
         e.created_at,
         e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
+        event_tx.status AS transaction_status,
+        event_tx.block_height AS transaction_block_height,
+        event_tx.block_index AS transaction_block_index,
+        event_tx.block_hash AS block_hash,
+        event_block.block_hash AS canonical_block_hash,
         e.txid,
         e.event_id,
         COALESCE(cd.token_id, cl_event.token_id) AS token_id,
@@ -2307,6 +5689,14 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
             e.event_id DESC
         ) AS canonical_history_rank
       FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.transactions event_tx
+        ON event_tx.network = e.network
+       AND event_tx.txid = e.txid
+      LEFT JOIN proof_indexer.blocks event_block
+        ON event_block.network = event_tx.network
+       AND event_block.block_hash = event_tx.block_hash
+       AND event_block.height = event_tx.block_height
+       AND event_block.canonical = true
       LEFT JOIN proof_indexer.credit_listings cl_event
         ON cl_event.network = e.network
        AND cl_event.listing_id = lower(e.payload->>'listingId')
@@ -2320,6 +5710,10 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
           ON canonical_seal_tx.network = canonical_seal_event_row.network
          AND canonical_seal_tx.txid = canonical_seal_event_row.txid
          AND canonical_seal_tx.status = 'confirmed'
+         AND canonical_seal_tx.block_height =
+           canonical_seal_event_row.block_height
+         AND canonical_seal_tx.block_index =
+           canonical_seal_event_row.block_index
         JOIN proof_indexer.blocks canonical_seal_block
           ON canonical_seal_block.network = canonical_seal_tx.network
          AND canonical_seal_block.block_hash = canonical_seal_tx.block_hash
@@ -2353,9 +5747,14 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
             ''
           )) IN (
             '${WORK_MARKET_V2_AUTH_VERSION}',
-            '${WORK_MARKET_V4_AUTH_VERSION}'
+            '${WORK_MARKET_V4_AUTH_VERSION}',
+            '${WORK_AMO_V5_AUTH_VERSION}'
           )
-        ORDER BY canonical_seal_event_row.event_id DESC
+        ORDER BY
+          canonical_seal_event_row.block_height DESC,
+          canonical_seal_event_row.block_index DESC,
+          canonical_seal_event_row.op_return_vout DESC,
+          canonical_seal_event_row.record_ordinal DESC
         LIMIT 1
       ) canonical_seal_event ON true
       LEFT JOIN proof_indexer.credit_definitions cd
@@ -2384,6 +5783,55 @@ function tokenListingId(item) {
     .toLowerCase();
 }
 
+function canonicalTokenMarketHistorySaleKey(item, network = "") {
+  const sale = item?.sale ?? item;
+  const txid = normalizedLowerText(sale?.txid ?? item?.txid);
+  const blockHeight =
+    sale?.blockHeight !== undefined &&
+    sale?.blockHeight !== null &&
+    sale?.blockHeight !== "" &&
+    Number.isSafeInteger(Number(sale.blockHeight)) &&
+    Number(sale.blockHeight) >= 1
+      ? Number(sale.blockHeight)
+      : null;
+  if (
+    sale?.confirmed === true &&
+    blockHeight !== null &&
+    blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    const exactPositionInteger = (value) =>
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      Number.isSafeInteger(Number(value)) &&
+      Number(value) >= 0
+        ? Number(value)
+        : null;
+    const blockIndex = exactPositionInteger(sale?.blockIndex);
+    const protocolVout = exactPositionInteger(sale?.protocolVout);
+    const recordOrdinal = exactPositionInteger(sale?.recordOrdinal);
+    if (
+      blockIndex === null ||
+      protocolVout === null ||
+      recordOrdinal === null
+    ) {
+      throw new Error(
+        "Canonical AMO V5 market sale position is incomplete.",
+      );
+    }
+    return [
+      normalizedLowerText(sale?.network ?? network),
+      txid,
+      normalizedLowerText(sale?.listingId),
+      blockHeight,
+      blockIndex,
+      protocolVout,
+      recordOrdinal,
+    ].join(":");
+  }
+  return txid;
+}
+
 function currentRelationalHistoryPageWithScanCoverage(page, scan) {
   if (!page) {
     return null;
@@ -2404,7 +5852,7 @@ function currentRelationalHistoryPageWithScanCoverage(page, scan) {
 function tokenHistoryItemKey(item, safeKind) {
   if (safeKind === "market-log") {
     if (item?.kind === "sale") {
-      return `sale:${String(item.sale?.txid ?? item.txid ?? "").toLowerCase()}`;
+      return `sale:${canonicalTokenMarketHistorySaleKey(item)}`;
     }
     if (item?.kind === "closed-listing") {
       return `closed:${String(
@@ -2427,7 +5875,7 @@ function tokenHistoryItemKey(item, safeKind) {
   }
 
   if (safeKind === "sales") {
-    return `sale:${String(item?.txid ?? "").toLowerCase()}`;
+    return `sale:${canonicalTokenMarketHistorySaleKey(item)}`;
   }
 
   return String(item?.txid ?? item?.listingId ?? JSON.stringify(item));
@@ -2493,7 +5941,10 @@ function compareTokenHistoryMarketItems(left, right) {
       ? Number(tokenHistoryItemConfirmed(right)) -
         Number(tokenHistoryItemConfirmed(left))
       : 0) ||
-    tokenHistoryItemTxid(right).localeCompare(tokenHistoryItemTxid(left)) ||
+    compareCanonicalUtf8(
+      tokenHistoryItemTxid(right),
+      tokenHistoryItemTxid(left),
+    ) ||
     (marketLogPair
       ? tokenHistoryItemKindRank(left) - tokenHistoryItemKindRank(right)
       : 0)
@@ -2568,7 +6019,7 @@ function preferredTokenListingSealSource(left, right) {
     return leftTime > rightTime ? left : right;
   }
 
-  return String(left?.sealTxid ?? "").localeCompare(String(right?.sealTxid ?? "")) >= 0
+  return compareCanonicalUtf8(left?.sealTxid, right?.sealTxid) >= 0
     ? left
     : right;
 }
@@ -2709,6 +6160,46 @@ function mergeCanonicalTokenSaleRecord(current, incoming) {
     ...current,
     createdAt: current.createdAt ?? incoming.createdAt,
   };
+}
+
+function canonicalTokenSaleProjectionKey(sale, network) {
+  const normalizedNetwork = normalizedLowerText(sale?.network ?? network);
+  const txid = normalizedLowerText(sale?.txid);
+  const listingId = normalizedLowerText(sale?.listingId);
+  return `${normalizedNetwork}:${txid}:${listingId}`;
+}
+
+function isWorkAmoV5ListingSaleProjection(sale) {
+  const saleAuthorization = objectRecord(sale?.saleAuthorization);
+  return (
+    isWorkTokenId(sale?.tokenId ?? saleAuthorization.tokenId) &&
+    normalizedLowerText(saleAuthorization.version) ===
+      WORK_AMO_V5_AUTH_VERSION
+  );
+}
+
+function canonicalTokenSalesWithListingEnrichment(
+  marketSales,
+  listingSales,
+  network,
+) {
+  const canonicalSales = Array.isArray(marketSales) ? marketSales : [];
+  const projectedSales = Array.isArray(listingSales) ? listingSales : [];
+  const canonicalSaleKeys = new Set(
+    canonicalSales.map((sale) =>
+      canonicalTokenSaleProjectionKey(sale, network),
+    ),
+  );
+  const admissibleListingSales = projectedSales.filter(
+    (sale) =>
+      !isWorkAmoV5ListingSaleProjection(sale) ||
+      canonicalSaleKeys.has(canonicalTokenSaleProjectionKey(sale, network)),
+  );
+  return uniqueTokenItems(
+    [...canonicalSales, ...admissibleListingSales],
+    (sale) => canonicalTokenSaleProjectionKey(sale, network),
+    mergeCanonicalTokenSaleRecord,
+  );
 }
 
 function mergeCanonicalTokenClosedListingRecord(current, incoming) {
@@ -2943,17 +6434,15 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
         e.event_time,
         COALESCE(e.block_time, t.block_time) AS block_time,
         e.created_at,
-        COALESCE(e.block_height, t.block_height) AS block_height,
+        e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
+        t.status AS transaction_status,
+        t.block_height AS transaction_block_height,
+        t.block_index AS transaction_block_index,
         t.block_hash AS block_hash,
-        CASE
-          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
-            THEN (e.payload->>'blockIndex')::integer
-          WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
-            THEN (e.payload->>'_powBlockIndex')::integer
-          WHEN t.raw_tx->'canonicalBlockScan'->>'blockIndex' ~ '^[0-9]+$'
-            THEN (t.raw_tx->'canonicalBlockScan'->>'blockIndex')::integer
-          ELSE NULL
-        END AS block_index,
+        canonical_block.block_hash AS canonical_block_hash,
         e.txid,
         e.event_id,
         e.amount_sats,
@@ -2978,10 +6467,17 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
         NULLIF(e.payload->>'issuanceValueSnapshotWorkNetworkValueSats', '')
           AS issuance_value_snapshot_work_network_value_sats_text,
         CASE
+          WHEN COALESCE(t.status, e.status) = 'confirmed'
+            AND e.block_height >= ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            THEN NULL
           WHEN e.payload->>'eventKeyVout' ~ '^[0-9]{1,9}$'
             THEN (e.payload->>'eventKeyVout')::integer
           ELSE 0
         END AS mint_ordinal,
+        (
+          COALESCE(t.status, e.status) = 'confirmed'
+          AND e.block_height >= ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+        ) AS canonical_v5_position,
         COALESCE(
           NULLIF(btrim(e.payload->>'minterAddress'), ''),
           NULLIF(btrim(e.payload->>'actor'), ''),
@@ -2992,6 +6488,11 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
       LEFT JOIN proof_indexer.transactions t
         ON t.network = e.network
        AND t.txid = e.txid
+      LEFT JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = t.network
+       AND canonical_block.block_hash = t.block_hash
+       AND canonical_block.height = t.block_height
+       AND canonical_block.canonical = true
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = e.network
        AND cd.token_id = lower(e.payload->>'tokenId')
@@ -3004,7 +6505,12 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
       SELECT DISTINCT ON (
         lower(txid),
         lower(COALESCE(token_id, '')),
-        mint_ordinal,
+        canonical_v5_position,
+        CASE WHEN canonical_v5_position THEN block_height ELSE NULL END,
+        CASE WHEN canonical_v5_position THEN block_index ELSE NULL END,
+        CASE WHEN canonical_v5_position THEN op_return_vout ELSE NULL END,
+        CASE WHEN canonical_v5_position THEN record_ordinal ELSE NULL END,
+        CASE WHEN canonical_v5_position THEN NULL ELSE mint_ordinal END,
         lower(mint_recipient_address)
       )
         *
@@ -3012,7 +6518,12 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
       ORDER BY
         lower(txid),
         lower(COALESCE(token_id, '')),
-        mint_ordinal,
+        canonical_v5_position,
+        CASE WHEN canonical_v5_position THEN block_height ELSE NULL END,
+        CASE WHEN canonical_v5_position THEN block_index ELSE NULL END,
+        CASE WHEN canonical_v5_position THEN op_return_vout ELSE NULL END,
+        CASE WHEN canonical_v5_position THEN record_ordinal ELSE NULL END,
+        CASE WHEN canonical_v5_position THEN NULL ELSE mint_ordinal END,
         lower(mint_recipient_address),
         CASE effective_status
           WHEN 'confirmed' THEN 0
@@ -3058,6 +6569,44 @@ function canonicalTokenMintCandidateRows(rows) {
       .toLowerCase();
     return status === "confirmed" ? 0 : status === "pending" ? 1 : 2;
   };
+  const exactNonNegativeInteger = (value, minimum = 0) =>
+    value !== undefined &&
+    value !== null &&
+    value !== "" &&
+    Number.isSafeInteger(Number(value)) &&
+    Number(value) >= minimum
+      ? Number(value)
+      : null;
+  const canonicalV5Position = (row) => {
+    if (statusRank(row) !== 0) {
+      return null;
+    }
+    const blockHeight = exactNonNegativeInteger(row?.block_height, 1);
+    if (
+      blockHeight === null ||
+      blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT
+    ) {
+      return null;
+    }
+    const blockIndex = exactNonNegativeInteger(row?.block_index);
+    const protocolVout = exactNonNegativeInteger(row?.op_return_vout);
+    const recordOrdinal = exactNonNegativeInteger(row?.record_ordinal);
+    if (
+      blockIndex === null ||
+      protocolVout === null ||
+      recordOrdinal === null
+    ) {
+      throw new Error(
+        "Canonical AMO V5 mint candidate position is incomplete.",
+      );
+    }
+    return {
+      blockHeight,
+      blockIndex,
+      protocolVout,
+      recordOrdinal,
+    };
+  };
   const candidateWins = (candidate, current) => {
     const candidateStatusRank = statusRank(candidate);
     const currentStatusRank = statusRank(current);
@@ -3094,6 +6643,19 @@ function canonicalTokenMintCandidateRows(rows) {
     if (leftTxid !== rightTxid) {
       return leftTxid < rightTxid ? 1 : -1;
     }
+    const leftPosition = canonicalV5Position(left);
+    const rightPosition = canonicalV5Position(right);
+    if (leftPosition || rightPosition) {
+      if (!leftPosition) return 1;
+      if (!rightPosition) return -1;
+      const positionComparison =
+        leftPosition.blockIndex - rightPosition.blockIndex ||
+        leftPosition.protocolVout - rightPosition.protocolVout ||
+        leftPosition.recordOrdinal - rightPosition.recordOrdinal;
+      if (positionComparison !== 0) {
+        return positionComparison;
+      }
+    }
     const leftOrdinal = ordinal(left?.mint_ordinal);
     const rightOrdinal = ordinal(right?.mint_ordinal);
     if (leftOrdinal !== rightOrdinal) {
@@ -3115,10 +6677,19 @@ function canonicalTokenMintCandidateRows(rows) {
   };
 
   for (const row of Array.isArray(rows) ? rows : []) {
+    const position = canonicalV5Position(row);
     const key = JSON.stringify([
       String(row?.txid ?? "").trim().toLowerCase(),
       String(row?.token_id ?? "").trim().toLowerCase(),
-      ordinal(row?.mint_ordinal),
+      position
+        ? [
+            "v5",
+            position.blockHeight,
+            position.blockIndex,
+            position.protocolVout,
+            position.recordOrdinal,
+          ]
+        : ["legacy", ordinal(row?.mint_ordinal)],
       String(row?.mint_recipient_address ?? "").trim().toLowerCase(),
     ]);
     const current = byMintKey.get(key);
@@ -3271,7 +6842,7 @@ export async function proofIndexTokenMintStatsPayload(
     ...rows.map((row) => rowNumber(row, "block_height")),
   );
   const pendingCandidateRows = [...pendingCandidatesByTxid.values()].sort(
-    (left, right) => left.txid.localeCompare(right.txid),
+    (left, right) => compareCanonicalUtf8(left.txid, right.txid),
   );
   const pendingCandidateSupply = pendingCandidateRows.reduce(
     (total, candidate) => total + candidate.amount,
@@ -3634,9 +7205,14 @@ async function exactActiveTokenListingHistoryPage(
     network,
     snapshotHeight,
   );
-  const currentWorkMarketAuthorizationVersion = workMarketV4Activation
-    ? WORK_MARKET_V4_AUTH_VERSION
-    : WORK_MARKET_V2_AUTH_VERSION;
+  const currentWorkMarketAuthorizationVersion =
+    network === "livenet" &&
+      (snapshotHeight === 0 ||
+        snapshotHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT)
+      ? WORK_AMO_V5_AUTH_VERSION
+      : workMarketV4Activation
+        ? WORK_MARKET_V4_AUTH_VERSION
+        : WORK_MARKET_V2_AUTH_VERSION;
   const workMarketV2Active =
     network === "livenet" &&
     (snapshotHeight === 0 ||
@@ -4167,9 +7743,23 @@ function maxAtomicStrings(left, right) {
 }
 
 function canonicalEventIdentityDetails(item = {}) {
-  return ["_powEventIndex", "eventKeyVout", "protocolVout", "eventId"]
+  return [
+    "_powEventIndex",
+    "eventKeyVout",
+    "protocolVout",
+    "recordOrdinal",
+    "eventId",
+  ]
     .reduce((details, key) => {
-      const value = Number(item?.[key]);
+      const rawValue = item?.[key];
+      if (
+        rawValue === undefined ||
+        rawValue === null ||
+        rawValue === ""
+      ) {
+        return details;
+      }
+      const value = Number(rawValue);
       if (Number.isSafeInteger(value) && value >= 0) {
         details[key] = value;
       }
@@ -4364,11 +7954,59 @@ function itemCreatedAtMs(item) {
 function compareHistoryItems(left, right) {
   return (
     itemCreatedAtMs(right) - itemCreatedAtMs(left) ||
-    String(right?.txid ?? "").localeCompare(String(left?.txid ?? ""))
+    compareCanonicalUtf8(right?.txid, left?.txid)
   );
 }
 
 function historyActivityKey(item) {
+  const blockHeight =
+    item?.blockHeight !== undefined &&
+    item?.blockHeight !== null &&
+    item?.blockHeight !== "" &&
+    Number.isSafeInteger(Number(item.blockHeight)) &&
+    Number(item.blockHeight) >= 1
+      ? Number(item.blockHeight)
+      : null;
+  if (
+    item?.confirmed === true &&
+    blockHeight !== null &&
+    blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    const exactPositionInteger = (field) => {
+      const value = item?.[field];
+      return value !== undefined &&
+        value !== null &&
+        value !== "" &&
+        Number.isSafeInteger(Number(value)) &&
+        Number(value) >= 0
+        ? Number(value)
+        : null;
+    };
+    const blockIndex = exactPositionInteger("blockIndex");
+    const protocolVout = exactPositionInteger("protocolVout");
+    const recordOrdinal = exactPositionInteger("recordOrdinal");
+    if (
+      blockIndex === null ||
+      protocolVout === null ||
+      recordOrdinal === null
+    ) {
+      throw new Error(
+        "Canonical post-AMO-V5 activity position is incomplete.",
+      );
+    }
+    return [
+      item?.kind,
+      item?.network,
+      item?.txid,
+      "v5",
+      blockHeight,
+      blockIndex,
+      protocolVout,
+      recordOrdinal,
+      item?.listingId ?? "",
+      item?.id ?? "",
+    ].join(":");
+  }
   if (item?.kind === "token-listing-closed" && item?.txid) {
     return `${item.kind}:${item.network}:${item.txid}`;
   }
@@ -5379,9 +9017,14 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     network,
     snapshotHeight,
   );
-  const currentWorkMarketAuthorizationVersion = workMarketV4Activation
-    ? WORK_MARKET_V4_AUTH_VERSION
-    : WORK_MARKET_V2_AUTH_VERSION;
+  const currentWorkMarketAuthorizationVersion =
+    network === "livenet" &&
+      (snapshotHeight === 0 ||
+        snapshotHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT)
+      ? WORK_AMO_V5_AUTH_VERSION
+      : workMarketV4Activation
+        ? WORK_MARKET_V4_AUTH_VERSION
+        : WORK_MARKET_V2_AUTH_VERSION;
   const conditions = [
     "e.network = $1",
     "e.valid = true",
@@ -5471,7 +9114,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     conditions.push(
       `(e.status IS DISTINCT FROM 'dropped')`,
       `(e.payload ? 'saleAuthorization')`,
-      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2','${WORK_MARKET_V2_AUTH_VERSION}','${WORK_MARKET_V4_AUTH_VERSION}']::text[]))`,
+      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2','${WORK_MARKET_V2_AUTH_VERSION}','${WORK_MARKET_V4_AUTH_VERSION}','${WORK_AMO_V5_AUTH_VERSION}']::text[]))`,
       `(e.payload->'saleAuthorization'->>'anchorType' = 'sale-ticket-v1')`,
     );
     if (
@@ -5605,6 +9248,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
       tokenHistoryItemFromMarketEventPayload(
         tokenMarketEventRowPayload(row, network),
         safeKind,
+        row,
       ),
     )
     .filter(Boolean)
@@ -5839,6 +9483,9 @@ export async function proofIndexLogHistoryPayload(
           e.block_time,
           e.created_at,
           e.block_height,
+          e.block_index,
+          e.op_return_vout,
+          e.record_ordinal,
           e.txid,
           e.event_id
         FROM matched_events matched
@@ -6100,6 +9747,9 @@ export async function proofIndexLogHistoryPayload(
           e.block_time,
           e.created_at,
           e.block_height,
+          e.block_index,
+          e.op_return_vout,
+          e.record_ordinal,
           e.txid,
           e.event_id
         FROM proof_indexer.events e
@@ -6145,6 +9795,9 @@ export async function proofIndexLogHistoryPayload(
         e.block_time,
         e.created_at,
         e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
         e.txid,
         e.event_id
       FROM proof_indexer.events e
@@ -6279,6 +9932,15 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
         e.block_time,
         e.created_at,
         e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
+        COALESCE(event_tx.status, e.status) AS effective_status,
+        event_tx.status AS transaction_status,
+        event_tx.block_height AS transaction_block_height,
+        event_tx.block_index AS transaction_block_index,
+        event_tx.block_hash AS block_hash,
+        event_block.block_hash AS canonical_block_hash,
         e.txid,
         e.event_id,
         COALESCE(cd.token_id, cl_event.token_id) AS token_id,
@@ -6291,6 +9953,14 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
         cl_event.price_sats AS listing_price_sats,
         cl_event.payload AS listing_payload
       FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.transactions event_tx
+        ON event_tx.network = e.network
+       AND event_tx.txid = e.txid
+      LEFT JOIN proof_indexer.blocks event_block
+        ON event_block.network = event_tx.network
+       AND event_block.block_hash = event_tx.block_hash
+       AND event_block.height = event_tx.block_height
+       AND event_block.canonical = true
       LEFT JOIN proof_indexer.credit_listings cl_event
         ON cl_event.network = e.network
        AND cl_event.listing_id = lower(e.payload->>'listingId')
@@ -6321,7 +9991,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
     }
 
     if (payload?.kind === "token-sale") {
-      const sale = tokenSaleFromEventPayload(payload);
+      const sale = tokenSaleFromEventPayload(payload, row);
       if (sale.txid && sale.listingId && sale.tokenId) {
         sales.push(sale);
         closedListings.push(tokenClosedListingFromSalePayload(sale));
@@ -6450,6 +10120,11 @@ async function currentTokenTransferHistoryPage(
     LEFT JOIN proof_indexer.credit_definitions cd
       ON cd.network = e.network
      AND cd.token_id = lower(e.payload->>'tokenId')
+    LEFT JOIN proof_indexer.blocks canonical_block
+      ON canonical_block.network = t.network
+     AND canonical_block.height = t.block_height
+     AND canonical_block.block_hash = t.block_hash
+     AND canonical_block.canonical = true
     WHERE ${conditions.join(" AND ")}
   `;
   const countResult = await pool.query(
@@ -6472,20 +10147,18 @@ async function currentTokenTransferHistoryPage(
         e.event_id,
         e.network,
         e.txid,
-        e.status AS event_status,
-        COALESCE(t.status, e.status) AS status,
+        e.status,
+        COALESCE(t.status, e.status) AS effective_status,
+        t.status AS transaction_status,
         e.amount_sats,
         e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
+        t.block_height AS transaction_block_height,
+        t.block_index AS transaction_block_index,
         t.block_hash AS block_hash,
-        CASE
-          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
-            THEN (e.payload->>'blockIndex')::integer
-          WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
-            THEN (e.payload->>'_powBlockIndex')::integer
-          WHEN t.raw_tx->'canonicalBlockScan'->>'blockIndex' ~ '^[0-9]+$'
-            THEN (t.raw_tx->'canonicalBlockScan'->>'blockIndex')::integer
-          ELSE NULL
-        END AS block_index,
+        canonical_block.block_hash AS canonical_block_hash,
         e.block_time,
         e.event_time,
         e.created_at,
@@ -8340,11 +12013,14 @@ async function canonicalIncbReplayBondRows(client, network, manifest) {
         t.txid,
         t.block_height,
         lower(t.block_hash) AS block_hash,
-        CASE
-          WHEN t.raw_tx->>'_powBlockIndex' ~ '^[0-9]+$'
-            THEN (t.raw_tx->>'_powBlockIndex')::integer
-          ELSE NULL
-        END AS block_index,
+        COALESCE(
+          t.block_index,
+          CASE
+            WHEN t.raw_tx->>'_powBlockIndex' ~ '^[0-9]+$'
+              THEN (t.raw_tx->>'_powBlockIndex')::integer
+            ELSE NULL
+          END
+        ) AS block_index,
         lower(block.previous_block_hash) AS previous_block_hash,
         t.raw_tx
       FROM proof_indexer.transactions t
@@ -8553,13 +12229,14 @@ export async function proofIndexCanonicalInceptionMintWitnessesPayload(
           COALESCE(e.block_time, t.block_time) AS block_time,
           e.created_at,
           e.block_height,
+          e.block_index,
+          e.op_return_vout,
+          e.record_ordinal,
+          t.status AS transaction_status,
           t.block_height AS transaction_block_height,
-          t.block_hash,
-          CASE
-            WHEN t.raw_tx->>'_powBlockIndex' ~ '^[0-9]+$'
-              THEN (t.raw_tx->>'_powBlockIndex')::integer
-            ELSE NULL
-          END AS block_index,
+          t.block_index AS transaction_block_index,
+          t.block_hash AS block_hash,
+          current_block.block_hash AS canonical_block_hash,
           e.txid,
           e.event_id,
           e.amount_sats,
@@ -8600,6 +12277,7 @@ export async function proofIndexCanonicalInceptionMintWitnessesPayload(
          AND t.txid = e.txid
          AND t.status = 'confirmed'
          AND t.block_height = e.block_height
+         AND t.block_index = e.block_index
         JOIN proof_indexer.blocks current_block
           ON current_block.network = t.network
          AND current_block.height = t.block_height
@@ -8624,7 +12302,7 @@ export async function proofIndexCanonicalInceptionMintWitnessesPayload(
           AND e.block_height BETWEEN $3 AND $4
         ORDER BY
           e.block_height ASC,
-          block_index ASC NULLS LAST,
+          e.block_index ASC,
           e.txid ASC,
           e.event_id ASC
       `,
@@ -9051,11 +12729,7 @@ export async function proofIndexCanonicalTransactionsPayload(
         AND raw_tx->'canonicalBlockScan'->>'network' = $1
       ORDER BY
         block_height ASC,
-        CASE
-          WHEN raw_tx->>'_powBlockIndex' ~ '^[0-9]+$'
-            THEN (raw_tx->>'_powBlockIndex')::integer
-          ELSE 2147483647
-        END ASC,
+        block_index ASC NULLS LAST,
         txid ASC
     `,
       [network, fromHeight, actualHeight],
@@ -9328,8 +13002,8 @@ async function proofIndexWalletTokenDefinitions(
   }
   return [...definitionsById.values()].sort(
     (left, right) =>
-      String(left?.ticker ?? "").localeCompare(String(right?.ticker ?? "")) ||
-      String(left?.tokenId ?? "").localeCompare(String(right?.tokenId ?? "")),
+      compareCanonicalUtf8(left?.ticker, right?.ticker) ||
+      compareCanonicalUtf8(left?.tokenId, right?.tokenId),
   );
 }
 
@@ -9834,16 +13508,15 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
         e.valid,
         e.amount_sats,
         e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
+        COALESCE(t.status, e.status) AS effective_status,
+        t.status AS transaction_status,
+        t.block_height AS transaction_block_height,
+        t.block_index AS transaction_block_index,
         t.block_hash AS block_hash,
-        CASE
-          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
-            THEN (e.payload->>'blockIndex')::integer
-          WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
-            THEN (e.payload->>'_powBlockIndex')::integer
-          WHEN t.raw_tx->'canonicalBlockScan'->>'blockIndex' ~ '^[0-9]+$'
-            THEN (t.raw_tx->'canonicalBlockScan'->>'blockIndex')::integer
-          ELSE NULL
-        END AS block_index,
+        canonical_block.block_hash AS canonical_block_hash,
         e.block_time,
         e.event_time,
         e.created_at,
@@ -9855,6 +13528,11 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
       LEFT JOIN proof_indexer.transactions t
         ON t.network = e.network
        AND t.txid = e.txid
+      LEFT JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = t.network
+       AND canonical_block.block_hash = t.block_hash
+       AND canonical_block.height = t.block_height
+       AND canonical_block.canonical = true
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = e.network
        AND cd.token_id = lower(e.payload->>'tokenId')
@@ -10252,6 +13930,15 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
         e.block_time,
         e.created_at,
         e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
+        COALESCE(event_tx.status, e.status) AS effective_status,
+        event_tx.status AS transaction_status,
+        event_tx.block_height AS transaction_block_height,
+        event_tx.block_index AS transaction_block_index,
+        event_tx.block_hash AS block_hash,
+        event_block.block_hash AS canonical_block_hash,
         e.txid,
         e.event_id,
         COALESCE(cd.token_id, cl_event.token_id) AS token_id,
@@ -10264,6 +13951,14 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
         cl_event.price_sats AS listing_price_sats,
         cl_event.payload AS listing_payload
       FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.transactions event_tx
+        ON event_tx.network = e.network
+       AND event_tx.txid = e.txid
+      LEFT JOIN proof_indexer.blocks event_block
+        ON event_block.network = event_tx.network
+       AND event_block.block_hash = event_tx.block_hash
+       AND event_block.height = event_tx.block_height
+       AND event_block.canonical = true
       LEFT JOIN proof_indexer.credit_listings cl_event
         ON cl_event.network = e.network
        AND cl_event.listing_id = lower(e.payload->>'listingId')
@@ -10289,7 +13984,7 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
   for (const row of result.rows) {
     const payload = tokenMarketEventRowPayload(row, network);
     if (payload?.kind === "token-sale") {
-      const sale = tokenSaleFromEventPayload(payload);
+      const sale = tokenSaleFromEventPayload(payload, row);
       if (sale.txid && sale.listingId && sale.tokenId) {
         sales.push(sale);
         const closedListing = tokenClosedListingFromSalePayload(sale);
@@ -10579,10 +14274,10 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
   // Canonical event rows are deliberately first. The table projection may
   // carry richer lifecycle state, but its maintenance timestamp is not market
   // chronology and must never replace the confirmed event time.
-  const sales = uniqueTokenItems(
-    [...marketEvents.sales, ...listingProjection.sales],
-    (sale) => `${sale.network ?? network}:${sale.txid}`,
-    mergeCanonicalTokenSaleRecord,
+  const sales = canonicalTokenSalesWithListingEnrichment(
+    marketEvents.sales,
+    listingProjection.sales,
+    network,
   );
   const closedListings = uniqueTokenItems(
     [...marketEvents.closedListings, ...listingProjection.closedListings],
@@ -11270,16 +14965,15 @@ export async function proofIndexWalletTokenOverlayPayload(
         e.block_time,
         e.created_at,
         e.block_height,
+        COALESCE(t.status, e.status) AS effective_status,
+        t.status AS transaction_status,
+        t.block_height AS transaction_block_height,
+        t.block_index AS transaction_block_index,
         t.block_hash AS block_hash,
-        CASE
-          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
-            THEN (e.payload->>'blockIndex')::integer
-          WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
-            THEN (e.payload->>'_powBlockIndex')::integer
-          WHEN t.raw_tx->'canonicalBlockScan'->>'blockIndex' ~ '^[0-9]+$'
-            THEN (t.raw_tx->'canonicalBlockScan'->>'blockIndex')::integer
-          ELSE NULL
-        END AS block_index,
+        canonical_block.block_hash AS canonical_block_hash,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
         e.txid,
         e.network,
         COALESCE(cd.token_id, cl_event.token_id) AS token_id,
@@ -11295,6 +14989,11 @@ export async function proofIndexWalletTokenOverlayPayload(
       LEFT JOIN proof_indexer.transactions t
         ON t.network = e.network
        AND t.txid = e.txid
+      LEFT JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = t.network
+       AND canonical_block.block_hash = t.block_hash
+       AND canonical_block.height = t.block_height
+       AND canonical_block.canonical = true
       LEFT JOIN proof_indexer.credit_listings cl_event
         ON cl_event.network = e.network
        AND cl_event.listing_id = lower(e.payload->>'listingId')
@@ -11663,6 +15362,10 @@ export async function proofIndexWalletTokenOverlayPayload(
       const sale = tokenSaleFromEventPayload({
         ...listingPayload,
         ...payload,
+        blockHeight: row.block_height,
+        blockIndex: row.block_index,
+        protocolVout: row.op_return_vout,
+        recordOrdinal: row.record_ordinal,
         amountAtoms:
           payload.amountAtoms ??
           listingPayload.amountAtoms ??
@@ -11699,7 +15402,7 @@ export async function proofIndexWalletTokenOverlayPayload(
           payload.tokenId ??
           listingPayload.tokenId ??
           row.token_id,
-      });
+      }, row);
       if (sale.txid && sale.listingId && sale.tokenId) {
         sales.push(sale);
       }
@@ -12147,7 +15850,7 @@ function idLifecycleStateFromItems(items, network, id) {
   const matchesTargetId = (value) =>
     !idLower || normalizedLowerText(value) === idLower;
   const listingsById = new Map();
-  const salesByTxid = new Map();
+  const salesByKey = new Map();
   const activity = [];
   const supportedKinds = new Set([
     "id-list",
@@ -12156,24 +15859,79 @@ function idLifecycleStateFromItems(items, network, id) {
     "id-buy",
     "id-transfer",
   ]);
-  const eventNumber = (item, key, fallback = Number.MAX_SAFE_INTEGER) => {
-    const value = Number(item?.[key]);
-    return Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+  const exactEventNumber = (item, key, minimum = 0) => {
+    const rawValue = item?.[key];
+    if (rawValue === undefined || rawValue === null || rawValue === "") {
+      return null;
+    }
+    const value = Number(rawValue);
+    return Number.isSafeInteger(value) && value >= minimum ? value : null;
   };
-  const orderedItems = (Array.isArray(items) ? items : [])
+  const eventNumber = (item, key, fallback = Number.MAX_SAFE_INTEGER) =>
+    exactEventNumber(item, key) ?? fallback;
+  const lifecycleItems = (Array.isArray(items) ? items : [])
     .filter(
       (item) =>
         item?.confirmed === true &&
         supportedKinds.has(normalizedLowerText(item?.kind)),
-    )
-    .sort(
+    );
+  const canonicalPositions = new Map();
+  const seenCanonicalPositions = new Set();
+  for (const item of lifecycleItems) {
+    const blockHeight = exactEventNumber(item, "blockHeight", 1);
+    if (
+      blockHeight === null ||
+      blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT
+    ) {
+      continue;
+    }
+    const blockIndex = exactEventNumber(item, "blockIndex");
+    const protocolVout = exactEventNumber(item, "protocolVout");
+    const recordOrdinal = exactEventNumber(item, "recordOrdinal");
+    if (
+      blockIndex === null ||
+      protocolVout === null ||
+      recordOrdinal === null
+    ) {
+      throw new Error(
+        "Canonical post-AMO-V5 ID lifecycle position is incomplete.",
+      );
+    }
+    const position = {
+      blockHeight,
+      blockIndex,
+      protocolVout,
+      recordOrdinal,
+    };
+    const positionKey = [
+      blockHeight,
+      blockIndex,
+      protocolVout,
+      recordOrdinal,
+    ].join(":");
+    if (seenCanonicalPositions.has(positionKey)) {
+      throw new Error(
+        `Duplicate canonical post-AMO-V5 ID lifecycle position ${positionKey}.`,
+      );
+    }
+    seenCanonicalPositions.add(positionKey);
+    canonicalPositions.set(item, position);
+  }
+  const orderedItems = lifecycleItems.sort(
       (left, right) =>
         eventNumber(left, "blockHeight") - eventNumber(right, "blockHeight") ||
         eventNumber(left, "blockIndex") - eventNumber(right, "blockIndex") ||
+        (canonicalPositions.has(left) && canonicalPositions.has(right)
+          ? canonicalPositions.get(left).protocolVout -
+              canonicalPositions.get(right).protocolVout ||
+            canonicalPositions.get(left).recordOrdinal -
+              canonicalPositions.get(right).recordOrdinal
+          : 0) ||
         eventNumber(left, "_powEventIndex") -
           eventNumber(right, "_powEventIndex") ||
         eventNumber(left, "eventId") - eventNumber(right, "eventId") ||
-        normalizedLowerText(left?.txid).localeCompare(
+        compareCanonicalUtf8(
+          normalizedLowerText(left?.txid),
           normalizedLowerText(right?.txid),
         ),
     );
@@ -12341,7 +16099,19 @@ function idLifecycleStateFromItems(items, network, id) {
     ) {
       continue;
     }
-    salesByTxid.set(txid, {
+    const canonicalPosition = canonicalPositions.get(item);
+    const saleKey = canonicalPosition
+      ? [
+          txid,
+          canonicalPosition.blockHeight,
+          canonicalPosition.blockIndex,
+          canonicalPosition.protocolVout,
+          canonicalPosition.recordOrdinal,
+          listingId,
+          normalizedLowerText(saleId),
+        ].join(":")
+      : txid;
+    salesByKey.set(saleKey, {
       ...item,
       amountSats: Number(item?.amountSats ?? 0),
       buyerAddress,
@@ -12360,8 +16130,23 @@ function idLifecycleStateFromItems(items, network, id) {
   return {
     activity: [...activity].sort(compareHistoryItems),
     listings: [...listingsById.values()].sort(compareHistoryItems),
-    sales: [...salesByTxid.values()].sort(compareHistoryItems),
+    sales: [...salesByKey.values()].sort(compareHistoryItems),
   };
+}
+
+function idLifecycleEventFromRow(row, network) {
+  const item = eventRowPayload(row, network);
+  try {
+    return {
+      ...item,
+      ...canonicalMovementPositionFromEventRow(item, row),
+    };
+  } catch (error) {
+    throw new Error(
+      "Canonical post-AMO-V5 ID lifecycle position is incomplete or noncanonical.",
+      { cause: error },
+    );
+  }
 }
 
 async function confirmedIdLifecycleFromCurrentEvents(pool, network, idLower) {
@@ -12386,16 +16171,30 @@ async function confirmedIdLifecycleFromCurrentEvents(pool, network, idLower) {
         e.protocol,
         e.kind,
         e.status,
+        t.status AS transaction_status,
+        COALESCE(t.status, e.status) AS effective_status,
         e.event_time,
         e.block_time,
         e.created_at,
-        COALESCE(e.block_height, t.block_height) AS block_height,
+        e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
+        t.block_height AS transaction_block_height,
+        t.block_index AS transaction_block_index,
+        t.block_hash,
+        canonical_block.block_hash AS canonical_block_hash,
         e.txid
       FROM proof_indexer.events e
       JOIN proof_indexer.transactions t
         ON t.network = e.network
        AND t.txid = e.txid
        AND t.status = 'confirmed'
+      LEFT JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = t.network
+       AND canonical_block.height = t.block_height
+       AND canonical_block.block_hash = t.block_hash
+       AND canonical_block.canonical = true
       WHERE e.network = $1
         AND e.status = 'confirmed'
         AND e.valid = true
@@ -12411,6 +16210,9 @@ async function confirmedIdLifecycleFromCurrentEvents(pool, network, idLower) {
         )
       ORDER BY
         COALESCE(e.block_height, t.block_height) ASC NULLS LAST,
+        e.block_index ASC NULLS LAST,
+        e.op_return_vout ASC NULLS LAST,
+        e.record_ordinal ASC NULLS LAST,
         CASE
           WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
             THEN (e.payload->>'blockIndex')::integer
@@ -12426,7 +16228,7 @@ async function confirmedIdLifecycleFromCurrentEvents(pool, network, idLower) {
     [network, idLower],
   );
   const items = result.rows.map((row) => ({
-    ...eventRowPayload(row, network),
+    ...idLifecycleEventFromRow(row, network),
     eventId: rowNumber(row, "event_id"),
   }));
   return idLifecycleStateFromItems(items, network, idLower);
@@ -12545,22 +16347,39 @@ async function currentIdRegistryEventState(pool, network) {
         e.payload,
         e.protocol,
         e.kind,
-        t.status,
+        e.status,
+        t.status AS transaction_status,
+        COALESCE(t.status, e.status) AS effective_status,
         e.event_time,
         e.block_time,
         e.created_at,
-        COALESCE(e.block_height, t.block_height) AS block_height,
+        e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
+        t.block_height AS transaction_block_height,
+        t.block_index AS transaction_block_index,
+        t.block_hash,
+        canonical_block.block_hash AS canonical_block_hash,
         e.txid
       FROM proof_indexer.events e
       JOIN proof_indexer.transactions t
         ON t.network = e.network
        AND t.txid = e.txid
+      LEFT JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = t.network
+       AND canonical_block.height = t.block_height
+       AND canonical_block.block_hash = t.block_hash
+       AND canonical_block.canonical = true
       WHERE e.network = $1
         AND e.valid = true
         AND e.kind = ANY($2::text[])
         AND t.status IN ('confirmed', 'pending')
       ORDER BY
         COALESCE(e.block_height, t.block_height) ASC NULLS LAST,
+        e.block_index ASC NULLS LAST,
+        e.op_return_vout ASC NULLS LAST,
+        e.record_ordinal ASC NULLS LAST,
         CASE
           WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
             THEN (e.payload->>'blockIndex')::integer
@@ -12576,7 +16395,7 @@ async function currentIdRegistryEventState(pool, network) {
     [network, eventKinds],
   );
   const canonicalItems = result.rows.map((row) => ({
-    ...eventRowPayload(row, network),
+    ...idLifecycleEventFromRow(row, network),
     eventId: rowNumber(row, "event_id"),
   }));
   const activity = normalizeHistoryEventRows(result.rows, network);
@@ -13793,9 +17612,22 @@ function eventRowPayload(row, network) {
   const auditCosts = invalidTokenEvent
     ? tokenInvalidAuditCosts(payload, row, registryAddress)
     : {};
-  const blockIndex = Number(
+  const exactPositionInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const blockIndex = exactPositionInteger(
     row?.block_index ?? payload.blockIndex ?? payload._powBlockIndex,
+    0,
   );
+  const protocolVout = exactPositionInteger(
+    row?.op_return_vout ?? row?.protocol_vout,
+    0,
+  );
+  const recordOrdinal = exactPositionInteger(row?.record_ordinal, 0);
   return {
     ...payload,
     ...canonicalEventIdentityDetails({
@@ -13826,9 +17658,9 @@ function eventRowPayload(row, network) {
       .trim()
       .toLowerCase(),
     blockHeight: rowNumber(row, "block_height") || payload.blockHeight,
-    ...(Number.isSafeInteger(blockIndex) && blockIndex >= 0
-      ? { blockIndex }
-      : {}),
+    ...(blockIndex !== null ? { blockIndex } : {}),
+    ...(protocolVout !== null ? { protocolVout } : {}),
+    ...(recordOrdinal !== null ? { recordOrdinal } : {}),
     txid: row.txid ?? payload.txid,
     protocol: row.protocol ?? payload.protocol,
     kind,
@@ -14288,7 +18120,10 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
   return [...byProtocolVout.values()].sort(
     (left, right) =>
       left.protocolVout - right.protocolVout ||
-      left.recipientAddress.localeCompare(right.recipientAddress),
+      compareCanonicalUtf8(
+        left.recipientAddress,
+        right.recipientAddress,
+      ),
   );
 }
 
@@ -14430,7 +18265,7 @@ function addressMailRowPayloads(row, address, network) {
 function compareMailMessages(left, right) {
   return (
     Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-    String(right.txid ?? "").localeCompare(String(left.txid ?? ""))
+    compareCanonicalUtf8(right.txid, left.txid)
   );
 }
 
@@ -16113,6 +19948,9 @@ export async function proofIndexCreditListingsPayload(
           e.block_time,
           e.created_at,
           e.block_height,
+          e.block_index,
+          e.op_return_vout,
+          e.record_ordinal,
           e.txid,
           e.event_id
         FROM proof_indexer.events e

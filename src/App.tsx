@@ -698,11 +698,13 @@ type PowTokenInvalidEvent = {
 type PowTokenSaleAuthorizationDraft = {
   amount: ExactIntegerValue;
   amountAtoms?: string;
+  amountModel?: string;
   anchorScriptPubKey: string;
   anchorSigHashType: number;
   anchorType: string;
   anchorValueSats: number;
   anchorVout: number;
+  bondTransitionModel?: string;
   buyerAddress: string;
   expiresAt: string;
   network: BitcoinNetwork;
@@ -716,8 +718,13 @@ type PowTokenSaleAuthorizationDraft = {
   registryAddress: string;
   sellerAddress: string;
   sellerPublicKey: string;
+  stateOrderModel?: string;
   ticker: string;
   tokenId: string;
+  unitFaceUsdCents?: number;
+  unitModel?: string;
+  unitUsdOracleModel?: string;
+  unitWorkOracleModel?: string;
   version: string;
 };
 
@@ -732,7 +739,9 @@ type PowTokenListing = {
   confirmed: boolean;
   createdAt: string;
   dataBytes?: number;
+  estimate?: WorkAmoV5Estimate;
   frozenNetworkValueSats?: number;
+  frozenTerms?: WorkAmoV5FrozenTerms;
   listingId: string;
   liveNetworkValueSats?: number;
   marketplaceMutationFeeSats?: number;
@@ -751,6 +760,9 @@ type PowTokenListing = {
   sellerAddress: string;
   ticker: string;
   tokenId: string;
+  unitFaceUsdCents?: number;
+  workAmoEstimate?: WorkAmoV5Estimate;
+  workAmoFrozenTerms?: WorkAmoV5FrozenTerms;
 };
 
 type PowTokenClosedListing = PowTokenListing & {
@@ -1470,11 +1482,44 @@ const TOKEN_SALE_AUTH_VERSION = "pwt-sale-v1";
 const TOKEN_SALE_AUTH_VERSION_ATOMS = "pwt-sale-v2";
 const TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION = "pwt-sale-v3";
 const TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION = "pwt-sale-v4";
+const TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION = "pwt-sale-v5";
 const WORK_MARKET_V2_ORACLE_MODEL = "canonical-work-market-h-minus-one-v1";
 const WORK_MARKET_CONFIRMATION_FLOOR_ORACLE_MODEL =
   "canonical-work-market-confirmation-floor-v1";
+const WORK_AMO_UNIT_MODEL = "canonical-work-amo-usd-unit-v2";
+const WORK_AMO_STATE_ORDER_MODEL = "canonical-proof-state-order-v1";
+const WORK_AMO_AMOUNT_MODEL =
+  "canonical-confirmed-position-derived-work-amount-v1";
+const WORK_AMO_USD_ORACLE_MODEL = "canonical-amo-chain-usd-quote-v1";
+const WORK_AMO_WORK_ORACLE_MODEL =
+  "canonical-work-prefix-before-action-v1";
+const WORK_AMO_BOND_TRANSITION_MODEL =
+  "canonical-compute-then-bond-v1";
+const WORK_AMO_ALLOWED_FACE_USD_CENTS = [2000, 5000, 10000] as const;
+const WORK_AMO_V1_FACE_USD_CENTS = [
+  1000,
+  2000,
+  5000,
+  10000,
+  20000,
+  50000,
+  100000,
+  200000,
+  500000,
+  1000000,
+] as const;
 const WORK_MARKET_V2_DECLARATION_TXID =
   "4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f";
+const WORK_AMO_V1_DECLARATION_TXID =
+  "b578601bf1c1804b6afb4b030cfa5207c9894f4b5a2d2bc5ce5a9369534ed837";
+const WORK_AMO_V1_ACTIVATION_HEIGHT = 959306;
+const WORK_AMO_V5_DECLARATION_TXID =
+  "54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36";
+const WORK_AMO_V5_DECLARATION_HEIGHT = 959620;
+const WORK_AMO_V5_DECLARATION_BLOCK_INDEX = 141;
+const WORK_AMO_V5_ACTIVATION_HEIGHT = 959621;
+const WORK_AMO_V5_DECLARATION_BLOCK_HASH =
+  "0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811";
 const TOKEN_CREATION_PRICE_SATS = 546;
 const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
 const TOKEN_LISTING_ANCHOR_TYPE = ID_LISTING_TICKET_ANCHOR_TYPE;
@@ -1778,8 +1823,100 @@ type WorkFloorQuote = {
   totalQ8?: string;
   tokenFlowSats: number;
   usdSource?: string;
+  workAmoV5?: WorkAmoV5Status;
   workMarketplaceV4?: WorkMarketplaceV4Status;
   workNetworkValueAccountingModel?: string;
+};
+
+type WorkAmoV5Estimate = {
+  estimateOnly?: boolean;
+  unitAmountAtoms?: string;
+  unitFaceUsdCents?: number;
+  unitMinimumPriceSats?: string;
+  unitNetworkValueBeforeQ8?: string;
+  unitPriceSats?: number;
+  unitUsdQuoteTxid?: string;
+};
+
+type WorkAmoV5FrozenTerms = {
+  amountModel?: string;
+  authorizationVersion?: string;
+  bondTransitionModel?: string;
+  canonical?: boolean;
+  confirmed?: boolean;
+  listingBlockHash?: string;
+  listingBlockHeight?: number;
+  listingBlockIndex?: number;
+  listingBondContributionQ8?: string;
+  listingProtocolVout?: number;
+  listingRecordOrdinal?: number;
+  stateOrderModel?: string;
+  tokenId?: string;
+  unitAmountAtoms?: string;
+  unitFaceUsd?: number;
+  unitFaceUsdCents?: number;
+  unitMinimumPriceSats?: string;
+  unitModel?: string;
+  unitNetworkValueAfterQ8?: string;
+  unitNetworkValueBeforeQ8?: string;
+  unitPriceSats?: number;
+  unitUsdOracleModel?: string;
+  unitUsdPer100mProofsQ8?: string;
+  unitUsdQuoteBlockHash?: string;
+  unitUsdQuoteBlockHeight?: number;
+  unitUsdQuoteBlockIndex?: number;
+  unitUsdQuoteSequence?: string;
+  unitUsdQuoteTxid?: string;
+  unitUsdQuoteVout?: number;
+  unitWorkOracleModel?: string;
+  valid?: boolean;
+};
+
+type WorkAmoV5QuoteHead = {
+  blockHash?: string;
+  blockHeight?: number;
+  blockIndex?: number;
+  previousQuoteTxid?: string;
+  protocolVout?: number;
+  recordOrdinal?: number;
+  sequence?: string;
+  txid?: string;
+  usdPer100mProofsQ8?: string;
+};
+
+type WorkAmoV5QuotePublication = {
+  authorityScriptPubKey?: string;
+  nextSequence?: string;
+  previousQuoteTxid?: string;
+  ready?: boolean;
+  reasonCode?: string;
+  recordPrefix?: string;
+  registryAddress?: string;
+  registryPaymentSats?: number;
+  v1DeclarationTxid?: string;
+};
+
+type WorkAmoV5Status = {
+  active?: boolean;
+  activationHeight?: number;
+  allowedFaceUsdCents?: number[];
+  authVersion?: string;
+  declarationBlockHash?: string;
+  declarationBlockIndex?: number;
+  declarationConfirmed?: boolean;
+  declarationHeight?: number;
+  declarationTxid?: string;
+  estimates?: Record<string, WorkAmoV5Estimate>;
+  indexReady?: boolean;
+  listingWritesEnabled?: boolean;
+  maxQuoteAgeBlocks?: number;
+  protocolWritesEnabled?: boolean;
+  quoteHead?: WorkAmoV5QuoteHead;
+  quotePublication?: WorkAmoV5QuotePublication;
+  quoteReady?: boolean;
+  reasonCode?: string;
+  writesConfigured?: boolean;
+  writesEnabled?: boolean;
 };
 
 type WorkMarketplaceV4Status = {
@@ -1840,6 +1977,7 @@ type WorkFloorApiResponse = {
   totalQ8?: string;
   tokenFlowSats?: number;
   usdSource?: string;
+  workAmoV5?: WorkAmoV5Status;
   workMarketplaceV4?: WorkMarketplaceV4Status;
   workNetworkValueAccountingModel?: string;
 };
@@ -2781,7 +2919,7 @@ function marketplaceLegacyAnchorOutputScript(_network: BitcoinNetwork) {
   });
 
   if (!payment.output) {
-    throw new Error("Could not build marketplace listing anchor script.");
+    throw new Error("Could not build AMO listing anchor script.");
   }
 
   return payment.output;
@@ -3723,7 +3861,7 @@ function folderLabel(folder: Folder) {
   }
 
   if (folder === "marketplace") {
-    return "Marketplace";
+    return "AMO";
   }
 
   if (folder === "token") {
@@ -3803,7 +3941,7 @@ function folderSubtitle(folder: Folder) {
   }
 
   if (folder === "marketplace") {
-    return "ID listings and transfers";
+    return "Autonomous Money Organization";
   }
 
   if (folder === "token") {
@@ -6781,7 +6919,7 @@ function workMarketConfirmationFloorOracleFields(
     minimumPriceSats === null
   ) {
     throw new Error(
-      "The exact-tip WORK pricing oracle is unavailable. No marketplace transaction was created.",
+      "The historical WORK pricing oracle is unavailable. No AMO transaction was created.",
     );
   }
   return {
@@ -6793,15 +6931,296 @@ function workMarketConfirmationFloorOracleFields(
   };
 }
 
-function isWorkMarketSaleAuthorizationVersion(version: unknown) {
+function isWorkMarketLegacyPriceAuthorizationVersion(version: unknown) {
   return (
     version === TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION ||
     version === TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION
   );
 }
 
+function isWorkMarketSaleAuthorizationVersion(version: unknown) {
+  return (
+    isWorkMarketLegacyPriceAuthorizationVersion(version) ||
+    version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION
+  );
+}
+
 function isWorkMarketConfirmationFloorAuthorization(version: unknown) {
   return version === TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION;
+}
+
+function isWorkAmoUnitAuthorization(version: unknown) {
+  return version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION;
+}
+
+function workAmoFaceUsdCentsAllowed(value: unknown): value is 2000 | 5000 | 10000 {
+  const normalized = Number(value);
+  return WORK_AMO_ALLOWED_FACE_USD_CENTS.some(
+    (allowed) => allowed === normalized,
+  );
+}
+
+function workAmoHistoricalFaceUsdCents(value: unknown) {
+  const normalized = Number(value);
+  return Number.isSafeInteger(normalized) &&
+    WORK_AMO_V1_FACE_USD_CENTS.some((face) => face === normalized)
+    ? normalized
+    : undefined;
+}
+
+function workAmoFaceLabel(value: unknown) {
+  const normalized = workAmoHistoricalFaceUsdCents(value);
+  return normalized
+    ? `$${(normalized / 100).toLocaleString(undefined, {
+        maximumFractionDigits: 2,
+        minimumFractionDigits: normalized % 100 === 0 ? 0 : 2,
+      })}`
+    : "Unknown face";
+}
+
+function canonicalPositiveIntegerText(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const canonical = exactIntegerText(value);
+  return canonical === value && canonical !== "0" ? canonical : "";
+}
+
+function workAmoV5QuotePublicationReady(
+  publication: WorkAmoV5QuotePublication | undefined,
+) {
+  const nextSequence = canonicalPositiveIntegerText(
+    publication?.nextSequence,
+  );
+  const previousQuoteTxid = String(publication?.previousQuoteTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const recordPrefix = String(publication?.recordPrefix ?? "");
+  return Boolean(
+    publication?.ready === true &&
+      nextSequence &&
+      /^[0-9a-f]{64}$/u.test(previousQuoteTxid) &&
+      publication.v1DeclarationTxid === WORK_AMO_V1_DECLARATION_TXID &&
+      recordPrefix ===
+        `pwa1:usd1:${WORK_AMO_V1_DECLARATION_TXID}:${nextSequence}:${previousQuoteTxid}:`,
+  );
+}
+
+function workAmoListingFaceUsdCents(listing: PowTokenListing) {
+  const rawFace =
+    listing.unitFaceUsdCents ??
+    listing.workAmoFrozenTerms?.unitFaceUsdCents ??
+    listing.frozenTerms?.unitFaceUsdCents ??
+    listing.saleAuthorization.unitFaceUsdCents;
+  if (workAmoFaceUsdCentsAllowed(rawFace)) {
+    return rawFace;
+  }
+  return listing.saleAuthorization.version ===
+      TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION ||
+    (listing.workAmoFrozenTerms ?? listing.frozenTerms)
+      ?.authorizationVersion ===
+      TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION
+    ? workAmoHistoricalFaceUsdCents(rawFace)
+    : undefined;
+}
+
+function workAmoFrozenTerms(listing: PowTokenListing) {
+  const frozen = listing.workAmoFrozenTerms ?? listing.frozenTerms;
+  const amountAtoms = workAtomsFromIntegerString(
+    frozen?.unitAmountAtoms ?? listing.amountAtoms,
+  );
+  const priceSats = Math.floor(
+    Number(frozen?.unitPriceSats ?? listing.priceSats),
+  );
+  const grandfatheredV4 =
+    listing.saleAuthorization.version ===
+      TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION ||
+    frozen?.authorizationVersion ===
+      TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION;
+  const faceUsdCents = workAmoListingFaceUsdCents(listing);
+  const frozenMinimumPriceSats = exactIntegerBigInt(
+    frozen?.unitMinimumPriceSats,
+  );
+  const frozenNetworkValueBeforeQ8 = exactIntegerBigInt(
+    frozen?.unitNetworkValueBeforeQ8,
+  );
+  const frozenNetworkValueAfterQ8 = exactIntegerBigInt(
+    frozen?.unitNetworkValueAfterQ8,
+  );
+  const frozenListingBondContributionQ8 = exactIntegerBigInt(
+    frozen?.listingBondContributionQ8,
+  );
+  const frozenUsdPer100mProofsQ8 = exactIntegerBigInt(
+    frozen?.unitUsdPer100mProofsQ8,
+  );
+  const frozenUsdQuoteSequence = canonicalPositiveIntegerText(
+    frozen?.unitUsdQuoteSequence,
+  );
+  const frozenListingRecordOrdinalRaw: unknown =
+    frozen?.listingRecordOrdinal;
+  const frozenListingRecordOrdinal =
+    frozenListingRecordOrdinalRaw !== undefined &&
+    frozenListingRecordOrdinalRaw !== null &&
+    frozenListingRecordOrdinalRaw !== "" &&
+    Number.isSafeInteger(Number(frozenListingRecordOrdinalRaw)) &&
+    Number(frozenListingRecordOrdinalRaw) >= 0
+      ? Number(frozenListingRecordOrdinalRaw)
+      : null;
+  const grandfatheredV4ProjectionComplete =
+    !grandfatheredV4 ||
+    Boolean(
+      frozen &&
+        frozen.canonical === true &&
+        frozen.confirmed === true &&
+        frozen.valid === true &&
+        frozen.authorizationVersion ===
+          TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION &&
+        String(frozen.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID &&
+        faceUsdCents &&
+        workAmoHistoricalFaceUsdCents(
+          listing.saleAuthorization.unitFaceUsdCents,
+        ) === faceUsdCents &&
+        Number(frozen.unitFaceUsdCents) === faceUsdCents &&
+        Number(frozen.unitFaceUsd) === faceUsdCents / 100 &&
+        Number.isSafeInteger(Number(frozen.listingBlockHeight)) &&
+        Number(frozen.listingBlockHeight) >= WORK_AMO_V1_ACTIVATION_HEIGHT &&
+        Number(frozen.listingBlockHeight) <
+          WORK_AMO_V5_ACTIVATION_HEIGHT &&
+        /^[0-9a-f]{64}$/u.test(
+          String(frozen.listingBlockHash ?? "").trim().toLowerCase(),
+        ) &&
+        Number.isSafeInteger(Number(frozen.listingBlockIndex)) &&
+        Number(frozen.listingBlockIndex) >= 0 &&
+        Number.isSafeInteger(Number(frozen.listingProtocolVout)) &&
+        Number(frozen.listingProtocolVout) >= 0 &&
+        frozenListingRecordOrdinal !== null &&
+        frozenMinimumPriceSats !== null &&
+        frozenMinimumPriceSats > 0n &&
+        frozenNetworkValueBeforeQ8 !== null &&
+        frozenNetworkValueBeforeQ8 > 0n,
+    );
+  const v5ProjectionComplete =
+    grandfatheredV4 ||
+    Boolean(
+      frozen &&
+        frozen.unitModel === WORK_AMO_UNIT_MODEL &&
+        frozen.stateOrderModel === WORK_AMO_STATE_ORDER_MODEL &&
+        frozen.amountModel === WORK_AMO_AMOUNT_MODEL &&
+        frozen.unitUsdOracleModel === WORK_AMO_USD_ORACLE_MODEL &&
+        frozen.unitWorkOracleModel === WORK_AMO_WORK_ORACLE_MODEL &&
+        frozen.bondTransitionModel === WORK_AMO_BOND_TRANSITION_MODEL &&
+        faceUsdCents &&
+        workAmoFaceUsdCentsAllowed(faceUsdCents) &&
+        Number(frozen.unitFaceUsdCents) === faceUsdCents &&
+        Number(frozen.unitFaceUsd) === faceUsdCents / 100 &&
+        /^[0-9a-f]{64}$/u.test(
+          String(frozen.unitUsdQuoteTxid ?? "").trim().toLowerCase(),
+        ) &&
+        Number.isSafeInteger(Number(frozen.unitUsdQuoteVout)) &&
+        Number(frozen.unitUsdQuoteVout) >= 0 &&
+        Boolean(frozenUsdQuoteSequence) &&
+        Number.isSafeInteger(Number(frozen.unitUsdQuoteBlockHeight)) &&
+        Number(frozen.unitUsdQuoteBlockHeight) > 0 &&
+        /^[0-9a-f]{64}$/u.test(
+          String(frozen.unitUsdQuoteBlockHash ?? "").trim().toLowerCase(),
+        ) &&
+        Number.isSafeInteger(Number(frozen.unitUsdQuoteBlockIndex)) &&
+        Number(frozen.unitUsdQuoteBlockIndex) >= 0 &&
+        frozenUsdPer100mProofsQ8 !== null &&
+        frozenUsdPer100mProofsQ8 > 0n &&
+        Number.isSafeInteger(Number(frozen.listingBlockHeight)) &&
+        Number(frozen.listingBlockHeight) >= WORK_AMO_V5_ACTIVATION_HEIGHT &&
+        /^[0-9a-f]{64}$/u.test(
+          String(frozen.listingBlockHash ?? "").trim().toLowerCase(),
+        ) &&
+        Number.isSafeInteger(Number(frozen.listingBlockIndex)) &&
+        Number(frozen.listingBlockIndex) >= 0 &&
+        Number.isSafeInteger(Number(frozen.listingProtocolVout)) &&
+        Number(frozen.listingProtocolVout) >= 0 &&
+        frozenListingRecordOrdinal !== null &&
+        frozenMinimumPriceSats !== null &&
+        frozenMinimumPriceSats > 0n &&
+        Number.isSafeInteger(priceSats) &&
+        priceSats > 0 &&
+        BigInt(priceSats) >= frozenMinimumPriceSats &&
+        frozenNetworkValueBeforeQ8 !== null &&
+        frozenNetworkValueBeforeQ8 > 0n &&
+        frozenListingBondContributionQ8 !== null &&
+        frozenListingBondContributionQ8 > 0n &&
+        frozenNetworkValueAfterQ8 !== null &&
+        frozenNetworkValueAfterQ8 ===
+          frozenNetworkValueBeforeQ8 + frozenListingBondContributionQ8,
+    );
+  if (
+    listing.confirmed !== true ||
+    amountAtoms === null ||
+    amountAtoms < 1n ||
+    !Number.isSafeInteger(priceSats) ||
+    priceSats < 1 ||
+    !faceUsdCents ||
+    !grandfatheredV4ProjectionComplete ||
+    !v5ProjectionComplete
+  ) {
+    return null;
+  }
+  return {
+    amountAtoms: amountAtoms.toString(),
+    faceUsdCents,
+    grandfatheredV4,
+    priceSats,
+  };
+}
+
+function workAmoEstimateForFace(
+  quote: WorkFloorQuote | undefined,
+  faceUsdCents: number,
+) {
+  const estimate = quote?.workAmoV5?.estimates?.[String(faceUsdCents)];
+  const amountAtoms = workAtomsFromIntegerString(estimate?.unitAmountAtoms);
+  const priceSats = Math.floor(Number(estimate?.unitPriceSats));
+  return estimate &&
+    estimate.estimateOnly === true &&
+    estimate.unitFaceUsdCents === faceUsdCents &&
+    amountAtoms !== null &&
+    amountAtoms > 0n &&
+    Number.isSafeInteger(priceSats) &&
+    priceSats > 0
+    ? {
+        ...estimate,
+        unitAmountAtoms: amountAtoms.toString(),
+        unitPriceSats: priceSats,
+      }
+    : undefined;
+}
+
+function workAmoV5StaticAuthorizationForListing(
+  listing: PowTokenListing,
+): PowTokenSaleAuthorization {
+  const frozen = workAmoFrozenTerms(listing);
+  const faceUsdCents = workAmoListingFaceUsdCents(listing);
+  if (!faceUsdCents || !frozen) {
+    throw new Error(
+      "This WORK listing does not expose complete immutable AMO terms. No transaction was created.",
+    );
+  }
+  return {
+    ...tokenSaleAuthorizationDraft({
+      ...listing.saleAuthorization,
+      amount: 0,
+      amountAtoms: undefined,
+      amountModel: WORK_AMO_AMOUNT_MODEL,
+      bondTransitionModel: WORK_AMO_BOND_TRANSITION_MODEL,
+      priceSats: 0,
+      stateOrderModel: WORK_AMO_STATE_ORDER_MODEL,
+      unitFaceUsdCents: faceUsdCents,
+      unitModel: WORK_AMO_UNIT_MODEL,
+      unitUsdOracleModel: WORK_AMO_USD_ORACLE_MODEL,
+      unitWorkOracleModel: WORK_AMO_WORK_ORACLE_MODEL,
+      version: TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION,
+    }),
+    anchorSignature: listing.saleAuthorization.anchorSignature,
+    anchorTxid: listing.saleAuthorization.anchorTxid,
+  };
 }
 
 function workMarketPricingCommitmentMatches(
@@ -6931,7 +7350,7 @@ function tokenSaleAuthorizationDraft(
     ticker === INCB_TOKEN_TICKER;
   const amountAtoms =
     (version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-      isWorkMarketSaleAuthorizationVersion(version))
+      isWorkMarketLegacyPriceAuthorizationVersion(version))
       ? workAtomsFromIntegerString(authorization.amountAtoms)
       : null;
   return {
@@ -6943,9 +7362,13 @@ function tokenSaleAuthorizationDraft(
         : workNumberFromAtoms(amountAtoms),
     amountAtoms:
       (version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-        isWorkMarketSaleAuthorizationVersion(version)) &&
+        isWorkMarketLegacyPriceAuthorizationVersion(version)) &&
       amountAtoms !== null
         ? amountAtoms.toString()
+        : undefined,
+    amountModel:
+      version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION
+        ? String(authorization.amountModel ?? "").trim()
         : undefined,
     anchorScriptPubKey: String(authorization.anchorScriptPubKey ?? "").toLowerCase(),
     anchorSigHashType: Math.floor(Number(authorization.anchorSigHashType ?? 0)),
@@ -6955,11 +7378,15 @@ function tokenSaleAuthorizationDraft(
       Math.floor(Number(authorization.anchorValueSats ?? 0)),
     ),
     anchorVout: Math.max(0, Math.floor(Number(authorization.anchorVout ?? 0))),
+    bondTransitionModel:
+      version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION
+        ? String(authorization.bondTransitionModel ?? "").trim()
+        : undefined,
     buyerAddress: String(authorization.buyerAddress ?? "").trim(),
     expiresAt: String(authorization.expiresAt ?? "").trim(),
     network: (authorization.network ?? "livenet") as BitcoinNetwork,
     nonce: String(authorization.nonce ?? "").trim(),
-    ...(isWorkMarketSaleAuthorizationVersion(version)
+    ...(isWorkMarketLegacyPriceAuthorizationVersion(version)
       ? {
           minimumPriceSats: String(
             authorization.minimumPriceSats ?? "",
@@ -6978,8 +7405,29 @@ function tokenSaleAuthorizationDraft(
     registryAddress: String(authorization.registryAddress ?? "").trim(),
     sellerAddress: String(authorization.sellerAddress ?? "").trim(),
     sellerPublicKey: String(authorization.sellerPublicKey ?? "").toLowerCase(),
+    stateOrderModel:
+      version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION
+        ? String(authorization.stateOrderModel ?? "").trim()
+        : undefined,
     ticker,
     tokenId,
+    unitFaceUsdCents:
+      (version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION ||
+        version === TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION)
+        ? workAmoHistoricalFaceUsdCents(authorization.unitFaceUsdCents)
+        : undefined,
+    unitModel:
+      version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION
+        ? String(authorization.unitModel ?? "").trim()
+        : undefined,
+    unitUsdOracleModel:
+      version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION
+        ? String(authorization.unitUsdOracleModel ?? "").trim()
+        : undefined,
+    unitWorkOracleModel:
+      version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION
+        ? String(authorization.unitWorkOracleModel ?? "").trim()
+        : undefined,
     version,
   };
 }
@@ -6988,9 +7436,18 @@ function tokenSaleAuthorizationWireDraft(
   authorization: Partial<PowTokenSaleAuthorization>,
 ) {
   const draft = tokenSaleAuthorizationDraft(authorization);
+  if (draft.version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION) {
+    const {
+      amount: _amount,
+      amountAtoms: _amountAtoms,
+      priceSats: _priceSats,
+      ...wire
+    } = draft;
+    return wire;
+  }
   if (
     draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-    isWorkMarketSaleAuthorizationVersion(draft.version)
+    isWorkMarketLegacyPriceAuthorizationVersion(draft.version)
   ) {
     const { amount: _amount, ...wire } = draft;
     return wire;
@@ -7032,20 +7489,27 @@ function parseTokenSaleAuthorizationJson(
 
   const workAmountAtoms =
     (draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-      isWorkMarketSaleAuthorizationVersion(draft.version))
+      isWorkMarketLegacyPriceAuthorizationVersion(draft.version))
       ? workAtomsFromIntegerString(draft.amountAtoms)
       : null;
+  const v5Authorization =
+    draft.version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION;
+  const v5ReferenceAuthorization =
+    v5Authorization &&
+    /^[0-9a-f]{64}$/u.test(anchorTxid) &&
+    validSignatureHex(anchorSignature);
   if (
     !/^[0-9a-f]{64}$/u.test(draft.tokenId) ||
     !/^[A-Z0-9]{1,12}$/u.test(draft.ticker) ||
     ((draft.version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
-      isWorkMarketSaleAuthorizationVersion(draft.version))
+      isWorkMarketLegacyPriceAuthorizationVersion(draft.version))
       ? draft.tokenId !== WORK_TOKEN_ID ||
         draft.ticker !== WORK_TOKEN_TICKER ||
         workAmountAtoms === null ||
         workAmountAtoms < 1n
-      : (exactIntegerBigInt(draft.amount) ?? 0n) < 1n) ||
-    draft.priceSats < 1 ||
+      : !v5Authorization &&
+        (exactIntegerBigInt(draft.amount) ?? 0n) < 1n) ||
+    (!v5Authorization && draft.priceSats < 1) ||
     draft.network !== targetNetwork ||
     !isValidBitcoinAddress(draft.registryAddress, targetNetwork) ||
     !isValidBitcoinAddress(draft.sellerAddress, targetNetwork) ||
@@ -7066,7 +7530,26 @@ function parseTokenSaleAuthorizationJson(
     throw new Error("Credit sale authorization is invalid.");
   }
 
-  if (isWorkMarketSaleAuthorizationVersion(draft.version)) {
+  if (
+    v5Authorization &&
+    (draft.tokenId !== WORK_TOKEN_ID ||
+      draft.ticker !== WORK_TOKEN_TICKER ||
+      (!workAmoFaceUsdCentsAllowed(draft.unitFaceUsdCents) &&
+        !(
+          v5ReferenceAuthorization &&
+          workAmoHistoricalFaceUsdCents(draft.unitFaceUsdCents)
+        )) ||
+      draft.unitModel !== WORK_AMO_UNIT_MODEL ||
+      draft.stateOrderModel !== WORK_AMO_STATE_ORDER_MODEL ||
+      draft.amountModel !== WORK_AMO_AMOUNT_MODEL ||
+      draft.unitUsdOracleModel !== WORK_AMO_USD_ORACLE_MODEL ||
+      draft.unitWorkOracleModel !== WORK_AMO_WORK_ORACLE_MODEL ||
+      draft.bondTransitionModel !== WORK_AMO_BOND_TRANSITION_MODEL)
+  ) {
+    throw new Error("WORK AMO unit authorization is invalid.");
+  }
+
+  if (isWorkMarketLegacyPriceAuthorizationVersion(draft.version)) {
     const calculatedMinimum = workMarketV2MinimumPriceSats(
       draft.amountAtoms,
       draft.oracleNetworkValueQ8,
@@ -7084,7 +7567,7 @@ function parseTokenSaleAuthorizationJson(
       String(calculatedMinimum) !== draft.minimumPriceSats ||
       BigInt(draft.priceSats) < calculatedMinimum
     ) {
-      throw new Error("WORK Marketplace V2 pricing authorization is invalid.");
+      throw new Error("Historical WORK pricing authorization is invalid.");
     }
   }
 
@@ -7165,11 +7648,34 @@ function normalizeTokenListingRecord<
     tokenId === INCB_TOKEN_ID ||
     ticker === POWB_TOKEN_TICKER ||
     ticker === INCB_TOKEN_TICKER;
+  const rawFrozenTerms = listing.workAmoFrozenTerms ?? listing.frozenTerms;
+  const frozenTerms =
+    rawFrozenTerms &&
+    typeof rawFrozenTerms === "object" &&
+    !Array.isArray(rawFrozenTerms)
+      ? { ...rawFrozenTerms }
+      : undefined;
+  const rawEstimate = listing.workAmoEstimate ?? listing.estimate;
+  const estimate =
+    listing.confirmed !== true &&
+    rawEstimate &&
+    typeof rawEstimate === "object" &&
+    !Array.isArray(rawEstimate)
+      ? { ...rawEstimate, estimateOnly: true }
+      : undefined;
+  const normalizedFaceUsdCents = Number(
+    listing.unitFaceUsdCents ??
+      frozenTerms?.unitFaceUsdCents ??
+      saleAuthorization.unitFaceUsdCents ??
+      estimate?.unitFaceUsdCents,
+  );
   const workAmountAtoms =
     tokenId === WORK_TOKEN_ID || ticker === WORK_TOKEN_TICKER
       ? workRecordAtoms(
           listing.amount || saleAuthorization.amount || 0,
-          listing.amountAtoms || saleAuthorization.amountAtoms,
+          frozenTerms?.unitAmountAtoms ??
+            listing.amountAtoms ??
+            saleAuthorization.amountAtoms,
         )
       : null;
 
@@ -7188,10 +7694,19 @@ function normalizeTokenListingRecord<
         : workNumberFromAtoms(workAmountAtoms),
     amountAtoms:
       workAmountAtoms === null ? undefined : workAmountAtoms.toString(),
+    estimate,
+    frozenTerms,
     listingId,
     priceSats: Math.max(
       0,
-      Math.floor(Number(listing.priceSats || saleAuthorization.priceSats || 0)),
+      Math.floor(
+        Number(
+          frozenTerms?.unitPriceSats ??
+            listing.priceSats ??
+            saleAuthorization.priceSats ??
+            0,
+        ),
+      ),
     ),
     registryAddress: String(
       listing.registryAddress || saleAuthorization.registryAddress || "",
@@ -7202,6 +7717,14 @@ function normalizeTokenListingRecord<
     ).trim(),
     ticker,
     tokenId,
+    unitFaceUsdCents: workAmoFaceUsdCentsAllowed(normalizedFaceUsdCents)
+      ? normalizedFaceUsdCents
+      : saleAuthorization.version ===
+          TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION
+        ? workAmoHistoricalFaceUsdCents(normalizedFaceUsdCents)
+      : undefined,
+    workAmoEstimate: estimate,
+    workAmoFrozenTerms: frozenTerms,
   } as T;
 }
 
@@ -8513,7 +9036,9 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
       listing.saleAuthorization.version !==
         TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION &&
       listing.saleAuthorization.version !==
-        TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION,
+        TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION &&
+      listing.saleAuthorization.version !==
+        TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION,
   );
   const closedListings = normalizeTokenListingRecords([
     ...indexedClosedListings,
@@ -11120,7 +11645,7 @@ function tokenMarketplaceSummaryStats({
 
   if (scopedToken) {
     return {
-      ariaLabel: `${scopedToken.ticker} credit marketplace stats`,
+      ariaLabel: `${scopedToken.ticker} credit AMO stats`,
       items: [
         {
           label: "Confirmed Supply",
@@ -11155,7 +11680,7 @@ function tokenMarketplaceSummaryStats({
   }
 
   return {
-    ariaLabel: "Credit marketplace stats",
+    ariaLabel: "Credit AMO stats",
     items: [
       {
         label: "Total Credits",
@@ -11334,7 +11859,7 @@ function activityItemsFromIdEvents(events: PowIdEvent[]): PowActivityItem[] {
       listingId: event.listingId,
       tags: [
         ...base.tags,
-        "Marketplace buy",
+        "AMO buy",
         event.priceSats ? `${event.priceSats.toLocaleString()} sale proofs` : "",
       ].filter(Boolean),
       title: event.confirmed ? "ID purchased" : "ID purchase pending",
@@ -13680,6 +14205,41 @@ function normalizeWorkFloorQuote(
     totalQ8: exactIntegerText(payload.totalQ8) || undefined,
     tokenFlowSats: Number(payload.tokenFlowSats) || 0,
     usdSource: typeof payload.usdSource === "string" ? payload.usdSource : undefined,
+    workAmoV5:
+      payload.workAmoV5 && typeof payload.workAmoV5 === "object"
+        ? {
+            ...payload.workAmoV5,
+            estimates:
+              payload.workAmoV5.estimates &&
+              typeof payload.workAmoV5.estimates === "object"
+                ? { ...payload.workAmoV5.estimates }
+                : undefined,
+            quoteHead:
+              payload.workAmoV5.quoteHead &&
+              typeof payload.workAmoV5.quoteHead === "object"
+                ? {
+                    ...payload.workAmoV5.quoteHead,
+                    sequence:
+                      canonicalPositiveIntegerText(
+                        payload.workAmoV5.quoteHead.sequence,
+                      ) || undefined,
+                  }
+                : undefined,
+            quotePublication:
+              payload.workAmoV5.quotePublication &&
+              typeof payload.workAmoV5.quotePublication === "object"
+                ? {
+                    ...payload.workAmoV5.quotePublication,
+                    nextSequence:
+                      canonicalPositiveIntegerText(
+                        payload.workAmoV5.quotePublication.nextSequence,
+                      ) || undefined,
+                    ready:
+                      payload.workAmoV5.quotePublication.ready === true,
+                  }
+                : undefined,
+          }
+        : undefined,
     workMarketplaceV4:
       payload.workMarketplaceV4 &&
       typeof payload.workMarketplaceV4 === "object"
@@ -14083,35 +14643,78 @@ async function fetchWorkFloorQuote(
   return normalizeWorkFloorQuote(payload, targetNetwork);
 }
 
-function workMarketplaceV4WritesReady(quote: WorkFloorQuote | undefined) {
-  const status = quote?.workMarketplaceV4;
+function workAmoV5ProtocolReady(quote: WorkFloorQuote | undefined) {
+  const status = quote?.workAmoV5;
   const declarationHeight = Number(status?.declarationHeight);
+  const declarationBlockIndex = Number(status?.declarationBlockIndex);
   const activationHeight = Number(status?.activationHeight);
   return Boolean(
     status?.active === true &&
-      status.writesEnabled === true &&
+      status.indexReady === true &&
       status.declarationConfirmed === true &&
-      status.authVersion === TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION &&
-      status.oracleModel === WORK_MARKET_CONFIRMATION_FLOOR_ORACLE_MODEL &&
-      /^[0-9a-f]{64}$/u.test(
-        String(status.declarationTxid ?? "").trim().toLowerCase(),
-      ) &&
-      /^[0-9a-f]{64}$/u.test(
-        String(status.declarationBlockHash ?? "").trim().toLowerCase(),
-      ) &&
+      status.authVersion === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION &&
+      String(status.declarationTxid ?? "").trim().toLowerCase() ===
+        WORK_AMO_V5_DECLARATION_TXID &&
+      String(status.declarationBlockHash ?? "").trim().toLowerCase() ===
+        WORK_AMO_V5_DECLARATION_BLOCK_HASH &&
       Number.isSafeInteger(declarationHeight) &&
-      declarationHeight > 0 &&
+      declarationHeight === WORK_AMO_V5_DECLARATION_HEIGHT &&
+      Number.isSafeInteger(declarationBlockIndex) &&
+      declarationBlockIndex === WORK_AMO_V5_DECLARATION_BLOCK_INDEX &&
       Number.isSafeInteger(activationHeight) &&
-      activationHeight === declarationHeight + 1,
+      activationHeight === WORK_AMO_V5_ACTIVATION_HEIGHT &&
+      activationHeight === declarationHeight + 1 &&
+      Array.isArray(status.allowedFaceUsdCents) &&
+      WORK_AMO_ALLOWED_FACE_USD_CENTS.every((face) =>
+        status.allowedFaceUsdCents?.includes(face),
+      ) &&
+      status.allowedFaceUsdCents.length ===
+        WORK_AMO_ALLOWED_FACE_USD_CENTS.length,
   );
 }
 
-function assertWorkMarketplaceV4WritesEnabled(
+function workAmoV5ProtocolWritesReady(
   quote: WorkFloorQuote | undefined,
 ) {
-  if (!workMarketplaceV4WritesReady(quote)) {
+  return Boolean(
+    workAmoV5ProtocolReady(quote) &&
+      quote?.workAmoV5?.protocolWritesEnabled === true,
+  );
+}
+
+function workAmoV5ListingWritesReady(
+  quote: WorkFloorQuote | undefined,
+) {
+  return Boolean(
+    workAmoV5ProtocolWritesReady(quote) &&
+      quote?.workAmoV5?.writesEnabled === true &&
+      quote.workAmoV5.listingWritesEnabled === true &&
+      quote.workAmoV5.quoteReady === true &&
+      WORK_AMO_ALLOWED_FACE_USD_CENTS.every((face) =>
+        Boolean(workAmoEstimateForFace(quote, face)),
+      ),
+  );
+}
+
+function assertWorkAmoV5ProtocolEnabled(quote: WorkFloorQuote | undefined) {
+  if (!workAmoV5ProtocolReady(quote)) {
     throw new Error(
-      "Marketplace upgrade pending declaration. WORK list, seal, and buy actions are temporarily read-only; delisting remains available.",
+      "AMO V5 is not fully indexed against its confirmed declaration. No WORK transaction was created.",
+    );
+  }
+  if (!workAmoV5ProtocolWritesReady(quote)) {
+    const reason = String(quote?.workAmoV5?.reasonCode ?? "").trim();
+    throw new Error(
+      `AMO governed writes are paused${reason ? ` (${reason})` : ""}. No WORK transaction was created.`,
+    );
+  }
+}
+
+function assertWorkAmoV5ListingEnabled(quote: WorkFloorQuote | undefined) {
+  if (!workAmoV5ListingWritesReady(quote)) {
+    const reason = String(quote?.workAmoV5?.reasonCode ?? "").trim();
+    throw new Error(
+      `AMO cannot prepare a governed WORK unit right now${reason ? ` (${reason})` : ""}. The canonical quote and all three estimates must be verified before signing.`,
     );
   }
 }
@@ -14169,7 +14772,7 @@ async function fetchMarketplaceSummary(
     !payload.indexedAt.trim()
   ) {
     throw new Error(
-      "Marketplace summary did not include one coherent registry, credit, and WORK-floor snapshot.",
+      "AMO summary did not include one coherent registry, credit, and WORK-floor snapshot.",
     );
   }
 
@@ -15854,7 +16457,7 @@ function listingAnchorDetails(
   const authorization = listing.saleAuthorization as PowIdSaleAuthorization;
   if (!saleAuthorizationHasAnchor(authorization)) {
     throw new Error(
-      "This listing does not use a spendable marketplace anchor.",
+      "This listing does not use a spendable AMO anchor.",
     );
   }
 
@@ -15893,7 +16496,7 @@ function listingAnchorDetails(
     marketplaceLegacyAnchorScriptPubKey(network)
   ) {
     throw new Error(
-      "This listing anchor script does not match the legacy marketplace protocol.",
+      "This listing anchor script does not match the legacy AMO protocol.",
     );
   }
 
@@ -16767,8 +17370,11 @@ export default function App() {
   const [tokenListAmount, setTokenListAmount] = useState(
     String(WORK_TOKEN_MINT_AMOUNT),
   );
+  const [tokenListFaceUsdCents, setTokenListFaceUsdCents] = useState(2000);
   const [tokenListBuyerAddress, setTokenListBuyerAddress] = useState("");
   const [tokenListPriceSats, setTokenListPriceSats] = useState(1000);
+  const [workAmoQuoteUsdPer100mProofsQ8, setWorkAmoQuoteUsdPer100mProofsQ8] =
+    useState("");
   const [tokenBtcUsd, setTokenBtcUsd] = useState(0);
   const [workFloorQuote, setWorkFloorQuote] = useState<
     WorkFloorQuote | undefined
@@ -16824,7 +17430,7 @@ export default function App() {
   );
   const [rushMinting, setRushMinting] = useState(false);
   const [tokenAction, setTokenAction] = useState<
-    "" | "buy" | "create" | "delist" | "list" | "mint" | "seal" | "split" | "split-transfer" | "transfer"
+    "" | "buy" | "create" | "delist" | "list" | "mint" | "quote" | "seal" | "split" | "split-transfer" | "transfer"
   >("");
   useEffect(() => {
     let canceled = false;
@@ -19061,16 +19667,35 @@ export default function App() {
   const normalizedTokenListPriceSats = Number.isFinite(tokenListPriceSats)
     ? Math.floor(tokenListPriceSats)
     : 0;
+  const selectedWorkAmoEstimate = workAmoEstimateForFace(
+    workFloorQuote,
+    tokenListFaceUsdCents,
+  );
+  const selectedWorkAmoEstimateAtoms = exactIntegerBigInt(
+    selectedWorkAmoEstimate?.unitAmountAtoms,
+  );
+  const workAmoListInputReady = Boolean(
+    walletTransferToken &&
+      isWorkToken(walletTransferToken) &&
+      workAmoFaceUsdCentsAllowed(tokenListFaceUsdCents) &&
+      workAmoV5ListingWritesReady(workFloorQuote) &&
+      selectedWorkAmoEstimateAtoms !== null &&
+      selectedWorkAmoEstimateAtoms > 0n &&
+      selectedWorkAmoEstimateAtoms <= walletSpendableTokenAtoms,
+  );
+  const genericListInputReady = Boolean(
+    walletTransferToken &&
+      !isWorkToken(walletTransferToken) &&
+      tokenListInput &&
+      normalizedTokenListAmountUnits !== null &&
+      normalizedTokenListAmountUnits <= walletSpendableTokenAtoms &&
+      normalizedTokenListPriceSats >= 1,
+  );
   const canListToken =
     Boolean(
       address &&
         walletTransferToken &&
-        (!isWorkToken(walletTransferToken) ||
-          workMarketplaceV4WritesReady(workFloorQuote)) &&
-        tokenListInput &&
-        normalizedTokenListAmountUnits !== null &&
-        normalizedTokenListAmountUnits <= walletSpendableTokenAtoms &&
-        normalizedTokenListPriceSats >= 1 &&
+        (workAmoListInputReady || genericListInputReady) &&
         (!tokenListBuyerAddress.trim() ||
           isValidBitcoinAddress(tokenListBuyerAddress.trim(), "livenet")),
     ) &&
@@ -21628,7 +22253,7 @@ export default function App() {
         }
         setStatusForWorkspace(requestWorkspaceKey, {
           tone: "idle",
-          text: "Marketplace summary refresh already in progress...",
+          text: "AMO summary refresh already in progress...",
         });
       }
       try {
@@ -21665,7 +22290,7 @@ export default function App() {
         }
         setStatusForWorkspace(requestWorkspaceKey, {
           tone: "idle",
-          text: "Refreshing marketplace summary...",
+          text: "Refreshing AMO summary...",
         });
       }
       try {
@@ -21722,7 +22347,7 @@ export default function App() {
             : "";
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "good",
-            text: `Marketplace loaded. ${acceptedTokenState.tokens.length.toLocaleString()} credit${acceptedTokenState.tokens.length === 1 ? "" : "s"}, ${acceptedTokenState.listings.length.toLocaleString()} listing${acceptedTokenState.listings.length === 1 ? "" : "s"}.${floorText}`,
+            text: `AMO loaded. ${acceptedTokenState.tokens.length.toLocaleString()} credit${acceptedTokenState.tokens.length === 1 ? "" : "s"}, ${acceptedTokenState.listings.length.toLocaleString()} listing${acceptedTokenState.listings.length === 1 ? "" : "s"}.${floorText}`,
           });
         }
         return acceptedSnapshot;
@@ -21748,12 +22373,12 @@ export default function App() {
           isTransientProofApiReadError(error) &&
           showLastGoodReadWarning(requestWorkspaceKey, readSource, readAttempt, error, {
             indexedAt: lastGoodSnapshot?.indexedAt,
-            label: "ProofOfWork marketplace",
+            label: "ProofOfWork AMO",
           });
         if (!silent && !retainedLastGood) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
-            text: errorMessage(error, "Marketplace summary refresh failed."),
+            text: errorMessage(error, "AMO summary refresh failed."),
           });
         }
         return undefined;
@@ -24185,7 +24810,7 @@ export default function App() {
     if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
       setStatus({
         tone: "bad",
-        text: "ID marketplace transfer OP_RETURN is over 100 KB.",
+        text: "ID AMO transfer OP_RETURN is over 100 KB.",
       });
       return;
     }
@@ -26035,49 +26660,169 @@ export default function App() {
     }
   }
 
-  async function assertWorkMarketPricingTipUnchanged({
-    amountAtoms,
-    authorization,
-    actionLabel,
-  }: {
-    amountAtoms: string;
-    authorization: Partial<PowTokenSaleAuthorizationDraft>;
-    actionLabel: string;
-  }) {
-    const preBroadcastFloor = await fetchWorkFloorQuote("livenet", true);
-    assertWorkMarketplaceV4WritesEnabled(preBroadcastFloor);
-    if (!preBroadcastFloor) {
-      throw new Error(
-        `The WORK pricing oracle became unavailable before broadcast. No ${actionLabel} transaction was broadcast.`,
-      );
-    }
-    applyWorkFloorQuote(preBroadcastFloor);
-    const preBroadcastPricingFields =
-      workMarketConfirmationFloorOracleFields(
-        preBroadcastFloor,
-        amountAtoms,
-      );
-    if (
-      !workMarketPricingCommitmentMatches(
-        authorization,
-        preBroadcastPricingFields,
-      )
-    ) {
-      throw new Error(
-        `The WORK pricing tip advanced before broadcast. Retry the ${actionLabel} against the new confirmed tip. The signed transaction was not broadcast.`,
-      );
-    }
+  function confirmWorkAmoEstimateListing(
+    faceUsdCents: number,
+    estimate: WorkAmoV5Estimate,
+  ) {
+    return window.confirm(
+      `${workAmoFaceLabel(faceUsdCents)} AMO unit: the displayed ${formatWorkAmount(
+        BigInt(estimate.unitAmountAtoms ?? "0"),
+      )} WORK and ${Number(estimate.unitPriceSats).toLocaleString()} proof price are estimates only. Confirmation order derives and freezes the exact amount and price. The transaction can fail admission if the quote, balance, or canonical state is invalid at its position. Registry and miner fees are final once broadcast. Continue?`,
+    );
   }
 
-  function confirmWorkMarketConfirmationFloorAction(actionLabel: string) {
-    if (actionLabel === "purchase") {
-      return window.confirm(
-        "WORK purchases use confirmation-floor pricing. If the confirmation-time floor rises above the signed price, the seller payment and sale-ticket spend may still confirm while the WORK transfer is rejected. Registry and miner fees are final once broadcast. Continue?",
-      );
+  function confirmWorkAmoFrozenAction(
+    actionLabel: "purchase" | "seal",
+    listing: PowTokenListing,
+  ) {
+    const frozen = workAmoFrozenTerms(listing);
+    if (!frozen) {
+      return false;
     }
+    const unitLabel =
+      frozen.faceUsdCents
+        ? `${workAmoFaceLabel(frozen.faceUsdCents)} AMO unit`
+        : "grandfathered V4 WORK listing";
     return window.confirm(
-      `WORK ${actionLabel} uses confirmation-floor pricing. The canonical verifier checks the floor from the block immediately before confirmation; this transaction remains valid when its price meets that confirmation floor. Registry and miner fees are final once broadcast. Continue?`,
+      `${actionLabel === "seal" ? "Seal" : "Purchase"} ${unitLabel}: this confirmed listing is frozen at ${formatWorkAmount(
+        BigInt(frozen.amountAtoms),
+      )} WORK for ${frozen.priceSats.toLocaleString()} proofs. Later network-value or USD-quote changes do not reprice it. Registry and miner fees are final once broadcast. Continue?`,
     );
+  }
+
+  async function publishWorkAmoUsdQuote(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    const publication = workFloorQuote?.workAmoV5?.quotePublication;
+    const usdPer100mProofsQ8 = workAmoQuoteUsdPer100mProofsQ8.trim();
+    const recordPrefix = String(publication?.recordPrefix ?? "");
+    const nextSequence = canonicalPositiveIntegerText(
+      publication?.nextSequence,
+    );
+    const authorityScriptPubKey = String(
+      publication?.authorityScriptPubKey ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    const registryAddress = String(publication?.registryAddress ?? "").trim();
+    const registryPaymentSats = Math.floor(
+      Number(publication?.registryPaymentSats),
+    );
+
+    if (!window.unisat?.signPsbt || !address) {
+      setStatus({
+        tone: "bad",
+        text: "Connect the declared USD quote-authority wallet first.",
+      });
+      return;
+    }
+    if (
+      network !== "livenet" ||
+      !publication ||
+      !workAmoV5QuotePublicationReady(publication) ||
+      publication.v1DeclarationTxid !== WORK_AMO_V1_DECLARATION_TXID ||
+      !/^pwa1:usd1:/u.test(recordPrefix) ||
+      !recordPrefix.endsWith(":") ||
+      !/^[1-9][0-9]{0,79}$/u.test(usdPer100mProofsQ8) ||
+      !/^[0-9a-f]+$/u.test(authorityScriptPubKey) ||
+      !isValidBitcoinAddress(registryAddress, "livenet") ||
+      !Number.isSafeInteger(registryPaymentSats) ||
+      registryPaymentSats < TOKEN_MIN_MUTATION_PRICE_SATS
+    ) {
+      setStatus({
+        tone: "bad",
+        text: "The authority quote publication data is incomplete or the Q8 quote is invalid. No transaction was created.",
+      });
+      return;
+    }
+
+    const connectedScriptPubKey = bytesToHex(
+      scriptForAddress(address, "livenet", "Quote authority"),
+    ).toLowerCase();
+    if (connectedScriptPubKey !== authorityScriptPubKey) {
+      setStatus({
+        tone: "bad",
+        text: "The connected wallet is not the declared USD quote authority. No transaction was created.",
+      });
+      return;
+    }
+
+    setTokenAction("quote");
+    setBusy(true);
+    setStatus({ tone: "idle", text: "Preparing canonical USD quote..." });
+    try {
+      await ensureWalletNetwork(window.unisat, "livenet", address);
+      await assertActiveWalletAddress(window.unisat, address);
+      const payload = `${recordPrefix}${usdPer100mProofsQ8}`;
+      if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
+        throw new Error("AMO USD quote OP_RETURN is over 100 KB.");
+      }
+      const paymentPsbt = await buildPaymentPsbt({
+        excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
+          tokenListings,
+          address,
+          { network: "livenet" },
+        ),
+        feeRate,
+        fromAddress: address,
+        network: "livenet",
+        payments: [
+          {
+            address: registryAddress,
+            amountSats: registryPaymentSats,
+          },
+        ],
+        protocolPayloads: [payload],
+        requireConfirmedUtxos: true,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+      if (
+        !window.confirm(
+          `Publish canonical USD quote sequence ${BigInt(
+            nextSequence,
+          ).toLocaleString("en-US")} with usdPer100mProofsQ8=${usdPer100mProofsQ8}? This authority action is final once broadcast.`,
+        )
+      ) {
+        setStatus({
+          tone: "idle",
+          text: "AMO USD quote canceled before signing.",
+        });
+        return;
+      }
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network: "livenet",
+        psbtHex: paymentPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+      setWorkAmoQuoteUsdPer100mProofsQ8("");
+      setStatus({
+        tone: "good",
+        text: `AMO USD quote broadcast: ${shortAddress(txid)}. It becomes canonical only after confirmed ordered validation.`,
+      });
+      void refreshTokenMarketData({
+        includeWorkFloor: true,
+        label: "AMO quote state",
+      });
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "AMO USD quote publication failed."),
+      });
+    } finally {
+      setTokenAction("");
+      setBusy(false);
+    }
   }
 
   async function listToken(event: FormEvent<HTMLFormElement>) {
@@ -26085,6 +26830,7 @@ export default function App() {
     const token = walletTransferToken;
     const priceSats = Math.floor(tokenListPriceSats);
     const buyerAddress = tokenListBuyerAddress.trim();
+    const workListing = Boolean(token && isWorkToken(token));
 
     if (!window.unisat?.signPsbt) {
       setStatus({
@@ -26098,17 +26844,23 @@ export default function App() {
       setStatus({ tone: "bad", text: "Select a mainnet credit first." });
       return;
     }
-    const parsedAmount = tokenAmountInput(token, tokenListAmount);
+    const parsedAmount = workListing
+      ? null
+      : tokenAmountInput(token, tokenListAmount);
 
     if (
-      !parsedAmount ||
-      !Number.isSafeInteger(priceSats) ||
-      priceSats < 1 ||
+      (workListing
+        ? !workAmoFaceUsdCentsAllowed(tokenListFaceUsdCents)
+        : !parsedAmount ||
+          !Number.isSafeInteger(priceSats) ||
+          priceSats < 1) ||
       (buyerAddress && !isValidBitcoinAddress(buyerAddress, "livenet"))
     ) {
       setStatus({
         tone: "bad",
-        text: "Enter a valid listing amount, price, and optional buyer lock.",
+        text: workListing
+          ? "Choose a $20, $50, or $100 AMO face unit and a valid optional buyer lock."
+          : "Enter a valid listing amount, price, and optional buyer lock.",
       });
       return;
     }
@@ -26117,11 +26869,29 @@ export default function App() {
     setBusy(true);
     setStatus({
       tone: "idle",
-      text: `Listing ${parsedAmount.display} ${token.ticker}...`,
+      text: workListing
+        ? `Preparing ${workAmoFaceLabel(tokenListFaceUsdCents)} AMO unit...`
+        : `Listing ${parsedAmount!.display} ${token.ticker}...`,
     });
 
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
+
+      let workEstimate: WorkAmoV5Estimate | undefined;
+      if (workListing) {
+        const freshFloor = await fetchWorkFloorQuote("livenet", true);
+        assertWorkAmoV5ListingEnabled(freshFloor);
+        workEstimate = workAmoEstimateForFace(
+          freshFloor,
+          tokenListFaceUsdCents,
+        );
+        if (!freshFloor || !workEstimate) {
+          throw new Error(
+            "The canonical AMO quote estimate is unavailable. No listing was created.",
+          );
+        }
+        applyWorkFloorQuote(freshFloor);
+      }
 
       setStatus({
         tone: "idle",
@@ -26149,11 +26919,17 @@ export default function App() {
       const spendableAmountUnits = exactIntegerBigInt(
         spendability.spendableBalanceAtoms,
       );
-      const attemptedAmountUnits = tokenRecordAmountAtoms(
-        token,
-        parsedAmount.amount,
-        parsedAmount.amountAtoms,
-      );
+      const attemptedAmountUnits = workListing
+        ? exactIntegerBigInt(workEstimate?.unitAmountAtoms)
+        : tokenRecordAmountAtoms(
+            token,
+            parsedAmount!.amount,
+            parsedAmount!.amountAtoms,
+          );
+      const attemptedAmountDisplay =
+        workListing && attemptedAmountUnits !== null
+          ? `${formatWorkAmount(attemptedAmountUnits)} estimated`
+          : parsedAmount?.display ?? "unknown";
       if (
         attemptedAmountUnits === null ||
         spendableAmountUnits === null ||
@@ -26165,7 +26941,7 @@ export default function App() {
             token,
             spendability.spendableBalance,
             spendability.spendableBalanceAtoms,
-          )} ${token.ticker} available; ${parsedAmount.display} attempted. No transaction was created.`,
+          )} ${token.ticker} available; ${attemptedAmountDisplay} attempted. No transaction was created.`,
         });
         return;
       }
@@ -26178,33 +26954,11 @@ export default function App() {
         throw new Error("UniSat did not return a valid seller public key.");
       }
 
-      let workPricingFields: Partial<PowTokenSaleAuthorizationDraft> = {};
-      if (isWorkToken(latestToken)) {
-        const freshFloor = await fetchWorkFloorQuote("livenet", true);
-        assertWorkMarketplaceV4WritesEnabled(freshFloor);
-        if (!freshFloor || !parsedAmount.amountAtoms) {
-          throw new Error(
-            "The exact-tip WORK pricing oracle is unavailable. No listing was created.",
-          );
-        }
-        applyWorkFloorQuote(freshFloor);
-        workPricingFields = workMarketConfirmationFloorOracleFields(
-          freshFloor,
-          parsedAmount.amountAtoms,
-        );
-        if (
-          BigInt(priceSats) < BigInt(workPricingFields.minimumPriceSats ?? "0")
-        ) {
-          throw new Error(
-            `WORK listings require at least ${workPricingFields.minimumPriceSats} proofs at the current network value.`,
-          );
-        }
-      }
-
       const saleAuthorization: PowTokenSaleAuthorization = {
         ...tokenSaleAuthorizationDraft({
-          amount: parsedAmount.amount,
-          amountAtoms: parsedAmount.amountAtoms,
+          amount: workListing ? 0 : parsedAmount!.amount,
+          amountAtoms: workListing ? undefined : parsedAmount!.amountAtoms,
+          amountModel: workListing ? WORK_AMO_AMOUNT_MODEL : undefined,
           anchorScriptPubKey: bytesToHex(
             scriptForAddress(address, "livenet", "Sale-ticket address"),
           ),
@@ -26212,21 +26966,36 @@ export default function App() {
           anchorType: TOKEN_LISTING_ANCHOR_TYPE,
           anchorValueSats: TOKEN_LISTING_ANCHOR_VALUE_SATS,
           anchorVout: TOKEN_LISTING_ANCHOR_VOUT,
+          bondTransitionModel: workListing
+            ? WORK_AMO_BOND_TRANSITION_MODEL
+            : undefined,
           buyerAddress,
           network: "livenet",
           nonce: `${Date.now().toString(36)}-${Math.random()
             .toString(36)
             .slice(2, 10)}`,
-          priceSats,
+          priceSats: workListing ? 0 : priceSats,
           registryAddress: latestToken.registryAddress,
           sellerAddress: address,
           sellerPublicKey,
+          stateOrderModel: workListing
+            ? WORK_AMO_STATE_ORDER_MODEL
+            : undefined,
           ticker: latestToken.ticker,
           tokenId: latestToken.tokenId,
-          version: isWorkToken(latestToken)
-            ? TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION
+          unitFaceUsdCents: workListing
+            ? tokenListFaceUsdCents
+            : undefined,
+          unitModel: workListing ? WORK_AMO_UNIT_MODEL : undefined,
+          unitUsdOracleModel: workListing
+            ? WORK_AMO_USD_ORACLE_MODEL
+            : undefined,
+          unitWorkOracleModel: workListing
+            ? WORK_AMO_WORK_ORACLE_MODEL
+            : undefined,
+          version: workListing
+            ? TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION
             : TOKEN_SALE_AUTH_VERSION,
-          ...workPricingFields,
         }),
         anchorSignature: "",
         anchorTxid: "",
@@ -26272,8 +27041,9 @@ export default function App() {
       }
 
       if (
-        isWorkToken(latestToken) &&
-        !confirmWorkMarketConfirmationFloorAction("listing")
+        workListing &&
+        workEstimate &&
+        !confirmWorkAmoEstimateListing(tokenListFaceUsdCents, workEstimate)
       ) {
         setStatus({
           tone: "idle",
@@ -26284,34 +27054,30 @@ export default function App() {
 
       await assertActiveWalletAddress(window.unisat, address);
       const txid = await signAndBroadcastPsbt({
-        beforeBroadcast:
-          isWorkToken(latestToken) && parsedAmount.amountAtoms
-            ? () =>
-                assertWorkMarketPricingTipUnchanged({
-                  actionLabel: "listing",
-                  amountAtoms: parsedAmount.amountAtoms!,
-                  authorization: saleAuthorization,
-                })
-            : undefined,
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
         wallet: window.unisat,
       });
       const listing: PowTokenListing = {
-        amount: parsedAmount.amount,
-        amountAtoms: parsedAmount.amountAtoms,
+        amount: workListing ? 0 : parsedAmount!.amount,
+        amountAtoms: workListing ? undefined : parsedAmount!.amountAtoms,
         confirmed: false,
         createdAt: new Date().toISOString(),
         dataBytes: dataCarrierBytesForPayload(payload),
+        estimate: workEstimate,
         listingId: txid,
         network: "livenet",
-        priceSats,
+        priceSats: workListing ? 0 : priceSats,
         registryAddress: latestToken.registryAddress,
         saleAuthorization,
         sellerAddress: address,
         ticker: latestToken.ticker,
         tokenId: latestToken.tokenId,
+        unitFaceUsdCents: workListing
+          ? tokenListFaceUsdCents
+          : undefined,
+        workAmoEstimate: workEstimate,
       };
       setTokenListings((current) =>
         current.some((item) => item.listingId === txid)
@@ -26320,7 +27086,9 @@ export default function App() {
       );
       setStatus({
         tone: "good",
-        text: `${latestToken.ticker} listing broadcast: ${shortAddress(txid)}.`,
+        text: workListing
+          ? `${workAmoFaceLabel(tokenListFaceUsdCents)} AMO intent broadcast. WORK amount and proof price remain estimates until confirmation: ${shortAddress(txid)}.`
+          : `${latestToken.ticker} listing broadcast: ${shortAddress(txid)}.`,
       });
       void refreshToken(true, true);
     } catch (error) {
@@ -26363,37 +27131,11 @@ export default function App() {
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
 
-      let workPricingFields: Partial<PowTokenSaleAuthorizationDraft> = {};
+      let baseAuthorization = listing.saleAuthorization;
       if (isWorkToken(listing)) {
-        if (
-          !isWorkMarketConfirmationFloorAuthorization(
-            listing.saleAuthorization.version,
-          )
-        ) {
-          throw new Error(
-            "This WORK listing uses the retired next-block authorization. Delist it to recover the sale ticket, then relist after the marketplace upgrade activates.",
-          );
-        }
-        const freshFloor = await fetchWorkFloorQuote("livenet", true);
-        assertWorkMarketplaceV4WritesEnabled(freshFloor);
-        if (!freshFloor || !listing.amountAtoms) {
-          throw new Error(
-            "The exact-tip WORK pricing oracle is unavailable. No seal was created.",
-          );
-        }
-        applyWorkFloorQuote(freshFloor);
-        workPricingFields = workMarketConfirmationFloorOracleFields(
-          freshFloor,
-          listing.amountAtoms,
-        );
-        if (
-          BigInt(listing.priceSats) <
-          BigInt(workPricingFields.minimumPriceSats ?? "0")
-        ) {
-          throw new Error(
-            "This WORK listing is below the current network value and cannot be sealed. Relist it at the current floor.",
-          );
-        }
+        assertWorkAmoV5ProtocolEnabled(workFloorQuote);
+        baseAuthorization =
+          workAmoV5StaticAuthorizationForListing(listing);
       }
 
       const anchorSignature = await signTokenSaleTicketAuthorization({
@@ -26402,8 +27144,7 @@ export default function App() {
         wallet: window.unisat,
       });
       const sealedAuthorization: PowTokenSaleAuthorization = {
-        ...listing.saleAuthorization,
-        ...workPricingFields,
+        ...baseAuthorization,
         anchorSignature,
         anchorTxid: listing.listingId,
       };
@@ -26440,7 +27181,7 @@ export default function App() {
 
       if (
         isWorkToken(listing) &&
-        !confirmWorkMarketConfirmationFloorAction("listing seal")
+        !confirmWorkAmoFrozenAction("seal", listing)
       ) {
         setStatus({
           tone: "idle",
@@ -26451,15 +27192,6 @@ export default function App() {
 
       await assertActiveWalletAddress(window.unisat, address);
       const txid = await signAndBroadcastPsbt({
-        beforeBroadcast:
-          isWorkToken(listing) && listing.amountAtoms
-            ? () =>
-                assertWorkMarketPricingTipUnchanged({
-                  actionLabel: "listing seal",
-                  amountAtoms: listing.amountAtoms!,
-                  authorization: sealedAuthorization,
-                })
-            : undefined,
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
@@ -26645,6 +27377,14 @@ export default function App() {
       return;
     }
 
+    if (isWorkToken(listing) && !workAmoFrozenTerms(listing)) {
+      setStatus({
+        tone: "bad",
+        text: "This WORK listing does not expose complete immutable AMO terms. No purchase was created.",
+      });
+      return;
+    }
+
     setTokenAction("buy");
     setBusy(true);
     setStatus({
@@ -26659,42 +27399,12 @@ export default function App() {
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
 
-      let purchaseAuthorization: PowTokenSaleAuthorization | undefined;
       if (isWorkToken(listing)) {
-        if (
-          !isWorkMarketConfirmationFloorAuthorization(
-            listing.saleAuthorization.version,
-          )
-        ) {
-          throw new Error(
-            "This WORK listing uses the retired next-block authorization and cannot be bought. The seller must delist and relist after the marketplace upgrade activates.",
-          );
-        }
-        const freshFloor = await fetchWorkFloorQuote("livenet", true);
-        assertWorkMarketplaceV4WritesEnabled(freshFloor);
-        if (!freshFloor || !listing.amountAtoms) {
-          throw new Error(
-            "The exact-tip WORK pricing oracle is unavailable. No purchase was created.",
-          );
-        }
-        applyWorkFloorQuote(freshFloor);
-        const workPricingFields = workMarketConfirmationFloorOracleFields(
-          freshFloor,
-          listing.amountAtoms,
-        );
-        if (
-          BigInt(listing.priceSats) <
-          BigInt(workPricingFields.minimumPriceSats ?? "0")
-        ) {
-          throw new Error(
-            "This WORK listing is below the current network value and is no longer executable.",
-          );
-        }
-        purchaseAuthorization = {
-          ...listing.saleAuthorization,
-          ...workPricingFields,
-        };
+        assertWorkAmoV5ProtocolEnabled(workFloorQuote);
       }
+      const purchaseAuthorization = isWorkToken(listing)
+        ? workAmoV5StaticAuthorizationForListing(listing)
+        : undefined;
       const payload = buildTokenBuyPayload(
         listing.listingId,
         address,
@@ -26735,8 +27445,8 @@ export default function App() {
         return;
       }
 
-      if (purchaseAuthorization) {
-        if (!confirmWorkMarketConfirmationFloorAction("purchase")) {
+      if (isWorkToken(listing)) {
+        if (!confirmWorkAmoFrozenAction("purchase", listing)) {
           setStatus({
             tone: "idle",
             text: "WORK purchase canceled before signing.",
@@ -26747,15 +27457,6 @@ export default function App() {
 
       await assertActiveWalletAddress(window.unisat, address);
       const txid = await signAndBroadcastPsbt({
-        beforeBroadcast:
-          purchaseAuthorization && listing.amountAtoms
-            ? () =>
-                assertWorkMarketPricingTipUnchanged({
-                  actionLabel: "purchase",
-                  amountAtoms: listing.amountAtoms!,
-                  authorization: purchaseAuthorization!,
-                })
-            : undefined,
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
@@ -27721,7 +28422,13 @@ export default function App() {
           tokenMarketLoading={tokenMarketplaceLoading}
           workFloorLoading={workFloorLoading}
           workFloorQuote={workFloorQuote}
+          workAmoQuotePublishing={tokenAction === "quote"}
+          workAmoQuoteUsdPer100mProofsQ8={workAmoQuoteUsdPer100mProofsQ8}
           buyTokenListing={buyTokenListing}
+          publishWorkAmoUsdQuote={publishWorkAmoUsdQuote}
+          setWorkAmoQuoteUsdPer100mProofsQ8={
+            setWorkAmoQuoteUsdPer100mProofsQ8
+          }
           useListing={(listing) => {
             setIdSaleAuthorization(
               JSON.stringify(listing.saleAuthorization, null, 2),
@@ -27734,7 +28441,7 @@ export default function App() {
           onRefreshTokens={() =>
             void refreshTokenMarketData({
               includeWorkFloor: true,
-              label: "credit marketplace",
+              label: "credit AMO",
             })
           }
         />
@@ -27767,6 +28474,7 @@ export default function App() {
         invalidEvents={accountWalletInvalidEvents}
         listAmount={tokenListAmount}
         listBuyerAddress={tokenListBuyerAddress}
+        listFaceUsdCents={tokenListFaceUsdCents}
         listPriceSats={tokenListPriceSats}
         listing={tokenAction === "list"}
         listings={tokenListings}
@@ -27800,6 +28508,7 @@ export default function App() {
         setFeeRate={setFeeRate}
         setListAmount={setTokenListAmount}
         setListBuyerAddress={setTokenListBuyerAddress}
+        setListFaceUsdCents={setTokenListFaceUsdCents}
         setListPriceSats={setTokenListPriceSats}
         setPrepareTransferCount={setTokenPrepareTransferCount}
         setPrepareTransferFeeRate={setTokenPrepareTransferFeeRate}
@@ -27860,6 +28569,7 @@ export default function App() {
         hasUnisat={hasUnisat}
         listAmount={tokenListAmount}
         listBuyerAddress={tokenListBuyerAddress}
+        listFaceUsdCents={tokenListFaceUsdCents}
         listPriceSats={tokenListPriceSats}
         listing={tokenAction === "list"}
         listings={activeBondListings}
@@ -27876,6 +28586,7 @@ export default function App() {
         setFeeRate={setFeeRate}
         setListAmount={setTokenListAmount}
         setListBuyerAddress={setTokenListBuyerAddress}
+        setListFaceUsdCents={setTokenListFaceUsdCents}
         setListPriceSats={setTokenListPriceSats}
         setSelectedTokenId={setTokenTransferTokenId}
         setTransferAmount={setTokenTransferAmount}
@@ -28188,7 +28899,7 @@ export default function App() {
                 if (activeFolder === "marketplace") {
                   void refreshTokenMarketData({
                     includeWorkFloor: true,
-                    label: "marketplace data",
+                    label: "AMO data",
                   });
                   return;
                 }
@@ -28421,7 +29132,7 @@ export default function App() {
             >
               <span className="folder-label">
                 <Users size={17} />
-                <span>Marketplace</span>
+                <span>AMO</span>
               </span>
               <strong>{ownerControlledIds.length}</strong>
             </button>
@@ -28687,6 +29398,14 @@ export default function App() {
             tokenMarketLoading={tokenMarketplaceLoading}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
+            workAmoQuotePublishing={tokenAction === "quote"}
+            workAmoQuoteUsdPer100mProofsQ8={
+              workAmoQuoteUsdPer100mProofsQ8
+            }
+            publishWorkAmoUsdQuote={publishWorkAmoUsdQuote}
+            setWorkAmoQuoteUsdPer100mProofsQ8={
+              setWorkAmoQuoteUsdPer100mProofsQ8
+            }
             onOpenTokenWorkspace={openTokenWorkspace}
             onOpenWalletWorkspace={openWalletWorkspace}
             useListing={(listing) => {
@@ -28701,7 +29420,7 @@ export default function App() {
             onRefreshTokens={() =>
               void refreshTokenMarketData({
                 includeWorkFloor: true,
-                label: "credit marketplace",
+                label: "credit AMO",
               })
             }
           />
@@ -28720,6 +29439,7 @@ export default function App() {
             invalidEvents={accountWalletInvalidEvents}
             listAmount={tokenListAmount}
             listBuyerAddress={tokenListBuyerAddress}
+            listFaceUsdCents={tokenListFaceUsdCents}
             listPriceSats={tokenListPriceSats}
             listing={tokenAction === "list"}
             listings={tokenListings}
@@ -28747,6 +29467,7 @@ export default function App() {
             setFeeRate={setFeeRate}
             setListAmount={setTokenListAmount}
             setListBuyerAddress={setTokenListBuyerAddress}
+            setListFaceUsdCents={setTokenListFaceUsdCents}
             setListPriceSats={setTokenListPriceSats}
             setPrepareTransferCount={setTokenPrepareTransferCount}
             setPrepareTransferFeeRate={setTokenPrepareTransferFeeRate}
@@ -28883,6 +29604,7 @@ export default function App() {
             hasUnisat={hasUnisat}
             listAmount={tokenListAmount}
             listBuyerAddress={tokenListBuyerAddress}
+            listFaceUsdCents={tokenListFaceUsdCents}
             listPriceSats={tokenListPriceSats}
             listing={tokenAction === "list"}
             listings={activeBondListings}
@@ -28899,6 +29621,7 @@ export default function App() {
             setFeeRate={setFeeRate}
             setListAmount={setTokenListAmount}
             setListBuyerAddress={setTokenListBuyerAddress}
+            setListFaceUsdCents={setTokenListFaceUsdCents}
             setListPriceSats={setTokenListPriceSats}
             setSelectedTokenId={setTokenTransferTokenId}
             setTransferAmount={setTokenTransferAmount}
@@ -30960,6 +31683,7 @@ type TokenWalletAppProps = {
   invalidEvents: PowTokenInvalidEvent[];
   listAmount: string;
   listBuyerAddress: string;
+  listFaceUsdCents: number;
   listPriceSats: number;
   listing: boolean;
   listings: PowTokenListing[];
@@ -30978,6 +31702,7 @@ type TokenWalletAppProps = {
   setFeeRate: (value: number) => void;
   setListAmount: (value: string) => void;
   setListBuyerAddress: (value: string) => void;
+  setListFaceUsdCents: (value: number) => void;
   setListPriceSats: (value: number) => void;
   setPrepareTransferCount: (value: number) => void;
   setPrepareTransferFeeRate: (value: number) => void;
@@ -31033,6 +31758,7 @@ type InfinityAppProps = {
   hasUnisat: boolean;
   listAmount: string;
   listBuyerAddress: string;
+  listFaceUsdCents: number;
   listPriceSats: number;
   listing: boolean;
   listings: PowTokenListing[];
@@ -31049,6 +31775,7 @@ type InfinityAppProps = {
   setFeeRate: (value: number) => void;
   setListAmount: (value: string) => void;
   setListBuyerAddress: (value: string) => void;
+  setListFaceUsdCents: (value: number) => void;
   setListPriceSats: (value: number) => void;
   setSelectedTokenId: (value: string) => void;
   setTransferAmount: (value: string) => void;
@@ -31100,6 +31827,7 @@ function InfinityApp({
   hasUnisat,
   listAmount,
   listBuyerAddress,
+  listFaceUsdCents,
   listPriceSats,
   listing,
   listings,
@@ -31116,6 +31844,7 @@ function InfinityApp({
   setFeeRate,
   setListAmount,
   setListBuyerAddress,
+  setListFaceUsdCents,
   setListPriceSats,
   setSelectedTokenId,
   setTransferAmount,
@@ -31432,7 +32161,7 @@ function InfinityApp({
               </p>
               <p className="field-note">
                 INCB network value equals fixed cumulative issuance value plus
-                confirmed INCB sale volume, transfer fees, and marketplace
+                confirmed INCB sale volume, transfer fees, and AMO
                 mutation fees. Later WORK value changes do not reprice INCB.
               </p>
               <p className="field-note">
@@ -31641,7 +32370,7 @@ function InfinityApp({
                 excluded. Confirmation fixes 1 INCB per whole proof of direct and
                 attached WORK value. Later WORK value changes do not reprice INCB;
                 beyond new confirmed bonds, only confirmed INCB sales, transfer
-                fees, and marketplace mutation fees can change its network value
+                fees, and AMO mutation fees can change its network value
                 and floor.
               </p>
             ) : null}
@@ -31667,6 +32396,7 @@ function InfinityApp({
           feeRate={feeRate}
           listAmount={listAmount}
           listBuyerAddress={listBuyerAddress}
+          listFaceUsdCents={listFaceUsdCents}
           listPriceSats={listPriceSats}
           listing={listing}
           listings={listings}
@@ -31676,6 +32406,7 @@ function InfinityApp({
           setFeeRate={setFeeRate}
           setListAmount={setListAmount}
           setListBuyerAddress={setListBuyerAddress}
+          setListFaceUsdCents={setListFaceUsdCents}
           setListPriceSats={setListPriceSats}
           setSelectedTokenId={setSelectedTokenId}
           setTransferAmount={setTransferAmount}
@@ -31783,6 +32514,7 @@ function TokenWalletApp({
   invalidEvents,
   listAmount,
   listBuyerAddress,
+  listFaceUsdCents,
   listPriceSats,
   listing,
   listings,
@@ -31801,6 +32533,7 @@ function TokenWalletApp({
   setFeeRate,
   setListAmount,
   setListBuyerAddress,
+  setListFaceUsdCents,
   setListPriceSats,
   setPrepareTransferCount,
   setPrepareTransferFeeRate,
@@ -31861,6 +32594,7 @@ function TokenWalletApp({
         invalidEvents={invalidEvents}
         listAmount={listAmount}
         listBuyerAddress={listBuyerAddress}
+        listFaceUsdCents={listFaceUsdCents}
         listPriceSats={listPriceSats}
         listing={listing}
         listings={listings}
@@ -31876,6 +32610,7 @@ function TokenWalletApp({
         setFeeRate={setFeeRate}
         setListAmount={setListAmount}
         setListBuyerAddress={setListBuyerAddress}
+        setListFaceUsdCents={setListFaceUsdCents}
         setListPriceSats={setListPriceSats}
         setPrepareTransferCount={setPrepareTransferCount}
         setPrepareTransferFeeRate={setPrepareTransferFeeRate}
@@ -32019,6 +32754,7 @@ function TokenWalletWorkspace({
   invalidEvents = [],
   listAmount,
   listBuyerAddress,
+  listFaceUsdCents,
   listPriceSats,
   listing,
   listings,
@@ -32035,6 +32771,7 @@ function TokenWalletWorkspace({
   setFeeRate,
   setListAmount,
   setListBuyerAddress,
+  setListFaceUsdCents,
   setListPriceSats,
   setPrepareTransferCount,
   setPrepareTransferFeeRate,
@@ -32068,6 +32805,7 @@ function TokenWalletWorkspace({
   | "feeRate"
   | "listAmount"
   | "listBuyerAddress"
+  | "listFaceUsdCents"
   | "listPriceSats"
   | "listing"
   | "listings"
@@ -32077,6 +32815,7 @@ function TokenWalletWorkspace({
   | "setFeeRate"
   | "setListAmount"
   | "setListBuyerAddress"
+  | "setListFaceUsdCents"
   | "setListPriceSats"
   | "setSelectedTokenId"
   | "setTransferAmount"
@@ -32336,8 +33075,17 @@ function TokenWalletWorkspace({
     tokenWalletBalanceHasConfirmed,
   ).length;
   const selectedListToken = transferToken;
-  const workMarketplaceWritesEnabled =
-    workMarketplaceV4WritesReady(workFloorQuote);
+  const selectedListTokenIsWork = Boolean(
+    selectedListToken && isWorkToken(selectedListToken),
+  );
+  const workAmoProtocolVerified = workAmoV5ProtocolReady(workFloorQuote);
+  const workAmoProtocolWritesEnabled =
+    workAmoV5ProtocolWritesReady(workFloorQuote);
+  const workAmoListingEnabled = workAmoV5ListingWritesReady(workFloorQuote);
+  const selectedWorkAmoEstimate = workAmoEstimateForFace(
+    workFloorQuote,
+    listFaceUsdCents,
+  );
   const selectedWalletBalance = selectedListToken
     ? balances.find(
         (balance) => balance.token.tokenId === selectedListToken.tokenId,
@@ -32426,12 +33174,6 @@ function TokenWalletWorkspace({
     selectedListToken?.tokenId === WORK_TOKEN_ID && workFloorQuote
       ? workFloorQuote.networkValueSats / WORK_TOKEN_MAX_SUPPLY
       : 0;
-  const workSuggestedListPriceSats =
-    selectedListToken?.tokenId === WORK_TOKEN_ID &&
-    workReferenceSats > 0 &&
-    normalizedListAmountNumber > 0
-      ? Math.max(1, Math.round(workReferenceSats * normalizedListAmountNumber))
-      : 0;
   const listReferenceSats =
     workReferenceSats || lowestAskSats || lastSaleSats || mintReferenceSats;
   const listReferenceLabel =
@@ -32474,33 +33216,6 @@ function TokenWalletWorkspace({
           ? `Below ${listReferenceLabel.toLowerCase()}`
           : `Above ${listReferenceLabel.toLowerCase()}`
       : "Set listing";
-  const previousWorkSuggestedListPriceSatsRef = useRef(0);
-
-  useEffect(() => {
-    if (
-      selectedListToken?.tokenId !== WORK_TOKEN_ID ||
-      workSuggestedListPriceSats <= 0
-    ) {
-      previousWorkSuggestedListPriceSatsRef.current = 0;
-      return;
-    }
-
-    const previousSuggestion = previousWorkSuggestedListPriceSatsRef.current;
-    previousWorkSuggestedListPriceSatsRef.current = workSuggestedListPriceSats;
-
-    if (
-      normalizedListPriceSats <= 0 ||
-      normalizedListPriceSats === WORK_TOKEN_MINT_PRICE_SATS ||
-      normalizedListPriceSats === previousSuggestion
-    ) {
-      setListPriceSats(workSuggestedListPriceSats);
-    }
-  }, [
-    normalizedListPriceSats,
-    selectedListToken?.tokenId,
-    setListPriceSats,
-    workSuggestedListPriceSats,
-  ]);
   const normalizedPrepareTransferCount = Math.max(
     0,
     Math.floor(prepareTransferCount),
@@ -32889,90 +33604,182 @@ function TokenWalletWorkspace({
               <p>{walletCopy.listingDescription}</p>
             </div>
           </div>
-          {selectedListToken &&
-          isWorkToken(selectedListToken) &&
-          !workMarketplaceWritesEnabled ? (
+          {selectedListTokenIsWork && !workAmoProtocolVerified ? (
+            <p className="field-note bad">
+              AMO V5 is not fully indexed against declaration{" "}
+              {shortAddress(WORK_AMO_V5_DECLARATION_TXID)}. Governed WORK
+              actions fail closed; transfers and delisting remain available.
+            </p>
+          ) : selectedListTokenIsWork && !workAmoListingEnabled ? (
             <p className="field-note">
-              Marketplace upgrade pending declaration. WORK listing, sealing,
-              and buying are temporarily read-only; transfers and delisting
-              remain available.
+              New AMO units are read-only because the canonical on-chain USD
+              quote or confirmation estimates are unavailable
+              {workFloorQuote?.workAmoV5?.reasonCode
+                ? ` (${workFloorQuote.workAmoV5.reasonCode})`
+                : ""}
+              . Confirmed listings keep their frozen terms and remain eligible
+              for sealing and purchase.
             </p>
           ) : null}
           <form className="id-form" onSubmit={submitList}>
-            <div className="token-form-grid">
-              <label>
-                Amount
-                <input
-                  inputMode={
-                    selectedListToken && isWorkToken(selectedListToken)
-                      ? "decimal"
-                      : "numeric"
-                  }
-                  min={
-                    selectedListToken && isWorkToken(selectedListToken)
-                      ? "0.00000001"
-                      : "1"
-                  }
-                  onChange={(event) => setListAmount(event.target.value)}
-                  step={
-                    selectedListToken && isWorkToken(selectedListToken)
-                      ? "0.00000001"
-                      : "1"
-                  }
-                  type="number"
-                  value={listAmount}
-                />
-              </label>
-              <label>
-                Price proofs
-                <input
-                  min={1}
-                  onChange={(event) => setListPriceSats(Number(event.target.value))}
-                  type="number"
-                  value={listPriceSats}
-                />
-              </label>
-            </div>
-            <div className="token-list-price-reference">
-              <div>
-                <span>List unit</span>
-                <strong>
-                  {listUnitPriceSats > 0
-                    ? `${tokenSatsPerUnit(listUnitPriceSats)} proofs / ${selectedListToken?.ticker ?? walletCopy.fallbackTicker}`
-                    : "Set amount and price"}
-                </strong>
-                <small>{tokenUsd(satsToUsd(listUnitPriceSats, btcUsd))}</small>
-              </div>
-              <div>
-                <span>{listReferenceLabel}</span>
-                <strong>
-                  {listReferenceSats > 0
-                    ? `${tokenSatsPerUnit(listReferenceSats)} proofs / ${selectedListToken?.ticker ?? walletCopy.fallbackTicker}`
-                    : workFloorLoading &&
-                        selectedListToken?.tokenId === WORK_TOKEN_ID
-                      ? "Loading floor"
-                      : "No market data"}
-                </strong>
-                <small>
-                  {listReferenceSats > 0
-                    ? tokenUsd(satsToUsd(listReferenceSats, btcUsd))
-                    : "Refresh for latest"}
-                </small>
-              </div>
-              <div
-                className={
-                  listPriceBelowReference
-                    ? "bad"
-                    : listPriceAboveReference
-                      ? "good"
-                      : ""
-                }
-              >
-                <span>Position</span>
-                <strong>{listPositionLabel}</strong>
-                <small>{listPositionNote}</small>
-              </div>
-            </div>
+            {selectedListTokenIsWork ? (
+              <>
+                <fieldset className="work-amo-face-selector">
+                  <legend>USD face unit</legend>
+                  <div>
+                    {WORK_AMO_ALLOWED_FACE_USD_CENTS.map((faceUsdCents) => (
+                      <button
+                        aria-pressed={listFaceUsdCents === faceUsdCents}
+                        className={
+                          listFaceUsdCents === faceUsdCents
+                            ? "secondary active"
+                            : "secondary"
+                        }
+                        key={faceUsdCents}
+                        onClick={() => setListFaceUsdCents(faceUsdCents)}
+                        type="button"
+                      >
+                        {workAmoFaceLabel(faceUsdCents)}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+                <div
+                  className="token-list-price-reference work-amo-estimate"
+                  data-estimate-only="true"
+                >
+                  <div>
+                    <span>Face</span>
+                    <strong>{workAmoFaceLabel(listFaceUsdCents)}</strong>
+                    <small>Fixed USD unit</small>
+                  </div>
+                  <div>
+                    <span>Estimated WORK</span>
+                    <strong>
+                      {selectedWorkAmoEstimate?.unitAmountAtoms
+                        ? formatWorkAmount(
+                            BigInt(selectedWorkAmoEstimate.unitAmountAtoms),
+                          )
+                        : workFloorLoading
+                          ? "Loading"
+                          : "Unavailable"}
+                    </strong>
+                    <small>Estimate only</small>
+                  </div>
+                  <div>
+                    <span>Estimated proof price</span>
+                    <strong>
+                      {selectedWorkAmoEstimate?.unitPriceSats
+                        ? `${selectedWorkAmoEstimate.unitPriceSats.toLocaleString()} proofs`
+                        : "Unavailable"}
+                    </strong>
+                    <small>Estimate only</small>
+                  </div>
+                </div>
+                <p className="field-note work-amo-estimate-note">
+                  You choose only the face unit. Confirmed block, transaction,
+                  protocol-output, and record order derive the exact WORK amount
+                  and proof price. Pending values are estimates; confirmation
+                  freezes the terms permanently.
+                  {workFloorQuote?.workAmoV5?.quoteHead?.txid ? (
+                    <>
+                      {" "}
+                      Quote{" "}
+                      <a
+                        href={explorerTxUrl(
+                          workFloorQuote.workAmoV5.quoteHead.txid,
+                          "livenet",
+                        )}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {shortAddress(workFloorQuote.workAmoV5.quoteHead.txid)}
+                      </a>
+                      .
+                    </>
+                  ) : (
+                    " Canonical quote unavailable; signing is disabled."
+                  )}
+                </p>
+                <p className="field-note work-amo-quote-authority-status">
+                  Quote authority:{" "}
+                  <strong>
+                    {workFloorQuote?.workAmoV5?.quoteReady
+                      ? "canonical quote verified"
+                      : "no signable quote prepared"}
+                  </strong>
+                  . Quote publication requires the declared authority output.
+                  This public wallet fails closed and does not invent an
+                  authority-signing path.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="token-form-grid">
+                  <label>
+                    Amount
+                    <input
+                      inputMode="numeric"
+                      min="1"
+                      onChange={(event) => setListAmount(event.target.value)}
+                      step="1"
+                      type="number"
+                      value={listAmount}
+                    />
+                  </label>
+                  <label>
+                    Price proofs
+                    <input
+                      min={1}
+                      onChange={(event) =>
+                        setListPriceSats(Number(event.target.value))
+                      }
+                      type="number"
+                      value={listPriceSats}
+                    />
+                  </label>
+                </div>
+                <div className="token-list-price-reference">
+                  <div>
+                    <span>List unit</span>
+                    <strong>
+                      {listUnitPriceSats > 0
+                        ? `${tokenSatsPerUnit(listUnitPriceSats)} proofs / ${selectedListToken?.ticker ?? walletCopy.fallbackTicker}`
+                        : "Set amount and price"}
+                    </strong>
+                    <small>
+                      {tokenUsd(satsToUsd(listUnitPriceSats, btcUsd))}
+                    </small>
+                  </div>
+                  <div>
+                    <span>{listReferenceLabel}</span>
+                    <strong>
+                      {listReferenceSats > 0
+                        ? `${tokenSatsPerUnit(listReferenceSats)} proofs / ${selectedListToken?.ticker ?? walletCopy.fallbackTicker}`
+                        : "No market data"}
+                    </strong>
+                    <small>
+                      {listReferenceSats > 0
+                        ? tokenUsd(satsToUsd(listReferenceSats, btcUsd))
+                        : "Refresh for latest"}
+                    </small>
+                  </div>
+                  <div
+                    className={
+                      listPriceBelowReference
+                        ? "bad"
+                        : listPriceAboveReference
+                          ? "good"
+                          : ""
+                    }
+                  >
+                    <span>Position</span>
+                    <strong>{listPositionLabel}</strong>
+                    <small>{listPositionNote}</small>
+                  </div>
+                </div>
+              </>
+            )}
             <label>
               Buyer lock optional
               <input
@@ -33007,7 +33814,11 @@ function TokenWalletWorkspace({
               <span className="button-content">
                 <Tag size={16} />
                 <span>
-                  {listing ? walletCopy.listProgressButton : walletCopy.listButton}
+                  {listing
+                    ? walletCopy.listProgressButton
+                    : selectedListTokenIsWork
+                      ? `Create ${workAmoFaceLabel(listFaceUsdCents)} AMO intent`
+                      : walletCopy.listButton}
                 </span>
               </span>
             </button>
@@ -33039,23 +33850,35 @@ function TokenWalletWorkspace({
                   const sealPending =
                     tokenListingHasPendingSaleTicketSeal(item);
                   const readyToSeal = item.confirmed && !hasSeal;
+                  const workFrozenTerms = isWorkToken(item)
+                    ? workAmoFrozenTerms(item)
+                    : null;
+                  const workEstimate =
+                    item.workAmoEstimate ?? item.estimate;
+                  const workFaceUsdCents = workAmoListingFaceUsdCents(item);
                   const workSealBlocked =
                     isWorkToken(item) &&
-                    (!workMarketplaceWritesEnabled ||
-                      !isWorkMarketConfirmationFloorAuthorization(
-                        item.saleAuthorization.version,
-                      ));
+                    (!workAmoProtocolWritesEnabled || !workFrozenTerms);
+                  const workSealBlockedLabel =
+                    isWorkToken(item) && !workAmoProtocolWritesEnabled
+                      ? `AMO paused${
+                          workFloorQuote?.workAmoV5?.reasonCode
+                            ? ` (${workFloorQuote.workAmoV5.reasonCode})`
+                            : ""
+                        }`
+                      : "Frozen terms unavailable";
                   const unitSats = tokenListingUnitPriceSats(item);
                   return (
                     <article className="token-list-item" key={item.listingId}>
                       <span>
                         <strong>
-                          {tokenAmountDisplay(
-                            item,
-                            item.amount,
-                            item.amountAtoms,
-                          )}{" "}
-                          {item.ticker}
+                          {isWorkToken(item) && workFaceUsdCents
+                            ? `${workAmoFaceLabel(workFaceUsdCents)} AMO unit`
+                            : `${tokenAmountDisplay(
+                                item,
+                                item.amount,
+                                item.amountAtoms,
+                              )} ${item.ticker}`}
                         </strong>
                         <small>
                           {!item.confirmed
@@ -33066,8 +33889,18 @@ function TokenWalletWorkspace({
                                 ? "seal pending"
                               : "ready to seal"}{" "}
                           ·{" "}
-                          {item.priceSats.toLocaleString()} proofs ·{" "}
-                          {tokenSatsPerUnit(unitSats)} proofs / {item.ticker}
+                          {isWorkToken(item)
+                            ? workFrozenTerms
+                              ? `${formatWorkAmount(
+                                  BigInt(workFrozenTerms.amountAtoms),
+                                )} WORK · ${workFrozenTerms.priceSats.toLocaleString()} frozen proofs`
+                              : workEstimate?.unitAmountAtoms &&
+                                  workEstimate.unitPriceSats
+                                ? `${formatWorkAmount(
+                                    BigInt(workEstimate.unitAmountAtoms),
+                                  )} estimated WORK · ${workEstimate.unitPriceSats.toLocaleString()} estimated proofs · terms finalize at confirmation`
+                                : "amount and proof price pending confirmation"
+                            : `${item.priceSats.toLocaleString()} proofs · ${tokenSatsPerUnit(unitSats)} proofs / ${item.ticker}`}
                         </small>
                       </span>
                       <span className="id-record-actions">
@@ -33097,7 +33930,7 @@ function TokenWalletWorkspace({
                             type="button"
                           >
                             {workSealBlocked
-                              ? "Upgrade pending"
+                              ? workSealBlockedLabel
                               : item.confirmed
                                 ? "Seal"
                                 : "Confirming"}
@@ -33134,7 +33967,8 @@ function TokenWalletWorkspace({
                 sale tickets became read-only relics when V4 activated. They
                 cannot be sealed or bought. The seller can still publish a
                 delist5 transaction to return the seller-controlled ticket
-                output, then relist under V4. Registry and miner fees are final.
+                output, then create a $20, $50, or $100 AMO unit under V5.
+                Registry and miner fees are final.
               </p>
               <div className="token-list compact-token-list">
                 {walletRecoverableV3WorkRelics.map((item) => (
@@ -36755,7 +37589,7 @@ function growthActivityKindLabel(kind: PowActivityKind) {
     kind === "token-listing-closed" ||
     kind === "token-sale"
   ) {
-    return "Marketplace";
+    return "AMO";
   }
 
   if (kind === "file") {
@@ -36877,9 +37711,9 @@ function growthRealEventItems(
       createdAt: sale.createdAt,
       detail: `${sale.id}@proofofwork.me transferred from ${shortAddress(sale.sellerAddress)} to ${shortAddress(sale.buyerAddress)}.`,
       key: sale.txid,
-      kind: "Marketplace",
+      kind: "AMO",
       network: sale.network,
-      title: "Marketplace sale",
+      title: "AMO sale",
       txid: sale.txid,
     });
   }
@@ -36945,7 +37779,7 @@ function growthRealEventItems(
       createdAt: sale.createdAt,
       detail: `${tokenAmountDisplay(sale, sale.amount, sale.amountAtoms)} ${sale.ticker} bought by ${shortAddress(sale.buyerAddress)} from ${shortAddress(sale.sellerAddress)}.`,
       key: sale.txid,
-      kind: "Marketplace",
+      kind: "AMO",
       network: sale.network,
       title: "Credit sale",
       txid: sale.txid,
@@ -38390,7 +39224,7 @@ function GrowthWorkspace({
           <p>
             The candle-gold line is modeled ProofOfWork Computer network value. The
             olive line is real confirmed mainnet value from IDs, Mail, Infinity
-            Bonds, Inception Bonds, Drive, Marketplace, Browser, Credits, and Wallet.
+            Bonds, Inception Bonds, Drive, AMO, Browser, Credits, and Wallet.
           </p>
         </div>
         <div className="growth-model-card">
@@ -38497,7 +39331,7 @@ function GrowthWorkspace({
             {marketplaceFlowSats.toLocaleString()}
           </strong>
           <span>
-            Marketplace flow proofs · {marketplaceSaleVolumeSats.toLocaleString()} sale ·{" "}
+            AMO flow proofs · {marketplaceSaleVolumeSats.toLocaleString()} sale ·{" "}
             {marketplaceSaleCount.toLocaleString()} confirmed sales ·{" "}
             {marketplaceFeeSats.toLocaleString()} fee proofs
           </span>
@@ -38522,7 +39356,7 @@ function GrowthWorkspace({
           <h3>Candle-gold is the success case. Olive is ProofOfWork history.</h3>
           <p>
             The model asks what the ProofOfWork Computer can become if IDs, Mail,
-            Infinity Bonds, Inception Bonds, Drive, Marketplace, Browser, Credits, and Wallet
+            Infinity Bonds, Inception Bonds, Drive, AMO, Browser, Credits, and Wallet
             compound together. The real line only counts confirmed mainnet
             records that already exist.
           </p>
@@ -38532,7 +39366,7 @@ function GrowthWorkspace({
           <h3>Everything is valued in proofs first.</h3>
           <p>
             IDs use n squared network value. Mail, Infinity Bonds, Inception Bonds, Drive,
-            Marketplace, Browser, Credits, and Wallet keep their confirmed
+            AMO, Browser, Credits, and Wallet keep their confirmed
             payment-flow buckets. WORK credit movements add live
             proof-equivalent value as the active site value, while each
             confirmation stamps its own frozen audit value plus separate miner fees.
@@ -38543,7 +39377,7 @@ function GrowthWorkspace({
           <h3>The olive line moves when ProofOfWork confirms.</h3>
           <p>
             Registrations, messages, replies, file writes, HTML page writes,
-            Infinity Bonds, Inception Bonds, marketplace listings, seals, delistings,
+            Infinity Bonds, Inception Bonds, AMO listings, seals, delistings,
             buyer-funded buys, credit creations, credit mints, and credit
             transfers are pulled from live endpoints. WORK credit transfers
             and sales also carry frozen and live network value. Other credits
@@ -38557,7 +39391,7 @@ function GrowthWorkspace({
           <p>
             A product needs real chain inputs, a usage assumption, a value
             assumption, fee elasticity, and blockspace cost. That keeps every
-            merged app beside IDs, Mail, Infinity, Inception, Drive, Marketplace, Browser,
+            merged app beside IDs, Mail, Infinity, Inception, Drive, AMO, Browser,
             Credits, and Wallet instead of bolted on.
           </p>
         </article>
@@ -38750,7 +39584,7 @@ function GrowthWorkspace({
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.marketplaceSats)}
             modelOneYearLabel={growthUsdForSats(oneYear.marketplaceSats)}
-            name="Marketplace"
+            name="AMO"
             note="Buyer-funded ID transfers and credit sale-ticket buys become first-class product flow."
           />
           <GrowthProductCard
@@ -38775,7 +39609,7 @@ function GrowthWorkspace({
             modelOneYear="Tracked"
             modelOneYearLabel="confirmed event ledger"
             name="Confirmed Events"
-            note="Non-marketplace registry mutations and other confirmed log writes feed the same WORK floor ledger."
+            note="Non-AMO registry mutations and other confirmed log writes feed the same WORK floor ledger."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.tokenSats)}
@@ -40022,7 +40856,7 @@ function MarketplaceTabs({
   tokenCount: number;
 }) {
   return (
-    <div className="marketplace-tabs" aria-label="Marketplace asset tabs">
+    <div className="marketplace-tabs" aria-label="AMO asset tabs">
       {(
         [
           ["ids", "IDs", idCount],
@@ -40736,6 +41570,10 @@ function TokenMarketplacePanel({
   transfers,
   workFloorLoading,
   workFloorQuote,
+  workAmoQuotePublishing,
+  workAmoQuoteUsdPer100mProofsQ8,
+  publishWorkAmoUsdQuote,
+  setWorkAmoQuoteUsdPer100mProofsQ8,
 }: {
   address: string;
   btcUsd: number;
@@ -40760,6 +41598,10 @@ function TokenMarketplacePanel({
   transfers: PowTokenTransfer[];
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
+  workAmoQuotePublishing: boolean;
+  workAmoQuoteUsdPer100mProofsQ8: string;
+  publishWorkAmoUsdQuote: (event: FormEvent<HTMLFormElement>) => void;
+  setWorkAmoQuoteUsdPer100mProofsQ8: (value: string) => void;
 }) {
   const [workFloorChartUnit, setWorkFloorChartUnit] =
     useState<WorkFloorChartUnit>("sats");
@@ -40798,8 +41640,8 @@ function TokenMarketplacePanel({
   const [tokenListingBookFilter, setTokenListingBookFilter] =
     useState<MarketplaceListingBookFilter>("all");
   const [workMarketplaceVersion, setWorkMarketplaceVersion] = useState<
-    "v2" | "v1-relic"
-  >("v2");
+    "amo" | "v4-relic" | "v1-relic"
+  >("amo");
   const [workRelicPageIndex, setWorkRelicPageIndex] = useState(0);
   const selectedMarketToken = rows.find(
     (token) =>
@@ -40816,6 +41658,7 @@ function TokenMarketplacePanel({
     tokenListingBookFilter,
     tokenListingSearchQuery,
     tokenListingSortMode,
+    workMarketplaceVersion,
   ]);
   useEffect(() => {
     setTokenMarketLogPageIndex(0);
@@ -40853,11 +41696,32 @@ function TokenMarketplacePanel({
     setTokenMarketRoute("");
   };
   const networkListings = listings.filter((listing) => listing.network === network);
-  const marketListings = selectedMarketToken
+  const selectedTokenIsWork =
+    selectedMarketToken?.tokenId === WORK_TOKEN_ID ||
+    selectedMarketToken?.ticker === WORK_TOKEN_TICKER;
+  const allMarketListings = selectedMarketToken
     ? networkListings.filter(
         (listing) => listing.tokenId === selectedMarketToken.tokenId,
       )
     : networkListings;
+  const workAmoListings = selectedTokenIsWork
+    ? allMarketListings.filter((listing) =>
+        isWorkAmoUnitAuthorization(listing.saleAuthorization.version),
+      )
+    : [];
+  const workV4RelicListings = selectedTokenIsWork
+    ? allMarketListings.filter(
+        (listing) =>
+          listing.saleAuthorization.version ===
+          TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION,
+      )
+    : [];
+  const marketListings =
+    selectedTokenIsWork && workMarketplaceVersion === "amo"
+      ? workAmoListings
+      : selectedTokenIsWork && workMarketplaceVersion === "v4-relic"
+        ? workV4RelicListings
+        : allMarketListings;
   const networkClosedListings = closedListings.filter(
     (listing) => listing.network === network,
   );
@@ -41092,11 +41956,35 @@ function TokenMarketplacePanel({
     (token) =>
       token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER,
   );
-  const selectedMarketTokenIsWork = Boolean(
-    selectedMarketToken &&
-      (selectedMarketToken.tokenId === WORK_TOKEN_ID ||
-        selectedMarketToken.ticker === WORK_TOKEN_TICKER),
+  const selectedMarketTokenIsWork = Boolean(selectedTokenIsWork);
+  const workAmoQuotePublication = workFloorQuote?.workAmoV5?.quotePublication;
+  const workAmoQuotePublicationIsReady =
+    workAmoV5QuotePublicationReady(workAmoQuotePublication);
+  const workAmoQuoteNextSequence = canonicalPositiveIntegerText(
+    workAmoQuotePublication?.nextSequence,
   );
+  const workAmoProtocolVerified = workAmoV5ProtocolReady(workFloorQuote);
+  const workAmoProtocolWritesEnabled =
+    workAmoV5ProtocolWritesReady(workFloorQuote);
+  const workAmoWriteReasonCode = String(
+    workFloorQuote?.workAmoV5?.reasonCode ?? "",
+  ).trim();
+  let workAmoQuoteAuthorityConnected = false;
+  if (
+    network === "livenet" &&
+    address &&
+    workAmoQuotePublicationIsReady &&
+    workAmoQuotePublication?.authorityScriptPubKey
+  ) {
+    try {
+      workAmoQuoteAuthorityConnected =
+        bytesToHex(scriptForAddress(address, "livenet", "Quote authority"))
+          .toLowerCase() ===
+        workAmoQuotePublication.authorityScriptPubKey.toLowerCase();
+    } catch {
+      workAmoQuoteAuthorityConnected = false;
+    }
+  }
   const workRelicRows = workMarketV1RelicRows(marketClosedListings);
   const workRelicPage = pagedItems(
     workRelicRows,
@@ -41149,10 +42037,12 @@ function TokenMarketplacePanel({
                 <TrendingUp size={24} />
               </div>
               <div>
-                <h3>WORK Market Price</h3>
+                <h3>WORK AMO State</h3>
                 <p>
-                  WORK uses the network value as a hard on-chain floor.
-                  Listings cannot be created, sealed, or bought below it.
+                  New $20, $50, and $100 units derive their WORK amount and
+                  proof price at confirmation order. Once confirmed, those
+                  terms are frozen; later value changes do not reprice seals or
+                  purchases.
                 </p>
               </div>
             </div>
@@ -41280,9 +42170,88 @@ function TokenMarketplacePanel({
                       </div>
                     </>
                   ) : null}
-                </div>
+                  </div>
 
-                {workFloorChartPoints.length > 1 ? (
+                  {workAmoQuotePublicationIsReady ? (
+                    <div className="work-amo-quote-control">
+                      <div>
+                        <strong>Canonical USD quote authority</strong>
+                        <span>
+                          Sequence{" "}
+                          {BigInt(workAmoQuoteNextSequence).toLocaleString(
+                            "en-US",
+                          )}{" "}
+                          · previous{" "}
+                          {shortAddress(
+                            workAmoQuotePublication?.previousQuoteTxid ?? "",
+                          )}
+                        </span>
+                      </div>
+                      {workAmoQuoteAuthorityConnected ? (
+                        <form
+                          className="id-form"
+                          onSubmit={publishWorkAmoUsdQuote}
+                        >
+                          <label>
+                            USD per 100m proofs Q8
+                            <input
+                              inputMode="numeric"
+                              onChange={(event) =>
+                                setWorkAmoQuoteUsdPer100mProofsQ8(
+                                  event.target.value.replace(/[^0-9]/gu, ""),
+                                )
+                              }
+                              placeholder="Positive integer × 100,000,000"
+                              value={workAmoQuoteUsdPer100mProofsQ8}
+                            />
+                          </label>
+                          <p className="field-note">
+                            Authority only. The declared authority input,
+                            registry payment, sequence, predecessor, and one
+                            pwa1:usd1 record are verified on confirmation.
+                            Quote publication remains available while ordinary
+                            V5 writes are paused.
+                          </p>
+                          <FeeRateControl
+                            feeRate={feeRate}
+                            setFeeRate={setFeeRate}
+                          />
+                          <button
+                            className="secondary"
+                            disabled={
+                              busy ||
+                              workAmoQuotePublishing ||
+                              !/^[1-9][0-9]{0,79}$/u.test(
+                                workAmoQuoteUsdPer100mProofsQ8,
+                              )
+                            }
+                            type="submit"
+                          >
+                            {workAmoQuotePublishing
+                              ? "Publishing quote..."
+                              : "Publish canonical quote"}
+                          </button>
+                        </form>
+                      ) : (
+                        <p className="field-note">
+                          Read only. Connect the declaration’s quote-authority
+                          wallet to prepare the next canonical quote. AMO never
+                          substitutes a public or unsigned quote.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="field-note work-amo-quote-authority-status">
+                      Quote publication is not ready
+                      {workAmoQuotePublication?.reasonCode
+                        ? ` (${workAmoQuotePublication.reasonCode})`
+                        : ""}
+                      . Authority preparation fails closed; no sequence or
+                      publication form is offered.
+                    </p>
+                  )}
+
+                  {workFloorChartPoints.length > 1 ? (
                   <>
                     <div className="work-floor-chart-toolbar">
                       <div
@@ -41352,7 +42321,7 @@ function TokenMarketplacePanel({
               <p className="field-note">
                 {workFloorLoading
                   ? "Loading WORK market price..."
-                  : "Refresh Marketplace to load the WORK market price."}
+                  : "Refresh AMO to load the WORK state."}
               </p>
             )}
           </section>
@@ -41655,22 +42624,30 @@ function TokenMarketplacePanel({
         {selectedMarketTokenIsWork ? (
           <div
             className="marketplace-tabs work-marketplace-version-tabs"
-            aria-label="WORK marketplace version"
+            aria-label="WORK AMO protocol view"
           >
             <button
-              aria-pressed={workMarketplaceVersion === "v2"}
-              onClick={() => setWorkMarketplaceVersion("v2")}
+              aria-pressed={workMarketplaceVersion === "amo"}
+              onClick={() => setWorkMarketplaceVersion("amo")}
               type="button"
             >
-              <span>Marketplace V2</span>
-              <strong>{marketListings.length.toLocaleString()}</strong>
+              <span>AMO</span>
+              <strong>{workAmoListings.length.toLocaleString()}</strong>
+            </button>
+            <button
+              aria-pressed={workMarketplaceVersion === "v4-relic"}
+              onClick={() => setWorkMarketplaceVersion("v4-relic")}
+              type="button"
+            >
+              <span>V4 Relic</span>
+              <strong>{workV4RelicListings.length.toLocaleString()}</strong>
             </button>
             <button
               aria-pressed={workMarketplaceVersion === "v1-relic"}
               onClick={() => setWorkMarketplaceVersion("v1-relic")}
               type="button"
             >
-              <span>V1 Relic</span>
+              <span>Marketplace V1 Relic</span>
               <strong>{workRelicRows.length.toLocaleString()}</strong>
             </button>
           </div>
@@ -41687,8 +42664,8 @@ function TokenMarketplacePanel({
                 <p>
                   These WORK listings were disabled at activation height
                   959062. They are immutable history and cannot be sealed or
-                  purchased. Sellers may create new Marketplace V2 listings at
-                  the hash-bound network-value floor.
+                  purchased. Sellers may create new $20, $50, or $100 AMO
+                  units under the confirmed-position V5 protocol.
                 </p>
               </div>
             </div>
@@ -41815,14 +42792,41 @@ function TokenMarketplacePanel({
               <Wallet size={24} />
             </div>
             <div>
-              <h3>Credit Sale Tickets</h3>
+              <h3>
+                {selectedMarketTokenIsWork
+                  ? workMarketplaceVersion === "v4-relic"
+                    ? "V4 Relic Sale Tickets"
+                    : "AMO Units"
+                  : "Credit Sale Tickets"}
+              </h3>
               <p>
-                {selectedMarketToken
+                {selectedMarketTokenIsWork &&
+                workMarketplaceVersion === "v4-relic"
+                  ? "Confirmed pre-activation V4 listings are historical protocol state. Complete frozen terms remain sealable and purchasable through V5 without repricing; incomplete rows fail closed."
+                  : selectedMarketTokenIsWork
+                    ? "Each pending intent commits only a $20, $50, or $100 face. Confirmation derives and freezes its WORK amount and proof price."
+                  : selectedMarketToken
                   ? `${selectedMarketToken.ticker} listings only. Buyers spend the sealed ticket and pay the seller plus registry.`
                   : "Open listings reserve seller balance, then buyers spend the sealed ticket and pay the seller plus registry."}
               </p>
             </div>
           </div>
+          {selectedMarketTokenIsWork && !workAmoProtocolVerified ? (
+            <p className="field-note bad">
+              AMO V5 declaration or canonical index evidence is incomplete.
+              Governed WORK actions fail closed.
+            </p>
+          ) : selectedMarketTokenIsWork &&
+            !workAmoProtocolWritesEnabled ? (
+            <p className="field-note">
+              AMO governed writes are paused
+              {workAmoWriteReasonCode
+                ? ` (${workAmoWriteReasonCode})`
+                : ""}
+              . Frozen listings remain visible; no seal or purchase is
+              prepared until the explicit protocol gate is enabled.
+            </p>
+          ) : null}
           <div className="listing-fee-control token-listing-fee-control">
             <div>
               <strong>Buy fee rate</strong>
@@ -41853,6 +42857,12 @@ function TokenMarketplacePanel({
             <div className="token-list compact-token-list">
               {walletMarketListings.slice(0, 6).map((listing) => {
                 const unitSats = tokenListingUnitPriceSats(listing);
+                const workFrozen = isWorkToken(listing)
+                  ? workAmoFrozenTerms(listing)
+                  : null;
+                const workFace = workAmoListingFaceUsdCents(listing);
+                const workEstimate =
+                  listing.workAmoEstimate ?? listing.estimate;
                 const sealStatus = tokenListingHasConfirmedSaleTicketSeal(listing)
                   ? "sealed"
                   : tokenListingHasPendingSaleTicketSeal(listing)
@@ -41869,16 +42879,28 @@ function TokenMarketplacePanel({
                     <span>
                       <strong>
                         Your{" "}
-                        {tokenAmountDisplay(
-                          listing,
-                          listing.amount,
-                          listing.amountAtoms,
-                        )}{" "}
-                        {listing.ticker}
+                        {isWorkToken(listing) && workFace
+                          ? `${workAmoFaceLabel(workFace)} AMO unit`
+                          : `${tokenAmountDisplay(
+                              listing,
+                              listing.amount,
+                              listing.amountAtoms,
+                            )} ${listing.ticker}`}
                       </strong>
                       <small>
-                        {sealStatus} · {listing.priceSats.toLocaleString()} proofs ·{" "}
-                        {tokenSatsPerUnit(unitSats)} proof / {listing.ticker}
+                        {sealStatus} ·{" "}
+                        {isWorkToken(listing)
+                          ? workFrozen
+                            ? `${formatWorkAmount(
+                                BigInt(workFrozen.amountAtoms),
+                              )} WORK · ${workFrozen.priceSats.toLocaleString()} frozen proofs`
+                            : workEstimate?.unitAmountAtoms &&
+                                workEstimate.unitPriceSats
+                              ? `${formatWorkAmount(
+                                  BigInt(workEstimate.unitAmountAtoms),
+                                )} estimated WORK · ${workEstimate.unitPriceSats.toLocaleString()} estimated proofs`
+                              : "terms pending confirmation"
+                          : `${listing.priceSats.toLocaleString()} proofs · ${tokenSatsPerUnit(unitSats)} proof / ${listing.ticker}`}
                       </small>
                     </span>
                     <span>
@@ -41900,6 +42922,12 @@ function TokenMarketplacePanel({
                   tokenListingHasConfirmedSaleTicketSeal(listing);
                 const sealPending =
                   tokenListingHasPendingSaleTicketSeal(listing);
+                const workFrozen = isWorkToken(listing)
+                  ? workAmoFrozenTerms(listing)
+                  : null;
+                const workFace = workAmoListingFaceUsdCents(listing);
+                const workEstimate =
+                  listing.workAmoEstimate ?? listing.estimate;
                 const listingUnitSats =
                   tokenListingUnitPriceSats(listing);
                 const listingToken = rows.find(
@@ -41935,6 +42963,16 @@ function TokenMarketplacePanel({
                     : "n/a";
                 const buyLabel = !address
                   ? "Connect to buy"
+                  : isWorkToken(listing) && !workAmoProtocolWritesEnabled
+                    ? `AMO paused${
+                        workAmoWriteReasonCode
+                          ? ` (${workAmoWriteReasonCode})`
+                          : ""
+                      }`
+                  : isWorkToken(listing) && !workFrozen
+                    ? listing.confirmed
+                      ? "Frozen terms unavailable"
+                      : "Terms pending confirmation"
                   : !hasSeal
                     ? "Needs seal"
                     : sealPending
@@ -41948,6 +42986,8 @@ function TokenMarketplacePanel({
                 const buyDisabled =
                   busy ||
                   !sealConfirmed ||
+                  (isWorkToken(listing) && !workAmoProtocolWritesEnabled) ||
+                  (isWorkToken(listing) && !workFrozen) ||
                   listing.sellerAddress === address ||
                   Boolean(
                     listing.saleAuthorization.buyerAddress &&
@@ -41959,9 +42999,15 @@ function TokenMarketplacePanel({
                     key={listing.listingId}
                   >
                     <div>
-                      <strong>{listing.ticker}</strong>
+                      <strong>
+                        {isWorkToken(listing) && workFace
+                          ? `${workAmoFaceLabel(workFace)} AMO unit`
+                          : listing.ticker}
+                      </strong>
                       <span>
-                        {!hasSeal
+                        {!listing.confirmed
+                          ? "Estimate only"
+                          : !hasSeal
                           ? "Waiting for seal"
                           : sealConfirmed
                             ? "Sealed"
@@ -41972,38 +43018,78 @@ function TokenMarketplacePanel({
                       <div>
                         <dt>Amount</dt>
                         <dd>
-                          {tokenAmountDisplay(
-                            listing,
-                            listing.amount,
-                            listing.amountAtoms,
-                          )}
+                          {isWorkToken(listing)
+                            ? workFrozen
+                              ? `${formatWorkAmount(
+                                  BigInt(workFrozen.amountAtoms),
+                                )} WORK`
+                              : workEstimate?.unitAmountAtoms
+                                ? `${formatWorkAmount(
+                                    BigInt(workEstimate.unitAmountAtoms),
+                                  )} WORK estimated`
+                                : "Pending confirmation"
+                            : tokenAmountDisplay(
+                                listing,
+                                listing.amount,
+                                listing.amountAtoms,
+                              )}
                         </dd>
                       </div>
                       <div>
                         <dt>Price</dt>
-                        <dd>{listing.priceSats.toLocaleString()} proofs</dd>
-                      </div>
-                      <div>
-                        <dt>Unit</dt>
                         <dd>
-                          {tokenSatsPerUnit(listingUnitSats)} proof /{" "}
-                          {listing.ticker}
+                          {isWorkToken(listing)
+                            ? workFrozen
+                              ? `${workFrozen.priceSats.toLocaleString()} proofs frozen`
+                              : workEstimate?.unitPriceSats
+                                ? `${workEstimate.unitPriceSats.toLocaleString()} proofs estimated`
+                                : "Pending confirmation"
+                            : `${listing.priceSats.toLocaleString()} proofs`}
                         </dd>
                       </div>
-                      <div>
-                        <dt>Market</dt>
-                        <dd>{listingMarketLabel}</dd>
-                      </div>
+                      {isWorkToken(listing) ? (
+                        <div>
+                          <dt>Terms</dt>
+                          <dd>
+                            {workFrozen
+                              ? "Frozen at confirmation"
+                              : "Estimate only"}
+                          </dd>
+                        </div>
+                      ) : (
+                        <>
+                          <div>
+                            <dt>Unit</dt>
+                            <dd>
+                              {tokenSatsPerUnit(listingUnitSats)} proof /{" "}
+                              {listing.ticker}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Market</dt>
+                            <dd>{listingMarketLabel}</dd>
+                          </div>
+                        </>
+                      )}
                       <div>
                         <dt>Seller</dt>
                         <dd>{shortAddress(listing.sellerAddress)}</dd>
                       </div>
                     </dl>
                     <p className="field-note">
-                      Reference:{" "}
-                      {listingReferenceSats > 0
+                      {isWorkToken(listing)
+                        ? workFrozen
+                          ? `Immutable confirmation terms. Later network value and USD quotes cannot reprice this listing.${
+                              listing.workAmoFrozenTerms?.listingBlockHeight
+                                ? ` Block ${listing.workAmoFrozenTerms.listingBlockHeight.toLocaleString()}`
+                                : ""
+                            }`
+                          : "Pending WORK amount and proof price are estimates only. Confirmation order creates the canonical terms."
+                        : `Reference: ${
+                            listingReferenceSats > 0
                         ? `${tokenSatsPerUnit(listingReferenceSats)} proofs / ${listing.ticker} ${listingReferenceLabel}`
-                        : "none yet"}
+                              : "none yet"
+                          }`}
                     </p>
                     <div className="id-record-actions">
                       <button
@@ -42437,7 +43523,11 @@ function MarketplaceApp({
   tokenMarketLoading,
   workFloorLoading,
   workFloorQuote,
+  workAmoQuotePublishing,
+  workAmoQuoteUsdPer100mProofsQ8,
   buyTokenListing,
+  publishWorkAmoUsdQuote,
+  setWorkAmoQuoteUsdPer100mProofsQ8,
   useListing,
   onRefreshIds,
   onRefreshTokens,
@@ -42494,7 +43584,11 @@ function MarketplaceApp({
   tokenMarketLoading: boolean;
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
+  workAmoQuotePublishing: boolean;
+  workAmoQuoteUsdPer100mProofsQ8: string;
   buyTokenListing: (listing: PowTokenListing) => void;
+  publishWorkAmoUsdQuote: (event: FormEvent<HTMLFormElement>) => void;
+  setWorkAmoQuoteUsdPer100mProofsQ8: (value: string) => void;
   useListing: (listing: PowIdListing) => void;
   onRefreshIds: () => void;
   onRefreshTokens: () => void;
@@ -42548,7 +43642,7 @@ function MarketplaceApp({
     active: marketplaceTab,
     idSummary: {
       tone: "good",
-      text: `ID marketplace loaded. ${confirmedRecords.length.toLocaleString()} confirmed, ${registryListings.length.toLocaleString()} active listing${registryListings.length === 1 ? "" : "s"}, ${pendingRecords.length.toLocaleString()} pending.`,
+      text: `ID sale tickets loaded in AMO. ${confirmedRecords.length.toLocaleString()} confirmed, ${registryListings.length.toLocaleString()} active listing${registryListings.length === 1 ? "" : "s"}, ${pendingRecords.length.toLocaleString()} pending.`,
     },
     status,
     tokenSummary: {
@@ -42577,8 +43671,8 @@ function MarketplaceApp({
         network={network}
         onNetworkChange={onNetworkChange}
         onRefresh={refreshMarketplaceTab}
-        subtitle="Mainnet asset marketplace"
-        title="ProofOfWork Marketplace"
+        subtitle="Autonomous Money Organization"
+        title="ProofOfWork AMO"
       />
 
       <AppStatusRow
@@ -42590,7 +43684,9 @@ function MarketplaceApp({
       <section className="id-launch-main">
         <div className="id-launch-hero">
           <div>
-            <span className="id-launch-kicker">ProofOfWork marketplace</span>
+            <span className="id-launch-kicker">
+              Autonomous Money Organization
+            </span>
             <h2>Trade ProofOfWork-native assets.</h2>
             <p>
               IDs and credits trade through sale tickets: sellers reserve the
@@ -42599,7 +43695,7 @@ function MarketplaceApp({
           </div>
 
           {marketplaceTab === "ids" ? (
-            <div className="id-launch-stats" aria-label="ID marketplace stats">
+            <div className="id-launch-stats" aria-label="ID AMO stats">
               <div>
                 <strong>{registryRecords.length.toLocaleString()}</strong>
                 <span>Total IDs</span>
@@ -42758,8 +43854,8 @@ function MarketplaceApp({
               events={walletPendingEvents}
               empty={
                 address
-                  ? "No pending marketplace transfers for this wallet."
-                  : "Connect a wallet to see pending marketplace transfers."
+                  ? "No pending AMO transfers for this wallet."
+                  : "Connect a wallet to see pending AMO transfers."
               }
             />
           </section>
@@ -42806,6 +43902,14 @@ function MarketplaceApp({
             tokenMarketLoading={tokenMarketLoading}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
+            workAmoQuotePublishing={workAmoQuotePublishing}
+            workAmoQuoteUsdPer100mProofsQ8={
+              workAmoQuoteUsdPer100mProofsQ8
+            }
+            publishWorkAmoUsdQuote={publishWorkAmoUsdQuote}
+            setWorkAmoQuoteUsdPer100mProofsQ8={
+              setWorkAmoQuoteUsdPer100mProofsQ8
+            }
           />
         )}
       </section>
@@ -42861,6 +43965,10 @@ function MarketplaceWorkspace({
   tokenMarketLoading,
   workFloorLoading,
   workFloorQuote,
+  workAmoQuotePublishing,
+  workAmoQuoteUsdPer100mProofsQ8,
+  publishWorkAmoUsdQuote,
+  setWorkAmoQuoteUsdPer100mProofsQ8,
   onOpenTokenWorkspace,
   onOpenWalletWorkspace,
   useListing,
@@ -42914,6 +44022,10 @@ function MarketplaceWorkspace({
   tokenMarketLoading: boolean;
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
+  workAmoQuotePublishing: boolean;
+  workAmoQuoteUsdPer100mProofsQ8: string;
+  publishWorkAmoUsdQuote: (event: FormEvent<HTMLFormElement>) => void;
+  setWorkAmoQuoteUsdPer100mProofsQ8: (value: string) => void;
   onOpenTokenWorkspace?: (token?: PowTokenDefinition) => void;
   onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
   useListing: (listing: PowIdListing) => void;
@@ -42986,11 +44098,11 @@ function MarketplaceWorkspace({
     <section className="ids-workspace marketplace-workspace">
       <div className="files-toolbar">
         <div>
-          <h2>Marketplace</h2>
+          <h2>AMO</h2>
           <span>
             {registryAddress
               ? `${networkListings.length.toLocaleString()} ID listings · ${networkTokenCount.toLocaleString()} credits`
-              : `No marketplace registry configured for ${networkLabel(network)}`}
+              : `No AMO registry configured for ${networkLabel(network)}`}
           </span>
         </div>
         <button
@@ -43017,7 +44129,7 @@ function MarketplaceWorkspace({
         <>
       <div
         className="id-launch-stats marketplace-workspace-stats"
-        aria-label="Marketplace stats"
+        aria-label="AMO stats"
       >
         <div>
           <strong>{networkListings.length.toLocaleString()}</strong>
@@ -43157,8 +44269,8 @@ function MarketplaceWorkspace({
             events={walletPendingEvents}
             empty={
               address
-                ? "No pending marketplace transfers for this wallet."
-                : "Connect a wallet to see pending marketplace transfers."
+                ? "No pending AMO transfers for this wallet."
+                : "Connect a wallet to see pending AMO transfers."
             }
           />
         </section>
@@ -43171,7 +44283,7 @@ function MarketplaceWorkspace({
             <div>
               <h3>Registry Supply</h3>
               <p>
-                Confirmed IDs are marketplace assets. The standalone marketplace
+                Confirmed IDs are AMO assets. The standalone AMO
                 uses the same registry.
               </p>
             </div>
@@ -43181,7 +44293,7 @@ function MarketplaceWorkspace({
             empty={
               registryAddress
                 ? "No confirmed registry records found yet."
-                : "Switch to Mainnet to browse the ID marketplace."
+                : "Switch to Mainnet to browse the ID AMO book."
             }
             initialLimit={24}
             searchPlaceholder="Search registry supply"
@@ -43218,6 +44330,14 @@ function MarketplaceWorkspace({
             tokenMarketLoading={tokenMarketLoading}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
+            workAmoQuotePublishing={workAmoQuotePublishing}
+            workAmoQuoteUsdPer100mProofsQ8={
+              workAmoQuoteUsdPer100mProofsQ8
+            }
+            publishWorkAmoUsdQuote={publishWorkAmoUsdQuote}
+            setWorkAmoQuoteUsdPer100mProofsQ8={
+              setWorkAmoQuoteUsdPer100mProofsQ8
+            }
           />
         </>
       )}
@@ -44048,7 +45168,7 @@ function MarketplaceListingList({
                 ? "Seal fee rate"
                 : "Seller action fee rate"}
             </strong>
-            <span>Used for sealing and delisting marketplace listings.</span>
+            <span>Used for sealing and delisting AMO listings.</span>
           </div>
           <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
         </div>
@@ -44258,7 +45378,7 @@ function IdMarketplaceCard({
           <Users size={24} />
         </div>
         <div>
-          <h3>Marketplace Transfer</h3>
+          <h3>AMO Transfer</h3>
           <p>
             Listings create a sale-ticket UTXO. Buyers settle by spending that
             ticket and paying the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat

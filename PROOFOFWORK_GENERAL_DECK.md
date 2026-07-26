@@ -1,6 +1,6 @@
 # ProofOfWork.Me General Deck
 
-Deck source and product surface updated on 2026-07-23.
+Deck source and product surface updated on 2026-07-26.
 
 Purpose: public-facing narrative deck for the current ProofOfWork Computer.
 
@@ -16,7 +16,7 @@ ProofOfWork.Me
 
 The ProofOfWork Computer.
 
-Identity, mail, files, pages, marketplace actions, credit mints, wallet transfers, bonds, logs, and growth signals written to ProofOfWork.
+Identity, mail, files, pages, AMO actions, credit mints, wallet transfers, bonds, logs, and growth signals written to ProofOfWork.
 
 ## Slide 2: The Internet Rents Identity
 
@@ -51,7 +51,7 @@ IDs resolve to ProofOfWork receive addresses.
 
 First confirmed valid registration wins.
 
-Owners can update receivers, transfer IDs, and list IDs in the marketplace.
+Owners can update receivers, transfer IDs, and list IDs in AMO.
 
 ## Slide 5: ProofOfWork Mail
 
@@ -100,11 +100,11 @@ It appears as the default system file in Files and Desktop.
 
 It opens through Browser by txid.
 
-## Slide 9: Marketplace
+## Slide 9: AMO
 
-ProofOfWork IDs and credits are transferable market assets.
+AMO is the Autonomous Money Organization for transferable ProofOfWork IDs and credits.
 
-Current marketplace protocols:
+Current AMO protocols:
 
 ```text
 pwid1: list5 · seal5 · buy5 · delist5
@@ -117,7 +117,11 @@ Buyers settle by spending a sale-ticket UTXO, paying the seller, paying the regi
 
 Competing buys conflict at the ProofOfWork UTXO layer.
 
-Current governed WORK list, seal, and buy actions use `pwt-sale-v3` with exact atoms and a hash-bound H-1 pricing commitment.
+Current governed WORK actions use `pwt-sale-v5`.
+
+Users choose a `$20`, `$50`, or `$100` face. Confirmed ProofOfWork order derives and freezes the exact WORK amount and proof price.
+
+Seals and buys use those frozen terms without later repricing.
 
 ## Slide 10: Credits
 
@@ -188,7 +192,7 @@ ProofOfWork.Me gives agents:
 - Chain-readable messages.
 - Proofs with every interaction.
 - Durable files and instructions.
-- Public ownership, marketplace, funding, and credit records.
+- Public ownership, AMO, funding, and credit records.
 - Local wallet authority controlled by humans.
 
 Humans sign. Agents verify.
@@ -199,7 +203,7 @@ ProofOfWork.Me is a new interface for ProofOfWork.
 
 Mail. IDs. Files. Desktop. Browser.
 
-Marketplace. Credits. Wallet. WORK.
+AMO. Credits. Wallet. WORK.
 
 Infinity. Inception. Bonds. Log. Growth.
 

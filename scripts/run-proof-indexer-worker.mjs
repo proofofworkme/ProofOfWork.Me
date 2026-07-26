@@ -269,6 +269,125 @@ async function assertWorkAtomicProjectionReady(pool) {
   }
 }
 
+async function assertAmoPositionSchemaReady(pool) {
+  const result = await pool.query(
+    `
+      SELECT
+        to_regclass('proof_indexer.work_usd_quotes') IS NOT NULL
+          AS quotes_ready,
+        to_regclass('proof_indexer.work_amo_listing_terms') IS NOT NULL
+          AS listing_terms_ready,
+        to_regclass('proof_indexer.work_amo_block_transitions') IS NOT NULL
+          AS block_transitions_ready,
+        (
+          SELECT count(*) = 4
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'work_usd_quotes'
+            AND column_name IN (
+              'record_count',
+              'registry_address',
+              'registry_payment_sats',
+              'registry_payment_vout'
+            )
+        ) AS quote_evidence_ready,
+        (
+          SELECT count(*) = 22
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'work_amo_block_transitions'
+            AND column_name IN (
+              'block_height',
+              'block_hash',
+              'previous_block_hash',
+              'model',
+              'state_commitment_model',
+              'opening_network_value_q8',
+              'closing_network_value_q8',
+              'opening_state_sha256',
+              'closing_state_sha256',
+              'opening_state_payload_bytes',
+              'closing_state_payload_bytes',
+              'protocol_record_count',
+              'raw_protocol_candidate_count',
+              'transaction_count',
+              'event_count',
+              'event_set_model',
+              'event_set_sha256',
+              'event_set_payload_bytes',
+              'block_atomic',
+              'fee_once',
+              'invalid_zero',
+              'complete'
+            )
+        ) AS block_transition_evidence_ready,
+        EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'transactions'
+            AND column_name = 'block_index'
+        ) AS transaction_position_ready,
+        (
+          SELECT count(*) = 3
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'events'
+            AND column_name IN (
+              'block_index',
+              'op_return_vout',
+              'record_ordinal'
+            )
+        ) AS event_position_ready,
+        (
+          SELECT count(*) = 3
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND (
+              (
+                table_name = 'events'
+                AND column_name = 'record_ordinal'
+              )
+              OR (
+                table_name = 'work_usd_quotes'
+                AND column_name = 'record_ordinal'
+              )
+              OR (
+                table_name = 'work_amo_listing_terms'
+                AND column_name = 'listing_record_ordinal'
+              )
+            )
+            AND is_nullable = 'NO'
+            AND column_default IS NULL
+        ) AS ordinal_constraints_ready,
+        EXISTS (
+          SELECT 1
+          FROM pg_indexes
+          WHERE schemaname = 'proof_indexer'
+            AND tablename = 'events'
+            AND indexname =
+              'events_confirmed_governed_position_uidx'
+        ) AS governed_position_unique_ready
+    `,
+  );
+  const row = result.rows[0] ?? {};
+  if (
+    row.quotes_ready !== true ||
+    row.listing_terms_ready !== true ||
+    row.block_transitions_ready !== true ||
+    row.block_transition_evidence_ready !== true ||
+    row.quote_evidence_ready !== true ||
+    row.transaction_position_ready !== true ||
+    row.event_position_ready !== true ||
+    row.ordinal_constraints_ready !== true ||
+    row.governed_position_unique_ready !== true
+  ) {
+    throw new Error(
+      "Proof index worker is paused until the AMO V5 canonical-position schema is installed.",
+    );
+  }
+}
+
 function endpoint(pathname, params = {}) {
   const url = new URL(`${API_BASE}${pathname}`);
   url.searchParams.set("network", NETWORK);
@@ -958,6 +1077,7 @@ async function updateTransactionStatus(client, txid, status, payload) {
           replaced_by_txid = NULL,
           block_hash = NULL,
           block_height = NULL,
+          block_index = NULL,
           block_time = NULL,
           raw_tx =
             (COALESCE(raw_tx, '{}'::jsonb) - 'statusObservation')
@@ -980,6 +1100,9 @@ async function updateTransactionStatus(client, txid, status, payload) {
         UPDATE proof_indexer.events
         SET
           block_height = NULL,
+          block_index = NULL,
+          op_return_vout = NULL,
+          record_ordinal = 0,
           block_time = NULL,
           event_time = CASE
             WHEN event_time IS NULL
@@ -1029,6 +1152,9 @@ async function updateTransactionStatus(client, txid, status, payload) {
         WHERE network = $1 AND txid = $2 AND status = 'pending'
           AND (
             block_height IS NOT NULL
+            OR block_index IS NOT NULL
+            OR op_return_vout IS NOT NULL
+            OR record_ordinal <> 0
             OR block_time IS NOT NULL
             OR event_time IS DISTINCT FROM CASE
               WHEN event_time IS NULL
@@ -1233,6 +1359,7 @@ async function updateTransactionStatus(client, txid, status, payload) {
         dropped_reason = $5,
         block_hash = NULL,
         block_height = NULL,
+        block_index = NULL,
         block_time = NULL,
         raw_tx =
           (COALESCE(raw_tx, '{}'::jsonb) - 'statusObservation')
@@ -1257,6 +1384,9 @@ async function updateTransactionStatus(client, txid, status, payload) {
       SET
         status = 'dropped',
         block_height = NULL,
+        block_index = NULL,
+        op_return_vout = NULL,
+        record_ordinal = 0,
         block_time = NULL,
         payload =
           (
@@ -1376,24 +1506,44 @@ async function updateTransactionStatus(client, txid, status, payload) {
         LEFT JOIN LATERAL (
           SELECT e.payload
           FROM proof_indexer.events e
+          JOIN proof_indexer.transactions event_tx
+            ON event_tx.network = e.network
+           AND event_tx.txid = e.txid
+           AND event_tx.status = 'confirmed'
+           AND event_tx.block_height = e.block_height
+           AND event_tx.block_index = e.block_index
           WHERE e.network = $1
             AND e.txid = affected.listing_id
             AND e.kind = 'token-listing'
             AND e.status = 'confirmed'
             AND e.valid = true
-          ORDER BY e.block_height DESC NULLS LAST, e.event_id DESC
+          ORDER BY
+            e.block_height DESC NULLS LAST,
+            e.block_index DESC NULLS LAST,
+            e.op_return_vout DESC NULLS LAST,
+            e.record_ordinal DESC
           LIMIT 1
         ) base_event ON true
         LEFT JOIN LATERAL (
           SELECT e.txid, e.payload
           FROM proof_indexer.events e
+          JOIN proof_indexer.transactions event_tx
+            ON event_tx.network = e.network
+           AND event_tx.txid = e.txid
+           AND event_tx.status = 'confirmed'
+           AND event_tx.block_height = e.block_height
+           AND event_tx.block_index = e.block_index
           WHERE e.network = $1
             AND e.kind = 'token-listing-sealed'
             AND e.status = 'confirmed'
             AND e.valid = true
             AND e.txid <> $2
             AND lower(e.payload->>'listingId') = affected.listing_id
-          ORDER BY e.block_height DESC NULLS LAST, e.event_id DESC
+          ORDER BY
+            e.block_height DESC NULLS LAST,
+            e.block_index DESC NULLS LAST,
+            e.op_return_vout DESC NULLS LAST,
+            e.record_ordinal DESC
           LIMIT 1
         ) surviving_seal ON true
       )
@@ -1594,6 +1744,7 @@ async function runCycle(pool, lastSuccess, runtime) {
   const startedAt = new Date();
   const noProgress = runtime.noProgress;
   await assertWorkAtomicProjectionReady(pool);
+  await assertAmoPositionSchemaReady(pool);
   await writeWorkerMeta(pool, {
     apiBase: API_BASE,
     lastSuccess,

@@ -10,10 +10,10 @@ It is distilled from current repository docs and public launch memory captured t
 - Launch memory reviewed: 2026-06-08
 - Full 2026-06-09 archive re-reviewed: 2026-06-17
 - Full 2026-07-14 archive re-reviewed: 2026-07-15
-- Operational memory updated: 2026-07-23
+- Operational memory updated: 2026-07-26
 - Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-07-14-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
 - 2026-07-14 archive inventory reviewed without sampling: 2,486 active tweet records, 39 deleted-tweet records, 67 long-form Note Tweet records, 2,486 active headers, and 39 deleted headers. Active and deleted tweet IDs were each unique; 271 active records were retweets.
-- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
+- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `amo.proofofwork.me`, legacy `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
 
@@ -71,6 +71,18 @@ confirmation. The rollout begins fail-closed: list, seal, and buy stay
 read-only until the exact locally signed declaration confirms, activates at
 the following block, is pinned, and writes are explicitly enabled. V3 listings
 become recoverable relics; any confirmed ticket spend still closes its listing.
+
+WORK AMO Unit Protocol V2 is the current corrective protocol. Its confirmed
+declaration transaction
+`54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36`
+activates `pwt-sale-v5` at block 959621. A seller chooses only a fixed USD face
+of $20, $50, or $100. The exact WORK amount and proof price are derived at the
+listing's confirmed canonical position, frozen once, and never repriced at
+seal or purchase. Confirmed state is ordered by block height, transaction
+position, protocol output, and record ordinal; every valid event is computed
+and frozen before its own bond contribution is applied. AMO remains
+fail-closed until its canonical USD quote chain, exact positions, replay, and
+independent write gate are ready.
 
 ## Launch Memory
 
@@ -134,6 +146,7 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-07-16: INCB network-value accounting is corrected to the Infinity-style rule. Each confirmed INCB starts from the proof value fixed at its bond's H-1 issuance oracle. Later WORK value changes never reprice historical INCB. Inception network value is fixed cumulative issuance value plus confirmed INCB sale volume, transfer fees, and marketplace mutation fees.
 - 2026-07-23: Repository hygiene becomes a mandatory handoff contract for every approved update and every authored commit. Agents review `SOUL.md` and canonical docs semantically, classify tracked notes, clear only allowlisted rebuildable local state, verify generated artifacts and relative links, inspect the final diff, and attest the result in commit trailers. A server-created merge may inherit reviewed parent attestations only when its tree is the exact mechanical Git merge result. Old history, ledgers, refunds, incident evidence, and tx-backed records are not stale merely because they are old.
 - 2026-07-23: Two community reports harden WORK liveness. Fractional invalid-event records keep their exact atoms and paid-cost audit trail; WORK marketplace V4 uses a recent quote plus the independent confirmation H-1 floor, with V3 sale tickets preserved as recoverable relics. Wallet sends prefer separate confirmed curated funding outputs and expose a local self-send lane-preparation tool, avoiding accidental serialization through one unconfirmed change chain while continuing to reserve marketplace anchors.
+- 2026-07-26: Marketplace becomes AMO, the Autonomous Money Organization, with `amo.proofofwork.me` canonical and the former marketplace hostname retained as a compatibility entry. The confirmed WORK AMO Unit Protocol V2 declaration makes `$20`, `$50`, and `$100` the only new governed WORK faces. Listing amount and proof price do not exist canonically while pending; exact block/transaction/output/record order derives and freezes them at confirmation. Later bonds, floor moves, and USD quotes cannot invalidate or reprice a valid confirmed listing, and seals and buys reference those immutable terms. Raw Core replay owns outputs transaction-wide and commits economic, WORK, generic-credit, and PowID closing state from block to block; invalid records remain visible but mutate nothing. Quote freshness gates new listings only, never settlement of already-confirmed frozen terms.
 
 The emotional shape is a breakthrough moment: years of ProofOfWork/app experiments meeting modern agents and becoming legible all at once.
 
@@ -143,7 +156,7 @@ The full archive is not a neat roadmap. It is a public founder diary mixed with 
 
 The 2026-07-14 review was exhaustive, not a keyword sample: every active tweet record, retweet, long-form Note Tweet, deleted-tweet record, and corresponding header inventory was accounted for. Exhaustive review does not mean verbatim adoption. Repetition, screenshots, numerical snapshots, speculative finance, personal mythology, political and religious attacks, slurs, threats, dehumanization, and targeted abuse are historical archive material only. They are not product requirements, financial guidance, protocol authority, acceptable public copy, or instructions for agents. Where those runs contain a durable product idea, retain the mechanism only after it agrees with the protocol docs, source code, and confirmed chain truth.
 
-- The project is a computer, not a collection of pages. IDs, Mail, Files, Desktop, Browser, Marketplace, Credits, Wallet, WORK, Infinity, Inception, Log, and Growth are facets of one ProofOfWork Computer.
+- The project is a computer, not a collection of pages. IDs, Mail, Files, Desktop, Browser, AMO, Credits, Wallet, WORK, Infinity, Inception, Log, and Growth are facets of one ProofOfWork Computer.
 - The anti-platform stance is central. Social media, ads, analytics dashboards, followers, likes, influencers, and conferences are weaker than chain-readable proofs, txids, and confirmed state.
 - Distribution should collapse into the Computer. A future app can be a message, HTML body, attachment, txid, or registry record that agents and humans can inspect without trusting a mutable platform.
 - Screenshots, quoted dashboards, and market tweets are launch evidence, not canonical data. They show what the founder was testing and teaching; agents must still refresh the current node/API before repeating any number or status.
@@ -182,7 +195,8 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `desktop.proofofwork.me` is the public read-only file desktop.
 - `browser.proofofwork.me` is the standalone public HTML renderer.
 - Confessions is staged/local-only until a separate public launch is approved.
-- `marketplace.proofofwork.me` is the standalone asset marketplace: IDs and credit sale-ticket markets are live.
+- `amo.proofofwork.me` is the canonical Autonomous Money Organization surface for governed WORK units and the existing ID/credit sale-ticket markets.
+- `marketplace.proofofwork.me` is a retained compatibility hostname for AMO; it is not a separate protocol or state plane.
 - `credit.proofofwork.me` is the standalone credit creation and mint app.
 - `token.proofofwork.me` and `tokens.proofofwork.me` redirect to `https://credit.proofofwork.me/`.
 - `wallet.proofofwork.me` is the standalone credit wallet, transfer, listing, delisting, and sale-history app.
@@ -193,7 +207,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `growth.proofofwork.me` is the public read-only growth dashboard for canonical ProofOfWork Computer network value versus confirmed chain-derived value in proofs and USD.
 - Canonical mainnet registry address: `bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e`
 - Registration price: `1000` proofs.
-- ID mutation price: `546` proofs for receiver updates, direct transfers, marketplace listings, seals, delistings, and buyer-funded marketplace transfers.
+- ID mutation price: `546` proofs for receiver updates, direct transfers, AMO listings, seals, delistings, and buyer-funded AMO transfers.
 - Current ID event: `pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>`
 - Current mail prefix: `pwm1:`
 - Mailbox projections must preserve subject/body separation: `pwm1:s` supplies the subject, `pwm1:m` supplies the body, and `mail_items.body_text` plus UI memo rendering must not use Log display detail as a substitute for decoded message content.
@@ -208,10 +222,10 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Listing confirmation promotion must preserve the listing lifecycle. A pending listing that confirms should become the canonical active listing once, keep its seal/outspend state, and not leave a duplicate pending shadow behind.
 - A seller should not be able to seal the same credit listing twice. Once a valid seal is visible for a listing, the UI and API should treat additional seal attempts as duplicates unless the underlying active listing changes.
 - WORK and credit listing views must preserve sale-ticket seal metadata when pending listings promote to confirmed state. Cache/regression guards should reject refreshed token payloads that drop a confirmed seal.
-- Marketplace summaries must include every confirmed, unspent, buyable sealed WORK/credit listing even when ordinary active-listing previews are capped. The public Sealed tab counts confirmed sale-ticket seals only; pending seals remain visible in All/Unsealed until they confirm.
-- Wallet and Marketplace refreshes may preserve local pending listing/seal overlays while the indexer catches up, but confirmed chain/API state wins once the listing, seal, closure, or sale is indexed.
+- AMO summaries must include every confirmed, unspent, buyable sealed WORK/credit listing even when ordinary active-listing previews are capped. The public Sealed tab counts confirmed sale-ticket seals only; pending seals remain visible in All/Unsealed until they confirm.
+- Wallet and AMO refreshes may preserve local pending listing/seal overlays while the indexer catches up, but confirmed chain/API state wins once the listing, seal, closure, or sale is indexed.
 - Dropped pending WORK and credit transactions must be removed from pending overlays after live liveness checks. They can remain diagnosable for a short cache window, but they must not keep stale transfers, listings, seals, or buys visible as live pending state.
-- Marketplace network value counts seller sale volume plus marketplace mutation fees from listings, seals, delistings, and buys. Keep seller sale volume separate from mutation-fee flow, and do not double-count marketplace mutation fees as generic Computer event flow.
+- AMO network value counts seller sale volume plus market mutation fees from listings, seals, delistings, and buys. Keep seller sale volume separate from mutation-fee flow, and do not double-count market mutation fees as generic Computer event flow.
 - WORK credit id: `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`
 - WORK registry address: `1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV`
 - WORK supply settings: 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, 1 proof per WORK launch price.
@@ -232,12 +246,12 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Wallet signing stays local.
 - Node/API infrastructure reads, indexes, verifies, and broadcasts already-signed txs. It does not custody.
 - Every tx-backed app action should be inspectable from an activity surface with clear labels for confirmed, pending, txid, listing txid, and UTXO references where relevant.
-- Every app action is a ProofOfWork Computer action. Log and Growth should treat tx-backed actions from IDs, mail, files, Browser, Marketplace, Credits, Infinity, Inception, and staged protocols consistently.
+- Every app action is a ProofOfWork Computer action. Log and Growth should treat tx-backed actions from IDs, mail, files, Browser, AMO, Credits, Infinity, Inception, and staged protocols consistently.
 - WORK, Infinity, Inception, Growth, Log, token history, and public searches should read from the same canonical confirmed ledger snapshot on livenet. Address-only fallback scans are useful for recovery, but they must not become a separate truth that changes network value without appearing in Log.
 - Production confirmed stable data surfaces should prefer the proof index database for speed, then fall back to the first-party node/API cache and current full-node data for fresh reads, stale or missing projections, mempool truth, raw tx/UTXO/outspend edge cases, signing support, broadcasts, and verification. Stale snapshots are acceptable only as a first paint, not as the final truth after refresh.
 - `pwm1:m:powb` is the canonical Infinity Bond memo. Indexers and database readers must normalize it to `infinity-bond` for Log, Event History, Growth, WORK floor, and searches, while preserving mailbox projection so the same tx appears in Inbox/Sent for touched addresses. POWB mint credit belongs to the bond recipient address, not necessarily the sender.
 - `pwm1:m:incb` is the canonical Inception Bond memo. It must normalize to `inception-bond` and issue only INCB to the confirmed recipient. POWB and INCB definitions/mints are synthetic bond projections, not generic credit creates or extra proof-value events. INCB issuance equals direct bond proofs plus a valid recipient-matched same-transaction WORK attachment valued from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block, rounded down to whole proofs at one INCB per proof. Every transaction in the bond block is excluded from the valuation. Confirmation fixes the resulting INCB balance, supply, and attached WORK proof value. Inception network value equals fixed cumulative issuance value plus confirmed INCB sale volume, transfer fees, and marketplace mutation fees. Current or later WORK value never reprices INCB. The attachment remains its own atomic `pwt1:send2` movement lane, and the shared Growth/WORK ledger counts it only once.
-- Changes to one Computer surface must not disable or degrade the other app surfaces. Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Inception, Log, Growth, IDs, and Computer are facets of one machine; a fix for one must preserve routing, first-party API reads, and basic search/load behavior for the rest. Production browser surfaces must not fall back to public `mempool.space` data paths for app reads; if the first-party API path is unavailable, fail closed and fix the API/proxy/build instead of silently depending on a public explorer.
+- Changes to one Computer surface must not disable or degrade the other app surfaces. Desktop, Browser, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, Growth, IDs, and Computer are facets of one machine; a fix for one must preserve routing, first-party API reads, and basic search/load behavior for the rest. Production browser surfaces must not fall back to public `mempool.space` data paths for app reads; if the first-party API path is unavailable, fail closed and fix the API/proxy/build instead of silently depending on a public explorer.
 - Fresh summary endpoints must not return stale credit, POWB, or INCB truth. `token-summary`, `token-history`, `work-summary`, `infinity-summary`, `inception-summary`, and `marketplace-summary` refreshes should update the shared credit/bond payload cache so every surface converges on the same chain state; fast cached first paint may only survive if active listing spend state is corrected against node truth.
 - WORK and credit marketplace views must derive active listings, closed listings, sales, wallet owned listings, and mint summaries from the same refreshed credit payload. A surface-specific summary can format the data differently, but it must not carry its own stale listing or mint count after refresh.
 - Broadcast errors should be legible. A rejected transaction should expose the RPC code, reason when available, and a plain-English hint instead of a mystery error.
@@ -318,7 +332,7 @@ Use the first-party API and confirmed chain data:
 
 - WORK floor: `https://work.proofofwork.me/api/v1/work-floor?network=livenet&fresh=1`
 - WORK holders and confirmed secondary sales: `https://work.proofofwork.me/api/v1/token-history?network=livenet&asset=d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8&kind=holders&limit=20&fresh=1` and `kind=sales`
-- Marketplace summary and ID order book: `https://marketplace.proofofwork.me/api/v1/marketplace-summary?network=livenet&fresh=1`
+- AMO summary and ID order book: `https://amo.proofofwork.me/api/v1/marketplace-summary?network=livenet&fresh=1`
 - Infinity/POWB summary: `https://infinity.proofofwork.me/api/v1/infinity-summary?network=livenet&fresh=1`
 - Inception/INCB summary: `https://inception.proofofwork.me/api/v1/inception-summary?network=livenet&fresh=1`
 
@@ -327,7 +341,7 @@ For USD in public posts, use the live BTC/USD-backed fields from the fresh API r
 Daily tweet set:
 
 - WORK mint-to-floor update. Report mint price, current live floor proofs per WORK, floor multiple from mint, live ProofOfWork Computer network value, and live USD if useful. If frozen value is included, label it as confirmation-time value, not the current floor source. Formula: `floor_proofs_per_work = floor.liveNetworkValueSats / 21000000` or `floor.networkValueSats / 21000000` when `networkValueSats` is the live field; mint multiple is `floor_proofs_per_work / 1`; live USD is `floor.actualValue.totalUsd` or `floor.liveNetworkValueSats / 100000000 * floor.btcUsd`.
-- WORK sealed order book. Do not use raw `token-history` listing counts, `token-summary` `openListings`, or unsealed rows as the sealed book. Start from the fresh Marketplace active WORK listings, exclude spent tickets, then count only listings whose sale authorization has a valid sale-ticket anchor signature and anchor txid. Report active sealed listings, current floor, and every sealed listing's buyer arb, including negative arbs. Formula: `price_per_work = priceSats / amount`; `buyer_arb_proofs = (floor_proofs_per_work - price_per_work) * amount`. Positive arb means the buyer can take sealed WORK below floor; negative arb means the sealed ask is above floor. If counts disagree with the UI, re-check sale-ticket outspends and the sealed filter before posting.
+- WORK sealed order book. Do not use raw `token-history` listing counts, `token-summary` `openListings`, or unsealed rows as the sealed book. Start from the fresh AMO active WORK listings, exclude spent tickets, then count only listings whose sale authorization has a valid sale-ticket anchor signature and anchor txid. Report active sealed listings, current floor, and every sealed listing's buyer arb, including negative arbs. Formula: `price_per_work = priceSats / amount`; `buyer_arb_proofs = (floor_proofs_per_work - price_per_work) * amount`. Positive arb means the buyer can take sealed WORK below floor; negative arb means the sealed ask is above floor. If counts disagree with the UI, re-check sale-ticket outspends and the sealed filter before posting.
 - PowID order book. Report confirmed PowIDs, active ID listings, sealed ID listings, lowest active ask, and lowest sealed asks. Explain that sealed ID listings are buyer-funded transfer terms on chain.
 - WORK reserve update. Use the top three WORK holder addresses from the fresh WORK holders view. Include confirmed secondary buys for `1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv`. Formula: `reserve_work = sum(top_3_holder_balances)`; `secondary_work = sum(confirmed_1F1p_secondary_amounts)`; `secondary_paid_proofs = sum(confirmed_1F1p_secondary_paidSats)`; `reserve_basis_proofs = (reserve_work - secondary_work) * 1 + secondary_paid_proofs`; `floor_value_proofs = reserve_work * floor_proofs_per_work`; `gain_proofs = floor_value_proofs - reserve_basis_proofs`; `multiple = floor_value_proofs / reserve_basis_proofs`. Prefer `paidSats` for all-in secondary basis when present, and `priceSats` only when describing seller price.
 - Infinity/POWB market update. Report confirmed bond actions, confirmed POWB supply, holders, transfers, sales, current POWB floor, live and frozen POWB network value, and the current sealed POWB sale-ticket book with buyer arb when present.

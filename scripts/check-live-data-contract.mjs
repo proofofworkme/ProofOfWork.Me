@@ -13,6 +13,11 @@ const proofIndexerSchema = readFileSync(
   "server/sql/proof-indexer-v1.sql",
   "utf8",
 );
+const workAmoV5Core = readFileSync("server/work-amo-v5.mjs", "utf8");
+const workAmoV5Migration = readFileSync(
+  "scripts/migrate-work-amo-v5.mjs",
+  "utf8",
+);
 const app = readFileSync("src/App.tsx", "utf8");
 const routeRegistry = readFileSync("src/app/routeRegistry.ts", "utf8");
 const proofIndexDeploy = readFileSync("deploy/proofofwork-api-proof-index.conf", "utf8");
@@ -457,7 +462,7 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /buildIndexedCanonicalLedgerPayload\([\s\S]*strictCanonicalRushPayload\(network, exactHeight\)[\s\S]*exactTokenTablePayloadForCanonicalLedger\(/,
   /async function strictCanonicalRushPayload\([\s\S]*proofIndexRushPayload\([\s\S]*proof-indexer-rush-canonical[\s\S]*rushStateFromIndexedMintEvents\(/,
   /RUSH_BOOTSTRAP_META_KEY[\s\S]*RUSH_DISCOVERY_META_KEY[\s\S]*async function ensureCanonicalRushBootstrap\([\s\S]*canonicalRushDiscovery\([\s\S]*canonicalRushBootstrapTransaction\([\s\S]*persistCanonicalRawTransaction\([\s\S]*RUSH_BOOTSTRAP_META_KEY/,
-  /const PROTOCOL_PREFIXES = \["pwm1:", "pwid1:", "pwr1:", "pwt1:"\]/,
+  /const PROTOCOL_PREFIXES = \["pwm1:", "pwa1:", "pwid1:", "pwr1:", "pwt1:"\]/,
   /function tokenTablePayloadHasConservedBalances\([\s\S]*!tokenIds\.has\(tokenId\)[\s\S]*minted === held[\s\S]*mintedSupply === heldSupply/,
   /currentProofIndexTokenTablePayloadForLedger\([\s\S]*options\.exactHeight[\s\S]*proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
   /indexedActivityStateForCanonicalLedger\([\s\S]*options\.exactHeight[\s\S]*proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
@@ -508,7 +513,7 @@ expectAll("stateful block discoveries require the first-party ordered verifier",
   /validationMode:[\s\S]*canonical-first-party-state/,
 ]);
 expectAll("ordered credit verifier distinguishes deterministic invalidity from unresolved state", tokenVerifierPayloadSource, [
-  /tokenVerifierItemsFromState\(state, normalizedTxid\)/,
+  /tokenVerifierItemsFromState\(\s*state,\s*normalizedTxid,\s*\{\s*requireConfirmed,\s*requiredBlockHeight\s*\}/,
   /tokenVerifierDeterministicInvalidReason\(/,
   /if \(invalidReason\) \{[\s\S]*valid: false/,
   /if \(items\.length === 0\) \{[\s\S]*error\.statusCode = 503[\s\S]*code: "TOKEN_VERIFIER_UNRESOLVED"/,
@@ -528,7 +533,7 @@ expect(
   !/nodeTip|tipHeight|ledgerTipHeight/.test(tokenVerifierPayloadSource),
 );
 expectAll("ordered ID verifier fails closed when registry replay has no verdict", idVerifierPayloadSource, [
-  /idVerifierItemsFromState\(bundle\.state, normalizedTxid\)/,
+  /idVerifierItemsFromState\(\s*bundle\.state,\s*normalizedTxid,\s*\{\s*requireConfirmed,\s*requiredBlockHeight\s*\}/,
   /idVerifierDeterministicInvalidReason\(/,
   /if \(invalidReason\) \{[\s\S]*valid: false/,
   /if \(items\.length === 0\) \{[\s\S]*error\.statusCode = 503[\s\S]*code: "ID_VERIFIER_UNRESOLVED"/,
@@ -541,7 +546,7 @@ expectAll("internal ordered verifier routes are loopback-only and uncached", int
 ]);
 expectAll("authenticated loopback snapshot bootstrap bypasses only the rebuilding public gate", server + proofIndexerBackfill, [
   /const loopbackApi = \["127\.0\.0\.1", "::1", "\[::1\]", "localhost"\]/,
-  /const headers = loopbackApi && INTERNAL_VERIFIER_TOKEN\.length >= 32/,
+  /const headers = \{[\s\S]*loopbackApi && INTERNAL_VERIFIER_TOKEN\.length >= 32[\s\S]*"X-PoW-Internal-Verifier"/,
   /const authenticatedLoopbackRead = internalVerifierRequestAllowed\(request\)/,
   /canonicalPublicReadGateApplies\(url\.pathname\) &&[\s\S]*!authenticatedLoopbackRead/,
 ]);
@@ -669,7 +674,7 @@ expectAll("supervised canonical rebuild resets mixed-era state behind a hashed b
   /POW_INDEX_BACKFILL_CANONICAL_REBUILD/,
   /--prepare-canonical-rebuild/,
   /requires NETWORK=livenet and an explicit positive POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT/,
-  /DELETE FROM proof_indexer\.events[\s\S]*\["pwid1", "pwt1", "pwm1", "pwr1"\]/,
+  /DELETE FROM proof_indexer\.events[\s\S]*\["pwid1", "pwt1", "pwm1", "pwa1", "pwr1"\]/,
   /DELETE FROM proof_indexer\.id_records/,
   /DELETE FROM proof_indexer\.credit_balances/,
   /DELETE FROM proof_indexer\.credit_listings/,
@@ -743,8 +748,11 @@ expectAll("canonical replay faults before crossing a reorg", blockScanSource, [
 expectAll("canonical balances replay by chain order and fail before publication", canonicalBalanceReplaySource, [
   /e\.valid = true/,
   /COALESCE\(t\.status, e\.status\) = 'confirmed'/,
-  /e\.payload->>'blockIndex'/,
-  /e\.payload->>'_powEventIndex'/,
+  /e\.block_index AS canonical_block_index/,
+  /e\.op_return_vout AS canonical_protocol_vout/,
+  /e\.record_ordinal AS canonical_record_ordinal/,
+  /payload\.blockIndex/,
+  /payload\._powEventIndex/,
   /Canonical credit replay would make[\s\S]*negative/,
   /replayedSupply !== minted/,
   /storedSupply > minted/,
@@ -842,7 +850,7 @@ expectAll("pending WORK supply-cap fast path fails closed on exact live truth", 
   /pendingCandidatesComplete !== true/,
   /pendingCandidateCount !== pendingMints/,
   /pendingCandidateSupply !== pendingSupply/,
-  /candidate\.txid\.localeCompare\(normalizedTargetTxid\) >= 0/,
+  /compareCanonicalUtf8\([\s\S]*candidate\.txid,[\s\S]*normalizedTargetTxid,[\s\S]*\) >= 0/,
   /witnessMint\?\.amount === candidate\.amount/,
   /validatedWitnessSupply !== witnessProof\.witnessSupply/,
   /finalSupply\.confirmedSupply !== supply\.confirmedSupply/,
@@ -860,7 +868,7 @@ expect(
 );
 expect(
   "WORK pending cap ordering matches canonical txid replay before display time",
-  /function sortWorkMintsForPendingCap[\s\S]*String\(left\.txid[\s\S]*localeCompare\(String\(right\.txid[\s\S]*Date\.parse\(left\.createdAt\)/u.test(
+  /function sortWorkMintsForPendingCap[\s\S]*compareCanonicalUtf8\(left\.txid, right\.txid\)[\s\S]*Date\.parse\(left\.createdAt\)/u.test(
     server,
   ),
 );
@@ -1056,7 +1064,7 @@ expectAll("server WORK transfer txid history recovers without full ledger rebuil
   /async function recoveredWorkTransfersForAddresses\(\s*addresses,\s*network,\s*options = \{\},?\s*\)/,
   /const maxPages = Number\.isSafeInteger\(Number\(options\.maxPages\)\)[\s\S]{0,300}TOKEN_ADDRESS_TRANSFER_RECOVERY_MAX_PAGES/,
   /fetchAddressTransactionsViaMempoolPagination\(\s*address,\s*network,\s*maxPages/,
-  /function tokenTransferHistoryItemKey\(item\)[\s\S]{0,180}item\?\.protocolVout,[\s\S]{0,80}item\?\._powEventIndex/,
+  /function tokenTransferHistoryItemKey\(item\)[\s\S]*canonicalTokenReplayPosition\(item\)[\s\S]*position\.recordOrdinal[\s\S]*const identity = \[[\s\S]*item\?\.protocolVout,[\s\S]*item\?\._powEventIndex/,
   /scope === WORK_TOKEN_ID &&[\s\S]*recoveryTxids\.length > 0[\s\S]*safeKind === "transfers"[\s\S]*first-party-work-transfer-txid-recovery/,
   /scope === WORK_TOKEN_ID &&[\s\S]*recoveryAddresses\.length > 0[\s\S]*safeKind === "transfers"[\s\S]*first-party-work-transfer-address-recovery/,
 ]);
@@ -1434,11 +1442,11 @@ expectAll("targeted canonical ID repair replaces aliases and rebuilds projection
 ]);
 expectAll("closed token listings preserve and repair canonical seal metadata", proofIndexerBackfill + proofIndexReader, [
   /seal_txid = COALESCE\(NULLIF\(EXCLUDED\.seal_txid, ''\), proof_indexer\.credit_listings\.seal_txid\)/,
-  /payload = proof_indexer\.credit_listings\.payload \|\| EXCLUDED\.payload/,
+  /payload =[\s\S]*proof_indexer\.credit_listings\.payload[\s\S]*EXCLUDED\.payload[\s\S]*'actionAuthorization'[\s\S]*'listingFrozenTerms'/,
   /async function repairConfirmedListingSealMetadata\([\s\S]*kind = 'token-listing-sealed'[\s\S]*UPDATE proof_indexer\.credit_listings[\s\S]*'sealConfirmed', true[\s\S]*'sealTxid', seals\.seal_txid/,
   /results\.push\(await repairConfirmedListingSealMetadata\(client\)\)/,
   /function tokenClosedListingFromEventPayload\(payload\)[\s\S]*payload\?\.closedAt[\s\S]*saleAuthorization: objectRecord\(payload\?\.saleAuthorization\)[\s\S]*sealConfirmed:[\s\S]*sealTxid:/,
-  /const sales = uniqueTokenItems\([\s\S]*marketEvents\.sales[\s\S]*listingProjection\.sales[\s\S]*mergeCanonicalTokenSaleRecord/,
+  /const sales = canonicalTokenSalesWithListingEnrichment\(\s*marketEvents\.sales,\s*listingProjection\.sales,\s*network,\s*\)/,
   /const closedListings = uniqueTokenItems\([\s\S]*marketEvents\.closedListings[\s\S]*listingProjection\.closedListings[\s\S]*mergeCanonicalTokenClosedListingRecord/,
   /function mergeCanonicalTokenClosedListingRecord\([\s\S]*closedAt: current\.closedAt \?\? incoming\.closedAt[\s\S]*createdAt: current\.createdAt \?\? incoming\.createdAt/,
 ]);
@@ -1482,6 +1490,29 @@ expectAll("proof index deploy flags keep mailbox DB reads enabled", proofIndexDe
   /POW_INDEX_READS=[^\n]*event-history/,
   /POW_INDEX_READS=[^\n]*address-mail/,
   /POW_INDEX_TOKEN_HISTORY_MAX_AGE_MS=86400000/,
+]);
+expectAll("AMO V5 stays fail-closed until canonical quote readiness", proofIndexDeploy, [
+  /WORK_AMO_V5_DECLARATION_TXID=54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36/,
+  /WORK_AMO_V5_DECLARATION_HEIGHT=959620/,
+  /WORK_AMO_V5_DECLARATION_BLOCK_HASH=0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811/,
+  /WORK_AMO_V5_DECLARATION_BLOCK_INDEX=141/,
+  /WORK_AMO_V5_DECLARATION_MEMO_SHA256=d947a9adaa9d84d05571d2addd210cc4aa194eac94562411397553ef8135f95f/,
+  /WORK_AMO_V5_WRITES_ENABLED=0/,
+]);
+expectAll("AMO V5 uses exact position-derived immutable unit terms", workAmoV5Core, [
+  /WORK_AMO_V5_AUTH_VERSION = "pwt-sale-v5"/,
+  /WORK_AMO_V5_ALLOWED_FACE_USD_CENTS = Object\.freeze\(\[\s*2_000,\s*5_000,\s*10_000,\s*\]\)/,
+  /WORK_AMO_V5_STATE_ORDER_MODEL =\s*"canonical-proof-state-order-v1"/,
+  /export function deriveWorkAmoV5FrozenTerms\(/,
+  /export function validateWorkAmoV5SealOrBuyTerms\(/,
+  /export function workAmoV5BroadcastDecision\(/,
+]);
+expectAll("AMO V5 migration preserves relic and invalid-history distinctions", workAmoV5Migration, [
+  /WORK_AMO_V5_PRE_V1_RELIC_LISTING_TXID/,
+  /WORK_AMO_V5_POST_V1_INVALID_LISTING_TXID/,
+  /Post-V1 WORK pwt-sale-v3 actions are invalid audit history/,
+  /proof_indexer\.work_amo_listing_terms/,
+  /WORK_AMO_V5_MIGRATION_APPLY/,
 ]);
 
 expectAll("registry default reads use proof index with canonical fallback", server, [
@@ -1889,6 +1920,18 @@ expect(
 expect(
   "package exposes credit mint regression checks",
   /"check:credit-mint-regressions":\s*"node scripts\/check-credit-mint-regressions\.mjs"/.test(
+    packageJson,
+  ),
+);
+expect(
+  "package exposes AMO V5 protocol checks",
+  /"check:work-amo-v5":\s*"node scripts\/check-work-amo-v5\.mjs"/.test(
+    packageJson,
+  ),
+);
+expect(
+  "package exposes the supervised AMO V5 migration",
+  /"migrate:work-amo-v5":\s*"node scripts\/migrate-work-amo-v5\.mjs"/.test(
     packageJson,
   ),
 );
