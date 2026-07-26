@@ -30,6 +30,29 @@ const WORK_MARKET_V3_AUTH_VERSION = "pwt-sale-v3";
 const WORK_MARKET_V4_AUTH_VERSION = "pwt-sale-v4";
 const WORK_MARKET_V4_ORACLE_MODEL =
   "canonical-work-market-confirmation-floor-v1";
+const WORK_AMO_V5_AUTH_VERSION = "pwt-sale-v5";
+const WORK_AMO_V5_DECLARATION_TXID =
+  "54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36";
+const WORK_AMO_V5_DECLARATION_BLOCK_HASH =
+  "0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811";
+const WORK_AMO_V5_DECLARATION_HEIGHT = 959_620;
+const WORK_AMO_V5_DECLARATION_BLOCK_INDEX = 141;
+const WORK_AMO_V5_ACTIVATION_HEIGHT = 959_621;
+const WORK_AMO_V5_V1_ACTIVATION_HEIGHT = 959_306;
+const WORK_AMO_V5_ALLOWED_FACE_USD_CENTS = [2_000, 5_000, 10_000];
+const WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS = 144;
+const WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX =
+  "4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1";
+const WORK_AMO_V5_POST_V1_INVALID_LISTING_TX =
+  "5eb0a876603a7551653806b932533dc27a884631a581caa2e36dcf129b8278e8";
+const WORK_AMO_V5_MODELS = {
+  amountModel: "canonical-confirmed-position-derived-work-amount-v1",
+  bondTransitionModel: "canonical-compute-then-bond-v1",
+  stateOrderModel: "canonical-proof-state-order-v1",
+  unitModel: "canonical-work-amo-usd-unit-v2",
+  unitUsdOracleModel: "canonical-amo-chain-usd-quote-v1",
+  unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
+};
 const WORK_MARKET_V2_LATE_SEAL_LISTING_TX =
   "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9";
 const WORK_MARKET_V2_LATE_SEAL_TX =
@@ -610,7 +633,81 @@ function validWorkMarketV4DeclarationCoordinates(value) {
   );
 }
 
+function workAmoV5StatusFromPayload(payload, context = payload) {
+  return [
+    context?.workAmoV5,
+    context?.floor?.workAmoV5,
+    context?.workFloor?.workAmoV5,
+    payload?.workAmoV5,
+  ].find((status) => status && typeof status === "object");
+}
+
+function assertWorkAmoV5Readiness(payload, label, context = payload) {
+  const status = workAmoV5StatusFromPayload(payload, context);
+  assert(status, `${label} is missing WORK AMO V5 status`);
+  assert(
+    status.active === true &&
+      status.authVersion === WORK_AMO_V5_AUTH_VERSION &&
+      status.declarationConfirmed === true &&
+      status.declarationTxid === WORK_AMO_V5_DECLARATION_TXID &&
+      status.declarationBlockHash === WORK_AMO_V5_DECLARATION_BLOCK_HASH &&
+      Number(status.declarationHeight) === WORK_AMO_V5_DECLARATION_HEIGHT &&
+      Number(status.declarationBlockIndex) ===
+        WORK_AMO_V5_DECLARATION_BLOCK_INDEX &&
+      Number(status.activationHeight) === WORK_AMO_V5_ACTIVATION_HEIGHT,
+    `${label} does not expose the exact confirmed AMO V5 declaration`,
+  );
+  assert(
+    JSON.stringify(status.allowedFaceUsdCents) ===
+      JSON.stringify(WORK_AMO_V5_ALLOWED_FACE_USD_CENTS) &&
+      Number(status.maxQuoteAgeBlocks) ===
+        WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS,
+    `${label} does not expose exactly the $20, $50, and $100 V5 faces`,
+  );
+  assert(
+    Object.entries(WORK_AMO_V5_MODELS).every(
+      ([key, value]) => status.models?.[key] === value,
+    ),
+    `${label} does not expose the exact AMO V5 model identifiers`,
+  );
+  assert(
+    status.indexReady === true,
+    `${label} reports that canonical AMO V5 replay is not ready`,
+  );
+  assert(
+    status.protocolWritesEnabled === false &&
+      status.listingWritesEnabled === false &&
+      status.writesEnabled === false &&
+      ["work-amo-v5-quote-not-ready", "work-amo-v5-writes-not-configured"].includes(
+        String(status.reasonCode ?? ""),
+      ),
+    `${label} did not preserve the fail-closed AMO V5 production write gate`,
+  );
+  if (status.quoteReady === true) {
+    assert(
+      /^[0-9a-f]{64}$/u.test(String(status.quoteHead?.txid ?? "")) &&
+        Number(status.quoteHead?.blockHeight) >=
+          WORK_AMO_V5_V1_ACTIVATION_HEIGHT,
+      `${label} reports a ready AMO quote without a canonical quote head`,
+    );
+  } else {
+    assert(
+      status.quoteHead === null,
+      `${label} reports an unusable AMO quote head`,
+    );
+  }
+  return status;
+}
+
 function expectedActiveWorkMarketVersion(payload, context = payload) {
+  const workAmoV5 = workAmoV5StatusFromPayload(payload, context);
+  if (
+    workAmoV5?.active === true &&
+    workAmoV5?.declarationConfirmed === true &&
+    workAmoV5?.authVersion === WORK_AMO_V5_AUTH_VERSION
+  ) {
+    return WORK_AMO_V5_AUTH_VERSION;
+  }
   const statusCandidates = [
     context?.workMarketplaceV4,
     context?.floor?.workMarketplaceV4,
@@ -654,13 +751,28 @@ function assertActiveWorkListingsUseCanonicalVersion(
 ) {
   const expectedVersion = expectedActiveWorkMarketVersion(payload, context);
   const activeWrongVersion = (payload?.listings ?? []).filter(
-    (listing) =>
-      String(
-        listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
-      )
-        .trim()
-        .toLowerCase() === WORK_TOKEN_ID &&
-      workListingAuthorizationVersion(listing) !== expectedVersion,
+    (listing) => {
+      const isWork =
+        String(
+          listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
+        )
+          .trim()
+          .toLowerCase() === WORK_TOKEN_ID;
+      if (!isWork) {
+        return false;
+      }
+      const version = workListingAuthorizationVersion(listing);
+      if (version === expectedVersion) {
+        return false;
+      }
+      return !(
+        expectedVersion === WORK_AMO_V5_AUTH_VERSION &&
+        version === WORK_MARKET_V4_AUTH_VERSION &&
+        listing?.confirmed === true &&
+        Number.isSafeInteger(Number(listing?.blockHeight)) &&
+        Number(listing.blockHeight) < WORK_AMO_V5_ACTIVATION_HEIGHT
+      );
+    },
   );
   assert(
     activeWrongVersion.length === 0,
@@ -777,6 +889,60 @@ async function assertWorkMarketV2CutoverContract({ fresh = true } = {}) {
   return token;
 }
 
+async function assertWorkAmoV5CutoverContract({ fresh = true } = {}) {
+  const token = await getJson("/api/v1/token", {
+    network: "livenet",
+    asset: WORK_TOKEN_ID,
+    ...(fresh ? { fresh: 1 } : {}),
+  });
+  assertWorkAmoV5Readiness(token, "/api/v1/token?asset=WORK");
+  assertActiveWorkListingsUseCanonicalVersion(
+    token,
+    "/api/v1/token?asset=WORK",
+  );
+
+  const relicHistory = await tokenHistory("closed-listings", {
+    fresh: 1,
+    q: WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
+  });
+  const relic = listingById(
+    relicHistory.items,
+    WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
+  );
+  assert(
+    relic?.confirmed === true &&
+      relic?.relic === true &&
+      relic?.refundEligible === false &&
+      ["disabled", "closed"].includes(String(relic?.status ?? "")),
+    `${WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX} is not preserved as a non-reserving pre-unit relic`,
+  );
+
+  const invalidHistory = await tokenHistory("invalid-events", {
+    fresh: 1,
+    q: WORK_AMO_V5_POST_V1_INVALID_LISTING_TX,
+  });
+  const invalid = (invalidHistory.items ?? []).find(
+    (item) =>
+      String(item?.txid ?? "").toLowerCase() ===
+      WORK_AMO_V5_POST_V1_INVALID_LISTING_TX,
+  );
+  assert(
+    invalid?.confirmed === true &&
+      invalid?.valid === false &&
+      invalid?.relic === false &&
+      invalid?.refundEligible === false &&
+      String(invalid?.reasonCode ?? invalid?.reason ?? "") ===
+        "work-market-v4-version-required",
+    `${WORK_AMO_V5_POST_V1_INVALID_LISTING_TX} is not preserved as post-V1 invalid audit history`,
+  );
+  assert(
+    !listingById(token.listings, WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX) &&
+      !listingById(token.listings, WORK_AMO_V5_POST_V1_INVALID_LISTING_TX),
+    "AMO V5 migration left a V3 listing reservation active",
+  );
+  return token;
+}
+
 function holderByAddress(items, address) {
   const needle = String(address ?? "").toLowerCase();
   return (items ?? []).find(
@@ -803,6 +969,10 @@ async function runFastMarketplaceRegressionGate() {
 
   await step("WORK Marketplace V2 cutover contract", async () => {
     await assertWorkMarketV2CutoverContract();
+  });
+
+  await step("WORK AMO V5 cutover and write gate", async () => {
+    await assertWorkAmoV5CutoverContract();
   });
 
   await step("active and closed WORK listing truth", async () => {
@@ -1035,6 +1205,7 @@ assert(
 );
 
 const workCutoverToken = await assertWorkMarketV2CutoverContract();
+await assertWorkAmoV5CutoverContract();
 
 const activeListing = await tokenHistory("listings", { q: LISTING_TX });
 assert(

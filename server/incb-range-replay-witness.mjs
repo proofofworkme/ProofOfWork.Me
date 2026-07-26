@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { compareCanonicalUtf8 } from "./canonical-order.mjs";
 
 export const INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL =
   "canonical-incb-range-replay-witness-set-v1";
@@ -430,7 +431,7 @@ function entryOrder(left, right) {
   return (
     left.bond.blockHeight - right.bond.blockHeight ||
     left.bond.blockIndex - right.bond.blockIndex ||
-    left.bond.txid.localeCompare(right.bond.txid) ||
+    compareCanonicalUtf8(left.bond.txid, right.bond.txid) ||
     left.bond.bondRecipientVout - right.bond.bondRecipientVout
   );
 }

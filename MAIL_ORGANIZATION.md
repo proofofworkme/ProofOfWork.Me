@@ -13,7 +13,8 @@ id.proofofwork.me           focused ProofOfWork ID registry onboarding app
 computer.proofofwork.me     full mailbox/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
-marketplace.proofofwork.me  standalone asset marketplace; IDs and credit sale-ticket markets live
+amo.proofofwork.me          canonical Autonomous Money Organization
+marketplace.proofofwork.me  compatibility route to AMO
 credit.proofofwork.me       standalone credit creation and mint app
 token.proofofwork.me        permanent redirect to https://credit.proofofwork.me/
 tokens.proofofwork.me       permanent redirect to https://credit.proofofwork.me/
@@ -45,9 +46,9 @@ Mail organization features that are already implemented in the full app:
 - Canonical `Welcome to ProofOfWork.Me.html` system file pinned by txid and shown by default in Files/Desktop.
 - Browser-readable HTML message bodies appear in Files/Desktop as derived `.html` files, even when no attachment exists.
 - Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
-- Marketplace workspace for confirmed ID listings, seals, delistings, and buyer-funded transfers.
+- AMO workspace for confirmed ID listings, seals, delistings, and buyer-funded transfers.
 - Credit workspace for mainnet credit creation and minting, Wallet workspace for credit balances, transfers, listings, delistings, and sale history, plus WORK, Infinity, and Inception workspaces for the dedicated WORK credit dashboard and POWB/INCB bond markets. Creation pays the `tokens@proofofwork.me` index fee; mints, transfers, listings, seals, delistings, and buys pay each credit registry directly.
-- Wallet-owned listing state is reconstructed from the shared credit marketplace ledger, including active, pending, delisted, and sold sale-ticket records. Core-backed sale-ticket spend checks keep Wallet, Marketplace, WORK, and Log aligned while summary payloads warm.
+- Wallet-owned listing state is reconstructed from the shared credit market ledger, including active, pending, delisted, and sold sale-ticket records. Core-backed sale-ticket spend checks keep Wallet, AMO, WORK, and Log aligned while summary payloads warm.
 - Log surface for tx-backed registry, marketplace, mail, reply, file, attachment, credit, and seeded Computer mail actions from the canonical livenet ledger.
 - Growth surface for canonical modeled network value versus real confirmed registry, log, file, marketplace, and Credit value metrics from the same livenet ledger snapshot used by WORK. WORK values are split into live network value, the active site/floor value, and frozen network value, the confirmation-time audit stamp.
 - Export/import for local drafts, archive/favorite preferences, and sent/outbox tracking.
@@ -66,7 +67,7 @@ Mail organization features that are already implemented in the full app:
   bypassed.
 
 Future developers should keep `id.proofofwork.me` narrow. Do not pull the full mailbox UI into the Phase 1 registry launch unless the launch scope explicitly changes.
-Marketplace actions should stay outside the mailbox folders. Keep ID and credit trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders. The Marketplace workspace is tabbed by asset class: IDs and Credits both use sale-ticket settlement, while Wallet stays the place to transfer or list owned credit balances.
+AMO actions should stay outside the mailbox folders. Keep ID and credit trading in the Computer AMO workspace and `amo.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders. The legacy Marketplace hostname points to AMO. The AMO workspace is tabbed by asset class: IDs and Credits both use sale-ticket settlement, while Wallet stays the place to transfer or list owned credit balances.
 Log is not a mailbox folder. It is a read-only ProofOfWork Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, credit sales, and seeded Computer mail events such as Infinity and Inception Bonds. Server-backed Log search should query the canonical confirmed ledger by address, confirmed ID, txid, protocol kind, participant, token id, or app label, using the proof index database for stable confirmed search/filter reads and the node/API path for volatile first-page, fresh, pending, dropped, and fallback reads. A direct address lookup must not expose confirmed value-bearing events that are absent from global Log. Mail, Log, and Event History must agree on the same txid; if a confirmed mailbox tx is value-bearing, it must also be searchable in global Log/Event views with the normalized kind.
 Growth is not a mailbox folder. It is a read-only model surface that compares confirmed chain-derived network value with the canonical ProofOfWork Computer growth model in proofs and USD. Merged apps such as Credits and Wallet should appear as normal app surfaces, Computer workspaces when useful, and first-class Growth inputs. Growth, WORK, Log, and credit/token history should read the same canonical ledger snapshot, served through the proof index database where supported, so proofs/USD totals and event search agree after refresh. WORK's live value is the current floor source; WORK's frozen value is the immutable confirmation-time value of past WORK movement and fixed event components.
 Browser is not a mailbox folder. It is an HTML renderer over ProofOfWork message bodies and the same verified file attachment protocol used by Files and Desktop. Browser-rendered HTML stays separate from wallet signing. Browser should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.

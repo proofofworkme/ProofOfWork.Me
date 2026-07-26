@@ -3311,6 +3311,7 @@ select {
 .work-marketplace-version-tabs {
   align-self: start;
   grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 0;
   max-width: none;
   padding: 0;
@@ -3387,6 +3388,84 @@ select {
 
 .token-list-price-reference div.bad {
   border-color: rgba(255, 69, 58, 0.5);
+}
+
+.work-amo-face-selector {
+  border: 0;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.work-amo-face-selector legend {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 820;
+  margin-bottom: 8px;
+}
+
+.work-amo-face-selector > div {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.work-amo-face-selector button {
+  justify-content: center;
+  min-width: 0;
+  width: 100%;
+}
+
+.work-amo-face-selector button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: rgba(10, 132, 255, 0.52);
+  color: var(--accent);
+}
+
+.work-amo-estimate {
+  margin-top: 2px;
+}
+
+.work-amo-estimate-note,
+.work-amo-quote-authority-status {
+  overflow-wrap: anywhere;
+}
+
+.work-amo-quote-control {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.work-amo-quote-control > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.work-amo-quote-control > div > span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.work-amo-quote-control form {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.work-amo-quote-control input,
+.work-amo-quote-control button {
+  max-width: 100%;
+  min-width: 0;
 }
 
 .token-list-price-reference div.good {

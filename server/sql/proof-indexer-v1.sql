@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS proof_indexer.transactions (
   dropped_at timestamptz,
   block_hash text,
   block_height integer,
+  block_index integer,
   block_time timestamptz,
   fee_sats bigint,
   vsize integer,
@@ -54,11 +55,16 @@ CREATE TABLE IF NOT EXISTS proof_indexer.transactions (
   raw_tx jsonb,
   raw_hex text,
   updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT transactions_block_index_nonnegative
+    CHECK (block_index IS NULL OR block_index >= 0),
   PRIMARY KEY (network, txid),
   FOREIGN KEY (network, block_hash)
     REFERENCES proof_indexer.blocks (network, block_hash)
     DEFERRABLE INITIALLY DEFERRED
 );
+
+ALTER TABLE proof_indexer.transactions
+  ADD COLUMN IF NOT EXISTS block_index integer;
 
 CREATE INDEX IF NOT EXISTS transactions_status_idx
   ON proof_indexer.transactions (network, status, last_seen_at DESC);
@@ -66,6 +72,19 @@ CREATE INDEX IF NOT EXISTS transactions_status_idx
 CREATE INDEX IF NOT EXISTS transactions_confirmed_height_idx
   ON proof_indexer.transactions (network, block_height, txid)
   WHERE status = 'confirmed';
+
+-- `txid` identifies a transaction but never orders confirmed protocol state.
+-- AMO V5 uses the zero-based position in the canonical full-node block array.
+-- Keep the legacy height/txid index above for historical query compatibility;
+-- all deterministic replay uses this explicit position index.
+CREATE INDEX IF NOT EXISTS transactions_confirmed_position_idx
+  ON proof_indexer.transactions (
+    network,
+    block_height,
+    block_index,
+    txid
+  )
+  WHERE status = 'confirmed' AND block_index IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS proof_indexer.tx_inputs (
   network text NOT NULL,
@@ -152,17 +171,44 @@ CREATE TABLE IF NOT EXISTS proof_indexer.events (
   amount_sats bigint NOT NULL DEFAULT 0,
   data_bytes integer NOT NULL DEFAULT 0,
   block_height integer,
+  block_index integer,
+  record_ordinal integer NOT NULL,
   block_time timestamptz,
   event_time timestamptz,
   raw_payload text,
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT events_block_index_nonnegative
+    CHECK (block_index IS NULL OR block_index >= 0),
+  CONSTRAINT events_op_return_vout_nonnegative
+    CHECK (op_return_vout IS NULL OR op_return_vout >= 0),
+  CONSTRAINT events_record_ordinal_nonnegative
+    CHECK (record_ordinal >= 0),
   UNIQUE (network, event_key),
   FOREIGN KEY (network, txid)
     REFERENCES proof_indexer.transactions (network, txid)
     ON DELETE CASCADE
 );
+
+ALTER TABLE proof_indexer.events
+  ADD COLUMN IF NOT EXISTS block_index integer,
+  ADD COLUMN IF NOT EXISTS record_ordinal integer;
+
+UPDATE proof_indexer.events
+SET record_ordinal = 0
+WHERE record_ordinal IS NULL
+  AND (
+    status <> 'confirmed'
+    OR (
+      block_height IS NOT NULL
+      AND block_height < 959621
+    )
+  );
+
+ALTER TABLE proof_indexer.events
+  ALTER COLUMN record_ordinal SET NOT NULL,
+  ALTER COLUMN record_ordinal DROP DEFAULT;
 
 CREATE INDEX IF NOT EXISTS events_lookup_idx
   ON proof_indexer.events (network, protocol, kind, status, event_time DESC);
@@ -173,6 +219,21 @@ CREATE INDEX IF NOT EXISTS events_txid_idx
 CREATE INDEX IF NOT EXISTS events_confirmed_order_idx
   ON proof_indexer.events (network, block_height, txid, event_id)
   WHERE status = 'confirmed' AND valid = true;
+
+CREATE INDEX IF NOT EXISTS events_confirmed_position_idx
+  ON proof_indexer.events (
+    network,
+    block_height,
+    block_index,
+    op_return_vout,
+    record_ordinal,
+    event_id
+  )
+  WHERE
+    status = 'confirmed'
+    AND valid = true
+    AND block_index IS NOT NULL
+    AND op_return_vout IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS events_payload_gin_idx
   ON proof_indexer.events USING gin (payload jsonb_path_ops);
@@ -347,6 +408,445 @@ CREATE INDEX IF NOT EXISTS credit_listings_seller_idx
 CREATE INDEX IF NOT EXISTS credit_listings_ticket_idx
   ON proof_indexer.credit_listings (network, sale_ticket_txid, sale_ticket_vout)
   WHERE sale_ticket_txid IS NOT NULL;
+
+-- Canonical AMO USD quotes are an append-only chain. Invalid or competing
+-- records remain in `events`; only the winning, fully verified quote is
+-- projected here. Sequence and position uniqueness are constrained only for
+-- confirmed valid rows so audit history can remain intact.
+CREATE TABLE IF NOT EXISTS proof_indexer.work_usd_quotes (
+  network text NOT NULL,
+  txid text NOT NULL,
+  declaration_txid text NOT NULL,
+  sequence numeric NOT NULL,
+  previous_quote_txid text NOT NULL,
+  usd_per_100m_proofs_q8 numeric NOT NULL,
+  authority_scriptpubkey text NOT NULL,
+  record_count integer NOT NULL,
+  registry_address text NOT NULL,
+  registry_payment_sats bigint NOT NULL,
+  registry_payment_vout integer NOT NULL,
+  status text NOT NULL CHECK (
+    status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+  ),
+  valid boolean NOT NULL DEFAULT false,
+  validation_errors text[] NOT NULL DEFAULT '{}',
+  block_hash text,
+  block_height integer,
+  block_index integer,
+  protocol_vout integer,
+  record_ordinal integer NOT NULL,
+  raw_payload text NOT NULL,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT work_usd_quotes_sequence_integer
+    CHECK (sequence::text ~ '^[1-9][0-9]*$'),
+  CONSTRAINT work_usd_quotes_value_integer
+    CHECK (usd_per_100m_proofs_q8::text ~ '^[1-9][0-9]*$'),
+  CONSTRAINT work_usd_quotes_record_count_one
+    CHECK (record_count = 1),
+  CONSTRAINT work_usd_quotes_registry_payment_positive
+    CHECK (registry_payment_sats > 0),
+  CONSTRAINT work_usd_quotes_registry_payment_vout_nonnegative
+    CHECK (registry_payment_vout >= 0),
+  CONSTRAINT work_usd_quotes_block_index_nonnegative
+    CHECK (block_index IS NULL OR block_index >= 0),
+  CONSTRAINT work_usd_quotes_protocol_vout_nonnegative
+    CHECK (protocol_vout IS NULL OR protocol_vout >= 0),
+  CONSTRAINT work_usd_quotes_record_ordinal_nonnegative
+    CHECK (record_ordinal >= 0),
+  PRIMARY KEY (network, txid),
+  FOREIGN KEY (network, txid)
+    REFERENCES proof_indexer.transactions (network, txid)
+    ON DELETE CASCADE
+);
+
+ALTER TABLE proof_indexer.work_usd_quotes
+  ALTER COLUMN record_ordinal DROP DEFAULT;
+
+ALTER TABLE proof_indexer.work_usd_quotes
+  ADD COLUMN IF NOT EXISTS record_count integer,
+  ADD COLUMN IF NOT EXISTS registry_address text,
+  ADD COLUMN IF NOT EXISTS registry_payment_sats bigint,
+  ADD COLUMN IF NOT EXISTS registry_payment_vout integer;
+
+ALTER TABLE proof_indexer.work_usd_quotes
+  ALTER COLUMN record_count SET NOT NULL,
+  ALTER COLUMN registry_address SET NOT NULL,
+  ALTER COLUMN registry_payment_sats SET NOT NULL,
+  ALTER COLUMN registry_payment_vout SET NOT NULL;
+
+DO $proof_indexer_work_usd_quote_constraints$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.work_usd_quotes'::regclass
+      AND conname = 'work_usd_quotes_record_count_one'
+  ) THEN
+    ALTER TABLE proof_indexer.work_usd_quotes
+      ADD CONSTRAINT work_usd_quotes_record_count_one
+      CHECK (record_count = 1) NOT VALID;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.work_usd_quotes'::regclass
+      AND conname = 'work_usd_quotes_registry_payment_positive'
+  ) THEN
+    ALTER TABLE proof_indexer.work_usd_quotes
+      ADD CONSTRAINT work_usd_quotes_registry_payment_positive
+      CHECK (registry_payment_sats > 0) NOT VALID;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.work_usd_quotes'::regclass
+      AND conname = 'work_usd_quotes_registry_payment_vout_nonnegative'
+  ) THEN
+    ALTER TABLE proof_indexer.work_usd_quotes
+      ADD CONSTRAINT work_usd_quotes_registry_payment_vout_nonnegative
+      CHECK (registry_payment_vout >= 0) NOT VALID;
+  END IF;
+END;
+$proof_indexer_work_usd_quote_constraints$;
+
+ALTER TABLE proof_indexer.work_usd_quotes
+  VALIDATE CONSTRAINT work_usd_quotes_record_count_one,
+  VALIDATE CONSTRAINT work_usd_quotes_registry_payment_positive,
+  VALIDATE CONSTRAINT work_usd_quotes_registry_payment_vout_nonnegative;
+
+CREATE UNIQUE INDEX IF NOT EXISTS work_usd_quotes_confirmed_sequence_uidx
+  ON proof_indexer.work_usd_quotes (network, declaration_txid, sequence)
+  WHERE status = 'confirmed' AND valid = true;
+
+CREATE UNIQUE INDEX IF NOT EXISTS work_usd_quotes_confirmed_position_uidx
+  ON proof_indexer.work_usd_quotes (
+    network,
+    block_height,
+    block_index,
+    protocol_vout,
+    record_ordinal
+  )
+  WHERE
+    status = 'confirmed'
+    AND valid = true
+    AND block_height IS NOT NULL
+    AND block_index IS NOT NULL
+    AND protocol_vout IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS work_usd_quotes_previous_idx
+  ON proof_indexer.work_usd_quotes (
+    network,
+    previous_quote_txid,
+    block_height,
+    block_index
+  );
+
+CREATE OR REPLACE FUNCTION proof_indexer.reject_work_usd_quotes_update()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $proof_indexer_work_usd_quotes_immutable$
+BEGIN
+  RAISE EXCEPTION
+    'Canonical AMO USD quote projections are immutable; delete only for canonical reorg replay'
+    USING ERRCODE = '55000';
+END;
+$proof_indexer_work_usd_quotes_immutable$;
+
+DROP TRIGGER IF EXISTS work_usd_quotes_immutable
+  ON proof_indexer.work_usd_quotes;
+CREATE TRIGGER work_usd_quotes_immutable
+BEFORE UPDATE ON proof_indexer.work_usd_quotes
+FOR EACH ROW
+EXECUTE FUNCTION proof_indexer.reject_work_usd_quotes_update();
+
+-- A V5 listing's economic terms are derived once at its confirmed canonical
+-- position. The row is deliberately update-proof: lifecycle changes belong in
+-- `credit_listings`, while a reorg removes and deterministically replays this
+-- derived row.
+CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_listing_terms (
+  network text NOT NULL,
+  listing_id text NOT NULL,
+  listing_txid text NOT NULL,
+  token_id text NOT NULL,
+  authorization_version text NOT NULL,
+  unit_face_usd_cents integer NOT NULL,
+  unit_amount_atoms numeric NOT NULL,
+  unit_price_sats bigint NOT NULL,
+  unit_minimum_price_sats bigint NOT NULL,
+  unit_usd_quote_txid text NOT NULL,
+  unit_usd_quote_vout integer NOT NULL,
+  unit_usd_quote_sequence numeric NOT NULL,
+  unit_usd_quote_block_height integer NOT NULL,
+  unit_usd_quote_block_hash text NOT NULL,
+  unit_usd_quote_block_index integer NOT NULL,
+  unit_usd_per_100m_proofs_q8 numeric NOT NULL,
+  unit_network_value_before_q8 numeric NOT NULL,
+  listing_block_height integer NOT NULL,
+  listing_block_hash text NOT NULL,
+  listing_block_index integer NOT NULL,
+  listing_protocol_vout integer NOT NULL,
+  listing_record_ordinal integer NOT NULL,
+  listing_bond_contribution_q8 numeric NOT NULL,
+  unit_network_value_after_q8 numeric NOT NULL,
+  frozen_terms jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT work_amo_listing_terms_face
+    CHECK (unit_face_usd_cents IN (2000, 5000, 10000)),
+  CONSTRAINT work_amo_listing_terms_amount_integer
+    CHECK (unit_amount_atoms::text ~ '^[1-9][0-9]*$'),
+  CONSTRAINT work_amo_listing_terms_quote_sequence_integer
+    CHECK (unit_usd_quote_sequence::text ~ '^[1-9][0-9]*$'),
+  CONSTRAINT work_amo_listing_terms_quote_value_integer
+    CHECK (unit_usd_per_100m_proofs_q8::text ~ '^[1-9][0-9]*$'),
+  CONSTRAINT work_amo_listing_terms_network_before_integer
+    CHECK (unit_network_value_before_q8::text ~ '^[1-9][0-9]*$'),
+  CONSTRAINT work_amo_listing_terms_bond_integer
+    CHECK (listing_bond_contribution_q8::text ~ '^[1-9][0-9]*$'),
+  CONSTRAINT work_amo_listing_terms_network_after_integer
+    CHECK (unit_network_value_after_q8::text ~ '^[1-9][0-9]*$'),
+  CONSTRAINT work_amo_listing_terms_price_positive
+    CHECK (
+      unit_price_sats > 0
+      AND unit_minimum_price_sats > 0
+      AND unit_price_sats >= unit_minimum_price_sats
+    ),
+  CONSTRAINT work_amo_listing_terms_network_transition
+    CHECK (
+      unit_network_value_after_q8 =
+        unit_network_value_before_q8 + listing_bond_contribution_q8
+    ),
+  CONSTRAINT work_amo_listing_terms_quote_precedes_listing
+    CHECK (
+      (
+        unit_usd_quote_block_height,
+        unit_usd_quote_block_index,
+        unit_usd_quote_vout,
+        0
+      ) < (
+        listing_block_height,
+        listing_block_index,
+        listing_protocol_vout,
+        listing_record_ordinal
+      )
+      AND unit_usd_quote_block_height >= 959306
+      AND listing_block_height >= 959621
+      AND listing_block_height <= unit_usd_quote_block_height + 144
+    ),
+  CONSTRAINT work_amo_listing_terms_positions_nonnegative
+    CHECK (
+      unit_usd_quote_vout >= 0
+      AND unit_usd_quote_block_height > 0
+      AND unit_usd_quote_block_index >= 0
+      AND listing_block_height > 0
+      AND listing_block_index >= 0
+      AND listing_protocol_vout >= 0
+      AND listing_record_ordinal >= 0
+    ),
+  PRIMARY KEY (network, listing_id),
+  UNIQUE (network, listing_txid),
+  FOREIGN KEY (network, listing_txid)
+    REFERENCES proof_indexer.transactions (network, txid)
+    ON DELETE CASCADE,
+  FOREIGN KEY (network, unit_usd_quote_txid)
+    REFERENCES proof_indexer.work_usd_quotes (network, txid)
+    ON DELETE RESTRICT
+);
+
+ALTER TABLE proof_indexer.work_amo_listing_terms
+  ALTER COLUMN listing_record_ordinal DROP DEFAULT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS work_amo_listing_terms_position_uidx
+  ON proof_indexer.work_amo_listing_terms (
+    network,
+    listing_block_height,
+    listing_block_index,
+    listing_protocol_vout,
+    listing_record_ordinal
+  );
+
+CREATE OR REPLACE FUNCTION proof_indexer.reject_work_amo_listing_terms_update()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $proof_indexer_work_amo_listing_terms_immutable$
+BEGIN
+  RAISE EXCEPTION
+    'AMO V5 frozen listing terms are immutable; delete only for canonical reorg replay'
+    USING ERRCODE = '55000';
+END;
+$proof_indexer_work_amo_listing_terms_immutable$;
+
+DROP TRIGGER IF EXISTS work_amo_listing_terms_immutable
+  ON proof_indexer.work_amo_listing_terms;
+CREATE TRIGGER work_amo_listing_terms_immutable
+BEFORE UPDATE ON proof_indexer.work_amo_listing_terms
+FOR EACH ROW
+EXECUTE FUNCTION proof_indexer.reject_work_amo_listing_terms_update();
+
+CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_block_transitions (
+  network text NOT NULL,
+  block_height integer NOT NULL,
+  block_hash text NOT NULL,
+  previous_block_hash text NOT NULL,
+  model text NOT NULL,
+  state_commitment_model text NOT NULL,
+  opening_network_value_q8 numeric NOT NULL,
+  closing_network_value_q8 numeric NOT NULL,
+  opening_state_sha256 text NOT NULL,
+  closing_state_sha256 text NOT NULL,
+  opening_state_payload_bytes integer NOT NULL,
+  closing_state_payload_bytes integer NOT NULL,
+  protocol_record_count integer NOT NULL,
+  raw_protocol_candidate_count integer NOT NULL,
+  transaction_count integer NOT NULL,
+  event_count integer NOT NULL,
+  event_set_model text NOT NULL,
+  event_set_sha256 text NOT NULL,
+  event_set_payload_bytes integer NOT NULL,
+  block_atomic boolean NOT NULL,
+  fee_once boolean NOT NULL,
+  invalid_zero boolean NOT NULL,
+  complete boolean NOT NULL,
+  payload jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (network, block_height),
+  UNIQUE (network, block_hash),
+  CONSTRAINT work_amo_block_transitions_height_positive
+    CHECK (block_height > 0),
+  CONSTRAINT work_amo_block_transitions_models
+    CHECK (
+      model IN (
+        'canonical-work-amo-full-position-block-sequencer-v1',
+        'canonical-work-amo-full-position-block-sequencer-v2'
+      )
+      AND state_commitment_model =
+        'canonical-work-amo-sufficient-state-sha256-v1'
+      AND event_set_model =
+        'canonical-work-amo-event-set-sha256-v1'
+    ),
+  CONSTRAINT work_amo_block_transitions_hashes
+    CHECK (
+      block_hash ~ '^[0-9a-f]{64}$'
+      AND previous_block_hash ~ '^[0-9a-f]{64}$'
+      AND opening_state_sha256 ~ '^[0-9a-f]{64}$'
+      AND closing_state_sha256 ~ '^[0-9a-f]{64}$'
+      AND event_set_sha256 ~ '^[0-9a-f]{64}$'
+    ),
+  CONSTRAINT work_amo_block_transitions_values_integer
+    CHECK (
+      opening_network_value_q8::text ~ '^(0|[1-9][0-9]*)$'
+      AND closing_network_value_q8::text ~ '^(0|[1-9][0-9]*)$'
+      AND closing_network_value_q8 >= opening_network_value_q8
+    ),
+  CONSTRAINT work_amo_block_transitions_counts
+    CHECK (
+      opening_state_payload_bytes > 0
+      AND closing_state_payload_bytes > 0
+      AND protocol_record_count >= 0
+      AND raw_protocol_candidate_count >= 0
+      AND transaction_count >= 0
+      AND event_count >= 0
+      AND event_set_payload_bytes > 0
+    ),
+  CONSTRAINT work_amo_block_transitions_complete
+    CHECK (
+      block_atomic = true
+      AND fee_once = true
+      AND invalid_zero = true
+      AND complete = true
+    ),
+  FOREIGN KEY (network, block_hash)
+    REFERENCES proof_indexer.blocks (network, block_hash)
+    ON DELETE CASCADE
+);
+
+ALTER TABLE proof_indexer.work_amo_block_transitions
+  DROP CONSTRAINT IF EXISTS work_amo_block_transitions_models;
+ALTER TABLE proof_indexer.work_amo_block_transitions
+  ADD CONSTRAINT work_amo_block_transitions_models
+  CHECK (
+    model IN (
+      'canonical-work-amo-full-position-block-sequencer-v1',
+      'canonical-work-amo-full-position-block-sequencer-v2'
+    )
+    AND state_commitment_model =
+      'canonical-work-amo-sufficient-state-sha256-v1'
+    AND event_set_model =
+      'canonical-work-amo-event-set-sha256-v1'
+  );
+
+CREATE INDEX IF NOT EXISTS work_amo_block_transitions_tip_idx
+  ON proof_indexer.work_amo_block_transitions (
+    network,
+    block_height DESC
+  );
+
+CREATE OR REPLACE FUNCTION
+  proof_indexer.reject_work_amo_block_transitions_update()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $proof_indexer_work_amo_block_transitions_immutable$
+BEGIN
+  RAISE EXCEPTION
+    'Canonical AMO block transitions are immutable; delete only for canonical reorg replay'
+    USING ERRCODE = '55000';
+END;
+$proof_indexer_work_amo_block_transitions_immutable$;
+
+DROP TRIGGER IF EXISTS work_amo_block_transitions_immutable
+  ON proof_indexer.work_amo_block_transitions;
+CREATE TRIGGER work_amo_block_transitions_immutable
+BEFORE UPDATE ON proof_indexer.work_amo_block_transitions
+FOR EACH ROW
+EXECUTE FUNCTION
+  proof_indexer.reject_work_amo_block_transitions_update();
+
+DO $proof_indexer_amo_position_constraints$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.transactions'::regclass
+      AND conname = 'transactions_block_index_nonnegative'
+  ) THEN
+    ALTER TABLE proof_indexer.transactions
+      ADD CONSTRAINT transactions_block_index_nonnegative
+      CHECK (block_index IS NULL OR block_index >= 0) NOT VALID;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.events'::regclass
+      AND conname = 'events_block_index_nonnegative'
+  ) THEN
+    ALTER TABLE proof_indexer.events
+      ADD CONSTRAINT events_block_index_nonnegative
+      CHECK (block_index IS NULL OR block_index >= 0) NOT VALID;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.events'::regclass
+      AND conname = 'events_op_return_vout_nonnegative'
+  ) THEN
+    ALTER TABLE proof_indexer.events
+      ADD CONSTRAINT events_op_return_vout_nonnegative
+      CHECK (op_return_vout IS NULL OR op_return_vout >= 0) NOT VALID;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.events'::regclass
+      AND conname = 'events_record_ordinal_nonnegative'
+  ) THEN
+    ALTER TABLE proof_indexer.events
+      ADD CONSTRAINT events_record_ordinal_nonnegative
+      CHECK (record_ordinal >= 0) NOT VALID;
+  END IF;
+END;
+$proof_indexer_amo_position_constraints$;
+
+ALTER TABLE proof_indexer.transactions
+  VALIDATE CONSTRAINT transactions_block_index_nonnegative;
+
+ALTER TABLE proof_indexer.events
+  VALIDATE CONSTRAINT events_block_index_nonnegative,
+  VALIDATE CONSTRAINT events_op_return_vout_nonnegative,
+  VALIDATE CONSTRAINT events_record_ordinal_nonnegative;
 
 -- Existing databases predate unbounded synthetic bond issuance and used a
 -- numeric(78, 0) typmod for every durable credit unit. Drop only that typmod;

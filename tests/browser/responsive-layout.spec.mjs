@@ -125,6 +125,10 @@ const FLOOR_VALUE_EXACT = "93779776551.76099574";
 const FLOOR_VALUE = Number(FLOOR_VALUE_EXACT);
 const FLOOR_VALUE_Q8 = "9377977655176099574";
 const WORK_ACCOUNTING_MODEL = "canonical-exact-work-network-q8-v1";
+const WORK_AMO_V5_DECLARATION_TXID =
+  "54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36";
+const WORK_AMO_V5_DECLARATION_BLOCK_HASH =
+  "0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811";
 
 const WORK_ACTUAL_VALUE = {
   baseNetworkValueQ8: NETWORK_VALUE_Q8,
@@ -214,6 +218,52 @@ const WORK_FLOOR = {
   stats: { indexedThroughBlock: 959_100 },
   tokenFlowSats: 0,
   totalQ8: NETWORK_VALUE_Q8,
+  workAmoV5: {
+    activationHeight: 959_621,
+    active: true,
+    allowedFaceUsdCents: [2000, 5000, 10000],
+    authVersion: "pwt-sale-v5",
+    declarationBlockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+    declarationConfirmed: true,
+    declarationHeight: 959_620,
+    declarationTxid: WORK_AMO_V5_DECLARATION_TXID,
+    estimates: {
+      2000: {
+        estimateOnly: true,
+        unitAmountAtoms: "20000000",
+        unitFaceUsdCents: 2000,
+        unitMinimumPriceSats: 20_000,
+        unitNetworkValueBeforeQ8: NETWORK_VALUE_Q8,
+        unitPriceSats: 20_000,
+        unitUsdQuoteTxid: HASH,
+      },
+      5000: {
+        estimateOnly: true,
+        unitAmountAtoms: "50000000",
+        unitFaceUsdCents: 5000,
+        unitMinimumPriceSats: 50_000,
+        unitNetworkValueBeforeQ8: NETWORK_VALUE_Q8,
+        unitPriceSats: 50_000,
+        unitUsdQuoteTxid: HASH,
+      },
+      10000: {
+        estimateOnly: true,
+        unitAmountAtoms: "100000000",
+        unitFaceUsdCents: 10000,
+        unitMinimumPriceSats: 100_000,
+        unitNetworkValueBeforeQ8: NETWORK_VALUE_Q8,
+        unitPriceSats: 100_000,
+        unitUsdQuoteTxid: HASH,
+      },
+    },
+    indexReady: true,
+    listingWritesEnabled: true,
+    maxQuoteAgeBlocks: 144,
+    protocolWritesEnabled: true,
+    quoteReady: true,
+    writesConfigured: true,
+    writesEnabled: true,
+  },
   workNetworkValueAccountingModel: WORK_ACCOUNTING_MODEL,
 };
 
@@ -569,16 +619,23 @@ async function openFixtureRoute(page, href, label) {
 }
 
 async function assertMarketplaceGeometry(page, mode, width) {
-  const label = `Marketplace WORK ${mode} at ${width}px`;
+  const label = `AMO WORK ${mode} at ${width}px`;
   await assertTopbarGeometry(page, label, width);
   const tabs = page.locator(".work-marketplace-version-tabs");
   await expect(tabs, `${label} version controls did not render`).toBeVisible();
 
   if (mode === "V1") {
     await tabs.getByRole("button", { name: /V1 Relic/ }).click();
+  } else if (mode === "V4") {
+    await tabs.getByRole("button", { name: /V4 Relic/ }).click();
   }
 
-  const panelHeading = mode === "V1" ? "Marketplace V1 Relic" : "Credit Sale Tickets";
+  const panelHeading =
+    mode === "V1"
+      ? "Marketplace V1 Relic"
+      : mode === "V4"
+        ? "V4 Relic Sale Tickets"
+        : "AMO Units";
   const panel = page
     .getByRole("heading", { exact: true, name: panelHeading })
     .locator("xpath=ancestor::section[1]");
@@ -619,8 +676,8 @@ async function assertMarketplaceGeometry(page, mode, width) {
   }
 }
 
-for (const mode of ["V2", "V1"]) {
-  test(`standalone Marketplace WORK ${mode} geometry matrix`, async ({ page }) => {
+for (const mode of ["AMO", "V4", "V1"]) {
+  test(`standalone AMO WORK ${mode} geometry matrix`, async ({ page }) => {
     await installApiFixtures(page);
     for (const width of VIEWPORT_WIDTHS) {
       await test.step(`${width}px`, async () => {
@@ -631,7 +688,7 @@ for (const mode of ["V2", "V1"]) {
             MARKETPLACE_BASE_URL,
             `/?marketplace=1&asset=${WORK_TOKEN_ID}`,
           ),
-          `Marketplace WORK ${mode}`,
+          `AMO WORK ${mode}`,
         );
         await assertMarketplaceGeometry(page, mode, width);
       });

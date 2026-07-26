@@ -1,25 +1,31 @@
-# ProofOfWork Marketplace
+# ProofOfWork AMO
+
+This historical filename is retained because repository automation and earlier
+protocol documentation link to it. The current product name is AMO:
+Autonomous Money Organization.
 
 ## Product Boundaries
 
 - `id.proofofwork.me` is registration-only.
-- `computer.proofofwork.me` contains the authenticated Marketplace workspace.
-- `marketplace.proofofwork.me` is the standalone asset marketplace app.
+- `computer.proofofwork.me` contains the authenticated AMO workspace.
+- `amo.proofofwork.me` is the canonical standalone AMO app.
+- `marketplace.proofofwork.me` is a compatibility hostname for the same app.
 
-Marketplace is organized by asset tabs. IDs, Credits, POWB, and INCB are live trading
+AMO is organized by asset tabs. IDs, Credits, POWB, and INCB are live trading
 classes. These asset classes use sale-ticket settlement so the buyer path spends
 a scarce UTXO, pays the seller, pays the registry mutation fee, and writes a
 chain-readable transfer/purchase event.
 - `log.proofofwork.me` is the public read-only ProofOfWork Computer log for tx-backed app actions.
 - The IDs workspace is for registration, receiver updates, and direct owner transfers only.
-- Marketplace is for on-chain listings, seals, delistings, buyer-funded purchases, credit sales, and future asset trades.
-- Marketplace actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer/buy tx, credit sale tx, and sale-ticket UTXO references.
-- Marketplace attention metrics should be derived from valid chain events: active listings, ID sale count, credit sale count, seller-price sale volume, credit sale volume, and marketplace mutation-fee flow.
+- AMO is for on-chain listings, seals, delistings, buyer-funded purchases, credit sales, and future asset trades.
+- AMO actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer/buy tx, credit sale tx, and sale-ticket UTXO references.
+- AMO attention metrics should be derived from valid chain events: active listings, ID sale count, credit sale count, seller-price sale volume, credit sale volume, and mutation-fee flow.
 - POWB and INCB market actions use the same credit sale-ticket machinery under their reserved synthetic assets. POWB supply comes directly from confirmed `pwm1:m:powb` recipient proof payments. INCB valuation and issuance amount come from direct bond proofs plus attached WORK valued by the send-time oracle: the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. Confirmation fixes the resulting balance and supply. Neither asset can be issued by `pwt1:mint`.
 
-## Current ID Marketplace Model
+## Current ID AMO Model
 
-The live marketplace writes on-chain listing-book events to the same canonical ProofOfWork ID registry address.
+The live AMO writes on-chain listing-book events to the same canonical
+ProofOfWork ID registry address.
 
 Current events:
 
@@ -45,21 +51,22 @@ The sale ticket is the scarce settlement point. Competing buyers must spend the 
 
 ## Sales Metrics
 
-The marketplace reports realized ID sale data from resolver-accepted buyer-funded transfers.
+AMO reports realized ID sale data from resolver-accepted buyer-funded
+transfers.
 
-- Public sale count starts with the live sale-ticket marketplace and increments for valid `buy5` purchases.
-- Historical valid `buy2`/`buy3`/`buy4` purchases remain replayable protocol history, but they are not counted in the public marketplace sales metric.
+- Public sale count starts with the live AMO sale-ticket book and increments for valid `buy5` purchases.
+- Historical valid `buy2`/`buy3`/`buy4` purchases remain replayable protocol history, but they are not counted in the public AMO sales metric.
 - Sale volume is the seller price in proofs, excluding the 546-proof registry mutation fee and excluding sale-ticket refunds.
-- Marketplace flow for Growth and WORK floor accounting is seller sale volume plus marketplace mutation fees from listing, seal, delisting, and buy events.
-- Seller sale volume remains a separate public metric. Do not fold mutation fees into seller volume, and do not count marketplace mutation fees again as generic Computer event flow.
+- AMO flow for Growth and WORK floor accounting is seller sale volume plus market mutation fees from listing, seal, delisting, and buy events.
+- Seller sale volume remains a separate public metric. Do not fold mutation fees into seller volume, and do not count market mutation fees again as generic Computer event flow.
 - WORK credit sales add more than seller price. For canonical WORK only, the amount of WORK moved also contributes credit movement network value: frozen value at the live WORK floor when the sale confirms, and live value at the current live WORK floor thereafter. Negative or positive buyer arb is spread information only; it does not redefine the network floor.
-- Non-WORK credit sales do not inherit WORK's movement-value lane. They contribute their confirmed sale payments, registry/mutation fees, and marketplace flow, but their own listing floors are not network value because illiquid listings can be manipulated.
+- Non-WORK credit sales do not inherit WORK's movement-value lane. They contribute their confirmed sale payments, registry/mutation fees, and AMO flow, but their own listing floors are not network value because illiquid listings can be manipulated.
 - Confirmed sales are canonical.
 - Pending sales are mempool-visible only until confirmation.
 
-## Current Credit Marketplace Model
+## Current Credit AMO Model
 
-The live credit marketplace writes sale-ticket events to each credit's own
+The live credit AMO writes sale-ticket events to each credit's own
 registry address.
 
 Current events:
@@ -83,11 +90,11 @@ The current flow:
 4. A buyer funds one `pwt1:buy5` transaction that spends the sale ticket, pays the seller price plus ticket value, pays the 546-proof credit registry mutation fee, and writes the buy event.
 5. The credit resolver accepts the purchase only if the listing is active and sealed, the seller still has spendable balance, the sale ticket is spent, seller payment is sufficient, and buyer constraints match.
 
-Wallet and Marketplace both use this model. Wallet is the connected-address
-ownership/action surface; Marketplace is the public discovery and purchase
+Wallet and AMO both use this model. Wallet is the connected-address
+ownership/action surface; AMO is the public discovery and purchase
 surface.
 
-## WORK Pricing Protocol V2
+## Historical WORK Marketplace Pricing Protocol V2
 
 Canonical WORK marketplace pricing is governed by declaration transaction
 `4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f`.
@@ -184,7 +191,7 @@ that later resurfaces through reconciliation remains closed evidence and
 cannot acquire `relic` or `refundEligible` status unless its listing id is in
 that snapshot.
 
-## WORK Pricing Protocol V4 Phase 1
+## Historical WORK Marketplace Pricing Protocol V4 Phase 1
 
 V4 removes V2's next-block liveness hazard without weakening the canonical
 execution floor. Governed WORK list, seal, and buy authorizations use
@@ -224,6 +231,228 @@ outpoint state, even when an attempted buy fails application validation.
 Missing, unavailable, hash-mismatched, inconsistent, expired-quote, or
 below-confirmation-floor actions remain invalid audit history and do not mutate
 canonical WORK balances, sales, Log, Growth, or network value.
+
+V4 remains historical design and replay documentation. No new V4 action is
+valid at or after AMO V5 activation.
+
+## Current WORK AMO Unit Protocol V2 (`pwt-sale-v5`)
+
+The corrective declaration is transaction
+`54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36`.
+It is canonical at block height `959620`, block transaction index `141`, block
+hash
+`0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811`,
+and activates at height `959621`.
+
+The declaration memo is output 3. Input zero spends exact authority
+scriptPubKey
+`76a91499b91dd27a616a71c0a1e9db6a86ceb8cff284c588ac`; output 4 pays
+546 proofs to `1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV` before the `pwt1`
+protocol output at output 5. Implementations pin all of these facts and the
+exact memo hash. A matching txid without matching canonical position and
+evidence is insufficient.
+
+New governed WORK list, seal, and buy actions use `pwt-sale-v5`. A new listing
+chooses exactly one face:
+
+```text
+allowedFaceUsdCents = { 2000, 5000, 10000 }
+```
+
+These are `$20`, `$50`, and `$100`. The signed pending authorization commits
+the face and the declared models, but it does not choose `amountAtoms`,
+`priceSats`, a markup, or a discount. Pending amount and price displays are
+estimates only.
+
+Every confirmed Computer event has the canonical position:
+
+```text
+(blockHeight, blockTransactionIndex, protocolVout, recordOrdinal)
+```
+
+Positions compare lexicographically as integers. Txid order, timestamps,
+database insertion order, and event ids never order confirmed state. Missing,
+duplicated, inconsistent, or unverifiable position data fails closed.
+`recordOrdinal` is mandatory even when its value is zero; no V5 validation,
+replay-key, quote-head, or projection path may manufacture a missing ordinal.
+When a committed set preimage still needs a string total order, normalized
+strings compare by unsigned UTF-8 bytes. Locale collation, `localeCompare`,
+`Intl.Collator`, and host database locale never define protocol order. This
+string rule canonicalizes set preimages only; it never replaces confirmed
+position order.
+
+For every event, the Computer computes and validates the result from the state
+immediately before that position, freezes the result, then applies that valid
+event's bond contribution. An invalid event contributes zero. A transaction's
+miner fee is counted exactly once after its final protocol record. Thus an
+earlier bond in the same block affects a later listing, while a later bond does
+not reprice an earlier listing.
+
+The internal block sequencer is
+`canonical-work-amo-full-position-block-sequencer-v2`. Its raw evaluator keeps
+a rolling
+`canonical-work-amo-raw-transition-chain-sha256-v1` commitment. The opening
+commitment is bound before the first event, the chain advances after every raw
+protocol event and every once-per-transaction fee transition, and a final
+block-close step binds the closing economic, generic-credit, PowID, and WORK
+commitments. Replay records and traces preserve the applicable per-step chain
+head. These rolling heads supplement, and never replace, the independently
+recomputed full opening and closing state commitments. Pre-release V1
+sequencer rows may remain immutable evidence, but only V2 transitions are
+selected or published.
+
+Replay starts from every raw Core `pwm1`, `pwa1`, `pwid1`, `pwr1`, and `pwt1`
+candidate, including malformed and ultimately invalid records. One
+transaction-wide output-ownership map prevents two protocol records from
+claiming the same economic output. A `pwa1` quote and a WORK `pwt1` registry
+payment each require the first qualifying single output in vout order; two
+smaller outputs cannot be aggregated. ID, RUSH, and non-WORK credit registry
+payments use the deterministic multi-output allocator: constrained and
+claim-all roles first, then larger requirements; choose the smallest sufficient
+single output or the deterministic largest-first prefix. That allocator is
+only for those registry-payment requirements; it never aggregates a PWA
+payment, a WORK registry payment, or seller settlement. Seller settlement
+requires one seller output covering price plus the returned ticket anchor,
+while sale volume attributes only seller price. A transaction containing only
+invalid protocol records contributes
+neither economic flow nor miner fee.
+
+The replay witness is the exact 80-byte Core block header plus every
+transaction in that block in Core array order, not merely transactions that
+already produced database events. The array must begin with its sole coinbase.
+Each entry retains its exact serialized transaction bytes; parsing those bytes
+must reproduce its txid, wtxid, input outpoints or coinbase script, output
+scripts, and output values. Every governed candidate transaction is also
+hydrated with exact input prevout scripts and values so its miner fee is
+independently derived. Script-derived addresses may be exposed as projections,
+but RPC address labels and optional status/hash/height/index/time metadata have
+no consensus authority. Block time comes only from the exact header. The
+header must reproduce the requested block hash, previous-block hash, and
+transaction-array Merkle root.
+
+The full-block descriptor binds a `bip141Witness` under
+`canonical-work-amo-raw-bip141-witness-v1`. When the block contains witness
+data, replay recomputes the witness Merkle root from exact wtxids with the
+coinbase leaf fixed to zero, requires the coinbase's exact 32-byte witness
+reserved value, and verifies the highest-index matching coinbase witness
+commitment output. A legacy block with neither witness data nor a commitment
+remains valid. Missing, partial, reordered, metadata-substituted, or divergent
+block evidence fails closed.
+
+Every V2 row stores that closed-shape summary at
+`work_amo_block_transitions.payload.bip141Witness`. Its
+`witnessTransactionCount` cannot exceed the transition's exact
+`blockTransactionCount`. The migration bootstrap certificate repeats the
+final row as `finalBip141Witness` beside `finalBlockTransactionCount`, and
+readiness requires the marker, replay result, and stored tip to agree exactly.
+Missing fields, extra fields, coerced values, a noncanonical script, an
+independently incorrect double-SHA256 commitment, or an impossible count fails
+closed.
+
+Replay exposes three different counts and never treats them as aliases.
+`rawProtocolCandidateCount` counts physical decoded Core OP_RETURN candidates,
+including every participating PWM part. `protocolRecordCount` counts logical
+raw records after all PWM parts in one transaction collapse into one ordered
+aggregate. `eventCount` counts persisted replay events: every logical raw
+record plus its deterministic derived children. Derived children have their
+own later projection ordinals and event-set entries, but are marked
+`rawCandidate:false`; they claim no output, apply no economic delta, and charge
+no second transaction fee.
+
+All `pwm1` outputs in one transaction form one ordered PWM envelope, even when
+ordinary payment outputs appear between its parts. If any other governed
+`pwa1`, `pwid1`, `pwr1`, or `pwt1` candidate appears strictly between the
+first and last PWM part, the PWM aggregate is invalid with stable reason
+`work-amo-v5-raw-pwm-envelope-noncontiguous` and contributes zero. The
+intervening governed records remain independently ordered and evaluated.
+
+The USD oracle record is:
+
+```text
+pwa1:usd1:<v1DeclarationTxid>:<sequence>:<previousQuoteTxid>:<usdPer100mProofsQ8>
+```
+
+The first quote has sequence 1 and references V1 declaration txid
+`b578601bf1c1804b6afb4b030cfa5207c9894f4b5a2d2bc5ce5a9369534ed837`.
+Each later quote increments by one and references the preceding canonical
+quote. A quote must be confirmed, spend the exact authority script through
+input zero, contain exactly one valid `pwa1:usd1` record, pay at least 546
+proofs to the WORK registry, and have a complete canonical position. Competing
+children of one quote are resolved by lowest canonical position; every other
+child is invalid. A listing uses the latest valid quote strictly before its
+position, including an earlier quote in the same block. The quote must be no
+more than 144 blocks old when the listing confirms. Later quote expiration or
+replacement never changes a confirmed listing.
+
+For confirmed listing `L`, using unsigned arbitrary-precision integers:
+
+```text
+F = unitFaceUsdCents
+P = quoteBefore(L).usdPer100mProofsQ8
+N = Nbefore(L)
+S = 21000000
+A = 100000000
+Q = 100000000
+R = 100000000
+U = 100000000
+
+targetNumerator = F * R * U
+targetDenominator = 100 * P
+
+unitPriceSats =
+  ceilDiv(targetNumerator, targetDenominator)
+
+unitAmountAtoms =
+  floorDiv(
+    targetNumerator * S * A * Q,
+    targetDenominator * N
+  )
+
+unitMinimumPriceSats =
+  ceilDiv(
+    unitAmountAtoms * N,
+    S * A * Q
+  )
+```
+
+Floating-point arithmetic is forbidden. The proof price rounds up and the WORK
+amount rounds down. A zero, overflowed, noncanonical, unavailable, stale,
+insufficient-balance, or otherwise inconsistent result is invalid.
+
+A valid confirmation permanently binds the declaration-listed model ids, face,
+quote identity and position, listing position, `Nbefore`, derived WORK atoms,
+proof price, minimum proof price, listing bond contribution, and network value
+after the listing. A V5 seal or purchase references that exact listing and
+uses those frozen values. It never recomputes them from the seal or purchase
+block. Later bonds, transfers, listings, sales, network-value changes, quote
+changes, quote expiration, or high traffic cannot invalidate or reprice it.
+
+A valid V4 listing confirmed before height 959621 retains its original frozen
+terms and may close through a V5 seal or purchase reference. A V4 action at or
+after activation is invalid audit history. Pre-unit V3 listings are immutable
+non-reserving relics; a V3 action submitted after its own cutover remains
+invalid audit history. Existing Marketplace V1 relic history remains
+immutable. Non-WORK credits, POWB, and INCB retain their existing protocols.
+
+Production uses the independent `WORK_AMO_V5_WRITES_ENABLED` gate. Declaration
+truth, complete positions, replay parity, and a valid confirmed quote head are
+all required in addition to the explicit gate. Quote readiness gates creation
+of a new governed WORK listing only. A confirmed valid listing may still be
+sealed or bought from its frozen terms when the current quote is missing,
+expired, or replaced; those actions never consult a current quote or reprice
+the listing. No quote may be invented from a web price or pending transaction.
+Wallet and oracle-authority signing stay local.
+
+Each activation-through-tip block transition commits the economic accumulator,
+the complete WORK state, the generic-credit state, and the PowID state. The
+activation opening state is the one legacy H-1 bootstrap. Every later opening
+state is the preceding canonical raw transition's closing state; current
+relational tables cannot substitute for that chain. Backfill binds each
+prepared row one-to-one to the raw transition outcome at its exact
+`(height, transaction index, protocol vout, ordinal)` before persistence.
+Transition validity, reason, frozen output, and state mutation are
+authoritative. Invalid rows remain audit history but cannot mutate balances,
+listings, IDs, quotes, Log, Growth, or network value.
 
 ## Current Infinity Bond / POWB Model
 
@@ -272,6 +501,16 @@ payment lane. A bond transaction may attach canonical WORK through a separate
 `pwt1:send2`. When that attachment is valid, confirmed, recipient-matched, and in
 the same transaction, its value uses the live WORK floor from that canonical
 H-1 summary.
+
+Attachment issuance follows canonical position without reading the future. If
+the PWM bond position comes first, it issues the direct recipient proofs at
+that position; only a later valid recipient-matched WORK send adds the H-1
+valued INCB top-up at the send position. An invalid later send adds nothing,
+and an intervening INCB spend sees only the direct issuance. If the valid WORK
+send is earlier, its transfer state is already present before the later PWM
+position. The synthetic INCB projection is parent-bound, carries no separately
+claimable output, fee, or Growth/WORK contribution, and cannot survive an
+invalid parent or attachment.
 
 INCB issuance uses the H-1 live WORK value, never a bond-block or post-bond
 result:
@@ -354,7 +593,7 @@ not a close. It publishes the seller's executable terms.
 
 ## Order Books And Logs
 
-Marketplace books should stay asset-agnostic as new product classes are added.
+AMO books should stay asset-agnostic as new product classes are added.
 For any sale-ticket product, the active book should expose:
 
 - All listings
@@ -426,22 +665,24 @@ A valid delisting must:
 Automatic invalidation rules:
 
 - Any confirmed `pwid1:t` ownership transfer cancels active listings for that ID.
-- Any confirmed `pwid1:buy5` marketplace transfer cancels active listings for that ID.
+- Any confirmed `pwid1:buy5` AMO purchase cancels active listings for that ID.
 - Any confirmed credit `pwt1:buy5` sale-ticket spend closes the active credit listing and records the sale.
 - Expired sale authorizations are ignored by the resolver.
 - Delistings cancel the referenced listing after confirmation.
 
 ## Pending Visibility
 
-Pending marketplace events are UI status, not final ownership:
+Pending AMO events are UI status, not final ownership:
 
 - Sellers see pending listings, seals, and delistings they funded.
 - Buyers see pending buyer-funded transfers they broadcast.
 - New owners or receivers see incoming pending transfers that target their wallet.
 - Confirmed registry state remains the source of truth for active listings and ownership.
-- Fresh reads should prune dropped pending marketplace and credit txids from live overlays after liveness checks. Dropped pending txids may stay diagnosable for a short cache window, but they must not remain visible as active pending marketplace state.
+- Fresh reads should prune dropped pending AMO and credit txids from live overlays after liveness checks. Dropped pending txids may stay diagnosable for a short cache window, but they must not remain visible as active pending AMO state.
 
-Marketplace broadcasts spend confirmed wallet UTXOs only. This keeps the visible fee rate close to the effective package fee and avoids low-fee unconfirmed ancestors trapping marketplace actions in mempool.
+AMO broadcasts spend confirmed wallet UTXOs only. This keeps the visible fee
+rate close to the effective package fee and avoids low-fee unconfirmed
+ancestors trapping AMO actions in mempool.
 
 ## Historical Replay
 
@@ -457,7 +698,8 @@ New clients must write `list5`, `seal5`, `delist5`, and `buy5`.
 
 ## General Asset Trading
 
-IDs and Credits are the first marketplace assets. The long-term marketplace should stay asset-agnostic without weakening the live ID or credit sale-ticket protocols.
+IDs and Credits are the first AMO assets. AMO should stay asset-agnostic without
+weakening the live ID or credit sale-ticket protocols.
 
 Future asset classes can include:
 

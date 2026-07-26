@@ -14,7 +14,7 @@ export const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 export const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
 export const BROWSER_APP_URL = "https://browser.proofofwork.me";
 export const CONFESSIONS_APP_URL = "https://confessions.proofofwork.me";
-export const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
+export const MARKETPLACE_APP_URL = "https://amo.proofofwork.me";
 export const TOKEN_APP_URL = "https://credit.proofofwork.me";
 export const WALLET_APP_URL = "https://wallet.proofofwork.me";
 export const WORK_TOKEN_APP_URL = "https://work.proofofwork.me";
@@ -52,7 +52,7 @@ export const APP_LINKS: AppLink[] = [
   { href: BROWSER_APP_URL, label: "Browser", localHref: LOCAL_BROWSER_APP_URL },
   {
     href: MARKETPLACE_APP_URL,
-    label: "Marketplace",
+    label: "AMO",
     localHref: LOCAL_MARKETPLACE_APP_URL,
   },
   {

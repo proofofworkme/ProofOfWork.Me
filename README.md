@@ -1,6 +1,8 @@
 # ProofOfWork.Me
 
-The ProofOfWork Computer: local-first, agent-readable identity, mail, files, pages, marketplaces, credits, wallet transfers, bonds, logs, and growth records written to ProofOfWork OP_RETURN outputs and signed locally with UniSat.
+The ProofOfWork Computer: local-first, agent-readable identity, mail, files,
+pages, AMO markets, credits, wallet transfers, bonds, logs, and growth records
+written to ProofOfWork OP_RETURN outputs and signed locally with UniSat.
 
 ## For Agents
 
@@ -31,7 +33,8 @@ id.proofofwork.me
 computer.proofofwork.me
 desktop.proofofwork.me
 browser.proofofwork.me
-marketplace.proofofwork.me
+amo.proofofwork.me
+marketplace.proofofwork.me -> https://amo.proofofwork.me/
 credit.proofofwork.me
 token.proofofwork.me -> https://credit.proofofwork.me/
 tokens.proofofwork.me -> https://credit.proofofwork.me/
@@ -51,7 +54,8 @@ Production app roles:
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `browser.proofofwork.me` is the standalone public HTML renderer for ProofOfWork message bodies or verified file attachments by txid.
-- `marketplace.proofofwork.me` is the standalone asset marketplace. The IDs tab is live for ProofOfWork ID listings and buyer-funded transfers; the Credits tab is live for credit sale-ticket listings, sealed purchases, and market discovery.
+- `amo.proofofwork.me` is the canonical Autonomous Money Organization surface. Governed WORK units and the existing ID/credit sale-ticket markets share this app.
+- `marketplace.proofofwork.me` is a retained URI-preserving compatibility route to AMO.
 - `credit.proofofwork.me` is the standalone mainnet credit creation and mint app.
 - `token.proofofwork.me` and `tokens.proofofwork.me` redirect permanently to `https://credit.proofofwork.me/`.
 - `wallet.proofofwork.me` is the standalone credit wallet for confirmed balances, transfers, listings, delistings, and sale history touching the connected address.
@@ -63,12 +67,12 @@ Production app roles:
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
 
 ### Audit Workflow
 
 Audit standalone public apps before the full Computer shell: Home, IDs, Desktop,
-Browser, Marketplace, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth come
+Browser, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth come
 first. `computer.proofofwork.me` comes last because it embeds and cross-checks
 the same protocols, workspaces, and read models in one integrated ProofOfWork
 Computer.
@@ -191,35 +195,35 @@ Launch invariants for future developers/agents:
 - Supports fractional fee rates, including sub-1 proof/vB values like `0.1`.
 - Uses the correct external explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
-- Searches ID registry records, owned IDs, pending ID events, marketplace listings, and registry supply views across the app.
+- Searches ID registry records, owned IDs, pending ID events, AMO listings, and registry supply views across the app.
 - Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.
 - Resolves confirmed ProofOfWork IDs as direct transfer targets, so ownership can be sent to an ID's current owner/receiver instead of manually pasting the raw address.
 - Lets ID management receive fields accept confirmed ProofOfWork IDs, resolving them to raw ProofOfWork receive addresses before writing registry events.
-- Lets current ID owners publish on-chain marketplace listings, seal them, delist them, and execute buyer-funded ID transfers. Marketplace is tabbed by asset class: IDs and credit sale-ticket markets are live.
-- Shows pending ID receiver updates, direct transfers, listings, seals, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
-- Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
+- Lets current ID owners publish on-chain AMO listings, seal them, delist them, and execute buyer-funded ID transfers. AMO is tabbed by asset class: IDs and credit sale-ticket markets are live.
+- Shows pending ID receiver updates, direct transfers, listings, seals, delistings, and AMO buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
+- Exposes AMO as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Exposes Credits as a mainnet-only creation and mint surface, a Wallet surface for balances, transfers, listing actions, and sale history, a dedicated WORK credit dashboard, and Infinity Bond / POWB plus Inception Bond / INCB workspaces in the Computer shell. Credit creation pays the built-in index fee to `tokens@proofofwork.me`; mints, transfers, listings, seals, delistings, and buys pay each credit's own registry at the owner-set price or mutation fee.
-- Filters active marketplace listings by sale-ticket outspend state, using Bitcoin Core spend checks when configured, so a spent ticket leaves the active book even if a cached summary snapshot is still warming.
+- Filters active AMO listings by sale-ticket outspend state, using Bitcoin Core spend checks when configured, so a spent ticket leaves the active book even if a cached summary snapshot is still warming.
 - Excludes every active ProofOfWork ID and credit sale-ticket outpoint owned by the connected address from generic funding selection, independent of the currently open app or asset scope.
-- Treats `seal5` as signature publication without moving the original sale-ticket anchor. A legacy seal transaction that actually spends that anchor closes the listing because the ticket is no longer buyable. If an indexed or cached projection has `closeTxid` equal to `sealTxid`, Marketplace recovers it only when first-party outspend truth proves the original listing ticket is still unspent.
+- Treats `seal5` as signature publication without moving the original sale-ticket anchor. A legacy seal transaction that actually spends that anchor closes the listing because the ticket is no longer buyable. If an indexed or cached projection has `closeTxid` equal to `sealTxid`, AMO recovers it only when first-party outspend truth proves the original listing ticket is still unspent.
 - Promotes pending credit listings into confirmed listing state without duplicating them, so WORK and other credit books do not show stale pending shadows after confirmation.
 - Preserves credit sale-ticket seal metadata when pending listings promote to confirmed state, so WORK listings stay sealed or sealing across cache refreshes.
 - Preserves local pending credit listings and seals across wallet/token refreshes until the canonical API sees the same listing, seal, closure, or sale, so seller action buttons do not blink away while the indexer catches up.
 - Blocks duplicate credit listing seals once a valid seal is already known for the active listing.
 - Shows credit market books with All, Sealed, and Unsealed views where sale-ticket status applies. Sealed means the sale-ticket seal is confirmed and buyable; pending seal rows remain visible in All/Unsealed as sealing status. Active books can sort by price or arbitrage, while sales/listing logs stay ordered by confirmation time.
-- Keeps confirmed, unspent, buyable sealed listings in marketplace summaries even when ordinary active-listing previews are capped, so older sealed inventory remains visible in Buy and public order-book views.
+- Keeps confirmed, unspent, buyable sealed listings in AMO summaries even when ordinary active-listing previews are capped, so older sealed inventory remains visible in Buy and public order-book views.
 - Paginates credit sales/listing logs from the API so every listing, closure, and sale remains inspectable instead of being limited to a preview.
 - Prunes dropped pending WORK and credit transactions from live pending overlays after liveness checks, so stale mempool ghosts cannot distort transfer visibility, listing visibility, balances, floor, or network value.
 - Credit mint surfaces treat confirmed history as canonical mint-out, but pause user mint actions when confirmed plus pending mints would fill the remaining supply. Pending mempool records are not final, but the UI avoids letting users pay for likely overfill attempts, and WORK summary data must replay confirmed mints instead of trusting stale partial supply totals.
 - Stages RUSH as an explicit development/protocol surface behind `?rush=1` or `VITE_RUSH_ONLY=1`. It is not part of shared public navigation or production domain routing until separately approved for launch.
-- Exposes Growth as a public dashboard for modeled ProofOfWork Computer network value versus real confirmed registry, log, file, marketplace, and Credit value metrics.
+- Exposes Growth as a public dashboard for modeled ProofOfWork Computer network value versus real confirmed registry, log, file, AMO, and Credit value metrics.
 - Computes WORK, Infinity, Inception, Growth, Log, and livenet credit/token views from one canonical confirmed ledger snapshot, so public searches, logged events, and network value cannot diverge after refresh.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
-- Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
+- Keeps `id.proofofwork.me` registration-only. ID management and AMO flows live in the Computer app and the standalone AMO app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
 - Reads registry, mail, files, pagination, wallet UTXOs, transaction preparation data, broadcast status, live BTC/USD, WORK floor, Infinity/Inception summaries, and app metrics through the first-party ProofOfWork OP_RETURN API.
 - Uses `/api/v1/consistency` and `npm run audit:ledger` as the regression gate for livenet ledger coverage across Log, Growth, WORK, Infinity, Inception, and credit/token history.
-- Uses explicit pagination for registry, marketplace, credit, wallet, log, and growth data views so large confirmed datasets remain inspectable without relying on infinite scroll.
+- Uses explicit pagination for registry, AMO, credit, wallet, log, and growth data views so large confirmed datasets remain inspectable without relying on infinite scroll.
 - Treats ProofOfWork IDs as case-insensitive names capped by the aggregate 100 KB OP_RETURN transaction limit, not arbitrary character rules.
 - Resolves ProofOfWork IDs in the compose recipient field only after a confirmed registry record exists; pending IDs cannot receive routed mail yet.
 - Re-checks the full registry immediately before broadcasting an ID registration to block stale duplicate claims.
@@ -244,7 +248,7 @@ https://id.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
-https://marketplace.proofofwork.me/api/*
+https://amo.proofofwork.me/api/*
 https://credit.proofofwork.me/api/*
 https://wallet.proofofwork.me/api/*
 https://work.proofofwork.me/api/*
@@ -273,7 +277,7 @@ Current production behavior:
 - The unscoped credit directory (`token-history?kind=tokens`) paginates exact-tip proof-index data or the stored hash-bound Token summary instead of rebuilding full credit history. Mempool checks, raw tx lookups, UTXO/outspend checks, broadcasts, and projection fallback still use the first-party node/API path.
 - Confirmed database projections are the default fast path for supported stable reads; pending records are visible but not final.
 - Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
-- Marketplace ID sale count and seller-price volume are derived from resolver-accepted `buy5` sale-ticket purchases, with confirmed sales canonical and pending sales shown as mempool visibility. Older legacy buy events remain replayable protocol history but do not seed the public marketplace stats.
+- AMO ID sale count and seller-price volume are derived from resolver-accepted `buy5` sale-ticket purchases, with confirmed sales canonical and pending sales shown as mempool visibility. Older legacy buy events remain replayable protocol history but do not seed the public AMO stats.
 - The credit API scans `tokens@proofofwork.me` at `1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn` for `pwt1:create` events, using tx `7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19` as the current ID record for the credit index.
 - Credit creation requires a 546-proof payment to `tokens@proofofwork.me` before the OP_RETURN. The create event defines ticker, max supply, mint amount, mint price, and the credit's own registry address. The UI may accept a confirmed ProofOfWork ID such as `work@proofofwork.me` for the credit registry field, but the on-chain create payload stores the resolved ProofOfWork address.
 - Credit ids are creation txids. Mint events use `pwt1:mint:<token-create-txid>:<amount>` and must pay the credit registry address before OP_RETURN.
@@ -281,8 +285,8 @@ Current production behavior:
 - Legacy whole-credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` and remain replayable exactly as signed. New WORK transfers use `pwt1:send2:<canonical-work-token-id>:<amount-atoms>:<recipient-address>`, where one WORK is 100,000,000 atoms and the positive canonical integer atom amount supports up to eight decimal places. Other credits continue to use `send`. Both forms require the normal 546-proof registry mutation payment; confirmed transfers debit the first input address and credit the recipient address, while pending transfers are visibility only.
 - Approved message senders can combine the canonical WORK `send2` transfer with ProofOfWork mail in one transaction. Mail recipients remain the normal payment outputs before the first `pwm1:` output. The WORK registry mutation payment is placed after the mail `pwm1:` outputs and before the `pwt1:` transfer outputs so mail delivery and WORK transfer parsing stay separate while sharing one txid.
 - WORK attachments to normal messages and Infinity Bonds remain a V1 allowlisted sender feature for `1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT`, `1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x`, and `1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv`. Inception Bonds instead expose WORK attachment to every connected mainnet address whose authoritative wallet-scoped state proves a positive confirmed WORK balance. The pre-sign check fails closed and subtracts active listing reservations, pending outgoing transfers, and uncovered pending sales; pending incoming WORK does not qualify until confirmation. A holder with no currently spendable WORK can still create a proof-only Inception Bond.
-- The Credit tab inside Marketplace is the shared market surface for credit trades. Credit `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature without spending that output, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the credit registry mutation fee. Historical non-WORK and whole-credit tickets keep signed `pwt-sale-v1` terms, and historical fractional WORK tickets keep `pwt-sale-v2` `amountAtoms` terms. WORK Pricing Protocol V2 actions use `pwt-sale-v3` with an exact hash-bound H-1 commitment. Pricing Protocol V4 is currently Phase-1 write-gated: after its exact declaration confirms and activates at `D + 1`, `pwt-sale-v4` permits a quote up to 480 blocks old only when the signed seller price also meets the canonical confirmation-block H-1 floor. Until the declaration is pinned and writes are explicitly enabled, WORK list, seal, and buy broadcasts remain read-only; V3 tickets are recoverable relics and delisting remains available. The `list5`/`seal5`/`buy5`/`delist5` envelopes and sale-ticket anchoring do not change.
-- Credit active listings are spend-state aware. A sale-ticket outpoint spend closes the listing; production Core-backed spend checks keep Wallet and Marketplace aligned while summaries warm. If the spend is a valid `pwt1:buy5`, the sale appears in credit sales, credit market logs, Growth, and summary endpoints after refresh.
+- The Credit tab inside AMO is the shared market surface for credit trades. Credit `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature without spending that output, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the credit registry mutation fee. Historical non-WORK and whole-credit tickets keep signed `pwt-sale-v1` terms, and historical fractional WORK tickets keep their earlier immutable terms. Current governed WORK actions use `pwt-sale-v5`: a listing commits only `$20`, `$50`, or `$100`, while canonical position, the preceding USD quote, and network value immediately before confirmation derive and freeze the exact WORK atoms and proof price. A later seal or purchase references those frozen terms and never reprices. The `list5`/`seal5`/`buy5`/`delist5` envelopes and sale-ticket anchoring remain compatible.
+- Credit active listings are spend-state aware. A sale-ticket outpoint spend closes the listing; production Core-backed spend checks keep Wallet and AMO aligned while summaries warm. If the spend is a valid `pwt1:buy5`, the sale appears in credit sales, credit market logs, Growth, and summary endpoints after refresh.
 - Infinity Bonds use the canonical `pwm1:m:powb` message memo. Each confirmed recipient payment mints the same number of POWB to that recipient address. POWB is a reserved, uncapped synthetic credit backed by confirmed bond proofs and registered through `infinity@proofofwork.me`; `infinity.proofofwork.me` exposes `/api/v1/infinity-summary`, the bond composer, POWB balances, and the POWB sale-ticket market. POWB supply has no maximum and can trend to infinity.
 - POWB floor accounting is confirmed bond network value divided by confirmed POWB supply. Bond network value includes confirmed bond proof payments, POWB seller sale volume, POWB transfer fees, and POWB marketplace mutation fees. POWB sale volume and mutation fees also contribute to the broader ProofOfWork Computer/WORK network floor alongside the rest of confirmed marketplace flow.
 - Inception Bonds use the canonical `pwm1:m:incb` message memo. When a bond confirms, the recipient receives one INCB for each whole proof in the bond's direct proof payment plus its attached WORK valued by the send-time oracle. That oracle is the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. INCB is a reserved, uncapped synthetic credit registered through `inception@proofofwork.me`; its canonical credit id is `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`. `inception.proofofwork.me` exposes `/api/v1/inception-summary`, the bond composer, INCB balances, and the INCB sale-ticket market.
@@ -298,13 +302,17 @@ Current production behavior:
 - WORK is reserved for the canonical WORK credit id `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`. Official indexers and UI creation flows reject non-canonical credit creates whose ticker contains `WORK`, and exclude credit creates from blocked scam creator address `bc1qcf57sgazj4gcd0yfxste3eaa35eltj48sgrvjl`.
 - WORK settings are 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, and the `work@proofofwork.me` registry address. WORK has eight decimal places: one WORK is 100,000,000 atoms, and exact API/read-model projections pair canonical human decimal strings with integer `*Atoms` strings. The launch price is exactly 1 proof per WORK. The credit create form can reuse the same economic template for new tickers, but cannot create another WORK-like credit.
 - WORK's permanent value floor is derived from the live ProofOfWork Computer network value: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`. The inverse, `21,000,000 / live_network_value_sats`, is the WORK-per-proof ratio. Pending records are visible but do not change the canonical floor until confirmed.
-- WORK Marketplace Pricing Protocol V2 is anchored by declaration txid `4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f`. It activates in the block after that declaration confirms. Governed WORK list, seal, and buy actions use `pwt-sale-v3`, commit the exact hash-bound H-1 live network value in Q8, and require `priceSats >= ceil(amountAtoms * liveNetworkValueQ8 / (21,000,000 * 100,000,000 * 100,000,000))`. Missing, stale, mismatched, below-floor, or unverifiable actions fail closed without mutating canonical WORK state.
+- Historical WORK Marketplace Pricing Protocol V2 is anchored by declaration txid `4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f`. It activated in the block after that declaration confirmed. Its governed WORK list, seal, and buy actions used `pwt-sale-v3`, committed the exact hash-bound H-1 live network value in Q8, and required `priceSats >= ceil(amountAtoms * liveNetworkValueQ8 / (21,000,000 * 100,000,000 * 100,000,000))`. Missing, stale, mismatched, below-floor, or unverifiable actions failed closed without mutating canonical WORK state. This remains replayable history; current governed WORK actions use the AMO Unit Protocol V2 authorization `pwt-sale-v5`.
+- WORK AMO Unit Protocol V2 is the current corrective declaration, txid `54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36`, confirmed at height 959620/index 141 and active from height 959621. New governed actions require `pwt-sale-v5`. Faces are exactly 2000, 5000, or 10000 USD cents. Confirmed state is ordered by `(blockHeight, blockTransactionIndex, protocolVout, recordOrdinal)`. The latest valid `pwa1:usd1` quote strictly before the listing and `Nbefore(listing)` feed integer-only floor/ceiling formulas; confirmation permanently freezes the result before the listing's own bond is applied. Pending figures are estimates. Seal and buy never re-evaluate the listing against a later floor or quote. Production remains fail-closed unless declaration pins, canonical positions, replay readiness, a valid quote head, and `WORK_AMO_V5_WRITES_ENABLED=1` all agree.
+- AMO V5 replay classifies every raw Core protocol candidate and owns economic outputs transaction-wide before any relational projection is written. PWA and WORK registry payments require one qualifying output. The deterministic shared allocator applies only to ID, RUSH, and generic-credit registry-payment requirements; it never aggregates PWA, WORK-registry, or seller settlement, and seller settlement is one signed output covering price plus the returned anchor. Invalid-only transactions add no event value or miner fee. The activation H-1 state is the one legacy bootstrap; every later block opens from the prior raw transition's committed economic, WORK, generic-credit, and PowID closing states. Backfill binds each exact raw or deterministic-derived position to one replay outcome before persistence, so invalid audit rows cannot mutate derived state.
+- AMO V5 counters are deliberately separate: physical decoded Core parts are `rawProtocolCandidateCount`; logical raw records after per-transaction PWM aggregation are `protocolRecordCount`; persisted raw plus deterministic zero-delta/no-claim/no-fee children are `eventCount`.
+- A fresh canonical USD quote gates only a new governed WORK listing. Once a listing confirms, its amount and proof price are immutable: seal and buy remain valid references to those frozen terms without a current quote and without current-floor repricing.
 - WORK network value has two confirmed views. Live network value is the active site and floor value, repricing historical confirmed WORK movement at the current live floor. Frozen network value is the immutable confirmation-time audit stamp for the same events. A normal WORK transfer, sale, or marketplace mutation uses the current live WORK floor when it confirms. An Inception-attached WORK transfer uses the bond's already validated, hash-bound H-1 live oracle for that frozen stamp, because the whole bond block is excluded from its send-time value. Both remain live-revalued afterward on the WORK side; that WORK accounting never reprices the INCB issued from the fixed H-1 value.
 - Only canonical WORK receives credit movement network value. Other credits can still add confirmed proof payments, registry mutations, marketplace sale payments, marketplace mutation fees, and miner-fee buckets where tracked, but they do not reprice network value from their own listing floors.
 - The cumulative WORK miner-fee bucket counts the Bitcoin transaction fee for each confirmed canonical WORK transaction once by txid, derived from complete full-node input value minus output value. It records historical blockspace/security cost; it is not platform revenue, retained reserves, or spendable backing.
 - The WORK dashboard shows the live floor beside the mint panel: floor proofs per WORK, USD per WORK, live and frozen network value in proofs/USD, a confirmed floor-history chart, and the refresh time. This is separate from the 1 proof/WORK launch mint price. WORK and Growth must use the same node-backed BTC/USD quote and the same confirmed network-value payload so proofs and USD totals agree across surfaces.
 - `work-floor`, `work-summary`, `growth-summary`, and `marketplace-summary` expose current USD from the live first-party BTC/USD quote. `actualValue.totalUsd` is live current USD; `actualValue.modelTotalUsd` is the Growth model USD projection. Consumers that publish current numbers should use `actualValue.totalUsd` plus the response's `btcUsd`, `btcUsdIndexedAt`, and `usdSource` metadata, not `modelTotalUsd`.
-- Marketplace flow in WORK/Growth accounting is seller sale volume plus marketplace mutation fees from valid listing, seal, delisting, and buy events. For WORK sales, the sale price remains a trade metric and also contributes confirmed proof flow, while the WORK amount moved contributes live/frozen credit movement value. Seller sale volume remains separate from mutation-fee flow, and marketplace mutation fees are excluded from generic Computer event flow to avoid double counting.
+- AMO flow in WORK/Growth accounting is seller sale volume plus market mutation fees from valid listing, seal, delisting, and buy events. For WORK sales, the sale price remains a trade metric and also contributes confirmed proof flow, while the WORK amount moved contributes live/frozen credit movement value. Seller sale volume remains separate from mutation-fee flow, and market mutation fees are excluded from generic Computer event flow to avoid double counting.
 - The WORK floor announcement is part of project history as ProofOfWork mail tx `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`: `$work now has a permanent ProofOfWork Computer floor.` Live indexers determine whether that tx is pending or confirmed; once confirmed, ProofOfWork history is the permanent source.
 - The staged RUSH API scans the configured network registry for valid `pwr1:m:rush` mints that pay at least 1,000 proofs to the registry before OP_RETURN. Confirmed mint ordinals determine the phase reward; pending mints are visibility only.
 - The log API exposes a normalized ProofOfWork Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, and credit sales. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
@@ -314,8 +322,8 @@ Current production behavior:
 - The canonical welcome page txid is `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b`. Files/Desktop/Browser may show it only from verified transaction body or attachment data returned by the first-party API; no hardcoded client artifact may impersonate the transaction.
 - Growth reads the same registry, log, Credit, and WORK floor endpoints, then auto-refreshes real confirmed network value with the same live node-backed BTC/USD benchmark used by the rest of the app. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
 - On livenet, WORK floor, Growth summary, Log/Log history, token summary, and token history are backed by the same canonical ledger payload. That payload merges registry activity, discovered Computer activity, seeded mail activity from app-derived addresses, WORK token state, credit token state, and staged protocol activity where enabled. A confirmed event that affects network value must be searchable in Log from the same snapshot. Fresh reads require that one snapshot at the exact verified Core tip; stable reads can expose a coherent last-good checkpoint with explicit lag provenance.
-- The database/read-model layer is the app-wide speed plane for that contract: once prior confirmed history is indexed, public routes should answer from the current verified snapshot, update only from newer indexed blocks and transactions, and keep embedded summaries such as Growth `workFloor` and Marketplace `workFloor` on the same snapshot/value as `/api/v1/work-floor` and `/api/v1/consistency`.
-- ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which external explorers can report as a lower effective fee rate.
+- The database/read-model layer is the app-wide speed plane for that contract: once prior confirmed history is indexed, public routes should answer from the current verified snapshot, update only from newer indexed blocks and transactions, and keep embedded summaries such as Growth `workFloor` and AMO `workFloor` on the same snapshot/value as `/api/v1/work-floor` and `/api/v1/consistency`.
+- ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and AMO actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which external explorers can report as a lower effective fee rate.
 - Generic wallet funding also reserves all active ProofOfWork ID and credit listing anchors for that address before selection, so working in one asset view cannot accidentally spend another asset's sale ticket.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
@@ -472,7 +480,7 @@ http://localhost:5173/?confessions=1&view=following
 http://localhost:5173/?confessions=1&view=profile&profile=proofofwork
 ```
 
-To preview the standalone asset Marketplace locally:
+To preview the standalone AMO app locally:
 
 ```text
 http://localhost:5173/?marketplace=1
@@ -529,7 +537,7 @@ IDs -> /?id-launch=1
 Computer -> /
 Desktop -> /?desktop=1
 Browser -> /?browser=1
-Marketplace -> /?marketplace=1
+AMO -> /?marketplace=1
 Credit -> /?credit=1
 Wallet -> /?wallet=1
 WORK -> /?work=1
@@ -571,10 +579,10 @@ VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run bui
 
 The staged Confessions app is local-only until separately approved. Do not add it to public navigation or production builds.
 
-To build the standalone asset Marketplace app for production:
+To build the standalone AMO app for production:
 
 ```bash
-VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
+VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://amo.proofofwork.me npm run build
 ```
 
 To build the standalone credit app for production:
@@ -652,6 +660,11 @@ API and indexer worker to the checksum-verified Node.js 24 LTS runtime installed
 by `deploy/install-node-runtime.sh`; the matching systemd override is
 `deploy/proofofwork-api-node-runtime.conf`. Production dependency maintenance
 must prepend `/opt/node-v24.18.0-linux-x64/bin` to `PATH` before invoking npm.
+The consensus server paths additionally require Unicode data version `17.0`
+for the historical case-insensitive PowID mapping. The API, indexer, and AMO
+V5 migration fail closed on a different runtime Unicode version; a runtime
+upgrade needs a full-registry normalization compatibility proof or an explicit
+protocol migration.
 
 Useful API environment variables:
 
@@ -741,7 +754,7 @@ refresh should return the current checked snapshot and continue in the
 background, or fail closed if no current snapshot exists; false zero dashboards
 are not a valid fallback.
 Summary responses are app-wide consistency surfaces, not isolated page caches:
-WORK, Growth, Marketplace, and Consistency must expose the same current
+WORK, Growth, AMO, and Consistency must expose the same current
 verified WORK floor snapshot and value, including nested `workFloor` payloads.
 Worker-written summary-snapshot fallback rows are allowed only as non-OK
 publication envelopes for verified proof-index summaries while the full
@@ -772,7 +785,7 @@ Important implementation points:
 - Public Desktop route switch: `isDesktopRoute()` in `src/app/routeRegistry.ts`.
 - Public Browser route switch: `isBrowserRoute()` in `src/app/routeRegistry.ts`.
 - Staged Confessions route switch: `isConfessionsRoute()` in `src/app/routeRegistry.ts`; it returns true only on local preview hosts unless launch scope changes.
-- Standalone Marketplace route switch: `isMarketplaceRoute()` in `src/app/routeRegistry.ts`.
+- Standalone AMO route switch: `isMarketplaceRoute()` in `src/app/routeRegistry.ts` (retained internal compatibility name).
 - Standalone Credit route switch: `isTokenRoute()` in `src/app/routeRegistry.ts`.
 - Standalone Wallet route switch: `isWalletRoute()` in `src/app/routeRegistry.ts`.
 - Standalone WORK route switch: `isWorkTokenRoute()` in `src/app/routeRegistry.ts`.
@@ -788,7 +801,7 @@ Important implementation points:
 - Desktop-only deploy switch: `VITE_DESKTOP_ONLY=1`.
 - Browser-only deploy switch: `VITE_BROWSER_ONLY=1`.
 - Confessions-only deploy switch: `VITE_CONFESSIONS_ONLY=1` for local/staged builds only.
-- Marketplace-only deploy switch: `VITE_MARKETPLACE_ONLY=1`.
+- AMO-only deploy switch: `VITE_MARKETPLACE_ONLY=1` (retained internal compatibility name).
 - Credit-only deploy switch: `VITE_TOKEN_ONLY=1`.
 - Wallet-only deploy switch: `VITE_WALLET_ONLY=1`.
 - WORK-only deploy switch: `VITE_WORK_TOKEN_ONLY=1`.
@@ -811,11 +824,11 @@ Important implementation points:
 - Multi-recipient compose routing: `resolveRecipientInputs()` and `buildPaymentPsbt()` payment outputs.
 - Dedicated registration-only launch UI: `IdLaunchApp`.
 - Full app ID workspace: `IdsWorkspace`.
-- Standalone marketplace UI: `MarketplaceApp`.
-- Computer marketplace workspace: `MarketplaceWorkspace`.
+- Standalone AMO UI: `MarketplaceApp` (retained internal compatibility name).
+- Computer AMO workspace: `MarketplaceWorkspace` (retained internal compatibility name).
 - Standalone Infinity Bond / POWB and Inception Bond / INCB UI: the parameterized `InfinityApp` bond-family surface.
 - Standalone growth dashboard: `GrowthApp`.
 - OP_RETURN API: `server/proof-api.mjs`.
 - OP_RETURN infrastructure notes: `OP_RETURN_INFRASTRUCTURE.md`.
 - ID refund log: `ID_REFUNDS.md`.
-- Marketplace protocol notes: `MARKETPLACE.md`.
+- AMO protocol notes: `MARKETPLACE.md` (retained historical filename).

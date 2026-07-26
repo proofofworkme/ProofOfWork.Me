@@ -74,12 +74,17 @@ export function isBrowserRoute() {
 }
 
 export function isMarketplaceRoute() {
-  if (import.meta.env.VITE_MARKETPLACE_ONLY === "1") {
+  if (
+    import.meta.env.VITE_MARKETPLACE_ONLY === "1" ||
+    import.meta.env.VITE_AMO_ONLY === "1"
+  ) {
     return true;
   }
 
   return (
+    hostname() === "amo.proofofwork.me" ||
     hostname() === "marketplace.proofofwork.me" ||
+    searchFlag("amo") ||
     searchFlag("marketplace")
   );
 }

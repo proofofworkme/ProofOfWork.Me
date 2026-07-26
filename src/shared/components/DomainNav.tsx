@@ -4,9 +4,9 @@ import { APP_LINKS } from "../../app/appLinks";
 import { appHref, isLocalPreviewHost } from "../../app/routeRegistry";
 
 const SHORT_LABELS: Record<string, string> = {
+  AMO: "AMO",
   Browser: "Web",
   Computer: "PC",
-  Marketplace: "Market",
 };
 
 function currentHref() {
@@ -34,6 +34,14 @@ function linkIsActive(link: (typeof APP_LINKS)[number], current: string) {
   }
 
   if (window.location.href.startsWith(link.href)) {
+    return true;
+  }
+
+  if (
+    link.label === "AMO" &&
+    (window.location.hostname === "amo.proofofwork.me" ||
+      window.location.hostname === "marketplace.proofofwork.me")
+  ) {
     return true;
   }
 

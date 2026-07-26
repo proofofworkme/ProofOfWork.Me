@@ -140,7 +140,7 @@ export function LandingApp({
           <h2>ProofOfWork.Me</h2>
           <p>
             Claim a permanent on-chain ID, then use the ProofOfWork Computer for
-            mail, files, HTML pages, marketplace actions, credit mints, and
+            mail, files, HTML pages, AMO actions, credit mints, and
             bond-backed chain-readable proof.
           </p>
           <div className="landing-actions">
@@ -186,7 +186,7 @@ export function LandingApp({
             >
               <span className="button-content">
                 <Users size={17} />
-                <span>Marketplace</span>
+                <span>AMO</span>
               </span>
             </a>
             <a
@@ -454,7 +454,7 @@ export function LandingApp({
               <Users size={24} />
             </div>
             <div>
-              <h3>Open Marketplace</h3>
+              <h3>Open AMO</h3>
               <p>
                 List confirmed ProofOfWork IDs, delist them, and execute
                 buyer-funded ownership transfers on chain.
@@ -466,7 +466,7 @@ export function LandingApp({
             >
               <span className="button-content">
                 <Users size={16} />
-                <span>Open Marketplace</span>
+                <span>Open AMO</span>
               </span>
             </a>
           </article>
@@ -567,7 +567,7 @@ export function LandingApp({
               <h3>Open Log</h3>
               <p>
                 Read the public ProofOfWork Computer activity feed for IDs, mail,
-                replies, files, Browser pages, and marketplace events.
+                replies, files, Browser pages, and AMO events.
               </p>
             </div>
             <a

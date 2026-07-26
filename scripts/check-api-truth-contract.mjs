@@ -6,6 +6,11 @@ const server = readFileSync("server/proof-api.mjs", "utf8");
 const reader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
 const backfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const worker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
+const workAmoV5 = readFileSync("server/work-amo-v5.mjs", "utf8");
+const proofIndexSchema = readFileSync(
+  "server/sql/proof-indexer-v1.sql",
+  "utf8",
+);
 const ledgerAudit = readFileSync(
   "scripts/audit-ledger-consistency.mjs",
   "utf8",
@@ -495,7 +500,7 @@ expect(
       pendingWorkSupplyCapVerifier,
     ) &&
     /pendingCandidatesComplete !== true/u.test(pendingWorkSupplyCapVerifier) &&
-    /candidate\.txid\.localeCompare\(normalizedTargetTxid\) >= 0/u.test(
+    /compareCanonicalUtf8\([\s\S]*candidate\.txid,[\s\S]*normalizedTargetTxid,[\s\S]*\) >= 0/u.test(
       pendingWorkSupplyCapVerifier,
     ) &&
     (pendingWorkSupplyCapVerifier.match(
@@ -549,15 +554,73 @@ expect(
 );
 expect(
   "WORK pending cap ordering matches canonical pending transaction replay",
-  /function sortWorkMintsForPendingCap[\s\S]*String\(left\.txid[\s\S]*localeCompare\(String\(right\.txid[\s\S]*Date\.parse\(left\.createdAt\)/u.test(
+  /function sortWorkMintsForPendingCap[\s\S]*compareCanonicalUtf8\(left\.txid, right\.txid\)[\s\S]*Date\.parse\(left\.createdAt\)/u.test(
     server,
   ),
 );
 expect(
   "live USD remains derived from actual total proofs",
-  /totalUsd: satsToUsdAtBtcUsd\(totalSats, btcUsdMetadata\.btcUsd\)/u.test(
+  /const liveTotalUsd =[\s\S]*?satsToUsdAtBtcUsd\(\s*correctedNetworkValueSats,\s*btcUsdMetadata\.btcUsd\s*\)/u.test(
     server,
-  ),
+  ) &&
+    /totalUsd: liveTotalUsd/u.test(server),
+);
+expect(
+  "AMO V5 pins the confirmed corrective declaration and exact faces",
+  /WORK_AMO_V5_AUTH_VERSION = "pwt-sale-v5"/u.test(workAmoV5) &&
+    /54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36/u.test(
+      workAmoV5,
+    ) &&
+    /WORK_AMO_V5_ACTIVATION_HEIGHT = 959_621/u.test(workAmoV5) &&
+    /WORK_AMO_V5_DECLARATION_BLOCK_INDEX = 141/u.test(workAmoV5) &&
+    /2_000,\s*5_000,\s*10_000/u.test(workAmoV5),
+);
+expect(
+  "AMO V5 uses full canonical positions and integer-only unit math",
+  /blockHeight[\s\S]*blockTransactionIndex[\s\S]*protocolVout[\s\S]*recordOrdinal/u.test(
+    workAmoV5,
+  ) &&
+    /workAmoCeilDiv/u.test(workAmoV5) &&
+    /workAmoFloorDiv/u.test(workAmoV5) &&
+    /targetNumerator[\s\S]*targetDenominator[\s\S]*unitAmountAtoms[\s\S]*unitMinimumPriceSats/u.test(
+      workAmoV5,
+    ) &&
+    /workAmoV5FrozenTermsMatch/u.test(workAmoV5),
+);
+expect(
+  "AMO V5 API admission is independently pinned and fail closed",
+  /WORK_AMO_V5_DECLARATION_PINS_CONFIGURED/u.test(server) &&
+    /WORK_AMO_V5_WRITES_CONFIGURED/u.test(server) &&
+    /proofIndexWorkAmoReplayReadiness/u.test(server) &&
+    /proofIndexWorkUsdQuoteHead/u.test(server) &&
+    /workAmoV5BroadcastDecision/u.test(server) &&
+    /WORK_AMO_V5_WRITES_PAUSED/u.test(server) &&
+    /listingFrozenTerms/u.test(server),
+);
+expect(
+  "AMO V5 production configuration starts with its separate gate closed",
+  /Environment=WORK_AMO_V5_DECLARATION_TXID=54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36/u.test(
+    service,
+  ) &&
+    /Environment=WORK_AMO_V5_DECLARATION_HEIGHT=959620/u.test(service) &&
+    /Environment=WORK_AMO_V5_DECLARATION_BLOCK_INDEX=141/u.test(service) &&
+    /Environment=WORK_AMO_V5_WRITES_ENABLED=0/u.test(service),
+);
+expect(
+  "AMO V5 index schema persists positions, quotes, and frozen terms",
+  /block_index\s+integer/iu.test(proofIndexSchema) &&
+    /record_ordinal\s+integer/iu.test(proofIndexSchema) &&
+    /work_usd_quotes/iu.test(proofIndexSchema) &&
+    /work_amo_listing_terms/iu.test(proofIndexSchema) &&
+    /op_return_vout/iu.test(proofIndexSchema),
+);
+expect(
+  "AMO V5 indexer recognizes quote records and reader exposes readiness",
+  /pwa1:/u.test(backfill) &&
+    /proofIndexWorkAmoV5Declaration/u.test(reader) &&
+    /proofIndexWorkUsdQuoteHead/u.test(reader) &&
+    /proofIndexWorkAmoListingTerms/u.test(reader) &&
+    /proofIndexWorkAmoReplayReadiness/u.test(reader),
 );
 
 async function optionalLiveChecks() {
